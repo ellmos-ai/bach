@@ -19,6 +19,7 @@ Referenz: BACH_Dev/docs/MEMORY_WORKING_CLEANUP_KONZEPT.md
 """
 from pathlib import Path
 from .base import BaseHandler
+from .memory import MemoryHandler
 
 
 class MemHandler(BaseHandler):
@@ -37,17 +38,49 @@ class MemHandler(BaseHandler):
 
     def get_operations(self) -> dict:
         return {
+            "status": "Memory-Uebersicht (Alias fuer bach memory status)",
+            "write": "Notiz schreiben (Alias fuer bach memory write)",
+            "read": "Letzte Notizen lesen (Alias fuer bach memory read)",
+            "fact": "Fakt speichern (Alias fuer bach memory fact)",
+            "facts": "Fakten anzeigen (Alias fuer bach memory facts)",
+            "search": "Memory durchsuchen (Alias fuer bach memory search)",
+            "context": "Kontext generieren (Alias fuer bach memory context)",
+            "session": "Session-Bericht speichern (Alias fuer bach memory session)",
+            "sessions": "Letzte Sessions anzeigen (Alias fuer bach memory sessions)",
             "working": "Working Memory Management (SQ043)",
             "decay": "Memory Decay (Facts/Lessons/Working, SQ043 Runde 30C)",
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
-        if operation == "working":
+        memory_aliases = {
+            "",
+            "status",
+            "write",
+            "read",
+            "fact",
+            "facts",
+            "certain",
+            "uncertain",
+            "confidence",
+            "search",
+            "context",
+            "clear",
+            "session",
+            "sessions",
+        }
+
+        if operation in memory_aliases:
+            return MemoryHandler(self.base_path).handle(operation, args, dry_run)
+        elif operation == "working":
             return self._working(args, dry_run)
         elif operation == "decay":
             return self._decay(args, dry_run)
         else:
-            return False, f"Unbekannte Operation: {operation}\n\nVerfügbar: working, decay"
+            return False, (
+                f"Unbekannte Operation: {operation}\n\n"
+                "Verfuegbar: status, write, read, fact, facts, search, "
+                "context, session, sessions, working, decay"
+            )
 
     def _working(self, args: list, dry_run: bool) -> tuple:
         """Working Memory Cleanup (SQ043)."""

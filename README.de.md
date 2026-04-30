@@ -1,6 +1,6 @@
 # BACH - Textbasiertes Betriebssystem fuer LLMs
 
-**Version:** v3.7.1-tower-of-babel
+**Version:** v3.8.0-sugar-of-babel
 **Status:** Production-Ready
 **Lizenz:** MIT
 
@@ -62,6 +62,10 @@ Connector-Framework fuer externe Services (Telegram, Email, WhatsApp, etc.).
 
 ### 5. Automatisierung
 Scheduler fuer wiederkehrende Tasks und Event-basierte Workflows.
+
+## OpenClaw-Abgleich
+
+Stand 2026-04-30: OpenClaw bleibt fuer BACH vor allem als Vergleichssystem fuer breite Messaging-Anbindung, Plugin-Oekosystem und Security-Patterns relevant. Fuer BACH passen aktuell besonders manifest-first Plugin-Metadaten, fail-closed Tool-Setup-Checks und Scans vor der Installation von Skills, MCP-Servern und Plugins.
 
 ## Dokumentation
 

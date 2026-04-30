@@ -189,7 +189,7 @@ class TaskHandler(BaseHandler):
         except Exception:
             pass
 
-        return True, f"[OK] {t('task_erstellt', default='Task erstellt')}: {title}"
+        return True, f"[OK] Task {task_id} erstellt: {title}"
     
     def _edit(self, args: List[str]) -> Tuple[bool, str]:
         """Task bearbeiten - Titel, Beschreibung, Kategorie, Zuweisung aendern"""

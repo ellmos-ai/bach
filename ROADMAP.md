@@ -1,6 +1,6 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-03-02 | **Version:** 4.0.0
+**Stand:** 2026-04-30 | **Version:** 4.3.0
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
@@ -60,6 +60,23 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 ---
 
 ## Aktuelle Fokus-Bereiche
+
+### Prioritaet 1 — Security, Plugin-Haertung, Self-Heal (ab 2026-04-30)
+
+Der OpenClaw-Abgleich vom 2026-04-30 verschiebt den naechsten BACH-Fokus
+klar in Richtung sichere Erweiterbarkeit. Relevant sind nicht die breite
+Messenger-Abdeckung, sondern manifest-first Plugin-Metadaten, fail-closed
+Tool-Setups und Scans vor der Installation von Skills, MCP-Servern und Plugins.
+
+| ID | Thema | Status | Notiz |
+|----|-------|--------|-------|
+| SH-001 | CLI/API Self-Heal: `mem write`, `wiki read`, Task-ID bei `task add` | DONE | Implementiert und mit Unit-Tests abgesichert (2026-04-30) |
+| SEC-PLUGIN-001 | Skill-/Plugin-/MCP-Install-Scanner | OFFEN | Vor Trust-Entscheidung statisch pruefen, Quarantaene statt Auto-Trust |
+| SEC-PLUGIN-002 | Manifest-first Plugin-Metadaten | OFFEN | Aktivierung, Capabilities, Provider-/Model-Catalogs aus Manifesten statt Runtime-Import |
+| SEC-PLUGIN-003 | Fail-closed Tool-Setup-Checks | OFFEN | Vor Desktop-/Shell-/MCP-Zugriff Voraussetzungen pruefen und bei Unsicherheit abbrechen |
+| SANDBOX-002 | Subprocess-Isolation | OFFEN | Timeout, Ressourcenlimit, erlaubte Capabilities; ergaenzt bestehende Stufe 1 |
+
+---
 
 ### Prioritaet 1-3 — Alle erledigt (2026-03-02)
 

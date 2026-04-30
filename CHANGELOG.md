@@ -32,7 +32,12 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Bugfix
 
+- **Self-Heal CLI/API:** `bach mem write/read/...` delegiert jetzt auf den bestehenden `memory`-Handler; `bach wiki read <thema>` ist als Alias verfuegbar; `bach task add` gibt die neue Task-ID direkt aus.
 - **agent_launcher.py:** Windows cp1252 Encoding-Fix bei tasklist-Subprocess (0x81 Umlaut-Crash)
+
+### Dokumentation
+
+- **OpenClaw-Abgleich 2026-04-30:** README und ROADMAP aktualisiert; naechster Fokus ist Skill-/Plugin-Sicherheit, manifest-first Metadaten und fail-closed Tool-Setup.
 
 ---
 

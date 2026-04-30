@@ -39,6 +39,7 @@ class WikiHandler(BaseHandler):
         return {
             "list": t("wiki_list_desc", default="Alle Wiki-Artikel auflisten"),
             "folders": t("wiki_folders_desc", default="Alle Themenordner auflisten"),
+            "read": t("wiki_read_desc", default="Artikel anzeigen (Alias: bach wiki read <thema>)"),
             "<thema>": t("wiki_show_desc", default="Artikel zu einem Thema anzeigen"),
             "<ordner>/<thema>": t("wiki_subshow_desc", default="Artikel aus Unterordner (z.B. foerderung/icf)"),
             "search": t("wiki_search_desc", default="Artikel durchsuchen"),
@@ -59,6 +60,10 @@ class WikiHandler(BaseHandler):
             if not args:
                 return False, "Usage: bach wiki search \"keyword\""
             return self._search(" ".join(args))
+        elif operation == "read":
+            if not args:
+                return False, "Usage: bach wiki read <thema>"
+            return self._show(" ".join(args))
         else:
             # operation ist das Thema (mit oder ohne Unterordner)
             return self._show(operation)

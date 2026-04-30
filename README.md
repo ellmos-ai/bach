@@ -141,14 +141,14 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 
 ## See Also: OpenClaw
 
-How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the popular open-source AI assistant (274K+ stars)?
+How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the popular open-source AI assistant (366K+ GitHub stars observed on 2026-04-30)?
 
 | | **BACH** | **OpenClaw** |
 |---|---|---|
 | **Focus** | LLM Operating System -- deep autonomy, structured memory, multi-agent orchestration | Personal AI Assistant -- broad messaging gateway, voice, companion apps |
-| **Tools/Skills** | 373+ tools, 932+ skills, 54 workflows (local, curated) | Community-driven skill marketplace (ClawhHub, 2.2K+ skills) |
-| **Memory** | 5 memory types with decay, conflict detection, consolidation (145+ DB tables) | Session-based with `/compact`, workspace files |
-| **Agents** | Boss-Expert orchestration (5 boss agents), SharedMemory Bus | Single-agent with multi-session management |
+| **Tools/Skills** | 373+ tools, 932+ skills, 54 workflows (local, curated) | Community-driven skill/plugin ecosystem; recent releases emphasize manifest-first plugin metadata and install safety |
+| **Memory** | 5 memory types with decay, conflict detection, consolidation (145+ DB tables) | Session/runtime workspace with bootstrap files such as `AGENTS.md`, `TOOLS.md`, `USER.md`, and related context files |
+| **Agents** | Boss-Expert orchestration (5 boss agents), SharedMemory Bus | Agent runtime with multi-session/channel operation |
 | **Messaging** | Telegram, Email, WhatsApp (Bridge System) | 20+ platforms (WhatsApp, Telegram, Slack, Discord, Signal, Teams, Matrix...) |
 | **Interfaces** | CLI, Python API, PySide6 GUI, Web GUI | CLI, WebChat, macOS/iOS/Android apps, Voice |
 | **MCP** | Own MCP servers (FileCommander, CodeCommander) | Native MCP Registry |
@@ -156,6 +156,10 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the p
 | **License** | MIT | MIT |
 
 **In short:** BACH goes deep (structured memory, autonomous agents, scheduler, 145+ DB tables). OpenClaw goes wide (20+ messengers, native apps, voice, massive community). Different philosophies, complementary strengths.
+
+### Competitive Watch (2026-04-30)
+
+OpenClaw's current direction reinforces three BACH priorities: manifest-first plugin metadata, fail-closed setup checks before powerful tool use, and pre-install scanning for skills, MCP servers, and plugins. BACH should adopt those patterns where they fit its privacy-first, local-first design, while avoiding broad marketplace-style auto-install until skill provenance and sandboxing are stronger.
 
 ## License
 
