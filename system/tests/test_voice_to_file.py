@@ -35,6 +35,7 @@ Datum: 2026-02-15
 import os
 import sys
 from pathlib import Path
+import pytest
 
 # UTF-8 Encoding fix
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
@@ -51,6 +52,10 @@ if str(SYSTEM_DIR) not in sys.path:
 from hub._services.voice.voice_stt import VoiceTTS
 
 
+@pytest.mark.skipif(
+    os.environ.get("BACH_RUN_VOICE_TESTS") != "1",
+    reason="Voice/TTS integration test requires explicit opt-in via BACH_RUN_VOICE_TESTS=1",
+)
 def test_voice_to_file():
     """Testet speak_to_file mit verschiedenen Engines."""
 
@@ -59,6 +64,8 @@ def test_voice_to_file():
     print("=" * 60)
 
     test_text = "Hallo, dies ist ein Test der Text-to-Speech Funktion von BACH. Version eins punkt eins."
+    temp_dir = SYSTEM_DIR / "data" / "temp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
 
     # Test 1: Auto-Engine (beste verfügbare)
     print("\n[Test 1] Auto-Engine (beste verfügbare)")
@@ -71,8 +78,7 @@ def test_voice_to_file():
         print(f"✓ TTS verfügbar: {engine}")
 
         # Test MP3
-        output_mp3 = SYSTEM_DIR / "data" / "temp" / "test_voice_auto.mp3"
-        output_mp3.parent.mkdir(exist_ok=True)
+        output_mp3 = temp_dir / "test_voice_auto.mp3"
 
         print(f"  Generiere: {output_mp3}")
         success = tts_auto.speak_to_file(test_text, str(output_mp3), format="mp3")
@@ -95,7 +101,7 @@ def test_voice_to_file():
     if available:
         print(f"✓ pyttsx3 verfügbar")
 
-        output_wav = SYSTEM_DIR / "data" / "temp" / "test_voice_pyttsx3.wav"
+        output_wav = temp_dir / "test_voice_pyttsx3.wav"
         print(f"  Generiere: {output_wav}")
         success = tts_pyttsx3.speak_to_file(test_text, str(output_wav), format="wav")
 
@@ -122,7 +128,7 @@ def test_voice_to_file():
         if piper_model:
             print(f"  Modell: {piper_model}")
 
-            output_ogg = SYSTEM_DIR / "data" / "temp" / "test_voice_piper.ogg"
+            output_ogg = temp_dir / "test_voice_piper.ogg"
             print(f"  Generiere: {output_ogg}")
             success = tts_piper.speak_to_file(test_text, str(output_ogg), format="ogg")
 
@@ -143,7 +149,6 @@ def test_voice_to_file():
     print("=" * 60)
 
     # Generierte Dateien auflisten
-    temp_dir = SYSTEM_DIR / "data" / "temp"
     if temp_dir.exists():
         files = list(temp_dir.glob("test_voice_*.*"))
         if files:

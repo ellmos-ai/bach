@@ -32,6 +32,7 @@
 - **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System
 - **Agent CLI** - `bach agent start/stop/list` for direct agent control
 - **Prompt System** - Central prompt management with board system and versioning
+- **Install Security Gate** - Static pre-load scans block obvious code-injection patterns during `skills install`/`plugins load`; MCP setup validates allowlisted packages and configs fail-closed
 - **SharedMemory Bus** - Multi-agent coordination with conflict detection and decay
 - **USMC Bridge** - United Shared Memory Communication for cross-agent communication
 - **llmauto Chains** - Claude prompts as chain steps with `bach://` URL resolution
@@ -141,7 +142,7 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 
 ## See Also: OpenClaw
 
-How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the popular open-source AI assistant (366K+ GitHub stars observed on 2026-04-30)?
+How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the popular open-source AI assistant (367K GitHub stars observed on 2026-04-30)?
 
 | | **BACH** | **OpenClaw** |
 |---|---|---|
@@ -159,7 +160,9 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the p
 
 ### Competitive Watch (2026-04-30)
 
-OpenClaw's current direction reinforces three BACH priorities: manifest-first plugin metadata, fail-closed setup checks before powerful tool use, and pre-install scanning for skills, MCP servers, and plugins. BACH should adopt those patterns where they fit its privacy-first, local-first design, while avoiding broad marketplace-style auto-install until skill provenance and sandboxing are stronger.
+OpenClaw's latest stable release observed today is `2026.4.27`; its latest pre-release is `2026.4.29-beta.2`. Recent release notes emphasize manifest-backed provider/plugin metadata, install/update hardening, OpenTelemetry coverage, active-run steering, subagent routing metadata, and people-aware memory/wiki provenance.
+
+BACH should selectively adopt the parts that fit its operating-system model: manifest-first metadata, fail-closed setup checks, broader install scanning for skills/MCP/plugins, API parity for agent and prompt surfaces, and low-cardinality telemetry. BACH has started that response by adding a static security gate for `skills install` and `plugins load`, validating MCP setup package/config plans before npm or local config writes, and exposing the documented `agent`, `agents`, and `prompt` API modules for agent usecases.
 
 ## License
 
@@ -180,7 +183,7 @@ Die vollstaendige deutsche Dokumentation findest du hier: **[README.de.md](READM
 
 ---
 
-*ellmos BACH v3.7.0-waterfall - Text-Based Operating System for LLMs*
+*ellmos BACH v3.8.0-sugar-of-babel - Text-Based Operating System for LLMs*
 
 ---
 

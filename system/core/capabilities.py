@@ -307,6 +307,8 @@ class CapabilityManager:
         dangerous_patterns = [
             (r'\beval\s*\(', 'eval() Aufruf gefunden'),
             (r'\bexec\s*\(', 'exec() Aufruf gefunden'),
+            (r'\bFunction\s*\(', 'Dynamischer JavaScript Function() Aufruf gefunden'),
+            (r'child_process\.(exec|execSync)\s*\(', 'Node child_process exec-Aufruf gefunden'),
             (r'subprocess.*shell\s*=\s*True', 'subprocess mit shell=True'),
             (r'__import__\s*\(', 'Dynamischer Import via __import__()'),
             (r'os\.system\s*\(', 'os.system() Aufruf gefunden'),
@@ -328,6 +330,47 @@ class CapabilityManager:
             findings.append("[NETWORK] urllib-Nutzung erkannt")
 
         return findings
+
+    def scan_tree(self, root_path: str | Path,
+                  suffixes: tuple[str, ...] = (
+                      '.py', '.js', '.ts', '.mjs', '.cjs',
+                      '.sh', '.ps1', '.md', '.txt', '.json', '.yaml', '.yml',
+                  )) -> dict[str, list[str]]:
+        """Scannt ein Verzeichnis rekursiv und gibt Findings pro Datei zurueck."""
+        root = Path(root_path)
+        if not root.exists():
+            return {str(root): [f"Pfad nicht gefunden: {root}"]}
+
+        report: dict[str, list[str]] = {}
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            if "__pycache__" in path.parts:
+                continue
+            if suffixes and path.suffix.lower() not in suffixes:
+                continue
+
+            findings = self.run_security_checks(str(path))
+            if findings:
+                report[str(path)] = findings
+
+        return report
+
+    def categorize_scan_findings(self, findings_by_file: dict[str, list[str]]) -> tuple[list[str], list[str]]:
+        """Trennt Findings in blockierende und informative Eintraege."""
+        blocking: list[str] = []
+        warnings: list[str] = []
+
+        for file_path, findings in findings_by_file.items():
+            label = Path(file_path).name
+            for finding in findings:
+                line = f"{label}: {finding}"
+                if finding.startswith("[CODE_INJECTION]"):
+                    blocking.append(line)
+                else:
+                    warnings.append(line)
+
+        return blocking, warnings
 
     # ==================================================================
     # AUDIT LOG

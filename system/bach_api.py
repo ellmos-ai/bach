@@ -31,7 +31,7 @@ Drei Zugriffsmodi:
   3. Session-Modus:     python bach.py --startup (klassische CLI)
 
 Nutzung:
-    from bach_api import session, task, memory, partner, tools, injector
+    from bach_api import session, task, memory, agent, prompt, partner, tools, injector
 
     # Session-Lifecycle (optional -- Modus 2)
     session.startup(partner="claude", mode="silent")
@@ -47,6 +47,8 @@ Nutzung:
 
     # Domain-Handler
     steuer.status()
+    agent.list()
+    prompt.list()
     partner.list()
     partner.delegate("Recherche", "--to=gemini")
     tools.list()
@@ -57,12 +59,13 @@ Nutzung:
     injector.check_between("task done 42")
     injector.set_mode("api")                 # CLI-Hinweise filtern
 
-    # Raw-Zugriff (beliebiger der 64+ Handler)
+    # Raw-Zugriff (beliebiger der 109+ Handler)
     app().execute("gesundheit", "termine", ["--upcoming"])
 
 Verfuegbare Module:
     session, task, memory, backup, steuer, lesson, status,
-    partner, logs, msg, tools, help, update, injector, db, app
+    agent, agents, prompt, partner, logs, msg, tools, help, update,
+    injector, db, app
 """
 
 import re
@@ -202,6 +205,9 @@ backup = _HandlerProxy("backup")
 steuer = _HandlerProxy("steuer")
 lesson = _HandlerProxy("lesson")
 status = _HandlerProxy("status")
+agent = _HandlerProxy("agent")
+agents = _HandlerProxy("agents")
+prompt = _HandlerProxy("prompt")
 partner = _HandlerProxy("partner")
 logs = _HandlerProxy("logs")
 msg = _HandlerProxy("msg")

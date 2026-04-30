@@ -28,6 +28,35 @@ from .base import BaseHandler
 class SetupHandler(BaseHandler):
     """Handler fuer System-Setup und Konfiguration."""
 
+    MCP_PACKAGE_PATTERN = re.compile(r"^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$")
+
+    CORE_MCP_PACKAGES = [
+        "ellmos-codecommander-mcp",
+        "ellmos-filecommander-mcp",
+    ]
+
+    CORE_MCP_SERVER_CONFIGS = {
+        "bach-codecommander": {
+            "command": "npx",
+            "args": ["ellmos-codecommander-mcp"]
+        },
+        "bach-filecommander": {
+            "command": "npx",
+            "args": ["ellmos-filecommander-mcp"]
+        },
+    }
+
+    MCP_PACKAGE_ALLOWLIST = {
+        "ellmos-codecommander-mcp",
+        "ellmos-filecommander-mcp",
+        "n8n-manager-mcp",
+    }
+
+    MCP_LOCAL_SCAN_SUFFIXES = (
+        ".py", ".js", ".ts", ".mjs", ".cjs",
+        ".sh", ".ps1", ".json", ".md", ".txt", ".yaml", ".yml",
+    )
+
     def __init__(self, base_path: Path):
         super().__init__(base_path)
 
@@ -130,10 +159,13 @@ class SetupHandler(BaseHandler):
             )
 
         # 2. MCP-Server installieren
-        packages = [
-            "ellmos-codecommander-mcp",
-            "ellmos-filecommander-mcp",
-        ]
+        packages = list(self.CORE_MCP_PACKAGES)
+        ok, validation_errors = self._validate_mcp_install_plan(
+            packages,
+            self.CORE_MCP_SERVER_CONFIGS,
+        )
+        if not ok:
+            return False, self._format_mcp_validation_error(validation_errors)
 
         results.append("=== MCP-Server Installation ===\n")
 
@@ -159,8 +191,10 @@ class SetupHandler(BaseHandler):
 
         # 3. Claude Code MCP-Config aktualisieren
         results.append("\n=== Claude Code Konfiguration ===\n")
-        config_result = self._configure_claude_mcp(packages, dry_run)
+        config_ok, config_result = self._configure_claude_mcp(packages, dry_run)
         results.append(config_result)
+        if not config_ok:
+            errors.append(config_result)
 
         # Hinweis auf optionale MCP-Server
         if self.OPTIONAL_MCP_PACKAGES:
@@ -179,7 +213,7 @@ class SetupHandler(BaseHandler):
 
         return True, output
 
-    def _configure_claude_mcp(self, packages: list, dry_run: bool) -> str:
+    def _configure_claude_mcp(self, packages: list, dry_run: bool) -> tuple:
         """Aktualisiert die Claude Code MCP-Konfiguration."""
         # Claude Code config: ~/.claude.json oder ~/.claude/mcp.json
         claude_config = Path.home() / ".claude.json"
@@ -190,7 +224,7 @@ class SetupHandler(BaseHandler):
             if alt_config.exists():
                 claude_config = alt_config
             else:
-                return (
+                return True, (
                     "  Claude Code Config nicht gefunden.\n"
                     "  Manuell konfigurieren mit:\n"
                     "    claude mcp add --scope user bach-codecommander -- npx ellmos-codecommander-mcp\n"
@@ -198,7 +232,7 @@ class SetupHandler(BaseHandler):
                 )
 
         if dry_run:
-            return f"  [DRY-RUN] Wuerde {claude_config} aktualisieren"
+            return True, f"  [DRY-RUN] Wuerde {claude_config} aktualisieren"
 
         try:
             config = json.loads(claude_config.read_text(encoding="utf-8"))
@@ -210,16 +244,12 @@ class SetupHandler(BaseHandler):
             config["mcpServers"] = {}
 
         # Server-Eintraege hinzufuegen/aktualisieren
-        server_configs = {
-            "bach-codecommander": {
-                "command": "npx",
-                "args": ["ellmos-codecommander-mcp"]
-            },
-            "bach-filecommander": {
-                "command": "npx",
-                "args": ["ellmos-filecommander-mcp"]
-            },
-        }
+        server_configs = self.CORE_MCP_SERVER_CONFIGS
+        scan_configs = dict(config["mcpServers"])
+        scan_configs.update(server_configs)
+        scan_ok, blocking_findings, warning_findings = self._scan_mcp_config_paths(scan_configs)
+        if not scan_ok:
+            return False, self._format_mcp_scan_error(blocking_findings)
 
         updated = []
         for name, conf in server_configs.items():
@@ -235,7 +265,12 @@ class SetupHandler(BaseHandler):
             encoding="utf-8"
         )
 
-        return "\n".join(updated) + f"\n  Config: {claude_config}"
+        if warning_findings:
+            updated.append(f"  Scan-Warnungen: {len(warning_findings)}")
+            for warning in warning_findings[:5]:
+                updated.append(f"    - {warning}")
+
+        return True, "\n".join(updated) + f"\n  Config: {claude_config}"
 
     def _check(self) -> tuple:
         """Prueft ob alle Abhaengigkeiten konfiguriert sind."""
@@ -1135,6 +1170,145 @@ class SetupHandler(BaseHandler):
         except Exception:
             return False
 
+    def _validate_mcp_install_plan(self, packages: list,
+                                   server_configs: dict | None = None) -> tuple:
+        """Validiert MCP-Installationsplaene fail-closed vor npm/config-Zugriff."""
+        errors = []
+
+        if not packages:
+            errors.append("Keine MCP-Pakete angegeben")
+
+        for package in packages:
+            if not isinstance(package, str) or not package:
+                errors.append("Leerer oder ungueltiger MCP-Paketname")
+                continue
+            if not self.MCP_PACKAGE_PATTERN.match(package):
+                errors.append(f"Ungueltiger MCP-Paketname: {package}")
+            if package not in self.MCP_PACKAGE_ALLOWLIST:
+                errors.append(f"MCP-Paket nicht in Allowlist: {package}")
+
+        for server_name, config in (server_configs or {}).items():
+            if not isinstance(config, dict):
+                errors.append(f"MCP-Config fuer {server_name} ist kein Objekt")
+                continue
+
+            command = config.get("command")
+            args = config.get("args", [])
+            if command != "npx":
+                errors.append(f"MCP-Config {server_name}: command muss 'npx' sein")
+            if not isinstance(args, list) or len(args) != 1:
+                errors.append(f"MCP-Config {server_name}: args muss genau ein Paket enthalten")
+                continue
+
+            package = args[0]
+            if package not in packages:
+                errors.append(f"MCP-Config {server_name}: Paket nicht im Installationsplan: {package}")
+            if package not in self.MCP_PACKAGE_ALLOWLIST:
+                errors.append(f"MCP-Config {server_name}: Paket nicht in Allowlist: {package}")
+            if not isinstance(package, str) or not self.MCP_PACKAGE_PATTERN.match(package):
+                errors.append(f"MCP-Config {server_name}: ungueltiger Paketname: {package}")
+
+        return len(errors) == 0, errors
+
+    def _format_mcp_validation_error(self, errors: list) -> str:
+        """Formatiert blockierende MCP-Setup-Validierungsfehler."""
+        lines = [
+            "MCP-Setup blockiert: fail-closed Sicherheitspruefung fehlgeschlagen.",
+            "Bitte Paketnamen und MCP-Konfiguration vor Installation pruefen.",
+        ]
+        for error in errors[:10]:
+            lines.append(f"  - {error}")
+        if len(errors) > 10:
+            lines.append(f"  - ... und {len(errors) - 10} weitere")
+        return "\n".join(lines)
+
+    def _candidate_mcp_local_paths(self, value: str) -> list[Path]:
+        """Gibt existierende lokale Pfade aus einem MCP command/args-Wert zurueck."""
+        if not isinstance(value, str):
+            return []
+
+        raw = value.strip().strip("\"'")
+        if not raw or raw.startswith("-"):
+            return []
+        if raw in {"npx", "npm", "node", "python", "python3", "python.exe"}:
+            return []
+        if raw in self.MCP_PACKAGE_ALLOWLIST:
+            return []
+
+        candidates = [Path(raw).expanduser()]
+        if not candidates[0].is_absolute():
+            candidates.extend([
+                self.base_path / raw,
+                self.base_path.parent / raw,
+            ])
+
+        found = []
+        seen = set()
+        for candidate in candidates:
+            try:
+                if not candidate.exists():
+                    continue
+                resolved = candidate.resolve()
+            except (OSError, RuntimeError):
+                continue
+            if resolved not in seen:
+                found.append(resolved)
+                seen.add(resolved)
+
+        return found
+
+    def _scan_mcp_config_paths(self, server_configs: dict) -> tuple:
+        """Scannt lokale MCP-Serverpfade aus command/args vor Config-Aktivierung."""
+        from core.capabilities import capability_manager
+
+        blocking = []
+        warnings = []
+
+        for server_name, config in (server_configs or {}).items():
+            if not isinstance(config, dict):
+                continue
+
+            values = [config.get("command")]
+            args = config.get("args", [])
+            if isinstance(args, list):
+                values.extend(args)
+
+            for value in values:
+                for path in self._candidate_mcp_local_paths(value):
+                    findings_by_file = {}
+                    if path.is_dir():
+                        findings_by_file = capability_manager.scan_tree(
+                            path,
+                            suffixes=self.MCP_LOCAL_SCAN_SUFFIXES,
+                        )
+                    elif path.suffix.lower() in self.MCP_LOCAL_SCAN_SUFFIXES:
+                        findings = capability_manager.run_security_checks(str(path))
+                        if findings:
+                            findings_by_file[str(path)] = findings
+
+                    for file_path, findings in findings_by_file.items():
+                        label = f"{server_name}/{Path(file_path).name}"
+                        for finding in findings:
+                            line = f"{label}: {finding}"
+                            if finding.startswith("[CODE_INJECTION]"):
+                                blocking.append(line)
+                            else:
+                                warnings.append(line)
+
+        return len(blocking) == 0, blocking, warnings
+
+    def _format_mcp_scan_error(self, findings: list) -> str:
+        """Formatiert blockierende MCP-Importpfad-Scanfehler."""
+        lines = [
+            "MCP-Config blockiert: lokaler MCP-Importpfad ist unsicher.",
+            "Quarantaene empfohlen. Bitte Serverdatei vor Aktivierung pruefen.",
+        ]
+        for finding in findings[:10]:
+            lines.append(f"  - {finding}")
+        if len(findings) > 10:
+            lines.append(f"  - ... und {len(findings) - 10} weitere")
+        return "\n".join(lines)
+
     def _find_claude_config(self) -> Path | None:
         """Findet die Claude Code MCP-Config-Datei."""
         claude_config = Path.home() / ".claude.json"
@@ -1151,6 +1325,12 @@ class SetupHandler(BaseHandler):
         errors = []
         pkg = "n8n-manager-mcp"
         info = self.OPTIONAL_MCP_PACKAGES[pkg]
+        ok, validation_errors = self._validate_mcp_install_plan(
+            [pkg],
+            {info["name"]: info["config"]},
+        )
+        if not ok:
+            return False, self._format_mcp_validation_error(validation_errors)
 
         # 1. npm pruefen
         npm_path = shutil.which("npm")
@@ -1206,6 +1386,12 @@ class SetupHandler(BaseHandler):
                 config["mcpServers"] = {}
 
             server_name = info["name"]
+            scan_configs = dict(config["mcpServers"])
+            scan_configs[server_name] = info["config"]
+            scan_ok, blocking_findings, warning_findings = self._scan_mcp_config_paths(scan_configs)
+            if not scan_ok:
+                return False, self._format_mcp_scan_error(blocking_findings)
+
             if server_name not in config["mcpServers"]:
                 config["mcpServers"][server_name] = info["config"]
                 results.append(f"  [NEU] {server_name} hinzugefuegt")
@@ -1217,6 +1403,10 @@ class SetupHandler(BaseHandler):
                 encoding="utf-8"
             )
             results.append(f"  Config: {claude_config}")
+            if warning_findings:
+                results.append(f"  Scan-Warnungen: {len(warning_findings)}")
+                for warning in warning_findings[:5]:
+                    results.append(f"    - {warning}")
 
         # Ergebnis
         output = "\n".join(results)

@@ -110,6 +110,26 @@ class BackupHandler(BaseHandler):
     
     def _list(self, show_nas: bool) -> tuple:
         """Backups auflisten."""
+        manager = self._get_backup_manager()
+        if manager:
+            backups = manager.list_backups(show_nas=show_nas)
+            location = "NAS" if show_nas else "Lokal"
+            results = [f"BACKUPS ({location})", "=" * 40]
+
+            if not backups:
+                return True, t("keine_backups", default="Keine Backups gefunden.")
+
+            for backup in backups[:20]:
+                name = backup.get("name") or Path(backup.get("path", "")).name
+                size = f"{backup.get('size_mb', 0):.2f} MB"
+                created = backup.get("created_at", "?")[:19]
+                results.append(f"  {name:<35} {size:>8} ({created})")
+
+            if len(backups) > 20:
+                results.append(f"  ... und {len(backups) - 20} weitere")
+
+            return True, "\n".join(results)
+
         results = ["BACKUPS", "=" * 40]
         
         if not self.backups_dir.exists():
@@ -133,6 +153,32 @@ class BackupHandler(BaseHandler):
     def _info(self, name: str) -> tuple:
         """Backup-Info anzeigen."""
         import zipfile
+
+        manager = self._get_backup_manager()
+        if manager:
+            backups = manager.list_backups(show_nas=False)
+            matches = [
+                backup for backup in backups
+                if name in backup.get("name", "") or name in Path(backup.get("path", "")).name
+            ]
+            if not matches:
+                return False, f"{t('backup_nicht_gefunden', default='Backup nicht gefunden')}: {name}"
+
+            backup = matches[0]
+            results = [f"BACKUP INFO: {backup.get('name', '?')}", "=" * 40]
+            results.append(f"Pfad:   {backup.get('path', '?')}")
+            results.append(f"Groesse: {backup.get('size_mb', 0):.2f} MB")
+            results.append(f"Datum:  {backup.get('created_at', '?')}")
+            contents = backup.get("contents", [])
+            if contents:
+                results.append(f"Dateien: {len(contents)}")
+                results.append("\nInhalt (erste 10):")
+                for item in contents[:10]:
+                    results.append(f"  {item}")
+                if len(contents) > 10:
+                    results.append(f"  ... und {len(contents) - 10} weitere")
+
+            return True, "\n".join(results)
         
         # Backup finden
         matches = list(self.backups_dir.glob(f"*{name}*"))

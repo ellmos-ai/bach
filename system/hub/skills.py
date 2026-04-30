@@ -816,6 +816,27 @@ Weitere Informationen: https://github.com/anthropics/skills
             if not skill_source.exists():
                 # Fallback: Dateien direkt im manifest_dir
                 skill_source = manifest_dir
+
+            from core.capabilities import capability_manager
+            scan_report = capability_manager.scan_tree(manifest_dir)
+            blocking_findings, warning_findings = capability_manager.categorize_scan_findings(scan_report)
+
+            if blocking_findings:
+                results.append("")
+                results.append("SECURITY-SCAN:")
+                results.append("  [BLOCK] Install abgebrochen. Quarantaene empfohlen.")
+                for finding in blocking_findings[:10]:
+                    results.append(f"  - {finding}")
+                if len(blocking_findings) > 10:
+                    results.append(f"  - ... und {len(blocking_findings) - 10} weitere")
+                return False, "\n".join(results)
+
+            if warning_findings:
+                results.append("")
+                results.append("SECURITY-SCAN:")
+                results.append(f"  [WARN] {len(warning_findings)} Hinweis(e) im Importpaket")
+                for finding in warning_findings[:5]:
+                    results.append(f"  - {finding}")
             
             # Dateien zaehlen
             files_to_copy = list(skill_source.rglob("*"))

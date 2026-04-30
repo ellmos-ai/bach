@@ -376,7 +376,9 @@ class WorkflowValidator:
 
     def __init__(self, system_root: Path):
         self.system_root = system_root
-        self.workflows_dir = system_root / "skills" / "_workflows"
+        current_dir = system_root / "skills" / "workflows"
+        legacy_dir = system_root / "skills" / "_workflows"
+        self.workflows_dir = current_dir if current_dir.exists() else legacy_dir
 
     def validate_all(self) -> Tuple[bool, str]:
         """
@@ -395,7 +397,19 @@ class WorkflowValidator:
         issues_total = 0
         results = []
 
-        for wf_file in sorted(self.workflows_dir.glob("*.md")):
+        workflow_files = sorted(self.workflows_dir.glob("*.md"))
+        seen_names = {wf.name for wf in workflow_files}
+        for wf_file in sorted(self.workflows_dir.rglob("*.md")):
+            if "_archive" in wf_file.parts:
+                continue
+            if wf_file.parent == self.workflows_dir:
+                continue
+            if wf_file.name in seen_names:
+                continue
+            workflow_files.append(wf_file)
+            seen_names.add(wf_file.name)
+
+        for wf_file in sorted(workflow_files):
             total += 1
             issues = self._validate_single(wf_file)
 

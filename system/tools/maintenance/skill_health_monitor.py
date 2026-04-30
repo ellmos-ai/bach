@@ -299,8 +299,8 @@ class SkillHealthMonitor:
             if not agent_dir.is_dir():
                 continue
             
-            # Ignoriere interne Ordner (z.B. _archive, _templates)
-            if agent_dir.name.startswith("_"):
+            # Ignoriere interne Ordner und Container-Verzeichnisse.
+            if agent_dir.name.startswith("_") or agent_dir.name in {"personas"}:
                 continue
             
             self.stats["agents_total"] += 1
@@ -378,7 +378,9 @@ class SkillHealthMonitor:
             cursor = conn.cursor()
             
             # Skills in DB vs. Dateisystem
-            cursor.execute("SELECT name, path FROM skills WHERE active = 1")
+            columns = {row[1] for row in cursor.execute("PRAGMA table_info(skills)").fetchall()}
+            active_column = "is_active" if "is_active" in columns else "active"
+            cursor.execute(f"SELECT name, path FROM skills WHERE {active_column} = 1")
             db_skills = {row[0]: row[1] for row in cursor.fetchall()}
             
             # Prüfe ob DB-Skills noch existieren

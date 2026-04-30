@@ -29,15 +29,20 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
   - Agent-Start/Stop akzeptiert Display-Names, Rollen und Beschreibungen
   - 20 Default-Personas: 5 Boss-Agenten (Atlas, Clara, Felix, Helena, Paul) + 15 Experten
   - Listing zeigt Display-Names in Klammern an
+- **Security Gate für Erweiterungen:** `plugins load` und `skills install` scannen Importpakete jetzt vor dem Laden auf offensichtliche Code-Injection-Muster und blockieren verdächtige Pakete fail-closed.
+- **MCP-Setup-Härtung:** `bach setup mcp` und `bach setup n8n` validieren Paketnamen und Claude-Code-MCP-Configs jetzt gegen eine explizite Allowlist, bevor npm oder die lokale MCP-Konfiguration berührt werden.
+- **API-Surface-Parität:** `bach_api` exportiert jetzt die dokumentierten Module `agent`, `agents` und `prompt` für Agenten- und Prompt-Usecases ohne Raw-Handler-Zugriff.
 
 ### Bugfix
 
 - **Self-Heal CLI/API:** `bach mem write/read/...` delegiert jetzt auf den bestehenden `memory`-Handler; `bach wiki read <thema>` ist als Alias verfuegbar; `bach task add` gibt die neue Task-ID direkt aus.
 - **agent_launcher.py:** Windows cp1252 Encoding-Fix bei tasklist-Subprocess (0x81 Umlaut-Crash)
+- **bach_api.py:** Import-Lücke geschlossen, durch die `from bach_api import agent` trotz dokumentierter API fehlschlug.
 
 ### Dokumentation
 
-- **OpenClaw-Abgleich 2026-04-30:** README und ROADMAP aktualisiert; naechster Fokus ist Skill-/Plugin-Sicherheit, manifest-first Metadaten und fail-closed Tool-Setup.
+- **OpenClaw-Abgleich 2026-04-30:** README und ROADMAP aktualisiert; latest stable `2026.4.27`, pre-release `2026.4.29-beta.2`. Relevante Impulse: manifest-backed Provider/Plugin-Metadaten, Install-Hardening, aktive Agentensteuerung, subagent routing metadata, provenance-aware Memory/Wiki und low-cardinality Telemetrie.
+- **README-Version bereinigt:** Footer auf `v3.8.0-sugar-of-babel` angeglichen.
 
 ---
 

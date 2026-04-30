@@ -313,9 +313,12 @@ class TestLibraryAPI:
     def test_import(self):
         if str(SYSTEM_ROOT) not in sys.path:
             sys.path.insert(0, str(SYSTEM_ROOT))
-        from bach_api import task, memory, get_app
+        from bach_api import task, memory, agent, agents, prompt, get_app
         assert task is not None
         assert memory is not None
+        assert agent is not None
+        assert agents is not None
+        assert prompt is not None
 
     def test_app_creation(self):
         if str(SYSTEM_ROOT) not in sys.path:
@@ -340,6 +343,22 @@ class TestLibraryAPI:
         from bach_api import get_app
         app = get_app()
         success, message = app.execute("memory", "status")
+        assert success is True
+
+    def test_documented_agent_prompt_modules_via_api(self):
+        if str(SYSTEM_ROOT) not in sys.path:
+            sys.path.insert(0, str(SYSTEM_ROOT))
+        from bach_api import agent, agents, prompt
+
+        success, message = agent("list")
+        assert success is True
+        assert "agent" in message.lower()
+
+        success, message = agents("list")
+        assert success is True
+        assert "agent" in message.lower()
+
+        success, message = prompt("list")
         assert success is True
 
 

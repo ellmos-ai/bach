@@ -395,6 +395,19 @@ description: >
         if name in self._plugins and self._plugins[name].get('loaded'):
             return False, f"Plugin '{name}' bereits geladen"
 
+        scan_report = capability_manager.scan_tree(plugin_dir)
+        blocking_findings, warning_findings = capability_manager.categorize_scan_findings(scan_report)
+        if blocking_findings:
+            lines = [
+                f"Plugin '{name}' blockiert: statischer Sicherheits-Scan fehlgeschlagen",
+                "Quarantaene empfohlen. Bitte pruefe das Plugin vor einer Trust-Freigabe.",
+            ]
+            for finding in blocking_findings[:10]:
+                lines.append(f"  - {finding}")
+            if len(blocking_findings) > 10:
+                lines.append(f"  - ... und {len(blocking_findings) - 10} weitere")
+            return False, "\n".join(lines)
+
         # Capability-System: Plugin registrieren und Rechte pruefen
         source = manifest.get('source', 'untrusted')
         requested_caps = manifest.get('capabilities', [])
@@ -489,6 +502,10 @@ description: >
             parts.append(f"  Handler: {', '.join(info['handlers'])}")
         if info['workflows']:
             parts.append(f"  Workflows: {len(info['workflows'])}")
+        if warning_findings:
+            parts.append(f"  Scan-Warnungen: {len(warning_findings)}")
+            for warning in warning_findings[:5]:
+                parts.append(f"    - {warning}")
         if errors:
             parts.append(f"  Warnungen: {len(errors)}")
             for e in errors:
