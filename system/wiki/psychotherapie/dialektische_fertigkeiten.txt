@@ -1,0 +1,162 @@
+HINWEIS: Umbenannt wegen Markenrecht. DBT ist eine eingetragene Marke
+von Behavioral Tech LLC. Frueher: dbt.txt
+
+DIALEKTISCH-BEHAVIORALE THERAPIE (DBT)
+=======================================
+
+Stand: 2026-03-04
+Portabilitaet: UNIVERSAL
+
+WAS IST DBT?
+--------------
+Die Dialektisch-Behaviorale Therapie (DBT) ist ein evidenzbasiertes
+Psychotherapieverfahren, entwickelt von Marsha M. Linehan in den 1980er
+Jahren. Urspruenglich fuer die Behandlung von Borderline-Persoenlichkeits-
+stoerung (BPS) entwickelt, heute bei vielen Stoerungen mit
+Emotionsregulationsproblemen eingesetzt.
+
+Kernidee: Balance (Dialektik) zwischen Akzeptanz ("Du bist okay so wie
+du bist") und Veraenderung ("Und du kannst lernen, es besser zu machen").
+
+MARSHA LINEHAN - KURZBIOGRAFIE
+-------------------------------
+  - 1943: Geboren in Tulsa, Oklahoma
+  - Eigene Erfahrung mit schwerem psychischem Leiden
+  - Promotion in Psychologie (Loyola University)
+  - 1980er: Entwicklung der DBT
+  - 1993: Erstes DBT-Manual publiziert
+  - 2011: Oeffentliches Bekenntnis zu eigener BPS-Geschichte
+  - Revolutionierte die Behandlung von Borderline
+
+DIE VIER SKILLS-MODULE
+----------------------
+Skills = Fertigkeiten, die in Gruppen trainiert werden.
+
+1. ACHTSAMKEIT (Mindfulness)
+   Basis-Modul, aus Zen-Buddhismus abgeleitet.
+   - "Was"-Skills: Wahrnehmen, Beschreiben, Teilnehmen
+   - "Wie"-Skills: Nicht-wertend, Eins-im-Moment, Wirksam
+
+   Uebungen:
+     - "Wise Mind": Balance zwischen Emotion Mind und Reasonable Mind
+     - Achtsamkeit fuer aktuelle Emotion
+     - Bodyscan, Atemachtsamkeit
+
+2. STRESSTOLERANZ (Distress Tolerance)
+   Kurzfristige Strategien fuer akute Krisen.
+
+   TIPP-Skills (koerperbasiert):
+     - T: Temperatur (kaltes Wasser ins Gesicht, Eiswuerfel)
+     - I: Intensive Bewegung (Sprint, Liegestuetze)
+     - P: Paced Breathing (langsames Ausatmen)
+     - P: Progressive Muskelrelaxation
+
+   ACCEPTS (Ablenkung):
+     - Activities, Contributing, Comparisons, Emotions,
+       Pushing away, Thoughts, Sensations
+
+   Radikale Akzeptanz:
+     "Es ist wie es ist" -- nicht gutheissen, aber aufhoeren
+     gegen die Realitaet zu kaempfen.
+
+3. EMOTIONSREGULATION (Emotion Regulation)
+   Langfristige Strategien fuer emotionale Balance.
+
+   - ABC PLEASE: Positive Erfahrungen aufbauen, Kompetenz staerken,
+     koerperliche Gesundheit pflegen
+   - Gegenteiliges Handeln (Opposite Action):
+     Angst? -> Annaeherung. Scham? -> Oeffnung.
+   - Emotionswellen reiten (Emotion surfen): Emotion kommen und
+     gehen lassen ohne zu reagieren
+   - Vulnerabilitaetsfaktoren reduzieren (Schlaf, Ernaehrung, Bewegung)
+
+4. ZWISCHENMENSCHLICHE FERTIGKEITEN (Interpersonal Effectiveness)
+   Beziehungen gestalten und erhalten.
+
+   DEAR MAN (Ziele erreichen):
+     - Describe, Express, Assert, Reinforce
+     - Mindful, Appear confident, Negotiate
+
+   GIVE (Beziehung erhalten):
+     - Gentle, Interested, Validate, Easy manner
+
+   FAST (Selbstachtung erhalten):
+     - Fair, Apologies (keine uebermaessigen), Stick to values, Truthful
+
+THERAPIE-SETTING
+-----------------
+Standard-DBT hat vier Bausteine:
+  1. Einzeltherapie (1x/Woche, 50 Min.)
+  2. Skills-Gruppe (1x/Woche, 2-2.5 Std., ca. 24 Wochen)
+  3. Telefoncoaching (bei akuten Krisen zwischen Sitzungen)
+  4. Konsultationsteam (Supervision fuer Therapeuten)
+
+DIARY CARD
+-----------
+Taegliches Protokoll:
+  - Emotionen (0-5 Intensitaet)
+  - Drang zu Problemverhalten (0-5)
+  - Tatsaechliches Problemverhalten (ja/nein)
+  - Eingesetzte Skills
+  - Medikamenteneinnahme
+
+INDIKATIONEN
+------------
+  Starke Evidenz:
+    - Borderline-Persoenlichkeitsstoerung
+    - Chronische Suizidalitaet / Selbstverletzung
+  Gute Evidenz:
+    - Essstoerungen (DBT-E)
+    - Substanzabhaengigkeit (DBT-SUD)
+    - PTBS (DBT-PTSD)
+    - Depression bei Jugendlichen (DBT-A)
+  Erforschung:
+    - ADHS, Bipolare Stoerung, Cluster C Persoenlichkeitsstoerungen
+
+EVIDENZ UND FORSCHUNG
+---------------------
+  - Linehan et al. (2006): RCT zeigt DBT reduziert Suizidversuche
+    um 50% gegenueber Community Treatment
+  - Cochrane Review Storeboe et al. (2020): DBT wirksam bei BPS
+    (Reduktion von Selbstverletzung, Suizidalitaet, Wut)
+  - AWMF S3-Leitlinie BPS: DBT als Empfehlung (hoechste Evidenz)
+  - Ueber 30 RCTs, eines der am besten erforschten Verfahren fuer BPS
+
+ABGRENZUNG
+----------
+  Zur KVT:
+    - DBT: Akzeptanz + Veraenderung (dialektisch)
+    - KVT: Primaer Veraenderung (kognitive Umstrukturierung)
+
+  Zur Schematherapie:
+    - DBT: Skills fuer den Alltag, Krisenmanagement
+    - Schematherapie: Fruehkindliche Muster verstehen und aendern
+
+  Zur Achtsamkeitsbasierten Therapie (MBSR/MBCT):
+    - DBT: Achtsamkeit als eines von vier Modulen
+    - MBSR/MBCT: Achtsamkeit als Hauptfokus
+
+ANWENDUNG IN BACH (PSYCHO-BERATER AGENT)
+----------------------------------------
+BACH kann DBT-Skills vermitteln (psychoedukativ):
+  - TIPP-Skills fuer akute Anspannung anleiten
+  - Achtsamkeitsuebungen durchfuehren
+  - Diary Card-Konzept erklaeren
+
+BACH fuehrt KEINE DBT-Therapie durch:
+  - Kein Telefoncoaching-Ersatz
+  - Keine Krisenintervention
+  - Verweis auf DBT-Therapeuten (DDBT e.V.)
+
+SIEHE AUCH
+----------
+  wiki/psychotherapie/schematherapie.txt
+  wiki/psychotherapie/verhaltenstherapie.txt
+  skills/therapie/achtsamkeit_basis.md
+
+LITERATUR (AUSWAHL)
+-------------------
+  Linehan, M. (1993). Cognitive-Behavioral Treatment of BPD.
+  Linehan, M. (2014). DBT Skills Training Manual.
+  Bohus, M. & Wolf-Arehult, M. (2013). Interaktives Skillstraining. Schattauer.
+  Storeboe, O.J. et al. (2020). DBT for BPD. Cochrane Review.

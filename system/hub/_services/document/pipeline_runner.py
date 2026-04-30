@@ -21,7 +21,7 @@ from pathlib import Path
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
 # BACH system/ zum sys.path hinzufuegen
-_bach_system = Path(__file__).resolve().parent.parent.parent.parent / "system"
+_bach_system = Path(__file__).resolve().parent.parent.parent.parent
 if str(_bach_system) not in sys.path:
     sys.path.insert(0, str(_bach_system))
 

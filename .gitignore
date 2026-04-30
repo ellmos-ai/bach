@@ -28,9 +28,13 @@
 # === SYSTEM LAUFZEIT-DATEN ===
 /system/data/.clock_state
 /system/data/.injector_cooldowns
+/system/data/*.clock_state
+/system/data/*.injector_cooldowns
 /system/data/build_db_log.json
 /system/data/config/db_sync_enabled
 /system/data/bach.db
+/system/bach.db
+/system/tools/data/*.db
 /system/data/bach-*.db
 /system/data/bach.db-journal
 /system/data/bach.db-wal
@@ -38,6 +42,8 @@
 /system/data/archive.db
 /system/data/directory_truth.json
 /system/data/config/directory_truth-*.json
+/system/data/healing_report.json
+/system/data/sync_state-*.json
 /system/data/user_config.json
 /system/data/skills_hierarchy.json
 /system/data/skills_hierarchy.backup.json
@@ -48,8 +54,10 @@
 /system/data/messages/
 /system/data/ati/
 /system/data/backups/
+/system/data/cache/
 /system/data/mail_attachments/
 /system/data/migrations/
+/system/data/temp/
 /system/data/trash/
 
 # === EXPORTS (Generiert) ===
@@ -100,6 +108,7 @@ PARTNERS.md
 AGENTS.md
 WORKFLOWS.md
 BACH_HELP_REFERENCE.md
+/*-ASUS-GEI.md
 
 # === SESSION-LOGS (Enthalten private Daten) ===
 logs/daily/
@@ -136,6 +145,7 @@ PLAN.txt
 # /system/skills/therapie/  # SQ046: Therapie-Skills sind ab v3.5.0 Teil des Repos
 /system/skills/_services/notizblock.md
 /system/skills/_services/user-decide.md
+/system/skills/_templates/bericht_template_geiger_universal.docx
 /system/skills/workflows/_archive/
 /system/skills/workflows/analysis/
 /system/skills/workflows/dev/
@@ -145,6 +155,23 @@ PLAN.txt
 /system/skills/workflows/schwarm-entscheidungsbaum.md
 /system/skills/workflows/schwarm-operationen.md
 /system/skills/workflows/translate_haiku.md
+
+# === LOKALE LLMAUTO RUNS UND USER-PIPELINES ===
+/system/tools/agents/cache/
+/system/tools/llmauto/state/**
+!/system/tools/llmauto/state/
+!/system/tools/llmauto/state/.gitkeep
+/system/tools/llmauto/chains/foerderbericht.json
+/system/tools/llmauto/chains/research_review_cycle.json
+/system/tools/llmauto/chains/research_review_v2.json
+/system/tools/llmauto/chains/software_aufgaben_marathon.json
+/system/tools/llmauto/prompts/corrector_research.txt
+/system/tools/llmauto/prompts/corrector_research_v2.txt
+/system/tools/llmauto/prompts/foerderbericht.txt
+/system/tools/llmauto/prompts/reviewer_strict_research.txt
+/system/tools/llmauto/prompts/reviewer_strict_research_v2.txt
+/system/tools/llmauto/prompts/worker_opus_software.txt
+/system/tools/llmauto/prompts/worker_sonnet_software.txt
 
 # === DISTRIBUTION SNAPSHOTS (Optional behalten) ===
 # Auskommentieren wenn Snapshots versioniert werden sollen:

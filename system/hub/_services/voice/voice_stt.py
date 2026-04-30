@@ -201,6 +201,52 @@ class VoiceTTS:
             return True, "piper"
         return False, "Kein TTS-Engine verfuegbar. pip install pyttsx3 oder pip install piper-tts"
 
+    def _detect_language(self, text: str) -> str:
+        """Heuristische Sprach-Erkennung: 'de' oder 'en'.
+
+        Kriterien: deutsche Umlaute/ß zaehlen stark, deutsche Stoppwoerter
+        und englische Stoppwoerter werden gegeneinander abgewogen.
+        """
+        if not text:
+            return "de"
+        lower = text.lower()
+        de_score = 0
+        en_score = 0
+        for ch in "äöüß":
+            if ch in lower:
+                de_score += 3
+        de_words = (" der ", " die ", " das ", " und ", " ist ", " nicht ", " mit ", " ein ",
+                    " eine ", " ich ", " du ", " wir ", " auch ", " auf ", " für ", " fuer ",
+                    " sind ", " wurde ", " werden ", " kann ", " soll ", " hat ", " haben ")
+        en_words = (" the ", " and ", " is ", " not ", " with ", " a ", " an ", " of ", " to ",
+                    " in ", " on ", " for ", " are ", " was ", " were ", " be ", " have ",
+                    " has ", " this ", " that ", " you ", " we ", " they ", " it ")
+        padded = f" {lower} "
+        for w in de_words:
+            if w in padded:
+                de_score += 1
+        for w in en_words:
+            if w in padded:
+                en_score += 1
+        return "en" if en_score > de_score else "de"
+
+    def _select_voice_id(self, lang: str) -> Optional[str]:
+        """Liefert die voice.id zur passenden Sprache (de=Hedda, en=Zira) oder None."""
+        if not self._engine:
+            return None
+        try:
+            voices = self._engine.getProperty("voices")
+        except Exception:
+            return None
+        prefs_de = ("hedda", "katja", "stefan", "german")
+        prefs_en = ("zira", "david", "mark", "english")
+        prefs = prefs_en if lang == "en" else prefs_de
+        for pref in prefs:
+            for v in voices:
+                if pref in v.name.lower():
+                    return v.id
+        return None
+
     def _ensure_engine(self):
         """Engine lazy initialisieren (vermeidet Import-Fehler bei fehlender Abhaengigkeit)."""
         if self._setup_done:
@@ -215,16 +261,33 @@ class VoiceTTS:
             self._engine.setProperty("rate", self.rate)
             self._engine.setProperty("volume", 1.0)
 
-            # Voice-Selection: Zira (deutsch/klar) bevorzugen
-            if self.voice_name != "none":
+            # Voice-Selection: bei voice_name='auto' uebernimmt _apply_voice_for_text()
+            # die sprachsensitive Auswahl. Bei explizitem Namen: festen Match setzen.
+            if self.voice_name not in ("none", "auto"):
                 voices = self._engine.getProperty("voices")
-                target = "Zira" if self.voice_name == "auto" else self.voice_name
                 for v in voices:
-                    if target.lower() in v.name.lower():
+                    if self.voice_name.lower() in v.name.lower():
                         self._engine.setProperty("voice", v.id)
                         break
+            elif self.voice_name == "auto":
+                # Default vor Sprach-Erkennung: deutsche Stimme
+                vid = self._select_voice_id("de")
+                if vid:
+                    self._engine.setProperty("voice", vid)
         except Exception:
             self._engine = None
+
+    def _apply_voice_for_text(self, text: str):
+        """Wenn auto-Modus: passende Stimme zur erkannten Textsprache setzen."""
+        if self.voice_name != "auto" or not self._engine:
+            return
+        lang = self._detect_language(text)
+        vid = self._select_voice_id(lang)
+        if vid:
+            try:
+                self._engine.setProperty("voice", vid)
+            except Exception:
+                pass
 
     def speak(self, text: str, block: bool = True) -> bool:
         """Text sprechen. block=False fuer non-blocking."""
@@ -233,6 +296,8 @@ class VoiceTTS:
             # Silent-Fallback
             print(f"[Silent Mode] >> {text}")
             return False
+
+        self._apply_voice_for_text(text)
 
         try:
             self._engine.say(text)
@@ -282,6 +347,8 @@ class VoiceTTS:
         self._ensure_engine()
         if not self._engine:
             return False
+
+        self._apply_voice_for_text(text)
 
         try:
             import tempfile
