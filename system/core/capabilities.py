@@ -47,6 +47,7 @@ Version: 1.0.0
 
 import json
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -371,6 +372,61 @@ class CapabilityManager:
                     warnings.append(line)
 
         return blocking, warnings
+
+    def quarantine_path(self, source_path: str | Path, base_path: str | Path,
+                        kind: str, findings_by_file: dict[str, list[str]],
+                        reason: str, metadata: dict | None = None) -> Path:
+        """Kopiert einen blockierten Importpfad in eine lokale Quarantaene.
+
+        Die Quarantaene ist absichtlich nicht destruktiv: Originale bleiben
+        unveraendert, BACH legt nur eine pruefbare Kopie mit report.json ab.
+        """
+        base = Path(base_path)
+        source = Path(source_path)
+        safe_kind = re.sub(r"[^A-Za-z0-9._-]+", "_", kind or "unknown").strip("_")
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", source.name or "payload").strip("_")
+        if not safe_kind:
+            safe_kind = "unknown"
+        if not safe_name:
+            safe_name = "payload"
+
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        quarantine_dir = base / "data" / "quarantine" / safe_kind / f"{stamp}_{safe_name[:80]}"
+        payload_dir = quarantine_dir / "payload"
+        quarantine_dir.mkdir(parents=True, exist_ok=False)
+
+        copied = False
+        copy_error = None
+        try:
+            if source.exists() and source.is_dir():
+                shutil.copytree(
+                    source,
+                    payload_dir / source.name,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+                )
+                copied = True
+            elif source.exists() and source.is_file():
+                payload_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, payload_dir / source.name)
+                copied = True
+        except Exception as exc:
+            copy_error = f"{type(exc).__name__}: {exc}"
+
+        report = {
+            "created_at": datetime.now().isoformat(),
+            "kind": safe_kind,
+            "source_path": str(source),
+            "reason": reason,
+            "copied": copied,
+            "copy_error": copy_error,
+            "findings": findings_by_file,
+            "metadata": metadata or {},
+        }
+        (quarantine_dir / "report.json").write_text(
+            json.dumps(report, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return quarantine_dir
 
     # ==================================================================
     # AUDIT LOG

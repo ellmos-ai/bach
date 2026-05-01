@@ -30,6 +30,7 @@ Prueft dass alle kritischen CLI-Befehle weiterhin funktionieren.
 
 import sys
 import subprocess
+import re
 from pathlib import Path
 
 SYSTEM_ROOT = Path(__file__).parent.parent
@@ -290,9 +291,17 @@ class TestCLIBackwardsCompat:
 
     def test_task_add(self):
         """Test bach task add (UC-Tasks erstellen)."""
-        code, out, err = run_bach("task", "add", "Test Task Runde 24")
-        assert code == 0
-        # Task sollte hinzugefügt werden
+        task_id = None
+        code, out, err = run_bach("task", "add", "Smoke Test Task Cleanup")
+        try:
+            assert code == 0
+            match = re.search(r"Task\s+(\d+)\s+erstellt", out)
+            assert match, out
+            task_id = match.group(1)
+        finally:
+            if task_id:
+                cleanup_code, cleanup_out, cleanup_err = run_bach("task", "delete", task_id)
+                assert cleanup_code == 0, cleanup_out + cleanup_err
 
     def test_lesson_search(self):
         """Test bach lesson search (Lesson-Suche)."""

@@ -1294,6 +1294,20 @@ class SetupHandler(BaseHandler):
                                 blocking.append(line)
                             else:
                                 warnings.append(line)
+                    if any(
+                        finding.startswith("[CODE_INJECTION]")
+                        for findings in findings_by_file.values()
+                        for finding in findings
+                    ):
+                        quarantine_dir = capability_manager.quarantine_path(
+                            path,
+                            self.base_path,
+                            "mcp",
+                            findings_by_file,
+                            f"MCP config blocked: {server_name}",
+                            metadata={"server": server_name},
+                        )
+                        blocking.append(f"{server_name}: Quarantaene erstellt: {quarantine_dir}")
 
         return len(blocking) == 0, blocking, warnings
 
@@ -1301,7 +1315,7 @@ class SetupHandler(BaseHandler):
         """Formatiert blockierende MCP-Importpfad-Scanfehler."""
         lines = [
             "MCP-Config blockiert: lokaler MCP-Importpfad ist unsicher.",
-            "Quarantaene empfohlen. Bitte Serverdatei vor Aktivierung pruefen.",
+            "Quarantaene wurde fuer blockierte lokale Pfade erstellt.",
         ]
         for finding in findings[:10]:
             lines.append(f"  - {finding}")

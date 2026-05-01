@@ -57,7 +57,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
-from .capabilities import capability_manager
+from .capabilities import CAPABILITIES, capability_manager
 
 
 class PluginRegistry:
@@ -354,6 +354,123 @@ description: >
     # PLUGIN MANAGEMENT (Deklarativ via plugin.json)
     # ==================================================================
 
+    def read_manifest_metadata(self, manifest_path: str, scan: bool = True) -> tuple:
+        """Liest Plugin-Metadaten ohne Runtime-Code zu importieren."""
+        path = Path(manifest_path)
+        if not path.exists():
+            return False, f"Manifest nicht gefunden: {manifest_path}"
+
+        try:
+            manifest = json.loads(path.read_text(encoding='utf-8'))
+        except json.JSONDecodeError as e:
+            return False, f"Ungueltiges JSON: {e}"
+
+        if not isinstance(manifest, dict):
+            return False, "Ungueltiges Manifest: Root muss ein JSON-Objekt sein"
+
+        metadata = self._normalize_manifest_metadata(path, manifest)
+
+        if scan:
+            scan_report = capability_manager.scan_tree(path.parent)
+            blocking, warnings = capability_manager.categorize_scan_findings(scan_report)
+            metadata["scan"] = {
+                "blocking": blocking,
+                "warnings": warnings,
+            }
+        else:
+            metadata["scan"] = {"blocking": [], "warnings": []}
+
+        return True, metadata
+
+    def inspect_plugin(self, manifest_path: str) -> tuple:
+        """Formatiert eine sichere Manifest-Vorschau ohne Plugin-Load."""
+        success, result = self.read_manifest_metadata(manifest_path)
+        if not success:
+            return False, result
+
+        meta = result
+        lines = [
+            "PLUGIN MANIFEST",
+            "=" * 50,
+            f"Name:        {meta['name']}",
+            f"Version:     {meta['version']}",
+            f"Quelle:      {meta['source']}",
+            f"Beschreibung: {meta['description'] or '-'}",
+            f"Manifest:    {meta['manifest_path']}",
+            "",
+            "Status:      nicht geladen (manifest-first Vorschau)",
+        ]
+
+        if meta["capabilities"]:
+            lines.append(f"Capabilities: {', '.join(meta['capabilities'])}")
+        else:
+            lines.append("Capabilities: -")
+
+        activation = meta.get("activation", {})
+        if activation:
+            if isinstance(activation, dict):
+                mode = activation.get("mode", "manual")
+                enabled = activation.get("enabled", True)
+            else:
+                mode = str(activation)
+                enabled = True
+            lines.append(f"Aktivierung: {mode} (enabled={enabled})")
+
+        for label, key in (("Provider", "providers"), ("Modelle", "models")):
+            values = meta.get(key, [])
+            if values:
+                lines.append(f"{label}:     {len(values)} Eintrag(e)")
+                for item in values[:5]:
+                    if isinstance(item, dict):
+                        item_id = item.get("id") or item.get("name") or item.get("provider") or str(item)
+                    else:
+                        item_id = str(item)
+                    lines.append(f"  - {item_id}")
+                if len(values) > 5:
+                    lines.append(f"  - ... und {len(values) - 5} weitere")
+
+        setup = meta.get("setup", {})
+        if setup:
+            if isinstance(setup, dict):
+                setup_keys = ", ".join(sorted(setup.keys()))
+                lines.append(f"Setup:       {setup_keys}")
+            else:
+                lines.append(f"Setup:       {setup}")
+
+        registrations = []
+        for key in ("hooks", "handlers", "workflows"):
+            count = len(meta.get(key, []))
+            if count:
+                registrations.append(f"{count} {key}")
+        lines.append(f"Registriert: {', '.join(registrations) if registrations else '-'}")
+
+        scan = meta.get("scan", {})
+        blocking = scan.get("blocking", [])
+        warnings = scan.get("warnings", [])
+        if blocking:
+            lines.append("")
+            lines.append("Security-Scan: BLOCK")
+            for finding in blocking[:10]:
+                lines.append(f"  - {finding}")
+            if len(blocking) > 10:
+                lines.append(f"  - ... und {len(blocking) - 10} weitere")
+        elif warnings:
+            lines.append("")
+            lines.append(f"Security-Scan: WARN ({len(warnings)})")
+            for finding in warnings[:5]:
+                lines.append(f"  - {finding}")
+        else:
+            lines.append("Security-Scan: OK")
+
+        validation_errors = meta.get("validation_errors", [])
+        if validation_errors:
+            lines.append("")
+            lines.append("Manifest-Warnungen:")
+            for error in validation_errors:
+                lines.append(f"  - {error}")
+
+        return not blocking and not validation_errors, "\n".join(lines)
+
     def load_plugin(self, manifest_path: str) -> tuple:
         """Laedt ein Plugin aus einer plugin.json Manifest-Datei.
 
@@ -391,16 +508,37 @@ description: >
 
         name = manifest.get('name', path.parent.name)
         plugin_dir = path.parent
+        metadata = self._normalize_manifest_metadata(path, manifest)
 
         if name in self._plugins and self._plugins[name].get('loaded'):
             return False, f"Plugin '{name}' bereits geladen"
 
+        if metadata["validation_errors"]:
+            lines = [
+                f"Plugin '{name}' blockiert: Manifest-Validierung fehlgeschlagen",
+                "Bitte Manifest-Metadaten korrigieren, bevor Runtime-Code geladen wird.",
+            ]
+            for error in metadata["validation_errors"][:10]:
+                lines.append(f"  - {error}")
+            if len(metadata["validation_errors"]) > 10:
+                lines.append(f"  - ... und {len(metadata['validation_errors']) - 10} weitere")
+            return False, "\n".join(lines)
+
         scan_report = capability_manager.scan_tree(plugin_dir)
         blocking_findings, warning_findings = capability_manager.categorize_scan_findings(scan_report)
         if blocking_findings:
+            quarantine_dir = capability_manager.quarantine_path(
+                plugin_dir,
+                self._get_base_path(),
+                "plugin",
+                scan_report,
+                f"plugins load blocked: {name}",
+                metadata={"manifest_path": str(path)},
+            )
             lines = [
                 f"Plugin '{name}' blockiert: statischer Sicherheits-Scan fehlgeschlagen",
-                "Quarantaene empfohlen. Bitte pruefe das Plugin vor einer Trust-Freigabe.",
+                f"Quarantaene erstellt: {quarantine_dir}",
+                "Bitte pruefe das Plugin vor einer Trust-Freigabe.",
             ]
             for finding in blocking_findings[:10]:
                 lines.append(f"  - {finding}")
@@ -409,8 +547,8 @@ description: >
             return False, "\n".join(lines)
 
         # Capability-System: Plugin registrieren und Rechte pruefen
-        source = manifest.get('source', 'untrusted')
-        requested_caps = manifest.get('capabilities', [])
+        source = metadata["source"]
+        requested_caps = metadata["capabilities"]
         capability_manager.register_plugin(name, source, requested_caps)
 
         denied = capability_manager.check_all(name, requested_caps)
@@ -434,6 +572,15 @@ description: >
             'handlers': [],
             'workflows': [],
             'tools': [],
+            'activation': metadata.get('activation', {}),
+            'providers': metadata.get('providers', []),
+            'models': metadata.get('models', []),
+            'setup': metadata.get('setup', {}),
+            'metadata': {
+                'manifest_version': metadata.get('manifest_version'),
+                'compatibility': metadata.get('compatibility', {}),
+                'validation_errors': metadata.get('validation_errors', []),
+            },
         }
 
         errors = []
@@ -594,6 +741,84 @@ description: >
             'handlers': [],
             'workflows': [],
             'tools': [],
+        }
+
+    def _normalize_manifest_metadata(self, path: Path, manifest: dict) -> dict:
+        """Normalisiert bekannte Manifest-Metadaten fuer cold inspection."""
+        def as_list(value):
+            if value is None:
+                return []
+            if isinstance(value, list):
+                return value
+            return [value]
+
+        name = str(manifest.get('name') or path.parent.name)
+        capabilities = [str(cap) for cap in as_list(manifest.get('capabilities'))]
+        validation_errors = []
+        unknown_caps = [cap for cap in capabilities if cap != '*' and cap not in CAPABILITIES]
+        if unknown_caps:
+            validation_errors.append(
+                "Unbekannte Capabilities: " + ", ".join(sorted(unknown_caps))
+            )
+
+        source = manifest.get('source', 'untrusted')
+        if not isinstance(source, str):
+            validation_errors.append("source muss ein String sein")
+            source = 'untrusted'
+
+        activation = manifest.get('activation', {"mode": "manual", "enabled": True})
+        if activation is None:
+            activation = {"mode": "manual", "enabled": True}
+
+        hooks = as_list(manifest.get('hooks'))
+        handlers = as_list(manifest.get('handlers'))
+        workflows = as_list(manifest.get('workflows'))
+
+        for section, entries, file_key in (
+            ('hooks', hooks, 'module'),
+            ('handlers', handlers, 'file'),
+            ('workflows', workflows, 'file'),
+        ):
+            for index, entry in enumerate(entries):
+                label = f"{section}[{index}]"
+                if not isinstance(entry, dict):
+                    validation_errors.append(f"{label} muss ein Objekt sein")
+                    continue
+                if not entry.get('name') and section in ('handlers', 'workflows'):
+                    validation_errors.append(f"{label}.name fehlt")
+                if not entry.get(file_key):
+                    validation_errors.append(f"{label}.{file_key} fehlt")
+                    continue
+                ref = str(entry[file_key])
+                try:
+                    ref_path = (path.parent / ref).resolve()
+                    ref_path.relative_to(path.parent.resolve())
+                except ValueError:
+                    validation_errors.append(f"{label}.{file_key} verlaesst Plugin-Verzeichnis: {ref}")
+                    continue
+                if not ref_path.exists():
+                    validation_errors.append(f"{label}.{file_key} nicht gefunden: {ref}")
+
+        return {
+            "name": name,
+            "version": str(manifest.get('version', '0.0.0')),
+            "description": str(manifest.get('description', '')),
+            "author": str(manifest.get('author', 'unknown')),
+            "source": source,
+            "capabilities": capabilities,
+            "activation": activation,
+            "providers": as_list(manifest.get('providers')),
+            "models": as_list(manifest.get('models')),
+            "setup": manifest.get('setup', {}),
+            "hooks": hooks,
+            "handlers": handlers,
+            "workflows": workflows,
+            "manifest_version": manifest.get('manifest_version'),
+            "compatibility": manifest.get('compatibility', {}),
+            "manifest_path": str(path),
+            "plugin_dir": str(path.parent),
+            "manifest": manifest,
+            "validation_errors": validation_errors,
         }
 
     def _load_function(self, filepath: Path, func_name: str) -> Optional[Callable]:

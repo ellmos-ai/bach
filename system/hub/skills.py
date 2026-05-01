@@ -822,9 +822,22 @@ Weitere Informationen: https://github.com/anthropics/skills
             blocking_findings, warning_findings = capability_manager.categorize_scan_findings(scan_report)
 
             if blocking_findings:
+                quarantine_dir = capability_manager.quarantine_path(
+                    source_path,
+                    self.base_path,
+                    "skill",
+                    scan_report,
+                    f"skills install blocked: {skill_name}",
+                    metadata={
+                        "manifest_path": str(manifest_path),
+                        "scan_root": str(manifest_dir),
+                        "type": skill_type,
+                    },
+                )
                 results.append("")
                 results.append("SECURITY-SCAN:")
-                results.append("  [BLOCK] Install abgebrochen. Quarantaene empfohlen.")
+                results.append("  [BLOCK] Install abgebrochen.")
+                results.append(f"  Quarantaene: {quarantine_dir}")
                 for finding in blocking_findings[:10]:
                     results.append(f"  - {finding}")
                 if len(blocking_findings) > 10:

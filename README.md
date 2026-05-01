@@ -32,7 +32,8 @@
 - **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System
 - **Agent CLI** - `bach agent start/stop/list` for direct agent control
 - **Prompt System** - Central prompt management with board system and versioning
-- **Install Security Gate** - Static pre-load scans block obvious code-injection patterns during `skills install`/`plugins load`; MCP setup validates allowlisted packages and configs fail-closed
+- **Install Security Gate** - Static pre-load scans block obvious code-injection patterns during `skills install`/`plugins load`; MCP setup validates allowlisted packages/configs fail-closed and quarantines blocked local imports
+- **Manifest-first Plugins** - `bach plugins inspect` previews activation, provider/model, setup, and capability metadata without importing plugin runtime code
 - **SharedMemory Bus** - Multi-agent coordination with conflict detection and decay
 - **USMC Bridge** - United Shared Memory Communication for cross-agent communication
 - **llmauto Chains** - Claude prompts as chain steps with `bach://` URL resolution
@@ -158,11 +159,11 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the p
 
 **In short:** BACH goes deep (structured memory, autonomous agents, scheduler, 145+ DB tables). OpenClaw goes wide (20+ messengers, native apps, voice, massive community). Different philosophies, complementary strengths.
 
-### Competitive Watch (2026-04-30)
+### Competitive Watch (2026-05-01)
 
-OpenClaw's latest stable release observed today is `2026.4.27`; its latest pre-release is `2026.4.29-beta.2`. Recent release notes emphasize manifest-backed provider/plugin metadata, install/update hardening, OpenTelemetry coverage, active-run steering, subagent routing metadata, and people-aware memory/wiki provenance.
+OpenClaw's latest stable release observed today is `2026.4.29`; the same release train also exposed `2026.4.29-beta.4`. Recent release notes emphasize active-run steering, visible-reply enforcement, spawned-subagent routing metadata, people-aware memory/wiki provenance, safer provider/model paths, OpenGrep scanning, stale-session recovery, and version-scoped update caches.
 
-BACH should selectively adopt the parts that fit its operating-system model: manifest-first metadata, fail-closed setup checks, broader install scanning for skills/MCP/plugins, API parity for agent and prompt surfaces, and low-cardinality telemetry. BACH has started that response by adding a static security gate for `skills install` and `plugins load`, validating MCP setup package/config plans before npm or local config writes, and exposing the documented `agent`, `agents`, and `prompt` API modules for agent usecases.
+BACH should selectively adopt the parts that fit its operating-system model: manifest-first metadata, fail-closed setup checks, broader install scanning for skills/MCP/plugins, active-run steering at safe checkpoints, memory/wiki provenance views, and low-cardinality telemetry. BACH has started that response by adding a static security gate for `skills install` and `plugins load`, validating MCP setup package/config plans before npm or local config writes, quarantining blocked local imports under `system/data/quarantine/`, adding manifest-only plugin inspection, and exposing the documented `agent`, `agents`, and `prompt` API modules for agent usecases.
 
 ## License
 

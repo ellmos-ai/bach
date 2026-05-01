@@ -27,6 +27,7 @@ Plugins Handler - Plugin-Verwaltung fuer BACH
 ==============================================
 
 bach plugins list              Alle geladenen Plugins anzeigen
+bach plugins inspect <pfad>    Manifest-Metadaten ohne Runtime-Load pruefen
 bach plugins load <pfad>       Plugin aus plugin.json laden
 bach plugins unload <name>     Plugin entladen
 bach plugins tools             Alle Plugin-Tools anzeigen
@@ -57,6 +58,7 @@ class PluginsHandler(BaseHandler):
     def get_operations(self) -> dict:
         return {
             "list": "Alle geladenen Plugins anzeigen",
+            "inspect": "Manifest-Metadaten ohne Runtime-Load pruefen",
             "load": "Plugin aus plugin.json laden",
             "unload": "Plugin entladen",
             "tools": "Alle Plugin-Tools anzeigen",
@@ -72,6 +74,13 @@ class PluginsHandler(BaseHandler):
 
         if operation == "list" or not operation:
             return True, plugins.list_plugins()
+
+        elif operation == "inspect" and args:
+            manifest_path = args[0]
+            p = Path(manifest_path)
+            if not p.is_absolute():
+                p = self.base_path / p
+            return plugins.inspect_plugin(str(p))
 
         elif operation == "load" and args:
             manifest_path = args[0]
@@ -106,7 +115,8 @@ class PluginsHandler(BaseHandler):
 
         else:
             return False, (
-                "Usage: bach plugins [list|load|unload|tools|info|create|caps|trust|audit]\n"
+                "Usage: bach plugins [list|inspect|load|unload|tools|info|create|caps|trust|audit]\n"
+                "  bach plugins inspect <pfad>    Manifest ohne Runtime-Load pruefen\n"
                 "  bach plugins caps              Capability-Profile anzeigen\n"
                 "  bach plugins trust <name> <l>  Trust-Level aendern\n"
                 "  bach plugins audit [limit]     Audit-Log anzeigen"
@@ -144,6 +154,22 @@ class PluginsHandler(BaseHandler):
 
         if info.get('manifest_path'):
             lines.append(f"  Manifest:    {info['manifest_path']}")
+
+        activation = info.get('activation')
+        if activation:
+            if isinstance(activation, dict):
+                mode = activation.get('mode', 'manual')
+                enabled = activation.get('enabled', True)
+                lines.append(f"  Aktivierung: {mode} (enabled={enabled})")
+            else:
+                lines.append(f"  Aktivierung: {activation}")
+
+        providers = info.get('providers', [])
+        models = info.get('models', [])
+        if providers:
+            lines.append(f"  Provider:    {len(providers)} manifest-backed")
+        if models:
+            lines.append(f"  Modelle:     {len(models)} manifest-backed")
 
         hooks = info.get('hooks', [])
         if hooks:
@@ -192,11 +218,23 @@ class PluginsHandler(BaseHandler):
 
         manifest = {
             "name": name,
+            "manifest_version": "1.1",
             "version": "0.1.0",
             "description": f"BACH Plugin: {name}",
             "author": "claude",
             "source": "goldstandard",
             "capabilities": ["db_read", "hook_listen"],
+            "activation": {
+                "mode": "manual",
+                "enabled": True
+            },
+            "providers": [],
+            "models": [],
+            "setup": {
+                "requires": [],
+                "env": [],
+                "notes": ""
+            },
             "hooks": [
                 {
                     "event": "after_startup",

@@ -32,6 +32,8 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 - **Security Gate für Erweiterungen:** `plugins load` und `skills install` scannen Importpakete jetzt vor dem Laden auf offensichtliche Code-Injection-Muster und blockieren verdächtige Pakete fail-closed.
 - **MCP-Setup-Härtung:** `bach setup mcp` und `bach setup n8n` validieren Paketnamen und Claude-Code-MCP-Configs jetzt gegen eine explizite Allowlist, bevor npm oder die lokale MCP-Konfiguration berührt werden.
 - **API-Surface-Parität:** `bach_api` exportiert jetzt die dokumentierten Module `agent`, `agents` und `prompt` für Agenten- und Prompt-Usecases ohne Raw-Handler-Zugriff.
+- **Quarantäne für blockierte Erweiterungen:** Blockierte `plugins load`-, `skills install`- und lokale MCP-Config-Pfade werden jetzt nicht nur abgewiesen, sondern unter `system/data/quarantine/` mit Payload-Kopie und `report.json` dokumentiert.
+- **Manifest-first Plugin-Prüfung:** `bach plugins inspect <pfad>` zeigt Plugin-Metadaten ohne Runtime-Import; `plugins load` blockiert Manifeste mit fehlenden Hook-/Handler-/Workflow-Dateireferenzen, bevor Plugin-Code geladen wird.
 
 ### Bugfix
 
@@ -41,7 +43,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Dokumentation
 
-- **OpenClaw-Abgleich 2026-04-30:** README und ROADMAP aktualisiert; latest stable `2026.4.27`, pre-release `2026.4.29-beta.2`. Relevante Impulse: manifest-backed Provider/Plugin-Metadaten, Install-Hardening, aktive Agentensteuerung, subagent routing metadata, provenance-aware Memory/Wiki und low-cardinality Telemetrie.
+- **OpenClaw-Abgleich 2026-05-01:** README und ROADMAP aktualisiert; latest stable `2026.4.29`, pre-release `2026.4.29-beta.4`. Relevante Impulse: active-run steering, visible-reply enforcement, subagent routing metadata, people-aware Memory/Wiki-Provenance, OpenGrep-Scanning, stale-session recovery und version-scoped update caches.
 - **README-Version bereinigt:** Footer auf `v3.8.0-sugar-of-babel` angeglichen.
 
 ---
