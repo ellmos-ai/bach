@@ -121,7 +121,7 @@ def create_task_in_bach(task_text: str, priority: str, project: str) -> int:
 
         # Pruefen ob Task schon existiert
         existing = conn.execute(
-            "SELECT id FROM tasks WHERE title = ? AND status = 'open'",
+            "SELECT id FROM tasks WHERE title = ? AND status IN ('pending', 'open')",
             (task_text,)
         ).fetchone()
 
@@ -131,7 +131,7 @@ def create_task_in_bach(task_text: str, priority: str, project: str) -> int:
 
         cursor = conn.execute("""
             INSERT INTO tasks (title, status, priority, project, created_at, source)
-            VALUES (?, 'open', ?, ?, ?, 'recurring')
+            VALUES (?, 'pending', ?, ?, ?, 'recurring')
         """, (task_text, priority, project, datetime.now().isoformat()))
 
         task_id = cursor.lastrowid
@@ -198,6 +198,9 @@ def check_recurring_tasks() -> List[str]:
 
         if result == -1:
             print(f"  [SKIP] Task existiert bereits: {task_text[:40]}")
+            # Bestehender offener Task gilt als bereits eingeplanter Lauf.
+            config['recurring_tasks'][task_id]['last_run'] = now.isoformat()
+            save_config(config)
         elif result > 0:
             # last_run aktualisieren
             config['recurring_tasks'][task_id]['last_run'] = now.isoformat()

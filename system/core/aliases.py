@@ -41,6 +41,7 @@ COMMAND_ALIASES = {
     "hook": "hooks",
     "plugin": "plugins",
     "daemon": "scheduler",
+    "health": "healthcheck",
 
     # Multi-Handler-Dateien: time.py hat 5 Handler
     # (werden automatisch erkannt wenn profile_name != dateiname)

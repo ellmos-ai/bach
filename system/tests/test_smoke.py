@@ -92,6 +92,11 @@ class TestCLIBackwardsCompat:
         assert code == 0
         assert "BACH" in out or "Status" in out
 
+    def test_health_status(self):
+        code, out, err = run_bach("health", "status")
+        assert code == 0
+        assert "System Health Check" in out
+
     def test_steuer_status(self):
         code, out, err = run_bach("steuer", "status")
         assert code == 0
