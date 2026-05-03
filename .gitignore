@@ -176,3 +176,7 @@ PLAN.txt
 # === DISTRIBUTION SNAPSHOTS (Optional behalten) ===
 # Auskommentieren wenn Snapshots versioniert werden sollen:
 # /system/dist/snapshots/
+
+# === LOKALE USER-LAUNCHER (User-spezifisch) ===
+/prompt_bach.txt
+/run_bach.bat
