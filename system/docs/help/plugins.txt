@@ -1,20 +1,21 @@
 # Portabilitaet: UNIVERSAL
-# Version: 2.0.0
-# Zuletzt validiert: 2026-02-13 (Claude Opus 4.6)
-# Naechste Pruefung: 2026-08-13
+# Version: 2.1.0
+# Zuletzt validiert: 2026-05-06 (Codex)
+# Naechste Pruefung: 2026-11-06
 
 BACH PLUGIN-API
 ===============
 
-Stand: 2026-02-13
+Stand: 2026-05-06
 
 Die Plugin-API ermoeglicht dynamische Erweiterung von BACH zur Laufzeit.
 Plugins koennen Tools, Hooks, Workflows und Handler registrieren --
-imperativ (via Code) oder deklarativ (via plugin.json).
+imperativ (via Code) oder deklarativ (via `plugin.json`).
 
 CLI-BEFEHLE
 -----------
   bach plugins list              Alle geladenen Plugins anzeigen
+  bach plugins inspect <pfad>    Manifest-first Vorschau ohne Runtime-Load
   bach plugins load <pfad>       Plugin aus plugin.json laden
   bach plugins unload <name>     Plugin entladen
   bach plugins tools             Alle Plugin-Tools anzeigen
@@ -28,7 +29,7 @@ CLI-BEFEHLE
   bach plugin list               (Alias: plugin -> plugins)
 
 API-NUTZUNG (Imperativ)
-------------------------
+-----------------------
   from core.plugin_api import plugins
   # Oder: from bach_api import plugins
 
@@ -45,7 +46,7 @@ API-NUTZUNG (Imperativ)
 
   plugins.register_hook("after_task_create", on_task, plugin="mein-plugin")
 
-  # Handler registrieren (neuer CLI-Befehl!)
+  # Handler registrieren (neuer CLI-Befehl)
   from hub.base import BaseHandler
   class MeinHandler(BaseHandler):
       ...
@@ -57,22 +58,38 @@ API-NUTZUNG (Imperativ)
 
   # Verwaltung
   print(plugins.list_plugins())
+  plugins.inspect_plugin("plugins/mein-plugin/plugin.json")
   plugins.unload_plugin("mein-plugin")
 
 PLUGIN-MANIFEST (Deklarativ)
------------------------------
+----------------------------
 Erstelle ein `plugin.json` fuer automatisches Laden:
 
   bach plugins create mein-plugin
 
-Manifest-Format (plugin.json):
+Manifest-Format (`plugin.json`):
   {
     "name": "mein-plugin",
+    "manifest_version": "1.1",
     "version": "1.0.0",
     "description": "Was das Plugin tut",
     "author": "claude",
     "source": "goldstandard",
     "capabilities": ["db_read", "hook_listen"],
+    "activation": {"mode": "manual", "enabled": true},
+    "providers": [],
+    "models": [],
+    "setup": {
+      "requires": ["Node.js", "Claude Code"],
+      "env": ["ANTHROPIC_API_KEY"],
+      "notes": "Warum das Setup gebraucht wird",
+      "fail_closed": true,
+      "surfaces": ["shell", "mcp"],
+      "checks": [
+        {"type": "command_exists", "command": "npx"},
+        {"type": "mcp_server_known", "package": "ellmos-codecommander-mcp"}
+      ]
+    },
     "hooks": [
       {
         "event": "after_task_done",
@@ -90,10 +107,11 @@ Manifest-Format (plugin.json):
   }
 
 Laden:
+  bach plugins inspect plugins/mein-plugin/plugin.json
   bach plugins load plugins/mein-plugin/plugin.json
 
 REGISTRIERUNGS-TYPEN
----------------------
+--------------------
   Typ          API-Methode              Beschreibung
   ---------    ----------------------   ---------------------------------
   Tool         register_tool()          Callable als Werkzeug registrieren
@@ -102,15 +120,16 @@ REGISTRIERUNGS-TYPEN
   Handler      register_handler()       Neuer CLI-Befehl zur Laufzeit
 
 PLUGIN-LIFECYCLE
------------------
+----------------
   1. Erstellen:  bach plugins create <name>
   2. Entwickeln: plugin.json + handlers.py bearbeiten
-  3. Laden:      bach plugins load <pfad/plugin.json>
-  4. Nutzen:     Hooks feuern, Tools aufrufen, CLI-Befehle nutzen
-  5. Entladen:   bach plugins unload <name>
+  3. Pruefen:    bach plugins inspect <pfad/plugin.json>
+  4. Laden:      bach plugins load <pfad/plugin.json>
+  5. Nutzen:     Hooks feuern, Tools aufrufen, CLI-Befehle nutzen
+  6. Entladen:   bach plugins unload <name>
 
 CAPABILITY-SYSTEM (Stufe 1 Sandbox)
--------------------------------------
+-----------------------------------
 Plugins deklarieren benoetigte Faehigkeiten. BACH prueft und
 durchsetzt basierend auf dem Trust-Level der Quelle.
 
@@ -126,46 +145,83 @@ durchsetzt basierend auf dem Trust-Level der Quelle.
     workflow_create  Workflows erstellen
     network          Netzwerk-Zugriff (HTTP/API)
     shell            Shell-Befehle ausfuehren
+    desktop          Desktop-/GUI-Automation ausfuehren
+    mcp              MCP-Server konfigurieren oder anbinden
 
-  Trust-Profile (verknuepft mit data/skill_sources.json):
+  Trust-Profile (verknuepft mit `data/skill_sources.json`):
     goldstandard     trust=100  Alle Capabilities
-    trusted          trust=80   Alles ausser shell + network
+    trusted          trust=80   Alles ausser shell + desktop + mcp + network
     untrusted        trust=20   Nur db_read, file_read, hook_listen
     blacklist        trust=0    Nichts erlaubt
 
   Enforcement:
-    - register_tool()     prueft 'tool_register'
-    - register_hook()     prueft 'hook_listen'
-    - register_handler()  prueft 'handler_register'
-    - register_workflow() prueft 'workflow_create'
+    - register_tool()     prueft `tool_register`
+    - register_hook()     prueft `hook_listen`
+    - register_handler()  prueft `handler_register`
+    - register_workflow() prueft `workflow_create`
     - load_plugin()       prueft alle angeforderten Capabilities
+    - inspect/load prueft Setup-Guards fail-closed fuer shell/desktop/mcp
 
-  Audit:
-    - Jede Pruefung wird in data/logs/capability_audit.log geschrieben
-    - In-Memory Log (letzte 200 Eintraege): bach plugins audit
-    - Hook 'after_capability_denied' feuert bei Verweigerung
+SETUP-GUARDS (SEC-PLUGIN-003)
+-----------------------------
+Starker Zugriff ueber Setup-Metadaten wird vor dem Runtime-Import blockiert,
+wenn Voraussetzungen nicht explizit und fail-closed beschrieben sind.
+
+  Gefaehrliche Oberflaechen:
+    shell, desktop, mcp
+
+  Pflicht bei solchen Setups:
+    - `setup.fail_closed = true`
+    - `setup.checks = [...]` mit passenden Guard-Checks
+
+  Unterstuetzte Check-Typen:
+    command_exists
+    env_present
+    path_exists
+    python_import
+    mcp_server_known
+    desktop_enabled
+    permission_flag
+
+  Erwartete Check-Abdeckung:
+    shell   -> command_exists, env_present, path_exists, python_import
+    desktop -> desktop_enabled, path_exists, command_exists, env_present
+    mcp     -> mcp_server_known, command_exists, env_present, path_exists
+
+  Beispiel:
+    "setup": {
+      "requires": ["Claude Desktop", "Node.js"],
+      "fail_closed": true,
+      "surfaces": ["mcp"],
+      "checks": [
+        {"type": "command_exists", "command": "npx"},
+        {"type": "mcp_server_known", "package": "ellmos-codecommander-mcp"}
+      ]
+    }
 
 SICHERHEIT
 ----------
-  - Capability-Enforcement in allen register_*() Methoden
-  - Trust-Level aus skill_sources.json (4-Stufen-System)
+  - Capability-Enforcement in allen `register_*()` Methoden
+  - Trust-Level aus `skill_sources.json` (4-Stufen-System)
+  - Manifest-first Inspection: Aktivierung, Provider, Modelle, Setup ohne Runtime-Import
+  - Fail-closed Setup-Guards fuer Shell/Desktop/MCP vor Plugin-Load
   - Statische Code-Analyse: eval, exec, subprocess, os.system
   - Audit-Log fuer Nachvollziehbarkeit
   - Fehlerhafte Hooks werden gefangen, brechen nichts ab
   - Plugin-Entladen entfernt alle Registrierungen sauber
-  - Audit via: bach plugins audit, bach plugins info <name>
+  - Audit via: `bach plugins audit`, `bach plugins info <name>`
 
 ARCHITEKTUR
 -----------
-  core/capabilities.py  CapabilityManager-Singleton (Enforcement)
-  core/plugin_api.py    PluginRegistry-Singleton (Plugin-Verwaltung)
-  hub/plugins.py        CLI-Handler (bach plugins ...)
-  core/hooks.py         Hook-Framework (17 Events)
+  core/capabilities.py     CapabilityManager-Singleton (Enforcement)
+  core/plugin_api.py       PluginRegistry-Singleton (Plugin-Verwaltung)
+  hub/plugins.py           CLI-Handler (`bach plugins ...`)
+  core/hooks.py            Hook-Framework
   data/skill_sources.json  Trust-Profile und Capability-Zuordnung
 
 SIEHE AUCH
 ----------
-  bach help hooks              Hook-Framework (16 Events)
-  bach help skills             Skill-System
-  bach help self-extension     Selbsterweiterungs-System
-  bach help cli                CLI-Konventionen
+  bach help hooks          Hook-Framework
+  bach help skills         Skill-System
+  bach help self-extension Selbsterweiterungs-System
+  bach help cli            CLI-Konventionen

@@ -35,6 +35,61 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+_PACKAGING_COMMANDS = {
+    "egg_info",
+    "dist_info",
+    "editable_wheel",
+    "bdist_wheel",
+    "sdist",
+    "develop",
+}
+
+
+def _read_requirements(requirements_path: Path) -> list[str]:
+    """Liest requirements.txt fuer setuptools packaging."""
+    if not requirements_path.exists():
+        return []
+
+    requirements = []
+    for raw_line in requirements_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "#" in line:
+            line = line.split("#", 1)[0].strip()
+        if line:
+            requirements.append(line)
+    return requirements
+
+
+def _run_packaging_setup() -> None:
+    """Bedient setuptools-Buildhooks fuer pip install -e ."""
+    from setuptools import setup as setuptools_setup
+
+    root = Path(__file__).parent
+    readme_path = root / "README.md"
+    long_description = ""
+    if readme_path.exists():
+        long_description = readme_path.read_text(encoding="utf-8")
+
+    setuptools_setup(
+        name="ellmos-bach",
+        version="3.8.0",
+        description="BACH root-level editable install shim",
+        long_description=long_description,
+        long_description_content_type="text/markdown",
+        python_requires=">=3.10",
+        license="MIT",
+        py_modules=["bach", "bach_api"],
+        install_requires=_read_requirements(root / "requirements.txt"),
+        entry_points={"console_scripts": ["bach=bach:main"]},
+    )
+
+
+if any(arg in _PACKAGING_COMMANDS for arg in sys.argv[1:]):
+    _run_packaging_setup()
+    raise SystemExit(0)
+
 
 class BACHSetup:
     """BACH Installation Manager."""

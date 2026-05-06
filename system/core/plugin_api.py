@@ -437,6 +437,22 @@ description: >
             else:
                 lines.append(f"Setup:       {setup}")
 
+        setup_validation = meta.get("setup_validation", {})
+        if setup_validation.get("dangerous_surfaces"):
+            joined = ", ".join(setup_validation["dangerous_surfaces"])
+            if setup_validation.get("errors"):
+                lines.append(f"Setup-Guard: BLOCK ({joined})")
+            else:
+                check_count = len(setup_validation.get("checks", []))
+                fail_closed = setup_validation.get("fail_closed") is True
+                lines.append(
+                    f"Setup-Guard: OK ({joined}; checks={check_count}; fail_closed={fail_closed})"
+                )
+
+        setup_access = meta.get("setup_access", [])
+        if setup_access:
+            lines.append(f"Setup-Zugriff: {', '.join(setup_access)}")
+
         registrations = []
         for key in ("hooks", "handlers", "workflows"):
             count = len(meta.get(key, []))
@@ -468,6 +484,13 @@ description: >
             lines.append("Manifest-Warnungen:")
             for error in validation_errors:
                 lines.append(f"  - {error}")
+
+        validation_warnings = meta.get("validation_warnings", [])
+        if validation_warnings:
+            lines.append("")
+            lines.append("Manifest-Hinweise:")
+            for warning in validation_warnings:
+                lines.append(f"  - {warning}")
 
         return not blocking and not validation_errors, "\n".join(lines)
 
@@ -580,6 +603,9 @@ description: >
                 'manifest_version': metadata.get('manifest_version'),
                 'compatibility': metadata.get('compatibility', {}),
                 'validation_errors': metadata.get('validation_errors', []),
+                'validation_warnings': metadata.get('validation_warnings', []),
+                'setup_access': metadata.get('setup_access', []),
+                'setup_validation': metadata.get('setup_validation', {}),
             },
         }
 
@@ -773,6 +799,9 @@ description: >
         hooks = as_list(manifest.get('hooks'))
         handlers = as_list(manifest.get('handlers'))
         workflows = as_list(manifest.get('workflows'))
+        setup = manifest.get('setup')
+        setup_validation = capability_manager.validate_setup_contract(setup, capabilities)
+        validation_errors.extend(setup_validation.get('errors', []))
 
         for section, entries, file_key in (
             ('hooks', hooks, 'module'),
@@ -809,7 +838,8 @@ description: >
             "activation": activation,
             "providers": as_list(manifest.get('providers')),
             "models": as_list(manifest.get('models')),
-            "setup": manifest.get('setup', {}),
+            "setup": {} if setup is None else setup,
+            "setup_validation": setup_validation,
             "hooks": hooks,
             "handlers": handlers,
             "workflows": workflows,
@@ -819,6 +849,8 @@ description: >
             "plugin_dir": str(path.parent),
             "manifest": manifest,
             "validation_errors": validation_errors,
+            "validation_warnings": setup_validation.get("warnings", []),
+            "setup_access": setup_validation.get("dangerous_surfaces", []),
         }
 
     def _load_function(self, filepath: Path, func_name: str) -> Optional[Callable]:

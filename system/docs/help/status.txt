@@ -1,6 +1,6 @@
 # Portabilitaet: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-03-04
+# Version: 1.1.0
+# Zuletzt validiert: 2026-05-06
 
 HANDLER-NAME
 ============
@@ -12,9 +12,10 @@ BESCHREIBUNG
 ============
 
 Der Status Handler bietet einen schnellen Ueberblick ueber den aktuellen Zustand
-des BACH-Systems. Er zeigt Informationen ueber Memory-Status, Chat-Queue, offene
-Tasks, registrierte Tools und die Systemgesundheit an. Alle Informationen werden
-aus den zentralen JSON-Dateien und Memory-Dateien extrahiert.
+des BACH-Systems. Er zeigt Informationen ueber aktive Sessions, online Partner,
+Memory-Bestaende, ungelesene Nachrichten, offene Tasks, registrierte Tools und
+die Systemgesundheit an. Alle Informationen werden direkt aus `data/bach.db`
+ermittelt.
 
 
 OPERATIONEN
@@ -39,51 +40,50 @@ BEISPIELE
 AUSGABE-FELDER
 ==============
 
+Session
+    - Aktive Session-ID und Partner falls eine Session offen ist
+    - Sonst: "Keine aktive Session"
+
+Partner
+    - Anzahl aktuell online eingestempelter Partner
+    - Vorschau der Partner-Namen
+
 Memory
-    - Status (BEREIT/AKTIV/UNTERBROCHEN)
-    - Zeilenzahl der aktuellen Memory-Datei
-    - Meldung wenn keine aktive Session vorhanden ist
+    - Anzahl Eintraege in Working Memory, Facts und Lessons
 
 Chat
-    - Anzahl ungeloster (nicht resolved) Chat-Nachrichten
-    - Fehler-Indikator bei JSON-Leseproblemen
-    - Standard: 0 offen, wenn Datei fehlt
+    - Anzahl ungelesener Nachrichten aus `messages`
 
 Tasks
-    - Gesamtzahl offener Tasks
-    - Separat: Anzahl Tasks mit hoher/kritischer Prioritaet
-    - Fehler-Indikator bei JSON-Leseproblemen
+    - Anzahl offener Tasks (`status='pending'`)
+    - Separat: Anzahl P1/P2-Tasks und blockierte Tasks
 
 Tools
-    - Gesamtzahl registrierter Tools aus tools.json
-    - Fehler-Indikator bei Leseproblemen
+    - Gesamtzahl verfuegbarer Tools aus der `tools`-Tabelle
 
 Health
-    - OK: Alle JSON-Dateien (chat.json, tasks.json, tools.json) sind valid
-    - FEHLER: Mindestens eine JSON-Datei ist korrupt oder lesbar
+    - OK: Datenbank vorhanden und Kern-Tabellen lesbar
+    - FEHLER: `bach.db` fehlt oder Kernabfragen schlagen fehl
 
 
-DATEIEN (relativ zu system/)
-=============================
+DATENQUELLEN (relativ zu system/)
+=================================
 
-memory/current.md
-    Aktuelle Memory-Session mit Status-Marken (BEREIT/AKTIV/UNTERBROCHEN)
+data/bach.db
+    Zentrale Laufzeitdatenbank
 
-memory/chat.json
-    Chat-Nachrichten mit resolved-Feld fuer Offene-Zaehlung
-
-memory/tasks.json
-    Task-Objekte mit status- und priority-Feldern
-
-tools/tools.json
-    Registrierte Tools und deren Konfiguration
-
+Wichtige Tabellen:
+    - `memory_sessions`
+    - `partner_presence`
+    - `memory_working`, `memory_facts`, `memory_lessons`
+    - `messages`
+    - `tasks`
+    - `tools`
 
 SIEHE AUCH
 ==========
 
+- hub/startup.py: Startup-Report mit ausfuehrlicherem Session-Kontext
 - hub/base.py: BaseHandler-Klasse
-- hub/lang.py: Uebersetzungs-Funktion t()
-- memory/current.md: Detaillierter Memory-Status
-- memory/chat.json: Chat-Queue-Details
-- memory/tasks.json: Aufgaben-Verwaltung
+- hub/messages.py: Nachrichten-Status und Inbox
+- hub/task.py: Task-Zaehler und Task-Details

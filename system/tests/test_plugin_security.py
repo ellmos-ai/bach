@@ -177,6 +177,159 @@ def test_plugin_load_blocks_missing_manifest_file_reference(tmp_path):
     assert registry.plugin_names == []
 
 
+def test_plugin_load_blocks_shell_setup_without_fail_closed_guard(tmp_path):
+    from core.plugin_api import PluginRegistry
+
+    base = _init_base(tmp_path)
+    plugin_dir = base / "plugins" / "unguarded-shell-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "unguarded-shell-plugin",
+                "version": "0.1.0",
+                "source": "goldstandard",
+                "capabilities": ["shell"],
+                "setup": {
+                    "surfaces": ["shell"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    registry = PluginRegistry()
+    registry._base_path = base
+
+    success, message = registry.inspect_plugin(str(plugin_dir / "plugin.json"))
+
+    assert success is False
+    assert "Setup-Guard: BLOCK" in message
+    assert "setup.fail_closed=true ist Pflicht" in message
+
+    success, message = registry.load_plugin(str(plugin_dir / "plugin.json"))
+
+    assert success is False
+    assert "Manifest-Validierung fehlgeschlagen" in message
+    assert "setup.fail_closed=true ist Pflicht" in message
+    assert registry.plugin_names == []
+
+
+def test_plugin_load_allows_shell_setup_with_fail_closed_checks(tmp_path):
+    from core.capabilities import capability_manager
+    from core.plugin_api import PluginRegistry
+
+    base = _init_base(tmp_path)
+    plugin_dir = base / "plugins" / "guarded-shell-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "guarded-shell-plugin",
+                "version": "0.1.0",
+                "source": "goldstandard",
+                "capabilities": ["shell"],
+                "setup": {
+                    "surfaces": ["shell"],
+                    "fail_closed": True,
+                    "checks": [
+                        {"type": "command_exists", "command": "python"},
+                        {"type": "env_present", "env": ["PYTHONIOENCODING"]},
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    registry = PluginRegistry()
+    registry._base_path = base
+
+    success, message = registry.inspect_plugin(str(plugin_dir / "plugin.json"))
+
+    assert success is True
+    assert "Setup-Guard: OK (shell; checks=2; fail_closed=True)" in message
+
+    success, message = registry.load_plugin(str(plugin_dir / "plugin.json"))
+
+    assert success is True
+    assert "guarded-shell-plugin" in registry.plugin_names
+    registry.unload_plugin("guarded-shell-plugin")
+    capability_manager.unregister_plugin("guarded-shell-plugin")
+
+
+def test_plugin_load_blocks_mcp_capability_without_setup_guard(tmp_path):
+    from core.plugin_api import PluginRegistry
+
+    base = _init_base(tmp_path)
+    plugin_dir = base / "plugins" / "unguarded-mcp-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "unguarded-mcp-plugin",
+                "version": "0.1.0",
+                "source": "goldstandard",
+                "capabilities": ["mcp"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    registry = PluginRegistry()
+    registry._base_path = base
+
+    success, message = registry.inspect_plugin(str(plugin_dir / "plugin.json"))
+
+    assert success is False
+    assert "Setup-Guard: BLOCK (mcp)" in message
+    assert "setup.fail_closed=true ist Pflicht" in message
+    assert "Setup-Guard fuer 'mcp' fehlt" in message
+
+    success, message = registry.load_plugin(str(plugin_dir / "plugin.json"))
+
+    assert success is False
+    assert "Manifest-Validierung fehlgeschlagen" in message
+    assert "setup.fail_closed=true ist Pflicht" in message
+    assert registry.plugin_names == []
+
+
+def test_plugin_load_blocks_desktop_capability_without_setup_guard(tmp_path):
+    from core.plugin_api import PluginRegistry
+
+    base = _init_base(tmp_path)
+    plugin_dir = base / "plugins" / "unguarded-desktop-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "unguarded-desktop-plugin",
+                "version": "0.1.0",
+                "source": "goldstandard",
+                "capabilities": ["desktop"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    registry = PluginRegistry()
+    registry._base_path = base
+
+    success, message = registry.inspect_plugin(str(plugin_dir / "plugin.json"))
+
+    assert success is False
+    assert "Setup-Guard: BLOCK (desktop)" in message
+    assert "setup.fail_closed=true ist Pflicht" in message
+    assert "Setup-Guard fuer 'desktop' fehlt" in message
+
+    success, message = registry.load_plugin(str(plugin_dir / "plugin.json"))
+
+    assert success is False
+    assert "Manifest-Validierung fehlgeschlagen" in message
+    assert "setup.fail_closed=true ist Pflicht" in message
+    assert registry.plugin_names == []
+
+
 def test_skills_install_blocks_unsafe_package(tmp_path):
     from hub.skills import SkillsHandler
 
@@ -298,3 +451,49 @@ def test_mcp_setup_blocks_mismatched_config_package(tmp_path):
 
     assert ok is False
     assert any("nicht im Installationsplan" in error for error in errors)
+
+
+def test_setup_hooks_blocks_invalid_claude_settings_json(tmp_path, monkeypatch):
+    from hub.setup import SetupHandler
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+
+    base = _init_base(tmp_path)
+    hooks_source = base / "hooks"
+    hooks_source.mkdir(parents=True)
+    (hooks_source / "bach-db-guard.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    settings_path = home / ".claude" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text("{invalid", encoding="utf-8")
+
+    success, message = SetupHandler(base)._setup_hooks()
+
+    assert success is False
+    assert "Claude Hook settings blockiert" in message
+    assert "JSON ungueltig" in message
+    assert not (home / ".claude" / "hooks" / "bach-db-guard.sh").exists()
+
+
+def test_configure_mcp_blocks_invalid_claude_config_json(tmp_path, monkeypatch):
+    from hub.setup import SetupHandler
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+
+    base = _init_base(tmp_path)
+    claude_config = home / ".claude.json"
+    claude_config.parent.mkdir(parents=True, exist_ok=True)
+    claude_config.write_text("{broken", encoding="utf-8")
+
+    success, message = SetupHandler(base)._configure_claude_mcp(
+        SetupHandler.CORE_MCP_PACKAGES,
+        dry_run=False,
+    )
+
+    assert success is False
+    assert "Claude Code Config blockiert" in message
+    assert "JSON ungueltig" in message

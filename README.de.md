@@ -14,7 +14,7 @@ BACH ist ein textbasiertes Betriebssystem, das Large Language Models (LLMs) bef�
 - **373+ Tools** - Umfangreiche Tool-Bibliothek für Dateiverarbeitung, Analyse und Automation
 - **932+ Skills** - Wiederverwendbare Workflows und Templates
 - **54 Protocol Workflows** - Vorgefertigte Prozess-Protokolle
-- **Install Security Gate** - Statische Scans für `skills install`, `plugins load` und MCP-Setup/Config-Aktivierung; blockierte lokale Importe werden quarantänisiert
+- **Install Security Gate** - Statische Scans für `skills install`, `plugins load` und MCP-Setup/Config-Aktivierung; Plugin-Setups mit Shell/Desktop/MCP-Zugriff brauchen jetzt explizite fail-closed Guards, blockierte lokale Importe werden quarantänisiert
 - **Manifest-first Plugins** - `bach plugins inspect` zeigt Aktivierung, Provider-/Model-, Setup- und Capability-Metadaten ohne Runtime-Import
 - **Wissensspeicher** - Lessons, Facts und mehrstufiges Memory-System
 
@@ -67,7 +67,7 @@ Scheduler fuer wiederkehrende Tasks und Event-basierte Workflows.
 
 ## OpenClaw-Abgleich
 
-Stand 2026-05-01: OpenClaw bleibt für BACH vor allem als Vergleichssystem für breite Messaging-Anbindung, Plugin-Ökosystem und Security-Patterns relevant. Die aktuelle stabile GitHub-Release ist `2026.4.29`; im selben Release-Zug ist `2026.4.29-beta.4` als Pre-Release sichtbar. Für BACH passen aktuell besonders manifest-first Plugin-Metadaten, fail-closed Tool-Setup-Checks, aktive Laufsteuerung an sicheren Checkpoints, Memory-/Wiki-Provenance und Scans mit Quarantäne vor der Installation bzw. Aktivierung von Skills, MCP-Servern und Plugins. BACH deckt davon jetzt die manifestbasierte Plugin-Vorschau und erste Quarantäne-Reports ab.
+Stand 2026-05-06: OpenClaw bleibt für BACH vor allem als Vergleichssystem für breite Messaging-Anbindung, Plugin-Ökosystem und Security-Patterns relevant. Die aktuelle stabile GitHub-Release ist `2026.5.4` vom 5. Mai 2026; auf derselben Release-Seite ist `2026.5.4-beta.3` als Pre-Release sichtbar. Für BACH passen aktuell besonders manifest-first Plugin-Metadaten, fail-closed Tool-Setup-Checks, aktive Laufsteuerung an sicheren Checkpoints, Memory-/Wiki-Provenance und Scans mit Quarantäne vor der Installation bzw. Aktivierung von Skills, MCP-Servern und Plugins. BACH deckt davon jetzt zusätzlich explizite Setup-Guards für Shell/Desktop/MCP-Flächen in Plugin-Manifests ab.
 
 ## Dokumentation
 

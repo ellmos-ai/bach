@@ -34,16 +34,19 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 - **API-Surface-Parität:** `bach_api` exportiert jetzt die dokumentierten Module `agent`, `agents` und `prompt` für Agenten- und Prompt-Usecases ohne Raw-Handler-Zugriff.
 - **Quarantäne für blockierte Erweiterungen:** Blockierte `plugins load`-, `skills install`- und lokale MCP-Config-Pfade werden jetzt nicht nur abgewiesen, sondern unter `system/data/quarantine/` mit Payload-Kopie und `report.json` dokumentiert.
 - **Manifest-first Plugin-Prüfung:** `bach plugins inspect <pfad>` zeigt Plugin-Metadaten ohne Runtime-Import; `plugins load` blockiert Manifeste mit fehlenden Hook-/Handler-/Workflow-Dateireferenzen, bevor Plugin-Code geladen wird.
+- **Fail-closed Setup-Guards für Plugins:** Plugin-Manifeste mit `shell`-, `desktop`- oder `mcp`-Setupflächen brauchen jetzt `setup.fail_closed=true` plus passende `setup.checks`; `plugins inspect/load` blockieren unsichere Verträge noch vor Runtime-Code.
+- **Editable-Install für `bach_api`:** Repo-Root exportiert jetzt einen `bach_api`-Shim plus `pyproject.toml`, damit `pip install -e .` und `from bach_api import ...` ohne `sys.path.insert(...)` für Entwickler- und Agenten-Usecases funktionieren.
 
 ### Bugfix
 
 - **Self-Heal CLI/API:** `bach mem write/read/...` delegiert jetzt auf den bestehenden `memory`-Handler; `bach wiki read <thema>` ist als Alias verfuegbar; `bach task add` gibt die neue Task-ID direkt aus.
 - **agent_launcher.py:** Windows cp1252 Encoding-Fix bei tasklist-Subprocess (0x81 Umlaut-Crash)
 - **bach_api.py:** Import-Lücke geschlossen, durch die `from bach_api import agent` trotz dokumentierter API fehlschlug.
+- **Fail-closed Setup-Configs:** `bach setup hooks`, `bach setup mcp` und `bach setup n8n` brechen jetzt bei ungültigen oder strukturell falschen bestehenden Claude-JSON-Dateien ab, statt sie stillschweigend mit `{}` zu überschreiben.
 
 ### Dokumentation
 
-- **OpenClaw-Abgleich 2026-05-01:** README und ROADMAP aktualisiert; latest stable `2026.4.29`, pre-release `2026.4.29-beta.4`. Relevante Impulse: active-run steering, visible-reply enforcement, subagent routing metadata, people-aware Memory/Wiki-Provenance, OpenGrep-Scanning, stale-session recovery und version-scoped update caches.
+- **OpenClaw-Abgleich 2026-05-06:** README und ROADMAP aktualisiert; latest stable `2026.5.4` (5. Mai 2026). Relevante Impulse: workspace-scoped Plugin-Metadaten-Caches, Install-Hinweise für fehlende offizielle Erweiterungen, SecretRef-erhaltende Secret-Scrubs, aktive Laufsteuerung, Plugin-/Provider-Härtung und Memory-/Wiki-Provenance.
 - **README-Version bereinigt:** Footer auf `v3.8.0-sugar-of-babel` angeglichen.
 
 ---

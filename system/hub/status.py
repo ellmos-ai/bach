@@ -2,11 +2,10 @@
 """
 Status Handler - Schnelle System-Uebersicht
 """
+import sqlite3
 from datetime import datetime
 from pathlib import Path
-import json
 from .base import BaseHandler
-from .lang import t
 
 
 class StatusHandler(BaseHandler):
@@ -14,6 +13,7 @@ class StatusHandler(BaseHandler):
     
     def __init__(self, base_path: Path):
         super().__init__(base_path)
+        self.db_path = base_path / "data" / "bach.db"
     
     @property
     def profile_name(self) -> str:
@@ -24,98 +24,111 @@ class StatusHandler(BaseHandler):
         return self.base_path
     
     def get_operations(self) -> dict:
-        return {"show": t("status_show_desc", default="Systemstatus anzeigen (Standard)")}
+        return {"show": "Systemstatus anzeigen (Standard)"}
     
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
         return self._show_status()
+
+    def _get_conn(self):
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _count(self, cursor, table: str, where: str = "", params: tuple = ()) -> int:
+        query = f"SELECT COUNT(*) FROM {table}"
+        if where:
+            query += f" WHERE {where}"
+        return cursor.execute(query, params).fetchone()[0]
     
     def _show_status(self) -> tuple:
-        """Sammelt und zeigt Systemstatus."""
+        """Sammelt und zeigt den aktuellen DB-basierten Systemstatus."""
         now = datetime.now()
         results = []
 
         results.append(f"BACH Status @ {now.strftime('%Y-%m-%d %H:%M')}")
         results.append("=" * 45)
+        if not self.db_path.exists():
+            results.append("Session:  Keine aktive Session")
+            results.append("Partner:  0 online")
+            results.append("Memory:   0 Working | 0 Facts | 0 Lessons")
+            results.append("Chat:     0 ungelesen")
+            results.append("Tasks:    0 offen (0 P1/P2, 0 blocked)")
+            results.append("Tools:    0 registriert")
+            results.append("Health:   FEHLER (bach.db fehlt)")
+            return False, "\n".join(results)
 
-        # Memory Status
-        memory_file = self.base_path / "memory" / "current.md"
-        if memory_file.exists():
-            content = memory_file.read_text(encoding="utf-8")
-            lines = len(content.splitlines())
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
 
-            if "BEREIT" in content.upper():
-                mem_status = t("bereit", default="BEREIT")
-            elif "AKTIV" in content.upper():
-                mem_status = t("aktiv", default="AKTIV")
-            elif "UNTERBROCHEN" in content.upper():
-                mem_status = t("unterbrochen", default="UNTERBROCHEN") + " (!)"
-            else:
-                mem_status = "?"
+                active_session = cursor.execute("""
+                    SELECT session_id, partner_id
+                    FROM memory_sessions
+                    WHERE ended_at IS NULL
+                    ORDER BY id DESC
+                    LIMIT 1
+                """).fetchone()
 
-            lines_label = t("zeilen", default="Zeilen")
-            results.append(f"Memory:   {mem_status} ({lines} {lines_label})")
+                online_rows = cursor.execute("""
+                    SELECT partner_name
+                    FROM partner_presence
+                    WHERE status = 'online'
+                    ORDER BY clocked_in DESC
+                """).fetchall()
+
+                working_count = self._count(cursor, "memory_working")
+                facts_count = self._count(cursor, "memory_facts")
+                lessons_count = self._count(cursor, "memory_lessons")
+                unread_count = self._count(cursor, "messages", "status = ?", ("unread",))
+                open_tasks = self._count(cursor, "tasks", "status = ?", ("pending",))
+                blocked_tasks = self._count(cursor, "tasks", "status = ?", ("blocked",))
+                high_prio = self._count(
+                    cursor,
+                    "tasks",
+                    "status = ? AND priority IN ('P1', 'P2')",
+                    ("pending",),
+                )
+                tool_count = self._count(
+                    cursor,
+                    "tools",
+                    "COALESCE(is_available, 1) = 1",
+                )
+
+                # Essential table checks should raise immediately if the runtime is broken.
+                for table in ("memory_sessions", "partner_presence", "messages", "tasks", "tools"):
+                    self._count(cursor, table)
+
+        except Exception as exc:
+            results.append("Session:  Unbekannt")
+            results.append("Partner:  Unbekannt")
+            results.append("Memory:   Unbekannt")
+            results.append("Chat:     Unbekannt")
+            results.append("Tasks:    Unbekannt")
+            results.append("Tools:    Unbekannt")
+            results.append(f"Health:   FEHLER ({exc})")
+            return False, "\n".join(results)
+
+        if active_session:
+            results.append(
+                f"Session:  Aktiv ({active_session['partner_id']} / {active_session['session_id']})"
+            )
         else:
-            results.append(f"Memory:   {t('keine_aktive_session', default='Keine aktive Session')}")
+            results.append("Session:  Keine aktive Session")
 
-        # Chat
-        chat_file = self.base_path / "memory" / "chat.json"
-        if chat_file.exists():
-            try:
-                with open(chat_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                unresolved = len([m for m in data.get("messages", []) if not m.get("resolved")])
-                results.append(f"Chat:     {unresolved} {t('offen', default='offen')}")
-            except:
-                results.append(f"Chat:     {t('fehler', default='Fehler')}")
+        if online_rows:
+            partner_names = [row["partner_name"] for row in online_rows]
+            preview = ", ".join(partner_names[:3])
+            extra = f" +{len(partner_names) - 3}" if len(partner_names) > 3 else ""
+            results.append(f"Partner:  {len(partner_names)} online ({preview}{extra})")
         else:
-            results.append(f"Chat:     0 {t('offen', default='offen')}")
+            results.append("Partner:  0 online")
 
-        # Tasks
-        tasks_file = self.base_path / "memory" / "tasks.json"
-        if tasks_file.exists():
-            try:
-                with open(tasks_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                task_list = data.get("tasks", [])
-                open_count = len([tk for tk in task_list if tk.get("status") == "open"])
-                high_prio = len([tk for tk in task_list if tk.get("status") == "open" and tk.get("priority") in ["high", "critical"]])
-                results.append(f"Tasks:    {open_count} open ({high_prio} high/critical)")
-            except:
-                results.append(f"Tasks:    {t('fehler', default='Fehler')}")
-        else:
-            results.append(f"Tasks:    {t('keine_datei', default='Keine Datei')}")
-
-        # Tools
-        tools_file = self.base_path / "tools" / "tools.json"
-        if tools_file.exists():
-            try:
-                with open(tools_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                tool_count = len(data.get("tools", []))
-                results.append(f"Tools:    {tool_count} {t('registriert', default='registriert')}")
-            except:
-                results.append(f"Tools:    {t('fehler', default='Fehler')}")
-
-        # Health (JSONs pruefen)
-        json_files = [
-            self.base_path / "memory" / "chat.json",
-            self.base_path / "memory" / "tasks.json",
-            self.base_path / "tools" / "tools.json"
-        ]
-
-        all_valid = True
-        for jf in json_files:
-            if jf.exists():
-                try:
-                    with open(jf, "r", encoding="utf-8") as f:
-                        json.load(f)
-                except:
-                    all_valid = False
-                    break
-
-        if all_valid:
-            results.append("Health:   OK")
-        else:
-            results.append(f"Health:   {t('fehler', default='FEHLER')} (JSON {t('korrupt', default='korrupt')})")
+        results.append(
+            f"Memory:   {working_count} Working | {facts_count} Facts | {lessons_count} Lessons"
+        )
+        results.append(f"Chat:     {unread_count} ungelesen")
+        results.append(f"Tasks:    {open_tasks} offen ({high_prio} P1/P2, {blocked_tasks} blocked)")
+        results.append(f"Tools:    {tool_count} registriert")
+        results.append("Health:   OK")
 
         return True, "\n".join(results)

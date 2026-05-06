@@ -1,6 +1,6 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-05-01 | **Version:** 4.3.1
+**Stand:** 2026-05-06 | **Version:** 4.3.2
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
@@ -63,22 +63,24 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 
 ### Priorität 1 — Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
 
-Der OpenClaw-Abgleich vom 2026-05-01 bestätigt den nächsten BACH-Fokus
+Der OpenClaw-Abgleich vom 2026-05-06 bestätigt den nächsten BACH-Fokus
 klar in Richtung sichere Erweiterbarkeit und robuste Agenten-Laufzeit. Relevant
 sind nicht die breite Messenger-Abdeckung, sondern manifest-first Plugin- und
 Provider-Metadaten, fail-closed Tool-Setups, Scans vor der Installation von
 Skills/MCP-Servern/Plugins, API-Parität für Agentenflächen und
-low-cardinality Telemetrie. Neu aus OpenClaw `2026.4.29` sind zusätzlich
-aktive Laufsteuerung an sicheren Checkpoints, sichtbare Antwortpfade,
-Memory-/Wiki-Provenance, stale-session recovery und versionierte Update-Caches
-als prüfenswerte Impulse markiert.
+low-cardinality Telemetrie. Neu aus OpenClaw `2026.5.4` sind zusätzlich
+workspace-scoped Plugin-Metadaten-Snapshots auf Hot Paths, Install-Hinweise
+für fehlende offizielle Erweiterungen, SecretRef-erhaltende Secret-Scrubs
+und weiterhin aktive Laufsteuerung an sicheren Checkpoints, sichtbare
+Antwortpfade, Memory-/Wiki-Provenance, stale-session recovery und versionierte
+Update-Caches als prüfenswerte Impulse markiert.
 
 | ID | Thema | Status | Notiz |
 |----|-------|--------|-------|
 | SH-001 | CLI/API Self-Heal: `mem write`, `wiki read`, Task-ID bei `task add` | DONE | Implementiert und mit Unit-Tests abgesichert (2026-04-30) |
 | SEC-PLUGIN-001 | Skill-/Plugin-/MCP-Install-Scanner | DONE (Stufe 1) | `skills install`, `plugins load` und lokale MCP-Config-Pfade scannen statisch, blockieren Code-Injection-Muster fail-closed und legen Quarantäne-Kopien mit `report.json` an |
 | SEC-PLUGIN-002 | Manifest-first Plugin-Metadaten | TEILWEISE | `bach plugins inspect` liest Aktivierung, Capabilities, Provider-/Model-Catalogs und Setup-Metadaten ohne Runtime-Import; `plugins load` speichert diese Metadaten und blockiert fehlende Manifest-Dateireferenzen fail-closed |
-| SEC-PLUGIN-003 | Fail-closed Tool-Setup-Checks | OFFEN | Vor Desktop-/Shell-/MCP-Zugriff Voraussetzungen pruefen und bei Unsicherheit abbrechen |
+| SEC-PLUGIN-003 | Fail-closed Tool-Setup-Checks | DONE | Plugin-Manifeste mit `shell`-/`desktop`-/`mcp`-Setupflächen brauchen jetzt `setup.fail_closed=true` plus passende `setup.checks`; `plugins inspect/load` blockieren unsichere Verträge vor Runtime-Code, und bestehende Claude Hook-/MCP-Config-JSONs werden vor Setup-Schreibzugriffen fail-closed validiert |
 | SANDBOX-002 | Subprocess-Isolation | OFFEN | Timeout, Ressourcenlimit, erlaubte Capabilities; ergaenzt bestehende Stufe 1 |
 | API-SURFACE-001 | Agent-/Prompt-API-Parität | DONE | `bach_api` exportiert jetzt die dokumentierten Module `agent`, `agents` und `prompt`; Agenten-Usecase per Regressionstest abgesichert |
 | OPS-TELEM-001 | Low-cardinality Telemetrie | OFFEN | OpenTelemetry-inspiriert, aber lokal/privacy-first: Model-Calls, Tool-Loops, Agentenstarts und Fehler ohne sensible Payloads messen |
@@ -391,6 +393,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 | **4.2** | 2026-03-02 | **Prio 1-3 erledigt: SQ043 Memory-Migration (2046+1120 Datensaetze), HQ8 Installer (full-install+preflight), SQ014 UC26/27 (Overpass+OSRM), SQ011 Pipeline-Framework (DB+Scanner+Definitionen). Nur noch Prio 4 offen.** |
 | **4.3** | 2026-04-30 | **Security-/Plugin-Härtung aus OpenClaw-Abgleich: Scanner, MCP-Allowlist, API-Parität als neuer Fokusblock.** |
 | **4.3.1** | 2026-05-01 | **OpenClaw `2026.4.29` abgeglichen; SEC-PLUGIN-001 Stufe 1 mit Quarantäne-Reports abgeschlossen; OPS-RUN-001 und MEM-PROV-001 ergänzt.** |
+| **4.3.2** | 2026-05-06 | **OpenClaw `2026.5.4` gegengeprüft; SEC-PLUGIN-003 mit fail-closed Setup-Guards für Shell/Desktop/MCP in Plugin-Manifests plus bestehende Claude-Config-Validierung abgeschlossen; `bach_api` für Editable-Install/Root-Import nachgezogen.** |
 
 Detaillierte Historie: `CHANGELOG.md`
 Archivierte Versionen: `../docs/_archive/ROADMAP_*.md`

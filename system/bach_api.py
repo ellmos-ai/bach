@@ -455,3 +455,29 @@ class _InjectorProxy:
 
 
 injector = _InjectorProxy()
+
+__all__ = [
+    "get_app",
+    "session",
+    "task",
+    "memory",
+    "backup",
+    "steuer",
+    "lesson",
+    "status",
+    "agent",
+    "agents",
+    "prompt",
+    "partner",
+    "logs",
+    "msg",
+    "tools",
+    "help",
+    "update",
+    "email",
+    "app",
+    "db",
+    "hooks",
+    "plugins",
+    "injector",
+]

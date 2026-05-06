@@ -233,7 +233,10 @@ class PluginsHandler(BaseHandler):
             "setup": {
                 "requires": [],
                 "env": [],
-                "notes": ""
+                "notes": "",
+                "fail_closed": False,
+                "surfaces": [],
+                "checks": []
             },
             "hooks": [
                 {

@@ -91,6 +91,10 @@ class TestCLIBackwardsCompat:
         code, out, err = run_bach("--status")
         assert code == 0
         assert "BACH" in out or "Status" in out
+        assert "Session:" in out
+        assert "Tasks:" in out
+        assert "Tools:" in out
+        assert "Health:" in out
 
     def test_health_status(self):
         code, out, err = run_bach("health", "status")
@@ -374,6 +378,26 @@ class TestLibraryAPI:
 
         success, message = prompt("list")
         assert success is True
+
+    def test_root_level_bach_api_import_for_agent_usecase(self):
+        repo_root = SYSTEM_ROOT.parent
+        code = (
+            "from bach_api import agent, get_app; "
+            "app = get_app(); "
+            "success, _ = agent('list'); "
+            "print(app.base_path); "
+            "print(success)"
+        )
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+        )
+
+        assert proc.returncode == 0, proc.stderr
+        assert str(SYSTEM_ROOT) in proc.stdout
+        assert "True" in proc.stdout
 
 
 class TestRegistryDiscovery:

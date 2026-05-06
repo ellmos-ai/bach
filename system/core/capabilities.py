@@ -66,6 +66,24 @@ CAPABILITIES = {
     'workflow_create':  'Workflows erstellen',
     'network':          'Netzwerk-Zugriff (HTTP/API)',
     'shell':            'Shell-Befehle ausfuehren',
+    'desktop':          'Desktop-/GUI-Automation ausfuehren',
+    'mcp':              'MCP-Server konfigurieren oder anbinden',
+}
+
+SETUP_GUARD_SURFACES = {"shell", "desktop", "mcp"}
+SETUP_CHECK_TYPES = {
+    "command_exists",
+    "env_present",
+    "path_exists",
+    "python_import",
+    "mcp_server_known",
+    "desktop_enabled",
+    "permission_flag",
+}
+SETUP_SURFACE_CHECKS = {
+    "shell": {"command_exists", "env_present", "path_exists", "python_import"},
+    "desktop": {"desktop_enabled", "path_exists", "command_exists", "env_present"},
+    "mcp": {"mcp_server_known", "command_exists", "env_present", "path_exists"},
 }
 
 # Fallback Trust-Profile (werden bevorzugt aus skill_sources.json geladen)
@@ -82,7 +100,7 @@ DEFAULT_TRUST_PROFILES = {
             'hook_listen', 'hook_emit', 'tool_register',
             'handler_register', 'workflow_create',
         ],
-        'description': 'Alles ausser Shell und Netzwerk',
+        'description': 'Alles ausser Shell, Desktop, MCP und Netzwerk',
     },
     'untrusted': {
         'trust': 20,
@@ -232,6 +250,186 @@ class CapabilityManager:
             if not allowed:
                 denied.append(cap)
         return denied
+
+    # ==================================================================
+    # SETUP GUARDS
+    # ==================================================================
+
+    def infer_setup_surfaces(self, setup, capabilities: list | None = None) -> list[str]:
+        """Leitet gefaehrliche Setup-Oberflaechen aus Manifestdaten ab."""
+        surfaces = set()
+        caps = {str(cap) for cap in (capabilities or [])}
+
+        for surface in SETUP_GUARD_SURFACES:
+            if surface in caps:
+                surfaces.add(surface)
+
+        if not isinstance(setup, dict):
+            return sorted(surfaces)
+
+        explicit = setup.get("surfaces", [])
+        if isinstance(explicit, str):
+            explicit = [explicit]
+        if isinstance(explicit, list):
+            for surface in explicit:
+                if isinstance(surface, str) and surface:
+                    surfaces.add(surface.strip().lower())
+
+        key_map = {
+            "shell": ("shell", "shell_commands", "commands", "command"),
+            "desktop": ("desktop", "desktop_copy", "desktop_path", "desktop_app"),
+            "mcp": ("mcp", "mcp_server", "mcp_servers", "mcpServers"),
+        }
+        for surface, keys in key_map.items():
+            if any(key in setup for key in keys):
+                surfaces.add(surface)
+
+        return sorted(surfaces)
+
+    def validate_setup_contract(self, setup, capabilities: list | None = None) -> dict:
+        """Prueft fail-closed Setup-Vertraege fuer gefaehrliche Oberflaechen."""
+        surfaces = self.infer_setup_surfaces(setup, capabilities)
+        dangerous = [surface for surface in surfaces if surface in SETUP_GUARD_SURFACES]
+        result = {
+            "surfaces": surfaces,
+            "dangerous_surfaces": dangerous,
+            "errors": [],
+            "warnings": [],
+            "checks": [],
+            "fail_closed": False,
+        }
+
+        if not dangerous:
+            return result
+
+        if not isinstance(setup, dict):
+            result["errors"].append(
+                "Setup-Guard fehlt: Shell/Desktop/MCP-Zugriffe brauchen ein setup-Objekt "
+                "mit fail_closed=true und setup.checks."
+            )
+            joined = ", ".join(dangerous)
+            result["errors"].append(
+                f"Setup-Guard fuer {joined} fehlt: setup.fail_closed=true ist Pflicht."
+            )
+            for surface in dangerous:
+                allowed_types = SETUP_SURFACE_CHECKS.get(surface, set())
+                result["errors"].append(
+                    f"Setup-Guard fuer '{surface}' fehlt: mindestens ein passender Check "
+                    f"aus {sorted(allowed_types)} ist erforderlich."
+                )
+            return result
+
+        fail_closed = setup.get("fail_closed") is True
+        result["fail_closed"] = fail_closed
+        if not fail_closed:
+            joined = ", ".join(dangerous)
+            result["errors"].append(
+                f"Setup-Guard fuer {joined} fehlt: setup.fail_closed=true ist Pflicht."
+            )
+
+        raw_checks = setup.get("checks", [])
+        if isinstance(raw_checks, dict):
+            raw_checks = [raw_checks]
+        if not isinstance(raw_checks, list):
+            result["errors"].append("setup.checks muss eine Liste sein.")
+            raw_checks = []
+
+        for index, check in enumerate(raw_checks):
+            if not isinstance(check, dict):
+                result["errors"].append(f"setup.checks[{index}] muss ein Objekt sein.")
+                continue
+            check_type = str(check.get("type", "")).strip()
+            if not check_type:
+                result["errors"].append(f"setup.checks[{index}].type fehlt.")
+                continue
+            if check_type not in SETUP_CHECK_TYPES:
+                result["errors"].append(
+                    f"setup.checks[{index}].type unbekannt: {check_type}"
+                )
+                continue
+
+            if check_type == "command_exists":
+                commands = check.get("commands", check.get("command"))
+                if isinstance(commands, str):
+                    commands = [commands]
+                if not isinstance(commands, list) or not any(
+                    isinstance(item, str) and item.strip() for item in commands
+                ):
+                    result["errors"].append(
+                        f"setup.checks[{index}] command_exists braucht command oder commands."
+                    )
+                    continue
+            elif check_type == "env_present":
+                values = check.get("env", check.get("vars"))
+                if isinstance(values, str):
+                    values = [values]
+                if not isinstance(values, list) or not any(
+                    isinstance(item, str) and item.strip() for item in values
+                ):
+                    result["errors"].append(
+                        f"setup.checks[{index}] env_present braucht env oder vars."
+                    )
+                    continue
+            elif check_type == "path_exists":
+                values = check.get("paths", check.get("path"))
+                if isinstance(values, str):
+                    values = [values]
+                if not isinstance(values, list) or not any(
+                    isinstance(item, str) and item.strip() for item in values
+                ):
+                    result["errors"].append(
+                        f"setup.checks[{index}] path_exists braucht path oder paths."
+                    )
+                    continue
+            elif check_type == "python_import":
+                module = check.get("module")
+                if not isinstance(module, str) or not module.strip():
+                    result["errors"].append(
+                        f"setup.checks[{index}] python_import braucht module."
+                    )
+                    continue
+            elif check_type == "mcp_server_known":
+                value = check.get("name", check.get("package"))
+                if not isinstance(value, str) or not value.strip():
+                    result["errors"].append(
+                        f"setup.checks[{index}] mcp_server_known braucht name oder package."
+                    )
+                    continue
+            elif check_type == "desktop_enabled":
+                marker = check.get("feature", check.get("path", check.get("app")))
+                if marker is None:
+                    result["errors"].append(
+                        f"setup.checks[{index}] desktop_enabled braucht feature, path oder app."
+                    )
+                    continue
+            elif check_type == "permission_flag":
+                flag = check.get("flag")
+                if not isinstance(flag, str) or not flag.strip():
+                    result["errors"].append(
+                        f"setup.checks[{index}] permission_flag braucht flag."
+                    )
+                    continue
+
+            result["checks"].append(check_type)
+
+        for surface in dangerous:
+            allowed_types = SETUP_SURFACE_CHECKS.get(surface, set())
+            if not any(check_type in allowed_types for check_type in result["checks"]):
+                result["errors"].append(
+                    f"Setup-Guard fuer '{surface}' fehlt: mindestens ein passender Check "
+                    f"aus {sorted(allowed_types)} ist erforderlich."
+                )
+
+        unknown_surfaces = [
+            surface for surface in surfaces
+            if surface not in SETUP_GUARD_SURFACES and surface not in {"network"}
+        ]
+        for surface in unknown_surfaces:
+            result["warnings"].append(
+                f"Unbekannte setup.surface '{surface}' wird aktuell nicht ausgewertet."
+            )
+
+        return result
 
     # ==================================================================
     # TRUST MANAGEMENT

@@ -89,6 +89,7 @@ Thumbs.db
 **/.venv/
 **/dist/
 **/build/
+**/*.egg-info/
 
 # === BENUTZERSPEZIFISCHE DOKUMENTATION (niemals committen!) ===
 # Werden beim ersten Start aus Templates generiert / von BACH ueberschrieben

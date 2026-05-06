@@ -234,14 +234,19 @@ class SetupHandler(BaseHandler):
         if dry_run:
             return True, f"  [DRY-RUN] Wuerde {claude_config} aktualisieren"
 
-        try:
-            config = json.loads(claude_config.read_text(encoding="utf-8"))
-        except Exception:
-            config = {}
+        ok, config, error = self._load_json_object_config(
+            claude_config,
+            "Claude Code Config",
+            allow_missing=True,
+        )
+        if not ok:
+            return False, error
 
         # mcpServers-Sektion sicherstellen
         if "mcpServers" not in config:
             config["mcpServers"] = {}
+        elif not isinstance(config["mcpServers"], dict):
+            return False, "Claude Code Config blockiert: 'mcpServers' muss ein Objekt sein."
 
         # Server-Eintraege hinzufuegen/aktualisieren
         server_configs = self.CORE_MCP_SERVER_CONFIGS
@@ -414,6 +419,15 @@ class SetupHandler(BaseHandler):
         settings_path = Path(os.path.expanduser("~/.claude/settings.json"))
         hooks_dir = Path(os.path.expanduser("~/.claude/hooks"))
         out = []
+        ok, settings, error = self._load_json_object_config(
+            settings_path,
+            "Claude Hook settings",
+            allow_missing=True,
+        )
+        if not ok:
+            return False, error
+        if "hooks" in settings and not isinstance(settings["hooks"], dict):
+            return False, "Claude Hook settings blockiert: 'hooks' muss ein Objekt sein."
 
         # --- 1. Hook-Scripts kopieren ---
         hooks_dir.mkdir(parents=True, exist_ok=True)
@@ -441,14 +455,6 @@ class SetupHandler(BaseHandler):
         if dry_run:
             out.append("  [DRY] Wuerde Hooks in settings.json mergen")
             return True, "\n".join(["Claude Code Hooks (dry-run):"] + out)
-
-        # Settings lesen
-        settings = {}
-        if settings_path.exists():
-            try:
-                settings = json.loads(settings_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                settings = {}
 
         # Hooks mergen (nicht ueberschreiben, nur fehlende hinzufuegen)
         if "hooks" not in settings:
@@ -522,10 +528,15 @@ class SetupHandler(BaseHandler):
         # --- 2. Hook-Config aus settings.json entfernen ---
         removed_hooks = 0
         if settings_path.exists():
-            try:
-                settings = json.loads(settings_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                settings = {}
+            ok, settings, error = self._load_json_object_config(
+                settings_path,
+                "Claude Hook settings",
+                allow_missing=True,
+            )
+            if not ok:
+                return False, error
+            if "hooks" in settings and not isinstance(settings["hooks"], dict):
+                return False, "Claude Hook settings blockiert: 'hooks' muss ein Objekt sein."
 
             hooks_config = settings.get("hooks", {})
 
@@ -1323,6 +1334,43 @@ class SetupHandler(BaseHandler):
             lines.append(f"  - ... und {len(findings) - 10} weitere")
         return "\n".join(lines)
 
+    def _load_json_object_config(self, path: Path, label: str,
+                                 allow_missing: bool = False) -> tuple:
+        """Laedt eine JSON-Konfiguration fail-closed als Objekt."""
+        if not path.exists():
+            if allow_missing:
+                return True, {}, ""
+            return False, None, f"{label} nicht gefunden: {path}"
+
+        if path.is_dir():
+            return False, None, f"{label} blockiert: {path} ist ein Verzeichnis."
+        if path.is_symlink():
+            return False, None, (
+                f"{label} blockiert: Symbolic-Link-Ziele werden nicht automatisch "
+                f"beschrieben ({path})."
+            )
+
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError as e:
+            return False, None, f"{label} blockiert: Datei nicht lesbar ({e})."
+
+        if not raw.strip():
+            return True, {}, ""
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            return False, None, (
+                f"{label} blockiert: JSON ungueltig "
+                f"(Zeile {e.lineno}, Spalte {e.colno}: {e.msg})."
+            )
+
+        if not isinstance(data, dict):
+            return False, None, f"{label} blockiert: oberstes JSON-Element muss ein Objekt sein."
+
+        return True, data, ""
+
     def _find_claude_config(self) -> Path | None:
         """Findet die Claude Code MCP-Config-Datei."""
         claude_config = Path.home() / ".claude.json"
@@ -1391,13 +1439,18 @@ class SetupHandler(BaseHandler):
         elif dry_run:
             results.append(f"  [DRY-RUN] Wuerde {claude_config} aktualisieren")
         else:
-            try:
-                config = json.loads(claude_config.read_text(encoding="utf-8"))
-            except Exception:
-                config = {}
+            ok, config, error = self._load_json_object_config(
+                claude_config,
+                "Claude Code Config",
+                allow_missing=True,
+            )
+            if not ok:
+                return False, error
 
             if "mcpServers" not in config:
                 config["mcpServers"] = {}
+            elif not isinstance(config["mcpServers"], dict):
+                return False, "Claude Code Config blockiert: 'mcpServers' muss ein Objekt sein."
 
             server_name = info["name"]
             scan_configs = dict(config["mcpServers"])
