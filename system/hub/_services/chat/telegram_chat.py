@@ -998,11 +998,12 @@ class ControlHandler(BaseHTTPRequestHandler):
 
 def start_control_api():
     try:
-        server = HTTPServer(("127.0.0.1", CONTROL_PORT), ControlHandler)
+        bind_host = os.environ.get("BACH_CONTROL_HOST", "0.0.0.0")
+        server = HTTPServer((bind_host, CONTROL_PORT), ControlHandler)
         server.daemon_threads = True
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        log.info(f"Control API auf 127.0.0.1:{CONTROL_PORT}")
+        log.info(f"Control API auf {bind_host}:{CONTROL_PORT}")
         print(f"Web-Dashboard: http://localhost:{CONTROL_PORT}/")
         return server
     except OSError as e:
