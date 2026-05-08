@@ -37,6 +37,7 @@
 - **SharedMemory Bus** - Multi-agent coordination with conflict detection and decay
 - **USMC Bridge** - United Shared Memory Communication for cross-agent communication
 - **llmauto Chains** - Claude prompts as chain steps with `bach://` URL resolution
+- **Chat Service** - Multi-backend Telegram bot (5 backends), Control API, Web Dashboard, cross-platform System Tray
 
 ## Installation
 
@@ -113,8 +114,8 @@ Boss agents orchestrate experts for complex tasks. The Agent CLI allows direct s
 ### 4. Prompt System
 Central management of prompt templates with board collections and full versioning (`bach prompt`).
 
-### 5. Bridge System
-Connector framework for external services (Telegram, Email, WhatsApp, etc.) and USMC Bridge for cross-agent communication.
+### 5. Chat Service & Bridge System
+Multi-backend Telegram bot with pluggable LLM backends (Ollama, Claude CLI, Codex CLI, Claude API, OpenAI API), HTTP Control API with web dashboard, and cross-platform system tray. Connector framework for additional services (Email, WhatsApp, etc.) and USMC Bridge for cross-agent communication.
 
 ### 6. Automation
 SchedulerService for time-based jobs (chains, tasks, scripts) and event-driven workflows via the hook framework.
@@ -146,7 +147,7 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 
 ## See Also: OpenClaw
 
-How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the popular open-source AI assistant (369K GitHub stars observed on 2026-05-06)?
+How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the popular open-source AI assistant (about 369k GitHub stars observed on 2026-05-07)?
 
 | | **BACH** | **OpenClaw** |
 |---|---|---|
@@ -155,18 +156,18 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the p
 | **Memory** | 5 memory types with decay, conflict detection, consolidation (145+ DB tables) | Session/runtime workspace with bootstrap files such as `AGENTS.md`, `TOOLS.md`, `USER.md`, and related context files |
 | **Agents** | Boss-Expert orchestration (5 boss agents), SharedMemory Bus | Agent runtime with multi-session/channel operation |
 | **Messaging** | Telegram, Email, WhatsApp (Bridge System) | 20+ platforms (WhatsApp, Telegram, Slack, Discord, Signal, Teams, Matrix...) |
-| **Interfaces** | CLI, Python API, PySide6 GUI, Web GUI | CLI, WebChat, macOS/iOS/Android apps, Voice |
+| **Interfaces** | CLI, Python API, PySide6 GUI, Web GUI, Telegram Bot, Web Chat, System Tray | CLI, WebChat, macOS/iOS/Android apps, Voice |
 | **MCP** | Own MCP servers (FileCommander, CodeCommander) | Native MCP Registry |
 | **Stack** | Python 3.10+, SQLite | TypeScript, Node.js 22+ |
 | **License** | MIT | MIT |
 
 **In short:** BACH goes deep (structured memory, autonomous agents, scheduler, 145+ DB tables). OpenClaw goes wide (20+ messengers, native apps, voice, massive community). Different philosophies, complementary strengths.
 
-### Competitive Watch (2026-05-06)
+### Competitive Watch (2026-05-07)
 
-OpenClaw's latest stable GitHub release observed on May 6, 2026 is `2026.5.4` from May 5, 2026. The BACH-relevant parts of the early-May release line are not the broader channel surface, but workspace-scoped plugin metadata reuse on hot paths, install hints for missing official external plugins, Codex/OpenAI runtime metadata cleanup, and SecretRef-preserving secret scrubs for external channel configs.
+As of May 7, 2026, OpenClaw's latest stable GitHub release is `2026.5.5`, published on May 6, 2026. For BACH, the relevant takeaways from the recent `2026.4.x` to `2026.5.5` release line are still not the broader channel surface, but control-plane hardening: workspace-scoped plugin metadata snapshot reuse on hot paths, install hints for missing official external plugins, collision-safe session-memory capture around repeated resets/new sessions, and stricter fail-closed config/setup behavior.
 
-BACH should keep selectively adopting the parts that fit its operating-system model: manifest-first metadata, fail-closed setup checks, broader install scanning for skills/MCP/plugins, privacy-preserving secret/reference handling, active-run steering at safe checkpoints, memory/wiki provenance views, and low-cardinality telemetry. BACH now blocks malformed existing Claude config JSON before hook or MCP setup writes, which moves the setup-check track forward without pulling in OpenClaw's wider channel/runtime surface.
+BACH should keep selectively adopting the parts that fit its operating-system model: manifest-first metadata, fail-closed setup checks, broader install scanning for skills/MCP/plugins, privacy-preserving secret/reference handling, active-run steering at safe checkpoints, memory/wiki provenance views, and low-cardinality telemetry. BACH now also validates malformed existing Claude config JSON before hook or MCP setup writes, which moves the setup-check track forward without pulling in OpenClaw's wider channel/runtime surface.
 
 ## License
 

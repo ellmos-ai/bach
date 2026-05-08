@@ -1,0 +1,145 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-05-08
+
+BACH CHAT SERVICE - Multi-Backend Telegram Bot + Control API + System Tray
+==========================================================================
+
+DESCRIPTION
+-----------
+BACH Chat Service is the successor to the Claude Bridge. It provides a
+BACH-integrated Telegram bot with pluggable LLM backends, an HTTP Control
+API, and a cross-platform system tray.
+
+Architecture (3 layers):
+  - model_backend.py:   Pluggable backend abstraction (Ollama, Claude CLI,
+                         Codex CLI, Claude API, OpenAI API)
+  - chat_runtime.py:    Backend-agnostic chat runtime with tool-use loop,
+                         context management, security modes, summarization
+  - telegram_chat.py:   Telegram bot with all commands + Control API
+  - chat_tray.py:       Cross-platform system tray (macOS/Windows/Linux)
+
+Backends:
+  - ollama:     Local Ollama server with native tool-use
+  - claude:     Claude Code CLI (--continue session, own tools)
+  - codex:      Codex CLI (GPT models, own tools)
+  - claude-api: Anthropic API (requires ANTHROPIC_API_KEY)
+  - openai:     OpenAI API (requires OPENAI_API_KEY)
+
+Security modes:
+  - safe:  Read-only tools (ls, cat, grep, git, docker, etc.)
+  - full:  Also write tools (execute_command, write_file)
+           Activation: /mode full confirmed
+
+
+TELEGRAM COMMANDS
+-----------------
+  /start                    Welcome message
+  /clear                    Reset conversation
+  /backend [name] [model]   Switch backend (ollama|claude|codex|claude-api|openai)
+  /model <name>             Switch model
+  /mode [safe|full]         Security mode
+  /think                    Think mode ON (thorough)
+  /nothink                  Think mode OFF (fast)
+  /settings                 Show all settings
+  /status                   System status
+  /remember <text>          BACH Memory: Remember
+  /recall <search>          BACH Memory: Search
+  /facts                    BACH Memory: Facts
+  /bach <cmd>               Execute BACH command
+  /task <text>              Create task
+  /tasks                    Open tasks
+  Voice message             Whisper transcription -> Chat
+  Photo                     OCR text recognition -> Chat
+
+
+CONTROL API (Port 8081)
+-----------------------
+  GET  /                    Web dashboard (HTML)
+  GET  /api/status          Current status (backend, model, mode, think)
+  GET  /api/backends        Available backends with status
+  GET  /api/models          Models of current backend
+  POST /api/backend         Switch backend: {"name": "claude", "model": "opus"}
+  POST /api/mode            Set mode: {"mode": "safe"}
+  POST /api/model           Set model: {"model": "qwen3.5:35b-a3b"}
+  POST /api/think           Think mode: {"think": true}
+
+
+SYSTEM TRAY
+-----------
+  Start:  python chat_tray.py [--host HOST] [--port PORT]
+
+  Features:
+    - Status icon: Green (safe), Orange (full), Red (disconnected)
+    - Backend submenu: All backends with availability
+    - Model submenu: Models of current backend
+    - Mode toggle: Safe/Full
+    - Think toggle: ON/OFF
+    - Open web dashboard
+    - Cross-platform: macOS, Windows, Linux (via pystray)
+
+  Remote tray (from another system):
+    python chat_tray.py --host macstudvonlukas --port 8081
+
+
+FILES
+-----
+  Bot:        hub/_services/chat/telegram_chat.py
+  Runtime:    hub/_services/chat/chat_runtime.py
+  Backends:   hub/_services/llm/model_backend.py
+  Tray:       hub/_services/chat/chat_tray.py
+  Config:     ~/.config/bach/telegram_chat.json
+  Token:      ~/.credentials/telegram_bot_token
+  Owner-ID:   ~/.credentials/telegram_owner_id
+  Prompt:     data/system_prompt_buddha.txt
+  Logs:       /tmp/telegram-bot.log, /tmp/telegram-bot-error.log
+
+  LaunchAgents (macOS):
+    com.qwen.telegram-bot    Telegram bot
+    com.bach.chat-tray        System tray
+
+
+CONFIGURATION
+-------------
+  ~/.config/bach/telegram_chat.json:
+    {
+      "bot_token": "...",
+      "owner_id": "...",
+      "backend": {
+        "type": "ollama",
+        "base_url": "http://localhost:11434",
+        "default_model": "qwen3.5:35b-a3b"
+      }
+    }
+
+  Environment variables:
+    TELEGRAM_BOT_TOKEN       Bot token (alternative to file)
+    TELEGRAM_OWNER_ID        Owner chat ID
+    OLLAMA_MODEL             Override default model
+    OLLAMA_URL               Override Ollama URL
+    BACH_CONTROL_PORT        Control API port (default: 8081)
+    ANTHROPIC_API_KEY        For claude-api backend
+    OPENAI_API_KEY           For openai backend
+
+
+MIGRATION FROM CLAUDE BRIDGE
+-----------------------------
+  BACH Chat Service functionally replaces the Claude Bridge:
+  - bridge_daemon.py -> telegram_chat.py (Telegram bot)
+  - bridge_tray.py   -> chat_tray.py (system tray)
+  - config.json      -> ~/.config/bach/telegram_chat.json
+
+  Advantages over Claude Bridge:
+  - 5 backends instead of only Claude CLI
+  - BACH integration (memory, tasks, injectors)
+  - Control API + web dashboard
+  - Voice (Whisper) + OCR (Tesseract)
+  - Cross-platform tray
+  - Clean 3-layer architecture
+
+
+SEE ALSO
+--------
+  help claude_bridge        Old Claude Bridge (Legacy)
+  help connector            Connector system
+  help llm-kommunikation    LLM communication methods

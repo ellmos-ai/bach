@@ -10,7 +10,7 @@ pushd "%~dp0.."
 set "ROOT_DIR=%CD%"
 popd
 set "WATCHER_DIR=!SYS_DIR!\hub\_services\watcher"
-set "BRIDGE_DIR=!SYS_DIR!\hub\_services\claude_bridge"
+set "CHAT_DIR=!SYS_DIR!\hub\_services\chat"
 set PYTHONIOENCODING=utf-8
 
 :menu
@@ -22,13 +22,13 @@ echo  \ \  __^< \ \  __ \\ \ \____\ \  __ \
 echo   \ \_____\\ \_\ \_\\ \_____\\ \_\ \_\
 echo    \/_____/ \/_/\/_/ \/_____/ \/_/\/_/
 echo.
-echo   Personal AI Operating System v3.3.0
+echo   Personal AI Operating System v3.8.0
 echo   ==================================================
 echo.
-echo   --- TELEGRAM BRIDGE ---------------------------
-echo   [B]  Bridge starten (Tray + Daemon)
-echo   [S]  Bridge Status
-echo   [X]  Bridge stoppen
+echo   --- BACH CHAT SERVICE --------------------------
+echo   [B]  Chat Service starten (Tray + Bot)
+echo   [S]  Chat Service Status
+echo   [X]  Chat Service stoppen
 echo.
 echo   --- ALWAYS-ON (Daemon) ------------------------
 echo   [A]  Mistral Watcher + Telegram
@@ -104,65 +104,67 @@ timeout /t 2 >nul
 goto menu
 
 REM ============================================================
-REM  TELEGRAM BRIDGE
+REM  BACH CHAT SERVICE (Telegram Bot + Control API + Tray)
 REM ============================================================
 :bridge_start
-title BACH Bridge Start
+title BACH Chat Service Start
 cls
 echo.
 echo  ============================================
-echo   BACH TELEGRAM BRIDGE - Start
+echo   BACH CHAT SERVICE - Start
+echo   (Telegram Bot + Control API + System Tray)
 echo  ============================================
 echo.
-pushd "!BRIDGE_DIR!"
-if exist "%TEMP%\bach_bridge.lock" (
-    echo [WARN] Bridge laeuft bereits!
-    echo        Lock-File: %TEMP%\bach_bridge.lock
-    echo        Zum Stoppen: [X] im Hauptmenue
-    popd
-    pause
-    goto menu
-)
-echo [INFO] Starte Bridge Tray (System Tray Icon pruefen)...
-start "" pythonw bridge_tray.py
+pushd "!CHAT_DIR!"
+echo [1/2] Starte Telegram Bot + Control API...
+start "BACH Chat Bot" cmd /k "set PYTHONIOENCODING=utf-8 && python telegram_chat.py"
+timeout /t 3 /nobreak >nul
+echo       [OK] Bot gestartet (Control API auf Port 8081)
+echo.
+echo [2/2] Starte System Tray...
+start "" pythonw chat_tray.py
+echo       [OK] Tray gestartet - Icon pruefen
 popd
 echo.
-echo [OK] Bridge Tray gestartet - Tray-Icon pruefen
+echo [OK] Chat Service laeuft
+echo      Dashboard: http://127.0.0.1:8081
+echo      Telegram:  @bach_assistant_bot
 pause
 goto menu
 
 :bridge_status
-title BACH Bridge Status
+title BACH Chat Service Status
 cls
 echo.
 echo  ============================================
-echo   BACH TELEGRAM BRIDGE - Status
+echo   BACH CHAT SERVICE - Status
 echo  ============================================
 echo.
-pushd "!BRIDGE_DIR!"
-python bridge_daemon.py --status
+pushd "!SYS_DIR!"
+python -c "import urllib.request,json; r=urllib.request.urlopen('http://127.0.0.1:8081/api/status'); d=json.loads(r.read()); print(f'  Backend:  {d.get(\"backend\",\"?\")}'); print(f'  Modell:   {d.get(\"model\",\"?\")}'); print(f'  Modus:    {d.get(\"mode\",\"?\")}'); print(f'  Think:    {d.get(\"think\",\"?\")}'); print(f'  Sessions: {d.get(\"sessions\",\"?\")}')" 2>nul || echo [WARN] Control API nicht erreichbar (Port 8081)
 popd
 echo.
 pause
 goto menu
 
 :bridge_stop
-title BACH Bridge Stop
+title BACH Chat Service Stop
 cls
 echo.
 echo  ============================================
-echo   BACH TELEGRAM BRIDGE - Stop
+echo   BACH CHAT SERVICE - Stop
 echo  ============================================
 echo.
-pushd "!BRIDGE_DIR!"
-python bridge_daemon.py --stop
-popd
-echo [INFO] Stoppe Tray-Prozess...
-for /f "tokens=2 delims=," %%p in ('wmic process where "name='pythonw.exe' and commandline like '%%bridge_tray%%'" get processid /format:csv 2^>nul ^| findstr /r "[0-9]"') do (
+echo [INFO] Stoppe Telegram Bot...
+for /f "tokens=2 delims=," %%p in ('wmic process where "commandline like '%%telegram_chat%%'" get processid /format:csv 2^>nul ^| findstr /r "[0-9]"') do (
+    taskkill /f /pid %%p >nul 2>&1
+)
+echo [INFO] Stoppe System Tray...
+for /f "tokens=2 delims=," %%p in ('wmic process where "commandline like '%%chat_tray%%'" get processid /format:csv 2^>nul ^| findstr /r "[0-9]"') do (
     taskkill /f /pid %%p >nul 2>&1
 )
 echo.
-echo [OK] Bridge gestoppt
+echo [OK] Chat Service gestoppt
 pause
 goto menu
 
