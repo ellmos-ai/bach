@@ -352,6 +352,85 @@ class UsecaseHandler(BaseHandler):
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _workflow_candidates(self, row: sqlite3.Row, conn: sqlite3.Connection) -> List[Path]:
+        """Leitet moegliche Workflow-Dateipfade fuer einen Usecase her.
+
+        Historische Usecases enthalten teils nur Kategorienamen wie `SOFTWARE`
+        statt eines konkreten `workflow_path`. Der Runner darf daran nicht
+        scheitern, sondern versucht zuerst sinnvolle Kandidaten aufloesen.
+        """
+        candidates: List[Path] = []
+        seen = set()
+
+        def add_candidate(raw_value: Optional[str]):
+            if not raw_value:
+                return
+
+            value = str(raw_value).strip().replace("\\", "/")
+            if not value:
+                return
+
+            variants = [Path(value)]
+            if not value.endswith(".md"):
+                variants.append(Path(f"{value}.md"))
+
+            if not value.startswith("skills/"):
+                variants.extend([
+                    Path("skills/workflows") / value,
+                    Path("skills/_workflows") / value,
+                ])
+                if not value.endswith(".md"):
+                    variants.extend([
+                        Path("skills/workflows") / f"{value}.md",
+                        Path("skills/_workflows") / f"{value}.md",
+                    ])
+
+            for variant in variants:
+                normalized = variant.as_posix()
+                if normalized in seen:
+                    continue
+                seen.add(normalized)
+                candidates.append(self.base_path / variant)
+
+        add_candidate(row["workflow_path"])
+
+        workflow_name = (row["workflow_name"] or "").strip()
+        if workflow_name:
+            normalized_names = {
+                workflow_name,
+                workflow_name.lower(),
+                workflow_name.lower().replace(" ", "-"),
+                workflow_name.lower().replace("_", "-"),
+                workflow_name.lower().replace(" ", "_"),
+            }
+            for name in sorted(normalized_names):
+                add_candidate(name)
+
+            tuev_rows = conn.execute(
+                """
+                SELECT workflow_path
+                FROM workflow_tuev
+                WHERE lower(workflow_name) = lower(?)
+                ORDER BY workflow_path
+                """,
+                (workflow_name,),
+            ).fetchall()
+            for tuev_row in tuev_rows:
+                add_candidate(tuev_row["workflow_path"])
+
+        return candidates
+
+    def _resolve_workflow_path(
+        self, row: sqlite3.Row, conn: sqlite3.Connection
+    ) -> Tuple[Optional[Path], List[Path]]:
+        """Findet den ersten existierenden Workflow-Pfad fuer einen Usecase."""
+        checked_paths: List[Path] = []
+        for candidate in self._workflow_candidates(row, conn):
+            checked_paths.append(candidate)
+            if candidate.exists():
+                return candidate, checked_paths
+        return None, checked_paths
+
     def _list(self, workflow: str = None) -> Tuple[bool, str]:
         """Listet Testfaelle auf."""
         conn = self._get_conn()
@@ -454,13 +533,6 @@ bach db query "INSERT INTO usecases (title, workflow_name, test_input, expected_
             conn.close()
             return False, f"[USECASE] Testfall {usecase_id} nicht gefunden"
 
-        # Workflow-Datei laden
-        wf_path = self.base_path / (row["workflow_path"] or f"skills/workflows/{row['workflow_name']}.md")
-
-        if not wf_path.exists():
-            conn.close()
-            return False, f"[USECASE] Workflow nicht gefunden: {wf_path}"
-
         # Test-Daten parsen
         try:
             test_input = json.loads(row["test_input"] or "{}")
@@ -469,8 +541,26 @@ bach db query "INSERT INTO usecases (title, workflow_name, test_input, expected_
             conn.close()
             return False, f"[USECASE] JSON-Fehler: {e}"
 
+        wf_path, checked_paths = self._resolve_workflow_path(row, conn)
+
         lines = [f"[USECASE] Test #{row['id']}: {row['title']}", ""]
-        lines.append(f"Workflow: {wf_path.name}")
+        workflow_label = row["workflow_path"] or row["workflow_name"] or "-"
+        if wf_path is not None:
+            try:
+                relative = wf_path.relative_to(self.base_path)
+            except ValueError:
+                relative = wf_path
+            lines.append(f"Workflow: {wf_path.name}")
+            lines.append(f"Pfad: {relative}")
+        else:
+            lines.append(f"Workflow: {workflow_label}")
+            lines.append("[WARN] Keine verknuepfte Workflow-Datei gefunden. Der Usecase kann trotzdem manuell geprueft werden.")
+            if checked_paths:
+                preview = ", ".join(
+                    str(path.relative_to(self.base_path)) if path.is_relative_to(self.base_path) else str(path)
+                    for path in checked_paths[:3]
+                )
+                lines.append(f"Gepruefte Pfade: {preview}")
         lines.append("")
 
         # Hier wuerde der eigentliche Test laufen

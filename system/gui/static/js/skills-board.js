@@ -374,7 +374,15 @@ async function loadItemSource() {
 
     try {
         editor.value = "Lade...";
-        const url = `/api/skills-board/item-file?type=${selectedItem.type}&id=${selectedItem.id}&description=${encodeURIComponent(selectedItem.description || '')}`;
+        const params = new URLSearchParams({
+            type: selectedItem.type,
+            id: selectedItem.id,
+            description: selectedItem.description || ''
+        });
+        if (selectedItem.path_hint) {
+            params.set('path_hint', selectedItem.path_hint);
+        }
+        const url = `/api/skills-board/item-file?${params.toString()}`;
         const response = await fetch(url);
         const data = await response.json();
 

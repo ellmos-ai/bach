@@ -15,6 +15,9 @@ Usecases sind Teil des BACH-TUeV-Systems und dienen als:
 
 Usecases werden in der SQLite-DB gespeichert (Tabelle: usecases)
 und sind mit Workflows verknuepft (workflow_tuev Tabelle).
+`workflow_path` ist optional: aeltere oder grobere Testfaelle koennen nur
+einen Bereich/Kategorienamen tragen. `bach usecase run` soll dann trotzdem
+laufen und den Testfall im manuellen Datenmodus anzeigen.
 
 Handler: system/hub/tuev.py (TuevHandler + UsecaseHandler)
 

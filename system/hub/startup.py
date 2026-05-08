@@ -538,21 +538,20 @@ class StartupHandler(BaseHandler):
             import sys
             sys.path.insert(0, str(self.base_path / "tools" / "maintenance"))
             from registry_watcher import RegistryWatcher
-            watcher = RegistryWatcher(self.base_path)
-            is_healthy, report = watcher.check_all()
-            
-            if not is_healthy:
+
+            watcher = RegistryWatcher(base_path=self.base_path)
+            report = watcher.check_all()
+            summary = report.get("summary", {})
+            actionable = summary.get("actionable_issues", 0)
+
+            if actionable > 0:
                 results.append("")
                 results.append("[REGISTRY WATCHER]")
-                missing = report.get('missing_tables', [])
-                invalid = report.get('invalid_json', [])
-                if missing:
-                    results.append(f" [!] {len(missing)} fehlende DB-Tabellen")
-                    for t in missing[:3]:
-                        results.append(f"   - {t}")
-                if invalid:
-                    results.append(f" [!] {len(invalid)} ungueltige JSON-Dateien")
-                results.append(" --> bach maintain registry fuer Details")
+                results.append(f" [!] {actionable} aktuelle Registry-Probleme")
+                stale = summary.get("stale_entries", 0)
+                if stale:
+                    results.append(f" [i] {stale} stale/umgezogene DB-Eintraege getrennt erkannt")
+                results.append(" --> bach --maintain registry fuer Details")
         except Exception as e:
             pass  # Silent fail - nicht kritisch
         

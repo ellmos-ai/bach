@@ -181,10 +181,41 @@ class AgentLauncherHandler(BaseHandler):
                 return args[i + 1]
         return default
 
+    def _resolve_db_skill_dir_name(self, resolved: dict) -> str | None:
+        """Leitet aus einer DB-Skill-Pfad-Angabe den aktuellen Verzeichnisnamen ab."""
+        table = resolved.get("source_table")
+        if table not in {"bach_agents", "bach_experts"}:
+            return None
+
+        db_path = self.data_dir / "bach.db"
+        if not db_path.exists():
+            return None
+
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                f"SELECT skill_path FROM {table} WHERE name = ?",
+                (resolved["name"],),
+            )
+            row = cursor.fetchone()
+            conn.close()
+        except Exception:
+            return None
+
+        if not row or "skill_path" not in row.keys() or not row["skill_path"]:
+            return None
+
+        normalized = str(row["skill_path"]).replace("\\", "/").rstrip("/")
+        directory_name = Path(normalized).name
+        return directory_name or None
+
     def _resolve_to_technical_name(self, query: str) -> str:
         """Loest Display-Name/Rolle/Beschreibung zum technischen Namen auf."""
         # Erst direkt pruefen (schneller Pfad)
         agents = self._scan_agents()
+        agent_names = {ag["name"] for ag in agents}
         for ag in agents:
             if ag["name"].lower() == query.lower():
                 return ag["name"]
@@ -195,6 +226,11 @@ class AgentLauncherHandler(BaseHandler):
             db_path = self.data_dir / "bach.db"
             result = resolve_agent_name(db_path, query)
             if result:
+                if result["name"] in agent_names:
+                    return result["name"]
+                skill_dir_name = self._resolve_db_skill_dir_name(result)
+                if skill_dir_name and skill_dir_name in agent_names:
+                    return skill_dir_name
                 return result['name']
         except Exception:
             pass

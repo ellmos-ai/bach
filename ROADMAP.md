@@ -1,6 +1,6 @@
-# BACH ROADMAP - Strategische Vision
+﻿# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-05-06 | **Version:** 4.3.2
+**Stand:** 2026-05-07 | **Version:** 4.3.4
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
@@ -61,19 +61,21 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 
 ## Aktuelle Fokus-Bereiche
 
-### Priorität 1 — Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
+### Priorität 1 - Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
 
-Der OpenClaw-Abgleich vom 2026-05-06 bestätigt den nächsten BACH-Fokus
+Der OpenClaw-Abgleich vom 2026-05-07 bestätigt den nächsten BACH-Fokus
 klar in Richtung sichere Erweiterbarkeit und robuste Agenten-Laufzeit. Relevant
 sind nicht die breite Messenger-Abdeckung, sondern manifest-first Plugin- und
 Provider-Metadaten, fail-closed Tool-Setups, Scans vor der Installation von
 Skills/MCP-Servern/Plugins, API-Parität für Agentenflächen und
-low-cardinality Telemetrie. Neu aus OpenClaw `2026.5.4` sind zusätzlich
-workspace-scoped Plugin-Metadaten-Snapshots auf Hot Paths, Install-Hinweise
-für fehlende offizielle Erweiterungen, SecretRef-erhaltende Secret-Scrubs
-und weiterhin aktive Laufsteuerung an sicheren Checkpoints, sichtbare
-Antwortpfade, Memory-/Wiki-Provenance, stale-session recovery und versionierte
-Update-Caches als prüfenswerte Impulse markiert.
+low-cardinality Telemetrie. Neu bzw. erneut bestaetigt aus der juengsten
+OpenClaw-Linie bis `2026.5.5` sind zusaetzlich workspace-scoped
+Plugin-Metadaten-Snapshots auf Hot Paths, Install-Hinweise fuer fehlende
+offizielle Erweiterungen, kollisionssichere Session-Memory-Captures bei
+wiederholtem `/new` oder `/reset` sowie weiterhin aktive Laufsteuerung an
+sicheren Checkpoints, sichtbare Antwortpfade, Memory-/Wiki-Provenance,
+stale-session recovery und versionierte Update-Caches als pruefenswerte
+Impulse markiert.
 
 | ID | Thema | Status | Notiz |
 |----|-------|--------|-------|
@@ -303,7 +305,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 | SQ027 Testabdeckung | — | 390/391 (99.7%) |
 | SQ014 Usecase-Coverage | — | 50/50 (100%), Score 80.0% |
 
-> Vollstaendige Erledigungsliste: `../../BACH_Dev/archive/masterplan/MASTERPLAN_DONE.txt`
+> Vollstaendige Erledigungsliste: `.dev/archive/masterplan/MASTERPLAN_DONE.txt`
 
 ---
 
@@ -368,7 +370,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 | Systemisch-First | `../docs/WICHTIG_SYSTEMISCH_FIRST.md` |
 | Distribution-System | `data/schema_distribution.sql` |
 | Architektur-Diagramme | `../docs/ARCHITECTURE_DIAGRAMS.md` |
-| Policy-Entscheidungen | `../../BACH_Dev/POLICY.md` (alle 44 ENTs) |
+| Policy-Entscheidungen | `.dev/POLICY.md` (alle 44 ENTs) |
 
 ---
 
@@ -394,6 +396,9 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 | **4.3** | 2026-04-30 | **Security-/Plugin-Härtung aus OpenClaw-Abgleich: Scanner, MCP-Allowlist, API-Parität als neuer Fokusblock.** |
 | **4.3.1** | 2026-05-01 | **OpenClaw `2026.4.29` abgeglichen; SEC-PLUGIN-001 Stufe 1 mit Quarantäne-Reports abgeschlossen; OPS-RUN-001 und MEM-PROV-001 ergänzt.** |
 | **4.3.2** | 2026-05-06 | **OpenClaw `2026.5.4` gegengeprüft; SEC-PLUGIN-003 mit fail-closed Setup-Guards für Shell/Desktop/MCP in Plugin-Manifests plus bestehende Claude-Config-Validierung abgeschlossen; `bach_api` für Editable-Install/Root-Import nachgezogen.** |
+| **4.3.3** | 2026-05-07 | **Usecase-Runner gegen Kategorie-/Pfad-Luecken gehaertet (`bach usecase run` faellt bei fehlender Workflow-Datei nicht mehr hart aus); Release-Planungsreferenzen auf `.dev/` korrigiert; OpenClaw-Abgleich auf `2026.5.5` aktualisiert.** |
+| **4.3.4** | 2026-05-07 | **Registry-Watcher auf aktuelles Skills-/Tools-Layout und Startup-Selbstcheck ausgerichtet: rekursive Layout-Scans, Trennung von actionable vs. stale/historical Eintraegen und keine False-Positive-Warnung mehr bei sauberem Core-Bestand.** |
+| **4.3.5** | 2026-05-07 | **Agent-Start loest Experten-Display-Names jetzt auch dann korrekt ueber `skill_path` auf, wenn DB-Name und Skill-Verzeichnis abweichen (`Theodor` -> `steuer`); Release-/QA-Notizen an den verifizierten Stand angepasst.** |
 
 Detaillierte Historie: `CHANGELOG.md`
 Archivierte Versionen: `../docs/_archive/ROADMAP_*.md`
@@ -402,18 +407,18 @@ Archivierte Versionen: `../docs/_archive/ROADMAP_*.md`
 
 ## Verwandte Dokumente
 
-- **MASTERPLAN (Release-Pipeline):** `../../BACH_Dev/MASTERPLAN.txt`
+- **MASTERPLAN (Release-Pipeline):** `.dev/archive/masterplan/MASTERPLAN.txt`
   Beschreibt den Weg von Vanilla -> Strawberry -> GitHub-Veroeffentlichung.
   Enthaelt: 11 Hauptquests, 29 Sidequests, 7 Cluster, Abhaengigkeitskarte.
   Die ROADMAP beschreibt WAS BACH kann, der MASTERPLAN beschreibt WIE wir releasen.
 
-- **NEXT_RELEASE (naechste Tasks):** `../../BACH_Dev/NEXT_RELEASE.md`
+- **NEXT_RELEASE (naechste Tasks):** `.dev/NEXT_RELEASE.md`
   Konkrete Aufgaben fuer das naechste Release.
 
-- **THE_RELEASE_AFTER (verschoben):** `../../BACH_Dev/THE_RELEASE_AFTER.md`
+- **THE_RELEASE_AFTER (verschoben):** `.dev/THE_RELEASE_AFTER.md`
   Items die nicht release-kritisch sind (B30/SQ046, B32/SQ049).
 
-- **POLICY (Entscheidungen):** `../../BACH_Dev/POLICY.md`
+- **POLICY (Entscheidungen):** `.dev/POLICY.md`
   Alle 44 ENT-Entscheidungen.
 
 - **SKILL.md (Einstiegspunkt):** `../../SKILL.md`

@@ -106,6 +106,19 @@ STATIC_DIR = GUI_DIR / "static"
 HELP_DIR = BACH_DIR / "help"
 
 SKILLS_DIR = BACH_DIR / "skills"
+AGENTS_DIR = BACH_DIR / "agents"
+EXPERTS_DIR = AGENTS_DIR / "_experts"
+
+HIERARCHY_TYPE_TO_KEY = {
+    "agent": "agents",
+    "expert": "experts",
+    "skill": "skills",
+    "service": "services",
+    "workflow": "workflows",
+}
+
+DIRECTORY_FILE_CANDIDATES = ("SKILL.md", "README.md", "CONCEPT.md", "ATI.md")
+TEXT_FILE_SUFFIXES = (".md", ".txt", ".py")
 
 
 
@@ -464,6 +477,351 @@ def rows_to_list(rows):
     """Konvertiert Liste von Rows zu Liste von dicts."""
 
     return [dict(row) for row in rows]
+
+
+def table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+
+    """Prueft ob eine SQLite-Tabelle existiert."""
+
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
+def empty_skills_hierarchy() -> dict:
+
+    """Leere Default-Struktur fuer das Skills Board."""
+
+    return {
+        "items": {key: [] for key in HIERARCHY_TYPE_TO_KEY.values()},
+        "assignments": {},
+        "_meta": {
+            "source": "empty",
+            "generated_at": datetime.now().isoformat(),
+        },
+    }
+
+
+def hierarchy_has_items(data: dict) -> bool:
+
+    """Prueft ob ein Hierarchie-Payload befuellte Items enthaelt."""
+
+    if not isinstance(data, dict):
+        return False
+
+    items = data.get("items")
+    if not isinstance(items, dict):
+        return False
+
+    return any(bool(items.get(key)) for key in HIERARCHY_TYPE_TO_KEY.values())
+
+
+def pretty_label(value: str) -> str:
+
+    """Erzeugt eine lesbare Fallback-Beschriftung."""
+
+    if not value:
+        return ""
+    return value.replace("_", " ").replace("-", " ").strip().title()
+
+
+def infer_agent_dashboard(name: str) -> Optional[str]:
+
+    """Leitet eine Dashboard-URL fuer bekannte Agenten ab."""
+
+    if not name:
+        return None
+
+    if name in {"ati", "developer-assistent"}:
+        return "/agents/ati"
+    if "steuer" in name:
+        return "/agents/steuer"
+    if "gesundheit" in name:
+        return "/agents/gesundheit"
+    if "persoenlich" in name:
+        return "/agents/persoenlich"
+    if "foerder" in name:
+        return "/agents/foerderplaner"
+    if "buero" in name:
+        return "/agents"
+    return None
+
+
+def infer_expert_dashboard(name: str) -> Optional[str]:
+
+    """Leitet eine Dashboard-URL fuer bekannte Experten ab."""
+
+    if not name:
+        return None
+
+    if name == "steuer-agent":
+        return "/agents/steuer"
+    if name in {"foerderplaner", "report_generator"}:
+        return "/agents/foerderplaner"
+    if "gesundheit" in name:
+        return "/agents/gesundheit"
+    return None
+
+
+def pick_directory_file(directory: Path, stem_hint: str = "") -> Optional[Path]:
+
+    """Waehlt eine sinnvolle Hauptdatei aus einem Verzeichnis."""
+
+    if not directory.exists() or not directory.is_dir():
+        return None
+
+    candidates = []
+    if stem_hint:
+        stem = Path(stem_hint).stem
+        candidates.extend((f"{stem}.md", f"{stem}.txt", f"{stem}.py"))
+    candidates.extend(DIRECTORY_FILE_CANDIDATES)
+
+    seen = set()
+    for name in candidates:
+        if name in seen:
+            continue
+        seen.add(name)
+        candidate = directory / name
+        if candidate.exists() and candidate.is_file():
+            return candidate
+
+    for child in sorted(directory.iterdir(), key=lambda item: item.name.lower()):
+        if child.is_file() and child.suffix.lower() in TEXT_FILE_SUFFIXES:
+            return child
+
+    return None
+
+
+def resolve_path_hint(path_hint: str) -> Optional[Path]:
+
+    """Versucht eine veraltete oder relative Pfadangabe robust auf eine Datei abzubilden."""
+
+    if not path_hint:
+        return None
+
+    normalized = path_hint.replace("\\", "/").strip()
+    raw_path = Path(normalized)
+    candidate_paths = []
+
+    if raw_path.is_absolute():
+        candidate_paths.append(raw_path)
+    else:
+        candidate_paths.append(BACH_DIR / raw_path)
+
+    for candidate in candidate_paths:
+        if candidate.exists():
+            if candidate.is_file():
+                return candidate
+            picked = pick_directory_file(candidate, candidate.name)
+            if picked:
+                return picked
+
+        if candidate.suffix:
+            stem_dir = candidate.with_suffix("")
+            if stem_dir.exists() and stem_dir.is_dir():
+                picked = pick_directory_file(stem_dir, candidate.stem)
+                if picked:
+                    return picked
+
+            sibling_dir = candidate.parent / candidate.stem
+            if sibling_dir.exists() and sibling_dir.is_dir():
+                picked = pick_directory_file(sibling_dir, candidate.stem)
+                if picked:
+                    return picked
+
+    return None
+
+
+def load_skills_board_from_db() -> dict:
+
+    """Baut einen Hierarchie-Payload direkt aus bach.db auf."""
+
+    data = empty_skills_hierarchy()
+
+    try:
+        conn = get_bach_db()
+    except Exception:
+        return data
+
+    try:
+        # Boss agents / main agents are the authoritative top-level nodes.
+        if table_exists(conn, "bach_agents"):
+            rows = conn.execute(
+                """
+                SELECT name, display_name, description, skill_path, is_active, priority, id
+                FROM bach_agents
+                WHERE is_active = 1
+                ORDER BY priority DESC, id ASC
+                """
+            ).fetchall()
+
+            seen = set()
+            for row in rows:
+                item_id = row["name"]
+                if item_id in seen:
+                    continue
+                seen.add(item_id)
+                data["items"]["agents"].append(
+                    {
+                        "id": item_id,
+                        "name": row["display_name"] or pretty_label(item_id),
+                        "description": row["description"] or pretty_label(item_id),
+                        "dashboard": infer_agent_dashboard(item_id),
+                        "status": "active",
+                        "path_hint": row["skill_path"],
+                    }
+                )
+
+        if table_exists(conn, "bach_experts"):
+            rows = conn.execute(
+                """
+                SELECT id, name, display_name, description, skill_path, agent_id
+                FROM bach_experts
+                WHERE is_active = 1
+                ORDER BY id ASC
+                """
+            ).fetchall()
+
+            seen = set()
+            agent_name_by_id = {}
+            if table_exists(conn, "bach_agents"):
+                for row in conn.execute(
+                    "SELECT id, name FROM bach_agents WHERE is_active = 1 ORDER BY id ASC"
+                ).fetchall():
+                    agent_name_by_id.setdefault(row["id"], row["name"])
+
+            for row in rows:
+                item_id = row["name"]
+                if item_id not in seen:
+                    seen.add(item_id)
+                    data["items"]["experts"].append(
+                        {
+                            "id": item_id,
+                            "name": row["display_name"] or pretty_label(item_id),
+                            "description": row["description"] or pretty_label(item_id),
+                            "dashboard": infer_expert_dashboard(item_id),
+                            "status": "active",
+                            "path_hint": row["skill_path"],
+                        }
+                    )
+
+                parent_id = agent_name_by_id.get(row["agent_id"])
+                if parent_id:
+                    assignment = data["assignments"].setdefault(
+                        parent_id,
+                        {"experts": [], "skills": [], "services": [], "workflows": []},
+                    )
+                    if item_id not in assignment["experts"]:
+                        assignment["experts"].append(item_id)
+
+        if table_exists(conn, "hierarchy_items"):
+            rows = conn.execute(
+                """
+                SELECT id, type, name, description, dashboard_url, status
+                FROM hierarchy_items
+                WHERE status = 'active' AND type IN ('skill', 'service', 'workflow')
+                ORDER BY type, name, id
+                """
+            ).fetchall()
+
+            seen_by_key = {
+                "skills": set(),
+                "services": set(),
+                "workflows": set(),
+            }
+            for row in rows:
+                key = HIERARCHY_TYPE_TO_KEY.get(row["type"])
+                if key not in seen_by_key:
+                    continue
+                if row["id"] in seen_by_key[key]:
+                    continue
+                seen_by_key[key].add(row["id"])
+                data["items"][key].append(
+                    {
+                        "id": row["id"],
+                        "name": row["name"] or pretty_label(row["id"]),
+                        "description": row["description"],
+                        "dashboard": row["dashboard_url"],
+                        "status": row["status"],
+                    }
+                )
+        elif table_exists(conn, "skills"):
+            rows = conn.execute(
+                """
+                SELECT id, name, type, description, path
+                FROM skills
+                WHERE is_active = 1 AND type IN ('skill', 'service', 'protocol')
+                ORDER BY type, name, id
+                """
+            ).fetchall()
+
+            legacy_type_map = {
+                "skill": "skills",
+                "service": "services",
+                "protocol": "workflows",
+            }
+            seen_by_key = {key: set() for key in legacy_type_map.values()}
+            for row in rows:
+                key = legacy_type_map.get(row["type"])
+                if not key or row["id"] in seen_by_key[key]:
+                    continue
+                seen_by_key[key].add(row["id"])
+                data["items"][key].append(
+                    {
+                        "id": str(row["id"]),
+                        "name": row["name"] or pretty_label(str(row["id"])),
+                        "description": row["description"],
+                        "status": "active",
+                        "path_hint": row["path"],
+                    }
+                )
+
+        if table_exists(conn, "hierarchy_assignments"):
+            valid_targets = {
+                key: {item["id"] for item in data["items"][key]}
+                for key in HIERARCHY_TYPE_TO_KEY.values()
+            }
+            rows = conn.execute(
+                """
+                SELECT parent_id, child_id, child_type
+                FROM hierarchy_assignments
+                ORDER BY parent_id, child_type, assignment_order, child_id
+                """
+            ).fetchall()
+
+            for row in rows:
+                parent_id = row["parent_id"]
+                child_key = HIERARCHY_TYPE_TO_KEY.get(row["child_type"])
+                child_id = row["child_id"]
+
+                if parent_id not in valid_targets["agents"] or child_key is None:
+                    continue
+                if child_id not in valid_targets[child_key]:
+                    continue
+
+                assignment = data["assignments"].setdefault(
+                    parent_id,
+                    {"experts": [], "skills": [], "services": [], "workflows": []},
+                )
+                if child_id not in assignment[child_key]:
+                    assignment[child_key].append(child_id)
+
+        for key in data["items"]:
+            data["items"][key].sort(key=lambda item: (item.get("name") or item["id"]).lower())
+
+        for assignment in data["assignments"].values():
+            for key, values in assignment.items():
+                assignment[key] = sorted(values, key=str.lower)
+
+        data["_meta"] = {
+            "source": "bach.db",
+            "generated_at": datetime.now().isoformat(),
+        }
+        return data
+    finally:
+        conn.close()
 
 
 
@@ -4729,161 +5087,95 @@ async def get_bach_agents():
 
 # ═══════════════════════════════════════════════════════════════
 
-def resolve_skill_file(item_type: str, item_id: str, description: str = "") -> Optional[Path]:
+def resolve_skill_file(
+    item_type: str,
+    item_id: str,
+    description: str = "",
+    path_hint: str = "",
+) -> Optional[Path]:
 
-    """Sucht die zugehoerige .md oder .txt Datei fuer ein Skills-Board Item."""
+    """Sucht die zugehoerige .md/.txt/.py Datei fuer ein Skills-Board Item."""
 
-    skills_dir = BACH_DIR / "skills"
-
-    
+    direct = resolve_path_hint(path_hint)
+    if direct:
+        return direct
 
     # 1. Hint-basierte Aufloesung (aus der Beschreibung)
-
     if description:
-
         if "Dateibasierter Workflow:" in description:
-
             filename = description.split("Dateibasierter Workflow:")[1].strip()
-
-            bases = [BACH_DIR / ".agent" / "workflows", skills_dir / "_workflows"]
-
-            for base in bases:
-
-                p = base / filename
-
-                if p.exists(): return p
-
-                
+            for base in (SKILLS_DIR / "workflows", SKILLS_DIR / "_workflows"):
+                target = base / filename
+                if target.exists():
+                    return target
 
         if "DB-basiert:" in description:
+            hint = description.split("DB-basiert:")[1].strip().replace("\\", "/")
+            hinted = resolve_path_hint(hint)
+            if hinted:
+                return hinted
 
-            hint = description.split("DB-basiert:")[1].strip()
-
-            parts = hint.split("/")
-
-            if len(parts) >= 2:
-
-                # e.g. service/document/SKILL -> _services/document/SKILL.md
-
-                base_dir = f"_{parts[0]}s"
-
-                p = skills_dir / base_dir
-
-                for part in parts[1:-1]: p /= part
-
-                fname = parts[-1]
-
-                for ext in ['.md', '.txt', '.py']:
-
-                    target = p / f"{fname}{ext}"
-
-                    if target.exists(): return target
-
-                    # Case-insensitive Fallback
-
-                    if p.exists() and p.is_dir():
-
-                        for item in p.iterdir():
-
-                            if item.stem.lower() == fname.lower() and item.suffix.lower() in ['.md', '.txt', '.py']:
-
-                                return item
-
-
+            parts = [part for part in hint.split("/") if part]
+            if parts:
+                root_map = {
+                    "agent": AGENTS_DIR,
+                    "expert": EXPERTS_DIR,
+                    "service": SKILLS_DIR / "_services",
+                    "workflow": SKILLS_DIR / "workflows",
+                    "skill": SKILLS_DIR,
+                    "template": SKILLS_DIR / "_templates",
+                }
+                base = root_map.get(parts[0])
+                if base:
+                    candidate = base
+                    for part in parts[1:]:
+                        candidate /= part
+                    hinted = resolve_path_hint(str(candidate))
+                    if hinted:
+                        return hinted
 
     # 2. Logik-basierter Fallback basierend auf Type/ID
-
     clean_id = item_id
-
-    prefixes = ["workflow-", "service-", "expert-", "agent-", "skill-"]
-
-    for pref in prefixes:
-
-        if clean_id.startswith(pref):
-
-            clean_id = clean_id[len(pref):]
-
+    prefixes = ("workflow-", "service-", "expert-", "agent-", "skill-", "template-")
+    for prefix in prefixes:
+        if clean_id.startswith(prefix):
+            clean_id = clean_id[len(prefix):]
             break
 
-            
-
-    type_dirs = {
-
-        "agent": "_agents",
-
-        "expert": "_experts",
-
-        "service": "_services",
-
-        "workflow": "_workflows",
-
-        "skill": "_skills"
-
+    base_dirs = {
+        "agent": [AGENTS_DIR],
+        "expert": [EXPERTS_DIR],
+        "service": [SKILLS_DIR / "_services"],
+        "workflow": [SKILLS_DIR / "workflows", SKILLS_DIR / "_workflows"],
+        "skill": [SKILLS_DIR],
     }
 
-    
+    for base in base_dirs.get(item_type, []):
+        if not base.exists():
+            continue
 
-    if item_type in type_dirs:
+        for ext in TEXT_FILE_SUFFIXES:
+            candidate = base / f"{clean_id}{ext}"
+            if candidate.exists():
+                return candidate
 
-        base = skills_dir / type_dirs[item_type]
+        picked = pick_directory_file(base / clean_id, clean_id)
+        if picked:
+            return picked
 
-        if base.exists():
+        for root, dirs, files in os.walk(str(base)):
+            root_path = Path(root)
+            if root_path.name.lower() == clean_id.lower():
+                picked = pick_directory_file(root_path, clean_id)
+                if picked:
+                    return picked
 
-            # Direkt im Verzeichnis (z.B. analyse-all.md)
-
-            for ext in ['.md', '.txt', '.py']:
-
-                p = base / f"{clean_id}{ext}"
-
-                if p.exists(): return p
-
-                # Case-insensitive
-
-                for item in base.iterdir():
-
-                    if item.is_file() and item.stem.lower() == clean_id.lower() and item.suffix.lower() in ['.md', '.txt', '.py']:
-
-                        return item
-
-            
-
-            # In einem Unterordner (z.B. ati/ATI.md)
-
-            subdir = base / clean_id
-
-            if subdir.exists() and subdir.is_dir():
-
-                # Suche nach Hauptdatei (gleicher Name, SKILL.md oder README.md)
-
-                for item in subdir.iterdir():
-
-                    if item.is_file():
-
-                        if item.stem.lower() == clean_id.lower() and item.suffix.lower() in ['.md', '.txt', '.py']:
-
-                            return item
-
-                        if item.stem.upper() in ['SKILL', 'README'] and item.suffix.lower() in ['.md', '.txt']:
-
-                            return item
-
-            elif base.exists():
-
-                 # Suche tiefer (z.B. _services/document/SKILL.md)
-
-                 for root, dirs, files in os.walk(str(base)):
-
-                     for f in files:
-
-                         f_path = Path(root) / f
-
-                         if f_path.stem.lower() == clean_id.lower() or f_path.stem.upper() == 'SKILL':
-
-                              if f_path.suffix.lower() in ['.md', '.txt']:
-
-                                  return f_path
-
-
+            for filename in files:
+                file_path = root_path / filename
+                if file_path.suffix.lower() not in TEXT_FILE_SUFFIXES:
+                    continue
+                if file_path.stem.lower() == clean_id.lower():
+                    return file_path
 
     return None
 
@@ -4901,11 +5193,16 @@ SKILLS_HIERARCHY_FILE = DATA_DIR / "skills_hierarchy.json"
 
 @app.get("/api/skills-board/item-file")
 
-async def get_skills_item_file(type: str, id: str, description: Optional[str] = ""):
+async def get_skills_item_file(
+    type: str,
+    id: str,
+    description: Optional[str] = "",
+    path_hint: Optional[str] = "",
+):
 
     """Sucht und liefert den Inhalt der Quelldatei eines Items."""
 
-    path = resolve_skill_file(type, id, description)
+    path = resolve_skill_file(type, id, description, path_hint or "")
 
     if not path:
 
@@ -4985,19 +5282,25 @@ async def get_skills_hierarchy():
 
     """Laedt die Skills-Hierarchie."""
 
-    if not SKILLS_HIERARCHY_FILE.exists():
-
-        return {"items": {"agents": [], "experts": [], "skills": [], "services": [], "workflows": []}, "assignments": {}}
-
-
-
     import json
 
-    with open(SKILLS_HIERARCHY_FILE, 'r', encoding='utf-8') as f:
+    if SKILLS_HIERARCHY_FILE.exists():
+        try:
+            with open(SKILLS_HIERARCHY_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if hierarchy_has_items(data):
+                return data
+        except Exception as e:
+            print(f"[BACH GUI] skills_hierarchy.json konnte nicht geladen werden: {e}")
 
-        data = json.load(f)
-
-
+    data = load_skills_board_from_db()
+    if hierarchy_has_items(data):
+        try:
+            SKILLS_HIERARCHY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(SKILLS_HIERARCHY_FILE, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"[BACH GUI] skills_hierarchy.json konnte nicht geschrieben werden: {e}")
 
     return data
 

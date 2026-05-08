@@ -67,7 +67,7 @@ Scheduler fuer wiederkehrende Tasks und Event-basierte Workflows.
 
 ## OpenClaw-Abgleich
 
-Stand 2026-05-06: OpenClaw bleibt für BACH vor allem als Vergleichssystem für breite Messaging-Anbindung, Plugin-Ökosystem und Security-Patterns relevant. Die aktuelle stabile GitHub-Release ist `2026.5.4` vom 5. Mai 2026; auf derselben Release-Seite ist `2026.5.4-beta.3` als Pre-Release sichtbar. Für BACH passen aktuell besonders manifest-first Plugin-Metadaten, fail-closed Tool-Setup-Checks, aktive Laufsteuerung an sicheren Checkpoints, Memory-/Wiki-Provenance und Scans mit Quarantäne vor der Installation bzw. Aktivierung von Skills, MCP-Servern und Plugins. BACH deckt davon jetzt zusätzlich explizite Setup-Guards für Shell/Desktop/MCP-Flächen in Plugin-Manifests ab.
+Stand 2026-05-07: OpenClaw bleibt fuer BACH vor allem als Vergleichssystem fuer breite Messaging-Anbindung, Plugin-Oekosystem und Security-Patterns relevant. Die aktuelle stabile GitHub-Release ist `2026.5.5` vom 6. Mai 2026. Fuer BACH sind aus der juengsten Linie `2026.4.x` bis `2026.5.5` vor allem die Control-Plane-Impulse relevant: workspace-scoped Plugin-Metadaten-Snapshots auf Hot Paths, Install-Hinweise fuer fehlende offizielle Erweiterungen, kollisionssichere Session-Memory-Captures bei wiederholtem Reset/New sowie strengere fail-closed Config-/Setup-Pruefungen. BACH deckt davon bereits manifest-first Plugin-Metadaten, fail-closed Setup-Guards fuer Shell/Desktop/MCP-Flaechen und Scans mit Quarantaene vor der Installation bzw. Aktivierung von Skills, MCP-Servern und Plugins ab.
 
 ## Dokumentation
 

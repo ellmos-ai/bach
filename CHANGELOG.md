@@ -39,14 +39,19 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Bugfix
 
+- **Registry-Watcher ans aktuelle Layout angepasst:** `bach --maintain registry check` trennt jetzt rekursive Core-Dateien von historischen, externen und stale DB-Eintraegen. Der Startup-Selbstcheck wertet nur noch `actionable_issues` aus und meldet keine massiven False Positives mehr, wenn nur Altlasten in der DB liegen.
+- **Usecase-Runner gehaertet:** `bach usecase run <id>` bricht bei aelteren DB-Eintraegen ohne konkrete Workflow-Datei nicht mehr mit `Workflow nicht gefunden` ab, sondern faellt auf einen manuellen Datenmodus mit Pfad-Resolution und Warnhinweis zurueck.
 - **Self-Heal CLI/API:** `bach mem write/read/...` delegiert jetzt auf den bestehenden `memory`-Handler; `bach wiki read <thema>` ist als Alias verfuegbar; `bach task add` gibt die neue Task-ID direkt aus.
 - **agent_launcher.py:** Windows cp1252 Encoding-Fix bei tasklist-Subprocess (0x81 Umlaut-Crash)
+- **agent_launcher.py:** Experten-Display-Names aus `bach_experts.skill_path` werden beim Start wieder auf das aktuelle Skill-Verzeichnis aufgeloest; `bach agent start Theodor` trifft dadurch erneut `agents/_experts/steuer/`.
 - **bach_api.py:** Import-Lücke geschlossen, durch die `from bach_api import agent` trotz dokumentierter API fehlschlug.
 - **Fail-closed Setup-Configs:** `bach setup hooks`, `bach setup mcp` und `bach setup n8n` brechen jetzt bei ungültigen oder strukturell falschen bestehenden Claude-JSON-Dateien ab, statt sie stillschweigend mit `{}` zu überschreiben.
 
 ### Dokumentation
 
-- **OpenClaw-Abgleich 2026-05-06:** README und ROADMAP aktualisiert; latest stable `2026.5.4` (5. Mai 2026). Relevante Impulse: workspace-scoped Plugin-Metadaten-Caches, Install-Hinweise für fehlende offizielle Erweiterungen, SecretRef-erhaltende Secret-Scrubs, aktive Laufsteuerung, Plugin-/Provider-Härtung und Memory-/Wiki-Provenance.
+- **Release-Verweise bereinigt:** `ROADMAP.md` zeigt jetzt auf die realen Planungsdateien unter `.dev/` statt auf veraltete `BACH_Dev`-Pfade.
+- **NEXT_RELEASE bereinigt:** Marketing-Referenz zeigt auf `.dev/marketing/M07_CHARAKTER_PROFILE.md`; QA-Notizen nennen die aktuellen Persona-/Registry-Regressionstests.
+- **OpenClaw-Abgleich 2026-05-07:** README, README.de, ROADMAP und NEXT_RELEASE aktualisiert; latest stable `2026.5.5` (6. Mai 2026) gegen GitHub Releases gegengeprueft. Relevante Impulse: workspace-scoped Plugin-Metadaten-Caches, Install-Hinweise fuer fehlende offizielle Erweiterungen, kollisionssichere Session-Memory-Captures, aktive Laufsteuerung, Plugin-/Provider-Haertung und Memory-/Wiki-Provenance.
 - **README-Version bereinigt:** Footer auf `v3.8.0-sugar-of-babel` angeglichen.
 
 ---
