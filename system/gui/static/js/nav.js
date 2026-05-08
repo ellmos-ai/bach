@@ -18,7 +18,6 @@ const NAV_ITEMS = [
     // Tokens+Dateien entfernt - jetzt als Tabs auf Dashboard (Task #554)
     { href: "/memory", label: "Memory", icon: null },
     { href: "/tools", label: "Tools", icon: null },
-    { href: "#", label: "Prompts", icon: "🖥️", desktop: true },  // Desktop-App, keine Navigation
     { href: "/messages", label: "Messages", icon: null },
     { href: "/maintenance", label: "Wartung", icon: "🛠️" },
     { href: "/help", label: "Help", icon: null },
@@ -66,48 +65,6 @@ function initNavigation() {
         </div>
     `;
 
-    // Event Listener für Prompt-Generator (Desktop App)
-    // Direkt nach DOM-Erstellung, kein setTimeout nötig
-    const promptLinks = header.querySelectorAll('a');
-    promptLinks.forEach(link => {
-        // Prüfe auf "Prompts" im Text (mit oder ohne Icon)
-        if (link.textContent.includes('Prompts') || link.innerText.includes('Prompts')) {
-            link.style.cursor = 'pointer';  // Visuelles Feedback
-            link.addEventListener('click', (e) => {
-                // Navigation verhindern - nur Desktop-App starten
-                e.preventDefault();
-                e.stopPropagation();
-
-                // Visuelles Feedback
-                link.style.opacity = '0.6';
-
-                // Starte Desktop Prompt-Manager v2.0
-                fetch('/api/prompt-generator/start-desktop', { method: 'POST' })
-                    .then(res => res.json())
-                    .then(data => {
-                        link.style.opacity = '1';
-                        if (data.success) {
-                            console.log('Prompt-Manager gestartet:', data.message);
-                            // Kurze Bestaetigung im Status anzeigen
-                            const statusText = document.getElementById('status-text');
-                            if (statusText) {
-                                const oldText = statusText.textContent;
-                                statusText.textContent = 'Prompt-Manager gestartet';
-                                setTimeout(() => { statusText.textContent = oldText; }, 2000);
-                            }
-                        } else {
-                            console.error('Prompt-Manager Fehler:', data.error);
-                            alert('Fehler: ' + (data.error || 'Prompt-Manager konnte nicht gestartet werden'));
-                        }
-                    })
-                    .catch(err => {
-                        link.style.opacity = '1';
-                        console.error('Fehler beim Starten des Prompt-Managers:', err);
-                        alert('Prompt-Manager konnte nicht gestartet werden: ' + err.message);
-                    });
-            });
-        }
-    });
 }
 
 /**

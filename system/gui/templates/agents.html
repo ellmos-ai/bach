@@ -231,15 +231,23 @@
     <script>
         const AGENT_ICONS = {
             'boss': '👔',
-            'ati': '🛠️',
+            'ati': '💻',
+            'entwickler': '🛠️',
             'steuer': '⚖️',
-            'research': '🔍',
+            'theodor': '⚖️',
+            'research': '🔬',
             'gesundheit': '🩺',
-            'persoenlich': '👤',
+            'psycho': '🧠',
+            'persoenlich': '🏠',
+            'buero': '📂',
             'finanz': '💰',
+            'versicherung': '🛡️',
             'foerderplaner': '📈',
+            'haushalt': '🏡',
+            'production': '🎬',
             'gemini': '♊',
-            'claude': '🤖'
+            'claude': '🟣',
+            'codex': '🟢'
         };
 
         async function loadAgents() {
@@ -279,7 +287,10 @@
                 const card = document.createElement('div');
                 card.className = `agent-card ${agent.is_active ? 'active' : 'inactive'}`;
 
-                const icon = AGENT_ICONS[agent.name.toLowerCase()] || '🤖';
+                const nameLower = agent.name.toLowerCase();
+                const icon = AGENT_ICONS[nameLower]
+                    || Object.entries(AGENT_ICONS).find(([k]) => nameLower.includes(k))?.[1]
+                    || '🤖';
                 const expertsHtml = agent.experts && agent.experts.length > 0
                     ? agent.experts.map(e => e.dashboard
                         ? `<a href="${e.dashboard}" class="expert-tag linkable" title="Experten-Board öffnen">${e.display_name}</a>`

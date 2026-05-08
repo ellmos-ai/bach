@@ -324,6 +324,62 @@
             'system': '⚙️'
         };
 
+        const namedIcons = {
+            'ati': '💻', 'bueroassistent': '📂', 'officeassistant': '📂',
+            'steuer': '⚖️', 'theodor': '⚖️', 'steueragent': '⚖️',
+            'gesundheit': '🩺', 'gesundheitsverwalter': '🩺', 'psycho': '🧠',
+            'persoenlich': '🏠', 'persoenlicher-assistent': '🏠',
+            'finanz': '💰', 'finance': '💰', 'versicherung': '🛡️',
+            'foerderplaner': '📈', 'research': '🔬', 'forschung': '🔬',
+            'gemini': '♊', 'claude': '🟣', 'codex': '🟢',
+            'haushalt': '🏡', 'haushaltsmanagement': '🏡',
+            'production': '🎬', 'medien': '🎬',
+            'entwickler': '🛠️', 'developer': '🛠️',
+        };
+
+        const namedDescriptions = {
+            'ati': 'Softwareentwicklung',
+            'bueroassistent': 'Büroverwaltung',
+            'officeassistant': 'Office Management',
+            'steuer': 'Steuerberatung',
+            'theodor': 'Steuerberatung',
+            'steueragent': 'Steuerberatung',
+            'gesundheit': 'Medizin & Gesundheit',
+            'gesundheitsverwalter': 'Medizinverwaltung',
+            'psycho': 'Psychologische Beratung',
+            'persoenlich': 'Alltag & Organisation',
+            'persoenlicher-assistent': 'Alltag & Organisation',
+            'finanz': 'Finanzverwaltung',
+            'finance': 'Finanzverwaltung',
+            'versicherung': 'Versicherungen',
+            'foerderplaner': 'Förderplanung',
+            'research': 'Wissenschaft & Recherche',
+            'gemini': 'Google Gemini',
+            'claude': 'Anthropic Claude',
+            'codex': 'OpenAI Codex',
+            'haushalt': 'Haushaltsmanagement',
+            'haushaltsmanagement': 'Haushaltsmanagement',
+            'production': 'Content & Medien',
+            'entwickler': 'Softwareentwicklung',
+            'developer': 'Softwareentwicklung',
+        };
+
+        function getPartnerIcon(partner) {
+            const key = (partner.name || partner.display_name || '').toLowerCase().replace(/\s+/g, '');
+            for (const [k, v] of Object.entries(namedIcons)) {
+                if (key.includes(k)) return v;
+            }
+            return partnerIcons[partner.type] || '📦';
+        }
+
+        function getPartnerLabel(partner) {
+            const key = (partner.name || partner.display_name || '').toLowerCase().replace(/\s+/g, '');
+            for (const [k, v] of Object.entries(namedDescriptions)) {
+                if (key.includes(k)) return `${partner.display_name} — ${v}`;
+            }
+            return partner.display_name;
+        }
+
         // Init
         document.addEventListener('DOMContentLoaded', () => {
             loadPartners();
@@ -378,11 +434,12 @@
                 btn.onclick = () => selectPartner(p.id);
 
                 const statusClass = (p.status || 'offline').toLowerCase();
-                const icon = partnerIcons[p.type] || '📦';
+                const icon = getPartnerIcon(p);
+                const label = getPartnerLabel(p);
 
                 btn.innerHTML = `
                     <span class="partner-icon">${icon}</span>
-                    <span style="font-weight:500;">${p.display_name}</span>
+                    <span style="font-weight:500;">${label}</span>
                     <span class="status-dot ${statusClass}"></span>
                 `;
                 container.appendChild(btn);

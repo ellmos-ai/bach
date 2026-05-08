@@ -271,17 +271,17 @@ function showToast(message, type = 'success') {
 const ALL_PAGES = [
     { href: '/tasks', label: 'Alle Tasks', primary: true },
     { href: '/agents', label: 'Agenten' },
-    { href: '/agents/ati', label: 'ATI' },
-    { href: '/agents/steuer', label: 'Steuer' },
-    { href: '/agents/gesundheit', label: 'Gesundheit' },
-    { href: '/agents/persoenlich', label: 'Persoenlich' },
-    { href: '/agents/foerderplaner', label: 'Foerderplaner' },
+    { href: '/agents/ati', label: 'ATI — Entwicklung' },
+    { href: '/agents/steuer', label: 'Steuer — Steuerberatung' },
+    { href: '/agents/gesundheit', label: 'Gesundheit — Medizin' },
+    { href: '/agents/persoenlich', label: 'Persoenlich — Alltag' },
+    { href: '/agents/foerderplaner', label: 'Foerderplaner — Foerderung' },
     { href: '/partners', label: 'Partner' },
     { href: '/skills-board', label: 'Skills Board' },
     { href: '/financial', label: 'Financial' },
     { href: '/memory', label: 'Memory' },
     { href: '/tools', label: 'Tools' },
-    { href: '/prompt-generator', label: 'Prompt-Gen' },
+    { href: '/prompt-generator', label: 'Prompt-Gen', hidden: true },
     { href: '/messages', label: 'Messages' },
     { href: '/daemon', label: 'Daemon' },
     { href: '/inbox', label: 'Inbox' },
@@ -339,7 +339,7 @@ function renderAvailablePages() {
     const stored = localStorage.getItem('bach-favorites');
     const favorites = stored ? JSON.parse(stored) : DEFAULT_FAVORITES;
 
-    container.innerHTML = ALL_PAGES.map(page => {
+    container.innerHTML = ALL_PAGES.filter(p => !p.hidden).map(page => {
         const isFav = favorites.includes(page.href);
         const btnStyle = isFav
             ? 'background: var(--accent); color: white;'
