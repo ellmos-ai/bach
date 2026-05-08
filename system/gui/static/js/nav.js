@@ -18,6 +18,7 @@ const NAV_ITEMS = [
     // Tokens+Dateien entfernt - jetzt als Tabs auf Dashboard (Task #554)
     { href: "/memory", label: "Memory", icon: null },
     { href: "/tools", label: "Tools", icon: null },
+    { href: "http://localhost:8080", label: "Chat", icon: "💬", external: true },
     { href: "/messages", label: "Messages", icon: null },
     { href: "/maintenance", label: "Wartung", icon: "🛠️" },
     { href: "/help", label: "Help", icon: null },
@@ -48,7 +49,8 @@ function initNavigation() {
             (item.href !== '/' && currentPath.startsWith(item.href));
         const activeClass = isActive ? 'active' : '';
         const icon = item.icon ? `<span class="nav-icon">${item.icon}</span>` : '';
-        return `<a href="${item.href}" class="nav-item ${activeClass}">${icon}${item.label}</a>`;
+        const target = item.external ? ' target="_blank"' : '';
+        return `<a href="${item.href}"${target} class="nav-item ${activeClass}">${icon}${item.label}</a>`;
     }).join('\n            ');
 
     header.innerHTML = `

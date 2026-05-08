@@ -281,6 +281,7 @@ const ALL_PAGES = [
     { href: '/financial', label: 'Financial' },
     { href: '/memory', label: 'Memory' },
     { href: '/tools', label: 'Tools' },
+    { href: 'http://localhost:8080', label: 'Web Chat', external: true },
     { href: '/prompt-generator', label: 'Prompt-Gen', hidden: true },
     { href: '/messages', label: 'Messages' },
     { href: '/daemon', label: 'Daemon' },
@@ -309,8 +310,9 @@ function renderFavorites(favorites) {
         if (!page) return '';
 
         const btnClass = page.primary ? 'btn btn-primary' : 'btn btn-secondary';
+        const onclick = page.external ? `window.open('${page.href}','_blank')` : `window.location.href='${page.href}'`;
         return `
-            <button class="${btnClass}" onclick="window.location.href='${page.href}'">
+            <button class="${btnClass}" onclick="${onclick}">
                 ${escapeHtml(page.label)}
             </button>
         `;
