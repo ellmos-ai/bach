@@ -12,6 +12,9 @@
 /system/hub/_services/claude_bridge/bridge_memory.md
 /system/hub/_services/claude_bridge/last_start*.txt
 
+# === BACH CHAT RUNTIME (User-spezifisch) ===
+/system/data/system_prompt_buddha.txt
+
 # === MAIL CREDENTIALS (NIEMALS COMMITTEN!) ===
 /system/hub/_services/mail/credentials/
 /system/hub/_services/mail/credentials/*.json
@@ -28,6 +31,7 @@
 # === SYSTEM LAUFZEIT-DATEN ===
 /system/data/.clock_state
 /system/data/.injector_cooldowns
+/system/data/.prompt_manager.lock
 /system/data/*.clock_state
 /system/data/*.injector_cooldowns
 /system/data/build_db_log.json
@@ -113,6 +117,9 @@ BACH_HELP_REFERENCE.md
 
 # === SESSION-LOGS (Enthalten private Daten) ===
 logs/daily/
+/system/logs/help_forensic/
+/system/logs/registry_health_*.txt
+/system/logs/registry_health_*.json
 
 # === PLAN-DATEIEN (Interne Planung, nicht veröffentlichen) ===
 PLAN.txt
