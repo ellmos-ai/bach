@@ -14,6 +14,8 @@
 
 # === BACH CHAT RUNTIME (User-spezifisch) ===
 /system/data/system_prompt_buddha.txt
+/system/data/ollama_config.json
+/system/partners/partner_config.json
 
 # === MAIL CREDENTIALS (NIEMALS COMMITTEN!) ===
 /system/hub/_services/mail/credentials/
@@ -40,6 +42,9 @@
 /system/bach.db
 /system/tools/data/*.db
 /system/data/bach-*.db
+/system/data/bach-*.db-journal
+/system/data/bach-*.db-wal
+/system/data/bach-*.db-shm
 /system/data/bach.db-journal
 /system/data/bach.db-wal
 /system/data/bach.db-shm
@@ -67,6 +72,14 @@
 # === EXPORTS (Generiert) ===
 /exports/**/*.zip
 /exports/**/_archive/
+
+# === ONEDRIVE CONFLICT COPIES (Nie committen!) ===
+*-Mac Studio.py
+*-LAPTOP-*.py
+*-DESKTOP-*.py
+
+# === ORPHANED CONFIG FLAGS ===
+/system/config/
 
 # === CACHE & TEMP ===
 __pycache__/
@@ -118,6 +131,7 @@ BACH_HELP_REFERENCE.md
 # === SESSION-LOGS (Enthalten private Daten) ===
 logs/daily/
 /system/logs/help_forensic/
+/system/logs/Doc_Update_Report_*.md
 /system/logs/registry_health_*.txt
 /system/logs/registry_health_*.json
 
