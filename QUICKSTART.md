@@ -1,6 +1,6 @@
 # BACH Quickstart Guide
 
-**Version:** v3.8.0-sugar
+**Version:** v3.9.0-tiramisu
 
 ## Your First BACH Workflow in 5 Minutes
 

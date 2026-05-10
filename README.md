@@ -10,10 +10,10 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-v3.8.0--sugar--of--babel-orange)
+![Version](https://img.shields.io/badge/Version-v3.9.0--tiramisu-orange)
 ![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)
 
-**Version:** v3.8.0-sugar-of-babel
+**Version:** v3.9.0-tiramisu
 
 <p align="center">
   <img src="overview.jpg" alt="BACH Overview" width="700">
@@ -190,7 +190,7 @@ Die vollstaendige deutsche Dokumentation findest du hier: **[README.de.md](READM
 
 ---
 
-*ellmos BACH v3.8.0-sugar-of-babel - Text-Based Operating System for LLMs*
+*ellmos BACH v3.9.0-tiramisu - Text-Based Operating System for LLMs*
 
 ---
 

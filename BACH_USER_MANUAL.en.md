@@ -1,6 +1,6 @@
 # BACH User Manual
 
-**Version:** v3.8.0
+**Version:** v3.9.0-tiramisu
 **Generated:** 2026-03-12
 **License:** MIT
 
@@ -23,7 +23,7 @@ This manual describes the installation, usage and extension of BACH.
 
 # BACH - Text-Based Operating System for LLMs
 
-**Version:** v3.8.0
+**Version:** v3.9.0-tiramisu
 **Status:** Production-Ready
 **License:** MIT
 

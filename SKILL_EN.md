@@ -1,6 +1,6 @@
 ---
 name: bach
-version: 3.8.0
+version: 3.9.0
 type: skill
 author: BACH Team
 created: 2025-12-01

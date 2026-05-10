@@ -8,62 +8,63 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+---
+
+## [3.9.0-tiramisu] - 2026-05-10
+
+### Highlights
+
+Multi-System-Integration: BACH läuft jetzt synchronisiert auf Laptop und Mac Studio.
+ProSync hält lokale Datenbanken über OneDrive-Transit konsistent. Buddha (Telegram-Bot)
+nutzt 13 Tools inkl. Web-Search, Wartung und Förderbericht-Pipeline. 5 Backends
+(Ollama, Claude CLI, Codex, Claude API, OpenAI) sind über /backend switchbar.
+
 ### Neu
 
-- **Schwarm-Muster komplett** (SQ016): Alle 5 Muster aktiv
-  - Hierarchie-Muster (`tools/schwarm/hierarchy.py`): Boss-Worker-Aggregator
-  - Stigmergy-Muster (`tools/schwarm/stigmergy_pattern.py`): Pheromon-Koordination
-  - Spezialist-Muster (`tools/schwarm/specialist.py`): Auto-Routing an Boss-Agenten
-  - 3 neue CLI-Operationen: `bach schwarm hierarchy/stigmergy/specialist`
-- **5 neue Therapie-Skills** (B30/SQ046 Phase 2):
-  - ACT-Techniken (Hexaflex, Defusion, Akzeptanz)
-  - DBT-Fertigkeiten (TIPP, DEAR MAN, 4 Module)
-  - Stabilisierungstechniken (5-4-3-2-1 Grounding, Box-Breathing)
-  - Trauma-Psychoedukation (Window of Tolerance, nur Aufklaerung)
-  - Expositionsbegleitung (SUDs-Skala, nur Planung)
+- **ProSync DB-Sync:** Lokale DB pro System (`~/.bach/bach.db`), OneDrive-Transit-Hub für Cross-System-Sync. 137 syncbare Tabellen, Schema-Drift-sicher, Pull-at-Start + Push-at-Stop + atexit-Hook
+- **`_canonical_db` Handler-Migration:** 55 Handler von hardcoded `data/bach.db` auf `self._canonical_db` migriert — DB-Standort ist jetzt location-independent via `bach_paths.BACH_DB`
+- **Buddha Chat Services:** Multi-Backend Telegram-Bot mit 5 Backends (Ollama, Claude CLI, Codex, Claude API, OpenAI), Control API (:8081), Web Dashboard, cross-platform System Tray
+- **13 Buddha Tools (TOOLS_SAFE):** web_search, task_manage, maintain, delegate, foerderbericht, memory_search, fact_store, lesson_store, wiki_search, system_status, help_search, calendar, notes
+- **Förderbericht-Pipeline:** DSGVO-konforme Anonymisierung (Phase 1) als Buddha-Tool, ICF-Prompt-Generierung, synthetische Testdaten
+- **Model-Switching & Delegation:** Claude/Codex→Buddha via `/api/chat`, Buddha→Claude/Codex via `delegate`-Tool mit Rekursionsschutz (max Depth 2)
+- **Cross-Platform Launcher:** `start/bach.sh` mit 4 Subkommandos (chat, gui, status, stop), Server-Modus via `BACH_HOST` env
+- **Installer ProSync-Setup:** `bach setup prosync` mit `--multi-system`/`--single-system` Flags, Config-gesteuert
+- **Schwarm-Muster komplett** (SQ016): Alle 5 Muster aktiv (Hierarchie, Stigmergy, Spezialist)
+- **5 neue Therapie-Skills** (B30/SQ046 Phase 2): ACT, DBT, Stabilisierung, Trauma-Psychoedukation, Expositionsbegleitung
+- **Agent-Personas & Name-Resolution** (Migration 034): Multi-Strategie Namensauflösung, Display-Names, Persona-Injection, 20 Default-Personas
+- **Security Gate für Erweiterungen:** Code-Injection-Scan bei `plugins load` und `skills install`, Quarantäne, Manifest-first Plugin-Prüfung, Fail-closed Setup-Guards
+- **MCP-Setup-Härtung:** Allowlist-Validierung bei `bach setup mcp` und `bach setup n8n`
+- **Editable-Install für `bach_api`:** `pip install -e .` funktioniert jetzt aus dem Repo-Root
+- **Strukturierte `bach_api`-Kernmodule:** `task`/`memory` mit echten Methoden, `dir(...)` discoverbar
+- **Memory-/Wiki-Provenance Views:** Heuristische Quellen-/Evidenz-/Privacy-Analyse
+- **Maschinenlesbare Status-Flächen:** `--json` für Agent-/Scheduler-Status
 
-- **Agent-Personas & Name-Resolution** (Migration 034):
-  - `resolve_agent_name()`: Multi-Strategie Namensaufloesung (Name, Display-Name, Beschreibung, Persona, Fuzzy/Levenshtein)
-  - `bach agent rename <name> <neuer-name>`: Benutzer-definierbare Display-Names
-  - Persona-Injection: Charakter-Beschreibung wird beim Agent-Start in CLAUDE.md injiziert
-  - Agent-Start/Stop akzeptiert Display-Names, Rollen und Beschreibungen
-  - 20 Default-Personas: 5 Boss-Agenten (Atlas, Clara, Felix, Helena, Paul) + 15 Experten
-  - Listing zeigt Display-Names in Klammern an
-- **Security Gate für Erweiterungen:** `plugins load` und `skills install` scannen Importpakete jetzt vor dem Laden auf offensichtliche Code-Injection-Muster und blockieren verdächtige Pakete fail-closed.
-- **MCP-Setup-Härtung:** `bach setup mcp` und `bach setup n8n` validieren Paketnamen und Claude-Code-MCP-Configs jetzt gegen eine explizite Allowlist, bevor npm oder die lokale MCP-Konfiguration berührt werden.
-- **API-Surface-Parität:** `bach_api` exportiert jetzt die dokumentierten Module `agent`, `agents` und `prompt` für Agenten- und Prompt-Usecases ohne Raw-Handler-Zugriff.
-- **Quarantäne für blockierte Erweiterungen:** Blockierte `plugins load`-, `skills install`- und lokale MCP-Config-Pfade werden jetzt nicht nur abgewiesen, sondern unter `system/data/quarantine/` mit Payload-Kopie und `report.json` dokumentiert.
-- **Manifest-first Plugin-Prüfung:** `bach plugins inspect <pfad>` zeigt Plugin-Metadaten ohne Runtime-Import; `plugins load` blockiert Manifeste mit fehlenden Hook-/Handler-/Workflow-Dateireferenzen, bevor Plugin-Code geladen wird.
-- **Fail-closed Setup-Guards für Plugins:** Plugin-Manifeste mit `shell`-, `desktop`- oder `mcp`-Setupflächen brauchen jetzt `setup.fail_closed=true` plus passende `setup.checks`; `plugins inspect/load` blockieren unsichere Verträge noch vor Runtime-Code.
-- **Editable-Install für `bach_api`:** Repo-Root exportiert jetzt einen `bach_api`-Shim plus `pyproject.toml`, damit `pip install -e .` und `from bach_api import ...` ohne `sys.path.insert(...)` für Entwickler- und Agenten-Usecases funktionieren.
-- **Strukturierte `bach_api`-Kernmodule:** `task` und `memory` exponieren jetzt echte Methoden, sind über `dir(...)` discoverbar, liefern für typische Reads/Writes Python-Objekte und behalten `raw(...)` als Legacy-Fallback.
+### Entfernt
 
-- **Memory-/Wiki-Provenance Views:** `bach memory provenance [scope] [limit]` und `bach wiki provenance [artikel|limit]` zeigen heuristisch Quelle, Evidenzart, Personenbezug und Privacy-Hinweise; die gemeinsame Logik liegt in `system/core/provenance.py`.
-- **Maschinenlesbare Agent-/Scheduler-Statusflaechen:** `bach agent list/status --json` sowie `bach scheduler status/jobs/session status --json` liefern jetzt strukturierte Run-/Statusdaten fuer externe Tools, Polling und spaetere Operator-Steuerung.
+- **Legacy Prompt-Manager (PyQt6):** 2283 Zeilen Desktop-App entfernt — Web-basierter Prompt-Generator bleibt verfügbar
+- **Deprecated Scanner:** Tote `/scanner`-Route und Template entfernt
+- **OneDrive Lock-Artefakte:** 10 `.lock.user`-Dateien aus Tracking entfernt, Pattern in `.gitignore`
 
 ### Bugfix
 
-- **Registry-Watcher ans aktuelle Layout angepasst:** `bach --maintain registry check` trennt jetzt rekursive Core-Dateien von historischen, externen und stale DB-Eintraegen. Der Startup-Selbstcheck wertet nur noch `actionable_issues` aus und meldet keine massiven False Positives mehr, wenn nur Altlasten in der DB liegen.
-- **Usecase-Runner gehaertet:** `bach usecase run <id>` bricht bei aelteren DB-Eintraegen ohne konkrete Workflow-Datei nicht mehr mit `Workflow nicht gefunden` ab, sondern faellt auf einen manuellen Datenmodus mit Pfad-Resolution und Warnhinweis zurueck.
-- **Self-Heal CLI/API:** `bach mem write/read/...` delegiert jetzt auf den bestehenden `memory`-Handler; `bach wiki read <thema>` ist als Alias verfuegbar; `bach task add` gibt die neue Task-ID direkt aus.
-- **Provenance-Regressionen abgesichert:** Self-Heal- und Smoke-Tests decken die neuen Memory-/Wiki-Provenance-Ansichten ab.
-- **CLI-Dry-Run wird wieder korrekt durchgereicht:** `system/bach.py` uebergibt `--dry-run`/`-n` jetzt auch im generischen Handler-Dispatch, sodass `bach agent start ... --dry-run` und `bach --agent start ... --dry-run` keine echten Prozesse mehr starten.
-- **Saubere JSON-CLI-Ausgaben:** `--json`-Befehle unterdruecken jetzt Idle-/EOD-Finalisierungs-Chatter und Injector-Ausgaben, damit Status-Polling keine kaputten JSON-Antworten mehr erzeugt.
-- **Git-Hygiene für Runtime-Artefakte:** `.gitignore` ignoriert jetzt auch instanzbezogene SQLite-Sidecars (`bach-*.db-journal/.wal/.shm`) sowie generierte `Doc_Update_Report_*.md`, damit Daily-Care-Läufe keine Push-Reste hinterlassen.
-- **agent_launcher.py:** Windows cp1252 Encoding-Fix bei tasklist-Subprocess (0x81 Umlaut-Crash)
-- **agent_launcher.py:** Experten-Display-Names aus `bach_experts.skill_path` werden beim Start wieder auf das aktuelle Skill-Verzeichnis aufgeloest; `bach agent start Theodor` trifft dadurch erneut `agents/_experts/steuer/`.
-- **bach_api.py:** Import-Lücke geschlossen, durch die `from bach_api import agent` trotz dokumentierter API fehlschlug.
-- **Fail-closed Setup-Configs:** `bach setup hooks`, `bach setup mcp` und `bach setup n8n` brechen jetzt bei ungültigen oder strukturell falschen bestehenden Claude-JSON-Dateien ab, statt sie stillschweigend mit `{}` zu überschreiben.
+- **`hub/secrets.py` → `secrets_handler.py`:** Stdlib-Shadow aufgelöst — ddgs-Import für Web-Search repariert
+- **system_prompt_buddha.txt Pfad:** Von hardcoded `~/services/bach/...` auf `bach_paths.DATA_DIR` umgestellt
+- **GUI Server Version:** Auf 1.1.8 synchronisiert (nav.js + server.py)
+- **Registry-Watcher:** Trennt Core-Dateien von historischen/stale DB-Einträgen, keine False Positives mehr
+- **Usecase-Runner:** Fallback auf manuellen Datenmodus bei fehlender Workflow-Datei
+- **Self-Heal CLI/API:** `bach mem write/read`, `bach wiki read`, `bach task add` ID-Ausgabe
+- **CLI-Dry-Run:** `--dry-run` wird im generischen Handler-Dispatch durchgereicht
+- **JSON-CLI-Ausgaben:** `--json` unterdrückt Idle-/EOD-Chatter
+- **Git-Hygiene:** `.gitignore` für SQLite-Sidecars und Doc_Update_Reports
+- **agent_launcher.py:** cp1252 Encoding-Fix, Experten-Display-Name-Resolution
+- **Fail-closed Setup-Configs:** Ungültige Claude-JSON-Dateien brechen Setup ab statt Überschreibung
 
 ### Dokumentation
 
-- **Release-Verweise bereinigt:** `ROADMAP.md` zeigt jetzt auf die realen Planungsdateien unter `.dev/` statt auf veraltete `BACH_Dev`-Pfade.
-- **NEXT_RELEASE bereinigt:** Marketing-Referenz zeigt auf `.dev/marketing/M07_CHARAKTER_PROFILE.md`; QA-Notizen nennen die aktuellen Persona-/Registry-Regressionstests.
-- **OpenClaw-Abgleich 2026-05-08:** README, README.de, ROADMAP und NEXT_RELEASE aktualisiert; latest stable `2026.5.7` (7. Mai 2026) gegen GitHub Releases gegengeprueft. Relevante Impulse: workspace-scoped Plugin-Metadaten-Caches, Install-Hinweise fuer fehlende offizielle Erweiterungen, kollisionssichere Session-Memory-Captures, aktive Laufsteuerung, Plugin-/Provider-Haertung, Cache-Invalidierung, Auth-Gating und machine-readable Run-/Cron-Status.
-- **OpenClaw-Abgleich 2026-05-09 erneut verifiziert:** Latest stable bleibt `2026.5.7` (7. Mai 2026); README, README.de, ROADMAP und NEXT_RELEASE auf den verifizierten Stand fortgeschrieben.
-- **Agent-Hilfe aktualisiert:** `help agent` und `help agent_launcher` dokumentieren `--dry-run` jetzt explizit.
-- **Provenance-Dokumentation nachgezogen:** CLI-Hilfen fuer `memory provenance` und `wiki provenance` sowie Release-/Roadmap-Notizen auf den implementierten Stand gebracht.
-- **README-Version bereinigt:** Footer auf `v3.8.0-sugar-of-babel` angeglichen.
+- **Release-Verweise** und **NEXT_RELEASE** bereinigt
+- **OpenClaw-Abgleich:** Zweimal verifiziert (2026-05-08, 2026-05-09)
+- **Agent-Hilfe** und **Provenance-Dokumentation** aktualisiert
+- **Versionierung:** Bump auf v3.9.0-tiramisu
 
 ---
 

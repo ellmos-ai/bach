@@ -1,6 +1,6 @@
 # BACH - Textbasiertes Betriebssystem für LLMs
 
-**Version:** v3.8.0-sugar-of-babel
+**Version:** v3.9.0-tiramisu
 **Status:** Production-Ready
 **Lizenz:** MIT
 
