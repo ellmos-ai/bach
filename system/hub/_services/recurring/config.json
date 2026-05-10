@@ -16,7 +16,7 @@
       "priority_score": 60,
       "task_text": "Neue Tools pruefen: bach ati onboard --check",
       "aufwand": "niedrig",
-      "last_run": "2026-04-30T13:10:03.149717"
+      "last_run": "2026-05-09T13:07:29.045114"
     },
     "code_quality": {
       "enabled": true,
@@ -34,7 +34,7 @@
       "priority": "P3",
       "project": "BACH",
       "task_text": "BACH Backup pruefen: bach backup status",
-      "last_run": "2026-04-30T13:10:03.149717"
+      "last_run": "2026-05-09T13:07:29.045114"
     },
     "memory_cleanup": {
       "enabled": true,

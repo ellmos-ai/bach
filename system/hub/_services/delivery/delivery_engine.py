@@ -79,7 +79,11 @@ class DeliveryEngine:
         self.base_path = base_path
         self.config_file = base_path / "data" / "config" / "delivery_preferences.json"
         self.config = self._load_config()
-        self.db_path = base_path / "data" / "bach.db"
+        try:
+            from hub.bach_paths import BACH_DB
+            self.db_path = BACH_DB
+        except ImportError:
+            self.db_path = base_path / "data" / "bach.db"
 
     def _load_config(self) -> dict:
         """Lädt Delivery-Preferences Config"""

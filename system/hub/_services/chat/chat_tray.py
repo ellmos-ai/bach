@@ -36,6 +36,9 @@ class BACHTray:
 
     def __init__(self, host="127.0.0.1", port=8081):
         self.base_url = f"http://{host}:{port}"
+        self.gui_url = f"http://{host}:8000"
+        self.webchat_url = f"http://{host}:8080"
+        self.telegram_url = "https://t.me/bach_assistant_bot"
         self.state = {
             "backend": "?",
             "backend_cli": "",
@@ -170,10 +173,22 @@ class BACHTray:
 
             items.append(pystray.Menu.SEPARATOR)
 
-            # Web Dashboard
+            # Zugangswege
             items.append(pystray.MenuItem(
-                f"Web-Dashboard ({self.base_url})",
-                self._open_dashboard,
+                "GUI Dashboard (:8000)",
+                self._open_gui,
+            ))
+            items.append(pystray.MenuItem(
+                "Web Chat (:8080)",
+                self._open_webchat,
+            ))
+            items.append(pystray.MenuItem(
+                "Telegram (@bach_assistant_bot)",
+                self._open_telegram,
+            ))
+            items.append(pystray.MenuItem(
+                f"Control API ({self.base_url})",
+                self._open_control_api,
             ))
 
         else:
@@ -212,7 +227,19 @@ class BACHTray:
         self._refresh()
         self._update_icon()
 
-    def _open_dashboard(self):
+    def _open_gui(self):
+        import webbrowser
+        webbrowser.open(self.gui_url)
+
+    def _open_webchat(self):
+        import webbrowser
+        webbrowser.open(self.webchat_url)
+
+    def _open_telegram(self):
+        import webbrowser
+        webbrowser.open(self.telegram_url)
+
+    def _open_control_api(self):
         import webbrowser
         webbrowser.open(self.base_url)
 

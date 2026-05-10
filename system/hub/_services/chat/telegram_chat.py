@@ -31,7 +31,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
 
-sys.path.insert(0, os.path.expanduser("~/services/bach/system"))
+# BACH system path: resolve from this file's location (hub/_services/chat/)
+_bach_system = str(Path(__file__).resolve().parent.parent.parent)
+if _bach_system not in sys.path:
+    sys.path.insert(0, _bach_system)
 
 try:
     from telegram import Update
@@ -992,6 +995,31 @@ class ControlHandler(BaseHTTPRequestHandler):
                 s.think = bool(think)
             self._json({"ok": True, "think": bool(think)})
 
+        elif path == "/api/chat":
+            prompt = body.get("prompt", "")
+            chat_id = body.get("chat_id", "api-delegate")
+            depth = int(self.headers.get("X-Delegation-Depth", "0"))
+            if not prompt:
+                self._json({"error": "prompt erforderlich"}, 400)
+                return
+            if depth >= 2:
+                self._json({"error": "Maximale Delegationstiefe erreicht"}, 429)
+                return
+            os.environ["BACH_DELEGATION_DEPTH"] = str(depth + 1)
+            try:
+                loop = asyncio.new_event_loop()
+                try:
+                    answer = loop.run_until_complete(
+                        runtime.process(prompt, chat_id)
+                    )
+                finally:
+                    loop.close()
+                self._json({"ok": True, "answer": answer})
+            except Exception as e:
+                self._json({"error": str(e)}, 500)
+            finally:
+                os.environ.pop("BACH_DELEGATION_DEPTH", None)
+
         else:
             self._json({"error": "Not found"}, 404)
 
@@ -1003,7 +1031,7 @@ def start_control_api():
         server.daemon_threads = True
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        log.info(f"Control API auf {bind_host}:{CONTROL_PORT}")
+        log.info(f"Control API auf 127.0.0.1:{CONTROL_PORT}")
         print(f"Web-Dashboard: http://localhost:{CONTROL_PORT}/")
         return server
     except OSError as e:

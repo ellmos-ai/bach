@@ -21,12 +21,20 @@ import logging
 import os
 import re
 import shlex
+import sqlite3
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 log = logging.getLogger("bach.chat")
+
+try:
+    from hub.bach_paths import BACH_DB as _RUNTIME_DB
+    RUNTIME_BACH_DB = str(_RUNTIME_DB)
+except ImportError:
+    RUNTIME_BACH_DB = str(Path(__file__).parent.parent.parent.parent / "data" / "bach.db")
 
 
 # --- Sicherheit ---
@@ -128,6 +136,34 @@ TOOLS_SAFE = [
     _tool("safe_shell", "Lesenden Shell-Befehl ausführen", {
         "command": {"type": "string", "description": "Shell-Befehl (nur lesende Befehle erlaubt)"},
     }, ["command"]),
+    _tool("web_search", "Im Internet nach Informationen suchen (DuckDuckGo)", {
+        "query": {"type": "string", "description": "Suchanfrage"},
+        "max_results": {"type": "integer", "description": "Maximale Ergebnisse (Standard 5, max 10)"},
+    }, ["query"]),
+    _tool("task_manage", "BACH-Tasks verwalten: anlegen, auflisten, Status ändern", {
+        "action": {"type": "string", "enum": ["list", "add", "done", "detail"], "description": "Aktion"},
+        "title": {"type": "string", "description": "Task-Titel (bei add)"},
+        "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (bei add, Standard P3)"},
+        "task_id": {"type": "integer", "description": "Task-ID (bei done/detail)"},
+    }, ["action"]),
+    _tool("maintain", "Systemwartung: fällige Tasks prüfen, Wartungsoperationen ausführen", {
+        "action": {"type": "string", "enum": ["check", "run", "health"],
+                   "description": "check=fällige Tasks zeigen, run=Wartung ausführen, health=Systemgesundheit"},
+        "operation": {"type": "string",
+                      "description": "Bei run: registry, skills, docs, backup, clean, memory, recurring"},
+    }, ["action"]),
+    _tool("foerderbericht", "Förderbericht-Pipeline: Anonymisierung und Berichterstellung", {
+        "action": {"type": "string", "enum": ["prepare", "status", "cleanup"],
+                   "description": "prepare=Phase 1 (Anonymisierung, kein LLM), status=Pipeline-Status, cleanup=Zwischendateien löschen"},
+        "zeitraum": {"type": "string", "description": "Berichtszeitraum (z.B. '01.01.2025 - 31.12.2025')"},
+        "eltern": {"type": "array", "items": {"type": "string"}, "description": "Elternnamen zur Anonymisierung"},
+        "adresse": {"type": "string", "description": "Klienten-Adresse zur Anonymisierung"},
+    }, ["action"]),
+    _tool("delegate", "Aufgabe an Claude Code oder Codex CLI delegieren", {
+        "target": {"type": "string", "enum": ["claude", "codex"], "description": "Ziel-Agent"},
+        "prompt": {"type": "string", "description": "Aufgabe oder Frage für den Agenten"},
+        "context": {"type": "string", "description": "Optionaler Kontext zur Aufgabe"},
+    }, ["target", "prompt"]),
 ]
 
 TOOLS_FULL = TOOLS_SAFE + [
@@ -140,6 +176,38 @@ TOOLS_FULL = TOOLS_SAFE + [
         "content": {"type": "string", "description": "Dateiinhalt"},
     }, ["path", "content"]),
 ]
+
+
+# --- Delegation ---
+
+def _delegate_claude_api(prompt: str, api_key: str,
+                         model: str = "claude-sonnet-4-20250514") -> str:
+    import httpx
+    try:
+        r = httpx.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": model,
+                "max_tokens": 2048,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=120,
+        )
+        data = r.json()
+        if r.status_code != 200:
+            return f"Claude API Fehler ({r.status_code}): {data.get('error', {}).get('message', str(data)[:500])}"
+        blocks = data.get("content", [])
+        text = "\n".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+        return (text or "(keine Antwort)")[:3000]
+    except httpx.TimeoutException:
+        return "Claude API Timeout (120s)"
+    except Exception as e:
+        return f"Claude API Fehler: {e}"
 
 
 # --- Tool-Ausführung ---
@@ -236,6 +304,230 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             log.info(f"WRITE: {p} ({len(c)} chars)")
             return f"Geschrieben: {p} ({len(c)} Zeichen)"
 
+        if name == "web_search":
+            query = args.get("query", "")
+            if not query:
+                return "Keine Suchanfrage angegeben"
+            max_r = min(int(args.get("max_results", 5)), 10)
+            try:
+                from ddgs import DDGS
+                results = DDGS().text(query, max_results=max_r)
+                if not results:
+                    return f"Keine Ergebnisse für: {query}"
+                out = []
+                for r in results:
+                    title = r.get("title", "")
+                    href = r.get("href", "")
+                    body = r.get("body", "")[:300]
+                    out.append(f"**{title}**\n{href}\n{body}")
+                return "\n\n".join(out)[:4000]
+            except ImportError:
+                return "Web-Suche nicht verfügbar (ddgs nicht installiert)"
+            except Exception as e:
+                return f"Suchfehler: {e}"
+
+        if name == "task_manage":
+            action = args.get("action", "list")
+            try:
+                conn = sqlite3.connect(RUNTIME_BACH_DB)
+                conn.row_factory = sqlite3.Row
+                try:
+                    if action == "list":
+                        rows = conn.execute(
+                            "SELECT id, title, priority, status FROM tasks "
+                            "WHERE status IN ('pending','in-progress') "
+                            "ORDER BY priority, id DESC LIMIT 20"
+                        ).fetchall()
+                        if not rows:
+                            return "Keine offenen Tasks."
+                        lines = [f"[{r['id']}] {r['priority']} {r['status']}: {r['title']}" for r in rows]
+                        return "\n".join(lines)
+
+                    if action == "add":
+                        title = args.get("title", "")
+                        if not title:
+                            return "Kein Titel angegeben"
+                        prio = args.get("priority", "P3")
+                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        cur = conn.execute(
+                            "INSERT INTO tasks (title, priority, status, created_at, updated_at) "
+                            "VALUES (?, ?, 'pending', ?, ?)",
+                            (title, prio, now, now)
+                        )
+                        conn.commit()
+                        return f"Task #{cur.lastrowid} erstellt: {title} ({prio})"
+
+                    if action == "done":
+                        tid = args.get("task_id")
+                        if not tid:
+                            return "Keine Task-ID angegeben"
+                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        r = conn.execute(
+                            "UPDATE tasks SET status='done', completed_at=?, updated_at=? WHERE id=?",
+                            (now, now, tid)
+                        )
+                        conn.commit()
+                        if r.rowcount == 0:
+                            return f"Task #{tid} nicht gefunden"
+                        return f"Task #{tid} erledigt."
+
+                    if action == "detail":
+                        tid = args.get("task_id")
+                        if not tid:
+                            return "Keine Task-ID angegeben"
+                        row = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
+                        if not row:
+                            return f"Task #{tid} nicht gefunden"
+                        return "\n".join(f"{k}: {row[k]}" for k in row.keys())
+
+                    return f"Unbekannte Aktion: {action}"
+                finally:
+                    conn.close()
+            except Exception as e:
+                return f"Task-Fehler: {e}"
+
+        if name == "maintain":
+            action = args.get("action", "check")
+            operation = args.get("operation", "")
+            try:
+                if action == "check":
+                    base = str(Path(__file__).parent.parent.parent.parent)
+                    if base not in sys.path:
+                        sys.path.insert(0, base)
+                    from hub._services.recurring.recurring_tasks import list_recurring_tasks
+                    tasks = list_recurring_tasks()
+                    if not tasks:
+                        return "Keine wiederkehrenden Tasks konfiguriert."
+                    lines = []
+                    for tid, info in tasks.items():
+                        status = info.get("status", "?")
+                        due = info.get("next_due", "?")
+                        text = info.get("task_text", tid)[:60]
+                        marker = "🔴 FÄLLIG" if status == "overdue" else ("🟡 bald" if status == "due_soon" else "✅")
+                        lines.append(f"{marker} {tid}: {text} (nächst: {due})")
+                    return "\n".join(lines)
+                elif action == "run":
+                    if not operation:
+                        return "Bitte 'operation' angeben: registry, skills, docs, backup, clean, memory, recurring"
+                    op_map = {
+                        "registry": "maintain registry",
+                        "skills": "maintain skills",
+                        "docs": "maintain docs report",
+                        "backup": "backup status",
+                        "clean": "maintain clean",
+                        "memory": "mem gc",
+                        "recurring": "recurring check",
+                    }
+                    cmd = op_map.get(operation)
+                    if not cmd:
+                        return f"Unbekannte Operation: {operation}. Erlaubt: {', '.join(op_map)}"
+                    parts = cmd.split()
+                    handler, op_args = parts[0], " ".join(parts[1:])
+                    return run_shell(f"cd {shlex.quote(str(Path(__file__).parent.parent.parent.parent))} && "
+                                     f"PYTHONIOENCODING=utf-8 python bach.py --{handler} {op_args}")
+                elif action == "health":
+                    return run_shell(f"cd {shlex.quote(str(Path(__file__).parent.parent.parent.parent))} && "
+                                     f"PYTHONIOENCODING=utf-8 python bach.py status")
+                else:
+                    return f"Unbekannte Aktion: {action}. Erlaubt: check, run, health"
+            except Exception as e:
+                return f"Wartungsfehler: {e}"
+
+        if name == "foerderbericht":
+            action = args.get("action", "status")
+            try:
+                base = str(Path(__file__).parent.parent.parent.parent)
+                if base not in sys.path:
+                    sys.path.insert(0, base)
+                from hub._services.document.foerderbericht_pipeline import FoerderberichtPipeline
+                pipeline = FoerderberichtPipeline()
+                lock_file = pipeline.base_path / ".pipeline_lock"
+
+                if action == "status":
+                    if lock_file.exists():
+                        return f"Pipeline läuft (Lock: {lock_file}). Aktenordner: {pipeline.base_path}"
+                    data_roh = pipeline.base_path / "data_roh"
+                    clients = [d.name for d in data_roh.iterdir() if d.is_dir()] if data_roh.exists() else []
+                    prompt_exists = (pipeline.base_path / "data_bundled" / "prompt.txt").exists()
+                    status = f"Pipeline bereit. Basis: {pipeline.base_path}\n"
+                    status += f"Klienten in data_roh/: {', '.join(clients) if clients else 'keine'}\n"
+                    status += f"Prompt vorhanden: {'ja' if prompt_exists else 'nein'}"
+                    return status
+
+                elif action == "prepare":
+                    zeitraum = args.get("zeitraum", "01.01.2025 - 31.12.2025")
+                    eltern = args.get("eltern")
+                    adresse = args.get("adresse")
+                    result = pipeline.prepare_prompt(
+                        berichtszeitraum=zeitraum,
+                        parent_names=eltern,
+                        client_address=adresse,
+                    )
+                    if result.success:
+                        return (f"Phase 1 abgeschlossen. Tarnname: {result.tarnname}\n"
+                                f"Anonymisierter Prompt: {pipeline.base_path / 'data_bundled' / 'prompt.txt'}\n"
+                                f"Dauer: {result.duration_s:.1f}s\nSchritte: {', '.join(result.steps_completed)}")
+                    return f"Phase 1 fehlgeschlagen: {result.error}"
+
+                elif action == "cleanup":
+                    for folder in ["data_ano", "data_bundled"]:
+                        p = pipeline.base_path / folder
+                        if p.exists():
+                            import shutil
+                            shutil.rmtree(p)
+                            p.mkdir()
+                    if lock_file.exists():
+                        lock_file.unlink()
+                    return "Zwischendateien gelöscht (data_ano/, data_bundled/), Lock entfernt."
+
+                return f"Unbekannte Aktion: {action}. Erlaubt: prepare, status, cleanup"
+            except Exception as e:
+                return f"Pipeline-Fehler: {e}"
+
+        if name == "delegate":
+            target = args.get("target", "")
+            prompt = args.get("prompt", "")
+            context = args.get("context", "")
+            if target not in ("claude", "codex"):
+                return f"Unbekanntes Ziel: {target}. Erlaubt: claude, codex"
+            if not prompt:
+                return "Kein Prompt angegeben"
+            depth = int(os.environ.get("BACH_DELEGATION_DEPTH", "0"))
+            if depth >= 2:
+                return "Maximale Delegationstiefe erreicht (2). Abbruch."
+            full_prompt = prompt
+            if context:
+                full_prompt = f"Kontext: {context}\n\nAufgabe: {prompt}"
+            env = {**os.environ, "PYTHONIOENCODING": "utf-8",
+                   "BACH_DELEGATION_DEPTH": str(depth + 1)}
+            log.info(f"DELEGATE -> {target} (depth={depth}): {prompt[:100]}")
+            if target == "claude":
+                api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+                if not api_key:
+                    kf = Path.home() / ".credentials" / "anthropic_api_key"
+                    if kf.exists():
+                        api_key = kf.read_text().strip()
+                if api_key:
+                    return _delegate_claude_api(full_prompt, api_key)
+                cmd = ["claude", "-p", full_prompt]
+            else:
+                cmd = ["codex", "exec", full_prompt]
+            try:
+                r = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=120,
+                    stdin=subprocess.DEVNULL, env=env,
+                )
+                out = (r.stdout or "").strip()
+                if r.returncode != 0 and r.stderr:
+                    out += f"\n[stderr] {r.stderr.strip()[:500]}"
+                return (out or "(keine Ausgabe)")[:3000]
+            except subprocess.TimeoutExpired:
+                return f"Delegation an {target} abgebrochen (Timeout 120s)"
+            except FileNotFoundError:
+                return f"{target} CLI nicht gefunden — API-Key unter ~/.credentials/anthropic_api_key hinterlegen für API-Fallback"
+            except Exception as e:
+                return f"Delegation fehlgeschlagen: {e}"
+
         return f"Unbekanntes Tool: {name}"
     except Exception as e:
         return f"Tool-Fehler ({name}): {e}"
@@ -291,6 +583,10 @@ SAFE-MODUS (Standard):
 - ollama_info — Modelle und Status
 - bach_command — BACH Memory, Tasks, Suche, Status
 - get_datetime — Datum/Uhrzeit
+- web_search — Im Internet suchen (DuckDuckGo)
+- task_manage — Tasks anlegen, auflisten, erledigen
+- maintain — Systemwartung: fällige Tasks prüfen (check), Wartung ausführen (run), Gesundheit (health)
+- delegate — Aufgabe an Claude Code oder Codex CLI delegieren
 
 FULL-MODUS (nur nach /mode full bestätigt):
 - execute_command — Beliebige Shell-Befehle
@@ -298,10 +594,20 @@ FULL-MODUS (nur nach /mode full bestätigt):
 
 REGELN:
 - Nutze Tools aktiv, wenn der User nach Informationen fragt
+- Nutze web_search, wenn du aktuelle Informationen brauchst oder der User fragt
+- Nutze task_manage, wenn der User Tasks verwalten will
+- Nutze maintain, wenn der User nach Systemstatus, Wartung oder Health fragt
+- Nutze delegate, wenn eine Aufgabe besser von Claude (Coding, Analyse) oder Codex (schnelle Code-Generierung) erledigt wird
 - Führe Befehle aus, wenn der User es wünscht
 - Antworte immer auf Deutsch
 - Sei präzise, hilfreich, und zeige Tool-Ergebnisse klar an
 - Du KANNST Befehle ausführen — sag nicht, dass du das nicht kannst
+
+WARTUNGSROLLE:
+Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
+- maintain(check) zeigt fällige wiederkehrende Tasks
+- maintain(run, operation) führt Wartung aus (registry, skills, docs, backup, clean, memory, recurring)
+- maintain(health) zeigt den Gesamtstatus
 """
         s = self.base_system + "\n\n" + capabilities
         s += f"\n[Modus={session.mode}, Denken={'AN' if session.think else 'AUS'}, Modell={session.model}]"
