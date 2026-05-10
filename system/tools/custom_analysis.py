@@ -62,9 +62,10 @@ def check_myvariant(chrom, pos, ref, alt):
         print(f"  Fetch Error: {e}")
     return None
 
-# Paths
-VCF_PATH = r"C:\Users\User\OneDrive\Dokumente\_Arztsachen\Daten, Bilder & DNA\Genetik\DNA\WGS Nebula\NG1V0Q9T8S.mm2.sortdup.bqsr.hc.vcf"
-VCF_GZ_PATH = VCF_PATH + ".gz"
+# Paths are intentionally supplied by environment to avoid committing private
+# local health/genetics file locations.
+VCF_PATH = os.environ.get("BACH_VCF_PATH", "")
+VCF_GZ_PATH = os.environ.get("BACH_VCF_GZ_PATH", f"{VCF_PATH}.gz" if VCF_PATH else "")
     
 def analyze_file(path, open_func):
     print(f"Analyzing {path}...")
@@ -117,5 +118,9 @@ def print_af_header(path, open_func):
     pass # Skipped for brevity
 
 if __name__ == "__main__":
-    if os.path.exists(VCF_GZ_PATH):
-         analyze_file(VCF_GZ_PATH, gzip.open)
+    if VCF_GZ_PATH and os.path.exists(VCF_GZ_PATH):
+        analyze_file(VCF_GZ_PATH, gzip.open)
+    elif VCF_PATH and os.path.exists(VCF_PATH):
+        analyze_file(VCF_PATH, open)
+    else:
+        print("Set BACH_VCF_PATH or BACH_VCF_GZ_PATH to analyze a local VCF file.")

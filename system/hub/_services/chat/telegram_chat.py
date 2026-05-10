@@ -123,7 +123,11 @@ OWNER_ID = CONFIG["owner_id"]
 # Backend + Runtime initialisieren
 backend = create_backend(CONFIG["backend"])
 
-system_file = os.path.expanduser("~/services/bach/system/data/system_prompt_buddha.txt")
+try:
+    from hub.bach_paths import DATA_DIR
+    system_file = str(DATA_DIR / "system_prompt_buddha.txt")
+except Exception:
+    system_file = os.path.join(os.environ.get("PYTHONPATH", "."), "data", "system_prompt_buddha.txt")
 if os.path.exists(system_file):
     system_prompt = open(system_file).read().strip()
 else:

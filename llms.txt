@@ -2,9 +2,9 @@
 
 > BACH is a text-based operating system that empowers Large Language Models to work autonomously, learn, and self-organize. Part of the ellmos family (Extra Large Language Model Operating Systems), BACH provides infrastructure for task management, structured memory, multi-agent orchestration, and automation -- not a framework like LangChain or LlamaIndex, but the working environment underneath.
 
-BACH differs from agent frameworks (LangChain, LlamaIndex, Haystack) by treating the LLM as a resident of a persistent text-based OS rather than a caller of a pipeline. Core primitives: handlers (CLI/API surface), skills (reusable workflows), chains (llmauto prompt sequences), boss-expert agents, a SharedMemory Bus for cross-agent coordination, and a scheduler for time-based and event-driven automation. Memory is first-class: five memory types with decay, conflict detection, and consolidation across 145+ DB tables.
+BACH differs from agent frameworks (LangChain, LlamaIndex, Haystack) by treating the LLM as a resident of a persistent text-based OS rather than a caller of a pipeline. Core primitives: handlers (CLI/API surface), skills (reusable workflows), chains (llmauto prompt sequences), boss-expert agents, a SharedMemory Bus for cross-agent coordination, and a scheduler for time-based and event-driven automation. Memory is first-class: six memory types with decay, conflict detection, and consolidation across 210+ DB tables.
 
-Current version: v3.9.0-tiramisu. Scale: 109+ handlers, 373+ tools, 932+ skills, 54 protocol workflows. Stack: Python 3.10+, SQLite. License: MIT.
+Current version: v3.9.1-tiramisu. Scale: 113+ handlers, 550+ tools, 1870+ skills, 58 workflow templates. Stack: Python 3.10+, SQLite. License: MIT.
 
 ## Docs
 
@@ -17,11 +17,11 @@ Current version: v3.9.0-tiramisu. Scale: 109+ handlers, 373+ tools, 932+ skills,
 
 ## Core subsystems
 
-- [Agents Catalog](https://github.com/ellmos-ai/bach/blob/main/AGENTS.md): Boss-expert orchestration model, 5 boss agents (ati, officeassistant, finance-assistant, health-assistant, personal-assistant)
-- [Skills Catalog](https://github.com/ellmos-ai/bach/blob/main/SKILLS.md): All 932+ reusable workflows and templates
-- [Workflows](https://github.com/ellmos-ai/bach/blob/main/WORKFLOWS.md): 54 protocol workflows (pre-built processes)
+- [Agents Catalog](https://github.com/ellmos-ai/bach/blob/main/AGENTS.md): Boss-expert orchestration model, 11 boss agents + 22 experts
+- [Skills Catalog](https://github.com/ellmos-ai/bach/blob/main/SKILLS.md): All 1870+ reusable workflows and templates
+- [Workflows](https://github.com/ellmos-ai/bach/blob/main/WORKFLOWS.md): 58 workflow templates (pre-built processes)
 - [Chains](https://github.com/ellmos-ai/bach/blob/main/CHAINS.md): llmauto chain steps with `bach://` URL resolution
-- [Memory System](https://github.com/ellmos-ai/bach/blob/main/MEMORY.md): Five memory types, decay, consolidation, conflict detection
+- [Memory System](https://github.com/ellmos-ai/bach/blob/main/MEMORY.md): Six memory types, decay, consolidation, conflict detection
 - [Ollama Integration](https://github.com/ellmos-ai/bach/blob/main/OLLAMA.md): Local LLM backend configuration
 - [Contributing Guide](https://github.com/ellmos-ai/bach/blob/main/CONTRIBUTING.md): Contribution workflow
 

@@ -77,7 +77,7 @@ Einfach neue Zeile im `MEDIA_TYPES` Array ergänzen:
 
 ```bash
 # Kompletter Durchlauf:
-cd "C:\Users\User\OneDrive\Dokumente\_Wissensdatenbank"
+cd "<lokaler Wissensdatenbank-Pfad>"
 bash _ordner_flattening_komplett.sh
 
 # Oder einzelne Phasen:

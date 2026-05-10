@@ -1,6 +1,6 @@
 # BACH - Textbasiertes Betriebssystem für LLMs
 
-**Version:** v3.9.0-tiramisu
+**Version:** v3.9.1-tiramisu
 **Status:** Production-Ready
 **Lizenz:** MIT
 
@@ -10,10 +10,10 @@ BACH ist ein textbasiertes Betriebssystem, das Large Language Models (LLMs) bef�
 
 ### Kernfunktionen
 
-- **109+ Handler** - CLI- und API-Abdeckung für Systemfunktionen
-- **373+ Tools** - Umfangreiche Tool-Bibliothek für Dateiverarbeitung, Analyse und Automation
-- **932+ Skills** - Wiederverwendbare Workflows und Templates
-- **54 Protocol Workflows** - Vorgefertigte Prozess-Protokolle
+- **113+ Handler** - CLI- und API-Abdeckung für Systemfunktionen
+- **550+ Tools** - Umfangreiche Tool-Bibliothek für Dateiverarbeitung, Analyse und Automation
+- **1870+ Skills** - Wiederverwendbare Workflows und Templates
+- **58 Workflow-Vorlagen** - Vorgefertigte Prozess-Workflows
 - **Install Security Gate** - Statische Scans für `skills install`, `plugins load` und MCP-Setup/Config-Aktivierung; Plugin-Setups mit Shell/Desktop/MCP-Zugriff brauchen jetzt explizite fail-closed Guards, blockierte lokale Importe werden quarantänisiert
 - **Manifest-first Plugins** - `bach plugins inspect` zeigt Aktivierung, Provider-/Model-, Setup- und Capability-Metadaten ohne Runtime-Import
 - **Strukturierte `bach_api`-Kernmodule** - `task` und `memory` bieten jetzt über `dir(...)` auffindbare Methoden, liefern bei häufigen Reads/Writes Python-Objekte zurück und behalten `raw(...)` für Legacy-Handler-Aufrufe
@@ -68,7 +68,7 @@ Scheduler fuer wiederkehrende Tasks und Event-basierte Workflows.
 
 ## OpenClaw-Abgleich
 
-Stand 2026-05-09: OpenClaw bleibt für BACH vor allem als Vergleichssystem für breite Messaging-Anbindung, Plugin-Ökosystem und Security-Patterns relevant. Die aktuelle stabile GitHub-Release bleibt laut GitHub Releases `2026.5.7` vom 7. Mai 2026. Für BACH sind aus der jüngsten Linie `2026.4.x` bis `2026.5.7` vor allem die Control-Plane-Impulse relevant: workspace-scoped Plugin-Metadaten-Snapshots auf Hot Paths, Install-Hinweise für fehlende offizielle Erweiterungen, kollisionssichere Session-Memory-Captures bei wiederholtem Reset/New, Cache-Invalidierung nach Skill-Änderungen sowie strengere fail-closed Config-/Setup-Prüfungen und Auth-Gates. BACH deckt davon bereits manifest-first Plugin-Metadaten, fail-closed Setup-Guards für Shell/Desktop/MCP-Flächen, Scans mit Quarantäne vor der Installation bzw. Aktivierung von Skills, MCP-Servern und Plugins, heuristische Memory-/Wiki-Provenance-Ansichten für Quelle, Evidenzart, Personenbezug und Privacy-Hinweise sowie neue maschinenlesbare Agent-/Scheduler-Statusflächen ab.
+OpenClaw bleibt für BACH vor allem als Vergleichssystem für breite Messaging-Anbindung, Plugin-Ökosystem und Security-Patterns relevant. BACH deckt bereits manifest-first Plugin-Metadaten, fail-closed Setup-Guards für Shell/Desktop/MCP-Flächen, Scans mit Quarantäne vor der Installation von Skills/MCP-Servern/Plugins, Memory-/Wiki-Provenance-Ansichten sowie maschinenlesbare Agent-/Scheduler-Statusflächen ab. Nächste Schritte: Active-Run-Steering, Telemetrie, Cache-Invalidierung, strengere Auth-Gates und externe Observability.
 
 ## Dokumentation
 

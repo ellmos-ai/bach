@@ -1192,7 +1192,7 @@ INSERT OR IGNORE INTO memory_facts (category, subcategory, fact, fact_key, confi
 ('user', 'work', 'Arbeitet in Autismus-Förderung', 'profession', 1.0, 'user_stated', 1),
 ('user', 'work', 'Erstellt ICF-basierte Gutachten', 'job_task', 1.0, 'user_stated', 1),
 ('system', 'constraint', 'NAS (NAS-HOST) nur im Heimnetzwerk erreichbar', 'nas_availability', 1.0, 'user_stated', 1),
-('system', 'path', 'Software-Projekte: C:\Users\User\OneDrive\Software Entwicklung', 'dev_path', 1.0, 'user_stated', 1);
+('system', 'path', 'Software-Projekte: <lokaler Software-Pfad>', 'dev_path', 1.0, 'user_stated', 1);
 
 
 -- Async Communication (Inbox/Outbox für Delegation und Multi-AI)

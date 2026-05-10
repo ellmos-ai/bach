@@ -357,7 +357,7 @@ class SetupWizard:
             if extracted_secrets:
                 try:
                     sys.path.insert(0, str(self.base_path))
-                    from hub.secrets import SecretsHandler
+                    from hub.secrets_handler import SecretsHandler
                     sh = SecretsHandler()
                     for sk, sv in extracted_secrets.items():
                         sh.set_secret(

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
-secrets.py — Secrets-Management Handler (SQ076)
+secrets_handler.py — Secrets-Management Handler (SQ076)
 
 Verwaltet API-Keys, Passwörter und sensible Credentials.
 Datei-autoritärer SYNC: ~/.bach/bach_secrets.json <-> bach.db:secrets

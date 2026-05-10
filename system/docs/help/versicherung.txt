@@ -44,7 +44,7 @@ DATENBANK:
 
 VERKNUEPFUNGEN:
   - financial_emails: E-Mails von Versicherungen (category = 'versicherung')
-  - ordner_pfad: Echte Dokumente unter C:\Users\User\OneDrive\Dokumente\_Versicherungen&Finanzen\
+  - ordner_pfad: Echte Dokumente unter einem lokal konfigurierten Versicherungsdokumente-Pfad
   - user_data_folders: Registrierter Ordner 'user/versicherungen'
 
 AKTUELLE DATEN:

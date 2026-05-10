@@ -337,7 +337,7 @@ BACH verfuegt ueber 97 Handler:
 - **bach scan** -- Scan Handler - Scanner-Verwaltung
 - **bach seal** -- Kernel Seal Handler (SQ021)
 - **bach search** -- SearchHandler - Unified Search CLI for BACH
-- **bach secrets** -- secrets.py — Secrets-Management Handler (SQ076)
+- **bach secrets** -- secrets_handler.py — Secrets-Management Handler (SQ076)
 - **bach session** -- SessionHandler - Session-Verwaltung fuer BACH
 - **bach settings** -- Settings Handler - Systemeinstellungen verwalten
 - **bach shared_memory** -- Shared Memory Handler - Multi-Agent Memory-Verwaltung (SQ043
@@ -1576,7 +1576,7 @@ prioritized. Please allow reasonable time before public disclosure.
 
 # Contributing to BACH
 
-BACH is a personal project by Lukas Geiger. Contributions are welcome
+BACH is maintained as part of the ellmos project family. Contributions are welcome
 but there's no guarantee of response time.
 
 ## How to contribute

@@ -1,6 +1,6 @@
 # Portabilitaet: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-03-04
+# Version: 1.1.0
+# Zuletzt validiert: 2026-05-10
 
 HANDLER-NAME
 ===
@@ -37,8 +37,13 @@ user            Verwaltet USER.md: personalisiert aus DB falls noch Template,
 preflight       Fuehrt Pre-Install-Checks durch: Python >= 3.10, npm vorhanden,
                 data/ beschreibbar, > 100 MB Speicherplatz frei.
 
-full-install    Vollstaendige Installation in einem Durchlauf (preflight, mcp,
-                secrets, user). Optional: --with-n8n oder --config <json>.
+prosync         Konfiguriert ProSync fuer Multi-System-Nutzung.
+                --multi-system    Aktiviert DB-Sync (BACH auf mehreren Rechnern)
+                --single-system   Deaktiviert DB-Sync (nur dieses System)
+                Ohne Flag: Zeigt aktuellen Status an. Default: single-system.
+
+full-install    Vollstaendige Installation in einem Durchlauf (preflight, prosync,
+                mcp, secrets, user). Optional: --with-n8n oder --config <json>.
 
 
 BEISPIELE
@@ -55,6 +60,15 @@ bach setup n8n
 
 bach setup preflight
   Validiert Python, npm, Speicherplatz vor Installation
+
+bach setup prosync
+  Zeigt aktuellen ProSync-Status (Multi- oder Single-System)
+
+bach setup prosync --multi-system
+  Aktiviert ProSync: lokale DB (~/.bach/bach.db) + OneDrive-Transit-Sync
+
+bach setup prosync --single-system
+  Deaktiviert ProSync (Default fuer neue Installationen)
 
 bach setup full-install --with-n8n
   Vollstaendige Installation inkl. n8n-Manager
@@ -77,5 +91,5 @@ SIEHE AUCH
 ===
 
 hub/base.py                         BaseHandler (Oberklasse)
-hub/secrets.py                      SecretsHandler (Secrets-Verwaltung)
+hub/secrets_handler.py              SecretsHandler (Secrets-Verwaltung)
 docs/help/check.txt                 Validation und Status-Checks

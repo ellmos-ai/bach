@@ -10,10 +10,10 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-v3.9.0--tiramisu-orange)
+![Version](https://img.shields.io/badge/Version-v3.9.1--tiramisu-orange)
 ![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)
 
-**Version:** v3.9.0-tiramisu
+**Version:** v3.9.1-tiramisu
 
 <p align="center">
   <img src="overview.jpg" alt="BACH Overview" width="700">
@@ -25,11 +25,11 @@
 
 ### Key Features
 
-- **109+ Handlers** - Full CLI and API coverage of all system functions
-- **373+ Tools** - Extensive tool library for file processing, analysis, and automation
-- **932+ Skills** - Reusable workflows and templates
-- **54 Protocol Workflows** - Pre-built process workflows
-- **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System
+- **113+ Handlers** - Full CLI and API coverage of all system functions
+- **550+ Tools** - Extensive tool library for file processing, analysis, and automation
+- **1870+ Skills** - Reusable workflows and templates
+- **58 Workflow Templates** - Pre-built process workflows
+- **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System (6 memory types)
 - **Agent CLI** - `bach agent start/stop/list` for direct agent control
 - **Machine-readable Status Surfaces** - `bach agent list/status --json` plus `bach scheduler status/jobs/session status --json` for external tooling and automation-safe polling
 - **Prompt System** - Central prompt management with board system and versioning
@@ -103,14 +103,14 @@ python bach.py --shutdown
 Full GTD system with prioritization, deadlines, tags, and context tracking.
 
 ### 2. Knowledge System
-Structured memory system with Facts, Lessons, and automatic consolidation (5 memory types).
+Structured memory system with Facts, Lessons, and automatic consolidation (6 memory types, 210+ DB tables).
 
 ### 3. Agent Framework
-Boss agents orchestrate experts for complex tasks. The Agent CLI allows direct starting, stopping, and listing of agents via `bach agent`.
+11 Boss agents orchestrate 22 experts for complex tasks. The Agent CLI allows direct starting, stopping, and listing of agents via `bach agent`.
 
 <p align="center">
   <img src="sketch_bach_boss_agents.jpg" alt="BACH Boss Agents" width="600"><br>
-  <i>The 5 Boss Agents: ati, officeassistant, finance-assistant, health-assistant, personal-assistant</i>
+  <i>Illustration shows BACH's five original boss agents: ati, officeassistant, finance-assistant, health-assistant, personal-assistant. The current system ships 11 boss agents and 22 experts.</i>
 </p>
 
 ### 4. Prompt System
@@ -136,7 +136,7 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 |------|---------|-------------|------------|
 | 1 | **USMC** | United Shared Memory Client -- the spring (shared memory only) | [github.com/ellmos-ai/usmc](https://github.com/ellmos-ai/usmc) |
 | 2 | **Rinnsal** | The trickle -- USMC + llmauto (LLM orchestration), extremely compact | [github.com/ellmos-ai/rinnsal](https://github.com/ellmos-ai/rinnsal) |
-| 3 | **BACH** | The stream that unites everything -- 109+ handlers, 932+ skills, agents, GUI, bridge | [github.com/ellmos-ai/bach](https://github.com/ellmos-ai/bach) |
+| 3 | **BACH** | The stream that unites everything -- 113+ handlers, 1870+ skills, agents, GUI, bridge | [github.com/ellmos-ai/bach](https://github.com/ellmos-ai/bach) |
 
 ## Documentation
 
@@ -144,32 +144,30 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 - **[User Manual](BACH_USER_MANUAL.md)** - Complete handbook
 - **[Skills Catalog](SKILLS.md)** - All available skills
 - **[Agents Catalog](AGENTS.md)** - All available agents and experts
-- **[Workflows](WORKFLOWS.md)** - 54 protocol workflows
+- **[Workflows](WORKFLOWS.md)** - 58 workflow templates
 - **[SKILL.md](SKILL.md)** - LLM operating instructions (for Claude, Gemini, Ollama)
 
 ## See Also: OpenClaw
 
-How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the popular open-source AI assistant (about 370k GitHub stars observed on 2026-05-09)?
+How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a popular open-source AI assistant?
 
 | | **BACH** | **OpenClaw** |
 |---|---|---|
 | **Focus** | LLM Operating System -- deep autonomy, structured memory, multi-agent orchestration | Personal AI Assistant -- broad messaging gateway, voice, companion apps |
-| **Tools/Skills** | 373+ tools, 932+ skills, 54 workflows (local, curated) | Community-driven skill/plugin ecosystem; recent releases emphasize manifest-first plugin metadata and install safety |
-| **Memory** | 5 memory types with decay, conflict detection, consolidation (145+ DB tables) | Session/runtime workspace with bootstrap files such as `AGENTS.md`, `TOOLS.md`, `USER.md`, and related context files |
-| **Agents** | Boss-Expert orchestration (5 boss agents), SharedMemory Bus | Agent runtime with multi-session/channel operation |
+| **Tools/Skills** | 550+ tools, 1870+ skills, 58 workflows (local, curated) | Community-driven skill/plugin ecosystem; recent releases emphasize manifest-first plugin metadata and install safety |
+| **Memory** | 6 memory types with decay, conflict detection, consolidation (210+ DB tables) | Session/runtime workspace with bootstrap files such as `AGENTS.md`, `TOOLS.md`, `USER.md`, and related context files |
+| **Agents** | Boss-Expert orchestration (11 boss agents + 22 experts), SharedMemory Bus | Agent runtime with multi-session/channel operation |
 | **Messaging** | Telegram, Email, WhatsApp (Bridge System) | 20+ platforms (WhatsApp, Telegram, Slack, Discord, Signal, Teams, Matrix...) |
 | **Interfaces** | CLI, Python API, PySide6 GUI, Web GUI, Telegram Bot, Web Chat, System Tray | CLI, WebChat, macOS/iOS/Android apps, Voice |
 | **MCP** | Own MCP servers (FileCommander, CodeCommander) | Native MCP Registry |
 | **Stack** | Python 3.10+, SQLite | TypeScript, Node.js 22+ |
 | **License** | MIT | MIT |
 
-**In short:** BACH goes deep (structured memory, autonomous agents, scheduler, 145+ DB tables). OpenClaw goes wide (20+ messengers, native apps, voice, massive community). Different philosophies, complementary strengths.
+**In short:** BACH goes deep (structured memory, autonomous agents, scheduler, 210+ DB tables). OpenClaw goes wide (20+ messengers, native apps, voice, large community). Different philosophies, complementary strengths.
 
-### Competitive Watch (2026-05-09)
+### Competitive Watch
 
-As of May 9, 2026, verified against GitHub Releases, OpenClaw's latest stable release remains `2026.5.7`, published on May 7, 2026. For BACH, the relevant additions on top of the earlier `2026.4.x` to `2026.5.5` line are still not the broader channel surface, but runtime hygiene and control-plane hardening: cache invalidation after skill changes or pre-reset history shrinkage, stricter authorization hooks around inline skill/tool dispatch, active-runtime config snapshot resolution for secret-backed tools, computed cron status for external automation, and tighter admin scoping for global memory toggles.
-
-BACH already ships several of the OpenClaw-inspired control-plane pieces that fit its operating-system model: manifest-first metadata, fail-closed setup checks, broader install scanning for skills/MCP/plugins, privacy-preserving secret/reference handling, memory/wiki provenance views, and new machine-readable agent/scheduler status surfaces. The next high-leverage steps remain active-run steering at safe checkpoints, low-cardinality telemetry, cache invalidation, stricter auth gating, and external observability.
+BACH already ships several control-plane pieces inspired by the broader assistant ecosystem: manifest-first metadata, fail-closed setup checks, broader install scanning for skills/MCP/plugins, privacy-preserving secret/reference handling, memory/wiki provenance views, and machine-readable agent/scheduler status surfaces. Next high-leverage steps: active-run steering at safe checkpoints, low-cardinality telemetry, cache invalidation, stricter auth gating, and external observability.
 
 ## License
 
@@ -190,7 +188,7 @@ Die vollstaendige deutsche Dokumentation findest du hier: **[README.de.md](READM
 
 ---
 
-*ellmos BACH v3.9.0-tiramisu - Text-Based Operating System for LLMs*
+*ellmos BACH v3.9.1-tiramisu - Text-Based Operating System for LLMs*
 
 ---
 

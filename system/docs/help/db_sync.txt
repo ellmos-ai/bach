@@ -1,22 +1,30 @@
 # Portabilitaet: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-03-04
+# Version: 2.0.0
+# Zuletzt validiert: 2026-05-10
 
 HANDLER-NAME
 ============
-db_sync - OneDrive-basiertes Backup-Sync-System
+db_sync - ProSync: Multi-System DB-Synchronisierung
 
 
 BESCHREIBUNG
 ============
-Synchronisiert bach.db ueber OneDrive-Backups mit .bachdb-Endung. Die Live-DB
-bleibt lokal ohne Konflikte. Backups werden zwischen Systemen (LAPTOP/
-WORKSTATION) ueber die Backup-Ordner synchronisiert.
+ProSync synchronisiert BACH-Datenbanken zwischen mehreren Systemen.
+
+Architektur:
+- Jedes System hat eine lokale DB (~/.bach/bach.db)
+- OneDrive dient als Transit-Hub (.SYNC/bach_db_transit/)
+- Sync bei BACH-Start (pull) und -Exit (push)
+- 137 Tabellen werden dynamisch erkannt und synchronisiert
 
 Intelligentes Merge: Tabellen mit Timestamp-Spalten verwenden Last-Write-Wins
-mit Konflikt-Check durch Heartbeat (5-Minuten-Fenster). Secrets werden aus
-Backups entfernt (ENT-44). Automatische Cleanup-Strategie: Behalte neueste
-Backups pro Host plus alles unter X Tagen (Default: 7 Tage, 10 pro Host).
+mit Konflikt-Check durch Heartbeat (5-Minuten-Fenster). Schema-Drift-sicher
+durch shared-columns-Erkennung und named INSERT. Secrets werden aus Backups
+entfernt. Automatische Cleanup-Strategie: Behalte neueste Backups pro Host
+plus alles unter X Tagen (Default: 7 Tage, 10 pro Host).
+
+ProSync ist optional. Single-System-Installationen brauchen keinen Sync.
+Konfiguration: bach setup prosync --multi-system / --single-system.
 
 
 OPERATIONEN
@@ -72,23 +80,25 @@ Relativ zu system/:
 
 hub/db_sync.py
   Kernimplementierung (DBSyncManager, DBSyncHandler).
-  Tabellen mit Timestamp-Merge: ati_tasks, connector_messages, memory_facts,
-  memory_context, tasks, steuer_dokumente, agent_synergies, bach_agents,
-  assistant_calendar.
+  Dynamische Tabellen-Erkennung: 137 syncbare Tabellen (statt hardcoded).
+  Schema-Drift-sicher durch shared-columns + named INSERT.
+
+~/.bach/bach.db
+  Lokale Produktions-Datenbank (primaere DB seit ProSync).
 
 data/bach.db
-  Lokale Produktions-Datenbank (bleibt unberuehrt bei Fehlern).
+  OneDrive-Fallback-DB (wird nicht mehr direkt beschrieben bei aktivem ProSync).
 
-../backups/
-  Backup-Ordner (OneDrive-synced). Enthaelt .bachdb-Dateien und heartbeat.json.
+OneDrive/.SYNC/bach_db_transit/
+  Transit-Hub fuer .bachdb-Dateien und heartbeat.json.
   Heartbeat: Verfolgt aktive PCs (Hostname, PID, Zeitstempel) fuer Konflikt-Detection.
 
-config/db_sync_enabled
-  Flag fuer Auto-Sync-Aktivierung (erstellt durch "enable", entfernt durch "disable").
+data/config/db_sync_enabled
+  Flag fuer ProSync-Aktivierung (erstellt durch "bach setup prosync --multi-system").
 
 
 SIEHE AUCH
 ==========
-- CLAUDE.md: BACH-System-Doku, Retention-Policy (backup_retention_days in system_config)
+- docs/help/setup.txt: bach setup prosync (Konfiguration)
+- hub/bach_paths.py: BACH_DB, PROSYNC_TRANSIT_DIR, LOCAL_BACH_DIR
 - basehandler / Handler-Framework: Siehe base.py fuer Schnittstelle
-- heartbeat.json: Dynamisch, enthaelt {hostname: {last_seen, pid, active}}

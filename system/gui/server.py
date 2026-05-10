@@ -4024,54 +4024,6 @@ async def inbox_page():
 
 
 
-@app.get("/financial", response_class=HTMLResponse)
-
-async def financial_page():
-
-    """Financial Seite."""
-
-    financial_file = TEMPLATES_DIR / "financial.html"
-
-    if financial_file.exists():
-
-        return FileResponse(financial_file)
-
-    return HTMLResponse("<h1>Financial</h1><p>Template nicht gefunden</p>")
-
-
-
-@app.get("/memory", response_class=HTMLResponse)
-
-async def memory_page():
-
-    """Memory Seite."""
-
-    memory_file = TEMPLATES_DIR / "memory.html"
-
-    if memory_file.exists():
-
-        return FileResponse(memory_file)
-
-    return HTMLResponse("<h1>Memory</h1><p>Template nicht gefunden</p>")
-
-
-
-@app.get("/prompt-generator", response_class=HTMLResponse)
-
-async def prompt_generator_page():
-
-    """Prompt Generator Seite."""
-
-    prompt_file = TEMPLATES_DIR / "prompt-generator.html"
-
-    if prompt_file.exists():
-
-        return FileResponse(prompt_file)
-
-    return HTMLResponse("<h1>Prompt Generator</h1><p>Template nicht gefunden</p>")
-
-
-
 @app.get("/daemon", response_class=HTMLResponse)
 
 async def daemon_page():
@@ -4240,22 +4192,6 @@ async def partners_page():
 
 
 
-@app.get("/agents/ati", response_class=HTMLResponse)
-
-async def ati_dashboard_page():
-
-    """ATI Agent Dashboard."""
-
-    ati_file = TEMPLATES_DIR / "ati.html"
-
-    if ati_file.exists():
-
-        return FileResponse(ati_file)
-
-    return HTMLResponse("<h1>ATI Dashboard</h1><p>Template nicht gefunden</p>")
-
-
-
 @app.get("/agents/steuer", response_class=HTMLResponse)
 
 async def steuer_dashboard_page():
@@ -4331,22 +4267,6 @@ async def skills_board_page():
     return HTMLResponse("<h1>Skills Board</h1><p>Template nicht gefunden</p>")
 
 
-
-
-
-@app.get("/tools", response_class=HTMLResponse)
-
-async def tools_page():
-
-    """Tools Übersicht Seite."""
-
-    tools_file = TEMPLATES_DIR / "tools.html"
-
-    if tools_file.exists():
-
-        return FileResponse(tools_file)
-
-    return HTMLResponse("<h1>Tools</h1><p>Template nicht gefunden</p>")
 
 
 
@@ -13689,17 +13609,6 @@ def run_server(host: str = "127.0.0.1", port: int = 8000):
 
 
 
-
-# ═══════════════════════════════════════════════════════════════
-# PROMPT GENERATOR ROUTE
-# ═══════════════════════════════════════════════════════════════
-
-@app.get("/prompt-generator", response_class=HTMLResponse)
-async def prompt_generator_page():
-    """Serves the Prompt Generator GUI."""
-    if (TEMPLATES_DIR / "prompt-generator.html").exists():
-        return FileResponse(TEMPLATES_DIR / "prompt-generator.html")
-    return HTMLResponse(content="<h1>Prompt Generator Template not found</h1>", status_code=404)
 
 if __name__ == "__main__":
 

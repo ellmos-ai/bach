@@ -10,6 +10,22 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ---
 
+## [3.9.1-tiramisu] - 2026-05-10
+
+### Fixed
+
+- **Secrets-Handler-Rename abgeschlossen:** CLI-/Setup-Imports auf `hub.secrets_handler` umgestellt, damit der alte `hub/secrets.py`-Name nicht mehr die Python-Stdlib `secrets` shadowt.
+- **Packaging-Version synchronisiert:** `setup.py`, `pyproject.toml`, Root-Docs und LLM-Skill-Header auf `3.9.1` nachgezogen.
+- **ProSync-Kompatibilität:** `BaseHandler._canonical_db` bevorzugt bei explizitem Fremd-`base_path` dessen lokale `data/bach.db` und nutzt sonst die zentrale `BACH_DB`.
+- **Gitignore-Screening:** ASUS-GEI-Sync-Artefakte werden jetzt für Python- und Root-Memory-Dateien ignoriert.
+- **Privacy-Hygiene:** Personenbezug im generierten User Manual neutralisiert.
+- **Lokale Pfade redigiert:** Hardcodierte OneDrive-/Gesundheits-/Wissensdatenbank-Pfade in Schema, Hilfe und Wartungstools durch Platzhalter bzw. Umgebungsvariablen ersetzt.
+- **GUI-Routen bereinigt:** Doppelte Legacy-Routen entfernt, bestehende Dashboard-Routen bleiben über die späteren Handler registriert.
+- **Handler-Testisolation:** `BaseHandler` nutzt temporäre Testdatenbanken wieder lokal, während echte Systemläufe weiter auf `bach_paths.BACH_DB` gehen.
+- **Privacy-Hygiene:** Private DNA-/Arztsachen-Dateipfade aus Analyse-Tools entfernt; lokale Pfade kommen jetzt aus Environment-Variablen.
+
+---
+
 ## [3.9.0-tiramisu] - 2026-05-10
 
 ### Highlights

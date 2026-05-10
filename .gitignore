@@ -50,6 +50,7 @@
 /system/data/bach.db-shm
 /system/data/archive.db
 /system/data/directory_truth.json
+/system/data/config/directory_truth.json
 /system/data/config/directory_truth-*.json
 /system/data/healing_report.json
 /system/data/sync_state-*.json
@@ -77,6 +78,7 @@
 *-Mac Studio.py
 *-LAPTOP-*.py
 *-DESKTOP-*.py
+*-ASUS-GEI*.py
 
 # === ORPHANED CONFIG FLAGS ===
 /system/config/
@@ -113,23 +115,24 @@ Thumbs.db
 
 # === BENUTZERSPEZIFISCHE DOKUMENTATION (niemals committen!) ===
 # Werden beim ersten Start aus Templates generiert / von BACH ueberschrieben
-MEMORY.md
-USER.md
-SKILL.md
+/MEMORY.md
+/USER.md
+/SKILL.md
 
 # === DB-GENERIERTE DOKUMENTATION (user-spezifisch) ===
 # Diese Dateien werden aus bach.db generiert und enthalten user-spezifische Daten.
 # Fuer Repo-Besucher liegen *.template.md Versionen bei.
-CLAUDE.md
-OLLAMA.md
-GEMINI.md
-SKILLS.md
-CHAINS.md
-PARTNERS.md
-AGENTS.md
-WORKFLOWS.md
-BACH_HELP_REFERENCE.md
-/*-ASUS-GEI.md
+/CLAUDE.md
+/OLLAMA.md
+/GEMINI.md
+/SKILLS.md
+/CHAINS.md
+/PARTNERS.md
+/AGENTS.md
+/WORKFLOWS.md
+/USECASES.md
+/BACH_HELP_REFERENCE.md
+/*-ASUS-GEI*.md
 
 # === SESSION-LOGS (Enthalten private Daten) ===
 logs/daily/
@@ -157,9 +160,21 @@ PLAN.txt
 # === USER-SPEZIFISCHE EXPERTEN (dist_type 0) ===
 # Portiert aus Vanilla, nicht im Release enthalten
 /system/agents/_experts/decision-briefing/
+/system/agents/_experts/aboservice/
+/system/agents/_experts/data-analysis/
+/system/agents/_experts/financial_mail/
+/system/agents/_experts/gesundheitsverwalter/
+/system/agents/_experts/haushaltsmanagement/
+/system/agents/_experts/health_import/
+/system/agents/_experts/literaturverwalter/
+/system/agents/_experts/mediaproduction/
+/system/agents/_experts/mr_tiktak/
+/system/agents/_experts/psycho-berater/
 /system/agents/_experts/press/
 /system/agents/_experts/report_generator/
+/system/agents/_experts/textproduction/
 /system/agents/_experts/transkriptions-service/
+/system/agents/_experts/wikiquizzer/
 /system/agents/_experts/worksheet_generator/
 /system/agents/_experts/steuer/
 /system/agents/_experts/foerderplaner/
@@ -168,6 +183,7 @@ PLAN.txt
 # === USER-SPEZIFISCHE SKILLS (dist_type 0) ===
 /system/skills/_os/
 # /system/skills/therapie/  # SQ046: Therapie-Skills sind ab v3.5.0 Teil des Repos
+/system/skills/steuererklaerung/
 /system/skills/_services/notizblock.md
 /system/skills/_services/user-decide.md
 /system/skills/_templates/bericht_template_geiger_universal.docx

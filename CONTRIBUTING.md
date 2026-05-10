@@ -1,6 +1,6 @@
 # Contributing to BACH
 
-BACH is a personal project by Lukas Geiger. Contributions are welcome
+BACH is maintained as part of the ellmos project family. Contributions are welcome
 but there's no guarantee of response time.
 
 ## Getting Started

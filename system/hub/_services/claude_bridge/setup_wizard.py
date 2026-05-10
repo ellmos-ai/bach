@@ -186,7 +186,7 @@ def run_wizard(base_path: Path = None):
         _WIZARD_DIR = Path(__file__).parent
         _SYSTEM_DIR = _WIZARD_DIR.parent.parent.parent
         sys.path.insert(0, str(_SYSTEM_DIR))
-        from hub.secrets import SecretsHandler
+        from hub.secrets_handler import SecretsHandler
         sh = SecretsHandler()
         sh.set_secret(
             "telegram_main_bot_token",

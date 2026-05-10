@@ -1,6 +1,6 @@
 # BACH User Manual
 
-**Version:** v3.9.0-tiramisu
+**Version:** v3.9.1-tiramisu
 **Generated:** 2026-03-12
 **License:** MIT
 
@@ -23,7 +23,7 @@ This manual describes the installation, usage and extension of BACH.
 
 # BACH - Text-Based Operating System for LLMs
 
-**Version:** v3.9.0-tiramisu
+**Version:** v3.9.1-tiramisu
 **Status:** Production-Ready
 **License:** MIT
 
@@ -33,10 +33,10 @@ BACH is a text-based operating system that empowers Large Language Models (LLMs)
 
 ### Core Features
 
-- **🤖 5 Boss Agents + 15 Experts** - Specialized agents for various task domains
-- **🛠️ 373+ Tools** - Extensive tool library for file processing, analysis, automation (DB-registered)
-- **📚 932+ Skills** - Reusable workflows and templates (DB-registered)
-- **🔄 54 Workflows** - Pre-built process protocols
+- **🤖 11 Boss Agents + 22 Experts** - Specialized agents for various task domains
+- **🛠️ 550+ Tools** - Extensive tool library for file processing, analysis, automation (DB-registered)
+- **📚 1870+ Skills** - Reusable workflows and templates (DB-registered)
+- **🔄 58 Workflow Templates** - Pre-built process workflows
 - **💾 Knowledge Store** - 138 Lessons + 248 Facts
 
 ## Installation
@@ -337,7 +337,7 @@ BACH has 97 handlers:
 - **bach scan** -- Scan Handler - Scanner management
 - **bach seal** -- Kernel Seal Handler (SQ021)
 - **bach search** -- SearchHandler - Unified Search CLI for BACH
-- **bach secrets** -- secrets.py — Secrets Management Handler (SQ076)
+- **bach secrets** -- secrets_handler.py — Secrets Management Handler (SQ076)
 - **bach session** -- SessionHandler - Session management for BACH
 - **bach settings** -- Settings Handler - Manage system settings
 - **bach shared_memory** -- Shared Memory Handler - Multi-agent memory management (SQ043)
@@ -1576,7 +1576,7 @@ prioritized. Please allow reasonable time before public disclosure.
 
 # Contributing to BACH
 
-BACH is a personal project by Lukas Geiger. Contributions are welcome
+BACH is maintained as part of the ellmos project family. Contributions are welcome
 but there's no guarantee of response time.
 
 ## How to contribute

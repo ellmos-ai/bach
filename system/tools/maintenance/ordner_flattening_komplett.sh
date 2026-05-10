@@ -15,7 +15,11 @@
 #   bash _ordner_flattening_komplett.sh --phase cleanup
 ###############################################################################
 
-TARGET_DIR="C:\Users\User\OneDrive\Dokumente\_Wissensdatenbank"
+TARGET_DIR="${TARGET_DIR:-}"
+if [ -z "$TARGET_DIR" ]; then
+    echo "Bitte TARGET_DIR auf den lokalen Wissensdatenbank-Pfad setzen."
+    exit 1
+fi
 cd "$TARGET_DIR" || { echo "Verzeichnis nicht gefunden!"; exit 1; }
 
 PHASE_ARG="${1:-all}"

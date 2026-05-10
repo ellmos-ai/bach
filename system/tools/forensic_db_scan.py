@@ -27,8 +27,8 @@ import gzip
 import os
 import random
 
-DB_PATH = r"C:\_Local_DEV\DATA_STORE\variant_fusion.sqlite"
-VCF_PATH = r"C:\Users\User\OneDrive\Dokumente\_Arztsachen\Daten, Bilder & DNA\Genetik\DNA\WGS Nebula\NG1V0Q9T8S.mm2.sortdup.bqsr.hc.vcf.gz"
+DB_PATH = os.environ.get("BACH_VARIANT_DB_PATH", "")
+VCF_PATH = os.environ.get("BACH_VCF_GZ_PATH", "")
 
 def parse_info(info_str):
     info_dict = {}

@@ -1,6 +1,6 @@
 ---
 name: bach
-version: 3.9.0
+version: 3.9.1
 type: skill
 author: BACH Team
 created: 2025-12-01
@@ -293,7 +293,7 @@ from bach_api import (
 | Read files, search code | Directly (Glob/Grep/Read) |
 | Handler not in bach_api | `app().execute("handler", "op", ["args"])` |
 
-**Architecture:** `core/registry.py` auto-discovers 109+ handlers (Auto-Discovery). New handlers only need a `.py` file in `hub/` -- no manual mapping. Hot-Reload: `app().reload_registry()`
+**Architecture:** `core/registry.py` auto-discovers 113+ handlers (Auto-Discovery). New handlers only need a `.py` file in `hub/` -- no manual mapping. Hot-Reload: `app().reload_registry()`
 
 #### Component Types
 
@@ -367,7 +367,7 @@ Or via API: `help.run("cli")`, `help.run("features")`, etc.
 
 #### Handler Discovery & Search
 
-BACH has 109+ handlers in `hub/`. **Every handler is a CLI command.** To find handlers, tools, skills, or help topics:
+BACH has 113+ handlers in `hub/`. **Every handler is a CLI command.** To find handlers, tools, skills, or help topics:
 
 ```bash
 # Fuzzy search in help topics (187+ topics, fuzzy match!)
@@ -446,8 +446,8 @@ These files contain detailed knowledge capture rules and partner-specific settin
 | 1 | System | `system_identity`, `system_config`, `instance_identity` |
 | 2 | Tasks | `tasks` |
 | 3 | Memory | `memory_working`, `memory_facts`, `memory_lessons`, `memory_sessions` |
-| 4 | Tools | `tools` (373 entries) |
-| 5 | Skills | `skills` (932 entries) |
+| 4 | Tools | `tools` (550+ entries) |
+| 5 | Skills | `skills` (1870+ entries) |
 | 6 | Agents | `bach_agents`, `bach_experts`, `agent_synergies` |
 | 7 | Files | `files_truth`, `files_trash`, `dist_files` |
 | 8 | Automation | `automation_triggers`, `automation_routines`, `automation_injectors` |

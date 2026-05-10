@@ -1219,7 +1219,7 @@ class SetupHandler(BaseHandler):
         try:
             import sys
             sys.path.insert(0, str(self.base_path))
-            from hub.secrets import SecretsHandler
+            from hub.secrets_handler import SecretsHandler
             handler = SecretsHandler()
             handler.sync_from_file(enforce_authority=False)
             return True, "Secrets-Sync abgeschlossen."

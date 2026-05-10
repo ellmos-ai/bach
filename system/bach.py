@@ -610,7 +610,7 @@ def _handle_secrets(sub_cmd, args):
     """Secrets-Management (SQ076)."""
     sys.path.insert(0, str(HUB_DIR))
     try:
-        from hub.secrets import handle_secrets_command
+        from hub.secrets_handler import handle_secrets_command
         # sub_cmd + args zusammenf├╝gen
         full_args = [sub_cmd] + args if sub_cmd else args
         handle_secrets_command(full_args)
