@@ -21,7 +21,7 @@ add <titel>              Task hinzufuegen
   Optionen: --priority P1-P4, --description TEXT, --category TEXT
 
 list [status]            Tasks auflisten
-  Status: pending (default), done, blocked, all
+  Status: pending (default), open (legacy), in_progress, done, blocked, all
   Optionen: --filter TERM, --assigned PARTNER, --unassigned
 
 show <id>                Task-Details anzeigen
@@ -60,6 +60,7 @@ Task erstellen:
 
 Tasks auflisten:
   bach task list                    # Nur pending
+  bach task list in_progress        # Aktuell in Bearbeitung
   bach task list all                # Alle
   bach task list blocked --assigned GEMINI
 

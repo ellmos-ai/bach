@@ -23,6 +23,7 @@ folders       Alle Themenordner mit Artikelanzahl auflisten
 <thema>       Artikel anzeigen (z.B. bach wiki linux)
 <ordner>/<thema>  Artikel aus Unterordner (z.B. bach wiki steuer/elster)
 search        Artikel durchsuchen (FTS5 oder Fallback-Scan)
+provenance    Metadaten, Evidenzart, Personenbezug und Privacy-Hinweise anzeigen
 sync          Wiki- und Help-Dateien in Datenbank spiegeln (Index aktualisieren)
 
 BEISPIELE
@@ -47,6 +48,12 @@ Bach wiki search "kubernetes"
 
 Bach wiki search "deployment pipeline"
   Suche mit mehreren Woertern (in Anfuehrungszeichen)
+
+Bach wiki provenance
+  Zeige die zuletzt indexierten Artikel mit Herkunft und Privacy-Einschaetzung
+
+Bach wiki provenance steuer/elster
+  Zeige Provenance fuer genau einen Artikel
 
 Bach wiki sync
   Aktualisiere Datenbank-Index (nach manuellen Datei-Aenderungen)

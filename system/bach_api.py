@@ -69,8 +69,11 @@ Verfuegbare Module:
 """
 
 import re
+import sqlite3
 import sys
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 # system/ Verzeichnis ermitteln
 _SYSTEM_DIR = Path(__file__).parent
@@ -101,12 +104,37 @@ class _HandlerProxy:
     def __init__(self, handler_name: str):
         self._name = handler_name
 
+    def _execute(self, operation: str, *args) -> tuple[bool, Any]:
+        app = get_app()
+        str_args = [str(a) for a in args]
+        return app.execute(self._name, operation, str_args)
+
+    def raw(self, operation: str = "", *args) -> tuple[bool, Any]:
+        """Fuehrt einen Handler-Aufruf im Legacy-Format aus."""
+        return self._execute(operation, *args)
+
+    def available_operations(self) -> list[str]:
+        """Listet discoverbare Operationen fuer IDEs und Agenten auf."""
+        handler = get_app().get_handler(self._name)
+        if not handler or not hasattr(handler, "get_operations"):
+            return []
+
+        operations = []
+        for operation in handler.get_operations().keys():
+            if isinstance(operation, str) and operation and operation.isidentifier():
+                operations.append(operation)
+        return sorted(set(operations))
+
+    def __dir__(self) -> list[str]:
+        names = set(super().__dir__())
+        names.update(self.available_operations())
+        names.update({"available_operations", "raw"})
+        return sorted(names)
+
     def __getattr__(self, operation: str):
         """Jeder Attributzugriff wird zu einem Handler-Aufruf."""
         def caller(*args):
-            app = get_app()
-            str_args = [str(a) for a in args]
-            success, message = app.execute(self._name, operation, str_args)
+            success, message = self._execute(operation, *args)
             if not success:
                 print(f"[FEHLER] {message}")
             return message
@@ -114,10 +142,297 @@ class _HandlerProxy:
 
     def __call__(self, operation: str = "", *args):
         """Direkter Aufruf: task("list")"""
-        app = get_app()
-        str_args = [str(a) for a in args]
-        success, message = app.execute(self._name, operation, str_args)
-        return (success, message)
+        return self.raw(operation, *args)
+
+
+class BachAPIError(RuntimeError):
+    """Fehler fuer die strukturierte bach_api."""
+
+
+class _DBBackedProxy(_HandlerProxy):
+    """Hilfsbasis fuer strukturierte Wrapper mit direktem DB-Lesezugriff."""
+
+    def _connect(self) -> sqlite3.Connection:
+        try:
+            from hub.bach_paths import BACH_DB
+            db_path = BACH_DB
+        except ImportError:
+            db_path = _SYSTEM_DIR / "data" / "bach.db"
+
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        return conn
+
+
+class _TaskProxy(_DBBackedProxy):
+    """Strukturierter Zugriff auf Task-Operationen mit Raw-Fallback."""
+
+    def add(
+        self,
+        title: str,
+        *args,
+        priority: str = "P3",
+        description: str | None = None,
+        category: str | None = "general",
+    ) -> dict[str, Any]:
+        cli_priority = priority
+        cli_description = description
+        cli_category = category
+
+        i = 0
+        while i < len(args):
+            arg = str(args[i])
+            if arg in ("--priority", "-p") and i + 1 < len(args):
+                cli_priority = str(args[i + 1]).upper()
+                i += 2
+            elif arg.startswith("--priority="):
+                cli_priority = arg.split("=", 1)[1].upper()
+                i += 1
+            elif arg in ("--description", "-d") and i + 1 < len(args):
+                cli_description = str(args[i + 1])
+                i += 2
+            elif arg.startswith("--description="):
+                cli_description = arg.split("=", 1)[1]
+                i += 1
+            elif arg in ("--category", "-c") and i + 1 < len(args):
+                cli_category = str(args[i + 1])
+                i += 2
+            elif arg.startswith("--category="):
+                cli_category = arg.split("=", 1)[1]
+                i += 1
+            else:
+                i += 1
+
+        raw_args = [title, "--priority", cli_priority]
+        if cli_description:
+            raw_args.extend(["--description", cli_description])
+        if cli_category:
+            raw_args.extend(["--category", cli_category])
+
+        success, message = self.raw("add", *raw_args)
+        if not success:
+            raise BachAPIError(message)
+
+        match = re.search(r"Task\s+(\d+)\s+erstellt", str(message))
+        if match:
+            task_data = self.show(int(match.group(1)))
+        else:
+            rows = self.list(status="all", filter_text=title, limit=1)
+            if not rows:
+                raise BachAPIError(f"Task erstellt, aber nicht wiedergefunden: {message}")
+            task_data = rows[0]
+
+        task_data["_message"] = str(message)
+        return task_data
+
+    def list(
+        self,
+        *args,
+        status: str | None = "pending",
+        filter_text: str | None = None,
+        assigned_to: str | None = None,
+        unassigned: bool = False,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        status_filter = status
+        title_filter = filter_text
+        assigned_filter = assigned_to.upper() if assigned_to else None
+        unassigned_only = unassigned
+
+        i = 0
+        while i < len(args):
+            arg = str(args[i])
+            if arg in ("all", "done", "pending", "open", "blocked"):
+                status_filter = None if arg == "all" else arg
+            elif arg.startswith("--filter="):
+                title_filter = arg.split("=", 1)[1]
+            elif arg == "--filter" and i + 1 < len(args):
+                title_filter = str(args[i + 1])
+                i += 1
+            elif arg.startswith("--assigned="):
+                assigned_filter = arg.split("=", 1)[1].upper()
+            elif arg == "--assigned" and i + 1 < len(args):
+                assigned_filter = str(args[i + 1]).upper()
+                i += 1
+            elif arg == "--unassigned":
+                unassigned_only = True
+            i += 1
+
+        conditions = []
+        params: list[Any] = []
+        if status_filter:
+            conditions.append("status = ?")
+            params.append(status_filter)
+        if title_filter:
+            conditions.append("title LIKE ?")
+            params.append(f"%{title_filter}%")
+        if assigned_filter:
+            conditions.append("(assigned_to = ? OR delegated_to = ?)")
+            params.extend([assigned_filter, assigned_filter])
+        if unassigned_only:
+            conditions.append(
+                "(assigned_to IS NULL OR assigned_to = '') "
+                "AND (delegated_to IS NULL OR delegated_to = '')"
+            )
+
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        sql = (
+            "SELECT id, priority, title, status, category, description, assigned_to, "
+            "delegated_to, depends_on, created_at, completed_at, updated_at "
+            "FROM tasks "
+            f"WHERE {where_clause} "
+            "ORDER BY priority, id"
+        )
+        if limit and limit > 0:
+            sql += " LIMIT ?"
+            params.append(limit)
+
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            return [self._row_to_task(conn, row) for row in rows]
+
+    def show(self, task_id: int | str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (int(task_id),)).fetchone()
+            if not row:
+                raise BachAPIError(f"Task {task_id} nicht gefunden")
+            return self._row_to_task(conn, row)
+
+    def _row_to_task(self, conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
+        task_data = dict(row)
+        task_data["partner"] = task_data.get("assigned_to") or task_data.get("delegated_to") or ""
+        task_data["is_blocked_by_dep"] = self._is_blocked_by_dependency(
+            conn,
+            task_data.get("depends_on"),
+        )
+        return task_data
+
+    def _is_blocked_by_dependency(
+        self,
+        conn: sqlite3.Connection,
+        depends_on: str | None,
+    ) -> bool:
+        if not depends_on:
+            return False
+
+        dep_ids = [int(value.strip()) for value in str(depends_on).split(",") if value.strip()]
+        if not dep_ids:
+            return False
+
+        placeholders = ",".join("?" for _ in dep_ids)
+        unfinished = conn.execute(
+            f"SELECT COUNT(*) FROM tasks WHERE id IN ({placeholders}) AND status != 'done'",
+            dep_ids,
+        ).fetchone()[0]
+        return unfinished > 0
+
+
+class _MemoryProxy(_DBBackedProxy):
+    """Strukturierter Zugriff auf Working-Memory mit Raw-Fallback."""
+
+    def write(
+        self,
+        text: str,
+        *,
+        entry_type: str = "note",
+        priority: int | None = None,
+        tags: str | list[str] | None = None,
+        expires_at: str | None = None,
+        is_active: bool = True,
+    ) -> dict[str, Any]:
+        now = datetime.now().isoformat()
+        tag_value: str | None
+        if isinstance(tags, (list, tuple, set)):
+            tag_value = ",".join(str(tag) for tag in tags)
+        else:
+            tag_value = tags
+
+        payload = {
+            "type": entry_type,
+            "content": text,
+            "created_at": now,
+            "updated_at": now,
+            "is_active": 1 if is_active else 0,
+        }
+        if priority is not None:
+            payload["priority"] = priority
+        if tag_value:
+            payload["tags"] = tag_value
+        if expires_at:
+            payload["expires_at"] = expires_at
+
+        row_id = db.insert("memory_working", payload)
+        return self._get_entry(row_id)
+
+    def read(
+        self,
+        limit: int = 10,
+        *,
+        entry_type: str | None = None,
+        active_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        conditions = []
+        params: list[Any] = []
+
+        if active_only:
+            conditions.append("is_active = 1")
+        if entry_type:
+            conditions.append("type = ?")
+            params.append(entry_type)
+
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        sql = (
+            "SELECT id, type, content, priority, tags, created_at, updated_at, "
+            "expires_at, is_active "
+            "FROM memory_working "
+            f"WHERE {where_clause} "
+            "ORDER BY created_at DESC "
+            "LIMIT ?"
+        )
+        params.append(limit)
+
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(row) for row in rows]
+
+    def status(self) -> dict[str, int]:
+        with self._connect() as conn:
+            return {
+                "working": conn.execute(
+                    "SELECT COUNT(*) FROM memory_working WHERE is_active = 1"
+                ).fetchone()[0],
+                "facts": conn.execute(
+                    "SELECT COUNT(*) FROM memory_facts"
+                ).fetchone()[0],
+                "lessons": conn.execute(
+                    "SELECT COUNT(*) FROM memory_lessons WHERE is_active = 1"
+                ).fetchone()[0],
+                "sessions": conn.execute(
+                    "SELECT COUNT(*) FROM memory_sessions"
+                ).fetchone()[0],
+                "confidence_high": conn.execute(
+                    "SELECT COUNT(*) FROM memory_facts WHERE confidence >= 0.8"
+                ).fetchone()[0],
+                "confidence_mid": conn.execute(
+                    "SELECT COUNT(*) FROM memory_facts WHERE confidence >= 0.5 "
+                    "AND confidence < 0.8"
+                ).fetchone()[0],
+                "confidence_low": conn.execute(
+                    "SELECT COUNT(*) FROM memory_facts WHERE confidence < 0.5 "
+                    "AND confidence IS NOT NULL"
+                ).fetchone()[0],
+            }
+
+    def _get_entry(self, entry_id: int) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, type, content, priority, tags, created_at, updated_at, "
+                "expires_at, is_active FROM memory_working WHERE id = ?",
+                (entry_id,),
+            ).fetchone()
+            if not row:
+                raise BachAPIError(f"Memory-Eintrag {entry_id} nicht gefunden")
+            return dict(row)
 
 
 # --- Session-Management ---
@@ -199,8 +514,8 @@ class _SessionProxy:
 session = _SessionProxy()
 
 # Handler-Proxies (haeufigste)
-task = _HandlerProxy("task")
-memory = _HandlerProxy("memory")
+task = _TaskProxy("task")
+memory = _MemoryProxy("memory")
 backup = _HandlerProxy("backup")
 steuer = _HandlerProxy("steuer")
 lesson = _HandlerProxy("lesson")
@@ -457,6 +772,7 @@ class _InjectorProxy:
 injector = _InjectorProxy()
 
 __all__ = [
+    "BachAPIError",
     "get_app",
     "session",
     "task",

@@ -331,5 +331,66 @@ class TestApp:
         assert len(message) > 0
 
 
+class TestBachCliDispatch:
+    def _dummy_app(self, called):
+        class DummyHandler:
+            def handle(self, operation, args, dry_run=False):
+                called["operation"] = operation
+                called["args"] = list(args)
+                called["dry_run"] = dry_run
+                return True, "[DRY-RUN] ok" if dry_run else "ok"
+
+        class DummyRegistry:
+            def suggest(self, _command):
+                return []
+
+        class DummyApp:
+            registry = DummyRegistry()
+
+            def get_handler(self, name):
+                return DummyHandler() if name == "dummy" else None
+
+        return DummyApp()
+
+    def test_subcommand_handler_gets_dry_run_flag(self, monkeypatch, capsys):
+        import bach as bach_cli
+
+        called = {}
+        monkeypatch.setattr(bach_cli, "_get_app", lambda: self._dummy_app(called))
+        monkeypatch.setattr(bach_cli, "_run_injectors", lambda *args, **kwargs: None)
+        monkeypatch.setattr(bach_cli, "cmd", lambda *args, **kwargs: None)
+        monkeypatch.setenv("BACH_USE_LAUNCHER", "0")
+        monkeypatch.setattr(sys, "argv", ["bach.py", "dummy", "run", "target", "--dry-run"])
+
+        rc = bach_cli.main()
+
+        assert rc == 0
+        assert called == {
+            "operation": "run",
+            "args": ["target", "--dry-run"],
+            "dry_run": True,
+        }
+        assert "[DRY-RUN] ok" in capsys.readouterr().out
+
+    def test_profile_handler_gets_dry_run_flag(self, monkeypatch, capsys):
+        import bach as bach_cli
+
+        called = {}
+        monkeypatch.setattr(bach_cli, "_get_app", lambda: self._dummy_app(called))
+        monkeypatch.setattr(bach_cli, "_run_injectors", lambda *args, **kwargs: None)
+        monkeypatch.setattr(bach_cli, "cmd", lambda *args, **kwargs: None)
+        monkeypatch.setattr(sys, "argv", ["bach.py", "--dummy", "run", "target", "--dry-run"])
+
+        rc = bach_cli.main()
+
+        assert rc == 0
+        assert called == {
+            "operation": "run",
+            "args": ["target", "--dry-run"],
+            "dry_run": True,
+        }
+        assert "[DRY-RUN] ok" in capsys.readouterr().out
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

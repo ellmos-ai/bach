@@ -31,6 +31,7 @@ Prueft dass alle kritischen CLI-Befehle weiterhin funktionieren.
 import sys
 import subprocess
 import re
+import json
 from pathlib import Path
 
 SYSTEM_ROOT = Path(__file__).parent.parent
@@ -86,6 +87,11 @@ class TestCLIBackwardsCompat:
         code, out, err = run_bach("memory", "read")
         assert code == 0
         assert "WORKING MEMORY" in out or "Memory" in out
+
+    def test_memory_provenance(self):
+        code, out, err = run_bach("memory", "provenance", "facts", "1")
+        assert code == 0
+        assert "PROVENANCE" in out
 
     def test_status(self):
         code, out, err = run_bach("--status")
@@ -209,6 +215,13 @@ class TestCLIBackwardsCompat:
         # Agent-Liste kann entweder direkt auflisten oder AGENTS.md generieren
         assert "agent" in out.lower() or "AGENTS.md" in out or "generiert" in out.lower()
 
+    def test_agent_list_json(self):
+        code, out, err = run_bach("agent", "list", "--json")
+        assert code == 0, err
+        payload = json.loads(out)
+        assert "agents" in payload
+        assert "active_count" in payload
+
     def test_downgrade_help(self):
         """Test bach help downgrade (SQ020)."""
         code, out, err = run_bach("help", "downgrade")
@@ -280,6 +293,19 @@ class TestCLIBackwardsCompat:
         assert code == 0
         assert "DAEMON" in out or "Status" in out
 
+    def test_scheduler_status_json(self):
+        code, out, err = run_bach("scheduler", "status", "--json")
+        assert code == 0, err
+        payload = json.loads(out)
+        assert "service" in payload
+        assert "jobs" in payload
+
+    def test_scheduler_jobs_json(self):
+        code, out, err = run_bach("scheduler", "jobs", "--json")
+        assert code == 0, err
+        payload = json.loads(out)
+        assert isinstance(payload["jobs"], list)
+
     def test_docs_list(self):
         """Test bach docs list (Dokumentations-Generator)."""
         code, out, err = run_bach("docs", "list")
@@ -297,6 +323,11 @@ class TestCLIBackwardsCompat:
         code, out, err = run_bach("wiki", "search", "bach")
         assert code == 0
         # Wiki-Suche sollte Ergebnisse oder "keine Treffer" anzeigen
+
+    def test_wiki_provenance(self):
+        code, out, err = run_bach("wiki", "provenance", "1")
+        assert code == 0
+        assert "PROVENANCE" in out
 
     def test_task_add(self):
         """Test bach task add (UC-Tasks erstellen)."""
@@ -362,6 +393,79 @@ class TestLibraryAPI:
         app = get_app()
         success, message = app.execute("memory", "status")
         assert success is True
+
+    def test_dir_exposes_documented_operations(self):
+        if str(SYSTEM_ROOT) not in sys.path:
+            sys.path.insert(0, str(SYSTEM_ROOT))
+        from bach_api import task, memory
+
+        task_dir = dir(task)
+        memory_dir = dir(memory)
+
+        assert "add" in task_dir
+        assert "list" in task_dir
+        assert "show" in task_dir
+        assert "raw" in task_dir
+        assert "write" in memory_dir
+        assert "read" in memory_dir
+        assert "status" in memory_dir
+
+    def test_structured_task_api_and_raw_fallback(self):
+        if str(SYSTEM_ROOT) not in sys.path:
+            sys.path.insert(0, str(SYSTEM_ROOT))
+        from bach_api import task
+
+        created = task.add(
+            "Structured API Smoke Task",
+            priority="P4",
+            category="tests",
+            description="structured smoke",
+        )
+        try:
+            assert created["title"] == "Structured API Smoke Task"
+            assert created["priority"] == "P4"
+            assert created["category"] == "tests"
+            assert isinstance(created["id"], int)
+
+            listed = task.list("--filter", "Structured API Smoke Task", limit=5)
+            assert any(row["id"] == created["id"] for row in listed)
+
+            details = task.show(created["id"])
+            assert details["description"] == "structured smoke"
+
+            success, raw_message = task.raw("show", created["id"])
+            assert success is True
+            assert "Structured API Smoke Task" in raw_message
+        finally:
+            success, _ = task.raw("delete", created["id"])
+            assert success is True
+
+    def test_structured_memory_api(self):
+        if str(SYSTEM_ROOT) not in sys.path:
+            sys.path.insert(0, str(SYSTEM_ROOT))
+        from bach_api import db, memory
+
+        entry = memory.write(
+            "Structured memory smoke note",
+            priority=2,
+            tags=["smoke", "api"],
+        )
+        try:
+            assert entry["content"] == "Structured memory smoke note"
+            assert entry["priority"] == 2
+            assert entry["tags"] == "smoke,api"
+
+            recent = memory.read(limit=5, entry_type="note")
+            assert any(row["id"] == entry["id"] for row in recent)
+
+            status = memory.status()
+            assert status["working"] >= 1
+
+            success, raw_message = memory.raw("read", 1)
+            assert success is True
+            assert "WORKING MEMORY" in raw_message or "Memory" in raw_message
+        finally:
+            db.delete("memory_working", {"id": entry["id"]})
 
     def test_documented_agent_prompt_modules_via_api(self):
         if str(SYSTEM_ROOT) not in sys.path:

@@ -1,13 +1,13 @@
 # Portabilitaet: SYSTEM
 # Version: 1.0.0
-# Zuletzt validiert: 2026-02-28
-# Naechste Pruefung: 2026-08-28
+# Zuletzt validiert: 2026-05-09
+# Naechste Pruefung: 2026-11-09
 # Ressourcen: [hub/agent_launcher.py, agents/, agents/_experts/]
 
 AGENT - Agent-Launcher und Verwaltung
 ======================================
 
-STAND: 2026-02-28
+STAND: 2026-05-09
 
 Das Agent-System erlaubt das Starten und Verwalten von BACH-Agenten
 als separate Claude-Code-Prozesse. Jeder Agent wird mit seiner eigenen
@@ -32,12 +32,16 @@ CLI-BEFEHLE (bach agent)
   start <name>          Agent starten (neues Terminalfenster)
   stop <name>           Laufenden Agent stoppen
   status                Alle laufenden Agents anzeigen
+  list --json           Agenten inkl. Laufzeit-Metadaten als JSON
+  status --json         Laufende/registrierte Agenten als JSON
 
 OPTIONEN FUER START
 -------------------
 
   --mode plan|default   Modus (Standard: default)
   --model sonnet|opus|haiku   KI-Modell (Standard: sonnet)
+  --dry-run             Nur pruefen, nicht starten
+  --json                Maschinenlesbare Ausgabe fuer list/status
 
 BEISPIELE
 ---------
@@ -49,9 +53,11 @@ BEISPIELE
   bach agent start ati
   bach agent start research --model opus
   bach agent start entwickler --mode plan
+  bach agent start ati --dry-run
 
   # Laufende Agents anzeigen
   bach agent status
+  bach agent status --json
 
   # Agent stoppen (per Name)
   bach agent stop ati

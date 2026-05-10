@@ -847,29 +847,26 @@ def main():
 
     logger = get_logger(BACH_DIR)
 
-    # Auto-Sync bei Start (wenn aktiviert)
+    # ProSync: Pull bei Start, Push bei Exit
     sync_config = SYSTEM_ROOT / "config" / "db_sync_enabled"
     if sync_config.exists():
         try:
             from hub.db_sync import DBSyncManager
             manager = DBSyncManager()
-            newer = manager.find_newer_backups()
-            if newer:
-                print(f"[DB SYNC] Neueres Backup gefunden: {newer[0].name}")
-                manager.merge_backup(newer[0])
-                print("[DB SYNC] Sync abgeschlossen")
+            ok, msg = manager.sync_on_start()
+            print(f"[ProSync] {msg}")
         except Exception as e:
-            print(f"[DB SYNC] Fehler: {e}")
+            print(f"[ProSync] Start-Fehler: {e}")
 
-    # Auto-Backup bei Exit registrieren (max. 1x taeglich + Auto-Cleanup)
     import atexit
-    def _exit_backup():
+    def _exit_sync():
         try:
             from hub.db_sync import DBSyncManager
-            DBSyncManager().create_backup_if_needed()
+            ok, msg = DBSyncManager().sync_on_exit()
+            print(f"[ProSync] {msg}")
         except Exception:
             pass
-    atexit.register(_exit_backup)
+    atexit.register(_exit_sync)
 
     # Keine Argumente oder Help
     if len(sys.argv) < 2 or sys.argv[1] in ['-h', '--help', 'help']:
@@ -887,6 +884,7 @@ def main():
     arg = sys.argv[1]
     sub_cmd = sys.argv[2] if len(sys.argv) > 2 else ""
     args = sys.argv[3:] if len(sys.argv) > 3 else []
+    json_requested = "--json" in sys.argv[2:]
 
     # ── --help Abfangen (CLI --help Parsing-Bug Fix, Runde 24) ──
     # Wenn --help oder -h als sub_cmd ODER in args vorkommt -> Hilfe anzeigen
@@ -921,8 +919,9 @@ def main():
                 pass  # session_id bleibt None
 
             tracker = ActivityTracker(DB_PATH, idle_threshold_minutes=30)
-            tracker.check_eod_and_finalize(BACH_ROOT, eod_hour=23)  # EOD-Timer (23:00 Uhr)
-            tracker.check_idle_and_finalize(BACH_ROOT)
+            if not json_requested:
+                tracker.check_eod_and_finalize(BACH_ROOT, eod_hour=23)  # EOD-Timer (23:00 Uhr)
+                tracker.check_idle_and_finalize(BACH_ROOT)
             tracker.tick(session_id=session_id)
         except Exception as e:
             # Graceful Degradation: Activity-Tracking-Fehler blockieren nicht den CLI-Befehl
@@ -953,9 +952,11 @@ def main():
 
             try:
                 cmd(profile_name, [operation] + handler_args)
-                success, message = handler.handle(operation, handler_args)
+                dry_run = "--dry-run" in handler_args or "-n" in handler_args
+                success, message = handler.handle(operation, handler_args, dry_run)
                 print(message)
-                _run_injectors(message, f"{profile_name} {operation}")
+                if not json_requested:
+                    _run_injectors(message, f"{profile_name} {operation}")
 
                 # Auto-Watch bei --startup --watch
                 if profile_name == "startup" and "--watch" in handler_args:
@@ -1083,7 +1084,8 @@ def main():
                 base_path=SYSTEM_ROOT
             )
             print(message)
-            _run_injectors(message, f"{command} {sub_cmd}")
+            if not json_requested:
+                _run_injectors(message, f"{command} {sub_cmd}")
             return 0 if success else 1
         except Exception as e:
             log(f"[ERROR] Launcher: {e}")
@@ -1099,9 +1101,11 @@ def main():
             operation = sub_cmd or ""
             try:
                 cmd(command, [operation] + args)
-                success, message = handler.handle(operation, args)
+                dry_run = "--dry-run" in args or "-n" in args
+                success, message = handler.handle(operation, args, dry_run)
                 print(message)
-                _run_injectors(message, f"{command} {operation}")
+                if not json_requested:
+                    _run_injectors(message, f"{command} {operation}")
                 return 0 if success else 1
             except Exception as e:
                 log(f"[ERROR] {e}")

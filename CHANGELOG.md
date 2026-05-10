@@ -36,12 +36,20 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 - **Manifest-first Plugin-Prüfung:** `bach plugins inspect <pfad>` zeigt Plugin-Metadaten ohne Runtime-Import; `plugins load` blockiert Manifeste mit fehlenden Hook-/Handler-/Workflow-Dateireferenzen, bevor Plugin-Code geladen wird.
 - **Fail-closed Setup-Guards für Plugins:** Plugin-Manifeste mit `shell`-, `desktop`- oder `mcp`-Setupflächen brauchen jetzt `setup.fail_closed=true` plus passende `setup.checks`; `plugins inspect/load` blockieren unsichere Verträge noch vor Runtime-Code.
 - **Editable-Install für `bach_api`:** Repo-Root exportiert jetzt einen `bach_api`-Shim plus `pyproject.toml`, damit `pip install -e .` und `from bach_api import ...` ohne `sys.path.insert(...)` für Entwickler- und Agenten-Usecases funktionieren.
+- **Strukturierte `bach_api`-Kernmodule:** `task` und `memory` exponieren jetzt echte Methoden, sind über `dir(...)` discoverbar, liefern für typische Reads/Writes Python-Objekte und behalten `raw(...)` als Legacy-Fallback.
+
+- **Memory-/Wiki-Provenance Views:** `bach memory provenance [scope] [limit]` und `bach wiki provenance [artikel|limit]` zeigen heuristisch Quelle, Evidenzart, Personenbezug und Privacy-Hinweise; die gemeinsame Logik liegt in `system/core/provenance.py`.
+- **Maschinenlesbare Agent-/Scheduler-Statusflaechen:** `bach agent list/status --json` sowie `bach scheduler status/jobs/session status --json` liefern jetzt strukturierte Run-/Statusdaten fuer externe Tools, Polling und spaetere Operator-Steuerung.
 
 ### Bugfix
 
 - **Registry-Watcher ans aktuelle Layout angepasst:** `bach --maintain registry check` trennt jetzt rekursive Core-Dateien von historischen, externen und stale DB-Eintraegen. Der Startup-Selbstcheck wertet nur noch `actionable_issues` aus und meldet keine massiven False Positives mehr, wenn nur Altlasten in der DB liegen.
 - **Usecase-Runner gehaertet:** `bach usecase run <id>` bricht bei aelteren DB-Eintraegen ohne konkrete Workflow-Datei nicht mehr mit `Workflow nicht gefunden` ab, sondern faellt auf einen manuellen Datenmodus mit Pfad-Resolution und Warnhinweis zurueck.
 - **Self-Heal CLI/API:** `bach mem write/read/...` delegiert jetzt auf den bestehenden `memory`-Handler; `bach wiki read <thema>` ist als Alias verfuegbar; `bach task add` gibt die neue Task-ID direkt aus.
+- **Provenance-Regressionen abgesichert:** Self-Heal- und Smoke-Tests decken die neuen Memory-/Wiki-Provenance-Ansichten ab.
+- **CLI-Dry-Run wird wieder korrekt durchgereicht:** `system/bach.py` uebergibt `--dry-run`/`-n` jetzt auch im generischen Handler-Dispatch, sodass `bach agent start ... --dry-run` und `bach --agent start ... --dry-run` keine echten Prozesse mehr starten.
+- **Saubere JSON-CLI-Ausgaben:** `--json`-Befehle unterdruecken jetzt Idle-/EOD-Finalisierungs-Chatter und Injector-Ausgaben, damit Status-Polling keine kaputten JSON-Antworten mehr erzeugt.
+- **Git-Hygiene für Runtime-Artefakte:** `.gitignore` ignoriert jetzt auch instanzbezogene SQLite-Sidecars (`bach-*.db-journal/.wal/.shm`) sowie generierte `Doc_Update_Report_*.md`, damit Daily-Care-Läufe keine Push-Reste hinterlassen.
 - **agent_launcher.py:** Windows cp1252 Encoding-Fix bei tasklist-Subprocess (0x81 Umlaut-Crash)
 - **agent_launcher.py:** Experten-Display-Names aus `bach_experts.skill_path` werden beim Start wieder auf das aktuelle Skill-Verzeichnis aufgeloest; `bach agent start Theodor` trifft dadurch erneut `agents/_experts/steuer/`.
 - **bach_api.py:** Import-Lücke geschlossen, durch die `from bach_api import agent` trotz dokumentierter API fehlschlug.
@@ -51,7 +59,10 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 - **Release-Verweise bereinigt:** `ROADMAP.md` zeigt jetzt auf die realen Planungsdateien unter `.dev/` statt auf veraltete `BACH_Dev`-Pfade.
 - **NEXT_RELEASE bereinigt:** Marketing-Referenz zeigt auf `.dev/marketing/M07_CHARAKTER_PROFILE.md`; QA-Notizen nennen die aktuellen Persona-/Registry-Regressionstests.
-- **OpenClaw-Abgleich 2026-05-07:** README, README.de, ROADMAP und NEXT_RELEASE aktualisiert; latest stable `2026.5.5` (6. Mai 2026) gegen GitHub Releases gegengeprueft. Relevante Impulse: workspace-scoped Plugin-Metadaten-Caches, Install-Hinweise fuer fehlende offizielle Erweiterungen, kollisionssichere Session-Memory-Captures, aktive Laufsteuerung, Plugin-/Provider-Haertung und Memory-/Wiki-Provenance.
+- **OpenClaw-Abgleich 2026-05-08:** README, README.de, ROADMAP und NEXT_RELEASE aktualisiert; latest stable `2026.5.7` (7. Mai 2026) gegen GitHub Releases gegengeprueft. Relevante Impulse: workspace-scoped Plugin-Metadaten-Caches, Install-Hinweise fuer fehlende offizielle Erweiterungen, kollisionssichere Session-Memory-Captures, aktive Laufsteuerung, Plugin-/Provider-Haertung, Cache-Invalidierung, Auth-Gating und machine-readable Run-/Cron-Status.
+- **OpenClaw-Abgleich 2026-05-09 erneut verifiziert:** Latest stable bleibt `2026.5.7` (7. Mai 2026); README, README.de, ROADMAP und NEXT_RELEASE auf den verifizierten Stand fortgeschrieben.
+- **Agent-Hilfe aktualisiert:** `help agent` und `help agent_launcher` dokumentieren `--dry-run` jetzt explizit.
+- **Provenance-Dokumentation nachgezogen:** CLI-Hilfen fuer `memory provenance` und `wiki provenance` sowie Release-/Roadmap-Notizen auf den implementierten Stand gebracht.
 - **README-Version bereinigt:** Footer auf `v3.8.0-sugar-of-babel` angeglichen.
 
 ---

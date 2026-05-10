@@ -94,6 +94,7 @@ GRUNDBEFEHLE:
   bach --memory session "..."       Session-Bericht speichern
   bach --memory search "..."        Assoziative Suche
   bach --memory status              Detaillierter Memory-Status
+  bach --memory provenance          Herkunft, Evidenzart, Personenbezug und Privacy-Hinweise
   bach --status                     Memory-Status im Header sehen
 
 LIBRARY API (bach_api.py):
@@ -113,6 +114,11 @@ KONFIDENZ-BEFEHLE:
 SESSION-BEFEHLE:
   bach --memory sessions            Alle Sessions anzeigen
   bach --memory sessions N          Letzte N Sessions anzeigen
+
+PROVENANCE-VIEWS:
+  bach --memory provenance              Letzte Einträge aus allen Memory-Bereichen
+  bach --memory provenance facts 10     Nur Fakten mit Quelle, Evidenz und Privacy-Hinweis
+  bach --memory provenance sessions 5   Session-Zusammenfassungen mit Partner-/Privacy-Sicht
 
 FAKT MIT KONFIDENZ SPEICHERN:
   bach --memory fact "key:value" --conf=0.8 --source="user"

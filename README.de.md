@@ -16,6 +16,7 @@ BACH ist ein textbasiertes Betriebssystem, das Large Language Models (LLMs) bef�
 - **54 Protocol Workflows** - Vorgefertigte Prozess-Protokolle
 - **Install Security Gate** - Statische Scans für `skills install`, `plugins load` und MCP-Setup/Config-Aktivierung; Plugin-Setups mit Shell/Desktop/MCP-Zugriff brauchen jetzt explizite fail-closed Guards, blockierte lokale Importe werden quarantänisiert
 - **Manifest-first Plugins** - `bach plugins inspect` zeigt Aktivierung, Provider-/Model-, Setup- und Capability-Metadaten ohne Runtime-Import
+- **Strukturierte `bach_api`-Kernmodule** - `task` und `memory` bieten jetzt über `dir(...)` auffindbare Methoden, liefern bei häufigen Reads/Writes Python-Objekte zurück und behalten `raw(...)` für Legacy-Handler-Aufrufe
 - **Wissensspeicher** - Lessons, Facts und mehrstufiges Memory-System
 
 ## Installation
@@ -67,7 +68,7 @@ Scheduler fuer wiederkehrende Tasks und Event-basierte Workflows.
 
 ## OpenClaw-Abgleich
 
-Stand 2026-05-07: OpenClaw bleibt fuer BACH vor allem als Vergleichssystem fuer breite Messaging-Anbindung, Plugin-Oekosystem und Security-Patterns relevant. Die aktuelle stabile GitHub-Release ist `2026.5.5` vom 6. Mai 2026. Fuer BACH sind aus der juengsten Linie `2026.4.x` bis `2026.5.5` vor allem die Control-Plane-Impulse relevant: workspace-scoped Plugin-Metadaten-Snapshots auf Hot Paths, Install-Hinweise fuer fehlende offizielle Erweiterungen, kollisionssichere Session-Memory-Captures bei wiederholtem Reset/New sowie strengere fail-closed Config-/Setup-Pruefungen. BACH deckt davon bereits manifest-first Plugin-Metadaten, fail-closed Setup-Guards fuer Shell/Desktop/MCP-Flaechen und Scans mit Quarantaene vor der Installation bzw. Aktivierung von Skills, MCP-Servern und Plugins ab.
+Stand 2026-05-09: OpenClaw bleibt für BACH vor allem als Vergleichssystem für breite Messaging-Anbindung, Plugin-Ökosystem und Security-Patterns relevant. Die aktuelle stabile GitHub-Release bleibt laut GitHub Releases `2026.5.7` vom 7. Mai 2026. Für BACH sind aus der jüngsten Linie `2026.4.x` bis `2026.5.7` vor allem die Control-Plane-Impulse relevant: workspace-scoped Plugin-Metadaten-Snapshots auf Hot Paths, Install-Hinweise für fehlende offizielle Erweiterungen, kollisionssichere Session-Memory-Captures bei wiederholtem Reset/New, Cache-Invalidierung nach Skill-Änderungen sowie strengere fail-closed Config-/Setup-Prüfungen und Auth-Gates. BACH deckt davon bereits manifest-first Plugin-Metadaten, fail-closed Setup-Guards für Shell/Desktop/MCP-Flächen, Scans mit Quarantäne vor der Installation bzw. Aktivierung von Skills, MCP-Servern und Plugins, heuristische Memory-/Wiki-Provenance-Ansichten für Quelle, Evidenzart, Personenbezug und Privacy-Hinweise sowie neue maschinenlesbare Agent-/Scheduler-Statusflächen ab.
 
 ## Dokumentation
 

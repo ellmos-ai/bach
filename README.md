@@ -31,9 +31,11 @@
 - **54 Protocol Workflows** - Pre-built process workflows
 - **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System
 - **Agent CLI** - `bach agent start/stop/list` for direct agent control
+- **Machine-readable Status Surfaces** - `bach agent list/status --json` plus `bach scheduler status/jobs/session status --json` for external tooling and automation-safe polling
 - **Prompt System** - Central prompt management with board system and versioning
 - **Install Security Gate** - Static pre-load scans block obvious code-injection patterns during `skills install`/`plugins load`; MCP setup validates allowlisted packages/configs fail-closed, plugin setup contracts now require explicit shell/desktop/MCP checks, and blocked local imports are quarantined
 - **Manifest-first Plugins** - `bach plugins inspect` previews activation, provider/model, setup, and capability metadata without importing plugin runtime code
+- **Structured `bach_api` Core** - `task` and `memory` now expose discoverable methods via `dir(...)`, return Python objects for common reads/writes, and still keep `raw(...)` for legacy handler-style calls
 - **SharedMemory Bus** - Multi-agent coordination with conflict detection and decay
 - **USMC Bridge** - United Shared Memory Communication for cross-agent communication
 - **llmauto Chains** - Claude prompts as chain steps with `bach://` URL resolution
@@ -147,7 +149,7 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 
 ## See Also: OpenClaw
 
-How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the popular open-source AI assistant (about 369k GitHub stars observed on 2026-05-07)?
+How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the popular open-source AI assistant (about 370k GitHub stars observed on 2026-05-09)?
 
 | | **BACH** | **OpenClaw** |
 |---|---|---|
@@ -163,11 +165,11 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), the p
 
 **In short:** BACH goes deep (structured memory, autonomous agents, scheduler, 145+ DB tables). OpenClaw goes wide (20+ messengers, native apps, voice, massive community). Different philosophies, complementary strengths.
 
-### Competitive Watch (2026-05-07)
+### Competitive Watch (2026-05-09)
 
-As of May 7, 2026, OpenClaw's latest stable GitHub release is `2026.5.5`, published on May 6, 2026. For BACH, the relevant takeaways from the recent `2026.4.x` to `2026.5.5` release line are still not the broader channel surface, but control-plane hardening: workspace-scoped plugin metadata snapshot reuse on hot paths, install hints for missing official external plugins, collision-safe session-memory capture around repeated resets/new sessions, and stricter fail-closed config/setup behavior.
+As of May 9, 2026, verified against GitHub Releases, OpenClaw's latest stable release remains `2026.5.7`, published on May 7, 2026. For BACH, the relevant additions on top of the earlier `2026.4.x` to `2026.5.5` line are still not the broader channel surface, but runtime hygiene and control-plane hardening: cache invalidation after skill changes or pre-reset history shrinkage, stricter authorization hooks around inline skill/tool dispatch, active-runtime config snapshot resolution for secret-backed tools, computed cron status for external automation, and tighter admin scoping for global memory toggles.
 
-BACH should keep selectively adopting the parts that fit its operating-system model: manifest-first metadata, fail-closed setup checks, broader install scanning for skills/MCP/plugins, privacy-preserving secret/reference handling, active-run steering at safe checkpoints, memory/wiki provenance views, and low-cardinality telemetry. BACH now also validates malformed existing Claude config JSON before hook or MCP setup writes, which moves the setup-check track forward without pulling in OpenClaw's wider channel/runtime surface.
+BACH already ships several of the OpenClaw-inspired control-plane pieces that fit its operating-system model: manifest-first metadata, fail-closed setup checks, broader install scanning for skills/MCP/plugins, privacy-preserving secret/reference handling, memory/wiki provenance views, and new machine-readable agent/scheduler status surfaces. The next high-leverage steps remain active-run steering at safe checkpoints, low-cardinality telemetry, cache invalidation, stricter auth gating, and external observability.
 
 ## License
 

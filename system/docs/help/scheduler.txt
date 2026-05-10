@@ -30,10 +30,12 @@ CLI-BEFEHLE (bach scheduler)
 
   jobs              Alle Jobs anzeigen
   status            Scheduler-Status
+  status --json     Scheduler-Status als JSON
   start [--bg]      Scheduler-Service starten (--bg fuer Hintergrund)
   stop              Scheduler-Service stoppen
   run <ID>          Einzelnen Job manuell ausfuehren
   logs [N]          Letzte Log-Eintraege anzeigen (Standard: 20)
+  jobs --json       Scheduler-Jobs mit berechnetem Status als JSON
 
 SESSION-SYSTEM
 --------------
@@ -41,6 +43,7 @@ SESSION-SYSTEM
   session start [--profile NAME]   Session-Scheduler starten
   session stop                     Session-Scheduler stoppen
   session status                   Session-Status anzeigen
+  session status --json            Session-Status als JSON
   session trigger [--profile NAME] Session manuell ausloesen
   session profiles                 Verfuegbare Profile auflisten
 
@@ -87,6 +90,7 @@ Empfohlene Methode statt automatischem Scheduler:
   # Job einmalig ausfuehren
   bach scheduler run 1         # Scanner einmal laufen lassen
   bach scheduler run 2         # Backup einmal erstellen
+  bach scheduler jobs --json   # Jobs fuer externe Tools/Agenten
 
   # Oder direkt den Befehl
   bach scan run                # Scanner

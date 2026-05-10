@@ -34,7 +34,7 @@ BACH hat ZWEI parallele Zugangswege - beide nutzen dieselben Handler + DB:
 CLI-BEFEHLE (bach task)
 -----------------------
   add <titel>       Erstellt Task (--priority P1-P4, --description, --category)
-  list [filter]     Gefilterte Uebersicht (pending/done/blocked/all)
+  list [status]     Gefilterte Uebersicht (pending/open/in_progress/done/blocked/all)
   list --filter     Nach Begriff im Titel filtern
   list --assigned   Tasks fuer einen bestimmten Partner
   list --unassigned Tasks ohne Zuweisung
@@ -61,6 +61,8 @@ LIBRARY-API BEISPIELE
 
   # Tasks auflisten
   task.list("pending")
+  task.list("open")         # Legacy-Status
+  task.list("in_progress")  # Aktuell in Bearbeitung
   task.list("all", "--assigned", "GEMINI")
   task.list("--unassigned")
 

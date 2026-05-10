@@ -71,7 +71,11 @@ from typing import Optional
 BACH_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(BACH_ROOT))
 
-BACH_DB = str(BACH_ROOT / "data" / "bach.db")
+try:
+    from hub.bach_paths import BACH_DB as _PATHS_DB
+    BACH_DB = str(_PATHS_DB)
+except ImportError:
+    BACH_DB = str(BACH_ROOT / "data" / "bach.db")
 
 try:
     from fastapi import FastAPI, HTTPException, Depends, Request, Query

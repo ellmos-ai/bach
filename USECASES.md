@@ -1,7 +1,7 @@
 # BACH Usecases
 
 Automatisch generiert aus der Datenbank (usecases).
-Letzte Aktualisierung: 2026-05-06 12:35
+Letzte Aktualisierung: 2026-05-10 04:21
 
 **Total:** 50 Usecases
 
@@ -125,7 +125,7 @@ Aktuelle Medikation mit Dosierung, Einnahmezeit, Wirkung. Aus Arztberichten extr
 
 Taeglich/woechentlich/monatlich/vierteljaehrlich/halbjaehrlich/jaehrlich - Aufgaben tracken mit Status zuletzt erledigt. Quelle: Haushaltsaufgaben von taeglich bis jaehrlich.docx
 
-**Letzter Test:** 2026-02-06 08:13:06 | **Score:** 100/100
+**Letzter Test:** 2026-05-07 10:41:01 | **Score:** 100/100
 
 ## KARRIERE
 
@@ -161,19 +161,19 @@ Wiederverwendbare Listen, Body Doubling, Planungsphase verkuerzen. Quelle: adhs 
 
 Mit A3 FormBuilder Formulare erstellen und exportieren.
 
-**Letzter Test:** 2026-02-06 08:13:06 | **Score:** 100/100
+**Letzter Test:** 2026-05-07 10:45:05 | **Score:** 100/100
 
 ### ○ HausLagerist Datenbank auslesen ⭐⭐⭐⭐⭐
 
 Datenbank hauslagerist.db auslesen: Haushaltsgegenstaende, Lagerort, Inventar.
 
-**Letzter Test:** 2026-02-06 08:13:06 | **Score:** 100/100
+**Letzter Test:** 2026-05-07 10:27:16 | **Score:** 100/100
 
 ### ○ MediPlaner Datenbank nutzen ⭐⭐⭐⭐⭐
 
 mediplaner.db auslesen: Medikamentenplaene, Einnahmezeiten, Dosierungen.
 
-**Letzter Test:** 2026-02-06 08:13:06 | **Score:** 100/100
+**Letzter Test:** 2026-05-07 10:27:16 | **Score:** 100/100
 
 ### ○ MediaBrain Datenbank nutzen ⭐⭐⭐⭐⭐
 
@@ -203,13 +203,13 @@ routine_master.db auslesen: Routinen, Aufgaben, Turnus-basierte Erinnerungen.
 
 MetaWiki-Struktur (hierarchische Markdown-Wikis) erstellen und als Funktion in BACH exportieren.
 
-**Letzter Test:** 2026-02-21 22:36:11 | **Score:** 70/100
+**Letzter Test:** 2026-05-07 10:27:16 | **Score:** 70/100
 
 ### ○ FinancialProof Dashboard integrieren ⭐⭐
 
 Entscheidung: Standalone lassen. market/-Services in BACH fuer Backend-Analyse.
 
-**Letzter Test:** 2026-02-21 22:36:11 | **Score:** 50/100
+**Letzter Test:** 2026-05-07 10:45:05 | **Score:** 50/100
 
 ## THERAPIE
 
@@ -291,7 +291,7 @@ Automatisch neu fotografierte und hochgeladene Dokumente scannen, kategorisieren
 
 bach reflection status zeigt Performance-Report
 
-**Letzter Test:** 2026-02-21T05:53:30.950266 | **Score:** 0/100
+**Letzter Test:** 2026-05-07 10:41:01 | **Score:** 0/100
 
 ## system-synopse
 

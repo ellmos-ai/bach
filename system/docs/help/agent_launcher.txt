@@ -1,6 +1,6 @@
 # Portabilitaet: UNIVERSAL
 # Version: 1.0.0
-# Zuletzt validiert: 2026-03-04
+# Zuletzt validiert: 2026-05-09
 
 AGENT LAUNCHER - Agent-Verwaltung und -Prozesssteuerung
 =======================================================
@@ -28,6 +28,7 @@ OPERATIONEN
                                                   default (Standard, default)
     --model MODEL                                 Modell: sonnet, opus oder haiku
                                                   (default: sonnet)
+    --dry-run                                     Nur pruefen, nicht starten
 
   bach agent stop <name>                        Laufenden Agent stoppen (Process
                                                 beenden, PID-File aufgeraeumt)
@@ -50,6 +51,10 @@ BEISPIELE
   # Agent mit spezifischem Modell und Modus starten
   bach agent start research --model opus --mode plan
   Prozess mit Claude Opus im Plan-Mode
+
+  # Start nur simulieren
+  bach agent start ati --dry-run
+  Ausgabe: [DRY-RUN] Wuerde Agent 'ati' starten ...
 
   # Laufende Agents anzeigen
   bach agent status

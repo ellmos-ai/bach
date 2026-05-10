@@ -95,9 +95,13 @@ except ImportError:
 
 DATA_DIR = BACH_DIR / "data"
 
-BACH_DB = DATA_DIR / "bach.db"
+try:
+    from hub.bach_paths import BACH_DB as _PATHS_DB
+    BACH_DB = _PATHS_DB
+except ImportError:
+    BACH_DB = DATA_DIR / "bach.db"
 
-USER_DB = DATA_DIR / "bach.db"
+USER_DB = BACH_DB
 
 TEMPLATES_DIR = GUI_DIR / "templates"
 
