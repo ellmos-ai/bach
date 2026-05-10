@@ -135,8 +135,18 @@ INSTANCES_DIR = DATA_DIR / "instances"
 
 LOCAL_BACH_DIR = Path.home() / ".bach"
 _LOCAL_DB = LOCAL_BACH_DIR / "bach.db"
-_ONEDRIVE_ROOT = BACH_ROOT.parent.parent.parent.parent
-PROSYNC_TRANSIT_DIR = _ONEDRIVE_ROOT / ".SYNC" / "bach_db_transit"
+_ONEDRIVE_CANDIDATES = [
+    BACH_ROOT.parent.parent.parent.parent,
+    Path.home() / "OneDrive",
+    Path.home() / "Library" / "CloudStorage" / "OneDrive-Persönlich",
+]
+_ONEDRIVE_SYNC_DIR = next(
+    (c / ".SYNC" for c in _ONEDRIVE_CANDIDATES if (c / ".SYNC").exists()), None
+)
+PROSYNC_TRANSIT_DIR = (
+    _ONEDRIVE_SYNC_DIR / "bach_db_transit" if _ONEDRIVE_SYNC_DIR
+    else LOCAL_BACH_DIR / "transit"
+)
 
 # ============================================================================
 # ROOT-VERZEICHNISSE (auf Repository-Ebene)

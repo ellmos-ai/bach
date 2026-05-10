@@ -101,7 +101,7 @@
       "target": "tasks",
       "priority": "P3",
       "project": "BACH",
-      "task_text": "Docs-Changelog Review: python skills/_services/docs/docs_changelog.py report, Aenderungen an docs/help/ und wiki/ pruefen",
+      "task_text": "Docs-Changelog Review: python hub/_services/docs/docs_changelog.py report, Aenderungen an docs/help/ und wiki/ pruefen",
       "aufwand": "niedrig",
       "last_run": "2026-04-30T13:10:03.149717"
     }

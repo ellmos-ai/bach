@@ -19,6 +19,54 @@ def _init_base(tmp_path):
     return base
 
 
+def _init_agent_runtime_tables(base: Path, name: str = "demo-agent"):
+    db_path = base / "data" / "bach.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE agent_instances (
+                name TEXT PRIMARY KEY,
+                agent_type TEXT NOT NULL,
+                capabilities TEXT,
+                config TEXT,
+                is_active INTEGER DEFAULT 1,
+                created_at TEXT,
+                last_used TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO agent_instances (
+                name, agent_type, capabilities, config, is_active, created_at
+            ) VALUES (?, ?, ?, ?, ?, datetime('now'))
+            """,
+            (name, "boss", "[]", "{}", 1),
+        )
+
+
+def _write_runtime_agent(base: Path, stem: str, message: str) -> Path:
+    agents_dir = base / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    module_path = agents_dir / f"{stem}_agent.py"
+    class_name = ''.join(part.capitalize() for part in stem.split('_')) + "Agent"
+    module_path.write_text(
+        (
+            f"class {class_name}:\n"
+            f"    def __init__(self, config):\n"
+            f"        self.config = config\n"
+            f"    def connect(self):\n"
+            f"        return True\n"
+            f"    def disconnect(self):\n"
+            f"        return True\n"
+            f"    def execute(self, operation, args):\n"
+            f"        return True, {message!r}\n"
+        ),
+        encoding="utf-8",
+    )
+    return module_path
+
+
 def test_task_add_returns_created_id(tmp_path):
     from hub.task import TaskHandler
 
@@ -561,3 +609,58 @@ def test_maintain_docs_defaults_to_check_for_flag_only_args(tmp_path, monkeypatc
     assert success is True
     assert message == "json"
     assert captured["cmd"][2:] == ["check", "--json"]
+
+
+def test_agent_runtime_registry_is_scoped_per_base_path(tmp_path):
+    from core.agent_runtime import clear_registry_cache, get_agent
+
+    clear_registry_cache()
+    base_a = _init_base(tmp_path / "a")
+    base_b = _init_base(tmp_path / "b")
+    _init_agent_runtime_tables(base_a)
+    _init_agent_runtime_tables(base_b)
+    _write_runtime_agent(base_a, "demo", "alpha")
+    _write_runtime_agent(base_b, "demo", "beta")
+
+    agent_a = get_agent("demo-agent", base_a)
+    agent_b = get_agent("demo-agent", base_b)
+
+    assert agent_a is not None
+    assert agent_b is not None
+    assert agent_a.execute("status", [])[1] == "alpha"
+    assert agent_b.execute("status", [])[1] == "beta"
+
+
+def test_agent_runtime_invalidates_cached_module_after_code_change(tmp_path):
+    from core.agent_runtime import AgentRegistry
+
+    base = _init_base(tmp_path)
+    _init_agent_runtime_tables(base)
+    module_path = _write_runtime_agent(base, "demo", "version-1")
+
+    registry = AgentRegistry(base)
+    first = registry.get("demo-agent")
+
+    assert first is not None
+    assert first.execute("status", [])[1] == "version-1"
+
+    module_path.write_text(
+        (
+            "class DemoAgent:\n"
+            "    def __init__(self, config):\n"
+            "        self.config = config\n"
+            "    def connect(self):\n"
+            "        return True\n"
+            "    def disconnect(self):\n"
+            "        return True\n"
+            "    def execute(self, operation, args):\n"
+            "        return True, 'version-2-reloaded'\n"
+        ),
+        encoding="utf-8",
+    )
+
+    second = registry.get("demo-agent")
+
+    assert second is not None
+    assert second is not first
+    assert second.execute("status", [])[1] == "version-2-reloaded"

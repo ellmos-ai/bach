@@ -43,6 +43,14 @@ openpyxl>=3.1.5           # Read/write .xlsx Excel files
 
 
 # ============================================================
+# [CHAT SERVICE / BUDDHA] Telegram bot, web search, system tray
+# Needed for: hub/_services/chat/ (telegram_chat, chat_runtime, chat_tray)
+# ============================================================
+python-telegram-bot>=22.4  # Telegram Bot API (telegram_chat.py)
+duckduckgo-search>=8.0.0   # DuckDuckGo web search (chat_runtime.py web_search tool)
+
+
+# ============================================================
 # [AI / LLM PARTNERS] External AI service clients
 # Needed for: hub/partners/, connectors/, multi-LLM workflows
 # ============================================================

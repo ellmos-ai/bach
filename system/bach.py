@@ -845,28 +845,32 @@ def main():
         except Exception:
             pass
 
+    json_requested = "--json" in sys.argv[1:]
     logger = get_logger(BACH_DIR)
 
-    # ProSync: Pull bei Start, Push bei Exit
-    sync_config = SYSTEM_ROOT / "config" / "db_sync_enabled"
+    # ProSync: Pull bei Start, Push bei Exit (nur wenn aktiviert)
+    sync_config = DATA_DIR / "config" / "db_sync_enabled"
     if sync_config.exists():
         try:
             from hub.db_sync import DBSyncManager
             manager = DBSyncManager()
             ok, msg = manager.sync_on_start()
-            print(f"[ProSync] {msg}")
+            if not json_requested:
+                print(f"[ProSync] {msg}")
         except Exception as e:
-            print(f"[ProSync] Start-Fehler: {e}")
+            if not json_requested:
+                print(f"[ProSync] Start-Fehler: {e}")
 
-    import atexit
-    def _exit_sync():
-        try:
-            from hub.db_sync import DBSyncManager
-            ok, msg = DBSyncManager().sync_on_exit()
-            print(f"[ProSync] {msg}")
-        except Exception:
-            pass
-    atexit.register(_exit_sync)
+        import atexit
+        def _exit_sync():
+            try:
+                from hub.db_sync import DBSyncManager
+                ok, msg = DBSyncManager().sync_on_exit()
+                if not json_requested:
+                    print(f"[ProSync] {msg}")
+            except Exception:
+                pass
+        atexit.register(_exit_sync)
 
     # Keine Argumente oder Help
     if len(sys.argv) < 2 or sys.argv[1] in ['-h', '--help', 'help']:
@@ -884,7 +888,6 @@ def main():
     arg = sys.argv[1]
     sub_cmd = sys.argv[2] if len(sys.argv) > 2 else ""
     args = sys.argv[3:] if len(sys.argv) > 3 else []
-    json_requested = "--json" in sys.argv[2:]
 
     # ── --help Abfangen (CLI --help Parsing-Bug Fix, Runde 24) ──
     # Wenn --help oder -h als sub_cmd ODER in args vorkommt -> Hilfe anzeigen

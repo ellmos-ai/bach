@@ -554,7 +554,11 @@ class _DBProxy:
     def _get(self):
         if self._safe_db is None:
             from core.safe_db import SafeDB
-            db_path = _SYSTEM_DIR / "data" / "bach.db"
+            try:
+                from hub.bach_paths import BACH_DB
+                db_path = BACH_DB
+            except ImportError:
+                db_path = _SYSTEM_DIR / "data" / "bach.db"
             self._safe_db = SafeDB(db_path, partner="bach_api")
         return self._safe_db
 
