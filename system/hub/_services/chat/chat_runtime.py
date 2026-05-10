@@ -543,6 +543,9 @@ class ChatSession:
         self.think: bool = True
         self.mode: str = "safe"
         self.model: str = ""
+        self.current_tool: str = ""
+        self.tool_round: int = 0
+        self.last_tools: list[str] = []
 
 
 class ChatRuntime:
@@ -551,7 +554,6 @@ class ChatRuntime:
     MAX_CONTEXT_CHARS = 24000
     SUMMARIZE_THRESHOLD = 16000
     MAX_MESSAGES = 40
-    MAX_TOOL_ROUNDS = 5
 
     def __init__(self, backend, system_prompt: str = "",
                  bach_app=None, memory_fn=None, injector=None):
@@ -561,6 +563,7 @@ class ChatRuntime:
         self.memory = memory_fn
         self.injector = injector
         self.sessions: dict[str, ChatSession] = {}
+        self.max_tool_rounds: int = 0
 
     def get_session(self, chat_id: str) -> ChatSession:
         if chat_id not in self.sessions:
@@ -663,27 +666,41 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
     async def _tool_loop(self, msgs: list, session: ChatSession,
                          tools: list) -> str:
-        for _ in range(self.MAX_TOOL_ROUNDS + 1):
+        max_rounds = self.max_tool_rounds
+        round_num = 0
+        session.tool_round = 0
+        session.last_tools = []
+        while True:
+            if max_rounds > 0 and round_num > max_rounds:
+                session.current_tool = ""
+                return result.get("content", "") or "(Max Tool-Runden erreicht)"
             try:
                 result = await self.backend.chat(
                     msgs, tools=tools, think=session.think, model=session.model
                 )
             except Exception as e:
+                session.current_tool = ""
                 return f"Backend-Fehler: {e}"
 
             tool_calls = result.get("tool_calls")
             if not tool_calls:
+                session.current_tool = ""
                 return result.get("content", "(keine Antwort)")
 
             raw_msg = result.get("raw_message", {})
             if raw_msg:
                 msgs.append(raw_msg)
 
+            round_num += 1
+            session.tool_round = round_num
             for i, tc in enumerate(tool_calls):
                 fn = tc.get("function", {})
                 t_name = fn.get("name", "")
                 t_args = fn.get("arguments", {})
-                log.info(f"Tool: {t_name}({json.dumps(t_args, ensure_ascii=False)[:200]})")
+                session.current_tool = t_name
+                if t_name and t_name not in session.last_tools:
+                    session.last_tools = (session.last_tools + [t_name])[-5:]
+                log.info(f"Tool [{round_num}]: {t_name}({json.dumps(t_args, ensure_ascii=False)[:200]})")
                 t_result = exec_tool(
                     t_name, t_args, session.mode,
                     bach_app=self.bach_app,
@@ -697,8 +714,6 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 msgs.append(
                     self.backend.tool_response_message(str(t_result), tool_call_id)
                 )
-
-        return result.get("content", "") or "(Max Tool-Runden erreicht)"
 
     async def _summarize(self, session: ChatSession):
         if len(session.messages) < 6:

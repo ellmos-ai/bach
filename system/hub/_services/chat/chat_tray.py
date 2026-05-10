@@ -48,6 +48,9 @@ class BACHTray:
             "bach": False,
             "sessions": 0,
             "connected": False,
+            "max_tool_rounds": 0,
+            "current_tool": "",
+            "last_tools": [],
         }
         self.backends = {}
         self.models = []
@@ -173,6 +176,36 @@ class BACHTray:
 
             items.append(pystray.Menu.SEPARATOR)
 
+            # Max Tool-Runden
+            mr = self.state.get("max_tool_rounds", 0)
+            mr_label = "Unbegrenzt" if mr == 0 else str(mr)
+            round_items = []
+            for val in [5, 10, 20, 0]:
+                lbl = "Unbegrenzt" if val == 0 else str(val)
+                round_items.append(pystray.MenuItem(
+                    lbl, self._make_rounds_action(val),
+                    checked=lambda item, v=val: self.state.get("max_tool_rounds", 0) == v,
+                ))
+            items.append(pystray.MenuItem(
+                f"Max Tool-Runden ({mr_label})", pystray.Menu(*round_items),
+            ))
+
+            # Tool-Aktivität
+            ct = self.state.get("current_tool", "")
+            lt = self.state.get("last_tools", [])
+            if ct:
+                items.append(pystray.MenuItem(
+                    f"Tool: {ct} (Runde {self.state.get('tool_round', 0)})",
+                    None, enabled=False,
+                ))
+            elif lt:
+                items.append(pystray.MenuItem(
+                    f"Letzte Tools: {', '.join(lt)}",
+                    None, enabled=False,
+                ))
+
+            items.append(pystray.Menu.SEPARATOR)
+
             # Zugangswege
             items.append(pystray.MenuItem(
                 "GUI Dashboard (:8000)",
@@ -226,6 +259,13 @@ class BACHTray:
         self._api("POST", "/api/think", {"think": new_val})
         self._refresh()
         self._update_icon()
+
+    def _make_rounds_action(self, rounds):
+        def action():
+            self._api("POST", "/api/max_tool_rounds", {"rounds": rounds})
+            self._refresh()
+            self._update_icon()
+        return action
 
     def _open_gui(self):
         import webbrowser

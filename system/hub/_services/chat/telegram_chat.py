@@ -145,6 +145,7 @@ _global_defaults = {
     "mode": "safe",
     "think": True,
     "model": "",
+    "max_tool_rounds": 0,
 }
 
 _orig_get_session = runtime.get_session
@@ -174,6 +175,7 @@ WELCOME = (
     "  /nothink — Denkmodus aus (schnell)\n"
     "  /model <name> — Modell wechseln\n"
     "  /backend [ollama|claude|openai] — Backend wechseln\n"
+    "  /maxrounds [0|5|10|20] — Max Tool-Runden (0=unbegrenzt)\n"
     "  /settings — Alle Einstellungen\n\n"
     "Chat:\n"
     "  /clear — Konversation zurücksetzen\n\n"
@@ -401,14 +403,46 @@ async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     session = runtime.get_session(str(update.effective_chat.id))
     n_msgs = len(session.messages)
     chars = sum(len(m.get("content", "")) for m in session.messages)
+    mr = runtime.max_tool_rounds
+    mr_label = "Unbegrenzt" if mr == 0 else str(mr)
+    tool_info = ""
+    if session.current_tool:
+        tool_info = f"\nAktives Tool: {session.current_tool} (Runde {session.tool_round})"
+    elif session.last_tools:
+        tool_info = f"\nLetzte Tools: {', '.join(session.last_tools)}"
     await update.message.reply_text(
         f"Backend: {CONFIG['backend'].get('type', 'ollama')}\n"
         f"Modus: {session.mode}\n"
         f"Denken: {'AN' if session.think else 'AUS'}\n"
         f"Modell: {session.model}\n"
+        f"Max Tool-Runden: {mr_label}\n"
         f"BACH: {'Ja' if HAS_BACH else 'Nein'}\n"
         f"Kontext: {n_msgs} Nachrichten, ~{chars:,} Zeichen"
+        + tool_info
     )
+
+
+async def cmd_maxrounds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    args = ctx.args or []
+    if not args:
+        mr = runtime.max_tool_rounds
+        await update.message.reply_text(
+            f"Max Tool-Runden: {'Unbegrenzt' if mr == 0 else mr}\n\n"
+            "/maxrounds 0 — Unbegrenzt\n"
+            "/maxrounds 5 — Max 5 Runden\n"
+            "/maxrounds 10 — Max 10 Runden"
+        )
+        return
+    try:
+        val = int(args[0])
+        if val < 0:
+            val = 0
+        runtime.max_tool_rounds = val
+        _global_defaults["max_tool_rounds"] = val
+        label = "Unbegrenzt" if val == 0 else str(val)
+        await update.message.reply_text(f"Max Tool-Runden: {label}")
+    except ValueError:
+        await update.message.reply_text("Nutzung: /maxrounds <zahl>")
 
 
 # --- BACH Commands ---
@@ -727,6 +761,8 @@ h1{color:#00d4ff;margin-bottom:20px;font-size:1.4em}
 <div class="status-row"><span class="label">Denken</span><span class="value" id="s-think">-</span></div>
 <div class="status-row"><span class="label">BACH</span><span class="value" id="s-bach">-</span></div>
 <div class="status-row"><span class="label">Sessions</span><span class="value" id="s-sessions">-</span></div>
+<div class="status-row"><span class="label">Max Tool-Runden</span><span class="value" id="s-maxrounds">-</span></div>
+<div class="status-row" id="tool-activity" style="display:none"><span class="label">Aktives Tool</span><span class="value" id="s-tool"><span class="dot yellow"></span>-</span></div>
 </div>
 
 <div class="card">
@@ -747,6 +783,16 @@ h1{color:#00d4ff;margin-bottom:20px;font-size:1.4em}
 <div class="btn-group">
 <button class="btn" onclick="setThink(true)">AN</button>
 <button class="btn" onclick="setThink(false)">AUS</button>
+</div>
+</div>
+
+<div class="card">
+<h2>Max Tool-Runden</h2>
+<div class="btn-group">
+<button class="btn" onclick="setMaxRounds(5)">5</button>
+<button class="btn" onclick="setMaxRounds(10)">10</button>
+<button class="btn" onclick="setMaxRounds(20)">20</button>
+<button class="btn" onclick="setMaxRounds(0)">Unbegrenzt</button>
 </div>
 </div>
 
@@ -785,6 +831,17 @@ async function refresh() {
   document.getElementById('s-think').textContent = s.think ? 'AN' : 'AUS';
   document.getElementById('s-bach').textContent = s.bach ? 'Ja' : 'Nein';
   document.getElementById('s-sessions').textContent = s.sessions;
+  document.getElementById('s-maxrounds').textContent = s.max_tool_rounds === 0 ? 'Unbegrenzt' : s.max_tool_rounds;
+  const toolEl = document.getElementById('tool-activity');
+  if (s.current_tool) {
+    toolEl.style.display = '';
+    document.getElementById('s-tool').innerHTML = '<span class="dot yellow"></span>' + s.current_tool + ' (Runde ' + s.tool_round + ')';
+  } else if (s.last_tools && s.last_tools.length) {
+    toolEl.style.display = '';
+    document.getElementById('s-tool').innerHTML = s.last_tools.join(', ');
+  } else {
+    toolEl.style.display = 'none';
+  }
 
   const bs = await api('GET', '/backends');
   if (!bs.error) {
@@ -830,6 +887,11 @@ async function setThink(think) {
 async function setModel(model) {
   const r = await api('POST', '/model', {model});
   toast(r.error || 'Modell: ' + model);
+  refresh();
+}
+async function setMaxRounds(rounds) {
+  const r = await api('POST', '/max_tool_rounds', {rounds});
+  toast(r.error || 'Max Runden: ' + (rounds === 0 ? 'Unbegrenzt' : rounds));
   refresh();
 }
 refresh();
@@ -898,6 +960,16 @@ class ControlHandler(BaseHTTPRequestHandler):
             backend_name = type(runtime.backend).__name__
             cli_name = getattr(runtime.backend, "cli_name", "")
             owns_tools = getattr(runtime.backend, "manages_own_tools", False)
+            active_tools = []
+            current_tool = ""
+            tool_round = 0
+            for s in runtime.sessions.values():
+                if s.current_tool:
+                    current_tool = s.current_tool
+                    tool_round = s.tool_round
+                if s.last_tools:
+                    active_tools = s.last_tools
+                    break
             self._json({
                 "backend": backend_name,
                 "backend_cli": cli_name,
@@ -907,6 +979,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                 "manages_own_tools": owns_tools,
                 "bach": HAS_BACH,
                 "sessions": len(runtime.sessions),
+                "max_tool_rounds": runtime.max_tool_rounds,
+                "current_tool": current_tool,
+                "tool_round": tool_round,
+                "last_tools": active_tools,
             })
 
         elif path == "/api/backends":
@@ -999,6 +1075,14 @@ class ControlHandler(BaseHTTPRequestHandler):
                 s.think = bool(think)
             self._json({"ok": True, "think": bool(think)})
 
+        elif path == "/api/max_tool_rounds":
+            rounds = int(body.get("rounds", 0))
+            if rounds < 0:
+                rounds = 0
+            runtime.max_tool_rounds = rounds
+            _global_defaults["max_tool_rounds"] = rounds
+            self._json({"ok": True, "max_tool_rounds": rounds})
+
         elif path == "/api/chat":
             prompt = body.get("prompt", "")
             chat_id = body.get("chat_id", "api-delegate")
@@ -1061,6 +1145,7 @@ def main():
     app.add_handler(CommandHandler("mode", cmd_mode))
     app.add_handler(CommandHandler("model", cmd_model))
     app.add_handler(CommandHandler("backend", cmd_backend))
+    app.add_handler(CommandHandler("maxrounds", cmd_maxrounds))
     app.add_handler(CommandHandler("settings", cmd_settings))
 
     if HAS_BACH:
