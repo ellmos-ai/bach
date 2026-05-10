@@ -669,7 +669,7 @@ CREATE TABLE IF NOT EXISTS ati_tasks (
     aufwand TEXT DEFAULT 'mittel' CHECK(aufwand IN ('niedrig', 'mittel', 'hoch')),
     status TEXT DEFAULT 'offen' CHECK(status IN ('offen', 'in_arbeit', 'erledigt', 'blockiert')),
     priority_score REAL DEFAULT 0,
-    source_file TEXT NOT NULL,       -- Pfad zur AUFGABEN.txt
+    source_file TEXT NOT NULL,       -- Pfad zur Aufgaben-Datei
     line_number INTEGER,             -- Zeile in der Datei
     file_hash TEXT,                  -- MD5 für Change-Detection
     last_modified TIMESTAMP,         -- Änderungsdatum der Datei

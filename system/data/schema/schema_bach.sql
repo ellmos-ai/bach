@@ -1726,7 +1726,7 @@ CREATE TABLE IF NOT EXISTS ati_scan_runs (
 INSERT OR IGNORE INTO ati_scan_config (key, value, category, description) VALUES
     ('base_path', '"{USER_DEV_PATH}"', 'scan', 'Basis-Pfad fuer Tool-Scans'),
     ('scan_folders', '["SINGLE", "SUITEN", "TOOLS"]', 'scan', 'Zu scannende Unterordner'),
-    ('task_files', '["AUFGABEN.txt", "Aufgaben.txt", "AUFGABEN.TXT"]', 'scan', 'Task-Dateinamen'),
+    ('task_files', '["AUFGABEN.txt", "Aufgaben.txt", "AUFGABEN.TXT", "TODO.md", "AUFGABEN.md", "ROADMAP.md", "DONE.md"]', 'scan', 'Task-Dateinamen'),
     ('test_files', '["TEST.txt", "Test.txt"]', 'scan', 'Test-Dateinamen'),
     ('feedback_files', '["TESTERGEBNIS.txt", "AENDERUNGEN.txt"]', 'scan', 'Feedback-Dateinamen'),
     ('ignore_folders', '["dist", "__pycache__", ".git", "venv", "node_modules", "_alt", "_archive"]', 'scan', 'Ignorierte Ordner');

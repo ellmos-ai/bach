@@ -1,7 +1,6 @@
 # Portabilitaet: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-02-08 (Log-Pfad korrigiert)
-# Naechste Pruefung: 2026-08-08
+# Version: 1.1.0
+# Zuletzt validiert: 2026-05-10
 
 SHUTDOWN - Session beenden
 ==========================
@@ -16,6 +15,7 @@ bach --shutdown              Komplett-Shutdown (Standard)
 bach --shutdown "Summary"    Mit Session-Zusammenfassung
 bach --shutdown quick        Schnell ohne Dir-Scan
 bach --shutdown emergency    Notfall - nur Zustand sichern
+bach --shutdown --partner=NAME  Partner-spezifischer Shutdown (v1.1.71)
 
 SHUTDOWN-TYPEN
 --------------
@@ -126,12 +126,35 @@ HANDLER
 -------
 hub/shutdown.py    Shutdown-Handler (DB-basiert)
 
+PARTNER-SHUTDOWN (v1.1.71)
+--------------------------
+Bei Partner-Sessions wird der Partner automatisch ausgestempelt:
+
+  bach --shutdown --partner=claude   Claude ausstempeln
+  bach --shutdown --partner=gemini   Gemini ausstempeln
+
+Die Stempelkarte (partner_presence Tabelle) wird aktualisiert:
+  - status: online -> offline
+  - clocked_out: Zeitstempel gesetzt
+
+Ohne --partner wird "user" als Partner angenommen.
+
+PROSYNC (bei Exit)
+------------------
+Wenn ProSync aktiviert ist (bach setup prosync --multi-system), wird
+bei Session-Ende ein DB-Backup in den Transit-Hub geschrieben:
+  - Push: Lokale DB als .bachdb-Backup exportieren
+  - Ziel: OneDrive/.SYNC/bach_db_transit/
+ProSync laeuft via atexit-Hook in bach.py, nicht im Shutdown-Handler.
+Details: bach --help db_sync
+
 VERSIONSHISTORIE
 ----------------
 v1.1.0   Basis-Shutdown mit Dir-Scan
 v1.1.14  + Task-Statistik
 v1.1.15  + Auto-Memory Fallback aus Autolog
 v1.1.17  + Auto-Snapshot bei >= 3 Aenderungen
+v1.1.71  + Partner Clock-Out (Stempelkarte)
 
 SIEHE AUCH
 ----------
@@ -139,3 +162,4 @@ bach --help startup        Session starten
 bach --help memory         Memory-System (session, facts)
 bach --help snapshot       Snapshots verwalten
 bach --help tasks          Task-Management
+bach --help db_sync        ProSync: Multi-System DB-Synchronisierung

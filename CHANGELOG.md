@@ -8,6 +8,15 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+### Fixed
+
+- **ATI-Scanner erweitert:** `system/agents/ati/scanner/task_scanner.py` erkennt jetzt neben `AUFGABEN.txt` auch `TODO.md`, `AUFGABEN.md`, `ROADMAP.md` und `DONE.md`, zählt Tools bei Multi-Datei-Projekten korrekt nur einmal, speichert echte Zeilennummern für Rücksyncs und liest offene ROADMAP-Tabellenzeilen direkt als ATI-Tasks ein.
+- **Agent-Runtime-Cache gehärtet:** `system/core/agent_runtime.py` scoped Registries jetzt pro `base_path`, lädt Agent-Module isoliert und invalidiert gecachte Instanzen automatisch bei Code- oder Config-Änderungen.
+- **JSON-Smokes wieder stabil:** `system/bach.py` unterdrückt ProSync-Start/Exit-Chatter bei `--json`, sodass `bach agent ... --json` und `bach scheduler ... --json` sauber maschinenlesbar bleiben.
+- **Kanonischer DB-Pfad vereinheitlicht:** `system/bach_api.py` schreibt strukturierte `memory`-Einträge wieder in dieselbe Datenbank, die Reader und Handler verwenden.
+- **Seal-Status repariert:** `system/hub/seal.py` löst `BACH_DB` wieder robust auf; `bach seal status` läuft im CLI-Smoke erneut grün.
+- **OpenClaw-Referenzstand präzisiert:** Dokumentation und Release-Planung unterscheiden jetzt sauber zwischen GitHub Releases `2026.5.6`, GHCR `2026.5.7-slim` und Beta `2026.5.9-beta.1` (Stand 2026-05-10).
+
 ---
 
 ## [3.9.1-tiramisu] - 2026-05-10

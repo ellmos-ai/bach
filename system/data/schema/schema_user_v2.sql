@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS scan_config (
 INSERT OR IGNORE INTO scan_config (key, value, category, description) VALUES
     ('base_path', '"{USER_DEV_PATH}"', 'scan', 'Basis-Pfad fuer Tool-Scans'),
     ('scan_folders', '["SINGLE", "SUITEN", "TOOLS"]', 'scan', 'Zu scannende Ordner'),
-    ('task_files', '["AUFGABEN.txt", "Aufgaben.txt", "AUFGABEN.TXT"]', 'scan', 'Task-Dateinamen'),
+    ('task_files', '["AUFGABEN.txt", "Aufgaben.txt", "AUFGABEN.TXT", "TODO.md", "AUFGABEN.md", "ROADMAP.md", "DONE.md"]', 'scan', 'Task-Dateinamen'),
     ('test_files', '["TEST.txt", "Test.txt"]', 'scan', 'Test-Dateinamen'),
     ('feedback_files', '["TESTERGEBNIS.txt", "AENDERUNGEN.txt"]', 'scan', 'Feedback-Dateinamen'),
     ('ignore_folders', '["dist", "__pycache__", ".git", "venv", "node_modules", "_alt"]', 'scan', 'Ignorierte Ordner'),
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS tool_registry (
 CREATE INDEX IF NOT EXISTS idx_tool_registry_status ON tool_registry(status);
 
 -- ───────────────────────────────────────────────────────────────────────────
--- GESCANNTE AUFGABEN (aus AUFGABEN.txt Dateien)
+-- GESCANNTE AUFGABEN (aus Aufgaben-/TODO-/Roadmap-Dateien)
 -- ───────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS scanned_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS scanned_tasks (
     aufwand TEXT DEFAULT 'mittel' CHECK(aufwand IN ('niedrig', 'mittel', 'hoch')),
     status TEXT DEFAULT 'offen' CHECK(status IN ('offen', 'in_arbeit', 'erledigt', 'blockiert')),
     priority_score REAL DEFAULT 0,
-    source_file TEXT NOT NULL,       -- Pfad zur AUFGABEN.txt
+    source_file TEXT NOT NULL,       -- Pfad zur Aufgaben-Datei
     line_number INTEGER,             -- Zeile in der Datei
     file_hash TEXT,                  -- MD5 für Change-Detection
     last_modified TIMESTAMP,         -- Änderungsdatum der Datei

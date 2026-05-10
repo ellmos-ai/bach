@@ -13,7 +13,7 @@ BACH ist ein textbasiertes Betriebssystem, das Large Language Models (LLMs) bef�
 - **113+ Handler** - CLI- und API-Abdeckung für Systemfunktionen
 - **550+ Tools** - Umfangreiche Tool-Bibliothek für Dateiverarbeitung, Analyse und Automation
 - **1870+ Skills** - Wiederverwendbare Workflows und Templates
-- **58 Workflow-Vorlagen** - Vorgefertigte Prozess-Workflows
+- **59 Workflow-Vorlagen** - Vorgefertigte Prozess-Workflows
 - **Install Security Gate** - Statische Scans für `skills install`, `plugins load` und MCP-Setup/Config-Aktivierung; Plugin-Setups mit Shell/Desktop/MCP-Zugriff brauchen jetzt explizite fail-closed Guards, blockierte lokale Importe werden quarantänisiert
 - **Manifest-first Plugins** - `bach plugins inspect` zeigt Aktivierung, Provider-/Model-, Setup- und Capability-Metadaten ohne Runtime-Import
 - **Strukturierte `bach_api`-Kernmodule** - `task` und `memory` bieten jetzt über `dir(...)` auffindbare Methoden, liefern bei häufigen Reads/Writes Python-Objekte zurück und behalten `raw(...)` für Legacy-Handler-Aufrufe
@@ -52,7 +52,7 @@ python bach.py --shutdown
 ## Hauptkomponenten
 
 ### 1. Task-Management
-Vollstaendiges GTD-System mit Priorisierung, Deadlines, Tags und Context-Tracking.
+Vollständiges GTD-System mit Priorisierung, Deadlines, Tags und Context-Tracking.
 
 ### 2. Wissenssystem
 Strukturiertes Memory-System mit Facts, Lessons und automatischer Konsolidierung.
@@ -60,22 +60,30 @@ Strukturiertes Memory-System mit Facts, Lessons und automatischer Konsolidierung
 ### 3. Agenten-Framework
 Boss-Agenten orchestrieren Experten für komplexe Aufgaben (Büro, Gesundheit, Produktion, etc.).
 
-### 4. Bridge-System
-Connector-Framework für externe Services (Telegram, Email, WhatsApp, etc.).
+### 4. Chat-Service & Bridge-System
+Multi-Backend Telegram-Bot mit wechselbaren LLM-Backends (Ollama, Claude CLI, Codex CLI, Claude API, OpenAI API), HTTP Control API mit Web-Dashboard und plattformübergreifendem System Tray. Connector-Framework für weitere Services (Email, WhatsApp, etc.) und USMC-Bridge für Cross-Agent-Kommunikation.
 
 ### 5. Automatisierung
-Scheduler fuer wiederkehrende Tasks und Event-basierte Workflows.
+SchedulerService für zeitbasierte Jobs (Chains, Tasks, Scripts) und Event-basierte Workflows über das Hook-Framework.
+
+### 6. SharedMemory
+Multi-Agent-Koordination mit Kontextgenerierung, Konflikterkennung, Decay und Delta-Queries.
+
+### 7. llmauto-Integration
+Chain-Schritte als LLM-Prompts mit `bach://` URL-Auflösung für dynamische Kontext-Einbettung.
 
 ## OpenClaw-Abgleich
 
-OpenClaw bleibt für BACH vor allem als Vergleichssystem für breite Messaging-Anbindung, Plugin-Ökosystem und Security-Patterns relevant. BACH deckt bereits manifest-first Plugin-Metadaten, fail-closed Setup-Guards für Shell/Desktop/MCP-Flächen, Scans mit Quarantäne vor der Installation von Skills/MCP-Servern/Plugins, Memory-/Wiki-Provenance-Ansichten sowie maschinenlesbare Agent-/Scheduler-Statusflächen ab. Nächste Schritte: Active-Run-Steering, Telemetrie, Cache-Invalidierung, strengere Auth-Gates und externe Observability.
+Stand 2026-05-10: Auf GitHub Releases zeigt OpenClaw aktuell `2026.5.6`, im GHCR läuft bereits `2026.5.7-slim`, und `2026.5.9-beta.1` ist als aktuelle Beta-Linie sichtbar. Für BACH bleibt OpenClaw vor allem als Vergleichssystem für breite Messaging-Anbindung, Plugin-Ökosystem und Security-Patterns relevant. BACH deckt bereits manifest-first Plugin-Metadaten, fail-closed Setup-Guards für Shell/Desktop/MCP-Flächen, Scans mit Quarantäne vor der Installation von Skills/MCP-Servern/Plugins, Memory-/Wiki-Provenance-Ansichten, maschinenlesbare Agent-/Scheduler-Statusflächen sowie workspace-scoped Cache-Invalidierung in der Agent-Runtime ab. Nächste Schritte: Active-Run-Steering, Telemetrie, strengere Auth-Gates und externe Observability.
 
 ## Dokumentation
 
-- **[Erste Schritte](docs/getting-started.md)** - Erste Schritte mit BACH
-- **[API-Referenz](docs/reference/)** - Vollständige API-Dokumentation
+- **[Schnellstart](QUICKSTART.md)** - Erste Schritte mit BACH
+- **[Benutzerhandbuch](BACH_USER_MANUAL.md)** - Vollständiges Handbuch
 - **[Skills-Katalog](SKILLS.md)** - Alle verfügbaren Skills
-- **[Agenten-Katalog](AGENTS.md)** - Alle verfuegbaren Agenten
+- **[Agenten-Katalog](AGENTS.md)** - Alle verfügbaren Agenten und Experten
+- **[Workflows](WORKFLOWS.md)** - 59 Workflow-Vorlagen
+- **[SKILL.md](SKILL.md)** - LLM-Betriebsanweisungen (für Claude, Gemini, Ollama)
 
 ## Lizenz
 

@@ -43,7 +43,7 @@ prosync         Konfiguriert ProSync fuer Multi-System-Nutzung.
                 Ohne Flag: Zeigt aktuellen Status an. Default: single-system.
 
 full-install    Vollstaendige Installation in einem Durchlauf (preflight, prosync,
-                mcp, secrets, user). Optional: --with-n8n oder --config <json>.
+                mcp, hooks, secrets, user). Optional: --with-n8n oder --config <json>.
 
 
 BEISPIELE
@@ -92,4 +92,6 @@ SIEHE AUCH
 
 hub/base.py                         BaseHandler (Oberklasse)
 hub/secrets_handler.py              SecretsHandler (Secrets-Verwaltung)
-docs/help/check.txt                 Validation und Status-Checks
+docs/help/check.txt                 Validierung nach Installation
+docs/help/install.txt               Erstinstallation und Szenarien
+docs/help/db_sync.txt               ProSync: Multi-System DB-Synchronisierung

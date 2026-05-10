@@ -1,7 +1,6 @@
 # Portabilitaet: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Version: 1.0.1
+# Zuletzt validiert: 2026-05-10
 
 BACH NUTZERMODI (v1.1.37)
 =========================

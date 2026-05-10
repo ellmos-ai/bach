@@ -1,0 +1,115 @@
+# Portabilitaet: UNIVERSAL
+# Version: 1.0.0
+# Zuletzt validiert: 2026-05-10
+
+BACH INSTALLATION
+=================
+
+
+BESCHREIBUNG
+============
+Anleitung fuer die Erstinstallation von BACH. BACH ist ein Personal Agentic OS,
+das lokal laeuft und KI-Modelle orchestriert.
+
+
+VORAUSSETZUNGEN
+===============
+- Python >= 3.10
+- npm (fuer MCP-Server)
+- > 100 MB freier Speicher
+- Optional: OneDrive (fuer Multi-System-Sync)
+- Optional: Tailscale (fuer Remote-Zugang zum Server)
+
+
+SCHNELLSTART
+============
+# 1. Repository klonen
+git clone https://github.com/ellmos-ai/bach.git
+cd bach
+
+# 2. Voraussetzungen pruefen
+bach setup preflight
+
+# 3. Vollstaendige Installation
+bach setup full-install
+
+# 4. Erste Session starten
+bach --startup
+
+
+FULL-INSTALL SCHRITTE
+=====================
+"bach setup full-install" fuehrt diese Schritte automatisch aus:
+
+1. Pre-Flight Check      Python, npm, Speicher, Schreibrechte
+2. ProSync               Single- oder Multi-System konfigurieren (Default: single)
+3. MCP-Server            ellmos-codecommander-mcp, ellmos-filecommander-mcp
+4. Claude Code Hooks     DB-Schutz und andere Hooks in ~/.claude/
+5. Secrets               ~/.bach/bach_secrets.json initialisieren
+6. User-Profil           USER.md personalisieren und mit DB synchronisieren
+7. Validierung           Abschluss-Check aller Komponenten
+
+Optional: --with-n8n fuer n8n-Manager-MCP, --config <json> fuer Batch-Konfiguration.
+
+
+NUTZUNGSSZENARIEN
+=================
+BACH hat eine Installation. Nach der Installation entscheiden Konfigurationsoptionen
+ueber das Deployment-Szenario.
+
+Single-System (Default)
+-----------------------
+BACH laeuft auf einem Rechner, keine Synchronisation noetig.
+
+  bach setup full-install
+  # ProSync bleibt deaktiviert (Default)
+
+Multi-System mit OneDrive
+-------------------------
+BACH liegt in OneDrive und wird auf mehreren Rechnern genutzt.
+Jedes System hat eine lokale Datenbank (~/.bach/bach.db), die ueber
+ProSync synchronisiert wird.
+
+  bach setup full-install
+  bach setup prosync --multi-system
+  # Sync: bach db sync (manuell) oder automatisch bei Start/Exit
+
+Server (Headless)
+-----------------
+BACH laeuft auf einem Server (z.B. Mac Studio, Linux-Server) und wird
+ueber Telegram, Web-GUI oder System-Tray ferngesteuert.
+
+  bach setup full-install
+  # Danach Connectors aktivieren:
+  # - Telegram Bot: hub/_services/chat/telegram_chat.py
+  # - Web GUI: gui/server.py --host 0.0.0.0
+  # - System Tray: hub/_services/chat/chat_tray.py --port 8081
+  # - CLI Chat: hub/_services/chat/buddha_cli.py
+
+Bei Multi-System-Server zusaetzlich:
+  bach setup prosync --multi-system
+
+
+NACH DER INSTALLATION
+=====================
+bach setup check           Installation validieren
+bach --startup             Erste Session starten
+bach --help                Hilfe-System nutzen
+bach --help setup          Setup-Optionen anzeigen
+
+
+DATEIEN
+=======
+hub/setup.py               Setup-Handler (Installer-Logik)
+data/bach.db               BACH-Datenbank (wird bei Install erstellt)
+../USER.md                 Benutzer-Profil (Template -> personalisiert)
+~/.bach/bach_secrets.json  Secrets-Vault
+~/.claude/settings.json    Claude Code Hooks
+
+
+SIEHE AUCH
+==========
+docs/help/setup.txt        Setup-Handler (alle Operationen)
+docs/help/check.txt        Validierung nach Installation
+docs/help/db_sync.txt      ProSync: Multi-System DB-Synchronisierung
+docs/help/startup.txt      Session starten

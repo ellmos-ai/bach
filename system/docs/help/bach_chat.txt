@@ -1,6 +1,6 @@
 # Portabilitaet: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-05-08
+# Version: 1.1.0
+# Zuletzt validiert: 2026-05-10
 
 BACH CHAT SERVICE - Multi-Backend Telegram Bot + Control API + System Tray
 ==========================================================================
@@ -49,6 +49,7 @@ TELEGRAM BEFEHLE
   /bach <cmd>               BACH-Befehl ausfuehren
   /task <text>              Task anlegen
   /tasks                    Offene Tasks
+  /maxrounds [N]            Max Tool-Runden setzen (0=unbegrenzt)
   Sprachnachricht           Whisper-Transkription -> Chat
   Foto                      OCR-Texterkennung -> Chat
 
@@ -56,13 +57,15 @@ TELEGRAM BEFEHLE
 CONTROL API (Port 8081)
 -----------------------
   GET  /                    Web-Dashboard (HTML)
-  GET  /api/status          Aktueller Status (Backend, Modell, Modus, Think)
+  GET  /api/status          Aktueller Status (inkl. Tool-Aktivitaet)
   GET  /api/backends        Verfuegbare Backends mit Status
   GET  /api/models          Modelle des aktuellen Backends
   POST /api/backend         Backend wechseln: {"name": "claude", "model": "opus"}
   POST /api/mode            Modus setzen: {"mode": "safe"}
   POST /api/model           Modell setzen: {"model": "qwen3.5:35b-a3b"}
   POST /api/think           Denkmodus: {"think": true}
+  POST /api/max_tool_rounds Max Tool-Runden: {"rounds": 10} (0=unbegrenzt)
+  POST /api/chat            Chat-Nachricht: {"prompt": "...", "chat_id": "..."}
 
 
 SYSTEM TRAY
@@ -75,6 +78,8 @@ SYSTEM TRAY
     - Modell-Submenu: Modelle des aktuellen Backends
     - Modus-Toggle: Safe/Full
     - Think-Toggle: AN/AUS
+    - Max Tool-Runden: Presets (5/10/20/Unbegrenzt)
+    - Tool-Aktivitaet: Aktuelles Tool + Runde im Tray-Titel
     - Web-Dashboard oeffnen
     - Cross-platform: macOS, Windows, Linux (via pystray)
 
@@ -97,6 +102,8 @@ DATEIEN
   LaunchAgents (macOS):
     com.qwen.telegram-bot    Telegram-Bot
     com.bach.chat-tray        System Tray
+    com.bach.gui-server       GUI Dashboard (:8000)
+    com.bach.onedrive-sync    OneDrive-Sync
 
 
 KONFIGURATION

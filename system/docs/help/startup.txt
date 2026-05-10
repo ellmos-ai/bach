@@ -1,7 +1,6 @@
 # Portabilitaet: UNIVERSAL
-# Version: 1.0.1
-# Zuletzt validiert: 2026-02-08 (Log-Pfad korrigiert)
-# Naechste Pruefung: 2026-08-08
+# Version: 1.1.0
+# Zuletzt validiert: 2026-05-10
 
 STARTUP - Session starten
 =========================
@@ -78,6 +77,15 @@ BACH unterstuetzt 4 Startup-Modi:
 
 Der Modus wird in data/user_config.json gespeichert.
 Details: bach --help modes
+
+PROSYNC (vor Startup-Protokoll)
+-------------------------------
+Wenn ProSync aktiviert ist (bach setup prosync --multi-system), fuehrt
+bach.py VOR dem Startup-Protokoll einen DB-Sync durch:
+  - Pull: Neuere Backups aus dem Transit-Hub laden und mergen
+  - Push (bei Exit): Eigenes Backup in den Transit-Hub schreiben
+ProSync laeuft in bach.py main(), nicht im Startup-Handler.
+Details: bach --help db_sync
 
 ABLAUF (v1.1.31)
 ----------------
@@ -240,3 +248,5 @@ bach --help memory         Memory-System
 bach --help maintain       Wartungs-Tools (heal, registry, skills)
 bach --help snapshot       Snapshots verwalten
 bach --help tasks          Task-Management
+bach --help db_sync        ProSync: Multi-System DB-Synchronisierung
+bach --help install         Erstinstallation und Szenarien

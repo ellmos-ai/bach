@@ -144,7 +144,7 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 - **[User Manual](BACH_USER_MANUAL.md)** - Complete handbook
 - **[Skills Catalog](SKILLS.md)** - All available skills
 - **[Agents Catalog](AGENTS.md)** - All available agents and experts
-- **[Workflows](WORKFLOWS.md)** - 58 workflow templates
+- **[Workflows](WORKFLOWS.md)** - 59 workflow templates
 - **[SKILL.md](SKILL.md)** - LLM operating instructions (for Claude, Gemini, Ollama)
 
 ## See Also: OpenClaw
@@ -154,7 +154,7 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 | | **BACH** | **OpenClaw** |
 |---|---|---|
 | **Focus** | LLM Operating System -- deep autonomy, structured memory, multi-agent orchestration | Personal AI Assistant -- broad messaging gateway, voice, companion apps |
-| **Tools/Skills** | 550+ tools, 1870+ skills, 58 workflows (local, curated) | Community-driven skill/plugin ecosystem; recent releases emphasize manifest-first plugin metadata and install safety |
+| **Tools/Skills** | 550+ tools, 1870+ skills, 59 workflows (local, curated) | Community-driven skill/plugin ecosystem; recent releases emphasize manifest-first plugin metadata and install safety |
 | **Memory** | 6 memory types with decay, conflict detection, consolidation (210+ DB tables) | Session/runtime workspace with bootstrap files such as `AGENTS.md`, `TOOLS.md`, `USER.md`, and related context files |
 | **Agents** | Boss-Expert orchestration (11 boss agents + 22 experts), SharedMemory Bus | Agent runtime with multi-session/channel operation |
 | **Messaging** | Telegram, Email, WhatsApp (Bridge System) | 20+ platforms (WhatsApp, Telegram, Slack, Discord, Signal, Teams, Matrix...) |
@@ -167,7 +167,7 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 
 ### Competitive Watch
 
-BACH already ships several control-plane pieces inspired by the broader assistant ecosystem: manifest-first metadata, fail-closed setup checks, broader install scanning for skills/MCP/plugins, privacy-preserving secret/reference handling, memory/wiki provenance views, and machine-readable agent/scheduler status surfaces. Next high-leverage steps: active-run steering at safe checkpoints, low-cardinality telemetry, cache invalidation, stricter auth gating, and external observability.
+As of 2026-05-10, OpenClaw's public GitHub releases show `2026.5.6`, while GHCR already rolls `2026.5.7-slim` and `2026.5.9-beta.1` is visible as the current beta line. BACH already ships several control-plane pieces inspired by the broader assistant ecosystem: manifest-first metadata, fail-closed setup checks, broader install scanning for skills/MCP/plugins, privacy-preserving secret/reference handling, memory/wiki provenance views, machine-readable agent/scheduler status surfaces, and workspace-scoped agent-runtime cache invalidation for safe hot-reloads. Next high-leverage steps: active-run steering at safe checkpoints, low-cardinality telemetry, stricter auth gating, and external observability.
 
 ## License
 
@@ -182,9 +182,9 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Deutsche Version
 
-BACH ist ein textbasiertes Betriebssystem, das Large Language Models (LLMs) befaehigt, eigenstaendig zu arbeiten, zu lernen und sich zu organisieren.
+BACH ist ein textbasiertes Betriebssystem, das Large Language Models (LLMs) befähigt, eigenständig zu arbeiten, zu lernen und sich zu organisieren.
 
-Die vollstaendige deutsche Dokumentation findest du hier: **[README.de.md](README.de.md)**
+Die vollständige deutsche Dokumentation findest du hier: **[README.de.md](README.de.md)**
 
 ---
 

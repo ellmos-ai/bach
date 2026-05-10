@@ -1,6 +1,6 @@
 ﻿# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-05-09 | **Version:** 4.3.8
+**Stand:** 2026-05-10 | **Version:** 4.3.9
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
@@ -63,21 +63,27 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 
 ### Priorität 1 - Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
 
-Der OpenClaw-Abgleich vom 2026-05-09 bestätigt den nächsten BACH-Fokus
+Der OpenClaw-Abgleich vom 2026-05-10 bestätigt den nächsten BACH-Fokus
 klar in Richtung sichere Erweiterbarkeit, robuste Agenten-Laufzeit und
 saubere Steuer-/Statusoberflächen. Relevant sind nicht die breite
 Messenger-Abdeckung, sondern manifest-first Plugin- und Provider-Metadaten,
 fail-closed Tool-Setups, Scans vor der Installation von
 Skills/MCP-Servern/Plugins, API-Parität für Agentenflächen und
-low-cardinality Telemetrie. Neu bzw. erneut bestätigt aus der jüngsten
-OpenClaw-Linie bis `2026.5.7` sind zusätzlich workspace-scoped
-Plugin-Metadaten-Snapshots auf Hot Paths, Install-Hinweise für fehlende
-offizielle Erweiterungen, kollisionssichere Session-Memory-Captures bei
-wiederholtem `/new` oder `/reset`, Cache-Invalidierung nach Skill- oder
-Reset-Änderungen, Autorisierungs-Hooks für Inline-Tool-Dispatch,
-SecretRef-sichere Runtime-Config-Snapshots, maschinenlesbare Cron-/Run-Status
-und restriktivere Scopes für globale Memory-Toggles als prüfenswerte
-Impulse markiert.
+low-cardinality Telemetrie. Als Referenzstand gilt dabei: auf GitHub
+Releases ist aktuell `openclaw 2026.5.6` vom 2026-05-06 sichtbar, während
+die GHCR-Containerlinie bereits `2026.5.7-slim` ausrollt. Daraus erneut
+bestätigt sind workspace-scoped Plugin-Metadaten-Snapshots auf Hot Paths,
+Install-Hinweise für fehlende offizielle Erweiterungen, kollisionssichere
+Session-Memory-Captures bei wiederholtem `/new` oder `/reset`,
+Autorisierungs-Hooks für Inline-Tool-Dispatch, SecretRef-sichere
+Runtime-Config-Snapshots, maschinenlesbare Cron-/Run-Status und restriktivere
+Scopes für globale Memory-Toggles als prüfenswerte Impulse. Die erste
+Stufe der Cache-Invalidierung ist jetzt in BACHs Agent-Runtime umgesetzt;
+für Skill-/Plugin-Reset-Hooks bleibt weitere Verdrahtung offen. Neu
+beobachtet, aber noch nicht priorisiert, sind aus `openclaw 2026.5.9-beta.1`
+vor allem modellidentitätsbasierte Prompt-Injektion, gezielte
+Workspace-Pfad-Helfer (`openclaw path`) sowie deutlichere Recovery-Hinweise
+bei CLI-/Startup-/Config-Fehlern.
 
 | ID | Thema | Status | Notiz |
 |----|-------|--------|-------|
@@ -88,6 +94,7 @@ Impulse markiert.
 | SANDBOX-002 | Subprocess-Isolation | OFFEN | Timeout, Ressourcenlimit, erlaubte Capabilities; ergaenzt bestehende Stufe 1 |
 | API-SURFACE-001 | Agent-/Prompt-API-Parität | DONE | `bach_api` exportiert jetzt die dokumentierten Module `agent`, `agents` und `prompt`; Agenten-Usecase per Regressionstest abgesichert |
 | OPS-TELEM-001 | Low-cardinality Telemetrie | OFFEN | OpenTelemetry-inspiriert, aber lokal/privacy-first: Model-Calls, Tool-Loops, Agentenstarts und Fehler ohne sensible Payloads messen |
+| OPS-CACHE-001 | Workspace-scoped Runtime-Cache-Invalidierung | DONE | `core.agent_runtime` trennt Registries jetzt pro `base_path`, lädt Agent-Module isoliert und invalidiert gecachte Instanzen automatisch bei Code-/Config-Änderungen |
 | OPS-RUN-001 | Aktive Laufsteuerung langer Agenten-/Scheduler-Runs | TEILWEISE | `bach agent list/status --json` sowie `bach scheduler status/jobs/session status --json` liefern jetzt maschinenlesbare Run-Status-Flächen ohne Idle-/EOD-Chatter; echtes Operator-Steering an Modell-/Tool-Grenzen bleibt offen |
 | MEM-PROV-001 | Memory-/Wiki-Provenance Views | DONE | `bach memory provenance` und `bach wiki provenance` zeigen Quellen, Evidenzart, Personenbezug und Privacy-Hinweise; gemeinsame Heuristiken plus Smoke-/Self-Heal-Tests sichern das Verhalten ab |
 
@@ -403,7 +410,8 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 | **4.3.5** | 2026-05-07 | **Agent-Start loest Experten-Display-Names jetzt auch dann korrekt ueber `skill_path` auf, wenn DB-Name und Skill-Verzeichnis abweichen (`Theodor` -> `steuer`); Release-/QA-Notizen an den verifizierten Stand angepasst.** |
 | **4.3.6** | 2026-05-08 | **`bach --maintain docs report` wieder funktionsfähig gemacht (Subcommand-Passthrough statt hartem `check`-Prefix), Regressionstest ergänzt und OpenClaw-Abgleich auf `2026.5.7` nachgezogen.** |
 | **4.3.7** | 2026-05-08 | **MEM-PROV-001 abgeschlossen: `bach memory provenance` und `bach wiki provenance` liefern heuristische Quellen-/Privacy-Sichten; Task `#1119` geschlossen sowie CLI-Hilfe und Regressionstests ergänzt.** |
-| **4.3.8** | 2026-05-09 | **Daily-Care-Verifikation und Control-Plane-Nachzug: strukturierte `bach_api`-/Provenance-Smokes gegen die Live-Instanz bestätigt, OpenClaw `2026.5.7` erneut auf GitHub Releases verifiziert, generischer CLI-Dispatch reicht `--dry-run` wieder korrekt an Handler weiter (`bach agent ... --dry-run`) und Agent-/Scheduler-Statusflächen liefern jetzt sauberes JSON (`bach agent ... --json`, `bach scheduler ... --json`).** |
+| **4.3.8** | 2026-05-09 | **Daily-Care-Verifikation und Control-Plane-Nachzug: strukturierte `bach_api`-/Provenance-Smokes gegen die Live-Instanz bestätigt, generischer CLI-Dispatch reicht `--dry-run` wieder korrekt an Handler weiter (`bach agent ... --dry-run`) und Agent-/Scheduler-Statusflächen liefern jetzt sauberes JSON (`bach agent ... --json`, `bach scheduler ... --json`).** |
+| **4.3.9** | 2026-05-10 | **ATI-Scanner erweitert; Agent-Runtime-Caches jetzt pro `base_path` gescoped und bei Code-/Config-Änderungen invalidiert; `--json`-Ausgaben bleiben trotz ProSync sauber; `bach_api` nutzt für strukturierte Memory-Schreibpfade denselben kanonischen DB-Pfad wie die Reader; `bach seal status` funktioniert wieder; OpenClaw-Referenzstand auf GitHub Releases `2026.5.6` plus GHCR `2026.5.7-slim` präzisiert.** |
 
 Detaillierte Historie: `CHANGELOG.md`
 Archivierte Versionen: `../docs/_archive/ROADMAP_*.md`

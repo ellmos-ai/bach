@@ -1,0 +1,68 @@
+# Portabilitaet: UNIVERSAL
+# Version: 1.0.0
+# Zuletzt validiert: 2026-05-10
+
+HANDLER-NAME
+===
+
+setup check
+
+
+BESCHREIBUNG
+===
+
+Validiert ob alle BACH-Abhaengigkeiten vorhanden und konfiguriert sind.
+Fuehrt keine Aenderungen durch, nur Pruefung mit Status-Ausgabe.
+
+
+BEFEHL
+===
+
+bach setup check
+
+
+PRUEFUNGEN
+===
+
+1. npm verfuegbar              Muss im PATH sein (fuer MCP-Server-Installation)
+2. ellmos-codecommander-mcp    Global installiertes npm-Paket (17 Tools)
+3. ellmos-filecommander-mcp    Global installiertes npm-Paket (43 Tools)
+4. Secrets-Datei               ~/.bach/bach_secrets.json muss existieren und valides JSON sein
+5. bach.db                     Datenbank in data/bach.db muss vorhanden sein
+6. Optionale MCP-Server        Info-Check (kein Fehler wenn nicht installiert)
+7. USER.md                     Muss existieren und personalisiert sein (kein TEMPLATE-Marker)
+
+
+STATUS-CODES
+===
+
+[OK]    Pruefung bestanden
+[!!]    Pruefung fehlgeschlagen (Aktion erforderlich)
+[--]    Optionale Komponente nicht installiert (kein Fehler)
+[??]    Pruefung konnte nicht durchgefuehrt werden
+
+
+BEISPIELE
+===
+
+bach setup check
+  Alle Abhaengigkeiten pruefen mit Status-Ausgabe
+
+bach setup full-install
+  Bei Fehlern: Vollstaendige Installation durchfuehren
+
+
+DATEIEN
+===
+
+hub/setup.py                   SetupHandler._check()
+~/.bach/bach_secrets.json      Secrets-Vault
+data/bach.db                   BACH-Datenbank
+../USER.md                     Benutzer-Profil
+
+
+SIEHE AUCH
+===
+
+docs/help/setup.txt            Setup-Handler (alle Operationen)
+docs/help/install.txt          Erstinstallation und Szenarien

@@ -53,6 +53,7 @@
 /system/data/config/directory_truth.json
 /system/data/config/directory_truth-*.json
 /system/data/healing_report.json
+/system/data/sync_state.json
 /system/data/sync_state-*.json
 /system/data/user_config.json
 /system/data/skills_hierarchy.json
