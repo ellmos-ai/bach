@@ -23,7 +23,14 @@
       "[!]",
       "blocked"
     ],
-    "file_pattern": "AUFGABEN.txt"
+    "file_pattern": "AUFGABEN.txt",
+    "task_files": [
+      "AUFGABEN.txt",
+      "TODO.md",
+      "AUFGABEN.md",
+      "ROADMAP.md",
+      "DONE.md"
+    ]
   },
   "onboarding": {
     "enabled": true,

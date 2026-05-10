@@ -1,9 +1,9 @@
 {
     "id": "ati-scanner",
     "name": "ATI Task Scanner",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "type": "scanner",
-    "description": "Scannt Software-Ordner nach AUFGABEN.txt und TODO/FIXME Markern",
+    "description": "Scannt Software-Ordner nach Aufgaben-, TODO-, Roadmap- und Done-Dateien",
     "schedule": "daily",
     "entry_point": "agents/ati/scanner/task_scanner.py",
     "class": "TaskScanner",

@@ -50,6 +50,10 @@ import os
 import sys
 import json
 import sqlite3
+import hashlib
+import importlib
+import importlib.util
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Tuple, Dict, Any
@@ -170,9 +174,10 @@ class AgentRegistry:
     """Registry für Agent-Discovery und Instanziierung."""
 
     def __init__(self, base_path: Path):
-        self.base_path = base_path
-        self.db_path = base_path / "data" / "bach.db"
+        self.base_path = base_path.resolve()
+        self.db_path = self.base_path / "data" / "bach.db"
         self._cache: Dict[str, BaseAgent] = {}
+        self._cache_signatures: Dict[str, str] = {}
 
     def get(self, name: str) -> Optional[BaseAgent]:
         """
@@ -184,22 +189,40 @@ class AgentRegistry:
         Returns:
             Agent-Instanz oder None
         """
-        # Cache-Check
-        if name in self._cache:
-            return self._cache[name]
-
         # Aus DB laden
         config = self._load_config(name)
         if not config:
+            self.clear_cache(name)
             return None
+
+        cache_key = config.name
+        signature = self._build_cache_signature(config)
+
+        if cache_key in self._cache and self._cache_signatures.get(cache_key) == signature:
+            return self._cache[cache_key]
+
+        self.clear_cache(cache_key)
 
         # Instanz erstellen
         instance = self._instantiate(config)
         if instance:
-            self._cache[name] = instance
+            self._cache[cache_key] = instance
+            self._cache_signatures[cache_key] = signature
             return instance
 
         return None
+
+    def clear_cache(self, name: Optional[str] = None) -> None:
+        """Entfernt gecachte Agent-Instanzen fuer einen Namen oder komplett."""
+        keys = [name] if name else list(self._cache.keys())
+        for key in keys:
+            cached = self._cache.pop(key, None)
+            self._cache_signatures.pop(key, None)
+            if cached:
+                try:
+                    cached.disconnect()
+                except Exception:
+                    pass
 
     def list_agents(self, active_only: bool = False) -> List[Dict[str, Any]]:
         """
@@ -313,49 +336,98 @@ class AgentRegistry:
           2. agents/_experts/{name}/{name}_agent.py
           3. Fallback: DummyAgent
         """
-        agent_type = config.agent_type
-        name_base = config.name.replace("-agent", "").replace("_agent", "")
+        name_base = self._agent_name_base(config.name)
 
-        # Versuch 1: agents/{name}_agent.py
-        try:
-            module_name = f"{name_base}_agent"
-            agents_dir = self.base_path / "agents"
-
-            if str(agents_dir) not in sys.path:
-                sys.path.insert(0, str(agents_dir))
-
-            # Dynamischer Import
-            module = __import__(module_name)
-
-            # Suche nach Klasse (z.B. SteuerAgent)
-            class_name = ''.join(word.capitalize() for word in name_base.split('_')) + 'Agent'
-
-            if hasattr(module, class_name):
-                agent_class = getattr(module, class_name)
-                return agent_class(config)
-        except ImportError:
-            pass
-
-        # Versuch 2: agents/_experts/{name}/
-        try:
-            expert_dir = self.base_path / "agents" / "_experts" / name_base
-            if expert_dir.exists() and str(expert_dir) not in sys.path:
-                sys.path.insert(0, str(expert_dir))
-
-            module_name = f"{name_base}_agent"
-            module = __import__(module_name)
-
-            class_name = ''.join(word.capitalize() for word in name_base.split('_')) + 'Agent'
-            if hasattr(module, class_name):
-                agent_class = getattr(module, class_name)
-                return agent_class(config)
-        except ImportError:
-            pass
+        for module_path, class_name in self._candidate_module_specs(name_base):
+            if not module_path.exists():
+                continue
+            try:
+                module = self._load_module_from_path(module_path)
+                if hasattr(module, class_name):
+                    agent_class = getattr(module, class_name)
+                    return agent_class(config)
+            except ImportError:
+                continue
 
         # Fallback: DummyAgent
         print(f"[AgentRegistry] No implementation found for '{config.name}', using DummyAgent",
               file=sys.stderr)
         return DummyAgent(config)
+
+    def _agent_name_base(self, name: str) -> str:
+        """Normalisiert technische Agentennamen fuer Modul-/Klassensuche."""
+        return name.replace("-agent", "").replace("_agent", "")
+
+    def _module_stems(self, name_base: str) -> List[str]:
+        """Ermittelt gueltige Python-Modul-Stems fuer einen Agentennamen."""
+        stems: List[str] = []
+        for stem in (name_base, name_base.replace("-", "_")):
+            if stem and stem not in stems:
+                stems.append(stem)
+        return stems
+
+    def _candidate_module_specs(self, name_base: str) -> List[Tuple[Path, str]]:
+        """Liefert moegliche Modulpfade und zugehoerige Klassennamen."""
+        specs: List[Tuple[Path, str]] = []
+        agents_dir = self.base_path / "agents"
+        experts_dir = agents_dir / "_experts"
+
+        for stem in self._module_stems(name_base):
+            class_name = self._class_name_from_stem(stem)
+            specs.append((agents_dir / f"{stem}_agent.py", class_name))
+            specs.append((experts_dir / stem / f"{stem}_agent.py", class_name))
+
+        return specs
+
+    def _class_name_from_stem(self, stem: str) -> str:
+        """Baut einen Python-Klassennamen wie `SteuerAgent` aus einem Stem."""
+        parts = [part for part in re.split(r"[_-]+", stem) if part]
+        return ''.join(part.capitalize() for part in parts) + 'Agent'
+
+    def _load_module_from_path(self, module_path: Path):
+        """Laedt ein Agent-Modul isoliert pro BACH-Root und Dateipfad."""
+        importlib.invalidate_caches()
+        resolved_path = module_path.resolve()
+        digest = hashlib.sha1(
+            f"{self.base_path}:{resolved_path}".encode("utf-8")
+        ).hexdigest()[:12]
+        module_name = f"_bach_agent_{resolved_path.stem}_{digest}"
+        sys.modules.pop(module_name, None)
+
+        spec = importlib.util.spec_from_file_location(module_name, resolved_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Kann Modul nicht laden: {resolved_path}")
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        return module
+
+    def _build_cache_signature(self, config: AgentConfig) -> str:
+        """Berechnet eine Signatur aus Config- und Modulzustand fuer Cache-Invalidierung."""
+        payload = {
+            "name": config.name,
+            "agent_type": config.agent_type,
+            "capabilities": config.capabilities,
+            "config": config.config,
+            "is_active": config.is_active,
+            "modules": [],
+        }
+
+        for module_path, class_name in self._candidate_module_specs(self._agent_name_base(config.name)):
+            entry = {
+                "path": str(module_path),
+                "class_name": class_name,
+                "exists": module_path.exists(),
+            }
+            if module_path.exists():
+                stat = module_path.stat()
+                entry["mtime_ns"] = stat.st_mtime_ns
+                entry["size"] = stat.st_size
+            payload["modules"].append(entry)
+
+        blob = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+        return hashlib.sha1(blob.encode("utf-8")).hexdigest()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -382,17 +454,36 @@ class DummyAgent(BaseAgent):
 # Public API
 # ═══════════════════════════════════════════════════════════════
 
-_registry: Optional[AgentRegistry] = None
+_registries: Dict[str, AgentRegistry] = {}
+
+
+def _registry_key(base_path: Path) -> str:
+    return str(base_path.resolve())
 
 def get_registry(base_path: Optional[Path] = None) -> AgentRegistry:
     """Holt oder erstellt die globale Agent-Registry."""
-    global _registry
-    if _registry is None:
-        if base_path is None:
-            # Auto-detect: Dieses Modul liegt in system/core/agent_runtime.py
-            base_path = Path(__file__).parent.parent
-        _registry = AgentRegistry(base_path)
-    return _registry
+    if base_path is None:
+        # Auto-detect: Dieses Modul liegt in system/core/agent_runtime.py
+        base_path = Path(__file__).parent.parent
+
+    resolved = Path(base_path).resolve()
+    key = _registry_key(resolved)
+    if key not in _registries:
+        _registries[key] = AgentRegistry(resolved)
+    return _registries[key]
+
+
+def clear_registry_cache(base_path: Optional[Path] = None, name: Optional[str] = None) -> None:
+    """Leert Agent-Caches fuer einen Root oder global ueber alle Roots."""
+    if base_path is None:
+        registries = list(_registries.values())
+    else:
+        registry = _registries.get(_registry_key(Path(base_path)))
+        registries = [registry] if registry else []
+
+    for registry in registries:
+        if registry:
+            registry.clear_cache(name)
 
 
 def get_agent(name: str, base_path: Optional[Path] = None) -> Optional[BaseAgent]:

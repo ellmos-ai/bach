@@ -23,13 +23,15 @@ SOFTWARE.
 """
 
 """
-ATI Task Scanner v1.3.0
+ATI Task Scanner v1.4.0
 =====================
-Scannt Software-Ordner nach AUFGABEN.txt und synchronisiert mit bach.db
+Scannt Software-Ordner nach Task-Dateien und synchronisiert mit bach.db
 
 Migriert von: scanner/task_scanner.py (Task 81)
 Original: _BATCH/scanner.py
 
+v1.4.0 (2026-05-10): TODO/AUFGABEN/ROADMAP/DONE erkannt, Tool-Zaehler pro Projekt,
+                     exakte Zeilennummern und Roadmap-Status-Parsing
 v1.3.2 (2026-04-07): Tool-Registry Pfad-Migration bei Ordner-Umbenennungen
 v1.3.0 (2026-02-01): Migration auf bach.db - Tabellen umbenannt zu ati_*
 v1.2.1 (2026-01-25): Duplikaterkennung - Prueft vor INSERT ob task_text bereits existiert
@@ -43,16 +45,50 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import json
 
+DEFAULT_TASK_FILES = [
+    "AUFGABEN.txt",
+    "Aufgaben.txt",
+    "AUFGABEN.TXT",
+    "TODO.md",
+    "AUFGABEN.md",
+    "ROADMAP.md",
+    "DONE.md",
+]
+
 class TaskScanner:
-    """Scannt dezentrale AUFGABEN.txt Dateien und synchronisiert mit DB."""
+    """Scannt dezentrale Task-Dateien und synchronisiert mit DB."""
     
     def __init__(self, db_path: Path, config: Optional[Dict] = None):
         self.db_path = db_path
         self.config = config or self._load_config_from_db()
         self.base_path = Path(self.config.get('base_path', '.'))
-        self.task_files = self.config.get('task_files', ['AUFGABEN.txt'])
+        self.task_files = self._resolve_task_files(self.config.get('task_files'))
         self.ignore_folders = self.config.get('ignore_folders', [])
         self.scan_folders = self.config.get('scan_folders', [])
+
+    def _resolve_task_files(self, configured_files) -> List[str]:
+        """Ergaenzt Alt-Konfigurationen um neue Markdown-Task-Dateien."""
+        resolved = []
+        seen = set()
+        if isinstance(configured_files, str):
+            configured_list = [configured_files]
+        else:
+            configured_list = list(configured_files or [])
+        candidates = configured_list + DEFAULT_TASK_FILES
+
+        for entry in candidates:
+            if not isinstance(entry, str):
+                continue
+            name = entry.strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            resolved.append(name)
+
+        return resolved
         
     def _load_config_from_db(self) -> Dict:
         """Laedt Konfiguration aus ati_scan_config Tabelle."""
@@ -94,11 +130,13 @@ class TaskScanner:
         
         print(f"[SCAN] Scanne {self.base_path}...")
         print(f"[SCAN] Ordner: {self.scan_folders}")
-        
+
+        tools_seen = set()
+
         for folder in self.scan_folders:
             folder_path = self.base_path / folder
             if folder_path.exists():
-                self._scan_folder(folder_path, conn, result)
+                self._scan_folder(folder_path, conn, result, tools_seen=tools_seen)
             else:
                 print(f"[WARN] Ordner nicht gefunden: {folder_path}")
         
@@ -131,10 +169,10 @@ class TaskScanner:
         print(f"[OK] Scan abgeschlossen in {duration:.2f}s")
         print(f"     Tools: {result['tools_scanned']}, Tasks: {result['tasks_found']}")
         print(f"     Neu: {result['tasks_new']}, Aktualisiert: {result['tasks_updated']}")
-        
+
         return result
-    
-    def _scan_folder(self, folder: Path, conn, result: Dict, depth: int = 0):
+
+    def _scan_folder(self, folder: Path, conn, result: Dict, depth: int = 0, tools_seen=None):
         """Scannt einen Ordner rekursiv."""
         if depth > 5:  # Max Tiefe
             return
@@ -146,23 +184,30 @@ class TaskScanner:
                         continue
                     if item.name.startswith('_') or item.name.startswith('.'):
                         continue
-                    
-                    # Pruefen ob AUFGABEN.txt existiert
-                    for task_file in self.task_files:
-                        aufgaben_path = item / task_file
-                        if aufgaben_path.exists():
-                            self._process_tool(item, aufgaben_path, conn, result)
-                            break
-                    
+
+                    task_paths = [
+                        item / task_file
+                        for task_file in self.task_files
+                        if (item / task_file).exists()
+                    ]
+                    for task_path in task_paths:
+                        self._process_tool(item, task_path, conn, result, tools_seen=tools_seen)
+
                     # Rekursiv scannen
-                    self._scan_folder(item, conn, result, depth + 1)
+                    self._scan_folder(item, conn, result, depth + 1, tools_seen=tools_seen)
                     
         except PermissionError:
             result['errors'].append(f"Zugriff verweigert: {folder}")
     
-    def _process_tool(self, tool_path: Path, aufgaben_path: Path, conn, result: Dict):
-        """Verarbeitet ein Tool mit AUFGABEN.txt."""
-        result['tools_scanned'] += 1
+    def _process_tool(self, tool_path: Path, aufgaben_path: Path, conn, result: Dict, tools_seen=None):
+        """Verarbeitet ein Tool mit einer Task-Datei."""
+        tool_key = str(tool_path)
+        if tools_seen is None:
+            result['tools_scanned'] += 1
+        elif tool_key not in tools_seen:
+            tools_seen.add(tool_key)
+            result['tools_scanned'] += 1
+
         tool_name = tool_path.name
         
         # Tool-Registry synchronisieren
@@ -188,7 +233,7 @@ class TaskScanner:
             return
         
         # Tasks parsen
-        tasks = self._parse_aufgaben(content)
+        tasks = self._parse_aufgaben(content, source_name=aufgaben_path.name)
         
         # Alte Tasks entfernen
         old_count = conn.execute(
@@ -237,7 +282,7 @@ class TaskScanner:
                 status,
                 task.get('priority', 50),
                 str(aufgaben_path),
-                idx,
+                task.get('line_number', idx),
                 file_hash,
                 file_mtime,
                 datetime.now().isoformat()
@@ -250,17 +295,21 @@ class TaskScanner:
                 result['tasks_new'] += 1
         
         if duplicates_skipped > 0:
-            print(f"     [~] {tool_name}: {duplicates_skipped} Duplikate uebersprungen")
+            print(f"     [~] {tool_name}/{aufgaben_path.name}: {duplicates_skipped} Duplikate uebersprungen")
         
         # Tool-Registry-Update (Last Scan & Task Count)
+        total_tasks = conn.execute(
+            "SELECT COUNT(*) FROM ati_tasks WHERE tool_name = ?",
+            (tool_name,)
+        ).fetchone()[0]
         conn.execute("""
             UPDATE ati_tool_registry
             SET last_scan = ?, task_count = ?, updated_at = ?
             WHERE id = ?
-        """, (datetime.now().isoformat(), len(tasks), datetime.now().isoformat(), tool_id))
+        """, (datetime.now().isoformat(), total_tasks, datetime.now().isoformat(), tool_id))
         
         conn.commit()
-        print(f"     [+] {tool_name}: {len(tasks)} Tasks")
+        print(f"     [+] {tool_name}/{aufgaben_path.name}: {len(tasks)} Tasks")
     
     def _register_tool(self, tool_path: Path, conn) -> int:
         """Registriert Tool in ati_tool_registry, gibt ID zurueck.
@@ -311,15 +360,19 @@ class TaskScanner:
         conn.commit()
         return cursor.lastrowid
     
-    def _parse_aufgaben(self, content: str) -> List[Dict]:
-        """Parst AUFGABEN.txt Format."""
+    def _parse_aufgaben(self, content: str, source_name: str = "AUFGABEN.txt") -> List[Dict]:
+        """Parst Task-Dateien wie AUFGABEN/TODO/ROADMAP/DONE."""
         tasks = []
-        
-        # Verschiedene Formate unterstuetzen
+        source_kind = self._classify_source_file(source_name)
+        default_status = 'erledigt' if source_kind == 'done' else 'offen'
+
+        if source_kind == 'roadmap':
+            tasks.extend(self._parse_roadmap_tables(content))
+
         lines = content.split('\n')
         current_task = None
         
-        for line in lines:
+        for line_number, line in enumerate(lines, 1):
             line_stripped = line.strip()
             
             # Format 1: [ ] Task oder [x] Task (unterstuetzt optionales - oder * am Anfang)
@@ -333,9 +386,10 @@ class TaskScanner:
                 
                 current_task = {
                     'text': text,
-                    'status': 'erledigt' if checked else 'offen',
+                    'status': 'erledigt' if checked else default_status,
                     'aufwand': self._detect_aufwand(text),
-                    'priority': self._calculate_priority(text)
+                    'priority': self._calculate_priority(text),
+                    'line_number': line_number,
                 }
                 continue
             
@@ -348,10 +402,11 @@ class TaskScanner:
                 text = critical_match.group(1).strip()
                 current_task = {
                     'text': text,
-                    'status': 'offen',
+                    'status': default_status,
                     'aufwand': self._detect_aufwand(text),
                     'priority': self._calculate_priority(text) + 100,  # Kritisch = hoechste Prio
-                    'critical': True
+                    'critical': True,
+                    'line_number': line_number,
                 }
                 continue
             
@@ -366,10 +421,11 @@ class TaskScanner:
                 
                 current_task = {
                     'text': text,
-                    'status': 'offen',
+                    'status': default_status,
                     'aufwand': self._detect_aufwand(text),
                     'priority': self._calculate_priority(text) + (70 if is_fixme else 50),
-                    'source': 'FIXME' if is_fixme else 'TODO'
+                    'source': 'FIXME' if is_fixme else 'TODO',
+                    'line_number': line_number,
                 }
                 continue
             
@@ -382,9 +438,10 @@ class TaskScanner:
                 text = line_stripped[2:].strip()
                 current_task = {
                     'text': text,
-                    'status': 'offen',
+                    'status': default_status,
                     'aufwand': self._detect_aufwand(text),
-                    'priority': self._calculate_priority(text)
+                    'priority': self._calculate_priority(text),
+                    'line_number': line_number,
                 }
                 continue
             
@@ -398,13 +455,112 @@ class TaskScanner:
         if current_task:
             tasks.append(current_task)
         
-        # Nachbearbeitung: blocked Status erkennen
+        normalized_tasks = []
         for task in tasks:
-            if self._is_blocked(task['text']):
+            if source_kind == 'done':
+                task['status'] = 'erledigt'
+            elif source_kind == 'roadmap' and task.get('status') == 'erledigt':
+                continue
+
+            if task['status'] != 'erledigt' and self._is_blocked(task['text']):
                 task['status'] = 'blockiert'
                 task['priority'] -= 50  # Blockierte Tasks zurueckstellen
-        
+            normalized_tasks.append(task)
+
+        return normalized_tasks
+
+    def _classify_source_file(self, source_name: str) -> str:
+        """Ordnet Task-Dateien in bekannte Typen ein."""
+        name = source_name.lower()
+        if name == 'done.md':
+            return 'done'
+        if name == 'roadmap.md':
+            return 'roadmap'
+        if name in ('todo.md', 'aufgaben.md'):
+            return 'todo'
+        return 'default'
+
+    def _parse_roadmap_tables(self, content: str) -> List[Dict]:
+        """Parst Markdown-Tabellen aus ROADMAP.md in offene ATI-Tasks."""
+        tasks = []
+        header_cells = None
+
+        for line_number, raw_line in enumerate(content.splitlines(), 1):
+            line = raw_line.strip()
+            if not (line.startswith('|') and line.endswith('|')):
+                header_cells = None
+                continue
+
+            cells = [cell.strip() for cell in line.strip('|').split('|')]
+            if not cells or all(not cell for cell in cells):
+                continue
+            if all(re.fullmatch(r'[:\- ]+', cell or '') for cell in cells):
+                continue
+
+            lower_cells = [cell.lower() for cell in cells]
+            if 'status' in lower_cells:
+                header_cells = lower_cells
+                continue
+            if header_cells is None:
+                continue
+
+            row = {header_cells[idx]: cells[idx] for idx in range(min(len(header_cells), len(cells)))}
+            status = self._normalize_roadmap_status(row.get('status', ''))
+            if status is None or status == 'erledigt':
+                continue
+
+            text = self._build_roadmap_task_text(row)
+            if not text:
+                continue
+
+            tasks.append({
+                'text': text,
+                'status': status,
+                'aufwand': self._detect_aufwand(text),
+                'priority': self._calculate_priority(text),
+                'line_number': line_number,
+                'source': 'ROADMAP',
+            })
+
         return tasks
+
+    def _build_roadmap_task_text(self, row: Dict[str, str]) -> str:
+        """Erzeugt kompakten Task-Text aus einer ROADMAP-Tabellenzeile."""
+        id_parts = []
+        for key in ('id', 'block', 'sq', 'phase'):
+            value = row.get(key, '').strip()
+            if value and value not in id_parts:
+                id_parts.append(value)
+
+        title = ''
+        for key in ('thema', 'aufgabe', 'titel', 'aktion', 'integration', 'meilenstein', 'bereich'):
+            value = row.get(key, '').strip()
+            if value:
+                title = value
+                break
+
+        if not title and not id_parts:
+            return ''
+        if title and id_parts:
+            return f"{' / '.join(id_parts)}: {title}"
+        return title or ' / '.join(id_parts)
+
+    def _normalize_roadmap_status(self, raw_status: str) -> Optional[str]:
+        """Mappt ROADMAP-Statuswerte auf ATI-Task-Status."""
+        status = raw_status.strip().lower()
+        if not status:
+            return None
+
+        if any(token in status for token in ('done', 'komplett', 'completed', 'erledigt', 'abgeschlossen')):
+            return 'erledigt'
+        if any(token in status for token in ('blocked', 'blockiert')):
+            return 'blockiert'
+        if any(token in status for token in ('teilweise', 'partial', 'in arbeit', 'progress', 'wip')):
+            return 'in_arbeit'
+        if any(token in status for token in ('offen', 'open', 'todo', 'pending', 'geplant', 'plan', 'backlog')):
+            return 'offen'
+
+        return None
     
     def _is_blocked(self, text: str) -> bool:
         """Prueft ob ein Task als blockiert markiert ist."""

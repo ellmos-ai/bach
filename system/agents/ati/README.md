@@ -1,69 +1,70 @@
 # ATI - Advanced Tool Integration Agent
 
-> Software-Entwickler-Agent fuer BACH
+> Software-Entwickler-Agent für BACH
 
 ## Konzept
 
-```
+```text
 BATCHI = _BATCH + _CHIAH (Best-of Synopse)
 ATI    = BATCHI - BACH (Delta zu BACH-Core)
-BACH + ATI = BATCHI (vollstaendiger Software-Entwickler)
+BACH + ATI = BATCHI (vollständiger Software-Entwickler)
 ```
 
 ## Wichtig: Eigene Task-Verwaltung
 
 ATI verwaltet **eigene** Software-Entwicklungs-Tasks:
-- Scanner fuer AUFGABEN.txt = ATI Feature
-- user.db/ati_tasks = ATI Tasks (nicht BACH)
-- Onboarding neue Projekte = ATI Feature
 
-BACH System-Tasks (bach.db/tasks) sind separat!
+- Scanner für `AUFGABEN.txt`, `TODO.md`, `AUFGABEN.md`, `ROADMAP.md` und `DONE.md`
+- `bach.db` / `ati_tasks` für ATI-Tasks, getrennt von BACH-Core-Tasks
+- Onboarding neuer Projekte als ATI-Feature
+
+BACH-System-Tasks (`bach.db/tasks`) bleiben separat.
 
 ## Ordnerstruktur
 
-```
+```text
 agents/ati/
-├── ATI.md              Haupt-Dokumentation
-├── README.md           Diese Datei
+├── ATI.md
+├── README.md
 ├── data/
-│   ├── config.json     ATI Konfiguration
-│   └── tasks.db        (geplant) ATI-eigene Tasks
-├── prompt_templates/   Prompt-Vorlagen fuer Headless
-└── (geplant)
-    ├── task_scanner.py     AUFGABEN.txt Scanner
-    ├── session_daemon.py   Headless Sessions
-    ├── onboarding.py       Projekt-Erkennung
-    └── cli.py              ATI CLI
+│   └── config.json
+├── prompt_templates/
+├── scanner/
+│   └── task_scanner.py
+├── session/
+├── tools/
+└── export/
 ```
 
-## CLI (geplant)
+## CLI
 
 ```bash
 bach ati start           # Headless-Daemon starten
 bach ati stop            # Daemon stoppen
 bach ati status          # Status anzeigen
-bach ati task list       # ATI-Tasks (Software-Dev)
-bach ati scan            # AUFGABEN.txt scannen
-bach ati onboard PATH    # Neues Projekt
+bach ati task list       # ATI-Tasks (Software-Entwicklung)
+bach ati scan            # Task-Dateien in Software-Projekten scannen
+bach ati onboard PATH    # Neues Projekt onboarden
 bach ati export          # Als BATCHI exportieren
 ```
 
 ## Export: BATCHI
 
 ATI kann als "BATCHI" exportiert werden:
+
 ```bash
 bach ati export          # -> batchi.zip
 ```
 
-Das Paket enthaelt alles was ein standalone Software-Entwickler-Agent braucht.
+Das Paket enthält alles, was ein standalone Software-Entwickler-Agent braucht.
 
 ## Status
 
 - [x] Konzept dokumentiert
 - [x] Ordnerstruktur angelegt
-- [x] config.json erstellt
-- [x] Prompt-Templates erstellt (task, review, analysis)
-- [ ] CLI-Handler (hub/handlers/ati.py)
-- [ ] Scanner-Migration
+- [x] `config.json` erstellt
+- [x] Prompt-Templates erstellt (`task`, `review`, `analysis`)
+- [x] CLI-Handler (`hub/ati.py`)
+- [x] Scanner-Migration
 - [ ] Headless Sessions
 - [ ] Export-System

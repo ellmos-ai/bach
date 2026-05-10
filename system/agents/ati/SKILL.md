@@ -31,7 +31,7 @@ bach ati task list
 # Projekt onboarden
 bach ati onboard "Projektname" --path "/pfad/zum/projekt"
 
-# AUFGABEN.txt scannen
+# Aufgaben-Dateien scannen
 bach ati scan
 
 # Projekt bootstrappen
@@ -43,7 +43,7 @@ python agents/ati/tools/project_bootstrapper.py --template python-cli
 - **Headless AI-Sessions:** Automatische Claude-Sessions ohne User-Interaktion
 - **Prompt-Templates:** Standardisierte Prompts fuer Code-Tasks
 - **Onboarding-System:** Neue Projekte in ATI registrieren
-- **Task-Scanner:** AUFGABEN.txt in Projekten erkennen
+- **Task-Scanner:** AUFGABEN.txt, AUFGABEN.md, TODO.md, ROADMAP.md und DONE.md in Projekten erkennen
 - **Project Bootstrapper:** Neue Projekte aus Templates erstellen
 
 ## ABGRENZUNG
@@ -62,7 +62,7 @@ ati/
   manifest.json             # Metadaten
   data/config.json          # Konfiguration
   onboarding/               # Projekt-Onboarding
-  scanner/                  # AUFGABEN.txt Scanner
+  scanner/                  # Aufgaben-/Roadmap-Scanner
   tools/                    # ATI-spezifische Tools
   templates/                # Projekt-Templates
   prompt_templates/         # AI-Prompt-Vorlagen
@@ -75,7 +75,7 @@ bach ati status             # ATI-Status
 bach ati task list          # Software-Tasks
 bach ati task add "..."     # Task hinzufuegen
 bach ati onboard            # Projekt registrieren
-bach ati scan               # AUFGABEN.txt scannen
+bach ati scan               # Aufgaben-Dateien scannen
 ```
 
 ## SIEHE AUCH

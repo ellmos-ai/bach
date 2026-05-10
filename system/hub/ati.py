@@ -693,20 +693,23 @@ Hinweis: ATI-Tasks sind Software-Entwicklungs-Tasks,
 
     def _handle_scan(self, args: list, dry_run: bool = False) -> tuple:
         """ATI Scanner - Software-Projekte scannen"""
-        if not args:
+        scan_args = [arg for arg in args if arg not in ("--dry-run", "-n")]
+        effective_dry_run = dry_run or len(scan_args) != len(args)
+
+        if not scan_args:
             # bach ati scan -> Scanner starten
-            return self._run_scan(dry_run)
+            return self._run_scan(effective_dry_run)
         
-        subop = args[0]
+        subop = scan_args[0]
         if subop == "status":
             return self._scan_status()
         elif subop == "tasks":
             tool_filter = None
-            if len(args) > 1 and args[1] == "--tool" and len(args) > 2:
-                tool_filter = args[2]
+            if len(scan_args) > 1 and scan_args[1] == "--tool" and len(scan_args) > 2:
+                tool_filter = scan_args[2]
             return self._scan_tasks(tool_filter)
         elif subop == "run":
-            return self._run_scan(dry_run)
+            return self._run_scan(effective_dry_run)
         else:
             return False, f"""
 [ATI SCAN] Unbekannte Operation: {subop}
