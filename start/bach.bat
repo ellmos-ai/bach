@@ -37,7 +37,6 @@ echo   --- INTERAKTIV --------------------------------
 echo   [1]  User-Konsole (einfaches CLI)
 echo   [2]  Advanced Console (bach.py direkt)
 echo   [3]  Web-Dashboard (Port 8000)
-echo   [4]  Prompt Manager GUI
 echo   [5]  Gemini-Partner Menue
 echo.
 echo   --- CLAUDE AUTO-SESSIONS ----------------------
@@ -79,7 +78,6 @@ if /i "!choice!"=="A" goto always_on
 if "!choice!"=="1" goto console
 if "!choice!"=="2" goto advanced
 if "!choice!"=="3" goto gui
-if "!choice!"=="4" goto prompt_mgr
 if "!choice!"=="5" goto gemini
 if "!choice!"=="6" goto claude_all_15
 if "!choice!"=="7" goto claude_all_30
@@ -284,14 +282,6 @@ start "" "http://127.0.0.1:8000?nocache=!TIMESTAMP!"
 popd
 echo  [OK] GUI gestartet auf http://127.0.0.1:8000
 pause
-goto menu
-
-:prompt_mgr
-pushd "!SYS_DIR!"
-start "" pythonw gui\prompt_manager.py
-popd
-echo  [OK] Prompt Manager gestartet.
-timeout /t 2 >nul
 goto menu
 
 :gemini

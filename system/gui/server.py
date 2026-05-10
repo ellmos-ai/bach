@@ -953,7 +953,7 @@ app = FastAPI(
 
     title="BACH Dashboard API",
 
-    version="1.1.7",
+    version="1.1.8",
 
     description="REST-API fuer das BACH v1.1 Dashboard",
 

@@ -9,10 +9,11 @@ BACH PROMPT-GENERATOR
 Der Prompt-Generator ist ein GUI-Board zum Erstellen, Verwalten und
 Senden von Prompts an Claude-Sessions - manuell oder automatisiert.
 
-STATUS:   FUNKTIONAL (Service implementiert, Handler fehlt)
+STATUS:   FUNKTIONAL (Web-GUI, Service implementiert)
 HANDLER:  NICHT REGISTRIERT (kein bach.py Integration)
 SERVICE:  hub/_services/prompt_generator/
-GUI:      gui/prompt_manager.py (PySide6, eigenstaendig)
+GUI:      gui/templates/prompt-generator.html (Web-basiert)
+NOTE:     Desktop-App (prompt_manager.py, PyQt6) wurde entfernt (v1.1.8)
 
 
 KONZEPT

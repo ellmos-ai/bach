@@ -10,8 +10,7 @@
 
   --- INTERAKTIV ---------------------------------
   [1]  User-Konsole        [2]  Advanced Console
-  [3]  Web-Dashboard       [4]  Prompt Manager
-  [5]  Gemini-Partner Menue
+  [3]  Web-Dashboard       [5]  Gemini-Partner Menue
 
   --- CLAUDE AUTO-SESSIONS -----------------------
   [6]  Alle Tasks 15min    [7]  Alle Tasks 30min
@@ -35,7 +34,6 @@ Die einzelnen .bat-Dateien existieren weiterhin fuer direkte Nutzung und Kompati
 | `start_console.bat` | User-Konsole (einfaches CLI) |
 | `start_console_advanced.bat` | Advanced Console (bach.py direkt) |
 | `start_gui.bat` | Web-Dashboard auf http://127.0.0.1:8000 |
-| `start_prompt_manager.bat` | Prompt Manager GUI |
 | `start_gemini.bat` | Gemini-Partner Menue |
 | `claude_all_15min.bat` | Alle Tasks, 15 Min, 50 Turns |
 | `claude_all_30min.bat` | Alle Tasks, 30 Min, 100 Turns |

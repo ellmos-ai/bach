@@ -105,7 +105,6 @@ STRUKTUR
 gui/
 ├── server.py          FastAPI Backend (alle APIs integriert)
 ├── daemon_service.py  Hintergrund-Service
-├── prompt_manager.py  Prompt-Verwaltung
 ├── file_watcher.py    Datei-Ueberwachung
 ├── sync_service.py    Synchronisation
 ├── api_webhook.py     Webhook-Handler
