@@ -81,6 +81,9 @@
 # === ORPHANED CONFIG FLAGS ===
 /system/config/
 
+# === ONEDRIVE LOCK FILES (Sync-Artefakte, nie committen!) ===
+*.lock.user
+
 # === CACHE & TEMP ===
 __pycache__/
 *.pyc

@@ -70,25 +70,6 @@ function initNavigation() {
 }
 
 /**
- * Oeffnet den Prompt-Manager direkt (ohne Navigation)
- */
-function openPromptManager() {
-    fetch('/api/prompt-generator/start-desktop', { method: 'POST' })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                console.log('Prompt-Manager gestartet');
-            } else {
-                alert('Fehler: ' + (data.error || 'Unbekannt'));
-            }
-        })
-        .catch(err => {
-            console.error('Fehler beim Starten des Prompt-Managers:', err);
-            alert('Prompt-Manager konnte nicht gestartet werden');
-        });
-}
-
-/**
  * Aktualisiert den Status in der Navigation
  */
 function updateNavStatus(online, text) {

@@ -3419,7 +3419,7 @@ async def start_ati_session(work_time: int = 15):
         session_start = datetime.now().strftime("%H:%M")
         session_end = (datetime.now() + timedelta(minutes=timeout)).strftime("%H:%M")
 
-        # Prompt generieren (wie im prompt_manager)
+        # Prompt generieren
         parts = []
 
         # 1. Agent-Prompt
@@ -4104,19 +4104,6 @@ async def tasks_page():
 
 
 
-@app.get("/scanner", response_class=HTMLResponse)
-
-async def scanner_page():
-
-    """Scanner Seite."""
-
-    scanner_file = TEMPLATES_DIR / "scanner.html"
-
-    if scanner_file.exists():
-
-        return FileResponse(scanner_file)
-
-    return HTMLResponse("<h1>Scanner</h1><p>Template nicht gefunden</p>")
 
 
 
@@ -9634,56 +9621,6 @@ async def update_prompt_daemon_config(req: DaemonConfigRequest):
 
 
 
-
-
-@app.post("/api/prompt-generator/start-desktop")
-async def start_prompt_manager_desktop():
-    """Startet den PyQt6 Prompt-Manager als Desktop-App (v2.0)."""
-    try:
-        import subprocess
-        import time
-
-        # PyQt6 Prompt-Manager
-        script_path = BACH_DIR / "gui" / "prompt_manager.py"
-        if not script_path.exists():
-            return {"success": False, "error": f"Script nicht gefunden: {script_path}"}
-
-        # Lock-Datei bereinigen falls verwaist (Fix fuer Task 861)
-        lock_file = BACH_DIR / "data" / ".prompt_manager.lock"
-        if lock_file.exists():
-            try:
-                stored_pid = int(lock_file.read_text().strip())
-                result = subprocess.run(
-                    ["tasklist", "/FI", f"PID eq {stored_pid}", "/NH"],
-                    capture_output=True, text=True, creationflags=0x08000000
-                )
-                if str(stored_pid) not in result.stdout:
-                    lock_file.unlink()
-            except:
-                try:
-                    lock_file.unlink()
-                except:
-                    pass
-
-        # Starte als eigenstaendigen Prozess
-        if sys.platform == "win32":
-            pythonw = Path(sys.executable).parent / "pythonw.exe"
-            exe = str(pythonw) if pythonw.exists() else sys.executable
-            process = subprocess.Popen(
-                [exe, str(script_path)],
-                creationflags=0x08000000,  # CREATE_NO_WINDOW
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            time.sleep(0.5)
-            if process.poll() is not None:
-                return {"success": False, "error": f"Prozess beendet (Exit: {process.returncode})"}
-        else:
-            subprocess.Popen([sys.executable, str(script_path)])
-
-        return {"success": True, "message": "Prompt-Manager v2.0 gestartet"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
 
 
 @app.post("/api/prompt-generator/daemon/toggle")
