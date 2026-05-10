@@ -42,6 +42,7 @@ Erstellt: 2026-02-14
 
 import json
 import os
+import re
 import socket
 import sqlite3
 import sys
@@ -84,6 +85,30 @@ class DBSyncManager:
         """Rückwärtskompatibilität: backup_dir zeigt auf transit_dir."""
         return self.transit_dir
 
+    @property
+    def _sync_state_file(self) -> Path:
+        return self.local_bach_dir / "sync_state.json"
+
+    def _load_sync_state(self) -> dict:
+        if self._sync_state_file.exists():
+            try:
+                return json.loads(self._sync_state_file.read_text(encoding='utf-8'))
+            except (json.JSONDecodeError, OSError):
+                return {}
+        return {}
+
+    def _save_sync_state(self, state: dict):
+        self._sync_state_file.write_text(
+            json.dumps(state, indent=2, ensure_ascii=False),
+            encoding='utf-8'
+        )
+
+    @staticmethod
+    def _extract_host(backup: Path) -> Optional[str]:
+        """Extrahiert Hostname aus Backup-Dateiname (bach_<host>_<timestamp>.bachdb)."""
+        m = re.match(r'^bach_(.+)_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}$', backup.stem)
+        return m.group(1) if m else None
+
     def ensure_local_db(self) -> bool:
         """Erstellt lokale DB falls nicht vorhanden (Initial-Population von OneDrive)."""
         local_db = self.local_bach_dir / "bach.db"
@@ -106,6 +131,13 @@ class DBSyncManager:
         latest = newer[0]
         stats = self.merge_backup(latest)
         total = sum(v for v in stats.values() if isinstance(v, int))
+
+        remote_host = self._extract_host(latest)
+        if remote_host:
+            state = self._load_sync_state()
+            state.setdefault("last_pulled", {})[remote_host] = latest.stat().st_mtime
+            self._save_sync_state(state)
+
         self._update_heartbeat()
         return True, f"ProSync Pull: {total} Zeilen aus {latest.name} gemergt"
 
@@ -240,24 +272,31 @@ class DBSyncManager:
     # ==================== SYNC ====================
 
     def find_newer_backups(self) -> List[Path]:
-        """Findet fremde Backups die neuer sind als lokale DB.
+        """Findet fremde Backups die neuer als der letzte Pull sind.
+
+        Vergleicht gegen sync_state.json (last_pulled pro Host), nicht
+        gegen die lokale DB-mtime — so werden Backups nicht übersehen,
+        nur weil die lokale DB zwischenzeitlich modifiziert wurde.
 
         Returns:
             Liste von Backup-Pfaden, sortiert nach Änderungszeit (neueste zuerst)
         """
-        if not self.db_path.exists():
-            # DB existiert noch nicht - alle Backups sind "neuer"
-            local_mtime = 0
-        else:
-            local_mtime = self.db_path.stat().st_mtime
+        state = self._load_sync_state()
+        last_pulled = state.get("last_pulled", {})
 
         backups = []
         for backup in self.backup_dir.glob("bach_*.bachdb"):
-            # Überspringe eigene Backups
             if self.hostname in backup.name:
                 continue
 
-            if backup.stat().st_mtime > local_mtime:
+            remote_host = self._extract_host(backup)
+            if not remote_host:
+                continue
+
+            backup_mtime = backup.stat().st_mtime
+            last_pull_time = last_pulled.get(remote_host, 0)
+
+            if backup_mtime > last_pull_time:
                 backups.append(backup)
 
         return sorted(backups, key=lambda p: p.stat().st_mtime, reverse=True)
@@ -368,6 +407,12 @@ class DBSyncManager:
             stats = self.merge_backup(latest)
             total = sum(v for v in stats.values() if isinstance(v, int))
             print(f"[DB SYNC] Merged: {total} Zeilen")
+
+            remote_host = self._extract_host(latest)
+            if remote_host:
+                state = self._load_sync_state()
+                state.setdefault("last_pulled", {})[remote_host] = latest.stat().st_mtime
+                self._save_sync_state(state)
         else:
             print("[DB SYNC] Keine neueren Backups")
 
