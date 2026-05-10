@@ -23,7 +23,7 @@ class ScanHandler(BaseHandler):
     def __init__(self, base_path: Path):
         super().__init__(base_path)
         self.data_dir = base_path / "data"
-        self.db_path = self.data_dir / "bach.db"  # Migration auf bach.db (v1.3.0)
+        self.db_path = self._canonical_db
         self.scanner_dir = base_path / "scanner"
     
     @property

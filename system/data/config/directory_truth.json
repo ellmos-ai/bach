@@ -1,7 +1,7 @@
 {
   "_comment": "BACH Directory Truth - Referenz für korrekte Pfade (SQ022 Pfadfreiheit)",
   "_version": "1.0.0",
-  "_updated_at": "2026-03-06T20:55:45.920510",
+  "_updated_at": "2026-05-10T04:20:43.567778",
   "_auto_generated": true,
   "paths": {
     "bach_root": ".",
@@ -24,24 +24,24 @@
     "workspace": "workspace"
   },
   "absolute_paths": {
-    "bach_root": "C:/Users/User/OneDrive/.AI/BACH",
-    "system": "C:/Users/User/OneDrive/.AI/BACH/system",
-    "data": "C:/Users/User/OneDrive/.AI/BACH/system/data",
-    "config": "C:/Users/User/OneDrive/.AI/BACH/system/data/config",
-    "backups": "C:/Users/User/OneDrive/.AI/BACH/system/data/backups",
-    "logs": "C:/Users/User/OneDrive/.AI/BACH/system/data/logs",
-    "exports": "C:/Users/User/OneDrive/.AI/BACH/system/exports",
-    "hub": "C:/Users/User/OneDrive/.AI/BACH/system/hub",
-    "tools": "C:/Users/User/OneDrive/.AI/BACH/system/tools",
-    "agents": "C:/Users/User/OneDrive/.AI/BACH/system/agents",
-    "connectors": "C:/Users/User/OneDrive/.AI/BACH/system/connectors",
-    "partners": "C:/Users/User/OneDrive/.AI/BACH/system/partners",
-    "skills": "C:/Users/User/OneDrive/.AI/BACH/system/skills",
-    "docs": "C:/Users/User/OneDrive/.AI/BACH/system/docs",
-    "help": "C:/Users/User/OneDrive/.AI/BACH/system/docs/help",
-    "wiki": "C:/Users/User/OneDrive/.AI/BACH/system/wiki",
-    "user": "C:/Users/User/OneDrive/.AI/BACH/user",
-    "workspace": "C:/Users/User/OneDrive/.AI/BACH/workspace"
+    "bach_root": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH",
+    "system": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system",
+    "data": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/data",
+    "config": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/data/config",
+    "backups": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/data/backups",
+    "logs": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/data/logs",
+    "exports": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/exports",
+    "hub": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/hub",
+    "tools": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/tools",
+    "agents": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/agents",
+    "connectors": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/connectors",
+    "partners": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/partners",
+    "skills": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/skills",
+    "docs": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/docs",
+    "help": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/docs/help",
+    "wiki": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/system/wiki",
+    "user": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/user",
+    "workspace": "/Users/lukas/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH/workspace"
   },
-  "last_finalize": "2026-03-06T20:55:45.920510"
+  "last_finalize": "2026-05-10T04:20:43.567785"
 }

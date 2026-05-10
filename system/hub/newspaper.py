@@ -57,7 +57,7 @@ class NewspaperHandler(BaseHandler):
 
     def __init__(self, base_path_or_app):
         super().__init__(base_path_or_app)
-        self.db_path = self.base_path / "data" / "bach.db"
+        self.db_path = self._canonical_db
         self.newspaper_dir = self.base_path / "hub" / "_services" / "newspaper"
 
     @property

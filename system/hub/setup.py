@@ -10,6 +10,7 @@ bach setup check             Pruefe ob alle Abhaengigkeiten konfiguriert sind
 bach setup secrets           Secrets-Datei initialisieren / synchen
 bach setup user              USER.md pruefen, personalisieren und mit DB synchronisieren
 bach setup preflight         Pre-Flight-Checks vor Installation (Python, npm, Speicher)
+bach setup prosync            Multi-System-Sync konfigurieren (ProSync)
 bach setup full-install      Vollstaendige BACH-Installation in einem Durchlauf
 
 Teil von PEANUT Release: MCP-Server aus Repo entfernt, stattdessen via npm installieren.
@@ -111,6 +112,7 @@ class SetupHandler(BaseHandler):
             "check": "Pruefe ob alle Abhaengigkeiten konfiguriert sind",
             "secrets": "Secrets-Datei initialisieren / synchen",
             "user": "USER.md pruefen, personalisieren und mit DB synchronisieren",
+            "prosync": "Multi-System-Sync konfigurieren (--multi-system / --single-system)",
             "preflight": "Pre-Flight-Checks vor Installation (Python, npm, Speicher)",
             "full-install": "Vollstaendige BACH-Installation in einem Durchlauf",
             "lang": "Root-Dokumente auf Sprache umschalten (de/en) [TOWER_OF_BABEL]",
@@ -131,6 +133,8 @@ class SetupHandler(BaseHandler):
             return self._setup_secrets()
         elif operation == "user":
             return self._setup_user()
+        elif operation == "prosync":
+            return self._setup_prosync(args)
         elif operation == "preflight":
             return self._preflight(args)
         elif operation == "full-install":
@@ -596,6 +600,7 @@ class SetupHandler(BaseHandler):
         results = []
         steps = [
             ("Pre-Flight Check", self._preflight),
+            ("ProSync", lambda a, _a=list(args): self._setup_prosync(_a, config=config)),
             ("MCP-Server", lambda a: self._setup_mcp()),
             ("Claude Code Hooks", lambda a: self._setup_hooks()),
             ("Secrets", lambda a: self._setup_secrets()),
@@ -634,6 +639,59 @@ class SetupHandler(BaseHandler):
             out.append(f"Fehlgeschlagen: {', '.join(failed)}")
 
         return passed == total, "\n".join(out)
+
+    # =========================================================================
+    # ProSync Setup (Multi-System DB-Sync)
+    # =========================================================================
+
+    def _setup_prosync(self, args=None, config=None) -> tuple:
+        """Konfiguriert ProSync fuer Multi-System-Nutzung.
+
+        Flags:
+            --multi-system    Aktiviert DB-Sync (BACH auf mehreren Rechnern)
+            --single-system   Deaktiviert DB-Sync (BACH nur auf diesem Rechner)
+        Config JSON:
+            "multi_system": true/false
+        Ohne Angabe: Prüft bestehende Konfiguration, Default = single-system.
+        """
+        if args is None:
+            args = []
+        if config is None:
+            config = {}
+
+        flag_file = self.base_path / "data" / "config" / "db_sync_enabled"
+        currently_enabled = flag_file.exists()
+        out = ["=== ProSync Setup ===\n"]
+
+        explicit_multi = "--multi-system" in args or config.get("multi_system") is True
+        explicit_single = "--single-system" in args or config.get("multi_system") is False
+
+        if explicit_multi:
+            flag_file.parent.mkdir(parents=True, exist_ok=True)
+            flag_file.write_text("enabled", encoding="utf-8")
+            out.append("  [OK] ProSync aktiviert (Multi-System-Modus)")
+            out.append("  DB-Sync wird bei nächstem Start wirksam.")
+            out.append("  Nutze 'bach db sync' für manuellen Sync.")
+            return True, "\n".join(out)
+
+        if explicit_single:
+            if currently_enabled:
+                flag_file.unlink()
+                out.append("  [OK] ProSync deaktiviert (Single-System-Modus)")
+            else:
+                out.append("  [OK] ProSync war bereits deaktiviert")
+            out.append("  Keine DB-Synchronisation zwischen Systemen.")
+            return True, "\n".join(out)
+
+        if currently_enabled:
+            out.append("  ProSync ist aktiv (Multi-System-Modus)")
+            out.append("  Ändern: bach setup prosync --single-system")
+        else:
+            out.append("  ProSync ist nicht aktiv (Single-System-Modus)")
+            out.append("  Nutzt du BACH auf mehreren Rechnern?")
+            out.append("  Aktivieren: bach setup prosync --multi-system")
+
+        return True, "\n".join(out)
 
     # =========================================================================
     # USER.md Setup (B34)

@@ -54,18 +54,107 @@ from .base import BaseHandler
 
 
 class DBSyncManager:
-    """Verwaltet DB-Backups und Sync zwischen PCs."""
+    """Verwaltet DB-Backups und ProSync zwischen Systemen.
 
-    def __init__(self, db_path: Path = None, backup_dir: Path = None):
+    ProSync-Architektur:
+    - Jedes System hat eine lokale DB (~/.bach/bach.db)
+    - OneDrive dient als Transit-Hub für .bachdb-Dateien
+    - Sync bei BACH-Start (pull) und -Exit (push)
+    """
+
+    def __init__(self, db_path: Path = None, transit_dir: Path = None):
         self.base_path = Path(__file__).parent.parent
-        self.db_path = db_path or self.base_path / "data" / "bach.db"
-        # Backups LOKAL speichern — NICHT in OneDrive (OneDrive IST das Backup)
-        self.backup_dir = backup_dir or Path(r"C:\_Local_DEV\BACKUPS\BACH\db_sync")
+        try:
+            from .bach_paths import BACH_DB, PROSYNC_TRANSIT_DIR, LOCAL_BACH_DIR
+            self.db_path = db_path or BACH_DB
+            self.transit_dir = transit_dir or PROSYNC_TRANSIT_DIR
+            self.local_bach_dir = LOCAL_BACH_DIR
+        except ImportError:
+            self.db_path = db_path or self.base_path / "data" / "bach.db"
+            self.transit_dir = transit_dir or Path.home() / ".bach" / "transit"
+            self.local_bach_dir = Path.home() / ".bach"
         self.hostname = socket.gethostname()
-        self.heartbeat_file = self.backup_dir / "heartbeat.json"
+        self.heartbeat_file = self.transit_dir / "heartbeat.json"
 
-        # Stelle sicher dass Backup-Ordner existiert
-        self.backup_dir.mkdir(parents=True, exist_ok=True)
+        self.transit_dir.mkdir(parents=True, exist_ok=True)
+        self.local_bach_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def backup_dir(self) -> Path:
+        """Rückwärtskompatibilität: backup_dir zeigt auf transit_dir."""
+        return self.transit_dir
+
+    def ensure_local_db(self) -> bool:
+        """Erstellt lokale DB falls nicht vorhanden (Initial-Population von OneDrive)."""
+        local_db = self.local_bach_dir / "bach.db"
+        if local_db.exists():
+            return True
+        onedrive_db = self.base_path / "data" / "bach.db"
+        if not onedrive_db.exists():
+            return False
+        import shutil
+        shutil.copy2(onedrive_db, local_db)
+        return True
+
+    def sync_on_start(self) -> Tuple[bool, str]:
+        """Pull: Beim Start neuere Backups aus Transit mergen."""
+        self.ensure_local_db()
+        newer = self.find_newer_backups()
+        if not newer:
+            self._update_heartbeat()
+            return True, "ProSync: Keine neueren Backups im Transit"
+        latest = newer[0]
+        stats = self.merge_backup(latest)
+        total = sum(v for v in stats.values() if isinstance(v, int))
+        self._update_heartbeat()
+        return True, f"ProSync Pull: {total} Zeilen aus {latest.name} gemergt"
+
+    def sync_on_exit(self) -> Tuple[bool, str]:
+        """Push: Beim Exit Backup in Transit-Ordner erstellen."""
+        backup_path = self.create_backup_if_needed()
+        if backup_path:
+            return True, f"ProSync Push: {backup_path.name}"
+        return True, "ProSync Push: Bereits heute gepusht"
+
+    # ==================== TABLE DISCOVERY ====================
+
+    _MERGE_EXCLUDE = {'secrets', '_migrations'}
+    _MERGE_EXCLUDE_PREFIXES = ('_temp_', 'sqlite_')
+    _MERGE_EXCLUDE_CONTAINS = ('_backup_',)
+
+    def _discover_timestamped_tables(self, conn: sqlite3.Connection) -> Dict[str, str]:
+        """Findet alle Tabellen mit updated_at oder created_at Spalte.
+
+        Bevorzugt updated_at (für Last-Write-Wins), fällt auf created_at zurück.
+        Überspringt: secrets, _temp_*, *_backup_*, _migrations, Tabellen ohne PK.
+        """
+        tables = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+
+        result = {}
+        for (table_name,) in tables:
+            if table_name in self._MERGE_EXCLUDE:
+                continue
+            if any(table_name.startswith(p) for p in self._MERGE_EXCLUDE_PREFIXES):
+                continue
+            if any(s in table_name for s in self._MERGE_EXCLUDE_CONTAINS):
+                continue
+
+            info = conn.execute(f"PRAGMA table_info([{table_name}])").fetchall()
+            cols = [row[1] for row in info]
+            has_pk = any(row[5] > 0 for row in info)
+
+            if not has_pk:
+                continue
+
+            if 'updated_at' in cols:
+                result[table_name] = 'updated_at'
+            elif 'created_at' in cols:
+                result[table_name] = 'created_at'
+
+        return result
 
     # ==================== BACKUP (DAILY GUARD) ====================
 
@@ -200,60 +289,42 @@ class DBSyncManager:
         remote = sqlite3.connect(str(backup_path))
         remote.row_factory = sqlite3.Row
 
-        # Tabellen mit Timestamp-Spalten (für intelligenten Merge)
-        timestamped_tables = {
-            'ati_tasks': 'updated_at',
-            'connector_messages': 'created_at',
-            'memory_facts': 'created_at',
-            'memory_context': 'created_at',
-            'tasks': 'updated_at',
-            'steuer_dokumente': 'created_at',
-            'agent_synergies': 'updated_at',
-            'bach_agents': 'updated_at',
-            'assistant_calendar': 'updated_at',
-        }
+        timestamped_tables = self._discover_timestamped_tables(local)
+        print(f"[DB SYNC] {len(timestamped_tables)} Tabellen mit Timestamp-Spalten gefunden")
 
         stats = {}
 
         for table, ts_col in timestamped_tables.items():
             try:
-                # Prüfe ob Tabelle existiert
-                table_exists = local.execute(
+                remote_exists = remote.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
                     (table,)
                 ).fetchone()
-
-                if not table_exists:
+                if not remote_exists:
                     continue
 
-                # Hole Spalten-Info
-                columns = [row[1] for row in local.execute(
-                    f"PRAGMA table_info({table})"
-                ).fetchall()]
+                local_cols = [r[1] for r in local.execute(f"PRAGMA table_info([{table}])").fetchall()]
+                remote_cols = [r[1] for r in remote.execute(f"PRAGMA table_info([{table}])").fetchall()]
+                shared = [c for c in local_cols if c in remote_cols]
 
-                if ts_col not in columns:
+                if ts_col not in shared:
                     continue
 
-                # Hole neuere Rows vom Remote
-                max_ts_query = f"""
-                    SELECT COALESCE(MAX({ts_col}), '1970-01-01')
-                    FROM {table}
-                """
-                max_local_ts = local.execute(max_ts_query).fetchone()[0]
+                max_local_ts = local.execute(
+                    f"SELECT COALESCE(MAX([{ts_col}]), '1970-01-01') FROM [{table}]"
+                ).fetchone()[0]
 
-                newer_rows = remote.execute(f"""
-                    SELECT * FROM {table}
-                    WHERE {ts_col} > ?
-                """, (max_local_ts,)).fetchall()
+                col_list = ', '.join(f'[{c}]' for c in shared)
+                newer_rows = remote.execute(
+                    f"SELECT {col_list} FROM [{table}] WHERE [{ts_col}] > ?",
+                    (max_local_ts,)
+                ).fetchall()
 
                 if newer_rows:
-                    # INSERT OR REPLACE
-                    placeholders = ','.join(['?'] * len(columns))
-                    insert_query = f"INSERT OR REPLACE INTO {table} VALUES ({placeholders})"
-
+                    placeholders = ', '.join(['?'] * len(shared))
+                    insert_q = f"INSERT OR REPLACE INTO [{table}] ({col_list}) VALUES ({placeholders})"
                     for row in newer_rows:
-                        local.execute(insert_query, tuple(row))
-
+                        local.execute(insert_q, tuple(row))
                     stats[table] = len(newer_rows)
                     print(f"  {table}: {len(newer_rows)} Zeilen")
 
@@ -467,9 +538,12 @@ class DBSyncHandler(BaseHandler):
 
     def get_operations(self) -> dict:
         return {
-            "backup": "Manuelles Backup erstellen",
-            "sync": "Pull + Merge + Push",
-            "status": "Status und Backups anzeigen",
+            "backup": "Manuelles Backup in Transit erstellen",
+            "sync": "Pull + Merge + Push (ProSync)",
+            "pull": "Neuere Backups aus Transit mergen",
+            "push": "Lokales Backup in Transit pushen",
+            "status": "ProSync-Status anzeigen",
+            "init": "Lokale DB erstellen (Initial-Population von OneDrive)",
             "cleanup": "Alte Backups löschen",
             "enable": "Auto-Sync aktivieren (bei Startup/Exit)",
             "disable": "Auto-Sync deaktivieren",
@@ -493,6 +567,28 @@ class DBSyncHandler(BaseHandler):
             except Exception as e:
                 return False, f"Sync fehlgeschlagen: {e}"
 
+        elif operation == "pull":
+            try:
+                success, msg = manager.sync_on_start()
+                return success, msg
+            except Exception as e:
+                return False, f"Pull fehlgeschlagen: {e}"
+
+        elif operation == "push":
+            try:
+                success, msg = manager.sync_on_exit()
+                return success, msg
+            except Exception as e:
+                return False, f"Push fehlgeschlagen: {e}"
+
+        elif operation == "init":
+            try:
+                if manager.ensure_local_db():
+                    return True, f"Lokale DB bereit: {manager.local_bach_dir / 'bach.db'}"
+                return False, "Keine OneDrive-DB zum Kopieren gefunden"
+            except Exception as e:
+                return False, f"Init fehlgeschlagen: {e}"
+
         elif operation == "status":
             return True, manager.get_status()
 
@@ -504,16 +600,16 @@ class DBSyncHandler(BaseHandler):
                 return False, f"Cleanup fehlgeschlagen: {e}"
 
         elif operation == "enable":
-            config_file = self.base_path / "config" / "db_sync_enabled"
+            config_file = self.base_path / "data" / "config" / "db_sync_enabled"
             config_file.parent.mkdir(parents=True, exist_ok=True)
             config_file.write_text("enabled", encoding="utf-8")
-            return True, "✅ Auto-Sync aktiviert (wirkt bei nächstem Start)"
+            return True, "Auto-Sync aktiviert (wirkt bei nächstem Start)"
 
         elif operation == "disable":
-            config_file = self.base_path / "config" / "db_sync_enabled"
+            config_file = self.base_path / "data" / "config" / "db_sync_enabled"
             if config_file.exists():
                 config_file.unlink()
-            return True, "❌ Auto-Sync deaktiviert"
+            return True, "Auto-Sync deaktiviert"
 
         else:
             return False, f"Unbekannte Operation: {operation}"

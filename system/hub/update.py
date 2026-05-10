@@ -60,7 +60,7 @@ class UpdateHandler(BaseHandler):
         self.hub_dir = self.base_path / "hub"
         # Backups LOKAL — NICHT in OneDrive
         self.backups_dir = Path(r"C:\_Local_DEV\BACKUPS\BACH\updates")
-        self.db_path = self.base_path / "data" / "bach.db"
+        self.db_path = self._canonical_db
 
     @property
     def profile_name(self) -> str:

@@ -47,7 +47,7 @@ class SteuerHandler(BaseHandler):
         self.profile_dir = self.steuer_dir / "profile"
         self.watch_dir = self.steuer_dir / "watch"
         self.templates_dir = self.steuer_dir / "templates"
-        self.db_path = self.base_path / "data" / "bach.db"  # Unified DB seit v1.1.84
+        self.db_path = self._canonical_db
         self.username = "user"  # Default, spaeter aus Config
 
     @staticmethod

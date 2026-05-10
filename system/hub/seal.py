@@ -37,7 +37,7 @@ class SealHandler:
         """
         self.base_path = Path(base_path)
         self.system_root = self.base_path / "system"
-        self.db_path = self.system_root / "data" / "bach.db"
+        self.db_path = self._canonical_db
 
     def _get_conn(self):
         """DB-Verbindung."""

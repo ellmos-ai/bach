@@ -37,7 +37,7 @@ class ATIHandler(BaseHandler):
         self.ati_dir = base_path / "agents" / "ati"
         self.ati_data_dir = base_path / "data" / "ati"
         self.config_path = self.ati_dir / "data" / "config.json"
-        self.db_path = base_path / "data" / "bach.db"
+        self.db_path = self._canonical_db
         # user_db entfernt - alle Daten jetzt in bach.db (v1.3.0)
     
     @property

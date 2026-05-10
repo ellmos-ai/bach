@@ -45,7 +45,7 @@ class PartnerHandler(BaseHandler):
         super().__init__(base_path)
         super().__init__(base_path)
         # self.registry_path entfernt (Task #302)
-        self.db_path = base_path / "data" / "bach.db"
+        self.db_path = self._canonical_db
     
     def _load_partners_from_db(self) -> dict:
         """Laedt Partner aus der partner_recognition DB-Tabelle.

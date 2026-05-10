@@ -119,12 +119,24 @@ SERVICES_DIR = SKILLS_DIR / "_services"
 
 # Data-Unterverzeichnisse
 LOGS_DIR = DATA_DIR / "logs"
-# Backups LOKAL — NICHT in OneDrive (OneDrive IST das Backup)
-BACKUPS_DIR = Path(r"C:\_Local_DEV\BACKUPS\BACH")
+import platform as _platform
+if _platform.system() == "Darwin":
+    BACKUPS_DIR = Path.home() / ".bach" / "backups"
+else:
+    BACKUPS_DIR = Path(r"C:\_Local_DEV\BACKUPS\BACH")
 ARCHIVE_DIR = DATA_DIR / "_archive"
 TRASH_DIR = DATA_DIR / "_trash"
 MESSAGES_DIR = DATA_DIR / "messages"
 INSTANCES_DIR = DATA_DIR / "instances"
+
+# ============================================================================
+# PROSYNC (Lokale DB + OneDrive-Transit)
+# ============================================================================
+
+LOCAL_BACH_DIR = Path.home() / ".bach"
+_LOCAL_DB = LOCAL_BACH_DIR / "bach.db"
+_ONEDRIVE_ROOT = BACH_ROOT.parent.parent.parent.parent
+PROSYNC_TRANSIT_DIR = _ONEDRIVE_ROOT / ".SYNC" / "bach_db_transit"
 
 # ============================================================================
 # ROOT-VERZEICHNISSE (auf Repository-Ebene)
@@ -139,7 +151,12 @@ EXTENSIONS_DIR = BACH_ROOT / "extensions"
 # DATENBANKEN
 # ============================================================================
 
-BACH_DB = DATA_DIR / "bach.db"
+# ProSync: Lokale DB bevorzugen, OneDrive-DB als Fallback
+ONEDRIVE_DB = DATA_DIR / "bach.db"
+if _LOCAL_DB.exists():
+    BACH_DB = _LOCAL_DB
+else:
+    BACH_DB = ONEDRIVE_DB
 # USER_DB deprecated seit v1.1.84 - alle Daten jetzt in bach.db (Task 772)
 USER_DB = BACH_DB  # Alias fuer Rueckwaertskompatibilitaet
 ARCHIVE_DB = BACH_DB  # Konsolidiert v2.0: Archive-Tabellen jetzt in bach.db (Task 980)
@@ -259,7 +276,12 @@ _PATH_REGISTRY = {
     # Datenbanken
     "db": BACH_DB,
     "bach_db": BACH_DB,
+    "onedrive_db": ONEDRIVE_DB,
     "archive_db": ARCHIVE_DB,
+
+    # ProSync
+    "local_bach": LOCAL_BACH_DIR,
+    "prosync_transit": PROSYNC_TRANSIT_DIR,
 
     # User-Dokumente
     "user_documents": USER_DOCUMENTS_DIR,

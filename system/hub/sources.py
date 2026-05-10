@@ -26,7 +26,7 @@ class SourcesHandler(BaseHandler):
     def __init__(self, base_path: Path):
         super().__init__(base_path)
         self.config_file = base_path / "data" / "context_sources.json"
-        self.db_path = base_path / "data" / "bach.db"
+        self.db_path = self._canonical_db
         self.help_dir = base_path / "help"
         self._config = None
     

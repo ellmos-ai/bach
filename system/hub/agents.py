@@ -145,7 +145,7 @@ class AgentsHandler(BaseHandler):
 
     def __init__(self, base_path: Path):
         super().__init__(base_path)
-        self.db_path = base_path / "data" / "bach.db"
+        self.db_path = self._canonical_db
         # Pfade: aus bach_paths oder Fallback relativ zu base_path
         self.agents_dir = _AGENTS_DIR if _PATHS_FROM_BACH else base_path / "agents"
         self.experts_dir = _EXPERTS_DIR if _PATHS_FROM_BACH else base_path / "agents" / "_experts"

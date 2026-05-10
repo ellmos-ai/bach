@@ -32,7 +32,7 @@ class SyncHandler(BaseHandler):
         self.skills_dir = base_path / "skills"
         self.tools_dir = base_path / "tools"
         self.base_path = base_path
-        self.db_path = base_path / "data" / "bach.db"
+        self.db_path = self._canonical_db
     
     def _get_connection(self):
         """SQLite-Verbindung zur BACH-Datenbank."""

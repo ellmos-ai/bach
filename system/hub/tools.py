@@ -31,7 +31,7 @@ class ToolsHandler(BaseHandler):
         super().__init__(base_path)
         # Korrigiert: tools liegt direkt unter system/tools/
         self.tools_dir = base_path / "tools"
-        self.db_path = base_path / "data" / "bach.db"
+        self.db_path = self._canonical_db
     
     @property
     def profile_name(self) -> str:

@@ -28,6 +28,12 @@ class BaseHandler(ABC):
             # Legacy: Path-Instanz
             self.app = None
             self.base_path = Path(base_path_or_app) if not isinstance(base_path_or_app, Path) else base_path_or_app
+
+        try:
+            from .bach_paths import BACH_DB
+            self._canonical_db = BACH_DB
+        except ImportError:
+            self._canonical_db = self.base_path / "data" / "bach.db"
     
     @property
     @abstractmethod

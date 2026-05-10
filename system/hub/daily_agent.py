@@ -57,7 +57,7 @@ class DailyAgentHandler(BaseHandler):
 
     def __init__(self, base_path_or_app):
         super().__init__(base_path_or_app)
-        self.db_path = self.base_path / "data" / "bach.db"
+        self.db_path = self._canonical_db
         self.pid_file = self.base_path / "data" / "daily_agent.pid"
 
     @property

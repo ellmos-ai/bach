@@ -41,7 +41,7 @@ class CVHandler(BaseHandler):
 
     def __init__(self, base_path: Path):
         super().__init__(base_path)
-        self.db_path = base_path / "data" / "bach.db"
+        self.db_path = self._canonical_db
         self.expert_dir = base_path / "skills" / "_experts" / "bewerbungsexperte"
 
     @property
