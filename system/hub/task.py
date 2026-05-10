@@ -35,7 +35,7 @@ class TaskHandler(BaseHandler):
     
     def __init__(self, base_path: Path):
         super().__init__(base_path)
-        self.db_path = base_path / "data" / "bach.db"
+        self.db_path = self._canonical_db
     
     @property
     def profile_name(self) -> str:
@@ -275,12 +275,22 @@ class TaskHandler(BaseHandler):
         filter_text = None
         assigned_filter = None
         unassigned_only = False
+        status_aliases = {
+            "all": None,
+            "done": "done",
+            "pending": "pending",
+            "open": "open",
+            "blocked": "blocked",
+            "in_progress": "in_progress",
+            "in-progress": "in_progress",
+        }
         
         i = 0
         while i < len(args):
             arg = args[i]
-            if arg in ["all", "done", "pending", "open", "blocked"]:
-                status_filter = arg if arg != "all" else None
+            normalized_arg = arg.lower()
+            if normalized_arg in status_aliases:
+                status_filter = status_aliases[normalized_arg]
             elif arg.startswith("--filter="):
                 filter_text = arg[9:]
             elif arg == "--filter" and i + 1 < len(args):
@@ -774,7 +784,7 @@ TASK-VERWALTUNG
 
 Befehle:
   bach task add <titel>              Task hinzufuegen
-  bach task list [status]            Tasks auflisten (pending/done/blocked/all)
+  bach task list [status]            Tasks auflisten (pending/open/in_progress/done/blocked/all)
   bach task list --filter TERM       Tasks nach Begriff filtern
   bach task list --assigned PARTNER  Tasks nach Partner filtern
   bach task list --unassigned        Nur unzugewiesene Tasks
@@ -807,6 +817,7 @@ Beispiele:
   bach task done 319 320 321 --note "Alle Help-Dateien erstellt"
   bach task assign 100 101 --to GEMINI
   bach task depends 306 --on 305   # Task 306 wartet auf 305
+  bach task list in_progress       # Aktuell in Bearbeitung
   bach task list pending --assigned COPILOT
   bach task list all --unassigned
 """

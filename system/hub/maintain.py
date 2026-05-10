@@ -122,12 +122,23 @@ Siehe: bach --help tools/path_healer"""
         script = self.tools_dir / "doc_update_checker.py"
         if not script.exists():
             return False, f"Script nicht gefunden: {script}"
-        
-        cmd_args = ["check"]
-        if dry_run:
+
+        # Ohne explizites Subcommand bleibt "check" der Default.
+        # Sobald der erste Wert kein Flag ist, geben wir ihn direkt an das Tool
+        # weiter (z.B. "report", "auto-update", "schedule").
+        if args and not str(args[0]).startswith("-"):
+            cmd_args = list(args)
+        else:
+            cmd_args = ["check"]
+            if args:
+                cmd_args.extend(args)
+
+        if dry_run and "--dry-run" not in cmd_args and cmd_args[0] in {
+            "check",
+            "auto-update",
+            "auto-fix",
+        }:
             cmd_args.append("--dry-run")
-        if args:
-            cmd_args.extend(args)
         
         try:
             result = subprocess.run(
@@ -870,6 +881,7 @@ Befehle:
 
 Beispiele:
   bach --maintain docs                # Doku pruefen
+  bach --maintain docs report         # Markdown-Report erzeugen
   bach --maintain heal                # Pfade korrigieren
   bach --maintain registry report     # Detaillierter Registry-Report
   bach --maintain skills check        # Skill-Health Check

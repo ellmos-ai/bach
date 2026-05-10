@@ -15,8 +15,15 @@ Unterordner-Unterstuetzung (v2.6 Refactoring):
 """
 from pathlib import Path
 import sqlite3
+from datetime import datetime
 from .base import BaseHandler
 from .lang import t
+from core.provenance import (
+    classify_people_scope,
+    classify_privacy,
+    format_timestamp,
+    truncate_text,
+)
 
 
 class WikiHandler(BaseHandler):
@@ -43,6 +50,7 @@ class WikiHandler(BaseHandler):
             "<thema>": t("wiki_show_desc", default="Artikel zu einem Thema anzeigen"),
             "<ordner>/<thema>": t("wiki_subshow_desc", default="Artikel aus Unterordner (z.B. foerderung/icf)"),
             "search": t("wiki_search_desc", default="Artikel durchsuchen"),
+            "provenance": t("wiki_provenance_desc", default="Metadaten, Personenbezug und Privacy-Hinweise anzeigen"),
             "sync": t("wiki_sync_desc", default="Help- und Wiki-Dateien in DB spiegeln (Index aktualisieren)")
         }
 
@@ -60,6 +68,8 @@ class WikiHandler(BaseHandler):
             if not args:
                 return False, "Usage: bach wiki search \"keyword\""
             return self._search(" ".join(args))
+        elif operation == "provenance":
+            return self._provenance(args)
         elif operation == "read":
             if not args:
                 return False, "Usage: bach wiki read <thema>"
@@ -286,6 +296,172 @@ class WikiHandler(BaseHandler):
             return True, f"WIKI: {display_name}\n{'='*50}\n\n{content}"
         except Exception as e:
             return False, f"Fehler beim Lesen: {e}"
+
+    def _get_db_conn(self):
+        db_path = self.base_path / "data" / "bach.db"
+        if not db_path.exists():
+            return None
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _wiki_evidence(self, category: str) -> str:
+        if category == "help":
+            return "Help-Referenz"
+        return "Wiki-Artikel"
+
+    def _fetch_article_metadata(self, thema: str) -> dict | None:
+        normalized = thema.replace("\\", "/").lower()
+
+        conn = self._get_db_conn()
+        if conn is not None:
+            try:
+                row = conn.execute(
+                    """
+                    SELECT path, title, content, category, last_modified, tags, language
+                    FROM wiki_articles
+                    WHERE path = ?
+                    """,
+                    (f"wiki/{normalized}.txt",),
+                ).fetchone()
+                if row is None and "/" not in normalized:
+                    row = conn.execute(
+                        """
+                        SELECT path, title, content, category, last_modified, tags, language
+                        FROM wiki_articles
+                        WHERE path LIKE ? OR path LIKE ?
+                        ORDER BY path
+                        LIMIT 1
+                        """,
+                        (f"wiki/{normalized}.txt", f"wiki/%/{normalized}.txt"),
+                    ).fetchone()
+                if row:
+                    return dict(row)
+            finally:
+                conn.close()
+
+        file_path = self.wiki_path / f"{normalized}.txt"
+        if not file_path.exists() and "/" in normalized:
+            folder, subtopic = normalized.split("/", 1)
+            file_path = self.wiki_path / folder / f"{subtopic}.txt"
+        if not file_path.exists():
+            return None
+
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except Exception:
+            return None
+
+        title = file_path.stem
+        first_line = content.splitlines()[0].strip() if content.splitlines() else ""
+        if first_line:
+            stripped = first_line.lstrip("#-= ").strip()
+            if len(stripped) > 2:
+                title = stripped
+
+        rel_path = file_path.relative_to(self.base_path).as_posix()
+        return {
+            "path": rel_path,
+            "title": title,
+            "content": content,
+            "category": "wiki",
+            "last_modified": format_timestamp(datetime.fromtimestamp(file_path.stat().st_mtime).isoformat()),
+            "tags": None,
+            "language": "de",
+        }
+
+    def _provenance_entry(self, row: dict) -> list[str]:
+        content = row.get("content") or ""
+        path = row.get("path") or ""
+        category = row.get("category") or "wiki"
+        people_scope, scope_reason = classify_people_scope(
+            text=content,
+            category=category,
+            path=path,
+        )
+        privacy, privacy_hint = classify_privacy(
+            text=content,
+            category=category,
+            path=path,
+            people_scope=people_scope,
+        )
+
+        return [
+            f"  {row.get('path', '-')}",
+            f"    Titel: {row.get('title') or '-'}",
+            f"    Evidenz: {self._wiki_evidence(category)} | Sprache: {row.get('language') or '-'}",
+            f"    Personenbezug: {people_scope} | Privacy: {privacy}",
+            f"    Letzte Änderung: {format_timestamp(row.get('last_modified'))}",
+            f"    Inhalt: {truncate_text(content)}",
+            f"    Hinweis: {scope_reason} {privacy_hint}",
+            "",
+        ]
+
+    def _provenance(self, args: list) -> tuple:
+        """Zeigt heuristische Provenance fuer einen oder mehrere Wiki-Artikel."""
+        limit = 5
+        article = None
+
+        if args:
+            if str(args[0]).isdigit():
+                limit = max(1, min(int(args[0]), 20))
+            else:
+                article = " ".join(args)
+
+        results = [
+            "WIKI PROVENANCE (heuristisch)",
+            "=" * 60,
+            "",
+            "Hinweis: Personenbezug und Privacy sind Review-Hilfen, keine harte Policy.",
+        ]
+
+        if article:
+            row = self._fetch_article_metadata(article)
+            if not row:
+                return False, f"Artikel '{article}' nicht gefunden."
+            results.extend(["", "[ARTIKEL]"])
+            results.extend(self._provenance_entry(row))
+            return True, "\n".join(results).rstrip()
+
+        conn = self._get_db_conn()
+        rows = []
+        if conn is not None:
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT path, title, content, category, last_modified, tags, language
+                    FROM wiki_articles
+                    ORDER BY last_modified DESC, path
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                rows = []
+            finally:
+                conn.close()
+
+        if not rows:
+            files = sorted(
+                (path for path in self.wiki_path.rglob("*.txt") if not path.name.startswith("_")),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )[:limit]
+            for file_path in files:
+                data = self._fetch_article_metadata(file_path.relative_to(self.wiki_path).with_suffix("").as_posix())
+                if data:
+                    rows.append(data)
+
+        if not rows:
+            return True, "Keine Wiki-Artikel für Provenance gefunden."
+
+        results.extend(["", "[LETZTE ARTIKEL]"])
+        for row in rows:
+            if isinstance(row, sqlite3.Row):
+                row = dict(row)
+            results.extend(self._provenance_entry(row))
+
+        return True, "\n".join(results).rstrip()
 
     def _fts_search(self, keyword):
         """FTS5-basierte Suche in bach_blobs."""

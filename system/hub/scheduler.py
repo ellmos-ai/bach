@@ -25,6 +25,7 @@ import sys
 import os
 import signal
 import subprocess
+import json
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
@@ -68,6 +69,8 @@ class SchedulerHandler(BaseHandler):
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
+        json_output = self._has_flag(args, "--json")
+
         # Session System (System-Service)
         if operation == "session":
             return self._handle_session(args, dry_run)
@@ -79,9 +82,9 @@ class SchedulerHandler(BaseHandler):
         elif operation == "stop":
             return self._stop_daemon(dry_run)
         elif operation == "status":
-            return self._show_status()
+            return self._show_status(json_output=json_output)
         elif operation == "jobs":
-            return self._list_jobs()
+            return self._list_jobs(json_output=json_output)
         elif operation == "run":
             if args:
                 try:
@@ -101,27 +104,44 @@ class SchedulerHandler(BaseHandler):
         else:
             return self._show_status()
 
-    def _is_running(self) -> bool:
-        """Prueft ob Scheduler laeuft."""
+    def _has_flag(self, args: list, *flags: str) -> bool:
+        """Prueft ob ein Flag in den CLI-Argumenten gesetzt wurde."""
+        return any(arg in flags for arg in args)
+
+    def _json_dump(self, payload: dict) -> str:
+        """Formatiert JSON konsistent fuer CLI-Ausgabe."""
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    def _parse_datetime_value(self, value):
+        """Parst ISO-Zeitstempel robust fuer Statusberechnungen."""
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            return None
+
+    def _get_daemon_pid(self) -> int:
+        """Prueft ob Scheduler laeuft und liefert PID oder 0."""
         if not self.pid_file.exists():
-            return False
+            return 0
 
         try:
             pid = int(self.pid_file.read_text().strip())
-            # Pruefen ob Prozess existiert (platform-abhaengig)
             if sys.platform == 'win32':
-                # Windows: tasklist verwenden
                 result = subprocess.run(
                     ['tasklist', '/FI', f'PID eq {pid}'],
                     capture_output=True, text=True
                 )
-                return str(pid) in result.stdout
-            else:
-                # Unix: Signal 0 senden
-                os.kill(pid, 0)
-                return True
-        except:
-            return False
+                return pid if str(pid) in result.stdout else 0
+            os.kill(pid, 0)
+            return pid
+        except Exception:
+            return 0
+
+    def _is_running(self) -> bool:
+        """Prueft ob Scheduler laeuft."""
+        return bool(self._get_daemon_pid())
 
     def _start_daemon(self, background: bool, dry_run: bool) -> tuple:
         """Startet den Scheduler-Service."""
@@ -212,11 +232,61 @@ class SchedulerHandler(BaseHandler):
         except Exception as e:
             return (False, f"[ERROR] Stoppen fehlgeschlagen: {e}")
 
-    def _show_status(self) -> tuple:
+    def _show_status(self, json_output: bool = False) -> tuple:
         """Zeigt Scheduler-Status."""
         import sqlite3
 
-        running = self._is_running()
+        pid = self._get_daemon_pid()
+        running = bool(pid)
+
+        if json_output:
+            payload = {
+                "generated_at": datetime.now().isoformat(),
+                "service": {
+                    "running": running,
+                    "pid": pid or None,
+                    "pid_file": str(self.pid_file),
+                    "script": str(self.daemon_script),
+                    "log_file": str(self.log_dir / "daemon.log"),
+                },
+                "jobs": {
+                    "total": 0,
+                    "active": 0,
+                },
+                "recent_runs": [],
+            }
+
+            if self.user_db.exists():
+                try:
+                    conn = sqlite3.connect(self.user_db)
+                    conn.row_factory = sqlite3.Row
+                    payload["jobs"]["total"] = conn.execute("SELECT COUNT(*) FROM scheduler_jobs").fetchone()[0]
+                    payload["jobs"]["active"] = conn.execute(
+                        "SELECT COUNT(*) FROM scheduler_jobs WHERE is_active = 1"
+                    ).fetchone()[0]
+                    runs = conn.execute("""
+                        SELECT j.name, r.result, r.finished_at, r.duration_seconds, r.triggered_by
+                        FROM scheduler_runs r
+                        JOIN scheduler_jobs j ON r.job_id = j.id
+                        ORDER BY r.id DESC LIMIT 5
+                    """).fetchall()
+                    payload["recent_runs"] = [
+                        {
+                            "name": row["name"],
+                            "result": row["result"],
+                            "finished_at": row["finished_at"],
+                            "duration_seconds": row["duration_seconds"],
+                            "triggered_by": row["triggered_by"],
+                        }
+                        for row in runs
+                    ]
+                    conn.close()
+                except Exception as e:
+                    payload["warning"] = str(e)
+            else:
+                payload["warning"] = f"User-DB nicht gefunden: {self.user_db}"
+
+            return True, self._json_dump(payload)
 
         output = [
             "=== SCHEDULER STATUS ===",
@@ -264,7 +334,61 @@ class SchedulerHandler(BaseHandler):
 
         return (True, "\n".join(output))
 
-    def _list_jobs(self) -> tuple:
+    def _compute_job_status(self, row, now: datetime) -> str:
+        """Leitet einen maschinenlesbaren Status fuer einen Scheduler-Job ab."""
+        if not row["is_active"]:
+            return "disabled"
+
+        next_run = self._parse_datetime_value(row["next_run"])
+        last_result = (row["last_result"] or "").lower()
+
+        if last_result in {"failed", "timeout", "cancelled"}:
+            return "error"
+        if next_run and next_run <= now:
+            return "due"
+        if next_run:
+            return "scheduled"
+        if last_result == "success":
+            return "ok"
+        return "idle"
+
+    def _serialize_job_row(self, row, now: datetime) -> dict:
+        """Serialisiert einen Scheduler-Job fuer JSON-Ausgaben."""
+        next_run = self._parse_datetime_value(row["next_run"])
+        due_in_seconds = None
+        overdue_seconds = None
+        if next_run:
+            delta = int((next_run - now).total_seconds())
+            if delta >= 0:
+                due_in_seconds = delta
+            else:
+                overdue_seconds = abs(delta)
+
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "description": row["description"],
+            "job_type": row["job_type"],
+            "schedule": row["schedule"],
+            "command": row["command"],
+            "script_path": row["script_path"],
+            "arguments": row["arguments"],
+            "is_active": bool(row["is_active"]),
+            "status": self._compute_job_status(row, now),
+            "last_run": row["last_run"],
+            "next_run": row["next_run"],
+            "last_result": row["last_result"],
+            "run_count": row["run_count"],
+            "success_count": row["success_count"],
+            "fail_count": row["fail_count"],
+            "timeout_seconds": row["timeout_seconds"],
+            "retry_on_fail": bool(row["retry_on_fail"]),
+            "max_retries": row["max_retries"],
+            "due_in_seconds": due_in_seconds,
+            "overdue_seconds": overdue_seconds,
+        }
+
+    def _list_jobs(self, json_output: bool = False) -> tuple:
         """Listet alle Scheduler-Jobs."""
         import sqlite3
 
@@ -276,12 +400,22 @@ class SchedulerHandler(BaseHandler):
             conn.row_factory = sqlite3.Row
 
             jobs = conn.execute("""
-                SELECT id, name, job_type, schedule, is_active, last_run
+                SELECT id, name, description, job_type, schedule, command, script_path,
+                       arguments, is_active, last_run, next_run, run_count, success_count,
+                       fail_count, last_result, timeout_seconds, retry_on_fail, max_retries
                 FROM scheduler_jobs
                 ORDER BY is_active DESC, name
             """).fetchall()
 
             conn.close()
+
+            if json_output:
+                now = datetime.now()
+                payload = {
+                    "generated_at": now.isoformat(),
+                    "jobs": [self._serialize_job_row(job, now) for job in jobs],
+                }
+                return True, self._json_dump(payload)
 
             if not jobs:
                 return (True, "Keine Scheduler-Jobs definiert.\n\nErstelle Jobs via GUI oder API.")
@@ -376,6 +510,9 @@ class SchedulerHandler(BaseHandler):
         if not args:
             return self._session_status()
 
+        if args[0] == "--json":
+            return self._session_status(json_output=True)
+
         sub_cmd = args[0].lower()
         sub_args = args[1:] if len(args) > 1 else []
 
@@ -384,7 +521,7 @@ class SchedulerHandler(BaseHandler):
         elif sub_cmd == "stop":
             return self._session_stop(dry_run)
         elif sub_cmd == "status":
-            return self._session_status()
+            return self._session_status(json_output=self._has_flag(sub_args, "--json"))
         elif sub_cmd == "trigger":
             return self._session_trigger(sub_args, dry_run)
         elif sub_cmd == "profiles":
@@ -508,11 +645,50 @@ class SchedulerHandler(BaseHandler):
         except Exception as e:
             return (False, f"[ERROR] Stop fehlgeschlagen: {e}")
 
-    def _session_status(self) -> tuple:
+    def _session_status(self, json_output: bool = False) -> tuple:
         """Zeigt Session-Status."""
         import json
 
         pid = self._session_is_running()
+
+        if json_output:
+            payload = {
+                "generated_at": datetime.now().isoformat(),
+                "service": {
+                    "running": bool(pid),
+                    "pid": pid or None,
+                    "script": str(self.session_daemon),
+                    "pid_file": str(self.session_pid_file),
+                },
+                "config": {},
+                "profiles": [],
+                "log_tail": [],
+            }
+
+            config_file = self.session_dir / "config.json"
+            if config_file.exists():
+                try:
+                    config = json.loads(config_file.read_text(encoding='utf-8'))
+                    payload["config"] = {
+                        "enabled": config.get("enabled", True),
+                        "quiet_start": config.get("quiet_start", "22:00"),
+                        "quiet_end": config.get("quiet_end", "08:00"),
+                        "jobs": config.get("jobs", []),
+                    }
+                except Exception as e:
+                    payload["config_error"] = str(e)
+
+            if self.session_profiles_dir.exists():
+                payload["profiles"] = sorted(p.stem for p in self.session_profiles_dir.glob("*.json"))
+
+            log_file = self.log_dir / "session_daemon.log"
+            if log_file.exists():
+                try:
+                    payload["log_tail"] = log_file.read_text(encoding='utf-8').strip().split("\n")[-5:]
+                except Exception as e:
+                    payload["log_error"] = str(e)
+
+            return True, self._json_dump(payload)
 
         output = [
             "=== SESSION SCHEDULER STATUS ===",

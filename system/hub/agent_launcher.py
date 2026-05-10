@@ -54,6 +54,8 @@ class AgentLauncherHandler(BaseHandler):
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
         if operation == "list":
+            if self._has_flag(args, "--json"):
+                return self._list_agents_json()
             return self._list_agents()
         elif operation == "start":
             if not args:
@@ -65,6 +67,8 @@ class AgentLauncherHandler(BaseHandler):
                 return (False, f"[ERROR] {t('agent_name_required', default='Agent-Name erforderlich')}: bach agent stop <name>")
             return self._stop_agent(args[0], dry_run)
         elif operation == "status":
+            if self._has_flag(args, "--json"):
+                return self._show_status_json()
             return self._show_status()
         elif operation == "rename":
             if len(args) < 2:
@@ -72,6 +76,14 @@ class AgentLauncherHandler(BaseHandler):
             return self._rename_agent(args[0], ' '.join(args[1:]), dry_run)
         else:
             return self._list_agents()
+
+    def _has_flag(self, args: list, *flags: str) -> bool:
+        """Prueft ob ein Flag in den CLI-Argumenten gesetzt wurde."""
+        return any(arg in flags for arg in args)
+
+    def _json_dump(self, payload: dict) -> str:
+        """Formatiert JSON konsistent fuer CLI-Ausgabe."""
+        return json.dumps(payload, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
     # list
@@ -140,6 +152,37 @@ class AgentLauncherHandler(BaseHandler):
             pid_file.unlink(missing_ok=True)
             return 0
 
+    def _load_pid_data(self, name: str) -> dict:
+        """Liest optionale Laufzeit-Metadaten aus der PID-Datei."""
+        pid_file = self.pid_dir / f"{name}.pid"
+        if not pid_file.exists():
+            return {}
+        try:
+            return json.loads(pid_file.read_text(encoding='utf-8'))
+        except (OSError, json.JSONDecodeError, ValueError):
+            return {}
+
+    def _agent_list_entry(self, agent: dict) -> dict:
+        """Erzeugt maschinenlesbare Metadaten fuer `agent list --json`."""
+        persona_info = self._get_persona_info(agent["name"])
+        pid_data = self._load_pid_data(agent["name"])
+        running_pid = self._is_agent_running(agent["name"])
+
+        return {
+            "name": agent["name"],
+            "display_name": persona_info.get("display_name") or None,
+            "type": agent["type"],
+            "path": str(agent["path"]),
+            "skill_file": str(agent["skill_file"]),
+            "running": bool(running_pid),
+            "status": "running" if running_pid else "stopped",
+            "pid": running_pid or pid_data.get("pid") or None,
+            "mode": pid_data.get("mode"),
+            "model": pid_data.get("model"),
+            "started_at": pid_data.get("started"),
+            "temp_dir": pid_data.get("temp_dir"),
+        }
+
     def _list_agents(self) -> tuple:
         """Listet alle verfuegbaren Agents."""
         agents = self._scan_agents()
@@ -169,6 +212,16 @@ class AgentLauncherHandler(BaseHandler):
         ])
 
         return (True, "\n".join(output))
+
+    def _list_agents_json(self) -> tuple:
+        """Listet alle verfuegbaren Agents als JSON."""
+        entries = [self._agent_list_entry(agent) for agent in self._scan_agents()]
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "active_count": sum(1 for entry in entries if entry["running"]),
+            "agents": entries,
+        }
+        return True, self._json_dump(payload)
 
     # ------------------------------------------------------------------
     # start
@@ -258,6 +311,18 @@ class AgentLauncherHandler(BaseHandler):
                             'display_name': row['display_name'] or '',
                             'persona': row['persona'] or '',
                         }
+                    cursor.execute(
+                        f"SELECT display_name, persona, skill_path FROM {table} "
+                        "WHERE skill_path IS NOT NULL AND skill_path != ''"
+                    )
+                    for candidate in cursor.fetchall():
+                        normalized = str(candidate["skill_path"]).replace("\\", "/").rstrip("/")
+                        if Path(normalized).name == name:
+                            conn.close()
+                            return {
+                                'display_name': candidate['display_name'] or '',
+                                'persona': candidate['persona'] or '',
+                            }
                 except sqlite3.OperationalError:
                     continue
             conn.close()
@@ -523,6 +588,63 @@ class AgentLauncherHandler(BaseHandler):
         ])
 
         return (True, "\n".join(output))
+
+    def _show_status_json(self) -> tuple:
+        """Zeigt laufende Agents als maschinenlesbaren JSON-Status."""
+        self.pid_dir.mkdir(parents=True, exist_ok=True)
+        pid_files = list(self.pid_dir.glob("*.pid"))
+
+        agents = []
+        active = 0
+
+        for pf in sorted(pid_files):
+            try:
+                data = json.loads(pf.read_text(encoding='utf-8'))
+                name = data.get("name", pf.stem)
+                running_pid = self._is_agent_running(name)
+                running = bool(running_pid)
+                display_name = data.get("display_name") or self._get_persona_info(name).get("display_name") or None
+                if running:
+                    active += 1
+                else:
+                    pf.unlink(missing_ok=True)
+
+                agents.append({
+                    "name": name,
+                    "display_name": display_name,
+                    "type": data.get("type"),
+                    "running": running,
+                    "status": "running" if running else "dead",
+                    "pid": running_pid or data.get("pid") or None,
+                    "model": data.get("model"),
+                    "mode": data.get("mode"),
+                    "started_at": data.get("started"),
+                    "temp_dir": data.get("temp_dir"),
+                    "pid_file": str(pf),
+                })
+            except (json.JSONDecodeError, ValueError):
+                agents.append({
+                    "name": pf.stem,
+                    "display_name": None,
+                    "type": None,
+                    "running": False,
+                    "status": "invalid",
+                    "pid": None,
+                    "model": None,
+                    "mode": None,
+                    "started_at": None,
+                    "temp_dir": None,
+                    "pid_file": str(pf),
+                })
+                pf.unlink(missing_ok=True)
+
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "registered_count": len(agents),
+            "active_count": active,
+            "agents": agents,
+        }
+        return True, self._json_dump(payload)
 
     # ------------------------------------------------------------------
     # rename
