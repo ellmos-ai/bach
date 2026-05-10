@@ -26,11 +26,14 @@ BACH ist ein textbasiertes Betriebssystem, das Large Language Models (LLMs) bef�
 git clone https://github.com/ellmos-ai/bach.git
 cd bach
 
-# Abhängigkeiten installieren
-pip install -r requirements.txt
+# Abhängigkeiten installieren und `bach` CLI verfügbar machen
+pip install -e .
 
-# BACH initialisieren
-python system/setup.py
+# Pre-Flight-Check
+bach setup preflight
+
+# Vollständige Installation (MCP-Server, Hooks, Secrets, User-Profil)
+bach setup full-install
 ```
 
 ## Quick Start

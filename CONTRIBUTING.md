@@ -7,8 +7,8 @@ but there's no guarantee of response time.
 
 1. Fork the repository
 2. Clone: `git clone https://github.com/YOUR_USERNAME/bach.git`
-3. Install: `pip install -r requirements.txt`
-4. Initialize: `python system/setup.py`
+3. Pre-flight: `bach setup preflight`
+4. Install: `bach setup full-install`
 
 ## How to contribute
 

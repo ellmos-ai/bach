@@ -1,6 +1,6 @@
 # BACH Quickstart Guide
 
-**Version:** v3.9.0-tiramisu
+**Version:** v3.9.1-tiramisu
 
 ## Your First BACH Workflow in 5 Minutes
 
@@ -11,114 +11,151 @@
 git clone https://github.com/ellmos-ai/bach.git
 cd bach
 
-# Install dependencies
-pip install -r requirements.txt
+# Run pre-flight check
+bach setup preflight
 
-# Initialize BACH
-python system/setup.py
+# Full install (MCP servers, hooks, secrets, user profile)
+bach setup full-install
 ```
+
+> **Note:** `bach` is the CLI entry point (`system/bach.py`). If `bach` is not
+> in your PATH, use `python system/bach.py` instead.
 
 ### 2. First Steps (3 Minutes)
 
 #### Start BACH
 
 ```bash
-python bach.py --startup
+bach --startup
 ```
 
 #### Create and Manage Tasks
 
 ```bash
 # Create a new task
-python bach.py task add "First BACH experiment"
+bach task add "First BACH experiment"
 
 # List tasks
-python bach.py task list
+bach task list
 
 # Complete a task
-python bach.py task done 1
+bach task done 1
 ```
 
 #### Store and Retrieve Knowledge
 
 ```bash
-# Write a wiki note
-python bach.py wiki write "bash-tricks" "Collecting useful bash commands"
-
-# Search knowledge
-python bach.py wiki search "bash"
-```
-
-#### Use the Memory System
-
-```bash
 # Store an important fact
-python bach.py mem write fact "Project deadline: 2024-12-31"
+bach mem fact "API endpoint: https://api.example.com/v2"
 
 # Retrieve facts
-python bach.py mem read facts
+bach mem read facts
+
+# Write a wiki note
+bach wiki write "bash-tricks" "Useful bash commands"
+```
+
+#### Check System Status
+
+```bash
+bach status
 ```
 
 #### Stop BACH
 
 ```bash
-python bach.py --shutdown
+bach --shutdown
 ```
 
 ---
 
 ## Essential Commands
 
+| Command | Description |
+|---|---|
+| `bach --startup` | Start session with all subsystems |
+| `bach --shutdown` | Clean shutdown |
+| `bach status` | System health check |
+| `bach task list` | Show open tasks |
+| `bach mem read facts` | Browse stored facts |
+| `bach help <topic>` | Topic-specific help |
+| `bach setup check` | Validate installation |
+
+---
+
+## Deployment Scenarios
+
+BACH has **one installer**. Configuration determines the deployment mode:
+
+### Single System (Default)
+Standard setup, no sync needed.
+
+```bash
+bach setup full-install
+```
+
+### Multi-System (OneDrive Sync)
+BACH in OneDrive, local database per system, synced via ProSync.
+
+```bash
+bach setup full-install
+bach setup prosync --multi-system
+```
+
+### Server / Headless
+BACH on a 24/7 server (e.g., Mac Studio), accessed via Telegram, Web UI, or Tray.
+
+```bash
+bach setup full-install
+# Start services:
+# Telegram Bot:  python hub/_services/chat/telegram_chat.py
+# Web GUI:       python gui/server.py --host 0.0.0.0
+# System Tray:   python hub/_services/chat/chat_tray.py
+```
+
 ---
 
 ## Next Steps
 
-1. **Explore documentation**
-   ```bash
-   python bach.py docs list
-   ```
-
-2. **Discover agents**
-   ```bash
-   python bach.py agent list
-   ```
-
-3. **Browse skills**
-   ```bash
-   cat SKILLS.md
-   ```
-
-4. **Create your own workflow**
-   - See: [Skills/_workflows/](skills/_workflows/)
-   - Examples for recurring tasks
+1. **Explore documentation:** `bach help list`
+2. **Discover agents:** `bach agent list`
+3. **Browse skills:** `cat SKILLS.md`
+4. **Create your own workflow:** See [skills/workflows/](system/skills/workflows/)
 
 ---
 
 ## Configuration
 
-BACH adapts automatically, but you can customize:
+```bash
+# Register a partner (Claude, Gemini, Ollama)
+bach partner register claude
 
-- **Configure partner:** `python bach.py partner register claude`
-- **Change settings:** `python bach.py config list`
-- **Set up connector:** `python bach.py connector list`
+# View settings
+bach config list
+
+# List connectors
+bach connector list
+```
 
 ---
 
 ## Further Documentation
 
 - **[README.md](README.md)** - Complete overview
-- **[API Reference](docs/reference/api.md)** - Programming interface
+- **[User Manual](BACH_USER_MANUAL.en.md)** - Comprehensive guide
 - **[Skills Catalog](SKILLS.md)** - All available skills
 - **[Agents Catalog](AGENTS.md)** - All available agents
+- **[Installation Guide](system/docs/help/install.txt)** - Detailed install docs
 
 ---
 
 ## Tips
 
-1. **Contextual work:** BACH remembers what you're working on
+1. **Contextual work:** BACH remembers what you're working on across sessions
 2. **Automation:** Use workflows for recurring tasks
-3. **Integration:** Connect BACH with Claude, Gemini, or Ollama
-4. **Backup:** Regularly `python bach.py backup create`
+3. **Integration:** Connect with Claude, Gemini, Ollama, or OpenAI
+4. **Backup:** `bach backup create` for manual backups (automatic on shutdown)
+5. **Help:** `bach help <topic>` for any handler or concept
 
 ---
 
@@ -126,17 +163,15 @@ BACH adapts automatically, but you can customize:
 
 ```bash
 # General help
-python bach.py --help
+bach --help
 
 # Handler-specific help
-python bach.py <handler> --help
+bach help <handler>
 
 # Search documentation
-python bach.py docs search "keyword"
+bach docs search "keyword"
 ```
 
 ---
 
 Deutsche Version: [QUICKSTART.de.md](QUICKSTART.de.md)
-
-*Generated with `bach docs generate quickstart --lang en`*

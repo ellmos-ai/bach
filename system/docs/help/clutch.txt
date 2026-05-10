@@ -1,0 +1,39 @@
+# Portabilitaet: UNIVERSAL
+# Version: 1.0.0
+# Zuletzt validiert: 2026-05-10
+
+CLUTCH - Agentische Fahrassistenz (clutch-bridge)
+===================================================
+
+BESCHREIBUNG
+------------
+Clutch ist BACHs Bridge zu clutch-bridge, einem agentischen Fahrassistenz-Modul.
+Es analysiert Fahraufgaben, zeigt Metriken und ueberwacht den Systemzustand.
+
+Hinweis: Erfordert das clutch-bridge Paket. Ohne dieses Paket sind alle
+Operationen deaktiviert.
+
+
+OPERATIONEN
+-----------
+  bach clutch status          Gesamtstatus aller clutch-bridge Komponenten
+  bach clutch analyse         Task analysieren (StreckenAnalyse + Gas/Bremse)
+  bach clutch metriken        Fahrtenbuch-Metriken anzeigen
+  bach clutch fitness         Fahrschule Fitness-Uebersicht
+  bach clutch health          Bordcomputer Health-Status
+
+
+VORAUSSETZUNGEN
+---------------
+  - clutch-bridge Modul muss installiert sein
+  - Wird automatisch erkannt bei Import
+
+
+DATEIEN
+-------
+  Handler:     hub/clutch.py
+
+
+SIEHE AUCH
+----------
+  help status                 System-Status

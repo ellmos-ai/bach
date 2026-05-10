@@ -46,11 +46,11 @@ BACH is a text-based operating system that empowers Large Language Models (LLMs)
 git clone https://github.com/ellmos-ai/bach.git
 cd bach
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies and make `bach` CLI available
+pip install -e .
 
-# Initialize BACH
-python system/setup.py
+# Full install (MCP servers, hooks, secrets, user profile)
+bach setup full-install
 ```
 
 ## Quick Start
@@ -126,11 +126,11 @@ MIT License - see [LICENSE](LICENSE) for details.
 git clone https://github.com/ellmos-ai/bach.git
 cd bach
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies and make `bach` CLI available
+pip install -e .
 
-# Initialize BACH
-python system/setup.py
+# Full install (MCP servers, hooks, secrets, user profile)
+bach setup full-install
 ```
 
 ### 2. First Steps (3 Minutes)

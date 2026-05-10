@@ -1,0 +1,63 @@
+# Portabilitaet: UNIVERSAL
+# Version: 1.0.0
+# Zuletzt validiert: 2026-05-10
+
+CLAUDE PERMISSIONS - Claude Code Permission-Profile verwalten
+==============================================================
+
+BESCHREIBUNG
+------------
+Verwaltet Permission-Profile fuer Claude Code. Profile definieren, welche
+Tools Claude Code automatisch nutzen darf (allow) und welche blockiert
+werden (deny). Gespeichert in der BACH-Datenbank, angewendet auf
+~/.claude/settings.json.
+
+
+OPERATIONEN
+-----------
+  bach permissions list                 Alle Profile anzeigen
+  bach permissions show <profil>        Profil-Details
+  bach permissions set <profil> allow=Tool    Regel hinzufuegen
+  bach permissions set <profil> deny=Tool     Regel hinzufuegen
+  bach permissions remove <profil> allow=Tool Regel entfernen
+  bach permissions activate <profil>    Profil aktivieren
+  bach permissions deactivate           Zum Normal-Profil zurueckkehren
+  bach permissions sync                 settings.json in DB importieren
+  bach permissions reset <profil>       Profil auf Defaults zuruecksetzen
+  bach permissions status               Aktuellen Status anzeigen
+  bach permissions init                 Default-Profile in DB anlegen
+
+
+BEISPIELE
+---------
+  # Profile anzeigen
+  bach permissions list
+
+  # Strenges Profil aktivieren
+  bach permissions activate strict
+
+  # Tool erlauben
+  bach permissions set default allow=Bash
+
+  # Aktuelle settings.json importieren
+  bach permissions sync
+
+
+DEFAULT-PROFILE
+---------------
+  default         Standard-Profil (moderater Zugriff)
+  strict          Eingeschraenkt (minimale Tool-Nutzung)
+  development     Erweitert (alle Entwicklungstools)
+
+
+DATEIEN
+-------
+  Handler:      hub/claude_permissions.py
+  Config:       ~/.claude/settings.json (wird modifiziert)
+  DB-Tabelle:   claude_permission_profiles
+
+
+SIEHE AUCH
+----------
+  help setup                  Setup-Handler (Hooks)
+  help security               Sicherheitseinstellungen

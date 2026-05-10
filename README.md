@@ -48,14 +48,14 @@
 git clone https://github.com/ellmos-ai/bach.git
 cd bach
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Optional: make `bach` and `from bach_api import ...` work directly from the repo root
+# Install dependencies and make `bach` CLI available
 pip install -e .
 
-# Initialize BACH
-python system/setup.py
+# Pre-flight check
+bach setup preflight
+
+# Full install (MCP servers, hooks, secrets, user profile)
+bach setup full-install
 ```
 
 ## MCP Servers (Claude Code Integration)
