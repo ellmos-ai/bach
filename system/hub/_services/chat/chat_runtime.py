@@ -129,9 +129,9 @@ TOOLS_SAFE = [
         "action": {"type": "string", "enum": ["list", "running", "show"]},
         "model": {"type": "string", "description": "Modellname (nur bei show)"},
     }),
-    _tool("bach_command", "BACH-Befehl ausführen (Memory, Tasks, Suche, Status)", {
-        "handler": {"type": "string", "description": "Handler: status, task, mem, search, help, tools"},
-        "operation": {"type": "string", "description": "Operation: list, add, facts, write, context"},
+    _tool("bach_command", "BACH-Befehl ausführen (Memory, Tasks, Kalender, Denkarium, News, etc.)", {
+        "handler": {"type": "string", "description": "Handler: status, task, mem, search, help, tools, denkarium, kalender, kontakte, timer, countdown, news, newspaper, lesson, snapshot, partner, connector, msg, backup, web-parse, web-scrape, skills, agent"},
+        "operation": {"type": "string", "description": "Operation: list, add, done, facts, write, read, search, context, today, brainstorm, promote, stats, fetch, generate, create, load"},
         "args": {"type": "array", "items": {"type": "string"}, "description": "Argumente"},
     }, ["handler"]),
     _tool("get_datetime", "Aktuelles Datum und Uhrzeit abfragen", {}),
