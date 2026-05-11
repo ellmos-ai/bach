@@ -318,6 +318,8 @@ def on_file_change(event_type: str, file_path: str, file_type: str):
         success, message = service.sync_file_to_db(file_path)
         if success:
             logger.info(f"Sync: {message}")
+        elif "Kein Sync-Mapping" in message:
+            logger.debug(f"Sync übersprungen: {message}")
         else:
             logger.warning(f"Sync fehlgeschlagen: {message}")
 

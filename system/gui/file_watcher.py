@@ -54,8 +54,13 @@ class BachFileHandler(FileSystemEventHandler):
         self.debounce_seconds = debounce_seconds
         self._last_events = {}  # path -> timestamp für Debouncing
     
+    _IGNORED_DIRS = {'logs', '__pycache__', 'backups', '.git'}
+
     def _should_process(self, path: str) -> bool:
         """Prüft ob Event verarbeitet werden soll (Extension + Debouncing)."""
+        path_parts = Path(path).parts
+        if any(part in self._IGNORED_DIRS for part in path_parts):
+            return False
         ext = Path(path).suffix.lower()
         if ext not in self.watched_extensions:
             return False
