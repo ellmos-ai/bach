@@ -488,10 +488,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     parts = cmd.split()
                     handler, op_args = parts[0], " ".join(parts[1:])
                     return run_shell(f"cd {shlex.quote(str(Path(__file__).parent.parent.parent.parent))} && "
-                                     f"PYTHONIOENCODING=utf-8 python bach.py --{handler} {op_args}")
+                                     f"PYTHONIOENCODING=utf-8 python bach.py --{handler} {op_args}", 60)
                 elif action == "health":
                     return run_shell(f"cd {shlex.quote(str(Path(__file__).parent.parent.parent.parent))} && "
-                                     f"PYTHONIOENCODING=utf-8 python bach.py status")
+                                     f"PYTHONIOENCODING=utf-8 python bach.py status", 60)
                 elif action == "services":
                     http_checks = {
                         "GUI Dashboard (:8000)": "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:8000/",
