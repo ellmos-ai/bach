@@ -156,7 +156,7 @@ class CVHandler(BaseHandler):
             # Kontakte
             try:
                 contacts = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM assistant_contacts WHERE is_active=1 AND context='beruflich'"
+                    "SELECT COUNT(*) as cnt FROM contacts WHERE is_active=1 AND category='beruflich'"
                 ).fetchone()
                 lines.append(f"Berufliche Referenzen: {contacts['cnt']}")
             except Exception:

@@ -782,7 +782,7 @@ class ChatRuntime:
         self.memory = memory_fn
         self.injector = injector
         self.sessions: dict[str, ChatSession] = {}
-        self.max_tool_rounds: int = 0
+        self.max_tool_rounds: int = 12
 
     def get_session(self, chat_id: str) -> ChatSession:
         if chat_id not in self.sessions:

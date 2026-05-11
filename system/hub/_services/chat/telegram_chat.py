@@ -147,7 +147,7 @@ _global_defaults = {
     "mode": "safe",
     "think": True,
     "model": "",
-    "max_tool_rounds": 0,
+    "max_tool_rounds": 12,
 }
 
 _orig_get_session = runtime.get_session

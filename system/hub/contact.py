@@ -14,7 +14,7 @@ Operationen:
   birthday          Geburtstage anzeigen
   help              Hilfe anzeigen
 
-Nutzt: bach.db / assistant_contacts (Unified DB seit v1.1.84)
+Nutzt: bach.db / contacts (Unified DB seit v1.1.84)
 Ref: DB_003_KONTAKTDATENBANK_ANALYSE.md
 """
 
@@ -90,19 +90,19 @@ class ContactHandler(BaseHandler):
 
         conn = self._get_db()
         try:
-            query = "SELECT * FROM assistant_contacts"
+            query = "SELECT * FROM contacts"
             params = []
 
             if not show_all:
                 query += " WHERE is_active = 1"
                 if context_filter:
-                    query += " AND context = ?"
+                    query += " AND category = ?"
                     params.append(context_filter)
             elif context_filter:
-                query += " WHERE context = ?"
+                query += " WHERE category = ?"
                 params.append(context_filter)
 
-            query += " ORDER BY context ASC, name ASC"
+            query += " ORDER BY category ASC, name ASC"
             rows = conn.execute(query, params).fetchall()
 
             if not rows:
@@ -112,14 +112,14 @@ class ContactHandler(BaseHandler):
             current_ctx = None
 
             for r in rows:
-                ctx = r["context"] or "sonstige"
+                ctx = r["category"] or "sonstige"
                 if ctx != current_ctx:
                     current_ctx = ctx
                     lines.append(f"  [{ctx.upper()}]")
 
-                phone_info = r["mobile"] or r["phone"] or ""
+                phone_info = r["phone_mobile"] or r["phone"] or ""
                 email_info = r["email"] or ""
-                company_info = f" @ {r['company']}" if r["company"] else ""
+                company_info = f" @ {r['organization']}" if r["organization"] else ""
                 detail = email_info if email_info else phone_info
                 if detail and len(detail) > 25:
                     detail = detail[:22] + "..."
@@ -147,21 +147,21 @@ class ContactHandler(BaseHandler):
         try:
             like = f"%{term}%"
             rows = conn.execute("""
-                SELECT * FROM assistant_contacts
+                SELECT * FROM contacts
                 WHERE is_active = 1
                   AND (name LIKE ? OR email LIKE ? OR phone LIKE ?
-                       OR mobile LIKE ? OR address LIKE ? OR notes LIKE ?
-                       OR company LIKE ? OR position LIKE ? OR tags LIKE ?)
+                       OR phone_mobile LIKE ? OR organization LIKE ?
+                       OR notes LIKE ? OR position LIKE ? OR tags LIKE ?)
                 ORDER BY name ASC
-            """, (like, like, like, like, like, like, like, like, like)).fetchall()
+            """, (like, like, like, like, like, like, like, like)).fetchall()
 
             if not rows:
                 return True, f"[CONTACTS] Keine Treffer fuer \"{term}\"."
 
             lines = [f"[CONTACTS] {len(rows)} Treffer fuer \"{term}\":\n"]
             for r in rows:
-                ctx = (r["context"] or "sonstige").upper()
-                detail = r["email"] or r["mobile"] or r["phone"] or ""
+                ctx = (r["category"] or "sonstige").upper()
+                detail = r["email"] or r["phone_mobile"] or r["phone"] or ""
                 lines.append(
                     f"  [{r['id']:>3}] {r['name']:<30} ({ctx}) {detail}"
                 )
@@ -223,8 +223,8 @@ class ContactHandler(BaseHandler):
         conn = self._get_db()
         try:
             cursor = conn.execute("""
-                INSERT INTO assistant_contacts
-                (name, context, email, phone, mobile, address, birthday, company, position, tags, notes, is_active, created_at, updated_at)
+                INSERT INTO contacts
+                (name, category, email, phone, phone_mobile, street, birthday, organization, position, tags, notes, is_active, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
             """, (
                 name, context, email, phone, mobile, address,
@@ -246,20 +246,20 @@ class ContactHandler(BaseHandler):
 
         conn = self._get_db()
         try:
-            row = conn.execute("SELECT * FROM assistant_contacts WHERE id = ?", (ids[0],)).fetchone()
+            row = conn.execute("SELECT * FROM contacts WHERE id = ?", (ids[0],)).fetchone()
             if not row:
                 return False, f"Kontakt {ids[0]} nicht gefunden"
 
             lines = [
                 f"=== KONTAKT {row['id']} ===",
                 f"Name:        {row['name']}",
-                f"Kontext:     {row['context'] or '---'}",
-                f"Firma:       {row['company'] or '---'}",
+                f"Kategorie:   {row['category'] or '---'}",
+                f"Organisation:{row['organization'] or '---'}",
                 f"Position:    {row['position'] or '---'}",
                 f"E-Mail:      {row['email'] or '---'}",
                 f"Telefon:     {row['phone'] or '---'}",
-                f"Mobil:       {row['mobile'] or '---'}",
-                f"Adresse:     {row['address'] or '---'}",
+                f"Mobil:       {row['phone_mobile'] or '---'}",
+                f"Adresse:     {row['street'] or '---'}",
                 f"Geburtstag:  {self._format_birthday(row['birthday'])}",
                 f"Tags:        {row['tags'] or '---'}",
                 f"Aktiv:       {'Ja' if row['is_active'] else 'Nein'}",
@@ -298,7 +298,7 @@ class ContactHandler(BaseHandler):
         cid = ids[0]
         conn = self._get_db()
         try:
-            row = conn.execute("SELECT * FROM assistant_contacts WHERE id = ?", (cid,)).fetchone()
+            row = conn.execute("SELECT * FROM contacts WHERE id = ?", (cid,)).fetchone()
             if not row:
                 return False, f"Kontakt {cid} nicht gefunden"
 
@@ -310,7 +310,7 @@ class ContactHandler(BaseHandler):
 
             context = self._get_arg(rest, "--context") or self._get_arg(rest, "-c")
             if context:
-                updates["context"] = context
+                updates["category"] = context
 
             email = self._get_arg(rest, "--email") or self._get_arg(rest, "-e")
             if email:
@@ -322,11 +322,11 @@ class ContactHandler(BaseHandler):
 
             mobile = self._get_arg(rest, "--mobile") or self._get_arg(rest, "-m")
             if mobile:
-                updates["mobile"] = mobile
+                updates["phone_mobile"] = mobile
 
             address = self._get_arg(rest, "--address") or self._get_arg(rest, "-a")
             if address:
-                updates["address"] = address
+                updates["street"] = address
 
             birthday_str = self._get_arg(rest, "--birthday") or self._get_arg(rest, "-b")
             if birthday_str:
@@ -337,7 +337,7 @@ class ContactHandler(BaseHandler):
 
             company = self._get_arg(rest, "--company")
             if company:
-                updates["company"] = company
+                updates["organization"] = company
 
             position = self._get_arg(rest, "--position")
             if position:
@@ -360,7 +360,7 @@ class ContactHandler(BaseHandler):
 
             set_clause = ", ".join(f"{k} = ?" for k in updates)
             params = list(updates.values()) + [cid]
-            conn.execute(f"UPDATE assistant_contacts SET {set_clause} WHERE id = ?", params)
+            conn.execute(f"UPDATE contacts SET {set_clause} WHERE id = ?", params)
             conn.commit()
 
             changed = ", ".join(k for k in updates if k != "updated_at")
@@ -378,7 +378,7 @@ class ContactHandler(BaseHandler):
 
         conn = self._get_db()
         try:
-            row = conn.execute("SELECT * FROM assistant_contacts WHERE id = ?", (ids[0],)).fetchone()
+            row = conn.execute("SELECT * FROM contacts WHERE id = ?", (ids[0],)).fetchone()
             if not row:
                 return False, f"Kontakt {ids[0]} nicht gefunden"
 
@@ -386,7 +386,7 @@ class ContactHandler(BaseHandler):
                 return True, f"Kontakt #{ids[0]} ({row['name']}) ist bereits inaktiv."
 
             conn.execute(
-                "UPDATE assistant_contacts SET is_active = 0, updated_at = ? WHERE id = ?",
+                "UPDATE contacts SET is_active = 0, updated_at = ? WHERE id = ?",
                 (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ids[0])
             )
             conn.commit()
@@ -409,7 +409,7 @@ class ContactHandler(BaseHandler):
         conn = self._get_db()
         try:
             rows = conn.execute("""
-                SELECT * FROM assistant_contacts
+                SELECT * FROM contacts
                 WHERE is_active = 1 AND birthday IS NOT NULL AND birthday != ''
                 ORDER BY name ASC
             """).fetchall()
@@ -489,14 +489,14 @@ class ContactHandler(BaseHandler):
 
         conn = self._get_db()
         try:
-            query = "SELECT * FROM assistant_contacts WHERE is_active = 1"
+            query = "SELECT * FROM contacts WHERE is_active = 1"
             params = []
 
             if context_filter:
-                query += " AND context = ?"
+                query += " AND category = ?"
                 params.append(context_filter)
 
-            query += " ORDER BY context ASC, name ASC"
+            query += " ORDER BY category ASC, name ASC"
             rows = conn.execute(query, params).fetchall()
 
             if not rows:
@@ -569,11 +569,11 @@ class ContactHandler(BaseHandler):
             line = ";".join([
                 r["name"] or "",
                 r["phone"] or "",
-                r["mobile"] or "",
+                r["phone_mobile"] or "",
                 r["email"] or "",
-                r["company"] or "",
-                (r["address"] or "").replace("\n", " "),
-                r["context"] or "",
+                r["organization"] or "",
+                (r["street"] or "").replace("\n", " "),
+                r["category"] or "",
                 r["tags"] or "",
                 (r["notes"] or "").replace("\n", " ").replace(";", ",")
             ])
@@ -586,7 +586,7 @@ class ContactHandler(BaseHandler):
         current_ctx = None
 
         for r in rows:
-            ctx = r["context"] or "sonstige"
+            ctx = r["category"] or "sonstige"
             if ctx != current_ctx:
                 current_ctx = ctx
                 lines.append(f"\n=== {ctx.upper()} ===")
@@ -594,16 +594,16 @@ class ContactHandler(BaseHandler):
             lines.append(f"\n{r['name']}")
             if r["phone"]:
                 lines.append(f"  Tel:    {r['phone']}")
-            if r["mobile"]:
+            if r["phone_mobile"]:
                 lines.append(f"  Mobil:  {r['mobile']}")
             if r["email"]:
                 lines.append(f"  Email:  {r['email']}")
-            if r["company"]:
-                lines.append(f"  Firma:  {r['company']}")
+            if r["organization"]:
+                lines.append(f"  Firma:  {r['organization']}")
             if r["position"]:
                 lines.append(f"  Position: {r['position']}")
-            if r["address"]:
-                addr = r["address"].replace("\n", ", ")
+            if r["street"]:
+                addr = r["street"].replace("\n", ", ")
                 lines.append(f"  Adresse: {addr}")
             if r["notes"]:
                 note = r["notes"][:100] + "..." if len(r["notes"] or "") > 100 else r["notes"]
@@ -723,7 +723,7 @@ BEFEHLE:
 KONTEXTE:
   privat, beruflich, versicherung, finanzen, arzt, sonstige
 
-DATENBANK: bach.db / assistant_contacts + contacts (Unified DB seit v1.1.84)"""
+DATENBANK: bach.db / contacts + contacts (Unified DB seit v1.1.84)"""
 
     # ------------------------------------------------------------------
     # Hilfsmethoden

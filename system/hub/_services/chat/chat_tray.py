@@ -48,7 +48,7 @@ class BACHTray:
             "bach": False,
             "sessions": 0,
             "connected": False,
-            "max_tool_rounds": 0,
+            "max_tool_rounds": 12,
             "current_tool": "",
             "last_tools": [],
         }
