@@ -1165,12 +1165,7 @@
         const API_BASE = '/api/financial';
         let apiError = false;
 
-        function esc(s) {
-            if (!s) return '';
-            const d = document.createElement('div');
-            d.textContent = s;
-            return d.innerHTML;
-        }
+        const esc = escapeHtml;
 
         // Tab-Navigation
         document.querySelectorAll('.tab').forEach(tab => {

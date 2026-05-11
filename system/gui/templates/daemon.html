@@ -1182,7 +1182,7 @@
             }
 
             if (jobs.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" style="color: var(--text-muted);">Keine Jobs ${currentSchedulerFilter !== 'all' ? 'vom Typ "' + currentSchedulerFilter + '"' : 'definiert'}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" style="color: var(--text-muted);">Keine Jobs ${currentSchedulerFilter !== 'all' ? 'vom Typ "' + escapeHtml(currentSchedulerFilter) + '"' : 'definiert'}</td></tr>`;
                 return;
             }
 
@@ -1203,7 +1203,7 @@
                         <strong>${escapeHtml(job.name)}</strong>
                         ${job.description ? `<div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(job.description)}</div>` : ''}
                     </td>
-                    <td><code>${job.job_type}</code></td>
+                    <td><code>${escapeHtml(job.job_type)}</code></td>
                     <td>
                         <code>${escapeHtml(job.schedule || '-')}</code>
                         <div style="font-size: 0.75rem; color: var(--text-muted);">${scheduleReadable}</div>

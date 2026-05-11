@@ -325,7 +325,7 @@
                 `).join('');
             } catch (e) {
                 console.error('Fehler beim Laden der Klienten:', e);
-                document.querySelector('.client-list').innerHTML = `<li style="color:var(--danger)">Fehler: ${e.message}</li>`;
+                document.querySelector('.client-list').innerHTML = `<li style="color:var(--danger)">Fehler: ${escapeHtml(e.message)}</li>`;
             }
         }
 

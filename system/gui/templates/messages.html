@@ -620,7 +620,7 @@
                         <span class="detail-meta-label">Datum:</span>
                         <span>${formatDate(msg.created_at)}</span>
                         <span class="detail-meta-label">Status:</span>
-                        <span>${msg.status}</span>
+                        <span>${escapeHtml(msg.status)}</span>
                     </div>
                 </div>
                 <div class="detail-body">${escapeHtml(msg.body || '')}</div>

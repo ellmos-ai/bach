@@ -12738,28 +12738,6 @@ async def get_inbox_status():
 
 
 
-@app.get("/api/inbox/config")
-
-async def get_inbox_config():
-
-    """INBOX_008c: Komplette Inbox-Konfiguration abrufen."""
-
-    try:
-
-        config = {"settings": {}, "rules": [], "fallback": {}}
-
-        if INBOX_CONFIG_FILE.exists():
-
-            config = json.loads(INBOX_CONFIG_FILE.read_text(encoding='utf-8'))
-
-        return {"success": True, "config": config}
-
-    except Exception as e:
-
-        return {"success": False, "error": str(e)}
-
-
-
 
 
 @app.get("/api/inbox/folders")

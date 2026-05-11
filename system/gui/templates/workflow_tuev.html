@@ -358,8 +358,8 @@
                             </td>
                             <td>${statusBadge}</td>
                             <td>
-                                <button class="btn btn-primary btn-sm" onclick="openTuevModal(${wf.id}, ${JSON.stringify(wf.workflow_name)}, ${JSON.stringify(wf.workflow_path)})">TUV</button>
-                                <button class="btn btn-secondary btn-sm" onclick="viewWorkflow(${JSON.stringify(wf.workflow_path)})">Ansehen</button>
+                                <button class="btn btn-primary btn-sm" onclick="openTuevModal(${wf.id}, ${escapeHtml(JSON.stringify(wf.workflow_name))}, ${escapeHtml(JSON.stringify(wf.workflow_path))})">TUV</button>
+                                <button class="btn btn-secondary btn-sm" onclick="viewWorkflow(${escapeHtml(JSON.stringify(wf.workflow_path))})">Ansehen</button>
                             </td>
                         </tr>
                     `;
@@ -368,7 +368,7 @@
             } catch (e) {
                 console.error('Workflow-Fehler:', e);
                 document.getElementById('workflows-table').innerHTML =
-                    '<tr><td colspan="6">Fehler beim Laden: ' + e.message + '</td></tr>';
+                    '<tr><td colspan="6">Fehler beim Laden: ' + escapeHtml(e.message) + '</td></tr>';
             }
         }
 
