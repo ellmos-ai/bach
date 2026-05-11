@@ -458,11 +458,11 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                                      f"PYTHONIOENCODING=utf-8 python bach.py status")
                 elif action == "services":
                     checks = {
-                        "GUI Dashboard (:8000)": "curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/",
-                        "Control API (:8081)": "curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/api/status",
-                        "Ollama (:11434)": "curl -s -o /dev/null -w '%{http_code}' http://localhost:11434/api/tags",
+                        "GUI Dashboard (:8000)": "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:8000/",
+                        "Ollama (:11434)": "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:11434/api/tags",
                     }
                     lines = ["BACH Service-Check:"]
+                    lines.append(f"  ✅ Control API (:8081) — läuft (diese Anfrage)")
                     for svc, cmd in checks.items():
                         code = run_shell(cmd).strip()
                         ok = code == "200"
