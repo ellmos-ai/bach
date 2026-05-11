@@ -974,6 +974,14 @@ def _get_active_session_state():
     )
 
 
+class QuietHTTPServer(HTTPServer):
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+            return
+        super().handle_error(request, client_address)
+
+
 class ControlHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         log.debug("ControlAPI: " + fmt % args)
@@ -1188,7 +1196,7 @@ class ControlHandler(BaseHTTPRequestHandler):
 def start_control_api():
     try:
         bind_host = os.environ.get("BACH_CONTROL_HOST", "0.0.0.0")
-        server = HTTPServer((bind_host, CONTROL_PORT), ControlHandler)
+        server = QuietHTTPServer((bind_host, CONTROL_PORT), ControlHandler)
         server.daemon_threads = True
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
