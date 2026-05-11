@@ -1068,7 +1068,7 @@
             const time = new Date().toLocaleTimeString('de-DE');
             const entry = document.createElement('div');
             entry.style.cssText = 'padding: 0.5rem; border-bottom: 1px solid var(--border); font-size: 0.85rem;';
-            entry.innerHTML = `<span style="color: var(--text-muted);">${time}</span> <strong>${sessionId}</strong> - ${status}`;
+            entry.textContent = `${time} ${sessionId} - ${status}`;
             if (log.querySelector('p')) log.innerHTML = '';
             log.prepend(entry);
         }
