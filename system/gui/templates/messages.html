@@ -469,6 +469,7 @@
     <script>
         // State
         let currentFolder = 'inbox';
+        let currentPartner = null;
         let selectedMessageId = null;
         let messages = [];
 
@@ -539,11 +540,11 @@
             list.innerHTML = '<div class="empty-state">Lade...</div>';
 
             try {
-                let params = 'limit=500';  // Mehr Nachrichten laden
+                let params = 'limit=500';
                 if (currentFolder === 'inbox') params += '&direction=inbox';
                 else if (currentFolder === 'outbox') params += '&direction=outbox';
                 else if (currentFolder === 'archived') params += '&status=archived';
-                // 'all' zeigt alle ohne Filter
+                if (currentPartner) params += `&partner=${encodeURIComponent(currentPartner)}`;
 
                 const data = await api.get(`/api/messages?${params}`);
                 messages = data.messages || [];
@@ -691,8 +692,12 @@
         }
 
         function filterByPartner(name) {
-            // TODO: Filter by partner
-            console.log('Filter by partner:', name);
+            currentPartner = currentPartner === name ? null : name;
+            document.querySelectorAll('#partner-list .folder-item').forEach(el => el.classList.remove('active'));
+            if (currentPartner) {
+                event?.target?.closest('.folder-item')?.classList.add('active');
+            }
+            loadMessages();
         }
 
         // Actions
@@ -737,10 +742,7 @@
 
         async function markAllRead() {
             try {
-                // TODO: Batch mark read endpoint
-                for (const msg of messages.filter(m => m.status === 'unread')) {
-                    await api.put(`/api/messages/${msg.id}/read`);
-                }
+                await api.post('/api/messages/mark-all-read');
                 loadMessages();
                 updateCounts();
             } catch (e) {

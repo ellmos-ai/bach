@@ -1956,6 +1956,8 @@ async def api_restore_mounts():
 
 async def list_messages(direction: Optional[str] = None, status: Optional[str] = None,
 
+                        partner: Optional[str] = None,
+
                         include_archived: bool = True, limit: int = 50):
 
     """Listet Nachrichten.
@@ -2004,7 +2006,11 @@ async def list_messages(direction: Optional[str] = None, status: Optional[str] =
 
         query += " AND status != 'archived'"
 
+    if partner:
 
+        query += " AND (sender = ? OR recipient = ?)"
+
+        params.extend([partner, partner])
 
     query += " ORDER BY created_at DESC LIMIT ?"
 
@@ -2098,6 +2104,19 @@ async def mark_message_read(msg_id: int):
     return {"status": "read"}
 
 
+@app.post("/api/messages/mark-all-read")
+async def mark_all_messages_read():
+    """Markiert alle ungelesenen Nachrichten als gelesen."""
+    conn = get_user_db()
+    now = datetime.now().isoformat()
+    cursor = conn.execute(
+        "UPDATE messages SET status = 'read', read_at = ? WHERE status = 'unread'",
+        (now,)
+    )
+    count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return {"status": "ok", "marked": count}
 
 
 
