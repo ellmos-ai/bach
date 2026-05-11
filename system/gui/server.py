@@ -13780,156 +13780,6 @@ async def list_pending_reports():
 
 
 # ═══════════════════════════════════════════════════════════════
-
-# MAIN
-
-# ═══════════════════════════════════════════════════════════════
-
-
-
-def run_server(host: str = "127.0.0.1", port: int = 8000):
-
-    """Startet den Server."""
-
-    try:
-
-        import uvicorn
-
-        print(f"[BACH GUI] Starte Server auf http:/{host}:{port}")
-
-        print(f"[BACH GUI] API-Docs: http:/{host}:{port}/docs")
-
-        uvicorn.run(app, host=host, port=port)
-
-    except ImportError:
-
-        print("[ERROR] uvicorn nicht installiert!")
-
-        print("        pip install uvicorn")
-
-
-
-
-if __name__ == "__main__":
-
-    import argparse
-
-    parser = argparse.ArgumentParser(description="BACH GUI Server")
-
-    parser.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
-
-    parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
-
-    args = parser.parse_args()
-
-    
-
-    run_server(args.host, args.port)
-
-
-
-# " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " 
-
-# API ROUTES - TOKENS (Task #678)
-
-# " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " " 
-
-
-
-@app.get("/api/tokens/usage")
-
-async def api_tokens_usage():
-
-    """Liefert Token-Nutzung fuer das Dashboard."""
-
-    try:
-
-        conn = get_bach_db()
-
-        now = datetime.now()
-
-        thirty_days_ago = (now - timedelta(days=30)).isoformat()
-
-        
-
-        # 1. Total Stats (Last 30 Days)
-
-        row = conn.execute("""
-
-            SELECT 
-
-                SUM(cost_eur) as total_cost,
-
-                SUM(tokens_total) as total_tokens,
-
-                AVG(exchange_rate) as avg_rate
-
-            FROM monitor_tokens 
-
-            WHERE timestamp > ?
-
-        """, (thirty_days_ago,)).fetchone()
-
-        
-
-        total_cost = row['total_cost'] or 0.0
-
-        total_tokens = row['total_tokens'] or 0
-
-        exchange_rate = row['avg_rate'] or 0.85 # Fallback
-
-        
-
-        # 2. Top Model
-
-        top_row = conn.execute("""
-
-            SELECT model, SUM(tokens_total) as usage 
-
-            FROM monitor_tokens 
-
-            WHERE timestamp > ? 
-
-            GROUP BY model 
-
-            ORDER BY usage DESC 
-
-            LIMIT 1
-
-        """, (thirty_days_ago,)).fetchone()
-
-        
-
-        top_model = top_row['model'] if top_row else "Keine Daten"
-
-
-
-        conn.close()
-
-
-
-        return {
-
-            "success": True,
-
-            "exchange_rate": exchange_rate,
-
-            "rate_date": now.strftime("%Y-%m-%d"),
-
-            "total_cost_eur": round(total_cost, 2),
-
-            "total_tokens": total_tokens,
-
-            "top_model": top_model
-
-        }
-
-    except Exception as e:
-
-        return {"success": False, "error": str(e)}
-
-
-# ═══════════════════════════════════════════════════════════════
 # WORKFLOW TÜV SYSTEM
 # ═══════════════════════════════════════════════════════════════
 
@@ -13955,7 +13805,6 @@ def _ensure_workflow_tuev_table():
     """)
     conn.commit()
 
-    # Auto-Sync: Wenn Tabelle leer, automatisch mit Dateisystem fuellen
     count = conn.execute("SELECT COUNT(*) FROM workflow_tuev").fetchone()[0]
     if count == 0:
         workflows_dir = Path(__file__).parent.parent / "skills" / "_workflows"
@@ -14162,7 +14011,6 @@ async def get_workflow_content(path: str):
         if ".." in path or path.startswith("/"):
             return HTMLResponse(content="<h1>Invalid path</h1>", status_code=400)
 
-        # Normalisiere Pfad: Forward- und Backslashes unterstuetzen
         normalized = path.replace("\\", "/").replace("%5C", "/")
         workflow_path = Path(__file__).parent.parent / normalized
 
@@ -14175,4 +14023,52 @@ async def get_workflow_content(path: str):
 
     except Exception as e:
         return HTMLResponse(content=f"<h1>Fehler: {str(e)}</h1>", status_code=500)
+
+
+# ═══════════════════════════════════════════════════════════════
+
+# MAIN
+
+# ═══════════════════════════════════════════════════════════════
+
+
+
+def run_server(host: str = "127.0.0.1", port: int = 8000):
+
+    """Startet den Server."""
+
+    try:
+
+        import uvicorn
+
+        print(f"[BACH GUI] Starte Server auf http:/{host}:{port}")
+
+        print(f"[BACH GUI] API-Docs: http:/{host}:{port}/docs")
+
+        uvicorn.run(app, host=host, port=port)
+
+    except ImportError:
+
+        print("[ERROR] uvicorn nicht installiert!")
+
+        print("        pip install uvicorn")
+
+
+
+
+if __name__ == "__main__":
+
+    import argparse
+
+    parser = argparse.ArgumentParser(description="BACH GUI Server")
+
+    parser.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
+
+    parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
+
+    args = parser.parse_args()
+
+    
+
+    run_server(args.host, args.port)
 
