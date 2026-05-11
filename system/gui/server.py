@@ -12310,15 +12310,13 @@ async def complete_routine(routine_id: int):
         elif interval_type == 'woechentlich':
             next_due = today + timedelta(weeks=interval_value)
         elif interval_type == 'monatlich':
-            # Naechster Monat am gleichen Tag
             next_month = today.month + interval_value
-            next_year = today.year + (next_month - 1) / 12
+            next_year = today.year + (next_month - 1) // 12
             next_month = ((next_month - 1) % 12) + 1
             try:
-                next_due = date(next_year, next_month, today.day)
+                next_due = date(int(next_year), int(next_month), today.day)
             except ValueError:
-                # Falls Tag nicht existiert (z.B. 31. Februar)
-                next_due = date(next_year, next_month + 1, 1) - timedelta(days=1)
+                next_due = date(int(next_year), int(next_month) % 12 + 1, 1) - timedelta(days=1)
         elif interval_type == 'jaehrlich':
             next_due = date(today.year + interval_value, today.month, today.day)
         else:
