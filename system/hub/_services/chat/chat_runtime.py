@@ -169,6 +169,29 @@ TOOLS_SAFE = [
     _tool("weather", "Aktuelles Wetter für einen Ort oder Koordinaten abfragen (wttr.in)", {
         "location": {"type": "string", "description": "Ortsname (z.B. 'Berlin') oder Koordinaten ('52.52,13.405')"},
     }, ["location"]),
+    _tool("edit_file", "Text in einer Datei ersetzen (suchen und ersetzen)", {
+        "path": {"type": "string", "description": "Dateipfad"},
+        "old_text": {"type": "string", "description": "Zu ersetzender Text (muss exakt vorkommen)"},
+        "new_text": {"type": "string", "description": "Neuer Text"},
+        "all": {"type": "boolean", "description": "Alle Vorkommen ersetzen (Standard: nur erstes)"},
+    }, ["path", "old_text", "new_text"]),
+    _tool("move_file", "Datei oder Ordner verschieben oder umbenennen", {
+        "source": {"type": "string", "description": "Quellpfad"},
+        "destination": {"type": "string", "description": "Zielpfad"},
+    }, ["source", "destination"]),
+    _tool("copy_file", "Datei oder Ordner kopieren", {
+        "source": {"type": "string", "description": "Quellpfad"},
+        "destination": {"type": "string", "description": "Zielpfad"},
+    }, ["source", "destination"]),
+    _tool("file_info", "Detaillierte Informationen zu einer Datei oder einem Ordner", {
+        "path": {"type": "string", "description": "Pfad zur Datei oder zum Ordner"},
+    }, ["path"]),
+    _tool("recycle", "Datei oder Ordner in den Papierkorb verschieben (wiederherstellbar)", {
+        "path": {"type": "string", "description": "Pfad zum Löschen (wird in Papierkorb verschoben)"},
+    }, ["path"]),
+    _tool("create_directory", "Neuen Ordner erstellen (inkl. Elternordner)", {
+        "path": {"type": "string", "description": "Pfad des neuen Ordners"},
+    }, ["path"]),
 ]
 
 TOOLS_FULL = TOOLS_SAFE + [
@@ -566,6 +589,133 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             except Exception as e:
                 return f"Wetter-Fehler: {e}"
 
+        if name == "edit_file":
+            p = args.get("path", "")
+            old_text = args.get("old_text", "")
+            new_text = args.get("new_text", "")
+            if not p or not old_text:
+                return "Pfad und old_text sind erforderlich"
+            try:
+                content = Path(p).read_text(encoding="utf-8")
+            except FileNotFoundError:
+                return f"Datei nicht gefunden: {p}"
+            except Exception as e:
+                return f"Lesefehler: {e}"
+            if old_text not in content:
+                return f"Text nicht gefunden in {p}"
+            if args.get("all"):
+                new_content = content.replace(old_text, new_text)
+                count = content.count(old_text)
+            else:
+                new_content = content.replace(old_text, new_text, 1)
+                count = 1
+            try:
+                Path(p).write_text(new_content, encoding="utf-8")
+                log.info(f"EDIT: {p} ({count}x ersetzt)")
+                return f"Bearbeitet: {p} ({count} Ersetzung{'en' if count > 1 else ''})"
+            except Exception as e:
+                return f"Schreibfehler: {e}"
+
+        if name == "move_file":
+            src = args.get("source", "")
+            dst = args.get("destination", "")
+            if not src or not dst:
+                return "source und destination sind erforderlich"
+            try:
+                import shutil
+                shutil.move(src, dst)
+                log.info(f"MOVE: {src} -> {dst}")
+                return f"Verschoben: {src} → {dst}"
+            except Exception as e:
+                return f"Fehler beim Verschieben: {e}"
+
+        if name == "copy_file":
+            src = args.get("source", "")
+            dst = args.get("destination", "")
+            if not src or not dst:
+                return "source und destination sind erforderlich"
+            try:
+                import shutil
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst)
+                else:
+                    shutil.copy2(src, dst)
+                log.info(f"COPY: {src} -> {dst}")
+                return f"Kopiert: {src} → {dst}"
+            except Exception as e:
+                return f"Fehler beim Kopieren: {e}"
+
+        if name == "file_info":
+            p = args.get("path", "")
+            if not p:
+                return "Kein Pfad angegeben"
+            try:
+                st = os.stat(p)
+                import stat
+                ftype = "Ordner" if stat.S_ISDIR(st.st_mode) else "Datei"
+                size = st.st_size
+                if size < 1024:
+                    size_str = f"{size} B"
+                elif size < 1024 * 1024:
+                    size_str = f"{size / 1024:.1f} KB"
+                elif size < 1024 * 1024 * 1024:
+                    size_str = f"{size / (1024 * 1024):.1f} MB"
+                else:
+                    size_str = f"{size / (1024 * 1024 * 1024):.2f} GB"
+                mtime = datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                ctime = datetime.fromtimestamp(st.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
+                perms = oct(st.st_mode)[-3:]
+                lines = [
+                    f"Typ: {ftype}",
+                    f"Pfad: {p}",
+                    f"Größe: {size_str}",
+                    f"Geändert: {mtime}",
+                    f"Erstellt: {ctime}",
+                    f"Rechte: {perms}",
+                ]
+                if ftype == "Ordner":
+                    try:
+                        entries = os.listdir(p)
+                        lines.append(f"Einträge: {len(entries)}")
+                    except PermissionError:
+                        lines.append("Einträge: (keine Berechtigung)")
+                return "\n".join(lines)
+            except FileNotFoundError:
+                return f"Nicht gefunden: {p}"
+            except Exception as e:
+                return f"Fehler: {e}"
+
+        if name == "recycle":
+            p = args.get("path", "")
+            if not p:
+                return "Kein Pfad angegeben"
+            if not os.path.exists(p):
+                return f"Nicht gefunden: {p}"
+            try:
+                trash = Path.home() / ".Trash"
+                basename = Path(p).name
+                dest = trash / basename
+                if dest.exists():
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    dest = trash / f"{Path(basename).stem}_{ts}{Path(basename).suffix}"
+                import shutil
+                shutil.move(p, str(dest))
+                log.info(f"RECYCLE: {p} -> {dest}")
+                return f"In Papierkorb verschoben: {p}"
+            except Exception as e:
+                return f"Fehler beim Recyceln: {e}"
+
+        if name == "create_directory":
+            p = args.get("path", "")
+            if not p:
+                return "Kein Pfad angegeben"
+            try:
+                Path(p).mkdir(parents=True, exist_ok=True)
+                log.info(f"MKDIR: {p}")
+                return f"Ordner erstellt: {p}"
+            except Exception as e:
+                return f"Fehler: {e}"
+
         return f"Unbekanntes Tool: {name}"
     except Exception as e:
         return f"Tool-Fehler ({name}): {e}"
@@ -620,12 +770,19 @@ Du hast Zugriff auf Werkzeuge (Tools), die du bei Bedarf aufrufen kannst.
 
 SAFE-MODUS (Standard):
 - list_directory, read_file, search_text — Dateisystem lesen
+- edit_file — Text in Dateien ersetzen (suchen/ersetzen)
+- move_file — Dateien/Ordner verschieben oder umbenennen
+- copy_file — Dateien/Ordner kopieren
+- file_info — Detaillierte Datei-/Ordner-Informationen
+- recycle — In Papierkorb verschieben (wiederherstellbar, statt Löschen)
+- create_directory — Neuen Ordner erstellen
 - safe_shell — Lesende Shell-Befehle (ls, cat, grep, git, docker, ps, etc.)
 - system_status — Systeminfos (CPU, RAM, Disk)
 - ollama_info — Modelle und Status
 - bach_command — BACH Memory, Tasks, Suche, Status
 - get_datetime — Datum/Uhrzeit
 - web_search — Im Internet suchen (DuckDuckGo)
+- weather — Aktuelles Wetter abfragen
 - task_manage — Tasks anlegen, auflisten, erledigen
 - maintain — Systemwartung: fällige Tasks prüfen (check), Wartung ausführen (run), Gesundheit (health)
 - delegate — Aufgabe an Claude Code oder Codex CLI delegieren
@@ -656,6 +813,9 @@ REGELN:
 - Nutze task_manage, wenn der User Tasks verwalten will
 - Nutze maintain, wenn der User nach Systemstatus, Wartung oder Health fragt
 - Nutze delegate, wenn eine Aufgabe besser von Claude (Coding, Analyse) oder Codex (schnelle Code-Generierung) erledigt wird
+- Nutze edit_file zum Bearbeiten von Dateien (suchen/ersetzen)
+- Nutze recycle zum Löschen — verschiebt in den Papierkorb statt endgültig zu löschen
+- Nutze weather für Wetterabfragen
 - Nutze denkarium, wenn der User Gedanken notieren, im Logbuch schreiben oder brainstormen will
 - Nutze kalender, wenn der User nach Terminen fragt oder welche anlegen will
 - Nutze kontakte, wenn der User Kontakte sucht oder anzeigen will
