@@ -58,6 +58,8 @@ class OllamaBackend(ModelBackend):
                  default_model: str = "qwen3.5:35b-a3b"):
         self.base_url = base_url.rstrip("/")
         self.default_model = default_model
+        self._models_cache: list[str] = []
+        self._models_cache_time: float = 0
 
     async def chat(self, messages, tools=None, think=True, model=None):
         import httpx
@@ -86,9 +88,13 @@ class OllamaBackend(ModelBackend):
         }
 
     def list_models(self) -> list[str]:
+        if self._models_cache and (time.time() - self._models_cache_time) < 60:
+            return self._models_cache
         import httpx
         r = httpx.get(f"{self.base_url}/api/tags", timeout=5)
-        return [m["name"] for m in r.json().get("models", [])]
+        self._models_cache = [m["name"] for m in r.json().get("models", [])]
+        self._models_cache_time = time.time()
+        return self._models_cache
 
     def get_default_model(self) -> str:
         return self.default_model
