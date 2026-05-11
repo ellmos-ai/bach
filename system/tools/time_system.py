@@ -176,8 +176,8 @@ class TimerModule:
     def _format_duration(self, seconds: float) -> str:
         """Formatiert Sekunden als HH:MM:SS oder MM:SS."""
         total_sec = int(seconds)
-        hours = total_sec / 3600
-        minutes = (total_sec % 3600) / 60
+        hours = total_sec // 3600
+        minutes = (total_sec % 3600) // 60
         secs = total_sec % 60
 
         if hours > 0:

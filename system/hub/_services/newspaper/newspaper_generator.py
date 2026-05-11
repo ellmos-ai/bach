@@ -88,7 +88,9 @@ def generate_newspaper(target_date: str = None, config: dict = None) -> dict:
     if target_date is None:
         target_date = date.today().strftime("%Y-%m-%d")
 
-    db_path = BACH_DIR / "data" / "bach.db"
+    db_path = Path.home() / ".bach" / "bach.db"
+    if not db_path.exists():
+        db_path = BACH_DIR / "data" / "bach.db"
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
 
