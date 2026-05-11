@@ -1,0 +1,43 @@
+BACH Tool: Abo-Scanner
+======================
+
+Erkennt wiederkehrende Zahlungen (Abonnements) aus Steuer-Posten.
+
+VERWENDUNG
+----------
+
+  bach --tools abo scan [--jahr YYYY] [--dry-run]
+
+FUNKTIONEN
+----------
+
+  scan       Steuer-Posten nach Abo-Mustern durchsuchen
+  list       Erkannte Abonnements anzeigen
+
+ERKENNUNG
+---------
+
+Analysiert steuer_posten und identifiziert Abonnements anhand von:
+  - Wiederholte Zahlungen an gleichen Anbieter
+  - Konstante Betraege (geringe Abweichung)
+  - Bekannte Abo-Anbieter-Patterns (DB-gestuetzt)
+
+Score-Schwelle: 50 Punkte (konfigurierbar)
+
+OPTIONEN
+--------
+
+  --jahr YYYY    Steuerjahr filtern (Standard: aktuelles Jahr)
+  --dry-run      Nur Vorschau, nichts speichern
+
+BEISPIELE
+---------
+
+  bach --tools abo scan
+  bach --tools abo scan --jahr 2025 --dry-run
+  bach --tools abo list
+
+MODUL
+-----
+
+  tools/abo/abo_scanner.py (AboScanner)

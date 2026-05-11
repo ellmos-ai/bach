@@ -1,0 +1,34 @@
+BACH Tool: Maintenance
+======================
+
+Wartungs- und Pflegewerkzeuge fuer das BACH-System.
+
+VERFUEGBARE TOOLS
+-----------------
+
+  archive_done_tasks     Erledigte Tasks archivieren
+  create_boot_checks     Boot-Checks generieren
+  doc_path_updater       Dokumentations-Pfade aktualisieren
+  generate_skills_report Skills-Report erstellen
+  header_migrate         Datei-Header migrieren
+
+VERWENDUNG
+----------
+
+  bach --tools maintenance archive     Erledigte Tasks in Archiv verschieben
+  bach --tools maintenance skills      Skills-Report generieren
+  bach --tools maintenance headers     Header-Migration durchfuehren
+
+ZUSAMMENSPIEL MIT MAINTAIN-HANDLER
+-----------------------------------
+
+Der maintain-Handler (bach maintain) nutzt diese Tools intern:
+  bach maintain health     System-Gesundheitscheck
+  bach maintain services   Service-Status pruefen
+  bach maintain registry   Tool-Registry aktualisieren
+  bach maintain tasks      Task-Bereinigung
+
+MODUL
+-----
+
+  tools/maintenance/ (5 Scripts)
