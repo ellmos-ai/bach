@@ -11,8 +11,16 @@ document.addEventListener('DOMContentLoaded', () => {
     loadFavorites();
     loadDashboard();
 
-    // Auto-Refresh alle 30 Sekunden
-    setInterval(loadDashboard, 30000);
+    let pollTimer = setInterval(loadDashboard, 30000);
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        } else {
+            loadDashboard();
+            pollTimer = setInterval(loadDashboard, 30000);
+        }
+    });
 });
 
 // ═══════════════════════════════════════════════════════════════
