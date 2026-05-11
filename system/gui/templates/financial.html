@@ -1943,7 +1943,7 @@
             } catch (e) {
                 statusDiv.innerHTML = `
                     <div class="form-group">
-                        <div class="hint" style="color: #f44336;">Fehler: ${e.message}</div>
+                        <div class="hint" style="color: #f44336;">Fehler: ${escapeHtml(e.message)}</div>
                     </div>
                 `;
             }
@@ -2305,7 +2305,7 @@
                     `;
                 }
             } catch (e) {
-                document.getElementById('test-result').innerHTML = `<div style="color: #f44336;">Fehler: ${e.message}</div>`;
+                document.getElementById('test-result').innerHTML = `<div style="color: #f44336;">Fehler: ${escapeHtml(e.message)}</div>`;
             }
         }
 

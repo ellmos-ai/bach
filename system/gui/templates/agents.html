@@ -267,7 +267,7 @@
                 }
             } catch (e) {
                 document.getElementById('agents-grid').innerHTML =
-                    `<div class="error">Fehler beim Laden der Agenten: ${e.message}</div>`;
+                    `<div class="error">Fehler beim Laden der Agenten: ${escapeHtml(e.message)}</div>`;
             }
         }
 

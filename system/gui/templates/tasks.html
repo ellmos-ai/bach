@@ -485,7 +485,7 @@
                 if (selectedTaskId) showTaskDetail(selectedTaskId);
             } catch (e) {
                 document.getElementById('task-list').innerHTML = 
-                    '<li class="detail-empty">Fehler: ' + e.message + '</li>';
+                    '<li class="detail-empty">Fehler: ' + escapeHtml(e.message) + '</li>';
             }
         }
         
