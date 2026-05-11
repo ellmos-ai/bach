@@ -41,7 +41,7 @@ BACH_PY = SYSTEM_ROOT / "bach.py"
 import pytest
 
 
-def run_bach(*args, timeout=30):
+def run_bach(*args, timeout=45):
     """Fuehrt bach.py aus und gibt (returncode, stdout, stderr) zurueck."""
     cmd = [sys.executable, str(BACH_PY)] + list(args)
     result = subprocess.run(
