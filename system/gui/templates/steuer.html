@@ -388,6 +388,13 @@
         // STEUER DASHBOARD - JavaScript
         // ═══════════════════════════════════════════════════════════════
 
+        function esc(s) {
+            if (!s) return '';
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
         let currentTab = 'uebersicht';
 
         // ─────────────────────────────────────────────────────────────────
@@ -454,8 +461,8 @@
                 container.innerHTML = data.tasks.map(task => `
                     <div class="beleg-item">
                         <div>
-                            <strong>${task.title}</strong>
-                            <div class="beleg-kategorie">${task.priority}</div>
+                            <strong>${esc(task.title)}</strong>
+                            <div class="beleg-kategorie">${esc(task.priority)}</div>
                         </div>
                     </div>
                 `).join('');
@@ -542,8 +549,8 @@
                 container.innerHTML = data.docs.map(doc => `
                     <div class="beleg-item">
                         <div>
-                            <strong>${doc.dateiname}</strong>
-                            <div class="beleg-kategorie">Vom: ${doc.hochgeladen_am.split('T')[0]}</div>
+                            <strong>${esc(doc.dateiname)}</strong>
+                            <div class="beleg-kategorie">Vom: ${esc((doc.hochgeladen_am || '').split('T')[0])}</div>
                         </div>
                         <button class="btn btn-secondary btn-sm" onclick="linkToPosten(${doc.id})">🔗 Verknüpfen</button>
                     </div>

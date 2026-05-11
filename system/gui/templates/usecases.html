@@ -341,6 +341,13 @@
         const API_BASE = '/api/usecases';
         let currentRunId = null;
 
+        function esc(s) {
+            if (!s) return '';
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             loadUsecases();
         });
@@ -373,11 +380,11 @@
                     return `
                         <tr>
                             <td>
-                                <strong>${uc.title}</strong>
-                                ${uc.description ? `<br><small style="color: var(--text-muted);">${uc.description.substring(0, 80)}${uc.description.length > 80 ? '...' : ''}</small>` : ''}
+                                <strong>${esc(uc.title)}</strong>
+                                ${uc.description ? `<br><small style="color: var(--text-muted);">${esc(uc.description.substring(0, 80))}${uc.description.length > 80 ? '...' : ''}</small>` : ''}
                             </td>
                             <td>
-                                ${uc.workflow_name ? `<span class="badge workflow">${uc.workflow_name}</span>` : '-'}
+                                ${uc.workflow_name ? `<span class="badge workflow">${esc(uc.workflow_name)}</span>` : '-'}
                             </td>
                             <td>${uc.last_tested ? new Date(uc.last_tested).toLocaleDateString('de-DE') : '-'}</td>
                             <td>${statusBadge}</td>

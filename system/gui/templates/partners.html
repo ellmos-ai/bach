@@ -316,6 +316,13 @@
         let allPartners = [];
         let selectedPartner = null;
 
+        function esc(s) {
+            if (!s) return '';
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
         const partnerIcons = {
             'agent': '🤖',
             'expert': '👨‍💼',
@@ -375,9 +382,9 @@
         function getPartnerLabel(partner) {
             const key = (partner.name || partner.display_name || '').toLowerCase().replace(/\s+/g, '');
             for (const [k, v] of Object.entries(namedDescriptions)) {
-                if (key.includes(k)) return `${partner.display_name} — ${v}`;
+                if (key.includes(k)) return `${esc(partner.display_name)} — ${v}`;
             }
-            return partner.display_name;
+            return esc(partner.display_name);
         }
 
         // Init

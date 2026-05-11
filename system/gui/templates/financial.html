@@ -1165,6 +1165,13 @@
         const API_BASE = '/api/financial';
         let apiError = false;
 
+        function esc(s) {
+            if (!s) return '';
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
         // Tab-Navigation
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', () => {
@@ -1244,8 +1251,8 @@
                 container.innerHTML = data.emails.map(e => `
                     <div class="subscription-card">
                         <div class="sub-info">
-                            <h4>${e.provider_name || 'Unbekannt'} ${e.steuer_relevant ? '<span class="badge steuer">Steuer</span>' : ''}</h4>
-                            <div class="category">${e.subject ? e.subject.substring(0, 60) : '-'}</div>
+                            <h4>${esc(e.provider_name || 'Unbekannt')} ${e.steuer_relevant ? '<span class="badge steuer">Steuer</span>' : ''}</h4>
+                            <div class="category">${e.subject ? esc(e.subject.substring(0, 60)) : '-'}</div>
                         </div>
                         <div class="sub-price">${e.betrag ? e.betrag.toFixed(2) + ' EUR' : '-'}</div>
                     </div>
@@ -2419,7 +2426,7 @@
                     document.getElementById('email-view-subject').textContent = e.subject || 'Kein Betreff';
                     document.getElementById('email-view-meta').innerHTML = `
                         <div><strong>Von:</strong> ${e.sender || '-'}</div>
-                        <div><strong>Anbieter:</strong> ${e.provider_name || '-'}</div>
+                        <div><strong>Anbieter:</strong> ${esc(e.provider_name || '-')}</div>
                         <div><strong>Datum:</strong> ${e.email_date ? new Date(e.email_date).toLocaleString('de-DE') : '-'}</div>
                         <div><strong>Betrag:</strong> ${e.betrag ? e.betrag.toFixed(2) + ' EUR' : '-'}</div>
                         <div style="margin-top: 0.5rem; color: var(--accent-color);">ID: ${e.message_id || '-'}</div>
