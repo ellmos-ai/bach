@@ -679,7 +679,7 @@
 
                 if (data.partners && data.partners.length > 0) {
                     list.innerHTML = data.partners.slice(0, 5).map(p => `
-                        <li class="folder-item" onclick="filterByPartner(${JSON.stringify(p.name)})">
+                        <li class="folder-item" onclick="filterByPartner(${escapeHtml(JSON.stringify(p.name))})">
                             <span><span class="folder-icon">👤</span>${escapeHtml(p.name)}</span>
                         </li>
                     `).join('');

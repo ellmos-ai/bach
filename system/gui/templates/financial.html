@@ -1288,7 +1288,7 @@
                         <td>${email.email_date ? new Date(email.email_date).toLocaleDateString('de-DE') : '-'}</td>
                         <td>
                             <span class="badge ${escapeHtml(email.status)}">${escapeHtml(email.status)}</span>
-                            <button class="btn btn-sm" style="margin-left: 0.25rem; padding: 0.1rem 0.3rem; font-size: 0.65rem; background: #666;" onclick="showFpModal(${JSON.stringify(email.message_id || email.id || '')}, ${JSON.stringify(email.sender || '')}, ${JSON.stringify(email.subject || '')})">FP</button>
+                            <button class="btn btn-sm" style="margin-left: 0.25rem; padding: 0.1rem 0.3rem; font-size: 0.65rem; background: #666;" onclick="showFpModal(${escapeHtml(JSON.stringify(email.message_id || email.id || ''))}, ${escapeHtml(JSON.stringify(email.sender || ''))}, ${escapeHtml(JSON.stringify(email.subject || ''))})">FP</button>
                         </td>
                     </tr>
                 `).join('');

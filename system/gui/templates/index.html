@@ -599,7 +599,7 @@ class="min-h-screen transition-colors duration-300">
                                 </span>
                             </td>
                             <td class="px-6 py-4">
-                                <button onclick="removeMount(${JSON.stringify(m.alias)})" class="px-3 py-1 text-xs bg-[#1a1a2e] border border-[#2a2a3e] rounded hover:border-bach-error hover:text-bach-error transition-all">Löschen</button>
+                                <button onclick="removeMount(${escapeHtml(JSON.stringify(m.alias))})" class="px-3 py-1 text-xs bg-[#1a1a2e] border border-[#2a2a3e] rounded hover:border-bach-error hover:text-bach-error transition-all">Löschen</button>
                             </td>
                         </tr>
                     `).join('');
@@ -796,7 +796,7 @@ class="min-h-screen transition-colors duration-300">
                 const container = document.getElementById('unsorted-list');
                 if (!container) return;
                 container.innerHTML = (data.files || []).map(f => `
-                    <div onclick="processFile(${JSON.stringify(f.name)})" class="flex justify-between items-center p-3 bg-[#1a1a2e] rounded-lg border border-[#2a2a3e] cursor-pointer hover:border-bach-accent transition-all">
+                    <div onclick="processFile(${escapeHtml(JSON.stringify(f.name))})" class="flex justify-between items-center p-3 bg-[#1a1a2e] rounded-lg border border-[#2a2a3e] cursor-pointer hover:border-bach-accent transition-all">
                         <span class="text-gray-200">${esc(f.name)}</span>
                         <span class="px-3 py-1 bg-[#16213e] rounded text-sm">⚙️</span>
                     </div>

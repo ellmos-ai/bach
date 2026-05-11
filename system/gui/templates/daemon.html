@@ -1394,8 +1394,8 @@
                         <button class="btn btn-sm btn-primary" onclick="runChain(${chain.id})">Run</button>
                         <button class="btn btn-sm" onclick="toggleChain(${chain.id})">${chain.is_active ? 'Deaktivieren' : 'Aktivieren'}</button>
                         <button class="btn btn-sm" onclick="editChain(${chain.id})">Bearbeiten</button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteChain(${chain.id}, ${JSON.stringify(chain.name)})">Loeschen</button>
-                        <button class="btn btn-sm btn-secondary" onclick="showChainRuns(${chain.id}, ${JSON.stringify(chain.name)})">History</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteChain(${chain.id}, ${escapeHtml(JSON.stringify(chain.name))})">Loeschen</button>
+                        <button class="btn btn-sm btn-secondary" onclick="showChainRuns(${chain.id}, ${escapeHtml(JSON.stringify(chain.name))})">History</button>
                     </div>
                 </div>
             `;
