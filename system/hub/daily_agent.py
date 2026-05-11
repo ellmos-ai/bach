@@ -400,7 +400,7 @@ class DailyAgentHandler(BaseHandler):
         """Modul: Wetter (optional, benoetigt weather_service)."""
         try:
             from hub._services.weather.weather_service import get_weather_text
-            weather = get_weather_text(0.0, 0.0)  # TODO: Set your coordinates
+            weather = get_weather_text(52.6786, 13.5874)  # Bernau bei Berlin
             if weather:
                 return f"\nWETTER:\n  {weather[:150]}"
         except Exception:
