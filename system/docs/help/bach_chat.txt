@@ -97,10 +97,10 @@ DATEIEN
   Token:      ~/.credentials/telegram_bot_token
   Owner-ID:   ~/.credentials/telegram_owner_id
   Prompt:     data/system_prompt_buddha.txt
-  Logs:       /tmp/telegram-bot.log, /tmp/telegram-bot-error.log
+  Logs:       ~/Library/Logs/bach/telegram-bot.log (macOS), data/logs/ (Windows)
 
   LaunchAgents (macOS):
-    com.qwen.telegram-bot    Telegram-Bot
+    com.bach.telegram-bot     Telegram-Bot
     com.bach.chat-tray        System Tray
     com.bach.gui-server       GUI Dashboard (:8000)
     com.bach.onedrive-sync    OneDrive-Sync

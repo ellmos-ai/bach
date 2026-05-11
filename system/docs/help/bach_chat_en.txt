@@ -92,10 +92,10 @@ FILES
   Token:      ~/.credentials/telegram_bot_token
   Owner-ID:   ~/.credentials/telegram_owner_id
   Prompt:     data/system_prompt_buddha.txt
-  Logs:       /tmp/telegram-bot.log, /tmp/telegram-bot-error.log
+  Logs:       ~/Library/Logs/bach/telegram-bot.log (macOS), data/logs/ (Windows)
 
   LaunchAgents (macOS):
-    com.qwen.telegram-bot    Telegram bot
+    com.bach.telegram-bot     Telegram bot
     com.bach.chat-tray        System tray
 
 
