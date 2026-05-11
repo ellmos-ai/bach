@@ -481,9 +481,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     lines.append(f"  Uptime: {run_shell('uptime').strip()}")
                     return "\n".join(lines)
                 elif action == "sync":
-                    sync_script = Path.home() / "services" / "bach" / "sync-from-onedrive.sh"
+                    sync_script = Path.home() / "services" / "bach" / "sync_mirror.sh"
                     if not sync_script.exists():
-                        return "Sync-Script nicht gefunden: ~/services/bach/sync-from-onedrive.sh"
+                        return "Sync-Script nicht gefunden: ~/services/bach/sync_mirror.sh"
                     out = run_shell(f"bash {sync_script} 2>&1")
                     return f"OneDrive → Mirror Sync abgeschlossen.\n{out.strip()}" if out.strip() else "OneDrive → Mirror Sync abgeschlossen (keine Änderungen)."
                 else:
