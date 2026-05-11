@@ -8,21 +8,21 @@
 
 const BACH_VERSION = "1.1.8";
 
+const CHAT_HOST = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ? "macstudvonlukas" : window.location.hostname;
+
 const NAV_ITEMS = [
     { href: "/", label: "Dashboard", icon: null },
     { href: "/tasks-board", label: "Tasks-Board", icon: "📋" },
     { href: "/agents", label: "Agenten", icon: null },
     { href: "/partners", label: "Partner", icon: null },
     { href: "/skills-board", label: "Skills", icon: null },
-    // Financial entfernt - jetzt ueber Agenten-Dashboard erreichbar (Task #511)
-    // Tokens+Dateien entfernt - jetzt als Tabs auf Dashboard (Task #554)
     { href: "/memory", label: "Memory", icon: null },
+    { href: "/denkarium", label: "Denkarium", icon: null },
     { href: "/tools", label: "Tools", icon: null },
-    { href: "http://localhost:8080", label: "Chat", icon: "💬", external: true },
-    { href: "/messages", label: "Messages", icon: null },
+    { href: `http://${CHAT_HOST}:8081`, label: "Buddha Chat", icon: "💬", external: true },
     { href: "/maintenance", label: "Wartung", icon: "🛠️" },
     { href: "/help", label: "Help", icon: null },
-
     { href: "/wiki", label: "Wiki", icon: null }
 ];
 

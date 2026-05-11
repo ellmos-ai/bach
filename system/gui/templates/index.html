@@ -94,24 +94,7 @@
 :class="darkMode ? 'dark bg-[#0f0f23] text-gray-200' : 'bg-gray-50 text-gray-900'"
 class="min-h-screen transition-colors duration-300">
 
-    <header class="sticky top-0 z-50 bg-[#16213e] border-b border-[#2a2a3e] shadow-lg" id="main-header">
-        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
-            <div class="flex items-center gap-4">
-                <h1 class="text-2xl font-bold text-bach-primary">BACH</h1>
-                <span class="text-sm text-gray-400">Dashboard</span>
-            </div>
-
-            <!-- Dark Mode Toggle -->
-            <button
-                @click="darkMode = !darkMode"
-                class="px-4 py-2 rounded-lg bg-[#1a1a2e] border border-[#2a2a3e] hover:border-bach-accent transition-all"
-                :aria-label="darkMode ? 'Light Mode aktivieren' : 'Dark Mode aktivieren'"
-            >
-                <span x-show="darkMode">🌙</span>
-                <span x-show="!darkMode">☀️</span>
-            </button>
-        </div>
-    </header>
+    <div id="main-header"></div>
 
     <main class="container mx-auto px-4 py-6">
         <!-- Dashboard Tabs - Modernisiert mit Alpine.js & Tailwind -->
@@ -567,7 +550,7 @@ class="min-h-screen transition-colors duration-300">
     </section>
 
     <footer class="bg-[#16213e] border-t border-[#2a2a3e] py-4 text-center">
-        <span class="text-gray-400 text-sm">BACH v1.1.7</span>
+        <span class="text-gray-400 text-sm">BACH v1.1.8</span>
     </footer>
 
     <script src="/static/js/api.js?v=2"></script>

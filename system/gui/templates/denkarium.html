@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Denkarium</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Pinyon+Script&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Lora:ital,wght@0,400;0,600;1,400&family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --ink: #2c2c2c;
+            --ink-light: #6b6b6b;
+            --ink-faint: #a0a0a0;
+            --paper: #fefefe;
+            --paper-warm: #faf8f5;
+            --paper-aged: #f5f0e8;
+            --rule-line: #e8e4de;
+            --accent-ink: #8b4513;
+            --accent-blue: #2c5f8a;
+            --accent-red: #8b2020;
+            --shadow-soft: rgba(0,0,0,0.06);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--paper);
+            color: var(--ink);
+            min-height: 100vh;
+            transition: font-family 0.3s ease;
+        }
+
+        body.font-serif { font-family: 'Cormorant Garamond', 'Georgia', serif; }
+        body.font-garamond { font-family: 'EB Garamond', 'Georgia', serif; }
+        body.font-lora { font-family: 'Lora', 'Georgia', serif; }
+        body.font-sans { font-family: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; }
+        body.font-mono { font-family: 'JetBrains Mono', 'Consolas', monospace; }
+
+        .denkarium {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 2.5rem 2rem 4rem;
+        }
+
+        /* --- Back link --- */
+        .back-link {
+            display: inline-block;
+            color: var(--ink-faint);
+            text-decoration: none;
+            font-size: 0.8rem;
+            letter-spacing: 0.05em;
+            margin-bottom: 2rem;
+            transition: color 0.2s;
+        }
+        .back-link:hover { color: var(--ink); }
+
+        /* --- Header --- */
+        .page-header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--rule-line);
+        }
+
+        .page-title {
+            font-family: 'Pinyon Script', cursive;
+            font-size: 3.5rem;
+            font-weight: 400;
+            color: var(--accent-ink);
+            margin: 0 0 0.25rem 0;
+            line-height: 1.2;
+        }
+
+        .page-subtitle {
+            font-size: 0.85rem;
+            color: var(--ink-faint);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            font-weight: 300;
+        }
+
+        .ornament {
+            color: var(--ink-faint);
+            font-size: 1.2rem;
+            margin-top: 0.75rem;
+            opacity: 0.4;
+        }
+
+        /* --- Settings bar --- */
+        .settings-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--rule-line);
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .font-selector {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .font-btn {
+            padding: 0.25rem 0.6rem;
+            border: 1px solid var(--rule-line);
+            border-radius: 3px;
+            background: transparent;
+            color: var(--ink-light);
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: all 0.2s;
+        }
+
+        .font-btn.active {
+            background: var(--ink);
+            color: var(--paper);
+            border-color: var(--ink);
+        }
+
+        .font-btn:hover:not(.active) {
+            border-color: var(--ink-light);
+        }
+
+        .stats-line {
+            font-size: 0.8rem;
+            color: var(--ink-faint);
+            letter-spacing: 0.03em;
+        }
+
+        .stats-line strong { color: var(--ink-light); }
+
+        /* --- Compose --- */
+        .compose {
+            margin-bottom: 2.5rem;
+            padding: 1.5rem;
+            background: var(--paper-warm);
+            border: 1px solid var(--rule-line);
+            border-radius: 2px;
+            box-shadow: 0 1px 4px var(--shadow-soft);
+        }
+
+        .compose-textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 1rem;
+            border: none;
+            border-bottom: 1px solid var(--rule-line);
+            background: transparent;
+            color: var(--ink);
+            font-family: inherit;
+            font-size: 1.05rem;
+            line-height: 1.8;
+            resize: vertical;
+            background-image: repeating-linear-gradient(
+                transparent,
+                transparent 1.75rem,
+                var(--rule-line) 1.75rem,
+                var(--rule-line) calc(1.75rem + 1px)
+            );
+            background-position: 0 1rem;
+        }
+
+        .compose-textarea:focus {
+            outline: none;
+            border-bottom-color: var(--accent-ink);
+        }
+
+        .compose-textarea::placeholder {
+            color: var(--ink-faint);
+            font-style: italic;
+        }
+
+        .compose-controls {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .ctrl-select, .ctrl-input {
+            padding: 0.35rem 0.6rem;
+            border: 1px solid var(--rule-line);
+            border-radius: 2px;
+            background: var(--paper);
+            color: var(--ink);
+            font-family: inherit;
+            font-size: 0.85rem;
+        }
+
+        .ctrl-input { flex: 1; min-width: 100px; }
+        .ctrl-select:focus, .ctrl-input:focus { outline: none; border-color: var(--accent-ink); }
+
+        .btn {
+            padding: 0.4rem 1rem;
+            border: 1px solid;
+            border-radius: 2px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+            background: transparent;
+        }
+
+        .btn-write {
+            border-color: var(--accent-ink);
+            color: var(--accent-ink);
+        }
+        .btn-write:hover {
+            background: var(--accent-ink);
+            color: var(--paper);
+        }
+
+        .btn-logbuch {
+            border-color: var(--accent-red);
+            color: var(--accent-red);
+        }
+        .btn-logbuch:hover {
+            background: var(--accent-red);
+            color: var(--paper);
+        }
+
+        .btn-ghost {
+            border-color: var(--rule-line);
+            color: var(--ink-faint);
+        }
+        .btn-ghost:hover {
+            border-color: var(--ink-light);
+            color: var(--ink);
+        }
+
+        .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
+
+        .spacer { flex: 1; }
+
+        /* --- Filter --- */
+        .filter-bar {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 180px;
+            padding: 0.4rem 0.75rem;
+            border: none;
+            border-bottom: 1px solid var(--rule-line);
+            background: transparent;
+            color: var(--ink);
+            font-family: inherit;
+            font-size: 0.9rem;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-bottom-color: var(--accent-ink);
+        }
+
+        .search-box::placeholder { color: var(--ink-faint); }
+
+        .filter-chip {
+            padding: 0.25rem 0.65rem;
+            border: 1px solid var(--rule-line);
+            border-radius: 2px;
+            background: transparent;
+            color: var(--ink-faint);
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .filter-chip.active {
+            background: var(--ink);
+            color: var(--paper);
+            border-color: var(--ink);
+        }
+
+        .filter-chip:hover:not(.active) { border-color: var(--ink-light); }
+
+        /* --- Entries --- */
+        .entries { margin-top: 1rem; }
+
+        .entry {
+            margin-bottom: 1.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--rule-line);
+            animation: fadeIn 0.4s ease;
+        }
+
+        .entry:last-child { border-bottom: none; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .entry-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 0.4rem;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+
+        .entry-meta {
+            display: flex;
+            align-items: baseline;
+            gap: 0.6rem;
+            font-size: 0.78rem;
+            color: var(--ink-faint);
+        }
+
+        .entry-type {
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.65rem;
+            font-weight: 600;
+        }
+
+        .type-denkarium { color: var(--accent-blue); }
+        .type-logbuch { color: var(--accent-red); }
+        .type-brainstorm { color: #b8860b; }
+
+        .entry-category {
+            font-style: italic;
+            color: var(--ink-faint);
+        }
+
+        .entry-mood { font-size: 0.7rem; letter-spacing: 0.1em; }
+
+        .entry-actions {
+            display: flex;
+            gap: 0.25rem;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .entry:hover .entry-actions { opacity: 1; }
+
+        .entry-title {
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 0.3rem;
+            color: var(--ink);
+        }
+
+        .entry-content {
+            line-height: 1.8;
+            font-size: 1rem;
+            color: var(--ink);
+            white-space: pre-wrap;
+        }
+
+        .promoted-tag {
+            font-size: 0.7rem;
+            color: var(--accent-blue);
+            font-style: italic;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--ink-faint);
+        }
+
+        .empty-state .empty-title {
+            font-family: 'Pinyon Script', cursive;
+            font-size: 2rem;
+            color: var(--ink-faint);
+            margin-bottom: 0.5rem;
+        }
+
+        .empty-state p { font-size: 0.95rem; }
+
+        .load-more {
+            text-align: center;
+            margin-top: 1.5rem;
+        }
+
+        /* --- Responsive --- */
+        @media (max-width: 600px) {
+            .denkarium { padding: 1.5rem 1rem; }
+            .page-title { font-size: 2.5rem; }
+            .compose { padding: 1rem; }
+        }
+    </style>
+</head>
+<body class="font-serif">
+
+    <div class="denkarium">
+        <a href="/" class="back-link">&larr; Dashboard</a>
+
+        <div class="page-header">
+            <h1 class="page-title">Denkarium</h1>
+            <p class="page-subtitle">Gedanken &middot; Logbuch &middot; Ideen</p>
+            <div class="ornament">&mdash; &#10053; &mdash;</div>
+        </div>
+
+        <div class="settings-bar">
+            <div class="font-selector">
+                <button class="font-btn active" onclick="setFont('serif', this)" title="Cormorant Garamond">Serif</button>
+                <button class="font-btn" onclick="setFont('garamond', this)" title="EB Garamond">Garamond</button>
+                <button class="font-btn" onclick="setFont('lora', this)" title="Lora">Lora</button>
+                <button class="font-btn" onclick="setFont('sans', this)" title="Source Sans">Sans</button>
+                <button class="font-btn" onclick="setFont('mono', this)" title="JetBrains Mono">Mono</button>
+            </div>
+            <div class="stats-line" id="stats-line"></div>
+        </div>
+
+        <div class="compose">
+            <textarea class="compose-textarea" id="compose-text" placeholder="Was bewegt dich gerade?"></textarea>
+            <div class="compose-controls">
+                <select class="ctrl-select" id="compose-type">
+                    <option value="denkarium">Gedanke</option>
+                    <option value="logbuch">Logbuch</option>
+                </select>
+                <input class="ctrl-input" id="compose-category" placeholder="Kategorie" value="notiz">
+                <input class="ctrl-input" id="compose-title" placeholder="Titel (optional)">
+                <select class="ctrl-select" id="compose-mood">
+                    <option value="">Stimmung</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                </select>
+                <span class="spacer"></span>
+                <button class="btn btn-write" onclick="createEntry()">Schreiben</button>
+                <button class="btn btn-logbuch" onclick="createEntry('logbuch')">Logbuch</button>
+            </div>
+        </div>
+
+        <div class="filter-bar">
+            <input class="search-box" id="search-input" placeholder="Durchsuchen ..." oninput="debounceLoad()">
+            <button class="filter-chip active" data-type="" onclick="setFilter(this)">Alle</button>
+            <button class="filter-chip" data-type="denkarium" onclick="setFilter(this)">Gedanken</button>
+            <button class="filter-chip" data-type="logbuch" onclick="setFilter(this)">Logbuch</button>
+        </div>
+
+        <div class="entries" id="entries">
+            <div class="empty-state">
+                <div class="empty-title">Lade...</div>
+            </div>
+        </div>
+
+        <div class="load-more" id="load-more" style="display:none">
+            <button class="btn btn-ghost" onclick="loadMore()">Weitere Eintr&auml;ge</button>
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script>
+        let currentType = '';
+        let currentLimit = 50;
+        let debounceTimer = null;
+
+        function setFont(name, btn) {
+            document.body.className = 'font-' + name;
+            document.querySelectorAll('.font-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            localStorage.setItem('denkarium-font', name);
+        }
+
+        (function restoreFont() {
+            const saved = localStorage.getItem('denkarium-font');
+            if (saved) {
+                document.body.className = 'font-' + saved;
+                document.querySelectorAll('.font-btn').forEach(b => {
+                    b.classList.toggle('active', b.textContent.toLowerCase().startsWith(saved.substring(0, 3)));
+                });
+            }
+        })();
+
+        function debounceLoad() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(loadEntries, 300);
+        }
+
+        async function loadEntries() {
+            const search = document.getElementById('search-input').value.trim();
+            let url = `/api/denkarium?limit=${currentLimit}`;
+            if (currentType) url += `&entry_type=${currentType}`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+
+            try {
+                const data = await api.get(url);
+                renderStats(data.stats);
+                renderEntries(data.entries);
+            } catch (e) {
+                document.getElementById('entries').innerHTML =
+                    '<div class="empty-state"><p>Fehler beim Laden</p></div>';
+            }
+        }
+
+        function renderStats(stats) {
+            document.getElementById('stats-line').innerHTML =
+                `<strong>${stats.total}</strong> Eintr&auml;ge &middot; <strong>${stats.denkarium}</strong> Gedanken &middot; <strong>${stats.logbuch}</strong> Logbuch`;
+        }
+
+        function renderEntries(entries) {
+            const el = document.getElementById('entries');
+            if (!entries.length) {
+                el.innerHTML = `<div class="empty-state">
+                    <div class="empty-title">Leere Seiten</div>
+                    <p>Schreibe deinen ersten Gedanken.</p>
+                </div>`;
+                return;
+            }
+
+            el.innerHTML = entries.map(e => {
+                const t = e.entry_type || 'denkarium';
+                const mood = e.mood ? '★'.repeat(e.mood) + '☆'.repeat(5 - e.mood) : '';
+                const content = e.content || '';
+                const isLong = content.length > 400;
+                const display = isLong ? content.substring(0, 400) + '…' : content;
+                const promoted = e.promoted_to ? `<span class="promoted-tag">→ ${e.promoted_to} #${e.promoted_id}</span>` : '';
+
+                return `<div class="entry" data-id="${e.id}">
+                    <div class="entry-header">
+                        <div class="entry-meta">
+                            <span class="entry-type type-${t}">${t === 'logbuch' ? 'Logbuch' : t === 'brainstorm' ? 'Brainstorm' : 'Gedanke'}</span>
+                            <span class="entry-category">${e.category || ''}</span>
+                            ${promoted}
+                            <span>${e.created_at || ''}</span>
+                            ${mood ? `<span class="entry-mood">${mood}</span>` : ''}
+                        </div>
+                        <div class="entry-actions">
+                            <button class="btn btn-sm btn-ghost" onclick="promoteEntry(${e.id})" title="Zu Task">Task</button>
+                            <button class="btn btn-sm btn-ghost" onclick="deleteEntry(${e.id})" title="Löschen">×</button>
+                        </div>
+                    </div>
+                    ${e.title ? `<div class="entry-title">${esc(e.title)}</div>` : ''}
+                    <div class="entry-content" id="c-${e.id}">${esc(display)}</div>
+                    ${isLong ? `<button class="btn btn-sm btn-ghost" style="margin-top:0.4rem" onclick="toggle(${e.id})">mehr</button>` : ''}
+                </div>`;
+            }).join('');
+
+            entries.forEach(e => {
+                if (e.content && e.content.length > 400) {
+                    document.querySelector(`[data-id="${e.id}"]`)._fullContent = e.content;
+                }
+            });
+        }
+
+        function esc(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        function toggle(id) {
+            const div = document.querySelector(`[data-id="${id}"]`);
+            const cel = document.getElementById(`c-${id}`);
+            const full = div._fullContent;
+            if (!full) return;
+            const expanded = cel.dataset.expanded === '1';
+            cel.textContent = expanded ? full.substring(0, 400) + '…' : full;
+            cel.dataset.expanded = expanded ? '0' : '1';
+        }
+
+        function setFilter(btn) {
+            document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            currentType = btn.dataset.type;
+            loadEntries();
+        }
+
+        async function createEntry(forceType) {
+            const content = document.getElementById('compose-text').value.trim();
+            if (!content) return;
+            const entry_type = forceType || document.getElementById('compose-type').value;
+            const category = document.getElementById('compose-category').value.trim() || 'notiz';
+            const title = document.getElementById('compose-title').value.trim() || null;
+            const moodVal = document.getElementById('compose-mood').value;
+            const mood = moodVal ? parseInt(moodVal) : null;
+            try {
+                await api.post('/api/denkarium', { content, entry_type, category, title, mood, source: 'web' });
+                document.getElementById('compose-text').value = '';
+                document.getElementById('compose-title').value = '';
+                document.getElementById('compose-mood').value = '';
+                loadEntries();
+            } catch (e) { alert('Fehler beim Speichern'); }
+        }
+
+        async function deleteEntry(id) {
+            if (!confirm('Eintrag wirklich löschen?')) return;
+            try {
+                await api.delete(`/api/denkarium/${id}`);
+                loadEntries();
+            } catch (e) { alert('Fehler'); }
+        }
+
+        async function promoteEntry(id) {
+            try {
+                const r = await fetch(`/api/denkarium/${id}/promote`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ target: 'task' })
+                });
+                if (r.ok) loadEntries();
+                else alert('Fehler');
+            } catch (e) { alert('Fehler'); }
+        }
+
+        function loadMore() {
+            currentLimit += 50;
+            loadEntries();
+        }
+
+        loadEntries();
+    </script>
+</body>
+</html>

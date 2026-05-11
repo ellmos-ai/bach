@@ -107,7 +107,8 @@ TEMPLATES_DIR = GUI_DIR / "templates"
 
 STATIC_DIR = GUI_DIR / "static"
 
-HELP_DIR = BACH_DIR / "help"
+HELP_DIR = BACH_DIR / "docs" / "help"
+WIKI_DIR = BACH_DIR / "wiki"
 
 SKILLS_DIR = BACH_DIR / "skills"
 AGENTS_DIR = BACH_DIR / "agents"
@@ -4272,6 +4273,202 @@ async def skills_board_page():
 
 
 
+@app.get("/denkarium", response_class=HTMLResponse)
+
+async def denkarium_page():
+
+    """Denkarium — Logbuch und Gedanken-Sammler."""
+
+    f = TEMPLATES_DIR / "denkarium.html"
+
+    if f.exists():
+
+        return FileResponse(f)
+
+    return HTMLResponse("<h1>Denkarium</h1><p>Template nicht gefunden</p>")
+
+
+
+@app.get("/api/denkarium")
+
+async def denkarium_list(entry_type: str = None, category: str = None, limit: int = 50, search: str = None):
+
+    """Denkarium-Einträge abrufen."""
+
+    conn = sqlite3.connect(str(USER_DB))
+
+    query = "SELECT id, entry_type, title, content, category, source, mood, promoted_to, promoted_id, created_at, updated_at FROM denkarium_entries"
+
+    conditions = []
+
+    params = []
+
+    if entry_type:
+
+        conditions.append("entry_type = ?")
+
+        params.append(entry_type)
+
+    if category:
+
+        conditions.append("category = ?")
+
+        params.append(category)
+
+    if search:
+
+        conditions.append("(content LIKE ? OR title LIKE ?)")
+
+        params.extend([f"%{search}%", f"%{search}%"])
+
+    if conditions:
+
+        query += " WHERE " + " AND ".join(conditions)
+
+    query += " ORDER BY created_at DESC LIMIT ?"
+
+    params.append(limit)
+
+    cursor = conn.execute(query, params)
+
+    cols = [d[0] for d in cursor.description]
+
+    rows = cursor.fetchall()
+
+    entries = [dict(zip(cols, row)) for row in rows]
+
+    stats = conn.execute("SELECT COUNT(*) as total, SUM(CASE WHEN entry_type='logbuch' THEN 1 ELSE 0 END) as logbuch, SUM(CASE WHEN entry_type='denkarium' THEN 1 ELSE 0 END) as denkarium FROM denkarium_entries").fetchone()
+
+    categories = conn.execute("SELECT category, COUNT(*) as cnt FROM denkarium_entries GROUP BY category ORDER BY cnt DESC").fetchall()
+
+    conn.close()
+
+    return {
+
+        "entries": entries,
+
+        "count": len(entries),
+
+        "stats": {"total": stats[0] or 0, "logbuch": stats[1] or 0, "denkarium": stats[2] or 0},
+
+        "categories": [{"name": c[0], "count": c[1]} for c in categories]
+
+    }
+
+
+
+@app.post("/api/denkarium")
+
+async def denkarium_create(request: Request):
+
+    """Neuen Denkarium-Eintrag erstellen."""
+
+    data = await request.json()
+
+    content = data.get("content", "").strip()
+
+    if not content:
+
+        raise HTTPException(status_code=400, detail="Inhalt darf nicht leer sein")
+
+    entry_type = data.get("entry_type", "denkarium")
+
+    category = data.get("category", "notiz")
+
+    title = data.get("title")
+
+    mood = data.get("mood")
+
+    source = data.get("source", "web")
+
+    from datetime import datetime
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    if entry_type == "logbuch" and not title:
+
+        title = f"Sternzeit {now}"
+
+    conn = sqlite3.connect(str(USER_DB))
+
+    conn.execute("INSERT INTO denkarium_entries (entry_type, title, content, category, source, mood, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+
+        (entry_type, title, content, category, source, mood, now))
+
+    entry_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    conn.commit()
+
+    conn.close()
+
+    return {"ok": True, "id": entry_id, "message": f"Eintrag #{entry_id} gespeichert"}
+
+
+
+@app.delete("/api/denkarium/{entry_id}")
+
+async def denkarium_delete(entry_id: int):
+
+    """Denkarium-Eintrag löschen."""
+
+    conn = sqlite3.connect(str(USER_DB))
+
+    conn.execute("DELETE FROM denkarium_entries WHERE id = ?", (entry_id,))
+
+    conn.commit()
+
+    conn.close()
+
+    return {"ok": True}
+
+
+
+@app.post("/api/denkarium/{entry_id}/promote")
+
+async def denkarium_promote(entry_id: int, request: Request):
+
+    """Denkarium-Eintrag zu Task befördern."""
+
+    data = await request.json()
+
+    target = data.get("target", "task")
+
+    conn = sqlite3.connect(str(USER_DB))
+
+    entry = conn.execute("SELECT id, title, content FROM denkarium_entries WHERE id = ?", (entry_id,)).fetchone()
+
+    if not entry:
+
+        conn.close()
+
+        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+
+    title = entry[1] or (entry[2][:50] if entry[2] else "Denkarium-Eintrag")
+
+    if target == "task":
+
+        conn.execute("INSERT INTO tasks (title, description, status, priority, assigned_to, dist_type) VALUES (?, ?, 'pending', 3, 'user', 0)", (title, entry[2]))
+
+        promoted_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    else:
+
+        promoted_id = 0
+
+    from datetime import datetime
+
+    conn.execute("UPDATE denkarium_entries SET promoted_to = ?, promoted_id = ?, updated_at = ? WHERE id = ?",
+
+        (target, promoted_id, datetime.now().isoformat(), entry_id))
+
+    conn.commit()
+
+    conn.close()
+
+    return {"ok": True, "promoted_id": promoted_id}
+
+
+
 @app.get("/tokens", response_class=HTMLResponse)
 
 async def tokens_page():
@@ -5281,31 +5478,39 @@ async def list_help_files():
 
 
 
-    # Haupt-Help-Dateien
+    # Help-Dateien rekursiv (inkl. tools/ Unterordner)
 
-    for help_file in sorted(HELP_DIR.glob("*.txt")):
+    for help_file in sorted(HELP_DIR.rglob("*.txt")):
+
+        if help_file.name.startswith('_'):
+            continue
 
         size = help_file.stat().st_size
 
         total_size += size
 
+        rel = help_file.relative_to(HELP_DIR)
+        name_key = str(rel).replace('\\', '/').replace('.txt', '')
+
         files.append({
 
-            "name": help_file.stem,
+            "name": name_key,
 
             "filename": help_file.name,
 
             "size": size,
 
-            "type": "help"
+            "type": "help",
+
+            "folder": rel.parts[0] if len(rel.parts) > 1 else None
 
         })
 
 
 
-    # Wiki-Ordner (wiki/) - rekursiv
+    # Wiki-Ordner (separates Verzeichnis)
 
-    wiki_dir = HELP_DIR / "wiki"
+    wiki_dir = WIKI_DIR
 
     if wiki_dir.exists():
 
@@ -5417,6 +5622,7 @@ async def list_help_files():
 
 
 
+@app.get("/api/help/{name:path}")
 @app.get("/api/docs/help/{name:path}")
 
 async def get_help_file(name: str):
@@ -5432,28 +5638,27 @@ async def get_help_file(name: str):
 
 
     help_file = HELP_DIR / name
+    base_dir = HELP_DIR
 
-
+    if not help_file.exists() and name.startswith("wiki/"):
+        help_file = WIKI_DIR / name[5:]
+        base_dir = WIKI_DIR
 
     if not help_file.exists():
-
-        # Versuche ohne Extension
-
         help_file = HELP_DIR / (name.replace('.txt', '') + '.txt')
+        base_dir = HELP_DIR
 
-
+    if not help_file.exists() and name.startswith("wiki/"):
+        help_file = WIKI_DIR / (name[5:].replace('.txt', '') + '.txt')
+        base_dir = WIKI_DIR
 
     if not help_file.exists():
 
         raise HTTPException(status_code=404, detail=f"Help-Datei nicht gefunden: {name}")
 
-
-
-    # Sicherheitscheck: Pfad darf nicht aus HELP_DIR ausbrechen
-
     try:
 
-        help_file.resolve().relative_to(HELP_DIR.resolve())
+        help_file.resolve().relative_to(base_dir.resolve())
 
     except ValueError:
 
@@ -5465,18 +5670,11 @@ async def get_help_file(name: str):
 
         content = help_file.read_text(encoding='utf-8', errors='ignore')
 
-        rel_path = str(help_file.relative_to(HELP_DIR))
-
-
-
-        # Bestimme Typ basierend auf Pfad
-
-        if rel_path.startswith('wiki'):
-
-            file_type = 'wiki_sub' if '/' in rel_path.replace('wiki/', '', 1) else 'wiki'
-
+        if base_dir == WIKI_DIR:
+            rel_path = "wiki/" + str(help_file.relative_to(WIKI_DIR))
+            file_type = 'wiki_sub' if '/' in str(help_file.relative_to(WIKI_DIR)) else 'wiki'
         else:
-
+            rel_path = str(help_file.relative_to(HELP_DIR))
             file_type = 'help'
 
 
@@ -5513,6 +5711,7 @@ class HelpUpdate(BaseModel):
 
 
 
+@app.put("/api/help/{name:path}")
 @app.put("/api/docs/help/{name:path}")
 
 async def update_help_file(name: str, data: HelpUpdate):
@@ -5647,6 +5846,7 @@ async def create_help_file(name: str = Query(...), data: HelpUpdate = None):
 
 
 
+@app.delete("/api/help/{name:path}")
 @app.delete("/api/docs/help/{name:path}")
 
 async def delete_help_file(name: str):
