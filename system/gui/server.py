@@ -4307,7 +4307,9 @@ async def gesundheit_redirect():
 async def persoenlich_redirect():
     return RedirectResponse("/agents/persoenlich")
 
-
+@app.get("/routines")
+async def routines_redirect():
+    return RedirectResponse("/routinen")
 
 
 
