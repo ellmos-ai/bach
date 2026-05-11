@@ -76,6 +76,27 @@ def is_safe_command(cmd: str) -> bool:
     return os.path.basename(parts[0]) in SAFE_BASES
 
 
+BLOCKED_WRITE_PREFIXES = (
+    "/etc", "/usr", "/bin", "/sbin", "/System", "/Library",
+    "/var/root", "/private/etc",
+)
+
+BACH_SYSTEM_DIR = str(Path(__file__).resolve().parents[2])
+
+
+def is_safe_write_path(path_str: str, mode: str) -> str | None:
+    """Return error message if path is blocked for writes in safe mode, else None."""
+    if mode != "safe":
+        return None
+    p = str(Path(path_str).resolve())
+    for prefix in BLOCKED_WRITE_PREFIXES:
+        if p.startswith(prefix):
+            return f"Schreibzugriff auf {prefix}/ im Safe-Mode nicht erlaubt"
+    if p.startswith(BACH_SYSTEM_DIR) and "/user/" not in p.lower():
+        return "Schreibzugriff auf BACH-Systemdateien im Safe-Mode nicht erlaubt"
+    return None
+
+
 def run_shell(cmd: str, timeout: int = CMD_TIMEOUT) -> str:
     timeout = min(max(timeout, 5), 120)
     try:
@@ -636,6 +657,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             new_text = args.get("new_text", "")
             if not p or not old_text:
                 return "Pfad und old_text sind erforderlich"
+            if err := is_safe_write_path(p, mode):
+                return err
             try:
                 content = Path(p).read_text(encoding="utf-8")
             except FileNotFoundError:
@@ -662,6 +685,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             dst = args.get("destination", "")
             if not src or not dst:
                 return "source und destination sind erforderlich"
+            if err := is_safe_write_path(dst, mode):
+                return err
             try:
                 import shutil
                 shutil.move(src, dst)
@@ -675,6 +700,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             dst = args.get("destination", "")
             if not src or not dst:
                 return "source und destination sind erforderlich"
+            if err := is_safe_write_path(dst, mode):
+                return err
             try:
                 import shutil
                 if os.path.isdir(src):
@@ -730,6 +757,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             p = args.get("path", "")
             if not p:
                 return "Kein Pfad angegeben"
+            if err := is_safe_write_path(p, mode):
+                return err
             if not os.path.exists(p):
                 return f"Nicht gefunden: {p}"
             try:
@@ -750,6 +779,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             p = args.get("path", "")
             if not p:
                 return "Kein Pfad angegeben"
+            if err := is_safe_write_path(p, mode):
+                return err
             try:
                 Path(p).mkdir(parents=True, exist_ok=True)
                 log.info(f"MKDIR: {p}")
