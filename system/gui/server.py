@@ -55,7 +55,7 @@ try:
 
     from fastapi.staticfiles import StaticFiles
 
-    from fastapi.responses import HTMLResponse, FileResponse
+    from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 
     from fastapi.middleware.cors import CORSMiddleware
 
@@ -4287,6 +4287,25 @@ async def skills_board_page():
     return HTMLResponse("<h1>Skills Board</h1><p>Template nicht gefunden</p>")
 
 
+@app.get("/skills")
+async def skills_redirect():
+    return RedirectResponse("/skills-board")
+
+@app.get("/finanzen")
+async def finanzen_redirect():
+    return RedirectResponse("/financial")
+
+@app.get("/steuer")
+async def steuer_redirect():
+    return RedirectResponse("/agents/steuer")
+
+@app.get("/gesundheit")
+async def gesundheit_redirect():
+    return RedirectResponse("/agents/gesundheit")
+
+@app.get("/persoenlich")
+async def persoenlich_redirect():
+    return RedirectResponse("/agents/persoenlich")
 
 
 
