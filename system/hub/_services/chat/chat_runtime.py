@@ -149,8 +149,8 @@ TOOLS_SAFE = [
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail)"},
     }, ["action"]),
     _tool("maintain", "Systemwartung: fällige Tasks prüfen, Wartungsoperationen ausführen", {
-        "action": {"type": "string", "enum": ["check", "run", "health"],
-                   "description": "check=fällige Tasks zeigen, run=Wartung ausführen, health=Systemgesundheit"},
+        "action": {"type": "string", "enum": ["check", "run", "health", "services"],
+                   "description": "check=fällige Tasks, run=Wartung, health=BACH-Status, services=Service-Check"},
         "operation": {"type": "string",
                       "description": "Bei run: registry, skills, docs, backup, clean, memory, recurring"},
     }, ["action"]),
@@ -209,7 +209,7 @@ TOOLS_FULL = TOOLS_SAFE + [
 # --- Delegation ---
 
 def _delegate_claude_api(prompt: str, api_key: str,
-                         model: str = "claude-sonnet-4-20250514") -> str:
+                         model: str = "claude-sonnet-4-6") -> str:
     import httpx
     try:
         r = httpx.post(
@@ -456,8 +456,23 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 elif action == "health":
                     return run_shell(f"cd {shlex.quote(str(Path(__file__).parent.parent.parent.parent))} && "
                                      f"PYTHONIOENCODING=utf-8 python bach.py status")
+                elif action == "services":
+                    checks = {
+                        "GUI Dashboard (:8000)": "curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/",
+                        "Control API (:8081)": "curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/api/status",
+                        "Ollama (:11434)": "curl -s -o /dev/null -w '%{http_code}' http://localhost:11434/api/tags",
+                    }
+                    lines = ["BACH Service-Check:"]
+                    for svc, cmd in checks.items():
+                        code = run_shell(cmd).strip()
+                        ok = code == "200"
+                        lines.append(f"  {'✅' if ok else '❌'} {svc} — HTTP {code}")
+                    ps_out = run_shell("ps aux | grep -E '(telegram_chat|server\\.py|chat_tray)' | grep -v grep | wc -l")
+                    lines.append(f"  Prozesse (Bot/GUI/Tray): {ps_out.strip()}")
+                    lines.append(f"  Uptime: {run_shell('uptime').strip()}")
+                    return "\n".join(lines)
                 else:
-                    return f"Unbekannte Aktion: {action}. Erlaubt: check, run, health"
+                    return f"Unbekannte Aktion: {action}. Erlaubt: check, run, health, services"
             except Exception as e:
                 return f"Wartungsfehler: {e}"
 
@@ -784,7 +799,7 @@ SAFE-MODUS (Standard):
 - web_search — Im Internet suchen (DuckDuckGo)
 - weather — Aktuelles Wetter abfragen
 - task_manage — Tasks anlegen, auflisten, erledigen
-- maintain — Systemwartung: fällige Tasks prüfen (check), Wartung ausführen (run), Gesundheit (health)
+- maintain — Systemwartung: fällige Tasks (check), Wartung (run), BACH-Status (health), Service-Check (services)
 - delegate — Aufgabe an Claude Code oder Codex CLI delegieren
 
 FULL-MODUS (nur nach /mode full bestätigt):
