@@ -196,7 +196,8 @@ class HealthCheckHandler(BaseHandler):
 
     def _check_disk(self) -> Tuple[bool, str]:
         try:
-            usage = shutil.disk_usage(os.environ.get("SystemDrive", "C:"))
+            drive = os.environ.get("SystemDrive", "C:") if os.name == "nt" else "/"
+            usage = shutil.disk_usage(drive)
             free_gb = usage.free / (1024**3)
             total_gb = usage.total / (1024**3)
             pct = (usage.used / usage.total) * 100
@@ -224,9 +225,12 @@ class HealthCheckHandler(BaseHandler):
 
     def _check_ping(self, host: str) -> Tuple[bool, str]:
         try:
-            param = "-n" if os.name == "nt" else "-c"
+            if os.name == "nt":
+                cmd = ["ping", "-n", "1", "-w", "2000", host]
+            else:
+                cmd = ["ping", "-c", "1", "-W", "2", host]
             result = subprocess.run(
-                ["ping", param, "1", "-w", "2000", host],
+                cmd,
                 capture_output=True, timeout=5
             )
             if result.returncode == 0:

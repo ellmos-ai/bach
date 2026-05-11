@@ -2169,6 +2169,35 @@ async def delete_message(msg_id: int):
     return {"status": "deleted"}
 
 
+@app.get("/api/partners")
+async def get_partners():
+    """Partner-Liste aus Agenten und Nachrichtenhistorie."""
+    partners = []
+    try:
+        with get_bach_db() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT name FROM bach_agents WHERE is_active = 1 ORDER BY name"
+            ).fetchall()
+            seen = set()
+            for r in rows:
+                name = r[0] if isinstance(r, (tuple, list)) else r["name"]
+                if name and name not in seen:
+                    partners.append({"name": name})
+                    seen.add(name)
+        conn = get_user_db()
+        rows = conn.execute(
+            "SELECT DISTINCT sender FROM messages WHERE sender != 'user' AND sender IS NOT NULL ORDER BY sender"
+        ).fetchall()
+        conn.close()
+        for r in rows:
+            name = r[0]
+            if name and name not in seen:
+                partners.append({"name": name})
+                seen.add(name)
+    except Exception:
+        pass
+    return {"partners": partners}
+
 
 # ═══════════════════════════════════════════════════════════════
 

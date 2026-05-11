@@ -29,6 +29,7 @@ Prueft dass alle kritischen CLI-Befehle weiterhin funktionieren.
 """
 
 import sys
+import os
 import subprocess
 import re
 import json
@@ -221,6 +222,27 @@ class TestCLIBackwardsCompat:
         payload = json.loads(out)
         assert "agents" in payload
         assert "active_count" in payload
+
+    def test_path_db_json(self):
+        code, out, err = run_bach("path", "db", "--json")
+        assert code == 0, err
+        payload = json.loads(out)
+        assert payload["name"] == "db"
+        assert "path" in payload
+
+    def test_path_summary_json(self):
+        code, out, err = run_bach("path", "--json")
+        assert code == 0, err
+        payload = json.loads(out)
+        assert "groups" in payload
+        assert "core" in payload["groups"]
+
+    def test_path_list_json(self):
+        code, out, err = run_bach("path", "list", "--json")
+        assert code == 0, err
+        payload = json.loads(out)
+        assert payload["count"] >= 1
+        assert any(item["name"] == "db" for item in payload["paths"])
 
     def test_downgrade_help(self):
         """Test bach help downgrade (SQ020)."""
@@ -492,11 +514,13 @@ class TestLibraryAPI:
             "print(app.base_path); "
             "print(success)"
         )
+        env = {**os.environ, "PYTHONPATH": str(SYSTEM_ROOT)}
         proc = subprocess.run(
             [sys.executable, "-c", code],
             cwd=str(repo_root),
             capture_output=True,
             text=True,
+            env=env,
         )
 
         assert proc.returncode == 0, proc.stderr
