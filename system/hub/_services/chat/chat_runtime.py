@@ -130,7 +130,7 @@ TOOLS_SAFE = [
         "model": {"type": "string", "description": "Modellname (nur bei show)"},
     }),
     _tool("bach_command", "BACH-Befehl ausführen (Memory, Tasks, Kalender, Denkarium, News, etc.)", {
-        "handler": {"type": "string", "description": "Handler: status, task, mem, search, help, tools, denkarium, kalender, kontakte, timer, countdown, news, newspaper, lesson, snapshot, partner, connector, msg, backup, web-parse, web-scrape, skills, agent"},
+        "handler": {"type": "string", "description": "Handler: status, task, mem, search, help, tools, denkarium, calendar, contact, routine, timer, countdown, news, newspaper, lesson, snapshot, partner, connector, msg, backup, web-parse, web-scrape, skills, agent, maintain, sync, abo, steuer, gesundheit, haushalt, versicherung, inbox, wiki"},
         "operation": {"type": "string", "description": "Operation: list, add, done, facts, write, read, search, context, today, brainstorm, promote, stats, fetch, generate, create, load"},
         "args": {"type": "array", "items": {"type": "string"}, "description": "Argumente"},
     }, ["handler"]),
@@ -290,9 +290,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if not bach_app:
                 return "BACH nicht verfügbar"
             _HANDLER_ALIASES = {
-                "calendar": "kalender", "contacts": "kontakte",
-                "contact": "kontakte", "notes": "denkarium",
-                "routines": "routinen", "routine": "routinen",
+                "kalender": "calendar", "kontakte": "contact",
+                "contacts": "contact", "routinen": "routine",
+                "routines": "routine", "notes": "denkarium",
                 "timers": "timer", "counters": "countdown",
                 "lessons": "lesson", "partners": "partner",
                 "agents": "agent", "messages": "msg",
@@ -823,8 +823,9 @@ FULL-MODUS (nur nach /mode full bestätigt):
 
 BACH-HANDLER (alle via bach_command nutzbar):
 - denkarium write/read/search/brainstorm/promote/stats — Gedanken-Sammler und Logbuch
-- kalender list/add/today — Termine und Kalender
-- kontakte list/search/show — Kontaktverwaltung
+- calendar list/add/today/week — Termine und Kalender
+- contact list/search/show — Kontaktverwaltung
+- routine list/add/complete — Routinen und Gewohnheiten
 - countdown list — Countdowns und Timer
 - mem write/read/fact/facts/search/context — Memory-System
 - lesson add/list — Lessons Learned
@@ -847,8 +848,9 @@ REGELN:
 - Nutze recycle zum Löschen — verschiebt in den Papierkorb statt endgültig zu löschen
 - Nutze weather für Wetterabfragen
 - Nutze denkarium, wenn der User Gedanken notieren, im Logbuch schreiben oder brainstormen will
-- Nutze kalender, wenn der User nach Terminen fragt oder welche anlegen will
-- Nutze kontakte, wenn der User Kontakte sucht oder anzeigen will
+- Nutze calendar, wenn der User nach Terminen fragt oder welche anlegen will
+- Nutze contact, wenn der User Kontakte sucht oder anzeigen will
+- Nutze routine, wenn der User nach Routinen oder Gewohnheiten fragt
 - Führe Befehle aus, wenn der User es wünscht
 - Antworte immer auf Deutsch
 - Sei präzise, hilfreich, und zeige Tool-Ergebnisse klar an
