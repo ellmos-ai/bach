@@ -442,7 +442,7 @@
                     ? '<span class="badge due">Heute</span>'
                     : '<span class="badge done">OK</span>';
 
-            const intervalBadge = `<span class="badge ${routine.interval_type}">${routine.interval_type}</span>`;
+            const intervalBadge = `<span class="badge ${esc(routine.interval_type)}">${esc(routine.interval_type)}</span>`;
 
             return `
                 <div class="routine-card">
