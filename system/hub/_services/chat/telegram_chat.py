@@ -71,6 +71,8 @@ from hub._services.llm.model_backend import create_backend, OllamaBackend
 from hub._services.chat.chat_runtime import ChatRuntime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 log = logging.getLogger("bach.telegram_chat")
 
 
@@ -753,15 +755,11 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     try:
         answer = await runtime.process(text, chat_id)
+        for i in range(0, len(answer), 4000):
+            await update.message.reply_text(answer[i:i + 4000])
         session = runtime.get_session(chat_id)
         if session.voice_output:
-            sent = await _send_voice_reply(update, answer)
-            if not sent:
-                for i in range(0, len(answer), 4000):
-                    await update.message.reply_text(answer[i:i + 4000])
-        else:
-            for i in range(0, len(answer), 4000):
-                await update.message.reply_text(answer[i:i + 4000])
+            await _send_voice_reply(update, answer)
     except Exception as e:
         log.error(f"Chat-Fehler: {e}")
         await update.message.reply_text(f"Fehler: {e}")
@@ -954,7 +952,11 @@ async function setMaxRounds(rounds) {
   refresh();
 }
 refresh();
-setInterval(refresh, 5000);
+let _refreshTimer = setInterval(refresh, 30000);
+document.addEventListener('visibilitychange', () => {
+  clearInterval(_refreshTimer);
+  if (!document.hidden) { refresh(); _refreshTimer = setInterval(refresh, 30000); }
+});
 </script>
 </body>
 </html>"""
