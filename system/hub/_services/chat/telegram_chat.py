@@ -558,6 +558,58 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n\n".join(parts)[:4000])
 
 
+async def cmd_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _owner_check(update):
+        return
+    session = runtime.get_session(str(update.effective_chat.id))
+    session.voice_output = not session.voice_output
+    status = "AN" if session.voice_output else "AUS"
+    await update.message.reply_text(f"Sprachausgabe: {status}")
+
+
+async def _send_voice_reply(update, text: str):
+    """Text als Sprachnachricht senden (macOS say + ffmpeg)."""
+    tmp_aiff = None
+    tmp_ogg = None
+    try:
+        import shutil
+        if not shutil.which("say") or not shutil.which("ffmpeg"):
+            return False
+
+        tmp_aiff = tempfile.mktemp(suffix=".aiff")
+        tmp_ogg = tempfile.mktemp(suffix=".ogg")
+
+        clean_text = text[:3000].replace('"', "'").replace("`", "'")
+
+        proc = await asyncio.subprocess.create_subprocess_exec(
+            "say", "-v", "Anna", "-o", tmp_aiff, clean_text,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL
+        )
+        await asyncio.wait_for(proc.wait(), timeout=30)
+
+        proc = await asyncio.subprocess.create_subprocess_exec(
+            "ffmpeg", "-y", "-i", tmp_aiff,
+            "-c:a", "libopus", "-b:a", "48k", "-ar", "48000",
+            "-application", "voip", tmp_ogg,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL
+        )
+        await asyncio.wait_for(proc.wait(), timeout=15)
+
+        if os.path.exists(tmp_ogg) and os.path.getsize(tmp_ogg) > 0:
+            with open(tmp_ogg, "rb") as f:
+                await update.message.reply_voice(voice=f)
+            return True
+    except Exception as e:
+        log.error(f"TTS-Fehler: {e}")
+    finally:
+        for p in (tmp_aiff, tmp_ogg):
+            if p and os.path.exists(p):
+                os.unlink(p)
+    return False
+
+
 # --- Voice & Photo ---
 
 async def handle_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -701,8 +753,15 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     try:
         answer = await runtime.process(text, chat_id)
-        for i in range(0, len(answer), 4000):
-            await update.message.reply_text(answer[i:i + 4000])
+        session = runtime.get_session(chat_id)
+        if session.voice_output:
+            sent = await _send_voice_reply(update, answer)
+            if not sent:
+                for i in range(0, len(answer), 4000):
+                    await update.message.reply_text(answer[i:i + 4000])
+        else:
+            for i in range(0, len(answer), 4000):
+                await update.message.reply_text(answer[i:i + 4000])
     except Exception as e:
         log.error(f"Chat-Fehler: {e}")
         await update.message.reply_text(f"Fehler: {e}")
@@ -1157,6 +1216,7 @@ def main():
         app.add_handler(CommandHandler("tasks", cmd_tasks))
         app.add_handler(CommandHandler("status", cmd_status))
 
+    app.add_handler(CommandHandler("voice", cmd_voice))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

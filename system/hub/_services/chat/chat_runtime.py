@@ -24,6 +24,8 @@ import shlex
 import sqlite3
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -164,6 +166,9 @@ TOOLS_SAFE = [
         "prompt": {"type": "string", "description": "Aufgabe oder Frage für den Agenten"},
         "context": {"type": "string", "description": "Optionaler Kontext zur Aufgabe"},
     }, ["target", "prompt"]),
+    _tool("weather", "Aktuelles Wetter für einen Ort oder Koordinaten abfragen (wttr.in)", {
+        "location": {"type": "string", "description": "Ortsname (z.B. 'Berlin') oder Koordinaten ('52.52,13.405')"},
+    }, ["location"]),
 ]
 
 TOOLS_FULL = TOOLS_SAFE + [
@@ -310,7 +315,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 return "Keine Suchanfrage angegeben"
             max_r = min(int(args.get("max_results", 5)), 10)
             try:
-                from ddgs import DDGS
+                from duckduckgo_search import DDGS
                 results = DDGS().text(query, max_results=max_r)
                 if not results:
                     return f"Keine Ergebnisse für: {query}"
@@ -528,6 +533,39 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             except Exception as e:
                 return f"Delegation fehlgeschlagen: {e}"
 
+        if name == "weather":
+            location = args.get("location", "")
+            if not location:
+                return "Kein Ort angegeben"
+            try:
+                from hub._services.weather.weather_service import get_weather_text, get_weather
+                parts = location.replace(" ", "").split(",")
+                if len(parts) == 2:
+                    try:
+                        lat, lon = float(parts[0]), float(parts[1])
+                        return get_weather_text(lat, lon)
+                    except ValueError:
+                        pass
+                url = f"https://wttr.in/{urllib.parse.quote(location)}?format=j1&lang=de"
+                req = urllib.request.Request(url, headers={"User-Agent": "BACH/1.0"})
+                with urllib.request.urlopen(req, timeout=12) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                cc = data["current_condition"][0]
+                area = data.get("nearest_area", [{}])[0]
+                area_name = area.get("areaName", [{}])[0].get("value", location)
+                country = area.get("country", [{}])[0].get("value", "")
+                desc = cc.get("lang_de", [{}])
+                desc_text = desc[0].get("value", cc.get("weatherDesc", [{}])[0].get("value", "")) if desc else cc.get("weatherDesc", [{}])[0].get("value", "")
+                temp = cc.get("temp_C", "?")
+                feels = cc.get("FeelsLikeC", "?")
+                hum = cc.get("humidity", "?")
+                wind = cc.get("windspeedKmph", "?")
+                return (f"Wetter in {area_name}, {country}:\n"
+                        f"Temperatur: {temp}°C (gefühlt: {feels}°C) | {desc_text}\n"
+                        f"Wind: {wind} km/h | Luftfeuchtigkeit: {hum}%")
+            except Exception as e:
+                return f"Wetter-Fehler: {e}"
+
         return f"Unbekanntes Tool: {name}"
     except Exception as e:
         return f"Tool-Fehler ({name}): {e}"
@@ -546,6 +584,7 @@ class ChatSession:
         self.current_tool: str = ""
         self.tool_round: int = 0
         self.last_tools: list[str] = []
+        self.voice_output: bool = False
 
 
 class ChatRuntime:
@@ -595,12 +634,31 @@ FULL-MODUS (nur nach /mode full bestätigt):
 - execute_command — Beliebige Shell-Befehle
 - write_file — Dateien schreiben
 
+BACH-HANDLER (alle via bach_command nutzbar):
+- denkarium write/read/search/brainstorm/promote/stats — Gedanken-Sammler und Logbuch
+- kalender list/add/today — Termine und Kalender
+- kontakte list/search/show — Kontaktverwaltung
+- countdown list — Countdowns und Timer
+- mem write/read/fact/facts/search/context — Memory-System
+- lesson add/list — Lessons Learned
+- help <thema> — Dokumentation zu jedem Thema (260+ Help-Dateien)
+
+WICHTIGSTE REGEL — SUCHE ALS FALLBACK:
+Wenn der User einen Service, ein Tool oder eine Funktion anfragt die du nicht kennst:
+1. ZUERST: bach_command mit "help <thema>" nutzen — findet die passende Dokumentation
+2. DANN: bach_command mit "search <begriff>" — durchsucht Handler, Tools und Skills
+3. NIEMALS sagen "das kann ich nicht" ohne vorher gesucht zu haben
+BACH hat 110+ Handler — du kennst hier nur die wichtigsten. Die Suche findet den Rest.
+
 REGELN:
 - Nutze Tools aktiv, wenn der User nach Informationen fragt
 - Nutze web_search, wenn du aktuelle Informationen brauchst oder der User fragt
 - Nutze task_manage, wenn der User Tasks verwalten will
 - Nutze maintain, wenn der User nach Systemstatus, Wartung oder Health fragt
 - Nutze delegate, wenn eine Aufgabe besser von Claude (Coding, Analyse) oder Codex (schnelle Code-Generierung) erledigt wird
+- Nutze denkarium, wenn der User Gedanken notieren, im Logbuch schreiben oder brainstormen will
+- Nutze kalender, wenn der User nach Terminen fragt oder welche anlegen will
+- Nutze kontakte, wenn der User Kontakte sucht oder anzeigen will
 - Führe Befehle aus, wenn der User es wünscht
 - Antworte immer auf Deutsch
 - Sei präzise, hilfreich, und zeige Tool-Ergebnisse klar an
