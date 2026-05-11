@@ -6,24 +6,26 @@
  * und dieses Script am Ende laden
  */
 
-const BACH_VERSION = "1.1.8";
+const BACH_VERSION = "3.9.1";
 
 const CHAT_HOST = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
     ? "macstudvonlukas" : window.location.hostname;
 
 const NAV_ITEMS = [
     { href: "/", label: "Dashboard", icon: null },
-    { href: "/tasks-board", label: "Tasks-Board", icon: "📋" },
+    { href: "/tasks-board", label: "Tasks", icon: null },
     { href: "/agents", label: "Agenten", icon: null },
-    { href: "/partners", label: "Partner", icon: null },
     { href: "/skills-board", label: "Skills", icon: null },
     { href: "/memory", label: "Memory", icon: null },
     { href: "/denkarium", label: "Denkarium", icon: null },
     { href: "/tools", label: "Tools", icon: null },
-    { href: `http://${CHAT_HOST}:8081`, label: "Buddha Chat", icon: "💬", external: true },
-    { href: "/maintenance", label: "Wartung", icon: "🛠️" },
+    { href: "/kontakte", label: "Kontakte", icon: null },
+    { href: "/financial", label: "Finanzen", icon: null },
+    { href: "/routinen", label: "Routinen", icon: null },
+    { href: `http://${CHAT_HOST}:8081`, label: "Buddha Chat", icon: null, external: true },
+    { href: "/maintenance", label: "Wartung", icon: null },
+    { href: "/logs", label: "Logs", icon: null },
     { href: "/help", label: "Help", icon: null },
-    { href: "/wiki", label: "Wiki", icon: null }
 ];
 
 /**
