@@ -84,7 +84,7 @@ BLOCKED_WRITE_PREFIXES = (
 BACH_SYSTEM_DIR = str(Path(__file__).resolve().parents[2])
 
 
-def is_safe_write_path(path_str: str, mode: str) -> str | None:
+def is_safe_write_path(path_str: str, mode: str) -> Optional[str]:
     """Return error message if path is blocked for writes in safe mode, else None."""
     if mode != "safe":
         return None
