@@ -1320,32 +1320,6 @@ async def api_post_task(payload: dict = Body(...)):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-@app.put("/api/tasks/{task_id}")
-async def api_put_task(task_id: int, payload: dict = Body(...)):
-    """Aktualisiert einen Task in bach.db."""
-    try:
-        conn = get_bach_db()
-        fields = []
-        params = []
-        for key in ["title", "description", "priority", "status", "category", "assigned_to", "depends_on"]:
-            if key in payload:
-                fields.append(f"{key} = ?")
-                params.append(payload[key])
-        if "image" in payload:
-            fields.append("image_data = ?")
-            params.append(payload["image"])
-        
-        if not fields:
-            return {"success": False, "error": "Keine Felder zum Update angegeben"}
-            
-        params.append(task_id)
-        conn.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id = ?", params)
-        conn.commit()
-        conn.close()
-        return {"success": True}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
 @app.get("/api/tasks/{task_id}")
 async def get_task(task_id: int):
     """Holt einzelnen Task aus bach.db."""

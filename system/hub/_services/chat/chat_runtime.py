@@ -214,6 +214,11 @@ TOOLS_SAFE = [
     _tool("create_directory", "Neuen Ordner erstellen (inkl. Elternordner)", {
         "path": {"type": "string", "description": "Pfad des neuen Ordners"},
     }, ["path"]),
+    _tool("web_fetch", "Inhalt einer URL abrufen (Webseite, API, JSON)", {
+        "url": {"type": "string", "description": "Die abzurufende URL"},
+        "extract_text": {"type": "boolean", "description": "Nur sichtbaren Text extrahieren (bei HTML, Standard: true)"},
+        "max_chars": {"type": "integer", "description": "Maximale Zeichenanzahl (Standard 4000, max 8000)"},
+    }, ["url"]),
 ]
 
 TOOLS_FULL = TOOLS_SAFE + [
@@ -788,6 +793,36 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             except Exception as e:
                 return f"Fehler: {e}"
 
+        if name == "web_fetch":
+            url = args.get("url", "")
+            if not url:
+                return "Keine URL angegeben"
+            if not url.startswith(("http://", "https://")):
+                return "Nur http:// und https:// URLs erlaubt"
+            extract = args.get("extract_text", True)
+            max_chars = min(int(args.get("max_chars", 4000)), 8000)
+            try:
+                import httpx
+                r = httpx.get(url, follow_redirects=True, timeout=15,
+                              headers={"User-Agent": "BACH/3.9"})
+                ct = r.headers.get("content-type", "")
+                if "json" in ct:
+                    return json.dumps(r.json(), indent=2, ensure_ascii=False)[:max_chars]
+                text = r.text
+                if extract and "html" in ct.lower():
+                    try:
+                        from lxml import html as lxml_html
+                        doc = lxml_html.fromstring(text)
+                        for el in doc.xpath("//script|//style|//noscript"):
+                            el.getparent().remove(el)
+                        text = doc.text_content()
+                    except Exception:
+                        text = re.sub(r"<[^>]+>", "", text)
+                    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+                return text[:max_chars]
+            except Exception as e:
+                return f"Fehler beim Abrufen: {e}"
+
         return f"Unbekanntes Tool: {name}"
     except Exception as e:
         return f"Tool-Fehler ({name}): {e}"
@@ -854,6 +889,7 @@ SAFE-MODUS (Standard):
 - bach_command — BACH Memory, Tasks, Suche, Status
 - get_datetime — Datum/Uhrzeit
 - web_search — Im Internet suchen (DuckDuckGo)
+- web_fetch — Inhalt einer URL abrufen (Webseite, API, JSON)
 - weather — Aktuelles Wetter abfragen
 - task_manage — Tasks anlegen, auflisten, erledigen
 - maintain — Systemwartung: fällige Tasks (check), Wartung (run), BACH-Status (health), Service-Check (services)
