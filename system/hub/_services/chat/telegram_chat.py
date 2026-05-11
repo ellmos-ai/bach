@@ -285,7 +285,7 @@ BACKEND_PRESETS = {
     },
     "claude-api": {
         "type": "claude-api",
-        "default_model": "claude-sonnet-4-20250514",
+        "default_model": "claude-sonnet-4-6",
         "method": "api",
         "description": "Anthropic API (braucht Key)",
     },

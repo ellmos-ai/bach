@@ -184,7 +184,7 @@ class OpenAIBackend(ModelBackend):
 class AnthropicBackend(ModelBackend):
     """Anthropic Claude API Backend."""
 
-    def __init__(self, api_key: str = "", default_model: str = "claude-sonnet-4-20250514"):
+    def __init__(self, api_key: str = "", default_model: str = "claude-sonnet-4-6"):
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self.default_model = default_model
         self.base_url = "https://api.anthropic.com/v1"
@@ -279,7 +279,7 @@ class CLIBackend(ModelBackend):
                              "--model", "{model}"],
             "continue_flag": "--continue",
             "models": ["sonnet", "opus", "haiku",
-                       "claude-sonnet-4-20250514", "claude-opus-4-20250514"],
+                       "claude-sonnet-4-6", "claude-opus-4-6"],
             "search_names": ["claude", "claude.exe", "claude.cmd"],
         },
         "codex": {
@@ -486,7 +486,7 @@ def create_backend(config: dict) -> ModelBackend:
     elif backend_type in ("anthropic", "claude-api"):
         return AnthropicBackend(
             api_key=config.get("api_key", ""),
-            default_model=config.get("default_model", "claude-sonnet-4-20250514"),
+            default_model=config.get("default_model", "claude-sonnet-4-6"),
         )
     elif backend_type in ("claude", "claude-cli"):
         return CLIBackend(
