@@ -557,6 +557,13 @@ class="min-h-screen transition-colors duration-300">
     <script src="/static/js/nav.js?v=2"></script>
     <script src="/static/js/app.js?v=2"></script>
     <script>
+        function esc(s) {
+            if (!s) return '';
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
         // Sub-Tab Switching for Files (Alpine.js handles main tabs)
         function showSubTab(subId) {
             if (subId === 'quarantine') loadQuarantine();
@@ -589,15 +596,15 @@ class="min-h-screen transition-colors duration-300">
                 if (data.mounts && data.mounts.length > 0) {
                     tbody.innerHTML = data.mounts.map(m => `
                         <tr class="hover:bg-[#1a1a2e] transition-colors">
-                            <td class="px-6 py-4"><b class="text-gray-200">${m.alias}</b></td>
-                            <td class="px-6 py-4 text-sm text-gray-400">${m.path}</td>
+                            <td class="px-6 py-4"><b class="text-gray-200">${esc(m.alias)}</b></td>
+                            <td class="px-6 py-4 text-sm text-gray-400">${esc(m.path)}</td>
                             <td class="px-6 py-4">
                                 <span class="inline-block px-3 py-1 text-xs rounded-full border ${m.active && m.exists ? 'border-bach-success text-bach-success' : 'border-[#2a2a3e] text-gray-400'}">
                                     ${m.active && m.exists ? 'Aktiv' : (m.exists ? 'Verbunden (System)' : 'Fehlt')}
                                 </span>
                             </td>
                             <td class="px-6 py-4">
-                                <button onclick="removeMount('${m.alias}')" class="px-3 py-1 text-xs bg-[#1a1a2e] border border-[#2a2a3e] rounded hover:border-bach-error hover:text-bach-error transition-all">Löschen</button>
+                                <button onclick="removeMount(${JSON.stringify(m.alias)})" class="px-3 py-1 text-xs bg-[#1a1a2e] border border-[#2a2a3e] rounded hover:border-bach-error hover:text-bach-error transition-all">Löschen</button>
                             </td>
                         </tr>
                     `).join('');
@@ -664,12 +671,11 @@ class="min-h-screen transition-colors duration-300">
         let tokenConfig = {
             currency: { exchange_rate: 0.85, rate_date: "2026-01-28" },
             models: {
-                "claude-opus-4-5": { name: "Claude Opus 4.5", input_per_mtok_usd: 15.00, output_per_mtok_usd: 75.00 },
-                "claude-sonnet-4": { name: "Claude Sonnet 4", input_per_mtok_usd: 3.00, output_per_mtok_usd: 15.00 },
-                "claude-3-5-sonnet": { name: "Claude 3.5 Sonnet", input_per_mtok_usd: 3.00, output_per_mtok_usd: 15.00 },
-                "claude-haiku-3-5": { name: "Claude Haiku 3.5", input_per_mtok_usd: 0.80, output_per_mtok_usd: 4.00 },
-                "gemini-2-0-flash": { name: "Gemini 2.0 Flash", input_per_mtok_usd: 0.10, output_per_mtok_usd: 0.40 },
-                "gemini-2-0-pro": { name: "Gemini 2.0 Pro", input_per_mtok_usd: 1.25, output_per_mtok_usd: 10.00 },
+                "claude-opus-4-6": { name: "Claude Opus 4.6", input_per_mtok_usd: 15.00, output_per_mtok_usd: 75.00 },
+                "claude-sonnet-4-6": { name: "Claude Sonnet 4.6", input_per_mtok_usd: 3.00, output_per_mtok_usd: 15.00 },
+                "claude-haiku-4-5": { name: "Claude Haiku 4.5", input_per_mtok_usd: 0.80, output_per_mtok_usd: 4.00 },
+                "gemini-2-5-flash": { name: "Gemini 2.5 Flash", input_per_mtok_usd: 0.15, output_per_mtok_usd: 0.60 },
+                "gemini-2-5-pro": { name: "Gemini 2.5 Pro", input_per_mtok_usd: 1.25, output_per_mtok_usd: 10.00 },
                 "gpt-4o": { name: "GPT-4o", input_per_mtok_usd: 2.50, output_per_mtok_usd: 10.00 },
                 "deepseek-chat": { name: "DeepSeek V3", input_per_mtok_usd: 0.14, output_per_mtok_usd: 0.28 },
                 "ollama-local": { name: "Ollama (Lokal)", input_per_mtok_usd: 0.00, output_per_mtok_usd: 0.00 }
@@ -782,7 +788,7 @@ class="min-h-screen transition-colors duration-300">
                 if (!list) return;
                 list.innerHTML = (data.folders || []).map(f => `
                     <li class="flex justify-between items-center py-2 px-3 border-b border-[#2a2a3e] hover:bg-[#1a1a2e] transition-colors">
-                        <span class="text-sm text-gray-300">${f.path}</span>
+                        <span class="text-sm text-gray-300">${esc(f.path)}</span>
                     </li>
                 `).join('');
             } catch (e) { console.error(e); }
@@ -795,8 +801,8 @@ class="min-h-screen transition-colors duration-300">
                 const container = document.getElementById('unsorted-list');
                 if (!container) return;
                 container.innerHTML = (data.files || []).map(f => `
-                    <div onclick="processFile('${f.name}')" class="flex justify-between items-center p-3 bg-[#1a1a2e] rounded-lg border border-[#2a2a3e] cursor-pointer hover:border-bach-accent transition-all">
-                        <span class="text-gray-200">${f.name}</span>
+                    <div onclick="processFile(${JSON.stringify(f.name)})" class="flex justify-between items-center p-3 bg-[#1a1a2e] rounded-lg border border-[#2a2a3e] cursor-pointer hover:border-bach-accent transition-all">
+                        <span class="text-gray-200">${esc(f.name)}</span>
                         <span class="px-3 py-1 bg-[#16213e] rounded text-sm">⚙️</span>
                     </div>
                 `).join('') || '<p class="text-gray-400 text-center py-4">Keine neuen Dateien</p>';
@@ -827,7 +833,7 @@ class="min-h-screen transition-colors duration-300">
                 if (!list) return;
                 list.innerHTML = (data.clients || []).map(c => `
                     <div class="p-3 border-b border-[#2a2a3e] hover:bg-[#1a1a2e] transition-colors">
-                        <b class="text-gray-200">${c.name}</b> <span class="text-gray-400">(${c.status})</span>
+                        <b class="text-gray-200">${esc(c.name)}</b> <span class="text-gray-400">(${esc(c.status)})</span>
                     </div>
                 `).join('') || '<p class="text-gray-400 text-center py-4">Keine Klienten</p>';
             } catch (e) { console.error(e); }
@@ -846,7 +852,7 @@ class="min-h-screen transition-colors duration-300">
                     card.classList.remove('hidden');
                     list.innerHTML = data.deadlines.map(d => `
                         <div class="p-3 mb-2 bg-[#1a1a2e] rounded-lg border-l-4 border-bach-error">
-                            <div class="font-bold text-gray-200">${d.name}</div>
+                            <div class="font-bold text-gray-200">${esc(d.name)}</div>
                             <div class="text-sm text-gray-400 mt-1">
                                 Bis: ${new Date(d.deadline).toLocaleDateString()}
                             </div>
