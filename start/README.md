@@ -2,15 +2,20 @@
 
 ## Einheitlicher Bootscreen
 
-**`bach.bat`** - Zentrales Boot-Menue mit allen Modi. Doppelklick zum Starten.
+**`bach.bat`** - Zentrales Boot-Menü mit allen Modi. Doppelklick zum Starten.
+
+**`bach.sh`** - Cross-Platform-Launcher für macOS/Linux (`chat`, `gui`, `status`, `stop`).
 
 ```
-  --- ALWAYS-ON (Daemon) -------------------------
-  [A]  Mistral Watcher + Telegram
+  --- VERBINDEN ----------------------------------
+  [W]  Buddha Connect (Server-Modus)
+
+  --- BACH CHAT SERVICE --------------------------
+  [B]  Chat Service starten    [S]  Status    [X]  Stop
 
   --- INTERAKTIV ---------------------------------
   [1]  User-Konsole        [2]  Advanced Console
-  [3]  Web-Dashboard       [5]  Gemini-Partner Menue
+  [3]  Web-Dashboard       [5]  Gemini-Partner Menü
 
   --- CLAUDE AUTO-SESSIONS -----------------------
   [6]  Alle Tasks 15min    [7]  Alle Tasks 30min
@@ -23,6 +28,22 @@
   --- CLAUDE LOOP (Endlos) ----------------------
   [L]  Loop 15min  [N]  Loop 30min  [H]  Loop 1h
 ```
+
+## Server-Modus
+
+Option `[W]` verbindet zu einem BACH-Server (z.B. Mac Studio):
+
+1. Prüft Erreichbarkeit des Servers via Control API (:8081)
+2. Startet System Tray mit `--host` (Remote-Steuerung)
+3. Öffnet GUI Dashboard im Browser
+
+Standard-Host: `macstudvonlukas` (Tailscale). Eigener Host via ENV:
+```
+SET BACH_HOST=mein-server
+bach.bat
+```
+
+Falls Server nicht erreichbar: Angebot für lokalen Start.
 
 ## Einzelne Startdateien (Legacy)
 

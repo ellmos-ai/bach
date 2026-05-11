@@ -22,8 +22,11 @@ echo  \ \  __^< \ \  __ \\ \ \____\ \  __ \
 echo   \ \_____\\ \_\ \_\\ \_____\\ \_\ \_\
 echo    \/_____/ \/_/\/_/ \/_____/ \/_/\/_/
 echo.
-echo   Personal AI Operating System v3.8.0
+echo   Personal AI Operating System v3.9.0
 echo   ==================================================
+echo.
+echo   --- VERBINDEN ----------------------------------
+echo   [W]  Buddha Connect (Server-Modus)
 echo.
 echo   --- BACH CHAT SERVICE --------------------------
 echo   [B]  Chat Service starten (Tray + Bot)
@@ -31,7 +34,7 @@ echo   [S]  Chat Service Status
 echo   [X]  Chat Service stoppen
 echo.
 echo   --- ALWAYS-ON (Daemon) ------------------------
-echo   [A]  Mistral Watcher + Telegram
+echo   [A]  Watcher + Telegram
 echo.
 echo   --- INTERAKTIV --------------------------------
 echo   [1]  User-Konsole (einfaches CLI)
@@ -71,6 +74,7 @@ echo.
 
 set /p "choice=  Auswahl: "
 
+if /i "!choice!"=="W" goto server_connect
 if /i "!choice!"=="B" goto bridge_start
 if /i "!choice!"=="S" goto bridge_status
 if /i "!choice!"=="X" goto bridge_stop
@@ -99,6 +103,63 @@ if /i "!choice!"=="Q" goto end
 
 echo   Ungueltige Auswahl.
 timeout /t 2 >nul
+goto menu
+
+REM ============================================================
+REM  SERVER-MODUS (Buddha Connect)
+REM ============================================================
+:server_connect
+title BACH Server Connect
+cls
+echo.
+echo  ============================================
+echo   BUDDHA CONNECT - Server-Modus
+echo  ============================================
+echo.
+
+set "BACH_HOST_TARGET=%BACH_HOST%"
+if "!BACH_HOST_TARGET!"=="" set "BACH_HOST_TARGET=macstudvonlukas"
+
+echo [1/3] Pruefe Verbindung zu !BACH_HOST_TARGET!...
+curl -s --max-time 5 "http://!BACH_HOST_TARGET!:8081/api/status" >nul 2>&1
+if !ERRORLEVEL! neq 0 (
+    echo.
+    echo       [OFFLINE] !BACH_HOST_TARGET! nicht erreichbar.
+    echo.
+    echo       Moegliche Ursachen:
+    echo         - Tailscale nicht aktiv
+    echo         - Mac Studio ausgeschaltet
+    echo         - Anderer Host? SET BACH_HOST=hostname
+    echo.
+    set /p "fallback=  Lokal starten stattdessen? [J/N]: "
+    if /i "!fallback!"=="J" goto bridge_start
+    goto menu
+)
+echo       [OK] Control API erreichbar
+
+echo [2/3] Starte System Tray (verbunden mit !BACH_HOST_TARGET!)...
+pushd "!CHAT_DIR!"
+start "" pythonw chat_tray.py --host "!BACH_HOST_TARGET!" --port 8081
+popd
+echo       [OK] Tray gestartet
+
+echo [3/3] Oeffne Zugangswege...
+timeout /t 2 /nobreak >nul
+start "" "http://!BACH_HOST_TARGET!:8000"
+echo       [OK] GUI Dashboard geoeffnet
+echo.
+echo  ============================================
+echo   Verbunden mit !BACH_HOST_TARGET!
+echo  ============================================
+echo   GUI:       http://!BACH_HOST_TARGET!:8000
+echo   Dashboard: http://!BACH_HOST_TARGET!:8081
+echo   Telegram:  @bach_assistant_bot
+echo   Tray:      System Tray (Icon pruefen)
+echo  ============================================
+echo.
+echo   Tipp: SET BACH_HOST=anderer-host fuer anderen Server
+echo.
+pause
 goto menu
 
 REM ============================================================
@@ -138,8 +199,10 @@ echo  ============================================
 echo   BACH CHAT SERVICE - Status
 echo  ============================================
 echo.
+set "STATUS_HOST=127.0.0.1"
+if not "!BACH_HOST!"=="" set "STATUS_HOST=!BACH_HOST!"
 pushd "!SYS_DIR!"
-python -c "import urllib.request,json; r=urllib.request.urlopen('http://127.0.0.1:8081/api/status'); d=json.loads(r.read()); print(f'  Backend:  {d.get(\"backend\",\"?\")}'); print(f'  Modell:   {d.get(\"model\",\"?\")}'); print(f'  Modus:    {d.get(\"mode\",\"?\")}'); print(f'  Think:    {d.get(\"think\",\"?\")}'); print(f'  Sessions: {d.get(\"sessions\",\"?\")}')" 2>nul || echo [WARN] Control API nicht erreichbar (Port 8081)
+python -c "import urllib.request,json; r=urllib.request.urlopen('http://!STATUS_HOST!:8081/api/status'); d=json.loads(r.read()); print(f'  Host:     !STATUS_HOST!'); print(f'  Backend:  {d.get(\"backend\",\"?\")}'); print(f'  Modell:   {d.get(\"model\",\"?\")}'); print(f'  Modus:    {d.get(\"mode\",\"?\")}'); print(f'  Think:    {d.get(\"think\",\"?\")}'); print(f'  Sessions: {d.get(\"sessions\",\"?\")}')" 2>nul || echo [WARN] Control API nicht erreichbar (!STATUS_HOST!:8081)
 popd
 echo.
 pause
