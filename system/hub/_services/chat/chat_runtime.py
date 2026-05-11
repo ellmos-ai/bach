@@ -81,7 +81,8 @@ def run_shell(cmd: str, timeout: int = CMD_TIMEOUT) -> str:
     try:
         r = subprocess.run(
             cmd, shell=True, capture_output=True, text=True,
-            timeout=timeout, env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            timeout=timeout, stdin=subprocess.DEVNULL,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         )
         out = r.stdout
         if r.stderr:
