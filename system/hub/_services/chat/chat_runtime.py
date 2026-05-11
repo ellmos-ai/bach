@@ -289,7 +289,16 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
         if name == "bach_command":
             if not bach_app:
                 return "BACH nicht verfügbar"
+            _HANDLER_ALIASES = {
+                "calendar": "kalender", "contacts": "kontakte",
+                "contact": "kontakte", "notes": "denkarium",
+                "routines": "routinen", "routine": "routinen",
+                "timers": "timer", "counters": "countdown",
+                "lessons": "lesson", "partners": "partner",
+                "agents": "agent", "messages": "msg",
+            }
             h = args.get("handler", "")
+            h = _HANDLER_ALIASES.get(h, h)
             op = args.get("operation", "")
             ex = args.get("args", [])
             ok, out = bach_app.execute(h, op, ex)
