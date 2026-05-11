@@ -551,11 +551,7 @@
             });
         }
 
-        function esc(s) {
-            const d = document.createElement('div');
-            d.textContent = s;
-            return d.innerHTML;
-        }
+        const esc = escapeHtml;
 
         function toggle(id) {
             const div = document.querySelector(`[data-id="${id}"]`);

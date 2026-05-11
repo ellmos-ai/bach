@@ -316,12 +316,7 @@
         let allPartners = [];
         let selectedPartner = null;
 
-        function esc(s) {
-            if (!s) return '';
-            const d = document.createElement('div');
-            d.textContent = s;
-            return d.innerHTML;
-        }
+        const esc = escapeHtml;
 
         const partnerIcons = {
             'agent': '🤖',

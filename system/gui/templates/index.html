@@ -557,12 +557,7 @@ class="min-h-screen transition-colors duration-300">
     <script src="/static/js/nav.js?v=2"></script>
     <script src="/static/js/app.js?v=2"></script>
     <script>
-        function esc(s) {
-            if (!s) return '';
-            const d = document.createElement('div');
-            d.textContent = s;
-            return d.innerHTML;
-        }
+        const esc = escapeHtml;
 
         // Sub-Tab Switching for Files (Alpine.js handles main tabs)
         function showSubTab(subId) {

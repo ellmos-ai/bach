@@ -388,12 +388,7 @@
         // STEUER DASHBOARD - JavaScript
         // ═══════════════════════════════════════════════════════════════
 
-        function esc(s) {
-            if (!s) return '';
-            const d = document.createElement('div');
-            d.textContent = s;
-            return d.innerHTML;
-        }
+        const esc = escapeHtml;
 
         let currentTab = 'uebersicht';
 

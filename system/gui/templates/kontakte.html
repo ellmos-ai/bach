@@ -411,12 +411,7 @@
         const API_BASE = '/api/contacts';
         let allContacts = [];
 
-        function esc(s) {
-            if (!s) return '';
-            const d = document.createElement('div');
-            d.textContent = s;
-            return d.innerHTML;
-        }
+        const esc = escapeHtml;
 
         document.addEventListener('DOMContentLoaded', () => {
             loadContacts();

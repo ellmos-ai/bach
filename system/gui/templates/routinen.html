@@ -382,12 +382,7 @@
     <script>
         const API_BASE = '/api/routines';
 
-        function esc(s) {
-            if (!s) return '';
-            const d = document.createElement('div');
-            d.textContent = s;
-            return d.innerHTML;
-        }
+        const esc = escapeHtml;
 
         // Initial laden
         document.addEventListener('DOMContentLoaded', () => {
