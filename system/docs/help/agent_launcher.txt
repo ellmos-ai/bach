@@ -118,5 +118,5 @@ SIEHE AUCH
 ----------
 
   help agents              Agenten-Ueberblick (Boss, Experten, Struktur)
-  help bash_paths          Verzeichnisstruktur und Pfade
+  help path                Verzeichnisstruktur und Pfade
   help develop             Neue Agenten entwickeln

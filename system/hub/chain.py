@@ -18,6 +18,9 @@ llmauto-Befehle (JSON):
   bach chain create <name>       Neue llmauto-Kette erstellen (CLI)
   bach chain start <name>        llmauto-Kette starten (Hintergrund)
   bach chain stop <name>         llmauto-Kette stoppen
+  bach chain pause <name>        llmauto-Kette am Checkpoint pausieren
+  bach chain resume <name>       llmauto-Kette fortsetzen
+  bach chain steer <name> "..."  Operator-Hinweis für nächsten Checkpoint
   bach chain status [name]       llmauto-Status anzeigen
   bach chain reset <name>        llmauto-State zuruecksetzen
 
@@ -61,6 +64,9 @@ class ChainHandler(BaseHandler):
             "create": "Neue llmauto-Kette erstellen: bach chain create <name> [--mode once|loop] ...",
             "start": "llmauto-Kette starten: bach chain start <name>",
             "stop": "llmauto-Kette stoppen: bach chain stop <name>",
+            "pause": "llmauto-Kette pausieren: bach chain pause <name> [Grund]",
+            "resume": "llmauto-Kette fortsetzen: bach chain resume <name>",
+            "steer": "llmauto-Kette steuern: bach chain steer <name> \"Hinweis\"",
             "status": "llmauto-Status anzeigen: bach chain status [name]",
             "reset": "llmauto-State zuruecksetzen: bach chain reset <name>",
         }
@@ -92,6 +98,17 @@ class ChainHandler(BaseHandler):
         elif operation == "stop":
             if not args: return False, "Name benoetigt: bach chain stop <name>"
             return self._llmauto_stop(args[0])
+        elif operation == "pause":
+            if not args: return False, "Name benoetigt: bach chain pause <name> [Grund]"
+            reason = " ".join(args[1:]) if len(args) > 1 else None
+            return self._llmauto_pause(args[0], reason)
+        elif operation == "resume":
+            if not args: return False, "Name benoetigt: bach chain resume <name>"
+            return self._llmauto_resume(args[0])
+        elif operation == "steer":
+            if len(args) < 2:
+                return False, "Name und Hinweis benoetigt: bach chain steer <name> \"Hinweis\""
+            return self._llmauto_steer(args[0], " ".join(args[1:]))
         elif operation == "status":
             name = args[0] if args else None
             return self._llmauto_status(name)
@@ -635,6 +652,30 @@ class ChainHandler(BaseHandler):
         if proc.returncode == 0:
             return True, proc.stdout.strip() or f"llmauto-Kette '{name}' gestoppt."
         return False, f"Stop fehlgeschlagen (rc={proc.returncode}):\n{proc.stderr}"
+
+    def _llmauto_pause(self, name: str, reason: str | None = None) -> tuple:
+        """Pausiert eine laufende llmauto-Kette am nächsten sicheren Checkpoint."""
+        args = ["chain", "pause", name]
+        if reason:
+            args.append(reason)
+        proc = self._run_llmauto(args)
+        if proc.returncode == 0:
+            return True, proc.stdout.strip() or f"llmauto-Kette '{name}' wird pausiert."
+        return False, f"Pause fehlgeschlagen (rc={proc.returncode}):\n{proc.stderr}"
+
+    def _llmauto_resume(self, name: str) -> tuple:
+        """Hebt eine Pause für eine llmauto-Kette auf."""
+        proc = self._run_llmauto(["chain", "resume", name])
+        if proc.returncode == 0:
+            return True, proc.stdout.strip() or f"llmauto-Kette '{name}' wird fortgesetzt."
+        return False, f"Resume fehlgeschlagen (rc={proc.returncode}):\n{proc.stderr}"
+
+    def _llmauto_steer(self, name: str, message: str) -> tuple:
+        """Hinterlegt einen Operator-Hinweis für die nächste llmauto-Runde."""
+        proc = self._run_llmauto(["chain", "steer", name, message])
+        if proc.returncode == 0:
+            return True, proc.stdout.strip() or f"Steering für '{name}' vorgemerkt."
+        return False, f"Steer fehlgeschlagen (rc={proc.returncode}):\n{proc.stderr}"
 
     def _llmauto_status(self, name: str = None) -> tuple:
         """Zeigt Status aller oder einer llmauto-Kette."""

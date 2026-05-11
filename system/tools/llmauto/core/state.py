@@ -38,6 +38,28 @@ class ChainState:
     def stop_file(self):
         return self.state_dir / "STOP"
 
+    @property
+    def pause_file(self):
+        return self.state_dir / "control_pause.json"
+
+    @property
+    def steer_file(self):
+        return self.state_dir / "control_steer.json"
+
+    def _read_json(self, path: Path, default):
+        if not path.exists():
+            return default
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValueError):
+            return default
+
+    def _write_json(self, path: Path, payload):
+        path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
     # --- Status ---
 
     def get_status(self):
@@ -94,6 +116,65 @@ class ChainState:
             return self.stop_file.read_text(encoding="utf-8").strip()
         return None
 
+    # --- Laufsteuerung ---
+
+    def request_pause(self, reason="Manuell pausiert"):
+        payload = {
+            "reason": reason,
+            "created_at": datetime.now().isoformat(),
+        }
+        self._write_json(self.pause_file, payload)
+        return payload
+
+    def clear_pause(self):
+        self.pause_file.unlink(missing_ok=True)
+
+    def get_pause_request(self):
+        payload = self._read_json(self.pause_file, None)
+        if not isinstance(payload, dict):
+            return None
+        if not payload.get("reason"):
+            payload["reason"] = "Manuell pausiert"
+        return payload
+
+    def is_pause_requested(self):
+        return self.get_pause_request() is not None
+
+    def request_steer(self, message: str):
+        requests = self.peek_steer_requests()
+        requests.append(
+            {
+                "message": message,
+                "created_at": datetime.now().isoformat(),
+            }
+        )
+        self._write_json(self.steer_file, requests)
+        return requests[-1]
+
+    def peek_steer_requests(self):
+        payload = self._read_json(self.steer_file, [])
+        if not isinstance(payload, list):
+            return []
+        cleaned = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            message = str(item.get("message", "")).strip()
+            if not message:
+                continue
+            cleaned.append(
+                {
+                    "message": message,
+                    "created_at": item.get("created_at"),
+                }
+            )
+        return cleaned
+
+    def consume_steer_requests(self):
+        requests = self.peek_steer_requests()
+        self.steer_file.unlink(missing_ok=True)
+        return requests
+
     # --- Shutdown-Checks ---
 
     def check_shutdown(self, config):
@@ -135,7 +216,7 @@ class ChainState:
     def reset(self):
         self.set_status("READY")
         self.round_file.write_text("0", encoding="utf-8")
-        for f in [self.start_time_file, self.stop_file]:
+        for f in [self.start_time_file, self.stop_file, self.pause_file, self.steer_file]:
             if f.exists():
                 f.unlink()
         self.write_handoff(

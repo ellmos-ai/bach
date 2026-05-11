@@ -85,6 +85,16 @@ class AgentLauncherHandler(BaseHandler):
         """Formatiert JSON konsistent fuer CLI-Ausgabe."""
         return json.dumps(payload, indent=2, ensure_ascii=False)
 
+    def _compute_runtime_seconds(self, started_at: str | None) -> int | None:
+        """Berechnet die Laufzeit eines Agenten fuer JSON-Statusflaechen."""
+        if not started_at:
+            return None
+        try:
+            delta = datetime.now() - datetime.fromisoformat(str(started_at))
+        except (TypeError, ValueError):
+            return None
+        return max(0, int(delta.total_seconds()))
+
     # ------------------------------------------------------------------
     # list
     # ------------------------------------------------------------------
@@ -167,6 +177,8 @@ class AgentLauncherHandler(BaseHandler):
         persona_info = self._get_persona_info(agent["name"])
         pid_data = self._load_pid_data(agent["name"])
         running_pid = self._is_agent_running(agent["name"])
+        started_at = pid_data.get("started")
+        running = bool(running_pid)
 
         return {
             "name": agent["name"],
@@ -174,13 +186,15 @@ class AgentLauncherHandler(BaseHandler):
             "type": agent["type"],
             "path": str(agent["path"]),
             "skill_file": str(agent["skill_file"]),
-            "running": bool(running_pid),
-            "status": "running" if running_pid else "stopped",
+            "running": running,
+            "status": "running" if running else "stopped",
             "pid": running_pid or pid_data.get("pid") or None,
             "mode": pid_data.get("mode"),
             "model": pid_data.get("model"),
-            "started_at": pid_data.get("started"),
+            "started_at": started_at,
+            "runtime_seconds": self._compute_runtime_seconds(started_at) if running else None,
             "temp_dir": pid_data.get("temp_dir"),
+            "available_actions": ["stop"] if running else ["start"],
         }
 
     def _list_agents(self) -> tuple:
@@ -415,7 +429,9 @@ class AgentLauncherHandler(BaseHandler):
 
         try:
             if sys.platform == 'win32':
-                # Windows: neues Fenster via cmd /c start
+                # Windows: eigenes Konsolenfenster direkt ueber cmd.exe starten.
+                # So bleibt die getrackte PID ueber die gesamte Agenten-Session
+                # stabil, statt nur den kurzlebigen `start`-Launcher zu sehen.
                 agent_label = display_name or resolved_name
                 title = f"BACH: {agent_label}"
                 # start.bat im Temp-Verzeichnis erstellen
@@ -435,9 +451,9 @@ class AgentLauncherHandler(BaseHandler):
                 start_bat.write_text(bat_content, encoding='utf-8')
 
                 proc = subprocess.Popen(
-                    ["cmd", "/c", "start", title, "cmd", "/c", str(start_bat)],
+                    ["cmd", "/c", str(start_bat)],
                     cwd=str(agent_temp_dir),
-                    creationflags=subprocess.CREATE_NO_WINDOW
+                    creationflags=subprocess.CREATE_NEW_CONSOLE
                 )
             else:
                 proc = subprocess.Popen(
@@ -457,7 +473,8 @@ class AgentLauncherHandler(BaseHandler):
                 "model": model,
                 "mode": mode,
                 "started": datetime.now().isoformat(),
-                "temp_dir": str(agent_temp_dir)
+                "temp_dir": str(agent_temp_dir),
+                "window_title": title if sys.platform == 'win32' else None,
             }
             pid_file = self.pid_dir / f"{resolved_name}.pid"
             pid_file.write_text(json.dumps(pid_data, indent=2), encoding='utf-8')
@@ -604,6 +621,7 @@ class AgentLauncherHandler(BaseHandler):
                 running_pid = self._is_agent_running(name)
                 running = bool(running_pid)
                 display_name = data.get("display_name") or self._get_persona_info(name).get("display_name") or None
+                started_at = data.get("started")
                 if running:
                     active += 1
                 else:
@@ -618,9 +636,12 @@ class AgentLauncherHandler(BaseHandler):
                     "pid": running_pid or data.get("pid") or None,
                     "model": data.get("model"),
                     "mode": data.get("mode"),
-                    "started_at": data.get("started"),
+                    "started_at": started_at,
+                    "runtime_seconds": self._compute_runtime_seconds(started_at) if running else None,
                     "temp_dir": data.get("temp_dir"),
+                    "window_title": data.get("window_title"),
                     "pid_file": str(pf),
+                    "available_actions": ["stop"] if running else ["start"],
                 })
             except (json.JSONDecodeError, ValueError):
                 agents.append({
@@ -633,8 +654,11 @@ class AgentLauncherHandler(BaseHandler):
                     "model": None,
                     "mode": None,
                     "started_at": None,
+                    "runtime_seconds": None,
                     "temp_dir": None,
+                    "window_title": None,
                     "pid_file": str(pf),
+                    "available_actions": ["start"],
                 })
                 pf.unlink(missing_ok=True)
 
