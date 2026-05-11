@@ -498,7 +498,7 @@
                         <li class="folder-header" onclick="toggleFolder('${folderId}')" id="${folderId}-header">
                             <span class="folder-toggle">▼</span>
                             <span>${folderIcon}</span>
-                            <span style="flex: 1;">${folder}/</span>
+                            <span style="flex: 1;">${escapeHtml(folder)}/</span>
                             <span style="font-size: 0.7rem; color: var(--text-muted);">${fileCount}</span>
                         </li>
                         <div class="folder-children" id="${folderId}-children">
@@ -542,9 +542,9 @@
             const icon = isFile ? '📄' : getIcon(file.name);
 
             return `
-                <li class="help-item ${active} ${fileClass}" data-name="${file.name}" ${indent}>
+                <li class="help-item ${active} ${fileClass}" data-name="${escapeHtml(file.name)}" ${indent}>
                     <span class="icon">${icon}</span>
-                    <span class="name">${displayName}</span>
+                    <span class="name">${escapeHtml(displayName)}</span>
                     <span class="size">${formatSize(file.size)}</span>
                 </li>
             `;
@@ -651,7 +651,7 @@
             }
 
             content.innerHTML = `
-                <div class="help-title">${getIcon(data.name)} ${data.name}</div>
+                <div class="help-title">${getIcon(data.name)} ${escapeHtml(data.name)}</div>
                 <div class="help-meta">
                     Groesse: ${formatSize(data.size)} |
                     CLI: <code>bach --help ${data.name}</code>
@@ -665,7 +665,7 @@
             const typeLabel = isWiki ? '📖 Wiki' : '📄 Help';
 
             content.innerHTML = `
-                <div class="help-title">${getIcon(data.name)} ${data.name} <span style="font-size: 0.7rem; color: var(--text-muted);">(${typeLabel})</span></div>
+                <div class="help-title">${getIcon(data.name)} ${escapeHtml(data.name)} <span style="font-size: 0.7rem; color: var(--text-muted);">(${typeLabel})</span></div>
                 <div class="toolbar">
                     <button class="toolbar-btn" onclick="insertTemplate('heading')"># Ueberschrift</button>
                     <button class="toolbar-btn" onclick="insertTemplate('section')">== Sektion ==</button>

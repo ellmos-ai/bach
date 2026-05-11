@@ -452,7 +452,7 @@
                 select.innerHTML = allAssignees.map(a => {
                     const typeLabel = getTypeLabel(a.type);
                     const selected = a.name === defaultVal ? ' selected' : '';
-                    return `<option value="${a.name}"${selected}>${a.display_name} (${typeLabel})</option>`;
+                    return `<option value="${escapeHtml(a.name)}"${selected}>${escapeHtml(a.display_name)} (${typeLabel})</option>`;
                 }).join('');
             });
         }
@@ -461,7 +461,7 @@
             return allAssignees.map(a => {
                 const typeLabel = getTypeLabel(a.type);
                 const selected = a.name === selectedValue ? 'selected' : '';
-                return `<option value="${a.name}" ${selected}>${a.display_name} (${typeLabel})</option>`;
+                return `<option value="${escapeHtml(a.name)}" ${selected}>${escapeHtml(a.display_name)} (${typeLabel})</option>`;
             }).join('');
         }
 
@@ -511,7 +511,7 @@
                         <span class="task-item-prio ${task.priority}">${task.priority}</span>
                     </div>
                     <div class="task-item-meta">
-                        #${task.id} ${task.category ? '· ' + task.category : ''}
+                        #${task.id} ${task.category ? '· ' + escapeHtml(task.category) : ''}
                     </div>
                 </li>
             `).join('');
@@ -557,7 +557,7 @@
                         </div>
                         <div class="meta-item">
                             <div class="meta-label">Kategorie</div>
-                            <div class="meta-value">${task.category || '-'}</div>
+                            <div class="meta-value">${escapeHtml(task.category) || '-'}</div>
                         </div>
                         <div class="meta-item">
                             <div class="meta-label">ID</div>
@@ -565,15 +565,15 @@
                         </div>
                         <div class="meta-item">
                             <div class="meta-label">Erstellt von</div>
-                            <div class="meta-value">${task.created_by || 'user'}</div>
+                            <div class="meta-value">${escapeHtml(task.created_by) || 'user'}</div>
                         </div>
                         <div class="meta-item">
                             <div class="meta-label">Zugewiesen an</div>
-                            <div class="meta-value">${task.assigned_to || 'user'}</div>
+                            <div class="meta-value">${escapeHtml(task.assigned_to) || 'user'}</div>
                         </div>
                         <div class="meta-item">
                             <div class="meta-label">Zuletzt geaendert von</div>
-                            <div class="meta-value">${task.modified_by || '-'}</div>
+                            <div class="meta-value">${escapeHtml(task.modified_by) || '-'}</div>
                         </div>
                         <div class="meta-item">
                             <div class="meta-label">Erstellt am</div>
@@ -582,7 +582,7 @@
                         ${task.depends_on ? `
                         <div class="meta-item">
                             <div class="meta-label">Abhaengig von</div>
-                            <div class="meta-value">${task.depends_on}</div>
+                            <div class="meta-value">${escapeHtml(task.depends_on)}</div>
                         </div>
                         ` : ''}
                     </div>

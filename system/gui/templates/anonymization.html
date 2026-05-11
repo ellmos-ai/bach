@@ -305,12 +305,12 @@
                 list.innerHTML = data.clients.map(client => `
                     <li class="client-item">
                         <div class="client-info">
-                            <h3>${client.name} (${escapeHtml(client.real_name)})</h3>
+                            <h3>${escapeHtml(client.name)} (${escapeHtml(client.real_name)})</h3>
                             <div class="client-meta">${client.file_count} Dateien · Zuletzt: ${formatDate(client.last_modified)}</div>
                             <div class="progress-container">
                                 <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 0.2rem;">
                                     <span>Status</span>
-                                    <span>${client.status}</span>
+                                    <span>${escapeHtml(client.status)}</span>
                                 </div>
                                 <div class="progress-bar">
                                     <div class="progress-fill" style="width: ${client.progress}%;"></div>
@@ -318,7 +318,7 @@
                             </div>
                         </div>
                         <div class="client-status">
-                            <span class="status-badge ${client.status === 'profile_ready' ? 'active' : 'pending'}">${client.status}</span>
+                            <span class="status-badge ${client.status === 'profile_ready' ? 'active' : 'pending'}">${escapeHtml(client.status)}</span>
                             <button class="btn" style="width: auto; padding: 0.4rem 0.8rem; margin-top: 0.5rem; font-size: 0.85rem; background: var(--bg); color: var(--text); border: 1px solid var(--border);">Details</button>
                         </div>
                     </li>

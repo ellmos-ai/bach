@@ -560,7 +560,7 @@
                 const datalist = document.getElementById('target-suggestions');
                 if (datalist) {
                     const targets = [...new Set((data.rules || []).map(r => r.target))];
-                    datalist.innerHTML = targets.map(t => `<option value="${t}">`).join('');
+                    datalist.innerHTML = targets.map(t => `<option value="${escapeHtml(t)}">`).join('');
                 }
 
                 list.innerHTML = (data.rules || []).map(r => `

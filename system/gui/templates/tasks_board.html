@@ -394,7 +394,7 @@
                 const data = await api.get('/api/assignees');
                 assignees = data.assignees || [];
                 const select = document.getElementById('task-assigned-to');
-                select.innerHTML = assignees.map(a => `<option value="${a.name}">${a.display_name}</option>`).join('');
+                select.innerHTML = assignees.map(a => `<option value="${escapeHtml(a.name)}">${escapeHtml(a.display_name)}</option>`).join('');
             } catch (e) { console.error('Error loading assignees:', e); }
         }
 
@@ -455,8 +455,8 @@
                     <div class="task-meta">
                         ${(task.is_blocked_by_dep || task.is_blocked_status) ? '<span class="badge-blocked">BLOCKED</span>' : ''}
                         ${task.has_image ? '<span class="badge-tag" title="Hat Screenshot">&#128247;</span>' : ''}
-                        <span class="badge-tag">${task.category}</span>
-                        <span class="badge-tag">${task.assigned_to || 'unassigned'}</span>
+                        <span class="badge-tag">${escapeHtml(task.category)}</span>
+                        <span class="badge-tag">${escapeHtml(task.assigned_to) || 'unassigned'}</span>
                     </div>
                 </div>
             `).join('');
