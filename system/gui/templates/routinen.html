@@ -382,6 +382,13 @@
     <script>
         const API_BASE = '/api/routines';
 
+        function esc(s) {
+            if (!s) return '';
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
         // Initial laden
         document.addEventListener('DOMContentLoaded', () => {
             loadRoutines();
@@ -441,12 +448,12 @@
                 <div class="routine-card">
                     <div class="routine-info">
                         <h4>
-                            ${routine.name}
+                            ${esc(routine.name)}
                             ${intervalBadge}
                             ${!routine.is_active ? '<span class="badge inactive">Inaktiv</span>' : ''}
                         </h4>
                         <div class="meta">
-                            ${routine.category || 'Keine Kategorie'}
+                            ${esc(routine.category || 'Keine Kategorie')}
                             ${routine.duration_minutes ? ' | ' + routine.duration_minutes + ' Min.' : ''}
                             ${routine.next_due_at ? ' | Naechste: ' + formatDate(routine.next_due_at) : ''}
                         </div>

@@ -12318,7 +12318,10 @@ async def complete_routine(routine_id: int):
             except ValueError:
                 next_due = date(int(next_year), int(next_month) % 12 + 1, 1) - timedelta(days=1)
         elif interval_type == 'jaehrlich':
-            next_due = date(today.year + interval_value, today.month, today.day)
+            try:
+                next_due = date(today.year + interval_value, today.month, today.day)
+            except ValueError:
+                next_due = date(today.year + interval_value, today.month, 28)
         else:
             next_due = today + timedelta(days=7)
 

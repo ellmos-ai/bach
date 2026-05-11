@@ -411,6 +411,13 @@
         const API_BASE = '/api/contacts';
         let allContacts = [];
 
+        function esc(s) {
+            if (!s) return '';
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             loadContacts();
         });
@@ -457,15 +464,15 @@
             }
 
             grid.innerHTML = contacts.map(c => {
-                const name = c.name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Unbenannt';
-                const tags = c.tags ? c.tags.split(',').map(t => `<span class="badge tag">${t.trim()}</span>`).join('') : '';
+                const name = esc(c.name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Unbenannt');
+                const tags = c.tags ? c.tags.split(',').map(t => `<span class="badge tag">${esc(t.trim())}</span>`).join('') : '';
 
                 return `
                     <div class="contact-card">
                         <div class="contact-header">
                             <div>
                                 <h4 class="contact-name">${name}</h4>
-                                ${c.organization ? `<div class="contact-org">${c.position ? c.position + ' - ' : ''}${c.organization}</div>` : ''}
+                                ${c.organization ? `<div class="contact-org">${c.position ? esc(c.position) + ' - ' : ''}${esc(c.organization)}</div>` : ''}
                             </div>
                             <div style="display: flex; gap: 0.25rem;">
                                 <button class="btn btn-secondary btn-sm" onclick="editContact(${c.id})">Edit</button>
@@ -473,14 +480,14 @@
                             </div>
                         </div>
                         <div class="contact-details">
-                            ${c.phone ? `<div class="item"><span class="icon">T</span> ${c.phone}</div>` : ''}
-                            ${c.phone_mobile ? `<div class="item"><span class="icon">M</span> ${c.phone_mobile}</div>` : ''}
-                            ${c.email ? `<div class="item"><span class="icon">@</span> ${c.email}</div>` : ''}
-                            ${c.city ? `<div class="item"><span class="icon">A</span> ${c.street ? c.street + ', ' : ''}${c.zip_code || ''} ${c.city}</div>` : ''}
+                            ${c.phone ? `<div class="item"><span class="icon">T</span> ${esc(c.phone)}</div>` : ''}
+                            ${c.phone_mobile ? `<div class="item"><span class="icon">M</span> ${esc(c.phone_mobile)}</div>` : ''}
+                            ${c.email ? `<div class="item"><span class="icon">@</span> ${esc(c.email)}</div>` : ''}
+                            ${c.city ? `<div class="item"><span class="icon">A</span> ${c.street ? esc(c.street) + ', ' : ''}${esc(c.zip_code || '')} ${esc(c.city)}</div>` : ''}
                         </div>
                         <div class="contact-tags">
-                            <span class="badge category">${c.category || 'Sonstiges'}</span>
-                            ${c.subcategory ? `<span class="badge tag">${c.subcategory}</span>` : ''}
+                            <span class="badge category">${esc(c.category || 'Sonstiges')}</span>
+                            ${c.subcategory ? `<span class="badge tag">${esc(c.subcategory)}</span>` : ''}
                             ${tags}
                         </div>
                     </div>
