@@ -149,8 +149,8 @@ TOOLS_SAFE = [
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail)"},
     }, ["action"]),
     _tool("maintain", "Systemwartung: fällige Tasks prüfen, Wartungsoperationen ausführen", {
-        "action": {"type": "string", "enum": ["check", "run", "health", "services"],
-                   "description": "check=fällige Tasks, run=Wartung, health=BACH-Status, services=Service-Check"},
+        "action": {"type": "string", "enum": ["check", "run", "health", "services", "sync"],
+                   "description": "check=fällige Tasks, run=Wartung, health=BACH-Status, services=Service-Check, sync=OneDrive→Mirror"},
         "operation": {"type": "string",
                       "description": "Bei run: registry, skills, docs, backup, clean, memory, recurring"},
     }, ["action"]),
@@ -471,8 +471,14 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     lines.append(f"  Prozesse (Bot/GUI/Tray): {ps_out.strip()}")
                     lines.append(f"  Uptime: {run_shell('uptime').strip()}")
                     return "\n".join(lines)
+                elif action == "sync":
+                    sync_script = Path.home() / "services" / "bach" / "sync-from-onedrive.sh"
+                    if not sync_script.exists():
+                        return "Sync-Script nicht gefunden: ~/services/bach/sync-from-onedrive.sh"
+                    out = run_shell(f"bash {sync_script} 2>&1")
+                    return f"OneDrive → Mirror Sync abgeschlossen.\n{out.strip()}" if out.strip() else "OneDrive → Mirror Sync abgeschlossen (keine Änderungen)."
                 else:
-                    return f"Unbekannte Aktion: {action}. Erlaubt: check, run, health, services"
+                    return f"Unbekannte Aktion: {action}. Erlaubt: check, run, health, services, sync"
             except Exception as e:
                 return f"Wartungsfehler: {e}"
 
