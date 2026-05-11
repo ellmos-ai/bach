@@ -49,7 +49,7 @@ CV Generator - ASCII-Lebenslauf aus BACH-Daten generieren
 
 Generiert einen strukturierten Lebenslauf aus:
   - assistant_user_profile (Persoenliche Daten)
-  - assistant_contacts (Referenzen)
+  - contacts (Referenzen, category='beruflich')
   - user_data_folders (Arbeitgeber-Ordner scannen)
   - Ordnerstruktur-Analyse (Zeugnisse, Fortbildungen)
 
@@ -104,16 +104,16 @@ class CVGenerator:
         finally:
             conn.close()
 
-    def collect_contacts(self, context: str = "beruflich") -> List[Dict]:
+    def collect_contacts(self, category: str = "beruflich") -> List[Dict]:
         """Berufliche Kontakte als potenzielle Referenzen."""
         conn = self._get_db()
         try:
             rows = conn.execute("""
-                SELECT name, company, position, phone, email
-                FROM assistant_contacts
-                WHERE is_active = 1 AND context = ?
+                SELECT name, organization, position, phone, email
+                FROM contacts
+                WHERE is_active = 1 AND category = ?
                 ORDER BY name
-            """, (context,)).fetchall()
+            """, (category,)).fetchall()
             contacts = [dict(r) for r in rows]
             self.sections["references"] = contacts
             return contacts

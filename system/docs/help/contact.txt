@@ -54,12 +54,9 @@ KONTEXTE:
   sonstige      Alles andere
 
 DATENBANK:
-  Haupttabelle: bach.db / assistant_contacts
-  Felder: id, name, context, email, phone, mobile, address, birthday,
-          company, position, tags, notes, is_active, created_at, updated_at
-
-  HINWEIS: vCard-Export nutzt zusaetzlich "contacts" Tabelle (Unified Schema)
-           mit erweiterten Feldern (first_name, last_name, organization, etc.)
+  Haupttabelle: bach.db / contacts
+  Felder: id, name, category, email, phone, phone_mobile, street, birthday,
+          organization, position, tags, notes, is_active, created_at, updated_at
 
 BEISPIELE:
   # Kontakt mit allen Details anlegen:
@@ -89,11 +86,9 @@ BEISPIELE:
 
 ZUSAMMENSPIEL:
   - Getrennt von health_contacts (Arzt-Kontakte im Gesundheitsmodul)
-  - assistant_contacts = persoenliche Kontaktdatenbank (Standard-Operationen)
-  - contacts = Unified-Tabelle (nur fuer vCard-Export)
+  - contacts = zentrale Kontakttabelle (CLI + GUI + vCard-Export)
   - GUI: Kontakte-Tab (wenn verfuegbar)
 
 BEKANNTE EINSCHRAENKUNGEN:
   - "bach contact list --all" zeigt inaktive Kontakte OHNE visuelle Markierung
-  - vCard-Export greift auf separate "contacts" Tabelle zu (nicht assistant_contacts)
   - Tags werden bei Search durchsucht, aber nicht in List-Ansicht angezeigt

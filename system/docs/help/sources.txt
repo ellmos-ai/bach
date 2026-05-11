@@ -72,7 +72,7 @@ Für Lessons-DB verwenden: bach lesson list/search
 HINWEIS ZU KONTAKTEN
 --------------------
 Seit v1.1.84 werden Kontakte in bach.db gespeichert (Tabellen: contacts,
-assistant_contacts, health_contacts). Die alte contacts.json existiert nicht mehr.
+health_contacts). Die alte contacts.json existiert nicht mehr.
 Der "bach sources contacts" Befehl nutzt jetzt die DB-Tabellen direkt.
 
 SIEHE AUCH

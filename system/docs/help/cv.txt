@@ -37,7 +37,7 @@ DATENQUELLEN
 Der Handler sammelt Daten aus folgenden Quellen:
 
   1. Persoenliche Daten: assistant_user_profile-Tabelle
-  2. Berufliche Referenzen: assistant_contacts (Kontext: "beruflich")
+  2. Berufliche Referenzen: contacts (category: "beruflich")
   3. Karriere-Ordner: Arbeitgeber, Zeugnisse, Fortbildungen (bei --scan)
 
 STATUS-AUSGABE

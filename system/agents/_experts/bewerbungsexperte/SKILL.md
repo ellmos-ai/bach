@@ -43,7 +43,7 @@ python agents/_experts/bewerbungsexperte/cv_generator.py --output user/bewerbung
 - **Berufserfahrung:** Arbeitgeber-Ordner scannen (Zeugnisse, Vertraege)
 - **Ausbildung:** Abschluesse-Ordner scannen
 - **Fortbildungen:** Zertifikate-Ordner scannen
-- **Referenzen:** Aus assistant_contacts (Kontext: beruflich)
+- **Referenzen:** Aus contacts (category: beruflich)
 
 ### 2. Stellendiagnose
 - **Keyword-Matching:** Abgleich von CV mit Job-Requirements (ATS-Safe)
@@ -80,7 +80,7 @@ user/
 ## DATENBANK-TABELLEN
 
 - `assistant_user_profile` - Persoenliche Daten (name, email, phone, address)
-- `assistant_contacts` - Berufliche Kontakte/Referenzen
+- `contacts` - Berufliche Kontakte/Referenzen (category='beruflich')
 - `user_data_folders` - Pfade zu Karriere-Ordnern
 
 ## REGISTRIERUNG VON ORDNERN

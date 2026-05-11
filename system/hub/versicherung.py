@@ -56,7 +56,7 @@ class VersicherungHandler(BaseHandler):
 
     def __init__(self, base_path: Path):
         super().__init__(base_path)
-        self.user_db_path = base_path / "data" / "bach.db"
+        self.user_db_path = self._canonical_db
 
     @property
     def profile_name(self) -> str:

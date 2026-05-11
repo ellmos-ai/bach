@@ -230,8 +230,8 @@ class ContextInjector:
         "medikament": "Medikamente: bach gesundheit medikamente | bach.db health_medications",
 
         # Kontakte
-        "kontakt": "Kontakte: bach contact list/search/add | bach.db assistant_contacts",
-        "kontakte": "Kontakte: bach contact list/search/add/birthday | bach.db assistant_contacts",
+        "kontakt": "Kontakte: bach contact list/search/add | bach.db contacts",
+        "kontakte": "Kontakte: bach contact list/search/add/birthday | bach.db contacts",
 
         # Haushalt
         "haushalt": "Haushalt: bach haushalt due/routinen/kalender/fixkosten/insurance-check/einkauf",
