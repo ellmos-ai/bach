@@ -11925,12 +11925,8 @@ async def get_contacts(category: str = None):
         # Stats berechnen
         cursor.execute("SELECT COUNT(*) FROM contacts WHERE is_active = 1")
         total = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM contacts WHERE is_active = 1 AND category = 'Gesundheit'")
-        health = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM contacts WHERE is_active = 1 AND category = 'Geschaeftlich'")
-        business = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM contacts WHERE is_active = 1 AND category = 'Privat'")
-        personal = cursor.fetchone()[0]
+        cursor.execute("SELECT COALESCE(category,'sonstige') as cat, COUNT(*) as cnt FROM contacts WHERE is_active = 1 GROUP BY cat ORDER BY cnt DESC")
+        by_category = {r[0]: r[1] for r in cursor.fetchall()}
 
         conn.close()
 
@@ -11939,9 +11935,10 @@ async def get_contacts(category: str = None):
             "contacts": contacts,
             "stats": {
                 "total": total,
-                "health": health,
-                "business": business,
-                "personal": personal
+                "by_category": by_category,
+                "health": by_category.get("arzt", 0),
+                "business": by_category.get("beruflich", 0),
+                "personal": by_category.get("privat", 0),
             }
         }
     except Exception as e:
