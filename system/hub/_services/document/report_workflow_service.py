@@ -1915,7 +1915,7 @@ def main():
                 print("      Sende Prompt an Claude API...")
                 client = anthropic.Anthropic()
                 message = client.messages.create(
-                    model="claude-sonnet-4-6",
+                    model="claude-sonnet-4-20250514",
                     max_tokens=8192,
                     messages=[{"role": "user", "content": prompt}]
                 )
