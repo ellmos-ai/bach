@@ -126,7 +126,7 @@
                 </div>
                 <div class="form-group">
                     <label>Transfer-Zone (Pfad)</label>
-                    <input type="text" value="${config.settings.transfer_zone}" onchange="updateSetting('transfer_zone', this.value)">
+                    <input type="text" value="${escapeHtml(config.settings.transfer_zone)}" onchange="updateSetting('transfer_zone', this.value)">
                 </div>
                 <div class="form-group">
                     <label>Auto-Task bei unbekannten Dokumenten</label>
@@ -147,15 +147,15 @@
                     <div class="rule-grid">
                         <div class="form-group">
                             <label>ID / Name</label>
-                            <input type="text" value="${rule.id}" onchange="updateRule(${index}, 'id', this.value)">
+                            <input type="text" value="${escapeHtml(rule.id)}" onchange="updateRule(${index}, 'id', this.value)">
                         </div>
                         <div class="form-group">
                             <label>Pattern (Regex)</label>
-                            <input type="text" value="${rule.pattern}" onchange="updateRule(${index}, 'pattern', this.value)">
+                            <input type="text" value="${escapeHtml(rule.pattern)}" onchange="updateRule(${index}, 'pattern', this.value)">
                         </div>
                         <div class="form-group">
                             <label>Zielpfad</label>
-                            <input type="text" value="${rule.target}" onchange="updateRule(${index}, 'target', this.value)">
+                            <input type="text" value="${escapeHtml(rule.target)}" onchange="updateRule(${index}, 'target', this.value)">
                         </div>
                         <div class="form-group">
                             <label>Typ</label>
