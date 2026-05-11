@@ -631,10 +631,10 @@
             }
 
             content.innerHTML = `
-                <div class="help-title">${getIcon(data.name)} ${data.name}</div>
+                <div class="help-title">${getIcon(data.name)} ${escapeHtml(data.name)}</div>
                 <div class="help-meta">
                     Groesse: ${formatSize(data.size)} |
-                    CLI: <code>bach --help ${data.name}</code>
+                    CLI: <code>bach --help ${escapeHtml(data.name)}</code>
                 </div>
                 <div class="help-viewer">${text}</div>
             `;
@@ -645,7 +645,7 @@
             const typeLabel = isWiki ? '📖 Wiki' : '📄 Help';
 
             content.innerHTML = `
-                <div class="help-title">${getIcon(data.name)} ${data.name} <span style="font-size: 0.7rem; color: var(--text-muted);">(${typeLabel})</span></div>
+                <div class="help-title">${getIcon(data.name)} ${escapeHtml(data.name)} <span style="font-size: 0.7rem; color: var(--text-muted);">(${typeLabel})</span></div>
                 <div class="toolbar">
                     <button class="toolbar-btn" onclick="insertTemplate('heading')"># Ueberschrift</button>
                     <button class="toolbar-btn" onclick="insertTemplate('section')">== Sektion ==</button>

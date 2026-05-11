@@ -522,13 +522,13 @@
                 const content = e.content || '';
                 const isLong = content.length > 400;
                 const display = isLong ? content.substring(0, 400) + '…' : content;
-                const promoted = e.promoted_to ? `<span class="promoted-tag">→ ${e.promoted_to} #${e.promoted_id}</span>` : '';
+                const promoted = e.promoted_to ? `<span class="promoted-tag">→ ${esc(e.promoted_to)} #${e.promoted_id}</span>` : '';
 
                 return `<div class="entry" data-id="${e.id}">
                     <div class="entry-header">
                         <div class="entry-meta">
                             <span class="entry-type type-${t}">${t === 'logbuch' ? 'Logbuch' : t === 'brainstorm' ? 'Brainstorm' : 'Gedanke'}</span>
-                            <span class="entry-category">${e.category || ''}</span>
+                            <span class="entry-category">${esc(e.category || '')}</span>
                             ${promoted}
                             <span>${e.created_at || ''}</span>
                             ${mood ? `<span class="entry-mood">${mood}</span>` : ''}

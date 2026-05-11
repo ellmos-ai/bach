@@ -343,8 +343,8 @@
                     return `
                         <tr>
                             <td>
-                                <strong>${wf.workflow_name}</strong>
-                                <br><span class="workflow-path">${wf.workflow_path}</span>
+                                <strong>${escapeHtml(wf.workflow_name)}</strong>
+                                <br><span class="workflow-path">${escapeHtml(wf.workflow_path)}</span>
                             </td>
                             <td>${wf.last_tuev_date ? new Date(wf.last_tuev_date).toLocaleDateString('de-DE') : '-'}</td>
                             <td>${wf.tuev_valid_until ? new Date(wf.tuev_valid_until).toLocaleDateString('de-DE') : '-'}</td>
@@ -358,8 +358,8 @@
                             </td>
                             <td>${statusBadge}</td>
                             <td>
-                                <button class="btn btn-primary btn-sm" onclick="openTuevModal(${wf.id}, '${wf.workflow_name}', '${wf.workflow_path}')">TUV</button>
-                                <button class="btn btn-secondary btn-sm" onclick="viewWorkflow('${wf.workflow_path}')">Ansehen</button>
+                                <button class="btn btn-primary btn-sm" onclick="openTuevModal(${wf.id}, ${JSON.stringify(wf.workflow_name)}, ${JSON.stringify(wf.workflow_path)})">TUV</button>
+                                <button class="btn btn-secondary btn-sm" onclick="viewWorkflow(${JSON.stringify(wf.workflow_path)})">Ansehen</button>
                             </td>
                         </tr>
                     `;

@@ -174,7 +174,7 @@
                 allLogs = data.logs;
                 renderLogList(allLogs);
             } catch (e) {
-                document.getElementById('log-files-list').innerHTML = `<div class="error">Fehler: ${e.message}</div>`;
+                document.getElementById('log-files-list').innerHTML = `<div class="error">Fehler: ${escapeHtml(e.message)}</div>`;
             }
         }
 
@@ -186,8 +186,8 @@
                 const activeKey = `${activeSource}:${activeLog}`;
                 const srcLabel = sourceLabels[log.source] || log.source;
                 return `
-                <div class="log-file-item ${activeKey === logKey ? 'active' : ''}" onclick="viewLog('${log.name}', '${log.source}')">
-                    <span class="log-file-name">${log.name}</span>
+                <div class="log-file-item ${activeKey === logKey ? 'active' : ''}" onclick="viewLog(${JSON.stringify(log.name)}, ${JSON.stringify(log.source)})">
+                    <span class="log-file-name">${escapeHtml(log.name)}</span>
                     <div class="log-file-info">
                         ${(log.size / 1024).toFixed(1)} KB | ${srcLabel} | ${new Date(log.modified).toLocaleString()}
                     </div>
@@ -233,7 +233,7 @@
                         `${(logData.size / 1024).toFixed(1)} KB | Letzte Änderung: ${new Date(logData.modified).toLocaleString()}`;
                 }
             } catch (e) {
-                document.getElementById('log-content').innerHTML = `<div class="error">Fehler beim Laden des Logs: ${e.message}</div>`;
+                document.getElementById('log-content').innerHTML = `<div class="error">Fehler beim Laden des Logs: ${escapeHtml(e.message)}</div>`;
             }
         }
 

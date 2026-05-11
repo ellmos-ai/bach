@@ -1284,16 +1284,16 @@
                 tbody.innerHTML = data.emails.map(email => `
                     <tr ondblclick="showEmailContent(${email.id})" style="cursor: pointer;" title="Doppelklick fuer Inhalt">
                         <td>
-                            <strong>${email.provider_name}</strong>
+                            <strong>${escapeHtml(email.provider_name)}</strong>
                             ${email.steuer_relevant ? '<span class="badge steuer">Steuer</span>' : ''}
                         </td>
-                        <td>${email.subject ? email.subject.substring(0, 50) + '...' : '-'}</td>
-                        <td><span class="category-tag">${email.category}</span></td>
+                        <td>${email.subject ? escapeHtml(email.subject.substring(0, 50)) + '...' : '-'}</td>
+                        <td><span class="category-tag">${escapeHtml(email.category)}</span></td>
                         <td>${email.betrag ? email.betrag.toFixed(2) + ' EUR' : '-'}</td>
                         <td>${email.email_date ? new Date(email.email_date).toLocaleDateString('de-DE') : '-'}</td>
                         <td>
-                            <span class="badge ${email.status}">${email.status}</span>
-                            <button class="btn btn-sm" style="margin-left: 0.25rem; padding: 0.1rem 0.3rem; font-size: 0.65rem; background: #666;" onclick="showFpModal('${email.message_id || email.id || ''}', '${(email.sender || '').replace(/'/g, '')}', '${(email.subject || '').replace(/'/g, '')}')">FP</button>
+                            <span class="badge ${escapeHtml(email.status)}">${escapeHtml(email.status)}</span>
+                            <button class="btn btn-sm" style="margin-left: 0.25rem; padding: 0.1rem 0.3rem; font-size: 0.65rem; background: #666;" onclick="showFpModal(${JSON.stringify(email.message_id || email.id || '')}, ${JSON.stringify(email.sender || '')}, ${JSON.stringify(email.subject || '')})">FP</button>
                         </td>
                     </tr>
                 `).join('');

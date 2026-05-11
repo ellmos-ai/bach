@@ -735,9 +735,9 @@
             const systemList = document.getElementById('system-templates');
             if (data.system && data.system.length > 0) {
                 systemList.innerHTML = data.system.map(t => `
-                    <div class="template-item" onclick="loadTemplate('${t.path}')">
-                        ${t.name}
-                        ${t.description ? `<div class="template-desc">${t.description}</div>` : ''}
+                    <div class="template-item" onclick="loadTemplate(${JSON.stringify(t.path)})">
+                        ${escapeHtml(t.name)}
+                        ${t.description ? `<div class="template-desc">${escapeHtml(t.description)}</div>` : ''}
                     </div>
                 `).join('');
             } else {
@@ -748,9 +748,9 @@
             const agentList = document.getElementById('agent-templates');
             if (data.agents && data.agents.length > 0) {
                 agentList.innerHTML = data.agents.map(t => `
-                    <div class="template-item" onclick="loadTemplate('${t.path}')">
-                        ${t.name}
-                        ${t.description ? `<div class="template-desc">${t.description}</div>` : ''}
+                    <div class="template-item" onclick="loadTemplate(${JSON.stringify(t.path)})">
+                        ${escapeHtml(t.name)}
+                        ${t.description ? `<div class="template-desc">${escapeHtml(t.description)}</div>` : ''}
                     </div>
                 `).join('');
             } else {

@@ -696,8 +696,8 @@
                                 <div class="session-item">
                                     <div class="session-time">${date}</div>
                                     <div class="session-summary">
-                                        <strong>${session.partner_id || 'System'}</strong>: 
-                                        ${session.summary || 'Laufende Aktivität...'}
+                                        <strong>${escapeHtml(session.partner_id || 'System')}</strong>:
+                                        ${escapeHtml(session.summary || 'Laufende Aktivität...')}
                                     </div>
                                 </div>
                             `;
@@ -717,8 +717,8 @@
                                 <div class="session-item">
                                     <div class="session-time">${date}</div>
                                     <div class="session-summary">
-                                        <strong>${session.partner_id}</strong> (Tokens: ${session.tokens_used || '?'})<br>
-                                        ${session.summary || '<i>Keine Zusammenfassung.</i>'}
+                                        <strong>${escapeHtml(session.partner_id || '')}</strong> (Tokens: ${session.tokens_used || '?'})<br>
+                                        ${escapeHtml(session.summary) || '<i>Keine Zusammenfassung.</i>'}
                                     </div>
                                 </div>
                             `;
@@ -742,7 +742,7 @@
 
                 container.innerHTML = data.tools.map(tool => `
                     <div class="tool-item ${tool.task_count > 0 ? 'has-tasks' : ''}">
-                        <span class="tool-name">${tool.name}</span>
+                        <span class="tool-name">${escapeHtml(tool.name)}</span>
                         ${tool.task_count > 0 ? `<span class="tool-count">${tool.task_count}</span>` : ''}
                     </div>
                 `).join('');
@@ -794,8 +794,8 @@
                 list.innerHTML = data.tools.map(tool => `
                     <div class="task-item">
                         <div>
-                            <strong>${tool.name}</strong>
-                            <div class="task-tool">${tool.path || ''}</div>
+                            <strong>${escapeHtml(tool.name)}</strong>
+                            <div class="task-tool">${escapeHtml(tool.path || '')}</div>
                         </div>
                         ${tool.task_count > 0 ? `<span class="task-priority medium">${tool.task_count} Tasks</span>` : ''}
                     </div>
@@ -829,7 +829,7 @@
                         </div>
                         <p style="margin: 0.5rem 0;">${escapeHtml(task.task_text)}</p>
                         <div style="font-size: 0.8rem; color: var(--text-muted);">
-                            Status: ${task.status} | Aufwand: ${task.aufwand} | Prioritaet: ${task.priority_score ? task.priority_score.toFixed(1) : '-'}
+                            Status: ${escapeHtml(task.status || '')} | Aufwand: ${escapeHtml(task.aufwand || '')} | Prioritaet: ${task.priority_score ? task.priority_score.toFixed(1) : '-'}
                         </div>
                     </div>
                 `).join('');

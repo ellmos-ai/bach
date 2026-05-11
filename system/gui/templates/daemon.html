@@ -930,11 +930,11 @@
                             </span>
                         </td>
                         <td>
-                            <strong>${job.name}</strong>
+                            <strong>${escapeHtml(job.name)}</strong>
                             ${job.next_run ? `<div class="next-run">Naechster: ${nextRun}</div>` : ''}
                         </td>
-                        <td>${job.job_type}</td>
-                        <td><code>${job.schedule || '-'}</code></td>
+                        <td>${escapeHtml(job.job_type)}</td>
+                        <td><code>${escapeHtml(job.schedule || '-')}</code></td>
                         <td class="job-actions">
                             <button onclick="toggleJob(${job.id})" title="${job.is_active ? 'Deaktivieren' : 'Aktivieren'}">
                                 ${job.is_active ? 'Pause' : 'Start'}

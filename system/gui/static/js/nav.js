@@ -8,6 +8,15 @@
 
 const BACH_VERSION = "3.9.1";
 
+if (typeof escapeHtml === 'undefined') {
+    window.escapeHtml = function(text) {
+        if (text == null) return '';
+        const div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
+    };
+}
+
 const CHAT_HOST = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
     ? "macstudvonlukas" : window.location.hostname;
 

@@ -690,9 +690,9 @@
             list.innerHTML = entries.map(e => `
                 <div class="memory-entry" style="border-left-color: var(--warning);">
                     <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">
-                        ${e.source_table} [${e.source_id}]
+                        ${escapeHtml(e.source_table)} [${e.source_id}]
                     </div>
-                    <div class="entry-content">Weight: ${e.weight || 0} | Status: ${e.status || 'active'}</div>
+                    <div class="entry-content">Weight: ${e.weight || 0} | Status: ${escapeHtml(e.status || 'active')}</div>
                     <div class="entry-meta">
                         <span>${formatDate(e.created_at)}</span>
                     </div>
@@ -711,7 +711,7 @@
                 <div class="memory-entry" style="border-left-color: var(--accent);">
                     <div style="display: flex; justify-content: space-between;">
                         <span style="font-weight: 600; color: var(--accent);">${escapeHtml(e.trigger_key)}</span>
-                        <span style="font-size: 0.75rem; color: var(--text-muted);">${e.trigger_type}</span>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(e.trigger_type)}</span>
                     </div>
                     <div class="entry-meta">
                         <span>Fired: ${e.last_fired ? formatDate(e.last_fired) : 'Never'}</span>
@@ -730,7 +730,7 @@
             list.innerHTML = entries.map(e => `
                 <div class="memory-entry" style="border-left-color: var(--success);">
                     <div style="font-weight: 600; color: var(--success);">${escapeHtml(e.name)}</div>
-                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">${e.filename}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">${escapeHtml(e.filename)}</div>
                 </div>
             `).join('');
         }
