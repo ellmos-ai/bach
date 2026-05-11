@@ -466,18 +466,28 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     return run_shell(f"cd {shlex.quote(str(Path(__file__).parent.parent.parent.parent))} && "
                                      f"PYTHONIOENCODING=utf-8 python bach.py status")
                 elif action == "services":
-                    checks = {
+                    http_checks = {
                         "GUI Dashboard (:8000)": "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:8000/",
                         "Ollama (:11434)": "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:11434/api/tags",
                     }
+                    proc_checks = {
+                        "Telegram Bot": "telegram_chat",
+                        "GUI Server": "gui/server\\.py",
+                        "Chat Tray": "chat_tray",
+                    }
                     lines = ["BACH Service-Check:"]
                     lines.append(f"  ✅ Control API (:8081) — läuft (diese Anfrage)")
-                    for svc, cmd in checks.items():
+                    for svc, cmd in http_checks.items():
                         code = run_shell(cmd).strip()
                         ok = code == "200"
                         lines.append(f"  {'✅' if ok else '❌'} {svc} — HTTP {code}")
-                    ps_out = run_shell("ps aux | grep -E '(telegram_chat|server\\.py|chat_tray)' | grep -v grep | wc -l")
-                    lines.append(f"  Prozesse (Bot/GUI/Tray): {ps_out.strip()}")
+                    for svc, pattern in proc_checks.items():
+                        ps_out = run_shell(f"pgrep -f '{pattern}' 2>/dev/null").strip()
+                        if ps_out:
+                            pids = ps_out.replace('\n', ', ')
+                            lines.append(f"  ✅ {svc} — PID {pids}")
+                        else:
+                            lines.append(f"  ❌ {svc} — nicht gefunden")
                     lines.append(f"  Uptime: {run_shell('uptime').strip()}")
                     return "\n".join(lines)
                 elif action == "sync":
