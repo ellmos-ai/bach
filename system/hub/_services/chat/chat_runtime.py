@@ -363,7 +363,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if not p:
                 return "Kein Pfad"
             Path(p).parent.mkdir(parents=True, exist_ok=True)
-            with open(p, "w") as f:
+            with open(p, "w", encoding="utf-8") as f:
                 f.write(c)
             log.info(f"WRITE: {p} ({len(c)} chars)")
             return f"Geschrieben: {p} ({len(c)} Zeichen)"
@@ -690,6 +690,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             dst = args.get("destination", "")
             if not src or not dst:
                 return "source und destination sind erforderlich"
+            if err := is_safe_write_path(src, mode):
+                return err
             if err := is_safe_write_path(dst, mode):
                 return err
             try:
