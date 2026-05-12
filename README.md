@@ -32,6 +32,7 @@
 - **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System (6 memory types)
 - **Agent CLI** - `bach agent start/stop/list` for direct agent control
 - **Machine-readable Status Surfaces** - `bach agent list/status --json` plus `bach scheduler status/jobs/session status --json` for external tooling and automation-safe polling
+- **Path Surface** - `bach path` exposes canonical system/workspace/DB paths, validation, resolve helpers, and DB overrides in text or JSON
 - **Prompt System** - Central prompt management with board system and versioning
 - **Install Security Gate** - Static pre-load scans block obvious code-injection patterns during `skills install`/`plugins load`; MCP setup validates allowlisted packages/configs fail-closed, plugin setup contracts now require explicit shell/desktop/MCP checks, and blocked local imports are quarantined
 - **Manifest-first Plugins** - `bach plugins inspect` previews activation, provider/model, setup, and capability metadata without importing plugin runtime code
@@ -167,7 +168,7 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 
 ### Competitive Watch
 
-As of 2026-05-10, OpenClaw's public GitHub releases show `2026.5.6`, while GHCR already rolls `2026.5.7-slim` and `2026.5.9-beta.1` is visible as the current beta line. BACH already ships several control-plane pieces inspired by the broader assistant ecosystem: manifest-first metadata, fail-closed setup checks, broader install scanning for skills/MCP/plugins, privacy-preserving secret/reference handling, memory/wiki provenance views, machine-readable agent/scheduler status surfaces, and workspace-scoped agent-runtime cache invalidation for safe hot-reloads. Next high-leverage steps: active-run steering at safe checkpoints, low-cardinality telemetry, stricter auth gating, and external observability.
+As of 2026-05-11, OpenClaw's releases page marks `2026.5.7` as the latest stable release, the visible prerelease line has advanced to `2026.5.10-beta.3`, and the official GHCR package page currently exposes `2026.5.10-beta.2-slim` as the latest tagged container. The recent notes especially reinforce queue-independent steering, checkpoint visibility, diagnostics, and installer/plugin safety. BACH already ships analogous control-plane pieces: manifest-first metadata, fail-closed setup checks, broader install scanning for skills/MCP/plugins, privacy-preserving secret/reference handling, memory/wiki provenance views, machine-readable agent/scheduler status surfaces, workspace-scoped agent-runtime cache invalidation, stable Windows agent tracking via durable console PIDs, and now chain-level operator controls via `bach chain pause`, `bach chain resume`, and `bach chain steer` at safe llmauto checkpoints. Next high-leverage steps remain extending the same steering semantics to broader agent/scheduler runs, low-cardinality telemetry, stricter auth gating, and external observability.
 
 ## License
 

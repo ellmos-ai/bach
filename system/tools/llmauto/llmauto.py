@@ -11,6 +11,9 @@ Verwendung (aus system/tools/ heraus):
     python -m llmauto chain list                 Alle Ketten anzeigen
     python -m llmauto chain status [name]        Status anzeigen
     python -m llmauto chain stop <name> [grund]  Kette stoppen
+    python -m llmauto chain pause <name> [grund] Kette an Checkpoint pausieren
+    python -m llmauto chain resume <name>        Pause aufheben
+    python -m llmauto chain steer <name> <text>  Operator-Hinweis vormerken
     python -m llmauto chain log <name> [N]       Log anzeigen
     python -m llmauto chain reset <name>         State zuruecksetzen
 
@@ -41,7 +44,8 @@ VERSION = "0.1.0"
 def cmd_chain(args):
     """Chain-Modus Subkommandos."""
     from llmauto.modes.chain import (
-        run_chain, show_status, stop_chain, show_log, reset_chain
+        run_chain, show_status, stop_chain, pause_chain, resume_chain,
+        steer_chain, show_log, reset_chain
     )
     from llmauto.core.config import list_chains
 
@@ -82,6 +86,28 @@ def cmd_chain(args):
             return 1
         reason = " ".join(args.extra) if args.extra else None
         return stop_chain(args.name, reason)
+
+    elif action == "pause":
+        if not args.name:
+            print("Fehler: Ketten-Name erforderlich.")
+            return 1
+        reason = " ".join(args.extra) if args.extra else None
+        return pause_chain(args.name, reason)
+
+    elif action == "resume":
+        if not args.name:
+            print("Fehler: Ketten-Name erforderlich.")
+            return 1
+        return resume_chain(args.name)
+
+    elif action == "steer":
+        if not args.name:
+            print("Fehler: Ketten-Name erforderlich.")
+            return 1
+        if not args.extra:
+            print("Fehler: Steering-Nachricht erforderlich.")
+            return 1
+        return steer_chain(args.name, " ".join(args.extra))
 
     elif action == "log":
         if not args.name:
@@ -175,7 +201,7 @@ def main():
 
     # --- chain ---
     chain_parser = subparsers.add_parser("chain", help="Ketten-Modus (Marble-Run)")
-    chain_parser.add_argument("chain_action", choices=["start", "list", "status", "stop", "log", "reset"],
+    chain_parser.add_argument("chain_action", choices=["start", "list", "status", "stop", "pause", "resume", "steer", "log", "reset"],
                               help="Aktion")
     chain_parser.add_argument("name", nargs="?", default=None, help="Ketten-Name")
     chain_parser.add_argument("extra", nargs="*", help="Zusaetzliche Argumente (Grund bei stop, Zeilenanzahl bei log)")

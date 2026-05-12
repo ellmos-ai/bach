@@ -297,7 +297,53 @@ def generate_active_chain_md(chain_name, config, state, base_dir):
     out_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def run_parallel_workers(chain_name, worker_links, config, state, global_config, base_dir):
+def _format_operator_steer(requests):
+    """Formatiert vorgemerkte Operator-Hinweise fuer den naechsten Checkpoint."""
+    if not requests:
+        return ""
+
+    lines = [
+        "",
+        "## Operator-Steering",
+        "Am letzten sicheren Checkpoint wurde folgende Operator-Anweisung hinterlegt.",
+        "Beachte sie jetzt vor allen freien Folgeentscheidungen, solange keine Sicherheitsregeln verletzt werden.",
+        "",
+    ]
+    for idx, request in enumerate(requests, start=1):
+        created_at = request.get("created_at") or "ohne Zeitstempel"
+        lines.append(f"{idx}. [{created_at}] {request.get('message', '')}")
+    return "\n".join(lines)
+
+
+def _apply_operator_controls(chain_name, state, config):
+    """Wendet Pause-/Steuerungswuensche an sicheren Checkpoints an."""
+    pause_request = state.get_pause_request()
+    if pause_request:
+        pause_reason = pause_request.get("reason", "Manuell pausiert")
+        if state.get_status() != "PAUSED":
+            log(f"PAUSE angefordert: {pause_reason}", chain_name)
+            state.set_status("PAUSED")
+
+        while state.is_pause_requested():
+            should_stop, reason = state.check_shutdown(config)
+            if should_stop:
+                return False, "", reason
+            time.sleep(2)
+
+        log("PAUSE aufgehoben, Kette laeuft weiter.", chain_name)
+        if state.get_status() == "PAUSED":
+            state.set_status("RUNNING")
+
+    steer_requests = state.consume_steer_requests()
+    if steer_requests:
+        log(
+            f"STEER uebernommen: {len(steer_requests)} Operator-Hinweis(e) fuer den naechsten Modelllauf.",
+            chain_name,
+        )
+    return True, _format_operator_steer(steer_requests), ""
+
+
+def run_parallel_workers(chain_name, worker_links, config, state, global_config, base_dir, operator_steer=""):
     """Fuehrt Worker-Links parallel aus (SQ016).
 
     Args:
@@ -336,6 +382,8 @@ def run_parallel_workers(chain_name, worker_links, config, state, global_config,
 
         if link.get("until_full", False):
             prompt_text += UNTIL_FULL_SUFFIX
+        if operator_steer:
+            prompt_text += operator_steer
 
         log(f"[PARALLEL] {link_name}: Starte {model}...", chain_name)
         result = runner.run(prompt_text)
@@ -448,10 +496,25 @@ def run_chain(chain_name, background=False):
                         send_telegram_update(chain_name, state)
                         return 0
 
+                    can_continue, operator_steer, control_reason = _apply_operator_controls(
+                        chain_name, state, config
+                    )
+                    if not can_continue:
+                        log(f"SHUTDOWN: {control_reason}", chain_name)
+                        state.set_status("STOPPED")
+                        send_telegram_update(chain_name, state)
+                        return 0
+
                     # Worker parallel ausfuehren
                     log(f"PARALLEL-MODUS: {len(worker_links)} Worker starten...", chain_name)
                     run_parallel_workers(
-                        chain_name, worker_links, config, state, global_config, base_dir
+                        chain_name,
+                        worker_links,
+                        config,
+                        state,
+                        global_config,
+                        base_dir,
+                        operator_steer=operator_steer,
                     )
 
                     # Status-Schutz nach paralleler Ausfuehrung
@@ -465,6 +528,15 @@ def run_chain(chain_name, background=False):
                         should_stop, reason = state.check_shutdown(config)
                         if should_stop:
                             log(f"SHUTDOWN: {reason}", chain_name)
+                            state.set_status("STOPPED")
+                            send_telegram_update(chain_name, state)
+                            return 0
+
+                        can_continue, operator_steer, control_reason = _apply_operator_controls(
+                            chain_name, state, config
+                        )
+                        if not can_continue:
+                            log(f"SHUTDOWN: {control_reason}", chain_name)
                             state.set_status("STOPPED")
                             send_telegram_update(chain_name, state)
                             return 0
@@ -492,6 +564,8 @@ def run_chain(chain_name, background=False):
 
                         if link.get("until_full", False):
                             prompt_text += UNTIL_FULL_SUFFIX
+                        if operator_steer:
+                            prompt_text += operator_steer
 
                         log(f"{link_name} ({role}): Starte {model}...", chain_name)
                         result = runner.run(prompt_text)
@@ -549,6 +623,15 @@ def run_chain(chain_name, background=False):
                     send_telegram_update(chain_name, state)
                     return 0
 
+                can_continue, operator_steer, control_reason = _apply_operator_controls(
+                    chain_name, state, config
+                )
+                if not can_continue:
+                    log(f"SHUTDOWN: {control_reason}", chain_name)
+                    state.set_status("STOPPED")
+                    send_telegram_update(chain_name, state)
+                    return 0
+
                 link_name = link.get("name", f"link-{i+1}")
                 role = link.get("role", "worker")
                 model = link.get("model") or global_config.get("default_model", "claude-sonnet-4-6")
@@ -589,6 +672,8 @@ def run_chain(chain_name, background=False):
                 # until_full: Kontext-Begrenzungs-Hinweis anhaengen
                 if link.get("until_full", False):
                     prompt_text += UNTIL_FULL_SUFFIX
+                if operator_steer:
+                    prompt_text += operator_steer
 
                 if is_continuation:
                     log(f"{link_name} ({role}): CONTINUE {model}...", chain_name)
@@ -657,9 +742,10 @@ def run_chain(chain_name, background=False):
         return 0
 
 
-def show_status(chain_name=None):
+def show_status(chain_name=None, base_dir=None):
     """Zeigt Status einer oder aller Ketten."""
-    base_dir = Path(__file__).parent.parent
+    if base_dir is None:
+        base_dir = Path(__file__).parent.parent
     state_dir = base_dir / "state"
 
     if chain_name:
@@ -713,6 +799,16 @@ def show_status(chain_name=None):
 
         if state.is_stop_requested():
             print(f"  !!! STOP: {state.get_stop_reason()}")
+        pause_request = state.get_pause_request()
+        if pause_request:
+            print(f"  !!! PAUSE: {pause_request.get('reason', 'Manuell pausiert')}")
+        steer_requests = state.peek_steer_requests()
+        if steer_requests:
+            print(f"  !!! STEER: {len(steer_requests)} Nachricht(en) vorgemerkt")
+            last_message = steer_requests[-1].get("message", "")
+            if last_message:
+                preview = last_message[:80]
+                print(f"      Zuletzt: {preview}")
 
         print("=" * 50)
         print()
@@ -729,6 +825,45 @@ def stop_chain(chain_name, reason=None):
     print(f"STOP-Datei erstellt fuer '{chain_name}'.")
     print(f"Pipeline stoppt nach aktuellem Glied.")
     print(f"Grund: {reason}")
+    return 0
+
+
+def pause_chain(chain_name, reason=None):
+    """Merkt eine Pause fuer den naechsten sicheren Checkpoint vor."""
+    base_dir = Path(__file__).parent.parent
+    state = ChainState(chain_name, base_dir)
+    reason = reason or "Manuell pausiert via llmauto"
+    payload = state.request_pause(reason)
+    print(f"PAUSE-Datei erstellt fuer '{chain_name}'.")
+    print("Die Kette pausiert vor dem naechsten Modelllauf oder nach dem aktuellen Glied.")
+    print(f"Grund: {payload.get('reason')}")
+    return 0
+
+
+def resume_chain(chain_name):
+    """Hebt eine vorgemerkte Pause auf."""
+    base_dir = Path(__file__).parent.parent
+    state = ChainState(chain_name, base_dir)
+    if not state.is_pause_requested():
+        print(f"Keine Pause fuer '{chain_name}' vorgemerkt.")
+        return 0
+    state.clear_pause()
+    if state.get_status() == "PAUSED":
+        state.set_status("RUNNING")
+    print(f"Pause fuer '{chain_name}' aufgehoben.")
+    print("Die Kette wird am naechsten Poll/Checkpoint fortgesetzt.")
+    return 0
+
+
+def steer_chain(chain_name, message):
+    """Haengt einen Operator-Hinweis an den naechsten sicheren Checkpoint."""
+    base_dir = Path(__file__).parent.parent
+    state = ChainState(chain_name, base_dir)
+    state.request_steer(message)
+    pending = state.peek_steer_requests()
+    print(f"Steering fuer '{chain_name}' vorgemerkt.")
+    print(f"Nachrichten in Queue: {len(pending)}")
+    print("Die Hinweise werden vor dem naechsten Modelllauf in den Prompt eingeblendet.")
     return 0
 
 

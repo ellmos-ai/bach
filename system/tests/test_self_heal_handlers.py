@@ -4,6 +4,7 @@
 
 import json
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
@@ -325,6 +326,102 @@ def test_agent_list_json_is_machine_readable(tmp_path):
     assert payload["active_count"] == 0
     assert payload["agents"][0]["display_name"] == "Theodor"
     assert payload["agents"][0]["status"] == "stopped"
+    assert payload["agents"][0]["available_actions"] == ["start"]
+
+
+def test_path_handler_json_uses_runtime_base_path(tmp_path):
+    from hub.path import PathHandler
+
+    base = _init_base(tmp_path)
+    db_path = base / "data" / "bach.db"
+    db_path.touch()
+
+    success, message = PathHandler(base).handle("db", ["--json"])
+
+    assert success is True
+    payload = json.loads(message)
+    assert payload["name"] == "db"
+    assert Path(payload["path"]) == db_path.resolve()
+    assert payload["source"] == "default"
+    assert payload["exists"] is True
+
+
+def test_path_handler_set_and_report_overrides_via_canonical_db(tmp_path):
+    from hub.path import PathHandler
+
+    base = _init_base(tmp_path)
+    override_path = base / "custom wiki"
+
+    success, _ = PathHandler(base).handle("set", ["wissensdatenbank", str(override_path)])
+    assert success is True
+
+    success, message = PathHandler(base).handle("overrides", ["--json"])
+
+    assert success is True
+    payload = json.loads(message)
+    assert payload["count"] == 1
+    assert payload["overrides"][0]["name"] == "wissensdatenbank"
+    assert payload["overrides"][0]["path"] == str(override_path)
+
+    with sqlite3.connect(base / "data" / "bach.db") as conn:
+        stored = conn.execute(
+            "SELECT value FROM system_config WHERE key = 'path.wissensdatenbank'"
+        ).fetchone()
+
+    assert stored == (str(override_path),)
+
+
+def test_path_handler_resolve_supports_repo_root_json(tmp_path):
+    from hub.path import PathHandler
+
+    base = _init_base(tmp_path)
+
+    success, message = PathHandler(base).handle(
+        "resolve",
+        ["docs/README.md", "--from-root", "--json"],
+    )
+
+    assert success is True
+    payload = json.loads(message)
+    assert payload["from_root"] is True
+    assert Path(payload["resolved_path"]) == (base.parent / "docs" / "README.md").resolve()
+
+
+def test_agent_start_uses_long_lived_windows_console_pid(tmp_path, monkeypatch):
+    from hub.agent_launcher import AgentLauncherHandler
+
+    base = _init_base(tmp_path)
+    agent_dir = base / "agents" / "demo"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
+
+    class FakeProc:
+        pid = 4321
+
+    calls = {}
+
+    def fake_popen(cmd, cwd=None, creationflags=0, **kwargs):
+        calls["cmd"] = cmd
+        calls["cwd"] = cwd
+        calls["creationflags"] = creationflags
+        return FakeProc()
+
+    monkeypatch.setattr("hub.agent_launcher.sys.platform", "win32")
+    monkeypatch.setattr("hub.agent_launcher.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("hub.agent_launcher.subprocess.CREATE_NEW_CONSOLE", subprocess.CREATE_NEW_CONSOLE)
+
+    success, message = AgentLauncherHandler(base).handle("start", ["demo"])
+
+    assert success is True
+    assert "PID:    4321" in message
+    assert calls["cmd"][0:2] == ["cmd", "/c"]
+    assert calls["cmd"][2].endswith("start.bat")
+    assert calls["creationflags"] == subprocess.CREATE_NEW_CONSOLE
+
+    pid_file = base / "data" / "agent_pids" / "demo.pid"
+    payload = json.loads(pid_file.read_text(encoding="utf-8"))
+    assert payload["pid"] == 4321
+    assert payload["window_title"] == "BACH: demo"
 
 
 def test_scheduler_jobs_json_computes_status(tmp_path):
@@ -466,6 +563,7 @@ def test_scheduler_status_json_includes_recent_runs(tmp_path):
     assert success is True
     payload = json.loads(message)
     assert payload["jobs"]["active"] == 1
+    assert payload["service"]["available_actions"] == ["start"]
     assert payload["recent_runs"][0]["name"] == "scanner"
     assert payload["recent_runs"][0]["result"] == "success"
 

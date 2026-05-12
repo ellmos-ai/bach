@@ -248,6 +248,7 @@ class SchedulerHandler(BaseHandler):
                     "pid_file": str(self.pid_file),
                     "script": str(self.daemon_script),
                     "log_file": str(self.log_dir / "daemon.log"),
+                    "available_actions": ["stop"] if running else ["start"],
                 },
                 "jobs": {
                     "total": 0,
@@ -659,6 +660,7 @@ class SchedulerHandler(BaseHandler):
                     "pid": pid or None,
                     "script": str(self.session_daemon),
                     "pid_file": str(self.session_pid_file),
+                    "available_actions": ["stop", "trigger"] if pid else ["start", "trigger"],
                 },
                 "config": {},
                 "profiles": [],

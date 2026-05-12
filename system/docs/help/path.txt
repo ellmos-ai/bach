@@ -1,80 +1,95 @@
-# Portabilitaet: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-03-04
+# Portabilität: UNIVERSAL
+# Version: 1.1.0
+# Zuletzt validiert: 2026-05-11
 
-HANDLER-NAME
-============
-path - Zeigt und verwaltet BACH-Systempfade
+PATH
+====
 
-
-BESCHREIBUNG
-============
-Der path-Handler ermittelt und zeigt alle wichtigen BACH-Verzeichnisse an. Er
-nutzt bach_paths.py als zentrale Quelle (Single Source of Truth). Pfade koennen
-lokal ueberschrieben und validiert werden.
-
-Versionsstand: v2.0
+`bach path` macht die zentrale Pfad-Registry aus `hub/bach_paths.py`
+direkt über CLI und API nutzbar. Die Ausgabe ist sowohl menschenlesbar
+als auch mit `--json` für Automationen geeignet.
 
 
-OPERATIONEN
-===========
-show, all           Alle wichtigen Pfade anzeigen (Standard)
-list                Alle verfuegbaren Pfadnamen auflisten (gruppiert)
-<name>              Spezifischen Pfad anzeigen (mit Zusatzinfo)
-set <name> <pfad>   Pfad-Override in Datenbank setzen
-overrides           DB-Overrides anzeigen
-validate            Alle kritischen Pfade validieren
+BEFEHLE
+=======
+
+  bach path
+    Zeigt die wichtigsten BACH-Pfade gruppiert an.
+
+  bach path <name>
+  bach path get <name>
+    Zeigt einen einzelnen registrierten Pfad mit Metadaten an.
+
+  bach path list [--json]
+    Listet die vollständige Registry.
+
+  bach path resolve <relativer-pfad> [--from-root] [--json]
+    Löst einen relativen Pfad gegen `system/` oder den Repo-Root auf.
+
+  bach path overrides [--json]
+    Zeigt aktive DB-Pfad-Overrides aus `system_config`.
+
+  bach path validate [--json]
+    Prüft kritische, wichtige und optionale Pfade.
+
+  bach path set <name> <pfad>
+    Speichert einen Pfad-Override in der kanonischen BACH-DB.
 
 
 BEISPIELE
 =========
-bach path
-  -> Alle Pfade (Standard)
 
-bach path root
-  -> Hauptverzeichnis
+  bach path
+    -> Zusammenfassung für Operatoren
 
-bach path list
-  -> Alle verfuegbaren Pfadnamen (gruppiert)
+  bach path db
+    -> Kanonischer Datenbankpfad
 
-bach path templates
-  -> Pfad zum Templates-Verzeichnis mit Details
+  bach path list --json
+    -> Vollständige Registry als JSON
 
-bach path set wissensdatenbank /mnt/my/path
-  -> Override in DB speichern
+  bach path resolve docs/README.md --from-root
+    -> Absoluter Pfad relativ zum Repo-Root
 
-bach path validate
-  -> Validierung durchfuehren
+  bach path overrides
+    -> Aktive DB-Overrides prüfen
+
+
+JSON-SURFACES
+=============
+
+Diese Aufrufe liefern maschinenlesbare Antworten:
+
+  bach path --json
+  bach path list --json
+  bach path db --json
+  bach path overrides --json
+  bach path validate --json
+  bach path resolve docs/help/path.txt --json
+
+
+WICHTIGE DETAILS
+================
+
+- Quelle bleibt `hub/bach_paths.py` (Single Source of Truth).
+- Bei fremdem `base_path` spiegelt der Handler Pfade auf den aktiven
+  Runtime-Root, damit Tests und portable Instanzen saubere Ergebnisse
+  erhalten.
+- Overrides werden aus der kanonischen DB des aktiven Roots gelesen und
+  geschrieben, nicht aus einem global hartcodierten Pfad.
 
 
 DATEIEN
 =======
-hub/path.py                      Handler-Implementierung (PathHandler)
-hub/bach_paths.py               Zentrale Pfad-Registry und Funktionen
-data/bach.db                    Speichert Pfad-Overrides
 
-
-PFAD-HEILUNG / PATH HEALING
-===========================
-Pfade werden automatisch ueber bach_paths.py verwaltet.
-Manuelle Pfad-Reparaturen sind NICHT noetig!
-
-  bach_paths.py berechnet alle Pfade dynamisch relativ zum
-  eigenen Standort. Wenn BACH verschoben wird, passen sich
-  alle Pfade automatisch an.
-
-Nur Dokumentations-Pfade (in .txt/.md Dateien) muessen bei
-Umstrukturierungen aktualisiert werden:
-
-  bach --maintain docs-paths          Dokumentations-Pfade pruefen
-  bach --maintain docs-paths --apply  Dokumentations-Pfade korrigieren
-
-Siehe: bach --help tools/path_healer  (Details)
+  hub/path.py                CLI-/API-Handler
+  hub/bach_paths.py          Zentrale Pfad-Registry
+  data/bach.db               `system_config` für Pfad-Overrides
 
 
 SIEHE AUCH
 ==========
-hub/bach_paths.py                Zentrale Pfad-Registry (Single Source of Truth)
-docs/help/bach_paths.txt         Ausfuehrliche Doku zu bach_paths
-docs/help/tools/path_healer.txt  Pfad-Aktualisierung fuer Dokumentation
-hub/base.py                      BaseHandler-Dokumentation
+
+  help agent                 Agenten-CLI
+  help scheduler             Scheduler-Statusflächen
+  help tools                 Werkzeug-Übersicht

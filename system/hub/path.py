@@ -22,42 +22,46 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-"""
-Path Handler - Zeigt wichtige BACH-Pfade an (v2.0)
-==================================================
+from __future__ import annotations
 
-Nutzt bach_paths.py als Single Source of Truth.
-
-Befehle:
-  bach path              Alle wichtigen Pfade anzeigen
-  bach path root         BACH Hauptverzeichnis
-  bach path tools        Tools-Verzeichnis
-  bach path templates    Templates-Verzeichnis
-  bach path berichte     Berichte-Verzeichnis
-  bach path <name>       Spezifischen Pfad anzeigen
-  bach path list         Alle verfuegbaren Pfadnamen
-  bach path set <name> <pfad>  Override setzen (in DB)
-  bach path overrides    DB-Overrides anzeigen
 """
+Path Handler - strukturierte Pfadoberfläche für BACH
+====================================================
+
+Nutzt ``bach_paths.py`` als Single Source of Truth und macht die Pfade
+maschinenlesbar für CLI, API und Automationen.
+"""
+
+import json
+import sqlite3
+from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, Iterable, Tuple
+
+from . import bach_paths as bp
 from .base import BaseHandler
 
-# Import bach_paths als Single Source of Truth
-from .bach_paths import (
-    get_path, list_paths, validate,
-    set_path_override, load_path_overrides_from_db,
-    _PATH_REGISTRY
-)
+
+SUMMARY_GROUPS = {
+    "core": ("root", "system", "hub", "data", "db"),
+    "runtime": ("logs", "backups", "messages", "instances", "prosync_transit"),
+    "workspace": ("user", "docs", "exports", "skills", "tools", "agents", "experts"),
+    "domains": ("foerderplanung", "berichte", "berichte_output", "steuer", "belege"),
+}
+
+VALIDATION_GROUPS = {
+    "error": ("root", "system", "hub", "data", "db"),
+    "warn": ("skills", "tools", "help", "user"),
+    "info": ("partners", "connectors", "agents", "logs", "berichte"),
+}
 
 
 class PathHandler(BaseHandler):
-    """Handler fuer bach path - zeigt Systempfade an (v2.0).
+    """Handler für `bach path`."""
 
-    Nutzt bach_paths.py als zentrale Pfad-Quelle.
-    """
-
-    def __init__(self, base_path: Path):
-        super().__init__(base_path)
+    def __init__(self, base_path_or_app):
+        super().__init__(base_path_or_app)
+        self.repo_root = self.base_path.parent
 
     @property
     def profile_name(self) -> str:
@@ -65,203 +69,420 @@ class PathHandler(BaseHandler):
 
     @property
     def target_file(self) -> Path:
-        return self.base_path
+        return self.base_path / "hub" / "bach_paths.py"
 
     def get_operations(self) -> dict:
         return {
-            "show": "Alle wichtigen Pfade anzeigen (Standard)",
-            "list": "Alle verfuegbaren Pfadnamen auflisten",
+            "status": "Wichtige Pfade zusammengefasst anzeigen (Standard)",
+            "list": "Alle registrierten Pfade anzeigen",
+            "get": "Einen spezifischen Pfad anzeigen",
+            "resolve": "Relativen Pfad gegen system/ oder Repo-Root auflösen",
+            "overrides": "DB-Pfad-Overrides anzeigen",
             "set": "Pfad-Override setzen: bach path set <name> <pfad>",
-            "overrides": "DB-Overrides anzeigen",
-            "validate": "Alle Pfade validieren",
+            "validate": "Wichtige Pfade validieren",
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
-        # Hilfe
-        if operation in ("help", "--help", "-h"):
-            return self._show_help()
+        json_output = self._has_flag(args, "--json")
+        clean_args = self._strip_flags(args, "--json")
 
-        # Alle Pfade auflisten (Namen)
+        if operation in {"help", "--help", "-h"}:
+            return self._show_help(json_output=json_output)
+        if operation in {"--json", "-j"}:
+            return self._show_summary(json_output=True)
+        if operation in {"", "status", "show", "all"}:
+            return self._show_summary(json_output=json_output)
         if operation == "list":
-            return self._list_path_names()
-
-        # Alle Pfade anzeigen
-        if operation in ("all", "show", ""):
-            return self._show_all_paths()
-
-        # Override setzen: bach path set <name> <pfad>
-        if operation == "set":
-            if len(args) < 2:
-                return False, "[FEHLER] Nutzung: bach path set <name> <pfad>"
-            name, pfad = args[0], args[1]
-            if dry_run:
-                return True, f"[DRY-RUN] Wuerde setzen: {name} -> {pfad}"
-            if set_path_override(name, pfad):
-                return True, f"[OK] Override gesetzt: {name} -> {pfad}"
-            return False, f"[FEHLER] Konnte Override nicht setzen"
-
-        # DB-Overrides anzeigen
+            return self._list_paths(json_output=json_output)
+        if operation == "get":
+            if not clean_args:
+                return False, "[FEHLER] Nutzung: bach path get <name>"
+            return self._show_path(clean_args[0], json_output=json_output)
+        if operation == "resolve":
+            return self._resolve_path(args, json_output=json_output)
         if operation == "overrides":
-            return self._show_overrides()
-
-        # Validierung
+            return self._show_overrides(json_output=json_output)
         if operation == "validate":
-            return self._validate_paths()
+            return self._validate_paths(json_output=json_output)
+        if operation == "set":
+            return self._set_override(clean_args, dry_run=dry_run, json_output=json_output)
 
-        # Spezifischer Pfad abfragen
-        path_name = operation.lower()
-        try:
-            return self._show_path(path_name)
-        except KeyError:
-            available = ", ".join(sorted(_PATH_REGISTRY.keys())[:15]) + ", ..."
-            return False, f"Unbekannter Pfad: '{operation}'\nVerfuegbar: {available}\n\nNutze 'bach path list' fuer alle Pfadnamen."
+        # Kurzform: `bach path db`
+        return self._show_path(operation, json_output=json_output)
 
-    def _show_help(self) -> tuple:
-        available_paths = sorted(_PATH_REGISTRY.keys())
-        path_list = "\n".join(f"  {name}" for name in available_paths[:20])
-        if len(available_paths) > 20:
-            path_list += f"\n  ... und {len(available_paths) - 20} weitere"
+    def _has_flag(self, args: Iterable[str], *flags: str) -> bool:
+        return any(arg in flags for arg in args)
 
-        help_text = f"""BACH PATH v2.0 - Systempfade anzeigen
-=====================================
+    def _strip_flags(self, args: Iterable[str], *flags: str) -> list[str]:
+        blocked = set(flags)
+        return [arg for arg in args if arg not in blocked]
 
-Nutzt bach_paths.py als Single Source of Truth.
+    def _json_dump(self, payload: dict) -> str:
+        return json.dumps(payload, indent=2, ensure_ascii=False)
 
-Befehle:
-  bach path              Alle wichtigen Pfade anzeigen
-  bach path <name>       Spezifischen Pfad anzeigen
-  bach path list         Alle verfuegbaren Pfadnamen
-  bach path set <n> <p>  Pfad-Override in DB setzen
-  bach path overrides    DB-Overrides anzeigen
-  bach path validate     Pfade validieren
+    def _normalize_name(self, name: str) -> str:
+        return name.lower().replace("-", "_").replace(" ", "_")
 
-Beispiele:
-  bach path templates    Pfad zum Templates-Verzeichnis
-  bach path berichte     Pfad zum Berichte-Verzeichnis
-  bach path db           Pfad zur Haupt-Datenbank
-  bach path set wissensdatenbank D:\\Meine\\Wissensdatenbank
+    def _active_db_path(self) -> Path:
+        """Aktive DB für den aktuellen Runtime-Root."""
+        local_db = (self.base_path / "data" / "bach.db").resolve(strict=False)
+        if self.base_path.resolve() != bp.SYSTEM_ROOT.resolve():
+            return local_db
+        return self._canonical_db.resolve(strict=False)
 
-Verfuegbare Pfade:
-{path_list}
-"""
-        return True, help_text
+    def _runtime_registry(self) -> Dict[str, Path]:
+        """Spiegelt die zentrale Registry auf den aktiven base_path."""
+        registry: Dict[str, Path] = {}
+        actual_system = bp.SYSTEM_ROOT.resolve()
+        actual_root = bp.BACH_ROOT.resolve()
+        runtime_system = self.base_path.resolve()
+        runtime_root = self.repo_root.resolve()
 
-    def _list_path_names(self) -> tuple:
-        """Listet alle verfuegbaren Pfadnamen auf."""
-        paths = list_paths()
-        results = ["Verfuegbare Pfadnamen:", "=" * 50, ""]
+        for name, raw_path in bp._PATH_REGISTRY.items():
+            candidate = Path(raw_path)
+            remapped = candidate
 
-        # Gruppiert nach Kategorie
-        groups = {
-            "Hierarchie": ["root", "bach", "system", "hub"],
-            "System": ["data", "gui", "skills", "dist"],
-            "Skills": ["tools", "help", "agents", "experts", "workflows", "partners", "services", "templates"],
-            "Data": ["logs", "backups", "archive", "trash", "messages"],
-            "User": ["user", "docs", "exports", "extensions", "user_documents", "persoenlich"],
-            "Datenbanken": ["db", "bach_db", "archive_db"],
-            "Berichte": ["foerderplanung", "berichte", "berichte_output", "berichte_klienten", "klienten", "bericht_template"],
-            "Steuer": ["steuer", "steuer_2025", "belege", "bundles"],
-            "Partner": ["gemini", "claude", "ollama"],
-        }
-
-        for group_name, path_names in groups.items():
-            group_paths = [n for n in path_names if n in paths]
-            if group_paths:
-                results.append(f"{group_name}:")
-                for name in group_paths:
-                    results.append(f"  {name}")
-                results.append("")
-
-        # Restliche Pfade
-        listed = set()
-        for names in groups.values():
-            listed.update(names)
-        other = [n for n in paths.keys() if n not in listed]
-        if other:
-            results.append("Sonstige:")
-            for name in sorted(other):
-                results.append(f"  {name}")
-
-        return True, "\n".join(results)
-
-    def _show_all_paths(self) -> tuple:
-        results = ["BACH Systempfade (v2.0)", "=" * 60, ""]
-
-        # Gruppierte Ausgabe
-        groups = {
-            "Hauptverzeichnisse": ["root", "system", "hub", "data", "skills", "tools", "user"],
-            "Templates & Berichte": ["templates", "berichte", "berichte_output", "bericht_template"],
-            "Datenbanken": ["db", "archive_db"],
-            "Partner": ["gemini", "claude", "ollama"],
-        }
-
-        for group_name, path_names in groups.items():
-            results.append(f"\n{group_name}:")
-            results.append("-" * 40)
-            for name in path_names:
+            try:
+                remapped = runtime_system / candidate.resolve(strict=False).relative_to(actual_system)
+            except ValueError:
                 try:
-                    path = get_path(name)
-                    exists = "✓" if path.exists() else "✗"
-                    results.append(f"  {name:20} {exists} {path}")
-                except KeyError:
-                    pass
+                    remapped = runtime_root / candidate.resolve(strict=False).relative_to(actual_root)
+                except ValueError:
+                    remapped = candidate
 
-        results.append("")
-        results.append("Nutze 'bach path list' fuer alle verfuegbaren Pfade.")
+            registry[name] = remapped
 
-        return True, "\n".join(results)
+        return registry
 
-    def _show_path(self, name: str) -> tuple:
-        """Zeigt Details zu einem spezifischen Pfad."""
-        path = get_path(name)  # Wirft KeyError wenn nicht gefunden
+    def _load_overrides(self) -> Dict[str, Path]:
+        """Lädt Pfad-Overrides aus der kanonischen DB des aktuellen Roots."""
+        db_path = self._active_db_path()
+        if not db_path.exists():
+            return {}
+
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='system_config'"
+            )
+            if not cursor.fetchone():
+                conn.close()
+                return {}
+
+            cursor.execute(
+                "SELECT key, value FROM system_config WHERE key LIKE 'path.%' ORDER BY key"
+            )
+            rows = cursor.fetchall()
+            conn.close()
+        except sqlite3.Error:
+            return {}
+
+        overrides: Dict[str, Path] = {}
+        for key, value in rows:
+            normalized = self._normalize_name(str(key).replace("path.", "", 1))
+            overrides[normalized] = Path(value)
+        return overrides
+
+    def _get_registry_entry(self, name: str) -> Tuple[str, Path, str]:
+        normalized = self._normalize_name(name)
+        if normalized in {"db", "bach_db", "archive_db"}:
+            return normalized, self._active_db_path(), "default"
+
+        registry = self._runtime_registry()
+        if normalized not in registry:
+            available = ", ".join(sorted(registry.keys())[:20]) + ", ..."
+            raise KeyError(
+                f"Unbekannter Pfad: '{name}'\n"
+                f"Verfügbar: {available}\n\n"
+                "Nutze `bach path list` für alle Pfadnamen."
+            )
+
+        overrides = self._load_overrides()
+        if normalized in overrides:
+            return normalized, overrides[normalized], "override"
+        return normalized, registry[normalized], "default"
+
+    def _serialize_path(self, name: str, path: Path, source: str) -> dict:
         exists = path.exists()
+        record = {
+            "name": name,
+            "path": str(path),
+            "exists": exists,
+            "source": source,
+            "kind": "missing",
+        }
 
-        result = f"{name}: {path}"
-
-        # Zusatzinfo
         if exists:
             if path.is_dir():
+                record["kind"] = "directory"
                 try:
-                    count = len(list(path.iterdir()))
-                    result += f"\n  ({count} Eintraege)"
-                except:
-                    pass
+                    record["entry_count"] = sum(1 for _ in path.iterdir())
+                except OSError:
+                    record["entry_count"] = None
             elif path.is_file():
-                size = path.stat().st_size
-                if size > 1024 * 1024:
-                    result += f"\n  ({size / 1024 / 1024:.1f} MB)"
-                elif size > 1024:
-                    result += f"\n  ({size / 1024:.1f} KB)"
-                else:
-                    result += f"\n  ({size} Bytes)"
-        else:
-            result += "\n  (existiert nicht)"
+                record["kind"] = "file"
+                try:
+                    record["size_bytes"] = path.stat().st_size
+                except OSError:
+                    record["size_bytes"] = None
 
-        return True, result
+        for label, base in (("relative_to_system", self.base_path), ("relative_to_root", self.repo_root)):
+            try:
+                record[label] = str(path.resolve(strict=False).relative_to(base.resolve()))
+            except ValueError:
+                continue
 
-    def _show_overrides(self) -> tuple:
-        """Zeigt DB-Overrides an."""
-        overrides = load_path_overrides_from_db()
+        return record
 
-        if not overrides:
-            return True, "Keine DB-Overrides gesetzt.\n\nSetze mit: bach path set <name> <pfad>"
+    def _format_record(self, record: dict) -> str:
+        status = "✓" if record["exists"] else "✗"
+        source = "override" if record["source"] == "override" else "default "
+        return f"  {record['name']:18} {status} {source} {record['path']}"
 
-        results = ["DB-Pfad-Overrides:", "=" * 40, ""]
-        for name, path in overrides.items():
-            exists = "✓" if path.exists() else "✗"
-            results.append(f"  {name:20} {exists} {path}")
+    def _show_help(self, json_output: bool = False) -> tuple:
+        payload = {
+            "command": "bach path",
+            "operations": self.get_operations(),
+            "examples": [
+                "bach path",
+                "bach path db",
+                "bach path list --json",
+                "bach path resolve docs/README.md --from-root",
+                "bach path set wissensdatenbank D:\\Daten\\Wiki",
+            ],
+        }
+        if json_output:
+            return True, self._json_dump(payload)
 
-        return True, "\n".join(results)
+        lines = [
+            "BACH PATH",
+            "=========",
+            "",
+            "Befehle:",
+            "  bach path                        Wichtige Pfade zusammengefasst",
+            "  bach path <name>                 Einzelnen Pfad anzeigen",
+            "  bach path get <name>             Einzelnen Pfad explizit anzeigen",
+            "  bach path list [--json]          Alle registrierten Pfade",
+            "  bach path resolve <pfad>         Relativen Pfad auflösen",
+            "  bach path overrides [--json]     Aktive DB-Overrides",
+            "  bach path validate [--json]      Pfade validieren",
+            "  bach path set <name> <pfad>      DB-Override setzen",
+            "",
+            "Beispiele:",
+        ]
+        lines.extend(f"  {example}" for example in payload["examples"])
+        return True, "\n".join(lines)
 
-    def _validate_paths(self) -> tuple:
-        """Validiert alle wichtigen Pfade."""
-        warnings = validate()
+    def _show_summary(self, json_output: bool = False) -> tuple:
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "override_count": len(self._load_overrides()),
+            "groups": {},
+        }
+
+        lines = ["BACH Pfadoberfläche", "=" * 60]
+        for group_name, names in SUMMARY_GROUPS.items():
+            records = []
+            lines.extend(["", f"[{group_name.upper()}]"])
+            for name in names:
+                normalized, path, source = self._get_registry_entry(name)
+                record = self._serialize_path(normalized, path, source)
+                records.append(record)
+                lines.append(self._format_record(record))
+            payload["groups"][group_name] = records
+
+        if json_output:
+            return True, self._json_dump(payload)
+
+        lines.extend(
+            [
+                "",
+                "Hinweis: `bach path list --json` liefert die vollständige Registry.",
+            ]
+        )
+        return True, "\n".join(lines)
+
+    def _list_paths(self, json_output: bool = False) -> tuple:
+        names = sorted(self._runtime_registry().keys())
+        records = []
+        for name in names:
+            normalized, path, source = self._get_registry_entry(name)
+            records.append(self._serialize_path(normalized, path, source))
+
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "count": len(records),
+            "paths": records,
+        }
+        if json_output:
+            return True, self._json_dump(payload)
+
+        lines = ["Verfügbare BACH-Pfade", "=" * 60]
+        lines.extend(self._format_record(record) for record in records)
+        return True, "\n".join(lines)
+
+    def _show_path(self, name: str, json_output: bool = False) -> tuple:
+        normalized, path, source = self._get_registry_entry(name)
+        record = self._serialize_path(normalized, path, source)
+
+        if json_output:
+            return True, self._json_dump(record)
+
+        lines = [
+            f"{normalized}: {record['path']}",
+            f"  Quelle:     {'DB-Override' if source == 'override' else 'Standard-Registry'}",
+            f"  Existiert:  {'Ja' if record['exists'] else 'Nein'}",
+            f"  Typ:        {record['kind']}",
+        ]
+        if "entry_count" in record and record["entry_count"] is not None:
+            lines.append(f"  Einträge:   {record['entry_count']}")
+        if "size_bytes" in record and record["size_bytes"] is not None:
+            lines.append(f"  Größe:      {record['size_bytes']} Bytes")
+        if "relative_to_system" in record:
+            lines.append(f"  Rel. system:{record['relative_to_system']}")
+        if "relative_to_root" in record:
+            lines.append(f"  Rel. root:  {record['relative_to_root']}")
+        return True, "\n".join(lines)
+
+    def _resolve_path(self, raw_args: list[str], json_output: bool = False) -> tuple:
+        from_root = self._has_flag(raw_args, "--from-root", "--root")
+        args = self._strip_flags(raw_args, "--json", "--from-root", "--root")
+        if not args:
+            return False, "[FEHLER] Nutzung: bach path resolve <pfad> [--from-root]"
+
+        raw_path = " ".join(args)
+        path = Path(raw_path)
+        base = self.repo_root if from_root else self.base_path
+        resolved = path if path.is_absolute() else (base / path)
+        resolved = resolved.resolve(strict=False)
+
+        payload = {
+            "input": raw_path,
+            "base": str(base),
+            "from_root": from_root,
+            "resolved_path": str(resolved),
+            "exists": resolved.exists(),
+        }
+        if json_output:
+            return True, self._json_dump(payload)
+
+        lines = [
+            f"Eingabe:   {raw_path}",
+            f"Basis:     {base}",
+            f"Aufgelöst: {resolved}",
+            f"Existiert: {'Ja' if resolved.exists() else 'Nein'}",
+        ]
+        return True, "\n".join(lines)
+
+    def _show_overrides(self, json_output: bool = False) -> tuple:
+        overrides = self._load_overrides()
+        records = [
+            self._serialize_path(name, path, "override")
+            for name, path in sorted(overrides.items())
+        ]
+
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "count": len(records),
+            "overrides": records,
+            "db_path": str(self._active_db_path()),
+        }
+        if json_output:
+            return True, self._json_dump(payload)
+
+        if not records:
+            return True, "Keine Pfad-Overrides gesetzt."
+
+        lines = ["DB-Pfad-Overrides", "=" * 60]
+        lines.extend(self._format_record(record) for record in records)
+        lines.append(f"\nDB: {self._active_db_path()}")
+        return True, "\n".join(lines)
+
+    def _validate_paths(self, json_output: bool = False) -> tuple:
+        warnings = []
+        checked = []
+
+        for level, names in VALIDATION_GROUPS.items():
+            for name in names:
+                normalized, path, source = self._get_registry_entry(name)
+                record = self._serialize_path(normalized, path, source)
+                checked.append(record)
+                if not record["exists"]:
+                    warnings.append(
+                        {
+                            "level": level,
+                            "name": normalized,
+                            "path": record["path"],
+                            "source": source,
+                        }
+                    )
+
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "valid": not any(item["level"] == "error" for item in warnings),
+            "warnings": warnings,
+            "checked": checked,
+        }
+        if json_output:
+            return True, self._json_dump(payload)
 
         if not warnings:
-            return True, "[OK] Alle kritischen Pfade valide"
+            return True, "[OK] Alle kritischen Pfade sind vorhanden."
 
-        results = ["Pfad-Validierung:", "=" * 40, ""]
-        for w in warnings:
-            results.append(f"  {w}")
+        lines = ["Pfad-Validierung", "=" * 60]
+        for item in warnings:
+            lines.append(
+                f"  [{item['level'].upper()}] {item['name']}: {item['path']}"
+            )
+        return True, "\n".join(lines)
 
-        return True, "\n".join(results)
+    def _set_override(self, args: list[str], dry_run: bool = False, json_output: bool = False) -> tuple:
+        if len(args) < 2:
+            return False, "[FEHLER] Nutzung: bach path set <name> <pfad>"
+
+        name = self._normalize_name(args[0])
+        value = " ".join(args[1:])
+        payload = {
+            "name": name,
+            "path": value,
+            "db_path": str(self._active_db_path()),
+            "dry_run": dry_run,
+        }
+
+        if dry_run:
+            if json_output:
+                return True, self._json_dump(payload)
+            return True, f"[DRY-RUN] Würde Override setzen: {name} -> {value}"
+
+        db_path = self._active_db_path()
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS system_config (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO system_config (key, value, updated_at)
+                VALUES (?, ?, datetime('now'))
+                """,
+                (f"path.{name}", value),
+            )
+            conn.commit()
+            conn.close()
+        except sqlite3.Error as exc:
+            return False, f"[FEHLER] Override konnte nicht gespeichert werden: {exc}"
+
+        payload["saved"] = True
+        if json_output:
+            return True, self._json_dump(payload)
+
+        return True, f"[OK] Override gesetzt: {name} -> {value}"

@@ -8,14 +8,22 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+### Added
+
+- **Strukturierte Pfadoberfläche:** `system/hub/path.py` liefert jetzt eine moderne `bach path`-CLI mit JSON-Ausgaben, Runtime-Root-Spiegelung, `resolve`-/`validate`-Helfern und DB-Overrides über die kanonische BACH-Datenbank.
+- **Safe-Checkpoint-Steering für Ketten:** `llmauto` und `bach chain` unterstützen jetzt `pause`, `resume` und `steer`, sodass Operator-Hinweise zwischen Modellläufen vorgemerkt, angezeigt und am nächsten sicheren Checkpoint übernommen werden.
+
 ### Fixed
 
+- **Windows-Agenten wieder sauber trackbar:** `system/hub/agent_launcher.py` startet interaktive Agenten auf Windows jetzt in einer langlebigen eigenen Konsole statt nur über den kurzlebigen `start`-Launcher, sodass `bach agent status` und `bach agent stop` dieselbe Session-PID sehen.
+- **Run-Statusflächen konkretisiert:** `bach agent list/status --json` liefern jetzt auch `runtime_seconds`, `window_title` und `available_actions`; `bach scheduler status --json` sowie `bach scheduler session status --json` exponieren ebenfalls maschinenlesbare `available_actions`.
 - **ATI-Scanner erweitert:** `system/agents/ati/scanner/task_scanner.py` erkennt jetzt neben `AUFGABEN.txt` auch `TODO.md`, `AUFGABEN.md`, `ROADMAP.md` und `DONE.md`, zählt Tools bei Multi-Datei-Projekten korrekt nur einmal, speichert echte Zeilennummern für Rücksyncs und liest offene ROADMAP-Tabellenzeilen direkt als ATI-Tasks ein.
 - **Agent-Runtime-Cache gehärtet:** `system/core/agent_runtime.py` scoped Registries jetzt pro `base_path`, lädt Agent-Module isoliert und invalidiert gecachte Instanzen automatisch bei Code- oder Config-Änderungen.
 - **JSON-Smokes wieder stabil:** `system/bach.py` unterdrückt ProSync-Start/Exit-Chatter bei `--json`, sodass `bach agent ... --json` und `bach scheduler ... --json` sauber maschinenlesbar bleiben.
 - **Kanonischer DB-Pfad vereinheitlicht:** `system/bach_api.py` schreibt strukturierte `memory`-Einträge wieder in dieselbe Datenbank, die Reader und Handler verwenden.
 - **Seal-Status repariert:** `system/hub/seal.py` löst `BACH_DB` wieder robust auf; `bach seal status` läuft im CLI-Smoke erneut grün.
-- **OpenClaw-Referenzstand präzisiert:** Dokumentation und Release-Planung unterscheiden jetzt sauber zwischen GitHub Releases `2026.5.6`, GHCR `2026.5.7-slim` und Beta `2026.5.9-beta.1` (Stand 2026-05-10).
+- **Path-Handler wieder importierbar:** `system/hub/path.py` platziert `from __future__ import annotations` wieder an einer gültigen Modulposition, sodass `bach path ...` im normalen CLI-Dispatch nicht mehr als Syntaxfehler herausfällt.
+- **OpenClaw-Referenzstand aktualisiert:** Doku und Release-Planung erfassen jetzt den verifizierten Stand vom 2026-05-11 mit Stable `2026.5.7`, Beta `2026.5.10-beta.3`, GHCR `2026.5.10-beta.2-slim` und dem daraus abgeleiteten Fokus auf Steering, Checkpoints und Plugin-/Installer-Sicherheit.
 
 ---
 
