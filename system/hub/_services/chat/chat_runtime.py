@@ -895,6 +895,7 @@ SAFE-MODUS (Standard):
 - weather — Aktuelles Wetter abfragen
 - task_manage — Tasks anlegen, auflisten, erledigen
 - maintain — Systemwartung: fällige Tasks (check), Wartung (run), BACH-Status (health), Service-Check (services)
+- foerderbericht — Förderbericht-Pipeline: Anonymisierung (prepare), Status (status), Aufräumen (cleanup)
 - delegate — Aufgabe an Claude Code oder Codex CLI delegieren
 
 FULL-MODUS (nur nach /mode full bestätigt):
