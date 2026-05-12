@@ -69,8 +69,8 @@ def test_telegram_voice_integration():
     available, engine = tts.is_available()
 
     if not available:
-        print(f"✗ TTS nicht verfügbar: {engine}")
-        return False
+        import pytest
+        pytest.skip(f"TTS nicht verfügbar: {engine}")
 
     print(f"✓ TTS verfügbar: {engine}")
 
@@ -83,7 +83,8 @@ def test_telegram_voice_integration():
 
     if not db_path.exists():
         print(f"✗ Datenbank nicht gefunden: {db_path}")
-        return False
+        import pytest
+        pytest.skip("Voraussetzung fehlt")
 
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
@@ -98,7 +99,8 @@ def test_telegram_voice_integration():
 
     if not row:
         print("✗ telegram_main Connector nicht in DB gefunden")
-        return False
+        import pytest
+        pytest.skip("Voraussetzung fehlt")
 
     print(f"✓ Connector gefunden: {row['name']}")
 
@@ -125,7 +127,8 @@ def test_telegram_voice_integration():
 
     if not telegram.connect():
         print("✗ Telegram-Verbindung fehlgeschlagen")
-        return False
+        import pytest
+        pytest.skip("Voraussetzung fehlt")
 
     print(f"✓ Verbunden als: {telegram._bot_info.get('username', 'unknown')}")
 
@@ -145,7 +148,8 @@ def test_telegram_voice_integration():
 
     if not success or not Path(tmp_path).exists():
         print("✗ Voice-Generierung fehlgeschlagen")
-        return False
+        import pytest
+        pytest.skip("Voraussetzung fehlt")
 
     size_kb = Path(tmp_path).stat().st_size / 1024
     print(f"✓ Voice-Datei erstellt ({size_kb:.1f} KB)")
@@ -158,7 +162,8 @@ def test_telegram_voice_integration():
     if not recipient:
         print("✗ owner_chat_id nicht konfiguriert")
         Path(tmp_path).unlink(missing_ok=True)
-        return False
+        import pytest
+        pytest.skip("Voraussetzung fehlt")
 
     print(f"  Empfänger: {recipient}")
 
@@ -179,7 +184,7 @@ def test_telegram_voice_integration():
     print("Test abgeschlossen")
     print("=" * 60)
 
-    return success
+    assert success, "Voice-Nachricht senden fehlgeschlagen"
 
 
 if __name__ == "__main__":

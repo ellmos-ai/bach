@@ -38,6 +38,7 @@
 /system/data/*.injector_cooldowns
 /system/data/build_db_log.json
 /system/data/config/db_sync_enabled
+/bach.db
 /system/data/bach.db
 /system/bach.db
 /system/tools/data/*.db

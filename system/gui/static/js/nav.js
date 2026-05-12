@@ -1,9 +1,6 @@
 /**
- * BACH Navigation v1.0
- * Zentrale Navigation fuer alle GUI-Seiten
- *
- * Verwendung: Im Template einfach header mit id="main-header" einbinden
- * und dieses Script am Ende laden
+ * BACH Navigation v2.0
+ * Zentrale Navigation mit Dropdown-Submenüs
  */
 
 const BACH_VERSION = "3.9.1";
@@ -21,36 +18,44 @@ const CHAT_HOST = (window.location.hostname === "localhost" || window.location.h
     ? "macstudvonlukas" : window.location.hostname;
 
 const NAV_ITEMS = [
-    { href: "/", label: "Dashboard", icon: null },
-    { href: "/tasks-board", label: "Tasks", icon: null },
-    { href: "/agents", label: "Agenten", icon: null },
-    { href: "/skills-board", label: "Skills", icon: null },
-    { href: "/memory", label: "Memory", icon: null },
-    { href: "/denkarium", label: "Denkarium", icon: null },
-    { href: "/tools", label: "Tools", icon: null },
-    { href: "/kontakte", label: "Kontakte", icon: null },
-    { href: "/financial", label: "Finanzen", icon: null },
-    { href: "/routinen", label: "Routinen", icon: null },
-    { href: "/messages", label: "Nachrichten", icon: null },
-    { href: "/inbox", label: "Inbox", icon: null },
-    { href: "/wiki", label: "Wiki", icon: null },
-    { href: "/partners", label: "Partner", icon: null },
-    { href: "/usecases", label: "Use Cases", icon: null },
-    { href: "/tokens", label: "Tokens", icon: null },
-    { href: `http://${CHAT_HOST}:8081`, label: "Buddha Chat", icon: null, external: true },
-    { href: "/maintenance", label: "Wartung", icon: null },
-    { href: "/logs", label: "Logs", icon: null },
-    { href: "/help", label: "Help", icon: null },
+    { href: "/", label: "Dashboard" },
+    { label: "Aufgaben", children: [
+        { href: "/tasks-board", label: "Tasks" },
+        { href: "/routinen", label: "Routinen" },
+    ]},
+    { label: "Agenten", children: [
+        { href: "/agents", label: "Agenten" },
+        { href: "/partners", label: "Partner" },
+        { href: "/skills-board", label: "Skills" },
+    ]},
+    { label: "Wissen", children: [
+        { href: "/memory", label: "Memory" },
+        { href: "/denkarium", label: "Denkarium" },
+        { href: "/wiki", label: "Wiki" },
+        { href: "/usecases", label: "Use Cases" },
+    ]},
+    { label: "Kommunikation", children: [
+        { href: "/messages", label: "Nachrichten" },
+        { href: "/inbox", label: "Inbox" },
+        { href: "/kontakte", label: "Kontakte" },
+    ]},
+    { label: "Finanzen", children: [
+        { href: "/financial", label: "Finanzen" },
+        { href: "/tokens", label: "Tokens" },
+    ]},
+    { href: "/tools", label: "Tools" },
+    { label: "System", children: [
+        { href: "/maintenance", label: "Wartung" },
+        { href: "/logs", label: "Logs" },
+        { href: "/help", label: "Help" },
+    ]},
+    { href: `http://${CHAT_HOST}:8081`, label: "Buddha Chat", external: true },
 ];
 
-/**
- * Initialisiert die Navigation
- */
 function initNavigation() {
     const header = document.getElementById('main-header');
     if (!header) return;
 
-    // Check for embedded mode (Task #616)
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('embedded') === '1') {
         header.style.display = 'none';
@@ -59,15 +64,30 @@ function initNavigation() {
 
     const currentPath = window.location.pathname;
 
-    // Navigation HTML erstellen
+    function isActive(href) {
+        return currentPath === href || currentPath === href + '/' ||
+            (href !== '/' && currentPath.startsWith(href));
+    }
+
+    function hasActiveChild(item) {
+        return item.children && item.children.some(c => isActive(c.href));
+    }
+
     const navHtml = NAV_ITEMS.map(item => {
-        const isActive = (currentPath === item.href) ||
-            (currentPath === item.href + '/') ||
-            (item.href !== '/' && currentPath.startsWith(item.href));
-        const activeClass = isActive ? 'active' : '';
-        const icon = item.icon ? `<span class="nav-icon">${item.icon}</span>` : '';
+        if (item.children) {
+            const parentActive = hasActiveChild(item) ? ' active' : '';
+            const childHtml = item.children.map(child => {
+                const childActive = isActive(child.href) ? ' active' : '';
+                return `<a href="${child.href}" class="dropdown-item${childActive}">${child.label}</a>`;
+            }).join('');
+            return `<div class="nav-dropdown${parentActive}">
+                <button class="nav-item nav-dropdown-toggle${parentActive}">${item.label} <span class="dropdown-arrow">▾</span></button>
+                <div class="dropdown-menu">${childHtml}</div>
+            </div>`;
+        }
+        const active = isActive(item.href) ? ' active' : '';
         const target = item.external ? ' target="_blank"' : '';
-        return `<a href="${item.href}"${target} class="nav-item ${activeClass}">${icon}${item.label}</a>`;
+        return `<a href="${item.href}"${target} class="nav-item${active}">${item.label}</a>`;
     }).join('\n            ');
 
     header.innerHTML = `
@@ -84,15 +104,25 @@ function initNavigation() {
         </div>
     `;
 
+    document.querySelectorAll('.nav-dropdown').forEach(dd => {
+        dd.addEventListener('mouseenter', () => dd.classList.add('open'));
+        dd.addEventListener('mouseleave', () => dd.classList.remove('open'));
+        dd.querySelector('.nav-dropdown-toggle').addEventListener('click', (e) => {
+            e.preventDefault();
+            dd.classList.toggle('open');
+        });
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.nav-dropdown')) {
+            document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+        }
+    });
 }
 
-/**
- * Aktualisiert den Status in der Navigation
- */
 function updateNavStatus(online, text) {
     const dot = document.getElementById('status-dot');
     const statusText = document.getElementById('status-text');
-
     if (dot) {
         dot.classList.remove('online', 'offline');
         dot.classList.add(online ? 'online' : 'offline');
@@ -102,9 +132,6 @@ function updateNavStatus(online, text) {
     }
 }
 
-/**
- * Laedt den Status vom Server und aktualisiert die Anzeige
- */
 async function loadNavStatus() {
     try {
         const response = await fetch('/api/status');
@@ -118,13 +145,11 @@ async function loadNavStatus() {
     }
 }
 
-// Automatisch initialisieren wenn DOM geladen
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     loadNavStatus();
 });
 
-// Export fuer Module
 if (typeof module !== 'undefined') {
     module.exports = { initNavigation, updateNavStatus, loadNavStatus, NAV_ITEMS, BACH_VERSION };
 }
