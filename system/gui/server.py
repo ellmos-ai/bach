@@ -2307,86 +2307,90 @@ async def list_scheduler_runs(job_id: Optional[int] = None, limit: int = 20):
 
 async def get_daemon_status():
 
-    """Liefert aktuellen Daemon-Status."""
+    """Liefert aktuellen Daemon-Status mit Job-Statistiken und Runtime-Metriken."""
 
     from gui.daemon_service import DaemonService, DAEMON_PID_FILE
 
-
-
-    # PID-File pruefen
-
-    pid_exists = DAEMON_PID_FILE.exists()
-
+    running = False
+    pid = None
     pid_content = None
+    started_at = None
 
-    if pid_exists:
-
+    if DAEMON_PID_FILE.exists():
         try:
-
             pid_content = DAEMON_PID_FILE.read_text().strip()
-
-        except:
-
+            pid = int(pid_content)
+            import subprocess
+            if os.name == 'nt':
+                output = subprocess.check_output(
+                    ['tasklist', '/FI', f'PID eq {pid}'],
+                    stderr=subprocess.DEVNULL).decode()
+                running = str(pid) in output
+            else:
+                os.kill(pid, 0)
+                running = True
+        except Exception:
             pass
 
+    config = {"interval": 15, "max_sessions": 3, "quiet_time": None}
+    is_quiet = False
+    config_file = BACH_DIR / "data" / "daemon_config.json"
+    if config_file.exists():
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+                config["interval"] = cfg.get("interval_minutes", 15)
+                config["max_sessions"] = cfg.get("max_sessions", 3)
+                quiet_start = cfg.get("quiet_start")
+                quiet_end = cfg.get("quiet_end")
+                if quiet_start and quiet_end:
+                    config["quiet_time"] = f"{quiet_start}-{quiet_end}"
+                    is_quiet = is_quiet_time(quiet_start, quiet_end)
+                started_at = cfg.get("started_at")
+        except Exception:
+            pass
 
-
-    # Job-Statistiken
+    runtime_str = "00:00:00"
+    sessions_generated = 0
+    next_session_in = 0
+    if running and started_at:
+        interval = config["interval"]
+        sessions_generated = get_extrapolated_session_count(started_at, interval)
+        next_session_in = get_next_session_seconds(started_at, interval)
+        runtime_str = get_runtime_string(started_at)
 
     conn = get_user_db()
-
     stats = {
-
         "total_jobs": conn.execute("SELECT COUNT(*) FROM scheduler_jobs").fetchone()[0],
-
         "active_jobs": conn.execute("SELECT COUNT(*) FROM scheduler_jobs WHERE is_active = 1").fetchone()[0],
-
         "runs_today": conn.execute(
-
             "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now')"
-
         ).fetchone()[0],
-
         "failed_today": conn.execute(
-
             "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now') AND result = 'failed'"
-
         ).fetchone()[0],
-
     }
-
-
-
-    # Letzte 5 Laeufe
-
     last_runs = conn.execute("""
-
         SELECT r.id, j.name, r.result, r.started_at, r.duration_seconds
-
         FROM scheduler_runs r
-
         JOIN scheduler_jobs j ON r.job_id = j.id
-
         ORDER BY r.started_at DESC LIMIT 5
-
     """).fetchall()
-
     conn.close()
 
-
-
     return {
-
-        "running": pid_exists,
-
+        "running": running,
+        "pid": pid,
         "pid_file": str(DAEMON_PID_FILE),
-
         "pid_content": pid_content,
-
+        "started_at": started_at,
+        "config": config,
+        "runtime_str": runtime_str,
+        "sessions_generated": sessions_generated,
+        "next_session_in": next_session_in,
+        "is_quiet_time": is_quiet,
         "stats": stats,
-
-        "last_runs": rows_to_list(last_runs)
-
+        "last_runs": rows_to_list(last_runs),
     }
 
 
@@ -7871,155 +7875,6 @@ async def update_daemon_config(request: Request):
 
 
 
-@app.get("/api/daemon/status")
-
-async def daemon_status():
-
-    """
-
-    Liefert Daemon-Status mit Berechnungsmetriken.
-
-    Implementiert DAEMON_001 aus ROADMAP_ADVANCED.md
-
-    """
-
-    result = {
-
-        "running": False,
-
-        "pid": None,
-
-        "started_at": None,
-
-        "config": {
-
-            "interval": 15,
-
-            "max_sessions": 3,
-
-            "quiet_time": None
-
-        },
-
-        "runtime_str": "00:00:00",
-
-        "sessions_generated": 0,
-
-        "next_session_in": 0,
-
-        "is_quiet_time": False
-
-    }
-
-    
-
-    # Config laden falls vorhanden
-
-    if DAEMON_CONFIG_FILE.exists():
-
-        try:
-
-            with open(DAEMON_CONFIG_FILE, 'r', encoding='utf-8') as f:
-
-                config = json.load(f)
-
-                result["config"]["interval"] = config.get("interval_minutes", 15)
-
-                result["config"]["max_sessions"] = config.get("max_sessions", 3)
-
-                
-
-                quiet_start = config.get("quiet_start")
-
-                quiet_end = config.get("quiet_end")
-
-                if quiet_start and quiet_end:
-
-                    result["config"]["quiet_time"] = f"{quiet_start}-{quiet_end}"
-
-                    result["is_quiet_time"] = is_quiet_time(quiet_start, quiet_end)
-
-                
-
-                result["started_at"] = config.get("started_at")
-
-        except Exception as e:
-
-            pass
-
-    
-
-    # PID-Datei pruefen
-
-    if DAEMON_PID_FILE.exists():
-
-        try:
-
-            with open(DAEMON_PID_FILE, 'r') as f:
-
-                pid = int(f.read().strip())
-
-                
-
-            # Pruefen ob Prozess noch laeuft (Windows/Unix)
-
-            import subprocess
-
-            try:
-
-                if os.name == 'nt':  # Windows
-
-                    output = subprocess.check_output(['tasklist', '/FI', f'PID eq {pid}'], 
-
-                                                     stderr=subprocess.DEVNULL).decode()
-
-                    result["running"] = str(pid) in output
-
-                else:  # Unix
-
-                    os.kill(pid, 0)
-
-                    result["running"] = True
-
-            except:
-
-                result["running"] = False
-
-                
-
-            if result["running"]:
-
-                result["pid"] = pid
-
-        except:
-
-            pass
-
-    
-
-    # Berechnungen wenn Daemon laeuft
-
-    if result["running"] and result["started_at"]:
-
-        interval = result["config"]["interval"]
-
-        result["sessions_generated"] = get_extrapolated_session_count(
-
-            result["started_at"], interval
-
-        )
-
-        result["next_session_in"] = get_next_session_seconds(
-
-            result["started_at"], interval
-
-        )
-
-        result["runtime_str"] = get_runtime_string(result["started_at"])
-
-    
-
-    return result
 
 
 
