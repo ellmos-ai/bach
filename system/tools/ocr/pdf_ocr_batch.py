@@ -49,6 +49,8 @@ def ocr_pdf(src_path: Path, output_path: Optional[Path] = None,
     try:
         import pikepdf
         out_pdf = pikepdf.Pdf.new()
+        open_sources = []
+        tmp_paths = []
 
         for img in images:
             if img.mode != "RGB":
@@ -65,13 +67,20 @@ def ocr_pdf(src_path: Path, output_path: Optional[Path] = None,
                 tmp_f.write(pdf_bytes)
                 tmp_f.close()
                 src_pdf = pikepdf.Pdf.open(tmp_f.name)
-                os.unlink(tmp_f.name)
+                tmp_paths.append(tmp_f.name)
             out_pdf.pages.extend(src_pdf.pages)
-            src_pdf.close()
+            open_sources.append(src_pdf)
 
         dst.parent.mkdir(parents=True, exist_ok=True)
         out_pdf.save(str(dst))
         out_pdf.close()
+        for s in open_sources:
+            s.close()
+        for p in tmp_paths:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
         result["ok"] = True
     except ImportError:
         result["error"] = "pikepdf nicht installiert: pip install pikepdf"
