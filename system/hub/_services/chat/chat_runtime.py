@@ -54,7 +54,7 @@ SAFE_BASES = frozenset({
     "ls", "cat", "head", "tail", "grep", "find", "wc", "file", "stat",
     "echo", "date", "which", "whoami", "hostname", "uname", "env",
     "df", "du", "uptime", "ps", "top", "sw_vers", "sysctl",
-    "ollama", "brew", "pip", "pip3", "python3",
+    "ollama", "brew", "pip", "pip3",
     "docker", "git", "curl",
     "bach",
 })
