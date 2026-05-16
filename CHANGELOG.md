@@ -6,6 +6,24 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ---
 
+## [3.11.1] - 2026-05-17
+
+### Fixed
+
+- **GUI: implicit window.event in 5 templates:** Functions called via `onclick` used `event` without receiving it as parameter (fails in strict mode). Fixed in `prompt-generator.html`, `inbox.html`, `daemon.html`, `messages.html`, `skills-board.js` by passing event explicitly.
+- **Cross-platform Popen detachment in 4 handlers:** `claude_bridge.py`, `ati.py`, `daily_agent.py`, `watcher.py` used Windows-only `CREATE_NO_WINDOW` unconditionally. Now uses platform-conditional kwargs dict with `start_new_session=True` on Unix.
+- **extensions.py subprocess:** Console window suppression on Windows for plugin subprocess fallback.
+
+### Added
+
+- **Test: test_claude_bridge_handler.py** (8 tests) — startup, shutdown, status, cross-platform Popen.
+- **Test: test_watcher_handler.py** (8 tests) — start, stop, status, cross-platform Popen.
+- **Test: test_daily_agent_handler.py** (6 tests) — start, stop, schedule, cross-platform Popen.
+- **Test: test_ati_handler.py** (+2 tests) — cross-platform Popen verification.
+- **Test: test_plugins_handler.py** (8 tests) — plugin installation, listing, removal.
+
+---
+
 ## [3.11.0-coffee] - 2026-05-16
 
 ### Added
