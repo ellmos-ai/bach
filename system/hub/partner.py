@@ -43,7 +43,6 @@ class PartnerHandler(BaseHandler):
     
     def __init__(self, base_path: Path):
         super().__init__(base_path)
-        super().__init__(base_path)
         # self.registry_path entfernt (Task #302)
         self.db_path = self._canonical_db
     

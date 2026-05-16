@@ -115,8 +115,13 @@ class TestShScript:
                 f"Zeile {i}: xargs -r ist GNU-only und fehlt auf macOS"
             )
 
-    def test_no_dev_null_file_risk(self):
-        pass
+    def test_no_windows_paths(self):
+        for i, line in enumerate(self.lines, 1):
+            if line.strip().startswith("#"):
+                continue
+            assert "C:\\" not in line and "C:/" not in line, (
+                f"Zeile {i}: Hartcodierte Windows-Pfade in bach.sh vermeiden"
+            )
 
     def test_chat_dir_reference(self):
         assert "chat_tray.py" in self.text
