@@ -779,11 +779,12 @@
                 const resp = await fetch('/api/inbox/status');
                 const data = await resp.json();
                 const newState = !data.enabled;
-                await fetch('/api/inbox/scanner', {
-                    method: 'POST',
+                const res = await fetch('/api/inbox/settings', {
+                    method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ enabled: newState })
                 });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
                 loadInboxStatus();
             } catch (e) { alert('Scanner-Umschaltung fehlgeschlagen: ' + e.message); }
         }
