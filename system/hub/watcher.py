@@ -96,14 +96,18 @@ class WatcherHandler(BaseHandler):
             return False, f"watcher_daemon.py nicht gefunden: {daemon_script}"
 
         # Im Hintergrund starten
-        creation_flags = 0x08000000 if sys.platform == "win32" else 0
         try:
+            kwargs = {
+                "cwd": str(self.target_file),
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+            }
+            if sys.platform == "win32":
+                kwargs["creationflags"] = 0x08000000
+            else:
+                kwargs["start_new_session"] = True
             proc = subprocess.Popen(
-                [sys.executable, str(daemon_script)],
-                cwd=str(self.target_file),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=creation_flags
+                [sys.executable, str(daemon_script)], **kwargs
             )
             return True, f"Watcher-Daemon gestartet (PID {proc.pid})"
         except Exception as e:

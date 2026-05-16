@@ -173,14 +173,19 @@ class DailyAgentHandler(BaseHandler):
         today = date.today().strftime("%Y-%m-%d")
         initial_prompt = f"Starte BACH Tagesagent fuer {today}. Fuehre bach --startup durch und arbeite die Task-Queue ab."
 
-        creation_flags = 0x08000000 if sys.platform == "win32" else 0
         try:
+            kwargs = {
+                "cwd": str(self.base_path),
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+            }
+            if sys.platform == "win32":
+                kwargs["creationflags"] = 0x08000000
+            else:
+                kwargs["start_new_session"] = True
             proc = subprocess.Popen(
                 [claude, "--model", model, "--continue", "-p", initial_prompt],
-                cwd=str(self.base_path),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=creation_flags,
+                **kwargs,
             )
 
             # PID speichern

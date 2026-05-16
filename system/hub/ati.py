@@ -244,14 +244,16 @@ Mehr Info: agents/ati/ATI.md
                 cmd.extend(["--interval", args[i + 1]])
 
         try:
-            creation_flags = 0x08000000 if sys.platform == "win32" else 0
-            subprocess.Popen(
-                cmd,
-                cwd=str(daemon_script.parent),
-                creationflags=creation_flags,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
+            kwargs = {
+                "cwd": str(daemon_script.parent),
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+            }
+            if sys.platform == "win32":
+                kwargs["creationflags"] = 0x08000000
+            else:
+                kwargs["start_new_session"] = True
+            subprocess.Popen(cmd, **kwargs)
             return True, "[ATI] Session-Daemon gestartet (Profil: ati)\n\nStatus: bach daemon status"
         except Exception as e:
             return False, f"[ATI DAEMON] Start fehlgeschlagen: {e}"

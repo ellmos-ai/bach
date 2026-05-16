@@ -357,6 +357,42 @@ class TestTaskDependencies:
 
 
 # ================================================================
+# DAEMON POPEN (cross-platform regression)
+# ================================================================
+
+class TestDaemonPopen:
+    @patch("subprocess.Popen")
+    def test_start_daemon_win32_creationflags(self, mock_popen, ati_env):
+        """Regression: daemon Popen must pass CREATE_NO_WINDOW on Windows."""
+        h, _ = ati_env
+        daemon_script = h.session_service_dir / "session_daemon.py"
+        daemon_script.parent.mkdir(parents=True, exist_ok=True)
+        daemon_script.write_text("# daemon", encoding="utf-8")
+
+        with patch("hub.ati.sys.platform", "win32"):
+            ok, msg = h.handle("start", [])
+        assert ok is True
+        call_kwargs = mock_popen.call_args[1]
+        assert call_kwargs.get("creationflags") == 0x08000000
+        assert "start_new_session" not in call_kwargs
+
+    @patch("subprocess.Popen")
+    def test_start_daemon_unix_start_new_session(self, mock_popen, ati_env):
+        """Regression: daemon Popen must pass start_new_session on Unix."""
+        h, _ = ati_env
+        daemon_script = h.session_service_dir / "session_daemon.py"
+        daemon_script.parent.mkdir(parents=True, exist_ok=True)
+        daemon_script.write_text("# daemon", encoding="utf-8")
+
+        with patch("hub.ati.sys.platform", "linux"):
+            ok, msg = h.handle("start", [])
+        assert ok is True
+        call_kwargs = mock_popen.call_args[1]
+        assert call_kwargs.get("start_new_session") is True
+        assert "creationflags" not in call_kwargs
+
+
+# ================================================================
 # TASK BLOCKED
 # ================================================================
 

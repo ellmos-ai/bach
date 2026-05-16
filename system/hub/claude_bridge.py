@@ -110,18 +110,23 @@ class ClaudeBridgeHandler(BaseHandler):
         if not daemon_script.exists():
             return False, f"bridge_daemon.py nicht gefunden: {daemon_script}"
 
-        creation_flags = 0x08000000 if sys.platform == "win32" else 0
         try:
             env = dict(__import__('os').environ)
             env['PYTHONIOENCODING'] = 'utf-8'
+            kwargs = {
+                "cwd": str(self.target_file),
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+                "env": env,
+                "encoding": "utf-8",
+                "errors": "replace",
+            }
+            if sys.platform == "win32":
+                kwargs["creationflags"] = 0x08000000
+            else:
+                kwargs["start_new_session"] = True
             proc = subprocess.Popen(
-                [sys.executable, str(daemon_script)],
-                cwd=str(self.target_file),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=creation_flags,
-                env=env,
-                encoding='utf-8', errors='replace'
+                [sys.executable, str(daemon_script)], **kwargs
             )
             return True, f"Claude Bridge Daemon gestartet (PID {proc.pid})"
         except Exception as e:
