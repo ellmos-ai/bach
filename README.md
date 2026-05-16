@@ -10,10 +10,11 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-v3.9.1--tiramisu-orange)
+![Version](https://img.shields.io/badge/Version-v3.11.0--coffee-orange)
 ![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-3241%20passed-brightgreen)
 
-**Version:** v3.9.1-tiramisu
+**Version:** v3.11.0-coffee
 
 <p align="center">
   <img src="overview.jpg" alt="BACH Overview" width="700">
@@ -29,6 +30,7 @@
 - **550+ Tools** - Extensive tool library for file processing, analysis, and automation
 - **1870+ Skills** - Reusable workflows and templates
 - **58 Workflow Templates** - Pre-built process workflows
+- **3241 Tests** - Comprehensive test suite covering handlers, services, GUI, and MCP servers
 - **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System (6 memory types)
 - **Agent CLI** - `bach agent start/stop/list` for direct agent control
 - **Agent Doctor** - `bach agent doctor [name] [--json]` validates Claude CLI availability, runtime dirs, skill files, and stale PID state before a launch
@@ -64,7 +66,7 @@ bach setup full-install
 
 ## MCP Servers (Claude Code Integration)
 
-BACH provides two MCP servers for integration with Claude Code, Cursor, and other IDEs:
+BACH provides two MCP servers for integration with Claude Code, Cursor, and other IDEs. Cross-platform tested on Windows, macOS (ARM64), and Linux:
 
 ```bash
 # Install and configure MCP servers (recommended)
@@ -74,8 +76,8 @@ python system/bach.py setup mcp
 npm install -g ellmos-codecommander-mcp ellmos-filecommander-mcp
 ```
 
-- **[ellmos-codecommander-mcp](https://www.npmjs.com/package/ellmos-codecommander-mcp)** - Code analysis and refactoring tools
-- **[ellmos-filecommander-mcp](https://www.npmjs.com/package/ellmos-filecommander-mcp)** - File management and batch operations
+- **[ellmos-codecommander-mcp](https://www.npmjs.com/package/ellmos-codecommander-mcp)** v1.3.8 - Code analysis and refactoring tools (17 tools)
+- **[ellmos-filecommander-mcp](https://www.npmjs.com/package/ellmos-filecommander-mcp)** v1.7.8 - File management and batch operations (44 tools)
 
 ## Quick Start
 
@@ -192,7 +194,7 @@ Die vollständige deutsche Dokumentation findest du hier: **[README.de.md](READM
 
 ---
 
-*ellmos BACH v3.9.1-tiramisu - Text-Based Operating System for LLMs*
+*ellmos BACH v3.11.0-coffee - Text-Based Operating System for LLMs*
 
 ---
 

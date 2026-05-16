@@ -72,9 +72,10 @@
 /system/data/temp/
 /system/data/trash/
 
-# === EXPORTS (Generiert) ===
+# === EXPORTS & GENERATED ARTIFACTS ===
 /exports/**/*.zip
 /exports/**/_archive/
+/system/tools/analysis_results.json
 
 # === ONEDRIVE CONFLICT COPIES (Nie committen!) ===
 *-Mac Studio.py
