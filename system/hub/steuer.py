@@ -1648,7 +1648,7 @@ bach steuer beleg sync [--dry-run]
             cmd.append("--dry-run")
         
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             output = result.stdout + result.stderr
             return True, output if output else "Scan abgeschlossen."
         except Exception as e:
@@ -1681,7 +1681,7 @@ Die Belege werden als DEPRECATED markiert, die Nummern bleiben reserviert."""
             cmd.append("--dry-run")
         
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             output = result.stdout + result.stderr
             return True, output if output else "Deprecate abgeschlossen."
         except Exception as e:
@@ -1754,7 +1754,7 @@ Die Belege werden als DEPRECATED markiert, die Nummern bleiben reserviert."""
             cmd.append("--dry-run")
         
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             output = result.stdout + result.stderr
             return True, output if output else "Sync abgeschlossen."
         except Exception as e:
@@ -2428,7 +2428,8 @@ Usage:
         
         try:
             # cwd auf tools/steuer setzen, damit relative Imports funktionieren
-            result = subprocess.run(cmd, capture_output=True, text=True, 
+            result = subprocess.run(cmd, capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace",
                                    timeout=120, cwd=str(tools_dir), env=env)
             output = result.stdout + result.stderr
             return True, output if output else f"Tool {tool_name} ausgefuehrt (keine Ausgabe)"

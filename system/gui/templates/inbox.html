@@ -774,6 +774,20 @@
             else alert(msg);
         }
 
+        async function toggleScanner() {
+            try {
+                const resp = await fetch('/api/inbox/status');
+                const data = await resp.json();
+                const newState = !data.enabled;
+                await fetch('/api/inbox/scanner', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: newState })
+                });
+                loadInboxStatus();
+            } catch (e) { alert('Scanner-Umschaltung fehlgeschlagen: ' + e.message); }
+        }
+
         async function runScan() {
             try {
                 await fetch('/api/inbox/scan', { method: 'POST' });

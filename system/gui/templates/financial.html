@@ -1690,7 +1690,7 @@
 
         async function editContract(id) {
             try {
-                const res = await fetch(`${API_BASE}/financial/contracts`);
+                const res = await fetch(`${API_BASE}/contracts`);
                 const data = await res.json();
                 const c = data.contracts.find(i => i.id === id);
                 if (!c) return;
@@ -1721,7 +1721,7 @@
             };
 
             try {
-                const url = id ? `${API_BASE}/financial/contracts/${id}` : `${API_BASE}/financial/contracts`;
+                const url = id ? `${API_BASE}/contracts/${id}` : `${API_BASE}/contracts`;
                 const method = id ? 'PUT' : 'POST';
                 const res = await fetch(url, {
                     method: method,
@@ -1738,7 +1738,7 @@
         async function deleteContract(id) {
             if (!confirm('Vertrag wirklich loeschen?')) return;
             try {
-                const res = await fetch(`${API_BASE}/financial/contracts/${id}`, { method: 'DELETE' });
+                const res = await fetch(`${API_BASE}/contracts/${id}`, { method: 'DELETE' });
                 if ((await res.json()).success) loadSubscriptions();
             } catch (e) { console.error(e); }
         }

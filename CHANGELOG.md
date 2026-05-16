@@ -6,6 +6,35 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ---
 
+## [3.11.0-coffee] - 2026-05-16
+
+### Added
+
+- **3241 Tests:** Comprehensive test suite with 63 new test files covering handlers, services, GUI, MCP servers.
+- **MCP Cross-Platform Tests:** `test_mcp_servers.py` validates FileCommander/CodeCommander discovery, initialization, capabilities on Windows/macOS/Linux.
+- **Linux Support Verified:** BACH core installs and runs on Ubuntu 24.04 (321/332 smoke tests pass, only GUI-desktop tools skip on headless).
+- **GUI Interactivity Audit:** 8 critical templates audited, 3 runtime bugs fixed, all data endpoints verified populated (32/32).
+
+### Fixed
+
+- **GUI: memory.html addLesson/addFact crash:** Removed references to non-existent `lesson-category`/`fact-category` elements that threw TypeError on click.
+- **GUI: memory.html Dev Mode buttons:** Implemented missing `refreshDevData()` and `cleanupOrphanedMemory()` functions that threw ReferenceError.
+- **GUI: kontakte.html non-functional:** Fixed `escapeHtml` load order — inline `esc()` function instead of referencing `nav.js` before it loads.
+- **GUI: tools.html apostrophe crash:** Escape single quotes in tool names for `onclick` handlers.
+- **GUI: scan_config SQL query:** Removed non-existent `category` column from scanner config endpoint.
+- **GUI: PromptGenerator import path:** Corrected service path from `skills/_services/` to `hub/_services/`.
+- **Encoding: scheduler.py subprocess calls:** Added `encoding="utf-8", errors="replace"` to 3 subprocess.run calls that crashed with cp1252 UnicodeDecodeError on Windows.
+- **Connection leaks:** Fixed unclosed DB connections in health, fs, restore, setup, startup, agents, db_sync handlers.
+- **Cross-platform:** `subprocess.CREATE_NO_WINDOW` instead of magic constant, Edge PDF detection for macOS, font fallback in chat_tray.
+- **Contact handler:** Fixed `r['mobile']` → `r['phone_mobile']` column name mismatch.
+- **Linux: hub/test.py:** Fixed invalid escape sequences causing SyntaxWarning on Python 3.12.
+- **Help files:** Added missing operations: agent rename, setup hooks/hooks-remove/lang, skills export-agent.
+- **Schema:** Marked `schema_user_v2.sql` as deprecated (dead artifact, not used by code).
+- **Version sync:** Updated pyproject.toml, setup.py, bach.bat, README.md/de.md to v3.11.0.
+- **Gitignore:** Added generated `analysis_results.json` to .gitignore, removed from tracking.
+
+---
+
 ## [Unreleased]
 
 ### Added

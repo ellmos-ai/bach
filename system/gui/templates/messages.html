@@ -824,7 +824,8 @@
             loadPartners();
 
             // Status dot
-            document.getElementById('status-dot').classList.add('online');
+            const dot = document.getElementById('status-dot');
+            if (dot) dot.classList.add('online');
         });
     </script>
 </body>
