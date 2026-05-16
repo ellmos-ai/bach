@@ -273,3 +273,47 @@ class TestResolve:
     def test_resolve_default_is_system(self):
         result = resolve("hub")
         assert result == BP_SYSTEM_ROOT / "hub"
+
+
+# ═══════════════════════════════════════════════════════════════
+# DEPLOYMENT MODE
+# ═══════════════════════════════════════════════════════════════
+
+from hub.bach_paths import (
+    get_deployment_mode,
+    is_server_mode,
+    is_onedrive_mode,
+    DEPLOYMENT_MODE,
+)
+
+
+class TestDeploymentMode:
+    def test_mode_is_string(self):
+        assert isinstance(get_deployment_mode(), str)
+
+    def test_mode_in_valid_set(self):
+        assert get_deployment_mode() in {"server", "onedrive", "local"}
+
+    def test_constant_matches_function(self):
+        assert DEPLOYMENT_MODE == get_deployment_mode()
+
+    def test_is_server_mode_returns_bool(self):
+        assert isinstance(is_server_mode(), bool)
+
+    def test_is_onedrive_mode_returns_bool(self):
+        assert isinstance(is_onedrive_mode(), bool)
+
+    def test_server_mode_with_env(self, monkeypatch):
+        monkeypatch.setenv("BACH_SERVER_MODE", "1")
+        assert get_deployment_mode() == "server"
+        assert is_server_mode() is True
+
+    def test_server_mode_with_host_env(self, monkeypatch):
+        monkeypatch.setenv("BACH_HOST", "somehost")
+        assert get_deployment_mode() == "server"
+
+    def test_onedrive_or_local_without_env(self, monkeypatch):
+        monkeypatch.delenv("BACH_SERVER_MODE", raising=False)
+        monkeypatch.delenv("BACH_HOST", raising=False)
+        mode = get_deployment_mode()
+        assert mode in {"onedrive", "local"}

@@ -483,6 +483,42 @@ def resolve(relative_path: str, from_root: bool = False) -> Path:
 
 
 # ============================================================================
+# DEPLOYMENT MODE DETECTION
+# ============================================================================
+
+import os as _os
+
+def get_deployment_mode() -> str:
+    """
+    Erkennt den Deployment-Modus von BACH.
+
+    Returns:
+        "server"  — BACH_SERVER_MODE env var gesetzt oder als Service laufend
+        "onedrive" — System liegt in einem OneDrive-synced Verzeichnis
+        "local"   — Standalone lokale Installation (z.B. ~/.bach/)
+    """
+    if _os.environ.get("BACH_SERVER_MODE") or _os.environ.get("BACH_HOST"):
+        return "server"
+    system_str = str(SYSTEM_ROOT).lower()
+    if "onedrive" in system_str or "cloudstorage" in system_str:
+        return "onedrive"
+    return "local"
+
+
+def is_server_mode() -> bool:
+    """True wenn BACH im Server-Modus laeuft."""
+    return get_deployment_mode() == "server"
+
+
+def is_onedrive_mode() -> bool:
+    """True wenn BACH aus einem OneDrive-Verzeichnis laeuft."""
+    return get_deployment_mode() == "onedrive"
+
+
+DEPLOYMENT_MODE = get_deployment_mode()
+
+
+# ============================================================================
 # FILE ACCESS HOOK (Anonymisierte Dateizugriffe)
 # ============================================================================
 
