@@ -85,7 +85,7 @@ def populated(handler, cal_env):
 
     conn.execute(
         "INSERT INTO assistant_calendar (title, event_type, start_datetime, location, status) VALUES (?, ?, ?, ?, ?)",
-        ("Zahnarzt", "termin", now.strftime("%Y-%m-%d 23:30:00"), "Praxis Dr. X", "geplant"),
+        ("Zahnarzt", "termin", (now + timedelta(days=1)).strftime("%Y-%m-%d 10:00:00"), "Praxis Dr. X", "geplant"),
     )
     conn.execute(
         "INSERT INTO assistant_calendar (title, event_type, start_datetime, status) VALUES (?, ?, ?, ?)",
@@ -196,7 +196,7 @@ class TestCalendarToday:
         ok, msg = populated.handle("today", [])
         assert ok
         assert "Heute" in msg
-        assert "Zahnarzt" in msg
+        assert "Staubsaugen" in msg
 
     def test_today_shows_weekday(self, populated):
         ok, msg = populated.handle("today", [])
@@ -429,8 +429,8 @@ class TestRangeView:
     def test_range_shows_location(self, populated):
         now = datetime.now()
         start = now.replace(hour=0, minute=0, second=0)
-        end = now.replace(hour=23, minute=59, second=59)
-        ok, msg = populated._range_view(start, end, "Heute")
+        end = (now + timedelta(days=2)).replace(hour=23, minute=59, second=59)
+        ok, msg = populated._range_view(start, end, "Diese Woche")
         assert ok
         assert "Praxis Dr. X" in msg
 
