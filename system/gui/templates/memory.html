@@ -611,7 +611,35 @@
             isDevMode = document.getElementById('dev-mode').checked;
             document.getElementById('dev-section').style.display = isDevMode ? 'block' : 'none';
             if (isDevMode) refreshDevData();
-            loadMemory(); // Neu rendern mit Buttons
+            loadMemory();
+        }
+
+        async function refreshDevData() {
+            try {
+                const stats = await api.get('/api/memory/stats/db');
+                const tableCount = document.getElementById('db-table-count');
+                if (tableCount && stats.tables) tableCount.textContent = stats.tables.length || '?';
+                const tableList = document.getElementById('db-tables-list');
+                if (tableList && stats.tables) {
+                    tableList.innerHTML = stats.tables.map(t =>
+                        `<div class="entry-item"><strong>${t.name}</strong> <span style="opacity:0.6">${t.rows} rows</span></div>`
+                    ).join('');
+                }
+            } catch (e) {
+                console.error('Dev refresh failed:', e);
+            }
+        }
+
+        async function cleanupOrphanedMemory() {
+            if (!confirm('Verwaiste Memory-Eintraege bereinigen?')) return;
+            try {
+                const result = await api.post('/api/memory/maintenance/cleanup', {});
+                alert(result.message || 'Cleanup abgeschlossen');
+                refreshDevData();
+                loadMemory();
+            } catch (e) {
+                alert('Fehler: ' + e.message);
+            }
         }
 
         function switchMemoryTab(tabId) {
@@ -940,13 +968,12 @@
         // Add Lesson
         async function addLesson() {
             const input = document.getElementById('lesson-input');
-            const category = document.getElementById('lesson-category').value;
             const content = input.value.trim();
 
             if (!content) return;
 
             try {
-                await api.post('/api/memory/lessons', { content, category });
+                await api.post('/api/memory/lessons', { content });
                 input.value = '';
                 loadMemory();
             } catch (e) {
@@ -958,12 +985,11 @@
         async function addFact() {
             const key = document.getElementById('fact-key').value.trim();
             const value = document.getElementById('fact-value').value.trim();
-            const category = document.getElementById('fact-category').value;
 
             if (!key || !value) return;
 
             try {
-                await api.post('/api/memory/facts', { key, value, category });
+                await api.post('/api/memory/facts', { key, value });
                 document.getElementById('fact-key').value = '';
                 document.getElementById('fact-value').value = '';
                 loadMemory();

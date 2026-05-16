@@ -22,7 +22,7 @@ echo  \ \  __^< \ \  __ \\ \ \____\ \  __ \
 echo   \ \_____\\ \_\ \_\\ \_____\\ \_\ \_\
 echo    \/_____/ \/_/\/_/ \/_____/ \/_/\/_/
 echo.
-echo   Personal AI Operating System v3.9.1
+echo   Personal AI Operating System v3.11.0
 echo   ==================================================
 echo.
 echo   --- VERBINDEN ----------------------------------

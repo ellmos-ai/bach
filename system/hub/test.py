@@ -98,7 +98,7 @@ class TestHandler(BaseHandler):
     def _run_system_test(self, args: list) -> tuple:
         """Testet ein beliebiges System."""
         if not args:
-            return False, "Fehler: Pfad zum System erforderlich\nBeispiel: bach --test run C:\...\system"
+            return False, r"Fehler: Pfad zum System erforderlich\nBeispiel: bach --test run C:\...\system"
         
         system_path = args[0]
         profile = args[1].upper() if len(args) > 1 else "STANDARD"
@@ -123,7 +123,7 @@ class TestHandler(BaseHandler):
     def _compare_with_bach(self, args: list) -> tuple:
         """Vergleicht ein System mit BACH."""
         if not args:
-            return False, "Fehler: Pfad zum Vergleichssystem erforderlich\nBeispiel: bach --test compare C:\...\anderes"
+            return False, r"Fehler: Pfad zum Vergleichssystem erforderlich\nBeispiel: bach --test compare C:\...\anderes"
         
         other_path = args[0]
         profile = args[1].upper() if len(args) > 1 else "STANDARD"
@@ -228,8 +228,8 @@ Profile: QUICK, STANDARD, FULL, OBSERVATION, OUTPUT
 Beispiele:
   bach --test self              # Schneller Selbsttest
   bach --test self STANDARD     # Standard-Selbsttest
-  bach --test run "C:\...\sys" # Anderes System testen
-  bach --test compare "C:\..."  # Mit BACH vergleichen
+  bach --test run "C:\\...\\sys" # Anderes System testen
+  bach --test compare "C:\\..."  # Mit BACH vergleichen
 
 Agent: agents/test-agent.txt
 Tools: tools/testing/"""
