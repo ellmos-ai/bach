@@ -1,3 +1,12 @@
+---
+name: immune-system
+metadata:
+  version: 1.0.0
+  status: active
+description: >
+  Sicherheitssystem fuer BACH Evolution — schuetzt vor destruktiven Veraenderungen.
+---
+
 # Immune System
 
 > **Sicherheitssystem für Claude OS Evolution - schützt vor destruktiven Veränderungen**

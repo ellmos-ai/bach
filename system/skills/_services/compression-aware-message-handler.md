@@ -1,3 +1,12 @@
+---
+name: compression-aware-message-handler
+metadata:
+  version: 1.0.0
+  status: active
+description: >
+  Wiederholte User-Nachrichten nach Komprimierung erkennen und korrekt behandeln.
+---
+
 # Compression-Aware Message Handler
 
 **Version:** 1.0.0  

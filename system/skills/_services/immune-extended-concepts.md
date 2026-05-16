@@ -1,3 +1,12 @@
+---
+name: immune-extended-concepts
+metadata:
+  version: 1.0.0
+  status: active
+description: >
+  Erweiterte Konzepte fuer das Immune System basierend auf biologischem Modell.
+---
+
 # Immune System - Erweiterte Konzepte
 
 > **Ergänzung basierend auf User-Reflektion zum biologischen Immunsystem-Modell**

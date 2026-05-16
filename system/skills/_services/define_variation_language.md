@@ -1,3 +1,12 @@
+---
+name: define-variation-language
+metadata:
+  version: 1.0.0
+  status: active
+description: >
+  Definiert wie Varianten sich unterscheiden koennen.
+---
+
 # Define Variation Language
 
 > **Definiert wie Varianten sich unterscheiden können**

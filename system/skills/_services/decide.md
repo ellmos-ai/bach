@@ -1,3 +1,12 @@
+---
+name: decide
+metadata:
+  version: 1.0.0
+  status: active
+description: >
+  Strukturierte Entscheidungsfindung fuer Systemoperationen.
+---
+
 # Decide Skill v1.0
 
 **Strukturierte Entscheidungsfindung**

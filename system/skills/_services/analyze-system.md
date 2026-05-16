@@ -1,3 +1,12 @@
+---
+name: analyze-system
+metadata:
+  version: 1.0.0
+  status: active
+description: >
+  Systemisches Denken und komplexe Systeme verstehen und analysieren.
+---
+
 # Analyze-System Skill v1.0
 
 **Systemisches Denken und komplexe Systeme verstehen**
