@@ -254,8 +254,8 @@
         </div>
 
         <div class="tabs-header">
-            <button class="tab-btn active" onclick="showTab('inbox')">Eingang / Scanner</button>
-            <button class="tab-btn" onclick="showTab('quarantine')">Quarantäne / Anonymisierung</button>
+            <button class="tab-btn active" onclick="showTab(event, 'inbox')">Eingang / Scanner</button>
+            <button class="tab-btn" onclick="showTab(event, 'quarantine')">Quarantäne / Anonymisierung</button>
         </div>
 
         <!-- TAB: INBOX / SCANNER -->
@@ -494,12 +494,12 @@
     <script src="/static/js/nav.js?v=3"></script>
     <script>
         // TAB LOGIC
-        function showTab(tabId) {
+        function showTab(e, tabId) {
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
 
             document.getElementById('tab-' + tabId).classList.add('active');
-            event.target.classList.add('active');
+            e.target.classList.add('active');
 
             if (tabId === 'quarantine') loadQuarantine();
         }

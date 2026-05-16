@@ -416,9 +416,9 @@
 
         <!-- Tab Navigation -->
         <div class="tab-nav" id="tab-nav">
-            <button class="active" onclick="switchTab('jobs')">Jobs</button>
-            <button onclick="switchTab('scheduler')">Scheduler</button>
-            <button onclick="switchTab('chains')">Chains</button>
+            <button class="active" onclick="switchTab(event, 'jobs')">Jobs</button>
+            <button onclick="switchTab(event, 'scheduler')">Scheduler</button>
+            <button onclick="switchTab(event, 'chains')">Chains</button>
         </div>
 
         <!-- ═══════════════════════════════════════════════════════ -->
@@ -711,10 +711,10 @@
         // TAB NAVIGATION
         // ─────────────────────────────────────────────────────────────────
 
-        function switchTab(tabName) {
+        function switchTab(e, tabName) {
             // Buttons
             document.querySelectorAll('.tab-nav button').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
+            e.target.classList.add('active');
 
             // Content
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));

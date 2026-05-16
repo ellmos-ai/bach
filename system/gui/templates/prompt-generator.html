@@ -407,8 +407,8 @@
     <main class="main-content">
         <!-- Tab Navigation -->
         <div class="pg-tabs">
-            <button class="pg-tab active" onclick="switchPgTab('editor')">Prompt Editor</button>
-            <button class="pg-tab" onclick="switchPgTab('auto-sessions')">Auto-Sessions</button>
+            <button class="pg-tab active" onclick="switchPgTab(event, 'editor')">Prompt Editor</button>
+            <button class="pg-tab" onclick="switchPgTab(event, 'auto-sessions')">Auto-Sessions</button>
         </div>
 
         <!-- Tab: Editor (bestehend) -->
@@ -737,7 +737,7 @@
             const systemList = document.getElementById('system-templates');
             if (data.system && data.system.length > 0) {
                 systemList.innerHTML = data.system.map(t => `
-                    <div class="template-item" onclick="loadTemplate(${escapeHtml(JSON.stringify(t.path))})">
+                    <div class="template-item" onclick="loadTemplate(event, ${escapeHtml(JSON.stringify(t.path))})">
                         ${escapeHtml(t.name)}
                         ${t.description ? `<div class="template-desc">${escapeHtml(t.description)}</div>` : ''}
                     </div>
@@ -750,7 +750,7 @@
             const agentList = document.getElementById('agent-templates');
             if (data.agents && data.agents.length > 0) {
                 agentList.innerHTML = data.agents.map(t => `
-                    <div class="template-item" onclick="loadTemplate(${escapeHtml(JSON.stringify(t.path))})">
+                    <div class="template-item" onclick="loadTemplate(event, ${escapeHtml(JSON.stringify(t.path))})">
                         ${escapeHtml(t.name)}
                         ${t.description ? `<div class="template-desc">${escapeHtml(t.description)}</div>` : ''}
                     </div>
@@ -761,7 +761,7 @@
         }
 
         // Load Template (PROMPT_GEN_003)
-        async function loadTemplate(path) {
+        async function loadTemplate(e, path) {
             const data = await api(`/prompt-generator/template/${encodeURIComponent(path)}`);
             if (data && data.content) {
                 document.getElementById('prompt-editor').value = data.content;
@@ -771,7 +771,7 @@
 
                 // Highlight selected
                 document.querySelectorAll('.template-item').forEach(el => el.classList.remove('selected'));
-                event.target.closest('.template-item').classList.add('selected');
+                e.target.closest('.template-item').classList.add('selected');
 
                 // Check for variables
                 checkForVariables(data.content);
@@ -1006,11 +1006,11 @@
         }
 
         // Tab Switching
-        function switchPgTab(tabId) {
+        function switchPgTab(e, tabId) {
             document.querySelectorAll('.pg-tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.pg-tab-content').forEach(t => t.classList.remove('active'));
             document.getElementById('tab-' + tabId).classList.add('active');
-            event.target.classList.add('active');
+            e.target.classList.add('active');
         }
 
         // Auto-Sessions

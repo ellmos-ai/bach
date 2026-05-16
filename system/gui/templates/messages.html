@@ -679,7 +679,7 @@
 
                 if (data.partners && data.partners.length > 0) {
                     list.innerHTML = data.partners.slice(0, 5).map(p => `
-                        <li class="folder-item" onclick="filterByPartner(${escapeHtml(JSON.stringify(p.name))})">
+                        <li class="folder-item" onclick="filterByPartner(event, ${escapeHtml(JSON.stringify(p.name))})">
                             <span><span class="folder-icon">👤</span>${escapeHtml(p.name)}</span>
                         </li>
                     `).join('');
@@ -691,11 +691,11 @@
             }
         }
 
-        function filterByPartner(name) {
+        function filterByPartner(e, name) {
             currentPartner = currentPartner === name ? null : name;
             document.querySelectorAll('#partner-list .folder-item').forEach(el => el.classList.remove('active'));
             if (currentPartner) {
-                event?.target?.closest('.folder-item')?.classList.add('active');
+                e?.target?.closest('.folder-item')?.classList.add('active');
             }
             loadMessages();
         }
