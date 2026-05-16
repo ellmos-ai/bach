@@ -170,7 +170,7 @@
 
         async function loadLogList() {
             try {
-                const data = await API.get('/api/system/logs');
+                const data = await api.get('/api/system/logs');
                 allLogs = data.logs;
                 renderLogList(allLogs);
             } catch (e) {
@@ -208,7 +208,7 @@
             document.getElementById('log-content').innerHTML = '<div class="loading">Lade Inhalt...</div>';
 
             try {
-                const data = await API.get(`/api/system/logs/${filename}?lines=500&source=${activeSource}`);
+                const data = await api.get(`/api/system/logs/${filename}?lines=500&source=${activeSource}`);
                 if (data.error) throw new Error(data.error);
 
                 const content = data.content || '';
