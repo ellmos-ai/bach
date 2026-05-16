@@ -304,6 +304,27 @@ class TestRun:
         assert ok is False
         assert "fehlgeschlagen" in msg
 
+    @patch("subprocess.Popen")
+    def test_run_fallback_py_win32_creationflags(self, mock_popen, ext_with_data):
+        """Regression: fallback Popen must pass CREATE_NO_WINDOW on Windows."""
+        with patch("hub.extensions.sys.platform", "win32"):
+            ok, msg = ext_with_data.handle("run", ["simple_ext"], dry_run=False)
+        assert ok is True
+        call_kwargs = mock_popen.call_args[1]
+        assert call_kwargs.get("creationflags") == 0x08000000
+        assert call_kwargs.get("stdout") is not None
+        assert call_kwargs.get("stderr") is not None
+
+    @patch("subprocess.Popen")
+    def test_run_fallback_py_unix_start_new_session(self, mock_popen, ext_with_data):
+        """Regression: fallback Popen must pass start_new_session on Unix."""
+        with patch("hub.extensions.sys.platform", "linux"):
+            ok, msg = ext_with_data.handle("run", ["simple_ext"], dry_run=False)
+        assert ok is True
+        call_kwargs = mock_popen.call_args[1]
+        assert call_kwargs.get("start_new_session") is True
+        assert "creationflags" not in call_kwargs
+
 
 # ═══════════════════════════════════════════════════════════════
 # SYNC
