@@ -14,7 +14,6 @@ Start:
 """
 import argparse
 import json
-import platform
 import sys
 import threading
 import time
@@ -94,12 +93,14 @@ class BACHTray:
         img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
         draw.rounded_rectangle([4, 4, 60, 60], radius=12, fill=color)
-        draw.text((16, 14), "B", fill="white")
         try:
-            font = ImageFont.truetype("arial", 32)
+            if sys.platform == "darwin":
+                font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 32)
+            else:
+                font = ImageFont.truetype("arial", 32)
             draw.text((14, 10), "B", fill="white", font=font)
         except (OSError, IOError):
-            pass
+            draw.text((16, 14), "B", fill="white")
         return img
 
     @property
@@ -156,12 +157,12 @@ class BACHTray:
             # Mode
             items.append(pystray.MenuItem(
                 "Safe-Modus",
-                lambda: self._set_mode("safe"),
+                lambda *_: self._set_mode("safe"),
                 checked=lambda item: self.state["mode"] == "safe",
             ))
             items.append(pystray.MenuItem(
                 "Full-Modus",
-                lambda: self._set_mode("full"),
+                lambda *_: self._set_mode("full"),
                 checked=lambda item: self.state["mode"] == "full",
             ))
 
@@ -236,54 +237,54 @@ class BACHTray:
     # --- Actions ---
 
     def _make_backend_action(self, name):
-        def action():
+        def action(*_):
             self._api("POST", "/api/backend", {"name": name})
             self._refresh()
             self._update_icon()
         return action
 
     def _make_model_action(self, model):
-        def action():
+        def action(*_):
             self._api("POST", "/api/model", {"model": model})
             self._refresh()
             self._update_icon()
         return action
 
-    def _set_mode(self, mode):
+    def _set_mode(self, mode, *_):
         self._api("POST", "/api/mode", {"mode": mode})
         self._refresh()
         self._update_icon()
 
-    def _toggle_think(self):
+    def _toggle_think(self, *_):
         new_val = not self.state["think"]
         self._api("POST", "/api/think", {"think": new_val})
         self._refresh()
         self._update_icon()
 
     def _make_rounds_action(self, rounds):
-        def action():
+        def action(*_):
             self._api("POST", "/api/max_tool_rounds", {"rounds": rounds})
             self._refresh()
             self._update_icon()
         return action
 
-    def _open_gui(self):
+    def _open_gui(self, *_):
         import webbrowser
         webbrowser.open(self.gui_url)
 
-    def _open_webchat(self):
+    def _open_webchat(self, *_):
         import webbrowser
         webbrowser.open(self.webchat_url)
 
-    def _open_telegram(self):
+    def _open_telegram(self, *_):
         import webbrowser
         webbrowser.open(self.telegram_url)
 
-    def _open_control_api(self):
+    def _open_control_api(self, *_):
         import webbrowser
         webbrowser.open(self.base_url)
 
-    def _quit(self):
+    def _quit(self, *_):
         self._stop.set()
         if self.icon:
             self.icon.stop()

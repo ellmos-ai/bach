@@ -216,7 +216,7 @@ class SkillsHandler(BaseHandler):
                     content = skill_file.read_text(encoding='utf-8', errors='ignore').lower()
                     if term_lower in content:
                         found.append((skill_file, "Inhalt"))
-                except:
+                except (OSError, UnicodeDecodeError):
                     pass
         
         if not found:
@@ -663,7 +663,7 @@ Weitere Informationen: https://github.com/anthropics/skills
                             description = first_line[:100]
                         if description:
                             break
-                    except:
+                    except (OSError, UnicodeDecodeError):
                         pass
 
         # Relative Pfade fuer includes
@@ -672,7 +672,7 @@ Weitere Informationen: https://github.com/anthropics/skills
             for f in files:
                 rel = f.relative_to(self.skills_dir)
                 core_includes.append(str(rel).replace('\\', '/'))
-        except:
+        except ValueError:
             core_includes = [f.name for f in files]
 
         # Skill-spezifische Tools und Workflows sammeln
@@ -1537,7 +1537,7 @@ anthropic_compatible: true
                             if central_version:
                                 results.append(f"ZENTRAL: v{central_version} ({source.get('source', 'unbekannt')})")
                             break
-            except:
+            except (ValueError, OSError, KeyError):
                 pass
 
         if not central_version:
@@ -1552,7 +1552,7 @@ anthropic_compatible: true
             try:
                 parts = v.replace('v', '').split('.')
                 return tuple(int(p) for p in parts[:3])
-            except:
+            except (ValueError, AttributeError):
                 return (0, 0, 0)
 
         local_tuple = parse_version(local_version)

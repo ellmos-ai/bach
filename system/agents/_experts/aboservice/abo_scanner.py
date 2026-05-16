@@ -36,7 +36,7 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
-from statistics import stdev, mean
+from statistics import stdev, mean, StatisticsError
 
 
 class AboScanner:
@@ -176,7 +176,7 @@ class AboScanner:
                     score += 20
                 elif cv < 0.2:
                     score += 10
-        except:
+        except (ValueError, StatisticsError):
             pass
 
         # Pattern-Match

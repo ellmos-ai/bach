@@ -43,7 +43,10 @@ from pathlib import Path
 from threading import Thread, Event
 
 # Fackel-Modul importieren
-from fackel import acquire_fackel, heartbeat, release_fackel, get_fackel_holder
+try:
+    from .fackel import acquire_fackel, heartbeat, release_fackel, get_fackel_holder
+except ImportError:
+    from fackel import acquire_fackel, heartbeat, release_fackel, get_fackel_holder
 
 # Logger
 def log(msg: str, level: str = "INFO"):

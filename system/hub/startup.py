@@ -52,7 +52,7 @@ class StartupHandler(BaseHandler):
         if self.user_config_path.exists():
             try:
                 return json.loads(self.user_config_path.read_text(encoding='utf-8'))
-            except:
+            except (json.JSONDecodeError, OSError):
                 pass
         # Default-Config
         return {
@@ -171,7 +171,8 @@ class StartupHandler(BaseHandler):
 
         # Hook: after_startup
         try:
-            hooks.emit('after_startup', {
+            from core.hooks import hooks as _hooks
+            _hooks.emit('after_startup', {
                 'partner': partner_id, 'mode': startup_mode, 'success': success
             })
         except Exception:
@@ -332,6 +333,101 @@ class StartupHandler(BaseHandler):
             pass
         return max_mtime
 
+    def _count_startup_resources(self) -> dict:
+        """Ermittelt die Startup-Ressourcen fuer das aktuelle Layout robust."""
+        counts = {
+            "agents": 0,
+            "workflows": 0,
+            "skills": 0,
+            "tools": 0,
+            "help": 0,
+        }
+
+        workflows_dir = self.base_path / "skills" / "workflows"
+        if workflows_dir.exists():
+            workflow_files = {
+                str(path)
+                for pattern in ("*.md", "*.txt")
+                for path in workflows_dir.rglob(pattern)
+            }
+            counts["workflows"] = len(workflow_files)
+
+        help_dir = self.base_path / "docs" / "help"
+        if help_dir.exists():
+            counts["help"] = len(list(help_dir.rglob("*.txt")))
+
+        conn = self._get_conn()
+        try:
+            counts["tools"] = conn.execute(
+                "SELECT COUNT(*) FROM tools WHERE is_available = 1"
+            ).fetchone()[0]
+        except sqlite3.Error:
+            tools_dir = self.base_path / "tools"
+            counts["tools"] = len(list(tools_dir.glob("*.py"))) if tools_dir.exists() else 0
+
+        agent_count = 0
+        agent_tables_found = False
+        for table in ("bach_agents", "bach_experts"):
+            try:
+                agent_count += conn.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE COALESCE(is_active, 1) = 1"
+                ).fetchone()[0]
+                agent_tables_found = True
+            except sqlite3.Error:
+                continue
+        counts["agents"] = agent_count if agent_tables_found else self._count_agent_dirs()
+
+        try:
+            counts["skills"] = conn.execute("SELECT COUNT(*) FROM skills").fetchone()[0]
+        except sqlite3.Error:
+            counts["skills"] = self._count_skill_files()
+        finally:
+            conn.close()
+
+        return counts
+
+    def _count_agent_dirs(self) -> int:
+        """Zaehlt Agenten und Experten ueber vorhandene SKILL.md-Verzeichnisse."""
+        count = 0
+        for root in (self.base_path / "agents", self.base_path / "agents" / "_experts"):
+            if not root.exists():
+                continue
+            for child in root.iterdir():
+                if child.is_dir() and (child / "SKILL.md").exists():
+                    count += 1
+        return count
+
+    def _count_skill_files(self) -> int:
+        """Faellt fuer Skills auf einen vorsichtigen Dateisystem-Count zurueck."""
+        skills_dir = self.base_path / "skills"
+        if not skills_dir.exists():
+            return 0
+
+        skill_files = []
+        for path in skills_dir.rglob("*"):
+            if not path.is_file():
+                continue
+            if path.name.lower() == "readme.md":
+                continue
+            if path.suffix.lower() not in {".md", ".txt"}:
+                continue
+            skill_files.append(path)
+        return len(skill_files)
+
+    def _ati_status_lines(self) -> list[str]:
+        """Erzeugt den ATI-Statusblock fuer das Startup-Protokoll."""
+        lines = ["", "[ATI AGENT]"]
+        ati_path = self.base_path / "agents" / "ati"
+
+        if (ati_path / "SKILL.md").exists():
+            lines.append(" ATI Ordner vorhanden")
+            lines.append(" Software-Entwicklungs-Tasks: bach ati task list (geplant)")
+            lines.append(" AUFGABEN.txt Scanner: bach ati scan (geplant)")
+        else:
+            lines.append(" [SKIP] ATI Agent nicht eingerichtet")
+
+        return lines
+
     def _run_startup(self, quick: bool, dry_run: bool, startup_mode: str = "gui", partner_id: str = "user") -> tuple:
         results = []
         now = datetime.now()
@@ -451,11 +547,7 @@ class StartupHandler(BaseHandler):
         # ══════════════════════════════════════════════════════════════
         if not dry_run:
             try:
-                import sys
-                hub_dir = str(self.base_path / "hub")
-                if hub_dir not in sys.path:
-                    sys.path.insert(0, hub_dir)
-                from secrets import SecretsHandler
+                from hub.secrets_handler import SecretsHandler
 
                 handler = SecretsHandler()
                 # SYNC: Datei → DB (enforce_authority=True)
@@ -626,65 +718,66 @@ class StartupHandler(BaseHandler):
                 import sqlite3
 
                 conn = sqlite3.connect(str(self.db_path))
-                # CORE-Dateien aus distribution_manifest lesen (dist_type=2)
-                core_files = conn.execute(
-                    "SELECT path FROM distribution_manifest WHERE dist_type = 2 ORDER BY path"
-                ).fetchall()
+                try:
+                    # CORE-Dateien aus distribution_manifest lesen (dist_type=2)
+                    core_files = conn.execute(
+                        "SELECT path FROM distribution_manifest WHERE dist_type = 2 ORDER BY path"
+                    ).fetchall()
 
-                if core_files:
-                    system_dir = self.base_path
-                    bach_root = self.base_path.parent
-                    combined_hash = hashlib.sha256()
-                    files_hashed = 0
+                    if core_files:
+                        system_dir = self.base_path
+                        bach_root = self.base_path.parent
+                        combined_hash = hashlib.sha256()
+                        files_hashed = 0
 
-                    for (rel_path,) in core_files:
-                        if '*' in rel_path:
-                            continue
-                        abs_path = system_dir / rel_path
-                        if not abs_path.exists():
-                            abs_path = bach_root / rel_path
-                        if abs_path.exists() and abs_path.is_file():
-                            try:
-                                file_hash = hashlib.sha256(abs_path.read_bytes()).hexdigest()
-                                combined_hash.update(file_hash.encode())
-                                files_hashed += 1
-                            except (OSError, IOError):
-                                pass
+                        for (rel_path,) in core_files:
+                            if '*' in rel_path:
+                                continue
+                            abs_path = system_dir / rel_path
+                            if not abs_path.exists():
+                                abs_path = bach_root / rel_path
+                            if abs_path.exists() and abs_path.is_file():
+                                try:
+                                    file_hash = hashlib.sha256(abs_path.read_bytes()).hexdigest()
+                                    combined_hash.update(file_hash.encode())
+                                    files_hashed += 1
+                                except (OSError, IOError):
+                                    pass
 
-                    current_hash = combined_hash.hexdigest()[:16]
+                        current_hash = combined_hash.hexdigest()[:16]
 
-                    # Gespeicherten Hash aus instance_identity lesen
-                    stored = conn.execute(
-                        "SELECT kernel_hash, seal_status FROM instance_identity LIMIT 1"
-                    ).fetchone()
+                        # Gespeicherten Hash aus instance_identity lesen
+                        stored = conn.execute(
+                            "SELECT kernel_hash, seal_status FROM instance_identity LIMIT 1"
+                        ).fetchone()
 
-                    if stored and stored[0]:
-                        stored_hash = stored[0][:16]
-                        seal_status = stored[1] or 'unknown'
-                        if stored_hash != current_hash:
-                            results.append("")
-                            results.append("[SIEGEL]")
-                            results.append(f" [!] Kernel-Hash geaendert ({files_hashed} CORE-Dateien)")
-                            results.append(f"     Gespeichert: {stored_hash}...")
-                            results.append(f"     Aktuell:     {current_hash}...")
-                            results.append(" --> bach seal check fuer Details")
-                            # Seal als broken markieren (nur Warnung, keine Sperre)
-                            if not dry_run:
+                        if stored and stored[0]:
+                            stored_hash = stored[0][:16]
+                            seal_status = stored[1] or 'unknown'
+                            if stored_hash != current_hash:
+                                results.append("")
+                                results.append("[SIEGEL]")
+                                results.append(f" [!] Kernel-Hash geaendert ({files_hashed} CORE-Dateien)")
+                                results.append(f"     Gespeichert: {stored_hash}...")
+                                results.append(f"     Aktuell:     {current_hash}...")
+                                results.append(" --> bach seal check fuer Details")
+                                # Seal als broken markieren (nur Warnung, keine Sperre)
+                                if not dry_run:
+                                    conn.execute(
+                                        "UPDATE instance_identity SET seal_status = 'changed', kernel_hash = ?",
+                                        (current_hash,)
+                                    )
+                                    conn.commit()
+                        else:
+                            # Erster Start: Hash speichern
+                            if not dry_run and files_hashed > 0:
                                 conn.execute(
-                                    "UPDATE instance_identity SET seal_status = 'changed', kernel_hash = ?",
+                                    "UPDATE instance_identity SET kernel_hash = ?, seal_status = 'intact'",
                                     (current_hash,)
                                 )
                                 conn.commit()
-                    else:
-                        # Erster Start: Hash speichern
-                        if not dry_run and files_hashed > 0:
-                            conn.execute(
-                                "UPDATE instance_identity SET kernel_hash = ?, seal_status = 'intact'",
-                                (current_hash,)
-                            )
-                            conn.commit()
-
-                conn.close()
+                finally:
+                    conn.close()
             except Exception:
                 pass  # Silent fail - Siegel ist nicht kritisch
 
@@ -761,7 +854,7 @@ class StartupHandler(BaseHandler):
                         tasks = data.get("open_tasks", [])
                         if tasks:
                             results.append(f" Tasks im Snapshot: {len(tasks)}")
-                    except:
+                    except (json.JSONDecodeError, TypeError, KeyError, AttributeError):
                         pass
                     
                     results.append(" --> bach snapshot load zum Fortsetzen")
@@ -802,34 +895,11 @@ class StartupHandler(BaseHandler):
         results.append("")
         results.append("[RESSOURCEN]")
         try:
-            # Agents zaehlen
-            agents_dir = self.base_path / "skills" / "_agents"
-            agent_count = len(list(agents_dir.glob("*.txt"))) if agents_dir.exists() else 0
-
-            # Workflows zaehlen
-            workflows_dir = self.base_path / "skills" / "workflows"
-            workflow_count = len(list(workflows_dir.glob("*.txt"))) + len(list(workflows_dir.glob("*.md"))) if workflows_dir.exists() else 0
-
-            # Skills zaehlen (ohne Unterordner wie _agents, _workflows)
-            skills_dir = self.base_path / "skills"
-            skill_files = [f for f in skills_dir.glob("*.txt") if skills_dir.exists()]
-            skill_count = len(skill_files)
-
-            # Tools aus DB
-            conn = self._get_conn()
-            try:
-                tool_count = conn.execute("SELECT COUNT(*) FROM tools WHERE is_available = 1").fetchone()[0]
-            except:
-                tool_count = len(list((self.base_path / "tools").glob("*.py"))) if (self.base_path / "tools").exists() else 0
-
-            # Help-Dateien
-            help_dir = self.base_path / "help"
-            help_count = len(list(help_dir.glob("*.txt"))) if help_dir.exists() else 0
-
-            conn.close()
-
-            results.append(f" Agents: {agent_count} | Workflows: {workflow_count} | Skills: {skill_count}")
-            results.append(f" Tools: {tool_count} | Help: {help_count}")
+            counts = self._count_startup_resources()
+            results.append(
+                f" Agents: {counts['agents']} | Workflows: {counts['workflows']} | Skills: {counts['skills']}"
+            )
+            results.append(f" Tools: {counts['tools']} | Help: {counts['help']}")
             results.append(" --> bach tools list, --help agents, --help workflows")
         except Exception as e:
             results.append(f" [SKIP] Ressourcen-Check: {e}")
@@ -848,9 +918,9 @@ class StartupHandler(BaseHandler):
                 today = now.strftime('%Y-%m-%d')
                 try:
                     appointments = conn.execute("""
-                        SELECT time, title FROM assistant_calendar
-                        WHERE date = ? AND status != 'cancelled'
-                        ORDER BY time
+                        SELECT TIME(start_datetime) as time, title FROM assistant_calendar
+                        WHERE DATE(start_datetime) = ? AND status != 'cancelled'
+                        ORDER BY start_datetime
                     """, (today,)).fetchall()
                     if appointments:
                         results.append(" Termine heute:")
@@ -859,7 +929,7 @@ class StartupHandler(BaseHandler):
                             results.append(f"   {time_str} {apt[1][:40]}")
                         if len(appointments) > 3:
                             results.append(f"   ... und {len(appointments) - 3} weitere")
-                except:
+                except sqlite3.OperationalError:
                     pass  # Tabelle existiert evtl. nicht
 
                 # Faellige Routinen
@@ -874,7 +944,7 @@ class StartupHandler(BaseHandler):
                         results.append(f" Faellige Routinen: {len(routines)}")
                         for r in routines[:3]:
                             results.append(f"   - {r[0][:40]}")
-                except:
+                except sqlite3.OperationalError:
                     pass
 
                 # Wichtige Tasks (P1/P2)
@@ -889,7 +959,7 @@ class StartupHandler(BaseHandler):
                         results.append(f" Wichtige Tasks: {len(tasks)}")
                         for t in tasks[:3]:
                             results.append(f"   [{t[0]}] {t[2]} {t[1][:35]}")
-                except:
+                except sqlite3.OperationalError:
                     pass
 
                 conn.close()
@@ -1232,15 +1302,7 @@ class StartupHandler(BaseHandler):
         # ══════════════════════════════════════════════════════════════
         # Der Scanner fuer AUFGABEN.txt gehoert zu ATI, nicht zu BACH!
         # Wenn ATI implementiert ist: bach ati status
-        results.append("")
-        results.append("[ATI AGENT]")
-        ati_path = self.base_path / "skills" / "_agents" / "ati"
-        if ati_path.exists():
-            results.append(" ATI Ordner vorhanden")
-            results.append(" Software-Entwicklungs-Tasks: bach ati task list (geplant)")
-            results.append(" AUFGABEN.txt Scanner: bach ati scan (geplant)")
-        else:
-            results.append(" [SKIP] ATI Agent nicht eingerichtet")
+        results.extend(self._ati_status_lines())
         
         # ══════════════════════════════════════════════════════════════
         # 7. LESSONS LEARNED
@@ -1285,7 +1347,7 @@ class StartupHandler(BaseHandler):
                         if len(parts) > 1:
                             results.append(f"   {parts[1].strip()[:40]}")
                 results.append(" --> bach logs tail 20 fuer mehr")
-            except:
+            except (OSError, UnicodeDecodeError):
                 results.append(" [?] Nicht lesbar")
         else:
             results.append(" Kein Autolog vorhanden")
@@ -1304,7 +1366,7 @@ class StartupHandler(BaseHandler):
                 results.append(f" Aktiv: {', '.join(active)}")
             else:
                 results.append(" Alle deaktiviert")
-        except:
+        except Exception:
             results.append(" [SKIP] Injektoren nicht verfuegbar")
         
         # ══════════════════════════════════════════════════════════════
@@ -1445,33 +1507,35 @@ class StartupHandler(BaseHandler):
     
     def _start_gui_background(self) -> bool:
         """Startet GUI-Server im Hintergrund und oeffnet Browser."""
+        import os
         import socket
         import sys
         import subprocess
-        import webbrowser
+
+        if os.environ.get("BACH_NO_BROWSER", "").strip() in ("1", "true", "yes"):
+            return False
 
         port = 8000
-        url = f"http://127.0.0.1:{port}"
         server_script = self.base_path / "gui" / "server.py"
-        
-        # Pruefen ob Script existiert
+
         if not server_script.exists():
             return False
-        
-        # Pruefen ob bereits laeuft
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         result = sock.connect_ex(('127.0.0.1', port))
         sock.close()
-        
+
         already_running = (result == 0)
-        
+
         if not already_running:
-            # Server im Hintergrund starten
             try:
                 if sys.platform == "win32":
-                    import os
-                    cmd = f'start /b python "{server_script}" --port {port}'
-                    os.system(cmd)
+                    subprocess.Popen(
+                        [sys.executable, str(server_script), "--port", str(port)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                    )
                 else:
                     subprocess.Popen(
                         [sys.executable, str(server_script), "--port", str(port)],
@@ -1481,9 +1545,8 @@ class StartupHandler(BaseHandler):
                     )
 
                 import time
-                time.sleep(1.5)  # Kurz warten bis Server hochfaehrt
+                time.sleep(1.5)
 
-                # Pruefen ob gestartet
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 result = sock.connect_ex(('127.0.0.1', port))
                 sock.close()
@@ -1494,14 +1557,19 @@ class StartupHandler(BaseHandler):
             except Exception:
                 return False
 
-        # Browser oeffnen (immer, auch wenn Server schon lief)
-        url_fixed = f"http://127.0.0.1:{port}"  # URL mit korrektem Protokoll
-        try:
-            webbrowser.open(url_fixed)
-        except Exception:
-            pass  # Browser-Fehler nicht kritisch
+        # Browser nur oeffnen wenn Server tatsaechlich erreichbar ist
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_reachable = sock.connect_ex(('127.0.0.1', port)) == 0
+        sock.close()
 
-        return True
+        if server_reachable:
+            try:
+                import webbrowser
+                webbrowser.open(f"http://127.0.0.1:{port}")
+            except Exception:
+                pass
+
+        return server_reachable
 
     def _start_console_background(self) -> bool:
         """Startet eine neue Konsole mit bach.py im Text-Modus."""
@@ -1516,16 +1584,46 @@ class StartupHandler(BaseHandler):
             if sys.platform == "win32":
                 import os
                 # Neues CMD-Fenster oeffnen mit bach.py
-                cmd = f'start cmd /k "cd /d {self.base_path} && python bach.py --help"'
-                os.system(cmd)
+                bat_content = f'@echo off\ncd /d "{self.base_path}"\n"{sys.executable}" bach.py --help\nif not defined BACH_AUTO pause\n'
+                import tempfile
+                bat_file = Path(tempfile.gettempdir()) / "bach_terminal.bat"
+                bat_file.write_text(bat_content, encoding="utf-8")
+                subprocess.Popen(
+                        [str(bat_file)],
+                        creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    )
             else:
                 # Linux/Mac: xterm oder gnome-terminal
-                subprocess.Popen(
-                    ["x-terminal-emulator", "-e", f"cd {self.base_path} && python bach.py --help"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True
-                )
+                shell_cmd = f'cd "{self.base_path}" && "{sys.executable}" bach.py --help'
+                if sys.platform == "darwin":
+                    subprocess.Popen(
+                        ["open", "-a", "Terminal", str(self.base_path / "bach.py")],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                else:
+                    import shutil
+                    term = (
+                        shutil.which("x-terminal-emulator")
+                        or shutil.which("gnome-terminal")
+                        or shutil.which("xterm")
+                    )
+                    if term and "gnome-terminal" in term:
+                        subprocess.Popen(
+                            [term, "--", "bash", "-c", shell_cmd],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            start_new_session=True,
+                        )
+                    elif term:
+                        subprocess.Popen(
+                            [term, "-e", "bash", "-c", shell_cmd],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            start_new_session=True,
+                        )
+                    else:
+                        return False
             return True
         except Exception:
             return False

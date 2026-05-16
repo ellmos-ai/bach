@@ -14,7 +14,6 @@ Usage:
   python plan_agent.py export <plan_id> [--format markdown|json]
 """
 
-import io
 import json
 import sys
 import uuid
@@ -23,9 +22,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(
-        sys.stdout.buffer, encoding="utf-8", errors="replace"
-    )
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
 
 from portable_base import BACH_AVAILABLE, BACH_ROOT, PortableAgent
 

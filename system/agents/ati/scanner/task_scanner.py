@@ -619,8 +619,11 @@ class TaskScanner:
 def scan_now(db_path: Path = None) -> Dict:
     """Convenience-Funktion fuer direkten Scan."""
     if db_path is None:
-        # ATI Scanner nutzt user.db (Agent-Daten = User-Daten)
-        db_path = Path(__file__).parent.parent.parent.parent.parent / "data" / "bach.db"
+        try:
+            from hub.bach_paths import BACH_DB
+            db_path = BACH_DB
+        except ImportError:
+            db_path = Path(__file__).parent.parent.parent.parent.parent / "data" / "bach.db"
 
     scanner = TaskScanner(db_path)
     return scanner.scan_all()
@@ -639,7 +642,11 @@ def sync_db_to_aufgaben(db_path: Path = None, task_ids: List[int] = None) -> Dic
         Dict mit Statistiken: files_updated, tasks_synced, errors
     """
     if db_path is None:
-        db_path = Path(__file__).parent.parent.parent.parent.parent / "data" / "bach.db"
+        try:
+            from hub.bach_paths import BACH_DB
+            db_path = BACH_DB
+        except ImportError:
+            db_path = Path(__file__).parent.parent.parent.parent.parent / "data" / "bach.db"
 
     result = {
         'files_updated': 0,
@@ -736,7 +743,11 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         db_path = Path(sys.argv[1])
     else:
-        db_path = Path(__file__).parent.parent.parent.parent.parent / "data" / "bach.db"
+        try:
+            from hub.bach_paths import BACH_DB
+            db_path = BACH_DB
+        except ImportError:
+            db_path = Path(__file__).parent.parent.parent.parent.parent / "data" / "bach.db"
 
     print(f"[INFO] DB: {db_path}")
     result = scan_now(db_path)

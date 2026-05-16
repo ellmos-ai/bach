@@ -22,7 +22,6 @@ import sys
 import json
 import subprocess
 import re
-import io
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Any
@@ -30,8 +29,11 @@ import argparse
 
 # Windows Console UTF-8
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
 
 # ============================================================================
 # BACH-PFADE (angepasst von RecludOS)
@@ -65,22 +67,49 @@ class SystemExplorer:
     
     def _default_config(self) -> Dict:
         """Standard-Konfiguration falls keine config.json existiert"""
-        return {
-            "scan_directories": {
-                "windows": [
-                    "%PROGRAMFILES%",
-                    "%PROGRAMFILES(X86)%",
-                    "%LOCALAPPDATA%\\Programs"
-                ],
-                "user_defined": []
-            },
-            "exclude_directories": [
-                "Windows", "System32", "SysWOW64", "$Recycle.Bin"
-            ],
-            "file_extensions": {
+        if sys.platform == "win32":
+            scan_dirs = [
+                "%PROGRAMFILES%",
+                "%PROGRAMFILES(X86)%",
+                "%LOCALAPPDATA%\\Programs"
+            ]
+            exclude = ["Windows", "System32", "SysWOW64", "$Recycle.Bin"]
+            extensions = {
                 "executables": [".exe"],
                 "scripts": [".py", ".ps1", ".bat", ".cmd"]
+            }
+        elif sys.platform == "darwin":
+            scan_dirs = [
+                "/Applications",
+                "/usr/local/bin",
+                "/opt/homebrew/bin",
+                str(Path.home() / "Applications")
+            ]
+            exclude = [".Trash", "Library", ".Spotlight-V100"]
+            extensions = {
+                "executables": [],
+                "scripts": [".py", ".sh", ".command"]
+            }
+        else:
+            scan_dirs = [
+                "/usr/bin",
+                "/usr/local/bin",
+                "/opt",
+                str(Path.home() / ".local" / "bin")
+            ]
+            exclude = ["proc", "sys", "dev", "run", "snap"]
+            extensions = {
+                "executables": [],
+                "scripts": [".py", ".sh"]
+            }
+
+        return {
+            "scan_directories": {
+                "default": scan_dirs,
+                "user_defined": []
             },
+            "exclude_directories": exclude,
+            "file_extensions": extensions,
             "max_depth": 4,
             "enable_system_wide_search": False,
             "known_ai_compatible_software": {
@@ -126,19 +155,25 @@ class SystemExplorer:
         
         # Basis-Verzeichnisse
         if mode in ["standard", "deep", "full"]:
-            for path in self.config.get("scan_directories", {}).get("windows", []):
+            scan_dirs = self.config.get("scan_directories", {})
+            for path in scan_dirs.get("default", scan_dirs.get("windows", [])):
                 expanded = self._expand_path(path)
                 if os.path.exists(expanded):
                     directories.append(expanded)
-        
+
         # User-definierte Verzeichnisse
         for path in self.config.get("scan_directories", {}).get("user_defined", []):
             if os.path.exists(path):
                 directories.append(path)
-        
+
         # Systemweite Suche
         if mode == "full" and self.config.get("enable_system_wide_search"):
-            directories.extend(["C:\\", "D:\\"])
+            if sys.platform == "win32":
+                directories.extend(["C:\\", "D:\\"])
+            elif sys.platform == "darwin":
+                directories.append("/")
+            else:
+                directories.extend(["/usr", "/opt", "/home"])
         
         # Scan durchführen
         for directory in directories:

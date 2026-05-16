@@ -732,10 +732,12 @@ class FoerderberichtPipeline:
         try:
             exe = self._find_onedrive_exe()
             if exe:
-                subprocess.Popen(
-                    [exe, "/background"],
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
-                )
+                kwargs = {}
+                if sys.platform == "win32":
+                    kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+                else:
+                    kwargs["start_new_session"] = True
+                subprocess.Popen([exe, "/background"], **kwargs)
                 print("[INFO] OneDrive gestartet (/background)")
         except Exception as e:
             print(f"[WARN] OneDrive-Start fehlgeschlagen: {e}")

@@ -31,8 +31,10 @@ from typing import List, Dict, Optional, Tuple
 
 from .runner import ClaudeRunner, log_schwarm_run
 
-# DB-Pfad
-_DB_PATH = Path(__file__).parent.parent.parent / "data" / "bach.db"
+try:
+    from hub.bach_paths import BACH_DB as _DB_PATH
+except ImportError:
+    _DB_PATH = Path(__file__).parent.parent.parent / "data" / "bach.db"
 
 
 class SpecialistPattern:

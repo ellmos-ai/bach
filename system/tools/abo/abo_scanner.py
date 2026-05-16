@@ -156,7 +156,7 @@ class AboScanner:
                     score += 20
                 elif cv < 0.2:
                     score += 10
-        except:
+        except (ValueError, TypeError, ZeroDivisionError):
             pass
 
         # Pattern-Match

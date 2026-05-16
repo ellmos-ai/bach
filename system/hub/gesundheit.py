@@ -1504,29 +1504,35 @@ class GesundheitHandler(BaseHandler):
                         termin = v["naechster_termin"] or "ueberfaellig"
                         lines.append(f"    [!] {v['untersuchung']} - faellig: {termin}")
                     lines.append("")
-            except Exception:
-                pass
+            except Exception as e:
+                lines.append(f"  [Vorsorge-Abfrage fehlgeschlagen: {e}]")
+                lines.append("")
 
             # 3. Anstehende Arzttermine (naechste 14 Tage)
             try:
                 in_14_days = (now + timedelta(days=14)).strftime("%Y-%m-%d")
                 appointments = conn.execute("""
-                    SELECT hc.name as arzt, ha.date, ha.time, ha.reason, ha.status
+                    SELECT hc.name as arzt,
+                           date(ha.appointment_date) as termin_date,
+                           time(ha.appointment_date) as termin_time,
+                           ha.title, ha.status
                     FROM health_appointments ha
                     LEFT JOIN health_contacts hc ON ha.doctor_id = hc.id
-                    WHERE ha.date BETWEEN ? AND ? AND ha.status != 'cancelled'
-                    ORDER BY ha.date, ha.time
+                    WHERE date(ha.appointment_date) BETWEEN ? AND ?
+                      AND ha.status != 'abgesagt'
+                    ORDER BY ha.appointment_date
                 """, (today, in_14_days)).fetchall()
                 if appointments:
                     has_reminders = True
                     lines.append(f"  ANSTEHENDE TERMINE ({len(appointments)}, naechste 14 Tage):")
                     for a in appointments:
                         arzt = a["arzt"] or "?"
-                        zeit = a["time"] or ""
-                        lines.append(f"    {a['date']} {zeit} - {arzt}: {a['reason'] or '-'}")
+                        zeit = a["termin_time"] or ""
+                        lines.append(f"    {a['termin_date']} {zeit} - {arzt}: {a['title'] or '-'}")
                     lines.append("")
-            except Exception:
-                pass
+            except Exception as e:
+                lines.append(f"  [Termin-Abfrage fehlgeschlagen: {e}]")
+                lines.append("")
 
             if not has_reminders:
                 lines.append("  Keine aktiven Erinnerungen.")

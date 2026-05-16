@@ -7,7 +7,7 @@
       "priority_score": 80,
       "task_text": "BACH SELF-CHECK: SKILL.md und Lessons pruefen",
       "aufwand": "mittel",
-      "last_run": "2026-04-30T13:10:03.149717"
+      "last_run": "2026-05-15T13:04:33.029608"
     },
     "onboarding_scan": {
       "enabled": true,
@@ -63,7 +63,7 @@
       "project": "BACH",
       "task_text": "ROADMAP.md Review: Erledigte Tasks markieren, Prioritaeten pruefen, veraltete Eintraege archivieren",
       "aufwand": "mittel",
-      "last_run": "2026-04-30T13:10:03.149717"
+      "last_run": "2026-05-15T13:04:33.029608"
     },
     "wiki_author": {
       "enabled": true,
@@ -83,7 +83,7 @@
       "project": "BACH",
       "task_text": "Help-Forensik: Eine docs/help/*.txt pruefen, Ist vs Soll vergleichen, bei Abweichung Help oder Roadmap anpassen. Workflow: skills/workflows/help-forensic.md",
       "aufwand": "mittel",
-      "last_run": "2026-04-30T13:10:03.149717"
+      "last_run": "2026-05-15T13:04:33.029608"
     },
     "doc_freshness": {
       "enabled": true,

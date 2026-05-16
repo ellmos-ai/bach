@@ -110,7 +110,7 @@ class WikiHandler(BaseHandler):
             try:
                 first_line = article.read_text(encoding="utf-8").split("\n")[0]
                 desc = first_line[:50] if first_line else ""
-            except:
+            except (OSError, UnicodeDecodeError):
                 desc = ""
             results.append(f"  {name:<20} {desc}")
 
@@ -155,7 +155,7 @@ class WikiHandler(BaseHandler):
                     for line in lines:
                         if line.strip():
                             results.append(f"  {line}")
-                except:
+                except (OSError, UnicodeDecodeError):
                     pass
 
             # Artikel auflisten
@@ -241,7 +241,7 @@ class WikiHandler(BaseHandler):
                     try:
                         content = folder_index.read_text(encoding="utf-8")
                         return True, f"WIKI: {folder.upper()}/ (Index)\n{'='*50}\n\n{content}\n\nArtikel '{subtopic}' nicht gefunden im Ordner."
-                    except:
+                    except (OSError, UnicodeDecodeError):
                         pass
 
                 # Fuzzy-Suche im Unterordner
@@ -272,7 +272,7 @@ class WikiHandler(BaseHandler):
                             for a in sorted(articles):
                                 article_list += f"  bach wiki {thema}/{a.stem}\n"
                             return True, f"WIKI: {thema.upper()}/ (Themenordner)\n{'='*50}\n\n{content}{article_list}"
-                        except:
+                        except (OSError, UnicodeDecodeError):
                             pass
                     # Ordner ohne Index - liste nur Artikel
                     articles = [f for f in folder_path.glob("*.txt") if not f.name.startswith("_")]
@@ -548,7 +548,7 @@ class WikiHandler(BaseHandler):
                 if idx >= 0:
                     return content[max(0, idx-20):idx+len(keyword_lower)+30].replace("\n", " ")
                 return ""
-        except:
+        except (OSError, UnicodeDecodeError):
             pass
         return None
 
@@ -645,7 +645,7 @@ class WikiHandler(BaseHandler):
                                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
                                 """, (rel_path, title, content, "help"))
                                 count += 1
-                            except:
+                            except (OSError, UnicodeDecodeError, sqlite3.Error):
                                 pass
                         
             conn.commit()

@@ -32,12 +32,15 @@ bach sandbox shell "<cmd>"      Shell-Befehl mit Timeout
 
 Task: 995
 """
+import json
 import os
+import re
+import shlex
 import sys
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import List, Tuple
+from typing import FrozenSet, List, Tuple
 from .base import BaseHandler
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
@@ -48,11 +51,28 @@ if sys.stderr:
 
 
 class SandboxHandler(BaseHandler):
+    # Allowed interpreters (python, node) can execute arbitrary code —
+    # this sandbox provides resource bounds, not containment.
 
     TIMEOUT = 30  # Sekunden
 
+    DEFAULT_ALLOWED_COMMANDS: FrozenSet[str] = frozenset({
+        "echo", "cat", "head", "tail", "wc", "sort", "uniq", "diff",
+        "ls", "dir", "find", "type", "where", "which",
+        "grep", "rg", "fd",
+        "python", "python3", "pip", "pip3", "pytest",
+        "git", "node", "npm", "npx",
+    })
+
+    BLOCKED_PATTERNS: FrozenSet[str] = frozenset({
+        "rm -rf /", "rm -rf /*", "del /f /s /q c:\\",
+        "format c:", "mkfs", "shutdown", "reboot", "halt",
+        ":(){", "fork", ">(){ :|:& };:",
+    })
+
     def __init__(self, base_path_or_app):
         super().__init__(base_path_or_app)
+        self._allowed_commands: FrozenSet[str] = self._load_allowed_commands()
 
     @property
     def profile_name(self) -> str:
@@ -68,6 +88,9 @@ class SandboxHandler(BaseHandler):
             "eval": "Python-Ausdruck: eval '<code>'",
             "test": "pytest ausfuehren: test <datei>",
             "shell": "Shell-Befehl: shell '<cmd>'",
+            "policy": "Sandbox-Policy anzeigen (erlaubte Befehle)",
+            "allow": "Befehl zur Allowlist hinzufuegen: allow <cmd>",
+            "deny": "Befehl von der Allowlist entfernen: deny <cmd>",
         }
 
     def handle(self, operation: str, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
@@ -82,6 +105,12 @@ class SandboxHandler(BaseHandler):
             return self._test(args[0])
         elif operation == "shell" and args:
             return self._shell(" ".join(args))
+        elif operation == "policy":
+            return self._policy()
+        elif operation == "allow" and args:
+            return self._allow_command(args[0])
+        elif operation == "deny" and args:
+            return self._deny_command(args[0])
         else:
             ops = "\n".join(f"  {k}: {v}" for k, v in self.get_operations().items())
             return False, f"Nutzung:\n{ops}"
@@ -170,7 +199,11 @@ class SandboxHandler(BaseHandler):
             return False, f"Fehler: {e}"
 
     def _shell(self, cmd: str) -> Tuple[bool, str]:
-        """Shell-Befehl mit Sandbox (temp cwd, timeout)."""
+        """Shell-Befehl mit Sandbox (temp cwd, timeout, capability check)."""
+        allowed, reason = self._check_shell_allowed(cmd)
+        if not allowed:
+            return False, reason
+
         with tempfile.TemporaryDirectory() as tmpdir:
             try:
                 result = subprocess.run(
@@ -187,6 +220,122 @@ class SandboxHandler(BaseHandler):
                 return False, f"TIMEOUT ({self.TIMEOUT}s)"
             except Exception as e:
                 return False, f"Fehler: {e}"
+
+    # ------------------------------------------------------------------
+    # Capability System (SANDBOX-002)
+    # ------------------------------------------------------------------
+
+    def _load_allowed_commands(self) -> FrozenSet[str]:
+        db = self._canonical_db
+        if not db or not Path(db).exists():
+            return self.DEFAULT_ALLOWED_COMMANDS
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db))
+            cur = conn.execute(
+                "SELECT value FROM system_config WHERE key = 'sandbox.allowed_commands'"
+            )
+            row = cur.fetchone()
+            conn.close()
+            if row:
+                custom = set(json.loads(row[0]))
+                return frozenset(custom)
+        except Exception:
+            pass
+        return self.DEFAULT_ALLOWED_COMMANDS
+
+    def _save_allowed_commands(self, commands: FrozenSet[str]) -> bool:
+        db = self._canonical_db
+        if not db or not Path(db).exists():
+            return False
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db))
+            conn.execute(
+                "INSERT OR REPLACE INTO system_config (key, value, category) "
+                "VALUES ('sandbox.allowed_commands', ?, 'sandbox')",
+                (json.dumps(sorted(commands)),)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
+            return False
+
+    def _extract_base_command(self, cmd: str) -> str:
+        """Extrahiert den Basis-Befehl (erstes Token) aus einem Shell-String."""
+        cmd_stripped = cmd.strip()
+        if not cmd_stripped:
+            return ""
+        try:
+            tokens = shlex.split(cmd_stripped, posix=(os.name != "nt"))
+            if tokens:
+                raw = tokens[0].strip('"').strip("'")
+                return Path(raw).stem.lower()
+        except ValueError:
+            pass
+        first = cmd_stripped.split()[0] if cmd_stripped.split() else ""
+        return Path(first).stem.lower()
+
+    def _check_shell_allowed(self, cmd: str) -> Tuple[bool, str]:
+        cmd_lower = cmd.lower().strip()
+        for pattern in self.BLOCKED_PATTERNS:
+            escaped = re.escape(pattern)
+            if re.search(rf"(?:^|\s){escaped}(?:\s|$)", cmd_lower):
+                return False, f"BLOCKIERT: Befehl enthaelt verbotenes Muster '{pattern}'"
+
+        base_cmd = self._extract_base_command(cmd)
+        if not base_cmd:
+            return False, "BLOCKIERT: Leerer Befehl"
+
+        if base_cmd not in self._allowed_commands:
+            return False, (
+                f"BLOCKIERT: '{base_cmd}' ist nicht in der Sandbox-Allowlist.\n"
+                f"Erlaubte Befehle: {', '.join(sorted(self._allowed_commands))}\n"
+                f"Hinzufuegen: bach sandbox allow {base_cmd}"
+            )
+        return True, ""
+
+    def _policy(self) -> Tuple[bool, str]:
+        lines = [
+            "Sandbox Policy (SANDBOX-002)",
+            "=" * 40,
+            f"  Timeout: {self.TIMEOUT}s (shell), {self.TIMEOUT * 2}s (test)",
+            f"  Shell-Modus: fail-closed (nur erlaubte Befehle)",
+            "",
+            f"  Erlaubte Befehle ({len(self._allowed_commands)}):",
+        ]
+        for cmd in sorted(self._allowed_commands):
+            lines.append(f"    - {cmd}")
+        lines.append("")
+        lines.append(f"  Blockierte Muster ({len(self.BLOCKED_PATTERNS)}):")
+        for p in sorted(self.BLOCKED_PATTERNS):
+            lines.append(f"    - {p}")
+        return True, "\n".join(lines)
+
+    def _allow_command(self, cmd: str) -> Tuple[bool, str]:
+        cmd = cmd.lower().strip()
+        if not cmd:
+            return False, "Kein Befehl angegeben"
+        new_set = set(self._allowed_commands) | {cmd}
+        if self._save_allowed_commands(frozenset(new_set)):
+            self._allowed_commands = frozenset(new_set)
+            return True, f"'{cmd}' zur Sandbox-Allowlist hinzugefuegt"
+        self._allowed_commands = frozenset(new_set)
+        return True, f"'{cmd}' zur Sandbox-Allowlist hinzugefuegt (nur Session, DB nicht verfuegbar)"
+
+    def _deny_command(self, cmd: str) -> Tuple[bool, str]:
+        cmd = cmd.lower().strip()
+        if not cmd:
+            return False, "Kein Befehl angegeben"
+        if cmd not in self._allowed_commands:
+            return False, f"'{cmd}' ist nicht in der Allowlist"
+        new_set = set(self._allowed_commands) - {cmd}
+        if self._save_allowed_commands(frozenset(new_set)):
+            self._allowed_commands = frozenset(new_set)
+            return True, f"'{cmd}' von der Sandbox-Allowlist entfernt"
+        self._allowed_commands = frozenset(new_set)
+        return True, f"'{cmd}' von der Sandbox-Allowlist entfernt (nur Session, DB nicht verfuegbar)"
 
     def _format_result(self, result: subprocess.CompletedProcess, label: str) -> str:
         """Formatiert subprocess-Ergebnis."""

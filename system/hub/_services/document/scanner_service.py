@@ -253,7 +253,7 @@ class InboxScanner:
         if suffix in [".txt", ".md", ".csv"]:
             try:
                 return filepath.read_text(encoding="utf-8", errors="ignore")[:5000]
-            except:
+            except OSError:
                 pass
 
         # OCR fuer Bilder (falls aktiviert)

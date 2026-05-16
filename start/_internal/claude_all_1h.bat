@@ -12,4 +12,4 @@ claude --print "Starte mit lesen und ausfuehren von SKILL.md. Bearbeite dann off
 
 echo.
 echo [FERTIG] Session beendet.
-pause
+if not defined BACH_AUTO pause

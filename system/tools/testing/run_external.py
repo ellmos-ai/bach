@@ -11,8 +11,8 @@ Usage:
     python run_external.py --all
 
 Beispiele:
-    python run_external.py "C:\...\recludOS"
-    python run_external.py "C:\...\recludOS" --profile QUICK
+    python run_external.py "C:\\...\\recludOS"
+    python run_external.py "C:\\...\\recludOS" --profile QUICK
     python run_external.py --all --profile STANDARD
 """
 

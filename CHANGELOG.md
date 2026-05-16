@@ -12,9 +12,25 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 - **Strukturierte Pfadoberfläche:** `system/hub/path.py` liefert jetzt eine moderne `bach path`-CLI mit JSON-Ausgaben, Runtime-Root-Spiegelung, `resolve`-/`validate`-Helfern und DB-Overrides über die kanonische BACH-Datenbank.
 - **Safe-Checkpoint-Steering für Ketten:** `llmauto` und `bach chain` unterstützen jetzt `pause`, `resume` und `steer`, sodass Operator-Hinweise zwischen Modellläufen vorgemerkt, angezeigt und am nächsten sicheren Checkpoint übernommen werden.
+- **Agent Doctor:** `system/hub/agent_launcher.py` ergänzt `bach agent doctor [name] [--json]` als Preflight-Diagnose für Claude CLI, Laufzeitverzeichnisse, SKILL.md und stale PID-Dateien inklusive konkreter Recovery-/Start-Hinweise.
+- **Scheduler Doctor:** `system/hub/scheduler.py` ergänzt `bach scheduler doctor [--json]` und `bach scheduler session doctor [--json]` als strukturierte Preflight-Diagnosen für Scheduler-/Session-Skripte, PID-Zustand, DB-/Config-/Profil-Flächen und konkrete Recovery-Schritte.
+- **Maschinenlesbare Agent-Kontrollantworten:** `system/hub/agent_launcher.py` liefert jetzt auch bei `bach agent start/stop --json` strukturierte Operator-Antworten inklusive Zielauflösung, Status, PID- und Laufzeit-Metadaten.
+- **Explizite Session-Steering-Bereinigung:** `bach scheduler session clear-steer [--profile NAME]` leert vorgemerkte Profil-Hinweise jetzt gezielt, und `session status --json` listet die neue Control-Action maschinenlesbar mit aus.
 
 ### Fixed
 
+- **Legacy-Usecases laufen wieder:** `system/hub/tuev.py` akzeptiert bei `bach usecase run` jetzt neben JSON auch ältere Klartext-Payloads in `test_input` und `expected_output`, sodass bestehende Testfälle wie `#12 Irreguläre Kosten Vorschau` nicht mehr mit `JSON-Fehler` abbrechen.
+- **Docs-Report auf aktuelles Layout gehärtet:** `system/tools/doc_update_checker.py` scannt jetzt `docs/help/*.txt`, `hub/_services/` und Root-Dokumente mit konsistenten Pfaden, erkennt veraltete `hub/handlers/*.py`- sowie `skills/_services/<service>/`-Referenzen am realen Layout und beschädigt dabei keine bereits korrekten `hub/_services/...`-Pfade mehr.
+- **Scheduler-Doctor DB-Check repariert:** `system/hub/scheduler.py` importiert `sqlite3` wieder explizit, sodass Stale-PID- und Datenbankdiagnosen im JSON-Doctor gemeinsam sauber funktionieren.
+- **Registry-Reports entdoppelt:** `system/tools/maintenance/registry_watcher.py` dedupliziert `valid`, `stale_db_entries`, `relocated_entries`, `historical_entries`, `external_entries` und `orphan_files` jetzt stabil, sodass mehrfach vorhandene DB-Zeilen die Health-Reports nicht mehr künstlich aufblasen.
+- **Upgrade-Kategorien vervollständigt:** `system/hub/upgrade.py` routet jetzt auch `agents`, `connectors`, `partners`, `docs` und `gui` sauber in die kategorie-basierte Restore-/Upgrade-Logik, statt diese Namen fälschlich wie Dateipfade zu behandeln.
+- **Restore-Kategorien erweitert:** `system/hub/restore.py` erkennt dieselben zusätzlichen Kategorien jetzt nativ über ihre Manifest-Pfadpräfixe, sodass Dry-Runs und selektive Upgrades konsistent bleiben.
+- **Upgrade-Hilfe korrigiert:** `system/docs/help/upgrade.txt` beschreibt wieder die echte CLI-Syntax inklusive `list`, Dry-Run-Form und der unterstützten Kategorien.
+- **Daemon-Pfade in Doku nachgezogen:** Restliche Hilfs- und Service-Texte referenzieren für Session-Profile jetzt konsistent `hub/_services/daemon/...` statt des alten `skills/_services/daemon/...`-Pfads.
+- **Session-Steering bleibt bei Fehlern erhalten:** fehlgeschlagene manuelle oder Hintergrund-Trigger löschen vorgemerkte Profil-Hinweise nicht mehr vorzeitig; die Queue wird erst nach erfolgreichem Session-Start geleert.
+- **Working-Memory-Cleanup wieder startup-kompatibel:** `system/tools/memory_working_cleanup.py` stellt den bisherigen `cleanup()`-Aufruf jetzt rückwärtskompatibel wieder bereit, sodass `startup.py` die automatische Bereinigung nicht still verliert.
+- **Financial-Mail-Servicepfade vereinheitlicht:** GUI, Daemon-Profil, llmauto-Chain und Service-SKILL referenzieren den Mail-Service und sein Schema jetzt konsistent unter `hub/_services/mail/...` statt auf dem veralteten `skills/_services/...`-Layout.
+- **Startup-Ressourcenblock wieder korrekt:** `system/hub/startup.py` zählt Agenten, Skills und Help-Dateien jetzt wieder über das aktuelle Layout (`agents/`, `docs/help/`) und die kanonische DB statt über veraltete `skills/_agents`-/`help`-Pfade, sodass der Startup-Block im Live-System keine falschen Nullwerte mehr meldet.
 - **Windows-Agenten wieder sauber trackbar:** `system/hub/agent_launcher.py` startet interaktive Agenten auf Windows jetzt in einer langlebigen eigenen Konsole statt nur über den kurzlebigen `start`-Launcher, sodass `bach agent status` und `bach agent stop` dieselbe Session-PID sehen.
 - **Run-Statusflächen konkretisiert:** `bach agent list/status --json` liefern jetzt auch `runtime_seconds`, `window_title` und `available_actions`; `bach scheduler status --json` sowie `bach scheduler session status --json` exponieren ebenfalls maschinenlesbare `available_actions`.
 - **ATI-Scanner erweitert:** `system/agents/ati/scanner/task_scanner.py` erkennt jetzt neben `AUFGABEN.txt` auch `TODO.md`, `AUFGABEN.md`, `ROADMAP.md` und `DONE.md`, zählt Tools bei Multi-Datei-Projekten korrekt nur einmal, speichert echte Zeilennummern für Rücksyncs und liest offene ROADMAP-Tabellenzeilen direkt als ATI-Tasks ein.
@@ -23,7 +39,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 - **Kanonischer DB-Pfad vereinheitlicht:** `system/bach_api.py` schreibt strukturierte `memory`-Einträge wieder in dieselbe Datenbank, die Reader und Handler verwenden.
 - **Seal-Status repariert:** `system/hub/seal.py` löst `BACH_DB` wieder robust auf; `bach seal status` läuft im CLI-Smoke erneut grün.
 - **Path-Handler wieder importierbar:** `system/hub/path.py` platziert `from __future__ import annotations` wieder an einer gültigen Modulposition, sodass `bach path ...` im normalen CLI-Dispatch nicht mehr als Syntaxfehler herausfällt.
-- **OpenClaw-Referenzstand aktualisiert:** Doku und Release-Planung erfassen jetzt den verifizierten Stand vom 2026-05-11 mit Stable `2026.5.7`, Beta `2026.5.10-beta.3`, GHCR `2026.5.10-beta.2-slim` und dem daraus abgeleiteten Fokus auf Steering, Checkpoints und Plugin-/Installer-Sicherheit.
+- **OpenClaw-Referenzstand aktualisiert:** Doku und Release-Planung erfassen jetzt den verifizierten Stand vom 2026-05-16 mit GitHub-Stable `2026.5.12`, sichtbarem Prerelease `2026.5.16-beta.1` und aktueller Paket-/GHCR-Tag-Linie `2026.5.16-beta.1-slim`; zusätzlich schärfen die jüngsten offiziellen Hinweise per-Agent-MCP-Scopes, MIME-Sniffing, Cron-/Subagent-Fallbacks, robusten Config-State-Cleanup und reproduzierbare Release-Validierungslanes als relevante Beobachtungspunkte für BACH.
 
 ---
 

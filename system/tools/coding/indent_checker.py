@@ -94,9 +94,9 @@ def check_file(file_path: str) -> List[Dict[str, Any]]:
         # Check 1: Strukturen ohne Doppelpunkt
         structure_pattern = r"^(def|if|elif|else|for|while|try|except|finally|class|with|async def|async for|async with)\b"
         if re.match(structure_pattern, stripped):
-            if not stripped.endswith(":") and not stripped.endswith(":\"):
+            if not stripped.endswith(":") and not stripped.endswith(":\\"):
                 # Mehrzeilige Definitionen ignorieren (endet mit \)
-                if not stripped.endswith("\"):
+                if not stripped.endswith("\\"):
                     errors.append({
                         "file": file_path,
                         "line": i,

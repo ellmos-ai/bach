@@ -9,7 +9,7 @@ Usage:
     python run_o_tests.py <system_path> [output_dir]
 
 Beispiel:
-    python run_o_tests.py "C:\...\recludOS" ".\ERGEBNISSE\recludOS"
+    python run_o_tests.py "C:\\...\\recludOS" ".\\ERGEBNISSE\\recludOS"
 """
 
 import os
@@ -141,7 +141,7 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python run_o_tests.py <system_path> [output_dir]")
         print("\nBeispiel:")
-        print('  python run_o_tests.py "C:\...\recludOS" ".\ERGEBNISSE\recludOS"')
+        print('  python run_o_tests.py "C:\\...\\recludOS" ".\\ERGEBNISSE\\recludOS"')
         sys.exit(1)
     
     system_path = sys.argv[1]

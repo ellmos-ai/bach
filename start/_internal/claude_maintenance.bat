@@ -12,4 +12,4 @@ claude --print "Starte mit lesen und ausfuehren von SKILL.md. Fuehre dann folgen
 
 echo.
 echo [FERTIG] Wartung beendet.
-pause
+if not defined BACH_AUTO pause

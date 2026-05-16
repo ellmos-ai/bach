@@ -263,7 +263,7 @@ class ToolsHandler(BaseHandler):
                         caps = json.loads(row['capabilities'])
                         results.append(f"\n[FAEHIGKEITEN]")
                         results.append(f"  {', '.join(caps)}")
-                    except:
+                    except (json.JSONDecodeError, ValueError, TypeError):
                         pass
                 if row['use_for']:
                     results.append(f"\n[VERWENDUNG]")
@@ -399,7 +399,7 @@ class ToolsHandler(BaseHandler):
                 content = tool_file.read_text(encoding='utf-8', errors='ignore').lower()
                 if term_lower in content:
                     found.append((tool_file.stem, "Script/Inhalt", ""))
-            except:
+            except (OSError, UnicodeDecodeError):
                 pass
         
         if not found:

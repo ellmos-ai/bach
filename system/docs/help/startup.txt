@@ -1,6 +1,6 @@
 # Portabilitaet: UNIVERSAL
-# Version: 1.1.0
-# Zuletzt validiert: 2026-05-10
+# Version: 1.2.0
+# Zuletzt validiert: 2026-05-13
 
 STARTUP - Session starten
 =========================
@@ -86,6 +86,16 @@ bach.py VOR dem Startup-Protokoll einen DB-Sync durch:
   - Push (bei Exit): Eigenes Backup in den Transit-Hub schreiben
 ProSync laeuft in bach.py main(), nicht im Startup-Handler.
 Details: bach --help db_sync
+
+AGENT-RECOVERY-TIPP
+-------------------
+Wenn Agent-Starts oder Agenten-Smokes Teil des Startup-/Tageschecks sind,
+liefert `bach agent doctor [name]` jetzt eine schnelle Preflight-Diagnose mit
+Recovery-Hinweisen. Besonders nützlich vor `bach agent start ...` oder wenn ein
+Agent-Fenster sofort wieder schließt:
+
+  bach agent doctor ati
+  bach agent doctor ati --json
 
 ABLAUF (v1.1.31)
 ----------------

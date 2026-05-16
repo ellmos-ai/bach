@@ -10,4 +10,4 @@ title BACH Claude Remote Control
 
 python "%~dp0claude_remote_control.py" %*
 
-pause
+if not defined BACH_AUTO pause

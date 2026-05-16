@@ -117,7 +117,7 @@ class DirectoryScanner:
                         "hash": file_hash,
                         "size": path.stat().st_size
                     }
-                except:
+                except OSError:
                     result["files"][rel_path] = {"hash": "error", "size": 0}
         
         result["directories"].sort()
@@ -132,7 +132,7 @@ class DirectoryScanner:
         try:
             with open(self.truth_file, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except:
+        except (json.JSONDecodeError, OSError):
             return {}
     
     def save_truth(self, state: Dict):

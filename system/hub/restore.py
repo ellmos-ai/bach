@@ -126,16 +126,19 @@ class RestoreHandler(BaseHandler):
         Returns:
             Liste von (version, file_hash, created_at)
         """
-        conn = self._get_conn()
-        cursor = conn.execute("""
-            SELECT version, file_hash, created_at
-            FROM dist_file_versions
-            WHERE file_path = ?
-            ORDER BY created_at DESC
-        """, (file_path,))
-        versions = cursor.fetchall()
-        conn.close()
-        return versions
+        conn = None
+        try:
+            conn = self._get_conn()
+            cursor = conn.execute("""
+                SELECT version, file_hash, created_at
+                FROM dist_file_versions
+                WHERE file_path = ?
+                ORDER BY created_at DESC
+            """, (file_path,))
+            return cursor.fetchall()
+        finally:
+            if conn:
+                conn.close()
 
     def restore_file(self, file_path: str, version: Optional[str] = None) -> Tuple[bool, str]:
         """
@@ -172,14 +175,18 @@ class RestoreHandler(BaseHandler):
         selected_version, file_hash, created_at = target_version
 
         # 3. Pruefe ob Datei TEMPLATE ist (dist_type=1)
-        conn = self._get_conn()
-        cursor = conn.execute("""
-            SELECT dist_type
-            FROM distribution_manifest
-            WHERE path = ?
-        """, (file_path,))
-        row = cursor.fetchone()
-        conn.close()
+        conn = None
+        try:
+            conn = self._get_conn()
+            cursor = conn.execute("""
+                SELECT dist_type
+                FROM distribution_manifest
+                WHERE path = ?
+            """, (file_path,))
+            row = cursor.fetchone()
+        finally:
+            if conn:
+                conn.close()
 
         if not row:
             return False, f"[ERROR] Datei nicht in distribution_manifest: {file_path}"
@@ -305,7 +312,7 @@ class RestoreHandler(BaseHandler):
         Restored alle Dateien einer Kategorie.
 
         Args:
-            category: Kategorie (core, templates, skills, hub, tools, agents)
+            category: Kategorie (core, templates, skills, hub, tools, agents, connectors, partners, docs, gui)
             dry_run: Nur anzeigen, nicht ausführen
 
         Returns:
@@ -319,6 +326,10 @@ class RestoreHandler(BaseHandler):
             "hub": {"dist_type": None, "path_pattern": "hub/%"},
             "tools": {"dist_type": None, "path_pattern": "tools/%"},
             "agents": {"dist_type": None, "path_pattern": "agents/%"},
+            "connectors": {"dist_type": None, "path_pattern": "connectors/%"},
+            "partners": {"dist_type": None, "path_pattern": "partners/%"},
+            "docs": {"dist_type": None, "path_pattern": "docs/%"},
+            "gui": {"dist_type": None, "path_pattern": "gui/%"},
         }
 
         if category not in category_mapping:
@@ -330,34 +341,36 @@ class RestoreHandler(BaseHandler):
         config = category_mapping[category]
 
         # Dateien aus DB holen
-        conn = self._get_conn()
+        conn = None
+        try:
+            conn = self._get_conn()
 
-        if config["dist_type"] is not None:
-            # Nach dist_type filtern (core, templates)
-            query = """
-                SELECT DISTINCT m.path
-                FROM distribution_manifest m
-                JOIN dist_file_versions v ON m.path = v.file_path
-                WHERE m.dist_type = ?
-                ORDER BY m.path
-            """
-            cursor = conn.execute(query, (config["dist_type"],))
-        else:
-            # Nach Pfad-Pattern filtern (skills, hub, tools, agents)
-            query = """
-                SELECT DISTINCT m.path
-                FROM distribution_manifest m
-                JOIN dist_file_versions v ON m.path = v.file_path
-                WHERE m.path LIKE ?
-                ORDER BY m.path
-            """
-            cursor = conn.execute(query, (config["path_pattern"],))
+            if config["dist_type"] is not None:
+                query = """
+                    SELECT DISTINCT m.path
+                    FROM distribution_manifest m
+                    JOIN dist_file_versions v ON m.path = v.file_path
+                    WHERE m.dist_type = ?
+                    ORDER BY m.path
+                """
+                cursor = conn.execute(query, (config["dist_type"],))
+            else:
+                query = """
+                    SELECT DISTINCT m.path
+                    FROM distribution_manifest m
+                    JOIN dist_file_versions v ON m.path = v.file_path
+                    WHERE m.path LIKE ?
+                    ORDER BY m.path
+                """
+                cursor = conn.execute(query, (config["path_pattern"],))
 
-        files = [row[0] for row in cursor.fetchall()]
-        conn.close()
+            files = [row[0] for row in cursor.fetchall()]
+        finally:
+            if conn:
+                conn.close()
 
         if not files:
-            return False, f"[INFO] Keine Dateien gefunden für Kategorie: {category}"
+            return True, f"[INFO] Keine Dateien gefunden für Kategorie: {category}"
 
         # Dry-Run: Nur anzeigen
         if dry_run:

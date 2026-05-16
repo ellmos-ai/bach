@@ -1,7 +1,7 @@
 # Portabilitaet: UNIVERSAL
-# Version: 1.1.0
-# Zuletzt validiert: 2026-02-08 (Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Version: 1.1.1
+# Zuletzt validiert: 2026-05-15 (Wartungsloop: Pfad-Korrektur, Mac-Verifikation)
+# Naechste Pruefung: 2026-11-15
 
 BACKUP & RESTORE
 ================
@@ -48,14 +48,14 @@ WAS WIRD GESICHERT?
 BACKUP-ROTATION
 ---------------
 
-  Lokal (_system/data/system/data/system/data/system/data/backups/):  7 Backups behalten
+  Lokal (_backups/):              7 Backups behalten
   NAS:                30 Backups behalten
   OneDrive:           Automatisch (Versionsverlauf)
 
 SPEICHERORTE
 ------------
 
-  Lokal:   system/_system/data/system/data/system/data/system/data/backups/
+  Lokal:   system/_backups/
   NAS:     \\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
   Logs:    system/data/logs/ (konsolidiert)
 

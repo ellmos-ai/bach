@@ -20,14 +20,16 @@ Erstellt: 2026-01-21
 import json
 import os
 import sys
-import io
 import re
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
 
 SCRIPT_DIR = Path(__file__).parent
 BACH_ROOT = SCRIPT_DIR.parent

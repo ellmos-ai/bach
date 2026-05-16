@@ -361,7 +361,7 @@ class DocsHandler(BaseHandler):
                 if idx >= 0:
                     return content[max(0, idx-20):idx+len(keyword_lower)+30].replace("\n", " ")
                 return ""
-        except:
+        except (OSError, UnicodeDecodeError):
             pass
         return None
 

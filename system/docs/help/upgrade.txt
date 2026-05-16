@@ -1,13 +1,12 @@
 # Portabilitaet: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-02-21 (SQ063)
-# Naechste Pruefung: 2026-08-21
+# Version: 1.1.0
+# Zuletzt validiert: 2026-05-12
+# Nächste Prüfung: 2026-08-12
 
 BACH UPGRADE - SYSTEM-AKTUALISIERUNG
 =====================================
 
-Aktualisiert BACH auf eine neuere Version. Unterstützt selektive
-Upgrades nach Kategorien (SQ020).
+Aktualisiert versionierte BACH-Komponenten selektiv nach Datei oder Kategorie.
 
 
 VERWENDUNG
@@ -16,28 +15,39 @@ VERWENDUNG
   # Upgrade-Status anzeigen
   bach upgrade status
 
-  # Verfügbare Updates anzeigen
+  # Verfügbare Versionen einer Datei anzeigen
+  bach upgrade list hub/backup.py
+
+  # Verfügbare Updates prüfen
   bach upgrade check
 
-  # Vollständiges Upgrade durchführen
-  bach upgrade --all
-
-  # Selektives Upgrade nach Kategorie
-  bach upgrade --category <kategorie>
+  # Selektive Kategorie-Upgrades
+  bach upgrade core
+  bach upgrade templates
+  bach upgrade agents
+  bach upgrade skills
+  bach upgrade hub
+  bach upgrade tools
+  bach upgrade connectors
+  bach upgrade partners
+  bach upgrade docs
+  bach upgrade gui
 
   # Dry-Run (nur anzeigen, nicht ausführen)
-  bach upgrade --dry-run
+  bach upgrade agents --dry-run
 
 
 KATEGORIEN
 ----------
 
-  core         System-Kern (hub/, tools/, core/)
-  templates    Vorlagen und Templates
+  core         System-Kern (dist_type=2)
+  templates    Vorlagen und Templates (dist_type=1)
   agents       Boss-Agenten und Experten
   skills       Skills und Protokolle
+  hub          Hub-Handler
+  tools        Tools
   connectors   Connector-System
-  partners     Partner-Dateien (claude/, gemini/, ollama/)
+  partners     Partner-Dateien
   docs         Dokumentation
   gui          GUI-Dateien
 
@@ -45,30 +55,36 @@ KATEGORIEN
 WICHTIG
 -------
 
-- Upgrade überschreibt NUR CORE + TEMPLATE Dateien
-- USER_DATA bleibt unangetastet
-- Backup wird empfohlen vor Upgrade
-- Versionen werden in dist_file_versions getrackt
+- Upgrade überschreibt nur versionierte Dateien aus Distribution/Manifest.
+- USER_DATA bleibt unangetastet.
+- Backup wird vor größeren Upgrades empfohlen.
+- Versionen werden in `dist_file_versions` getrackt.
 
 
 BEISPIELE
 ---------
 
   # Nur Core-Dateien aktualisieren
-  bach upgrade --category core
+  bach upgrade core
 
   # Nur Templates aktualisieren
-  bach upgrade --category templates
+  bach upgrade templates
 
-  # Prüfen welche Dateien aktualisiert würden
-  bach upgrade --dry-run --category agents
+  # Nur Agenten-Dateien als Vorschau prüfen
+  bach upgrade agents --dry-run
+
+  # Dokumentation wiederherstellen/upgraden
+  bach upgrade docs
+
+  # Verfügbare Versionen einer Datei ansehen
+  bach upgrade list hub/backup.py
 
 
 VERSIONIERUNG
 -------------
 
 - Hash + Auto-Increment System (ENT-09)
-- Nur CORE + TEMPLATE werden versioniert (dist_type 1+2)
+- Nur versionierte Distribution-Dateien können über `bach upgrade` bewegt werden
 - USER_DATA ist vom User und wird nicht versioniert
 
 

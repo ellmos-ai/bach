@@ -44,14 +44,16 @@ class MessagesHandler(BaseHandler):
         try:
             import sqlite3
             conn = sqlite3.connect(str(self.bach_db))
-            row = conn.execute("""
-                SELECT partner_name FROM partner_presence 
-                WHERE status = 'online' 
-                ORDER BY clocked_in DESC LIMIT 1
-            """).fetchone()
-            conn.close()
-            return row[0] if row else None
-        except:
+            try:
+                row = conn.execute("""
+                    SELECT partner_name FROM partner_presence
+                    WHERE status = 'online'
+                    ORDER BY clocked_in DESC LIMIT 1
+                """).fetchone()
+                return row[0] if row else None
+            finally:
+                conn.close()
+        except (sqlite3.Error, OSError):
             return None
     
     def get_operations(self) -> dict:
@@ -154,58 +156,57 @@ class MessagesHandler(BaseHandler):
         conn = self._get_conn()
         if not conn:
             return (False, "[ERROR] Datenbank (bach.db) nicht gefunden")
-        
-        # Filter bestimmen
-        direction = None
-        limit = 10
-        
-        if "--inbox" in args:
-            direction = "inbox"
-        elif "--outbox" in args:
-            direction = "outbox"
-        
-        if "--limit" in args:
-            idx = args.index("--limit")
-            if idx + 1 < len(args):
-                try:
-                    limit = int(args[idx + 1])
-                except ValueError:
-                    pass
-        
-        # Query bauen
-        if direction:
-            rows = conn.execute("""
-                SELECT id, direction, sender, recipient, subject, body, status, created_at
-                FROM messages WHERE direction = ?
-                ORDER BY created_at DESC LIMIT ?
-            """, (direction, limit)).fetchall()
-        else:
-            rows = conn.execute("""
-                SELECT id, direction, sender, recipient, subject, body, status, created_at
-                FROM messages ORDER BY created_at DESC LIMIT ?
-            """, (limit,)).fetchall()
-        
-        conn.close()
-        
+
+        try:
+            direction = None
+            limit = 10
+
+            if "--inbox" in args:
+                direction = "inbox"
+            elif "--outbox" in args:
+                direction = "outbox"
+
+            if "--limit" in args:
+                idx = args.index("--limit")
+                if idx + 1 < len(args):
+                    try:
+                        limit = int(args[idx + 1])
+                    except ValueError:
+                        pass
+
+            if direction:
+                rows = conn.execute("""
+                    SELECT id, direction, sender, recipient, subject, body, status, created_at
+                    FROM messages WHERE direction = ?
+                    ORDER BY created_at DESC LIMIT ?
+                """, (direction, limit)).fetchall()
+            else:
+                rows = conn.execute("""
+                    SELECT id, direction, sender, recipient, subject, body, status, created_at
+                    FROM messages ORDER BY created_at DESC LIMIT ?
+                """, (limit,)).fetchall()
+        finally:
+            conn.close()
+
         if not rows:
             return (True, "Keine Nachrichten vorhanden.")
-        
+
         output = [f"=== NACHRICHTEN ({len(rows)}) ===", ""]
-        
+
         for row in rows:
             status_icon = "●" if row["status"] == "unread" else "○"
             direction_icon = "📥" if row["direction"] == "inbox" else "📤"
             subject = row["subject"] or "(Kein Betreff)"
             date = row["created_at"][:16] if row["created_at"] else "?"
-            
+
             output.append(f"{status_icon} [{row['id']:3}] {direction_icon} {date}")
             output.append(f"       {row['sender']} -> {row['recipient']}")
             output.append(f"       {subject[:50]}")
             output.append("")
-        
+
         output.append("--")
         output.append("bach msg read <id>   Nachricht lesen")
-        
+
         return (True, "\n".join(output))
     
     def _list_unread(self) -> tuple:
@@ -213,27 +214,28 @@ class MessagesHandler(BaseHandler):
         conn = self._get_conn()
         if not conn:
             return (False, "[ERROR] Datenbank (bach.db) nicht gefunden")
-        
-        rows = conn.execute("""
-            SELECT id, sender, subject, created_at
-            FROM messages WHERE status = 'unread'
-            ORDER BY created_at DESC
-        """).fetchall()
-        
-        conn.close()
-        
+
+        try:
+            rows = conn.execute("""
+                SELECT id, sender, subject, created_at
+                FROM messages WHERE status = 'unread'
+                ORDER BY created_at DESC
+            """).fetchall()
+        finally:
+            conn.close()
+
         if not rows:
             return (True, "Keine ungelesenen Nachrichten.")
-        
+
         output = [f"=== UNGELESEN ({len(rows)}) ===", ""]
-        
+
         for row in rows:
             subject = row["subject"] or "(Kein Betreff)"
             date = row["created_at"][:16] if row["created_at"] else "?"
             output.append(f"● [{row['id']:3}] {date} - {row['sender']}")
             output.append(f"         {subject[:50]}")
             output.append("")
-        
+
         return (True, "\n".join(output))
     
     def _ping_messages(self, partner: str = None) -> tuple:
@@ -241,17 +243,19 @@ class MessagesHandler(BaseHandler):
         my_name = partner or self._get_active_partner()
         if not my_name:
             return (False, "[ERROR] Kein Partner. Nutze --from <name> oder starte mit --partner=NAME")
-        
+
         conn = self._get_conn()
         if not conn:
             return (False, "[ERROR] Datenbank (bach.db) nicht gefunden")
-        
-        rows = conn.execute("""
-            SELECT id, sender, body, created_at FROM messages
-            WHERE status = 'unread' AND recipient = ?
-            ORDER BY created_at DESC LIMIT 10
-        """, (my_name,)).fetchall()
-        conn.close()
+
+        try:
+            rows = conn.execute("""
+                SELECT id, sender, body, created_at FROM messages
+                WHERE status = 'unread' AND recipient = ?
+                ORDER BY created_at DESC LIMIT 10
+            """, (my_name,)).fetchall()
+        finally:
+            conn.close()
         
         if not rows:
             return (True, f"[OK] Keine neuen Nachrichten fuer {my_name.upper()}")
@@ -291,13 +295,15 @@ class MessagesHandler(BaseHandler):
             while True:
                 conn = self._get_conn()
                 if conn:
-                    rows = conn.execute("""
-                        SELECT id, sender, body, created_at FROM messages
-                        WHERE status = 'unread' AND recipient = ?
-                        ORDER BY created_at DESC LIMIT 10
-                    """, (my_name,)).fetchall()
-                    conn.close()
-                    
+                    try:
+                        rows = conn.execute("""
+                            SELECT id, sender, body, created_at FROM messages
+                            WHERE status = 'unread' AND recipient = ?
+                            ORDER BY created_at DESC LIMIT 10
+                        """, (my_name,)).fetchall()
+                    finally:
+                        conn.close()
+
                     for row in rows:
                         if row['id'] not in seen_ids:
                             seen_ids.add(row['id'])
@@ -316,56 +322,54 @@ class MessagesHandler(BaseHandler):
         """Sendet eine Nachricht."""
         if dry_run:
             return (True, f"[DRY-RUN] Wuerde senden an: {recipient}")
-        
+
         conn = self._get_conn()
         if not conn:
             return (False, "[ERROR] Datenbank (bach.db) nicht gefunden")
-        
-        now = datetime.now().isoformat()
-        
-        # Direction basierend auf Sender bestimmen
-        # user sendet -> outbox, alle anderen -> inbox (für user)
-        direction = "outbox" if sender == "user" else "inbox"
-        
-        conn.execute("""
-            INSERT INTO messages (direction, sender, recipient, body, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (direction, sender, recipient, body, "unread" if direction == "inbox" else "read", now))
-        
-        msg_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        conn.commit()
-        conn.close()
-        
+
+        try:
+            now = datetime.now().isoformat()
+            direction = "outbox" if sender == "user" else "inbox"
+
+            conn.execute("""
+                INSERT INTO messages (direction, sender, recipient, body, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (direction, sender, recipient, body, "unread" if direction == "inbox" else "read", now))
+
+            msg_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.commit()
+        finally:
+            conn.close()
+
         return (True, f"[OK] Nachricht #{msg_id} von {sender} gesendet an: {recipient}")
     
     def _read_message(self, msg_id: str, dry_run: bool, send_ack: bool = False) -> tuple:
         """Liest eine Nachricht und markiert als gelesen. Optional: Lesebestaetigung."""
-        conn = self._get_conn()
-        if not conn:
-            return (False, "[ERROR] Datenbank (bach.db) nicht gefunden")
-        
         try:
             mid = int(msg_id)
         except ValueError:
             return (False, f"[ERROR] Ungueltige ID: {msg_id}")
-        
-        row = conn.execute("""
-            SELECT * FROM messages WHERE id = ?
-        """, (mid,)).fetchone()
-        
-        if not row:
+
+        conn = self._get_conn()
+        if not conn:
+            return (False, "[ERROR] Datenbank (bach.db) nicht gefunden")
+
+        try:
+            row = conn.execute("""
+                SELECT * FROM messages WHERE id = ?
+            """, (mid,)).fetchone()
+
+            if not row:
+                return (False, f"[ERROR] Nachricht #{mid} nicht gefunden")
+
+            if not dry_run and row["status"] == "unread":
+                conn.execute("""
+                    UPDATE messages SET status = 'read', read_at = ?
+                    WHERE id = ?
+                """, (datetime.now().isoformat(), mid))
+                conn.commit()
+        finally:
             conn.close()
-            return (False, f"[ERROR] Nachricht #{mid} nicht gefunden")
-        
-        # Als gelesen markieren
-        if not dry_run and row["status"] == "unread":
-            conn.execute("""
-                UPDATE messages SET status = 'read', read_at = ?
-                WHERE id = ?
-            """, (datetime.now().isoformat(), mid))
-            conn.commit()
-        
-        conn.close()
         
         # Nachricht formatieren
         direction_icon = "📥 INBOX" if row["direction"] == "inbox" else "📤 OUTBOX"
@@ -406,13 +410,14 @@ class MessagesHandler(BaseHandler):
         conn = self._get_conn()
         if not conn:
             return (False, "[ERROR] Datenbank (bach.db) nicht gefunden")
-        
-        total = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
-        inbox = conn.execute("SELECT COUNT(*) FROM messages WHERE direction='inbox'").fetchone()[0]
-        outbox = conn.execute("SELECT COUNT(*) FROM messages WHERE direction='outbox'").fetchone()[0]
-        unread = conn.execute("SELECT COUNT(*) FROM messages WHERE status='unread'").fetchone()[0]
-        
-        conn.close()
+
+        try:
+            total = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+            inbox = conn.execute("SELECT COUNT(*) FROM messages WHERE direction='inbox'").fetchone()[0]
+            outbox = conn.execute("SELECT COUNT(*) FROM messages WHERE direction='outbox'").fetchone()[0]
+            unread = conn.execute("SELECT COUNT(*) FROM messages WHERE status='unread'").fetchone()[0]
+        finally:
+            conn.close()
         
         output = [
             "=== NACHRICHTEN-STATUS ===",
@@ -430,31 +435,33 @@ class MessagesHandler(BaseHandler):
         conn = self._get_conn()
         if not conn:
             return (False, "[ERROR] Datenbank (bach.db) nicht gefunden")
-        
+
         deleted = []
         errors = []
-        
-        for msg_id in msg_ids:
-            try:
-                mid = int(msg_id)
-            except ValueError:
-                errors.append(f"Ungueltige ID: {msg_id}")
-                continue
-            
-            row = conn.execute("SELECT id FROM messages WHERE id = ?", (mid,)).fetchone()
-            if not row:
-                errors.append(f"Nachricht #{mid} nicht gefunden")
-                continue
-            
+
+        try:
+            for msg_id in msg_ids:
+                try:
+                    mid = int(msg_id)
+                except ValueError:
+                    errors.append(f"Ungueltige ID: {msg_id}")
+                    continue
+
+                row = conn.execute("SELECT id FROM messages WHERE id = ?", (mid,)).fetchone()
+                if not row:
+                    errors.append(f"Nachricht #{mid} nicht gefunden")
+                    continue
+
+                if not dry_run:
+                    conn.execute("DELETE FROM messages WHERE id = ?", (mid,))
+                    deleted.append(mid)
+                else:
+                    deleted.append(mid)
+
             if not dry_run:
-                conn.execute("DELETE FROM messages WHERE id = ?", (mid,))
-                deleted.append(mid)
-            else:
-                deleted.append(mid)
-        
-        if not dry_run:
-            conn.commit()
-        conn.close()
+                conn.commit()
+        finally:
+            conn.close()
         
         output = []
         if deleted:
@@ -470,38 +477,40 @@ class MessagesHandler(BaseHandler):
         conn = self._get_conn()
         if not conn:
             return (False, "[ERROR] Datenbank (bach.db) nicht gefunden")
-        
+
         archived = []
         errors = []
-        
-        for msg_id in msg_ids:
-            try:
-                mid = int(msg_id)
-            except ValueError:
-                errors.append(f"Ungueltige ID: {msg_id}")
-                continue
-            
-            row = conn.execute("SELECT id, status FROM messages WHERE id = ?", (mid,)).fetchone()
-            if not row:
-                errors.append(f"Nachricht #{mid} nicht gefunden")
-                continue
-            
-            if row["status"] == "archived":
-                errors.append(f"#{mid} bereits archiviert")
-                continue
-            
+
+        try:
+            for msg_id in msg_ids:
+                try:
+                    mid = int(msg_id)
+                except ValueError:
+                    errors.append(f"Ungueltige ID: {msg_id}")
+                    continue
+
+                row = conn.execute("SELECT id, status FROM messages WHERE id = ?", (mid,)).fetchone()
+                if not row:
+                    errors.append(f"Nachricht #{mid} nicht gefunden")
+                    continue
+
+                if row["status"] == "archived":
+                    errors.append(f"#{mid} bereits archiviert")
+                    continue
+
+                if not dry_run:
+                    conn.execute("""
+                        UPDATE messages SET status = 'archived', archived_at = ?
+                        WHERE id = ?
+                    """, (datetime.now().isoformat(), mid))
+                    archived.append(mid)
+                else:
+                    archived.append(mid)
+
             if not dry_run:
-                conn.execute("""
-                    UPDATE messages SET status = 'archived', archived_at = ?
-                    WHERE id = ?
-                """, (datetime.now().isoformat(), mid))
-                archived.append(mid)
-            else:
-                archived.append(mid)
-        
-        if not dry_run:
-            conn.commit()
-        conn.close()
+                conn.commit()
+        finally:
+            conn.close()
         
         output = []
         if archived:

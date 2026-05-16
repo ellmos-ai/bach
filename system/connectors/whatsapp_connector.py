@@ -136,7 +136,6 @@ class WhatsAppConnector(BaseConnector):
             with urllib.request.urlopen(req, timeout=15) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
                 return result is not None
-            return True
         except Exception as e:
             print(f"[WhatsApp send_message Error] {type(e).__name__}: {e}", file=sys.stderr)
             return False
@@ -146,16 +145,7 @@ class WhatsAppConnector(BaseConnector):
         """Neue Nachrichten abrufen."""
         try:
             # WhatsApp Business API verwendet Webhooks fuer eingehende Nachrichten
-            # Hier koennte man einen Webhook-Server implementieren oder
-            # einen lokalen Cache von empfangenen Nachrichten abfragen
-            # Fuer dieses Template geben wir eine leere Liste zurueck
-            # und verlassen uns auf den Webhook-Mechanismus
             return []
-
-            messages = []
-            # Wird nur verwendet wenn Webhook-Daten gecacht werden
-
-            return messages
         except Exception as e:
             print(f"[WhatsApp get_messages Error] {type(e).__name__}: {e}", file=sys.stderr)
             return []

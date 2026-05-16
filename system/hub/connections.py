@@ -78,84 +78,86 @@ class ConnectionsHandler(BaseHandler):
     def _list_db(self, args: list) -> tuple:
         """Connections aus Datenbank auflisten."""
         results = ["REGISTRIERTE CONNECTIONS (bach.db)", "=" * 60]
-        
+
         if not self.db_path.exists():
             return False, "Datenbank nicht gefunden"
-        
+
         conn = self._get_db_conn()
-        
-        # Filter nach Typ
-        type_filter = None
-        if '--type' in args:
-            idx = args.index('--type')
-            if idx + 1 < len(args):
-                type_filter = args[idx + 1]
-        
-        # Query
-        if type_filter:
-            query = "SELECT * FROM connections WHERE type = ? ORDER BY category, name"
-            rows = conn.execute(query, (type_filter,)).fetchall()
-        else:
-            query = "SELECT * FROM connections ORDER BY type, category, name"
-            rows = conn.execute(query).fetchall()
-        
-        if not rows:
+        try:
+            # Filter nach Typ
+            type_filter = None
+            if '--type' in args:
+                idx = args.index('--type')
+                if idx + 1 < len(args):
+                    type_filter = args[idx + 1]
+
+            # Query
+            if type_filter:
+                query = "SELECT * FROM connections WHERE type = ? ORDER BY category, name"
+                rows = conn.execute(query, (type_filter,)).fetchall()
+            else:
+                query = "SELECT * FROM connections ORDER BY type, category, name"
+                rows = conn.execute(query).fetchall()
+
+            if not rows:
+                return True, "Keine Connections in Datenbank gefunden.\nFuehre 'bach --tools migrate' aus."
+
+            # Nach Typ gruppieren
+            current_type = None
+            for row in rows:
+                if row['type'] != current_type:
+                    current_type = row['type']
+                    type_label = {
+                        'mcp': 'MCP-SERVER',
+                        'ai': 'AI-PARTNER',
+                        'api': 'API-CONNECTIONS',
+                        'service': 'SERVICES'
+                    }.get(current_type, current_type.upper())
+                    results.append(f"\n[{type_label}]")
+
+                # Status-Icon
+                status = "[OK]" if row['is_active'] else "[--]"
+
+                # Ausgabe
+                name = row['name']
+                category = row['category'] or ''
+                help_text = (row['help_text'] or '')[:45]
+
+                results.append(f"  {status} {name:<15} {category:<15} {help_text}")
+
+            # Statistik
+            stats = conn.execute(
+                "SELECT type, COUNT(*) as cnt FROM connections GROUP BY type"
+            ).fetchall()
+
+            results.append(f"\n{'=' * 60}")
+            results.append("Statistik:")
+            total = 0
+            for stat in stats:
+                results.append(f"  {stat['type']}: {stat['cnt']}")
+                total += stat['cnt']
+            results.append(f"  Gesamt: {total}")
+
+            results.append(f"\nWeitere Infos:")
+            results.append(f"  bach --connections actors    Actors-Model")
+            results.append(f"  bach --connections partners  Partner-Profile")
+
+            return True, "\n".join(results)
+        finally:
             conn.close()
-            return True, "Keine Connections in Datenbank gefunden.\nFuehre 'bach --tools migrate' aus."
-        
-        # Nach Typ gruppieren
-        current_type = None
-        for row in rows:
-            if row['type'] != current_type:
-                current_type = row['type']
-                type_label = {
-                    'mcp': 'MCP-SERVER',
-                    'ai': 'AI-PARTNER',
-                    'api': 'API-CONNECTIONS',
-                    'service': 'SERVICES'
-                }.get(current_type, current_type.upper())
-                results.append(f"\n[{type_label}]")
-            
-            # Status-Icon
-            status = "[OK]" if row['is_active'] else "[--]"
-            
-            # Ausgabe
-            name = row['name']
-            category = row['category'] or ''
-            help_text = (row['help_text'] or '')[:45]
-            
-            results.append(f"  {status} {name:<15} {category:<15} {help_text}")
-        
-        # Statistik
-        stats = conn.execute(
-            "SELECT type, COUNT(*) as cnt FROM connections GROUP BY type"
-        ).fetchall()
-        
-        results.append(f"\n{'=' * 60}")
-        results.append("Statistik:")
-        total = 0
-        for stat in stats:
-            results.append(f"  {stat['type']}: {stat['cnt']}")
-            total += stat['cnt']
-        results.append(f"  Gesamt: {total}")
-        
-        results.append(f"\nWeitere Infos:")
-        results.append(f"  bach --connections actors    Actors-Model")
-        results.append(f"  bach --connections partners  Partner-Profile")
-        
-        conn.close()
-        return True, "\n".join(results)
     
     def _show(self, name: str) -> tuple:
         """Connection-Details aus DB anzeigen."""
         if not self.db_path.exists():
             return False, "Datenbank nicht gefunden"
-        
+
         conn = self._get_db_conn()
-        row = conn.execute(
-            "SELECT * FROM connections WHERE name LIKE ?", (f"%{name}%",)
-        ).fetchone()
-        conn.close()
+        try:
+            row = conn.execute(
+                "SELECT * FROM connections WHERE name LIKE ?", (f"%{name}%",)
+            ).fetchone()
+        finally:
+            conn.close()
         
         if not row:
             return False, f"Connection nicht gefunden: {name}\nNutze: bach --connections list"
@@ -174,7 +176,7 @@ class ConnectionsHandler(BaseHandler):
                 patterns = json.loads(row['trigger_patterns'])
                 results.append(f"\n[TRIGGER/TOOLS]")
                 results.append(f"  {', '.join(patterns)}")
-            except:
+            except Exception:
                 pass
         
         return True, "\n".join(results)

@@ -62,7 +62,7 @@ class ClockModule:
             try:
                 loaded = json.loads(self.state_file.read_text(encoding="utf-8"))
                 default.update(loaded)
-            except:
+            except (json.JSONDecodeError, OSError):
                 pass
         return default
 
@@ -74,7 +74,7 @@ class ClockModule:
                 json.dumps(self.state, indent=2, ensure_ascii=False),
                 encoding="utf-8"
             )
-        except:
+        except OSError:
             pass
 
     def enable(self, enabled: bool = True) -> str:
@@ -118,7 +118,7 @@ class ClockModule:
                 last_dt = datetime.fromisoformat(last_shown)
                 if (now - last_dt).total_seconds() < interval:
                     return None
-            except:
+            except (ValueError, TypeError):
                 pass
 
         self.state["last_shown"] = now.isoformat()
@@ -134,7 +134,7 @@ class ClockModule:
             try:
                 last_dt = datetime.fromisoformat(self.state["last_shown"])
                 last = last_dt.strftime("%H:%M")
-            except:
+            except (ValueError, TypeError):
                 pass
         return f"Clock: {enabled} | Intervall: {interval}s | Letzte: {last}"
 
@@ -158,7 +158,7 @@ class TimerModule:
             try:
                 loaded = json.loads(self.state_file.read_text(encoding="utf-8"))
                 default.update(loaded)
-            except:
+            except (json.JSONDecodeError, OSError):
                 pass
         return default
 
@@ -170,7 +170,7 @@ class TimerModule:
                 json.dumps(self.state, indent=2, ensure_ascii=False),
                 encoding="utf-8"
             )
-        except:
+        except OSError:
             pass
 
     def _format_duration(self, seconds: float) -> str:
@@ -236,7 +236,7 @@ class TimerModule:
                 duration = (now - start_time).total_seconds()
                 formatted = self._format_duration(duration)
                 lines.append(f"  {name}: {formatted}")
-            except:
+            except (ValueError, TypeError):
                 lines.append(f"  {name}: (Fehler)")
 
         return "\n".join(lines)
@@ -268,7 +268,7 @@ class TimerModule:
                 duration = (now - start_time).total_seconds()
                 formatted = self._format_duration(duration)
                 parts.append(f"{name} {formatted}")
-            except:
+            except (ValueError, TypeError):
                 pass
 
         return " | ".join(parts) if parts else None
@@ -293,7 +293,7 @@ class CountdownModule:
             try:
                 loaded = json.loads(self.state_file.read_text(encoding="utf-8"))
                 default.update(loaded)
-            except:
+            except (json.JSONDecodeError, OSError):
                 pass
         return default
 
@@ -305,7 +305,7 @@ class CountdownModule:
                 json.dumps(self.state, indent=2, ensure_ascii=False),
                 encoding="utf-8"
             )
-        except:
+        except OSError:
             pass
 
     def _parse_duration(self, duration_str: str) -> int:
@@ -359,7 +359,7 @@ class CountdownModule:
         """
         try:
             seconds = self._parse_duration(duration)
-        except:
+        except (ValueError, TypeError):
             return f"[COUNTDOWN] Ungueltiges Format: {duration}"
 
         end_time = datetime.now() + timedelta(seconds=seconds)
@@ -583,7 +583,7 @@ DENKANSTOSS:
             try:
                 loaded = json.loads(self.state_file.read_text(encoding="utf-8"))
                 default.update(loaded)
-            except:
+            except (json.JSONDecodeError, OSError):
                 pass
         return default
 
@@ -595,7 +595,7 @@ DENKANSTOSS:
                 json.dumps(self.state, indent=2, ensure_ascii=False),
                 encoding="utf-8"
             )
-        except:
+        except OSError:
             pass
 
     def _init_db_profiles(self) -> None:
@@ -638,7 +638,7 @@ DENKANSTOSS:
 
             conn.commit()
             conn.close()
-        except:
+        except Exception:
             pass
 
     def enable(self, enabled: bool = True) -> str:
@@ -680,7 +680,7 @@ DENKANSTOSS:
                         "trigger_on": json.loads(row["trigger_on"] or "[]"),
                         "is_default": bool(row["is_default"])
                     }
-        except:
+        except Exception:
             pass
 
         # Fallback auf DEFAULT_PROFILES
@@ -743,7 +743,7 @@ DENKANSTOSS:
                     lines.append(f"  {row['name']}: {row['description']}{default_marker}{active_marker}")
 
                 return "\n".join(lines)
-        except:
+        except Exception:
             pass
 
         # Fallback

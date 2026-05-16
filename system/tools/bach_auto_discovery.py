@@ -47,7 +47,7 @@ def extract_skill_metadata(path):
                 data = json.load(f)
                 description = data.get("description", "")
                 version = data.get("version", "1.0.0")
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
             
     # 2. Check SKILL.md
@@ -61,7 +61,7 @@ def extract_skill_metadata(path):
                     match = re.search(r'#.*?\n(.*?)(?=\n#|$)', content, re.DOTALL)
                     if match:
                         description = match.group(1).strip().replace("\n", " ")[:200]
-            except:
+            except OSError:
                 pass
                 
     # 3. Fallback for .txt experts
@@ -71,7 +71,7 @@ def extract_skill_metadata(path):
                 content = f.read(500)
                 # Erste Zeile oder Docstring-artig
                 description = content.split("\n")[0].strip()[:200]
-        except:
+        except OSError:
             pass
             
     return description, version

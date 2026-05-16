@@ -116,8 +116,8 @@ class CVHandler(BaseHandler):
     def _scan_folders(self, gen):
         """Scannt registrierte Ordner fuer Karrieredaten."""
         import sqlite3
+        conn = sqlite3.connect(self.db_path)
         try:
-            conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
             folders = conn.execute(
                 "SELECT folder_path, folder_type FROM user_data_folders"
@@ -131,20 +131,21 @@ class CVHandler(BaseHandler):
                     gen.scan_education_folders(fp)
                 elif "fortbildung" in ft.lower() or "cert" in ft.lower():
                     gen.scan_certifications(fp)
-            conn.close()
         except Exception:
             pass
+        finally:
+            conn.close()
 
     def _status(self) -> tuple:
         """Zeigt Status der CV-Datenbasis."""
         import sqlite3
         lines = ["=== Lebenslauf-Datenbasis ===\n"]
 
+        conn = None
         try:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
 
-            # Persoenliche Daten
             try:
                 profile = conn.execute(
                     "SELECT COUNT(*) as cnt FROM assistant_user_profile"
@@ -153,7 +154,6 @@ class CVHandler(BaseHandler):
             except Exception:
                 lines.append("Persoenliche Daten: Tabelle nicht vorhanden")
 
-            # Kontakte
             try:
                 contacts = conn.execute(
                     "SELECT COUNT(*) as cnt FROM contacts WHERE is_active=1 AND category='beruflich'"
@@ -162,7 +162,6 @@ class CVHandler(BaseHandler):
             except Exception:
                 lines.append("Berufliche Referenzen: Tabelle nicht vorhanden")
 
-            # Ordner
             try:
                 folders = conn.execute(
                     "SELECT folder_type, folder_path FROM user_data_folders"
@@ -174,10 +173,11 @@ class CVHandler(BaseHandler):
                     lines.append(f"  [{marker}] {f['folder_type']}: {f['folder_path']}")
             except Exception:
                 lines.append("Registrierte Ordner: Tabelle nicht vorhanden")
-
-            conn.close()
         except Exception as e:
             lines.append(f"DB-Fehler: {e}")
+        finally:
+            if conn:
+                conn.close()
 
         lines.append(f"\nGenerator: {self.expert_dir / 'cv_generator.py'}")
         lines.append(f"Vorhanden: {'Ja' if (self.expert_dir / 'cv_generator.py').exists() else 'Nein'}")

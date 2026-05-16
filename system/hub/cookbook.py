@@ -99,6 +99,7 @@ class CookbookHandler(BaseHandler):
 
     def _list_recipes(self, args: list) -> tuple:
         """Zeigt alle verfuegbaren Rezepte."""
+        conn = None
         try:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
@@ -111,25 +112,26 @@ class CookbookHandler(BaseHandler):
             """)
 
             recipes = cursor.fetchall()
-            conn.close()
-
-            if not recipes:
-                return (True, "[INFO] Keine Rezepte vorhanden")
-
-            output = ["Verfuegbare Rezepte:\n"]
-            for idx, recipe in enumerate(recipes, 1):
-                dist_label = "[CORE]" if recipe["dist_type"] == 2 else "[USER]"
-                output.append(f"  [{idx}] {recipe['name']:20} {dist_label}")
-                if recipe['title']:
-                    output.append(f"      {recipe['title']}")
-                if recipe['description']:
-                    output.append(f"      {recipe['description']}")
-                output.append("")
-
-            return (True, "\n".join(output))
-
         except Exception as e:
             return (False, f"[ERROR] Fehler beim Lesen der Rezepte: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+        if not recipes:
+            return (True, "[INFO] Keine Rezepte vorhanden")
+
+        output = ["Verfuegbare Rezepte:\n"]
+        for idx, recipe in enumerate(recipes, 1):
+            dist_label = "[CORE]" if recipe["dist_type"] == 2 else "[USER]"
+            output.append(f"  [{idx}] {recipe['name']:20} {dist_label}")
+            if recipe['title']:
+                output.append(f"      {recipe['title']}")
+            if recipe['description']:
+                output.append(f"      {recipe['description']}")
+            output.append("")
+
+        return (True, "\n".join(output))
 
     def _generate(self, args: list, dry_run: bool) -> tuple:
         """Generiert Rohfassung aus einem Rezept."""
@@ -138,12 +140,12 @@ class CookbookHandler(BaseHandler):
 
         recipe_name = args[0]
 
+        conn = None
         try:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            # Rezept laden
             cursor.execute("""
                 SELECT name, title, description, recipe_json
                 FROM cookbook_recipes
@@ -152,34 +154,27 @@ class CookbookHandler(BaseHandler):
 
             recipe_row = cursor.fetchone()
             if not recipe_row:
-                conn.close()
                 return (False, f"[ERROR] Rezept '{recipe_name}' nicht gefunden")
 
             recipe = json.loads(recipe_row["recipe_json"])
 
-            # SQL aus Rezept bauen und ausfuehren
             sql = self._build_sql(recipe)
             cursor.execute(sql)
             rows = cursor.fetchall()
-
-            conn.close()
-
-            # Template anwenden
-            content = self._apply_template(recipe, rows)
-
-            # Output-Pfad
-            output_file = self.output_dir / recipe.get("output_file", f"{recipe_name.upper()}.md")
-
-            if dry_run:
-                return (True, f"[DRY-RUN] Wuerde schreiben: {output_file}\n\nInhalt:\n{content[:500]}...")
-
-            # Datei schreiben
-            output_file.write_text(content, encoding="utf-8")
-
-            return (True, f"[OK] Rohfassung generiert: {output_file} ({len(rows)} Zeilen)")
-
         except Exception as e:
             return (False, f"[ERROR] Fehler beim Generieren: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+        content = self._apply_template(recipe, rows)
+        output_file = self.output_dir / recipe.get("output_file", f"{recipe_name.upper()}.md")
+
+        if dry_run:
+            return (True, f"[DRY-RUN] Wuerde schreiben: {output_file}\n\nInhalt:\n{content[:500]}...")
+
+        output_file.write_text(content, encoding="utf-8")
+        return (True, f"[OK] Rohfassung generiert: {output_file} ({len(rows)} Zeilen)")
 
     def _build_sql(self, recipe: dict) -> str:
         """Baut SQL-Query aus Rezept-Definition."""
@@ -323,33 +318,30 @@ class CookbookHandler(BaseHandler):
         if dry_run:
             return (True, f"[DRY-RUN] Wuerde Rezept hinzufuegen:\n\nName: {name}\nTitle: {title}\nDescription: {description or '(keine)'}\nSQL: {sql_query}\nTemplate: {template_type}\nOutput: {output_file}")
 
-        # In DB einfuegen
+        conn = None
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
-            # Pruefe ob Rezept schon existiert
             existing = cursor.execute("""
                 SELECT name FROM cookbook_recipes WHERE name = ?
             """, (name,)).fetchone()
 
             if existing:
-                conn.close()
                 return (False, f"[ERROR] Rezept '{name}' existiert bereits\n\nNutze 'bach cookbook delete {name}' um es zuerst zu loeschen")
 
-            # Einfuegen
             cursor.execute("""
                 INSERT INTO cookbook_recipes (name, title, description, recipe_json, dist_type)
                 VALUES (?, ?, ?, ?, ?)
-            """, (name, title, description or "", recipe_json, 0))  # dist_type=0 (USER)
+            """, (name, title, description or "", recipe_json, 0))
 
             conn.commit()
-            conn.close()
-
             return (True, f"✓ Rezept hinzugefuegt: {name}\n\nTitle: {title}\nSQL: {sql_query}\nTemplate: {template_type}\nOutput: {output_file}\n\nGenerieren mit: bach cookbook generate {name}")
-
         except Exception as e:
             return (False, f"[ERROR] Rezept konnte nicht hinzugefuegt werden: {e}")
+        finally:
+            if conn:
+                conn.close()
 
     def _delete_recipe(self, args: list, dry_run: bool) -> tuple:
         """
@@ -364,7 +356,7 @@ class CookbookHandler(BaseHandler):
         name = args[0]
         force = "--force" in args
 
-        # Pruefe ob Rezept existiert
+        conn = None
         try:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
@@ -377,34 +369,28 @@ class CookbookHandler(BaseHandler):
             """, (name,)).fetchone()
 
             if not recipe:
-                conn.close()
                 return (False, f"[ERROR] Rezept nicht gefunden: {name}")
 
             dist_type = recipe['dist_type']
             dist_type_name = {0: "USER", 1: "TEMPLATE", 2: "CORE"}.get(dist_type, "?")
 
-            # Warnung bei CORE/TEMPLATE
             if dist_type in (1, 2) and not force:
-                conn.close()
                 return (False, f"[WARNUNG] Rezept '{name}' ist ein {dist_type_name}-Rezept\n\nNutze --force um es trotzdem zu loeschen")
 
-            # Dry-Run?
             if dry_run:
-                conn.close()
                 return (True, f"[DRY-RUN] Wuerde Rezept loeschen:\n\nName: {name}\nTitle: {recipe['title']}\nTyp: {dist_type_name}")
 
-            # Loeschen
             cursor.execute("""
                 DELETE FROM cookbook_recipes WHERE name = ?
             """, (name,))
 
             conn.commit()
-            conn.close()
-
             return (True, f"✓ Rezept geloescht: {name}")
-
         except Exception as e:
             return (False, f"[ERROR] Rezept konnte nicht geloescht werden: {e}")
+        finally:
+            if conn:
+                conn.close()
 
     def _show_help(self) -> tuple:
         """Zeigt Hilfe an."""

@@ -20,27 +20,28 @@ class FoldersHandler:
     def list_folders(self) -> list[dict]:
         """Listet alle Ordner auf."""
         conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
+        try:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
 
-        cur.execute("""
-            SELECT
-                f.id,
-                f.folder_path,
-                f.folder_type,
-                a.name as agent_name,
-                e.name as expert_name,
-                f.created_at,
-                f.last_accessed
-            FROM user_data_folders f
-            LEFT JOIN bach_agents a ON f.agent_id = a.id
-            LEFT JOIN bach_experts e ON f.expert_id = e.id
-            ORDER BY f.folder_type, f.folder_path
-        """)
+            cur.execute("""
+                SELECT
+                    f.id,
+                    f.folder_path,
+                    f.folder_type,
+                    a.name as agent_name,
+                    e.name as expert_name,
+                    f.created_at,
+                    f.last_accessed
+                FROM user_data_folders f
+                LEFT JOIN bach_agents a ON f.agent_id = a.id
+                LEFT JOIN bach_experts e ON f.expert_id = e.id
+                ORDER BY f.folder_type, f.folder_path
+            """)
 
-        folders = [dict(row) for row in cur.fetchall()]
-        conn.close()
-        return folders
+            return [dict(row) for row in cur.fetchall()]
+        finally:
+            conn.close()
 
     def add_folder(
         self,
@@ -54,66 +55,64 @@ class FoldersHandler:
             raise ValueError(f"Ungültiger folder_type: {folder_type}. Erlaubt: data, archive, export, temp")
 
         conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
+        try:
+            cur = conn.cursor()
 
-        # Agent/Expert ID auflösen
-        agent_id = None
-        expert_id = None
+            agent_id = None
+            expert_id = None
 
-        if agent_name:
-            cur.execute("SELECT id FROM bach_agents WHERE name = ?", (agent_name,))
-            row = cur.fetchone()
-            if not row:
-                conn.close()
-                raise ValueError(f"Agent nicht gefunden: {agent_name}")
-            agent_id = row[0]
+            if agent_name:
+                cur.execute("SELECT id FROM bach_agents WHERE name = ?", (agent_name,))
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError(f"Agent nicht gefunden: {agent_name}")
+                agent_id = row[0]
 
-        if expert_name:
-            cur.execute("SELECT id FROM bach_experts WHERE name = ?", (expert_name,))
-            row = cur.fetchone()
-            if not row:
-                conn.close()
-                raise ValueError(f"Expert nicht gefunden: {expert_name}")
-            expert_id = row[0]
+            if expert_name:
+                cur.execute("SELECT id FROM bach_experts WHERE name = ?", (expert_name,))
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError(f"Expert nicht gefunden: {expert_name}")
+                expert_id = row[0]
 
-        # Einfügen
-        cur.execute("""
-            INSERT INTO user_data_folders (folder_path, folder_type, agent_id, expert_id, dist_type)
-            VALUES (?, ?, ?, ?, 0)
-        """, (folder_path, folder_type, agent_id, expert_id))
+            cur.execute("""
+                INSERT INTO user_data_folders (folder_path, folder_type, agent_id, expert_id, dist_type)
+                VALUES (?, ?, ?, ?, 0)
+            """, (folder_path, folder_type, agent_id, expert_id))
 
-        folder_id = cur.lastrowid
-        conn.commit()
-        conn.close()
-        return folder_id
+            folder_id = cur.lastrowid
+            conn.commit()
+            return folder_id
+        finally:
+            conn.close()
 
     def remove_folder(self, folder_id: int) -> bool:
         """Entfernt einen Ordner (nur DB-Eintrag, nicht Dateisystem)."""
         conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-
-        cur.execute("DELETE FROM user_data_folders WHERE id = ?", (folder_id,))
-        deleted = cur.rowcount > 0
-
-        conn.commit()
-        conn.close()
-        return deleted
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM user_data_folders WHERE id = ?", (folder_id,))
+            deleted = cur.rowcount > 0
+            conn.commit()
+            return deleted
+        finally:
+            conn.close()
 
     def move_folder(self, folder_id: int, new_path: str) -> bool:
         """Aendert den Pfad eines Ordners (nur DB, nicht Dateisystem)."""
         conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-
-        cur.execute("""
-            UPDATE user_data_folders
-            SET folder_path = ?, last_accessed = ?
-            WHERE id = ?
-        """, (new_path, datetime.now().isoformat(), folder_id))
-
-        updated = cur.rowcount > 0
-        conn.commit()
-        conn.close()
-        return updated
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE user_data_folders
+                SET folder_path = ?, last_accessed = ?
+                WHERE id = ?
+            """, (new_path, datetime.now().isoformat(), folder_id))
+            updated = cur.rowcount > 0
+            conn.commit()
+            return updated
+        finally:
+            conn.close()
 
 
 def _handle_folders(db_path: Path, args: list[str]) -> int:

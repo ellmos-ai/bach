@@ -203,9 +203,9 @@ class TestHandler(BaseHandler):
                     lines.append(f"  {result_file.name}")
                     lines.append(f"    Profil: {profile}, Score: {overall}/5.0")
                     found = True
-                except:
+                except (json.JSONDecodeError, OSError, KeyError):
                     pass
-        
+
         if not found:
             lines.append("\nKeine Ergebnisse gefunden.")
         

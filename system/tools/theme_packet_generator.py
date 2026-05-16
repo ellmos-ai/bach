@@ -78,7 +78,7 @@ def parse_skill_md():
                     'triggers': list(triggers),
                     'hint': hint
                 })
-        except:
+        except (IndexError, ValueError, KeyError):
             pass
             
     return packets

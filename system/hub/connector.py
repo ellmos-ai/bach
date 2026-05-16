@@ -280,9 +280,17 @@ class ConnectorHandler(BaseHandler):
         limit = 20
         connector_name = None
 
+        skip_next = False
         for i, a in enumerate(args):
+            if skip_next:
+                skip_next = False
+                continue
             if a == "--limit" and i + 1 < len(args):
-                limit = int(args[i + 1])
+                try:
+                    limit = int(args[i + 1])
+                except ValueError:
+                    return False, f"Ungueltige Zahl fuer --limit: {args[i + 1]}"
+                skip_next = True
             elif not a.startswith("--"):
                 connector_name = a
 
@@ -335,7 +343,7 @@ class ConnectorHandler(BaseHandler):
 
             lines = [f"Unverarbeitete Nachrichten ({len(rows)})", "=" * 50]
             for r in rows:
-                lines.append(f"  #{r[0]} [{r[1]}] von {r[2]}: {(r[4] or '')[:80]}")
+                lines.append(f"  #{r[0]} [{r[1]}] von {r[3]}: {(r[4] or '')[:80]}")
             return True, "\n".join(lines)
         finally:
             conn.close()

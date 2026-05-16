@@ -114,7 +114,7 @@ class TuevHandler(BaseHandler):
                         soon.append((r, days_left))
                     else:
                         ok.append((r, days_left))
-                except:
+                except (ValueError, TypeError):
                     ok.append((r, 999))
             else:
                 expired.append((r, -999))
@@ -523,6 +523,33 @@ bach db query "INSERT INTO usecases (title, workflow_name, test_input, expected_
 
         return True, "\n".join(lines)
 
+    @staticmethod
+    def _parse_usecase_payload(raw_value):
+        """Parst JSON-Felder rueckwaertskompatibel und faellt auf Klartext zurueck."""
+        if raw_value is None:
+            return {}
+
+        if not isinstance(raw_value, str):
+            return raw_value
+
+        text = raw_value.strip()
+        if not text:
+            return {}
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return text
+
+    @staticmethod
+    def _format_usecase_payload(value) -> str:
+        """Formatiert Testdaten fuer die CLI-Ausgabe."""
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, indent=2, ensure_ascii=False)
+        if isinstance(value, str):
+            return value
+        return json.dumps(value, ensure_ascii=False)
+
     def _run(self, usecase_id: str) -> Tuple[bool, str]:
         """Fuehrt einen Testfall aus."""
         conn = self._get_conn()
@@ -535,9 +562,9 @@ bach db query "INSERT INTO usecases (title, workflow_name, test_input, expected_
 
         # Test-Daten parsen
         try:
-            test_input = json.loads(row["test_input"] or "{}")
-            expected_output = json.loads(row["expected_output"] or "{}")
-        except json.JSONDecodeError as e:
+            test_input = self._parse_usecase_payload(row["test_input"])
+            expected_output = self._parse_usecase_payload(row["expected_output"])
+        except Exception as e:
             conn.close()
             return False, f"[USECASE] JSON-Fehler: {e}"
 
@@ -568,10 +595,10 @@ bach db query "INSERT INTO usecases (title, workflow_name, test_input, expected_
         # Wir markieren den Test als "durchgefuehrt" und erwarten manuelle Bewertung
 
         lines.append("Test-Input:")
-        lines.append(f"  {json.dumps(test_input, indent=2)}")
+        lines.append(f"  {self._format_usecase_payload(test_input)}")
         lines.append("")
         lines.append("Expected Output:")
-        lines.append(f"  {json.dumps(expected_output, indent=2)}")
+        lines.append(f"  {self._format_usecase_payload(expected_output)}")
         lines.append("")
         lines.append("[INFO] Automatische Tests fuer Markdown-Workflows werden noch entwickelt.")
         lines.append("")

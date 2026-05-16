@@ -116,7 +116,7 @@ def get_running_pid() -> int:
     if not PID_FILE.exists():
         return 0
     try:
-        pid = int(PID_FILE.read_text().strip())
+        pid = int(PID_FILE.read_text(encoding="utf-8").strip())
         if _is_process_running(pid):
             return pid
         PID_FILE.unlink()

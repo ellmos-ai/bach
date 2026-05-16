@@ -27,7 +27,7 @@ import os
 import sys
 import tempfile
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -99,14 +99,14 @@ def load_config() -> dict:
     if not config["bot_token"]:
         tf = os.path.expanduser("~/.credentials/telegram_bot_token")
         if os.path.exists(tf):
-            config["bot_token"] = open(tf).read().strip()
+            config["bot_token"] = open(tf, encoding="utf-8").read().strip()
 
     if not config["owner_id"]:
         config["owner_id"] = os.environ.get("TELEGRAM_OWNER_ID", "")
     if not config["owner_id"]:
         of = os.path.expanduser("~/.credentials/telegram_owner_id")
         if os.path.exists(of):
-            config["owner_id"] = open(of).read().strip()
+            config["owner_id"] = open(of, encoding="utf-8").read().strip()
 
     env_model = os.environ.get("OLLAMA_MODEL")
     if env_model:
@@ -131,7 +131,7 @@ try:
 except Exception:
     system_file = os.path.join(os.environ.get("PYTHONPATH", "."), "data", "system_prompt_buddha.txt")
 if os.path.exists(system_file):
-    system_prompt = open(system_file).read().strip()
+    system_prompt = open(system_file, encoding="utf-8").read().strip()
 else:
     system_prompt = "Du bist ein persönlicher KI-Assistent auf dem Mac Studio. Antworte auf Deutsch, präzise und klar."
 
@@ -370,7 +370,7 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         key_file = os.path.expanduser(f"~/.credentials/{file_name}")
         api_key = os.environ.get(env_var, "")
         if not api_key and os.path.exists(key_file):
-            api_key = open(key_file).read().strip()
+            api_key = open(key_file, encoding="utf-8").read().strip()
         if not api_key:
             await update.message.reply_text(
                 f"Kein API-Key für {name}.\n"
@@ -974,7 +974,7 @@ def _get_active_session_state():
     )
 
 
-class QuietHTTPServer(HTTPServer):
+class QuietHTTPServer(ThreadingHTTPServer):
     def handle_error(self, request, client_address):
         exc = sys.exc_info()[1]
         if isinstance(exc, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
@@ -1112,7 +1112,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 key_file = os.path.expanduser(f"~/.credentials/{file_name}")
                 api_key = os.environ.get(env_var, "")
                 if not api_key and os.path.exists(key_file):
-                    api_key = open(key_file).read().strip()
+                    api_key = open(key_file, encoding="utf-8").read().strip()
                 if not api_key:
                     self._json({"error": f"Kein API-Key für {name}"}, 400)
                     return

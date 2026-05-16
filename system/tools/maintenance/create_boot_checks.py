@@ -7,7 +7,11 @@ import sqlite3
 import json
 from pathlib import Path
 
-db_path = Path(__file__).parent.parent / "data" / "bach.db"
+try:
+    from hub.bach_paths import BACH_DB
+    db_path = BACH_DB
+except ImportError:
+    db_path = Path(__file__).parent.parent / "data" / "bach.db"
 
 def create_boot_checks():
     conn = sqlite3.connect(db_path)

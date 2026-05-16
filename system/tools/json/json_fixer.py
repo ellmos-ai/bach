@@ -63,7 +63,6 @@ Autor: BACH v1.1
 """
 
 import sys
-import io
 import json
 import re
 import shutil
@@ -72,7 +71,10 @@ from pathlib import Path
 from datetime import datetime
 
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
 
 
 def remove_bom(content: str) -> str:

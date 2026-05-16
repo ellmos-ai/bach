@@ -242,9 +242,12 @@ class DiscordConnector(BaseConnector):
             try:
                 messages = self.get_new_messages()
                 for msg in messages:
-                    on_message(msg)
-            except Exception:
-                pass
+                    try:
+                        on_message(msg)
+                    except Exception as e:
+                        print(f"[Discord on_message callback Error] {type(e).__name__}: {e}", file=sys.stderr)
+            except Exception as e:
+                print(f"[Discord poll_loop Error] {type(e).__name__}: {e}", file=sys.stderr)
             time.sleep(interval)
 
     def poll_threaded(self, on_message: Callable[[Message], None],

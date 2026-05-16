@@ -192,13 +192,20 @@ class ClaudeBridgeHandler(BaseHandler):
 
     def _workers(self, args: List[str]) -> Tuple[bool, str]:
         db_path = self.base_path / "data" / "bach.db"
+        conn = None
         try:
             conn = sqlite3.connect(str(db_path))
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT * FROM claude_bridge_workers ORDER BY id DESC LIMIT 10"
             ).fetchall()
-            conn.close()
+        except Exception as e:
+            return False, f"Fehler: {e}"
+        finally:
+            if conn:
+                conn.close()
+
+        try:
 
             if not rows:
                 return True, "Keine Worker vorhanden."

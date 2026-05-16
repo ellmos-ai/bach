@@ -81,8 +81,8 @@ class GuiHandler(BaseHandler):
         
         output = [
             "[OK] Starte BACH GUI Server...",
-            f"     URL: http:/127.0.0.1:{port}",
-            f"     API: http:/127.0.0.1:{port}/docs",
+            f"     URL: http://127.0.0.1:{port}",
+            f"     API: http://127.0.0.1:{port}/docs",
             "",
             "     Druecke Ctrl+C zum Beenden"
         ]
@@ -120,14 +120,15 @@ class GuiHandler(BaseHandler):
         
         # Server im Hintergrund starten
         try:
-            # Windows: pythonw oder start /b
             if sys.platform == "win32":
-                import os
-                # Verwende START /B fuer Hintergrund-Prozess
-                cmd = f'start /b python "{self.server_script}" --port {port}'
-                os.system(cmd)
+                CREATE_NO_WINDOW = 0x08000000
+                subprocess.Popen(
+                    [sys.executable, str(self.server_script), "--port", str(port)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=CREATE_NO_WINDOW,
+                )
             else:
-                # Unix: nohup
                 subprocess.Popen(
                     [sys.executable, str(self.server_script), "--port", str(port)],
                     stdout=subprocess.DEVNULL,

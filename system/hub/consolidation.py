@@ -18,6 +18,7 @@ Operationen:
 - review:   KI-Review anfordern (Tasks)
 """
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Tuple
@@ -92,75 +93,78 @@ class ConsolidationHandler(BaseHandler):
             ops = "\n".join(f"  {k:12} - {v}" for k, v in self.get_operations().items())
             return False, f"[FEHLER] Unbekannte Operation: {operation}\n\nVerfuegbar:\n{ops}"
 
-    def _get_db(self) -> sqlite3.Connection:
-        """DB-Verbindung mit Row-Factory"""
+    @contextmanager
+    def _get_db(self):
+        """DB-Verbindung mit Row-Factory (Context Manager)"""
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def _status(self) -> tuple:
         """Zeigt Konsolidierungs-Status"""
-        conn = self._get_db()
-        cursor = conn.cursor()
+        with self._get_db() as conn:
+            cursor = conn.cursor()
 
-        output = ["[CONSOLIDATION] Status", "=" * 50, ""]
+            output = ["[CONSOLIDATION] Status", "=" * 50, ""]
 
-        # Memory-Tabellen Counts
-        tables = [
-            ("memory_sessions", "Sessions (episodisch)"),
-            ("memory_lessons", "Lessons (prozedural)"),
-            ("memory_facts", "Facts (semantisch)"),
-            ("memory_context", "Context (komprimiert)"),
-            ("memory_working", "Working (Kurzzeit)"),
-        ]
+            # Memory-Tabellen Counts
+            tables = [
+                ("memory_sessions", "Sessions (episodisch)"),
+                ("memory_lessons", "Lessons (prozedural)"),
+                ("memory_facts", "Facts (semantisch)"),
+                ("memory_context", "Context (komprimiert)"),
+                ("memory_working", "Working (Kurzzeit)"),
+            ]
 
-        output.append("MEMORY-TABELLEN:")
-        for table, desc in tables:
+            output.append("MEMORY-TABELLEN:")
+            for table, desc in tables:
+                try:
+                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                    count = cursor.fetchone()[0]
+                    output.append(f"  {desc:25} {count:5} Eintraege")
+                except (sqlite3.OperationalError, sqlite3.DatabaseError):
+                    output.append(f"  {desc:25} (nicht vorhanden)")
+
+            output.append("")
+
+            # Consolidation Tracking
             try:
-                cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                count = cursor.fetchone()[0]
-                output.append(f"  {desc:25} {count:5} Eintraege")
-            except:
-                output.append(f"  {desc:25} (nicht vorhanden)")
+                cursor.execute("SELECT COUNT(*) FROM memory_consolidation")
+                total = cursor.fetchone()[0]
 
-        output.append("")
+                cursor.execute("SELECT status, COUNT(*) FROM memory_consolidation GROUP BY status")
+                by_status = dict(cursor.fetchall())
 
-        # Consolidation Tracking
-        try:
-            cursor.execute("SELECT COUNT(*) FROM memory_consolidation")
-            total = cursor.fetchone()[0]
+                cursor.execute("SELECT AVG(weight) FROM memory_consolidation WHERE status='active'")
+                avg_weight = cursor.fetchone()[0] or 0
 
-            cursor.execute("SELECT status, COUNT(*) FROM memory_consolidation GROUP BY status")
-            by_status = dict(cursor.fetchall())
+                cursor.execute("""
+                    SELECT COUNT(*) FROM memory_consolidation
+                    WHERE weight < ? AND status='active'
+                """, (self.WEIGHT_THRESHOLD_ARCHIVE,))
+                below_threshold = cursor.fetchone()[0]
 
-            cursor.execute("SELECT AVG(weight) FROM memory_consolidation WHERE status='active'")
-            avg_weight = cursor.fetchone()[0] or 0
+                output.append("KONSOLIDIERUNG:")
+                output.append(f"  Tracking-Eintraege:      {total:5}")
+                output.append(f"    - active:              {by_status.get('active', 0):5}")
+                output.append(f"    - archived:            {by_status.get('archived', 0):5}")
+                output.append(f"    - deleted:             {by_status.get('deleted', 0):5}")
+                output.append(f"  Durchschnittl. Gewicht:  {avg_weight:.2f}")
+                output.append(f"  Unter Archiv-Schwelle:   {below_threshold:5}")
+            except Exception as e:
+                output.append(f"KONSOLIDIERUNG: Fehler - {e}")
 
-            cursor.execute("""
-                SELECT COUNT(*) FROM memory_consolidation
-                WHERE weight < ? AND status='active'
-            """, (self.WEIGHT_THRESHOLD_ARCHIVE,))
-            below_threshold = cursor.fetchone()[0]
+            output.append("")
+            output.append("SCHWELLENWERTE:")
+            output.append(f"  Archivieren bei weight < {self.WEIGHT_THRESHOLD_ARCHIVE}")
+            output.append(f"  Loeschen bei weight <    {self.WEIGHT_THRESHOLD_DELETE}")
+            output.append(f"  Decay-Rate (taeglich):   {self.DECAY_RATE_DEFAULT}")
+            output.append(f"  Boost bei Abruf:         +{self.BOOST_ON_ACCESS}")
 
-            output.append("KONSOLIDIERUNG:")
-            output.append(f"  Tracking-Eintraege:      {total:5}")
-            output.append(f"    - active:              {by_status.get('active', 0):5}")
-            output.append(f"    - archived:            {by_status.get('archived', 0):5}")
-            output.append(f"    - deleted:             {by_status.get('deleted', 0):5}")
-            output.append(f"  Durchschnittl. Gewicht:  {avg_weight:.2f}")
-            output.append(f"  Unter Archiv-Schwelle:   {below_threshold:5}")
-        except Exception as e:
-            output.append(f"KONSOLIDIERUNG: Fehler - {e}")
-
-        output.append("")
-        output.append("SCHWELLENWERTE:")
-        output.append(f"  Archivieren bei weight < {self.WEIGHT_THRESHOLD_ARCHIVE}")
-        output.append(f"  Loeschen bei weight <    {self.WEIGHT_THRESHOLD_DELETE}")
-        output.append(f"  Decay-Rate (taeglich):   {self.DECAY_RATE_DEFAULT}")
-        output.append(f"  Boost bei Abruf:         +{self.BOOST_ON_ACCESS}")
-
-        conn.close()
-        return True, "\n".join(output)
+            return True, "\n".join(output)
 
     def _run_all(self, dry_run: bool = False) -> tuple:
         """Fuehrt alle automatischen Prozesse aus"""
@@ -191,201 +195,185 @@ class ConsolidationHandler(BaseHandler):
 
     def _update_weights(self, dry_run: bool = False) -> tuple:
         """Aktualisiert Gewichtungen (decay)"""
-        conn = self._get_db()
-        cursor = conn.cursor()
+        with self._get_db() as conn:
+            cursor = conn.cursor()
 
-        # Berechne Decay basierend auf last_accessed
-        now = datetime.now()
+            now = datetime.now()
 
-        cursor.execute("""
-            SELECT id, weight, last_accessed, decay_rate
-            FROM memory_consolidation
-            WHERE status = 'active'
-        """)
-        entries = cursor.fetchall()
+            cursor.execute("""
+                SELECT id, weight, last_accessed, decay_rate
+                FROM memory_consolidation
+                WHERE status = 'active'
+            """)
+            entries = cursor.fetchall()
 
-        updated = 0
-        for entry in entries:
-            if entry['last_accessed']:
-                last = datetime.fromisoformat(entry['last_accessed'])
-                days_since = (now - last).days
-                if days_since > 0:
-                    # Decay anwenden
-                    decay = entry['decay_rate'] ** days_since
-                    new_weight = entry['weight'] * decay
-                    new_weight = max(0.0, min(1.0, new_weight))  # Clamp 0-1
+            updated = 0
+            for entry in entries:
+                if entry['last_accessed']:
+                    last = datetime.fromisoformat(entry['last_accessed'])
+                    days_since = (now - last).days
+                    if days_since > 0:
+                        decay = entry['decay_rate'] ** days_since
+                        new_weight = entry['weight'] * decay
+                        new_weight = max(0.0, min(1.0, new_weight))
 
-                    if not dry_run:
-                        cursor.execute("""
-                            UPDATE memory_consolidation
-                            SET weight = ?, updated_at = ?
-                            WHERE id = ?
-                        """, (new_weight, now.isoformat(), entry['id']))
-                    updated += 1
+                        if not dry_run:
+                            cursor.execute("""
+                                UPDATE memory_consolidation
+                                SET weight = ?, updated_at = ?
+                                WHERE id = ?
+                            """, (new_weight, now.isoformat(), entry['id']))
+                        updated += 1
 
-        if not dry_run:
-            conn.commit()
-        conn.close()
+            if not dry_run:
+                conn.commit()
 
-        prefix = "[DRY-RUN] " if dry_run else ""
-        return True, f"{prefix}[OK] {updated} Gewichtungen aktualisiert (decay)"
+            prefix = "[DRY-RUN] " if dry_run else ""
+            return True, f"{prefix}[OK] {updated} Gewichtungen aktualisiert (decay)"
 
     def _archive_old(self, dry_run: bool = False) -> tuple:
         """Archiviert Eintraege unter Schwellenwert"""
-        conn = self._get_db()
-        cursor = conn.cursor()
+        with self._get_db() as conn:
+            cursor = conn.cursor()
 
-        cursor.execute("""
-            SELECT id, source_table, source_id, weight
-            FROM memory_consolidation
-            WHERE status = 'active' AND weight < ?
-        """, (self.WEIGHT_THRESHOLD_ARCHIVE,))
+            cursor.execute("""
+                SELECT id, source_table, source_id, weight
+                FROM memory_consolidation
+                WHERE status = 'active' AND weight < ?
+            """, (self.WEIGHT_THRESHOLD_ARCHIVE,))
 
-        to_archive = cursor.fetchall()
+            to_archive = cursor.fetchall()
 
-        if not dry_run:
-            for entry in to_archive:
-                cursor.execute("""
-                    UPDATE memory_consolidation
-                    SET status = 'archived', updated_at = ?
-                    WHERE id = ?
-                """, (datetime.now().isoformat(), entry['id']))
-            conn.commit()
+            if not dry_run:
+                for entry in to_archive:
+                    cursor.execute("""
+                        UPDATE memory_consolidation
+                        SET status = 'archived', updated_at = ?
+                        WHERE id = ?
+                    """, (datetime.now().isoformat(), entry['id']))
+                conn.commit()
 
-        conn.close()
-
-        prefix = "[DRY-RUN] " if dry_run else ""
-        return True, f"{prefix}[OK] {len(to_archive)} Eintraege archiviert"
+            prefix = "[DRY-RUN] " if dry_run else ""
+            return True, f"{prefix}[OK] {len(to_archive)} Eintraege archiviert"
 
     def _index_facts(self, dry_run: bool = False) -> tuple:
         """Erstellt Facts-Index aus Help/Wiki"""
-        conn = self._get_db()
-        cursor = conn.cursor()
+        with self._get_db() as conn:
+            cursor = conn.cursor()
 
-        help_dir = self.base_path / "help"
-        wiki_dir = help_dir / "wiki"
+            help_dir = self.base_path / "help"
+            wiki_dir = help_dir / "wiki"
 
-        indexed = 0
+            indexed = 0
 
-        # Help-Dateien indexieren
-        if help_dir.exists():
-            for f in help_dir.glob("*.txt"):
-                key = f"HELP.{f.stem}"
-                value = f"docs/help/{f.name}"
+            if help_dir.exists():
+                for f in help_dir.glob("*.txt"):
+                    key = f"HELP.{f.stem}"
+                    value = f"docs/help/{f.name}"
 
-                if not dry_run:
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO memory_facts
-                        (key, value, category, source, updated_at)
-                        VALUES (?, ?, 'system', 'consolidate-index', ?)
-                    """, (key, value, datetime.now().isoformat()))
-                indexed += 1
+                    if not dry_run:
+                        cursor.execute("""
+                            INSERT OR REPLACE INTO memory_facts
+                            (key, value, category, source, updated_at)
+                            VALUES (?, ?, 'system', 'consolidate-index', ?)
+                        """, (key, value, datetime.now().isoformat()))
+                    indexed += 1
 
-        # Wiki-Dateien indexieren
-        if wiki_dir.exists():
-            for f in wiki_dir.rglob("*.txt"):
-                rel_path = f.relative_to(help_dir)
-                key = f"WIKI.{f.stem}"
-                value = str(rel_path).replace("\\", "/")
+            if wiki_dir.exists():
+                for f in wiki_dir.rglob("*.txt"):
+                    rel_path = f.relative_to(help_dir)
+                    key = f"WIKI.{f.stem}"
+                    value = str(rel_path).replace("\\", "/")
 
-                if not dry_run:
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO memory_facts
-                        (key, value, category, source, updated_at)
-                        VALUES (?, ?, 'system', 'consolidate-index', ?)
-                    """, (key, value, datetime.now().isoformat()))
-                indexed += 1
+                    if not dry_run:
+                        cursor.execute("""
+                            INSERT OR REPLACE INTO memory_facts
+                            (key, value, category, source, updated_at)
+                            VALUES (?, ?, 'system', 'consolidate-index', ?)
+                        """, (key, value, datetime.now().isoformat()))
+                    indexed += 1
 
-        if not dry_run:
-            conn.commit()
-        conn.close()
+            if not dry_run:
+                conn.commit()
 
-        prefix = "[DRY-RUN] " if dry_run else ""
-        return True, f"{prefix}[OK] {indexed} Help/Wiki-Eintraege indexiert"
+            prefix = "[DRY-RUN] " if dry_run else ""
+            return True, f"{prefix}[OK] {indexed} Help/Wiki-Eintraege indexiert"
 
     def _compress(self, args: list, dry_run: bool = False) -> tuple:
         """Sessions komprimieren (v2.0: --run, --cleanup, --batch)"""
 
-        # --cleanup: Leere/auto-closed Sessions aufräumen
         if "--cleanup" in args:
-            conn = self._get_db()
-            return self._cleanup_empty_sessions(conn, dry_run)
+            with self._get_db() as conn:
+                return self._cleanup_empty_sessions(conn, dry_run)
 
-        # --batch: Sessions nach Tag gruppieren (einfach, ohne KI)
         if "--batch" in args:
-            conn = self._get_db()
-            return self._batch_compress_sessions(conn, dry_run)
+            with self._get_db() as conn:
+                return self._batch_compress_sessions(conn, dry_run)
 
-        # --run: Vollstaendige Komprimierung mit ContextCompressor
         if "--run" in args:
             return self._run_context_compressor(args, dry_run)
 
-        # Standard: Status anzeigen
-        conn = self._get_db()
-        cursor = conn.cursor()
+        with self._get_db() as conn:
+            cursor = conn.cursor()
 
-        cursor.execute("""
-            SELECT COUNT(*) FROM memory_sessions
-            WHERE is_compressed = 0 OR is_compressed IS NULL
-        """)
-        uncompressed = cursor.fetchone()[0]
+            cursor.execute("""
+                SELECT COUNT(*) FROM memory_sessions
+                WHERE is_compressed = 0 OR is_compressed IS NULL
+            """)
+            uncompressed = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM memory_context")
-        context_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM memory_context")
+            context_count = cursor.fetchone()[0]
 
-        cursor.execute("""
-            SELECT MIN(started_at), MAX(ended_at) FROM memory_sessions
-            WHERE is_compressed = 0 OR is_compressed IS NULL
-        """)
-        date_range = cursor.fetchone()
+            cursor.execute("""
+                SELECT MIN(started_at), MAX(ended_at) FROM memory_sessions
+                WHERE is_compressed = 0 OR is_compressed IS NULL
+            """)
+            date_range = cursor.fetchone()
 
-        # Leere Sessions zaehlen
-        cursor.execute("""
-            SELECT COUNT(*) FROM memory_sessions
-            WHERE (summary IS NULL OR summary = '' OR length(summary) <= 50
-                   OR summary LIKE '%AUTO-CLOSED%')
-            AND (is_compressed = 0 OR is_compressed IS NULL)
-        """)
-        empty_count = cursor.fetchone()[0]
+            cursor.execute("""
+                SELECT COUNT(*) FROM memory_sessions
+                WHERE (summary IS NULL OR summary = '' OR length(summary) <= 50
+                       OR summary LIKE '%AUTO-CLOSED%')
+                AND (is_compressed = 0 OR is_compressed IS NULL)
+            """)
+            empty_count = cursor.fetchone()[0]
 
-        # Komprimierbare zaehlen
-        cursor.execute("""
-            SELECT COUNT(*) FROM memory_sessions
-            WHERE (is_compressed = 0 OR is_compressed IS NULL)
-            AND summary IS NOT NULL AND summary != ''
-            AND length(summary) > 50
-            AND summary NOT LIKE '%AUTO-CLOSED%'
-            AND summary NOT LIKE '%CLEANUP%'
-        """)
-        compressible = cursor.fetchone()[0]
+            cursor.execute("""
+                SELECT COUNT(*) FROM memory_sessions
+                WHERE (is_compressed = 0 OR is_compressed IS NULL)
+                AND summary IS NOT NULL AND summary != ''
+                AND length(summary) > 50
+                AND summary NOT LIKE '%AUTO-CLOSED%'
+                AND summary NOT LIKE '%CLEANUP%'
+            """)
+            compressible = cursor.fetchone()[0]
 
-        conn.close()
+            output = [
+                "[COMPRESS] Sessions-Komprimierung",
+                "=" * 50,
+                "",
+                f"Unkomprimierte Sessions:  {uncompressed}",
+                f"  davon leer/kurz:        {empty_count}",
+                f"  davon komprimierbar:    {compressible}",
+                f"Vorhandene Kontexte:      {context_count}",
+            ]
 
-        output = [
-            "[COMPRESS] Sessions-Komprimierung",
-            "=" * 50,
-            "",
-            f"Unkomprimierte Sessions:  {uncompressed}",
-            f"  davon leer/kurz:        {empty_count}",
-            f"  davon komprimierbar:    {compressible}",
-            f"Vorhandene Kontexte:      {context_count}",
-        ]
+            if date_range[0]:
+                output.append(f"Zeitraum:                 {date_range[0][:10]} bis {date_range[1][:10] if date_range[1] else 'heute'}")
 
-        if date_range[0]:
-            output.append(f"Zeitraum:                 {date_range[0][:10]} bis {date_range[1][:10] if date_range[1] else 'heute'}")
+            output.extend([
+                "",
+                "Optionen:",
+                "",
+                "  bach consolidate compress --cleanup          Leere Sessions aufraemen",
+                "  bach consolidate compress --batch            Nach Tag gruppieren (einfach)",
+                "  bach consolidate compress --run              Komprimieren (mit Regelwerk)",
+                "  bach consolidate compress --run --dry-run    Vorschau ohne Aenderungen",
+                "  bach consolidate compress --run --format bullet   Format: bullet/prose/structured",
+            ])
 
-        output.extend([
-            "",
-            "Optionen:",
-            "",
-            "  bach consolidate compress --cleanup          Leere Sessions aufraemen",
-            "  bach consolidate compress --batch            Nach Tag gruppieren (einfach)",
-            "  bach consolidate compress --run              Komprimieren (mit Regelwerk)",
-            "  bach consolidate compress --run --dry-run    Vorschau ohne Aenderungen",
-            "  bach consolidate compress --run --format bullet   Format: bullet/prose/structured",
-        ])
-
-        return True, "\n".join(output)
+            return True, "\n".join(output)
 
     def _run_context_compressor(self, args: list, dry_run: bool = False) -> tuple:
         """Startet den ContextCompressor fuer regelbasierte Komprimierung."""
@@ -423,7 +411,6 @@ class ConsolidationHandler(BaseHandler):
         empty_ids = [r[0] for r in cursor.fetchall()]
 
         if not empty_ids:
-            conn.close()
             return True, "[CLEANUP] Keine leeren Sessions gefunden"
 
         if not dry_run:
@@ -438,8 +425,6 @@ class ConsolidationHandler(BaseHandler):
                 WHERE id IN ({placeholders})
             """, empty_ids)
             conn.commit()
-
-        conn.close()
 
         prefix = "[DRY-RUN] " if dry_run else ""
         return True, f"{prefix}[CLEANUP] {len(empty_ids)} leere Sessions als komprimiert markiert"
@@ -471,7 +456,6 @@ class ConsolidationHandler(BaseHandler):
         days = cursor.fetchall()
 
         if not days:
-            conn.close()
             return True, "[BATCH] Keine zusammenfassbaren Tages-Gruppen gefunden"
 
         compressed = 0
@@ -482,7 +466,6 @@ class ConsolidationHandler(BaseHandler):
             session_ids = [int(x) for x in day_row[2].split(',')]
 
             if not dry_run:
-                # Sessions als komprimiert markieren (Summaries bleiben erhalten)
                 placeholders = ','.join(['?'] * len(session_ids))
                 cursor.execute(f"""
                     UPDATE memory_sessions
@@ -495,118 +478,109 @@ class ConsolidationHandler(BaseHandler):
         if not dry_run:
             conn.commit()
 
-        conn.close()
-
         prefix = "[DRY-RUN] " if dry_run else ""
         return True, f"{prefix}[BATCH] {compressed} Sessions komprimiert (episodisch)"
 
     def _create_review_tasks(self, dry_run: bool = False) -> tuple:
         """Erstellt Tasks fuer KI-Review"""
-        conn = self._get_db()
-        cursor = conn.cursor()
+        with self._get_db() as conn:
+            cursor = conn.cursor()
 
-        # Pruefe wie viele Sessions seit letzter Komprimierung
-        cursor.execute("SELECT COUNT(*) FROM memory_sessions WHERE is_compressed = 0 OR is_compressed IS NULL")
-        try:
-            uncompressed = cursor.fetchone()[0]
-        except:
-            uncompressed = 0
+            cursor.execute("SELECT COUNT(*) FROM memory_sessions WHERE is_compressed = 0 OR is_compressed IS NULL")
+            try:
+                uncompressed = cursor.fetchone()[0]
+            except (TypeError, IndexError):
+                uncompressed = 0
 
-        tasks_created = 0
+            tasks_created = 0
 
-        if uncompressed >= self.SESSIONS_BEFORE_COMPRESS:
-            # Task fuer Komprimierung erstellen
-            task_title = f"[CONSOL] {uncompressed} Sessions komprimieren"
+            if uncompressed >= self.SESSIONS_BEFORE_COMPRESS:
+                task_title = f"[CONSOL] {uncompressed} Sessions komprimieren"
 
-            if not dry_run:
-                cursor.execute("""
-                    INSERT INTO tasks (title, priority, status, category, created_at)
-                    VALUES (?, 'P3', 'pending', 'maintenance', ?)
-                """, (task_title, datetime.now().isoformat()))
-                tasks_created += 1
-
-        # Pruefe Facts ohne Wiki-Eintrag (user, project, domain - aber nicht system-Index)
-        cursor.execute("""
-            SELECT key FROM memory_facts
-            WHERE category IN ('user', 'project', 'domain')
-            AND key NOT LIKE 'HELP.%' AND key NOT LIKE 'WIKI.%'
-        """)
-        orphan_facts = cursor.fetchall()
-
-        for fact in orphan_facts[:5]:  # Max 5 Tasks
-            task_title = f"[WIKI] Eintrag erstellen: {fact[0]}"
-            if not dry_run:
-                # Pruefe ob Task bereits existiert
-                cursor.execute("SELECT id FROM tasks WHERE title LIKE ? AND status = 'pending'", (f"%{fact[0]}%",))
-                if not cursor.fetchone():
+                if not dry_run:
                     cursor.execute("""
                         INSERT INTO tasks (title, priority, status, category, created_at)
-                        VALUES (?, 'P4', 'pending', 'documentation', ?)
+                        VALUES (?, 'P3', 'pending', 'maintenance', ?)
                     """, (task_title, datetime.now().isoformat()))
                     tasks_created += 1
 
-        if not dry_run:
-            conn.commit()
-        conn.close()
+            cursor.execute("""
+                SELECT key FROM memory_facts
+                WHERE category IN ('user', 'project', 'domain')
+                AND key NOT LIKE 'HELP.%' AND key NOT LIKE 'WIKI.%'
+            """)
+            orphan_facts = cursor.fetchall()
 
-        prefix = "[DRY-RUN] " if dry_run else ""
-        return True, f"{prefix}[OK] {tasks_created} Review-Tasks erstellt"
+            for fact in orphan_facts[:5]:
+                task_title = f"[WIKI] Eintrag erstellen: {fact[0]}"
+                if not dry_run:
+                    cursor.execute("SELECT id FROM tasks WHERE title LIKE ? AND status = 'pending'", (f"%{fact[0]}%",))
+                    if not cursor.fetchone():
+                        cursor.execute("""
+                            INSERT INTO tasks (title, priority, status, category, created_at)
+                            VALUES (?, 'P4', 'pending', 'documentation', ?)
+                        """, (task_title, datetime.now().isoformat()))
+                        tasks_created += 1
+
+            if not dry_run:
+                conn.commit()
+
+            prefix = "[DRY-RUN] " if dry_run else ""
+            return True, f"{prefix}[OK] {tasks_created} Review-Tasks erstellt"
 
     def _init_tracking(self, dry_run: bool = False) -> tuple:
         """Initialisiert Tracking fuer existierende Eintraege"""
-        conn = self._get_db()
-        cursor = conn.cursor()
+        with self._get_db() as conn:
+            cursor = conn.cursor()
 
-        tables = [
-            ("memory_sessions", "session"),
-            ("memory_lessons", "lesson"),
-            ("memory_facts", "fact"),
-            ("memory_context", "context"),
-        ]
+            tables = [
+                ("memory_sessions", "session"),
+                ("memory_lessons", "lesson"),
+                ("memory_facts", "fact"),
+                ("memory_context", "context"),
+            ]
 
-        initialized = 0
+            initialized = 0
 
-        for table, prefix in tables:
-            try:
-                cursor.execute(f"SELECT id FROM {table}")
-                entries = cursor.fetchall()
+            for table, pfx in tables:
+                try:
+                    cursor.execute(f"SELECT id FROM {table}")
+                    entries = cursor.fetchall()
 
-                for entry in entries:
-                    if not dry_run:
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO memory_consolidation
-                            (source_table, source_id, times_accessed, weight, status, created_at)
-                            VALUES (?, ?, 0, 0.5, 'active', ?)
-                        """, (table, entry[0], datetime.now().isoformat()))
-                    initialized += 1
-            except Exception as e:
-                continue
+                    for entry in entries:
+                        if not dry_run:
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO memory_consolidation
+                                (source_table, source_id, times_accessed, weight, status, created_at)
+                                VALUES (?, ?, 0, 0.5, 'active', ?)
+                            """, (table, entry[0], datetime.now().isoformat()))
+                        initialized += 1
+                except Exception:
+                    continue
 
-        if not dry_run:
-            conn.commit()
-        conn.close()
+            if not dry_run:
+                conn.commit()
 
-        prefix = "[DRY-RUN] " if dry_run else ""
-        return True, f"{prefix}[OK] {initialized} Eintraege im Tracking initialisiert"
+            pfx = "[DRY-RUN] " if dry_run else ""
+            return True, f"{pfx}[OK] {initialized} Eintraege im Tracking initialisiert"
 
     def boost_access(self, source_table: str, source_id: int) -> None:
         """Erhoeht Gewicht bei Abruf (wird von anderen Handlern aufgerufen)"""
-        conn = self._get_db()
-        cursor = conn.cursor()
+        with self._get_db() as conn:
+            cursor = conn.cursor()
 
-        now = datetime.now().isoformat()
+            now = datetime.now().isoformat()
 
-        cursor.execute("""
-            UPDATE memory_consolidation
-            SET times_accessed = times_accessed + 1,
-                last_accessed = ?,
-                weight = MIN(1.0, weight + ?),
-                updated_at = ?
-            WHERE source_table = ? AND source_id = ?
-        """, (now, self.BOOST_ON_ACCESS, now, source_table, source_id))
+            cursor.execute("""
+                UPDATE memory_consolidation
+                SET times_accessed = times_accessed + 1,
+                    last_accessed = ?,
+                    weight = MIN(1.0, weight + ?),
+                    updated_at = ?
+                WHERE source_table = ? AND source_id = ?
+            """, (now, self.BOOST_ON_ACCESS, now, source_table, source_id))
 
-        conn.commit()
-        conn.close()
+            conn.commit()
 
     def _sync_triggers(self, dry_run: bool = False) -> tuple:
         """Aktualisiert alle dynamischen Trigger (Workflows, Lessons, Tools)."""
@@ -643,40 +617,37 @@ class ConsolidationHandler(BaseHandler):
 
     def _deactivate_unused(self, dry_run: bool = False) -> tuple:
         """Deaktiviert oder loescht Eintraege mit sehr geringem Gewicht (v1.1.80)."""
-        conn = self._get_db()
-        cursor = conn.cursor()
+        with self._get_db() as conn:
+            cursor = conn.cursor()
 
-        cursor.execute("""
-            SELECT id, source_table, source_id, weight
-            FROM memory_consolidation
-            WHERE status = 'active' AND weight < ?
-        """, (self.WEIGHT_THRESHOLD_DELETE,))
+            cursor.execute("""
+                SELECT id, source_table, source_id, weight
+                FROM memory_consolidation
+                WHERE status = 'active' AND weight < ?
+            """, (self.WEIGHT_THRESHOLD_DELETE,))
 
-        to_delete = cursor.fetchall()
+            to_delete = cursor.fetchall()
 
-        if not dry_run:
-            now = datetime.now().isoformat()
-            for entry in to_delete:
-                # 1. Status in Consolidation-Table
-                cursor.execute("""
-                    UPDATE memory_consolidation
-                    SET status = 'deleted', updated_at = ?
-                    WHERE id = ?
-                """, (now, entry['id']))
-                
-                # 2. Deaktivieren in Source-Table (if possible)
-                table = entry['source_table']
-                if table in ['memory_lessons', 'memory_working']:
-                    cursor.execute(f"UPDATE {table} SET is_active = 0, updated_at = ? WHERE id = ?", 
-                                 (now, entry['source_id']))
-                elif table == 'memory_facts':
-                    cursor.execute("DELETE FROM memory_facts WHERE id = ?", (entry['source_id'],))
-            
-            conn.commit()
+            if not dry_run:
+                now = datetime.now().isoformat()
+                for entry in to_delete:
+                    cursor.execute("""
+                        UPDATE memory_consolidation
+                        SET status = 'deleted', updated_at = ?
+                        WHERE id = ?
+                    """, (now, entry['id']))
 
-        conn.close()
-        prefix = "[DRY-RUN] " if dry_run else ""
-        return True, f"{prefix}[OK] {len(to_delete)} Eintraege geloescht/deaktiviert"
+                    table = entry['source_table']
+                    if table in ['memory_lessons', 'memory_working']:
+                        cursor.execute(f"UPDATE {table} SET is_active = 0, updated_at = ? WHERE id = ?",
+                                     (now, entry['source_id']))
+                    elif table == 'memory_facts':
+                        cursor.execute("DELETE FROM memory_facts WHERE id = ?", (entry['source_id'],))
+
+                conn.commit()
+
+            prefix = "[DRY-RUN] " if dry_run else ""
+            return True, f"{prefix}[OK] {len(to_delete)} Eintraege geloescht/deaktiviert"
 
     def _reclassify(self, args: list, dry_run: bool = False) -> tuple:
         """Korrigiert falsch kategorisierte Eintraege (v1.1.81).
@@ -692,113 +663,105 @@ class ConsolidationHandler(BaseHandler):
           bach consolidate reclassify --fix        Automatische Korrekturen
           bach consolidate reclassify lesson 42 context  Manuell: Lesson 42 -> Context
         """
-        conn = self._get_db()
-        cursor = conn.cursor()
+        with self._get_db() as conn:
+            cursor = conn.cursor()
 
-        # Manuelle Reklassifizierung?
-        if len(args) >= 3:
-            return self._reclassify_manual(cursor, conn, args, dry_run)
+            if len(args) >= 3:
+                return self._reclassify_manual(cursor, conn, args, dry_run)
 
-        # Automatische Analyse
-        suggestions = []
+            suggestions = []
 
-        # 1. Lessons die sehr oft abgerufen wurden -> sollten Context werden
-        try:
-            cursor.execute("""
-                SELECT ml.id, ml.title, mc.times_accessed, mc.weight
-                FROM memory_lessons ml
-                JOIN memory_consolidation mc ON mc.source_table = 'memory_lessons'
-                    AND mc.source_id = ml.id
-                WHERE mc.times_accessed >= 5 AND mc.weight > 0.7
-                AND ml.is_active = 1
-                ORDER BY mc.times_accessed DESC
-                LIMIT 10
-            """)
-            high_access_lessons = cursor.fetchall()
-            for lesson in high_access_lessons:
-                suggestions.append({
-                    "type": "lesson_to_context",
-                    "id": lesson['id'],
-                    "title": lesson['title'][:50],
-                    "reason": f"Hohe Nutzung ({lesson['times_accessed']}x, weight={lesson['weight']:.2f})"
-                })
-        except Exception:
-            pass
+            try:
+                cursor.execute("""
+                    SELECT ml.id, ml.title, mc.times_accessed, mc.weight
+                    FROM memory_lessons ml
+                    JOIN memory_consolidation mc ON mc.source_table = 'memory_lessons'
+                        AND mc.source_id = ml.id
+                    WHERE mc.times_accessed >= 5 AND mc.weight > 0.7
+                    AND ml.is_active = 1
+                    ORDER BY mc.times_accessed DESC
+                    LIMIT 10
+                """)
+                high_access_lessons = cursor.fetchall()
+                for lesson in high_access_lessons:
+                    suggestions.append({
+                        "type": "lesson_to_context",
+                        "id": lesson['id'],
+                        "title": lesson['title'][:50],
+                        "reason": f"Hohe Nutzung ({lesson['times_accessed']}x, weight={lesson['weight']:.2f})"
+                    })
+            except Exception:
+                pass
 
-        # 2. Facts ohne Wiki/Help Pendant -> Task erstellen
-        try:
-            cursor.execute("""
-                SELECT key, value FROM memory_facts
-                WHERE category IN ('user', 'project', 'domain')
-                AND key NOT LIKE 'HELP.%' AND key NOT LIKE 'WIKI.%'
-            """)
-            orphan_facts = cursor.fetchall()
-            for fact in orphan_facts[:5]:
-                suggestions.append({
-                    "type": "fact_needs_wiki",
-                    "key": fact['key'],
-                    "value": str(fact['value'])[:50],
-                    "reason": "Kein Wiki/Help-Eintrag vorhanden"
-                })
-        except Exception:
-            pass
+            try:
+                cursor.execute("""
+                    SELECT key, value FROM memory_facts
+                    WHERE category IN ('user', 'project', 'domain')
+                    AND key NOT LIKE 'HELP.%' AND key NOT LIKE 'WIKI.%'
+                """)
+                orphan_facts = cursor.fetchall()
+                for fact in orphan_facts[:5]:
+                    suggestions.append({
+                        "type": "fact_needs_wiki",
+                        "key": fact['key'],
+                        "value": str(fact['value'])[:50],
+                        "reason": "Kein Wiki/Help-Eintrag vorhanden"
+                    })
+            except Exception:
+                pass
 
-        # 3. Working Memory Notizen die Lesson-Pattern haben
-        try:
-            cursor.execute("""
-                SELECT id, content FROM memory_working
-                WHERE is_active = 1
-                AND (content LIKE '%gelernt%' OR content LIKE '%Fehler%'
-                     OR content LIKE '%Loesung%' OR content LIKE '%wichtig%'
-                     OR content LIKE '%merken%' OR content LIKE '%nie wieder%')
-                LIMIT 5
-            """)
-            lesson_worthy = cursor.fetchall()
-            for note in lesson_worthy:
-                suggestions.append({
-                    "type": "working_to_lesson",
-                    "id": note['id'],
-                    "content": note['content'][:50],
-                    "reason": "Enthaelt Lesson-Muster"
-                })
-        except Exception:
-            pass
+            try:
+                cursor.execute("""
+                    SELECT id, content FROM memory_working
+                    WHERE is_active = 1
+                    AND (content LIKE '%gelernt%' OR content LIKE '%Fehler%'
+                         OR content LIKE '%Loesung%' OR content LIKE '%wichtig%'
+                         OR content LIKE '%merken%' OR content LIKE '%nie wieder%')
+                    LIMIT 5
+                """)
+                lesson_worthy = cursor.fetchall()
+                for note in lesson_worthy:
+                    suggestions.append({
+                        "type": "working_to_lesson",
+                        "id": note['id'],
+                        "content": note['content'][:50],
+                        "reason": "Enthaelt Lesson-Muster"
+                    })
+            except Exception:
+                pass
 
-        conn.close()
+            if not suggestions:
+                return True, "[RECLASSIFY] Keine Reklassifizierungs-Vorschlaege gefunden."
 
-        # Ausgabe formatieren
-        if not suggestions:
-            return True, "[RECLASSIFY] Keine Reklassifizierungs-Vorschlaege gefunden."
+            output = [
+                "[RECLASSIFY] Vorschlaege zur Korrektur",
+                "=" * 50,
+                ""
+            ]
 
-        output = [
-            "[RECLASSIFY] Vorschlaege zur Korrektur",
-            "=" * 50,
-            ""
-        ]
-
-        for i, s in enumerate(suggestions, 1):
-            if s['type'] == 'lesson_to_context':
-                output.append(f"{i}. LESSON -> CONTEXT: #{s['id']} {s['title']}")
+            for i, s in enumerate(suggestions, 1):
+                if s['type'] == 'lesson_to_context':
+                    output.append(f"{i}. LESSON -> CONTEXT: #{s['id']} {s['title']}")
+                    output.append(f"   Grund: {s['reason']}")
+                elif s['type'] == 'fact_needs_wiki':
+                    output.append(f"{i}. FACT braucht WIKI: {s['key']}")
+                    output.append(f"   Wert: {s['value']}")
+                elif s['type'] == 'working_to_lesson':
+                    output.append(f"{i}. WORKING -> LESSON: #{s['id']}")
+                    output.append(f"   Inhalt: {s['content']}...")
                 output.append(f"   Grund: {s['reason']}")
-            elif s['type'] == 'fact_needs_wiki':
-                output.append(f"{i}. FACT braucht WIKI: {s['key']}")
-                output.append(f"   Wert: {s['value']}")
-            elif s['type'] == 'working_to_lesson':
-                output.append(f"{i}. WORKING -> LESSON: #{s['id']}")
-                output.append(f"   Inhalt: {s['content']}...")
-            output.append(f"   Grund: {s['reason']}")
-            output.append("")
+                output.append("")
 
-        if '--fix' in args:
-            return self._reclassify_auto_fix(suggestions, dry_run)
+            if '--fix' in args:
+                return self._reclassify_auto_fix(suggestions, dry_run)
 
-        output.extend([
-            "Aktionen:",
-            "  bach consolidate reclassify --fix         Automatisch korrigieren",
-            "  bach consolidate reclassify lesson 42 context  Manuell umwandeln"
-        ])
+            output.extend([
+                "Aktionen:",
+                "  bach consolidate reclassify --fix         Automatisch korrigieren",
+                "  bach consolidate reclassify lesson 42 context  Manuell umwandeln"
+            ])
 
-        return True, "\n".join(output)
+            return True, "\n".join(output)
 
     def _reclassify_manual(self, cursor, conn, args: list, dry_run: bool) -> tuple:
         """Manuelle Reklassifizierung eines einzelnen Eintrags."""
@@ -832,48 +795,47 @@ class ConsolidationHandler(BaseHandler):
 
     def _convert_lesson_to_context(self, cursor, conn, lesson_id: int) -> bool:
         """Konvertiert eine Lesson zu einem Context-Eintrag."""
-        cursor.execute("SELECT title, content, category FROM memory_lessons WHERE id = ?", (lesson_id,))
+        cursor.execute("SELECT title, solution, category FROM memory_lessons WHERE id = ?", (lesson_id,))
         lesson = cursor.fetchone()
         if not lesson:
             raise ValueError(f"Lesson {lesson_id} nicht gefunden")
 
-        # Context erstellen
+        import json as _json
         now = datetime.now().isoformat()
+        category = lesson['category'] or 'general'
         cursor.execute("""
-            INSERT INTO memory_context (key, content, source, trigger_on, created_at)
+            INSERT OR REPLACE INTO memory_context
+                (source_name, source_path, injection_template, trigger_words, updated_at)
             VALUES (?, ?, ?, ?, ?)
         """, (
             f"LESSON_{lesson_id}",
-            f"{lesson['title']}: {lesson['content']}",
             f"reclassify:lesson:{lesson_id}",
-            lesson['category'] or 'general',
+            f"{lesson['title']}: {lesson['solution'] or ''}",
+            _json.dumps([category]),
             now
         ))
 
-        # Lesson deaktivieren
         cursor.execute("UPDATE memory_lessons SET is_active = 0, updated_at = ? WHERE id = ?",
                       (now, lesson_id))
         return True
 
     def _convert_working_to_lesson(self, cursor, conn, working_id: int) -> bool:
         """Konvertiert eine Working-Notiz zu einer Lesson."""
-        cursor.execute("SELECT content, context FROM memory_working WHERE id = ?", (working_id,))
+        cursor.execute("SELECT content FROM memory_working WHERE id = ?", (working_id,))
         note = cursor.fetchone()
         if not note:
             raise ValueError(f"Working-Notiz {working_id} nicht gefunden")
 
         now = datetime.now().isoformat()
         cursor.execute("""
-            INSERT INTO memory_lessons (title, content, category, source, created_at)
-            VALUES (?, ?, 'workflow', ?, ?)
+            INSERT INTO memory_lessons (title, solution, category, created_at)
+            VALUES (?, ?, 'workflow', ?)
         """, (
-            note['content'][:100],  # Titel aus Content
+            note['content'][:100],
             note['content'],
-            f"reclassify:working:{working_id}",
             now
         ))
 
-        # Working deaktivieren
         cursor.execute("UPDATE memory_working SET is_active = 0, updated_at = ? WHERE id = ?",
                       (now, working_id))
         return True
@@ -909,33 +871,31 @@ class ConsolidationHandler(BaseHandler):
         if dry_run:
             return True, f"[DRY-RUN] Wuerde {len(suggestions)} Eintraege reklassifizieren"
 
-        conn = self._get_db()
-        cursor = conn.cursor()
+        with self._get_db() as conn:
+            cursor = conn.cursor()
 
-        fixed = 0
-        tasks_created = 0
-        now = datetime.now().isoformat()
+            fixed = 0
+            tasks_created = 0
+            now = datetime.now().isoformat()
 
-        for s in suggestions:
-            try:
-                if s['type'] == 'lesson_to_context':
-                    self._convert_lesson_to_context(cursor, conn, s['id'])
-                    fixed += 1
-                elif s['type'] == 'working_to_lesson':
-                    self._convert_working_to_lesson(cursor, conn, s['id'])
-                    fixed += 1
-                elif s['type'] == 'fact_needs_wiki':
-                    # Task erstellen statt automatischer Konvertierung
-                    task_title = f"[WIKI] Eintrag fuer Fact: {s['key']}"
-                    cursor.execute("""
-                        INSERT INTO tasks (title, description, priority, status, category, created_at)
-                        VALUES (?, ?, 'P4', 'pending', 'documentation', ?)
-                    """, (task_title, f"Fact-Wert: {s['value']}", now))
-                    tasks_created += 1
-            except Exception:
-                continue
+            for s in suggestions:
+                try:
+                    if s['type'] == 'lesson_to_context':
+                        self._convert_lesson_to_context(cursor, conn, s['id'])
+                        fixed += 1
+                    elif s['type'] == 'working_to_lesson':
+                        self._convert_working_to_lesson(cursor, conn, s['id'])
+                        fixed += 1
+                    elif s['type'] == 'fact_needs_wiki':
+                        task_title = f"[WIKI] Eintrag fuer Fact: {s['key']}"
+                        cursor.execute("""
+                            INSERT INTO tasks (title, description, priority, status, category, created_at)
+                            VALUES (?, ?, 'P4', 'pending', 'documentation', ?)
+                        """, (task_title, f"Fact-Wert: {s['value']}", now))
+                        tasks_created += 1
+                except Exception:
+                    continue
 
-        conn.commit()
-        conn.close()
+            conn.commit()
 
-        return True, f"[OK] {fixed} Eintraege reklassifiziert, {tasks_created} Tasks erstellt"
+            return True, f"[OK] {fixed} Eintraege reklassifiziert, {tasks_created} Tasks erstellt"

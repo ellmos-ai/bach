@@ -14,10 +14,10 @@
       "agents/ati/export/*"
     ],
     "services": [
-      "skills/_services/daemon/session_daemon.py",
-      "skills/_services/daemon/auto_session.py",
-      "skills/_services/daemon/config.json",
-      "skills/_services/daemon/profiles/ati.json",
+      "hub/_services/daemon/session_daemon.py",
+      "hub/_services/daemon/auto_session.py",
+      "hub/_services/daemon/config.json",
+      "hub/_services/daemon/profiles/ati.json",
       "skills/_services/recurring/recurring_tasks.py"
     ],
     "tools": [

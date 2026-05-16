@@ -55,7 +55,7 @@ try:
 
     from fastapi.staticfiles import StaticFiles
 
-    from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
+    from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, JSONResponse
 
     from fastapi.middleware.cors import CORSMiddleware
 
@@ -981,6 +981,13 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(FileNotFoundError)
+async def file_not_found_handler(request: Request, exc: FileNotFoundError):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": f"Datenbank nicht verfügbar: {exc}"}
+    )
+
 
 # Cache-Control Middleware - verhindert Browser-Caching (v1.1.82)
 
@@ -1046,7 +1053,7 @@ async def get_status():
 
         ).fetchone()[0]
 
-    except:
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
 
         tasks_open = 0
 
@@ -1057,7 +1064,7 @@ async def get_status():
         scanned_tasks = conn_bach.execute(
             "SELECT COUNT(*) FROM ati_tasks WHERE status = 'offen'"
         ).fetchone()[0]
-    except:
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
         scanned_tasks = 0
 
 
@@ -1067,7 +1074,7 @@ async def get_status():
         messages_unread = conn_bach.execute(
             "SELECT COUNT(*) FROM messages WHERE status = 'unread'"
         ).fetchone()[0]
-    except:
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
         messages_unread = 0
 
 
@@ -1082,7 +1089,7 @@ async def get_status():
 
         ).fetchone()[0]
 
-    except:
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
 
         daemon_active = 0
 
@@ -1098,7 +1105,7 @@ async def get_status():
 
         ).fetchone()
 
-    except:
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
 
         last_scan = None
 
@@ -1282,9 +1289,9 @@ async def api_get_tasks(status: str = "all", project: str = None, assigned_to: s
                         unfinished = conn.execute(f"SELECT COUNT(*) FROM tasks WHERE id IN ({placeholders}) AND status != 'done'", dep_ids).fetchone()[0]
                         if unfinished > 0:
                             task["is_blocked_by_dep"] = True
-                except:
+                except (sqlite3.OperationalError, sqlite3.DatabaseError, ValueError, AttributeError):
                     pass
-                    
+
         conn.close()
         return {"success": True, "tasks": tasks, "count": len(tasks)}
     except Exception as e:
@@ -1336,54 +1343,51 @@ async def get_task(task_id: int):
 async def update_task(task_id: int, update: TaskUpdate):
     """Aktualisiert Task in bach.db."""
     conn = get_bach_db()
-    
-    # Bestehenden Task pruefen
-    existing = conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
-    if not existing:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Task nicht gefunden")
-    
-    # Update bauen
-    updates = []
-    values = []
-    
-    if update.title is not None:
-        updates.append("title = ?")
-        values.append(update.title)
-    if update.description is not None:
-        updates.append("description = ?")
-        values.append(update.description)
-    if update.priority is not None:
-        updates.append("priority = ?")
-        values.append(update.priority)
-    if update.status is not None:
-        updates.append("status = ?")
-        values.append(update.status)
-        if update.status == "completed":
-            updates.append("completed_at = ?")
-            values.append(datetime.now().isoformat())
-    if update.project is not None:
-        updates.append("category = ?")
-        values.append(update.project)
-    if update.assigned_to is not None:
-        updates.append("assigned_to = ?")
-        values.append(update.assigned_to)
-    if update.created_by is not None:
-        updates.append("created_by = ?")
-        values.append(update.created_by)
-    if update.depends_on is not None:
-        updates.append("depends_on = ?")
-        values.append(update.depends_on)
+    try:
+        existing = conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Task nicht gefunden")
 
-    if updates:
-        updates.append("updated_at = ?")
-        values.append(datetime.now().isoformat())
-        values.append(task_id)
-        
-        conn.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", values)
-        conn.commit()
-    
-    conn.close()
+        updates = []
+        values = []
+
+        if update.title is not None:
+            updates.append("title = ?")
+            values.append(update.title)
+        if update.description is not None:
+            updates.append("description = ?")
+            values.append(update.description)
+        if update.priority is not None:
+            updates.append("priority = ?")
+            values.append(update.priority)
+        if update.status is not None:
+            updates.append("status = ?")
+            values.append(update.status)
+            if update.status == "completed":
+                updates.append("completed_at = ?")
+                values.append(datetime.now().isoformat())
+        if update.project is not None:
+            updates.append("category = ?")
+            values.append(update.project)
+        if update.assigned_to is not None:
+            updates.append("assigned_to = ?")
+            values.append(update.assigned_to)
+        if update.created_by is not None:
+            updates.append("created_by = ?")
+            values.append(update.created_by)
+        if update.depends_on is not None:
+            updates.append("depends_on = ?")
+            values.append(update.depends_on)
+
+        if updates:
+            updates.append("updated_at = ?")
+            values.append(datetime.now().isoformat())
+            values.append(task_id)
+            conn.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", values)
+            conn.commit()
+    finally:
+        conn.close()
+
     return {"status": "updated"}
 
 # ═══════════════════════════════════════════════════════════════
@@ -1609,46 +1613,26 @@ async def list_scanned_tasks(tool: Optional[str] = None, status: Optional[str] =
     """Listet gescannte Tasks."""
 
     conn = get_user_db()
+    try:
+        query = "SELECT * FROM ati_tasks WHERE 1=1"
+        params = []
 
-    
+        if tool:
+            query += " AND tool_name LIKE ?"
+            params.append(f"%{tool}%")
 
-    query = "SELECT * FROM ati_tasks WHERE 1=1"
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        else:
+            query += " AND status IN ('offen', 'in_arbeit')"
 
-    params = []
+        query += " ORDER BY priority_score DESC LIMIT ?"
+        params.append(limit)
 
-    
-
-    if tool:
-
-        query += " AND tool_name LIKE ?"
-
-        params.append(f"%{tool}%")
-
-    
-
-    if status:
-
-        query += " AND status = ?"
-
-        params.append(status)
-
-    else:
-
-        query += " AND status IN ('offen', 'in_arbeit')"
-
-    
-
-    query += " ORDER BY priority_score DESC LIMIT ?"
-
-    params.append(limit)
-
-    
-
-    rows = conn.execute(query, params).fetchall()
-
-    conn.close()
-
-    
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
 
     return {"tasks": rows_to_list(rows), "count": len(rows)}
 
@@ -1951,52 +1935,30 @@ async def list_messages(direction: Optional[str] = None, status: Optional[str] =
     """
 
     conn = get_user_db()
+    try:
+        query = "SELECT * FROM messages WHERE status != 'deleted'"
+        params = []
 
+        if direction:
+            query += " AND direction = ?"
+            params.append(direction)
 
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        elif not include_archived:
+            query += " AND status != 'archived'"
 
-    query = "SELECT * FROM messages WHERE status != 'deleted'"
+        if partner:
+            query += " AND (sender = ? OR recipient = ?)"
+            params.extend([partner, partner])
 
-    params = []
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
 
-
-
-    if direction:
-
-        query += " AND direction = ?"
-
-        params.append(direction)
-
-
-
-    if status:
-
-        query += " AND status = ?"
-
-        params.append(status)
-
-    elif not include_archived:
-
-        # Wenn nicht explizit archived angefragt, archived ausschliessen
-
-        query += " AND status != 'archived'"
-
-    if partner:
-
-        query += " AND (sender = ? OR recipient = ?)"
-
-        params.extend([partner, partner])
-
-    query += " ORDER BY created_at DESC LIMIT ?"
-
-    params.append(limit)
-
-
-
-    rows = conn.execute(query, params).fetchall()
-
-    conn.close()
-
-
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
 
     return {"messages": rows_to_list(rows), "count": len(rows)}
 
@@ -2019,8 +1981,11 @@ async def claude_chat(
     if not CLAUDE_ROUTER_AVAILABLE:
         raise HTTPException(status_code=503, detail="Claude Router nicht verfügbar")
 
-    result = route_request(request_type, prompt, user_id)
-    return result
+    try:
+        result = route_request(request_type, prompt, user_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Router-Fehler: {type(e).__name__}")
 
 
 @app.post("/api/messages")
@@ -2031,25 +1996,23 @@ async def create_message(msg: MessageCreate):
 
     conn = get_user_db()
 
+    try:
 
+        cursor = conn.execute("""
 
-    cursor = conn.execute("""
+            INSERT INTO messages (direction, sender, recipient, subject, body, priority)
 
-        INSERT INTO messages (direction, sender, recipient, subject, body, priority)
+            VALUES ('outbox', 'user', ?, ?, ?, ?)
 
-        VALUES ('outbox', 'user', ?, ?, ?, ?)
+        """, (msg.recipient, msg.subject, msg.body, msg.priority))
 
-    """, (msg.recipient, msg.subject, msg.body, msg.priority))
+        msg_id = cursor.lastrowid
 
+        conn.commit()
 
+    finally:
 
-    msg_id = cursor.lastrowid
-
-    conn.commit()
-
-    conn.close()
-
-
+        conn.close()
 
     return {"id": msg_id, "status": "created"}
 
@@ -2063,17 +2026,21 @@ async def mark_message_read(msg_id: int):
 
     conn = get_user_db()
 
-    conn.execute(
+    try:
 
-        "UPDATE messages SET status = 'read', read_at = ? WHERE id = ?",
+        conn.execute(
 
-        (datetime.now().isoformat(), msg_id)
+            "UPDATE messages SET status = 'read', read_at = ? WHERE id = ?",
 
-    )
+            (datetime.now().isoformat(), msg_id)
 
-    conn.commit()
+        )
 
-    conn.close()
+        conn.commit()
+
+    finally:
+
+        conn.close()
 
     return {"status": "read"}
 
@@ -2082,14 +2049,16 @@ async def mark_message_read(msg_id: int):
 async def mark_all_messages_read():
     """Markiert alle ungelesenen Nachrichten als gelesen."""
     conn = get_user_db()
-    now = datetime.now().isoformat()
-    cursor = conn.execute(
-        "UPDATE messages SET status = 'read', read_at = ? WHERE status = 'unread'",
-        (now,)
-    )
-    count = cursor.rowcount
-    conn.commit()
-    conn.close()
+    try:
+        now = datetime.now().isoformat()
+        cursor = conn.execute(
+            "UPDATE messages SET status = 'read', read_at = ? WHERE status = 'unread'",
+            (now,)
+        )
+        count = cursor.rowcount
+        conn.commit()
+    finally:
+        conn.close()
     return {"status": "ok", "marked": count}
 
 
@@ -2102,17 +2071,21 @@ async def archive_message(msg_id: int):
 
     conn = get_user_db()
 
-    conn.execute(
+    try:
 
-        "UPDATE messages SET status = 'archived' WHERE id = ?",
+        conn.execute(
 
-        (msg_id,)
+            "UPDATE messages SET status = 'archived' WHERE id = ?",
 
-    )
+            (msg_id,)
 
-    conn.commit()
+        )
 
-    conn.close()
+        conn.commit()
+
+    finally:
+
+        conn.close()
 
     return {"status": "archived"}
 
@@ -2128,17 +2101,21 @@ async def delete_message(msg_id: int):
 
     conn = get_user_db()
 
-    conn.execute(
+    try:
 
-        "UPDATE messages SET status = 'deleted' WHERE id = ?",
+        conn.execute(
 
-        (msg_id,)
+            "UPDATE messages SET status = 'deleted' WHERE id = ?",
 
-    )
+            (msg_id,)
 
-    conn.commit()
+        )
 
-    conn.close()
+        conn.commit()
+
+    finally:
+
+        conn.close()
 
     return {"status": "deleted"}
 
@@ -2189,9 +2166,13 @@ async def list_scheduler_jobs():
 
     conn = get_user_db()
 
-    rows = conn.execute("SELECT * FROM scheduler_jobs ORDER BY name").fetchall()
+    try:
 
-    conn.close()
+        rows = conn.execute("SELECT * FROM scheduler_jobs ORDER BY name").fetchall()
+
+    finally:
+
+        conn.close()
 
     return {"jobs": rows_to_list(rows), "count": len(rows)}
 
@@ -2205,25 +2186,23 @@ async def create_daemon_job(job: DaemonJobCreate):
 
     conn = get_user_db()
 
-    
+    try:
 
-    cursor = conn.execute("""
+        cursor = conn.execute("""
 
-        INSERT INTO scheduler_jobs (name, description, job_type, schedule, command, script_path, arguments)
+            INSERT INTO scheduler_jobs (name, description, job_type, schedule, command, script_path, arguments)
 
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
 
-    """, (job.name, job.description, job.job_type, job.schedule, job.command, job.script_path, job.arguments))
+        """, (job.name, job.description, job.job_type, job.schedule, job.command, job.script_path, job.arguments))
 
-    
+        job_id = cursor.lastrowid
 
-    job_id = cursor.lastrowid
+        conn.commit()
 
-    conn.commit()
+    finally:
 
-    conn.close()
-
-    
+        conn.close()
 
     return {"id": job_id, "status": "created"}
 
@@ -2237,27 +2216,23 @@ async def toggle_daemon_job(job_id: int):
 
     conn = get_user_db()
 
-    
+    try:
 
-    current = conn.execute("SELECT is_active FROM scheduler_jobs WHERE id = ?", (job_id,)).fetchone()
+        current = conn.execute("SELECT is_active FROM scheduler_jobs WHERE id = ?", (job_id,)).fetchone()
 
-    if not current:
+        if not current:
+
+            raise HTTPException(status_code=404, detail="Job nicht gefunden")
+
+        new_state = 0 if current[0] else 1
+
+        conn.execute("UPDATE scheduler_jobs SET is_active = ? WHERE id = ?", (new_state, job_id))
+
+        conn.commit()
+
+    finally:
 
         conn.close()
-
-        raise HTTPException(status_code=404, detail="Job nicht gefunden")
-
-    
-
-    new_state = 0 if current[0] else 1
-
-    conn.execute("UPDATE scheduler_jobs SET is_active = ? WHERE id = ?", (new_state, job_id))
-
-    conn.commit()
-
-    conn.close()
-
-    
 
     return {"is_active": bool(new_state)}
 
@@ -2271,31 +2246,31 @@ async def list_scheduler_runs(job_id: Optional[int] = None, limit: int = 20):
 
     conn = get_user_db()
 
+    try:
 
+        if job_id:
 
-    if job_id:
+            rows = conn.execute(
 
-        rows = conn.execute(
+                "SELECT * FROM scheduler_runs WHERE job_id = ? ORDER BY started_at DESC LIMIT ?",
 
-            "SELECT * FROM scheduler_runs WHERE job_id = ? ORDER BY started_at DESC LIMIT ?",
+                (job_id, limit)
 
-            (job_id, limit)
+            ).fetchall()
 
-        ).fetchall()
+        else:
 
-    else:
+            rows = conn.execute(
 
-        rows = conn.execute(
+                "SELECT * FROM scheduler_runs ORDER BY started_at DESC LIMIT ?",
 
-            "SELECT * FROM scheduler_runs ORDER BY started_at DESC LIMIT ?",
+                (limit,)
 
-            (limit,)
+            ).fetchall()
 
-        ).fetchall()
+    finally:
 
-
-
-    conn.close()
+        conn.close()
 
     return {"runs": rows_to_list(rows), "count": len(rows)}
 
@@ -2360,22 +2335,25 @@ async def get_daemon_status():
         runtime_str = get_runtime_string(started_at)
 
     conn = get_user_db()
-    stats = {
-        "total_jobs": conn.execute("SELECT COUNT(*) FROM scheduler_jobs").fetchone()[0],
-        "active_jobs": conn.execute("SELECT COUNT(*) FROM scheduler_jobs WHERE is_active = 1").fetchone()[0],
-        "runs_today": conn.execute(
+    stats = {"total_jobs": 0, "active_jobs": 0, "runs_today": 0, "failed_today": 0}
+    last_runs = []
+    try:
+        stats["total_jobs"] = conn.execute("SELECT COUNT(*) FROM scheduler_jobs").fetchone()[0]
+        stats["active_jobs"] = conn.execute("SELECT COUNT(*) FROM scheduler_jobs WHERE is_active = 1").fetchone()[0]
+        stats["runs_today"] = conn.execute(
             "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now')"
-        ).fetchone()[0],
-        "failed_today": conn.execute(
+        ).fetchone()[0]
+        stats["failed_today"] = conn.execute(
             "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now') AND result = 'failed'"
-        ).fetchone()[0],
-    }
-    last_runs = conn.execute("""
-        SELECT r.id, j.name, r.result, r.started_at, r.duration_seconds
-        FROM scheduler_runs r
-        JOIN scheduler_jobs j ON r.job_id = j.id
-        ORDER BY r.started_at DESC LIMIT 5
-    """).fetchall()
+        ).fetchone()[0]
+        last_runs = conn.execute("""
+            SELECT r.id, j.name, r.result, r.started_at, r.duration_seconds
+            FROM scheduler_runs r
+            JOIN scheduler_jobs j ON r.job_id = j.id
+            ORDER BY r.started_at DESC LIMIT 5
+        """).fetchall()
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
+        pass
     conn.close()
 
     return {
@@ -2407,11 +2385,25 @@ async def start_daemon(background_tasks: BackgroundTasks):
 
 
 
-    # Pruefen ob bereits laeuft
+    # Pruefen ob bereits laeuft (mit PID-Validierung)
 
     if DAEMON_PID_FILE.exists():
-
-        return {"status": "already_running", "message": "Daemon laeuft bereits"}
+        daemon_running = False
+        try:
+            pid = int(DAEMON_PID_FILE.read_text().strip())
+            if os.name == 'nt':
+                import subprocess as _sp
+                output = _sp.check_output(
+                    ['tasklist', '/FI', f'PID eq {pid}'],
+                    stderr=_sp.DEVNULL).decode()
+                daemon_running = str(pid) in output
+            else:
+                os.kill(pid, 0)
+                daemon_running = True
+        except Exception:
+            DAEMON_PID_FILE.unlink(missing_ok=True)
+        if daemon_running:
+            return {"status": "already_running", "message": "Daemon laeuft bereits"}
 
 
 
@@ -2535,9 +2527,13 @@ async def list_chains():
 
     conn = get_user_db()
 
-    rows = conn.execute("SELECT * FROM toolchains ORDER BY id").fetchall()
+    try:
 
-    conn.close()
+        rows = conn.execute("SELECT * FROM toolchains ORDER BY id").fetchall()
+
+    finally:
+
+        conn.close()
 
     return {"chains": rows_to_list(rows), "count": len(rows)}
 
@@ -2563,19 +2559,23 @@ async def create_chain(chain: ChainCreate):
 
     conn = get_user_db()
 
-    cursor = conn.execute("""
+    try:
 
-        INSERT INTO toolchains (name, description, trigger_type, trigger_value, steps_json, is_active)
+        cursor = conn.execute("""
 
-        VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO toolchains (name, description, trigger_type, trigger_value, steps_json, is_active)
 
-    """, (chain.name, chain.description, chain.trigger_type, chain.trigger_value, chain.steps_json, chain.is_active))
+            VALUES (?, ?, ?, ?, ?, ?)
 
-    chain_id = cursor.lastrowid
+        """, (chain.name, chain.description, chain.trigger_type, chain.trigger_value, chain.steps_json, chain.is_active))
 
-    conn.commit()
+        chain_id = cursor.lastrowid
 
-    conn.close()
+        conn.commit()
+
+    finally:
+
+        conn.close()
 
     return {"id": chain_id, "status": "created"}
 
@@ -2591,67 +2591,63 @@ async def update_chain(chain_id: int, chain: ChainUpdate):
 
     conn = get_user_db()
 
-    existing = conn.execute("SELECT * FROM toolchains WHERE id = ?", (chain_id,)).fetchone()
+    try:
 
-    if not existing:
+        existing = conn.execute("SELECT * FROM toolchains WHERE id = ?", (chain_id,)).fetchone()
+
+        if not existing:
+
+            raise HTTPException(status_code=404, detail="Chain nicht gefunden")
+
+        updates = {}
+
+        if chain.name is not None:
+
+            updates["name"] = chain.name
+
+        if chain.description is not None:
+
+            updates["description"] = chain.description
+
+        if chain.trigger_type is not None:
+
+            updates["trigger_type"] = chain.trigger_type
+
+        if chain.trigger_value is not None:
+
+            updates["trigger_value"] = chain.trigger_value
+
+        if chain.steps_json is not None:
+
+            try:
+
+                _json.loads(chain.steps_json)
+
+            except _json.JSONDecodeError:
+
+                raise HTTPException(status_code=400, detail="Ungueltiges JSON in steps_json")
+
+            updates["steps_json"] = chain.steps_json
+
+        if chain.is_active is not None:
+
+            updates["is_active"] = chain.is_active
+
+        if not updates:
+
+            return {"status": "no_changes"}
+
+        set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+
+        values = list(updates.values()) + [chain_id]
+
+        conn.execute(f"UPDATE toolchains SET {set_clause} WHERE id = ?", values)
+
+        conn.commit()
+
+    finally:
 
         conn.close()
-
-        raise HTTPException(status_code=404, detail="Chain nicht gefunden")
-
-    # Dynamisch nur gesetzte Felder updaten
-
-    updates = {}
-
-    if chain.name is not None:
-
-        updates["name"] = chain.name
-
-    if chain.description is not None:
-
-        updates["description"] = chain.description
-
-    if chain.trigger_type is not None:
-
-        updates["trigger_type"] = chain.trigger_type
-
-    if chain.trigger_value is not None:
-
-        updates["trigger_value"] = chain.trigger_value
-
-    if chain.steps_json is not None:
-
-        try:
-
-            _json.loads(chain.steps_json)
-
-        except _json.JSONDecodeError:
-
-            conn.close()
-
-            raise HTTPException(status_code=400, detail="Ungueltiges JSON in steps_json")
-
-        updates["steps_json"] = chain.steps_json
-
-    if chain.is_active is not None:
-
-        updates["is_active"] = chain.is_active
-
-    if not updates:
-
-        conn.close()
-
-        return {"status": "no_changes"}
-
-    set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
-
-    values = list(updates.values()) + [chain_id]
-
-    conn.execute(f"UPDATE toolchains SET {set_clause} WHERE id = ?", values)
-
-    conn.commit()
-
-    conn.close()
 
     return {"status": "updated", "id": chain_id}
 
@@ -2665,21 +2661,23 @@ async def toggle_chain(chain_id: int):
 
     conn = get_user_db()
 
-    current = conn.execute("SELECT is_active FROM toolchains WHERE id = ?", (chain_id,)).fetchone()
+    try:
 
-    if not current:
+        current = conn.execute("SELECT is_active FROM toolchains WHERE id = ?", (chain_id,)).fetchone()
+
+        if not current:
+
+            raise HTTPException(status_code=404, detail="Chain nicht gefunden")
+
+        new_state = 0 if current[0] else 1
+
+        conn.execute("UPDATE toolchains SET is_active = ? WHERE id = ?", (new_state, chain_id))
+
+        conn.commit()
+
+    finally:
 
         conn.close()
-
-        raise HTTPException(status_code=404, detail="Chain nicht gefunden")
-
-    new_state = 0 if current[0] else 1
-
-    conn.execute("UPDATE toolchains SET is_active = ? WHERE id = ?", (new_state, chain_id))
-
-    conn.commit()
-
-    conn.close()
 
     return {"is_active": bool(new_state)}
 
@@ -2693,21 +2691,23 @@ async def delete_chain(chain_id: int):
 
     conn = get_user_db()
 
-    existing = conn.execute("SELECT id FROM toolchains WHERE id = ?", (chain_id,)).fetchone()
+    try:
 
-    if not existing:
+        existing = conn.execute("SELECT id FROM toolchains WHERE id = ?", (chain_id,)).fetchone()
+
+        if not existing:
+
+            raise HTTPException(status_code=404, detail="Chain nicht gefunden")
+
+        conn.execute("DELETE FROM toolchain_runs WHERE chain_id = ?", (chain_id,))
+
+        conn.execute("DELETE FROM toolchains WHERE id = ?", (chain_id,))
+
+        conn.commit()
+
+    finally:
 
         conn.close()
-
-        raise HTTPException(status_code=404, detail="Chain nicht gefunden")
-
-    conn.execute("DELETE FROM toolchain_runs WHERE chain_id = ?", (chain_id,))
-
-    conn.execute("DELETE FROM toolchains WHERE id = ?", (chain_id,))
-
-    conn.commit()
-
-    conn.close()
 
     return {"status": "deleted", "id": chain_id}
 
@@ -2721,9 +2721,13 @@ async def run_chain(chain_id: int, background_tasks: BackgroundTasks):
 
     conn = get_user_db()
 
-    chain = conn.execute("SELECT * FROM toolchains WHERE id = ?", (chain_id,)).fetchone()
+    try:
 
-    conn.close()
+        chain = conn.execute("SELECT * FROM toolchains WHERE id = ?", (chain_id,)).fetchone()
+
+    finally:
+
+        conn.close()
 
     if not chain:
 
@@ -2751,15 +2755,19 @@ async def list_chain_runs(chain_id: int, limit: int = 10):
 
     conn = get_user_db()
 
-    rows = conn.execute(
+    try:
 
-        "SELECT * FROM toolchain_runs WHERE chain_id = ? ORDER BY id DESC LIMIT ?",
+        rows = conn.execute(
 
-        (chain_id, limit)
+            "SELECT * FROM toolchain_runs WHERE chain_id = ? ORDER BY id DESC LIMIT ?",
 
-    ).fetchall()
+            (chain_id, limit)
 
-    conn.close()
+        ).fetchall()
+
+    finally:
+
+        conn.close()
 
     return {"runs": rows_to_list(rows), "count": len(rows)}
 
@@ -2964,7 +2972,7 @@ async def get_wartung_status():
 
                 status["scanner"]["tasks_found"] = last_scan["tasks_created"] or 0
 
-        except:
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
 
             pass
 
@@ -2986,7 +2994,7 @@ async def get_wartung_status():
 
             status["daemon"]["running"] = Path(BACH_DIR / "data" / "daemon.pid").exists()
 
-        except:
+        except Exception:
 
             pass
 
@@ -2998,7 +3006,7 @@ async def get_wartung_status():
             lessons = conn.execute("SELECT COUNT(*) FROM memory_lessons").fetchone()[0]
             status["memory"]["working_count"] = working
             status["memory"]["lessons_count"] = lessons
-        except:
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
             pass
 
 
@@ -3025,7 +3033,7 @@ async def get_wartung_status():
 
                     ).isoformat()
 
-        except:
+        except (OSError, ValueError):
 
             pass
 
@@ -3222,57 +3230,33 @@ async def get_scanner_status():
     """Liefert Scanner-Status."""
 
     conn = get_user_db()
-
-
-
-    # Last run (mit Fallback)
-
     try:
+        # Last run (mit Fallback)
+        try:
+            last_run = conn.execute("""
+                SELECT * FROM scan_runs ORDER BY id DESC LIMIT 1
+            """).fetchone()
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            last_run = None
 
-        last_run = conn.execute("""
+        # Total tasks (mit Fallback)
+        try:
+            total_tasks = conn.execute("SELECT COUNT(*) FROM ati_tasks").fetchone()[0]
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            total_tasks = 0
 
-            SELECT * FROM scan_runs ORDER BY id DESC LIMIT 1
-
-        """).fetchone()
-
-    except:
-
-        last_run = None
-
-
-
-    # Total tasks (mit Fallback)
-    try:
-        total_tasks = conn.execute("SELECT COUNT(*) FROM ati_tasks").fetchone()[0]
-    except:
-        total_tasks = 0
-
-
-
-    # Total tools (mit Fallback)
-
-    try:
-
-        total_tools = conn.execute("SELECT COUNT(*) FROM tool_registry").fetchone()[0]
-
-    except:
-
-        total_tools = 0
-
-
-
-    conn.close()
-
-
+        # Total tools (mit Fallback)
+        try:
+            total_tools = conn.execute("SELECT COUNT(*) FROM tool_registry").fetchone()[0]
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            total_tools = 0
+    finally:
+        conn.close()
 
     return {
-
         "last_run": row_to_dict(last_run) if last_run else None,
-
         "total_tasks": total_tasks,
-
         "total_tools": total_tools
-
     }
 
 
@@ -3284,15 +3268,12 @@ async def list_tools():
     """Listet registrierte Tools."""
 
     conn = get_user_db()
-
-    rows = conn.execute(
-
-        "SELECT * FROM tool_registry ORDER BY task_count DESC"
-
-    ).fetchall()
-
-    conn.close()
-
+    try:
+        rows = conn.execute(
+            "SELECT * FROM tool_registry ORDER BY task_count DESC"
+        ).fetchall()
+    finally:
+        conn.close()
     return {"tools": rows_to_list(rows), "count": len(rows)}
 
 
@@ -3304,28 +3285,19 @@ async def get_scan_config():
     """Liefert Scanner-Konfiguration."""
 
     conn = get_user_db()
-
-    rows = conn.execute("SELECT key, value, category FROM scan_config").fetchall()
-
-    conn.close()
-
-
-
-    config = {}
-
-    for row in rows:
-
-        try:
-
-            config[row[0]] = json.loads(row[1])
-
-        except:
-
-            config[row[0]] = row[1]
-
-
-
-    return config
+    try:
+        rows = conn.execute("SELECT key, value FROM scan_config").fetchall()
+        config = {}
+        for row in rows:
+            try:
+                config[row[0]] = json.loads(row[1])
+            except (json.JSONDecodeError, ValueError):
+                config[row[0]] = row[1]
+        return config
+    except Exception:
+        return {}
+    finally:
+        conn.close()
 
 
 
@@ -3506,11 +3478,22 @@ bach --memory session
             import pyperclip
             pyperclip.copy(prompt)
         except ImportError:
-            # Fallback: PowerShell
-            subprocess.run(
-                ["powershell", "-Command", f"Set-Clipboard -Value '{prompt.replace(chr(39), chr(39)+chr(39))}'"],
-                capture_output=True, creationflags=0x08000000
-            )
+            if sys.platform == "win32":
+                subprocess.run(
+                    ["powershell", "-Command", f"Set-Clipboard -Value '{prompt.replace(chr(39), chr(39)+chr(39))}'"],
+                    capture_output=True, creationflags=0x08000000
+                )
+            elif sys.platform == "darwin":
+                subprocess.run(["pbcopy"], input=prompt.encode("utf-8"), capture_output=True)
+            else:
+                import shutil
+                data = prompt.encode("utf-8")
+                if shutil.which("wl-copy"):
+                    subprocess.run(["wl-copy"], input=data, capture_output=True)
+                elif shutil.which("xsel"):
+                    subprocess.run(["xsel", "-b", "-i"], input=data, capture_output=True)
+                elif shutil.which("xclip"):
+                    subprocess.run(["xclip", "-selection", "clipboard"], input=data, capture_output=True)
 
         # Claude triggern (optional - nur wenn pyautogui verfuegbar)
         triggered = False
@@ -3591,13 +3574,32 @@ async def start_ati_session_cli(work_time: int = 15, task_prompt: str = ""):
             f.write(prompt_text)
 
         # Claude Code im neuen Terminal starten
-        cmd = f'start cmd /k "cd /d {BACH_DIR} && claude -p \\"{prompt_text[:200]}...\\" "'
-        # Besser: claude mit --print fuer non-interactive, oder einfach claude oeffnen
-        subprocess.Popen(
-            ["cmd", "/c", "start", "cmd", "/k",
-             f"cd /d {BACH_DIR} && claude"],
-            creationflags=0x08000000
-        )
+        if sys.platform == "win32":
+            subprocess.Popen(
+                ["cmd", "/c", "start", "", "cmd", "/k",
+                 f"cd /d \"{BACH_DIR}\" && claude"],
+                creationflags=0x08000000
+            )
+        elif sys.platform == "darwin":
+            import shlex
+            script = f'tell application "Terminal" to do script "cd {shlex.quote(str(BACH_DIR))} && claude"'
+            subprocess.Popen(
+                ["osascript", "-e", script],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+        else:
+            import shutil
+            term = shutil.which("gnome-terminal") or shutil.which("xterm")
+            if term:
+                shell_cmd = f'cd "{BACH_DIR}" && claude'
+                if "gnome-terminal" in term:
+                    subprocess.Popen([term, "--", "bash", "-c", shell_cmd],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     start_new_session=True)
+                else:
+                    subprocess.Popen([term, "-e", "bash", "-c", shell_cmd],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     start_new_session=True)
 
         return {
             "success": True,
@@ -3727,74 +3729,39 @@ async def update_ati_task(task_id: int, update: ATITaskUpdate):
     """Aktualisiert ATI-Task."""
 
     conn = get_user_db()
+    try:
 
+        existing = conn.execute("SELECT id FROM ati_tasks WHERE id = ?", (task_id,)).fetchone()
 
+        if not existing:
+            raise HTTPException(status_code=404, detail="ATI Task nicht gefunden")
 
-    existing = conn.execute("SELECT id FROM ati_tasks WHERE id = ?", (task_id,)).fetchone()
+        updates = []
+        values = []
 
-    if not existing:
+        if update.task_text is not None:
+            updates.append("task_text = ?")
+            values.append(update.task_text)
+        if update.tool_name is not None:
+            updates.append("tool_name = ?")
+            values.append(update.tool_name)
+        if update.aufwand is not None:
+            updates.append("aufwand = ?")
+            values.append(update.aufwand)
+        if update.priority_score is not None:
+            updates.append("priority_score = ?")
+            values.append(update.priority_score)
+        if update.status is not None:
+            updates.append("status = ?")
+            values.append(update.status)
 
+        if updates:
+            values.append(task_id)
+            conn.execute(f"UPDATE ati_tasks SET {', '.join(updates)} WHERE id = ?", values)
+            conn.commit()
+
+    finally:
         conn.close()
-
-        raise HTTPException(status_code=404, detail="ATI Task nicht gefunden")
-
-
-
-    updates = []
-
-    values = []
-
-
-
-    if update.task_text is not None:
-
-        updates.append("task_text = ?")
-
-        values.append(update.task_text)
-
-    if update.tool_name is not None:
-
-        updates.append("tool_name = ?")
-
-        values.append(update.tool_name)
-
-    if update.aufwand is not None:
-
-        updates.append("aufwand = ?")
-
-        values.append(update.aufwand)
-
-    if update.priority_score is not None:
-
-        updates.append("priority_score = ?")
-
-        values.append(update.priority_score)
-
-    if update.status is not None:
-
-        updates.append("status = ?")
-
-        values.append(update.status)
-
-
-
-    if updates:
-
-        updates.append("updated_at = ?")
-
-        values.append(datetime.now().isoformat())
-
-        values.append(task_id)
-
-
-
-        conn.execute(f"UPDATE ati_tasks SET {', '.join(updates)} WHERE id = ?", values)
-
-        conn.commit()
-
-
-
-    conn.close()
 
     return {"status": "updated"}
 
@@ -3809,13 +3776,11 @@ async def delete_ati_task(task_id: int):
     """Loescht ATI-Task."""
 
     conn = get_user_db()
-
-    conn.execute("DELETE FROM ati_tasks WHERE id = ?", (task_id,))
-
-    conn.commit()
-
-    conn.close()
-
+    try:
+        conn.execute("DELETE FROM ati_tasks WHERE id = ?", (task_id,))
+        conn.commit()
+    finally:
+        conn.close()
     return {"status": "deleted"}
 
 
@@ -3837,42 +3802,24 @@ async def list_skills(category: Optional[str] = None, is_active: Optional[bool] 
     """Listet Skills aus bach.db mit optionalen Filtern."""
 
     conn = get_bach_db()
+    try:
+        query = "SELECT id, name, type, category, path, version, description, is_active, priority, trigger_phrases FROM skills WHERE 1=1"
+        params = []
 
-    
+        if category:
+            query += " AND category = ?"
+            params.append(category)
 
-    query = "SELECT id, name, type, category, path, version, description, is_active, priority, trigger_phrases FROM skills WHERE 1=1"
+        if is_active is not None:
+            query += " AND is_active = ?"
+            params.append(1 if is_active else 0)
 
-    params = []
+        query += " ORDER BY category, priority DESC, name LIMIT ?"
+        params.append(limit)
 
-    
-
-    if category:
-
-        query += " AND category = ?"
-
-        params.append(category)
-
-    
-
-    if is_active is not None:
-
-        query += " AND is_active = ?"
-
-        params.append(1 if is_active else 0)
-
-    
-
-    query += " ORDER BY category, priority DESC, name LIMIT ?"
-
-    params.append(limit)
-
-    
-
-    rows = conn.execute(query, params).fetchall()
-
-    conn.close()
-
-    
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
 
     return {"skills": rows_to_list(rows), "count": len(rows)}
 
@@ -3885,24 +3832,15 @@ async def list_skill_categories():
     """Listet alle Skill-Kategorien mit Zaehler."""
 
     conn = get_bach_db()
-
-    
-
-    rows = conn.execute("""
-
-        SELECT category, COUNT(*) as count 
-
-        FROM skills 
-
-        GROUP BY category 
-
-        ORDER BY count DESC
-
-    """).fetchall()
-
-    conn.close()
-
-    
+    try:
+        rows = conn.execute("""
+            SELECT category, COUNT(*) as count
+            FROM skills
+            GROUP BY category
+            ORDER BY count DESC
+        """).fetchall()
+    finally:
+        conn.close()
 
     return {"categories": [{"name": r[0], "count": r[1]} for r in rows]}
 
@@ -3915,18 +3853,13 @@ async def get_skill(skill_id: int):
     """Holt einzelnen Skill mit Details."""
 
     conn = get_bach_db()
-
-    row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
-
-    conn.close()
-
-    
+    try:
+        row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
+    finally:
+        conn.close()
 
     if not row:
-
         raise HTTPException(status_code=404, detail="Skill nicht gefunden")
-
-    
 
     return row_to_dict(row)
 
@@ -4344,63 +4277,71 @@ async def denkarium_list(entry_type: str = None, category: str = None, limit: in
 
     conn = sqlite3.connect(str(USER_DB))
 
-    query = "SELECT id, entry_type, title, content, category, source, mood, promoted_to, promoted_id, created_at, updated_at FROM denkarium_entries"
+    try:
 
-    conditions = []
+        query = "SELECT id, entry_type, title, content, category, source, mood, promoted_to, promoted_id, created_at, updated_at FROM denkarium_entries"
 
-    params = []
+        conditions = []
 
-    if entry_type:
+        params = []
 
-        conditions.append("entry_type = ?")
+        if entry_type:
 
-        params.append(entry_type)
+            conditions.append("entry_type = ?")
 
-    if category:
+            params.append(entry_type)
 
-        conditions.append("category = ?")
+        if category:
 
-        params.append(category)
+            conditions.append("category = ?")
 
-    if search:
+            params.append(category)
 
-        conditions.append("(content LIKE ? OR title LIKE ?)")
+        if search:
 
-        params.extend([f"%{search}%", f"%{search}%"])
+            conditions.append("(content LIKE ? OR title LIKE ?)")
 
-    if conditions:
+            params.extend([f"%{search}%", f"%{search}%"])
 
-        query += " WHERE " + " AND ".join(conditions)
+        if conditions:
 
-    query += " ORDER BY created_at DESC LIMIT ?"
+            query += " WHERE " + " AND ".join(conditions)
 
-    params.append(limit)
+        query += " ORDER BY created_at DESC LIMIT ?"
 
-    cursor = conn.execute(query, params)
+        params.append(limit)
 
-    cols = [d[0] for d in cursor.description]
+        cursor = conn.execute(query, params)
 
-    rows = cursor.fetchall()
+        cols = [d[0] for d in cursor.description]
 
-    entries = [dict(zip(cols, row)) for row in rows]
+        rows = cursor.fetchall()
 
-    stats = conn.execute("SELECT COUNT(*) as total, SUM(CASE WHEN entry_type='logbuch' THEN 1 ELSE 0 END) as logbuch, SUM(CASE WHEN entry_type='denkarium' THEN 1 ELSE 0 END) as denkarium FROM denkarium_entries").fetchone()
+        entries = [dict(zip(cols, row)) for row in rows]
 
-    categories = conn.execute("SELECT category, COUNT(*) as cnt FROM denkarium_entries GROUP BY category ORDER BY cnt DESC").fetchall()
+        stats = conn.execute("SELECT COUNT(*) as total, SUM(CASE WHEN entry_type='logbuch' THEN 1 ELSE 0 END) as logbuch, SUM(CASE WHEN entry_type='denkarium' THEN 1 ELSE 0 END) as denkarium FROM denkarium_entries").fetchone()
 
-    conn.close()
+        categories = conn.execute("SELECT category, COUNT(*) as cnt FROM denkarium_entries GROUP BY category ORDER BY cnt DESC").fetchall()
 
-    return {
+        return {
 
-        "entries": entries,
+            "entries": entries,
 
-        "count": len(entries),
+            "count": len(entries),
 
-        "stats": {"total": stats[0] or 0, "logbuch": stats[1] or 0, "denkarium": stats[2] or 0},
+            "stats": {"total": (stats[0] or 0) if stats else 0, "logbuch": (stats[1] or 0) if stats else 0, "denkarium": (stats[2] or 0) if stats else 0},
 
-        "categories": [{"name": c[0], "count": c[1]} for c in categories]
+            "categories": [{"name": c[0], "count": c[1]} for c in categories]
 
-    }
+        }
+
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
+
+        return {"entries": [], "count": 0, "stats": {"total": 0, "logbuch": 0, "denkarium": 0}, "categories": []}
+
+    finally:
+
+        conn.close()
 
 
 
@@ -4438,15 +4379,25 @@ async def denkarium_create(request: Request):
 
     conn = sqlite3.connect(str(USER_DB))
 
-    conn.execute("INSERT INTO denkarium_entries (entry_type, title, content, category, source, mood, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    try:
 
-        (entry_type, title, content, category, source, mood, now))
+        conn.execute("INSERT INTO denkarium_entries (entry_type, title, content, category, source, mood, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
 
-    entry_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            (entry_type, title, content, category, source, mood, now))
 
-    conn.commit()
+        row = conn.execute("SELECT last_insert_rowid()").fetchone()
 
-    conn.close()
+        entry_id = row[0] if row else 0
+
+        conn.commit()
+
+    except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
+
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+    finally:
+
+        conn.close()
 
     return {"ok": True, "id": entry_id, "message": f"Eintrag #{entry_id} gespeichert"}
 
@@ -4460,11 +4411,19 @@ async def denkarium_delete(entry_id: int):
 
     conn = sqlite3.connect(str(USER_DB))
 
-    conn.execute("DELETE FROM denkarium_entries WHERE id = ?", (entry_id,))
+    try:
 
-    conn.commit()
+        conn.execute("DELETE FROM denkarium_entries WHERE id = ?", (entry_id,))
 
-    conn.close()
+        conn.commit()
+
+    except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
+
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+    finally:
+
+        conn.close()
 
     return {"ok": True}
 
@@ -4482,35 +4441,47 @@ async def denkarium_promote(entry_id: int, request: Request):
 
     conn = sqlite3.connect(str(USER_DB))
 
-    entry = conn.execute("SELECT id, title, content FROM denkarium_entries WHERE id = ?", (entry_id,)).fetchone()
+    try:
 
-    if not entry:
+        entry = conn.execute("SELECT id, title, content FROM denkarium_entries WHERE id = ?", (entry_id,)).fetchone()
+
+        if not entry:
+
+            raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+
+        title = entry[1] or (entry[2][:50] if entry[2] else "Denkarium-Eintrag")
+
+        if target == "task":
+
+            conn.execute("INSERT INTO tasks (title, description, status, priority, assigned_to, dist_type) VALUES (?, ?, 'pending', 3, 'user', 0)", (title, entry[2]))
+
+            row = conn.execute("SELECT last_insert_rowid()").fetchone()
+
+            promoted_id = row[0] if row else 0
+
+        else:
+
+            promoted_id = 0
+
+        from datetime import datetime
+
+        conn.execute("UPDATE denkarium_entries SET promoted_to = ?, promoted_id = ?, updated_at = ? WHERE id = ?",
+
+            (target, promoted_id, datetime.now().isoformat(), entry_id))
+
+        conn.commit()
+
+    except HTTPException:
+
+        raise
+
+    except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
+
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+    finally:
 
         conn.close()
-
-        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
-
-    title = entry[1] or (entry[2][:50] if entry[2] else "Denkarium-Eintrag")
-
-    if target == "task":
-
-        conn.execute("INSERT INTO tasks (title, description, status, priority, assigned_to, dist_type) VALUES (?, ?, 'pending', 3, 'user', 0)", (title, entry[2]))
-
-        promoted_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-    else:
-
-        promoted_id = 0
-
-    from datetime import datetime
-
-    conn.execute("UPDATE denkarium_entries SET promoted_to = ?, promoted_id = ?, updated_at = ? WHERE id = ?",
-
-        (target, promoted_id, datetime.now().isoformat(), entry_id))
-
-    conn.commit()
-
-    conn.close()
 
     return {"ok": True, "promoted_id": promoted_id}
 
@@ -4614,7 +4585,10 @@ async def api_ai_headless_run(payload: dict = Body(...)):
 
         # da es zu lange dauern könnte (Timeout))
 
-        subprocess.Popen(cmd, cwd=str(BACH_DIR))
+        popen_kwargs = {"cwd": str(BACH_DIR)}
+        if sys.platform == "win32":
+            popen_kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+        subprocess.Popen(cmd, **popen_kwargs)
 
         return {"success": True, "message": "Headless Session gestartet. Antwort erscheint in der Inbox."}
 
@@ -4722,7 +4696,7 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
                     description = docstring_match.group(1).strip().split('\n')[0]
 
-            except:
+            except (OSError, UnicodeDecodeError):
 
                 pass
 
@@ -4774,11 +4748,11 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
         conn.close()
 
-    except:
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
 
         pass
 
-            
+
 
 @app.get("/api/steuer/dokumente/unlinked")
 
@@ -4984,11 +4958,11 @@ async def api_get_tool_detail(name: str):
 
             return dict(row)
 
-    except:
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
 
         pass
 
-        
+
 
     raise HTTPException(status_code=404, detail="Tool nicht gefunden")
 
@@ -5995,7 +5969,7 @@ async def search_help(term: str):
 
                 })
 
-        except:
+        except (OSError, UnicodeDecodeError):
 
             pass
 
@@ -6029,7 +6003,7 @@ async def search_help(term: str):
 
 FINANCIAL_DATA_FILE = DATA_DIR / "financial_data.json"
 
-FINANCIAL_SCHEMA_FILE = BACH_DIR / "skills" / "_services" / "mail" / "schema_financial.sql"
+FINANCIAL_SCHEMA_FILE = BACH_DIR / "hub" / "_services" / "mail" / "schema_financial.sql"
 
 
 
@@ -6953,7 +6927,7 @@ async def financial_accounts():
 
         accounts = [row_to_dict(row) for row in cursor.fetchall()]
 
-    except:
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
 
         accounts = []
 
@@ -7073,7 +7047,7 @@ async def create_mail_account(account: MailAccountCreate):
 
                 keyring.set_password("bach_financial_mail", account.email, account.password)
 
-            except:
+            except Exception:
 
                 pass
 
@@ -7149,7 +7123,7 @@ async def delete_mail_account(account_id: int):
 
         keyring.delete_password("bach_financial_mail", email)
 
-    except:
+    except Exception:
 
         pass
 
@@ -7167,45 +7141,45 @@ async def toggle_mail_account(account_id: int):
 
     conn = get_user_db()
 
-    cursor = conn.cursor()
+    try:
 
+        cursor = conn.cursor()
 
+        cursor.execute("""
 
-    cursor.execute("""
+            UPDATE mail_accounts
 
-        UPDATE mail_accounts
+            SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END,
 
-        SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END,
+                updated_at = CURRENT_TIMESTAMP
 
-            updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
 
-        WHERE id = ?
+        """, (account_id,))
 
-    """, (account_id,))
+        if cursor.rowcount == 0:
 
+            raise HTTPException(status_code=404, detail="Konto nicht gefunden")
 
+        cursor.execute("SELECT is_active FROM mail_accounts WHERE id = ?", (account_id,))
 
-    if cursor.rowcount == 0:
+        row = cursor.fetchone()
+
+        is_active = row[0] if row else 0
+
+        conn.commit()
+
+    except HTTPException:
+
+        raise
+
+    except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
+
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    finally:
 
         conn.close()
-
-        raise HTTPException(status_code=404, detail="Konto nicht gefunden")
-
-
-
-    # Neuen Status holen
-
-    cursor.execute("SELECT is_active FROM mail_accounts WHERE id = ?", (account_id,))
-
-    is_active = cursor.fetchone()[0]
-
-
-
-    conn.commit()
-
-    conn.close()
-
-
 
     return {"success": True, "id": account_id, "is_active": bool(is_active)}
 
@@ -7291,7 +7265,7 @@ async def test_mail_account(account_id: int):
 
         password = keyring.get_password("bach_financial_mail", account['email'])
 
-    except:
+    except Exception:
 
         password = None
 
@@ -7449,7 +7423,7 @@ async def setup_gmail_api():
 
                     }
 
-                except:
+                except Exception:
 
                     pass
 
@@ -7717,7 +7691,7 @@ def get_extrapolated_session_count(start_time_str: str, interval_min: int) -> in
 
         return math.floor((elapsed_min - safety_buffer_min) / interval_min)
 
-    except:
+    except (ValueError, TypeError, OverflowError):
 
         return 0
 
@@ -7751,7 +7725,7 @@ def get_next_session_seconds(start_time_str: str, interval_min: int) -> int:
 
         return int(interval_sec - progress_in_interval)
 
-    except:
+    except (ValueError, TypeError, OverflowError):
 
         return interval_min * 60
 
@@ -7775,7 +7749,7 @@ def get_runtime_string(start_time_str: str) -> str:
 
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    except:
+    except (ValueError, TypeError, OverflowError):
 
         return "00:00:00"
 
@@ -7803,7 +7777,7 @@ def is_quiet_time(quiet_start: str, quiet_end: str) -> bool:
 
             return now >= start or now <= end
 
-    except:
+    except (ValueError, TypeError):
 
         return False
 
@@ -8109,7 +8083,7 @@ async def get_memory_overview():
                             "path": str(f.relative_to(BACH_DIR)),
                             "filename": f.name
                         })
-            except:
+            except OSError:
                 pass
             result["workflows"] = workflows
 
@@ -8804,7 +8778,7 @@ async def get_tools(
 
                         tool_info["description"] = first_line[:100]
 
-            except:
+            except (OSError, UnicodeDecodeError):
 
                 pass
 
@@ -8989,7 +8963,7 @@ async def get_tools(
 
 # Import Prompt-Generator Service
 
-sys.path.insert(0, str(BACH_DIR / "skills" / "_services" / "prompt_generator"))
+sys.path.insert(0, str(BACH_DIR / "hub" / "_services" / "prompt_generator"))
 
 try:
 
@@ -9324,7 +9298,7 @@ async def get_prompt_daemon_status():
 
             config = json.loads(config_file.read_text(encoding="utf-8"))
 
-        except:
+        except (json.JSONDecodeError, OSError):
 
             pass
 
@@ -9476,7 +9450,7 @@ async def toggle_prompt_daemon():
 
                     pid_file.unlink()
 
-                except:
+                except OSError:
 
                     pass
 
@@ -9523,7 +9497,7 @@ async def toggle_prompt_daemon():
                     for job in config.get("jobs", []):
                         job["last_run"] = None  # Reset fuer sofortigen Start
                     config_file.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
-                except:
+                except (json.JSONDecodeError, OSError):
                     pass
 
             # Starte Daemon im Hintergrund
@@ -9564,7 +9538,7 @@ async def toggle_prompt_daemon():
 
                     new_pid = int(pid_file.read_text().strip())
 
-                except:
+                except (OSError, ValueError):
 
                     pass
 
@@ -9602,20 +9576,32 @@ async def launch_auto_session(request: Request):
         data = await request.json()
         session_id = data.get("session_id", "")
         start_dir = Path(__file__).parent.parent.parent / "start"
-        bat_file = start_dir / f"{session_id}.bat"
 
-        if not bat_file.exists():
-            return {"status": "error", "message": f"Batch-Datei nicht gefunden: {bat_file.name}"}
-
-        # Starte Batch-Datei in neuem Fenster
-        creation_flags = 0x00000010 if sys.platform == "win32" else 0  # CREATE_NEW_CONSOLE
-        subprocess.Popen(
-            ["cmd", "/c", "start", str(bat_file)],
-            cwd=str(start_dir),
-            creationflags=creation_flags if sys.platform == "win32" else 0,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
+        env = {**os.environ, "BACH_AUTO": "1"}
+        if sys.platform == "win32":
+            script_file = start_dir / f"{session_id}.bat"
+            if not script_file.exists():
+                return {"status": "error", "message": f"Batch-Datei nicht gefunden: {script_file.name}"}
+            subprocess.Popen(
+                ["cmd", "/c", "start", str(script_file)],
+                cwd=str(start_dir),
+                creationflags=0x00000010,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=env
+            )
+        else:
+            script_file = start_dir / f"{session_id}.sh"
+            if not script_file.exists():
+                return {"status": "error", "message": f"Script nicht gefunden: {script_file.name}"}
+            subprocess.Popen(
+                ["bash", str(script_file)],
+                cwd=str(start_dir),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                env=env
+            )
 
         return {"status": "launched", "session_id": session_id, "message": f"Session {session_id} gestartet"}
     except Exception as e:
@@ -10930,6 +10916,7 @@ async def add_contract(contract: ContractModel):
 
     """FIN_002: Neuen Vertrag/Abo anlegen."""
 
+    conn = None
     try:
 
         conn = get_user_db()
@@ -10948,13 +10935,15 @@ async def add_contract(contract: ContractModel):
 
         new_id = cursor.lastrowid
 
-        conn.close()
-
         return {"success": True, "id": new_id}
 
     except Exception as e:
 
         return {"success": False, "error": str(e)}
+
+    finally:
+        if conn:
+            conn.close()
 
 
 
@@ -10964,6 +10953,7 @@ async def update_contract(contract_id: int, contract: ContractModel):
 
     """FIN_002: Vertrag/Abo aktualisieren."""
 
+    conn = None
     try:
 
         conn = get_user_db()
@@ -10980,13 +10970,15 @@ async def update_contract(contract_id: int, contract: ContractModel):
 
         conn.commit()
 
-        conn.close()
-
         return {"success": True}
 
     except Exception as e:
 
         return {"success": False, "error": str(e)}
+
+    finally:
+        if conn:
+            conn.close()
 
 
 
@@ -13045,7 +13037,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     Usage (JavaScript):
 
-        const ws = new WebSocket('ws:/localhost:8000/ws');
+        const ws = new WebSocket('ws://localhost:8000/ws');
 
         ws.onmessage = (event) => {
 
@@ -13698,9 +13690,9 @@ def run_server(host: str = "127.0.0.1", port: int = 8000):
 
         import uvicorn
 
-        print(f"[BACH GUI] Starte Server auf http:/{host}:{port}")
+        print(f"[BACH GUI] Starte Server auf http://{host}:{port}")
 
-        print(f"[BACH GUI] API-Docs: http:/{host}:{port}/docs")
+        print(f"[BACH GUI] API-Docs: http://{host}:{port}/docs")
 
         uvicorn.run(app, host=host, port=port)
 

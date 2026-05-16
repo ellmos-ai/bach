@@ -120,10 +120,10 @@ SERVICES_DIR = SKILLS_DIR / "_services"
 # Data-Unterverzeichnisse
 LOGS_DIR = DATA_DIR / "logs"
 import platform as _platform
-if _platform.system() == "Darwin":
-    BACKUPS_DIR = Path.home() / ".bach" / "backups"
-else:
+if _platform.system() == "Windows":
     BACKUPS_DIR = Path(r"C:\_Local_DEV\BACKUPS\BACH")
+else:
+    BACKUPS_DIR = Path.home() / ".bach" / "backups"
 ARCHIVE_DIR = DATA_DIR / "_archive"
 TRASH_DIR = DATA_DIR / "_trash"
 MESSAGES_DIR = DATA_DIR / "messages"

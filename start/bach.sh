@@ -16,7 +16,9 @@ export PYTHONIOENCODING=utf-8
 export PYTHONUNBUFFERED=1
 export PYTHONPATH="$SYS_DIR"
 
-if [ -f "$HOME/.venvs/science/bin/python" ]; then
+if [ -f "$HOME/.venvs/bach/bin/python" ]; then
+    PYTHON="$HOME/.venvs/bach/bin/python"
+elif [ -f "$HOME/.venvs/science/bin/python" ]; then
     PYTHON="$HOME/.venvs/science/bin/python"
 elif command -v python3 >/dev/null 2>&1; then
     PYTHON=python3

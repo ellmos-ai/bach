@@ -25,8 +25,12 @@ SOFTWARE.
 """
 FinancialProof - Analyse-Module
 """
-from analysis.registry import AnalysisRegistry, get_analyzer, list_analyzers
-from analysis.base import BaseAnalyzer, AnalysisResult, AnalysisParameters
+try:
+    from .registry import AnalysisRegistry, get_analyzer, list_analyzers
+    from .base import BaseAnalyzer, AnalysisResult, AnalysisParameters
+except ImportError:
+    from analysis.registry import AnalysisRegistry, get_analyzer, list_analyzers
+    from analysis.base import BaseAnalyzer, AnalysisResult, AnalysisParameters
 
 __all__ = [
     'AnalysisRegistry',

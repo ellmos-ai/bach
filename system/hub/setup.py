@@ -325,7 +325,7 @@ class SetupHandler(BaseHandler):
             all_ok = False
 
         # 4. bach.db
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self._canonical_db
         if db_path.exists():
             checks.append("[OK] bach.db vorhanden")
         else:
@@ -708,7 +708,7 @@ class SetupHandler(BaseHandler):
              -> Parse USER.md und sync relevante Felder in die DB
         """
         user_md = self.base_path.parent / "USER.md"
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self._canonical_db
         results = ["=== USER.md Setup ===\n"]
 
         # 1. Existenz-Check
@@ -847,14 +847,17 @@ class SetupHandler(BaseHandler):
                 'goals': {key: value, ...},
             }
         """
+        conn = None
         try:
             conn = sqlite3.connect(str(db_path))
             rows = conn.execute(
                 "SELECT category, key, value FROM assistant_user_profile ORDER BY category, key"
             ).fetchall()
-            conn.close()
         except Exception:
             return {}
+        finally:
+            if conn:
+                conn.close()
 
         data = {
             "stats": {},
@@ -1071,6 +1074,7 @@ class SetupHandler(BaseHandler):
             Anzahl synchronisierter Eintraege
         """
         synced = 0
+        conn = None
         try:
             conn = sqlite3.connect(str(db_path))
             now = datetime.now().isoformat()
@@ -1100,9 +1104,11 @@ class SetupHandler(BaseHandler):
                     synced += 1
 
             conn.commit()
-            conn.close()
         except Exception as e:
             print(f"[WARN] USER.md -> DB sync fehlgeschlagen: {e}")
+        finally:
+            if conn:
+                conn.close()
 
         return synced
 
@@ -1195,16 +1201,18 @@ class SetupHandler(BaseHandler):
             from .lang import set_lang
             set_lang(lang)
 
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = self._canonical_db
             if db_path.exists():
                 conn = sqlite3.connect(str(db_path))
-                conn.execute(
-                    "UPDATE languages_config SET default_language = ?, updated_at = ?",
-                    (lang, datetime.now().isoformat())
-                )
-                conn.commit()
-                conn.close()
-                results.append(f"\n  Systemsprache auf '{lang}' gesetzt.")
+                try:
+                    conn.execute(
+                        "UPDATE languages_config SET default_language = ?, updated_at = ?",
+                        (lang, datetime.now().isoformat())
+                    )
+                    conn.commit()
+                    results.append(f"\n  Systemsprache auf '{lang}' gesetzt.")
+                finally:
+                    conn.close()
         except Exception as e:
             results.append(f"\n  [WARN] Systemsprache konnte nicht gesetzt werden: {e}")
 

@@ -81,10 +81,11 @@ class DailyOverview:
         """Heutige Termine aus assistant_calendar."""
         try:
             rows = conn.execute("""
-                SELECT id, title, event_date, event_time, event_type
+                SELECT id, title, DATE(start_datetime) as event_date,
+                       TIME(start_datetime) as event_time, event_type
                 FROM assistant_calendar
-                WHERE date(event_date) = ? AND status != 'erledigt'
-                ORDER BY event_time ASC
+                WHERE DATE(start_datetime) = ? AND status != 'erledigt'
+                ORDER BY start_datetime ASC
             """, (today_str,)).fetchall()
             return {
                 "count": len(rows),

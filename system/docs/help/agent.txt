@@ -1,7 +1,7 @@
 # Portabilitaet: SYSTEM
-# Version: 1.0.0
-# Zuletzt validiert: 2026-05-09
-# Naechste Pruefung: 2026-11-09
+# Version: 1.1.0
+# Zuletzt validiert: 2026-05-13
+# Nächste Prüfung: 2026-11-13
 # Ressourcen: [hub/agent_launcher.py, agents/, agents/_experts/]
 
 AGENT - Agent-Launcher und Verwaltung
@@ -31,9 +31,15 @@ CLI-BEFEHLE (bach agent)
   list                  Alle verfuegbaren Agents auflisten
   start <name>          Agent starten (neues Terminalfenster)
   stop <name>           Laufenden Agent stoppen
+  steer <name> "..."    Operator-Hinweis für laufenden Agenten vormerken
   status                Alle laufenden Agents anzeigen
+  doctor [name]         Agent-Preflight und Recovery-Hinweise
   list --json           Agenten inkl. Laufzeit-Metadaten als JSON
+  start <name> --json   Startantwort maschinenlesbar als JSON
+  stop <name> --json    Stop-Antwort maschinenlesbar als JSON
+  steer <name> --json   Steer-Antwort inkl. Queue-Stand als JSON
   status --json         Laufende/registrierte Agenten als JSON
+  doctor [name] --json  Diagnose maschinenlesbar als JSON
 
 OPTIONEN FUER START
 -------------------
@@ -41,7 +47,7 @@ OPTIONEN FUER START
   --mode plan|default   Modus (Standard: default)
   --model sonnet|opus|haiku   KI-Modell (Standard: sonnet)
   --dry-run             Nur pruefen, nicht starten
-  --json                Maschinenlesbare Ausgabe fuer list/status
+  --json                Maschinenlesbare Ausgabe fuer list/start/stop/status/doctor
 
 BEISPIELE
 ---------
@@ -54,13 +60,20 @@ BEISPIELE
   bach agent start research --model opus
   bach agent start entwickler --mode plan
   bach agent start ati --dry-run
+  bach agent start ati --dry-run --json
 
   # Laufende Agents anzeigen
   bach agent status
   bach agent status --json
+  bach agent steer ati "Bitte nur Statusflächen anfassen." --json
+
+  # Start-Voraussetzungen und Recovery prüfen
+  bach agent doctor ati
+  bach agent doctor Theodor --json
 
   # Agent stoppen (per Name)
   bach agent stop ati
+  bach agent stop ati --json
 
 VERFUEGBARE AGENTEN (Auswahl)
 -----------------------------
@@ -93,12 +106,33 @@ WIE ES FUNKTIONIERT
 2. Eine temporaere CLAUDE.md wird erstellt (data/temp/agent_<name>/)
 3. Ein neues Terminalfenster oeffnet sich mit Claude Code
 4. PID wird in data/agent_pids/<name>.pid gespeichert
-5. `bach agent stop <name>` beendet den Prozess und loescht die PID
+5. `bach agent steer <name> "..."` schreibt Operator-Hinweise in `OPERATOR_NOTES.md`
+6. `bach agent stop <name>` beendet den Prozess und loescht die PID
 
 VORAUSSETZUNGEN
 ---------------
 - Claude Code CLI muss installiert sein (Befehl: `claude`)
 - Agent muss eine SKILL.md haben (agents/<name>/SKILL.md)
+
+RECOVERY / TROUBLESHOOTING
+--------------------------
+
+Wenn `bach agent start ...` fehlschlägt oder ein Agent-Fenster sofort wieder
+schließt, zuerst die Diagnose ausführen:
+
+  bach agent doctor ati
+  bach agent doctor ati --json
+
+`doctor` prüft:
+- ob die Claude Code CLI im PATH gefunden wird
+- ob `data/agent_pids/` und `data/temp/` beschreibbar sind
+- ob der angefragte Agent und seine `SKILL.md` lesbar sind
+- ob veraltete PID-Dateien bereinigt werden müssen
+
+Typische nächste Schritte nach dem Report:
+- `bach agent start <name> --dry-run` für einen sicheren Vorabtest
+- `bach agent status --json` bei laufenden oder hängenden Sessions
+- Claude Code CLI installieren oder Login/Setup lokal prüfen
 
 DATENBANK
 ---------

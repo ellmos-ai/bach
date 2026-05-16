@@ -1,6 +1,6 @@
 # Portabilitaet: SYSTEM
-# Zuletzt validiert: 2026-02-28
-# Naechste Pruefung: 2026-08-28
+# Zuletzt validiert: 2026-05-15
+# Nächste Prüfung: 2026-11-15
 
 DAEMON - Hintergrund-Jobs und Scheduler
 =======================================
@@ -26,6 +26,7 @@ CLI-BEFEHLE
 -----------
   bach daemon jobs              Alle Jobs anzeigen
   bach daemon status            Daemon-Status
+  bach daemon doctor            Scheduler-Preflight und Recovery-Hinweise
   bach daemon start [--bg]      Scheduler starten (--bg fuer Hintergrund)
   bach daemon stop              Scheduler stoppen
   bach daemon run <ID>          Einzelnen Job manuell ausfuehren
@@ -36,6 +37,7 @@ SESSION-SYSTEM
   bach daemon session start [--profile NAME]   Session-Daemon starten
   bach daemon session stop                     Session-Daemon stoppen
   bach daemon session status                   Session-Status anzeigen
+  bach daemon session doctor                   Session-Preflight und Recovery-Hinweise
   bach daemon session trigger [--profile NAME] Session manuell ausloesen
   bach daemon session profiles                 Verfuegbare Profile auflisten
 

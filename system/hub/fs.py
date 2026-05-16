@@ -115,14 +115,19 @@ class FSHandler(BaseHandler):
     def _status(self) -> Tuple[bool, str]:
         """Zeigt Schutz-Status."""
         import sqlite3
-        conn = sqlite3.connect(str(self.target_file))
+        conn = None
+        try:
+            conn = sqlite3.connect(str(self.target_file))
 
-        # Snapshots zaehlen
-        snapshots_dir = self.base_path / "dist" / "snapshots"
-        snapshot_count = len(list(snapshots_dir.glob("*.orig"))) if snapshots_dir.exists() else 0
+            # Snapshots zaehlen
+            snapshots_dir = self.base_path / "dist" / "snapshots"
+            snapshot_count = len(list(snapshots_dir.glob("*.orig"))) if snapshots_dir.exists() else 0
 
-        # Manifest-Eintraege
-        manifest_count = conn.execute("SELECT COUNT(*) FROM distribution_manifest").fetchone()[0]
+            # Manifest-Eintraege
+            manifest_count = conn.execute("SELECT COUNT(*) FROM distribution_manifest").fetchone()[0]
+        finally:
+            if conn:
+                conn.close()
 
         # Letzte Pruefung aus fs_manifest.json
         import json
@@ -133,8 +138,6 @@ class FSHandler(BaseHandler):
             manifest = json.loads(manifest_file.read_text(encoding='utf-8'))
             last_check = manifest.get("last_check", "nie")[:19]
             last_backup = manifest.get("last_backup", "keins")
-
-        conn.close()
 
         lines = [
             "[FS] Filesystem Protection Status",

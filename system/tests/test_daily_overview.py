@@ -36,12 +36,12 @@ def tmp_db(tmp_path):
         )
     """)
 
-    # Kalender
+    # Kalender (Produktions-Schema: start_datetime statt event_date/event_time)
     conn.execute("""
         CREATE TABLE assistant_calendar (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL, event_date TEXT, event_time TEXT,
-            event_type TEXT, status TEXT DEFAULT 'offen'
+            title TEXT NOT NULL, start_datetime DATETIME, end_datetime DATETIME,
+            event_type TEXT, status TEXT DEFAULT 'geplant'
         )
     """)
 
@@ -146,8 +146,8 @@ def seeded_db(tmp_db):
 
     # Termine
     conn.execute(
-        "INSERT INTO assistant_calendar (title, event_date, event_time, event_type) VALUES (?, ?, ?, ?)",
-        ("Zahnarzt", today_str, "14:00", "termin")
+        "INSERT INTO assistant_calendar (title, start_datetime, event_type) VALUES (?, ?, ?)",
+        ("Zahnarzt", f"{today_str} 14:00:00", "termin")
     )
 
     # Einkauf

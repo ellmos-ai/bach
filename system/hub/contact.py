@@ -595,7 +595,7 @@ class ContactHandler(BaseHandler):
             if r["phone"]:
                 lines.append(f"  Tel:    {r['phone']}")
             if r["phone_mobile"]:
-                lines.append(f"  Mobil:  {r['mobile']}")
+                lines.append(f"  Mobil:  {r['phone_mobile']}")
             if r["email"]:
                 lines.append(f"  Email:  {r['email']}")
             if r["organization"]:

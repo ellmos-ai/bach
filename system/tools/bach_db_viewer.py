@@ -96,9 +96,15 @@ class BachDbViewer(tk.Tk):
             self.open_db(str(self.db_path))
 
     def _find_bach_db(self) -> Optional[Path]:
-        """Sucht bach.db relativ zum aktuellen Verzeichnis."""
+        """Sucht bach.db — bevorzugt bach_paths, dann Fallback-Kandidaten."""
+        try:
+            from hub.bach_paths import BACH_DB
+            if BACH_DB.exists():
+                return BACH_DB
+        except ImportError:
+            pass
         candidates = [
-            Path(__file__).parent.parent / "data" / "bach.db",  # system/tools -> system/data
+            Path(__file__).parent.parent / "data" / "bach.db",
             Path.cwd() / "system" / "data" / "bach.db",
             Path.cwd() / "data" / "bach.db",
         ]
@@ -375,7 +381,7 @@ class BachDbViewer(tk.Tk):
             try:
                 count = cursor.execute(f"SELECT COUNT(*) FROM [{name}]").fetchone()[0]
                 display = f"{name:<40} ({count:>5})"
-            except:
+            except Exception:
                 display = name
 
             self.table_listbox.insert(tk.END, display)

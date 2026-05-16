@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Callable
 from dataclasses import dataclass
 import json
+import shlex
 
 # Recurring Tasks Integration
 try:
@@ -156,7 +157,7 @@ class DaemonService:
             return None
         try:
             return datetime.fromisoformat(value)
-        except:
+        except (ValueError, TypeError):
             return None
     
     def _calculate_next_run(self, job: DaemonJob):
@@ -179,7 +180,7 @@ class DaemonService:
             try:
                 cron = croniter(job.schedule, now)
                 job.next_run = cron.get_next(datetime)
-            except:
+            except Exception:
                 logger.warning(f"Ungueltiger Cron-Ausdruck fuer Job {job.name}: {job.schedule}")
                 
         elif job.job_type == 'manual':
@@ -194,7 +195,7 @@ class DaemonService:
         try:
             value = int(schedule[:-1])
             unit = schedule[-1].lower()
-            
+
             if unit == 's':
                 return timedelta(seconds=value)
             elif unit == 'm':
@@ -203,7 +204,7 @@ class DaemonService:
                 return timedelta(hours=value)
             elif unit == 'd':
                 return timedelta(days=value)
-        except:
+        except (ValueError, IndexError):
             pass
         
         return None
@@ -237,19 +238,29 @@ class DaemonService:
                 return self._run_chain_job(job, result, start_time, triggered_by)
 
             if job.script_path:
-                cmd = f"python {job.script_path}"
-            if job.arguments:
-                cmd += f" {job.arguments}"
-            
-            # Ausfuehren
-            process = subprocess.run(
-                cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=job.timeout_seconds,
-                cwd=str(BACH_DIR)
-            )
+                cmd_list = [sys.executable, str(job.script_path)]
+                if job.arguments:
+                    cmd_list.extend(shlex.split(job.arguments, posix=(os.name != 'nt')))
+                process = subprocess.run(
+                    cmd_list,
+                    capture_output=True,
+                    text=True,
+                    timeout=job.timeout_seconds,
+                    cwd=str(BACH_DIR)
+                )
+            else:
+                if not cmd:
+                    raise ValueError("Kein Command konfiguriert")
+                if job.arguments:
+                    cmd = f"{cmd} {job.arguments}"
+                process = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=job.timeout_seconds,
+                    cwd=str(BACH_DIR)
+                )
             
             result["output"] = process.stdout
             result["success"] = process.returncode == 0

@@ -59,7 +59,10 @@ class UpdateHandler(BaseHandler):
         self.migrations_dir = self.base_path / "data" / "migrations"
         self.hub_dir = self.base_path / "hub"
         # Backups LOKAL — NICHT in OneDrive
-        self.backups_dir = Path(r"C:\_Local_DEV\BACKUPS\BACH\updates")
+        if sys.platform == "win32":
+            self.backups_dir = Path(r"C:\_Local_DEV\BACKUPS\BACH\updates")
+        else:
+            self.backups_dir = Path.home() / ".bach" / "backups" / "updates"
         self.db_path = self._canonical_db
 
     @property
@@ -251,7 +254,9 @@ class UpdateHandler(BaseHandler):
                         rollback_bak = self.db_path.with_suffix(".db.pre_rollback")
                         shutil.copy2(self.db_path, rollback_bak)
                         lines.append(f"  Aktuelle DB gesichert: {rollback_bak.name}")
-                    zf.extract("bach.db", self.base_path / "data")
+                    self.db_path.parent.mkdir(parents=True, exist_ok=True)
+                    with zf.open("bach.db") as src, open(self.db_path, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
                     lines.append("  bach.db wiederhergestellt.")
                 else:
                     lines.append("  [WARNUNG] bach.db nicht im Backup gefunden.")
@@ -288,12 +293,14 @@ class UpdateHandler(BaseHandler):
             try:
                 import sqlite3
                 conn = sqlite3.connect(str(self.db_path))
-                tables = conn.execute(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table'"
-                ).fetchone()[0]
-                conn.close()
-                lines.append(f"  [OK] bach.db: {tables} Tabellen")
-                checks_ok += 1
+                try:
+                    tables = conn.execute(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table'"
+                    ).fetchone()[0]
+                    lines.append(f"  [OK] bach.db: {tables} Tabellen")
+                    checks_ok += 1
+                finally:
+                    conn.close()
             except Exception as e:
                 lines.append(f"  [!!] bach.db nicht lesbar: {e}")
                 issues.append(f"DB-Fehler: {e}")
@@ -456,7 +463,7 @@ class UpdateHandler(BaseHandler):
     def _create_pre_update_backup(self) -> tuple:
         """Erstellt ein Pre-Update-Backup."""
         import zipfile
-        self.backups_dir.mkdir(exist_ok=True)
+        self.backups_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
         ver = self._load_version()
         version_str = ver.get("version", "unknown").replace(".", "_")

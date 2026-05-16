@@ -21,12 +21,14 @@ Usage:
 import json
 import sqlite3
 import sys
-import io
 from pathlib import Path
 from typing import Dict, List, Optional
 
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
 
 SCRIPT_DIR = Path(__file__).parent
 BACH_DIR = SCRIPT_DIR.parent

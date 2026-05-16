@@ -494,9 +494,14 @@ class MediaHandler(BaseHandler):
                 open_method = "browser"
                 opened = True
             elif row["local_path"]:
-                import os
+                import os, subprocess, sys
                 try:
-                    os.startfile(row["local_path"])
+                    if sys.platform == "win32":
+                        os.startfile(row["local_path"])
+                    elif sys.platform == "darwin":
+                        subprocess.Popen(["open", row["local_path"]])
+                    else:
+                        subprocess.Popen(["xdg-open", row["local_path"]])
                     open_method = "local"
                     opened = True
                 except Exception as e:

@@ -1,0 +1,811 @@
+# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: MIT
+"""Tests for LangHandler (hub/lang.py)."""
+
+import json
+import sqlite3
+import sys
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+import pytest
+
+SYSTEM_ROOT = Path(__file__).parent.parent
+if str(SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(SYSTEM_ROOT))
+
+from hub.lang import LangHandler
+
+
+# ═══════════════════════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════════════════════
+
+LANG_SCHEMA = """
+CREATE TABLE IF NOT EXISTS languages_config (
+    id INTEGER PRIMARY KEY,
+    default_language TEXT DEFAULT 'de',
+    fallback_language TEXT DEFAULT 'en',
+    auto_translate INTEGER DEFAULT 0,
+    enabled_languages TEXT DEFAULT '["de","en"]',
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS languages_translations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL,
+    namespace TEXT DEFAULT 'general',
+    language TEXT NOT NULL,
+    value TEXT,
+    is_verified INTEGER DEFAULT 0,
+    source TEXT DEFAULT 'auto_detected',
+    created_at TEXT,
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS languages_dictionary (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    term TEXT NOT NULL,
+    translation TEXT NOT NULL,
+    source_lang TEXT DEFAULT 'de',
+    target_lang TEXT DEFAULT 'en',
+    is_preferred INTEGER DEFAULT 1,
+    usage_count INTEGER DEFAULT 0,
+    context TEXT,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS skills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT, type TEXT, category TEXT, path TEXT,
+    description TEXT, is_active INTEGER DEFAULT 1,
+    version TEXT, dist_type INTEGER DEFAULT 0
+);
+"""
+
+
+def _create_db(db_path: Path):
+    """Creates a test DB with lang tables."""
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(LANG_SCHEMA)
+    conn.execute("""
+        INSERT OR IGNORE INTO languages_config (id, default_language, fallback_language, auto_translate, enabled_languages)
+        VALUES (1, 'de', 'en', 0, '["de","en"]')
+    """)
+    conn.commit()
+    conn.close()
+
+
+def _create_db_with_data(db_path: Path):
+    """Creates a test DB with sample translations and dictionary entries."""
+    _create_db(db_path)
+    conn = sqlite3.connect(str(db_path))
+
+    conn.execute("""
+        INSERT INTO languages_translations (key, namespace, language, value, is_verified, source, created_at)
+        VALUES ('speichern', 'cli', 'de', 'Speichern', 1, 'manual', '2026-01-01')
+    """)
+    conn.execute("""
+        INSERT INTO languages_translations (key, namespace, language, value, is_verified, source, created_at)
+        VALUES ('speichern', 'cli', 'en', 'Save', 1, 'manual', '2026-01-01')
+    """)
+    conn.execute("""
+        INSERT INTO languages_translations (key, namespace, language, value, is_verified, source, created_at)
+        VALUES ('loeschen', 'cli', 'de', 'Loeschen', 0, 'auto_detected', '2026-01-01')
+    """)
+    conn.execute("""
+        INSERT INTO languages_translations (key, namespace, language, value, is_verified, source, created_at)
+        VALUES ('oeffnen', 'gui', 'de', 'Oeffnen', 0, 'auto_detected', '2026-01-01')
+    """)
+
+    conn.execute("""
+        INSERT INTO languages_dictionary (term, translation, source_lang, target_lang, is_preferred, usage_count, context, created_at)
+        VALUES ('datei', 'file', 'de', 'en', 1, 5, 'base_dictionary', '2026-01-01')
+    """)
+    conn.execute("""
+        INSERT INTO languages_dictionary (term, translation, source_lang, target_lang, is_preferred, usage_count, context, created_at)
+        VALUES ('ordner', 'folder', 'de', 'en', 1, 3, 'base_dictionary', '2026-01-01')
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════
+# FIXTURES
+# ═══════════════════════════════════════════════════════════════
+
+
+@pytest.fixture
+def lang_env(tmp_path):
+    """Minimal environment for LangHandler."""
+    system_dir = tmp_path / "system"
+    system_dir.mkdir()
+    (system_dir / "data").mkdir()
+    (system_dir / "hub").mkdir()
+    db_path = system_dir / "data" / "bach.db"
+    _create_db(db_path)
+    return system_dir
+
+
+@pytest.fixture
+def handler(lang_env):
+    """LangHandler with empty DB."""
+    h = LangHandler(lang_env)
+    h.db_path = lang_env / "data" / "bach.db"
+    return h
+
+
+@pytest.fixture
+def handler_with_data(lang_env):
+    """LangHandler with sample data."""
+    db_path = lang_env / "data" / "bach.db"
+    _create_db_with_data(db_path)
+    h = LangHandler(lang_env)
+    h.db_path = db_path
+    return h
+
+
+# ═══════════════════════════════════════════════════════════════
+# BASIC PROPERTIES
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestProperties:
+    def test_profile_name(self, handler):
+        assert handler.profile_name == "lang"
+
+    def test_target_file(self, handler):
+        assert handler.target_file == handler.db_path
+
+    def test_get_operations(self, handler):
+        ops = handler.get_operations()
+        assert isinstance(ops, dict)
+        for key in ["status", "scan", "list", "missing", "translate",
+                     "add", "add-language", "export", "import", "set", "dict", "help"]:
+            assert key in ops
+
+
+class TestAppInit:
+    def test_init_with_app_object(self, lang_env):
+        app = MagicMock()
+        app.base_path = lang_env
+        app.db = MagicMock()
+        h = LangHandler(app)
+        assert h.base_path == lang_env
+
+
+# ═══════════════════════════════════════════════════════════════
+# ROUTING
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestRouting:
+    def test_help_operation(self, handler):
+        ok, msg = handler.handle("help", [], dry_run=False)
+        assert ok is True
+        assert "LANG" in msg
+        assert "BEFEHLE" in msg
+
+    def test_empty_operation_shows_help(self, handler):
+        ok, msg = handler.handle("", [], dry_run=False)
+        assert ok is True
+        assert "LANG" in msg
+
+    def test_unknown_operation(self, handler):
+        ok, msg = handler.handle("nonexistent", [], dry_run=False)
+        assert ok is False
+        assert "Unbekannte Operation" in msg
+
+
+# ═══════════════════════════════════════════════════════════════
+# STATUS
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestStatus:
+    def test_status_empty_db(self, handler):
+        ok, msg = handler.handle("status", [], dry_run=False)
+        assert ok is True
+        assert "SPRACH-SYSTEM STATUS" in msg
+        assert "Standard-Sprache" in msg
+        assert "Gesamt-Eintraege" in msg
+
+    def test_status_with_data(self, handler_with_data):
+        ok, msg = handler_with_data.handle("status", [], dry_run=False)
+        assert ok is True
+        assert "Gesamt-Eintraege:  4" in msg
+        assert "Verifiziert:       2" in msg
+
+
+# ═══════════════════════════════════════════════════════════════
+# _is_german
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestIsGerman:
+    def test_empty_string(self, handler):
+        assert handler._is_german("") is False
+
+    def test_short_string(self, handler):
+        assert handler._is_german("ab") is False
+
+    def test_umlaut_detected(self, handler):
+        assert handler._is_german("Datei öffnen") is True
+        assert handler._is_german("Größe ändern") is True
+
+    def test_german_keyword(self, handler):
+        assert handler._is_german("Datei nicht gefunden") is True
+        assert handler._is_german("Einstellungen speichern") is True
+
+    def test_english_text(self, handler):
+        assert handler._is_german("Save file") is False
+        assert handler._is_german("Open dialog") is False
+
+    def test_sz_detected(self, handler):
+        assert handler._is_german("Straße") is True
+
+
+# ═══════════════════════════════════════════════════════════════
+# _make_key
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestMakeKey:
+    def test_simple_text(self, handler):
+        assert handler._make_key("Datei speichern") == "datei_speichern"
+
+    def test_special_chars_replaced(self, handler):
+        assert handler._make_key("Fehler: Datei!") == "fehler_datei"
+
+    def test_truncated_at_50(self, handler):
+        long_text = "a" * 100
+        key = handler._make_key(long_text)
+        assert len(key) <= 50
+
+    def test_no_trailing_underscores(self, handler):
+        assert not handler._make_key("test!").endswith("_")
+
+
+# ═══════════════════════════════════════════════════════════════
+# _get_arg
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestGetArg:
+    def test_flag_with_value(self, handler):
+        assert handler._get_arg(["--lang", "en"], "--lang") == "en"
+
+    def test_flag_with_equals(self, handler):
+        assert handler._get_arg(["--lang=en"], "--lang") == "en"
+
+    def test_missing_flag(self, handler):
+        assert handler._get_arg(["--other", "x"], "--lang") is None
+
+    def test_flag_at_end_without_value(self, handler):
+        assert handler._get_arg(["--lang"], "--lang") is None
+
+
+# ═══════════════════════════════════════════════════════════════
+# LIST
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestList:
+    def test_list_empty(self, handler):
+        ok, msg = handler.handle("list", [], dry_run=False)
+        assert ok is True
+        assert "Keine Uebersetzungen" in msg
+
+    def test_list_with_data(self, handler_with_data):
+        ok, msg = handler_with_data.handle("list", [], dry_run=False)
+        assert ok is True
+        assert "4 Uebersetzung" in msg
+
+    def test_list_filter_by_lang(self, handler_with_data):
+        ok, msg = handler_with_data.handle("list", ["--lang", "en"], dry_run=False)
+        assert ok is True
+        assert "1 Uebersetzung" in msg
+
+    def test_list_filter_by_namespace(self, handler_with_data):
+        ok, msg = handler_with_data.handle("list", ["--namespace", "gui"], dry_run=False)
+        assert ok is True
+        assert "1 Uebersetzung" in msg
+
+
+# ═══════════════════════════════════════════════════════════════
+# MISSING
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestMissing:
+    def test_missing_empty_db(self, handler):
+        ok, msg = handler.handle("missing", [], dry_run=False)
+        assert ok is True
+        assert "Alle Strings" in msg
+
+    def test_missing_with_data(self, handler_with_data):
+        ok, msg = handler_with_data.handle("missing", [], dry_run=False)
+        assert ok is True
+        assert "fehlende" in msg
+        assert "loeschen" in msg or "oeffnen" in msg
+
+
+# ═══════════════════════════════════════════════════════════════
+# ADD
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestAdd:
+    def test_add_no_args(self, handler):
+        ok, msg = handler.handle("add", [], dry_run=False)
+        assert ok is False
+        assert "Key fehlt" in msg
+
+    def test_add_no_text(self, handler):
+        ok, msg = handler.handle("add", ["test_key"], dry_run=False)
+        assert ok is False
+        assert "--de oder --en" in msg
+
+    def test_add_dry_run(self, handler):
+        ok, msg = handler.handle("add", ["test_key", "--de", "Test", "--en", "Test"], dry_run=True)
+        assert ok is True
+        assert "DRY-RUN" in msg
+
+    def test_add_de_and_en(self, handler):
+        ok, msg = handler.handle("add", ["gruss", "--de", "Hallo", "--en", "Hello"], dry_run=False)
+        assert ok is True
+        assert "hinzugefuegt" in msg
+
+        conn = sqlite3.connect(str(handler.db_path))
+        conn.row_factory = sqlite3.Row
+        de_row = conn.execute(
+            "SELECT value FROM languages_translations WHERE key='gruss' AND language='de'"
+        ).fetchone()
+        en_row = conn.execute(
+            "SELECT value FROM languages_translations WHERE key='gruss' AND language='en'"
+        ).fetchone()
+        conn.close()
+        assert de_row["value"] == "Hallo"
+        assert en_row["value"] == "Hello"
+
+    def test_add_only_de(self, handler):
+        ok, msg = handler.handle("add", ["nur_de", "--de", "Nur Deutsch"], dry_run=False)
+        assert ok is True
+        conn = sqlite3.connect(str(handler.db_path))
+        row = conn.execute(
+            "SELECT COUNT(*) FROM languages_translations WHERE key='nur_de'"
+        ).fetchone()
+        conn.close()
+        assert row[0] == 1
+
+
+# ═══════════════════════════════════════════════════════════════
+# ADD-LANGUAGE
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestAddLanguage:
+    def test_add_language_no_args(self, handler):
+        ok, msg = handler.handle("add-language", [], dry_run=False)
+        assert ok is False
+        assert "Sprach-Code fehlt" in msg
+
+    def test_add_language_invalid_code(self, handler):
+        ok, msg = handler.handle("add-language", ["1234"], dry_run=False)
+        assert ok is False
+        assert "Ungueltiger Sprach-Code" in msg
+
+    def test_add_language_dry_run(self, handler):
+        ok, msg = handler.handle("add-language", ["fr"], dry_run=True)
+        assert ok is True
+        assert "DRY-RUN" in msg
+        assert "fr" in msg
+
+    def test_add_language_success(self, handler):
+        ok, msg = handler.handle("add-language", ["fr"], dry_run=False)
+        assert ok is True
+        assert "fr" in msg
+
+        conn = sqlite3.connect(str(handler.db_path))
+        row = conn.execute("SELECT enabled_languages FROM languages_config LIMIT 1").fetchone()
+        conn.close()
+        langs = json.loads(row[0])
+        assert "fr" in langs
+
+    def test_add_language_duplicate(self, handler):
+        ok, msg = handler.handle("add-language", ["en"], dry_run=False)
+        assert ok is False
+        assert "bereits aktiviert" in msg
+
+
+# ═══════════════════════════════════════════════════════════════
+# SET LANGUAGE
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestSetLanguage:
+    def test_set_no_args(self, handler):
+        ok, msg = handler.handle("set", [], dry_run=False)
+        assert ok is False
+        assert "Sprache fehlt" in msg
+
+    def test_set_invalid_language(self, handler):
+        ok, msg = handler.handle("set", ["xx"], dry_run=False)
+        assert ok is False
+        assert "Ungueltige Sprache" in msg
+
+    def test_set_dry_run(self, handler):
+        ok, msg = handler.handle("set", ["en"], dry_run=True)
+        assert ok is True
+        assert "DRY-RUN" in msg
+
+    @patch("hub.lang.clear_t_cache")
+    def test_set_en(self, mock_clear, handler):
+        ok, msg = handler.handle("set", ["en"], dry_run=False)
+        assert ok is True
+        assert "en" in msg
+        mock_clear.assert_called_once()
+
+        conn = sqlite3.connect(str(handler.db_path))
+        row = conn.execute("SELECT default_language FROM languages_config LIMIT 1").fetchone()
+        conn.close()
+        assert row[0] == "en"
+
+
+# ═══════════════════════════════════════════════════════════════
+# TRANSLATE
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestTranslate:
+    def test_translate_unknown_source(self, handler):
+        ok, msg = handler.handle("translate", ["--source", "fake"], dry_run=False)
+        assert ok is False
+        assert "Unbekannte Quelle" in msg
+
+    def test_translate_empty_db(self, handler):
+        ok, msg = handler.handle("translate", [], dry_run=False)
+        assert ok is True
+        assert "Keine fehlenden" in msg
+
+    def test_translate_with_dict_match(self, handler_with_data):
+        conn = sqlite3.connect(str(handler_with_data.db_path))
+        conn.execute("""
+            INSERT INTO languages_translations (key, namespace, language, value, is_verified, source, created_at)
+            VALUES ('datei', 'cli', 'de', 'datei', 0, 'auto_detected', '2026-01-01')
+        """)
+        conn.commit()
+        conn.close()
+
+        ok, msg = handler_with_data.handle("translate", ["--source", "windows_dict"], dry_run=False)
+        assert ok is True
+        assert "Uebersetzt:" in msg
+
+    def test_translate_dry_run(self, handler_with_data):
+        ok, msg = handler_with_data.handle("translate", [], dry_run=True)
+        assert ok is True
+        assert "DRY-RUN" in msg
+
+
+# ═══════════════════════════════════════════════════════════════
+# DICT
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestDict:
+    def test_dict_status_empty(self, handler):
+        ok, msg = handler.handle("dict", ["status"], dry_run=False)
+        assert ok is True
+        assert "WOERTERBUCH STATUS" in msg
+        assert "Gesamt-Eintraege: 0" in msg
+
+    def test_dict_status_with_data(self, handler_with_data):
+        ok, msg = handler_with_data.handle("dict", ["status"], dry_run=False)
+        assert ok is True
+        assert "Gesamt-Eintraege: 2" in msg
+
+    def test_dict_init_dry_run(self, handler):
+        ok, msg = handler.handle("dict", ["init"], dry_run=True)
+        assert ok is True
+        assert "DRY-RUN" in msg
+
+    def test_dict_init(self, handler):
+        ok, msg = handler.handle("dict", ["init"], dry_run=False)
+        assert ok is True
+        assert "initialisiert" in msg
+
+        conn = sqlite3.connect(str(handler.db_path))
+        count = conn.execute("SELECT COUNT(*) FROM languages_dictionary").fetchone()[0]
+        conn.close()
+        assert count == len(LangHandler.BASE_DICTIONARY)
+
+    def test_dict_init_idempotent(self, handler):
+        handler.handle("dict", ["init"], dry_run=False)
+        ok, msg = handler.handle("dict", ["init"], dry_run=False)
+        assert ok is True
+        assert "Bereits vorhanden:" in msg
+
+        conn = sqlite3.connect(str(handler.db_path))
+        count = conn.execute("SELECT COUNT(*) FROM languages_dictionary").fetchone()[0]
+        conn.close()
+        assert count == len(LangHandler.BASE_DICTIONARY)
+
+    def test_dict_add_no_args(self, handler):
+        ok, msg = handler.handle("dict", ["add"], dry_run=False)
+        assert ok is False
+        assert "de und en Term" in msg
+
+    def test_dict_add_success(self, handler):
+        ok, msg = handler.handle("dict", ["add", "katze", "cat"], dry_run=False)
+        assert ok is True
+        assert "katze" in msg
+        assert "cat" in msg
+
+    def test_dict_add_dry_run(self, handler):
+        ok, msg = handler.handle("dict", ["add", "katze", "cat"], dry_run=True)
+        assert ok is True
+        assert "DRY-RUN" in msg
+
+    def test_dict_search_no_args(self, handler):
+        ok, msg = handler.handle("dict", ["search"], dry_run=False)
+        assert ok is False
+        assert "Suchbegriff" in msg
+
+    def test_dict_search_found(self, handler_with_data):
+        ok, msg = handler_with_data.handle("dict", ["search", "datei"], dry_run=False)
+        assert ok is True
+        assert "datei" in msg
+        assert "file" in msg
+
+    def test_dict_search_not_found(self, handler):
+        ok, msg = handler.handle("dict", ["search", "zzz_nothing"], dry_run=False)
+        assert ok is True
+        assert "Keine Treffer" in msg
+
+    def test_dict_unknown_subcmd(self, handler):
+        ok, msg = handler.handle("dict", ["xxx"], dry_run=False)
+        assert ok is False
+        assert "Unbekannter dict-Befehl" in msg
+
+
+# ═══════════════════════════════════════════════════════════════
+# EXPORT
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestExport:
+    def test_export_empty_db(self, handler):
+        ok, msg = handler.handle("export", [], dry_run=False)
+        assert ok is True
+        assert "Keine fehlenden" in msg
+
+    def test_export_prompt_format(self, handler_with_data):
+        ok, msg = handler_with_data.handle("export", [], dry_run=False)
+        assert ok is True
+        assert "Translation Request" in msg
+        assert "loeschen" in msg or "oeffnen" in msg
+
+    def test_export_json_format(self, handler_with_data):
+        ok, msg = handler_with_data.handle("export", ["--format", "json"], dry_run=False)
+        assert ok is True
+        data = json.loads(msg)
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        assert "key" in data[0]
+
+    def test_export_to_file(self, handler_with_data, tmp_path):
+        out_file = str(tmp_path / "export.json")
+        ok, msg = handler_with_data.handle("export", ["--format", "json", "--file", out_file], dry_run=False)
+        assert ok is True
+        assert "exportiert" in msg
+        assert Path(out_file).exists()
+
+
+# ═══════════════════════════════════════════════════════════════
+# IMPORT
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestImport:
+    def test_import_no_args(self, handler):
+        ok, msg = handler.handle("import", [], dry_run=False)
+        assert ok is False
+        assert "Datei fehlt" in msg
+
+    def test_import_file_not_found(self, handler):
+        ok, msg = handler.handle("import", ["/nonexistent/file.json"], dry_run=False)
+        assert ok is False
+        assert "nicht gefunden" in msg
+
+    def test_import_json(self, handler, tmp_path):
+        data = [
+            {"key": "test_key", "namespace": "cli", "de": "Testtext", "en": "Test text"},
+            {"key": "test_key2", "namespace": "gui", "de": "Zweiter", "en": "Second"},
+        ]
+        import_file = tmp_path / "import.json"
+        import_file.write_text(json.dumps(data), encoding="utf-8")
+
+        ok, msg = handler.handle("import", [str(import_file)], dry_run=False)
+        assert ok is True
+        assert "2 Uebersetzungen importiert" in msg
+
+        conn = sqlite3.connect(str(handler.db_path))
+        count = conn.execute(
+            "SELECT COUNT(*) FROM languages_translations WHERE source='llm_reviewed'"
+        ).fetchone()[0]
+        conn.close()
+        assert count == 2
+
+    def test_import_json_dry_run(self, handler, tmp_path):
+        data = [{"key": "k", "en": "v"}]
+        import_file = tmp_path / "import.json"
+        import_file.write_text(json.dumps(data), encoding="utf-8")
+
+        ok, msg = handler.handle("import", [str(import_file)], dry_run=True)
+        assert ok is True
+        assert "DRY-RUN" in msg
+
+        conn = sqlite3.connect(str(handler.db_path))
+        count = conn.execute(
+            "SELECT COUNT(*) FROM languages_translations WHERE source='llm_reviewed'"
+        ).fetchone()[0]
+        conn.close()
+        assert count == 0
+
+    def test_import_pipe_format(self, handler, tmp_path):
+        content = "test_pipe | Testtext | Test text\ntest2 | Zweiter | Second\n"
+        import_file = tmp_path / "import.txt"
+        import_file.write_text(content, encoding="utf-8")
+
+        ok, msg = handler.handle("import", [str(import_file)], dry_run=False)
+        assert ok is True
+        assert "2 Uebersetzungen importiert" in msg
+
+
+# ═══════════════════════════════════════════════════════════════
+# SCAN
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestScan:
+    def test_scan_empty_dirs(self, handler):
+        ok, msg = handler.handle("scan", [], dry_run=False)
+        assert ok is True
+        assert "STRING-SCAN ERGEBNIS" in msg
+
+    def test_scan_finds_german_strings(self, handler):
+        hub_dir = handler.base_path / "hub"
+        hub_dir.mkdir(exist_ok=True)
+        (hub_dir / "test_scan.py").write_text(
+            'print("Datei nicht gefunden")\nreturn (False, "Fehler beim Laden")\n',
+            encoding="utf-8",
+        )
+
+        ok, msg = handler.handle("scan", [], dry_run=True)
+        assert ok is True
+        assert "Gefunden:" in msg
+
+    def test_scan_with_namespace_filter(self, handler):
+        hub_dir = handler.base_path / "hub"
+        hub_dir.mkdir(exist_ok=True)
+        (hub_dir / "test_scan2.py").write_text(
+            'print("Warnung: Eintrag existiert bereits")\n',
+            encoding="utf-8",
+        )
+
+        ok, msg = handler.handle("scan", ["--namespace", "cli"], dry_run=True)
+        assert ok is True
+        assert "cli:" in msg
+
+
+# ═══════════════════════════════════════════════════════════════
+# _extract_german_strings
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestExtractGermanStrings:
+    def test_extracts_print(self, handler, tmp_path):
+        f = tmp_path / "test.py"
+        f.write_text('print("Datei erfolgreich gespeichert")\n', encoding="utf-8")
+        result = handler._extract_german_strings(f)
+        assert any("gespeichert" in s for s in result)
+
+    def test_extracts_return_tuple(self, handler, tmp_path):
+        f = tmp_path / "test.py"
+        f.write_text('return (True, "Einstellungen geladen")\n', encoding="utf-8")
+        result = handler._extract_german_strings(f)
+        assert any("Einstellungen" in s for s in result)
+
+    def test_skips_english(self, handler, tmp_path):
+        f = tmp_path / "test.py"
+        f.write_text('print("File saved successfully")\n', encoding="utf-8")
+        result = handler._extract_german_strings(f)
+        assert len(result) == 0
+
+    def test_handles_unreadable_file(self, handler, tmp_path):
+        f = tmp_path / "test.py"
+        f.write_bytes(b'\x80\x81\x82')
+        result = handler._extract_german_strings(f)
+        assert isinstance(result, set)
+
+
+# ═══════════════════════════════════════════════════════════════
+# _extract_help_strings
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestExtractHelpStrings:
+    def test_extracts_title(self, handler, tmp_path):
+        f = tmp_path / "help.txt"
+        f.write_text("Hilfe zu den Einstellungen\n===========================\n", encoding="utf-8")
+        result = handler._extract_help_strings(f)
+        assert "Hilfe zu den Einstellungen" in result
+
+    def test_extracts_section_headers(self, handler, tmp_path):
+        f = tmp_path / "help.txt"
+        f.write_text("Titel\n===\nInhalt\nOptionen anzeigen\n---\n", encoding="utf-8")
+        result = handler._extract_help_strings(f)
+        assert "Optionen anzeigen" in result
+
+
+# ═══════════════════════════════════════════════════════════════
+# MODULE-LEVEL FUNCTIONS
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestModuleFunctions:
+    def test_set_lang_clears_cache(self):
+        from hub.lang import set_lang, _t_cache, _t_lang_cache, clear_t_cache
+        clear_t_cache()
+        set_lang("en")
+        from hub import lang as lang_mod
+        assert lang_mod._t_lang_cache == "en"
+        set_lang("de")
+        assert lang_mod._t_lang_cache == "de"
+
+    def test_clear_t_cache(self):
+        from hub.lang import clear_t_cache
+        from hub import lang as lang_mod
+        lang_mod._t_cache["test:de"] = "cached"
+        lang_mod._t_lang_cache = "de"
+        clear_t_cache()
+        assert lang_mod._t_cache == {}
+        assert lang_mod._t_lang_cache is None
+
+    @patch("hub.lang._get_t_db_path")
+    def test_get_lang_no_db(self, mock_path):
+        from hub.lang import get_lang, clear_t_cache
+        clear_t_cache()
+        mock_path.return_value = Path("/nonexistent/bach.db")
+        result = get_lang()
+        assert result == "de"
+
+    @patch("hub.lang._get_t_db_path")
+    def test_t_exists_no_db(self, mock_path):
+        from hub.lang import t_exists
+        mock_path.return_value = Path("/nonexistent/bach.db")
+        assert t_exists("anything") is False
+
+    @patch("hub.lang._get_t_db_path")
+    def test_t_returns_default(self, mock_path):
+        from hub.lang import t, clear_t_cache
+        clear_t_cache()
+        mock_path.return_value = Path("/nonexistent/bach.db")
+        assert t("unknown_key", default="Fallback") == "Fallback"
+
+    @patch("hub.lang._get_t_db_path")
+    def test_t_returns_key_when_no_default(self, mock_path):
+        from hub.lang import t, clear_t_cache
+        clear_t_cache()
+        mock_path.return_value = Path("/nonexistent/bach.db")
+        assert t("my_key") == "my_key"
+
+    def test_t_cache_hit(self):
+        from hub.lang import t, clear_t_cache
+        from hub import lang as lang_mod
+        clear_t_cache()
+        lang_mod._t_lang_cache = "de"
+        lang_mod._t_cache["cached_key:de"] = "Gecachter Wert"
+        assert t("cached_key") == "Gecachter Wert"
+        clear_t_cache()

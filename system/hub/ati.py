@@ -38,6 +38,7 @@ class ATIHandler(BaseHandler):
         self.ati_data_dir = base_path / "data" / "ati"
         self.config_path = self.ati_dir / "data" / "config.json"
         self.db_path = self._canonical_db
+        self.session_service_dir = base_path / "hub" / "_services" / "daemon"
         # user_db entfernt - alle Daten jetzt in bach.db (v1.3.0)
     
     @property
@@ -181,7 +182,7 @@ Mehr Info: agents/ati/ATI.md
         pid_file = self.base_path / "skills" / "_services" / "daemon" / "daemon.pid"
         if pid_file.exists():
             try:
-                pid = int(pid_file.read_text().strip())
+                pid = int(pid_file.read_text(encoding="utf-8").strip())
                 import os
                 import subprocess
                 if sys.platform == 'win32':
@@ -194,7 +195,7 @@ Mehr Info: agents/ati/ATI.md
                     try:
                         os.kill(pid, 0)
                         is_running = True
-                    except:
+                    except (ProcessLookupError, PermissionError, OSError):
                         is_running = False
 
                 if is_running:
@@ -226,7 +227,7 @@ Mehr Info: agents/ati/ATI.md
     def _start_daemon(self, args: list, dry_run: bool = False) -> tuple:
         """Startet Session-Daemon mit ATI-Profil (nutzt System-Service)"""
         # System-Service nutzen
-        daemon_script = self.base_path / "skills" / "_services" / "daemon" / "session_daemon.py"
+        daemon_script = self.session_service_dir / "session_daemon.py"
 
         if not daemon_script.exists():
             return False, f"[ATI DAEMON] System-Service nicht gefunden: {daemon_script}"
@@ -257,7 +258,7 @@ Mehr Info: agents/ati/ATI.md
 
     def _stop_daemon(self, args: list) -> tuple:
         """Stoppt Session-Daemon (System-Service)"""
-        daemon_script = self.base_path / "skills" / "_services" / "daemon" / "session_daemon.py"
+        daemon_script = self.session_service_dir / "session_daemon.py"
 
         if not daemon_script.exists():
             return False, "[ATI DAEMON] System-Service nicht gefunden"
@@ -276,7 +277,7 @@ Mehr Info: agents/ati/ATI.md
 
     def _handle_session(self, args: list, dry_run: bool = False) -> tuple:
         """Manuelle Session mit ATI-Profil starten (nutzt System-Service)"""
-        auto_session = self.base_path / "skills" / "_services" / "daemon" / "auto_session.py"
+        auto_session = self.session_service_dir / "auto_session.py"
 
         if not auto_session.exists():
             return False, f"[ATI SESSION] System-Service nicht gefunden: {auto_session}"
@@ -479,16 +480,18 @@ Hinweis: ATI-Tasks sind Software-Entwicklungs-Tasks,
 
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                INSERT INTO ati_tasks
-                (tool_name, tool_path, task_text, aufwand, status, priority_score,
-                 source_file, synced_at, is_synced)
-                VALUES (?, '', ?, ?, 'offen', 50, 'manual', ?, 1)
-            """, (tool_name, task_text, aufwand, datetime.now().isoformat()))
+            try:
+                cursor = conn.execute("""
+                    INSERT INTO ati_tasks
+                    (tool_name, tool_path, task_text, aufwand, status, priority_score,
+                     source_file, synced_at, is_synced)
+                    VALUES (?, '', ?, ?, 'offen', 50, 'manual', ?, 1)
+                """, (tool_name, task_text, aufwand, datetime.now().isoformat()))
 
-            task_id = cursor.lastrowid
-            conn.commit()
-            conn.close()
+                task_id = cursor.lastrowid
+                conn.commit()
+            finally:
+                conn.close()
 
             return True, f"[ATI TASK] Task #{task_id} erstellt: {task_text[:50]}"
 
@@ -507,30 +510,26 @@ Hinweis: ATI-Tasks sind Software-Entwicklungs-Tasks,
 
         try:
             conn = sqlite3.connect(self.db_path)
+            try:
+                task = conn.execute(
+                    "SELECT task_text, status FROM ati_tasks WHERE id = ?",
+                    (task_id,)
+                ).fetchone()
 
-            # Task existiert?
-            task = conn.execute(
-                "SELECT task_text, status FROM ati_tasks WHERE id = ?",
-                (task_id,)
-            ).fetchone()
+                if not task:
+                    return False, f"[ATI TASK] Task #{task_id} nicht gefunden"
 
-            if not task:
+                if task[1] == 'erledigt':
+                    return False, f"[ATI TASK] Task #{task_id} bereits erledigt"
+
+                conn.execute(
+                    "UPDATE ati_tasks SET status = 'erledigt', synced_at = ? WHERE id = ?",
+                    (datetime.now().isoformat(), task_id)
+                )
+                conn.commit()
+            finally:
                 conn.close()
-                return False, f"[ATI TASK] Task #{task_id} nicht gefunden"
 
-            if task[1] == 'erledigt':
-                conn.close()
-                return False, f"[ATI TASK] Task #{task_id} bereits erledigt"
-
-            # Task erledigen
-            conn.execute(
-                "UPDATE ati_tasks SET status = 'erledigt', synced_at = ? WHERE id = ?",
-                (datetime.now().isoformat(), task_id)
-            )
-            conn.commit()
-            conn.close()
-
-            # Automatische Rueckschreibung zu AUFGABEN.txt
             try:
                 from agents.ati.scanner.task_scanner import sync_db_to_aufgaben
                 sync_result = sync_db_to_aufgaben(self.db_path, task_ids=[task_id])
@@ -540,7 +539,6 @@ Hinweis: ATI-Tasks sind Software-Entwicklungs-Tasks,
                 else:
                     return True, f"[ATI TASK] Task #{task_id} erledigt: {task[0][:50]}"
             except Exception as sync_err:
-                # Sync-Fehler nicht kritisch - Task wurde in DB erledigt
                 return True, f"[ATI TASK] Task #{task_id} erledigt (Sync-Warnung: {sync_err}): {task[0][:50]}"
 
         except Exception as e:
@@ -559,38 +557,34 @@ Hinweis: ATI-Tasks sind Software-Entwicklungs-Tasks,
 
         try:
             conn = sqlite3.connect(self.db_path)
+            try:
+                task = conn.execute("SELECT depends_on FROM ati_tasks WHERE id = ?", (task_id,)).fetchone()
+                dep = conn.execute("SELECT id FROM ati_tasks WHERE id = ?", (dep_id,)).fetchone()
 
-            # Tasks existieren?
-            task = conn.execute("SELECT depends_on FROM ati_tasks WHERE id = ?", (task_id,)).fetchone()
-            dep = conn.execute("SELECT id FROM ati_tasks WHERE id = ?", (dep_id,)).fetchone()
+                if not task:
+                    return False, f"[ATI TASK] Task #{task_id} nicht gefunden"
+                if not dep:
+                    return False, f"[ATI TASK] Abhaengigkeit #{dep_id} nicht gefunden"
 
-            if not task:
+                existing = []
+                if task[0]:
+                    try:
+                        existing = json.loads(task[0])
+                    except (json.JSONDecodeError, ValueError, TypeError):
+                        pass
+
+                if dep_id in existing:
+                    return False, f"[ATI TASK] Abhaengigkeit bereits vorhanden"
+
+                existing.append(dep_id)
+
+                conn.execute(
+                    "UPDATE ati_tasks SET depends_on = ? WHERE id = ?",
+                    (json.dumps(existing, ensure_ascii=False), task_id)
+                )
+                conn.commit()
+            finally:
                 conn.close()
-                return False, f"[ATI TASK] Task #{task_id} nicht gefunden"
-            if not dep:
-                conn.close()
-                return False, f"[ATI TASK] Abhaengigkeit #{dep_id} nicht gefunden"
-
-            # Bestehende Abhaengigkeiten laden
-            existing = []
-            if task[0]:
-                try:
-                    existing = json.loads(task[0])
-                except:
-                    pass
-
-            if dep_id in existing:
-                conn.close()
-                return False, f"[ATI TASK] Abhaengigkeit bereits vorhanden"
-
-            existing.append(dep_id)
-
-            conn.execute(
-                "UPDATE ati_tasks SET depends_on = ? WHERE id = ?",
-                (json.dumps(existing, ensure_ascii=False), task_id)
-            )
-            conn.commit()
-            conn.close()
 
             return True, f"[ATI TASK] Task #{task_id} haengt jetzt von #{dep_id} ab"
 
@@ -601,44 +595,41 @@ Hinweis: ATI-Tasks sind Software-Entwicklungs-Tasks,
         """Zeigt blockierte Tasks (mit unerfuellten Abhaengigkeiten)"""
         try:
             conn = sqlite3.connect(self.db_path)
+            try:
+                tasks = conn.execute("""
+                    SELECT id, task_text, depends_on, tool_name
+                    FROM ati_tasks
+                    WHERE status = 'offen' AND depends_on IS NOT NULL AND depends_on != '[]'
+                """).fetchall()
 
-            # Tasks mit Abhaengigkeiten
-            tasks = conn.execute("""
-                SELECT id, task_text, depends_on, tool_name
-                FROM ati_tasks
-                WHERE status = 'offen' AND depends_on IS NOT NULL AND depends_on != '[]'
-            """).fetchall()
+                if not tasks:
+                    return True, "[ATI TASK] Keine blockierten Tasks"
 
-            if not tasks:
+                output = ["[ATI BLOCKED TASKS]", "-" * 60]
+                blocked_count = 0
+
+                for task_id, text, deps_json, tool in tasks:
+                    try:
+                        deps = json.loads(deps_json)
+                    except (json.JSONDecodeError, ValueError, TypeError):
+                        continue
+
+                    open_deps = []
+                    for dep_id in deps:
+                        dep_status = conn.execute(
+                            "SELECT status FROM ati_tasks WHERE id = ?",
+                            (dep_id,)
+                        ).fetchone()
+                        if dep_status and dep_status[0] != 'erledigt':
+                            open_deps.append(dep_id)
+
+                    if open_deps:
+                        blocked_count += 1
+                        short_text = text[:40] + "..." if len(text) > 40 else text
+                        output.append(f"\n#{task_id} [{tool}] {short_text}")
+                        output.append(f"  Wartet auf: {', '.join(f'#{d}' for d in open_deps)}")
+            finally:
                 conn.close()
-                return True, "[ATI TASK] Keine blockierten Tasks"
-
-            output = ["[ATI BLOCKED TASKS]", "-" * 60]
-            blocked_count = 0
-
-            for task_id, text, deps_json, tool in tasks:
-                try:
-                    deps = json.loads(deps_json)
-                except:
-                    continue
-
-                # Pruefen welche Abhaengigkeiten noch offen sind
-                open_deps = []
-                for dep_id in deps:
-                    dep_status = conn.execute(
-                        "SELECT status FROM ati_tasks WHERE id = ?",
-                        (dep_id,)
-                    ).fetchone()
-                    if dep_status and dep_status[0] != 'erledigt':
-                        open_deps.append(dep_id)
-
-                if open_deps:
-                    blocked_count += 1
-                    short_text = text[:40] + "..." if len(text) > 40 else text
-                    output.append(f"\n#{task_id} [{tool}] {short_text}")
-                    output.append(f"  Wartet auf: {', '.join(f'#{d}' for d in open_deps)}")
-
-            conn.close()
 
             output.append("-" * 60)
             output.append(f"Gesamt: {blocked_count} blockierte Tasks")
@@ -652,22 +643,20 @@ Hinweis: ATI-Tasks sind Software-Entwicklungs-Tasks,
         """Zeigt ATI-Tasks aus bach.db/ati_tasks"""
         try:
             conn = sqlite3.connect(self.db_path)
+            try:
+                total = conn.execute("SELECT COUNT(*) FROM ati_tasks").fetchone()[0]
+                offen = conn.execute("SELECT COUNT(*) FROM ati_tasks WHERE status = 'offen'").fetchone()[0]
+                erledigt = conn.execute("SELECT COUNT(*) FROM ati_tasks WHERE status = 'erledigt'").fetchone()[0]
 
-            # Statistik
-            total = conn.execute("SELECT COUNT(*) FROM ati_tasks").fetchone()[0]
-            offen = conn.execute("SELECT COUNT(*) FROM ati_tasks WHERE status = 'offen'").fetchone()[0]
-            erledigt = conn.execute("SELECT COUNT(*) FROM ati_tasks WHERE status = 'erledigt'").fetchone()[0]
-
-            # Top 15 offene Tasks nach Priorität
-            tasks = conn.execute("""
-                SELECT tool_name, task_text, aufwand, priority_score
-                FROM ati_tasks
-                WHERE status = 'offen'
-                ORDER BY priority_score DESC
-                LIMIT 15
-            """).fetchall()
-
-            conn.close()
+                tasks = conn.execute("""
+                    SELECT tool_name, task_text, aufwand, priority_score
+                    FROM ati_tasks
+                    WHERE status = 'offen'
+                    ORDER BY priority_score DESC
+                    LIMIT 15
+                """).fetchall()
+            finally:
+                conn.close()
 
             output = [
                 "[ATI TASKS]",
@@ -754,27 +743,24 @@ Verwendung:
         """Zeigt Status des letzten Scans"""
         try:
             conn = sqlite3.connect(self.db_path)
-            
-            # Letzter Scan
-            last_scan = conn.execute("""
-                SELECT started_at, finished_at, duration_seconds,
-                       tools_scanned, tasks_found, tasks_new, tasks_updated
-                FROM ati_scan_runs
-                ORDER BY id DESC LIMIT 1
-            """).fetchone()
+            try:
+                last_scan = conn.execute("""
+                    SELECT started_at, finished_at, duration_seconds,
+                           tools_scanned, tasks_found, tasks_new, tasks_updated
+                    FROM ati_scan_runs
+                    ORDER BY id DESC LIMIT 1
+                """).fetchone()
 
-            if not last_scan:
+                if not last_scan:
+                    return True, "[ATI SCAN] Noch kein Scan durchgefuehrt"
+
+                total_tasks = conn.execute("SELECT COUNT(*) FROM ati_tasks").fetchone()[0]
+                total_tools = conn.execute("SELECT COUNT(*) FROM ati_tool_registry").fetchone()[0]
+                open_tasks = conn.execute(
+                    "SELECT COUNT(*) FROM ati_tasks WHERE status IN ('offen', 'in_arbeit')"
+                ).fetchone()[0]
+            finally:
                 conn.close()
-                return True, "[ATI SCAN] Noch kein Scan durchgefuehrt"
-
-            # Statistik
-            total_tasks = conn.execute("SELECT COUNT(*) FROM ati_tasks").fetchone()[0]
-            total_tools = conn.execute("SELECT COUNT(*) FROM ati_tool_registry").fetchone()[0]
-            open_tasks = conn.execute(
-                "SELECT COUNT(*) FROM ati_tasks WHERE status IN ('offen', 'in_arbeit')"
-            ).fetchone()[0]
-            
-            conn.close()
             
             output = [
                 "[ATI SCAN STATUS]",
@@ -800,25 +786,25 @@ Verwendung:
         """Zeigt gescannte Tasks"""
         try:
             conn = sqlite3.connect(self.db_path)
-            
-            if tool_filter:
-                tasks = conn.execute("""
-                    SELECT tool_name, task_text, aufwand, status, priority_score
-                    FROM ati_tasks
-                    WHERE tool_name LIKE ? AND status IN ('offen', 'in_arbeit')
-                    ORDER BY priority_score DESC
-                    LIMIT 20
-                """, (f"%{tool_filter}%",)).fetchall()
-            else:
-                tasks = conn.execute("""
-                    SELECT tool_name, task_text, aufwand, status, priority_score
-                    FROM ati_tasks
-                    WHERE status IN ('offen', 'in_arbeit')
-                    ORDER BY priority_score DESC
-                    LIMIT 20
-                """).fetchall()
-            
-            conn.close()
+            try:
+                if tool_filter:
+                    tasks = conn.execute("""
+                        SELECT tool_name, task_text, aufwand, status, priority_score
+                        FROM ati_tasks
+                        WHERE tool_name LIKE ? AND status IN ('offen', 'in_arbeit')
+                        ORDER BY priority_score DESC
+                        LIMIT 20
+                    """, (f"%{tool_filter}%",)).fetchall()
+                else:
+                    tasks = conn.execute("""
+                        SELECT tool_name, task_text, aufwand, status, priority_score
+                        FROM ati_tasks
+                        WHERE status IN ('offen', 'in_arbeit')
+                        ORDER BY priority_score DESC
+                        LIMIT 20
+                    """).fetchall()
+            finally:
+                conn.close()
             
             if not tasks:
                 if tool_filter:
@@ -875,38 +861,36 @@ Verwendung:
         """Zeigt Pfad eines Tools aus ati_tool_registry."""
         try:
             conn = sqlite3.connect(self.db_path)
+            try:
+                if not args or args[0] == "--list":
+                    tools = conn.execute(
+                        "SELECT name, path FROM ati_tool_registry WHERE status = 'aktiv' ORDER BY name"
+                    ).fetchall()
 
-            if not args or args[0] == "--list":
-                tools = conn.execute(
-                    "SELECT name, path FROM ati_tool_registry WHERE status = 'aktiv' ORDER BY name"
-                ).fetchall()
+                    if not tools:
+                        return True, "[ATI PATH] Keine Tools registriert.\nTipp: 'bach ati scan' zum Scannen ausfuehren."
+
+                    output = ["[ATI TOOL PATHS]", "-" * 70]
+                    for name, path in tools:
+                        output.append(f"  {name:25} {path}")
+                    output.append("-" * 70)
+                    output.append(f"Gesamt: {len(tools)} Tools")
+                    return True, "\n".join(output)
+
+                tool_name = " ".join([a for a in args if not a.startswith("-")])
+
+                result = conn.execute(
+                    "SELECT name, path, status, task_count, last_scan FROM ati_tool_registry WHERE name LIKE ?",
+                    (f"%{tool_name}%",)
+                ).fetchone()
+            finally:
                 conn.close()
-
-                if not tools:
-                    return True, "[ATI PATH] Keine Tools registriert.\nTipp: 'bach ati scan' zum Scannen ausfuehren."
-
-                output = ["[ATI TOOL PATHS]", "-" * 70]
-                for name, path in tools:
-                    output.append(f"  {name:25} {path}")
-                output.append("-" * 70)
-                output.append(f"Gesamt: {len(tools)} Tools")
-                return True, "\n".join(output)
-
-            # Fuzzy-Suche nach Tool-Name (ohne Flags)
-            tool_name = " ".join([a for a in args if not a.startswith("-")])
-
-            result = conn.execute(
-                "SELECT name, path, status, task_count, last_scan FROM ati_tool_registry WHERE name LIKE ?",
-                (f"%{tool_name}%",)
-            ).fetchone()
-            conn.close()
 
             if result:
                 name, path, status, tasks, last_scan = result
                 if "--verbose" in args or "-v" in args:
                     scan_str = last_scan[:19] if last_scan else "nie"
                     return True, f"Tool: {name}\nPfad: {path}\nStatus: {status}\nTasks: {tasks}\nLetzter Scan: {scan_str}"
-                # Nur Pfad zurueckgeben (fuer Scripting)
                 return True, path
 
             return False, f"[ATI PATH] Tool nicht gefunden: {tool_name}\nTipp: 'bach ati path --list' zeigt alle Tools"
@@ -1094,7 +1078,7 @@ Das ZIP muss ein manifest.json mit type='bach-agent' enthalten.
         if self.config_path.exists():
             try:
                 return json.loads(self.config_path.read_text(encoding='utf-8'))
-            except:
+            except (json.JSONDecodeError, OSError, ValueError):
                 pass
         
         # Default-Config

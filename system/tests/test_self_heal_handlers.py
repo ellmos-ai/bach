@@ -3,6 +3,7 @@
 """Regression tests for small BACH self-heal handler fixes."""
 
 import json
+import importlib.util
 import sqlite3
 import subprocess
 import sys
@@ -329,6 +330,205 @@ def test_agent_list_json_is_machine_readable(tmp_path):
     assert payload["agents"][0]["available_actions"] == ["start"]
 
 
+def test_agent_start_json_dry_run_is_machine_readable(tmp_path):
+    from hub.agent_launcher import AgentLauncherHandler
+
+    base = _init_base(tmp_path)
+    agent_dir = base / "agents" / "demo"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
+
+    success, message = AgentLauncherHandler(base).handle(
+        "start",
+        ["demo", "--mode", "plan", "--model", "opus", "--json"],
+        dry_run=True,
+    )
+
+    assert success is True
+    payload = json.loads(message)
+    assert payload["action"] == "start"
+    assert payload["requested_name"] == "demo"
+    assert payload["resolved_name"] == "demo"
+    assert payload["ok"] is True
+    assert payload["agent"]["status"] == "planned"
+    assert payload["agent"]["mode"] == "plan"
+    assert payload["agent"]["model"] == "opus"
+    assert payload["agent"]["available_actions"] == ["start"]
+    assert payload["agent"]["dry_run"] is True
+
+
+def test_agent_start_json_success_payload(tmp_path, monkeypatch):
+    from hub.agent_launcher import AgentLauncherHandler
+
+    base = _init_base(tmp_path)
+    agent_dir = base / "agents" / "demo"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
+
+    class FakeProc:
+        pid = 4242
+
+    monkeypatch.setattr("hub.agent_launcher.sys.platform", "linux")
+    monkeypatch.setattr("hub.agent_launcher.subprocess.Popen", lambda *args, **kwargs: FakeProc())
+
+    success, message = AgentLauncherHandler(base).handle("start", ["demo", "--json"])
+
+    assert success is True
+    payload = json.loads(message)
+    assert payload["action"] == "start"
+    assert payload["ok"] is True
+    assert payload["agent"]["running"] is True
+    assert payload["agent"]["status"] == "running"
+    assert payload["agent"]["pid"] == 4242
+    assert payload["agent"]["available_actions"] == ["stop", "steer"]
+    assert (base / "data" / "agent_pids" / "demo.pid").exists()
+
+
+def test_agent_stop_json_success_payload(tmp_path, monkeypatch):
+    from hub.agent_launcher import AgentLauncherHandler
+
+    base = _init_base(tmp_path)
+    pid_dir = base / "data" / "agent_pids"
+    pid_dir.mkdir(parents=True)
+    pid_file = pid_dir / "demo.pid"
+    pid_file.write_text(
+        json.dumps(
+            {
+                "pid": 4242,
+                "name": "demo",
+                "display_name": "Demo",
+                "type": "boss",
+                "model": "sonnet",
+                "mode": "default",
+                "started": "2026-05-16T12:30:00",
+                "temp_dir": str(base / "data" / "temp" / "agent_demo"),
+                "window_title": "BACH: Demo",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    killed = {}
+
+    def fake_kill(pid, sig):
+        killed["pid"] = pid
+        killed["sig"] = sig
+
+    monkeypatch.setattr("hub.agent_launcher.sys.platform", "linux")
+    monkeypatch.setattr("hub.agent_launcher.os.kill", fake_kill)
+
+    success, message = AgentLauncherHandler(base).handle("stop", ["demo", "--json"])
+
+    assert success is True
+    payload = json.loads(message)
+    assert payload["action"] == "stop"
+    assert payload["requested_name"] == "demo"
+    assert payload["resolved_name"] == "demo"
+    assert payload["ok"] is True
+    assert payload["agent"]["status"] == "stopped"
+    assert payload["agent"]["pid"] == 4242
+    assert payload["agent"]["available_actions"] == ["start"]
+    assert killed["pid"] == 4242
+    assert not pid_file.exists()
+
+
+def test_agent_doctor_json_flags_missing_claude_cli(tmp_path, monkeypatch):
+    from hub.agent_launcher import AgentLauncherHandler
+
+    base = _init_base(tmp_path)
+    agent_dir = base / "agents" / "demo"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
+
+    monkeypatch.setattr("hub.agent_launcher.shutil.which", lambda _cmd: None)
+
+    success, message = AgentLauncherHandler(base).handle("doctor", ["demo", "--json"])
+
+    assert success is True
+    payload = json.loads(message)
+    checks = {check["name"]: check for check in payload["checks"]}
+
+    assert payload["requested_name"] == "demo"
+    assert payload["resolved_name"] == "demo"
+    assert payload["summary"]["overall_status"] == "error"
+    assert payload["summary"]["ready"] is False
+    assert payload["summary"]["can_start"] is False
+    assert checks["claude_cli"]["status"] == "error"
+    assert checks["agent_exists"]["status"] == "ok"
+    assert any("Claude Code CLI installieren" in step for step in payload["next_steps"])
+
+
+def test_agent_doctor_json_reports_ready_agent_and_start_steps(tmp_path, monkeypatch):
+    from hub.agent_launcher import AgentLauncherHandler
+
+    base = _init_base(tmp_path)
+    agent_dir = base / "agents" / "demo"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
+
+    class FakeCompletedProcess:
+        returncode = 0
+        stdout = "Claude Code 1.2.3\n"
+        stderr = ""
+
+    monkeypatch.setattr("hub.agent_launcher.shutil.which", lambda _cmd: "C:/Tools/claude.cmd")
+    monkeypatch.setattr("hub.agent_launcher.subprocess.run", lambda *args, **kwargs: FakeCompletedProcess())
+
+    success, message = AgentLauncherHandler(base).handle("doctor", ["demo", "--json"])
+
+    assert success is True
+    payload = json.loads(message)
+    checks = {check["name"]: check for check in payload["checks"]}
+
+    assert payload["summary"]["overall_status"] == "ok"
+    assert payload["summary"]["ready"] is True
+    assert payload["summary"]["can_start"] is True
+    assert checks["claude_cli"]["status"] == "ok"
+    assert checks["claude_cli"]["details"]["version"] == "Claude Code 1.2.3"
+    assert checks["skill_file"]["status"] == "ok"
+    assert any("bach agent start demo --dry-run" in step for step in payload["next_steps"])
+    assert any("bach agent start demo" in step for step in payload["next_steps"])
+
+
+def test_startup_resource_summary_uses_current_layout_and_db_counts(tmp_path):
+    from hub.startup import StartupHandler
+
+    base = _init_base(tmp_path)
+    (base / "skills" / "workflows").mkdir(parents=True)
+    (base / "skills" / "workflows" / "daily-check.md").write_text("# workflow\n", encoding="utf-8")
+    (base / "skills" / "workflows" / "weekly.txt").write_text("workflow\n", encoding="utf-8")
+    (base / "docs" / "help").mkdir(parents=True)
+    (base / "docs" / "help" / "agent.txt").write_text("help\n", encoding="utf-8")
+    (base / "docs" / "help" / "startup.txt").write_text("help\n", encoding="utf-8")
+
+    db_path = base / "data" / "bach.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE bach_agents (id INTEGER PRIMARY KEY, is_active INTEGER DEFAULT 1)")
+        conn.execute("CREATE TABLE bach_experts (id INTEGER PRIMARY KEY, is_active INTEGER DEFAULT 1)")
+        conn.execute("CREATE TABLE skills (id INTEGER PRIMARY KEY)")
+        conn.execute(
+            "CREATE TABLE tools (id INTEGER PRIMARY KEY, is_available INTEGER DEFAULT 1)"
+        )
+        conn.executemany("INSERT INTO bach_agents (is_active) VALUES (?)", [(1,), (1,)])
+        conn.executemany("INSERT INTO bach_experts (is_active) VALUES (?)", [(1,), (0,), (1,)])
+        conn.executemany("INSERT INTO skills DEFAULT VALUES", [(), (), (), ()])
+        conn.executemany(
+            "INSERT INTO tools (is_available) VALUES (?)",
+            [(1,), (0,), (1,)],
+        )
+
+    counts = StartupHandler(base)._count_startup_resources()
+
+    assert counts == {
+        "agents": 4,
+        "workflows": 2,
+        "skills": 4,
+        "tools": 2,
+        "help": 2,
+    }
+
+
 def test_path_handler_json_uses_runtime_base_path(tmp_path):
     from hub.path import PathHandler
 
@@ -568,6 +768,420 @@ def test_scheduler_status_json_includes_recent_runs(tmp_path):
     assert payload["recent_runs"][0]["result"] == "success"
 
 
+def test_scheduler_doctor_json_cleans_stale_pid_and_reports_db_counts(tmp_path):
+    from hub.scheduler import SchedulerHandler
+
+    base = _init_base(tmp_path)
+    gui_dir = base / "gui"
+    gui_dir.mkdir(parents=True)
+    (gui_dir / "daemon_service.py").write_text("# daemon\n", encoding="utf-8")
+
+    db_path = base / "data" / "bach.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE scheduler_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                job_type TEXT NOT NULL,
+                schedule TEXT,
+                command TEXT NOT NULL,
+                script_path TEXT,
+                arguments TEXT,
+                is_active INTEGER DEFAULT 0,
+                last_run TEXT,
+                next_run TEXT,
+                run_count INTEGER DEFAULT 0,
+                success_count INTEGER DEFAULT 0,
+                fail_count INTEGER DEFAULT 0,
+                last_result TEXT,
+                timeout_seconds INTEGER DEFAULT 300,
+                retry_on_fail INTEGER DEFAULT 0,
+                max_retries INTEGER DEFAULT 3
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE scheduler_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                started_at TEXT,
+                finished_at TEXT,
+                duration_seconds REAL,
+                result TEXT,
+                output TEXT,
+                error TEXT,
+                triggered_by TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO scheduler_jobs (id, name, description, job_type, schedule, command, is_active)
+            VALUES (1, ?, ?, ?, ?, ?, ?)
+            """,
+            ("scanner", "Scannt Aufgaben", "interval", "60m", "bach scan run", 1),
+        )
+
+    pid_file = base / "data" / "daemon.pid"
+    pid_file.write_text("43210", encoding="utf-8")
+
+    success, message = SchedulerHandler(base).handle("doctor", ["--json"])
+
+    assert success is True
+    payload = json.loads(message)
+    checks = {check["name"]: check for check in payload["checks"]}
+
+    assert payload["summary"]["overall_status"] == "warn"
+    assert payload["summary"]["ready"] is True
+    assert payload["summary"]["can_start"] is True
+    assert checks["runtime_state"]["status"] == "warn"
+    assert checks["runtime_state"]["details"]["previous_pid"] == 43210
+    assert checks["database"]["status"] == "ok"
+    assert checks["database"]["details"]["jobs_active"] == 1
+    assert not pid_file.exists()
+    assert any("bach scheduler start --bg" in step for step in payload["next_steps"])
+
+
+def test_scheduler_session_doctor_json_reports_ready_profiled_service(tmp_path):
+    from hub.scheduler import SchedulerHandler
+
+    base = _init_base(tmp_path)
+    session_dir = base / "hub" / "_services" / "daemon"
+    profiles_dir = session_dir / "profiles"
+    profiles_dir.mkdir(parents=True)
+    (session_dir / "session_daemon.py").write_text("# daemon\n", encoding="utf-8")
+    (session_dir / "auto_session.py").write_text("# trigger\n", encoding="utf-8")
+    (session_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "enabled": True,
+                "quiet_start": "22:00",
+                "quiet_end": "08:00",
+                "jobs": [{"profile": "ati", "interval_minutes": 30, "enabled": True}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (profiles_dir / "ati.json").write_text("{}", encoding="utf-8")
+
+    success, message = SchedulerHandler(base).handle("session", ["doctor", "--json"])
+
+    assert success is True
+    payload = json.loads(message)
+    checks = {check["name"]: check for check in payload["checks"]}
+
+    assert payload["summary"]["overall_status"] == "ok"
+    assert payload["summary"]["ready"] is True
+    assert payload["summary"]["can_start"] is True
+    assert checks["script"]["status"] == "ok"
+    assert checks["config"]["status"] == "ok"
+    assert checks["profiles"]["status"] == "ok"
+    assert any("bach scheduler session start --profile ati" in step for step in payload["next_steps"])
+
+
+def test_scheduler_session_pause_resume_and_steer_status_json(tmp_path):
+    from hub.scheduler import SchedulerHandler
+
+    base = _init_base(tmp_path)
+    session_dir = base / "hub" / "_services" / "daemon"
+    profiles_dir = session_dir / "profiles"
+    profiles_dir.mkdir(parents=True)
+    (session_dir / "session_daemon.py").write_text("# daemon\n", encoding="utf-8")
+    (session_dir / "auto_session.py").write_text("# trigger\n", encoding="utf-8")
+    (session_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "enabled": True,
+                "quiet_start": "22:00",
+                "quiet_end": "08:00",
+                "jobs": [{"profile": "ati", "interval_minutes": 30, "enabled": True}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (profiles_dir / "ati.json").write_text("{}", encoding="utf-8")
+
+    handler = SchedulerHandler(base)
+
+    success, message = handler.handle("session", ["pause", "--profile", "ati", "Maintenance window"])
+    assert success is True
+    assert "pausiert" in message
+
+    success, message = handler.handle("session", ["steer", "--profile", "ati", "Bitte zuerst Docs pruefen"])
+    assert success is True
+    assert "vorgemerkt" in message
+
+    success, message = handler.handle("session", ["status", "--json"])
+    assert success is True
+    payload = json.loads(message)
+    control = next(item for item in payload["operator_controls"] if item["profile"] == "ati")
+    assert control["pause_requested"] is True
+    assert control["pause_reason"] == "Maintenance window"
+    assert control["pending_steer_count"] == 1
+    assert "Docs pruefen" in control["latest_steer_message"]
+
+    success, message = handler.handle("session", ["resume", "--profile", "ati"])
+    assert success is True
+    assert "aufgehoben" in message
+
+    success, message = handler.handle("session", ["status", "--json"])
+    assert success is True
+    payload = json.loads(message)
+    control = next(item for item in payload["operator_controls"] if item["profile"] == "ati")
+    assert control["pause_requested"] is False
+    assert control["pending_steer_count"] == 1
+
+
+def test_auto_session_prompt_includes_operator_steer_section(monkeypatch):
+    module_path = SYSTEM_ROOT / "hub" / "_services" / "daemon" / "auto_session.py"
+    spec = importlib.util.spec_from_file_location("bach_auto_session_test", module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    monkeypatch.setenv(
+        "BACH_SESSION_OPERATOR_STEER",
+        json.dumps([{"message": "Priorisiere zuerst die Roadmap.", "requested_at": "2026-05-16T12:00:00"}]),
+    )
+    steer = module.load_operator_steer()
+    prompt = module.create_prompt({"name": "ati", "timeout_minutes": 15}, operator_steer=steer)
+
+    assert len(steer) == 1
+    assert "Operator-Hinweise fuer diese Session" in prompt
+    assert "Priorisiere zuerst die Roadmap." in prompt
+
+
+def test_scheduler_session_status_json_lists_control_actions(tmp_path):
+    from hub.scheduler import SchedulerHandler
+
+    base = _init_base(tmp_path)
+    session_dir = base / "hub" / "_services" / "daemon"
+    profiles_dir = session_dir / "profiles"
+    profiles_dir.mkdir(parents=True)
+    (session_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "enabled": True,
+                "jobs": [{"profile": "ati", "interval_minutes": 30, "enabled": True}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (profiles_dir / "ati.json").write_text("{}", encoding="utf-8")
+    control_dir = session_dir / "control"
+    control_dir.mkdir(parents=True)
+    (control_dir / "ati.steer.json").write_text(
+        json.dumps(
+            [
+                {
+                    "profile": "ati",
+                    "message": "Bitte nur Health-Checks anfassen.",
+                    "requested_at": "2026-05-16T12:40:00",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    success, message = SchedulerHandler(base).handle("session", ["status", "--json"])
+
+    assert success is True
+    payload = json.loads(message)
+    assert payload["service"]["control_actions"] == ["pause", "resume", "steer", "clear-steer"]
+    assert payload["operator_controls"][0]["profile"] == "ati"
+    assert payload["operator_controls"][0]["pending_steer_count"] == 1
+    assert payload["operator_controls"][0]["latest_steer_message"] == "Bitte nur Health-Checks anfassen."
+
+
+def test_scheduler_session_clear_steer_deletes_profile_queue(tmp_path):
+    from hub.scheduler import SchedulerHandler
+
+    base = _init_base(tmp_path)
+    session_dir = base / "hub" / "_services" / "daemon"
+    control_dir = session_dir / "control"
+    control_dir.mkdir(parents=True)
+    steer_file = control_dir / "ati.steer.json"
+    steer_file.write_text(
+        json.dumps(
+            [
+                {
+                    "profile": "ati",
+                    "message": "Doku zuerst pruefen.",
+                    "requested_at": "2026-05-16T12:41:00",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    success, message = SchedulerHandler(base).handle("session", ["clear-steer", "--profile", "ati"])
+
+    assert success is True
+    assert "1 Session-Steering-Hinweis(e)" in message
+    assert not steer_file.exists()
+
+
+def test_scheduler_session_trigger_keeps_steer_queue_on_failure(tmp_path, monkeypatch):
+    from hub.scheduler import SchedulerHandler
+
+    base = _init_base(tmp_path)
+    session_dir = base / "hub" / "_services" / "daemon"
+    control_dir = session_dir / "control"
+    control_dir.mkdir(parents=True)
+    (session_dir / "auto_session.py").write_text("# auto session\n", encoding="utf-8")
+    steer_file = control_dir / "ati.steer.json"
+    steer_file.write_text(
+        json.dumps(
+            [
+                {
+                    "profile": "ati",
+                    "message": "Bitte Logs zuerst lesen.",
+                    "requested_at": "2026-05-16T12:42:00",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class _Result:
+        returncode = 1
+        stdout = ""
+        stderr = "kaputt"
+
+    def fake_run(*args, **kwargs):
+        return _Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    success, message = SchedulerHandler(base).handle("session", ["trigger", "--profile", "ati"])
+
+    assert success is False
+    assert steer_file.exists()
+    payload = json.loads(steer_file.read_text(encoding="utf-8"))
+    assert payload[0]["message"] == "Bitte Logs zuerst lesen."
+    assert "Session-Trigger fehlgeschlagen" in message
+
+
+def test_upgrade_handler_routes_extended_categories(tmp_path, monkeypatch):
+    from hub.upgrade import UpgradeHandler
+
+    base = _init_base(tmp_path)
+    db_path = base / "data" / "bach.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE dist_file_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_path TEXT,
+                version TEXT,
+                file_hash TEXT,
+                dist_type INTEGER,
+                created_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE distribution_releases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                version TEXT,
+                release_date TEXT,
+                status TEXT,
+                is_stable INTEGER DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE distribution_manifest (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                path TEXT,
+                dist_type INTEGER
+            )
+            """
+        )
+
+    calls = []
+
+    def fake_restore_by_category(self, category, dry_run=False):
+        calls.append((category, dry_run))
+        return True, f"restored:{category}:{dry_run}"
+
+    monkeypatch.setattr("hub.restore.RestoreHandler.restore_by_category", fake_restore_by_category)
+
+    success, message = UpgradeHandler(base).handle("agents", ["--dry-run"])
+    assert success is True
+    assert message == "restored:agents:True"
+
+    success, message = UpgradeHandler(base).handle("docs", [])
+    assert success is True
+    assert message == "restored:docs:False"
+
+    success, message = UpgradeHandler(base).handle("connectors", ["--dry-run"])
+    assert success is True
+    assert message == "restored:connectors:True"
+
+    success, message = UpgradeHandler(base).handle("partners", [])
+    assert success is True
+    assert message == "restored:partners:False"
+
+    success, message = UpgradeHandler(base).handle("gui", ["--dry-run"])
+    assert success is True
+    assert message == "restored:gui:True"
+
+    assert calls == [
+        ("agents", True),
+        ("docs", False),
+        ("connectors", True),
+        ("partners", False),
+        ("gui", True),
+    ]
+
+
+def test_restore_by_category_returns_info_when_manifest_is_empty(tmp_path):
+    from hub.restore import RestoreHandler
+
+    bach_root = tmp_path / "bach"
+    system_root = bach_root / "system"
+    data_dir = system_root / "data"
+    data_dir.mkdir(parents=True)
+
+    db_path = data_dir / "bach.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE distribution_manifest (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                path TEXT,
+                dist_type INTEGER
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE dist_file_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_path TEXT,
+                version TEXT,
+                file_hash TEXT,
+                dist_type INTEGER,
+                created_at TEXT
+            )
+            """
+        )
+
+    success, message = RestoreHandler(bach_root).restore_by_category("docs", dry_run=True)
+
+    assert success is True
+    assert "Keine Dateien gefunden" in message
+
+
 def test_wiki_provenance_shows_article_metadata(tmp_path):
     from hub.wiki import WikiHandler
 
@@ -642,6 +1256,69 @@ def test_usecase_run_works_without_linked_workflow_file(tmp_path):
     assert success is True
     assert "FormBuilder Formulare erstellen" in message
     assert "Keine verknuepfte Workflow-Datei gefunden" in message
+
+    with sqlite3.connect(db_path) as conn:
+        last_tested = conn.execute(
+            "SELECT last_tested FROM usecases WHERE id = 1"
+        ).fetchone()[0]
+
+    assert last_tested is not None
+
+
+def test_usecase_run_accepts_legacy_plain_text_payloads(tmp_path):
+    from hub.tuev import UsecaseHandler
+
+    base = _init_base(tmp_path)
+    db_path = base / "data" / "bach.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE usecases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT,
+                description TEXT,
+                workflow_name TEXT,
+                workflow_path TEXT,
+                test_input TEXT,
+                expected_output TEXT,
+                last_tested TEXT,
+                test_result TEXT,
+                test_score INTEGER,
+                created_by TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE workflow_tuev (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workflow_name TEXT,
+                workflow_path TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO usecases (
+                title, workflow_name, test_input, expected_output, created_by
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                "Irregulaere Kosten Vorschau",
+                "system-synopse",
+                "Benutzer fragt nach kommenden Kosten",
+                "Liste erwarteter Zahlungen mit Datum und Betrag",
+                "user",
+            ),
+        )
+
+    success, message = UsecaseHandler(base).handle("run", ["1"])
+
+    assert success is True
+    assert "Benutzer fragt nach kommenden Kosten" in message
+    assert "Liste erwarteter Zahlungen mit Datum und Betrag" in message
 
     with sqlite3.connect(db_path) as conn:
         last_tested = conn.execute(
@@ -762,3 +1439,141 @@ def test_agent_runtime_invalidates_cached_module_after_code_change(tmp_path):
     assert second is not None
     assert second is not first
     assert second.execute("status", [])[1] == "version-2-reloaded"
+
+
+def test_financial_mail_paths_follow_hub_services_layout():
+    import gui.server as gui_server
+
+    profile_path = SYSTEM_ROOT / "hub" / "_services" / "daemon" / "profiles" / "financial_mail.json"
+    chain_path = SYSTEM_ROOT / "tools" / "llmauto" / "chains" / "session_financial_mail.json"
+    skill_path = SYSTEM_ROOT / "hub" / "_services" / "financial" / "SKILL.md"
+
+    profile_payload = json.loads(profile_path.read_text(encoding="utf-8"))
+    chain_payload = json.loads(chain_path.read_text(encoding="utf-8"))
+    skill_text = skill_path.read_text(encoding="utf-8")
+
+    assert profile_payload["script_path"] == "hub/_services/mail/mail_service.py"
+    assert "python hub/_services/mail/mail_service.py sync" in chain_payload["prompts"]["financial_mail_worker"]
+    assert "hub/_services/mail/schema_financial.sql" in skill_text
+    assert str(gui_server.FINANCIAL_SCHEMA_FILE).endswith("hub\\_services\\mail\\schema_financial.sql")
+
+
+def test_doc_update_checker_scans_help_and_current_layout_paths(tmp_path):
+    from tools.doc_update_checker import DocUpdateChecker
+
+    base = _init_base(tmp_path)
+    help_dir = base / "docs" / "help"
+    help_dir.mkdir(parents=True, exist_ok=True)
+    (base / "hub").mkdir(parents=True, exist_ok=True)
+    (base / "hub" / "startup.py").write_text("def handle():\n    return True\n", encoding="utf-8")
+    (base / "hub" / "_services" / "mail").mkdir(parents=True, exist_ok=True)
+
+    help_doc = help_dir / "maintenance.txt"
+    help_doc.write_text(
+        (
+            "Altpfad Service: skills/_services/mail/mail_service.py\n"
+            "Altpfad Handler: hub/handlers/startup.py\n"
+        ),
+        encoding="utf-8",
+    )
+
+    checker = DocUpdateChecker(base_path=base)
+    docs = checker._get_all_docs()
+
+    scanned = next(item for item in docs if item["path"] == "docs/help/maintenance.txt")
+    assert scanned["doc_type"] == "help"
+
+    results = checker.check_all()
+    assert any(
+        issue["invalid_path"] == "skills/_services/mail/" and issue["correct_path"] == "hub/_services/mail/"
+        for issue in results["invalid_paths"]
+    )
+    assert any(
+        issue["invalid_path"] == "hub/handlers/startup.py" and issue["correct_path"] == "hub/startup.py"
+        for issue in results["invalid_paths"]
+    )
+
+
+def test_doc_update_checker_auto_fix_preserves_correct_hub_service_paths(tmp_path):
+    from tools.doc_update_checker import DocUpdateChecker
+
+    base = _init_base(tmp_path)
+    docs_dir = base / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    (base / "hub").mkdir(parents=True, exist_ok=True)
+    (base / "hub" / "startup.py").write_text("def handle():\n    return True\n", encoding="utf-8")
+    (base / "hub" / "_services" / "mail").mkdir(parents=True, exist_ok=True)
+
+    doc_file = docs_dir / "paths.md"
+    doc_file.write_text(
+        (
+            "Alt: skills/_services/mail/mail_service.py\n"
+            "Schon korrekt: hub/_services/mail/mail_service.py\n"
+            "Alt-Handler: handlers/startup.py\n"
+        ),
+        encoding="utf-8",
+    )
+
+    checker = DocUpdateChecker(base_path=base)
+    fixed = checker.auto_fix_paths(dry_run=False)
+    updated = doc_file.read_text(encoding="utf-8")
+
+    assert any(item["path"] == "docs/paths.md" for item in fixed)
+    assert "skills/_services/mail/" not in updated
+    assert "hub/_services/mail/mail_service.py" in updated
+    assert "hub/startup.py" in updated
+    assert "hub/hub/_services" not in updated
+
+
+def test_agent_steer_creates_operator_note_and_status_json_reports_queue(tmp_path, monkeypatch):
+    from hub.agent_launcher import AgentLauncherHandler
+
+    base = _init_base(tmp_path)
+    agent_dir = base / "agents" / "demo"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
+
+    temp_dir = base / "data" / "temp" / "agent_demo"
+    temp_dir.mkdir(parents=True)
+    pid_dir = base / "data" / "agent_pids"
+    pid_dir.mkdir(parents=True)
+    pid_file = pid_dir / "demo.pid"
+    pid_file.write_text(
+        json.dumps(
+            {
+                "pid": 4242,
+                "name": "demo",
+                "display_name": "Demo",
+                "type": "boss",
+                "model": "sonnet",
+                "mode": "default",
+                "started": "2026-05-16T12:00:00",
+                "temp_dir": str(temp_dir),
+                "window_title": "BACH: Demo",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("hub.agent_launcher.AgentLauncherHandler._is_agent_running", lambda self, _name: 4242)
+
+    handler = AgentLauncherHandler(base)
+    success, message = handler.handle("steer", ["demo", "Bitte", "zuerst", "Logs", "pruefen"])
+
+    assert success is True
+    assert "vorgemerkt" in message
+
+    notes_json = temp_dir / "operator_notes.json"
+    notes_md = temp_dir / "OPERATOR_NOTES.md"
+    notes = json.loads(notes_json.read_text(encoding="utf-8"))
+    assert len(notes) == 1
+    assert "Logs pruefen" in notes[0]["message"]
+    assert "Logs pruefen" in notes_md.read_text(encoding="utf-8")
+
+    success, message = handler.handle("status", ["--json"])
+    assert success is True
+    payload = json.loads(message)
+    assert payload["active_count"] == 1
+    agent = payload["agents"][0]
+    assert agent["pending_operator_notes"] == 1
+    assert "steer" in agent["available_actions"]

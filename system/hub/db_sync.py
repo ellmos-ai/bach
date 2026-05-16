@@ -244,25 +244,27 @@ class DBSyncManager:
         filename = f"bach_{self.hostname}_{timestamp}.bachdb"
         backup_path = self.backup_dir / filename
 
-        # SQLite BACKUP (crash-safe, konsistent)
         src = sqlite3.connect(str(self.db_path))
         dst = sqlite3.connect(str(backup_path))
-
-        with dst:
-            src.backup(dst)
-
-        dst.close()
-        src.close()
+        try:
+            with dst:
+                src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
 
         # Secrets aus Backup entfernen (ENT-44: dist_type=0, nie im Backup)
         # Die Tabelle bleibt als Schema erhalten, nur die Zeilen werden geleert.
+        bkp = None
         try:
             bkp = sqlite3.connect(str(backup_path))
             bkp.execute("DELETE FROM secrets")
             bkp.commit()
-            bkp.close()
         except Exception:
-            pass  # Tabelle evtl. nicht vorhanden (aeltere DB-Versionen)
+            pass
+        finally:
+            if bkp:
+                bkp.close()
 
         # Heartbeat aktualisieren
         self._update_heartbeat()
@@ -328,52 +330,54 @@ class DBSyncManager:
         remote = sqlite3.connect(str(backup_path))
         remote.row_factory = sqlite3.Row
 
-        timestamped_tables = self._discover_timestamped_tables(local)
-        print(f"[DB SYNC] {len(timestamped_tables)} Tabellen mit Timestamp-Spalten gefunden")
+        try:
+            timestamped_tables = self._discover_timestamped_tables(local)
+            print(f"[DB SYNC] {len(timestamped_tables)} Tabellen mit Timestamp-Spalten gefunden")
 
-        stats = {}
+            stats = {}
 
-        for table, ts_col in timestamped_tables.items():
-            try:
-                remote_exists = remote.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                    (table,)
-                ).fetchone()
-                if not remote_exists:
-                    continue
+            for table, ts_col in timestamped_tables.items():
+                try:
+                    remote_exists = remote.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                        (table,)
+                    ).fetchone()
+                    if not remote_exists:
+                        continue
 
-                local_cols = [r[1] for r in local.execute(f"PRAGMA table_info([{table}])").fetchall()]
-                remote_cols = [r[1] for r in remote.execute(f"PRAGMA table_info([{table}])").fetchall()]
-                shared = [c for c in local_cols if c in remote_cols]
+                    local_cols = [r[1] for r in local.execute(f"PRAGMA table_info([{table}])").fetchall()]
+                    remote_cols = [r[1] for r in remote.execute(f"PRAGMA table_info([{table}])").fetchall()]
+                    shared = [c for c in local_cols if c in remote_cols]
 
-                if ts_col not in shared:
-                    continue
+                    if ts_col not in shared:
+                        continue
 
-                max_local_ts = local.execute(
-                    f"SELECT COALESCE(MAX([{ts_col}]), '1970-01-01') FROM [{table}]"
-                ).fetchone()[0]
+                    max_local_ts = local.execute(
+                        f"SELECT COALESCE(MAX([{ts_col}]), '1970-01-01') FROM [{table}]"
+                    ).fetchone()[0]
 
-                col_list = ', '.join(f'[{c}]' for c in shared)
-                newer_rows = remote.execute(
-                    f"SELECT {col_list} FROM [{table}] WHERE [{ts_col}] > ?",
-                    (max_local_ts,)
-                ).fetchall()
+                    col_list = ', '.join(f'[{c}]' for c in shared)
+                    newer_rows = remote.execute(
+                        f"SELECT {col_list} FROM [{table}] WHERE [{ts_col}] > ?",
+                        (max_local_ts,)
+                    ).fetchall()
 
-                if newer_rows:
-                    placeholders = ', '.join(['?'] * len(shared))
-                    insert_q = f"INSERT OR REPLACE INTO [{table}] ({col_list}) VALUES ({placeholders})"
-                    for row in newer_rows:
-                        local.execute(insert_q, tuple(row))
-                    stats[table] = len(newer_rows)
-                    print(f"  {table}: {len(newer_rows)} Zeilen")
+                    if newer_rows:
+                        placeholders = ', '.join(['?'] * len(shared))
+                        insert_q = f"INSERT OR REPLACE INTO [{table}] ({col_list}) VALUES ({placeholders})"
+                        for row in newer_rows:
+                            local.execute(insert_q, tuple(row))
+                        stats[table] = len(newer_rows)
+                        print(f"  {table}: {len(newer_rows)} Zeilen")
 
-            except sqlite3.Error as e:
-                print(f"  FEHLER {table}: {e}")
-                stats[f"{table}_error"] = str(e)
+                except sqlite3.Error as e:
+                    print(f"  FEHLER {table}: {e}")
+                    stats[f"{table}_error"] = str(e)
 
-        local.commit()
-        local.close()
-        remote.close()
+            local.commit()
+        finally:
+            local.close()
+            remote.close()
 
         return stats
 

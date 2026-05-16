@@ -298,8 +298,6 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
             # Woerterbuch
             dict_count = conn.execute("SELECT COUNT(*) FROM languages_dictionary").fetchone()[0]
 
-            conn.close()
-
             output = [
                 "=== SPRACH-SYSTEM STATUS ===",
                 "",
@@ -442,7 +440,7 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
         strings = set()
         try:
             content = file_path.read_text(encoding='utf-8')
-        except:
+        except (OSError, UnicodeDecodeError):
             return strings
 
         for pattern in self.STRING_PATTERNS:
@@ -460,7 +458,7 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
         strings = set()
         try:
             content = file_path.read_text(encoding='utf-8')
-        except:
+        except (OSError, UnicodeDecodeError):
             return strings
 
         # Titel (erste Zeile)
@@ -1135,8 +1133,11 @@ def _get_t_db_path() -> Path:
     """Ermittelt DB-Pfad (cached)."""
     global _t_db_path
     if _t_db_path is None:
-        # Pfad relativ zu diesem Modul: hub/lang.py -> system/data/bach.db
-        _t_db_path = Path(__file__).parent.parent / "data" / "bach.db"
+        try:
+            from hub.bach_paths import BACH_DB
+            _t_db_path = BACH_DB
+        except ImportError:
+            _t_db_path = Path(__file__).parent.parent / "data" / "bach.db"
     return _t_db_path
 
 
@@ -1150,14 +1151,17 @@ def get_lang() -> str:
     if not db_path.exists():
         return "de"
 
+    conn = None
     try:
         conn = sqlite3.connect(str(db_path))
         row = conn.execute("SELECT default_language FROM languages_config LIMIT 1").fetchone()
-        conn.close()
         _t_lang_cache = row[0] if row else "de"
         return _t_lang_cache
     except Exception:
         return "de"
+    finally:
+        if conn:
+            conn.close()
 
 
 def set_lang(lang: str) -> None:
@@ -1185,17 +1189,20 @@ def _get_lang_config() -> Dict[str, str]:
     if not db_path.exists():
         return {'default': 'de', 'fallback': 'en'}
 
+    conn = None
     try:
         conn = sqlite3.connect(str(db_path))
         row = conn.execute(
             "SELECT default_language, fallback_language FROM languages_config LIMIT 1"
         ).fetchone()
-        conn.close()
 
         if row:
             return {'default': row[0] or 'de', 'fallback': row[1] or 'en'}
     except Exception:
         pass
+    finally:
+        if conn:
+            conn.close()
 
     return {'default': 'de', 'fallback': 'en'}
 
@@ -1230,10 +1237,10 @@ def t(key: str, lang: Optional[str] = None, default: Optional[str] = None) -> st
     # 1. Versuche exakten Match in languages_translations
     db_path = _get_t_db_path()
     if db_path.exists():
+        conn = None
         try:
             conn = sqlite3.connect(str(db_path))
 
-            # Exakte Suche nach Key + Sprache
             row = conn.execute("""
                 SELECT value FROM languages_translations
                 WHERE key = ? AND language = ? AND value != ''
@@ -1242,11 +1249,9 @@ def t(key: str, lang: Optional[str] = None, default: Optional[str] = None) -> st
 
             if row and row[0]:
                 _t_cache[cache_key] = row[0]
-                conn.close()
                 return row[0]
 
             # 2. Fallback: Woerterbuch (fuer einzelne Woerter)
-            # Wenn Zielsprache nicht Default: Default->Target Lookup
             lang_config = _get_lang_config()
             default_lang = lang_config['default']
 
@@ -1260,7 +1265,6 @@ def t(key: str, lang: Optional[str] = None, default: Optional[str] = None) -> st
 
                 if dict_row and dict_row[0]:
                     _t_cache[cache_key] = dict_row[0]
-                    conn.close()
                     return dict_row[0]
 
             # 3. Fallback: Fallback-Sprache aus Config pruefen
@@ -1271,15 +1275,15 @@ def t(key: str, lang: Optional[str] = None, default: Optional[str] = None) -> st
                 LIMIT 1
             """, (key, fallback_lang)).fetchone()
 
-            conn.close()
-
             if fallback_row and fallback_row[0]:
-                # Fallback-Wert cachen
                 _t_cache[cache_key] = fallback_row[0]
                 return fallback_row[0]
 
         except Exception:
             pass
+        finally:
+            if conn:
+                conn.close()
 
     # Nicht gefunden: default oder Key zurueckgeben
     result = default if default is not None else key
@@ -1295,6 +1299,7 @@ def t_exists(key: str, lang: Optional[str] = None) -> bool:
 
     target_lang = lang or get_lang()
 
+    conn = None
     try:
         conn = sqlite3.connect(str(db_path))
         row = conn.execute("""
@@ -1302,7 +1307,9 @@ def t_exists(key: str, lang: Optional[str] = None) -> bool:
             WHERE key = ? AND language = ? AND value != ''
             LIMIT 1
         """, (key, target_lang)).fetchone()
-        conn.close()
         return row is not None
     except Exception:
         return False
+    finally:
+        if conn:
+            conn.close()

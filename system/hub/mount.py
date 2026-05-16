@@ -73,26 +73,47 @@ class MountHandler(BaseHandler):
         except Exception as e:
             return False, f"Fehler beim Lesen der DB: {e}"
 
+    def _create_link(self, source: Path, target: Path):
+        if os.name == "nt":
+            subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(target), str(source)],
+                check=True, capture_output=True,
+            )
+        else:
+            os.symlink(source, target)
+
+    def _remove_link(self, target: Path) -> bool:
+        if os.name == "nt":
+            if target.exists():
+                os.rmdir(target)
+                return True
+        else:
+            if target.is_symlink() or target.exists():
+                os.unlink(target)
+                return True
+        if hasattr(target, "is_junction") and target.is_junction():
+            os.rmdir(target)
+            return True
+        return False
+
     def _add_mount(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
         if len(args) < 2:
             return False, "Verwendung: bach mount add <pfad> <alias>"
-        
+
         source = Path(args[0]).resolve()
         alias = args[1]
         target = self.base_path / "user" / alias
-        
+
         if not source.exists():
             return False, f"Quellpfad existiert nicht: {source}"
-        
+
         if dry_run:
             return True, f"[DRY-RUN] Wuerde Junction erstellen: {target} -> {source} und in DB speichern."
-        
+
         try:
-            # 1. Junction erstellen
             if not target.exists():
-                subprocess.run(["cmd", "/c", "mklink", "/J", str(target), str(source)], check=True, capture_output=True)
-            
-            # 2. In DB speichern
+                self._create_link(source, target)
+
             conn = self._get_db_conn()
             conn.execute("""
                 INSERT INTO connections (name, type, category, endpoint, is_active, help_text)
@@ -101,7 +122,7 @@ class MountHandler(BaseHandler):
             """, (alias, str(source)))
             conn.commit()
             conn.close()
-            
+
             return True, f"[OK] Ordner angebunden und gespeichert: {alias} -> {source}"
         except Exception as e:
             return False, f"Fehler: {e}"
@@ -117,11 +138,8 @@ class MountHandler(BaseHandler):
             return True, f"[DRY-RUN] Wuerde Junction entfernen und aus DB loeschen: {alias}"
         
         try:
-            # 1. Junction entfernen (falls existiert)
-            if target.exists():
-                os.rmdir(target)
-            
-            # 2. Aus DB entfernen (oder inaktiv setzen?) -> Wir loeschen fuer Clean state
+            self._remove_link(target)
+
             conn = self._get_db_conn()
             conn.execute("DELETE FROM connections WHERE type='mount' AND name=?", (alias,))
             conn.commit()
@@ -159,7 +177,7 @@ class MountHandler(BaseHandler):
                     continue
                     
                 try:
-                    subprocess.run(["cmd", "/c", "mklink", "/J", str(target), str(source)], check=True, capture_output=True)
+                    self._create_link(source, target)
                     restored.append(alias)
                 except Exception as ex:
                     errors.append(f"{alias}: {ex}")

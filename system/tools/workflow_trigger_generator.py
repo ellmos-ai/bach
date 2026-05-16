@@ -50,9 +50,9 @@ def extract_metadata(file_path):
                 
                 if title and description:
                     break
-    except:
+    except (OSError, ValueError, IndexError):
         pass
-        
+
     return title, description
 
 def get_keywords(filename, title):

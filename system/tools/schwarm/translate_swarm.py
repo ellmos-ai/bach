@@ -102,7 +102,13 @@ def get_api_key():
 
 
 def get_db_path():
-    """Ermittelt bach.db Pfad relativ zum Script."""
+    """Ermittelt bach.db Pfad."""
+    try:
+        from hub.bach_paths import BACH_DB
+        if BACH_DB.exists():
+            return BACH_DB
+    except ImportError:
+        pass
     db_path = Path(__file__).parent.parent.parent / "data" / "bach.db"
     if not db_path.exists():
         print(f"[FEHLER] bach.db nicht gefunden: {db_path}")

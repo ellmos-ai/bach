@@ -15,6 +15,7 @@ Befehle:
   --sources problems            Fehler-Log pruefen
 """
 import json
+import sqlite3
 from pathlib import Path
 from typing import Tuple, List, Dict, Any
 from .base import BaseHandler
@@ -367,9 +368,9 @@ class SourcesHandler(BaseHandler):
                             "count": len(error_lines),
                             "last": error_lines[-1][:80]
                         })
-                except:
+                except (OSError, UnicodeDecodeError):
                     pass
-        
+
         # 2. Blockierte Tasks
         try:
             from ..handlers.base import BaseHandler
@@ -388,7 +389,7 @@ class SourcesHandler(BaseHandler):
                         "count": blocked,
                         "last": f"{blocked} blockierte Tasks"
                     })
-        except:
+        except (sqlite3.Error, ImportError, OSError):
             pass
         
         if not problems:

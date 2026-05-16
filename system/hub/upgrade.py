@@ -75,9 +75,14 @@ class UpgradeHandler(BaseHandler):
             "check": "Nach Updates pruefen",
             "core": "CORE-Komponenten upgraden",
             "templates": "TEMPLATE-Dateien upgraden",
+            "agents": "Agenten-Dateien upgraden",
             "skills": "Skills upgraden",
             "hub": "Hub-Handler upgraden",
             "tools": "Tools upgraden",
+            "connectors": "Connector-Dateien upgraden",
+            "partners": "Partner-Dateien upgraden",
+            "docs": "Dokumentation upgraden",
+            "gui": "GUI-Dateien upgraden",
             "file": "Einzeldatei upgraden",
             "downgrade": "Datei downgraden",
             "help": "Hilfe anzeigen",
@@ -102,12 +107,22 @@ class UpgradeHandler(BaseHandler):
             return self._upgrade_category("core", args, dry_run)
         elif operation == "templates":
             return self._upgrade_category("templates", args, dry_run)
+        elif operation == "agents":
+            return self._upgrade_category("agents", args, dry_run)
         elif operation == "skills":
             return self._upgrade_category("skills", args, dry_run)
         elif operation == "hub":
             return self._upgrade_category("hub", args, dry_run)
         elif operation == "tools":
             return self._upgrade_category("tools", args, dry_run)
+        elif operation == "connectors":
+            return self._upgrade_category("connectors", args, dry_run)
+        elif operation == "partners":
+            return self._upgrade_category("partners", args, dry_run)
+        elif operation == "docs":
+            return self._upgrade_category("docs", args, dry_run)
+        elif operation == "gui":
+            return self._upgrade_category("gui", args, dry_run)
         elif operation == "file":
             return self._upgrade_file(args, dry_run)
         elif operation == "downgrade":
@@ -131,9 +146,14 @@ BEFEHLE:
 KATEGORIE-UPGRADES:
   bach upgrade core                    CORE-Komponenten upgraden (dist_type=2)
   bach upgrade templates               TEMPLATE-Dateien upgraden (dist_type=1)
+  bach upgrade agents                  Agenten-Dateien upgraden
   bach upgrade skills                  Skills upgraden
   bach upgrade hub                     Hub-Handler upgraden
   bach upgrade tools                   Tools upgraden
+  bach upgrade connectors              Connector-Dateien upgraden
+  bach upgrade partners                Partner-Dateien upgraden
+  bach upgrade docs                    Dokumentation upgraden
+  bach upgrade gui                     GUI-Dateien upgraden
 
 EINZELDATEI-UPGRADES:
   bach upgrade <file>                  Einzeldatei auf neueste Version upgraden
@@ -281,7 +301,18 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
         dry_run_flag = "--dry-run" in args or dry_run
 
         # Kategorien validieren
-        valid_categories = ["core", "templates", "skills", "hub", "tools", "agents"]
+        valid_categories = [
+            "core",
+            "templates",
+            "agents",
+            "skills",
+            "hub",
+            "tools",
+            "connectors",
+            "partners",
+            "docs",
+            "gui",
+        ]
         if category not in valid_categories:
             return (False, f"[ERROR] Unbekannte Kategorie: {category}\n\nVerfügbar: {', '.join(valid_categories)}")
 

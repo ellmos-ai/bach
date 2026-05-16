@@ -75,9 +75,7 @@ REM Start-BAT fuer neues Fenster
     echo echo Modell: %AGENT_MODEL%
     echo echo.
     echo claude --model %AGENT_MODEL% %PERMS%
-    echo echo.
-    echo echo Session beendet. Druecke eine Taste...
-    echo pause
+    echo if not defined BACH_AUTO pause
 ) > "%PROJECT_DIR%\start.bat"
 
 REM In neuem Fenster starten

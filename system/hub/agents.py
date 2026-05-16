@@ -66,6 +66,7 @@ def resolve_agent_name(db_path, query: str) -> dict:
             prev_row = curr_row
         return prev_row[-1]
 
+    conn = None
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
@@ -97,7 +98,6 @@ def resolve_agent_name(db_path, query: str) -> dict:
                       f'%{query_lower}%', f'%{query_lower}%'))
                 row = cursor.fetchone()
                 if row:
-                    conn.close()
                     return {
                         'name': row['name'],
                         'display_name': row['display_name'] or row['name'],
@@ -133,10 +133,12 @@ def resolve_agent_name(db_path, query: str) -> dict:
             except sqlite3.OperationalError:
                 continue
 
-        conn.close()
         return best_match
     except Exception:
         pass
+    finally:
+        if conn:
+            conn.close()
     return None
 
 

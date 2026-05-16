@@ -66,9 +66,18 @@ WORKSPACE = BASE / "workspace"
 MESSAGEBOX_INBOX = BASE / "user" / "MessageBox" / "inbox"
 STORAGE_REPORTS = BASE / "system" / "storage" / "reports"
 
-EDGE_PATHS = [
+EDGE_PATHS_WIN = [
     Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
     Path(r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"),
+]
+
+EDGE_PATHS_MAC = [
+    Path("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"),
+]
+
+EDGE_PATHS_LINUX = [
+    Path("/usr/bin/microsoft-edge"),
+    Path("/usr/bin/microsoft-edge-stable"),
 ]
 
 
@@ -78,10 +87,18 @@ EDGE_PATHS = [
 
 def find_edge() -> str:
     """Findet Edge-Binary. Gibt Pfad oder None zurueck."""
-    for p in EDGE_PATHS:
+    if sys.platform == "win32":
+        candidates = EDGE_PATHS_WIN
+    elif sys.platform == "darwin":
+        candidates = EDGE_PATHS_MAC
+    else:
+        candidates = EDGE_PATHS_LINUX
+    for p in candidates:
         if p.exists():
             return str(p)
-    return None
+    import shutil
+    found = shutil.which("msedge") or shutil.which("microsoft-edge")
+    return found
 
 
 # ============================================================

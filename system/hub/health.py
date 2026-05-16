@@ -58,7 +58,7 @@ class HealthCheckHandler(BaseHandler):
 
     def __init__(self, base_path_or_app):
         super().__init__(base_path_or_app)
-        self.db_path = self._canonical_db
+        self.db_path = Path(self._canonical_db) if self._canonical_db else None
 
     @property
     def profile_name(self) -> str:
@@ -80,6 +80,9 @@ class HealthCheckHandler(BaseHandler):
         }
 
     def handle(self, operation: str, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
+        if dry_run:
+            return True, f"[DRY-RUN] health {operation} {' '.join(args)}"
+
         ops = {
             "status": self._status,
             "disk": self._disk,
@@ -95,16 +98,16 @@ class HealthCheckHandler(BaseHandler):
             avail = ", ".join(ops.keys())
             return False, f"Unbekannte Operation: {operation}\nVerfuegbar: {avail}"
 
-        return fn(args, dry_run)
+        return fn(args)
 
     # ------------------------------------------------------------------
     # Checks
     # ------------------------------------------------------------------
 
-    def _status(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
-        return self._all(args, dry_run)
+    def _status(self, args: List[str]) -> Tuple[bool, str]:
+        return self._all(args)
 
-    def _all(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
+    def _all(self, args: List[str]) -> Tuple[bool, str]:
         lines = ["System Health Check", "=" * 50, ""]
         all_ok = True
 
@@ -144,35 +147,40 @@ class HealthCheckHandler(BaseHandler):
         self._log_check(all_ok)
         return all_ok, "\n".join(lines)
 
-    def _disk(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
+    def _disk(self, args: List[str]) -> Tuple[bool, str]:
         ok, msg = self._check_disk()
         drives = self._check_all_drives()
         lines = [f"Disk Check: {msg}", ""] + drives
         return ok, "\n".join(lines)
 
-    def _ping(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
+    def _ping(self, args: List[str]) -> Tuple[bool, str]:
         host = args[0] if args else "fritz.box"
         ok, msg = self._check_ping(host)
         return ok, f"Ping {host}: {msg}"
 
-    def _dns(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
+    def _dns(self, args: List[str]) -> Tuple[bool, str]:
         ok, msg = self._check_dns()
         return ok, f"DNS Check: {msg}"
 
-    def _network(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
+    def _network(self, args: List[str]) -> Tuple[bool, str]:
         lines = ["Netzwerk-Checks", "=" * 40]
+        all_ok = True
 
         for host, label in [("fritz.box", "FritzBox"), ("8.8.8.8", "Google DNS"),
                             ("1.1.1.1", "Cloudflare")]:
             ok, msg = self._check_ping(host)
             lines.append(f"  {'[OK]' if ok else '[FAIL]'} {label} ({host}): {msg}")
+            if not ok:
+                all_ok = False
 
         ok, msg = self._check_dns()
         lines.append(f"  {'[OK]' if ok else '[FAIL]'} DNS: {msg}")
+        if not ok:
+            all_ok = False
 
-        return True, "\n".join(lines)
+        return all_ok, "\n".join(lines)
 
-    def _nas(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
+    def _nas(self, args: List[str]) -> Tuple[bool, str]:
         # Versuche typische NAS-Pfade
         nas_paths = [r"\\fritz.nas", r"\\FRITZ.NAS", r"\\NAS", "/mnt/nas"]
         for p in nas_paths:
@@ -269,22 +277,39 @@ class HealthCheckHandler(BaseHandler):
             return False, "DNS-Aufloesung fehlgeschlagen"
 
     def _check_db(self) -> Tuple[bool, str]:
+        if not self.db_path:
+            return False, "bach.db Pfad nicht konfiguriert"
         if self.db_path.exists():
             size_mb = self.db_path.stat().st_size / (1024 * 1024)
-            ok = size_mb < 500  # Warnung ueber 500MB
+            ok = size_mb < 500
             return ok, f"bach.db: {size_mb:.1f} MB"
         return False, "bach.db nicht gefunden"
 
     def _log_check(self, all_ok: bool):
-        """Ergebnis in DB loggen."""
+        """Ergebnis in DB loggen (max 1 Eintrag pro Tag)."""
+        conn = None
         try:
+            if not self.db_path or not self.db_path.exists():
+                return
             conn = sqlite3.connect(str(self.db_path))
+            today = datetime.now().strftime("%Y-%m-%d")
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            conn.execute("""
-                INSERT INTO memory_working (type, content, created_at, is_active)
-                VALUES ('note', ?, ?, 1)
-            """, (f"Health-Check: {'OK' if all_ok else 'WARNUNGEN'}", now))
+            content = f"Health-Check: {'OK' if all_ok else 'WARNUNGEN'}"
+            existing = conn.execute(
+                "SELECT id FROM memory_working WHERE content LIKE 'Health-Check:%' "
+                "AND created_at LIKE ? AND is_active = 1", (f"{today}%",)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE memory_working SET content = ?, created_at = ? WHERE id = ?",
+                    (content, now, existing[0]))
+            else:
+                conn.execute(
+                    "INSERT INTO memory_working (type, content, created_at, is_active) "
+                    "VALUES ('note', ?, ?, 1)", (content, now))
             conn.commit()
-            conn.close()
         except Exception:
             pass
+        finally:
+            if conn:
+                conn.close()

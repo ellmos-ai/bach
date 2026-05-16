@@ -32,7 +32,7 @@ if sys.platform == 'win32':
     try:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-    except:
+    except (AttributeError, OSError):
         pass
 
 # ============================================================================
@@ -61,7 +61,7 @@ class PolicyManager:
             try:
                 with open(POLICY_SETS_FILE, 'r', encoding='utf-8') as f:
                     return json.load(f)
-            except:
+            except (json.JSONDecodeError, OSError):
                 pass
         return {"policies": {}, "sets": {}}
     
@@ -93,14 +93,14 @@ class PolicyManager:
                     return content[start_idx:end_idx + len(marker_end)]
             
             return None
-        except:
+        except OSError:
             return None
-    
+
     def _is_policy_present(self, filepath: Path, policy_name: str) -> Tuple[bool, Optional[str]]:
         """Prueft ob Policy bereits vorhanden ist. Returns (present, version)"""
         try:
             content = filepath.read_text(encoding='utf-8')
-        except:
+        except OSError:
             return False, None
         
         policy = self.policies.get(policy_name, {})

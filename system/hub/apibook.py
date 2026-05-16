@@ -75,26 +75,28 @@ class ApiBookHandler(BaseHandler):
         """Stellt sicher dass die api_book Tabelle existiert."""
         try:
             conn = sqlite3.connect(str(self.db_path))
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS api_book (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT UNIQUE NOT NULL,
-                    provider TEXT,
-                    base_url TEXT NOT NULL,
-                    auth_type TEXT DEFAULT 'none',
-                    description TEXT,
-                    endpoints_json TEXT DEFAULT '[]',
-                    examples_json TEXT DEFAULT '[]',
-                    tags TEXT,
-                    last_verified TEXT,
-                    is_active INTEGER DEFAULT 1,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    dist_type INTEGER DEFAULT 0
-                )
-            """)
-            conn.commit()
-            conn.close()
+            try:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS api_book (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT UNIQUE NOT NULL,
+                        provider TEXT,
+                        base_url TEXT NOT NULL,
+                        auth_type TEXT DEFAULT 'none',
+                        description TEXT,
+                        endpoints_json TEXT DEFAULT '[]',
+                        examples_json TEXT DEFAULT '[]',
+                        tags TEXT,
+                        last_verified TEXT,
+                        is_active INTEGER DEFAULT 1,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        dist_type INTEGER DEFAULT 0
+                    )
+                """)
+                conn.commit()
+            finally:
+                conn.close()
         except Exception:
             pass
 

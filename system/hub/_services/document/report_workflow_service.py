@@ -1140,7 +1140,7 @@ JSON:
                         content = f.read_text(encoding="utf-8")[:1000]
                         results.append(f"[{topic}/{f.name}]\n{content}")
                         total_chars += len(content)
-                    except:
+                    except (OSError, UnicodeDecodeError):
                         pass
 
             # Suche in allen .md Dateien
@@ -1153,7 +1153,7 @@ JSON:
                         excerpt = content[:500]
                         results.append(f"[{f.relative_to(WISSENSDATENBANK)}]\n{excerpt}")
                         total_chars += len(excerpt)
-                except:
+                except (OSError, UnicodeDecodeError):
                     pass
 
         return "\n\n".join(results[:10])  # Max 10 Eintraege

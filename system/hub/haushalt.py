@@ -353,9 +353,9 @@ class HaushaltHandler(BaseHandler):
                 cal_events = []
                 try:
                     cal_events = conn.execute("""
-                        SELECT title, event_time FROM assistant_calendar
-                        WHERE date(event_date) = ? AND status != 'erledigt'
-                        ORDER BY event_time ASC
+                        SELECT title, TIME(start_datetime) as event_time FROM assistant_calendar
+                        WHERE DATE(start_datetime) = ? AND status != 'erledigt'
+                        ORDER BY start_datetime ASC
                     """, (day_str,)).fetchall()
                 except Exception:
                     pass
@@ -393,6 +393,7 @@ class HaushaltHandler(BaseHandler):
             lines = ["=== MONATLICHE FIXKOSTEN ===\n"]
 
             # Vertraege
+            total_contracts = 0
             try:
                 contracts = conn.execute("""
                     SELECT name, kategorie, betrag, intervall
@@ -403,7 +404,6 @@ class HaushaltHandler(BaseHandler):
 
                 if contracts:
                     lines.append("  VERTRAEGE / ABOS:")
-                    total_contracts = 0
                     current_cat = None
                     for c in contracts:
                         cat = c["kategorie"] or "Sonstige"
@@ -430,6 +430,7 @@ class HaushaltHandler(BaseHandler):
                 total_contracts = 0
 
             # Versicherungen
+            total_insurance = 0
             try:
                 insurances = conn.execute("""
                     SELECT anbieter, sparte, beitrag, zahlweise
@@ -440,7 +441,6 @@ class HaushaltHandler(BaseHandler):
 
                 if insurances:
                     lines.append("  VERSICHERUNGEN:")
-                    total_insurance = 0
                     for ins in insurances:
                         zahlweise = ins["zahlweise"] or "jaehrlich"
                         beitrag = ins["beitrag"] or 0
@@ -615,14 +615,6 @@ class HaushaltHandler(BaseHandler):
             return True, "\n".join(lines)
         finally:
             conn.close()
-
-    def _get_arg(self, args: List[str], flag: str) -> Optional[str]:
-        for i, a in enumerate(args):
-            if a == flag and i + 1 < len(args):
-                return args[i + 1]
-            if a.startswith(flag + "="):
-                return a[len(flag) + 1:]
-        return None
 
     # ------------------------------------------------------------------
     # INSURANCE-CHECK - Versicherungs-Portfolio Analyse
@@ -927,7 +919,10 @@ EXPORT:
         i = 0
         while i < len(args):
             if args[i] == "--days" and i + 1 < len(args):
-                days_ahead = int(args[i + 1])
+                try:
+                    days_ahead = int(args[i + 1])
+                except ValueError:
+                    return False, f"Ungueltiger Wert fuer --days: {args[i + 1]}"
                 i += 2
             elif args[i] == "--out" and i + 1 < len(args):
                 out_file = args[i + 1]
@@ -987,9 +982,9 @@ EXPORT:
                 # Termine
                 try:
                     appointments = conn.execute("""
-                        SELECT title, event_time, event_type FROM assistant_calendar
-                        WHERE date(event_date) = ? AND status != 'erledigt'
-                        ORDER BY event_time ASC
+                        SELECT title, TIME(start_datetime) as event_time, event_type FROM assistant_calendar
+                        WHERE DATE(start_datetime) = ? AND status != 'erledigt'
+                        ORDER BY start_datetime ASC
                     """, (day_str,)).fetchall()
 
                     if appointments:

@@ -39,22 +39,37 @@ SKILL_FILE = BACH_DIR / "SKILL.md"
 
 
 def copy_to_clipboard(text):
-    """Kopiert Text in die Zwischenablage (Windows)."""
-    if sys.platform == "win32":
-        try:
-            import subprocess
-            process = subprocess.Popen(['clip'], stdin=subprocess.PIPE)
-            process.communicate(text.encode('utf-16-le'))
-            return True
-        except Exception:
-            pass
-    # Fallback: pyperclip wenn installiert
+    """Kopiert Text in die Zwischenablage (cross-platform)."""
     try:
         import pyperclip
         pyperclip.copy(text)
         return True
     except ImportError:
-        return False
+        pass
+
+    import subprocess
+    import shutil
+    data = text.encode("utf-8")
+    try:
+        if sys.platform == "win32":
+            process = subprocess.Popen(["clip"], stdin=subprocess.PIPE)
+            process.communicate(text.encode("utf-16-le"))
+            return True
+        elif sys.platform == "darwin":
+            subprocess.run(["pbcopy"], input=data, capture_output=True)
+            return True
+        elif shutil.which("wl-copy"):
+            subprocess.run(["wl-copy"], input=data, capture_output=True)
+            return True
+        elif shutil.which("xsel"):
+            subprocess.run(["xsel", "-b", "-i"], input=data, capture_output=True)
+            return True
+        elif shutil.which("xclip"):
+            subprocess.run(["xclip", "-selection", "clipboard"], input=data, capture_output=True)
+            return True
+    except (OSError, FileNotFoundError):
+        pass
+    return False
 
 
 def list_prompt_files():
@@ -260,18 +275,7 @@ def start_gui(prompt, mode_display, dry_run=False):
 
     try:
         # Antigravity starten
-        if sys.platform == "win32" and '&' in str(BACH_DIR):
-            quoted_parts = []
-            for arg in cmd:
-                if ' ' in arg or '&' in arg or '"' in arg:
-                    escaped = arg.replace('"', '\\"')
-                    quoted_parts.append(f'"{escaped}"')
-                else:
-                    quoted_parts.append(arg)
-            cmd_str = ' '.join(quoted_parts)
-            process = subprocess.Popen(cmd_str, cwd=str(BACH_DIR), shell=True)
-        else:
-            process = subprocess.Popen(cmd, cwd=str(BACH_DIR), shell=False)
+        process = subprocess.Popen(cmd, cwd=str(BACH_DIR))
 
         print(f"[OK] Antigravity gestartet (PID: {process.pid})")
         print()

@@ -176,7 +176,7 @@ class ResearchAgent(BaseAnalyzer):
             elif num >= 1e9: return f"{num/1e9:.2f}B"
             elif num >= 1e6: return f"{num/1e6:.2f}M"
             return f"{num:.2f}"
-        except:
+        except (ValueError, TypeError):
             return str(num)
 
     def _build_result(self, symbol: str, research_data: Dict, sections: List) -> AnalysisResult:

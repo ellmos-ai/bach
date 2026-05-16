@@ -62,7 +62,7 @@ class InjectorConfig:
                 with open(self.config_file, "r", encoding="utf-8") as f:
                     loaded = json.load(f)
                     default.update(loaded.get("injectors", {}))
-            except:
+            except (json.JSONDecodeError, OSError):
                 pass
         
         return default
@@ -79,7 +79,7 @@ class InjectorConfig:
             
             with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump(full_config, f, ensure_ascii=False, indent=2)
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
     
     def toggle(self, injector: str) -> bool:
@@ -460,9 +460,9 @@ class ContextInjector:
                 # Wenn DB Daten hat, nutzen wir diese
                 cls._cache = {r['trigger_phrase']: {'id': r['id'], 'hint': r['hint_text'], 'source': r['source']} for r in rows}
             conn.close()
-        except:
+        except Exception:
             pass
-        
+
         # v1.1.82: Session-Usage laden
         cls._load_session_usage()
 
@@ -482,7 +482,7 @@ class ContextInjector:
             """, (trigger_id,))
             conn.commit()
             conn.close()
-        except:
+        except Exception:
             pass
 
     @classmethod
@@ -501,7 +501,7 @@ class ContextInjector:
                     return
                 
                 cls._session_triggered = set(json.loads(session_file.read_text()))
-            except:
+            except (OSError, ValueError, json.JSONDecodeError):
                 cls._session_triggered = set()
 
     @classmethod
@@ -513,7 +513,7 @@ class ContextInjector:
         session_file = cls.base_path / "data" / ".session_themes"
         try:
             session_file.write_text(json.dumps(list(cls._session_triggered), ensure_ascii=False))
-        except:
+        except OSError:
             pass
 
         
@@ -666,7 +666,7 @@ class TimeInjector:
                 self.manager = TimeManager(base_path)
                 # Sync Interval aus InjectorConfig
                 self.manager.set_interval(interval)
-            except:
+            except (ImportError, AttributeError):
                 pass
 
     def check(self) -> Optional[str]:
@@ -760,7 +760,7 @@ class TimeInjector:
             lines.append("  --> bach msg ping --from " + partner)
             
             return "\n".join(lines)
-        except:
+        except Exception:
             return None
 
 
@@ -814,8 +814,8 @@ class TaskAssigner:
             # Fallback: Erste Aufgabe
             sorted_tasks[0]["estimated_minutes"] = max_minutes
             return sorted_tasks[0]
-            
-        except:
+
+        except (json.JSONDecodeError, OSError):
             return None
     
     def decompose(self, task: dict) -> List[dict]:
@@ -878,7 +878,7 @@ class CooldownManager:
         if self._state_file.exists():
             try:
                 return json.loads(self._state_file.read_text(encoding="utf-8"))
-            except:
+            except (json.JSONDecodeError, OSError):
                 pass
         return {}
 
@@ -890,7 +890,7 @@ class CooldownManager:
                 json.dumps(self._cooldowns, indent=2, ensure_ascii=False),
                 encoding="utf-8"
             )
-        except:
+        except OSError:
             pass
 
     def is_on_cooldown(self, injector_name: str) -> bool:
@@ -911,7 +911,7 @@ class CooldownManager:
             last_dt = datetime.fromisoformat(last_shown)
             cooldown_sec = self.DEFAULT_COOLDOWNS.get(injector_name, 120)
             return datetime.now() < last_dt + timedelta(seconds=cooldown_sec)
-        except:
+        except (ValueError, TypeError):
             return False
 
     def mark_shown(self, injector_name: str) -> None:
@@ -940,7 +940,7 @@ class CooldownManager:
             cooldown_sec = self.DEFAULT_COOLDOWNS.get(injector_name, 120)
             remaining = (last_dt + timedelta(seconds=cooldown_sec) - datetime.now()).total_seconds()
             return max(0, int(remaining))
-        except:
+        except (ValueError, TypeError):
             return 0
 
 

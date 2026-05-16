@@ -21,7 +21,10 @@ class BackupHandler(BaseHandler):
     def __init__(self, base_path: Path):
         super().__init__(base_path)
         # Backups LOKAL speichern — NICHT in OneDrive (OneDrive IST das Backup)
-        self.backups_dir = Path(r"C:\_Local_DEV\BACKUPS\BACH\userdata")
+        if sys.platform == "win32":
+            self.backups_dir = Path(r"C:\_Local_DEV\BACKUPS\BACH\userdata")
+        else:
+            self.backups_dir = Path.home() / ".bach" / "backups" / "userdata"
         self.tools_dir = base_path / "tools"
     
     @property

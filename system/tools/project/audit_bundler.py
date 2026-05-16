@@ -51,13 +51,15 @@ __author__ = "BACH Team"
 
 import os
 import sys
-import io
 import sqlite3
 from pathlib import Path
 from datetime import datetime
 
 # Fix Windows Console Encoding
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except (AttributeError, OSError):
+    pass
 
 # ============ KONFIGURATION ============
 
@@ -163,7 +165,7 @@ def get_db_schema(db_path: Path) -> str:
             try:
                 count = cursor.execute(f"SELECT COUNT(*) FROM [{table_name}]").fetchone()[0]
                 lines.append(f"*{count} Eintraege*")
-            except:
+            except Exception:
                 pass
             
             lines.append("")

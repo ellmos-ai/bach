@@ -40,7 +40,7 @@ Usage:
   python session_daemon.py --status           # Zeigt Status
 
 Prompt-Profile:
-  Profile werden in skills/_services/daemon/profiles/ definiert.
+  Profile werden in hub/_services/daemon/profiles/ definiert.
   Jedes Profil hat eigene Tasks, Prompts und Konfiguration.
 """
 
@@ -64,6 +64,7 @@ BACH_DIR = SKILLS_DIR.parent
 # Konfiguration
 CONFIG_FILE = DAEMON_DIR / "config.json"
 PROFILES_DIR = DAEMON_DIR / "profiles"
+CONTROL_DIR = DAEMON_DIR / "control"
 PID_FILE = DAEMON_DIR / "daemon.pid"
 LOG_FILE = BACH_DIR / "data" / "logs" / "session_daemon.log"
 
@@ -92,7 +93,7 @@ def log(msg: str, level: str = "INFO"):
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(line + "\n")
-    except:
+    except OSError:
         pass
 
 # ============ CONFIG ============
@@ -102,7 +103,7 @@ def load_config() -> dict:
     if CONFIG_FILE.exists():
         try:
             return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
 
     return {
@@ -131,7 +132,7 @@ def load_profile(name: str) -> dict:
     if profile_file.exists():
         try:
             return json.loads(profile_file.read_text(encoding="utf-8"))
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
 
     # Fallback: ATI-Profil
@@ -145,6 +146,106 @@ def load_profile(name: str) -> dict:
         "prompt_template": "default"
     }
 
+
+def _profile_slug(name: str) -> str:
+    """Normalisiert Profilnamen fuer Control-Dateien."""
+    cleaned = []
+    for char in (name or DEFAULT_PROFILE):
+        if char.isalnum() or char in {"-", "_"}:
+            cleaned.append(char)
+        else:
+            cleaned.append("_")
+    return "".join(cleaned) or DEFAULT_PROFILE
+
+
+def _pause_file(profile_name: str) -> Path:
+    return CONTROL_DIR / f"{_profile_slug(profile_name)}.pause.json"
+
+
+def _steer_file(profile_name: str) -> Path:
+    return CONTROL_DIR / f"{_profile_slug(profile_name)}.steer.json"
+
+
+def _read_json(path: Path, default):
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+def request_pause(profile_name: str, reason: str = "Manuell pausiert") -> dict:
+    """Merkt eine Pause fuer ein Profil vor."""
+    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "profile": profile_name,
+        "reason": reason,
+        "requested_at": datetime.now().isoformat(),
+    }
+    _pause_file(profile_name).write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return payload
+
+
+def clear_pause(profile_name: str):
+    """Hebt eine vorgemerkte Pause fuer ein Profil auf."""
+    _pause_file(profile_name).unlink(missing_ok=True)
+
+
+def get_pause_request(profile_name: str) -> dict | None:
+    """Liest eine vorgemerkte Pause fuer ein Profil."""
+    payload = _read_json(_pause_file(profile_name), None)
+    if isinstance(payload, dict) and payload.get("reason"):
+        return payload
+    return None
+
+
+def peek_steer_requests(profile_name: str) -> list[dict]:
+    """Zeigt vorgemerkte Operator-Hinweise, ohne sie zu verbrauchen."""
+    payload = _read_json(_steer_file(profile_name), [])
+    if isinstance(payload, list):
+        normalized = []
+        for item in payload:
+            if isinstance(item, dict) and item.get("message"):
+                normalized.append(item)
+        return normalized
+    return []
+
+
+def request_steer(profile_name: str, message: str) -> list[dict]:
+    """Haengt einen Operator-Hinweis an die Steuer-Queue eines Profils."""
+    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    requests = peek_steer_requests(profile_name)
+    requests.append(
+        {
+            "profile": profile_name,
+            "message": message,
+            "requested_at": datetime.now().isoformat(),
+        }
+    )
+    _steer_file(profile_name).write_text(
+        json.dumps(requests, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return requests
+
+
+def consume_steer_requests(profile_name: str) -> list[dict]:
+    """Liest und leert Operator-Hinweise fuer ein Profil."""
+    requests = peek_steer_requests(profile_name)
+    _steer_file(profile_name).unlink(missing_ok=True)
+    return requests
+
+
+def clear_steer_requests(profile_name: str) -> int:
+    """Loescht vorgemerkte Operator-Hinweise fuer ein Profil."""
+    requests = peek_steer_requests(profile_name)
+    _steer_file(profile_name).unlink(missing_ok=True)
+    return len(requests)
+
 # ============ DAEMON CONTROL ============
 
 def get_running_pid() -> int:
@@ -152,13 +253,13 @@ def get_running_pid() -> int:
     if not PID_FILE.exists():
         return 0
     try:
-        pid = int(PID_FILE.read_text().strip())
+        pid = int(PID_FILE.read_text(encoding="utf-8").strip())
         os.kill(pid, 0)
         return pid
     except (ProcessLookupError, ValueError, PermissionError):
         try:
             PID_FILE.unlink()
-        except:
+        except OSError:
             pass
         return 0
 
@@ -218,8 +319,20 @@ def show_status():
             try:
                 dt = datetime.fromisoformat(last)
                 last = dt.strftime("%d.%m. %H:%M")
-            except: pass
-        print(f"  {status} {job.get('profile', '?'):12} - Alle {job.get('interval_minutes', '?'):3} Min (Zuletzt: {last})")
+            except (ValueError, TypeError): pass
+        profile_name = job.get("profile", "?")
+        controls = []
+        pause_request = get_pause_request(profile_name)
+        steer_requests = peek_steer_requests(profile_name)
+        if pause_request:
+            controls.append(f"PAUSE: {pause_request.get('reason', 'Manuell pausiert')}")
+        if steer_requests:
+            controls.append(f"STEER: {len(steer_requests)}")
+        suffix = f" | {'; '.join(controls)}" if controls else ""
+        print(
+            f"  {status} {profile_name:12} - Alle {job.get('interval_minutes', '?'):3} Min "
+            f"(Zuletzt: {last}){suffix}"
+        )
 
     # Profile auflisten
     print(f"\nVerfuegbare Profile Dateien:")
@@ -252,7 +365,7 @@ def is_quiet_time(quiet_start: str, quiet_end: str) -> bool:
         if start > end:
             return now >= start or now < end
         return start <= now < end
-    except:
+    except (ValueError, TypeError):
         return False
 
 # ============ TASK COUNTING ============
@@ -277,12 +390,12 @@ def count_tasks(profile: dict) -> int:
 
         conn.close()
         return count
-    except:
+    except Exception:
         return 0
 
 # ============ SESSION TRIGGER ============
 
-def trigger_session(profile_name: str) -> bool:
+def trigger_session(profile_name: str, operator_steer: list[dict] | None = None) -> bool:
     """Triggert Claude-Session mit Profil."""
     auto_session = DAEMON_DIR / "auto_session.py"
 
@@ -293,6 +406,12 @@ def trigger_session(profile_name: str) -> bool:
     log(f"Starte Session mit Profil '{profile_name}'...")
     try:
         creation_flags = 0x08000000 if sys.platform == "win32" else 0
+        env = dict(os.environ)
+        if operator_steer:
+            env["BACH_SESSION_OPERATOR_STEER"] = json.dumps(
+                operator_steer,
+                ensure_ascii=False,
+            )
 
         result = subprocess.run(
             [sys.executable, str(auto_session), "--profile", profile_name],
@@ -300,7 +419,8 @@ def trigger_session(profile_name: str) -> bool:
             capture_output=True,
             text=True,
             timeout=60,
-            creationflags=creation_flags
+            creationflags=creation_flags,
+            env=env,
         )
 
         if result.returncode == 0:
@@ -451,7 +571,7 @@ def daemon_loop(stop_event: Event):
                         last_run = datetime.fromisoformat(last_run_str)
                         if now >= last_run + timedelta(minutes=interval):
                             should_run = True
-                    except:
+                    except (ValueError, TypeError):
                         should_run = True
 
                 if should_run:
@@ -460,11 +580,25 @@ def daemon_loop(stop_event: Event):
 
                     log(f"Pruefe Job [{profile_name}] - Offene Tasks: {tasks}")
 
+                    pause_request = get_pause_request(profile_name)
+                    if pause_request:
+                        reason = pause_request.get("reason", "Manuell pausiert")
+                        log(f"Job [{profile_name}] pausiert - ueberspringe Trigger ({reason})")
+                        continue
+
                     if tasks > 0:
-                        success = trigger_session(profile_name)
+                        operator_steer = peek_steer_requests(profile_name)
+                        if operator_steer:
+                            log(
+                                f"Operator-Steering fuer [{profile_name}] erkannt "
+                                f"({len(operator_steer)} Hinweis(e))"
+                            )
+                        success = trigger_session(profile_name, operator_steer=operator_steer)
                         if success:
+                            if operator_steer:
+                                consume_steer_requests(profile_name)
                             sessions_generated += 1
-                            log(f"Session für [{profile_name}] gestartet.")
+                            log(f"Session fuer [{profile_name}] gestartet.")
 
                     # Last Run immer aktualisieren wenn fällig
                     job["last_run"] = now.isoformat()
@@ -544,7 +678,7 @@ def main():
     if PID_FILE.exists():
         try:
             PID_FILE.unlink()
-        except:
+        except OSError:
             pass
 
     log("Daemon beendet")

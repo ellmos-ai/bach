@@ -10,7 +10,7 @@ Usage:
     
 Beispiele:
     python test_runner.py                           # BACH selbst testen
-    python test_runner.py "C:\...\anderes_system" # Anderes System testen
+    python test_runner.py "C:\\...\\anderes_system" # Anderes System testen
     python test_runner.py --profile QUICK           # Nur Schnelltest
 """
 

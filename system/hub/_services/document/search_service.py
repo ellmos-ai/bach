@@ -34,7 +34,11 @@ def _get_indexer():
     if str(_TOOLS_DIR) not in sys.path:
         sys.path.insert(0, str(_TOOLS_DIR))
     from document_indexer import DocumentIndexer
-    db_path = Path(__file__).parent.parent.parent.parent / "data" / "bach.db"
+    try:
+        from hub.bach_paths import BACH_DB
+        db_path = BACH_DB
+    except ImportError:
+        db_path = Path(__file__).parent.parent.parent.parent / "data" / "bach.db"
     return DocumentIndexer(db_path)
 
 

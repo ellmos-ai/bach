@@ -289,33 +289,35 @@ class DailyAgentHandler(BaseHandler):
     def _briefing(self, args: List[str]) -> Tuple[bool, str]:
         """Generiert ein modulares Morgen-Briefing."""
         conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+        try:
+            conn.row_factory = sqlite3.Row
 
-        lines = [f"MORGEN-BRIEFING ({date.today().strftime('%d.%m.%Y')})", "=" * 45]
+            lines = [f"MORGEN-BRIEFING ({date.today().strftime('%d.%m.%Y')})", "=" * 45]
 
-        active_modules = self._get_active_modules(conn)
+            active_modules = self._get_active_modules(conn)
 
-        module_methods = {
-            "task_briefing": self._mod_task_briefing,
-            "message_briefing": self._mod_message_briefing,
-            "news_briefing": self._mod_news_briefing,
-            "session_briefing": self._mod_session_briefing,
-            "weather_briefing": self._mod_weather_briefing,
-            "calendar_briefing": self._mod_calendar_briefing,
-        }
+            module_methods = {
+                "task_briefing": self._mod_task_briefing,
+                "message_briefing": self._mod_message_briefing,
+                "news_briefing": self._mod_news_briefing,
+                "session_briefing": self._mod_session_briefing,
+                "weather_briefing": self._mod_weather_briefing,
+                "calendar_briefing": self._mod_calendar_briefing,
+            }
 
-        for mod_name in active_modules:
-            method = module_methods.get(mod_name)
-            if method:
-                try:
-                    block = method(conn)
-                    if block:
-                        lines.append(block)
-                except Exception as e:
-                    lines.append(f"\n[{mod_name}] Fehler: {e}")
+            for mod_name in active_modules:
+                method = module_methods.get(mod_name)
+                if method:
+                    try:
+                        block = method(conn)
+                        if block:
+                            lines.append(block)
+                    except Exception as e:
+                        lines.append(f"\n[{mod_name}] Fehler: {e}")
 
-        conn.close()
-        return True, "\n".join(lines)
+            return True, "\n".join(lines)
+        finally:
+            conn.close()
 
     # ------------------------------------------------------------------
     # Briefing-Module (jedes liefert einen Textblock)
@@ -427,37 +429,39 @@ class DailyAgentHandler(BaseHandler):
     def _summary(self, args: List[str]) -> Tuple[bool, str]:
         """Generiert eine Abend-Zusammenfassung."""
         conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+        try:
+            conn.row_factory = sqlite3.Row
 
-        today = date.today().strftime("%Y-%m-%d")
-        lines = [f"ABEND-SUMMARY ({today})", "=" * 45]
+            today = date.today().strftime("%Y-%m-%d")
+            lines = [f"ABEND-SUMMARY ({today})", "=" * 45]
 
-        # Heute erledigte Tasks
-        done = conn.execute("""
-            SELECT id, title FROM tasks
-            WHERE status = 'done' AND completed_at LIKE ?
-            ORDER BY completed_at
-        """, (f"{today}%",)).fetchall()
-        lines.append(f"\nERLEDIGT HEUTE: {len(done)}")
-        for t in done:
-            lines.append(f"  [{t['id']}] {t['title'][:60]}")
+            # Heute erledigte Tasks
+            done = conn.execute("""
+                SELECT id, title FROM tasks
+                WHERE status = 'done' AND completed_at LIKE ?
+                ORDER BY completed_at
+            """, (f"{today}%",)).fetchall()
+            lines.append(f"\nERLEDIGT HEUTE: {len(done)}")
+            for t in done:
+                lines.append(f"  [{t['id']}] {t['title'][:60]}")
 
-        # Noch offen
-        pending = conn.execute("SELECT COUNT(*) as cnt FROM tasks WHERE status = 'pending'").fetchone()
-        lines.append(f"\nNOCH OFFEN: {pending['cnt']}")
+            # Noch offen
+            pending = conn.execute("SELECT COUNT(*) as cnt FROM tasks WHERE status = 'pending'").fetchone()
+            lines.append(f"\nNOCH OFFEN: {pending['cnt']}")
 
-        # Heutige Memory-Eintraege
-        memos = conn.execute("""
-            SELECT content FROM memory_working
-            WHERE created_at LIKE ? AND is_active = 1
-        """, (f"{today}%",)).fetchall()
-        if memos:
-            lines.append(f"\nNOTIZEN HEUTE: {len(memos)}")
-            for m in memos[:5]:
-                lines.append(f"  - {m['content'][:80]}")
+            # Heutige Memory-Eintraege
+            memos = conn.execute("""
+                SELECT content FROM memory_working
+                WHERE created_at LIKE ? AND is_active = 1
+            """, (f"{today}%",)).fetchall()
+            if memos:
+                lines.append(f"\nNOTIZEN HEUTE: {len(memos)}")
+                for m in memos[:5]:
+                    lines.append(f"  - {m['content'][:80]}")
 
-        conn.close()
-        return True, "\n".join(lines)
+            return True, "\n".join(lines)
+        finally:
+            conn.close()
 
     # ------------------------------------------------------------------
     # Briefing-Konfiguration
@@ -470,14 +474,16 @@ class DailyAgentHandler(BaseHandler):
     def _modules(self, args: List[str]) -> Tuple[bool, str]:
         """Zeigt aktive und inaktive Briefing-Module."""
         conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
-        self._ensure_briefing_config(conn)
+        try:
+            conn.row_factory = sqlite3.Row
+            self._ensure_briefing_config(conn)
 
-        rows = conn.execute("""
-            SELECT module_name, is_active, priority FROM briefing_config
-            ORDER BY priority ASC
-        """).fetchall()
-        conn.close()
+            rows = conn.execute("""
+                SELECT module_name, is_active, priority FROM briefing_config
+                ORDER BY priority ASC
+            """).fetchall()
+        finally:
+            conn.close()
 
         if not rows:
             return True, "Keine Briefing-Module konfiguriert."
@@ -500,29 +506,31 @@ class DailyAgentHandler(BaseHandler):
             return False, f"Unbekanntes Modul: {mod_name}\nVerfuegbar: {', '.join(self.BRIEFING_MODULES.keys())}"
 
         conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
-        self._ensure_briefing_config(conn)
+        try:
+            conn.row_factory = sqlite3.Row
+            self._ensure_briefing_config(conn)
 
-        row = conn.execute(
-            "SELECT is_active FROM briefing_config WHERE module_name = ?",
-            (mod_name,)
-        ).fetchone()
-
-        if row:
-            new_state = 0 if row['is_active'] else 1
-            conn.execute(
-                "UPDATE briefing_config SET is_active = ? WHERE module_name = ?",
-                (new_state, mod_name)
-            )
-        else:
-            new_state = 1
-            conn.execute(
-                "INSERT INTO briefing_config (module_name, is_active, priority) VALUES (?, 1, 50)",
+            row = conn.execute(
+                "SELECT is_active FROM briefing_config WHERE module_name = ?",
                 (mod_name,)
-            )
+            ).fetchone()
 
-        conn.commit()
-        conn.close()
+            if row:
+                new_state = 0 if row['is_active'] else 1
+                conn.execute(
+                    "UPDATE briefing_config SET is_active = ? WHERE module_name = ?",
+                    (new_state, mod_name)
+                )
+            else:
+                new_state = 1
+                conn.execute(
+                    "INSERT INTO briefing_config (module_name, is_active, priority) VALUES (?, 1, 50)",
+                    (mod_name,)
+                )
+
+            conn.commit()
+        finally:
+            conn.close()
 
         status = "aktiviert" if new_state else "deaktiviert"
         desc = self.BRIEFING_MODULES.get(mod_name, ("?",))[0]

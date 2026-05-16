@@ -53,7 +53,7 @@ def load_config() -> Dict:
     if CONFIG_FILE.exists():
         try:
             return json.loads(CONFIG_FILE.read_text(encoding='utf-8'))
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
     return {}
 
@@ -93,7 +93,7 @@ def check_recurring_tasks() -> List[str]:
                 next_due = last_run + timedelta(days=interval_days)
                 if now < next_due:
                     continue  # Noch nicht faellig
-            except:
+            except (ValueError, TypeError):
                 pass  # Bei Parse-Fehler erstellen
 
         # Task erstellen
@@ -164,7 +164,7 @@ def list_recurring_tasks() -> Dict[str, Dict]:
                 last_run = datetime.fromisoformat(last_run_str)
                 next_due = last_run + timedelta(days=interval_days)
                 days_until = (next_due - now).days
-            except:
+            except (ValueError, TypeError):
                 days_until = 0
                 next_due = now
         else:

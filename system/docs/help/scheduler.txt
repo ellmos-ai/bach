@@ -1,7 +1,7 @@
 # Portabilitaet: SYSTEM
 # Version: 1.0.0
-# Zuletzt validiert: 2026-02-28
-# Naechste Pruefung: 2026-08-28
+# Zuletzt validiert: 2026-05-15
+# Nächste Prüfung: 2026-11-15
 # Ressourcen: [hub/scheduler.py, gui/daemon_service.py, scheduler_jobs, scheduler_runs]
 
 SCHEDULER - Hintergrund-Jobs und Scheduler-Service
@@ -31,6 +31,8 @@ CLI-BEFEHLE (bach scheduler)
   jobs              Alle Jobs anzeigen
   status            Scheduler-Status
   status --json     Scheduler-Status als JSON
+  doctor            Scheduler-Preflight und Recovery-Hinweise
+  doctor --json     Scheduler-Preflight als JSON
   start [--bg]      Scheduler-Service starten (--bg fuer Hintergrund)
   stop              Scheduler-Service stoppen
   run <ID>          Einzelnen Job manuell ausfuehren
@@ -44,11 +46,21 @@ SESSION-SYSTEM
   session stop                     Session-Scheduler stoppen
   session status                   Session-Status anzeigen
   session status --json            Session-Status als JSON
+  session doctor                   Session-Preflight und Recovery-Hinweise
+  session doctor --json            Session-Preflight als JSON
+  session pause [--profile NAME] [Grund] Trigger für Profil pausieren
+  session resume [--profile NAME]         Pause für Profil aufheben
+  session steer [--profile NAME] "Text"   Steuerhinweis für die nächste Session vormerken
+  session clear-steer [--profile NAME]    Steuerhinweise für Profil löschen
   session trigger [--profile NAME] Session manuell ausloesen
   session profiles                 Verfuegbare Profile auflisten
 
   Beispiel mit Dry-Run:
     bach scheduler session trigger --profile wartung --dry-run
+
+  Beispiel mit Operator-Steuerung:
+    bach scheduler session steer --profile ati "Bitte heute nur Health-Checks und Docs anfassen."
+    bach scheduler session status --json
 
 JOB-TYPEN
 ---------

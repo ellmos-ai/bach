@@ -109,243 +109,248 @@ class DbHandler(BaseHandler):
     def _status(self) -> tuple:
         """Datenbank-Status."""
         results = ["BACH DATABASE", "=" * 40]
-
-        conn = self._get_conn()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name NOT LIKE 'sqlite_%'
-        """)
-        tables = cursor.fetchall()
-        results.append(f"Tabellen: {len(tables)}")
-
-        size_kb = self.db_path.stat().st_size / 1024
-        if size_kb > 1024:
-            results.append(f"Groesse:  {size_kb / 1024:.1f} MB")
-        else:
-            results.append(f"Groesse:  {size_kb:.1f} KB")
-
+        conn = None
         try:
-            cursor.execute("SELECT instance_name, version FROM system_identity WHERE id = 1")
-            row = cursor.fetchone()
-            if row:
-                results.append(f"Instance: {row['instance_name']} v{row['version']}")
-        except Exception:
-            pass
+            conn = self._get_conn()
+            cursor = conn.cursor()
 
-        # Views zaehlen
-        views = cursor.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='view'"
-        ).fetchone()[0]
-        results.append(f"Views:    {views}")
+            cursor.execute("""
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name NOT LIKE 'sqlite_%'
+            """)
+            tables = cursor.fetchall()
+            results.append(f"Tabellen: {len(tables)}")
 
-        # Indices zaehlen
-        indices = cursor.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='index'"
-        ).fetchone()[0]
-        results.append(f"Indices:  {indices}")
+            size_kb = self.db_path.stat().st_size / 1024
+            if size_kb > 1024:
+                results.append(f"Groesse:  {size_kb / 1024:.1f} MB")
+            else:
+                results.append(f"Groesse:  {size_kb:.1f} KB")
 
-        conn.close()
+            try:
+                cursor.execute("SELECT instance_name, version FROM system_identity WHERE id = 1")
+                row = cursor.fetchone()
+                if row:
+                    results.append(f"Instance: {row['instance_name']} v{row['version']}")
+            except Exception:
+                pass
+
+            views = cursor.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='view'"
+            ).fetchone()[0]
+            results.append(f"Views:    {views}")
+
+            indices = cursor.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index'"
+            ).fetchone()[0]
+            results.append(f"Indices:  {indices}")
+        finally:
+            if conn:
+                conn.close()
         return True, "\n".join(results)
 
     def _tables(self) -> tuple:
         """Tabellen mit Counts."""
         results = ["TABELLEN", "=" * 40]
+        conn = None
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
 
-        conn = self._get_conn()
-        cursor = conn.cursor()
+            cursor.execute("""
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name NOT LIKE 'sqlite_%'
+                ORDER BY name
+            """)
+            tables = cursor.fetchall()
 
-        cursor.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name NOT LIKE 'sqlite_%'
-            ORDER BY name
-        """)
-        tables = cursor.fetchall()
-
-        for t in tables:
-            name = t['name']
-            try:
-                cursor.execute(f"SELECT COUNT(*) as cnt FROM [{name}]")
-                count = cursor.fetchone()['cnt']
-                results.append(f"  {name:<40} {count:>6}")
-            except Exception:
-                results.append(f"  {name:<40}  ERROR")
-
-        conn.close()
+            for t in tables:
+                name = t['name']
+                try:
+                    cursor.execute(f"SELECT COUNT(*) as cnt FROM [{name}]")
+                    count = cursor.fetchone()['cnt']
+                    results.append(f"  {name:<40} {count:>6}")
+                except Exception:
+                    results.append(f"  {name:<40}  ERROR")
+        finally:
+            if conn:
+                conn.close()
         return True, "\n".join(results)
 
     def _info(self, table: str) -> tuple:
         """Tabellen-Details: Schema, Spalten, Beispieldaten, dist_type."""
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        conn = None
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
 
-        # Pruefen ob Tabelle existiert
-        row = cursor.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
-        ).fetchone()
-        if not row:
-            conn.close()
-            return False, f"Tabelle '{table}' nicht gefunden."
+            row = cursor.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            ).fetchone()
+            if not row:
+                return False, f"Tabelle '{table}' nicht gefunden."
 
-        results = [f"TABELLE: {table}", "=" * 50]
+            results = [f"TABELLE: {table}", "=" * 50]
 
-        # Zeilenanzahl
-        count = cursor.execute(f"SELECT COUNT(*) FROM [{table}]").fetchone()[0]
-        results.append(f"Zeilen: {count}")
+            count = cursor.execute(f"SELECT COUNT(*) FROM [{table}]").fetchone()[0]
+            results.append(f"Zeilen: {count}")
 
-        # Spalten-Info
-        columns = cursor.execute(f"PRAGMA table_info([{table}])").fetchall()
-        results.append(f"Spalten: {len(columns)}")
-        results.append("")
-        results.append("SPALTEN:")
-        results.append(f"  {'Name':<30} {'Typ':<15} {'NotNull':<8} {'Default'}")
-        results.append("  " + "-" * 70)
-        has_dist_type = False
-        for col in columns:
-            nn = "YES" if col['notnull'] else ""
-            dflt = col['dflt_value'] if col['dflt_value'] else ""
-            pk = " [PK]" if col['pk'] else ""
-            results.append(f"  {col['name']:<30} {(col['type'] or 'ANY'):<15} {nn:<8} {dflt}{pk}")
-            if col['name'] == 'dist_type':
-                has_dist_type = True
-
-        # dist_type Info
-        if has_dist_type:
+            columns = cursor.execute(f"PRAGMA table_info([{table}])").fetchall()
+            results.append(f"Spalten: {len(columns)}")
             results.append("")
-            results.append("DIST_TYPE Verteilung:")
-            try:
-                dist_counts = cursor.execute(
-                    f"SELECT dist_type, COUNT(*) as cnt FROM [{table}] GROUP BY dist_type ORDER BY dist_type"
-                ).fetchall()
-                labels = {0: "USER", 1: "TEMPLATE", 2: "CORE"}
-                for dc in dist_counts:
-                    dt = dc['dist_type'] if dc['dist_type'] is not None else '?'
-                    label = labels.get(dc['dist_type'], str(dt))
-                    results.append(f"  {label} ({dt}): {dc['cnt']}")
-            except Exception:
-                pass
+            results.append("SPALTEN:")
+            results.append(f"  {'Name':<30} {'Typ':<15} {'NotNull':<8} {'Default'}")
+            results.append("  " + "-" * 70)
+            has_dist_type = False
+            for col in columns:
+                nn = "YES" if col['notnull'] else ""
+                dflt = col['dflt_value'] if col['dflt_value'] else ""
+                pk = " [PK]" if col['pk'] else ""
+                results.append(f"  {col['name']:<30} {(col['type'] or 'ANY'):<15} {nn:<8} {dflt}{pk}")
+                if col['name'] == 'dist_type':
+                    has_dist_type = True
 
-        # Indices
-        indices = cursor.execute(
-            "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", (table,)
-        ).fetchall()
-        if indices:
-            results.append("")
-            results.append(f"INDICES ({len(indices)}):")
-            for idx in indices:
-                results.append(f"  {idx['name']}")
+            if has_dist_type:
+                results.append("")
+                results.append("DIST_TYPE Verteilung:")
+                try:
+                    dist_counts = cursor.execute(
+                        f"SELECT dist_type, COUNT(*) as cnt FROM [{table}] GROUP BY dist_type ORDER BY dist_type"
+                    ).fetchall()
+                    labels = {0: "USER", 1: "TEMPLATE", 2: "CORE"}
+                    for dc in dist_counts:
+                        dt = dc['dist_type'] if dc['dist_type'] is not None else '?'
+                        label = labels.get(dc['dist_type'], str(dt))
+                        results.append(f"  {label} ({dt}): {dc['cnt']}")
+                except Exception:
+                    pass
 
-        # Beispieldaten (max 5 Zeilen)
-        if count > 0:
-            results.append("")
-            results.append(f"BEISPIELDATEN (max 5):")
-            try:
-                sample = cursor.execute(f"SELECT * FROM [{table}] LIMIT 5").fetchall()
-                keys = sample[0].keys()
-                # Nur Spalten zeigen die nicht zu lang sind
-                show_keys = []
-                for k in keys:
-                    show_keys.append(k)
-                    if len(show_keys) >= 6:
-                        break
-                results.append("  " + " | ".join(f"{k[:20]}" for k in show_keys))
-                results.append("  " + "-" * min(len(show_keys) * 22, 130))
-                for s in sample:
-                    vals = []
-                    for k in show_keys:
-                        v = str(s[k]) if s[k] is not None else "NULL"
-                        if len(v) > 20:
-                            v = v[:17] + "..."
-                        vals.append(v)
-                    results.append("  " + " | ".join(f"{v:<20}" for v in vals))
-                if len(show_keys) < len(keys):
-                    results.append(f"  ... +{len(keys) - len(show_keys)} weitere Spalten")
-            except Exception as e:
-                results.append(f"  (Fehler beim Lesen: {e})")
+            indices = cursor.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", (table,)
+            ).fetchall()
+            if indices:
+                results.append("")
+                results.append(f"INDICES ({len(indices)}):")
+                for idx in indices:
+                    results.append(f"  {idx['name']}")
 
-        conn.close()
-        return True, "\n".join(results)
+            if count > 0:
+                results.append("")
+                results.append(f"BEISPIELDATEN (max 5):")
+                try:
+                    sample = cursor.execute(f"SELECT * FROM [{table}] LIMIT 5").fetchall()
+                    keys = sample[0].keys()
+                    show_keys = []
+                    for k in keys:
+                        show_keys.append(k)
+                        if len(show_keys) >= 6:
+                            break
+                    results.append("  " + " | ".join(f"{k[:20]}" for k in show_keys))
+                    results.append("  " + "-" * min(len(show_keys) * 22, 130))
+                    for s in sample:
+                        vals = []
+                        for k in show_keys:
+                            v = str(s[k]) if s[k] is not None else "NULL"
+                            if len(v) > 20:
+                                v = v[:17] + "..."
+                            vals.append(v)
+                        results.append("  " + " | ".join(f"{v:<20}" for v in vals))
+                    if len(show_keys) < len(keys):
+                        results.append(f"  ... +{len(keys) - len(show_keys)} weitere Spalten")
+                except Exception as e:
+                    results.append(f"  (Fehler beim Lesen: {e})")
+
+            return True, "\n".join(results)
+        finally:
+            if conn:
+                conn.close()
 
     def _query(self, sql: str) -> tuple:
         """SQL-Query ausfuehren."""
         results = []
-
-        conn = self._get_conn()
-        cursor = conn.cursor()
-
+        conn = None
         try:
-            cursor.execute(sql)
+            conn = self._get_conn()
+            cursor = conn.cursor()
 
-            if sql.strip().upper().startswith("SELECT"):
-                rows = cursor.fetchall()
-                if rows:
-                    keys = rows[0].keys()
-                    results.append(" | ".join(keys))
-                    results.append("-" * 50)
-                    for row in rows[:50]:
-                        results.append(" | ".join(str(row[k]) for k in keys))
-                    if len(rows) > 50:
-                        results.append(f"... und {len(rows) - 50} weitere")
+            try:
+                cursor.execute(sql)
+
+                if sql.strip().upper().startswith("SELECT"):
+                    rows = cursor.fetchall()
+                    if rows:
+                        keys = rows[0].keys()
+                        results.append(" | ".join(keys))
+                        results.append("-" * 50)
+                        for row in rows[:50]:
+                            results.append(" | ".join(str(row[k]) for k in keys))
+                        if len(rows) > 50:
+                            results.append(f"... und {len(rows) - 50} weitere")
+                    else:
+                        results.append("Keine Ergebnisse.")
                 else:
-                    results.append("Keine Ergebnisse.")
-            else:
-                conn.commit()
-                results.append(f"[OK] {cursor.rowcount} Zeilen betroffen.")
+                    conn.commit()
+                    results.append(f"[OK] {cursor.rowcount} Zeilen betroffen.")
 
-        except Exception as e:
-            results.append(f"[FEHLER] {e}")
-
-        conn.close()
+            except Exception as e:
+                results.append(f"[FEHLER] {e}")
+        finally:
+            if conn:
+                conn.close()
         return True, "\n".join(results)
 
     def _schema(self, table: str) -> tuple:
         """Zeigt CREATE TABLE Statement."""
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        conn = None
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
 
-        row = cursor.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
-        ).fetchone()
+            row = cursor.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            ).fetchone()
 
-        if not row:
-            conn.close()
-            return False, f"Tabelle '{table}' nicht gefunden."
+            if not row:
+                return False, f"Tabelle '{table}' nicht gefunden."
 
-        # Auch Indices zeigen
-        indices = cursor.execute(
-            "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", (table,)
-        ).fetchall()
+            indices = cursor.execute(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", (table,)
+            ).fetchall()
 
-        conn.close()
-
-        result = [row['sql'] + ";"]
-        for idx in indices:
-            result.append(idx['sql'] + ";")
-        return True, "\n".join(result)
+            result = [row['sql'] + ";"]
+            for idx in indices:
+                result.append(idx['sql'] + ";")
+            return True, "\n".join(result)
+        finally:
+            if conn:
+                conn.close()
 
     def _count(self, table: str) -> tuple:
         """Zeilenanzahl einer Tabelle."""
-        conn = self._get_conn()
+        conn = None
         try:
+            conn = self._get_conn()
             count = conn.execute(f"SELECT COUNT(*) FROM [{table}]").fetchone()[0]
-            conn.close()
             return True, f"{table}: {count} Eintraege"
         except Exception as e:
-            conn.close()
             return False, f"Fehler: {e}"
+        finally:
+            if conn:
+                conn.close()
 
     def _export(self, table: str, fmt: str = "csv") -> tuple:
         """Tabelle als CSV oder JSON exportieren."""
-        conn = self._get_conn()
+        conn = None
         try:
+            conn = self._get_conn()
             rows = conn.execute(f"SELECT * FROM [{table}]").fetchall()
         except Exception as e:
-            conn.close()
             return False, f"Fehler: {e}"
+        finally:
+            if conn:
+                conn.close()
 
         if not rows:
-            conn.close()
             return True, f"Tabelle '{table}' ist leer."
 
         keys = rows[0].keys()
@@ -354,21 +359,23 @@ class DbHandler(BaseHandler):
         export_dir.mkdir(exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        if fmt == "json":
-            data = [dict(row) for row in rows]
-            out_file = export_dir / f"{table}_{ts}.json"
-            out_file.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
-        else:
-            out_file = export_dir / f"{table}_{ts}.csv"
-            output = io.StringIO()
-            writer = csv.writer(output)
-            writer.writerow(keys)
-            for row in rows:
-                writer.writerow([row[k] for k in keys])
-            out_file.write_text(output.getvalue(), encoding='utf-8')
+        try:
+            if fmt == "json":
+                data = [dict(row) for row in rows]
+                out_file = export_dir / f"{table}_{ts}.json"
+                out_file.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
+            else:
+                out_file = export_dir / f"{table}_{ts}.csv"
+                output = io.StringIO()
+                writer = csv.writer(output)
+                writer.writerow(keys)
+                for row in rows:
+                    writer.writerow([row[k] for k in keys])
+                out_file.write_text(output.getvalue(), encoding='utf-8')
+        except Exception as e:
+            return False, f"Fehler: {e}"
 
-        conn.close()
-        return True, f"Exportiert: {out_file.relative_to(self.base_path)}\n  {len(rows)} Eintraege, Format: {fmt}"
+        return True, f"Exportiert: {out_file}\n  {len(rows)} Eintraege, Format: {fmt}"
 
     def _insert(self, table: str, json_str: str) -> tuple:
         """Datensatz einfuegen."""
@@ -408,8 +415,11 @@ class DbHandler(BaseHandler):
     def _backup(self) -> tuple:
         """Quick-Backup der Datenbank."""
         # Backups LOKAL speichern — NICHT in OneDrive
-        backup_dir = Path(r"C:\_Local_DEV\BACKUPS\BACH\db_quick")
-        backup_dir.mkdir(exist_ok=True)
+        if sys.platform == "win32":
+            backup_dir = Path(r"C:\_Local_DEV\BACKUPS\BACH\db_quick")
+        else:
+            backup_dir = Path.home() / ".bach" / "backups" / "db_quick"
+        backup_dir.mkdir(parents=True, exist_ok=True)
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_file = backup_dir / f"bach_quick_{ts}.db"
@@ -417,6 +427,6 @@ class DbHandler(BaseHandler):
         try:
             shutil.copy2(str(self.db_path), str(backup_file))
             size_kb = backup_file.stat().st_size / 1024
-            return True, f"[OK] Backup: {backup_file.relative_to(self.base_path)} ({size_kb:.0f}KB)"
+            return True, f"[OK] Backup: {backup_file} ({size_kb:.0f}KB)"
         except Exception as e:
             return False, f"Backup-Fehler: {e}"

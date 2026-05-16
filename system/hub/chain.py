@@ -379,7 +379,7 @@ class ChainHandler(BaseHandler):
         # Validierung
         try:
             json.loads(steps_json)
-        except:
+        except (json.JSONDecodeError, TypeError):
              return False, "Ungueltiges JSON fuer Steps."
 
         conn = self._get_conn()

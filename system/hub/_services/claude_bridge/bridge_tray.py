@@ -47,8 +47,12 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-import pystray
-from PIL import Image, ImageDraw, ImageFont
+try:
+    import pystray
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:
+    print("[ERROR] pystray/Pillow nicht installiert: pip install pystray Pillow")
+    sys.exit(1)
 
 # ============ PFADE ============
 
@@ -586,7 +590,12 @@ class BridgeTray:
     def _on_logs(self, icon, item):
         """Oeffnet Log-Datei im Standard-Editor."""
         if LOG_FILE.exists():
-            os.startfile(str(LOG_FILE))
+            if sys.platform == "win32":
+                os.startfile(str(LOG_FILE))
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(LOG_FILE)])
+            else:
+                subprocess.Popen(["xdg-open", str(LOG_FILE)])
         else:
             icon.notify("Keine Logs vorhanden", "BACH Bridge")
 
@@ -611,7 +620,7 @@ class BridgeTray:
             daemon_lock = Path(tempfile.gettempdir()) / "bach_bridge.lock"
             if not daemon_lock.exists():
                 return False
-            pid_text = daemon_lock.read_text().strip()
+            pid_text = daemon_lock.read_text(encoding="utf-8").strip()
             if not pid_text:
                 return False
             pid = int(pid_text)
@@ -757,7 +766,7 @@ class BridgeTray:
         """
         time.sleep(3)  # Kurz warten nach Start
 
-        while self.icon._running:
+        while getattr(self.icon, '_running', False):
             # Modus und Budget vom Daemon synchronisieren
             self._sync_mode_from_log()
             self._sync_budget_from_state()
@@ -841,18 +850,21 @@ _tray_lock_handle = None
 def _check_single_instance() -> bool:
     """Verhindert mehrfachen Start der Tray-App.
 
-    Nutzt OS-Level Advisory Lock (msvcrt.locking) statt nur PID-Check.
-    Bei Prozessabbruch gibt Windows das Dateihandle automatisch frei →
+    Nutzt OS-Level Advisory Lock: msvcrt.locking (Windows) bzw. fcntl.flock (Unix).
+    Bei Prozessabbruch gibt das OS das Dateihandle automatisch frei →
     naechster Start kann den Lock problemlos erwerben.
     """
     global _tray_lock_handle
     try:
         LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _tray_lock_handle = open(LOCK_FILE, "a+")
-        import msvcrt
-        _tray_lock_handle.seek(0)
-        msvcrt.locking(_tray_lock_handle.fileno(), msvcrt.LK_NBLCK, 1)
-        # Lock erworben → PID reinschreiben
+        _tray_lock_handle = open(LOCK_FILE, "a+", encoding="utf-8")
+        if sys.platform == "win32":
+            import msvcrt
+            _tray_lock_handle.seek(0)
+            msvcrt.locking(_tray_lock_handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(_tray_lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         _tray_lock_handle.seek(0)
         _tray_lock_handle.truncate()
         _tray_lock_handle.write(str(os.getpid()))
@@ -869,12 +881,19 @@ def _cleanup_lock():
     global _tray_lock_handle
     if _tray_lock_handle:
         try:
-            import msvcrt
-            try:
-                _tray_lock_handle.seek(0)
-                msvcrt.locking(_tray_lock_handle.fileno(), msvcrt.LK_UNLCK, 1)
-            except Exception:
-                pass
+            if sys.platform == "win32":
+                import msvcrt
+                try:
+                    _tray_lock_handle.seek(0)
+                    msvcrt.locking(_tray_lock_handle.fileno(), msvcrt.LK_UNLCK, 1)
+                except Exception:
+                    pass
+            else:
+                import fcntl
+                try:
+                    fcntl.flock(_tray_lock_handle.fileno(), fcntl.LOCK_UN)
+                except Exception:
+                    pass
             _tray_lock_handle.close()
         except Exception:
             pass

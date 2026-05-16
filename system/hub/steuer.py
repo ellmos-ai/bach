@@ -330,10 +330,10 @@ Batch-Tools:
         # Werbungskosten mit Unterstruktur
         wk = jahr_dir / "Werbungskosten"
         (wk / "belege" / "_bundles").mkdir(parents=True, exist_ok=True)
-        (wk / "belege" / "_Fahrten&Homeoffice").mkdir(exist_ok=True)
-        (wk / "belege" / "_Fehlbelege").mkdir(exist_ok=True)
-        (wk / "belege" / "_Papierkorb").mkdir(exist_ok=True)
-        (wk / "belege" / "Weitere").mkdir(exist_ok=True)
+        (wk / "belege" / "_Fahrten&Homeoffice").mkdir(parents=True, exist_ok=True)
+        (wk / "belege" / "_Fehlbelege").mkdir(parents=True, exist_ok=True)
+        (wk / "belege" / "_Papierkorb").mkdir(parents=True, exist_ok=True)
+        (wk / "belege" / "Weitere").mkdir(parents=True, exist_ok=True)
         (wk / "export" / "csv").mkdir(parents=True, exist_ok=True)
 
         # Templates kopieren und anpassen
@@ -808,7 +808,7 @@ Beispiel:
                     try:
                         datum_obj = datetime.strptime(r['datum'], '%Y-%m-%d')
                         datum_datev = datum_obj.strftime('%d%m')
-                    except:
+                    except (ValueError, TypeError):
                         datum_datev = ""
                     
                     # Buchungstext (max 60 Zeichen)
@@ -1300,6 +1300,9 @@ Parameter:
                 m = re.search(r'(\d{4}-\d{2}-\d{2})', beleg['dateiname'])
                 beleg_datum = m.group(1) if m else datetime.now().strftime('%Y-%m-%d')
 
+            if not anbieter:
+                anbieter = beleg['anbieter'] or ""
+
             # Einfuegen
             conn.execute("""
                 INSERT INTO steuer_posten
@@ -1309,7 +1312,7 @@ Parameter:
                  version, created_at, updated_at)
                 VALUES (?, 2025, ?, ?, ?, ?, 'Material', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
             """, (self.username, int(belegnr), next_nr, bezeichnung, beleg_datum,
-                  anbieter or beleg['anbieter'], rechnungsnr, beleg['dateiname'],
+                  anbieter, rechnungsnr, beleg['dateiname'],
                   netto_val, brutto_val, liste_full, anteil_val,
                   netto_val * anteil_val, absetzbar, bemerkung))
             conn.commit()
@@ -1702,31 +1705,31 @@ Die Belege werden als DEPRECATED markiert, die Nummern bleiben reserviert."""
                 params.append(status_filter.upper())
 
             sql += f" ORDER BY id LIMIT {int(limit)}"
-            
+
             rows = conn.execute(sql, params).fetchall()
             conn.close()
-            
+
             if not rows:
                 return True, "Keine Belege gefunden."
-            
+
             # Zaehler fuer Status
             status_counts = {"ERFASST": 0, "NICHT_ERFASST": 0, "DEPRECATED": 0}
-            
+
             results = [f"\nBELEGE ({len(rows)} Eintraege)", "=" * 80]
-            results.append(f"{'Nr':<6} {'Status':<14} {'Anbieter':<12} {'Erfasst':<12} {'Dateiname':<30}")
+            results.append(f"{'Nr':<6} {'Anbieter':<12} {'Status':<14} {'Erfasst':<12} {'Dateiname':<30}")
             results.append("-" * 80)
-            
+
             for r in rows:
                 nr = f"B{r['id']:04d}"
-                status = r['status'] or "?"
                 anbieter = (r['anbieter'] or "?")[:12]
+                status = r['status'] or "?"
                 erfasst = (r['erfasst_am'] or "-")[:12]
                 datei = (r['dateiname'] or "?")[:30]
-                
+
                 if status in status_counts:
                     status_counts[status] += 1
-                
-                results.append(f"{nr:<6} {status:<14} {anbieter:<12} {erfasst:<12} {datei}")
+
+                results.append(f"{nr:<6} {anbieter:<12} {status:<14} {erfasst:<12} {datei}")
             
             results.append("")
             results.append(f"Status: ERFASST={status_counts['ERFASST']} | NICHT_ERFASST={status_counts['NICHT_ERFASST']} | DEPRECATED={status_counts['DEPRECATED']}")
@@ -1967,6 +1970,8 @@ bach steuer batch move --von V --nach W --limit 50
                         m = re.search(r'(\d{4}-\d{2}-\d{2})', beleg['dateiname'] or '')
                         datum = m.group(1) if m else datetime.now().strftime('%Y-%m-%d')
                     
+                    rechnungssteller = beleg['anbieter'] or ""
+
                     conn.execute("""
                         INSERT INTO steuer_posten
                         (username, steuerjahr, dokument_id, postennr, bezeichnung, datum, typ,
@@ -1975,7 +1980,7 @@ bach steuer batch move --von V --nach W --limit 50
                          version, created_at, updated_at)
                         VALUES (?, 2025, ?, ?, ?, ?, 'Material', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
                     """, (self.username, int(belegnr), next_nr, bez, datum,
-                          beleg['anbieter'], beleg['dateiname'],
+                          rechnungssteller, beleg['dateiname'],
                           netto_val, brutto_val, liste_full, anteil,
                           netto_val * anteil, absetzbar, bem))
                     

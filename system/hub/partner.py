@@ -97,15 +97,15 @@ class PartnerHandler(BaseHandler):
                 if row["capabilities"]:
                     try:
                         caps = json_lib.loads(row["capabilities"])
-                    except:
+                    except (json.JSONDecodeError, ValueError, TypeError):
                         caps = []
-                
+
                 # Zone extrahieren (z.B. "zone_1" -> [1])
                 zone_num = 1
                 if row["token_zone"]:
                     try:
                         zone_num = int(row["token_zone"].replace("zone_", ""))
-                    except:
+                    except (ValueError, AttributeError):
                         zone_num = 1
                 
                 # Alle Zonen bis zur aktuellen Zone erlauben (typisches Muster)

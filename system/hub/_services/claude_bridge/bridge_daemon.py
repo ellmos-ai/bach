@@ -92,7 +92,10 @@ from datetime import datetime, date, timedelta
 from pathlib import Path
 from threading import Event, Thread, Lock
 
-from fackel import acquire_fackel, heartbeat, release_fackel, get_fackel_holder, check_fackel_mine
+try:
+    from .fackel import acquire_fackel, heartbeat, release_fackel, get_fackel_holder, check_fackel_mine
+except ImportError:
+    from fackel import acquire_fackel, heartbeat, release_fackel, get_fackel_holder, check_fackel_mine
 
 FACKEL_LOST_EXIT_CODE = 2  # Exit-Code wenn Fackel durch anderen PC uebernommen wurde
 
@@ -375,7 +378,7 @@ def get_running_pid() -> int:
     if not LOCK_FILE.exists():
         return 0
     try:
-        content = LOCK_FILE.read_text().strip()
+        content = LOCK_FILE.read_text(encoding="utf-8").strip()
         if content:
             pid = int(content)
             if _is_process_running(pid):
@@ -412,7 +415,7 @@ def check_restart_cooldown() -> bool:
     Gibt True zurueck wenn Start erlaubt ist."""
     try:
         if LAST_START_FILE.exists():
-            last_start = float(LAST_START_FILE.read_text().strip())
+            last_start = float(LAST_START_FILE.read_text(encoding="utf-8").strip())
             elapsed = time.time() - last_start
             if elapsed < MIN_RESTART_INTERVAL:
                 remaining = int(MIN_RESTART_INTERVAL - elapsed)
@@ -2583,7 +2586,7 @@ class BridgeDaemon:
         if not TRAY_LOCK_FILE.exists():
             return True  # CLI-Modus ohne Tray - kein Problem
         try:
-            pid_text = TRAY_LOCK_FILE.read_text().strip()
+            pid_text = TRAY_LOCK_FILE.read_text(encoding="utf-8").strip()
             if not pid_text:
                 return True
             pid = int(pid_text)

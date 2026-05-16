@@ -51,7 +51,7 @@ class ExtensionsHandler(BaseHandler):
 
     def __init__(self, base_path: Path):
         super().__init__(base_path)
-        self.extensions_dir = base_path.parent / "extensions"
+        self.extensions_dir = self.base_path.parent / "extensions"
         self.db_path = self._canonical_db
 
     @property
@@ -209,18 +209,32 @@ class ExtensionsHandler(BaseHandler):
         if not ext_dir.exists():
             return False, f"[FEHLER] Extension '{name}' nicht gefunden."
 
-        start_bat = ext_dir / "START.bat"
-        if start_bat.exists():
+        if sys.platform == "win32":
+            start_script = ext_dir / "START.bat"
+        else:
+            start_script = ext_dir / "START.sh"
+            if not start_script.exists():
+                start_script = ext_dir / "START.bat"
+
+        if start_script.exists():
             try:
                 if sys.platform == "win32":
                     subprocess.Popen(
-                        ["cmd", "/c", "start", str(start_bat)],
+                        ["cmd", "/c", "start", str(start_script)],
                         cwd=str(ext_dir),
                         creationflags=0x00000010
                     )
+                elif start_script.suffix == ".sh":
+                    subprocess.Popen(
+                        ["bash", str(start_script)],
+                        cwd=str(ext_dir),
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True
+                    )
                 else:
-                    return False, "[FEHLER] START.bat nur auf Windows verfuegbar."
-                return True, f"[OK] Extension '{name}' gestartet (START.bat)"
+                    return False, f"[FEHLER] {start_script.name} nur auf Windows verfuegbar."
+                return True, f"[OK] Extension '{name}' gestartet ({start_script.name})"
             except Exception as e:
                 return False, f"[FEHLER] Start fehlgeschlagen: {e}"
 
@@ -248,47 +262,47 @@ class ExtensionsHandler(BaseHandler):
             return True, "[EXTENSIONS] Keine Extensions zum Synchronisieren."
 
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        try:
+            cursor = conn.cursor()
 
-        # Bestehende Extensions in DB
-        cursor.execute("SELECT name FROM skills WHERE type = 'extension'")
-        existing = set(row[0] for row in cursor.fetchall())
+            cursor.execute("SELECT name FROM skills WHERE type = 'extension'")
+            existing = set(row[0] for row in cursor.fetchall())
 
-        added = 0
-        updated = 0
+            added = 0
+            updated = 0
 
-        for ext in extensions:
-            name = ext["name"]
-            desc = ext["description"] or f"Extension: {name}"
-            path = ext["path"]
-            category = "extension"
+            for ext in extensions:
+                name = ext["name"]
+                desc = ext["description"] or f"Extension: {name}"
+                path = ext["path"]
+                category = "extension"
+
+                if dry_run:
+                    status = "UPDATE" if name in existing else "NEU"
+                    print(f"  [{status}] {name}")
+                    continue
+
+                if name in existing:
+                    cursor.execute("""
+                        UPDATE skills SET description = ?, path = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE name = ? AND type = 'extension'
+                    """, (desc, path, name))
+                    updated += 1
+                else:
+                    cursor.execute("""
+                        INSERT INTO skills (name, type, category, path, description, is_active, version, dist_type)
+                        VALUES (?, 'extension', ?, ?, ?, 1, '1.0.0', 2)
+                    """, (name, category, path, desc))
+                    added += 1
+
+            if not dry_run:
+                conn.commit()
 
             if dry_run:
-                status = "UPDATE" if name in existing else "NEU"
-                print(f"  [{status}] {name}")
-                continue
-
-            if name in existing:
-                cursor.execute("""
-                    UPDATE skills SET description = ?, path = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE name = ? AND type = 'extension'
-                """, (desc, path, name))
-                updated += 1
-            else:
-                cursor.execute("""
-                    INSERT INTO skills (name, type, category, path, description, is_active, version, dist_type)
-                    VALUES (?, 'extension', ?, ?, ?, 1, '1.0.0', 2)
-                """, (name, category, path, desc))
-                added += 1
-
-        if not dry_run:
-            conn.commit()
-
-        conn.close()
-
-        if dry_run:
-            return True, f"[DRY-RUN] {len(extensions)} Extensions gefunden."
-        return True, f"[EXTENSIONS] Sync: {added} neu, {updated} aktualisiert, {len(extensions)} gesamt"
+                return True, f"[DRY-RUN] {len(extensions)} Extensions gefunden."
+            return True, f"[EXTENSIONS] Sync: {added} neu, {updated} aktualisiert, {len(extensions)} gesamt"
+        finally:
+            conn.close()
 
     def _search_extensions(self, term: str) -> Tuple[bool, str]:
         """Durchsucht Extensions nach Begriff."""

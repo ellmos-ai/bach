@@ -103,10 +103,10 @@ class TestCLIBackwardsCompat:
         assert "Tools:" in out
         assert "Health:" in out
 
-    def test_health_status(self):
-        code, out, err = run_bach("health", "status")
+    def test_health_disk(self):
+        code, out, err = run_bach("health", "disk")
         assert code == 0
-        assert "System Health Check" in out
+        assert "Disk Check" in out or "GB" in out
 
     def test_steuer_status(self):
         code, out, err = run_bach("steuer", "status")
@@ -222,6 +222,42 @@ class TestCLIBackwardsCompat:
         payload = json.loads(out)
         assert "agents" in payload
         assert "active_count" in payload
+
+    def test_agent_doctor_json(self):
+        code, out, err = run_bach("agent", "doctor", "ati", "--json")
+        assert code == 0, err
+        payload = json.loads(out)
+        assert payload["requested_name"] == "ati"
+        assert payload["resolved_name"] == "ati"
+        assert "summary" in payload
+        assert "checks" in payload
+
+    def test_agent_start_dry_run_json(self):
+        code, out, err = run_bach("agent", "start", "ati", "--dry-run", "--json")
+        assert code == 0, err
+        payload = json.loads(out)
+        assert payload["action"] == "start"
+        assert payload["requested_name"] == "ati"
+        assert payload["resolved_name"] == "ati"
+        assert payload["ok"] is True
+        assert payload["agent"]["dry_run"] is True
+        assert payload["agent"]["available_actions"] == ["start"]
+
+    def test_scheduler_doctor_json(self):
+        code, out, err = run_bach("scheduler", "doctor", "--json")
+        assert code == 0, err
+        payload = json.loads(out)
+        assert payload["service"]["kind"] == "scheduler"
+        assert "summary" in payload
+        assert "checks" in payload
+
+    def test_scheduler_session_doctor_json(self):
+        code, out, err = run_bach("scheduler", "session", "doctor", "--json")
+        assert code == 0, err
+        payload = json.loads(out)
+        assert payload["service"]["kind"] == "session_scheduler"
+        assert "summary" in payload
+        assert "checks" in payload
 
     def test_path_db_json(self):
         code, out, err = run_bach("path", "db", "--json")

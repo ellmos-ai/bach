@@ -70,6 +70,7 @@ WAIT_AFTER_PASTE = 0.3
 STARTUP_DELAY = 3
 
 DEFAULT_PROFILE = "ati"
+OPERATOR_STEER_ENV = "BACH_SESSION_OPERATOR_STEER"
 
 # ============ LOGGING ============
 
@@ -82,7 +83,7 @@ def log(msg: str):
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(line + "\n")
-    except:
+    except OSError:
         pass
 
 # ============ SCREEN LOCK CHECK ============
@@ -103,7 +104,7 @@ def is_screen_locked() -> bool:
             import pyautogui
             pos = pyautogui.position()
             return False
-        except:
+        except Exception:
             return True
 
     except Exception as e:
@@ -118,7 +119,7 @@ def load_profile(name: str) -> dict:
     if profile_file.exists():
         try:
             return json.loads(profile_file.read_text(encoding="utf-8"))
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
 
     # Fallback
@@ -188,7 +189,7 @@ def count_tasks(profile: dict) -> int:
 
         conn.close()
         return count
-    except:
+    except Exception:
         return 0
 
 def get_recent_memory() -> str:
@@ -204,12 +205,43 @@ def get_recent_memory() -> str:
         if notes:
             return "\n".join(f"- {n[0][:100]}" for n in notes)
         return "(keine)"
-    except:
+    except Exception:
         return "(Fehler)"
+
+
+def load_operator_steer() -> list[dict]:
+    """Laedt optionale Operator-Hinweise aus der Umgebung."""
+    raw = os.environ.get(OPERATOR_STEER_ENV, "").strip()
+    if not raw:
+        return []
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return [{"message": raw, "requested_at": None}]
+
+    if isinstance(payload, list):
+        normalized = []
+        for item in payload:
+            if isinstance(item, dict) and item.get("message"):
+                normalized.append(
+                    {
+                        "message": str(item["message"]),
+                        "requested_at": item.get("requested_at"),
+                    }
+                )
+            elif isinstance(item, str) and item.strip():
+                normalized.append({"message": item.strip(), "requested_at": None})
+        return normalized
+
+    if isinstance(payload, dict) and payload.get("message"):
+        return [{"message": str(payload["message"]), "requested_at": payload.get("requested_at")}]
+
+    return []
 
 # ============ PROMPT GENERATION ============
 
-def create_prompt(profile: dict) -> str:
+def create_prompt(profile: dict, operator_steer: list[dict] | None = None) -> str:
     """Erstellt Prompt basierend auf Profil.
 
     Nutzt agent_prompt und start_command aus dem Profil falls vorhanden.
@@ -232,6 +264,18 @@ def create_prompt(profile: dict) -> str:
         parts.append(f"# {profile_name.upper()} Agent Prompt")
         instruction = profile.get("instruction", f"Du bist der {profile_name} Agent im BACH-System.")
         parts.append(f"\n{instruction}")
+
+    if operator_steer:
+        lines = ["\n## Operator-Hinweise fuer diese Session"]
+        lines.append("Beruecksichtige diese aktuellen Hinweise bei Priorisierung und Ausfuehrung:")
+        for item in operator_steer:
+            message = item.get("message", "").strip()
+            if not message:
+                continue
+            requested_at = item.get("requested_at")
+            prefix = f"[{requested_at}] " if requested_at else ""
+            lines.append(f"- {prefix}{message}")
+        parts.append("\n".join(lines))
 
     # ═══════════════════════════════════════════════════════════════
     # 2. ERSTE AKTION
@@ -348,6 +392,9 @@ def main():
 
     # Profil laden
     profile = load_profile(profile_name)
+    operator_steer = load_operator_steer()
+    if operator_steer:
+        log(f"Operator-Steering erkannt: {len(operator_steer)} Hinweis(e)")
 
     # Tasks pruefen
     task_count = count_tasks(profile)
@@ -358,7 +405,7 @@ def main():
         return
 
     # Prompt generieren
-    prompt = create_prompt(profile)
+    prompt = create_prompt(profile, operator_steer=operator_steer)
 
     # Claude starten
     if dry_run:
