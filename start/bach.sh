@@ -106,7 +106,7 @@ cmd_status() {
 
     if curl -s --max-time 3 "http://${target}:${api_port}/api/status" >/dev/null 2>&1; then
         echo "  Control API (${target}:${api_port}): ONLINE"
-        curl -s --max-time 3 "http://${target}:${api_port}/api/status" | python3 -m json.tool 2>/dev/null || true
+        curl -s --max-time 3 "http://${target}:${api_port}/api/status" | "$PYTHON" -m json.tool 2>/dev/null || true
     else
         echo "  Control API (${target}:${api_port}): OFFLINE"
     fi
