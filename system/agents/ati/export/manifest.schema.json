@@ -1,5 +1,5 @@
 {
-  "$schema": "http:/json-schema.org/draft-07/schema#",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "bach-agent-manifest-v1",
   "title": "BACH Agent/Skill Export Manifest",
   "description": "Schema fuer manifest.json beim Export von BACH Agents/Skills",

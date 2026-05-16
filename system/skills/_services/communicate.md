@@ -443,7 +443,7 @@ def discover_new_partners():
 
 **Ollama:**
 ```bash
-curl http:/localhost:11434/api/tags
+curl http://localhost:11434/api/tags
 # HTTP 200 → OK
 ```
 

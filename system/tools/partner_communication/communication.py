@@ -153,7 +153,7 @@ class CommunicationExecutor:
     HEALTH_CHECKS = {
         "ollama": {
             "type": "http",
-            "url": "http:/localhost:11434/api/tags",
+            "url": "http://localhost:11434/api/tags",
             "timeout": 5,
             "success_codes": [200]
         },

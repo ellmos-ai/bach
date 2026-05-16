@@ -25,23 +25,23 @@ INSTALLIERTE MODELLE (LOKAL)
 
 API-ENDPUNKT
 ------------
-  URL:      http:/127.0.0.1:11434
+  URL:      http://127.0.0.1:11434
   Status:   Aktiv (startet automatisch bei Bedarf)
 
 API-BEISPIELE
 -------------
   # Modelle auflisten
-  curl http:/127.0.0.1:11434/api/tags
+  curl http://127.0.0.1:11434/api/tags
 
   # Text generieren
-  curl http:/127.0.0.1:11434/api/generate -d '{
+  curl http://127.0.0.1:11434/api/generate -d '{
     "model": "Mistral",
     "prompt": "Deine Frage",
     "stream": false
   }'
 
   # Embeddings erzeugen
-  curl http:/127.0.0.1:11434/api/embeddings -d '{
+  curl http://127.0.0.1:11434/api/embeddings -d '{
     "model": "nomic-embed-text",
     "prompt": "Text zum Einbetten"
   }'
@@ -52,7 +52,7 @@ PYTHON-INTEGRATION
 
   def ask_ollama(prompt, model="Mistral"):
       response = requests.post(
-          "http:/127.0.0.1:11434/api/generate",
+          "http://127.0.0.1:11434/api/generate",
           json={"model": model, "prompt": prompt, "stream": False}
       )
       return response.json()["response"]

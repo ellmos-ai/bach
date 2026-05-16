@@ -32,7 +32,7 @@ Der Financial Mail Service analysiert eingehende E-Mails auf finanzrelevante Inh
 
 ## GUI-Dashboard
 
-Erreichbar über: `http:/127.0.0.1:8000/financial`
+Erreichbar über: `http://127.0.0.1:8000/financial`
 
 **Features:**
 - Statistiken (Konten, neue E-Mails, steuer-relevante, monatliche Kosten)

@@ -36,7 +36,7 @@ def get_embedding(text: str) -> Optional[List[float]]:
     import requests
     try:
         resp = requests.post(
-            "http:/localhost:11434/api/embed",
+            "http://localhost:11434/api/embed",
             json={"model": EMBEDDING_MODEL, "input": text},
             timeout=30
         )

@@ -145,7 +145,7 @@ class GuiHandler(BaseHandler):
             sock.close()
             
             if result == 0:
-                return (True, f"[OK] GUI Server gestartet (http:/127.0.0.1:{port})")
+                return (True, f"[OK] GUI Server gestartet (http://127.0.0.1:{port})")
             else:
                 return (False, f"[WARN] Server gestartet, aber Port {port} antwortet nicht")
                 

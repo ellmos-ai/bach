@@ -1,5 +1,5 @@
 {
-  "$schema": "http:/json-schema.org/draft-07/schema#",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "providers.schema.json",
   "title": "BACH Mail Provider Registry",
   "description": "Schema für Provider-Profile zur automatischen E-Mail-Erkennung (Task 272)",
