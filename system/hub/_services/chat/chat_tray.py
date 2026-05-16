@@ -96,8 +96,10 @@ class BACHTray:
         try:
             if sys.platform == "darwin":
                 font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 32)
-            else:
+            elif sys.platform == "win32":
                 font = ImageFont.truetype("arial", 32)
+            else:
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
             draw.text((14, 10), "B", fill="white", font=font)
         except (OSError, IOError):
             draw.text((16, 14), "B", fill="white")
