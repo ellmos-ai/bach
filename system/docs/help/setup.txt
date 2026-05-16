@@ -42,6 +42,15 @@ prosync         Konfiguriert ProSync fuer Multi-System-Nutzung.
                 --single-system   Deaktiviert DB-Sync (nur dieses System)
                 Ohne Flag: Zeigt aktuellen Status an. Default: single-system.
 
+hooks           Installiert Claude Code Hooks (DB-Schutz etc.) in die
+                Claude Code Settings (~/.claude/settings.json).
+
+hooks-remove    Entfernt BACH-installierte Claude Code Hooks (reversibel).
+                Entfernt nur von BACH registrierte Hook-Eintraege.
+
+lang <de|en>    Schaltet Root-Dokumente (README, QUICKSTART, etc.) zwischen
+                Deutsch und Englisch um.
+
 full-install    Vollstaendige Installation in einem Durchlauf (preflight, prosync,
                 mcp, hooks, secrets, user). Optional: --with-n8n oder --config <json>.
 

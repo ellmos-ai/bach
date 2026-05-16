@@ -32,6 +32,7 @@ CLI-BEFEHLE (bach agent)
   start <name>          Agent starten (neues Terminalfenster)
   stop <name>           Laufenden Agent stoppen
   steer <name> "..."    Operator-Hinweis für laufenden Agenten vormerken
+  rename <name> <neu>   Display-Name eines Agenten/Experten aendern
   status                Alle laufenden Agents anzeigen
   doctor [name]         Agent-Preflight und Recovery-Hinweise
   list --json           Agenten inkl. Laufzeit-Metadaten als JSON

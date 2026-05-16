@@ -1,4 +1,9 @@
 -- ═══════════════════════════════════════════════════════════════════════════
+-- DEPRECATED: Historisches Schema aus der Pre-Consolidation-Ära (user.db)
+-- Die Live-DB folgt schema.sql (bach.db). Diese Datei wird NICHT mehr
+-- von Code referenziert und dient nur noch als Dokumentation.
+-- Siehe auch: schema_bach.sql Zeile 1654
+-- ═══════════════════════════════════════════════════════════════════════════
 -- BACH v1.1 - USER.DB SCHEMA (Erweitert)
 -- Kombiniert: Basis-Konzept + Scanner aus _BATCH + DaemonManager
 -- Erstellt: 2026-01-15

@@ -156,6 +156,7 @@ CLI-BEFEHLE
   bach skills version <name>     Versions-Check (lokal vs zentral)
   bach skills export <name>      Autarkes Paket erstellen (v2.0)
   bach skills install <path>     Skill aus ZIP/Verzeichnis importieren
+  bach skills export-agent <n>   Skill als Claude Code Agent exportieren
   bach skills hierarchy          Hierarchie aus DB anzeigen
   bach skills hierarchy <typ>    Nur Typ anzeigen (agent/expert/skill/service/workflow)
 
