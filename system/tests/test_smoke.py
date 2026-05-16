@@ -223,6 +223,31 @@ class TestCLIBackwardsCompat:
         assert "agents" in payload
         assert "active_count" in payload
 
+    def test_agent_doctor_json(self):
+        code, out, err = run_bach("agent", "doctor", "ati", "--json")
+        assert code == 0, err
+        payload = json.loads(out)
+        assert payload["requested_name"] == "ati"
+        assert payload["resolved_name"] == "ati"
+        assert "summary" in payload
+        assert "checks" in payload
+
+    def test_scheduler_doctor_json(self):
+        code, out, err = run_bach("scheduler", "doctor", "--json")
+        assert code == 0, err
+        payload = json.loads(out)
+        assert payload["service"]["kind"] == "scheduler"
+        assert "summary" in payload
+        assert "checks" in payload
+
+    def test_scheduler_session_doctor_json(self):
+        code, out, err = run_bach("scheduler", "session", "doctor", "--json")
+        assert code == 0, err
+        payload = json.loads(out)
+        assert payload["service"]["kind"] == "session_scheduler"
+        assert "summary" in payload
+        assert "checks" in payload
+
     def test_path_db_json(self):
         code, out, err = run_bach("path", "db", "--json")
         assert code == 0, err

@@ -601,7 +601,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 if not api_key:
                     kf = Path.home() / ".credentials" / "anthropic_api_key"
                     if kf.exists():
-                        api_key = kf.read_text().strip()
+                        api_key = kf.read_text(encoding="utf-8").strip()
                 if api_key:
                     return _delegate_claude_api(full_prompt, api_key)
                 cmd = ["claude", "-p", full_prompt]

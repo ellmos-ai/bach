@@ -326,11 +326,13 @@ class NotifyHandler(BaseHandler):
         """Liest sender_tag aus der Connector-Config (connections-Tabelle)."""
         try:
             conn = sqlite3.connect(str(self.db_path))
-            row = conn.execute(
-                "SELECT auth_config FROM connections WHERE name = ? OR name = ?",
-                (channel, f"notify_{channel}")
-            ).fetchone()
-            conn.close()
+            try:
+                row = conn.execute(
+                    "SELECT auth_config FROM connections WHERE name = ? OR name = ?",
+                    (channel, f"notify_{channel}")
+                ).fetchone()
+            finally:
+                conn.close()
             if row and row[0]:
                 config = json.loads(row[0])
                 return config.get("sender_tag", "")

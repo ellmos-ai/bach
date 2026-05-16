@@ -34,8 +34,10 @@ from typing import List, Dict, Optional
 
 from .runner import ClaudeRunner, log_schwarm_run
 
-# DB-Pfad fuer Stigmergy-API
-_DB_PATH = Path(__file__).parent.parent.parent / "data" / "bach.db"
+try:
+    from hub.bach_paths import BACH_DB as _DB_PATH
+except ImportError:
+    _DB_PATH = Path(__file__).parent.parent.parent / "data" / "bach.db"
 
 
 class StigmergyPattern:

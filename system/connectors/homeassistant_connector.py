@@ -128,8 +128,8 @@ class HomeAssistantConnector(BaseConnector):
 
     def get_history(self, entity_id: str, hours: int = 24) -> List:
         """Historie einer Entity abrufen."""
-        from datetime import datetime, timedelta
-        since = (datetime.utcnow() - timedelta(hours=hours)).isoformat() + "Z"
+        from datetime import datetime, timedelta, timezone
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat().replace("+00:00", "Z")
         result = self._api_call("GET",
                                 f"/api/history/period/{since}?filter_entity_id={entity_id}")
         return result if isinstance(result, list) else []

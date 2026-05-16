@@ -142,7 +142,7 @@ class PromptGenerator:
                 if line.startswith('# '):
                     return line[2:].strip()
             return ""
-        except:
+        except (OSError, UnicodeDecodeError):
             return ""
 
     def get_template(self, template_path: str) -> Optional[str]:
@@ -289,7 +289,7 @@ class PromptGenerator:
             conn.close()
             if notes:
                 memory_text = "\n".join(f"- {n[0][:100]}" for n in notes)
-        except:
+        except (sqlite3.Error, OSError):
             pass
 
         # Profil laden (USER-PROFIL Block fuer Kontext)
@@ -462,7 +462,7 @@ bach --shutdown "Zusammenfassung der erledigten Arbeit"
                 import pyautogui
                 pos = pyautogui.position()
                 return False
-            except:
+            except Exception:
                 return True
 
         except Exception:
@@ -532,7 +532,7 @@ bach --shutdown "Zusammenfassung der erledigten Arbeit"
             log_line = f"{timestamp} - Session gestartet ({len(prompt)} Zeichen)\n"
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(log_line)
-        except:
+        except (OSError, ValueError):
             pass
 
     def copy_to_clipboard(self, prompt: str) -> dict:
@@ -546,18 +546,43 @@ bach --shutdown "Zusammenfassung der erledigten Arbeit"
             pyperclip.copy(prompt)
             return {"status": "copied", "length": len(prompt)}
         except ImportError:
-            # Fallback: tkinter
-            try:
-                import tkinter as tk
-                root = tk.Tk()
-                root.withdraw()
-                root.clipboard_clear()
-                root.clipboard_append(prompt)
-                root.update()
-                root.destroy()
-                return {"status": "copied", "length": len(prompt)}
-            except:
+            pass
+
+        try:
+            import tkinter as tk
+            root = tk.Tk()
+            root.withdraw()
+            root.clipboard_clear()
+            root.clipboard_append(prompt)
+            root.update()
+            root.destroy()
+            return {"status": "copied", "length": len(prompt)}
+        except (ImportError, RuntimeError):
+            pass
+
+        import sys
+        import subprocess
+        import shutil
+        data = prompt.encode("utf-8")
+        try:
+            if sys.platform == "win32":
+                subprocess.run(
+                    ["powershell", "-Command", f"Set-Clipboard -Value '{prompt.replace(chr(39), chr(39)+chr(39))}'"],
+                    capture_output=True, creationflags=0x08000000
+                )
+            elif sys.platform == "darwin":
+                subprocess.run(["pbcopy"], input=data, capture_output=True)
+            elif shutil.which("wl-copy"):
+                subprocess.run(["wl-copy"], input=data, capture_output=True)
+            elif shutil.which("xsel"):
+                subprocess.run(["xsel", "-b", "-i"], input=data, capture_output=True)
+            elif shutil.which("xclip"):
+                subprocess.run(["xclip", "-selection", "clipboard"], input=data, capture_output=True)
+            else:
                 return {"status": "error", "message": "Clipboard nicht verfuegbar"}
+            return {"status": "copied", "length": len(prompt)}
+        except (OSError, FileNotFoundError):
+            return {"status": "error", "message": "Clipboard nicht verfuegbar"}
 
     # =========================================================================
     # DAEMON CONTROL (Stub fuer GUI-Integration)

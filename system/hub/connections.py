@@ -174,7 +174,7 @@ class ConnectionsHandler(BaseHandler):
                 patterns = json.loads(row['trigger_patterns'])
                 results.append(f"\n[TRIGGER/TOOLS]")
                 results.append(f"  {', '.join(patterns)}")
-            except:
+            except Exception:
                 pass
         
         return True, "\n".join(results)

@@ -59,7 +59,7 @@ def get_known_tools() -> Set[str]:
         try:
             data = json.loads(KNOWN_TOOLS_FILE.read_text(encoding='utf-8'))
             return set(data.get('tools', []))
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
     return set()
 
@@ -81,7 +81,7 @@ def get_current_tools() -> Set[str]:
         tools = conn.execute("SELECT name FROM ati_tool_registry").fetchall()
         conn.close()
         return {t[0] for t in tools}
-    except:
+    except (sqlite3.OperationalError, sqlite3.DatabaseError, OSError):
         return set()
 
 

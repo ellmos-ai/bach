@@ -84,15 +84,28 @@ def _ensure_ffmpeg():
     """Stellt sicher dass ffmpeg im PATH ist (fuer Whisper)."""
     if shutil.which("ffmpeg"):
         return  # Bereits verfuegbar
-    # WinGet-Installationspfad durchsuchen
-    winget_base = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
-    if winget_base.exists():
-        for d in winget_base.iterdir():
-            if "FFmpeg" in d.name:
-                bin_dir = next(d.rglob("ffmpeg.exe"), None)
-                if bin_dir:
-                    os.environ["PATH"] = str(bin_dir.parent) + ";" + os.environ.get("PATH", "")
-                    return
+
+    # Unix: Explizite Pfade pruefen (launchd/cron haben minimalen PATH)
+    if sys.platform != "win32":
+        for candidate in (
+            "/opt/homebrew/bin/ffmpeg",  # macOS Apple Silicon
+            "/usr/local/bin/ffmpeg",     # macOS Intel / Linux manual
+            "/usr/bin/ffmpeg",           # Linux apt/dnf
+        ):
+            if Path(candidate).is_file():
+                os.environ["PATH"] = str(Path(candidate).parent) + ":" + os.environ.get("PATH", "")
+                return
+
+    # Windows: WinGet-Installationspfad durchsuchen
+    if sys.platform == "win32":
+        winget_base = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
+        if winget_base.exists():
+            for d in winget_base.iterdir():
+                if "FFmpeg" in d.name:
+                    bin_dir = next(d.rglob("ffmpeg.exe"), None)
+                    if bin_dir:
+                        os.environ["PATH"] = str(bin_dir.parent) + ";" + os.environ.get("PATH", "")
+                        return
 
 def _get_stt():
     """Lazy-Init des STT-Service (Singleton)."""
@@ -129,11 +142,17 @@ class TelegramConnector(BaseConnector):
         """Laedt Secret aus der secrets-Tabelle in bach.db (ENT-44)."""
         try:
             import sqlite3
-            db_path = Path(__file__).parent.parent / "data" / "bach.db"
+            try:
+                from hub.bach_paths import BACH_DB
+                db_path = BACH_DB
+            except ImportError:
+                db_path = Path(__file__).parent.parent / "data" / "bach.db"
             conn = sqlite3.connect(str(db_path))
-            row = conn.execute("SELECT value FROM secrets WHERE key = ?", (key,)).fetchone()
-            conn.close()
-            return row[0] if row and row[0] else ""
+            try:
+                row = conn.execute("SELECT value FROM secrets WHERE key = ?", (key,)).fetchone()
+                return row[0] if row and row[0] else ""
+            finally:
+                conn.close()
         except Exception:
             return ""
 
@@ -444,22 +463,30 @@ class TelegramConnector(BaseConnector):
                         print(f"[Telegram API Error] {method}: {error_msg}", file=sys.stderr)
                     return None
             except urllib.error.HTTPError as e:
-                # HTTP Fehler (4xx, 5xx)
+                if e.code < 500:
+                    print(f"[Telegram HTTP Error] {method}: HTTP {e.code}", file=sys.stderr)
+                    return None
                 if attempt == retries - 1:
                     print(f"[Telegram HTTP Error] {method}: HTTP {e.code}", file=sys.stderr)
-                return None
+                    return None
+                time.sleep(2 * (attempt + 1))
+                continue
             except urllib.error.URLError as e:
-                # Netzwerk-Fehler (Timeout, DNS, etc.)
+                # Netzwerk-Fehler (DNS, Connection Refused, etc.) — retriable
                 if attempt == retries - 1:
                     print(f"[Telegram Network Error] {method}: {e.reason}", file=sys.stderr)
-                return None
+                    return None
+                time.sleep(2 * (attempt + 1))
+                continue
             except socket.timeout:
                 # Expliziter Timeout (kann bei long-polling normal sein)
                 if method == "getUpdates":
-                    return []  # Leere Liste = keine neuen Nachrichten
+                    return []
                 if attempt == retries - 1:
                     print(f"[Telegram Timeout] {method}", file=sys.stderr)
-                return None
+                    return None
+                time.sleep(2 * (attempt + 1))
+                continue
             except Exception as e:
                 # Sonstige Fehler (JSON decode, etc.)
                 if attempt < retries - 1:

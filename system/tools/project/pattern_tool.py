@@ -65,13 +65,15 @@ Autor: BACH v1.1
 """
 
 import sys
-import io
 import argparse
 from pathlib import Path
 from collections import defaultdict
 
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
 
 
 def find_prefix_patterns(names: list, min_len: int = 3) -> dict:

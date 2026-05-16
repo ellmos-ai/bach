@@ -46,7 +46,7 @@ def get_keywords(title, trigger_words_json):
             if isinstance(words, list):
                 for w in words:
                     keywords.add(w.lower())
-        except:
+        except (json.JSONDecodeError, ValueError):
             # Fallback falls kein JSON
             words = re.findall(r'\w{3,}', trigger_words_json.lower())
             keywords.update(words)

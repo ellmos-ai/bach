@@ -63,7 +63,10 @@ MODEL_COSTS = {
     "claude-opus-4-6": {"input": 15.00, "output": 75.00},
 }
 
-DB_PATH = Path(__file__).parent.parent.parent / "data" / "bach.db"
+try:
+    from hub.bach_paths import BACH_DB as DB_PATH
+except ImportError:
+    DB_PATH = Path(__file__).parent.parent.parent / "data" / "bach.db"
 
 
 def _estimate_tokens(text: str) -> int:

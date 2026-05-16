@@ -417,7 +417,7 @@ def main():
         print()
         print("Einzelne Datei (Quick-Compile):")
         print("  python universal_compiler.py script.py")
-        print("  python universal_compiler.py script.py -o C:\Output")
+        print("  python universal_compiler.py script.py -o C:\\Output")
         print("  python universal_compiler.py script.py --exe MeinTool --console")
         print()
         print("Projekt-Ordner:")

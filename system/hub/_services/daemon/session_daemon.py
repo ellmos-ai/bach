@@ -40,7 +40,7 @@ Usage:
   python session_daemon.py --status           # Zeigt Status
 
 Prompt-Profile:
-  Profile werden in skills/_services/daemon/profiles/ definiert.
+  Profile werden in hub/_services/daemon/profiles/ definiert.
   Jedes Profil hat eigene Tasks, Prompts und Konfiguration.
 """
 
@@ -92,7 +92,7 @@ def log(msg: str, level: str = "INFO"):
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(line + "\n")
-    except:
+    except OSError:
         pass
 
 # ============ CONFIG ============
@@ -102,7 +102,7 @@ def load_config() -> dict:
     if CONFIG_FILE.exists():
         try:
             return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
 
     return {
@@ -131,7 +131,7 @@ def load_profile(name: str) -> dict:
     if profile_file.exists():
         try:
             return json.loads(profile_file.read_text(encoding="utf-8"))
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
 
     # Fallback: ATI-Profil
@@ -152,13 +152,13 @@ def get_running_pid() -> int:
     if not PID_FILE.exists():
         return 0
     try:
-        pid = int(PID_FILE.read_text().strip())
+        pid = int(PID_FILE.read_text(encoding="utf-8").strip())
         os.kill(pid, 0)
         return pid
     except (ProcessLookupError, ValueError, PermissionError):
         try:
             PID_FILE.unlink()
-        except:
+        except OSError:
             pass
         return 0
 
@@ -218,7 +218,7 @@ def show_status():
             try:
                 dt = datetime.fromisoformat(last)
                 last = dt.strftime("%d.%m. %H:%M")
-            except: pass
+            except (ValueError, TypeError): pass
         print(f"  {status} {job.get('profile', '?'):12} - Alle {job.get('interval_minutes', '?'):3} Min (Zuletzt: {last})")
 
     # Profile auflisten
@@ -252,7 +252,7 @@ def is_quiet_time(quiet_start: str, quiet_end: str) -> bool:
         if start > end:
             return now >= start or now < end
         return start <= now < end
-    except:
+    except (ValueError, TypeError):
         return False
 
 # ============ TASK COUNTING ============
@@ -277,7 +277,7 @@ def count_tasks(profile: dict) -> int:
 
         conn.close()
         return count
-    except:
+    except Exception:
         return 0
 
 # ============ SESSION TRIGGER ============
@@ -451,7 +451,7 @@ def daemon_loop(stop_event: Event):
                         last_run = datetime.fromisoformat(last_run_str)
                         if now >= last_run + timedelta(minutes=interval):
                             should_run = True
-                    except:
+                    except (ValueError, TypeError):
                         should_run = True
 
                 if should_run:
@@ -544,7 +544,7 @@ def main():
     if PID_FILE.exists():
         try:
             PID_FILE.unlink()
-        except:
+        except OSError:
             pass
 
     log("Daemon beendet")

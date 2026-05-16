@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
-BACH Registry Watcher v1.1.0
+BACH Registry Watcher v1.1.2
 
 Registry-Checks fuer das aktuelle BACH-Layout.
 
@@ -22,7 +22,6 @@ Usage:
 """
 
 import argparse
-import io
 import json
 import sqlite3
 import sys
@@ -33,8 +32,11 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 # Windows Console UTF-8
 if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
 
 # Pfade - BACH v1.1
 SCRIPT_DIR = Path(__file__).parent
@@ -53,7 +55,7 @@ IGNORED_DIR_NAMES = {"__pycache__", "node_modules", ".git", ".pytest_cache"}
 class RegistryWatcher:
     """Layout-aware Registry-Konsistenzpruefung fuer BACH."""
 
-    VERSION = "1.1.0"
+    VERSION = "1.1.2"
 
     def __init__(self, db_path: Optional[Path] = None, base_path: Optional[Path] = None):
         candidate_db = Path(db_path) if db_path is not None else None
@@ -62,10 +64,45 @@ class RegistryWatcher:
             candidate_db = None
 
         self.root = Path(base_path) if base_path is not None else BACH_ROOT
-        self.db_path = Path(candidate_db) if candidate_db is not None else (self.root / "data" / "bach.db")
+        fallback_db = self.root / "data" / "bach.db"
+        self.db_path = (
+            Path(candidate_db)
+            if candidate_db is not None
+            else self._resolve_canonical_db_path(fallback_db)
+        )
         self.tools_dir = self.root / "tools"
         self.skills_dir = self.root / "skills"
         self.agents_dir = self.root / "agents"
+
+    def _resolve_canonical_db_path(self, fallback_db: Path) -> Path:
+        """Nutze fuer die echte BACH-Instanz denselben kanonischen DB-Pfad wie die Handler.
+
+        Tests und isolierte Fixture-Roots bleiben bewusst bei ihrem lokalen
+        `data/bach.db`, damit sie nicht aus Versehen auf die Live-DB zeigen.
+        """
+        try:
+            if self.root.resolve() != BACH_ROOT.resolve():
+                return fallback_db
+        except OSError:
+            return fallback_db
+
+        inserted = False
+        try:
+            root_str = str(BACH_ROOT)
+            if root_str not in sys.path:
+                sys.path.insert(0, root_str)
+                inserted = True
+            from hub.bach_paths import BACH_DB
+
+            return Path(BACH_DB)
+        except Exception:
+            return fallback_db
+        finally:
+            if inserted:
+                try:
+                    sys.path.remove(root_str)
+                except ValueError:
+                    pass
 
     def check_all(self) -> Dict:
         """Fuehrt die vollstaendige Registry-Pruefung aus."""
@@ -144,7 +181,7 @@ class RegistryWatcher:
         except Exception as exc:
             result["error"] = str(exc)
 
-        return result
+        return self._finalize_result(result)
 
     def check_skills(self) -> Dict:
         """Prueft die Skills-Registry gegen den aktuellen skills/-Sync-Scope."""
@@ -208,7 +245,7 @@ class RegistryWatcher:
         except Exception as exc:
             result["error"] = str(exc)
 
-        return result
+        return self._finalize_result(result)
 
     def check_agents(self) -> Dict:
         """Prueft die Agenten-Oberflaeche gegen die aktuelle bach_agents-Tabelle."""
@@ -293,7 +330,7 @@ class RegistryWatcher:
         except Exception as exc:
             result["error"] = str(exc)
 
-        return result
+        return self._finalize_result(result)
 
     def check_partners(self) -> Dict:
         """Prueft die Partner-Registry auf Basiskonsistenz."""
@@ -321,7 +358,7 @@ class RegistryWatcher:
         except Exception as exc:
             result["error"] = str(exc)
 
-        return result
+        return self._finalize_result(result)
 
     def generate_report(self, results: Optional[Dict] = None) -> str:
         """Generiert einen lesbaren Health-Report."""
@@ -454,6 +491,65 @@ class RegistryWatcher:
             "external_entries": [],
             "valid": [],
         }
+
+    def _finalize_result(self, result: Dict) -> Dict:
+        """Entfernt Mehrfacheintraege aus den Ergebnislisten, ohne die Reihenfolge zu verlieren."""
+        result["valid"] = self._dedupe_strings(result.get("valid", []))
+        result["orphan_files"] = self._dedupe_strings(result.get("orphan_files", []))
+        result["config_errors"] = self._dedupe_strings(result.get("config_errors", []))
+
+        entry_keys = (
+            "missing_files",
+            "stale_db_entries",
+            "relocated_entries",
+            "historical_entries",
+            "external_entries",
+        )
+        for key in entry_keys:
+            result[key] = self._dedupe_entries(result.get(key, []))
+
+        return result
+
+    def _dedupe_strings(self, values: Iterable[str]) -> List[str]:
+        """Dedupe fuer einfache String-Listen."""
+        seen = set()
+        deduped: List[str] = []
+        for value in values or []:
+            if value in seen:
+                continue
+            seen.add(value)
+            deduped.append(value)
+        return deduped
+
+    def _dedupe_entries(self, entries: Iterable[Dict]) -> List[Dict]:
+        """Dedupe fuer strukturierte Registry-Eintraege."""
+        seen = set()
+        deduped: List[Dict] = []
+
+        for entry in entries or []:
+            if isinstance(entry, str):
+                key = ("__string__", entry)
+                normalized_entry = entry
+            else:
+                normalized_entry = dict(entry)
+                candidates = tuple(self._dedupe_strings(normalized_entry.get("candidates") or []))
+                if candidates:
+                    normalized_entry["candidates"] = list(candidates)
+                else:
+                    normalized_entry.pop("candidates", None)
+                key = (
+                    normalized_entry.get("name"),
+                    normalized_entry.get("expected_path"),
+                    normalized_entry.get("reason"),
+                    candidates,
+                )
+
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(normalized_entry)
+
+        return deduped
 
     def _fetch_rows(self, query: str) -> List[sqlite3.Row]:
         with sqlite3.connect(self.db_path) as conn:

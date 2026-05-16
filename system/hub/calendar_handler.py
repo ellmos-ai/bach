@@ -236,12 +236,21 @@ class CalendarHandler(BaseHandler):
                 "  --note        Beschreibung"
             )
 
-        # Titel
+        # Titel: erstes Argument das kein Flag und kein Flag-Wert ist
+        known_flags = {"--date", "-d", "--time", "-t", "--end", "--location", "--type", "--note"}
         title = None
+        skip_next = False
         for a in args:
-            if not a.startswith("-"):
-                title = a
-                break
+            if skip_next:
+                skip_next = False
+                continue
+            if a in known_flags:
+                skip_next = True
+                continue
+            if a.startswith("-"):
+                continue
+            title = a
+            break
         if not title:
             return False, "Kein Titel angegeben."
 

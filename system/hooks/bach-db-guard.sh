@@ -10,7 +10,11 @@
 
 # --- Befehl aus STDIN extrahieren ---
 INPUT=$(cat)
-CMD=$(echo "$INPUT" | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" 2>/dev/null)
+PYTHON_CMD=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "")
+if [ -z "$PYTHON_CMD" ]; then
+    exit 0
+fi
+CMD=$(echo "$INPUT" | "$PYTHON_CMD" -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" 2>/dev/null)
 
 # Kein Befehl -> ALLOW
 [ -z "$CMD" ] && exit 0

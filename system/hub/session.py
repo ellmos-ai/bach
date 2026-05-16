@@ -63,8 +63,10 @@ class SessionHandler(BaseHandler):
         """Laedt User-Config."""
         if self.user_config_path.exists():
             try:
-                return json.loads(self.user_config_path.read_text(encoding='utf-8'))
-            except:
+                data = json.loads(self.user_config_path.read_text(encoding='utf-8'))
+                if isinstance(data, dict):
+                    return data
+            except (json.JSONDecodeError, OSError):
                 pass
         return {"session_duration_minutes": 120}
 
@@ -164,7 +166,7 @@ class SessionHandler(BaseHandler):
                 hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
                 minutes, seconds = divmod(remainder, 60)
                 runtime_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-            except:
+            except (ValueError, TypeError):
                 runtime_str = "?"
 
             results.append(f"\n[AKTIVE SESSION]")
@@ -322,7 +324,7 @@ class SessionHandler(BaseHandler):
                     config["session_duration_minutes"] = duration_minutes
                     self._save_user_config(config)
                     results.append(f"[OK] Sitzungsdauer auf {duration_minutes} Minuten gesetzt")
-                except:
+                except (ValueError, IndexError, OSError):
                     pass
 
         config = self._load_user_config()

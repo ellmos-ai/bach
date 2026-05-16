@@ -103,59 +103,56 @@ class AboHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.user_db)
-            cursor = conn.cursor()
+            try:
+                cursor = conn.cursor()
 
-            # Abo-Subscriptions
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS abo_subscriptions (
-                    id INTEGER PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    anbieter TEXT NOT NULL,
-                    kategorie TEXT,
-                    betrag_monatlich REAL,
-                    zahlungsintervall TEXT DEFAULT 'monatlich',
-                    kuendigungslink TEXT,
-                    erkannt_am TEXT,
-                    bestaetigt INTEGER DEFAULT 0,
-                    aktiv INTEGER DEFAULT 1,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT
-                )
-            """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS abo_subscriptions (
+                        id INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        anbieter TEXT NOT NULL,
+                        kategorie TEXT,
+                        betrag_monatlich REAL,
+                        zahlungsintervall TEXT DEFAULT 'monatlich',
+                        kuendigungslink TEXT,
+                        erkannt_am TEXT,
+                        bestaetigt INTEGER DEFAULT 0,
+                        aktiv INTEGER DEFAULT 1,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT
+                    )
+                """)
 
-            # Abo-Payments (Verknuepfung zu steuer_posten)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS abo_payments (
-                    id INTEGER PRIMARY KEY,
-                    subscription_id INTEGER REFERENCES abo_subscriptions(id),
-                    posten_id INTEGER,
-                    betrag REAL,
-                    datum TEXT,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS abo_payments (
+                        id INTEGER PRIMARY KEY,
+                        subscription_id INTEGER REFERENCES abo_subscriptions(id),
+                        posten_id INTEGER,
+                        betrag REAL,
+                        datum TEXT,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
 
-            # Bekannte Anbieter-Patterns
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS abo_patterns (
-                    id INTEGER PRIMARY KEY,
-                    pattern TEXT NOT NULL,
-                    anbieter TEXT NOT NULL,
-                    kategorie TEXT,
-                    kuendigungslink TEXT,
-                    dist_type INTEGER DEFAULT 2
-                )
-            """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS abo_patterns (
+                        id INTEGER PRIMARY KEY,
+                        pattern TEXT NOT NULL,
+                        anbieter TEXT NOT NULL,
+                        kategorie TEXT,
+                        kuendigungslink TEXT,
+                        dist_type INTEGER DEFAULT 2
+                    )
+                """)
 
-            # Indizes
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_abo_subs_anbieter ON abo_subscriptions(anbieter)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_abo_subs_aktiv ON abo_subscriptions(aktiv)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_abo_payments_sub ON abo_payments(subscription_id)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_abo_subs_anbieter ON abo_subscriptions(anbieter)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_abo_subs_aktiv ON abo_subscriptions(aktiv)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_abo_payments_sub ON abo_payments(subscription_id)")
 
-            conn.commit()
-            conn.close()
+                conn.commit()
+            finally:
+                conn.close()
 
-            # Standard-Patterns laden
             self._load_default_patterns()
 
             return (True, "[OK] Abo-Tabellen initialisiert")
@@ -191,17 +188,19 @@ class AboHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.user_db)
-            cursor = conn.cursor()
+            try:
+                cursor = conn.cursor()
 
-            for pattern, anbieter, kategorie, link in patterns:
-                cursor.execute("""
-                    INSERT OR IGNORE INTO abo_patterns (pattern, anbieter, kategorie, kuendigungslink, dist_type)
-                    VALUES (?, ?, ?, ?, 2)
-                """, (pattern, anbieter, kategorie, link))
+                for pattern, anbieter, kategorie, link in patterns:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO abo_patterns (pattern, anbieter, kategorie, kuendigungslink, dist_type)
+                        VALUES (?, ?, ?, ?, 2)
+                    """, (pattern, anbieter, kategorie, link))
 
-            conn.commit()
-            conn.close()
-        except:
+                conn.commit()
+            finally:
+                conn.close()
+        except (sqlite3.Error, OSError):
             pass
 
     def _scan(self, args: list, dry_run: bool) -> tuple:
@@ -250,23 +249,24 @@ class AboHandler(BaseHandler):
         """Listet alle erkannten Abos."""
         try:
             conn = sqlite3.connect(self.user_db)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+            try:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
 
-            # Filter
-            nur_aktiv = "--alle" not in args
-            nur_bestaetigt = "--bestaetigt" in args
+                nur_aktiv = "--alle" not in args
+                nur_bestaetigt = "--bestaetigt" in args
 
-            query = "SELECT * FROM abo_subscriptions WHERE 1=1"
-            if nur_aktiv:
-                query += " AND aktiv = 1"
-            if nur_bestaetigt:
-                query += " AND bestaetigt = 1"
-            query += " ORDER BY betrag_monatlich DESC"
+                query = "SELECT * FROM abo_subscriptions WHERE 1=1"
+                if nur_aktiv:
+                    query += " AND aktiv = 1"
+                if nur_bestaetigt:
+                    query += " AND bestaetigt = 1"
+                query += " ORDER BY betrag_monatlich DESC"
 
-            cursor.execute(query)
-            abos = cursor.fetchall()
-            conn.close()
+                cursor.execute(query)
+                abos = cursor.fetchall()
+            finally:
+                conn.close()
 
             if not abos:
                 return (True, "Keine Abos gefunden.\n\nFuehre 'bach abo scan' aus um Abos zu erkennen.")
@@ -321,17 +321,18 @@ class AboHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.user_db)
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE abo_subscriptions SET bestaetigt = 1, updated_at = ? WHERE id = ?",
-                (datetime.now().isoformat(), abo_id)
-            )
-            if cursor.rowcount == 0:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE abo_subscriptions SET bestaetigt = 1, updated_at = ? WHERE id = ?",
+                    (datetime.now().isoformat(), abo_id)
+                )
+                if cursor.rowcount == 0:
+                    return (False, f"[ERROR] Abo {abo_id} nicht gefunden")
+                conn.commit()
+                return (True, f"[OK] Abo {abo_id} bestaetigt")
+            finally:
                 conn.close()
-                return (False, f"[ERROR] Abo {abo_id} nicht gefunden")
-            conn.commit()
-            conn.close()
-            return (True, f"[OK] Abo {abo_id} bestaetigt")
         except Exception as e:
             return (False, f"[ERROR] {e}")
 
@@ -350,17 +351,18 @@ class AboHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.user_db)
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE abo_subscriptions SET aktiv = 0, updated_at = ? WHERE id = ?",
-                (datetime.now().isoformat(), abo_id)
-            )
-            if cursor.rowcount == 0:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE abo_subscriptions SET aktiv = 0, updated_at = ? WHERE id = ?",
+                    (datetime.now().isoformat(), abo_id)
+                )
+                if cursor.rowcount == 0:
+                    return (False, f"[ERROR] Abo {abo_id} nicht gefunden")
+                conn.commit()
+                return (True, f"[OK] Abo {abo_id} deaktiviert (Fehlererkennung)")
+            finally:
                 conn.close()
-                return (False, f"[ERROR] Abo {abo_id} nicht gefunden")
-            conn.commit()
-            conn.close()
-            return (True, f"[OK] Abo {abo_id} deaktiviert (Fehlererkennung)")
         except Exception as e:
             return (False, f"[ERROR] {e}")
 
@@ -368,24 +370,25 @@ class AboHandler(BaseHandler):
         """Zeigt Kostenaufstellung nach Kategorie."""
         try:
             conn = sqlite3.connect(self.user_db)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+            try:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
 
-            cursor.execute("""
-                SELECT kategorie,
-                       COUNT(*) as anzahl,
-                       SUM(betrag_monatlich) as summe
-                FROM abo_subscriptions
-                WHERE aktiv = 1
-                GROUP BY kategorie
-                ORDER BY summe DESC
-            """)
-            kategorien = cursor.fetchall()
+                cursor.execute("""
+                    SELECT kategorie,
+                           COUNT(*) as anzahl,
+                           SUM(betrag_monatlich) as summe
+                    FROM abo_subscriptions
+                    WHERE aktiv = 1
+                    GROUP BY kategorie
+                    ORDER BY summe DESC
+                """)
+                kategorien = cursor.fetchall()
 
-            cursor.execute("SELECT SUM(betrag_monatlich) as total FROM abo_subscriptions WHERE aktiv = 1")
-            total = cursor.fetchone()['total'] or 0
-
-            conn.close()
+                cursor.execute("SELECT SUM(betrag_monatlich) as total FROM abo_subscriptions WHERE aktiv = 1")
+                total = cursor.fetchone()['total'] or 0
+            finally:
+                conn.close()
 
             output = [
                 "=== ABO-KOSTEN nach Kategorie ===",
@@ -420,17 +423,19 @@ class AboHandler(BaseHandler):
         """Exportiert Abos als CSV."""
         try:
             conn = sqlite3.connect(self.user_db)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+            try:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
 
-            cursor.execute("""
-                SELECT anbieter, kategorie, betrag_monatlich, zahlungsintervall, kuendigungslink, bestaetigt
-                FROM abo_subscriptions
-                WHERE aktiv = 1
-                ORDER BY kategorie, anbieter
-            """)
-            abos = cursor.fetchall()
-            conn.close()
+                cursor.execute("""
+                    SELECT anbieter, kategorie, betrag_monatlich, zahlungsintervall, kuendigungslink, bestaetigt
+                    FROM abo_subscriptions
+                    WHERE aktiv = 1
+                    ORDER BY kategorie, anbieter
+                """)
+                abos = cursor.fetchall()
+            finally:
+                conn.close()
 
             if not abos:
                 return (True, "Keine Abos zum Exportieren.")
@@ -483,12 +488,14 @@ class AboHandler(BaseHandler):
         """Zeigt bekannte Abo-Patterns."""
         try:
             conn = sqlite3.connect(self.user_db)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+            try:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
 
-            cursor.execute("SELECT * FROM abo_patterns ORDER BY kategorie, anbieter")
-            patterns = cursor.fetchall()
-            conn.close()
+                cursor.execute("SELECT * FROM abo_patterns ORDER BY kategorie, anbieter")
+                patterns = cursor.fetchall()
+            finally:
+                conn.close()
 
             if not patterns:
                 return (True, "Keine Patterns definiert.\n\nFuehre 'bach abo init' aus.")

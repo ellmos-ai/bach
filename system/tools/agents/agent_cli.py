@@ -29,14 +29,16 @@ import argparse
 import json
 import sqlite3
 import sys
-import io
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
 
 # Encoding fix fuer Windows
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
 
 # ============ PFADE ============
 

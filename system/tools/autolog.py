@@ -100,9 +100,9 @@ class AutoLogger:
                             if line_date >= cutoff:
                                 kept_lines.append(line)
                             continue
-                    except:
+                    except (ValueError, IndexError):
                         pass
-                    
+
                     # Altes Format ohne Datum: behalten (koennen wir nicht datieren)
                     kept_lines.append(line)
                 else:

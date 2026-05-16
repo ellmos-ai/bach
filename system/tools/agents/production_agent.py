@@ -16,13 +16,15 @@ Usage:
 
 import json
 import sys
-import io
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List
 
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
 
 SCRIPT_DIR = Path(__file__).parent
 BACH_ROOT = SCRIPT_DIR.parent

@@ -86,7 +86,7 @@ def check_status():
     # Credentials pruefen
     if CREDENTIALS_FILE.exists():
         try:
-            creds = json.loads(CREDENTIALS_FILE.read_text())
+            creds = json.loads(CREDENTIALS_FILE.read_text(encoding="utf-8"))
             client = creds.get("installed") or creds.get("web", {})
             print(f"[OK] Credentials: {CREDENTIALS_FILE.name}")
             print(f"     Client-ID: {client.get('client_id', '?')[:30]}...")
@@ -99,7 +99,7 @@ def check_status():
     # Token pruefen
     if TOKEN_FILE.exists():
         try:
-            token = json.loads(TOKEN_FILE.read_text())
+            token = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
             expiry_str = token.get("expiry", "")
             scopes = token.get("scopes", [])
             has_send = any("send" in s for s in scopes)
@@ -161,7 +161,7 @@ def refresh_token():
         return False
 
     try:
-        token_data = json.loads(TOKEN_FILE.read_text())
+        token_data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
         creds = Credentials(
             token=token_data.get("token"),
             refresh_token=token_data.get("refresh_token"),

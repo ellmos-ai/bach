@@ -60,7 +60,7 @@ Verwendung:
     python c_import_diagnose.py <projekt_src_pfad> [--json] [--modules module1:Class1,module2:Class2]
     
 Beispiel:
-    python c_import_diagnose.py C:\MeinProjekt\src --json
+    python c_import_diagnose.py C:\\MeinProjekt\\src --json
     python c_import_diagnose.py . --modules core.app:App,gui.main:MainWindow
 """
 
@@ -78,7 +78,7 @@ if sys.platform == 'win32':
     try:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-    except:
+    except (AttributeError, OSError):
         pass
 
 class ImportDiagnostics:
@@ -123,7 +123,7 @@ class ImportDiagnostics:
                         class_name = line.split('class ')[1].split('(')[0].strip()
                         modules.append((module_path, class_name))
                         break
-            except:
+            except OSError:
                 pass
         
         return modules[:20]  # Max 20 Module
@@ -316,7 +316,7 @@ except Exception as e:
                             imports.append(p.strip().split(' as ')[0])
                 
                 imports_map[module_name] = imports
-            except:
+            except OSError:
                 pass
         
         # Vereinfachte Circular Detection
@@ -459,7 +459,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Beispiele:
-  python c_import_diagnose.py C:\MeinProjekt\src
+  python c_import_diagnose.py C:\\MeinProjekt\\src
   python c_import_diagnose.py . --json
   python c_import_diagnose.py ./src --modules core.app:App,gui.main:MainWindow
         """

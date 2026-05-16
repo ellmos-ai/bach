@@ -305,7 +305,7 @@ class RestoreHandler(BaseHandler):
         Restored alle Dateien einer Kategorie.
 
         Args:
-            category: Kategorie (core, templates, skills, hub, tools, agents)
+            category: Kategorie (core, templates, skills, hub, tools, agents, connectors, partners, docs, gui)
             dry_run: Nur anzeigen, nicht ausführen
 
         Returns:
@@ -319,6 +319,10 @@ class RestoreHandler(BaseHandler):
             "hub": {"dist_type": None, "path_pattern": "hub/%"},
             "tools": {"dist_type": None, "path_pattern": "tools/%"},
             "agents": {"dist_type": None, "path_pattern": "agents/%"},
+            "connectors": {"dist_type": None, "path_pattern": "connectors/%"},
+            "partners": {"dist_type": None, "path_pattern": "partners/%"},
+            "docs": {"dist_type": None, "path_pattern": "docs/%"},
+            "gui": {"dist_type": None, "path_pattern": "gui/%"},
         }
 
         if category not in category_mapping:
@@ -343,7 +347,7 @@ class RestoreHandler(BaseHandler):
             """
             cursor = conn.execute(query, (config["dist_type"],))
         else:
-            # Nach Pfad-Pattern filtern (skills, hub, tools, agents)
+            # Nach Pfad-Pattern filtern (skills, hub, tools, agents, connectors, partners, docs, gui)
             query = """
                 SELECT DISTINCT m.path
                 FROM distribution_manifest m
@@ -357,7 +361,7 @@ class RestoreHandler(BaseHandler):
         conn.close()
 
         if not files:
-            return False, f"[INFO] Keine Dateien gefunden für Kategorie: {category}"
+            return True, f"[INFO] Keine Dateien gefunden für Kategorie: {category}"
 
         # Dry-Run: Nur anzeigen
         if dry_run:

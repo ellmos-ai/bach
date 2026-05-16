@@ -139,9 +139,9 @@ SIEHE AUCH
   docs/help/tools/partner.txt         Partner-Tools (Perplexity-Integration)
   docs/help/delegate.txt              Delegation an Research-Partner
 
-  PubMed:     https:/pubmed.ncbi.nlm.nih.gov/
-  Perplexity: https:/www.perplexity.ai/
-  Consensus:  https:/consensus.app/
+  PubMed:     https://pubmed.ncbi.nlm.nih.gov/
+  Perplexity: https://www.perplexity.ai/
+  Consensus:  https://consensus.app/
 
 VERSION: v1.0.0 (2026-01-23)
 Zeilen: ~205 (research_agent.py)

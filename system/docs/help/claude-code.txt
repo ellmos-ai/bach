@@ -142,7 +142,7 @@ UMGEBUNGSVARIABLEN (Auswahl)
 BEISPIELE
 ---------
   # Interaktiv im BACH-Verzeichnis
-  cd "C:\Users\User\OneDrive\.AI\BACH"
+  cd "C:\Users\User\OneDrive\.TOPICS\.AI\.OS\BACH"
   claude
 
   # Mit Opus 4.6 und Extended Context

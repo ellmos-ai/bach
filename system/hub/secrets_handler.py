@@ -68,7 +68,7 @@ def get_secrets_file_path():
             # Tilde expandieren (~/.bach -> /home/user/.bach)
             path = Path(row[0]).expanduser()
             return path
-    except:
+    except (sqlite3.Error, OSError):
         pass
 
     return DEFAULT_SECRETS_FILE

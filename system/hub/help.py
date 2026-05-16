@@ -69,7 +69,7 @@ class HelpHandler(BaseHandler):
                     if first_line.startswith("="):
                         first_line = f.readline().strip()
                 topics.append(f"  {topic:20} {first_line[:50]}")
-            except:
+            except (OSError, UnicodeDecodeError):
                 topics.append(f"  {topic}")
         
         # Unterordner
@@ -328,7 +328,7 @@ class HelpHandler(BaseHandler):
                             header = f"[ALIAS: {topic} -> {pattern.relative_to(self.base_path)}]\n"
                             header += "=" * 60 + "\n\n"
                             return header + content
-                        except:
+                        except (OSError, UnicodeDecodeError):
                             continue
 
                 # Ordner-Liste zeigen wenn Name nicht gefunden

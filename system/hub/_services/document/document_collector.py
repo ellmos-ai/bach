@@ -784,7 +784,7 @@ class DocumentCollector:
                             parts.append(f"\n[Anhang: {attach_name}]")
                             try:
                                 text = attach.data.decode('utf-8')
-                            except:
+                            except UnicodeDecodeError:
                                 text = attach.data.decode('latin-1')
                             parts.append(text)
 
@@ -824,14 +824,14 @@ class DocumentCollector:
                         body = part.get_payload(decode=True).decode(charset)
                         parts.append(body)
                         break
-                    except:
+                    except (UnicodeDecodeError, AttributeError):
                         pass
         else:
             charset = msg.get_content_charset() or 'utf-8'
             try:
                 body = msg.get_payload(decode=True).decode(charset)
                 parts.append(body)
-            except:
+            except (UnicodeDecodeError, AttributeError):
                 parts.append(str(msg.get_payload()))
 
         return "\n".join(parts)

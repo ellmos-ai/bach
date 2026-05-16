@@ -15,7 +15,6 @@ Usage:
 
 import json
 import sys
-import io
 import argparse
 from collections import Counter
 from pathlib import Path
@@ -23,8 +22,11 @@ from typing import Dict, List
 
 # Windows Console UTF-8
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
 
 # ============================================================================
 # BACH-PFADE

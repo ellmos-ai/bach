@@ -57,7 +57,6 @@ Usage:
 """
 
 import sys
-import io
 import json
 import sqlite3
 import argparse
@@ -65,7 +64,10 @@ from pathlib import Path
 from collections import defaultdict
 
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
 
 BACH_DB = Path(r"C:\Users\User\OneDrive\.AI\BACH_STREAM\PRODUCTION\CONSTRUCTION_AREA\BACH_v1\Bach\bach.db")
 

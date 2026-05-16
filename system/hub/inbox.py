@@ -47,7 +47,7 @@ class InboxHandler:
             return False, None
         
         try:
-            pid = int(INBOX_PID_FILE.read_text().strip())
+            pid = int(INBOX_PID_FILE.read_text(encoding="utf-8").strip())
             
             # Windows: tasklist pruefen
             if sys.platform == 'win32':

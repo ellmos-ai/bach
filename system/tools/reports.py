@@ -42,8 +42,13 @@ SCRIPT_DIR = Path(__file__).parent
 REPORTS_DIR = SCRIPT_DIR / "reports"
 
 sys.path.insert(0, str(SCRIPT_DIR))
-from watcher import check_changes, get_latest_snapshot
-from writer import WATCHED_DIRS
+try:
+    from watcher import check_changes, get_latest_snapshot
+    from writer import WATCHED_DIRS
+except ImportError:
+    check_changes = None
+    get_latest_snapshot = None
+    WATCHED_DIRS = {}
 
 
 def create_report(alias: str) -> str:

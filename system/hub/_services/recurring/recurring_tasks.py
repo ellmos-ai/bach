@@ -68,7 +68,7 @@ def load_config() -> Dict:
     if CONFIG_FILE.exists():
         try:
             return json.loads(CONFIG_FILE.read_text(encoding='utf-8'))
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
 
     # Default-Config
@@ -175,7 +175,7 @@ def check_recurring_tasks() -> List[str]:
                 next_due = last_run + timedelta(days=interval_days)
                 if now < next_due:
                     continue
-            except:
+            except (ValueError, TypeError):
                 pass
 
         # Task erstellen
@@ -227,13 +227,17 @@ def list_recurring_tasks() -> Dict[str, Dict]:
             try:
                 last_run = datetime.fromisoformat(last_run_str)
                 next_due = last_run + timedelta(days=interval_days)
-                days_until = (next_due - now).days
-            except:
+                remaining = next_due - now
+                is_due = remaining.total_seconds() <= 0
+                days_until = 0 if is_due else max(0, remaining.days)
+            except (ValueError, TypeError):
                 days_until = 0
                 next_due = now
+                is_due = True
         else:
             days_until = 0
             next_due = now
+            is_due = True
 
         result[task_id] = {
             'enabled': task_config.get('enabled', False),
@@ -243,7 +247,7 @@ def list_recurring_tasks() -> Dict[str, Dict]:
             'last_run': last_run_str,
             'next_due': next_due.isoformat() if next_due else None,
             'days_until': days_until,
-            'is_due': days_until <= 0
+            'is_due': is_due
         }
 
     return result

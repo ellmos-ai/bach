@@ -297,7 +297,11 @@ class SyncTracker:
 def get_tracker(db_path: Path = None) -> SyncTracker:
     """Erstellt SyncTracker mit Standard-DB-Pfad."""
     if db_path is None:
-        db_path = Path(__file__).parent.parent / "data" / "bach.db"
+        try:
+            from hub.bach_paths import BACH_DB
+            db_path = BACH_DB
+        except ImportError:
+            db_path = Path(__file__).parent.parent / "data" / "bach.db"
     return SyncTracker(db_path)
 
 

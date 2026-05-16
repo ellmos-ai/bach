@@ -125,7 +125,7 @@ class WorkerThread(QThread):
                 # Cleanup Temp Files (nur wenn konvertiert wurde)
                 if pdf_path != input_path and os.path.exists(pdf_path):
                     try: os.remove(pdf_path)
-                    except: pass
+                    except OSError: pass
 
                 self.progress_signal.emit(idx, 100, 1) # Fertig
 
@@ -177,7 +177,7 @@ class WorkerThread(QThread):
                 page.insert_text((50, 50), text, fontsize=11)
                 doc.save(temp_pdf)
                 return temp_pdf
-            except:
+            except Exception:
                 return None
 
         return None
@@ -271,7 +271,7 @@ class MainWindow(QMainWindow):
             try:
                 with open(CONFIG_FILE, "r") as f:
                     return json.load(f)
-            except: pass
+            except (json.JSONDecodeError, OSError): pass
         return {"master_pw": "", "lang": "deu", "encrypt_only": False}
 
     def save_config(self):

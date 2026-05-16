@@ -60,7 +60,6 @@ Autor: BACH v1.1
 """
 
 import sys
-import io
 import os
 import argparse
 from pathlib import Path
@@ -68,7 +67,10 @@ from datetime import datetime, timedelta
 from typing import List, Tuple
 
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
 
 
 def get_file_age_days(path: Path) -> float:
@@ -84,7 +86,7 @@ def get_folder_size_mb(path: Path) -> float:
         if f.is_file():
             try:
                 total += f.stat().st_size
-            except:
+            except OSError:
                 pass
     return total / (1024 * 1024)
 

@@ -136,7 +136,7 @@ class InteractionProtocol:
             return None
         try:
             return json.loads(self.identity_file.read_text(encoding='utf-8'))
-        except:
+        except (json.JSONDecodeError, OSError):
             return None
     
     def _load_identity_from_db(self) -> Optional[Dict]:
@@ -166,7 +166,7 @@ class InteractionProtocol:
                     elif key == "instance_name":
                         identity["instance"]["name"] = value
                 return identity
-        except:
+        except (sqlite3.Error, OSError):
             pass
         return None
     
@@ -485,7 +485,7 @@ class InteractionProtocol:
                 conn.close()
                 lessons_info["exists"] = True
                 lessons_info["entries"] = count
-            except:
+            except (sqlite3.Error, OSError):
                 pass
         versions["lessons"] = lessons_info
         
@@ -500,7 +500,7 @@ class InteractionProtocol:
                 conn.close()
                 facts_info["exists"] = True
                 facts_info["entries"] = count
-            except:
+            except (sqlite3.Error, OSError):
                 pass
         versions["facts"] = facts_info
         

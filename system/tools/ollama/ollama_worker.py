@@ -35,7 +35,7 @@ def is_ollama_ready() -> bool:
     try:
         r = requests.get("http://localhost:11434/api/tags", timeout=5)
         return r.status_code == 200
-    except:
+    except (requests.RequestException, OSError):
         return False
 
 def process_job(job_file: Path) -> bool:

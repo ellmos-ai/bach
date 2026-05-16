@@ -22,7 +22,6 @@ import sys
 import json
 import subprocess
 import re
-import io
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Any
@@ -30,8 +29,11 @@ import argparse
 
 # Windows Console UTF-8
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
 
 # ============================================================================
 # BACH-PFADE (angepasst von RecludOS)

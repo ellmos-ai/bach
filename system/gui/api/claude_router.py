@@ -92,30 +92,52 @@ def send_to_bridge(prompt: str, user_id: str) -> dict:
 
 def spawn_worker_session(prompt: str, user_id: str) -> dict:
     """Spawnt neue Worker-Session (nicht persistent)."""
-    result = subprocess.run(
-        ["claude", prompt],
-        capture_output=True,
-        text=True,
-        encoding='utf-8'
-    )
+    try:
+        result = subprocess.run(
+            ["claude", "--print", prompt],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "mode": "worker", "response": "Timeout nach 120s"}
+    except FileNotFoundError:
+        return {"status": "error", "mode": "worker", "response": "claude CLI nicht gefunden"}
+
+    if result.returncode != 0:
+        return {"status": "error", "mode": "worker", "response": result.stderr or "Unbekannter Fehler"}
 
     return {
         "status": "ok",
         "mode": "worker",
-        "response": result.stdout
+        "response": result.stdout,
     }
 
 def execute_cli_command(command: str) -> dict:
     """Führt BACH CLI-Befehl direkt aus (kein LLM)."""
-    result = subprocess.run(
-        ["python", str(BACH_DIR / "bach.py")] + command.split(),
-        capture_output=True,
-        text=True,
-        encoding='utf-8'
-    )
+    import shlex
+    try:
+        args = shlex.split(command)
+    except ValueError:
+        return {"status": "error", "mode": "cli", "response": "Ungültiger Befehl"}
+
+    try:
+        result = subprocess.run(
+            ["python", str(BACH_DIR / "bach.py")] + args,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "mode": "cli", "response": "Timeout nach 60s"}
+
+    if result.returncode != 0:
+        return {"status": "error", "mode": "cli", "response": result.stderr or result.stdout}
 
     return {
         "status": "ok",
         "mode": "cli",
-        "response": result.stdout
+        "response": result.stdout,
     }

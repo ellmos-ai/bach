@@ -61,14 +61,16 @@ Autor: BACH v1.1 (basiert auf partner_scanner.py)
 import json
 import os
 import sys
-import io
 import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Set
 
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
 
 SCRIPT_DIR = Path(__file__).parent
 BACH_ROOT = SCRIPT_DIR.parent
@@ -177,7 +179,7 @@ def compare_with_registry() -> Dict:
                 data = json.load(f)
                 if isinstance(data, dict) and "tools" in data:
                     registered = set(data["tools"].keys())
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
     
     found_names = {t["name"] for t in scan["tools"]}

@@ -12,7 +12,7 @@ Ausfuehrliche Dokumentation: wiki/antigravity.txt
 KURZUEBERSICHT
 --------------
   Was:        VS Code Fork mit autonomen KI-Agenten
-  Download:   https:/antigravity.google/download
+  Download:   https://antigravity.google/download
   Pfad:       C:\Users\User\AppData\Local\Programs\Antigravity\
 
 CLI-BEFEHLE

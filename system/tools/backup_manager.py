@@ -76,7 +76,7 @@ class BackupManager:
                 ).fetchone()
                 if row:
                     return Path(row[0])
-        except:
+        except sqlite3.Error:
             pass
         return Path(DEFAULT_NAS_PATH)
     
@@ -186,35 +186,35 @@ class BackupManager:
             try:
                 sessions = conn.execute("SELECT * FROM memory_sessions").fetchall()
                 export["memory_sessions"] = [dict(row) for row in sessions]
-            except:
+            except sqlite3.Error:
                 export["memory_sessions"] = []
             
             # Memory Lessons
             try:
                 lessons = conn.execute("SELECT * FROM memory_lessons").fetchall()
                 export["memory_lessons"] = [dict(row) for row in lessons]
-            except:
+            except sqlite3.Error:
                 export["memory_lessons"] = []
             
             # Memory Context
             try:
                 context = conn.execute("SELECT * FROM memory_context").fetchall()
                 export["memory_context"] = [dict(row) for row in context]
-            except:
+            except sqlite3.Error:
                 export["memory_context"] = []
             
             # Token-Monitoring
             try:
                 tokens = conn.execute("SELECT * FROM monitor_tokens").fetchall()
                 export["monitor_tokens"] = [dict(row) for row in tokens]
-            except:
+            except sqlite3.Error:
                 export["monitor_tokens"] = []
             
             # Success-Monitoring
             try:
                 success = conn.execute("SELECT * FROM monitor_success").fetchall()
                 export["monitor_success"] = [dict(row) for row in success]
-            except:
+            except sqlite3.Error:
                 export["monitor_success"] = []
         
         return export
@@ -228,7 +228,7 @@ class BackupManager:
                 ).fetchone()
                 if row:
                     return row[0]
-        except:
+        except sqlite3.Error:
             pass
         return "unknown"
     
@@ -295,7 +295,7 @@ class BackupManager:
                 manifest["path"] = str(zip_path)
                 manifest["size_mb"] = zip_path.stat().st_size / (1024 * 1024)
                 return manifest
-        except:
+        except (zipfile.BadZipFile, json.JSONDecodeError, KeyError, OSError):
             return {
                 "name": zip_path.stem,
                 "path": str(zip_path),
@@ -436,9 +436,9 @@ class BackupManager:
                             f"INSERT OR REPLACE INTO memory_sessions ({cols}) VALUES ({placeholders})",
                             list(session.values())
                         )
-                except:
+                except sqlite3.Error:
                     pass
-            
+
             conn.commit()
     
     # ═══════════════════════════════════════════════════════════════

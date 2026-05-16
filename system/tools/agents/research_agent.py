@@ -17,7 +17,6 @@ Usage:
 import json
 import os
 import sys
-import io
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -26,7 +25,10 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
 
 from portable_base import PortableAgent, BACH_ROOT, BACH_AVAILABLE
 

@@ -82,7 +82,7 @@ def log(msg: str):
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(line + "\n")
-    except:
+    except OSError:
         pass
 
 # ============ SCREEN LOCK CHECK ============
@@ -103,7 +103,7 @@ def is_screen_locked() -> bool:
             import pyautogui
             pos = pyautogui.position()
             return False
-        except:
+        except Exception:
             return True
 
     except Exception as e:
@@ -118,7 +118,7 @@ def load_profile(name: str) -> dict:
     if profile_file.exists():
         try:
             return json.loads(profile_file.read_text(encoding="utf-8"))
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
 
     # Fallback
@@ -188,7 +188,7 @@ def count_tasks(profile: dict) -> int:
 
         conn.close()
         return count
-    except:
+    except Exception:
         return 0
 
 def get_recent_memory() -> str:
@@ -204,7 +204,7 @@ def get_recent_memory() -> str:
         if notes:
             return "\n".join(f"- {n[0][:100]}" for n in notes)
         return "(keine)"
-    except:
+    except Exception:
         return "(Fehler)"
 
 # ============ PROMPT GENERATION ============

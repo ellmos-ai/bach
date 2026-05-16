@@ -39,22 +39,37 @@ SKILL_FILE = BACH_DIR / "SKILL.md"
 
 
 def copy_to_clipboard(text):
-    """Kopiert Text in die Zwischenablage (Windows)."""
-    if sys.platform == "win32":
-        try:
-            import subprocess
-            process = subprocess.Popen(['clip'], stdin=subprocess.PIPE)
-            process.communicate(text.encode('utf-16-le'))
-            return True
-        except Exception:
-            pass
-    # Fallback: pyperclip wenn installiert
+    """Kopiert Text in die Zwischenablage (cross-platform)."""
     try:
         import pyperclip
         pyperclip.copy(text)
         return True
     except ImportError:
-        return False
+        pass
+
+    import subprocess
+    import shutil
+    data = text.encode("utf-8")
+    try:
+        if sys.platform == "win32":
+            process = subprocess.Popen(["clip"], stdin=subprocess.PIPE)
+            process.communicate(text.encode("utf-16-le"))
+            return True
+        elif sys.platform == "darwin":
+            subprocess.run(["pbcopy"], input=data, capture_output=True)
+            return True
+        elif shutil.which("wl-copy"):
+            subprocess.run(["wl-copy"], input=data, capture_output=True)
+            return True
+        elif shutil.which("xsel"):
+            subprocess.run(["xsel", "-b", "-i"], input=data, capture_output=True)
+            return True
+        elif shutil.which("xclip"):
+            subprocess.run(["xclip", "-selection", "clipboard"], input=data, capture_output=True)
+            return True
+    except (OSError, FileNotFoundError):
+        pass
+    return False
 
 
 def list_prompt_files():

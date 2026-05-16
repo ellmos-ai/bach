@@ -55,9 +55,9 @@ def extract_metadata(file_path):
                 usage_match = re.search(r'Usage:\s*(.*)', doc, re.IGNORECASE)
                 if usage_match:
                     usage = usage_match.group(1).strip()
-    except:
+    except (OSError, ValueError):
         pass
-        
+
     return description[:200], usage[:200]
 
 def get_keywords(name, description):

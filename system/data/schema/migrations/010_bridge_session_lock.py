@@ -47,5 +47,9 @@ def downgrade(db_path: Path):
 
 if __name__ == "__main__":
     # Pfad zur Datenbank
-    db_path = Path(__file__).parent.parent.parent / "data" / "bach.db"
+    try:
+        from hub.bach_paths import BACH_DB
+        db_path = BACH_DB
+    except ImportError:
+        db_path = Path(__file__).parent.parent.parent / "data" / "bach.db"
     upgrade(db_path)

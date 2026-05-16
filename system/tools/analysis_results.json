@@ -1,5 +1,9 @@
 {
   "dependencies": {
+    "activity_tracker": [
+      "memory_decay",
+      "activity_tracker"
+    ],
     "call_graph": [
       "X"
     ],
@@ -24,9 +28,32 @@
     ],
     "ollama_client": [
       "ollama_client"
+    ],
+    "consensus": [
+      "schwarm"
+    ],
+    "hierarchy": [
+      "schwarm"
+    ],
+    "specialist": [
+      "schwarm"
+    ],
+    "stigmergy_pattern": [
+      "schwarm"
     ]
   },
   "usage": {
+    "activity_tracker": [
+      "bach.py",
+      "tests\\test_activity_tracker.py",
+      "tools\\activity_tracker.py",
+      "_dev\\test_export_mirrors.py"
+    ],
+    "agents_export": [
+      "bach.py",
+      "hub\\docs.py",
+      "tools\\agents_export.py"
+    ],
     "autolog": [
       "bach.py",
       "bach_legacy.py",
@@ -40,38 +67,43 @@
       "bach_legacy.py",
       "hub\\backup.py",
       "tools\\backup_manager.py",
-      "data\\_archive\\bach_legacy.py",
-      "hub\\_archive_handlers\\backup.py",
-      "tools\\generators\\os_generator.py"
-    ],
-    "c_file_manager": [
-      "bach.py",
-      "bach_legacy.py",
-      "tools\\c_file_manager.py"
+      "hub\\_archive\\_archive_handlers\\backup.py",
+      "tools\\_archive\\os_generator.py"
     ],
     "call_graph": [
       "bach.py",
       "bach_legacy.py",
       "tools\\call_graph.py"
     ],
-    "fs_protection": [
+    "chains_export": [
       "bach.py",
-      "bach_legacy.py",
-      "hub\\fs.py",
-      "tools\\fs_protection.py"
+      "tools\\chains_export.py"
     ],
     "exporter": [
       "bach.py",
       "bach_legacy.py",
       "hub\\ati.py",
+      "hub\\docs.py",
       "hub\\maintain.py",
-      "tools\\c_structure_generator.py",
+      "hub\\skills.py",
+      "tools\\exporter.py",
       "agents\\ati\\export\\ati_exporter.py",
-      "data\\_archive\\temp_scripts_20260129\\temp_debug2.py",
-      "data\\_archive\\temp_scripts_20260129\\temp_debug_sync.py",
-      "hub\\_archive_handlers\\ati.py",
-      "hub\\_archive_handlers\\maintain.py",
-      "tools\\generators\\exporter.py"
+      "data\\temp\\translate_worker.py",
+      "data\\temp\\translate_worker_8.py",
+      "hub\\_archive\\_archive_handlers\\ati.py",
+      "hub\\_archive\\_archive_handlers\\maintain.py",
+      "tools\\project\\structure_generator.py"
+    ],
+    "file_manager": [
+      "bach.py",
+      "bach_legacy.py",
+      "tools\\file_ops\\file_manager.py"
+    ],
+    "fs_protection": [
+      "bach.py",
+      "bach_legacy.py",
+      "hub\\fs.py",
+      "tools\\fs_protection.py"
     ],
     "injectors": [
       "bach.py",
@@ -82,108 +114,251 @@
       "hub\\inject.py",
       "hub\\startup.py",
       "tools\\injectors.py",
-      "hub\\_archive_handlers\\inject.py",
-      "hub\\_archive_handlers\\startup.py",
+      "hub\\_archive\\_archive_handlers\\inject.py",
+      "hub\\_archive\\_archive_handlers\\startup.py",
+      "hub\\_services\\connector\\queue_processor.py"
+    ],
+    "config": [
+      "bach.py",
+      "connectors\\discord_connector.py",
+      "connectors\\homeassistant_connector.py",
+      "connectors\\signal_connector.py",
+      "connectors\\telegram_connector.py",
+      "connectors\\whatsapp_connector.py",
+      "gui\\server.py",
+      "hub\\api_prober.py",
+      "hub\\bach_paths.py",
+      "hub\\claude_permissions.py",
+      "hub\\connector.py",
+      "hub\\daily_agent.py",
+      "hub\\db_sync.py",
+      "hub\\docs.py",
+      "hub\\inbox.py",
+      "hub\\integration.py",
+      "hub\\lang.py",
+      "hub\\path.py",
+      "hub\\pipeline.py",
+      "hub\\press.py",
+      "hub\\sandbox.py",
+      "hub\\secrets_handler.py",
+      "hub\\settings.py",
+      "hub\\shutdown.py",
+      "hub\\snapshot.py",
+      "hub\\startup.py",
+      "hub\\steuer.py",
+      "tests\\test_connectors.py",
+      "tests\\test_connectors_and_tray.py",
+      "tests\\test_portable_agents.py",
+      "tests\\test_self_heal_handlers.py",
+      "tests\\test_telegram_voice.py",
+      "tools\\activity_tracker.py",
+      "tools\\backup_manager.py",
+      "tools\\claude_md_sync.py",
+      "tools\\context_compressor.py",
+      "tools\\memory_sync.py",
+      "_dev\\apply_partner_memory_schema.py",
+      "_dev\\bach_hook.py",
+      "_dev\\configure_ati_scan_roots.py",
+      "_dev\\schedule_pipeline.py",
+      "agents\\ati\\scanner\\task_scanner.py",
+      "agents\\ati\\_archive\\session_daemon_OLD.py",
+      "agents\\_experts\\steuer\\_config.py",
+      "agents\\_experts\\steuer\\_paths.py",
+      "connectors\\templates\\connector_template.py",
+      "data\\temp\\translate_batch_2_worker.py",
+      "data\\temp\\translate_worker_9.py",
+      "hub\\_archive\\_archive_handlers\\inbox.py",
+      "hub\\_archive\\_archive_handlers\\maintain.py",
+      "hub\\_archive\\_archive_handlers\\snapshot.py",
+      "hub\\_archive\\_archive_handlers\\startup.py",
+      "hub\\_archive\\_archive_handlers\\steuer.py",
+      "hub\\_services\\claude_bridge\\bridge_daemon.py",
+      "hub\\_services\\claude_bridge\\server_api.py",
       "hub\\_services\\connector\\queue_processor.py",
-      "tools\\_archive\\fix_injectors.py",
-      "tools\\_archive\\m_migrate_context_triggers.py"
+      "hub\\_services\\household\\inventory_engine.py",
+      "hub\\_services\\market\\database.py",
+      "hub\\_services\\market\\data_provider.py",
+      "tools\\json\\json_config_cli.py",
+      "tools\\llmauto\\llmauto.py",
+      "tools\\llmauto\\core\\config.py",
+      "tools\\llmauto\\modes\\chain.py",
+      "tools\\testing\\o_tests\\O005_config_validation.py"
+    ],
+    "chain": [
+      "bach.py",
+      "bach_legacy.py",
+      "gui\\daemon_service.py",
+      "gui\\server.py",
+      "hub\\chain.py",
+      "tests\\test_chain_control.py",
+      "tests\\test_self_heal_handlers.py",
+      "tools\\chains_export.py",
+      "tools\\llmauto\\llmauto.py",
+      "tools\\llmauto\\modes\\chain.py"
     ],
     "engine": [
       "bach.py",
       "bach_legacy.py",
+      "hub\\haushalt.py",
+      "hub\\search.py",
+      "tests\\test_haushalt_inventory.py",
       "tools\\injectors.py",
       "agents\\_experts\\health_import\\importer.py",
       "agents\\_experts\\steuer\\beleg_parser.py",
       "agents\\_experts\\steuer\\temu_ocr_batch.py",
+      "hub\\_services\\chat\\telegram_chat.py",
+      "hub\\_services\\dashboard\\daily_overview.py",
+      "hub\\_services\\delivery\\delivery_engine.py",
       "hub\\_services\\document\\anonymizer_service.py",
       "hub\\_services\\document\\document_collector.py",
+      "hub\\_services\\document\\document_pipeline.py",
       "hub\\_services\\document\\ocr_service.py",
       "hub\\_services\\document\\__init__.py",
+      "hub\\_services\\household\\inventory_engine.py",
       "hub\\_services\\household\\stubs\\inventory.py",
+      "tools\\converters\\md_to_pdf.py",
       "tools\\ocr\\cli.py",
       "tools\\ocr\\engine.py"
+    ],
+    "partners_export": [
+      "bach.py",
+      "tools\\partners_export.py"
     ],
     "skill_export": [
       "bach.py",
       "bach_legacy.py",
       "hub\\maintain.py",
+      "hub\\skills.py",
       "tools\\skill_export.py"
+    ],
+    "usecases_export": [
+      "bach.py",
+      "tools\\usecases_export.py"
+    ],
+    "workflows_export": [
+      "bach.py",
+      "tools\\workflows_export.py"
     ],
     "cli": [
       "bach_api.py",
-      "send_report.py",
-      "gui\\prompt_manager.py",
       "gui\\server.py",
       "hub\\ati.py",
       "hub\\help.py",
       "hub\\ollama.py",
+      "tests\\test_core.py",
+      "tests\\test_gui_server.py",
+      "tests\\test_gui_server_smoke.py",
+      "tests\\test_help_handler.py",
+      "tests\\test_prompt_generator.py",
       "tests\\test_smoke.py",
       "tools\\call_graph.py",
-      "tools\\c_python_cli_editor.py",
-      "tools\\c_sqlite_viewer.py",
       "tools\\injectors.py",
+      "tools\\send_report.py",
       "tools\\skill_export.py",
+      "tools\\sqlite_viewer.py",
       "agents\\ati\\modules\\distribution.py",
-      "agents\\ati\\session\\auto_session.py",
       "agents\\ati\\tools\\project_bootstrapper.py",
+      "agents\\ati\\_archive\\auto_session_OLD.py",
+      "agents\\ati\\templates\\rest-api-module\\cli_interface.py",
+      "agents\\persoenlicher-assistent\\tools\\route_planner.py",
       "agents\\_experts\\foerderplaner\\foerderplaner_cli.py",
       "agents\\_experts\\selbstmanagement\\selbstmanagement_cli.py",
-      "hub\\_archive_handlers\\ati.py",
-      "hub\\_archive_handlers\\help.py",
-      "hub\\_archive_handlers\\ollama.py",
+      "data\\temp\\translate_batch_2_worker.py",
+      "data\\temp\\translate_batch_5_worker.py",
+      "data\\temp\\translate_worker.py",
+      "data\\temp\\translate_worker_9.py",
+      "hub\\_services\\usmc_bridge.py",
+      "hub\\_archive\\_archive_handlers\\ati.py",
+      "hub\\_archive\\_archive_handlers\\help.py",
+      "hub\\_archive\\_archive_handlers\\ollama.py",
       "hub\\_services\\daemon\\auto_session.py",
       "hub\\_services\\document\\file_access_hook.py",
       "hub\\_services\\document\\report_workflow_service.py",
       "hub\\_services\\mail\\account_manager.py",
       "hub\\_services\\mail\\mail_service.py",
+      "hub\\_services\\mail\\mail_setup.py",
       "hub\\_services\\prompt_generator\\prompt_generator.py",
       "hub\\_services\\watcher\\classifier.py",
       "hub\\_services\\document\\_vendor\\pdf_schwaerzer_pro.py",
       "hub\\_services\\household\\stubs\\health.py",
       "tools\\agents\\agent_cli.py",
       "tools\\agents\\entwickler_agent.py",
+      "tools\\coding\\python_cli_editor.py",
+      "tools\\json\\json_config_cli.py",
       "tools\\ollama\\ollama_client.py",
       "tools\\ollama\\verify_token_logic.py",
       "tools\\partner_communication\\gemini_start.py",
       "tools\\partner_communication\\interaction_protocol.py",
       "tools\\_policies\\policy_applier.py"
     ],
-    "c_encoding_fixer": [
-      "bach_legacy.py",
-      "tools\\c_encoding_fixer.py"
-    ],
     "encoding_fix": [
       "bach_legacy.py",
       "hub\\connector.py",
-      "tools\\c_encoding_fixer.py",
       "tools\\encoding_fix.py",
       "hub\\_services\\claude_bridge\\bridge_daemon.py",
       "hub\\_services\\connector\\queue_processor.py",
-      "hub\\_services\\watcher\\responder.py"
+      "hub\\_services\\watcher\\responder.py",
+      "tools\\file_ops\\encoding_fixer.py",
+      "tools\\maintenance\\translate_tools_en.py"
+    ],
+    "encoding_fixer": [
+      "bach_legacy.py",
+      "tools\\file_ops\\encoding_fixer.py"
     ],
     "autolog_analyzer": [
       "gui\\server.py",
       "tools\\autolog_analyzer.py"
     ],
-    "c_headless_agent": [
+    "headless_agent": [
       "gui\\server.py",
-      "tools\\c_headless_agent.py"
+      "tools\\headless_agent.py"
     ],
     "reports": [
       "gui\\server.py",
       "tools\\reports.py"
     ],
+    "hierarchy": [
+      "gui\\server.py",
+      "hub\\schwarm.py",
+      "hub\\skills.py",
+      "data\\temp\\translate_worker.py",
+      "tools\\migration\\migrate_skills_hierarchy.py",
+      "tools\\schwarm\\hierarchy.py",
+      "tools\\schwarm\\__init__.py"
+    ],
     "abo_scanner": [
       "hub\\abo.py",
-      "hub\\_archive_handlers\\abo.py"
+      "hub\\_archive\\_archive_handlers\\abo.py"
     ],
     "tool_discovery": [
       "hub\\ati.py",
       "hub\\tools.py",
       "agents\\ati\\onboarding\\tool_discovery.py",
-      "hub\\_archive_handlers\\ati.py",
-      "hub\\_archive_handlers\\tools.py",
+      "hub\\_archive\\_archive_handlers\\ati.py",
+      "hub\\_archive\\_archive_handlers\\tools.py",
       "tools\\maintenance\\tool_discovery.py"
+    ],
+    "distribution": [
+      "hub\\bach_paths.py",
+      "hub\\dist.py",
+      "hub\\fs.py",
+      "hub\\restore.py",
+      "hub\\seal.py",
+      "hub\\startup.py",
+      "hub\\upgrade.py",
+      "tests\\test_seal.py",
+      "tools\\distribution.py",
+      "tools\\fs_protection.py",
+      "_dev\\add_license_headers.py",
+      "_dev\\add_memory_md_to_manifest.py",
+      "_dev\\add_missing_root_files_to_manifest.py",
+      "_dev\\clean_stale_manifest_entries.py",
+      "_dev\\populate_file_versions.py",
+      "_dev\\rebuild_distribution_manifest.py",
+      "_dev\\sync_distribution_manifest.py",
+      "_dev\\test_seal_system.py",
+      "hub\\_archive\\_archive_handlers\\dist.py",
+      "tools\\partner_communication\\interaction_protocol.py"
     ],
     "context_compressor": [
       "hub\\consolidation.py",
@@ -212,11 +387,6 @@
       "hub\\consolidation.py",
       "tools\\workflow_trigger_generator.py"
     ],
-    "distribution_system": [
-      "hub\\dist.py",
-      "agents\\ati\\modules\\distribution.py",
-      "hub\\_archive_handlers\\dist.py"
-    ],
     "nulcleaner": [
       "hub\\dist.py",
       "hub\\maintain.py",
@@ -235,50 +405,138 @@
       "tools\\folder_diff_scanner.py",
       "tools\\injectors.py"
     ],
+    "md_to_pdf": [
+      "hub\\docs.py",
+      "hub\\_services\\delivery\\delivery_engine.py",
+      "tools\\converters\\md_to_pdf.py"
+    ],
+    "search": [
+      "hub\\docs.py",
+      "hub\\search.py",
+      "hub\\wiki.py",
+      "tests\\test_portable_agents.py",
+      "tools\\document_indexer.py",
+      "tools\\doc_search.py",
+      "tools\\injectors.py",
+      "tools\\text_chunker.py",
+      "tools\\unified_search.py",
+      "_dev\\embedding_service.py",
+      "agents\\persoenlicher-assistent\\tools\\location_search.py",
+      "agents\\_experts\\steuer\\skr04_mapper.py",
+      "data\\temp\\translate_batch_5_worker.py",
+      "data\\temp\\translate_worker_9.py",
+      "hub\\_services\\chat\\chat_runtime.py",
+      "hub\\_services\\document\\__init__.py",
+      "hub\\_services\\market\\analysis\\registry.py",
+      "tools\\agents\\research_agent.py",
+      "tools\\partner_communication\\communication.py",
+      "tools\\rag\\search.py"
+    ],
+    "python_cli_editor": [
+      "hub\\help.py",
+      "tools\\injectors.py",
+      "data\\temp\\translate_worker.py",
+      "hub\\_archive\\_archive_handlers\\help.py",
+      "tools\\coding\\python_cli_editor.py"
+    ],
     "inbox_watcher": [
       "hub\\inbox.py",
       "tools\\inbox_watcher.py",
-      "hub\\_archive_handlers\\inbox.py"
+      "hub\\_archive\\_archive_handlers\\inbox.py"
+    ],
+    "claude_md_sync": [
+      "hub\\integration.py",
+      "hub\\settings.py",
+      "hub\\shutdown.py",
+      "tools\\claude_md_sync.py",
+      "_dev\\register_in_partner_md.py"
+    ],
+    "state": [
+      "hub\\lang.py",
+      "tests\\test_chain_control.py",
+      "tools\\skill_export.py",
+      "tools\\time_system.py",
+      "data\\schema\\migrations\\steuer_002_cleanup.py",
+      "hub\\_services\\claude_bridge\\bridge_tray.py",
+      "tools\\coding\\import_organizer.py",
+      "tools\\llmauto\\llmauto.py",
+      "tools\\llmauto\\modes\\chain.py"
     ],
     "doc_update_checker": [
       "hub\\maintain.py",
+      "tests\\test_self_heal_handlers.py",
       "tools\\doc_update_checker.py",
-      "hub\\_archive_handlers\\maintain.py",
-      "tools\\_archive\\doc_update_checker.py"
+      "hub\\_archive\\_archive_handlers\\maintain.py"
     ],
     "duplicate_detector": [
       "hub\\maintain.py",
-      "tools\\c_duplicate_detector.py",
-      "hub\\_archive_handlers\\maintain.py"
+      "hub\\_archive\\_archive_handlers\\maintain.py",
+      "tools\\file_ops\\duplicate_detector.py"
     ],
-    "c_path_healer": [
+    "file_cleaner": [
+      "hub\\maintain.py",
+      "hub\\_archive\\_archive_handlers\\maintain.py",
+      "tools\\file_ops\\file_cleaner.py"
+    ],
+    "json_fixer": [
+      "hub\\maintain.py",
+      "data\\temp\\translate_batch_2_worker.py",
+      "hub\\_archive\\_archive_handlers\\maintain.py",
+      "tools\\json\\json_fixer.py"
+    ],
+    "doc_path_updater": [
+      "hub\\maintain.py",
+      "tools\\maintenance\\doc_path_updater.py",
+      "tools\\maintenance\\path_healer.py"
+    ],
+    "path_healer": [
       "hub\\maintain.py",
       "hub\\startup.py",
-      "tools\\c_path_healer.py"
-    ],
-    "skill_generator": [
-      "hub\\maintain.py",
-      "hub\\_archive_handlers\\maintain.py",
-      "tools\\generators\\skill_generator.py"
+      "tools\\activity_tracker.py",
+      "agents\\ati\\_modules\\path_healer.py",
+      "agents\\ati\\_modules\\__init__.py",
+      "data\\temp\\translate_worker.py",
+      "hub\\_archive\\_archive_handlers\\maintain.py",
+      "hub\\_archive\\_archive_handlers\\startup.py",
+      "tools\\maintenance\\doc_path_updater.py",
+      "tools\\maintenance\\path_healer.py"
     ],
     "registry_watcher": [
       "hub\\maintain.py",
       "hub\\startup.py",
-      "hub\\_archive_handlers\\maintain.py",
-      "hub\\_archive_handlers\\startup.py",
+      "tests\\test_registry_watcher.py",
+      "hub\\_archive\\_archive_handlers\\maintain.py",
+      "hub\\_archive\\_archive_handlers\\startup.py",
       "tools\\maintenance\\registry_watcher.py"
     ],
     "skill_health_monitor": [
       "hub\\maintain.py",
       "hub\\startup.py",
-      "hub\\_archive_handlers\\maintain.py",
-      "hub\\_archive_handlers\\startup.py",
+      "hub\\_archive\\_archive_handlers\\maintain.py",
+      "hub\\_archive\\_archive_handlers\\startup.py",
       "tools\\maintenance\\skill_health_monitor.py"
     ],
     "sync_skills": [
       "hub\\maintain.py",
-      "hub\\_archive_handlers\\maintain.py",
+      "hub\\_archive\\_archive_handlers\\maintain.py",
       "tools\\maintenance\\sync_skills.py"
+    ],
+    "tool_scanner": [
+      "hub\\maintain.py",
+      "data\\temp\\translate_worker.py",
+      "data\\temp\\translate_worker_8.py",
+      "hub\\_archive\\_archive_handlers\\maintain.py",
+      "tools\\maintenance\\tool_scanner.py"
+    ],
+    "pattern_tool": [
+      "hub\\maintain.py",
+      "hub\\_archive\\_archive_handlers\\maintain.py",
+      "tools\\project\\pattern_tool.py"
+    ],
+    "skill_generator": [
+      "hub\\maintain.py",
+      "tools\\skill_generator.py",
+      "hub\\_archive\\_archive_handlers\\maintain.py"
     ],
     "skill_header_gen": [
       "hub\\maintain.py",
@@ -288,9 +546,15 @@
       "hub\\maintain.py",
       "tools\\skill_help_gen.py"
     ],
+    "memory_working_cleanup": [
+      "hub\\mem.py",
+      "hub\\startup.py",
+      "tests\\test_memory_working_cleanup.py",
+      "tools\\memory_working_cleanup.py"
+    ],
     "ollama_client": [
       "hub\\ollama.py",
-      "hub\\_archive_handlers\\ollama.py",
+      "hub\\_archive\\_archive_handlers\\ollama.py",
       "hub\\_services\\watcher\\classifier.py",
       "tools\\ollama\\ollama_client.py",
       "tools\\ollama\\verify_token_logic.py"
@@ -299,29 +563,107 @@
       "hub\\ollama.py",
       "hub\\startup.py",
       "tools\\token_monitor.py",
-      "hub\\_archive_handlers\\startup.py",
+      "hub\\_archive\\_archive_handlers\\startup.py",
       "tools\\ollama\\verify_token_logic.py"
+    ],
+    "dirscan": [
+      "hub\\scan.py",
+      "hub\\shutdown.py",
+      "hub\\startup.py",
+      "tools\\dirscan.py",
+      "hub\\_archive\\_archive_handlers\\scan.py",
+      "hub\\_archive\\_archive_handlers\\shutdown.py",
+      "hub\\_archive\\_archive_handlers\\startup.py",
+      "tools\\file_ops\\dirscan.py"
+    ],
+    "benchmark": [
+      "hub\\schwarm.py",
+      "tools\\llmauto\\benchmark.py",
+      "tools\\schwarm\\benchmark.py"
+    ],
+    "runner": [
+      "hub\\schwarm.py",
+      "hub\\test.py",
+      "hub\\_archive\\_archive_handlers\\test.py",
+      "hub\\_services\\document\\foerderbericht_pipeline.py",
+      "hub\\_services\\document\\pipeline_runner.py",
+      "tools\\llmauto\\benchmark.py",
+      "tools\\llmauto\\llmauto.py",
+      "tools\\schwarm\\benchmark.py",
+      "tools\\schwarm\\consensus.py",
+      "tools\\schwarm\\hierarchy.py",
+      "tools\\schwarm\\specialist.py",
+      "tools\\schwarm\\stigmergy_pattern.py",
+      "tools\\schwarm\\summarize_chunks.py",
+      "tools\\schwarm\\translate_swarm.py",
+      "tools\\schwarm\\__init__.py",
+      "tools\\testing\\test_runner.py",
+      "tools\\llmauto\\modes\\chain.py"
+    ],
+    "consensus": [
+      "hub\\schwarm.py",
+      "tools\\schwarm\\consensus.py",
+      "tools\\schwarm\\__init__.py"
+    ],
+    "specialist": [
+      "hub\\schwarm.py",
+      "tools\\schwarm\\specialist.py",
+      "tools\\schwarm\\__init__.py"
+    ],
+    "stigmergy_pattern": [
+      "hub\\schwarm.py",
+      "tools\\schwarm\\stigmergy_pattern.py",
+      "tools\\schwarm\\__init__.py"
+    ],
+    "summarize_chunks": [
+      "hub\\schwarm.py",
+      "_dev\\summarize_chunks.py",
+      "tools\\schwarm\\summarize_chunks.py"
+    ],
+    "translate_swarm": [
+      "hub\\schwarm.py",
+      "_dev\\translate_swarm.py",
+      "tools\\schwarm\\translate_swarm.py"
+    ],
+    "unified_search": [
+      "hub\\search.py",
+      "hub\\wiki.py",
+      "tools\\text_chunker.py",
+      "_dev\\embedding_service.py"
+    ],
+    "memory_sync": [
+      "hub\\shutdown.py",
+      "hub\\startup.py",
+      "tools\\memory_sync.py",
+      "_dev\\add_memory_md_to_manifest.py"
     ],
     "__init__": [
       "hub\\skills.py",
-      "tools\\c_header_migrate.py",
-      "tools\\c_import_diagnose.py",
+      "tests\\test_doc_analysis.py",
+      "tests\\test_smoke_imports.py",
       "tools\\__init__.py",
       "agents\\ati\\modules\\distribution.py",
-      "agents\\ati\\tools\\project_bootstrapper.py"
+      "agents\\ati\\tools\\project_bootstrapper.py",
+      "hub\\_services\\stigmergy\\__init__.py",
+      "tools\\coding\\import_diagnose.py",
+      "tools\\maintenance\\header_migrate.py",
+      "tools\\maintenance\\registry_watcher.py"
     ],
     "migrate_skills_hierarchy": [
       "hub\\skills.py",
       "tools\\migration\\migrate_skills_hierarchy.py"
     ],
+    "skill_init": [
+      "hub\\skills.py"
+    ],
     "problems_first": [
       "hub\\startup.py",
       "tools\\problems_first.py",
-      "hub\\_archive_handlers\\startup.py"
+      "hub\\_archive\\_archive_handlers\\startup.py"
     ],
     "test_runner": [
       "hub\\test.py",
-      "hub\\_archive_handlers\\test.py",
+      "hub\\_archive\\_archive_handlers\\test.py",
       "tools\\testing\\test_runner.py"
     ],
     "time_system": [
@@ -330,139 +672,43 @@
       "tools\\time_system.py",
       "hub\\_services\\daemon\\session_daemon.py"
     ],
-    "migrate_connections": [
-      "hub\\tools.py",
-      "hub\\_archive_handlers\\tools.py",
-      "tools\\_archive\\migrate_connections.py"
+    "llmauto": [
+      "tests\\test_chain_control.py",
+      "tests\\test_portable_agents.py",
+      "tools\\llmauto\\benchmark.py",
+      "tools\\llmauto\\llmauto.py",
+      "tools\\llmauto\\__main__.py",
+      "tools\\llmauto\\modes\\chain.py"
+    ],
+    "entwickler_agent": [
+      "tests\\test_portable_agents.py"
+    ],
+    "plan_agent": [
+      "tests\\test_portable_agents.py",
+      "tools\\agents\\plan_agent.py"
+    ],
+    "portable_base": [
+      "tests\\test_portable_agents.py",
+      "tools\\agents\\entwickler_agent.py",
+      "tools\\agents\\plan_agent.py",
+      "tools\\agents\\research_agent.py"
+    ],
+    "research_agent": [
+      "tests\\test_portable_agents.py",
+      "hub\\_services\\market\\analysis\\registry.py",
+      "tools\\agents\\research_agent.py"
     ],
     "bach_auto_discovery": [
       "tools\\bach_auto_discovery.py"
+    ],
+    "bach_db_viewer": [
+      "tools\\bach_db_viewer.py"
     ],
     "batch_file_ops": [
       "tools\\batch_file_ops.py"
     ],
     "custom_analysis": [
       "tools\\custom_analysis.py"
-    ],
-    "c_audit_bundler": [
-      "tools\\c_audit_bundler.py"
-    ],
-    "c_code_analyzer": [
-      "tools\\c_code_analyzer.py"
-    ],
-    "c_code_generator": [
-      "tools\\c_code_generator.py"
-    ],
-    "c_dictionary_builder": [
-      "tools\\c_dictionary_builder.py"
-    ],
-    "c_dirscan": [
-      "tools\\c_dirscan.py"
-    ],
-    "c_duplicate_detector": [
-      "tools\\c_duplicate_detector.py"
-    ],
-    "c_emoji_scanner": [
-      "tools\\c_emoji_scanner.py"
-    ],
-    "c_json_repair": [
-      "tools\\c_emoji_scanner.py",
-      "tools\\c_json_repair.py",
-      "tools\\c_standard_fixer.py"
-    ],
-    "c_file_cleaner": [
-      "tools\\c_file_cleaner.py"
-    ],
-    "c_german_scanner": [
-      "tools\\c_german_scanner.py"
-    ],
-    "c_header_migrate": [
-      "tools\\c_header_migrate.py"
-    ],
-    "c_import_diagnose": [
-      "tools\\c_import_diagnose.py",
-      "tools\\injectors.py"
-    ],
-    "c_import_organizer": [
-      "tools\\c_import_organizer.py",
-      "tools\\injectors.py"
-    ],
-    "c_indent_checker": [
-      "tools\\c_indent_checker.py",
-      "tools\\c_standard_fixer.py"
-    ],
-    "c_json_fixer": [
-      "tools\\c_json_fixer.py"
-    ],
-    "c_json_registry_cleaner": [
-      "tools\\c_json_registry_cleaner.py"
-    ],
-    "c_license_generator": [
-      "tools\\c_license_generator.py"
-    ],
-    "c_md_to_pdf": [
-      "tools\\c_md_to_pdf.py"
-    ],
-    "c_method_analyzer": [
-      "tools\\c_method_analyzer.py"
-    ],
-    "pattern_renamer": [
-      "tools\\c_pattern_tool.py",
-      "tools\\_archive\\pattern_renamer.py"
-    ],
-    "pattern_trimmer": [
-      "tools\\c_pattern_tool.py",
-      "tools\\_archive\\pattern_trimmer.py"
-    ],
-    "c_pattern_tool": [
-      "tools\\c_pattern_tool.py"
-    ],
-    "c_project_bundler": [
-      "tools\\c_project_bundler.py"
-    ],
-    "c_pycutter": [
-      "tools\\c_pycutter.py",
-      "tools\\injectors.py"
-    ],
-    "c_python_cli_editor": [
-      "tools\\c_python_cli_editor.py"
-    ],
-    "c_sqlite_viewer": [
-      "tools\\c_sqlite_viewer.py",
-      "tools\\injectors.py"
-    ],
-    "c_standard_fixer": [
-      "tools\\c_standard_fixer.py"
-    ],
-    "c_umlaut_fixer": [
-      "tools\\c_standard_fixer.py",
-      "tools\\c_umlaut_fixer.py"
-    ],
-    "c_structure_generator": [
-      "tools\\c_structure_generator.py"
-    ],
-    "os_generator": [
-      "tools\\c_structure_generator.py",
-      "tools\\generators\\os_generator.py"
-    ],
-    "c_sync_registry": [
-      "tools\\c_sync_registry.py"
-    ],
-    "partner_scanner": [
-      "tools\\c_tool_scanner.py",
-      "tools\\_archive\\partner_scanner.py"
-    ],
-    "c_tool_scanner": [
-      "tools\\c_tool_scanner.py"
-    ],
-    "c_universal_compiler": [
-      "tools\\c_universal_compiler.py"
-    ],
-    "c_universal_converter": [
-      "tools\\c_universal_converter.py"
-    ],
-    "c_youtube_extractor": [
-      "tools\\c_youtube_extractor.py"
     ],
     "data_importer": [
       "tools\\data_importer.py",
@@ -474,21 +720,26 @@
     "debug_scan": [
       "tools\\debug_scan.py"
     ],
-    "search": [
-      "tools\\document_indexer.py",
-      "tools\\doc_search.py",
-      "tools\\injectors.py",
-      "agents\\persoenlicher-assistent\\tools\\location_search.py",
-      "agents\\_experts\\steuer\\skr04_mapper.py",
-      "hub\\_services\\document\\__init__.py",
-      "hub\\_services\\market\\analysis\\registry.py",
-      "tools\\agents\\research_agent.py",
-      "tools\\partner_communication\\communication.py",
-      "tools\\rag\\search.py"
+    "dictionary_builder": [
+      "tools\\dictionary_builder.py"
+    ],
+    "document_chunker": [
+      "tools\\document_chunker.py"
     ],
     "doc_search": [
       "tools\\doc_search.py",
       "tools\\injectors.py"
+    ],
+    "dungeon_template": [
+      "tools\\dungeon_template.py"
+    ],
+    "emoji_scanner": [
+      "tools\\emoji_scanner.py"
+    ],
+    "json_repair": [
+      "tools\\emoji_scanner.py",
+      "tools\\json\\json_repair.py",
+      "tools\\maintenance\\standard_fixer.py"
     ],
     "forensic_db_scan": [
       "tools\\forensic_db_scan.py"
@@ -497,9 +748,41 @@
       "tools\\gemini_llm.py",
       "agents\\_experts\\health_import\\importer.py"
     ],
+    "german_scanner": [
+      "tools\\german_scanner.py"
+    ],
+    "import_diagnose": [
+      "tools\\injectors.py",
+      "tools\\coding\\import_diagnose.py"
+    ],
+    "import_organizer": [
+      "tools\\injectors.py",
+      "tools\\coding\\import_organizer.py"
+    ],
+    "pycutter": [
+      "tools\\injectors.py",
+      "tools\\coding\\pycutter.py"
+    ],
     "mcp_server": [
       "tools\\injectors.py",
       "tools\\mcp_server.py"
+    ],
+    "sqlite_viewer": [
+      "tools\\injectors.py",
+      "tools\\sqlite_viewer.py"
+    ],
+    "ingest": [
+      "tools\\memory_sync.py",
+      "tools\\rag\\ingest.py",
+      "tools\\rag\\search.py"
+    ],
+    "interaction_protocol": [
+      "tools\\partners_export.py",
+      "tools\\rezeptbuch.py",
+      "tools\\partner_communication\\interaction_protocol.py"
+    ],
+    "rezeptbuch": [
+      "tools\\rezeptbuch.py"
     ],
     "schema_reader": [
       "tools\\schema_reader.py"
@@ -510,23 +793,30 @@
     "success_tracker": [
       "tools\\success_tracker.py"
     ],
+    "text_chunker": [
+      "tools\\text_chunker.py"
+    ],
     "translate_batch": [
-      "tools\\translate_batch.py"
+      "tools\\translate_batch.py",
+      "_dev\\translate_batch_haiku.py"
     ],
     "user_console": [
       "tools\\user_console.py"
     ],
-    "generate_finance_test_data": [
-      "agents\\_experts\\steuer\\generate_finance_test_data.py",
-      "tools\\_archive\\generate_finance_test_data.py"
+    "version_bump": [
+      "tools\\version_bump.py"
     ],
-    "cleanup": [
-      "data\\migrations\\steuer_002_cleanup.py",
-      "tools\\_archive\\cleanup_old.py"
+    "system_explorer": [
+      "_dev\\create_onboarding_tasks.py",
+      "_dev\\insert_onboarding_tasks.py",
+      "tools\\partner_communication\\ai_compatible.py",
+      "tools\\partner_communication\\real_tools.py",
+      "tools\\partner_communication\\system_explorer.py"
     ],
-    "research_agent": [
-      "hub\\_services\\market\\analysis\\registry.py",
-      "tools\\agents\\research_agent.py"
+    "structure_generator": [
+      "agents\\ati\\tools\\project_bootstrapper.py",
+      "data\\temp\\translate_worker_9.py",
+      "tools\\project\\structure_generator.py"
     ],
     "temu_quittung_fetcher": [
       "skills\\_templates\\TEMPLATE_RECEIPT_FETCHER.py",
@@ -541,8 +831,45 @@
     "agent_service_integration": [
       "tools\\agents\\agent_service_integration.py"
     ],
+    "code_analyzer": [
+      "tools\\agents\\entwickler_agent.py",
+      "tools\\coding\\code_analyzer.py"
+    ],
+    "code_generator": [
+      "tools\\agents\\entwickler_agent.py",
+      "tools\\coding\\code_generator.py"
+    ],
     "production_agent": [
       "tools\\agents\\production_agent.py"
+    ],
+    "indent_checker": [
+      "tools\\coding\\indent_checker.py",
+      "tools\\maintenance\\standard_fixer.py"
+    ],
+    "method_analyzer": [
+      "tools\\coding\\method_analyzer.py"
+    ],
+    "image_converter": [
+      "tools\\converters\\image_converter.py"
+    ],
+    "universal_compiler": [
+      "tools\\converters\\universal_compiler.py"
+    ],
+    "universal_converter": [
+      "tools\\converters\\universal_converter.py"
+    ],
+    "youtube_extractor": [
+      "tools\\converters\\youtube_extractor.py"
+    ],
+    "umlaut_fixer": [
+      "tools\\file_ops\\umlaut_fixer.py",
+      "tools\\maintenance\\standard_fixer.py"
+    ],
+    "json_config_cli": [
+      "tools\\json\\json_config_cli.py"
+    ],
+    "json_registry_cleaner": [
+      "tools\\json\\json_registry_cleaner.py"
     ],
     "archive_done_tasks": [
       "tools\\maintenance\\archive_done_tasks.py"
@@ -550,14 +877,26 @@
     "generate_skills_report": [
       "tools\\maintenance\\generate_skills_report.py"
     ],
+    "header_migrate": [
+      "tools\\maintenance\\header_migrate.py"
+    ],
     "migrate_restructure": [
       "tools\\maintenance\\migrate_restructure.py"
+    ],
+    "standard_fixer": [
+      "tools\\maintenance\\standard_fixer.py"
+    ],
+    "sync_registry": [
+      "tools\\maintenance\\sync_registry.py"
     ],
     "sync_utils": [
       "tools\\maintenance\\sync_utils.py"
     ],
     "task_statistics": [
       "tools\\maintenance\\task_statistics.py"
+    ],
+    "pdf_ocr_batch": [
+      "tools\\ocr\\pdf_ocr_batch.py"
     ],
     "ollama_worker": [
       "tools\\ollama\\ollama_worker.py"
@@ -566,26 +905,27 @@
       "tools\\partner_communication\\ai_compatible.py",
       "tools\\partner_communication\\system_explorer.py"
     ],
-    "system_explorer": [
-      "tools\\partner_communication\\ai_compatible.py",
-      "tools\\partner_communication\\real_tools.py",
-      "tools\\partner_communication\\system_explorer.py"
-    ],
     "communication": [
       "tools\\partner_communication\\communication.py"
     ],
     "gemini_start": [
       "tools\\partner_communication\\gemini_start.py"
     ],
-    "interaction_protocol": [
-      "tools\\partner_communication\\interaction_protocol.py"
-    ],
     "real_tools": [
       "tools\\partner_communication\\real_tools.py"
     ],
-    "ingest": [
-      "tools\\rag\\ingest.py",
-      "tools\\rag\\search.py"
+    "audit_bundler": [
+      "tools\\project\\audit_bundler.py"
+    ],
+    "license_generator": [
+      "tools\\project\\license_generator.py"
+    ],
+    "project_bundler": [
+      "tools\\project\\project_bundler.py"
+    ],
+    "os_generator": [
+      "tools\\project\\structure_generator.py",
+      "tools\\_archive\\os_generator.py"
     ],
     "compare_systems": [
       "tools\\testing\\compare_systems.py",
@@ -607,60 +947,6 @@
       "tools\\testing\\run_external.py",
       "tools\\testing\\run_o_tests.py",
       "tools\\testing\\o_tests\\run_o_tests.py"
-    ],
-    "bulk_replace": [
-      "tools\\_archive\\bulk_replace.py"
-    ],
-    "check_my_tasks": [
-      "tools\\_archive\\check_my_tasks.py"
-    ],
-    "cleanup_old": [
-      "tools\\_archive\\cleanup_old.py"
-    ],
-    "c_brain_reader": [
-      "tools\\_archive\\c_brain_reader.py"
-    ],
-    "fix_daemon_jobs": [
-      "tools\\_archive\\fix_daemon_jobs.py"
-    ],
-    "fix_injectors": [
-      "tools\\_archive\\fix_injectors.py"
-    ],
-    "get_skills_schema": [
-      "tools\\_archive\\get_skills_schema.py"
-    ],
-    "inspect_schema": [
-      "tools\\_archive\\inspect_schema.py"
-    ],
-    "migrate_agents": [
-      "tools\\_archive\\migrate_agents.py"
-    ],
-    "migrate_json_to_db": [
-      "tools\\_archive\\migrate_json_to_db.py"
-    ],
-    "m_add_help_headers": [
-      "tools\\_archive\\m_add_help_headers.py"
-    ],
-    "m_add_tool_headers": [
-      "tools\\_archive\\m_add_tool_headers.py"
-    ],
-    "m_migrate_context_triggers": [
-      "tools\\_archive\\m_migrate_context_triggers.py"
-    ],
-    "setup_token_testdata": [
-      "tools\\_archive\\setup_token_testdata.py"
-    ],
-    "test_anonymizer": [
-      "tools\\_archive\\test_anonymizer.py"
-    ],
-    "test_quarantine": [
-      "tools\\_archive\\test_quarantine.py"
-    ],
-    "update_daemon_jobs": [
-      "tools\\_archive\\update_daemon_jobs.py"
-    ],
-    "update_tasks": [
-      "tools\\_archive\\update_tasks.py"
     ],
     "policy_applier": [
       "tools\\_policies\\policy_applier.py"
@@ -720,19 +1006,24 @@
   "unused": [
     "_policies\\encoding_header.py",
     "_policies\\json_safe.py",
-    "agents\\entwickler_agent.py",
-    "c_skill_init.py",
-    "c_skill_package.py",
-    "c_skill_validate.py",
+    "bach_text_viewer.py",
     "deep_analysis.py",
     "dependency_analysis.py",
     "maintenance\\create_boot_checks.py",
     "maintenance\\register_skills.py",
     "maintenance\\tool_registry_boot.py",
+    "maintenance\\translate_tools_en.py",
     "mapping\\populate_features.py",
+    "migrate_consolidate_dbs.py",
+    "migrate_consolidate_phase2.py",
     "ollama\\ollama_summarize.py",
     "ollama\\test_tokens.py",
     "ollama\\verify_token_logic.py",
+    "ppt_generator.py",
+    "send_report.py",
+    "skills\\skill_package.py",
+    "skills\\skill_validate.py",
+    "start_bach_gemini.py",
     "testing\\playwright\\examples\\console_logging.py",
     "testing\\playwright\\examples\\element_discovery.py",
     "testing\\playwright\\examples\\static_html_automation.py",
@@ -743,18 +1034,23 @@
   "delete_candidates": [
     "_policies\\encoding_header.py",
     "_policies\\json_safe.py",
-    "agents\\entwickler_agent.py",
-    "c_skill_init.py",
-    "c_skill_package.py",
-    "c_skill_validate.py",
+    "bach_text_viewer.py",
     "deep_analysis.py",
     "dependency_analysis.py",
     "maintenance\\create_boot_checks.py",
     "maintenance\\register_skills.py",
     "maintenance\\tool_registry_boot.py",
+    "maintenance\\translate_tools_en.py",
     "mapping\\populate_features.py",
+    "migrate_consolidate_dbs.py",
+    "migrate_consolidate_phase2.py",
     "ollama\\ollama_summarize.py",
     "ollama\\verify_token_logic.py",
+    "ppt_generator.py",
+    "send_report.py",
+    "skills\\skill_package.py",
+    "skills\\skill_validate.py",
+    "start_bach_gemini.py",
     "update_directory_truth.py"
   ]
 }

@@ -23,7 +23,7 @@ Unterstützte Formate:
 Abhängigkeiten:
   pip install pyyaml toml xmltodict tkinterdnd2
 
-TOON Spezifikation: https:/github.com/toon-format/toon
+TOON Spezifikation: https://github.com/toon-format/toon
 
 Autor: Claude für _BATCH System
 Version: 2.0.0

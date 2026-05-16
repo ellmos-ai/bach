@@ -228,7 +228,7 @@ class TrashHandler(BaseHandler):
                 try:
                     trash_path.unlink()
                     purged += 1
-                except:
+                except OSError:
                     pass
             
             conn.execute("""

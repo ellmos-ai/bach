@@ -72,9 +72,10 @@ class ShutdownHandler(BaseHandler):
         else:
             success, message = self._complete(summary, dry_run)
 
-        # Hook: after_shutdown
+        # Hook: after_shutdown (re-import to avoid scope issue)
         try:
-            hooks.emit('after_shutdown', {
+            from core.hooks import hooks as _hooks
+            _hooks.emit('after_shutdown', {
                 'partner': partner_id, 'mode': operation or 'complete',
                 'success': success
             })
@@ -89,16 +90,16 @@ class ShutdownHandler(BaseHandler):
     def _clock_out_partner(self, partner_id: str) -> bool:
         """Stempelt Partner aus (partner_presence Tabelle)."""
         conn = self._get_conn()
-        now = datetime.now().isoformat()
-        
-        conn.execute("""
-            UPDATE partner_presence 
-            SET status = 'offline', clocked_out = ?, updated_at = ?
-            WHERE partner_name = ? AND status = 'online'
-        """, (now, now, partner_id))
-        
-        conn.commit()
-        conn.close()
+        try:
+            now = datetime.now().isoformat()
+            conn.execute("""
+                UPDATE partner_presence
+                SET status = 'offline', clocked_out = ?, updated_at = ?
+                WHERE partner_name = ? AND status = 'online'
+            """, (now, now, partner_id))
+            conn.commit()
+        finally:
+            conn.close()
         return True
     
     def _get_active_session(self, conn) -> tuple:
@@ -540,16 +541,15 @@ class ShutdownHandler(BaseHandler):
         # 5.8 CONTINUATION CONTEXT - Naechster-Start-Anker (SQ065)
         # ══════════════════════════════════════════════════════════
         if not dry_run:
+            conn = None
             try:
                 import json
                 conn = self._get_conn()
 
-                # Aktive Session finden
                 active = self._get_active_session(conn)
                 if active:
                     session_id = active[1]
 
-                    # Top-5 Tasks aus DB holen (Priorität: in_progress > pending)
                     cursor = conn.execute("""
                         SELECT id, title, priority, status
                         FROM tasks
@@ -574,7 +574,6 @@ class ShutdownHandler(BaseHandler):
                             "status": row[3]
                         })
 
-                    # Continuation Context als JSON
                     continuation = {
                         "timestamp": now.isoformat(),
                         "top_tasks": top_tasks,
@@ -583,7 +582,6 @@ class ShutdownHandler(BaseHandler):
                         "tasks_completed": tasks_completed
                     }
 
-                    # In memory_sessions speichern
                     conn.execute("""
                         UPDATE memory_sessions
                         SET continuation_context = ?
@@ -594,10 +592,11 @@ class ShutdownHandler(BaseHandler):
                     results.append("")
                     results.append("[CONTINUATION CONTEXT]")
                     results.append(f" ✓ Naechster-Start-Anker gesetzt ({len(top_tasks)} Tasks)")
-
-                conn.close()
-            except Exception as e:
-                pass  # Silent fail - nicht kritisch
+            except Exception:
+                pass
+            finally:
+                if conn:
+                    conn.close()
 
         # 6. NUL-Cleaner - Windows NUL-Dateien aufräumen
         if not dry_run:

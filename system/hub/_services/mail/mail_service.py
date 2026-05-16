@@ -702,7 +702,7 @@ class FinancialMailService:
         try:
             internal_date = int(msg.get('internalDate', 0)) / 1000
             email_date = datetime.fromtimestamp(internal_date)
-        except:
+        except (ValueError, TypeError, OSError):
             pass
 
         # Body ZUERST extrahieren (fuer Blacklist-Pruefung!)
@@ -723,7 +723,7 @@ class FinancialMailService:
                 if mime_type == 'text/plain' and body.get('data'):
                     try:
                         body_text += base64.urlsafe_b64decode(body['data']).decode('utf-8', errors='ignore')
-                    except:
+                    except (ValueError, UnicodeDecodeError):
                         pass
 
                 elif mime_type == 'application/pdf':
@@ -858,7 +858,7 @@ class FinancialMailService:
         try:
             from email.utils import parsedate_to_datetime
             email_date = parsedate_to_datetime(date_str)
-        except:
+        except (ValueError, TypeError):
             email_date = datetime.now()
 
         # Body ZUERST extrahieren (fuer Blacklist-Pruefung!)
@@ -886,7 +886,7 @@ class FinancialMailService:
                     payload = part.get_payload(decode=True)
                     if payload:
                         body_text += payload.decode('utf-8', errors='ignore')
-                except:
+                except (ValueError, UnicodeDecodeError):
                     pass
 
         # === Provider-Match MIT Body fuer Blacklist-Pruefung ===

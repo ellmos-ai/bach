@@ -103,7 +103,7 @@ class EmojiLookup:
                         if emoji_char:
                             name = entry.get('aliases', [entry.get('description', '')])[0]
                             self.gemoji_data[emoji_char] = name
-            except:
+            except (json.JSONDecodeError, OSError):
                 pass
     
     def can_resolve(self, char: str) -> Tuple[bool, str]:
@@ -123,7 +123,7 @@ class EmojiLookup:
                     ascii_tag = result.upper().replace(' ', '_').replace('-', '_')
                     ascii_tag = re.sub(r'[^A-Z0-9_]', '', ascii_tag)
                     return True, f"[{ascii_tag}]"
-            except:
+            except Exception:
                 pass
         else:
             if char in self.gemoji_data:
@@ -152,7 +152,7 @@ def scan_file(filepath: Path, lookup: EmojiLookup) -> Dict:
     
     try:
         content = filepath.read_text(encoding='utf-8')
-    except:
+    except OSError:
         return result
     
     seen = set()
@@ -215,7 +215,7 @@ def main():
         try:
             sys.stdout.reconfigure(encoding='utf-8', errors='replace')
             sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-        except:
+        except (AttributeError, OSError):
             pass
     
     if len(sys.argv) < 2 or '--help' in sys.argv:

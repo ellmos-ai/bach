@@ -23,86 +23,50 @@ SOFTWARE.
 """
 
 """Tiefe Analyse des Tools-Ordners mit Kategorisierung und Duplikat-Erkennung"""
-import os
 import re
 from pathlib import Path
 from collections import defaultdict
 
-tools_dir = Path("tools")
 
-# Ergebnisstrukturen
-categories = {
-    "code_quality": [],
-    "maintenance": [],
-    "testing": [],
-    "generators": [],
-    "migration": [],
-    "archive": [],
-    "agents": [],
-    "communication": [],
-    "analysis": [],
-    "data": [],
-    "integration": [],
-    "utility": [],
-    "unclear": []
-}
+CATEGORIES = [
+    "code_quality", "maintenance", "testing", "generators", "migration",
+    "archive", "agents", "communication", "analysis", "data",
+    "integration", "utility", "unclear",
+]
 
-function_hashes = defaultdict(list)
-similar_names = defaultdict(list)
-
-quality_metrics = {
-    "has_docstring": 0,
-    "has_main_guard": 0,
-    "has_argparse": 0,
-    "has_error_handling": 0,
-    "imports_count": defaultdict(int),
-    "total_lines": 0,
-    "empty_or_minimal": []
-}
 
 def categorize_file(filepath, content):
     name = filepath.name
-    # Archiv
     if "_archive" in str(filepath):
         return "archive"
-    # Testing
     if "test" in str(filepath).lower() or name.startswith(("B0", "O0")):
         return "testing"
-    # Agents
     if "agent" in name.lower():
         return "agents"
-    # Maintenance
     if any(x in name for x in ["sync", "registry", "boot", "migrate", "health"]):
         return "maintenance"
-    # Generators
     if "generat" in name or "export" in name or "skill_" in name:
         return "generators"
-    # Migration
     if "migrat" in name and "_archive" not in str(filepath):
         return "migration"
-    # Communication
     if "communication" in str(filepath) or "partner" in name:
         return "communication"
-    # Integration
     if any(x in str(filepath) for x in ["ocr", "rag", "ollama", "mcp"]):
         return "integration"
-    # Code Quality
     if name.startswith("c_"):
         return "code_quality"
-    # Analysis
     if any(x in name for x in ["analyz", "scan", "check", "inspect", "audit"]):
         return "analysis"
-    # Data
     if any(x in name for x in ["import", "data_", "db_", "schema"]):
         return "data"
-    # Utility
     if any(x in name for x in ["util", "helper", "tool"]):
         return "utility"
     return "unclear"
 
+
 def extract_functions(content):
-    functions = re.findall(r'^def\s+(\w+)\s*\(', content, re.MULTILINE)
-    return functions
+    return re.findall(r'^def\s+(\w+)\s*\(', content, re.MULTILINE)
+
 
 def check_quality(filepath, content):
     metrics = {}
@@ -117,102 +81,121 @@ def check_quality(filepath, content):
     metrics["imports"] = imports
     return metrics
 
-# Hauptanalyse
-all_files = []
-for pyfile in sorted(tools_dir.glob("**/*.py")):
-    if "node_modules" in str(pyfile) or "__pycache__" in str(pyfile):
-        continue
 
-    try:
-        content = pyfile.read_text(encoding="utf-8")
-    except:
+if __name__ == "__main__":
+    tools_dir = Path("tools")
+
+    categories = {cat: [] for cat in CATEGORIES}
+    function_hashes = defaultdict(list)
+    similar_names = defaultdict(list)
+    quality_metrics = {
+        "has_docstring": 0,
+        "has_main_guard": 0,
+        "has_argparse": 0,
+        "has_error_handling": 0,
+        "imports_count": defaultdict(int),
+        "total_lines": 0,
+        "empty_or_minimal": [],
+    }
+
+    all_files = []
+    for pyfile in sorted(tools_dir.glob("**/*.py")):
+        if "node_modules" in str(pyfile) or "__pycache__" in str(pyfile):
+            continue
+
         try:
-            content = pyfile.read_text(encoding="latin-1")
-        except:
-            content = ""
+            content = pyfile.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            try:
+                content = pyfile.read_text(encoding="latin-1")
+            except OSError:
+                content = ""
 
-    rel_path = str(pyfile.relative_to(tools_dir))
-    category = categorize_file(pyfile, content)
-    categories[category].append(rel_path)
+        rel_path = str(pyfile.relative_to(tools_dir))
+        category = categorize_file(pyfile, content)
+        categories[category].append(rel_path)
 
-    qm = check_quality(pyfile, content)
-    if qm["has_docstring"]:
-        quality_metrics["has_docstring"] += 1
-    if qm["has_main_guard"]:
-        quality_metrics["has_main_guard"] += 1
-    if qm["has_argparse"]:
-        quality_metrics["has_argparse"] += 1
-    if qm["has_error_handling"]:
-        quality_metrics["has_error_handling"] += 1
+        qm = check_quality(pyfile, content)
+        if qm["has_docstring"]:
+            quality_metrics["has_docstring"] += 1
+        if qm["has_main_guard"]:
+            quality_metrics["has_main_guard"] += 1
+        if qm["has_argparse"]:
+            quality_metrics["has_argparse"] += 1
+        if qm["has_error_handling"]:
+            quality_metrics["has_error_handling"] += 1
 
-    quality_metrics["total_lines"] += qm["line_count"]
+        quality_metrics["total_lines"] += qm["line_count"]
 
-    if qm["non_empty_lines"] < 50:
-        quality_metrics["empty_or_minimal"].append((rel_path, qm["non_empty_lines"]))
+        if qm["non_empty_lines"] < 50:
+            quality_metrics["empty_or_minimal"].append((rel_path, qm["non_empty_lines"]))
 
-    for imp in qm["imports"]:
-        quality_metrics["imports_count"][imp] += 1
+        for imp in qm["imports"]:
+            quality_metrics["imports_count"][imp] += 1
 
-    functions = extract_functions(content)
-    func_sig = "_".join(sorted(functions)[:5])
-    if func_sig and len(functions) >= 2:
-        function_hashes[func_sig].append(rel_path)
+        functions = extract_functions(content)
+        func_sig = "_".join(sorted(functions)[:5])
+        if func_sig and len(functions) >= 2:
+            function_hashes[func_sig].append(rel_path)
 
-    base_name = pyfile.stem.replace("_old", "").replace("_new", "").replace("_v2", "")
-    similar_names[base_name].append(rel_path)
+        base_name = pyfile.stem.replace("_old", "").replace("_new", "").replace("_v2", "")
+        similar_names[base_name].append(rel_path)
 
-    all_files.append({
-        "path": rel_path,
-        "name": pyfile.name,
-        "category": category,
-        "size": pyfile.stat().st_size,
-        "lines": qm["line_count"],
-        "quality": qm
-    })
+        all_files.append({
+            "path": rel_path,
+            "name": pyfile.name,
+            "category": category,
+            "size": pyfile.stat().st_size,
+            "lines": qm["line_count"],
+            "quality": qm,
+        })
 
-# Ausgabe
-print("=" * 80)
-print("DUPLIKAT-ANALYSE")
-print("=" * 80)
-print("\nDateien mit ähnlichen Funktions-Signaturen:")
-for sig, files in function_hashes.items():
-    if len(files) > 1:
-        print(f"\n  Signatur: {sig[:60]}...")
-        for f in files:
-            print(f"    - {f}")
+    print("=" * 80)
+    print("DUPLIKAT-ANALYSE")
+    print("=" * 80)
+    print("\nDateien mit ähnlichen Funktions-Signaturen:")
+    for sig, files in function_hashes.items():
+        if len(files) > 1:
+            print(f"\n  Signatur: {sig[:60]}...")
+            for f in files:
+                print(f"    - {f}")
 
-print("\n\nDateien mit ähnlichen Namen:")
-for base, files in similar_names.items():
-    if len(files) > 1:
-        print(f"\n  {base}:")
-        for f in files:
-            print(f"    - {f}")
+    print("\n\nDateien mit ähnlichen Namen:")
+    for base, files in similar_names.items():
+        if len(files) > 1:
+            print(f"\n  {base}:")
+            for f in files:
+                print(f"    - {f}")
 
-print("\n" + "=" * 80)
-print("KATEGORISIERUNG DER 199 TOOLS")
-print("=" * 80)
-for cat, files in sorted(categories.items(), key=lambda x: -len(x[1])):
-    if files:
-        print(f"\n{cat.upper()} ({len(files)} Dateien):")
-        print("-" * 40)
-        for f in sorted(files)[:10]:
-            print(f"  • {f}")
-        if len(files) > 10:
-            print(f"  ... und {len(files) - 10} weitere")
+    total = len(all_files)
+    print("\n" + "=" * 80)
+    print(f"KATEGORISIERUNG DER {total} TOOLS")
+    print("=" * 80)
+    for cat, files in sorted(categories.items(), key=lambda x: -len(x[1])):
+        if files:
+            print(f"\n{cat.upper()} ({len(files)} Dateien):")
+            print("-" * 40)
+            for f in sorted(files)[:10]:
+                print(f"  • {f}")
+            if len(files) > 10:
+                print(f"  ... und {len(files) - 10} weitere")
 
-print("\n" + "=" * 80)
-print("QUALITÄTS-METRIKEN")
-print("=" * 80)
-total = len(all_files)
-print(f"Dateien mit Docstring:      {quality_metrics['has_docstring']:3d} / {total} ({quality_metrics['has_docstring']*100/total:.1f}%)")
-print(f"Dateien mit main-Guard:     {quality_metrics['has_main_guard']:3d} / {total} ({quality_metrics['has_main_guard']*100/total:.1f}%)")
-print(f"Dateien mit ArgParse:       {quality_metrics['has_argparse']:3d} / {total} ({quality_metrics['has_argparse']*100/total:.1f}%)")
-print(f"Dateien mit Error-Handling: {quality_metrics['has_error_handling']:3d} / {total} ({quality_metrics['has_error_handling']*100/total:.1f}%)")
-print(f"\nDurchschnittliche Länge:    {quality_metrics['total_lines']/total:.0f} Zeilen")
-print(f"Minimale/leere Dateien (<50 Zeilen): {len(quality_metrics['empty_or_minimal'])} Dateien")
+    print("\n" + "=" * 80)
+    print("QUALITÄTS-METRIKEN")
+    print("=" * 80)
+    if total > 0:
+        print(f"Dateien mit Docstring:      {quality_metrics['has_docstring']:3d} / {total} ({quality_metrics['has_docstring']*100/total:.1f}%)")
+        print(f"Dateien mit main-Guard:     {quality_metrics['has_main_guard']:3d} / {total} ({quality_metrics['has_main_guard']*100/total:.1f}%)")
+        print(f"Dateien mit ArgParse:       {quality_metrics['has_argparse']:3d} / {total} ({quality_metrics['has_argparse']*100/total:.1f}%)")
+        print(f"Dateien mit Error-Handling: {quality_metrics['has_error_handling']:3d} / {total} ({quality_metrics['has_error_handling']*100/total:.1f}%)")
+        print(f"\nDurchschnittliche Länge:    {quality_metrics['total_lines']/total:.0f} Zeilen")
+        print(f"Minimale/leere Dateien (<50 Zeilen): {len(quality_metrics['empty_or_minimal'])} Dateien")
+    else:
+        print("Keine Dateien gefunden.")
 
-print("\n\nTop 10 meist-importierte Module:")
-for mod, count in sorted(quality_metrics["imports_count"].items(), key=lambda x: -x[1])[:10]:
-    print(f"  {mod:20s}: {count:3d}x")
+    if quality_metrics["imports_count"]:
+        print("\n\nTop 10 meist-importierte Module:")
+        for mod, count in sorted(quality_metrics["imports_count"].items(), key=lambda x: -x[1])[:10]:
+            print(f"  {mod:20s}: {count:3d}x")
 
-print("\n" + "=" * 80)
+    print("\n" + "=" * 80)

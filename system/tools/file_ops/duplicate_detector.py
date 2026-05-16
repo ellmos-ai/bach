@@ -77,7 +77,7 @@ class DuplicateDetector:
             try:
                 with open(self.usage_log_path, 'r', encoding='utf-8') as f:
                     self.usage_log = json.load(f)
-            except:
+            except (json.JSONDecodeError, OSError):
                 self.usage_log = []
     
     def _save_usage_log(self):

@@ -1,6 +1,6 @@
 # Portabilitaet: UNIVERSAL
-# Version: 1.1.0
-# Zuletzt validiert: 2026-05-10
+# Version: 1.1.1
+# Zuletzt validiert: 2026-05-15 (ThreadingHTTPServer, LaunchAgent-Korrektur)
 
 BACH CHAT SERVICE - Multi-Backend Telegram Bot + Control API + System Tray
 ==========================================================================
@@ -103,7 +103,10 @@ DATEIEN
     com.bach.telegram-bot     Telegram-Bot
     com.bach.chat-tray        System Tray
     com.bach.gui-server       GUI Dashboard (:8000)
-    com.bach.onedrive-sync    OneDrive-Sync
+
+  Crontab (macOS):
+    */5 * * * * sync_mirror.sh    OneDrive-Mirror-Sync
+    0 */6 * * * rotate_logs.sh    Log-Rotation
 
 
 KONFIGURATION
@@ -127,6 +130,15 @@ KONFIGURATION
     BACH_CONTROL_PORT        Control API Port (default: 8081)
     ANTHROPIC_API_KEY        Fuer claude-api Backend
     OPENAI_API_KEY           Fuer openai Backend
+
+
+HINWEISE
+--------
+  Threading: Die Control API nutzt ThreadingHTTPServer (ab v1.1.1).
+  ChatRuntime hat keine Locks um shared State (sessions, current_tool,
+  tool_round, last_tools). Bei Single-User-Betrieb unkritisch, aber bei
+  gleichzeitigen API-Anfragen waehrend laufender Tool-Ausfuehrung kann
+  es zu Race Conditions kommen. Workaround: Nur einen Chat gleichzeitig.
 
 
 MIGRATION VON CLAUDE BRIDGE

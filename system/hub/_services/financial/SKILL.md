@@ -82,7 +82,7 @@ bach steuer import --from-financial
 ### Mit Daemon
 
 Automatische Sync über Daemon-Profil:
-- `skills/_services/daemon/profiles/financial_mail.json`
+- `hub/_services/daemon/profiles/financial_mail.json`
 
 ## Ordnerstruktur
 
@@ -92,7 +92,7 @@ financial/
 └── stubs/            # Reserviert für zukünftige Module
 ```
 
-Schema: `skills/_services/mail/schema_financial.sql`
+Schema: `hub/_services/mail/schema_financial.sql`
 GUI: `gui/templates/financial.html`
 API: `gui/server.py` (ab Zeile 1780)
 

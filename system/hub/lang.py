@@ -442,7 +442,7 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
         strings = set()
         try:
             content = file_path.read_text(encoding='utf-8')
-        except:
+        except (OSError, UnicodeDecodeError):
             return strings
 
         for pattern in self.STRING_PATTERNS:
@@ -460,7 +460,7 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
         strings = set()
         try:
             content = file_path.read_text(encoding='utf-8')
-        except:
+        except (OSError, UnicodeDecodeError):
             return strings
 
         # Titel (erste Zeile)
@@ -1135,8 +1135,11 @@ def _get_t_db_path() -> Path:
     """Ermittelt DB-Pfad (cached)."""
     global _t_db_path
     if _t_db_path is None:
-        # Pfad relativ zu diesem Modul: hub/lang.py -> system/data/bach.db
-        _t_db_path = Path(__file__).parent.parent / "data" / "bach.db"
+        try:
+            from hub.bach_paths import BACH_DB
+            _t_db_path = BACH_DB
+        except ImportError:
+            _t_db_path = Path(__file__).parent.parent / "data" / "bach.db"
     return _t_db_path
 
 

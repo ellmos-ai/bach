@@ -109,14 +109,16 @@ class SharedMemoryHandler(BaseHandler):
         """Liste alle shared memory facts."""
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                SELECT id, agent_id, namespace, key, value, visibility, created_at
-                FROM shared_memory_facts
-                ORDER BY created_at DESC
-                LIMIT 50
-            """)
-            rows = cursor.fetchall()
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    SELECT id, agent_id, namespace, key, value, visibility, created_at
+                    FROM shared_memory_facts
+                    ORDER BY created_at DESC
+                    LIMIT 50
+                """)
+                rows = cursor.fetchall()
+            finally:
+                conn.close()
 
             if not rows:
                 return True, "Keine shared memory facts gefunden."
@@ -180,52 +182,52 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            now = datetime.now().isoformat()
+            try:
+                now = datetime.now().isoformat()
 
-            # B56: Conflict Resolution -- pruefe ob Key bereits existiert
-            cursor = conn.execute("""
-                SELECT id, confidence FROM shared_memory_facts
-                WHERE key = ? AND namespace = ?
-                AND (agent_id = ? OR (agent_id IS NULL AND ? IS NULL))
-                ORDER BY created_at DESC LIMIT 1
-            """, (key, namespace, agent_id, agent_id))
-            existing = cursor.fetchone()
+                # B56: Conflict Resolution -- pruefe ob Key bereits existiert
+                cursor = conn.execute("""
+                    SELECT id, confidence FROM shared_memory_facts
+                    WHERE key = ? AND namespace = ?
+                    AND (agent_id = ? OR (agent_id IS NULL AND ? IS NULL))
+                    ORDER BY created_at DESC LIMIT 1
+                """, (key, namespace, agent_id, agent_id))
+                existing = cursor.fetchone()
 
-            if existing:
-                existing_id, existing_confidence = existing
-                existing_confidence = existing_confidence or 0.0
+                if existing:
+                    existing_id, existing_confidence = existing
+                    existing_confidence = existing_confidence or 0.0
 
-                if confidence >= existing_confidence:
-                    # Update bestehenden Eintrag
-                    conn.execute("""
-                        UPDATE shared_memory_facts
-                        SET value = ?, confidence = ?, visibility = ?, updated_at = ?, modified_by = 'conflict_resolution'
-                        WHERE id = ?
-                    """, (value, confidence, visibility, now, existing_id))
-                    conn.commit()
-                    conn.close()
-                    return True, (
-                        f"Fact aktualisiert (Conflict Resolution, ID: {existing_id})\n"
-                        f"  Key: {key}\n"
-                        f"  Neuer Value: {value}\n"
-                        f"  Confidence: {existing_confidence} -> {confidence}"
-                    )
-                else:
-                    conn.close()
-                    return True, (
-                        f"Fact NICHT aktualisiert (bestehender Confidence hoeher)\n"
-                        f"  Key: {key} (ID: {existing_id})\n"
-                        f"  Bestehender Confidence: {existing_confidence} > Neuer: {confidence}"
-                    )
+                    if confidence >= existing_confidence:
+                        # Update bestehenden Eintrag
+                        conn.execute("""
+                            UPDATE shared_memory_facts
+                            SET value = ?, confidence = ?, visibility = ?, updated_at = ?, modified_by = 'conflict_resolution'
+                            WHERE id = ?
+                        """, (value, confidence, visibility, now, existing_id))
+                        conn.commit()
+                        return True, (
+                            f"Fact aktualisiert (Conflict Resolution, ID: {existing_id})\n"
+                            f"  Key: {key}\n"
+                            f"  Neuer Value: {value}\n"
+                            f"  Confidence: {existing_confidence} -> {confidence}"
+                        )
+                    else:
+                        return True, (
+                            f"Fact NICHT aktualisiert (bestehender Confidence hoeher)\n"
+                            f"  Key: {key} (ID: {existing_id})\n"
+                            f"  Bestehender Confidence: {existing_confidence} > Neuer: {confidence}"
+                        )
 
-            # Kein bestehender Eintrag -- neu anlegen
-            cursor = conn.execute("""
-                INSERT INTO shared_memory_facts (agent_id, namespace, key, value, visibility, confidence, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (agent_id, namespace, key, value, visibility, confidence, now, now))
-            conn.commit()
-            fact_id = cursor.lastrowid
-            conn.close()
+                # Kein bestehender Eintrag -- neu anlegen
+                cursor = conn.execute("""
+                    INSERT INTO shared_memory_facts (agent_id, namespace, key, value, visibility, confidence, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (agent_id, namespace, key, value, visibility, confidence, now, now))
+                conn.commit()
+                fact_id = cursor.lastrowid
+            finally:
+                conn.close()
 
             return True, f"Shared Memory Fact hinzugefuegt (ID: {fact_id})\n  Key: {key}\n  Agent: {agent_id or 'GLOBAL'}\n  Namespace: {namespace}\n  Visibility: {visibility}\n  Confidence: {confidence}"
 
@@ -241,13 +243,15 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                SELECT id, agent_id, namespace, key, value, visibility, created_at
-                FROM shared_memory_facts
-                WHERE id = ?
-            """, (fact_id,))
-            row = cursor.fetchone()
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    SELECT id, agent_id, namespace, key, value, visibility, created_at
+                    FROM shared_memory_facts
+                    WHERE id = ?
+                """, (fact_id,))
+                row = cursor.fetchone()
+            finally:
+                conn.close()
 
             if not row:
                 return False, f"Fact mit ID {fact_id} nicht gefunden."
@@ -278,10 +282,12 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("DELETE FROM shared_memory_facts WHERE id = ?", (fact_id,))
-            conn.commit()
-            deleted = cursor.rowcount
-            conn.close()
+            try:
+                cursor = conn.execute("DELETE FROM shared_memory_facts WHERE id = ?", (fact_id,))
+                conn.commit()
+                deleted = cursor.rowcount
+            finally:
+                conn.close()
 
             if deleted == 0:
                 return False, f"Fact mit ID {fact_id} nicht gefunden."
@@ -311,14 +317,16 @@ class SharedMemoryHandler(BaseHandler):
         """Liste alle shared memory lessons."""
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                SELECT id, agent_id, namespace, title, severity, is_active, times_shown, created_at
-                FROM shared_memory_lessons
-                ORDER BY severity DESC, created_at DESC
-                LIMIT 50
-            """)
-            rows = cursor.fetchall()
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    SELECT id, agent_id, namespace, title, severity, is_active, times_shown, created_at
+                    FROM shared_memory_lessons
+                    ORDER BY severity DESC, created_at DESC
+                    LIMIT 50
+                """)
+                rows = cursor.fetchall()
+            finally:
+                conn.close()
 
             if not rows:
                 return True, "Keine shared memory lessons gefunden."
@@ -361,15 +369,17 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                INSERT INTO shared_memory_lessons
-                (agent_id, namespace, visibility, severity, title, is_active, times_shown, confidence, source, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (agent_id, namespace, "global", severity, title, 1, 0, 1.0, "cli",
-                  datetime.now().isoformat(), datetime.now().isoformat()))
-            conn.commit()
-            lesson_id = cursor.lastrowid
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    INSERT INTO shared_memory_lessons
+                    (agent_id, namespace, visibility, severity, title, is_active, times_shown, confidence, source, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (agent_id, namespace, "global", severity, title, 1, 0, 1.0, "cli",
+                      datetime.now().isoformat(), datetime.now().isoformat()))
+                conn.commit()
+                lesson_id = cursor.lastrowid
+            finally:
+                conn.close()
 
             return True, f"✓ Lesson hinzugefügt (ID: {lesson_id}): {title}"
 
@@ -388,10 +398,12 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("UPDATE shared_memory_lessons SET is_active = 1 WHERE id = ?", (lesson_id,))
-            conn.commit()
-            updated = cursor.rowcount
-            conn.close()
+            try:
+                cursor = conn.execute("UPDATE shared_memory_lessons SET is_active = 1 WHERE id = ?", (lesson_id,))
+                conn.commit()
+                updated = cursor.rowcount
+            finally:
+                conn.close()
 
             if updated == 0:
                 return False, f"Lesson mit ID {lesson_id} nicht gefunden."
@@ -413,10 +425,12 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("UPDATE shared_memory_lessons SET is_active = 0 WHERE id = ?", (lesson_id,))
-            conn.commit()
-            updated = cursor.rowcount
-            conn.close()
+            try:
+                cursor = conn.execute("UPDATE shared_memory_lessons SET is_active = 0 WHERE id = ?", (lesson_id,))
+                conn.commit()
+                updated = cursor.rowcount
+            finally:
+                conn.close()
 
             if updated == 0:
                 return False, f"Lesson mit ID {lesson_id} nicht gefunden."
@@ -446,15 +460,17 @@ class SharedMemoryHandler(BaseHandler):
         """Liste shared working memory."""
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                SELECT id, agent_id, session_id, type, content, priority, is_active, created_at
-                FROM shared_memory_working
-                WHERE is_active = 1
-                ORDER BY priority DESC, created_at DESC
-                LIMIT 50
-            """)
-            rows = cursor.fetchall()
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    SELECT id, agent_id, session_id, type, content, priority, is_active, created_at
+                    FROM shared_memory_working
+                    WHERE is_active = 1
+                    ORDER BY priority DESC, created_at DESC
+                    LIMIT 50
+                """)
+                rows = cursor.fetchall()
+            finally:
+                conn.close()
 
             if not rows:
                 return True, "Shared Working Memory ist leer."
@@ -497,15 +513,17 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                INSERT INTO shared_memory_working
-                (agent_id, session_id, type, content, priority, is_active, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (agent_id, None, type_, content, priority, 1,
-                  datetime.now().isoformat(), datetime.now().isoformat()))
-            conn.commit()
-            entry_id = cursor.lastrowid
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    INSERT INTO shared_memory_working
+                    (agent_id, session_id, type, content, priority, is_active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (agent_id, None, type_, content, priority, 1,
+                      datetime.now().isoformat(), datetime.now().isoformat()))
+                conn.commit()
+                entry_id = cursor.lastrowid
+            finally:
+                conn.close()
 
             return True, f"✓ Working Entry hinzugefügt (ID: {entry_id})"
 
@@ -516,25 +534,25 @@ class SharedMemoryHandler(BaseHandler):
         """Cleanup abgelaufener Working Memory Entries."""
         try:
             conn = sqlite3.connect(self.db_path)
+            try:
+                # Zähle abgelaufene Einträge
+                cursor = conn.execute("""
+                    SELECT COUNT(*) FROM shared_memory_working
+                    WHERE expires_at IS NOT NULL AND expires_at < ?
+                """, (datetime.now().isoformat(),))
+                expired_count = cursor.fetchone()[0]
 
-            # Zähle abgelaufene Einträge
-            cursor = conn.execute("""
-                SELECT COUNT(*) FROM shared_memory_working
-                WHERE expires_at IS NOT NULL AND expires_at < ?
-            """, (datetime.now().isoformat(),))
-            expired_count = cursor.fetchone()[0]
+                if dry_run:
+                    return True, f"[DRY-RUN] Würde {expired_count} abgelaufene Entries löschen"
 
-            if dry_run:
+                # Lösche abgelaufene
+                conn.execute("""
+                    DELETE FROM shared_memory_working
+                    WHERE expires_at IS NOT NULL AND expires_at < ?
+                """, (datetime.now().isoformat(),))
+                conn.commit()
+            finally:
                 conn.close()
-                return True, f"[DRY-RUN] Würde {expired_count} abgelaufene Entries löschen"
-
-            # Lösche abgelaufene
-            conn.execute("""
-                DELETE FROM shared_memory_working
-                WHERE expires_at IS NOT NULL AND expires_at < ?
-            """, (datetime.now().isoformat(),))
-            conn.commit()
-            conn.close()
 
             return True, f"✓ {expired_count} abgelaufene Entries gelöscht"
 
@@ -568,25 +586,27 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            now = datetime.now().isoformat()
+            try:
+                now = datetime.now().isoformat()
 
-            # Upsert: bestehenden current_task fuer diesen Agent deaktivieren
-            conn.execute("""
-                UPDATE shared_memory_working
-                SET is_active = 0, updated_at = ?
-                WHERE type = 'current_task' AND is_active = 1
-                AND (agent_id = ? OR (agent_id IS NULL AND ? IS NULL))
-            """, (now, agent_id, agent_id))
+                # Upsert: bestehenden current_task fuer diesen Agent deaktivieren
+                conn.execute("""
+                    UPDATE shared_memory_working
+                    SET is_active = 0, updated_at = ?
+                    WHERE type = 'current_task' AND is_active = 1
+                    AND (agent_id = ? OR (agent_id IS NULL AND ? IS NULL))
+                """, (now, agent_id, agent_id))
 
-            # Neuen current_task anlegen
-            cursor = conn.execute("""
-                INSERT INTO shared_memory_working
-                (agent_id, session_id, type, content, priority, is_active, created_at, updated_at)
-                VALUES (?, ?, 'current_task', ?, 9, 1, ?, ?)
-            """, (agent_id, None, content, now, now))
-            conn.commit()
-            entry_id = cursor.lastrowid
-            conn.close()
+                # Neuen current_task anlegen
+                cursor = conn.execute("""
+                    INSERT INTO shared_memory_working
+                    (agent_id, session_id, type, content, priority, is_active, created_at, updated_at)
+                    VALUES (?, ?, 'current_task', ?, 9, 1, ?, ?)
+                """, (agent_id, None, content, now, now))
+                conn.commit()
+                entry_id = cursor.lastrowid
+            finally:
+                conn.close()
 
             return True, f"Current Task gesetzt (ID: {entry_id})\n  Agent: {agent_id or 'GLOBAL'}\n  Task: {content}"
 
@@ -613,14 +633,16 @@ class SharedMemoryHandler(BaseHandler):
             limit = int(args[0]) if args and args[0].isdigit() else 20
 
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                SELECT id, session_id, agent_id, started_at, ended_at, tasks_completed, is_archived
-                FROM shared_memory_sessions
-                ORDER BY started_at DESC
-                LIMIT ?
-            """, (limit,))
-            rows = cursor.fetchall()
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    SELECT id, session_id, agent_id, started_at, ended_at, tasks_completed, is_archived
+                    FROM shared_memory_sessions
+                    ORDER BY started_at DESC
+                    LIMIT ?
+                """, (limit,))
+                rows = cursor.fetchall()
+            finally:
+                conn.close()
 
             if not rows:
                 return True, "Keine Sessions gefunden."
@@ -643,14 +665,16 @@ class SharedMemoryHandler(BaseHandler):
         """Zeige aktuelle (laufende) Sessions."""
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                SELECT id, session_id, agent_id, started_at, tasks_completed
-                FROM shared_memory_sessions
-                WHERE ended_at IS NULL
-                ORDER BY started_at DESC
-            """)
-            rows = cursor.fetchall()
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    SELECT id, session_id, agent_id, started_at, tasks_completed
+                    FROM shared_memory_sessions
+                    WHERE ended_at IS NULL
+                    ORDER BY started_at DESC
+                """)
+                rows = cursor.fetchall()
+            finally:
+                conn.close()
 
             if not rows:
                 return True, "Keine aktiven Sessions."
@@ -679,26 +703,26 @@ class SharedMemoryHandler(BaseHandler):
             cutoff = (datetime.now() - timedelta(days=days)).isoformat()
 
             conn = sqlite3.connect(self.db_path)
+            try:
+                # Zähle Sessions
+                cursor = conn.execute("""
+                    SELECT COUNT(*) FROM shared_memory_sessions
+                    WHERE ended_at IS NOT NULL AND ended_at < ? AND is_archived = 0
+                """, (cutoff,))
+                count = cursor.fetchone()[0]
 
-            # Zähle Sessions
-            cursor = conn.execute("""
-                SELECT COUNT(*) FROM shared_memory_sessions
-                WHERE ended_at IS NOT NULL AND ended_at < ? AND is_archived = 0
-            """, (cutoff,))
-            count = cursor.fetchone()[0]
+                if dry_run:
+                    return True, f"[DRY-RUN] Würde {count} Sessions archivieren (älter als {days} Tage)"
 
-            if dry_run:
+                # Archiviere
+                conn.execute("""
+                    UPDATE shared_memory_sessions
+                    SET is_archived = 1
+                    WHERE ended_at IS NOT NULL AND ended_at < ? AND is_archived = 0
+                """, (cutoff,))
+                conn.commit()
+            finally:
                 conn.close()
-                return True, f"[DRY-RUN] Würde {count} Sessions archivieren (älter als {days} Tage)"
-
-            # Archiviere
-            conn.execute("""
-                UPDATE shared_memory_sessions
-                SET is_archived = 1
-                WHERE ended_at IS NOT NULL AND ended_at < ? AND is_archived = 0
-            """, (cutoff,))
-            conn.commit()
-            conn.close()
 
             return True, f"✓ {count} Sessions archiviert (älter als {days} Tage)"
 
@@ -729,14 +753,16 @@ class SharedMemoryHandler(BaseHandler):
             limit = int(args[0]) if args and args[0].isdigit() else 50
 
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                SELECT id, source_table, source_id, agent_id, times_accessed, weight, status, last_accessed
-                FROM shared_memory_consolidation
-                ORDER BY weight DESC, times_accessed DESC
-                LIMIT ?
-            """, (limit,))
-            rows = cursor.fetchall()
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    SELECT id, source_table, source_id, agent_id, times_accessed, weight, status, last_accessed
+                    FROM shared_memory_consolidation
+                    ORDER BY weight DESC, times_accessed DESC
+                    LIMIT ?
+                """, (limit,))
+                rows = cursor.fetchall()
+            finally:
+                conn.close()
 
             if not rows:
                 return True, "Keine Consolidation-Einträge gefunden."
@@ -757,29 +783,29 @@ class SharedMemoryHandler(BaseHandler):
         """Zeige Consolidation-Statistiken."""
         try:
             conn = sqlite3.connect(self.db_path)
+            try:
+                # Gesamt-Stats
+                cursor = conn.execute("""
+                    SELECT
+                        COUNT(*) as total,
+                        COUNT(CASE WHEN status='active' THEN 1 END) as active,
+                        COUNT(CASE WHEN status='consolidated' THEN 1 END) as consolidated,
+                        AVG(weight) as avg_weight,
+                        AVG(times_accessed) as avg_access
+                    FROM shared_memory_consolidation
+                """)
+                total, active, consolidated, avg_weight, avg_access = cursor.fetchone()
 
-            # Gesamt-Stats
-            cursor = conn.execute("""
-                SELECT
-                    COUNT(*) as total,
-                    COUNT(CASE WHEN status='active' THEN 1 END) as active,
-                    COUNT(CASE WHEN status='consolidated' THEN 1 END) as consolidated,
-                    AVG(weight) as avg_weight,
-                    AVG(times_accessed) as avg_access
-                FROM shared_memory_consolidation
-            """)
-            total, active, consolidated, avg_weight, avg_access = cursor.fetchone()
-
-            # Pro Source-Tabelle
-            cursor = conn.execute("""
-                SELECT source_table, COUNT(*) as count
-                FROM shared_memory_consolidation
-                GROUP BY source_table
-                ORDER BY count DESC
-            """)
-            by_source = cursor.fetchall()
-
-            conn.close()
+                # Pro Source-Tabelle
+                cursor = conn.execute("""
+                    SELECT source_table, COUNT(*) as count
+                    FROM shared_memory_consolidation
+                    GROUP BY source_table
+                    ORDER BY count DESC
+                """)
+                by_source = cursor.fetchall()
+            finally:
+                conn.close()
 
             output = "=== Consolidation Statistics ===\n\n"
             output += f"Total Entries: {total}\n"
@@ -817,15 +843,17 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                INSERT INTO shared_memory_consolidation
-                (source_table, source_id, agent_id, times_accessed, weight, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (source_table, source_id, agent_id, 0, 0.5, 'active',
-                  datetime.now().isoformat(), datetime.now().isoformat()))
-            conn.commit()
-            cid = cursor.lastrowid
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    INSERT INTO shared_memory_consolidation
+                    (source_table, source_id, agent_id, times_accessed, weight, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (source_table, source_id, agent_id, 0, 0.5, 'active',
+                      datetime.now().isoformat(), datetime.now().isoformat()))
+                conn.commit()
+                cid = cursor.lastrowid
+            finally:
+                conn.close()
 
             return True, f"✓ Consolidation-Eintrag hinzugefügt (ID: {cid})"
 
@@ -839,26 +867,26 @@ class SharedMemoryHandler(BaseHandler):
             threshold = float(args[0]) if args and args[0].replace('.','').isdigit() else 0.2
 
             conn = sqlite3.connect(self.db_path)
+            try:
+                # Zähle Einträge unter threshold
+                cursor = conn.execute("""
+                    SELECT COUNT(*) FROM shared_memory_consolidation
+                    WHERE status='active' AND weight < ?
+                """, (threshold,))
+                count = cursor.fetchone()[0]
 
-            # Zähle Einträge unter threshold
-            cursor = conn.execute("""
-                SELECT COUNT(*) FROM shared_memory_consolidation
-                WHERE status='active' AND weight < ?
-            """, (threshold,))
-            count = cursor.fetchone()[0]
+                if dry_run:
+                    return True, f"[DRY-RUN] Würde {count} Einträge konsolidieren (weight < {threshold})"
 
-            if dry_run:
+                # Markiere als consolidated
+                conn.execute("""
+                    UPDATE shared_memory_consolidation
+                    SET status = 'consolidated', updated_at = ?
+                    WHERE status='active' AND weight < ?
+                """, (datetime.now().isoformat(), threshold))
+                conn.commit()
+            finally:
                 conn.close()
-                return True, f"[DRY-RUN] Würde {count} Einträge konsolidieren (weight < {threshold})"
-
-            # Markiere als consolidated
-            conn.execute("""
-                UPDATE shared_memory_consolidation
-                SET status = 'consolidated', updated_at = ?
-                WHERE status='active' AND weight < ?
-            """, (datetime.now().isoformat(), threshold))
-            conn.commit()
-            conn.close()
 
             return True, f"✓ {count} Einträge konsolidiert (weight < {threshold})"
 
@@ -869,51 +897,52 @@ class SharedMemoryHandler(BaseHandler):
         """B57: Decay-Logik -- weight *= decay_rate, archiviere unter threshold."""
         try:
             conn = sqlite3.connect(self.db_path)
-            now = datetime.now().isoformat()
+            try:
+                now = datetime.now().isoformat()
 
-            # Hole alle aktiven Eintraege mit decay_rate und threshold
-            cursor = conn.execute("""
-                SELECT id, weight, decay_rate, threshold
-                FROM shared_memory_consolidation
-                WHERE status = 'active'
-            """)
-            rows = cursor.fetchall()
+                # Hole alle aktiven Eintraege mit decay_rate und threshold
+                cursor = conn.execute("""
+                    SELECT id, weight, decay_rate, threshold
+                    FROM shared_memory_consolidation
+                    WHERE status = 'active'
+                """)
+                rows = cursor.fetchall()
 
-            if not rows:
+                if not rows:
+                    return True, "Keine aktiven Consolidation-Eintraege zum Decay."
+
+                decayed_count = 0
+                archived_count = 0
+
+                for row in rows:
+                    cid, weight, decay_rate, threshold = row
+                    weight = weight or 1.0
+                    decay_rate = decay_rate or 0.95  # Default: 5% Decay
+                    threshold = threshold or 0.1     # Default: Archivierung unter 0.1
+
+                    new_weight = weight * decay_rate
+                    decayed_count += 1
+
+                    if new_weight < threshold:
+                        if not dry_run:
+                            conn.execute("""
+                                UPDATE shared_memory_consolidation
+                                SET weight = ?, status = 'archived', updated_at = ?
+                                WHERE id = ?
+                            """, (new_weight, now, cid))
+                        archived_count += 1
+                    else:
+                        if not dry_run:
+                            conn.execute("""
+                                UPDATE shared_memory_consolidation
+                                SET weight = ?, updated_at = ?
+                                WHERE id = ?
+                            """, (new_weight, now, cid))
+
+                if not dry_run:
+                    conn.commit()
+            finally:
                 conn.close()
-                return True, "Keine aktiven Consolidation-Eintraege zum Decay."
-
-            decayed_count = 0
-            archived_count = 0
-
-            for row in rows:
-                cid, weight, decay_rate, threshold = row
-                weight = weight or 1.0
-                decay_rate = decay_rate or 0.95  # Default: 5% Decay
-                threshold = threshold or 0.1     # Default: Archivierung unter 0.1
-
-                new_weight = weight * decay_rate
-                decayed_count += 1
-
-                if new_weight < threshold:
-                    if not dry_run:
-                        conn.execute("""
-                            UPDATE shared_memory_consolidation
-                            SET weight = ?, status = 'archived', updated_at = ?
-                            WHERE id = ?
-                        """, (new_weight, now, cid))
-                    archived_count += 1
-                else:
-                    if not dry_run:
-                        conn.execute("""
-                            UPDATE shared_memory_consolidation
-                            SET weight = ?, updated_at = ?
-                            WHERE id = ?
-                        """, (new_weight, now, cid))
-
-            if not dry_run:
-                conn.commit()
-            conn.close()
 
             prefix = "[DRY-RUN] " if dry_run else ""
             return True, f"{prefix}Decay ausgefuehrt: {decayed_count} Eintraege decayed, {archived_count} archiviert"
@@ -926,63 +955,65 @@ class SharedMemoryHandler(BaseHandler):
         """B55: Generiere Kontext-Block (Top-10 Facts, aktive Lessons, current_task)."""
         try:
             conn = sqlite3.connect(self.db_path)
-            output = "## Shared Memory Context\n\n"
+            try:
+                output = "## Shared Memory Context\n\n"
 
-            # 1. Current Task(s)
-            cursor = conn.execute("""
-                SELECT agent_id, content, created_at
-                FROM shared_memory_working
-                WHERE type = 'current_task' AND is_active = 1
-                ORDER BY created_at DESC
-            """)
-            tasks = cursor.fetchall()
+                # 1. Current Task(s)
+                cursor = conn.execute("""
+                    SELECT agent_id, content, created_at
+                    FROM shared_memory_working
+                    WHERE type = 'current_task' AND is_active = 1
+                    ORDER BY created_at DESC
+                """)
+                tasks = cursor.fetchall()
 
-            if tasks:
-                output += "### Current Tasks\n"
-                for agent_id, content, created_at in tasks:
-                    output += f"- **{agent_id or 'GLOBAL'}**: {content} (seit {created_at})\n"
-                output += "\n"
-            else:
-                output += "### Current Tasks\n- Kein aktiver Task\n\n"
+                if tasks:
+                    output += "### Current Tasks\n"
+                    for agent_id, content, created_at in tasks:
+                        output += f"- **{agent_id or 'GLOBAL'}**: {content} (seit {created_at})\n"
+                    output += "\n"
+                else:
+                    output += "### Current Tasks\n- Kein aktiver Task\n\n"
 
-            # 2. Top-10 Facts (nach confidence absteigend)
-            cursor = conn.execute("""
-                SELECT key, value, confidence, agent_id
-                FROM shared_memory_facts
-                ORDER BY confidence DESC, created_at DESC
-                LIMIT 10
-            """)
-            facts = cursor.fetchall()
+                # 2. Top-10 Facts (nach confidence absteigend)
+                cursor = conn.execute("""
+                    SELECT key, value, confidence, agent_id
+                    FROM shared_memory_facts
+                    ORDER BY confidence DESC, created_at DESC
+                    LIMIT 10
+                """)
+                facts = cursor.fetchall()
 
-            if facts:
-                output += "### Top Facts\n"
-                for key, value, confidence, agent_id in facts:
-                    conf_str = f" [{confidence:.1f}]" if confidence else ""
-                    value_short = value[:100] + "..." if len(value) > 100 else value
-                    output += f"- **{key}**{conf_str}: {value_short}\n"
-                output += "\n"
-            else:
-                output += "### Top Facts\n- Keine Facts vorhanden\n\n"
+                if facts:
+                    output += "### Top Facts\n"
+                    for key, value, confidence, agent_id in facts:
+                        conf_str = f" [{confidence:.1f}]" if confidence else ""
+                        value_short = value[:100] + "..." if len(value) > 100 else value
+                        output += f"- **{key}**{conf_str}: {value_short}\n"
+                    output += "\n"
+                else:
+                    output += "### Top Facts\n- Keine Facts vorhanden\n\n"
 
-            # 3. Aktive Lessons
-            cursor = conn.execute("""
-                SELECT severity, title
-                FROM shared_memory_lessons
-                WHERE is_active = 1
-                ORDER BY severity DESC, created_at DESC
-                LIMIT 10
-            """)
-            lessons = cursor.fetchall()
+                # 3. Aktive Lessons
+                cursor = conn.execute("""
+                    SELECT severity, title
+                    FROM shared_memory_lessons
+                    WHERE is_active = 1
+                    ORDER BY severity DESC, created_at DESC
+                    LIMIT 10
+                """)
+                lessons = cursor.fetchall()
 
-            if lessons:
-                output += "### Aktive Lessons\n"
-                for severity, title in lessons:
-                    output += f"- [{severity or 'info'}] {title}\n"
-                output += "\n"
-            else:
-                output += "### Aktive Lessons\n- Keine aktiven Lessons\n\n"
+                if lessons:
+                    output += "### Aktive Lessons\n"
+                    for severity, title in lessons:
+                        output += f"- [{severity or 'info'}] {title}\n"
+                    output += "\n"
+                else:
+                    output += "### Aktive Lessons\n- Keine aktiven Lessons\n\n"
+            finally:
+                conn.close()
 
-            conn.close()
             return True, output
 
         except sqlite3.Error as e:
@@ -998,63 +1029,64 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            output = f"## Aenderungen seit {since}\n\n"
-            total_changes = 0
+            try:
+                output = f"## Aenderungen seit {since}\n\n"
+                total_changes = 0
 
-            # Facts
-            cursor = conn.execute("""
-                SELECT id, key, value, created_at, updated_at
-                FROM shared_memory_facts
-                WHERE created_at > ? OR updated_at > ?
-                ORDER BY COALESCE(updated_at, created_at) DESC
-            """, (since, since))
-            facts = cursor.fetchall()
+                # Facts
+                cursor = conn.execute("""
+                    SELECT id, key, value, created_at, updated_at
+                    FROM shared_memory_facts
+                    WHERE created_at > ? OR updated_at > ?
+                    ORDER BY COALESCE(updated_at, created_at) DESC
+                """, (since, since))
+                facts = cursor.fetchall()
 
-            if facts:
-                output += f"### Facts ({len(facts)})\n"
-                for fid, key, value, created_at, updated_at in facts:
-                    value_short = value[:80] + "..." if len(value) > 80 else value
-                    ts = updated_at or created_at
-                    output += f"- [{fid}] **{key}**: {value_short} ({ts})\n"
-                output += "\n"
-                total_changes += len(facts)
+                if facts:
+                    output += f"### Facts ({len(facts)})\n"
+                    for fid, key, value, created_at, updated_at in facts:
+                        value_short = value[:80] + "..." if len(value) > 80 else value
+                        ts = updated_at or created_at
+                        output += f"- [{fid}] **{key}**: {value_short} ({ts})\n"
+                    output += "\n"
+                    total_changes += len(facts)
 
-            # Lessons
-            cursor = conn.execute("""
-                SELECT id, title, severity, created_at, updated_at
-                FROM shared_memory_lessons
-                WHERE created_at > ? OR updated_at > ?
-                ORDER BY COALESCE(updated_at, created_at) DESC
-            """, (since, since))
-            lessons = cursor.fetchall()
+                # Lessons
+                cursor = conn.execute("""
+                    SELECT id, title, severity, created_at, updated_at
+                    FROM shared_memory_lessons
+                    WHERE created_at > ? OR updated_at > ?
+                    ORDER BY COALESCE(updated_at, created_at) DESC
+                """, (since, since))
+                lessons = cursor.fetchall()
 
-            if lessons:
-                output += f"### Lessons ({len(lessons)})\n"
-                for lid, title, severity, created_at, updated_at in lessons:
-                    ts = updated_at or created_at
-                    output += f"- [{lid}] [{severity or 'info'}] {title} ({ts})\n"
-                output += "\n"
-                total_changes += len(lessons)
+                if lessons:
+                    output += f"### Lessons ({len(lessons)})\n"
+                    for lid, title, severity, created_at, updated_at in lessons:
+                        ts = updated_at or created_at
+                        output += f"- [{lid}] [{severity or 'info'}] {title} ({ts})\n"
+                    output += "\n"
+                    total_changes += len(lessons)
 
-            # Working Memory
-            cursor = conn.execute("""
-                SELECT id, type, content, created_at, updated_at
-                FROM shared_memory_working
-                WHERE created_at > ? OR updated_at > ?
-                ORDER BY COALESCE(updated_at, created_at) DESC
-            """, (since, since))
-            working = cursor.fetchall()
+                # Working Memory
+                cursor = conn.execute("""
+                    SELECT id, type, content, created_at, updated_at
+                    FROM shared_memory_working
+                    WHERE created_at > ? OR updated_at > ?
+                    ORDER BY COALESCE(updated_at, created_at) DESC
+                """, (since, since))
+                working = cursor.fetchall()
 
-            if working:
-                output += f"### Working Memory ({len(working)})\n"
-                for wid, type_, content, created_at, updated_at in working:
-                    content_short = content[:80] + "..." if len(content) > 80 else content
-                    ts = updated_at or created_at
-                    output += f"- [{wid}] {type_ or 'note'}: {content_short} ({ts})\n"
-                output += "\n"
-                total_changes += len(working)
-
-            conn.close()
+                if working:
+                    output += f"### Working Memory ({len(working)})\n"
+                    for wid, type_, content, created_at, updated_at in working:
+                        content_short = content[:80] + "..." if len(content) > 80 else content
+                        ts = updated_at or created_at
+                        output += f"- [{wid}] {type_ or 'note'}: {content_short} ({ts})\n"
+                    output += "\n"
+                    total_changes += len(working)
+            finally:
+                conn.close()
 
             if total_changes == 0:
                 return True, f"Keine Aenderungen seit {since}."
@@ -1089,15 +1121,17 @@ class SharedMemoryHandler(BaseHandler):
             limit = int(args[0]) if args and args[0].isdigit() else 50
 
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                SELECT id, agent_id, trigger_phrase, hint_text, is_active, usage_count, status
-                FROM shared_context_triggers
-                WHERE is_active = 1 OR ? = 1
-                ORDER BY usage_count DESC, created_at DESC
-                LIMIT ?
-            """, (1 if "--all" in args else 0, limit))
-            rows = cursor.fetchall()
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    SELECT id, agent_id, trigger_phrase, hint_text, is_active, usage_count, status
+                    FROM shared_context_triggers
+                    WHERE is_active = 1 OR ? = 1
+                    ORDER BY usage_count DESC, created_at DESC
+                    LIMIT ?
+                """, (1 if "--all" in args else 0, limit))
+                rows = cursor.fetchall()
+            finally:
+                conn.close()
 
             if not rows:
                 return True, "Keine Context Triggers gefunden."
@@ -1143,15 +1177,17 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                INSERT INTO shared_context_triggers
-                (agent_id, namespace, trigger_phrase, hint_text, is_active, status, usage_count, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (agent_id, "default", phrase, hint, 1, "approved", 0,
-                  datetime.now().isoformat(), datetime.now().isoformat()))
-            conn.commit()
-            tid = cursor.lastrowid
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    INSERT INTO shared_context_triggers
+                    (agent_id, namespace, trigger_phrase, hint_text, is_active, status, usage_count, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (agent_id, "default", phrase, hint, 1, "approved", 0,
+                      datetime.now().isoformat(), datetime.now().isoformat()))
+                conn.commit()
+                tid = cursor.lastrowid
+            finally:
+                conn.close()
 
             return True, f"✓ Context Trigger hinzugefügt (ID: {tid})"
 
@@ -1170,13 +1206,15 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                UPDATE shared_context_triggers SET is_active = 1, updated_at = ?
-                WHERE id = ?
-            """, (datetime.now().isoformat(), trigger_id))
-            conn.commit()
-            updated = cursor.rowcount
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    UPDATE shared_context_triggers SET is_active = 1, updated_at = ?
+                    WHERE id = ?
+                """, (datetime.now().isoformat(), trigger_id))
+                conn.commit()
+                updated = cursor.rowcount
+            finally:
+                conn.close()
 
             if updated == 0:
                 return False, f"Trigger {trigger_id} nicht gefunden."
@@ -1198,13 +1236,15 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                UPDATE shared_context_triggers SET is_active = 0, updated_at = ?
-                WHERE id = ?
-            """, (datetime.now().isoformat(), trigger_id))
-            conn.commit()
-            updated = cursor.rowcount
-            conn.close()
+            try:
+                cursor = conn.execute("""
+                    UPDATE shared_context_triggers SET is_active = 0, updated_at = ?
+                    WHERE id = ?
+                """, (datetime.now().isoformat(), trigger_id))
+                conn.commit()
+                updated = cursor.rowcount
+            finally:
+                conn.close()
 
             if updated == 0:
                 return False, f"Trigger {trigger_id} nicht gefunden."
@@ -1226,10 +1266,12 @@ class SharedMemoryHandler(BaseHandler):
 
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("DELETE FROM shared_context_triggers WHERE id = ?", (trigger_id,))
-            conn.commit()
-            deleted = cursor.rowcount
-            conn.close()
+            try:
+                cursor = conn.execute("DELETE FROM shared_context_triggers WHERE id = ?", (trigger_id,))
+                conn.commit()
+                deleted = cursor.rowcount
+            finally:
+                conn.close()
 
             if deleted == 0:
                 return False, f"Trigger {trigger_id} nicht gefunden."

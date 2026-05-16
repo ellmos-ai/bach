@@ -808,7 +808,7 @@ Beispiel:
                     try:
                         datum_obj = datetime.strptime(r['datum'], '%Y-%m-%d')
                         datum_datev = datum_obj.strftime('%d%m')
-                    except:
+                    except (ValueError, TypeError):
                         datum_datev = ""
                     
                     # Buchungstext (max 60 Zeichen)

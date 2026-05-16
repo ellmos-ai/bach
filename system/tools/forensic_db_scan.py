@@ -127,7 +127,7 @@ def analyze_pollution():
                 if 'DP' in info:
                     try:
                         dp = int(info['DP'])
-                    except: pass
+                    except (ValueError, TypeError): pass
                 
                 if dp < 20:
                     dp_issues += 1

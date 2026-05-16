@@ -76,7 +76,11 @@ def test_bach_db_integration():
     import pytest
     import sqlite_vec
 
-    db_path = Path(__file__).parent.parent / "data" / "bach.db"
+    try:
+        from hub.bach_paths import BACH_DB
+        db_path = BACH_DB
+    except ImportError:
+        db_path = Path(__file__).parent.parent / "data" / "bach.db"
     if not db_path.exists():
         pytest.skip("bach.db nicht gefunden")
 

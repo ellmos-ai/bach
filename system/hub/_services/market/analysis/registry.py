@@ -27,7 +27,10 @@ FinancialProof - Analyse-Registry
 Zentrales Register für alle verfügbaren Analyse-Algorithmen
 """
 from typing import Dict, List, Type, Optional, Any
-from analysis.base import BaseAnalyzer, AnalysisCategory
+try:
+    from .base import BaseAnalyzer, AnalysisCategory
+except ImportError:
+    from analysis.base import BaseAnalyzer, AnalysisCategory
 
 
 class AnalysisRegistry:
@@ -176,44 +179,68 @@ def _register_all_analyzers():
     """
     # Die Imports müssen hier sein um zirkuläre Imports zu vermeiden
     try:
-        from analysis.statistical.arima import ARIMAAnalyzer
+        from .statistical.arima import ARIMAAnalyzer
     except ImportError:
-        pass
+        try:
+            from analysis.statistical.arima import ARIMAAnalyzer
+        except ImportError:
+            pass
 
     try:
-        from analysis.statistical.monte_carlo import MonteCarloAnalyzer
+        from .statistical.monte_carlo import MonteCarloAnalyzer
     except ImportError:
-        pass
+        try:
+            from analysis.statistical.monte_carlo import MonteCarloAnalyzer
+        except ImportError:
+            pass
 
     try:
-        from analysis.statistical.mean_reversion import MeanReversionAnalyzer
+        from .statistical.mean_reversion import MeanReversionAnalyzer
     except ImportError:
-        pass
+        try:
+            from analysis.statistical.mean_reversion import MeanReversionAnalyzer
+        except ImportError:
+            pass
 
     try:
-        from analysis.correlation.cointegration import CorrelationAnalyzer
+        from .correlation.cointegration import CorrelationAnalyzer
     except ImportError:
-        pass
+        try:
+            from analysis.correlation.cointegration import CorrelationAnalyzer
+        except ImportError:
+            pass
 
     try:
-        from analysis.ml.random_forest import RandomForestAnalyzer
+        from .ml.random_forest import RandomForestAnalyzer
     except ImportError:
-        pass
+        try:
+            from analysis.ml.random_forest import RandomForestAnalyzer
+        except ImportError:
+            pass
 
     try:
-        from analysis.ml.neural_net import NeuralNetAnalyzer
+        from .ml.neural_net import NeuralNetAnalyzer
     except ImportError:
-        pass
+        try:
+            from analysis.ml.neural_net import NeuralNetAnalyzer
+        except ImportError:
+            pass
 
     try:
-        from analysis.nlp.sentiment import SentimentAnalyzer
+        from .nlp.sentiment import SentimentAnalyzer
     except ImportError:
-        pass
+        try:
+            from analysis.nlp.sentiment import SentimentAnalyzer
+        except ImportError:
+            pass
 
     try:
-        from analysis.nlp.research_agent import ResearchAgent
+        from .nlp.research_agent import ResearchAgent
     except ImportError:
-        pass
+        try:
+            from analysis.nlp.research_agent import ResearchAgent
+        except ImportError:
+            pass
 
 
 # Registrierung wird verzögert, damit die Analyzer-Module Zeit haben zu laden

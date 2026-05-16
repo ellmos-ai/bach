@@ -120,7 +120,7 @@ class ConsolidationHandler(BaseHandler):
                 cursor.execute(f"SELECT COUNT(*) FROM {table}")
                 count = cursor.fetchone()[0]
                 output.append(f"  {desc:25} {count:5} Eintraege")
-            except:
+            except (sqlite3.OperationalError, sqlite3.DatabaseError):
                 output.append(f"  {desc:25} (nicht vorhanden)")
 
         output.append("")
@@ -509,7 +509,7 @@ class ConsolidationHandler(BaseHandler):
         cursor.execute("SELECT COUNT(*) FROM memory_sessions WHERE is_compressed = 0 OR is_compressed IS NULL")
         try:
             uncompressed = cursor.fetchone()[0]
-        except:
+        except (TypeError, IndexError):
             uncompressed = 0
 
         tasks_created = 0

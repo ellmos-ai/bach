@@ -67,7 +67,7 @@ def load_log() -> Dict:
     if log_file.exists():
         try:
             return json.loads(log_file.read_text(encoding='utf-8'))
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
     return {"entries": [], "created": datetime.now().isoformat()}
 

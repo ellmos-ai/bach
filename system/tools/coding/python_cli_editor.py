@@ -125,9 +125,9 @@ def fix_emojis(content: str, use_package: bool = True) -> Tuple[str, int]:
                         name = name.strip(':').upper()[:20]
                         result = result.replace(emoji_char, f"[{name}]")
                         emoji_count += 1
-                except:
+                except (ValueError, TypeError):
                     pass
-    
+
     return result, emoji_count
 
 

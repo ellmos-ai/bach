@@ -141,7 +141,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         try:
             hours = int(sys.argv[1])
-        except:
+        except (ValueError, TypeError):
             pass
     
     problems = scan_problems(base, hours)

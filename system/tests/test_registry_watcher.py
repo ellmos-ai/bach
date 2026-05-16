@@ -174,3 +174,108 @@ def test_registry_summary_counts_only_actionable_issues(tmp_path):
     assert summary["stale_entries"] == 0
     assert summary["ignored_entries"] == 0
     assert summary["healthy"] is False
+
+
+def test_registry_watcher_uses_canonical_db_for_real_system_root(tmp_path, monkeypatch):
+    base, _db_path = _init_base(tmp_path)
+    (base / "tools" / "current_tool.py").write_text("print('ok')\n", encoding="utf-8")
+
+    canonical_db = tmp_path / ".bach" / "bach.db"
+    canonical_db.parent.mkdir(parents=True)
+    with sqlite3.connect(canonical_db) as conn:
+        conn.execute(
+            """
+            CREATE TABLE tools (
+                name TEXT,
+                path TEXT,
+                type TEXT,
+                category TEXT,
+                command TEXT,
+                dist_type INTEGER DEFAULT 2,
+                is_available INTEGER DEFAULT 1
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE skills (
+                name TEXT,
+                path TEXT,
+                type TEXT,
+                category TEXT,
+                dist_type INTEGER DEFAULT 2
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE bach_agents (
+                name TEXT,
+                skill_path TEXT,
+                is_active INTEGER DEFAULT 1
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE partner_recognition (
+                partner_name TEXT,
+                status TEXT,
+                partner_type TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO tools (name, path, type, category, command, is_available)
+            VALUES (?, ?, ?, ?, ?, 1)
+            """,
+            ("current_tool", "tools/current_tool.py", "python", "general", None),
+        )
+
+    monkeypatch.setattr(module, "BACH_ROOT", base)
+    monkeypatch.setattr(module, "DATA_DIR", base / "data")
+    monkeypatch.setattr(module, "DB_FILE", base / "data" / "bach.db")
+    monkeypatch.setattr(module, "TOOLS_DIR", base / "tools")
+    monkeypatch.setattr(module, "SKILLS_DIR", base / "skills")
+    monkeypatch.setattr(module, "AGENTS_DIR", base / "agents")
+
+    import types
+
+    fake_bp = types.SimpleNamespace(BACH_DB=canonical_db)
+    monkeypatch.setitem(sys.modules, "hub.bach_paths", fake_bp)
+
+    watcher = RegistryWatcher(base_path=base)
+    result = watcher.check_tools()
+
+    assert watcher.db_path == canonical_db
+    assert result["valid"] == ["current_tool"]
+    assert result["orphan_files"] == []
+
+
+def test_registry_watcher_dedupes_duplicate_tool_rows(tmp_path):
+    base, db_path = _init_base(tmp_path)
+    (base / "tools" / "current_tool.py").write_text("print('ok')\n", encoding="utf-8")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO tools (name, path, type, category, command, is_available)
+            VALUES (?, ?, ?, ?, ?, 1)
+            """,
+            [
+                ("current_tool", "tools/current_tool.py", "python", "general", None),
+                ("current_tool", "tools/current_tool.py", "python", "general", None),
+                ("legacy_tool", "tools/legacy_tool.py", "python", "general", None),
+                ("legacy_tool", "tools/legacy_tool.py", "python", "general", None),
+                ("git", None, "command", "external", "git"),
+                ("git", None, "command", "external", "git"),
+            ],
+        )
+
+    result = RegistryWatcher(base_path=base).check_tools()
+
+    assert result["db_count"] == 6
+    assert result["valid"] == ["current_tool"]
+    assert [item["name"] for item in result["stale_db_entries"]] == ["legacy_tool"]
+    assert [item["name"] for item in result["external_entries"]] == ["git"]

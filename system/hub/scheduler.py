@@ -26,6 +26,7 @@ import os
 import signal
 import subprocess
 import json
+import sqlite3
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
@@ -44,7 +45,8 @@ class SchedulerHandler(BaseHandler):
         self.user_db = self.data_dir / "bach.db"  # Unified DB seit v1.1.84
 
         # Session System (System-Service)
-        self.session_dir = base_path / "skills" / "_services" / "daemon"
+        # Lives under hub/_services after the service migration.
+        self.session_dir = base_path / "hub" / "_services" / "daemon"
         self.session_daemon = self.session_dir / "session_daemon.py"
         self.session_pid_file = self.session_dir / "daemon.pid"
         self.session_profiles_dir = self.session_dir / "profiles"
@@ -62,6 +64,7 @@ class SchedulerHandler(BaseHandler):
             "start": "Scheduler-Service starten (GUI Jobs)",
             "stop": "Scheduler-Service stoppen (GUI Jobs)",
             "status": "Status anzeigen",
+            "doctor": "Scheduler-Preflight und Recovery-Hinweise anzeigen",
             "jobs": "Aktive Jobs auflisten",
             "run": "Job manuell ausfuehren (bach scheduler run ID)",
             "logs": "Letzte Logs anzeigen",
@@ -83,6 +86,8 @@ class SchedulerHandler(BaseHandler):
             return self._stop_daemon(dry_run)
         elif operation == "status":
             return self._show_status(json_output=json_output)
+        elif operation == "doctor":
+            return self._doctor_scheduler(json_output=json_output)
         elif operation == "jobs":
             return self._list_jobs(json_output=json_output)
         elif operation == "run":
@@ -98,7 +103,7 @@ class SchedulerHandler(BaseHandler):
             if args:
                 try:
                     lines = int(args[0])
-                except:
+                except (ValueError, TypeError):
                     pass
             return self._show_logs(lines)
         else:
@@ -111,6 +116,434 @@ class SchedulerHandler(BaseHandler):
     def _json_dump(self, payload: dict) -> str:
         """Formatiert JSON konsistent fuer CLI-Ausgabe."""
         return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    def _check_runtime_dir(self, name: str, path: Path, label: str) -> dict:
+        """Prueft ob ein Laufzeit-Verzeichnis verfuegbar und beschreibbar ist."""
+        details = {"path": str(path)}
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            probe = path / ".scheduler_doctor_write_test"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            return {
+                "name": name,
+                "status": "ok",
+                "message": f"{label} ist verfügbar und beschreibbar.",
+                "details": details,
+            }
+        except Exception as exc:
+            return {
+                "name": name,
+                "status": "error",
+                "message": f"{label} ist nicht beschreibbar: {exc}",
+                "details": details,
+            }
+
+    def _check_file_exists(self, name: str, path: Path, label: str, *, required: bool = True) -> dict:
+        """Prueft das Vorhandensein einer Datei fuer Doctor-Reports."""
+        if path.exists():
+            return {
+                "name": name,
+                "status": "ok",
+                "message": f"{label} wurde gefunden.",
+                "details": {"path": str(path)},
+            }
+        return {
+            "name": name,
+            "status": "error" if required else "warn",
+            "message": f"{label} fehlt.",
+            "details": {"path": str(path)},
+        }
+
+    def _check_pid_state(self, name: str, pid_file: Path, running_pid: int, label: str) -> dict:
+        """Prueft laufende/stale PID-Dateien und bereinigt Altlasten."""
+        details = {"pid_file": str(pid_file)}
+
+        if running_pid:
+            details["pid"] = running_pid
+            return {
+                "name": name,
+                "status": "ok",
+                "message": f"{label} läuft (PID {running_pid}).",
+                "details": details,
+            }
+
+        if not pid_file.exists():
+            return {
+                "name": name,
+                "status": "ok",
+                "message": f"Keine laufende {label}-Instanz erkannt.",
+                "details": details,
+            }
+
+        raw_pid = None
+        status = "warn"
+        message = "Veraltete PID-Datei wurde entfernt."
+        try:
+            raw_pid = int(pid_file.read_text(encoding="utf-8").strip())
+        except Exception:
+            status = "warn"
+            message = "Ungültige PID-Datei wurde entfernt."
+
+        pid_file.unlink(missing_ok=True)
+        if raw_pid:
+            details["previous_pid"] = raw_pid
+        return {
+            "name": name,
+            "status": status,
+            "message": message,
+            "details": details,
+        }
+
+    def _summarize_checks(self, checks: list[dict]) -> dict:
+        """Reduziert Diagnosen auf einen kompakten Status-Block."""
+        counts = {"ok": 0, "warn": 0, "error": 0}
+        for check in checks:
+            status = check.get("status", "warn")
+            counts[status] = counts.get(status, 0) + 1
+
+        if counts["error"]:
+            overall = "error"
+        elif counts["warn"]:
+            overall = "warn"
+        else:
+            overall = "ok"
+
+        return {
+            "ok": counts.get("ok", 0),
+            "warn": counts.get("warn", 0),
+            "error": counts.get("error", 0),
+            "overall_status": overall,
+        }
+
+    def _format_doctor_text(self, payload: dict, title: str) -> str:
+        """Formatiert Doctor-Reports fuer die CLI."""
+        status_map = {"ok": "OK", "warn": "WARN", "error": "ERROR"}
+        summary = payload["summary"]
+        service = payload["service"]
+
+        lines = [
+            f"=== {title} DOCTOR ===",
+            "",
+            f"Ziel:    {service['label']}",
+            f"Zeit:    {payload['generated_at'][:19]}",
+            f"Status:  {summary['overall_status'].upper()}",
+            f"Ready:   {'ja' if summary['ready'] else 'nein'}",
+            f"Läuft:   {'ja' if summary['running'] else 'nein'}",
+            f"Startbar:{' ja' if summary['can_start'] else ' nein'}",
+            "",
+            "Checks:",
+        ]
+
+        for check in payload["checks"]:
+            lines.append(f"  [{status_map.get(check['status'], check['status'].upper())}] {check['message']}")
+            details = check.get("details") or {}
+            if details.get("path"):
+                lines.append(f"      Pfad: {details['path']}")
+            elif details.get("pid_file"):
+                lines.append(f"      PID-Datei: {details['pid_file']}")
+
+        lines.extend(["", "Nächste Schritte:"])
+        for step in payload["next_steps"]:
+            lines.append(f"  - {step}")
+
+        return "\n".join(lines)
+
+    def _check_scheduler_db(self) -> dict:
+        """Prueft Scheduler-DB, Job-Zaehlungen und letzte Lauf-Ergebnisse."""
+        details = {"path": str(self.user_db)}
+        if not self.user_db.exists():
+            return {
+                "name": "database",
+                "status": "error",
+                "message": "Scheduler-Datenbank wurde nicht gefunden.",
+                "details": details,
+            }
+
+        try:
+            conn = sqlite3.connect(self.user_db)
+            conn.row_factory = sqlite3.Row
+            total = conn.execute("SELECT COUNT(*) AS count FROM scheduler_jobs").fetchone()["count"]
+            active = conn.execute(
+                "SELECT COUNT(*) AS count FROM scheduler_jobs WHERE is_active = 1"
+            ).fetchone()["count"]
+            latest_run = conn.execute(
+                """
+                SELECT j.name, r.result, r.finished_at, r.triggered_by
+                FROM scheduler_runs r
+                JOIN scheduler_jobs j ON r.job_id = j.id
+                ORDER BY r.id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            conn.close()
+        except Exception as exc:
+            details["error"] = str(exc)
+            return {
+                "name": "database",
+                "status": "error",
+                "message": f"Scheduler-Datenbank ist nicht lesbar: {exc}",
+                "details": details,
+            }
+
+        details["jobs_total"] = total
+        details["jobs_active"] = active
+        if latest_run:
+            details["latest_run"] = {
+                "name": latest_run["name"],
+                "result": latest_run["result"],
+                "finished_at": latest_run["finished_at"],
+                "triggered_by": latest_run["triggered_by"],
+            }
+
+        if total == 0:
+            return {
+                "name": "database",
+                "status": "warn",
+                "message": "Scheduler-Datenbank ist erreichbar, aber es sind keine Jobs definiert.",
+                "details": details,
+            }
+
+        latest_result = (latest_run["result"] or "").lower() if latest_run else ""
+        if latest_result in {"failed", "timeout", "cancelled"}:
+            return {
+                "name": "database",
+                "status": "warn",
+                "message": f"Letzter Scheduler-Lauf endete mit {latest_result}.",
+                "details": details,
+            }
+
+        return {
+            "name": "database",
+            "status": "ok",
+            "message": f"Scheduler-Datenbank ist erreichbar ({active}/{total} Jobs aktiv).",
+            "details": details,
+        }
+
+    def _scheduler_doctor_payload(self) -> dict:
+        """Erstellt einen strukturierten Preflight-Report fuer den GUI-Scheduler."""
+        running_pid = self._get_daemon_pid()
+        checks = [
+            self._check_file_exists("script", self.daemon_script, "Scheduler-Script"),
+            self._check_runtime_dir("data_dir", self.data_dir, "Scheduler-Datenverzeichnis"),
+            self._check_runtime_dir("log_dir", self.log_dir, "Scheduler-Logverzeichnis"),
+            self._check_pid_state("runtime_state", self.pid_file, running_pid, "Scheduler-Service"),
+            self._check_scheduler_db(),
+        ]
+
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "service": {
+                "kind": "scheduler",
+                "label": "Scheduler-Service",
+                "running": bool(running_pid),
+                "pid": running_pid or None,
+                "script": str(self.daemon_script),
+                "pid_file": str(self.pid_file),
+                "log_file": str(self.log_dir / "daemon.log"),
+            },
+            "checks": checks,
+            "next_steps": [],
+        }
+
+        summary = self._summarize_checks(checks)
+        summary["ready"] = summary["error"] == 0
+        summary["running"] = bool(running_pid)
+        summary["can_start"] = summary["ready"] and not running_pid
+        payload["summary"] = summary
+
+        next_steps = []
+        if any(check["name"] == "script" and check["status"] == "error" for check in checks):
+            next_steps.append("Den Scheduler-Pfad bzw. die Installation prüfen und fehlende Dateien wiederherstellen.")
+        if any(check["name"] == "database" and check["status"] == "error" for check in checks):
+            next_steps.append("Die Scheduler-DB oder das Schema reparieren und danach `bach scheduler status --json` erneut prüfen.")
+        elif any(
+            check["name"] == "database"
+            and check["status"] == "warn"
+            and "keine Jobs definiert" in check["message"]
+            for check in checks
+        ):
+            next_steps.append("Mit `bach scheduler jobs --json` oder der GUI Jobs anlegen bzw. aktivieren.")
+        elif any(
+            check["name"] == "database"
+            and check["status"] == "warn"
+            and "Letzter Scheduler-Lauf endete" in check["message"]
+            for check in checks
+        ):
+            next_steps.append("Mit `bach scheduler logs 50` die letzte Fehlerspur lesen und betroffene Jobs gezielt neu starten.")
+
+        runtime_check = next((check for check in checks if check["name"] == "runtime_state"), None)
+        if runtime_check and runtime_check["message"].startswith("Scheduler-Service läuft"):
+            next_steps.append("Mit `bach scheduler status --json` den Live-Status prüfen oder den Dienst gezielt stoppen.")
+        elif summary["can_start"]:
+            next_steps.append("Mit `bach scheduler start --bg` einen sicheren Hintergrundstart testen.")
+            next_steps.append("Danach `bach scheduler status --json` zur Verifikation ausführen.")
+
+        if not next_steps:
+            next_steps.append("Keine Aktion nötig. Der Scheduler-Preflight ist bereits grün.")
+
+        payload["next_steps"] = next_steps
+        return payload
+
+    def _doctor_scheduler(self, json_output: bool = False) -> tuple:
+        """Diagnostiziert Scheduler-Voraussetzungen und liefert Recovery-Hinweise."""
+        payload = self._scheduler_doctor_payload()
+        if json_output:
+            return True, self._json_dump(payload)
+        return True, self._format_doctor_text(payload, "SCHEDULER")
+
+    def _check_session_config(self, config_file: Path) -> dict:
+        """Prueft Session-Config auf Lesbarkeit und Profil-Jobs."""
+        details = {"path": str(config_file)}
+        if not config_file.exists():
+            return {
+                "name": "config",
+                "status": "warn",
+                "message": "Session-Config fehlt; der Session-Scheduler hätte keine explizite Job-Konfiguration.",
+                "details": details,
+            }
+
+        try:
+            config = json.loads(config_file.read_text(encoding="utf-8"))
+        except Exception as exc:
+            details["error"] = str(exc)
+            return {
+                "name": "config",
+                "status": "error",
+                "message": f"Session-Config ist nicht lesbar: {exc}",
+                "details": details,
+            }
+
+        jobs = config.get("jobs", [])
+        details["enabled"] = config.get("enabled", True)
+        details["job_count"] = len(jobs)
+        details["quiet_start"] = config.get("quiet_start")
+        details["quiet_end"] = config.get("quiet_end")
+
+        if not jobs:
+            return {
+                "name": "config",
+                "status": "warn",
+                "message": "Session-Config ist lesbar, enthält aber keine Jobs.",
+                "details": details,
+            }
+
+        return {
+            "name": "config",
+            "status": "ok",
+            "message": f"Session-Config ist lesbar ({len(jobs)} Job(s) konfiguriert).",
+            "details": details,
+        }
+
+    def _check_session_profiles(self) -> dict:
+        """Prueft den Profil-Ordner des Session-Schedulers."""
+        details = {"path": str(self.session_profiles_dir)}
+        if not self.session_profiles_dir.exists():
+            return {
+                "name": "profiles",
+                "status": "error",
+                "message": "Der Session-Profilordner fehlt.",
+                "details": details,
+            }
+
+        profiles = sorted(path.stem for path in self.session_profiles_dir.glob("*.json"))
+        details["profiles"] = profiles
+        if not profiles:
+            return {
+                "name": "profiles",
+                "status": "warn",
+                "message": "Keine Session-Profile gefunden.",
+                "details": details,
+            }
+
+        return {
+            "name": "profiles",
+            "status": "ok",
+            "message": f"{len(profiles)} Session-Profil(e) gefunden.",
+            "details": details,
+        }
+
+    def _session_doctor_payload(self) -> dict:
+        """Erstellt einen strukturierten Preflight-Report fuer den Session-Scheduler."""
+        running_pid = self._session_is_running()
+        config_file = self.session_dir / "config.json"
+        auto_session = self.session_dir / "auto_session.py"
+
+        checks = [
+            self._check_file_exists("script", self.session_daemon, "Session-Scheduler-Script"),
+            self._check_runtime_dir("session_dir", self.session_dir, "Session-Service-Verzeichnis"),
+            self._check_pid_state("runtime_state", self.session_pid_file, running_pid, "Session-Scheduler"),
+            self._check_session_config(config_file),
+            self._check_session_profiles(),
+            self._check_file_exists("trigger_script", auto_session, "Auto-Session-Trigger", required=False),
+        ]
+
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "service": {
+                "kind": "session_scheduler",
+                "label": "Session-Scheduler",
+                "running": bool(running_pid),
+                "pid": running_pid or None,
+                "script": str(self.session_daemon),
+                "pid_file": str(self.session_pid_file),
+                "config_file": str(config_file),
+            },
+            "checks": checks,
+            "next_steps": [],
+        }
+
+        summary = self._summarize_checks(checks)
+        summary["ready"] = summary["error"] == 0
+        summary["running"] = bool(running_pid)
+        summary["can_start"] = summary["ready"] and not running_pid
+        payload["summary"] = summary
+
+        next_steps = []
+        if any(check["name"] == "script" and check["status"] == "error" for check in checks):
+            next_steps.append("Den Pfad `hub/_services/daemon/session_daemon.py` bzw. die Installation reparieren.")
+        if any(check["name"] == "config" and check["status"] == "error" for check in checks):
+            next_steps.append("`hub/_services/daemon/config.json` reparieren und JSON-Syntax erneut validieren.")
+        elif any(
+            check["name"] == "config"
+            and check["status"] == "warn"
+            and "keine Jobs" in check["message"]
+            for check in checks
+        ):
+            next_steps.append("In `hub/_services/daemon/config.json` mindestens einen Session-Job konfigurieren.")
+        if any(check["name"] == "profiles" and check["status"] == "error" for check in checks):
+            next_steps.append("Den Profilordner `hub/_services/daemon/profiles/` wiederherstellen.")
+        elif any(check["name"] == "profiles" and check["status"] == "warn" for check in checks):
+            next_steps.append("Mindestens ein Profil unter `hub/_services/daemon/profiles/*.json` anlegen.")
+        if any(check["name"] == "trigger_script" and check["status"] == "warn" for check in checks):
+            next_steps.append("Falls manuelle Trigger benötigt werden, `hub/_services/daemon/auto_session.py` wiederherstellen.")
+
+        runtime_check = next((check for check in checks if check["name"] == "runtime_state"), None)
+        profile_check = next((check for check in checks if check["name"] == "profiles"), None)
+        default_profile = "ati"
+        if profile_check:
+            profiles = (profile_check.get("details") or {}).get("profiles") or []
+            if profiles:
+                default_profile = profiles[0]
+
+        if runtime_check and runtime_check["message"].startswith("Session-Scheduler läuft"):
+            next_steps.append("Mit `bach scheduler session status --json` den Live-Status prüfen oder den Dienst gezielt stoppen.")
+        elif summary["can_start"]:
+            next_steps.append(f"Mit `bach scheduler session start --profile {default_profile}` einen Starttest ausführen.")
+            next_steps.append("Danach `bach scheduler session status --json` zur Verifikation ausführen.")
+
+        if not next_steps:
+            next_steps.append("Keine Aktion nötig. Der Session-Preflight ist bereits grün.")
+
+        payload["next_steps"] = next_steps
+        return payload
+
+    def _session_doctor(self, json_output: bool = False) -> tuple:
+        """Diagnostiziert Session-Scheduler-Voraussetzungen und Recovery-Schritte."""
+        payload = self._session_doctor_payload()
+        if json_output:
+            return True, self._json_dump(payload)
+        return True, self._format_doctor_text(payload, "SESSION SCHEDULER")
 
     def _parse_datetime_value(self, value):
         """Parst ISO-Zeitstempel robust fuer Statusberechnungen."""
@@ -127,7 +560,7 @@ class SchedulerHandler(BaseHandler):
             return 0
 
         try:
-            pid = int(self.pid_file.read_text().strip())
+            pid = int(self.pid_file.read_text(encoding="utf-8").strip())
             if sys.platform == 'win32':
                 result = subprocess.run(
                     ['tasklist', '/FI', f'PID eq {pid}'],
@@ -212,7 +645,7 @@ class SchedulerHandler(BaseHandler):
             return (True, "[DRY-RUN] Wuerde Scheduler stoppen")
 
         try:
-            pid = int(self.pid_file.read_text().strip())
+            pid = int(self.pid_file.read_text(encoding="utf-8").strip())
 
             if sys.platform == 'win32':
                 # Windows: taskkill verwenden
@@ -523,6 +956,8 @@ class SchedulerHandler(BaseHandler):
             return self._session_stop(dry_run)
         elif sub_cmd == "status":
             return self._session_status(json_output=self._has_flag(sub_args, "--json"))
+        elif sub_cmd == "doctor":
+            return self._session_doctor(json_output=self._has_flag(sub_args, "--json"))
         elif sub_cmd == "trigger":
             return self._session_trigger(sub_args, dry_run)
         elif sub_cmd == "profiles":
@@ -539,6 +974,7 @@ class SchedulerHandler(BaseHandler):
             "  bach scheduler session start [--profile NAME]   Scheduler starten",
             "  bach scheduler session stop                      Scheduler stoppen",
             "  bach scheduler session status                    Status anzeigen",
+            "  bach scheduler session doctor                    Preflight und Recovery-Hinweise",
             "  bach scheduler session trigger [--profile NAME]  Session manuell",
             "  bach scheduler session profiles                  Profile auflisten",
             "",
@@ -560,7 +996,7 @@ class SchedulerHandler(BaseHandler):
         if not self.session_pid_file.exists():
             return 0
         try:
-            pid = int(self.session_pid_file.read_text().strip())
+            pid = int(self.session_pid_file.read_text(encoding="utf-8").strip())
             if sys.platform == 'win32':
                 result = subprocess.run(
                     ['tasklist', '/FI', f'PID eq {pid}'],
@@ -572,7 +1008,7 @@ class SchedulerHandler(BaseHandler):
             else:
                 os.kill(pid, 0)
                 return pid
-        except:
+        except (OSError, subprocess.SubprocessError):
             return 0
 
     def _session_start(self, args: list, dry_run: bool) -> tuple:
@@ -725,7 +1161,7 @@ class SchedulerHandler(BaseHandler):
                     if last and last != "nie":
                         last = last[11:16] # Nur Zeit
                     output.append(f"  {status} {job.get('profile', '?'):12} (Alle {job.get('interval_minutes', '?')} Min, Last: {last})")
-            except:
+            except Exception:
                 pass
 
         # Profile auflisten
@@ -748,7 +1184,7 @@ class SchedulerHandler(BaseHandler):
                 output.extend(["", "--- Letzte Logs ---"])
                 for line in lines[-5:]:
                     output.append(f"  {line[:80]}")
-            except:
+            except (OSError, UnicodeDecodeError):
                 pass
 
         return (True, "\n".join(output))
@@ -821,7 +1257,7 @@ class SchedulerHandler(BaseHandler):
                     f"  Timeout:      {timeout} Min",
                     ""
                 ])
-            except:
+            except Exception:
                 output.append(f"[{pf.stem}] (Fehler beim Laden)")
 
         output.extend([

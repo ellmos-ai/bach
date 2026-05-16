@@ -366,7 +366,7 @@ def export_agent(name: str, os_path: Path, output: Path = None) -> bool:
                             shutil.copy2(os_skill, dest_skill / "SKILL.md")
                             skills_used.append(skill_name)
                             print(f"  📦 Skill: {skill_name}")
-            except:
+            except (json.JSONDecodeError, OSError):
                 pass
         
         # README ergänzen

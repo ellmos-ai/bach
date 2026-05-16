@@ -147,7 +147,7 @@ lock_status: FREE
                     age = (datetime.now() - heartbeat).total_seconds()
                     info['is_active'] = age < self.PRESENCE_TIMEOUT
                     info['age_seconds'] = age
-                except:
+                except (ValueError, TypeError):
                     pass
             
             # Status pruefen
@@ -282,7 +282,7 @@ target: {dirpath.name}
                     lock_time = datetime.fromisoformat(line.split(':', 1)[1].strip())
                     age = (datetime.now() - lock_time).total_seconds()
                     return age > self.LOCK_TIMEOUT
-        except:
+        except (OSError, ValueError):
             pass
         return False
     
@@ -618,10 +618,10 @@ class MultiLLMHandler:
             """).fetchall()
             conn.close()
             
-            return [{'partner': r['partner_name'], 'status': r['status'], 
-                    'current_task': r['current_task'], 'heartbeat': r['last_heartbeat']} 
+            return [{'partner': r['partner_name'], 'status': r['status'],
+                    'current_task': r['current_task'], 'heartbeat': r['last_heartbeat']}
                    for r in rows]
-        except:
+        except Exception:
             return []
     
     def _cmd_help(self) -> Tuple[bool, str]:

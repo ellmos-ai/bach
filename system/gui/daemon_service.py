@@ -156,7 +156,7 @@ class DaemonService:
             return None
         try:
             return datetime.fromisoformat(value)
-        except:
+        except (ValueError, TypeError):
             return None
     
     def _calculate_next_run(self, job: DaemonJob):
@@ -179,7 +179,7 @@ class DaemonService:
             try:
                 cron = croniter(job.schedule, now)
                 job.next_run = cron.get_next(datetime)
-            except:
+            except Exception:
                 logger.warning(f"Ungueltiger Cron-Ausdruck fuer Job {job.name}: {job.schedule}")
                 
         elif job.job_type == 'manual':
@@ -194,7 +194,7 @@ class DaemonService:
         try:
             value = int(schedule[:-1])
             unit = schedule[-1].lower()
-            
+
             if unit == 's':
                 return timedelta(seconds=value)
             elif unit == 'm':
@@ -203,7 +203,7 @@ class DaemonService:
                 return timedelta(hours=value)
             elif unit == 'd':
                 return timedelta(days=value)
-        except:
+        except (ValueError, IndexError):
             pass
         
         return None

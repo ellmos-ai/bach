@@ -171,7 +171,7 @@ class GemojiDatabase:
                 # Wenn unveraendert zurueckkommt, wurde es nicht erkannt
                 if result != char:
                     return result
-            except:
+            except Exception:
                 pass
             return None
         else:
@@ -236,7 +236,7 @@ class EmojiRegistry:
             try:
                 with open(REGISTRY_FILE, 'r', encoding='utf-8') as f:
                     return json.load(f)
-            except:
+            except (json.JSONDecodeError, OSError):
                 pass
         return {"meta": {"version": "3.0"}, "emojis": {}, "quarantine": []}
     
@@ -272,9 +272,9 @@ def create_quarantine_task(quarantine_entries: List[Dict]) -> bool:
     try:
         with open(TASKS_FILE, 'r', encoding='utf-8') as f:
             tasks = json.load(f)
-    except:
+    except (json.JSONDecodeError, OSError):
         return False
-    
+
     # Pruefen ob Task schon existiert
     task_id = "EMOJI_QUARANTINE"
     existing = [t for t in tasks.get('tasks', []) if t.get('id') == task_id]
@@ -305,7 +305,7 @@ def create_quarantine_task(quarantine_entries: List[Dict]) -> bool:
             json.dump(tasks, f, indent=2, ensure_ascii=False)
         print(f"[TASK] Quarantaene-Task erstellt: {task_id}")
         return True
-    except:
+    except OSError:
         return False
 
 
@@ -399,9 +399,9 @@ def fix_mojibake(content: str) -> Tuple[str, List[str]]:
                 content_bytes = content_bytes.replace(bad, good)
                 fixes.append(f"Mojibake repariert")
         content = content_bytes.decode('utf-8')
-    except:
+    except (UnicodeDecodeError, UnicodeEncodeError):
         pass
-    
+
     return content, fixes
 
 
@@ -496,9 +496,9 @@ def main():
         try:
             sys.stdout.reconfigure(encoding='utf-8', errors='replace')
             sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-        except:
+        except (AttributeError, OSError):
             pass
-    
+
     if len(sys.argv) < 2 or '--help' in sys.argv:
         print(__doc__)
         sys.exit(0)

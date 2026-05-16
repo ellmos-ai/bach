@@ -307,7 +307,7 @@ class MemoryGenerator:
                 WHERE key='integration.claude-code.level'
             """).fetchone()
             settings['integration_level'] = row[0] if row else "off"
-        except:
+        except sqlite3.OperationalError:
             settings['integration_level'] = "off"
 
         # Backup-Strategie
@@ -317,7 +317,7 @@ class MemoryGenerator:
                 WHERE key='backup_local_retention'
             """).fetchone()
             settings['backup_retention'] = row[0] if row else "7"
-        except:
+        except sqlite3.OperationalError:
             settings['backup_retention'] = "7"
 
         # Token-Limits
@@ -332,7 +332,7 @@ class MemoryGenerator:
             """).fetchone()
             settings['token_warning'] = warn[0] if warn else "70"
             settings['token_critical'] = crit[0] if crit else "85"
-        except:
+        except sqlite3.OperationalError:
             settings['token_warning'] = "70"
             settings['token_critical'] = "85"
 
@@ -343,7 +343,7 @@ class MemoryGenerator:
                 WHERE key='auto_sync_enabled'
             """).fetchone()
             settings['auto_sync'] = row[0] if row else "false"
-        except:
+        except sqlite3.OperationalError:
             settings['auto_sync'] = "false"
 
         conn.close()

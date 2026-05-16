@@ -18,6 +18,7 @@ import signal
 import subprocess
 import json
 import sqlite3
+import shutil
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
@@ -49,6 +50,10 @@ class AgentLauncherHandler(BaseHandler):
             "start": t("agent_start_desc", default="Agent starten (bach agent start <name>)"),
             "stop": t("agent_stop_desc", default="Agent stoppen (bach agent stop <name>)"),
             "status": t("agent_status_desc", default="Laufende Agents anzeigen"),
+            "doctor": t(
+                "agent_doctor_desc",
+                default="Agent-Preflight und Recovery-Hinweise anzeigen (bach agent doctor [name])",
+            ),
             "rename": t("agent_rename_desc", default="Display-Name aendern (bach agent rename <name> <neuer-name>)")
         }
 
@@ -70,6 +75,9 @@ class AgentLauncherHandler(BaseHandler):
             if self._has_flag(args, "--json"):
                 return self._show_status_json()
             return self._show_status()
+        elif operation == "doctor":
+            query = next((arg for arg in args if not arg.startswith("-")), None)
+            return self._doctor_agent(query, json_output=self._has_flag(args, "--json"))
         elif operation == "rename":
             if len(args) < 2:
                 return (False, t("agent_rename_syntax", default="[ERROR] Syntax: bach agent rename <name> <neuer-display-name>"))
@@ -247,6 +255,290 @@ class AgentLauncherHandler(BaseHandler):
             if arg == flag and i + 1 < len(args):
                 return args[i + 1]
         return default
+
+    def _check_runtime_dir(self, name: str, path: Path, label: str) -> dict:
+        """Prueft ob ein Laufzeit-Verzeichnis verfuegbar und beschreibbar ist."""
+        details = {"path": str(path)}
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            probe = path / ".agent_doctor_write_test"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            return {
+                "name": name,
+                "status": "ok",
+                "message": f"{label} ist verfuegbar und beschreibbar.",
+                "details": details,
+            }
+        except Exception as exc:
+            return {
+                "name": name,
+                "status": "error",
+                "message": f"{label} ist nicht beschreibbar: {exc}",
+                "details": details,
+            }
+
+    def _check_claude_cli(self) -> dict:
+        """Prueft ob die Claude CLI fuer Agent-Starts verfuegbar ist."""
+        cli_path = shutil.which("claude")
+        if not cli_path:
+            return {
+                "name": "claude_cli",
+                "status": "error",
+                "message": "Claude Code CLI wurde nicht gefunden.",
+                "details": {"expected_command": "claude"},
+            }
+
+        details = {"path": cli_path}
+        status = "ok"
+        message = f"Claude Code CLI gefunden: {cli_path}"
+        try:
+            result = subprocess.run(
+                [cli_path, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                encoding="utf-8",
+                errors="replace",
+            )
+            version_text = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
+            version_line = version_text.splitlines()[0].strip() if version_text else ""
+            if version_line:
+                details["version"] = version_line
+                message = f"{message} ({version_line})"
+            elif result.returncode != 0:
+                status = "warn"
+                details["returncode"] = result.returncode
+                message = "Claude Code CLI gefunden, aber die Versionspruefung blieb leer."
+        except Exception as exc:
+            status = "warn"
+            details["version_check_error"] = str(exc)
+            message = "Claude Code CLI gefunden, aber die Versionspruefung ist fehlgeschlagen."
+
+        return {
+            "name": "claude_cli",
+            "status": status,
+            "message": message,
+            "details": details,
+        }
+
+    def _find_agent_record(self, query: str | None) -> tuple[str | None, dict | None]:
+        """Liefert den aufgeloesten technischen Agent-Namen und den Scan-Eintrag."""
+        if not query:
+            return None, None
+
+        resolved_name = self._resolve_to_technical_name(query)
+        for agent in self._scan_agents():
+            if agent["name"] == resolved_name:
+                return resolved_name, agent
+        return resolved_name, None
+
+    def _summarize_checks(self, checks: list[dict]) -> dict:
+        """Reduziert Diagnosen auf einen kompakten Status-Block."""
+        counts = {"ok": 0, "warn": 0, "error": 0}
+        for check in checks:
+            status = check.get("status", "warn")
+            counts[status] = counts.get(status, 0) + 1
+
+        if counts["error"]:
+            overall = "error"
+        elif counts["warn"]:
+            overall = "warn"
+        else:
+            overall = "ok"
+
+        return {
+            "ok": counts.get("ok", 0),
+            "warn": counts.get("warn", 0),
+            "error": counts.get("error", 0),
+            "overall_status": overall,
+        }
+
+    def _doctor_payload(self, query: str | None) -> dict:
+        """Erstellt einen strukturierten Agent-Preflight-Report."""
+        checks = [
+            self._check_runtime_dir("data_dir", self.data_dir, "BACH-Datenverzeichnis"),
+            self._check_runtime_dir("pid_dir", self.pid_dir, "PID-Verzeichnis"),
+            self._check_runtime_dir("temp_dir", self.temp_dir, "Temp-Verzeichnis"),
+            self._check_claude_cli(),
+        ]
+
+        resolved_name, agent = self._find_agent_record(query)
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "requested_name": query,
+            "resolved_name": resolved_name,
+            "agent": None,
+            "checks": checks,
+            "next_steps": [],
+        }
+
+        can_start = None
+
+        if query:
+            if not agent:
+                checks.append(
+                    {
+                        "name": "agent_exists",
+                        "status": "error",
+                        "message": f"Agent '{query}' wurde nicht gefunden.",
+                        "details": {"requested_name": query, "resolved_name": resolved_name},
+                    }
+                )
+                can_start = False
+            else:
+                persona_info = self._get_persona_info(resolved_name)
+                payload["agent"] = {
+                    "name": resolved_name,
+                    "display_name": persona_info.get("display_name") or None,
+                    "type": agent["type"],
+                    "path": str(agent["path"]),
+                    "skill_file": str(agent["skill_file"]),
+                }
+                checks.append(
+                    {
+                        "name": "agent_exists",
+                        "status": "ok",
+                        "message": f"Agent '{resolved_name}' wurde gefunden.",
+                        "details": payload["agent"],
+                    }
+                )
+                try:
+                    skill_preview = agent["skill_file"].read_text(encoding="utf-8")[:120]
+                    checks.append(
+                        {
+                            "name": "skill_file",
+                            "status": "ok",
+                            "message": "SKILL.md ist lesbar.",
+                            "details": {
+                                "path": str(agent["skill_file"]),
+                                "preview": skill_preview,
+                            },
+                        }
+                    )
+                except Exception as exc:
+                    checks.append(
+                        {
+                            "name": "skill_file",
+                            "status": "error",
+                            "message": f"SKILL.md ist nicht lesbar: {exc}",
+                            "details": {"path": str(agent["skill_file"])},
+                        }
+                    )
+
+                pid_file = self.pid_dir / f"{resolved_name}.pid"
+                had_pid_file = pid_file.exists()
+                pid_data = self._load_pid_data(resolved_name)
+                running_pid = self._is_agent_running(resolved_name)
+                stale_pid = had_pid_file and not running_pid and not pid_file.exists()
+
+                if running_pid:
+                    checks.append(
+                        {
+                            "name": "runtime_state",
+                            "status": "warn",
+                            "message": f"Agent laeuft bereits (PID {running_pid}).",
+                            "details": {"pid": running_pid, "pid_file": str(pid_file)},
+                        }
+                    )
+                    can_start = False
+                elif stale_pid:
+                    checks.append(
+                        {
+                            "name": "runtime_state",
+                            "status": "warn",
+                            "message": "Eine veraltete PID-Datei wurde bereinigt.",
+                            "details": {"previous_pid": pid_data.get("pid"), "pid_file": str(pid_file)},
+                        }
+                    )
+                else:
+                    checks.append(
+                        {
+                            "name": "runtime_state",
+                            "status": "ok",
+                            "message": "Kein laufender Agent-Prozess erkannt.",
+                            "details": {"pid_file": str(pid_file)},
+                        }
+                    )
+
+        summary = self._summarize_checks(checks)
+        ready = summary["error"] == 0
+        if can_start is None:
+            can_start = ready
+        elif can_start is False:
+            can_start = False
+        else:
+            can_start = ready
+
+        summary["ready"] = ready
+        summary["can_start"] = can_start
+        payload["summary"] = summary
+
+        next_steps = []
+        if any(check["name"] == "claude_cli" and check["status"] == "error" for check in checks):
+            next_steps.append("Claude Code CLI installieren oder den PATH fuer `claude` korrigieren.")
+        if query and any(check["name"] == "agent_exists" and check["status"] == "error" for check in checks):
+            next_steps.append("Mit `bach agent list` verfuegbare Agenten pruefen und die SKILL.md-Pfade kontrollieren.")
+        if query and any(check["name"] == "skill_file" and check["status"] == "error" for check in checks):
+            next_steps.append("Die betroffene SKILL.md reparieren oder Datei-/Ordnerrechte pruefen.")
+        if query and any(check["name"] == "runtime_state" and check["message"].startswith("Agent laeuft bereits") for check in checks):
+            next_steps.append(f"`bach agent status --json` pruefen oder `{resolved_name}` gezielt stoppen.")
+        elif query and can_start:
+            next_steps.append(f"`bach agent start {resolved_name} --dry-run` als sicherer Vorabtest.")
+            next_steps.append(f"`bach agent start {resolved_name}` fuer den echten Start.")
+
+        if not next_steps:
+            next_steps.append("Keine Aktion noetig. Agent-Preflight ist bereits gruen.")
+
+        payload["next_steps"] = next_steps
+        return payload
+
+    def _format_doctor_text(self, payload: dict) -> str:
+        """Formatiert den Agent-Doctor-Report fuer die CLI."""
+        status_map = {"ok": "OK", "warn": "WARN", "error": "ERROR"}
+        summary = payload["summary"]
+        agent = payload.get("agent") or {}
+
+        if payload.get("requested_name"):
+            target = payload.get("resolved_name") or payload["requested_name"]
+            if agent.get("display_name"):
+                target = f"{agent['display_name']} ({target})"
+        else:
+            target = "Globaler Agent-Preflight"
+
+        lines = [
+            "=== AGENT DOCTOR ===",
+            "",
+            f"Ziel:    {target}",
+            f"Zeit:    {payload['generated_at'][:19]}",
+            f"Status:  {summary['overall_status'].upper()}",
+            f"Ready:   {'ja' if summary['ready'] else 'nein'}",
+        ]
+
+        if payload.get("requested_name"):
+            lines.append(f"Startbar:{' ja' if summary['can_start'] else ' nein'}")
+
+        lines.extend(["", "Checks:"])
+        for check in payload["checks"]:
+            lines.append(f"  [{status_map.get(check['status'], check['status'].upper())}] {check['message']}")
+            details = check.get("details") or {}
+            if details.get("path"):
+                lines.append(f"      Pfad: {details['path']}")
+            if details.get("version"):
+                lines.append(f"      Version: {details['version']}")
+
+        lines.extend(["", "Naechste Schritte:"])
+        for step in payload["next_steps"]:
+            lines.append(f"  - {step}")
+
+        return "\n".join(lines)
+
+    def _doctor_agent(self, query: str | None, json_output: bool = False) -> tuple:
+        """Diagnostiziert Agent-Voraussetzungen und liefert Recovery-Hinweise."""
+        payload = self._doctor_payload(query)
+        if json_output:
+            return True, self._json_dump(payload)
+        return True, self._format_doctor_text(payload)
 
     def _resolve_db_skill_dir_name(self, resolved: dict) -> str | None:
         """Leitet aus einer DB-Skill-Pfad-Angabe den aktuellen Verzeichnisnamen ab."""

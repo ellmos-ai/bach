@@ -202,9 +202,9 @@ class ContextHandler(BaseHandler):
                 with open(f, "r", encoding="utf-8") as file:
                     first_line = file.readline().strip()[:60]
                 results.append(f"  {f.name}: {first_line}")
-            except:
+            except (OSError, UnicodeDecodeError):
                 results.append(f"  {f.name}")
-        
+
         if len(filtered) > 20:
             results.append(f"\n  ... und {len(filtered) - 20} weitere")
         
@@ -248,9 +248,9 @@ class ContextHandler(BaseHandler):
                         "date": date,
                         "summary": summary
                     })
-            except:
+            except (OSError, UnicodeDecodeError):
                 pass
-        
+
         return memories
     
     def _get_priority_tasks(self) -> List[dict]:
@@ -273,9 +273,9 @@ class ContextHandler(BaseHandler):
             
             return [{"title": t.get("task", ""), "priority": t.get("priority", "")} 
                    for t in filtered]
-        except:
+        except (ValueError, OSError, KeyError):
             return []
-    
+
     def _get_lessons_summary(self) -> List[str]:
         """Holt Kurzfassung der Lessons Learned."""
         help_file = self.base_path / "help" / "lessons.txt"
@@ -290,9 +290,9 @@ class ContextHandler(BaseHandler):
             # Zeilen mit Nummern extrahieren
             lessons = re.findall(r"^\d+\.\s+(.+)$", content, re.MULTILINE)
             return lessons[:5]
-        except:
+        except (OSError, UnicodeDecodeError):
             return []
-    
+
     def _get_warnings(self) -> List[str]:
         """Prueft auf aktuelle Warnungen."""
         warnings = []
@@ -316,9 +316,9 @@ class ContextHandler(BaseHandler):
                             and t.get("priority") == "critical"]
                 if old_tasks:
                     warnings.append(f"{len(old_tasks)} kritische Tasks offen")
-            except:
+            except (ValueError, OSError, KeyError):
                 pass
-        
+
         return warnings
     
     def _search_in_memory(self, query: str, from_date: str, to_date: str) -> List[dict]:
@@ -338,11 +338,11 @@ class ContextHandler(BaseHandler):
                         if any(term in line for term in terms):
                             results.append({"file": f.name, "match": line.strip()})
                             break
-            except:
+            except (OSError, UnicodeDecodeError):
                 pass
-        
+
         return results
-    
+
     def _search_in_system(self, query: str) -> List[dict]:
         """Durchsucht System-Dateien."""
         results = []
@@ -359,7 +359,7 @@ class ContextHandler(BaseHandler):
                             if any(term in line for term in terms):
                                 results.append({"file": f"docs/help/{f.name}", "match": line.strip()})
                                 break
-                except:
+                except (OSError, UnicodeDecodeError):
                     pass
-        
+
         return results
