@@ -78,7 +78,15 @@ cmd_gui() {
 
     echo "Starte BACH GUI Dashboard..."
 
-    lsof -ti:"$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
+    local pids=""
+    if command -v lsof >/dev/null 2>&1; then
+        pids=$(lsof -ti:"$port" 2>/dev/null || true)
+    elif command -v fuser >/dev/null 2>&1; then
+        fuser -k "$port/tcp" 2>/dev/null || true
+    fi
+    if [ -n "$pids" ]; then
+        echo "$pids" | xargs kill -9 2>/dev/null || true
+    fi
 
     nohup "$PYTHON" "$SYS_DIR/gui/server.py" --host 0.0.0.0 --port "$port" > /tmp/bach-gui.log 2>&1 &
     echo "  GUI Server gestartet (PID $!)"

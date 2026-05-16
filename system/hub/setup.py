@@ -182,7 +182,7 @@ class SetupHandler(BaseHandler):
             try:
                 proc = subprocess.run(
                     ["npm", "install", "-g", pkg],
-                    capture_output=True, text=True, timeout=120
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120
                 )
                 if proc.returncode == 0:
                     results.append(f"  [OK] {pkg} installiert")
@@ -299,7 +299,7 @@ class SetupHandler(BaseHandler):
             try:
                 proc = subprocess.run(
                     ["npm", "list", "-g", pkg, "--depth=0"],
-                    capture_output=True, text=True, timeout=15
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15
                 )
                 if proc.returncode == 0 and pkg in proc.stdout:
                     checks.append(f"[OK] {pkg} installiert")
@@ -1241,7 +1241,7 @@ class SetupHandler(BaseHandler):
         try:
             proc = subprocess.run(
                 ["npm", "list", "-g", package, "--depth=0"],
-                capture_output=True, text=True, timeout=15
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15
             )
             return proc.returncode == 0 and package in proc.stdout
         except Exception:
@@ -1481,7 +1481,7 @@ class SetupHandler(BaseHandler):
             try:
                 proc = subprocess.run(
                     ["npm", "install", "-g", pkg],
-                    capture_output=True, text=True, timeout=120
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120
                 )
                 if proc.returncode == 0:
                     results.append(f"  [OK] {pkg} installiert")

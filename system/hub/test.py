@@ -86,6 +86,8 @@ class TestHandler(BaseHandler):
                 [sys.executable, str(runner), str(self.base_path), "-p", profile],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=300
             )
             output = result.stdout + (result.stderr if result.returncode != 0 else "")
@@ -113,6 +115,8 @@ class TestHandler(BaseHandler):
                 [sys.executable, str(runner), system_path, "-p", profile],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=300
             )
             output = result.stdout + (result.stderr if result.returncode != 0 else "")
@@ -138,6 +142,8 @@ class TestHandler(BaseHandler):
                 [sys.executable, str(runner), str(self.base_path), "--compare", other_path, "-p", profile],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=600
             )
             output = result.stdout + (result.stderr if result.returncode != 0 else "")
