@@ -735,8 +735,10 @@ def _try_run_tool(name: str, args: list) -> Optional[int]:
     if exact.exists():
         tool_file = exact
     else:
+        # Prefix-Match statt Substring (verhindert z.B. "check" → "db_check")
+        name_lower = name.lower()
         for f in TOOLS_DIR.glob("*.py"):
-            if name.lower() in f.stem.lower():
+            if f.stem.lower().startswith(name_lower):
                 tool_file = f
                 break
 
