@@ -155,6 +155,7 @@ except Exception as e:
                 [sys.executable, "-c", code],
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=10
             )
             output = result.stdout.strip() + result.stderr.strip()
@@ -218,6 +219,7 @@ except Exception as e:
                     [sys.executable, "-c", code],
                     capture_output=True,
                     text=True,
+                    encoding='utf-8', errors='replace',
                     timeout=15
                 )
                 

@@ -36,8 +36,8 @@ REM Kurz warten
 timeout /t 3 >nul
 
 REM Browser oeffnen MIT Cache-Buster Parameter
-if defined BACH_NO_BROWSER (
-    echo  [SKIP] Browser nicht geoeffnet (BACH_NO_BROWSER gesetzt)
+if "%BACH_NO_BROWSER%"=="1" (
+    echo  [SKIP] Browser nicht geoeffnet (BACH_NO_BROWSER=1)
     echo  URL: http://127.0.0.1:8000
 ) else (
     echo  Oeffne Browser (mit Cache-Buster)...

@@ -198,7 +198,8 @@ def is_edge_running():
         result = subprocess.run(
             ["powershell", "-Command",
              "(Get-Process msedge -ErrorAction SilentlyContinue).Count"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True,
+            encoding='utf-8', errors='replace', timeout=10,
         )
         count = int(result.stdout.strip() or "0")
         return count > 0

@@ -56,6 +56,7 @@ def run_b_tests(system_path: str, output_dir: Path) -> dict:
             [sys.executable, str(script), system_path, str(output_dir)],
             capture_output=True,
             text=True,
+            encoding='utf-8', errors='replace',
             timeout=300
         )
         
@@ -87,6 +88,7 @@ def run_o_tests(system_path: str, output_dir: Path) -> dict:
             [sys.executable, str(script), system_path, str(output_dir)],
             capture_output=True,
             text=True,
+            encoding='utf-8', errors='replace',
             timeout=300
         )
         

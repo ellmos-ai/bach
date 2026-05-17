@@ -107,6 +107,7 @@ def run_tests(system_path: str, profile: str = "STANDARD", output_dir: str = Non
                         [sys.executable, str(script), system_path],
                         capture_output=True,
                         text=True,
+                        encoding='utf-8', errors='replace',
                         timeout=60
                     )
                     if proc.returncode == 0:
@@ -139,6 +140,7 @@ def run_tests(system_path: str, profile: str = "STANDARD", output_dir: str = Non
                         [sys.executable, str(script), system_path],
                         capture_output=True,
                         text=True,
+                        encoding='utf-8', errors='replace',
                         timeout=120
                     )
                     if proc.returncode == 0:

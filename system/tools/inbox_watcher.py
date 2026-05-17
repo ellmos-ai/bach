@@ -332,6 +332,7 @@ class InboxEventHandler(FileSystemEventHandler):
                 ["python", bach_py, "task", "add", task_title, "--priority", "P3"],
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=10
             )
             if result.returncode == 0:
@@ -652,7 +653,8 @@ def _create_review_task_standalone(filename: str):
     try:
         subprocess.run(
             ["python", bach_py, "task", "add", task_title, "--priority", "P3"],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True,
+            encoding='utf-8', errors='replace', timeout=10
         )
     except Exception:
         pass  # Task-Fehler nicht kritisch

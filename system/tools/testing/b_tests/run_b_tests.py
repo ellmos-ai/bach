@@ -69,6 +69,7 @@ def run_b_tests(system_path: str, output_dir: str = None) -> dict:
                 [sys.executable, str(script_path), system_path],
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=60
             )
             

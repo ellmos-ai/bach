@@ -342,6 +342,7 @@ class EntwicklerAgent(PortableAgent):
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=30
             )
             result['stdout'] = process.stdout

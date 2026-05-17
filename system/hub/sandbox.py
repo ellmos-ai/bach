@@ -129,6 +129,7 @@ class SandboxHandler(BaseHandler):
                 [sys.executable, str(fpath)] + extra_args,
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=self.TIMEOUT,
                 cwd=str(fpath.parent),
                 env={**os.environ, 'PYTHONIOENCODING': 'utf-8'},
@@ -159,6 +160,7 @@ class SandboxHandler(BaseHandler):
                 [sys.executable, tmp_path],
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=self.TIMEOUT,
                 cwd=tempfile.gettempdir(),
             )
@@ -187,6 +189,7 @@ class SandboxHandler(BaseHandler):
                 [sys.executable, "-m", "pytest", str(fpath), "-v", "--tb=short"],
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=self.TIMEOUT * 2,
                 cwd=str(self.base_path),
                 env={**os.environ, 'PYTHONIOENCODING': 'utf-8'},
@@ -211,6 +214,7 @@ class SandboxHandler(BaseHandler):
                     shell=True,
                     capture_output=True,
                     text=True,
+                    encoding='utf-8', errors='replace',
                     timeout=self.TIMEOUT,
                     cwd=tmpdir,
                 )

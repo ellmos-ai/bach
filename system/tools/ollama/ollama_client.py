@@ -342,14 +342,15 @@ class OllamaClient:
         try:
             result = subprocess.run(
                 ["curl", "-s", url],
-                capture_output=True, text=True, timeout=self.timeout
+                capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=self.timeout
             )
             if result.returncode == 0 and result.stdout:
                 return json.loads(result.stdout)
         except Exception:
             pass
         return None
-    
+
     def _curl_post(self, url: str, data: Dict) -> Optional[Dict]:
         """Fallback POST via curl."""
         try:
@@ -357,7 +358,8 @@ class OllamaClient:
                 ["curl", "-s", "-X", "POST", url,
                  "-H", "Content-Type: application/json",
                  "-d", json.dumps(data)],
-                capture_output=True, text=True, timeout=self.timeout
+                capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=self.timeout
             )
             if result.returncode == 0 and result.stdout:
                 return json.loads(result.stdout)
