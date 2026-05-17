@@ -1,0 +1,98 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+文学管理 (文学)
+================================================================================
+
+ハンドラー名
+  文献
+
+説明
+出典、引用、要約情報を含む完全な文献管理
+行政。 5 つの引用スタイル (APA、MLA、シカゴ、DIN、ハーバード) をサポート
+BibTeX エクスポートおよび検索可能なデータベース。 LitZentrum から移植されました。
+すべてを bach.db に保存します (テーブル: lit_sources、lit_quotes、lit_summaries)。
+
+操作
+  追加 ソースを追加
+  list ソースのリストを表示
+  検索 ソースを検索
+  show ソースの詳細を表示
+  編集 ソースを編集
+  削除 ソースを削除
+  見積もり 見積もりを追加
+  引用 出典からの引用を表示します
+  cite 引用形式 (APA/MLA/シカゴ/DIN/ハーバード)
+  BibTeX エクスポート
+  概要 概要の追加・表示
+  stats データベース統計を表示します
+  ヘルプ ヘルプを表示
+
+例
+
+ソースを追加
+  bach literatur add "Machine Learning Basics" \
+    --著者「トム・ミッチェル」 --2023 年 --タイプ 本
+
+  bach literatur add "Deep Learning Review" \
+    --著者「LeCun, Yann; Bengio, Yoshua」 --2022 年 --type 記事 \
+    --journal "Nature" --doi "10.1038/nature14539"
+
+ソースの管理
+  bach literatur list                    (最新 20)
+  bach literatur list --limit 50         (変更制限)
+  bach literatur list --type article     (記事のみ)
+  bach literatur list --status read      (読み取り専用)
+  bach literatur search "LSTM"           (検索)
+  bach literatur show 5                  (詳細)
+  bach literatur edit 5 --year 2024 --status read
+  bach literatur delete 3                (引用/要約も削除)
+
+引用と引用
+  bach literatur quote 5 "This is a great insight" --page 42
+  bach literatur quote 5 "Another quote" --type indirect --comment "Wichtig"
+  bach literatur quotes 5                (すべての引用)表示)
+  bach literatur cite 5                  (APA 引用)
+  bach literatur cite 5 --style mla --page 42
+  (スタイル: apa、mla、chicago、din、harvard)
+
+概要
+  bach literatur summary 5 "Die Quelle beschreibt..." --type full
+  bach literatur summary 5 "Kapitel 3 kurz gefasst" --type chapter --pages "45-67"
+  bach literatur summary 5                (すべて表示)
+
+エクスポート
+  bach literatur export                  (最後の 50 を bibtex として)
+  bach literatur export --all            (すべてエクスポート)
+  bach literatur export --ids 1,2,3 --out refs.bib
+  bach literatur stats                   (概要)
+
+フィールド オプション (追加/編集時)
+  --author "名前 1; 名前 2; 名前 3" (; を含む複数の著者)
+  --年 YYYY (年)
+  --type 記事|本|章|論文|カンファレンス|ウェブサイト|その他
+  --journal "ジャーナル名"
+  --出版社 "出版社"
+  --doi "10.xxxx/xxxx"
+  --isbn「978-x-xxxx-xxxx-x」
+  --url "https://..."
+  --tags "タグ 1、タグ 2、タグ 3" (カンマ区切り)
+  --lang de|en (言語、デフォルト: de)
+  --ステータスは未読|読み取り中|既読|アーカイブ済み
+  --評価 1 ～ 5 (星評価)
+  --メモ「メモ」
+  --abstract "短い説明"
+  --pdf "/path/to/file.pdf"
+
+ファイル
+  data/bach.db SQLite データベース
+  data/bach.db -> lit_sources ソーステーブル
+  data/bach.db -> lit_quotes 引用テーブル
+  data/bach.db -> lit_summaries サマリーテーブル
+  _services/literatur/quote_formatter 引用モジュール
+
+関連項目
+  bach media       メディア管理
+  bach lesson      学んだ教訓
+  bach mem         メモリ システム

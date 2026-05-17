@@ -1,0 +1,64 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+============
+inject -- 注射器控制和任务分配
+
+描述
+============
+注射处理程序管理注射器系统以实现自动化
+上下文注入和任务分配。注入器是插件
+自动针对某些触发器（单词、时间、任务完成）。
+提供有用的提示或操作。
+
+操作
+===========
+状态
+  显示所有喷油器的状态（活动/非活动）。
+  语法：--inject status
+
+toggle <名称>
+  打开或关闭注射器。
+  语法：--inject 切换 <名称>
+
+  可用的喷油器：
+    策略 关于触发词的有用想法
+    上下文 关键字的上下文线索
+    时间 定期时间更新（timebeat）
+    任务完成后自动提醒
+
+任务 <分钟>
+  分配具有指定持续时间的新任务。
+  语法：--inject 任务 <分钟>
+  默认：5 分钟
+
+分解 <id>
+  将现有任务分解为子目标。
+  语法：--inject decompose <task-id>
+
+示例
+=========
+# 检查所有注入器的状态
+--inject status
+
+# 启用策略注入器
+--inject 切换策略
+
+# 分配 15 分钟任务
+--inject task 15
+
+# 反汇编 ID 为“abc123”的任务
+--inject 分解 abc123
+
+FILES
+=======
+hub/inject.py 处理程序实现
+工具/injectors.py InjectorSystem后端
+config.json 注入器配置
+
+另请参见
+==========
+hub/base.py BaseHandler 类
+docs/help/ 更多处理程序文档

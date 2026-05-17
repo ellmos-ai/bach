@@ -1,0 +1,101 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+================================================================================
+NOMBRE DEL MANEJADOR
+================================================================================
+mem - Gestión de memoria (Trabajo, Hechos, Lecciones)
+
+================================================================================
+DESCRIPCIÓN
+================================================================================
+El manejador de memoria administra el sistema de memoria BACH con dos funciones principales:
+
+1. MEMORIA DE TRABAJO: limpieza de entradas caducadas de la memoria de trabajo
+2. DECAIMIENTO DE LA MEMORIA: Decaimiento automático de hechos, lecciones y memoria de trabajo
+   Base para SQ043 (Ronda 30C)
+
+Almacena información contextual crítica con ciclo de vida configurable.
+
+================================================================================
+OPERACIONES
+================================================================================
+
+working - Gestión de la memoria de trabajo
+  bach mem working status
+  bach mem working analyze
+  bach mem working cleanup
+  bach mem working cleanup --dry-run
+  bach mem working set-expires
+  bach mem working set-expires --dry-run
+
+  estado/análisis: muestra el estado de la memoria de trabajo y las entradas categorizadas
+  limpieza: Limpiar entradas caducadas (opción: --dry-run)
+  set-expires: Establecer valores de caducidad para entradas antiguas (opción: --dry-run)
+
+
+decay - Decaimiento de la memoria (Hechos/Lecciones/Trabajo)
+  bach mem decay
+  bach mem decay --facts
+  bach mem decay --lessons
+  bach mem decay --working
+  bach mem decay --dry-run
+  bach mem decay --facts --dry-run
+
+  Sin opciones: aplicar decadencia a los tres tipos de memoria
+  --facts: Reduce solo hechos (puntuación de relevancia)
+  --lessons: Reducir solo lecciones (confiabilidad)
+  --working: Solo reduce la memoria de trabajo (seguridad)
+  --ejecución en seco: Vista previa sin cambios en la base de datos
+
+================================================================================
+EJEMPLOS
+================================================================================
+
+# Verificar el estado de la memoria de trabajo
+bach mem working status
+
+# Análisis: ¿Qué entradas han caducado?
+bach mem working analyze
+
+# Simular limpieza
+bach mem working cleanup --dry-run
+
+# Limpiar realmente la memoria de trabajo
+bach mem working cleanup
+
+# Decaimiento de memoria en todos los tipos (vista previa)
+bach mem decay --dry-run
+
+# Solo reducir hechos
+bach mem decay --facts
+
+# El deterioro de las lecciones con vista previa
+bach mem decay --lessons --dry-run
+
+# Decaimiento completo sin simulación
+bach mem decay
+
+================================================================================
+ARCHIVOS
+================================================================================
+
+Archivos fuente:
+  definición del controlador hub/mem.py
+  tools/memory_working_cleanup.py Implementación de limpieza de memoria de trabajo
+  tools/memory_decay.py Implementación de la decadencia de la memoria
+
+Base de datos:
+  data/bach.db SQLite3 con tablas de memoria
+
+Documentación:
+  docs/MEMORY_WORKING_CLEANUP_KONZEPT.md Concepto técnico
+
+================================================================================
+VER TAMBIÉN
+================================================================================
+
+bach db      - Acceso directo a la base de datos (bach db list-tables)
+bach help    - Descripción general de todos los manejadores
+bach help db - Datenbankhandler (Tabellen, Schema)

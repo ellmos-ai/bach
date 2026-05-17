@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+============
+lang - Gestión de multilingüismo y traducción
+
+DESCRIPCIÓN
+============
+El manejador LANG gestiona contenido multilingüe en BACH. Él escanea el código
+Cadenas en alemán, realiza traducciones, valida las que faltan
+Traduce y gestiona un diccionario básico con 119 términos alemanes.
+Utiliza la base de datos SQLite (bach.db) con tablas: language_config,
+traducciones_idiomas, diccionario_idiomas.
+
+OPERACIONES
+===========
+  estado Ver configuración de idioma y estadísticas
+  escanear directorios de códigos de búsqueda para cadenas alemanas
+  scan --namespace Escanea solo un área específica (cli, gui, ayuda, habilidades)
+  lista Mostrar todas las traducciones
+  list --lang <código> Solo idioma específico (p. ej. de/en/es/ru/ja/zh)
+  Faltan traducciones faltantes (predeterminado: de sin en)
+  desaparecido --target es Faltan traducciones al español
+  traducir Iniciar traducción automática (basada en el diccionario)
+  traducir --target es Traducción automática para el idioma de destino
+  add <key> Agregar traducción manualmente (--de, --en, --es ... o --lang/--text)
+  add-language <código> Registrar nuevo idioma (por ejemplo, fr, es, pt)
+  export Exportar para revisión LLM (formato JSON, estándar: de -> en)
+  exportación --target zh Para exportación china
+  importar <archivo> Importar e integrar el archivo de revisión de LLM
+  set <lang> Establecer idioma predeterminado (por ejemplo, de/en/es/ru/ja/zh)
+  estado del dictado Mostrar estado del diccionario
+  dict init Carga el diccionario básico (119 términos).
+  dict add <src> <dst> [--source-lang de --target-lang es]
+  dict search <término> Buscar término en el diccionario
+
+EJEMPLOS
+=========
+# Mostrar estado del idioma
+  bach lang status
+
+# Código de búsqueda para textos en alemán
+  bach lang scan
+  bach lang scan --namespace cli
+
+# Identificar traducciones faltantes
+  bach lang missing
+  bach lang missing --target es
+
+# Traducir manualmente
+  bach lang add "speichern" --de "Speichern" --en "Save"
+  bach lang add "speichern" --es "Guardar" --ru "Sohranit"
+
+# Preparar revisión de LLM
+  bach lang export
+  bach lang export --target zh
+  [... LLM edita archivo ...]
+  bach lang import export.json
+
+# Agregar nuevo idioma (francés)
+  bach lang add-language fr
+
+# Establecer idioma predeterminado en inglés
+  bach lang set en
+  bach lang set ja
+
+# Cargar base de diccionario (119 entradas)
+  bach lang dict init
+
+FILES
+=======
+Implementación: hub/lang.py (clase LangHandler)
+Base de datos: datos/bach.db (SQLite)
+  - tabla language_config: idioma predeterminado, respaldo, indicador de traducción automática
+  - Tabla language_translations: todas las traducciones con metadatos
+  - tabla language_dictionary: diccionario básico (119 términos)
+Formato de exportación: JSON (traducciones + metadatos, compatible con herramientas LLM)
+Lanzar artefactos: sistema/exportaciones/traducciones/ (manifiesto, archivos locales, SQL inicial)
+
+VER TAMBIÉN
+==========
+  bach cli        - Interfaz de línea de comando
+  bach backup     - Copias de seguridad de bases de datos (escribir traducciones en bach.db)
+  bach help       - Sistema de ayuda para todos los controladores

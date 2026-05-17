@@ -1,0 +1,67 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+  lesson
+
+DESCRIPTION
+  Lessons Learned Management - Documentation of problems, solutions and best practices.
+  Stores lessons in the SQLite database (data/bach.db) with Category, Severity and
+  Timestamp. Supports full management: add, edit, disable and search.
+
+OPERATIONS
+  add Add new lesson with title and solution
+  edit Edit Lesson (Title, Solution, Category, Severity)
+  deactivate Deactivate Lesson (with optional reason)
+  list Show all active lessons (optionally filtered by category)
+  last Show last n lessons (default: 5)
+  search Search lessons by keyword
+  show Full details of a lesson with ID
+  categories Show available categories
+
+CATEGORIES
+  bug, workflow, tool, integration, performance, general
+
+SEVERITY-LEVEL
+  low, medium, high, critical
+
+EXAMPLES
+  # Add lesson with title and solution
+  bach lesson add "DB-Pfad: Immer data/bach.db verwenden"
+
+  # With Category and Severity
+  bach lesson add "Handler-Bug: base_path nicht root" --category bug --severity high
+
+  # With problem description
+  bach lesson add "Titel" --problem "Was ging schief" --category workflow
+
+  # Edit Lesson
+  bach lesson edit 5 --title "Neuer Titel" --severity critical
+
+  # Show last 3 lessons
+  bach lesson last 3
+
+  # Show all lessons in a category
+  bach lesson list bug
+
+  # Search by keyword
+  bach lesson search "database"
+
+  # Show full details
+  bach lesson show 5
+
+  # Disable Lesson
+  bach lesson deactivate 5 --reason "Nicht mehr relevant"
+
+  # Show available categories
+  bach lesson categories
+
+FILES
+  hub/lesson.py handler implementation
+  data/bach.db SQLite database (table: memory_lessons)
+  docs/help/lesson.txt This help file
+
+SEE ALSO
+  hub/base.py BaseHandler class
+  core/hooks.py hook system (after_lesson_add)

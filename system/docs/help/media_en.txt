@@ -1,0 +1,147 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+============
+media — media management (movies, series, music, podcasts, audiobooks)
+
+DESCRIPTION
+============
+MediaHandler manages media collections with support for various
+Media types and sources. Uses SQLite backend (bach.db) with favorites,
+Blacklist, playback history and extended metadata per media.
+
+MEDIA TYPES
+-----------
+  [F] movie, [S] series, [M] music, [C] clip, [P] podcast, [A] audiobook, [D] document
+
+SOURCES
+-------
+  netflix, youtube, spotify, disney, prime, appletv, twitch, local
+
+OPERATIONS
+===========
+
+add
+  Add new media
+  Usage: bach media add "Title" [--type TYPE] [--source SOURCE] [--url URL]
+           [--artist "..."] [--album "..."] [--channel "..."] [--season N]
+           [--episode N] [--rating 1-5] [--tags "tag1,tag2"] [--desc "..."]
+           [--path "/path/to/file"]
+
+list
+  List and filter media
+  Usage: bach media list [--type TYPE] [--source SOURCE] [--fav] [--limit N]
+  Flags:
+    --type TYPE Show only one media type
+    --source SOURCE Filter only one source
+    --fav Show favorites only
+    --limit N Max. N entries (default: 20)
+  Output: Icon, Favorite(*), ID, Title, Source, Rating
+
+search
+  Full text search by title, artist, album, channel, tags, description
+  Usage: bach media search “search term”
+  Output: Up to 30 hits with icon, favorite, ID, title, source
+
+show
+  Detailed view of a medium with complete metadata
+  Usage: bach media show <id>
+  Output: All fields (Title, Type, Source, Artist, Album, Season/Episode,
+          Rating, tags, description, favorite, blacklist status, date,
+          last 5 plays)
+
+edit
+  Edit medium (any fields)
+  Usage: bach media edit <id> --title "New" [--type TYPE] [--source SOURCE]
+           [--url URL] [--desc "..."] [--artist "..."] [--album "..."]
+           [--channel "..."] [--season N] [--episode N] [--rating 1-5]
+           [--tags "tag1,tag2"] [--notes "..."] [--path "/path"]
+
+fav
+  Set/remove favorite
+  Usage: bach media fav <id> [--remove]
+  Flag:
+    --remove Removes favorite status
+
+blacklist
+  Lock/unlock media (hidden in list/search)
+  Usage: bach media blacklist <id> [--remove]
+  Flag:
+    --remove Unlock
+
+open
+  Open medium: Start URL in browser or file. Updated playback
+  History and last_opened_at timestamp. Blocked media cannot
+  be opened.
+  Usage: bach media open <id>
+
+history
+  Playback history of all media (newest first)
+  Usage: bach media history [--limit N]
+  Shows: timestamp, icon, id, title, source, open method
+
+stats
+  Statistics overview: total number, favorites, blocked, plays,
+  Distribution by type and source
+  Usage: bach media stats
+
+help
+  View this help
+  Usage: bach media help
+
+EXAMPLES
+=========
+
+# Add medium (film on Netflix)
+bach media add "Inception" --type movie --source netflix --url "https://..." \
+  --rating 5 --desc "Science-Fiction Masterpiece"
+
+# Add medium (music album)
+bach media add "Abbey Road" --type music --source spotify --artist "The Beatles" \
+  --album "Abbey Road" --year 1969
+
+# Add medium (local file)
+bach media add "Dokumentation" --type document --source local \
+  --path "C:\\Videos\\doku.mp4"
+
+# Show all films with favorites
+bach media list --type movie --fav
+
+# Search for series
+bach media search "Breaking Bad"
+
+# Capture series with season/episode
+bach media add "Breaking Bad S01E01" --type series --source netflix \
+  --season 1 --episode 1 --rating 5
+
+# Mark medium as favorite
+bach media fav 42
+
+# Remove favorite status
+bach media fav 42 --remove
+
+# Mark medium as blacklist
+bach media blacklist 99
+
+# Open medium
+bach media open 42
+
+# Show statistics
+bach media stats
+
+FILES
+=======
+
+Base: hub/media.py
+Database: data/bach.db
+Tables: media_items, media_history
+Config: None (everything about CLI flags)
+
+SEE ALSO
+==========
+
+  bach_api.media.* Programmatic API
+  hub/base.py BaseHandler base class
+  docs/API.md BACH API documentation

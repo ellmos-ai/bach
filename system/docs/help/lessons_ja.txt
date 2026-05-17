@@ -1,0 +1,102 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [memory_lessons table、hub/lesson.py、bach_api.lesson]
+
+学んだ教訓 - ナレッジ管理
+====================================
+
+ステータス: 2026-02-08
+
+洞察、バグ修正、ベスト プラクティスを取得および取得するためのシステム。
+レッスンは、システム動作への「フィードバック」の中核です。
+
+CLI コマンド
+-----------
+  bach lesson add "Titel: Loesung"     新しいレッスンを追加
+  bach lesson edit ID [Optionen]       レッスンを編集 (v1.1.70)
+  bach lesson deactivate ID [-r REASON] Deaktivieren (v1.1.70)
+  bach lesson last [n]                 最後の n レッスン (デフォルト: 5)
+  bach lesson search "keyword"         参照
+  bach lesson show ID                  詳細とメタデータを表示
+
+ライブラリ API
+-----------
+  bach_api インポート レッスンから
+  lesson.add("タイトル: 解決策", "--カテゴリー", "バグ")
+  lesson.list("バグ")
+  lesson.edit(42, "--タイトル", "新しいタイトル")
+  lesson.deactivate(42, "--理由", "廃止")
+  lesson.show(42)
+
+カテゴリー (現在)
+--------------------
+  バグ バグ修正と回避策
+  ワークフロー 拡張ワークフロー (例: Multi-LLM)
+  ツール ツール固有の知識
+  統合 外部システムとの統合
+  パフォーマンス パフォーマンスの最適化
+  一般 一般的なアーキテクチャ上の決定事項
+
+重大度
+------------
+  低い ご参考までに
+  中 推奨規格
+  高 重要なルール (インジェクターの優先順位)
+  重要な重要なシステム知識 (保護ルール)
+
+例
+=========
+
+  # ドキュメントのバグ修正
+  bach lesson add "SQLite Lock: WAL-Mode aktivieren" --category bug --severity high
+
+  # ドキュメントのワークフロー
+  bach lesson add "Multi-LLM: Immer llm lock vor Schreibzugriff" --category workflow
+
+  # パフォーマンスの最適化
+  bach lesson add "DB-Queries: Index auf created_at" --category performance
+
+  # 統合に関する知識
+  bach lesson add "OCR: Tesseract braucht PATH-Variable" --category integration
+
+  # レッスンを編集
+  bach lesson edit 42 --title "Neuer Titel" --severity critical
+
+  # レッスンを無効にする
+  bach lesson deactivate 42 --reason "Durch bessere Loesung ersetzt"
+
+既知の問題と解決策 (抜粋)
+=====================================
+
+1。マルチ LLM 共有ファイル (ワークフロー)
+   問題: 同時編集中の競合状態。
+   解決策: 書き込みアクセスの前に、常に `bach llm lock <file>` を使用してください。
+
+2。 CLI第一原則（ワークフロー）
+   問題: 手動でファイルを編集すると、インジェクター/モニタリングがバイパスされます。
+   解決策: CLI で動作するすべての作業 (タスク、レッスン、メモリ) は常に CLI 経由で実行してください。
+
+3. Windows エンコーディング (バグ)
+   問題: 絵文字により標準の Windows コンソールがクラッシュすることがよくあります。
+   解決策: Python では、標準出力の UTF-8 フォールバックで `io.TextIOWrapper` を使用します。
+
+4。 LOCK DB FILE (パフォーマンス)
+   問題: 多数のプロセスが並行してアクセスすると、ロック エラーが発生します。
+   解決策: 短いトランザクションと WAL モード (先行書き込みログ)。
+
+5。ドキュメントの更新 (バグ)
+   問題: SKILL.md のバージョンが古いとセッションがブロックされます。
+   解決策: `python tools/doc_update_checker.py` を定期的に実行します。
+
+統合
+-----------
+レッスンは自動的に **動的学習システム** に流れ込みます。
+- トリガー生成: タイトル内のキーワードによりインジェクター ヒントが生成されます。
+- アクティブ化: `is_active=1` は、どのルールが LLM に提示されるかを制御します。
+
+関連項目
+----------
+  docs/help/memory.txt 認知記憶モデル
+  docs/help/consolidation.txt イベントからレッスンまで
+  ROADMAP.md の開発段階

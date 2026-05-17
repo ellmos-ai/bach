@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+============
+lang - 多语言和翻译管理
+
+描述
+============
+LANG 处理程序管理 BACH 中的多语言内容。他扫码
+德语字符串，进行翻译，验证缺失的字符串
+翻译和管理包含 119 个德语术语的基本词典。
+使用 SQLite 数据库 (bach.db) 和表： languages_config，
+语言翻译、语言词典。
+
+操作
+===========
+  status 查看语言配置和统计信息
+  scan 搜索德语字符串的代码目录
+  scan --namespace 仅扫描特定区域（cli、gui、帮助、技能）
+  列表 显示所有翻译
+  list --lang <code> 仅特定语言（例如 de/en/es/ru/ja/zh）
+  缺少 缺少翻译（默认：de 不带 en）
+  缺少 --target es 缺少西班牙语翻译
+  开始自动翻译（基于词典）
+  翻译 --target en 自动翻译目标语言
+  add <key> 手动添加翻译（--de、--en、--es ... 或 --lang/--text）
+  add-language <code> 注册新语言（例如 fr、es、pt）
+  导出用于 LLM 审核的导出（JSON 格式，标准：de -> en）
+  export --target zh 用于中文导出
+  import <file> 导入并集成LLM审阅文件
+  set <lang> 设置默认语言（例如 de/en/es/ru/ja/zh）
+  字典状态 显示字典状态
+  dict init 加载基本词典（119 个术语）。
+  dict add <src> <dst> [--source-lang de --target-lang es]
+  dict search <term> 在词典中搜索术语
+
+示例
+=========
+# 显示语言状态
+  bach lang status
+
+# 德语文本搜索代码
+  bach lang scan
+  bach lang scan --namespace cli
+
+# 识别缺失的翻译
+  bach lang missing
+  bach lang missing --target es
+
+# 手动翻译
+  bach lang add "speichern" --de "Speichern" --en "Save"
+  bach lang add "speichern" --es "Guardar" --ru "Sohranit"
+
+# 准备LLM 复习
+  bach lang export
+  bach lang export --target zh
+  [... LLM 编辑文件...]
+  bach lang import export.json
+
+# 添加新语言（法语）
+  bach lang add-language fr
+
+# 将默认语言设置为英语
+  bach lang set en
+  bach lang set ja
+
+# 加载字典库（119 个条目）
+  bach lang dict init
+
+FILES
+=======
+实现：hub/lang.py（LangHandler 类）
+数据库：data/bach.db (SQLite)
+  - languages_config 表：默认语言、后备、自动翻译标志
+  - 表 languages_translations：所有带有元数据的翻译
+  - 表 languages_dictionary：基本词典（119 个术语）
+导出格式：JSON（翻译+元数据，兼容LLM工具）
+发布工件：system/exports/translations/（清单、区域设置文件、种子 SQL）
+
+另请参见
+==========
+  bach cli        - 命令行界面
+  bach backup     - 数据库备份（将翻译写入 bach.db）
+  bach help       - 所有处理程序的帮助系统

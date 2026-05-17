@@ -1,0 +1,101 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+================================================================================
+处理程序名称
+================================================================================
+mem - 内存管理（工作、事实、课程）
+
+================================================================================
+描述
+================================================================================
+内存处理程序通过两个主要功能管理 BACH 内存系统：
+
+1。工作内存：清除工作内存中过期的条目
+2. 记忆衰退：事实、教训和工作记忆自动衰退
+   SQ043（第 30C 轮）的基础
+
+存储具有可配置生命周期的关键上下文信息。
+
+================================================================================
+操作
+================================================================================
+
+working - 工作内存管理
+  bach mem working status
+  bach mem working analyze
+  bach mem working cleanup
+  bach mem working cleanup --dry-run
+  bach mem working set-expires
+  bach mem working set-expires --dry-run
+
+  状态/分析：显示工作记忆状态和分类条目
+  cleanup：清理过期条目（选项：--dry-run）
+  set-expires：设置旧条目的过期值（选项：--dry-run）
+
+
+decay - 内存衰减（事实/课程/工作）
+  bach mem decay
+  bach mem decay --facts
+  bach mem decay --lessons
+  bach mem decay --working
+  bach mem decay --dry-run
+  bach mem decay --facts --dry-run
+
+  没有选项：将衰减应用于所有三种内存类型
+  --facts：仅减少事实（相关性分数）
+  --lessons：仅减少教训（可靠性）
+  --working：仅减少工作记忆（安全）
+  --dry-run: 不更改数据库进行预览
+
+================================================================================
+示例
+================================================================================
+
+# 检查工作内存的状态
+bach mem working status
+
+# 分析：哪些条目已过期？
+bach mem working analyze
+
+# 模拟清理
+bach mem working cleanup --dry-run
+
+# 实际清理工作内存
+bach mem working cleanup
+
+# 所有类型的内存衰减（预览）
+bach mem decay --dry-run
+
+# 仅减少事实
+bach mem decay --facts
+
+# 通过预览进行教训衰减
+bach mem decay --lessons --dry-run
+
+# 无需模拟即可完全衰减
+bach mem decay
+
+================================================================================
+文件
+================================================================================
+
+源文件：
+  hub/mem.py 处理程序定义
+  tools/memory_working_cleanup.py 工作内存清理实现
+  tools/memory_decay.py 内存衰减实现
+
+数据库：
+  data/bach.db SQLite3 与内存表
+
+文档：
+  docs/MEMORY_WORKING_CLEANUP_KONZEPT.md 技术概念
+
+================================================================================
+另请参见
+================================================================================
+
+bach db      - 直接数据库访问（bach db 列表）
+bach help    - 所有处理程序概述
+bach help db - Datenbankhandler (Tabellen, Schema)

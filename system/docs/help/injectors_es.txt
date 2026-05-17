@@ -1,0 +1,297 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [tools/injectors.py, hub/inject.py]
+
+SISTEMA INYECTOR (Orquestación Cognitiva)
+==========================================
+
+A partir de: 2026-02-08
+
+Los inyectores simulan PENSAMIENTO y ASOCIACIONES como EJECUTIVO CENTRAL.
+Orquestan el procesamiento cognitivo en tres niveles:
+- ESTÁTICO: base de conocimientos (wiki, ayuda, contexto)
+- ACOMPAÑAMIENTO DEL PROCESO: Control activo durante el trabajo
+- PROACTIVO: Llamadas de memoria y registros del sistema
+
+Predeterminado: Todo ENCENDIDO (se puede apagar en cualquier momento).
+
+GESTIÓN DE ENFRIAMIENTO (v1.1.75)
+-----------------------------
+Los inyectores se silencian durante X minutos después de la visualización:
+- Estrategia: 2 minutos
+- Contexto: 1 minuto
+- Entre: 3 minutos
+- Aviso de herramienta: 5 minutos
+
+Evita repeticiones molestas sin perder función.
+
+LOS 5 INYECTORES CON FUNCIONES PARCIALES
+-----------------------------------
+
+1. INYECTOR DE ESTRATEGIA (metacognición)
+   Funciones parciales:
+   - Metacognición: ¿Qué hacer, cuándo, cómo?
+   - Soporte de decisiones para sucursales.
+   - Análisis de errores ("Los errores son información valiosa")
+
+   Palabras desencadenantes: error, complejo, bloqueado, difícil, problema
+   Ejemplo: "Errores" -> "Los errores son información valiosa"
+   Enfriamiento: 2 minutos
+
+2. INYECTOR DE CONTEXTO (memoria de trabajo)
+   Funciones parciales:
+   - Recordar la descripción de la tarea.
+   - Recomendaciones de herramientas basadas en el contexto.
+   - Recuperación de memoria (a corto plazo, a largo plazo, sesión)
+   - Análisis de requisitos
+   - Integración con enrutamiento de conectores (ver más abajo)
+
+   Activador: Palabras clave en el texto (consulte HERRAMIENTA-DISPARADOR a continuación)
+   No agresivo, solo indirectas.
+   Enfriamiento: 1 minuto
+
+3. INYECTOR DEL TIEMPO (sentido del tiempo)
+   Funciones parciales:
+   - Timebeat: actualizaciones periódicas de la hora
+   - Conciencia del presupuesto de tiempo
+
+   Intervalo predeterminado: 60 segundos
+   Ayuda con el sentido del tiempo y la gestión de sesiones.
+   Sin tiempo de reutilización (mecanismo de intervalo propio)
+
+4. ENTRE INYECTOR (control de calidad)
+   Funciones parciales:
+   - Control de calidad después de la tarea realizada.
+   - Regular la transición a la siguiente tarea.
+   - Verificación de resultados: Validación frente a requisitos
+
+   Desencadenante: después de "la tarea de Bach realizada"
+   NO al final de la sesión (lo reconoce)
+   Enfriamiento: 3 minutos
+
+5. INYECTOR DE HERRAMIENTA (conocimiento de herramienta)
+   Funciones parciales:
+   - Recordatorio de herramienta al inicio de la sesión (una sola vez)
+   - Advertencia sobre duplicados de herramientas al crear
+   - Descripción general de herramientas categorizadas
+
+   Categorías: OCR, importación de datos, controlador de dominio, análisis de código,
+               Codificación, manejo de importaciones, conversión.
+   Activador: el texto contiene "nueva herramienta", "crear herramienta", etc.
+   Enfriamiento: 5 minutos
+
+ORQUESTRACIÓN COGNITIVA (diagrama)
+-----------------------------------
+
++-----------------------------------------------------------------+
+  |                ORQUESTRACIÓN DEL INYECTOR |
+  |                (Ejecutivo Central) |
+  +-----------------------------------------------------------------+
+  |                                                             |
+  |  ESTÁTICA (base de conocimientos) |
+  |  +-- Metahabilidades, metaflujos de trabajo |
+  |  +-- Wiki (wiki/) |
+  |  +-- Ayuda (docs/help/*.txt) |
+  |  +-- contexto (memoria_contexto) |
+  |                                                             |
+  |  ACOMPAÑAMIENTO DEL PROCESO (vía inyectores) |
+  |  +-- Strategy_injector (Enfriamiento: 2 min) |
+  |  |   +-- Metacognición: ¿Qué, cuándo, cómo?                     |
+  |  |   +-- Apoyo a la decisión |
+  |  |   +-- Análisis de errores |
+  |  +-- context_injector (Enfriamiento: 1 min) |
+  |  |   +-- Recordatorio de tarea |
+  |  |   +-- Recomendaciones de herramientas |
+  |  |   +-- Análisis de requisitos |
+  |  |   +-- Integración de enrutamiento de conectores (ver más abajo) |
+  |  +-- Between_injector (Enfriamiento: 3 min) |
+  |  |   +-- Control de calidad |
+  |  |   +-- Transición de tareas |
+  |  |   +-- validación de resultados |
+  |  +-- time_injector (sin tiempo de reutilización) |
+  |  |   +-- Sentido del tiempo (Timebeat) |
+  |  +-- tool_injector (Enfriamiento: 5 min) |
+  |      +-- Conocimiento de herramientas (inicio de sesión) |
+  |      +-- Advertencia duplicada |
+  |                                                             |
+  |  PROACTIVO (recuperaciones de memoria a través de context_injector) |
+  |  +-- Memoria a corto plazo (memoria_de_trabajo) |
+  |  +-- Memoria a largo plazo (hechos, lecciones) |
+  |  +-- Memoria de sesión (sesiones) |
+  |  +-- Registros del sistema (registro de cambios, registro de errores, hoja de ruta) |
+  |                                                             |
+  +-----------------------------------------------------------------+
+
+COMANDOS
+-------
+  bach --inject status         Muestra el estado de todos los inyectores (incluido el enfriamiento)
+  bach --inject toggle <name>  Enciende/apaga
+  bach --inject task <min>     Tarea durante X minutos
+  bach --inject decompose <id> Zerlegt Aufgabe
+
+ALTERNAR NOMBRES:
+  estrategia (o estrategia_inyector)
+  contexto (o contexto_inyector)
+  tiempo (o time_injector)
+  entre (o entre_inyector)
+
+MOSTRAR ESTADO DE ENFRIAMIENTO:
+  bach --inject status zeigt verbleibende Cooldown-Zeit in Sekunden
+
+DISPARADOR DE HERRAMIENTA (inyector de contexto)
+-------------------------------
+El inyector de contexto reconoce palabras clave y recomienda herramientas:
+
+  EDICIÓN DE PITÓN
+  ------------------
+  "editar python" -> bach python_cli_editor <archivo> --mostrar todo
+  "editar clase" -> bach python_cli_editor <archivo> --mostrar todo
+  "método de edición" -> bach python_cli_editor <archivo> --show-all
+  "estructura del código" -> bach python_cli_editor <archivo> --show-all
+  "mostrar importaciones" -> bach python_cli_editor <archivo> --show-imports
+
+  ANÁLISIS DE CÓDIGO
+  ------------
+  "analizar código" -> bach code_analyzer <archivo>
+  "código muerto" -> bach code_analyzer <archivo>
+
+  CODIFICACIÓN Y FORMATO
+  ----------------------
+  "problema de codificación" -> bach c_encoding_fixer <archivo>
+  "diéresis rota" -> bach c_encoding_fixer <archivo>
+  "utf-8" -> bach c_encoding_fixer <archivo>
+  "emoji" -> bach c_emoji_scanner <archivo>
+  "sangría" -> bach c_indent_checker <archivo>
+
+  MANEJO DE IMPORTACIONES
+  ---------------
+  "Ordenar importaciones" -> bach c_import_organizer <archivo>
+  "problema de importación" -> bach c_import_diagnose <archivo>
+  "Falta la importación" -> bach c_import_diagnose <archivo>
+
+  OPERACIONES DE ARCHIVO
+  -----------------
+  "archivo dividido" -> bach c_pycutter <archivo>
+  "demasiado grande" -> bach c_pycutter <archivo>
+  "ver sqlite" -> bach c_sqlite_viewer <db>
+  "problema json" -> bach c_json_repair <archivo>
+
+  CONVERSIÓN
+  -------------
+  "rebaja a pdf" -> bach c_md_to_pdf <archivo>
+  "convertir formato" -> bach c_universal_converter <archivo>
+
+BÚSQUEDA DE HERRAMIENTAS
+  ----------
+  "herramienta de búsqueda" -> herramienta bach sugiere 'descripción'
+  "qué herramienta" -> herramienta bach sugiere 'descripción'
+  "Herramienta de búsqueda" -> búsqueda de herramientas bach <término>
+
+  AYUDA Y CONVENCIONES
+  --------------------
+  "nueva herramienta" -> --ayuda a nombrar (prefijos de herramientas)
+  "concepto" -> --ayuda a prácticas
+  "arquitectura" -> --ayuda a prácticas
+  "memoria" -> --ayuda a la memoria
+  "tarea" -> --tareas de ayuda
+  "ruta" -> --ayuda bach_paths
+  "habilidad" -> --ayuda habilidades
+  "versión" -> bach --skills versión <nombre>
+
+SALIDA DE MUESTRA
+----------------
+Cuando Claude lee "editar python":
+
+  [CONTEXTO] Editor de Python: bach python_cli_editor <archivo> --show-all
+
+Cuando Claude lee "problema de codificación":
+
+  [CONTEXTO] Corrección de codificación: bach c_encoding_fixer <archivo>
+
+INTEGRACIÓN DE ENRUTAMIENTO DEL CONECTOR (NUEVA v1.1.75)
+-------------------------------------------
+ContextInjector ahora está integrado en el flujo de mensajes del conector:
+
+PIPELINE DE ENRUTAMIENTO (queue_processor.py):
+  Mensaje entrante (connector_messages)
+    |
+    v
+  route_incoming() se aplica:
+    1. ContextInjector.check(texto): más de 100 activadores codificados + caché de base de datos
+    2. Tabla context_triggers: más de 900 activadores dinámicos de la base de datos
+    |
+    v
+  Mensaje con sugerencias de metadatos (messages.inbox)
+    -> metadatos["context_hints"] = [pista1, pista2, ...]
+    -> metadatos["context_triggers"] = [trigger1, trigger2, ...]
+
+VENTAJA:
+- Los mensajes entrantes reciben información de contexto INMEDIATA
+- LLM ya ve recomendaciones de herramientas relevantes
+- No es necesaria la búsqueda manual de herramientas.
+- El contexto se proporciona como metadatos (no en el texto)
+
+EJEMPLO:
+  El usuario escribe: "problema de codificación con el archivo X"
+  -> ContextInjector detecta "problema de codificación"
+  -> Metadatos: {"context_hints": "bach c_encoding_fixer <archivo>"}
+  -> LLM recibe pistas como información del sistema, no como texto del usuario
+
+DATABASE TRIGGER:
+  Tabla context_triggers (más de 900 entradas):
+  - trigger_phrase: término de búsqueda (por ejemplo, “editar python”)
+  - sugerencia_texto: recomendación (por ejemplo, "bach python_cli_editor <archivo>")
+  - Consultado automáticamente durante el enrutamiento.
+  - Ampliable dinámicamente sin cambios de código
+
+CONFIGURACIÓN
+-------------
+En config.json bajo "inyectores":
+
+  {
+    "inyectores": {
+      "strategy_injector": verdadero,
+      "context_injector": verdadero,
+      "time_injector": verdadero,
+      "entre_inyector": verdadero,
+      "timebeat_interval": 60
+    }
+  }
+
+IMPORTANTE
+-------
+- ¡Los inyectores también pueden ser molestos/distraídos!
+- Se puede desactivar en cualquier momento: bach --inject alternar contexto (o estrategia, tiempo, entre)
+- Nota sobre cómo apagar con cada inyección de estrategia
+- NO se necesitan inyectores nuevos: los 5 cubren todas las funciones
+- Los tiempos de reutilización evitan automáticamente repeticiones molestas
+
+REFERENCIA DEL CÓDIGO
+-------------
+  tools/injectors.py Implementación del inyector
+  controlador CLI hub/inject.py
+  hub/_services/connector/queue_processor.py Integración del conector
+
+CLASES Y COMPONENTES:
+  InjectorSystem: interfaz principal, organiza todos los inyectores
+  StrategyInjector: metacognición, basada en disparadores
+  ContextInjector: recomendaciones de herramientas, caché de base de datos (~100 activadores)
+  TimeInjector - Timebeat (intervalo de 60 s)
+  BetweenInjector: control de calidad después de realizar la tarea
+  ToolInjector: reconocimiento de herramientas, advertencia duplicada
+  CooldownManager: gestión del tiempo de reutilización (estrategia=2 min, contexto=1 min, entre=3 min)
+  TaskAssigner: asignación de tareas basada en el presupuesto de tiempo
+
+TABLAS DE BASE DE DATOS:
+  context_triggers      - 900+ activadores dinámicos (frase_desencadenante, texto_insinuación)
+  injector_cooldowns    - Marcas de tiempo de enfriamiento (nombre_del_inyector, último_mostrado)
+
+VER TAMBIÉN
+----------
+  bach --help tools                      Descripción general de la herramienta
+  bach --help tools/python_cli_editor    Documentación detallada de la herramienta
+  bach --help memory                     Sistema de memoria
+  bach --help connector                  Sistema de conectores y enrutamiento de mensajes
+  bach tools search                      Búsqueda de herramientas
+  bach tool suggest                      Recomendación de herramientas

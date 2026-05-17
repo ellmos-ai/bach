@@ -1,0 +1,98 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+文学管理（文学）
+================================================================================
+
+处理者姓名
+  文献
+
+描述
+完整的文献管理，包括来源、引文和摘要信息
+行政管理。支持 5 种引文样式（APA、MLA、Chicago、DIN、Harvard），
+BibTeX 导出和可搜索数据库。从 LitZentrum 移植。
+将所有内容存储在 bach.db 中（表：lit_sources、lit_quotes、lit_summaries）。
+
+操作
+  添加添加源
+  列出 列出来源
+  搜索 搜索来源
+  show 显示源详细信息
+  编辑编辑源
+  删除删除源
+  报价 添加报价
+  引用 显示来源的引用
+  cite 格式引文（APA/MLA/Chicago/DIN/Harvard）
+  导出 BibTeX 导出
+  摘要 添加/显示摘要
+  stats 显示数据库统计信息
+  帮助 显示帮助
+
+示例
+
+添加源
+  bach literatur add "Machine Learning Basics" \
+    --作者“汤姆·米切尔”--2023 年 --类型书籍
+
+  bach literatur add "Deep Learning Review" \
+    ——作者“LeCun，Yann；Bengio，Yoshua”——2022 年——类型文章 \
+    --journal "Nature" --doi "10.1038/nature14539"
+
+管理来源
+  bach literatur list                    （最后 20 条）
+  bach literatur list --limit 50         （更改限制）
+  bach literatur list --type article     （仅限文章）
+  bach literatur list --status read      （只读）
+  bach literatur search "LSTM"           （搜索）
+  bach literatur show 5                  （详细信息）
+  bach literatur edit 5 --year 2024 --status read
+  bach literatur delete 3                （还删除引用/摘要）
+
+引用和引文
+  bach literatur quote 5 "This is a great insight" --page 42
+  bach literatur quote 5 "Another quote" --type indirect --comment "Wichtig"
+  bach literatur quotes 5                （所有引用均显示）
+  bach literatur cite 5                  （APA）引文）
+  bach literatur cite 5 --style mla --page 42
+  （样式：apa、mla、chicago、din、harvard）
+
+摘要
+  bach literatur summary 5 "Die Quelle beschreibt..." --type full
+  bach literatur summary 5 "Kapitel 3 kurz gefasst" --type chapter --pages "45-67"
+  bach literatur summary 5                （显示全部）
+
+导出
+  bach literatur export                  （最后 50 个作为 bibtex）
+  bach literatur export --all            （导出全部）
+  bach literatur export --ids 1,2,3 --out refs.bib
+  bach literatur stats                   （概述）
+
+字段选项（在添加/编辑时）
+  --author "Name1; Name2; Name3" （多个作者带有 ;）
+  --年 YYYY（年）
+  --输入文章|书籍|章节|论文|会议|网站|其他
+  --journal“期刊名称”
+  ——出版商“出版商”
+  --doi“10.xxxx/xxxx”
+  --isbn“978-x-xxxx-xxxx-x”
+  --url“https://...”
+  --tags "tag1, tag2, tag3" （逗号分隔）
+  --lang de|en （语言，默认：de）
+  --状态未读|正在阅读|已读|已存档
+  --评级 1-5（星级）
+  --notes“注释”
+  --摘要“简短描述”
+  --pdf "/path/to/file.pdf"
+
+文件
+  data/bach.db SQLite 数据库
+  data/bach.db -> lit_sources 源表
+  data/bach.db -> lit_quotes 报价表
+  data/bach.db -> lit_summaries 汇总表
+  _services/literatur/itation_formatter 引文模块
+
+另请参见
+  bach media       媒体管理
+  bach lesson      经验教训
+  bach mem         内存系统

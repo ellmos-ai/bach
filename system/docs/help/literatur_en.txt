@@ -1,0 +1,98 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+LITERATURE MANAGEMENT (literature)
+================================================================================
+
+HANDLER NAME
+  literature
+
+DESCRIPTION
+Complete literature management with source, citation and summary information
+administration. Supports 5 citation styles (APA, MLA, Chicago, DIN, Harvard),
+BibTeX export and searchable database. Ported from LitZentrum.
+Stores everything in bach.db (tables: lit_sources, lit_quotes, lit_summaries).
+
+OPERATIONS
+  add add source
+  list List sources
+  search Search sources
+  show Show source details
+  edit edit source
+  delete delete source
+  quote Add quote
+  quotes Show quotes from a source
+  cite Format citation (APA/MLA/Chicago/DIN/Harvard)
+  export BibTeX export
+  summary Add/display summary
+  stats Show database statistics
+  help Show help
+
+EXAMPLES
+
+ADD SOURCES
+  bach literatur add "Machine Learning Basics" \
+    --author "Tom Mitchell" --year 2023 --type book
+
+  bach literatur add "Deep Learning Review" \
+    --author "LeCun, Yann; Bengio, Yoshua" --year 2022 --type article \
+    --journal "Nature" --doi "10.1038/nature14539"
+
+MANAGE SOURCES
+  bach literatur list                    (last 20)
+  bach literatur list --limit 50         (change limit)
+  bach literatur list --type article     (only articles)
+  bach literatur list --status read      (read only)
+  bach literatur search "LSTM"           (search)
+  bach literatur show 5                  (details)
+  bach literatur edit 5 --year 2024 --status read
+  bach literatur delete 3                (also deletes quotes/summaries)
+
+QUOTES AND CITATION
+  bach literatur quote 5 "This is a great insight" --page 42
+  bach literatur quote 5 "Another quote" --type indirect --comment "Wichtig"
+  bach literatur quotes 5                (all quotes show)
+  bach literatur cite 5                  (APA citation)
+  bach literatur cite 5 --style mla --page 42
+  (Styles: apa, mla, chicago, din, harvard)
+
+SUMMARIES
+  bach literatur summary 5 "Die Quelle beschreibt..." --type full
+  bach literatur summary 5 "Kapitel 3 kurz gefasst" --type chapter --pages "45-67"
+  bach literatur summary 5                (show all)
+
+EXPORT
+  bach literatur export                  (last 50 as bibtex)
+  bach literatur export --all            (export all)
+  bach literatur export --ids 1,2,3 --out refs.bib
+  bach literatur stats                   (overview)
+
+FIELD OPTIONS (at add/edit)
+  --author "Name1; Name2; Name3" (multiple authors with ;)
+  --year YYYY (year)
+  --type article|book|chapter|thesis|conference|website|other
+  --journal "journal name"
+  --publisher "publisher"
+  --doi "10.xxxx/xxxx"
+  --isbn "978-x-xxxx-xxxx-x"
+  --url "https://..."
+  --tags "tag1, tag2, tag3" (comma-separated)
+  --lang de|en (language, default: de)
+  --status unread|reading|read|archived
+  --rating 1-5 (star rating)
+  --notes "note"
+  --abstract "short description"
+  --pdf "/path/to/file.pdf"
+
+FILES
+  data/bach.db SQLite database
+  data/bach.db -> lit_sources source table
+  data/bach.db -> lit_quotes quote table
+  data/bach.db -> lit_summaries summary table
+  _services/literatur/citation_formatter Citation modules
+
+SEE ALSO
+  bach media       Media management
+  bach lesson      Lessons learned
+  bach mem         Memory system

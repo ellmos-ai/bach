@@ -1,0 +1,68 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+APRENDIZAJE - La memoria como proceso de aprendizaje
+================================
+
+DESCRIPCIÓN
+Visión filosófica del aprendizaje como un proceso de memoria.
+Se originó a partir del análisis de cómo aprenden los agentes BACH.
+
+TESIS PRINCIPAL
+----------
+"El aprendizaje es en realidad una forma de memoria."
+
+EL FLUJO DEL PROCESO
+------------------
+1. CONDICIÓN ACTUAL (Status Quo)
+   Situación inicial del sistema/conocimiento.
+
+2. EVENTO/EXPERIENCIA (Evento)
+   Interacción, nuevos aportes, éxito o fracaso.
+
+3. GUARDAR (Almacenamiento)
+   Registre datos de eventos sin procesar.
+
+4. CONSOLIDAR (Consolidación)
+   El paso de aprendizaje real:
+   - sacar ideas
+   - Derivar reglas (abstracción)
+   - Resumir la experiencia (compresión)
+
+CONCLUSIÓN
+-----
+El aprendizaje no es la acumulación de datos, sino la
+Consolidación de experiencias en nuevas estructuras.
+(Reglas/conocimiento) en la memoria.
+
+IMPLEMENTACIÓN EN BACH
+-----------------
+El sistema de memoria mapea este proceso:
+
+  Entrada --> Memoria de Trabajo --> Consolidación --> Hechos/Lecciones
+                    |                                     |
+                    | (fin de sesión) | (Permanente)
+                    vv
+              Inyectores/contexto de informes de sesión
+              (Episódico) (Semántico)
+
+APLICACIÓN PRÁCTICA
+--------------------
+1. Adquirir experiencia
+   bach memory write "Beobachtung: XYZ funktioniert nicht"
+
+2. derivar conocimiento
+   ¿Cuál es el núcleo? ¿Cuál es la regla?
+
+3. Guardar como lección
+   bach lesson add "Titel: Erkenntnis/Loesung"
+
+4. Disponible en contexto
+   La lección se inyecta cuando el contexto es relevante
+
+VER TAMBIÉN
+----------
+bach memory status         Descripción general del sistema de memoria
+bach lesson list           Sistema de lecciones aprendidas
+bach shutdown              Consolidación al final de la sesión

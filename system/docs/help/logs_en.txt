@@ -1,0 +1,71 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+LOGS - Auto-Logging System
+==========================
+
+DESCRIPTION
+BACH automatically logs all actions.
+Two-tier system for efficient storage.
+
+ARCHITECTURE
+-----------
+system/data/logs/auto_log.txt Last 300 entries (short-term memory)
+system/data/logs/auto_log_extended.txt Older entries, max 30 days
+
+Entries are automatically deleted after 30 days.
+
+CLI COMMANDS
+-----------
+bach --logs tail [n]         Last n entries (default: 20)
+bach --logs extended         Show extended archive
+bach --logs count            Number of entries
+
+python tools/autolog.py --tail 50 Last 50 entries
+python tools/autolog.py --extended extended archive
+python tools/autolog.py --count statistics
+python tools/autolog.py --log "Text" Manual entry
+
+LOG FORMAT
+----------
+[YYYY-MM-DD HH:MM:SS] TYPE: Message
+
+Types:
+  CMD Executed command
+  TOOL Tool call
+  SESSION Session start/end
+
+EXAMPLE OUTPUT
+---------------
+[2026-01-19 12:29:34] SESSION START
+[2026-01-19 12:29:35] CMD: startup
+[2026-01-19 12:30:00] TOOL: autolog --count
+[2026-01-19 12:35:00] SESSION END: Tax Agent Tasks
+
+INTEGRATION
+-----------
+Auto-logging is integrated into bach.py (via tools/autolog.py) and logs automatically:
+- Session start and end
+- All CLI commands
+- Tool calls
+
+STORAGE LOCATIONS
+------------
+Main log: system/data/logs/auto_log.txt
+Extended: system/data/logs/auto_log_extended.txt
+
+NOTE: The path system/logs/ is DEPRECATED.
+ONLY log folder is now system/data/logs/ (consolidated 2026-02-06).
+
+CONFIGURATION
+-------------
+MAX_LINES = 300 Maximum lines in main log
+ARCHIVE_DAYS = 30 days in the extended archive
+
+Values adjustable in tools/autolog.py.
+
+SEE ALSO
+----------
+bach --help startup    Shows Autolog status at session start
+bach --help shutdown   Session end logging

@@ -1,0 +1,147 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+============
+media — 媒体管理（电影、连续剧、音乐、播客、有声读物）
+
+描述
+============
+MediaHandler 管理媒体集合，支持各种
+媒体类型和来源。使用带有收藏夹的 SQLite 后端 (bach.db)，
+每个媒体的黑名单、播放历史记录和扩展元数据。
+
+媒体类型
+-----------
+  [F] 电影、[S] 系列、[M] 音乐、[C] 剪辑、[P] 播客、[A] 有声读物、[D] 文档
+
+来源
+-------
+  netflix、youtube、spotify、迪士尼、prime、appletv、twitch、本地
+
+操作
+===========
+
+添加
+  添加新媒体
+  用法：巴赫媒体添加“标题”[--type TYPE] [--source SOURCE] [--url URL]
+           [--艺术家“...”] [--专辑“...”] [--频道“...”] [--N 季]
+           [--第 N 集] [--评分 1-5] [--tags "tag1,tag2"] [--desc "..."]
+           [--path "/path/to/file"]
+
+列表
+  列出和过滤介质
+  用法：巴赫媒体列表 [--type TYPE] [--source SOURCE] [--fav] [--limit N]
+  标志：
+    --type TYPE 仅显示一种媒体类型
+    --source SOURCE 仅过滤一个源
+    --fav 仅显示收藏夹
+    --限制 N 最大值。 N 条目（默认：20）
+  输出：图标、收藏夹(*)、ID、标题、来源、评级
+
+搜索
+  按标题、艺术家、专辑、频道、标签、描述进行全文搜索
+  用法：巴赫媒体搜索“搜索词”
+  输出：最多 30 个点击，包括图标、收藏夹、ID、标题、来源
+
+显示
+  具有完整元数据的介质的详细视图
+  用法：巴赫媒体秀 <id>
+  输出：所有字段（标题、类型、来源、艺术家、专辑、季节/剧集、
+          评级、标签、描述、收藏夹、黑名单状态、日期、
+          最后 5 场）
+
+编辑
+  编辑媒体（任何字段）
+  用法： bach media edit <id> --title "New" [--type TYPE] [--source SOURCE]
+           [--url URL] [--desc“...”] [--艺术家“...”] [--专辑“...”]
+           [--频道“...”] [--第 N 季] [--第 N 集] [--评级 1-5]
+           [--标签“tag1,tag2”] [--注释“...”] [--路径“/path”]
+
+fav
+  设置/删除收藏夹
+  用法：bach media fav <id> [--remove]
+  标志：
+    --remove 删除收藏夹状态
+
+黑名单
+  锁定/解锁媒体（隐藏在列表/搜索中）
+  用法：巴赫媒体黑名单 <id> [--remove]
+  标志：
+    --remove 解锁
+
+打开
+  打开介质：浏览器或文件中的起始 URL。更新播放
+  历史记录和last_opened_at 时间戳。被阻止的媒体不能
+  被打开。
+  用法：bach media open <id>
+
+历史记录
+  所有媒体的播放历史记录（最新的在前）
+  用法：巴赫媒体历史 [--limit N]
+  显示：时间戳、图标、id、标题、来源、打开方式
+
+统计
+  统计概览：总数、收藏、屏蔽、播放、
+  按类型和来源分布
+  用法：巴赫媒体统计
+
+帮助
+  查看此帮助
+  用法：巴赫媒体帮助
+
+示例
+=========
+
+# 添加媒体（Netflix 上的电影）
+bach media add "Inception" --type movie --source netflix --url "https://..." \
+  -- rating 5 --desc "科幻杰作"
+
+# 添加媒介（音乐专辑）
+bach media add "Abbey Road" --type music --source spotify --artist "The Beatles" \
+  --album "Abbey Road" --year 1969
+
+# 添加媒体（本地文件）
+bach media add "Dokumentation" --type document --source local \
+  --path "C:\\Videos\\doku.mp4"
+
+# 显示所有收藏的电影
+bach media list --type movie --fav
+
+# 搜索系列
+bach media search "Breaking Bad"
+
+# 捕获带有季节/剧集的系列
+bach media add "Breaking Bad S01E01" --type series --source netflix \
+  --season 1 --episode 1 -- rating 5
+
+# 将媒体标记为收藏
+bach media fav 42
+
+# 删除收藏状态
+bach media fav 42 --remove
+
+# 将媒体标记为黑名单
+bach media blacklist 99
+
+# 打开媒体
+bach media open 42
+
+# 显示统计信息
+bach media stats
+
+文件
+=======
+
+Base: hub/media.py
+数据库：data/bach.db
+表：media_items、media_history
+配置：无（有关 CLI 标志的所有内容）
+
+另请参见
+==========
+
+  bach_api.media.* 编程 API
+  hub/base.py BaseHandler基类
+  docs/API.md BACH API 文档

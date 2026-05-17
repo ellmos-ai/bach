@@ -1,0 +1,297 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [tools/injectors.py, hub/inject.py]
+
+INJECTOR SYSTEM (Cognitive Orchestration)
+==========================================
+
+As of: 2026-02-08
+
+Injectors simulate THINKING and ASSOCIATIONS as CENTRAL EXECUTIVE.
+They orchestrate cognitive processing in three levels:
+- STATIC: knowledge base (wiki, help, context)
+- PROCESS-ACCOMPANYING: Active control during work
+- PROACTIVE: Memory calls and system logs
+
+Default: All ON (can be switched off at any time).
+
+COOLDOWN MANAGEMENT (v1.1.75)
+-----------------------------
+Injectors are muted for X minutes after display:
+- Strategy: 2 minutes
+- Context: 1 minute
+- Between: 3 minutes
+- Tool warning: 5 minutes
+
+Prevents annoying repetitions without losing function.
+
+THE 5 INJECTORS WITH PARTIAL FUNCTIONS
+-----------------------------------
+
+1. STRATEGY INJECTOR (metacognition)
+   Partial functions:
+   - Metacognition: What to do, when, how?
+   - Decision support for branches
+   - Error analysis ("Errors are valuable information")
+
+   Trigger words: error, complex, blocked, difficult, problem
+   Example: "Errors" -> "Errors are valuable information"
+   Cooldown: 2 minutes
+
+2. CONTEXT INJECTOR (working memory)
+   Partial functions:
+   - Recall task description
+   - Tool recommendations based on context
+   - Memory recall (short-term, long-term, session)
+   - Requirements analysis
+   - Integration with connector routing (see below)
+
+   Trigger: Keywords in the text (see TOOL-TRIGGER below)
+   Not aggressive - just hints
+   Cooldown: 1 minute
+
+3. TIME INJECTOR (sense of time)
+   Partial functions:
+   - Timebeat: Regular time updates
+   - Time budget awareness
+
+   Default interval: 60 seconds
+   Helps with sense of time and session management
+   No cooldown (own interval mechanism)
+
+4. BETWEEN INJECTOR (quality control)
+   Partial functions:
+   - Quality control after task done
+   - Regulate the transition to the next task
+   - Result check: Validation against requirements
+
+   Trigger: After “bach task done”
+   NOT at session end (recognizes this)
+   Cooldown: 3 minutes
+
+5. TOOL INJECTOR (tool awareness)
+   Partial functions:
+   - Tool reminder at session start (one-time)
+   - Warning about tool duplicates when creating
+   - Categorized tool overview
+
+   Categories: OCR, data import, domain handler, code analysis,
+               Encoding, import handling, conversion
+   Trigger: Text contains "new tool", "create tool" etc.
+   Cooldown: 5 minutes
+
+COGNITIVE ORCHESTRATION (diagram)
+-----------------------------------
+
++-----------------------------------------------------------------+
+  |                INJECTOR ORCHESTRATION |
+  |                (Central Executive) |
+  +-----------------------------------------------------------------+
+  |                                                             |
+  |  STATIC (knowledge base) |
+  |  +-- Meta skills, meta workflows |
+  |  +-- Wiki (wiki/) |
+  |  +-- Help (docs/help/*.txt) |
+  |  +-- context (memory_context) |
+  |                                                             |
+  |  PROCESS-ACCOMPANYING (via injectors) |
+  |  +-- strategy_injector (Cooldown: 2min) |
+  |  |   +-- Metacognition: What, when, how?                     |
+  |  |   +-- Decision support |
+  |  |   +-- Error analysis |
+  |  +-- context_injector (Cooldown: 1min) |
+  |  |   +-- Task reminder |
+  |  |   +-- Tool recommendations |
+  |  |   +-- Requirements analysis |
+  |  |   +-- Connector routing integration (see below) |
+  |  +-- between_injector (Cooldown: 3min) |
+  |  |   +-- Quality control |
+  |  |   +-- Task transition |
+  |  |   +-- result validation |
+  |  +-- time_injector (no cooldown) |
+  |  |   +-- Sense of time (Timebeat) |
+  |  +-- tool_injector (Cooldown: 5min) |
+  |      +-- Tool awareness (session start) |
+  |      +-- Duplicate warning |
+  |                                                             |
+  |  PROACTIVE (memory retrievals via context_injector) |
+  |  +-- Short-term memory (working_memory) |
+  |  +-- Long-term memory (facts, lessons) |
+  |  +-- Session memory (sessions) |
+  |  +-- System logs (changelog, buglog, roadmap) |
+  |                                                             |
+  +-----------------------------------------------------------------+
+
+COMMANDS
+-------
+  bach --inject status         Shows status of all injectors (including cooldown)
+  bach --inject toggle <name>  Switches on/off
+  bach --inject task <min>     Task for X minutes
+  bach --inject decompose <id> Zerlegt Aufgabe
+
+TOGGLE NAMES:
+  strategy (or strategy_injector)
+  context (or context_injector)
+  time (or time_injector)
+  between (or between_injector)
+
+SHOW COOLDOWN STATUS:
+  bach --inject status zeigt verbleibende Cooldown-Zeit in Sekunden
+
+TOOL TRIGGER (context injector)
+-------------------------------
+The context injector recognizes keywords and recommends tools:
+
+  PYTHON EDITING
+  ------------------
+  "edit python" -> bach python_cli_editor <file> --show-all
+  "edit class" -> bach python_cli_editor <file> --show-all
+  "edit method" -> bach python_cli_editor <file> --show-all
+  "code structure" -> bach python_cli_editor <file> --show-all
+  "show imports" -> bach python_cli_editor <file> --show-imports
+
+  CODE ANALYSIS
+  ------------
+  "analyze code" -> bach code_analyzer <file>
+  "dead code" -> bach code_analyzer <file>
+
+  ENCODING & FORMATTING
+  ----------------------
+  "encoding problem" -> bach c_encoding_fixer <file>
+  "umlaute broken" -> bach c_encoding_fixer <file>
+  "utf-8" -> bach c_encoding_fixer <file>
+  "emoji" -> bach c_emoji_scanner <file>
+  "indentation" -> bach c_indent_checker <file>
+
+  IMPORT HANDLING
+  ---------------
+  "Sort imports" -> bach c_import_organizer <file>
+  "import problem" -> bach c_import_diagnose <file>
+  "import is missing" -> bach c_import_diagnose <file>
+
+  FILE OPERATIONS
+  -----------------
+  "split file" -> bach c_pycutter <file>
+  "too big" -> bach c_pycutter <file>
+  "view sqlite" -> bach c_sqlite_viewer <db>
+  "json problem" -> bach c_json_repair <file>
+
+  CONVERSION
+  -------------
+  "markdown to pdf" -> bach c_md_to_pdf <file>
+  "convert format" -> bach c_universal_converter <file>
+
+TOOL SEARCH
+  ----------
+  "find tool" -> bach tool suggest 'description'
+  "which tool" -> bach tool suggest 'description'
+  "Search tool" -> bach tools search <term>
+
+  HELP & CONVENTIONS
+  --------------------
+  "new tool" -> --help naming (tool prefixes)
+  "concept" -> --help practices
+  "architecture" -> --help practices
+  "memory" -> --help memory
+  "task" -> --help tasks
+  "path" -> --help bach_paths
+  "skill" -> --help skills
+  "version" -> bach --skills version <name>
+
+SAMPLE OUTPUT
+----------------
+When Claude reads "edit python":
+
+  [CONTEXT] Python editor: bach python_cli_editor <file> --show-all
+
+When Claude reads "encoding problem":
+
+  [CONTEXT] Encoding fix: bach c_encoding_fixer <file>
+
+CONNECTOR ROUTING INTEGRATION (NEW v1.1.75)
+-------------------------------------------
+ContextInjector is now integrated into the connector message flow:
+
+ROUTING PIPELINE (queue_processor.py):
+  Incoming message (connector_messages)
+    |
+    v
+  route_incoming() applies:
+    1. ContextInjector.check(text) - 100+ hardcoded triggers + DB cache
+    2. context_triggers table - 900+ dynamic triggers from DB
+    |
+    v
+  Message with metadata hints (messages.inbox)
+    -> metadata["context_hints"] = [hint1, hint2, ...]
+    -> metadata["context_triggers"] = [trigger1, trigger2, ...]
+
+ADVANTAGE:
+- Incoming messages receive IMMEDIATE context information
+- LLM already sees relevant tool recommendations
+- No manual search for tools necessary
+- Context is supplied as metadata (not in the text)
+
+EXAMPLE:
+  User writes: "encoding problem with file X"
+  -> ContextInjector detects “encoding problem”
+  -> Metadata: {"context_hints": "bach c_encoding_fixer <file>"}
+  -> LLM gets hint as system info, not as user text
+
+DATABASE TRIGGER:
+  Table context_triggers (900+ entries):
+  - trigger_phrase: search term (e.g. “edit python”)
+  - hint_text: recommendation (e.g. "bach python_cli_editor <file>")
+  - Automatically queried during routing
+  - Dynamically expandable without code changes
+
+CONFIGURATION
+-------------
+In config.json under "injectors":
+
+  {
+    "injectors": {
+      "strategy_injector": true,
+      "context_injector": true,
+      "time_injector": true,
+      "between_injector": true,
+      "timebeat_interval": 60
+    }
+  }
+
+IMPORTANT
+-------
+- Injectors can also be annoying/distracting!
+- Can be switched off at any time: bach --inject toggle context (or strategy, time, between)
+- Note on how to switch off with every strategy injection
+- NO new injectors necessary - the 5 cover all functions
+- Cooldowns automatically prevent annoying repetitions
+
+CODE REFERENCE
+-------------
+  tools/injectors.py Injector implementation
+  hub/inject.py CLI handler
+  hub/_services/connector/queue_processor.py Connector Integration
+
+CLASSES & COMPONENTS:
+  InjectorSystem - Main interface, orchestrates all injectors
+  StrategyInjector - Metacognition, trigger-based
+  ContextInjector - tool recommendations, DB cache (~100 triggers)
+  TimeInjector - Timebeat (60s interval)
+  BetweenInjector - Quality control after task done
+  ToolInjector - Tool awareness, duplicate warning
+  CooldownManager - Cooldown management (strategy=2min, context=1min, between=3min)
+  TaskAssigner - task assignment based on time budget
+
+DATABASE TABLES:
+  context_triggers      - 900+ dynamic triggers (trigger_phrase, hint_text)
+  injector_cooldowns    - Cooldown timestamps (injector_name, last_shown)
+
+SEE ALSO
+----------
+  bach --help tools                      Tool overview
+  bach --help tools/python_cli_editor    Detailed tool documentation
+  bach --help memory                     Memory system
+  bach --help connector                  Connector system & Message routing
+  bach tools search                      Tool search
+  bach tool suggest                      Tool recommendation

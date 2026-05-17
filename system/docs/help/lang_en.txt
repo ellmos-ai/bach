@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+============
+lang - Multilingualism and translation management
+
+DESCRIPTION
+============
+The LANG handler manages multilingual content in BACH. He scans code
+German strings, carries out translations, validates missing ones
+Translations and manages a basic dictionary with 119 German terms.
+Uses SQLite database (bach.db) with tables: languages_config,
+languages_translations, languages_dictionary.
+
+OPERATIONS
+===========
+  status View language configuration and statistics
+  scan Search code directories for German strings
+  scan --namespace Scan only specific area (cli, gui, help, skills)
+  list Show all translations
+  list --lang <code> Specific language only (e.g. de/en/es/ru/ja/zh)
+  missing Missing translations (default: de without en)
+  missing --target es Missing Spanish translations
+  translate Start auto-translation (based on dictionary)
+  translate --target en Auto-translation for target language
+  add <key> Manually add translation (--de, --en, --es ... or --lang/--text)
+  add-language <code> Register new language (e.g. fr, es, pt)
+  export Export for LLM review (JSON format, standard: de -> en)
+  export --target zh For Chinese export
+  import <file> Import and integrate LLM review file
+  set <lang> Set default language (e.g. de/en/es/ru/ja/zh)
+  dict status Show dictionary status
+  dict init Load basic dictionary (119 terms).
+  dict add <src> <dst> [--source-lang de --target-lang es]
+  dict search <term> Search term in dictionary
+
+EXAMPLES
+=========
+# Show language status
+  bach lang status
+
+# Search code for German texts
+  bach lang scan
+  bach lang scan --namespace cli
+
+# Identify missing translations
+  bach lang missing
+  bach lang missing --target es
+
+# Translate manually
+  bach lang add "speichern" --de "Speichern" --en "Save"
+  bach lang add "speichern" --es "Guardar" --ru "Sohranit"
+
+# Prepare LLM review
+  bach lang export
+  bach lang export --target zh
+  [... LLM edits file ...]
+  bach lang import export.json
+
+# Add new language (French)
+  bach lang add-language fr
+
+# Set default language to English
+  bach lang set en
+  bach lang set ja
+
+# Load dictionary base (119 entries)
+  bach lang dict init
+
+FILES
+=======
+Implementation: hub/lang.py (LangHandler class)
+Database: data/bach.db (SQLite)
+  - languages_config table: default language, fallback, auto-translate flag
+  - Table languages_translations: All translations with metadata
+  - table languages_dictionary: basic dictionary (119 terms)
+Export format: JSON (translations + metadata, compatible with LLM tools)
+Release artifacts: system/exports/translations/ (manifest, locale files, seed SQL)
+
+SEE ALSO
+==========
+  bach cli        - Command line interface
+  bach backup     - Database backups (write translations to bach.db)
+  bach help       - Help system for all handlers

@@ -1,0 +1,68 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [tabla system_identity], [hub/dist.py], [tools/generators/distribution_system.py]
+# Estado: MANEJADOR DEFECTUOSO: el enrutamiento dist no funciona
+
+SISTEMA DE IDENTIDAD
+===============
+
+A partir de: 2026-02-08
+
+El sistema de identidad garantiza la integridad e identificación de la instancia BACH.
+Las funciones se implementan en el controlador de distribución, pero el enrutamiento CLI está roto.
+
+TABLA: system_identity (Central Singleton)
+----------------------------------------------
+  - id: clave principal (DEBE ser 1 - Singleton)
+  -stance_id: UUID único de la instalación
+  - nombre_instancia: nombre individual (por ejemplo, "BACH_Alpha")
+  - versión: versión BACH actual (por ejemplo, v1.1.83)
+  - creado_at: fecha de creación
+  - seal_status: estado de integridad ('intacto' | 'roto')
+  - kernel_hash: SHA256 de los archivos del kernel del sistema
+  - last_verified: última hora de verificación
+  - current_mode: modo de funcionamiento (predeterminado: 'desarrollador')
+  - last_boot: última hora de arranque
+  - boot_count: Número de arranques (predeterminado: 0)
+
+MECANISMO DE SELLO
+------------------
+  1. Comprobación de arranque: el hash del kernel se calcula para cada inicio
+  2. Comparación: ¿El hash coincide con la base de datos?
+  3. Estado: Si hay una desviación, el sello está “roto”
+  4. Advertencia: Un sello roto indica intervención manual
+
+COMANDOS CLI (DOCUMENTADOS pero ROTO)
+----------------------------------------
+  bach --dist status         Mostrar el estado del sistema con información del sello
+  bach --dist verify         Verificar la integridad del sello
+
+PROBLEMA: El controlador dist (hub/dist.py) existe e implementa esto
+funciona, pero el enrutamiento CLI en bach.py no lo llama correctamente.
+Sólo funciona "bach dist list".
+
+NO IMPLEMENTADO
+-------------------
+  bach --dist reseal         (NO EXISTE - no hay función de resellado)
+
+No hay reparación automática si el sello está roto. Tienes que hacerlo manualmente.
+establezca un nuevo sello a través de Distribution_system.py.
+
+IMPLEMENTACIÓN
+--------------
+  Controlador: system/hub/dist.py (DistHandler)
+  Backend: sistema/herramientas/generadores/distribution_system.py
+  Operaciones: estado, verificar, escanear, tomar instantáneas, liberar, restaurar, instalar, enumerar
+  Funciona: Solo "lista": todas las demás operaciones no se enrutan 
+
+CONTEXTO
+-------
+La identidad es parte del sistema de distribución (anteriormente capa de gobernanza 5).
+Garantiza que la "memoria" (DB) coincida con el "hardware" (sistema de archivos).
+
+VER TAMBIÉN
+----------
+  Herramientas de mantenimiento docs/help/maintain.txt (sin función de identidad)
+  docs/help/distribution.txt Distribución y lanzamientos
+  docs/help/bach_info.txt Descripción general del sistema

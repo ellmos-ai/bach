@@ -1,0 +1,129 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH HOOK-FRAMEWORK
+===================
+
+A partir de: 2026-02-13
+
+Los ganchos son un sistema de eventos expandible para el ciclo de vida de BACH.
+Le permiten adjuntar su propia lógica a los eventos del sistema central,
+SIN cambiar el código existente.
+
+IMPORTANTE: GANCHOS != INYECTORES
+-----------------------------
+  Hooks = Marco técnico (eventos del ciclo de vida, integración de complementos)
+  Inyectores = subsistema cognitivo (simulación de pensamiento, alivio cognitivo)
+
+Los ganchos y los inyectores funcionan de forma independiente unos de otros.
+Los inyectores quedan como un subsistema independiente.
+
+EVENTOS DISPONIBLES (17)
+------------------------
+  Evento cuando claves de contexto
+  ---------------------- ---------------------------- ------------------------
+  before_startup Antes del protocolo de inicio socio, modo, rápido
+  after_startup Después de una startup exitosa socio, modo, éxito
+  before_shutdown Antes del cierre socio de protocolo, modo
+  after_shutdown Después del apagado socio, modo, éxito
+  before_command Antes de cada controlador de comandos CLI, operación, argumentos
+  after_command Después de cada controlador de comando CLI, operación, éxito, argumentos
+  after_task_create Después de la creación de la tarea task_id, título
+  after_task_done Después de completar la tarea task_id, título
+  after_task_delete Después de la eliminación de la tarea task_id
+  after_memory_write Después del tipo de entrada de memoria, contenido
+  after_lesson_add Después de la creación de la lección lección_id, título, categoría, gravedad
+  after_skill_create Después de la creación de la habilidad, nombre, tipo y ruta
+  after_skill_reload Después de la recarga en caliente handler_count
+  after_plugin_load Después de cargar el complemento, nombre, versión, ganchos, controladores
+  after_plugin_unload Después del nombre de descarga del complemento
+  after_capability_denied Complemento de capacidad, capacidad, motivo
+  after_email_send Después de enviar el correo electrónico draft_id, destinatario
+
+COMANDOS CLI
+-----------
+  bach hooks status            Estado de todos los enlaces y oyentes
+  bach hooks events            Listar todos los eventos con descripción
+  bach hooks log               Mostrar las últimas ejecuciones de enlaces
+  bach hooks test <event>      Emitir evento de prueba (depuración)
+
+  Forma corta:
+  bach hook status             (Alias: gancho -> ganchos)
+
+USO DE API
+-----------
+  desde core.hooks importar ganchos
+
+  # Registrar oyentes
+  def mi_handler(contexto):
+      print(f"Tarea creada: {context['task_id']}")
+      devolver "procesado" # Opcional
+
+  hooks.on('after_task_create', my_handler, nombre='my_plugin')
+
+  # Oyente con prioridad (inferior = anterior, predeterminado = 50)
+  hooks.on('after_startup', check_updates, prioridad=10, nombre='actualizador')
+
+  # Eliminar oyentes
+  hooks.off('after_task_create', nombre='my_plugin')
+
+  # Emitir evento manualmente
+  resultados = hooks.emit('after_task_create', {'task_id': 42, 'title': 'Prueba'})
+
+  # Estado de la consulta
+  imprimir(ganchos.status())
+
+  # Comprobar si el evento tiene oyentes
+  si ganchos.has_listeners('after_startup'):
+      print("El inicio está siendo monitoreado")
+
+REGISTRAR GANCHOS PROPIOS
+--------------------------
+Los socios de IA pueden registrar sus propios ganchos para expandir BACH:
+
+  desde core.hooks importar ganchos
+
+  # Ejemplo: copia de seguridad automática después de completar cada tarea
+  def auto_backup_nach_task(ctx):
+      desde bach_api importar copia de seguridad
+      copia de seguridad.crear()
+      return f"Copia de seguridad después de la tarea #{ctx['task_id']}"
+
+  hooks.on('after_task_done', auto_backup_nach_task, nombre='auto_backup')
+
+  # Ejemplo: notificación de inicio
+  def notificación_inicio(ctx):
+      desde bach_api importar mensaje
+      msg.send("usuario", f"Sesión iniciada ({ctx['partner']})")
+
+  hooks.on('after_startup', startup_notification, name='notify')
+
+SEGURIDAD
+----------
+  - Los ganchos están encapsulados en try/except: un oyente roto
+    NUNCA bloquea la operación real
+  - Los oyentes sólo reciben contexto de lectura (dict), no acceso de escritura
+  - La priorización evita conflictos de pedidos.
+  - Registro de ganchos (registro de ganchos de Bach) para depuración
+
+ARQUITECTURA
+-----------
+core/hooks.py HookRegistry singleton (marco)
+  Controlador CLI hub/hooks.py (ganchos de Bach...)
+  core/app.py Emite antes/después_command
+  hub/startup.py Emite antes/después del inicio
+  hub/shutdown.py Emite antes/después del apagado
+  hub/task.py Emite after_task_create/done
+  hub/memory.py Emite after_memory_write
+  hub/lesson.py Emite after_lesson_add
+  hub/skills.py Emite after_skill_create/reload
+  core/plugin_api.py Emite after_plugin_load/unload
+  core/capabilities.py Emitido after_capability_denied
+
+VER TAMBIÉN
+----------
+  bach help cli              Convenciones CLI
+  bach help skills           Sistema de habilidades
+  bach help self-extension   Flujo de trabajo de autoextensión
+  bach --inject status       Sistema de inyector (subsistema separado)

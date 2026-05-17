@@ -1,0 +1,118 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH のインストール
+=================
+
+
+説明
+============
+BACH の初期インストールの手順。 BACH はパーソナル エージェント OS、
+ローカルで実行され、AI モデルを調整します。
+
+
+要件
+===============
+- Python >= 3.10
+- npm (MCP サーバー用)
+- > 100 MB の空きメモリ
+- オプション: OneDrive (マルチシステム同期用)
+- オプション: Tailscale (サーバーへのリモート アクセス用)
+
+
+QUICK START
+============
+# 1. リポジトリのクローンを作成します。
+git clone https://github.com/ellmos-ai/bach.git
+cd bach
+
+# 2. 要件を確認します
+bach setup preflight
+
+# 3. インストールを完了します
+bach setup full-install
+
+# 4. 最初のセッションを開始します
+bach --startup
+
+
+フルインストール手順
+=====================
+「bach setup full-install」は次の手順を自動的に実行します:
+
+1。プリフライトチェック Python、npm、メモリ、書き込み権限
+2. ProSync シングル システムまたはマルチ システムを構成します (デフォルト: シングル)
+3. MCP サーバー ellmos-codecommander-mcp、ellmos-filecommander-mcp
+4. Claude コードフック ~/.claude/ 内の DB 保護およびその他のフック
+5. シークレットの初期化 ~/.bach/bach_secrets.json
+6. ユーザープロファイル USER.md をパーソナライズし、DB と同期する
+7. 言語 (オプション) システム言語を設定し、ドキュメントを切り替えます
+8. ヘルプ ドキュメント (オプション) 選択した言語のヘルプ ファイルを生成します (EN フォールバック)
+9. すべてのコンポーネントの検証最終チェック
+
+オプション: n8n-Manager-MCP の場合は --with-n8n、言語選択の場合は --lang <code> (de/en/es/ru/ja/zh)、
+--config <json> はバッチ構成用です。
+
+
+使用シナリオ
+=================
+BACH がインストールされています。インストール後、構成オプションが決定します
+導入シナリオについて。
+
+単一システム (デフォルト)
+-----------------------
+BACH は 1 台のコンピュータで実行され、同期は必要ありません。
+
+  bach setup full-install
+  # ProSync は非アクティブ化されたままです (デフォルト)
+
+OneDrive を使用したマルチシステム
+-------------------------
+BACH は OneDrive にあり、複数のコンピューターで使用されます。
+各システムにはローカル データベース (~/.bach/bach.db) があり、
+ProSync は同期されています。
+
+  bach setup full-install
+  bach setup prosync --multi-system
+  # 同期: bach db sync (手動) または開始/終了時に自動的に同期
+
+サーバー (ヘッドレス)
+-----------------
+BACH はサーバー (Mac Studio、Linux サーバーなど) 上で実行され、
+Telegram、Web GUI、またはシステム トレイ経由でリモート制御。
+
+  bach setup full-install
+  # 次に、コネクタをアクティブにします。
+  # - テレグラムボット: Hub/_services/chat/telegram_chat.py
+  # - Web GUI: gui/server.py --host 0.0.0.0
+  # - システム トレイ: Hub/_services/chat/chat_tray.py --port 8081
+  # - CLI チャット: Hub/_services/chat/buddha_cli.py
+
+マルチシステム サーバーの場合:
+  bach setup prosync --multi-system
+
+
+インストール後
+=====================
+bach setup check           インストールを検証
+bach --startup             最初のセッションを開始
+bach --help                ヘルプ システムを使用
+bach --help setup          セットアップ オプションを表示
+
+
+ファイル
+=======
+hub/setup.py セットアップ ハンドラー (インストーラー ロジック)
+data/bach.db BACH データベース (インストール時に作成)
+../USER.md ユーザー プロファイル (テンプレート -> 個人用)
+~/.bach/bach_secrets.json Secrets Vault
+~/.claude/settings.json クロード コード フック
+
+
+関連項目
+==========
+docs/help/setup.txt ハンドラーのセットアップ (すべての操作)
+docs/help/check.txt インストール後の検証
+docs/help/db_sync.txt ProSync: マルチシステム DB 同期
+docs/help/startup.txt セッションの開始

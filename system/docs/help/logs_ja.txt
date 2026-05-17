@@ -1,0 +1,71 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ログ - 自動ログ システム
+==========================
+
+説明
+BACH はすべてのアクションを自動的に記録します。
+効率的なストレージのための 2 層システム。
+
+アーキテクチャ
+-----------
+system/data/logs/auto_log.txt 最新 300 エントリ (短期記憶)
+system/data/logs/auto_log_extended.txt 古いエントリ、最大 30 日
+
+エントリは 30 日後に自動的に削除されます。
+
+CLI コマンド
+-----------
+bach --logs tail [n]         最後の n エントリ (デフォルト: 20)
+bach --logs extended         拡張アーカイブを表示
+bach --logs count            エントリ数
+
+python tools/autolog.py --tail 50 最新の 50 エントリ
+python tools/autolog.py --extended 拡張アーカイブ
+python tools/autolog.py --count 統計
+python tools/autolog.py --log "テキスト" 手動エントリ
+
+ログ形式
+----------
+[YYYY-MM-DD HH:MM:SS] タイプ: メッセージ
+
+タイプ:
+  CMD 実行されたコマンド
+  TOOL ツール呼び出し
+  SESSION セッションの開始/終了
+
+出力例
+---------------
+[2026-01-19 12:29:34] セッションの開始
+[2026-01-19 12:29:35] CMD: 起動
+[2026-01-19 12:30:00] ツール: autolog --count
+[2026-01-19 12:35:00] セッション終了: 税務担当者のタスク
+
+統合
+-----------
+自動ログは bach.py (tools/autolog.py 経由) に統合され、自動的にログが記録されます。
+- セッションの開始と終了
+- すべての CLI コマンド
+- ツール呼び出し
+
+ストレージの場所
+------------
+メインログ: system/data/logs/auto_log.txt
+拡張: system/data/logs/auto_log_extended.txt
+
+注: パス system/logs/ は非推奨です。
+ログ フォルダーのみが system/data/logs/ になりました (2026 年 2 月 6 日に統合されました)。
+
+CONFIGURATION
+-------------
+MAX_LINES = 300 メイン ログの最大行数
+ARCHIVE_DAYS = 拡張アーカイブでは 30 日
+
+値は tools/autolog.py. で調整可能
+
+関連項目
+----------
+bach --help startup    セッション開始時の自動ログ ステータスを表示
+bach --help shutdown   セッション終了ログ

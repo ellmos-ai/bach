@@ -1,0 +1,71 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+日志 - 自动记录系统
+==========================
+
+描述
+BACH 自动记录所有操作。
+两层系统可实现高效存储。
+
+架构
+-----------
+system/data/logs/auto_log.txt 最后 300 条条目（短期记忆）
+system/data/logs/auto_log_extended.txt 较旧的条目，最多 30 天
+
+条目将在 30 天后自动删除。
+
+CLI 命令
+-----------
+bach --logs tail [n]         最后 n 条目（默认：20）
+bach --logs extended         显示扩展存档
+bach --logs count            条目数
+
+python tools/autolog.py --tail 50 最后 50 条条目
+python tools/autolog.py --extended 扩展存档
+python 工具/autolog.py --计数统计
+python tools/autolog.py --log "Text" 手动输入
+
+日志格式
+----------
+[YYYY-MM-DD HH:MM:SS] 类型：消息
+
+类型：
+  CMD 执行命令
+  TOOL 工具调用
+  会话会话开始/结束
+
+示例输出
+---------------
+[2026-01-19 12:29:34] 会话开始
+[2026-01-19 12:29:35] CMD：启动
+[2026-01-19 12:30:00] 工具：autolog --count
+[2026-01-19 12:35:00] 会话结束：税务代理任务
+
+集成
+-----------
+自动日志记录已集成到 bach.py（通过 tools/autolog.py）并自动记录：
+- 会话开始和结束
+- 所有 CLI 命令
+- 工具调用
+
+存储位置
+------------
+主日志：system/data/logs/auto_log.txt
+扩展：system/data/logs/auto_log_extended.txt
+
+注意：路径 system/logs/ 已弃用。
+现在，唯一的日志文件夹是 system/data/logs/（2026 年 2 月 6 日合并）。
+
+配置
+-------------
+MAX_LINES = 300 主日志中的最大行数
+ARCHIVE_DAYS = 扩展存档中的 30 天
+
+可在 tools/autolog.py 中调整值。
+
+另请参阅
+----------
+bach --help startup    在会话开始时显示自动日志状态
+bach --help shutdown   会话结束日志记录

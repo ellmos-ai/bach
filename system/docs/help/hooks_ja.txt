@@ -1,0 +1,129 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH フック フレームワーク
+===================
+
+現在: 2026-02-13
+
+フックは、BACH のライフサイクル用の拡張可能なイベント システムです。
+これにより、独自のロジックを中央システム イベントに接続できるようになります。
+既存のコードを変更する必要はありません。
+
+重要: フック != インジェクター
+-----------------------------
+  フック = 技術フレームワーク (ライフサイクル イベント、プラグイン統合)
+  インジェクター = 認知サブシステム (思考シミュレーション、認知緩和)
+
+フックとインジェクターは互いに独立して機能します。
+インジェクターは独立したサブシステムとして残ります。
+
+利用可能なイベント (17)
+------------------------
+  コンテキストキーのイベント
+  ------------------------ ------------------------ ------------------------
+  before_startup 起動前プロトコルパートナー、モード、クイック
+  after_startup スタートアップパートナー、モード、成功後
+  before_shutdown シャットダウン前のプロトコル パートナー、モード
+  after_shutdown シャットダウン後のパートナー、モード、成功
+  before_command 各 CLI コマンド ハンドラ、操作、引数の前
+  after_command 各 CLI コマンド ハンドラー、操作、成功、引数の後
+  after_task_create タスク作成後 task_id、title
+  after_task_done タスク完了後 task_id、title
+  after_task_delete タスク削除後 task_id
+  after_memory_write アフタメモリエントリタイプ、内容
+  after_lesson_add レッスン作成後、lesson_id、タイトル、カテゴリ、重要度
+  after_skill_create スキル作成後の名前、タイプ、パス
+  after_skill_reload ホット リロード後 handler_count
+  after_plugin_load プラグインのロード後、名前、バージョン、フック、ハンドラー
+  after_plugin_unload プラグインのアンロード後の名前
+  after_capability_denied 機能プラグイン、機能、理由
+  after_email_send 電子メールのdraft_id、受信者を送信した後
+
+CLIコマンド
+-----------
+  bach hooks status            すべてのフックとリスナーのステータス
+  bach hooks events            すべてのイベントを説明付きでリスト
+  bach hooks log               最後のフック実行を表示
+  bach hooks test <event>      テストイベントを発行(デバッグ)
+
+  短縮形:
+  bach hook status             (エイリアス: フック -> フック)
+
+API の使用法
+-----------
+  core.hooks インポート フックから
+
+  # リスナーを登録する
+  def my_handler(コンテキスト):
+      print(f"作成されたタスク: {context['task_id']}")
+      "処理済み" を返す # オプション
+
+  フック.on('after_task_create', my_handler, name='my_plugin')
+
+  # 優先度を持つリスナー (低い = 早い、デフォルト = 50)
+  フック.on('after_startup', check_updates, priority=10, name='updater')
+
+  # リスナーを削除する
+  フック.off('after_task_create', name='my_plugin')
+
+  # イベントを手動で発行する
+  results =hooks.emit('after_task_create', {'task_id': 42, 'title': 'Test'})
+
+  # ステータスのクエリ
+  print(hooks.status())
+
+  # イベントにリスナーがあるかどうかを確認する
+  ifhooks.has_listeners('after_startup'):
+      print("起動は監視されています")
+
+独自のフックを登録する
+--------------------------
+AI パートナーは独自のフックを登録して BACH を拡張できます:
+
+  core.hooks インポート フックから
+
+  # 例: 各タスク完了後の自動バックアップ
+  def auto_backup_nach_task(ctx):
+      bach_api インポート バックアップから
+      バックアップ.作成()
+      return f"タスク #{ctx['task_id']} 後のバックアップ"
+
+  フック.on('after_task_done', auto_backup_nach_task, name='auto_backup')
+
+  # 例: 起動通知
+  def 起動通知(ctx):
+      bach_api インポート メッセージから
+      msg.send("user", f"セッションが開始されました ({ctx['partner']})")
+
+  hooks.on('after_startup',startup_notification,name='notify')
+
+SECURITY
+----------
+  - フックは try/excel にカプセル化されます: 壊れたリスナー
+    実際の操作を決してブロックしないでください
+  - リスナーは読み取りコンテキスト (dict) のみを受け取り、書き込みアクセスは受け取りません。
+  - 優先順位付けにより順序の競合を防止します
+  - デバッグ用のフック ログ (バッチ フック ログ)
+
+アーキテクチャ
+-----------
+core/hooks.py HookRegistry シングルトン (フレームワーク)
+  Hub/hooks.py CLI ハンドラー (バッチフック...)
+  core/app.py before/after_command の出力
+  Hub/startup.py before/after_startup を出力します。
+  Hub/shutdown.py before/after_shutdown で出力
+  Hub/task.py after_task_create/done を出力します
+  Hub/memory.py after_memory_write を発行します
+  Hub/lesson.py after_lesson_add を出力します
+  Hub/skills.py after_skill_create/reload を発行します
+  core/plugin_api.py after_plugin_load/unload を発行します
+  core/capabilities.py after_capability_denied で発行
+
+関連項目
+----------
+  bach help cli              CLI 規約
+  bach help skills           スキル システム
+  bach help self-extension   自己拡張ワークフロー
+  bach --inject status       インジェクター システム (別個のサブシステム)

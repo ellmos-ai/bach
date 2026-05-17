@@ -1,0 +1,325 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [Multi-LLM Protocol, Bridge, Swarm System, Claude Code Docs]
+
+LLM COMMUNICATION -- OVERVIEW OF ALL METHODS
+================================================
+
+As of: 2026-02-17
+Context: How can LLM instances (Claude, Gemini, Ollama) interact with each other
+         and communicate with the outside world? Catalog of all known ones
+         Methods evaluated according to suitability for different scenarios.
+
+21 FORMS OF COMMUNICATION
+========================
+
+NOTE: 15 generic methods (1-15) + 6 BACH-specific (16-21).
+The generic methods can be transferred to any LLM system.
+The BACH-specific ones use BACH's own infrastructure.
+
+1. LEAVE FILES (drop file)
+-----------------------------------
+   Method: LLM writes file, other LLM reads it later
+   Direction: Unidirectional (Writer -> Reader)
+   Latency: High (reader must actively check)
+   Example: Agent writes result.txt, next agent reads it
+   Strength: Simplest possible method, no infrastructure required
+   Weakness: No notification mechanism, timing issues
+   BACH: Basic method in many workflows
+
+2. MEMORY.md (Shared file)
+----------------------------------------
+   Method: All LLM partners read/write the same MEMORY.md
+   Direction: Bidirectional (all read and write)
+   Latency: Session-based (changes take effect from the next session)
+   Example: Claude writes Lesson Learned, Gemini reads it next session
+   Strength: Automatically injected at session start (Claude Code)
+   Weakness: 200 line limit, no real time, maintained manually
+   BACH: Currently one per partner; SQ043 plans shared memory DB
+
+3. COMMON MEMORY (database)
+---------------------------------------
+   Method: Central DB (bach.db) into which everyone writes/reads
+   Direction: Bidirectional, Multi-Party
+   Latency: Immediately (for DB access within a session)
+   Example: Agent saves fact, other agent queries facts
+   Strength: Structured, searchable, weighted, persistent
+   Weakness: Needs DB access handler, not automatically injected
+   BACH: facts, lessons, context_triggers in bach.db (890+ entries)
+
+4. INJECTORS AS COMMUNICATION
+---------------------------------
+   Method: System reminders are injected into the message stream
+   Direction: System -> LLM (unidirectional)
+   Latency: Immediately (on next message)
+   Example: Hook injects message via hook_additional_context
+   Variants:
+     a) Claude Code injectors (52 types, not controllable)
+     b) BACH injectors (5 types, LLM controllable)
+     c) Hook-based (UserPromptSubmit reads "Inbox" file)
+   Strength: Appears in the context without active retrieval
+   Weakness: CC injectors cannot be controlled by the user/LLM
+   BACH: ContextInjector, SessionInjector, PartnerInjector,
+               HealthInjector, DonationInjector
+   See also: claude-code-injections.txt, injectors.txt
+
+5. STIGMERGY / MARGATOR'S MAP
+--------------------------------------
+   Method: Agents leave marker files (pheromones)
+               Other agents read the markers and adapt behavior
+   Direction: Indirect bidirectional (via environment)
+   Latency: Instant (File System)
+   Example: Bot writes .visited.log, others avoid visited areas
+   Markers: .done, .in_progress, .visited.log, .counter, .flag
+   Strength: No direct communication required, scales well
+   Weakness: No guarantee that marker will be read, evaporation necessary
+   BACH: data/swarm/map/, maintenance_swarm.py, marauders_map.py
+   See also: trampelpfadanalyse.md (Chapter 2: Swarm method)
+
+6. HANDOFF FILES (Explicit Handoff)
+------------------------------------------
+   Method: Structured transfer document between instances
+   Direction: Unidirectional (predecessor -> successor)
+   Latency: Immediately (file is written before the successor starts)
+   Example: Marble Run: handoff.md with task, status, result, feedback
+   Strength: Full context transfer, structured, comprehensible
+   Weakness: Only for serial chains, not for parallel communication
+   BACH: tools/llmauto/state/handoff.md (marble run pipeline)
+
+7. BRIDGE / CONNECTORS (External channels)
+------------------------------------------
+Method: BACH sends/receives messages via external services
+   Direction: Bidirectional (BACH <-> human/other system)
+   Latency: seconds (depending on service)
+   Example: User writes Telegram message, BACH responds
+   Channels: Telegram (Beta), Discord (Beta), HomeAssistant (Beta),
+               Signal (planned), WhatsApp (planned)
+   Strength: Communication with the real world, not just LLM-to-LLM
+   Weakness: Depends on external APIs, scraping-based for some
+   BACH: connectors/, hub/connector.py, bridge system
+   See also: bridge.txt, connectors.txt
+
+8. CLAUDE CODE TEAM MODE
+---------------------------
+   Method: Built-in team coordination in Claude Code CLI
+   Direction: Bidirectional (Leaders <-> Teammates)
+   Latency: Immediately (message queue within the session)
+   Example: Team lead sends task to researcher, gets result
+   Features: SendMessage, TaskList, TaskCreate, TaskUpdate, Broadcast
+   Strength: Anthropic-native, well integrated, parallel work
+   Weakness: Only within a Claude Code session, no Opus/Sonnet mix
+   BACH: Not directly integrated (Claude Code Feature, not BACH)
+
+9. GIT AS COMMUNICATION
+--------------------------
+   Method: Commits + commit messages as messages between instances
+   Direction: Bidirectional (Push/Pull)
+   Latency: Minutes (Commit + Push + Pull)
+   Example: Worker committed change, reviewer reads git diff + message
+   Strength: Versioned, comprehensible, standard tooling
+   Weakness: Overhead for small messages, requires repo
+   BACH: Not used systematically, but possible (SQ020 versioning)
+
+10. DB TABLES AS A CHANNEL
+---------------------------
+    Method: Agents write to shared DB table, others read
+    Direction: Bidirectional, Multi-Party
+    Latency: Immediately (within a session for DB access)
+    Example: Agent writes message to messages table, recipient polls
+    Strength: Structured, persistent, searchable, already existing
+    Weakness: Polling necessary (no push), needs handlers
+    BACH: bach.db has infrastructure, but no explicit message system
+
+11. HOOKS (Event-Based Injection)
+--------------------------------------
+    Method: Shell command is executed at event, result injected
+    Direction: External -> LLM (unidirectional per hook call)
+    Latency: Immediately (at every user prompt or tool call)
+    Example: UserPromptSubmit hook reads "Inbox" file and injects content
+    Hook types: PreToolUse, PostToolUse, SessionStart, UserPromptSubmit, etc.
+    Strength: Easiest way for inter-instance messaging without a source patch
+    Weakness: Only for events (not on-demand), hook configuration required
+    BACH: Recommended approach for Claude Code Integration
+    See also: claude-code-injections.txt (“Messaging System” section)
+
+12. MCP SERVER AS AN INTERMEDIARY
+-------------------------------
+    Method: Shared MCP server that multiple LLM instances use
+    Direction: Bidirectional (all instances access the same server)
+    Latency: Immediate (tool call)
+    Example: ellmos-codecommander-mcp as a shared service for all Claude instances
+    Strength: Standardized (MCP protocol), tool-based, expandable
+    Weakness: Server must be running, no push mechanism
+    BACH: ellmos-codecommander-mcp (14 tools), ellmos-filecommander-mcp (38 tools)
+
+13. PROCESS CHAINING (.bat as signal)
+----------------------------------------
+    Method: One process starts the next via batch file
+    Direction: Unidirectional (predecessor -> successor)
+    Latency: Immediate (process start)
+    Example: Marble-Run: Opus Worker exits, .bat starts Sonnet Reviewer
+    Strength: Deterministic, no infrastructure, BS native
+    Weakness: Only serial chains, no feedback channel (needs handoff file)
+    BACH: tools/llmauto/ (llmauto-CLI) (marble run system)
+
+14. SHARED FILESYSTEM (File Watcher)
+--------------------------------------
+    Method: Agents monitor shared directory for changes
+    Direction: Bidirectional (all can write/read)
+    Latency: seconds (watcher polling interval)
+    Example: Agent writes new_task.json, Watcher detects and responds
+    Starke: Simple, no special infrastructure
+    Weakness: Polling-based, race conditions possible, OneDrive sync problems
+    BACH: Fundamentally possible, not systematically implemented
+
+15. STDOUT/STDIN PIPING
+-------------------------
+Method: Output of one process becomes the input of the next one
+    Direction: Unidirectional (Producer -> Consumer)
+    Latency: Instant (pipe)
+    Example: claude --print "Analyze X" | claude --print "Rate: $(cat -)"
+    Strength: Unix philosophy, minimal overhead, no file system required
+    Weakness: Only text, no structured context, no persistence
+    BACH: Not used (Claude Code supports --print but no stdin pipe)
+
+BACH-SPECIFIC FORMS OF COMMUNICATION (16-21)
+===============================================
+
+16. MULTI-LLM PROTOCOL V3 (Presence + Locking)
+-------------------------------------------------
+    Method: presence files + lock files + handshake in the file system
+    Direction: Bidirectional, Multi-Party
+    Latency: seconds (heartbeat every 30s, timeout 120s)
+    Example: Claude recognizes that Gemini is online via .gemini_presence
+    Features: Presence, Locking, Handshake, Heartbeat, Agent Detection
+    Known: Claude, Gemini, Copilot, Ollama, Perplexity, Mistral-Watcher
+    Strength: Coordination without a central authority, race condition-safe
+    Weakness: File system based (slower than DB), stale presence possible
+    BACH: hub/multi_llm_protocol.py (V3), CLI: bach llm presence/check/lock
+
+17. PARTNER-PRESENCE DB (stamp cards)
+----------------------------------------
+    Method: SQLite table partner_presence with clock_in/out/heartbeat
+    Direction: Bidirectional (everyone logs in/out)
+    Latency: Immediate (DB query)
+    Example: bach llm status -> shows who is online and what they are doing
+    Features: clock_in(), clock_out(), heartbeat(), get_online_partners()
+    Strength: More reliable than files, persistent state
+    Weakness: Requires DB access, not file system compatible
+    BACH: hub/multi_llm_protocol.py (PartnerPresenceDB class)
+
+18. MESSAGE SYSTEM (INBOX/OUTBOX)
+--------------------------------------
+    Method: DB-based messaging with sender, recipient, body, status
+    Direction: Bidirectional, directional (receiver determined)
+    Latency: Immediate (on query) or polling (watch mode every 10s)
+    Example: bach msg send gemini “Analyze this image”
+    Features: Send, Read, Watch (Polling), Ping, Read Confirmation (--ack)
+    Status: unread, read, archived
+    Strength: Structured, persistent, searchable, read receipt
+    Weakness: Pull-based (no push), requires active polling
+    BACH: hub/messages.py, DB table: messages
+
+19. NOTIFICATION SYSTEM (Multi-Channel Push)
+--------------------------------------------------
+    Method: Outgoing notifications via external channels
+    Direction: Unidirectional (BACH -> External)
+    Latency: seconds
+    Channels: Discord (Webhook), Telegram (Bot API), Slack (Webhook),
+                Email (SMTP/SSL), Signal (Direct), Generic Webhook
+    Example: bach notify send telegram “Task completed”
+    Strength: Multi-channel, configurable
+    Weakness: Only outgoing (no reception via notify)
+    BACH: hub/notify.py, CLI: bach notify setup/send/test/list
+
+20. QUEUE PROCESSOR & SMART ROUTER
+------------------------------------
+    Method: Reliable routing of connector messages
+    Direction: Bidirectional (Connector <-> BACH internal)
+    Latency: seconds (poll intervals: Telegram 15s, Discord 60s)
+    Features: Retry/Backoff (5 levels: 30s-480s), Circuit Breaker (5 errors)
+    Smart: Parse commands from messages ("/task add test")
+    Strength: Reliable, self-healing, command recognition
+    Weakness: Complex, needs running daemon
+    BACH: hub/_services/connector/queue_processor.py, smart_router.py
+
+21. GEMINI DELEGATION PROTOCOL
+--------------------------------
+    Method: Task files in gemini/inbox/, results in gemini/outbox/
+    Direction: Bidirectional (Claude -> Gemini and back)
+    Latency: minutes to hours (manually or via Google Drive Sync)
+    Trigger: keyword, token budget, document length, explicit
+    Example: Claude creates a research task, Gemini processes it, returns the result
+    Strength: Uses Gemini's strengths (large documents, images)
+    Weakness: Manual transfer required (or Google Drive Sync)
+    BACH: skills/workflows/gemini-delegation.md
+
+COMPARISON MATRIX
+=================
+
+Method | Direction | Latency | Persistence | Scaling | Complexity
+  ---------------------|----------|----------|------------|------------|-------------
+  GENERIC (transferable to any LLM system):
+  1 drop file | University | High | Yes | Good | Minimal
+  2 MEMORY.md | Bi | session | Yes | Limited | Low
+  3 Shared DB | Multi | Immediately | Yes | Very good | Means
+  4 injectors | University | Immediately | No | Limited | Means
+  5 Stigmergy | Indirect | Immediately | Yes (TTL) | Very good | Means
+  6 Handoff Files | University | Immediately | Yes | Serial | Low
+  7 Bridge/Connectors | Bi | seconds | Yes | Good | High
+  8 Team Mode | Bi | Immediately | session | Parallel | Means
+  9 Git | Bi | minutes | Yes | Good | Means
+  10 DB tables | Multi | Immediately | Yes | Very good | Means
+  11 Hooks | University | Event | No | Limited | Low
+  12 MCP servers | Bi | Immediately | Variable | Good | High
+  13 Process Chaining | University | Immediately | No | Serial | Low
+  14 File Watcher | Bi | seconds | Yes | Good | Means
+  15 stdout piping | University | Immediately | No | Serial | Minimal
+
+  BACH-SPECIFIC (uses BACH infrastructure):
+  16 Multi-LLM prot.   | Multi | 30s | Yes | Good | Means
+  17 Partner Presence | Multi | Immediately | Yes | Good | Means
+  18 message sys.   | Bi | Immediately | Yes | Good | Means
+  19 Notify (Push) | University | seconds | Yes | Multi Ch.  | Means
+  20 Queue/Router | Bi | seconds | Yes | Good | High
+  21 Gemini Delegation | Bi | minutes | Yes | Limited | Low
+
+RECOMMENDATIONS BY CASE OF USE
+==================================
+
+  Use case | Recommended method(s)
+  ----------------------------------|--------------------------------------
+  Swarm (many parallel agents) | 5 (Stigmergy) + 3 (DB) + 14 (Watcher)
+  Serial Pipeline (Marble Run) | 6 (Handoff) + 13 (Process Chain)
+  Team work (2-5 agents) | 8 (Team mode) or 10 (DB tables)
+  Long-term knowledge transfer | 2 (MEMORY.md) + 3 (DB)
+  Real-time notification | 4 (injectors) + 11 (hooks)
+  Communication with the outside world | 7 (Bridge/Connectors)
+  Asynchronous Collaboration | 1 (drop file) + 9 (git)
+  Tool-based integration | 12 (MCP server)
+
+BACH-SPECIFIC ARCHITECTURE
+==============================
+
+BACH's strength is the combination of several methods:
+- Bridge (7) for the outside world
+- DB (3+10) as a central knowledge storage
+- Injectors (4) for proactive context enrichment
+- Stigmergy (5) for swarm operations
+- Handoff (6) + Process Chaining (13) for marble run pipelines
+
+In contrast, Claude Code is limited to one method per scenario:
+Team mode (8) OR injectors (4), cannot be combined.
+
+BACH can use all 15 methods simultaneously and switch dynamically --
+this is the architectural advantage of an LLM-centric system.
+
+SEE ALSO
+===========
+  bridge.txt Bridge/Connector system
+  connectors.txt Connector types in detail
+  injectors.txt BACH injector system
+  claude-code-injections.txt Claude Code Injections Anatomy
+  multi-llm.txt Multi-LLM protocol
+  schwarm.txt Swarm operations (if any)

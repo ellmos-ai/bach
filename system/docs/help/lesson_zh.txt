@@ -1,0 +1,67 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理者名称
+  课程
+
+描述
+  经验教训管理 - 问题、解决方案和最佳实践的文档。
+  将课程存储在 SQLite 数据库 (data/bach.db) 中，包括类别、严重性和
+  时间戳。支持全面管理：添加、编辑、禁用和搜索。
+
+操作
+  添加 添加带有标题和解决方案的新课程
+  edit 编辑课程（标题、解决方案、类别、严重性）
+  停用 停用课程（带有可选原因）
+  列表 显示所有活动课程（可以选择按类别过滤）
+  最后 显示最后 n 节课（默认值：5）
+  搜索 按关键字搜索课程
+  显示带有 ID 的课程的完整详细信息
+  类别 显示可用类别
+
+类别
+  bug、工作流程、工具、集成、性能、一般
+
+严重级别
+  低、中、高、关键
+
+示例
+  # 添加带有标题和解决方案的课程
+  bach lesson add "DB-Pfad: Immer data/bach.db verwenden"
+
+  # 具有类别和严重性
+  bach lesson add "Handler-Bug: base_path nicht root" --category bug --severity high
+
+  # 有问题描述
+  bach lesson add "Titel" --problem "Was ging schief" --category workflow
+
+  # 编辑课程
+  bach lesson edit 5 --title "Neuer Titel" --severity critical
+
+  # 显示最后 3 节课
+  bach lesson last 3
+
+  # 显示类别中的所有课程
+  bach lesson list bug
+
+  # 按关键字搜索
+  bach lesson search "database"
+
+  # 显示完整详细信息
+  bach lesson show 5
+
+  # 禁用课程
+  bach lesson deactivate 5 --reason "Nicht mehr relevant"
+
+  # 显示可用类别
+  bach lesson categories
+
+文件
+  hub/lesson.py 处理程序实现
+  data/bach.db SQLite 数据库（表：memory_lessons）
+  docs/help/lesson.txt 此帮助文件
+
+另请参阅
+  hub/base.py BaseHandler 类
+  core/hooks.py 钩子系统（after_lesson_add）

@@ -1,0 +1,71 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+LOGS - Sistema de registro automático
+==========================
+
+DESCRIPCIÓN
+BACH registra automáticamente todas las acciones.
+Sistema de dos niveles para un almacenamiento eficiente.
+
+ARQUITECTURA
+-----------
+system/data/logs/auto_log.txt Últimas 300 entradas (memoria a corto plazo)
+system/data/logs/auto_log_extended.txt Entradas más antiguas, máximo 30 días
+
+Las entradas se eliminan automáticamente después de 30 días.
+
+COMANDOS CLI
+-----------
+bach --logs tail [n]         Últimas n entradas (predeterminado: 20)
+bach --logs extended         Mostrar archivo extendido
+bach --logs count            Número de entradas
+
+python tools/autolog.py --tail 50 Últimas 50 entradas
+python tools/autolog.py --archivo extendido extendido
+herramientas de python/autolog.py --cuenta estadísticas
+python tools/autolog.py --log "Texto" Entrada manual
+
+FORMATO DE REGISTRO
+----------
+[AAAA-MM-DD HH:MM:SS] TIPO: Mensaje
+
+Tipos:
+  CMD Comando ejecutado
+  HERRAMIENTA Llamada a herramienta
+  SESIÓN Inicio/fin de sesión
+
+SALIDA DE EJEMPLO
+---------------
+[2026-01-19 12:29:34] INICIO DE SESIÓN
+[2026-01-19 12:29:35] CMD: inicio
+[2026-01-19 12:30:00] HERRAMIENTA: registro automático --count
+[2026-01-19 12:35:00] FIN DE SESIÓN: Tareas del agente fiscal
+
+INTEGRACIÓN
+-----------
+El registro automático está integrado en bach.py (a través de herramientas/autolog.py) y registra automáticamente:
+- Inicio y fin de sesión.
+- Todos los comandos CLI
+- Llamadas a herramientas
+
+UBICACIONES DE ALMACENAMIENTO
+------------
+Registro principal: system/data/logs/auto_log.txt
+Extendido: system/data/logs/auto_log_extended.txt
+
+NOTA: La ruta system/logs/ está DESPRECADA.
+SÓLO la carpeta de registro ahora es system/data/logs/ (consolidada el 6 de febrero de 2026).
+
+CONFIGURATION
+-------------
+MAX_LINES = 300 líneas máximas en el registro principal
+ARCHIVE_DAYS = 30 días en el archivo extendido
+
+Valores ajustables en tools/autolog.py.
+
+VER TAMBIÉN
+----------
+bach --help startup    Muestra el estado de Autolog al inicio de la sesión
+bach --help shutdown   Registro de fin de sesión

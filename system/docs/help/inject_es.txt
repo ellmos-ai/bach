@@ -1,0 +1,64 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+============
+inject - Control del inyector y asignación de tareas
+
+DESCRIPCIÓN
+============
+El manejador de inyección administra el sistema del inyector para fines automatizados.
+Inyecciones de contexto y asignación de tareas. Los inyectores son complementos que
+automáticamente para ciertos desencadenantes (palabras, tiempos, finalización de tareas).
+proporcionar sugerencias o acciones útiles.
+
+OPERACIONES
+===========
+status
+  Muestra el estado de todos los inyectores (activos/inactivos).
+  Sintaxis: --inject status
+
+toggle <nombre>
+  Enciende o apaga un inyector.
+  Sintaxis: --inject alternar <nombre>
+
+  Inyectores disponibles:
+    estrategia Pensamientos útiles sobre palabras desencadenantes
+    contexto Pistas de contexto para palabras clave
+    time Actualizaciones periódicas de tiempo (timebeat)
+    entre recordatorio automático después de tarea realizada
+
+tarea <minutos>
+  Asigna una nueva tarea con una duración especificada.
+  Sintaxis: --inject tarea <minutos>
+  Predeterminado: 5 minutos
+
+descomponer <id>
+  Divide una tarea existente en subobjetivos.
+  Sintaxis: --inject decompose <task-id>
+
+EJEMPLOS
+=========
+# Verificar el estado de todos los inyectores
+--inject status
+
+# Habilitar inyector de estrategia
+--inject alternar estrategia
+
+# Asignar tarea de 15 minutos
+--inject tarea 15
+
+# Desensamblar tarea con ID 'abc123'
+--inject descomponer abc123
+
+ARCHIVOS
+=======
+hub/inject.py Implementación del controlador
+herramientas/injectors.py backend de InjectorSystem
+Configuración del inyector config.json
+
+VER TAMBIÉN
+==========
+hub/base.py Clase BaseHandler
+docs/help/ Documentación adicional sobre el controlador

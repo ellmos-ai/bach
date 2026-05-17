@@ -1,0 +1,68 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+LEARNING - Memory as a learning process
+================================
+
+DESCRIPTION
+Philosophical view of learning as a memory process.
+Originated from the analysis of how BACH agents learn.
+
+CORE THESIS
+----------
+"Learning is actually a form of memory."
+
+THE PROCESS FLOW
+------------------
+1. CURRENT CONDITION (Status Quo)
+   Initial situation of the system/knowledge.
+
+2. EVENT / EXPERIENCE (Event)
+   Interaction, new input, success or failure.
+
+3. SAVE (Storage)
+   Record raw event data.
+
+4. CONSOLIDATE (Consolidation)
+   The actual learning step:
+   - draw insights
+   - Derive rules (abstraction)
+   - Summarize experience (compression)
+
+CONCLUSION
+-----
+Learning is not the accumulation of data, but the
+Consolidation of experiences into new structures
+(Rules/knowledge) in memory.
+
+IMPLEMENTATION IN BACH
+-----------------
+The memory system maps this process:
+
+  Input --> Working Memory --> Consolidation --> Facts/Lessons
+                    |                                     |
+                    | (end of session) | (Permanent)
+                    v v
+              Session report injectors/context
+              (Episodic) (Semantic)
+
+PRACTICAL APPLICATION
+--------------------
+1. Gain experience
+   bach memory write "Beobachtung: XYZ funktioniert nicht"
+
+2. Derive knowledge
+   What is the core? What is the rule?
+
+3. Save as Lesson
+   bach lesson add "Titel: Erkenntnis/Loesung"
+
+4. Available in context
+   Lesson is injected when context is relevant
+
+SEE ALSO
+----------
+bach memory status         Memory System Overview
+bach lesson list           Lessons Learned System
+bach shutdown              Consolidation at session end

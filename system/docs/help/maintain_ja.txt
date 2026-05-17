@@ -1,0 +1,349 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MAINTAIN - BACH メンテナンス ツール
+==============================
+
+概要
+----------
+BACH 用のメンテナンスおよび分析ツールのコレクション。
+すべてのツールは、bach --maintain
+
+COMMANDS (16)
+------------
+  bach --maintain docs          ドキュメントの更新チェック
+  bach --maintain duplicates    重複検出情報
+  bach --maintain generate      スキル/エージェント ジェネレーター
+  bach --maintain export        エクスポート ツール
+  bach --maintain pattern       短いファイル名パターン
+  bach --maintain scan          CLI ツールのシステムのスキャン
+  bach --maintain clean         経過時間/パターンによるファイルの削除
+  bach --maintain json          JSON ファイルの修復
+  bach --maintain heal          パスの修正と自己修復
+  bach --maintain registry      レジストリの整合性のチェック
+  bach --maintain skills        スキルのチェックヘルス
+  bach --maintain sync          スキルをデータベースと同期
+  bach --maintain headers       SKILL.md YAML ヘッダーを生成/検証
+  bach --maintain skill-help    SKILL.md からヘルプ ファイルを生成
+  bach --maintain workflows     ワークフロー形式を検証
+  bach --maintain nul           Windows NUL ファイルを削除
+  bach --maintain list          すべてのツールで表示
+
+ドキュメント チェック
+--------------------
+  bach --maintain docs [--dry-run]
+
+  古いドキュメントを検出します。
+  - 60日以上経過したもの
+  - 無効なパス
+  - 参照がありません
+
+スキルジェネレーター
+---------------
+  bach --maintain generate <n> [profil] [zielordner]
+
+  プロフィール:
+    MICRO - ファイルのみ
+    ライト - 最小限 (SKILL.md + config + data)
+    STANDARD - メモリ付きスタンダード
+    拡張 - マイクロスキルによる複雑さ
+
+  例:
+    bach --maintain generate mein-skill STANDARD skills/
+    bach --maintain generate analyse MICRO skills/workflows/
+
+エクスポート ツール
+------------
+  bach --maintain export skill <n> --from-os <path>
+  bach --maintain export agent <n> --from-os <path>
+  bach --maintain export os-fresh <path> --output <zip>
+  bach --maintain export os-reset <path> --backup
+
+パターン ツール
+------------
+  bach --maintain pattern <ordner> [optionen]
+
+  オプション:
+    --dry-run 表示のみ (デフォルト)
+    --execute 名前の変更を実行します
+    --prefix-only プレフィックス パターンのみ
+    --suffix-only サフィックスパターンのみ
+    -m <n> 最小パターン長
+
+TOOL SCANNER
+------------
+  bach --maintain scan [--json]
+  bach --maintain scan compare
+
+  インストールされている CLI ツールを検索し、レジストリと比較します。
+
+FILE CLEANER
+------------
+  bach --maintain clean <ordner> [optionen]
+
+  オプション:
+    --age <days> X 日より古いファイル
+    --keep <n> 最新の N のみを保持します
+    --pattern <p> ファイル パターン (例: "*.log")
+    -r 再帰的に検索します
+    --execute 実際には削除します
+
+  例:
+    bach --maintain clean ./logs --age 30
+    bach --maintain clean ./backups --keep 5 --execute
+
+JSON FIXER
+----------
+  bach --maintain json <datei/ordner> [optionen]
+
+  オプション:
+    --dry-run チェックのみ (デフォルト)
+    --実行 実際に修復する
+    --backup 変更前のバックアップ
+
+  修理済み:
+    - UTF-8 BOM
+    - 末尾のカンマ
+    - 一重引用符
+    - PowerShell 改行
+
+パス ヒーラー (新規)
+-----------------
+  bach --maintain heal [optionen]
+
+  BACH ファイル内の非推奨のパスを修正しました。
+
+  オプション:
+    --dry-run チェックだけを行い、何も変更しません (デフォルト)
+    --execute 実際は正しい
+    --target <p> 特定のファイルのみをチェックします
+    --report 詳細レポートを生成します
+
+  修正:
+    - 古い recludOS パス -> BACH
+    - 古いスキルパス
+    - ハブ/ハンドラーのパス
+    - ツールのリファレンス
+
+  例:
+    bach --maintain heal                   # すべてのドライラン
+    bach --maintain heal --execute         # すべて修正
+    bach --maintain heal --target config.py
+
+  ベース: RecludOS Unified Path Healer v2.3.0
+
+レジストリ ウォッチャー (新規)
+----------------------
+  bach --maintain registry [optionen]
+
+  すべての BACH レジストリを監視および検証します。
+
+  オプション:
+    チェック 完全チェック (デフォルト)
+    check --db データベースのみをチェックする
+    check --json JSON 構成のみをチェックします
+    パートナー パートナーレジストリチェック (新規)
+    レポート 詳細レポート
+
+  チェック:
+    - レジストリ関連DBテーブルの存在（ツール、スキル、エージェント、パートナー）
+    - JSON 設定ファイル (正当な例外のみ)
+    - テーブル間の相互参照
+    - パートナー認識 + 委任ルールの一貫性
+
+  注: Partner_registry.json は非推奨です (docs/help/formats.txt を参照)
+
+  例:
+    bach --maintain registry               # クイックチェック
+    bach --maintain registry report        # 詳細レポート
+    bach --maintain registry check --db    # データベースのみ
+
+  注: --startup で自動的に実行 (クイック チェック)
+
+スキル ヘルス モニター (新規)
+--------------------------
+  bach --maintain skills [optionen]
+
+  すべての BACH スキルとエージェントを監視および検証します。
+
+  オプション:
+    チェック 完全チェック (デフォルト)
+    check --skills スキルのみをチェックします
+    check --agents エージェントのみをチェックします
+    レポート 詳細レポート
+
+  チェック:
+    - スキルディレクトリ (_agents、_experts、_services)
+    - SKILL.md の完全性 (名前、バージョン、説明)
+    - エージェント定義の検証
+    - 孤立したスキルや壊れたスキルを見つけます
+
+  例:
+    bach --maintain skills                 # クイックチェック
+    bach --maintain skills report          # 詳細レポート
+    bach --maintain skills check --agents  # エージェントのみ
+
+  注: --startup で自動的に実行 (クイック チェック)
+
+同期ツール (新規)
+---------------
+  bach --maintain sync [optionen]
+
+  スキル/ファイルをデータベースと同期します。
+
+  オプション:
+    --dry-run 表示のみ、何も変更しません (デフォルト)
+    --verbose 詳細な出力
+    -v --verbose の短縮形
+
+  同期済み:
+    - SKILL.md メタデータ (名前、バージョン、説明)
+    - スキルのステータスと依存関係
+    - エージェントの定義
+
+  例:
+    bach --maintain sync               # ドライラン
+    bach --maintain sync --verbose     # 詳細付き
+    bach --maintain sync --dry-run -v  # 詳細なドライラン
+
+HEADERS TOOL (NEW)
+------------------
+  bach --maintain headers [optionen]
+
+  SKILL.md ファイルの YAML ヘッダーを生成および検証します。
+
+オプション:
+    --all すべてのスキル ディレクトリをスキャンします (デフォルト)
+    --path <p> 特定のディレクトリをスキャンします
+    --file <f> 個々の SKILL.md を処理します
+    --dry-run 表示のみ (デフォルト)
+    --書き込み変更を修正
+    --update-db YAML ヘッダーから DB バージョンを更新します
+    -v 詳細
+
+  スキャンされたディレクトリ:
+    - エージェント/*/SKILL.md
+    - エージェント/_experts/*/SKILL.md
+    - ハブ/_services/*/SKILL.md
+    - パートナー/*/SKILL.md
+
+  例:
+    bach --maintain headers                      # ドライラン
+    bach --maintain headers --fix                # すべてのヘッダーを正規化
+    bach --maintain headers --fix --update-db    # ヘッダー + DB を更新
+    bach --maintain headers --path agents -v
+
+SKILL-HELP TOOL (NEW)
+---------------------
+  bach --maintain skill-help [optionen]
+
+  SKILL.md から docs/help/*.txt ファイルを生成します。
+
+  オプション:
+    <name> 単一のスキル名
+    --all すべてのスキルを処理します
+    -a --all の短縮形
+    --dry-run 表示のみ、何も書き込まない
+    -n --dry-run の短縮形
+
+  例:
+    bach --maintain skill-help ati              # ATI エージェントのヘルプ
+    bach --maintain skill-help --all            # すべてのスキル
+    bach --maintain skill-help --all --dry-run  # ドライ ラン
+
+ワークフロー ツール (新規)
+--------------------
+  bach --maintain workflows [optionen]
+
+  ワークフロー ファイルの形式が一貫しているかどうかを検証します。
+
+  チェック:
+    - H1 タイトルが利用可能
+    - 説明 (> ブロック引用、**目的:**、## 概要)
+    - ステップ/フェーズ構造
+    - バージョン情報 (オプション)
+
+  期待される場所: skill/workflows/*.md
+
+  例:
+    bach --maintain workflows        # すべてのワークフローを検証する
+    bach --maintain workflows help   # ヘルプを表示
+
+NUL-CLEANER (新規)
+-----------------
+  bach --maintain nul [optionen]
+
+  Windows NUL (予約ファイル名) ファイルを削除します。
+
+  オプション:
+    scan NUL ファイルのみをリストします (デフォルト)
+    delete NUL ファイルを削除します
+    clean/remove 削除用のエイリアス
+    <パス> 特定のディレクトリをスキャンします
+
+  例:
+    bach --maintain nul                        # BACH ディレクトリをスキャン
+    bach --maintain nul scan                   # スキャンのみ
+    bach --maintain nul delete                 # スキャンして削除
+    bach --maintain nul delete C:\Pfad         # 特定のディレクトリ
+
+  注: Windows 上で誤って NUL ファイルが作成される
+           
+
+TOOLS
+-----
+ 'NUL' (Windows デバイス名) の後に記述されます。  tools/doc_update_checker.py ドキュメントチェッカー
+  tools/duplicate_detector.py 重複検出
+  ツール/ジェネレーター/ジェネレーター スクリプト
+    skill_generator.py スキル構造体
+    exporter.py エクスポート関数
+  tools/pattern_tool.py パターン認識
+  tools/tool_scanner.py CLI ツールの検出
+  tools/file_cleaner.py ファイルのクリーンアップ
+  tools/json_fixer.py JSON 修復
+  tools/c_path_healer.py パスの修正 (重要: c_path_healer!)
+  tools/nulcleaner.py NUL ファイルを削除する
+  tools/skill_header_gen.py YAML ヘッダー ジェネレーター
+  tools/skill_help_gen.py ヘルプ ジェネレーター + ワークフロー バリデーター
+  ツール/メンテナンス/
+    registry_watcher.py レジストリの整合性
+    skill_health_monitor.py スキルのヘルス
+    sync_skills.py スキル DB の同期
+
+ --startup 時の自動チェック
+---------------------------------
+次のメンテナンス チェックはセッション開始時に自動的に実行されます:
+
+  1. ディレクトリ スキャン - 前回のセッション以降の変更
+  2. パスヒーラー - ドライランパス修正
+  3. レジストリ ウォッチャー - DB/JSON の整合性を簡単にチェック
+  4. スキルの健全性 - スキル/エージェントのクイックチェック
+
+詳細なレポートについては: bach --maintain <tool> report
+
+現在のツールの概要 (16 コマンド)
+-------------------------------------
+1。  docs - ドキュメントの更新チェック
+2. 重複 - 重複検出情報
+3.generate - スキル/エージェントジェネレータ
+4. エクスポート - エクスポートツール
+5. pattern - ファイル名の短縮パターン
+6. scan - CLI ツールのシステムをスキャンします。
+7. クリーン - 経過時間/パターンに基づいてファイルを削除します
+8. json - JSON ファイルを修復する
+9. ヒール - パス修正と自己修復
+10. レジストリ - レジストリの整合性をチェックします
+11. スキル - スキルの健全性を確認します
+12. sync - スキルをデータベースと同期します
+13. ヘッダー - SKILL.md YAML ヘッダーを生成/検証します
+14. skill-help - SKILL.md からヘルプ ファイルを生成します。
+15. ワークフロー - ワークフロー形式の検証
+16. nul - Windows NUL ファイルを削除します
+
+関連項目
+----------
+  docs/help/backup.txt バックアップ システム
+  docs/help/test.txt テストシステム
+  docs/help/tools.txt ツール インベントリ
+  docs/help/formats.txt データベース形式

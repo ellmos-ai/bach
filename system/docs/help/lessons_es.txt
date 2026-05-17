@@ -1,0 +1,102 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [tabla memoria_lecciones, hub/lesson.py, bach_api.lesson]
+
+LECCIONES APRENDIDAS - Gestión del conocimiento
+====================================
+
+Estado: 2026-02-08
+
+Sistema para capturar y recuperar conocimientos, correcciones de errores y mejores prácticas.
+Las lecciones son el núcleo de la "retroalimentación" sobre el comportamiento del sistema.
+
+COMANDOS CLI
+-----------
+  bach lesson add "Titel: Loesung"     Agregar nueva lección
+  bach lesson edit ID [Optionen]       Editar lección (v1.1.70)
+  bach lesson deactivate ID [-r REASON] Deaktivieren (v1.1.70)
+  bach lesson last [n]                 Últimas n lecciones (predeterminado: 5)
+  bach lesson search "keyword"         Examinar
+  bach lesson show ID                  Mostrar detalles y metadatos
+
+LIBRARY API
+-----------
+  de la lección de importación bach_api
+  lección.add("Título: Solución", "--categoría", "error")
+  lección.lista("error")
+  lección.edit(42, "--title", "Nuevo título")
+  lección.deactivate(42, "--razón", "Obsoleto")
+  lección.show(42)
+
+CATEGORÍAS (Actuales)
+--------------------
+  corrección de errores y soluciones alternativas
+  flujo de trabajo Flujos de trabajo extendidos (por ejemplo, Multi-LLM)
+  herramienta Conocimiento específico de la herramienta
+  integración Integración con sistemas externos
+  rendimiento Optimizaciones de rendimiento
+  general Decisiones arquitectónicas generales
+
+SEVERIDAD
+------------
+  bajo Solo para tu información
+  medio Estándar recomendado
+  regla importante alta (prioridad del inyector)
+  crítico Conocimiento crítico del sistema (reglas de protección)
+
+EJEMPLOS
+=========
+
+  # Corrección de errores en el documento
+  bach lesson add "SQLite Lock: WAL-Mode aktivieren" --category bug --severity high
+
+  # Flujo de trabajo de documentos
+  bach lesson add "Multi-LLM: Immer llm lock vor Schreibzugriff" --category workflow
+
+  # Optimización del rendimiento
+  bach lesson add "DB-Queries: Index auf created_at" --category performance
+
+  # Integración de conocimientos
+  bach lesson add "OCR: Tesseract braucht PATH-Variable" --category integration
+
+  # Editar lección
+  bach lesson edit 42 --title "Neuer Titel" --severity critical
+
+  # Desactivar lección
+  bach lesson deactivate 42 --reason "Durch bessere Loesung ersetzt"
+
+PROBLEMAS Y SOLUCIONES CONOCIDOS (extracto)
+=====================================
+
+1. ARCHIVOS COMPARTIDOS MULTI-LLM (flujo de trabajo)
+   Problema: condiciones de carrera durante la edición simultánea.
+   Solución: SIEMPRE use `bach ​​​​llm lock <archivo>` antes del acceso de escritura.
+
+2. PRIMER PRINCIPIO DE CLI (flujo de trabajo)
+   Problema: Las ediciones manuales de archivos omiten los inyectores/el monitoreo.
+   Solución: SIEMPRE haga todo lo que funcione a través de CLI (tarea, lección, memoria) a través de CLI.
+
+3. CODIFICACIÓN DE WINDOWS (error)
+   Problema: Los emojis suelen bloquear la consola estándar de Windows.
+   Solución: En Python use `io.TextIOWrapper` con respaldo UTF-8 para la salida estándar.
+
+4. BLOQUEAR ARCHIVO DB (rendimiento)
+   Problema: Error de bloqueo cuando muchos procesos acceden en paralelo.
+   Solución: Transacciones cortas y modo WAL (Registro de escritura anticipada).
+
+5. ACTUALIZACIÓN DE DOCUMENTOS (error)
+   Problema: Versiones desactualizadas en sesiones de bloqueo de SKILL.md.
+   Solución: Ejecute `python tools/doc_update_checker.py` regularmente.
+
+INTEGRACIÓN
+-----------
+Las lecciones fluyen automáticamente al **Sistema de aprendizaje dinámico**:
+- Generación de activadores: las palabras clave en los títulos generan sugerencias de inyectores.
+- Activación: `is_active=1` controla qué reglas se presentan al LLM.
+
+VER TAMBIÉN
+----------
+  docs/help/memory.txt Modelo de memoria cognitiva
+  docs/help/consolidation.txt Del evento a la lección
+  ROADMAP.md etapas de desarrollo

@@ -1,0 +1,101 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+================================================================================
+HANDLER NAME
+================================================================================
+mem - Memory management (Working, Facts, Lessons)
+
+================================================================================
+DESCRIPTION
+================================================================================
+The mem handler manages the BACH memory system with two main functions:
+
+1. WORKING MEMORY: Cleaning up expired entries from the working memory
+2. MEMORY DECAY: Automatic decay of facts, lessons and working memory
+   Basis for SQ043 (Round 30C)
+
+Stores critical contextual information with configurable life cycle.
+
+================================================================================
+OPERATIONS
+================================================================================
+
+working - Working Memory Management
+  bach mem working status
+  bach mem working analyze
+  bach mem working cleanup
+  bach mem working cleanup --dry-run
+  bach mem working set-expires
+  bach mem working set-expires --dry-run
+
+  status/analyze: Show working memory status and categorized entries
+  cleanup: Clean up expired entries (option: --dry-run)
+  set-expires: Set expires values for old entries (option: --dry-run)
+
+
+decay - Memory Decay (Facts/Lessons/Working)
+  bach mem decay
+  bach mem decay --facts
+  bach mem decay --lessons
+  bach mem decay --working
+  bach mem decay --dry-run
+  bach mem decay --facts --dry-run
+
+  Without options: Apply decay to all three memory types
+  --facts: Reduce only facts (relevance score)
+  --lessons: Reduce only lessons (reliability)
+  --working: Only reduce working memory (security)
+  --dry-run: Preview without database changes
+
+================================================================================
+EXAMPLES
+================================================================================
+
+# Check the status of the working memory
+bach mem working status
+
+# Analysis: Which entries have expired?
+bach mem working analyze
+
+# Simulate cleanup
+bach mem working cleanup --dry-run
+
+# Actually clean up working memory
+bach mem working cleanup
+
+# Memory decay on all types (preview)
+bach mem decay --dry-run
+
+# Only reduce facts
+bach mem decay --facts
+
+# Lessons decay with preview
+bach mem decay --lessons --dry-run
+
+# Complete decay without Simulation
+bach mem decay
+
+================================================================================
+FILES
+================================================================================
+
+Source files:
+  hub/mem.py handler definition
+  tools/memory_working_cleanup.py Working memory cleanup implementation
+  tools/memory_decay.py Memory Decay Implementation
+
+Database:
+  data/bach.db SQLite3 with memory tables
+
+Documentation:
+  docs/MEMORY_WORKING_CLEANUP_KONZEPT.md Technical concept
+
+================================================================================
+SEE ALSO
+================================================================================
+
+bach db      - Direct database access (bach db list-tables)
+bach help    - Overview of all handlers
+bach help db - Datenbankhandler (Tabellen, Schema)

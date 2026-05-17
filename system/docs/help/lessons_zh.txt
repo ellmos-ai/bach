@@ -1,0 +1,102 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[memory_lessons 表、hub/lesson.py、bach_api.lesson]
+
+经验教训 - 知识管理
+====================================
+
+状态：2026-02-08
+
+用于捕获和检索见解、错误修复和最佳实践的系统。
+课程是系统行为“反馈”的核心。
+
+CLI 命令
+-----------
+  bach lesson add "Titel: Loesung"     添加新课程
+  bach lesson edit ID [Optionen]       编辑课程 (v1.1.70)
+  bach lesson deactivate ID [-r REASON] Deaktivieren (v1.1.70)
+  bach lesson last [n]                 最后 n 课（默认：5）
+  bach lesson search "keyword"         浏览
+  bach lesson show ID                  显示详细信息和元数据
+
+LIBRARY API
+-----------
+  来自 bach_api 导入课程
+  Lesson.add("标题：解决方案", "--category", "bug")
+  课程.列表（“错误”）
+  Lesson.edit(42, "--title", "新标题")
+  Lesson.deactivate(42, "--reason", "已过时")
+  Lesson.show(42)
+
+类别（当前）
+--------------------
+  bug 错误修复和解决方法
+  工作流程 扩展工作流程（例如 Multi-LLM）
+  工具 工具特定知识
+  集成 与外部系统集成
+  性能 性能优化
+  一般 一般架构决策
+
+严重性
+------------
+  低 仅供参考
+  中等 推荐标准
+  高 重要规则（喷油器优先级）
+  关键 关键系统知识（保护规则）
+
+示例
+=========
+
+  # 文档错误修复
+  bach lesson add "SQLite Lock: WAL-Mode aktivieren" --category bug --severity high
+
+  # 文档工作流程
+  bach lesson add "Multi-LLM: Immer llm lock vor Schreibzugriff" --category workflow
+
+  # 性能优化
+  bach lesson add "DB-Queries: Index auf created_at" --category performance
+
+  # 整合知识
+  bach lesson add "OCR: Tesseract braucht PATH-Variable" --category integration
+
+  # 编辑课程
+  bach lesson edit 42 --title "Neuer Titel" --severity critical
+
+  # 停用课程
+  bach lesson deactivate 42 --reason "Durch bessere Loesung ersetzt"
+
+已知问题和解决方案（摘录）
+=====================================
+
+1.多个法学硕士共享文件（工作流程）
+   问题：同时编辑期间的竞争条件。
+   解决方案：在写访问之前始终使用 `bach llm lock <file>`。
+
+2. CLI 优先原则（工作流程）
+   问题：手动文件编辑旁路注入器/监控。
+   解决方案：始终通过 CLI 完成所有可以通过 CLI 工作的事情（任务、课程、内存）。
+
+3。 WINDOWS 编码（错误）
+   问题：表情符号经常使标准 Windows 控制台崩溃。
+   解决方案：在 Python 中，使用 io.TextIOWrapper 和 UTF-8 后备标准输出。
+
+4。锁定数据库文件（性能）
+   问题：多个进程并行访问时出现锁定错误。
+   解决方案：短事务和WAL模式（预写日志记录）。
+
+5。文档更新（错误）
+   问题：SKILL.md 中的过时版本会阻止会话。
+   解决方案：定期运行`python tools/doc_update_checker.py`。
+
+集成
+-----------
+课程自动流入**动态学习系统**：
+- 触发器生成：标题中的关键字生成注入器提示。
+- 激活：“is_active=1”控制向 LLM 提交哪些规则。
+
+另请参阅
+----------
+  docs/help/memory.txt 认知记忆模型
+  docs/help/consolidation.txt 从事件到课程
+  ROADMAP.md 的发展阶段

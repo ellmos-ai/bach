@@ -1,0 +1,102 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [memory_lessons table, hub/lesson.py, bach_api.lesson]
+
+LESSONS LEARNED - Knowledge Management
+====================================
+
+Status: 2026-02-08
+
+System for capturing and retrieving insights, bug fixes and best practices.
+Lessons are the core of the "feedback" into system behavior.
+
+CLI COMMANDS
+-----------
+  bach lesson add "Titel: Loesung"     Add new lesson
+  bach lesson edit ID [Optionen]       Edit lesson (v1.1.70)
+  bach lesson deactivate ID [-r REASON] Deaktivieren (v1.1.70)
+  bach lesson last [n]                 Last n lessons (default: 5)
+  bach lesson search "keyword"         Browse
+  bach lesson show ID                  Show details & metadata
+
+LIBRARY API
+-----------
+  from bach_api import lesson
+  lesson.add("Title: Solution", "--category", "bug")
+  lesson.list("bug")
+  lesson.edit(42, "--title", "New title")
+  lesson.deactivate(42, "--reason", "Obsolete")
+  lesson.show(42)
+
+CATEGORIES (Current)
+--------------------
+  bug Bug fixes and workarounds
+  workflow Extended workflows (e.g. Multi-LLM)
+  tool Tool-specific knowledge
+  integration Integration with external systems
+  performance Performance optimizations
+  general General architectural decisions
+
+SEVERITY
+------------
+  low Just for your information
+  medium Recommended standard
+  high Important rule (injector priority)
+  critical Critical system knowledge (protection rules)
+
+EXAMPLES
+=========
+
+  # Document bug fix
+  bach lesson add "SQLite Lock: WAL-Mode aktivieren" --category bug --severity high
+
+  # Document workflow
+  bach lesson add "Multi-LLM: Immer llm lock vor Schreibzugriff" --category workflow
+
+  # Performance optimization
+  bach lesson add "DB-Queries: Index auf created_at" --category performance
+
+  # Integration Knowledge
+  bach lesson add "OCR: Tesseract braucht PATH-Variable" --category integration
+
+  # Edit Lesson
+  bach lesson edit 42 --title "Neuer Titel" --severity critical
+
+  # Deactivate Lesson
+  bach lesson deactivate 42 --reason "Durch bessere Loesung ersetzt"
+
+KNOWN PROBLEMS & SOLUTIONS (excerpt)
+=====================================
+
+1. MULTI-LLM SHARED FILES (workflow)
+   Problem: Race conditions during simultaneous editing.
+   Solution: ALWAYS use `bach ​​llm lock <file>` before write access.
+
+2. CLI-FIRST PRINCIPLE (workflow)
+   Problem: Manual file edits bypass injectors/monitoring.
+   Solution: ALWAYS do everything that works via CLI (task, lesson, mem) via CLI.
+
+3. WINDOWS ENCODING (bug)
+   Problem: Emojis often crash the standard Windows console.
+   Solution: In Python use `io.TextIOWrapper` with UTF-8 fallback for stdout.
+
+4. LOCK DB FILE (performance)
+   Problem: Lock error when many processes access in parallel.
+   Solution: Short transactions and WAL mode (Write-Ahead Logging).
+
+5. DOCS UPDATE (bug)
+   Problem: Outdated versions in SKILL.md block sessions.
+   Solution: Run `python tools/doc_update_checker.py` regularly.
+
+INTEGRATION
+-----------
+Lessons automatically flow into the **Dynamic Learning System**:
+- Trigger generation: Keywords in titles generate injector hints.
+- Activation: `is_active=1` controls which rules are presented to the LLM.
+
+SEE ALSO
+----------
+  docs/help/memory.txt Cognitive Memory Model
+  docs/help/consolidation.txt From event to lesson
+  ROADMAP.md stages of development

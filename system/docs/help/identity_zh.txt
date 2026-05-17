@@ -1,0 +1,68 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[system_identity 表]、[hub/dist.py]、[tools/generators/distribution_system.py]
+# 状态：处理程序缺陷 - dist 路由不起作用
+
+身份系统
+===============
+
+截至：2026-02-08
+
+身份系统确保 BACH 实例的完整性和标识。
+功能在分发处理程序中实现，但 CLI 路由已损坏。
+
+表：system_identity（中央单例）
+----------------------------------------------
+  - id：主键（必须为 1 - 单例）
+  -instance_id：安装的唯一UUID
+  -instance_name：个人名称（例如“BACH_Alpha”）
+  - 版本：当前 BACH 版本（例如 v1.1.83）
+  - 创建时间：创建日期
+  - seal_status：完整性状态（'完好' | '破损'）
+  - kernel_hash：系统内核文件的SHA256
+  - last_verified：上次验证时间
+  - current_mode：操作模式（默认：“开发者”）
+  -last_boot：上次启动时间
+  - boot_count：启动次数（默认值：0）
+
+密封机制
+------------------
+  1. 启动检查：每次启动都会计算内核哈希值
+  2. 比较：哈希是否与数据库匹配？
+  3.状态：如有偏差，则密封“破损”
+  4. 警告：密封损坏表明需要手动干预
+
+CLI 命令（已记录但已损坏）
+----------------------------------------
+  bach --dist status         使用密封信息显示系统状态
+  bach --dist verify         检查密封完整性
+
+问题：dist 处理程序 (hub/dist.py) 存在并实现此功能
+函数，但 bach.py 中的 CLI 路由未正确调用它。
+只有“bach dist list”有效。
+
+未实现
+-------------------
+  bach --dist reseal         （不存在 - 无重新密封功能）
+
+如果密封损坏，则不会自动修复。你必须手动完成
+通过 distribution_system.py 设置新的密封。
+
+实施
+--------------
+  处理程序：system/hub/dist.py (DistHandler)
+  后端：system/tools/generators/distribution_system.py
+  操作：状态、验证、扫描、快照、发布、恢复、安装、列表
+  工作原理：仅“列表” - 所有其他操作均不会路由
+
+上下文
+-------
+身份是分发系统的一部分（以前是治理层 5）。
+它确保“内存”（数据库）与“硬件”（文件系统）匹配。
+
+另请参见
+----------
+  docs/help/maintain.txt 维护工具（无身份识别功能）
+  docs/help/distribution.txt 分发和发布
+  docs/help/bach_info.txt 系统概述

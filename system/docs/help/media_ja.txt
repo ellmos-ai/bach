@@ -1,0 +1,147 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+============
+メディア — メディア管理 (映画、シリーズ、音楽、ポッドキャスト、オーディオブック)
+
+説明
+============
+MediaHandler は、さまざまなメディア コレクションをサポートしてメディア コレクションを管理します。
+メディアの種類とソース。 SQLite バックエンド (bach.db) をお気に入りとともに使用します。
+メディアごとのブラックリスト、再生履歴、拡張メタデータ。
+
+メディア タイプ
+-----------
+  [F] 映画、[S] シリーズ、[M] 音楽、[C] クリップ、[P] ポッドキャスト、[A] オーディオブック、[D] ドキュメント
+
+ソース
+-------
+  netflix、youtube、spotify、ディズニー、プライム、appletv、twitch、ローカル
+
+操作
+===========
+
+追加
+  新しいメディアを追加する
+  使用法: bach media add "Title" [--type TYPE] [--source SOURCE] [--url URL]
+           [--アーティスト "..."] [--アルバム "..."] [--チャンネル "..."] [--シーズン N]
+           [--エピソード N] [--評価 1-5] [--tags "tag1,tag2"] [--desc "..."]
+           [--path "/path/to/file"]
+
+リスト
+  メディアのリストとフィルタリング
+  使用法: bach メディア リスト [--type TYPE] [--source SOURCE] [--fav] [--limit N]
+  フラグ:
+    --type TYPE メディア タイプを 1 つだけ表示します
+    --source SOURCE 1 つのソースのみをフィルタリングします
+    --fav お気に入りのみを表示
+    --N 最大値を制限します。 N エントリ (デフォルト: 20)
+  出力: アイコン、お気に入り(*)、ID、タイトル、ソース、評価
+
+検索
+  タイトル、アーティスト、アルバム、チャンネル、タグ、説明による全文検索
+  使用法: バッチメディア検索「検索語」
+  出力: アイコン、お気に入り、ID、タイトル、ソースを含む最大 30 件のヒット
+
+表示
+  完全なメタデータを含むメディアの詳細ビュー
+  使用法: Bach media show <id>
+  出力: すべてのフィールド (タイトル、タイプ、ソース、アーティスト、アルバム、シーズン/エピソード、
+          評価、タグ、説明、お気に入り、ブラックリストのステータス、日付、
+          過去 5 回のプレイ)
+
+編集
+  メディアの編集 (任意のフィールド)
+  使用法: bach media edit <id> --title "New" [--type TYPE] [--source SOURCE]
+           [--url URL] [--desc "..."] [--アーティスト "..."] [--アルバム "..."]
+           [--チャンネル "..."] [--シーズン N] [--エピソード N] [--評価 1-5]
+           [--tags "tag1,tag2"] [--notes "..."] [--path "/path"]
+
+fav
+  お気に入りの設定/削除
+  使用法: bach media fav <id> [--remove]
+  フラグ:
+    --remove お気に入りのステータスを削除します
+
+ブラックリスト
+  メディアのロック/ロック解除 (リスト/検索で非表示)
+  使用法: Bach メディア ブラックリスト <id> [--remove]
+  フラグ:
+    --remove ロック解除
+
+開く
+  オープンメディア: ブラウザまたはファイルの開始 URL。更新された再生
+  履歴と last_opened_at タイムスタンプ。ブロックされたメディアはできません
+  開かれる。
+  使用法: bach メディア オープン <id>
+
+history
+  全メディアの再生履歴（新しい順）
+  使用法: バッチメディア履歴 [--limit N]
+  表示: タイムスタンプ、アイコン、ID、タイトル、ソース、オープンメソッド
+
+統計
+  統計の概要: 総数、お気に入り、ブロック、再生、
+  種類とソースごとの分布
+  使用法: Bach メディア統計
+
+ヘルプ
+  このヘルプを見る
+  使用法: bach メディア ヘルプ
+
+例
+=========
+
+# メディアを追加 (Netflix の映画)
+bach media add "Inception" --type movie --source netflix --url "https://..." \
+  --評価 5 --desc "SF 傑作"
+
+# メディアを追加 (音楽アルバム)
+bach media add "Abbey Road" --type music --source spotify --artist "The Beatles" \
+  --album "Abbey Road" --year 1969
+
+# メディア (ローカル ファイル) を追加
+bach media add "Dokumentation" --type document --source local \
+  --path "C:\\Videos\\doku.mp4"
+
+# お気に入りのあるすべての映画を表示
+bach media list --type movie --fav
+
+# シリーズを検索
+bach media search "Breaking Bad"
+
+# シーズン/エピソードを含むシリーズをキャプチャ
+bach media add "Breaking Bad S01E01" --type series --source netflix \
+  --シーズン 1 --エピソード 1 --評価 5
+
+# メディアをお気に入りとしてマークする
+bach media fav 42
+
+# お気に入りのステータスを削除する
+bach media fav 42 --remove
+
+# メディアをブラックリストとしてマークする
+bach media blacklist 99
+
+# メディアを開く
+bach media open 42
+
+# 統計情報を表示
+bach media stats
+
+ファイル
+=======
+
+ベース: Hub/media.py
+データベース: data/bach.db
+テーブル: media_items、media_history
+構成: なし (CLI フラグに関するすべて)
+
+関連項目
+==========
+
+  bach_api.media.* プログラム API
+  Hub/base.py BaseHandler 基本クラス
+  docs/API.md BACH API ドキュメント

@@ -1,0 +1,325 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [Protocolo Multi-LLM, Bridge, Swarm System, Claude Code Docs]
+
+COMUNICACIÓN LLM - RESUMEN DE TODOS LOS MÉTODOS
+================================================
+
+A partir de: 2026-02-17
+Contexto: ¿Cómo pueden interactuar las instancias de LLM (Claude, Gemini, Ollama) entre sí?
+         y comunicarse con el mundo exterior? Catálogo de todos los conocidos.
+         Métodos evaluados según idoneidad para diferentes escenarios.
+
+21 FORMAS DE COMUNICACIÓN
+========================
+
+NOTA: 15 métodos genéricos (1-15) + 6 específicos de BACH (16-21).
+Los métodos genéricos se pueden transferir a cualquier sistema LLM.
+Los específicos de BACH utilizan la infraestructura propia de BACH.
+
+1. DEJAR ARCHIVOS (soltar archivo)
+-----------------------------------
+   Método: LLM escribe el archivo, otro LLM lo lee más tarde
+   Dirección: Unidireccional (Escritor -> Lector)
+   Latencia: alta (el lector debe comprobarla activamente)
+   Ejemplo: el agente escribe result.txt, el siguiente agente lo lee
+   Fortaleza: método más simple posible, no requiere infraestructura
+   Debilidad: Sin mecanismo de notificación, problemas de tiempo
+   BACH: Método básico en muchos flujos de trabajo
+
+2. MEMORIA.md (archivo compartido)
+----------------------------------------
+   Método: todos los socios de LLM leen/escriben el mismo MEMORY.md
+   Dirección: Bidireccional (todo lectura y escritura)
+   Latencia: basada en sesión (los cambios entran en vigor a partir de la siguiente sesión)
+   Ejemplo: Claude escribe la lección aprendida, Géminis la lee en la próxima sesión.
+   Fuerza: Inyectado automáticamente al inicio de la sesión (Código Claude)
+   Debilidad: límite de 200 líneas, sin tiempo real, mantenido manualmente
+   BACH: Actualmente uno por socio; SQ043 planifica la memoria compartida DB
+
+3. MEMORIA COMÚN (base de datos)
+---------------------------------------
+   Método: Base de datos central (bach.db) en la que todos escriben/lee
+   Dirección: bidireccional, multipartidista
+   Latencia: Inmediatamente (para acceso a la base de datos dentro de una sesión)
+   Ejemplo: el agente guarda los hechos, otro agente consulta los hechos
+   Fortaleza: estructurado, con capacidad de búsqueda, ponderado, persistente
+   Debilidad: Necesita un controlador de acceso a la base de datos, no se inyecta automáticamente
+   BACH: hechos, lecciones, contexto_triggers en bach.db (más de 890 entradas)
+
+4. INYECTORES COMO COMUNICACIÓN
+---------------------------------
+   Método: los recordatorios del sistema se inyectan en el flujo de mensajes
+   Dirección: Sistema -> LLM (unidireccional)
+   Latencia: Inmediatamente (en el siguiente mensaje)
+   Ejemplo: Hook inyecta mensaje a través de hook_additional_context
+   Variantes:
+     a) Inyectores Claude Code (52 tipos, no controlables)
+     b) Inyectores BACH (5 tipos, controlables por LLM)
+     c) Basado en gancho (UserPromptSubmit lee el archivo "Bandeja de entrada")
+   Fortaleza: Aparece en el contexto sin recuperación activa.
+   Debilidad: los inyectores CC no pueden ser controlados por el usuario/LLM
+   BACH: ContextInjector, SessionInjector, PartnerInjector,
+               HealthInjector, DonaciónInjector
+   Ver también: claude-code-injections.txt, injectors.txt
+
+5. ESTIGMERGIO / MAPA DE MARGATOR
+--------------------------------------
+   Método: Los agentes dejan archivos marcadores (feromonas)
+               Otros agentes leen los marcadores y adaptan el comportamiento.
+   Dirección: Bidireccional indirecta (a través del entorno)
+   Latencia: instantánea (sistema de archivos)
+   Ejemplo: el bot escribe .visited.log, otros evitan las áreas visitadas
+   Marcadores: .done, .in_progress, .visited.log, .counter, .flag
+   Fortaleza: No se requiere comunicación directa, se adapta bien
+   Debilidad: No hay garantía de que se lea el marcador, es necesaria la evaporación
+   BACH: datos/swarm/map/, mantenimiento_swarm.py, merodeadores_map.py
+   Ver también: trampelpfadanalyse.md (Capítulo 2: Método de enjambre)
+
+6. ARCHIVOS DE TRANSFERENCIA (Transferencia explícita)
+------------------------------------------
+   Método: Documento de transferencia estructurado entre instancias
+   Dirección: Unidireccional (predecesor -> sucesor)
+   Latencia: Inmediatamente (el archivo se escribe antes de que comience el sucesor)
+   Ejemplo: Marble Run: handoff.md con tarea, estado, resultado, comentarios
+   Punto fuerte: Transferencia de contexto completo, estructurado, comprensible.
+   Debilidad: solo para cadenas en serie, no para comunicación paralela
+   BACH: tools/llmauto/state/handoff.md (tubería de mármol)
+
+7. PUENTE / CONECTORES (Canales externos)
+------------------------------------------
+Método: BACH envía/recibe mensajes a través de servicios externos
+   Dirección: Bidireccional (BACH <-> humano/otro sistema)
+   Latencia: segundos (dependiendo del servicio)
+   Ejemplo: usuario escribe mensaje de Telegram, BACH responde
+   Canales: Telegram (Beta), Discord (Beta), HomeAssistant (Beta),
+               Signal (planeado), WhatsApp (planeado)
+   Fortaleza: comunicación con el mundo real, no solo de LLM a LLM
+   Debilidad: Depende de API externas, algunas basadas en scraping
+   BACH: conectores/, hub/connector.py, sistema puente
+   Ver también: bridge.txt, conectores.txt
+
+8. MODO EQUIPO CLAUDE CODE
+---------------------------
+   Método: coordinación de equipo integrada en Claude Code CLI
+   Dirección: Bidireccional (Líderes <-> Compañeros)
+   Latencia: Inmediatamente (cola de mensajes dentro de la sesión)
+   Ejemplo: el líder del equipo envía la tarea al investigador y obtiene el resultado
+   Características: Enviar mensaje, Lista de tareas, Creación de tareas, Actualización de tareas, Difusión
+   Fortaleza: Antrópico-nativo, bien integrado, trabajo paralelo.
+   Debilidad: Sólo dentro de una sesión de Claude Code, no hay mezcla de Opus/Soneto
+   BACH: No integrado directamente (Función del Código Claude, no BACH)
+
+9. GIT COMO COMUNICACIÓN
+--------------------------
+   Método: confirma + confirma mensajes como mensajes entre instancias
+   Dirección: Bidireccional (empujar/tirar)
+   Latencia: Minutos (Commit + Push + Pull)
+   Ejemplo: el trabajador confirmó el cambio, el revisor lee git diff + mensaje
+   Fortaleza: Herramientas estándar, versionadas y comprensibles.
+   Debilidad: gastos generales para mensajes pequeños, requiere repositorio
+   BACH: No se utiliza sistemáticamente, pero es posible (versionado SQ020)
+
+10. TABLAS DE BD COMO CANAL
+---------------------------
+    Método: los agentes escriben en una tabla de base de datos compartida, otros leen
+    Dirección: bidireccional, multipartidista
+    Latencia: Inmediatamente (dentro de una sesión para acceso a la base de datos)
+    Ejemplo: el agente escribe un mensaje en la tabla de mensajes y el destinatario sondea
+    Fortaleza: estructurado, persistente, con capacidad de búsqueda, ya existente.
+    Debilidad: sondeo necesario (sin presión), necesita manejadores
+    BACH: bach.db tiene infraestructura, pero no tiene un sistema de mensajes explícito
+
+11. HOOKS (Inyección basada en eventos)
+--------------------------------------
+    Método: el comando Shell se ejecuta en el evento, se inyecta el resultado
+    Dirección: Externa -> LLM (unidireccional por llamada de gancho)
+    Latencia: Inmediatamente (en cada aviso del usuario o llamada a la herramienta)
+    Ejemplo: el gancho UserPromptSubmit lee el archivo "Bandeja de entrada" e inyecta contenido
+    Tipos de gancho: PreToolUse, PostToolUse, SessionStart, UserPromptSubmit, etc.
+    Fortaleza: la forma más sencilla de enviar mensajes entre instancias sin un parche de origen
+    Debilidad: solo para eventos (no bajo demanda), se requiere configuración de enlace
+    BACH: enfoque recomendado para la integración del código Claude
+    Ver también: claude-code-injections.txt (sección “Sistema de mensajería”)
+
+12. SERVIDOR MCP COMO INTERMEDIARIO
+-------------------------------
+    Método: servidor MCP compartido que utilizan varias instancias de LLM
+    Dirección: Bidireccional (todas las instancias acceden al mismo servidor)
+    Latencia: Inmediata (llamada a herramienta)
+    Ejemplo: ellmos-codecommander-mcp como servicio compartido para todas las instancias de Claude
+    Fortaleza: estandarizado (protocolo MCP), basado en herramientas, ampliable
+    Debilidad: el servidor debe estar en ejecución, sin mecanismo de inserción
+    BACH: ellmos-codecommander-mcp (14 herramientas), ellmos-filecommander-mcp (38 herramientas)
+
+13. ENCADENAMIENTO DE PROCESOS (.bat como señal)
+----------------------------------------
+    Método: un proceso inicia el siguiente mediante un archivo por lotes
+    Dirección: Unidireccional (predecesor -> sucesor)
+    Latencia: Inmediata (inicio del proceso)
+    Ejemplo: Marble-Run: Opus Worker sale, .bat inicia Sonnet Reviewer
+    Fortaleza: Determinista, sin infraestructura, nativo de BS
+    Debilidad: solo cadenas en serie, sin canal de retroalimentación (necesita un archivo de transferencia)
+    BACH: herramientas/llmauto/ (llmauto-CLI) (sistema de ejecución de mármol)
+
+14. SISTEMA DE ARCHIVOS COMPARTIDOS (File Watcher)
+--------------------------------------
+    Método: los agentes supervisan el directorio compartido en busca de cambios
+    Dirección: bidireccional (todos pueden escribir/leer)
+    Latencia: segundos (intervalo de sondeo del observador)
+    Ejemplo: el agente escribe new_task.json, Watcher lo detecta y responde
+    Starke: Sencillo, sin infraestructura especial
+    Debilidad: basado en encuestas, posibles condiciones de carrera, problemas de sincronización de OneDrive
+    BACH: Fundamentalmente posible, no implementado sistemáticamente
+
+15. TUBERÍAS STDOUT/STDIN
+-------------------------
+Método: la salida de un proceso se convierte en la entrada del siguiente
+    Dirección: Unidireccional (Productor -> Consumidor)
+    Latencia: instantánea (tubería)
+    Ejemplo: claude --print "Analizar X" | claude --print "Tarifa: $(cat -)"
+    Puntos fuertes: Filosofía Unix, gastos generales mínimos, no se requiere sistema de archivos
+    Debilidad: solo texto, sin contexto estructurado, sin persistencia
+    BACH: No utilizado (Claude Code admite --print pero no stdin pipe)
+
+FORMAS DE COMUNICACIÓN ESPECÍFICAS DE BACH (16-21)
+===============================================
+
+16. PROTOCOLO MULTI-LLM V3 (Presencia + Bloqueo)
+-------------------------------------------------
+    Método: archivos de presencia + archivos de bloqueo + protocolo de enlace en el sistema de archivos
+    Dirección: bidireccional, multipartidista
+    Latencia: segundos (latido cada 30 segundos, tiempo de espera 120 segundos)
+    Ejemplo: Claude reconoce que Gemini está en línea a través de .gemini_presence
+    Características: Presencia, Bloqueo, Apretón de manos, Latido, Detección de agente
+    Conocidos: Claude, Géminis, Copiloto, Ollama, Perplejidad, Mistral-Watcher
+    Punto fuerte: Coordinación sin una autoridad central, condiciones de carrera seguras.
+    Debilidad: Basado en sistema de archivos (más lento que DB), posible presencia obsoleta
+    BACH: hub/multi_llm_protocol.py (V3), CLI: presencia de bach llm/check/lock
+
+17. PRESENCIA DE SOCIOS DB (tarjetas de sellos)
+----------------------------------------
+    Método: tabla SQLite partner_presence con clock_in/out/heartbeat
+    Dirección: Bidireccional (todos inician/cierran sesión)
+    Latencia: Inmediata (consulta BD)
+    Ejemplo: estado de bach llm -> muestra quién está en línea y qué está haciendo
+    Características: clock_in(), clock_out(), latido del corazón(), get_online_partners()
+    Fortaleza: Más confiable que los archivos, estado persistente
+    Debilidad: Requiere acceso a la base de datos, no es compatible con el sistema de archivos
+    BACH: hub/multi_llm_protocol.py (clase PartnerPresenceDB)
+
+18. SISTEMA DE MENSAJES (ENTRADA/SALIDA)
+--------------------------------------
+    Método: mensajería basada en base de datos con remitente, destinatario, cuerpo y estado
+    Dirección: bidireccional, direccional (determinado por el receptor)
+    Latencia: Inmediata (al consultar) o sondeo (modo de visualización cada 10 segundos)
+    Ejemplo: mensaje de bach enviar gemini “Analizar esta imagen”
+    Funciones: Enviar, Leer, Ver (sondeo), Hacer ping, Confirmar lectura (--ack)
+    Estado: no leído, leído, archivado
+    Fortaleza: Estructurado, persistente, con capacidad de búsqueda, recibo de lectura.
+    Debilidad: Basado en pull (sin push), requiere sondeo activo
+    BACH: hub/messages.py, tabla DB: mensajes
+
+19. SISTEMA DE NOTIFICACIÓN (Push Multicanal)
+--------------------------------------------------
+    Método: notificaciones salientes a través de canales externos
+    Dirección: Unidireccional (BACH -> Externa)
+    Latencia: segundos
+    Canales: Discord (Webhook), Telegram (Bot API), Slack (Webhook),
+                Correo electrónico (SMTP/SSL), señal (directa), webhook genérico
+    Ejemplo: bach notificar enviar telegrama "Tarea completada"
+    Fuerza: multicanal, configurable
+    Debilidad: Solo saliente (no hay recepción vía notificación)
+    BACH: hub/notify.py, CLI: configuración de notificación de bach/enviar/prueba/lista
+
+20. PROCESADOR DE COLAS Y ENRUTADOR INTELIGENTE
+------------------------------------
+    Método: enrutamiento confiable de mensajes del conector
+    Dirección: Bidireccional (Conector <-> BACH interno)
+    Latencia: segundos (intervalos de encuesta: Telegram 15 s, Discord 60 s)
+    Características: Reintento/Retroceso (5 niveles: 30 s-480 s), Disyuntor (5 errores)
+    Inteligente: analiza comandos de mensajes ("/task add test")
+    Fortaleza: Confiable, autocurativo, reconocimiento de comandos.
+    Debilidad: Complejo, necesita ejecutar un demonio
+    BACH: hub/_services/connector/queue_processor.py, smart_router.py
+
+21. PROTOCOLO DE DELEGACIÓN GÉMINIS
+--------------------------------
+    Método: archivos de tareas en gemini/inbox/, resultados en gemini/outbox/
+    Dirección: Bidireccional (Claude -> Géminis y viceversa)
+    Latencia: minutos a horas (manualmente o mediante Google Drive Sync)
+    Desencadenante: palabra clave, presupuesto simbólico, longitud del documento, explícito
+    Ejemplo: Claude crea una tarea de investigación, Gemini la procesa y devuelve el resultado.
+    Fortaleza: Utiliza las fortalezas de Géminis (documentos grandes, imágenes)
+    Debilidad: Se requiere transferencia manual (o Google Drive Sync)
+    BACH: habilidades/flujos de trabajo/gemini-delegation.md
+
+MATRIZ DE COMPARACIÓN
+=================
+
+Método | Dirección | Latencia | Persistencia | Escalado | Complejidad
+  ---------------------|----------|----------|------------|------------|-------------
+  GENÉRICO (transferible a cualquier sistema LLM):
+  1 archivo de caída | Universidad | Alto | Sí | Bueno | mínimo
+  2 MEMORIA.md | Bi | sesión | Sí | Limitado | Bajo
+  3 bases de datos compartidas | Múltiples | Inmediatamente | Sí | Muy bueno | Medios
+  4 inyectores | Universidad | Inmediatamente | No | Limitado | Medios
+  5 Estigmargia | Indirecto | Inmediatamente | Sí (TTL) | Muy bueno | Medios
+  6 archivos de transferencia | Universidad | Inmediatamente | Sí | Serie | Bajo
+  7 Puente/Conectores | Bi | segundos | Sí | Bueno | Alto
+  8 Modo Equipo | Bi | Inmediatamente | sesión | Paralelo | Medios
+  9Git | Bi | minutos | Sí | Bueno | Medios
+  10 mesas de base de datos | Múltiples | Inmediatamente | Sí | Muy bueno | Medios
+  11 ganchos | Universidad | Evento | No | Limitado | Bajo
+  12 servidores MCP | Bi | Inmediatamente | Variables | Bueno | Alto
+  13 Encadenamiento de procesos | Universidad | Inmediatamente | No | Serie | Bajo
+  14 Vigilante de archivos | Bi | segundos | Sí | Bueno | Medios
+  15 tuberías estándar | Universidad | Inmediatamente | No | Serie | Mínimo
+
+  ESPECÍFICO BACH (utiliza infraestructura BACH):
+  16 Prot. Multi-LLM.   | Múltiples | 30 años | Sí | Bueno | Medios
+  17 Presencia de socios | Múltiples | Inmediatamente | Sí | Bueno | Medios
+  Sistema de 18 mensajes.   | Bi | Inmediatamente | Sí | Bueno | Medios
+  19 Notificar (empujar) | Universidad | segundos | Sí | Varios canales.  | Medios
+  20 colas/enrutador | Bi | segundos | Sí | Bueno | Alto
+  21 Delegación Géminis | Bi | minutos | Sí | Limitado | Baja
+
+RECOMENDACIONES POR CASO DE USO
+==================================
+
+  Caso de uso | Métodos recomendados
+  ----------------------------------|--------------------------------------
+  Swarm (muchos agentes paralelos) | 5 (Estigmergía) + 3 (DB) + 14 (Observador)
+  Tubería en serie (Marble Run) | 6 (traspaso) + 13 (cadena de proceso)
+  Trabajo en equipo (2-5 agentes) | 8 (modo Equipo) o 10 (tablas DB)
+  Transferencia de conocimientos a largo plazo | 2 (MEMORIA.md) + 3 (DB)
+  Notificación en tiempo real | 4 (inyectores) + 11 (ganchos)
+  Comunicación con el mundo exterior | 7 (Puente/Conectores)
+  Colaboración asincrónica | 1 (soltar archivo) + 9 (git)
+  Integración basada en herramientas | 12 (servidor MCP)
+
+ARQUITECTURA ESPECÍFICA DE BACH
+==============================
+
+El punto fuerte de BACH es la combinación de varios métodos:
+- Puente (7) para el mundo exterior.
+- DB (3+10) como almacenamiento central de conocimientos
+- Inyectores (4) para enriquecimiento proactivo del contexto
+- Stigmergy (5) para operaciones de enjambre
+- Transferencia (6) + Encadenamiento de procesos (13) para tuberías de mármol
+
+Por el contrario, Claude Code está limitado a un método por escenario:
+El modo de equipo (8) O los inyectores (4), no se pueden combinar.
+
+BACH puede usar los 15 métodos simultáneamente y cambiar dinámicamente.
+esta es la ventaja arquitectónica de un sistema centrado en LLM.
+
+VER TAMBIÉN
+===========
+  bridge.txt Sistema puente/conector
+  conectores.txt Tipos de conectores en detalle
+  inyectores.txt sistema inyector BACH
+  claude-code-injections.txt Anatomía de las inyecciones del código Claude
+  multi-llm.txt Protocolo multi-LLM
+  schwarm.txt Operaciones de enjambre (si las hay)

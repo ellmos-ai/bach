@@ -1,0 +1,77 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+============
+集成
+
+描述
+============
+LLM 合作伙伴集成和 BACH 上下文同步。管理连接到
+通过结构化 Markdown 文件块的外部 AI 系统（Claude、Gemini、Ollama）
+有清晰的标记。基础：2 级托管（CLAUDE.md/GEMINI.md/OLLAMA.md 推送）。
+
+SQ038 的一部分：Claude 代码集成和 LLM 合作伙伴桥。
+
+操作
+===========
+状态 显示当前集成状态（默认）
+                  来源：system_config、CLAUDE.md 标记检查
+                  输出：配置、文件状态、阶段模型
+
+push-claude 将 BACH 块推送到 CLAUDE.md（第 2 阶段托管）
+                  需要：tools/claude_md_sync.py + 父目录
+                  效果：创建或更新 BACH:START...BACH:END
+
+push-gemini 将 BACH 块推送到 GEMINI.md（2 级托管）
+                  与 Push-claude 相同，合作伙伴：GEMINI
+
+push-ollama 将 BACH 块推送到 OLLAMA.md（2 级托管）
+                  与推克劳德相同，合作伙伴：OLLAMA
+
+拉克劳德 [尚未实现 - 3 级]
+                  计划：手动内容从 CLAUDE.md 返回到 DB
+
+config 从 system_config 显示当前集成配置
+                  过滤器：所有带有前缀“integration.*”的键
+                  显示：键、值、可选 描述
+
+set <partner> 设置每个合作伙伴的集成级别
+<level> 合作伙伴：claude、gemini、ollama、claude-code、...
+                  级别：关闭 |同步|管理 |满
+                  位置：系统配置（数据库）
+                  关闭 = 无 BACH 干预
+                  同步 = 来自数据库的 MEMORY.md (SQ065)
+                  托管 = CLAUDE.md BACH 块（当前可用）
+                  full = 钩子 + 上下文注入（计划）
+
+示例
+=========
+1。检查集成状态：
+   bach integration status
+
+2.更新 CLAUDE.md 中的 BACH 块：
+   bach integration push-claude
+
+3。在级别 2 激活克劳德积分：
+   bach integration set claude-code managed
+
+4。显示当前配置：
+   bach integration config
+
+5。禁用集成：
+   bach integration set claude-code off
+
+FILES
+=======
+hub/integration.py 处理程序实现（IntegrationHandler 类）
+tools/claude_md_sync.py ClaudeMdSync - 同步和 BACH 块管理
+data/bach.db system_config 表：每个合作伙伴的集成级别
+                            键格式：integration.<partner>.level
+
+另请参见
+==========
+- hub/base.py BaseHandler 类（继承）
+- docs/HANDLER.md 处理程序架构
+- BACH_Dev/BACH_Memory_Architecture_Concept.md SQ038 规范

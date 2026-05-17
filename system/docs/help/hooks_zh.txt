@@ -1,0 +1,129 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH HOOK-FRAMEWORK
+===================
+
+截至：2026-02-13
+
+Hooks 是 BACH 生命周期的可扩展事件系统。
+它们允许您将自己的逻辑附加到中央系统事件，
+无需更改现有代码。
+
+重要：HOOKS != INJECTORS
+-----------------------------
+  Hooks = 技术框架（生命周期事件、插件集成）
+  注入器=认知子系统（思维模拟、认知缓解）
+
+钩子和注入器彼此独立工作。
+喷射器仍然作为一个独立的子系统。
+
+可用事件 (17)
+------------------------
+  上下文键时的事件
+  ---------------------- ---------------------------------------- ------------------------
+  before_startup 启动前协议伙伴，模式，快速
+  after_startup 成功启动伙伴后，模式，成功
+  before_shutdown 关闭前协议伙伴，模式
+  after_shutdown 关闭伙伴后，模式，成功
+  before_command 在每个 CLI 命令处理程序、操作、参数之前
+  after_command 每个 CLI 命令处理程序、操作、成功、参数之后
+  after_task_create 任务创建后task_id, title
+  after_task_done 任务完成后task_id, title
+  after_task_delete 任务删除后task_id
+  after_memory_write 后内存条目类型、内容
+  after_lesson_add 课后创建 Lesson_id、标题、类别、严重性
+  after_skill_create 技能创建后名称、类型、路径
+  after_skill_reload 热重载后 handler_count
+  after_plugin_load 插件加载后名称、版本、钩子、处理程序
+  after_plugin_unload 插件卸载后名称
+  after_capability_denied 能力插件、能力、原因
+  after_email_send 发送电子邮件草稿 ID 后，收件人
+
+CLI 命令
+-----------
+  bach hooks status            所有挂钩和侦听器的状态
+  bach hooks events            列出所有事件及描述
+  bach hooks log               显示最后的挂钩执行
+  bach hooks test <event>      发出测试事件（调试）
+
+  缩写形式：
+  bach hook status             （别名：hook -> hooks）
+
+API 用法
+-----------
+  从 core.hooks 导入钩子
+
+  # 注册监听器
+  def my_handler(上下文):
+      print(f"创建的任务：{context['task_id']}")
+      return "processed" # 可选
+
+  hooks.on('after_task_create', my_handler, name='my_plugin')
+
+  # 具有优先级的侦听器（较低=较早，默认=50）
+  hooks.on('after_startup', check_updates, 优先级=10, name='updater')
+
+  # 删除监听器
+  hooks.off('after_task_create', name='my_plugin')
+
+  # 手动发出事件
+  结果 = hooks.emit('after_task_create', {'task_id': 42, 'title': '测试'})
+
+  # 查询状态
+  打印（hooks.status（））
+
+  # 检查事件是否有监听器
+  if hooks.has_listeners('after_startup'):
+      print("启动正在被监控")
+
+注册自己的HOOKS
+--------------------------
+AI小伙伴可以注册自己的hook来扩展BACH：
+
+  从 core.hooks 导入钩子
+
+  # 示例：每次任务完成后自动备份
+  def auto_backup_nach_task(ctx):
+      从 bach_api 导入备份
+      备份.create()
+      return f"任务#{ctx['task_id']}后备份"
+
+  hooks.on('after_task_done', auto_backup_nach_task, name='auto_backup')
+
+  # 示例：启动通知
+  def 启动_通知(ctx):
+      从 bach_api 导入消息
+      msg.send("user", f"会话已开始 ({ctx['partner']})")
+
+  hooks.on('after_startup',startup_notification, name='notify')
+
+安全
+----------
+  - 钩子封装在 try/ except 中：一个损坏的监听器
+    永远不会阻塞实际操作
+  - 侦听器仅接收读取上下文（字典），而不接收写入访问权限
+  - 优先顺序可防止顺序冲突
+  - 用于调试的钩子日志（bach hooks 日志）
+
+架构
+-----------
+core/hooks.py HookRegistry 单例（框架）
+  hub/hooks.py CLI 处理程序（bach hooks...）
+  core/app.py 在命令之前/之后发出
+  hub/startup.py 在启动之前/之后发出
+  hub/shutdown.py 发出 before/after_shutdown
+  hub/task.py 在_task_create/done 之后发出
+  hub/memory.py 发出 after_memory_write
+  hub/lesson.py 发出 after_lesson_add
+  hub/skills.py 发出 after_skill_create/reload
+  core/plugin_api.py 发出 after_plugin_load/unload
+  core/capability.py after_capability_denied 发出
+
+另请参见
+----------
+  bach help cli              CLI 约定
+  bach help skills           技能系统
+  bach help self-extension   自我扩展工作流程
+  bach --inject status       注入器系统（单独的子系统）

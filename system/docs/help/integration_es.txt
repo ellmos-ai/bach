@@ -1,0 +1,77 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+============
+integración
+
+DESCRIPCIÓN
+============
+Integración de socios LLM y sincronización de contexto BACH. Gestiona la conexión a
+sistemas de IA externos (Claude, Gemini, Ollama) a través de bloques de archivos Markdown estructurados
+con marcadores claros. Base: Nivel 2 administrado (CLAUDE.md/GEMINI.md/OLLAMA.md Push).
+
+Parte de SQ038: Integración de Claude Code y LLM Partner Bridge.
+
+OPERACIONES
+===========
+status Mostrar estado de integración actual (predeterminado)
+                  Fuentes: system_config, verificación de marcador CLAUDE.md
+                  Salida: configuración, estado del archivo, modelo de etapa
+
+push-claude push bloque BACH a CLAUDE.md (etapa 2 administrada)
+                  Requiere: herramientas/claude_md_sync.py + directorio principal
+                  Efecto: Crea o actualiza BACH:START...BACH:END
+
+push-gemini Empuje el bloque BACH a GEMINI.md (Nivel 2 administrado)
+                  Idéntico a push-claude, socio: GEMINI
+
+push-ollama Empuje el bloque BACH a OLLAMA.md (Nivel 2 administrado)
+                  Igual que push-claude, socio: OLLAMA
+
+pull-claude [AÚN NO IMPLEMENTADO - Nivel 3]
+                  Planificado: contenido manual de CLAUDE.md de regreso a DB
+
+config Mostrar la configuración de integración actual desde system_config
+                  Filtro: Todas las claves con prefijo 'integración.*'
+                  Pantalla: Clave, valor, opcional Descripción
+
+set <partner> Establecer nivel de integración por socio
+<nivel> Socios: claude, gemini, ollama, claude-code, ...
+                  Nivel: apagado | sincronización | gestionado | lleno
+                  Ubicación: system_config (base de datos)
+                  apagado = Sin intervención BACH
+                  sincronización = MEMORIA.md de DB (SQ065)
+                  gestionado = CLAUDE.md bloque BACH (actualmente disponible)
+                  full = ganchos + inyección de contexto (planificada)
+
+EJEMPLOS
+=========
+1. Verificar estado de integración:
+   bach integration status
+
+2. Actualizar bloque BACH en CLAUDE.md:
+   bach integration push-claude
+
+3. Activar la integración de Claude en el nivel 2:
+   bach integration set claude-code managed
+
+4. Mostrar configuración actual:
+   bach integration config
+
+5. Deshabilitar la integración:
+   bach integration set claude-code off
+
+FILES
+=======
+hub/integration.py Implementación del controlador (clase IntegrationHandler)
+tools/claude_md_sync.py ClaudeMdSync - Sincronización y gestión de bloques BACH
+data/bach.db system_config Tabla: Nivel de integración por socio
+                            Formato de clave: integración.<socio>.nivel
+
+VER TAMBIÉN
+==========
+- hub/base.py Clase BaseHandler (herencia)
+- docs/HANDLER.md Arquitectura del controlador
+- Especificación BACH_Dev/BACH_Memory_Architecture_Concept.md SQ038

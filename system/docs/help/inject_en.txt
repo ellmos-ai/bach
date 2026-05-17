@@ -1,0 +1,64 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+============
+inject -- Injector control and task assignment
+
+DESCRIPTION
+============
+The inject handler manages the injector system for automated
+Context injections and task assignment. Injectors are plugins that
+automatically for certain triggers (words, times, task completion).
+provide helpful hints or actions.
+
+OPERATIONS
+===========
+status
+  Shows the status of all injectors (active/inactive).
+  Syntax: --inject status
+
+toggle <name>
+  Turns an injector on or off.
+  Syntax: --inject toggle <name>
+
+  Available injectors:
+    strategy Helpful thoughts on trigger words
+    context Context clues for keywords
+    time Regular time updates (timebeat)
+    between Auto-reminder after Task-Done
+
+task <minutes>
+  Assigns a new task with a specified duration.
+  Syntax: --inject task <minutes>
+  Default: 5 minutes
+
+decompose <id>
+  Breaks down an existing task into subgoals.
+  Syntax: --inject decompose <task-id>
+
+EXAMPLES
+=========
+# Check status of all injectors
+--inject status
+
+# Enable strategy injector
+--inject toggle strategy
+
+# Assign 15 minute task
+--inject task 15
+
+# Disassemble task with ID 'abc123'
+--inject decompose abc123
+
+FILES
+=======
+hub/inject.py Handler implementation
+tools/injectors.py InjectorSystem backend
+config.json injector configuration
+
+SEE ALSO
+==========
+hub/base.py BaseHandler class
+docs/help/ Further handler documentation

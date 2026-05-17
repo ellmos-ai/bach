@@ -1,0 +1,77 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+============
+統合
+
+説明
+============
+LLM パートナーの統合と BACH コンテキストの同期。への接続を管理します
+構造化された Markdown ファイル ブロックを介した外部 AI システム (Claude、Gemini、Ollama)
+クリアマーカー付き。ベース: レベル 2 管理 (CLAUDE.md/GEMINI.md/OLLAMA.md Push)。
+
+SQ038 の一部: クロード コードの統合と LLM パートナー ブリッジ。
+
+OPERATIONS
+===========
+status 現在の統合ステータスを表示 (デフォルト)
+                  ソース: system_config、CLAUDE.md マーカー チェック
+                  出力: 設定、ファイル ステータス、ステージ モデル
+
+push-claude BACH ブロックを CLAUDE.md にプッシュ (ステージ 2 管理)
+                  必要なもの: tools/claude_md_sync.py + 親ディレクトリ
+                  効果: BACH:START...BACH:END
+
+push-gemini を作成または更新します。 BACH ブロックを GEMINI.md にプッシュします (レベル 2 管理対象)
+                  Push-claude と同一、パートナー: GEMINI
+
+push-ollama BACH ブロックを OLLAMA.md にプッシュします (レベル 2 管理対象)
+                  プッシュ クロードと同じ、パートナー: OLLAMA
+
+プル クロード [未実装 - レベル 3]
+                  計画: CLAUDE.md から DB
+
+config に戻された手動コンテンツ system_config からの現在の統合構成の表示
+                  フィルター: プレフィックス「integration.*」を持つすべてのキー
+                  表示: キー、値、オプション 説明
+
+set <partner> パートナーごとに統合レベルを設定します
+<レベル> パートナー: クロード、ジェミニ、オラマ、クロード コード、...
+                  レベル: オフ |同期 |管理された |いっぱい
+                  場所: system_config (DB)
+                  オフ = BACH 介入なし
+                  sync = DB からの MEMORY.md (SQ065)
+                  管理対象 = CLAUDE.md BACH ブロック (現在利用可能)
+                  full = フック + コンテキスト インジェクション (計画)
+
+例
+=========
+1。統合ステータスを確認します:
+   bach integration status
+
+2。 CLAUDE.md:
+   bach integration push-claude
+
+3 の BACH ブロックを更新します。レベル 2:
+   bach integration set claude-code managed
+
+4 でクロード統合をアクティブ化します。現在の構成を表示します:
+   bach integration config
+
+5。統合を無効にする:
+   bach integration set claude-code off
+
+FILES
+=======
+hub/integration.py ハンドラーの実装 (IntegrationHandler クラス)
+tools/claude_md_sync.py ClaudeMdSync - 同期と BACH ブロック管理
+data/bach.db system_config 表: パートナーごとの統合レベル
+                            キーの形式:integration.<partner>.level
+
+関連項目
+==========
+- Hub/base.py BaseHandler クラス (継承)
+- docs/HANDLER.md ハンドラーのアーキテクチャ
+- BACH_Dev/BACH_Memory_Architecture_Concept.md SQ038仕様

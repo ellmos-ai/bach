@@ -1,0 +1,98 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+УПРАВЛЕНИЕ ЛИТЕРАТУРОЙ (литература)
+================================================================================
+
+ИМЯ ХРАНИТЕЛЯ
+  литература
+
+ОПИСАНИЕ
+Полное управление литературой с указанием источника, цитирования и сводной информации.
+администрация. Поддерживает 5 стилей цитирования (APA, MLA, Чикаго, DIN, Гарвард).
+Экспорт BibTeX и база данных с возможностью поиска. Портировано с ЛитЦентрума.
+Хранит все в bach.db (таблицы:lit_sources,lit_quotes,lit_summaries).
+
+ОПЕРАЦИИ
+  добавить добавить источник
+  список источников списка
+  поиск Искать источники
+  show Показать сведения об источнике
+  редактировать редактировать источник
+  удалить удалить источник
+  цитата Добавить цитату
+  quotes Показать цитаты из источника
+  cite Формат цитаты (APA/MLA/Чикаго/DIN/Гарвард)
+  экспорт экспорта BibTeX
+  сводка Добавить/показать сводку
+  stats Показать статистику базы данных
+  help Показать справку
+
+ПРИМЕРЫ
+
+ДОБАВИТЬ ИСТОЧНИКИ
+  bach literatur add "Machine Learning Basics" \
+    --автор «Том Митчелл» --2023 год --типовая книга
+
+  bach literatur add "Deep Learning Review" \
+    --автор "ЛеКун, Янн; Бенджио, Йошуа" --2022 год --тип статьи \
+    --journal "Nature" --doi "10.1038/nature14539"
+
+УПРАВЛЕНИЕ ИСТОЧНИКАМИ
+  bach literatur list                    (последние 20)
+  bach literatur list --limit 50         (ограничение изменений)
+  bach literatur list --type article     (только статьи)
+  bach literatur list --status read      (только чтение)
+  bach literatur search "LSTM"           (поиск)
+  bach literatur show 5                  (подробности)
+  bach literatur edit 5 --year 2024 --status read
+  bach literatur delete 3                (также удаляет цитаты/резюме)
+
+ЦИТАТЫ И ЦИТИРОВАНИЯ
+  bach literatur quote 5 "This is a great insight" --page 42
+  bach literatur quote 5 "Another quote" --type indirect --comment "Wichtig"
+  bach literatur quotes 5                (все кавычки) показать)
+  bach literatur cite 5                  (цитата АПА)
+  bach literatur cite 5 --style mla --page 42
+  (Стили: apa, mla, Chicago, din, Harvard)
+
+ОБЗОРЫ
+  bach literatur summary 5 "Die Quelle beschreibt..." --type full
+  bach literatur summary 5 "Kapitel 3 kurz gefasst" --type chapter --pages "45-67"
+  bach literatur summary 5                (показать все)
+
+ЭКСПОРТ
+  bach literatur export                  (последние 50 как bibtex)
+  bach literatur export --all            (экспортировать все)
+  bach literatur export --ids 1,2,3 --out refs.bib
+  bach literatur stats                   (обзор)
+
+ОПЦИИ ПОЛЯ (при добавлении/редактировании)
+  --author "Имя1; Имя2; Имя3" (несколько авторов с ;)
+  --year ГГГГ (год)
+  --type статья|книга|глава|диссертация|конференция|веб-сайт|другое
+  --journal "название журнала"
+  --publisher "издатель"
+  --doi "10.xxxx/xxxx"
+  --isbn "978-x-xxxx-xxxx-x"
+  --url "https://..."
+  --tags "тег1, тег2, тег3" (через запятую)
+  --lang de|en (язык, по умолчанию: de)
+  --status непрочитано|чтено|прочитано|в архиве
+  --рейтинг 1-5 (звездный рейтинг)
+  --notes "заметка"
+  --abstract "краткое описание"
+  --pdf "/путь/к/файлу.pdf"
+
+ФАЙЛЫ
+  data/bach.db База данных SQLite
+  data/bach.db -> исходная таблицаlit_sources
+  data/bach.db -> таблица котировокlit_quotes
+  data/bach.db -> сводная таблицаlit_summaries
+  _services/literatur/citation_formatter Модули цитирования
+
+СМОТРИТЕ ТАКЖЕ
+  bach media       Медиа-менеджмент
+  bach lesson      Извлеченные уроки
+  bach mem         Система памяти

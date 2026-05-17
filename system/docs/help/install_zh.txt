@@ -1,0 +1,118 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH 安装
+=================
+
+
+描述
+============
+BACH 初始安装说明。 BACH 是一个个人代理操作系统，
+在本地运行并协调 AI 模型。
+
+
+要求
+===============
+- Python >= 3.10
+- npm（用于 MCP 服务器）
+-> 100 MB 可用内存
+- 可选：OneDrive（用于多系统同步）
+- 可选：Tailscale（用于远程访问服务器）
+
+
+快速启动
+============
+# 1. 克隆存储库
+git 克隆 https://github.com/ellmos-ai/bach.git
+cd bach
+
+# 2. 检查要求
+bach setup preflight
+
+# 3. 完成安装
+bach setup full-install
+
+# 4. 启动第一个会话
+bach --startup
+
+
+完整安装步骤
+=====================
+“bach setup full-install”自动执行以下步骤：
+
+1.飞行前检查Python、npm、内存、写入权限
+2. 配置 ProSync 单系统或多系统（默认：单系统）
+3. MCP 服务器 ellmos-codecommander-mcp、ellmos-filecommander-mcp
+4.Claude代码在~/.claude/中Hook DB保护和其他钩子
+5.初始化Secret ~/.bach/bach_secrets.json
+6.个性化用户配置文件USER.md并与DB同步
+7.语言（可选）设置系统语言和切换文档
+8. 帮助文档（可选）生成所选语言的帮助文件（EN 后备）
+9. 所有组件的验证最终检查
+
+可选：--with-n8n 用于 n8n-Manager-MCP，--lang <code> 用于语言选择 (de/en/es/ru/ja/zh)，
+--config <json> 用于批量配置。
+
+
+USE SCENARIOS
+=================
+BACH 已安装。安装后，配置选项决定
+关于部署场景。
+
+单系统（默认）
+-----------------------
+BACH 在一台计算机上运行，无需同步。
+
+  bach setup full-install
+  # ProSync 保持停用状态（默认）
+
+带有 OneDrive 的多系统
+-------------------------
+BACH 位于 OneDrive 中并在多台计算机上使用。
+每个系统都有一个本地数据库（~/.bach/bach.db），通过
+ProSync 已同步。
+
+  bach setup full-install
+  bach setup prosync --multi-system
+  # 同步：bach 数据库同步（手动）或在启动/退出时自动
+
+服务器（无头）
+-----------------
+BACH 在服务器（例如 Mac Studio、Linux 服务器）上运行，并且是
+通过 Telegram、Web GUI 或系统托盘远程控制。
+
+  bach setup full-install
+  # 然后激活连接器：
+  # - Telegram 机器人：hub/_services/chat/telegram_chat.py
+  # - Web GUI: gui/server.py --host 0.0.0.0
+  # - 系统托盘：hub/_services/chat/chat_tray.py --端口 8081
+  # - CLI 聊天：hub/_services/chat/buddha_cli.py
+
+对于多系统服务器另外：
+  bach setup prosync --multi-system
+
+
+安装后
+=====================
+bach setup check           验证安装
+bach --startup             启动第一个会话
+bach --help                使用帮助系统
+bach --help setup          显示设置选项
+
+
+文件
+=======
+hub/setup.py 设置处理程序（安装程序逻辑）
+data/bach.db BACH 数据库（在安装过程中创建）
+../USER.md 用户配置文件（模板 -> 个性化）
+~/.bach/bach_secrets.json 秘密库
+~/.claude/settings.json Claude 代码挂钩
+
+
+另请参见
+==========
+docs/help/setup.txt 设置处理程序（所有操作）
+docs/help/check.txt 安装后验证
+docs/help/db_sync.txt ProSync：多系统数据库同步
+docs/help/startup.txt 启动会话

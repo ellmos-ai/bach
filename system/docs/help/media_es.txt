@@ -1,0 +1,147 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+============
+medios: administración de medios (películas, series, música, podcasts, audiolibros)
+
+DESCRIPCIÓN
+============
+MediaHandler administra colecciones de medios con soporte para varios
+Tipos de medios y fuentes. Utiliza el backend SQLite (bach.db) con favoritos,
+Lista negra, historial de reproducción y metadatos extendidos por medio.
+
+TIPOS DE MEDIOS
+-----------
+  Película [F], serie [S], música [M], clip [C], podcast [P], audiolibro [A], documento [D]
+
+FUENTES
+-------
+  netflix, youtube, spotify, disney, prime, appletv, twitch, local
+
+OPERACIONES
+===========
+
+añadir
+  Agregar nuevos medios
+  Uso: bach media agrega "Título" [--type TIPO] [--source FUENTE] [--url URL]
+           [--artista "..."] [--álbum "..."] [--canal "..."] [--temporada N]
+           [--episodio N] [--rating 1-5] [--tags "tag1,tag2"] [--desc "..."]
+           [--ruta "/ruta/al/archivo"]
+
+lista
+  Listar y filtrar medios
+  Uso: lista de medios de bach [--type TIPO] [--source FUENTE] [--fav] [--limit N]
+  Banderas:
+    --type TYPE Muestra solo un tipo de medio
+    --source SOURCE Filtrar solo una fuente
+    --fav Mostrar solo favoritos
+    --límite N máx. N entradas (predeterminado: 20)
+  Salida: Icono, Favorito(*), ID, Título, Fuente, Clasificación
+
+búsqueda
+  Búsqueda de texto completo por título, artista, álbum, canal, etiquetas, descripción
+  Uso: búsqueda en Bach Media “término de búsqueda”
+  Salida: Hasta 30 visitas con ícono, favorito, ID, título, fuente
+
+mostrar
+  Vista detallada de un medio con metadatos completos.
+  Uso: show de medios de bach <id>
+  Salida: Todos los campos (Título, Tipo, Fuente, Artista, Álbum, Temporada/Episodio,
+          Clasificación, etiquetas, descripción, favorito, estado de lista negra, fecha,
+          últimas 5 jugadas)
+
+editar
+  Editar medio (cualquier campo)
+  Uso: bach media edit <id> --title "Nuevo" [--type TIPO] [--source FUENTE]
+           [--url URL] [--desc "..."] [--artista "..."] [--álbum "..."]
+           [--canal "..."] [--temporada N] [--episodio N] [--rating 1-5]
+           [--tags "etiqueta1,etiqueta2"] [--notas "..."] [--ruta "/ruta"]
+
+fav
+  Establecer/eliminar favorito
+  Uso: bach media fav <id> [--remove]
+  Bandera:
+    --remove Elimina el estado favorito
+
+lista negra
+  Bloquear/desbloquear medios (ocultos en lista/búsqueda)
+  Uso: lista negra de medios de Bach <id> [--remove]
+  Bandera:
+    --eliminar Desbloquear
+
+abrir
+  Medio abierto: URL de inicio en el navegador o archivo. Reproducción actualizada
+  Historial y marca de tiempo last_opened_at. Los medios bloqueados no pueden
+  ser abierto.
+  Uso: bach media open <id>
+
+historia
+  Historial de reproducción de todos los medios (los más nuevos primero)
+  Uso: historial de medios de bach [--límite N]
+  Muestra: marca de tiempo, icono, identificación, título, fuente, método abierto
+
+estadísticas
+  Resumen de estadísticas: número total, favoritos, bloqueados, jugadas,
+  Distribución por tipo y fuente
+  Uso: estadísticas de medios de bach
+
+ayuda
+  Ver esta ayuda
+  Uso: ayuda de bach media
+
+EJEMPLOS
+=========
+
+# Agregar medio (película en Netflix)
+bach media add "Inception" --type movie --source netflix --url "https://..." \
+  --rating 5 --desc "Obra maestra de ciencia ficción"
+
+# Agregar medio (álbum de música)
+bach media add "Abbey Road" --type music --source spotify --artist "The Beatles" \
+  --álbum "Abbey Road" --año 1969
+
+# Agregar medio (archivo local)
+bach media add "Dokumentation" --type document --source local \
+  --path "C:\\Videos\\doku.mp4"
+
+# Mostrar todas las películas con favoritos
+bach media list --type movie --fav
+
+# Buscar series
+bach media search "Breaking Bad"
+
+# Capturar series con temporada/episodio
+bach media add "Breaking Bad S01E01" --type series --source netflix \
+  --temporada 1 --episodio 1 --rating 5
+
+# Marcar medio como favorito
+bach media fav 42
+
+# Eliminar estado de favorito
+bach media fav 42 --remove
+
+# Marcar medio como lista negra
+bach media blacklist 99
+
+# Abrir medio
+bach media open 42
+
+# Mostrar estadísticas
+bach media stats
+
+ARCHIVOS
+=======
+
+Base: hub/media.py
+Base de datos: datos/bach.db
+Tablas: media_items, media_history
+Configuración: Ninguna (todo sobre los indicadores CLI)
+
+VER TAMBIÉN
+==========
+
+  bach_api.media.* API programática
+  hub/base.py Clase base BaseHandler
+  docs/API.md Documentación de la API de BACH

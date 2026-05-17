@@ -1,0 +1,68 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [system_identity table]、[hub/dist.py]、[tools/generators/distribution_system.py]
+# ステータス: ハンドラーの欠陥 - dist ルーティングが機能しません
+
+ID システム
+===============
+
+現在: 2026-02-08
+
+ID システムは、BACH インスタンスの整合性と識別を保証します。
+関数は配布ハンドラーに実装されていますが、CLI ルーティングが壊れています。
+
+表: system_identity (中央シングルトン)
+----------------------------------------------
+  - id: 主キー (1 - シングルトンである必要があります)
+  -instance_id: インストールの一意の UUID
+  -instance_name: 個別の名前 (例: "BACH_Alpha")
+  - バージョン: 現在の BACH バージョン (例: v1.1.83)
+  - created_at: 作成日
+  - seal_status: 整合性ステータス ('無傷' | '破損')
+  - kernel_hash: システム カーネル ファイルの SHA256
+  - last_verified: 前回の検証時刻
+  - current_mode: 動作モード (デフォルト: 'developer')
+  - last_boot: 前回の起動時間
+  - boot_count: ブート数 (デフォルト: 0)
+
+シール機構
+------------------
+  1. ブートチェック: カーネルハッシュは起動ごとに計算されます。
+  2. 比較: ハッシュは DB と一致しますか?
+  3. 状態: ずれがある場合、シールは「壊れています」
+  4. 警告: 壊れたシールは手動介入を示します
+
+CLI コマンド (文書化されていますが壊れています)
+----------------------------------------
+  bach --dist status         システム ステータスをシール情報とともに表示
+  bach --dist verify         シールの整合性を確認
+
+問題: dist ハンドラー (hub/dist.py) が存在し、これを実装しています
+関数は存在しますが、bach.py の CLI ルーティングはそれを正しく呼び出しません。
+「bach dist list」のみが機能します。
+
+実装されていません
+-------------------
+  bach --dist reseal         (存在しません - 再シール機能はありません)
+
+シールが壊れた場合の自動修復はありません。手動で行う必要があります
+distribution_system.py 経由で新しいシールを設定します。
+
+実装
+--------------
+  ハンドラー: system/hub/dist.py (DistHandler)
+  バックエンド: system/tools/generators/distribution_system.py
+  操作: ステータス、検証、スキャン、スナップショット、リリース、復元、インストール、リスト
+  動作: 「リスト」のみ - 他のすべての操作はルーティングされません
+
+コンテキスト
+-------
+アイデンティティは分散システム (以前のガバナンス層 5) の一部です。
+これにより、「メモリ」 (DB) が「ハードウェア」 (ファイル システム) と確実に一致します。
+
+関連項目
+----------
+  docs/help/maintain.txt メンテナンスツール（ID機能なし）
+  docs/help/distribution.txt 配布とリリース
+  docs/help/bach_info.txt システム概要

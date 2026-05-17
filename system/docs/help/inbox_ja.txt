@@ -1,0 +1,152 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH INBOX システム
+=================
+
+ウォッチドッグ監視による自動ドキュメント分類。
+
+コンセプト
+-------
+
+受信ボックス システムは、受信フォルダー (ダウンロード、スキャン) を監視し、
+ルールに従ってファイルをターゲット フォルダに自動的に分類します。
+
+設定
+-------------
+
+2 つのファイルがシステムを制御します:
+
+  data/inbox_folders.txt 監視フォルダー (ソース)
+  data/inbox_config.json 並べ替えルール
+
+INBOX_FOLDERS.TXT 形式
+------------------------
+
+  # 形式: パス |モード |フィルター |目標
+  C:\ユーザー\ユーザー\ダウンロード |車 | PDF |受信箱
+  C:\ユーザー\ユーザー\スキャン |マニュアル | pdf、jpg |受信箱
+
+  モード: 自動 (自動的にソート) または手動 (収集のみ)
+  フィルター: ファイル拡張子 (カンマ区切り) またはすべての場合は *
+  DESTINATION: 受信箱 (転送ゾーン) または相対 BACH パス
+
+INBOX_CONFIG.JSON
+-----------------
+
+  設定:
+    有効: true/false
+    間隔秒: 60
+    transfer_zone: ユーザー/受信箱/未分類
+    ocr_enabled: false
+    auto_task_on_unknown: true
+
+  ルール:
+    - ID:tax_invoice
+      パターン: 請求書|請求書|領収書
+      pattern_type: ファイル名|コンテンツ|ocr
+      対象: ユーザー/税金/{年}/領収書/その他
+      優先度: 1
+
+フォルダ
+------
+
+  ユーザー/受信トレイ/転送ゾーン (入り口)
+  user/inbox/unsorted 割り当て不可能なファイル
+
+CLI コマンド
+-----------
+
+  bach inbox status      ステータスの表示
+  bach inbox start       受信ボックス ウォッチャーの開始 (バックグラウンド)
+  bach inbox stop        受信ボックス ウォッチャーの停止
+  bach inbox scan        ワンタイム ドライラン スキャン
+  bach inbox config      構成の表示
+
+デーモン統合
+------------------
+
+受信ボックス システムはデーモン ジョブとして統合されています:
+
+  ジョブID: 3 (受信トレイスキャン)
+  タイプ: 間隔
+  サイクル: 30 分 (デフォルト OFF)
+  モード: --process (実行ごとに 1 回のスキャン)
+
+コマンド:
+  bach daemon jobs               すべてのジョブを一覧表示
+  bach daemon run 3              受信トレイ スキャンを手動で開始
+  bach daemon toggle 3           ジョブをアクティブ化/非アクティブ化
+  bach daemon reschedule 3 15m   間隔を変更 (例: 15 分)
+
+重要: デーモン ジョブは `inbox_watcher.py --process` を呼び出します。
+         永続的なウォッチドッグ モード。リアルタイム監視の場合:
+         `bach inbox start` (ウォッチドッグを直接開始します)
+
+GUI
+---
+
+  /inbox 受信トレイ ダッシュボード
+  /inbox/rules ルールを管理する (タスク #443)
+
+  API エンドポイント:
+    POST /api/inbox/scan スキャンを手動でトリガーします (GUI +index.html)
+
+ワークフロー
+--------
+
+2 つのモード:
+
+A。 WATCHDOG モード (バッチ受信箱の開始):
+   - ウォッチドッグライブラリによるリアルタイム監視
+   - 新しいファイルにすぐに応答します
+   - バックグラウンドで永続的に実行
+
+B.デーモンモード (bach デーモン実行 3):
+   - 30 分ごとの定期スキャン (構成可能)
+   - `inbox_watcher.py --process` を呼び出します
+   - デーモン システムに統合
+
+処理フロー (両方のモード):
+1. ファイルが監視フォルダーに表示されます (例: ダウンロード)
+2. スキャナはファイルが安定するまで待機します (書き込みアクセスがない)
+3. ファイルは転送ゾーンに移動されます
+4. ルール エンジン チェック パターン (ファイル名、コンテンツ、OCR)
+5 番目のヒット: ファイルがターゲット フォルダーに移動されます
+6. ヒットなし: 未ソートのまま、タスクは作成されます
+
+コネクタ統合
+---------------------
+
+v1.1.0 では、コネクタ メッセージ (電子メール、Slack など) は自動です
+メッセージの受信箱にルーティングされます。参照:
+
+  system/hub/_services/connector/queue_processor.py
+  bach --help messages
+  bach --help connector
+
+コンセプト ドキュメント
+-----------------
+
+  docs/CONCEPT_INBOX_SCANNER.md アーキテクチャ (アクティブ)
+  docs/_archive/CONCEPT_inbox_*.md 形式仕様 (アーカイブ)
+
+実装
+--------------
+
+  system/tools/inbox_watcher.py メイン スクリプト (watchdog + --process)
+  system/hub/inbox.py CLI ハンドラー
+  system/gui/server.py GUI API (POST /api/inbox/scan)
+  system/hub/_services/document/scanner_service.py ドキュメント スキャナ
+
+関連項目
+----------
+
+  bach --help dirscan       ドキュメント スキャナ
+  bach --help daemon        バックグラウンド サービス
+  bach --help steuer        税務統合
+  bach --help messages      メッセージ システム
+  bach --help connector     コネクタ システム
+
+バージョン: 1.1.0 (2026-02-08)

@@ -1,0 +1,297 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[tools/injectors.py, hub/inject.py]
+
+注射器系统（认知编排）
+==========================================
+
+截至：2026-02-08
+
+注射器模拟中央执行人员的思维和关联。
+他们在三个层面上协调认知处理：
+- 静态：知识库（维基、帮助、上下文）
+- 过程伴随：工作期间主动控制
+- PROACTIVE：内存调用和系统日志
+
+默认：全部打开（可以随时关闭）。
+
+冷却管理 (v1.1.75)
+-----------------------------
+显示后喷油器静音 X 分钟：
+- 策略：2分钟
+- 背景：1 分钟
+- 间隔：3 分钟
+- 工具警告：5 分钟
+
+防止烦人的重复而不失去功能。
+
+具有部分功能的 5 个注射器
+-----------------------------------
+
+1。策略注入器（元认知）
+   部分功能：
+   - 元认知：做什么、何时、如何做？
+   - 分支机构决策支持
+   - 错误分析（“错误是有价值的信息”）
+
+   触发词：错误、复杂、受阻、困难、问题
+   示例：“错误”->“错误是有价值的信息”
+   冷却时间：2 分钟
+
+2。上下文注入器（工作记忆）
+   部分功能：
+   - 回忆任务描述
+   - 基于上下文的工具推荐
+   - 记忆回忆（短期、长期、会话）
+   - 需求分析
+   - 与连接器路由集成（见下文）
+
+   触发器：文本中的关键字（参见下面的工具触发器）
+   没有攻击性 - 只是提示
+   冷却时间：1 分钟
+
+3。 TIME INJECTOR（时间感）
+   部分功能：
+   - 时间节拍：定期更新时间
+   - 时间预算意识
+
+   默认间隔：60 秒
+   有助于时间感和会话管理
+   无冷却时间（自带间隔机制）
+
+4。注射器之间（质量控制）
+   部分功能：
+   - 任务完成后的质量控制
+   - 规范到下一个任务的过渡
+   - 结果检查：根据要求进行验证
+
+   触发：“巴赫任务完成”之后
+   不在会话结束时（认识到这一点）
+   冷却时间：3 分钟
+
+5。 TOOL INJECTOR（工具意识）
+   部分功能：
+   - 会话开始时的工具提醒（一次性）
+   - 创建时有关工具重复的警告
+   - 分类工具概述
+
+   类别： OCR、数据导入、域处理程序、代码分析、
+               编码、导入处理、转换
+   触发器：文本包含“新工具”、“创建工具”等。
+   冷却时间：5 分钟
+
+认知编排（图表）
+-----------------------------------
+
++----------------------------------------------------------------+
+  |                喷油器编排|
+  |                （中央行政）|
+  +----------------------------------------------------------------+
+  |                                                             |
+  |  静态（知识库）|
+  |  +-- 元技能、元工作流程 |
+  |  +-- 维基 (wiki/) |
+  |  +-- 帮助 (docs/help/*.txt) |
+  |  +-- 上下文（内存上下文）|
+  |                                                             |
+  |  过程伴随（通过注射器）|
+  |  +--strategy_injector（冷却时间：2分钟）|
+  |  |   +-- 元认知：什么、何时、如何？                     |
+  |  |   +-- 决策支持 |
+  |  |   +-- 错误分析 |
+  |  +-- context_injector（冷却时间：1分钟）|
+  |  |   +-- 任务提醒 |
+  |  |   +-- 工具推荐 |
+  |  |   +-- 需求分析|
+  |  |   +-- 连接器路由集成（见下文）|
+  |  +-- Between_injector（冷却时间：3分钟）|
+  |  |   +-- 质量控制 |
+  |  |   +-- 任务转换 |
+  |  |   +-- 结果验证 |
+  |  +-- time_injector（无冷却时间）|
+  |  |   +-- 时间感（Timebeat）|
+  |  +-- tool_injector（冷却时间：5分钟）|
+  |      +-- 工具认知（会话开始）|
+  |      +-- 重复警告 |
+  |                                                             |
+  |  PROACTIVE（通过 context_injector 进行内存检索）|
+  |  +-- 短期记忆（工作记忆）|
+  |  +-- 长期记忆（事实、教训）|
+  |  +-- 会话内存（会话）|
+  |  +-- 系统日志（变更日志、错误日志、路线图）|
+  |                                                             |
+  +----------------------------------------------------------------+
+
+命令
+-------
+  bach --inject status         显示所有注射器的状态（包括冷却时间）
+  bach --inject toggle <name>  打开/关闭
+  bach --inject task <min>     任务 X 分钟
+  bach --inject decompose <id> Zerlegt Aufgabe
+
+切换名称：
+  策略（或strategy_injector）
+  上下文（或 context_injector）
+  时间（或 time_injector）
+  Between（或 Between_injector）
+
+显示冷却状态：
+  bach --inject status zeigt verbleibende Cooldown-Zeit in Sekunden
+
+工具触发（上下文注入器）
+-------------------------------
+上下文注入器识别关键字并推荐工具：
+
+  Python编辑
+  ------------------
+  “编辑 python”-> 巴赫 python_cli_editor <文件> --show-all
+  “编辑类”-> 巴赫 python_cli_editor <文件> --show-all
+  “编辑方法”-> bach python_cli_editor <文件> --show-all
+  “代码结构”-> bach python_cli_editor <文件> --show-all
+  “显示导入”-> 巴赫 python_cli_editor <文件> --show-imports
+
+  代码分析
+  ------------
+  “分析代码”-> bach code_analyzer <文件>
+  “死代码”-> bach code_analyzer <文件>
+
+  编码和格式化
+  ----------------------
+  “编码问题”-> bach c_encoding_fixer <文件>
+  “元音变音损坏”-> bach c_encoding_fixer <文件>
+  “utf-8”-> bach c_encoding_fixer <文件>
+  “表情符号” -> 巴赫 c_emoji_scanner <文件>
+  “缩进”-> bach c_indent_checker <文件>
+
+  进口处理
+  ----------------
+  “对导入进行排序”-> bach c_import_organizer <文件>
+  “导入问题”-> bach c_import_diagnose <文件>
+  “导入丢失”-> bach c_import_diagnose <文件>
+
+  文件操作
+  -----------------
+  “分割文件”-> bach c_pycutter <文件>
+  “太大”-> bach c_pycutter <文件>
+  “查看 sqlite”-> 巴赫 c_sqlite_viewer <db>
+  “json 问题”-> 巴赫 c_json_repair <文件>
+
+  转换
+  -------------
+  “markdown 到 pdf”-> bach c_md_to_pdf <文件>
+  “转换格式”-> bach c_universal_converter <文件>
+
+工具搜索
+  ----------
+  “查找工具”-> 巴赫工具建议“描述”
+  “哪个工具”-> 巴赫工具建议“描述”
+  “搜索工具”-> 巴赫工具搜索<术语>
+
+  帮助与约定
+  --------------------
+  “新工具”-> --help 命名（工具前缀）
+  “概念”-> --帮助实践
+  “架构”-> --帮助实践
+  “记忆”-> --帮助记忆
+  “任务”-> --帮助任务
+  “路径”-> --help bach_paths
+  “技能”-> --帮助技能
+  "version" -> bach --skills version <name>
+
+示例输出
+----------------
+当 Claude 读到“edit python”时：
+
+  [上下文] Python 编辑器：bach python_cli_editor <file> --show-all
+
+当 Claude 读到“编码问题”时：
+
+  [上下文] 编码修复：bach c_encoding_fixer <文件>
+
+连接器路由集成（新 v1.1.75）
+-------------------------------------------
+ContextInjector 现已集成到连接器消息流中：
+
+路由管道 (queue_processor.py)：
+  传入消息（connector_messages）
+    |
+    v
+  route_incoming() 适用：
+    1. ContextInjector.check(text) - 100+硬编码触发器+数据库缓存
+    2. context_triggers 表 - 来自数据库的 900 多个动态触发器
+    |
+    v
+  带有元数据提示的消息 (messages.inbox)
+    -> 元数据[“context_hints”] = [提示1，提示2，...]
+    -> 元数据[“context_triggers”] = [trigger1，trigger2，...]
+
+优点：
+- 传入消息接收即时上下文信息
+- LLM已经看到相关工具推荐
+- 无需手动搜索工具
+- 上下文作为元数据提供（不在文本中）
+
+示例：
+  用户写道：“文件 X 的编码问题”
+  -> ContextInjector 检测到“编码问题”
+  -> 元数据：{"context_hints": "bach c_encoding_fixer <文件>"}
+  -> LLM 将提示作为系统信息，而不是用户文本
+
+数据库触发：
+  表 context_triggers（900 多个条目）：
+  -trigger_phrase：搜索词（例如“edit python”）
+  -hint_text：推荐（例如“bach python_cli_editor <文件>”）
+  - Automatically queried during routing
+  - 无需更改代码即可动态扩展
+
+配置
+-------------
+在“注入器”下的 config.json 中：
+
+  {
+    “注射器”：{
+      “strategy_injector”：正确，
+      “context_injector”：正确，
+      “time_injector”：正确，
+      “ Between_injector”：正确，
+      “时间节拍间隔”：60
+    }
+  }
+
+重要
+-------
+- 注射器也可能令人烦恼/分散注意力！
+- 可以随时关闭：bach --inject 切换上下文（或策略、时间、之间）
+- 注意如何关闭每次策略注入
+- 无需新的喷油器 - 5 个喷油器涵盖所有功能
+- 冷却自动防止烦人的重复
+
+代码参考
+-------------
+  tools/injectors.py 注入器实现
+  hub/inject.py CLI 处理程序
+  hub/_services/connector/queue_processor.py 连接器集成
+
+类和组件：
+  InjectorSystem - 主界面，协调所有注射器
+  StrategyInjector - 元认知，基于触发器
+  ContextInjector - 工具推荐、数据库缓存（~100 个触发器）
+  TimeInjector - 时间节拍（60 秒间隔）
+  BetweenInjector - 任务完成后的质量控制
+  ToolInjector - 工具感知、重复警告
+  CooldownManager - 冷却管理（策略=2分钟，上下文=1分钟，之间=3分钟）
+  TaskAssigner - 基于时间预算的任务分配
+
+数据库表：
+  context_triggers      - 900+动态触发器（trigger_phrase、hint_text）
+  injector_cooldowns    - 冷却时间戳（injector_name、last_shown）
+
+另请参阅
+----------
+  bach --help tools                      工具概述
+  bach --help tools/python_cli_editor    详细的工具文档
+  bach --help memory                     内存系统
+  bach --help connector                  连接器系统和消息路由
+  bach tools search                      工具搜索
+  bach tool suggest                      工具推荐

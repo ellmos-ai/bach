@@ -1,0 +1,67 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+  lección
+
+DESCRIPCIÓN
+  Gestión de Lecciones Aprendidas - Documentación de problemas, soluciones y mejores prácticas.
+  Almacena lecciones en la base de datos SQLite (data/bach.db) con Categoría, Gravedad y
+  Marca de tiempo. Admite gestión completa: agregar, editar, deshabilitar y buscar.
+
+OPERACIONES
+  agregar Agregar nueva lección con título y solución
+  editar Editar lección (título, solución, categoría, gravedad)
+  desactivar Desactivar lección (con motivo opcional)
+  lista Mostrar todas las lecciones activas (opcionalmente filtradas por categoría)
+  last Mostrar las últimas n lecciones (predeterminado: 5)
+  search Buscar lecciones por palabra clave
+  mostrar detalles completos de una lección con identificación
+  categorías Mostrar categorías disponibles
+
+CATEGORIAS
+  error, flujo de trabajo, herramienta, integración, rendimiento, general
+
+NIVEL DE SEVERIDAD
+  bajo, medio, alto, crítico
+
+EJEMPLOS
+  # Agregar lección con título y solución
+  bach lesson add "DB-Pfad: Immer data/bach.db verwenden"
+
+  # Con categoría y gravedad 
+  bach lesson add "Handler-Bug: base_path nicht root" --category bug --severity high
+
+  # Con descripción del problema
+  bach lesson add "Titel" --problem "Was ging schief" --category workflow
+
+  # Editar lección
+  bach lesson edit 5 --title "Neuer Titel" --severity critical
+
+  # Mostrar las últimas 3 lecciones
+  bach lesson last 3
+
+  # Mostrar todas las lecciones en una categoría
+  bach lesson list bug
+
+  # Buscar por palabra clave
+  bach lesson search "database"
+
+  # Mostrar todos los detalles
+  bach lesson show 5
+
+  # Deshabilitar lección
+  bach lesson deactivate 5 --reason "Nicht mehr relevant"
+
+  # Mostrar categorías disponibles
+  bach lesson categories
+
+ARCHIVOS
+  Implementación del controlador hub/lesson.py
+  data/bach.db Base de datos SQLite (tabla: lecciones_memoria)
+  docs/help/lesson.txt Este archivo de ayuda
+
+VER TAMBIÉN
+  clase hub/base.py BaseHandler
+  sistema de enlace core/hooks.py (after_lesson_add)

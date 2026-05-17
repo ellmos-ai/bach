@@ -1,0 +1,349 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MAINTAIN - BACH 维护工具
+==============================
+
+概述
+----------
+BACH 维护和分析工具的集合。
+所有工具均可通过 bach --maintain
+
+命令 (16)
+------------
+  bach --maintain docs          文档更新检查
+  bach --maintain duplicates    重复检测信息
+  bach --maintain generate      技能/代理生成器
+  bach --maintain export        导出工具
+  bach --maintain pattern       短文件名模式
+  bach --maintain scan          扫描 CLI 工具系统
+  bach --maintain clean         按年龄/模式删除文件
+  bach --maintain json          JSON 文件修复
+  bach --maintain heal          路径更正和自我修复
+  bach --maintain registry      检查注册表一致性
+  bach --maintain skills        检查技能health
+  bach --maintain sync          将技能与数据库同步
+  bach --maintain headers       生成/验证SKILL.md YAML标头
+  bach --maintain skill-help    从SKILL.md生成帮助文件
+  bach --maintain workflows     验证工作流程格式
+  bach --maintain nul           删除Windows NUL文件
+  bach --maintain list          所有工具显示
+
+文档检查
+--------------------
+  bach --maintain docs [--dry-run]
+
+  检测过时的文档：
+  - 超过 60 天
+  - 无效路径
+  - 缺少参考文献
+
+技能生成器
+---------------
+  bach --maintain generate <n> [profil] [zielordner]
+
+  简介：
+    MICRO - 仅文件
+    LIGHT - 最小（SKILL.md + 配置 + 数据）
+    标准 - 标准带内存
+    扩展 - 具有微观技能的复杂
+
+  示例：
+    bach --maintain generate mein-skill STANDARD skills/
+    bach --maintain generate analyse MICRO skills/workflows/
+
+导出工具
+------------
+  bach --maintain export skill <n> --from-os <path>
+  bach --maintain export agent <n> --from-os <path>
+  bach --maintain export os-fresh <path> --output <zip>
+  bach --maintain export os-reset <path> --backup
+
+图案工具
+------------
+  bach --maintain pattern <ordner> [optionen]
+
+  选项：
+    --dry-run 仅显示（默认）
+    --execute 执行重命名
+    --prefix-only 仅前缀模式
+    --suffix-only 仅后缀模式
+    -m <n> 最小模式长度
+
+工具扫描仪
+------------
+  bach --maintain scan [--json]
+  bach --maintain scan compare
+
+  查找已安装的 CLI 工具并与注册表进行比较。
+
+文件清理器
+------------
+  bach --maintain clean <ordner> [optionen]
+
+  选项：
+    --age <天数> 超过 X 天的文件
+    --keep <n> 只保留 N 个最新的
+    --pattern <p> 文件模式（例如“*.log”）
+    -r 递归搜索
+    --execute 实际上删除
+
+  示例：
+    bach --maintain clean ./logs --age 30
+    bach --maintain clean ./backups --keep 5 --execute
+
+JSON 修复程序
+----------
+  bach --maintain json <datei/ordner> [optionen]
+
+  选项：
+    --dry-run 仅检查（默认）
+    --执行实际修复
+    --backup 更改前备份
+
+  修复：
+    - UTF-8 BOM
+    - 尾随逗号
+    - 单引号
+    - PowerShell 换行符
+
+路径修复程序（新）
+-----------------
+  bach --maintain heal [optionen]
+
+  修复了 BACH 文件中已弃用的路径。
+
+  选项：
+    --dry-run 只需检查，不要更改任何内容（默认）
+    --execute 确实正确
+    --target <p> 仅检查特定文件
+    --report 生成详细报告
+
+  更正：
+    - 旧的 recludOS 路径 -> BACH
+    - 旧的技能路径
+    - 集线器/处理程序路径
+    - 工具参考
+
+  示例：
+    bach --maintain heal                   # 全部试运行
+    bach --maintain heal --execute         # 全部修正
+    bach --maintain heal --target config.py
+
+  基于：RecludOS Unified Path Healer v2.3.0
+
+REGISTRY WATCHER（新）
+----------------------
+  bach --maintain registry [optionen]
+
+  监控并验证所有 BACH 注册表。
+
+  选项：
+    check 完整检查（默认）
+    check --db 仅检查数据库
+    check --json 只检查 JSON 配置
+    合作伙伴 合作伙伴注册检查（新）
+    报告 详细报告
+
+  检查：
+    - 存在与注册表相关的数据库表（工具、技能、代理、合作伙伴）
+    - JSON 配置文件（仅合理的例外）
+    - 表之间的交叉引用
+    - Partner_recognition + delegate_rules 一致性
+
+  注意：partner_registry.json 已弃用（请参阅 docs/help/formats.txt）
+
+  示例：
+    bach --maintain registry               # 快速检查
+    bach --maintain registry report        # 详细报告
+    bach --maintain registry check --db    # 仅数据库
+
+  注意：在 --startup 时自动运行（快速检查）
+
+技能健康监控（新）
+--------------------------
+  bach --maintain skills [optionen]
+
+  监控和验证所有 BACH 技能和代理。
+
+  选项：
+    check 完整检查（默认）
+    check --skills 仅检查技能
+    check --agents 仅检查代理
+    报告 详细报告
+
+  检查：
+    - 技能目录（_agents、_experts、_services）
+    - SKILL.md 完整性（名称、版本、描述）
+    - 验证代理定义
+    - 查找孤立或损坏的技能
+
+  示例：
+    bach --maintain skills                 # 快速检查
+    bach --maintain skills report          # 详细报告
+    bach --maintain skills check --agents  # 仅限代理
+
+  注意：使用 --startup 自动运行（快速检查）
+
+同步工具（新）
+---------------
+  bach --maintain sync [optionen]
+
+  将技能/文件与数据库同步。
+
+  选项：
+    --dry-run 仅显示，不更改任何内容（默认）
+    --verbose 详细输出
+    -v --verbose
+
+ 的缩写  同步：
+    - SKILL.md 元数据（名称、版本、描述）
+    - 技能状态和依赖性
+    - 代理定义
+
+  示例：
+    bach --maintain sync               # 试运行
+    bach --maintain sync --verbose     # 详细信息
+    bach --maintain sync --dry-run -v  # 详细试运行
+
+标题工具（新）
+------------------
+  bach --maintain headers [optionen]
+
+  生成并验证 SKILL.md 文件的 YAML 标头。
+
+选项：
+    --all 扫描所有技能目录（默认）
+    --path <p> 扫描特定目录
+    --file <f> 处理个人SKILL.md
+    --dry-run 仅显示（默认）
+    --修复写入更改
+    --update-db 从 YAML 标头更新数据库版本
+    -v 详细
+
+  扫描的目录：
+    - 特工/*/SKILL.md
+    - 特工/_experts/*/SKILL.md
+    - hub/_services/*/SKILL.md
+    - 合作伙伴/*/SKILL.md
+
+  示例：
+    bach --maintain headers                      # 试运行
+    bach --maintain headers --fix                # 标准化所有标头
+    bach --maintain headers --fix --update-db    # 更新标头 + DB
+    bach --maintain headers --path agents -v
+
+技能帮助工具（新）
+---------------------
+  bach --maintain skill-help [optionen]
+
+  从 SKILL.md 生成 docs/help/*.txt 文件。
+
+  选项：
+    <name>单技能名称
+    --all 处理所有技能
+    -a 缩写 --all
+    --dry-run 仅显示，不写入任何内容
+    -n --dry-run
+
+ 的缩写  示例：
+    bach --maintain skill-help ati              # ATI 代理帮助
+    bach --maintain skill-help --all            # 所有技能
+    bach --maintain skill-help --all --dry-run  # 试运行
+
+工作流程工具（新）
+--------------------
+  bach --maintain workflows [optionen]
+
+  验证工作流程文件的格式是否一致。
+
+  检查：
+    - H1 头衔可用
+    - 描述（> 块引用，**目的：**，## 概述）
+    - 步骤/阶段结构
+    - 版本信息（可选）
+
+  预期位于：技能/工作流程/*.md
+
+  示例：
+    bach --maintain workflows        # 验证所有工作流程
+    bach --maintain workflows help   # 显示帮助
+
+NUL-CLEANER（新）
+-----------------
+  bach --maintain nul [optionen]
+
+  删除 Windows NUL（保留文件名）文件。
+
+  选项：
+    扫描 仅列出 NUL 文件（默认）
+    删除 删除NUL文件
+    clean/remove 用于删除的别名
+    <path> 扫描特定目录
+
+  示例:
+    bach --maintain nul                        # 扫描 BACH 目录
+    bach --maintain nul scan                   # 仅扫描
+    bach --maintain nul delete                 # 扫描并删除
+    bach --maintain nul delete C:\Pfad         # 特定目录
+
+  注意：如果不小心，Windows 上会创建 NUL 文件
+           写在“NUL”（Windows 设备名称）之后。
+
+工具
+-----
+  tools/doc_update_checker.py 文档检查器
+  tools/duplicate_ detector.py 重复检测
+  工具/生成器/生成器脚本
+    Skill_generator.py 技能结构
+    exporter.py 导出函数
+  工具/pattern_tool.py 模式识别
+  tools/tool_scanner.py CLI 工具发现
+  tools/file_cleaner.py 文件清理
+  tools/json_fixer.py JSON 修复
+  tools/c_path_healer.py 路径修正（重要：c_path_healer！）
+  tools/nulcleaner.py 删除 NUL 文件
+  tools/skill_header_gen.py YAML 标头生成器
+  tools/skill_help_gen.py 帮助生成器 + 工作流验证器
+  工具/维护/
+    registry_watcher.py 注册表一致性
+    Skill_health_monitor.py 技能健康状况
+    sync_skills.py 技能数据库同步
+
+ --startup 时自动检查
+---------------------------------
+以下维护检查在会话启动时自动运行：
+
+  1. 目录扫描 - 自上次会话以来的更改
+  2. Path Healer - 试运行路径修正
+  3.Registry Watcher - 快速检查DB/JSON一致性
+  4. 技能健康状况 - 快速检查技能/代理
+
+有关详细报告： bach --maintain <工具> 报告
+
+当前工具概述（16 个命令）
+-------------------------------------
+1.  docs - 文档更新检查
+2.duplicates——重复检测信息
+3.生成-技能/代理生成器
+4.export-导出工具
+5.pattern - 缩短文件名模式
+6. scan - 扫描 CLI 工具系统
+7. clean - 按年龄/模式删除文件
+8. json - 修复 JSON 文件
+9.heal——路径修正和自我修复
+10.注册表-检查注册表一致性
+11.技能-检查技能健康状况
+12.sync-将技能与数据库同步
+13. headers - SKILL.md 生成/验证 YAML 标头
+14. Skill-help - 从 SKILL.md 生成帮助文件
+15.工作流程-验证工作流程格式
+16. nul - 删除 Windows NUL 文件
+
+另请参阅
+----------
+  docs/help/backup.txt 备份系统
+  docs/help/test.txt 测试系统
+  docs/help/tools.txt 工具清单
+  docs/help/formats.txt 数据库格式

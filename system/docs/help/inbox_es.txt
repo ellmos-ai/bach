@@ -1,0 +1,152 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SISTEMA BACH INBOX
+=================
+
+Clasificación automatizada de documentos con monitoreo de vigilancia.
+
+CONCEPTO
+-------
+
+El sistema de bandeja de entrada monitorea las carpetas entrantes (descargas, escaneos) y
+ordena automáticamente los archivos en carpetas de destino según reglas.
+
+CONFIGURACIÓN
+-------------
+
+Dos archivos controlan el sistema:
+
+  data/inbox_folders.txt Carpeta de vigilancia (fuentes)
+  data/inbox_config.json Reglas de clasificación
+
+FORMATO INBOX_FOLDERS.TXT
+------------------------
+
+  # Formato: RUTA | MODO | FILTRO | OBJETIVO
+  C:\Usuarios\Usuario\Descargas | coche | pdf | bandeja de entrada
+  C:\Usuarios\Usuario\Escaneos | manuales | pdf,jpg | bandeja de entrada
+
+  MODO: automático (clasificar automáticamente) o manual (solo recolectar)
+  FILTRO: Extensiones de archivo (separadas por comas) o * para todos
+  DESTINO: bandeja de entrada (zona de transferencia) o ruta BACH relativa
+
+INBOX_CONFIG.JSON
+-----------------
+
+  ajustes:
+    habilitado: verdadero/falso
+    intervalo_segundos: 60
+    transfer_zone: usuario/bandeja de entrada/sin clasificar
+    ocr_enabled: falso
+    auto_task_on_unknown: verdadero
+
+  reglas:
+    - identificación: factura_impuesto
+      patrón: factura|factura|recibo
+      tipo_patrón: nombre de archivo|contenido|ocr
+      objetivo: usuario/impuesto/{año}/recibos/Otros
+      prioridad: 1
+
+CARPETA
+------
+
+  usuario/bandeja de entrada/zona de transferencia (entrada)
+  usuario/bandeja de entrada/sin clasificar Archivos no asignables
+
+COMANDOS CLI
+-----------
+
+  bach inbox status      Mostrar estado
+  bach inbox start       Iniciar el observador de la bandeja de entrada (en segundo plano)
+  bach inbox stop        Detener el observador de la bandeja de entrada
+  bach inbox scan        Escaneo de prueba único
+  bach inbox config      Mostrar configuración
+
+INTEGRACIÓN DEL DEMONIO
+------------------
+
+El sistema de la bandeja de entrada está integrado como un trabajo de demonio:
+
+  ID de trabajo: 3 (escaneo de bandeja de entrada)
+  Tipo: intervalo
+  Ciclo: 30 minutos (apagado predeterminado)
+  Modo: --proceso (escaneo único por ejecución)
+
+Comandos:
+  bach daemon jobs               Enumerar todos los trabajos
+  bach daemon run 3              Iniciar escaneo de la bandeja de entrada manualmente
+  bach daemon toggle 3           Activar/desactivar trabajo
+  bach daemon reschedule 3 15m   Cambiar intervalo (por ejemplo, 15 minutos)
+
+IMPORTANTE: El trabajo del demonio llama a `inbox_watcher.py --process`, NO
+         el modo de vigilancia permanente. Para monitoreo en tiempo real:
+         `bach inbox start` (inicia el perro guardián directamente)
+
+GUI
+---
+
+  /inbox Panel de la bandeja de entrada
+  /inbox/rules Administrar reglas (Tarea #443)
+
+  Puntos finales de API:
+    POST /api/inbox/scan Activar escaneo manualmente (GUI + index.html)
+
+FLUJO DE TRABAJO
+--------
+
+DOS MODOS:
+
+A. MODO WATCHDOG (inicio de la bandeja de entrada de Bach):
+   - Monitoreo en tiempo real con biblioteca de vigilancia
+   - Responde inmediatamente a nuevos archivos
+   - Se ejecuta permanentemente en segundo plano
+
+B. MODO DEMONIO (ejecución 3 del demonio de Bach):
+   - Escaneo periódico cada 30 minutos (configurable)
+   - Llama a `inbox_watcher.py --process`
+   - Integrado en el sistema demonio
+
+Flujo de procesamiento (ambos modos):
+1. El archivo aparece en la carpeta Vigilar (por ejemplo, Descargas)
+2. El escáner espera hasta que el archivo esté estable (sin acceso de escritura)
+3. El archivo se mueve a la zona de transferencia.
+4. El motor de reglas comprueba patrones (nombre de archivo, contenido, OCR)
+5to resultado: el archivo se mueve a la carpeta de destino
+6. Sin resultados: permanece sin clasificar, se crea la tarea
+
+INTEGRACIÓN DEL CONECTOR
+---------------------
+
+A partir de v1.1.0, los mensajes del conector (correos electrónicos, Slack, etc.) son automáticos
+enrutado a la bandeja de entrada de mensajes. Ver:
+
+  system/hub/_services/connector/queue_processor.py
+  bach --help messages
+  bach --help connector
+
+DOCUMENTOS CONCEPTUALES
+-----------------
+
+  docs/CONCEPT_INBOX_SCANNER.md Arquitectura (activa)
+  docs/_archive/CONCEPT_inbox_*.md Especificaciones de formato (archivado)
+
+IMPLEMENTACIÓN
+--------------
+
+  system/tools/inbox_watcher.py script principal (vigilancia + --proceso)
+  controlador CLI system/hub/inbox.py
+  system/gui/server.py GUI API (POST /api/inbox/scan)
+  system/hub/_services/document/scanner_service.py Escáner de documentos
+
+VER TAMBIÉN
+----------
+
+  bach --help dirscan       Escáner de documentos
+  bach --help daemon        Servicios en segundo plano
+  bach --help steuer        Integración de impuestos
+  bach --help messages      Sistema de mensajes
+  bach --help connector     Sistema de conectores
+
+VERSIÓN: 1.1.0 (2026-02-08)

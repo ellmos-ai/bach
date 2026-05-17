@@ -1,0 +1,152 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH INBOX SYSTEM
+=================
+
+Automated document sorting with watchdog monitoring.
+
+CONCEPT
+-------
+
+The inbox system monitors incoming folders (downloads, scans) and
+automatically sorts files into target folders according to rules.
+
+CONFIGURATION
+-------------
+
+Two files control the system:
+
+  data/inbox_folders.txt Watch folder (sources)
+  data/inbox_config.json Sorting rules
+
+INBOX_FOLDERS.TXT FORMAT
+------------------------
+
+  # Format: PATH | MODE | FILTER | GOAL
+  C:\Users\User\Downloads | car | pdf | inbox
+  C:\Users\User\Scans | manual | pdf,jpg | inbox
+
+  MODE: auto (automatically sort) or manual (collect only)
+  FILTER: File extensions (comma separated) or * for all
+  DESTINATION: inbox (transfer zone) or relative BACH path
+
+INBOX_CONFIG.JSON
+-----------------
+
+  settings:
+    enabled: true/false
+    interval_seconds: 60
+    transfer_zone: user/inbox/unsorted
+    ocr_enabled: false
+    auto_task_on_unknown: true
+
+  rules:
+    - id: tax_invoice
+      pattern: invoice|invoice|receipt
+      pattern_type: filename|content|ocr
+      target: user/tax/{year}/receipts/Other
+      priority: 1
+
+FOLDER
+------
+
+  user/inbox/ Transfer zone (entrance)
+  user/inbox/unsorted Unassignable files
+
+CLI COMMANDS
+-----------
+
+  bach inbox status      Show status
+  bach inbox start       Start inbox watcher (background)
+  bach inbox stop        Stop inbox watcher
+  bach inbox scan        One-time dry-run scan
+  bach inbox config      Show configuration
+
+DAEMON INTEGRATION
+------------------
+
+The inbox system is integrated as a daemon job:
+
+  Job ID: 3 (inbox scan)
+  Type: interval
+  Cycle: 30 minutes (default OFF)
+  Mode: --process (single scan per run)
+
+Commands:
+  bach daemon jobs               List all jobs
+  bach daemon run 3              Start inbox scan manually
+  bach daemon toggle 3           Activate/deactivate job
+  bach daemon reschedule 3 15m   Change interval (e.g. 15 minutes)
+
+IMPORTANT: The daemon job calls `inbox_watcher.py --process`, NOT
+         the permanent watchdog mode. For real-time monitoring:
+         `bach inbox start` (starts watchdog directly)
+
+GUI
+---
+
+  /inbox Inbox dashboard
+  /inbox/rules Manage rules (Task #443)
+
+  API endpoints:
+    POST /api/inbox/scan Trigger scan manually (GUI + index.html)
+
+WORKFLOW
+--------
+
+TWO MODES:
+
+A. WATCHDOG MODE (bach inbox start):
+   - Real-time monitoring with watchdog library
+   - Responds immediately to new files
+   - Runs permanently in the background
+
+B. DAEMON MODE (bach daemon run 3):
+   - Periodic scan every 30 minutes (configurable)
+   - Calls `inbox_watcher.py --process`
+   - Integrated into daemon system
+
+Processing flow (both modes):
+1. File appears in Watch folder (e.g. Downloads)
+2. Scanner waits until file is stable (no write access)
+3. File is moved to transfer zone
+4. Rule engine checks patterns (file name, content, OCR)
+5th hit: File is moved to target folder
+6. No hit: Remains unsorted, task is created
+
+CONNECTOR INTEGRATION
+---------------------
+
+As of v1.1.0, connector messages (emails, Slack, etc.) are automatic
+routed to the messages inbox. See:
+
+  system/hub/_services/connector/queue_processor.py
+  bach --help messages
+  bach --help connector
+
+CONCEPT DOCUMENTS
+-----------------
+
+  docs/CONCEPT_INBOX_SCANNER.md Architecture (active)
+  docs/_archive/CONCEPT_inbox_*.md Format Specs (archived)
+
+IMPLEMENTATION
+--------------
+
+  system/tools/inbox_watcher.py main script (watchdog + --process)
+  system/hub/inbox.py CLI handler
+  system/gui/server.py GUI API (POST /api/inbox/scan)
+  system/hub/_services/document/scanner_service.py Document Scanner
+
+SEE ALSO
+----------
+
+  bach --help dirscan       Document Scanner
+  bach --help daemon        Background Services
+  bach --help steuer        Tax Integration
+  bach --help messages      Message System
+  bach --help connector     Connector System
+
+VERSION: 1.1.0 (2026-02-08)

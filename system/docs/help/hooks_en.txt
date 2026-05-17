@@ -1,0 +1,129 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH HOOK-FRAMEWORK
+===================
+
+As of: 2026-02-13
+
+Hooks are an expandable event system for BACH's lifecycle.
+They allow you to attach your own logic to central system events,
+WITHOUT changing existing code.
+
+IMPORTANT: HOOKS != INJECTORS
+-----------------------------
+  Hooks = Technical framework (lifecycle events, plugin integration)
+  Injectors = cognitive subsystem (thinking simulation, cognitive relief)
+
+Hooks and injectors work independently of each other.
+Injectors remain as an independent subsystem.
+
+AVAILABLE EVENTS (17)
+------------------------
+  Event When Context Keys
+  ---------------------- ---------------------------- ------------------------
+  before_startup Before the startup protocol partner, mode, quick
+  after_startup After a successful startup partner, mode, success
+  before_shutdown Before shutdown protocol partner, mode
+  after_shutdown After the shutdown partner, mode, success
+  before_command Before each CLI command handler, operation, args
+  after_command After each CLI command handler, operation, success, args
+  after_task_create After task creation task_id, title
+  after_task_done After task completion task_id, title
+  after_task_delete After task deletion task_id
+  after_memory_write After memory entry type, content
+  after_lesson_add After lesson creation lesson_id, title, category, severity
+  after_skill_create After skill creation name, type, path
+  after_skill_reload After hot reload handler_count
+  after_plugin_load After plugin loading name, version, hooks, handlers
+  after_plugin_unload After plugin unload name
+  after_capability_denied Capability plugin, capability, reason
+  after_email_send After sending email draft_id, recipient
+
+CLI COMMANDS
+-----------
+  bach hooks status            Status of all hooks and listeners
+  bach hooks events            List all events with description
+  bach hooks log               Show last hook executions
+  bach hooks test <event>      Emit test event (debugging)
+
+  Short form:
+  bach hook status             (Alias: hook -> hooks)
+
+API USAGE
+-----------
+  from core.hooks import hooks
+
+  # Register listeners
+  def my_handler(context):
+      print(f"Task created: {context['task_id']}")
+      return "processed" # Optional
+
+  hooks.on('after_task_create', my_handler, name='my_plugin')
+
+  # Listener with priority (lower = earlier, default=50)
+  hooks.on('after_startup', check_updates, priority=10, name='updater')
+
+  # Remove listeners
+  hooks.off('after_task_create', name='my_plugin')
+
+  # Emit event manually
+  results = hooks.emit('after_task_create', {'task_id': 42, 'title': 'Test'})
+
+  # Query status
+  print(hooks.status())
+
+  # Check whether event has listeners
+  if hooks.has_listeners('after_startup'):
+      print("Startup is being monitored")
+
+REGISTER OWN HOOKS
+--------------------------
+AI partners can register their own hooks to expand BACH:
+
+  from core.hooks import hooks
+
+  # Example: Auto backup after each task completion
+  def auto_backup_nach_task(ctx):
+      from bach_api import backup
+      backup.create()
+      return f"Backup after task #{ctx['task_id']}"
+
+  hooks.on('after_task_done', auto_backup_nach_task, name='auto_backup')
+
+  # Example: Startup notification
+  def startup_notification(ctx):
+      from bach_api import msg
+      msg.send("user", f"Session started ({ctx['partner']})")
+
+  hooks.on('after_startup', startup_notification, name='notify')
+
+SECURITY
+----------
+  - Hooks are encapsulated in try/except: A broken listener
+    NEVER blocks the actual operation
+  - Listeners only receive read context (dict), not write access
+  - Prioritization prevents order conflicts
+  - Hook log (bach hooks log) for debugging
+
+ARCHITECTURE
+-----------
+core/hooks.py HookRegistry singleton (framework)
+  hub/hooks.py CLI handler (bach hooks...)
+  core/app.py Emits before/after_command
+  hub/startup.py Emits before/after_startup
+  hub/shutdown.py Emits before/after_shutdown
+  hub/task.py Emits after_task_create/done
+  hub/memory.py Emits after_memory_write
+  hub/lesson.py Emits after_lesson_add
+  hub/skills.py Emits after_skill_create/reload
+  core/plugin_api.py Emits after_plugin_load/unload
+  core/capabilities.py Emitted after_capability_denied
+
+SEE ALSO
+----------
+  bach help cli              CLI Conventions
+  bach help skills           Skill System
+  bach help self-extension   Self-extension Workflow
+  bach --inject status       Injector System (separate subsystem)

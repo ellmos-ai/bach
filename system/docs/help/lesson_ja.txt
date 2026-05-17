@@ -1,0 +1,67 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+  レッスン
+
+説明
+  教訓管理 - 問題、解決策、ベスト プラクティスの文書化。
+  カテゴリ、重要度、およびレッスンを SQLite データベース (data/bach.db) に保存します。
+  タイムスタンプ。完全な管理をサポート: 追加、編集、無効化、検索。
+
+操作
+  add タイトルと解決策を含む新しいレッスンを追加します
+  edit レッスンの編集 (タイトル、ソリューション、カテゴリ、重大度)
+  deactivate レッスンを非アクティブ化します (理由はオプション)
+  list すべてのアクティブなレッスンを表示します (オプションでカテゴリ別にフィルタリング)
+  last 最後の n 個のレッスンを表示 (デフォルト: 5)
+  検索 キーワードでレッスンを検索
+  ID 付きのレッスンの詳細を表示
+  カテゴリ 利用可能なカテゴリを表示
+
+CATEGORIES
+  バグ、ワークフロー、ツール、統合、パフォーマンス、一般
+
+重大度レベル
+  低、中、高、重大
+
+例
+  # タイトルと解決策を含むレッスンを追加します
+  bach lesson add "DB-Pfad: Immer data/bach.db verwenden"
+
+  # カテゴリと重大度付き
+  bach lesson add "Handler-Bug: base_path nicht root" --category bug --severity high
+
+  # 問題の説明付き
+  bach lesson add "Titel" --problem "Was ging schief" --category workflow
+
+  # レッスンを編集
+  bach lesson edit 5 --title "Neuer Titel" --severity critical
+
+  # 最後の 3 つのレッスンを表示
+  bach lesson last 3
+
+  # カテゴリ内のすべてのレッスンを表示
+  bach lesson list bug
+
+  # キーワードで検索
+  bach lesson search "database"
+
+  # 詳細を表示
+  bach lesson show 5
+
+  # レッスンを無効にする
+  bach lesson deactivate 5 --reason "Nicht mehr relevant"
+
+  # 利用可能なカテゴリを表示
+  bach lesson categories
+
+ファイル
+  Hub/lesson.py ハンドラーの実装
+  data/bach.db SQLiteデータベース（テーブル：memory_lessons）
+  docs/help/lesson.txt このヘルプ ファイル
+
+関連項目
+  Hub/base.py BaseHandler クラス
+  core/hooks.py フック システム (after_lesson_add)

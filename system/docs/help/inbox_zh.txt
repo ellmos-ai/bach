@@ -1,0 +1,152 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH 收件箱系统
+=================
+
+带看门狗监控的自动文档排序。
+
+概念
+-------
+
+收件箱系统监控传入文件夹（下载、扫描）和
+根据规则自动将文件分类到目标文件夹中。
+
+配置
+-------------
+
+两个文件控制系统：
+
+  data/inbox_folders.txt 监视文件夹（来源）
+  data/inbox_config.json 排序规则
+
+INBOX_FOLDERS.TXT FORMAT
+------------------------
+
+  # 格式：路径|模式|过滤器|目标
+  C：\用户\用户\下载|汽车 | pdf |收件箱
+  C：\用户\用户\扫描|手册| pdf,jpg |收件箱
+
+  模式：自动（自动排序）或手动（仅收集）
+  过滤器：文件扩展名（逗号分隔）或 * 表示全部
+  目的地：收件箱（传输区域）或相对 BACH 路径
+
+INBOX_CONFIG.JSON
+-----------------
+
+  设置：
+    启用：真/假
+    间隔秒数：60
+    Transfer_zone：用户/收件箱/未排序
+    ocr_启用：假
+    auto_task_on_unknown：true
+
+  规则：
+    - id：tax_invoice
+      样式: 发票|发票|收据
+      模式类型：文件名|内容|ocr
+      目标：用户/税/{年份}/收据/其他
+      优先级：1
+
+文件夹
+------
+
+  用户/收件箱/传输区（入口）
+  user/inbox/unsorted 不可分配的文件
+
+CLI 命令
+-----------
+
+  bach inbox status      显示状态
+  bach inbox start       启动收件箱观察程序（后台）
+  bach inbox stop        停止收件箱观察程序
+  bach inbox scan        一次性空运行扫描
+  bach inbox config      显示配置
+
+守护进程集成
+------------------
+
+收件箱系统集成为守护进程作业：
+
+  作业 ID：3（收件箱扫描）
+  类型：间隔
+  周期：30分钟（默认关闭）
+  模式：--process（每次运行一次扫描）
+
+命令：
+  bach daemon jobs               列出所有作业
+  bach daemon run 3              手动启动收件箱扫描
+  bach daemon toggle 3           激活/停用作业
+  bach daemon reschedule 3 15m   更改间隔（例如15分钟）
+
+重要：守护程序作业调用“inbox_watcher.py --process”，而不是
+         永久看门狗模式。对于实时监控：
+         `bach inbox start`（直接启动看门狗）
+
+GUI
+---
+
+  /inbox 收件箱仪表板
+  /inbox/rules 管理规则（任务#443）
+
+  API端点：
+    POST /api/inbox/scan 手动触发扫描 (GUI + index.html)
+
+工作流程
+--------
+
+两种模式：
+
+A.看门狗模式（巴赫收件箱启动）：
+   - 使用看门狗库进行实时监控
+   - 立即响应新文件
+   - 在后台永久运行
+
+B.守护进程模式（bach 守护进程运行 3）：
+   - 每 30 分钟定期扫描（可配置）
+   - 调用“inbox_watcher.py --process”
+   - 集成到守护进程系统
+
+处理流程（两种模式）：
+1. 文件出现在Watch文件夹中（例如Downloads）
+2. 扫描仪等待文件稳定（无写访问权限）
+3. 文件被移动到传输区
+4. 规则引擎检查模式（文件名、内容、OCR）
+第五次点击：文件被移动到目标文件夹
+6. 无命中：保持未排序，任务已创建
+
+连接器集成
+---------------------
+
+从 v1.1.0 开始，连接器消息（电子邮件、Slack 等）是自动的
+路由到消息收件箱。请参阅：
+
+  system/hub/_services/connector/queue_processor.py
+  bach --help messages
+  bach --help connector
+
+概念文档
+-----------------
+
+  docs/CONCEPT_INBOX_SCANNER.md 架构（活动）
+  docs/_archive/CONCEPT_inbox_*.md 格式规范（已存档）
+
+实现
+--------------
+
+  system/tools/inbox_watcher.py 主脚本（watchdog + --process）
+  system/hub/inbox.py CLI 处理程序
+  system/gui/server.py GUI API (POST /api/inbox/scan)
+  system/hub/_services/document/scanner_service.py 文档扫描仪
+
+另请参阅
+----------
+
+  bach --help dirscan       文档扫描仪
+  bach --help daemon        后台服务
+  bach --help steuer        税务集成
+  bach --help messages      消息系统
+  bach --help connector     连接器系统
+
+版本：1.1.0 (2026-02-08)
