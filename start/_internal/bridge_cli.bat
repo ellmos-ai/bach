@@ -1,8 +1,11 @@
 @echo off
 REM ============================================
-REM BACH Bridge - CLI-Modus (ohne Tray)
+REM DEPRECATED: Old claude_bridge/ system
+REM Replaced by chat/ (chat_tray.py, chat_runtime.py)
 REM ============================================
 
+echo [WARN] bridge_cli.bat ist veraltet. Siehe: system\hub\_services\chat\
+echo.
 echo [BACH] Starte Bridge im CLI-Modus...
 cd /d "%~dp0..\..\system\hub\_services\claude_bridge"
 

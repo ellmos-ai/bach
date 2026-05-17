@@ -1,9 +1,13 @@
 @echo off
 REM ============================================
-REM BACH Bridge - Standard-Startverfahren
-REM Startet immer: Tray + Daemon (gekoppelt)
+REM DEPRECATED: Use chat_tray.py instead
+REM Old claude_bridge/ system — replaced by chat/
+REM See: system\hub\_services\chat\
 REM ============================================
 
+echo [WARN] bridge.bat ist veraltet. Nutze stattdessen:
+echo        start\_internal\windows_autostart.bat (chat_tray.py)
+echo.
 echo [BACH] Bridge Standard-Start...
 cd /d "%~dp0..\..\system\hub\_services\claude_bridge"
 

@@ -1,6 +1,7 @@
 @echo off
 REM ============================================
-REM BACH Bridge - Status
+REM DEPRECATED: Old claude_bridge/ system
+REM Replaced by chat/ (chat_tray.py, chat_runtime.py)
 REM ============================================
 
 echo [BACH] Bridge Status:
