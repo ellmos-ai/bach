@@ -6,6 +6,17 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ---
 
+## [3.12.4-earth] - 2026-05-17
+
+### Added
+
+- **Mehrsprachige README-Oberfläche:** Root-READMEs für EN/DE/ES/RU/JA/ZH ergänzt und die englische sowie deutsche README um einen sichtbaren Sprachindex erweitert.
+- **Crawler-freundliche Spracheinstiege:** Jede aktivierte Sprache erhält zusätzlich einen eigenen `docs/i18n/<lang>/README.md`-Einstieg.
+
+### Changed
+
+- **Release-Codename:** Version auf `v3.12.4-earth` gehoben, passend zur global sichtbaren Mehrsprachigkeit.
+
 ## [3.12.3-coffee] - 2026-05-17
 
 ### Privacy

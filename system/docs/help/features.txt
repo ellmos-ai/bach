@@ -1,5 +1,5 @@
 # Portabilität: UNIVERSAL
-# Version: 3.12.3
+# Version: 3.12.4
 # Zuletzt validiert: 2026-05-17 (Feature-Liste mit CHANGELOG abgeglichen)
 # Nächste Prüfung: 2026-11-17
 

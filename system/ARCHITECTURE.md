@@ -2,7 +2,7 @@
 
 > Design-Manifest und Architektur-Dokumentation
 
-**Version:** 3.12.3-coffee
+**Version:** 3.12.4-earth
 **Stand Hauptteil:** 2026-03-04 (v3.6)
 **Stand Anhang:** 2026-05-17 (v3.7–v3.12)
 **Zielgruppe:** Entwickler, Kontributoren, fortgeschrittene Nutzer
@@ -1076,7 +1076,7 @@ BACH_ROOT/
 | 3.8.0-sugar | 2026-03-08 | Schwarm-Handler (4 Muster), Permission-Profile, Remote Control, 5 Therapie-Skills |
 | 3.9.0-tiramisu | 2026-05-10 | ProSync DB-Sync, Buddha Chat Services (5 Backends), 13 Tools, Förderbericht-Pipeline |
 | 3.11.0-coffee | 2026-05-16 | 3241 Tests, GUI Interactivity Audit, Linux-Support, MCP Cross-Platform |
-| **3.12.3-coffee** | **2026-05-17** | **Encoding-Härtung, Privacy-Hygiene, i18n (14.655 Übersetzungen)** |
+| **3.12.4-earth** | **2026-05-17** | **Encoding-Härtung, Privacy-Hygiene, i18n (17.407 Übersetzungen), mehrsprachige README-Oberflächen** |
 
 ---
 
@@ -1114,4 +1114,4 @@ MCP-Server. Linux-Support verifiziert (Ubuntu 24.04, 321/332 Smoke-Tests).
 
 *Dieses Dokument ist Teil der BACH-Entwicklerdokumentation.*
 *Fuer operative Befehle siehe: `bach --help`*
-*Erstellt: 2026-01-29 | Aktualisiert: 2026-05-17 (v3.12.3-coffee)*
+*Erstellt: 2026-01-29 | Aktualisiert: 2026-05-17 (v3.12.4-earth)*

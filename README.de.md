@@ -1,8 +1,16 @@
 # BACH - Textbasiertes Betriebssystem für LLMs
 
-**Version:** v3.12.3-coffee
+**Version:** v3.12.4-earth
 **Status:** Production-Ready
 **Lizenz:** MIT
+
+## Sprachen
+
+BACH wird mit Dokumentations- und Übersetzungsoberflächen für sechs Sprachen ausgeliefert:
+
+[English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
+
+Der aktuelle Release-Snapshot aktiviert `de`, `en`, `es`, `ru`, `ja` und `zh` in `system/exports/translations/languages_config.release.json` und exportiert passende Locale-Dateien in `system/exports/translations/locales/`. Für Crawler und direkte Spracheinstiege hat jede Sprache zusätzlich eine eigene `README.md` unter `docs/i18n/<lang>/`.
 
 ## Überblick
 
@@ -85,6 +93,7 @@ Stand 2026-05-17: GitHub Releases markiert `2026.5.12` weiterhin als aktuelle St
 
 ## Dokumentation
 
+- **Sprachen:** [English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
 - **[Schnellstart](QUICKSTART.md)** - Erste Schritte mit BACH
 - **[Benutzerhandbuch](BACH_USER_MANUAL.md)** - Vollständiges Handbuch
 - **[Skills-Katalog](SKILLS.md)** - Alle verfügbaren Skills

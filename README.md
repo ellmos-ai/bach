@@ -10,11 +10,19 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-v3.12.3--coffee-orange)
+![Version](https://img.shields.io/badge/Version-v3.12.4--earth-orange)
 ![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)
 ![Tests](https://img.shields.io/badge/Tests-4144%20passed-brightgreen)
 
-**Version:** v3.12.3-coffee
+**Version:** v3.12.4-earth
+
+## Languages
+
+BACH is documented and shipped with translation surfaces for six languages:
+
+[English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
+
+The current release snapshot enables `de`, `en`, `es`, `ru`, `ja`, and `zh` in `system/exports/translations/languages_config.release.json` and exports matching locale files in `system/exports/translations/locales/`. For crawlers and direct language entry points, each language also has its own `README.md` under `docs/i18n/<lang>/`.
 
 <p align="center">
   <img src="overview.jpg" alt="BACH Overview" width="700">
@@ -147,6 +155,7 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 
 ## Documentation
 
+- **Languages:** [English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
 - **[Quickstart Guide](QUICKSTART.md)** - Get your first workflow running in 5 minutes
 - **[User Manual](BACH_USER_MANUAL.md)** - Complete handbook
 - **[Skills Catalog](SKILLS.md)** - All available skills
@@ -195,7 +204,7 @@ Die vollständige deutsche Dokumentation findest du hier: **[README.de.md](READM
 
 ---
 
-*ellmos BACH v3.12.3-coffee - Text-Based Operating System for LLMs*
+*ellmos BACH v3.12.4-earth - Text-Based Operating System for LLMs*
 
 ---
 
