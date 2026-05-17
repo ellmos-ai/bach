@@ -3,7 +3,7 @@
  * Zentrale Navigation mit Dropdown-Submenüs
  */
 
-const BACH_VERSION = "3.12.0";
+const BACH_VERSION = "3.12.1";
 
 if (typeof escapeHtml === 'undefined') {
     window.escapeHtml = function(text) {

@@ -14,7 +14,7 @@
 ![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)
 ![Tests](https://img.shields.io/badge/Tests-4144%20passed-brightgreen)
 
-**Version:** v3.12.0-coffee
+**Version:** v3.12.1-coffee
 
 <p align="center">
   <img src="overview.jpg" alt="BACH Overview" width="700">
@@ -194,7 +194,7 @@ Die vollständige deutsche Dokumentation findest du hier: **[README.de.md](READM
 
 ---
 
-*ellmos BACH v3.12.0-coffee - Text-Based Operating System for LLMs*
+*ellmos BACH v3.12.1-coffee - Text-Based Operating System for LLMs*
 
 ---
 
