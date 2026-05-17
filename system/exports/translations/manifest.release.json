@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-05-17T05:32:25.086146",
+  "generated_at": "2026-05-17T07:19:43.709598",
   "export_kind": "languages_release_snapshot",
   "source_db": "C:\\Users\\User\\.bach\\bach.db",
   "counts": {
     "config_rows": 1,
-    "translations": 4318,
+    "translations": 12979,
     "dictionary_entries": 119,
     "locale_files": 6
   },

@@ -157,6 +157,15 @@ PLAN.txt
 /_dev/
 /.dev/
 
+# === TEMPORÄRE SKRIPTE (Übersetzungsarbeit, Debugging) ===
+/auto_translator.py
+/check_db.py
+/check_lang*.py
+/check_translations.py
+/merge_db.py
+/quality_check.py
+/scratch_dump.json
+
 # === USER-DATEN MIT ECHTEN NAMEN ===
 /system/data/anonymizer_whitelist.json
 
