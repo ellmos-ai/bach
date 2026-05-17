@@ -1027,7 +1027,10 @@ class ControlHandler(BaseHTTPRequestHandler):
     def _read_body(self):
         length = int(self.headers.get("Content-Length", 0))
         if length:
-            return json.loads(self.rfile.read(length))
+            try:
+                return json.loads(self.rfile.read(length))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return {}
         return {}
 
     def do_OPTIONS(self):
