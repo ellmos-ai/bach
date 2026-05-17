@@ -1,0 +1,101 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [tasks table, ati_tasks table, hub/task.py, bach_api.py]
+
+TASKS - Task Management System
+===============================
+
+STATUS: 2026-02-08
+
+The task system (Layer 5) orchestrates work between users and
+partner agents (Claude, Gemini, etc.).
+
+CORE CONCEPTS
+-------------
+- MANUAL TASKS: Via `bach task add` (table: `tasks`).
+- SCANNED TASKS: From code comments (table: `ati_tasks`).
+- MULTI-PARTNER: Assignment via `--assigned` to agents or user.
+- DISTI-TIERS: Tasks are separated via `dist_type` (User/Template/Core).
+
+TWO ACCESS PATHS (since v2.0)
+-----------------------------
+BACH has TWO parallel access paths - both use the same handlers + DB:
+
+1. CLI (for humans at the terminal):
+     python bach.py task add "Title" --priority P4
+
+2. LIBRARY API (PREFERRED for LLM/scripts):
+     from bach_api import task
+     task.add("Title", "--priority", "P4")
+     task.list()
+     task.done(42, "--note", "Completed")
+
+CLI COMMANDS (bach task)
+------------------------
+  add <title>       Create task (--priority P1-P4, --description, --category)
+  list [status]     Filtered overview (pending/open/in_progress/done/blocked/all)
+  list --filter     Filter by term in title
+  list --assigned   Tasks for a specific partner
+  list --unassigned Tasks without assignment
+  show <ID>         Details including description and history
+  edit <ID>         Edit task (--title, --description, --category, --assigned)
+  done <ID>         Mark task as done (multi-ID, --note)
+  block <ID>        Block task(s) (multi-ID, --reason)
+  unblock <ID>      Unblock task(s) (multi-ID)
+  reopen <ID>       Reopen completed task(s) (multi-ID)
+  delete <ID>       Delete task(s) permanently (multi-ID)
+  priority <ID> <P> Change priority (P1-P4)
+  assign <ID>       Assign to partner (--to GEMINI/COPILOT/etc.)
+  depends <ID>      Show dependencies
+    --on <X>        Add dependency (task waits on X)
+    --remove <X>    Remove dependency
+    --clear         Clear all dependencies
+
+LIBRARY API EXAMPLES
+--------------------
+  from bach_api import task
+
+  # Create task
+  task.add("Write docs", "--priority", "P2", "--category", "docs")
+
+  # List tasks
+  task.list("pending")
+  task.list("open")         # Legacy status
+  task.list("in_progress")  # Currently in progress
+  task.list("all", "--assigned", "GEMINI")
+  task.list("--unassigned")
+
+  # Edit tasks
+  task.edit(42, "--title", "New Title")
+  task.done(100, 101, 102, "--note", "All completed")
+  task.assign(200, "--to", "COPILOT")
+
+  # Dependencies
+  task.depends(306, "--on", "305")  # Task 306 waits on 305
+  task.depends(306)                 # Show dependencies
+
+SCAN TASKS (hub/ati.py)
+-----------------------
+  bach ati onboard --check    Scans filesystem for new tasks.
+  bach scan tasks             Lists tasks from `ati_tasks`.
+
+DATABASE (Layer 1)
+------------------
+- `tasks`: id, title, description, status, priority, assigned_to, delegated_to,
+  depends_on, category, tags, created_at, completed_at, updated_at, dist_type.
+- `ati_tasks`: Scanned tasks with source link (file/line).
+- DB path: system/data/bach.db
+
+GUI & INTEGRATION
+-----------------
+The **Task Board** (/tasks) provides a Kanban view for
+moving tasks between status columns.
+
+SEE ALSO
+--------
+  system/bach_api.py   Library API module (preferred access)
+  system/hub/task.py   TaskHandler implementation
+  docs/help/delegate.txt    Delegation to partners
+  docs/help/maintain.txt    Integrity checks and cleanup
+  bach --help ati      The Automated Tool Incorporator
