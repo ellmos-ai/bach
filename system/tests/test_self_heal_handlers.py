@@ -1576,4 +1576,80 @@ def test_agent_steer_creates_operator_note_and_status_json_reports_queue(tmp_pat
     assert payload["active_count"] == 1
     agent = payload["agents"][0]
     assert agent["pending_operator_notes"] == 1
+    assert agent["latest_operator_note"] == "Bitte zuerst Logs pruefen"
+    assert agent["latest_operator_note_at"] is not None
     assert "steer" in agent["available_actions"]
+    assert "clear-steer" in agent["available_actions"]
+
+    success, message = handler.handle("clear-steer", ["demo"])
+    assert success is True
+    assert "gelöscht" in message
+    assert not notes_json.exists()
+    assert not notes_md.exists()
+
+    success, message = handler.handle("status", ["--json"])
+    assert success is True
+    payload = json.loads(message)
+    agent = payload["agents"][0]
+    assert agent["pending_operator_notes"] == 0
+    assert agent["latest_operator_note"] is None
+    assert agent["latest_operator_note_at"] is None
+    assert "steer" in agent["available_actions"]
+    assert "clear-steer" not in agent["available_actions"]
+
+
+def test_agent_clear_steer_deletes_operator_queue_and_updates_json(tmp_path, monkeypatch):
+    from hub.agent_launcher import AgentLauncherHandler
+
+    base = _init_base(tmp_path)
+    agent_dir = base / "agents" / "demo"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
+
+    temp_dir = base / "data" / "temp" / "agent_demo"
+    temp_dir.mkdir(parents=True)
+    pid_dir = base / "data" / "agent_pids"
+    pid_dir.mkdir(parents=True)
+    (pid_dir / "demo.pid").write_text(
+        json.dumps(
+            {
+                "pid": 4242,
+                "name": "demo",
+                "display_name": "Demo",
+                "type": "boss",
+                "model": "sonnet",
+                "mode": "default",
+                "started": "2026-05-16T12:00:00",
+                "temp_dir": str(temp_dir),
+                "window_title": "BACH: Demo",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (temp_dir / "operator_notes.json").write_text(
+        json.dumps(
+            [
+                {
+                    "message": "Bitte zuerst Logs pruefen",
+                    "requested_at": "2026-05-16T12:20:00",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (temp_dir / "OPERATOR_NOTES.md").write_text("# Operator Notes\n", encoding="utf-8")
+
+    monkeypatch.setattr("hub.agent_launcher.AgentLauncherHandler._is_agent_running", lambda self, _name: 4242)
+
+    handler = AgentLauncherHandler(base)
+    success, message = handler.handle("clear-steer", ["demo", "--json"])
+
+    assert success is True
+    payload = json.loads(message)
+    assert payload["action"] == "clear-steer"
+    assert payload["agent"]["pending_operator_notes"] == 0
+    assert payload["agent"]["latest_operator_note"] is None
+    assert "clear-steer" not in payload["agent"]["available_actions"]
+    assert not (temp_dir / "operator_notes.json").exists()
+    assert not (temp_dir / "OPERATOR_NOTES.md").exists()

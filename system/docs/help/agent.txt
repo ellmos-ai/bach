@@ -1,24 +1,24 @@
-# Portabilitaet: SYSTEM
+# Portabilität: SYSTEM
 # Version: 1.1.0
-# Zuletzt validiert: 2026-05-13
-# Nächste Prüfung: 2026-11-13
+# Zuletzt validiert: 2026-05-17
+# Nächste Prüfung: 2026-11-17
 # Ressourcen: [hub/agent_launcher.py, agents/, agents/_experts/]
 
 AGENT - Agent-Launcher und Verwaltung
-======================================
+=====================================
 
-STAND: 2026-05-09
+STAND: 2026-05-17
 
 Das Agent-System erlaubt das Starten und Verwalten von BACH-Agenten
 als separate Claude-Code-Prozesse. Jeder Agent wird mit seiner eigenen
-SKILL.md als Identitaet gestartet.
+SKILL.md als Identität gestartet.
 
 STRUKTUR
 --------
 
   [Boss-Agent]         -- Koordiniert und delegiert
        |
-       +-- [Experte 1] -- Spezialisierte Ausfuehrung
+       +-- [Experte 1] -- Spezialisierte Ausführung
        +-- [Experte 2]
 
 Agenten-Verzeichnisse:
@@ -28,27 +28,29 @@ Agenten-Verzeichnisse:
 CLI-BEFEHLE (bach agent)
 ------------------------
 
-  list                  Alle verfuegbaren Agents auflisten
-  start <name>          Agent starten (neues Terminalfenster)
-  stop <name>           Laufenden Agent stoppen
-  steer <name> "..."    Operator-Hinweis für laufenden Agenten vormerken
-  rename <name> <neu>   Display-Name eines Agenten/Experten aendern
-  status                Alle laufenden Agents anzeigen
-  doctor [name]         Agent-Preflight und Recovery-Hinweise
-  list --json           Agenten inkl. Laufzeit-Metadaten als JSON
-  start <name> --json   Startantwort maschinenlesbar als JSON
-  stop <name> --json    Stop-Antwort maschinenlesbar als JSON
-  steer <name> --json   Steer-Antwort inkl. Queue-Stand als JSON
-  status --json         Laufende/registrierte Agenten als JSON
-  doctor [name] --json  Diagnose maschinenlesbar als JSON
+  list                        Alle verfügbaren Agents auflisten
+  start <name>                Agent starten (neues Terminalfenster)
+  stop <name>                 Laufenden Agent stoppen
+  steer <name> "..."          Operator-Hinweis für laufenden Agenten vormerken
+  clear-steer <name>          Vorgemerkte Operator-Hinweise gezielt löschen
+  rename <name> <neu>         Display-Name eines Agenten/Experten ändern
+  status                      Alle laufenden Agents anzeigen
+  doctor [name]               Agent-Preflight und Recovery-Hinweise
+  list --json                 Agenten inkl. Laufzeit-Metadaten als JSON
+  start <name> --json         Startantwort maschinenlesbar als JSON
+  stop <name> --json          Stop-Antwort maschinenlesbar als JSON
+  steer <name> --json         Steer-Antwort inkl. Queue-Stand als JSON
+  clear-steer <name> --json   Queue-Bereinigung inkl. Queue-Stand als JSON
+  status --json               Laufende/registrierte Agenten als JSON
+  doctor [name] --json        Diagnose maschinenlesbar als JSON
 
-OPTIONEN FUER START
--------------------
+OPTIONEN FÜR START
+------------------
 
-  --mode plan|default   Modus (Standard: default)
+  --mode plan|default         Modus (Standard: default)
   --model sonnet|opus|haiku   KI-Modell (Standard: sonnet)
-  --dry-run             Nur pruefen, nicht starten
-  --json                Maschinenlesbare Ausgabe fuer list/start/stop/status/doctor
+  --dry-run                   Nur prüfen, nicht starten
+  --json                      Maschinenlesbare Ausgabe für list/start/stop/status/doctor
 
 BEISPIELE
 ---------
@@ -63,10 +65,11 @@ BEISPIELE
   bach agent start ati --dry-run
   bach agent start ati --dry-run --json
 
-  # Laufende Agents anzeigen
+  # Laufende Agents anzeigen und steuern
   bach agent status
   bach agent status --json
   bach agent steer ati "Bitte nur Statusflächen anfassen." --json
+  bach agent clear-steer ati --json
 
   # Start-Voraussetzungen und Recovery prüfen
   bach agent doctor ati
@@ -76,15 +79,15 @@ BEISPIELE
   bach agent stop ati
   bach agent stop ati --json
 
-VERFUEGBARE AGENTEN (Auswahl)
------------------------------
+VERFÜGBARE AGENTEN (Auswahl)
+----------------------------
 
   [BERUFLICH]
     ati               Software-Entwickler-Agent (Scanner, Sessions)
     entwickler        Allgemeiner Entwickler-Agent
     production        Produktions-Workflow-Agent
     research          Wissenschaftliche Recherche
-    bueroassistent    Steuern, Foerderplanung, Dokumentation
+    bueroassistent    Steuern, Förderplanung, Dokumentation
     reflection        Selbstreflexion und Meta-Analyse
 
   [PRIVAT]
@@ -94,7 +97,7 @@ VERFUEGBARE AGENTEN (Auswahl)
 
   [EXPERTEN]
     steuer            Steuer-Experte (unter _experts/)
-    foerderplaner     Foerderantrag-Experte
+    foerderplaner     Förderantrag-Experte
     haushaltsmanagement
     psycho-berater
 
@@ -104,16 +107,18 @@ WIE ES FUNKTIONIERT
 -------------------
 
 1. `bach agent start <name>` findet die SKILL.md des Agenten
-2. Eine temporaere CLAUDE.md wird erstellt (data/temp/agent_<name>/)
-3. Ein neues Terminalfenster oeffnet sich mit Claude Code
-4. PID wird in data/agent_pids/<name>.pid gespeichert
+2. Eine temporäre CLAUDE.md wird erstellt (`data/temp/agent_<name>/`)
+3. Ein neues Terminalfenster öffnet sich mit Claude Code
+4. PID wird in `data/agent_pids/<name>.pid` gespeichert
 5. `bach agent steer <name> "..."` schreibt Operator-Hinweise in `OPERATOR_NOTES.md`
-6. `bach agent stop <name>` beendet den Prozess und loescht die PID
+6. `bach agent status --json` zeigt Queue-Stand, `latest_operator_note` und verfügbare Aktionen maschinenlesbar
+7. `bach agent clear-steer <name>` leert eine veraltete oder erledigte Hinweis-Queue gezielt
+8. `bach agent stop <name>` beendet den Prozess und löscht die PID
 
 VORAUSSETZUNGEN
 ---------------
 - Claude Code CLI muss installiert sein (Befehl: `claude`)
-- Agent muss eine SKILL.md haben (agents/<name>/SKILL.md)
+- Agent muss eine SKILL.md haben (`agents/<name>/SKILL.md`)
 
 RECOVERY / TROUBLESHOOTING
 --------------------------
@@ -133,6 +138,7 @@ schließt, zuerst die Diagnose ausführen:
 Typische nächste Schritte nach dem Report:
 - `bach agent start <name> --dry-run` für einen sicheren Vorabtest
 - `bach agent status --json` bei laufenden oder hängenden Sessions
+- `bach agent clear-steer <name> --json`, wenn erledigte Hinweise in der Queue liegen
 - Claude Code CLI installieren oder Login/Setup lokal prüfen
 
 DATENBANK
@@ -147,16 +153,4 @@ DATEIEN
   agents/                   Boss-Agenten-Ordner
   agents/_experts/          Experten-Ordner
   data/agent_pids/          PID-Dateien laufender Agents
-  data/temp/agent_*/        Temporaere CLAUDE.md pro Agent
-
-UNTERSCHIED ZU agents.txt
---------------------------
-Dieses Dokument beschreibt den AgentLauncherHandler (bach agent ...).
-Fuer eine Uebersicht ueber alle Agenten und Experten:
-  bach --help agents
-
-SIEHE AUCH
-----------
-  bach --help agents      Agenten-Uebersicht (alle Agenten)
-  bach --help skills      SKILL.md-System
-  bach --help ati         ATI Software-Entwickler Details
+  data/temp/agent_*/        Temporäre CLAUDE.md pro Agent

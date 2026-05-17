@@ -7,7 +7,7 @@
 AGENT - Agent launcher and administration
 ======================================
 
-DATE: 2026-05-09
+DATE: 2026-05-17
 
 The agent system allows you to start and manage BACH agents
 as separate Claude code processes. Each agent comes with their own
@@ -31,7 +31,8 @@ CLI COMMANDS (bach agent)
   list List all available agents
   start <name> Start agent (new terminal window)
   stop <name> Stop running agent
-  steer <name> "..." Save operator hint for running agent
+  steer <name> "..." Save operator hint for a running agent
+  clear-steer <name> Clear queued operator hints for an agent
   rename <name> <new> Change the display name of an agent/expert
   status Show all running agents
   doctor [name] Agent preflight and recovery notes
@@ -39,6 +40,7 @@ CLI COMMANDS (bach agent)
   start <name> --json Start response machine-readable as JSON
   stop <name> --json Stop response machine-readable as JSON
   steer <name> --json Steer response including queue status as JSON
+  clear-steer <name> --json Clear-steer response including queue status as JSON
   status --json Running/registered agents as JSON
   doctor [name] --json Diagnosis machine-readable as JSON
 
@@ -63,10 +65,11 @@ EXAMPLES
   bach agent start ati --dry-run
   bach agent start ati --dry-run --json
 
-  # Show running agents
+  # Show and control running agents
   bach agent status
   bach agent status --json
   bach agent steer ati "Bitte nur Statusflächen anfassen." --json
+  bach agent clear-steer ati --json
 
   # Check start requirements and recovery
   bach agent doctor ati
@@ -107,8 +110,10 @@ HOW IT WORKS
 2. A temporary CLAUDE.md is created (data/temp/agent_<name>/)
 3. A new terminal window opens with Claude Code
 4. PID is stored in data/agent_pids/<name>.pid
-5. `bach agent steer <name> "..."` writes operator notes in `OPERATOR_NOTES.md`
-6. `bach agent stop <name>` ends the process and deletes the PID
+5. `bach agent steer <name> "..."` writes operator notes to `OPERATOR_NOTES.md`
+6. `bach agent status --json` exposes queue state, `latest_operator_note`, and available actions
+7. `bach agent clear-steer <name>` clears stale or completed queued hints
+8. `bach agent stop <name>` ends the process and deletes the PID
 
 REQUIREMENTS
 ---------------
@@ -133,6 +138,7 @@ closes, run the diagnostics first:
 Typical next steps after the report:
 - `bach agent start <name> --dry-run` for a safe preliminary test
 - `bach agent status --json` for running or hanging sessions
+- `bach agent clear-steer <name> --json` when completed hints still remain queued
 - Install Claude Code CLI or check login/setup locally
 
 DATABASE

@@ -71,6 +71,7 @@ class TestProperties:
         assert "status" in ops
         assert "doctor" in ops
         assert "steer" in ops
+        assert "clear-steer" in ops
         assert "rename" in ops
 
 
@@ -99,6 +100,11 @@ class TestHandleRouting:
         ok, msg = handler.handle("steer", ["test-boss"])
         assert ok is False
         assert "bach agent steer" in msg.lower() or "Syntax" in msg
+
+    def test_clear_steer_too_few_args(self, handler):
+        ok, msg = handler.handle("clear-steer", [])
+        assert ok is False
+        assert "clear-steer" in msg
 
     def test_rename_too_few_args(self, handler):
         ok, msg = handler.handle("rename", ["test-boss"])
@@ -213,6 +219,18 @@ class TestOperatorNotes:
         notes = handler._read_operator_notes("test-boss", temp_dir=temp_dir)
         assert len(notes) == 1
         assert notes[0]["message"] == "valid"
+
+    def test_clear_operator_notes_removes_json_and_markdown(self, handler):
+        temp_dir = str(handler.temp_dir / "agent_test-boss")
+        handler._write_operator_notes(
+            "test-boss",
+            [{"message": "Bitte löschen", "requested_at": "2026-05-16T11:00:00"}],
+            temp_dir=temp_dir,
+        )
+        removed = handler._clear_operator_notes("test-boss", temp_dir=temp_dir)
+        assert removed == 1
+        assert not handler._agent_operator_notes_path("test-boss", temp_dir=temp_dir).exists()
+        assert not handler._agent_operator_notes_path("test-boss", temp_dir=temp_dir, markdown=True).exists()
 
 
 # ================================================================
@@ -421,6 +439,27 @@ class TestSteer:
         ok, msg = handler.handle("steer", [])
         assert ok is False
         assert "Syntax" in msg
+
+    def test_clear_steer_empty_queue(self, handler):
+        ok, msg = handler.handle("clear-steer", ["test-boss"])
+        assert ok is True
+        assert "Keine Operator-Hinweise" in msg
+
+    def test_clear_steer_removes_pending_queue(self, handler):
+        temp_dir = str(handler.temp_dir / "agent_test-boss")
+        handler._write_operator_notes(
+            "test-boss",
+            [{"message": "Bitte löschen", "requested_at": "2026-05-16T11:00:00"}],
+            temp_dir=temp_dir,
+        )
+
+        ok, msg = handler.handle("clear-steer", ["test-boss"])
+
+        assert ok is True
+        assert "gelöscht" in msg
+        assert handler._read_operator_notes("test-boss", temp_dir=temp_dir) == []
+        assert not handler._agent_operator_notes_path("test-boss", temp_dir=temp_dir).exists()
+        assert not handler._agent_operator_notes_path("test-boss", temp_dir=temp_dir, markdown=True).exists()
 
 
 # ================================================================

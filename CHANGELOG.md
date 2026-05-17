@@ -12,6 +12,10 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 - **Legacy-Pfade bereinigt:** Restliche getrackte Windows-/OneDrive-Pfade in Wiki, Help, Workflow-Dokumenten, historischen Testartefakten und Hilfsskripten durch portable Platzhalter oder Home-/Env-basierte Defaults ersetzt.
 
+### Fixed
+
+- **Legacy-Session-Policy geschärft:** `system/hub/scheduler.py` markiert die veraltete pyautogui-Session-Automation in `bach scheduler session doctor/status` jetzt explizit als deprecated, entfernt irreführende Start-Empfehlungen, blockiert `session start/trigger` ohne bewusstes `--force` und listet empfohlene Ersatzpfade plus bereinigte Profilhilfe für Operatoren.
+
 ## [3.12.2-coffee] - 2026-05-17
 
 ### Added
@@ -87,7 +91,8 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 - **Safe-Checkpoint-Steering für Ketten:** `llmauto` und `bach chain` unterstützen jetzt `pause`, `resume` und `steer`, sodass Operator-Hinweise zwischen Modellläufen vorgemerkt, angezeigt und am nächsten sicheren Checkpoint übernommen werden.
 - **Agent Doctor:** `system/hub/agent_launcher.py` ergänzt `bach agent doctor [name] [--json]` als Preflight-Diagnose für Claude CLI, Laufzeitverzeichnisse, SKILL.md und stale PID-Dateien inklusive konkreter Recovery-/Start-Hinweise.
 - **Scheduler Doctor:** `system/hub/scheduler.py` ergänzt `bach scheduler doctor [--json]` und `bach scheduler session doctor [--json]` als strukturierte Preflight-Diagnosen für Scheduler-/Session-Skripte, PID-Zustand, DB-/Config-/Profil-Flächen und konkrete Recovery-Schritte.
-- **Maschinenlesbare Agent-Kontrollantworten:** `system/hub/agent_launcher.py` liefert jetzt auch bei `bach agent start/stop --json` strukturierte Operator-Antworten inklusive Zielauflösung, Status, PID- und Laufzeit-Metadaten.
+- **Maschinenlesbare Agent-Kontrollantworten:** `system/hub/agent_launcher.py` liefert jetzt auch bei `bach agent start/stop/steer/clear-steer/status --json` strukturierte Operator-Antworten inklusive Zielauflösung, Status, PID-, Laufzeit- und Queue-Metadaten.
+- **Explizite Agent-Steering-Bereinigung:** `bach agent clear-steer [name] [--json]` leert vorgemerkte oder veraltete Operator-Hinweis-Queues jetzt gezielt und spiegelt den bereinigten Queue-Stand maschinenlesbar zurück.
 - **Explizite Session-Steering-Bereinigung:** `bach scheduler session clear-steer [--profile NAME]` leert vorgemerkte Profil-Hinweise jetzt gezielt, und `session status --json` listet die neue Control-Action maschinenlesbar mit aus.
 
 ### Fixed
@@ -106,13 +111,15 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 - **Startup-Ressourcenblock wieder korrekt:** `system/hub/startup.py` zählt Agenten, Skills und Help-Dateien jetzt wieder über das aktuelle Layout (`agents/`, `docs/help/`) und die kanonische DB statt über veraltete `skills/_agents`-/`help`-Pfade, sodass der Startup-Block im Live-System keine falschen Nullwerte mehr meldet.
 - **Windows-Agenten wieder sauber trackbar:** `system/hub/agent_launcher.py` startet interaktive Agenten auf Windows jetzt in einer langlebigen eigenen Konsole statt nur über den kurzlebigen `start`-Launcher, sodass `bach agent status` und `bach agent stop` dieselbe Session-PID sehen.
 - **Run-Statusflächen konkretisiert:** `bach agent list/status --json` liefern jetzt auch `runtime_seconds`, `window_title` und `available_actions`; `bach scheduler status --json` sowie `bach scheduler session status --json` exponieren ebenfalls maschinenlesbare `available_actions`.
+- **Agent-Steering-JSON konsistent gemacht:** `clear-steer`-Antworten und Statusflächen spiegeln Queue-Länge, `latest_operator_note` und `latest_operator_note_at` jetzt konsistent, auch bei Dry-Runs und bereits geleerten Queues.
+- **Agent-Statusflächen um Queue-Metadaten erweitert:** `bach agent list/status/start/stop/steer/clear-steer --json` zeigen jetzt zusätzlich `latest_operator_note` und `latest_operator_note_at`, sodass Operator-Dashboards veraltete Hinweis-Queues gezielt erkennen und bereinigen können.
 - **ATI-Scanner erweitert:** `system/agents/ati/scanner/task_scanner.py` erkennt jetzt neben `AUFGABEN.txt` auch `TODO.md`, `AUFGABEN.md`, `ROADMAP.md` und `DONE.md`, zählt Tools bei Multi-Datei-Projekten korrekt nur einmal, speichert echte Zeilennummern für Rücksyncs und liest offene ROADMAP-Tabellenzeilen direkt als ATI-Tasks ein.
 - **Agent-Runtime-Cache gehärtet:** `system/core/agent_runtime.py` scoped Registries jetzt pro `base_path`, lädt Agent-Module isoliert und invalidiert gecachte Instanzen automatisch bei Code- oder Config-Änderungen.
 - **JSON-Smokes wieder stabil:** `system/bach.py` unterdrückt ProSync-Start/Exit-Chatter bei `--json`, sodass `bach agent ... --json` und `bach scheduler ... --json` sauber maschinenlesbar bleiben.
 - **Kanonischer DB-Pfad vereinheitlicht:** `system/bach_api.py` schreibt strukturierte `memory`-Einträge wieder in dieselbe Datenbank, die Reader und Handler verwenden.
 - **Seal-Status repariert:** `system/hub/seal.py` löst `BACH_DB` wieder robust auf; `bach seal status` läuft im CLI-Smoke erneut grün.
 - **Path-Handler wieder importierbar:** `system/hub/path.py` platziert `from __future__ import annotations` wieder an einer gültigen Modulposition, sodass `bach path ...` im normalen CLI-Dispatch nicht mehr als Syntaxfehler herausfällt.
-- **OpenClaw-Referenzstand aktualisiert:** Doku und Release-Planung erfassen jetzt den verifizierten Stand vom 2026-05-16 mit GitHub-Stable `2026.5.12`, sichtbarem Prerelease `2026.5.16-beta.1` und aktueller Paket-/GHCR-Tag-Linie `2026.5.16-beta.1-slim`; zusätzlich schärfen die jüngsten offiziellen Hinweise per-Agent-MCP-Scopes, MIME-Sniffing, Cron-/Subagent-Fallbacks, robusten Config-State-Cleanup und reproduzierbare Release-Validierungslanes als relevante Beobachtungspunkte für BACH.
+- **OpenClaw-Referenzstand aktualisiert:** Doku und Release-Planung erfassen jetzt den verifizierten Stand vom 2026-05-17 mit GitHub-Stable `2026.5.12`, sichtbarem Prerelease `2026.5.16-beta.4` und aktueller GitHub-Paket-/GHCR-Tag-Linie `2026.5.16-beta.4-slim`; zusätzlich schärfen die jüngsten offiziellen Hinweise xAI-Grok-OAuth ohne API-Key, blockierendes `cron run --wait`, per-Agent-MCP-Scopes, MIME-Sniffing, Cron-/Subagent-Fallbacks, robusten Config-State-Cleanup und reproduzierbare Release-Validierungslanes als relevante Beobachtungspunkte für BACH.
 
 ---
 

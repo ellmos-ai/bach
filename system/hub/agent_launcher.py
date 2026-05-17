@@ -26,7 +26,7 @@ from .lang import t
 
 
 class AgentLauncherHandler(BaseHandler):
-    """Handler fuer Agent-Operationen (list, start, stop, status)."""
+    """Handler fuer Agent-Operationen (list, start, stop, steer, status)."""
 
     def __init__(self, base_path_or_app):
         super().__init__(base_path_or_app)
@@ -57,6 +57,10 @@ class AgentLauncherHandler(BaseHandler):
             "steer": t(
                 "agent_steer_desc",
                 default='Operator-Hinweis fuer laufenden Agenten vormerken (bach agent steer <name> "Hinweis")',
+            ),
+            "clear-steer": t(
+                "agent_clear_steer_desc",
+                default="Operator-Hinweise fuer einen Agenten loeschen (bach agent clear-steer <name>)",
             ),
             "rename": t("agent_rename_desc", default="Display-Name aendern (bach agent rename <name> <neuer-name>)")
         }
@@ -117,6 +121,21 @@ class AgentLauncherHandler(BaseHandler):
                 dry_run,
                 json_output=json_output,
             )
+        elif operation == "clear-steer":
+            if not filtered_args:
+                return self._action_response(
+                    "clear-steer",
+                    None,
+                    None,
+                    False,
+                    "[ERROR] Syntax: bach agent clear-steer <name>",
+                    json_output=json_output,
+                )
+            return self._clear_steer_agent(
+                filtered_args[0],
+                dry_run,
+                json_output=json_output,
+            )
         elif operation == "rename":
             if len(filtered_args) < 2:
                 return (False, t("agent_rename_syntax", default="[ERROR] Syntax: bach agent rename <name> <neuer-display-name>"))
@@ -174,10 +193,15 @@ class AgentLauncherHandler(BaseHandler):
         temp_dir: str | None,
         window_title: str | None,
         pid_file: str | None,
-        available_actions: list[str],
+        available_actions: list[str] | None,
         dry_run: bool = False,
+        notes: list[dict] | None = None,
     ) -> dict:
         """Erzeugt ein konsistentes Agent-Payload fuer JSON-Kontrollantworten."""
+        note_entries = notes if notes is not None else self._read_operator_notes(name, temp_dir=temp_dir)
+        actions = list(available_actions or self._available_actions(running, len(note_entries)))
+        if len(note_entries) and "clear-steer" not in actions:
+            actions.append("clear-steer")
         payload = {
             "name": name,
             "display_name": display_name or None,
@@ -192,8 +216,10 @@ class AgentLauncherHandler(BaseHandler):
             "temp_dir": temp_dir,
             "window_title": window_title,
             "pid_file": pid_file,
-            "available_actions": available_actions,
-            "pending_operator_notes": len(self._read_operator_notes(name, temp_dir=temp_dir)),
+            "available_actions": actions,
+            "pending_operator_notes": len(note_entries),
+            "latest_operator_note": note_entries[-1]["message"] if note_entries else None,
+            "latest_operator_note_at": note_entries[-1].get("requested_at") if note_entries else None,
             "operator_notes_file": str(self._agent_operator_notes_path(name, temp_dir=temp_dir, markdown=True)),
         }
         if dry_run:
@@ -233,6 +259,20 @@ class AgentLauncherHandler(BaseHandler):
                 if isinstance(item, dict) and item.get("message")
             ]
         return []
+
+    def _available_actions(self, running: bool, note_count: int) -> list[str]:
+        """Leitet die sinnvollen Kontrollaktionen aus Status und Queue ab."""
+        actions = ["stop", "steer"] if running else ["start"]
+        if note_count:
+            actions.append("clear-steer")
+        return actions
+
+    def _clear_operator_notes(self, name: str, *, temp_dir: str | None = None) -> int:
+        """Entfernt alle vorgemerkten oder veralteten Operator-Hinweise fuer einen Agenten."""
+        notes = self._read_operator_notes(name, temp_dir=temp_dir)
+        self._agent_operator_notes_path(name, temp_dir=temp_dir).unlink(missing_ok=True)
+        self._agent_operator_notes_path(name, temp_dir=temp_dir, markdown=True).unlink(missing_ok=True)
+        return len(notes)
 
     def _write_operator_notes(self, name: str, notes: list[dict], *, temp_dir: str | None = None):
         """Schreibt Operator-Hinweise als JSON und Markdown-Spiegel."""
@@ -359,8 +399,10 @@ class AgentLauncherHandler(BaseHandler):
             "runtime_seconds": self._compute_runtime_seconds(started_at) if running else None,
             "temp_dir": temp_dir,
             "pending_operator_notes": len(notes),
+            "latest_operator_note": notes[-1]["message"] if notes else None,
+            "latest_operator_note_at": notes[-1].get("requested_at") if notes else None,
             "operator_notes_file": str(self._agent_operator_notes_path(agent["name"], temp_dir=temp_dir, markdown=True)),
-            "available_actions": ["stop", "steer"] if running else ["start"],
+            "available_actions": self._available_actions(running, len(notes)),
         }
 
     def _list_agents(self) -> tuple:
@@ -389,6 +431,7 @@ class AgentLauncherHandler(BaseHandler):
             "bach agent stop <name>     " + t("agent_stop_desc", default="Agent stoppen"),
             "bach agent status          " + t("agent_status_desc", default="Laufende Agents anzeigen"),
             "bach agent steer <n> ...   " + t("agent_steer_desc", default="Operator-Hinweis vormerken"),
+            "bach agent clear-steer <n> " + t("agent_clear_steer_desc", default="Operator-Hinweise loeschen"),
             "bach agent rename <n> <n>  " + t("agent_rename_desc", default="Display-Name aendern")
         ])
 
@@ -1214,6 +1257,122 @@ class AgentLauncherHandler(BaseHandler):
                 agent=agent_payload,
             )
 
+    def _clear_steer_agent(self, name: str, dry_run: bool, json_output: bool = False) -> tuple:
+        """Leert die Operator-Hinweis-Queue eines Agenten."""
+        resolved_name = self._resolve_to_technical_name(name)
+        pid_data = self._load_pid_data(resolved_name)
+        running_pid = self._is_agent_running(resolved_name)
+        running = bool(running_pid)
+        display_name = pid_data.get("display_name") or self._get_persona_info(resolved_name).get("display_name") or None
+        temp_dir = pid_data.get("temp_dir")
+        if not temp_dir:
+            fallback_temp_dir = self.temp_dir / f"agent_{resolved_name}"
+            if fallback_temp_dir.exists():
+                temp_dir = str(fallback_temp_dir)
+
+        agent_entry = next((item for item in self._scan_agents() if item["name"] == resolved_name), None)
+        agent_type = pid_data.get("type") or (agent_entry["type"] if agent_entry else None)
+        notes = self._read_operator_notes(resolved_name, temp_dir=temp_dir)
+        note_count = len(notes)
+        json_path = self._agent_operator_notes_path(resolved_name, temp_dir=temp_dir)
+        markdown_path = self._agent_operator_notes_path(resolved_name, temp_dir=temp_dir, markdown=True)
+        has_queue_files = json_path.exists() or markdown_path.exists()
+
+        agent_payload = self._build_agent_payload(
+            resolved_name,
+            display_name,
+            agent_type,
+            running=running,
+            status="running" if running else "stopped",
+            pid=running_pid or pid_data.get("pid") or None,
+            model=pid_data.get("model"),
+            mode=pid_data.get("mode"),
+            started_at=pid_data.get("started"),
+            temp_dir=temp_dir,
+            window_title=pid_data.get("window_title"),
+            pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
+            available_actions=self._available_actions(running, note_count),
+            dry_run=dry_run,
+            notes=notes,
+        )
+
+        if note_count == 0 and not has_queue_files:
+            return self._action_response(
+                "clear-steer",
+                name,
+                resolved_name,
+                True,
+                f"Keine Operator-Hinweise für '{display_name or resolved_name}' vorgemerkt.",
+                json_output=json_output,
+                agent=agent_payload,
+            )
+
+        if dry_run:
+            if note_count:
+                message = (
+                    f"[DRY-RUN] Würde {note_count} Operator-Hinweis(e) "
+                    f"für '{display_name or resolved_name}' löschen."
+                )
+            else:
+                message = (
+                    f"[DRY-RUN] Würde veraltete Operator-Hinweisdateien "
+                    f"für '{display_name or resolved_name}' bereinigen."
+                )
+            agent_payload["dry_run"] = True
+            return self._action_response(
+                "clear-steer",
+                name,
+                resolved_name,
+                True,
+                message,
+                json_output=json_output,
+                agent=agent_payload,
+            )
+
+        try:
+            cleared = self._clear_operator_notes(resolved_name, temp_dir=temp_dir)
+        except Exception as exc:
+            return self._action_response(
+                "clear-steer",
+                name,
+                resolved_name,
+                False,
+                f"[ERROR] Operator-Hinweise konnten nicht gelöscht werden: {exc}",
+                json_output=json_output,
+                agent=agent_payload,
+            )
+
+        cleared_payload = self._build_agent_payload(
+            resolved_name,
+            display_name,
+            agent_type,
+            running=running,
+            status="running" if running else "stopped",
+            pid=running_pid or pid_data.get("pid") or None,
+            model=pid_data.get("model"),
+            mode=pid_data.get("mode"),
+            started_at=pid_data.get("started"),
+            temp_dir=temp_dir,
+            window_title=pid_data.get("window_title"),
+            pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
+            available_actions=self._available_actions(running, 0),
+            notes=[],
+        )
+
+        if cleared:
+            message = f"[OK] {cleared} Operator-Hinweis(e) für '{display_name or resolved_name}' gelöscht."
+        else:
+            message = f"[OK] Veraltete Operator-Hinweisdateien für '{display_name or resolved_name}' bereinigt."
+        return self._action_response(
+            "clear-steer",
+            name,
+            resolved_name,
+            True,
+            message,
+            json_output=json_output,
+            agent=cleared_payload,
+        )
+
     def _steer_agent(self, name: str, message: str, dry_run: bool, json_output: bool = False) -> tuple:
         """Merkt einen Operator-Hinweis fuer einen laufenden Agenten vor."""
         resolved_name = self._resolve_to_technical_name(name)
@@ -1277,6 +1436,7 @@ class AgentLauncherHandler(BaseHandler):
                 pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
                 available_actions=["stop", "steer"],
                 dry_run=True,
+                notes=notes,
             )
             return self._action_response(
                 "steer",
@@ -1305,6 +1465,7 @@ class AgentLauncherHandler(BaseHandler):
                 window_title=pid_data.get("window_title"),
                 pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
                 available_actions=["stop", "steer"],
+                notes=notes,
             )
             return self._action_response(
                 "steer",
@@ -1330,6 +1491,7 @@ class AgentLauncherHandler(BaseHandler):
             window_title=pid_data.get("window_title"),
             pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
             available_actions=["stop", "steer"],
+            notes=notes,
         )
         return self._action_response(
             "steer",
@@ -1452,8 +1614,10 @@ class AgentLauncherHandler(BaseHandler):
                     "window_title": data.get("window_title"),
                     "pid_file": str(pf),
                     "pending_operator_notes": len(notes),
+                    "latest_operator_note": notes[-1]["message"] if notes else None,
+                    "latest_operator_note_at": notes[-1].get("requested_at") if notes else None,
                     "operator_notes_file": str(self._agent_operator_notes_path(name, temp_dir=temp_dir, markdown=True)),
-                    "available_actions": ["stop", "steer"] if running else ["start"],
+                    "available_actions": self._available_actions(running, len(notes)),
                 })
             except (json.JSONDecodeError, ValueError):
                 agents.append({
@@ -1471,6 +1635,8 @@ class AgentLauncherHandler(BaseHandler):
                     "window_title": None,
                     "pid_file": str(pf),
                     "pending_operator_notes": 0,
+                    "latest_operator_note": None,
+                    "latest_operator_note_at": None,
                     "operator_notes_file": str(self._agent_operator_notes_path(pf.stem, markdown=True)),
                     "available_actions": ["start"],
                 })

@@ -1,6 +1,6 @@
 ﻿# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-05-16 | **Version:** 4.3.21
+**Stand:** 2026-05-17 | **Version:** 4.3.22
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
@@ -63,7 +63,7 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 
 ### Priorität 1 - Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
 
-Der OpenClaw-Abgleich vom 2026-05-16 bestätigt den nächsten BACH-Fokus
+Der OpenClaw-Abgleich vom 2026-05-17 bestätigt den nächsten BACH-Fokus
 klar in Richtung sichere Erweiterbarkeit, robuste Agenten-Laufzeit und
 saubere Steuer-/Statusoberflächen. Relevant sind nicht die breite
 Messenger-Abdeckung, sondern manifest-first Plugin- und Provider-Metadaten,
@@ -71,10 +71,10 @@ fail-closed Tool-Setups, Scans vor der Installation von
 Skills/MCP-Servern/Plugins, API-Parität für Agentenflächen, Checkpoint-
 Steuerung und low-cardinality Telemetrie. Als Referenzstand gilt dabei:
 GitHub markiert inzwischen `openclaw 2026.5.12` vom 2026-05-14 als aktuelle
-Stable-Linie und zeigt `2026.5.16-beta.1` als sichtbares Prerelease; die
-Paket-Startseite trägt inzwischen ebenfalls `2026.5.16-beta.1-slim` als
-neueste Tag-Linie, und in der jüngsten GHCR-/Versionsübersicht ist zusätzlich
-`2026.5.14-beta.3-slim` sichtbar. Aus den aktuellen offiziellen
+Stable-Linie und zeigt `2026.5.16-beta.4` als sichtbares Prerelease; die
+offizielle GitHub-Paketseite trägt inzwischen ebenfalls `2026.5.16-beta.4-slim`
+als neueste Tag-Linie, und in der jüngsten GHCR-/Versionsübersicht ist
+zusätzlich `2026.5.16-beta.3-slim` sichtbar. Aus den aktuellen offiziellen
 Hinweisen erneut bestätigt sind
 workspace-scoped Plugin-Metadaten-Snapshots auf Hot Paths,
 Install-Hinweise für fehlende offizielle Erweiterungen, kollisionssichere
@@ -83,8 +83,9 @@ Autorisierungs-Hooks für Inline-Tool-Dispatch, SecretRef-sichere
 Runtime-Config-Snapshots, queue-unabhängiges Steering an sicheren
 Checkpoints, maschinenlesbare Cron-/Run-Status und restriktivere Scopes für
 globale Memory-Toggles. Neu sichtbarer geworden sind außerdem
-lokalisierte Onboarding-/Setup-Flows, konfigurationsgebundenes Warm-Caching
-für `resolvedSkills`, Ambient-Turns für Gruppenräume, ACP- und
+lokalisierte Onboarding-/Setup-Flows, blockierendes `cron run --wait` für
+Automationen, xAI-Grok-OAuth ohne API-Key für berechtigte Abos,
+konfigurationsgebundenes Warm-Caching für `resolvedSkills`, Ambient-Turns für Gruppenräume, ACP- und
 Subagent-Fallback-Semantik in isolierten Scheduler-/Cron-Läufen, per-Agent
 scopte Codex-MCP-Server samt Approval-Defaults, das harte Ablehnen
 fehlerhafter Extension-Metadaten, MIME-Sniffing vor agentensichtbarer
@@ -118,7 +119,7 @@ Backend-Fallback-Semantik zu BACHs Multi-Partner-Architektur passt.
 | OPS-CACHE-001 | Workspace-scoped Runtime-Cache-Invalidierung | DONE | `core.agent_runtime` trennt Registries jetzt pro `base_path`, lädt Agent-Module isoliert und invalidiert gecachte Instanzen automatisch bei Code-/Config-Änderungen |
 | OPS-RECOVERY-001 | Agent-Preflight & Recovery-Hinweise | DONE | `bach agent doctor [name] [--json]` prüft Claude CLI, Laufzeitverzeichnisse, SKILL.md und stale PID-Dateien und liefert konkrete Start-/Recovery-Schritte |
 | OPS-RECOVERY-002 | Scheduler-/Session-Preflight & Recovery-Hinweise | DONE | `bach scheduler doctor [--json]` und `bach scheduler session doctor [--json]` prüfen Skripte, PID-Zustand, DB-/Config-/Profil-Flächen, bereinigen stale PID-Dateien und liefern konkrete Start-/Recovery-Schritte |
-| OPS-RUN-001 | Aktive Laufsteuerung langer Agenten-/Scheduler-Runs | TEILWEISE | `bach agent list/start/stop/status --json` sowie `bach scheduler status/jobs/session status --json` liefern maschinenlesbare Operator-/Run-Status-Flächen ohne Idle-/EOD-Chatter; `bach chain pause/resume/steer` steuert llmauto-Ketten an sicheren Checkpoints, `bach agent steer` spiegelt vorgemerkte Operator-Notizen über `pending_operator_notes`/`OPERATOR_NOTES.md`, und `bach scheduler session pause/resume/steer/clear-steer` kontrolliert profilbezogene Auto-Runs jetzt explizit, ohne Steering-Hinweise bei fehlgeschlagenen Triggern zu verlieren; breiteres aktives Steering und per-Agent-Scope-Kontrolle für Agenten-/Scheduler-Läufe bleibt offen |
+| OPS-RUN-001 | Aktive Laufsteuerung langer Agenten-/Scheduler-Runs | TEILWEISE | `bach agent list/start/stop/steer/clear-steer/status --json` sowie `bach scheduler status/jobs/session status --json` liefern maschinenlesbare Operator-/Run-Status-Flächen ohne Idle-/EOD-Chatter; `bach chain pause/resume/steer` steuert llmauto-Ketten an sicheren Checkpoints, `bach agent steer` spiegelt vorgemerkte Operator-Notizen über `pending_operator_notes`, `latest_operator_note` und `OPERATOR_NOTES.md`, `bach agent clear-steer` räumt veraltete Hinweis-Queues jetzt gezielt auf, `bach scheduler session pause/resume/steer/clear-steer` kontrolliert profilbezogene Auto-Runs explizit, und Doctor-/Status-Flächen markieren die veraltete pyautogui-Session-Automation jetzt sauber als deprecated samt `--force`-Guard; breiteres aktives Steering und per-Agent-Scope-Kontrolle für Agenten-/Scheduler-Läufe bleibt offen |
 | MEM-PROV-001 | Memory-/Wiki-Provenance Views | DONE | `bach memory provenance` und `bach wiki provenance` zeigen Quellen, Evidenzart, Personenbezug und Privacy-Hinweise; gemeinsame Heuristiken plus Smoke-/Self-Heal-Tests sichern das Verhalten ab |
 
 ---
@@ -447,6 +448,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 | **4.3.19** | 2026-05-15 | **Operator-Preflights auf Scheduler/Session erweitert: `bach scheduler doctor [--json]` und `bach scheduler session doctor [--json]` prüfen Skripte, PID-Zustand, DB-/Config-/Profil-Flächen, räumen stale PID-Dateien auf und liefern konkrete Recovery-/Start-Hinweise; README, Hilfe und Release-Planung auf den verifizierten OpenClaw-Stand plus die neuen Diagnoseschritte nachgezogen.** |
 | **4.3.20** | 2026-05-15 | **`doc_update_checker.py` auf das aktuelle Layout gehärtet: `bach --maintain docs report` scannt jetzt auch `docs/help/*.txt`, `hub/_services/` und Root-Dokumente mit konsistenten Pfaden, erkennt veraltete `hub/handlers/*.py`- sowie `skills/_services/<service>/`-Referenzen ohne bereits korrekte `hub/_services/...`-Pfade zu beschädigen; ergänzend importiert `scheduler.py` `sqlite3` wieder explizit, und die verifizierte OpenClaw-Spitze wurde auf Stable `2026.5.12`, sichtbares Prerelease `2026.5.14-beta.1`, `latest`-Container `2026.5.12-slim` sowie GHCR-Versionsseite `2026.5.14-beta.2-slim` nachgezogen.** |
 | **4.3.21** | 2026-05-16 | **Agent- und Session-Kontrollflächen für Automationen vertieft: `bach agent start/stop --json` liefern jetzt strukturierte Operator-Antworten inklusive Zielauflösung, Status und Laufzeit-Metadaten; `bach agent steer` bestätigt sich als Operator-Notiz-Bridge mit `pending_operator_notes`/`OPERATOR_NOTES.md`; neu ergänzt `bach scheduler session clear-steer` eine explizite Queue-Bereinigung für profilbezogene Auto-Runs, und fehlgeschlagene Session-Trigger verlieren vorgemerkte Steering-Hinweise weder im manuellen CLI-Pfad noch im Hintergrund-Daemon mehr. Hilfetexte, Smokes und Regressionstests wurden nachgezogen, und der OpenClaw-Abgleich wurde auf Stable `2026.5.12`, sichtbares Prerelease `2026.5.16-beta.1`, den Release-Feed `2026.5.12-beta.8`, die aktuelle Paket-/GHCR-Tag-Linie `2026.5.16-beta.1-slim` sowie die offizielle `beta -> latest`-Fallback-Regel mit zusätzlichen Signalen zu per-Agent-MCP-Scopes, MIME-Sniffing und Cron-Fallback-Semantik aktualisiert.** |
+| **4.3.22** | 2026-05-17 | **Agenten- und Session-Steuerflächen nachgeschärft: `bach agent clear-steer [name] [--json]` bereinigt veraltete oder erledigte Operator-Hinweis-Queues jetzt explizit, Agent-JSON-Flächen exponieren zusätzlich `latest_operator_note` und `latest_operator_note_at`, und `bach scheduler session doctor/status/start/trigger/profiles` markieren die veraltete pyautogui-Session-Automation jetzt konsistent als deprecated samt `--force`-Guard und empfohlenen Ersatzpfaden. Hilfetexte, README, Smokes und Regressionstests wurden nachgezogen, und der OpenClaw-Abgleich wurde auf Stable `2026.5.12`, sichtbares Prerelease `2026.5.16-beta.4` sowie die aktuelle GitHub-Paket-/GHCR-Tag-Linie `2026.5.16-beta.4-slim` aktualisiert.** |
 
 Detaillierte Historie: `CHANGELOG.md`
 Archivierte Versionen: `../docs/_archive/ROADMAP_*.md`
