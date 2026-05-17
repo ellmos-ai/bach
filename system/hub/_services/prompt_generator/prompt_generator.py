@@ -158,7 +158,11 @@ class PromptGenerator:
         if not template_path.endswith('.txt'):
             template_path += '.txt'
 
-        file_path = TEMPLATES_DIR / template_path
+        file_path = (TEMPLATES_DIR / template_path).resolve()
+        try:
+            file_path.relative_to(TEMPLATES_DIR.resolve())
+        except ValueError:
+            return None
         if file_path.exists():
             try:
                 content = file_path.read_text(encoding='utf-8')
@@ -181,7 +185,11 @@ class PromptGenerator:
         if not template_path.endswith('.txt'):
             template_path += '.txt'
 
-        file_path = TEMPLATES_DIR / template_path
+        file_path = (TEMPLATES_DIR / template_path).resolve()
+        try:
+            file_path.relative_to(TEMPLATES_DIR.resolve())
+        except ValueError:
+            return None
         if file_path.exists():
             return file_path.read_text(encoding='utf-8')
         return None

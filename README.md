@@ -12,7 +12,7 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Version](https://img.shields.io/badge/Version-v3.11.1-orange)
 ![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)
-![Tests](https://img.shields.io/badge/Tests-3921%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-4144%20passed-brightgreen)
 
 **Version:** v3.11.1
 
@@ -30,7 +30,7 @@
 - **550+ Tools** - Extensive tool library for file processing, analysis, and automation
 - **1870+ Skills** - Reusable workflows and templates
 - **58 Workflow Templates** - Pre-built process workflows
-- **3800+ Tests** - Comprehensive test suite covering handlers, services, GUI, and MCP servers
+- **4100+ Tests** - Comprehensive test suite covering handlers, services, GUI, and MCP servers
 - **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System (6 memory types)
 - **Agent CLI** - `bach agent start/stop/list` for direct agent control
 - **Agent Doctor** - `bach agent doctor [name] [--json]` validates Claude CLI availability, runtime dirs, skill files, and stale PID state before a launch

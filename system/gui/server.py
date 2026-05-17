@@ -5375,12 +5375,13 @@ async def update_skills_item_file(request: FileUpdateRequest):
 
         path = BACH_DIR / path
 
-        
 
-    # Sicherheits-Check
 
-    if not str(path).startswith(str(BACH_DIR)):
+    # Sicherheits-Check (resolve verhindert Path-Traversal via ..)
 
+    try:
+        path.resolve().relative_to(BACH_DIR.resolve())
+    except ValueError:
         raise HTTPException(status_code=403, detail="Zugriff verweigert: Pfad ausserhalb des Projekts.")
 
         
@@ -9572,9 +9573,12 @@ async def toggle_prompt_daemon():
 async def launch_auto_session(request: Request):
     """Startet eine vordefinierte Claude Code Auto-Session."""
     import subprocess
+    import re
     try:
         data = await request.json()
         session_id = data.get("session_id", "")
+        if not re.match(r'^[a-zA-Z0-9_-]+$', session_id):
+            return {"status": "error", "message": "Ungueltige Session-ID"}
         start_dir = Path(__file__).parent.parent.parent / "start"
 
         env = {**os.environ, "BACH_AUTO": "1"}
@@ -13657,11 +13661,14 @@ async def sync_workflow_tuev():
 async def get_workflow_content(path: str):
     """Workflow-Inhalt anzeigen."""
     try:
-        if ".." in path or path.startswith("/"):
-            return HTMLResponse(content="<h1>Invalid path</h1>", status_code=400)
-
+        base_dir = Path(__file__).parent.parent
         normalized = path.replace("\\", "/").replace("%5C", "/")
-        workflow_path = Path(__file__).parent.parent / normalized
+        workflow_path = (base_dir / normalized).resolve()
+
+        try:
+            workflow_path.relative_to(base_dir.resolve())
+        except ValueError:
+            return HTMLResponse(content="<h1>Zugriff verweigert</h1>", status_code=403)
 
         if workflow_path.exists():
             content = workflow_path.read_text(encoding='utf-8')
