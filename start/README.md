@@ -7,6 +7,9 @@
 **`bach.sh`** - Cross-Platform-Launcher für macOS/Linux (`chat`, `gui`, `status`, `stop`).
 
 ```
+  --- SCHNELLSTART --------------------------------
+  [D]  Default Start (GUI + Tray + PromptBoard)
+
   --- VERBINDEN ----------------------------------
   [W]  Buddha Connect (Server-Modus)
 
@@ -23,10 +26,17 @@
   [0]  Zugewiesen unbegrenzt
 
   --- CLAUDE SPEZIAL ----------------------------
-  [F]  Full Access         [M]  Maintenance
+  [F]  Full Access         [P]  Remote Control
+  [M]  Maintenance
 
   --- CLAUDE LOOP (Endlos) ----------------------
   [L]  Loop 15min  [N]  Loop 30min  [H]  Loop 1h
+
+  --- AGENTEN -----------------------------------
+  [G]  Agent starten (Menü)
+
+  --- AUTOMATISIERUNG ----------------------------
+  [C]  Neue Kette  [R]  MarbleRun  [U]  llmauto  [T]  Status
 ```
 
 ## Server-Modus

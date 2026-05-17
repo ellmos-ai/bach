@@ -128,6 +128,8 @@ KONFIGURATION
     OLLAMA_MODEL             Standard-Modell ueberschreiben
     OLLAMA_URL               Ollama-URL ueberschreiben
     BACH_CONTROL_PORT        Control API Port (default: 8081)
+    BACH_HOST                Default-Host fuer Tray/GUI (z.B. macstudvonlukas)
+    BACH_NO_BROWSER          =1: Browser nicht automatisch oeffnen (Remote-GUI)
     ANTHROPIC_API_KEY        Fuer claude-api Backend
     OPENAI_API_KEY           Fuer openai Backend
 

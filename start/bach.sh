@@ -56,13 +56,21 @@ cmd_chat() {
 
     echo "Starte BACH Chat-Services..."
 
-    nohup "$PYTHON" "$CHAT_DIR/telegram_chat.py" > /tmp/bach-telegram.log 2>&1 &
+    local log_dir
+    if [[ "$OSTYPE" == darwin* ]]; then
+        log_dir="${HOME}/Library/Logs/bach"
+    else
+        log_dir="${HOME}/.local/state/bach/logs"
+    fi
+    mkdir -p "$log_dir"
+
+    nohup "$PYTHON" "$CHAT_DIR/telegram_chat.py" > "$log_dir/telegram-bot.log" 2>&1 &
     echo "  Telegram Bot gestartet (PID $!)"
 
-    nohup "$PYTHON" "$CHAT_DIR/chat_tray.py" --port 8081 > /tmp/bach-tray.log 2>&1 &
+    nohup "$PYTHON" "$CHAT_DIR/chat_tray.py" --port 8081 > "$log_dir/chat-tray.log" 2>&1 &
     echo "  System Tray + Control API gestartet (PID $!)"
 
-    echo "Fertig. Logs: /tmp/bach-telegram.log, /tmp/bach-tray.log"
+    echo "Fertig. Logs: $log_dir/"
 }
 
 cmd_gui() {
@@ -88,12 +96,25 @@ cmd_gui() {
         echo "$pids" | xargs kill -9 2>/dev/null || true
     fi
 
-    nohup "$PYTHON" "$SYS_DIR/gui/server.py" --host 0.0.0.0 --port "$port" > /tmp/bach-gui.log 2>&1 &
+    local log_dir
+    if [[ "$OSTYPE" == darwin* ]]; then
+        log_dir="${HOME}/Library/Logs/bach"
+    else
+        log_dir="${HOME}/.local/state/bach/logs"
+    fi
+    mkdir -p "$log_dir"
+
+    nohup "$PYTHON" "$SYS_DIR/gui/server.py" --host 0.0.0.0 --port "$port" > "$log_dir/gui-server.log" 2>&1 &
     echo "  GUI Server gestartet (PID $!)"
 
     sleep 2
     local url="http://127.0.0.1:${port}"
-    open "$url" 2>/dev/null || xdg-open "$url" 2>/dev/null || echo "Im Browser öffnen: $url"
+    if [ "${BACH_NO_BROWSER:-}" = "1" ]; then
+        echo "  Browser nicht geöffnet (BACH_NO_BROWSER=1)"
+        echo "  URL: $url"
+    else
+        open "$url" 2>/dev/null || xdg-open "$url" 2>/dev/null || echo "Im Browser öffnen: $url"
+    fi
 }
 
 cmd_status() {
