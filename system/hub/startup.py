@@ -186,67 +186,69 @@ class StartupHandler(BaseHandler):
     
     def _clock_in_partner(self, partner_id: str) -> bool:
         """Stempelt Partner ein (partner_presence Tabelle).
-        
+
         Markiert alte 'online' Eintraege als 'crashed' falls vorhanden.
         """
         conn = self._get_conn()
-        cursor = conn.cursor()
-        now = datetime.now().isoformat()
-        session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
-        # Alte aktive Sessions als crashed markieren
-        cursor.execute("""
-            UPDATE partner_presence 
-            SET status = 'crashed', clocked_out = ?, updated_at = ?
-            WHERE partner_name = ? AND status = 'online'
-        """, (now, now, partner_id))
-        
-        # Neu einstempeln
-        cursor.execute("""
-            INSERT INTO partner_presence 
-            (partner_name, status, clocked_in, last_heartbeat, session_id, created_at, updated_at)
-            VALUES (?, 'online', ?, ?, ?, ?, ?)
-        """, (partner_id, now, now, session_id, now, now))
-        
-        conn.commit()
-        conn.close()
-        return True
+        try:
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+            session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+            cursor.execute("""
+                UPDATE partner_presence
+                SET status = 'crashed', clocked_out = ?, updated_at = ?
+                WHERE partner_name = ? AND status = 'online'
+            """, (now, now, partner_id))
+
+            cursor.execute("""
+                INSERT INTO partner_presence
+                (partner_name, status, clocked_in, last_heartbeat, session_id, created_at, updated_at)
+                VALUES (?, 'online', ?, ?, ?, ?, ?)
+            """, (partner_id, now, now, session_id, now, now))
+
+            conn.commit()
+            return True
+        finally:
+            conn.close()
     
     def _clock_out_partner(self, partner_id: str) -> bool:
         """Stempelt Partner aus."""
         conn = self._get_conn()
-        cursor = conn.cursor()
-        now = datetime.now().isoformat()
-        
-        cursor.execute("""
-            UPDATE partner_presence 
-            SET status = 'offline', clocked_out = ?, updated_at = ?
-            WHERE partner_name = ? AND status = 'online'
-        """, (now, now, partner_id))
-        
-        conn.commit()
-        conn.close()
-        return True
+        try:
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+
+            cursor.execute("""
+                UPDATE partner_presence
+                SET status = 'offline', clocked_out = ?, updated_at = ?
+                WHERE partner_name = ? AND status = 'online'
+            """, (now, now, partner_id))
+
+            conn.commit()
+            return True
+        finally:
+            conn.close()
     
     def _get_online_partners(self, timeout_minutes: int = 5) -> list:
         """Holt alle online Partner (Heartbeat-Check)."""
         conn = self._get_conn()
-        cursor = conn.cursor()
-        
-        # Cutoff fuer Heartbeat-Timeout
-        from datetime import timedelta
-        cutoff = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
-        
-        cursor.execute("""
-            SELECT partner_name, clocked_in, last_heartbeat, current_task
-            FROM partner_presence 
-            WHERE status = 'online' AND last_heartbeat > ?
-        """, (cutoff,))
-        
-        rows = cursor.fetchall()
-        conn.close()
-        
-        return [{'partner': r[0], 'clocked_in': r[1], 'heartbeat': r[2], 'task': r[3]} for r in rows]
+        try:
+            cursor = conn.cursor()
+
+            from datetime import timedelta
+            cutoff = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
+
+            cursor.execute("""
+                SELECT partner_name, clocked_in, last_heartbeat, current_task
+                FROM partner_presence
+                WHERE status = 'online' AND last_heartbeat > ?
+            """, (cutoff,))
+
+            rows = cursor.fetchall()
+            return [{'partner': r[0], 'clocked_in': r[1], 'heartbeat': r[2], 'task': r[3]} for r in rows]
+        finally:
+            conn.close()
     
     def _lazy_auto_sync(self) -> list:
         """Lazy Auto-Sync: Nur geaenderte Ordner synchronisieren (SQ044).

@@ -1,7 +1,7 @@
 # Portabilität: UNIVERSAL
 # Version: 1.0.0
-# Zuletzt validiert: 2026-02-08
-# Nächste Prüfung: 2026-08-08
+# Zuletzt validiert: 2026-05-17
+# Nächste Prüfung: 2026-11-17
 
 # HINWEIS: Dieser Eintrag wurde nach between.txt migriert
 #

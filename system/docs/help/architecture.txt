@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
-# Zuletzt validiert: 2026-02-08 (Claude Sonnet 4.5 - Help-Forensik)
-# Nächste Prüfung: 2027-02-08
+# Zuletzt validiert: 2026-05-17
+# Nächste Prüfung: 2027-05-17
 # Quellen: [ARCHITECTURE.md, SKILL.md, core/, bach_api.py]
 
 BACH ARCHITEKTUR (Personal Agentic OS)

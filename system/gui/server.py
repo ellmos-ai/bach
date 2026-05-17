@@ -3985,7 +3985,7 @@ async def inbox_page():
 
         return FileResponse(inbox_file)
 
-    return HTMLResponse("<h1>Inbox</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template inbox.html nicht gefunden")
 
 
 
@@ -4001,7 +4001,7 @@ async def daemon_page():
 
         return FileResponse(daemon_file)
 
-    return HTMLResponse("<h1>Daemon Manager</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template daemon.html nicht gefunden")
 
 
 
@@ -4017,7 +4017,7 @@ async def tasks_page():
 
         return FileResponse(tasks_file)
 
-    return HTMLResponse("<h1>Tasks</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template tasks.html nicht gefunden")
 
 
 
@@ -4036,7 +4036,7 @@ async def messages_page():
 
         return FileResponse(messages_file)
 
-    return HTMLResponse("<h1>Messages</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template messages.html nicht gefunden")
 
 
 
@@ -4052,7 +4052,7 @@ async def help_page():
 
         return FileResponse(help_file)
 
-    return HTMLResponse("<h1>Help</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template help.html nicht gefunden")
 
 
 
@@ -13198,7 +13198,7 @@ async def upload_anon_file(file: Request):
 
     # TODO: Proper file upload handling with FastAPI UploadFile
 
-    return {"success": False, "message": "Not implemented yet"}
+    raise HTTPException(status_code=501, detail="Not implemented yet")
 
 
 # ═══════════════════════════════════════════════════════════════
