@@ -8,8 +8,8 @@
 Этот файл описывает **BachForelle**, ОТДЕЛЬНЫЙ проект вне BACH v2 Vanilla.
 
 **Правильные пути:**
-- BachForelle: `C:\Users\User\OneDrive\.AI\BachForelle\`
-- BachFliege: `C:\Users\User\OneDrive\.AI\BachFliege\`
+- BachForelle: `%ONEDRIVE_AI_ROOT%\BachForelle\`
+- BachFliege: `%ONEDRIVE_AI_ROOT%\BachFliege\`
 
 ## Что такое BachForelle?
 BachForelle — это облегченный вариант программы BACH для LLM-First.
@@ -26,8 +26,8 @@ BachForelle — это облегченный вариант программы 
 
 Если вы хотите использовать BachForelle:
 1. Перейдите в папку BachForelle.
-2. Прочтите `C:\Users\User\OneDrive\.AI\BachForelle\README.md`
-3. Прочтите `C:\Users\User\OneDrive\.AI\BachForelle\SKILL.md`
+2. Прочтите `%ONEDRIVE_AI_ROOT%\BachForelle\README.md`
+3. Прочтите `%ONEDRIVE_AI_ROOT%\BachForelle\SKILL.md`
 
 ## BACH v2 Vanilla НЕ имеет команды «стрелка»
 Этот файл справки существует только в качестве перекрестной ссылки для пользователей, использующих обе системы.

@@ -74,7 +74,7 @@ def _run_packaging_setup() -> None:
 
     setuptools_setup(
         name="ellmos-bach",
-        version="3.12.2",
+        version="3.12.3",
         description="BACH root-level editable install shim",
         long_description=long_description,
         long_description_content_type="text/markdown",

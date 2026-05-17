@@ -8,7 +8,7 @@ WAS IST DAS?
 Zentraler Arbeitsordner fuer alle Software-Entwicklungsprojekte.
 Liegt auf OneDrive fuer Synchronisation und Backup.
 
-Pfad: C:\Users\User\OneDrive\.SOFTWARE
+Pfad: %ONEDRIVE_SOFTWARE_ROOT%
 
 STRUKTUR
 --------

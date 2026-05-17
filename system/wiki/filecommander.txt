@@ -14,7 +14,7 @@ Ersetzt Desktop Commander und Filesystem fuer recludOS/BACH-Workflows.
 
 AKTUELLE POSITION
 -----------------
-C:\Users\User\OneDrive\.AI\MCP\recludos-filecommander-mcp
+%ONEDRIVE_AI_ROOT%\MCP\recludos-filecommander-mcp
 
 (Migriert 2026-01-23 von .AI/recludos-filecommander-mcp)
 

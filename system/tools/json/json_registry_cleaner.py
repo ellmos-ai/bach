@@ -58,6 +58,7 @@ Usage:
 
 import sys
 import json
+import os
 import sqlite3
 import argparse
 from pathlib import Path
@@ -69,7 +70,20 @@ if sys.platform == 'win32':
     except (AttributeError, OSError):
         pass
 
-BACH_DB = Path(r"C:\Users\User\OneDrive\.AI\BACH_STREAM\PRODUCTION\CONSTRUCTION_AREA\BACH_v1\Bach\bach.db")
+BACH_DB = Path(
+    os.getenv(
+        "BACH_DB",
+        Path.home()
+        / "OneDrive"
+        / ".AI"
+        / "BACH_STREAM"
+        / "PRODUCTION"
+        / "CONSTRUCTION_AREA"
+        / "BACH_v1"
+        / "Bach"
+        / "bach.db",
+    )
+)
 
 # Heuristische Mapping: Begriff im Dateinamen → Kategorie/Aktion
 DELETE_PATTERNS = {

@@ -24,12 +24,13 @@ from datetime import datetime
 from typing import List, Dict, Any
 
 # Bekannte Systeme (gleich wie run_external.py)
+ONEDRIVE_ROOT = Path.home() / "OneDrive"
 KNOWN_SYSTEMS = {
-    "recludOS": r"C:\Users\User\OneDrive\.AI\recludOS",
-    "BACH": r"C:\Users\User\OneDrive\.AI\BACH",
-    "_BATCH": r"C:\Users\User\OneDrive\.SOFTWARE\_BATCH",
-    "_CHIAH": r"C:\Users\User\OneDrive\.SOFTWARE\_CHIAH",
-    "universal-llm-os-v2": r"C:\Users\User\OneDrive\.AI\Templates\OS\universal-llm-os-v2",
+    "recludOS": str(ONEDRIVE_ROOT / ".AI" / "recludOS"),
+    "BACH": str(ONEDRIVE_ROOT / ".AI" / "BACH"),
+    "_BATCH": str(ONEDRIVE_ROOT / ".SOFTWARE" / "_BATCH"),
+    "_CHIAH": str(ONEDRIVE_ROOT / ".SOFTWARE" / "_CHIAH"),
+    "universal-llm-os-v2": str(ONEDRIVE_ROOT / ".AI" / "Templates" / "OS" / "universal-llm-os-v2"),
 }
 
 

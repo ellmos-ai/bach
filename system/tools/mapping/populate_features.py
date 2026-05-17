@@ -4,8 +4,16 @@ BACH_STREAM Feature-Mapping Database - Initial Data Population
 """
 import sqlite3
 import json
+import os
+from pathlib import Path
 
-DB_PATH = r'C:\Users\User\OneDrive\.AI\BACH_STREAM\MAPPING\feature_mapping.db'
+MAPPING_ROOT = Path(
+    os.getenv(
+        "BACH_FEATURE_MAPPING_ROOT",
+        Path.home() / "OneDrive" / ".AI" / "BACH_STREAM" / "MAPPING",
+    )
+)
+DB_PATH = str(MAPPING_ROOT / "feature_mapping.db")
 
 conn = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
@@ -14,13 +22,13 @@ cursor = conn.cursor()
 # SYSTEME
 # ═══════════════════════════════════════════════════════════════════════════
 systems = [
-    ("_CHIAH", "system", "3.1", "SKILL.md", r"C:\Users\User\OneDrive\.SOFTWARE\_CHIAH"),
-    ("_BATCH", "system", "2.5", "SKILL.md", r"C:\Users\User\OneDrive\.SOFTWARE\_BATCH"),
-    ("recludOS", "system", "3.3.0", "boot/SKILL.md", r"C:\Users\User\OneDrive\.AI\BACH\main\system"),
-    ("BACH_STREAM", "meta", "1.1", "SKILL.txt", r"C:\Users\User\OneDrive\.AI\BACH_STREAM"),
-    ("AI-Portable", "utility", "1.0", None, r"C:\Users\User\OneDrive\.AI\AI-Portable"),
-    ("Templates", "utility", "1.0", None, r"C:\Users\User\OneDrive\.AI\Templates"),
-    ("recludos-filecommander-mcp", "utility", "1.0", "src/index.ts", r"C:\Users\User\OneDrive\.AI\recludos-filecommander-mcp"),
+    ("_CHIAH", "system", "3.1", "SKILL.md", r"%SOFTWARE_ROOT%\_CHIAH"),
+    ("_BATCH", "system", "2.5", "SKILL.md", r"%SOFTWARE_ROOT%\_BATCH"),
+    ("recludOS", "system", "3.3.0", "boot/SKILL.md", r"%ONEDRIVE_AI_ROOT%\BACH\main\system"),
+    ("BACH_STREAM", "meta", "1.1", "SKILL.txt", r"%ONEDRIVE_AI_ROOT%\BACH_STREAM"),
+    ("AI-Portable", "utility", "1.0", None, r"%ONEDRIVE_AI_ROOT%\AI-Portable"),
+    ("Templates", "utility", "1.0", None, r"%ONEDRIVE_AI_ROOT%\Templates"),
+    ("recludos-filecommander-mcp", "utility", "1.0", "src/index.ts", r"%ONEDRIVE_AI_ROOT%\recludos-filecommander-mcp"),
 ]
 
 cursor.executemany("""

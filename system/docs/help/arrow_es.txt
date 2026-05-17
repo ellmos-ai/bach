@@ -9,7 +9,7 @@ Este archivo describe **BachForelle**, un proyecto SEPARADO fuera de BACH v2 Van
 
 **Rutas correctas:**
 - BachForelle: `C:\Usuarios\Usuario\OneDrive\.AI\BachForelle\`
-- BachFliege: `C:\Users\User\OneDrive\.AI\BachFliege\`
+- BachFliege: `%ONEDRIVE_AI_ROOT%\BachFliege\`
 
 ## ¿Qué es BachForelle?
 BachForelle es una variante ligera de BACH LLM-First.
@@ -26,8 +26,8 @@ Es un proyecto INDEPENDIENTE con una base de código separada.
 
 Si desea utilizar BachForelle:
 1. Vaya a la carpeta BachForelle
-2. Lea `C:\Users\User\OneDrive\.AI\BachForelle\README.md`
-3. Lea `C:\Users\User\OneDrive\.AI\BachForelle\SKILL.md`
+2. Lea `%ONEDRIVE_AI_ROOT%\BachForelle\README.md`
+3. Lea `%ONEDRIVE_AI_ROOT%\BachForelle\SKILL.md`
 
 ## BACH v2 Vanilla NO tiene un comando de "flecha"
 Este archivo de ayuda solo existe como referencia cruzada para los usuarios que usan ambos sistemas.

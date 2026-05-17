@@ -8,21 +8,21 @@
 ## 1. Gefundene Legacy-Projekte
 
 ### CHIAH (Claude Human Inter Action Hub)
-- **Pfad:** `C:\Users\User\OneDrive\.AI\_ARCHIV\_CHIAH\`
+- **Pfad:** `%ONEDRIVE_AI_ROOT%\_ARCHIV\_CHIAH\`
 - **Dateien:** 322
 - **Git-Repo:** Nein (muss initialisiert werden)
 - **Version:** 3.2 (final)
 - **Beschreibung:** CLI-first System fuer Claude AI mit Injektoren, Context Sources, Auto-Logging
 
 ### recludOS (Reclusive OS)
-- **Pfad:** `C:\Users\User\OneDrive\.AI\_ARCHIV\recludOS\`
+- **Pfad:** `%ONEDRIVE_AI_ROOT%\_ARCHIV\recludOS\`
 - **Dateien:** 5296
 - **Git-Repo:** Nein (muss initialisiert werden)
 - **Version:** 3.3.0 (final)
 - **Beschreibung:** Text-basiertes OS/Framework fuer LLM AI mit Agent-Framework, Distribution-System, Self-Healing
 
 ### recludos-filecommander-mcp (Bonus)
-- **Pfad:** `C:\Users\User\OneDrive\.AI\_ARCHIV\recludos-filecommander-mcp\`
+- **Pfad:** `%ONEDRIVE_AI_ROOT%\_ARCHIV\recludos-filecommander-mcp\`
 - **Git-Repo:** Nein
 - **Beschreibung:** MCP-Server (TypeScript/Node.js) urspruenglich fuer recludOS entwickelt
 - **Hinweis:** Existiert bereits als separates Projekt, evtl. schon auf GitHub?

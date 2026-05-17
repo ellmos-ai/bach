@@ -22,7 +22,7 @@ echo  \ \  __^< \ \  __ \\ \ \____\ \  __ \
 echo   \ \_____\\ \_\ \_\\ \_____\\ \_\ \_\
 echo    \/_____/ \/_/\/_/ \/_____/ \/_/\/_/
 echo.
-echo   Personal AI Operating System v3.12.2-coffee
+echo   Personal AI Operating System v3.12.3-coffee
 echo   ==================================================
 echo.
 echo   --- SCHNELLSTART --------------------------------

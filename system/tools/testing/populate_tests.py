@@ -4,9 +4,17 @@ BACH_STREAM Test Library - Database Population
 """
 import sqlite3
 import json
+import os
+from pathlib import Path
 
-DB_PATH = r'C:\Users\User\OneDrive\.AI\BACH_STREAM\DOCS\TESTS\test_library.db'
-SCHEMA_PATH = r'C:\Users\User\OneDrive\.AI\BACH_STREAM\DOCS\TESTS\test_schema.sql'
+TEST_ROOT = Path(
+    os.getenv(
+        "BACH_TEST_LIBRARY_ROOT",
+        Path.home() / "OneDrive" / ".AI" / "BACH_STREAM" / "DOCS" / "TESTS",
+    )
+)
+DB_PATH = str(TEST_ROOT / "test_library.db")
+SCHEMA_PATH = str(TEST_ROOT / "test_schema.sql")
 
 # Schema laden und ausfuehren
 conn = sqlite3.connect(DB_PATH)

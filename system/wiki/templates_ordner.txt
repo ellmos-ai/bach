@@ -10,7 +10,7 @@ Zentraler Sammelort fuer wiederverwendbare Vorlagen und Generatoren
 fuer LLM-OS-Systeme und Skills. Entstanden aus der Entwicklung von
 BATCH, CHIAH und RecludOS.
 
-Pfad: C:\Users\User\OneDrive\.AI\_Templates
+Pfad: %ONEDRIVE_AI_ROOT%\_Templates
 
 INHALT
 ------

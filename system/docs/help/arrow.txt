@@ -9,8 +9,8 @@
 Diese Datei beschreibt **BachForelle**, ein SEPARATES Projekt ausserhalb von BACH v2 Vanilla.
 
 **Korrekte Pfade:**
-- BachForelle: `C:\Users\User\OneDrive\.AI\BachForelle\`
-- BachFliege: `C:\Users\User\OneDrive\.AI\BachFliege\`
+- BachForelle: `%ONEDRIVE_AI_ROOT%\BachForelle\`
+- BachFliege: `%ONEDRIVE_AI_ROOT%\BachFliege\`
 
 ## Was ist BachForelle?
 BachForelle ist eine leichtgewichtige, LLM-First Variante von BACH.
@@ -27,8 +27,8 @@ Es handelt sich um ein EIGENSTAENDIGES Projekt mit separatem Codebase.
 
 Wenn du BachForelle nutzen möchtest:
 1. Wechsle in den BachForelle-Ordner
-2. Lies `C:\Users\User\OneDrive\.AI\BachForelle\README.md`
-3. Lies `C:\Users\User\OneDrive\.AI\BachForelle\SKILL.md`
+2. Lies `%ONEDRIVE_AI_ROOT%\BachForelle\README.md`
+3. Lies `%ONEDRIVE_AI_ROOT%\BachForelle\SKILL.md`
 
 ## BACH v2 Vanilla hat KEINEN "arrow" Befehl
 Diese Help-Datei existiert nur als Cross-Reference für Nutzer, die beide Systeme verwenden.

@@ -275,7 +275,7 @@ BACH-INTEGRATION
 Claude Code ist das primaere Tool fuer BACH-Entwicklung.
 
   # BACH-Verzeichnis oeffnen
-  cd "C:\Users\User\OneDrive\.AI\BACH"
+  cd "%ONEDRIVE_AI_ROOT%\BACH"
   claude
 
   # Mit Opus fuer komplexe Aufgaben

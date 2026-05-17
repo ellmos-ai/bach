@@ -41,7 +41,7 @@ VORTEILE
 
 BACH MCP-SERVER (AKTIV)
 -----------------------
-Eigene MCP-Server unter: C:\Users\User\OneDrive\.AI\MCP\
+Eigene MCP-Server unter: %ONEDRIVE_AI_ROOT%\MCP\
 
   ellmos-codecommander-mcp  v1.0.1  14 Tools: Code-Analyse, JSON-Repair, Encoding-Fix,
                                   Import-Organizer, Format-Konvertierung

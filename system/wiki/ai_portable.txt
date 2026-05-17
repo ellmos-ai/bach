@@ -12,7 +12,7 @@ lokale Nutzung ohne Cloud-Abhaengigkeit. Es kombiniert:
 
 SPEICHERORT
 -----------
-  C:\Users\User\OneDrive\.AI\AI-Portable\
+  %ONEDRIVE_AI_ROOT%\AI-Portable\
 
 VERZEICHNISSTRUKTUR
 -------------------
@@ -135,4 +135,4 @@ SIEHE AUCH
 ----------
   wiki/ollama.txt       Ollama LLM-Server (Voraussetzung!)
   wiki/gemini.txt       Google Gemini Alternative
-  C:\Users\User\OneDrive\.SOFTWARE\PsycoTools\
+  %ONEDRIVE_SOFTWARE_ROOT%\PsycoTools\

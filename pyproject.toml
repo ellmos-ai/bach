@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ellmos-bach"
-version = "3.12.2"
+version = "3.12.3"
 description = "BACH root-level editable install shim"
 readme = "README.md"
 requires-python = ">=3.10"

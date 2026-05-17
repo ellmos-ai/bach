@@ -43,7 +43,7 @@ VERZEICHNISSTRUKTUR
       └── {team-name}/config.json
 
 Der Verzeichnisname wird aus dem Arbeitsverzeichnis abgeleitet:
-  C:\Users\User\OneDrive\.AI  -->  C--Users-User-OneDrive-KI-AI
+  %ONEDRIVE_AI_ROOT%  -->  C--Users-User-OneDrive-KI-AI
 
 WIE MEMORY.md FUNKTIONIERT
 ---------------------------
@@ -201,7 +201,7 @@ WARTUNG
 BEKANNTE EIGENHEITEN
 ---------------------
   - Projektname-Mapping: Sonderzeichen werden zu "-"
-    C:\Users\User\OneDrive\.AI  ->  C--Users-User-OneDrive-KI-AI
+    %ONEDRIVE_AI_ROOT%  ->  C--Users-User-OneDrive-KI-AI
   - Gleiches Arbeitsverzeichnis = gleiche Memory (auch verschiedene Sessions)
   - Memory wird NUR geladen wenn `claude` im passenden Verzeichnis gestartet wird
   - Unterverzeichnisse erben NICHT die Memory des Parent-Verzeichnisses

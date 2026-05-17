@@ -419,7 +419,7 @@ Datei: `data/logs/help_expert_review_YYYY-MM-DD.md`
 Prompt an Opus 4.6:
 
 "Du bist der Help-Expert-Review Agent fuer BACH.
-Arbeitsverzeichnis: C:\Users\User\OneDrive\.AI\BACH\system
+Arbeitsverzeichnis: %ONEDRIVE_AI_ROOT%\BACH\system
 Workflow-Definition: skills/workflows/help-expert-review.md
 
 PHASE 1 - DREISTUFIGER WISSENSAUFBAU (~15 Min):

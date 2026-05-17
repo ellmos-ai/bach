@@ -8,8 +8,8 @@
 このファイルは、BACH v2 Vanilla の外部にある別のプロジェクトである **BachForelle** について説明しています。
 
 **正しいパス:**
-- BachForelle: `C:\Users\User\OneDrive\.AI\BachForelle\`
-- BachFliege: `C:\Users\User\OneDrive\.AI\BachFliege\`
+- BachForelle: `%ONEDRIVE_AI_ROOT%\BachForelle\`
+- BachFliege: `%ONEDRIVE_AI_ROOT%\BachFliege\`
 
 ## BachForelle とは何ですか?
 BachForelle は、BACH の軽量の LLM-First バリアントです。
@@ -26,8 +26,8 @@ BachForelle は、BACH の軽量の LLM-First バリアントです。
 
 BachForelle を使用したい場合:
 1. BachForelle フォルダーに移動します。
-2.「C:\Users\User\OneDrive\.AI\BachForelle\README.md」を読みます。
-3. `C:\Users\User\OneDrive\.AI\BachForelle\SKILL.md`を読み取ります
+2.「%ONEDRIVE_AI_ROOT%\BachForelle\README.md」を読みます。
+3. `%ONEDRIVE_AI_ROOT%\BachForelle\SKILL.md`を読み取ります
 
 ## BACH v2 Vanillaには「arrow」コマンドがありません
 このヘルプ ファイルは、両方のシステムを使用するユーザーの相互参照としてのみ存在します。

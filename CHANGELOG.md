@@ -6,6 +6,12 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ---
 
+## [3.12.3-coffee] - 2026-05-17
+
+### Privacy
+
+- **Legacy-Pfade bereinigt:** Restliche getrackte Windows-/OneDrive-Pfade in Wiki, Help, Workflow-Dokumenten, historischen Testartefakten und Hilfsskripten durch portable Platzhalter oder Home-/Env-basierte Defaults ersetzt.
+
 ## [3.12.2-coffee] - 2026-05-17
 
 ### Added

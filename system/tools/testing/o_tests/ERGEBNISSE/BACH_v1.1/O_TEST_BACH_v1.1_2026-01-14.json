@@ -1,6 +1,6 @@
 {
   "system": "BACH",
-  "system_path": "C:/Users/User/OneDrive/.AI/BACH_STREAM/OUTPUT/BACH",
+  "system_path": "%ONEDRIVE_AI_ROOT%/BACH_STREAM/OUTPUT/BACH",
   "test_date": "2026-01-14T19:41:02.102016",
   "tests": {
     "O001": {
@@ -9,7 +9,7 @@
       "score": 5.0,
       "summary": "4/4 Checks bestanden",
       "data": {
-        "system_path": "C:/Users/User/OneDrive/.AI/BACH_STREAM/OUTPUT/BACH",
+        "system_path": "%ONEDRIVE_AI_ROOT%/BACH_STREAM/OUTPUT/BACH",
         "test_date": "2026-01-14T19:41:02.182149",
         "test_id": "O001",
         "test_name": "Task-Roundtrip",
@@ -46,7 +46,7 @@
       "score": 5.0,
       "summary": "5/5 Checks bestanden",
       "data": {
-        "system_path": "C:/Users/User/OneDrive/.AI/BACH_STREAM/OUTPUT/BACH",
+        "system_path": "%ONEDRIVE_AI_ROOT%/BACH_STREAM/OUTPUT/BACH",
         "test_date": "2026-01-14T19:41:02.285509",
         "test_id": "O002",
         "test_name": "Memory-Persistenz",
@@ -88,7 +88,7 @@
       "score": 5.0,
       "summary": "4/4 Checks bestanden",
       "data": {
-        "system_path": "C:/Users/User/OneDrive/.AI/BACH_STREAM/OUTPUT/BACH",
+        "system_path": "%ONEDRIVE_AI_ROOT%/BACH_STREAM/OUTPUT/BACH",
         "test_date": "2026-01-14T19:41:02.452942",
         "test_id": "O003",
         "test_name": "Tool-Registry",
@@ -187,7 +187,7 @@
       "score": 3.75,
       "summary": "3/4 Checks bestanden",
       "data": {
-        "system_path": "C:/Users/User/OneDrive/.AI/BACH_STREAM/OUTPUT/BACH",
+        "system_path": "%ONEDRIVE_AI_ROOT%/BACH_STREAM/OUTPUT/BACH",
         "test_date": "2026-01-14T19:41:02.572280",
         "test_id": "O004",
         "test_name": "Backup-Restore",
@@ -228,7 +228,7 @@
       "score": 5.0,
       "summary": "9/9 Config-Dateien valide",
       "data": {
-        "system_path": "C:/Users/User/OneDrive/.AI/BACH_STREAM/OUTPUT/BACH",
+        "system_path": "%ONEDRIVE_AI_ROOT%/BACH_STREAM/OUTPUT/BACH",
         "test_date": "2026-01-14T19:41:02.706454",
         "test_id": "O005",
         "test_name": "Config-Validierung",
@@ -304,7 +304,7 @@
       "score": 4.0,
       "summary": "4/5 Checks bestanden",
       "data": {
-        "system_path": "C:/Users/User/OneDrive/.AI/BACH_STREAM/OUTPUT/BACH",
+        "system_path": "%ONEDRIVE_AI_ROOT%/BACH_STREAM/OUTPUT/BACH",
         "test_date": "2026-01-14T19:41:02.828761",
         "test_id": "O006",
         "test_name": "Export-Import",

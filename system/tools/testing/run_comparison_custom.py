@@ -33,9 +33,10 @@ sys.path.append(str(current_dir))
 import compare_systems
 
 # Inject BachForelle path
-compare_systems.KNOWN_SYSTEMS["BachForelle"] = r"C:\Users\User\OneDrive\.AI\BachForelle"
+onedrive_root = Path.home() / "OneDrive"
+compare_systems.KNOWN_SYSTEMS["BachForelle"] = str(onedrive_root / ".AI" / "BachForelle")
 # Ensure BACH path is correct (Vanilla v2)
-compare_systems.KNOWN_SYSTEMS["BACH_v2"] = r"C:\Users\User\OneDrive\.AI\BACH"
+compare_systems.KNOWN_SYSTEMS["BACH_v2"] = str(onedrive_root / ".AI" / "BACH")
 
 # Run comparison
 print("Running comparison for: BACH_v2 vs BachForelle...")

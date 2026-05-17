@@ -4,10 +4,18 @@ BACH_STREAM Selbsterfahrungsprotokoll - Test Runner & Query Tool
 """
 import sqlite3
 import json
+import os
+from pathlib import Path
 from datetime import datetime
 from typing import Optional, List
 
-DB_PATH = r'C:\Users\User\OneDrive\.AI\BACH_STREAM\DOCS\TESTS\test_library.db'
+TEST_ROOT = Path(
+    os.getenv(
+        "BACH_TEST_LIBRARY_ROOT",
+        Path.home() / "OneDrive" / ".AI" / "BACH_STREAM" / "DOCS" / "TESTS",
+    )
+)
+DB_PATH = str(TEST_ROOT / "test_library.db")
 
 def get_connection():
     return sqlite3.connect(DB_PATH)

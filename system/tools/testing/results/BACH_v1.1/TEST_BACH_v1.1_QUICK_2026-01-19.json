@@ -1,6 +1,6 @@
 {
   "system": "BACH",
-  "system_path": "C:/Users/User/OneDrive/.AI/BACH",
+  "system_path": "%ONEDRIVE_AI_ROOT%/BACH",
   "profile": "QUICK",
   "test_date": "2026-01-19T11:25:19.799023",
   "b_tests": {
@@ -8,7 +8,7 @@
       "status": "success",
       "score": 0,
       "data": {
-        "system_path": "C:/Users/User/OneDrive/.AI/BACH",
+        "system_path": "%ONEDRIVE_AI_ROOT%/BACH",
         "scan_date": "2026-01-19T11:25:19.896386",
         "total_files": 1122,
         "total_dirs": 99,
@@ -137,7 +137,7 @@
       "status": "PARTIAL",
       "score": 3.75,
       "data": {
-        "system_path": "C:/Users/User/OneDrive/.AI/BACH",
+        "system_path": "%ONEDRIVE_AI_ROOT%/BACH",
         "test_date": "2026-01-19T11:25:20.112404",
         "test_id": "O001",
         "test_name": "Task-Roundtrip",

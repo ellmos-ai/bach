@@ -8,8 +8,8 @@
 此文件描述 **BachForelle**，这是 BACH v2 Vanilla 之外的一个单独项目。
 
 **正确路径：**
-- BachForelle: `C:\Users\User\OneDrive\.AI\BachForelle\`
-- BachFliege: `C:\Users\User\OneDrive\.AI\BachFliege\`
+- BachForelle: `%ONEDRIVE_AI_ROOT%\BachForelle\`
+- BachFliege: `%ONEDRIVE_AI_ROOT%\BachFliege\`
 
 ## BachForelle 是什么？
 BachForelle 是 BACH 的轻量级、LLM-First 变体。
@@ -26,8 +26,8 @@ BachForelle 是 BACH 的轻量级、LLM-First 变体。
 
 如果您想使用 BachForelle：
 1. 进入BachForelle文件夹
-2. 阅读 `C:\Users\User\OneDrive\.AI\BachForelle\README.md`
-3. 阅读 `C:\Users\User\OneDrive\.AI\BachForelle\SKILL.md`
+2. 阅读 `%ONEDRIVE_AI_ROOT%\BachForelle\README.md`
+3. 阅读 `%ONEDRIVE_AI_ROOT%\BachForelle\SKILL.md`
 
 ## BACH v2 Vanilla 没有“箭头”命令
 此帮助文件仅作为使用这两个系统的用户的交叉引用而存在。
