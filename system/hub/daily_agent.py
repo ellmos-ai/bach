@@ -140,7 +140,8 @@ class DailyAgentHandler(BaseHandler):
             if sys.platform == "win32":
                 result = subprocess.run(
                     ["tasklist", "/FI", f"PID eq {pid}"],
-                    capture_output=True, text=True, timeout=5
+                    capture_output=True, text=True,
+                    encoding='utf-8', errors='replace', timeout=5
                 )
                 if str(pid) in result.stdout:
                     return {"running": True, **data}

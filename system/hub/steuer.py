@@ -2450,8 +2450,9 @@ Usage:
         
         import subprocess
         try:
-            result = subprocess.run(["python", str(register_script)], 
-                                   capture_output=True, text=True, timeout=30)
+            result = subprocess.run(["python", str(register_script)],
+                                   capture_output=True, text=True,
+                                   encoding='utf-8', errors='replace', timeout=30)
             return True, result.stdout + result.stderr
         except Exception as e:
             return False, f"Fehler: {e}"

@@ -5020,6 +5020,8 @@ async def api_run_tool(name: str, payload: dict = Body(...)):
 
             text=True,
 
+            encoding='utf-8', errors='replace',
+
             timeout=30,
 
             cwd=str(BACH_DIR)
@@ -6638,7 +6640,9 @@ async def financial_sync(background_tasks: BackgroundTasks):
 
             capture_output=True,
 
-            text=True
+            text=True,
+
+            encoding='utf-8', errors='replace'
 
         )
 
@@ -7467,6 +7471,8 @@ async def setup_gmail_api():
             capture_output=True,
 
             text=True,
+
+            encoding='utf-8', errors='replace',
 
             timeout=180,  # 3 Minuten Timeout
 
@@ -9893,6 +9899,8 @@ async def end_session():
             capture_output=True,
 
             text=True,
+
+            encoding='utf-8', errors='replace',
 
             timeout=30
 

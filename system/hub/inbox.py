@@ -54,7 +54,8 @@ class InboxHandler:
                 result = subprocess.run(
                     ['tasklist', '/FI', f'PID eq {pid}', '/NH'],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    encoding='utf-8', errors='replace'
                 )
                 if str(pid) in result.stdout:
                     return True, pid
@@ -169,17 +170,17 @@ class InboxHandler:
             [sys.executable, str(INBOX_WATCHER), '--dry-run'],
             capture_output=True,
             text=True,
-            encoding='utf-8'
+            encoding='utf-8', errors='replace'
         )
         return True, result.stdout + result.stderr
-    
+
     def _config(self) -> tuple:
         """Zeigt Konfiguration."""
         result = subprocess.run(
             [sys.executable, str(INBOX_WATCHER), '--test'],
             capture_output=True,
             text=True,
-            encoding='utf-8'
+            encoding='utf-8', errors='replace'
         )
         return True, result.stdout + result.stderr
     

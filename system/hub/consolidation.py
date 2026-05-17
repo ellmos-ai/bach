@@ -605,8 +605,9 @@ class ConsolidationHandler(BaseHandler):
             script_path = tools_path / script
             if script_path.exists():
                 try:
-                    res = subprocess.run([sys.executable, str(script_path)], 
-                                       capture_output=True, text=True, check=True)
+                    res = subprocess.run([sys.executable, str(script_path)],
+                                       capture_output=True, text=True,
+                                       encoding='utf-8', errors='replace', check=True)
                     results.append(f"  {script}: OK")
                 except Exception as e:
                     results.append(f"  {script}: Fehler ({e})")

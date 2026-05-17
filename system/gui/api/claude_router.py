@@ -97,7 +97,7 @@ def spawn_worker_session(prompt: str, user_id: str) -> dict:
             ["claude", "--print", prompt],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding='utf-8', errors='replace',
             timeout=120,
         )
     except subprocess.TimeoutExpired:
@@ -127,7 +127,7 @@ def execute_cli_command(command: str) -> dict:
             ["python", str(BACH_DIR / "bach.py")] + args,
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding='utf-8', errors='replace',
             timeout=60,
         )
     except subprocess.TimeoutExpired:

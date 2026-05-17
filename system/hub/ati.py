@@ -188,7 +188,8 @@ Mehr Info: agents/ati/ATI.md
                 if sys.platform == 'win32':
                     result = subprocess.run(
                         ['tasklist', '/FI', f'PID eq {pid}'],
-                        capture_output=True, text=True
+                        capture_output=True, text=True,
+                        encoding='utf-8', errors='replace'
                     )
                     is_running = str(pid) in result.stdout
                 else:
@@ -271,6 +272,7 @@ Mehr Info: agents/ati/ATI.md
                 [sys.executable, str(daemon_script), "--stop"],
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=10
             )
             return True, result.stdout or "[ATI] Session-Daemon gestoppt"
@@ -299,6 +301,7 @@ Mehr Info: agents/ati/ATI.md
                 cwd=str(auto_session.parent),
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=120
             )
             output = result.stdout or result.stderr
@@ -928,6 +931,7 @@ Verwendung:
                 cwd=str(exporter_path.parent),
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=60
             )
             

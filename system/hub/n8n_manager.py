@@ -67,7 +67,8 @@ class N8nManagerHandler:
         try:
             proc = subprocess.run(
                 ["npm", "list", "-g", self.MCP_PACKAGE, "--depth=0"],
-                capture_output=True, text=True, timeout=15
+                capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=15
             )
             self._mcp_installed = (
                 proc.returncode == 0 and self.MCP_PACKAGE in proc.stdout

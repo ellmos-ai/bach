@@ -88,6 +88,7 @@ class SignalConnector(BaseConnector):
                 [self._signal_cli_path, "--version"],
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=5
             )
             if result.returncode == 0:
@@ -126,6 +127,7 @@ class SignalConnector(BaseConnector):
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=30
             )
             return result.returncode == 0
@@ -148,6 +150,7 @@ class SignalConnector(BaseConnector):
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=30
             )
 

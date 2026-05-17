@@ -4,7 +4,7 @@ GUI Handler - Web-Server Verwaltung
 ===================================
 
 bach gui start         Server starten
-bach gui stop          Server stoppen (TODO)
+bach gui stop          Server stoppen
 bach gui status        Server-Status anzeigen
 """
 import sys
@@ -33,6 +33,7 @@ class GuiHandler(BaseHandler):
         return {
             "start": "Web-Server starten (--port X fuer anderen Port)",
             "start-bg": "Web-Server im Hintergrund starten",
+            "stop": "Web-Server stoppen",
             "status": "Server-Status anzeigen",
             "info": "GUI-Informationen anzeigen"
         }
@@ -58,6 +59,16 @@ class GuiHandler(BaseHandler):
                     except ValueError:
                         pass
             return self._start_background(port, dry_run)
+        elif operation == "stop":
+            port = 8000
+            if "--port" in args:
+                idx = args.index("--port")
+                if idx + 1 < len(args):
+                    try:
+                        port = int(args[idx + 1])
+                    except ValueError:
+                        pass
+            return self._stop_server(port)
         elif operation == "status":
             return self._show_status()
         elif operation == "info":
@@ -151,21 +162,89 @@ class GuiHandler(BaseHandler):
                 
         except Exception as e:
             return (False, f"[ERROR] Konnte Server nicht starten: {e}")
-    
+
+    def _find_pid_on_port(self, port: int) -> int:
+        """Findet die PID des Prozesses auf einem Port."""
+        import re
+        try:
+            if sys.platform == "win32":
+                result = subprocess.run(
+                    ["netstat", "-ano", "-p", "TCP"],
+                    capture_output=True, text=True,
+                    encoding='utf-8', errors='replace', timeout=10
+                )
+                for line in result.stdout.splitlines():
+                    if f":{port}" in line and "LISTENING" in line:
+                        parts = line.split()
+                        if parts:
+                            return int(parts[-1])
+            else:
+                result = subprocess.run(
+                    ["lsof", "-i", f":{port}", "-t"],
+                    capture_output=True, text=True,
+                    encoding='utf-8', errors='replace', timeout=10
+                )
+                if result.stdout.strip():
+                    return int(result.stdout.strip().splitlines()[0])
+        except Exception:
+            pass
+        return None
+
+    def _stop_server(self, port: int) -> tuple:
+        """Stoppt den GUI-Server auf dem angegebenen Port."""
+        import socket
+        import signal
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = sock.connect_ex(('127.0.0.1', port))
+        sock.close()
+
+        if result != 0:
+            return (True, f"[OK] Kein Server aktiv auf Port {port}")
+
+        pid = self._find_pid_on_port(port)
+        if not pid:
+            return (False, f"[ERROR] Server laeuft auf Port {port}, aber PID nicht ermittelbar")
+
+        try:
+            if sys.platform == "win32":
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/F"],
+                    capture_output=True, timeout=10
+                )
+            else:
+                import os
+                os.kill(pid, signal.SIGTERM)
+
+            import time
+            time.sleep(1)
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            still_running = sock.connect_ex(('127.0.0.1', port)) == 0
+            sock.close()
+
+            if still_running:
+                return (False, f"[WARN] Server (PID {pid}) konnte nicht gestoppt werden")
+            return (True, f"[OK] Server gestoppt (PID {pid})")
+        except Exception as e:
+            return (False, f"[ERROR] Konnte Prozess {pid} nicht beenden: {e}")
+
     def _show_status(self) -> tuple:
         """Zeigt Server-Status."""
         import socket
-        
-        # Pruefen ob Port 8000 belegt ist
+
+        port = 8000
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = sock.connect_ex(('127.0.0.1', 8000))
+        result = sock.connect_ex(('127.0.0.1', port))
         sock.close()
-        
+
         if result == 0:
-            status = "[ONLINE] Server laeuft auf Port 8000"
+            pid = self._find_pid_on_port(port)
+            pid_info = f" (PID {pid})" if pid else ""
+            status = f"[ONLINE] Server laeuft auf Port {port}{pid_info}"
         else:
             status = "[OFFLINE] Server nicht aktiv"
-        
+
         output = [
             "=== GUI STATUS ===",
             "",
@@ -174,7 +253,7 @@ class GuiHandler(BaseHandler):
             f"Server-Script: {self.server_script}",
             f"Existiert: {'Ja' if self.server_script.exists() else 'Nein'}"
         ]
-        
+
         return (True, "\n".join(output))
     
     def _show_info(self) -> tuple:

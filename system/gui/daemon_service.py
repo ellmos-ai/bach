@@ -245,6 +245,7 @@ class DaemonService:
                     cmd_list,
                     capture_output=True,
                     text=True,
+                    encoding='utf-8', errors='replace',
                     timeout=job.timeout_seconds,
                     cwd=str(BACH_DIR)
                 )
@@ -258,6 +259,7 @@ class DaemonService:
                     shell=True,
                     capture_output=True,
                     text=True,
+                    encoding='utf-8', errors='replace',
                     timeout=job.timeout_seconds,
                     cwd=str(BACH_DIR)
                 )

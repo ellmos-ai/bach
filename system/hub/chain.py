@@ -334,9 +334,10 @@ class ChainHandler(BaseHandler):
         
         try:
             proc = subprocess.run(
-                cmd, 
-                capture_output=True, 
+                cmd,
+                capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 cwd=str(self.base_path)
             )
             
@@ -614,7 +615,7 @@ class ChainHandler(BaseHandler):
             env=env,
             capture_output=True,
             text=True,
-            encoding="utf-8",
+            encoding="utf-8", errors="replace",
         )
 
     def _llmauto_start(self, name: str) -> tuple:
@@ -636,7 +637,7 @@ class ChainHandler(BaseHandler):
                 env=env,
                 capture_output=True,
                 text=True,
-                encoding="utf-8",
+                encoding="utf-8", errors="replace",
             )
             if proc.returncode == 0:
                 out = proc.stdout.strip() or f"llmauto-Kette '{name}' gestartet."
