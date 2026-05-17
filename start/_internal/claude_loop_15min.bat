@@ -6,7 +6,7 @@ REM Ctrl+C zum Beenden
 REM ============================================================
 title BACH Loop: Alle 15 Min
 
-set "BACH_DIR=%~dp0.."
+set "BACH_DIR=%~dp0..\.."
 cd /d "%BACH_DIR%"
 
 :loop
