@@ -870,7 +870,7 @@ async def lifespan(app: FastAPI):
 
             # Event-Loop für threadsafe broadcast
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
 
             
 
@@ -972,7 +972,7 @@ app.add_middleware(
 
     allow_origins=["*"],
 
-    allow_credentials=True,
+    allow_credentials=False,
 
     allow_methods=["*"],
 
