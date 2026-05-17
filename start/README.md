@@ -57,7 +57,7 @@ Falls Server nicht erreichbar: Angebot für lokalen Start.
 
 ## Einzelne Startdateien (Legacy)
 
-Die einzelnen .bat-Dateien existieren weiterhin fuer direkte Nutzung und Kompatibilitaet.
+Die einzelnen .bat-Dateien liegen in `start/_internal/` und werden von `bach.bat` aufgerufen.
 
 | Datei | Beschreibung |
 |-------|-------------|
@@ -65,13 +65,14 @@ Die einzelnen .bat-Dateien existieren weiterhin fuer direkte Nutzung und Kompati
 | `start_console.bat` | User-Konsole (einfaches CLI) |
 | `start_console_advanced.bat` | Advanced Console (bach.py direkt) |
 | `start_gui.bat` | Web-Dashboard auf http://127.0.0.1:8000 |
-| `start_gemini.bat` | Gemini-Partner Menue |
+| `start_gemini.bat` | Gemini-Partner Menü |
 | `claude_all_15min.bat` | Alle Tasks, 15 Min, 50 Turns |
 | `claude_all_30min.bat` | Alle Tasks, 30 Min, 100 Turns |
 | `claude_all_1h.bat` | Alle Tasks, 1h, 200 Turns |
 | `claude_assigned_15min.bat` | Zugewiesene Tasks, 15 Min |
 | `claude_assigned_nolimit.bat` | Zugewiesene Tasks, unbegrenzt |
 | `claude_full_access.bat` | Volle Rechte (--dangerously-skip-permissions) |
+| `claude_remote_control.bat` | Remote Control Session |
 | `claude_maintenance.bat` | Wartung (recurring, backup, docs) |
 | `claude_loop_15min.bat` | Endlos alle 15 Min |
 | `claude_loop_30min.bat` | Endlos alle 30 Min |

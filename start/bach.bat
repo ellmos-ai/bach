@@ -219,8 +219,13 @@ echo       [OK] Tray gestartet
 
 echo [3/3] Oeffne Zugangswege...
 timeout /t 2 /nobreak >nul
-start "" "http://!BACH_HOST_TARGET!:8000"
-echo       [OK] GUI Dashboard geoeffnet
+if "!BACH_NO_BROWSER!"=="1" (
+    echo       [SKIP] Browser nicht geoeffnet ^(BACH_NO_BROWSER=1^)
+    echo       URL: http://!BACH_HOST_TARGET!:8000
+) else (
+    start "" "http://!BACH_HOST_TARGET!:8000"
+    echo       [OK] GUI Dashboard geoeffnet
+)
 echo.
 echo  ============================================
 echo   Verbunden mit !BACH_HOST_TARGET!
@@ -415,7 +420,12 @@ set TIMESTAMP=%TIME:~0,2%%TIME:~3,2%%TIME:~6,2%
 set TIMESTAMP=!TIMESTAMP: =0!
 start "BACH Server" cmd /k "set PYTHONIOENCODING=utf-8 && python gui\server.py --port 8000"
 timeout /t 3 >nul
-start "" "http://127.0.0.1:8000?nocache=!TIMESTAMP!"
+if "!BACH_NO_BROWSER!"=="1" (
+    echo  [SKIP] Browser nicht geoeffnet ^(BACH_NO_BROWSER=1^)
+    echo  URL: http://127.0.0.1:8000
+) else (
+    start "" "http://127.0.0.1:8000?nocache=!TIMESTAMP!"
+)
 popd
 echo  [OK] GUI gestartet auf http://127.0.0.1:8000
 pause
