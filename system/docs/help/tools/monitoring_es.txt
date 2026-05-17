@@ -1,0 +1,133 @@
+HERRAMIENTAS DE MONITOREO DE BACH
+---------------------
+
+Herramientas para monitoreo del sistema, verificación de consistencia y detección de errores.
+
+INICIO RÁPIDO
+------------
+  bach --maintain registry     # Verificar la consistencia de DB/JSON
+  bach --maintain skills       # Verificar el estado de las habilidades
+  bach --status               # Mostrar el estado del sistema
+
+HERRAMIENTAS DE MONITOREO GENERAL
+---------------------------
+herramientas/mantenimiento/
+├── registro_watcher.py # verificación de coherencia DB-JSON
+└── Skill_health_monitor.py # Validación de habilidades
+
+REGISTRY WATCHER
+----------------
+Comprueba la coherencia entre la base de datos SQLite y las configuraciones JSON.
+
+  herramientas de Python/mantenimiento/registry_watcher.py comprobar
+  python tools/maintenance/registry_watcher.py reparación
+
+Qué se comprueba:
+- Existencia de tablas en bach.db
+- Validez de los archivos de configuración JSON
+- Integridad referencial
+- Registros huérfanos
+
+MONITOR DE SALUD DE HABILIDADES
+--------------------
+Valida todas las habilidades y agentes de BACH.
+
+  herramientas de Python/mantenimiento/skill_health_monitor.py comprobar
+  python tools/maintenance/skill_health_monitor.py informe
+
+Qué se verifica:
+- Completitud de SKILL.md
+- Manifiestos del agente
+- Estructura del directorio
+- Habilidades huérfanas
+
+MONITORING DE TOKEN
+----------------
+Monitorea el consumo de token para el control de costos.
+
+Tabla: monitor_tokens
+- id_sesión, tokens_usados, marca de tiempo
+- Zonas token (1-4) para delegación de socios
+
+  bach --memory status         # Mostrar zona token
+  SELECCIONAR * DE monitor_tokens; # Datos sin procesar
+
+MONITOREO DE PROCESOS
+------------------
+Tabla: monitor_processes
+- Procesos en curso
+- Estado del demonio de mantenimiento
+- Trabajos en segundo plano
+
+  bach daemon status           # Comprobar demonio de mantenimiento
+  bach --status               # Estado general
+
+SUCCESS MONITORING
+------------------
+Tabla: monitor_success
+- Tasas de éxito de las herramientas.
+- Historial de errores
+- Patrones de aprendizaje para mejoras
+
+COMPROBACIONES AUTOMÁTICAS AL --inicio
+---------------------------------
+Estas comprobaciones se ejecutan automáticamente cuando se inicia la sesión:
+
+1. Exploración de directorio # Cambios desde la última sesión
+2. Path Healer (ejecución en seco) # Sugerencias de corrección de ruta
+3. Vigilante del Registro # Consistencia DB/JSON
+4. Monitor de estado de habilidades # Condición de habilidades/agentes
+
+Los problemas se informan como advertencias en la salida de inicio.
+
+TABLAS DE BASE DE DATOS
+------------------
+27 tablas en bach.db, de las cuales relevantes para el monitoreo:
+
+  monitor_tokens # Seguimiento de tokens
+  monitor_success # Tasas de éxito
+  monitor_processes # Estado del proceso
+
+COMANDOS CLI
+-----------
+  bach --maintain heal        # Corrección de ruta (ejecución de prueba)
+  bach --maintain registry    # Coherencia DB/JSON
+  bach --maintain skills      # Estado de las habilidades
+  bach --maintain docs        # Verificación de documentación
+  bach --status              # Estado general
+
+REGIstros y evaluación
+-------------------
+Los datos de monitoreo se almacenan en registros:
+
+  logs/auto_log_extended.txt # Registro de comandos
+  logs/errors/ # Registros de errores
+
+Evaluación:
+  bach --logs tail 20          # Últimas 20 entradas del registro
+  bach --logs search "error"   # Búsqueda de errores
+
+ALARMAS Y ADVERTENCIAS
+--------------------
+- Zona token 3/4: Advertencia por alto consumo
+- Error de habilidad: Advertencia al iniciar
+- Inconsistencia de la base de datos: error con la sugerencia de reparación
+
+CONSEJOS
+-----
+- Ejecute --mantenga los comandos regularmente
+- En caso de problemas: bach --mantener curar --ejecutar
+- Esté atento al consumo de tokens (Zona 2-3)
+- Verifique los registros de errores para detectar problemas
+
+VER TAMBIÉN
+----------
+  bach --help maintain         # Descripción general del mantenimiento
+  bach --help startup          # Comprobaciones de inicio
+  bach --help logs             # Sistema de registro
+  tools/TOOLS_CONCEPT.md # Concepto de herramienta
+
+---
+Versión: 1.0.0
+Creado: 2026-01-23
+Parte de: documentación de la herramienta BACH

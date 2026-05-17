@@ -1,0 +1,87 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+------------
+Unified Search Handler for BACH (SQ064 + SQ047)
+
+
+DESCRIPTION
+------------
+Full-text search (FTS5) across all BACH sources: Wiki articles, memory (working/
+Facts/Lessons), Documentations, KnowledgeDigest Skills/Wiki and any
+scanned directories. Supports advanced filters by source, tags and
+limit. Automatic indexing with duplicate detection via hash comparison.
+
+
+OPERATIONS
+-----------
+
+SEARCH (default)
+  <query> Full-text search across all sources
+  <query> --source SOURCE Search in source only (wiki|document|memory_*)
+  <query> --tag TAG filter by tag (can be combined multiple times)
+  <query> --limit N Max. hits (default: 20)
+
+INDEXING
+  index Index all BACH sources
+  index knowledgedigest|kd KnowledgeDigest + Index Wiki
+  index wiki|memory|documents Index a single source
+  index <path> scan directory (ProFiler style)
+  index <path> --no-tags Without automatic tag derivation
+
+MANAGEMENT
+  status index statistics and source overview
+  rebuild Empty index and rebuild completely
+  tags List all available tags
+  tags TAG1 TAG2 Find entries with these tags
+  tags --limit N Top-N tags by frequency
+  dupes find duplicates (same hash, paths)
+  help Show this help
+
+
+EXAMPLES
+---------
+
+Basic search:
+  bach search python
+  bach search "machine learning"
+
+With source:
+  bach search encoding --source memory_lesson
+  bach search entwickler --source knowledgedigest_skill
+
+With tags and limit:
+  bach search database --tag production --limit 50
+  bach search bridge --tag connector --tag network
+
+Indexing:
+  bach search index                    # All sources
+  bach search index knowledgedigest    # KD only
+  bach search index /c/Users/User/Docs # Verzeichnis
+  bach search index .                  # Current directory
+
+Administration:
+  bach search status                   # Statistics
+  bach search rebuild                  # Full reindex
+  bach search tags                     # All tags
+  bach search tags health system       # Search for tags
+  bach search dupes                    # Duplicates
+
+
+FILES
+-------
+
+hub/search.py SearchHandler implementation
+tools/unified_search.py UnifiedSearch Engine (FTS5)
+data/bach.db Index database (SQLite, FTS5)
+docs/help/search.txt This file
+
+
+SEE ALSO
+----------
+
+docs/help/index.txt BACH Command-Line Interface
+docs/OPERATIONS.md All handlers and operations
+tools/unified_search.py Engine documentation (index format, FTS5 syntax)

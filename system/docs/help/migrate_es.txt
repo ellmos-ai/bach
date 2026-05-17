@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MIGRAR - Migración evolutiva de archivos
+---------------------------------------
+
+CONCEPTO
+-------
+Para cambiar el nombre de archivos o cambios de ruta:
+En lugar de cambiar todas las referencias a la vez, utilice un archivo contenedor.
+Las referencias se corrigen orgánicamente mediante el uso diario.
+
+¿POR QUÉ?
+------
+- Sin pausas bruscas
+- Las referencias se actualizarán gradualmente.
+- Cada compañero corrige lo que se le envió.
+- Sin referencias olvidadas
+
+PROCEDIMIENTO
+--------
+1. Cambiar el nombre del archivo:
+   mv archivo_antiguo.md archivo_nuevo.md
+
+2. Crear contenedor (old_file.md):
+   - Mensaje de estado "redireccionado"
+   - Mesa de registro para visitantes.
+   - Instrucciones: Verificar + origen correcto
+   - Enlace al nuevo archivo
+
+3. Corrija las referencias críticas INMEDIATAMENTE:
+   - docs/help/*.txt (documentación principal)
+   - Código del sistema que utiliza la ruta directamente
+   - Controlador CLI
+
+4. Otros migrantes evolutivos migran:
+   - Compañeros correctos al utilizar
+   - Path Healer encuentra automáticamente
+   - Descubrimiento manual
+
+WRAPPER-TEMPLATE
+----------------
+# OLD_FILE - REDIVERTED
+
+Estado: Este archivo ha sido renombrado a `new_file.md`
+
+## Registro de migración
+
+| Fecha | Quien | Origen | ¿Referencia corregida? |
+|-------|-----|----------|-------------|
+| | | |
+
+|## Instrucciones
+
+1. Deja una entrada de registro
+2. Comprueba tus orígenes (¿qué te envió aquí?)
+3. Corrija la referencia allí.
+4. Vaya al archivo real
+
+**Archivo de destino:** [new_file.md](new_file.md)
+
+¿CUÁNDO ENVOLTORIO?
+-------------
+SÍ (el envoltorio tiene sentido):
+  - Muchas referencias potenciales
+  - Referenciado por varios socios.
+  - No hay archivos críticos del sistema
+
+NO (cambiar todo directamente):
+  - Pocas referencias conocidas
+  - Archivos críticos del sistema
+  - Rutas críticas de rendimiento
+
+LIMPIEZA
+-------
+Después de 30 días o cuando el registro esté vacío:
+  bach trash delete <wrapper>
+
+SOPORTE AUTOMÁTICO
+---------------------------
+  bach --maintain heal       Encuentra rutas obsoletas automáticamente
+  bach --maintain docs       Detecta documentación desactualizada
+
+EJEMPLO
+--------
+ROADMAP_ADVANCED.md → ROADMAP.md (2026-01-24):
+
+  1. mv ROADMAP_ADVANCED.md ROADMAP.md
+  2. Se crea el contenedor ROADMAP_ADVANCED.md
+  3. docs/help/formats.txt corregido (crítico)
+  4. Más de 20 referencias adicionales → evolutivas
+
+VER TAMBIÉN
+----------
+  skills/workflows/migrate-rename.md Flujo de trabajo detallado
+  docs/help/practices.txt Principio n.º 3: Migración evolutiva
+  bach --maintain heal                  Corrección automática de ruta
+  bach --maintain docs                  Detecta documentación desactualizada

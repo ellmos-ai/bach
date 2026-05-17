@@ -1,0 +1,205 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MANEJADOR DE PERMISOS - Perfiles de permisos de Claude Code
+-----------------------------------------------------
+
+NOMBRE DEL MANEJADOR
+------------
+permisos
+
+DESCRIPCIÓN
+------------
+El Manejador de permisos administra los perfiles de permisos para Claude Code en el
+Base de datos BACH (tabla system_config, categoría: claude_permissions).
+
+Dos perfiles preconfigurados:
+  - normal: permisos estándar (solicite herramientas críticas)
+  - control_remoto: Todas las herramientas preactivadas para el uso de aplicaciones móviles
+
+Los perfiles se guardan en la base de datos y, cuando se activan, en el archivo
+~/.claude/settings.json escrito. Cuando está desactivado, el anterior
+Estado restaurado automáticamente (mecanismo de copia de seguridad).
+
+ANTECEDENTES
+-----------
+Claude Code Remote Control (aplicación móvil) ignora --dangerfully-skip-permissions
+debido a un error conocido (GitHub Problema n.º 29214). Las reglas de permiso en
+Sin embargo, el control remoto también respeta settings.json. Por lo tanto
+Los permisos se gestionan a través de perfiles en BACH-DB y, si es necesario, en el
+settings.json escrito.
+
+OPERACIONES
+-----------
+
+LISTA
+----
+bach permissions list
+
+Mostrar todos los perfiles guardados con el número de reglas de permitir/denegar.
+Marca el perfil actualmente activo con [ACTIVE].
+
+SHOW
+----
+bach permissions show <profil>
+
+Vista detallada de un perfil: descripción, todas las reglas de permitir y denegar.
+
+SET
+---
+bach permissions set <profil> allow=<Tool> [allow=<Tool2>] [deny=<Tool3>]
+
+Agregar reglas a un perfil.
+- enable=Herramienta: Permitir herramienta sin confirmación
+- deny=Herramienta: Denegar herramienta
+- Comodines posibles: mcp__bach-*__* (todas las herramientas BACH MCP)
+- Los cambios en el perfil activo se reflejan inmediatamente en settings.json
+
+REMOVE
+------
+bach permissions remove <profil> allow=<Tool> [deny=<Tool2>]
+
+Eliminar reglas de un perfil.
+Los cambios en el perfil activo se reflejan inmediatamente en settings.json.
+
+ACTIVATE
+--------
+bach permissions activate <profil>
+
+Activar perfil:
+1. Haga una copia de seguridad de los permisos actuales de settings.json en DB
+2. Escriba reglas de perfil en settings.json
+3. Recuerde el perfil activo en la base de datos
+
+Otras configuraciones (ganchos, modelo, idioma, etc.) permanecen intactas.
+
+DESACTIVAR
+----------
+bach permissions deactivate
+
+Volver al perfil normal:
+1. Restaurar la copia de seguridad desde la base de datos
+2. Actualizar configuración.json
+3. Establezca el perfil activo en "normal"
+
+SYNC
+----
+bach permissions sync
+
+Reglas actuales de permitir/denegar desde settings.json en el perfil de base de datos activo
+importar. Útil si las reglas se han cambiado manualmente en settings.json.
+
+RESET
+-----
+bach permissions reset <profil>
+
+Restablecer el perfil a los valores predeterminados predefinidos.
+Valores predeterminados disponibles: normal, control_remoto.
+Los cambios en el perfil activo se reflejan inmediatamente en settings.json.
+
+ESTADO
+------
+bach permissions status
+
+Muestra:
+- Perfil activo y ruta a settings.json
+- El número de reglas de permitir/denegar se encuentra en settings.json
+- Número de reglas de permitir/denegar en la base de datos
+- Si DB y settings.json son sincrónicos
+- Si hay una copia de seguridad disponible
+
+INIT
+----
+bach permissions init
+
+Crea los perfiles predeterminados (normal, control_remoto) en la base de datos.
+Idempotente: omite los perfiles existentes.
+Se ejecuta automáticamente cuando se inicia el control remoto por primera vez.
+
+EJEMPLOS
+---------
+
+Crear perfiles predeterminados:
+$ bach permisos init
+
+Ver todos los perfiles:
+Lista de permisos de $ bach
+
+Detalles del perfil de control remoto:
+$ bach permisos muestran control_remoto
+
+Agregar nueva herramienta al perfil de control remoto:
+$ permisos de bach establecidos control remoto permitir=mcp__slack__*
+
+Eliminar herramienta del perfil:
+$ permisos de bach eliminar control_remoto permitir=mcp__slack__*
+
+Activar perfil de control remoto (antes de la sesión móvil):
+$ permisos de bach activan control_remoto
+
+Volver al perfil normal:
+$ permisos de bach desactivados
+
+Verificar estado actual:
+Estado de permisos de $ bach
+
+Aplicar settings.json modificado manualmente en la base de datos:
+$ sincronización de permisos de bach
+
+Restablecer perfil a los valores predeterminados:
+$ permisos de bach restablecen control_remoto
+
+FLUJO DE TRABAJO DE CONTROL REMOTO
+-----------------------
+
+Automáticamente (recomendado):
+  1. Escritorio: haga doble clic en Claude_RemoteControl.bat
+  2. Menú BACH: Tecla [P] en el menú de inicio
+  -> Script activa el perfil, inicia Claude, restaura el perfil
+
+Manualmente:
+  1. Los permisos de bach activan el control_remoto
+  2. claude --omitir-permisos peligrosamente
+  3. Ingrese /rc, escanee el código QR
+  4. Después de completar: desactivar permisos de bach
+
+ARQUITECTURA DE PERFIL
+------------------
+
++---------------------------------+
+  |     Base de datos BACH (system_config) |
+  |  categoría: claude_permissions |
+  |                                 |
+  |  normal: {permitir, denegar} |
+  |  control_remoto: {permitir, denegar} |
+  |  active_profile: "normal" |
+  |  copia de seguridad: {permitir, denegar} |
+  +---------------------------------+
+            |  activar/desactivar
+            v
+  +---------------------------------+
+  |   ~/.claude/settings.json |
+  |   permisos.allow/deny |
+  |   (quedan ganchos, modelo, etc.) |
+  +---------------------------------+
+            |
+            v
+  +---------------------------------+
+  |   Código Claude (local + remoto) |
+  +---------------------------------+
+
+ARCHIVOS
+-------
+hub/claude_permissions.py Implementación del controlador
+start/_internal/claude_remote_control.py Lanzador automático
+start/_internal/claude_remote_control.bat Envoltorio para inicio
+menú de inicio start/bach.bat (elemento de menú [P])
+~/.claude/settings.json Configuración del código Claude (archivo de destino)
+bach.db (system_config) Almacenamiento de perfiles en DB
+
+VER TAMBIÉN
+----------
+settings.txt Controlador de configuración (tabla system_config)
+claude-code.txt Referencia rápida del código Claude
+claude-code-automatization.txt Automatización de código Claude

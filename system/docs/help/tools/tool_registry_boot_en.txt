@@ -1,0 +1,24 @@
+BACH Tool: tool_registry_boot
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/tool_registry_boot.py
+
+DESCRIPTION
+----------------------------------------
+Boot Integration for Tool Registry
+-----------------------------------
+
+Called during the RecludOS boot process.
+Loads all tool registries into the global context.
+
+Version: 1.0.0
+
+USE
+----------------------------------------
+python bach.py tools run tool_registry_boot [args]
+or directly: python tools/tool_registry_boot.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show tool_registry_boot

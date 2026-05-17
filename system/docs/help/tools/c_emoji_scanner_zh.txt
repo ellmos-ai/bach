@@ -1,0 +1,29 @@
+巴赫工具：c_emoji_scanner
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/c_emoji_scanner.py
+
+描述
+----------------------------------------
+c_emoji_scanner.py - 带有 Gemoji/emoji 包集成的表情符号扫描仪
+
+扫描文件中的表情符号并显示哪些可以自动解析。
+使用与 c_json_repair.py 相同的后端（emoji 包或 gemoji.json 后备）。
+
+用法：
+    python c_emoji_scanner.py <文件或文件夹>
+    python c_emoji_scanner.py --scan-batch # 所有 _BATCH JSON 文件
+    python c_emoji_scanner.py --status # 系统状态
+
+作者：Claude
+版本：3.0 - 与 c_json_repair.py 统一
+
+使用
+----------------------------------------
+python bach.py 工具运行 c_emoji_scanner [args]
+或直接： python tools/c_emoji_scanner.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：巴赫工具显示 c_emoji_scanner

@@ -1,0 +1,168 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[hub/schwarm.py、tools/schwarm/、skills/workflows/schwarm-operationen.md]
+
+SWARM - 并行 LLM 操作和群体智能
+------------------------------------------------------------
+
+状态：2026-05-17 (v3.11.1)
+CLI：bach swarm（别名：bach swarm）
+
+Swarm 系统支持使用不同的并行 LLM 执行
+协调模式。多个LLM实例同时工作
+子任务 和 自动协调。
+
+参考：SQ016
+
+群体模式
+--------------
+
+1。并行块 [活动]
+   任务被分成块，并行处理和合并。
+   用途：翻译、代码审查、文档。
+   协调：中央（分块器 + 聚合器）
+   扩展性：高（与工人数量成线性）
+
+2。层次结构（老板 + 工人）[活跃]
+   协调器将任务分配给工作人员，聚合器对任务进行汇总。
+   用途：具有依赖关系的复杂项目。
+   协调：中央（Boss Worker 模式）
+   缩放比例：中（受boss限制）
+
+3。 STIGMERGY（基于信息素）[活性]
+   代理在共享内存中留下痕迹（信息素）。
+   其他代理也遵循强路径。
+   用途：探索、优化、分散协调。
+   协调：分散（间接通过环境）
+   扩展性：高（紧急）
+
+4。共识（多数决定）[活跃]
+   多个法学硕士独立回答同一问题。
+   共识是通过相似性评分或多数投票来确定的。
+   用途：关键决策、质量保证。
+   协调：中央（投票者+评估者）
+   缩放：低（每个问题的 O(n) 成本）
+
+   方法：
+     相似度 成对文本相似度，平均得分最高者获胜
+     小组多数回答，最大小组获胜
+
+5。专家（Boss 路由）[活跃]
+   已经融入BACH（11个老板代理）。
+   任务将发送给适当的专家。
+
+CLI 命令
+-----------
+
+  bach swarm list
+      显示可用的群体模式及其状态。
+
+  bach swarm run <muster> <aufgabe>
+      运行群模式。
+      示例：bach swarm 运行共识“什么是最好的 Python linter？”
+
+  bach swarm translate [optionen]
+      BACH 文本的并行块翻译 (DE->EN)。
+
+      选项：
+        --namespace <ns> 仅翻译一个命名空间
+        --workers N 个并行工作线程（默认值：8）
+        --chunk-size 每个 API 调用 N 个文本（默认值：10）
+        --限制 N 最大值。翻译文本
+        --inventory 仅显示状态
+        --无 API 调用的干运行模拟
+
+  bach swarm summarize [optionen]
+      生成块摘要（并行块级别 3）。
+
+      选项：
+        --batch-size 每批 N 个块（默认值：10）
+        --model MODEL 俳句或十四行诗（默认值：俳句）
+        --空运行模拟
+
+  bach swarm benchmark [optionen]
+      性能基准：顺序与并行。
+
+      选项：
+        --compare 比较两种模式
+        --parallel 仅并行模式
+        --sequential 仅限顺序模式
+        --run 实际运行基准测试
+        --workers N 个并行工作线程（默认值：3）
+        --category CAT software_dev、研究、wiki
+        --model MODEL LLM 模型（默认：haiku）
+        --export FILE 将结果导出为 JSON
+
+  bach swarm consensus "<frage>" [optionen]
+      共识投票：多个法学硕士回答同一问题。
+
+      选项：
+        --voters N 投票者数量（默认：3，最小值：2）
+        --model MODEL 俳句、十四行诗、作品（默认：俳句）
+        --method METHOD 相似性或多数（默认值：相似性）
+
+  bach swarm status [N]
+      显示最后 N 次群体运行（默认值：20）。
+      包括成本统计和代币消耗。
+
+成本跟踪
+---------------
+
+每个 swarm 运行都会记录在数据库中（表：swarm_runs）。
+记录内容：模式、任务、代币（输入/输出）、成本（美元）、
+工人数量、工期、状态。可通过：bach swarm status
+
+成本估算（每 1M 代币）：
+  Haiku：输入 1.00 美元/输出 5.00 美元（便宜，批量）
+  Sonnet：$3.00 输入 / $15.00 输出（默认）
+  Opus：15.00 美元输入/75.00 美元输出（高级）
+
+数据库架构 (swarm_runs)：
+  id、模式、任务、tokens_in、tokens_out、cost_usd、
+  工人、duration_ms、状态、result_summary、created_at
+
+配置
+-------------
+
+API密钥源（后备顺序）：
+1.BACH Secrets系统（~/.bach/bach_secrets.json）
+2.环境变量ANTHROPIC_API_KEY
+
+FILES
+-------
+
+system/hub/schwarm.py 处理程序（自动发现）
+  系统/工具/swarm/工具集合
+    __init__.py 包初始化
+    runner.py Claude CLI 包装器 + 成本跟踪
+    translate_swarm.py 并行块翻译 (SQ062)
+    summary_chunks.py 块摘要 (SQ047)
+    benchmark.py 性能基准
+    consensus.py 共识模式
+
+示例
+---------
+
+  # 检查缺失的翻译
+  bach swarm translate --inventory
+
+  # 开始翻译（8 个工人，10 个块）
+  bach swarm translate --workers 8 --chunk-size 10
+
+  #5 询问选民，通过多数决定共识
+  bach swarm consensus "Soll ich asyncio oder threading verwenden?" --voters 5 --method majority
+
+  # 比较和导出基准
+  bach swarm benchmark --compare --workers 5 --export results.json
+
+  # 所有 swarm 运行的状态（最后 50 次）
+  bach swarm status 50
+
+另请参见
+----------
+
+- chain.txt (LLM 链 / llmauto)
+- agent.txt（Boss代理系统）
+- Skills/workflows/schwarm-operationen.md（示例文档）
+- Skills/workflows/schwarm-wahlsbaum.md（路由逻辑）

@@ -1,0 +1,75 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [partner_recognition, connections, messages, delegation_rules tables]
+
+PARTNERS - Communication Partner Profiles
+-----------------------------------------
+
+Status: 2026-02-08
+
+The partner system (layer 5) orchestrates the collaboration between
+human users, local models (Ollama) and external agents (Claude, Gemini).
+
+PARTNER OVERVIEW (snapshot)
+-----------------------------
+| ID | Partner | Type | Workspace / Backend |
+|-----|----------------|--------------|--------------------------------|
+| 001 | User | Human | User/MessageBox/ |
+| 002 | Claude | AI | partners/claude/ |
+| 003 | Ollama | Local AI | 127.0.0.1:11434 |
+| 004 | Gemini | agent | Antigravity (Local) |
+| 006 | PubMed | MCP API | Research server
+
+|PARTNER FOCUS: GEMINI
+---------------------
+- BACKEND: Antigravity (Google DeepMind Toolchain).
+- STARTER: `system/partners/gemini/start_gemini.bat`
+- WORKSPACE: `system/partners/gemini/` (Inbox/Outbox model).
+- RULES: See `system/partners/gemini/GEMINI.md`
+
+PARTNER FOCUS: CLAUDE
+---------------------
+- BACKEND: Anthropic Sonnet (via Claude Desktop/MCP).
+- ROLE: Operating AI (Orchestrator).
+- WORKSPACE: `system/partners/claude/`
+
+COORDINATION via MESSAGES
+-------------------------
+Partners communicate via the `messages` system (bach.db).
+Commands:
+  bach msg send <recipient> "text" --from <sender>
+  bach msg list --inbox     (Show inbox)
+  bach msg unread           (Show unread)
+  bach msg read <id>        (Read message)
+
+SERVICES & TABLES (bach.db)
+----------------------------
+- `partner_recognition`: partner profiles (tools, capabilities, zones)
+- `connections`: Technical endpoints (API keys, URLs)
+- `messages`: Persistent chat history (Inbox/Outbox)
+- `delegation_rules`: Token-based delegation zones
+
+COMMUNICATION HYGIENE
+----------------------
+1. Each session starts with `bach --startup`
+2. Check tasks: `bach task list --assigned <partner>`
+3. Store results in `outbox/` (e.g. REPORT_*.md)
+4. Complete tasks: `bach task done <id> "Notiz"`
+5. Send messages: `bach msg send <to> "text" --from <sender>`
+
+SEE ALSO
+----------
+  docs/help/partner.txt Delegation logic and roles
+  docs/help/communicate.txt Interaction protocol
+  docs/help/messages.txt Message syntax
+  system/partners/_README.md Structure of the partner folder
+
+CLI ACCESS
+-----------
+  bach --partner list                  List all partners
+  bach --partner status                Status overview
+  bach --partner info <name>           Partner details
+  bach --partner delegate <task>       Delegate task (token-aware)
+  bach --connections list              Connection registry
+  bach msg list                        View messages

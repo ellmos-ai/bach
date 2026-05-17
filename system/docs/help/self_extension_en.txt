@@ -1,0 +1,148 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH SELF-EXTENSION (self-expansion)
+---------------------------------------
+
+As of: 2026-02-13
+
+BACH is a self-expanding system. AI partners should
+Actively improve BACH, create new capabilities and the system
+Adapt to new requirements.
+
+CORE PRINCIPLE: USE BACH = EXPAND BACH
+------------------------------------------
+Every access is an opportunity to improve the system.
+Missing skills are NOT reported, but CREATED.
+
+SELF-EXTENSION LOOP
+--------------------
+  1. RECOGNIZE → Identify missing skills
+  2. CREATE → Scaffold new skill/tool/handler
+  3. REGISTER → Hot reload, update registry
+  4. USE → Use immediately
+  5. REFLECT → Lesson learned, register hook
+
+CREATE NEW SKILLS
+-----------------------------
+With `bach skills create`, 5 component types are supported:
+
+  bach skills create voice-processor --type tool
+    → Created: system/tools/voice_processor.py
+    → Scaffolding with standard template
+    → Can be used immediately after implementation
+
+  bach skills create email-agent --type agent
+    → Created: system/agents/email-agent/SKILL.md
+    → Own folder with SKILL.md template
+    → Orchestrates other experts/tools
+
+  bach skills create tax-expert --type expert
+    → Created: system/agents/_experts/tax-expert/SKILL.md
+    → Own folder with SKILL.md template
+    → Deep domain knowledge
+
+  bach skills create api-gateway --type handler
+    → Created: system/hub/api_gateway.py
+    → Immediately available as a CLI command (bach api-gateway ...)
+    → BaseHandler subclass with get_operations()
+
+  bach skills create data-sync --type service
+    → Created: system/skills/_services/data-sync/
+    → Service with __init__.py and service.py
+    → Handler-near, general use
+
+AFTER CREATION: HOT-RELOAD
+---------------------------------
+  bach skills reload
+    → Reload registry (detect new handlers)
+    → Run tool discovery
+    → Synchronize Skills DB
+    → NO restart necessary!
+
+OR via API:
+  from bach_api import app
+  a = app()
+  count = a.reload_registry()
+  print(f"{count} handler loaded")
+
+HOOK INTEGRATION
+-----------------
+New abilities can be hooked into the hook system:
+
+  from core.hooks import hooks
+
+  # Execute your own logic for system events
+  hooks.on('after_task_create', my_logic, name='my_plugin')
+  hooks.on('after_startup', startup_check, name='my_plugin')
+
+  Available events: bach hooks events
+
+EXAMPLE: COMPLETE SELF-EXTENSION WORKFLOW
+----------------------------------------------
+
+  Step 1: Recognize the need
+  -------------------------
+  "I need a time tracking handler"
+
+  Step 2: Scaffolds
+  ----------------------
+  bach skills create zeiterfassung --type handler
+
+  Step 3: Implement
+  --------------------------
+  → edit hub/zeiterfassung.py
+  → Add operations (start, stop, list, report)
+  → Add DB table to db/schema.sql if necessary
+
+  Step 4: Hot Reload
+  ----------------------
+  bach skills reload
+
+  Step 5: Use immediately
+  -----------------------
+  bach zeiterfassung start "Projektarbeit"
+  bach zeiterfassung stop
+  bach zeiterfassung report --today
+
+  Step 6: Register hooks (optional)
+  ------------------------------------------------------
+  from core.hooks import hooks
+  hooks.on('after_task_done', lambda ctx: time recording.stop())
+
+  Step 7: Save Lesson
+  ----------------------------
+  bach lesson add "Zeiterfassung: Handler-Pattern mit start/stop/list/report"
+
+WHAT CAN BE EXPANDED?
+----------------------------
+  Area Like Where
+  --------------- -------------------------------- -------------------------
+  CLI Commands Create new handler in hub/ hub/<name>.py
+  Put tools Python script in tools/ tools/<name>.py
+  Agents Agent folder with SKILL.md agents/<name>/
+  Experts Expert folder with SKILL.md agents/_experts/<name>/
+  Services Create service folder skills/_services/<name>/
+  Workflows Create Markdown file skills/workflows/<name>.md
+  Register Hooks Listener core/hooks.py: hooks.on()
+  DB schema migration in db/ create db/migrations/
+  Help files Create text file in docs/help/ docs/help/<topic>.txt
+  Aliases short form in aliases.py core/aliases.py
+
+RULES FOR SELF EXPANSION
+-------------------------------
+  1. Handler First: Every function as a handler in hub/
+  2. Self-Healing: Correct mistakes immediately
+  3. Fix-or-Task: Small = fix immediately, large = create task
+  4. Lesson learned: Document after each expansion
+  5. Hot Reload: Always `bach skills reload` after changes
+  6. Testing: Validate new handlers with `bach <name> help`
+
+SEE ALSO
+----------
+  bach help hooks            Hook Framework
+  bach help skills           Skill System
+  bach help cli              CLI Conventions
+  bach help architecture     System Architecture
+  skills/workflows/self-extension.md Detailed workflow

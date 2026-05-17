@@ -1,0 +1,55 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 状态：已弃用 - 已替换为 messages.py 处理程序
+
+MESSAGEBOX 系统（已弃用）
+-----------------------------
+
+注意：此基于文件的系统已弃用并已存档。
+         当前系统：MessagesHandler (system/hub/messages.py)
+
+旧的基于主题的消息传递系统（如电子邮件，但基于文件）
+已被基于 SQLite 的系统取代。
+
+当前替换：
+  处理程序：system/hub/messages.py (MessagesHandler)
+  后端：system/data/bach.db（消息表）
+  CLI: bach msg <操作>
+
+SEE:
+  bach msg --help           当前命令
+  docs/help/messages.txt 新文档
+
+存档代码：
+  系统/数据/_archive/gui_Entwuerfe/收件箱/
+    - messagebox_backend.py
+    - 消息框.html
+    - inbox_index.json
+
+-----------------------------------------------------------------------
+旧文档（仅历史）
+-----------------------------------------------------------------------
+
+概念（旧）：
+  - 一个主题=一个TXT文件
+  - 消息被分配到主题
+  - 用于快速访问的索引（JSON）
+  - 具有大小限制的自动存档
+
+文件夹（旧）：
+  数据/收件箱/活动主题（不再存在）
+  DATA/inbox/archive/ 已归档主题（不再存在）
+  DATA/inbox/agenda/ 议程引用（不再存在）
+
+CLI 命令（旧的，不再起作用）：
+  python messagebox_backend.py 列表 [--all]
+  python messagebox_backend.py 新 <标题>
+  python messagebox_backend.py add <id> <text>
+  python messagebox_backend.py 显示 <id>
+  python messagebox_backend.py 存档 <id>
+  python messagebox_backend.py 恢复 <id>
+
+迁移：
+  旧系统没有迁移。如果需要，可以使用旧的
+  主题文件可以从备份中恢复。

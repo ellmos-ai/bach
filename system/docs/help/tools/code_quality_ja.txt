@@ -1,0 +1,207 @@
+コード品質ツール - コード品質と修正
+---------------------------------------------
+
+現在: 2026-01-23
+パス: docs/help/tools/code_quality.txt
+
+説明
+------------
+一般的なコードの問題を修正するためのツール:
+  - エンコードエラー（UTF-8、BOM、文字化け）
+  - 壊れたウムラウトと特殊文字
+  - コード内の絵文字 (Windows コンソールの問題)
+  - JSON修復
+  - インデントの問題
+
+メイン ツール: c_standard_fixer
+----------------------------
+収集ツールは複数の修正プログラムを順番に実行します。
+コードの問題の最初の選択肢として推奨されます。
+
+含まれる修正:
+  1. BOM 修正によりバイト オーダー マークが削除される
+  2. エンコーディングの修正により UTF-8 が保証される
+  3. JSON-Repair JSON を修復します (.json ファイルの場合)
+  4. ウムラウトの修正 壊れたドイツ語のウムラウトを修正します。
+  5. Indent-Check インデントをチェックします (診断のみ)
+
+基本コマンド:
+
+  # 個々のファイルを修復します
+  bach c_standard_fixer script.py
+
+  # 変更せずに確認してください
+  bach c_standard_fixer script.py --dry-run
+
+  # フォルダーを再帰的に処理します
+  bach c_standard_fixer projekt/ --recursive
+
+  # 特定の修正のみを適用します
+  bach c_standard_fixer script.py --only bom,encoding
+  bach c_standard_fixer script.py --only umlaut
+
+  # 利用可能なツールを表示
+  bach c_standard_fixer --list-tools
+
+  # 詳細な出力を使用する
+  bach c_standard_fixer script.py --verbose
+
+オプション:
+  --dry-run 確認のみ、変更なし
+  --再帰的なサブフォルダーを含める
+  --verbose、-v 詳細な出力
+  --only=TOOLS 特定のツールのみ (カンマ区切り)
+  --list-tools 利用可能なツールを表示
+
+ --only のツール名:
+  bom_fix、encoding_fix、json_repair、umlaut_fix、indent_check
+
+バックアップ:
+  .standardfixer.bak ファイルを自動的に作成します
+
+ファイル タイプ:
+  処理済み: .py、.md、.txt、.json
+  無視: __pycache__、.git、venv、node_modules、.bak
+
+警告:
+  batch_manager.py には適用しないでください (既知のバグ)。
+  参照: bach --help レッスン
+
+JSON 修復: c_json_repair
+-----------------------------
+JSON の問題に特化したツール。
+
+機能:
+  - 絵文字をASCIIに変換（[TOOL]、[OK]など）
+  - Mojibake (壊れた Unicode シーケンス) を修復します。
+  - 文字列内の改行を修正
+  - BOM の削除
+
+基本コマンド:
+
+  # JSON を修復します
+  bach c_json_repair config.json
+
+  # 確認してください
+  bach c_json_repair config.json --dry-run
+
+  # JSON 出力 (スクリプト用)
+  bach c_json_repair config.json --json
+
+  # 絵文字データベースを更新
+  bach c_json_repair --update-gemoji
+
+  # 統計の表示
+  bach c_json_repair --stats
+
+オプション:
+  --dry-run 確認のみ、変更なし
+  --json JSON 出力 (機械可読)
+  --update-gemoji 絵文字データベースを更新します
+  --stats 修復統計を表示
+
+絵文字変換 (例):
+  [レンチ] <- レンチの絵文字
+  [OK] <- 緑色のチェックマーク
+  [X] <- 赤の X
+  [警告] <- 警告三角マーク
+  [FOLDER] <- フォルダー絵文字
+  [ファイル] <- ファイルの絵文字
+  -> <- Arrow Unicode
+
+JSON FIXER (代替): json_fixer
+------------------------------------
+基本的な JSON 問題のためのよりシンプルなツール。
+
+機能:
+  - BOM の削除
+  - 末尾のカンマを削除します
+  - シングルオッズからダブルオッズへ
+  - エスケープされていない文字列を修復する
+
+基本コマンド:
+
+  # 単一ファイル
+  bach json_fixer config.json
+
+  # フォルダー内のすべての JSON
+  bach json_fixer data/
+
+  # 確認してください
+  bach json_fixer config.json --dry-run
+
+  # バックアップあり
+  bach json_fixer config.json --backup
+
+いつどのツールを使用しますか?
+  c_json_repair -> 絵文字の問題、複雑な修復
+  json_fixer -> 単純な構文エラー (カンマ、引用符)
+
+単一ツール (c_standard_fixer に含まれる)
+--------------------------------------------
+これらのツールは通常、c_standard_fixer 経由で呼び出されます。
+ただし、個別に使用することもできます:
+
+c_encoding_fixer.py
+  エンコードを UTF-8 に修正
+  bach c_encoding_fixer script.py
+
+c_umlaut_fixer.py
+  壊れたドイツ語のウムラウト (ae->ä、ue->ü など) を修復します
+  bach c_umlaut_fixer script.py
+
+c_indent_checker.py
+  インデントの問題を見つける (タブとスペース、矛盾)
+  bach c_indent_checker script.py
+
+c_emoji_scanner.py
+  ファイル内の絵文字を検索
+  bach c_emoji_scanner script.py
+
+c_german_scanner.py
+  ドイツ語の単語/ウムラウトを検索
+  bach c_german_scanner script.py
+
+推奨: 個別のツールの代わりに c_standard_fixer を使用します。
+
+典型的な使用例
+-------------------------
+
+1。 GIT CLONE による (Windows)
+   異なるシステムが原因で発生するエンコードの問題:
+   bach c_standard_fixer projekt/ --recursive
+
+2. WEBからコピー＆ペーストした後
+   壊れた特殊文字:
+   bach c_standard_fixer datei.py --only umlaut,encoding
+
+3. JSON が読み込まれない
+   構文またはエンコードエラー:
+   bach c_json_repair config.json
+
+4。絵文字が Windows コンソールをクラッシュさせる
+   絵文字を ASCII に変換:
+   bach c_json_repair datei.json
+   # または Python の場合:
+   bach c_standard_fixer script.py
+
+5。コミットする前に
+   すべてのコード ファイルを確認します:
+   bach c_standard_fixer src/ --recursive --dry-run
+
+CONTEXT INJECTOR
+----------------
+ContextInjector はキーワードを認識し、次のツールを推奨します:
+
+  「エンコーディングの問題」 -> bach c_standard_fixer <ファイル>
+  "ウムラウトが壊れた" -> bach c_standard_fixer <ファイル>
+  「json の問題」 -> bach c_json_repair <ファイル>
+  "絵文字" -> bach c_emoji_scanner <ファイル>
+  "utf-8" -> bach c_encoding_fixer <file>
+
+関連項目
+----------
+  bach --help tools              ツールの概要
+  bach --help lessons            既知の問題 (標準のフィクサーのバグ)
+  bach --help tools/imports      インポートの問題
+  bach --help tools/python_editing  Python ファイルの編集

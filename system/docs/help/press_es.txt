@@ -1,0 +1,95 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ENCARGADO DE PRENSA
+-------------
+
+NOMBRE DEL ENCARGADO
+------------
+
+press - Comunicados de prensa y documentos de posición
+
+
+DESCRIPCIÓN
+------------
+
+El encargado de prensa crea y gestiona comunicados de prensa profesionales y
+Documentos de posición. Los documentos se compilan mediante plantillas LaTeX y se guardan como
+Archivos PDF exportados. La gestión se realiza a través de la tabla bach.db.
+press_documents con seguimiento de estado y opciones de envío de correo electrónico.
+
+Requisito: MiKTeX o TeX Live (se requiere pdflatex/xelatex)
+
+
+OPERACIONES
+-----------
+
+create --type <tipo> --title "..." [--body "..."]
+  Crear nuevo documento. Tipos: comunicado de prensa, documento de posición
+  Ejemplo: crear en bach press --escribir comunicado de prensa --título "Innovaciones 2026"
+  Devolución: ID del documento y ruta del PDF en caso de éxito, borrador en caso de error de LaTeX
+
+plantillas
+  Mostrar plantillas LaTeX disponibles
+  Muestra: nombre de la plantilla, ruta, tamaño del archivo en bytes
+
+lista
+  Ver todos los documentos guardados (los más nuevos primero)
+  Muestra: ID, tipo, estado (borrador/compilado/enviado), estado del PDF, fecha de creación
+  Clasificación: Descendente por create_at
+
+show <id>
+  Mostrar información detallada sobre el documento con DNI
+  Contenido: tipo, título, estado, ruta del PDF, cuerpo (máx. 300 caracteres),
+           Fecha de creación, información de envío
+
+enviar <id> --a <email>
+  Enviar documento por correo electrónico
+  Usos: NotifyHandler para enviar correos electrónicos
+  Cambios: Estado actualizado a "enviado", enviado_at y enviado_a en DB
+
+config [--logo <ruta>] [--autor "..."] [--email <...>] [--org <...>]
+  Ver o cambiar la configuración
+  Almacena: configuración JSON en agentes/_experts/press/config.json
+  Opciones: ruta_logo, autor, correo electrónico_contacto, organización
+
+
+EJEMPLOS
+---------
+
+1. Crear nota de prensa:
+   bach press create --type pressemitteilung \
+     --title "Nuevas características del producto 2026" \
+     --cuerpo "Lorem ipsum dolor sit amet..."
+
+2. Listar todos los documentos:
+   bach press list
+
+3. Ver documento específico:
+   bach press show 5
+
+4. Enviar documento:
+   bach press send 5 --to redaktion@company.com
+
+5. Cambiar configuración:
+   bach press config --author "Max Mustermann" --email info@company.com
+
+
+ARCHIVOS
+-------
+
+Relativo al sistema/:
+
+  data/bach.db Base de datos de documentos
+  agentes/_experts/press/Directorio de manejadores de prensa
+  Agents/_experts/press/config.json archivo de configuración (JSON)
+  agentes/_experts/press/press_compiler.py Módulo compilador LaTeX
+
+
+VER TAMBIÉN
+----------
+
+  hub/base.py Clase BaseHandler (estructura básica del controlador)
+  hub/notify.py NotifyHandler (envío de correo electrónico)
+  agentes/_experts/press/ Directorio de expertos en prensa con plantillas

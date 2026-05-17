@@ -1,0 +1,36 @@
+BACH ツール: registry_watcher
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/registry_watcher.py
+
+説明
+----------------------------------------
+BACH Registry Watcher v1.0.0
+
+すべてのシステム レジストリの自動監視と整合性チェック。
+RecludOS から移植され、BACH データベース システムと統合されています。
+
+特徴:
+- 存在チェック: 登録されたエントリとファイル システム
+- 構文検証: JSON ファイル
+- 相互参照: DB エントリとファイル
+- 健康レポートの生成
+- 問題の通知
+
+使用方法:
+  python registry_watcher.py check # すべてのレジストリをチェックします
+  python registry_watcher.py report # ヘルスレポートを作成する
+  python registry_watcher.py tools # ツールのみをチェックします
+  python registry_watcher.py skill # スキルのみを確認する
+  python registry_watcher.py Agents # エージェントのみをチェックする
+  python registry_watcher.py --fix # 問題を自動的に (安全に) 修正します
+
+USE
+----------------------------------------
+python bach.py tools run registry_watcher [args]
+または直接: python tools/registry_watcher.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show registry_watcher

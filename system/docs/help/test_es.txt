@@ -1,0 +1,61 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+TEST - Prueba BACH y sistema de control de calidad
+--------------------------------
+
+VISIÓN GENERAL
+----------
+Pruebas sistemáticas de BACH y comparación con otros sistemas.
+Utiliza pruebas B (automatizadas), pruebas O (funcionales) y pruebas E (subjetivas).
+
+COMANDOS
+-------
+  bach --test self [PROFIL]     Pruebe BACH usted mismo (predeterminado: RÁPIDO)
+  bach --test run <path>        Pruebe otro sistema
+  bach --test compare <path>    Compare el sistema con BACH
+  bach --test profiles          Mostrar perfiles disponibles
+  bach --test results [system]  Mostrar resultados de pruebas
+
+PERFILES DE PRUEBA
+-----------
+  Prueba rápida QUICK (~5 min) - B001, O001
+  ESTÁNDAR Estándar (~20 min) - B001-B005, O001-O003
+  COMPLETO Completo (~40 min) - Todas las pruebas
+  OBSERVACIÓN Pruebas B únicamente (~15 min)
+  Sólo pruebas de SALIDA O (~20 min)
+  MEMORY_FOCUS Enfoque de memoria (~10 min)
+  TASK_FOCUS Enfoque de tarea (~10 min)
+
+TRES PERSPECTIVAS DE PRUEBA
+---------------------
+  Pruebas B (observación) Scripts de Python externos, automatizados
+                          "¿Qué existe?"
+
+  Pruebas O (salida) Funcionales, entrada->salida, scripts de Python
+                          "¿Funciona?"
+
+  E-tests (experiencia) Internos, subjetivos, dirigidos por Claude
+                          "¿Cómo se siente?"
+
+ESCALA DE CALIFICACIÓN
+---------------
+  5 = Excelente
+  4 = Bueno
+  3 = Aceptable
+  2 = pobre
+  1 = Crítico
+
+EJEMPLOS
+---------
+  bach --test self              Autotest rápido
+  bach --test self STANDARD     Autotest estándar
+  bach --test compare "C:\X"    Comparar BACH con otro sistema
+  bach --test results           Mostrar todos los resultados
+
+IMPLEMENTACIÓN
+---------------
+  Controlador: system/hub/test.py
+  Estado: Infraestructura de prueba (herramientas/pruebas/) NO disponible
+  Nota: El controlador existe, pero aún faltan herramientas/agente

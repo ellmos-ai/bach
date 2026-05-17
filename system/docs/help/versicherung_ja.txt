@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+保険 - 保険管理
+---------------------------------------
+
+説明:
+  期限と終了日を含むすべての保険契約の管理
+  そして貢献。データは bach.db/fin_insurances にあります。
+  財務モジュール (保険タブ) を介した GUI アクセス。
+
+ステータス:
+  Hub/versicherung.py に実装された完全な CLI ハンドラー
+  - CLI: 一括保険 <操作> (一覧、表示、追加、編集、削除、ステータス、期限、確認、請求)
+  - GUI: 財務モジュール > 保険 (Gemini によって実装された CRUD)
+  - 直接 DB クエリ (エージェント/エキスパート向け)
+
+データベース:
+  テーブル:
+    - bach.db / fin_insurances (保険)
+    - bach.db / fin_insurance_claims (請求)
+    - bach.db / Insurance_types (参照データ、オプション)
+
+  Fin_insurances フィールド:
+    id自動ID
+    プロバイダー保険会社 (Allianz、HUK、AXA など)
+    料金表名 料金表名
+    Police_nr ポリシー番号 (ユニーク)
+    賠償責任、BU、自動車、家庭用品、法的保護、...
+    ステータスがアクティブ |終了しました |非貢献 |休眠中の
+    start_date 契約の開始日
+    expiry_date 契約の終了
+    Notice period_months 通知期間を月単位で指定します (デフォルト: 3)
+    extension_months 自動延長 (デフォルト: 12)
+    next_termination 次回の終了日
+    金額としての貢献
+    毎月支払われる |季刊 |半年ごと |毎年
+    税金関連タイプの年金費用など
+    folder_path ファイル システム上のスキャン/ドキュメントへのパス
+    メモ フリーテキスト
+    created_at、updated_at タイムスタンプ
+
+リンク:
+  - Financial_emails: 保険会社からのメール (カテゴリ = '保険')
+  -folder_path: ローカルに設定された保険ドキュメント パスの下にある実際のドキュメント
+  - user_data_folders: 登録済みフォルダー 'user/insurance'
+
+現在のデータ:
+  13 の保険会社が輸入 (セッション 2026-01-28 時点)
+  部門: 責任、BU、自動車、家庭用品、法的保護、歯科用サプリメント、
+           PKV、傷害保険、外国の健康保険など
+
+CLI コマンド:
+  bach versicherung list                    すべての有効な保険契約
+  bach versicherung list --all              保険を含む終了しました
+  bach versicherung list --sparte <sparte>  部門でフィルタリング
+  bach versicherung list --status <status>  ステータスでフィルタリング
+
+  bach versicherung show <id>               詳細を表示
+
+  bach versicherung add --anbieter "X" --sparte "Y" [Optionen]
+    必須: --provider、--division
+    オプション: --contribution、--payment、--police、--tariff、--beginning、
+              --expiry、--cancellation、--period、-tax、-folder、-note
+
+  bach versicherung edit <id> [Felder]      保険を編集
+  bach versicherung delete <id>             ステータスを設定 -> キャンセル
+
+  bach versicherung status                  統計を含むダッシュボード
+  bach versicherung fristen [--tage N]      キャンセル期間を表示 (デフォルト: 90 日)
+  bach versicherung check                   ポートフォリオ分析
+
+  bach versicherung claim add <id> --datum DD.MM.YYYY --beschreibung "Text" [--betrag X]
+  bach versicherung claim list [<id>]       保険請求を表示
+
+  bach versicherung help                    ヘルプを表示
+
+計画:
+  - Financial_email との自動電子メール照合
+  - 税輸出統合 (現在: 手動税タイプ管理)
+
+INTERPLAY:
+  - GUI: 期限警告付きの財務ダッシュボード (#575)
+  - GUI: 保険 CRUD (#570)
+  - 税金輸出: #572 (予定)

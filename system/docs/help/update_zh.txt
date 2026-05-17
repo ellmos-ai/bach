@@ -1,0 +1,110 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+更新处理程序
+--------------
+
+处理程序名称
+------------
+bach update - Versions- und Update-Verwaltung
+
+
+描述
+------------
+管理更新、版本控制和系统完整性。检查可用的
+从 Git 更新，通过自动备份和数据迁移导入它们
+功能，并在每次更新后验证系统完整性。还支持
+回滚到更新前备份。
+
+
+操作
+-----------
+
+检查
+检查更新（基于 Git）。将本地提交与上游分支进行比较
+并显示待处理的更改。仅适用于 Git 存储库。
+
+STATUS（或不带参数）
+显示当前版本、架构版本、更新时间戳和验证
+状态。列出已应用的迁移和 Git 信息。
+
+APPLY [--dry-run]
+已安装的更新分为 5 阶段工作流程：(1) 创建更新前备份，
+(2) 运行 Git pull --rebase，(3) 运行迁移，(4) 系统
+验证，(5)更新version.json。仅使用 --dry-run 预览。
+
+ROLLBACK [--dry-run]
+回滚到上次更新前备份。查找最新的 pre_update_*.zip
+并恢复 bach.db。将当前数据库另存为.db.pre_rollback。
+
+验证
+检查系统完整性：处理程序可导入、version.json 可用、bach.db
+可读、迁移一致、关键目录（中心、核心、数据、技能）
+可用。显示错误详细信息并更新last_verified。
+
+MIGRATIONS [list|run]
+列表（默认）：显示所有可用的迁移及其状态（已应用/待处理）。
+run：运行挂起的迁移（.py 或 .sql），更新 schema_version。
+
+
+示例
+---------
+
+bach update check
+  检查来自 Git 上游的可用更新。
+
+bach update status
+  显示版本 1.2.3、最新更新、验证状态和
+  应用迁移。
+
+bach update apply --dry-run
+  显示没有任何变化的 5 阶段过程。
+
+bach update apply
+  安装了完整更新，包括备份、拉取、迁移、验证。
+
+bach update verify
+  检查所有 6 个点：处理程序、version.json、bach.db、迁移、目录。
+
+bach update rollback --dry-run
+  显示上次备份（文件名、大小、日期），无需执行任何操作。
+
+bach update rollback
+  从上次 pre_update_*.zip 恢复 bach.db。
+
+bach update migrations
+  列出可用和待处理的迁移及其计数。
+
+bach update migrations run
+  执行所有挂起的迁移，更新跟踪。
+
+
+文件
+-------
+data/version.json
+  中央版本文件。包含：版本、schema_version、updated_at、
+  last_verified、verification_status、migrations_applied[]。
+
+data/bach.db
+  SQLite 数据库。每次更新之前和回滚期间都会进行备份
+  已恢复。
+
+_backups/
+  更新前备份为 pre_update_X.Y.Z_YYYYMMdd_HHmm.zip。包含
+  bach.db、version.json、来自 data/.
+
+data/migrations/ 的所有配置 JSON
+  迁移文件（.py 或 .sql）的目录。跟踪的 Version.json
+  migrations_applied[].
+
+集线器/、核心/、数据/、技能/
+  关键目录。验证检查所有 4 个是否存在。
+
+
+另请参阅
+----------
+core      - BACH 核心处理程序
+verify    - 验证详细信息
+backup    - 备份策略
+git       - Git 集成

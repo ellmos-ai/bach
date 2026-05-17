@@ -1,0 +1,25 @@
+Herramienta BACH: inyectores
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/injectors.py
+
+DESCRIPCIÓN
+----------------------------------------
+Sistema de inyectores - Ayuda y contexto automáticos
+------------------------------------------------
+
+Inyectores que alivian la carga cognitiva de Claude:
+- StrategyInjector: pensamientos útiles sobre palabras desencadenantes
+- ContextInjector: contexto automático para palabras clave
+- TimeInjector: actualizaciones periódicas de tiempo
+- BetweenInjector: recordatorios automáticos después de realizar la tarea
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan inyectores [args]
+o directamente: python tools/injectors.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna duda: las herramientas bach muestran los inyectores

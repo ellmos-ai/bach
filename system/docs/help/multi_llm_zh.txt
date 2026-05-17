@@ -1,0 +1,246 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+多LLM协议 - 并行代理的协调
+-----------------------------------------------------
+
+截至：2026-01-28 v1.1.71
+
+用于多个LLM安全并行工作的协议V3
+（克劳德、双子座、副驾驶、奥拉马、困惑）在同一个地方
+文件系统。由 Claude + Gemini Experiment 开发
+2026 年 1 月 28 日。
+
+重要：从正确开始
+------------------------
+所有合作伙伴必须从一张印章卡开始！
+
+  # 克劳德开始
+  bach --startup --partner=claude --mode=silent
+
+  # 双子座发射
+  bach --startup --partner=gemini --mode=silent
+
+  # 新伙伴（有自己的名字）
+  bach --startup --partner=simonAI --mode=silent
+
+  # 新合作伙伴（无名）
+  bach --startup --partner=new --mode=silent
+
+为什么？
+- 在partner_presence数据库中自动打卡上班/下班
+- 合作伙伴意识：检测谁仍然在线
+- 自动向多个合作伙伴推荐协议V3
+- 任务间检查提醒伙伴检查
+
+CLI 命令
+-----------
+bach llm presence [dir] [task]  创建/更新存在
+bach llm check [dir]            检测其他代理
+bach llm lock <datei>           获取锁定
+bach llm unlock [datei]         释放锁定
+bach llm handshake [dir]        启动握手协议
+bach llm status [dir]           显示状态
+
+协议V3组件
+------------------------
+
+1.存在系统
+------------------
+每个代理在工作目录中创建一个存在文件：
+
+文件：.<agent>_presence（例如.claude_presence）
+
+内容：
+  经纪人：克劳德
+  状态：活动|已完成
+  开始于: 2026-01-28T01:00:00
+  心跳: 2026-01-28T01:05:00
+  正在处理：任务描述
+  当前文件：文件.txt
+  lock_status: FREE|LOCKED|WAITING
+
+规则：
+- 每 30-60 秒更新一次心跳
+- 心跳超过 2 分钟 = 代理不活动
+- 会话结束时：将状态设置为已完成
+
+2。锁定系统
+-----------------
+对共享文件进行写访问之前：
+
+锁定文件：<文件>.lock.<代理>
+示例：PROTOKOL.md.lock.claude
+
+工作流程：
+  1. list_directory - 检查foreign .lock.*是否存在
+  2. 如果是 -> 等待（5 秒后退，然后再次）
+  3.如果没有->创建锁
+  4. 创建备份（<文件>.bak）
+  5. 编辑文件
+  6. 立即删除锁定
+
+锁定内容：
+  经纪人：克劳德
+  锁定时间：2026-01-28T01:00:00
+  文件：PROTOKOL.md
+
+超时：超过 5 分钟的锁定被视为“过时”
+         并且可以被其他代理删除。
+
+3.备份系统
+----------------
+对共享文件进行任何更改之前：
+- 创建备份：<文件>.bak
+- 只在事后写
+- 保留备份以供恢复
+
+4。握手协议
+----------------------
+代理相遇时自动检测：
+
+程序：
+  1. 特工A创造存在感
+  2. Agent A检测到Agent B（通过Detect_other_agents）
+  3. 创建代理 A：.handshake_<agent_a>
+  4. Agent B检测到握手请求
+  5. 代理 B 回复：.handshake_<agent_b> 并接受
+  6. 均启用协议V3
+
+握手文件：
+  来自： 克劳德
+  致：双子座
+  时间：2026-01-28T01:00:00
+  状态：已接受
+  协议：V3
+
+通信
+-------------
+
+元级别（异步）：
+  bach msg send <partner> "Nachricht"
+  bach msg list
+  bach msg read <id>
+
+实时（在工作文件夹中）：
+  状态的存在文件
+  文件内通信（带有时间戳的条目）
+
+文件内格式：
+  [HH:MM] [代理] 消息或操作
+
+工作流程：编辑共享文件
+-------------------------------------
+
+1。检查存在：
+   bach llm check
+
+2。获取锁：
+   bach llm lock DATEI.md
+
+3。创建备份：
+   （使用 safe_write 自动）
+
+4。编辑文件
+
+5。释放锁：
+   bach llm unlock DATEI.md
+
+6。更新存在：
+   bach llm presence . "Fertig"
+
+示例会话
+----------------
+
+# 代理 A 启动
+bach llm presence . "Task_123"
+bach llm check              # -> “没有其他代理”
+
+# 代理 B 启动
+bach llm presence . "Task_456"
+bach llm check              # -> “claude: ACTIVE”
+
+# 代理 A 想要编辑 SHARED.txt
+bach llm lock SHARED.txt    # -> “已获取锁”
+# ... 已处理 ...
+bach llm unlock SHARED.txt
+
+# 如果锁存在，代理 B 会自动等待
+bach llm lock SHARED.txt    # -> 等待 A 完成
+
+KNOWN特工
+----------------
+
+- 克劳德 克劳德（人类）
+- 双子座 双子座（谷歌）
+- 副驾驶 GitHub 副驾驶
+- ollama 当地法学硕士
+- perplexity Perplexity AI
+
+工作文件夹中的文件
+------------------------
+
+.claude_presence Presence Claude
+.gemini_presence 存在双子座
+FILE.lock.claude 来自克劳德的锁
+来自 Gemini 的 FILE.lock.gemini 锁
+更改前的FILE.bak备份
+.handshake_claude 握手信号
+.handshake_gemini 握手答案
+
+故障排除
+---------------
+
+问题：锁卡住
+解决方案：超过 5 分钟的锁被认为是过时的
+         并自动忽略。手动删除可以。
+
+问题：代理无法识别其他人
+解决方案：检查存在文件。心跳电流？
+
+问题：尽管锁定，但竞争条件
+解决方案：在创建锁之前检查list_directory是否存在
+         被执行。时序问题？
+
+HANDLER
+-------
+hub/multi_llm_protocol.py 协议实现
+
+课程
+-------
+第 62 课：多 LLM 并行工作基础知识
+第 63 课：多 LLM 协议 V3
+
+另请参阅
+----------
+bach --help partner   合作伙伴系统
+bach --help messages       消息
+
+
+邮票卡系统 (v1.1.71)
+------------------------------
+基于数据库的合作伙伴存在，用于自动感知。
+
+表：partner_presence
+  id 整数主键
+  Partner_name TEXT 合作伙伴 ID（claude、gemini、用户、...）
+  状态 TEXT 在线|离线|崩溃
+  Clocked_in TEXT 打卡时间
+  Clocked_out TEXT 打卡下班时间
+  last_heartbeat TEXT 最后活动
+  current_task TEXT 当前任务
+  session_id TEXT 关联会话
+
+自动：
+- 在 --startup 处：打卡（标记了旧的崩溃会话）
+- 使用--shutdown：打卡下班
+- 启动输出中的合作伙伴意识
+
+手动（可选）：
+- 心跳：巴赫LLM存在。 “任务_XYZ”
+- 状态：bach llm 状态
+
+超时：
+- 心跳超过 5 分钟 = 伴侣不活动
+- 崩溃的会话将在下次启动时清理

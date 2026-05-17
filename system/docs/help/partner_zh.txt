@@ -1,0 +1,119 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[partner_recognition table、partner_presence table、hub/partner.py、tools/mcp_server.py]
+
+BACH PARTNER SYSTEM（联邦智能）
+---------------------------------------------
+
+DATE：2026-02-08
+
+合作伙伴系统管理不同AI之间的协作
+以及基于代币效率和能力的人员。
+
+注册合作伙伴 (bach.db)
+------------------------------
+**人工智能合作伙伴：**
+- 克劳德、双子座、奥拉马（主动）
+- ChatGPT、副驾驶、米斯特拉尔、困惑（主动）
+- 人类本地、自定义代理（不活动）
+
+**人类伙伴：**
+- 人类（用户/管理员）
+
+核心组件
+----------------
+1。逻辑（partner_recognition）：谁能做什么？ （上限、区域、成本等级）
+2. 物理（连接）：端点在哪里？ （API 密钥、URL）
+3. PRESENCE (partner_presence)：当前谁“打卡上班”？
+4. 协议（llm / msg）：我们如何合作？ （锁、消息）
+5. 连接器 (hub/connector.py)：外部通信（Telegram、Discord）
+
+CLI 命令（--partner）
+-----------------------
+  bach partner list              列出所有注册合作伙伴
+  bach partner status            网络状态（在线状态、令牌区域）
+  bach partner info <name>       显示有关特定合作伙伴的详细信息
+  bach partner active            当前活跃合作伙伴列表
+  bach partner delegate <task>   将任务分配给最高效的合作伙伴
+
+连接器命令（--connector）
+-------------------------------
+  bach connector list            所有连接器（Telegram、 Discord 等）
+  bach connector status          所有活动连接器的状态
+  bach connector send <name> <recipient> <text>  通过连接器发送消息
+  bach connector poll <name>     从连接器检索消息
+  bach connector messages [name] Empfangene Nachrichten anzeigen
+
+DELEGATE-FLAGS
+--------------
+委托命令支持以下选项：
+  --partner delegate <task> 自动路由任务
+  --partner delegate <task> --to=NAME 委托给特定合作伙伴
+  --partner delegate <任务> --zone=N 强制区域 (1-4)
+  --partner delegate <任务> --fallback-local
+  --partner delegate <task> --fal 离线回退到 Ollama（简短形式）
+
+多 LLM 协调（新 v1.1.73+）
+-------------------------------------
+为了避免并行工作中的冲突，适用以下规则：
+- 锁定：“bach llm lock <文件>”可防止两个 AI 修改同一文件。
+- 消息传递：`bach msg send <target>“text”`进行直接投票。
+
+区域系统（代币感知）
+------------------------------
+路由是根据代币预算自动完成的（第 5 层）：
+- 区域 1（<30% 预算）：克劳德（最佳质量）
+- 区域 2 (30-60%)：双子座 / 克劳德（混合）
+- 区域 3 (60-80%)：Ollama（本地/免费）
+- 区域 4 (80-100%)：人类（紧急/完成）
+
+数据库对象
+-----------------
+-partner_recognition：主数据（10 个合作伙伴：Claude、Gemini、Ollama 等）
+- Partner_presence：当前会话和印章卡（40 多个日志）
+- 连接：技术简介（8 个以上连接）
+-交互协议：协作协议（10+条目）
+- Connector_messages：来自/发往外部系统的消息（Telegram、Discord）
+
+WF 示例 (GEMINI)
+--------------------
+  1.检查：`bach msg ping --from Gemini`
+  2. 工作：`bach llm lock Research.md` -> 编辑 -> `unlock`。
+  3. 完成：`bach 任务完成 ID`
+
+MCP 服务器集成 (v2.2)
+------------------------------
+BACH MCP 服务器为 Claude 代码提供合作伙伴功能：
+
+**工具：**
+- Partner_list - 列出所有合作伙伴
+- Partner_status - 显示状态和令牌区域
+
+**在克劳德代码中使用：**
+````蟒蛇
+# 服务器运行时MCP工具自动可用
+结果 = mcp.call_tool("partner_list")
+```
+
+合作伙伴工作空间
+-----------------
+当前（自 2026 年 2 月 1 日起）：system/partners/
+- 克劳德/收件箱，克劳德/发件箱
+- 双子座/收件箱，双子座/发件箱
+- ollama/收件箱、ollama/发件箱
+
+已弃用（2026-02-01 之前）：system/partners/
+- 仅 Gemini/发件箱/包含旧报告 (2026-02-06)
+- 新报告转到partners/gemini/outbox/
+
+另请参阅
+----------
+  bach connector --help     连接器系统（Telegram、Discord）
+  bach llm --help           多LLM协议（锁）
+  bach msg --help           消息系统
+  bach tokens --help        令牌监控和配额
+  docs/help/maintain.txt 网络完整性检查
+
+版本：v1.2.0 (2026-02-08)
+来源：hub/partner.py、tools/mcp_server.py、partners/

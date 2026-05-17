@@ -1,0 +1,83 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[NPM 注册表、GitHub 存储库]
+
+NPM PUBLISH - MCP 服务器发布
+--------------------------------------------
+
+日期：2026-02-15
+
+在 NPM 和 GitHub 上发布 BACH MCP 服务器的工作流程。
+
+包
+------
+  ellmos-filecommander-mcp 39 个工具，文件系统/进程/会话/i18n
+  ellmos-codecommander-mcp 15 个工具，代码分析/JSON/编码/i18n
+
+GITHUB REPOS
+-------------
+  https://github.com/lukisch/ellmos-filecommander-mcp
+  https://github.com/lukisch/ellmos-codecommander-mcp
+
+NPM 身份验证
+----------------------
+  方法：使用“绕过 2FA”的细粒度访问令牌
+  代币名称：bach-publisher 2
+  创建时间：2026-02-15
+  到期时间: 2026-05-16
+  存储在：~/.npmrc
+
+  重要提示：经典自动化令牌不再起作用（EOTP 错误）。
+  只有具有“绕过 2FA”的粒度访问令牌才能绕过 OTP 查询。
+
+  更新令牌（如果过期）：
+    1. https://www.npmjs.com/settings/~/tokens ->“生成新令牌”
+    2. 选择“粒度访问令牌”（非经典！）
+    3. 权限：读、写、所有包
+    4. 激活“绕过 2FA”复选框
+    5. 在 ~/.npmrc 中输入令牌：
+       //registry.npmjs.org/:_authToken=<新令牌>
+
+NPM 发布工作流程
+---------------------
+  1.检查令牌：
+     npm whoami -> 必须输出“lukisch”
+
+  2. 手动运行构建（因为路径 KI&AI 中存在 &）：
+     节点“<路径>/node_modules/typescript/bin/tsc”--项目“<路径>/tsconfig.json”
+
+  3. 运行 npmpublish（无需 OTP，无需浏览器）：
+     cd <项目目录>
+     npmpublish--ignore-scripts
+
+已知问题
+------------------
+  - & 在路径“KI&AI”中破坏 npm 脚本（仅预发布）
+    -> 解决方法：--ignore-scripts（预先手动构建）
+  - npm run build 在项目目录中失败
+    -> 解决方法：直接通过node调用tsc
+  - 经典自动化令牌触发 EOTP 错误
+    -> 解决方法：使用“绕过 2FA”的精细访问令牌
+
+GITHUB 工作流程
+----------------
+  1. git add <文件> && git commit -m "消息"
+  2. git标签vX.Y.Z
+  3. git push origin master --tags
+
+版本BUMP检查表
+------------------------
+  [ ] package.json 版本
+  [ ] src/index.ts 版本（服务器配置）
+  [ ] CHANGELOG.md 新条目
+  [ ] README.md 如果功能发生变化
+  [ ] 测试构建
+  [ ] Git提交+标签+推送
+  [ ] npm 发布 --ignore-scripts
+
+另请参阅
+----------
+  docs/help/tools.txt 工具概述
+  docs/help/coding.txt 编码标准
+  Skills/workflows/npm-mcp-publish.md 详细日志

@@ -1,0 +1,95 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PRESS HANDLER
+-------------
+
+HANDLER NAME
+------------
+
+press - Press releases and position papers
+
+
+DESCRIPTION
+------------
+
+The press handler creates and manages professional press releases and
+Position papers. Documents are compiled via LaTeX templates and saved as
+PDF files exported. Management is done through the bach.db table
+press_documents with status tracking and email sending options.
+
+Requirement: MiKTeX or TeX Live (pdflatex/xelatex required)
+
+
+OPERATIONS
+-----------
+
+create --type <type> --title "..." [--body "..."]
+  Create new document. Types: press release, position paper
+  Example: bach press create --type press release --title "Innovations 2026"
+  Return: Document ID and PDF path on success, draft on LaTeX error
+
+templates
+  Show available LaTeX templates
+  Shows: template name, path, file size in bytes
+
+list
+  View all saved documents (newest first)
+  Shows: ID, type, status (draft/compiled/sent), PDF status, creation date
+  Sorting: Descending by created_at
+
+show <id>
+  Show detailed information about document with ID
+  Contents: Type, title, status, PDF path, body (max. 300 characters),
+           Creation date, shipping information
+
+send <id> --to <email>
+  Send document by email
+  Uses: NotifyHandler for sending emails
+  Changes: Status updated to "sent", sent_at and sent_to in DB
+
+config [--logo <path>] [--author "..."] [--email <...>] [--org <...>]
+  View or change configuration
+  Stores: JSON configuration in agents/_experts/press/config.json
+  Options: logo_path, author, contact_email, organization
+
+
+EXAMPLES
+---------
+
+1. Create press release:
+   bach press create --type pressemitteilung \
+     --title "New product features 2026" \
+     --body "Lorem ipsum dolor sit amet..."
+
+2. List all documents:
+   bach press list
+
+3. View specific document:
+   bach press show 5
+
+4. Send document:
+   bach press send 5 --to redaktion@company.com
+
+5. Change configuration:
+   bach press config --author "Max Mustermann" --email info@company.com
+
+
+FILES
+-------
+
+Relative to system/:
+
+  data/bach.db Document database
+  agents/_experts/press/ Press handler directory
+  agents/_experts/press/config.json configuration file (JSON)
+  agents/_experts/press/press_compiler.py LaTeX compiler module
+
+
+SEE ALSO
+----------
+
+  hub/base.py BaseHandler class (Handler basic structure)
+  hub/notify.py NotifyHandler (email sending)
+  agents/_experts/press/ Press Expert directory with templates

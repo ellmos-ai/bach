@@ -1,0 +1,196 @@
+HERRAMIENTAS DE IMPORTACIÓN: manejo de importaciones de Python
+--------------------------------------
+
+A partir de: 2026-01-23
+Ruta: docs/help/tools/imports.txt
+
+DESCRIPCIÓN
+------------
+Herramientas para diagnosticar y organizar importaciones de Python:
+  - Encontrar problemas de importación (faltantes, circulares, no utilizados)
+  - Ordenar y limpiar importaciones (compatible con PEP8)
+
+Problemas comunes que resuelven estas herramientas:
+  - "ModuleNotFoundError" / "ImportError"
+  - Importaciones circulares (A importa B, B importa A)
+  - Orden de importación caótica
+  - Dobles importaciones
+  - Importaciones en medio del código en lugar de al principio
+
+DIAGNÓSTICO DE IMPORTACIÓN: c_import_diagnose
+----------------------------------
+Análisis sistemático de problemas de importación.
+
+FUNCIONES:
+  - Importar módulos individuales de forma aislada
+  - Variar orden de importación
+  - Detectar importaciones circulares.
+  - Analizar __init__.py
+  - Pruebas de cronometraje con retrasos.
+  - Localizar el punto de colisión
+
+COMANDOS BÁSICOS:
+
+  # Analizar proyecto
+  bach c_import_diagnose projekt/src/
+
+  # Con salida JSON
+  bach c_import_diagnose projekt/src/ --json
+
+  # Pruebe módulos específicos
+  bach c_import_diagnose . --modules core.app:App,gui.main:MainWindow
+
+OPCIONES:
+  --json Salida JSON (legible por máquina)
+  --modules M1:C1,M2:C2 Módulos específicos:Clases de prueba
+
+EJEMPLO DE SALIDA:
+  === DIAGNÓSTICO DE IMPORTACIÓN ===
+
+  [1/5] Probar módulos individuales...
+    [Aceptar] core.app.App
+    [FALLO] gui.main.MainWindow -> ImportError: No hay ningún módulo llamado 'faltante'
+
+  [2/5] Verifique las importaciones circulares...
+    [ADVERTENCIA] core.utils -> core.app -> core.utils (¡Círculo!)
+
+  [3/5] Análisis __init__.py...
+    [Aceptar] core/__init__.py
+    [FALTA] gui/__init__.py
+
+  === RECOMENDACIONES ===
+  1. Instalar el módulo faltante 'faltante'
+  2. Resuelva la importación circular core.utils <-> core.app
+  3. Cree gui/__init__.py
+
+ORGANIZADOR DE IMPORTACIÓN: c_import_organizer
+------------------------------------
+Ordena y limpia las importaciones de Python según PEP8.
+
+FUNCIONES:
+  - Recopilar todas las importaciones al principio del archivo.
+  - Eliminar duplicados
+  - Ordenar alfabéticamente (primero importar, luego desde)
+  - Limpiar varias líneas en blanco
+
+COMANDOS BÁSICOS:
+
+  # Organizar archivo
+  bach c_import_organizer script.py
+
+  # Solo verifica sin cambios
+  bach c_import_organizer script.py --dry-run
+
+  # Salida JSON
+  bach c_import_organizer script.py --json
+
+  # Leer desde la entrada estándar
+  script de gato.py | bach c_import_organizer --stdin
+
+OPCIONES:
+  --ejecución en seco Mostrar solo, no cambiar
+  --json Salida JSON
+  --stdin Leer código de stdin
+
+ANTES/DESPUÉS EJEMPLO:
+
+  ANTES:
+  ---------------------
+  importar sistema operativo
+
+  definición foo():
+      desde pathlib importar ruta
+      pasar
+
+  sistema de importación
+  de escribir lista de importación
+  importar os # duplicar!
+  ----------------------
+
+  DESPUÉS:
+  ---------------------
+  importar sistema operativo
+  sistema de importación
+  desde pathlib importar ruta
+  al escribir lista de importación
+
+  definición foo():
+      pasar
+  ---------------------
+
+FLUJOS DE TRABAJO TÍPICOS
+------------------
+
+1. DEPURAR "ImportarError".
+   Analizar proyecto para encontrar el punto de falla:
+
+   bach c_import_diagnose projekt/src/ --json
+
+   Luego siga las recomendaciones.
+
+2. ENCUENTRA IMPORTACIONES CIRCULARES
+   Cuando los módulos se importan entre sí:
+
+   bach c_import_diagnose projekt/src/
+
+   La salida muestra: A -> B -> A (¡brújula!)
+
+   Solución: subcontratar las dependencias comunes a un tercer módulo.
+
+3. ANTES DE LA REVISIÓN DEL CÓDIGO
+   Limpiar las importaciones antes de revisar el código:
+
+   bach c_import_organizer script.py
+
+   O para todo el proyecto:
+   para f en *.py; hacer bach c_import_organizer "$f"; hecho
+
+4. DESPUÉS DE LA REFACTORACIÓN
+   Después de una conversión importante, verifique las importaciones:
+
+   # Diagnosticar primero
+   bach c_import_diagnose src/
+
+   # Luego limpia
+   para f en src/*.py; hacer bach c_import_organizer "$f"; hecho
+
+5. CONFIGURAR UN NUEVO PROYECTO
+   __init__.py Verificar archivos:
+
+   bach c_import_diagnose mein_paket/
+
+   Muestra los archivos __init__.py que faltan.
+
+PEP8 IMPORT ORDER
+-----------------------
+El c_import_organizer ordena según el estándar PEP8:
+
+  1. Biblioteca estándar (importar sistema operativo, importar sistema operativo)
+  2. Terceros (solicitudes de importación, importación de números)
+  3. Importaciones locales (desde el módulo . import)
+
+Dentro de cada grupo: ordenadas alfabéticamente.
+
+INJECTOR DE CONTEXTO
+----------------
+El ContextInjector reconoce palabras clave y recomienda estas herramientas:
+
+  "Ordenar importaciones" -> bach c_import_organizer <archivo>
+  "problema de importación" -> bach c_import_diagnose <proyecto>
+  "falta la importación" -> bach c_import_diagnose <proyecto>
+
+INTEGRACIÓN CON OTRAS HERRAMIENTAS
+-----------------------------
+Combine con python_cli_editor para obtener una imagen completa:
+
+  # Mostrar importaciones (agrupadas)
+  bach python_cli_editor script.py --imports
+
+  # Luego organiza
+  bach c_import_organizer script.py
+
+VER TAMBIÉN
+----------
+  bach --help tools/python_editing   Editar archivos Python
+  bach --help tools/code_quality     Calidad del código (codificación, etc.)
+  bach python_cli_editor --help      Mostrar importaciones con --imports

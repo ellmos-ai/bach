@@ -1,0 +1,83 @@
+# Portability: USER
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [household_routines table, hub/routine.py]
+
+ROUTINE - Household routines management
+--------------------------------------
+
+Status: 2026-02-08
+
+The routine system (layer 3) manages recurring tasks in the household
+and private area with automatic interval calculation.
+
+CORE CONCEPTS
+------------
+- FREQUENCY: From daily to annually (automatic rescheduling).
+- STATUS: Overdue tasks are marked with `!!!`.
+- CENTRALIZATION: All routines are in `bach.db`.
+
+CLI COMMANDS (bach routine)
+--------------------------
+  list [--all] [-c <category>]
+                Overview of all active routines.
+                --all also shows inactive ones, -c filters by category.
+                Example: bach routine list -c Kueche
+
+  show <ID> Shows details of a single routine.
+                Example: bach routine show 3
+
+  due [days] Shows due tasks for the selected period.
+                Default: 7 days. Example: bach routine due 14
+
+  done <ID> [ID2...] [--note "Text"]
+                Marks routine(s) as completed and sets new date.
+                Multiple IDs possible, optionally with a note.
+                Example: bach routine done 3 5 --note "Basic cleaning"
+
+  add "Name" [--freq/-f <Freq>] [--cat/-c <Cat>] [--dur/-d <Min>] [--note <Text>] [--schedule <Time>]
+                Creates new routine with optional parameters:
+                --freq/-f Frequency (daily, weekly, monthly, yearly, etc.)
+                --cat/-c category (kitchen, bathroom, living room, etc.)
+                --dur/-d Duration in minutes
+                --note note
+                --schedule Schedule details
+                Example: bach routine add "vacuuming" --freq weekly --cat living room --dur 30
+
+  help Displays this help.
+
+FREQUENCIES (full list)
+-------------------------------
+Supported frequency values for --freq:
+  daily, daily, daily
+  weekly, weekly, weekly
+  Biweekly, biweekly, biweekly
+  monthly, monthly
+  quarter, quarterly
+  semi-annually, semi-annually
+  annually, yearly, yearly
+
+ABM SYNTAX
+----------
+Marker:
+  !!!  = Overdue
+  + = Active
+  - = Inactive
+
+DATABASE (layer 1)
+---------------------
+- Table: `household_routines` (in `bach.db`).
+- Fields: id, name, frequency, schedule, category, duration_minutes,
+          last_done, next_due, is_active, notes, created_at.
+- Statistics: Variable number (depending on DB content).
+
+GUI & INTEGRATION
+-----------------
+The **Household Dashboard** in the GUI visually shows the status of the routines.
+Routines are also integrated into the global `calendar` handler.
+
+SEE ALSO
+----------
+  bach calendar         Combined appointment and routine view
+  bach --help gesundheit  Additional household tools (inventory)
+  docs/help/maintain.txt DB relocation history (User->Bach)

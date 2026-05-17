@@ -1,0 +1,35 @@
+BACH ツール: pattern_tool
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/pattern_tool.py
+
+説明
+----------------------------------------
+pattern_tool.py - パターン認識を通じてファイル名を短縮します
+------------------------------------------------------------
+
+pattern_renamer.py と pattern_trimmer.py を 1 つのツールに組み合わせます。
+
+機能:
+- PREFIX: グループに共通のプレフィックスを削除します。
+- SUFFIX: グループから共通のサフィックスを削除します。
+- BOTH: プレフィックスとサフィックスの組み合わせ
+
+使用法:
+    python pattern_tool.py <フォルダー> --dry-run
+    python pattern_tool.py <フォルダ> --execute
+    python pattern_tool.py <フォルダ> --prefix-only
+    python pattern_tool.py <フォルダー> --サフィックスのみ
+    python pattern_tool.py <folder> -m 5 # 最小 5 文字のパターン
+
+作成者: BACH v1.1
+
+使用
+----------------------------------------
+python bach.py tools run pattern_tool [args]
+または直接: python tools/pattern_tool.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show pattern_tool

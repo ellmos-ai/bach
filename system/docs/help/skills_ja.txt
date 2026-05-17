@@ -1,0 +1,216 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [スキル テーブル、skill_sources.json]
+
+BACH SKILLS SYSTEM (Architecture v2.0)
+-------------------------------------
+
+現在: 2026-02-08
+
+スキルは、LLM を拡張する特殊なスキルです。
+これらは、レイヤー 3 (ロジックとスキル) でモジュール式に編成されています。
+
+バージョン チェックの原則 (新規)
+----------------------------
+ローカルか中央かに関係なく、常に最新バージョンを使用します:
+
+  bach --skills version <name>  # バージョンを確認
+  bach --tools version <name>   # ツールのバージョンを確認
+
+スキル構造: 1 つのスキル = 1 つのフォルダー (新規)
+--------------------------------------------
+各スキル、エージェント、エキスパートは、独自のフォルダー内で完全に自立します:
+
+  FLAT (標準、< 5 ファイル):
+  ----------------------------
+  エージェント/開発者/
+  +-- SKILL.md # 標準ヘッダーによる定義
+  +-- tools_xyz.py # 特定のツール (ルートに直接)
+  +-- workflow_abc.md # 特定のワークフロー (ルートに直接)
+  +-- config.json # オプション
+
+  複雑 (>= 5 ファイル):
+  ------------------------
+  エージェント/_専門家/税金/
+  +-- スキル.md
+  +-- tools/ # 多くのツールのサブフォルダー
+  +-- workflows/ # 多くのワークフローのサブフォルダー
+  +-- data/ # 特定のデータ
+
+階層とカテゴリー
+-----------------------
+スキル/
++-- _agents/ エージェント (オーケストレーション、独自のフォルダー)
++-- _experts/ 専門家 (ドメインの知識、独自のフォルダー)
++-- _services/ Services (ハンドラー近く、独自のフォルダー)
++-- _connectors/ アダプター (Telegram、Discord、HA、独自のフォルダー)
++-- パートナー/パートナー統合 (独自のフォルダー)
++-- _os/ OS 固有のスキル (独自のフォルダー)
++-- _workflows/ ワークフロー (フォルダーなし、1 ファイル = 1 ワークフロー)
++-- _templates/ 標準テンプレート (TEMPLATE_*.md)
+
+コンポーネント タイプ
+-----------------
+
+  タイプフォルダーの特性
+  ---------- --------------- -----------------------------
+  エージェント _agents/<名前>/ 専門家と独自のフォルダーを調整します
+  Expert _experts/<name>/ 深いドメイン知識、独自のフォルダー
+  Service _services/<name>/ 一般、ハンドラー関連、独自のフォルダー
+  Connector _connectors/<name>/ 外部サービス用アダプター
+  パートナー パートナー/<名前>/ パートナー統合 (統合)
+  OS スキル _os/<名前>/ OS 固有の機能
+  ワークフロー _workflows/ フォルダーなし (1 ファイル = 1 ワークフロー)
+  ツール (一般) システム/ツール/ 再利用可能、スキル関連ではない
+  ツール (特定) スキル フォルダ内 このスキルのみ
+
+ツールの重複
+-----------------
+ルール: 迷った場合は、二重にしておいてください!
+
+  system/tools/c_ocr_engine.py # 一般バージョン
+  Agents/_experts/steuer/steuer_ocr.py # スキル固有のバージョン
+
+利点:
+- 独立して開発可能
+- スキルは自給自足のまま
+- 依存関係の競合はありません
+
+重要: tools/ は system/tools/ の下にあります (skills/tools/ の下ではありません)
+
+CONNECTORS (NEW 2026-02)
+------------------------
+_connectors/ には外部サービス用のアダプターが含まれています。
+- telegram_connector.py - Telegram Bot API の統合
+- discord_connector.py - Discord ボットの統合
+- homeassistant_connector.py - ホーム アシスタントの統合
+-base.py - 基本コネクタ クラス
+- SKILL.md - コネクタのドキュメント
+
+コネクタは、外部プラットフォームに接続する特殊なサービスです。
+これらは主に非同期通信とイベント キューを使用します。
+
+標準ヘッダー (必須)
+-------------------------
+すべてのコンポーネントには YAML-Frontmatter ヘッダーが必要です。
+
+  ---
+  名前: [名前]
+  バージョン: X.Y.Z
+  タイプ: スキル |エージェント |専門家 |サービス |コネクタ |パートナー | OS |ワークフロー
+  著者: [著者]
+  作成日: YYYY-MM-DD
+  更新日: YYYY-MM-DD
+  anthropic_compatibility: true
+  依存関係:
+    ツール: []
+    サービス: []
+    ワークフロー: []
+  説明: >
+    【説明】
+  ---
+
+テンプレート: skill/_templates/TEMPLATE_*.md
+
+EXPORT SYSTEM
+-------------
+エクスポートされたスキルは BACH なしで動作する必要があります:
+
+  bach --skills export <name>  # 自己完結型パッケージを作成します
+
+エクスポートには以下が含まれます:
+- ヘッダー付きSKILL.md
+-manifest.json (依存関係、バージョン)
+- すべての特定のツール
+- すべての特定のワークフロー
+- README.md (スタンドアロン ガイド)
+- 必要なバッハからのすべての一般リソース
+
+スキルソースとセキュリティ
+--------------------------
+
+  クラスソースアプローチ
+  ---------- --------------------------------- -----------------------------
+  ゴールドスタンダード 自己記述による最良の統合
+  信頼できる人類学/スキル、料理本 1:1 テスト後 OK
+  信頼できない他の GitHub リポジトリのみを書き換えます
+  ブラックリスト data/skill_blacklist.json 禁止
+
+チェック: data/skill_sources.json
+
+DB 同期
+------------------
+すべてのスキルは、ファイル システムと DB の間で双方向に同期されます。
+- テーブル: スキル (現在 876 エントリ)
+- フィールド: 名前、タイプ、パス、content_hash、is_active、バージョン
+- 詳細フィールド: category、priority、trigger_phrases、dist_type、template_content、content
+- 統計: bach --skills list
+
+CLI コマンド
+-----------
+  bach skills list               すべてのスキルのリスト
+  bach skills show <name>        コンテンツとメタデータ
+  bach skills search <term>      機能の検索
+  bach skills version <name>     バージョン チェック (ローカル vs セントラル)
+  bach skills export <name>      自立型パッケージ (v2.0) の作成
+  bach skills install <path>     ZIP/ディレクトリからスキルをインポート
+  bach skills export-agent <n>   スキルをクロード コード エージェントとしてエクスポート
+  bach skills hierarchy          DB から階層を表示
+  bach skills hierarchy <typ>    タイプのみを表示(エージェント/エキスパート/スキル/サービス/ワークフロー)
+
+自己拡張 (新しい v2.5)
+-----------------------------
+  bach skills create <name> --type <typ>   足場の新しい機能
+  bach skills reload                        再起動なしのホット リロード
+
+  「作成」でサポートされているタイプ:
+
+    --type ツール作成: system/tools/<名前>.py
+                       標準テンプレートを使用した Python スクリプト
+                       導入後すぐに使用可能
+
+    --type エージェント作成: system/agents/<名前>/SKILL.md
+                       独自のフォルダー、他のコンポーネントを調整する
+                       標準ヘッダー付きのテンプレート
+
+    --type Expert 作成日: system/agents/_experts/<名前>/SKILL.md
+                       独自のフォルダー、深いドメイン知識
+                       標準ヘッダー付きのテンプレート
+
+    --type ハンドラー作成: system/hub/<名前>.py
+                       CLI コマンドとしてすぐに使用可能です。
+                       get_operations() を使用した BaseHandler サブクラス
+                       'reload' 後に bach <name> 経由でアクセス可能
+
+    --type 作成されたサービス: system/skills/_services/<名前>/
+                       __init__.py と service.py が含まれるフォルダー
+                       ハンドラークローズ、通常使用可能
+
+  ワークフロー:
+    1. Bach スキルが my-tool --type ハンドラーを作成する
+    2. Hub/my_tool.py を編集 (ロジックの実装)
+    3.バッハスキルのリロード
+    4. bach mein-tool ヘルプ (すぐに利用可能!)
+
+  作成/再ロード後のフック:
+    after_skill_create → 「作成」のたびに発行されます
+    after_skill_reload → 各「リロード」後に発行されます
+
+GUI (スキル ボード)
+------------------
+インタラクティブなスキル ボードには階層全体が表示されます。
+同期ステータスを確認し、直接編集できるようにします。
+
+  http://127.0.0.1:8000/skills
+
+関連項目
+----------
+  bach help agents             エージェントの概要
+  bach help tools              ツール管理
+  bach help workflow           ワークフロー システム
+  bach help naming             命名規則
+  bach help hooks              フック フレームワーク (14 イベント)
+  bach help self-extension     自己拡張システム
+  SKILL.md 中央スキル定義
+  data/skill_sources.json スキルのソースとバージョン

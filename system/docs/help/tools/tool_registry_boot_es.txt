@@ -1,0 +1,24 @@
+Herramienta BACH: tool_registry_boot
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/tool_registry_boot.py
+
+DESCRIPCIÓN
+----------------------------------------
+Integración de arranque para Tool Registry
+-----------------------------------
+
+Llamada durante el proceso de arranque de RecludOS.
+Carga todos los registros de herramientas en el contexto global.
+
+Versión: 1.0.0
+
+USE
+----------------------------------------
+python bach.py tools run tool_registry_boot [args]
+o directamente: python tools/tool_registry_boot.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde docstring
+- Si tiene alguna pregunta: herramientas de bach muestra tool_registry_boot

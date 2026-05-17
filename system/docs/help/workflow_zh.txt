@@ -1,0 +1,169 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+工作流程 - BACH 工作流程
+--------------------------------
+
+描述
+------------
+工作流程描述您何时以何种顺序使用何种技能。
+工作流程是战略性使用技能的指南。
+
+工作流程存储
+--------------------
+  技能/工作流程/ 所有 BACH 工作流程（22 个 .md 文件）
+  Agents/_experts/tax/ 税务工作流程（7 个 .md 文件）
+  DB：技能表类型='工作流程'（自动同步）
+
+可用工作流程
+---------------------
+  系统工作流程（10）：
+  ----------------------
+  bugfix-protocol.md 纠错流程
+  cli-change-checklist.md 添加 CLI 命令
+  dev-cycle.md 开发周期（8 个阶段）
+  folder-flattening.md 展平文件夹结构
+  projekt-aufnahme.md 记录新项目
+  service-agent-validator.md 服务/代理验证器
+  system-connectionanalysis.md 集成检查
+  system-aufraeumen.md 清理和归档
+  system-mapping.md 地图系统
+  system-synopse.md 创建系统概述
+  system-testverfahren.md 测试程序
+
+  文档工作流程 (4)：
+  ----------------------------
+  docs-analysis.md 文档分析
+  help-forensic.md 帮助实际目标测试（重复：14天）
+  wiki-author.md 创建 wiki 帖子（重复：21 天）
+  migrate-rename.md 使用包装器重命名文件
+
+  合作伙伴工作流程 (2)：
+  ----------------------
+  gemini-delegation.md 将任务委托给 Gemini
+  google-drive.md Google 云端硬盘使用情况
+
+  分析工作流程 (4)：
+  ----------------------
+  agent-skill-finder.md 代理技能映射分析
+  Skill-Coverageanalysis.md 检查技能覆盖率
+  Synthese.md 合并文档
+  ing-strategy.md ING 银行工作流程
+
+  个人工作流程（1）：
+  ----------------------------
+  cv- Generation.md 创建/更新简历
+
+  税务工作流程 (7)：
+  --------------------
+  注意：这些工作流程位于 Agents/_experts/steuer/
+
+ 中  steuer-beleg-scan.md 扫描并记录收据
+  steuer-fahrtkosten-homeoffice.md 计算旅行费用 + 家庭办公室
+  steuer-finanzamt-export.md 创建税务局导出
+  steuer-sonderspenden-verfassung.md 记录特殊费用
+  steuer-telekommunikation-eigenbeleg.md 互联网/电话 20% 统一费率
+  tax-insurances-record.md 出于税务目的记录保险
+  steuer-advertising-costs-recording.md 记录广告费用
+
+何时、哪个工作流程
+---------------------
+  发现错误？           -> bugfix-protocol.md
+  新的 CLI 命令？       -> cli-change-checklist.md
+  新项目？          -> 项目录制.md
+  分析系统？     -> system-mapping.md 或 system-synopse.md
+  清理干净吗？             -> 系统-aufraeumen.md
+  检查集成？    -> 系统连接分析.md
+  使用双子座？          -> 双子座委托.md
+  检查帮助？           -> help-forensic.md（重复：14天）
+  展开维基？         -> wiki-author.md（重复周期：21 天）
+  重命名文件？       -> 迁移重命名.md
+  简化文件夹？    -> 文件夹展平.md
+  差旅费/家庭办公室？ -> 税务-旅行-费用-homeoffice.md
+  扫描收据？         -> 税务收据扫描.md
+  广告费？         -> 记录税收广告成本.md
+  特别版？         -> 记录特别税收费用.md
+  保险税？  -> 税务保险-capture.md
+  互联网/电话？       -> 税务-电信-eigenbeleg.md
+  税务局出口？       -> 税务-金融-出口.md
+  开发周期？     -> dev-cycle.md（8 个阶段）
+
+标准会话工作流程
+-------------------------
+1。 bachstartup#启动会话（默认：GUI模式）
+2.读取ROADMAP.md #选择任务
+3. 编辑任务
+4.中间任务：bach status #检查时间
+5. bach shutdown # 结束会话
+
+会话计时
+--------------
+  超时保护：Claude 可以在约 13 分钟后中止
+  建议：每 10 分钟记录一次简短的状态
+  对于长任务：巴赫内存会话“状态：...”
+
+任务大小
+---------------
+  <5 分钟 就做吧
+  保持当前记忆约 15 分钟
+  >30 分钟预构建（创建子任务）
+  >1h 包含为计划任务
+
+定义：工作流程与团队流程
+---------------------------------
+┌────────────────────────────┬─ ────────────────────────────────┐
+  │ 工作流程 │ 团队流程（计划） │
+  ├────────────────────────────┼─ ────────────────────────────────┤
+  │ 一名演员 │ 多名演员 │
+  │ 步骤说明 │ 交接管理 │
+  │ .md 文件中的文本 │ DB/JSON 结构 │
+  │ 技能/工作流程/ │ GUI 技能板（计划中） │
+  └────────────────── ────────┴──────────── ──────────────────┘
+
+CLI 命令
+-----------
+  bach help workflow           这些帮助
+  bach help between-tasks      中间任务检查
+  bach help startup            会话开始
+  bach help shutdown           会话结束
+
+  bach startup                 启动会话（默认：GUI）
+  bach startup quick           快速启动，无需目录扫描
+  bach startup mode            更改模式：gui|text|dual|silent
+
+  bach status                  显示系统状态
+
+  bach shutdown                结束会话（使用目录扫描）
+  bach shutdown quick          快速，无需目录扫描
+  bach shutdown emergency      紧急 - 仅保存工作内存
+
+工作流程读取
+--------------
+  # 直接在文件系统中：
+  技能/工作流程/<名称>.md
+  代理/_experts/steuer/<名称>.md
+
+  # 带有帮助系统（别名支持）：
+  bach help workflow/bugfix-protokoll
+  bach help workflow/help-forensic
+
+  # 在聊天客户端中：
+  阅读工具：skills/workflows/bugfix-protocol.md
+
+创建新工作流程
+------------------------
+1。创建文件：skills/workflows/mein-workflow.md
+2、备注格式：
+   - 标题带有#
+   - 步骤编号
+   - 明确制定条件
+   - 对其他工作流程/技能的引用
+
+另请参见
+----------
+  bach help tasks              任务系统
+  bach help maintain           维护工具
+  bach help startup            会话启动协议
+  bach help skills             技能系统
+  docs/con4_CONCEPT_Skill_Architecture_v2_70.md 技能架构

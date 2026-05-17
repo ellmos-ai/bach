@@ -1,0 +1,28 @@
+Инструмент BACH: c_sqlite_viewer
+--------------------------------------------------
+Создано: 23 января 2026 г., 10:36.
+Источник: инструменты/c_sqlite_viewer.py
+
+ОПИСАНИЕ
+----------------------------------------
+sqlite_viewer_cli.py — адаптер CLI для SQLite Viewer
+
+Просматривает и экспортирует содержимое базы данных SQLite.
+Основная логика извлечена из show_user_sqlite.py
+
+Использование:
+    python sqlite_viewer_cli.py <database.db> --tables
+    python sqlite_viewer_cli.py <database.db> --table <имя> [--limit 100]
+    python sqlite_viewer_cli.py <database.db> --query «ВЫБРАТЬ * ИЗ пользователей»
+    python sqlite_viewer_cli.py <database.db> --schema
+    python sqlite_viewer_cli.py <database.db> --export <table> --format csv
+
+USE
+----------------------------------------
+инструменты Python bach.py запускают c_sqlite_viewer [args]
+или напрямую: python Tools/c_sqlite_viewer.py [args]
+
+ПРИМЕЧАНИЯ
+----------------------------------------
+- Автоматически генерируется из строки документации.
+- Если у вас есть вопросы: инструменты bach показывают c_sqlite_viewer.

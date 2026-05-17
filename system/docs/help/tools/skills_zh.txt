@@ -1,0 +1,131 @@
+BACH 技能工具
+-----------------
+
+用于管理、监控和验证 BACH 技能的工具。
+
+快速入门
+------------
+  bach --maintain skills                    # 技能运行状况检查
+  bach skill list                          # 技能列表
+  bach skill export NAME                   # 导出技能
+
+什么是技能？
+----------------
+技能是 BACH 中可重复使用的技能模块：
+- _agents/：老大特工（ATI、税务代理等）
+- _experts/：专家技能（数据分析等）
+- _services/：服务技能（沟通、重复等）
+
+技能健康监控
+--------------------
+监控并验证所有技能。
+
+命令：
+  python 工具/维护/skill_health_monitor.py 检查
+  python 工具/维护/skill_health_monitor.py 检查 --skills
+  python 工具/维护/skill_health_monitor.py check --agents
+  python tools/maintenance/skill_health_monitor.py 报告
+
+检查的内容：
+- SKILL.md 完整性（名称、版本、描述）
+- 代理清单 (manifest.json)
+- 目录结构
+- 孤立或损坏的技能
+
+集成在--startup中：
+会话开始时，技能运行状况监控器会自动运行
+并在启动输出中报告问题。
+
+技能导出/导入
+-------------------
+技能可以导出并安装在其他系统上。
+
+导出：
+  bach skill export SKILLNAME
+  -> 使用所有文件+manifest.json
+
+导入：
+  bach skill install PFAD/skill.zip
+ 创建 SKILLNAME.zip  -> 解压并集成到技能/
+
+ATI EXPORT（特定于代理）：
+  bach ati export
+  -> 导出具有所有依赖项的 ATI 代理
+
+技能目录结构
+-------------------------
+技能/
+├── SKILL.md # 主要SKILL.md（巴赫本身）
+├── AGENT_KONVENTION.md # 代理规则
+├── SKILL_ANALYSE.md # 覆盖率分析
+│
+├── _agents/ # Boss 特工
+│ ├── ati/ # 软件开发商代理
+│ ├──tax-agent.txt # 税务代理
+│ └── ...
+│
+├── _experts/ # 专家模块
+│ └── data-analysis/ #数据分析专家
+│
+└── _services/ # 后台服务
+    ├──communicate.md # 伙伴沟通
+    └── recurring/ # 周期性任务
+
+SKILL.MD FORMAT
+---------------
+每个 SKILL.md 必须有 YAML front Matter:
+
+---
+name: Skill-name
+版本：1.0.0
+描述：简短描述
+last_updated: 2026-01-23
+---
+
+# 技能名称
+
+内容和文档...
+
+验证
+-----------
+必填字段：名称、版本、描述
+推荐：last_updated、作者、依赖项
+
+代理还需要：
+-manifest.json（强制）
+- README.md（推荐）
+- CHANGELOG.md（推荐）
+
+数据库集成
+---------------------
+技能在 bach.db 中注册：
+
+  从技能中选择*；                    # 所有技能
+  从代理中选择*；                    # 所有代理
+  从代理协同中选择*；           # 代理关系
+
+CLI 命令
+-----------
+  bach --maintain skills      # 运行状况检查（在 --startup 中）
+  bach skill list             # 从数据库列出技能
+  bach skill export NAME      # 导出技能
+  bach skill install PFAD     # 安装技能
+
+提示
+-----
+- 技能运行状况监视器在每个 --startup 上运行
+- 问题被报告为警告/错误
+- 对于新技能：使用正确的前面内容创建 SKILL.md
+- 始终使用 manifest.json 创建代理
+
+另请参见
+----------
+  bach --help agents           # 代理文档
+  bach --help ati              # ATI 代理详细信息
+  bach --help maintain         # 维护工具
+  Skills/AGENT_KONVENTION.md # 代理规则
+
+---
+版本：1.0.0
+创建时间：2026-01-23
+部分内容：BACH 工具文档

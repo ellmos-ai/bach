@@ -6,7 +6,8 @@ import concurrent.futures
 import time
 import re
 
-HELP_DIR = Path('C:/Users/User/OneDrive/.TOPICS/.AI/.OS/BACH/system/docs/help')
+SYSTEM_ROOT = Path(__file__).resolve().parents[1]
+HELP_DIR = SYSTEM_ROOT / 'docs' / 'help'
 LANGS = ['en', 'es', 'ru', 'zh', 'ja']
 LANG_MAP = {
     'en': 'en',

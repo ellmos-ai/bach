@@ -1,0 +1,29 @@
+BACH Tool: distribution_system
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/distribution_system.py
+
+DESCRIPTION
+----------------------------------------
+RecludOS Distribution & Identity System v1.1.0
+
+Managed:
+- Tier classification (Kernel, Core, Extension, UserData)
+- Seal system (integrity check)
+- Modes (Developer, User, Learn)
+- Versioning with source suffixes
+- Release creation and export
+- Snapshots & Point-in-Time Recovery
+- Multi-instance detection
+
+Date: 2026-01-01
+
+USE
+----------------------------------------
+python bach.py tools run distribution_system [args]
+or directly: python tools/distribution_system.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show distribution_system

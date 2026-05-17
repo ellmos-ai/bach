@@ -1,0 +1,105 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BEST PRACTICES
+--------------
+
+BACH CLI FIRST CHOICE:
+  ALWAYS use bach.py for all operations
+  - Tasks --> bach task add/list/done
+  - Memory --> bach mem write/read
+  - Skills --> bach --skills list/search
+  - Tools --> bach tools list/run
+
+WHY?
+  - Encoding safe (UTF-8)
+  - Validates structure
+  - No corruption
+  - Nuclear operations
+  - Uniform interface
+
+ALTERNATIVES (ONLY IF CLI DOESN'T WORK):
+  1. Python script with bach_paths.py
+  2. Direct DB query (read only!)
+  3. Never manual JSON editing!
+
+RULES INDEX:
+  What?                      Where?
+  CLI syntax --help cli
+  Memory rules --help memory
+  Task system --help tasks
+  Coding standards --help coding
+  Folder structure --help bach_paths
+  Naming conventions --help naming
+  Data formats --help formats
+  Known issues --help lessons
+  Tool overview --help tools
+  Tool prefixes --help naming (TOOL PREFIXES section)
+  Policy Validators tools/_policies/
+
+ARCHITECTURAL PRINCIPLES:
+-----------------------
+These rules apply system-wide:
+
+1. STORE CONCEPTS CENTRALLY IN DOCS/
+   All CONCEPT_*.md belong in docs/ (root directory).
+   ONE place for all plans = better overview.
+
+   After implementation: Move concept to docs/_archive.
+
+   MARKDOWN FILES IN THE SYSTEM:
+   - docs/CONCEPT_*.md = concepts and plans (central!)
+   - */README.md = folder guide, index
+   - skills/SKILL.md = Agent/Skill documentation
+   - skills/*.md = Agent main document (ATI.md, STEUER.md)
+
+   RULE: Decentralized .md are ONLY for navigation and skill documentation,
+          NOT for concepts or plans.
+
+2. DOCS/FOLDER STRUCTURE
+   docs/ concerns the DEVELOPMENT of the system:
+
+   _archive/ Archived old concepts (implemented/obsolete)
+   _ideas/ Long-term concepts (not yet approved)
+   _test_and_reports/ Developer analyses, current statuses, tests
+   analysis/analysis results and reports
+   reference/ Reference documentation
+   (root) CONCEPT_*.md - All concepts centrally
+                      ONE place for all plans to be implemented
+
+   user/ concerns the USE of the system:
+   - Reports that arise through usage
+   - Not for system development
+
+3. EVOLUTIONARY MIGRATION
+   No hard breaks when renaming/restructuring.
+   Migrate old structures step by step, not all at once.
+
+4. A UNIFIED DATABASE
+   bach.db = Single main DB (210+ tables, everything in it)
+
+   Note: user.db was merged into bach.db in v1.1.84.
+   registry.db (distribution) and archive.db (archive) are
+   Special DBs, not part of the core system.
+
+5. DATABASE BEFORE JSON (RecludOS doctrine!)
+   JSON files only in justified exceptional cases.
+   The default is ALWAYS the database.
+
+   JSON only allows if:
+   - User-specific (freshly created, not migrated)
+   - Transparency is important (user should edit directly)
+   - Process character (short-lived, processing)
+   - Import/Export exchange format
+
+   Details: docs/help/formats.txt
+
+6. DIST_TYPE THREE STEP
+   2 = CORE (system file, distribution is backup)
+   1 = TEMPLATE (1x snapshot for reset)
+   0 = USER (user data, normal rotation)
+
+7. HELP AS TRUTH
+   docs/help/*.txt is the primary documentation.
+   In case of objection: docs/help/ wins.

@@ -1,0 +1,36 @@
+巴赫工具：c_method_analyzer
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/c_method_analyzer.py
+
+描述
+----------------------------------------
+c_method_analyzer.py - Claude 的 Python 代码分析器
+
+目的：分析 Python 代码中的方法、调用、导入和潜在问题。
+       摘自MethodsAnalyser3.py - 删除了GUI，添加了CLI 界面。
+
+作者：Claude（改编自用户工具）
+版本：2.0（扩展包括信号检查、属性检查、编码修复）
+依赖项：ast、collections、difflib、datetime（所有标准库）
+
+功能：
+-analyze_file(path) -> AnalysisResult：主要分析
+-generate_report（结果）->str：格式化报告
+- get_summary(result) -> dict：用于进一步处理的紧凑摘要
+
+v2.0 中的新增功能：
+- Windows 控制台编码修复
+- 信号连接检查（.connect(self.X) -> X 是否存在？）
+- Attribute-before-init 检测（self.X 在 self.X = ... 之前使用）
+- 改进了拼写错误检测（_show_X 与 show_X）
+
+使用
+----------------------------------------
+python bach.py 工具运行 c_method_analyzer [args]
+或直接： python tools/c_method_analyzer.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：bach 工具显示 c_method_analyzer

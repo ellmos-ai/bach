@@ -1,0 +1,26 @@
+BACH 工具：项目
+------------------
+
+项目管理和代码生成。
+
+可用工具
+-----------------
+
+  audit_bundler 将项目审计导出为包
+  license_generator 生成许可证文件
+  pattern_tool 代码模式识别
+  project_bundler 将项目捆绑为包
+  Structure_generator 创建项目结构
+
+使用
+----------
+
+  bach --tools project audit <pfad>      审核项目
+  bach --tools project license <typ>     生成许可证（MIT、Apache 等）
+  bach --tools project bundle <pfad>     捆绑项目
+  bach --tools project structure <name>  创建新项目结构
+
+模块
+-----
+
+  工具/项目/（5 个工具）

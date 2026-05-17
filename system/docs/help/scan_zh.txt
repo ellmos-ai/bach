@@ -1,0 +1,94 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SCAN - 任务扫描器和目录分析
+---------------------------------------------
+
+已弃用：保留此处理程序是为了向后兼容。新功能：bach ati scan
+
+SCAN 是用于管理任务扫描和目录扫描的旧处理程序。
+分析。该扫描仪可与 ATI 基础架构和 SQLite 数据库配合使用
+bach.db 一起。现代扫描操作通过“bach ati scan”运行。
+
+命令
+-------
+
+bach scan run              启动扫描器（ATI 任务扫描器）
+bach scan status           显示上次扫描状态
+bach scan tasks            显示扫描任务（--tool 扫描所有已注册工具的任务。
+输出摘要：扫描的工具、找到的任务、新增和更新的任务
+任务。将结果存储在 ati_scan_runs 表 (bach.db) 中。
+bach scan tools            STATUS
+bach scan dir PATH         显示数据库上次扫描的状态：
+- 时间戳和持续时间
+- 上次扫描中的工具和任务数量
+- 总体统计：已注册的工具、已扫描的任务、未完成的任务
+
+任务
+-----------
+
+列出已完成和正在进行的任务，并按优先级排序。
+显示：工具名称、任务文本（缩短）、工作量、状态、优先级分数。
+最多限制 20 个任务。
+---
+使用 --tool FILTER：按工具名称过滤任务（子字符串匹配）。
+
+TOOLS
+------
+列出 ati_tool_registry 中注册的工具以及任务编号，
+状态和扫描日期。按任务数排序。最大。 30 个工具。
+
+DIR
+-----
+使用 DirectoryScanner (tools/dirscan.py) 扫描任何目录。
+显示目录树、文件列表和文件大小。
+
+示例
+
+# 启动扫描程序
+-----
+# 检查状态
+
+# 所有打开的任务
+---
+# 特定工具的任务
+
+# 显示已注册的工具
+---------
+
+# 扫描目录
+bach scan run
+
+数据源
+bach scan status
+
+数据库：data/bach.db (SQLite)
+表：ati_scan_runs、ati_tasks、ati_tool_registry
+扫描器：agents/ati/scanner/task_scanner.py（TaskScanner）
+Dir Scanner：tools/dirscan.py (DirectoryScanner)
+bach scan tasks
+
+另请参见
+bach scan tasks --tool featureX
+
+ATI Agent（现代扫描命令）
+bach scan tools
+
+构建自动化
+bach scan dir C:\Projekte\myapp
+bach scan dir /c/Users/User/OneDrive
+
+DATENQUELLEN
+------------
+
+Datenbank:    data/bach.db (SQLite)
+Tabellen:     ati_scan_runs, ati_tasks, ati_tool_registry
+Scanner:      agents/ati/scanner/task_scanner.py (TaskScanner)
+Dir-Scanner:  tools/dirscan.py (DirectoryScanner)
+
+SIEHE AUCH
+----------
+
+bach --help ati        ATI Agent (moderne Scan-Befehle)
+bach --help builder    Build-Automatisierung

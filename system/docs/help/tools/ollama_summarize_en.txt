@@ -1,0 +1,18 @@
+BACH Tool: ollama_summarize
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/ollama_summarize.py
+
+DESCRIPTION
+----------------------------------------
+Ollama session report summary
+
+USE
+----------------------------------------
+python bach.py tools run ollama_summarize [args]
+or directly: python tools/ollama_summarize.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show ollama_summarize

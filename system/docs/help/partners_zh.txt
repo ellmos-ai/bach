@@ -1,0 +1,75 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[partner_recognition、连接、消息、delegation_rules 表]
+
+合作伙伴 - 通信合作伙伴配置文件
+-----------------------------------------
+
+状态：2026-02-08
+
+合作伙伴系统（第 5 层）协调之间的协作
+人类用户、本地模型（Ollama）和外部代理（Claude、Gemini）。
+
+合作伙伴概述（快照）
+-----------------------------
+|身份证 |合作伙伴|类型 |工作区/后端 |
+|----------------|----------------|--------------|--------------------------------|
+| 001|用户 |人类 |用户/消息框/ |
+| 002|克劳德|人工智能 |合作伙伴/克劳德/ |
+| 003|奥拉玛 |本地人工智能 | 127.0.0.1:11434 |
+| 004|双子座|代理|反重力（本地）|
+| 006|考研| MCP API |研究服务器
+
+|合作伙伴重点：GEMINI
+---------------------
+- 后端：反重力（Google DeepMind 工具链）。
+- 启动器：`system/partners/gemini/start_gemini.bat`
+- 工作空间：`system/partners/gemini/`（收件箱/发件箱模型）。
+- 规则：请参阅 `system/partners/gemini/GEMINI.md`
+
+合作伙伴焦点：CLAUDE
+---------------------
+- 后端：Anthropic Sonnet（通过 Claude Desktop/MCP）。
+- 角色：操作人工智能（编排者）。
+- 工作空间：`system/partners/claude/`
+
+通过消息进行协调
+-------------------------
+合作伙伴通过`消息`系统（bach.db）进行通信。
+命令：
+  bach msg send <recipient> "text" --from <sender>
+  bach msg list --inbox     （显示收件箱）
+  bach msg unread           （显示未读）
+  bach msg read <id>        （读取消息）
+
+服务和表格 (bach.db)
+----------------------------
+- `partner_recognition`：合作伙伴配置文件（工具、功能、区域）
+- `connections`：技术端点（API 密钥、URL）
+- `messages`：持久聊天历史记录（收件箱/发件箱）
+- `delegation_rules`：基于令牌的授权区域
+
+通信卫生
+----------------------
+1。每个会话都以“bach --startup”开始
+2.检查任务：`bach任务列表--分配<partner>`
+3. 将结果存储在`outbox/`中（例如REPORT_*.md）
+4. 完成任务：`bach 任务已完成 <id> "Notiz"`
+5. 发送消息： `bach msg send <to> "text" --from <sender>`
+
+另请参阅
+----------
+  docs/help/partner.txt 委托逻辑和角色
+  docs/help/communicate.txt 交互协议
+  docs/help/messages.txt 消息语法
+  system/partners/_README.md 合作伙伴文件夹的结构
+
+CLI 访问
+-----------
+  bach --partner list                  列出所有合作伙伴
+  bach --partner status                状态概述
+  bach --partner info <name>           合作伙伴详细信息
+  bach --partner delegate <task>       委托任务（令牌感知）
+  bach --connections list              连接注册表
+  bach msg list                        查看消息

@@ -1,0 +1,119 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+设置处理程序
+---------------
+
+处理程序名称
+------------
+设置
+
+描述
+------------
+设置处理程序管理 BACH 数据库中的系统设置
+（系统配置表）。设置是带有可选的键值对
+类别、描述和分发类型（用户/模板/核心）。
+
+操作
+-----------
+
+列表
+----
+bach settings list
+bach settings list --category=KATEGORIE
+
+显示所有保存的设置。可选择按类别过滤。
+输出显示：键、值、类型、类别、描述、距离类型 (USER/TMPL/CORE)
+
+GET
+---
+bach settings get <key>
+
+读取具有完整元数据的单个值。
+显示：键、值、类型、类别、描述、距离类型、更新时间戳
+
+SET
+---
+bach settings set <key>=<value> [--category=CAT] [--desc=TEXT]
+
+设置新值或更新现有值。
+- 新设置获取 dist_type=0 (用户)
+- 核心设置 (dist_type=2) 无法更改
+- 选项--category：将设置存储在类别中
+- 选项--desc：添加描述
+- 在集成时启动合作伙伴 MD 更新。*-按键
+
+重置
+-----
+bach settings reset <key>
+
+删除设置。 CORE 设置无法删除。
+只能删除 USER 和 TEMPLATE。
+
+EXPORT
+------
+bach settings export [dateiname]
+
+将所有设置导出为 JSON。输出到标准输出，不带文件名。
+格式：{key: {值、类型、类别、描述、dist_type}}
+
+IMPORT
+------
+bach settings import <dateiname>
+
+从 JSON 文件导入设置。仅覆盖用户/模板，
+CORE 设置不受影响。显示导入/跳过的数量。
+
+类别
+----------
+bach settings categories
+
+显示所有可用类别及条目计数。
+
+示例
+---------
+
+列出所有设置：
+$ 巴赫设置列表
+
+按类别过滤：
+$ bach 设置列表 --category=security
+
+读取设置：
+$ bach settings get db.backup_interval
+
+设置设置（新）：
+$ bach settings set log.level=DEBUG --category=behavior --desc="Logging Verbositaet"
+
+更新设置：
+$ bach settings set log.level=INFO
+
+删除设置：
+$ bach settings Reset log.level
+
+导出并保存设置：
+$bach设置导出settings_backup.json
+
+导入设置：
+$bach settings import settings_backup.json
+
+列出类别：
+$ bach settingscategories
+
+FILES
+-------
+hub/settings.py 处理程序实现（相对：hub/settings.py）
+bach.db (system_config) 数据库表（路径：BACH_DB）
+
+相关类别
+--------------------
+claude_permissions Claude 代码的权限配置文件（请参阅 Permissions.txt）
+
+另请参见
+----------
+hub/base.py BaseHandler（相对：hub/base.py）
+hub/bach_paths.py BACH_DB 常量（相对：hub/bach_paths.py）
+hub/claude_permissions.py 权限处理程序（相对：hub/claude_permissions.py）
+docs/BACH-SCHEMA.md 数据库架构（相对：docs/BACH-SCHEMA.md）
+Permissions.txt Claude 代码 权限配置文件

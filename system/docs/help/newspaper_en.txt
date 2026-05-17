@@ -1,0 +1,83 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NEWSPAPER HANDLER
+-----------------
+
+DESCRIPTION
+------------
+
+Daily PDF newspaper from news items. Collects items from various
+Sources, generates a formatted HTML/PDF newspaper and presents it
+via configurable channels (Telegram, Email, Desktop).
+
+Depending on: NewsHandler (hub/news.py)
+Data sources: hub/_services/newspaper/config.json, user/newspaper/
+
+OPERATIONS
+-----------
+
+generate [--date YYYY-MM-DD]
+  Generate newspaper. Uses collected news items from the database.
+  Creates HTML and PDF in the user/newspaper/ directory.
+  Standard for today; --date sets explicit date.
+  Example: bach newspaper generate --date 2026-02-18
+
+deliver [--channel telegram|email|desktop]
+  Deliver newspaper. Find latest newspaper and send it.
+  Without --channel, all configured channels are used.
+  Example: bach newspaper deliver --channel telegram
+
+config
+  Show configuration. Reads hub/_services/newspaper/config.json
+  and displays all parameters in a structured manner.
+
+history
+  List previous expenses. Shows up to 20 latest newspapers
+  with date stamp and file size in KB.
+
+help
+  Show this help.
+
+EXAMPLES
+---------
+
+Generate daily newspaper:
+  bach newspaper generate
+
+With specific date:
+  bach newspaper generate --date 2026-02-25
+
+Deliver newspaper (all channels):
+  bach newspaper deliver
+
+Delivery via Telegram only:
+  bach newspaper deliver --channel telegram
+
+Complete workflow:
+  bach news fetch              [Collect messages]
+  bach newspaper generate      [Create newspaper]
+  bach newspaper deliver       [Send newspaper]
+
+FILES
+-------
+
+Relative paths to system/:
+
+  hub/newspaper.py Handler implementation
+  hub/_services/newspaper/newspaper_generator Newspaper generator (lazy-loaded)
+  hub/_services/newspaper/config.json Configuration (channels, sources)
+
+  user/newspaper/ Output directory
+  user/newspaper/newspaper_*.html Generated HTML newspapers
+  user/newspaper/newspaper_*.pdf Generated PDF newspapers
+
+  data/bach.db database (news_items, news_sources)
+
+SEE ALSO
+----------
+
+  news.py NewsHandler (source system for news items)
+  base.py BaseHandler (base class)
+  notify.py notification system (delivery)

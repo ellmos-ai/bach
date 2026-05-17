@@ -1,0 +1,25 @@
+巴赫工具：ollama_worker
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/ollama_worker.py
+
+描述
+----------------------------------------
+OLLAMA WORKER - 异步作业处理
+--------------------------------------
+在后台运行，通过 Ollama 处理来自挂起/的作业，
+完成后写入结果/。
+
+用法：
+  python ollama_worker.py # 处理一次所有待处理的作业
+  python ollama_worker.py --daemon # 永久运行
+
+使用
+----------------------------------------
+python bach.py 工具运行 ollama_worker [args]
+或直接： python tools/ollama_worker.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：bach 工具显示 ollama_worker

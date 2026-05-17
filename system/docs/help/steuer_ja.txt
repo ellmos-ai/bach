@@ -1,0 +1,466 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+税務ヘルプ
+------------
+
+事業経費を記録するための税務代理人。
+
+概要
+----------
+税務代理人は、経費の体系的な記録を支援します。
+納税申告のための事業経費。彼はサポートします
+複数のユーザー プロファイルと課税年度。
+
+フォルダ構造
+--------------
+user/tax/
++-- プロファイル/ユーザー プロファイル
++-- 監視/監視フォルダー (構成)
++-- テンプレート/新年用のテンプレート
++-- [年]/ 課税年度ごと
+    +-- 広告費・広告費（大分類）
+    |   +-- レシート/レシート保管
+    |   |   +-- _bundles/ バッチ処理用のテキスト バンドル
+    |   |   +-- _旅行とホームオフィス/ログブック、AZN、timeGoat
+    |   |   +-- _誤った領収書/ユーザーチェック用 (非領収書)
+    |   |   +-- _ごみ箱/未受領確認済み
+    |   |   +-- 新しい領収書用の追加/受信箱フォルダー
+    |   |   +-- [プロバイダー]/ プロバイダーごと (amazon.de、eBay など)
+    |   +-- エクスポート/ 生成されたレポートとエクスポート
+    |   |   +-- csv/CSV エクスポート
+    |   |   +-- POSTEN_*.txt 投稿リスト
+    |   |   +-- 広告費_all.txt
+    |   |   +-- BELEGE_all.txt
+    |   |   +-- 交通費_HOMEOFFICE_YYYY.*
+    |   |   +-- FINANZAMT_YYYY.zip
+    |   +-- TAX_README.txt
+    |   +-- FINANZAMT.bat
+    |   +-- SYNC.bat
+    +-- 異常な負荷/
+    +-- 家事関連サービスと職人/
+    +-- 特別版/
+    +-- 保険と年金の提供/
+
+CLI コマンド
+-----------
+
+ステータスと概要:
+  bach steuer status              全体的なステータスを表示
+  bach steuer status --jahr 2025  1 年のステータス
+
+納税年:
+  bach steuer init 2026           新しい課税年度を作成
+  bach steuer init 2026 --user X  特定のプロファイルを使用
+
+リスト:
+  bach steuer list                すべてのリストを表示
+  bach steuer list --jahr 2025    年のリスト
+  bach steuer list --liste WERBUNGSKOSTEN
+                                  特定のリストを表示
+
+領収書管理 (新規)
+----------------------
+領収書は、receips/ 内の PDF ファイルです。ステータス: 捕獲されました、
+対象外、非推奨。
+
+  bach steuer beleg list                    すべての領収書をリストする
+  bach steuer beleg list --status ERFASST   ステータスでフィルタリング
+  bach steuer beleg list --status NICHT_ERFASST
+  bach steuer beleg list --status DEPRECATED
+  bach steuer beleg list --status ALL --limit 1000
+                                            すべて上限あり
+
+  bach steuer beleg scan                    新しいレシートを検索
+  bach steuer beleg scan --dry-run          のみ表示
+
+  bach steuer beleg deprecate 215 466 "Grund"
+                                            領収書を無効としてマークする
+                                            (番号は予約されたままです)
+
+  bach steuer beleg sync                    DB から TXT ファイルを再生成
+
+アイテム管理 (新規)
+-----------------------
+アイテムはドキュメントからの個別のアイテムです。領収書は可能です
+いくつかの項目が含まれています。アイテム ID = 文書番号 アイテム番号 (例: 151-1)。
+
+  bach steuer posten list                   すべてのアイテムを表示
+  bach steuer posten list --liste W         リストでフィルター (W/G/V/Z)
+  bach steuer posten list --belegnr 151     文書番号でフィルター
+  bach steuer posten list --steller NAME    請求書発行者でフィルター
+  bach steuer posten list --rechnungsnr NR  請求書番号でフィルター
+  bach steuer posten list --limit 100       制限あり
+
+  bach steuer posten search BEGRIFF         アイテム全体を検索
+                                            (名前、場所、
+                                            コメント、請求書番号、アイテム ID)
+
+  bach steuer posten show 151-1             個別のアイテムを表示
+
+  bach steuer posten add --belegnr 151 --bezeichnung "Produkt" --brutto 34.95 --liste W
+                                            新しい投稿を作成する
+    パラメータ:
+    --文書番号 NR 文書番号 (必須)
+    --name TXT 製品名 (必須)
+    --gross VALUE 総額 (必須)
+    --list W|G|V|Z ターゲット リスト (デフォルト: Z)
+    --proportion 混合の場合は 0.0 ～ 1.0 の比率 (デフォルト: 0.5)
+    --remark TXT オプションのコメント
+    --date YYYY-MM-DD 日付
+    --プロバイダー名 プロバイダー
+    --請求書番号 NR 請求書番号 (または --請求書番号)
+
+  bach steuer posten edit 151-1 --bezeichnung "Neuer Name"
+                                            投稿を編集
+  bach steuer posten edit 151-1 --brutto 29.95
+  bach steuer posten edit 151-1 --anteil 0.7
+  bach steuer posten edit 151-1 --rechnungsnr "RE-12345"
+
+  bach steuer posten move 151-1 W           リストに移動
+  bach steuer posten move 151-1 G --anteil 0.5
+                                            男女混合用のポーション付き
+    リストのショートカット:
+    W = 広告費 (100% 控除可能)
+    G = 混合 (比例的に控除可能)
+    V = 拒否 (控除対象外)
+    Z = RESET (明確化予定)
+
+  bach steuer posten delete 151-1           削除 (確認あり)
+  bach steuer posten delete 151-1 --force   確認なし
+
+バッチインポート (新規 v1.1.4)
+-------------------------
+複数のアイテムまたはドキュメントの素早い入力用。
+
+  bach steuer batch help                    バッチヘルプを表示
+
+  bach steuer batch posten --belegnr 42 --json '[...]'
+                                            1 つのドキュメントに複数の項目
+    JSON形式:
+    [{"bez":"記事","総額":19.99,"リスト":"W"},
+     {"bez":"プライベート","グロス":5.00,"リスト":"V","bem":"プライベート"}]
+
+  bach steuer batch posten --belegnr 42 --file posten.json
+                                            JSON ファイルから投稿
+
+  bach steuer batch belege --inline "42:Artikel:19.99:W;43:Ware:5.00:V"
+                                            複数の書類を素早く入力
+                                            形式: 文書番号:DEZ:グロス:リスト
+
+  bach steuer batch belege --file import.json
+                                            商品が入った複数のレシート
+    JSON形式:
+    {「証拠」:[
+      {"領収書番号":42,"品目":[{"bez":"X","総額":10,"リスト":"W"}]},
+      {"領収書番号":43,"品目":[{"bez":"Y","総額":5,"リスト":"V"}]}
+    ]}
+
+  bach steuer batch delete --belegnr 42 --force
+                                            ドキュメント内のすべてのアイテムを削除する
+
+  bach steuer batch delete --posten "42-1,42-2,43-1" --force
+特定のアイテムを削除
+
+  bach steuer batch delete --liste V --limit 100 --force
+                                            DISCARDED をすべて削除 (最大 100)
+                                            注意: 多くの項目が削除される可能性があります!
+
+  bach steuer batch move --posten "42-1,42-2" --liste W
+                                            特定のアイテムを移動する
+
+  bach steuer batch move --belegnr 42 --liste W
+                                            ドキュメントのすべてのアイテムを移動
+
+  bach steuer batch move --von V --nach W --limit 50
+                                            リスト間の移動
+
+TAX TOOLS (NEW v1.1.4)
+-------------------------
+tools/tax/.のスタンドアロン Python スクリプト
+
+  bach steuer tools list                    すべてのツールのリスト
+  bach steuer tools <name> [args]           ツールの実行 (短縮形式)
+  bach steuer tools run <name> [args]       ツールの実行 (明示的)
+  bach steuer tools register                ツールを bach.db に登録
+
+重要なツール:
+  beleg_vorfilter 新しいドキュメントを事前に並べ替える (新規)
+  make_bundle レシートからテキスト バンドルを作成する
+  beleg_parser PDF からテキストを抽出します (OCR を使用)
+  regenerate_txt DB からリスト TXT を再生成します
+  scan_new_belege 新しいレシートを検索して登録する
+  temu_ocr_batch 画像 PDF のバッチ OCR
+
+直接アクセス:
+  bach steuer tools make_bundle amazon 11 67
+  bach steuer tools regenerate_txt
+
+PROFILES:
+  bach steuer profile list        プロファイルのリスト
+  bach steuer profile show <name>  プロファイルの表示
+  bach steuer profile create max  新しいプロファイルの作成
+
+監視フォルダー:
+  bach steuer watch list          監視フォルダーの表示
+  bach steuer watch add PFAD      フォルダーの追加
+  bach steuer watch remove PFAD   フォルダーの削除
+  bach steuer scan                監視フォルダーの確認
+
+EXPORT:
+  bach steuer export              エクスポート (標準: txt)
+  bach steuer export --jahr 2025 --format csv
+  bach steuer export --format datev         DATEV 予約バッチ CSV
+                                            （税理士向け）
+  bach steuer export --format csv           簡易CSV（Excel互換）
+  bach steuer export --format vorsorge      投資型年金支出額
+                                            (保険料)
+
+完全性チェック:
+  bach steuer check                         チェックを実施します
+  bach steuer check --jahr 2025             特定の年について
+                                            チェック：項目のない書類、
+                                            レシートのない商品、隙間がある
+                                            文書番号、欠落月、
+                                            VAT 額のない商品
+
+独自の領収書の作成:
+  bach steuer eigenbeleg --bezeichnung "Parkgebuehr" --brutto 5.00
+                                            独自の領収書を作成します
+  bach steuer eigenbeleg --bezeichnung "..." --brutto 10.00 --mwst 7
+                                            VAT率が異なる場合
+  オプション: --list、--date、--VAT、--reason
+
+BANK-IMPORT:
+  bach steuer import camt <pfad>            CAMT.053 XML のインポート
+
+FINANZAMT-EXPORT (計画中):
+  bach steuer finanzamt           すべての広告費用を含む ZIP を作成
+                                  以下を含む FINANZAMT_[YEAR].zip を作成します。
+                                  - WERBUNGSKOSEN_alle.txt (概要)
+                                  - CSV ファイルが含まれる csv/ フォルダー
+                                  - すべての参照ドキュメント (PDF)
+
+  スクリプト経由で直接:
+    python tools/tax/tax_sync.py 税務署
+
+CSV エクスポート (新規 v1.3.1):
+  bach steuer export --format csv CSV-Dateien in csv/ Ordner exportieren
+                                  Excel/税務ソフトインポート用
+
+  形式: セミコロン区切り、BOM 付き UTF-8、ドイツ語の数値形式
+
+  CSV ファイルは同期中に自動的に書き込まれません。
+  次の場合のみ: 税務署 (自動) またはエクスポート --format csv (明示的)
+
+  スクリプト経由で直接:
+    python tools/steuer/steuer_sync.py csv
+
+プロファイル
+-------
+プロファイルにはユーザー固有の設定が保存されます。
+- 専門的な背景 (業界、活動)
+- プロバイダー ルール (TEMU、Amazon など)
+- 自動割り当て（キーワード）
+- 混合使用のための標準共有
+
+プロファイルの作成:
+1. バッハ税プロファイルの作成 MYNAME
+2. user/tax/profile/
+
+LIST TYPES (V1.3.0 以降)
+------------------------
+ADVERTISING COSTS/ フォルダー内の新しいファイル名を編集します:
+
+  コードファイルの説明
+  -------------------------------------- ------------------------
+  W POSTEN_reine.txt 100% 控除可能
+  G POSTEN_gemischt.txt 比例控除可能 (シェアあり)
+  V POSTEN_verworfen.txt 控除対象外（非公開）
+  Z POSTEN_unsortiert.txt 後で編集/不明瞭
+  - WERBUNGSKOSEN_alle.txt W + G の組み合わせ (税務署用)
+
+伝票ステータス
+------------
+記録済み 文書が処理され、アイテムが作成されました
+NOT_RECORDED ドキュメントはまだ処理されていません
+非推奨 無効としてマークされた領収書 (重複など)
+
+バウチャー プレフィルター (新規)
+---------------------
+新しい領収書をプロバイダー フォルダーに自動的に事前に分類します。
+
+  python tools/steuer/beleg_vorfilter.py [--dry-run] [--verbose]
+
+ワークフロー:
+1. 電子メールからの新しい PDF を配置/ダウンロードしてドキュメント/その他/
+2. プレフィルターを実行します。
+   python tools/steuer/beleg_vorfilter.py --dry-run # プレビュー
+   python tools/steuer/beleg_vorfilter.py # 実行
+3. 結果:
+   - レシートはプロバイダーフォルダーに自動的に分類されます
+   - 領収書なし (追跡、配送状況) -> _誤った領収書/
+4. ユーザーは _Erroneous領収書/ -> _Recycle bin/ の実際の間違った領収書をチェックします
+
+検出方法:
+- ファイル名パターン: RG64116 -> LingoPlay、32xxxxxx -> TimeTEX
+- PDF コンテンツ: 「Anthropic、PBC」 -> Anthropic、「TimeTEX」 -> TimeTEX
+- 領収書マーカーがありません: 「出荷追跡」、「追跡」 -> _誤った領収書
+
+サポートされているプロバイダー:
+  Anthropic、TimeTEX、LingoPlay、Autism Publishing、PayPal、
+  eBay、Temu、Amazon、Apple、Google
+
+BIDI-SYNC (BIDIRECTIONAL TXT SYNC)
+-------------------------------------
+高度なアクションを TXT ファイルに直接書き込みます。
+同期はこれらを解析し、DB 内で実行します。
+
+アクション タイプ:
+  移動:
+    42-3 -> W 広告宣伝費へ移動
+    42-3 -> G 0.5 In 50%混合
+    42-3 -> V プライベート In コメント付きで拒否されました
+    B42 -> W ドキュメントのすべての項目を移動
+
+  編集:
+    42-3 :: 総額=19.99 総額変更
+    42-3 :: label=新しい名前
+    42-3 :: シェア=0.7 シェア変更
+
+  削除:
+    42-3 DELETE 個別項目の削除
+    42-3 DEL 短縮形
+
+  非推奨 (文書の予約):
+    B42 非推奨 文書を無効としてマークする
+    B42 非推奨 正当な理由がある重複
+
+入力領域:
+  「INPUT」セクションの TXT ファイルにアクションを書き込みます。
+
+  === 入力 (同期中に処理) ===
+  42-3 -> W
+  43-1 :: グロス=25.50
+  B44 非推奨 キャンセルされました
+  === 入力終了 ===
+
+同期を実行:
+  python tools/tax/tax_sync.py 同期
+  または: バッチ税領収書の同期
+
+注意:
+  - アクションは同期時に処理され、その後削除されます
+  - 間違ったアクションはエラー ログに記録されます。
+  - 常に最初に --dry-run をテストします (利用可能な場合)
+
+典型的なワークフロー
+------------------
+0。新しいドキュメントを事前に並べ替える (beleg_vorfilter.py)
+
+1。ステータスを確認します:
+   bach steuer beleg list --status NICHT_ERFASST
+
+2。プロバイダーごとにオープン レシートを表示します:
+   bach steuer beleg list --status NICHT_ERFASST --limit 500
+
+3。チャット エージェントに領収書を入力します
+
+4.チェック結果:
+   bach steuer posten list --liste W
+
+バンドルによるバッチ処理
+------------------------------
+文書が多い場合、個別にチェックするのは非効率です。代わりに:
+
+1。バンドルを作成します。
+   Python エージェント/_experts/steuer/make_bundle.py <ソース> <開始> <終了>
+
+   例:
+     Python エージェント/_experts/steuer/make_bundle.py ペイパル 171 214
+     Python エージェント/_experts/steuer/make_bundle.py ebay 77 128
+     Python エージェント/_experts/steuer/make_bundle.py google_play 129 170
+
+   出典: paypal、ebay、google_play、amazon、その他、temu
+   出力: user/steuer/2025/bundles/<source>_B<start>-B<end>.txt
+
+2。バンドルを分析します:
+   クロードは束を読み、すべての領収書を次のように分類します。
+   - W = 広告費 (100% 控除可能)
+   - G = 混合 (比例、例: 50%)
+   - V = 破棄 (プライベート、重複、ステータスメール)
+   - Z = 延期 (明確化予定)
+
+3.バッチキャプチャアイテム:
+   bach steuer posten add --belegnr 195 --bezeichnung "..." --brutto 55.85 --liste W ...
+
+4. TXT ファイルを更新します。
+   python Agents/_experts/steuer/regenerate_txt.py
+
+分類メモ
+----------------------------
+- PayPal: Temu の支払いは重複しています (オリジナルは Temu フォルダにあります)
+- eBay: 購入ごとに多数のメール (注文、発送、配送、請求書)
+        -> 請求書/注文確認書のみを主要文書として記録します。
+        -> ステータスメールを 0 ユーロの V として記録します (完全性)
+- 治療教材：レゴ、学習ゲーム、専門文献＝W
+- ソフトウェア: Microsoft 365、Office = G (50%)
+- ストリーミング: Netflix、Disney+ = V (プライベート)
+
+データベース
+---------
+すべてのデータ: data/bach.db
+
+テーブル:
+- Tax_documents ステータスのあるすべての文書
+- Tax_posten 割り当てのあるすべてのアイテム
+
+プロファイルは TXT ファイルとして user/steuer/profile/ に保存されます。
+
+チャット エージェント
+----------
+税務担当者は以下のチャット エージェントとして利用できます。
+Agents/steuer-agent.txt が利用可能です。
+
+彼は次のことができます:
+- PDF から領収書をキャプチャ
+- 投稿を自動的に分類します
+- 重複の検出
+- ユーザーによる検証
+- すべての書類を含む税務署の ZIP を作成します
+
+AREA README (キーワード参照機能)
+---------------------------------------------
+各税務分野には、キーワード テーブルを含む README.txt があります。
+必要な領収書と現在の定額料金 (2025 年現在)。
+
+  ファイルエリア/段落
+  ------------------------------------------------ ------------------------
+  user/steuer/[JAHR]/STEUER_README.txt 全体的な手順と同期
+  user/tax/[YEAR]/advertisingcosts/README.txt 付録 N (段落 9)
+  ユーザー/税金/[年]/特別負担/セクション 33 EStG
+    README.txt
+  ユーザー/税金/[年]/世帯関連サービス パラグラフ 35a EStG
+    & 職人/README.txt
+  user/steuer/[JAHR]/Special Editions/README.txt パラグラフ 10 EStG
+  ユーザー/税金/[年]/保険および投資年金費用
+退職規定/README.txt
+
+README の内容:
+  - 法的根拠のある領域の定義
+  ・キーワード表：提出できるもの＋必要書類
+  - 重要な定額金額と上限額
+  - 実用的なヒント
+
+関連項目
+----------
+  bach --help tasks                    一般的なタスク
+  bach --help backup                   バックアップ システム
+  wiki/steuer/_index.txt 税金 Wiki (背景知識)
+  wiki/steuer/est_bereich.txt EStG システムの概要
+  wiki/steuer/versicherungen.txt 免責保険
+  wiki/steuer/sonderspenden.txt 特別版の控除
+  wiki/steuer/fortbildung.txt さらなるトレーニングと研究
+  wiki/steuer/fahrtkosten_homeoffice.txt 旅費とホームオフィス
+  エージェント/steuer-agent.txt 税務エージェント (チャットエージェント)

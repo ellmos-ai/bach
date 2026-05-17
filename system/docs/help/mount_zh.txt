@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MOUNT HANDLER
+-------------
+
+将外部文件夹连接为工作区中的符号链接/连接。行政关于
+数据库连接表在系统重新启动后具有持久性。
+
+
+描述
+------------
+
+安装处理程序包括 user/ 目录 (hub/user/) 中的外部文件夹。
+使用在恢复期间自动恢复的 Windows 联结
+成为。所有挂载均在 data/bach.db 中管理，状态为 is_active。
+
+
+操作
+-----------
+
+添加：附加外部文件夹
+  语法： bach mount add <路径> <别名>
+  示例：bach mount 添加 C:\Data\Research 研究
+  - 创建连接：hub/user/research -> C:\Data\Research
+  - 保存在数据库连接表中（类型='mount'）
+  - 使用相同别名覆盖现有安装
+
+REMOVE：删除连接
+  语法： bach mount remove <别名>
+  示例：巴赫安装删除研究
+  - 从 hub/user/<alias> 删除联结
+  - 从数据库连接表中删除了条目
+  - 连接点必须存在，否则错误将被忽略
+
+LIST：显示活动安装（标准操作）
+  语法：bach挂载列表
+  - 显示数据库中状态为 [OK]/[--] 和 [EXISTS]/[MISSING] 的所有挂载
+  - [确定] = is_active=1, [--] = is_active=0
+  - [EXISTS] = 连接路径存在，[MISSING] = 不存在
+
+RESTORE：从数据库恢复连接
+  语法：bach安装恢复
+  - 重新创建活动坐骑的所有连接点（如果移动后丢失）
+  - 跳过现有的路口
+  - 如果源路径不存在则报告错误
+
+
+示例
+---------
+
+1。在项目中包含文件服务器：
+   bach mount add \\SERVER\shared projdata
+   -> hub/user/projdata 成为 \\SERVER\shared
+
+2 的符号链接。连接多个文件夹：
+   bach mount add C:\Daten data
+   bach mount add D:\Archive archive
+   bach mount list
+
+3.系统移动后恢复：
+   bach mount restore
+   -> 从数据库重新创建的所有连接（如果源路径仍然可用）
+
+4。操作前试运行：
+   bach mount --dry-run add C:\Quelle test
+   bach mount --dry-run remove test
+
+
+FILES
+-------
+
+受影响的文件（相对于system/）：
+  hub/mount.py - 处理程序实现
+  hub/user/ - 交汇点目录
+  data/bach.db - 持久存储（连接表）
+  docs/help/mount.txt - 此文件
+
+
+另请参阅
+----------
+
+  hub/base.py - BaseHandler 接口
+  data/ - 连接的数据库架构
+  bach.py --help - 常规 BACH 帮助

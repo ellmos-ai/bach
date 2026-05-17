@@ -1,0 +1,32 @@
+Herramienta BACH: migrar_conexiones
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/migrate_connections.py
+
+DESCRIPCIÓN
+----------------------------------------
+Migrar conexiones a la base de datos
+--------------------------------
+
+Migra los registros JSON archivados a las tablas bach.db:
+- external_ki_tools_registry.json -> herramientas (tipo='externo')
+- conexiones_overview.json/cli_tools -> herramientas (tipo='cli')
+- conexiones_overview.json/mcp_servers -> conexiones (tipo='mcp')
+- claude_registry.json -> conexiones (tipo='ai')
+
+Uso:
+    python migre_connections.py [--ejecución en seco]
+    python migrar_conexiones.py --status
+    python migrar_connections.py --ayuda
+
+Versión: 1.0.0
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan migrar_conexiones [args]
+o directamente: python tools/migrate_connections.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tiene alguna pregunta: las herramientas de bach muestran migrar_conexiones

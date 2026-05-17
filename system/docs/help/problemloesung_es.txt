@@ -1,0 +1,70 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+RESOLUCIÓN DE PROBLEMAS - Pensamiento Estructurado
+--------------------------------------
+
+DESCRIPCIÓN
+------------
+Estrategias de resolución de problemas y análisis de tareas complejas.
+Procesos de pensamiento estructurados para situaciones difíciles.
+
+ENFOQUES DE RESOLUCIÓN DE PROBLEMAS
+------------------------
+
+1. DIVIDE Y CONQUISTA
+   Problema -> Subproblemas -> Resolver individualmente -> Combinar
+
+   Cuándo usarlo: Problemas grandes y complejos que se pueden descomponer.
+
+2. ANÁLISIS DE LA CAUSA RAÍZ (5 porqués)
+   Síntoma -> ¿Por qué? -> ¿Por qué? -> ¿Por qué? -> Causa -> Solución
+
+   Cuándo usarlo: Cuando no está claro cuál es el problema real.
+
+3. RELAJACIÓN DE RESTRICCIONES
+   Sin solución -> relajar restricciones -> resolver -> apretar restricciones
+
+   Cuándo utilizar: Cuando los requisitos son demasiado restrictivos.
+
+4. BÚSQUEDA DE ANALOGÍA
+   Nuevo problema -> Problema conocido similar -> Adaptar solución
+
+   Cuándo utilizar: Para problemas nuevos sin una solución obvia.
+
+MÉTODOS DE ANÁLISIS
+----------------
+
+  Aplicación del método
+  ---------- ----------------------------------------
+  Fortalezas/debilidades/oportunidades/riesgos FODA
+  Toma de decisiones a favor y en contra
+  Priorización de Pareto 80/20 (encontrar el 20% más importante)
+  Análisis de causa raíz de espina de pescado (Diagrama de Ishikawa)
+
+HEURÍSTICAS DE DECISIÓN
+-------------------------
+
+Cuando hay incertidumbre:
+  1. ¿Cuál es el peor de los casos?
+  2. ¿Es reversible?
+  3. ¿Cuál es el coste de la inacción?
+
+Con complejidad:
+  1. ¿Cuál es el primer paso más sencillo?
+  2. ¿Qué haría un experto?
+  3. ¿Cuál sería la solución al 80%?
+
+CONSEJOS PRÁCTICOS
+----------------
+- Empiece siempre por el paso más fácil
+- Documentar los procesos de pensamiento para referencia futura.
+- Si hay un bloqueo: hacer una pausa, reformular el problema
+- Las soluciones del 80% suelen ser mejores que los planes del 100%
+
+VER TAMBIÉN
+----------
+docs/help/denkstrategie.txt Estrategias cognitivas y metacognitivas
+docs/help/strategies.txt Categorizar, evaluar, probar
+docs/help/operators.txt Operadores y patrones básicos

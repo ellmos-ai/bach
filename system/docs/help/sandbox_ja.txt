@@ -1,0 +1,104 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+サンドボックス ハンドラー
+---------------
+
+説明
+------------
+Python スクリプト、コード評価、単体テストなどの分離されたコード実行
+シェルコマンド。 E2B MCP を置き換えます。すべての操作は 30 秒のタイムアウトで実行され、
+PYTHONIOENCODING=utf-8。出力は最大 3000 文字 (標準出力) または 1000 文字に制限されます
+(stderr) 制限あり。
+
+
+OPERATIONS
+-----------
+
+RUN
+---
+サンドボックス プロセスで Python ファイルを実行します。
+
+構文: bach Sandbox run <file> [arg1] [arg2] ...
+
+パラメータ:
+  <file> - .py ファイルへの絶対パスまたは相対パス (system/ からの相対パス)
+  [arg1...] - オプション: 引数は sys.argv に渡されます
+
+終了コード: 成功時は 0、エラー時は >0
+
+cwd はファイルのディレクトリに設定されます。
+
+
+EVAL
+----
+分離されたプロセスで Python 式を評価します。
+
+構文: bach サンドボックス eval "<code>"
+
+パラメータ:
+  <code> - Python 式またはステートメント (引用符内)
+
+特別な機能: 最初に eval() を試行し、exec() に戻ります (ステートメントの場合)。
+戻り値 (None でない場合) は stdout に出力されます。
+
+cwd は一時ディレクトリに設定されます。
+
+
+TEST
+----
+Python ファイルで pytest を実行します。
+
+構文: bach サンドボックス テスト <ファイル>
+
+パラメータ:
+  <file> - テスト .py ファイルへの絶対パスまたは相対パス
+
+フラグ: -v (冗長)、--tb=short (短いトレースバック)
+
+タイムアウト: 60 秒 (run/eval と比較して 2 倍)
+
+cwd は system/ ディレクトリに設定されます。
+
+
+SHELL
+-----
+分離されたディレクトリでシェル コマンドを実行します。
+
+構文: bach サンドボックス シェル "<cmd>"
+
+パラメータ:
+  <cmd> - 任意のシェル コマンド (例: "ls -la"、"pip list")
+
+cwd は一時的な空のディレクトリ (実行後のクリーンアップ) に設定されます。
+
+
+例
+---------
+
+# パラメーターを指定して Python ファイルを実行します:
+bach sandbox run tools/data_processor.py input.csv output.json
+
+# 式を評価します:
+bach sandbox eval "import json; json.dumps({'test': 123})"
+
+# 単体テストを実行します:
+bach sandbox test tools/test_handler.py
+
+# タイムアウトを指定したシェル コマンド:
+bach sandbox shell "pip list | grep requests"
+
+
+FILES
+-------
+hub/sandbox.py - ハンドラーの実装
+docs/help/sandbox.txt - このファイル
+
+
+関連項目
+----------
+hub/base.py - BaseHandler (基本クラス)
+tools/ - スクリプトのターゲット ディレクトリ
+タイムアウト - デフォルトは 30 秒、テストでは 60 秒
+PYTHONIOENCODING - utf-8 (Windows 互換)

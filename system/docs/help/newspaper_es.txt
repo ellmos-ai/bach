@@ -1,0 +1,83 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NEWSPAPER HANDLER
+-----------------
+
+DESCRIPCIÓN
+------------
+
+Periódico diario en PDF a partir de noticias. Colecciona artículos de varios
+Fuentes, genera un periódico formateado HTML/PDF y lo presenta.
+a través de canales configurables (Telegram, correo electrónico, escritorio).
+
+Dependiendo de: NewsHandler (hub/news.py)
+Fuentes de datos: hub/_services/newspaper/config.json, usuario/newspaper/
+
+OPERACIONES
+-----------
+
+generar [--fecha AAAA-MM-DD]
+  Generar periódico. Utiliza noticias recopiladas de la base de datos.
+  Crea HTML y PDF en el directorio usuario/periódico/.
+  Estándar para hoy; --date establece una fecha explícita.
+  Ejemplo: generar periódico de bach --fecha 2026-02-18
+
+entregar [--canal telegrama|correo electrónico|escritorio]
+  Entregar periódico. Encuentre el último periódico y envíelo.
+  Sin --channel, se utilizan todos los canales configurados.
+  Ejemplo: entrega del periódico bach --channel telegram
+
+config
+  Mostrar configuración. Lee hub/_services/newspaper/config.json
+  y muestra todos los parámetros de forma estructurada.
+
+history
+  Enumerar gastos anteriores. Muestra hasta 20 periódicos más recientes.
+  con sello de fecha y tamaño de archivo en KB.
+
+ayuda
+  Mostrar esta ayuda.
+
+EJEMPLOS
+---------
+
+Generar periódico diario:
+  bach newspaper generate
+
+Con fecha específica:
+  bach newspaper generate --date 2026-02-25
+
+Entregar periódico (todos los canales):
+  bach newspaper deliver
+
+Entrega solo a través de Telegram:
+  bach newspaper deliver --channel telegram
+
+Flujo de trabajo completo:
+  bach news fetch              [Recoger mensajes]
+  bach newspaper generate      [Crear periódico]
+  bach newspaper deliver       [Enviar periódico]
+
+ARCHIVOS
+-------
+
+Rutas relativas al sistema/:
+
+  implementación del controlador hub/newspaper.py
+  hub/_services/newspaper/newspaper_generator Generador de periódicos (carga diferida)
+  hub/_services/newspaper/config.json Configuración (canales, fuentes)
+
+  usuario/periódico/directorio de salida
+  user/newspaper/newspaper_*.html Periódicos HTML generados
+  usuario/periódico/periódico_*.pdf Periódicos PDF generados
+
+  base de datos data/bach.db (artículos_noticias, fuentes_noticias)
+
+VER TAMBIÉN
+----------
+
+  news.py NewsHandler (sistema fuente de noticias)
+  base.py BaseHandler (clase base)
+  sistema de notificación notify.py (entrega)

@@ -1,0 +1,187 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [hub/shared_memory.py,shared_memory_*,shared_context_triggers]
+
+MEMORIA COMPARTIDA - Gestión de memoria multiagente
+-----------------------------------------------
+
+FECHA: 2026-02-28
+
+El sistema de memoria compartida permite el acceso a la memoria compartida
+varios agentes (Claude, Gemini, etc.). En contraste con lo normal
+El sistema de memoria permite que varios socios lean y lean al mismo tiempo.
+escribir.
+
+Ref: SQ043 Nivel A-2
+
+ARQUITECTURA
+-----------
+
+  Agente A ─┐
+  Agente B ─┤─> memoria_compartida_* (bach.db) <─┬─> bloque de contexto
+  Agente C ─┘ └─> Feed de cambios
+
+Características:
+  - Capacidad para múltiples agentes (agent_id, espacio de nombres)
+  - Niveles de visibilidad (privado, equipo, global)
+  - Seguimiento de descomposición para limpieza automática.
+  - Resolución de conflictos mediante valores de confianza.
+  - dist_type para el sistema de distribución
+
+COMANDOS CLI (mem compartido de Bach)
+------------------------------
+
+FACTS (hechos compartidos):
+  lista de hechos Mostrar todos los hechos compartidos
+  hechos agregar <clave> <valor> Agregar nuevo hecho
+  hechos obtienen <id> Mostrar hecho específico
+  hechos eliminar <id> eliminar hecho
+
+LESSONS (Lecciones compartidas):
+  lista de lecciones Mostrar todas las lecciones compartidas
+  lecciones agregar <título> Agregar nueva lección
+  lecciones activar <id> Activar lección
+  lecciones desactivar <id> desactivar lección
+
+MEMORIA DE TRABAJO (memoria a corto plazo):
+  lista de trabajo Mostrar entradas activas
+  trabajando agregar <contenido> Agregar entrada
+  limpieza en funcionamiento Eliminar entradas caducadas
+  trabajando tarea-actual <texto> Establecer tarea actual (máx. 1 por agente)
+
+SESSIONS:
+  lista de sesiones [N] Mostrar sesiones (predeterminado: 20)
+  sesiones actuales Mostrar sesiones activas
+  archivo de sesiones <tage> Archivar sesiones antiguas
+
+CONSOLIDACIÓN (ponderación de memoria):
+  lista de consolidación Mostrar entradas de consolidación
+  estadísticas de consolidación Ver estadísticas
+  consolidación agregar <t> <id> Agregar entrada manualmente
+  consolidación Consolidar entradas débiles
+  ejecución de consolidación Ejecutar lógica de caída (B57)
+
+CONTEXTO Y CAMBIOS:
+  contexto Generar bloque de contexto (B55)
+  cambios <marca de tiempo> Cambios desde la marca de tiempo (B58)
+
+EJEMPLOS
+---------
+
+  # Agregar dato
+  bach shared-mem facts add "api.endpoint" "https://api.example.com"
+  bach shared-mem facts add "server.ip" "192.168.1.1" --agent CLAUDE --confidence 0.9
+
+  # compartir lección
+  bach shared-mem lessons add "Windows: UTF-8 mit PYTHONIOENCODING setzen" --severity high
+
+  # Establecer la tarea actual (ancla de sesión)
+  bach shared-mem working current-task "Migration von PyMuPDF auf pypdf"
+  bach shared-mem working current-task "BACH Release vorbereiten" --agent GEMINI
+
+  # Generar bloque de contexto (para inicialización del agente)
+  bach shared-mem context
+
+  # Cambios de consulta desde ayer
+  bach shared-mem changes 2026-02-27T00:00:00
+
+  # Ejecutar lógica de decadencia (limpieza de memoria)
+  bach shared-mem consolidation run
+  bach shared-mem consolidation run --dry-run
+
+RESOLUCIÓN DE CONFLICTO (B56)
+--------------------------
+
+Cuando `se suman hechos` con la clave existente:
+  - Nueva confianza >= confianza existente → la entrada se actualiza
+  - Nueva Confianza < Confianza existente → la entrada permanece sin cambios
+
+  Ejemplo:
+    bach shared-mem facts add "version" "2.5" --confidence 0.9
+    # Sobrescribe la entrada existente si su confianza < 0.9
+
+DECAY-SYSTEM (B57)
+------------------
+
+`consolidation run` lleva a cabo la lógica de decaimiento:
+  - Cada entrada: peso *= decay_rate (predeterminado: 95% de retención)
+  - Si el peso cae por debajo del umbral (predeterminado: 0,1) → Archivar
+  - Las entradas a las que se accede con frecuencia reciben un impulso y se archivan con menos frecuencia
+
+CONTEXT-BLOCK (B55)
+--------------------
+
+`bachshared-mem context` genera un bloque Markdown:
+
+  ## Contexto de memoria compartida
+
+  ### Tareas actuales
+  - **CLAUDE**: Migración en ejecución (desde...)
+
+  ### Hechos principales
+  - **api.endpoint** [0.9]: https://api.example.com
+
+  ### Lecciones activas
+  - [alto] Windows: configure UTF-8 con PYTHONIOENCODING
+
+Se utiliza para la inicialización del agente.
+
+CHANGES-FEED (B58)
+-------------------
+
+`bach share-mem cambios <marca de tiempo>` devuelve todos los cambios
+desde la marca de tiempo ISO especificada:
+
+  bach shared-mem changes 2026-02-28T10:00:00
+
+Útil para la sincronización del agente: un agente verifica periódicamente
+si otros agentes han agregado hechos o lecciones.
+
+OPCIONES PARA AGREGAR HECHOS
+-----------------------
+
+  --agent <id> ID del agente (predeterminado: GLOBAL)
+  --namespace <ns> espacio de nombres (predeterminado: predeterminado)
+  --visibilidad <nivel> privado|equipo|global (predeterminado: global)
+  --confidence <0.0-1.0> Valor de confianza (predeterminado: 0.5)
+
+OPCIONES PARA AGREGAR LECCIONES
+--------------------------
+
+  --información de gravedad|advertencia|alta|gravedad crítica (predeterminado: información)
+  --agent <id> ID del agente (predeterminado: GLOBAL)
+  --namespace <ns> espacio de nombres (predeterminado: predeterminado)
+
+TABLAS DE BASE DE DATOS
+------------------
+
+share_memory_facts Hechos compartidos (clave-valor)
+  Shared_memory_lessons Lecciones compartidas
+  shared_memory_sessions Historial de sesiones compartidas
+  memoria_compartida_memoria de trabajo a corto plazo (is_active, expires_at)
+  Shared_memory_consolidation Seguimiento de decaimiento (peso, tasa de decaimiento, umbral)
+  Shared_context_triggers Activadores de contexto compartido
+
+DIFERENTES DE LA MEMORIA NORMAL
+---------------------------------
+
+  Memoria normal (bach mem, bach --memoria):
+    - Para UN agente/socio
+    - memoria_trabajo, memoria_hechos, memoria_lecciones
+
+  Memoria compartida (bach share-mem):
+    - Para MÚLTIPLES agentes al mismo tiempo
+    - Control de visibilidad (privado/equipo/global)
+    - Resolución de conflictos a través de la confianza.
+    - Sistema de descomposición para limpieza
+
+ARCHIVOS
+-------
+  hub/shared_memory.py Implementación del controlador
+
+VER TAMBIÉN
+----------
+  bach --help memory        Sistema de memoria normal (agente único)
+  bach --help consolidation Konsolidierungs-Engine
+  bach --help connector     Sistema conector (varios socios)

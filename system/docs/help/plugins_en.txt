@@ -1,0 +1,226 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH PLUGIN API
+---------------
+
+As of: 2026-05-06
+
+The plugin API enables dynamic expansion of BACH at runtime.
+Plugins can register tools, hooks, workflows and handlers --
+imperative (via code) or declarative (via `plugin.json`).
+
+CLI COMMANDS
+-----------
+  bach plugins list              Show all loaded plugins
+  bach plugins inspect <pfad>    Manifest-first preview without runtime load
+  bach plugins load <pfad>       Load plugin from plugin.json
+  bach plugins unload <name>     Unload plugin
+  bach plugins tools             Show all plugin tools
+  bach plugins info <name>       Details for a plugin
+  bach plugins create <name>     Create plugin manifest (Scaffolding)
+  bach plugins caps              Show capability profiles
+  bach plugins trust <name> <l>  Change the trust level of a plugin
+  bach plugins audit [limit]     Show the latest capability checks
+
+  Short form:
+  bach plugin list               (Alias: plugin -> plugins)
+
+API USAGE (Imperative)
+-----------------------
+  from core.plugin_api import plugins
+  # Or: from bach_api import plugins
+
+  # Register tool
+  def my_tool(text):
+      return f"Processed: {text}"
+
+  plugins.register_tool("my_tool", my_tool, "Description")
+  result = plugins.call_tool("my_tool", "input")
+
+  # Register hook
+  def on_task(ctx):
+      print(f"Task created: {ctx['task_id']}")
+
+  plugins.register_hook("after_task_create", on_task, plugin="my-plugin")
+
+  # Register handlers (new CLI command)
+  from hub.base import BaseHandler
+  class MyHandler(BaseHandler):
+      ...
+
+  plugins.register_handler("my_cmd", MyHandler, plugin="my-plugin")
+
+  # Create workflow
+  plugins.register_workflow("my-workflow", "# Workflow\n...", plugin="my-plugin")
+
+  # Administration
+  print(plugins.list_plugins())
+  plugins.inspect_plugin("plugins/my-plugin/plugin.json")
+  plugins.unload_plugin("my-plugin")
+
+PLUGIN MANIFEST (Declarative)
+----------------------------
+Create a `plugin.json` for automatic loading:
+
+  bach plugins create mein-plugin
+
+Manifest format (`plugin.json`):
+  {
+    "name": "my-plugin",
+    "manifest_version": "1.1",
+    "version": "1.0.0",
+    "description": "What the plugin does",
+    "author": "claude",
+    "source": "gold standard",
+    "capabilities": ["db_read", "hook_listen"],
+    "activation": {"mode": "manual", "enabled": true},
+    "providers": [],
+    "models": [],
+    "setup": {
+      "requires": ["Node.js", "Claude Code"],
+      "env": ["ANTHROPIC_API_KEY"],
+      "notes": "Why the setup is needed",
+      "fail_closed": true,
+      "surfaces": ["shell", "mcp"],
+      "checks": [
+        {"type": "command_exists", "command": "npx"},
+        {"type": "mcp_server_known", "package": "ellmos-codecommander-mcp"}
+      ]
+    },
+    "hooks": [
+      {
+        "event": "after_task_done",
+        "modules": "handlers.py",
+        "handler": "on_task_done",
+        "priority": 50
+      }
+    ],
+    "handlers": [
+      {"name": "my_cmd", "file": "my_handler.py"}
+    ],
+    "workflows": [
+      {"name": "my-workflow", "file": "workflow.md"}
+    ]
+  }
+
+Load:
+  bach plugins inspect plugins/mein-plugin/plugin.json
+  bach plugins load plugins/mein-plugin/plugin.json
+
+REGISTRATION TYPES
+--------------------
+  Type API method description
+  -------- ---------------------- ---------------------------------
+  Tool register_tool() Register callable as a tool
+  Hook register_hook() Register event listeners
+  Workflow register_workflow() Create Markdown file
+  Handler register_handler() New runtime CLI command
+
+PLUGIN-LIFECYCLE
+----------------
+  1. Create: bach plugins create <name>
+  2. Develop: edit plugin.json + handlers.py
+  3. Check: bach plugins inspect <path/plugin.json>
+  4. Load: bach plugins load <path/plugin.json>
+  5. Use: Fire hooks, call tools, use CLI commands
+  6. Unload: bach plugins unload <name>
+
+CAPABILITY SYSTEM (Level 1 Sandbox)
+-----------------------------------
+Plugins declare required capabilities. BACH checks and
+enforced based on the trust level of the source.
+
+  Defined capabilities:
+    db_read Read database
+    db_write Write database
+    file_read Read files
+    file_write Write files
+    hook_listen Listen for events
+    hook_emit Emit events
+    tool_register Register new tools
+    handler_register Register new CLI handlers
+    workflow_create Create workflows
+    network Network access (HTTP/API)
+    shell Execute shell commands
+    desktop Run desktop/GUI automation
+    Configure or connect mcp MCP server
+
+Trust profile (linked to `data/skill_sources.json`):
+    goldstandard trust=100 All capabilities
+    trusted trust=80 Everything except shell + desktop + mcp + network
+    untrusted trust=20 Only db_read, file_read, hook_listen
+    blacklist trust=0 Nothing allowed
+
+  Enforcement:
+    - register_tool() checks `tool_register`
+    - register_hook() checks `hook_listen`
+    - register_handler() checks `handler_register`
+    - register_workflow() checks `workflow_create`
+    - load_plugin() checks all requested capabilities
+    - inspect/load checks setup guards fail-closed for shell/desktop/mcp
+
+SETUP-GUARDS (SEC-PLUGIN-003)
+-----------------------------
+Strong access via setup metadata is blocked before the runtime import,
+if requirements are not described explicitly and fail-closed.
+
+  Dangerous surfaces:
+    shell, desktop, mcp
+
+  Mandatory for such setups:
+    - `setup.fail_closed = true`
+    - `setup.checks = [...]` with appropriate guard checks
+
+  Supported check types:
+    command_exists
+    env_present
+    path_exists
+    python_import
+    mcp_server_known
+    desktop_enabled
+    permission_flag
+
+  Expected Check Coverage:
+    shell -> command_exists, env_present, path_exists, python_import
+    desktop -> desktop_enabled, path_exists, command_exists, env_present
+    mcp -> mcp_server_known, command_exists, env_present, path_exists
+
+  Example:
+    "setup": {
+      "requires": ["Claude Desktop", "Node.js"],
+      "fail_closed": true,
+      "surfaces": ["mcp"],
+      "checks": [
+        {"type": "command_exists", "command": "npx"},
+        {"type": "mcp_server_known", "package": "ellmos-codecommander-mcp"}
+      ]
+    }
+
+SAFETY
+----------
+  - Capability enforcement in all `register_*()` methods
+  - Trust level from `skill_sources.json` (4-level system)
+  - Manifest-first inspection: activation, providers, models, setup without runtime import
+  - Fail-closed setup guards for shell/desktop/MCP before plugin load
+  - Static code analysis: eval, exec, subprocess, os.system
+  - Audit log for traceability
+  - Faulty hooks are caught and do not break anything
+  - Plugin unloading cleanly removes all registrations
+  - Audit via: `bach plugins audit`, `bach plugins info <name>`
+
+ARCHITECTURE
+-----------
+  core/capabilities.py CapabilityManager Singleton (Enforcement)
+  core/plugin_api.py PluginRegistry singleton (plugin management)
+  hub/plugins.py CLI handler (`bach plugins ...`)
+  core/hooks.py Hook framework
+  data/skill_sources.json Trust Profiles and Capability Mapping
+
+SEE ALSO
+----------
+  bach help hooks          Hook Framework
+  bach help skills         Skill System
+  bach help self-extension Selbsterweiterungs-System
+  bach help cli            CLI Conventions

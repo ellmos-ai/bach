@@ -1,0 +1,29 @@
+BACH ツール:tool_scanner
+--------------------------------------------------
+生成:2026-01-23 10:36
+ソース: tools/tool_scanner.py
+
+説明
+----------------------------------------
+tool_scanner.py - 利用可能な CLI ツールのシステムをスキャンします
+-----------------------------------------------------------
+
+インストールされているツールを検索し、登録されているツールと比較します。
+ツールの検出とシステムのインベントリに役立ちます。
+
+使用法:
+    python tool_scanner.py scan # スキャンシステム
+    python tool_scanner.py --json # JSON出力
+    python tool_scanner.py Compare # レジストリと比較
+
+作成者: BACH v1.1 (partner_scanner.py に基づく)
+
+使用
+----------------------------------------
+python bach.py tools run tool_scanner [args]
+または直接: python tools/tool_scanner.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- ご質問がある場合: bach tools show tools_scanner

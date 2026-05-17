@@ -1,0 +1,64 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH ゴミ箱ハンドラー (ゴミ箱システム)
+--------------------------------------
+
+ゴミ箱システムでは復元によるソフト削除が可能です。
+
+コマンド
+-------
+bach trash list            すべてのゴミ箱エントリ
+bach trash delete PATH     ゴミ箱内のファイル
+bach trash restore ID      ファイルを復元
+bach trash purge           期限切れのものを削除
+bach trash info ID         詳細を表示
+
+オプション
+--------
+--dry-run 変更のシミュレーションのみ
+
+例
+---------
+# ファイル削除
+bach trash delete ./alte_datei.txt
+
+# 内容を表示
+bach trash list
+
+# 復元
+bach trash restore 5
+
+# 期限切れのクリーンアップ (30+日)
+bach trash purge --dry-run
+bach trash purge
+
+テクニカル
+---------
+- ハンドラー: system/hub/trash.py
+- ファイルは system/data/trash/ に移動されます。
+- DB テーブルのメタデータ: files_trash
+- 標準保存期間: 30 日 (retention_days)
+- ステータス: アクティブ、復元、パージ
+
+データベース
+---------
+テーブル: files_trash (system/db/schema.sql)
+- ID: 主キー
+-original_path: 元のパス
+-trash_path: ゴミ箱内のパス
+- サイズ: ファイルサイズ (バイト単位)
+- selected_at: 削除時刻 (ISO-8601)
+- delete_by: ユーザー名 (デフォルト: "claude")
+- Retention_days: 保持期間 (デフォルト: 30)
+-expires_at: 有効期限 (ISO-8601)
+- ステータス: アクティブ/復元/パージ
+-restored_at: 復元時間
+- purged_at: 最終的な削除
+
+関連項目
+----------
+bach maintain help    メンテナンス ツール
+bach backup help      バックアップ システム
+bach trash help       インライン ヘルプ

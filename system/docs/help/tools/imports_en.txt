@@ -1,0 +1,196 @@
+IMPORT TOOLS - Python import handling
+--------------------------------------
+
+As of: 2026-01-23
+Path: docs/help/tools/imports.txt
+
+DESCRIPTION
+------------
+Tools for diagnosing and organizing Python imports:
+  - Find import problems (missing, circular, unused)
+  - Sort and clean imports (PEP8 compliant)
+
+Common problems that these tools solve:
+  - "ModuleNotFoundError" / "ImportError"
+  - Circular imports (A imports B, B imports A)
+  - Chaotic import order
+  - Double imports
+  - Imports in the middle of the code instead of at the beginning
+
+IMPORT DIAGNOSIS: c_import_diagnose
+----------------------------------
+Systematic analysis of import problems.
+
+FUNCTIONS:
+  - Import individual modules in isolation
+  - Vary import order
+  - Detect circular imports
+  - Parse __init__.py
+  - Timing tests with delays
+  - Locate crash point
+
+BASIC COMMANDS:
+
+  # Analyze project
+  bach c_import_diagnose projekt/src/
+
+  # With JSON output
+  bach c_import_diagnose projekt/src/ --json
+
+  # Test specific modules
+  bach c_import_diagnose . --modules core.app:App,gui.main:MainWindow
+
+OPTIONS:
+  --json JSON output (machine readable)
+  --modules M1:C1,M2:C2 Specific modules:Test classes
+
+OUTPUT EXAMPLE:
+  === IMPORT DIAGNOSIS ===
+
+  [1/5] Test individual modules...
+    [OK] core.app.App
+    [FAIL] gui.main.MainWindow -> ImportError: No module named 'missing'
+
+  [2/5] Check circular imports...
+    [WARN] core.utils -> core.app -> core.utils (Circle!)
+
+  [3/5] __init__.py analysis...
+    [OK] core/__init__.py
+    [MISSING] gui/__init__.py
+
+  === RECOMMENDATIONS ===
+  1. Install missing module 'missing'
+  2. Resolve circular import core.utils <-> core.app
+  3. Create gui/__init__.py
+
+IMPORT ORGANIZER: c_import_organizer
+------------------------------------
+Sorts and cleans Python imports according to PEP8.
+
+FUNCTIONS:
+  - Collect all imports at the beginning of the file
+  - Remove duplicates
+  - Sort alphabetically (first import, then from)
+  - Clean up multiple blank lines
+
+BASIC COMMANDS:
+
+  # Organize file
+  bach c_import_organizer script.py
+
+  # Just check without changes
+  bach c_import_organizer script.py --dry-run
+
+  # JSON output
+  bach c_import_organizer script.py --json
+
+  # Read from stdin
+  cat script.py | bach c_import_organizer --stdin
+
+OPTIONS:
+  --dry-run Show only, do not change
+  --json JSON output
+  --stdin Read code from stdin
+
+BEFORE/AFTER EXAMPLE:
+
+  BEFORE:
+  ---------------------
+  import os
+
+  def foo():
+      from pathlib import Path
+      pass
+
+  import sys
+  from typing import List
+  import os # duplicate!
+  ----------------------
+
+  AFTER:
+  ---------------------
+  import os
+  import sys
+  from pathlib import Path
+  from typing import List
+
+  def foo():
+      pass
+  ---------------------
+
+TYPICAL WORKFLOWS
+------------------
+
+1. DEBUG "ImportError".
+   Analyze project to find crash point:
+
+   bach c_import_diagnose projekt/src/ --json
+
+   Then follow recommendations.
+
+2. FIND CIRCULAR IMPORTS
+   When modules import each other:
+
+   bach c_import_diagnose projekt/src/
+
+   Output shows: A -> B -> A (compass!)
+
+   Solution: Outsource common dependencies to third module.
+
+3. BEFORE CODE REVIEW
+   Clean up imports before reviewing code:
+
+   bach c_import_organizer script.py
+
+   Or for the entire project:
+   for f in *.py; do bach c_import_organizer "$f"; done
+
+4. AFTER REFACTORING
+   After major conversion check imports:
+
+   # Diagnose first
+   bach c_import_diagnose src/
+
+   # Then clean up
+   for f in src/*.py; do bach c_import_organizer "$f"; done
+
+5. SET UP A NEW PROJECT
+   __init__.py Check files:
+
+   bach c_import_diagnose mein_paket/
+
+   Shows missing __init__.py files.
+
+PEP8 IMPORT ORDER
+-----------------------
+The c_import_organizer sorts according to PEP8 standard:
+
+  1. Standard library (import os, import sys)
+  2. Third party (import requests, import numpy)
+  3. Local imports (from . import module)
+
+Within each group: sorted alphabetically.
+
+CONTEXT INJECTOR
+----------------
+The ContextInjector recognizes keywords and recommends these tools:
+
+  "Sort imports" -> bach c_import_organizer <file>
+  "import problem" -> bach c_import_diagnose <project>
+  "import is missing" -> bach c_import_diagnose <project>
+
+INTEGRATION WITH OTHER TOOLS
+-----------------------------
+Combine with python_cli_editor for complete image:
+
+  # Show imports (grouped)
+  bach python_cli_editor script.py --imports
+
+  # Then organize
+  bach c_import_organizer script.py
+
+SEE ALSO
+----------
+  bach --help tools/python_editing   Edit Python files
+  bach --help tools/code_quality     Code quality (encoding etc.)
+  bach python_cli_editor --help      Show imports with --imports

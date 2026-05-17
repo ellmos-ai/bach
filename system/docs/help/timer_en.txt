@@ -1,0 +1,97 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+TIMER - Stopwatch
+----------------
+
+Measures elapsed time. Multiple timers possible at the same time.
+
+CLI COMMANDS
+-----------
+
+  bach timer start              Start unnamed timer
+  bach timer start "Recherche"  Start named timer
+  bach timer stop               Stop last/only timer
+  bach timer stop "Recherche"   Stop named timer
+  bach timer list               Show all active timers
+  bach timer clear              Delete all timers
+
+OUTPUT FORMAT
+--------------
+
+  [TIMER] Research: 05:23 | Session: 45:12
+
+Active timers are displayed with every CLI output.
+
+PERSISTENCY
+----------
+
+  File: data/.timer_state
+
+  Contents:
+  {
+    "timers": {
+      "Research": "2026-01-30T14:00:00",
+      "Session": "2026-01-30T13:50:00"
+    }
+  }
+
+EXAMPLES
+---------
+
+  # Start session timer
+  bach timer start "Session"
+  -> Timer 'Session' started
+
+  # Additional timer for subtask
+  bach timer start "Bugfix"
+  -> Timer 'Bugfix' started
+
+  # Check status
+  bach timer list
+  -> Session: 45:12
+  -> Bug fix: 05:23
+
+  # Stop bugfix timer
+  bach timer stop "Bugfix"
+  -> Timer 'Bugfix' stopped: 05:23
+
+USECASES
+--------
+
+  1. SESSION TRACKING
+     bach timer start "Session"
+     ... work ...
+     bach timer stop "Session"
+     -> Shows how long the session lasted
+
+  2. TASK TRACKING
+     bach timer start "Task-123"
+     ... Edit task ...
+     bach timer stop "Task-123"
+     -> Time can be noted in task comment
+
+  3. PARALLEL TRACKING
+     bach timer start "Gesamt"
+     bach timer start "Recherche"
+     ...research...
+     bach timer stop "Recherche"
+     bach timer start "Coding"
+     ... code ...
+     bach timer stop "Coding"
+     bach timer stop "Gesamt"
+     -> Shows time distribution
+
+INTERPLAY
+-------------
+
+Timer is part of the time system:
+  --help clock Time display
+  --help countdown Countdown with trigger
+  --help between between checks
+  --help beat Unified time display
+
+---
+Version: 1.0 | Status: Implemented (v1.1.83)
+Handler: system/hub/time.py (TimerHandler)

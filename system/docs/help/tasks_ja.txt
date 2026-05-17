@@ -1,0 +1,101 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [tasks table, ati_tasks table, Hub/task.py, bach_api.py]
+
+TASKS - タスク システム
+-----------------------
+
+ステータス: 2026-02-08
+
+タスク システム (レイヤー 5) は、ユーザーとタスク間の作業を調整します。
+パートナー エージェント (クロード、ジェミニなど)。
+
+中心的な概念
+------------
+- 手動タスク: `bach task add` 経由 (表: `tasks`)。
+- スキャンされたタスク: コード コメントから (テーブル: `ati_tasks`)。
+- マルチパートナー: `--assigned` によるエージェントまたはユーザーへの割り当て。
+- ディスティ層: タスクは `dist_type` (ユーザー/テンプレート/コア) によって分離されます。
+
+2 つのアクセス パス (v2.0 からの新機能)
+-------------------------------
+BACH には 2 つの並列アクセス パスがあり、どちらも同じハンドラー + DB:
+
+1 を使用します。 CLI (ターミナルにいる人向け):
+     python bach.py タスクは「タイトル」 --優先度 P4
+
+2 を追加します。ライブラリ API (LLM/スクリプトに推奨):
+     bach_api インポートタスクから
+     task.add("タイトル", "--優先順位", "P4")
+     task.list()
+     task.done(42, "--note", "Done")
+
+CLI コマンド (バッチ タスク)
+-----------------------
+  add <title> タスクを作成します (--priority P1-P4、--description、--category)
+  list [ステータス] フィルタリングされた概要 (保留中/オープン/進行中/完了/ブロック/すべて)
+  list --filter タイトルの用語でフィルタリングします
+  リスト -- 特定のパートナーに割り当てられたタスク
+  list --unassigned 割り当てのないタスク
+  説明と履歴を含む <ID> の詳細を表示します
+  edit <ID> タスクを編集します (--title、--description、--category、--assigned)
+  完了 <ID> タスクを完了としてマークします (マルチ ID、--note)
+  block <ID> タスクをブロックします (マルチ ID、--reason)
+  unblock <ID> タスクのブロックを解除します (マルチ ID)
+  再開 <ID> 完了したタスクを再度開きます (マルチ ID)
+  delete <ID> タスクを完全に削除します (マルチ ID)
+  priority <ID> <P> 優先順位の変更(P1～P4)
+  assign <ID> パートナーへの割り当て (--GEMINI/COPILOT/などへ)
+  depends <ID> 依存関係を表示します。
+    --on <X> 依存関係を追加します (タスクは X を待機します)
+    --remove <X> 依存関係を削除します
+    --clear すべての依存関係をクリアします
+
+ライブラリ API の例
+---------------------
+  bach_api インポート タスクから
+
+  # タスクの作成
+  task.add("ドキュメントの作成", "--priority", "P2", "--category", "docs")
+
+  # タスクをリストする
+  task.list("保留中")
+  task.list("open") # 従来のステータス
+  task.list("in_progress") # 現在進行中
+  task.list("すべて", "--assigned", "GEMINI")
+  task.list("--未割り当て")
+
+  # タスクを編集する
+  task.edit(42, "--タイトル", "新しいタイトル")
+  task.done(100, 101, 102, "--note", "すべて完了")
+  task.assign(200, "--to", "COPILOT")
+
+  # 依存関係
+  task.depends(306, "--on", "305") # タスク 306 は 305 を待ちます
+  task.depends(306) # 依存関係を表示
+
+SCAN-TASKS (hub/ati.py)
+-----------------------
+  bach ati onboard --check    ファイル システムをスキャンして新しいタスクを探します。
+  bach scan tasks             `ati_tasks` からタスクをリストします。
+
+DATABASE (レイヤー 1)
+---------------------
+- `tasks`: ID、タイトル、説明、ステータス、優先度、割り当て先、委任先、
+  depend_on、カテゴリ、タグ、created_at、completed_at、updated_at、dist_type。
+- `ati_tasks`: ソース リンク (ファイル/行) を持つスキャンされたタスク。
+- DB パス: system/data/bach.db
+
+GUI と統合 (計画中)
+---------------------------
+**タスク ボード** (/tasks) はカンバン ビューとして計画されています。
+タスクをステータス列間で移動できるようにします。
+
+関連項目
+----------
+  system/bach_api.py ライブラリ API モジュール (優先アクセス)
+  system/hub/task.py タスクハンドラーの実装
+  docs/help/delegate.txt パートナーへの委任
+  docs/help/maintain.txt 整合性チェックとクリーンアップ
+  bach --help ati      Automated Tool Incorporator

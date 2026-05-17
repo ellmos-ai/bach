@@ -1,0 +1,61 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+测试 - BACH 测试和 QA 系统
+--------------------------------
+
+概述
+----------
+BACH 的系统测试以及与其他系统的比较。
+使用 B 测试（自动）、O 测试（功能）和 E 测试（主观）。
+
+命令
+-------
+  bach --test self [PROFIL]     自己测试 BACH（默认：QUICK）
+  bach --test run <path>        测试另一个系统
+  bach --test compare <path>    将系统与 BACH 进行比较
+  bach --test profiles          显示可用配置文件
+  bach --test results [system]  显示测试结果
+
+测试配置文件
+-----------
+  QUICK 快速测试（~5 分钟）- B001、O001
+  标准 标准（~20 分钟）- B001-B005、O001-O003
+  完整 完成（约 40 分钟）- 所有测试
+  仅观察 B 测试（约 15 分钟）
+  仅输出 O 测试（约 20 分钟）
+  MEMORY_FOCUS 内存焦点（约 10 分钟）
+  TASK_FOCUS 任务焦点（约 10 分钟）
+
+三个测试视角
+---------------------
+  B 测试（观察）外部、自动化、Python 脚本
+                          “什么存在？”
+
+  O 测试（输出）功能、输入->输出、Python 脚本
+                          “有效吗？”
+
+  电子测试（经验） 内部、主观、克劳德主导
+                          “感觉如何？”
+
+评分标准
+---------------
+  5 = 优秀
+  4 = 好
+  3 = 可接受
+  2 = 差
+  1 = 关键
+
+示例
+---------
+  bach --test self              快速自检
+  bach --test self STANDARD     标准自检
+  bach --test compare "C:\X"    将 BACH 与另一个系统进行比较
+  bach --test results           显示所有结果
+
+实施
+---------------
+  处理程序：system/hub/test.py
+  状态：测试基础设施（工具/测试/）不可用
+  注意：处理程序存在，但工具/代理仍然丢失

@@ -1,0 +1,87 @@
+BACH Tool: gemini_start
+--------------------------------------------------
+Generated: 2026-01-24 (updated)
+Source: tools/gemini_start.py
+
+DESCRIPTION
+----------------------------------------
+BACH Gemini Starter - Launches Gemini CLI (headless) or Antigravity (GUI).
+
+TWO BACKENDS
+----------------------------------------
+  --cli Gemini CLI (headless, fully automatic with --yolo)
+  --gui Antigravity (prompt is copied to clipboard)
+
+IMPORTANT: Antigravity does not have headless mode! For automation
+         MUST use the Gemini CLI (--cli).
+
+USE
+----------------------------------------
+python tools/gemini_start.py [BACKEND] [OPTIONS]
+
+  BACKEND (required for non-auto):
+    --cli Gemini CLI (fully automatic)
+    --gui Antigravity (prompt in clipboard)
+
+  MODES:
+    (without) auto mode (only useful with --cli)
+    --bulk Bulk mode with no task limit
+    --default Interactive (waits for instructions)
+    --individual Use startprompt_gemini.txt
+    --mode NAME Use prompts/NAME.txt
+
+  OPTIONS:
+    --tasks N number of tasks in auto mode (default: 2)
+    --prompt "TEXT" Specify custom prompt directly
+    --list List available prompt templates
+    --dry-run Show command only, do not start
+
+CLI EXAMPLES (fully automatic)
+----------------------------------------
+  python tools/gemini_start.py --cli # Auto (2 tasks)
+  python tools/gemini_start.py --cli --tasks 5 # Auto (5 tasks)
+  python tools/gemini_start.py --cli --bulk # All tasks (endless)
+  python tools/gemini_start.py --cli --mode analysis # analysis mode
+
+GUI EXAMPLES (prompt to clipboard)
+----------------------------------------
+  python tools/gemini_start.py --gui --bulk # Bulk prompt
+  python tools/gemini_start.py --gui --default # Interactive prompt
+  python tools/gemini_start.py --gui --individual # User prompt
+  python tools/gemini_start.py --gui --mode analysis # analysis prompt
+
+GUI-WORKFLOW:
+  1. Script starts Antigravity
+  2. Promptly copied to clipboard
+  3. User clicks into chat, presses Ctrl+V, Enter
+
+PROMPT TEMPLATES (partners/gemini/prompts/)
+----------------------------------------
+  auto.txt Auto mode: Process tasks immediately (CLI only)
+  bulk.txt Bulk mode: ALL tasks without limit
+  default.txt Interactive: Waits for instructions
+  analysis.txt Executes all analysis scripts
+  research.txt Research mode for topic analysis
+
+CUSTOM PROMPT
+----------------------------------------
+Edit partners/gemini/startprompt_gemini.txt for your own instructions.
+Loaded with --individual.
+
+BATCH-STARTER
+----------------------------------------
+Alternatively: partners/gemini/start_gemini.bat
+Shows interactive menu with CLI/GUI selection.
+
+REQUIREMENTS
+----------------------------------------
+  CLI mode: npm install -g gemini-cli
+               gemini auth login
+  GUI mode: Antigravity installed and in the PATH
+
+SEE ALSO
+----------------------------------------
+  wiki/gemini.txt Gemini details (CLI, API, pricing)
+  wiki/antigravity.txt Antigravity IDE
+  docs/help/partners.txt Partner network
+  partners/gemini/_README.md Workspace documentation

@@ -1,0 +1,19 @@
+BACH ツール: create_boot_checks
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/create_boot_checks.py
+
+説明
+----------------------------------------
+boot_checks テーブルの作成 - プロンプト前のチェックに重要
+作成日: 2026-01-21 (BACH セッション)
+
+使用
+----------------------------------------
+python bach.py ツール run create_boot_checks [args]
+または直接: python tools/create_boot_checks.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show create_boot_checks

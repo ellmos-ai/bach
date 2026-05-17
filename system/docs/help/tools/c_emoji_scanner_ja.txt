@@ -1,0 +1,29 @@
+BACH ツール: c_emoji_scanner
+--------------------------------------------------
+生成: 2026-01-23 10:36
+出典: tools/c_emoji_scanner.py
+
+説明
+----------------------------------------
+c_emoji_scanner.py - Gemoji/emoji パッケージを統合した絵文字スキャナ
+
+ファイルの絵文字をスキャンし、どの絵文字が自動的に解決できるかを示します。
+c_json_repair.py と同じバックエンドを使用します (絵文字パッケージまたは gemoji.json フォールバック)。
+
+使用法:
+    python c_emoji_scanner.py <ファイルまたはフォルダー>
+    python c_emoji_scanner.py --scan-batch # すべての _BATCH JSON ファイル
+    python c_emoji_scanner.py --status # システム ステータス
+
+作成者: クロード
+バージョン: 3.0 - c_json_repair.py と統合
+
+USE
+----------------------------------------
+python bach.py ツールは c_emoji_scanner [args] を実行します
+または直接: python tools/c_emoji_scanner.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成
+- 質問がある場合: bach tools show c_emoji_scanner

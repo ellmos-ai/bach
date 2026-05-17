@@ -1,0 +1,37 @@
+BACH Tool: c_standard_fixer
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/c_standard_fixer.py
+
+DESCRIPTION
+----------------------------------------
+c_standard_fixer.py - Toolchain for common code problems
+
+Runs several fixers one after the other:
+  1. BOM fix (removed/corrected byte order mark)
+  2. Encoding fix (ensure UTF-8)
+  3. Umlaut Fix (repair broken German umlauts)
+  4. Indent check (identify indentation problems)
+
+Usage:
+    python c_standard_fixer.py <file.py>
+    python c_standard_fixer.py <file.py> --dry-run
+    python c_standard_fixer.py <folder> --recursive
+    python c_standard_fixer.py <file.py> --only bom,umlaut
+    python c_standard_fixer.py --list-tools
+
+Configuration:
+    The active tools can be customized in STANDARD_FIXER_CONFIG.
+
+Author: Claude
+Version: 1.0
+
+USE
+----------------------------------------
+python bach.py tools run c_standard_fixer [args]
+or directly: python tools/c_standard_fixer.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show c_standard_fixer

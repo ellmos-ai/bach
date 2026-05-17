@@ -1,0 +1,95 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+新闻处理人员
+-------------
+
+处理人员姓名
+------------
+
+press - 新闻稿和立场文件
+
+
+描述
+------------
+
+新闻处理人员创建和管理专业的新闻稿和
+立场文件。文档通过 LaTeX 模板编译并另存为
+导出的 PDF 文件。通过bach.db表进行管理
+具有状态跟踪和电子邮件发送选项的 press_documents。
+
+要求：MiKTeX 或 TeX Live（需要 pdflatex/xelatex）
+
+
+操作
+-----------
+
+create --type <type> --title "..." [--body "..."]
+  创建新文档。类型：新闻稿、立场文件
+  示例： bach press create --类型新闻稿 --标题“Innovations 2026”
+  返回：成功时的文档 ID 和 PDF 路径，LaTeX 错误时的草稿
+
+模板
+  显示可用的 LaTeX 模板
+  显示：模板名称、路径、文件大小（以字节为单位）
+
+列表
+  查看所有保存的文档（最新的在前）
+  显示：ID、类型、状态（草稿/已编译/已发送）、PDF 状态、创建日期
+  排序：按created_at
+
+show <id>降序
+  显示带有 ID 的文档的详细信息
+  内容：类型、标题、状态、PDF 路径、正文（最多 300 个字符）、
+           创建日期、发货信息
+
+发送 <id> --to <email>
+  通过电子邮件发送文档
+  用途：NotifyHandler 用于发送电子邮件
+  更改：状态更新为“已发送”，DB
+
+config 中的sent_at 和sent_to [--logo <path>] [--author "..."] [--email <...>] [--org <...>]
+  查看或更改配置
+  存储：agents/_experts/press/config.json 中的 JSON 配置
+  选项：徽标路径、作者、联系人电子邮件、组织
+
+
+示例
+---------
+
+1。创建新闻稿：
+   bach press create --type pressemitteilung \
+     --title“2026年新产品功能”\
+     --body“Lorem ipsum dolor sat amet...”
+
+2。列出所有文档：
+   bach press list
+
+3。具体查看文档：
+   bach press show 5
+
+4．发送文件：
+   bach press send 5 --to redaktion@company.com
+
+5.更改配置：
+   bach press config --author "Max Mustermann" --email info@company.com
+
+
+文件
+-------
+
+相对于系统/：
+
+  data/bach.db 文档数据库
+  Agents/_experts/press/ 新闻处理程序目录
+  Agents/_experts/press/config.json 配置文件 (JSON)
+  Agents/_experts/press/press_compiler.py LaTeX 编译器模块
+
+
+另请参阅
+----------
+
+  hub/base.py BaseHandler类（Handler基本结构）
+  hub/notify.py NotifyHandler（电子邮件发送）
+  Agents/_experts/press/ 带模板的新闻专家目录

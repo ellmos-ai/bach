@@ -1,0 +1,104 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MANEJADOR DE SANDBOX
+---------------
+
+DESCRIPCIÓN
+------------
+Ejecución de código aislado para scripts de Python, evaluaciones de código, pruebas unitarias y
+Comandos de shell. Reemplaza E2B MCP. Todas las operaciones se ejecutan con un tiempo de espera de 30 segundos y
+CODIFICACIÓN DE PYTHONIO = utf-8. Las salidas están limitadas a un máximo de 3000 caracteres (stdout) o 1000 caracteres
+(stderr) limitado.
+
+
+OPERACIONES
+-----------
+
+EJECUTAR
+---
+Ejecuta un archivo Python en un proceso sandbox.
+
+Sintaxis: bach sandbox run <archivo> [arg1] [arg2] ...
+
+Parámetros:
+  <archivo>: ruta absoluta o relativa al archivo .py (relativa al sistema/)
+  [arg1...] - Opcional: los argumentos se pasan a sys.argv
+
+Código de salida: 0 en caso de éxito, >0 en caso de error
+
+cwd se establece en el directorio del archivo.
+
+
+EVAL
+----
+Evalúa la expresión de Python en un proceso aislado.
+
+Sintaxis: bach sandbox eval "<código>"
+
+Parámetros:
+  <código> - Expresión o declaración de Python (entre comillas)
+
+Característica especial: primero intenta eval(), recurre a exec() (para declaraciones).
+El valor de retorno (si no es Ninguno) se imprime en la salida estándar.
+
+cwd se establece en el directorio temporal.
+
+
+TEST
+----
+Ejecuta pytest en un archivo Python.
+
+Sintaxis: bach sandbox test <archivo>
+
+Parámetros:
+  <archivo> - Ruta absoluta o relativa para probar el archivo .py
+
+Banderas: -v (detallado), --tb=short (rastreos cortos)
+
+Tiempo de espera: 60 segundos (el doble en comparación con ejecutar/evaluar)
+
+cwd está configurado en el directorio system/.
+
+
+SHELL
+-----
+Ejecuta el comando de shell en un directorio aislado.
+
+Sintaxis: bach sandbox shell "<cmd>"
+
+Parámetros:
+  <cmd> - Cualquier comando de shell (por ejemplo, "ls -la", "pip list")
+
+cwd se establece en un directorio vacío temporal (limpieza después de la ejecución).
+
+
+EJEMPLOS
+---------
+
+# Ejecutar archivo Python con parámetros:
+bach sandbox run tools/data_processor.py input.csv output.json
+
+# Evaluar expresión:
+bach sandbox eval "import json; json.dumps({'test': 123})"
+
+# Ejecutar pruebas unitarias:
+bach sandbox test tools/test_handler.py
+
+# Comando de shell con tiempo de espera:
+bach sandbox shell "pip list | grep requests"
+
+
+FILES
+-------
+hub/sandbox.py - Implementación del controlador
+docs/help/sandbox.txt - Este archivo
+
+
+VER TAMBIÉN
+----------
+hub/base.py - BaseHandler (clase base)
+tools/ - Directorio de destino para scripts
+TIEMPO DE ESPERA: 30 segundos por defecto, 60 segundos para prueba
+CODIFICACIÓN DE PYTHONIO - utf-8 (compatible con Windows)

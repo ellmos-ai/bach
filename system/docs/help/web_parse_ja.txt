@@ -1,0 +1,65 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+===
+web_parse
+
+説明
+===
+Web ページをダウンロードし、HTML を Markdown に変換します。サポートされています
+オプションのクリーンアップ (ナビゲーション、ヘッダー、フッターなどの削除)。
+MD5 ハッシュ ベースのファイル名キャッシュを実装します。
+
+OPERATIONS
+===
+url <url>
+  URL をロードし、完全な HTML を Markdown コンテンツに出力します。
+  キャッシュは自動的にチェックされ、更新されます。
+
+clean <url>
+  URL をロードし、メインコンテンツ (ナビゲーション、ヘッダー、フッター、その他) のみを解析します。
+  削除されました）。リンクはクリーン モードでは解析されません。
+
+キャッシュ リスト
+  キャッシュされたファイルをすべて表示します。ファイル名、サイズ（KB）、URL、および
+  タイムスタンプがオフです。
+
+キャッシュ クリア
+  空のキャッシュ ディレクトリ (クエリ: data/cache/web 内のすべての .md ファイル)
+  削除されます)。
+
+例
+===
+bach web-parse url https://example.com
+  example.com から完全なコンテンツを Markdown として出力します。
+
+bach web-parse clean https://example.com/article
+  ナビゲーション/ヘッダー/フッターをマークダウンとして持たない記事のメイン コンテンツのみ。
+
+bach web-parse cache list
+  キャッシュされたページをサイズとともに表示します。
+
+bach web-parse cache clear
+  キャッシュ全体をクリアします。
+
+ファイル
+===
+data/cache/web/
+  キャッシュディレクトリ。 URL の MD5 ハッシュ (12 文字) + サフィックス「_clean」
+  クリーン モード + .md 拡張子の場合。
+  例: abc1234def56_clean.md
+
+hub/web_parse.py
+  ハンドラー実装 BaseHandler サブクラス、HTTP リクエスト
+  リクエスト、html2text またはフォールバック正規表現を使用した HTML から Markdown へ。
+
+関連項目
+===
+依存関係: リクエスト (pip install リクエスト)、html2text (オプション)。
+html2text がインストールされていない場合は、正規表現を使用したフォールバック変換。
+ユーザーエージェントが設定されています(BACH WebParse/1.0)。
+タイムアウト: リクエストごとに 20 秒。
+HTML エンティティはデコードされます (&amp;、&lt;、&gt;、&quot;、&nbsp;)。
+キャッシュ ファイルには、URL、タイムスタンプ、モードを含むメタ コメントが含まれています。

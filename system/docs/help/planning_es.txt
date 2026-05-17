@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PROCESO DE PLANIFICACIÓN
+-----------------
+
+¿CUÁNDO PLANIFICAR?
+  < 15 min Editar directamente
+  15-30 min Estructura opcional
+  > 30 min DEBE ser estructurado
+
+CREAR PLANIFICACIÓN (MANUAL):
+
+  1. Cree un documento conceptual en docs/ o docs/_ideas/
+  2. Estructura (recomendada):
+     - Antecedentes (¿Por qué?)
+     - Meta (¿Qué se debe lograr?)
+     - Análisis técnico (componentes, archivos, dependencias)
+     - Plan de implementación con descomposición de tareas
+
+  3. Crear tareas en la base de datos BACH:
+     bach task add "Teil 1" --category development --priority P2
+     bach task add "Teil 2" --category development --priority P3
+
+  4. Establecer dependencias (si es necesario):
+     bach task depends <id> --on <andere_id>
+
+REGLAS DE PRESUPUESTO DE TIEMPO (recomendaciones):
+  Muy raro: 1-2 min (cambiar el nombre de la constante)
+  Raro: 2-3 min (agregar importación)
+  CON FRECUENCIA: 3-6 min (función del instrumento)
+  A veces: 8-11 min (Lógica más compleja)
+  Raro: 12 min (refactorización importante)
+  NUNCA: >15 min (técnicamente no es posible)
+
+COMANDOS DE TAREAS:
+  bach task add <titel>              Agregar tarea
+  bach task add <titel> --category development --priority P2
+  bach task list pending             Mostrar tareas abiertas
+  bach task depends <id>             Mostrar dependencias
+  bach task depends <id> --on <id2>  Establecer dependencia
+  bach task show <id>                Mostrar detalles de la tarea
+  bach task done <id>                Marcar tarea como completada
+
+  Ver también: ayuda para tareas de bach
+
+EJEMPLO DE FLUJO DE TRABAJO:
+  1. Escribe el concepto en docs/_ideas/my_feature.md
+  2. Crear tareas:
+     bach task add "Schema erweitern" --category development --priority P2
+     bach task add "Handler implementieren" --category development --priority P2
+     bach task add "Tests schreiben" --category development --priority P3
+  3. Establecer dependencias:
+     bach task depends 302 --on 301  # El controlador depende del esquema
+     bach task depends 303 --on 302  # Las pruebas dependen del controlador
+  4. Proceso paso a paso:
+     bach task done 301
+     bach task list pending  # 302 ya no está bloqueado

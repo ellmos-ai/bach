@@ -1,0 +1,69 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+USER_SYNC HANDLER
+-----------------
+
+HANDLER NAME
+------------
+user_sync -- Bidirectional synchronization between USER.md and user_profile
+
+DESCRIPTION
+------------
+The user_sync handler synchronizes user profile data between the
+Markdown file USER.md (in the BACH root directory) and the SQLite table
+user_profile in bach.db. Two synchronization directions are supported:
+
+1. USER.md -> DB at BACH startup (Block 0.07)
+2. DB -> USER.md during BACH shutdown (Block 5.7)
+
+Recognized fields: name, location, language, profession, GitHub, email, role.
+USER.md is one level above the system/ directory (BACH root).
+
+OPERATIONS
+-----------
+sync_to_db(dry_run=False)
+  Reads USER.md and saves fields in user_profile table.
+  Dry-Run: Just check, don't write.
+  Status message if file is missing or empty user_profile table.
+
+sync_to_file()
+  Reads user_profile from DB and updates fields in USER.md.
+  Retains the structure and formatting of USER.md.
+  Updates only recognized fields (**Name:**, etc.).
+
+from_bach_root(bach_root)
+  Factory method: Creates UserSync instance from system/path.
+
+Convenience functions for bach.py:
+  sync_user_md_to_db(bach_root, dry_run=False)
+  sync_db_to_user_md(bach_root)
+
+EXAMPLES
+---------
+# Python code: Write USER.md to DB
+from hub.user_sync import UserSync
+syncer = UserSync.from_bach_root('system/')
+result = syncer.sync_to_db()
+print(result) # {'status': 'ok', 'synced': 5}
+
+# Write DB back to USER.md (shutdown)
+result = syncer.sync_to_file()
+print(result) # {'status': 'ok', 'updated_fields': 3}
+
+# Dry-Run: Check only
+result = syncer.sync_to_db(dry_run=True)
+print(result) # {'status': 'dry_run', 'data': {...}}
+
+FILES
+-------
+hub/user_sync.py -- Implementation (class UserSync + convenience functions)
+../USER.md -- Synchronized profile (BACH root)
+data/bach.db -- SQLite DB with user_profile table
+
+SEE ALSO
+----------
+bach.py -- Startup/Shutdown orchestration (Block 0.07 / 5.7)
+user_profile -- DB table for profile data
+../CLAUDE.md -- BACH system documentation

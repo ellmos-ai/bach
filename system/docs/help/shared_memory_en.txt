@@ -1,0 +1,187 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [hub/shared_memory.py, shared_memory_*, shared_context_triggers]
+
+SHARED MEMORY - Multi-Agent Memory Management
+-----------------------------------------------
+
+DATE: 2026-02-28
+
+The shared memory system enables shared memory access
+several agents (Claude, Gemini, etc.). In contrast to normal
+Memory system allows several partners to read and read at the same time
+write.
+
+Ref: SQ043 Level A-2
+
+ARCHITECTURE
+-----------
+
+  Agent A ─┐
+  Agent B ─┤─> shared_memory_* (bach.db) <─┬─> context block
+  Agent C ─┘ └─> Changes feed
+
+Features:
+  - Multi-agent capable (agent_id, namespace)
+  - Visibility levels (private, team, global)
+  - Decay tracking for automatic cleanup
+  - Conflict resolution via confidence values
+  - dist_type for distribution system
+
+CLI COMMANDS (bach shared-mem)
+------------------------------
+
+FACTS (shared facts):
+  facts list Show all shared facts
+  facts add <key> <value> Add new fact
+  facts get <id> Show specific fact
+  facts delete <id> delete fact
+
+LESSONS (Shared Lessons):
+  lessons list Show all shared lessons
+  lessons add <title> Add new lesson
+  lessons activate <id> Activate lesson
+  lessons deactivate <id> deactivate lesson
+
+WORKING MEMORY (short-term memory):
+  working list Show active entries
+  working add <content> Add entry
+  working cleanup Delete expired entries
+  working current-task <text> Set current task (max. 1 per agent)
+
+SESSIONS:
+  sessions list [N] Show sessions (default: 20)
+  sessions current Show active sessions
+  sessions archive <tage> Archive old sessions
+
+CONSOLIDATION (memory weighting):
+  consolidation list Show consolidation entries
+  consolidation stats View statistics
+  consolidation add <t> <id> Add entry manually
+  consolidation Consolidate weak entries
+  consolidation run Execute decay logic (B57)
+
+CONTEXT & CHANGES:
+  context Generate context block (B55)
+  changes <timestamp> Changes since timestamp (B58)
+
+EXAMPLES
+---------
+
+  # Add fact
+  bach shared-mem facts add "api.endpoint" "https://api.example.com"
+  bach shared-mem facts add "server.ip" "192.168.1.1" --agent CLAUDE --confidence 0.9
+
+  # share lesson
+  bach shared-mem lessons add "Windows: UTF-8 mit PYTHONIOENCODING setzen" --severity high
+
+  # Set current task (session anchor)
+  bach shared-mem working current-task "Migration von PyMuPDF auf pypdf"
+  bach shared-mem working current-task "BACH Release vorbereiten" --agent GEMINI
+
+  # Generate context block (for agent initialization)
+  bach shared-mem context
+
+  # Query changes since yesterday
+  bach shared-mem changes 2026-02-27T00:00:00
+
+  # Execute decay logic (memory cleanup)
+  bach shared-mem consolidation run
+  bach shared-mem consolidation run --dry-run
+
+CONFLICT RESOLUTION (B56)
+--------------------------
+
+When `facts add` with existing key:
+  - New confidence >= existing confidence → entry is updated
+  - New Confidence < existing Confidence → entry remains unchanged
+
+  Example:
+    bach shared-mem facts add "version" "2.5" --confidence 0.9
+    # Overwrites existing entry if its confidence < 0.9
+
+DECAY-SYSTEM (B57)
+------------------
+
+`consolidation run` carries out decay logic:
+  - Each entry: weight *= decay_rate (default: 95% retention)
+  - If weight falls below the threshold (default: 0.1) → Archiving
+  - Frequently accessed entries receive a boost and are archived less often
+
+CONTEXT-BLOCK (B55)
+--------------------
+
+`bach shared-mem context` generates a Markdown block:
+
+  ## Shared Memory Context
+
+  ### Current Tasks
+  - **CLAUDE**: Migration running (since ...)
+
+  ### Top Facts
+  - **api.endpoint** [0.9]: https://api.example.com
+
+  ### Active lessons
+  - [high] Windows: Set UTF-8 with PYTHONIOENCODING
+
+Is used for agent initialization.
+
+CHANGES-FEED (B58)
+-------------------
+
+`bach shared-mem changes <timestamp>` returns all changes
+since the specified ISO timestamp:
+
+  bach shared-mem changes 2026-02-28T10:00:00
+
+Useful for agent synchronization: An agent checks regularly
+whether other agents have added facts or lessons.
+
+OPTIONS FOR ADDING FACTS
+-----------------------
+
+  --agent <id> agent ID (default: GLOBAL)
+  --namespace <ns> namespace (default: default)
+  --visibility <level> private|team|global (default: global)
+  --confidence <0.0-1.0> Confidence value (default: 0.5)
+
+OPTIONS FOR ADD LESSONS
+--------------------------
+
+  --severity info|warn|high|critical Severity (default: info)
+  --agent <id> agent ID (default: GLOBAL)
+  --namespace <ns> namespace (default: default)
+
+DATABASE TABLES
+------------------
+
+shared_memory_facts Shared facts (key-value)
+  shared_memory_lessons Shared lessons
+  shared_memory_sessions Shared session history
+  shared_memory_working short-term memory (is_active, expires_at)
+  shared_memory_consolidation Decay tracking (weight, decay_rate, threshold)
+  shared_context_triggers Shared context triggers
+
+DIFFERENT FROM NORMAL MEMORY
+---------------------------------
+
+  Normal memory (bach mem, bach --memory):
+    - For ONE agent/partner
+    - memory_working, memory_facts, memory_lessons
+
+  Shared memory (bach shared-mem):
+    - For MULTIPLE agents at the same time
+    - Visibility control (private/team/global)
+    - Conflict resolution via confidence
+    - Decay system for cleanup
+
+FILES
+-------
+  hub/shared_memory.py Handler implementation
+
+SEE ALSO
+----------
+  bach --help memory        Normal memory system (single agent)
+  bach --help consolidation Konsolidierungs-Engine
+  bach --help connector     Connector system (multi-partner)

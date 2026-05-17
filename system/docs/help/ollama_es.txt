@@ -1,0 +1,95 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+INTEGRACIÓN BACH OLLAMA
+-----------------------
+Servidor LLM local para modo de ahorro de token y uso fuera de línea.
+
+COMANDOS
+-------
+bach ollama status           Comprobar conexión, modelos instalados
+bach ollama ask "prompt"     Solicitud directa a Ollama
+bach ollama embed "text"     Generar incrustación
+bach ollama models           Listar modelos disponibles
+
+OPCIONES
+--------
+--model=NOMBRE Seleccionar modelo (predeterminado: llama3.2)
+
+EJEMPLOS
+---------
+# Verificar estado
+bach ollama status
+
+# Pregunta simple
+bach ollama ask "Was ist BACH?" --model=llama3.2
+
+# Delegar código revisión
+bach ollama ask "Review diesen Code: def add(a,b): return a+b"
+
+# Incrustación para búsqueda
+bach ollama embed "Suchtext fuer RAG"
+
+INTEGRACIÓN CON SISTEMA DE SOCIOS
+------------------------------
+Ollama está registrado como socio local y automáticamente
+preferido para un alto consumo de tokens:
+
+Zona 3 (60-80% tokens): se prefiere Ollama
+Zona 4 (80-100%): Humano/solo emergencia (Ollama aún es posible)
+
+Delegación automática:
+  bach partner delegate "Task" --to=ollama
+
+Reserva en caso de problemas de red:
+  bach ollama ask "Task"   (ejecución local directa)
+
+REQUISITOS
+---------------
+- Ollama debe instalarse localmente
+- Puerto predeterminado: http://localhost:11434
+- Se debe sacar al menos un modelo
+
+Verificar instalación:
+  ollama --versión
+  lista de ollama
+
+Instalar modelo:
+  ollama tirar llama3.2
+  ollama pull codellama
+
+SOLUCIÓN DE PROBLEMAS
+---------------
+Error: "Conexión rechazada"
+  → Iniciar servidor Ollama: servir ollama
+  → Verificar puerto: http://localhost:11434
+
+Error: “Modelo no encontrado”
+  → Modelo de extracción: ollama pull llama3.2
+  → Verifique los nombres de los modelos: lista de ollama
+
+Respuestas lentas:
+  → Elija un modelo más pequeño (llama3.2 en lugar de llama3.1:70b)
+  → Verificar el uso de GPU (CUDA/Metal)
+
+Problemas de memoria:
+  → Utilice un modelo más pequeño
+  → Descargar otros modelos: parada de ollama
+
+CONFIGURACIÓN
+-------------
+Ajustes de ollama en BACH:
+  - ID de socio: ollama
+  - Tipo: local
+  - Modelo estándar: llama3.2 (configurable)
+  - Tiempo de espera: 120 segundos
+
+Ajuste mediante:
+  bach partner info ollama
+
+VER TAMBIÉN
+----------
+bach help partner          Descripción general del sistema asociado
+bach help delegate         Delegación de tareas
+bach help tools            Inventario de herramientas (ollama_client.py)

@@ -1,0 +1,32 @@
+BACH Tool: migrate_connections
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/migrate_connections.py
+
+DESCRIPTION
+----------------------------------------
+Migrate Connections to Database
+--------------------------------
+
+Migrates the archived JSON registries into the bach.db tables:
+- external_ki_tools_registry.json -> tools (type='external')
+- connections_overview.json/cli_tools -> tools (type='cli')
+- connections_overview.json/mcp_servers -> connections (type='mcp')
+- claude_registry.json -> connections (type='ai')
+
+Usage:
+    python migrate_connections.py [--dry-run]
+    python migrate_connections.py --status
+    python migrate_connections.py --help
+
+Version: 1.0.0
+
+USE
+----------------------------------------
+python bach.py tools run migrate_connections [args]
+or directly: python tools/migrate_connections.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show migrate_connections

@@ -1,0 +1,83 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [NPM Registry, GitHub Repos]
+
+NPM PUBLISH - MCP Server publication
+--------------------------------------------
+
+DATE: 2026-02-15
+
+Workflow for publishing the BACH MCP Server on NPM and GitHub.
+
+PACKAGES
+------
+  ellmos-filecommander-mcp 39 tools, file system/processes/sessions/i18n
+  ellmos-codecommander-mcp 15 tools, code analysis/JSON/encoding/i18n
+
+GITHUB REPOS
+-------------
+  https://github.com/lukisch/ellmos-filecommander-mcp
+  https://github.com/lukisch/ellmos-codecommander-mcp
+
+NPM AUTHENTICATION
+----------------------
+  Method: Granular Access Token with “Bypass 2FA”
+  Token name: bach-publisher 2
+  Created: 2026-02-15
+  Expires: 2026-05-16
+  Stored in: ~/.npmrc
+
+  IMPORTANT: Classic Automation Tokens no longer work (EOTP error).
+  Nur Granular Access Tokens mit "Bypass 2FA" umgehen die OTP-Abfrage.
+
+  Renew token (if expired):
+    1. https://www.npmjs.com/settings/~/tokens -> "Generate New Token"
+    2. Select "Granular Access Token" (NOT Classic!)
+    3. Permissions: Read and Write, all packages
+    4. Activate “Bypass 2FA” checkbox
+    5. Enter tokens in ~/.npmrc:
+       //registry.npmjs.org/:_authToken=<new-token>
+
+NPM PUBLISH WORKFLOW
+---------------------
+  1. Check token:
+     npm whoami -> must output "lukisch"
+
+  2. Run the build manually (because of & in the path KI&AI):
+     node "<path>/node_modules/typescript/bin/tsc" --project "<path>/tsconfig.json"
+
+  3. Run npm publish (no OTP, no browser required):
+     cd <project directory>
+     npm publish --ignore-scripts
+
+KNOWN ISSUES
+------------------
+  - & in the path "KI&AI" breaks npm scripts (prepublishOnly)
+    -> Workaround: --ignore-scripts (build manually beforehand)
+  - npm run build fails in the project directory
+    -> Workaround: call tsc directly via node
+  - Classic Automation Tokens trigger EOTP errors
+    -> Workaround: Granular Access Token with "Bypass 2FA"
+
+GITHUB WORKFLOW
+----------------
+  1. git add <files> && git commit -m "message"
+  2. git tag vX.Y.Z
+  3. git push origin master --tags
+
+VERSION BUMP CHECKLIST
+------------------------
+  [ ] package.json version
+  [ ] src/index.ts version (server config)
+  [ ] CHANGELOG.md new entry
+  [ ] README.md if features change
+  [ ] Test build
+  [ ] Git commit + tag + push
+  [ ] npm publish --ignore-scripts
+
+SEE ALSO
+----------
+  docs/help/tools.txt Tool overview
+  docs/help/coding.txt Coding standards
+  skills/workflows/npm-mcp-publish.md Detailed log

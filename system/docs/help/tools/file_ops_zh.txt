@@ -1,0 +1,26 @@
+BACH 工具：文件操作
+--------------------------
+
+用于分析和清理的文件系统工具。
+
+可用工具
+-----------------
+
+  dirscan 带有统计信息的目录扫描器
+  查找文件重复项
+  coding_fixer 修复编码问题（UTF-8）
+  file_cleaner 删除临时/不需要的文件
+  file_manager 文件操作（移动、重命名）
+
+使用
+----------
+
+  bach --tools file_ops scan <pfad>        分析目录
+  bach --tools file_ops duplicates <pfad>  查找重复项
+  bach --tools file_ops encoding <pfad>    检查/修复编码
+  bach --tools file_ops clean <pfad>       清理
+
+模块
+-----
+
+  工具/file_ops/（5 个工具）

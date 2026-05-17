@@ -1,0 +1,45 @@
+BACH 工具：导出器
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/exporter.py
+
+描述
+----------------------------------------
+exporter.py
+-----------
+技能、代理和操作系统的导出工具。
+
+版本：1.0.0
+创建时间：2026-01-14
+
+概念：
+  在操作系统中，技能/代理是轻量级的（使用操作系统基础设施）。
+  对于外部使用，它们必须用自己的基础设施“打包”。
+
+命令：
+  技能 将技能作为独立项从操作系统导出
+  代理 输出具有技能的代理
+  os-fresh 创建一个新的操作系统包（没有用户数据）
+  os-reset 重置操作系统（删除用户数据）
+
+用法：
+    python exporter.py Skill <name> --from-os <os-path> [--output <zip>]
+    python exporter.py agent <name> --from-os <os-path> [--output <zip>]
+    python exporter.py os-fresh <os-path> [--output <zip>] [--version <v>]
+    python exporter.py os-reset <os-path> [--backup] [--confirm]
+
+示例：
+    python exporter.py 技能研究 --from-os ./my-os
+    python exporter.py 代理 write-assistant --from-os ./my-os
+    python exporter.py os-fresh ./my-os --output os-v1.0.zip
+    python exporter.py os-reset ./my-os --backup
+
+USE
+----------------------------------------
+python bach.py 工具运行导出器 [args]
+或直接： python tools/exporter.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：巴赫工具显示出口商

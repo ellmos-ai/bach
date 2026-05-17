@@ -1,0 +1,56 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+------------
+tokens - 代币消耗和成本跟踪
+
+
+描述
+------------
+代币处理程序记录并分析LLM代币的消耗
+（输入/输出）以及以欧元计算的成本。数据取自
+在bach.db中查询monitor_tokens表。支持的时间窗
+今天、过去 7 天和 30 天。
+
+
+操作
+-----------
+可用于： bach --tokens <操作>
+
+状态（默认）摘要：今天/周/月
+今天详细：今天最后 20 条记录
+周 按天分组：过去 7 天的成本总计
+报告 按型号报告 + 当前价格（30 天）
+
+
+示例
+---------
+检查当前状态：
+  bach --tokens status
+  bach --tokens
+
+查看今天的成本：
+  bach --tokens today
+
+分析每周消耗：
+  bach --tokens week
+
+详细报告：
+  bach --tokens report
+
+
+文件
+-------
+源代码：hub/tokens.py
+基础处理程序：hub/base.py
+数据库：data/bach.db（monitor_tokens表）
+定价表：data/bach.db（monitor_pricing 表）
+
+
+另请参见
+----------
+bach_api 对处理程序的编程访问
+Monitor-db 数据库命令和架构
+base.py 处理程序接口和错误处理

@@ -1,0 +1,64 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH 垃圾处理程序（垃圾系统）
+--------------------------------------
+
+垃圾系统允许软删除和恢复。
+
+命令
+-------
+bach trash list            所有垃圾条目
+bach trash delete PATH     垃圾中的文件
+bach trash restore ID      恢复文件
+bach trash purge           删除过期的
+bach trash info ID         显示详细信息
+
+选项
+--------
+--dry-run 仅模拟更改
+
+示例
+---------
+# 文件删除
+bach trash delete ./alte_datei.txt
+
+# 显示内容
+bach trash list
+
+# 恢复
+bach trash restore 5
+
+# 清理过期的(30+)天）
+bach trash purge --dry-run
+bach trash purge
+
+技术
+---------
+- 处理程序：system/hub/trash.py
+- 文件被移动到系统/数据/垃圾/
+- 数据库表中的元数据：files_trash
+- 标准保留：30 天 (retention_days)
+- 状态：活动、已恢复、已清除
+
+数据库
+---------
+表：files_trash (system/db/schema.sql)
+- id：主键
+- Original_path：原始路径
+-trash_path：垃圾箱中的路径
+- size：文件大小（以字节为单位）
+-deleted_at：删除时间（ISO-8601）
+-deleted_by：用户名（默认：“claude”）
+-retention_days：保留天数（默认值：30）
+-expires_at：到期日期（ISO-8601）
+- 状态：活动/恢复/清除
+- returned_at：恢复时间
+- purged_at：最终删除
+
+另请参阅
+----------
+bach maintain help    维护工具
+bach backup help      备份系统
+bach trash help       内联帮助

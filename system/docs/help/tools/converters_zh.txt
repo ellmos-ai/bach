@@ -1,0 +1,31 @@
+BACH 工具：转换器
+---------------------
+
+不同格式之间的文件转换。
+
+可用转换器
+---------------------
+
+  md_to_pdf Markdown 转 PDF（双引擎：Edge Headless + ReportLab）
+  universal_converter 通用文件格式转换器
+  universal_compiler 编译项目（LaTeX、Markdown 等）
+  youtube_extractor 提取 YouTube 转录本和元数据
+
+USE
+----------
+
+  bach --tools converters md_to_pdf <input.md> [-o output.pdf]
+  bach --tools converters convert <input> <format>
+  bach --tools converters youtube <url>
+
+MD_TO_PDF
+---------
+
+通过两个引擎将 Markdown 转换为 PDF：
+  1. Edge Headless（初级）-高品质
+  2. ReportLab（后备）- 无需浏览器
+
+模块
+-----
+
+  工具/转换器/（4 个转换器）

@@ -1,0 +1,29 @@
+Herramienta BACH: Comunicación con socios
+---------------------------------
+
+Protocolo de interacción y comunicación con socios de IA.
+
+HERRAMIENTAS DISPONIBLES
+-----------------
+
+  ai_compatible Formatear mensajes compatibles con AI
+  comunicación Enviar/recibir mensajes a socios
+  gemini_start Inicializar sesión de Gemini
+  interact_protocol Administrar protocolo de interacción
+  real_tools Reenviar llamadas de herramientas reales a socios
+
+INTERACCIÓN
+-------------
+
+BACH admite la comunicación multiagente entre:
+  - Claude (código-claude/escritorio-claude)
+  - Géminis (antigravedad)
+  - GPT (códice)
+
+Los mensajes se intercambian a través de CLAUDE.md / GEMINI.md / GPT.md.
+Sincronización a través de OneDrive/.SYNC/ (portátil <-> estación de trabajo).
+
+MODULE
+-----
+
+  herramientas/partner_communication/ (5 módulos)

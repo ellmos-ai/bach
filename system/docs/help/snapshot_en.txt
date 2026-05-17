@@ -1,0 +1,63 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [session_snapshots table, hub/snapshot.py]
+
+BACH SNAPSHOT SYSTEM
+--------------------
+
+Status: 2026-02-08
+
+Session snapshots ensure the exact "state of mind" of an AI session.
+This allows loading a context into a new instance or
+resuming after a crash/shutdown.
+
+COMMANDS
+-------
+  bach --snapshot create [name]  Save current status.
+  bach --snapshot list           Available snapshots (auto & manual).
+  bach --snapshot load [ID]      Restores working memory & tasks.
+  bach --snapshot delete <ID>    Removes old snapshots.
+
+CONCEPT: THE STATE TREE
+-----------------------
+A snapshot in BACH consists of the following components:
+1. SESSION ID: Current session context
+2. OPEN TASKS: Which tasks were active/open (up to 10)
+3. RECENT MEMORY: Last working memory entries (last 5)
+4. SNAPSHOT METADATA: Timestamp, Type (auto/manual), Name
+
+DIFFERENCE FROM OTHER SYSTEMS
+-------------------------------
+- MEMORY: Important knowledge (long-term).
+- LOGS: What was done (historical).
+- SNAPSHOT: Where we are now (operational).
+
+AUTOMATIC
+---------
+Snapshots can be created automatically or manually. The snapshot_type
+differentiates between 'manual' (via --snapshot create) and 'auto' (potentially
+via --shutdown). The implementation supports both types.
+
+DATABASE
+---------
+Table: `session_snapshots` (system/db/schema.sql, lines 226-239)
+Fields:
+  - id, session_id, snapshot_type, name
+  - snapshot_data (JSON: contains open_tasks, recent_memory, created_at)
+  - working_memory, open_tasks, active_files (separate JSON fields, optional)
+  - token_usage, context_hash, notes
+  - created_at (Timestamp)
+
+EXAMPLES
+---------
+  bach --snapshot create "Vor Grossumbau"  # Manual backup
+  bach --snapshot list                     # Check status
+  bach --snapshot load 42                  # Restore ID 42
+  bach --snapshot delete 42                # Delete snapshot 42
+
+SEE ALSO
+----------
+  docs/help/memory.txt Memory consolidation
+  docs/help/maintain.txt Integrity check
+  bach --help startup  Session start

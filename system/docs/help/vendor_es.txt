@@ -1,0 +1,80 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PROVEEDOR - Fuentes de código externo
+------------------------------
+
+FECHA: 2026-02-06
+
+DESCRIPCIÓN
+------------
+El directorio _vendor/ contiene copias del código externo ubicado en
+Los servicios BACH están integrados. Cada proveedor tiene su propio directorio
+con PROVENANCE.md (origen, compromiso, licencia).
+
+UBICACIÓN
+-----------
+system/hub/_services/document/_vendor/
+
+VENDEDORES DISPONIBLES
+-------------------
+
+  anthropic_docx/ Paquete XML de Word/Descomprimir, validar, realizar seguimiento de cambios
+                      Fuente: github.com/anthropics/skills (skills/docx)
+                      Beneficios: depuración de plantillas, seguimiento de cambios
+
+  anthropic_pdf/ Extracción, llenado y conversión de formularios PDF
+                      Fuente: github.com/anthropics/skills (skills/pdf)
+                      Beneficios: recibos de impuestos, llenado de formularios.
+                      Integración: pdf_service.py (Procesador PDF)
+
+  anthropic_xlsx/ Excel Recalc, Office XML Empaquetar/Descomprimir/Validar
+                      Fuente: github.com/anthropics/skills (skills/xlsx)
+                      Beneficio: Exportaciones financieras con fórmulas
+
+  redaction_detector.py Regex+Fuzzy+Blacklist Detección de datos confidenciales
+                          Fuente: DokuZentrum
+
+  pdf_schwaerzer_pro.py Ennegrecimiento de PDF + cifrado AES-256
+                          Fuente: PDFSchwaerzer Pro
+
+UTILIZAR EN CÓDIGO
+---------------
+
+  # Procesamiento de PDF (recomendado: a través de la capa de servicio)
+  desde hub._services.document.pdf_service importar PDFProcessor
+
+  PDFProcessor.extract_text("archivo.pdf")
+  PDFProcessor.get_metadata("archivo.pdf")
+  PDFProcessor.extract_form_fields("archivo.pdf")
+  PDFProcessor.fill_form("archivo.pdf", {"campo": "valor"}, "out.pdf")
+  PDFProcessor.to_images("archivo.pdf", "output_dir/")
+  PDFProcessor.check_fillable("archivo.pdf")
+
+  # Módulos de proveedor directamente (solo si la capa de servicio no es suficiente)
+  sistema de importación
+  sys.path.insert(0, str(vendor_dir))
+  de extract_form_structure importar extract_form_structure
+
+CONVENCIONES DE PROVEEDORES
+-------------------
+
+  1. Cada proveedor tiene su propio directorio
+  2. PROVENANCE.md es obligatorio (fuente, compromiso, fecha, licencia)
+  3. __init__.py como paquete Python
+  4. Sin cambios en el código de proveedor (Copia literal)
+  5. Actualizaciones: copie la nueva confirmación, actualice PROVENANCE.md
+
+HERRAMIENTAS RELACIONADAS
+---------------
+
+  tools/c_skill_init.py Crear nueva habilidad (estándar antrópico)
+  herramientas/c_skill_validate.py Validar SKILL.md
+  tools/c_skill_package.py Habilidad de paquete
+
+VER TAMBIÉN
+----------
+bach --help cookbooks          Referencia de libros de cocina antrópicos
+bach --help tools              Descripción general de herramientas
+_vendor/README.md Tabla de descripción general de proveedores

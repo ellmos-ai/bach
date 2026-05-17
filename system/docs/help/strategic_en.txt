@@ -1,0 +1,90 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [system/ROADMAP.md]
+
+STRATEGIC DOCUMENTS - METACOGNITION
+---------------------------------------
+
+Status: 2026-02-08
+
+OVERVIEW
+----------
+BACH uses three central documents for long-term control and metacognition:
+
+  system/ROADMAP.md Vision, phases, long-term goals
+  system/CHANGELOG.md Change history (versions, date, details)
+
+In addition:
+- Lessons and strategic insights end up in memory/MEMORY.md.
+- Bugs are also tracked via the task system (category: maintenance/bug).
+
+CLASSIFICATION IN THE MEMORY SYSTEM
+---------------------------
+
+  +-----------------------------------------------------------------+
+  |                    METACOGNITION (strategy) |
+  |  +-----------------------------------------------------------------+|
+  |  | system/ROADMAP.md | system/CHANGELOG.md | memory/MEMORY.md||
+  |  | docs/con3_*.md | Analyzes |                 ||
+  |  +-----------------------------------------------------------------+|
+  |                          |                                    |
+  |                          | Derivation |
+  |                          v |
+  |  +-----------------------------------------------------------------+|
+  |  |                    TASK SYSTEM (planning) ||
+  |  |  Concrete, executable tasks ||
+  |  |  bach task list / add / done ||
+  |  +-----------------------------------------------------------------+|
+  |                          |                                    |
+  |                          | Execution |
+  |                          v |
+  |  +-----------------------------------------------------------------+|
+  |  |              MEMORY SYSTEM (Operative) ||
+  |  |  memory_sessions | memory_lessons | memory_working ||
+  |  +-----------------------------------------------------------------+|
+  +-----------------------------------------------------------------+
+
+Circuit:
+  1. Strategy defines goals (system/ROADMAP.md)
+  2. Goals become tasks (task system)
+  3. Tasks generate activities (sessions / log)
+  4. Events are consolidated (bach consolidate)
+  5. Update Results Strategy (memory/MEMORY.md)
+
+DOCUMENT STYLES
+--------------
+
+system/ROADMAP.md:
+  - Focus: vision, phases, milestones.
+  - Granularity: Coarse blocks (e.g. "Phase 12: Tax").
+  - Goal: Orientation for partner agents (Where are we?).
+
+memory/MEMORY.md:
+  - Focus: Critical insights and lessons learned.
+  - Style: Structured documentation of problems and solutions.
+  - Categories: Organized by feature/module.
+
+CONSOLIDATION TO STRATEGY
+---------------------------
+This process transforms operational data into strategic documents:
+
+  Raw data ---[bach session end]---> Sessions (DB)
+  Sessions ---[bach consolidate compress]---> Context (DB)
+  Tasks (done) ---[Manual maintenance]---> memory/MEMORY.md
+
+COMMANDS FOR SUPPORT:
+  bach consolidate status                    Shows consolidation status
+  bach consolidate compress --batch          Groups sessions (simple)
+  bach consolidate compress --run            Compressed with rule set
+  bach consolidate review                    Creates review tasks for wiki/docs
+  bach consolidate run                       Executes all processes
+
+SEE ALSO
+----------
+  docs/help/consolidation.txt Memory consolidation
+  docs/help/tasks.txt Task system
+  docs/help/memory.txt Memory system
+  system/ROADMAP.md Current phase & milestones
+  system/CHANGELOG.md Change history
+  memory/MEMORY.md Critical Insights & Lessons

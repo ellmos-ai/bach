@@ -1,0 +1,82 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WEB_SCRAPE HANDLER
+------------------
+
+HANDLER NAME
+------------
+
+web-scrape (WebScrapeHandler)
+
+Replacement for Playwright MCP. Provides browser control over HTTP requests and
+Regex based data extraction. Optional: Selenium for screenshots.
+
+
+DESCRIPTION
+------------
+
+The web_scrape handler enables web scraping, HTML analysis and
+Screenshot capture. Works via the BACH CLI with robust
+Error handlers. Stores screenshots in the cache directory.
+
+Dependencies:
+  - requests (mandatory, HTTP requests)
+  - selenium (optional, screenshots)
+  - Chrome/Chromium (Optional, Screenshot WebDriver)
+
+
+OPERATIONS
+-----------
+
+get <url>
+  HTTP GET: Load and display the full HTML body.
+  Truncates at >5000 characters. Shows status, content type, size.
+
+left <url>
+  Link extraction: All <a href> with link text. Cleans HTML tags,
+  ignores javascript:, mailto:, anchor (#). Max. 50 links. Deduplicated.
+
+forms <url>
+  Form recognition: <form> with action/method, all <input>, <textarea>,
+  <select>. Shows field types (text, submit, etc.) and names.
+
+screenshot <url>
+  Screenshot with Selenium (headless, 1280x1024). Saves in
+  data/cache/scrape/ with hash based filename. Requires Chrome driver.
+
+headers <url>
+  Show response headers: All HTTP headers of the response + status code.
+
+
+EXAMPLES
+---------
+
+bach web-scrape get https://example.com
+  Get content from example.com
+
+bach web-scrape links https://github.com/lukisch
+  List all links on GitHub profile
+
+bach web-scrape forms https://example.com/login
+  Analyze forms on login page
+
+bach web-scrape screenshot https://example.com
+  Create PNG screenshot (needs selenium)
+
+bach web-scrape headers https://example.com
+  Check HTTP headers (user agent, cookies, etc.)
+
+
+FILES
+-------
+
+hub/web_scrape.py Handler implementation
+data/cache/scrape/ Screenshot output
+
+
+SEE ALSO
+----------
+
+hub/base.py BaseHandler class

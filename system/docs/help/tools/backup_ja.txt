@@ -1,0 +1,153 @@
+バックアップ ツール - データのバックアップとリカバリ
+---------------------------------------------------
+
+現在: 2026-01-23
+パス: docs/help/tools/backup.txt
+
+説明
+------------
+BACH データのデータ バックアップおよび復元用のツール:
+  - ローカルバックアップの作成と管理
+  - NAS バックアップ (利用可能な場合)
+  - テンプレートの復元（元のファイルをリセット）
+  - 配布パッケージの作成
+
+メインツール:backup_manager.py
+-----------------------------
+すべてのバックアップ操作の中心となるツール。
+直接または CLI 経由でアクセスできます。
+
+基本コマンド:
+
+  # バックアップを作成
+  bach backup create                  ローカル バックアップ
+  bach backup create --to-nas         NAS コピーを使用
+
+  # バックアップの表示
+  bach backup list                    ローカル バックアップ
+  bach backup list --nas              NAS バックアップの表示
+  bach backup info <n>                バックアップの詳細
+
+  # 復元
+  bach restore backup <n>             特定のバックアップ
+  bach restore backup latest          最新のバックアップ
+  bach restore backup latest --force  確認なし
+
+  # テンプレートをリセット
+  bach restore template SKILL.md      元の状態に
+
+DIST_TYPE CONCEPT
+-----------------
+バックアップ システムは配布タイプに基づいています:
+
+  dist_type = 2 (コア)
+    -> 配布はバックアップです
+    -> bach.py、hub/、tools/、skills/、docs/help/
+    -> 個別に保護されていません
+
+  dist_type = 1 (テンプレート)
+    -> インストール中の 1x スナップショット
+    -> バッチ復元テンプレート <ファイル>
+
+  dist_type = 0 (USER_DATA)
+    -> 通常のバックアップローテーション
+    -> タスク、メモリ、ログ、受信箱
+
+何がバックアップされていますか?
+-------------------
+USER_DATA (dist_type = 0):
+  タスク すべてのタスク、ステータス、履歴
+  メモリ/セッション、長期、アーカイブ
+  ログ/セッションログ
+  user/inbox/ メッセージ、アジェンダ
+
+保護されていません (コア/テンプレート):
+  bach.py、schema.sql、hub/
+  ツール/、スキル/、ドキュメント/ヘルプ/
+  (配布の一部です)
+
+バックアップ ローテーション
+---------------
+自動ローテーションによりメモリ オーバーフローが防止されます:
+
+  ローカル (data/_backups/): 7 つのバックアップを保持します
+  NAS: 30 個のバックアップを保持する
+  OneDrive: 自動 (バージョン履歴)
+
+ストレージの場所
+------------
+  ローカル: BACH/system/data/_backups/
+  NAS: \\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
+  距離: BACH/ディストリビューション/
+
+注:
+  NAS はホーム ネットワーク内でのみアクセス可能です。
+  --to-nas がない場合は使用しないでください。
+
+ツールの直接使用
+--------------------
+backup_manager.py は直接呼び出すこともできます:
+
+  python tools/backup_manager.py create [--to-nas]
+  Python tools/backup_manager.py リスト [--nas]
+  python tools/backup_manager.py バックアップを復元 <n>
+  python tools/backup_manager.py テンプレート <ファイル>
+
+スナップショット (セッションベース)
+---------------------------
+セッション スナップショットについては、メモリ システムを参照してください:
+
+  bach snapshot create           手動スナップショット
+  bach snapshot load             最後のスナップショットをロード
+  bach snapshot list             スナップショットを表示
+
+  -> シャットダウン時に自動的に (3 つ以上の変更を伴う)
+  -> session_snapshots テーブルに保存されます
+
+配布コマンド
+--------------------
+配布用パッケージの作成:
+
+  bach dist create base       基本パッケージの作成
+  bach dist list                 パッケージの表示
+  bach dist status               配布ステータス
+  bach dist verify               整合性のチェック
+
+典型的な使用例
+-------------------------
+
+1。大きな変更の前
+   セキュリティ バックアップを作成します:
+   bach backup create
+
+2。毎日（ホームネットワーク）
+   NAS コピーによるバックアップ:
+   bach backup create --to-nas
+
+3.クラッシュ/エラー後
+   最終動作バージョン:
+   bach restore backup latest
+
+4。リセットスキル.MD
+   壊れた変更の場合:
+   bach restore template SKILL.md
+
+5.別のコンピュータ用のパッケージ
+   ディストリビューションを作成します:
+   bach dist create base
+
+6。セッションを続ける
+   再起動/チャット変更後:
+   bach snapshot load
+
+関連スキル
+----------------
+  skill/_services/builder.md 作成、エクスポート、配布、バックアップ
+  docs/BACKUP_SYSTEM.md 元の概念
+
+関連項目
+----------
+  bach --help backup             完全なバックアップ ヘルプ
+  bach --help dist               分散コマンド
+  bach --help memory             メモリ/スナップショット システム
+  bach --help tools              ツールの概要

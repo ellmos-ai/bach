@@ -1,0 +1,106 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+## ハンドラー名
+
+meta_feedback_injector
+
+## 説明
+
+定期的な LLM ティックを自動的に検出し、それらを挿入するためのハンドラー
+修正フィードバック。発生頻度を追跡し、パターンを無効にします
+定義された非アクティブ期間 (max_inactive_count) が経過すると自動的に実行されます。
+
+プロンプト内のフィードバック ブロックを通じて、一貫した動作パターンを促進します。
+DB 永続性または JSON フォールバック (data/meta_feedback_patterns.json) をサポートします。
+
+## OPERATIONS
+
+check_response(response: str) -> list[dict]
+  アクティブなパターンに対する応答をスキャンします。ヒット/ミスを追跡します。見つかったものもあるよ
+  詳細を含むパターン。
+
+inject_corrections(prompt: str) -> str
+  アクティブな修正を含む [BACH-META-FEEDBACK] ブロックをプロンプトに挿入します。
+  頻度 > 0 のパターンのみが挿入されます。
+
+add_pattern(pattern,correction,pattern_type,max_inactive_count)
+  正規表現または部分文字列に一致する新しいパターン。 DB または JSON に保存します。
+
+remove_pattern(pattern_id: int) -> bool
+  パターンを永続性から削除します。
+
+reactivate_pattern(pattern_id: int) -> bool
+  非アクティブ化されたパターンを再アクティブ化し、inactive_count をリセットします。
+
+_record_hit(パターン: dict)
+  頻度を増やし、inactive_count を 0 に設定します。
+
+_record_miss(パターン: dict)
+  inactive_count を増やします。 >= max_inactive_count.
+
+_pattern_matches(pattern: dict, text: str) -> bool の場合は無効になります
+  テキストに対する正規表現/部分文字列のマッチング
+
+## DEFAULT-PATTERNS
+
+ID 1: 英語の穴埋め単語 (ここで、させてください、させていただきます)
+  訂正: 「常にドイツ語で答えてください。」
+
+ID 2: 絵文字検出 (Unicode 範囲)
+  訂正: 「返信には絵文字を使用しないでください。」
+
+ID 3: 誇張された謝罪
+  訂正: 「大げさな言い訳はありません。」
+
+## 例
+
+DB による初期化:
+  handler = MetaFeedbackInjector(base_path=Path("system"), db=bach.db)
+
+JSON フォールバックによる初期化:
+  handler = MetaFeedbackInjector(base_path=Path("system"))
+
+応答を確認します:
+  matches = handler.check_response("これが私の答えです...")
+  # 現在の状態と一致するパターン ID 1、2、... が含まれます
+
+再試行する前にフィードバックを挿入します:
+  correct_prompt = handler.inject_corrections(original_prompt)
+
+新しいパターンを追加:
+  handler.add_pattern(
+    パターン=r"(?i)\bactually\b",
+    correction="ドイツ語の回答では「実際に」を避けてください。",
+    pattern_type="正規表現"
+  )
+
+非アクティブになった後にパターンを再アクティブ化:
+  handler.reactivate_pattern(pattern_id=1)
+
+## ファイル
+
+hub/meta_feedback_injector.py
+  実装 (282 行、MIT ライセンス)
+
+data/meta_feedback_patterns.json
+  JSON フォールバック永続性 (_save_json によって作成)
+
+パターン フィールド スキーマ
+  ID (整数)
+  パターン (文字列): 正規表現または部分文字列
+  pattern_type (str): "正規表現" または "部分文字列"
+  修正 (str): プロンプトのフィードバック テキスト
+  頻度 (int): ヒット数
+  inactive_count (int): 最後のヒット以降のミス
+  max_inactive_count (int): 自動非アクティブ化のしきい値 (デフォルト: 10)
+  アクティブ (int): 1 (アクティブ) または 0 (非アクティブ)
+  created_at (str): ISO タイムスタンプ
+  updated_at (str): ISO タイムスタンプ
+
+## 関連項目
+
+bach_api              - 中央ハンドラー レジストリと初期化
+meta_feedback         - 関連するフィードバック メカニズム (存在する場合)
+bach.db (スキーマ) - すべての列を含むmeta_feedback_patterns テーブル

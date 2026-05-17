@@ -1,0 +1,148 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH SELF-EXTENSION (自己拡張)
+---------------------------------------
+
+現在: 2026-02-13
+
+BACH は自己拡張システムです。 AIパートナーがすべきことは、
+BACH を積極的に改善し、新しい機能とシステムを作成する
+新しい要件に適応します。
+
+中心原則: BACH の使用 = BACH の拡張
+------------------------------------------
+すべてのアクセスはシステムを改善する機会です。
+不足しているスキルは報告されませんが、作成されます。
+
+自己拡張ループ
+--------------------
+  1. 認識 → 不足しているスキルを特定する
+  2. 作成 → 新しいスキル/ツール/ハンドラーを足場にします
+  3. REGISTER → ホットリロード、レジストリの更新
+  4. 使用する → すぐに使用する
+  5. 反映 → 学んだ教訓、フックの登録
+
+新しいスキルの作成
+-----------------------------
+`bach skill create` では、5 つのコンポーネント タイプがサポートされています:
+
+  bach skills create voice-processor --type tool
+    → 作成: system/tools/voice_processor.py
+    → 標準テンプレートを使用した足場
+    →実装後すぐに使用可能
+
+  bach skills create email-agent --type agent
+    → 作成：system/agents/email-agent/SKILL.md
+    → SKILL.md テンプレートを含む独自のフォルダー
+    → 他の専門家/ツールを調整します
+
+  bach skills create tax-expert --type expert
+    → 作成：system/agents/_experts/tax-expert/SKILL.md
+    → SKILL.md テンプレートを含む独自のフォルダー
+    → 深いドメイン知識
+
+  bach skills create api-gateway --type handler
+    → 作成: system/hub/api_gateway.py
+    → CLI コマンドとしてすぐに使用可能 (bach api-gateway ...)
+    → get_operations() を使用した BaseHandler サブクラス
+
+  bach skills create data-sync --type service
+    → 作成: system/skills/_services/data-sync/
+    → __init__.py と service.py によるサービス
+    → ハンドラーに近い、一般的な使用
+
+作成後: ホットリロード
+---------------------------------
+  bach skills reload
+    → レジストリの再読み込み (新しいハンドラーの検出)
+    → ツール検出を実行する
+    → スキルDBと同期
+    → 再起動は必要ありません!
+
+または API 経由:
+  bach_api インポート アプリから
+  a = アプリ()
+  カウント = a.reload_registry()
+  print(f"{count} ハンドラーがロードされました")
+
+フック統合
+-----------------
+新しい機能をフック システムにフックできます:
+
+  core.hooks インポート フックから
+
+  # システムイベントに対して独自のロジックを実行する
+  フック.on('after_task_create', my_logic, name='my_plugin')
+  フック.on('after_startup'、startup_check、name='my_plugin')
+
+  利用可能なイベント: bach フック イベント
+
+例: 完全な自己拡張ワークフロー
+----------------------------------------------
+
+  ステップ 1: 必要性を認識する
+  -------------------------
+  "時間追跡ハンドラーが必要です"
+
+  ステップ 2: 足場
+  ----------------------
+  bach skills create zeiterfassung --type handler
+
+  ステップ 3: 実装する
+  ------------------------
+  → Hub/zeiterfassung.py を編集
+  → 操作の追加（開始、停止、リスト、レポート）
+  → 必要に応じて DB テーブルを db/schema.sql に追加します
+
+  ステップ 4: ホットリロード
+  ----------------------
+  bach skills reload
+
+  ステップ 5: すぐに使用する
+  -----------------------
+  bach zeiterfassung start "Projektarbeit"
+  bach zeiterfassung stop
+  bach zeiterfassung report --today
+
+  ステップ 6: フックを登録する (オプション)
+  --------------------------------------------------------
+  core.hooks インポートフックから
+  フック.on('after_task_done', ラムダ ctx: 時間記録.stop())
+
+  ステップ 7: レッスンを保存する
+  ----------------------------
+  bach lesson add "Zeiterfassung: Handler-Pattern mit start/stop/list/report"
+
+何を拡張できますか?
+----------------------------
+  どこのようなエリア
+  -------------------------------------- ------------------------
+  CLI コマンド Hub/hub/<name>.py に新しいハンドラーを作成します。
+  tools/tools/<name>.py にツール Python スクリプトを配置します。
+  エージェント SKILL.md が含まれるエージェント フォルダー エージェント/<名前>/
+  Experts SKILL.md が含まれる Expert フォルダ エージェント/_experts/<名前>/
+  サービス サービス フォルダーの作成 skill/_services/<name>/
+  ワークフロー Markdown ファイルを作成する skill/workflows/<name>.md
+  フック リスナーの登録 core/hooks.py:hooks.on()
+  db/create db/migrations/ での DB スキーマの移行
+  ヘルプ ファイル docs/help/ docs/help/<topic>.txt にテキスト ファイルを作成します。
+  aliases.py core/aliases.py 内のエイリアスの短縮形
+
+自己拡張のルール
+-------------------------------
+  1. ハンドラーファースト: すべての関数がハブ/のハンドラーとして機能します。
+  2. 自己修復: 間違いをすぐに修正します
+  3. 修正またはタスク: 小さい = すぐに修正、大きい = タスクを作成
+  4. 学んだ教訓: 各展開後に文書化する
+  5. ホットリロード: 変更後は常に「バッチスキルをリロード」します。
+  6. テスト: `bach <name> help` を使用して新しいハンドラーを検証します
+
+関連項目
+----------
+  bach help hooks            フック フレームワーク
+  bach help skills           スキル システム
+  bach help cli              CLI 規則
+  bach help architecture     システム アーキテクチャ
+  Skills/workflows/self-extension.md 詳細なワークフロー

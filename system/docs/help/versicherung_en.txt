@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+INSURANCE - Insurance Administration
+---------------------------------------
+
+DESCRIPTION:
+  Management of all insurance policies with deadlines and termination dates
+  and contributions. Data is in bach.db/fin_insurances.
+  GUI access via the finance module (insurance tab).
+
+STATUS:
+  Full CLI handler implemented in hub/versicherung.py
+  - CLI: bach insurance <operation> (list, show, add, edit, delete, status, deadlines, check, claim)
+  - GUI: Finance module > Insurance (CRUD implemented by Gemini)
+  - Direct DB query (for agents/experts)
+
+DATABASE:
+  Tables:
+    - bach.db / fin_insurances (insurance)
+    - bach.db / fin_insurance_claims (claims)
+    - bach.db / insurance_types (reference data, optional)
+
+  Fin_insurances fields:
+    id Auto ID
+    provider insurance company (Allianz, HUK, AXA, ...)
+    tariff_name Tariff name
+    police_nr policy number (UNIQUE)
+    Liability, BU, motor vehicle, household goods, legal protection, ...
+    status active | terminated | non-contributory | dormant
+    start_date Start of contract
+    expiry_date End of contract
+    notice period_months notice period in months (default: 3)
+    extension_months Auto extension (default: 12)
+    next_termination Next termination date
+    contribution contribution as an amount
+    paid monthly | quarterly | semi-annually | annually
+    tax_relevant_type pension expenses etc.
+    folder_path Path to scans/documents on file system
+    notes free text
+    created_at, updated_at Timestamps
+
+LINKS:
+  - financial_emails: Emails from insurance companies (category = 'insurance')
+  - folder_path: Real documents under a locally configured insurance documents path
+  - user_data_folders: Registered folder 'user/insurance'
+
+CURRENT DATA:
+  13 insurance companies imported (as of session 2026-01-28)
+  Divisions: Liability, BU, motor vehicle, household contents, legal protection, dental supplements,
+           PKV, accident insurance, foreign health insurance, etc.
+
+CLI COMMANDS:
+  bach versicherung list                    All active insurance policies
+  bach versicherung list --all              Incl. terminated
+  bach versicherung list --sparte <sparte>  Filter by division
+  bach versicherung list --status <status>  Filter by status
+
+  bach versicherung show <id>               Show details
+
+  bach versicherung add --anbieter "X" --sparte "Y" [Optionen]
+    Mandatory: --provider, --division
+    Options: --contribution, --payment, --police, --tariff, --beginning,
+              --expiry, --cancellation, --period, --tax, --folder, --note
+
+  bach versicherung edit <id> [Felder]      Edit insurance
+  bach versicherung delete <id>             Set status -> canceled
+
+  bach versicherung status                  Dashboard with statistics
+  bach versicherung fristen [--tage N]      Show cancellation periods (default: 90 days)
+  bach versicherung check                   Portfolio analysis
+
+  bach versicherung claim add <id> --datum DD.MM.YYYY --beschreibung "Text" [--betrag X]
+  bach versicherung claim list [<id>]       Show claims
+
+  bach versicherung help                    Show help
+
+PLANNED:
+  - Automatic email matching with financial_emails
+  - Tax export integration (currently: manual tax type management)
+
+INTERPLAY:
+  - GUI: Financial dashboard with deadline warning (#575)
+  - GUI: Insurance CRUD (#570)
+  - Tax export: #572 (planned)

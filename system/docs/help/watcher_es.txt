@@ -1,0 +1,108 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WATCHER - Mistral Always-On Daemon
+------------------------------------
+
+DESCRIPCIÓN
+------------
+El demonio Watcher hace que BACH esté "siempre activo" - inspirado en OpenClaw/molt.bot.
+Mistral (localmente a través de Ollama, gratis) se ejecuta permanentemente en segundo plano y
+clasifica los eventos entrantes. Si es necesario, inicia Claude Code Sessions.
+
+ARQUITECTURA
+-----------
+                    Demonio Vigilante (siempre activado)
+                    |
+    +---------------+---------------+
+    |               |               |
+  Conector Sistema de archivos Cola de tareas
+  (Telegram, (Bandeja de entrada, (Nuevo/Urgente)
+   Discord) Descargas) Tareas BACH)
+    |               |               |
+    +-------+-------+-------+------+
+            |
+            v
+     Clasificador Mistral
+     (OllamaClient -> Mistral:último)
+            |
+  +---------+---------+----------+
+  |         |         |          |
+RESPONDER ESCALATE LOG_ONLY IGNORAR
+CLAUDE DIRECTA
+  |         |         |
+  vvv
+Responder Claude Evento
+a través del registro de sesión
+Iniciar conector
+
+COMANDOS
+-------
+  bach watcher start              Iniciar demonio en segundo plano
+  bach watcher stop               Detener demonio
+  bach watcher status             Estado, eventos, estadísticas
+  bach watcher classify "text"    Clasificar texto manualmente (prueba)
+  bach watcher logs [N]           Últimas N líneas de registro
+  bach watcher events [N]         Últimos N eventos clasificados
+
+CLASIFICACIÓN
+--------------
+Mistral clasifica cada evento en una de 4 acciones:
+
+  Ejemplo de descripción de acción
+  --------------- ----------------------------------- ------------------------
+  RESPOND_DIRECT Mistral se responde "¿Cómo estás?" -> "¡Bien!"
+  ESCALATE_CLAUDE Iniciando sesión de Claude "Refactorizar el controlador"
+  LOG_ONLY Solo registro, ninguna acción "Copia de seguridad completada"
+  IGNORAR Descartar spam, publicidad
+
+FUENTES DE EVENTOS
+-------------
+  Connector_messages Mensajes de Telegram/Discord (a través del sistema de conector)
+  sistema de archivos Nuevos archivos en carpetas monitoreadas
+  task_queue Tareas BACH nuevas/urgentes (P1/P2)
+  Eventos programados basados en programación (Cron)
+
+GUARDIAS DE SEGURIDAD
+------------------
+- Enfriamiento: mín. 5 minutos entre las escaladas de Claude
+- Límite diario: máximo 20 escaladas por día
+- Verificación de Claude: no se escalará si Claude ya está en línea
+- Bloqueo de pantalla: no hay escalada cuando la pantalla está bloqueada
+- Horas de silencio: Configurable (predeterminado: 23:00-07:00)
+
+CONFIGURACIÓN
+-------------
+Archivo: hub/_services/watcher/config.json
+
+Configuraciones importantes:
+  demonio habilitado activado/desactivado
+  poll_interval_segundos intervalo de sondeo (predeterminado: 15 segundos)
+  quiet_start/quiet_end Tiempos de silencio
+  mistral_model Modelo Ollama (predeterminado: Mistral:último)
+  escalation_cooldown_segundos Min. tiempo entre escaladas
+  max_daily_escalations Máximo de escaladas por día
+  fuentes.* Activar/desactivar fuentes de eventos
+
+REQUISITOS
+---------------
+- Ollama instalado e iniciado
+- Modelo Mistral cargado (ollama pull mistral)
+- Sistema conector configurado (para fuentes de mensajes)
+
+DATABASE
+---------
+  Connector_messages.watcher_classified Seguimiento de si Watcher ha visto el mensaje
+  watcher_event_log Todos los eventos clasificados con resultado
+
+ARCHIVOS DE REGISTRO
+-----------
+  data/logs/watcher_daemon.log Actividad y clasificaciones del demonio
+
+VER TAMBIÉN
+----------
+  bach help connector     Sistema conector (Telegram/Discord)
+  bach help partners      Sistema asociado
+  bach help daemon        Demonio de sesión
+  bach help injectors     Sistema inyector

@@ -1,0 +1,19 @@
+Herramienta BACH: migrar_ati_tasks
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/migrate_ati_tasks.py
+
+DESCRIPCIÓN
+----------------------------------------
+Tarea 82 Fase 2: Migración scan_tasks (bach.db) → ati_tasks (bach.db)
+Creado: 2026-01-19
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan migrar_ati_tasks [args]
+o directamente: python tools/migrate_ati_tasks.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tiene alguna pregunta: las herramientas de bach muestran migrar_ati_tasks

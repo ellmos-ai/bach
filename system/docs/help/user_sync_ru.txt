@@ -1,0 +1,69 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+USER_SYNC HANDLER
+-----------------
+
+HANDLER NAME
+------------
+user_sync -- Двунаправленная синхронизация между USER.md и user_profile
+
+DESCRIPTION
+------------
+Обработчик user_sync синхронизирует данные профиля пользователя между
+Файл Markdown USER.md (в корневом каталоге BACH) и таблица SQLite.
+user_profile в bach.db. Поддерживаются два направления синхронизации:
+
+1. USER.md -> БД при запуске BACH (Блок 0.07)
+2. БД -> USER.md при выключении BACH (Блок 5.7)
+
+Распознаваемые поля: имя, местоположение, язык, профессия, GitHub, адрес электронной почты, роль.
+USER.md находится на один уровень выше каталога system/ (корень BACH).
+
+OPERATIONS
+-----------
+sync_to_db(dry_run=False)
+  Читает USER.md и сохраняет поля в таблице user_profile.
+  Пробный прогон: Просто проверяйте, а не пишите.
+  Сообщение о состоянии, если файл отсутствует или пустая таблица user_profile.
+
+sync_to_file()
+  Читает user_profile из БД и обновляет поля в USER.md.
+  Сохраняет структуру и форматирование USER.md.
+  Обновляет только распознанные поля (**Имя:** и т. д.).
+
+from_bach_root(bach_root)
+  Фабричный метод: создает экземпляр UserSync из system/path.
+
+Удобные функции для bach.py:
+  sync_user_md_to_db (bach_root, Dry_run = False)
+  sync_db_to_user_md(bach_root)
+
+ПРИМЕРЫ
+---------
+# Код Python: запись USER.md в БД
+из Hub.user_sync импортировать UserSync
+Syncer = UserSync.from_bach_root('system/')
+результат = syncer.sync_to_db()
+print(result) # {'status': 'ok', 'synced': 5}
+
+# Запись БД обратно в USER.md (завершение работы)
+результат = Syncer.sync_to_file()
+print(result) # {'status': 'ok', 'updated_fields': 3}
+
+# Пробный прогон: только проверка
+результат = syncer.sync_to_db(dry_run=True)
+print(result) # {'status': 'dry_run', 'data': {...}}
+
+FILES
+-------
+hub/user_sync.py -- Реализация (класс UserSync + удобные функции)
+../USER.md — Синхронизированный профиль (корень BACH)
+data/bach.db -- База данных SQLite с таблицей user_profile
+
+СМОТРИ ТАКЖЕ
+----------
+bach.py -- Оркестровка запуска/остановки работы (Блок 0.07/5.7)
+user_profile — таблица БД для данных профиля
+../CLAUDE.md — системная документация BACH

@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MIGRATE - 渐进式文件迁移
+---------------------------------------
+
+概念
+-------
+对于文件重命名或路径更改：
+不要一次更改所有引用，而是使用包装文件。
+参考文献通过日常使用得到有机纠正。
+
+为什么？
+------
+- 没有硬性中断
+- 参考文献将逐步更新
+- 每个合作伙伴都会更正发送给他们的内容
+- 没有忘记参考
+
+程序
+--------
+1。重命名文件：
+   mv old_file.md new_file.md
+
+2.创建包装器（old_file.md）：
+   - 状态消息“重定向”
+   - 访客日志表
+   - 说明：检查+正确的来源
+   - 链接到新文件
+
+3。立即纠正关键参考：
+   - docs/help/*.txt（主要文档）
+   - 直接使用路径的系统代码
+   - CLI 处理程序
+
+4。其他进化移民的迁徙：
+   - 使用时正确的伙伴
+   - 路径治疗者自动发现
+   - 手动发现
+
+WRAPPER-TEMPLATE
+----------------
+# OLD_FILE - REDIVERTED
+
+状态：此文件已重命名为 `new_file.md`
+
+## 迁移日志
+
+|日期 |谁 |产地 |参考更正了吗？ |
+|--------|-----|----------|--------------------|
+| | | |
+
+|## 说明
+
+1。留下日志条目
+2. 检查你的出身（是什么让你来到这里？）
+3. 更正那里的参考
+4. 转到实际文件
+
+**目标文件:** [new_file.md](new_file.md)
+
+WHEN WRAPPER?
+-------------
+YES (wrapper 有意义):
+  - 很多潜在的推荐
+  - 被各合作伙伴引用
+  - 没有关键系统文件
+
+NO（直接全部更改）：
+  - 很少有已知的参考资料
+  - 关键系统文件
+  - 性能关键路径
+
+清理
+-------
+30 天后或日志为空时：
+  bach trash delete <wrapper>
+
+自动支持
+---------------------------
+  bach --maintain heal       自动查找过时的路径
+  bach --maintain docs       检测过时的文档
+
+示例
+--------
+ROADMAP_ADVANCED.md → ROADMAP.md (2026-01-24):
+
+  1. mv ROADMAP_ADVANCED.md ROADMAP.md
+  2. 创建包装器 ROADMAP_ADVANCED.md
+  3. docs/help/formats.txt 已更正（关键）
+  4. 20 多个其他参考文献 → 进化
+
+另请参阅
+----------
+  Skills/workflows/migrate-rename.md 详细工作流程
+  docs/help/practices.txt 原则#3：进化迁移
+  bach --maintain heal                  自动路径修正
+  bach --maintain docs                  检测过时的文档

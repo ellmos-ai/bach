@@ -1,0 +1,34 @@
+巴赫工具：agent_framework
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/agent_framework.py
+
+描述
+----------------------------------------
+代理框架 v1.0.0
+
+RecludOS 代理的中央框架。
+将代理连接到服务、外部工具和连接。
+
+功能：
+- 代理加载器和注册表管理
+- 服务集成（日程安排、媒体、邮件等）
+- 外部AI工具推荐
+- 连接管理（MCP、API、CLI）
+
+用法：
+  python agent_framework.py list # 所有代理
+  python agent_framework.py info <agent> # 代理详细信息
+  python agent_framework.py tools <agent> # 推荐工具
+  python agent_framework.py services <agent> # 链接服务
+  python agent_framework.py activate <agent> # 激活代理
+
+USE
+----------------------------------------
+python bach.py 工具运行agent_framework [args]
+或直接： python tools/agent_framework.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：巴赫工具显示agent_framework

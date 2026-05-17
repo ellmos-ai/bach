@@ -1,0 +1,63 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [session_snapshots テーブル、hub/snapshot.py]
+
+BACH SNAPSHOT SYSTEM
+--------------------
+
+ステータス: 2026-02-08
+
+セッション スナップショットは、AI セッションの正確な「精神状態」を保証します。
+これにより、コンテキストを新しいインスタンスにロードしたり、
+クラッシュ/シャットダウン後の再開。
+
+コマンド
+-------
+  bach --snapshot create [name]  現在のステータスを保存します。
+  bach --snapshot list           利用可能なスナップショット (自動および手動)。
+  bach --snapshot load [ID]      作業メモリとタスクを復元します。
+  bach --snapshot delete <ID>    古いスナップショットを削除します。
+
+コンセプト: 状態ツリー
+-----------------------
+BACH のスナップショットは次のコンポーネントで構成されます。
+1. セッション ID: 現在のセッション コンテキスト
+2. OPEN TASKS: どのタスクがアクティブ/オープンしていたか (最大 10)
+3. 最近の記憶: 最後の作業記憶エントリ (最後の 5)
+4. スナップショット メタデータ: タイムスタンプ、タイプ (自動/手動)、名前
+
+他のシステムとの違い
+-------------------------------
+- メモリ: 重要な知識 (長期)。
+- ログ: 何が行われたか (歴史的)。
+- スナップショット: 現在の状況 (操作可能)。
+
+自動
+---------
+スナップショットは自動または手動で作成できます。スナップショットの種類
+'manual' (--snapshot create 経由) と 'auto' (潜在的に
+--shutdown 経由)。実装では両方のタイプがサポートされています。
+
+DATABASE
+---------
+テーブル: `session_snapshots` (system/db/schema.sql、226 ～ 239 行目)
+フィールド:
+  - ID、セッションID、スナップショットタイプ、名前
+  - snapshot_data (JSON: open_tasks、recent_memory、created_at が含まれます)
+  - working_memory、open_tasks、active_files (個別の JSON フィールド、オプション)
+  - token_usage、context_hash、メモ
+  - created_at (タイムスタンプ)
+
+例
+---------
+  bach --snapshot create "Vor Grossumbau"  # 手動バックアップ
+  bach --snapshot list                     # ステータスの確認
+  bach --snapshot load 42                  # ID 42 の復元
+  bach --snapshot delete 42                # スナップショット 42 の削除
+
+関連項目
+----------
+  docs/help/memory.txt メモリの統合
+  docs/help/maintain.txt 整合性チェック
+  bach --help startup  セッションの開始

@@ -1,0 +1,96 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Próxima revisión: 2026-08-12
+
+ACTUALIZACIÓN DE BACH - ACTUALIZACIÓN DEL SISTEMA
+-------------------------------------
+
+Actualiza componentes BACH versionados de forma selectiva por archivo o categoría.
+
+
+USO
+----------
+
+  # Ver estado de actualización
+  bach upgrade status
+
+  # Mostrar versiones disponibles de un archivo
+  bach upgrade list hub/backup.py
+
+  # Verificar actualizaciones disponibles
+  bach upgrade check
+
+  # Actualizaciones de categorías selectivas
+  bach upgrade core
+  bach upgrade templates
+  bach upgrade agents
+  bach upgrade skills
+  bach upgrade hub
+  bach upgrade tools
+  bach upgrade connectors
+  bach upgrade partners
+  bach upgrade docs
+  bach upgrade gui
+
+  # Ejecución en seco (solo ver, no ejecutar)
+  bach upgrade agents --dry-run
+
+
+CATEGORÍAS
+----------
+
+  Núcleo del sistema (dist_type=2)
+  plantillas plantillas y plantillas (dist_type=1)
+  agentes Jefe agentes y expertos
+  habilidades habilidades y protocolos
+  manejador de cubo
+  herramientas herramientas
+  sistema de conectores
+  archivos de socios
+  documentación de documentos
+  gui Archivos GUI
+
+
+IMPORTANTE
+-------
+
+- La actualización solo sobrescribe los archivos versionados de la distribución/manifiesto.
+- USER_DATA permanece intacto.
+- Se recomienda realizar una copia de seguridad antes de realizar actualizaciones importantes.
+- Las versiones se rastrean en `dist_file_versions`.
+
+
+EJEMPLOS
+---------
+
+  # Actualizar solo los archivos principales
+  bach upgrade core
+
+  # Solo actualizar plantillas
+  bach upgrade templates
+
+  # Vista previa de archivos de agente únicamente
+  bach upgrade agents --dry-run
+
+  # Restaurar/actualizar documentación
+  bach upgrade docs
+
+  # Ver versiones disponibles de un archivo
+  bach upgrade list hub/backup.py
+
+
+VERSIONING
+-------------
+
+- Hash + Sistema de incremento automático (ENT-09)
+- Sólo los archivos de distribución versionados se pueden mover mediante "actualización de bach"
+- USER_DATA es del usuario y no tiene versión
+
+
+VER TAMBIÉN
+----------
+
+  bach --help restore       Recuperación de plantilla
+  bach --help downgrade     Bajar a una versión anterior
+  bach --help seal          Verificación de integridad

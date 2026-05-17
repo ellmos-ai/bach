@@ -1,0 +1,131 @@
+BACH SKILLS TOOLS
+-----------------
+
+Tools for managing, monitoring and validating BACH skills.
+
+QUICK START
+------------
+  bach --maintain skills                    # Skill Health Check
+  bach skill list                          # List Skills
+  bach skill export NAME                   # Export Skill
+
+WHAT ARE SKILLS?
+----------------
+Skills are reusable skill modules in BACH:
+- _agents/: Boss agents (ATI, tax agent, etc.)
+- _experts/: expert skills (data analysis, etc.)
+- _services/: Service skills (communicate, recurring, etc.)
+
+SKILL HEALTH MONITOR
+--------------------
+Monitors and validates all skills.
+
+Commands:
+  python tools/maintenance/skill_health_monitor.py check
+  python tools/maintenance/skill_health_monitor.py check --skills
+  python tools/maintenance/skill_health_monitor.py check --agents
+  python tools/maintenance/skill_health_monitor.py report
+
+What is checked:
+- SKILL.md completeness (name, version, description)
+- Agent Manifest (manifest.json)
+- Directory structure
+- Orphaned or broken skills
+
+Integration in --startup:
+The Skill Health Monitor runs automatically when the session starts
+and reports problems in the startup output.
+
+SKILL EXPORT/IMPORT
+-------------------
+Skills can be exported and installed on other systems.
+
+Export:
+  bach skill export SKILLNAME
+  -> Created SKILLNAME.zip with all files + manifest.json
+
+Import:
+  bach skill install PFAD/skill.zip
+  -> Unpacked and integrated into skills/
+
+ATI EXPORT (agent-specific):
+  bach ati export
+  -> Exports ATI agent with all dependencies
+
+SKILL DIRECTORY STRUCTURE
+-------------------------
+skills/
+├── SKILL.md # main SKILL.md (BACH itself)
+├── AGENT_KONVENTION.md # Agent rules
+├── SKILL_ANALYSE.md # Coverage analysis
+│
+├── _agents/ # Boss agents
+│ ├── ati/ # Software developer agent
+│ ├── tax-agent.txt # Tax agent
+│ └── ...
+│
+├── _experts/ # Expert modules
+│ └── data-analysis/ # data analysis expert
+│
+└── _services/ # Background services
+    ├── communicate.md # Partner communication
+    └── recurring/ # Periodic tasks
+
+SKILL.MD FORMAT
+---------------
+Each SKILL.md must have YAML front matter:
+
+---
+name: skill-name
+version: 1.0.0
+description: Short description
+last_updated: 2026-01-23
+---
+
+# Skill name
+
+Content and documentation...
+
+VALIDATION
+-----------
+Required fields: name, version, description
+Recommended: last_updated, author, dependencies
+
+Agents also need:
+- manifest.json (MANDATORY)
+- README.md (recommended)
+- CHANGELOG.md (recommended)
+
+DATABASE INTEGRATION
+---------------------
+Skills are registered in bach.db:
+
+  SELECT * FROM skills;                    # All skills
+  SELECT * FROM agents;                    # All agents
+  SELECT * FROM agent_synergies;           # Agent relationships
+
+CLI COMMANDS
+-----------
+  bach --maintain skills      # Health check (in --startup)
+  bach skill list             # List skills from DB
+  bach skill export NAME      # Export skill
+  bach skill install PFAD     # Install skill
+
+TIPS
+-----
+- Skill Health Monitor runs on every --startup
+- Problems are reported as Warnings/Errors
+- For new skills: create SKILL.md with correct front matter
+- Always create agents with manifest.json
+
+SEE ALSO
+----------
+  bach --help agents           # Agent Documentation
+  bach --help ati              # ATI Agent Details
+  bach --help maintain         # Maintenance Tools
+  skills/AGENT_KONVENTION.md # Agent Rules
+
+---
+Version: 1.0.0
+Created: 2026-01-23
+Part of: BACH Tool documentation

@@ -1,0 +1,30 @@
+BACH ツール:batch_file_ops
+--------------------------------------------------
+生成:2026-01-23 10:36
+ソース: tools/batch_file_ops.py
+
+説明
+----------------------------------------
+batch_file_ops.py - バッチ ファイル操作
+
+パターンに従ってファイルを収集し、削除/移動/コピーします。
+
+使用法:
+    python patch_file_ops.py delete <フォルダ> --pattern "*.py"
+    python patch_file_ops.py delete <フォルダ> --pattern "TOOLS_*.py"
+    python patch_file_ops.py move <ソース> <宛先> --pattern "*.txt"
+    python patch_file_ops.py copy <ソース> <宛先> --pattern "*.md"
+    python patch_file_ops.py list <フォルダ> --pattern "*"
+    python patch_file_ops.py delete <folder> --pattern "*.py" --dry-run
+
+作成者: クロード
+
+使用
+----------------------------------------
+python bach.py tools run patch_file_ops [args]
+または直接: python tools/batch_file_ops.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成
+- ご質問がある場合は、bach tools showbatch_file_ops を参照してください。

@@ -1,0 +1,216 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [tabla de habilidades, Skill_sources.json]
+
+BACH SKILLS SYSTEM (Arquitectura v2.0)
+-------------------------------------
+
+A partir de: 2026-02-08
+
+Las habilidades son habilidades especializadas que amplían los LLM.
+Están organizados de forma modular en la capa 3 (Lógica y Habilidad).
+
+PRINCIPIO DE VERIFICACIÓN DE VERSIÓN (NUEVO)
+----------------------------
+SIEMPRE use la última versión, ya sea local o central:
+
+  bach --skills version <name>  # Verificar versiones
+  bach --tools version <name>   # Verificar versiones de herramientas
+
+ESTRUCTURA DE HABILIDADES: UNA HABILIDAD = UNA CARPETA (NUEVA)
+--------------------------------------------
+Cada habilidad, agente, experto es completamente autosuficiente en su propia Carpeta:
+
+  PLANO (estándar, < 5 archivos):
+  ----------------------------
+  agentes/desarrolladores/
+  +-- SKILL.md # Definición con encabezado estándar
+  +-- tool_xyz.py # Herramienta específica (directamente en la raíz)
+  +-- flujo de trabajo_abc.md # Flujo de trabajo específico (directamente en la raíz)
+  +-- config.json # Opcional
+
+  COMPLEJO (>= 5 archivos):
+  ----------------------
+  agentes/_expertos/impuestos/
+  +-- HABILIDAD.md
+  +-- herramientas/ # Subcarpetas para muchas herramientas
+  +-- flujos de trabajo/ # Subcarpetas para muchos flujos de trabajo
+  +-- datos/ # Datos específicos
+
+JERARQUÍA Y CATEGORÍAS
+-----------------------
+habilidades/
++-- _agents/ agentes (orquestado, carpeta propia)
++-- _experts/ Expertos (conocimiento del dominio, carpeta propia)
++-- _services/ Servicios (Handler-near, carpeta propia)
++-- _conectores/Adaptadores (Telegram, Discord, HA, carpeta propia)
++-- socios/integraciones de socios (carpeta propia)
++-- _os/ Habilidades específicas del sistema operativo (carpeta propia)
++-- _workflows/ Flujos de trabajo (SIN carpeta, 1 archivo = 1 flujo de trabajo)
++-- _templates/ Plantillas estándar (TEMPLATE_*.md)
+
+TIPOS DE COMPONENTES
+-----------------
+
+  Características de la carpeta tipo
+  -------- ----------------- ---------------------------------
+  Agente _agents/<nombre>/ Orquesta expertos, carpeta propia
+  Expertos _experts/<nombre>/ Conocimiento profundo del dominio, carpeta propia
+  Servicio _services/<nombre>/ General, relacionado con el controlador, carpeta propia
+  Conector _connectors/<nombre>/ Adaptador para servicios externos
+  Socios asociados/<nombre>/Integraciones de socios (consolidados)
+  Habilidad del sistema operativo _os/<nombre>/funcionalidad específica del sistema operativo
+  Flujo de trabajo _workflows/ NO carpeta (1 archivo = 1 flujo de trabajo)
+  Sistema de herramientas (general)/herramientas/Reutilizable, no relacionado con habilidades
+  Herramienta (específica) En la carpeta de habilidades Sólo para esta habilidad
+
+DUPLICACIÓN DE HERRAMIENTA
+-----------------
+REGLA: En caso de duda, ¡mantenlo doble!
+
+  system/tools/c_ocr_engine.py # Versión general
+  agentes/_experts/steuer/steuer_ocr.py # Versión específica de habilidad
+
+Ventajas:
+- Se puede desarrollar de forma independiente.
+- La habilidad sigue siendo autosuficiente
+- Sin conflictos de dependencia
+
+IMPORTANTE: herramientas/ se encuentra en sistema/herramientas/ (NO en habilidades/herramientas/)
+
+CONECTORES (NUEVO 2026-02)
+------------------------
+_conectores/ contiene adaptadores para servicios externos:
+- telegram_connector.py - Integración de la API de Telegram Bot
+- discord_connector.py - Integración del bot de Discord
+- homeassistant_connector.py - Integración de Home Assistant
+- base.py - clase de conector base
+- SKILL.md - Documentación del conector
+
+Los conectores son servicios especializados que conectan plataformas externas.
+En su mayoría utilizan comunicación asincrónica y colas de eventos.
+
+ENCABEZADO ESTÁNDAR (obligatorio)
+-------------------------
+Cada componente necesita un encabezado YAML-Frontmatter:
+
+  ---
+  nombre: [nombre]
+  versión: X.Y.Z
+  tipo: habilidad | agente | experto | servicio | conector | socios | sistema operativo | flujo de trabajo
+  autor: [autor]
+  creado: AAAA-MM-DD
+  actualizado: AAAA-MM-DD
+  anthropic_compatible: verdadero
+  dependencias:
+    herramientas: []
+    servicios: []
+    flujos de trabajo: []
+  descripción: >
+    [Descripción]
+  ---
+
+Plantillas: skills/_templates/TEMPLATE_*.md
+
+SISTEMA DE EXPORTACIÓN
+-------------
+Las habilidades exportadas deben funcionar SIN BACH:
+
+  bach --skills export <name>  # Crea un paquete autosuficiente
+
+La exportación contiene:
+- SKILL.md con encabezado
+- manifest.json (dependencias, versiones)
+- Todas las herramientas específicas.
+- Todos los flujos de trabajo específicos
+- README.md (guía independiente)
+- Todos los recursos generales de Bach que se necesitan
+
+FUENTES DE HABILIDADES Y SEGURIDAD
+--------------------------
+
+  Enfoque de fuentes de clase
+  ---------- --------------------------------- ----------------------
+  Estándar de oro Autoescrito Mejor integración
+  Antrópicos/habilidades confiables, libros de cocina Después de la prueba 1:1 OK
+  No confiable Reescribir SÓLO otros repositorios de GitHub
+  Lista negra data/skill_blacklist.json PROHIBIDO
+
+Verificar: data/skill_sources.json
+
+SINCHRONIZACIÓN DB
+------------------
+Todas las habilidades se sincronizan bidireccionalmente entre el sistema de archivos y la base de datos:
+- Tabla: habilidades (actualmente 876 entradas)
+- Campos: nombre, tipo, ruta, content_hash, is_active, versión
+- Campos avanzados: categoría, prioridad, frases_activadoras, tipo_dist, contenido_plantilla, contenido
+- Estadísticas: bach --skills list
+
+COMANDOS CLI
+-----------
+  bach skills list               Enumerar todas las habilidades
+  bach skills show <name>        Contenido y metadatos
+  bach skills search <term>      Buscar funcionalidad
+  bach skills version <name>     Verificación de versión (local vs central)
+  bach skills export <name>      Crear paquete autosuficiente (v2.0)
+  bach skills install <path>     Importar habilidad desde ZIP/directorio
+  bach skills export-agent <n>   Exportar habilidad como Claude Code Agent
+  bach skills hierarchy          Mostrar jerarquía desde DB
+  bach skills hierarchy <typ>    Mostrar solo tipo (agente/experto/habilidad/servicio/flujo de trabajo)
+
+AUTO EXPANSIÓN (NUEVO v2.5)
+-----------------------------
+  bach skills create <name> --type <typ>   Nueva habilidad de andamiaje
+  bach skills reload                        Recarga en caliente sin reiniciar
+
+  Tipos admitidos para 'crear':
+
+    --type herramienta Creado: system/tools/<nombre>.py
+                       Script Python con plantilla estándar
+                       Se puede utilizar inmediatamente después de la implementación
+
+    --tipo agente Creado: sistema/agentes/<nombre>/SKILL.md
+                       Carpeta propia, organiza otros componentes.
+                       Plantilla con encabezado estándar
+
+    --type expert Creado: system/agents/_experts/<nombre>/SKILL.md
+                       Carpeta propia, conocimiento profundo del dominio.
+                       Plantilla con encabezado estándar
+
+    --type handler Creado: system/hub/<nombre>.py
+                       ¡Disponible inmediatamente como comando CLI!
+                       Subclase BaseHandler con get_operaciones()
+                       Accesible a través de bach <nombre> después de 'recargar'
+
+    --tipo servicio Creado: sistema/skills/_services/<nombre>/
+                       Carpeta con __init__.py y service.py
+                       Cierre del controlador, generalmente utilizable
+
+  Flujo de trabajo:
+    1. Las habilidades de Bach crean el controlador my-tool --type
+    2. editar hub/my_tool.py (implementar lógica)
+    3. recarga de habilidades de bach
+    4. ayuda de bach mein-tool (¡disponible inmediatamente!)
+
+  Ganchos después de Crear/Recargar:
+    after_skill_create → se emite después de cada 'creación'
+    after_skill_reload → se emite después de cada 'recarga'
+
+GUI (Skills Board)
+------------------
+El tablero de habilidades interactivo muestra toda la jerarquía,
+el estado de sincronización y permite la edición directa.
+
+  http://127.0.0.1:8000/skills
+
+VER TAMBIÉN
+----------
+  bach help agents             Descripción general del agente
+  bach help tools              Gestión de herramientas
+  bach help workflow           Sistema de flujo de trabajo
+  bach help naming             Convenciones de nomenclatura
+  bach help hooks              Marco de gancho (14 eventos)
+  bach help self-extension     Sistema de autoextensión
+  SKILL.md Definición de habilidad central
+  data/skill_sources.json Fuentes y versiones de habilidades

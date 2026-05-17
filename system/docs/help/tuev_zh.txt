@@ -1,0 +1,132 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+
+TUEV-HANDLER
+------------
+
+BACH 工作流程的工作流程质量保证和测试用例管理。
+TUEV 处理程序管理状态、有效性和质量指标
+
+
+
+处理程序名称
+------------
+
+bach tuev     - 工作流程 TUeV 和有效性
+bach usecase  - 测试用例定义和执行
+
+
+描述
+------------
+
+TUeV 处理程序（测试、检查、验证）管理：
+
+  * 在巴赫数据库中注册工作流程
+  * 追踪TUeV有效期（标准：90天）
+  * 过期/即将到期的工作流程概述
+  * 按工作流程管理测试用例（用例）
+  * 每个测试用例的状态和质量分数
+
+处理程序适用于：
+  * 数据库：data/bach.db（workflow_tuev，用例表）
+  * 工作流程：技能/工作流程/（*.md 文件）
+  * 在数据库中以 JSON 形式测试输入/输出
+
+
+操作
+-----------
+
+TUeV-OPERATIONS：
+
+  bach tuev
+  bach tuev status        - 显示所有工作流程的状态
+  bach tuev check WFNAME  - 检查单个工作流程及其用例
+  bach tuev run           - 列出所有过期的工作流程
+  bach tuev renew WFNAME  - 续订 TUeV（90 天有效期）
+  bach tuev init          - 技能/工作流程/注册中的工作流程
+
+用例操作：
+
+  bach usecase list [WF]       - 全部或显示过滤的测试用例
+  bach usecase add WFNAME      - 添加新的测试用例测试用例（SQL 模板）
+  bach usecase show ID         - 带输入/输出的测试用例详细信息
+  bach usecase run ID          - 执行并检查测试用例
+  bach usecase run-all WFNAME  - 执行工作流的所有测试用例
+
+
+示例
+---------
+
+1.将新工作流程添加到数据库：
+   $ 巴赫 tuev 初始化
+   [TUeV] 工作流程已初始化
+     已添加：5
+     跳过：0
+
+2。状态概述（按到期日期排序）：
+   $ bach tuev 状态
+   [WORKFLOW-TUeV] 状态概述
+
+   已过期（立即检查！）：
+     [!] 错误修复日志 得分：75% |状态：待定
+
+   即将到期（< 14 天）：
+     [~]数据管道得分：88% | 5天
+
+   好的：
+     [OK] 主要工作流程 得分：92% | 30天
+
+3。使用用例检查工作流程：
+   $ bach tuev 检查错误修复日志
+   [TUeV] 测试：错误修复协议
+   路径：skills/workflows/bugfix-protocol.md
+   状态：待定
+   得分：75%
+
+   使用案例：2
+     [?] 简单测试用例 (?)
+     [确定] 有错误的边缘情况（通过）
+
+4。测试成功后更新TUeV：
+   $ bach tuev 更新错误修复协议
+   [TUeV] 更新了错误修复协议
+     有效期至：2026-06-02
+
+5。添加新的测试用例：
+   $bach 用例添加数据管道
+   要插入的 SQL：
+   --------------------
+   插入用例（标题、描述、工作流程名称，...）
+
+   或者通过 GUI：/usecases
+
+   示例：
+   $ bach 数据库查询“INSERT INTO usecases (...) VALUES (...)”
+
+6.执行测试用例：
+   $bach 用例运行 5
+   [用例] 测试 #5：简单测试
+   [信息] 需要手动检查。
+
+   输入结果：
+   $ bach db query "UPDATE usecases SET test_result='pass', test_score=90 WHERE id=5"
+
+
+文件
+-------
+
+相对于系统/:
+
+  data/bach.db - 带有 TUeV/Usecase 表的 SQLite 数据库
+  Skills/workflows/*.md - 工作流程文件（已初始化）
+  hub/tuev.py - TuevHandler 和 UsecaseHandler 类
+
+
+另请参阅
+----------
+
+  bach db          - 直接数据库查询
+  hub/base.py - BaseHandler 基类
+  Skills/workflows/ - 可用的工作流程文件

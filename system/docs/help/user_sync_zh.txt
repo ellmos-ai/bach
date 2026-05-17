@@ -1,0 +1,69 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+USER_SYNC HANDLER
+-----------------
+
+HANDLER NAME
+------------
+user_sync -- USER.md 和 user_profile 之间的双向同步
+
+描述
+------------
+user_sync 处理程序在 USER.md 和 user_profile 之间同步用户配置文件数据。
+Markdown 文件 USER.md（在 BACH 根目录中）和 SQLite 表
+bach.db 中的 user_profile。支持两个同步方向：
+
+1。 USER.md -> BACH 启动时的 DB（块 0.07）
+2. BACH 关闭期间的 DB -> USER.md（块 5.7）
+
+识别字段：姓名、位置、语言、职业、GitHub、电子邮件、角色。
+USER.md 位于 system/ 目录（BACH 根目录）之上一级。
+
+操作
+-----------
+sync_to_db(dry_run=False)
+  读取 USER.md 并将字段保存在 user_profile 表中。
+  空运行：只检查，不写。
+  如果文件丢失或 user_profile 表为空，则显示状态消息。
+
+sync_to_file()
+  从数据库读取 user_profile 并更新 USER.md 中的字段。
+  保留 USER.md 的结构和格式。
+  仅更新已识别的字段（**名称：**等）。
+
+from_bach_root(bach_root)
+  工厂方法：从 system/path 创建 UserSync 实例。
+
+bach.py 的便捷功能：
+  sync_user_md_to_db(bach_root, dry_run=False)
+  sync_db_to_user_md(bach_root)
+
+示例
+---------
+# Python 代码：将 USER.md 写入 DB
+从 hub.user_sync 导入 UserSync
+syncer = UserSync.from_bach_root('系统/')
+结果=syncer.sync_to_db()
+print(result) # {'status': 'ok', 'synced': 5}
+
+# 将 DB 写回 USER.md（关闭）
+结果=syncer.sync_to_file()
+print(result) # {'status': 'ok', 'updated_fields': 3}
+
+# 试运行：仅检查
+结果=syncer.sync_to_db(dry_run=True)
+print(result) # {'status': 'dry_run', 'data': {...}}
+
+FILES
+-------
+hub/user_sync.py -- 实现（类 UserSync + 便利函数）
+../USER.md -- 同步配置文件（BACH 根）
+data/bach.db -- 带有 user_profile 表的 SQLite DB
+
+另请参见
+----------
+bach.py -- 启动/关闭编排（块 0.07 / 5.7）
+user_profile——配置文件数据的数据库表
+../CLAUDE.md -- BACH 系统文档

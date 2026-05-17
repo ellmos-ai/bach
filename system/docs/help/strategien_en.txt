@@ -1,0 +1,173 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+STRATEGIES
+----------
+Basic action strategies for problem solving and automation.
+
+Reference: docs/help/operators.txt, docs/help/denkstrategie.txt
+
+
+1. CATEGORIZING
+-----------------
+Strategy: Rules, heuristics or models assign data to classes.
+Operators: Extract -> Normalize -> Classify -> Validate
+
+Example (Python):
+```python
+def classify_doc(doc):
+    text = doc["text"].lower()
+    if "invoice" in text:
+        return "invoice"
+    if "contract" in text:
+        return "contract"
+    return "other"
+```
+
+
+2. EVALUATE (scoring)
+---------------------
+Strategy: Define criteria, weight them, calculate the score.
+Basis for ranking, automation, human review.
+
+Example (Python):
+```python
+def score_invoice(mail):
+    score = 0
+    if "invoice" in mail["subject"].lower():
+        score += 0.5
+    if any(a.endswith(".pdf") for a in mail["attachments"]):
+        score += 0.3
+    if "iban" in mail["body"].lower():
+        score += 0.2
+    return score
+```
+
+
+3. EXCLUDE
+----------------
+Strategy: Define negative criteria (blacklists, patterns, limits).
+Early "cut-off" reduces noise.
+
+Example (JavaScript):
+```javascript
+function isExcluded(mail) {
+  const blacklist = ["noreply@", "newsletter@"];
+  return blacklist.some(b => mail.from.includes(b));
+}
+
+const relevant = mails.filter(m => !isExcluded(m));
+```
+
+
+4. TESTING (Validating)
+----------------------
+Strategy: Check data against rules, schemas, reference sources.
+Variants: Schema tests, business rules, A/B comparison, cross-source check.
+
+Example - Schema test (Python):
+```python
+def validate_invoice(d):
+    tests = [
+        ("amount", lambda x: x is not None and x > 0),
+        ("invoice_number", lambda x: bool(x)),
+        ("date", lambda x: x is not None),
+    ]
+    errors = []
+    for field, rule in tests:
+        if not rule(d.get(field)):
+            errors.append(field)
+    return errors
+```
+
+Example - A/B test (Python):
+```python
+def classify_A(doc): ...
+def classify_B(doc): ...
+
+resA = classify_A(doc)
+resB = classify_B(doc)
+
+if resA != resB:
+    # Mark conflict, log for analysis
+    pass
+```
+
+
+5. DEFINE PROBLEMS
+----------------------
+Strategy: Problem as input -> desired output -> formulate constraints.
+In code: clear interfaces, expected invariants, error classes.
+
+Example formulation:
+  Problem: "Incoming emails should automatically be sent as an invoice,
+           contract or other."
+  Input: Email (subject, body, attachments, metadata)
+  Output: Category + Score + extracts if necessary
+  Constraints: no false positives for invoices over X EUR,
+               Score thresholds, logging
+
+
+6. PROBLEM-SOLVING STRATEGIES
+--------------------------
+Generic pattern for strategy-based decisions.
+
+```python
+def solve_problem(input_data, strategies):
+    """
+    strategies: List of strategies with:
+      - name
+      - condition(input_data) -> bool
+      - action(input_data) -> result
+    """
+    for s in strategies:
+        if s["condition"](input_data):
+            return {
+                "strategy": s["name"],
+                "result": s["action"](input_data)
+            }
+    return {
+        "strategy": None,
+        "result": None
+    }
+```
+
+Example strategies (confidence-based):
+```python
+strategies = [
+    {
+        "name": "high_confidence_auto",
+        "condition": lambda d: d["score"] >= 0.9,
+        "action": lambda d: {"mode": "auto", "route": "accounting"}
+    },
+    {
+        "name": "medium_confidence_review",
+        "condition": lambda d: 0.6 <= d["score"] < 0.9,
+        "action": lambda d: {"mode": "review", "route": "inbox_review"}
+    },
+    {
+        "name": "low_confidence_ignore",
+        "condition": lambda d: d["score"] < 0.6,
+        "action": lambda d: {"mode": "ignore", "route": None}
+    },
+]
+```
+
+
+REFERENCE TO BACH
+-------------
+These strategies are the basis for:
+  - Injectors (context-based decisions) - system/tools/injectors.py
+  - Memory consolidation (Lesson derivation) - system/hub/consolidation.py
+  - Workflow routing (skills and services)
+  - Document processing (OCR, classification)
+
+Strategies + operators = reusable solution modules
+
+
+RELATED HELP FILES
+----------------------
+  --help operators Basic operators and patterns
+  --help thinking strategies Cognitive strategies
+  --help rhetoric Rhetorical operators

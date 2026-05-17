@@ -1,0 +1,58 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 最后验证时间：2026-05-17
+# 下次回顾：2027-05-17
+
+订阅管理（订阅管理）
+---------------------------------------
+
+DESCRIPTION
+检测税项的定期付款（订阅），
+管理确认并创建成本概览。
+
+命令
+-------
+bach abo scan              分析税项、识别订阅
+bach abo list              显示所有已识别的订阅
+bach abo confirm ID        确认订阅识别
+bach abo dismiss ID        删除错误检测
+bach abo costs             每月成本报表
+bach abo export            导出用于预算计划
+bach abo patterns          显示已知的订阅模式
+bach abo init              初始化数据库表
+bach abo sync-mail         从电子邮件同步订阅
+
+检测
+---------
+分析tax_posten并识别基于的订阅于：
+  - 重复向同一提供商付款
+  - 恒定量（小偏差）
+  - 已知订阅提供商模式（数据库支持）
+
+分数阈值：50 分（可配置）
+
+选项
+--------
+  --year YYYY 过滤纳税年度（默认：当年）
+  --dry-run 仅预览，不保存任何内容
+
+示例
+---------
+  bach abo scan
+  bach abo scan --jahr 2025 --dry-run
+  bach abo list
+  bach abo costs
+  bach abo confirm 42
+  bach abo export
+
+处理程序
+-------
+  hub/abo.py (AboHandler)
+  工具/abo/abo_scanner.py (AboScanner)
+  hub/_services/mail/mail_abo_sync_service.py（邮件集成）
+
+另请参阅
+----------
+  bach --help steuer       税务管理
+  bach --help financial    财务概览

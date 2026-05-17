@@ -1,0 +1,33 @@
+BACH ツール: c_pycutter
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/c_pycutter.py
+
+説明
+----------------------------------------
+c_pycutter.py - Python Class Extractor
+
+目的: Python ファイルをクラスごとに個別のテキスト ファイルに分解します。
+       さらに、インポート、関数、グローバル コード用のヘルパー function.txt も含まれています。
+       コード レビュー、ドキュメント、LLM コンテキスト管理に最適です。
+
+著者: Claude (pyCuttertxt.py から改変)
+依存関係: ast、os、datetime (stdlib)
+
+使用法:
+    python c_pycutter.py <python_file> [--output-dir <dir>] [--json]
+
+例:
+    python c_pycutter.py main.py # カレントディレクトリに出力
+    python c_pycutter.py main.py --output-dir ./out # ./out に出力します
+    python c_pycutter.py main.py --json # さらなる処理のための JSON 出力
+
+USE
+----------------------------------------
+python bach.py tools run c_pycutter [args]
+または直接: python tools/c_pycutter.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show c_pycutter

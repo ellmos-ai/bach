@@ -1,0 +1,24 @@
+BACH 工具：JSON
+---------------
+
+JSON 处理、修复和注册表清理。
+
+可用工具
+-----------------
+
+  json_config_cli 管理 JSON 配置文件
+  json_fixer 修复损坏的 JSON 文件
+  json_registry_cleaner 工具清理注册表
+  json_repair 自动更正 JSON 语法
+
+使用
+----------
+
+  bach --tools json fix <datei.json>      修复损坏的 JSON
+  bach --tools json config <key> [value]  读取/设置配置
+  bach --tools json clean-registry        清理注册表
+
+模块
+-----
+
+  工具/json/（4 个工具）

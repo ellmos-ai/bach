@@ -1,0 +1,101 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[tasks 表、ati_tasks 表、hub/task.py、bach_api.py]
+
+TASKS - 任务系统
+-----------------------
+
+状态：2026-02-08
+
+任务系统（第 5 层）协调用户和
+合作伙伴代理（Claude、Gemini 等）。
+
+核心概念
+------------
+- 手动任务：通过“bach task add”（表：“tasks”）。
+- 扫描任务：来自代码注释（表：`ati_tasks`）。
+- 多合作伙伴：通过“--signed”分配给代理或用户。
+- DISTI-TIERS：任务通过“dist_type”（用户/模板/核心）分隔。
+
+两个访问路径（v2.0 中的新增内容）
+-------------------------------
+BACH 有两个并行访问路径 - 两者都使用相同的处理程序 + DB:
+
+1。 CLI（对于终端用户）：
+     python bach.py 任务添加“标题”--优先级 P4
+
+2。图书馆 API（LLM/脚本首选）：
+     从 bach_api 导入任务
+     task.add("标题", "--优先级", "P4")
+     任务.list()
+     task.done(42, "--note", "Done")
+
+CLI 命令（巴赫任务）
+-----------------------
+  add <title> 创建任务（--priority P1-P4、--description、--category）
+  列表 [状态] 过滤概览（待处理/打开/进行中/完成/阻止/全部）
+  list --filter 按标题中的术语过滤
+  列出为特定合作伙伴分配的任务
+  list --unsigned 没有分配的任务
+  显示 <ID> 详细信息，包括描述和历史记录
+  edit <ID> 编辑任务（--标题、--描述、--类别、--分配）
+  完成 <ID> 将任务标记为已完成（多 ID，--note）
+  block <ID> 阻止任务（多 ID，--reason）
+  unblock <ID> 解锁任务（多 ID）
+  重新打开 <ID> 重新打开已完成的任务（多 ID）
+  delete <ID> 永久删除任务（多 ID）
+  优先级 <ID> <P> 更改优先级 (P1-P4)
+  分配 <ID> 分配给合作伙伴（--GEMINI/COPILOT/等）
+  depends <ID> 显示依赖关系
+    --on <X> 添加依赖项（任务等待 X）
+    --remove <X> 删除依赖项
+    --clear 清除所有依赖项
+
+LIBRARY-API 示例
+---------------------
+  从 bach_api 导入任务
+
+  # 创建任务
+  task.add("编写文档", "--priority", "P2", "--category", "docs")
+
+  # 列出任务
+  任务.列表（“待处理”）
+  task.list("open") # 旧状态
+  task.list("in_progress") # 当前正在进行中
+  任务列表（“全部”，“--分配”，“GEMINI”）
+  task.list("--未分配")
+
+  # 编辑任务
+  task.edit(42, "--title", "新标题")
+  task.done(100, 101, 102, "--note", "全部完成")
+  任务.分配（200，“--to”，“COPILOT”）
+
+  # 依赖项
+  task.depends(306, "--on", "305") # 任务 306 等待 305
+  task.depends(306) # 显示依赖项
+
+SCAN-TASKS (hub/ati.py)
+-----------------------
+  bach ati onboard --check    扫描文件系统中的新任务。
+  bach scan tasks             列出来自 `ati_tasks` 的任务。
+
+DATABASE (layer 1)
+---------------------
+- `tasks`: id, title, description, status,priority,signed_to, delegated_to,
+  取决于，类别，标签，创建的_at，完成的_at，更新的_at，dist_type。
+- `ati_tasks`：带有源链接（文件/行）的扫描任务。
+- 数据库路径：system/data/bach.db
+
+GUI 和集成（计划）
+---------------------------
+**任务板**（/tasks）计划作为看板视图，
+允许任务在状态列之间移动。
+
+另请参见
+----------
+  system/bach_api.py 库API模块（优先访问）
+  system/hub/task.py TaskHandler 实现
+  docs/help/delegate.txt 委托给合作伙伴
+  docs/help/maintain.txt 完整性检查和清理
+  bach --help ati      自动化工具合并器

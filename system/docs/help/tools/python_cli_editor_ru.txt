@@ -1,0 +1,81 @@
+Инструмент BACH: python_cli_editor
+--------------------------------------------------
+Создано: 23 января 2026 г., 10:36.
+Источник: инструменты/python_cli_editor.py
+
+ОПИСАНИЕ
+----------------------------------------
+python_cli_editor.py — CLI редактора кода Python v2.0
+
+Анализирует и редактирует файлы Python в структурированном виде.
+Показывает классы, методы, импорт и позволяет целенаправленное редактирование.
+
+Автор: участники BACH
+Версия: 2.0.0
+Дата: 13.01.2026
+
+------------------------------------------------------------
+НОВЫЕ ВОЗМОЖНОСТИ v2.0:
+------------------------------------------------------------
+
+НОМЕРА СТРООК:
+  --lines / --no-lines номера строк вкл/выкл (по умолчанию: вкл)
+
+INSERT:
+  --add CODE Вставить код (из файла или напрямую)
+  --at-start В начале файла (после импорта)
+  --at-end В конце файла
+  --at-imports В разделе импорта
+  --in-class NAME В классе NAME (в конце)
+  --before ИМЯ Перед элементом ИМЯ
+  --after ИМЯ После элемента ИМЯ
+  --at-line N В строке N
+
+DELETE:
+  --delete ИМЯ Удаляет класс, метод или функцию
+
+РЕДАКТИРОВАТЬ СТРОКИ:
+  --change-line N Редактировать строку N (интерактивно или с помощью --content)
+  --content «КОД» Новое содержимое для --change-line
+
+СОХРАНИТЬ:
+  --test Создать тестовый файл без изменения оригинала
+  --save Сохраняет напрямую с автоматическим резервным копированием
+
+------------------------------------------------------------
+ПРИМЕРЫ:
+------------------------------------------------------------
+
+# Показать структуру с номерами строк
+python python_cli_editor.py script.py --show-all --lines
+
+# Вставьте новую функцию в конец
+python python_cli_editor.py script.py --add new_func.py --at-end --save
+
+# Вставить метод в класс
+python python_cli_editor.py script.py --add Method.py --in-class MyClass --save
+
+# Добавить импорт
+python python_cli_editor.py script.py --add "import os" --at-imports --save
+
+# Удалить класс
+python python_cli_editor.py script.py --delete MyClass --save
+
+# Изменить строку
+python python_cli_editor.py script.py --change-line 42 --content "x = 100" --save
+
+# Вставить элемент до/после
+python python_cli_editor.py script.py --add helper.py --before MainClass --save
+python python_cli_editor.py script.py --add cleanup.py --afterprocess_data --save
+
+------------------------------------------------------------
+
+USE
+----------------------------------------
+инструменты Python bach.py запускают python_cli_editor [args]
+или напрямую: инструменты Python/python_cli_editor.py [args]
+
+ПРИМЕЧАНИЯ
+----------------------------------------
+- автоматически генерируется из Docstring
+- Если у вас есть вопросы: инструменты bach показывают python_cli_editor.

@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WIKI HANDLER
+------------
+
+NOMBRE DEL MANEJADOR
+------------
+wiki - Administrar y buscar artículos wiki
+
+DESCRIPCIÓN
+------------
+El Wiki Handler administra bases de datos de conocimiento locales (wiki/directorio).
+Soporte para artículos en la carpeta principal y subcarpetas de temas específicos.
+Los artículos se guardan como archivos de texto UTF-8. El manejador apoya
+Indexación de bases de datos (sincronización) para búsqueda de texto completo de alto rendimiento a través de FTS5.
+
+OPERACIONES
+-----------
+list Lista todos los artículos wiki (con subcarpetas)
+carpetas Enumere todas las carpetas de temas con el recuento de artículos
+<tema> Mostrar artículo (por ejemplo, bach wiki linux)
+<carpeta>/<tema> Artículo de la subcarpeta (por ejemplo, bach wiki tax/elster)
+buscar Buscar artículos (FTS5 o escaneo alternativo)
+Mostrar metadatos de procedencia, tipo de evidencia, referencia personal e información de privacidad.
+sincronizar wiki Mirror y archivos de ayuda en la base de datos (actualizar índice)
+
+EJEMPLOS
+---------
+Lista de wiki de Bach
+  Mostrar todos los artículos y carpetas de temas disponibles
+
+Carpetas wiki de Bach
+  Listar todas las carpetas de temas con el recuento de artículos
+
+Bach wiki Docker
+  Mostrar artículos wiki/docker.txt
+
+Bach wiki financiación/icf
+  Mostrar artículos de la subcarpeta: wiki/foerderung/icf.txt
+
+Bach wiki tax/elster
+  Mostrar artículos de la subcarpeta: wiki/steuer/elster.txt
+
+Bach wiki busca "kubernetes"
+  Buscar en todos los artículos con FTS5 o escaneo alternativo
+
+Búsqueda en la wiki de Bach "canal de implementación"
+  Buscar con varias palabras (entre comillas)
+
+Bach wiki procedencia
+  Mostrar los artículos indexados más recientemente con origen y evaluación de privacidad
+
+Bach wiki procedence tax/elster
+  Mostrar procedencia de exactamente un artículo
+
+Sincronización de wiki de Bach
+  Actualizar el índice de la base de datos (después de cambios manuales en los archivos)
+
+FILES
+-------
+wiki/ Carpeta principal de Wiki con artículos
+wiki/*.txt Artículos en la carpeta principal (por ejemplo, wiki/docker.txt)
+wiki/<carpeta>/carpeta de temas (por ejemplo, wiki/tax/)
+wiki/<carpeta>/*.txt Artículos de subcarpeta (por ejemplo, wiki/steuer/elster.txt)
+wiki/<carpeta>/_index.txt Descripción de carpeta opcional
+wiki/_index.txt Descripción de la lista maestra opcional
+base de datos data/bach.db con índice de sincronización (tabla wiki_articles)
+docs/help/ Archivos de ayuda (indexación adicional mediante sincronización)
+
+VER TAMBIÉN
+----------
+bach help config     Propiedades del controlador
+bach help base       Documentación básica del controlador
+bach list handlers   Todos los controladores disponibles
+bach wiki sync       Indexación de bases de datos
+
+NOTAS
+--------
+- Artículos sin prefijos de ruta o comandos de carpeta especiales: automáticamente en
+  Carpeta principal buscada
+- La sintaxis de subcarpeta (/) normaliza las barras invertidas en barras (compatible con Windows)
+- La búsqueda FTS5 tiene prioridad sobre el análisis del sistema de archivos alternativo si existe una base de datos
+- La coincidencia aproximada de elementos no encontrados muestra nombres de archivos similares
+- "Sincronización" debe llamarse manualmente después de cambios directos en el archivo.

@@ -1,0 +1,196 @@
+导入工具 - Python 导入处理
+--------------------------------------
+
+截至：2026-01-23
+路径：docs/help/tools/imports.txt
+
+描述
+------------
+诊断和组织Python导入的工具：
+  - 查找导入问题（缺失、循环、未使用）
+  - 排序和清理导入（符合 PEP8）
+
+这些工具解决的常见问题：
+  - “ModuleNotFoundError”/“ImportError”
+  - 循环进口（A进口B，B进口A）
+  - 进口秩序混乱
+  - 双进口
+  - 在代码中间而不是在开头导入
+
+导入诊断：c_import_diagnose
+----------------------------------
+导入问题的系统分析。
+
+功能：
+  - 单独导入各个模块
+  - 改变进口顺序
+  - 检测循环导入
+  - 解析__init__.py
+  - 有延迟的计时测试
+  - 找到崩溃点
+
+基本命令：
+
+  # 分析项目
+  bach c_import_diagnose projekt/src/
+
+  # 使用 JSON 输出
+  bach c_import_diagnose projekt/src/ --json
+
+  # 测试特定模块
+  bach c_import_diagnose . --modules core.app:App,gui.main:MainWindow
+
+选项：
+  --json JSON输出（机器可读）
+  --modules M1:C1,M2:C2 特定模块：测试类
+
+输出示例：
+  === 导入诊断 ===
+
+  [1/5] 测试各个模块...
+    [确定] core.app.App
+    [失败] gui.main.MainWindow -> ImportError: 没有名为“missing”的模块
+
+  [2/5] 检查循环进口...
+    [警告] core.utils -> core.app -> core.utils（圆圈！）
+
+  [3/5] __init__.py分析...
+    [确定] core/__init__.py
+    [缺失] gui/__init__.py
+
+  ===建议===
+  1.安装缺少的模块'missing'
+  2.解决循环导入 core.utils <-> core.app
+  3. 创建 gui/__init__.py
+
+IMPORT ORGANIZER: c_import_organizer
+------------------------------------
+根据 PEP8 对 Python 导入进行排序和清理。
+
+功能：
+  - 收集文件开头的所有导入
+  - 删除重复项
+  - 按字母顺序排序（首先导入，然后来自）
+  - 清除多个空白行
+
+基本命令：
+
+  # 组织文件
+  bach c_import_organizer script.py
+
+  # 只检查没有更改
+  bach c_import_organizer script.py --dry-run
+
+  # JSON 输出
+  bach c_import_organizer script.py --json
+
+  # 从标准输入读取
+  猫脚本.py |巴赫 c_import_organizer --stdin
+
+选项：
+  --dry-run 只显示，不改变
+  --json JSON 输出
+  --stdin 从 stdin 读取代码
+
+之前/之后示例：
+
+  之前：
+  --------------------
+  导入操作系统
+
+  def foo():
+      从 pathlib 导入路径
+      通过
+
+  导入系统
+  从输入导入列表
+  导入操作系统 # 重复！
+  ----------------------
+
+  之后：
+  --------------------
+  导入操作系统
+  导入系统
+  从 pathlib 导入路径
+  从输入导入列表
+
+  def foo():
+      通过
+  ---------------------
+
+典型工作流程
+------------------
+
+1.调试“导入错误”。
+   分析项目找到崩溃点：
+
+   bach c_import_diagnose projekt/src/ --json
+
+   然后遵循建议。
+
+2.查找循环进口
+   当模块相互导入时：
+
+   bach c_import_diagnose projekt/src/
+
+   输出显示：A -> B -> A（指南针！）
+
+   解决方案：将公共依赖项外包给第三个模块。
+
+3.代码审查之前
+   在检查代码之前清理导入：
+
+   bach c_import_organizer script.py
+
+   或者对于整个项目：
+   对于 *.py 中的 f；执行巴赫 c_import_organizer "$f";完成
+
+4。重构后
+   主要转换后检查导入：
+
+   # 先诊断
+   bach c_import_diagnose src/
+
+   # 然后清理
+   对于 src/*.py 中的 f；执行巴赫 c_import_organizer "$f";完成
+
+5。建立一个新项目
+   __init__.py 检查文件：
+
+   bach c_import_diagnose mein_paket/
+
+   显示缺少 __init__.py 文件。
+
+PEP8 导入订单
+-----------------------
+c_import_organizer 根据 PEP8 标准排序：
+
+  1.标准库（导入os、导入sys）
+  2.第三方（导入请求、导入numpy）
+  3. 本地导入（来自 .import 模块）
+
+每组内：按字母顺序排序。
+
+CONTEXT INJECTOR
+----------------
+ContextInjector 识别关键字并推荐这些工具：
+
+  “对导入进行排序”-> bach c_import_organizer <文件>
+  “导入问题”-> bach c_import_diagnose <项目>
+  “导入丢失” -> bach c_import_diagnose <项目>
+
+与其他工具集成
+-----------------------------
+与 python_cli_editor 结合以获得完整图像：
+
+  # 显示导入（分组）
+  bach python_cli_editor script.py --imports
+
+  # 然后组织
+  bach c_import_organizer script.py
+
+另请参见
+----------
+  bach --help tools/python_editing   编辑 Python 文件
+  bach --help tools/code_quality     代码质量（编码等）
+  bach python_cli_editor --help      使用 --imports 显示导入

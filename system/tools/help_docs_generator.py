@@ -38,6 +38,22 @@ DB_PATH = SYSTEM_ROOT / "data" / "bach.db"
 NAMESPACE = "help_doc"
 
 
+def _normalize_generated_content(content: str) -> str:
+    """Bereinigt generierte Help-Texte fuer Git-Release-Pruefungen."""
+    raw_lines = content.splitlines()
+    while raw_lines and not raw_lines[-1].strip():
+        raw_lines.pop()
+
+    lines = []
+    for line in raw_lines:
+        line = line.rstrip()
+        if re.fullmatch(r"={7,}", line):
+            line = "-" * len(line)
+        lines.append(line)
+
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     path = db_path or DB_PATH
     conn = sqlite3.connect(str(path))
@@ -225,7 +241,7 @@ def generate(lang: str, dry_run: bool = False, db_path: Path = None, fallback: s
 
         try:
             target_dir.mkdir(parents=True, exist_ok=True)
-            target_file.write_text(content, encoding="utf-8")
+            target_file.write_text(_normalize_generated_content(content), encoding="utf-8")
             stats["generated"] += 1
             if is_fallback:
                 stats["fallback_used"] += 1

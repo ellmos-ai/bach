@@ -1,0 +1,23 @@
+BACH 工具：sync_utils
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/sync_utils.py
+
+描述
+----------------------------------------
+BACH Sync Utilities v1.0
+------------------------
+文件散列和更改检测的中央功能。
+
+用法：
+  from tools.sync_utils import file_hash, content_hash, has_changed, SyncTracker
+
+USE
+----------------------------------------
+python bach.py 工具运行sync_utils [args]
+或直接： python tools/sync_utils.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示sync_utils

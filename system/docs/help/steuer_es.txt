@@ -1,0 +1,466 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+AYUDA TRIBUTARIA
+------------
+
+Agente fiscal para el registro de gastos comerciales.
+
+VISIÓN GENERAL
+----------
+El agente fiscal ayuda con el registro sistemático de
+Gastos comerciales para la declaración de impuestos. el apoya
+múltiples perfiles de usuario y años fiscales.
+
+ESTRUCTURA DE CARPETAS
+--------------
+usuario/tax/
++-- perfiles/perfiles de usuario
++-- observar/Carpetas vigiladas (configuración)
++-- plantillas/ plantillas para año nuevo
++-- [AÑO]/ Por año fiscal
+    +-- Costos de publicidad/costos de publicidad (categoría principal)
+    |   +-- recibos/almacenamiento de recibos
+    |   |   +-- _bundles/ Paquetes de texto para procesamiento por lotes
+    |   |   +-- _Viajes y Ministerio del Interior/Diario de registro, AZN, timeGoat
+    |   |   +-- _Recibos erróneos/ Para verificación del usuario (no recibos)
+    |   |   +-- _Papelera de reciclaje/no recibos confirmados
+    |   |   +-- Carpetas adicionales/de bandeja de entrada para nuevos recibos
+    |   |   +-- [Proveedor]/ Por proveedor (amazon.de, eBay, ...)
+    |   +-- exportar/ Informes generados y exportaciones
+    |   |   +-- exportaciones csv/CSV
+    |   |   +-- POSTEN_*.txt Listas de publicaciones
+    |   |   +-- COSTOS DE PUBLICIDAD_todos.txt
+    |   |   +-- BELEGE_all.txt
+    |   |   +-- COSTOS DE VIAJE_HOMEOFFICE_AAAA.*
+    |   |   +-- FINANZAMT_AAAA.zip
+    |   +-- TAX_README.txt
+    |   +-- FINANZAMT.bat
+    |   +-- SINCRONIZACIÓN.bat
+    +-- Cargas extraordinarias/
+    +-- Servicios relacionados con el hogar y artesanos/
+    +-- Ediciones especiales/
+    +-- Provisión de seguros y pensiones/
+
+COMANDOS CLI
+-----------
+
+ESTADO Y RESUMEN:
+  bach steuer status              Mostrar estado general
+  bach steuer status --jahr 2025  Estado por un año
+
+AÑO IMPUESTO:
+  bach steuer init 2026           Crear un nuevo año fiscal
+  bach steuer init 2026 --user X  Con un perfil específico
+
+LISTAS:
+  bach steuer list                Mostrar todas las listas
+  bach steuer list --jahr 2025    Listas por año
+  bach steuer list --liste WERBUNGSKOSTEN
+                                  Mostrar lista específica
+
+GESTIÓN DE RECIBOS (NUEVO)
+----------------------
+Los recibos son los archivos PDF en recibos/. Estado: CAPTURADO,
+NOT_COVERED, DEPRECATED.
+
+  bach steuer beleg list                    Enumerar todos los recibos
+  bach steuer beleg list --status ERFASST   Filtrar por estado
+  bach steuer beleg list --status NICHT_ERFASST
+  bach steuer beleg list --status DEPRECATED
+  bach steuer beleg list --status ALL --limit 1000
+                                            Todo con límite alto
+
+  bach steuer beleg scan                    Buscar nuevos recibos
+  bach steuer beleg scan --dry-run          Mostrar solo
+
+  bach steuer beleg deprecate 215 466 "Grund"
+                                            Marcar recibos como no válidos
+                                            (Los números permanecen reservados)
+
+  bach steuer beleg sync                    Regenerar archivos TXT desde DB
+
+GESTIÓN DE ARTÍCULOS (NUEVO)
+-----------------------
+Los artículos son artículos individuales de los documentos. un recibo puede
+contener varios elementos. ID de artículo = Número de documento Número de artículo (por ejemplo, 151-1).
+
+  bach steuer posten list                   Mostrar todos los artículos
+  bach steuer posten list --liste W         Filtrar por lista (W/G/V/Z)
+  bach steuer posten list --belegnr 151     Filtrar por número de documento
+  bach steuer posten list --steller NAME    Filtrar por emisor de factura
+  bach steuer posten list --rechnungsnr NR  Filtrar por número de factura
+  bach steuer posten list --limit 100       Con límite
+
+  bach steuer posten search BEGRIFF         Buscar entre artículos
+                                            (busca por nombre, lugar,
+                                            Comentario, número de factura, ID del artículo)
+
+  bach steuer posten show 151-1             Mostrar artículos individuales
+
+  bach steuer posten add --belegnr 151 --bezeichnung "Produkt" --brutto 34.95 --liste W
+                                            Crear nueva publicación
+    Parámetros:
+    --número de documento Número de documento NR (obligatorio)
+    --name TXT nombre del producto (obligatorio)
+    --VALOR bruto Importe bruto (obligatorio)
+    --list W|G|V|Z lista de objetivos (predeterminado: Z)
+    --proporción 0,0-1,0 proporción para mixto (predeterminado: 0,5)
+    --remark TXT Observación opcional
+    --date AAAA-MM-DD Fecha
+    --proveedor NOMBRE del proveedor
+    --número de factura NR número de factura (o --número de factura)
+
+  bach steuer posten edit 151-1 --bezeichnung "Neuer Name"
+                                            Editar publicación
+  bach steuer posten edit 151-1 --brutto 29.95
+  bach steuer posten edit 151-1 --anteil 0.7
+  bach steuer posten edit 151-1 --rechnungsnr "RE-12345"
+
+  bach steuer posten move 151-1 W           Mover a la lista
+  bach steuer posten move 151-1 G --anteil 0.5
+                                            Con ración para personas mixtas.
+    Lista de accesos directos:
+    W = COSTOS DE PUBLICIDAD (100% deducible)
+    G = MIXTO (deducible proporcionalmente)
+    V = RECHAZADO (no deducible)
+    Z = RESET (por aclarar)
+
+  bach steuer posten delete 151-1           Eliminar (con confirmación)
+  bach steuer posten delete 151-1 --force   Sin confirmación
+
+IMPORTACIÓN DE LOTES (NUEVO v1.1.4)
+-------------------------
+Para la entrada rápida de múltiples elementos o documentos.
+
+  bach steuer batch help                    Mostrar ayuda de lotes
+
+  bach steuer batch posten --belegnr 42 --json '[...]'
+                                            Varios elementos para un documento
+    Formato JSON:
+    [{"bez":"Artículo","bruto":19.99,"lista":"W"},
+     {"bez":"Privado","gross":5.00,"list":"V","bem":"privado"}]
+
+  bach steuer batch posten --belegnr 42 --file posten.json
+                                            Publicar desde un archivo JSON
+
+  bach steuer batch belege --inline "42:Artikel:19.99:W;43:Ware:5.00:V"
+                                            Entrada rápida de múltiples documentos
+                                            Formato: DOCUMENTO NO:DEZ:GROSS:LIST
+
+  bach steuer batch belege --file import.json
+                                            Múltiples recibos con artículos.
+    Formato JSON:
+    {"evidencia":[
+      {"recibo no":42,"item":[{"bez":"X","gross":10,"list":"W"}]},
+      {"recibo no":43,"item":[{"bez":"Y","gross":5,"list":"V"}]}
+    ]}
+
+  bach steuer batch delete --belegnr 42 --force
+                                            Eliminar todos los elementos de un documento
+
+  bach steuer batch delete --posten "42-1,42-2,43-1" --force
+Eliminar elementos específicos
+
+  bach steuer batch delete --liste V --limit 100 --force
+                                            Eliminar todos los DESCARTADOS (máximo 100)
+                                            PRECAUCIÓN: ¡Puedes eliminar muchos elementos!
+
+  bach steuer batch move --posten "42-1,42-2" --liste W
+                                            Mover ciertos elementos
+
+  bach steuer batch move --belegnr 42 --liste W
+                                            Mover todos los elementos de un documento
+
+  bach steuer batch move --von V --nach W --limit 50
+                                            Moverse entre listas
+
+HERRAMIENTAS DE IMPUESTOS (NUEVO v1.1.4)
+-------------------------
+Scripts de Python independientes en tools/tax/.
+
+  bach steuer tools list                    Enumerar todas las herramientas
+  bach steuer tools <name> [args]           Ejecutar herramienta (forma abreviada)
+  bach steuer tools run <name> [args]       Ejecutar herramienta (explícita)
+  bach steuer tools register                Registrar herramientas en bach.db
+
+Herramientas importantes:
+  beleg_vorfilter Preclasificar documentos nuevos (NUEVO)
+  make_bundle Crear paquetes de texto a partir de recibos
+  beleg_parser Extraer texto de archivos PDF (con OCR)
+  regenerate_txt Regenerar la lista de TXT de la base de datos
+  scan_new_belege Buscar y registrar nuevos recibos
+  temu_ocr_batch OCR por lotes para archivos PDF de imágenes
+
+Acceso directo:
+  bach steuer tools make_bundle amazon 11 67
+  bach steuer tools regenerate_txt
+
+PERFILES:
+  bach steuer profile list        Listar perfiles
+  bach steuer profile show <name>  Mostrar perfil
+  bach steuer profile create max  Crear nuevo perfil
+
+VER CARPETA:
+  bach steuer watch list          Mostrar carpeta de seguimiento
+  bach steuer watch add PFAD      Agregar carpeta
+  bach steuer watch remove PFAD   Eliminar carpeta
+  bach steuer scan                Ver carpeta de seguimiento
+
+EXPORTAR:
+  bach steuer export              Exportar (Estándar: txt)
+  bach steuer export --jahr 2025 --format csv
+  bach steuer export --format datev         DATEV reserva por lotes CSV
+                                            (para asesores fiscales)
+  bach steuer export --format csv           CSV simple (compatible con Excel)
+  bach steuer export --format vorsorge      Gasto en pensiones de inversión
+                                            (Primas de seguro)
+
+VERIFICACIÓN DE INTEGRIDAD:
+  bach steuer check                         Realizar una verificación
+  bach steuer check --jahr 2025             Para un año específico
+                                            Cheques: documentos sin partidas,
+                                            Artículo sin recibo, huecos en
+                                            Números de documentos, meses faltantes,
+                                            Artículo sin importe de IVA
+
+CREACIÓN DE RECIBO PROPIO:
+  bach steuer eigenbeleg --bezeichnung "Parkgebuehr" --brutto 5.00
+                                            Crea tu propio recibo
+  bach steuer eigenbeleg --bezeichnung "..." --brutto 10.00 --mwst 7
+                                            Con diferente tipo de IVA
+  Opciones: --list, --date, --VAT, --reason
+
+BANK-IMPORT:
+  bach steuer import camt <pfad>            CAMT.053 Importar XML
+
+FINANZAMT-EXPORT (planificado):
+  bach steuer finanzamt           Crear ZIP con todos los costos de publicidad
+                                  Crea FINANZAMT_[AÑO].zip con:
+                                  - WERBUNGSKOSEN_alle.txt (descripción general)
+                                  - csv/ carpeta con archivos CSV
+                                  - Todos los documentos referenciados (PDF)
+
+  Directamente a través de script:
+    python tools/tax/tax_sync.py oficina de impuestos
+
+EXPORTACIÓN CSV (NUEVO v1.3.1):
+  bach steuer export --format csv CSV-Dateien in csv/ Ordner exportieren
+                                  Para importación de software Excel/impuestos
+
+  Formato: delimitado por punto y coma, UTF-8 con BOM, formato numérico alemán
+
+  Los archivos CSV NO se escriben automáticamente durante la sincronización,
+  sólo con: oficina de impuestos (automático) o exportación --formato csv (explícito)
+
+  Directamente a través de script:
+    python tools/steuer/steuer_sync.py csv
+
+PERFILES
+-------
+Los perfiles guardan configuraciones específicas del usuario:
+- Contexto profesional (industria, actividad)
+- Normas del proveedor (TEMU, Amazon, ...)
+- Asignaciones automáticas (palabras clave)
+- Acciones estándar para uso mixto
+
+Crear perfil:
+1. perfil de impuestos de bach crear MINOMBRE
+2. Editar archivo en usuario/impuestos/perfil/
+
+TIPOS DE LISTA (desde V1.3.0)
+------------------------
+Nuevos nombres de archivos en la carpeta COSTOS DE PUBLICIDAD/:
+
+  Descripción del archivo de código
+  ---- ----------------------- -------------------------
+  W POSTEN_reine.txt 100% deducible
+  G POSTEN_gemischt.txt Deducible proporcional (con participación)
+  V POSTEN_verworfen.txt No deducible (privado)
+  Z POSTEN_unsortiert.txt Editar más tarde / poco claro
+  - WERBUNGSKOSEN_alle.txt W + G combinados (para la oficina de impuestos)
+
+ESTADO DEL CUPÓN
+------------
+REGISTRADO El documento fue procesado, el artículo creado
+NOT_RECORDED Documento aún no procesado
+DEPRECADO Recibo marcado como no válido (por ejemplo, duplicado)
+
+PREFILTRO DE CUPÓN (NUEVO)
+---------------------
+Clasificación previa automática de nuevos recibos en carpetas de proveedores.
+
+  python tools/steuer/beleg_vorfilter.py [--ejecución en seco] [--verbose]
+
+Flujo de trabajo:
+1. Coloque nuevos archivos PDF desde correo electrónico/descargas en documentos/Otros/
+2. Ejecute el prefiltro:
+   python tools/steuer/beleg_vorfilter.py --dry-run # Vista previa
+   herramientas de python/steuer/beleg_vorfilter.py # Ejecutar
+3. Resultado:
+   - Los recibos se clasifican automáticamente en carpetas de proveedores.
+   - No recibos (seguimiento, estado de envío) -> _Recibos erróneos/
+4. El usuario verifica _Recibos erróneos/ -> recibos reales incorrectos para _Papelera de reciclaje/
+
+Métodos de detección:
+- Patrón de nombre de archivo: RG64116 -> LingoPlay, 32xxxxxx -> TimeTEX
+- Contenido PDF: "Antrópico, PBC" -> Antrópico, "TimeTEX" -> TimeTEX
+- Falta marcador de recibo: "Seguimiento de envío", "Seguimiento" -> _Recibos erróneos
+
+Proveedores admitidos:
+  Antrópico, TimeTEX, LingoPlay, Autism Publishing, PayPal,
+  eBay, Temu, Amazon, Apple, Google
+
+BIDI-SYNC (SINCRONIZACIÓN DE TXT BIDIRECCIONAL)
+-------------------------------------
+Escriba acciones avanzadas directamente en archivos TXT.
+La sincronización los analiza y los ejecuta en la base de datos.
+
+TIPOS DE ACCIÓN:
+  MOVER:
+    42-3 -> W Pasar a costes publicitarios
+    42-3 -> G 0,5 En mezclado con proporción del 50%
+    42-3 -> V privado En Rechazado con comentario
+    B42 -> W Mover todos los elementos de un documento
+
+  EDITAR:
+    42-3 :: bruto=19.99 Cambiar importe bruto
+    42-3 :: etiqueta=Nuevo nombre
+    42-3 :: share=0.7 Cambiar porcentaje
+
+  BORRAR:
+    42-3 ELIMINAR Eliminar elemento individual
+    42-3 DEL forma corta
+
+  DESPRECADO (documento de reserva):
+    B42 DEPRECADO Marcar documento como no válido
+    B42 DESPRECADO Duplicado con justificación
+
+ÁREA DE ENTRADA:
+  Escriba acciones en archivos TXT en la sección "ENTRADA":
+
+  === ENTRADAS (procesadas durante la sincronización) ===
+  42-3 -> W
+  43-1 :: bruto=25.50
+  B44 DESPRECADO Cancelado
+  === FINALIZAR ENTRADAS ===
+
+EJECUTAR SINCRONIZACIÓN:
+  herramientas de Python/tax/tax_sync.py sincronización
+  o: sincronización del recibo de impuestos de bach
+
+NOTAS:
+  - Las acciones se procesan en sincronización y luego se eliminan
+  - Las acciones incorrectas se informan en el registro de errores.
+  - Pruebe siempre --ejecución en seco primero (si está disponible)
+
+FLUJO DE TRABAJO TÍPICO
+------------------
+0. Ordenar previamente los documentos nuevos (beleg_vorfilter.py)
+
+1. Verificar estado:
+   bach steuer beleg list --status NICHT_ERFASST
+
+2. Ver recibos abiertos por proveedor:
+   bach steuer beleg list --status NICHT_ERFASST --limit 500
+
+3. Ingresar recibos en el chat del agente
+
+4. Resultado de la verificación:
+   bach steuer posten list --liste W
+
+PROCESAMIENTO POR LOTES CON PAQUETES
+------------------------------
+Si hay muchos documentos, la verificación individual es ineficiente. En su lugar:
+
+1. Crear paquete:
+   agentes de Python/_experts/steuer/make_bundle.py <fuente> <inicio> <fin>
+
+   Ejemplos:
+     agentes de Python/_experts/steuer/make_bundle.py paypal 171 214
+     agentes de Python/_experts/steuer/make_bundle.py ebay 77 128
+     agentes de Python/_experts/steuer/make_bundle.py google_play 129 170
+
+   Fuentes: paypal, ebay, google_play, amazon, otros, temu
+   Salida: usuario/steuer/2025/bundles/<fuente>_B<inicio>-B<end>.txt
+
+2. Analizar paquete:
+   Claude lee el paquete y clasifica todos los recibos en:
+   - W = costes publicitarios (100% deducible)
+   - G = Mixto (proporcional, por ejemplo 50%)
+   - V = Descartado (privado, duplicados, correos electrónicos de estado)
+   - Z = Diferido (por aclarar)
+
+3. Elementos de captura por lotes:
+   bach steuer posten add --belegnr 195 --bezeichnung "..." --brutto 55.85 --liste W ...
+
+4. Actualizar archivos TXT:
+   python agent/_experts/steuer/regenerate_txt.py
+
+NOTAS DE CLASIFICACIÓN
+----------------------------
+- PayPal: los pagos de Temu son duplicados (originales en la carpeta de Temu)
+- eBay: Muchos correos electrónicos por compra (pedido, envío, entrega, factura)
+        -> Registre únicamente la factura/confirmación del pedido como documento principal
+        -> Registrar correos electrónicos de estado como V con 0 EUR (integridad)
+- Material de terapia: LEGO, juegos didácticos, literatura especializada = W
+- Software: Microsoft 365, Office = G con 50%
+- Streaming: Netflix, Disney+ = V (privado)
+
+BASE DE DATOS
+---------
+Todos los datos en: data/bach.db
+
+Tablas:
+- tax_documents Todos los documentos con estado
+- tax_posten Todos los elementos con asignación
+
+Los perfiles se guardan como archivos TXT en user/steuer/profile/.
+
+CHAT AGENT
+----------
+El agente fiscal está disponible como agente de chat en
+agentes/steuer-agent.txt disponible.
+
+Él puede:
+- Capturar recibos desde archivos PDF
+- Categorizar publicaciones automáticamente
+- Detectar duplicados
+- Validar con el usuario
+- Crear ZIP de oficina de impuestos con todos los documentos
+
+README READMES (trabajos de referencia de palabras clave)
+---------------------------------------------
+Cada área fiscal tiene un README.txt con tabla de palabras clave,
+recibos requeridos e importes a tanto alzado actuales (a partir de 2025).
+
+  Área/párrafo de archivo
+  ------------------------------------------ ------------------------
+  user/steuer/[JAHR]/STEUER_README.txt Procedimiento general y sincronización
+  usuario/impuesto/[AÑO]/costos publicitarios/README.txt Apéndice N (párrafo 9)
+  usuario/impuesto/[AÑO]/Cargas extraordinarias/Artículo 33 EStG
+    LÉAME.txt
+  usuario/impuesto/[AÑO]/Servicios relacionados con el hogar Artículo 35a EStG
+    & Artesanos/README.txt
+  user/steuer/[JAHR]/Special Editions/README.txt Apartado 10 EStG
+  usuario/impuestos/[AÑO]/gastos de seguros y pensiones de inversión
+Disposición de jubilación/README.txt
+
+Contenido de los README:
+  - Definición del área con base legal
+  - Tabla de palabras clave: qué se puede enviar + documentos requeridos
+  - Importantes importes a tanto alzado y límites máximos
+  - Consejos prácticos
+
+VER TAMBIÉN
+----------
+  bach --help tasks                    Tareas generales
+  bach --help backup                   Sistema de respaldo
+  wiki/steuer/_index.txt Wiki de impuestos (conocimientos previos)
+  wiki/steuer/est_bereich.txt Descripción general de los sistemas EStG
+  wiki/steuer/versicherungen.txt Seguro deducible
+  wiki/steuer/sonderspenden.txt Deducir ediciones especiales
+  wiki/steuer/fortbildung.txt Formación y estudios adicionales
+  wiki/steuer/fahrtkosten_homeoffice.txt Gastos de viaje y oficina en casa
+  agentes/steuer-agent.txt agente fiscal (agente de chat)

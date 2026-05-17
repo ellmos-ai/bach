@@ -1,0 +1,130 @@
+# Portability: WINDOWS
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 最后验证时间：2026-05-17
+# 下一次审核：2027-05-17
+
+INSTALLER.EXE / START.EXE 评估
+-------------------------------------
+
+状态：评估已完成 (2026-05-17)
+建议：是的，有用 - 但作为稳定版本后的第 2 阶段功能。
+
+
+PRO（优点）
+--------------
+
+1。用户友好性
+   - 双击而不是终端知识
+   - 无需手动设置 Python/npm
+   - 开始菜单集成（Windows 标准）
+   - 通过Windows“删除程序”卸载
+
+2。便携性
+   - 嵌入式Python：无系统依赖
+   - 捆绑车轮：安装过程中无需互联网
+   - 确定性环境：每个系统上的版本相同
+
+3。专业印象
+   - 带有 .exe 下载的 GitHub 版本（Windows 工具的标准）
+   - 带进度条的自解压存档
+   - 可以显示图标、品牌、许可证
+
+4。避免错误
+   - 没有 PATH 问题，没有“找不到 python”
+   - Virtualenv自动隔离
+   - 内置飞行前检查（内存、权限、端口）
+
+
+CONTRA（缺点）
+------------------
+
+1。努力
+   - 约 40-60 小时的开发 + 测试
+   - bach.bat 中的 20 多种启动模式必须与安装程序路径配合使用
+   - 每次更新都需要新的 .exe 版本（或自动更新程序）
+
+2。尺寸
+   - 嵌入式 Python + Deps：~200-400 MB 安装程序
+   - 不带嵌入式 Python：约 50 MB，但需要 Python
+
+3。复杂性
+   - PyInstaller/Nuitka/cx_Freeze 具有 Windows 特性
+   - 防病毒软件对未知 .exe 文件误报
+   - 信任所需的代码签名证书（约 100-400 欧元/年）
+
+4。保养
+   - 每个依赖项更新→新构建
+   - Windows Defender SmartScreen 阻止没有签名的情况
+   - OneDrive 方案（多系统）与 .exe-Install
+
+5 不匹配。巴赫特定问题
+   - OneDrive 同步：.exe 本地安装，BACH 位于 OneDrive 中
+   - MCP服务器需要npm（不能捆绑在.exe中）
+   - Claude 代码挂钩需要 claude-cli （外部）
+   - 支柱 2/3（LLM 任务、用户配置）无法自动化
+
+
+架构建议
+----------------------
+
+第 1 阶段（现在）：“智能批量启动器”- start.exe 作为包装器
+  - PyInstaller 单文件 .exe，仅调用 bach.bat
+  - 检查 Python 可用性，如果不存在则显示错误消息
+  - 可选择固定到开始菜单/任务栏
+  - 努力：〜4小时
+  - 优点：可以立即实施，维护工作量最少
+
+第 2 阶段（发布后）：完整安装程序
+  - Inno Setup 或 NSIS（经过验证的 Windows 安装程序框架）
+  - 嵌入式Python + pip 从附带的轮子安装
+  - 完整的数据库初始化
+  - 开始菜单+桌面快捷方式
+  - 工作量：约 40 小时（包括所有模式的测试）
+
+第 3 阶段（可选）：自动更新程序
+  - GitHub 发布用于版本检查的 API
+  - Delta 更新（仅更改的文件）
+  - 工作时间：约 20 小时
+
+
+技术选项
+-------------------
+
+A) PyInstaller（推荐用于 start.exe）
+   - 单文件模式（--onefile）
+   - 有据可查，广泛的社区
+   - 缺点：启动速度慢（解压临时文件夹）
+
+B) Inno Setup（推荐用于 installer.exe）
+   - Windows 安装程序的事实上的标准
+   - 用于复杂逻辑的 Pascal 脚本
+   - 压缩、卸载、注册表
+   - 免费、开源
+
+C) Nuitka（替代）
+   - 将 Python 编译为 C → real .exe
+   - 启动速度比 PyInstaller 更快
+   - 缺点：构建更复杂，编译时间更长
+
+D) cx_Freeze（替代）
+   - 与 PyInstaller 类似，但是文件夹而不是单个文件
+   - 启动速度比 PyInstaller 更快
+   - 缺点：没有单文件模式
+
+
+后续步骤
+----------------
+
+1。 [ ] 决定：立即进行第一阶段还是发布后等待？
+2. [ ] 如果阶段 1：为 start.exe 创建 PyInstaller 规范
+3. [ ] 如果阶段 2：使用嵌入式 Python 准备 Inno 安装脚本
+4. [ ] 获取代码签名证书（可选，针对 SmartScreen）
+
+
+另请参见
+----------
+  start/bach.bat 启动菜单（当前启动器）
+  docs/help/install.txt 安装说明
+  setup.py Python 安装程序（第一支柱）
+  ENT-45_INSTALLER_3D_MODELL.md 概念文档（在 .dev/ 中）

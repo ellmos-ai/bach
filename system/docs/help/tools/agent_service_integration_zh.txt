@@ -1,0 +1,31 @@
+BACH 工具：agent_service_integration
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/agent_service_integration.py
+
+描述
+----------------------------------------
+代理服务连接集成 v2.0.0（数据库版本）
+
+将代理与服务、连接和外部工具链接。
+代理激活和工具路由的中心联系点。
+
+更改：现在从 bach.db 而不是 JSON 文件读取！
+
+用法：
+  python agent_service_integration.py matrix # 显示连接矩阵
+  python agent_service_integration.py agent <name> # 代理连接
+  python agent_service_integration.py suggest <task> # 工具推荐
+  python agent_service_integration.py status # 总体状态
+  python agent_service_integration.py tools [type] # 列出工具
+  python agent_service_integration.pyconnections # 列出连接
+
+USE
+----------------------------------------
+python bach.py 工具运行agent_service_integration [args]
+或直接： python tools/agent_service_integration.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：巴赫工具显示agent_service_integration

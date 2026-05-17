@@ -1,0 +1,22 @@
+BACH Tool: archive_done_tasks
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/archive_done_tasks.py
+
+DESCRIPTION
+----------------------------------------
+archive_done_tasks.py - Moves done tasks from tasks.json to _done.json
+
+Usage:
+    python archive_done_tasks.py # Dry-run (shows what would happen)
+    python archive_done_tasks.py --apply # Really run
+
+USE
+----------------------------------------
+python bach.py tools run archive_done_tasks [args]
+or directly: python tools/archive_done_tasks.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show archive_done_tasks

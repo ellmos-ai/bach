@@ -1,0 +1,25 @@
+BACH Tool: autolog
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/autolog.py
+
+DESCRIPTION
+----------------------------------------
+Auto-Logger - Automatically logs all actions
+-----------------------------------------------------
+
+Two-stage system:
+1. auto_log.txt - Last 300 lines (short-term memory)
+2. auto_log_extended.txt - Older entries, max 30 days (archive)
+
+After 30 days, entries will be permanently deleted.
+
+USE
+----------------------------------------
+python bach.py tools run autolog [args]
+or directly: python tools/autolog.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show autolog

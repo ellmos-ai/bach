@@ -1,0 +1,35 @@
+Инструмент BACH: c_indent_checker
+--------------------------------------------------
+Создано: 23 января 2026 г., 10:36.
+Источник: инструменты/c_indent_checker.py
+
+ОПИСАНИЕ
+----------------------------------------
+c_indent_checker.py — средство проверки отступов Python
+
+Назначение: проверяет файлы Python на наличие распространенных ошибок отступов:
+       - Отсутствуют двоеточия после структур (def, if, class и т.д.)
+       - возврат/выход за пределы блоков
+       - Смесь табуляции и пробелов
+
+Автор: Claude (адаптировано из indent_gui_checker.py)
+Зависимости: os, re, json (stdlib)
+
+Использование:
+    python c_indent_checker.py <файл_или_папка> [--recursive] [--log] [--json]
+
+Примеры:
+    python c_indent_checker.py script.py # Один файл
+    python c_indent_checker.py ./src --recursive # Вся папка
+    python c_indent_checker.py ./src --log # Создать файл журнала
+    python c_indent_checker.py script.py --json # Вывод JSON
+
+USE
+----------------------------------------
+инструменты Python bach.py запускают c_indent_checker [args]
+или напрямую: python Tools/c_indent_checker.py [args]
+
+ПРИМЕЧАНИЯ
+----------------------------------------
+- Автоматически генерируется из строки документации.
+- Если у вас есть вопросы: инструменты bach показывают c_indent_checker.

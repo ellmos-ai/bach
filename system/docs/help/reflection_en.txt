@@ -1,0 +1,80 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+REFLECTION HANDLER
+------------------
+
+DESCRIPTION
+------------
+
+The Reflection Handler analyzes the self-reflection and performance of the BACH system.
+He evaluates information from the memory tables (working, sessions, lessons, facts)
+and displays detailed performance reports, trend analysis and identified
+Vulnerabilities.
+
+
+OPERATIONS
+-----------
+
+status
+  View performance report. Provides up-to-date overview of system metrics
+  and general performance indicators.
+
+review [days]
+  Analyze performance for the last N days (default: 7 days).
+  Example: review 14 shows the last two weeks.
+
+gaps
+  Identify weak points and gaps. Analyzes memory contents and displays
+  Areas with low coverage or performance issues.
+
+log
+  View reflection metrics from the database. Shows the last 20 entries
+  of type 'REFLECTION:*' from the memory_working table.
+
+
+EXAMPLES
+---------
+
+  bach reflection status
+    -> Shows current performance report with all metrics
+
+  bach reflection review 30
+    -> Analyzes performance of the last 30 days with detailed trends
+
+  bach reflection gaps
+    -> Lists all identified vulnerabilities
+
+  bach reflection log
+    -> Shows the last 20 reflection metrics entries
+
+
+FILES
+-------
+
+hub/reflection.py
+  Handler implementation with operation definitions and database queries.
+
+agents/reflection/reflection_analyzer.py
+  SelfReflection class for analysis logic and report generation.
+
+data/bach.db
+  Central SQLite database with memory tables:
+  - memory_working: Current working memory (type 'note' with REFLECTION:*)
+  - memory_sessions: Session history
+  - memory_lessons: Lessons learned
+  - memory_facts: Stored Facts
+
+
+SEE ALSO
+----------
+
+docs/help/memory.txt
+  Documentation of the memory system and table structure.
+
+docs/help/tasks.txt
+  Task management to complement performance analysis.
+
+agents/reflection/
+  Additional analysis modules and metric definitions.

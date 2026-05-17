@@ -1,0 +1,83 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+新聞ハンドラー
+-----------------
+
+説明
+------------
+
+ニュース項目からの毎日の PDF 新聞。さまざまなアイテムを収集します
+ソースを作成し、フォーマットされた HTML/PDF 新聞を生成して、それを提示します
+構成可能なチャネル (テレグラム、電子メール、デスクトップ) 経由。
+
+依存: NewsHandler (hub/news.py)
+データ ソース: Hub/_services/newspaper/config.json、user/newspaper/
+
+OPERATIONS
+-----------
+
+generate [--date YYYY-MM-DD]
+  新聞を作成します。データベースから収集したニュース項目を使用します。
+  user/newspaper/ ディレクトリに HTML と PDF を作成します。
+  今日の標準。 --date は明示的な日付を設定します。
+  例: バッハ新聞 生成 --date 2026-02-18
+
+配信 [--channel telegram|email|desktop]
+  新聞を配達します。最新の新聞を見つけて送ってください。
+  --channel を指定しないと、構成されているすべてのチャネルが使用されます。
+  例: バッハ新聞配信 --channel telegram
+
+config
+  構成を表示します。 Hub/_services/newspaper/config.json を読み取ります
+  すべてのパラメータを構造化された方法で表示します。
+
+履歴
+  過去の出費を列挙します。最新の新聞を最大 20 紙まで表示します
+  日付スタンプとファイル サイズ (KB 単位) 付き。
+
+ヘルプ
+  このヘルプを表示します。
+
+例
+---------
+
+日刊新聞の生成:
+  bach newspaper generate
+
+特定の日付:
+  bach newspaper generate --date 2026-02-25
+
+新聞の配信 (すべてのチャネル):
+  bach newspaper deliver
+
+電報による配信のみ:
+  bach newspaper deliver --channel telegram
+
+完全なワークフロー:
+  bach news fetch              [メッセージの収集]
+  bach newspaper generate      [新聞の作成]
+  bach newspaper deliver       [新聞の送信]
+
+ファイル
+-------
+
+システムへの相対パス:
+
+  Hub/newspaper.py ハンドラーの実装
+  Hub/_services/newspaper/newspaper_generator 新聞ジェネレーター (遅延読み込み)
+  Hub/_services/newspaper/config.json 構成 (チャネル、ソース)
+
+  user/newspaper/ 出力ディレクトリ
+  user/newspaper/newspaper_*.html 生成された HTML 新聞
+  user/newspaper/newspaper_*.pdf 生成された PDF 新聞
+
+  data/bach.db データベース (news_items、news_sources)
+
+関連項目
+----------
+
+  news.py NewsHandler (ニュース項目のソース システム)
+  Base.py BaseHandler (基本クラス)
+  Notice.py 通知システム (配信)

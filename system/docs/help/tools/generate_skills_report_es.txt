@@ -1,0 +1,20 @@
+BACH Tool: generate_skills_report
+--------------------------------------------------
+Generiert: 2026-01-23 10:36
+Quelle: tools/generate_skills_report.py
+
+BESCHREIBUNG
+----------------------------------------
+generate_skills_report.py - Generiert nutzerfreundlichen Skills-Bericht
+
+Erstellt: user/SKILLS_REPORT.md
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run generate_skills_report [args]
+oder direkt: python tools/generate_skills_report.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show generate_skills_report

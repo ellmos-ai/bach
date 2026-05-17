@@ -1,0 +1,87 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+------------
+Manejador de búsqueda unificada para BACH (SQ064 + SQ047)
+
+
+DESCRIPCIÓN
+------------
+Búsqueda de texto completo (FTS5) en todas las fuentes de BACH: artículos Wiki, memoria (en funcionamiento/
+Hechos/Lecciones), Documentaciones, KnowledgeDigest Skills/Wiki y cualquier
+directorios escaneados. Admite filtros avanzados por fuente, etiquetas y
+límite. Indexación automática con detección de duplicados mediante comparación de hash.
+
+
+OPERACIONES
+-----------
+
+BÚSQUEDA (predeterminado)
+  <consulta> Búsqueda de texto completo en todas las fuentes
+  <consulta> --source FUENTE Buscar solo en la fuente (wiki|document|memory_*)
+  <query> --tag TAG filtrar por etiqueta (se puede combinar varias veces)
+  <consulta> --limit N máx. visitas (predeterminado: 20)
+
+INDEXACIÓN
+  index Indexar todas las fuentes BACH
+  índice de conocimientodigest|kd KnowledgeDigest + Índice Wiki
+  indexar wiki|memoria|documentos Indexar una única fuente
+  índice <ruta> directorio de escaneo (estilo ProFiler)
+  index <ruta> --no-tags Sin derivación automática de etiquetas
+
+MANAGEMENT
+  estadísticas del índice de estado y descripción general de la fuente
+  reconstruir el índice vacío y reconstruir completamente
+  etiquetas Listar todas las etiquetas disponibles
+  etiquetas TAG1 TAG2 Buscar entradas con estas etiquetas
+  etiquetas: limita N etiquetas Top-N por frecuencia
+  los incautos encuentran duplicados (mismo hash, rutas)
+  ayuda Mostrar esta ayuda
+
+
+EJEMPLOS
+---------
+
+Búsqueda básica:
+  bach search python
+  bach search "machine learning"
+
+Con fuente:
+  bach search encoding --source memory_lesson
+  bach search entwickler --source knowledgedigest_skill
+
+Con etiquetas y límite:
+  bach search database --tag production --limit 50
+  bach search bridge --tag connector --tag network
+
+Indexación:
+  bach search index                    # Todas las fuentes
+  bach search index knowledgedigest    # Sólo KD
+  bach search index /c/Users/User/Docs # Verzeichnis
+  bach search index .                  # Directorio actual
+
+Administración:
+  bach search status                   # Estadísticas
+  bach search rebuild                  # Reindexación completa
+  bach search tags                     # Todas las etiquetas
+  bach search tags health system       # Búsqueda de etiquetas
+  bach search dupes                    # Duplicados
+
+
+FILES
+-------
+
+hub/search.py Implementación de SearchHandler
+tools/unified_search.py Motor de búsqueda unificado (FTS5)
+data/bach.db Base de datos de índice (SQLite, FTS5)
+docs/help/search.txt Este archivo
+
+
+VER TAMBIÉN
+----------
+
+docs/help/index.txt Interfaz de línea de comandos BACH
+docs/OPERACIONES.md Todos los manejadores y operaciones
+tools/unified_search.py Documentación del motor (formato de índice, sintaxis FTS5)

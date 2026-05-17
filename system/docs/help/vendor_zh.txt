@@ -1,0 +1,80 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+供应商 - 外部代码源
+------------------------------
+
+日期：2026-02-06
+
+描述
+------------
+_vendor/ 目录包含位于以下位置的外部代码的副本
+BACH 服务是集成的。每个供应商都有自己的目录
+带有 PROVENANCE.md（来源、提交、许可证）。
+
+位置
+-----------
+system/hub/_services/document/_vendor/
+
+可用供应商
+-------------------
+
+  anthropic_docx/ Word XML 打包/解包、验证、跟踪更改
+                      来源：github.com/anthropics/skills (skills/docx)
+                      优点：模板调试、变更跟踪
+
+  anthropic_pdf/ PDF表单提取、填写、转换
+                      来源：github.com/anthropics/skills (skills/pdf)
+                      福利：税单、填写表格
+                      集成：pdf_service.py (PDFProcessor)
+
+  anthropic_xlsx/ Excel 重新计算、Office XML 打包/解包/验证
+                      来源：github.com/anthropics/skills (skills/xlsx)
+                      好处：用公式进行金融导出
+
+  redaction_ detector.py Regex+Fuzzy+Blacklist 敏感数据检测
+                          来源：DokuZentrum
+
+  pdf_schwaerzer_pro.py PDF黑化+AES-256加密
+                          来源：PDFSchwaerzer Pro
+
+在代码中使用
+---------------
+
+  # PDF处理（推荐：通过服务层）
+  从 hub._services.document.pdf_service 导入 PDFProcessor
+
+  PDFProcessor.extract_text("文件.pdf")
+  PDFProcessor.get_metadata("文件.pdf")
+  PDFProcessor.extract_form_fields("文件.pdf")
+  PDFProcessor.fill_form("file.pdf", {"field": "value"}, "out.pdf")
+  PDFProcessor.to_images("文件.pdf", "output_dir/")
+  PDFProcessor.check_fillable("文件.pdf")
+
+  # 直接供应商模块（仅当服务层不够时）
+  导入系统
+  sys.path.insert(0, str(供应商目录))
+  from extract_form_struct import extract_form_struct
+
+供应商约定
+-------------------
+
+  1. 每个供应商都有自己的目录
+  2. PROVENANCE.md 是强制性的（来源、提交、日期、许可证）
+  3. __init__.py 作为Python包
+  4. 供应商代码未更改（逐字复制）
+  5. 更新：复制新提交，更新 PROVENANCE.md
+
+相关工具
+---------------
+
+  tools/c_skill_init.py 创建新技能（人类标准）
+  tools/c_skill_validate.py 验证 SKILL.md
+  tools/c_skill_package.py 软件包技能
+
+另请参见
+----------
+bach --help cookbooks          Anthropic Cookbooks 参考
+bach --help tools              工具概述
+_vendor/README.md 供应商概述表

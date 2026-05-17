@@ -1,0 +1,153 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PIPELINE HANDLER
+----------------
+
+The pipeline handler manages automated data processing pipelines in BACH.
+Pipelines are configured as JSON definitions stored under pipelines/
+and can be executed manually or time-controlled.
+
+
+OPERATIONS
+-----------
+
+list-available
+  Shows all available pipeline definitions (JSON files in pipelines/).
+  Specifies ID, Name, Type, Description and Schedule.
+  Usage: bach pipeline list-available
+
+list
+  Shows all installed pipelines from the database.
+  Specifies installation date and last run time.
+  Usage: bach pipeline list
+
+status <pipeline-id>
+  Shows detailed status of a pipeline.
+  Includes config details and last 5 runs with statistics.
+  Usage: bach pipeline status <pipeline-id>
+
+install <pipeline-id>
+  Interactively installs a pipeline.
+  Queries configuration parameters (config_questions from JSON),
+  saves the configuration in pipeline_configs table.
+  Offers reinstallation if pipeline already exists.
+  Usage: bach pipeline install <pipeline-id>
+
+run <pipeline-id>
+  Runs an installed pipeline.
+  Dynamically loads entry_point class, instantiates and calls method().
+  Creates entry in pipeline_runs with statistics (items_processed, errors_count).
+  Expects Result-Dict with metadata (tasks_found/items_processed, errors/errors_count).
+  Usage: bach pipeline run <pipeline-id>
+
+schedule <pipeline-id>
+  Enables scheduler job for the pipeline.
+  Converts schedule field (daily/hourly/weekly/monthly) to cron expression,
+  creates scheduler_jobs entry with is_active=1.
+  Standard times: daily 6:00, hourly, Monday 6:00, 1st of the month 6:00.
+  Usage: bach pipeline schedule <pipeline-id>
+
+unschedule <pipeline-id>
+  Disables scheduler job (sets is_active=0).
+  Usage: bach pipeline unschedule <pipeline-id>
+
+
+FILES
+-------
+
+hub/pipeline.py
+  Handler implementation with PipelineHandler class.
+
+pipelines/*.json
+  Pipeline definitions. Required fields:
+  - id: unique ID (e.g. "ati")
+  - name: Display name
+  - version: version number
+  - type: pipeline type (e.g. "sync", "import")
+  - description: Description
+  - schedule: "daily", "hourly", "weekly", "monthly" or cron string
+  - entry_point: Path to Python module (relative to system/)
+  - class: Class in the module
+  - method: method (default: "run")
+  - config_questions: Array with questions {key, prompt, type, default}
+
+data/bach.db
+  Tables:
+  - pipeline_configs: Installed pipelines + user-specific configuration
+  - pipeline_runs: Execution history with statistics
+  - scheduler_jobs: Cron jobs (created by schedule operation)
+
+
+EXAMPLES
+---------
+
+Pipeline definition (pipelines/ati.json):
+{
+  "id": "ati",
+  "name": "Article Title Importer",
+  "version": "1.0.0",
+  "type": "import",
+  "description": "Imports article titles from sources",
+  "schedule": "daily",
+  "entry_point": "agents/ati/importer.py",
+  "class": "ATIIImporter",
+  "method": "run",
+  "config_questions": [
+    {
+      "key": "source_url",
+      "prompt": "Source URL for title import",
+      "type": "text",
+      "default": "https://example.com/feed"
+    }
+  ]
+}
+
+Installation (interactive):
+$bach pipeline install ati
+=== Installation: Article Title Importer ===
+Description: Imports article titles from sources
+Type: import
+Schedule: daily
+
+Configuration:
+Source URL for title import [https://example.com/feed]
+> https://custom.com/feed
+  -> Changed: https://custom.com/feed
+
+✓ Configuration completed
+Install pipeline 'ati'...
+✓ Pipeline 'ati' installed
+
+
+Pipeline class (agents/ati/importer.py):
+class ATIImporter:
+    def __init__(self, db_path, config):
+        self.db_path = db_path
+        self.config = config
+        self.items_processed = 0
+        self.errors = []
+
+    def run(self):
+        # Implementation...
+        return {
+            "items_processed": self.items_processed,
+            "errors": self.errors
+        }
+
+
+Version:
+$bach pipeline run ati
+=== Pipeline Run: Article Title Importer ===
+Run ID: 42
+✓ Pipeline run successful
+  Items: 15, Errors: 0
+
+
+SEE ALSO
+----------
+
+scheduler - Scheduler for automated jobs (time-controlled execution)
+daemon - Daemon management for background processes
+agents/ - Agent implementations for pipeline entry_points

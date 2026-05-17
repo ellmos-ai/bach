@@ -1,0 +1,154 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+USECASES - Workflow test cases and TUeV system
+-----------------------------------------------
+
+DESCRIPTION
+------------
+Usecases are part of the BACH-TUeV system and serve as:
+  1. FEATURE TESTS Validates a workflow working?
+  2. QUALITY ASSURANCE All components work together?
+  3. REQUIREMENTS What is implemented, what is still missing?
+
+Usecases are stored in the SQLite DB (table: usecases)
+and are linked to workflows (workflow_tuev table).
+`workflow_path` is optional: older or rougher test cases can only
+have an area/category name. `bach usecase run` should then anyway
+run and display the test case in manual data mode.
+
+Handler: system/hub/tuev.py (TuevHandler + UsecaseHandler)
+
+USECASE FORMAT
+--------------
+
+  USECASE_NNN: Short title
+
+  PRECONDITION: What must be present?
+  INPUT: What does the user enter/what data is available?
+  EXPECTATION: What should the result be?
+  CHECKS: Which components are being tested?
+
+CURRENT USECASES
+-----------------
+Usecases are now in the DB (usecases table).
+Ads with: bach usecase list
+
+Historical usecase IDs (from old task system):
+  USECASE_001 Resume Agent
+  USECASE_002 Office Lens Scanner
+  USECASE_003 Document search
+  USECASE_004 Doctor reports thyroid
+  USECASE_005 Household routines
+  USECASE_006 Insurance advice
+
+View current use cases in DB:
+  bach usecase list
+  bach db query "SELECT id, title, workflow_name, test_result FROM usecases"
+
+USECASE AS A TEST
+----------------
+  A use case tests the complete puncture:
+
+  User input -> Agent/Skill -> Tools -> DB -> Result
+
+  This automatically validates:
+  - CLI commands work?
+  - DB schema correct?
+  - Tools available and accessible?
+  - Help files up to date?
+  - Injectors trigger on keywords?
+  - Result usable and correct?
+
+USECASE AS REQUIREMENT
+------------------------
+  Failed use cases reveal gaps:
+  - Missing tools -> task for tool creation
+  - Missing CLI commands -> Task for CLI handler
+  - Missing DB tables -> task for schema extension
+  - Missing workflows -> task for workflow creation
+
+  New usecase ideas are always welcome:
+    bach task add "USECASE_NNN Kurztitel: Beschreibung" --prio P3
+
+FEEDBACK INTO THE DEVELOPMENT CYCLE
+-----------------------------------------
+
+  Phase 8 (use cases)
+       │
+       ├── Failed? -> New task in phase 1
+       ├── Successful?    -> Feature validated
+       └── New idea?      -> New usecase task
+
+  Usecases are phase 8 in the dev cycle (see: bach --help dev)
+
+CLI COMMANDS
+-----------
+
+USECASE MANAGEMENT:
+  bach usecase list [workflow]       All test cases (optionally filtered)
+  bach usecase add <workflow>        Notes on adding (SQL template)
+  bach usecase show <id>             Show details of a test case
+  bach usecase run <id>              Execute a single test case
+  bach usecase run-all <workflow>    All tests of a Workflows
+
+TUeV ADMINISTRATION:
+  bach tuev status                   TUeV status of all workflows
+  bach tuev check <workflow>         Check individual workflows
+  bach tuev run                      All due checks
+  bach tuev renew <workflow>         Renew TUeV after check
+  bach tuev init                     Register workflows from skills/workflows/
+
+CREATE USECASE
+-----------------
+Usecases are inserted directly into the DB:
+
+  bach db query "INSERT INTO usecases (title, description, workflow_name, test_input, expected_output, created_by) VALUES ('Testfall-Titel', 'Beschreibung', 'workflow-name', '{}', '{}', 'user')"
+
+Or via GUI: /usecases (if GUI server running)
+
+COMPONENT COVERAGE
+---------------------
+  Good use cases cover different areas:
+
+  Example use case area
+  --------------- ------------------------------------------
+  OCR & documents USECASE_004 (doctor reports)
+  Search USECASE_003 (document search)
+  Generation USECASE_001 (CV)
+  Household USECASE_005 (Routines)
+  Finance USECASE_006 (Insurance)
+  Scanner USECASE_002 (Office Lens)
+
+  Not covered yet (ideas):
+  - Tax workflow (end-to-end: receipt -> export)
+  - Partner delegation (Claude -> Gemini -> result)
+  - Backup & Restore (Backup -> Restore)
+  - Multi-LLM coordination
+
+DATABASE STRUCTURE
+------------------
+  Table: usecases
+    - id, title, description
+    - workflow_name, workflow_path
+    - test_input (JSON), expected_output (JSON)
+    - last_tested, test_result, test_score
+    - created_by, created_at, updated_at
+
+  Table: workflow_tuev
+    - workflow_name, workflow_path
+    - tuev_status, last_tuev_date, tuev_valid_until
+    - avg_score, test_count, pass_count
+
+SEE ALSO
+----------
+  bach tuev status                          TUeV dashboard
+  bach --help dev                           Development cycle (8 phases)
+  bach --help test                          Technical test procedures (B/O/E)
+  system/skills/workflows/dev-cycle.md Detailed dev workflow
+  system/hub/tuev.py Handler implementation
+  system/db/schema.sql DB schema (usecases + workflow_tuev)
+
+---
+Version: 1.1.0 | Created: 2026-01-28 | Updated: 2026-02-08

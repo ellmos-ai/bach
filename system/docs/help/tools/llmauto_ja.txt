@@ -1,0 +1,36 @@
+BACH ツール: LLMauto (MarbleRun)
+------------------------------
+
+状態管理による自動化された LLM チェーン実行。
+
+使用
+----------
+
+  bach --tools llmauto run <chain.yaml>    チェーンの実行
+  bach --tools llmauto list                利用可能なチェーンを表示
+  bach --tools llmauto benchmark           パフォーマンス ベンチマーク
+
+チェーン形式
+-------------
+
+チェーンは、次のステップを含む YAML として定義されます。
+
+
+MODI
+----
+
+ は、順次または並列で実行できます。  次々に続く一連のステップ
+  平行ステップ平行
+  conditional 条件付き実行
+
+STATE
+-------
+
+チェーン状態は再開のために state.json に保存されます
+中断後。
+
+モジュール
+-----
+
+  tools/llmauto/ (MarbleRun エンジン)
+  GitHub: github.com/lukisch/MarbleRun

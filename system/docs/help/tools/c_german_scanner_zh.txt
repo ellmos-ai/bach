@@ -1,0 +1,38 @@
+巴赫工具：c_german_scanner
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/c_german_scanner.py
+
+描述
+----------------------------------------
+c_german_scanner.py - 在 Python 项目中查找德语字符串
+
+扫描 Python 文件：
+  - 带变音符号的字符串（ae、oe、ue、ss）
+  - GUI 文本（setText、setWindowTitle、QLabel 等）
+  - 德语关键字（文件、编辑、保存等）
+
+用于：
+  - 为国际化（i18n）做好准备。
+  - 查找硬编码字符串
+  - 创建翻译列表
+
+摘自：A3开发循环Advanced/TranslationSystem.py
+
+用法：
+    python c_german_scanner.py <文件夹>
+    python c_german_scanner.py <文件夹> --json
+    python c_german_scanner.py <folder> --export Translations.json
+
+作者：Claude（改编）
+依赖项：无（仅 stdlib）
+
+使用
+----------------------------------------
+python bach.py 工具运行 c_german_scanner [args]
+或直接： python tools/c_german_scanner.py [args]
+
+注释
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：巴赫工具显示 c_german_scanner

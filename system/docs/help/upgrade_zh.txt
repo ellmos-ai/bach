@@ -1,0 +1,96 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 下一篇评论：2026-08-12
+
+BACH 升级 - 系统更新
+-------------------------------------
+
+按文件或类别有选择地更新版本化 BACH 组件。
+
+
+使用
+----------
+
+  # 查看升级状态
+  bach upgrade status
+
+  # 显示文件的可用版本
+  bach upgrade list hub/backup.py
+
+  # 检查可用更新
+  bach upgrade check
+
+  # 选择性品类升级
+  bach upgrade core
+  bach upgrade templates
+  bach upgrade agents
+  bach upgrade skills
+  bach upgrade hub
+  bach upgrade tools
+  bach upgrade connectors
+  bach upgrade partners
+  bach upgrade docs
+  bach upgrade gui
+
+  # 试运行（仅查看，不执行）
+  bach upgrade agents --dry-run
+
+
+类别
+----------
+
+  core 系统核心 (dist_type=2)
+  模板 模板和模板 (dist_type=1)
+  代理商Boss代理商及专家
+  技能 技能和协议
+  集线器 集线器处理程序
+  工具 工具
+  连接器 连接器系统
+  合作伙伴 合作伙伴 文件
+  文档文档
+  gui GUI 文件
+
+
+重要
+-------
+
+- 升级仅覆盖分发/清单中的版本化文件。
+- USER_DATA 保持不变。
+- 建议在重大升级之前进行备份。
+- 版本在 `dist_file_versions` 中跟踪。
+
+
+示例
+---------
+
+  # 仅更新核心文件
+  bach upgrade core
+
+  # 只更新模板
+  bach upgrade templates
+
+  # 仅预览代理文件
+  bach upgrade agents --dry-run
+
+  # 恢复/升级文档
+  bach upgrade docs
+
+  # 查看文件的可用版本
+  bach upgrade list hub/backup.py
+
+
+版本化
+-------------
+
+- 哈希 + 自动增量系统 (ENT-09)
+- 只有版本化的分发文件可以通过“bach升级”移动
+- USER_DATA 来自用户且没有版本
+
+
+另请参阅
+----------
+
+  bach --help restore       模板恢复
+  bach --help downgrade     降级到旧版本
+  bach --help seal          完整性检查

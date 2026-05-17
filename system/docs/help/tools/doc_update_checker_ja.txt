@@ -1,0 +1,33 @@
+BACH ツール: doc_update_checker
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/doc_update_checker.py
+
+説明
+----------------------------------------
+BACH Documentation Update Checker v1.0.1
+
+古いドキュメントを自動的に検出して更新します。
+RecludOS から移植され、BACH メモリ システムと統合されています。
+
+特徴:
+- 期限切れのドキュメント (60 日以上、無効なパス) を検出します。
+- 更新の提案を生成します
+- 更新レポートの作成
+- 簡単なアップデートを自動的に実行できます
+
+使用方法:
+  python doc_update_checker.py check # チェック
+  python doc_update_checker.py report # レポートを作成する
+  python doc_update_checker.py auto-update # 自動更新 (安全)
+  python doc_update_checker.py スケジュール # マイクロ ルーチンの場合
+
+USE
+----------------------------------------
+python bach.py ツールは doc_update_checker [args] を実行します
+または直接: python tools/doc_update_checker.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成
+- 質問がある場合: bach tools show doc_update_checker

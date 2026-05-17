@@ -1465,7 +1465,7 @@ CHATGPT / OPENAI - ABOS, PREISE & API
 
 ### `check_my_tasks`
 **Kategorie:** general  
-db_path = r'c:\Users\User\OneDrive\.AI\BACH_v1.1\data\bach.db'
+db_path = r'<BACH_WORKSPACE>\data\bach.db'
 
 ### `check_task_463`
 **Kategorie:** general  
@@ -1901,7 +1901,7 @@ db_path = Path("data/bach.db")
 
 ### `fix_injectors`
 **Kategorie:** general  
-FILE_PATH = Path(r"C:\Users\User\OneDrive\.AI\BACH_v1.1\tools\injectors.py")
+FILE_PATH = Path(r"<BACH_WORKSPACE>\tools\injectors.py")
 
 ### `flipchart`
 **Kategorie:** general  
@@ -3061,7 +3061,7 @@ Test Lazy Sync
 
 ### `test_quarantine`
 **Kategorie:** general  
-base_dir = Path(r"c:\Users\User\OneDrive\.AI\BACH_v1.1")
+base_dir = Path(r"<BACH_WORKSPACE>")
 
 ### `test_runner`
 **Kategorie:** general  

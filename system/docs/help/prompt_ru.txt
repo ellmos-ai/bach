@@ -1,0 +1,121 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Ресурсы: [hub/prompt.py, Prompt_templates, Prompt_boards, Prompt_versions]
+
+PROMPT — управление шаблонами подсказок
+-------------------------------------
+
+ДАТА: 28 февраля 2026 г.
+
+Система подсказок управляет многократно используемыми шаблонами подсказок с помощью
+Варианты управления версиями и организации с помощью досок.
+
+Ссылка: B42
+
+ОСНОВНЫЕ ПОНЯТИЯ
+------------
+- ШАБЛОНЫ: многоразовые тексты подсказок с именем, категорией, тегами.
+- ВЕРСИИ: каждое изменение создает новую версию (история).
+- ДОСКИ: Коллекции шаблонов (тематические группы)
+
+КОМАНДЫ CLI (подсказка баха)
+--------------------------
+
+  list [--category CAT] Список всех шаблонов
+  add <имя> <текст> Создать новый шаблон
+  получить шаблон <id_or_name> + показать историю версий
+  update <id_or_name> <text> Создать новую версию
+  delete <id_or_name> Delete template
+  search <запрос> Шаблоны поиска
+  доски Посмотреть все доски
+  доска <title> Просмотр/создание/управление доской
+
+ВАРИАНТЫ ДЛЯ ДОБАВЛЕНИЯ
+-----------------
+  --category Категория CAT (например, «анализ», «запись»)
+  --tags теги t1,t2 (через запятую)
+  --назначение ТЕКСТ Цель
+
+ОПЦИИ ДЛЯ СОВЕТА
+-------------------
+  --add-prompt Добавить запрос идентификатора на доску
+  --remove-prompt Удалить запрос идентификатора с доски
+  --description ТЕКСТ Установить/обновить описание платы
+
+ПРИМЕРЫ
+---------
+
+  # Шаблоны списка
+  bach prompt list
+  bach prompt list --category analyse
+
+  # Создать шаблон
+  bach prompt add "Zusammenfassung" "Fasse den folgenden Text zusammen:" --category schreiben
+  bach prompt add "Code-Review" "Pruefe diesen Code auf Fehler:" --tags "dev,review" --purpose "Code-Qualitaet"
+
+  # Показать шаблон (с историей версий)
+  bach prompt get 42
+  bach prompt get "Zusammenfassung"
+
+  # Обновить шаблон (созданная версия)
+  bach prompt update 42 "Fasse den folgenden Text praegnant zusammen:"
+  bach prompt update "Zusammenfassung" "Neue Version des Textes..."
+
+  # Удалить шаблон
+  bach prompt delete 42
+
+  # Поиск (по имени, тексту, тегам)
+  bach prompt search "zusammenfass"
+  bach prompt search "code"
+
+  # Управление досками
+  bach prompt boards                                      # Все доски
+  bach prompt board "Schreiben"                           # Создать/просмотреть доску
+  bach prompt board "Schreiben" --add-prompt 42           # Добавить подсказку
+  bach prompt board "Schreiben" --remove-prompt 42        # Удалить подсказку
+  bach prompt board "Schreiben" --description "Schreib-Prompts fuer den Alltag"
+
+ВЕРСИЯ
+-------------
+
+Когда вы `обновляете`, старый текст автоматически сохраняется как версия.
+История версий видна в `bach ​​Prompt get <id>`:
+
+  ВЕРСИИ (2):
+    Нет созданного текста (предварительный просмотр)
+    1 2026-01-15T10:30:00 Старый текст...
+    2 2026-02-01T14:00:00 Следующая версия...
+
+РАЗРЕШЕНИЕ КОНФЛИКТА (--confidence)
+------------------------------------
+Доверие можно указать с помощью `add` (для общей памяти):
+  bach prompt add <name> <text> --confidence 0.8
+
+В случае конфликтов (один и тот же ключ, пространство имен) побеждает более высокая достоверность.
+
+БАЗА ДАННЫХ
+---------
+
+  подсказки_шаблоны:
+    идентификатор, имя, цель, текст, теги, категория,
+    созданный_at, обновленный_at, dist_type
+
+  подсказки_версии:
+    id, Prompt_id, номер_версии, текст, теги, созданный_at
+
+  Prompt_boards:
+    идентификатор, заголовок, описание, созданный_at
+
+  Prompt_board_items:
+    id, board_id, Prompt_id, добавленный_at
+
+ФАЙЛЫ
+-------
+  Hub/prompt.py Реализация обработчика
+
+СМОТРИ ТАКЖЕ
+----------
+  bach --help tasks        Система задач
+  bach --help memory       Система памяти
+  bach --help skills       Система SKILL.md

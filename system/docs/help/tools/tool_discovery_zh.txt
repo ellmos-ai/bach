@@ -1,0 +1,30 @@
+巴赫工具：tool_discovery
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/tool_discovery.py
+
+描述
+----------------------------------------
+tool_discovery.py - 基于问题的工具推荐
+-----------------------------------------------------
+
+分析问题描述并推荐合适的 BACH 工具。
+
+用法：
+    python tool_discovery.py 建议“带有变音符号的编码问题”
+    python tool_discovery.py 列表模式
+    python tool_discovery.py --json
+
+作者：BACH v1.1
+版本：1.0.0
+创建时间：2026-01-21
+
+使用
+----------------------------------------
+python bach.py 工具运行 tool_discovery [args]
+或直接： python tools/tool_discovery.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach tools show tool_discovery

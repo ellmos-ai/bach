@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+-----------------------------------------------------------------------------
+Reminder Injector (SQ040) - Inyecta recuerdos en las indicaciones de LLM
+
+DESCRIPCIÓN
+-----------------------------------------------------------------------------
+El Reminder Injector administra e inyecta recuerdos en las indicaciones de LLM
+antes de cada llamada. Los recordatorios se activan según las condiciones de activación.
+insertado selectivamente en un bloque [BACH-REMINDERS]. La implementación
+admite almacenamiento alternativo de bases de datos y JSON.
+
+Condiciones de activación admitidas:
+  - siempre: Siempre activo (sin condición)
+  - on_task: solo cuando se está ejecutando una tarea
+  - time_based: Sólo en una ventana de tiempo determinada (HH:MM-HH:MM)
+  - keyword_match: solo si la palabra clave aparece en la entrada del usuario
+
+OPERACIONES
+-----------------------------------------------------------------------------
+list_reminders(active_only=True)
+  Devuelve todos los recordatorios activos (o todos) como una lista[dict].
+
+add_reminder(message, trigger_condition="always", trigger_value=None,
+             prioridad = 5)
+  Crea un nuevo recordatorio. Valores de activación según la condición:
+    - siempre: valor_disparador ignorado
+    - on_task: valor_disparador ignorado
+    - basado en tiempo: "HH:MM-HH:MM" (por ejemplo, "09:00-17:00")
+    - keyword_match: "palabra clave1, palabra clave2, ..." (separados por comas)
+  Prioridad: Valores bajos = más importante (0 = prioridad más alta).
+
+update_reminder(reminder_id, **kwargs)
+  Recordatorio de actualización. Campos permitidos: mensaje, condición_activador,
+  valor_disparador, activo, prioridad. Devuelve Verdadero en caso de éxito.
+
+delete_reminder(reminder_id)
+  Eliminar recordatorio (luego list_reminders lo ignorará).
+  Devuelve Verdadero en caso de éxito.
+
+get_active_reminders(contexto)
+  Devuelve una lista de textos recordatorios relacionados con el contexto actual.
+  encajar. Context-Dict puede contener: active_task, user_input.
+
+inject(prompt, contexto)
+  Agrega recordatorios activos antes del mensaje. Retorno:
+    [RECORDATORIOS DE BACH]
+      1. <Recordatorio de máxima prioridad>
+      2. <Siguiente recordatorio>
+    [/RECORDATORIOS DE BACH]
+    <Mensaje original>
+
+EJEMPLOS
+-----------------------------------------------------------------------------
+# Crear recordatorios para tareas activas
+inj = ReminderInjector(Ruta("sistema"), db=Ninguno)
+inj.add_reminder("Usa el modo de enfoque para tareas largas.",
+                 trigger_condition="on_task", prioridad=1)
+
+# Recordatorio basado en tiempo (9 a. m. a 5 p. m.)
+inj.add_reminder("Asegura que las copias de seguridad se estén ejecutando.",
+                 trigger_condition="basado en el tiempo",
+                 trigger_value="09:00-17:00", prioridad=3)
+
+# Recordatorio basado en palabras clave
+inj.add_reminder("¡Utilice la API BACH, no el acceso directo a la base de datos!",
+                 trigger_condition="keyword_match",
+                 trigger_value="database, db, sql", prioridad=2)
+
+# Inyectar recordatorio en el mensaje
+contexto = {"active_task": "investigación", "user_input": "consulta de base de datos"}
+modificado_prompt = inj.inject("¿Cómo funciona XYZ?", contexto)
+
+FILES
+-----------------------------------------------------------------------------
+hub/reminder_injector.py Implementación principal
+data/reminders.json Reserva JSON (caso de error de base de datos)
+docs/help/reminder_injector.txt Este archivo de ayuda
+
+VER TAMBIÉN
+-----------------------------------------------------------------------------
+task_manager.py - gestión de tareas (contexto para el activador on_task)
+bach_api.py - API entre centros

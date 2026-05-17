@@ -1,0 +1,63 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[session_snapshots 表、hub/snapshot.py]
+
+BACH SNAPSHOT 系统
+--------------------
+
+状态：2026-02-08
+
+会话快照确保 AI 会话的准确“心态”。
+这允许将上下文加载到新实例中或
+崩溃/关机后恢复。
+
+命令
+-------
+  bach --snapshot create [name]  保存当前状态。
+  bach --snapshot list           可用快照（自动和手动）。
+  bach --snapshot load [ID]      恢复工作内存和任务。
+  bach --snapshot delete <ID>    删除旧快照。
+
+概念：状态树
+-----------------------
+BACH 中的快照由以下组件组成：
+1. SESSION ID：当前会话上下文
+2. 开放任务：哪些任务处于活动/开放状态（最多 10 个）
+3. 最近记忆：最近的工作记忆条目（最后 5 个）
+4. 快照元数据：时间戳、类型（自动/手动）、名称
+
+与其他系统的差异
+-------------------------------
+- 内存：重要知识（长期）。
+- 日志：做了什么（历史）。
+- 快照：我们现在所处的位置（可操作）。
+
+自动
+---------
+可以自动或手动创建快照。快照类型
+区分“手动”（通过 --snapshot create）和“自动”（可能
+通过--shutdown）。该实现支持这两种类型。
+
+DATABASE
+---------
+表：`session_snapshots`（system/db/schema.sql，第 226-239 行）
+领域：
+  - id、session_id、snapshot_type、名称
+  - snapshot_data（JSON：包含open_tasks、recent_memory、created_at）
+  -工作内存、打开任务、活动文件（单独的 JSON 字段，可选）
+  - token_usage、context_hash、注释
+  -created_at（时间戳）
+
+示例
+---------
+  bach --snapshot create "Vor Grossumbau"  # 手动备份
+  bach --snapshot list                     # 检查状态
+  bach --snapshot load 42                  # 恢复 ID 42
+  bach --snapshot delete 42                # 删除快照 42
+
+另请参阅
+----------
+  docs/help/memory.txt 内存整合
+  docs/help/maintain.txt 完整性检查
+  bach --help startup  会话开始

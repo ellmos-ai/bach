@@ -1,0 +1,20 @@
+BACH ツール:generate_skills_report
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/generate_skills_report.py
+
+説明
+----------------------------------------
+generate_skills_report.py - ユーザーフレンドリーなスキルレポートを生成します
+
+作成: user/SKILLS_REPORT.md
+
+USE
+----------------------------------------
+python bach.py tools run generated_skills_report [args]
+または直接: python tools/generate_skills_report.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成されます
+- 質問がある場合: bach tools show generated_skills_report

@@ -141,7 +141,7 @@ SUBAGENTS（--agents 标志）
 示例
 ---------
   # 在BACH目录下交互
-  cd "C:\Users\User\OneDrive\.TOPICS\.AI\.OS\BACH"
+  cd "<BACH_WORKSPACE>"
   克劳德
 
   # 使用 Opus 4.6 和扩展上下文

@@ -1,0 +1,87 @@
+Herramienta BACH: gemini_start
+--------------------------------------------------
+Generada: 2026-01-24 (actualizado)
+Fuente: tools/gemini_start.py
+
+DESCRIPCIÓN
+----------------------------------------
+BACH Gemini Starter: inicia Gemini CLI (sin cabeza) o Antigravity (GUI).
+
+DOS BACKENDS
+----------------------------------------
+  --cli Gemini CLI (sin cabeza, completamente automático con --yolo)
+  --gui Antigravity (el mensaje se copia al portapapeles)
+
+IMPORTANTE: ¡Antigravity no tiene modo sin cabeza! Para la automatización
+         DEBE usar la CLI de Gemini (--cli).
+
+UTILIZAR
+----------------------------------------
+python tools/gemini_start.py [BACKEND] [OPCIONES]
+
+  BACKEND (obligatorio para no automático):
+    --cli Gemini CLI (totalmente automático)
+    --gui Antigravity (mensaje en el portapapeles)
+
+  MODOS:
+    (sin) modo automático (solo útil con --cli)
+    --modo masivo sin límite de tareas
+    --predeterminado Interactivo (espera instrucciones)
+    --uso individual startprompt_gemini.txt
+    --mode NOMBRE Usar indicaciones/NOMBRE.txt
+
+  OPCIONES:
+    --tasks N número de tareas en modo automático (predeterminado: 2)
+    --prompt "TEXTO" Especifica un mensaje personalizado directamente
+    --list Listar las plantillas de mensajes disponibles
+    --dry-run Mostrar solo comando, no iniciar
+
+EJEMPLOS CLI (completamente automático)
+----------------------------------------
+  python tools/gemini_start.py --cli # Auto (2 tareas)
+  python tools/gemini_start.py --cli --tasks 5 # Auto (5 tareas)
+  python tools/gemini_start.py --cli --bulk # Todas las tareas (sin fin)
+  python tools/gemini_start.py --cli --mode análisis # modo de análisis
+
+EJEMPLOS GUI (mensaje al portapapeles)
+----------------------------------------
+  python tools/gemini_start.py --gui --bulk # Mensaje masivo
+  python tools/gemini_start.py --gui --default # Mensaje interactivo
+  python tools/gemini_start.py --gui --individual # Mensaje de usuario
+  python tools/gemini_start.py --gui --mode análisis # mensaje de análisis
+
+GUI-WORKFLOW:
+  1. El script inicia Antigravity
+  2. Copiado rápidamente al portapapeles
+  3. El usuario hace clic en el chat, presiona Ctrl+V, Enter
+
+PLANTILLAS DE INDICACIÓN (partners/gemini/prompts/)
+----------------------------------------
+  auto.txt Modo automático: Procesar tareas inmediatamente (solo CLI)
+  Bulk.txt Modo masivo: TODAS las tareas sin límite
+  default.txt Interactivo: espera instrucciones
+  análisis.txt Ejecuta todos los scripts de análisis.
+  research.txt Modo de investigación para análisis de temas
+
+MENUAJE PERSONALIZADO
+----------------------------------------
+Edite partners/gemini/startprompt_gemini.txt para sus propias instrucciones.
+Cargado con --individual.
+
+BATCH-STARTER
+----------------------------------------
+Alternativamente: partners/gemini/start_gemini.bat
+Muestra un menú interactivo con selección CLI/GUI.
+
+REQUISITOS
+----------------------------------------
+  Modo CLI: npm install -g gemini-cli
+               inicio de sesión de autenticación de Géminis
+  Modo GUI: Antigravity instalado y en la RUTA
+
+VER TAMBIÉN
+----------------------------------------
+  wiki/gemini.txt Detalles de Gemini (CLI, API, precios)
+  wiki/antigravity.txt IDE antigravedad
+  docs/help/partners.txt Red de socios
+  partners/gemini/_README.md Documentación del espacio de trabajo

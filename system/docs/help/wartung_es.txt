@@ -1,0 +1,152 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MANTENIMIENTO BACH (trabajos del sistema)
+--------------------------
+
+El gestor de mantenimiento ejecuta automáticamente trabajos del sistema programados, p. copias de seguridad,
+Verificaciones de tokens, limpieza de datos o sus propios scripts.
+
+HANDLER: system/hub/scheduler.py (anteriormente: daemon.py)
+SERVICIO: system/gui/daemon_service.py + DB (scheduler_jobs, Scheduler_runs)
+GUI: /daemon (http://localhost:8000/daemon)
+
+Nota: "bach daemon ..." y "bach Scheduler ..." son alias.
+
+
+COMANDOS
+-------
+
+  bach daemon start          Iniciar demonio de mantenimiento en primer plano (Ctrl+C terminado)
+  bach daemon start --bg     Iniciar demonio de mantenimiento en segundo plano
+  bach daemon stop           Detener ejecución de demonio
+  bach daemon status         Mostrar estado y últimas ejecuciones
+  bach daemon jobs           Todos los trabajos de lista definidos
+  bach daemon run <ID>       Ejecutar trabajo manualmente
+  bach daemon logs [N]       Mostrar último N líneas de registro (predeterminado: 20)
+
+
+COMANDOS DE SESIÓN (demonio de sesión para sesiones automáticas de Claude)
+------------------------------------------------------------------
+
+  bach daemon session start [--profile NAME]   Iniciar demonio de sesión
+  bach daemon session stop                     Detener demonio de sesión
+  bach daemon session status                   Mostrar estado de sesión
+  bach daemon session trigger [--profile NAME] Session manuell ausloesen
+  bach daemon session profiles                 Lista de perfiles disponibles
+
+
+TIPOS DE TRABAJO
+---------
+
+  intervalo Periódico (por ejemplo, "30 m", "1 h", "24 h")
+  cron Expresión cron (por ejemplo, "0 3 * * *" = diario 03:00)
+  manual Sólo se puede ejecutar manualmente
+  cadena Ejecución de cadena (job.command = chain_id)
+  event Basado en eventos (TODO)
+
+
+TRABAJOS DE EJEMPLO
+-------------
+
+  Nombre Tipo Horario Descripción
+  ----------------------------------------------------------------
+  intervalo diario de copia de seguridad 24 h Crear copia de seguridad diaria
+  intervalo de verificación de token 30 m Comprobar consumo de token
+  cleanup cron 0 4 * * * Limpiar registros antiguos
+
+
+CREAR TRABAJOS
+--------------
+
+A través del panel GUI (http://localhost:8000/daemon):
+  - Mantenimiento > "Nuevo trabajo"
+
+Vía API:
+  ENVIAR /api/daemon/jobs
+  {
+    "nombre": "mi-trabajo",
+    "tipo_trabajo": "intervalo",
+    "horario": "1h",
+    "comando": "herramientas de Python/my_script.py"
+  }
+
+
+ARCHIVOS DE REGISTRO
+-----------
+
+  data/logs/daemon.log Actividades de mantenimiento
+  data/logs/session_daemon.log Actividades de sesión
+  archivo PID data/daemon.pid (si se está ejecutando)
+  hub/_services/daemon/daemon.pid Demonio de sesión PID
+
+
+DETALLES TÉCNICOS
+------------------
+
+- Los trabajos se cargan desde bach.db (tabla: planificador_jobs)
+- Ejecuciones registradas en Scheduler_runs
+- Tiempo de espera por trabajo configurable (predeterminado: 300 s)
+- Reintento opcional en caso de error (max_retries configurable)
+- Los trabajos se recargan cada 5 minutos.
+- PROCESO PROPIO DAEMON (bucle de intervalo de Python)
+- OneDrive está en pausa durante la operación del demonio (Windows)
+- Previene conflictos de sincronización durante las operaciones de archivos
+- Integración con tareas recurrentes (verificar cada 5 minutos)
+
+Opcional: pip install croniter (para expresiones cron extendidas)
+
+
+DEFINICIÓN: TRES SISTEMAS DE MANEJADOR
+--------------------------------
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ MANTENIMIENTO │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Ejecuta comandos Shell/Python APAGADO │
+  │ Controlado por tiempo (cron/intervalo) │
+  │ Sin participación de Claude │
+  │ Controlador: system/hub/daemon.py │
+  │ Servicio: system/gui/daemon_service.py + DB │
+  │ GUI: /daemon (existente) │
+  │ Daemon: SI (proceso propio) │
+  └────────────────────────────────── ───────────────────────────────┘
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ RECURRENTE │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Crea TAREAS como recordatorios │
+  │ Basado en intervalos (días) │
+  │ Para que Claude/Usuario edite │
+  │ Controlador: system/hub/recurring.py │
+  │ Servicio: sistema/hub/_servicios/recurrente/ │
+  │ GUI: NINGUNO (solo CLI + integrado en /daemon) │
+  │ Daemon: NO (marque cuando lo llamen) │
+  └──────────────────────────────── ─────────────────────────────────┘
+
+┌──────────────────────────────── ─────────────────────────────────┐
+  │ GENERADOR DE INDICACIONES │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Envía indicaciones a las sesiones de Claude │
+  │ Manual o automatizado │
+  │ Sistema de plantillas con editor │
+  │ Handler: (en desarrollo) │
+  │ Servicio: sistema/hub/_services/prompt_generator/ │
+  │ GUI: /generador de avisos (planificado) │
+  │ Daemon: SÍ (session_daemon.py) │
+  └────────────────────────────────── ───────────────────────────────┘
+
+  Ejemplo de mantenimiento: "creación de copia de seguridad de bach" todos los días a las 3:00 a. m.
+  Ejemplo recurrente: "Autocomprobación vencida" -> Tarea para Claude
+  Ejemplo de generador de mensajes: enviar mensajes al Agente ATI cada 30 minutos
+
+
+VER TAMBIÉN
+----------
+
+  bach gui start              Panel web con administración de trabajos
+  bach --help backup          Sistema de respaldo
+  bach --help dirscan            Escáner de directorios
+  bach --help recurring       Tareas recurrentes (sin GUI)
+  bach --help prompt-generator  Gestión de mensajes (GUI programada)

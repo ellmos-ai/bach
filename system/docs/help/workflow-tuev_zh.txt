@@ -1,0 +1,144 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WORKFLOW-TUEV - 工作流程的质量保证
+--------------------------------------------------
+
+工作流程是系统的“大脑”。它们必须可靠地运行。
+Workflow-TUeV 确保定期测试工作流程。
+
+概念
+-------
+
+1.用例测试
+   - 每个工作流程的测试用例集合
+   - 定义的输入和预期输出
+   - 可以自动执行
+
+2。 TUEV 程序
+   - 每个工作流程都有一个到期日期（tuev_valid_until）
+   - 到期时：自动创建维护任务
+   - 成功检查后：新的到期日期
+
+3。评级
+   - 非常好（90-100%）
+   - 良好（70-89%）
+   - 满意（50-69%）
+   - 足够（30-49%）
+   - 失败（<30%）
+   - 注意确定维护任务的优先级
+
+CLI 命令
+-----------
+
+BACH TUEV：
+  bach tuev status                    所有工作流程的 TUeV 状态
+  bach tuev check <workflow>          检查单个工作流程
+  bach tuev run                       所有到期检查
+  bach tuev renew <workflow>          检查后更新 TUeV
+  bach tuev init                      在 DB 中注册工作流程
+
+BACH 用例：
+  bach usecase list [workflow]        显示测试用例
+  bach usecase add <workflow>         新测试用例添加
+  bach usecase run <id>               执行测试用例
+  bach usecase run-all <workflow>     工作流程的所有测试用例
+  bach usecase show <id>              显示测试用例详细信息
+
+DB架构
+---------
+
+用例：
+  id 主键
+  标题 测试用例标题
+  描述 测试用例的描述
+  workflow_path 工作流程的路径（技能/工作流程/...）
+  workflow_name 工作流程的名称
+  test_input JSON：测试的输入数据
+  Expected_output JSON：预期结果
+  last_tested 上次测试运行（时间戳）
+  test_result 通过/失败/错误
+  test_score 分数 0-100
+  tuev_valid_until 此测试用例的到期日期
+  由用户/系统创建
+
+workflow_tuev：
+  id 主键
+  workflow_path 工作流程的路径（唯一）
+  workflow_name 工作流程的名称
+  last_tuev_date 上次 TUEV 日期
+  tuev_valid_until 下一个TUeV到期
+  tuev_status 待定/通过/失败/过期
+  test_count 执行的测试次数
+  pass_count 通过的测试
+  fail_count 失败的测试
+  avg_score 平均分数
+
+测试过程（3 部分）
+---------------------
+
+第 1 部分：作为自我体验的实施
+  - 使用测试数据运行工作流程
+  - 法学硕士观点：“这对我来说怎么样？”
+  - 注意问题、歧义、绊脚石
+
+第 2 部分：根据标准进行评估
+  - 检查用例要求
+  - 比较定义的标准
+  - 比较结果与预期输出
+
+第 3 部分：评分和后果
+  - 计算分数（0-100）
+  - 推导等级
+  - 如果出现错误：创建改进任务
+
+新工作流程的检查清单
+------------------------------
+
+[ ] 工作流程是否至少有 1 个用例？
+[ ] 是否定义了输入和预期输出？
+[ ] 工作流程在没有用户数据的情况下是否可以工作？
+[ ] 工作流程是否幂等（可重复）？
+[ ] 依赖关系是否有记录？
+[ ] 是否有错误处理？
+
+示例用例
+----------------
+
+  工作流程：错误修复日志
+
+  测试用例：“简单语法错误”
+  测试输入：{
+    "bug_description": "main.py 第 42 行出现语法错误",
+    “file_path”：“测试/sample_bug.py”
+  }
+  预期输出：{
+    “状态”：“已修复”，
+    “changes_made”：正确，
+    “测试通过”：真
+  }
+
+自动化
+---------------
+
+守护进程作业（计划）：
+  名称：tuev-检查
+  命令：bach tuev 运行
+  间隔：7 天（每周）
+
+如果 TUeV 已过期：
+  -> 已创建任务“更新工作流程 X TUeV”（优先级基于分数）
+
+另请参阅
+----------
+
+  --help工作流系统
+  --help usecase 用例测试详细信息
+  --help core 核心概念（代理/工作流程/技能）
+  --help dev 开发工作流程
+
+---
+版本：1.1 |创建时间：2026-01-30
+状态：已实施 (v1.1.83)
+处理程序：system/hub/tuev.py（TuevHandler + UsecaseHandler）

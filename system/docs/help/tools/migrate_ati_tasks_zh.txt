@@ -1,0 +1,19 @@
+BACH 工具：migrate_ati_tasks
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/migrate_ati_tasks.py
+
+描述
+----------------------------------------
+任务 82 第 2 阶段：迁移 Scand_tasks (bach.db) → ati_tasks (bach.db)
+创建时间：2026-01-19
+
+使用
+----------------------------------------
+python bach.py 工具运行 migrate_ati_tasks [args]
+或直接： python tools/migrate_ati_tasks.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示 migrate_ati_tasks

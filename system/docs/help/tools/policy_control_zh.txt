@@ -1,0 +1,32 @@
+BACH 工具：policy_control
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/policy_control.py
+
+描述
+----------------------------------------
+policy_control.py - 中央代码片段注入
+
+将标准化代码策略注入Python项目。
+支持内联注入（小片段）和外部文件（大片段）。
+
+用法：
+    python policy_control.py <file.py> --inject emoji_safe
+    python policy_control.py <file.py> --set standardfixer
+    python policy_control.py <file.py> --检查 emoji_safe
+    python policy_control.py <文件夹> --set standardfixer --recursive
+    蟒蛇policy_control.py——列表
+    python policy_control.py --list-sets
+
+作者：克劳德
+版本：1.0
+
+使用
+----------------------------------------
+python bach.py工具运行policy_control [args]
+或直接： python tools/policy_control.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach工具显示policy_control

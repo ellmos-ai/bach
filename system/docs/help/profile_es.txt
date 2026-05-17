@@ -1,0 +1,100 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PROFILE HANDLER
+-------------------------------------------------------------------------------
+
+DESCRIPCIÓN
+-------------------------------------------------------------------------------
+
+El Profile Handler gestiona el perfil del usuario en BACH, combinando
+Datos de dos fuentes: una configuración JSON persistente (usuario/perfil.json)
+y aprendí las preferencias de la base de datos SQLite (bach.db, tabla
+asistente_usuario_perfil). El controlador admite visualización, edición.
+y exportar información del perfil.
+
+
+OPERACIONES
+-------------------------------------------------------------------------------
+
+mostrar
+  Vista de perfil combinada (JSON + DB)
+  Muestra: nombre, rol, idioma, zona horaria, sistema operativo desde perfil.json
+  Muestra: Preferencias aprendidas de la base de datos (por categorías)
+  Sintaxis: perfil mostrar
+
+editar <categoría> <clave> <valor>
+  Establecer o actualizar la propiedad del perfil en la base de datos
+  Categorías permitidas: preferencia, hábito, peculiaridad.
+  Guarda con confianza "alta" y fuente "entrada del usuario"
+  Sintaxis: idioma de preferencia de edición de perfil Alemán
+
+actualizar <categoría> <clave> <valor>
+  Alias para editar (funcionalidad idéntica)
+  Sintaxis: actualización de perfil editor personalizado vim
+
+stats
+  Muestra estadísticas del perfil
+  Versión JSON, fecha de actualización y número de entradas de la base de datos.
+  Desglosa las entradas de la base de datos por categoría
+  Sintaxis: estadísticas de perfil
+
+json
+  Muestra el contenido de user/profile.json como formato JSON
+  Sintaxis: perfil json
+
+db
+  Muestra todas las entradas aprendidas de Assistant_user_profile
+  Incluye categoría, clave, valor y nivel de confianza.
+  Ordenado por categoría y clave
+  Sintaxis: perfil db
+
+exportar
+  Exportar perfil como una descripción general completa
+  Representación combinada de todos los perfiles de JSON y DB
+  Contiene: conceptos básicos, rasgos, valores, objetivos, preferencias, aprendido
+  Sintaxis: exportación de perfil
+
+
+EJEMPLOS
+-------------------------------------------------------------------------------
+
+Mostrar perfil:
+  $ bach perfil mostrar
+
+Agregar nueva preferencia:
+  $ perfil de bach editar preferencia coding_language python
+
+Enseñar hábito:
+  $ perfil de bach editar hábito Morning_up 0700
+
+Ver estadísticas:
+  $ estadísticas de perfil de bach
+
+Exportar perfil completo como texto:
+  $ exportación de perfil de bach
+
+Verifique las entradas de la base de datos:
+  $ bach perfil db
+
+
+ARCHIVOS
+-------------------------------------------------------------------------------
+
+usuario/profile.json
+  Archivo de perfil principal con datos estáticos (nombre, función, sistema operativo, zona horaria)
+  Formato JSON con secciones: meta, estadísticas, rasgos, valores, objetivos, preferencias
+
+data/bach.db
+  Base de datos SQLite con tabla Assistant_user_profile
+  Guarda perfiles aprendidos por categoría (preferencia, hábito, peculiaridad)
+  Cada entrada conlleva niveles de confianza y tiempos de creación/modificación
+
+
+VER TAMBIÉN
+-------------------------------------------------------------------------------
+
+docs/help/base.txt Conceptos básicos del controlador
+base de datos de perfil data/bach.db
+usuario/perfil.json Configuración del perfil

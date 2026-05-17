@@ -1,0 +1,153 @@
+BACKUP TOOLS - Data backup and recovery
+---------------------------------------------------
+
+As of: 2026-01-23
+Path: docs/help/tools/backup.txt
+
+DESCRIPTION
+------------
+Tools for data backup and restoration of BACH data:
+  - Create and manage local backups
+  - NAS backups (if available)
+  - Template restore (reset original files)
+  - Create distribution packages
+
+MAIN TOOL: backup_manager.py
+-----------------------------
+Central tool for all backup operations.
+Can be accessed directly or via CLI.
+
+BASIC COMMANDS:
+
+  # Create backup
+  bach backup create                  Local backup
+  bach backup create --to-nas         With NAS copy
+
+  # View backups
+  bach backup list                    Local backups
+  bach backup list --nas              View NAS backups
+  bach backup info <n>                Backup details
+
+  # Restore
+  bach restore backup <n>             Specific backup
+  bach restore backup latest          Latest backup
+  bach restore backup latest --force  Without confirmation
+
+  # Reset template
+  bach restore template SKILL.md      To original
+
+DIST_TYPE CONCEPT
+-----------------
+The backup system is based on distribution types:
+
+  dist_type = 2 (CORE)
+    -> Distribution IS the backup
+    -> bach.py, hub/, tools/, skills/, docs/help/
+    -> NOT secured separately
+
+  dist_type = 1 (TEMPLATE)
+    -> 1x snapshot during installation
+    -> bach restore template <file>
+
+  dist_type = 0 (USER_DATA)
+    -> Normal backup rotation
+    -> Tasks, Memory, Logs, Inbox
+
+WHAT IS BACKED UP?
+-------------------
+USER_DATA (dist_type = 0):
+  tasks All tasks, status, history
+  memory/sessions, long-term, archives
+  logs/ session logs
+  user/inbox/ Messages, Agenda
+
+NOT secured (CORE/TEMPLATE):
+  bach.py, schema.sql, hub/
+  tools/, skills/, docs/help/
+  (are part of the distribution)
+
+BACKUP ROTATION
+---------------
+Automatic rotation prevents memory overflow:
+
+  Local (data/_backups/): Keep 7 backups
+  NAS: Keep 30 backups
+  OneDrive: Automatic (version history)
+
+STORAGE LOCATIONS
+------------
+  Local: BACH/system/data/_backups/
+  NAS: \\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
+  Dist: BACH/distributions/
+
+NOTE:
+  NAS only accessible in the home network!
+  Do not use --to-nas when absent.
+
+DIRECT TOOL USE
+--------------------
+backup_manager.py can also be called directly:
+
+  python tools/backup_manager.py create [--to-nas]
+  python tools/backup_manager.py list [--nas]
+  python tools/backup_manager.py restore backup <n>
+  python tools/backup_manager.py restore template <file>
+
+SNAPSHOTS (session-based)
+---------------------------
+For session snapshots see memory system:
+
+  bach snapshot create           Manual snapshot
+  bach snapshot load             Load last snapshot
+  bach snapshot list             Show snapshots
+
+  -> Automatically upon shutdown (with >= 3 changes)
+  -> Stored in session_snapshots table
+
+DISTRIBUTION COMMANDS
+--------------------
+Create packages for distribution:
+
+  bach dist create base       Create base package
+  bach dist list                 View packages
+  bach dist status               Distribution status
+  bach dist verify               Check integrity
+
+TYPICAL USE CASES
+-------------------------
+
+1. BEFORE MAJOR CHANGES
+   Create security backup:
+   bach backup create
+
+2. DAILY (HOME NETWORK)
+   Backup with NAS copy:
+   bach backup create --to-nas
+
+3. AFTER CRASH/ERROR
+   Last working version:
+   bach restore backup latest
+
+4. RESET SKILL.MD
+   For broken changes:
+   bach restore template SKILL.md
+
+5. PACKAGE FOR ANOTHER COMPUTER
+   Create distribution:
+   bach dist create base
+
+6. CONTINUE SESSION
+   After restart/chat change:
+   bach snapshot load
+
+RELATED SKILLS
+----------------
+  skills/_services/builder.md CREATE, EXPORT, DISTRIBUTE, BACKUP
+  docs/BACKUP_SYSTEM.md Original concept
+
+SEE ALSO
+----------
+  bach --help backup             Complete backup help
+  bach --help dist               Distribution commands
+  bach --help memory             Memory/Snapshot system
+  bach --help tools              Tool overview

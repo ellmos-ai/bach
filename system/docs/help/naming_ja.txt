@@ -1,0 +1,132 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [tools/_policies/CONCEPT_naming_convention.md]
+
+名前付け規則
+------------------
+
+現在: 2026-02-08
+
+タイムスタンプ形式
+-------------------
+  セッションID: YYYYMMDD_HHMM (20260111_0315)
+  チャット ID: msg_YYYYMMDD_HHMMSS (msg_20260111_031504)
+  文書: DD.MM.YYYY (2026/01/11)
+  JSON フィールド: ISO 8601 (2026-01-11T03:15:04)
+
+ファイル
+-------
+  レポート: Report_YYYYMMDD_HHMM.md
+  フォレンジック: REPORT_YYYY-MM-DD_Thema.md
+  コンセプト: CONCEPT_Name.md または CONCEPT_Name.md
+  分析: ANALYSIS_Name.md
+  研究: RECHERCHE_Name.md
+  スキーマ: *_schema.md
+  テンプレート: TEMPLATE_Name.md
+
+TOOL-PRAEFIXES (tools/*.py)
+--------------------------
+プレフィックスはツールのタイプと目的を識別します。
+
+  プレフィックスの意味の例
+  ---------- ----------------------------- ------------------------
+  AI 用に最適化された c_CLI c_encoding_fixer.py
+            (クロード/recludOS) c_json_repair.py
+            - 明確で解析可能な出力
+            - エンコーディングセーフ (UTF-8)
+
+  m_ m_merge_triggers.py を維持します
+            - クリーンアップツール m_cleanup_logs.py
+            - 移行スクリプト
+
+  b_ BACH コア（システム）backup_manager.py
+            - bach.py によって使用される bach_auto_discovery.py
+            - 重要な機能
+
+  check_ バリデーター check_my_task.py
+            - 1 回限りのテスト
+
+  fix_ クイックフィックス fix_injectors.py
+            - 特定のバグを修正
+
+スキル固有のツール (新規)
+-----------------------------
+スキルにのみ関連するツール:
+
+  命名規則: <スキル>_<関数>.py
+
+  例:
+    Tax_scanner.py # 税務専門家特有
+    Tax_sync.py # 税務専門家特有
+    task_scanner.py # ATI エージェント固有 (agents/ati/scanner/ 内)
+
+  場所:
+    - 一般: tools/c_ocr_engine.py
+    - 特定: Agents/_experts/steuer/steuer_scanner.py
+    - エージェント ツール: Agents/ati/scanner/task_scanner.py
+
+  ルール：迷ったら倍増！
+  スキル固有のツールはエクスポートに含める必要があります。
+
+PYTHON-TOOL-HEADER (新規 - 必須)
+----------------------------------
+すべてのツールには標準ヘッダーが必要です:
+
+  「」
+  ツール: ツール名
+  バージョン: X.Y.Z
+  著者: [著者]
+  作成日: YYYY-MM-DD
+  更新日: YYYY-MM-DD
+  人間互換性: True
+
+  バージョンに関する注意: 新しいバージョンを確認してください
+
+  説明:
+      ツールの機能。
+  """
+
+  __バージョン__ = "X.Y.Z"
+  __author__ = "[作成者]"
+
+テンプレート: system/skills/_templates/TEMPLATE_TOOL.py
+
+スキル フォルダ名
+------------------
+  形式: 小文字とハイフン
+
+  例:
+    エージェント/開発者/
+    エージェント/パーソナルアシスタント/
+    エージェント/_専門家/税金/
+    Agents/_experts/foerderplaner/
+
+スキル ファイル
+-------------
+  SKILL.mdメイン定義(必須)
+  config.json 構成 (オプション)
+  README.md ナビゲーション専用 (概念用ではありません!)
+
+タスク ID とプロジェクト
+-------------------
+  ID: 数値 (1、2、712) - 自動的に割り当てられます。
+  ラベル/Pfx: 説明に使用されるグループ:
+               SYS_システムコア
+               WF_ワークフロー開発
+               GUI_フロントエンドテーマ
+               FIN_財務モジュール
+               HEALTH_ フォレンジックとメンテナンス
+               SKILL_ スキル アーキテクチャ (新規)
+               LANG_ 国際化
+
+禁止
+--------
+  ファイル名： / \ ： * ？ " < > | ウムラウト
+
+関連項目
+----------
+  bach --help tools            ツールの管理と実行
+  bach --help skills           スキル システム
+ system/tools/_policies/ ポリシー バリデータ
+  system/skills/_templates/ デフォルトのテンプレート

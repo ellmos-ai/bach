@@ -1,0 +1,32 @@
+BACH ツール: c_audit_bundler
+--------------------------------------------------
+生成: 2026-01-23 10:36
+更新日: 2026-02-05 (法医学的修正)
+ソース: tools/c_audit_bundler.py
+
+説明
+----------------------------------------
+BACH Audit Bundler v1.0
+-----------------------
+外部レビュー用の監査パッケージを作成します。
+
+2 つのバンドル:
+1. CONCEPT バンドル (最初): ドキュメント、コンセプト、アイデア
+2. 実装バンドル (後ほど): コード、DB スキーマ、スクリプト
+
+使用法:
+    python c_audit_bundler.py --concept # バンドル 1: 概念
+    python c_audit_bundler.py --implementation # バンドル 2: コード
+    python c_audit_bundler.py --all # 両方のバンドル
+    python c_audit_bundler.py --help # ヘルプ
+
+使用
+----------------------------------------
+python bach.py ツールは c_audit_bundler を実行します [args]
+または直接: python tools/c_audit_bundler.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成されます
+- 質問がある場合: bach tools show c_audit_bundler
+- 注: ファイル名は、audit_bundler.py から c_audit_bundler.py (コーディング カテゴリの c_ プレフィックス) に変更されました。

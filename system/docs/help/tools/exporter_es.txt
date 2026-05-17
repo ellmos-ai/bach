@@ -1,0 +1,45 @@
+Herramienta BACH: exportador
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/exporter.py
+
+DESCRIPCIÓN
+----------------------------------------
+exporter.py
+-----------
+Herramienta de exportación de habilidades, agentes y SO.
+
+Versión: 1.0.0
+Creado: 2026-01-14
+
+CONCEPTO:
+  En el sistema operativo, las habilidades/agentes son livianos (use la infraestructura del sistema operativo).
+  Para uso externo deben estar "empaquetados" con su propia infraestructura.
+
+COMANDOS:
+  habilidad Exporta una habilidad desde el sistema operativo como independiente
+  agente Exporta un agente con sus habilidades.
+  os-fresh Crea un paquete de sistema operativo nuevo (sin datos de usuario)
+  os-reset Restablece un sistema operativo (elimina datos de usuario)
+
+Uso:
+    python exporter.py habilidad <nombre> --from-os <ruta-os> [--salida <zip>]
+    agente python exporter.py <nombre> --from-os <ruta-os> [--salida <zip>]
+    python exporter.py os-fresh <ruta-os> [--salida <zip>] [--versión <v>]
+    python exporter.py os-reset <os-path> [--backup] [--confirm]
+
+Ejemplos:
+    python exporter.py investigación de habilidades --from-os ./my-os
+    Asistente de escritura del agente python exporter.py --from-os ./my-os
+    python exporter.py os-fresh ./my-os --output os-v1.0.zip
+    python exporter.py os-reset ./my-os --backup
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan exportador [args]
+o directamente: python tools/exporter.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tiene alguna pregunta: exportador de espectáculos de herramientas bach

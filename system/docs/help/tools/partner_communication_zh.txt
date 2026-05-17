@@ -1,0 +1,29 @@
+BACH 工具：合作伙伴通信
+---------------------------------
+
+AI 合作伙伴通信和交互协议。
+
+可用工具
+-----------------
+
+  ai_兼容 格式化 AI 兼容消息
+  通信 向合作伙伴发送/接收消息
+  gemini_start 初始化 Gemini 会话
+  Interaction_protocol 管理交互协议
+  real_tools 将真实工具调用转发给合作伙伴
+
+交互
+-------------
+
+BACH 支持以下之间的多代理通信：
+  - Claude（克劳德代码/克劳德桌面）
+  - 双子座（反重力）
+  - GPT (codex)
+
+消息通过 CLAUDE.md / GEMINI.md / GPT.md 交换。
+通过 OneDrive/.SYNC/ 同步（笔记本电脑 <-> 工作站）。
+
+模块
+-----
+
+  工具/partner_communication/（5 个模块）

@@ -1,0 +1,25 @@
+Herramienta BACH: Pruebas
+------------------
+
+Marco de pruebas para pruebas y comparaciones del sistema BACH.
+
+HERRAMIENTAS DISPONIBLES
+-----------------
+
+  run_b_tests Ejecutar pruebas del sistema BACH
+  compare_systems Realizar comparaciones de sistemas
+  run_comparison_custom Comparaciones personalizadas
+  populate_tests Generar datos de prueba
+  query_tests Consultar resultados de pruebas
+
+USE
+----------
+
+  bach --tools testing run               Ejecutar todas las pruebas
+  bach --tools testing compare <a> <b>   Comparar sistemas
+  bach --tools testing populate          Crear datos de prueba
+
+MÓDULO
+-----
+
+  herramientas/pruebas/ (5 scripts)

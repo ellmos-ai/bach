@@ -141,7 +141,7 @@ SYSTEM-PROMPT FLAGS
 ПРИМЕРЫ
 ---------
   # Интерактив в каталоге BACH
-  cd "C:\Users\User\OneDrive\.TOPICS\.AI\.OS\BACH"
+  cd "<BACH_WORKSPACE>"
   Клод
 
   # С Opus 4.6 и расширенным контекстом

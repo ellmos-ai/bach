@@ -1,0 +1,26 @@
+Инструмент BACH: Research_agent
+--------------------------------------------------
+Сгенерировано: 23 января 2026 г., 10:36.
+Источник: инструменты/research_agent.py
+
+ОПИСАНИЕ
+----------------------------------------
+Research Agent v1.0.0
+
+Научные исследования и анализ литературы.
+Интегрирует PubMed, Perplexity, Consensus и NotebookLM.
+
+Использование:
+  python Research_agent.py поиск «запрос»
+  обзор python Research_agent.py --topic "тема" --years 5
+  python Research_agent.py status
+
+USE
+----------------------------------------
+инструменты Python bach.py запускают Research_agent [args]
+или напрямую: python Tools/research_agent.py [args]
+
+ПРИМЕЧАНИЯ
+----------------------------------------
+- Автоматически генерируется из Docstring
+- Если у вас есть вопросы: инструменты bach показывают Research_agent.

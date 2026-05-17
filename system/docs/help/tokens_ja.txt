@@ -1,0 +1,56 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+------------
+tokens - トークンの消費とコストの追跡
+
+
+説明
+------------
+トークン ハンドラーは、LLM トークンの消費を記録および分析します。
+(インプット/アウトプット) とユーロで発生したコスト。データはから取得されます
+Monitor_tokens テーブルは bach.db でクエリされます。次の時間枠をサポートします。
+今日、過去 7 日間、および 30 日間。
+
+
+OPERATIONS
+-----------
+使用可能なオプション: bach --tokens <operation>
+
+status (デフォルト) 概要: 今日 / 週 / 月
+今日の詳細: 今日の最後の 20 エントリ
+週日ごとにグループ化: 過去 7 日間とコスト合計
+レポート モデル別レポート + 現在の価格 (30 日)
+
+
+例
+---------
+現在のステータスの確認:
+  bach --tokens status
+  bach --tokens
+
+今日のコストの表示:
+  bach --tokens today
+
+週ごとの消費量の分析:
+  bach --tokens week
+
+詳細なレポート:
+  bach --tokens report
+
+
+ファイル
+-------
+ソース コード: Hub/tokens.py
+ベースハンドラー: Hub/base.py
+データベース: data/bach.db (monitor_tokens テーブル)
+価格表: data/bach.db (monitor_pricing table)
+
+
+関連項目
+----------
+bach_api ハンドラーへのプログラムによるアクセス
+Monitor-db データベースのコマンドとスキーマ
+Base.py ハンドラー インターフェイスとエラー処理

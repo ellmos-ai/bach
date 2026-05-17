@@ -24,7 +24,7 @@ def translate_skills_batch():
     conn.row_factory = sqlite3.Row
     
     # Get top 50 active skills
-    skills = conn.execute("SELECT name, description FROM skills WHERE is_active=1 ORDER BY priority DESC LIMIT 50").fetchall()
+    skills = conn.execute("SELECT name, description FROM skills WHERE is_active=1 ORDER BY priority DESC").fetchall()
     
     target_langs = ['en', 'es', 'ru', 'ja', 'zh']
     
@@ -58,6 +58,8 @@ def translate_skills_batch():
             try:
                 t = GoogleTranslator(source='de', target=gt_target)
                 res = t.translate(text)
+                if res is None:
+                    res = text
                 print(".", end="", flush=True)
                 return (key, text, res)
             except Exception as e:

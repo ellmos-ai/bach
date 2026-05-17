@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+新闻处理程序
+------------
+
+描述
+------------
+
+聚合来自 RSS 提要、网页和 YouTube 频道的新闻。节省资源
+以及 bach.db 中的文章，支持分类和阅读状态跟踪。
+基于 URL 结构的自动类型检测 (RSS/Web/YouTube)。
+
+操作
+-----------
+
+add <url> [--type TYPE] [--category CAT] [--name NAME]
+  添加新源。
+  类型：rss、web、youtube（如果未指定，则自动检测）
+  CATEGORY：组织类别（默认值：“常规”）
+  NAME：显示的名称（默认：从 URL 中提取）
+  YouTube URL：/channel/UC... 将转换为 RSS feed
+
+list
+  查看所有注册源及其状态。
+  显示：ID、名称、类型、URL、类别、活动/非活动状态、
+         最后一次调用，错误计数
+
+fetch [--源 ID]
+  获取新文章。
+  --source ID：仅特定源（默认：所有活动）
+  支持：RSS解析（使用feedparser）、简单网页
+
+items [--unread] [--category CAT] [--limit N]
+  查看保存的新闻文章。
+  --unread：仅未读项目（默认值：全部）
+  --category CAT：按类别过滤
+  --limit N：显示最大数量（默认：20）
+  标记：* = 未读，空格 = 已读
+
+已读 <ID|all>
+  将文章标记为已读。
+  ID：特定物品ID
+  all：所有未读项目
+
+删除<ID>
+  删除来源和所有相关文章。
+  通过 FOREIGN KEY
+
+类别进行级联删除
+  所有类别的概览以及来源/状态计数。
+
+统计信息
+  统计：来源、类别、文章、未读、
+  最近 3 次检索，带时间戳。
+
+帮助
+  显示此帮助。
+
+示例
+---------
+
+添加 RSS 源：
+  bach news add https://example.com/feed.xml --category technik --name "Beispiel Tech"
+
+订阅 YouTube 频道：
+  bach news add https://youtube.com/channel/UCxxxxxx --name "Mein Lieblingskanal"
+
+监控网页：
+  bach news add https://example.com --type web --category news
+
+检索并显示新闻：
+  bach news fetch
+  bach news items --unread --limit 10
+
+浏览类别：
+  bach news categories
+  bach news items --category technik
+
+将所有未读标记为已读：
+  bach news read all
+
+文件
+-------
+
+数据库：data/bach.db
+  - news_sources：带有元数据的来源（ID、名称、URL、类型、类别、状态）
+  - news_items：带有已读标记、发布和检索日期的文章
+
+依赖关系：
+  - feedparser：用于 RSS 解析（可选，可能需要）
+  - urllib：用于网页（stdlib）
+
+另请参见
+----------
+
+hub/base.py 用于操作调度的 BaseHandler
+data/bach.db 包含源和项目的 SQLite 数据库

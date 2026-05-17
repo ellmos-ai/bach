@@ -1,0 +1,82 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [tabla contexto_triggers, datos/context_sources.json]
+
+SISTEMA DE FUENTES DE CONTEXTO (Inyecciones dinámicas)
+-------------------------------------------
+
+FECHA: 2026-02-08
+
+Registro central para todas las fuentes de conocimiento con desencadenadores dinámicos.
+
+CATEGORÍAS DE FUENTES:
+-------------------
+1. SIEMPRE DISPONIBLE (prioridad de inyección 8-10)
+   - lecciones_aprendidas Errores conocidos y correcciones
+   - best_practices Mejores prácticas
+   - problemas Monitor de problemas (crítico/urgente)
+
+2. BAJO PETICIÓN / BASADO EN EVENTO
+   - estrategias de ayudas metacognitivas
+   - meta_cognitivo Apoyo mental
+   - historial de cambios
+   - longterm_memory Sesiones archivadas
+   - contactos Herramientas/API externas
+   - ayuda archivos de ayuda BACH
+
+DISPARADORES DINÁMICOS
+------------------
+Los activadores están en parte en JSON (word_triggers), en parte en DB (context_triggers):
+- JSON: data/context_sources.json (9 fuentes, ~45 word_triggers)
+- DB: tabla context_triggers (1012 entradas - lógica de activación extendida)
+- Tipos: descubrimiento_herramienta, lección_hit, guía_flujo de trabajo, paquete_tema
+- Ponderación: peso 1-10, indicador de autoinyección
+
+COMANDOS CLI
+-----------
+  bach sources status             Estado de todas las fuentes (habilitado/peso)
+  bach sources toggle <id>        Activar/desactivar fuente
+  bach sources inject <id>        Activar/desactivar la inyección automática
+  bach sources get <id> [query]   Obtener contenido de una fuente
+  bach sources search <query>     Verificar qué fuente se activa en el disparador
+  bach sources contacts [query]   Buscar contactos/API
+  bach sources problems           Ver registro de errores
+
+NOTA: "sincronización de fuentes de bach" NO está implementada en el handler.
+
+CONFIGURACIÓN
+-------------
+El control global de las fuentes se realiza a través de `data/context_sources.json`:
+- habilitado: Fuente generalmente disponible
+- injection_enabled: se permite inyectar sin una solicitud explícita
+- peso: prioridad base (1-10)
+- word_triggers: palabras clave para la coincidencia de desencadenadores
+- event_triggers: desencadenadores basados en eventos (inicio, error)
+
+Ruta del controlador: system/hub/sources.py
+
+CONTENIDO DE LA FUENTE
+---------------
+El controlador puede proporcionar contenido directo a través de "las fuentes de Bach obtienen <id>":
+- lecciones_aprendidas: entrega docs/help/lessons.txt (existe, pero es documentación de la lección)
+- best_practices: Lee docs/help/practices.txt (existe)
+- estrategias: estrategias codificadas (bloqueadas, complejas, poco claras, cansadas)
+- ayuda: lee archivos docs/help/*.txt (más de 90 archivos disponibles)
+- registro de cambios: extraído de SKILL.md (system/SKILL.md)
+- problemas: analiza datos/registros/*.log y tareas bloqueadas en DB
+
+NOTA: "lessons_learned" devuelve docs/help/lessons.txt, no la base de datos de lecciones.
+Usar para Lecciones DB: lista/búsqueda de lecciones de bach
+
+NOTA SOBRE LOS CONTACTOS
+--------------------
+Desde v1.1.84, los contactos se almacenan en bach.db (tablas: contactos,
+contactos_salud). El antiguo contacts.json ya no existe.
+El comando "contactos de fuentes de bach" ahora usa las tablas de base de datos directamente.
+
+VER TAMBIÉN
+----------
+  --ayuda a los inyectores El sistema del inyector
+  --ayuda a la consolidación Del evento al origen
+  docs/help/memory.txt Modelo cognitivo

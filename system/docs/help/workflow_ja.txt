@@ -1,0 +1,169 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ワークフロー - BACH ワークフロー
+--------------------------------
+
+説明
+------------
+ワークフローは、どのスキルをいつどの順序で使用するかを説明します。
+ワークフローは、スキルを戦略的に使用するためのガイドです。
+
+ワークフロー ストレージ
+--------------------
+  スキル/ワークフロー/ すべての BACH ワークフロー (22 の .md ファイル)
+  Agents/_experts/tax/ 税務ワークフロー (7 つの .md ファイル)
+  DB: スキル テーブル タイプ='ワークフロー' (自動的に同期)
+
+利用可能なワークフロー
+---------------------
+  システムワークフロー (10):
+  ------------------------
+  bugfix-protocol.md エラー修正プロセス
+  cli-change-checklist.md CLI コマンドを追加します。
+  dev-cycle.md 開発サイクル (8 フェーズ)
+  folder- flattening.md フォルダ構造を平坦化する
+  projekt-aufnahme.md 新しいプロジェクトを記録する
+  service-agent-validator.md サービス/エージェント検証ツール
+  system-connectionanalysis.md 統合チェック
+  system-aufraeumen.md のクリーンアップとアーカイブ
+  system-mapping.md マップシステム
+  system-synopse.md システム概要の作成
+  system-testverfahren.md テスト手順
+
+  文書作成のワークフロー (4):
+  ------------------------
+  docs-analyse.md ドキュメント分析
+  help-forensic.md 実際のターゲット テストのヘルプ (繰り返し: 14 日)
+  wiki-author.md ウィキ投稿を作成する (繰り返し: 21 日)
+  merge-rename.md ラッパーを使用してファイルの名前を変更します
+
+  パートナーのワークフロー (2):
+  ------------------------
+  gemini-delegation.md Gemini へのタスクの委任
+  google-drive.md Google ドライブの使用法
+
+  分析ワークフロー (4):
+  ------------------------
+  Agent-skill-finder.md エージェント スキル マッピング分析
+  skill-coverageanalysis.md スキル カバレッジを確認する
+  synthese.md ドキュメントを結合する
+  ing-strategy.md ING 銀行業務のワークフロー
+
+  個人的なワークフロー (1):
+  -------------------------
+  cv-generation.md CV の作成/更新
+
+  税務ワークフロー (7):
+  ---------------------
+  注: これらのワークフローは、agents/_experts/steuer/
+
+ にあります。  steuer-beleg-scan.md 領収書をスキャンして記録する
+  steuer-fahrtkosten-homeoffice.md 出張費 + ホームオフィスを計算する
+  steuer-finanzamt-export.md 税務署エクスポートの作成
+  steuer-sonderspenden-verfassung.md 特別経費の記録
+  steuer-telekommunikation-eigenbeleg.md インターネット/電話 20% 定額料金
+  Tax-insurance-record.md 税務上の保険の記録
+  steuer-advertising-costs-recording.md 広告費の記録
+
+どのワークフローの場合
+---------------------
+  バグが見つかりましたか?           -> バグ修正プロトコル.md
+  新しい CLI コマンドですか?       -> cli-change-チェックリスト.md
+  新しいプロジェクト?          -> プロジェクトレコーディング.md
+  システムを分析しますか？     -> system-mapping.md または system-synopse.md
+  掃除しますか？             -> system-aufraeumen.md
+  統合を確認しますか?    -> システム接続分析.md
+  ジェミニを使用しますか?          -> gemini-delegation.md
+  ヘルプを確認しますか?           -> help-forensic.md (繰り返し: 14 日)
+  ウィキを拡張しますか?         -> wiki-author.md (繰り返し: 21日)
+  ファイルの名前を変更しますか?       -> 移行-名前変更.md
+  フォルダーを簡素化しますか?    -> フォルダーフラット化.md
+  交通費/ホームオフィス? -> 税金-出張費-homeoffice.md
+  領収書をスキャンしますか?         -> 税金領収書-scan.md
+  広告費？         -> 税-advertising-costs.md を記録します。
+  特別版？         -> 特別税金費用を記録する.md
+  保険税？  -> 税金保険キャプチャ.md
+  インターネット/電話?       -> 税-電気通信-eigenbeleg.md
+  税務署輸出？       -> 税-金融-輸出.md
+  開発サイクル？     -> dev-cycle.md (8 フェーズ)
+
+標準セッションのワークフロー
+-------------------------
+1。 bach 起動 # セッション開始 (デフォルト: GUI モード)
+2. ROADMAP.mdを読み込む # タスクを選択
+3. タスクの編集
+4. 中間タスク: バッチステータス # チェック時間
+5. バッチ シャットダウン # セッション終了
+
+セッション タイミング
+--------------
+  タイムアウト保護: クロードは約 13 分後に中止できます
+  推奨事項: 10 分ごとに短いステータスを文書化する
+  長いタスクの場合: バッチ メモリ セッション "STATUS: ..."
+
+TASK SIZE
+---------------
+  5 分未満 とにかくやってみよう
+  メモリを最大 15 分間最新の状態に保ちます
+  30 分以上の事前構造化 (サブタスクの作成)
+  >1 時間 計画タスクとして含める
+
+定義: ワークフロー vs チーム フロー
+---------------------------------
+┌───────────────┬───────────────────┐
+  │ ワークフロー │ チームフロー（予定） │
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━┤
+  │ 1 人のアクター │ 複数のアクター │
+  │ 手順説明 │ 引き継ぎ管理 │
+  │ .md ファイル内のテキスト │ DB/JSON で構造化 │
+  │ スキル/ワークフロー/ │ GUIスキルボード（予定） │
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┘
+
+CLI コマンド
+-----------
+  bach help workflow           これらのヘルプ
+  bach help between-tasks      中間タスクのチェック
+  bach help startup            セッション開始
+  bach help shutdown           セッション終了
+
+  bach startup                 セッション開始 (デフォルト: GUI)
+  bach startup quick           ディレクトリ スキャンなしのクイック スタート
+  bach startup mode            変更モード: gui|text|dual|silent
+
+  bach status                  システム ステータスの表示
+
+  bach shutdown                セッションの終了 (ディレクトリあり) scan)
+  bach shutdown quick          Dir スキャンなしで迅速
+  bach shutdown emergency      緊急時 - 作業メモリのみを保存
+
+ワークフロー読み取り
+--------------
+  # ファイルシステム内で直接:
+  スキル/ワークフロー/<名前>.md
+  エージェント/_experts/steuer/<名前>.md
+
+  # ヘルプ システムあり (エイリアス サポート):
+  bach help workflow/bugfix-protokoll
+  bach help workflow/help-forensic
+
+  # チャットクライアントの場合:
+  ツールを読み取ります: skill/workflows/bugfix-protocol.md
+
+新しいワークフローの作成
+------------------------
+1。ファイルの作成: skill/workflows/mein-workflow.md
+2. メモの形式:
+   - タイトルに#が付いている
+   - ステップ番号付き
+   - 明確に定められた条件
+   - 他のワークフロー/スキルへの参照
+
+関連項目
+----------
+  bach help tasks              タスク システム
+  bach help maintain           メンテナンス ツール
+  bach help startup            セッション開始プロトコル
+  bach help skills             スキル システム
+  docs/con4_CONCEPT_Skill_Architecture_v2_70.md スキル アーキテクチャ

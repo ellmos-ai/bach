@@ -1,0 +1,64 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH Manejador de papelera (sistema de papelera)
+--------------------------------------
+
+El sistema de papelera permite la eliminación suave con restauración.
+
+COMANDOS
+-------
+bach trash list            Todas las entradas de la papelera
+bach trash delete PATH     Archivo en la papelera
+bach trash restore ID      Restaurar archivo
+bach trash purge           Eliminar los caducados
+bach trash info ID         Mostrar detalles
+
+OPCIONES
+--------
+--ejecución en seco Solo simular cambios
+
+EJEMPLOS
+---------
+# Eliminar archivos
+bach trash delete ./alte_datei.txt
+
+# Mostrar contenido
+bach trash list
+
+# Restaurar
+bach trash restore 5
+
+# Limpiar caducados (30+) días)
+bach trash purge --dry-run
+bach trash purge
+
+TÉCNICO
+---------
+- Manejador: system/hub/trash.py
+- Los archivos se mueven a sistema/datos/papelera/
+- Metadatos en la tabla DB: files_trash
+- Retención estándar: 30 días (retention_days)
+- Estado: activo, restaurado, purgado
+
+BASE DE DATOS
+---------
+Tabla: archivos_trash (system/db/schema.sql)
+- id: CLAVE PRIMARIA
+- original_path: ruta original
+- trash_path: Ruta en la papelera
+- tamaño: tamaño del archivo en bytes
+- eliminado_at: hora de eliminación (ISO-8601)
+- eliminado_por: nombre de usuario (predeterminado: "claude")
+- retención_días: retención (predeterminado: 30)
+- expires_at: fecha de caducidad (ISO-8601)
+- estado: activo/restaurado/purgado
+- restaurado_at: tiempo de restauración
+- purged_at: Eliminación final
+
+VER TAMBIÉN
+----------
+bach maintain help    Herramientas de mantenimiento
+bach backup help      Sistema de respaldo
+bach trash help       Ayuda en línea

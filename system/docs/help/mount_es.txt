@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MOUNT HANDLER
+-------------
+
+Conexión de carpetas externas como enlaces simbólicos/uniones en el espacio de trabajo. administración sobre
+la tabla de conexiones de la base de datos con persistencia durante los reinicios del sistema.
+
+
+DESCRIPCIÓN
+------------
+
+El controlador de montaje incluye carpetas externas en el directorio usuario/ (hub/user/).
+Se utilizan uniones de Windows que se restauran automáticamente durante la restauración.
+convertirse. Todos los montajes se administran en data/bach.db con estado is_active.
+
+
+OPERACIONES
+-----------
+
+AÑADIR: Adjuntar carpeta externa
+  Sintaxis: bach mount add <ruta> <alias>
+  Ejemplo: montaje de bach agregar C:\Data\Research research
+  - Unión creada: hub/usuario/research -> C:\Data\Research
+  - Guarda en la tabla de conexiones de base de datos (tipo = 'montaje')
+  - Sobrescribe montajes existentes con el mismo alias
+
+REMOVE: Eliminar conexión
+  Sintaxis: bach mount eliminar <alias>
+  Ejemplo: monte bach eliminar investigación
+  - Elimina la unión del concentrador/usuario/<alias>
+  - Entrada eliminada de la tabla de conexiones de base de datos.
+  - La unión debe existir; de lo contrario, se ignorará el error
+
+LISTA: Mostrar montajes activos (operación estándar)
+  Sintaxis: lista de montaje de Bach
+  - Muestra todos los montajes de la base de datos con estado [OK]/[--] y [EXISTE]/[MISSING]
+  - [Aceptar] = está_activo=1, [--] = está_activo=0
+  - [EXISTE] = la ruta de cruce existe, [MISSING] = no existe
+
+RESTORE: Restaura los cruces desde la base de datos
+  Sintaxis: restauración de montaje en Bach
+  - Recrea todos los cruces para monturas activas (si se pierden después del movimiento)
+  - Salta los cruces existentes
+  - Informa errores si la ruta de origen no existe
+
+
+EJEMPLOS
+---------
+
+1. Incluir servidor de archivos en el proyecto:
+   bach mount add \\SERVER\shared projdata
+   -> hub/user/projdata se convierte en un enlace simbólico a \\SERVER\shared
+
+2. Conecte varias carpetas:
+   bach mount add C:\Daten data
+   bach mount add D:\Archive archive
+   bach mount list
+
+3. Restaurar después del movimiento del sistema:
+   bach mount restore
+   -> Todos los cruces recreados desde la base de datos (si las rutas de origen aún están disponibles)
+
+4. Ejecución en seco antes de la operación:
+   bach mount --dry-run add C:\Quelle test
+   bach mount --dry-run remove test
+
+
+ARCHIVOS
+-------
+
+Archivos afectados (relativos al sistema/):
+  hub/mount.py - Implementación del controlador
+  hub/user/ - Directorio de cruces
+  data/bach.db - Almacenamiento persistente (tabla de conexiones)
+  docs/help/mount.txt - Este archivo
+
+
+VER TAMBIÉN
+----------
+
+  hub/base.py - Interfaz BaseHandler
+  data/ - Esquema de base de datos para conexiones
+  bach.py --help - Ayuda general de BACH

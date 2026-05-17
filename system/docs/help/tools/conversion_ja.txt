@@ -1,0 +1,100 @@
+変換ツール - 変換ツール
+-------------------------------------------
+
+概要
+BACH の変換ツールはファイル形式を変換します
+
+
+UNIVERSAL CONVERTER
+-------------------
+c_universal_converter.py
+
+多くの形式に対応した汎用変換ツール。
+サポート:
+  - テキスト -> PDF
+  - マークダウン -> PDF/HTML
+  - JSON -> CSV
+  - Excel -> CSV
+  - 画像 (サイズ変更、フォーマット)
+
+呼び出し: python tools/c_universal_converter.py <input> <output>
+
+MARKDOWN -> PDF
+---------------
+c_md_to_pdf.py
+
+Markdown ファイルをスタイル付きで PDF に変換します。
+特徴:
+  - コードのハイライト表示
+  - テーブル
+  - 画像を埋め込む
+
+呼び出し: python tools/c_md_to_pdf.py <md ファイル> [--output <pdf>]
+
+エンコーディングとテキスト
+---------------
+
+c_encoding_fixer.py
+  エンコーディングの問題を修正 (UTF-8、Latin-1 など)
+  不正なコーディングを自動的に検出します。
+  呼び出し: python tools/c_encoding_fixer.py <ファイル>
+
+c_umlaut_fixer.py
+  ファイル内のドイツ語のウムラウトを修正します。
+  壊れた文字を置き換えます (ae->ä、ue->ü など)
+  呼び出し: python tools/c_umlaut_fixer.py <ファイル>
+
+c_standard_fixer.py
+  コードのフォーマットを標準化します。
+  末尾の空白を削除し、行末を統一します。
+  呼び出し: python tools/c_standard_fixer.py <ファイル>
+
+JSON TOOLS
+----------
+
+c_json_repair.py
+  壊れた JSON ファイルを修復します。
+  欠落しているカンマ、引用符、括弧を修正します。
+  呼び出し: python tools/c_json_repair.py <ファイル>
+
+json_fixer.py
+  高度なオプションを使用した代替 JSON 修復。
+  呼び出し: python tools/json_fixer.py <ファイル>
+
+CODE TOOLS
+----------
+
+c_import_organizer.py
+  Python インポートを並べ替えて整理します。
+  グループ化: 標準、サードパーティ、ローカル。
+  呼び出し: python tools/c_import_organizer.py <ファイル>
+
+c_indent_checker.py
+  インデントを確認して修正します。
+  オプション: --tabs、--spaces N
+  呼び出し: python tools/c_indent_checker.py <ファイル>
+
+EXPORT
+------
+
+export_txt.py
+  ファイルをプレーンテキストとしてエクスポートします。
+  呼び出し: python tools/export_txt.py <ファイル>
+
+exporter.py
+  さまざまな形式に対応した総合エクスポーター。
+  呼び出し: python tools/exporter.py <file> --format <fmt>
+
+バッチ オペレーション
+-----------------
+
+batch_file_ops.py
+  複数のファイルに対してファイル操作を実行します。
+  操作: 名前変更、コピー、移動、変換
+  呼び出し: python tools/batch_file_ops.py <操作> <パターン>
+
+関連項目
+----------
+bach --help tools         ツールの概要
+bach --help backup        バックアップ ツール
+bach --help maintain      メンテナンス ツール

@@ -1,0 +1,20 @@
+BACH Tool: register_skills
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/register_skills.py
+
+DESCRIPTION
+----------------------------------------
+Register skills in bach.db
+------------------------------
+Scans skills/ folder and registers all skill files in the DB.
+
+USE
+----------------------------------------
+python bach.py tools run register_skills [args]
+or directly: python tools/register_skills.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show register_skills

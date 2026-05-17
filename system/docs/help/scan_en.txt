@@ -1,0 +1,94 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SCAN - Task scanner and directory analysis
+---------------------------------------------
+
+DEPRECATED: This handler remains for backward compatibility. New: bach ati scan
+
+SCAN is a legacy handler for managing task scanning and directory scanning.
+Analyzes. The scanner works with the ATI infrastructure and the SQLite database
+bach.db together. Modern scan operations run via 'bach ati scan'.
+
+COMMANDS
+-------
+
+bach scan run              Start scanner (ATI task scanner)
+bach scan status           Show last scan status
+bach scan tasks            Show scanned tasks (--tool scans all registered tools for tasks.
+Outputs summary: tools scanned, tasks found, new and updated
+tasks. Stores results in ati_scan_runs table (bach.db).
+bach scan tools            STATUS
+bach scan dir PATH         Shows status of the last scan from database:
+- Timestamp and duration
+- Number of tools and tasks in the last scan
+- Overall statistics: Registered tools, scanned tasks, open tasks
+
+TASKS
+-----------
+
+Lists open and in-progress tasks with priority sorting.
+Shows: tool name, task text (shortened), effort, status, priority score.
+Limited to a maximum of 20 tasks.
+---
+With --tool FILTER: Filters tasks by tool name (substring match).
+
+TOOLS
+------
+Lists registered tools from ati_tool_registry with task numbers,
+Status and scan date. Sort by task count. Max. 30 tools.
+
+DIR
+-----
+Scans any directory with DirectoryScanner (tools/dirscan.py).
+Shows directory tree, file lists and file sizes.
+
+EXAMPLES
+
+# Start scanner
+-----
+# Check status
+
+# All open tasks
+---
+# Tasks of a specific tool
+
+# Show registered tools
+---------
+
+# Scan directory
+bach scan run
+
+DATA SOURCES
+bach scan status
+
+Database: data/bach.db (SQLite)
+Tables: ati_scan_runs, ati_tasks, ati_tool_registry
+Scanner: agents/ati/scanner/task_scanner.py (TaskScanner)
+Dir Scanner: tools/dirscan.py (DirectoryScanner)
+bach scan tasks
+
+SEE ALSO
+bach scan tasks --tool featureX
+
+ATI Agent (modern scanning commands)
+bach scan tools
+
+Build automation
+bach scan dir C:\Projekte\myapp
+bach scan dir /c/Users/User/OneDrive
+
+DATENQUELLEN
+------------
+
+Datenbank:    data/bach.db (SQLite)
+Tabellen:     ati_scan_runs, ati_tasks, ati_tool_registry
+Scanner:      agents/ati/scanner/task_scanner.py (TaskScanner)
+Dir-Scanner:  tools/dirscan.py (DirectoryScanner)
+
+SIEHE AUCH
+----------
+
+bach --help ati        ATI Agent (moderne Scan-Befehle)
+bach --help builder    Build-Automatisierung

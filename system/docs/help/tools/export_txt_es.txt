@@ -1,0 +1,18 @@
+Herramienta BACH: export_txt
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: herramientas/export_txt.py
+
+DESCRIPCIÓN
+----------------------------------------
+Exporta elementos de impuestos en archivos TXT - todas las listas + directorio de documentos
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan export_txt [args]
+o directamente: python tools/export_txt.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: herramientas de bach muestran export_txt

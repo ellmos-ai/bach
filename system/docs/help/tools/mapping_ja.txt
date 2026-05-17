@@ -1,0 +1,111 @@
+マッピング ツール - システム間の機能比較
+---------------------------------------------------
+
+現在: 2026-01-23
+パス: docs/help/tools/mapping.txt
+
+説明
+------------
+比較および分析用の機能マッピング ツール
+さまざまなシステムにわたる機能の統合。
+BACH_STREAM プロジェクトの一部。
+
+パス: tools/mapping/
+
+FILES
+-------
+  query_features.py 機能のクエリと比較
+  Populate_features.py データベースに機能を追加します
+  schema.sql データベース スキーマ
+
+DATABASE
+---------
+場所: BACH_STREAM/MAPPING/feature_mapping.db
+
+テーブル:
+  システム 登録済みシステム (CHIAH、BATCH、recludOS など)
+  機能 機能の定義
+  feature_categories 分類 (メモリ、GUI、タスクなど)
+  実装 どのシステムにどの機能がある
+
+主な機能
+---------------
+
+feature_matrix(category=None):
+  どのシステムにどの機能があるかを示します。
+
+  python query_features.py マトリックス
+  python query_features.py マトリックス --category "メモリ"
+
+  記号:
+    + = 実装済み (完了)
+    ~ = 部分的
+    ?  = 予定/未定
+    - = 存在しません
+
+feature_synopsis(feature_name):
+  すべてのシステムにわたる単一の機能を比較します。
+  パス、テクノロジー、メモを表示します。
+
+  python query_features.py 概要 "ワーキング メモリ"
+
+登録システム
+--------------------
+  _CHIAH v3.1 オリジナル CLI-First システム
+  _BATCH v2.5 ハブベースのシステム
+  recludOS v3.3.0 エージェント フレームワーク
+  BACH v1.1 ベスト・オブ・シノプシス (本システム)
+  AI-Portable RAG パイプライン ユーティリティ
+  テンプレート プロジェクト テンプレート
+
+機能カテゴリ
+------------------
+  01 タスク管理 タスク管理
+  02 メモリーメモリーシステム
+     21 記憶短期セッションベース
+     22 メモリ長期永続的
+     23 メモリコンテキストソースの重み付け
+  03 セッション管理の起動/終了
+  04 GUI Web ダッシュボード
+  05 メンテナンスバックグラウンドプロセス（デーモン）
+  06 ツールユーティリティ
+  07 コミュニケーションメッセージング、パートナー
+  08 ドキュメントヘルプシステム
+  09 エージェント 上司のエージェント、専門家
+  10 バックアップのセキュリティ
+  11 RAG/エンベディング検索の拡張
+  12 ファイル操作 ファイルシステム
+
+使用
+----------
+
+特徴マトリックスの生成:
+  python tools/mapping/query_features.py マトリックス
+
+カテゴリでフィルタリング:
+  python tools/mapping/query_features.py行列 --category "GUI"
+
+機能の概要:
+  python tools/mapping/query_features.py 概要 "インジェクター"
+
+新しい機能を入力します。
+  python tools/mapping/populate_features.py
+
+BACH との統合
+--------------------
+マッピング システムは次のことに役立ちます。
+  - 以前のシステムの移行
+  - 不足している機能の特定
+  - 実装ステータスのドキュメント
+
+以下も参照: docs/con2_ANFORDERUNGSANALYSE.md
+
+関連項目
+----------
+  docs/help/architecture.txt BACH システム アーキテクチャ
+  docs/consense_diff_2.md オープン要件
+  ROADMAP.md Todo を含むロードマップ
+  スキル/SKILL_ANALYSE.md カバレッジ係数
+
+バージョン: v1.0.0 (2026-01-23)
+行数: ~334 (query_features.py)、~313 (populate_features.py)

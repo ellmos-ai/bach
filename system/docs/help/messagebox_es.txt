@@ -1,0 +1,55 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Estado: DESPRECADO - Reemplazado por message.py Handler
+
+SISTEMA MESSAGEBOX (DESPRECADO)
+-----------------------------
+
+NOTA: Este sistema basado en archivos está DESPRECADO y archivado.
+         Sistema actual: MessagesHandler (system/hub/messages.py)
+
+El antiguo sistema de mensajería basado en temas (como el correo electrónico, pero basado en archivos)
+ha sido reemplazado por un sistema basado en SQLite.
+
+REEMPLAZO ACTUAL:
+  Controlador: system/hub/messages.py (MessagesHandler)
+  Backend: system/data/bach.db (tabla de mensajes)
+  CLI: mensaje de bach <operación>
+
+VER:
+  bach msg --help           Comandos actuales
+  docs/help/messages.txt Nueva documentación
+
+CÓDIGO ARCHIVADO:
+  system/data/_archive/gui_Entwuerfe/inbox/
+    - mensajebox_backend.py
+    - cuadro de mensajes.html
+    - inbox_index.json
+
+-----------------------------------------------------------------------
+DOCUMENTACIÓN ANTIGUA (solo histórica)
+-----------------------------------------------------------------------
+
+CONCEPTO (antiguo):
+  - Un tema = un archivo TXT
+  - Los mensajes se asignan a temas.
+  - Índice (JSON) para acceso rápido
+  - Archivado automático con límite de tamaño
+
+CARPETA (antigua):
+  DATOS/bandeja de entrada/Temas activos (ya no existe)
+  DATOS/bandeja de entrada/archivo/Temas archivados (ya no existe)
+  DATOS/bandeja de entrada/agenda/Referencias de agenda (ya no existe)
+
+COMANDOS CLI (antiguos, ya no funcionan):
+  python messagebox_backend.py lista [--todos]
+  python messagebox_backend.py nuevo <título>
+  python messagebox_backend.py agregar <id> <texto>
+  Python messagebox_backend.py muestra <id>
+  Python messagebox_backend.py archivo <id>
+  python messagebox_backend.py restaurar <id>
+
+MIGRACIÓN:
+  El antiguo sistema no fue migrado. Si es necesario, se pueden utilizar los viejos.
+  Los archivos de temas se pueden restaurar a partir de copias de seguridad.

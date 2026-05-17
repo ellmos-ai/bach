@@ -1,0 +1,96 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 次のレビュー: 2026-08-12
+
+BACH アップグレード - システム更新
+-------------------------------------
+
+バージョン管理された BACH コンポーネントをファイルまたはカテゴリごとに選択的に更新します。
+
+
+使用
+----------
+
+  # アップグレード ステータスを表示
+  bach upgrade status
+
+  # ファイルの利用可能なバージョンを表示
+  bach upgrade list hub/backup.py
+
+  # 利用可能なアップデートを確認する
+  bach upgrade check
+
+  # 選択したカテゴリのアップグレード
+  bach upgrade core
+  bach upgrade templates
+  bach upgrade agents
+  bach upgrade skills
+  bach upgrade hub
+  bach upgrade tools
+  bach upgrade connectors
+  bach upgrade partners
+  bach upgrade docs
+  bach upgrade gui
+
+  # ドライラン (表示のみ、実行しない)
+  bach upgrade agents --dry-run
+
+
+カテゴリ
+----------
+
+  core システムコア (dist_type=2)
+  テンプレート テンプレートとテンプレート (dist_type=1)
+  エージェント 上司のエージェントと専門家
+  スキル スキルとプロトコル
+  ハブ ハブハンドラー
+  ツール ツール
+  コネクタ コネクタ システム
+  パートナー パートナー ファイル
+  ドキュメントドキュメント
+  gui GUI ファイル
+
+
+重要
+-------
+
+- アップグレードでは、ディストリビューション/マニフェストからのバージョン管理されたファイルのみが上書きされます。
+- USER_DATA はそのまま残ります。
+- メジャーアップグレードの前にバックアップをお勧めします。
+- バージョンは `dist_file_versions` で追跡されます。
+
+
+例
+---------
+
+  # コア ファイルのみを更新します
+  bach upgrade core
+
+  # テンプレートのみを更新します
+  bach upgrade templates
+
+  # エージェント ファイルのみをプレビューします
+  bach upgrade agents --dry-run
+
+  # ドキュメントの復元/アップグレード
+  bach upgrade docs
+
+  # ファイルの利用可能なバージョンを表示
+  bach upgrade list hub/backup.py
+
+
+バージョン管理
+-------------
+
+- ハッシュ + 自動インクリメント システム (ENT-09)
+- 「バッチアップグレード」経由で移動できるのは、バージョン管理された配布ファイルのみです
+- USER_DATA はユーザーからのものであり、バージョン管理されていません
+
+
+関連項目
+----------
+
+  bach --help restore       テンプレートのリカバリ
+  bach --help downgrade     古いバージョンにダウングレード
+  bach --help seal          整合性チェック

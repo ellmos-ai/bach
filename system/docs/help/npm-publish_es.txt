@@ -1,0 +1,83 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [Registro de NPM, repositorios de GitHub]
+
+PUBLICACIÓN DE NPM - Publicación del servidor MCP
+--------------------------------------------
+
+FECHA: 2026-02-15
+
+Flujo de trabajo para publicar el servidor BACH MCP en NPM y GitHub.
+
+PAQUETES
+------
+  ellmos-filecommander-mcp 39 herramientas, sistema de archivos/procesos/sesiones/i18n
+  ellmos-codecommander-mcp 15 herramientas, análisis de código/JSON/codificación/i18n
+
+REPOS GITHUB
+-------------
+  https://github.com/lukisch/ellmos-filecommander-mcp
+  https://github.com/lukisch/ellmos-codecommander-mcp
+
+AUTENTICACIÓN NPM
+----------------------
+  Método: Token de acceso granular con "Omitir 2FA"
+  Nombre del token: bach-editor 2
+  Creado: 2026-02-15
+  Vence: 2026-05-16
+  Almacenado en: ~/.npmrc
+
+  IMPORTANTE: Los tokens de automatización clásicos ya no funcionan (error EOTP).
+  Sólo los tokens de acceso granular con "Omitir 2FA" omiten la consulta OTP.
+
+  Renovar token (si ha caducado):
+    1. https://www.npmjs.com/settings/~/tokens -> "Generar nuevo token"
+    2. Seleccione "Token de acceso granular" (¡NO clásico!)
+    3. Permisos: Lectura y Escritura, todos los paquetes
+    4. Active la casilla de verificación "Omitir 2FA"
+    5. Ingrese tokens en ~/.npmrc:
+       //registry.npmjs.org/:_authToken=<nuevo-token>
+
+FLUJO DE TRABAJO DE PUBLICACIÓN DE NPM
+---------------------
+  1. Ficha de cheque:
+     npm whoami -> debe generar "lukisch"
+
+  2. Ejecute la compilación manualmente (debido a & en la ruta KI&AI):
+     nodo "<ruta>/node_modules/typescript/bin/tsc" --project "<ruta>/tsconfig.json"
+
+  3. Ejecute npm Publish (sin OTP, no se requiere navegador):
+     cd <directorio del proyecto>
+     npm publicar --ignore-scripts
+
+PROBLEMAS CONOCIDOS
+------------------
+  - & en la ruta "KI&AI" rompe los scripts npm (prepublishOnly)
+    -> Solución alternativa: --ignore-scripts (construya manualmente de antemano)
+  - npm run build falla en el directorio del proyecto
+    -> Solución alternativa: llame a tsc directamente a través del nodo
+  - Los tokens de automatización clásicos desencadenan errores de EOTP
+    -> Solución alternativa: Token de acceso granular con "Omitir 2FA"
+
+FLUJO DE TRABAJO DE GITHUB
+----------------
+  1. git add <archivos> && git commit -m "mensaje"
+  2. etiqueta git vXYZ
+  3. git push origin master --tags
+
+LISTA DE VERIFICACIÓN DE VERSIÓN BUMP
+------------------------
+  [] versión del paquete.json
+  [] Versión src/index.ts (configuración del servidor)
+  [] CHANGELOG.md nueva entrada
+  [] README.md si las características cambian
+  [] Prueba de compilación
+  [] Git commit + etiqueta + push
+  [] npm publicar --ignore-scripts
+
+VER TAMBIÉN
+----------
+  docs/help/tools.txt Descripción general de la herramienta
+  docs/help/coding.txt Estándares de codificación
+  skills/workflows/npm-mcp-publish.md Registro detallado

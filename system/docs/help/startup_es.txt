@@ -1,0 +1,262 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+INICIO - Iniciar sesión
+-------------------------
+
+DESCRIPCIÓN
+El protocolo de inicio inicializa una sesión BACH con todos
+comprobaciones necesarias y muestra el contexto de la última sesión.
+
+COMANDO
+------
+bach --startup                    Protocolo de inicio completo
+bach --startup quick              Inicio rápido (sin escaneo de directorio)
+bach --startup mode <m>           Cambiar modo de inicio (gui|text|dual|silent)
+bach --startup --mode=<m>         Iniciar una vez con un modo diferente
+bach --startup --partner=NAME     Sesión específica del socio (NUEVA v1.1.38)
+
+SESIONES DE SOCIOS (v1.1.38)
+--------------------------
+Sesión específica del socio habilitada gestión:
+
+  bach --startup --partner=claude   Inicia sesión Claude
+  bach --startup --partner=gemini   Inicia sesión Gemini
+  bach --startup --partner=user     Estándar (predeterminado)
+  bach --startup --partner=new      Genera ID automática (partner_HHMMSS)
+  bach --startup --partner=simonAI  Nuevo socio con nombre propio
+
+BENEFICIOS:
+- La sesión anterior del mismo socio se cierra automáticamente
+- Sesiones paralelas posibles para diferentes socios.
+- Previene sesiones abiertas "huérfanas" tras inicios repetidos
+- Tarjeta de reloj automático (entrada/salida) en tabla partner_presence
+
+SISTEMA DE TARJETA DE SELLO (v1.1.71):
+- Para el inicio: el socio se registra automáticamente
+- Durante el cierre: el socio queda automáticamente desconectado
+- Conocimiento de socios: muestra quién sigue en línea
+- Protocolo Multi-LLM V3: Activado para múltiples socios
+
+NUEVOS SOCIOS:
+  # Con tu propio nombre (recomendado)
+  bach --startup --partner=simonAI
+
+  # Sin nombre (genera ID)
+  bach --startup --partner=new      -> socio_143052
+  bach --startup --partner=nameless -> partner_143052
+
+EJEMPLO:
+  # Géminis comienza a trabajar
+  bach --startup --partner=gemini --mode=silent
+
+  # Más tarde: Gemini se reinicia -> la sesión anterior se cierra
+  bach --startup --partner=gemini --mode=silent
+  [CIERRE AUTOMÁTICO] La sesión anterior de GEMINI finalizó: session_20260126_...
+
+  # El conocimiento de los socios muestra:
+  [CONCIENCIA DE LOS SOCIOS]
+   *** 1 OTROS SOCIOS EN LÍNEA ***
+     CLAUDE: Tarea_XYZ
+   --> ¡Usa el protocolo V3! (bach --help multi_llm)
+
+BASE DE DATOS:
+  Memory_sessions.partner_id almacena el nombre del socio.
+  partner_presence guarda la tarjeta de sello (en línea/fuera de línea/bloqueada).
+  Predeterminado: "usuario" para sesiones manuales.
+
+MODOS DE USUARIO (v1.1.37)
+--------------------
+BACH admite 4 modos de inicio:
+
+  gui GUI Dashboard se abre en el navegador (predeterminado)
+  Solo consola de texto, sin navegador
+  GUI dual + consola en paralelo
+  silencioso No inicia nada automáticamente
+
+El modo se almacena en data/user_config.json.
+Detalles: bach --help modos
+
+PROSYNC (antes del protocolo de inicio)
+-------------------------------
+Si ProSync está activado (bach setup prosync --multi-system), conduce
+bach.py ANTES del protocolo de inicio, realice una sincronización de base de datos:
+  - Pull: cargue y combine copias de seguridad más nuevas desde Transit Hub
+  - Empujar (al salir): escriba su propia copia de seguridad en el centro de tránsito
+ProSync se ejecuta en bach.py main(), no en el controlador de inicio.
+Detalles: bach --help db_sync
+
+CONSEJO DE RECUPERACIÓN DEL AGENTE
+-------------------
+Si el inicio del agente o el humo del agente son parte de la verificación diaria/de inicio,
+`bach agent doctor [nombre]` ahora proporciona un diagnóstico rápido previo al vuelo
+Instrucciones de recuperación. Particularmente útil antes de "inicio del agente bach..." o cuando un
+La ventana del agente se cierra inmediatamente:
+
+  bach agent doctor ati
+  bach agent doctor ati --json
+
+PROCESO (v1.1.31)
+----------------
+El protocolo de inicio realiza los siguientes pasos:
+
+1. [ESCANEO DEL DIRECTORIO]
+   - Comprueba los cambios desde la última sesión.
+   - Muestra archivos nuevos/eliminados/modificados
+   - Saltado con "rápido"
+
+2. [PROBLEMA PRIMERO]
+   - Mensaje de error automático (por CHIAH)
+   - Muestra errores de las últimas 24 horas
+
+3. [COMPROBACIÓN DEL CURADOR DE RUTA] *** NUEVO v1.1.18 ***
+   - Comprobación de funcionamiento en seco para detectar problemas de ruta
+   - Muestra archivos con rutas incorrectas.
+   - Reparación: bach --mantener curar --ejecutar
+
+4. [OBSERVADOR DEL REGISTRO] *** NUEVO v1.1.21 ***
+   - Comprueba la coherencia DB/JSON
+   - Mostrar tablas faltantes, JSON no válido
+   - Detalles: bach --mantener registro
+
+5. [SALUD DE HABILIDADES] *** NUEVO v1.1.21 ***
+   - Valida habilidades y agentes.
+   - Muestra problemas con archivos SKILL.md
+   - Detalles: bach --mantener habilidades
+
+6. [ÚLTIMA SESIÓN]
+   - Muestra la última sesión completada
+   - Tareas creadas/completas
+   - IMPORTANTE: "PRÓXIMOS PASOS" = continuación_context
+
+7. [INSTANTÁNEA DISPONIBLE] ***NUEVA v1.1.17***
+   - Muestra la última instantánea (si se creó hoy)
+   - Número de tareas abiertas en la instantánea
+   - Continuar: carga de instantáneas de Bach
+
+8. [COMPROBACIÓN DE MEMORIA]
+   - Cuenta la memoria de trabajo, hechos, lecciones.
+   - Muestra la última nota
+
+9. [REGISTRAR SESIÓN]
+   - Se crea una nueva ID de sesión en Memory_sessions
+
+10. [NOTICIAS]
+    - Comprueba los mensajes no leídos en MessageBox
+    - Muestra remitente y asunto.
+    - Detalles: mensaje de bach no leído
+
+11. [TAREAS PERIÓDICAS] *** NUEVA v1.1.18 ***
+    - Muestra tareas recurrentes debidas
+    - Crear: bach --cheque recurrente
+
+12. [TAREAS DEL SISTEMA BACH]
+    - Muestra tareas del Marco BACH abiertas/completas
+    - Top 3 por prioridad (P1 > P2 > P3)
+    - Todos: lista de tareas de Bach
+
+13. [AGENTE DE ATI]
+    - Comprueba si existe la carpeta ATI
+    - Estado del agente desarrollador de software
+
+14. [LECCIONES APRENDIDAS]
+    - Muestra lecciones guardadas
+    - Detalles: última lección de bach
+
+15. [AUTOLOGO]
+    - Entradas de system/data/logs/auto_log.txt
+    - Últimos 3 comandos
+    - Más: bach --logs tail 20
+
+16. [INYECTORES]
+    - Muestra inyectores activos
+
+17. [MODO INICIO] *** NUEVO v1.1.37 ***
+    - Muestra el modo actual (GUI/TEXTO/DUAL/SILENCIO)
+    - Inicia GUI y/o consola dependiendo del modo
+    - GUI: http://127.0.0.1:8000 en el navegador
+    - Texto: Nueva ventana de consola con bach.py
+
+EJEMPLO DE SALIDA
+---------------
+-------------------------------------------------------
+         INICIO DE LA SESIÓN BACH
+-------------------------------------------------------
+ Hora: 2026-01-22 13:10:15 (jueves)
+ Modo: GUI
+ Socio: GEMINI
+-------------------------------------------------------
+
+[AUTO-CLOSE] La sesión anterior de GEMINI finalizó: session_20260122_...
+
+[PATH HEALER]
+ [!] Se encontraron 2 archivos con problemas de ruta
+   - archivo_ejemplo.py
+ --> bach --mantener curar --ejecutar para reparar
+
+[ÚLTIMA SESIÓN]
+ Sesión: sesión_20260122_1200
+ Finalizado: 2026-01-22 12:30
+ Tareas: +3 creadas, 2 completadas
+ Tema: Archivos de ayuda actualizados...
+
+ *** PRÓXIMOS PASOS ***
+   P2: actualizar Shutdown.txt
+   P2: comprobar memoria.txt
+
+[INSTANTÁNEA DISPONIBLE]
+ Último: auto_shutdown_20260122_1230 (12:30)
+ Tareas en la instantánea: 5
+ --> carga de instantáneas de Bach para continuar
+
+[TAREAS PERIÓDICAS]
+ *** 1 TAREAS VENCIDA ***
+   [weekly_backup] Copia de seguridad semanal -> BACH
+ --> bach --verificación recurrente para crear
+
+[TAREAS DEL SISTEMA BACH]
+ 42 abiertos, 15 terminados
+ Tareas principales:
+   [93] GUI de P1: /api/skills punto final...
+   [94] GUI de P1: Panel de habilidades...
+
+-------------------------------------------------------
+ LISTO - Sesión iniciada
+
+ NOTA: Al apagar -> bach --memory session "..."
+-------------------------------------------------------
+
+FUENTES DE DATOS
+-------------
+- Memory_sessions: Última sesión, contexto_continuación
+-memory_working: notas actuales
+-memory_facts: hechos persistentes
+-memory_lessons: Lecciones aprendidas
+- session_snapshots: puntos de restauración
+- tareas: tareas del sistema BACH
+- mensajes: MessageBox (bach.db)
+
+HANDLER
+-------
+hub/startup.py Controlador de inicio (basado en DB)
+
+HISTORIAL DE VERSIONES
+----------------
+v1.1.2 Inicio básico con escaneo de directorios, memoria, tareas
+v1.1.17 + Visualización de instantáneas
+v1.1.18 + Path Healer, Tareas recurrentes
+v1.1.21 + Vigilante del Registro, Monitor de Salud de Habilidades
+v1.1.37 + modos de usuario (gui, texto, dual, silencioso)
+v1.1.38 + sesiones de socio (--partner=NOMBRE, cierre automático)
+
+VER TAMBIÉN
+----------
+bach --help modes          Modos de usuario (gui, texto, dual, silencioso)
+bach --help shutdown       Finalizar sesión
+bach --help memory         Sistema de memoria
+bach --help maintain       Herramientas de mantenimiento (curar, registro, habilidades)
+bach --help snapshot       Administrar instantáneas
+bach --help tasks          Gestión de tareas
+bach --help db_sync        ProSync: Sincronización de base de datos multisistema
+bach --help install         Instalación inicial y escenarios

@@ -1,0 +1,23 @@
+BACH Tool: dirscan
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/dirscan.py
+
+DESCRIPTION
+----------------------------------------
+Directory Scanner - Automatic ACTUAL/TARGET state management
+------------------------------------------------------------
+
+- Startup: Capture actual state
+- Shutdown: Changes = new TARGET state
+- Heuristic: Claude changes are wanted
+
+USE
+----------------------------------------
+python bach.py tools run dirscan [args]
+or directly: python tools/dirscan.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show dirscan

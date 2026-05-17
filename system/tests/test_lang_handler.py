@@ -412,10 +412,31 @@ class TestAdd:
         translations = _load_release_export(handler.base_path, "languages_translations.release.json")
         locale_en = json.loads((handler.base_path / "exports" / "translations" / "locales" / "en.json").read_text(encoding="utf-8"))
 
+        assert manifest["source_db"] == "runtime_db"
         assert manifest["counts"]["translations"] == 2
         assert any(row["key"] == "gruss" and row["language"] == "de" and row["value"] == "Grüße" for row in translations)
         assert any(row["key"] == "gruss" and row["language"] == "en" and row["value"] == "Greetings" for row in translations)
         assert locale_en["entries"]["general"]["gruss"] == "Greetings"
+
+    def test_release_exports_redact_local_onedrive_paths(self, handler):
+        local_path = r'base_dir = Path(r"C:\Users\Example\OneDrive\PrivateProject")'
+        ok, msg = handler.handle("add", ["legacy_path", "--de", local_path], dry_run=False)
+        assert ok is True
+
+        translations = _load_release_export(handler.base_path, "languages_translations.release.json")
+        row = next(item for item in translations if item["key"] == "legacy_path")
+        assert "C:\\Users\\Example\\OneDrive" not in row["value"]
+        assert "<BACH_WORKSPACE>" in row["value"]
+
+    def test_release_exports_redact_userprofile_paths(self, handler):
+        local_path = r"Log: C:\Users\Example\Downloads\bach.log"
+        ok, msg = handler.handle("add", ["userprofile_path", "--de", local_path], dry_run=False)
+        assert ok is True
+
+        translations = _load_release_export(handler.base_path, "languages_translations.release.json")
+        row = next(item for item in translations if item["key"] == "userprofile_path")
+        assert "C:\\Users\\Example" not in row["value"]
+        assert "%USERPROFILE%" in row["value"]
 
 
 # ═══════════════════════════════════════════════════════════════

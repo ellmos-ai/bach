@@ -1,0 +1,200 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+重复任务 - 重复任务
+-----------------------------------------
+
+重复系统会在任务到期时自动创建任务。
+与维护（执行作业）不同，重复仅生成
+Claude 或用户的提醒任务。
+
+HANDLER：hub/recurring.py
+服务：hub/_services/recurring/
+GUI：无（仅 CLI + 集成在 /daemon 页面中）
+守护进程：是（守护进程每 5 分钟检查一次 - gui/daemon_service.py）
+
+
+命令
+-------
+
+  bach --recurring              显示所有重复任务
+  bach --recurring list         （别名）
+  bach --recurring check        创建到期任务
+  bach --recurring trigger ID   手动触发任务
+  bach --recurring done ID      标记为已完成（更新了last_run）
+  bach --recurring enable ID    激活任务
+  bach --recurring disable ID   停用任务
+
+
+定义：三个处理程序系统
+--------------------------------
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │ 重复发生 │
+  ├──────────────────────────────────────────────────────────────────┤
+  │ 创建任务作为提醒 │
+  │ 基于时间间隔（天） │
+  │ 供克劳德/用户编辑 │
+  │ 处理程序：hub/recurring.py │
+  │ 服务：hub/_services/recurring/ │
+  │ GUI：无（仅限 CLI）│
+  │ 守护进程：是（通过 daemon_service.py 每 5 分钟检查一次） │
+  └──────────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │ 维护 (docs/help/maintenance.txt) │
+  ├──────────────────────────────────────────────────────────────────┤
+  │ 关闭运行 shell/Python 命令 │
+  │ 时间控制（cron/interval） │
+  │ 没有克劳德参与 │
+  │ 处理程序：hub/daemon.py │
+  │ 服务：gui/api/daemon_api.py + DB │
+  │ GUI: /daemon (存在) │
+  │ 守护进程：是（自己的进程） │
+  └──────────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │ 提示生成器 (docs/help/prompt-generator.txt) │
+  ├──────────────────────────────────────────────────────────────────┤
+  │ 向 Claude 会话发送提示 │
+  │ 手动或自动 │
+  │ 带编辑器的模板系统 │
+  │ 处理程序：（正在开发中） │
+  │ 服务：hub/_services/prompt_generator/ │
+  │ GUI: /提示生成器（已计划） │
+  │ 守护进程：是 (session_daemon.py) │
+  └──────────────────────────────────── ──────────────────────────────┘
+
+何时使用？
+----------------
+
+  如果出现以下情况，请使用循环：
+  - 克劳德应该被记住
+  - 任务需要情报/分析
+  - 灵活的时间安排（在下一次会议）
+
+  在以下情况下使用维护：
+  - 脚本应自动运行（例如备份、扫描）
+  - 无需情报/决策
+  - 时间很重要（例如晚上 3:00）
+
+  如果出现以下情况，请使用提示生成器：
+  - 克劳德会话应该自动开始
+  - 可以使用提示模板
+  - 需要克劳德定时工作
+
+
+当前重复任务
+------------------------
+
+  ATI 代理任务：
+  ----------------
+  1. 自检（14d）
+     巴赫自检：检查 SKILL.md 和课程
+
+  2.onboarding_scan（7天）
+     检查新工具： bach ati onboard --check
+
+  3. 代码质量（30d）
+     检查代码质量：所有工具上的 c_method_analyzer
+
+  系统任务：
+  -------------
+  4. 备份检查（7d）
+     检查BACH备份：bach备份状态
+
+  5.内存清理（30天）
+     检查内存存档：存档旧条目
+
+  6. 集成检查（30天）
+     进行后续分析
+     工作流程：技能/工作流程/system-connectionanalysis.md
+
+  文档任务：
+  --------------------
+  7.路线图审查（14天）
+     ROADMAP.md 审查：标记已完成的任务，检查优先级
+
+  8. wiki_author (21d)
+     维基作者：识别并填补代理知识空白
+     工作流程：技能/工作流程/wiki-author.md
+
+  9. 帮助取证 (14d)
+     帮助取证：检查实际与目标，如果存在偏差则进行纠正
+     工作流程：技能/工作流程/help-forensic.md
+
+10.doc_freshness（60天）
+      文档新鲜度： bach --maintain 文档报告
+
+
+配置
+-------------
+
+  文件：hub/_services/recurring/config.json
+
+  每个任务的格式：
+  {
+    “任务名称”：{
+      “启用”：正确，
+      “间隔天数”：30，
+      "target": "tasks", // 或 "ati_tasks"
+      "priority": "P3", // 仅适用于 target=tasks
+      "priority_score": 50, // 仅适用于 target=ati_tasks
+      "effort": "medium", // 仅适用于 target=ati_tasks
+      "task_text": "描述...",
+      “last_run”：“2026-01-22T21:30:00”
+    }
+  }
+
+
+守护进程集成
+------------------
+
+BACH 守护进程服务 (gui/daemon_service.py) 自动检查
+每 5 分钟一次到期的重复任务。
+
+此外，您可以手动检查：
+- `bach --startup` 显示到期任务
+- `bach --recurring check` 立即将它们创建为真实任务
+
+
+添加新的重复任务
+--------------------------------
+
+1。编辑config.json：
+   hub/_services/recurring/config.json
+
+2.添加新条目：
+   “我的任务”：{
+     “启用”：正确，
+     “间隔天数”：14，
+     “目标”：“任务”，
+     “优先级”：“P3”，
+     "task_text": "描述我的任务"
+   }
+
+3.测试：
+   bach --recurring list
+
+
+技术细节
+------------------
+
+  处理程序：hub/recurring.py
+  服务：hub/_services/recurring/recurring_tasks.py
+  配置：hub/_services/recurring/config.json
+  守护程序模块：gui/daemon_service.py（每 5 分钟检查一次）
+
+重要：BACH 守护程序会自动检查重复任务
+（每 5 分钟一次）。使用“bach --recurring check”进行手动检查
+随时可能。
+
+
+另请参阅
+----------
+
+  bach --help wartung           维护作业（shell 命令，GUI 可用）
+  bach --help prompt-generator  提示管理（计划 GUI）
+  bach --help tasks             任务系统
+  bach --help startup           会话启动（显示到期任务）

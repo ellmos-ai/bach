@@ -1,0 +1,200 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+TAREAS RECURRENTES - Tareas recurrentes
+-----------------------------------------
+
+El sistema recurrente crea automáticamente tareas cuando vencen.
+A diferencia del Mantenimiento (que ejecuta trabajos), el Recurrente solo genera
+Tareas de recordatorio para Claude o el usuario.
+
+HANDLER: hub/recurring.py
+SERVICIO: hub/_servicios/recurrente/
+GUI: NINGUNO (solo CLI + integrado en la página /daemon)
+DAEMON: SÍ (Daemon comprueba cada 5 minutos - gui/daemon_service.py)
+
+
+COMANDOS
+-------
+
+  bach --recurring              Mostrar todas las tareas recurrentes
+  bach --recurring list         (Alias)
+  bach --recurring check        Crear tareas vencidas
+  bach --recurring trigger ID   Activar tarea manualmente
+  bach --recurring done ID      Marcar como completada (última ejecución actualizada)
+  bach --recurring enable ID    Activar tarea
+  bach --recurring disable ID   Desactivar tarea
+
+
+DEFINICIÓN: TRES SISTEMAS DE MANEJO
+--------------------------------
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ RECURRENTE │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Crea TAREAS como recordatorios │
+  │ Basado en intervalos (días) │
+  │ Para que Claude/Usuario edite │
+  │ Controlador: hub/recurring.py │
+  │ Servicio: hub/_servicios/recurrente/ │
+  │ GUI: NINGUNO (solo CLI) │
+  │ Daemon: SÍ (verificaciones cada 5 minutos a través de daemon_service.py) │
+  └────────────────────────────────── ───────────────────────────────┘
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ MANTENIMIENTO (docs/help/maintenance.txt) │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Ejecuta comandos Shell/Python APAGADO │
+  │ Controlado por tiempo (cron/intervalo) │
+  │ Sin participación de Claude │
+  │ Controlador: hub/daemon.py │
+  │ Servicio: gui/api/daemon_api.py + DB │
+  │ GUI: /daemon (EXISTE) │
+  │ Daemon: SI (proceso propio) │
+  └────────────────────────────────── ───────────────────────────────┘
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ GENERADOR DE INDICACIONES (docs/help/prompt-generator.txt) │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Envía indicaciones a las sesiones de Claude │
+  │ Manual o automatizado │
+  │ Sistema de plantillas con editor │
+  │ Handler: (en desarrollo) │
+  │ Servicio: hub/_services/prompt_generator/ │
+  │ GUI: /generador de mensajes (PLANIFICADO) │
+  │ Daemon: SÍ (session_daemon.py) │
+  └──────────────────────────────────── ─────────────────────────────┘
+
+¿CUÁNDO PARA QUÉ SE UTILIZA?
+----------------
+
+  Utilice recurrente si:
+  - Claude debe ser recordado.
+  - La tarea requiere inteligencia/análisis
+  - Horario flexible (en la próxima sesión)
+
+  Utilice el mantenimiento cuando:
+  - Un script debería ejecutarse automáticamente (por ejemplo, copia de seguridad, escaneo)
+  - No se requiere inteligencia/decisión
+  - El tiempo es importante (por ejemplo, a las 3:00 de la noche)
+
+  Utilice el generador de mensajes si:
+  - La sesión de Claude debería comenzar automáticamente.
+  - Se pueden utilizar plantillas de aviso
+  - Se requiere trabajo cronometrado de Claude
+
+
+TAREAS RECURRENTES ACTUALES
+------------------------
+
+  Tareas del agente ATI:
+  ----------------
+  1. autocomprobación (14d)
+     AUTOCOMPROBACIÓN DE BACH: Consulta SKILL.md y lecciones
+
+  2. onboarding_scan (7d)
+     Compruebe nuevas herramientas: bach ati onboard --check
+
+  3. código_calidad (30d)
+     Verifique la calidad del código: c_method_analyzer en todas las herramientas
+
+  Tareas del sistema:
+  -------------
+  4. backup_check (7d)
+     Verifique la copia de seguridad BACH: estado de la copia de seguridad bach
+
+  5. limpieza_memoria (30d)
+     Comprobar archivo de memoria: archivar entradas antiguas
+
+  6. verificación_integración (30d)
+     Realizar análisis de seguimiento.
+     Flujo de trabajo: habilidades/flujos de trabajo/system-connectionanalysis.md
+
+  Tareas de documentación:
+  ---------------------
+  7. revisión_hoja de ruta (14d)
+     Revisión de ROADMAP.md: marcar tareas completadas, verificar prioridades
+
+  8. wiki_autor (21d)
+     Autores de wiki: identificar y cubrir las lagunas de conocimiento de los agentes
+     Flujo de trabajo: habilidades/flujos de trabajo/wiki-author.md
+
+  9. ayuda_forense (14d)
+     Ayuda forense: compruebe el objetivo real frente al objetivo y corrija si hay una desviación
+     Flujo de trabajo: habilidades/flujos de trabajo/help-forensic.md
+
+10. doc_frescura (60d)
+      Actualización de la documentación: bach --mantener informe de documentos
+
+
+CONFIGURACIÓN
+-------------
+
+  Archivo: hub/_services/recurring/config.json
+
+  Formato por tarea:
+  {
+    "nombre_tarea": {
+      "habilitado": verdadero,
+      "intervalo_días": 30,
+      "objetivo": "tareas", // o "ati_tasks"
+      "prioridad": "P3", // sólo para objetivo=tareas
+      "priority_score": 50, // solo para target=ati_tasks
+      "esfuerzo": "medio", // sólo para target=ati_tasks
+      "task_text": "Descripción...",
+      "last_run": "2026-01-22T21:30:00"
+    }
+  }
+
+
+INTEGRACIÓN DE DEMONIO
+------------------
+
+El servicio de demonio BACH (gui/daemon_service.py) verifica automáticamente
+Cada 5 minutos para tareas recurrentes debidas.
+
+Además, puedes verificar manualmente:
+- `bach --startup` muestra las tareas pendientes
+- `bach --recurring check` las crea inmediatamente como tareas reales
+
+
+AÑADIR NUEVA TAREA RECURRENTE
+--------------------------------
+
+1. Editar config.json:
+   hub/_services/recurring/config.json
+
+2. Agregar nueva entrada:
+   "mi_tarea": {
+     "habilitado": verdadero,
+     "intervalo_días": 14,
+     "destino": "tareas",
+     "prioridad": "P3",
+     "task_text": "Describe mi tarea"
+   }
+
+3. Pruebas:
+   bach --recurring list
+
+
+DETALLES TÉCNICOS
+------------------
+
+  Controlador: hub/recurring.py
+  Servicio: hub/_services/recurring/recurring_tasks.py
+  Configuración: hub/_services/recurring/config.json
+  Módulo demonio: gui/daemon_service.py (verificaciones cada 5 minutos)
+
+IMPORTANTE: el demonio BACH verifica automáticamente las tareas recurrentes
+(cada 5 minutos). Las comprobaciones manuales con `bach --recurring check` son
+posible en cualquier momento.
+
+
+VER TAMBIÉN
+----------
+
+  bach --help wartung           Trabajos de mantenimiento (comandos de shell, GUI disponibles)
+  bach --help prompt-generator  Gestión de mensajes (GUI planificada)
+  bach --help tasks             Sistema de tareas
+  bach --help startup           Inicio de sesión (muestra las tareas pendientes)

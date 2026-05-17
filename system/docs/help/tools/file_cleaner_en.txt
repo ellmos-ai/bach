@@ -1,0 +1,30 @@
+BACH Tool: file_cleaner
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/file_cleaner.py
+
+DESCRIPTION
+----------------------------------------
+file_cleaner.py - Clean files by age/pattern
+------------------------------------------------------
+
+Finds and deletes old files or files by pattern.
+Useful for backup folders, logs, temporary files.
+
+Usage:
+    python file_cleaner.py <folder> --age 30 # Older than 30 days
+    python file_cleaner.py <folder> --pattern "*.log" # By pattern
+    python file_cleaner.py <folder> --keep 5 # Keep 5 newest
+    python file_cleaner.py <folder> --execute # actually delete
+
+Author: BACH v1.1
+
+USE
+----------------------------------------
+python bach.py tools run file_cleaner [args]
+or directly: python tools/file_cleaner.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show file_cleaner

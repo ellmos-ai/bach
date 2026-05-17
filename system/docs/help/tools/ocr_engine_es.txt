@@ -1,0 +1,25 @@
+Herramienta BACH: ocr_engine
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/ocr_engine.py
+
+DESCRIPCIÓN
+----------------------------------------
+BACH OCR Engine
+---------------
+Reconocimiento de texto con Tesseract.
+Adaptado de DokuZentrum Pro.
+
+Uso:
+    python ocr_engine.py <ruta_pdf>
+    python ocr_engine.py B0006 # Formulario corto de cupón
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan ocr_engine [args]
+o directamente: python tools/ocr_engine.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente a partir de docstring
+- Si tiene alguna pregunta: las herramientas de bach muestran ocr_engine

@@ -1,0 +1,187 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [hub/shared_memory.py、shared_memory_*、shared_context_triggers]
+
+共有メモリ - マルチエージェント メモリ管理
+-----------------------------------------------
+
+日付: 2026-02-28
+
+共有メモリ システムにより、共有メモリ アクセスが可能になります
+数人のエージェント (クロード、ジェミニなど)。通常とは対照的に
+メモリ システムにより、複数のパートナーが同時に読み取りおよび読み取りを行うことができます。
+
+
+参照: SQ043 レベル A-2
+
+建築
+-----------
+
+  エージェントA ─┐
+  エージェント B ─┤─>shared_memory_* (bach.db)<─┬─>コンテキスト ブロック
+  エージェント C ─┘ └─> フィードを変更
+
+特徴:
+  - マルチエージェント対応 (agent_id、名前空間)
+  - 可視性レベル (プライベート、チーム、グローバル)
+  - 自動クリーンアップのための減衰追跡
+  - 信頼値による競合解決
+  - ディストリビューション システムの dist_type
+
+CLI コマンド (bachshared-mem)
+------------------------------
+
+FACTS (共有ファクト):
+  ファクトリスト すべての共有ファクトを表示
+  ファクト追加 <キー> <値> 新しいファクトを追加します
+  ファクト取得 <id> 特定のファクトを表示
+  事実削除 <id> 事実削除
+
+LESSONS (共有レッスン):
+  レッスンリスト すべての共有レッスンを表示
+  レッスンを追加 <タイトル> 新しいレッスンを追加
+  レッスンをアクティブにする <id> レッスンをアクティブにする
+  レッスンを無効化 <id> レッスンを無効化
+
+作業記憶 (短期記憶):
+  作業リスト アクティブなエントリを表示
+  working add <content> エントリを追加
+  作業中のクリーンアップ 期限切れのエントリを削除する
+  working current-task <text> 現在のタスクを設定します (エージェントごとに最大 1 つ)
+
+セッション:
+  セッションリスト [N] セッションを表示 (デフォルト: 20)
+  現在のセッション アクティブなセッションを表示
+  セッション アーカイブ <tage> 古いセッションをアーカイブします
+
+CONSOLIDATION (メモリの重み付け):
+  連結リスト 連結エントリを表示
+  統合統計 統計の表示
+  consolidation add <t> <id> エントリを手動で追加します
+  consolidation 弱いエントリーを統合する
+  連結実行 減衰ロジックを実行 (B57)
+
+コンテキストと変更:
+  context コンテキストブロックの生成 (B55)
+  変更 <タイムスタンプ> タイムスタンプ以降の変更 (B58)
+
+例
+---------
+
+  # 事実を追加
+  bach shared-mem facts add "api.endpoint" "https://api.example.com"
+  bach shared-mem facts add "server.ip" "192.168.1.1" --agent CLAUDE --confidence 0.9
+
+  # レッスンを共有します
+  bach shared-mem lessons add "Windows: UTF-8 mit PYTHONIOENCODING setzen" --severity high
+
+  # 現在のタスクを設定します (セッション アンカー)
+  bach shared-mem working current-task "Migration von PyMuPDF auf pypdf"
+  bach shared-mem working current-task "BACH Release vorbereiten" --agent GEMINI
+
+  # コンテキスト ブロックを生成します (エージェントの初期化用)
+  bach shared-mem context
+
+  # 昨日以降のクエリの変更
+  bach shared-mem changes 2026-02-27T00:00:00
+
+  # 減衰ロジックを実行します (メモリのクリーンアップ)
+  bach shared-mem consolidation run
+  bach shared-mem consolidation run --dry-run
+
+競合解決 (B56)
+--------------------------
+
+既存のキーを使用して「ファクトを追加」する場合:
+  - 新しい信頼度 >= 既存の信頼度 → エントリが更新されます
+  - 新しい信頼度 < 既存の信頼度 → エントリは変更されません
+
+  例:
+    bach shared-mem facts add "version" "2.5" --confidence 0.9
+    # 信頼度 < 0.9 の場合、既存のエントリを上書きします
+
+DECAY-SYSTEM (B57)
+------------------
+
+`統合実行` が減衰ロジックを実行します。
+  - 各エントリ:weight *=decay_rate (デフォルト: 95% 保持)
+  - 体重がしきい値（デフォルト：0.1）を下回った場合 → アーカイブ
+  - 頻繁にアクセスされるエントリは強化され、アーカイブされる頻度が低くなります
+
+CONTEXT-BLOCK (B55)
+--------------------
+
+`bachshared-mem context` は Markdown ブロックを生成します:
+
+  ## 共有メモリ コンテキスト
+
+  ### 現在のタスク
+  - **クロード**: 移行を実行中 (... 以降)
+
+  ### 主な事実
+  - **api.endpoint** [0.9]: https://api.example.com
+
+  ### アクティブなレッスン
+  - [高] Windows: PYTHONIOENCODING で UTF-8 を設定
+
+エージェントの初期化に使用されます。
+
+CHANGES-FEED (B58)
+-------------------
+
+`bachshared-memchanges<timestamp>` はすべての変更を返します
+指定された ISO タイムスタンプ以降:
+
+  bach shared-mem changes 2026-02-28T10:00:00
+
+エージェントの同期に役立ちます: エージェントは定期的にチェックします
+他のエージェントが事実や教訓を追加したかどうか。
+
+事実を追加するためのオプション
+-----------------------
+
+  --agent <id> エージェント ID (デフォルト: GLOBAL)
+  --namespace <ns> 名前空間 (デフォルト: デフォルト)
+  --visibility <レベル> プライベート|チーム|グローバル (デフォルト: グローバル)
+  --confidence <0.0-1.0> 信頼値 (デフォルト: 0.5)
+
+追加レッスンのオプション
+--------------------------
+
+  --severity info|warn|high|critical 重大度 (デフォルト: 情報)
+  --agent <id> エージェント ID (デフォルト: GLOBAL)
+  --namespace <ns> ネームスペース (デフォルト: デフォルト)
+
+データベース テーブル
+------------------
+
+shared_memory_facts 共有ファクト (キーと値)
+  shared_memory_lessons 共有レッスン
+  shared_memory_sessions 共有セッション履歴
+  shared_memory_working 短期記憶 (is_active、expires_at)
+  shared_memory_consolidation 減衰追跡 (weight、decay_rate、threshold)
+  shared_context_triggers 共有コンテキスト トリガー
+
+通常のメモリとは異なります
+---------------------------------
+
+  通常のメモリ (bach mem、bach --memory):
+    - 1 人のエージェント/パートナーの場合
+    - 記憶作業、記憶事実、記憶レッスン
+
+  共有メモリ (bach 共有メモリ):
+    - 同時に複数のエージェントの場合
+    - 可視性制御 (プライベート/チーム/グローバル)
+    - 信頼による紛争の解決
+    - クリーンアップ用の減衰システム
+
+ファイル
+-------
+  Hub/shared_memory.py ハンドラーの実装
+
+関連項目
+----------
+  bach --help memory        通常のメモリ システム (シングル エージェント)
+  bach --help consolidation Konsolidierungs-Engine
+  bach --help connector     コネクタ システム (マルチパートナー)

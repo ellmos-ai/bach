@@ -1,0 +1,102 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PROFILER
+--------
+
+Handler for file and folder analysis in the BACH system.
+
+
+DESCRIPTION
+------------
+
+The PROFILER Handler offers functions for analyzing and managing files:
+- Search for files with keyword matching
+- Detailed file and folder profiles (size, category, metadata)
+- SHA256 hash calculation
+- Automatic file categorization (8 predefined categories)
+- Folder statistics with size output by file type
+
+
+OPERATIONS
+-----------
+
+search <keyword> [--path=DIR] [--type=ext]
+  Search file system by keyword. Max. 50 hits.
+  Options:
+    --path=DIR search path (default: .)
+    --type=ext Filter file type only (e.g. py, txt, json)
+  Example: profiler search config --path=. --type=json
+
+profile <path>
+  Analyze file or folder. Outputs size, category and metadata.
+  Example: profiler profile data/myfile.txt
+
+hash <path>
+  Calculate SHA256 hash of a file.
+  Example: profiler hash archive.zip
+
+categorize <path>
+  Determine automatic file category based on extension.
+  Example: profiler categorize document.docx
+
+stats <path>
+  Show detailed folder statistics: number of files, total size,
+  Distribution by memory usage category.
+  Example: profiler stats ./projects
+
+status
+  Show ProFiler status and available categories.
+
+
+EXAMPLES
+---------
+
+profiler search requirements --path=. --type=txt
+  -> Finds up to 50 files with "requirements" in the name (.txt only)
+
+profiler profile /home/cfm-cosmology/results
+  -> Folder profile: 1243 files, 15.7 GB, 8 subfolders
+
+profiler hash data/model.pkl
+  -> SHA256: a7f8c3e9d... (File size: 2.3 MB)
+
+profiler categorize config.json
+  -> config.json: Data (.json)
+
+profiler stats ./documents
+  -> Folder statistics with categorization (documents: 234 files 456 MB, etc.)
+
+profiler status
+  -> ProFiler status and category overview
+
+
+CATEGORIES
+----------
+
+8 predefined file categories:
+
+  Documents - .pdf, .doc, .docx, .txt, .odt, .xls, .xlsx, .csv, .pptx
+  Images - .jpg, .jpeg, .png, .gif, .bmp, .svg, .webp, .tiff, .ico
+  Audio - .mp3, .wav, .flac, .ogg, .aac, .wma, .m4a
+  Video - .mp4, .avi, .mkv, .mov, .wmv, .flv, .webm
+  Archives - .zip, .rar, .7z, .tar, .gz, .bz2
+  Code - .py, .js, .ts, .html, .css, .java, .c, .cpp, .rs, .go, .sql
+  Data - .json, .xml, .yaml, .yml, .toml, .ini, .cfg
+  Executable - .exe, .msi, .bat, .cmd, .ps1, .sh
+  Other - All other endings
+
+
+FILES
+-------
+
+hub/profiler.py Handler implementation (hub/)
+extensions/ProFiler/ Extension directory (optional)
+
+
+SEE ALSO
+----------
+
+hub/base.py - BaseHandler class
+docs/help/handler.txt - Handler documentation in general

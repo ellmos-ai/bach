@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MANEJADOR DE NOTICIAS
+------------
+
+DESCRIPCIÓN
+------------
+
+Agrega noticias de canales RSS, páginas web y canales de YouTube. Guarda fuentes
+y artículos en bach.db, admite categorización y seguimiento del estado de lectura.
+Detección automática de tipos (RSS/Web/YouTube) basada en la estructura de la URL.
+
+OPERACIONES
+-----------
+
+add <url> [--type TYPE] [--category CAT] [--name NAME]
+  Agregar nueva fuente.
+  TIPO: rss, web, youtube (detectado automáticamente si no se especifica)
+  CATEGORÍA: Categoría organizacional (predeterminado: “general”)
+  NOMBRE: nombre mostrado (predeterminado: extraído de la URL)
+  URL de YouTube: /canal/UC... se convertirán en fuente RSS
+
+list
+  Ver todas las fuentes registradas con estado.
+  Muestra: ID, nombre, tipo, URL, categoría, estado activo/inactivo,
+         últimas llamadas, recuento de errores
+
+fetch [--ID de fuente]
+  Obtener nuevos artículos.
+  --ID de fuente: solo fuente específica (predeterminado: todo activo)
+  Admite: análisis de RSS (con feedparser), páginas web simples
+
+elementos [--no leídos] [--categoría CAT] [--límite N]
+  Ver artículos de noticias guardados.
+  --unread: Sólo elementos no leídos (predeterminado: todos)
+  --categoría CAT: Filtrar por categoría
+  --limit N: muestra el número máximo (predeterminado: 20)
+  Marcado: * = no leído, espacio = leído
+
+leer <ID|todo>
+  Marcar artículo como leído.
+  ID: ID de artículo específico
+  all: Todos los elementos no leídos
+
+eliminar <ID>
+  Eliminar fuente y todos los artículos relacionados.
+  Eliminación en cascada mediante CLAVE EXTRANJERA
+
+categorías
+  Descripción general de todas las categorías con recuentos de fuente/estado.
+
+estadísticas
+  Estadísticas: fuentes, categorías, artículos, no leídos,
+  últimas 3 recuperaciones con marca de tiempo.
+
+ayuda
+  Mostrar esta ayuda.
+
+EJEMPLOS
+---------
+
+Agregar fuente RSS:
+  bach news add https://example.com/feed.xml --category technik --name "Beispiel Tech"
+
+Suscribirse al canal de YouTube:
+  bach news add https://youtube.com/channel/UCxxxxxx --name "Mein Lieblingskanal"
+
+Monitorear página web:
+  bach news add https://example.com --type web --category news
+
+Recuperar y mostrar noticias:
+  bach news fetch
+  bach news items --unread --limit 10
+
+Examinar categorías:
+  bach news categories
+  bach news items --category technik
+
+Marcar todo no leído como leído:
+  bach news read all
+
+ARCHIVOS
+-------
+
+Base de datos: data/bach.db
+  - news_sources: fuentes con metadatos (ID, nombre, URL, tipo, categoría, estado)
+  - news_items: Artículos con bandera de lectura, fecha de publicación y recuperación
+
+Dependencias:
+  - feedparser: para análisis RSS (opcional, se puede solicitar)
+  - urllib: Para páginas web (stdlib)
+
+VER TAMBIÉN
+----------
+
+hub/base.py BaseHandler para envío de operaciones
+data/bach.db Base de datos SQLite con fuentes y elementos

@@ -1,0 +1,25 @@
+BACH 工具：报告
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/reports.py
+
+描述
+----------------------------------------
+reports.py - 为其他控制例程创建更改报告
+
+从目录更改生成可读的 Markdown 报告。
+保存在：reports/<alias>_changes_<date>.md
+
+用法：
+    python reports.py <别名>
+    python reports.py 技能
+
+使用
+----------------------------------------
+python bach.py 工具运行报告 [args]
+或直接： python tools/reports.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：巴赫工具显示报告

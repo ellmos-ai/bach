@@ -1,0 +1,131 @@
+OCR ツール - Tesseract によるテキスト認識
+---------------------------------------
+
+現在: 2026-01-23
+パス: docs/help/tools/ocr.txt
+
+説明
+------------
+画像および PDF 内のテキスト認識用の OCR エンジン。
+Tesseract を使用し、DokuZentrum Pro から適応されています。
+
+パス: tools/ocr_engine.py
+
+要件
+---------------
+  - Tesseract がインストールされている (tesseract-ocr)
+  - Python パッケージ: pytesseract、Pillow
+  - オプション: PDF サポート用の PyMuPDF (fitz)
+
+  インストール:
+    pip install pytesseract PyMuPDF
+
+USE
+----------
+
+CLI (単純):
+  python ocr_engine.py <pdf_path>
+  python ocr_engine.py B0006 # ドキュメントの短い形式
+
+Python (クラス):
+  tools.ocr_engine から OCREngine、OCRResult をインポート
+
+  エンジン = OCREngine()
+
+  # 空き状況を確認する
+  Engine.is_available の場合:
+      print("Tesseract が利用可能になりました!")
+
+  # 画像を認識する
+  result = Engine.recognize_image("scan.png")
+  print(結果.テキスト)
+
+  # PDFを認識する
+  ページ = Engine.recognize_pdf("document.pdf")
+  ページ内のページの場合:
+      print(f"ページ {page.page_num}: {page.text}")
+
+  # 利用可能な言語
+  langs = Engine.get_available_messages()
+
+メインクラス
+------------
+
+OCREngine:
+  is_available Tesseract は利用可能ですか?
+  get_available_langages() 利用可能な言語をリストする
+  accept_image(path) 画像からテキストを抽出します
+  accept_pdf(path) PDF からのテキスト (画像 PDF も)
+
+OCRResult:
+  成功 成功 (ブール値)
+  テキスト 認識されたテキスト
+  信頼度 信頼値 (0 ～ 100)
+  言語 使用言語
+  error 失敗した場合のエラー テキスト
+
+OCRPageResult:
+  page_num ページ番号
+  テキストページのテキスト
+  自信
+  word_count 単語数
+
+言語
+--------
+標準: "deu+eng" (ドイツ語 + 英語)
+
+その他の言語:
+  Engine.recognize_image("image.png", language="fra")
+  Engine.recognize_pdf("doc.pdf", language="deu")
+
+複数の言語:
+  language="deu+eng+fra"
+
+VOCATION SHORT FORM
+--------------
+バウチャーのスキャンは短い形式で呼び出すことができます:
+
+  python ocr_engine.py B0006
+
+以下を自動的に検索します:
+  - ユーザー/税金/belege/B0006.pdf
+  - user/steuer/belege/B0006.png
+
+税務代理人との統合
+----------------------------
+税務代理人は OCR エンジンを使用して次のことを行います。
+  - 請求金額の抽出
+  - レシートデータを認識
+  - テキスト検索可能な PDF を作成
+
+  bach steuer beleg scan B0006
+
+バグ修正
+--------------
+
+「Tesseract が見つかりません」:
+  - Tesseractをインストールする
+  - PATHにパスを含める
+  - または: OCREngine(tesseract_path="C:/Program Files/...")
+
+"pytesseract がインストールされていません":
+  pip install pytesseract
+
+「PyMuPDF は利用できません」:
+  pip インストール PyMuPDF
+  (PDF サポートにのみ必要)
+
+不正な検出:
+  - 画質の向上 (DPI の向上)
+  - 正しい言語を選択してください
+  - 画像の前処理 (コントラスト、スケール補正)
+
+関連項目
+----------
+  docs/help/steuer.txt OCR を備えた税務担当者
+  ツール/税金/税金ツール
+
+  docs/MAIL_PROFILE_SYSTEM.md 電子メールベースのドキュメント キャプチャ
+
+バージョン: v1.0.0 (2026-01-23)
+行数: ~323 (ocr_engine.py)

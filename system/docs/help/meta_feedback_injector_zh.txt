@@ -1,0 +1,106 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+## 处理程序名称
+
+meta_feedback_injector
+
+## 描述
+
+用于自动检测重复出现的LLM 刻度并注入它们的处理程序
+修正反馈。跟踪发生频率并禁用模式
+在定义的不活动时间 (max_inactive_count) 后自动进行。
+
+通过提示中的反馈块促进一致的行为模式。
+支持数据库持久化或 JSON 回退 (data/meta_feedback_patterns.json)。
+
+## 操作
+
+check_response(response: str) -> list[dict]
+  扫描对活动模式的响应。跟踪命中/未命中。有找到的
+  带有详细信息的模式。
+
+inject_ Corrections(prompt: str) -> str
+  插入 [BACH-META-FEEDBACK] 块，并对提示进行主动更正。
+  仅注入频率 > 0 的模式。
+
+add_pattern(pattern, Correction, pattern_type, max_inactive_count)
+  具有正则表达式或子字符串匹配的新模式。保存到 DB 或 JSON。
+
+remove_pattern(pattern_id: int) -> bool
+  从持久性中删除模式。
+
+reactivate_pattern(pattern_id: int) -> bool
+  重新激活已停用的模式，重置 inactive_count。
+
+_record_hit(pattern: dict)
+  增加频率，将 inactive_count 设置为 0。
+
+_record_miss(pattern: dict)
+  增加 inactive_count。如果 >= max_inactive_count.
+
+_pattern_matches(pattern: dict, text: str) -> bool 则禁用
+  正则表达式/子字符串与文本匹配。
+
+## DEFAULT-PATTERNS
+
+ID 1：英文填充单词（这里，让我，我会）
+  更正：“始终用德语回答。”
+
+ID 2：表情符号检测（Unicode 范围）
+  更正：“请勿在回复中使用表情符号。”
+
+ID 3：夸张的道歉
+  更正：“没有夸张的借口。”
+
+## 示例
+
+使用 DB 初始化：
+  handler = MetaFeedbackInjector(base_path=Path("system"), db=bach.db)
+
+使用 JSON 回退进行初始化：
+  handler = MetaFeedbackInjector(base_path=Path("system"))
+
+检查响应：
+  matches = handler.check_response("这是我的答案...")
+  # 匹配包含模式 ID 1, 2, ... 与当前状态
+
+在重试之前注入反馈：
+  Corrected_prompt = handler.inject_ Corrections(original_prompt)
+
+添加新模式：
+  处理程序.add_pattern(
+    模式=r"(?i)\bactually\b",
+    Correction="避免在德语答案中使用“实际上”。",
+    模式类型=“正则表达式”
+  )
+
+不活动后重新激活模式：
+  handler.reactivate_pattern(pattern_id=1)
+
+## 文件
+
+hub/meta_feedback_injector.py
+  实现（282 行，MIT 许可证）
+
+data/meta_feedback_patterns.json
+  JSON 后备持久性（由 _save_json 创建）
+
+模式字段架构
+  id（整数）
+  模式（str）：正则表达式或子字符串
+  pattern_type (str)：“正则表达式”或“子字符串”
+  Correction (str): 提示的反馈文本
+  频率（int）：点击次数
+  inactive_count (int): 自上次命中以来的未命中次数
+  max_inactive_count (int)：自动停用的阈值（默认值：10）
+  活动（int）：1（活动）或0（非活动）
+  created_at (str): ISO 时间戳
+  Updated_at（str）：ISO时间戳
+
+##另请参见
+
+bach_api              - 中央处理程序注册表和初始化
+meta_feedback         - 相关反馈机制（如果有）
+bach.db（架构）-包含所有列的meta_feedback_patterns表

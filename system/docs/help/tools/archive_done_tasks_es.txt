@@ -1,0 +1,22 @@
+Herramienta BACH: archive_done_tasks
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/archive_done_tasks.py
+
+DESCRIPCIÓN
+----------------------------------------
+archive_done_tasks.py - Mueve las tareas realizadas de task.json a _done.json
+
+Uso:
+    python archive_done_tasks.py # Ejecución en seco (muestra lo que sucedería)
+    python archive_done_tasks.py --apply # Realmente ejecutar
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutar archive_done_tasks [args]
+o directamente: python tools/archive_done_tasks.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde docstring
+- Si tiene alguna pregunta: herramientas de bach muestran archive_done_tasks

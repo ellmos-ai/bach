@@ -1,0 +1,41 @@
+Herramienta BACH: os_generator
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/os_generator.py
+
+DESCRIPCIÓN
+----------------------------------------
+Universal LLM OS Structure Generator v3.0
+
+Crea la estructura base completa para Universal LLM OS v3.0
+basado en la evolución de los hallazgos de los análisis BACH_STREAM.
+
+MEJORAS en comparación con la versión 2.0:
+- Se agregó _backup/ Sistema (basura/, instantáneas/).
+- Secuencia de inicio mejorada con verificación de respaldo
+- Se amplió la documentación del ciclo de vida de la sesión.
+- Micro rutinas con integración de respaldo.
+- Protocolo de apagado optimizado con fase de respaldo
+
+Los tres pilares: MEMORIA + HERRAMIENTAS + COMUNICACIÓN
+
+Autor: BACH_STREAM Generator
+Fecha: 2026-01-13
+Versión: 3.0.0
+
+Uso:
+    python os_generator_v3.py [nombre] [carpeta de destino]
+
+Ejemplos:
+    python os_generator_v3.py mi-os
+    python os_generator_v3.py my-os "C:\Projects"
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan os_generator [args]
+o directamente: python tools/os_generator.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: las herramientas de bach muestran os_generator

@@ -1,0 +1,133 @@
+バッチ監視ツール
+---------------------
+
+システム監視、整合性チェック、およびエラー検出のためのツール。
+
+クイック スタート
+------------
+  bach --maintain registry     # DB/JSON の整合性をチェック
+  bach --maintain skills       # スキルの健全性をチェック
+  bach --status               # システム ステータスを表示
+
+概要監視ツール
+---------------------------
+tools/maintenance/
+§── registry_watcher.py # DB-JSON 整合性チェック
+└── skill_health_monitor.py # スキルの検証
+
+REGISTRY WATCHER
+----------------
+SQLite データベースと JSON 設定の間の一貫性をチェックします。
+
+  python tools/maintenance/registry_watcher.py チェック
+  python tools/maintenance/registry_watcher.py Repair
+
+チェック内容:
+- bach.db にテーブルが存在する
+- JSON 設定ファイルの有効性
+- 参照整合性
+- 孤立したレコード
+
+スキルヘルスモニター
+--------------------
+すべての BACH スキルとエージェントを検証します。
+
+  python tools/maintenance/skill_health_monitor.py チェック
+  python tools/maintenance/skill_health_monitor.py レポート
+
+チェック内容:
+- SKILL.mdの完成度
+- エージェントマニフェスト
+- ディレクトリ構造
+- 孤立したスキル
+
+トークン監視
+----------------
+コスト管理のためにトークンの消費を監視します。
+
+テーブル:monitor_tokens
+- session_id、tokens_used、タイムスタンプ
+- パートナー委任のトークン ゾーン (1 ～ 4)
+
+  bach --memory status         # トークン ゾーンを表示
+  SELECT * FROM モニタートークン; # 生データ
+
+プロセス監視
+------------------
+テーブル:monitor_processes
+- 進行中のプロセス
+・ メンテナンスデーモンの状態
+- バックグラウンド ジョブ
+
+  bach daemon status           # メンテナンス デーモンのチェック
+  bach --status               # 全体的なステータス
+
+成功監視
+------------------
+テーブル:monitor_success
+- ツールの成功率
+- エラー履歴
+- 改善のための学習パターン
+
+ --startup での自動チェック
+---------------------------------
+これらのチェックはセッションの開始時に自動的に実行されます:
+
+1。ディレクトリ スキャン # 前回のセッション以降の変更
+2. パスヒーラー (ドライラン) # パス修正の提案
+3. レジストリ ウォッチャー # DB/JSON の整合性
+4. スキル ヘルス モニター # スキル/エージェントの状態
+
+問題は起動出力の警告として報告されます。
+
+データベース テーブル
+------------------
+bach.db 内の 27 個のテーブル (そのうち監視に関連するテーブル):
+
+  Monitor_tokens # トークン追跡
+  monitor_success # 成功率
+  Monitor_processes # プロセス ステータス
+
+CLI コマンド
+-----------
+  bach --maintain heal        # パス修正 (ドライ ラン)
+  bach --maintain registry    # DB/JSON 整合性
+  bach --maintain skills      # スキルの健全性
+  bach --maintain docs        # ドキュメント チェック
+  bach --status              # 全体的なステータス
+
+ログと評価
+-------------------
+モニタリング データはログに保存されます。
+
+  logs/auto_log_extended.txt # コマンドログ
+  logs/errors/ # エラー ログ
+
+評価:
+  bach --logs tail 20          # 最新の 20 ログ エントリ
+  bach --logs search "error"   # エラーの検索
+
+アラームと警告
+--------------------
+- トークン ゾーン 3/4: 消費量が多い場合の警告
+- スキルエラー: --startup での警告
+- DB の不一致: 修復提案のあるエラー
+
+TIPS
+-----
+- --maintain コマンドを定期的に実行してください
+- 問題が発生した場合: bach --maintain hell --execute
+- トークンの消費に注意する (ゾーン 2-3)
+- エラー ログに問題がないか確認します
+
+関連項目
+----------
+  bach --help maintain         # メンテナンスの概要
+  bach --help startup          # 起動チェック
+  bach --help logs             # ログ システム
+  tools/TOOLS_CONCEPT.md # ツールのコンセプト
+
+---
+バージョン: 1.0.0
+作成日: 2026-01-23
+BACH ツールのドキュメントの一部:

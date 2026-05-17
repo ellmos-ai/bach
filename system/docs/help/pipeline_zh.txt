@@ -1,0 +1,153 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+管道处理程序
+----------------
+
+管道处理程序管理 BACH 中的自动化数据处理管道。
+管道被配置为存储在 pipelines/ 下的 JSON 定义
+并且可以手动执行或按时间控制执行。
+
+
+操作
+-----------
+
+list-available
+  显示所有可用的管道定义（pipelines/ 中的 JSON 文件）。
+  指定 ID、名称、类型、说明和时间表。
+  用法： bach pipeline list-available
+
+list
+  显示数据库中所有已安装的管道。
+  指定安装日期和上次运行时间。
+  用法：bach pipeline list
+
+status <pipeline-id>
+  显示管道的详细状态。
+  包括配置详细信息和最近 5 次运行的统计信息。
+  用法：bach 管道状态 <pipeline-id>
+
+install <pipeline-id>
+  交互式安装管道。
+  查询配置参数（来自 JSON 的 config_questions），
+  将配置保存在 pipeline_configs 表中。
+  如果管道已存在，则提供重新安装。
+  用法： bach pipeline install <pipeline-id>
+
+run <pipeline-id>
+  运行已安装的管道。
+  动态加载entry_point类，实例化并调用method()。
+  使用统计信息（items_processed、errors_count）在 pipeline_runs 中创建条目。
+  需要带有元数据的 Result-Dict（tasks_found/items_processed、errors/errors_count）。
+  用法： bach pipeline run <pipeline-id>
+
+schedule <pipeline-id>
+  为管道启用调度程序作业。
+  将计划字段（每日/每小时/每周/每月）转换为 cron 表达式，
+  创建 is_active=1 的 Scheduler_jobs 条目。
+  标准时间：每日 6:00、每小时、周一 6:00、每月 1 日 6:00。
+  用法： bach 管道调度 <pipeline-id>
+
+unschedule <pipeline-id>
+  禁用调度程序作业（设置 is_active=0）。
+  用法： bach pipeline unschedule <pipeline-id>
+
+
+FILES
+-------
+
+hub/pipeline.py
+  使用 PipelineHandler 类实现处理程序。
+
+pipelines/*.json
+  管道定义。必填字段：
+  - id：唯一ID（例如“ati”）
+  - 名称：显示名称
+  - 版本：版本号
+  - type：管道类型（例如“sync”、“import”）
+  - 描述：描述
+  - 时间表：“每日”、“每小时”、“每周”、“每月”或 cron 字符串
+  - Entry_point：Python模块的路径（相对于system/）
+  - class：模块中的类
+  - method：方法（默认：“运行”）
+  - config_questions：包含问题的数组{key、prompt、type、default}
+
+data/bach.db
+  表格：
+  - pipeline_configs：已安装的管道+用户特定的配置
+  - pipeline_runs：带有统计信息的执行历史记录
+  - Scheduler_jobs：Cron 作业（通过计划操作创建）
+
+
+示例
+---------
+
+管道定义 (pipelines/ati.json)：
+{
+  “id”：“阿蒂”，
+  "name": "文章标题导入者",
+  “版本”：“1.0.0”，
+  “类型”：“导入”，
+  "description": "从来源导入文章标题",
+  “时间表”：“每天”，
+  "entry_point": "agents/ati/importer.py",
+  “类”：“ATIII导入器”，
+  “方法”：“运行”，
+  “配置问题”：[
+    {
+      “关键”：“来源网址”，
+      "prompt": "标题导入的源 URL",
+      “类型”：“文本”，
+      “默认”：“https://example.com/feed”
+    }
+  ]
+}
+
+安装（交互式）：
+$bach管道安装ati
+=== 安装：文章标题导入器 ===
+描述：从来源导入文章标题
+类型：进口
+时间表：每天
+
+配置：
+标题导入的源 URL [https://example.com/feed]
+> https://custom.com/feed
+  -> 已更改：https://custom.com/feed
+
+✓ 配置完成
+安装管道“ati”...
+✓ 安装管道“ati”
+
+
+管道类 (agents/ati/importer.py):
+ATII 类导入器：
+    def __init__(自身，db_path，配置)：
+        self.db_path = db_path
+        self.config = 配置
+        self.items_processed = 0
+        self.errors = []
+
+    def 运行（自我）：
+        # 实施...
+        返回{
+            “items_processed”：self.items_processed，
+            “错误”：自我错误
+        }
+
+
+版本：
+$bach管道运行ati
+=== 管道运行：文章标题导入器 ===
+运行 ID：42
+✓ 管道运行成功
+  项目：15，错误：0
+
+
+另请参见
+----------
+
+scheduler - 自动化作业的调度程序（时间控制执行）
+daemon - 后台进程的守护进程管理
+agents/ - 管道入口点的代理实现

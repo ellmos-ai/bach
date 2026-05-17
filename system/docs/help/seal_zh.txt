@@ -1,0 +1,90 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH SEAL - 完整性检查
+-------------------------------
+
+检查 BACH 内核（所有 CORE 文件）的完整性。
+警告更改，但不锁定（ENT-13、ENT-14）。
+
+
+USE
+----------
+
+  # 显示内核状态
+  bach seal status
+
+  # 全面完整性检查
+  bach seal check
+
+  # 重新计算内核哈希
+  bach seal repair
+
+
+KERNEL-SCOPE
+------------
+
+dist_type=2 (CORE) = ~510 个文件的所有文件：
+  - 工具/（322 个文件）
+  - 集线器/（95 个文件）
+  - 技能/（89个文件）
+  - 根（4 个文件：bach.py、setup.py 等）
+
+
+海豹哲学
+------------------
+
+警告，无锁 (ENT-13)：
+  - 用户可以完全控制他的 BACH
+  - 封印只是警告，但并不能阻止任何事情
+  - 无 DRM，无锁定
+  - 用户决定更改是否可以
+
+
+自动检查
+--------------------
+
+对于 --startup:
+  - 样本检查（5 个核心文件，第 0.75 节）
+  - 没有完整的测试（性能）
+  - 关于所有 CORE 文件的更改
+
+
+KERNEL-HASH
+-----------
+
+SHA256 的警告：
+  - 自动计算
+  - 存储在system_state表中
+  - 与 dist_type 系统一致
+
+
+示例
+---------
+
+  # 查看当前封印状态
+  bach seal status
+
+  # 全面完整性检查
+  bach seal check
+
+  # 重新计算内核哈希（故意更改后）
+  bach seal repair
+
+
+重要
+-------
+
+- 检测到对 CORE 文件的更改
+- 用户可以接受更改（密封修复）
+- 没有自动回滚
+- 建议在核心更改之前进行备份
+
+
+另请参阅
+----------
+
+  bach --help restore       模板恢复
+  bach --help upgrade       更新系统
+  bach --help downgrade     重置版本

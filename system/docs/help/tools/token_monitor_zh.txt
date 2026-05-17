@@ -1,0 +1,46 @@
+BACH 工具：token_monitor
+--------------------------------------------------
+生成：2026-01-23 10:36
+更新：2026-02-05（帮助取证）
+来源：tools/token_monitor.py
+
+描述
+----------------------------------------
+BACH 令牌监视器
+------------------
+用于令牌感知委托的函数 get_token_zone()。
+
+区域定义（来自 DELEG_002）：
+- 区域 1：0-70% - 所有合作伙伴均可用
+- 2 区：70-85% - 中等经济
+- 区域 3：85-95% - 仅限本地合作伙伴 (Ollama)
+- 区域 4：95-100% - 紧急授权
+
+版本：1.0.0
+创建时间：2026-01-23
+任务：DELEG_001
+
+USE
+----------------------------------------
+主命令（推荐）：
+  bach --tokens status         - 显示代币统计信息和当前区域
+
+快捷方式：
+  python tools/token_monitor.py [args]
+
+注意：命令“bach tools run token_monitor”当前不可用
+在工具注册表中注册。请改用“bach --tokens status”。
+
+可用函数
+----------------------------------------
+get_token_zone() - 区域发现的主要函数
+get_current_budget_percent() - 从数据库获取当前预算
+log_token_check() - 将令牌检查记录到数据库中
+log_ollama_usage() - 专门用于 Ollama 代币
+check_emergency_shutdown() - 检查是否达到临界消耗 (95%+)
+format_zone_status() - 格式化 CLI 输出
+
+注释
+----------------------------------------
+- 对于问题： bach 工具 show token_monitor
+- 数据库表：monitor_tokens（17列）

@@ -1,0 +1,165 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SHUTDOWN - End session
+--------------------------
+
+DESCRIPTION
+The shutdown protocol ends a BACH session and saves it
+Session report and updates the directory state.
+
+COMMANDS
+-------
+bach --shutdown              Complete shutdown (default)
+bach --shutdown "Summary"    With session summary
+bach --shutdown quick        Fast without dir scan
+bach --shutdown emergency    Emergency - save state only
+bach --shutdown --partner=NAME  Partner-specific shutdown (v1.1.71)
+
+SHUTDOWN TYPES
+--------------
+COMPLETE (default):
+- Update directory scan
+- Auto snapshot when >= 3 changes
+- Save session to DB
+- Count task statistics
+
+QUICK:
+- No dir scan update
+- Saves short note
+- For breaks if the session continues soon
+
+EMERGENCY:
+- Only save emergency notes (priority 10)
+- Use in case of cancellation/timeout
+- Minimum backup of the state
+
+FULL PROCESS (v1.1.17)
+-------------------------
+1. [DIRECTORY SCAN]
+   - Update TARGET status
+   - Document changes
+
+2. [AUTO-SNAPSHOT] ***NEW v1.1.17***
+   - If >= 3 changes: Automatic snapshot
+   - Name: auto_YYYYMMDD_HHMMSS
+   - Continue: bach snapshot load
+
+3. [SAVE SESSION]
+   - Complete session in memory_sessions
+   - Summary is saved
+   - Auto memory fallback (v1.1.15):
+     If no summary is given -> generate from Autolog
+
+4. [MEMORY STATUS]
+   - Shows Working/Facts/Sessions Counter
+
+5. [TASK STATISTICS] *** v1.1.14 ***
+   - Counts created/completed tasks
+   - Stores in memory_sessions
+
+OUTPUT EXAMPLE
+---------------
+-------------------------------------------------------
+          COMPLETE SHUTDOWN
+-------------------------------------------------------
+ Time: 2026-01-22 13:15
+-------------------------------------------------------
+
+[DIRECTORY SCAN]
+ TARGET state updated (5 changes)
+
+[AUTO-SNAPSHOT]
+ [OK] Auto snapshot created (5 changes)
+
+[SAVE SESSION]
+ [OK] Session session_20260122_1300 completed
+
+[MEMORY STATUS]
+ Working: 3 | Facts: 5 | Sessions: 12
+
+[TASK STATISTICS]
+ +2 created, 1 done (this session)
+
+-------------------------------------------------------
+ Session ENDED
+-------------------------------------------------------
+
+SAVE SESSION REPORT
+-------------------------
+Save the session report BEFORE shutdown:
+
+  bach --memory session "THEMA: Was gemacht. NAECHSTE: Was kommt."
+
+Or specify summary directly during shutdown:
+
+  bach --shutdown "Help-Dateien aktualisiert. NEXT: memory.txt pruefen"
+
+IMPORTANT: Session reports belong in memory_sessions (DB),
+         NOT in memory/archive/*.md files!
+
+AUTO-MEMORY FALLBACK (v1.1.15)
+------------------------------
+If Claude doesn't specify a summary, one will be automatically created
+generated from the autolog. Format:
+
+  [AUTO-FALLBACK] Commands: 15 (8 unique) || task list, memory read, ...
+
+This is a safety net - manual summary is better!
+
+WHEN WHICH SHUTDOWN
+---------------------
+| Situation | command | reason |
+|-----------|--------|-------|
+| Task completed | --shutdown | Complete documentation |
+| Short break | --shutdown quick | Quickly, move on soon |
+| Timeout/Abort | --shutdown emergency | Minimum backup
+
+|DATA SOURCES
+-------------
+- memory_sessions: session reports, tasks counters
+- memory_working: Emergency notes
+- session_snapshots: Auto snapshots
+
+HANDLER
+-------
+hub/shutdown.py Shutdown handler (DB-based)
+
+PARTNER SHUTDOWN (v1.1.71)
+--------------------------
+For partner sessions, the partner is automatically clocked out:
+
+  bach --shutdown --partner=claude   Claude clock out
+  bach --shutdown --partner=gemini   Gemini clock out
+
+The stamp card (partner_presence table) is updated:
+  - status: online -> offline
+  - clocked_out: timestamp set
+
+Without --partner, "user" is assumed as a partner.
+
+PROSYNC (at exit)
+------------------
+If ProSync is activated (bach setup prosync --multi-system), is
+At the end of the session a DB backup is written to the transit hub:
+  - Push: Export local DB as .bachdb backup
+  - Target: OneDrive/.SYNC/bach_db_transit/
+ProSync runs via atexit hook in bach.py, not in the shutdown handler.
+Details: bach --help db_sync
+
+VERSION HISTORY
+----------------
+v1.1.0 Basic shutdown with dir scan
+v1.1.14 + task statistics
+v1.1.15 + Auto-Memory Fallback from Autolog
+v1.1.17 + Auto snapshot when >= 3 changes
+v1.1.71 + Partner Clock-Out (stamp card)
+
+SEE ALSO
+----------
+bach --help startup        Start session
+bach --help memory         Memory system (session, facts)
+bach --help snapshot       Manage snapshots
+bach --help tasks          Task management
+bach --help db_sync        ProSync: Multi-system DB synchronization

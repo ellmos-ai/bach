@@ -1,0 +1,19 @@
+BACH ツール: merge_ati_tasks
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/merge_ati_tasks.py
+
+説明
+----------------------------------------
+タスク 82 フェーズ 2: scanned_tasks (bach.db) → ati_tasks (bach.db) の移行
+作成日: 2026-01-19
+
+使用
+----------------------------------------
+python bach.py ツールは mitigate_ati_tasks [args] を実行します。
+または直接: python tools/merge_ati_tasks.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- ご不明な点がございましたら: bach ツールで mitigrate_ati_tasks を表示

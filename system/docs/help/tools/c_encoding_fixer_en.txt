@@ -1,0 +1,33 @@
+BACH Tool: c_encoding_fixer
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/c_encoding_fixer.py
+
+DESCRIPTION
+----------------------------------------
+c_encoding_fixer.py - Fix encoding problems in text files
+
+Purpose: Corrects encoding errors (Mojibake, incorrect UTF-8 decoding, etc.)
+       with the ftfy library. Automatically creates backups.
+
+Author: Claude (adapted from EncodingFixxer.py)
+Dependencies: ftfy (pip install ftfy), os, json (stdlib)
+
+Usage:
+    python c_encoding_fixer.py <file_or_folder> [--no-backup] [--recursive] [--json]
+
+Examples:
+    python c_encoding_fixer.py script.py # Single file
+    python c_encoding_fixer.py ./src --recursive # Entire folder
+    python c_encoding_fixer.py file.py --no-backup # Without backup
+    python c_encoding_fixer.py file.py --json # JSON output
+
+USE
+----------------------------------------
+python bach.py tools run c_encoding_fixer [args]
+or directly: python tools/c_encoding_fixer.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show c_encoding_fixer

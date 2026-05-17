@@ -1,0 +1,29 @@
+BACH ツール: パートナー通信
+---------------------------------
+
+AI パートナー通信および対話プロトコル。
+
+利用可能なツール
+-----------------
+
+  ai_compatibility AI 互換メッセージのフォーマット
+  コミュニケーション パートナーとのメッセージの送受信
+  gemini_start Gemini セッションを初期化します
+  interaction_protocol インタラクションプロトコルの管理
+  real_tools 実際のツール呼び出しをパートナーに転送
+
+対話
+-------------
+
+BACH は、以下の間のマルチエージェント通信をサポートします。
+  - クロード (claude-code / claude-desktop)
+  - ジェミニ (反重力)
+  - GPT (コーデックス)
+
+メッセージは CLAUDE.md / GEMINI.md / GPT.md を介して交換されます。
+OneDrive/.SYNC/ (ラップトップ <-> ワークステーション) 経由で同期します。
+
+MODULE
+-----
+
+  tools/partner_communication/ (5 モジュール)

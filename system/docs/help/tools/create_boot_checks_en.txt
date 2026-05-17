@@ -1,0 +1,19 @@
+BACH Tool: create_boot_checks
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/create_boot_checks.py
+
+DESCRIPTION
+----------------------------------------
+boot_checks Create table - CRITICAL for pre-prompt checks
+Created: 2026-01-21 (BACH Session)
+
+USE
+----------------------------------------
+python bach.py tools run create_boot_checks [args]
+or directly: python tools/create_boot_checks.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show create_boot_checks

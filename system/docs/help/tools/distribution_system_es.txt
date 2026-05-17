@@ -1,0 +1,29 @@
+Herramienta BACH: sistema_distribución
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/distribution_system.py
+
+DESCRIPCIÓN
+----------------------------------------
+RecludOS Distribution & Identity System v1.1.0
+
+Administrado:
+- Clasificación de niveles (Kernel, Core, Extension, UserData)
+- Sistema de sellado (control de integridad)
+- Modos (Desarrollador, Usuario, Aprender)
+- Versionado con sufijos de origen.
+- Creación y exportación de versiones.
+- Instantáneas y recuperación de un momento dado
+- Detección de instancias múltiples
+
+Fecha: 2026-01-01
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan Distribution_system [args]
+o directamente: python tools/distribution_system.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: las herramientas de bach muestran el sistema_distribución

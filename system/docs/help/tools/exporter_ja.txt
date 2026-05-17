@@ -1,0 +1,45 @@
+BACH ツール: エクスポーター
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/exporter.py
+
+説明
+----------------------------------------
+exporter.py
+-----------
+スキル、エージェント、OS のエクスポート ツール。
+
+バージョン: 1.0.0
+作成日: 2026-01-14
+
+コンセプト:
+  OS では、スキル/エージェントは軽量です (OS インフラストラクチャを使用します)。
+  外部で使用する場合は、独自のインフラストラクチャで「パッケージ化」する必要があります。
+
+コマンド:
+  skill スキルを OS からスタンドアロンとしてエクスポートします
+  エージェント スキルを備えたエージェントをエクスポートします
+  os-fresh 新しい OS パッケージを作成します (ユーザー データなし)
+  os-reset OS をリセットします (ユーザー データを削除します)
+
+使用法:
+    python exporter.py スキル <名前> --from-os <os パス> [--output <zip>]
+    python exporter.py エージェント <名前> --from-os <os パス> [--output <zip>]
+    python exporter.py os-fresh <os-path> [--output <zip>] [--version <v>]
+    python exporter.py os-reset <os-path> [--backup] [--confirm]
+
+例:
+    pythonexporter.pyスキルリサーチ --from-os ./my-os
+    python exporter.py エージェント書き込みアシスタント --from-os ./my-os
+    pythonexporter.py os-fresh ./my-os --output os-v1.0.zip
+    python exporter.py os-reset ./my-os --backup
+
+USE
+----------------------------------------
+python bach.py ツール エクスポーターを実行 [args]
+または直接: python tools/exporter.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- ご質問がある場合: bach tools showexporter

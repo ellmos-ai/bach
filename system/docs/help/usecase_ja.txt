@@ -1,0 +1,154 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ユースケース - ワークフロー テスト ケースと TUeV システム
+-----------------------------------------------
+
+説明
+------------
+ユースケースは BACH-TUeV システムの一部であり、次の役割を果たします。
+  1. 機能テスト ワークフローが機能しているかどうかを検証します。
+  2. 品質保証 すべてのコンポーネントは連携して動作しますか?
+  3. 要件 何が実装され、何がまだ不足していますか?
+
+ユースケースは SQLite DB に保存されます (テーブル: ユースケース)
+ワークフロー (workflow_tuev テーブル) にリンクされています。
+`workflow_path` はオプションです。古いまたはより粗いテスト ケースは、
+エリア/カテゴリ名が付いています。とにかく「bach usecase run」を実行する必要があります
+手動データ モードでテスト ケースを実行し、表示します。
+
+ハンドラー: system/hub/tuev.py (tuevHandler + UsecaseHandler)
+
+ユースケース形式
+--------------
+
+  USECASE_NNN: 短いタイトル
+
+  前提条件: 何が存在する必要がありますか?
+  入力: ユーザーは何を入力しますか?どのようなデータが利用可能ですか?
+  期待: 結果はどうなるでしょうか?
+  チェック: どのコンポーネントがテストされていますか?
+
+現在のユースケース
+-----------------
+ユースケースは現在 DB (ユースケース テーブル) にあります。
+広告の内容: bach ユースケース リスト
+
+過去のユースケース ID (古いタスク システムから):
+  USECASE_001 エージェントを再開します
+  USCASE_002 オフィス レンズ スキャナー
+  USCASE_003 ドキュメント検索
+  USCASE_004 医師が甲状腺の異常を報告
+  USCASE_005 家庭の日課
+  USECASE_006 保険に関するアドバイス
+
+DB で現在のユースケースを表示:
+  bach usecase list
+  bach db query "SELECT id, title, workflow_name, test_result FROM usecases"
+
+USECASE AS A TEST
+----------------
+  ユースケースでは完全なパンクチャをテストします:
+
+  ユーザー入力 -> エージェント/スキル -> ツール -> DB -> 結果
+
+  これにより、以下が自動的に検証されます。
+  - CLI コマンドは機能しますか?
+  - DB スキーマは正しいですか?
+  - ツールは利用可能でアクセス可能ですか?
+  - ヘルプ ファイルは最新ですか?
+  - インジェクターはキーワードでトリガーしますか?
+  - 結果は使用可能で正しいですか?
+
+要件としてのユースケース
+------------------------
+  失敗したユースケースではギャップが明らかになります。
+  - 不足しているツール -> ツール作成のタスク
+  - CLI コマンドが欠落しています -> CLI ハンドラーのタスク
+  - DBテーブルが欠落している -> スキーマ拡張のタスク
+  - ワークフローが欠落しています -> ワークフロー作成のタスク
+
+  新しいユースケースのアイデアはいつでも歓迎します:
+    bach task add "USECASE_NNN Kurztitel: Beschreibung" --prio P3
+
+開発サイクルへのフィードバック
+-----------------------------------------
+
+  フェーズ 8 (ユースケース)
+       │
+       §── 失敗した？ -> フェーズ 1 の新しいタスク
+       §── 成功？    -> 機能が検証されました
+       └── 新しいアイデア？      -> 新しいユースケース タスク
+
+  ユースケースは開発サイクルのフェーズ 8 です (bach --help dev を参照)
+
+CLI コマンド
+-----------
+
+ユースケース管理:
+  bach usecase list [workflow]       すべてのテスト ケース (オプションでフィルタリング)
+  bach usecase add <workflow>        追加に関する注意事項 (SQL テンプレート)
+  bach usecase show <id>             テスト ケースの詳細を表示
+  bach usecase run <id>              単一のテスト ケースを実行
+  bach usecase run-all <workflow>    ワークフローのすべてのテスト
+
+TUeV ADMINISTRATION:
+  bach tuev status                   すべてのテスト ケースの TUeV ステータスワークフロー
+  bach tuev check <workflow>         個々のワークフローをチェック
+  bach tuev run                      すべての期限のチェック
+  bach tuev renew <workflow>         チェック後に TUeV を更新
+  bach tuev init                     スキル/ワークフローからワークフローを登録/
+
+CREATE USECASE
+-----------------
+ユースケースは DB に直接挿入されます:
+
+  bach db query "INSERT INTO usecases (title, description, workflow_name, test_input, expected_output, created_by) VALUES ('Testfall-Titel', 'Beschreibung', 'workflow-name', '{}', '{}', 'user')"
+
+または GUI 経由: /usecases (GUI サーバーが実行されている場合)
+
+コンポーネント カバレッジ
+---------------------
+  優れた使用例はさまざまな分野をカバーします:
+
+  ユースケース領域の例
+  ----------------------------------------------------
+  OCR とドキュメント USECASE_004 (医師のレポート)
+  USECASE_003 を検索 (ドキュメント検索)
+  世代USECASE_001 (CV)
+  家庭用USECASE_005 (ルーチン)
+  財務 USCASE_006 (保険)
+  スキャナ USECASE_002 (オフィス レンズ)
+
+  まだカバーされていない (アイデア):
+  - 税務ワークフロー (エンドツーエンド: 受領 -> 輸出)
+  - パートナーの委任 (クロード -> ジェミニ -> 結果)
+  - バックアップと復元 (バックアップ -> 復元)
+  - マルチ LLM 調整
+
+データベース構造
+------------------
+  表: ユースケース
+    - ID、タイトル、説明
+    - ワークフロー名、ワークフローパス
+    - test_input (JSON)、expected_output (JSON)
+    - last_tested、test_result、test_score
+    - 作成者、作成者、更新者
+
+  テーブル: workflow_tuev
+    - ワークフロー名、ワークフローパス
+    - tuev_status、last_tuev_date、tuev_valid_until
+    - avg_score、test_count、pass_count
+
+関連項目
+----------
+  bach tuev status                          TUeV ダッシュボード
+  bach --help dev                           開発サイクル (8 フェーズ)
+  bach --help test                          技術テスト手順 (B/O/E)
+  system/skills/workflows/dev-cycle.md 詳細な開発ワークフロー
+  system/hub/tuev.py ハンドラーの実装
+  system/db/schema.sql DB スキーマ (ユースケース + workflow_tuev)
+
+---
+バージョン: 1.1.0 |作成日: 2026-01-28 |更新日: 2026-02-08

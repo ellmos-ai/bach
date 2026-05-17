@@ -1,0 +1,193 @@
+PARTNER COMMUNICATION TOOLS - Partner detection and message routing
+-------------------------------------------------------------------
+
+As of: 2026-01-23
+Path: docs/help/tools/partner.txt
+
+DESCRIPTION
+------------
+These tools enable communication between BACH and
+external partners (Ollama, Gemini, etc.), system analysis and
+Automatic routing of tasks.
+
+Path: tools/partner_communication/
+
+OVERVIEW
+----------
+
+  Tool lines function
+  ──────────────────────────── ─────────────────────────────
+  communication.py 678 partner recognition, health checks
+  system_explorer.py 458 OS software discovery
+  interaction_protocol.py 1225 Instance handshake, DNA tracking
+  ai_compatible.py 200 Filter AI compatible software
+  real_tools.py 198 Identify Real CLI Tools
+
+  TOTAL: 5 tools, ~2,759 Rows
+
+────────────────────────────── ─────────────────────────────────
+
+TOOL 1: communication.py
+------------------------
+Central tool for partner detection and message routing.
+
+FUNCTIONS:
+  - Automatic partner recognition (Claude, Ollama, Gemini, etc.)
+  - Health checks for partner availability
+  - Token-aware message routing
+  - Partner status queries
+
+USE (Python):
+  from tools.partner_communication.communication import (
+      detect_partners,
+      check_health,
+      route_message
+  )
+
+  # Recognize partners
+  partners = detect_partners()
+
+  # Check health
+  status = check_health("ollama")
+
+  # Route message
+  route_message("Research task", target="gemini")
+
+CLI (planned):
+  bach partner detect "Task-Beschreibung"
+  bach partner health
+  bach partner route --to gemini --message "..."
+
+──────────────────────────── ───────────────────────────────────
+
+TOOL 2: system_explorer.py
+--------------------------
+Scans the operating system for installed software.
+
+FUNCTIONS:
+  - Scan Windows Registry
+  - Identify AI compatible software
+  - Catalog tool capabilities
+  - Create software inventory
+
+USE (Python):
+  from tools.partner_communication.system_explorer import (
+      scan_system,
+      get_ai_tools,
+      list_capabilities
+  )
+
+  # Scan system
+  software = scan_system()
+
+  # AI tools only
+  ai_tools = get_ai_tools()
+
+CLI (planned):
+  bach partner scan
+  bach partner scan --ai-only
+
+──────────────────────────── ───────────────────────────────────
+
+TOOL 3: interaction_protocol.py
+-------------------------------
+Handshake and protocols between BACH instances.
+
+FUNCTIONS:
+  - Instance-to-instance handshake
+  - DNA tracking (instance identity)
+  - 5 interaction protocols:
+    * Handshake - Mutual recognition
+    * Compare - compare skills
+    * Request - import requests
+    * Transfer - data transfer
+    * Receipt - confirmation of receipt
+
+USE (Python):
+  from tools.partner_communication.interaction_protocol import (
+      initiate_handshake,
+      execute_protocol
+  )
+
+  # Start handshake
+  result = initiate_handshake("gemini")
+
+  # Execute protocol
+  execute_protocol("transfer", target="ollama", data=payload)
+
+─────────────────────────── ────────────────────────────────────
+
+TOOL 4: ai_compatible.py
+------------------------
+Filters AI compatible software from the system scan.
+
+FUNCTIONS:
+  - Search registry for AI tools
+  - Identify LLM clients (Ollama, LM Studio, etc.)
+  - Detect API endpoints
+  - Extract Capabilities
+
+USE (Python):
+  from tools.partner_communication.ai_compatible import (
+      scan_ai_software,
+      get_llm_clients
+  )
+
+  ai_tools = scan_ai_software()
+  llms = get_llm_clients()
+
+───────────────────────── ────────────────────── ────────────────
+
+TOOL 5: real_tools.py
+---------------------
+Identifies real CLI tools for delegation.
+
+FUNCTIONS:
+  - Find EXE/CMD/BAT tools
+  - Catalog Python scripts
+  - Analyze tool arguments
+  - Determine delegation candidates
+
+USE (Python):
+  from tools.partner_communication.real_tools import (
+      find_cli_tools,
+      analyze_tool
+  )
+
+  tools = find_cli_tools()
+  info = analyze_tool("git")
+
+─────────────────────────────────── ────────────────────────────
+
+Database integration
+---------------------
+The Tools use the following BACH tables:
+
+  connections partner endpoints and URLs
+  partner_recognition capabilities, zones, status
+  delegation_rules Token-based routing rules
+  comm_messages message log
+
+PARTNER-WORKSPACE
+-----------------
+  partners/
+  ├── _TASKS.md # Central task assignment
+  ├── claude/
+  │ ├── inbox/ # Incoming orders
+  │ ├── outbox/ # reports
+  │ └── workspace/ # work files
+  ├── gemini/
+  └── ollama/
+
+SEE ALSO
+----------
+docs/help/partner.txt Partner system CLI commands
+  docs/help/partners.txt Partner network overview
+  docs/help/delegate.txt Delegation details
+  docs/help/communicate.txt Communication protocols
+
+  skills/_services/communicate.md Skill definition
+  tools/partner_communication/README.md Developer documentation
+
+VERSION: v1.0.0 (2026-01-23)
+Source: tools/partner_communication/README.md

@@ -1,0 +1,205 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+権限ハンドラー - クロード コード権限プロファイル
+-----------------------------------------------------
+
+ハンドラー名
+------------
+権限
+
+説明
+------------
+権限ハンドラーは、クロード コードの権限プロファイルを管理します。
+BACH データベース (system_config テーブル、カテゴリ: claude_permissions)。
+
+2 つの事前構成されたプロファイル:
+  - 通常: 標準の権限 (重要なツールを要求)
+  - Remote_control: モバイル アプリで使用するために事前にアクティブ化されたすべてのツール
+
+プロファイルは DB に保存され、アクティブ化されるとファイルに保存されます
+~/.claude/settings.json が書き込まれます。非アクティブ化すると、以前の
+状態は自動的に復元されました (バックアップ メカニズム)。
+
+背景
+-----------
+クロード コード リモート コントロール (モバイル アプリ) は --dangerously-skip-permissions を無視します。
+既知のバグ (GitHub Issue #29214) が原因です。の許可ルール
+ただし、settings.json は Remote Control によっても尊重されます。したがって、
+権限は BACH-DB 内のプロファイルを介して管理され、必要に応じて
+settings.json が書き込まれています。
+
+OPERATIONS
+-----------
+
+LIST
+----
+bach permissions list
+
+保存されているすべてのプロファイルを許可/拒否ルールの数とともに表示します。
+現在アクティブなプロファイルに [ACTIVE] のマークを付けます。
+
+SHOW
+----
+bach permissions show <profil>
+
+プロファイルの詳細ビュー: 説明、すべての許可ルールと拒否ルール。
+
+SET
+---
+bach permissions set <profil> allow=<Tool> [allow=<Tool2>] [deny=<Tool3>]
+
+ルールをプロファイルに追加します。
+-allow=ツール: 確認なしでツールを許可します
+-deny=ツール: ツールを拒否します。
+- ワイルドカードが使用可能: mcp__bach-*__* (すべての BACH MCP ツール)
+- アクティブなプロファイルへの変更は、settings.json
+
+REMOVE
+------
+bach permissions remove <profil> allow=<Tool> [deny=<Tool2>]
+
+プロファイルからルールを削除します。
+アクティブなプロファイルへの変更は、settings.json にすぐに反映されます。
+
+アクティブ化
+--------
+bach permissions activate <profil>
+
+プロファイルをアクティブ化します:
+1.現在の権限を settings.json から DB にバックアップします。
+2. settings.json にプロファイル ルールを記述する
+3. DB にアクティブなプロファイルを記憶します
+
+他の設定 (フック、モデル、言語など) は変更されません。
+
+DEACTIVATE
+----------
+bach permissions deactivate
+
+通常のプロファイルに戻ります:
+1. DBからバックアップを復元する
+2. settings.json を更新する
+3. アクティブなプロファイルを「通常」に設定します
+
+SYNC
+----
+bach permissions sync
+
+settings.json からアクティブな DB プロファイルに現在の許可/拒否ルールを設定します
+輸入する。 settings.json でルールが手動で変更されている場合に役立ちます。
+
+RESET
+-----
+bach permissions reset <profil>
+
+プロファイルを事前定義されたデフォルトにリセットします。
+利用可能なデフォルト:normal、remote_control。
+アクティブなプロファイルへの変更は、すぐに settings.json に反映されます。
+
+ステータス
+------
+bach permissions status
+
+表示:
+- アクティブなプロファイルと settings.json へのパス
+- settings.json に存在する許可/拒否ルールの数
+- DB内の許可/拒否ルールの数
+- DBとsettings.jsonが同期しているかどうか
+- バックアップが利用可能かどうか
+
+INIT
+----
+bach permissions init
+
+DB にデフォルトのプロファイル (normal、remote_control) を作成します。
+べき等: 既存のプロファイルをスキップします。
+リモート コントロールを初めて起動するときに自動的に実行されます。
+
+例
+---------
+
+デフォルトのプロファイルを作成します。
+$ bach 権限 init
+
+すべてのプロファイルを表示:
+$ bach 権限リスト
+
+リモート コントロール プロファイルの詳細:
+$ bach 権限 showremote_control
+
+リモート コントロール プロファイルに新しいツールを追加します。
+$ bach 権限 setremote_controlallow=mcp__slack__*
+
+プロファイルからツールを削除します:
+$ bach 権限削除remote_controlallow=mcp__slack__*
+
+リモート コントロール プロファイルをアクティブ化します (モバイル セッション前):
+$ bach 権限は、remote_control をアクティブ化します
+
+通常のプロファイルに戻ります:
+$ bach 権限を無効にする
+
+現在のステータスを確認します:
+$ bach 権限ステータス
+
+手動で変更した settings.json を DB に適用します。
+$ bach 権限同期
+
+プロファイルをデフォルトにリセット:
+$ bach 権限リセット remote_control
+
+リモート コントロール ワークフロー
+-----------------------
+
+自動的に (推奨):
+  1. デスクトップ: Claude_RemoteControl.bat をダブルクリックします。
+  2. BACH メニュー: ブート メニューで [P] キーを押します。
+  -> スクリプトでプロファイルをアクティブ化し、クロードを起動し、プロファイルを復元します
+
+手動:
+  1. Bach 権限により、remote_control がアクティブ化されます。
+  2. クロード --dangerously-skip-permissions
+  3. /rc と入力し、QR コードをスキャンします
+  4. 完了後: bach 権限が非アクティブ化
+
+プロファイル アーキテクチャ
+------------------
+
++--------------------------------+
+  |     BACH DB (system_config) |
+  |  カテゴリ: クロード権限 |
+  |                                 |
+  |  通常: {許可、拒否} |
+  |  リモートコントロール: {許可、拒否} |
+  |  アクティブプロファイル: "通常" |
+  |  バックアップ: {許可、拒否} |
+  +--------------------------------+
+            |  有効化/無効化
+            v
+  +--------------------------------+
+  |   ~/.claude/settings.json |
+  |   許可/拒否 |
+  |   (フック、モデル等は残ります) |
+  +--------------------------------+
+            |
+            v
+  +--------------------------------+
+  |   クロード コード (ローカル + リモート) |
+  +---------------------------------+
+
+FILES
+-------
+hub/claude_permissions.py ハンドラーの実装
+start/_internal/claude_remote_control.py 自動ランチャー
+start/_internal/claude_remote_control.bat スターター用ラッパー
+start/bach.bat ブート メニュー (メニュー項目 [P])
+~/.claude/settings.json クロードコードの設定(対象ファイル)
+bach.db (system_config) DB 内のプロファイル ストレージ
+
+関連項目
+----------
+settings.txt 設定ハンドラー (system_config テーブル)
+claude-code.txt クロード コード クイック リファレンス
+claude-code-automatization.txt クロード コードの自動化

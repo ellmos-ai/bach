@@ -1,0 +1,108 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WATCHER - Mistral Always-On Daemon
+------------------------------------
+
+DESCRIPTION
+------------
+The Watcher daemon makes BACH "always-on" - inspired by OpenClaw/molt.bot.
+Mistral (locally via Ollama, free) runs permanently in the background and
+classifies incoming events. If necessary, he starts Claude Code Sessions.
+
+ARCHITECTURE
+-----------
+                    Watcher Daemon (always on)
+                    |
+    +---------------+---------------+
+    |               |               |
+  Connector FileSystem TaskQueue
+  (Telegram, (Inbox, (New/Urgent
+   Discord) Downloads) BACH Tasks)
+    |               |               |
+    +-------+-------+-------+------+
+            |
+            v
+     Mistral Classifier
+     (OllamaClient -> Mistral:latest)
+            |
+  +---------+---------+----------+
+  |         |         |          |
+RESPOND ESCALATE LOG_ONLY IGNORE
+DIRECT CLAUDE
+  |         |         |
+  v v v
+Reply Claude Event
+via session log
+Start Connector
+
+COMMANDS
+-------
+  bach watcher start              Start daemon in the background
+  bach watcher stop               Stop daemon
+  bach watcher status             Status, events, statistics
+  bach watcher classify "text"    Classify text manually (test)
+  bach watcher logs [N]           Last N log lines
+  bach watcher events [N]         Last N classified events
+
+CLASSIFICATION
+--------------
+Mistral classifies each event into one of 4 actions:
+
+  Action Description Example
+  --------------- ----------------------------------- ------------------------
+  RESPOND_DIRECT Mistral answers itself "How are you?" -> "Good!"
+  ESCALATE_CLAUDE Starting Claude session "Refactor the handler"
+  LOG_ONLY Log only, no action "Backup completed"
+  IGNORE Discard spam, advertising
+
+EVENT SOURCES
+-------------
+  connector_messages Telegram/Discord messages (via connector system)
+  filesystem New files in monitored folders
+  task_queue New/urgent BACH tasks (P1/P2)
+  scheduled Schedule-based Events (Cron)
+
+SAFETY GUARDS
+------------------
+- Cooldown: Min. 5 minutes between Claude escalations
+- Daily limit: Max 20 escalations per day
+- Claude check: No escalation if Claude is already online
+- Screen Lock: No escalation when the screen is locked
+- Quiet Hours: Configurable (default: 23:00-07:00)
+
+CONFIGURATION
+-------------
+File: hub/_services/watcher/config.json
+
+Important settings:
+  enabled daemon on/off
+  poll_interval_seconds polling interval (default: 15s)
+  quiet_start/quiet_end Quiet times
+  mistral_model Ollama model (default: Mistral:latest)
+  escalation_cooldown_seconds Min. time between escalations
+  max_daily_escalations Max escalations per day
+  sources.* Activate/deactivate event sources
+
+REQUIREMENTS
+---------------
+- Ollama installed and started
+- Mistral model loaded (ollama pull mistral)
+- Connector system configured (for message sources)
+
+DATABASE
+---------
+  connector_messages.watcher_classified Tracking whether Watcher has seen the message
+  watcher_event_log All classified events with result
+
+LOG FILES
+-----------
+  data/logs/watcher_daemon.log Daemon activity and classifications
+
+SEE ALSO
+----------
+  bach help connector     Connector system (Telegram/Discord)
+  bach help partners      Partner system
+  bach help daemon        Session daemon
+  bach help injectors     Injector system

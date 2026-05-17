@@ -1,0 +1,79 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+------------
+obsidian - Obsidian Vault 同步
+
+描述
+------------
+Obsidian 处理程序将本地Obsidian Vault 与BACH 数据同步。
+它管理三个同步类别：每日笔记、任务
+（任务管理）和 Wiki（知识库）。所有数据均来自于
+bach.db（表：任务、内存工作、维基文章）。
+
+操作
+-----------
+状态
+  显示同步状态（保管库路径、目录结构、是否存在
+  每日笔记、BACH Wiki、任务文件）。无需参数。
+
+同步
+  执行所有同步：今天的每日笔记、当前任务、
+  维基文章。不需要参数。
+
+config [路径]
+  设置或显示黑曜石库路径。带参数 <path> 的
+  配置并存储在 memory_facts 中的路径（category='system', key=
+  '黑曜石_金库_路径'）。不带参数显示当前路径。
+
+每日
+  创建或显示今天的每日笔记（YYYY-MM-DD.md in
+  《每日笔记》目录）。包含开放任务计数器和最后 3 个任务
+  来自 memory_working 的工作笔记。
+
+任务
+  从任务表同步活动任务（pending、in_progress）
+  进入文件“BACH Tasks.md”。按优先级 (P1-P3) 和 ID 排序。
+
+wiki
+  将 wiki_articles 中的所有文章导出到“BACH Wiki”目录。
+  文件名被清理（仅限字母数字、空格、连字符、
+  下划线）；标题源自标题字段或文件名。
+
+示例
+---------
+配置保管库：
+  bach obsidian config /path/to/My\ Vault
+
+检查状态：
+  bach obsidian status
+
+执行所有同步类别：
+  bach obsidian sync
+
+仅创建今天的每日笔记：
+  bach obsidian daily
+
+更新任务：
+  bach obsidian tasks
+
+导出 wiki：
+  bach obsidian wiki
+
+文件
+-------
+hub/obsidian.py 处理程序实现
+data/bach.db 数据库（表：tasks、memory_working、
+                                   wiki_articles、memory_facts)
+
+黑曜石金库（配置后）：
+  {vault}/每日笔记/每日笔记目录
+  {vault}/BACH Wiki/ wiki 文章目录
+  {vault}/BACH Tasks.md 任务同步文件
+
+另请参见
+----------
+base.py BaseHandler 类
+BACH 文档 bach.db 模式，memory_facts 结构

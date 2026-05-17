@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+规划过程
+-----------------
+
+何时规划？
+  < 15 分钟 直接编辑
+  15-30 分钟 可选结构
+  > 30 分钟必须结构化
+
+创建计划（手动）：
+
+  1. 在 docs/ 或 docs/_ideas/ 中创建概念文档
+  2. 结构（推荐）：
+     - 背景（为什么？）
+     - 目标（应该实现什么？）
+     - 技术分析（组件、文件、依赖项）
+     - 任务分解的实施计划
+
+  3. 在BACH数据库中创建任务：
+     bach task add "Teil 1" --category development --priority P2
+     bach task add "Teil 2" --category development --priority P3
+
+  4. 设置依赖关系（如有必要）：
+     bach task depends <id> --on <andere_id>
+
+时间预算规则（建议）：
+  非常罕见：1-2 分钟（重命名常量）
+  稀有：2-3 分钟（添加导入）
+  通常：3-6 分钟（实现功能）
+  有时：8-11 分钟（逻辑更复杂）
+  罕见：12 分钟（主要重构）
+  从不：>15 分钟（技术上不可能）
+
+任务命令：
+  bach task add <titel>              添加任务
+  bach task add <titel> --category development --priority P2
+  bach task list pending             显示打开的任务
+  bach task depends <id>             显示依赖项
+  bach task depends <id> --on <id2>  设置依赖项
+  bach task show <id>                显示任务详细信息
+  bach task done <id>                将任务标记为已完成
+
+  另请参阅：巴赫任务帮助
+
+工作流程示例：
+  1. 将概念写在docs/_ideas/my_feature.md中
+  2、创建任务：
+     bach task add "Schema erweitern" --category development --priority P2
+     bach task add "Handler implementieren" --category development --priority P2
+     bach task add "Tests schreiben" --category development --priority P3
+  3. 设置依赖关系：
+     bach task depends 302 --on 301  # Handler 依赖于 schema
+     bach task depends 303 --on 302  # Tests 依赖于 handler
+  4、一步步处理：
+     bach task done 301
+     bach task list pending  #302不再被阻塞

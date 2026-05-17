@@ -1,0 +1,26 @@
+Herramienta BACH: Operaciones con archivos
+--------------------------
+
+Herramientas del sistema de archivos para análisis y limpieza.
+
+HERRAMIENTAS DISPONIBLES
+-----------------
+
+  escáner de directorio dirscan con estadísticas
+  duplicado_detector Buscar archivos duplicados
+  encoding_fixer Solucionar problemas de codificación (UTF-8)
+  file_cleaner Eliminar archivos temporales/innecesarios
+  file_manager Operaciones de archivos (mover, renombrar)
+
+USE
+----------
+
+  bach --tools file_ops scan <pfad>        Analizar directorio
+  bach --tools file_ops duplicates <pfad>  Buscar duplicados
+  bach --tools file_ops encoding <pfad>    Verificar/corregir codificación
+  bach --tools file_ops clean <pfad>       Limpiar
+
+MÓDULO
+-----
+
+  herramientas/file_ops/ (5 herramientas)

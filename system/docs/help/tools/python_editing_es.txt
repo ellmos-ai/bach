@@ -1,0 +1,197 @@
+HERRAMIENTAS DE EDICIÓN DE PYTHON - Editar archivos de Python
+-------------------------------------------------
+
+A partir de: 2026-01-23
+Ruta: docs/help/tools/python_editing.txt
+
+DESCRIPCIÓN
+------------
+Herramientas para editar, analizar y dividir archivos Python.
+Particularmente útil para:
+  - Archivos Python grandes (más de 500 líneas)
+  - Revisión y refactorización de código.
+  - Gestión de contexto LLM (guardar tokens)
+  - Cambios en el código estructurado
+
+IMPORTANTE: PYTHON_CLI_EDITOR
+--------------------------
+La herramienta de edición principal de Python tiene su propia información detallada.
+Documentación debido a su complejidad e importancia:
+
+  bach --help tools/python_cli_editor
+
+python_cli_editor está diseñado específicamente para asistentes de IA:
+  - Mostrar estructura en lugar de leer el archivo completo (guardar tokens)
+  - Editar métodos/clases específicas
+  - Cambios quirúrgicos en lugar de reescrituras completas
+
+Resumen rápido python_cli_editor:
+  bach python_cli_editor script.py --show-all      # Mostrar estructura
+  bach python_cli_editor script.py --show 50-80    # Líneas 50-80
+  bach python_cli_editor script.py --imports       # Sólo importaciones
+  bach python_cli_editor script.py --classes       # Sólo clases
+  bach python_cli_editor script.py --add code.py --in-class MyClass --save
+
+Para más detalles: bach --help tools/python_cli_editor
+
+PYCUTTER: c_pycutter
+--------------------
+Divide archivos grandes de Python en archivos de texto separados por clase.
+
+CASOS DE APLICACIÓN:
+  - Revisión de código: mira cada clase individualmente
+  - Contexto LLM: cargar solo la clase relevante
+  - Documentación: crear documentación por clases.
+  - Refactorización: Descripción general de archivos grandes
+
+COMANDOS BÁSICOS:
+
+  # Dividir archivo (crea subcarpetas)
+  bach c_pycutter main.py
+
+  # Salida a una carpeta específica
+  bach c_pycutter main.py --output-dir ./extracted
+
+  # Salida JSON (para procesamiento posterior)
+  bach c_pycutter main.py --json
+
+OPCIONES:
+  --output-dir DIR Directorio de salida
+  --json Salida JSON en lugar de archivos
+
+ESTRUCTURA DE SALIDA:
+  principal_20260123_120000/
+    Funciones auxiliares.txt # Importaciones, funciones globales
+    ClassA.txt # Código de clase ClassA
+    ClassB.txt # Código de clase ClassB
+    ...
+
+FLUJO DE TRABAJO DE EJEMPLO:
+  # 1. Dividir archivos grandes
+  bach c_pycutter riesige_app.py --output-dir ./review
+
+  #2. Editar clase individual
+  # (en un editor independiente o con python_cli_editor)
+
+  # 3. Aplicar cambios nuevamente
+  # (manualmente o con herramienta de diferenciación)
+
+ANALIZADOR DE MÉTODOS: c_method_analyzer
+----------------------------------
+Análisis en profundidad del código Python para problemas y estructura.
+
+FUNCIONES:
+  - Inventario de métodos (todos los métodos con números de línea)
+  - Análisis de llamadas (qué método llama a cuál)
+  - Cheque de importación (usado versus no utilizado)
+  - Detección de errores tipográficos (nombres similares)
+  - Prueba de conexión de señal (Qt/Tk)
+  - Detección de atributo antes del inicio
+
+COMANDOS BÁSICOS:
+
+  # Analizar archivo
+  bach c_method_analyzer script.py
+
+  # Salida JSON
+  bach c_method_analyzer script.py --json
+
+  # Solo resumen
+  bach c_method_analyzer script.py --summary
+
+  # Analizar clase específica
+  bach c_method_analyzer script.py --class MyClass
+
+OPCIONES:
+  --json Salida JSON (legible por máquina)
+  --summary Solo resumen compacto
+  --class NAME Analiza solo una clase específica
+  --verbose Salida detallada
+
+EJEMPLO DE SALIDA:
+  === ANALIZADOR DE MÉTODOS: script.py ===
+
+  [CLASES]
+    MiClase (líneas 15-120)
+      - __inicio__ (17)
+      - datos_proceso (35)
+      - _helper (80) <- ¡nunca llamado!
+
+  [PROBLEMAS POTENCIALES]
+    Línea 42: self._hepler() - ¿error tipográfico? Quiso decir: _ayudante
+    Línea 67: self.button.connect(self.on_click) - on_click no encontrado
+
+  [IMPORTACIONES NO UTILIZADAS]
+    - importar json (línea 3)
+
+  [ESTADÍSTICAS]
+    Clases: 2
+    Métodos: 15
+    Líneas: 320
+
+FLUJOS DE TRABAJO TÍPICOS
+------------------
+
+1. ENTENDIENDO EL ARCHIVO GRANDE
+   Primero estructura, luego detalles:
+
+   # obtener una descripción general
+   bach python_cli_editor grosse_datei.py --show-all
+
+   # O dividir para revisión
+   bach c_pycutter grosse_datei.py
+
+2. ENCUENTRE PROBLEMAS ANTES DE COMPROMETERSE
+   Analizar código:
+
+   bach c_method_analyzer script.py
+
+   Muestra: errores tipográficos, métodos no utilizados, referencias faltantes
+
+3. PREPARAR LA REFACTORACIÓN
+   Comprender las dependencias:
+
+   # ¿Quién llama a quién?
+   bach c_method_analyzer script.py --verbose
+
+   # Mira la clase de forma aislada
+   bach c_pycutter script.py
+
+4. GUARDAR TOKENS (contexto de IA)
+   En lugar de leer el archivo completo:
+
+   # Estructura de carga únicamente
+   bach python_cli_editor script.py --show-all
+
+   # Luego seleccione el método relevante
+   bach python_cli_editor script.py --show 150-180
+
+¿CUÁNDO QUÉ HERRAMIENTA?
+------------------
+
+| Tarea | Herramienta |
+|--------------------------------|---------------------|
+| Mostrar estructura | python_cli_editor |
+| Cambiar código específicamente | python_cli_editor |
+| Dividir el archivo en partes | c_pycutter |
+| Buscar problemas/errores | c_method_analyzer |
+| Consultar importaciones | c_method_analyzer |
+| Buscar errores tipográficos | c_method_analyzer
+
+|CONTEXT INYECTOR
+----------------
+El ContextInjector reconoce palabras clave y recomienda estas herramientas:
+
+  "editar python" -> bach python_cli_editor <archivo> --mostrar todo
+  "editar clase" -> bach python_cli_editor <archivo> --mostrar todo
+  "método de edición" -> bach python_cli_editor <archivo> --show-all
+  "estructura del código" -> bach python_cli_editor <archivo> --show-all
+  "archivo dividido" -> bach c_pycutter <archivo>
+  "demasiado grande" -> bach c_pycutter <archivo>
+
+VER TAMBIÉN
+----------
+  bach --help tools/python_cli_editor  Documentación detallada del editor (¡IMPORTANTE!)
+  bach --help tools/imports            Manejo de importaciones
+  bach --help tools/code_quality       Calidad del código (codificación, etc.)
+  bach --help tools/analysis           Otras herramientas de análisis

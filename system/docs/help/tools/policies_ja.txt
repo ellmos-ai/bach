@@ -1,0 +1,154 @@
+ポリシー - 再利用可能なコード標準
+------------------------------------------
+
+現在: 2026-01-23
+パス: docs/help/tools/policies.txt
+
+説明
+------------
+ポリシーは BACH 標準の再利用可能なコード スニペットです
+強制する。これらは新しいプロジェクトに注入され、
+以下の一貫した処理:
+  - エンコーディング (UTF-8、Windows コンソール)
+  - JSON (絵文字セーフ、エンコーディング フォールバック)
+  - ファイル名 (接頭辞規則)
+
+LOCATION
+-----------
+  ツール/_ポリシー/
+    coding_header.py UTF-8 とコンソールの修正
+    emoji_safe.py 絵文字変換
+    json_safe.py 安全な JSON 操作
+    CONCEPT_naming_convention.md 命名規則 (概念)
+
+利用可能なポリシー
+--------------------
+
+1。 coding_header (v1.0)
+-------------------------
+UTF-8 エンコーディング ヘッダーと Windows コンソールの修正。
+ファイルの先頭に挿入されます。
+
+挿入済み:
+  - シバン: #!/usr/bin/env python3
+  - エンコーディング: # -*- コーディング: utf-8 -*-
+  - Windows コンソールのエンコーディング修正
+
+典型的なコード:
+  #!/usr/bin/env python3
+  # -*- コーディング: utf-8 -*-
+
+  インポートシステム
+  sys.platform == 'win32' の場合:
+      sys.stdout.reconfigure(encoding='utf-8'、errors='replace')
+
+2. emoji_safe (v1.0)
+--------------------
+保存/転送時の絵文字の安全な処理。
+
+特徴:
+  emoji_to_safe(text) 絵文字 -> ASCII セーフ (DB/ファイル用)
+  emoji_to_display(text) ASCII セーフ -> 絵文字 (表示用)
+
+使用:
+  _policies.emoji_safe から emoji_to_safe をインポート
+  safe_text = emoji_to_safe("Hello [TOOL]") # -> "Hello :wrench:"
+
+依存関係:
+  必須: pip install emoji (オプション、グレースフル フォールバック)
+
+3. json_safe (v1.0)
+-------------------
+絵文字/エンコーディング処理による安全な JSON 操作。
+
+特徴:
+  json_load_safe(filepath) エンコーディングフォールバックを使用してロードします
+  json_save_safe(data, filepath) 絵文字変換して保存します
+  json_dumps_safe(data) シリアル化された ensure_ascii=False
+
+USE:
+  _policies.json_safe から json_load_safe、json_save_safe をインポート
+
+  # ロード (utf-8、utf-8-sig、latin-1、cp1252 を試しました)
+  データ = json_load_safe("config.json")
+
+  # 保存 (絵文字を :shortcodes: に変換します)
+  json_save_safe(data, "config.json", Convert_emojis=True)
+
+ポリシーの形式
+-------------
+各ポリシーは次の構造になっています。
+
+  #!/usr/bin/env python3
+  # -*- コーディング: utf-8 -*-
+  「」
+  ポリシー: 名前
+  バージョン: 1.0
+  サイズ: 小/中/大
+  説明: ポリシーの内容
+  """
+
+  # === ポリシー:名前:バージョン ===
+  ...コード...
+  # === END:name ===
+
+サイズクラス:
+  小さい -> インライン注入 (数行)
+  媒体 -> 外部ファイル（独自モジュール）
+  大きい -> 複数のファイル
+
+ATI プロジェクトのブートストラップ
+-------------------------
+ポリシーは ATI ブートストラップによって新しいプロジェクトに挿入されます:
+
+  bach ati bootstrap my-tool --template python-cli
+
+Python CLI の標準ポリシー:
+  - エンコーディングヘッダー (常に)
+  - json_safe (JSON を使用する場合)
+  - emoji_safe (コンソールに出力する場合)
+
+参照: Agents/ati/ATI_PROJECT_BOOTSTRAPPING.md
+
+命名規則 (概念)
+---------------------------
+ツール ファイルの計画された命名規則:
+
+  c_ -> AI 用に最適化された CLI (c_encoding_fixer.py)
+  b_ -> BACH コア (b_backup.py)
+  a_ -> エージェント ランナー (a_developer.py)
+  t_ -> テストツール (t_runner.py)
+  m_ -> メンテナンス (m_cleanup.py)
+  g_ -> ジェネレーター ツール (g_skill.py)
+
+ステータス: コンセプト - まだ実装されていません
+参照: tools/_policies/CONCEPT_naming_convention.md
+
+独自のポリシーを作成
+-----------------------
+
+1。 tools/_policies/ にファイルを作成します
+2. 名前、バージョン、サイズ、説明を含むポリシーヘッダー
+3. # === POLICY:name:version === の間のコードをマークします。
+4. オプション: project_bootstrapper.py
+
+代表的な用途
+-------------------------
+
+1 に登録します。新しい Python プロジェクト
+   -> 自動的にencoding_header
+
+2を挿入します。 JSON設定
+   -> 安全なストレージのための json_safe
+
+3.絵文字付きコンソール版
+   -> Windows との互換性のための emoji_safe
+
+4.既存のコードを標準化する
+   -> c_standard_fixer は内部的にポリシーを使用します
+
+関連項目
+----------
+  bach --help tools/code_quality   エンコーディング/JSON-Fixer
+  bach --help ati                  ATI エージェントとブートストラップ
+  bach --help tools                ツールの概要

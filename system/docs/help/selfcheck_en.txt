@@ -1,0 +1,55 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Status: NOT IMPLEMENTED - See Alternatives
+
+SYSTEM CHECKS
+-------------
+
+NOTE: The planned --selfcheck command has not been implemented.
+The functionality is DISTRIBUTED across existing handlers.
+
+ALTERNATIVES FOR SYSTEM CHECKS:
+
+1. STARTUP CHECKS (automatic)
+   bach startup run
+
+   Executes:
+   - Directory scan (new/changed files)
+   - Path Healer Check (path problems)
+   - Registry Watcher (DB/JSON consistency)
+   - Skill Health Monitor (Skill/Agent Validation)
+   - NUL Cleaner (Windows NUL files)
+   - Problems First (24-hour error analysis)
+
+2. MAINTENANCE TOOLS
+   bach maintain list
+
+   Available checks:
+   - maintain heal - path correction
+   - maintain registry - database consistency
+   - maintain skills - skill health
+   - maintain json - JSON repair
+   - maintain nul - remove NUL files
+
+3. WORKFLOW QUALITY
+   bach tuev run
+
+   Checks workflows for structure and consistency
+
+4. BACKUP STATUS
+   bach backup status
+
+   Shows latest backups and age
+
+PERIODIC CHECK:
+  The automatic checks run with EVERY “bach startup run”.
+  No separate 30-day interval necessary.
+
+LOGS:
+  Startup logs: system/data/logs/
+  Maintain logs: output to console
+
+RECOMMENDATION:
+  At session start: bach startup run
+  In case of problems: bach maintain [operation]

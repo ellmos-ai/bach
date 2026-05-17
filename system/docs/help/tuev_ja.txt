@@ -1,0 +1,132 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+
+TUEV-HANDLER
+------------
+
+BACH ワークフローのワークフロー品質保証とテスト ケース管理。
+TUeV ハンドラーはステータス、有効性、品質のメトリクスを管理します
+
+
+
+ハンドラー名
+------------
+
+bach tuev     - ワークフロー TUeV と有効性
+bach usecase  - テスト ケースの定義と実行
+
+
+説明
+------------
+
+TUeV ハンドラー (テスト、チェック、検証) は以下を管理します。
+
+  * Bach データベースへのワークフローの登録
+  * TUeV 有効期限の追跡 (標準: 90 日)
+  * 期限切れ/期限が近づいているワークフローの概要
+  ※ワークフローごとのテストケース（ユースケース）の管理
+  * テスト ケースごとのステータスと品質スコア
+
+ハンドラーは以下で動作します。
+  * データベース: data/bach.db (workflow_tuev、ユースケース テーブル)
+  * ワークフロー: スキル/ワークフロー/ (*.md ファイル)
+  * DB で JSON として入力/出力をテスト
+
+
+OPERATIONS
+-----------
+
+TUeV-OPERATIONS:
+
+  bach tuev
+  bach tuev status        - すべてのワークフローのステータスを表示
+  bach tuev check WFNAME  - 個々のワークフローとそのユースケースを確認
+  bach tuev run           - 期限切れのワークフローをすべてリスト
+  bach tuev renew WFNAME  - TUeV を更新 (90 日間有効)
+  bach tuev init          - スキル/ワークフロー/登録からのワークフロー
+
+USECASE OPERATIONS:
+
+  bach usecase list [WF]       - すべてまたはフィルターされたテストを表示ケース
+  bach usecase add WFNAME      - 新しいテスト ケース (SQL テンプレート) を追加
+  bach usecase show ID         - 入力/出力を含むテスト ケースの詳細
+  bach usecase run ID          - テスト ケースを実行して確認
+  bach usecase run-all WFNAME  - ワークフローのすべてのテスト ケースを実行
+
+
+例
+---------
+
+1。新しいワークフローを DB に追加します。
+   $ bach tuev init
+   [TUeV] ワークフローが初期化されました
+     追加: 5
+     スキップ: 0
+
+2。ステータスの概要 (有効期限順に並べ替え):
+   $バッハチューエフステータス
+   [WORKFLOW-TUeV] ステータスの概要
+
+   期限切れ (すぐに確認してください!):
+     [!] バグ修正ログ スコア: 75% |ステータス: 保留中
+
+   まもなく期限 (< 14 日):
+     [~] データ パイプライン スコア: 88% | 5d
+
+   OK:
+     [OK] メイン ワークフロー スコア: 92% | 30日
+
+3。ユースケースによるワークフローのチェック:
+   $ bach tuev チェックバグ修正ログ
+   [TUeV] テスト: バグ修正プロトコル
+   パス: スキル/ワークフロー/bugfix-protocol.md
+   ステータス: 保留中
+   スコア: 75%
+
+   使用例: 2
+     [?] 簡単なテストケース (?)
+     [OK] エラーのあるエッジケース (パス)
+
+4。テストが成功したら、TUeV を更新します。
+   $ bach tuev 更新バグ修正プロトコル
+   [TUeV] バグ修正プロトコルが更新されました
+     有効期限: 2026-06-02
+
+5。新しいテスト ケースを追加します。
+   $bach usecase add data-pipeline
+   挿入するSQL:
+   ---------------------
+   INSERT INTO ユースケース (タイトル、説明、ワークフロー名など)
+
+   または GUI 経由: /usecases
+
+   例:
+   $ bach db query "INSERT INTO usecases (...) VALUES (...)"
+
+6.テストケースを実行します。
+   $bach ユースケースの実行 5
+   [ユースケース] テスト #5: 簡単なテスト
+   [情報] 手動チェックが必要です。
+
+   結果を入力してください:
+   $ bach db query "UPDATE usecases SET test_result='pass', test_score=90 WHERE id=5"
+
+
+FILES
+-------
+
+system/:
+
+ に関連  data/bach.db - TUeV/Usecase テーブルを含む SQLite データベース
+  skill/workflows/*.md - ワークフロー ファイル (初期化されます)
+  Hub/tuev.py - TuevHandler クラスと UsecaseHandler クラス
+
+
+関連項目
+----------
+
+  bach db          - 直接データベース クエリ
+  Hub/base.py - BaseHandler 基本クラス
+  スキル/ワークフロー/ - 利用可能なワークフロー ファイル

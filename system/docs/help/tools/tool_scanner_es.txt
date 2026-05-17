@@ -1,0 +1,29 @@
+Herramienta BACH: tool_scanner
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/tool_scanner.py
+
+DESCRIPCIÓN
+----------------------------------------
+tool_scanner.py: escanea el sistema en busca de herramientas CLI disponibles
+-----------------------------------------------------------
+
+Busca herramientas instaladas y las compara con herramientas registradas.
+Útil para el descubrimiento de herramientas y el inventario del sistema.
+
+Uso:
+    python tool_scanner.py escaneo # Sistema de escaneo
+    python tool_scanner.py --json # salida JSON
+    python tool_scanner.py comparar # Comparar con el registro
+
+Autor: BACH v1.1 (basado en partner_scanner.py)
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan tool_scanner [args]
+o directamente: python tools/tool_scanner.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: herramientas de bach muestra tool_scanner

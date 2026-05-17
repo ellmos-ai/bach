@@ -1,0 +1,33 @@
+Herramienta BACH: c_license_generator
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/c_license_generator.py
+
+DESCRIPCIÓN
+----------------------------------------
+c_license_generator.py - Generador de licencias de terceros
+
+Propósito: Genera THIRD_PARTY_LICENSES.txt con todo instalado
+       licencias de paquetes pip. Utiliza licencias pip (instaladas si es necesario).
+
+Autor: Claude (adaptado de generate_third_party_licenses.py)
+Dependencias: subproceso, sistema operativo, json (stdlib) + pip-licenses (se instalará automáticamente)
+
+Uso:
+    python c_license_generator.py [--salida <archivo>] [--formato plano|json|csv] [--json]
+
+Ejemplos:
+    python c_license_generator.py # Predeterminado: THIRD_PARTY_LICENSES.txt
+    python c_license_generator.py --output licenses.txt # Nombre de archivo propio
+    python c_license_generator.py --formato json # formato JSON
+    python c_license_generator.py --json # Salida legible por máquina
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan c_license_generator [args]
+o directamente: python tools/c_license_generator.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: herramientas de bach muestra c_license_generator

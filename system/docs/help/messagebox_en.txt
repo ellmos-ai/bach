@@ -1,0 +1,55 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Status: DEPRECATED - Replaced by messages.py Handler
+
+MESSAGEBOX SYSTEM (DEPRECATED)
+-----------------------------
+
+NOTE: This file-based system is DEPRECATED and archived.
+         Current system: MessagesHandler (system/hub/messages.py)
+
+The old topic-based messaging system (like email, but file-based)
+has been replaced by a SQLite-based system.
+
+CURRENT REPLACEMENT:
+  Handler: system/hub/messages.py (MessagesHandler)
+  Backend: system/data/bach.db (messages table)
+  CLI: bach msg <operation>
+
+SEE:
+  bach msg --help           Current commands
+  docs/help/messages.txt New documentation
+
+ARCHIVED CODE:
+  system/data/_archive/gui_Entwuerfe/inbox/
+    - messagebox_backend.py
+    - messagebox.html
+    - inbox_index.json
+
+-----------------------------------------------------------------------
+OLD DOCUMENTATION (historical only)
+-----------------------------------------------------------------------
+
+CONCEPT (old):
+  - One topic = one TXT file
+  - Messages are assigned to topics
+  - Index (JSON) for quick access
+  - Auto-archiving with size limit
+
+FOLDER (old):
+  DATA/inbox/ Active topics (no longer exists)
+  DATA/inbox/archive/ Archived topics (no longer exists)
+  DATA/inbox/agenda/ Agenda references (no longer exists)
+
+CLI COMMANDS (old, no longer functional):
+  python messagebox_backend.py list [--all]
+  python messagebox_backend.py new <title>
+  python messagebox_backend.py add <id> <text>
+  python messagebox_backend.py show <id>
+  python messagebox_backend.py archive <id>
+  python messagebox_backend.py restore <id>
+
+MIGRATION:
+  The old system was not migrated. If necessary, old ones can be used
+  Theme files can be restored from backups.

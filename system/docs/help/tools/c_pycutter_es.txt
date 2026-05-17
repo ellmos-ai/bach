@@ -1,0 +1,33 @@
+Herramienta BACH: c_pycutter
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/c_pycutter.py
+
+DESCRIPCIÓN
+----------------------------------------
+c_pycutter.py - Extractor de clases de Python
+
+Propósito: descompone archivos de Python en archivos de texto separados para cada clase.
+       además de un archivo auxiliar de funciones.txt para importaciones, funciones y código global.
+       Ideal para revisión de código, documentación o gestión de contexto LLM.
+
+Autor: Claude (adaptado de pyCuttertxt.py)
+Dependencias: ast, os, datetime (stdlib)
+
+Uso:
+    python c_pycutter.py <python_file> [--output-dir <dir>] [--json]
+
+Ejemplos:
+    python c_pycutter.py main.py # Salida en el directorio actual
+    python c_pycutter.py main.py --output-dir ./out # Salida a ./out
+    python c_pycutter.py main.py --json # Salida JSON para procesamiento posterior
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan c_pycutter [args]
+o directamente: python tools/c_pycutter.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: herramientas de bach muestra c_pycutter

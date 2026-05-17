@@ -1,0 +1,58 @@
+BACH Tool: c_md_to_pdf
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/c_md_to_pdf.py
+
+DESCRIPTION
+----------------------------------------
+Markdown to PDF Converter - BACH System
+--------------------------------------------------
+
+Converts Markdown files to professional PDFs.
+Standard tool for user reports and documentation in the BACH system.
+
+Usage:
+    # All .md files in the workspace
+    python c_md_to_pdf.py
+
+    # Specific file
+    python c_md_to_pdf.py report.md
+
+    # With custom output
+    python c_md_to_pdf.py report.md --output custom.pdf
+
+    # Save to Workspace only
+    python c_md_to_pdf.py report.md --workspace-only
+
+Version: 1.0.0
+Date: 2026-02-04
+Features:
+  - Universally applicable (all .md or specific files)
+  - Improved Markdown parsing (headers, lists, code blocks, bold/italic)
+  - Command line arguments (--output, --workspace-only)
+  - Automatic directory creation
+  - Professional PDF layout with ReportLab
+  - Supports checkboxes ([ ] and [x])
+
+USE
+----------------------------------------
+Execute directly:
+    python tools/c_md_to_pdf.py [args]
+
+Or from the BACH directory:
+    python system/tools/c_md_to_pdf.py [args]
+
+ARGUMENTS
+----------------------------------------
+  files Markdown files to convert (default: all *.md in the workspace)
+  -o, --output Custom output path (only for a file)
+  --workspace-only Save only in workspace
+
+DEPENDENCIES
+----------------------------------------
+  - reportlab (pip install reportlab)
+
+NOTES
+----------------------------------------
+- If you have any questions: bach tools show c_md_to_pdf
+- Output directories are created automatically

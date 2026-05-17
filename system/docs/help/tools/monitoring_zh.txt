@@ -1,0 +1,135 @@
+BACH 监控工具
+---------------------
+
+用于系统监控、一致性检查和错误检测的工具。
+
+快速入门
+------------
+  bach --maintain registry     # 检查 DB/JSON 一致性
+  bach --maintain skills       # 检查技能运行状况
+  bach --status               # 显示系统状态
+
+监控工具概述
+---------------------------
+工具/维护/
+├──registry_watcher.py # DB-JSON一致性检查
+└── Skill_health_monitor.py # 技能验证
+
+REGISTRY WATCHER
+----------------
+检查SQLite数据库和JSON配置之间的一致性。  python 工具/维护/registry_watcher.py 检查
+  python tools/maintenance/registry_watcher.py Repair
+
+检查的内容：
+- bach.db 中存在表
+- JSON 配置文件有效性
+- 参照完整性
+- 孤立记录
+
+技能健康监控
+
+验证所有 BACH 技能和代理。  python 工具/维护/skill_health_monitor.py 检查
+  python tools/maintenance/skill_health_monitor.py 报告
+--------------------
+检查的内容：
+- SKILL.md 完整性
+- 代理清单
+- 目录结构
+- 孤立技能
+
+令牌监控
+
+监控令牌消耗以控制成本。
+
+表：monitor_tokens
+- session_id、tokens_used、时间戳
+- 用于合作伙伴委托的令牌区域 (1-4)
+----------------
+# 显示令牌区域
+
+  从监视器令牌中选择*； # 原始数据
+
+  bach --memory status         进程监控
+表：monitor_processes
+- 正在进行的流程
+- 维护守护进程状态
+- 后台作业
+
+# 检查维护守护进程
+------------------
+# 总体状态
+
+  bach daemon status           成功监控
+  bach --status               表：monitor_success
+- 工具的成功率
+- 错误历史记录
+- 改进学习模式
+
+ --startup 自动检查
+------------------
+会话启动时自动运行这些检查：
+
+1.目录扫描 # 自上次会话以来的更改
+2. Path Healer (dry-run) # 路径修正建议
+3.Registry Watcher # DB/JSON 一致性
+4. 技能运行状况监控 # 技能/代理条件
+---------------------------------
+问题在启动输出中报告为警告。
+
+数据库表
+
+bach.db 中的 27 个表，其中与监控相关：
+
+  Monitor_tokens # 令牌跟踪
+  Monitor_success # 成功率
+  Monitor_processes # 进程状态
+------------------
+CLI 命令
+
+# 路径修正（空运行）
+
+# DB/JSON 一致性
+-----------
+  bach --maintain heal        # 技能运行状况
+  bach --maintain registry    # 文档检查
+  bach --maintain skills      # 总体状态
+  bach --maintain docs        日志和评估
+  bach --status              监控数据存储在日志中：
+
+  logs/auto_log_extended.txt # 命令日志
+  logs/errors/ # 错误日志
+-------------------
+评估：
+
+# 最近 20 条日志条目
+
+# 搜索错误
+  bach --logs tail 20          警报和警告
+  bach --logs search "error"   - 令牌区域 3/4：高消耗警告
+- 技能错误：警告 --startup
+- 数据库不一致：修复建议出错
+
+TIPS
+--------------------
+- 定期执行--maintain命令
+- 如果出现问题： bach --maintaineal --execute
+- 密切关注代币消耗（2-3区）
+- 检查错误日志中的问题
+
+另请参阅
+-----
+# 维护概述
+
+# 启动检查
+----------
+  bach --help maintain         # 日志系统
+  bach --help startup          tools/TOOLS_CONCEPT.md # 工具概念
+  bach --help logs             版本: 1.0.0
+创建时间：2026-01-23
+部分内容：BACH 工具文档
+  tools/TOOLS_CONCEPT.md       # Tool-Konzept
+
+---
+Version: 1.0.0
+Erstellt: 2026-01-23
+Teil von: BACH Tool-Dokumentation

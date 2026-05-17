@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+保险 - 保险管理
+---------------------------------------
+
+描述：
+  管理所有保单的截止日期和终止日期
+  和贡献。数据位于 bach.db/fin_insurances 中。
+  通过财务模块（保险选项卡）进行 GUI 访问。
+
+状态：
+  在 hub/versicherung.py 中实现的完整 CLI 处理程序
+  - CLI：巴赫保险<操作>（列表、显示、添加、编辑、删除、状态、截止日期、检查、索赔）
+  - GUI：财务模块>保险（由Gemini实现的CRUD）
+  - 直接数据库查询（针对代理/专家）
+
+数据库：
+  表格：
+    - bach.db / fin_insurances（保险）
+    - bach.db / fin_insurance_claims（索赔）
+    - bach.db / Insurance_types（参考数据，可选）
+
+  Fin_insurances 字段：
+    id 自动识别
+    提供商保险公司（Allianz、HUK、AXA...）
+    关税名称 关税名称
+    Police_nr 保单编号（唯一）
+    责任、BU、机动车辆、家庭用品、法律保护、...
+    状态活跃 |终止|非缴费|休眠的
+    start_date 合同开始日期
+    expiry_date 合同结束
+    notification period_months 通知期限（以月为单位）（默认值：3）
+    extension_months 自动延期（默认：12）
+    next_termination 下一个终止日期
+    贡献 贡献金额
+    按月付费 |每季|每半年一次 |每年
+    Tax_relevant_type 养老金支出等
+    folder_path 文件系统上扫描/文档的路径
+    注释自由文本
+    创建时间、更新时间时间戳
+
+链接：
+  - Financial_emails：来自保险公司的电子邮件（类别=“保险”）
+  -folder_path：本地配置的保险单据路径下的真实单据
+  - user_data_folders：注册文件夹“用户/保险”
+
+当前数据：
+  引进13家保险公司（截至2026-01-28）
+  部门：责任、BU、机动车辆、家居用品、法律保护、牙科补充剂、
+           PKV、意外保险、国外健康保险等
+
+CLI 命令：
+  bach versicherung list                    所有有效保险单
+  bach versicherung list --all              包括。终止
+  bach versicherung list --sparte <sparte>  按部门过滤
+  bach versicherung list --status <status>  按状态过滤
+
+  bach versicherung show <id>               显示详细信息
+
+  bach versicherung add --anbieter "X" --sparte "Y" [Optionen]
+    强制：--provider，--division
+    选项：--贡献、--付款、--警察、--关税、--开始、
+              --expiry、--cancellation、--period、--tax、--folder、--note
+
+  bach versicherung edit <id> [Felder]      编辑保险
+  bach versicherung delete <id>             设置状态 -> 已取消
+
+  bach versicherung status                  包含统计数据的仪表板
+  bach versicherung fristen [--tage N]      显示取消期限（默认：90 天）
+  bach versicherung check                   投资组合分析
+
+  bach versicherung claim add <id> --datum DD.MM.YYYY --beschreibung "Text" [--betrag X]
+  bach versicherung claim list [<id>]       显示索赔
+
+  bach versicherung help                    显示帮助
+
+计划：
+  - 自动电子邮件与 Financial_emails 匹配
+  - 税务导出集成（当前：手动税务类型管理）
+
+互动：
+  - GUI：带有截止日期警告的财务仪表板（#575）
+  - GUI：保险 CRUD (#570)
+  - 税收出口：#572（计划）

@@ -1,0 +1,131 @@
+OCR TOOLS - Text recognition with Tesseract
+---------------------------------------
+
+As of: 2026-01-23
+Path: docs/help/tools/ocr.txt
+
+DESCRIPTION
+------------
+OCR engine for text recognition in images and PDFs.
+Uses Tesseract and is adapted from DokuZentrum Pro.
+
+Path: tools/ocr_engine.py
+
+REQUIREMENTS
+---------------
+  - Tesseract installed (tesseract-ocr)
+  - Python packages: pytesseract, Pillow
+  - Optional: PyMuPDF (fitz) for PDF support
+
+  Installation:
+    pip install pytesseract Pillow PyMuPDF
+
+USE
+----------
+
+CLI (simple):
+  python ocr_engine.py <pdf_path>
+  python ocr_engine.py B0006 # Document short form
+
+Python (class):
+  from tools.ocr_engine import OCREngine, OCRResult
+
+  engine = OCREngine()
+
+  # Check availability
+  if engine.is_available:
+      print("Tesseract available!")
+
+  # Recognize image
+  result = engine.recognize_image("scan.png")
+  print(result.text)
+
+  # Recognize PDF
+  pages = engine.recognize_pdf("document.pdf")
+  for page in pages:
+      print(f"Page {page.page_num}: {page.text}")
+
+  # Available languages
+  langs = engine.get_available_languages()
+
+MAIN CLASSES
+------------
+
+OCREngine:
+  is_available Tesseract available?
+  get_available_languages() List available languages
+  recognize_image(path) Extract text from image
+  recognize_pdf(path) Text from PDF (also image PDFs)
+
+OCRResult:
+  success success (bool)
+  text Recognized text
+  confidence confidence value (0-100)
+  language Language used
+  error Error text in case of failure
+
+OCRPageResult:
+  page_num Page number
+  text page text
+  confidence
+  word_count Word count
+
+LANGUAGES
+--------
+Standard: "deu+eng" (German + English)
+
+Other languages:
+  engine.recognize_image("image.png", language="fra")
+  engine.recognize_pdf("doc.pdf", language="deu")
+
+Multiple languages:
+  language="deu+eng+fra"
+
+VOCATION SHORT FORM
+--------------
+Voucher scans can be called up with short form:
+
+  python ocr_engine.py B0006
+
+Searches automatically in:
+  - user/tax/belege/B0006.pdf
+  - user/steuer/belege/B0006.png
+
+INTEGRATION WITH TAX AGENT
+----------------------------
+The tax agent uses the OCR engine to:
+  - Extract invoice amounts
+  - Recognize receipt data
+  - Create text-searchable PDFs
+
+  bach steuer beleg scan B0006
+
+BUG FIX
+--------------
+
+"Tesseract not found":
+  - Install Tesseract
+  - Include path in PATH
+  - Or: OCREngine(tesseract_path="C:/Program Files/...")
+
+"pytesseract not installed":
+  pip install pytesseract
+
+"PyMuPDF not available":
+  pip install PyMuPDF
+  (Only necessary for PDF support)
+
+Bad detection:
+  - Improve image quality (increase DPI)
+  - Choose the correct language
+  - Preprocess image (contrast, scale correction)
+
+SEE ALSO
+----------
+  docs/help/steuer.txt Tax agent with OCR
+  tools/tax/tax tools
+
+  docs/MAIL_PROFILE_SYSTEM.md Email-based document capture
+
+VERSION: v1.0.0 (2026-01-23)
+Lines: ~323 (ocr_engine.py)

@@ -1,0 +1,34 @@
+BACH ツール: メンテナンス
+----------------------
+
+BACH システムのメンテナンスおよびケア ツール。
+
+利用可能なツール
+-----------------
+
+  archive_done_tasks 完了したタスクをアーカイブします
+  create_boot_checks ブート チェックを生成します
+  doc_path_updater ドキュメントのパスを更新します
+  generate_skills_report スキルレポートの生成
+  header_merge ファイル ヘッダーを移行する
+
+USE
+----------
+
+  bach --tools maintenance archive     完了したタスクをアーカイブに移動
+  bach --tools maintenance skills      スキル レポートを生成
+  bach --tools maintenance headers     ヘッダー移行を実行
+
+メイン ハンドラーとの相互作用
+-----------------------------------
+
+メンテナンス ハンドラー (バッチ メンテナンス) は内部で次のツールを使用します:
+  bach maintain health     システム ヘルス チェック
+  bach maintain services   サービス ステータスのチェック
+  bach maintain registry   ツール レジストリの更新
+  bach maintain tasks      タスク クリーンアップ
+
+MODULE
+-----
+
+  ツール/メンテナンス/ (5 つのスクリプト)

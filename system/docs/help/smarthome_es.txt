@@ -1,0 +1,62 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+------------
+smarthome - Integración de hogar inteligente (FritzBox TR-064)
+
+
+DESCRIPCIÓN
+------------
+Proporciona información de conexión y dispositivo desde un FritzBox.
+Utiliza la API SOAP TR-064 para comunicación UPnP segura a través de HTTP
+caja.fritz:49000. No se requiere autenticación ni dependencias externas.
+
+
+OPERACIONES
+-----------
+status Muestra el estado de la conexión, el tiempo de actividad, la IP externa y el recuento de dispositivos
+dispositivos Enumere todos los dispositivos conectados con IP, MAC y estado (en línea/fuera de línea)
+Información de WLAN wifi: SSID, estado, canal
+ancho de banda Velocidades máximas de descarga y carga (Mbps)
+reconnect Forzar la reconexión a Internet (se admite ejecución en seco)
+info Información de FritzBox: modelo, firmware, número de serie, tiempo de actividad
+ayuda Mostrar esta ayuda
+
+
+EJEMPLOS
+---------
+bach smarthome status
+  -> Mostrar estado de conexión y número de dispositivos
+
+bach smarthome devices
+  -> Todos los dispositivos conectados con IP, MAC y estado en línea
+  -> Límite: máx. 30 dispositivos por recuperación
+
+bach smarthome wifi
+  -> WLAN SSID, estado de actividad y canal
+
+bach smarthome bandwidth
+  -> Descarga y carga máximas en Mbit/s
+
+bach smarthome reconnect
+  -> Desconectar y volver a conectar a la conexión a Internet
+  -> Nueva IP disponible en ~10 segundos
+  -> Con --dry-run: simulación sin ejecución
+
+bach smarthome info
+  -> Detalles del dispositivo (modelo, versión de firmware, serie)
+
+
+ARCHIVOS
+-------
+hub/smarthome.py Implementación del controlador (clase SmartHomeHandler)
+data/bach.db Base de datos de destino para el perfil "smarthome"
+
+
+VER TAMBIÉN
+----------
+hub/base.py Clase base BaseHandler
+Documentación de FritzBox: https://avm.de (TR-064 SOAP API)
+Accesibilidad: fritz.box debe resolverse en la red local

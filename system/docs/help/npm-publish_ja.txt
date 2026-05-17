@@ -1,0 +1,83 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [NPM レジストリ、GitHub リポジトリ]
+
+NPM PUBLISH - MCP サーバーの公開
+--------------------------------------------
+
+日付: 2026-02-15
+
+NPM および GitHub で BACH MCP サーバーを公開するためのワークフロー。
+
+パッケージ
+------
+  ellmos-filecommander-mcp 39 ツール、ファイル システム/プロセス/セッション/i18n
+  ellmos-codecommander-mcp 15 ツール、コード分析/JSON/エンコーディング/i18n
+
+GITHUB REPOS
+-------------
+  https://github.com/lukisch/ellmos-filecommander-mcp
+  https://github.com/lukisch/ellmos-codecommander-mcp
+
+NPM 認証
+----------------------
+  方法: 「バイパス 2FA」を使用したグラニュラー アクセス トークン
+  トークン名: bach-publisher 2
+  作成日: 2026-02-15
+  有効期限: 2026-05-16
+  保存場所: ~/.npmrc
+
+  重要: クラシック オートメーション トークンは機能しなくなりました (EOTP エラー)。
+  「バイパス 2FA」を持つ個別アクセス トークンのみが OTP クエリをバイパスします。
+
+  トークンを更新します (期限切れの場合):
+    1. https://www.npmjs.com/settings/~/tokens -> 「新しいトークンの生成」
+    2.「Granular Access Token」を選択します（クラシックではありません！）
+    3. 権限: 読み取りおよび書き込み、すべてのパッケージ
+    4.「2FA をバイパス」チェックボックスをオンにします。
+    5. ~/.npmrc にトークンを入力します。
+       //registry.npmjs.org/:_authToken=<新しいトークン>
+
+NPM 公開ワークフロー
+---------------------
+  1. トークンを確認します。
+     npm whoami -> 「lukisch」を出力する必要があります
+
+  2. ビルドを手動で実行します (パス KI&AI に & があるため)。
+     ノード "<パス>/node_modules/typescript/bin/tsc" --project "<パス>/tsconfig.json"
+
+  3. npm public を実行します (OTP なし、ブラウザーは必要ありません)。
+     cd <プロジェクトディレクトリ>
+     npm public --ignore-scripts
+
+既知の問題
+------------------
+  - パス「KI&AI」内の & は npm スクリプトを中断します (prepublishOnly)
+    -> 回避策: --ignore-scripts (事前に手動でビルドします)
+  - npm run build がプロジェクト ディレクトリで失敗する
+    -> 回避策: ノード経由で tsc を直接呼び出します。
+  - クラシック オートメーション トークンが EOTP エラーをトリガーする
+    -> 回避策: 「バイパス 2FA」を使用したきめ細かなアクセス トークン
+
+GITHUB WORKFLOW
+----------------
+  1. git add <ファイル> && git commit -m "メッセージ"
+  2. git タグ vX.Y.Z
+  3. git Push Origin master --tags
+
+バージョン バンプ チェックリスト
+------------------------
+  [ ] package.json バージョン
+  [ ] src/index.ts バージョン (サーバー構成)
+  [ ] CHANGELOG.md の新しいエントリ
+  [ ] 機能が変更された場合の README.md
+  [ ] テストビルド
+  [ ] Git コミット + タグ + プッシュ
+  [ ] npm public --ignore-scripts
+
+関連項目
+----------
+  docs/help/tools.txt ツールの概要
+  docs/help/coding.txt コーディング標準
+  skill/workflows/npm-mcp-publish.md 詳細ログ

@@ -1,0 +1,121 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [hub/prompt.py, Prompt_templates, Prompt_boards, Prompt_versions]
+
+PROMPT - Gestión de plantillas de avisos
+-------------------------------------
+
+FECHA: 2026-02-28
+
+El sistema de avisos administra plantillas de avisos reutilizables con
+Opciones de versionado y organización a través de tableros.
+
+Ref: B42
+
+CONCEPTOS PRINCIPALES
+------------
+- PLANTILLAS: Textos emergentes reutilizables con nombre, categoría, etiquetas
+- VERSIONES: Cada cambio crea una nueva versión (historial)
+- TABLEROS: Colecciones de plantillas (grupos temáticos)
+
+COMANDOS CLI (indicador de bach)
+--------------------------
+
+  list [--category CAT] Listar todas las plantillas
+  agregar <nombre> <texto> Crear nueva plantilla
+  obtener plantilla <id_or_name> + mostrar historial de versiones
+  actualizar <id_or_name> <texto> Crear nueva versión
+  eliminar <id_or_name> Eliminar plantilla
+  search <query> Search templates
+  tableros Ver todos los tableros
+  tablero <título> Ver/crear/administrar tablero
+
+OPCIONES PARA AGREGAR
+-----------------
+  --categoría Categoría CAT (por ejemplo, "análisis", "escritura")
+  --tags etiquetas t1,t2 (separadas por comas)
+  --propósito TEXTO Propósito
+
+OPCIONES PARA TABLERO
+-------------------
+  --add-prompt Agregar mensaje de identificación al tablero
+  --remove-prompt Eliminar el mensaje de ID del tablero
+  --description TEXTO Configurar/actualizar la descripción del tablero
+
+EJEMPLOS
+---------
+
+  # Plantillas de lista
+  bach prompt list
+  bach prompt list --category analyse
+
+  # Crear plantilla
+  bach prompt add "Zusammenfassung" "Fasse den folgenden Text zusammen:" --category schreiben
+  bach prompt add "Code-Review" "Pruefe diesen Code auf Fehler:" --tags "dev,review" --purpose "Code-Qualitaet"
+
+  # Mostrar plantilla (con historial de versiones)
+  bach prompt get 42
+  bach prompt get "Zusammenfassung"
+
+  # Actualizar plantilla (versión creada)
+  bach prompt update 42 "Fasse den folgenden Text praegnant zusammen:"
+  bach prompt update "Zusammenfassung" "Neue Version des Textes..."
+
+  # Eliminar plantilla
+  bach prompt delete 42
+
+  # Buscar (en nombre, texto, etiquetas)
+  bach prompt search "zusammenfass"
+  bach prompt search "code"
+
+  # Administrar tableros
+  bach prompt boards                                      # Todos los tableros
+  bach prompt board "Schreiben"                           # Crear/ver tablero
+  bach prompt board "Schreiben" --add-prompt 42           # Agregar mensaje
+  bach prompt board "Schreiben" --remove-prompt 42        # Eliminar mensaje
+  bach prompt board "Schreiben" --description "Schreib-Prompts fuer den Alltag"
+
+VERSIONANDO
+-------------
+
+Cuando "actualizas", el texto antiguo se guarda automáticamente como una versión.
+El historial de versiones es visible en `bach ​​​​prompt get <id>`:
+
+  VERSIONES (2):
+    Sin texto creado (vista previa)
+    1 2026-01-15T10:30:00 Texto antiguo...
+    2 2026-02-01T14:00:00 Próxima versión...
+
+RESOLUCIÓN DE CONFLICTOS (--confidence)
+------------------------------------
+La confianza se puede especificar con `add` (para memoria compartida):
+  bach prompt add <name> <text> --confidence 0.8
+
+En caso de conflictos (misma clave, espacio de nombres), gana una mayor confianza.
+
+DATABASE
+---------
+
+  plantillas_indicación:
+    identificación, nombre, propósito, texto, etiquetas, categoría,
+    creado_at, actualizado_at, dist_type
+
+  versiones_prompt:
+    id, id_indicación, número_versión, texto, etiquetas, creado_at
+
+  tableros_indicadores:
+    id, título, descripción, creado_at
+
+  item_board_items:
+    id, board_id, Prompt_id, add_at
+
+ARCHIVOS
+-------
+  hub/prompt.py Implementación del controlador
+
+VER TAMBIÉN
+----------
+  bach --help tasks        Sistema de tareas
+  bach --help memory       Sistema de memoria
+  bach --help skills       Sistema SKILL.md

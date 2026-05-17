@@ -1,0 +1,38 @@
+BACH ツール: c_german_scanner
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/c_german_scanner.py
+
+説明
+----------------------------------------
+c_german_scanner.py - Python プロジェクトでドイツ語の文字列を検索
+
+Python ファイルをスキャンして次のものが見つかります:
+  - ウムラウト付きの文字列 (ae、oe、ue、ss)
+  - GUI テキスト (setText、setWindowTitle、QLabel など)
+  - ドイツ語のキーワード (ファイル、編集、保存など)
+
+次の場合に役立ちます:
+  - 国際化 (i18n) の準備をします。
+  - ハードコードされた文字列を検索する
+  - 翻訳リストの作成
+
+抽出元: A3 開発ループ Advanced/TranslationSystem.py
+
+使用法:
+    python c_german_scanner.py <フォルダー>
+    python c_german_scanner.py <フォルダー> --json
+    python c_german_scanner.py <フォルダ> --export translations.json
+
+著者: クロード (適応)
+依存関係: なし (stdlib のみ)
+
+USE
+----------------------------------------
+python bach.py ツールは c_german_scanner [args] を実行します
+または直接: python tools/c_german_scanner.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show c_german_scanner

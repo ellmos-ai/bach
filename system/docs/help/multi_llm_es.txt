@@ -1,0 +1,246 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PROTOCOLO MULTI-LLM - Coordinación de agentes paralelos
+-----------------------------------------------------
+
+A partir de: 2026-01-28 v1.1.71
+
+Protocolo V3 para trabajo paralelo seguro de múltiples LLM
+(Claude, Géminis, Copiloto, Ollama, Perplejidad) en el mismo
+Sistema de archivos. Desarrollado por Claude + Experimento Géminis
+el 28-01-2026.
+
+IMPORTANTE: COMENZAR BIEN
+------------------------
+¡TODOS los socios deben comenzar con una tarjeta de sello!
+
+  # Claude comienza
+  bach --startup --partner=claude --mode=silent
+
+  # Lanzamiento de Géminis
+  bach --startup --partner=gemini --mode=silent
+
+  # Nuevo socio (con nombre propio)
+  bach --startup --partner=simonAI --mode=silent
+
+  # Nuevo socio (sin nombre)
+  bach --startup --partner=new --mode=silent
+
+¿POR QUÉ?
+- Entrada/salida automática en la base de datos partner_presence
+- Conocimiento de socios: detecta quién sigue en línea
+- El protocolo V3 se recomienda automáticamente para varios socios
+- La verificación entre tareas recuerda la verificación del socio
+
+COMANDOS CLI
+-----------
+bach llm presence [dir] [task]  Crear/actualizar presencia
+bach llm check [dir]            Detectar otros agentes
+bach llm lock <datei>           Adquirir bloqueo
+bach llm unlock [datei]         Liberar bloqueo
+bach llm handshake [dir]        Iniciar protocolo de protocolo de enlace
+bach llm status [dir]           Mostrar estado
+
+COMPONENTES DEL PROTOCOLO V3
+------------------------
+
+1. SISTEMA DE PRESENCIA
+------------------
+Cada agente crea un archivo de presencia en el directorio de trabajo:
+
+Archivo: .<agent>_presence (por ejemplo, .claude_presence)
+
+Contenido:
+  Agente: Claude
+  estado: ACTIVO|TERMINADO
+  iniciado: 2026-01-28T01:00:00
+  latido del corazón: 2026-01-28T01:05:00
+  trabajando_en: TASK_DESCRIPTION
+  archivo_actual: archivo.txt
+  lock_status: GRATIS|BLOQUEADO|ESPERANDO
+
+Reglas:
+- Actualizar los latidos del corazón cada 30-60 segundos
+- Latido del corazón de más de 2 minutos = agente inactivo
+- Al final de la sesión: establezca el estado en FINALIZADO
+
+2. SISTEMA DE BLOQUEO
+-----------------
+Antes del acceso de escritura a archivos compartidos:
+
+Bloquear archivo: <archivo>.lock.<agente>
+Ejemplo: PROTOKOL.md.lock.claude
+
+Flujo de trabajo:
+  1. list_directory: comprueba si existe un .lock.* externo
+  2. Si es así -> ESPERE (retroceso de 5 segundos, luego otra vez)
+  3. Si no -> crear bloqueo
+  4. Cree una copia de seguridad (<archivo>.bak)
+  5. Editar archivo
+  6. Eliminar el bloqueo INMEDIATAMENTE
+
+Contenido del bloqueo:
+  Agente: Claude
+  bloqueado_en: 2026-01-28T01:00:00
+  archivo: PROTOKOL.md
+
+Tiempo de espera: el bloqueo de más de 5 minutos se considera "obsoleto"
+         y puede ser eliminado por otro agente.
+
+3. SISTEMA DE RESPALDO
+----------------
+ANTES de cualquier cambio en los archivos compartidos:
+- Crear copia de seguridad: <archivo>.bak
+- Sólo escribe después
+- La copia de seguridad queda para recuperación
+
+4. PROTOCOLO DE HANDSHAKE
+----------------------
+Autodetección cuando los agentes se encuentran:
+
+Procedimiento:
+  1. El agente A crea presencia
+  2. El Agente A detecta al Agente B (a través de detect_other_agents)
+  3. Agente A creado: .handshake_<agent_a>
+  4. El agente B detecta una solicitud de protocolo de enlace
+  5. El agente B responde: .handshake_<agent_b> con ACEPTADO
+  6. Ambos habilitan el protocolo V3
+
+archivo de protocolo de enlace:
+  de: claudio
+  a: géminis
+  hora: 2026-01-28T01:00:00
+  estado: ACEPTADO
+  protocolo: V3
+
+COMUNICACIÓN
+-------------
+
+Meta nivel (asíncrono):
+  bach msg send <partner> "Nachricht"
+  bach msg list
+  bach msg read <id>
+
+Tiempo real (en la carpeta de trabajo):
+  Archivos de presencia para estado
+  Comunicación en el archivo (entradas con marca de tiempo)
+
+Formato en el archivo:
+  [HH:MM] [Agente] Mensaje o acción
+
+FLUJO DE TRABAJO: EDITAR ARCHIVO COMPARTIDO
+-------------------------------------
+
+1. Comprobar presencia:
+   bach llm check
+
+2. Adquirir bloqueo:
+   bach llm lock DATEI.md
+
+3. Crear copia de seguridad:
+   (automáticamente con safe_write)
+
+4. Editar archivo
+
+5. Liberar bloqueo:
+   bach llm unlock DATEI.md
+
+6. Actualizar presencia:
+   bach llm presence . "Fertig"
+
+SESIÓN DE EJEMPLO
+----------------
+
+# El agente A comienza
+bach llm presence . "Task_123"
+bach llm check              # -> "No hay otros agentes"
+
+# El agente B comienza
+bach llm presence . "Task_456"
+bach llm check              # -> "claude: ACTIVO"
+
+# El agente A quiere editar SHARED.txt
+bach llm lock SHARED.txt    # -> "Bloqueo adquirido"
+# ... procesado ...
+bach llm unlock SHARED.txt
+
+# El agente B espera automáticamente si el bloqueo existe
+bach llm lock SHARED.txt    # -> Espera hasta que A termine
+
+KNOWN AGENTES
+----------------
+
+- claude Claude (Antrópico)
+- Géminis Géminis (Google)
+- copiloto Copiloto de GitHub
+- LLM locales de ollama
+- perplejidad Perplejidad AI
+
+ARCHIVOS EN LA CARPETA DE TRABAJO
+------------------------
+
+.claude_presence Presencia Claude
+.gemini_presence Presencia Géminis
+ARCHIVO.lock.claude Bloqueo de Claude
+FILE.lock.gemini Bloqueo de Gemini
+Copia de seguridad de FILE.bak antes del cambio
+.handshake_claude Señal de apretón de manos
+.handshake_gemini Respuesta del protocolo de enlace
+
+SOLUCIÓN DE PROBLEMAS
+---------------
+
+Problema: el bloqueo se atasca
+Solución: el bloqueo con más de 5 minutos se considera obsoleto
+         y automáticamente ignorado. Eliminar manualmente Aceptar.
+
+Problema: El agente no reconoce a otros
+Solución: verifique el archivo de presencia. ¿Latido actual?
+
+Problema: condición de carrera a pesar del bloqueo
+Solución: compruebe si list_directory ANTES de la creación del bloqueo
+         se ejecuta. ¿Problema de tiempo?
+
+HANDLER
+-------
+hub/multi_llm_protocol.py Implementación del protocolo
+
+LECCIONES
+-------
+Lección n.° 62: Conceptos básicos del trabajo paralelo de múltiples LLM
+Lección #63: Protocolo Multi-LLM V3
+
+VER TAMBIÉN
+----------
+bach --help partner   Sistema de socios
+bach --help messages       Mensajes
+
+
+SISTEMA DE TARJETA DE SELLO (v1.1.71)
+------------------------------
+Presencia de socios basada en base de datos para reconocimiento automático.
+
+TABLA: presencia_partner
+  id INTEGER CLAVE PRIMARIA
+  nombre_socio TEXTO ID del socio (claude, gemini, usuario, ...)
+  estado TEXTO en línea|fuera de línea|bloqueado
+  clocked_in TEXTO Hora de entrada
+  clocked_out TEXTO Hora de salida
+  last_heartbeat TEXTO Última actividad
+  current_task TEXTO Tarea actual
+  session_id TEXTO Sesión asociada
+
+AUTOMÁTICO:
+- En --startup: Entrada (sesiones antiguas bloqueadas marcadas)
+- Con --shutdown: marcar la salida
+- Conocimiento de los socios en la salida de inicio
+
+MANUAL (opcional):
+- Latidos del corazón: presencia de bach llm. "Tarea_XYZ"
+- Estado: estado de bach llm
+
+TIEMPO DE ESPERA:
+- Latidos del corazón de más de 5 minutos = pareja inactiva
+- Las sesiones fallidas se limpiarán en el próximo inicio.

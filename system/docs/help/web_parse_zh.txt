@@ -1,0 +1,65 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+===
+web_parse
+
+描述
+===
+下载网页并将HTML 转换为Markdown。支持
+可选的清理（删除导航、页眉、页脚、旁边）。
+实现基于 MD5 哈希的文件名缓存。
+
+操作
+===
+url <url>
+  加载URL，输出完整的HTML到Markdown内容。
+  缓存会自动检查和更新。
+
+clean <url>
+  加载 URL 并仅解析主要内容（导航、页眉、页脚、旁白）
+  已删除）。在干净模式下不会解析链接。
+
+缓存列表
+  显示所有缓存的文件。指定文件名、大小 (KB)、URL 和
+  时间戳关闭。
+
+缓存清除
+  清空缓存目录（查询：data/cache/web下的所有.md文件
+  将被删除）。
+
+示例
+===
+bach web-parse url https://example.com
+  将 example.com 的完整内容输出为 Markdown。
+
+bach web-parse clean https://example.com/article
+  仅文章主要内容，没有导航/页眉/页脚作为 Markdown。
+
+bach web-parse cache list
+  显示缓存页面的大小。
+
+bach web-parse cache clear
+  清除整个缓存。
+
+文件
+===
+data/cache/web/
+  缓存目录。 URL 的 MD5 哈希值（12 个字符）+ 后缀“_clean”
+  如果是干净模式+ .md 扩展名。
+  示例：abc1234def56_clean.md
+
+hub/web_parse.py
+  Handler实现BaseHandler子类，HTTP请求用
+  请求、使用 html2text 或后备正则表达式的 HTML 到 Markdown。
+
+另请参见
+===
+依赖项：请求（pip 安装请求）、html2text（可选）。
+如果未安装 html2text，则使用正则表达式进行回退转换。
+用户代理已设置 (BACH WebParse/1.0)。
+超时：每个请求 20 秒。
+HTML 实体被解码（&amp;、<、>、&quot;、&nbsp;）。
+缓存文件包含带有 URL、时间戳、模式的元注释。

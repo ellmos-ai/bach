@@ -1,0 +1,18 @@
+BACH ツール: ollama_summarize
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/ollama_summarize.py
+
+説明
+----------------------------------------
+Ollama セッション レポートの概要
+
+使用
+----------------------------------------
+python bach.py tools run ollama_summarize [args]
+または直接: python tools/ollama_summarize.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成されます
+- 質問がある場合: bach tools show ollama_summarize

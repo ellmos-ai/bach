@@ -1,0 +1,81 @@
+巴赫工具：python_cli_editor
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/python_cli_editor.py
+
+描述
+----------------------------------------
+python_cli_editor.py - Python 代码编辑器 CLI v2.0
+
+以结构化方式分析和编辑 Python 文件。
+显示类、方法、导入并启用有针对性的编辑。
+
+作者：BACH 贡献者
+版本：2.0.0
+日期：2026-01-13
+
+------------------------------------------------------------
+新功能 v2.0：
+------------------------------------------------------------
+
+行号：
+  --lines / --no-lines 行号开/关（默认：开）
+
+插入：
+  --add CODE 插入代码（从文件或直接）
+  --at-start 在文件的开头（导入后）
+  --at-end 在文件末尾
+  --at-imports 在导入部分
+  --in-class NAME 在类 NAME 中（最后）
+  --before NAME 在元素 NAME 之前
+  --after NAME 在元素 NAME 之后
+  --at-line N 在线 N
+
+删除：
+  --delete NAME 删除类、方法或函数
+
+编辑行：
+  --change-line N 编辑第 N 行（交互式或使用 --content）
+  --content "CODE" --change-line
+
+SAVE 的新内容：
+  --test 创建测试文件而不修改原始文件
+  --save 使用自动备份直接保存
+
+------------------------------------------------------------
+示例:
+------------------------------------------------------------
+
+# 显示带有行号的结构
+python python_cli_editor.py script.py --show-all --lines
+
+# 在末尾插入新函数
+python python_cli_editor.py script.py --add new_func.py --at-end --save
+
+# 将方法插入类中
+python python_cli_editor.py script.py --add method.py --in-class MyClass --save
+
+# 添加导入
+python python_cli_editor.py script.py --add "import os" --at-imports --save
+
+# 删除类
+python python_cli_editor.py script.py --delete MyClass --save
+
+# 换行
+python python_cli_editor.py script.py --change-line 42 --content "x = 100" --save
+
+# 在元素之前/之后插入
+python python_cli_editor.py script.py --add helper.py --在MainClass之前 --save
+python python_cli_editor.py script.py --add cleanup.py --after process_data --save
+
+------------------------------------------------------------
+
+USE
+----------------------------------------
+python bach.py 工具运行 python_cli_editor [args]
+或直接： python tools/python_cli_editor.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示 python_cli_editor

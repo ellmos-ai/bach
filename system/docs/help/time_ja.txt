@@ -1,0 +1,108 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+タイム ハンドラー
+----------------------------------------------------------------------------
+
+説明
+----------------------------------------------------------------------------
+
+タイム ハンドラーは、BACH の時間管理システムを管理します。彼は申し出ます
+時間表示、タイマー、カウントダウン、時間ベースの機能
+プロファイル管理 (間)。すべてのモジュールは中央の TimeManager を使用します
+調整された操作用。
+
+ベース ディレクトリ: data/ (状態ファイル)
+モジュール: tools/time_system.py
+
+
+OPERATIONS
+----------------------------------------------------------------------------
+
+CLOCK
+-----
+  bach clock on              - 時間表示をアクティブ化
+  bach clock off             - 時間表示を非アクティブ化
+  bach clock status          - 時間表示のステータスを確認
+  bach clock interval <sek>  - 表示間隔を秒単位で設定
+
+TIMER
+-----
+  bach timer start [name]    - タイマーを開始 (デフォルト: 「デフォルト」)
+  bach timer stop [name]     - タイマーを停止
+  bach timer list            - すべてのアクティブなタイマーを表示
+  bach timer clear           - すべてのタイマーを削除
+
+COUNTDOWN
+---------
+  bach countdown start <name> <HH:MM:SS> [--after 'befehl']
+                             - オプションのコマンドでカウントダウンを開始します
+                               (短い形式: <HH:MM:SS> のみ -> name="timer")
+  bach countdown stop <name> - Countdown abbrechen
+  bach countdown pause <name> - Countdown pausieren
+  bach countdown resume <name> - Countdown fortsetzen
+  bach countdown list        - すべてのカウントダウンを表示
+
+BETWEEN
+-------
+  bach between on            - チェック間でアクティブ化
+  bach between off           - チェック間で非アクティブ化
+  bach between status        - ステータスを表示
+  bach between use <name>    - プロファイルをアクティブ化
+  bach between profile list  - プロファイルのリスト
+  bach between profile show <name> - Profil Details anzeigen
+
+BEAT
+----
+  bach beat                  - すべての時間情報を表示
+  bach beat on               - すべての時間表示をアクティブ化
+  bach beat off              - すべての時間表示を非アクティブ化
+  bach beat interval <sek>   - グローバル セット間隔
+
+
+例
+----------------------------------------------------------------------------
+
+# 30 秒後にタイマー測定とクエリを開始
+bach timer start work
+# ... 仕事 ...
+bach timer stop work
+
+# アラーム付きカウントダウン: 5 分の休憩
+bach countdown start pause 00:05:00 --after "echo Pause vorbei!"
+
+# プロファイル間のロード (勤務時間など)
+bach between status
+bach between use office-hours
+
+# グローバル時間のステータスを確認
+bach beat
+bach beat on           # すべてのタイム モジュールをアクティブ化
+bach beat interval 60  # 60 秒ごとに更新
+
+
+ファイル
+----------------------------------------------------------------------------
+
+状態ファイル (system/ に相対):
+
+  data/. Clock_state - 時刻表示設定
+  data/.timer_state - タイマー状態管理
+  data/.countdown_state - カウントダウン状態管理
+  data/.between_state - プロファイル マネージャー間
+
+モジュール:
+
+  Hub/time.py - ハンドラーの実装
+  tools/time_system.py - TimeManager、ClockModule、TimerModule、
+                           CountdownModule、BetweenManager
+
+
+関連項目
+----------------------------------------------------------------------------
+
+  ベース ハンドラー API: docs/help/base.txt
+  構成: config/time_config.json
+  時間システムの仕様: docs/TIME-SYSTEM.md
+  プロファイル管理: docs/BETWEEN-PROFILES.md

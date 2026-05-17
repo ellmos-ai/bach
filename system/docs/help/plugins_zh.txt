@@ -1,0 +1,226 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH 插件 API
+---------------
+
+截至：2026-05-06
+
+插件 API 支持在运行时动态扩展 BACH。
+插件可以注册工具、挂钩、工作流程和处理程序——
+命令式（通过代码）或声明式（通过`plugin.json`）。
+
+CLI 命令
+-----------
+  bach plugins list              显示所有加载的插件
+  bach plugins inspect <pfad>    清单优先预览，无需运行时加载
+  bach plugins load <pfad>       从plugin.json加载插件
+  bach plugins unload <name>     卸载插件
+  bach plugins tools             显示所有插件工具
+  bach plugins info <name>       插件详细信息
+  bach plugins create <name>     创建插件清单（脚手架）
+  bach plugins caps              显示功能配置文件
+  bach plugins trust <name> <l>  更改插件的信任级别
+  bach plugins audit [limit]     显示最新的功能检查
+
+  缩写形式：
+  bach plugin list               （别名：插件 -> 插件）
+
+API 使用（命令）
+-----------------------
+  从 core.plugin_api 导入插件
+  # 或者：从 bach_api 导入插件
+
+  # 注册工具
+  def my_tool(文本):
+      返回f“已处理：{text}”
+
+  plugins.register_tool("my_tool", my_tool, "描述")
+  结果 = plugins.call_tool("my_tool", "input")
+
+  # 注册钩子
+  def on_task(ctx):
+      print(f"任务已创建：{ctx['task_id']}")
+
+  plugins.register_hook（“after_task_create”，on_task，plugin =“my-plugin”）
+
+  # 注册处理程序（新 CLI 命令）
+  从 hub.base 导入 BaseHandler
+  类 MyHandler(BaseHandler):
+      ...
+
+  plugins.register_handler("my_cmd", MyHandler, plugin="my-plugin")
+
+  # 创建工作流程
+  plugins.register_workflow("my-workflow", "# Workflow\n...", plugin="my-plugin")
+
+  # 管理
+  打印（插件.list_plugins（））
+  plugins.inspect_plugin("插件/my-plugin/plugin.json")
+  plugins.unload_plugin("my-plugin")
+
+插件清单（声明式）
+----------------------------
+创建`plugin.json`用于自动加载：
+
+  bach plugins create mein-plugin
+
+清单格式（`plugin.json`）：
+  {
+    “名称”：“我的插件”，
+    “清单版本”：“1.1”，
+    “版本”：“1.0.0”，
+    "description": "插件的作用",
+    “作者”：“克劳德”，
+    “来源”：“黄金标准”，
+    “功能”：[“db_read”，“hook_listen”]，
+    "activation": {"mode": "manual", "enabled": true},
+    “提供商”：[]，
+    “模型”：[]，
+    “设置”：{
+      “需要”：[“Node.js”，“克劳德代码”]，
+      “env”：[“ANTHROPIC_API_KEY”]，
+      "notes": "为什么需要设置",
+      “fail_close”：正确，
+      “表面”：[“壳”，“mcp”]，
+      “检查”：[
+        {"type": "command_exists", "command": "npx"},
+        {“类型”：“mcp_server_known”，“包”：“ellmos-codecommander-mcp”}
+      ]
+    },
+    “钩子”：[
+      {
+        “事件”：“after_task_done”，
+        “模块”：“处理程序.py”，
+        “处理程序”：“on_task_done”，
+        “优先级”：50
+      }
+    ],
+    “处理程序”：[
+      {“名称”：“my_cmd”，“文件”：“my_handler.py”}
+    ],
+    “工作流程”：[
+      {"name": "my-workflow", "file": "workflow.md"}
+    ]
+  }
+
+加载：
+  bach plugins inspect plugins/mein-plugin/plugin.json
+  bach plugins load plugins/mein-plugin/plugin.json
+
+注册类型
+--------------------
+  类型 API 方法说明
+  -------- ---------------------------------- ---------------------------------
+  工具 register_tool() 注册可调用的工具
+  Hook register_hook() 注册事件监听器
+  工作流程 register_workflow() 创建 Markdown 文件
+  处理程序 register_handler() 新运行时 CLI 命令
+
+PLUGIN-LIFECYCLE
+----------------
+  1.创建：bach plugins create <name>
+  2.开发：编辑plugin.json + handlers.py
+  3.检查：bach插件检查<path/plugin.json>
+  4.加载：bach插件加载<path/plugin.json>
+  5.使用：Fire hooks、调用工具、使用CLI命令
+  6. 卸载：bach 插件卸载 <name>
+
+CAPABILITY SYSTEM (Level 1 Sandbox)
+-----------------------------------
+插件声明所需的功能。巴赫检查和
+根据来源的信任级别强制执行。
+
+  定义的能力：
+    db_read 读取数据库
+    db_write 写入数据库
+    file_read 读取文件
+    file_write 写入文件
+    hook_listen 监听事件
+    hook_emit 发出事件
+    tool_register 注册新工具
+    handler_register 注册新的 CLI 处理程序
+    workflow_create 创建工作流程
+    网络 网络访问（HTTP/API）
+    shell 执行shell命令
+    桌面 运行桌面/GUI 自动化
+    配置或连接 mcp MCP 服务器
+
+信任配置文件（链接到“data/skill_sources.json”）：
+    goldstandard 信任=100 所有能力
+    Trusted trust=80 除 shell + 桌面 + mcp + 网络外的所有内容
+    untrusted trust=20 仅 db_read、file_read、hook_listen
+    黑名单信任=0 不允许
+
+  执行：
+    - register_tool() 检查 `tool_register`
+    - register_hook() 检查 `hook_listen`
+    - register_handler() 检查 `handler_register`
+    - register_workflow() 检查 `workflow_create`
+    - load_plugin() 检查所有请求的功能
+    - 检查/加载检查 shell/desktop/mcp 的设置防护失败关闭
+
+SETUP-GUARDS (SEC-PLUGIN-003)
+-----------------------------
+在运行时导入之前阻止通过设置元数据的强访问，
+如果需求没有明确描述并且失败关闭。
+
+  危险表面：
+    shell、桌面、mcp
+
+  此类设置的强制要求：
+    - `setup.fail_close = true`
+    - `setup.checks = [...]` 进行适当的防护检查
+
+  支持的支票类型：
+    命令存在
+    环境存在
+    路径存在
+    python_导入
+    mcp_服务器_已知
+    桌面启用
+    权限标志
+
+  预期支票覆盖范围：
+    shell -> command_exists、env_present、path_exists、python_import
+    桌面 -> 桌面启用、路径存在、命令存在、环境存在
+    mcp -> mcp_server_known、command_exists、env_present、path_exists
+
+  示例：
+    “设置”：{
+      “需要”：[“克劳德桌面”，“Node.js”]，
+      “fail_close”：正确，
+      “表面”：[“mcp”]，
+      “检查”：[
+        {"type": "command_exists", "command": "npx"},
+        {“类型”：“mcp_server_known”，“包”：“ellmos-codecommander-mcp”}
+      ]
+    }
+
+安全
+----------
+  - 所有 `register_*()` 方法中的功能强制执行
+  - 来自“skill_sources.json”的信任级别（4 级系统）
+  - 清单优先检查：激活、提供程序、模型、设置，无需运行时导入
+  - 在插件加载之前，针对 shell/桌面/MCP 的故障关闭设置防护
+  - 静态代码分析：eval、exec、subprocess、os.system
+  - 可追溯性审核日志
+  - 有缺陷的钩子会被抓住并且不会破坏任何东西
+  - 插件卸载干净地删除所有注册
+  - 审核通过：`bach 插件审核`、`bach 插件信息 <name>`
+
+架构
+-----------
+  core/capability.py CapabilityManager 单例（执行）
+  core/plugin_api.py PluginRegistry 单例（插件管理）
+  hub/plugins.py CLI 处理程序（`bach 插件 ...`）
+  core/hooks.py 钩子框架
+  data/skill_sources.json 信任配置文件和能力映射
+
+另请参见
+----------
+  bach help hooks          Hook 框架
+  bach help skills         技能系统
+  bach help self-extension Selbsterweiterungs-System
+  bach help cli            CLI 约定

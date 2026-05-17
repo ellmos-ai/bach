@@ -1,0 +1,55 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# ステータス: 非推奨 -messages.py ハンドラーに置き換えられました
+
+メッセージボックス システム (非推奨)
+-----------------------------
+
+注: このファイルベースのシステムは非推奨であり、アーカイブされています。
+         現在のシステム: MessagesHandler (system/hub/messages.py)
+
+古いトピックベースのメッセージング システム (電子メールと似ていますが、ファイルベース)
+SQLite ベースのシステムに置き換えられました。
+
+現在の置き換え:
+  ハンドラー: system/hub/messages.py (MessagesHandler)
+  バックエンド: system/data/bach.db (メッセージ テーブル)
+  CLI: bach msg <操作>
+
+SEE:
+  bach msg --help           現在のコマンド
+  docs/help/messages.txt 新しいドキュメント
+
+アーカイブされたコード:
+  システム/データ/_アーカイブ/gui_Entwuerfe/inbox/
+    - messagebox_backend.py
+    - メッセージボックス.html
+    - inbox_index.json
+
+-----------------------------------------------------------------------
+古いドキュメント (歴史的のみ)
+-----------------------------------------------------------------------
+
+コンセプト (古い):
+  - 1 つのトピック = 1 つの TXT ファイル
+  - メッセージはトピックに割り当てられます
+  - インデックス (JSON) による素早いアクセス
+  - サイズ制限付きの自動アーカイブ
+
+フォルダー (旧):
+  DATA/受信箱/アクティブなトピック (存在しません)
+  DATA/inbox/archive/ アーカイブされたトピック (存在しません)
+  DATA/inbox/agenda/ アジェンダ参照 (存在しません)
+
+CLI コマンド (古い、機能しなくなりました):
+  Python messagebox_backend.py リスト [--all]
+  python messagebox_backend.py 新しい <タイトル>
+  python messagebox_backend.py add <id> <text>
+  python messagebox_backend.py show <id>
+  python messagebox_backend.py アーカイブ <id>
+  python messagebox_backend.py 復元 <id>
+
+移行:
+  古いシステムは移行されませんでした。必要に応じて古いものを使用することもできます
+  テーマ ファイルはバックアップから復元できます。

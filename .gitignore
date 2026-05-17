@@ -165,6 +165,7 @@ PLAN.txt
 /merge_db.py
 /quality_check.py
 /scratch_dump.json
+/wait_and_finalize.py
 
 # === USER-DATEN MIT ECHTEN NAMEN ===
 /system/data/anonymizer_whitelist.json

@@ -1,0 +1,137 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 次回試験: 2026-11-15
+# リソース: [hub/scheduler.py、gui/daemon_service.py、scheduler_jobs、scheduler_runs]
+
+SCHEDULER - バックグラウンド ジョブとスケジューラ サービス
+----------------------------------------------------
+
+日付: 2026-02-28
+
+注: `bach スケジューラ ...` はスケジューラの新しい名前です。
+古いコマンド `bach daemon ...` はエイリアスとして引き続き使用できます。
+
+重要なポリシー
+---------------
+**すべてのスケジューラー ジョブはデフォルトで無効になっています。**
+
+理由: 自動プロセスはアクティブなチャット セッションで動作できます。
+とプロンプトジェネレーターが衝突します。仕事は手作業のみ
+
+
+スケジューラは、操作中に OneDrive 同期を自動的に一時停止します。
+同期の競合を避けるため。
+
+参照: docs/CONCEPT_daemon_policy.md
+
+CLI コマンド (バッチ スケジューラ)
+-----------------------------
+
+  求人 すべての求人を表示
+  ステータス スケジューラのステータス
+  status --json JSON としてのスケジューラのステータス
+  ドクタースケジューラーの飛行前および回復メモ
+  Doctor --json JSON としてのスケジューラのプリフライト
+  start [--bg] スケジューラーサービスを開始します (バックグラウンドの場合は --bg)
+  stop スケジューラーサービスを停止します
+  run <ID> 個々のジョブを手動で実行する
+  logs [N] 最新のログ エントリを表示します (デフォルト: 20)
+  jobs --json JSON として計算されたステータスを持つスケジューラ ジョブ
+
+SESSION-SYSTEM
+--------------
+
+  session start [--profile NAME] セッションスケジューラを開始します
+  セッション停止 セッションスケジューラーを停止します
+  セッションステータス セッションステータスを表示
+  セッションステータス --json JSON としてのセッションステータス
+  セッションドクター セッションのプリフライトとリカバリーノート
+  session Doctor --json JSON としてのセッション プリフライト
+  セッション一時停止 [--profile NAME] [理由] プロファイルの一時停止トリガー
+  セッション再開 [--profile NAME] プロファイルの一時停止を解除します
+  session steer [--profile NAME] "Text" 次のセッションの制御情報を保存します
+  session clear-steer [--profile NAME] プロファイル制御命令をクリアします
+  セッショントリガー [--profile NAME] セッションを手動でトリガーします
+  セッション プロファイル 利用可能なプロファイルのリスト
+
+  ドライランの例:
+    bach scheduler session trigger --profile wartung --dry-run
+
+  オペレーター制御の例:
+    bach scheduler session steer --profile ati "Bitte heute nur Health-Checks und Docs anfassen."
+    bach scheduler session status --json
+
+ジョブタイプ
+---------
+
+  間隔 一定期間後の繰り返し (例: 24 時間、30 分)
+  cron スケジュールベース (例: "0 2 * * *" = 毎日午前 2 時)
+  イベント イベントベースのトリガー (外部トリガー)
+  手動 手動でのみ実行できます
+  チェーン チェーンされたジョブの実行 (チェーン システム)
+
+スケジューラは、定期的なタスクがないか 5 分ごとに自動的にチェックします。
+
+利用可能なジョブ (デフォルトではすべてオフ)
+-------------------------------------------
+注: ジョブ リストは動的です。現在のジョブ経由: bach スケジューラ ジョブ
+
+ジョブの例:
+  ID名 スケジュール機能
+  -- ----------------------- -------- --------------------------------
+  1 スキャナー 60m タスクのソフトウェアフォルダーをスキャン
+  2 バックアップ 24 時間自動バックアップ
+  3 つの受信トレイ スキャン プロセス 30m の受信トレイ フォルダー
+  4 つの統合ウェイト 24 時間メモリ ウェイト (減衰)
+  5 consolidate-archive 24h 古いエントリをアーカイブする
+  6 consolidate-index 7d ヘルプ/Wiki インデックスの更新
+  7 つの統合圧縮 24 時間圧縮セッション
+  8 consolidate-we 7d 毎週の統合
+  9 夜間メンテナンス cron 0 2 夜間メンテナンス チェーン
+  10 週次バックアップ cron 0 3 0 週次バックアップ
+
+コネクタ ジョブ (v2.0、bach コネクタ セットアップ スケジューラ経由):
+  --connector_poll_and_route 2m コネクタ 花粉 + インボックス ルーティング
+  --connector_dispatch 1m 送信キューを再試行して送信します
+
+ジョブを手動で実行
+----------------------
+自動スケジューラの代わりに推奨される方法:
+
+  # ジョブを 1 回実行
+  bach scheduler run 1         # スキャナを 1 回実行
+  bach scheduler run 2         # バックアップを 1 回作成
+  bach scheduler jobs --json   # 外部ツール/エージェントのジョブ
+
+  # または直接コマンド
+  bach scan run                # Scanner
+  bach backup create           # Backup
+  bach consolidate run         # Consolidation
+
+GUI
+---
+  http://127.0.0.1:8000/scheduler スケジューラー ダッシュボード
+
+  - ジョブの有効化/無効化
+  - 手動で実行する
+  - 最新の実行を参照
+
+ALIAS: bach daemon ...
+----------------------
+前のコマンド名 `bach daemon` はまだエイリアスです
+下位互換性のために利用可能です。両方の形式のコマンド
+同等です:
+
+  bach daemon jobs      == bach スケジューラ ジョブ
+  bach daemon status    == bach スケジューラ ステータス
+  bach daemon start     == bach スケジューラの開始
+
+関連項目
+----------
+  bach --help daemon           古いドキュメント (エイリアス)
+docs/CONCEPT_daemon_policy.md スケジューラ ポリシー
+  bach --help connector        コネクタ システム (キュー、再試行)
+  bach --help maintain         メンテナンス ツール
+  bach --help backup           バックアップ システム
+  bach --help consolidation    メモリ統合

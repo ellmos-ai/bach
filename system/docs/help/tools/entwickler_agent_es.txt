@@ -1,0 +1,27 @@
+Herramienta BACH: desarrollador_agent
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/developer_agent.py
+
+DESCRIPCIÓN
+----------------------------------------
+Agente de desarrollador v1.0.0
+Agente de desarrollo de software RecludOS
+Implementación completa (Fase 1-6)
+
+Fase 1: ✅ Gestión de proyectos y tareas
+Fase 2: ✅ Análisis y generación de código
+Fase 3: ✅ Integración de servicios (editor/compilador)
+Fase 4: ✅ Inteligencia (Depuración, Patrones)
+Fase 5: ✅ Colaboración (bucle de retroalimentación)
+Fase 6: ✅ Pruebas y pulido
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan development_agent [args]
+o directamente: python tools/developer_agent.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: herramientas de bach muestra desarrollador_agente

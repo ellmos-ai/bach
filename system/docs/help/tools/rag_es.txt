@@ -1,0 +1,29 @@
+Herramienta BACH: RAG (Recuperación-Generación Aumentada)
+------------------------------------------------
+
+Búsqueda de documentos basada en vectores para BACH.
+
+USE
+----------
+
+  bach --tools rag ingest <pfad>     Indexar documentos
+  bach --tools rag search <query>    Búsqueda semántica
+
+INGEST
+------
+
+Lee documentos y crea vectores:
+  - Formatos admitidos: .txt, .md, .pdf, .py
+  - Almacenamiento en la tabla document_vectors
+
+SEARCH
+------
+
+Búsqueda de similitud semántica a través de documentos indexados.
+Devuelve secciones relevantes de texto con una puntuación.
+
+MÓDULO
+-----
+
+  herramientas/rag/ (ingest.py, search.py)
+  Tabla de base de datos: document_vectors (Migración 020)

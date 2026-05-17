@@ -1,0 +1,131 @@
+HERRAMIENTAS DE HABILIDADES BACH
+-----------------
+
+Herramientas para gestionar, monitorear y validar habilidades BACH.
+
+INICIO RÁPIDO
+------------
+  bach --maintain skills                    # Verificación del estado de las habilidades
+  bach skill list                          # Listar habilidades
+  bach skill export NAME                   # Exportar habilidad
+
+¿QUÉ SON LAS HABILIDADES?
+----------------
+Las habilidades son módulos de habilidades reutilizables en BACH:
+- _agents/: Agentes jefes (ATI, agente fiscal, etc.)
+- _expertos/: habilidades expertas (análisis de datos, etc.)
+- _services/: Habilidades de servicio (comunicadas, recurrentes, etc.)
+
+MONITOR DE SALUD DE HABILIDADES
+--------------------
+Monitorea y valida todas las habilidades.
+
+Comandos:
+  herramientas de Python/mantenimiento/skill_health_monitor.py comprobar
+  herramientas de Python/mantenimiento/skill_health_monitor.py comprobar --skills
+  herramientas de Python/mantenimiento/skill_health_monitor.py comprobar --agentes
+  python tools/maintenance/skill_health_monitor.py informe
+
+Qué se verifica:
+- Completitud de SKILL.md (nombre, versión, descripción)
+- Manifiesto del agente (manifest.json)
+- Estructura del directorio
+- Habilidades huérfanas o rotas
+
+Integración en --startup:
+El Skill Health Monitor se ejecuta automáticamente cuando comienza la sesión.
+e informa problemas en la salida de inicio.
+
+EXPORTACIÓN/IMPORTACIÓN DE HABILIDADES
+-------------------
+Las habilidades se pueden exportar e instalar en otros sistemas.
+
+Exportar:
+  bach skill export SKILLNAME
+  -> Creé SKILLNAME.zip con todos los archivos + manifest.json
+
+Importar:
+  bach skill install PFAD/skill.zip
+  -> Desempaquetado e integrado en skills/
+
+ATI EXPORT (específico del agente):
+  bach ati export
+  -> Exporta agente ATI con todas las dependencias
+
+ESTRUCTURA DEL DIRECTORIO DE HABILIDADES
+-------------------------
+habilidades/
+├── SKILL.md # principal SKILL.md (BACH en sí)
+├── AGENT_KONVENTION.md # Reglas del agente
+├── SKILL_ANALYSE.md # Análisis de cobertura
+│
+├── _agentes/ # agentes jefe
+│ ├── ati/ # Agente desarrollador de software
+│ ├── agente-impuesto.txt # Agente fiscal
+│ └── ...
+│
+├── _expertos/ # módulos expertos
+│ └── análisis de datos/# experto en análisis de datos
+│
+└── _servicios/ # Servicios en segundo plano
+    ├── comunicar.md # Comunicación con socios
+    └── recurrente/# Tareas periódicas
+
+FORMATO SKILL.MD
+---------------
+Cada SKILL.md debe tener contenido YAML:
+
+---
+nombre: nombre-habilidad
+versión: 1.0.0
+descripción: breve descripción
+last_updated: 2026-01-23
+---
+
+# Nombre de la habilidad
+
+Contenido y documentación...
+
+VALIDACIÓN
+-----------
+Campos obligatorios: nombre, versión, descripción
+Recomendado: last_updated, autor, dependencias
+
+Los agentes también necesitan:
+- manifest.json (OBLIGATORIO)
+- README.md (recomendado)
+- CHANGELOG.md (recomendado)
+
+INTEGRACIÓN DE BASE DE DATOS
+---------------------
+Las habilidades se registran en bach.db:
+
+  SELECCIONAR * DE habilidades;                    # Todas las habilidades
+  SELECCIONAR * DE agentes;                    # Todos los agentes
+  SELECCIONAR * DE agente_sinergias;           # Relaciones de agentes
+
+COMANDOS CLI
+-----------
+  bach --maintain skills      # Comprobación de estado (en --startup)
+  bach skill list             # Listar habilidades de la base de datos
+  bach skill export NAME      # Exportar habilidad
+  bach skill install PFAD     # Instalar habilidad
+
+TIPS
+-----
+- Skill Health Monitor se ejecuta en cada --startup
+- Los problemas se informan como Advertencias/Errores
+- Para nuevas habilidades: cree SKILL.md con el texto inicial correcto
+- Cree siempre agentes con manifest.json
+
+VER TAMBIÉN
+----------
+  bach --help agents           # Documentación del agente
+  bach --help ati              # Detalles del agente ATI
+  bach --help maintain         # Herramientas de mantenimiento
+  skills/AGENT_KONVENTION.md # Reglas del agente
+
+---
+Versión: 1.0.0
+Creado: 2026-01-23
+Parte de: documentación de la herramienta BACH

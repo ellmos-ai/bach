@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ИМЯ ОБРАБОТЧИКА
+------------
+N8nManagerHandler
+
+
+ОПИСАНИЕ
+------------
+Интеграция диспетчера рабочих процессов n8n для BACH. Управляет экземплярами n8n и
+Рабочие процессы через REST API и дополнительный сервер MCP. Порт по умолчанию: 5678.
+
+Профиль: n8n-manager
+Пакет: n8n-manager-mcp (необязательно, можно установить через «bach setup n8n»)
+Соединение: http://localhost:5678 (настраиваемый)
+
+
+OPERATIONS
+-----------
+status Проверяет экземпляр n8n и установку сервера MCP.
+            Указывает состояние соединения.
+
+list Перечисляет доступные рабочие процессы (через n8n REST API).
+            Показывает идентификатор, имя, активный статус.
+
+синхронизация Подготовка к синхронизации рабочего процесса
+            Требуется сервер MCP. Делегировано Claude Code Tools.
+
+
+ПРИМЕРЫ
+---------
+handler = N8nManagerHandler()
+
+# Проверить статус
+result = handler.handle('status')
+
+# Список рабочих процессов
+result = handler.handle('list')
+
+# Включить синхронизацию
+result = handler.handle('sync')
+
+# Обработчик с пользовательским URL-адресом
+handler = N8nManagerHandler('http://n8n.example.com:5678')
+
+
+FILES
+-------
+hub/n8n_manager.py Реализация обработчика
+docs/help/n8n_manager.txt Этот файл
+
+
+СМОТРИ ТАКЖЕ
+----------
+bach setup n8n                 Установите сервер MCP глобально
+MODULAR_AGENTS/n8nManager/ Справочник по менеджеру n8n (README.md)
+SQ081 Требования к менеджеру рабочих процессов n8n

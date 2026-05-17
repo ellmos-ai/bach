@@ -1,0 +1,105 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+------------
+multi_llm_protocol.py - Coordinación de agentes LLM paralelos
+
+DESCRIPCIÓN
+------------
+Protocolo V3 para el trabajo paralelo seguro de múltiples agentes de IA (Claude, Gemini,
+Copiloto, Ollama, Perplejidad, Mistral). Supervisa la presencia, gestiona
+acceso exclusivo a archivos y sincroniza las actividades del agente
+Archivos de presencia, cerraduras y señales de apretón de manos. Además: basado en DB
+Sistema de tarjeta de sello para estado en vivo en la tabla partner_presence.
+
+OPERACIONES
+-----------
+bach llm presence [dir] [task]      Crear presencia en el directorio
+bach llm check [dir]                Verificar otros agentes en el directorio
+bach llm lock <datei|ordner>        Adquirir bloqueo en archivo o directorio
+bach llm unlock [datei]             Liberar sus propios bloqueos
+bach llm handshake [dir]            Iniciar protocolo de enlace con otros agentes
+bach llm status [dir]               Estado Multi-LLM + DB muestra estado en vivo
+
+PROTOCOLO PRINCIPAL V3
+-----------------
+1. Sistema PRESENCIA (archivos)
+   - .<agent>_presence: Latido, estado, estado de trabajo
+   - Tiempo de espera después de 120 segundos de inactividad
+   - Estado: ACTIVO, TERMINADO
+
+2. Sistema de BLOQUEO (archivos + carpetas)
+   - Archivo: <archivo>.lock.<agente>
+   - Carpeta: <carpeta>/.dirlock.<agente>
+   - Tiempo de espera de bloqueo: 300 segundos (liberar bloqueos obsoletos)
+   - Retroceso: 5 segundos entre intentos
+
+3. Sistema de RESPALDO
+   - <archivo>.bak antes del cambio
+   - Automáticamente en safe_write/safe_append
+
+4. Protocolo de apretón de manos
+   - Archivos .handshake_<agente>
+   - Descubrimiento automático de agentes
+   - Espera máx. 30 segundos para confirmación
+
+5. TARJETAS DE SELLO DB (v1.1.71)
+   - tabla de presencia_partner
+   - clock_in/clock_out al inicio/apagado
+   - current_task + last_heartbeat para estado en vivo
+   - Tiempo de espera de latido: 5 minutos (configurable)
+
+EJEMPLOS
+---------
+# Activar agente
+bach llm presence /c/Users/User/project processing
+
+# Verificar otros agentes
+bach llm check /c/Users/User/project
+
+# Adquirir bloqueo en archivo
+bach llm lock /c/Users/User/project/results.txt
+
+# Liberar bloqueo
+bach llm unlock /c/Users/User/project/results.txt
+
+# Iniciar protocolo de enlace
+bach llm handshake /c/Users/User/project
+
+# Estado completo (incluido el estado activo de la base de datos)
+bach llm status /c/Users/User/project
+
+# Operación de escritura segura (API)
+protocolo.safe_write(Ruta("data.txt"), "Contenido", tiempo de espera=60)
+
+# Anexado seguro (API)
+protocolo.safe_append(Path("log.txt"), "Nueva línea\n", tiempo de espera=60)
+
+# DB: Entrada al inicio
+db = PartnerPresenceDB(Ruta("data/bach.db"), nombre_agente='claude')
+db.clock_in(task="Research",working_dir="/project", session_id="uuid-123")
+
+# DB: obtener estado activo
+partners = db.get_online_partners(timeout_minutos=5)
+
+FILES
+-------
+Acceso a archivos (relativo al sistema/):
+  hub/multi_llm_protocol.py Clases MultiLLMProtocol, MultiLLMHandler
+  data/bach.db tabla partners_presence (tarjetas de sellos)
+
+Archivos generados (en el directorio de trabajo):
+  .<agent>_presence Marcador de presencia
+  <archivo>.lock.<agente> Bloqueo de archivo
+  <carpeta>/.dirlock.<agente> Bloqueo de carpeta
+  <archivo>.bak copia de seguridad antes del cambio
+  .handshake_<agente> Señal/respuesta de protocolo de enlace
+
+VER TAMBIÉN
+----------
+bach --help                 Página de ayuda general
+hub/base.py Clase BaseHandler
+definición de tabla data/schema.sql partner_presence
+Lección n.° 62, n.° 63 Historia del desarrollo (Experimento Claude + Géminis)

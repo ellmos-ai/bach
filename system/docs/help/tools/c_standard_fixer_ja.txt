@@ -1,0 +1,37 @@
+BACH ツール: c_standard_fixer
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/c_standard_fixer.py
+
+説明
+----------------------------------------
+c_standard_fixer.py - 一般的なコードの問題に対するツールチェーン
+
+いくつかの修正プログラムを順番に実行します。
+  1. BOM 修正 (バイトオーダーマークの削除/修正)
+  2. エンコーディングの修正 (UTF-8 を確保)
+  3. ウムラウト修正 (壊れたドイツ語のウムラウトを修復)
+  4. インデントチェック (インデントの問題を特定)
+
+使用法:
+    python c_standard_fixer.py <file.py>
+    python c_standard_fixer.py <file.py> --dry-run
+    python c_standard_fixer.py <フォルダ> --recursive
+    python c_standard_fixer.py <file.py> --bom、ウムラウトのみ
+    python c_standard_fixer.py --list-tools
+
+設定:
+    アクティブなツールは STANDARD_FIXER_CONFIG でカスタマイズできます。
+
+作成者: クロード
+バージョン: 1.0
+
+使用
+----------------------------------------
+python bach.py ツールは c_standard_fixer [args] を実行します
+または直接: python tools/c_standard_fixer.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成
+- 質問がある場合: bach tools show c_standard_fixer

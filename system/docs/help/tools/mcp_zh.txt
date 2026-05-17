@@ -1,0 +1,37 @@
+BACH 工具：MCP 服务器
+---------------------
+
+用于 Claude Code 和 Claude Desktop 的捆绑 MCP 服务器。
+
+可用服务器
+------------------
+
+  bach-codecommander 代码执行和 shell 命令（17 个工具）
+  bach-filecommander 文件系统操作（43 个工具）
+  n8n-manager-mcp n8n 工作流程管理
+
+安装
+------------
+
+服务器通过 npm 安装：
+  npm 安装 bach-codecommander-mcp
+  npm 安装 bach-filecommander-mcp
+  npm install n8n-manager-mcp
+
+配置
+-------------
+
+克劳德代码：~/.claude.json（--scope user）
+Claude Desktop：AppData/Roaming/Claude/claude_desktop_config.json
+
+PROFILE
+-------
+
+~/.claude/profiles/ 中的 MCP 配置文件包括服务器组合：
+  基地、研究、软件、人工智能实验室、剧变、完整
+
+模块
+-----
+
+  tools/mcp/（3 个服务器，Node.js/TypeScript）
+  来源：OneDrive/.TOPICS/.AI/.MCP/

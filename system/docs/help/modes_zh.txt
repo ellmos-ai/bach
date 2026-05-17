@@ -1,0 +1,84 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH 用户模式 (v1.1.37)
+-------------------------
+
+BACH 支持 4 种不同的启动模式，这些模式决定
+哪些组件在启动时自动启动。
+
+可用模式
+----------------
+  gui GUI 模式（默认）
+           - 在浏览器中启动 GUI 仪表板
+           - 打开http://127.0.0.1:8000
+           - 非常适合交互式使用
+
+  文本文本模式
+           - 仅使用 bach.py 启动控制台
+           - 没有打开浏览器
+           - 非常适合以终端为中心的工作
+
+  双双模式
+           - 启动 GUI + 单独的控制台
+           - 两个接口可以并行使用
+           - 高级用户的理想选择
+
+  静音静音模式
+           - 没有什么会自动开始
+           - 仅启动报告输出
+           - 非常适合脚本和自动化
+
+更改模式
+-------------
+持久（保存在配置中）：
+  bach --startup mode gui
+  bach --startup mode text
+  bach --startup mode dual
+  bach --startup mode silent
+
+一次性（仅此启动）：
+  bach --startup --mode=gui
+  bach --startup --mode=text
+
+配置
+-------------
+当前模式保存在system/data/user_config.json中：
+
+  {
+    “启动模式”：“图形用户界面”，
+    “启动模式”：{
+      "gui": {"gui": true, "console": false},
+      "text": {"gui": false, "console": true},
+      "dual": {"gui": true, "console": true},
+      "silent": {"gui": false, "console": false}
+    }
+  }
+
+示例
+---------
+# 正常启动（使用保存模式）
+bach --startup
+
+# 将模式永久更改为文本
+bach --startup mode text
+
+# 在静默模式下启动一次
+bach --startup --mode=silent
+
+# 在 GUI 模式下快速启动，无需 dir 扫描
+bach --startup quick --mode=gui
+
+注释
+--------
+- 该模式会在 --startup 上自动显示
+- GUI 服务器在后台保持活动状态直至关闭
+- 在文本模式下会打开一个新的控制台窗口
+- 静默模式适用于 cron 作业和自动化
+
+另请参阅
+----------
+  帮助启动 - 启动日志详细信息
+  help gui - GUI 仪表板文档
+  帮助关闭 - 结束会话

@@ -1,0 +1,37 @@
+BACH ツール: c_youtube_extractor
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/c_youtube_extractor.py
+
+説明
+----------------------------------------
+c_youtube_extractor.py - URL から YouTube 動画 ID を抽出します
+
+サポートされている形式:
+  - https://www.youtube.com/watch?v=VIDEO_ID
+  - https://youtu.be/VIDEO_ID
+  - https://www.youtube.com/shorts/VIDEO_ID
+  - https://www.youtube.com/embed/VIDEO_ID
+  - ダイレクト ビデオ ID (11 文字)
+
+抽出元: TOOLS/MEDIA/ForYou-Playlist/YouTubePlaylist.py
+
+使用法:
+    python c_youtube_extractor.py <url>
+    python c_youtube_extractor.py <url1> <url2> <url3>
+    python c_youtube_extractor.py --file urls.txt
+    python c_youtube_extractor.py --json <url>
+    エコー「https://youtu.be/dQw4w9WgXcQ」 | python c_youtube_extractor.py --stdin
+
+著者: クロード (適応)
+依存関係: なし (stdlib のみ)
+
+USE
+----------------------------------------
+python bach.py ツールは c_youtube_extractor [args] を実行します
+または直接: python tools/c_youtube_extractor.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成されます
+- ご質問がある場合: bach tools show c_youtube_extractor

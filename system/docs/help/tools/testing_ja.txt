@@ -1,0 +1,25 @@
+BACH ツール: テスト
+------------------
+
+BACH システムのテストと比較のためのテスト フレームワーク。
+
+利用可能なツール
+-----------------
+
+  run_b_tests BACH システム テストを実行する
+  Compare_systems システム比較を実行します。
+  run_comparison_custom カスタム比較
+  Populate_tests テストデータを生成する
+  query_tests テスト結果のクエリ
+
+USE
+----------
+
+  bach --tools testing run               すべてのテストの実行
+  bach --tools testing compare <a> <b>   システムの比較
+  bach --tools testing populate          テスト データの作成
+
+MODULE
+-----
+
+  tools/testing/ (5 つのスクリプト)

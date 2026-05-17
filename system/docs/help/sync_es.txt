@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SYNC HANDLER
+------------
+
+DESCRIPCIÓN
+------------
+Sincroniza el contenido del sistema de archivos con la base de datos BACH. Lee habilidades y
+Herramientas a partir de archivos (Markdown, Text, Python) y actualizaciones/creaciones en consecuencia
+Entradas de base de datos. Compara cambios usando hash SHA256.
+
+OPERACIONES
+-----------
+habilidades Cargar el contenido de las habilidades de los archivos en la base de datos
+herramientas Cargar el contenido de las herramientas de los archivos en la base de datos
+todos Sincronizar ambos (habilidades + herramientas)
+status Mostrar el estado de sincronización, resaltar los archivos modificados
+
+OPCIONES
+--------
+--dry-run Mostrar solo los cambios, no ejecutarlos
+--force Ignorar la comparación de hash, recargar todo
+
+EJEMPLOS
+---------
+bach --sync skills
+    Sincroniza todas las habilidades desde skills/ con la base de datos.
+    Encuentra: archivos .md, .txt, .py (recursivamente).
+    Salta: archivos con _ o . al principio (excepto .py).
+
+bach --sync tools
+    Sincroniza todas las herramientas de Python desde tools/ a la base de datos.
+    Encuentra: archivos *.py (recursivamente).
+    Salta: archivos con _ o . al principio.
+
+bach --sync all --dry-run
+    Muestra los cambios planificados sin ejecutarlos.
+
+bach --sync status
+    Comprueba los cambios: compara los hashes de archivos con los hashes de bases de datos.
+    Informes: [CAMBIADO], [FALTANTE], [NUEVO], [OK].
+
+bach --sync all --force
+    Fuerza la recarga de todos los archivos (ignora la comparación de hash).
+
+FILES
+-------
+skills/ Fuente de los archivos de habilidades (.md, .txt, .py)
+herramientas/Fuente de los archivos Python de herramientas (.py)
+data/bach.db Base de datos de destino
+                        Tablas: habilidades, herramientas.
+                        Columnas: nombre, ruta, content_hash, descripción, ...
+
+VER TAMBIÉN
+----------
+docs/help/ Más documentación del controlador
+Implementación de hub/sync.py (código fuente)

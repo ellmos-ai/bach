@@ -1,0 +1,21 @@
+BACH Tool: success_tracker
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/success_tracker.py
+
+DESCRIPTION
+----------------------------------------
+Success Tracker - Basic implementation
+RecludOS v3.1.1
+
+Tracks success metrics for the 6 actor categories.
+
+USE
+----------------------------------------
+python bach.py tools run success_tracker [args]
+or directly: python tools/success_tracker.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show success_tracker

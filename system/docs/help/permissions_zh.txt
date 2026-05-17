@@ -1,0 +1,205 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+权限处理程序 - Claude Code 权限配置文件
+-----------------------------------------------------
+
+处理程序名称
+------------
+权限
+
+描述
+------------
+权限处理程序管理 Claude Code 中的权限配置文件
+BACH 数据库（system_config 表，类别：claude_permissions）。
+
+两个预配置的配置文件：
+  - 正常：标准权限（要求关键工具）
+  - Remote_control：所有为移动应用程序使用而预先激活的工具
+
+配置文件均保存在数据库中，激活后保存在文件中
+~/.claude/settings.json 写入。停用后，之前的
+状态自动恢复（备份机制）。
+
+背景
+-----------
+克劳德代码远程控制（移动应用程序）忽略--dangerously-skip-permissions
+由于已知错误（GitHub 问题 #29214）。中的允许规则
+但是，远程控制也尊重 settings.json。因此将
+权限通过 BACH-DB 中的配置文件进行管理，如有必要，还可以在
+写入的 settings.json。
+
+操作
+-----------
+
+列表
+----
+bach permissions list
+
+显示所有已保存的配置文件以及允许/拒绝规则的数量。
+用 [ACTIVE] 标记当前活动的配置文件。
+
+显示
+----
+bach permissions show <profil>
+
+配置文件的详细视图：描述、所有允许和拒绝规则。
+
+SET
+---
+bach permissions set <profil> allow=<Tool> [allow=<Tool2>] [deny=<Tool3>]
+
+将规则添加到配置文件。
+-allow=Tool：允许工具而不确认
+- deny=工具：拒绝工具
+- 可能的通配符：mcp__bach-*__*（所有 BACH MCP 工具）
+- 对活动配置文件的更改会立即反映在settings.json
+
+删除
+------
+bach permissions remove <profil> allow=<Tool> [deny=<Tool2>]
+
+从配置文件中删除规则。
+对活动配置文件的更改会立即反映在 settings.json 中。
+
+ACTIVATE
+--------
+bach permissions activate <profil>
+
+激活配置文件：
+1.将settings.json中的当前权限备份到DB
+2.在settings.json中写入配置文件规则
+3. 记住数据库中的活动配置文件
+
+其他设置（挂钩、模型、语言等）保持不变。
+
+停用
+----------
+bach permissions deactivate
+
+返回正常配置文件：
+1.从数据库恢复备份
+2.更新settings.json
+3. 将活动配置文件设置为“正常”
+
+SYNC
+----
+bach permissions sync
+
+当前允许/拒绝规则从 settings.json 到活动数据库配置文件中
+进口。如果已在 settings.json 中手动更改规则，则很有用。
+
+重置
+-----
+bach permissions reset <profil>
+
+将配置文件重置为预定义的默认值。
+可用默认值：normal、remote_control。
+对活动配置文件的更改会立即反映在 settings.json 中。
+
+状态
+------
+bach permissions status
+
+显示：
+- 活动配置文件和settings.json路径
+- settings.json 中允许/拒绝规则的数量
+- 数据库中允许/拒绝规则的数量
+- DB和settings.json是否同步
+- 备份是否可用
+
+INIT
+----
+bach permissions init
+
+在数据库中创建默认配置文件（normal、remote_control）。
+幂等：跳过现有配置文件。
+第一次启动远程控制时自动执行。
+
+示例
+---------
+
+创建默认配置文件：
+$ bach 权限 init
+
+查看所有配置文件：
+$ bach权限列表
+
+远程控制配置文件详细信息：
+$ bach requests show remote_control
+
+将新工具添加到远程控制配置文件：
+$ bach 权限设置remote_controlallow=mcp__slack__*
+
+从配置文件中删除工具：
+$ bach 权限删除remote_controlallow=mcp__slack__*
+
+激活远程控制配置文件（在移动会话之前）：
+$ bach权限激活remote_control
+
+返回正常配置文件：
+$ bach 权限停用
+
+检查当前状态：
+$ bach 权限状态
+
+将手动更改的settings.json 应用到数据库中：
+$ bach 权限同步
+
+将配置文件重置为默认值：
+$ bach权限重置remote_control
+
+远程控制工作流程
+-----------------------
+
+自动（推荐）：
+  1. 桌面：双击Claude_RemoteControl.bat
+  2. BACH菜单：启动菜单中的[P]键
+  -> 脚本激活配置文件，启动 Claude，恢复配置文件
+
+手动：
+  1.bach权限激活remote_control
+  2. claude --危险地跳过权限
+  3.输入/rc，扫描二维码
+  4.完成后：bach权限停用
+
+PROFILE ARCHITECTURE
+------------------
+
++--------------------------------+
+  |     BACH 数据库（系统配置）|
+  |  类别： claude_permissions |
+  |                                 |
+  |  正常：{允许，拒绝} |
+  |  远程控制：{允许，拒绝} |
+  |  active_profile: "正常" |
+  |  备份：{允许，拒绝} |
+  +--------------------------------+
+            |  激活/停用
+            v
+  +--------------------------------+
+  |   〜/.claude/settings.json |
+  |   权限.允许/拒绝 |
+  |   （保留挂钩、模型等）|
+  +--------------------------------+
+            |
+            v
+  +--------------------------------+
+  |   克劳德代码（本地+远程）|
+  +--------------------------------+
+
+FILES
+-------
+hub/claude_permissions.py 处理程序实现
+start/_internal/claude_remote_control.py 自动启动器
+start/_internal/claude_remote_control.bat 启动器的包装
+start/bach.bat启动菜单（菜单项[P]）
+~/.claude/settings.json 克劳德代码设置（目标文件）
+bach.db (system_config) 数据库中的配置文件存储
+
+另请参见
+----------
+settings.txt 设置处理程序（system_config 表）
+claude-code.txt 克劳德代码快速参考
+claude-code-automatization.txt 克劳德代码自动化

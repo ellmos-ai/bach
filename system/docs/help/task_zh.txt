@@ -1,0 +1,100 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+
+任务处理程序
+------------
+
+描述
+------------
+
+任务处理程序管理 BACH 数据库中的任务。支持
+优先级 (P1-P4)、多 ID 操作、依赖关系、分配
+合作伙伴和状态管理（待处理/已完成/已阻止）。
+
+
+操作
+-----------
+
+add <title> 添加任务
+  选项：--priority P1-P4、--description TEXT、--category TEXT
+
+list [status] 列出任务
+  状态：待处理（默认）、打开（旧版）、进行中、完成、阻止、全部
+  选项：--filter TERM、--signed PARTNER、--unassigned
+
+show <id> 显示任务详细信息
+
+edit <id> 编辑任务（标题、描述、类别）
+  选项：--title TEXT、--description TEXT、--category TEXT、--assigned NAME
+
+done <id> [id2...] 将任务标记为已完成
+  选项：--note TEXT
+
+block <id> [id2...] 阻止任务。
+  选项： --reason TEXT
+
+unblock <id> [id2...] 取消阻止任务
+
+reopen <id> [id2...] 重新打开任务（完成 -> 待处理）
+
+delete <id> [id2...] 删除任务
+
+优先级 <id> <P1-P4> 更改优先级
+
+分配 <id> [id2...] 任务分配
+  选项: --to PARTNER (CLAUDE、GEMINI、COPILOT、OLLAMA、CHATGPT 等)
+
+depends <id> 管理依赖关系
+  --on <id2> 添加新的依赖项
+  --remove <id2> 删除依赖项
+  --clear 清除所有依赖项
+
+
+示例
+---------
+
+创建任务：
+  bach task add "API implementieren" --priority P1 --category development
+
+列出任务：
+  bach task list                    # 仅待处理
+  bach task list in_progress        # 当前正在进行
+  bach task list all                # 全部
+  bach task list blocked --assigned GEMINI
+
+多 ID 操作：
+  bach task done 319 320 321 --note "Alle Help-Dateien erstellt"
+  bach task block 100 101 --reason "Wartet auf API-Review"
+
+分配：
+  bach task assign 100 101 --to GEMINI
+  bach task list --assigned CLAUDE
+
+依赖项：
+  bach task depends 306 --on 305    # 任务 306 正在等待 305
+  bach task depends 306              # 依赖项显示
+  bach task depends 306 --remove 305
+
+
+文件
+-------
+
+data/bach.db SQLite 数据库（任务表）
+
+
+SEE还
+----------
+
+bach help                一般帮助
+bach hook help           挂钩系统
+
+
+注释
+=====
+
+多ID支持：一次操作中的多个任务ID（例如完成、阻止、分配）
+依赖性检测：任务会自动添加（BLOCKED）标志
+显示未完成的依赖关系
+钩子：after_task_create、after_task_done 在操作期间发出

@@ -1,0 +1,87 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+------------
+BACH 用統合検索ハンドラー (SQ064 + SQ047)
+
+
+説明
+------------
+すべての BACH ソースにわたる全文検索 (FTS5): Wiki 記事、メモリ (作業中/
+事実/教訓)、ドキュメント、ナレッジダイジェスト スキル/Wiki およびその他
+スキャンされたディレクトリ。ソース、タグ、および
+限界。ハッシュ比較による重複検出による自動インデックス作成。
+
+
+OPERATIONS
+-----------
+
+SEARCH (デフォルト)
+  <query> すべてのソースにわたる全文検索
+  <query> --source SOURCE ソースのみで検索 (wiki|document|memory_*)
+  <query> --tag TAG タグによるフィルタリング (複数回組み合わせることができます)
+  <クエリ> --limit N Max。ヒット数 (デフォルト: 20)
+
+インデックス作成
+  Index すべての BACH ソースのインデックスを作成する
+  インデックス ナレッジダイジェスト|kd KnowledgeDigest + インデックス Wiki
+  インデックス wiki|メモリ|ドキュメント 単一ソースのインデックスを作成する
+  インデックス <パス> スキャン ディレクトリ (ProFiler スタイル)
+  Index <path> --no-tags 自動タグ導出なし
+
+管理
+  ステータスインデックスの統計とソースの概要
+  再構築 インデックスを空にして完全に再構築します
+  タグ 使用可能なすべてのタグをリストする
+  タグ TAG1 TAG2 これらのタグを持つエントリを検索
+  tags --limit N 上位 N タグを頻度別に制限
+  dupes は重複を見つけます (同じハッシュ、パス)
+  help このヘルプを表示
+
+
+例
+---------
+
+基本的な検索:
+  bach search python
+  bach search "machine learning"
+
+ソースあり:
+  bach search encoding --source memory_lesson
+  bach search entwickler --source knowledgedigest_skill
+
+タグと制限あり:
+  bach search database --tag production --limit 50
+  bach search bridge --tag connector --tag network
+
+インデックス作成:
+  bach search index                    # すべてのソース
+  bach search index knowledgedigest    # KD のみ
+  bach search index /c/Users/User/Docs # Verzeichnis
+  bach search index .                  # 現在のディレクトリ
+
+管理:
+  bach search status                   # 統計
+  bach search rebuild                  # 完全な再インデックス
+  bach search tags                     # すべてのタグ
+  bach search tags health system       # タグの検索
+  bach search dupes                    # 重複
+
+
+ファイル
+-------
+
+hub/search.py SearchHandlerの実装
+tools/unified_search.py 統合検索エンジン (FTS5)
+data/bach.db インデックス データベース (SQLite、FTS5)
+docs/help/search.txt このファイル
+
+
+関連項目
+----------
+
+docs/help/index.txt BACH コマンドライン インターフェイス
+docs/OPERATIONS.md すべてのハンドラーとオペレーション
+tools/unified_search.py エンジンのドキュメント (インデックス形式、FTS5 構文)

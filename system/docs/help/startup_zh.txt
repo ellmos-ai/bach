@@ -1,0 +1,262 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+启动 - 启动会话
+-------------------------
+
+描述
+启动协议初始化与每个人的 BACH 会话
+必要的检查并显示上次会话的上下文。
+
+命令
+------
+bach --startup                    完整的启动协议
+bach --startup quick              快速启动（无需目录扫描）
+bach --startup mode <m>           更改启动模式 (gui|text|dual|silent)
+bach --startup --mode=<m>         使用不同的模式启动一次
+bach --startup --partner=NAME     特定于合作伙伴的会话 (新 v1.1.38)
+
+合作伙伴会话 (v1.1.38)
+--------------------------
+启用特定于合作伙伴的会话管理：
+
+  bach --startup --partner=claude   启动Claude 会话
+  bach --startup --partner=gemini   启动 Gemini 会话
+  bach --startup --partner=user     标准（默认）
+  bach --startup --partner=new      生成自动 ID (partner_HHMMSS)
+  bach --startup --partner=simonAI  具有自己名称的新伙伴
+
+好处：
+- 同一伙伴的上一次会话将自动关闭
+- 不同合作伙伴可以举行平行会议
+- 防止重复启动时出现“孤立”打开会话
+- Partner_presence 表中的自动时钟卡（上班/下班）
+
+邮票卡系统 (v1.1.71)：
+- 启动时：合作伙伴自动打卡
+- 关闭期间：合作伙伴自动下班
+- 合作伙伴意识：显示谁仍然在线
+- 多LLM协议V3：为多个合作伙伴激活
+
+新合作伙伴：
+  # 用你自己的名字（推荐）
+  bach --startup --partner=simonAI
+
+  # 没有名称（生成 ID）
+  bach --startup --partner=new      ->partner_143052
+  bach --startup --partner=nameless -> partner_143052
+
+示例：
+  #双子座开始工作
+  bach --startup --partner=gemini --mode=silent
+
+  # 稍后：Gemini 重新启动 -> 旧会话关闭
+  bach --startup --partner=gemini --mode=silent
+  [自动关闭] 上一个 GEMINI 会话结束：session_20260126_...
+
+  # 合作伙伴意识显示：
+  [合作伙伴意识]
+   *** 1 个其他在线合作伙伴 ***
+     克劳德：任务_XYZ
+   --> 使用协议 V3！ (bach --help multi_llm)
+
+数据库：
+  memory_sessions.partner_id 存储伙伴名称。
+  Partner_presence 保存印章卡（在线/离线/崩溃）。
+  默认值：手动会话的“user”。
+
+用户模式 ​​(v1.1.37)
+--------------------
+BACH 支持 4 种启动模式：
+
+  gui GUI 仪表板在浏览器中打开（默认）
+  仅文本控制台，无浏览器
+  双 GUI + 并行控制台
+  无声自动启动任何操作
+
+该模式存储在 data/user_config.json 中。
+详细信息： bach --help 模式
+
+PROSYNC（启动协议之前）
+-------------------------------
+如果 ProSync 已激活（bach setup prosync --multi-system），则导致
+bach.py 在启动协议执行数据库同步之前：
+  - 拉取：从 Transit Hub 加载并合并较新的备份
+  - 推送（在出口处）：将您自己的备份写入交通枢纽
+ProSync 在 bach.py main() 中运行，而不是在启动处理程序中运行。
+详细信息： bach --help db_sync
+
+代理恢复提示
+-------------------
+如果代理启动或代理冒烟是启动/日常检查的一部分，
+“巴赫代理医生[姓名]”现在提供快速的飞行前诊断
+恢复说明。在“巴赫代理开始...”之前或当
+代理窗口立即关闭：
+
+  bach agent doctor ati
+  bach agent doctor ati --json
+
+PROCESS (v1.1.31)
+----------------
+启动协议执行以下步骤：
+
+1. [目录扫描]
+   - 检查自上次会话以来的更改
+   - 显示新的/删除的/更改的文件
+   - 用“快速”跳过
+
+2。 [问题第一]
+   - 自动错误信息（由 CHIAH 提供）
+   - 显示过去 24 小时内的错误
+
+3。 [路径治疗器检查] *** 新 v1.1.18 ***
+   - 试运行检查路径问题
+   - 显示路径错误的文件
+   - 修复：巴赫--维护愈合--执行
+
+4。 [注册表观察程序] *** 新 v1.1.21 ***
+   - 检查 DB/JSON 一致性
+   - 显示缺失的表、无效的 JSON
+   - 详细信息：bach --维护注册表
+
+5。 [技能健康] *** 新 v1.1.21 ***
+   - 验证技能和代理
+   - 显示 SKILL.md 文件的问题
+   - 详细信息：巴赫--维持技能
+
+6。 [最后一次会议]
+   - 显示最后完成的会话
+   - 创建/完成的任务
+   - 重要提示：“下一步”= continuation_context
+
+7。 [快照可用] ***新 v1.1.17***
+   - 显示最后一个快照（如果今天创建）
+   - 快照中打开的任务数
+   - 继续：巴赫快照加载
+
+8。 [内存检查]
+   - 计算工作记忆、事实、教训
+   - 显示最后一个注释
+
+9。 [注册会议]
+   - 新的会话 ID 在 memory_sessions
+
+10 中创建。 [新闻动态]
+    - 检查MessageBox中的未读消息
+    - 显示发件人和主题
+    - 详细信息：巴赫消息未读
+
+11。 [定期任务] *** 新 v1.1.18 ***
+    - 显示到期的重复任务
+    - 创建：bach --重复检查
+
+12。 [巴赫系统任务]
+    - 显示未完成/已完成的 BACH 框架任务
+    - 按优先级排名前 3 位 (P1 > P2 > P3)
+    - 全部：巴赫任务列表
+
+13.【ATI代理】
+    - 检查ATI文件夹是否存在
+    - 软件开发人员代理状态
+
+14。 [经验教训]
+    - 显示已保存的课程
+    - 详细信息：巴赫课程最后
+
+15。 [自白]
+    - 来自 system/data/logs/auto_log.txt 的条目
+    - 最后 3 个命令
+    - 更多：bach --logs tail 20
+
+16。 [注射器]
+    - 显示活动喷油器
+
+17。 [启动模式] *** 新 v1.1.37 ***
+    - 显示当前模式（GUI/TEXT/DUAL/SILENT）
+    - 根据模式启动 GUI 和/或控制台
+    - GUI：浏览器中的http://127.0.0.1:8000
+    - 文本：带有 bach.py 的新控制台窗口
+
+输出示例
+---------------
+-------------------------------------------------------
+         巴赫会话启动
+-------------------------------------------------------
+时间：2026-01-22 13:10:15（星期四）
+ 模式：图形用户界面
+ 合作伙伴：GEMINI
+-------------------------------------------------------
+
+[自动关闭] 上一个 GEMINI 会话结束：session_20260122_...
+
+[PATH HEALER]
+ [!] 发现 2 个文件存在路径问题
+   - example_file.py
+ --> bach --maintaineal --执行修复
+
+[最后一次会话]
+ 会话：session_20260122_1200
+ 结束于: 2026-01-22 12:30
+ 任务：+3 已创建，2 已完成
+ 主题：帮助文件已更新...
+
+ *** 下一步 ***
+   P2：更新shutdown.txt
+   P2：检查内存.txt
+
+[快照可用]
+ 最后：auto_shutdown_20260122_1230 (12:30)
+ 快照中的任务：5
+ --> 巴赫快照加载继续
+
+[定期任务]
+ *** 1 个任务到期 ***
+   [weekly_backup] 每周备份 -> BACH
+ --> bach --recurring 检查创建
+
+[BACH 系统任务]
+ 42 个开放，15 个已完成
+ 主要任务：
+   [93] P1 GUI：/api/skills 端点...
+   [94] P1 GUI：技能仪表板...
+
+-------------------------------------------------------
+准备就绪 - 会话开始
+
+注意：关闭时 -> bach --内存会话“...”
+-------------------------------------------------------
+
+数据源
+-------------
+- memory_sessions：最后一个会话，continuation_context
+- memory_working：当前笔记
+- memory_facts：持久事实
+- memory_lessons：吸取的教训
+- session_snapshots：恢复点
+- 任务：BACH 系统任务
+- 消息：MessageBox (bach.db)
+
+HANDLER
+-------
+hub/startup.py 启动处理程序（基于数据库）
+
+版本历史
+----------------
+v1.1.2 带有目录扫描、内存、任务的基本启动
+v1.1.17 + 快照显示
+v1.1.18 + Path Healer，重复任务
+v1.1.21 + 注册表观察器、技能健康监控器
+v1.1.37 + 用户模式（gui、文本、双、静默）
+v1.1.38 + 合作伙伴会话（--partner=NAME，自动关闭）
+
+另请参阅
+----------
+bach --help modes          用户模式（gui、文本、双、静默）
+bach --help shutdown       结束会话
+bach --help memory         内存系统
+bach --help maintain       维护工具（修复、注册表、技能）
+bach --help snapshot       管理快照
+bach --help tasks          任务管理
+bach --help db_sync        ProSync：多系统数据库同步
+bach --help install         初始安装和场景

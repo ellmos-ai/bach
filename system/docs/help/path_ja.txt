@@ -1,0 +1,93 @@
+# 移植性: UNIVERSAL
+
+PATH
+====
+
+`bach path` は、`hub/bach_paths.py` から中央のパス レジストリを作成します。
+CLI および API 経由で直接使用できます。出力はどちらも人間が判読可能です
+
+
+
+コマンド
+-------
+
+  bach path
+ 自動化に適した `--json` も使用できます。    最も重要な BACH パスをグループ化して表示します。
+
+  bach path <name>
+  bach path get <name>
+
+
+  bach path list [--json]
+ 単一の登録されたパスをメタデータとともに表示します。    完全なレジストリをリストします。
+
+  bach path resolve <relativer-pfad> [--from-root] [--json]
+
+
+  bach path overrides [--json]
+ `system/` またはリポジトリのルートに対する相対パスを解決します。
+
+  bach path validate [--json]
+ `system_config` からのアクティブな DB パスのオーバーライドを表示します。    クリティカル、重要、およびオプションのパスをチェックします。
+
+  bach path set <name> <pfad>
+    正規の BACH DB にパス オーバーライドを保存します。
+
+
+例
+---------
+
+  bach path
+    -> オペレーター向けの概要
+
+  bach path db
+    -> 正規データベース パス
+
+  bach path list --json
+    -> レジストリを JSON として完成させます
+
+  bach path resolve docs/README.md --from-root
+    -> リポジトリのルートを基準とした絶対パス
+
+  bach path overrides
+    -> アクティブな DB オーバーライドを確認します
+
+
+JSON-SURFACES
+-------------
+
+これらの呼び出しは機械可読な回答を提供します:
+
+  bach path --json
+  bach path list --json
+  bach path db --json
+  bach path overrides --json
+  bach path validate --json
+  bach path resolve docs/help/path.txt --json
+
+
+重要な詳細
+----------------
+
+- ソースは `hub/bach_paths.py` のままです (単一の真実のソース)。
+- `base_path` が外部の場合、ハンドラーはパスをアクティブなパスにミラーリングします。
+  テストとポータブル インスタンスがクリーンな結果を生成するためのランタイム ルート
+  受け取りました。
+- オーバーライドはアクティブなルートの正規 DB から読み取られ、
+
+
+
+ファイル
+-------
+
+ グローバルにハードコーディングされたパスからではなく、書き込まれます。  Hub/path.py CLI/API ハンドラー
+  Hub/bach_paths.py 中央パス レジストリ
+  パス オーバーライド用の data/bach.db `system_config`
+
+
+関連項目
+----------
+
+  ヘルプエージェント エージェント CLI
+  ヘルプ スケジューラ スケジューラ ステータス領域
+  ヘルプツール ツールの概要

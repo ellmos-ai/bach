@@ -1,0 +1,196 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[skill_init.py，技能表]
+
+ANTHROPIC / AGENTSKILLS.IO 技能标准
+------------------------------------------
+
+截至：2026-03-12
+
+Anthropic 和agentskills.io 定义了一个开放标准
+Claude Code、Codex CLI、Cursor、ChatGPT 和 提供的 AI 技能
+支持其他平台。该标准允许
+跨平台分发和安装技能。
+
+BACH 本身支持此标准，并且可以使用现有技能
+导出为 Anthropic 兼容格式。
+
+
+标准目录结构
+-----------------------------
+Anthropic 兼容技能是具有以下结构的文件夹：
+
+  我的技能/
+  +-- SKILL.md # 主要定义（必填）
+  +-- scripts/ # 可执行脚本（可选）
+  |   +-- setup.sh
+  |   +-- 运行.py
+  +--references/ # 参考文档（可选）
+  |   +-- 核心概述.md
+  |   +-- 功能-api.md
+  |   +-- 最佳实践测试.md
+  |   +-- 高级缓存.md
+  +-- asset/ # 静态文件（可选）
+      +-- 标志.png
+      +-- config-template.json
+
+
+SKILL.MD -- YAML-FRONTMATTER
+-----------------------------
+每个 SKILL.md 都以 YAML-Frontmatter 块开头：
+
+  ---
+  名称：我的技能名称
+  描述：>
+    该技能提供的能力的简短描述。
+    最多 1024 个字符。
+  许可证: 带有
+  兼容性：
+    ——克劳德代码
+    - Codex cli
+  元数据：
+    添加一名作者
+    版本：1.0.0
+    标签：[自动化、代码审查]
+  允许的工具：
+    - 猛击
+    - 阅读
+    - 编辑
+  ---
+
+必填字段：
+  名称 最多 64 个字符，短横线大小写（a-z、0-9、连字符）
+  描述 最多 1024 个字符，自由文本
+
+可选字段：
+  许可证 许可证标识符（MIT、Apache 2.0 等）
+  兼容性 兼容平台列表
+  元数据 作者、版本、标签等的免费键值。
+  allowed-tools 允许该技能使用的工具白名单
+
+实际技能正文在前面的内容后以降价形式显示。
+
+
+渐进披露（3 个阶段）
+----------------------------------
+该标准使用三阶段加载过程来生成代币预算
+有效使用：
+
+  1 级——元数据（~100 个代币）
+    仅 Frontmatter（名称、描述、元数据）。
+    浏览/搜索时加载。允许LLM决定
+    在不阅读正文的情况下该技能是否相关。
+
+  2 级——SKILL.md 主体（< 5000 代币）
+    SKILL.md 的完整说明文本。
+    激活/安装技能时加载。
+    包含所有规则、工作流程和说明。
+
+  第 3 级——捆绑资源（按需）
+    来自references/、scripts/和assets/的文件。
+    仅在技能明确要求时才加载
+    或者 LLM 需要它们来完成当前任务。
+
+此过程可保持较低的初始令牌消耗，并且
+仅在必要时进行缩放。
+
+
+参考文件命名
+--------------------------
+references/ 文件夹中的文件遵循命名约定：
+
+  core-*.md 基本概念和概述
+  features-*.md 功能文档和API参考
+  最佳实践-*.md 推荐实践
+  Advanced-*.md 高级主题和优化
+
+示例：
+  参考文献/core-overview.md
+  参考文献/features-query-api.md
+  参考文献/最佳实践错误处理.md
+  references/advanced-performance-tuning.md
+
+这一约定允许法学硕士专门搜索正确的
+详细搜索深度。
+
+
+BACH SUPPORT
+--------------------
+BACH 可以直接搭建与 Anthropic 兼容的技能：
+
+  bach skills create <name> --format anthropic
+
+此命令在内部使用 Skill_init.py 并创建：
+- SKILL.md 前面的内容正确
+- 脚本/文件夹（空）
+- 参考文献/文件夹（空）
+- asset/ 文件夹（空）
+
+可以导出现有的 BACH 技能：
+
+  bach skills export <name> --format anthropic
+
+导出将 BACH 内部标头转换为
+人类兼容的前题并重新组织文件。
+
+
+比较：BACH-INTERNAL VS ANTHROPIC-COMPATIBLE
+------------------------------------------------
+
+BACH Anthropic 标准的内部方面
+  ----------------- --------------------------------- ----------------------
+  主文件 SKILL.md SKILL.md
+  标头 YAML（扩展）YAML（Frontmatter）
+  名称 字段名称（自由） 名称（烤肉串大小写，64Z）
+  Type 字段类型（必填）--（不可用）
+  版本 version（强制）metadata.version（可选）
+  Dependency 依赖关系（强制）--（未正式化）
+  工具 在技能文件夹scripts/中
+  技能文件夹中的文档引用/
+  静态文件data/或assets/assets/
+  工作流程 _workflows/ 或本地 在 SKILL.md 正文中
+  数据库同步 是（技能表） 否
+  导出 bach 技能 导出 Native 格式
+
+BACH-内部技能有更多元数据（类型、依赖关系、
+触发器短语），在导出期间传输到元数据字段
+成为。与人类兼容的技能更精简，但更少
+明确地。
+
+
+技能VS。代理（人类）
+------------------------------
+在人类生态系统中，技能和代理是两个独立的概念：
+
+  技能：开放标准（agentskills.io），可移植
+          定义于：.claude/skills/<name>/SKILL.md
+          目的：说明、知识、工作流程
+
+  代理：Proprietaer（仅限 Claude Code / Agent SDK）
+          定义于：.claude/agents/<name>.md
+          目的：独立执行，拥有自己的上下文窗口
+
+代理未在技能文件夹中定义。但你可以
+一起努力：
+
+  - 技能可以触发代理：上下文：fork +代理：<name>
+  - 代理可以预加载技能：技能：[my-skill]
+
+只有技能导出与 LobeHub/Marketplace 相关（打开，
+便携式）。 Claude Code Agent 是可选的且不可移植。
+
+导出 BACH 代理时：
+  - 子代理定义 -> 参考/
+  - 编排代码 -> 脚本/
+  - 可选：.claude/agents/<name>.md（适用于 Claude 代码用户）
+
+
+另请参阅
+----------
+  bach help skills              BACH 技能系统（架构 v2.0）
+  bach help skill_export        现有技能的导出
+  bach help naming              命名约定
+  bach wiki lobehub             LobeHub Marketplace
+  docs/help/skills.txt 详细技能文档
+  wiki/skills_board.txt 技能板 GUI

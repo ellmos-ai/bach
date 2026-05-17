@@ -1,0 +1,104 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SANDBOX HANDLER
+---------------
+
+DESCRIPTION
+------------
+Isolated code execution for Python scripts, code evaluations, unit tests and
+Shell commands. Replaces E2B MCP. All operations run with a 30 second timeout and
+PYTHONIOENCODING=utf-8. Outputs are limited to a maximum of 3000 characters (stdout) or 1000 characters
+(stderr) limited.
+
+
+OPERATIONS
+-----------
+
+RUN
+---
+Runs Python file in sandbox process.
+
+Syntax: bach sandbox run <file> [arg1] [arg2] ...
+
+Parameters:
+  <file> - Absolute or relative path to the .py file (relative to system/)
+  [arg1...] - Optional: arguments are passed to sys.argv
+
+Exit code: 0 on success, >0 on error
+
+cwd is set to directory of the file.
+
+
+EVAL
+----
+Evaluates Python expression in isolated process.
+
+Syntax: bach sandbox eval "<code>"
+
+Parameters:
+  <code> - Python expression or statement (in quotation marks)
+
+Special feature: First tries eval(), falls back to exec() (for statements).
+Return value (if not None) is printed to stdout.
+
+cwd is set to temp directory.
+
+
+TEST
+----
+Runs pytest on Python file.
+
+Syntax: bach sandbox test <file>
+
+Parameters:
+  <file> - Absolute or relative path to test .py file
+
+Flags: -v (verbose), --tb=short (short tracebacks)
+
+Timeout: 60 seconds (double compared to run/eval)
+
+cwd is set to system/ directory.
+
+
+SHELL
+-----
+Executes shell command in isolated directory.
+
+Syntax: bach sandbox shell "<cmd>"
+
+Parameters:
+  <cmd> - Any shell command (e.g. "ls -la", "pip list")
+
+cwd is set to temporary empty directory (cleanup after execution).
+
+
+EXAMPLES
+---------
+
+# Run Python file with parameters:
+bach sandbox run tools/data_processor.py input.csv output.json
+
+# Evaluate expression:
+bach sandbox eval "import json; json.dumps({'test': 123})"
+
+# Run unit tests:
+bach sandbox test tools/test_handler.py
+
+# Shell command with Timeout:
+bach sandbox shell "pip list | grep requests"
+
+
+FILES
+-------
+hub/sandbox.py - Handler implementation
+docs/help/sandbox.txt - This file
+
+
+SEE ALSO
+----------
+hub/base.py - BaseHandler (base class)
+tools/ - Target directory for scripts
+TIMEOUT - 30 seconds default, 60 seconds for test
+PYTHONIOENCODING - utf-8 (Windows compatible)

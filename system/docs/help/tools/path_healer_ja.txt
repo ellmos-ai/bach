@@ -1,0 +1,54 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH でのパス管理
+----------------------
+
+重要: パスは BACH で自動的に管理されます!
+-------------------------------------------------------
+bach_paths.py はすべてのパスに対する「唯一の信頼できる情報源」です。
+すべてのパスは動的に計算されます - BACH が移動されると、
+すべてが自動的に機能します。手動パス修復は、
+通常は必要ありません。
+
+  from bach_paths import get_path、BACH_ROOT、TOOLS_DIR
+  tools = get_path("tools") # BACH の場所に関係なく、常に正しい
+
+参照: bach --help bach_paths (完全なドキュメント)
+
+
+手動パス更新が必要な場合は?
+----------------------------------------------
+パスがドキュメントとコメントにある場合のみ
+(get_path() を使用するコードには含まれません)。件名:
+  - ヘルプ ファイル (.txt)
+  - Wiki 記事 (.txt)
+  - マークダウンドキュメント (.md)
+  - Python ファイル内のドキュメント文字列
+
+この目的のために、Doc Path Updater があります:
+
+  bach --maintain docs-paths             # ドライラン (表示のみ)
+  bach --maintain docs-paths --apply     # 実際に修正します
+
+ツール: system/tools/maintenance/doc_path_updater.py
+
+
+前に何が間違っていたのですか?
+----------------------------------
+古い「path_healer.py」 (RecludOS の遺物) はすべてのファイルを試しました
+Python コードも含めて修復します。それは次のとおりです。
+1. 余分なもの (bach_paths.py がこれを動的に解決します)
+2. 危険 (非冪等ルールにより 101 個のファイルが破損)
+3. 正しく統合されていない (CLI ハンドラーのファイル名が間違っている)
+
+v2.1.0 以降、ツールはドキュメントの更新に限定されています
+
+
+
+関連項目
+----------
+- bach --help bach_paths 集中パス管理 (推奨)
+- bach --help path パスの表示と検証
+- bach --help dirscan ディレクトリの真実 (状態管理)

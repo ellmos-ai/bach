@@ -1,0 +1,200 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+RECURRING TASKS - Recurring tasks
+-----------------------------------------
+
+The recurring system automatically creates tasks when they are due.
+Unlike Maintenance (which executes jobs), Recurring only generates
+Reminder tasks for Claude or the user.
+
+HANDLER: hub/recurring.py
+SERVICE: hub/_services/recurring/
+GUI: NONE (only CLI + integrated in /daemon page)
+DAEMON: YES (Daemon checks every 5 min - gui/daemon_service.py)
+
+
+COMMANDS
+-------
+
+  bach --recurring              Show all recurring tasks
+  bach --recurring list         (Alias)
+  bach --recurring check        Create due tasks
+  bach --recurring trigger ID   Trigger task manually
+  bach --recurring done ID      Mark as completed (updated last_run)
+  bach --recurring enable ID    Activate task
+  bach --recurring disable ID   Deactivate task
+
+
+DEFINITION: THREE HANDLER SYSTEMS
+--------------------------------
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ RECURRING │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Creates TASKS as reminders │
+  │ Interval-based (days) │
+  │ For Claude/User to edit │
+  │ Handler: hub/recurring.py │
+  │ Service: hub/_services/recurring/ │
+  │ GUI: NONE (CLI only) │
+  │ Daemon: YES (checks every 5 minutes via daemon_service.py) │
+  └────────────────────────────────── ───────────────────────────────┘
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ MAINTENANCE (docs/help/maintenance.txt) │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Runs shell/Python commands OFF │
+  │ Time-controlled (cron/interval) │
+  │ Without Claude involvement │
+  │ Handler: hub/daemon.py │
+  │ Service: gui/api/daemon_api.py + DB │
+  │ GUI: /daemon (EXISTS) │
+  │ Daemon: YES (own process) │
+  └────────────────────────────────── ───────────────────────────────┘
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ PROMPT GENERATOR (docs/help/prompt-generator.txt) │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Sends prompts to Claude sessions │
+  │ Manual or automated │
+  │ Template system with editor │
+  │ Handler: (under development) │
+  │  Service:  hub/_services/prompt_generator/                      │
+  │ GUI: /prompt-generator (PLANNED) │
+  │ Daemon: YES (session_daemon.py) │
+  └──────────────────────────────────── ─────────────────────────────┘
+
+WHEN WHAT USE?
+----------------
+
+  Use recurring if:
+  - Claude should be remembered
+  - Task requires intelligence/analysis
+  - Flexible timing (at the next session)
+
+  Use maintenance when:
+  - A script should run automatically (e.g. backup, scan)
+  - No intelligence/decision required
+  - Time is important (e.g. at 3:00 at night)
+
+  Use prompt generator if:
+  - Claude session should start automatically
+  - Prompt templates can be used
+  - Timed Claude work required
+
+
+CURRENT RECURRING TASKS
+------------------------
+
+  ATI agent tasks:
+  ----------------
+  1. self_check (14d)
+     BACH SELF-CHECK: Check SKILL.md and lessons
+
+  2. onboarding_scan (7d)
+     Check new tools: bach ati onboard --check
+
+  3. code_quality (30d)
+     Check code quality: c_method_analyzer on all tools
+
+  System tasks:
+  -------------
+  4. backup_check (7d)
+     Check BACH backup: bach backup status
+
+  5. memory_cleanup (30d)
+     Check memory archive: archive old entries
+
+  6. integration_check (30d)
+     Carry out follow-up analysis
+     Workflow: skills/workflows/system-connectionanalysis.md
+
+  Documentation tasks:
+  ---------------------
+  7. roadmap_review (14d)
+     ROADMAP.md Review: Mark completed tasks, check priorities
+
+  8. wiki_author (21d)
+     Wiki authors: Identify and fill agent knowledge gaps
+     Workflow: skills/workflows/wiki-author.md
+
+  9. help_forensic (14d)
+     Help forensics: Check actual vs. target, correct if there is a deviation
+     Workflow: skills/workflows/help-forensic.md
+
+10. doc_freshness (60d)
+      Documentation freshness: bach --maintain docs report
+
+
+CONFIGURATION
+-------------
+
+  File: hub/_services/recurring/config.json
+
+  Format per task:
+  {
+    "task_name": {
+      "enabled": true,
+      "interval_days": 30,
+      "target": "tasks", // or "ati_tasks"
+      "priority": "P3", // only for target=tasks
+      "priority_score": 50, // only for target=ati_tasks
+      "effort": "medium", // only for target=ati_tasks
+      "task_text": "Description...",
+      "last_run": "2026-01-22T21:30:00"
+    }
+  }
+
+
+DAEMON INTEGRATION
+------------------
+
+The BACH daemon service (gui/daemon_service.py) checks automatically
+Every 5 minutes for due recurring tasks.
+
+In addition, you can check manually:
+- `bach --startup` shows due tasks
+- `bach --recurring check` immediately creates them as real tasks
+
+
+ADD NEW RECURRING TASK
+--------------------------------
+
+1. Edit config.json:
+   hub/_services/recurring/config.json
+
+2. Add new entry:
+   "my_task": {
+     "enabled": true,
+     "interval_days": 14,
+     "target": "tasks",
+     "priority": "P3",
+     "task_text": "Describe my task"
+   }
+
+3. Testing:
+   bach --recurring list
+
+
+TECHNICAL DETAILS
+------------------
+
+  Handler: hub/recurring.py
+  Service: hub/_services/recurring/recurring_tasks.py
+  Config: hub/_services/recurring/config.json
+  Daemon module: gui/daemon_service.py (checks every 5 minutes)
+
+IMPORTANT: Recurring tasks are checked automatically by the BACH daemon
+(every 5 minutes). Manual checks with `bach --recurring check` are
+possible at any time.
+
+
+SEE ALSO
+----------
+
+  bach --help wartung           Maintenance jobs (shell commands, GUI available)
+  bach --help prompt-generator  Prompt management (GUI planned)
+  bach --help tasks             Task system
+  bach --help startup           Session start (shows due tasks)

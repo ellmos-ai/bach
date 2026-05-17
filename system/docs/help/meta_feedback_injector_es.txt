@@ -1,0 +1,106 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+## NOMBRE DEL MANEJADOR
+
+meta_feedback_injector
+
+## DESCRIPCIÓN
+
+Manejador para detectar automáticamente ticks LLM recurrentes e inyectarlos
+Comentarios de corrección. Realiza un seguimiento de la frecuencia de ocurrencia y desactiva patrones
+automáticamente después de períodos definidos de inactividad (max_inactive_count).
+
+Promueve patrones de comportamiento consistentes a través de bloques de retroalimentación en el mensaje.
+Admite persistencia de base de datos o respaldo de JSON (data/meta_feedback_patterns.json).
+
+## OPERACIONES
+
+check_response(response: str) -> list[dict]
+  Escanea la respuesta a patrones activos. Seguimiento de aciertos/errores. Hay algunos encontrados
+  Patrones con detalles atrás.
+
+inject_corrections(prompt: str) -> str
+  Inserta el bloque [BACH-META-FEEDBACK] con correcciones activas en el mensaje.
+  Sólo se inyectan patrones con frecuencia > 0.
+
+add_pattern(patrón, corrección, tipo_patrón, max_inactive_count)
+  Nuevo patrón con coincidencia de expresiones regulares o subcadenas. Guarda en DB o JSON.
+
+remove_pattern(pattern_id: int) -> bool
+  Elimina el patrón de la persistencia.
+
+reactivate_pattern(pattern_id: int) -> bool
+  Reactiva el patrón desactivado, restablece inactive_count.
+
+_record_hit(patrón: dict)
+  Aumenta la frecuencia, establece inactive_count en 0.
+
+_record_miss(patrón: dict)
+  Aumenta el recuento_inactivo. Deshabilitado si >= max_inactive_count.
+
+_pattern_matches(patrón: dict, texto: str) -> bool
+  Coincidencia de expresiones regulares/subcadenas con texto.
+
+## PATRONES POR DEFECTO
+
+ID 1: palabras de relleno en inglés (aquí, déjame, lo haré)
+  Corrección: "SIEMPRE responde en alemán".
+
+ID 2: Detección de emoji (rangos Unicode)
+  Corrección: "NO uses emojis en las respuestas".
+
+ID 3: Disculpas exageradas
+  Corrección: "Sin excusas exageradas."
+
+## EJEMPLOS
+
+Inicialización con DB:
+  handler = MetaFeedbackInjector(base_path=Path("system"), db=bach.db)
+
+Inicialización con respaldo JSON:
+  controlador = MetaFeedbackInjector(base_path=Path("system"))
+
+Verificar respuesta:
+  coincidencias = handler.check_response("Aquí está mi respuesta...")
+  # coincidencias contiene los ID de patrón 1, 2, ... con el estado actual
+
+Inyecte comentarios antes de volver a intentarlo:
+  corrected_prompt = handler.inject_corrections(original_prompt)
+
+Agregar nuevo patrón:
+  controlador.add_pattern(
+    patrón=r"(?i)\bactualmente\b",
+    correct="Evita 'en realidad' en las respuestas en alemán.",
+    patrón_tipo="expresión regular"
+  )
+
+Reactivar patrón después de inactividad:
+  handler.reactivate_pattern(pattern_id=1)
+
+## ARCHIVOS
+
+hub/meta_feedback_injector.py
+  Implementación (282 líneas, licencia MIT)
+
+data/meta_feedback_patterns.json
+  Persistencia de reserva JSON (creada por _save_json)
+
+ESQUEMA DE CAMPO DE PATRÓN
+  identificación (int)
+  patrón (cadena): expresión regular o subcadena
+  patrón_tipo (cadena): "expresión regular" o "subcadena"
+  corrección (cadena): texto de comentarios para el mensaje
+  frecuencia (int): Número de visitas
+  inactive_count (int): fallos desde el último acceso
+  max_inactive_count (int): umbral para la desactivación automática (predeterminado: 10)
+  activo (int): 1 (activo) o 0 (inactivo)
+  creado_at (cadena): marca de tiempo ISO
+  update_at (str): marca de tiempo ISO
+
+## VER TAMBIÉN
+
+bach_api              - Registro e inicialización del controlador central
+meta_feedback         - Mecanismos de retroalimentación relacionados (si los hay)
+bach.db (esquema) - tabla meta_feedback_patterns con todas las columnas

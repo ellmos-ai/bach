@@ -1,0 +1,177 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MENSAJES - sistema de mensajería
+----------------------------
+
+DESCRIPCIÓN
+Sistema de mensajería interna para la comunicación entre usuarios,
+Sistema y agentes. Accesible a través de CLI y GUI web.
+
+Sin --from, el socio registrado se usa automáticamente.
+
+COMANDOS CLI
+-----------
+bach msg list              Mostrar todos los mensajes
+bach msg list --inbox      Solo bandeja de entrada
+bach msg list --outbox     Solo mensajes enviados
+bach msg list --limit 20   Con límite (predeterminado: 10)
+
+bach msg inbox             Mostrar bandeja de entrada (forma corta)
+bach msg outbox            Mostrar bandeja de salida (forma corta)
+
+bach msg unread            Mostrar mensajes no leídos
+bach msg count             Contador de mensajes
+
+bach msg send <to> <text>  Enviar mensaje (como usuario/activo) socio)
+bach msg send <to> <text> --from <partner>  Enviar desde socio
+
+bach msg read <id>         Leer mensaje (marcado como leído)
+bach msg read <id> --ack   Leer con confirmación de lectura automática
+
+bach msg ping              Mostrar mensajes no leídos A mí
+bach msg ping --from <p>   Mensajes a socio específico
+
+bach msg watch             Modo de sondeo: Esperar mensajes nuevos (Ctrl+C)
+bach msg watch --from <p>  Sondeo para socio específico
+
+bach msg delete <id>       Eliminar mensaje(s)
+bach msg delete 1 2 3      Eliminar múltiples mensajes
+bach msg delete <id> --dry-run  Vista previa (sin cambios)
+
+bach msg archive <id>      Archivar mensaje(s)
+bach msg archive 1 2 3     Archivar múltiples mensajes
+bach msg archive <id> --dry-run  Vista previa (sin cambios)
+
+bach msg help              Mostrar ayuda
+
+SOPORTE MULTI-SOCIO
+---------------------
+Enviar socios con su propia identidad:
+
+  bach msg send user "Bericht fertig" --from gemini
+  bach msg send user "Task erledigt" --from claude
+  bach msg send user "Verarbeitung abgeschlossen" --from ollama
+
+Lógica:
+  --del usuario -> mensaje en la BAJA DE SALIDA del usuario (predeterminado)
+  --de <otro> -> mensaje en la bandeja de entrada del usuario (no leído)
+
+Identidades de socios:
+  usuario usuario (humano)
+  Claude Claude (IA operativa)
+  gemini Gemini (IA externa vía antigravedad)
+  ollama Ollama (IA local)
+  sistema mensajes del sistema
+
+DESTINATARIO
+----------
+sistema mensajes del sistema
+usuario Mensajes de usuario
+agente:<nombre> Agente específico (por ejemplo, agente:codificador)
+
+VALORES DE ESTADO
+------------
+no leído No leído
+leer leer
+archivado Archivado
+eliminado Eliminado
+
+WEB-GUI
+-------
+http://127.0.0.1:8000/messages
+
+Características:
+- Bandeja de entrada/salida/vista de archivo
+- Escribe un nuevo mensaje.
+- Marcar como leído
+- Mostrar detalle del mensaje
+
+BASE DE DATOS
+---------
+Tabla: mensajes (en data/bach.db)
+
+Campos:
+- id INTEGER CLAVE PRIMARIA
+- dirección TEXTO (bandeja de entrada/salida)
+- TEXTO del transmisor
+- TEXTO del destinatario
+- TEXTO del asunto (planificado - no utilizado actualmente)
+- TEXTO del cuerpo
+- TEXTO de estado (no leído/leído/archivado/eliminado)
+- prioridad INTEGER
+- creado_en TIMESTAMP
+- read_at MARCA DE TIEMPO
+- archived_at TIMESTAMP
+
+EJEMPLOS
+---------
+# Enviar mensaje
+bach msg send system "Backup abgeschlossen"
+
+# Mostrar mensajes no leídos
+bach msg unread
+
+# Leer mensaje
+bach msg read 5
+
+# Leer mensaje con confirmación
+bach msg read 5 --ack
+
+# Todos los mensajes de salida
+bach msg list --outbox
+
+# Esperar nuevos mensajes
+bach msg watch
+
+# Verificar estado
+bach msg count
+
+INTEGRACIÓN DEL CONECTOR (v1.1.0)
+------------------------------
+Mensajes de conectores externos (Telegram, Discord, etc.)
+se dirigen automáticamente a la bandeja de entrada:
+
+  conector_messages (in) → route_incoming() → mensajes (bandeja de entrada)
+
+Formato del remitente: "conector:sender_id" (por ejemplo, "telegram:123456")
+Las sugerencias de contexto se guardan automáticamente como metadatos.
+
+Los mensajes salientes se envían a través de la cola:
+
+  bach connector send <name> <empfaenger> <text>
+
+Entrega confiable con reintento/retroceso a través del demonio:
+
+  bach connector setup-daemon    # Registrar trabajos
+  bach daemon start --bg         # Iniciar demonio
+
+Ver: bach --help conector
+
+API REST (puerto 8001)
+--------------------
+Disponible cuando se ejecuta la API sin cabeza:
+
+  POST /api/v1/messages/send Mensaje en cola
+  OBTENER /api/v1/messages/queue Estado de la cola
+  GET /api/v1/messages/inbox Leer bandeja de entrada (paginación, filtro)
+  POST /api/v1/messages/route Activar enrutamiento manualmente
+
+Ejemplo:
+  curl localhost:8001/api/v1/messages/inbox?status=unread&limit=10
+
+HANDLER
+-------
+hub/messages.py Controlador CLI (bandeja de entrada/salida)
+hub/connector.py Controlador de conector (cola, enrutamiento)
+gui/api/messages_api.py Puntos finales de API REST
+gui/server.py Puntos finales GUI (/api/messages)
+
+VER TAMBIÉN
+----------
+bach --help connector      Sistema de conector (cola, reintento, disyuntor)
+bach --help gui            Panel web
+bach --help daemon         Trabajos en segundo plano
+bach --help injectors      Inyectores de contexto
+bach --help wartung        Trabajos de mantenimiento (tareas automáticas)

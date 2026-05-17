@@ -1,0 +1,21 @@
+BACH Tool: code_generator
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/code_generator.py
+
+DESCRIPTION
+----------------------------------------
+Code generator module for developer agent
+Phase 2: Core Features
+
+Generates Python code based on templates and specifications
+
+USE
+----------------------------------------
+python bach.py tools run code_generator [args]
+or directly: python tools/code_generator.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show code_generator

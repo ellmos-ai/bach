@@ -1,0 +1,119 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [tabla de reconocimiento de socios, tabla de presencia de socios, hub/partner.py, herramientas/mcp_server.py]
+
+BACH PARTNER SYSTEM (Inteligencia federada)
+---------------------------------------------
+
+FECHA: 2026-02-08
+
+El sistema de socios gestiona la colaboración entre diferentes IA
+y personas según la eficiencia y las capacidades de los tokens.
+
+SOCIO REGISTRADO (bach.db)
+------------------------------
+**Socios de IA:**
+- Claude, Géminis, Ollama (activo)
+- ChatGPT, Copilot, Mistral, Perplexity (activo)
+- Antrópico-Local, Agente personalizado (inactivo)
+
+**Socio humano:**
+- Humano (Usuario/Administrador)
+
+COMPONENTES PRINCIPALES
+----------------
+1. LÓGICA (partner_recognition): ¿Quién puede hacer qué? (límites, zona, nivel de costos)
+2. FÍSICA (conexiones): ¿Dónde están los puntos finales? (Claves API, URL)
+3. PRESENCIA (partner_presence): ¿Quién está “registrado” actualmente?
+4. PROTOCOLO (llm/msg): ¿Cómo trabajamos juntos? (Bloqueos, Mensajes)
+5. CONECTORES (hub/connector.py): Comunicación externa (Telegram, Discord)
+
+COMANDOS CLI (--partner)
+-----------------------
+  bach partner list              Lista de todos los socios registrados
+  bach partner status            Estado de la red (estado en línea, zonas token)
+  bach partner info <name>       Mostrar detalles sobre el socio específico
+  bach partner active            Lista de socios actualmente activos
+  bach partner delegate <task>   Asignar tarea al socio más eficiente
+
+COMANDOS DEL CONECTOR (--conector)
+-------------------------------
+  bach connector list            Todos los conectores (Telegram, Discord, etc.)
+  bach connector status          Estado de todos los conectores activos
+  bach connector send <name> <recipient> <text>  Enviar mensaje a través del conector
+  bach connector poll <name>     Recuperar mensajes del conector
+  bach connector messages [name] Empfangene Nachrichten anzeigen
+
+DELEGATE-FLAGS
+--------------
+El comando delegado admite las siguientes opciones:
+  --partner delegado <tarea> Enrutar tarea automáticamente
+  --partner delegado <tarea> --to=NOMBRE Delegar a un socio específico
+  --partner delegado <tarea> --zone=N Forzar zona (1-4)
+  --partner delegado <tarea> --fallback-local
+  --partner delegado <tarea> --fal respaldo fuera de línea a Ollama (forma abreviada)
+
+COORDINACIÓN MULTI-LLM (Nueva v1.1.73+)
+-------------------------------------
+Para evitar conflictos en el trabajo paralelo, se aplican las siguientes reglas:
+- LOCKING: `bach llm lock <file>` prevents two AIs from modifying the same file.
+- MENSAJERÍA: `bach msg send <target> "text"` para votación directa.
+
+SISTEMA DE ZONA (Conciencia del token)
+------------------------------
+El enrutamiento se realiza automáticamente según el presupuesto del token (capa 5):
+- Zona 1 (<30% presupuesto): Claude (Mejor Calidad)
+- Zona 2 (30-60%): Géminis / Claude (Mixta)
+- Zona 3 (60-80%): Ollama (Local/Libre)
+- Zona 4 (80-100%): Humano (emergencia/finalización)
+
+OBJETOS DE BASE DE DATOS
+-----------------
+- reconocimiento_socio: datos maestros (10 socios: Claude, Gemini, Ollama, etc.)
+- partner_presence: sesiones actuales y tarjeta de sello (más de 40 registros)
+- conexiones: perfiles técnicos (8+ conexiones)
+- interactuación_protocols: Protocolo de colaboración (más de 10 entradas)
+- conector_messages: Mensajes desde/hacia sistemas externos (Telegram, Discord)
+
+EJEMPLO WF (GEMINI)
+--------------------
+  1. Verifique: `bach msg ping --desde gemini`
+  2. Trabajo: `bach llm lock research.md` -> Editar -> `desbloquear`.
+  3. Listo: `ID de tarea de Bach realizada`
+
+INTEGRACIÓN DEL SERVIDOR MCP (v2.2)
+------------------------------
+El servidor BACH MCP proporciona funciones de socio para Claude Code:
+
+**Herramientas:**
+- partner_list - Listar todos los socios
+- socio_status - muestra el estado y las zonas de token
+
+**Uso en Claude Code:**
+```pitón
+# La herramienta MCP está disponible automáticamente cuando el servidor se está ejecutando
+resultado = mcp.call_tool("lista_de_socios")
+```
+
+ESPACIO DE TRABAJO DE SOCIOS
+-----------------
+ACTUAL (desde 2026-02-01): sistema/partners/
+- claude/bandeja de entrada, claude/bandeja de salida
+- géminis/bandeja de entrada, géminis/bandeja de salida
+- ollama/inbox, ollama/outbox
+
+DEPRECated (antes del 2026-02-01): system/partners/
+- Sólo gemini/bandeja de salida/con informes antiguos (2026-02-06)
+- Los nuevos informes van a partners/gemini/outbox/
+
+VER TAMBIÉN
+----------
+  bach connector --help     Sistema de conector (Telegram, Discord)
+  bach llm --help           Protocolo multi-LLM (bloqueos)
+  bach msg --help           Sistema de mensajería
+  bach tokens --help        Monitor de tokens y cuotas
+  docs/help/maintain.txt Comprobación de integridad de la red
+
+VERSIÓN: v1.2.0 (2026-02-08)
+Fuente: hub/partner.py, tools/mcp_server.py, partners/

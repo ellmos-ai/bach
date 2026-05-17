@@ -1,0 +1,108 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+TIME HANDLER
+----------------------------------------------------------------------------
+
+DESCRIPTION
+----------------------------------------------------------------------------
+
+The Time Handler manages the time management system in BACH. He offers
+Functionalities for time displays, timers, countdowns and time-based
+Profile management (Between). All modules use the central TimeManager
+for coordinated operations.
+
+Base directory: data/ (state files)
+Modules: tools/time_system.py
+
+
+OPERATIONS
+----------------------------------------------------------------------------
+
+CLOCK
+-----
+  bach clock on              - Activate time display
+  bach clock off             - Deactivate time display
+  bach clock status          - Check status of time display
+  bach clock interval <sek>  - Set display interval in seconds
+
+TIMER
+-----
+  bach timer start [name]    - Start timer (default: "default")
+  bach timer stop [name]     - Stop timer
+  bach timer list            - Show all active timers
+  bach timer clear           - All timers delete
+
+COUNTDOWN
+---------
+  bach countdown start <name> <HH:MM:SS> [--after 'befehl']
+                             - Start countdown with optional command
+                               (Short form: only <HH:MM:SS> -> name="timer")
+  bach countdown stop <name> - Countdown abbrechen
+  bach countdown pause <name> - Countdown pausieren
+  bach countdown resume <name> - Countdown fortsetzen
+  bach countdown list        - Show all countdowns
+
+BETWEEN
+-------
+  bach between on            - Activate between checks
+  bach between off           - Deactivate between checks
+  bach between status        - Show status
+  bach between use <name>    - Activate profile
+  bach between profile list  - List profiles
+  bach between profile show <name> - Profil Details anzeigen
+
+BEAT
+----
+  bach beat                  - Show all time information
+  bach beat on               - Activate all time displays
+  bach beat off              - Deactivate all time displays
+  bach beat interval <sek>   - Global Set interval
+
+
+EXAMPLES
+----------------------------------------------------------------------------
+
+# Start timer measurement and query after 30 seconds
+bach timer start work
+# ... work ...
+bach timer stop work
+
+# Countdown with alarm: 5 minute break
+bach countdown start pause 00:05:00 --after "echo Pause vorbei!"
+
+# Load between profiles (e.g. office hours)
+bach between status
+bach between use office-hours
+
+# Check global time status
+bach beat
+bach beat on           # Activate all time modules
+bach beat interval 60  # Update every 60 seconds
+
+
+FILES
+----------------------------------------------------------------------------
+
+State files (relative to system/):
+
+  data/.clock_state - Time display settings
+  data/.timer_state - Timer state management
+  data/.countdown_state - Countdown state management
+  data/.between_state - Between Profile Manager
+
+Module:
+
+  hub/time.py - Handler implementation
+  tools/time_system.py - TimeManager, ClockModule, TimerModule,
+                           CountdownModule, BetweenManager
+
+
+SEE ALSO
+----------------------------------------------------------------------------
+
+  Base Handler API: docs/help/base.txt
+  Configuration: config/time_config.json
+  Time system specification: docs/TIME-SYSTEM.md
+  Profile management: docs/BETWEEN-PROFILES.md

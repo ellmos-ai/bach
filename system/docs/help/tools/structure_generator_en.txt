@@ -1,0 +1,52 @@
+BACH Tool: structure_generator
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/structure_generator.py
+
+DESCRIPTION
+----------------------------------------
+structure_generator.py
+----------------------
+Generates skill and agent structures on a spectrum.
+
+Version: 1.0.0
+Created: 2026-01-14
+Combined: skill_generator_v3.py + agent_generator_v1.py
+
+CONCEPT:
+  Skill and agent are a spectrum, not hard categories.
+  From the simplest partial capability to the full orchestrator.
+
+PROFILES (ascending):
+  MICRO = Only file(s), no folder system (absolute sharing capability)
+  LIGHT = Minimum structure (SKILL.md + _config + _data)
+  STANDARD = Skill with simple memory
+  EXTENDED = Skill with micro skills
+  AGENT = Orchestrates skills into workflows
+  AGENT_FULL = Full agent (closer to OS)
+
+MODI:
+  --embedded = For use within an OS (lightweight)
+  --standalone = For external use (full, default)
+
+Usage:
+    python structure_generator.py <name> <profile> [destination folder] [--embedded|--standalone]
+
+Examples:
+    python structure_generator.py analysis MICRO
+    python structure_generator.py search STANDARD
+    python structure_generator.py write assistant AGENT
+    python structure_generator.py project manager AGENT_FULL
+
+For OS → os_generator.py
+For export → exporter.py
+
+USE
+----------------------------------------
+python bach.py tools run structure_generator [args]
+or directly: python tools/structure_generator.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show structure_generator

@@ -1,0 +1,30 @@
+Herramienta BACH: file_cleaner
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/file_cleaner.py
+
+DESCRIPCIÓN
+----------------------------------------
+file_cleaner.py - Limpia archivos por edad/patrón
+------------------------------------------------------
+
+Busca y elimina archivos antiguos o archivos por patrón.
+Útil para copias de seguridad de carpetas, registros y archivos temporales.
+
+Uso:
+    python file_cleaner.py <carpeta> --age 30 # Más de 30 días
+    python file_cleaner.py <carpeta> --pattern "*.log" # Por patrón
+    python file_cleaner.py <carpeta> --keep 5 # Mantener 5 más nuevos
+    python file_cleaner.py <carpeta> --ejecutar # en realidad eliminar
+
+Autor: BACH v1.1
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan file_cleaner [args]
+o directamente: python tools/file_cleaner.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: herramientas de bach muestran file_cleaner

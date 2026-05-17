@@ -1,0 +1,32 @@
+BACH ツール:policy_control
+--------------------------------------------------
+生成:2026-01-23 10:36
+ソース: tools/policy_control.py
+
+説明
+----------------------------------------
+policy_control.py - 集中コード スニペット インジェクション
+
+標準化されたコード ポリシーを Python プロジェクトに挿入します。
+インライン インジェクション (小さなスニペット) と外部ファイル (大きなファイル) をサポートします。
+
+使用法:
+    pythonpolicy_control.py <file.py> --inject emoji_safe
+    pythonpolicy_control.py <file.py> --set standardfixer
+    pythonpolicy_control.py <file.py> --emoji_safe をチェック
+    pythonpolicy_control.py <フォルダ> --set standardfixer --recursive
+    pythonpolicy_control.py --list
+    pythonpolicy_control.py --list-sets
+
+著者: クロード
+バージョン: 1.0
+
+使用
+----------------------------------------
+python bach.py ツールは、policy_control [args] を実行します。
+または直接: python tools/policy_control.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- ご質問がある場合: bach tools showpolicy_control

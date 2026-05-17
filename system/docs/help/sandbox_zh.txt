@@ -1,0 +1,104 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+沙盒处理程序
+---------------
+
+描述
+------------
+Python 脚本、代码评估、单元测试和的隔离代码执行
+外壳命令。取代 E2B MCP。所有操作均以 30 秒超时运行，并且
+Python 编码=utf-8。输出最多限制为 3000 个字符（标准输出）或 1000 个字符
+(stderr) 受限。
+
+
+操作
+-----------
+
+RUN
+---
+在沙箱进程中运行 Python 文件。
+
+语法： bach sandbox run <file> [arg1] [arg2] ...
+
+参数：
+  <file> - .py 文件的绝对或相对路径（相对于 system/）
+  [arg1...] - 可选：参数传递给 sys.argv
+
+退出代码：成功时为 0，错误时为 >0
+
+cwd 设置为文件目录。
+
+
+EVAL
+----
+在隔离进程中评估 Python 表达式。
+
+语法：bach sandbox eval "<code>"
+
+参数：
+  <code> - Python 表达式或语句（在引号中）
+
+特殊功能：首先尝试 eval()，后退到 exec()（对于语句）。
+返回值（如果不是 None）被打印到 stdout。
+
+cwd 设置为临时目录。
+
+
+TEST
+----
+在 Python 文件上运行 pytest。
+
+语法：bach sandbox test <文件>
+
+参数：
+  <file> - 测试 .py 文件的绝对或相对路径
+
+标志：-v（详细）、--tb=short（短回溯）
+
+超时：60 秒（与 run/eval 相比双倍）
+
+cwd 设置为 system/ 目录。
+
+
+SHELL
+-----
+在隔离目录中执行 shell 命令。
+
+语法：bach sandbox shell "<cmd>"
+
+参数：
+  <cmd> - 任何 shell 命令（例如“ls -la”、“pip list”）
+
+cwd 设置为临时空目录（执行后清理）。
+
+
+示例
+---------
+
+# 带参数运行 Python 文件：
+bach sandbox run tools/data_processor.py input.csv output.json
+
+# 计算表达式：
+bach sandbox eval "import json; json.dumps({'test': 123})"
+
+# 运行单元测试：
+bach sandbox test tools/test_handler.py
+
+# 带超时的 Shell 命令：
+bach sandbox shell "pip list | grep requests"
+
+
+FILES
+-------
+hub/sandbox.py - 处理程序实现
+docs/help/sandbox.txt - 此文件
+
+
+另请参阅
+----------
+hub/base.py - BaseHandler （基类）
+tools/ - 脚本的目标目录
+超时 - 默认 30 秒，测试 60 秒
+PYTHONIOENCODING - utf-8（Windows 兼容）

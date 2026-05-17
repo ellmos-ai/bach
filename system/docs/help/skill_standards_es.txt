@@ -1,0 +1,196 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [skill_init.py, tabla de habilidades]
+
+ESTÁNDARES DE HABILIDADES DE ANTHROPIC / AGENTSKILLS.IO
+------------------------------------------
+
+A partir de: 2026-03-12
+
+Anthropic y agenteskills.io definen un estándar abierto para
+Habilidades de IA proporcionadas por Claude Code, Codex CLI, Cursor, ChatGPT y
+Se admiten otras plataformas. Esta norma permite
+Distribuya e instale habilidades entre plataformas.
+
+BACH admite este estándar de forma nativa y puede utilizar las habilidades existentes
+exportar a formato compatible con Anthropic.
+
+
+ESTRUCTURA DE DIRECTORIO ESTÁNDAR
+-----------------------------
+Una habilidad compatible con Anthropic es una carpeta con la siguiente estructura:
+
+  mi-habilidad/
+  +-- SKILL.md # Definición principal (obligatoria)
+  +-- scripts/ # Scripts ejecutables (opcional)
+  |   +-- configuración.sh
+  |   +-- ejecutar.py
+  +-- referencias/ # Documentación de referencia (opcional)
+  |   +-- core-overview.md
+  |   +-- características-api.md
+  |   +-- mejores-practicas-testing.md
+  |   +-- almacenamiento en caché avanzado.md
+  +-- activos/# Archivos estáticos (opcional)
+      +-- logotipo.png
+      +-- config-template.json
+
+
+SKILL.MD -- YAML-FRONTMATTER
+-----------------------------
+Cada SKILL.md comienza con un bloque YAML-Frontmatter:
+
+  ---
+  nombre: nombre-de-mi-habilidad
+  descripción: >
+    Breve descripción de la habilidad que proporciona esta habilidad.
+    Máximo 1024 caracteres.
+  licencia: CON
+  compatibilidad:
+    - código claude
+    - códice cli
+  metadatos:
+    autor: lukisch
+    versión: 1.0.0
+    Etiquetas: [automatización, revisión de código]
+  herramientas permitidas:
+    - Golpe
+    - Leer
+    - Editar
+  ---
+
+Campos obligatorios:
+  nombre Máximo 64 caracteres, mayúsculas y minúsculas kebab (a-z, 0-9, guión)
+  descripción Máximo 1024 caracteres, texto libre
+
+Campos opcionales:
+  licencia Identificador de licencia (MIT, Apache 2.0, etc.)
+  compatibilidad Lista de plataformas compatibles
+  Metadatos Valor clave gratuito para autor, versión, etiquetas, etc.
+  herramientas permitidas Lista blanca de herramientas que la habilidad puede usar
+
+El cuerpo de la habilidad real sigue como descuento después del tema inicial.
+
+
+DIVULGACIÓN PROGRESIVA (3 ETAPAS)
+----------------------------------
+El estándar utiliza un proceso de carga de tres etapas para generar presupuestos simbólicos
+para usar eficientemente:
+
+  Nivel 1: Metadatos (~100 tokens)
+    Solo contenido frontal (nombre, descripción, metadatos).
+    Se carga mientras navega/busca. Permite que el LLM decida
+    si la habilidad es relevante sin leer el cuerpo.
+
+  Nivel 2 - Cuerpo SKILL.md (< 5000 fichas)
+    El texto de instrucciones completo de SKILL.md.
+    Se carga cuando la habilidad se activa/instala.
+    Contiene todas las reglas, flujos de trabajo e instrucciones.
+
+  Nivel 3: recursos combinados (bajo demanda)
+    Archivos de referencias/, scripts/ y activos/.
+    Sólo se cargan si la habilidad los solicita explícitamente.
+    o el LLM los necesita para la tarea actual.
+
+Este procedimiento mantiene el consumo inicial de tokens bajo y
+solo se escala cuando es necesario.
+
+
+NOMBRE DE ARCHIVOS DE REFERENCIA
+--------------------------
+Los archivos en la carpeta references/ siguen una convención de nomenclatura:
+
+  core-*.md Conceptos básicos y descripción general
+  características-*.md Documentación de funciones y referencia de API
+  mejores-practicas-*.md Prácticas recomendadas
+  advanced-*.md Temas avanzados y optimización
+
+Ejemplos:
+  referencias/core-overview.md
+  referencias/características-query-api.md
+  referencias/mejores-practicas-manejo-de-errores.md
+  references/advanced-rendimiento-tuning.md
+
+Esta convención permite a los LLM buscar específicamente el correcto
+Busque profundidad de detalle.
+
+
+BACH SUPPORT
+--------------------
+BACH puede crear directamente habilidades compatibles con Anthropic:
+
+  bach skills create <name> --format anthropic
+
+Este comando usa internamente Skill_init.py y crea:
+- SKILL.md con texto frontal correcto
+- scripts/carpeta (vacía)
+- referencias/carpeta (vacía)
+- activos/carpeta (vacía)
+
+Las habilidades BACH existentes se pueden exportar:
+
+  bach skills export <name> --format anthropic
+
+La exportación convierte el encabezado interno de BACH en
+Portada compatible con Anthropic y reorganiza los archivos.
+
+
+COMPARACIÓN: BACH-INTERNAL VS ANTHROPIC-COMPATIBLE
+------------------------------------------------
+
+Aspecto interno al estándar BACH Antrópico
+  ----------------- --------------------- ----------------------
+  Archivo principal SKILL.md SKILL.md
+  Encabezado YAML (extendido) YAML (Frontmatter)
+  Nombre nombre del campo (gratis) nombre (estuche kebab, 64Z)
+  Tipo de campo (obligatorio) -- (no disponible)
+  Versión versión (obligatoria) metadata.version (opc.)
+  Dependencias dependencias (obligatorias) -- (no formalizadas)
+  Herramientas En la carpeta de habilidades scripts/
+  Documentación en la carpeta de habilidades referencias/
+  Archivos estáticos datos/o activos/activos/
+  Flujos de trabajo _workflows/ o localmente en SKILL.md Cuerpo
+  Sincronización de base de datos Sí (tabla de habilidades) No
+  Exportar habilidades de Bach exportar formato nativo
+
+Las habilidades internas de BACH tienen más metadatos (tipo, dependencias,
+trigger_phrases), que se transfieren a campos de metadatos durante la exportación
+convertirse. Las habilidades compatibles con lo antrópico son más magras, pero menos
+expresamente.
+
+
+HABILIDADES VS. AGENTES (ANTRÓPICOS)
+------------------------------
+En el ecosistema antrópico, habilidades y agentes son dos conceptos separados:
+
+  Habilidad: Estándar abierto (agentskills.io), portátil
+          Definido en: .claude/skills/<nombre>/SKILL.md
+          Finalidad: instrucciones, conocimientos, flujos de trabajo
+
+  Agente: Propietario (solo Claude Code / Agent SDK)
+          Definido en: .claude/agents/<nombre>.md
+          Propósito: Ejecución aislada, ventana de contexto propia
+
+Los agentes NO están definidos en la carpeta de habilidades. pero tu puedes
+trabajar juntos:
+
+  - La habilidad puede activar al agente: contexto: fork + agente: <nombre>
+  - El agente puede precargar habilidades: habilidades: [my-skill]
+
+Solo la exportación de habilidades es relevante para LobeHub/Marketplace (abierto,
+portátil). Los agentes de Claude Code son opcionales y no portátiles.
+
+Al exportar agentes BACH:
+  - Definiciones de subagentes -> referencias/
+  - Código de orquestación -> scripts/
+  - Opcional: .claude/agents/<nombre>.md para usuarios de Claude Code
+
+
+VER TAMBIÉN
+----------
+  bach help skills              BACH Skills System (Arquitectura v2.0)
+  bach help skill_export        Exportación de habilidades existentes
+  bach help naming              Convenciones de nomenclatura
+  bach wiki lobehub             LobeHub Marketplace
+  docs/help/skills.txt Documentación detallada de habilidades
+  wiki/skills_board.txt GUI del tablero de habilidades

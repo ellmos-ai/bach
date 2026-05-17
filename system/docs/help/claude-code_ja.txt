@@ -141,7 +141,7 @@ SUBAGENTS (--agents フラグ) を優先します。
 例
 ---------
   # BACH ディレクトリで対話型
-  cd "C:\Users\User\OneDrive\.TOPICS\.AI\.OS\BACH"
+  cd "<BACH_WORKSPACE>"
   クロード
 
   # Opus 4.6 と拡張コンテキストを使用

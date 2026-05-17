@@ -1,0 +1,83 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+报纸处理程序
+-----------------
+
+描述
+------------
+
+来自新闻项目的每日 PDF 报纸。收集各种物品
+来源、生成格式化的 HTML/PDF 报纸并呈现
+通过可配置的渠道（电报、电子邮件、桌面）。
+
+取决于：NewsHandler (hub/news.py)
+数据源：hub/_services/newspaper/config.json、user/newspaper/
+
+OPERATIONS
+-----------
+
+生成[--date YYYY-MM-DD]
+  生成报纸。使用从数据库收集的新闻项目。
+  在 user/newspaper/ 目录中创建 HTML 和 PDF。
+  今天的标准； --date 设置明确的日期。
+  示例：巴赫报纸生成 --date 2026-02-18
+
+deliver [--channel telegram|email|desktop]
+  送报纸。找到最新的报纸并发送。
+  如果没有 --channel，则使用所有配置的通道。
+  示例：巴赫报纸投递 --channel telegram
+
+config
+  显示配置。读取 hub/_services/newspaper/config.json
+  并以结构化方式显示所有参数。
+
+历史记录
+  列出以前的费用。显示多达 20 种最新报纸
+  带有日期戳和文件大小（以 KB 为单位）。
+
+帮助
+  显示此帮助。
+
+示例
+---------
+
+生成日报：
+  bach newspaper generate
+
+指定日期：
+  bach newspaper generate --date 2026-02-25
+
+发送报纸（所有频道）：
+  bach newspaper deliver
+
+仅通过 Telegram 发送：
+  bach newspaper deliver --channel telegram
+
+完整工作流程：
+  bach news fetch              [收集消息]
+  bach newspaper generate      [创建报纸]
+  bach newspaper deliver       [发送报纸]
+
+文件
+-------
+
+系统/的相对路径:
+
+  hub/newspaper.py 处理程序实现
+  hub/_services/newspaper/newspaper_generator 报纸生成器（延迟加载）
+  hub/_services/newspaper/config.json 配置（渠道、来源）
+
+  用户/报纸/输出目录
+  user/newspaper/newspaper_*.html 生成的 HTML 报纸
+  user/newspaper/newspaper_*.pdf 生成的 PDF 报纸
+
+  data/bach.db 数据库（news_items、news_sources）
+
+另请参见
+----------
+
+  news.py NewsHandler（新闻项目的源系统）
+  base.py BaseHandler（基类）
+  notify.py 通知系统（投递）

@@ -1,0 +1,27 @@
+BACH ツール:production_agent
+--------------------------------------------------
+生成:2026-01-23 10:36
+出典: tools/production_agent.py
+
+説明
+----------------------------------------
+Production Agent v1.0.0
+
+コンテンツ制作: 音楽、ポッドキャスト、ビデオ、テキスト、ストーリー、PR。
+外部 AI ツールと RecludOS サービスを統合します。
+
+使用方法:
+  pythonproduction_agent.pyリスト
+  pythonproduction_agent.py music --prompt "ジャズインストゥルメンタル"
+  pythonproduction_agent.pyビデオ --プロンプト「海の波」
+  python Production_agent.py recommend <category>
+
+USE
+----------------------------------------
+python bach.py tools runproduction_agent [args]
+または直接: python tools/production_agent.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools showproduction_agent

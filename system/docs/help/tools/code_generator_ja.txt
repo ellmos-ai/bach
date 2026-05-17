@@ -1,0 +1,21 @@
+BACH ツール: code_generator
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/code_generator.py
+
+説明
+----------------------------------------
+開発者エージェント用のコード ジェネレーター モジュール
+フェーズ 2: コア機能
+
+テンプレートと仕様に基づいて Python コードを生成
+
+使用
+----------------------------------------
+python bach.py tools run code_generator [args]
+または直接: python tools/code_generator.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show code_generator

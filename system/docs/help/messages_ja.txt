@@ -1,0 +1,177 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+メッセージ - メッセージング システム
+----------------------------
+
+説明
+ユーザー間のコミュニケーションのための内部メッセージング システム、
+システムとエージェント。 CLI および Web GUI 経由でアクセス可能。
+
+ --from を指定しないと、クロックインしたパートナーが自動的に使用されます。
+
+CLI コマンド
+-----------
+bach msg list              すべてのメッセージを表示
+bach msg list --inbox      受信箱のみ
+bach msg list --outbox     送信済みメッセージのみ
+bach msg list --limit 20   制限付き (デフォルト: 10)
+
+bach msg inbox             受信箱を表示 (短縮形式)
+bach msg outbox            送信箱を表示 (短縮形式)
+
+bach msg unread            未読メッセージを表示
+bach msg count             メッセージ カウンタ
+
+bach msg send <to> <text>  メッセージを送信 (ユーザー/アクティブとして)パートナー)
+bach msg send <to> <text> --from <partner>  パートナーから送信
+
+bach msg read <id>         メッセージを読む (既読としてマーク)
+bach msg read <id> --ack   自動既読確認付きで読む
+
+bach msg ping              未読メッセージを自分に表示
+bach msg ping --from <p>   特定のパートナーへのメッセージ
+
+bach msg watch             ポーリング モード: 新しいメッセージを待つ (Ctrl+C)
+bach msg watch --from <p>  特定のパートナーへのポーリング
+
+bach msg delete <id>       メッセージ削除
+bach msg delete 1 2 3      複数のメッセージを削除
+bach msg delete <id> --dry-run  プレビュー (変更なし)
+
+bach msg archive <id>      メッセージをアーカイブ
+bach msg archive 1 2 3     複数をアーカイブメッセージ
+bach msg archive <id> --dry-run  プレビュー (変更なし)
+
+bach msg help              ヘルプを表示
+
+マルチパートナー サポート
+---------------------
+パートナーに独自の ID を送信:
+
+  bach msg send user "Bericht fertig" --from gemini
+  bach msg send user "Task erledigt" --from claude
+  bach msg send user "Verarbeitung abgeschlossen" --from ollama
+
+ロジック:
+  --ユーザーから -> ユーザーの送信ボックス内のメッセージ (デフォルト)
+  --from <other> -> ユーザー INBOX のメッセージ (未読)
+
+パートナー ID:
+  ユーザー ユーザー (人間)
+  クロード・クロード（オペレーショナルAI）
+  gemini ジェミニ (反重力による外部 AI)
+  オラマ オラマ (ローカル AI)
+  system システム メッセージ
+
+RECIPIENT
+----------
+system システム メッセージ
+ユーザー ユーザーメッセージ
+エージェント:<名前> 特定のエージェント (例: エージェント:coder)
+
+ステータス値
+------------
+未読 未読
+読む 読む
+アーカイブ済み アーカイブ済み
+削除されました 削除されました
+
+WEB-GUI
+-------
+http://127.0.0.1:8000/messages
+
+特徴:
+- 受信箱/送信箱/アーカイブビュー
+- 新しいメッセージを書く
+- 既読としてマーク
+- メッセージの詳細を表示
+
+データベース
+---------
+テーブル: メッセージ (data/bach.db 内)
+
+フィールド:
+- id 整数主キー
+- 方向テキスト (受信ボックス/送信ボックス)
+- 送信機のテキスト
+- 受信者のテキスト
+- 件名 TEXT (予定 - 現在は使用されていません)
+- 本文テキスト
+- ステータス TEXT (未読/既読/アーカイブ済み/削除済み)
+- 優先順位 INTEGER
+- created_at TIMESTAMP
+- read_at タイムスタンプ
+- archived_at タイムスタンプ
+
+例
+---------
+# メッセージを送信
+bach msg send system "Backup abgeschlossen"
+
+# 未読メッセージを表示
+bach msg unread
+
+# メッセージを読む
+bach msg read 5
+
+# 確認付きでメッセージを読む
+bach msg read 5 --ack
+
+# すべての送信トレイ メッセージ
+bach msg list --outbox
+
+# 新しいメッセージを待つ
+bach msg watch
+
+# ステータスを確認
+bach msg count
+
+コネクタ統合 (v1.1.0)
+------------------------------
+外部コネクタ (Telegram、Discord など) からのメッセージ
+自動的に受信トレイにルーティングされます:
+
+  Connector_messages (in)→route_incoming()→messages(inbox)
+
+送信者の形式: "connector:sender_id" (例: "telegram:123456")
+コンテキスト ヒントはメタデータとして自動的に保存されます。
+
+送信メッセージはキュー経由で送信されます:
+
+  bach connector send <name> <empfaenger> <text>
+
+デーモン経由の再試行/バックオフによる信頼性の高い配信:
+
+  bach connector setup-daemon    # ジョブの登録
+  bach daemon start --bg         # デーモンの開始
+
+参照: bach --help コネクタ
+
+REST API (ポート 8001)
+--------------------
+ヘッドレス API の実行時に使用可能:
+
+  POST /api/v1/messages/send エンキューメッセージ
+  GET /api/v1/messages/queue キューのステータス
+  GET /api/v1/messages/inbox 受信トレイの読み取り (ページネーション、フィルター)
+  POST /api/v1/messages/route ルーティングを手動でトリガーする
+
+例:
+  curl localhost:8001/api/v1/messages/inbox?status=unread&limit=10
+
+HANDLER
+-------
+hub/messages.py CLI ハンドラー (受信ボックス/送信ボックス)
+Hub/connector.py コネクタ ハンドラー (キュー、ルーティング)
+gui/api/messages_api.py REST API エンドポイント
+gui/server.py GUI エンドポイント (/api/messages)
+
+関連項目
+----------
+bach --help connector      コネクタ システム (キュー、再試行、サーキット ブレーカー)
+bach --help gui            Web ダッシュボード
+bach --help daemon         バックグラウンド ジョブ
+bach --help injectors      コンテキスト インジェクター
+bach --help wartung        メンテナンス ジョブ (自動タスク)

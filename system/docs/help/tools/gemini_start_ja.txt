@@ -1,0 +1,87 @@
+BACH ツール: gemini_start
+--------------------------------------------------
+生成: 2026-01-24 (更新)
+出典: tools/gemini_start.py
+
+説明
+----------------------------------------
+BACH Gemini Starter - Gemini CLI (ヘッドレス) または Antigravity (GUI) を起動します。
+
+2 つのバックエンド
+----------------------------------------
+  --cli Gemini CLI (ヘッドレス、--yolo による完全自動)
+  --gui Antigravity (プロンプトはクリップボードにコピーされます)
+
+重要: Antigravity にはヘッドレス モードがありません。自動化向け
+         Gemini CLI (--cli) を使用する必要があります。
+
+使用
+----------------------------------------
+python tools/gemini_start.py [バックエンド] [オプション]
+
+  BACKEND (非自動の場合は必須):
+    --cli Gemini CLI (完全自動)
+    --gui 反重力 (クリップボードのプロンプト)
+
+  モード:
+    (なし) 自動モード (--cli を使用した場合のみ有効)
+    --bulk タスク制限のないバルク モード
+    --default インタラクティブ (指示を待つ)
+    --individual startprompt_gemini.txt を使用します
+    --mode NAME プロンプト/NAME.txt を使用します
+
+  オプション:
+    --tasks N 自動モードのタスクの数 (デフォルト: 2)
+    --prompt "TEXT" カスタム プロンプトを直接指定します
+    --list 利用可能なプロンプト テンプレートをリストします。
+    --dry-run コマンドのみを表示し、開始しません
+
+CLI の例 (完全自動)
+----------------------------------------
+  python tools/gemini_start.py --cli # 自動 (2 タスク)
+  python tools/gemini_start.py --cli --tasks 5 # 自動 (5 タスク)
+  python tools/gemini_start.py --cli --bulk # すべてのタスク (無限)
+  python tools/gemini_start.py --cli --mode 分析 # 分析モード
+
+GUI の例 (クリップボードへのプロンプト)
+----------------------------------------
+  python tools/gemini_start.py --gui --bulk # 一括プロンプト
+  python tools/gemini_start.py --gui --default # 対話型プロンプト
+  python tools/gemini_start.py --gui --individual # ユーザープロンプト
+  python tools/gemini_start.py --gui --mode 分析 # 分析プロンプト
+
+GUI-ワークフロー:
+  1. スクリプトが反重力を開始します
+  2. すぐにクリップボードにコピーされます
+  3. ユーザーがチャットをクリックし、Ctrl+V、Enter を押します
+
+プロンプト テンプレート (partners/gemini/prompts/)
+----------------------------------------
+  auto.txt 自動モード: タスクを即時に処理します (CLI のみ)
+  Bulk.txt 一括モード: 制限なしのすべてのタスク
+  default.txt インタラクティブ: 指示を待ちます
+  Analysis.txt すべての分析スクリプトを実行します
+  Research.txt トピック分析のリサーチ モード
+
+カスタム プロンプト
+----------------------------------------
+独自の手順に合わせて、partners/gemini/startprompt_gemini.txt を編集します。
+--individual でロードされます。
+
+BATCH-STARTER
+----------------------------------------
+代わりに:partners/gemini/start_gemini.bat
+CLI/GUI を選択できる対話型メニューを表示します。
+
+要件
+----------------------------------------
+  CLI モード: npm install -g gemini-cli
+               gemini 認証ログイン
+  GUI モード: Antigravity がインストールされ、PATH にあります
+
+関連項目
+----------------------------------------
+  wiki/gemini.txt Gemini の詳細 (CLI、API、価格)
+  wiki/antigravity.txt 反重力 IDE
+  docs/help/partners.txt パートナー ネットワーク
+  Partners/gemini/_README.md ワークスペースのドキュメント

@@ -1,0 +1,28 @@
+巴赫工具：c_sqlite_viewer
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/c_sqlite_viewer.py
+
+描述
+----------------------------------------
+sqlite_viewer_cli.py - SQLite Viewer 的 CLI 适配器
+
+查看和导出 SQLite 数据库内容。
+从show_user_sqlite.py中提取的核心逻辑
+
+用法：
+    python sqlite_viewer_cli.py <database.db> --tables
+    python sqlite_viewer_cli.py <database.db> --table <名称> [--limit 100]
+    python sqlite_viewer_cli.py <database.db> --query "SELECT * FROM users"
+    python sqlite_viewer_cli.py <database.db> --schema
+    python sqlite_viewer_cli.py <database.db> --export <table> --format csv
+
+USE
+----------------------------------------
+python bach.py 工具运行 c_sqlite_viewer [args]
+或直接： python tools/c_sqlite_viewer.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：bach 工具显示 c_sqlite_viewer

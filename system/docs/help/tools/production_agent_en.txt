@@ -1,0 +1,27 @@
+BACH Tool: production_agent
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/production_agent.py
+
+DESCRIPTION
+----------------------------------------
+Production Agent v1.0.0
+
+Content production: music, podcast, video, text, stories, PR.
+Integrates external AI tools and RecludOS services.
+
+Usage:
+  python production_agent.py list
+  python production_agent.py music --prompt "Jazz instrumental"
+  python production_agent.py video --prompt "Ocean waves"
+  python production_agent.py recommend <category>
+
+USE
+----------------------------------------
+python bach.py tools run production_agent [args]
+or directly: python tools/production_agent.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show production_agent

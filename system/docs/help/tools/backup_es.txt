@@ -1,0 +1,153 @@
+HERRAMIENTAS DE COPIA DE SEGURIDAD - Copia de seguridad y recuperación de datos
+---------------------------------------------------
+
+A partir de: 2026-01-23
+Ruta: docs/help/tools/backup.txt
+
+DESCRIPCIÓN
+------------
+Herramientas para copia de seguridad y restauración de datos BACH:
+  - Crear y gestionar copias de seguridad locales.
+  - Copias de seguridad NAS (si están disponibles)
+  - Restauración de plantilla (restablecer archivos originales)
+  - Crear paquetes de distribución
+
+HERRAMIENTA PRINCIPAL: backup_manager.py
+-----------------------------
+Herramienta central para todas las operaciones de respaldo.
+Se puede acceder directamente o mediante CLI.
+
+COMANDOS BÁSICOS:
+
+  # Crear copia de seguridad
+  bach backup create                  Copia de seguridad local
+  bach backup create --to-nas         Con copia NAS
+
+  # Ver copias de seguridad
+  bach backup list                    Copias de seguridad locales
+  bach backup list --nas              Ver copias de seguridad NAS
+  bach backup info <n>                Detalles de la copia de seguridad
+
+  # Restaurar
+  bach restore backup <n>             Copia de seguridad específica
+  bach restore backup latest          Última copia de seguridad
+  bach restore backup latest --force  Sin confirmación
+
+  # Restablecer plantilla
+  bach restore template SKILL.md      Al original
+
+DIST_TYPE CONCEPT
+-----------------
+El sistema de respaldo se basa en tipos de distribución:
+
+  dist_type = 2 (NÚCLEO)
+    -> La distribución ES la copia de seguridad
+    -> bach.py, hub/, herramientas/, habilidades/, documentos/ayuda/
+    -> NO asegurado por separado
+
+  dist_type = 1 (PLANTILLA)
+    -> 1x instantánea durante la instalación
+    -> plantilla de restauración de bach <archivo>
+
+  tipo_dist = 0 (DATOS_USUARIO)
+    -> Rotación de respaldo normal
+    -> Tareas, Memoria, Registros, Bandeja de entrada
+
+¿DE QUÉ SE HAGA UNA COPIA DE SEGURIDAD?
+-------------------
+USER_DATA (dist_type = 0):
+  tareas Todas las tareas, estado, historial
+  memoria/sesiones, largo plazo, archivos
+  registros/registros de sesión
+  usuario/bandeja de entrada/Mensajes, Agenda
+
+NO protegido (NÚCLEO/PLANTILLA):
+  bach.py, esquema.sql, hub/
+  herramientas/, habilidades/, documentos/ayuda/
+  (son parte de la distribución)
+
+ROTACIÓN DE RESPALDO
+---------------
+La rotación automática evita el desbordamiento de la memoria:
+
+  Local (data/_backups/): Mantenga 7 copias de seguridad
+  NAS: mantenga 30 copias de seguridad
+  OneDrive: Automático (historial de versiones)
+
+UBICACIONES DE ALMACENAMIENTO
+------------
+  Local: BACH/sistema/datos/_backups/
+  NAS: \\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
+  Dist: BACH/distribuciones/
+
+NOTA:
+  ¡Solo se puede acceder al NAS en la red doméstica!
+  No utilice --to-nas cuando esté ausente.
+
+USO DIRECTO DE LA HERRAMIENTA
+--------------------
+backup_manager.py también se puede llamar directamente:
+
+  herramientas de Python/backup_manager.py crear [--to-nas]
+  herramientas de Python/backup_manager.py lista [--nas]
+  python tools/backup_manager.py restaurar copia de seguridad <n>
+  python tools/backup_manager.py plantilla de restauración <archivo>
+
+INSTANTÁNEAS (basadas en sesión)
+---------------------------
+Para instantáneas de sesión, consulte el sistema de memoria:
+
+  bach snapshot create           Instantánea manual
+  bach snapshot load             Cargar la última instantánea
+  bach snapshot list             Mostrar instantáneas
+
+  -> Automáticamente al apagar (con >= 3 cambios)
+  -> Almacenado en la tabla session_snapshots
+
+COMANDOS DE DISTRIBUCIÓN
+--------------------
+Crear paquetes para distribución:
+
+  bach dist create base       Crear paquete base
+  bach dist list                 Ver paquetes
+  bach dist status               Estado de distribución
+  bach dist verify               Verificar integridad
+
+CASOS DE USO TÍPICOS
+-------------------------
+
+1. ANTES DE CAMBIOS GRANDES
+   Crear copia de seguridad de seguridad:
+   bach backup create
+
+2. DIARIO (RED DOMÉSTICA)
+   Copia de seguridad con copia NAS:
+   bach backup create --to-nas
+
+3. DESPUÉS DEL ACCIDENTE/ERROR
+   Última versión funcional:
+   bach restore backup latest
+
+4. REINICIAR HABILIDAD.MD
+   Para cambios rotos:
+   bach restore template SKILL.md
+
+5. PAQUETE PARA OTRA COMPUTADORA
+   Crear distribución:
+   bach dist create base
+
+6. CONTINUAR SESIÓN
+   Después de reiniciar/cambiar el chat:
+   bach snapshot load
+
+HABILIDADES RELACIONADAS
+----------------
+  skills/_services/builder.md CREAR, EXPORTAR, DISTRIBUIR, RESPALDAR
+  docs/BACKUP_SYSTEM.md Concepto original
+
+VER TAMBIÉN
+----------
+  bach --help backup             Ayuda completa para copias de seguridad
+  bach --help dist               Comandos de distribución
+  bach --help memory             Sistema de memoria/instantáneas
+  bach --help tools              Descripción general de herramientas

@@ -1,0 +1,466 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+税务帮助
+------------
+
+用于记录业务费用的税务代理人。
+
+概述
+----------
+税务代理人帮助系统记录
+报税的业务费用。他支持
+多个用户配置文件和纳税年度。
+
+文件夹结构
+--------------
+user/tax/
++-- 配置文件/用户配置文件
++-- 监视/监视文件夹（配置）
++-- 模板/新年模板
++-- [年份]/ 每个纳税年度
+    +-- 广告费用/广告费用（主类）
+    |   +-- 收据/收据存储
+    |   |   +-- _bundles/ 用于批处理的文本包
+    |   |   +-- _旅行和家庭办公室/日志、AZN、timeGoat
+    |   |   +-- _错误收据/供用户检查（非收据）
+    |   |   +-- _回收站/已确认的未收据
+    |   |   +-- 新收据的附加/收件箱文件夹
+    |   |   +-- [提供商]/每个提供商（amazon.de、eBay...）
+    |   +-- 导出/生成的报告和导出
+    |   |   +-- csv/CSV 导出
+    |   |   +-- POSTEN_*.txt 帖子列表
+    |   |   +-- 广告费用_all.txt
+    |   |   +-- BELEGE_all.txt
+    |   |   +-- 差旅费_HOMEOFFICE_YYYY。*
+    |   |   +-- FINANZAMT_YYYY.zip
+    |   +-- TAX_README.txt
+    |   +-- FINANZAMT.bat
+    |   +-- 同步.bat
+    +-- 异常负载/
+    +-- 家居相关服务及工匠/
+    +-- 特别版/
+    +-- 保险和养老金拨备/
+
+CLI 命令
+-----------
+
+状态和概述：
+  bach steuer status              显示总体状态
+  bach steuer status --jahr 2025  一年的状态
+
+纳税年度：
+  bach steuer init 2026           创建新纳税年度
+  bach steuer init 2026 --user X  具有特定配置文件
+
+列表：
+  bach steuer list                显示所有列表
+  bach steuer list --jahr 2025    年份列表
+  bach steuer list --liste WERBUNGSKOSTEN
+                                  显示具体列表
+
+收据管理（新）
+----------------------
+收据是receipts/ 中的PDF 文件。状态：已捕获，
+NOT_COVERED，已弃用。
+
+  bach steuer beleg list                    列出所有收据
+  bach steuer beleg list --status ERFASST   按状态过滤
+  bach steuer beleg list --status NICHT_ERFASST
+  bach steuer beleg list --status DEPRECATED
+  bach steuer beleg list --status ALL --limit 1000
+                                            全部有上限
+
+  bach steuer beleg scan                    查找新收据
+  bach steuer beleg scan --dry-run          仅显示
+
+  bach steuer beleg deprecate 215 466 "Grund"
+                                            将收据标记为无效
+                                            （数字保留）
+
+  bach steuer beleg sync                    从数据库重新生成 TXT 文件
+
+项目管理（新）
+-----------------------
+项目是文档中的单独项目。收据可以
+包含多个项目。项目 ID = 文件编号 项目编号（例如 151-1）。
+
+  bach steuer posten list                   显示所有项目
+  bach steuer posten list --liste W         按列表过滤 (W/G/V/Z)
+  bach steuer posten list --belegnr 151     按文件编号过滤
+  bach steuer posten list --steller NAME    按发票开具者过滤
+  bach steuer posten list --rechnungsnr NR  按发票编号过滤
+  bach steuer posten list --limit 100       有限制
+
+  bach steuer posten search BEGRIFF         跨项目搜索
+                                            （搜索名称、放置者、
+                                            评论、发票编号、商品 ID）
+
+  bach steuer posten show 151-1             显示单个商品
+
+  bach steuer posten add --belegnr 151 --bezeichnung "Produkt" --brutto 34.95 --liste W
+                                            创建新帖子
+    参数：
+    --文件编号 NR 文件编号（必填）
+    --name TXT 产品名称（必填）
+    --gross VALUE 总金额（必填）
+    --list W|G|V|Z 目标列表（默认值：Z）
+    --proportion 0.0-1.0 混合比例（默认：0.5）
+    --remark TXT 可选备注
+    --date YYYY-MM-DD 日期
+    --provider 名称 提供商
+    --发票号码 NR 发票号码（或 --发票号码）
+
+  bach steuer posten edit 151-1 --bezeichnung "Neuer Name"
+                                            编辑帖子
+  bach steuer posten edit 151-1 --brutto 29.95
+  bach steuer posten edit 151-1 --anteil 0.7
+  bach steuer posten edit 151-1 --rechnungsnr "RE-12345"
+
+  bach steuer posten move 151-1 W           移至列表
+  bach steuer posten move 151-1 G --anteil 0.5
+                                            适合混合人群的份量
+    列表快捷方式：
+    W = 广告费用（100% 可扣除）
+    G = 混合（按比例扣除）
+    V = 拒绝（不可扣除）
+    Z = RESET（待澄清）
+
+  bach steuer posten delete 151-1           删除（需确认）
+  bach steuer posten delete 151-1 --force   无需确认
+
+批量导入（新v1.1.4）
+-------------------------
+用于快速输入多个项目或文档。
+
+  bach steuer batch help                    显示批量帮助
+
+  bach steuer batch posten --belegnr 42 --json '[...]'
+                                            一份文档包含多个项目
+    JSON 格式：
+    [{"bez":"文章","gross":19.99,"list":"W"},
+     {"bez":"私人","gross":5.00,"list":"V","bem":"私人"}]
+
+  bach steuer batch posten --belegnr 42 --file posten.json
+                                            从 JSON 文件发布
+
+  bach steuer batch belege --inline "42:Artikel:19.99:W;43:Ware:5.00:V"
+                                            快速输入多个文档
+                                            格式：文件编号:DEZ:总:列表
+
+  bach steuer batch belege --file import.json
+                                            多张收据包含物品
+    JSON 格式：
+    {“证据”：[
+      {"收据号":42,"项目":[{"bez":"X","gross":10,"list":"W"}]},
+      {"收据号":43,"项目":[{"bez":"Y","gross":5,"list":"V"}]}
+    ]}
+
+  bach steuer batch delete --belegnr 42 --force
+                                            删除文档中的所有项目
+
+  bach steuer batch delete --posten "42-1,42-2,43-1" --force
+删除特定项目
+
+  bach steuer batch delete --liste V --limit 100 --force
+                                            删除所有 DISCARDED（最多 100 个）
+                                            注意：可以删除许多项目！
+
+  bach steuer batch move --posten "42-1,42-2" --liste W
+                                            移动某些项目
+
+  bach steuer batch move --belegnr 42 --liste W
+                                            移动文档的所有项目
+
+  bach steuer batch move --von V --nach W --limit 50
+                                            在列表之间移动
+
+税务工具（新 v1.1.4）
+-------------------------
+tools/tax/ 中的独立 Python 脚本。
+
+  bach steuer tools list                    列出所有工具
+  bach steuer tools <name> [args]           运行工具（简写形式）
+  bach steuer tools run <name> [args]       运行工具（显式）
+  bach steuer tools register                在 bach.db 中注册工具
+
+重要工具：
+  beleg_vorfilter 对新文档进行预排序（新）
+  make_bundle 从收据创建文本包
+  beleg_parser 从 PDF 中提取文本（使用 OCR）
+  regenerate_txt 从数据库重新生成列表 TXT
+  scan_new_belege 查找并注册新收据
+  temu_ocr_batch 对图像 PDF 进行批量 OCR
+
+直接访问：
+  bach steuer tools make_bundle amazon 11 67
+  bach steuer tools regenerate_txt
+
+配置文件：
+  bach steuer profile list        列出配置文件
+  bach steuer profile show <name>  显示配置文件
+  bach steuer profile create max  创建新配置文件
+
+观看文件夹：
+  bach steuer watch list          显示监视文件夹
+  bach steuer watch add PFAD      添加文件夹
+  bach steuer watch remove PFAD   删除文件夹
+  bach steuer scan                检查监视文件夹
+
+导出：
+  bach steuer export              导出（标准：txt）
+  bach steuer export --jahr 2025 --format csv
+  bach steuer export --format datev         DATEV 预订批量 CSV
+                                            （针对税务顾问）
+  bach steuer export --format csv           简单 CSV（兼容 Excel）
+  bach steuer export --format vorsorge      投资养老金支出
+                                            （保险费）
+
+完整性检查：
+  bach steuer check                         进行检查
+  bach steuer check --jahr 2025             针对特定年份
+                                            检查：不含物品的文件，
+                                            没有收据的物品，有缺口
+                                            文件编号、缺失月份、
+                                            不含增值税金额的商品
+
+创建自己的收据：
+  bach steuer eigenbeleg --bezeichnung "Parkgebuehr" --brutto 5.00
+                                            创建您自己的收据
+  bach steuer eigenbeleg --bezeichnung "..." --brutto 10.00 --mwst 7
+                                            不同的增值税税率
+  选项：--list、--date、--VAT、--reason
+
+BANK-IMPORT：
+  bach steuer import camt <pfad>            CAMT.053 导入 XML
+
+FINANZAMT-EXPORT（计划）：
+  bach steuer finanzamt           创建包含所有广告费用的 ZIP
+                                  使用以下内容创建 FINANZAMT_[YEAR].zip：
+                                  - WERBUNGSKOSEN_alle.txt（概述）
+                                  - 包含 CSV 文件的 csv/ 文件夹
+                                  - 所有参考文档 (PDF)
+
+  直接通过脚本：
+    python tools/tax/tax_sync.py 税务局
+
+CSV导出（新v1.3.1）：
+  bach steuer export --format csv CSV-Dateien in csv/ Ordner exportieren
+                                  用于Excel/税务软件导入
+
+  格式：分号分隔、带 BOM 的 UTF-8、德语数字格式
+
+  同步期间不会自动写入 CSV 文件，
+  仅适用于：税务局（自动）或导出 --format csv（显式）
+
+  直接通过脚本：
+    python tools/steuer/steuer_sync.py csv
+
+配置文件
+-------
+配置文件保存用户特定的设置：
+- 专业背景（行业、活动）
+- 提供商规则（TEMU、亚马逊...）
+- 自动分配（关键字）
+- 混合使用的标准共享
+
+创建配置文件：
+1.巴赫税务资料创建MYNAME
+2. 编辑 user/tax/profile/
+
+LIST TYPES 中的文件（从 V1.3.0 开始）
+------------------------
+ADVERTISING COSTS/ 文件夹中的新文件名：
+
+  代码文件说明
+  ---- ----------------------- -------------------------
+  W POSTEN_reine.txt 100% 免赔额
+  G POSTEN_gemischt.txt 按比例扣除（含份额）
+  V POSTEN_verworfen.txt 不可扣除（私人）
+  Z POSTEN_unsortiert.txt 稍后编辑/不清楚
+  - WERBUNGSKOSEN_alle.txt W + G 组合（用于税务局）
+
+凭证状态
+------------
+已记录 文档已处理，项目已创建
+NOT_RECORDED 文档尚未处理
+已弃用 收据标记为无效（例如重复）
+
+凭证预过滤器（新）
+---------------------
+将新收据自动预先分类到提供商文件夹中。
+
+  python tools/steuer/beleg_vorfilter.py [--dry-run] [--verbose]
+
+工作流程：
+1. 将电子邮件/下载中的新 PDF 放入文档/其他/
+2. 运行预过滤器：
+   python tools/steuer/beleg_vorfilter.py --dry-run # 预览
+   python tools/steuer/beleg_vorfilter.py # 执行
+3、结果：
+   - 收据自动分类到提供商文件夹中
+   - 未收据（跟踪、运输状态）-> _错误收据/
+4. 用户检查_错误收据/ -> _回收站/的真实错误收据/
+
+检测方法：
+- 文件名模式：RG64116 -> LingoPlay、32xxxxxx -> TimeTEX
+- PDF 内容：“Anthropic，PBC”-> Anthropic，“TimeTEX”-> TimeTEX
+- 缺少收据标记：“发货跟踪”、“跟踪”-> _错误收据
+
+支持的提供商：
+  Anthropic、TimeTEX、LingoPlay、Autism Publishing、PayPal、
+  eBay、Temu、Amazon、Apple、Google
+
+BIDI-SYNC（双向 TXT 同步）
+-------------------------------------
+将高级操作直接写入 TXT 文件。
+同步解析这些并在数据库中执行它们。
+
+操作类型：
+  移动：
+    42-3 -> W 转至广告费用
+    42-3 -> G 0.5 以50%比例混合
+    42-3 -> V private In 被拒绝并发表评论
+    B42 -> W 移动文档的所有项目
+
+  编辑：
+    42-3 :: 总额=19.99 更改总额
+    42-3 :: 标签=新名称
+    42-3 :: 份额=0.7 更改份额
+
+  删除：
+    42-3 删除 删除单个项目
+    42-3 DEL 缩写形式
+
+  已弃用（预订文档）：
+    B42 已弃用 将文档标记为无效
+    B42 已弃用重复并有理由
+
+输入区域：
+  将操作写入 TXT 文件的“INPUT”部分：
+
+  === 输入（同步期间处理）===
+  42-3 -> 西
+  43-1:: 毛额=25.50
+  B44 已弃用 已取消
+  === 结束输入 ===
+
+执行同步：
+  python 工具/tax/tax_sync.py 同步
+  或：巴赫纳税收据同步
+
+注释：
+  - 操作在同步时进行处理，然后删除
+  - 错误日志中报告不正确的操作
+  - 始终首先测试 --dry-run（如果可用）
+
+典型工作流程
+------------------
+0。对新文档进行预排序（beleg_vorfilter.py）
+
+1。检查状态：
+   bach steuer beleg list --status NICHT_ERFASST
+
+2。按提供商查看未结收据：
+   bach steuer beleg list --status NICHT_ERFASST --limit 500
+
+3。在聊天代理中输入收据
+
+4。检查结果：
+   bach steuer posten list --liste W
+
+BUNDLES批量处理
+------------------------------
+如果文档较多，单独检查效率低下。相反：
+
+1。创建捆绑包：
+   python Agents/_experts/steuer/make_bundle.py <源> <开始> <结束>
+
+   示例：
+     python 代理/_experts/steuer/make_bundle.py 贝宝 171 214
+     python 代理/_experts/steuer/make_bundle.py ebay 77 128
+     python 代理/_experts/steuer/make_bundle.py google_play 129 170
+
+   来源：paypal、ebay、google_play、亚马逊、其他、temu
+   输出：user/steuer/2025/bundles/<源>_B<开始>-B<结束>.txt
+
+2。分析包：
+   克劳德读取该包并将所有收据分类为：
+   - W = 广告费用（100% 扣除）
+   - G = 混合（比例，例如 50%）
+   - V = 已丢弃（私人、重复、状态电子邮件）
+   - Z = 推迟（待澄清）
+
+3。批量捕获项目：
+   bach steuer posten add --belegnr 195 --bezeichnung "..." --brutto 55.85 --liste W ...
+
+4。更新TXT文件：
+   python Agents/_experts/steuer/regenerate_txt.py
+
+分类注释
+----------------------------
+- PayPal：Temu 付款是重复的（Temu 文件夹中的原件）
+- eBay：每次购买都会有很多电子邮件（订单、运输、交付、发票）
+        -> 仅记录发票/订单确认作为主要文件
+        -> 将状态电子邮件记录为 V，0 欧元（完整性）
+- 治疗材料：乐高、学习游戏、专业文献 = W
+- 软件：Microsoft 365、Office = G 50%
+- 流媒体：Netflix、Disney+ = V（私人）
+
+数据库
+---------
+所有数据：data/bach.db
+
+表：
+-tax_documents 所有具有状态的文档
+-tax_posten 所有带有分配的项目
+
+配置文件均以 TXT 文件形式保存在 user/steuer/profile/ 中。
+
+聊天代理
+----------
+税务代理可作为聊天代理使用
+Agents/steuer-agent.txt 可用。
+
+他可以：
+- 从 PDF 中捕获收据
+- 自动对帖子进行分类
+- 检测重复项
+- 与用户验证
+- 使用所有文档创建税务局 ZIP
+
+区域自述文件（关键字参考作品）
+---------------------------------------------
+每个税务区域都有一个带有关键字表的 README.txt，
+所需收据和当前统一费率金额（截至 2025 年）。
+
+  文件区域/段落
+  ------------------------------------------------ ------------------------
+  user/steuer/[JAHR]/STEUER_README.txt 总体过程和同步
+  user/tax/[年份]/广告费用/README.txt 附录 N（第 9 段）
+  用户/税/[年份]/特别负担/第 33 条 EStG
+    自述文件.txt
+  用户/税/[年份]/家庭相关服务 第 35a 段 EStG
+    ＆工匠/README.txt
+  user/steuer/[JAHR]/Special Editions/README.txt 第 10 段 EStG
+  用户/税/[年份]/保险和投资养老金支出
+退休规定/README.txt
+
+自述文件内容：
+  - 具有法律依据的区域定义
+  - 关键词表：可以提交的内容+所需文件
+  - 重要的统一费率金额和最高限额
+  - 实用技巧
+
+另请参阅
+----------
+  bach --help tasks                    一般任务
+  bach --help backup                   备份系统
+  wiki/steuer/_index.txt 税务 Wiki（背景知识）
+  wiki/steuer/est_bereich.txt EStG 系统概述
+  wiki/steuer/versicherungen.txt 免赔额保险
+  wiki/steuer/sonderspenden.txt 扣除特别版本
+  wiki/steuer/fortbildung.txt 进一步的培训和学习
+  wiki/steuer/fahrtkosten_homeoffice.txt 差旅费和家庭办公室
+  Agents/steuer-agent.txt 税务代理（聊天代理）

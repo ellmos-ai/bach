@@ -1,0 +1,33 @@
+BACH Tool: c_pycutter
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/c_pycutter.py
+
+DESCRIPTION
+----------------------------------------
+c_pycutter.py - Python Class Extractor
+
+Purpose: Decomposes Python files into separate text files for each class,
+       plus a helper functions.txt for imports, functions and global code.
+       Ideal for code review, documentation or LLM context management.
+
+Author: Claude (adapted from pyCuttertxt.py)
+Dependencies: ast, os, datetime (stdlib)
+
+Usage:
+    python c_pycutter.py <python_file> [--output-dir <dir>] [--json]
+
+Examples:
+    python c_pycutter.py main.py # Output in the current directory
+    python c_pycutter.py main.py --output-dir ./out # Output to ./out
+    python c_pycutter.py main.py --json # JSON output for further processing
+
+USE
+----------------------------------------
+python bach.py tools run c_pycutter [args]
+or directly: python tools/c_pycutter.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show c_pycutter

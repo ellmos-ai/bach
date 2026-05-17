@@ -1,0 +1,30 @@
+BACH Tool: tool_discovery
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/tool_discovery.py
+
+DESCRIPTION
+----------------------------------------
+tool_discovery.py - Problem-based tool recommendation
+-----------------------------------------------------
+
+Analyzes problem descriptions and recommends suitable BACH tools.
+
+Usage:
+    python tool_discovery.py suggest "encoding problem with umlauts"
+    python tool_discovery.py list patterns
+    python tool_discovery.py --json
+
+Author: BACH v1.1
+Version: 1.0.0
+Created: 2026-01-21
+
+USE
+----------------------------------------
+python bach.py tools run tool_discovery [args]
+or directly: python tools/tool_discovery.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show tool_discovery

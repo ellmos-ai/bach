@@ -1,0 +1,193 @@
+HERRAMIENTAS DE COMUNICACIÓN DE SOCIOS: Detección de socios y enrutamiento de mensajes
+-------------------------------------------------------------------
+
+A partir de: 2026-01-23
+Ruta: docs/help/tools/partner.txt
+
+DESCRIPCIÓN
+------------
+Estas herramientas permiten la comunicación entre BACH y
+socios externos (Ollama, Gemini, etc.), análisis de sistemas y
+Enrutamiento automático de tareas.
+
+Ruta: herramientas/partner_communication/
+
+OVERVIEW
+----------
+
+  Función de líneas de herramientas
+  ──────────────────────────── ─────────────────────────────
+  comunicación.py 678 reconocimiento de pareja, controles de salud
+  system_explorer.py 458 Descubrimiento de software del sistema operativo
+  interact_protocol.py 1225 Apretón de manos de instancia, seguimiento de ADN
+  ai_compatible.py 200 Filtro de software compatible con IA
+  real_tools.py 198 Identificar herramientas CLI reales
+
+  TOTAL: 5 herramientas, ~2,759 Filas
+
+────────────────────────────── ─────────────────────────────────
+
+HERRAMIENTA 1: comunicación.py
+------------------------
+Herramienta central para detección de socios y enrutamiento de mensajes.
+
+FUNCIONES:
+  - Reconocimiento automático de pareja (Claude, Ollama, Gemini, etc.)
+  - Controles de salud para la disponibilidad de socios.
+  - Enrutamiento de mensajes con reconocimiento de token
+  - Consultas de estado de socios
+
+USE (Python):
+  desde herramientas.partner_communication.comunicación importación (
+      detectar_partners,
+      comprobar_salud,
+      mensaje_ruta
+  )
+
+  # Reconocer socios
+  socios = detectar_partners()
+
+  # Verificar la salud
+  estado = check_health("ollama")
+
+  # Mensaje de ruta
+  route_message("Tarea de investigación", target="gemini")
+
+CLI (planificado):
+  bach partner detect "Task-Beschreibung"
+  bach partner health
+  bach partner route --to gemini --message "..."
+
+──────────────────────────── ───────────────────────────────────
+
+HERRAMIENTA 2: system_explorer.py
+--------------------------
+Escanea el sistema operativo en busca de software instalado.
+
+FUNCIONES:
+  - Escanear el Registro de Windows
+  - Identificar software compatible con IA
+  - Capacidades de la herramienta de catálogo
+  - Crear inventario de software
+
+USE (Python):
+  desde herramientas.partner_communication.system_explorer importar (
+      sistema_escaneo,
+      obtener_ai_tools,
+      lista_capacidades
+  )
+
+  # Sistema de escaneo
+  software = sistema_escáner()
+
+  # Solo herramientas de IA
+  ai_tools = get_ai_tools()
+
+CLI (planificado):
+  bach partner scan
+  bach partner scan --ai-only
+
+──────────────────────────── ───────────────────────────────────
+
+HERRAMIENTA 3: interact_protocol.py
+-------------------------------
+Handshake y protocolos entre instancias BACH.
+
+FUNCIONES:
+  - Apretón de manos de instancia a instancia
+  - Seguimiento de ADN (identidad de instancia)
+  - 5 protocolos de interacción:
+    * Apretón de manos - Reconocimiento mutuo
+    * Comparar - comparar habilidades
+    * Solicitud - solicitudes de importación
+    * Transferencia - transferencia de datos
+    * Recibo - confirmación de recibo
+
+USE (Python):
+  desde herramientas.partner_communication.interaction_protocol importar (
+      iniciar_apretón de manos,
+      ejecutar_protocolo
+  )
+
+  # Iniciar apretón de manos
+  resultado = iniciar_handshake("géminis")
+
+  # Ejecutar protocolo
+  ejecutar_protocol("transfer", target="ollama", datos=carga útil)
+
+─────────────────────────── ────────────────────────────────────
+
+HERRAMIENTA 4: ai_compatible.py
+------------------------
+Filtra el software compatible con AI del análisis del sistema.
+
+FUNCIONES:
+  - Registro de búsqueda de herramientas de IA.
+  - Identificar clientes de LLM (Ollama, LM Studio, etc.)
+  - Detectar puntos finales API
+  - Extraer capacidades
+
+USE (Python):
+  desde tools.partner_communication.ai_compatible import (
+      software_scan_ai,
+      get_llm_clients
+  )
+
+  ai_tools = escaneo_ai_software()
+  llms = get_llm_clients()
+
+───────────────────────── ────────────────────── ────────────────
+
+HERRAMIENTA 5: real_tools.py
+---------------------
+Identifica herramientas CLI reales para delegación.
+
+FUNCIONES:
+  - Encuentra herramientas EXE/CMD/BAT
+  - Catálogo de scripts de Python
+  - Analizar argumentos de herramientas.
+  - Determinar candidatos de delegación
+
+USE (Python):
+  desde herramientas.partner_communication.real_tools importar (
+      encontrar_cli_tools,
+      analizar_herramienta
+  )
+
+  herramientas = find_cli_tools()
+  info = analizar_herramienta("git")
+
+─────────────────────────────────── ────────────────────────────
+
+Integración de bases de datos
+---------------------
+Las herramientas utilizan las siguientes tablas BACH:
+
+  URL y puntos finales de socios de conexiones
+  capacidades, zonas, estado de reconocimiento de socios
+  delegation_rules Reglas de enrutamiento basadas en tokens
+  registro de mensajes comm_messages
+
+PARTNER-WORKSPACE
+-----------------
+  socios/
+  ├── _TASKS.md # Asignación de tareas central
+  ├── claudio/
+  │ ├── bandeja de entrada/#Pedidos entrantes
+  │ ├── bandeja de salida/ # informes
+  │ └── espacio de trabajo/# archivos de trabajo
+  ├── géminis/
+  └── ollama/
+
+VER TAMBIÉN
+----------
+docs/help/partner.txt Comandos CLI del sistema asociado
+  docs/help/partners.txt Descripción general de la red de socios
+  docs/help/delegate.txt Detalles de la delegación
+  docs/help/communicate.txt Protocolos de comunicación
+
+  skills/_services/communicate.md Definición de habilidad
+  tools/partner_communication/README.md Documentación para desarrolladores
+
+VERSIÓN: v1.0.0 (2026-01-23)
+Fuente: herramientas/partner_communication/README.md

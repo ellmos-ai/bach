@@ -1,0 +1,35 @@
+巴赫工具：c_json_repair
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/c_json_repair.py
+
+描述
+----------------------------------------
+c_json_repair.py - 全自动 JSON 修复系统
+
+使用 `pip install emoji` 以获得最佳结果（多语言，当前）。
+如果未安装表情符号包，则回退到本地 gemoji.json。
+
+工作流程：
+1. Emoji 找到 -> 通过 emoji 包或 gemoji.json 查找
+2. 找到 -> 来自名称的自动 ASCII（例如“扳手”->“[WRENCH]”）
+3. 未找到 -> Quarantaene [Q:XXXX]（非常罕见）
+
+用法：
+    python c_json_repair.py <file.json> # 修复
+    python c_json_repair.py <file.json> --dry-run # 仅检查
+    python c_json_repair.py --update-gemoji # 更新 Gemoji
+    python c_json_repair.py --stats # 统计
+
+作者：Claude
+版本：3.1.0 - 使用表情符号包支持+后备
+
+使用
+----------------------------------------
+python bach.py工具运行c_json_repair [args]
+或直接： python tools/c_json_repair.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：bach 工具显示 c_json_repair

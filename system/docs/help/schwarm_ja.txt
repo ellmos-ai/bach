@@ -1,0 +1,168 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [hub/schwarm.py、tools/schwarm/、skills/workflows/schwarm-operationen.md]
+
+SWARM - 並列 LLM オペレーションと swarm インテリジェンス
+------------------------------------------------------------
+
+ステータス: 2026-05-17 (v3.11.1)
+CLI: bach swarm (エイリアス: bach swarm)
+
+Swarm システムは、異なる LLM の並列実行を可能にします。
+コーディネートパターン。複数の LLM インスタンスが同時に動作している
+サブタスクと は自動的に調整されます。
+
+参照: SQ016
+
+SWARM PATTERNS
+--------------
+
+1。パラレルチャンク [アクティブ]
+   タスクはチャンクに分割され、並列処理され、マージされます。
+   用途: 翻訳、コードレビュー、ドキュメント。
+   調整: 中央 (チャンカー + アグリゲーター)
+   スケーリング: 高 (ワーカー数に比例)
+
+2。階層 (上司 + 従業員) [アクティブ]
+   コーディネーターはタスクをワーカーに分配し、アグリゲーターはタスクを要約します。
+   用途: 依存関係のある複雑なプロジェクト。
+   コーディネート：中央（ボスワーカーパターン）
+   スケーリング: 中 (ボスによる制限)
+
+3. STIGMERGY (フェロモンベース) [アクティブ]
+   エージェントは SharedMemory に痕跡 (フェロモン) を残します。
+   他のエージェントは強力なパスをたどります。
+   用途: 探索、最適化、分散調整。
+   調整: 分散化 (環境を介して間接的に)
+   スケーリング: 高 (緊急)
+
+4。コンセンサス (多数決) [アクティブ]
+   複数の LLM が同じ質問に個別に回答します。
+   コンセンサスは、類似性スコアリングまたは多数決によって決定されます。
+   用途: 重要な意思決定、品質保証。
+   調整: 中央 (投票者 + 評価者)
+   スケーリング: 低 (質問あたり O(n) コスト)
+
+   方法:
+     類似性 ペアごとのテキストの類似性、最も高い平均スコアが優先されます
+     グループの過半数が回答した場合、最大のグループが勝ちます
+
+5。スペシャリスト (ボスルーティング) [アクティブ]
+   すでに BACH (11 のボス エージェント) に統合されています。
+   タスクは適切な専門家にルーティングされます。
+
+CLI コマンド
+-----------
+
+  bach swarm list
+      利用可能な群パターンをステータスとともに表示します。
+
+  bach swarm run <muster> <aufgabe>
+      群れパターンを実行します。
+      例: bach swarm run コンセンサス「最高の Python リンターは何ですか?」
+
+  bach swarm translate [optionen]
+      BACH テキストの並列チャンク翻訳 (DE->EN)。
+
+      オプション:
+        --namespace <ns> 1 つの名前空間のみを変換します
+        --workers N 並列ワーカー (デフォルト: 8)
+        --chunk-size API 呼び出しごとに N 個のテキスト (デフォルト: 10)
+        --N 最大値を制限します。テキストを翻訳する
+        --inventory ステータスのみを表示
+        --API 呼び出しを使用しないシミュレーションのドライラン
+
+  bach swarm summarize [optionen]
+      チャンクの概要を生成します (並列チャンク レベル 3)。
+
+      オプション:
+        --batch-size バッチあたり N チャンク (デフォルト: 10)
+        --model MODEL 俳句またはソネット (デフォルト: 俳句)
+        --ドライラン シミュレーション
+
+  bach swarm benchmark [optionen]
+      パフォーマンス ベンチマーク: シーケンシャルとパラレル。
+
+      オプション:
+        --compare 両方のモードを比較します
+        --Parallel パラレル モードのみ
+        --sequential シーケンシャル モードのみ
+        --run 実際にベンチマークを実行する
+        --workers N 並列ワーカー (デフォルト: 3)
+        --カテゴリ CAT ソフトウェア_開発、研究、Wiki
+        --model MODEL LLM モデル (デフォルト: Haiku)
+        --export FILE 結果を JSON としてエクスポートします
+
+  bach swarm consensus "<frage>" [optionen]
+      コンセンサス投票: 複数の LLM が同じ質問に回答します。
+
+      オプション:
+        --voters N 投票者の数 (デフォルト: 3、最小: 2)
+        --model MODEL 俳句、ソネット、作品 (デフォルト: 俳句)
+        --method METHOD 類似度または過半数 (デフォルト: 類似度)
+
+  bach swarm status [N]
+      最後の N 個の swarm 実行を表示します (デフォルト: 20)。
+      コスト統計とトークン消費量を含みます。
+
+コスト追跡
+---------------
+
+すべての swarm 実行は DB (テーブル: swarm_runs) に記録されます。
+記録される内容: パターン、タスク、トークン (in/out)、コスト (USD)、
+ワーカー番号、期間、ステータス。経由で入手可能: bach swarm status
+
+コスト見積もり (100 万トークンあたり):
+  Haiku: 入力 $1.00 / 出力 $5.00 (安価、大量)
+  ソネット: 入力 $3.00 / 出力 $15.00 (デフォルト)
+  Opus: 入力 $15.00 / 出力 $75.00 (プレミアム)
+
+DB スキーマ (swarm_runs):
+  ID、パターン、タスク、tokens_in、tokens_out、cost_usd、
+  ワーカー、duration_ms、status、result_summary、created_at
+
+CONFIGURATION
+-------------
+
+API キー ソース (フォールバック順序):
+1. BACH シークレット システム (~/.bach/bach_secrets.json)
+2. 環境変数 ANTHROPIC_API_KEY
+
+FILES
+-------
+
+system/hub/schwarm.py ハンドラー (自動検出)
+  システム/ツール/swarm/ツールコレクション
+    __init__.py パッケージの初期化
+    runner.py Claude CLI ラッパー + コスト追跡
+    translation_swarm.py 並列チャンク変換 (SQ062)
+    summary_chunks.py チャンクの要約 (SQ047)
+    benchmark.py パフォーマンス ベンチマーク
+    consensus.py コンセンサス パターン
+
+例
+---------
+
+  # 不足している翻訳をチェック
+  bach swarm translate --inventory
+
+  # 翻訳を開始します (8 ワーカー、10 チャンク)
+  bach swarm translate --workers 8 --chunk-size 10
+
+  #5 有権者に質問し、多数決で合意を決定する
+  bach swarm consensus "Soll ich asyncio oder threading verwenden?" --voters 5 --method majority
+
+  # 比較とエクスポートによるベンチマーク
+  bach swarm benchmark --compare --workers 5 --export results.json
+
+  # すべての swarm 実行のステータス (最新 50)
+  bach swarm status 50
+
+関連項目
+----------
+
+-chain.txt (LLM チェーン / llmauto)
+- Agent.txt (Boss エージェント システム)
+- skill/workflows/schwarm-operationen.md (サンプル ドキュメント)
+- スキル/ワークフロー/schwarm-wahlsbaum.md (ルーティング ロジック)

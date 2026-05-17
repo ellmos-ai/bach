@@ -1,0 +1,32 @@
+BACH 工具：c_audit_bundler
+--------------------------------------------------
+生成：2026-01-23 10:36
+更新日期：2026-02-05（取证更正）
+来源：tools/c_audit_bundler.py
+
+描述
+----------------------------------------
+BACH Audit Bundler v1.0
+-----------------------
+创建外部审查的审计包。
+
+两个捆绑包：
+1. CONCEPT 包（第一）：文档、概念、想法
+2. 实现包（稍后）：代码、数据库模式、脚本
+
+用法：
+    python c_audit_bundler.py --concept # 捆绑包 1：概念
+    python c_audit_bundler.py --implementation # 捆绑包 2：代码
+    python c_audit_bundler.py --all # 两个包
+    python c_audit_bundler.py --help # 帮助
+
+使用
+----------------------------------------
+python bach.py 工具运行 c_audit_bundler [args]
+或直接： python tools/c_audit_bundler.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：bach 工具显示 c_audit_bundler
+- 注意：文件已从audit_bundler.py重命名为c_audit_bundler.py（编码类别的c_前缀）

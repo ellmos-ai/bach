@@ -1,0 +1,99 @@
+# Portabilidad: UNIVERSAL
+
+PARTNER-CONFIG-MANAGER
+----------------------
+
+Gestiona el ingreso automático de BACH en los archivos de configuración de
+Socios de LLM (Claude Code, Gemini, Ollama). Detecta socios instalados y
+registra BACH con bloques de configuración basados en plantillas.
+
+Parte de SQ015: proceso de registro y agnóstico de LLM.
+
+
+DESCRIPCIÓN
+------------
+
+El controlador automatiza la integración de BACH en varios entornos de LLM.
+Se basa en plantillas y admite los tipos de socios:
+  - claude-code (directorio de detección: ~/.claude)
+  - gemini (directorio de detección: ~/.gemini)
+  - ollama (directorio de detección: ~/.ollama)
+
+Se crean nuevos archivos de configuración a partir de plantillas, BACH_ROOT_PATH es
+insertado automáticamente. El registro repetido es idempotente.
+
+
+OPERACIONES
+-----------
+
+detect_active_partners()
+  Detecta socios instalados comprobando sus directorios de detección.
+  Devuelve: Lista de nombres de socios (por ejemplo, ["claude-code", "ollama"])
+
+register_partner(partner: str)
+  Ingresa BACH en el archivo de configuración de un socio.
+  - Carga la plantilla desde plantillas/{PARTNER_MD_TEMPLATE.md}
+  - Reemplaza [BACH_ROOT_PATH] con la ruta raíz de BACH actual
+  - Crea un nuevo archivo o lo agrega si aún no se ha ingresado BACH
+  - Devolución: (éxito: bool, mensaje: str)
+
+unregister_partner(socio: str)
+  Elimina el bloque BACH del archivo de configuración de un socio.
+  - Busca el marcador "Integración #BACH"
+  - Elimina el bloqueo hasta el siguiente encabezado de nivel superior
+  - Idempotente: no faltan archivos/errores de bloque
+  - Devuelve: (éxito: bool, mensaje: str)
+
+register_all_detected()
+  Registra BACH en todos los socios reconocidos.
+  Devuelve: Lista de (socio: str, éxito: bool, mensaje: str)
+
+
+EJEMPLOS
+---------
+
+Programática (bach_api):
+
+  desde bach_api importar PartnerConfigManager
+  desde pathlib importar ruta
+
+  administrador = PartnerConfigManager(Ruta("/ruta/a/BACH"))
+
+  # Reconocer a todos los socios
+  socios = manager.detect_active_partners()
+  print(socios) # ["código-claude"]
+
+  # Registrarse BACH
+  éxito, msg = manager.register_partner ("código-claude")
+  print(msg) # ✓ CLAUDE.md creado: ~/.CLAUDE.md
+
+  # Registrar a todos
+  resultados = manager.register_all_detected()
+
+
+ARCHIVOS
+-------
+
+hub/partner_config_manager.py
+  Implementación del controlador con la clase PartnerConfigManager y funciones CLI.
+
+templates/CLAUDE_MD_TEMPLATE.md
+  Plantilla para la integración del código Claude. Será reemplazado por BACH_ROOT_PATH.
+
+templates/GEMINI_MD_TEMPLATE.md
+  Plantilla para la integración de Gemini.
+
+templates/OLLAMA_MD_TEMPLATE.md
+  Plantilla para la integración de Ollama.
+
+~/.CLAUDE.md, ~/.GEMINI.md, ~/.OLLAMA.md
+  Archivos de destino para los usuarios. Se creará en el directorio de inicio.
+
+
+VER TAMBIÉN
+----------
+
+SQ015 (Requisito del sistema): LLM Agnóstico y proceso de registro
+SQ038: Sistema de marcador mejorado para eliminación de bloques (planificado)
+bach.py: punto de entrada CLI con subcomandos "socio"
+bach_api.py: API de Python para uso programático

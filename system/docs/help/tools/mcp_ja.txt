@@ -1,0 +1,37 @@
+BACH ツール: MCP サーバー
+---------------------
+
+Claude Code および Claude Desktop 用のバンドル MCP サーバー。
+
+利用可能なサーバー
+------------------
+
+  bach-codecommander コードの実行とシェル コマンド (17 ツール)
+  bach-filecommander ファイル システム操作 (43 ツール)
+  n8n-manager-mcp n8n ワークフロー管理
+
+インストール
+------------
+
+サーバーは npm 経由でインストールされます。
+  npm インストール bach-codecommander-mcp
+  npm インストール bach-filecommander-mcp
+  npm install n8n-manager-mcp
+
+設定
+-------------
+
+クロード コード: ~/.claude.json (--scope user)
+Claude デスクトップ: AppData/Roaming/Claude/claude_desktop_config.json
+
+PROFILE
+-------
+
+~/.claude/profiles/ の MCP プロファイルにはサーバーの組み合わせが含まれます。
+  ベース、研究、ソフトウェア、AI ラボ、激動、フル
+
+MODULE
+-----
+
+  tools/mcp/ (3 サーバー、Node.js/TypeScript)
+  ソース: OneDrive/.TOPICS/.AI/.MCP/

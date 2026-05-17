@@ -1,0 +1,19 @@
+BACH ツール: foerderplaner_cli
+--------------------------------------------------
+生成: 2026-01-23 10:36
+出典: tools/foerderplaner_cli.py
+
+説明
+----------------------------------------
+Foerderplaner CLI - 資金計画用のコマンド ライン ツール
+ICF 構造、知識ベースを検索し、メソッド/マテリアルを提案します
+
+USE
+----------------------------------------
+python bach.py tools run foerderplaner_cli [args]
+または直接: python tools/foerderplaner_cli.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show foerderplaner_cli

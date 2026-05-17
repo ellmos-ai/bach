@@ -1,0 +1,119 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+設定ハンドラー
+---------------
+
+ハンドラー名
+------------
+設定
+
+説明
+------------
+設定ハンドラーは、BACH データベース内のシステム設定を管理します
+(system_config テーブル)。設定はキーと値のペアであり、オプションがあります
+カテゴリ、説明、および配布タイプ (ユーザー/テンプレート/コア)。
+
+操作
+-----------
+
+リスト
+----
+bach settings list
+bach settings list --category=KATEGORIE
+
+保存されているすべての設定を表示します。必要に応じてカテゴリ別にフィルタリングします。
+出力には次が表示されます: キー、値、タイプ、カテゴリ、説明、Dist-Type (USER/TMPL/CORE)
+
+GET
+---
+bach settings get <key>
+
+完全なメタデータを含む個々の値を読み取ります。
+表示: キー、値、タイプ、カテゴリ、説明、距離タイプ、更新タイムスタンプ
+
+SET
+---
+bach settings set <key>=<value> [--category=CAT] [--desc=TEXT]
+
+新しい値を設定するか、既存の値を更新します。
+- 新しい設定は dist_type=0 (USER) を取得します
+- CORE設定(dist_type=2)は変更できません
+- オプション --category: カテゴリに設定を保存します
+- オプション --desc: 説明を追加します。
+- 統合時にパートナー MD アップデートを開始します。*-Keys
+
+RESET
+-----
+bach settings reset <key>
+
+設定を削除します。 CORE設定は削除できません。
+USER と TEMPLATE のみを削除できます。
+
+EXPORT
+------
+bach settings export [dateiname]
+
+すべての設定を JSON としてエクスポートします。ファイル名なしで標準出力に出力します。
+形式: {key: {value, type, category, description, dist_type}}
+
+IMPORT
+------
+bach settings import <dateiname>
+
+JSON ファイルから設定をインポートします。 USER/TEMPLATEのみを上書きします。
+CORE 設定は影響を受けません。インポート/スキップされた数を表示します。
+
+カテゴリ
+----------
+bach settings categories
+
+利用可能なすべてのカテゴリをエントリ数とともに表示します。
+
+例
+---------
+
+すべての設定をリストします:
+$ bach 設定リスト
+
+カテゴリでフィルター:
+$ bach 設定リスト --category=security
+
+設定の読み取り:
+$ bach settings get db.backup_interval
+
+設定の設定 (新規):
+$ bach settings set log.level=DEBUG --category=behavior --desc="Logging Verbositaet"
+
+設定を更新します:
+$ bach settings set log.level=INFO
+
+設定を削除:
+$ bach settings restart log.level
+
+設定をエクスポートして保存:
+$bach 設定のエクスポート settings_backup.json
+
+設定のインポート:
+$bach settings import settings_backup.json
+
+カテゴリのリスト:
+$ bach settings category
+
+FILES
+-------
+hub/settings.py ハンドラーの実装 (相対: Hub/settings.py)
+bach.db (system_config) データベース テーブル (パス: BACH_DB)
+
+関連カテゴリ
+--------------------
+claude_permissions クロード コードの権限プロファイル (permissions.txt を参照)
+
+関連項目
+----------
+hub/base.py BaseHandler (相対: Hub/base.py)
+Hub/bach_paths.py BACH_DB 定数 (相対: Hub/bach_paths.py)
+Hub/claude_permissions.py 権限ハンドラー (相対: Hub/claude_permissions.py)
+docs/BACH-SCHEMA.md データベース スキーマ (相対: docs/BACH-SCHEMA.md)
+Permissions.txt クロード コードの権限プロファイル

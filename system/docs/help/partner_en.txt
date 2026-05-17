@@ -1,0 +1,119 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [partner_recognition table, partner_presence table, hub/partner.py, tools/mcp_server.py]
+
+BACH PARTNER SYSTEM (Federated Intelligence)
+---------------------------------------------
+
+DATE: 2026-02-08
+
+The partner system manages the collaboration between different AIs
+and people based on token efficiency and capabilities.
+
+REGISTERED PARTNERS (bach.db)
+------------------------------
+**AI partners:**
+- Claude, Gemini, Ollama (active)
+- ChatGPT, Copilot, Mistral, Perplexity (active)
+- Anthropic-Local, Custom-Agent (inactive)
+
+**Human Partner:**
+- Human (User/Admin)
+
+CORE COMPONENTS
+----------------
+1. LOGIC (partner_recognition): Who can do what? (Caps, Zone, Cost Tier)
+2. PHYSICS (connections): Where are the endpoints? (API keys, URLs)
+3. PRESENCE (partner_presence): Who is currently “clocked in”?
+4. PROTOCOL (llm / msg): How do we work together? (Locks, Messages)
+5. CONNECTORS (hub/connector.py): External communication (Telegram, Discord)
+
+CLI COMMANDS (--partner)
+-----------------------
+  bach partner list              List all registered partners
+  bach partner status            State of the network (online status, token zones)
+  bach partner info <name>       Show details about specific partner
+  bach partner active            List of currently active partners
+  bach partner delegate <task>   Assign task to most efficient partner
+
+CONNECTOR COMMANDS (--connector)
+-------------------------------
+  bach connector list            All connectors (Telegram, Discord, etc.)
+  bach connector status          Status of all active connectors
+  bach connector send <name> <recipient> <text>  Send message via connector
+  bach connector poll <name>     Retrieve messages from connector
+  bach connector messages [name] Empfangene Nachrichten anzeigen
+
+DELEGATE-FLAGS
+--------------
+The delegate command supports the following options:
+  --partner delegate <task> Automatically route task
+  --partner delegate <task> --to=NAME Delegate to specific partner
+  --partner delegate <task> --zone=N Force zone (1-4)
+  --partner delegate <task> --fallback-local
+  --partner delegate <task> --fal offline fallback to Ollama (short form)
+
+MULTI-LLM COORDINATION (New v1.1.73+)
+-------------------------------------
+To avoid conflicts in parallel work, the following rules apply:
+- LOCKING: `bach llm lock <file>` prevents two AIs from modifying the same file.
+- MESSAGING: `bach msg send <target> "text"` for direct voting.
+
+ZONE SYSTEM (Token Awareness)
+------------------------------
+Routing is done automatically based on the token budget (layer 5):
+- Zone 1 (<30% budget): Claude (Best Quality)
+- Zone 2 (30-60%): Gemini / Claude (Mixed)
+- Zone 3 (60-80%): Ollama (Local/Free)
+- Zone 4 (80-100%): Human (emergency/completion)
+
+DATABASE OBJECTS
+-----------------
+- partner_recognition: master data (10 partners: Claude, Gemini, Ollama, etc.)
+- partner_presence: Current sessions & stamp card (40+ logs)
+- connections: Technical profiles (8+ connections)
+- interaction_protocols: Protocol of collaboration (10+ entries)
+- connector_messages: Messages from/to external systems (Telegram, Discord)
+
+WF EXAMPLE (GEMINI)
+--------------------
+  1. Check: `bach msg ping --from gemini`
+  2. Work: `bach llm lock research.md` -> Edit -> `unlock`.
+  3. Done: `bach task done ID`
+
+MCP SERVER INTEGRATION (v2.2)
+------------------------------
+The BACH MCP Server provides partner functions for Claude Code:
+
+**Tools:**
+- partner_list - List all partners
+- partner_status - show status and token zones
+
+**Use in Claude Code:**
+```python
+# MCP Tool becomes available automatically when server is running
+result = mcp.call_tool("partner_list")
+```
+
+PARTNER WORKSPACE
+-----------------
+CURRENT (from 2026-02-01): system/partners/
+- claude/inbox, claude/outbox
+- gemini/inbox, gemini/outbox
+- ollama/inbox, ollama/outbox
+
+DEPRECATED (before 2026-02-01): system/partners/
+- Only gemini/outbox/ with old reports (2026-02-06)
+- New reports go to partners/gemini/outbox/
+
+SEE ALSO
+----------
+  bach connector --help     Connector system (Telegram, Discord)
+  bach llm --help           Multi-LLM protocol (locks)
+  bach msg --help           Messaging system
+  bach tokens --help        Token monitor & quotas
+  docs/help/maintain.txt Network integrity check
+
+VERSION: v1.2.0 (2026-02-08)
+Source: hub/partner.py, tools/mcp_server.py, partners/

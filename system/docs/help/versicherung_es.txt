@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SEGUROS - Administración de Seguros
+---------------------------------------
+
+DESCRIPCIÓN:
+  Gestión de todas las pólizas de seguro con plazos y fechas de terminación.
+  y contribuciones. Los datos están en bach.db/fin_insurances.
+  Acceso GUI a través del módulo de finanzas (pestaña de seguros).
+
+ESTADO:
+  Controlador CLI completo implementado en hub/versicherung.py
+  - CLI: seguro de bach <operación> (enumerar, mostrar, agregar, editar, eliminar, estado, plazos, verificar, reclamar)
+  - GUI: Módulo de Finanzas > Seguros (CRUD implementado por Gemini)
+  - Consulta directa a BD (para agentes/expertos)
+
+BASE DE DATOS:
+  Tablas:
+    - bach.db / fin_insurances (seguros)
+    - bach.db / fin_insurance_claims (reclamaciones)
+    - bach.db/insurance_types (datos de referencia, opcional)
+
+  Campos fin_insurances:
+    identificación identificación automática
+    compañía de seguros proveedora (Allianz, HUK, AXA, ...)
+    nombre_tarifa Nombre de tarifa
+    número de póliza policial_nr (ÚNICO)
+    Responsabilidad, BU, vehículo de motor, menaje del hogar, protección jurídica, ...
+    estado activo | terminado | no contributivo | inactivo
+    start_date Inicio del contrato
+    expire_date Fin del contrato
+    periodo de aviso_meses periodo de aviso en meses (predeterminado: 3)
+    extension_months Extensión automática (predeterminado: 12)
+    next_termination Próxima fecha de terminación
+    contribución de contribución como una cantidad
+    pagado mensualmente | trimestral | semestralmente | anualmente
+    tax_relevant_type gastos de pensión, etc.
+    carpeta_ruta Ruta a escaneos/documentos en el sistema de archivos
+    notas texto libre
+    creado_at, actualizado_at Marcas de tiempo
+
+ENLACES:
+  - Financial_emails: correos electrónicos de compañías de seguros (categoría = 'seguros')
+  - carpeta_ruta: documentos reales en una ruta de documentos de seguro configurada localmente
+  - user_data_folders: Carpeta registrada 'usuario/seguro'
+
+DATOS ACTUALES:
+  13 compañías de seguros importadas (a partir de la sesión 2026-01-28)
+  Divisiones: Responsabilidad Civil, BU, vehículos de motor, artículos del hogar, protección jurídica, suplementos dentales,
+           PKV, seguro de accidentes, seguro médico extranjero, etc.
+
+COMANDOS CLI:
+  bach versicherung list                    Todas las pólizas de seguro activas
+  bach versicherung list --all              Incl. terminado
+  bach versicherung list --sparte <sparte>  Filtrar por división
+  bach versicherung list --status <status>  Filtrar por estado
+
+  bach versicherung show <id>               Mostrar detalles
+
+  bach versicherung add --anbieter "X" --sparte "Y" [Optionen]
+    Obligatorio: --proveedor, --división
+    Opciones: --contribución, --pago, --policía, --tarifa, --comienzo,
+              --expiry, --cancellation, --period, --tax, --folder, --note
+
+  bach versicherung edit <id> [Felder]      Editar seguro
+  bach versicherung delete <id>             Establecer estado -> cancelado
+
+  bach versicherung status                  Panel con estadísticas
+  bach versicherung fristen [--tage N]      Mostrar períodos de cancelación (predeterminado: 90 días)
+  bach versicherung check                   Análisis de cartera
+
+  bach versicherung claim add <id> --datum DD.MM.YYYY --beschreibung "Text" [--betrag X]
+  bach versicherung claim list [<id>]       Mostrar reclamaciones
+
+  bach versicherung help                    Mostrar ayuda
+
+PLANIFICADO:
+  - Coincidencia automática de correo electrónico con Financial_emails
+  - Integración de exportación de impuestos (actualmente: gestión manual de tipos de impuestos)
+
+INTERPLAY:
+  - GUI: Panel financiero con advertencia de fecha límite (#575)
+  - GUI: Seguro CRUD (#570)
+  - Exportación de impuestos: #572 (planificada)

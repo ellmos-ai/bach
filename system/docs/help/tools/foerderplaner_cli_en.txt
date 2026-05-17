@@ -1,0 +1,19 @@
+BACH Tool: foerderplaner_cli
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/foerderplaner_cli.py
+
+DESCRIPTION
+----------------------------------------
+Foerderplaner CLI - command line tool for funding planning
+Searches ICF structure, knowledge base and suggests methods/material
+
+USE
+----------------------------------------
+python bach.py tools run foerderplaner_cli [args]
+or directly: python tools/foerderplaner_cli.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show foerderplaner_cli

@@ -1,0 +1,94 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ESCANEO: escáner de tareas y análisis de directorios
+---------------------------------------------
+
+DEPRECADO: este controlador permanece por compatibilidad con versiones anteriores. Nuevo: bach ati scan
+
+SCAN es un controlador heredado para gestionar el escaneo de tareas y el escaneo de directorios.
+Análisis. El escáner funciona con la infraestructura ATI y la base de datos SQLite.
+bach.db juntos. Las operaciones de escaneo modernas se ejecutan a través de 'bach ati scan'.
+
+COMANDOS
+-------
+
+bach scan run              Iniciar escáner (escáner de tareas ATI)
+bach scan status           Mostrar el último estado de escaneo
+bach scan tasks            Mostrar tareas escaneadas (--tool escanea todas las herramientas registradas en busca de tareas.
+Resumen de resultados: herramientas analizadas, tareas encontradas, nuevas y actualizadas
+tareas. Almacena los resultados en la tabla ati_scan_runs (bach.db).
+bach scan tools            ESTADO
+bach scan dir PATH         Muestra el estado del último análisis de la base de datos:
+- Marca de tiempo y duración.
+- Número de herramientas y tareas en el último escaneo.
+- Estadísticas generales: herramientas registradas, tareas escaneadas, tareas abiertas
+
+TAREAS
+-----------
+
+Lista de tareas abiertas y en progreso con clasificación por prioridad.
+Muestra: nombre de la herramienta, texto de la tarea (abreviado), esfuerzo, estado, puntuación de prioridad.
+Limitado a un máximo de 20 tareas.
+---
+Con --tool FILTER: Filtra tareas por nombre de herramienta (coincidencia de subcadena).
+
+TOOLS
+------
+Enumera las herramientas registradas de ati_tool_registry con números de tarea,
+Estado y fecha del escaneo. Ordenar por recuento de tareas. Máx. 30 herramientas.
+
+DIR
+-----
+Escanea cualquier directorio con DirectoryScanner (tools/dirscan.py).
+Muestra árbol de directorios, listas de archivos y tamaños de archivos.
+
+EJEMPLOS
+
+# Iniciar escáner
+-----
+# Verificar estado
+
+# Todas las tareas abiertas
+---
+# Tareas de una herramienta específica
+
+# Mostrar herramientas registradas
+---------
+
+# Directorio de escaneo
+bach scan run
+
+FUENTES DE DATOS
+bach scan status
+
+Base de datos: data/bach.db (SQLite)
+Tablas: ati_scan_runs, ati_tasks, ati_tool_registry
+Escáner: agentes/ati/scanner/task_scanner.py (TaskScanner)
+Dir Scanner: tools/dirscan.py (DirectoryScanner)
+bach scan tasks
+
+VER TAMBIÉN
+bach scan tasks --tool featureX
+
+ATI Agent (comandos de escaneo modernos)
+bach scan tools
+
+Crear automatización
+bach scan dir C:\Projekte\myapp
+bach scan dir /c/Users/User/OneDrive
+
+DATENQUELLEN
+------------
+
+Datenbank:    data/bach.db (SQLite)
+Tabellen:     ati_scan_runs, ati_tasks, ati_tool_registry
+Scanner:      agents/ati/scanner/task_scanner.py (TaskScanner)
+Dir-Scanner:  tools/dirscan.py (DirectoryScanner)
+
+SIEHE AUCH
+----------
+
+bach --help ati        ATI Agent (moderne Scan-Befehle)
+bach --help builder    Build-Automatisierung

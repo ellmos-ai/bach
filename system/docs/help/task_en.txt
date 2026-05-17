@@ -1,0 +1,100 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+
+TASK HANDLER
+------------
+
+DESCRIPTION
+------------
+
+The task handler manages tasks in the BACH database. Supported
+Priorities (P1-P4), multi-ID operations, dependencies, assignments
+Partner and status management (pending/done/blocked).
+
+
+OPERATIONS
+-----------
+
+add <title> Add task
+  Options: --priority P1-P4, --description TEXT, --category TEXT
+
+list [status] List tasks
+  Status: pending (default), open (legacy), in_progress, done, blocked, all
+  Options: --filter TERM, --assigned PARTNER, --unassigned
+
+show <id> Show task details
+
+edit <id> Edit task (title, description, category)
+  Options: --title TEXT, --description TEXT, --category TEXT, --assigned NAME
+
+done <id> [id2...] Mark task(s) as completed
+  Option: --note TEXT
+
+block <id> [id2...] Block task(s).
+  Option: --reason TEXT
+
+unblock <id> [id2...] unblock task(s)
+
+reopen <id> [id2...] reopen task(s) (done -> pending)
+
+delete <id> [id2...] delete task(s)
+
+priority <id> <P1-P4> change priority
+
+assign <id> [id2...] task(s) assign
+  Option: --to PARTNER (CLAUDE, GEMINI, COPILOT, OLLAMA, CHATGPT, etc.)
+
+depends <id> Manage dependencies
+  --on <id2> Add new dependency
+  --remove <id2> Remove dependency
+  --clear Clear all dependencies
+
+
+EXAMPLES
+---------
+
+Create task:
+  bach task add "API implementieren" --priority P1 --category development
+
+List tasks:
+  bach task list                    # Only pending
+  bach task list in_progress        # Currently in progress
+  bach task list all                # All
+  bach task list blocked --assigned GEMINI
+
+Multi-ID operations:
+  bach task done 319 320 321 --note "Alle Help-Dateien erstellt"
+  bach task block 100 101 --reason "Wartet auf API-Review"
+
+Assignments:
+  bach task assign 100 101 --to GEMINI
+  bach task list --assigned CLAUDE
+
+Dependencies:
+  bach task depends 306 --on 305    # Task 306 is waiting for 305
+  bach task depends 306              # Dependencies show
+  bach task depends 306 --remove 305
+
+
+FILES
+-------
+
+data/bach.db SQLite database (tasks table)
+
+
+SEE ALSO
+----------
+
+bach help                General help
+bach hook help           Hook system
+
+
+NOTES
+=====
+
+Multi-ID support: Multiple task IDs in one operation (e.g. done, block, assign)
+Dependency detection: Tasks are automatically added with (BLOCKED) flag
+unfinished dependencies are displayed
+Hooks: after_task_create, after_task_done are emitted during operations

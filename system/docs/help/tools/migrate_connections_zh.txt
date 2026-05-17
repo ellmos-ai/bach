@@ -1,0 +1,32 @@
+BACH 工具：migrate_connections
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/migrate_connections.py
+
+描述
+----------------------------------------
+将连接迁移到数据库
+--------------------------------
+
+将存档的 JSON 注册表迁移到 bach.db 表中：
+- external_ki_tools_registry.json -> 工具 (type='external')
+-connections_overview.json/cli_tools -> 工具 (type='cli')
+-connections_overview.json/mcp_servers -> 连接（类型='mcp'）
+- claude_registry.json -> 连接 (type='ai')
+
+用法：
+    python migrate_connections.py [--dry-run]
+    python migrate_connections.py --status
+    python migrate_connections.py --help
+
+版本：1.0.0
+
+使用
+----------------------------------------
+python bach.py 工具运行 migrate_connections [args]
+或直接： python tools/migrate_connections.py [args]
+
+注释
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示 migrate_connections

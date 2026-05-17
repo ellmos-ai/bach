@@ -1,0 +1,106 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+===
+
+セットアップ
+
+
+説明
+===
+
+BACH システムを完全に構成します: MCP サーバー (npm) をインストールし、検証済み
+依存関係、シークレットとユーザー プロファイルの同期、およびプリフライト チェックの実行
+を通して。オプションの n8n マネージャー MCP を備えた PEANUT リリース (B37) の一部。
+
+
+OPERATIONS
+===
+
+mcp npm 経由で MCP サーバー (codecommander、filecommander) をグローバルにインストールします。
+                クロード コード構成 (~/.claude.json) を更新しました。
+
+n8n オプションの n8n-manager-mcp パッケージをインストールし、
+                クロード コード MCP-Config.
+
+check すべての依存関係が存在し、構成されているかどうかを検証します。
+                npm、MCP パッケージ、シークレット ファイル、bach.db、USER.md.
+
+secrets ~/.bach/bach_secrets.json を初期化または同期します。
+                Secrets データベース。
+
+ユーザーは USER.md を管理します: まだテンプレートの場合は DB からパーソナライズされます。
+                または、解析されたデータを DB に同期します。
+
+preflight インストール前チェックを実行します: Python >= 3.10、npm が利用可能、
+                データ/書き込み可能、100 MB を超える空きストレージ容量。
+
+prosync マルチシステムで使用できるように ProSync を構成します。
+                --multi-system DB 同期を有効にします (複数のコンピューター上の BACH)
+                --single-system DB 同期を無効にする (このシステムのみ)
+                フラグなし：現在のステータスを表示します。デフォルト: single-system.
+
+hooks クロード コード フック (DB 保護など) を
+                クロード コード設定 (~/.claude/settings.json).
+
+hooks-remove BACH によってインストールされたクロード コード フックを削除します (元に戻すことができます)。
+                BACH によって登録されたフック エントリのみを削除します。
+
+lang <de|en> 中間のルート ドキュメント (README、QUICKSTART など)。
+                ドイツ語と英語。
+
+full-install インストールを一度で完了します (プリフライト、プロ同期、
+                mcp、フック、シークレット、ユーザー)。オプション: --with-n8n または --config <json>。
+
+
+例
+===
+
+bach setup mcp
+  codecommander-mcp と filecommander-mcp をインストールし、~/.claude.json を更新しました
+
+bach setup check
+  ステータス出力ですべての依存関係をチェックします
+
+bach setup n8n
+  n8n-manager-mcp をインストールします (オプション)
+
+bach setup preflight
+  インストール前に Python、npm、ディスク容量を検証します
+
+bach setup prosync
+  現在の ProSync ステータスを表示します (マルチシステムまたはシングルシステム)
+
+bach setup prosync --multi-system
+  ProSync を有効にします: ローカル DB (~/.bach/bach.db) + OneDrive Transit Sync
+
+bach setup prosync --single-system
+  ProSync を無効にします (新規インストールのデフォルト)
+
+bach setup full-install --with-n8n
+  n8n マネージャーを含むインストールを完了します
+
+bach setup user
+  USER.md を DB からパーソナライズするか、USER.md の変更を DB
+
+
+FILES
+===
+
+hub/setup.py に同期します。このハンドラー
+data/bach.db BACH データベース (assistant_user_profile、シークレット)
+data/bach_secrets.json Secrets Vault (~/.bach/bach_secrets.json)
+../USER.md ユーザー プロファイル (テンプレートまたは個人用)
+~/.claude.json クロード コード MCP サーバー構成
+
+
+関連項目
+===
+
+hub/base.py BaseHandler (スーパークラス)
+Hub/secrets_handler.py SecretsHandler (シークレット管理)
+docs/help/check.txt インストール後の検証
+docs/help/install.txt 初期インストールとシナリオ
+docs/help/db_sync.txt ProSync: マルチシステム DB 同期

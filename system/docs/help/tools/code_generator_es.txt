@@ -1,0 +1,21 @@
+Herramienta BACH: code_generator
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/code_generator.py
+
+DESCRIPCIÓN
+----------------------------------------
+Módulo generador de código para agente desarrollador
+Fase 2: Funciones principales
+
+Genera código Python basado en plantillas y especificaciones
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan code_generator [args]
+o directamente: python tools/code_generator.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: las herramientas de bach muestran code_generator

@@ -1,0 +1,193 @@
+合作伙伴通信工具 - 合作伙伴检测和消息路由
+-------------------------------------------------------------------
+
+截至：2026-01-23
+路径：docs/help/tools/partner.txt
+
+描述
+------------
+这些工具支持 BACH 和
+外部合作伙伴（Ollama、Gemini等）、系统分析和
+自动路由任务。
+
+路径：tools/partner_communication/
+
+概述
+----------
+
+  工具线功能
+  ────────────────────────────────────────────────────────────
+  communications.py 678 合作伙伴认可、健康检查
+  system_explorer.py 458 操作系统软件发现
+  Interaction_protocol.py 1225实例握手，DNA跟踪
+  ai_兼容.py 200 过滤器AI兼容软件
+  real_tools.py 198 识别真正的 CLI 工具
+
+  总计：5 个工具，约 2,759 行
+
+────────────────────────── ────────────────────────────────
+
+工具 1：communication.py
+------------------------
+用于伙伴检测和消息路由的中央工具。
+
+功能：
+  - 自动识别伴侣（Claude、Ollama、Gemini 等）
+  - 健康检查合作伙伴的可用性
+  - 令牌感知消息路由
+  - 合作伙伴状态查询
+
+使用 (Python)：
+  从tools.partner_communication.communication导入（
+      检测伙伴，
+      检查健康状况，
+      路由消息
+  )
+
+  # 认识合作伙伴
+  合作伙伴 = detector_partners()
+
+  # 检查健康状况
+  状态= check_health("ollama")
+
+  # 路由消息
+  route_message("研究任务", target="gemini")
+
+CLI（计划）：
+  bach partner detect "Task-Beschreibung"
+  bach partner health
+  bach partner route --to gemini --message "..."
+
+──────────────────────── ──────────────────────────────────
+
+工具 2：system_explorer.py
+--------------------------
+扫描操作系统中已安装的软件。
+
+功能：
+  - 扫描Windows注册表
+  - 识别AI兼容软件
+  - 目录工具功能
+  - 创建软件库存
+
+使用 (Python)：
+  从tools.partner_communication.system_explorer导入（
+      扫描系统，
+      获取人工智能工具，
+      列表功能
+  )
+
+  # 扫描系统
+  软件 = scan_system()
+
+  # 仅限人工智能工具
+  ai_tools = get_ai_tools()
+
+CLI（计划）：
+  bach partner scan
+  bach partner scan --ai-only
+
+────────────────────────────────────────────────────────────
+
+工具 3：interaction_protocol.py
+-------------------------------
+BACH 实例之间的握手和协议。
+
+功能：
+  - 实例到实例握手
+  - DNA追踪（实例身份）
+  - 5 种交互协议：
+    * 握手——相互认可
+    * 比较——比较技能
+    * 请求-导入请求
+    * 传输-数据传输
+    * 收据 - 确认收据
+
+使用 (Python):
+  从tools.partner_communication.interaction_protocol导入（
+      发起握手，
+      执行协议
+  )
+
+  # 开始握手
+  结果 = initiate_handshake("双子座")
+
+  # 执行协议
+  execute_protocol("transfer", target="ollama", data=payload)
+
+──────────────────────── ──────────────────────────────────
+
+工具 4：ai_known.py
+------------------------
+从系统扫描中过滤 AI 兼容软件。
+
+功能：
+  - 搜索注册表中的人工智能工具
+  - 识别LLM客户（Ollama、LM Studio等）
+  - 检测API端点
+  - 提取功能
+
+使用 (Python)：
+  从tools.partner_communication.ai_兼容导入（
+      扫描人工智能软件，
+      获取 llm_clients
+  )
+
+  ai_tools = scan_ai_software()
+  llms = get_llm_clients()
+
+────────────────────── ──────────────────── ────────────────
+
+工具 5：real_tools.py
+---------------------
+标识真正的 CLI 委托工具。
+
+功能：
+  - 查找EXE/CMD/BAT工具
+  - 目录Python脚本
+  - 分析工具参数
+  - 确定代表团候选人
+
+使用 (Python)：
+  从tools.partner_communication.real_tools导入（
+      查找_cli_工具，
+      分析工具
+  )
+
+  工具 = find_cli_tools()
+  info =analyze_tool("git")
+
+──────────────────────────────── ────────────────────────────
+
+数据库集成
+---------------------
+工具使用以下 BACH 表：
+
+  连接伙伴端点和 URL
+  合作伙伴识别能力、区域、状态
+  delegate_rules 基于令牌的路由规则
+  comm_messages 消息日志
+
+合作伙伴工作空间
+-----------------
+  合作伙伴/
+  ├── _TASKS.md # 中心任务分配
+  ├── 克劳德/
+  │ ├── inbox/ # 收到的订单
+  │ ├── 发件箱/ # 报告
+  │ └── 工作空间/ # 工作文件
+  ├── 双子座/
+  └── ollama/
+
+另请参阅
+----------
+docs/help/partner.txt 合作伙伴系统 CLI 命令
+  docs/help/partners.txt 合作伙伴网络概述
+  docs/help/delegate.txt 委托详细信息
+  docs/help/communicate.txt 通信协议
+
+  Skills/_services/communicate.md 技能定义
+  tools/partner_communication/README.md 开发者文档
+
+版本：v1.0.0 (2026-01-23)
+来源：tools/partner_communication/README.md

@@ -1,0 +1,93 @@
+# Portabilidad: UNIVERSAL
+
+PATH
+====
+
+`bach path` crea el registro de ruta central desde `hub/bach_paths.py`
+Se puede utilizar directamente a través de CLI y API. El resultado es legible por humanos.
+así como con `--json` adecuado para automatización.
+
+
+COMANDOS
+-------
+
+  bach path
+    Muestra agrupados los trayectos BACH más importantes.
+
+  bach path <name>
+  bach path get <name>
+    Muestra una única ruta registrada con metadatos.
+
+  bach path list [--json]
+    Muestra el registro completo.
+
+  bach path resolve <relativer-pfad> [--from-root] [--json]
+    Resuelve una ruta relativa contra `system/` o la raíz del repositorio.
+
+  bach path overrides [--json]
+    Muestra las anulaciones de rutas de base de datos activas desde `system_config`.
+
+  bach path validate [--json]
+    Comprueba rutas críticas, importantes y opcionales.
+
+  bach path set <name> <pfad>
+    Almacena una ruta anulada en la base de datos BACH canónica.
+
+
+EJEMPLOS
+---------
+
+  bach path
+    -> Resumen para operadores
+
+  bach path db
+    -> Ruta de la base de datos canónica
+
+  bach path list --json
+    -> Registro completo como JSON
+
+  bach path resolve docs/README.md --from-root
+    -> Ruta absoluta relativa a la raíz del repositorio
+
+  bach path overrides
+    -> Verifique las anulaciones de bases de datos activas
+
+
+JSON-SURFACES
+-------------
+
+Estas llamadas proporcionan respuestas legibles por máquina:
+
+  bach path --json
+  bach path list --json
+  bach path db --json
+  bach path overrides --json
+  bach path validate --json
+  bach path resolve docs/help/path.txt --json
+
+
+DETALLES IMPORTANTES
+----------------
+
+- La fuente sigue siendo `hub/bach_paths.py` (Fuente única de la verdad).
+- Si `base_path` es externa, el controlador refleja las rutas a la activa
+  Raíz en tiempo de ejecución para que las pruebas y las instancias portátiles produzcan resultados limpios
+  recibido.
+- Las anulaciones se leen desde la base de datos canónica de la raíz activa y
+  escrito, no desde una ruta codificada globalmente.
+
+
+ARCHIVOS
+-------
+
+  controlador hub/path.py CLI/API
+  hub/bach_paths.py Registro de ruta central
+  data/bach.db `system_config` para anulaciones de rutas
+
+
+VER TAMBIÉN
+----------
+
+  agente de ayuda Agente CLI
+  ayuda al programador Áreas de estado del programador
+  herramientas de ayuda descripción general de la herramienta

@@ -1,0 +1,25 @@
+Herramienta BACH: autolog
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/autolog.py
+
+DESCRIPCIÓN
+----------------------------------------
+Auto-Logger: registra automáticamente todas las acciones
+-----------------------------------------------------
+
+Sistema de dos etapas:
+1. auto_log.txt: últimas 300 líneas (memoria a corto plazo)
+2. auto_log_extended.txt: entradas más antiguas, máximo 30 días (archivo)
+
+Después de 30 días, las entradas se eliminarán permanentemente.
+
+USE
+----------------------------------------
+python bach.py tools ejecuta autolog [args]
+o directamente: python tools/autolog.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente a partir de docstring
+- Si tiene alguna pregunta: las herramientas de Bach muestran el registro automático

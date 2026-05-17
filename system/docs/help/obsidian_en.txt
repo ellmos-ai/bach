@@ -1,0 +1,79 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+------------
+obsidian - Obsidian Vault Synchronization
+
+DESCRIPTION
+------------
+The Obsidian Handler synchronizes a local Obsidian Vault with BACH data.
+It manages three sync categories: Daily Notes, Tasks
+(task management) and Wiki (knowledge base). All data comes from the
+bach.db (tables: tasks, memory_working, wiki_articles).
+
+OPERATIONS
+-----------
+status
+  Displays sync status (vault path, directory structure, existence of
+  Daily Notes, BACH Wiki, Tasks file). No arguments required.
+
+sync
+  Performs all syncs: Today's Daily Note, current tasks,
+  Wiki article. No arguments required.
+
+config [path]
+  Sets or displays the Obsidian Vault path. With argument <path> the
+  Path configured and stored in memory_facts (category='system', key=
+  'obsidian_vault_path'). Without argument shows the current path.
+
+daily
+  Creates or displays today's Daily Note (YYYY-MM-DD.md in
+  "Daily Notes" directory). Contains open tasks counter and last 3
+  Working notes from memory_working.
+
+tasks
+  Synchronizes active tasks (pending, in_progress) from the tasks table
+  into the file “BACH Tasks.md”. Sorting by priority (P1-P3) and ID.
+
+wiki
+  Exports all articles from wiki_articles to the "BACH Wiki" directory.
+  File names are cleaned (alphanumeric only, spaces, hyphens,
+  underscore); the title is derived from the title field or the file name.
+
+EXAMPLES
+---------
+Configure Vault:
+  bach obsidian config /path/to/My\ Vault
+
+Check status:
+  bach obsidian status
+
+Perform all sync categories:
+  bach obsidian sync
+
+Create today's Daily Note only:
+  bach obsidian daily
+
+Update tasks:
+  bach obsidian tasks
+
+Export wiki:
+  bach obsidian wiki
+
+FILES
+-------
+hub/obsidian.py Handler implementation
+data/bach.db database (tables: tasks, memory_working,
+                                   wiki_articles, memory_facts)
+
+Obsidian Vault (when configured):
+  {vault}/Daily Notes/ Directory for Daily Notes
+  {vault}/BACH Wiki/ Directory for wiki articles
+  {vault}/BACH Tasks.md Tasks sync file
+
+SEE ALSO
+----------
+base.py BaseHandler class
+BACH documentation bach.db schema, memory_facts structure

@@ -1,0 +1,115 @@
+AGENT TOOLS - Agent tools
+--------------------------------
+
+OVERVIEW
+Agent tools in BACH manage and control AI agents
+and their interactions.
+
+AGENT FRAMEWORK
+---------------
+agent_framework.py
+
+Core framework for all BACH agents.
+Features:
+  - Agent registration
+  - Capability matching
+  - Synergy management
+
+Call: Used internally
+
+AGENT CLI
+---------
+agent_cli.py
+
+Command line for agent interaction.
+Commands:
+  - list: Show all agents
+  - status: Check agent status
+  - activate: activate agent
+  - deactivate: deactivate agent
+
+Call: python tools/agent_cli.py <command>
+
+AGENT SERVICE INTEGRATION
+-------------------------
+agent_service_integration.py
+
+Connects agents to BACH services.
+Allows:
+  - Service discovery
+  - Automatic routing
+  - Load Balancing
+
+AVAILABLE AGENTS
+-------------------
+
+Directory: agents/
+
+  ati/ software developer (ATI)
+  tax-agent.txt tax assistant
+  research.txt Research agent (research)
+  developer.txt General developer
+  production.txt production agent
+  funding planner/ funding plan assistant
+
+AGENT CONVENTION
+----------------
+
+See: skills/AGENT_KONVENTION.md
+
+Hierarchy:
+  BOSS Agents: Complete control, long-term
+  Experts: Specialized, short-term
+  Services: Automatic background tasks
+
+AGENT COMMANDS IN BACH
+---------------------
+
+  bach --help agents       Agent documentation
+  bach --help ati          ATI agent help
+  bach ati bootstrap       Create project (ATI)
+  bach ati migrate         Migrate project (ATI)
+
+DELEGATION TO AGENTS
+---------------------
+
+  bach delegate "task" --to=<agent>
+
+Available destinations:
+  ollama, gemini, copilot, perplexity, human
+
+DEVELOPER AGENT
+----------------
+developer_agent.py
+
+Specialized agent for development tasks.
+Can:
+  - Generate code
+  - Analyze bugs
+  - Create tests
+
+PRODUCTION-AGENT
+----------------
+production_agent.py
+
+For production deployments.
+Features:
+  - Build processes
+  - Deployment checks
+  - Rollback Support
+
+RESEARCH AGENT
+--------------
+research_agent.py
+
+Research and information gathering.
+Sources:
+  - Web search
+  - Documentation
+  - Internal knowledge base
+
+SEE ALSO
+----------
+bach --help delegate      Delegation system
+bach --help partner       Partner communication
+skills/AGENT_KONVENTION.md Agent guidelines

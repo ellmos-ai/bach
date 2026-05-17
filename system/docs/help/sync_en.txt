@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SYNC HANDLER
+------------
+
+DESCRIPTION
+------------
+Synchronizes file system contents with the BACH database. Reads skills and
+Tools from files (Markdown, Text, Python) and updates/creates accordingly
+Database entries. Compares changes using SHA256 hashing.
+
+OPERATIONS
+-----------
+skills Load skills contents of files into DB
+tools Load tools contents of files into DB
+all Synchronize both (skills + tools)
+status Show sync status, highlight changed files
+
+OPTIONS
+--------
+--dry-run Only show changes, not execute them
+--force Ignore hash comparison, reload everything
+
+EXAMPLES
+---------
+bach --sync skills
+    Synchronizes all skills from skills/ into the database.
+    Finds: .md, .txt, .py files (recursively).
+    Skips: files with _ or . at the beginning (except .py).
+
+bach --sync tools
+    Synchronizes all Python tools from tools/ into the database.
+    Finds: *.py files (recursively).
+    Skips: files with _ or . at the beginning.
+
+bach --sync all --dry-run
+    Shows planned changes without executing them.
+
+bach --sync status
+    Checks changes: compares file hashes with DB hashes.
+    Reports: [CHANGED], [MISSING], [NEW], [OK].
+
+bach --sync all --force
+    Forces reload of all files (ignores hash comparison).
+
+FILES
+-------
+skills/ Source for skill files (.md, .txt, .py)
+tools/Source for tool Python files (.py)
+data/bach.db Target database
+                        Tables: skills, tools
+                        Columns: name, path, content_hash, description, ...
+
+SEE ALSO
+----------
+docs/help/ More handler documentation
+hub/sync.py implementation (source code)

@@ -1,0 +1,34 @@
+Herramienta BACH: agent_framework
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/agent_framework.py
+
+DESCRIPCIÓN
+----------------------------------------
+Agent Framework v1.0.0
+
+Marco central para agentes RecludOS.
+Conecta agentes a servicios, herramientas externas y conexiones.
+
+Características:
+- Cargador de agentes y gestión de registros.
+- Integración de servicios (programación, medios, correo, etc.)
+- Recomendaciones de herramientas de IA externas
+- Gestión de conexiones (MCP, API, CLI)
+
+Uso:
+  python agent_framework.py lista # Todos los agentes
+  python agent_framework.py info <agente> # Detalles del agente
+  python agent_framework.py herramientas <agente> # Herramientas recomendadas
+  python agent_framework.py servicios <agente> # Servicios vinculados
+  python agent_framework.py activar <agente> # activar agente
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan agent_framework [args]
+o directamente: python tools/agent_framework.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tiene alguna pregunta: las herramientas de bach muestran agente_framework

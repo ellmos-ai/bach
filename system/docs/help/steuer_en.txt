@@ -1,0 +1,466 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+TAX HELP
+------------
+
+Tax agent for recording business expenses.
+
+OVERVIEW
+----------
+The tax agent helps with the systematic recording of
+Business expenses for the tax return. He supports
+multiple user profiles and tax years.
+
+FOLDER STRUCTURE
+--------------
+user/tax/
++-- profiles/user profiles
++-- watch/Watched folders (configuration)
++-- templates/ templates for new years
++-- [YEAR]/ Per tax year
+    +-- Advertising costs/advertising costs (main category)
+    |   +-- receipts/receipt storage
+    |   |   +-- _bundles/ Text bundles for batch processing
+    |   |   +-- _Trips & Home Office/Logbook, AZN, timeGoat
+    |   |   +-- _Erroneous receipts/ For user checking (non-receipts)
+    |   |   +-- _Recycle bin/confirmed non-receipts
+    |   |   +-- Additional/inbox folders for new receipts
+    |   |   +-- [Provider]/ Per provider (amazon.de, eBay, ...)
+    |   +-- export/ Generated reports and exports
+    |   |   +-- csv/CSV exports
+    |   |   +-- POSTEN_*.txt Post lists
+    |   |   +-- ADVERTISING COSTS_all.txt
+    |   |   +-- BELEGE_all.txt
+    |   |   +-- TRAVEL COSTS_HOMEOFFICE_YYYY.*
+    |   |   +-- FINANZAMT_YYYY.zip
+    |   +-- TAX_README.txt
+    |   +-- FINANZAMT.bat
+    |   +-- SYNC.bat
+    +-- Extraordinary loads/
+    +-- Household-related services & craftsmen/
+    +-- Special editions/
+    +-- Insurance and pension provision/
+
+CLI COMMANDS
+-----------
+
+STATUS & OVERVIEW:
+  bach steuer status              Show overall status
+  bach steuer status --jahr 2025  Status for a year
+
+TAXY YEAR:
+  bach steuer init 2026           Create a new tax year
+  bach steuer init 2026 --user X  With a specific profile
+
+LISTS:
+  bach steuer list                Show all lists
+  bach steuer list --jahr 2025    Lists for year
+  bach steuer list --liste WERBUNGSKOSTEN
+                                  Show specific list
+
+RECEIPT MANAGEMENT (NEW)
+----------------------
+Receipts are the PDF files in receipts/. Status: CAPTURED,
+NOT_COVERED, DEPRECATED.
+
+  bach steuer beleg list                    List all receipts
+  bach steuer beleg list --status ERFASST   Filter by status
+  bach steuer beleg list --status NICHT_ERFASST
+  bach steuer beleg list --status DEPRECATED
+  bach steuer beleg list --status ALL --limit 1000
+                                            All with high limit
+
+  bach steuer beleg scan                    Find new receipts
+  bach steuer beleg scan --dry-run          Show only
+
+  bach steuer beleg deprecate 215 466 "Grund"
+                                            Mark receipts as invalid
+                                            (Numbers remain reserved)
+
+  bach steuer beleg sync                    Regenerate TXT files from DB
+
+ITEM MANAGEMENT (NEW)
+-----------------------
+Items are individual items from documents. A receipt can
+contain several items. Item ID = Document No. Item No. (e.g. 151-1).
+
+  bach steuer posten list                   Show all items
+  bach steuer posten list --liste W         Filter by list (W/G/V/Z)
+  bach steuer posten list --belegnr 151     Filter by document number
+  bach steuer posten list --steller NAME    Filter by invoice issuer
+  bach steuer posten list --rechnungsnr NR  Filter by invoice number
+  bach steuer posten list --limit 100       With limit
+
+  bach steuer posten search BEGRIFF         Search across items
+                                            (searches in name, placer,
+                                            Comment, invoice number, item ID)
+
+  bach steuer posten show 151-1             Show individual items
+
+  bach steuer posten add --belegnr 151 --bezeichnung "Produkt" --brutto 34.95 --liste W
+                                            Create new post
+    Parameters:
+    --document number NR document number (required)
+    --name TXT product name (required)
+    --gross VALUE Gross amount (required)
+    --list W|G|V|Z target list (default: Z)
+    --proportion 0.0-1.0 proportion for mixed (default: 0.5)
+    --remark TXT Optional remark
+    --date YYYY-MM-DD Date
+    --provider NAME provider
+    --invoice number NR invoice number (or --invoice number)
+
+  bach steuer posten edit 151-1 --bezeichnung "Neuer Name"
+                                            Edit post
+  bach steuer posten edit 151-1 --brutto 29.95
+  bach steuer posten edit 151-1 --anteil 0.7
+  bach steuer posten edit 151-1 --rechnungsnr "RE-12345"
+
+  bach steuer posten move 151-1 W           Move to list
+  bach steuer posten move 151-1 G --anteil 0.5
+                                            With portion for mixed people
+    List shortcut:
+    W = ADVERTISING COSTS (100% deductible)
+    G = MIXED (proportionately deductible)
+    V = REJECTED (not deductible)
+    Z = RESET (to be clarified)
+
+  bach steuer posten delete 151-1           Delete (with confirmation)
+  bach steuer posten delete 151-1 --force   Without confirmation
+
+BATCH IMPORT (NEW v1.1.4)
+-------------------------
+For quick entry of multiple items or documents.
+
+  bach steuer batch help                    Show batch help
+
+  bach steuer batch posten --belegnr 42 --json '[...]'
+                                            Multiple items for one document
+    JSON format:
+    [{"bez":"Article","gross":19.99,"list":"W"},
+     {"bez":"Private","gross":5.00,"list":"V","bem":"private"}]
+
+  bach steuer batch posten --belegnr 42 --file posten.json
+                                            Post from JSON file
+
+  bach steuer batch belege --inline "42:Artikel:19.99:W;43:Ware:5.00:V"
+                                            Quick entry of multiple documents
+                                            Format: DOCUMENT NO:DEZ:GROSS:LIST
+
+  bach steuer batch belege --file import.json
+                                            Multiple receipts with items
+    JSON format:
+    {"evidence":[
+      {"receipt no":42,"item":[{"bez":"X","gross":10,"list":"W"}]},
+      {"receipt no":43,"item":[{"bez":"Y","gross":5,"list":"V"}]}
+    ]}
+
+  bach steuer batch delete --belegnr 42 --force
+                                            Delete all items in a document
+
+  bach steuer batch delete --posten "42-1,42-2,43-1" --force
+Delete specific items
+
+  bach steuer batch delete --liste V --limit 100 --force
+                                            Delete all DISCARDED (max 100)
+                                            CAUTION: Can delete many items!
+
+  bach steuer batch move --posten "42-1,42-2" --liste W
+                                            Move certain items
+
+  bach steuer batch move --belegnr 42 --liste W
+                                            Move all items of a document
+
+  bach steuer batch move --von V --nach W --limit 50
+                                            Move between lists
+
+TAX TOOLS (NEW v1.1.4)
+-------------------------
+Standalone Python scripts in tools/tax/.
+
+  bach steuer tools list                    List all tools
+  bach steuer tools <name> [args]           Run tool (short form)
+  bach steuer tools run <name> [args]       Run tool (explicit)
+  bach steuer tools register                Register tools in bach.db
+
+Important tools:
+  beleg_vorfilter Pre-sort new documents (NEW)
+  make_bundle Create text bundles from receipts
+  beleg_parser Extract text from PDFs (with OCR)
+  regenerate_txt Regenerate list TXTs from DB
+  scan_new_belege Find and register new receipts
+  temu_ocr_batch Batch OCR for image PDFs
+
+Direct access:
+  bach steuer tools make_bundle amazon 11 67
+  bach steuer tools regenerate_txt
+
+PROFILES:
+  bach steuer profile list        List profiles
+  bach steuer profile show <name>  Show profile
+  bach steuer profile create max  Create new profile
+
+WATCH FOLDER:
+  bach steuer watch list          Show watch folder
+  bach steuer watch add PFAD      Add folder
+  bach steuer watch remove PFAD   Remove folder
+  bach steuer scan                Check watch folder
+
+EXPORT:
+  bach steuer export              Export (Standard: txt)
+  bach steuer export --jahr 2025 --format csv
+  bach steuer export --format datev         DATEV booking batch CSV
+                                            (for tax advisors)
+  bach steuer export --format csv           Simple CSV (Excel compatible)
+  bach steuer export --format vorsorge      Investment pension expenditure
+                                            (Insurance premiums)
+
+COMPLETENESS CHECK:
+  bach steuer check                         Conduct a check
+  bach steuer check --jahr 2025             For a specific year
+                                            Checks: documents without items,
+                                            Item without receipt, gaps in
+                                            Document numbers, missing months,
+                                            Item without VAT amount
+
+CREATION OF OWN RECEIPT:
+  bach steuer eigenbeleg --bezeichnung "Parkgebuehr" --brutto 5.00
+                                            Create your own receipt
+  bach steuer eigenbeleg --bezeichnung "..." --brutto 10.00 --mwst 7
+                                            With different VAT rate
+  Options: --list, --date, --VAT, --reason
+
+BANK-IMPORT:
+  bach steuer import camt <pfad>            CAMT.053 Import XML
+
+FINANZAMT-EXPORT (planned):
+  bach steuer finanzamt           Create ZIP with all advertising costs
+                                  Creates FINANZAMT_[YEAR].zip with:
+                                  - WERBUNGSKOSEN_alle.txt (overview)
+                                  - csv/ folder with CSV files
+                                  - All referenced documents (PDFs)
+
+  Directly via script:
+    python tools/tax/tax_sync.py tax office
+
+CSV EXPORT (NEW v1.3.1):
+  bach steuer export --format csv CSV-Dateien in csv/ Ordner exportieren
+                                  For Excel/tax software import
+
+  Format: Semicolon-delimited, UTF-8 with BOM, German number format
+
+  CSV files are NOT automatically written during sync,
+  only with: tax office (automatic) or export --format csv (explicit)
+
+  Directly via script:
+    python tools/steuer/steuer_sync.py csv
+
+PROFILES
+-------
+Profiles save user-specific settings:
+- Professional context (industry, activity)
+- Provider rules (TEMU, Amazon, ...)
+- Automatic assignments (keywords)
+- Standard shares for mixed use
+
+Create profile:
+1. bach tax profile create MYNAME
+2. Edit file in user/tax/profile/
+
+LIST TYPES (from V1.3.0)
+------------------------
+New file names in ADVERTISING COSTS/ folder:
+
+  Code file description
+  ---- ----------------------- -------------------------
+  W POSTEN_reine.txt 100% deductible
+  G POSTEN_gemischt.txt Proportionally deductible (with share)
+  V POSTEN_verworfen.txt Not deductible (private)
+  Z POSTEN_unsortiert.txt Edit later / unclear
+  - WERBUNGSKOSEN_alle.txt W + G combined (for tax office)
+
+VOUCHER STATUS
+------------
+RECORDED Document was processed, item created
+NOT_RECORDED Document not yet processed
+DEPRECATED Receipt marked as invalid (e.g. duplicate)
+
+VOUCHER PRE-FILTER (NEW)
+---------------------
+Automatic pre-sorting of new receipts into provider folders.
+
+  python tools/steuer/beleg_vorfilter.py [--dry-run] [--verbose]
+
+Workflow:
+1. Place new PDFs from email/downloads in documents/Other/
+2. Run pre-filter:
+   python tools/steuer/beleg_vorfilter.py --dry-run # Preview
+   python tools/steuer/beleg_vorfilter.py # Execute
+3. Result:
+   - Receipts are automatically sorted into provider folders
+   - Non-receipts (tracking, shipping status) -> _Erroneous receipts/
+4. User checks _Erroneous receipts/ -> real incorrect receipts for _Recycle bin/
+
+Detection methods:
+- Filename pattern: RG64116 -> LingoPlay, 32xxxxxx -> TimeTEX
+- PDF content: "Anthropic, PBC" -> Anthropic, "TimeTEX" -> TimeTEX
+- Missing receipt marker: "Shipment tracking", "Tracking" -> _Erroneous receipts
+
+Supported providers:
+  Anthropic, TimeTEX, LingoPlay, Autism Publishing, PayPal,
+  eBay, Temu, Amazon, Apple, Google
+
+BIDI-SYNC (BIDIRECTIONAL TXT SYNC)
+-------------------------------------
+Write advanced actions directly to TXT files.
+The sync parses these and executes them in the DB.
+
+ACTION TYPES:
+  MOVE:
+    42-3 -> W Move to advertising costs
+    42-3 -> G 0.5 In mixed with 50% proportion
+    42-3 -> V private In Rejected with comment
+    B42 -> W Move all items of a document
+
+  EDIT:
+    42-3 :: gross=19.99 Change gross amount
+    42-3 :: label=New name
+    42-3 :: share=0.7 Change share
+
+  DELETE:
+    42-3 DELETE Delete individual item
+    42-3 DEL short form
+
+  DEPRECATED (book out document):
+    B42 DEPRECATED Mark document as invalid
+    B42 DEPRECATED Duplicate With Justification
+
+INPUT AREA:
+  Write actions to TXT files in the "INPUT" section:
+
+  === INPUTS (processed during sync) ===
+  42-3 -> W
+  43-1 :: gross=25.50
+  B44 DEPRECATED Canceled
+  === END INPUTS ===
+
+EXECUTE SYNC:
+  python tools/tax/tax_sync.py sync
+  or: bach tax receipt sync
+
+NOTES:
+  - Actions are processed at sync and then removed
+  - Incorrect actions are reported in the error log
+  - Always test --dry-run first (if available)
+
+TYPICAL WORKFLOW
+------------------
+0. Pre-sort new documents (beleg_vorfilter.py)
+
+1. Check status:
+   bach steuer beleg list --status NICHT_ERFASST
+
+2. View open receipts by provider:
+   bach steuer beleg list --status NICHT_ERFASST --limit 500
+
+3. Enter receipts in the chat agent
+
+4. Check result:
+   bach steuer posten list --liste W
+
+BATCH PROCESSING WITH BUNDLES
+------------------------------
+If there are many documents, individual checking is inefficient. Instead:
+
+1. Create bundle:
+   python agents/_experts/steuer/make_bundle.py <source> <start> <end>
+
+   Examples:
+     python agents/_experts/steuer/make_bundle.py paypal 171 214
+     python agents/_experts/steuer/make_bundle.py ebay 77 128
+     python agents/_experts/steuer/make_bundle.py google_play 129 170
+
+   Sources: paypal, ebay, google_play, amazon, others, temu
+   Output: user/steuer/2025/bundles/<source>_B<start>-B<end>.txt
+
+2. Analyze bundle:
+   Claude reads the bundle and classifies all receipts into:
+   - W = advertising costs (100% deductible)
+   - G = Mixed (proportional, e.g. 50%)
+   - V = Discarded (private, duplicates, status emails)
+   - Z = Deferred (to be clarified)
+
+3. Batch capture items:
+   bach steuer posten add --belegnr 195 --bezeichnung "..." --brutto 55.85 --liste W ...
+
+4. Update TXT files:
+   python agents/_experts/steuer/regenerate_txt.py
+
+CLASSIFICATION NOTES
+----------------------------
+- PayPal: Temu payments are duplicates (originals in Temu folder)
+- eBay: Many emails per purchase (order, shipping, delivery, invoice)
+        -> Only record the invoice/order confirmation as the main document
+        -> Record status emails as V with 0 EUR (completeness)
+- Therapy material: LEGO, learning games, specialist literature = W
+- Software: Microsoft 365, Office = G with 50%
+- Streaming: Netflix, Disney+ = V (private)
+
+DATABASE
+---------
+All data in: data/bach.db
+
+Tables:
+- tax_documents All documents with status
+- tax_posten All items with assignment
+
+Profiles are saved as TXT files in user/steuer/profile/.
+
+CHAT AGENT
+----------
+The tax agent is available as a chat agent under
+agents/steuer-agent.txt available.
+
+He can:
+- Capture receipts from PDFs
+- Automatically categorize posts
+- Detect duplicates
+- Validate with the user
+- Create tax office ZIP with all documents
+
+AREA READMES (keyword reference works)
+---------------------------------------------
+Each tax area has a README.txt with keyword table,
+required receipts and current flat-rate amounts (as of 2025).
+
+  File area/paragraph
+  ------------------------------------------------ ------------------------
+  user/steuer/[JAHR]/STEUER_README.txt Overall procedure & sync
+  user/tax/[YEAR]/advertising costs/README.txt Appendix N (paragraph 9)
+  user/tax/[YEAR]/Extraordinary burdens/Section 33 EStG
+    README.txt
+  user/tax/[YEAR]/Household-related services Paragraph 35a EStG
+    & Craftsmen/README.txt
+  user/steuer/[JAHR]/Special Editions/README.txt Paragraph 10 EStG
+  user/tax/[YEAR]/insurance and investment pension expenses
+Retirement provision/README.txt
+
+Content of the READMEs:
+  - Definition of the area with legal basis
+  - Keyword table: What can be submitted + required documents
+  - Important flat-rate amounts and maximum limits
+  - Practical tips
+
+SEE ALSO
+----------
+  bach --help tasks                    General tasks
+  bach --help backup                   Backup system
+  wiki/steuer/_index.txt Tax Wiki (background knowledge)
+  wiki/steuer/est_bereich.txt EStG systems overview
+  wiki/steuer/versicherungen.txt Deductible insurance
+  wiki/steuer/sonderspenden.txt Deduct special editions
+  wiki/steuer/fortbildung.txt Further training and studies
+  wiki/steuer/fahrtkosten_homeoffice.txt Travel costs & home office
+  agents/steuer-agent.txt tax agent (chat agent)

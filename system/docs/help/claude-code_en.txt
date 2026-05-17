@@ -141,7 +141,7 @@ ENVIRONMENT VARIABLES (selection)
 EXAMPLES
 ---------
   # Interactive in the BACH directory
-  cd "C:\Users\User\OneDrive\.TOPICS\.AI\.OS\BACH"
+  cd "<BACH_WORKSPACE>"
   claude
 
   # With Opus 4.6 and Extended Context

@@ -1,0 +1,168 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [hub/schwarm.py, tools/schwarm/, skills/workflows/schwarm-operativeen.md]
+
+SWARM - Operaciones paralelas de LLM e inteligencia de enjambre
+------------------------------------------------------------
+
+Estado: 2026-05-17 (v3.11.1)
+CLI: bach swarm (alias: bach swarm)
+
+El sistema Swarm permite la ejecución paralela de LLM con diferentes
+patrones de coordinación. Varias instancias de LLM están funcionando al mismo tiempo.
+Subtareas y se coordinan automáticamente.
+
+Ref: SQ016
+
+PATRONES DE ENJAMBRE
+--------------
+
+1. TROZOS PARALELOS [ACTIVOS]
+   La tarea se divide en partes, se procesa en paralelo y se fusiona.
+   Uso: traducción, revisión de código, documentación.
+   Coordinación: Central (Chunker + Agregador)
+   Escalado: Alto (lineal con el recuento de trabajadores)
+
+2. JERARQUÍA (Jefe + Trabajador) [ACTIVA]
+   Un coordinador distribuye tareas a los trabajadores, un agregador las resume.
+   Uso: Proyectos complejos con dependencias.
+   Coordinación: Central (Patrón Trabajador Jefe)
+   Escalado: Medio (limitado por el jefe)
+
+3. ESTIGMERGIO (a base de feromonas) [ACTIVO]
+   Los agentes dejan rastros (feromonas) en SharedMemory.
+   Otros agentes siguen caminos fuertes.
+   Uso: exploración, optimización, coordinación descentralizada.
+   Coordinación: Descentralizada (indirectamente a través del entorno)
+   Escalado: Alto (emergente)
+
+4. CONSENSO (decisión mayoritaria) [ACTIVO]
+   Varios LLM responden la misma pregunta de forma independiente.
+   El consenso se determina mediante puntuación de similitud o votación por mayoría.
+   Uso: Decisiones críticas, aseguramiento de la calidad.
+   Coordinación: Central (votante + evaluador)
+   Escalamiento: Bajo (costo O(n) por pregunta)
+
+   Métodos:
+     similitud Similitud de texto por pares, gana la puntuación promedio más alta
+     La mayoría del grupo responde, el grupo más grande gana
+
+5. ESPECIALISTA (Ruteo de jefes) [ACTIVO]
+   Ya integrado en BACH (11 agentes jefes).
+   La tarea se envía al especialista adecuado.
+
+COMANDOS CLI
+-----------
+
+  bach swarm list
+      Mostrar patrones de enjambre disponibles con estado.
+
+  bach swarm run <muster> <aufgabe>
+      Ejecute el patrón de enjambre.
+      Ejemplo: consenso de ejecución de enjambre de Bach "¿Cuál es el mejor linter de Python?"
+
+  bach swarm translate [optionen]
+      Traducción de fragmentos paralelos (DE->EN) para textos BACH.
+
+      Opciones:
+        --namespace <ns> Traduce solo un espacio de nombres
+        --workers N trabajadores paralelos (predeterminado: 8)
+        --N textos de tamaño fragmentado por llamada API (predeterminado: 10)
+        --límite N máx. traducir textos
+        --inventario Mostrar solo estado
+        --simulación de ejecución en seco sin llamadas API
+
+  bach swarm summarize [optionen]
+      Generar resúmenes de fragmentos (fragmentos paralelos nivel 3).
+
+      Opciones:
+        --batch-size N fragmentos por lote (predeterminado: 10)
+        --modelo MODELO haiku o soneto (por defecto: haiku)
+        --simulación de ensayo
+
+  bach swarm benchmark [optionen]
+      Punto de referencia de rendimiento: secuencial frente a paralelo.
+
+      Opciones:
+        --compare Compara ambos modos
+        --parallel Solo modo paralelo
+        --sequential Solo modo secuencial
+        --run en realidad ejecuta el punto de referencia
+        --workers N trabajadores paralelos (predeterminado: 3)
+        --categoría CAT software_dev, investigación, wiki
+        --model MODELO modelo LLM (predeterminado: haiku)
+        --export FILE Exportar resultados como JSON
+
+  bach swarm consensus "<frage>" [optionen]
+      Voto de consenso: varios LLM responden a la misma pregunta.
+
+      Opciones:
+        --voters N número de votantes (predeterminado: 3, mínimo: 2)
+        --modelo MODELO haiku, soneto, opus (predeterminado: haiku)
+        --method MÉTODO similitud o mayoría (predeterminado: similitud)
+
+  bach swarm status [N]
+      Muestra las últimas N ejecuciones de enjambre (predeterminado: 20).
+      Incluyendo estadísticas de costos y consumo de tokens.
+
+SEGUIMIENTO DE COSTOS
+---------------
+
+Cada ejecución de enjambre se registra en la base de datos (tabla: swarm_runs).
+Qué se registra: patrón, tarea, tokens (entrada/salida), costos (USD),
+Número de trabajador, duración, estatus. Disponible a través de: estado de enjambre de bach
+
+Estimación de costos (por 1 millón de tokens):
+  Haiku: $1,00 de entrada / $5,00 de salida (barato, a granel)
+  Soneto: entrada de $3,00 / salida de $15,00 (predeterminado)
+  Opus: $15.00 de entrada / $75.00 de salida (Premium)
+
+Esquema de base de datos (swarm_runs):
+  identificación, patrón, tarea, tokens_in, tokens_out, cost_usd,
+  trabajadores, duración_ms, estado, resumen_resultado, creado_en
+
+CONFIGURACIÓN
+-------------
+
+Fuentes de claves API (orden alternativo):
+1. Sistema de secretos de BACH (~/.bach/bach_secrets.json)
+2. Variable de entorno ANTHROPIC_API_KEY
+
+FILES
+-------
+
+controlador system/hub/schwarm.py (descubrimiento automático)
+  sistema/herramientas/enjambre/ colección de herramientas
+    __init__.py inicio del paquete
+    runner.py Claude CLI contenedor + seguimiento de costos
+    Translate_swarm.py Traducción de fragmentos paralelos (SQ062)
+    resume_chunks.py Resúmenes de fragmentos (SQ047)
+    benchmark.py Prueba comparativa de rendimiento
+    consenso.py patrones de consenso
+
+EJEMPLOS
+---------
+
+  # Verificar traducciones faltantes
+  bach swarm translate --inventory
+
+  # Iniciar traducción (8 trabajadores, 10 fragmentos)
+  bach swarm translate --workers 8 --chunk-size 10
+
+  #5 Pregunte a los votantes, determine el consenso por mayoría
+  bach swarm consensus "Soll ich asyncio oder threading verwenden?" --voters 5 --method majority
+
+  # Punto de referencia con comparación y exportación
+  bach swarm benchmark --compare --workers 5 --export results.json
+
+  # Estado de todas las ejecuciones de enjambre (últimos 50)
+  bach swarm status 50
+
+VER TAMBIÉN
+----------
+
+- chain.txt (cadenas LLM / llmauto)
+- agent.txt (sistema de agente jefe)
+- skills/workflows/schwarm-operativeen.md (documentación de muestra)
+- skills/workflows/schwarm-wahlsbaum.md (lógica de enrutamiento)

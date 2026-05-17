@@ -1,0 +1,148 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH AUTOEXTENSIÓN (autoexpansión)
+---------------------------------------
+
+A partir de: 2026-02-13
+
+BACH es un sistema autoexpandible. Los socios de IA deberían
+Mejorar activamente BACH, crear nuevas capacidades y el sistema.
+Adáptese a los nuevos requisitos.
+
+PRINCIPIO BÁSICO: USAR BACH = AMPLIAR BACH
+------------------------------------------
+Cada acceso es una oportunidad para mejorar el sistema.
+Las habilidades faltantes NO se informan, sino que se CREAN.
+
+BUCLE DE AUTOEXTENSIÓN
+--------------------
+  1. RECONOCER → Identificar las habilidades faltantes
+  2. CREAR → Crear una nueva habilidad/herramienta/controlador
+  3. REGISTRAR → Recarga en caliente, actualizar registro
+  4. USO → Usar inmediatamente
+  5. REFLEXIONAR → Lección aprendida, gancho de registro
+
+CREAR NUEVAS HABILIDADES
+-----------------------------
+Con `bach skills create`, se admiten 5 tipos de componentes:
+
+  bach skills create voice-processor --type tool
+    → Creado: sistema/herramientas/voice_processor.py
+    → Andamio con plantilla estándar
+    → Se puede utilizar inmediatamente después de la implementación
+
+  bach skills create email-agent --type agent
+    → Creado: system/agents/email-agent/SKILL.md
+    → Carpeta propia con plantilla SKILL.md
+    → Orquesta otros expertos/herramientas
+
+  bach skills create tax-expert --type expert
+    → Creado: system/agents/_experts/tax-expert/SKILL.md
+    → Carpeta propia con plantilla SKILL.md
+    → Conocimiento profundo del dominio
+
+  bach skills create api-gateway --type handler
+    → Creado: system/hub/api_gateway.py
+    → Disponible inmediatamente como comando CLI (bach api-gateway...)
+    → Subclase BaseHandler con get_operaciones()
+
+  bach skills create data-sync --type service
+    → Creado: sistema/habilidades/_servicios/sincronización de datos/
+    → Servicio con __init__.py y service.py
+    → Controlador cercano, uso general
+
+DESPUÉS DE LA CREACIÓN: HOT-RELOAD
+---------------------------------
+  bach skills reload
+    → Recargar registro (detectar nuevos controladores)
+    → Ejecutar descubrimiento de herramientas
+    → Sincronizar base de datos de habilidades
+    → ¡NO es necesario reiniciar!
+
+O a través de API:
+  desde la aplicación de importación bach_api
+  a = aplicación()
+  contar = a.reload_registry()
+  print(f"{count} controlador cargado")
+
+INTEGRACIÓN DE GANCHO
+-----------------
+Se pueden conectar nuevas habilidades al sistema de gancho:
+
+  desde core.hooks importar ganchos
+
+  # Ejecute su propia lógica para eventos del sistema
+  hooks.on('after_task_create', my_logic, nombre='my_plugin')
+  hooks.on('after_startup', startup_check, nombre='my_plugin')
+
+  Eventos disponibles: eventos de bach hooks
+
+EJEMPLO: FLUJO DE TRABAJO DE AUTOEXTENSIÓN COMPLETA
+----------------------------------------------
+
+  Paso 1: reconocer la necesidad
+  -------------------------
+  "Necesito un controlador de seguimiento del tiempo"
+
+  Paso 2: andamios
+  ----------------------
+  bach skills create zeiterfassung --type handler
+
+  Paso 3: implementar
+  --------------------------
+  → editar hub/zeiterfassung.py
+  → Agregar operaciones (iniciar, detener, listar, informar)
+  → Agregue la tabla DB a db/schema.sql si es necesario
+
+  Paso 4: recarga en caliente
+  ----------------------
+  bach skills reload
+
+  Paso 5: Úselo inmediatamente
+  -----------------------
+  bach zeiterfassung start "Projektarbeit"
+  bach zeiterfassung stop
+  bach zeiterfassung report --today
+
+  Paso 6: registrar ganchos (opcional)
+  ------------------------------------------------------
+  desde core.hooks importar ganchos
+  hooks.on('after_task_done', lambda ctx: grabación de tiempo.stop())
+
+  Paso 7: guardar la lección
+  ----------------------
+  bach lesson add "Zeiterfassung: Handler-Pattern mit start/stop/list/report"
+
+¿QUÉ SE PUEDE AMPLIAR?
+----------------------------
+  Área como donde
+  --------------- -------------------------------- -------------------------
+  Comandos CLI Crear nuevo controlador en hub/hub/<nombre>.py
+  Coloque el script Python de herramientas en herramientas/tools/<nombre>.py
+  Agentes Carpeta del agente con SKILL.md agentes/<nombre>/
+  Expertos Carpeta de expertos con SKILL.md agentes/_experts/<nombre>/
+  Servicios Crear carpeta de servicios skills/_services/<nombre>/
+  Flujos de trabajo Crear archivo Markdown skills/workflows/<nombre>.md
+  Registrar Hooks Listener core/hooks.py: hooks.on()
+  Migración del esquema de base de datos en db/crear db/migrations/
+  Archivos de ayuda Crear archivo de texto en docs/help/docs/help/<tema>.txt
+  Alias en formato corto en alias.py core/aliases.py
+
+REGLAS PARA LA AUTOEXPANSIÓN
+-------------------------------
+  1. Controlador primero: cada función como controlador en hub/
+  2. Autocuración: corrija los errores inmediatamente
+  3. Reparar o Tarea: Pequeño = arreglar inmediatamente, grande = crear tarea
+  4. Lección aprendida: Documento después de cada expansión
+  5. Recarga en caliente: siempre "recargar habilidades de bach" después de los cambios
+  6. Pruebas: valide nuevos controladores con `bach <nombre> ayuda`
+
+VER TAMBIÉN
+----------
+  bach help hooks            Hook Framework
+  bach help skills           Sistema de habilidades
+  bach help cli              Convenciones CLI
+  bach help architecture     Arquitectura del sistema
+  skills/workflows/self-extension.md Flujo de trabajo detallado

@@ -1,0 +1,46 @@
+BACH Tool: token_monitor
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Updated: 2026-02-05 (Help-Forensics)
+Source: tools/token_monitor.py
+
+DESCRIPTION
+----------------------------------------
+BACH Token Monitor
+------------------
+Function get_token_zone() for token-aware delegation.
+
+Zone definition (from DELEG_002):
+- Zone 1: 0-70% - All partners available
+- Zone 2: 70-85% - Medium economy
+- Zone 3: 85-95% - Local partners only (Ollama)
+- Zone 4: 95-100% - Emergency Delegation
+
+Version: 1.0.0
+Created: 2026-01-23
+Task: DELEG_001
+
+USE
+----------------------------------------
+Main command (recommended):
+  bach --tokens status         - Shows token statistics and current zone
+
+Shortcut:
+  python tools/token_monitor.py [args]
+
+Note: The command "bach tools run token_monitor" is not currently available
+registered in the tool registry. Use "bach --tokens status" instead.
+
+AVAILABLE FUNCTIONS
+----------------------------------------
+get_token_zone() - Main function for zone discovery
+get_current_budget_percent() - Get current budget from DB
+log_token_check() - Logs token check into DB
+log_ollama_usage() - Specialized for Ollama tokens
+check_emergency_shutdown() - Checks whether critical consumption (95%+) is reached
+format_zone_status() - Formats CLI output
+
+NOTES
+----------------------------------------
+- For questions: bach tools show token_monitor
+- Database table: monitor_tokens (17 columns)

@@ -1,0 +1,52 @@
+Herramienta BACH: estructura_generador
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/structure_generator.py
+
+DESCRIPCIÓN
+----------------------------------------
+structure_generator.py
+----------------------
+Genera estructuras de habilidades y agentes en un espectro.
+
+Versión: 1.0.0
+Creado: 2026-01-14
+Combinado: Skill_generator_v3.py + agent_generator_v1.py
+
+CONCEPTO:
+  La habilidad y el agente son un espectro, no categorías estrictas.
+  Desde la capacidad parcial más simple hasta el orquestador completo.
+
+PERFILES (ascendente):
+  MICRO = Sólo archivo(s), sin sistema de carpetas (capacidad absoluta para compartir)
+  LUZ = Estructura mínima (SKILL.md + _config + _data)
+  ESTÁNDAR = Habilidad con memoria simple
+  EXTENDIDO = Habilidad con micro habilidades
+  AGENTE = Orquesta habilidades en flujos de trabajo
+  AGENT_FULL = Agente completo (más cercano al sistema operativo)
+
+MODI:
+  --embedded = Para uso dentro de un sistema operativo (ligero)
+  --standalone = Para uso externo (completo, predeterminado)
+
+Uso:
+    python Structure_generator.py <nombre> <perfil> [carpeta de destino] [--embedded|--standalone]
+
+Ejemplos:
+    python estructura_generador.py análisis MICRO
+    Python Structure_generator.py búsqueda ESTÁNDAR
+    python estructura_generador.py asistente de escritura AGENTE
+    python Structure_generator.py administrador de proyectos AGENT_FULL
+
+Para SO → os_generator.py
+Para exportar → exporter.py
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan Structure_generator [args]
+o directamente: python tools/structure_generator.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: herramientas de bach muestran estructura_generador

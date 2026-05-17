@@ -1,0 +1,99 @@
+# 移植性: UNIVERSAL
+
+PARTNER-CONFIG-MANAGER
+----------------------
+
+BACH の構成ファイルへの自動エントリを管理します。
+LLM パートナー (Claude Code、Gemini、Ollama)。インストールされているパートナーを検出し、
+BACH をテンプレートベースの構成ブロックに登録します。
+
+SQ015 の一部: LLM に依存しない & 登録プロセス。
+
+
+説明
+------------
+
+ハンドラーは、BACH のさまざまな LLM 環境への統合を自動化します。
+これはテンプレートに基づいており、次のパートナー タイプをサポートします。
+  ・claude-code（検出ディレクトリ：~/.claude）
+  - gemini (検出ディレクトリ: ~/.gemini)
+  - ollama (検出ディレクトリ: ~/.ollama)
+
+新しい設定ファイルがテンプレートから作成され、BACH_ROOT_PATH が
+自動的に挿入されます。繰り返しの登録はべき等です。
+
+
+OPERATIONS
+-----------
+
+detect_active_partners()
+  検出ディレクトリをチェックして、インストールされているパートナーを検出します。
+  戻り値: パートナー名のリスト (例: ["claude-code", "ollama"])
+
+register_partner(partner: str)
+  BACH をパートナーの構成ファイルに入力します。
+  - templates/{PARTNER_MD_TEMPLATE.md} からテンプレートを読み込みます
+  - [BACH_ROOT_PATH] を現在の BACH ルート パスに置き換えます
+  - 新しいファイルを作成するか、BACH がまだ入力されていない場合は追加します
+  - 戻り値: (成功: bool、メッセージ: str)
+
+unregister_partner(パートナー: str)
+  パートナーの構成ファイルから BACH ブロックを削除します。
+  - 「#BACH Integration」マーカーを検索します
+  - 次の最上位ヘッダーまでブロックを削除します
+  - 冪等: ファイル/ブロック欠落エラーなし
+  - 戻り値: (成功: bool、メッセージ: str)
+
+register_all_detected()
+  すべての認識されたパートナーに BACH を登録します。
+  戻り値: (パートナー: str、成功: bool、メッセージ: str)
+
+
+例
+---------
+
+プログラム (bach_api):
+
+ のリスト  bach_api から PartnerConfigManager をインポート
+  pathlib インポート パスから
+
+  マネージャー = PartnerConfigManager(Path("/path/to/BACH"))
+
+  # すべてのパートナーを認識する
+  パートナー = manager.detect_active_partners()
+  print(パートナー) # ["クロードコード"]
+
+  # BACHを登録する
+  成功、msg = manager.register_partner("claude-code")
+  print(msg) # ✓ CLAUDE.md が作成されました: ~/.CLAUDE.md
+
+  #全員登録
+  results = manager.register_all_detected()
+
+
+ファイル
+-------
+
+hub/partner_config_manager.py
+  PartnerConfigManager クラスと CLI 関数を使用したハンドラーの実装。
+
+templates/CLAUDE_MD_TEMPLATE.md
+  クロードコード統合用のテンプレート。 BACH_ROOT_PATH に置き換えられます。
+
+templates/GEMINI_MD_TEMPLATE.md
+  Gemini 統合用のテンプレート。
+
+templates/OLLAMA_MD_TEMPLATE.md
+  Ollama 統合用のテンプレート。
+
+~/.CLAUDE.md、~/.GEMINI.md、~/.OLLAMA.md
+  ユーザーの対象となるファイル。ホーム ディレクトリに作成されます。
+
+
+関連項目
+----------
+
+SQ015 (システム要件): LLM Agnostics および登録プロセス
+SQ038: ブロック除去のための改良されたマーカーシステム (予定)
+bach.py: 「partner」サブコマンドを含む CLI エントリ ポイント
+bach_api.py: プログラムで使用するための Python API

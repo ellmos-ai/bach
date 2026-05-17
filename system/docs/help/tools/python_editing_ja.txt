@@ -1,0 +1,197 @@
+Python 編集ツール - Python ファイルを編集
+-------------------------------------------------
+
+現在: 2026-01-23
+パス: docs/help/tools/python_editing.txt
+
+説明
+------------
+Python ファイルを編集、分析、分割するためのツール。
+特に次の場合に役立ちます。
+  - 大きな Python ファイル (500 行以上)
+  - コードレビューとリファクタリング
+  - LLM コンテキスト管理 (トークンの保存)
+  - 構造化コードの変更
+
+重要: PYTHON_CLI_EDITOR
+--------------------------
+メインの Python 編集ツールには、独自の詳細な機能があります
+複雑さと重要性のためのドキュメント:
+
+  bach --help tools/python_cli_editor
+
+python_cli_editor は AI アシスタント専用に構築されています。
+  - ファイル全体を読み取る代わりに構造を表示します (トークンを保存)
+  - 特定のメソッド/クラスを編集する
+  - 完全な書き換えではなく、外科的な変更
+
+概要 python_cli_editor:
+  bach python_cli_editor script.py --show-all      # 構造を表示
+  bach python_cli_editor script.py --show 50-80    # 行 50-80
+  bach python_cli_editor script.py --imports       # インポートのみ
+  bach python_cli_editor script.py --classes       # クラスのみ
+  bach python_cli_editor script.py --add code.py --in-class MyClass --save
+
+詳細: bach --help tools/python_cli_editor
+
+PYCUTTER: c_pycutter
+--------------------
+大きな Python ファイルをクラスごとに個別のテキスト ファイルに分割します。
+
+アプリケーションケース:
+  - コードレビュー: 各クラスを個別に確認します。
+  - LLM コンテキスト: 関連するクラスのみをロードします
+  - ドキュメント: クラスごとのドキュメントを作成します。
+  - リファクタリング: 大きなファイルの概要
+
+基本コマンド:
+
+  # ファイルを分割します (サブフォルダーを作成します)
+  bach c_pycutter main.py
+
+  # 特定のフォルダーに出力
+  bach c_pycutter main.py --output-dir ./extracted
+
+  # JSON 出力 (さらなる処理用)
+  bach c_pycutter main.py --json
+
+オプション:
+  --output-dir DIR 出力ディレクトリ
+  --json ファイルの代わりに JSON 出力
+
+出力構造:
+  main_20260123_120000/
+    補助関数.txt # インポート、グローバル関数
+    ClassA.txt # クラス ClassA のコード
+    ClassB.txt # クラス ClassB のコード
+    ...
+
+ワークフローの例:
+  # 1. 大きなファイルを分割する
+  bach c_pycutter riesige_app.py --output-dir ./review
+
+  #2.個々のクラスを編集する
+  # (別のエディターまたは python_cli_editor を使用)
+
+  # 3. 変更を元に戻す
+  # (手動または diff ツールを使用)
+
+メソッド アナライザー: c_method_analyzer
+----------------------------------
+Python コードの問題と構造を詳細に分析します。
+
+機能:
+  - メソッド インベントリ (行番号付きのすべてのメソッド)
+  - コール分析（どのメソッドがどのメソッドをコールするか）
+  - インポートチェック（使用済みか未使用か）
+  - タイプミスの検出 (類似した名前)
+  - 信号接続テスト (Qt/Tk)
+  - 初期化前の属性の検出
+
+基本コマンド:
+
+  # ファイルを分析します
+  bach c_method_analyzer script.py
+
+  # JSON 出力
+  bach c_method_analyzer script.py --json
+
+  # 概要のみ
+  bach c_method_analyzer script.py --summary
+
+  # 特定のクラスを分析します
+  bach c_method_analyzer script.py --class MyClass
+
+オプション:
+  --json JSON 出力 (機械可読)
+  --summary コンパクトな概要のみ
+  --class NAME 特定のクラスのみを解析します
+  --verbose 詳細な出力
+
+出力例:
+  === メソッドアナライザー: script.py ===
+
+  [クラス]
+    MyClass (15 ～ 120 行目)
+      - __init__ (17)
+      - プロセスデータ (35)
+      - _helper (80) <- 呼ばれることはありません!
+
+  [潜在的な問題]
+    42 行目: self._hepler() - タイプミス?もしかして: _ヘルパー
+    67 行目: self.button.connect(self.on_click) - on_click が見つかりません
+
+  [未使用輸入品]
+    - json をインポート (3 行目)
+
+  [統計]
+    クラス: 2
+    メソッド: 15
+    行数: 320
+
+一般的なワークフロー
+------------------
+
+1。大きなファイルを理解する
+   最初に構造、次に詳細:
+
+   # 概要を確認する
+   bach python_cli_editor grosse_datei.py --show-all
+
+   # またはレビューのために分割します
+   bach c_pycutter grosse_datei.py
+
+2。コミットする前に問題を見つける
+   コードを分析します:
+
+   bach c_method_analyzer script.py
+
+   表示: タイプミス、未使用のメソッド、欠落している参照
+
+3。リファクタリングの準備
+   依存関係を理解する:
+
+   # 誰が誰に電話をかけますか?
+   bach c_method_analyzer script.py --verbose
+
+   # クラスを個別に見てみましょう
+   bach c_pycutter script.py
+
+4。トークンの保存 (AI コンテキスト)
+   ファイル全体を読み取る代わりに:
+
+   # 構造体のみをロードします
+   bach python_cli_editor script.py --show-all
+
+   # その後、関連する方法を選択します
+   bach python_cli_editor script.py --show 150-180
+
+いつどのツールを使用しますか?
+------------------
+
+|タスク |ツール |
+|--------------------------------|---------------------|
+|構造を表示 | python_cli_editor |
+|具体的にコードを変更する | python_cli_editor |
+|ファイルをパーツに分割する | c_pycutter |
+|問題/バグを見つける | c_method_analyzer |
+|インポートを確認する | c_method_analyzer |
+|タイプミスを見つける | c_method_analyzer
+
+|CONTEXT INJECTOR
+----------------
+ContextInjector はキーワードを認識し、次のツールを推奨します。
+
+  "edit python" -> bach python_cli_editor <ファイル> --show-all
+  「クラスの編集」 -> bach python_cli_editor <ファイル> --show-all
+  「編集メソッド」 -> bach python_cli_editor <ファイル> --show-all
+  「コード構造」 -> bach python_cli_editor <ファイル> --show-all
+  「ファイルを分割」 -> bach c_pycutter <ファイル>
+  「大きすぎます」 -> bach c_pycutter <ファイル>
+
+関連項目
+----------
+  bach --help tools/python_cli_editor  エディターの詳細なドキュメント (重要!)
+  bach --help tools/imports            インポート処理
+  bach --help tools/code_quality       コード品質 (エンコーディングなど)
+  bach --help tools/analysis           その他の分析ツール

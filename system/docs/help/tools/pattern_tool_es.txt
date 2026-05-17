@@ -1,0 +1,35 @@
+Herramienta BACH: patrón_herramienta
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/pattern_tool.py
+
+DESCRIPCIÓN
+----------------------------------------
+pattern_tool.py - Acorta los nombres de los archivos mediante el reconocimiento de patrones
+------------------------------------------------------------
+
+Combina pattern_renamer.py y pattern_trimmer.py en una sola herramienta.
+
+Funciones:
+- PREFIJO: Elimina prefijos comunes para grupos
+- SUFIJO: Elimina sufijos comunes de grupos
+- AMBOS: Prefijo y sufijo combinados
+
+Uso:
+    python pattern_tool.py <carpeta> --ejecución en seco
+    python patrón_tool.py <carpeta> --ejecutar
+    python pattern_tool.py <carpeta> --prefijo-solo
+    python pattern_tool.py <carpeta> --solo sufijo
+    python patrón_tool.py <carpeta> -m 5 # Patrón mínimo de 5 caracteres
+
+Autor: BACH v1.1
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan patrón_herramienta [args]
+o directamente: python tools/pattern_tool.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: herramientas de bach muestra patrón_herramienta

@@ -1,0 +1,89 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+------------
+
+Status Handler - Quick system overview of the BACH system
+
+
+DESCRIPTION
+------------
+
+The Status Handler offers a quick overview of the current status
+of the BACH system. It shows information about active sessions, online partners,
+Memory stocks, unread messages, open tasks, registered tools and
+the system health. All information is taken directly from `data/bach.db`
+determined.
+
+
+OPERATIONS
+-----------
+
+show
+    Displays the complete system status (standard operation).
+    Command: bach --status [show]
+    Return: Formatted text output with all status messages
+
+
+EXAMPLES
+---------
+
+1. Show system status (standard form)
+   $bach --status
+
+2. Status query with explicit operation
+   $ bach --status show
+
+
+OUTPUT FIELDS
+--------------
+
+Session
+    - Active session ID and partner if a session is open
+    - Otherwise: "No active session"
+
+Partner
+    - Number of partners currently clocked in online
+    - Preview of partner names
+
+Memory
+    - Number of entries in Working Memory, Facts and Lessons
+
+Chat
+    - Number of unread messages from `messages`
+
+Tasks
+    - Number of open tasks (`status='pending'`)
+    - Separately: Number of P1/P2 tasks and blocked tasks
+
+Tools
+    - Total number of available tools from the `tools` table
+
+Health
+    - OK: Database exists and core tables readable
+    - ERROR: `bach.db` missing or core queries failing
+
+
+DATA SOURCES (relative to system/)
+---------------------------------
+
+data/bach.db
+    Central runtime database
+
+Important tables:
+    - `memory_sessions`
+    - `partner_presence`
+    - `memory_working`, `memory_facts`, `memory_lessons`
+    - `messages`
+    - `tasks`
+    - `tools`
+
+SEE ALSO
+----------
+
+- hub/startup.py: Startup report with more detailed session context
+- hub/base.py: BaseHandler class
+- hub/messages.py: Message status and inbox
+- hub/task.py: Task counter and task details

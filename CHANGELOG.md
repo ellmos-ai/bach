@@ -6,6 +6,26 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ---
 
+## [3.12.2-coffee] - 2026-05-17
+
+### Added
+
+- **i18n-Release-Snapshot erweitert:** Sprach-Artefakte auf 14.655 Übersetzungen aktualisiert und weitere Help-Übersetzungen für EN/ES/JA/RU/ZH ergänzt.
+
+### Fixed
+
+- **Übersetzungsbatch robuster:** `translate_skills_batch.py` verarbeitet wieder alle aktiven Skills und fällt bei leerem Google-Translate-Ergebnis auf den Ursprungstext zurück.
+- **Release-Version synchronisiert:** Packaging und README-Dateien auf `v3.12.2-coffee` nachgezogen.
+- **Windows-Subprocess-Ausgaben stabilisiert:** GUI-, Compiler-, Lizenz- und XLSX-Recalc-Aufrufe dekodieren Prozessausgaben explizit als UTF-8 mit Ersatzzeichen.
+
+### Privacy
+
+- **Release-Manifest neutralisiert:** `manifest.release.json` enthält wieder den neutralen `runtime_db`-Hinweis statt eines lokalen Benutzerpfads.
+- **Lokale Pfade bereinigt:** Release-Exports, Skill-Spiegel und Help-Beispiele ersetzen lokale Windows-/OneDrive-Pfade durch portable Platzhalter.
+- **Compiler-Pfad portable gemacht:** `universal_compiler.py` nutzt `BACH_SOFTWARE_DIR` oder den Home-basierten Standardpfad statt eines festen lokalen OneDrive-Pfads.
+- **User-spezifische Artefakte aus Tracking entfernt:** Bereits ignorierte dist_type-0 Experten-/Steuer-Dateien werden aus dem Git-Index entfernt; lokale Kopien bleiben erhalten.
+- **Lokales Finalizer-Skript ignoriert:** `wait_and_finalize.py` ist als temporäres Release-Hilfsskript eingestuft und wird nicht veröffentlicht.
+
 ## [3.11.1] - 2026-05-17
 
 ### Fixed
