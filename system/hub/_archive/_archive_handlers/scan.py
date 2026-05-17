@@ -250,7 +250,7 @@ class ScanHandler(BaseHandler):
             ]
             
             # Top-Level Verzeichnisse
-            top_dirs = [d for d in current.get("directories", []) if "/" not in d and "\" not in d]
+            top_dirs = [d for d in current.get("directories", []) if "/" not in d and "\\" not in d]
             if top_dirs[:10]:
                 output.append("--- Unterordner ---")
                 for d in sorted(top_dirs)[:10]:

@@ -157,9 +157,13 @@ if exist "!PROMPTBOARD_DIR!\src\promptboard.py" (
 )
 
 echo [4/4] Oeffne Web-GUI im Browser...
-timeout /t 3 /nobreak >nul
-start "" "http://127.0.0.1:8000"
-echo       [OK] Browser geoeffnet
+if "!BACH_NO_BROWSER!"=="1" (
+    echo       [SKIP] Browser nicht geoeffnet ^(BACH_NO_BROWSER=1^)
+) else (
+    timeout /t 3 /nobreak >nul
+    start "" "http://127.0.0.1:8000"
+    echo       [OK] Browser geoeffnet
+)
 echo.
 echo  ============================================
 echo   BACH laeuft!
