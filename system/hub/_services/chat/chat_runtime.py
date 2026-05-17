@@ -102,6 +102,7 @@ def run_shell(cmd: str, timeout: int = CMD_TIMEOUT) -> str:
     try:
         r = subprocess.run(
             cmd, shell=True, capture_output=True, text=True,
+            encoding='utf-8', errors='replace',
             timeout=timeout, stdin=subprocess.DEVNULL,
             env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         )
@@ -609,7 +610,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 cmd = ["codex", "exec", full_prompt]
             try:
                 r = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=120,
+                    cmd, capture_output=True, text=True,
+                    encoding='utf-8', errors='replace', timeout=120,
                     stdin=subprocess.DEVNULL, env=env,
                 )
                 out = (r.stdout or "").strip()

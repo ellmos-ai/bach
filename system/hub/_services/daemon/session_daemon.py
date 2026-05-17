@@ -428,6 +428,7 @@ def trigger_session(profile_name: str, operator_steer: list[dict] | None = None)
             cwd=str(DAEMON_DIR),
             capture_output=True,
             text=True,
+            encoding='utf-8', errors='replace',
             timeout=60,
             creationflags=creation_flags,
             env=env,
@@ -511,6 +512,7 @@ def _execute_countdown_command(command: str):
             cwd=str(BACH_DIR),
             capture_output=True,
             text=True,
+            encoding='utf-8', errors='replace',
             timeout=120,
             creationflags=creation_flags
         )

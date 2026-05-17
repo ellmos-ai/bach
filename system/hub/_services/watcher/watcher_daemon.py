@@ -224,6 +224,7 @@ def trigger_claude_session(profile: str = "ati") -> bool:
             cwd=str(DAEMON_DIR),
             capture_output=True,
             text=True,
+            encoding='utf-8', errors='replace',
             timeout=60,
             creationflags=creation_flags
         )

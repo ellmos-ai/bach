@@ -514,7 +514,8 @@ class UpdateHandler(BaseHandler):
         try:
             result = subprocess.run(
                 cmd, cwd=str(git_root),
-                capture_output=True, text=True, timeout=30
+                capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=30
             )
             if result.returncode == 0:
                 return True, result.stdout

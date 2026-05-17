@@ -836,7 +836,8 @@ class DocumentPipeline:
             try:
                 result = subprocess.run(
                     ["antiword", filepath],
-                    capture_output=True, text=True, timeout=30
+                    capture_output=True, text=True,
+                    encoding='utf-8', errors='replace', timeout=30
                 )
                 if result.returncode == 0 and result.stdout.strip():
                     return result.stdout.strip()

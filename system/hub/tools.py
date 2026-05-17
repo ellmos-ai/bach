@@ -167,6 +167,7 @@ class ToolsHandler(BaseHandler):
                 args,
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=60,
                 cwd=str(self.tools_dir.parent)
             )
@@ -344,6 +345,7 @@ class ToolsHandler(BaseHandler):
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding='utf-8', errors='replace',
                 timeout=60,
                 cwd=str(self.tools_dir.parent)
             )
@@ -437,7 +439,7 @@ class ToolsHandler(BaseHandler):
                 text=True,
                 timeout=30,
                 cwd=str(self.tools_dir.parent),
-                encoding='utf-8'
+                encoding='utf-8', errors='replace'
             )
             
             if process.returncode == 0 and process.stdout:

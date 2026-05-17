@@ -119,7 +119,8 @@ class WatcherHandler(BaseHandler):
         try:
             result = subprocess.run(
                 [sys.executable, str(daemon_script), "--stop"],
-                capture_output=True, text=True, timeout=10
+                capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=10
             )
             return True, result.stdout.strip() or "Watcher-Daemon gestoppt"
         except Exception as e:
@@ -131,7 +132,8 @@ class WatcherHandler(BaseHandler):
         try:
             result = subprocess.run(
                 [sys.executable, str(daemon_script), "--status"],
-                capture_output=True, text=True, timeout=10
+                capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=10
             )
             return True, result.stdout.strip()
         except Exception as e:
