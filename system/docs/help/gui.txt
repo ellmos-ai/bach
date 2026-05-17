@@ -1,6 +1,6 @@
 # Portabilitaet: UNIVERSAL
-# Version: 1.2.0
-# Zuletzt validiert: 2026-02-08 (Help-Forensik: Headless API + Messages integriert)
+# Version: 1.2.1
+# Zuletzt validiert: 2026-05-17 (Denkarium Dashboard + API ergaenzt)
 # Naechste Pruefung: 2026-08-08
 
 GUI - Web-Dashboard
@@ -59,6 +59,7 @@ DASHBOARDS (Erweitert)
 /skills-board  Skills-Board
 /tasks_board   Kanban Task-Board
 /logs          Log-Viewer
+/denkarium     Denkarium (Logbuch + Ideen-Sammlung)
 /help          Help-System
 /wiki          Wiki-Seiten
 /inbox         Inbox-Ansicht
@@ -381,6 +382,12 @@ PUT  /api/routines/{id}       Routine aktualisieren
 POST /api/routines/{id}/complete  Routine abschliessen
 DELETE /api/routines/{id}     Routine loeschen
 GET  /api/routines/export     Routinen exportieren
+
+Denkarium:
+GET  /api/denkarium           Eintraege auflisten (Filter: entry_type, category, limit, search)
+POST /api/denkarium           Eintrag erstellen
+DELETE /api/denkarium/{id}    Eintrag loeschen
+POST /api/denkarium/{id}/promote  Eintrag promoten (zu Task/Memory/Lesson)
 
 WebSockets:
 GET  /api/ws/status           WebSocket-Status

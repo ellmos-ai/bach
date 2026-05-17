@@ -6,7 +6,7 @@ REM ============================================================
 title BACH llmauto
 setlocal enabledelayedexpansion
 
-set "LLMAUTO_DIR=%~dp0..\..\..\..\MODULAR_AGENTS\llmauto"
+set "LLMAUTO_DIR=%~dp0..\..\system\tools\llmauto"
 set CHAINS_DIR=%LLMAUTO_DIR%\chains
 
 echo.

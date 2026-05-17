@@ -6,8 +6,8 @@ REM ============================================================
 title BACH Automation Status
 setlocal
 
-set "LLMAUTO_DIR=%~dp0..\..\..\..\MODULAR_AGENTS\llmauto"
-set "MARBLE_DIR=%~dp0..\..\..\..\BACH_Dev\marble_run"
+set "LLMAUTO_DIR=%~dp0..\..\system\tools\llmauto"
+set "MARBLE_DIR=%~dp0..\..\system\tools\llmauto"
 set PYTHONIOENCODING=utf-8
 
 echo.
@@ -26,10 +26,10 @@ if exist "%LLMAUTO_DIR%\llmauto.py" (
 )
 
 echo.
-echo  --- MarbleRun ---
-if exist "%MARBLE_DIR%\marble.py" (
+echo  --- MarbleRun (integriert in llmauto) ---
+if exist "%MARBLE_DIR%\llmauto.py" (
     cd /d "%MARBLE_DIR%"
-    python marble.py status 2>nul
+    python -m llmauto chain status 2>nul
     if errorlevel 1 echo   (Fehler beim Laden)
 ) else (
     echo   Nicht installiert

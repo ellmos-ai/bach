@@ -6,7 +6,7 @@ REM ============================================================
 title BACH Chain Creator
 setlocal
 
-set "LLMAUTO_DIR=%~dp0..\..\..\..\MODULAR_AGENTS\llmauto"
+set "LLMAUTO_DIR=%~dp0..\..\system\tools\llmauto"
 set PYTHONIOENCODING=utf-8
 
 echo.
