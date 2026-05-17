@@ -504,6 +504,12 @@ Headless API (Port 8001):
   # Inbox lesen
   curl "http://localhost:8001/api/v1/messages/inbox?status=unread&limit=20"
 
+UMGEBUNGSVARIABLEN
+------------------
+BACH_NO_BROWSER=1   Browser wird beim GUI-Start nicht automatisch geoeffnet.
+                    Nuetzlich wenn die GUI auf einem Remote-Host laeuft
+                    (z.B. Mac Studio) und lokal kein Browser benoetigt wird.
+
 SIEHE AUCH
 ----------
 bach --help wartung         Wartungs-Jobs

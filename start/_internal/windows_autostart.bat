@@ -15,7 +15,7 @@ schtasks /delete /tn "BACH Bridge Tray" /f >nul 2>&1
 
 REM Neuen Chat Tray Eintrag erstellen
 schtasks /create /tn "BACH Chat Tray" ^
-    /tr "pythonw \"%TRAY_SCRIPT%\" --host %TRAY_HOST%" ^
+    /tr "cmd /c \"set PYTHONIOENCODING=utf-8 && pythonw \"%TRAY_SCRIPT%\" --host %TRAY_HOST%\"" ^
     /sc onlogon ^
     /rl highest ^
     /f
