@@ -111,6 +111,13 @@ def _create_db_with_data(db_path: Path):
     conn.close()
 
 
+def _load_release_export(system_dir: Path, filename: str):
+    """Loads a generated release export artifact."""
+    export_file = system_dir / "exports" / "translations" / filename
+    assert export_file.exists()
+    return json.loads(export_file.read_text(encoding="utf-8"))
+
+
 # ═══════════════════════════════════════════════════════════════
 # FIXTURES
 # ═══════════════════════════════════════════════════════════════
@@ -322,13 +329,30 @@ class TestMissing:
     def test_missing_empty_db(self, handler):
         ok, msg = handler.handle("missing", [], dry_run=False)
         assert ok is True
-        assert "Alle Strings" in msg
+        assert "Alle de-Strings" in msg
 
     def test_missing_with_data(self, handler_with_data):
         ok, msg = handler_with_data.handle("missing", [], dry_run=False)
         assert ok is True
         assert "fehlende" in msg
         assert "loeschen" in msg or "oeffnen" in msg
+
+    def test_missing_respects_namespace(self, handler):
+        conn = sqlite3.connect(str(handler.db_path))
+        conn.execute("""
+            INSERT INTO languages_translations (key, namespace, language, value, is_verified, source, created_at)
+            VALUES ('shared_key', 'cli', 'de', 'Konfiguration', 0, 'auto_detected', '2026-01-01')
+        """)
+        conn.execute("""
+            INSERT INTO languages_translations (key, namespace, language, value, is_verified, source, created_at)
+            VALUES ('shared_key', 'help', 'en', 'Configuration', 0, 'llm_reviewed', '2026-01-01')
+        """)
+        conn.commit()
+        conn.close()
+
+        ok, msg = handler.handle("missing", [], dry_run=False)
+        assert ok is True
+        assert "shared_key" in msg
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -345,7 +369,7 @@ class TestAdd:
     def test_add_no_text(self, handler):
         ok, msg = handler.handle("add", ["test_key"], dry_run=False)
         assert ok is False
-        assert "--de oder --en" in msg
+        assert "Sprachversion" in msg
 
     def test_add_dry_run(self, handler):
         ok, msg = handler.handle("add", ["test_key", "--de", "Test", "--en", "Test"], dry_run=True)
@@ -378,6 +402,20 @@ class TestAdd:
         ).fetchone()
         conn.close()
         assert row[0] == 1
+
+    def test_add_refreshes_release_exports(self, handler):
+        ok, msg = handler.handle("add", ["gruss", "--de", "Grüße", "--en", "Greetings"], dry_run=False)
+        assert ok is True
+        assert "hinzugefuegt" in msg
+
+        manifest = _load_release_export(handler.base_path, "manifest.release.json")
+        translations = _load_release_export(handler.base_path, "languages_translations.release.json")
+        locale_en = json.loads((handler.base_path / "exports" / "translations" / "locales" / "en.json").read_text(encoding="utf-8"))
+
+        assert manifest["counts"]["translations"] == 2
+        assert any(row["key"] == "gruss" and row["language"] == "de" and row["value"] == "Grüße" for row in translations)
+        assert any(row["key"] == "gruss" and row["language"] == "en" and row["value"] == "Greetings" for row in translations)
+        assert locale_en["entries"]["general"]["gruss"] == "Greetings"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -417,6 +455,17 @@ class TestAddLanguage:
         ok, msg = handler.handle("add-language", ["en"], dry_run=False)
         assert ok is False
         assert "bereits aktiviert" in msg
+
+    def test_add_language_refreshes_release_exports(self, handler):
+        ok, msg = handler.handle("add-language", ["fr"], dry_run=False)
+        assert ok is True
+        assert "fr" in msg
+
+        config = _load_release_export(handler.base_path, "languages_config.release.json")
+        manifest = _load_release_export(handler.base_path, "manifest.release.json")
+
+        assert "fr" in config["enabled_languages"]
+        assert manifest["counts"]["config_rows"] == 1
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -542,6 +591,17 @@ class TestDict:
         assert "katze" in msg
         assert "cat" in msg
 
+    def test_dict_add_refreshes_release_exports(self, handler):
+        ok, msg = handler.handle("dict", ["add", "größe", "size"], dry_run=False)
+        assert ok is True
+        assert "größe" in msg
+
+        dictionary = _load_release_export(handler.base_path, "languages_dictionary.release.json")
+        manifest = _load_release_export(handler.base_path, "manifest.release.json")
+
+        assert any(row["term"] == "größe" and row["translation"] == "size" for row in dictionary)
+        assert manifest["counts"]["dictionary_entries"] == 1
+
     def test_dict_add_dry_run(self, handler):
         ok, msg = handler.handle("dict", ["add", "katze", "cat"], dry_run=True)
         assert ok is True
@@ -637,6 +697,23 @@ class TestImport:
         conn.close()
         assert count == 2
 
+    def test_import_json_respects_source(self, handler, tmp_path):
+        data = [
+            {"key": "test_key", "namespace": "cli", "de": "Testtext", "en": "Test text", "source": "mixed_auto"},
+        ]
+        import_file = tmp_path / "import_with_source.json"
+        import_file.write_text(json.dumps(data), encoding="utf-8")
+
+        ok, msg = handler.handle("import", [str(import_file)], dry_run=False)
+        assert ok is True
+
+        conn = sqlite3.connect(str(handler.db_path))
+        row = conn.execute(
+            "SELECT source FROM languages_translations WHERE key='test_key' AND namespace='cli' AND language='en'"
+        ).fetchone()
+        conn.close()
+        assert row[0] == "mixed_auto"
+
     def test_import_json_dry_run(self, handler, tmp_path):
         data = [{"key": "k", "en": "v"}]
         import_file = tmp_path / "import.json"
@@ -698,6 +775,27 @@ class TestScan:
         assert ok is True
         assert "cli:" in msg
 
+    def test_scan_dry_run_counts_missing_namespace_rows(self, handler):
+        hub_dir = handler.base_path / "hub"
+        gui_dir = handler.base_path / "gui"
+        hub_dir.mkdir(exist_ok=True)
+        gui_dir.mkdir(exist_ok=True)
+
+        (hub_dir / "scan_cli.py").write_text('print("Konfiguration")\n', encoding="utf-8")
+        (gui_dir / "scan_gui.py").write_text('print("Konfiguration")\n', encoding="utf-8")
+
+        conn = sqlite3.connect(str(handler.db_path))
+        conn.execute("""
+            INSERT INTO languages_translations (key, namespace, language, value, is_verified, source, created_at)
+            VALUES ('konfiguration', 'cli', 'de', 'Konfiguration', 0, 'auto_detected', '2026-01-01')
+        """)
+        conn.commit()
+        conn.close()
+
+        ok, msg = handler.handle("scan", [], dry_run=True)
+        assert ok is True
+        assert "Wuerde hinzufuegen: 1" in msg
+
 
 # ═══════════════════════════════════════════════════════════════
 # _extract_german_strings
@@ -752,6 +850,97 @@ class TestExtractHelpStrings:
 # ═══════════════════════════════════════════════════════════════
 # MODULE-LEVEL FUNCTIONS
 # ═══════════════════════════════════════════════════════════════
+
+
+class TestMultilanguage:
+    def test_add_supports_additional_language_flags(self, handler):
+        ok, msg = handler.handle("add", ["save_button", "--de", "Speichern", "--es", "Guardar", "--ru", "Sohranit"], dry_run=False)
+        assert ok is True
+        assert "hinzugefuegt" in msg
+
+        conn = sqlite3.connect(str(handler.db_path))
+        rows = conn.execute(
+            "SELECT language FROM languages_translations WHERE key='save_button' ORDER BY language"
+        ).fetchall()
+        enabled_row = conn.execute("SELECT enabled_languages FROM languages_config LIMIT 1").fetchone()
+        conn.close()
+
+        assert {row[0] for row in rows} == {"de", "es", "ru"}
+        enabled_languages = json.loads(enabled_row[0])
+        assert "es" in enabled_languages
+        assert "ru" in enabled_languages
+
+    def test_missing_supports_custom_target_language(self, handler):
+        conn = sqlite3.connect(str(handler.db_path))
+        conn.execute("""
+            INSERT INTO languages_translations (key, namespace, language, value, is_verified, source, created_at)
+            VALUES ('speichern', 'cli', 'de', 'Speichern', 1, 'manual', '2026-01-01')
+        """)
+        conn.execute("""
+            INSERT INTO languages_translations (key, namespace, language, value, is_verified, source, created_at)
+            VALUES ('speichern', 'cli', 'en', 'Save', 1, 'manual', '2026-01-01')
+        """)
+        conn.commit()
+        conn.close()
+
+        ok, msg = handler.handle("missing", ["--target", "es"], dry_run=False)
+        assert ok is True
+        assert "fehlende es" in msg
+        assert "speichern" in msg
+
+    def test_export_json_supports_custom_target_language(self, handler_with_data):
+        ok, msg = handler_with_data.handle("export", ["--format", "json", "--target", "es"], dry_run=False)
+        assert ok is True
+        data = json.loads(msg)
+        assert data[0]["target_language"] == "es"
+        assert "es" in data[0]
+
+    def test_import_json_with_translations_map(self, handler, tmp_path):
+        data = [
+            {
+                "key": "save_button",
+                "namespace": "gui",
+                "de": "Speichern",
+                "translations": {
+                    "en": "Save",
+                    "es": "Guardar",
+                    "ru": "Sohranit",
+                    "ja": "Hozon",
+                    "zh": "Bao cun",
+                },
+                "source": "gemini_reviewed",
+            }
+        ]
+        import_file = tmp_path / "import_multi.json"
+        import_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+        ok, msg = handler.handle("import", [str(import_file)], dry_run=False)
+        assert ok is True
+        assert "5 Uebersetzungen importiert" in msg
+
+        conn = sqlite3.connect(str(handler.db_path))
+        rows = conn.execute(
+            "SELECT language, source FROM languages_translations WHERE key='save_button' ORDER BY language"
+        ).fetchall()
+        enabled = json.loads(conn.execute("SELECT enabled_languages FROM languages_config LIMIT 1").fetchone()[0])
+        conn.close()
+
+        assert {row[0] for row in rows} == {"en", "es", "ja", "ru", "zh"}
+        assert {row[1] for row in rows} == {"gemini_reviewed"}
+        for lang_code in ["es", "ru", "ja", "zh"]:
+            assert lang_code in enabled
+
+    def test_dict_add_supports_custom_language_pair(self, handler):
+        ok, msg = handler.handle("dict", ["add", "speichern", "guardar", "--target-lang", "es"], dry_run=False)
+        assert ok is True
+        assert "(es)" in msg
+
+        conn = sqlite3.connect(str(handler.db_path))
+        row = conn.execute(
+            "SELECT source_lang, target_lang FROM languages_dictionary WHERE term='speichern' AND translation='guardar'"
+        ).fetchone()
+        conn.close()
+        assert row == ("de", "es")
 
 
 class TestModuleFunctions:

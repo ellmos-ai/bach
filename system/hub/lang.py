@@ -50,15 +50,30 @@ from datetime import datetime
 from typing import List, Tuple, Optional, Dict, Set
 from hub.base import BaseHandler
 
+KNOWN_LANGUAGE_LABELS = {
+    "de": "Deutsch",
+    "en": "English",
+    "es": "Spanish",
+    "ru": "Russian",
+    "ja": "Japanese",
+    "zh": "Chinese",
+}
+
+DEFAULT_SOURCE_LANGUAGE = "de"
+DEFAULT_TARGET_LANGUAGE = "en"
+
 
 class LangHandler(BaseHandler):
     """Handler fuer Mehrsprachigkeit und Uebersetzungen."""
+
+    LANGUAGE_LABELS = KNOWN_LANGUAGE_LABELS
 
     # Quellen-Prioritaet (hoeher = vertrauenswuerdiger)
     SOURCE_PRIORITY = {
         'manual': 100,        # Manuell verifiziert
         'llm_reviewed': 80,   # LLM-korrigiert
         'llm_auto': 60,       # LLM-automatisch
+        'mixed_auto': 50,     # Gemischter Auto-Import (Online + lokaler Fallback)
         'google_auto': 40,    # Google Translate
         'windows_dict': 20,   # Windows/System Dictionary
         'auto_detected': 10,  # Automatisch erkannt (unuebersetzt)
@@ -174,6 +189,345 @@ class LangHandler(BaseHandler):
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _normalize_language_code(self, lang_code: Optional[str], fallback: str = DEFAULT_TARGET_LANGUAGE) -> str:
+        """Normalisiert Sprachcodes auf 2-3 Kleinbuchstaben."""
+        if not lang_code:
+            return fallback
+        code = str(lang_code).strip().lower()
+        if re.match(r"^[a-z]{2,3}$", code):
+            return code
+        return fallback
+
+    def _lang_label(self, lang_code: str) -> str:
+        """Liefert eine menschenlesbare Sprachbezeichnung."""
+        normalized = self._normalize_language_code(lang_code, "")
+        return self.LANGUAGE_LABELS.get(normalized, normalized or "unknown")
+
+    def _parse_enabled_languages_value(self, raw_value) -> List[str]:
+        """Parst enabled_languages aus DB-JSON."""
+        if isinstance(raw_value, list):
+            values = raw_value
+        elif raw_value:
+            try:
+                values = json.loads(raw_value)
+            except json.JSONDecodeError:
+                values = [DEFAULT_SOURCE_LANGUAGE, DEFAULT_TARGET_LANGUAGE]
+        else:
+            values = [DEFAULT_SOURCE_LANGUAGE, DEFAULT_TARGET_LANGUAGE]
+
+        normalized = []
+        for value in values:
+            code = self._normalize_language_code(value, "")
+            if code and code not in normalized:
+                normalized.append(code)
+
+        if DEFAULT_SOURCE_LANGUAGE not in normalized:
+            normalized.insert(0, DEFAULT_SOURCE_LANGUAGE)
+        if DEFAULT_TARGET_LANGUAGE not in normalized:
+            normalized.append(DEFAULT_TARGET_LANGUAGE)
+        return normalized
+
+    def _get_enabled_languages(self, conn, include_detected: bool = True) -> List[str]:
+        """Liefert aktivierte Sprachcodes aus Config und optional aus vorhandenen Daten."""
+        row = conn.execute("SELECT enabled_languages FROM languages_config LIMIT 1").fetchone()
+        enabled = self._parse_enabled_languages_value(row["enabled_languages"] if row else None)
+
+        if include_detected:
+            for detected in conn.execute(
+                "SELECT DISTINCT language FROM languages_translations WHERE language IS NOT NULL ORDER BY language"
+            ).fetchall():
+                code = self._normalize_language_code(detected["language"], "")
+                if code and code not in enabled:
+                    enabled.append(code)
+
+        return enabled
+
+    def _ensure_languages_enabled(self, conn, languages: List[str]) -> List[str]:
+        """Stellt sicher, dass angegebene Sprachcodes in languages_config aktiviert sind."""
+        requested = []
+        for language in languages:
+            code = self._normalize_language_code(language, "")
+            if code and code not in requested:
+                requested.append(code)
+
+        if not requested:
+            return self._get_enabled_languages(conn, include_detected=False)
+
+        enabled = self._get_enabled_languages(conn, include_detected=False)
+        changed = False
+        for code in requested:
+            if code not in enabled:
+                enabled.append(code)
+                changed = True
+
+        if changed:
+            now = datetime.now().isoformat()
+            conn.execute("""
+                INSERT INTO languages_config (id, enabled_languages, updated_at)
+                VALUES (1, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    enabled_languages = excluded.enabled_languages,
+                    updated_at = excluded.updated_at
+            """, (json.dumps(enabled, ensure_ascii=False), now))
+
+        return enabled
+
+    def _get_source_language(self, args: list) -> str:
+        """Quelle fuer fehlende Uebersetzungen."""
+        return self._normalize_language_code(
+            self._get_arg(args, "--source-lang") or self._get_arg(args, "--from"),
+            DEFAULT_SOURCE_LANGUAGE,
+        )
+
+    def _get_target_language(self, args: list) -> str:
+        """Zielsprache fuer Uebersetzung/Export."""
+        return self._normalize_language_code(
+            self._get_arg(args, "--target") or self._get_arg(args, "--to"),
+            DEFAULT_TARGET_LANGUAGE,
+        )
+
+    def _collect_add_translations(self, args: list) -> Dict[str, str]:
+        """Sammelt Sprachtexte aus add-Argumenten."""
+        translations: Dict[str, str] = {}
+
+        for lang_code in self.LANGUAGE_LABELS:
+            value = self._get_arg(args, f"--{lang_code}")
+            if value:
+                translations[lang_code] = value
+
+        idx = 0
+        while idx < len(args):
+            token = args[idx]
+            if token == "--lang" and idx + 3 < len(args) and args[idx + 2] == "--text":
+                code = self._normalize_language_code(args[idx + 1], "")
+                value = args[idx + 3]
+                if code and value:
+                    translations[code] = value
+                idx += 4
+                continue
+            idx += 1
+
+        return translations
+
+    def _collect_import_translations(self, item: dict) -> Dict[str, str]:
+        """Extrahiert Sprachtexte aus JSON-Importen."""
+        translations: Dict[str, str] = {}
+        reserved_keys = {
+            "key",
+            "namespace",
+            "source",
+            "source_language",
+            "target_language",
+            "translation",
+            "translations",
+        }
+
+        nested = item.get("translations")
+        if isinstance(nested, dict):
+            for lang_code, value in nested.items():
+                code = self._normalize_language_code(lang_code, "")
+                if code and value:
+                    translations[code] = value
+
+        target_lang = self._normalize_language_code(item.get("target_language"), "")
+        if target_lang and item.get("translation"):
+            translations[target_lang] = item["translation"]
+
+        for key, value in item.items():
+            if key in reserved_keys:
+                continue
+            code = self._normalize_language_code(key, "")
+            if code and isinstance(value, str) and value:
+                translations[code] = value
+
+        return translations
+
+    def _sql_literal(self, value) -> str:
+        """Konvertiert Python-Werte in SQLite-Literale fuer Seed-Dateien."""
+        if value is None:
+            return "NULL"
+        if isinstance(value, bool):
+            return "1" if value else "0"
+        if isinstance(value, (int, float)):
+            return str(value)
+        if isinstance(value, (list, dict)):
+            value = json.dumps(value, ensure_ascii=False)
+        return "'" + str(value).replace("'", "''") + "'"
+
+    def _release_export_dir(self) -> Path:
+        """Zielordner fuer releasefaehige Sprach-Artefakte."""
+        return self.base_path / "exports" / "translations"
+
+    def _write_release_exports(self, conn) -> Path:
+        """Spiegelt den aktuellen Sprachstand aus der DB in releasebezogene Dateien."""
+        export_dir = self._release_export_dir()
+        export_dir.mkdir(parents=True, exist_ok=True)
+        locales_dir = export_dir / "locales"
+        locales_dir.mkdir(parents=True, exist_ok=True)
+
+        config_row = conn.execute("SELECT * FROM languages_config ORDER BY id LIMIT 1").fetchone()
+        config_payload = dict(config_row) if config_row else {}
+        enabled_languages = config_payload.get("enabled_languages")
+        if isinstance(enabled_languages, str):
+            try:
+                config_payload["enabled_languages"] = json.loads(enabled_languages)
+            except json.JSONDecodeError:
+                pass
+        else:
+            config_payload["enabled_languages"] = self._get_enabled_languages(conn, include_detected=True)
+
+        translations_payload = [
+            dict(row) for row in conn.execute("""
+                SELECT key, namespace, language, value, is_verified, source, created_at, updated_at
+                FROM languages_translations
+                ORDER BY namespace, key, language
+            """).fetchall()
+        ]
+
+        dictionary_payload = [
+            dict(row) for row in conn.execute("""
+                SELECT term, translation, source_lang, target_lang, is_preferred, usage_count, context, created_at
+                FROM languages_dictionary
+                ORDER BY source_lang, target_lang, term, translation
+            """).fetchall()
+        ]
+
+        locale_files = {}
+        enabled_language_list = config_payload.get("enabled_languages") or self._get_enabled_languages(conn, include_detected=True)
+        translation_languages = sorted({row["language"] for row in translations_payload if row.get("language")})
+        for language in translation_languages:
+            if language not in enabled_language_list:
+                enabled_language_list.append(language)
+
+        for language in enabled_language_list:
+            locale_payload = {
+                "language": language,
+                "label": self._lang_label(language),
+                "generated_at": datetime.now().isoformat(),
+                "entries": {},
+            }
+            for row in translations_payload:
+                if row["language"] != language:
+                    continue
+                namespace = row["namespace"] or "general"
+                locale_payload["entries"].setdefault(namespace, {})[row["key"]] = row["value"]
+
+            locale_filename = f"{language}.json"
+            (locales_dir / locale_filename).write_text(
+                json.dumps(locale_payload, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            locale_files[language] = f"locales/{locale_filename}"
+
+        seed_lines = [
+            "-- Auto-generated by system/tools/release_language.py",
+            "-- Mirrors the current release language state from bach.db",
+            "",
+        ]
+        if config_payload:
+            config_columns = list(config_payload.keys())
+            config_values = ", ".join(self._sql_literal(config_payload[column]) for column in config_columns)
+            seed_lines.append(
+                f"INSERT OR REPLACE INTO languages_config ({', '.join(config_columns)}) VALUES ({config_values});"
+            )
+            seed_lines.append("")
+
+        for row in translations_payload:
+            columns = list(row.keys())
+            values = ", ".join(self._sql_literal(row[column]) for column in columns)
+            seed_lines.append(
+                f"INSERT OR REPLACE INTO languages_translations ({', '.join(columns)}) VALUES ({values});"
+            )
+
+        if translations_payload:
+            seed_lines.append("")
+
+        for row in dictionary_payload:
+            columns = list(row.keys())
+            values = ", ".join(self._sql_literal(row[column]) for column in columns)
+            seed_lines.append(
+                f"INSERT OR REPLACE INTO languages_dictionary ({', '.join(columns)}) VALUES ({values});"
+            )
+
+        seed_filename = "languages_seed.release.sql"
+        (export_dir / seed_filename).write_text("\n".join(seed_lines) + "\n", encoding="utf-8")
+
+        manifest_payload = {
+            "generated_at": datetime.now().isoformat(),
+            "export_kind": "languages_release_snapshot",
+            "source_db": str(self.db_path),
+            "counts": {
+                "config_rows": 1 if config_payload else 0,
+                "translations": len(translations_payload),
+                "dictionary_entries": len(dictionary_payload),
+                "locale_files": len(locale_files),
+            },
+            "files": {
+                "config": "languages_config.release.json",
+                "translations": "languages_translations.release.json",
+                "dictionary": "languages_dictionary.release.json",
+                "seed_sql": seed_filename,
+            },
+            "locales": locale_files,
+        }
+
+        artifacts = {
+            "languages_config.release.json": config_payload,
+            "languages_translations.release.json": translations_payload,
+            "languages_dictionary.release.json": dictionary_payload,
+            "manifest.release.json": manifest_payload,
+        }
+
+        for filename, payload in artifacts.items():
+            (export_dir / filename).write_text(
+                json.dumps(payload, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+        return export_dir
+
+    def _missing_translation_predicate(
+        self,
+        source_alias: str = "t1",
+        target_alias: str = "t2",
+        target_lang: str = DEFAULT_TARGET_LANGUAGE,
+    ) -> str:
+        """SQL-Praedikat fuer Eintraege ohne passendes Gegenstueck in target_lang."""
+        normalized_target = self._normalize_language_code(target_lang, DEFAULT_TARGET_LANGUAGE)
+        return f"""
+            NOT EXISTS (
+                SELECT 1 FROM languages_translations {target_alias}
+                WHERE {target_alias}.key = {source_alias}.key
+                AND {target_alias}.namespace = {source_alias}.namespace
+                AND {target_alias}.language = '{normalized_target}'
+                AND COALESCE({target_alias}.value, '') != ''
+            )
+        """
+
+    def _get_missing_rows(
+        self,
+        conn,
+        limit: Optional[int] = None,
+        source_lang: str = DEFAULT_SOURCE_LANGUAGE,
+        target_lang: str = DEFAULT_TARGET_LANGUAGE,
+    ):
+        """Liefert source_lang-Eintraege ohne target_lang-Uebersetzung fuer denselben Namespace."""
+        normalized_source = self._normalize_language_code(source_lang, DEFAULT_SOURCE_LANGUAGE)
+        query = f"""
+            SELECT t1.key, t1.namespace, t1.value as de_value
+            FROM languages_translations t1
+            WHERE t1.language = ?
+            AND {self._missing_translation_predicate('t1', 't2', target_lang)}
+            ORDER BY t1.namespace, t1.key
+        """
+        params = [normalized_source]
+
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+
+        return conn.execute(query, params).fetchall()
+
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
         if operation == "help" or not operation:
             return self._show_help()
@@ -213,17 +567,22 @@ BEFEHLE:
   bach lang scan --namespace cli   Nur bestimmten Bereich scannen
   bach lang list                   Alle Uebersetzungen anzeigen
   bach lang list --lang en         Nur englische Uebersetzungen
-  bach lang missing                Fehlende Uebersetzungen anzeigen
+  bach lang missing                Fehlende Uebersetzungen anzeigen (Standard: de -> en)
+  bach lang missing --target es    Fehlende spanische Uebersetzungen
   bach lang translate              Auto-Uebersetzung starten
+  bach lang translate --target en  Auto-Uebersetzung fuer bestimmte Zielsprache
   bach lang translate --source windows_dict   Mit Windows-Woerterbuch
   bach lang translate --source llm            Mit LLM (erfordert Prompt)
   bach lang add <key> --de "Text" --en "Text" Manuell hinzufuegen
+  bach lang add <key> --es "Texto" --ru "Текст" Weitere Sprachen direkt setzen
+  bach lang add <key> --lang ja --text "テキスト" Generische Sprachpaare
   bach lang add-language <code>    Neue Sprache hinzufuegen (z.B. fr, es, pt)
-  bach lang export                 Fuer LLM-Review exportieren
+  bach lang export                 Fuer LLM-Review exportieren (Standard: de -> en)
+  bach lang export --target zh     Export fuer Chinesisch
   bach lang export --format json   Als JSON exportieren
   bach lang import <datei>         LLM-Review importieren
   bach lang set de                 Standard-Sprache auf Deutsch
-  bach lang set en                 Standard-Sprache auf Englisch
+  bach lang set ja                 Standard-Sprache auf Japanisch
 
 WOERTERBUCH:
   bach lang dict status            Woerterbuch-Status
@@ -243,6 +602,7 @@ QUELLEN (Prioritaet):
   manual (100)       - Manuell verifiziert
   llm_reviewed (80)  - LLM-korrigiert
   llm_auto (60)      - LLM-automatisch
+  mixed_auto (50)    - Gemischter Auto-Import
   google_auto (40)   - Google Translate
   windows_dict (20)  - System-Woerterbuch
   auto_detected (10) - Nur erkannt, nicht uebersetzt
@@ -255,6 +615,7 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
         try:
             # Config laden
             config = conn.execute("SELECT * FROM languages_config LIMIT 1").fetchone()
+            enabled_languages = self._get_enabled_languages(conn, include_detected=True)
 
             # Statistiken
             total = conn.execute("SELECT COUNT(*) FROM languages_translations").fetchone()[0]
@@ -283,17 +644,17 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
                 ORDER BY cnt DESC
             """).fetchall()
 
-            # Fehlende Uebersetzungen
-            # Keys die in 'de' existieren aber nicht in 'en'
-            missing = conn.execute("""
-                SELECT COUNT(DISTINCT t1.key)
-                FROM languages_translations t1
-                WHERE t1.language = 'de'
-                AND NOT EXISTS (
-                    SELECT 1 FROM languages_translations t2
-                    WHERE t2.key = t1.key AND t2.language = 'en' AND t2.value != ''
-                )
-            """).fetchone()[0]
+            missing_by_target = []
+            for target_lang in enabled_languages:
+                if target_lang == DEFAULT_SOURCE_LANGUAGE:
+                    continue
+                missing_count = conn.execute(f"""
+                    SELECT COUNT(*)
+                    FROM languages_translations t1
+                    WHERE t1.language = ?
+                    AND {self._missing_translation_predicate('t1', 't2', target_lang)}
+                """, (DEFAULT_SOURCE_LANGUAGE,)).fetchone()[0]
+                missing_by_target.append((target_lang, missing_count))
 
             # Woerterbuch
             dict_count = conn.execute("SELECT COUNT(*) FROM languages_dictionary").fetchone()[0]
@@ -304,15 +665,21 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
                 "Konfiguration:",
                 f"  Standard-Sprache:  {config['default_language'] if config else 'de'}",
                 f"  Fallback-Sprache:  {config['fallback_language'] if config else 'en'}",
+                f"  Aktiviert:         {', '.join(enabled_languages)}",
                 f"  Auto-Translate:    {'Ja' if config and config['auto_translate'] else 'Nein'}",
                 "",
                 "Statistiken:",
                 f"  Gesamt-Eintraege:  {total}",
                 f"  Verifiziert:       {verified}",
-                f"  Fehlende (en):     {missing}",
                 f"  Woerterbuch:       {dict_count} Eintraege",
                 "",
             ]
+
+            if missing_by_target:
+                output.append("Fehlende pro Zielsprache:")
+                for target_lang, missing_count in missing_by_target:
+                    output.append(f"  {target_lang}: {missing_count}")
+                output.append("")
 
             if by_lang:
                 output.append("Nach Sprache:")
@@ -387,32 +754,41 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
         # In DB einfuegen (wenn nicht dry_run)
         total_found = sum(len(s) for s in found_strings.values())
         added = 0
+        would_add = 0
 
-        if not dry_run and total_found > 0:
+        if total_found > 0:
             conn = self._get_db()
             try:
                 for namespace, strings in found_strings.items():
                     for string in strings:
                         # Pruefe ob bereits existiert
                         existing = conn.execute(
-                            "SELECT id FROM languages_translations WHERE key = ? AND language = 'de'",
-                            (self._make_key(string),)
+                            """
+                            SELECT id FROM languages_translations
+                            WHERE key = ? AND namespace = ? AND language = 'de'
+                            """,
+                            (self._make_key(string), namespace)
                         ).fetchone()
 
                         if not existing:
-                            conn.execute("""
-                                INSERT INTO languages_translations
-                                (key, namespace, language, value, is_verified, source, created_at)
-                                VALUES (?, ?, 'de', ?, 0, 'auto_detected', ?)
-                            """, (
-                                self._make_key(string),
-                                namespace,
-                                string,
-                                datetime.now().isoformat()
-                            ))
-                            added += 1
+                            would_add += 1
+                            if not dry_run:
+                                conn.execute("""
+                                    INSERT INTO languages_translations
+                                    (key, namespace, language, value, is_verified, source, created_at)
+                                    VALUES (?, ?, 'de', ?, 0, 'auto_detected', ?)
+                                """, (
+                                    self._make_key(string),
+                                    namespace,
+                                    string,
+                                    datetime.now().isoformat()
+                                ))
+                                added += 1
 
-                conn.commit()
+                if not dry_run:
+                    conn.commit()
+                    if added > 0:
+                        self._write_release_exports(conn)
             finally:
                 conn.close()
 
@@ -421,7 +797,7 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
             "=== STRING-SCAN ERGEBNIS ===",
             "",
             f"Gefunden: {total_found} deutsche Strings",
-            f"Neu hinzugefuegt: {added}" if not dry_run else "[DRY-RUN] Wuerde hinzufuegen: {0}".format(total_found),
+            f"Neu hinzugefuegt: {added}" if not dry_run else f"[DRY-RUN] Wuerde hinzufuegen: {would_add}",
             "",
             "Nach Namespace:",
         ]
@@ -548,26 +924,18 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
 
     def _missing(self, args: list) -> tuple:
         """Zeigt fehlende Uebersetzungen."""
+        source_lang = self._get_source_language(args)
+        target_lang = self._get_target_language(args)
+
         conn = self._get_db()
         try:
-            # Keys die in 'de' existieren aber nicht in 'en'
-            rows = conn.execute("""
-                SELECT t1.key, t1.namespace, t1.value as de_value
-                FROM languages_translations t1
-                WHERE t1.language = 'de'
-                AND NOT EXISTS (
-                    SELECT 1 FROM languages_translations t2
-                    WHERE t2.key = t1.key AND t2.language = 'en' AND t2.value != ''
-                )
-                ORDER BY t1.namespace, t1.key
-                LIMIT 100
-            """).fetchall()
+            rows = self._get_missing_rows(conn, limit=100, source_lang=source_lang, target_lang=target_lang)
 
             if not rows:
-                return (True, "[LANG] Alle Strings haben englische Uebersetzungen!")
+                return (True, f"[LANG] Alle {source_lang}-Strings haben {target_lang}-Uebersetzungen!")
 
             output = [
-                f"[LANG] {len(rows)} fehlende englische Uebersetzung(en):",
+                f"[LANG] {len(rows)} fehlende {target_lang}-Uebersetzung(en) fuer {source_lang}:",
                 "",
             ]
 
@@ -583,8 +951,8 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
 
             output.append("")
             output.append("Naechste Schritte:")
-            output.append("  bach lang translate --source windows_dict   Auto-Uebersetzen")
-            output.append("  bach lang export                            Fuer LLM-Review")
+            output.append(f"  bach lang translate --target {target_lang} --source windows_dict   Auto-Uebersetzen")
+            output.append(f"  bach lang export --target {target_lang}                            Fuer LLM-Review")
 
             return (True, "\n".join(output))
 
@@ -595,6 +963,8 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
         """Startet Auto-Uebersetzung."""
         source = self._get_arg(args, "--source") or "windows_dict"
         limit = int(self._get_arg(args, "--limit") or "100")
+        source_lang = self._get_source_language(args)
+        target_lang = self._get_target_language(args)
 
         if source not in self.SOURCE_PRIORITY:
             return (False, f"[ERROR] Unbekannte Quelle: {source}\nVerfuegbar: {', '.join(self.SOURCE_PRIORITY.keys())}")
@@ -602,16 +972,7 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
         conn = self._get_db()
         try:
             # Fehlende Uebersetzungen holen
-            rows = conn.execute("""
-                SELECT t1.id, t1.key, t1.namespace, t1.value as de_value
-                FROM languages_translations t1
-                WHERE t1.language = 'de'
-                AND NOT EXISTS (
-                    SELECT 1 FROM languages_translations t2
-                    WHERE t2.key = t1.key AND t2.language = 'en' AND t2.value != ''
-                )
-                LIMIT ?
-            """, (limit,)).fetchall()
+            rows = self._get_missing_rows(conn, limit=limit, source_lang=source_lang, target_lang=target_lang)
 
             if not rows:
                 return (True, "[LANG] Keine fehlenden Uebersetzungen gefunden.")
@@ -621,53 +982,58 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
 
             for r in rows:
                 de_text = r['de_value']
-                en_text = None
+                translated_text = None
 
                 if source == "windows_dict":
                     # Versuche einfache Woerterbuch-Uebersetzung
-                    en_text = self._translate_with_dict(de_text, conn)
+                    translated_text = self._translate_with_dict(de_text, conn, source_lang, target_lang)
                 elif source == "llm":
                     # LLM-Uebersetzung wird als Batch exportiert
                     skipped += 1
                     continue
 
-                if en_text and not dry_run:
+                if translated_text and not dry_run:
                     # Einfuegen
                     conn.execute("""
                         INSERT INTO languages_translations
-                        (key, namespace, language, value, is_verified, source, created_at)
-                        VALUES (?, ?, 'en', ?, 0, ?, ?)
+                        (key, namespace, language, value, is_verified, source, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, 0, ?, ?, ?)
                     """, (
                         r['key'],
                         r['namespace'],
-                        en_text,
+                        target_lang,
+                        translated_text,
                         source,
-                        datetime.now().isoformat()
+                        datetime.now().isoformat(),
+                        datetime.now().isoformat(),
                     ))
                     translated += 1
-                elif en_text:
+                elif translated_text:
                     translated += 1  # Dry-run count
                 else:
                     skipped += 1
 
             if not dry_run:
                 conn.commit()
+                if translated > 0:
+                    self._ensure_languages_enabled(conn, [target_lang])
+                    self._write_release_exports(conn)
 
             prefix = "[DRY-RUN] " if dry_run else ""
-            return (True, f"{prefix}[LANG] Uebersetzung abgeschlossen:\n  Uebersetzt: {translated}\n  Uebersprungen: {skipped}\n  Quelle: {source}")
+            return (True, f"{prefix}[LANG] Uebersetzung abgeschlossen:\n  Uebersetzt: {translated}\n  Uebersprungen: {skipped}\n  Sprachpaar: {source_lang}->{target_lang}\n  Quelle: {source}")
 
         finally:
             conn.close()
 
-    def _translate_with_dict(self, de_text: str, conn) -> Optional[str]:
+    def _translate_with_dict(self, de_text: str, conn, source_lang: str, target_lang: str) -> Optional[str]:
         """Versucht Uebersetzung mit Woerterbuch."""
         # Zuerst im eigenen Woerterbuch suchen
         row = conn.execute("""
             SELECT translation FROM languages_dictionary
-            WHERE term = ? AND source_lang = 'de' AND target_lang = 'en'
+            WHERE term = ? AND source_lang = ? AND target_lang = ?
             AND is_preferred = 1
             ORDER BY usage_count DESC LIMIT 1
-        """, (de_text.lower(),)).fetchone()
+        """, (de_text.lower(), source_lang, target_lang)).fetchone()
 
         if row:
             return row['translation']
@@ -677,9 +1043,9 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
         if len(de_text) < 30 and ' ' not in de_text:
             word_row = conn.execute("""
                 SELECT translation FROM languages_dictionary
-                WHERE term = ? AND source_lang = 'de' AND target_lang = 'en'
+                WHERE term = ? AND source_lang = ? AND target_lang = ?
                 ORDER BY usage_count DESC LIMIT 1
-            """, (de_text.lower(),)).fetchone()
+            """, (de_text.lower(), source_lang, target_lang)).fetchone()
 
             if word_row:
                 return word_row['translation']
@@ -692,37 +1058,32 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
             return (False, "Fehler: Key fehlt.\n\nBeispiel: bach lang add mein_key --de \"Mein Text\" --en \"My text\"")
 
         key = args[0]
-        de_text = self._get_arg(args, "--de")
-        en_text = self._get_arg(args, "--en")
         namespace = self._get_arg(args, "--namespace") or self._get_arg(args, "-n") or "general"
+        translations = self._collect_add_translations(args)
 
-        if not de_text and not en_text:
-            return (False, "Fehler: Mindestens --de oder --en muss angegeben werden.")
+        if not translations:
+            return (False, "Fehler: Mindestens eine Sprachversion muss angegeben werden (z.B. --de, --en, --es oder --lang <code> --text <wert>).")
 
         if dry_run:
-            return (True, f"[DRY-RUN] Wuerde hinzufuegen:\n  Key: {key}\n  DE: {de_text}\n  EN: {en_text}")
+            lines = [f"[DRY-RUN] Wuerde hinzufuegen:", f"  Key: {key}", f"  Namespace: {namespace}"]
+            for lang_code, value in sorted(translations.items()):
+                lines.append(f"  {lang_code.upper()}: {value}")
+            return (True, "\n".join(lines))
 
         conn = self._get_db()
         try:
             now = datetime.now().isoformat()
+            self._ensure_languages_enabled(conn, list(translations.keys()))
 
-            if de_text:
-                # Deutsche Version
+            for lang_code, value in translations.items():
                 conn.execute("""
                     INSERT OR REPLACE INTO languages_translations
                     (key, namespace, language, value, is_verified, source, created_at, updated_at)
-                    VALUES (?, ?, 'de', ?, 1, 'manual', ?, ?)
-                """, (key, namespace, de_text, now, now))
-
-            if en_text:
-                # Englische Version
-                conn.execute("""
-                    INSERT OR REPLACE INTO languages_translations
-                    (key, namespace, language, value, is_verified, source, created_at, updated_at)
-                    VALUES (?, ?, 'en', ?, 1, 'manual', ?, ?)
-                """, (key, namespace, en_text, now, now))
+                    VALUES (?, ?, ?, ?, 1, 'manual', ?, ?)
+                """, (key, namespace, lang_code, value, now, now))
 
             conn.commit()
+            self._write_release_exports(conn)
             return (True, f"[OK] Uebersetzung hinzugefuegt: {key}")
 
         finally:
@@ -733,21 +1094,15 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
         if not args:
             return (False, "Fehler: Sprach-Code fehlt.\n\nBeispiel: bach lang add-language fr")
 
-        lang_code = args[0].lower().strip()
+        lang_code = self._normalize_language_code(args[0], "")
 
         # Validierung: 2-3 Buchstaben
-        if not re.match(r'^[a-z]{2,3}$', lang_code):
+        if not lang_code:
             return (False, f"[ERROR] Ungueltiger Sprach-Code: {lang_code}\nErwartet: 2-3 Kleinbuchstaben (z.B. fr, es, pt)")
 
         conn = self._get_db()
         try:
-            # Aktuell aktivierte Sprachen holen
-            row = conn.execute("SELECT enabled_languages FROM languages_config LIMIT 1").fetchone()
-            if not row:
-                # Config existiert nicht -> initialisieren
-                enabled_langs = ["de", "en"]
-            else:
-                enabled_langs = json.loads(row[0]) if row[0] else ["de", "en"]
+            enabled_langs = self._get_enabled_languages(conn, include_detected=False)
 
             # Pruefen ob bereits vorhanden
             if lang_code in enabled_langs:
@@ -759,21 +1114,9 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
             if dry_run:
                 return (True, f"[DRY-RUN] Wuerde Sprache hinzufuegen: {lang_code}\nNeue Liste: {', '.join(enabled_langs)}")
 
-            # In DB speichern
-            conn.execute("""
-                UPDATE languages_config
-                SET enabled_languages = ?, updated_at = ?
-                WHERE id = 1
-            """, (json.dumps(enabled_langs), datetime.now().isoformat()))
-
-            # Falls Config noch nicht existiert, erstellen
-            if conn.total_changes == 0:
-                conn.execute("""
-                    INSERT INTO languages_config (id, enabled_languages, updated_at)
-                    VALUES (1, ?, ?)
-                """, (json.dumps(enabled_langs), datetime.now().isoformat()))
-
+            self._ensure_languages_enabled(conn, [lang_code])
             conn.commit()
+            self._write_release_exports(conn)
             return (True, f"[OK] Sprache hinzugefuegt: {lang_code}\nAktivierte Sprachen: {', '.join(enabled_langs)}")
 
         except json.JSONDecodeError as e:
@@ -785,22 +1128,15 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
         """Exportiert fehlende Uebersetzungen fuer LLM-Review."""
         format_type = self._get_arg(args, "--format") or "prompt"
         output_file = self._get_arg(args, "--file")
+        source_lang = self._get_source_language(args)
+        target_lang = self._get_target_language(args)
 
         conn = self._get_db()
         try:
-            rows = conn.execute("""
-                SELECT t1.key, t1.namespace, t1.value as de_value
-                FROM languages_translations t1
-                WHERE t1.language = 'de'
-                AND NOT EXISTS (
-                    SELECT 1 FROM languages_translations t2
-                    WHERE t2.key = t1.key AND t2.language = 'en' AND t2.value != ''
-                )
-                ORDER BY t1.namespace, t1.key
-            """).fetchall()
+            rows = self._get_missing_rows(conn, source_lang=source_lang, target_lang=target_lang)
 
             if not rows:
-                return (True, "[LANG] Keine fehlenden Uebersetzungen zum Exportieren.")
+                return (True, f"[LANG] Keine fehlenden {target_lang}-Uebersetzungen zum Exportieren.")
 
             if format_type == "json":
                 # JSON-Format
@@ -809,8 +1145,10 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
                     export_data.append({
                         "key": r['key'],
                         "namespace": r['namespace'],
-                        "de": r['de_value'],
-                        "en": ""
+                        "source_language": source_lang,
+                        "target_language": target_lang,
+                        source_lang: r['de_value'],
+                        target_lang: ""
                     })
                 output = json.dumps(export_data, indent=2, ensure_ascii=False)
             else:
@@ -818,9 +1156,9 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
                 output_lines = [
                     "# BACH Translation Request",
                     "",
-                    "Bitte uebersetze die folgenden deutschen Texte ins Englische.",
+                    f"Bitte uebersetze die folgenden {source_lang}-Texte nach {target_lang} ({self._lang_label(target_lang)}).",
                     "Behalte technische Begriffe (CLI-Befehle, Variablen) bei.",
-                    "Format: KEY | DEUTSCH | ENGLISCH",
+                    f"Format: KEY | {source_lang.upper()} | {target_lang.upper()}",
                     "",
                     "---",
                     ""
@@ -834,7 +1172,7 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
                     "",
                     "---",
                     "",
-                    "Bitte fuege die englischen Uebersetzungen nach dem letzten | ein.",
+                    f"Bitte fuege die {target_lang}-Uebersetzungen nach dem letzten | ein.",
                     "Importiere dann mit: bach lang import <datei>"
                 ])
                 output = "\n".join(output_lines)
@@ -861,7 +1199,8 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
         content = file_path.read_text(encoding='utf-8')
 
         imported = 0
-        errors = 0
+        imported_languages = set()
+        target_lang = self._get_target_language(args)
 
         conn = self._get_db()
         try:
@@ -869,20 +1208,29 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
             if file_path.suffix == '.json' or content.strip().startswith('['):
                 data = json.loads(content)
                 for item in data:
-                    if item.get('en'):
+                    translations = self._collect_import_translations(item)
+                    source = item.get('source') or 'llm_reviewed'
+                    namespace = item.get('namespace', 'general')
+                    source_lang = self._normalize_language_code(item.get("source_language"), DEFAULT_SOURCE_LANGUAGE)
+                    for lang_code, value in translations.items():
+                        if lang_code == source_lang:
+                            continue
                         if not dry_run:
                             conn.execute("""
                                 INSERT OR REPLACE INTO languages_translations
                                 (key, namespace, language, value, is_verified, source, created_at, updated_at)
-                                VALUES (?, ?, 'en', ?, 0, 'llm_reviewed', ?, ?)
+                                VALUES (?, ?, ?, ?, 0, ?, ?, ?)
                             """, (
                                 item['key'],
-                                item.get('namespace', 'general'),
-                                item['en'],
+                                namespace,
+                                lang_code,
+                                value,
+                                source,
                                 datetime.now().isoformat(),
                                 datetime.now().isoformat()
                             ))
                         imported += 1
+                        imported_languages.add(lang_code)
             else:
                 # Pipe-Format (KEY | DE | EN)
                 for line in content.split('\n'):
@@ -890,25 +1238,30 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
                         parts = [p.strip() for p in line.split('|')]
                         if len(parts) >= 3 and parts[2]:  # Hat englische Uebersetzung
                             key = parts[0]
-                            en_text = parts[2]
+                            translated_text = parts[2]
 
                             # Namespace aus existierendem DE-Eintrag holen
                             ns_row = conn.execute("""
                                 SELECT namespace FROM languages_translations
-                                WHERE key = ? AND language = 'de' LIMIT 1
-                            """, (key,)).fetchone()
+                                WHERE key = ? AND language = ? LIMIT 1
+                            """, (key, DEFAULT_SOURCE_LANGUAGE)).fetchone()
                             namespace = ns_row['namespace'] if ns_row else 'general'
 
                             if not dry_run:
                                 conn.execute("""
                                     INSERT OR REPLACE INTO languages_translations
                                     (key, namespace, language, value, is_verified, source, created_at, updated_at)
-                                    VALUES (?, ?, 'en', ?, 0, 'llm_reviewed', ?, ?)
-                                """, (key, namespace, en_text, datetime.now().isoformat(), datetime.now().isoformat()))
+                                    VALUES (?, ?, ?, ?, 0, 'llm_reviewed', ?, ?)
+                                """, (key, namespace, target_lang, translated_text, datetime.now().isoformat(), datetime.now().isoformat()))
                             imported += 1
+                            imported_languages.add(target_lang)
 
             if not dry_run:
+                if imported_languages:
+                    self._ensure_languages_enabled(conn, list(imported_languages))
                 conn.commit()
+                if imported > 0:
+                    self._write_release_exports(conn)
 
             prefix = "[DRY-RUN] " if dry_run else ""
             return (True, f"{prefix}[IMPORT] {imported} Uebersetzungen importiert")
@@ -947,6 +1300,7 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
                 UPDATE languages_config SET default_language = ?, updated_at = ?
             """, (lang, datetime.now().isoformat()))
             conn.commit()
+            self._write_release_exports(conn)
 
             # Cache leeren
             clear_t_cache()
@@ -1011,7 +1365,7 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
                 "",
                 "Befehle:",
                 "  bach lang dict init     Basis-Woerterbuch laden",
-                "  bach lang dict add <de> <en>  Eintrag hinzufuegen",
+                "  bach lang dict add <quelle> <ziel> [--source-lang de --target-lang en]",
                 "  bach lang dict search <term>  Suchen"
             ])
 
@@ -1050,6 +1404,8 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
                 added += 1
 
             conn.commit()
+            if added > 0:
+                self._write_release_exports(conn)
             return (True, f"[DICT] Woerterbuch initialisiert:\n  Hinzugefuegt: {added}\n  Bereits vorhanden: {skipped}")
 
         finally:
@@ -1060,11 +1416,19 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
         if len(args) < 2:
             return (False, "Fehler: de und en Term erforderlich.\n\nBeispiel: bach lang dict add datei file")
 
-        de_term = args[0].lower()
-        en_term = args[1].lower()
+        source_term = args[0].lower()
+        target_term = args[1].lower()
+        source_lang = self._normalize_language_code(
+            self._get_arg(args, "--source-lang") or self._get_arg(args, "--from"),
+            DEFAULT_SOURCE_LANGUAGE,
+        )
+        target_lang = self._normalize_language_code(
+            self._get_arg(args, "--target-lang") or self._get_arg(args, "--to"),
+            DEFAULT_TARGET_LANGUAGE,
+        )
 
         if dry_run:
-            return (True, f"[DRY-RUN] Wuerde hinzufuegen: {de_term} -> {en_term}")
+            return (True, f"[DRY-RUN] Wuerde hinzufuegen: {source_term} ({source_lang}) -> {target_term} ({target_lang})")
 
         conn = self._get_db()
         try:
@@ -1074,11 +1438,12 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
             conn.execute("""
                 INSERT OR REPLACE INTO languages_dictionary
                 (term, translation, source_lang, target_lang, is_preferred, usage_count, context, created_at)
-                VALUES (?, ?, 'de', 'en', 1, 0, 'manual', ?)
-            """, (de_term, en_term, now))
+                VALUES (?, ?, ?, ?, 1, 0, 'manual', ?)
+            """, (source_term, target_term, source_lang, target_lang, now))
 
             conn.commit()
-            return (True, f"[DICT] Hinzugefuegt: {de_term} -> {en_term}")
+            self._write_release_exports(conn)
+            return (True, f"[DICT] Hinzugefuegt: {source_term} ({source_lang}) -> {target_term} ({target_lang})")
 
         finally:
             conn.close()

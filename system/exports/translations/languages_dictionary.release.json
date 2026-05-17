@@ -1,0 +1,1192 @@
+[
+  {
+    "term": "abbrechen",
+    "translation": "cancel",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "abgeschlossen",
+    "translation": "completed",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "aendern",
+    "translation": "change",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "agent",
+    "translation": "agent",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "aktiv",
+    "translation": "active",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "aktualisieren",
+    "translation": "update",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "alle",
+    "translation": "all",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "anfang",
+    "translation": "start",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "ansicht",
+    "translation": "view",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "anwendung",
+    "translation": "application",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "anzahl",
+    "translation": "count",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "aufgabe",
+    "translation": "task",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "ausgabe",
+    "translation": "output",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "ausstehend",
+    "translation": "pending",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "auswahl",
+    "translation": "selection",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "backup",
+    "translation": "backup",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "bearbeiten",
+    "translation": "edit",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "benutzer",
+    "translation": "user",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "bereit",
+    "translation": "ready",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "bestaetigen",
+    "translation": "confirm",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "bild",
+    "translation": "image",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "daemon",
+    "translation": "daemon",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "datei",
+    "translation": "file",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "datenbank",
+    "translation": "database",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "details",
+    "translation": "details",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "dialog",
+    "translation": "dialog",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "dokument",
+    "translation": "document",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "durchschnitt",
+    "translation": "average",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "einfuegen",
+    "translation": "paste",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "eingabe",
+    "translation": "input",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "einstellungen",
+    "translation": "settings",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "eintrag",
+    "translation": "entry",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "ende",
+    "translation": "end",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "entfernen",
+    "translation": "remove",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "erfolg",
+    "translation": "success",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "erforderlich",
+    "translation": "required",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "erstellen",
+    "translation": "create",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "exportieren",
+    "translation": "export",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "fehler",
+    "translation": "error",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "fehlgeschlagen",
+    "translation": "failed",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "fenster",
+    "translation": "window",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "fertig",
+    "translation": "done",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "filtern",
+    "translation": "filter",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "finden",
+    "translation": "find",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "fortsetzen",
+    "translation": "continue",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "gefunden",
+    "translation": "found",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "geladen",
+    "translation": "loaded",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "geloescht",
+    "translation": "deleted",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "gesamt",
+    "translation": "total",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "gespeichert",
+    "translation": "saved",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "gestern",
+    "translation": "yesterday",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "gueltig",
+    "translation": "valid",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "handler",
+    "translation": "handler",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "heute",
+    "translation": "today",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "hilfe",
+    "translation": "help",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "hinweis",
+    "translation": "notice",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "hinzufuegen",
+    "translation": "add",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "hoch",
+    "translation": "up",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "importieren",
+    "translation": "import",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "inaktiv",
+    "translation": "inactive",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "info",
+    "translation": "info",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "jahr",
+    "translation": "year",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "keine",
+    "translation": "none",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "konfiguration",
+    "translation": "configuration",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "konto",
+    "translation": "account",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "kopieren",
+    "translation": "copy",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "laden",
+    "translation": "load",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "leer",
+    "translation": "empty",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "links",
+    "translation": "left",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "liste",
+    "translation": "list",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "loeschen",
+    "translation": "delete",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "maximum",
+    "translation": "maximum",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "mehr",
+    "translation": "more",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "menue",
+    "translation": "menu",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "minimum",
+    "translation": "minimum",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "minute",
+    "translation": "minute",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "monat",
+    "translation": "month",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "morgen",
+    "translation": "tomorrow",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "nachricht",
+    "translation": "message",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "netzwerk",
+    "translation": "network",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "neustart",
+    "translation": "restart",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "nicht gefunden",
+    "translation": "not found",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "notiz",
+    "translation": "note",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "oeffnen",
+    "translation": "open",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "optionen",
+    "translation": "options",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "ordner",
+    "translation": "folder",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "pausieren",
+    "translation": "pause",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "profil",
+    "translation": "profile",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "programm",
+    "translation": "program",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "rechts",
+    "translation": "right",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "runter",
+    "translation": "down",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "schaltflaeche",
+    "translation": "button",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "schliessen",
+    "translation": "close",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "sekunde",
+    "translation": "second",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "sichern",
+    "translation": "backup",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "skill",
+    "translation": "skill",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "sortieren",
+    "translation": "sort",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "speichern",
+    "translation": "save",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "starten",
+    "translation": "start",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "stoppen",
+    "translation": "stop",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "stunde",
+    "translation": "hour",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "suchen",
+    "translation": "search",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "summe",
+    "translation": "sum",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "system",
+    "translation": "system",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "tabelle",
+    "translation": "table",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "tag",
+    "translation": "day",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "task",
+    "translation": "task",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "termin",
+    "translation": "appointment",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "uebersicht",
+    "translation": "overview",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "ungueltig",
+    "translation": "invalid",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "update",
+    "translation": "update",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "verbindung",
+    "translation": "connection",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "version",
+    "translation": "version",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "warnung",
+    "translation": "warning",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "weiter",
+    "translation": "next",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "weniger",
+    "translation": "less",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "woche",
+    "translation": "week",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "workflow",
+    "translation": "workflow",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  },
+  {
+    "term": "zurueck",
+    "translation": "back",
+    "source_lang": "de",
+    "target_lang": "en",
+    "is_preferred": 1,
+    "usage_count": 0,
+    "context": "base_dictionary",
+    "created_at": "2026-02-02T03:51:12.829144"
+  }
+]

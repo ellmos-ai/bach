@@ -95,12 +95,31 @@ class Database:
         Alle Tabellen nutzen CREATE TABLE IF NOT EXISTS,
         daher sicher fuer bestehende Datenbanken.
         """
+        is_new_db = not self.db_path.exists() or self.db_path.stat().st_size == 0
         schema_file = self.schema_dir / "schema.sql"
         if not schema_file.exists():
             return
 
         with self.connect() as conn:
             conn.executescript(schema_file.read_text(encoding="utf-8"))
+            if is_new_db:
+                self._apply_release_language_seed(conn)
+
+    def _release_language_seed_candidates(self) -> list[Path]:
+        """Moegliche Pfade fuer generierte Sprach-Seed-Dateien."""
+        return [
+            self.schema_dir.parent.parent / "exports" / "translations" / "languages_seed.release.sql",
+            self.schema_dir.parent / "exports" / "translations" / "languages_seed.release.sql",
+            self.schema_dir / "exports" / "translations" / "languages_seed.release.sql",
+        ]
+
+    def _apply_release_language_seed(self, conn: sqlite3.Connection):
+        """Importiert generierte Sprach-Seeds bei frischer DB-Erstellung."""
+        for seed_file in self._release_language_seed_candidates():
+            if not seed_file.exists():
+                continue
+            conn.executescript(seed_file.read_text(encoding="utf-8"))
+            break
 
     def run_migrations(self):
         """Fuehrt ausstehende Migrationen aus db/migrations/ aus."""

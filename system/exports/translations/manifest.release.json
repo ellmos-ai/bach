@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-05-17T05:32:25.086146",
+  "export_kind": "languages_release_snapshot",
+  "source_db": "C:\\Users\\User\\.bach\\bach.db",
+  "counts": {
+    "config_rows": 1,
+    "translations": 4318,
+    "dictionary_entries": 119,
+    "locale_files": 6
+  },
+  "files": {
+    "config": "languages_config.release.json",
+    "translations": "languages_translations.release.json",
+    "dictionary": "languages_dictionary.release.json",
+    "seed_sql": "languages_seed.release.sql"
+  },
+  "locales": {
+    "de": "locales/de.json",
+    "en": "locales/en.json",
+    "es": "locales/es.json",
+    "ru": "locales/ru.json",
+    "ja": "locales/ja.json",
+    "zh": "locales/zh.json"
+  }
+}

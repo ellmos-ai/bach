@@ -1150,55 +1150,67 @@ class SetupHandler(BaseHandler):
 
         Bei lang=de: README.md wird deutsch, README.en.md als EN-Backup
         Bei lang=en: README.md wird englisch (Default), README.de.md als DE-Backup
+        Bei anderen bekannten Sprachen wird nur die Systemsprache gesetzt.
 
         Args:
-            lang: Zielsprache ('de' oder 'en')
+            lang: Zielsprache (z.B. 'de', 'en', 'es', 'ru', 'ja', 'zh')
         """
-        if lang not in ('de', 'en'):
-            return False, "Usage: bach setup lang <de|en>"
+        from .lang import KNOWN_LANGUAGE_LABELS, set_lang
+
+        if lang:
+            lang = lang.strip().lower()
+
+        if lang not in KNOWN_LANGUAGE_LABELS:
+            known = "|".join(sorted(KNOWN_LANGUAGE_LABELS))
+            return False, f"Usage: bach setup lang <{known}>"
 
         root = self.base_path.parent  # BACH/
         results = [f"=== Dokument-Sprache: {lang.upper()} ===\n"]
 
-        for doc_name in self._LANG_DOCS:
-            main_file = root / f"{doc_name}.md"
-            de_file = root / f"{doc_name}.de.md"
-            en_file = root / f"{doc_name}.en.md"
+        if lang in ("de", "en"):
+            for doc_name in self._LANG_DOCS:
+                main_file = root / f"{doc_name}.md"
+                de_file = root / f"{doc_name}.de.md"
+                en_file = root / f"{doc_name}.en.md"
 
-            if lang == "de":
-                # README.md soll deutsch werden
-                if de_file.exists():
-                    # Aktuelle README.md (englisch) sichern als README.en.md
-                    if main_file.exists() and not en_file.exists():
-                        main_file.rename(en_file)
-                        results.append(f"  [OK] {doc_name}.md -> {doc_name}.en.md (EN-Backup)")
+                if lang == "de":
+                    # README.md soll deutsch werden
+                    if de_file.exists():
+                        # Aktuelle README.md (englisch) sichern als README.en.md
+                        if main_file.exists() and not en_file.exists():
+                            main_file.rename(en_file)
+                            results.append(f"  [OK] {doc_name}.md -> {doc_name}.en.md (EN-Backup)")
+                        elif main_file.exists():
+                            main_file.unlink()
+                        # Deutsche Version wird Hauptdatei
+                        shutil.copy2(str(de_file), str(main_file))
+                        results.append(f"  [OK] {doc_name}.de.md -> {doc_name}.md (DE aktiv)")
+                    else:
+                        results.append(f"  [--] {doc_name}.de.md nicht vorhanden, uebersprungen")
+
+                else:  # lang == "en"
+                    # README.md soll englisch sein (Default)
+                    if en_file.exists():
+                        # EN-Backup zurueck als Hauptdatei
+                        if main_file.exists():
+                            # Aktuelle (deutsche) Version als .de.md sichern
+                            if not de_file.exists():
+                                shutil.copy2(str(main_file), str(de_file))
+                            main_file.unlink()
+                        en_file.rename(main_file)
+                        results.append(f"  [OK] {doc_name}.en.md -> {doc_name}.md (EN aktiv)")
                     elif main_file.exists():
-                        main_file.unlink()
-                    # Deutsche Version wird Hauptdatei
-                    shutil.copy2(str(de_file), str(main_file))
-                    results.append(f"  [OK] {doc_name}.de.md -> {doc_name}.md (DE aktiv)")
-                else:
-                    results.append(f"  [--] {doc_name}.de.md nicht vorhanden, uebersprungen")
-
-            else:  # lang == "en"
-                # README.md soll englisch sein (Default)
-                if en_file.exists():
-                    # EN-Backup zurueck als Hauptdatei
-                    if main_file.exists():
-                        # Aktuelle (deutsche) Version als .de.md sichern
-                        if not de_file.exists():
-                            shutil.copy2(str(main_file), str(de_file))
-                        main_file.unlink()
-                    en_file.rename(main_file)
-                    results.append(f"  [OK] {doc_name}.en.md -> {doc_name}.md (EN aktiv)")
-                elif main_file.exists():
-                    results.append(f"  [OK] {doc_name}.md bereits vorhanden (EN assumed)")
-                else:
-                    results.append(f"  [--] Keine {doc_name}-Datei vorhanden")
+                        results.append(f"  [OK] {doc_name}.md bereits vorhanden (EN assumed)")
+                    else:
+                        results.append(f"  [--] Keine {doc_name}-Datei vorhanden")
+        else:
+            results.append(
+                f"  [INFO] Keine Root-Dokumentvarianten fuer {KNOWN_LANGUAGE_LABELS[lang]} vorhanden. "
+                "Es wird nur die Systemsprache gesetzt."
+            )
 
         # Systemsprache setzen
         try:
-            from .lang import set_lang
             set_lang(lang)
 
             db_path = self._canonical_db
@@ -1209,6 +1221,21 @@ class SetupHandler(BaseHandler):
                         "UPDATE languages_config SET default_language = ?, updated_at = ?",
                         (lang, datetime.now().isoformat())
                     )
+                    columns = {row[1] for row in conn.execute("PRAGMA table_info(languages_config)").fetchall()}
+                    if "enabled_languages" in columns:
+                        row = conn.execute("SELECT enabled_languages FROM languages_config LIMIT 1").fetchone()
+                        current_langs = []
+                        if row and row[0]:
+                            try:
+                                current_langs = json.loads(row[0])
+                            except json.JSONDecodeError:
+                                current_langs = []
+                        if lang not in current_langs:
+                            current_langs.append(lang)
+                            conn.execute(
+                                "UPDATE languages_config SET enabled_languages = ?, updated_at = ?",
+                                (json.dumps(current_langs, ensure_ascii=False), datetime.now().isoformat())
+                            )
                     conn.commit()
                     results.append(f"\n  Systemsprache auf '{lang}' gesetzt.")
                 finally:
