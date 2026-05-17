@@ -6,7 +6,7 @@ REM See: system\hub\_services\chat\
 REM ============================================
 
 echo [WARN] bridge.bat ist veraltet. Nutze stattdessen:
-echo        start\_internal\windows_autostart.bat (chat_tray.py)
+echo        bach.bat -^> [B] Chat Service starten
 echo.
 echo [BACH] Bridge Standard-Start...
 cd /d "%~dp0..\..\system\hub\_services\claude_bridge"
