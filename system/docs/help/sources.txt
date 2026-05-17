@@ -1,12 +1,12 @@
 # Portabilität: SYSTEM
-# Zuletzt validiert: 2026-02-08
-# Nächste Prüfung: 2026-05-08
+# Zuletzt validiert: 2026-05-17
+# Nächste Prüfung: 2026-08-17
 # Ressourcen: [context_triggers table, data/context_sources.json]
 
 KONTEXTQUELLEN-SYSTEM (Dynamic Injections)
 ===========================================
 
-STAND: 2026-02-08
+STAND: 2026-05-17
 
 Zentrale Registry für alle Wissensquellen mit dynamischen Triggern.
 

@@ -1,18 +1,17 @@
 # Portability: SYSTEM
 # Last validated: 2026-05-17
-# Next review: 2027-05-17
-# Resources: [system_identity table], [hub/dist.py], [tools/generators/distribution_system.py]
-# Status: HANDLER DEFECTIVE - dist routing does not work
+# Next review: 2026-08-17
+# Resources: [instance_identity table], [hub/dist.py], [tools/generators/distribution_system.py]
 
 IDENTITY SYSTEM
 ===============
 
-As of: 2026-02-08
+As of: 2026-05-17
 
 The identity system ensures the integrity and identification of the BACH instance.
-Functions are implemented in the distribution handler, but the CLI routing is broken.
+Functions are implemented in the distribution handler and accessible via CLI.
 
-TABLE: system_identity (Central Singleton)
+TABLE: instance_identity (Central Singleton)
 ----------------------------------------------
   - id: Primary Key (MUST be 1 - Singleton)
   - instance_id: Unique UUID of the installation
@@ -33,28 +32,27 @@ SEAL MECHANISM
   3. Status: If there is a deviation, the seal is “broken”
   4. Warning: A broken seal indicates manual intervention
 
-CLI COMMANDS (DOCUMENTED but BROKEN)
-----------------------------------------
+CLI COMMANDS
+------------
   bach --dist status         Show system status with seal info
   bach --dist verify         Check seal integrity
-
-PROBLEM: The dist handler (hub/dist.py) exists and implements this
-functions, but the CLI routing in bach.py doesn't call it correctly.
-Only "bach dist list" works.
+  bach --dist classify       Show dist_type distribution
+  bach --dist snapshot NAME  Create snapshot
+  bach --dist release NAME   Create release
+  bach --dist list           List snapshots/releases
 
 NOT IMPLEMENTED
 -------------------
   bach --dist reseal         (DOES NOT EXIST - no reseal function)
 
-There is no automatic repair if the seal is broken. You have to do it manually
+There is no automatic repair if the seal is broken. You have to manually
 set a new seal via distribution_system.py.
 
 IMPLEMENTATION
 --------------
   Handler: system/hub/dist.py (DistHandler)
   Backend: system/tools/generators/distribution_system.py
-  Operations: status, verify, scan, snapshot, release, restore, install, list
-  Works: Only "list" - all other operations are not routed
+  Operations: status, verify, classify, snapshot, release, restore, install, list
 
 CONTEXT
 -------
