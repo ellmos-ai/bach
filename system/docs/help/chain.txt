@@ -1,7 +1,7 @@
 # Portabilität: SYSTEM
 # Version: 1.0.0
-# Zuletzt validiert: 2026-02-28
-# Nächste Prüfung: 2026-08-28
+# Zuletzt validiert: 2026-05-17
+# Nächste Prüfung: 2026-11-17
 # Ressourcen: [hub/chain.py, toolchains, scheduler_jobs]
 
 CHAIN - Verkettete Tool-Befehle und LLM-Ketten

@@ -246,34 +246,48 @@ class BACHTray:
 
     # --- Actions ---
 
+    def _notify_error(self, action_name):
+        if self.icon:
+            self.icon.notify(f"{action_name} fehlgeschlagen — API nicht erreichbar", "BACH Chat")
+
     def _make_backend_action(self, name):
         def action(*_):
-            self._api("POST", "/api/backend", {"name": name})
+            result = self._api("POST", "/api/backend", {"name": name})
+            if result is None:
+                self._notify_error(f"Backend → {name}")
             self._refresh()
             self._update_icon()
         return action
 
     def _make_model_action(self, model):
         def action(*_):
-            self._api("POST", "/api/model", {"model": model})
+            result = self._api("POST", "/api/model", {"model": model})
+            if result is None:
+                self._notify_error(f"Modell → {model}")
             self._refresh()
             self._update_icon()
         return action
 
     def _set_mode(self, mode, *_):
-        self._api("POST", "/api/mode", {"mode": mode})
+        result = self._api("POST", "/api/mode", {"mode": mode})
+        if result is None:
+            self._notify_error(f"Modus → {mode}")
         self._refresh()
         self._update_icon()
 
     def _toggle_think(self, *_):
         new_val = not self.state["think"]
-        self._api("POST", "/api/think", {"think": new_val})
+        result = self._api("POST", "/api/think", {"think": new_val})
+        if result is None:
+            self._notify_error("Think-Toggle")
         self._refresh()
         self._update_icon()
 
     def _make_rounds_action(self, rounds):
         def action(*_):
-            self._api("POST", "/api/max_tool_rounds", {"rounds": rounds})
+            result = self._api("POST", "/api/max_tool_rounds", {"rounds": rounds})
+            if result is None:
+                self._notify_error(f"Tool-Rounds → {rounds}")
             self._refresh()
             self._update_icon()
         return action

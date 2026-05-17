@@ -924,6 +924,7 @@ class StartupHandler(BaseHandler):
         if 5 <= hour < 12:
             results.append("")
             results.append("[MORGEN-BRIEFING]")
+            conn = None
             try:
                 conn = self._get_conn()
 
@@ -975,10 +976,12 @@ class StartupHandler(BaseHandler):
                 except sqlite3.OperationalError:
                     pass
 
-                conn.close()
                 results.append(" --> bach haushalt today | bach task list")
             except Exception as e:
                 results.append(f" [SKIP] Morgen-Briefing: {e}")
+            finally:
+                if conn:
+                    conn.close()
 
         # ══════════════════════════════════════════════════════════════
         # 2.7 GESUNDHEIT REMINDERS - Termine + Faellige Vorsorge
@@ -1087,6 +1090,7 @@ class StartupHandler(BaseHandler):
         # ══════════════════════════════════════════════════════════════
         results.append("")
         results.append("[NACHRICHTEN]")
+        conn_user = None
         try:
             # v1.1.84: Alle Daten jetzt in bach.db
             import sqlite3
@@ -1096,13 +1100,13 @@ class StartupHandler(BaseHandler):
                 "SELECT COUNT(*) FROM messages WHERE status = 'unread'"
             ).fetchone()
             unread = unread_row[0] if unread_row else 0
-            
+
             total_row = conn_user.execute("SELECT COUNT(*) FROM messages").fetchone()
             total = total_row[0] if total_row else 0
 
             if unread > 0:
                 results.append(f" *** {unread} UNGELESENE NACHRICHT(EN) ***")
-                
+
                 # v1.1.72: Bei Partner-Session VOLLSTAENDIGE Nachrichten injizieren
                 if partner_id and partner_id != "user":
                     # Nachrichten AN diesen Partner holen
@@ -1111,7 +1115,7 @@ class StartupHandler(BaseHandler):
                         WHERE status = 'unread' AND recipient = ?
                         ORDER BY created_at DESC LIMIT 5
                     """, (partner_id,)).fetchall()
-                    
+
                     if msgs_for_me:
                         results.append("")
                         results.append(" *** DIREKTE NACHRICHTEN AN DICH ***")
@@ -1145,9 +1149,11 @@ class StartupHandler(BaseHandler):
                 results.append(" --> bach msg unread fuer Details")
             else:
                 results.append(f" {total} Nachrichten, keine ungelesen")
-            conn_user.close()
         except Exception as e:
             results.append(f" [ERROR] Nachrichten-Check: {e}")
+        finally:
+            if conn_user:
+                conn_user.close()
 
         # ══════════════════════════════════════════════════════════════
         # 4.3 PARTNER PRESENCE - Andere aktive Partner erkennen (v1.1.71)

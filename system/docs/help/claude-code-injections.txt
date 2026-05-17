@@ -1,7 +1,7 @@
 # Portabilität: UNIVERSAL
 # Version: 1.0.0
-# Zuletzt validiert: 2026-02-17 (Claude Opus 4.6)
-# Nächste Prüfung: 2026-08-17
+# Zuletzt validiert: 2026-05-17
+# Nächste Prüfung: 2026-11-17
 # Ressourcen: [cli.js (gebundelt), github.com/anthropics/claude-code]
 
 CLAUDE CODE INJEKTIONS-SYSTEM -- ANATOMIE
