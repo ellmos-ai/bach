@@ -3401,7 +3401,7 @@ async def start_ati_session(work_time: int = 15):
         import subprocess
 
         # ATI-Profil laden
-        profile_path = BACH_DIR / "skills" / "_services" / "daemon" / "profiles" / "ati.json"
+        profile_path = BACH_DIR / "hub" / "_services" / "daemon" / "profiles" / "ati.json"
         if profile_path.exists():
             with open(profile_path, 'r', encoding='utf-8') as f:
                 profile = json.load(f)
@@ -3534,7 +3534,7 @@ async def start_ati_session_cli(work_time: int = 15, task_prompt: str = ""):
         import subprocess, tempfile
 
         # ATI-Profil laden
-        profile_path = BACH_DIR / "skills" / "_services" / "daemon" / "profiles" / "ati.json"
+        profile_path = BACH_DIR / "hub" / "_services" / "daemon" / "profiles" / "ati.json"
         if profile_path.exists():
             with open(profile_path, 'r', encoding='utf-8') as f:
                 profile = json.load(f)
@@ -5249,7 +5249,7 @@ def resolve_skill_file(
                 root_map = {
                     "agent": AGENTS_DIR,
                     "expert": EXPERTS_DIR,
-                    "service": SKILLS_DIR / "_services",
+                    "service": BACH_DIR / "hub" / "_services",
                     "workflow": SKILLS_DIR / "workflows",
                     "skill": SKILLS_DIR,
                     "template": SKILLS_DIR / "_templates",
@@ -5274,7 +5274,7 @@ def resolve_skill_file(
     base_dirs = {
         "agent": [AGENTS_DIR],
         "expert": [EXPERTS_DIR],
-        "service": [SKILLS_DIR / "_services"],
+        "service": [BACH_DIR / "hub" / "_services"],
         "workflow": [SKILLS_DIR / "workflows", SKILLS_DIR / "_workflows"],
         "skill": [SKILLS_DIR],
     }
@@ -6614,7 +6614,7 @@ async def financial_sync(background_tasks: BackgroundTasks):
 
 
 
-    mail_service = BACH_DIR / "skills" / "_services" / "mail" / "mail_service.py"
+    mail_service = BACH_DIR / "hub" / "_services" / "mail" / "mail_service.py"
 
     if not mail_service.exists():
 
@@ -6676,7 +6676,7 @@ async def save_financial_json():
 
 # ─── Config-Endpunkte ───
 
-MAIL_CONFIG_FILE = BACH_DIR / "skills" / "_services" / "mail" / "config.json"
+MAIL_CONFIG_FILE = BACH_DIR / "hub" / "_services" / "mail" / "config.json"
 
 
 
@@ -7228,7 +7228,7 @@ async def test_mail_account(account_id: int):
 
             import sys
 
-            mail_service_path = BACH_DIR / "skills" / "_services" / "mail"
+            mail_service_path = BACH_DIR / "hub" / "_services" / "mail"
 
             sys.path.insert(0, str(mail_service_path))
 
@@ -7336,7 +7336,7 @@ async def find_gmail_credentials():
 
     try:
 
-        mail_service_path = BACH_DIR / "skills" / "_services" / "mail"
+        mail_service_path = BACH_DIR / "hub" / "_services" / "mail"
 
         sys.path.insert(0, str(mail_service_path))
 
@@ -7386,7 +7386,7 @@ async def setup_gmail_api():
 
     try:
 
-        mail_service_path = BACH_DIR / "skills" / "_services" / "mail"
+        mail_service_path = BACH_DIR / "hub" / "_services" / "mail"
 
         sys.path.insert(0, str(mail_service_path))
 
@@ -7568,7 +7568,7 @@ async def gmail_api_status():
 
     try:
 
-        mail_service_path = BACH_DIR / "skills" / "_services" / "mail"
+        mail_service_path = BACH_DIR / "hub" / "_services" / "mail"
 
         sys.path.insert(0, str(mail_service_path))
 
@@ -9261,9 +9261,9 @@ async def get_prompt_daemon_status():
 
     # Pfade zum System-Daemon-Service
 
-    pid_file = SKILLS_DIR / "_services" / "daemon" / "daemon.pid"
+    pid_file = BACH_DIR / "hub" / "_services" / "daemon" / "daemon.pid"
 
-    config_file = SKILLS_DIR / "_services" / "daemon" / "config.json"
+    config_file = BACH_DIR / "hub" / "_services" / "daemon" / "config.json"
 
 
 
@@ -9419,9 +9419,9 @@ async def toggle_prompt_daemon():
 
     # Pfade zum System-Daemon-Service
 
-    daemon_script = SKILLS_DIR / "_services" / "daemon" / "session_daemon.py"
+    daemon_script = BACH_DIR / "hub" / "_services" / "daemon" / "session_daemon.py"
 
-    pid_file = SKILLS_DIR / "_services" / "daemon" / "daemon.pid"
+    pid_file = BACH_DIR / "hub" / "_services" / "daemon" / "daemon.pid"
 
 
 
@@ -9491,7 +9491,7 @@ async def toggle_prompt_daemon():
 
 
             # Reset last_run in config fuer sofortigen Start nach Sicherheitsintervall
-            config_file = SKILLS_DIR / "_services" / "daemon" / "config.json"
+            config_file = BACH_DIR / "hub" / "_services" / "daemon" / "config.json"
             if config_file.exists():
                 try:
                     config = json.loads(config_file.read_text(encoding="utf-8"))
@@ -9640,7 +9640,7 @@ async def save_prompt_template(req: TemplateSaveRequest):
 
         # Speichere als Datei im custom-Ordner
 
-        custom_dir = BACH_DIR / "skills" / "_services" / "prompt_generator" / "templates" / "custom"
+        custom_dir = BACH_DIR / "hub" / "_services" / "prompt_generator" / "templates" / "custom"
 
         custom_dir.mkdir(parents=True, exist_ok=True)
 
@@ -10124,7 +10124,7 @@ async def get_mail_profiles():
 
         # Provider.json laden fuer System-Profile
 
-        providers_file = BACH_DIR / "skills" / "_services" / "mail" / "providers.json"
+        providers_file = BACH_DIR / "hub" / "_services" / "mail" / "providers.json"
 
         system_profiles = []
 
@@ -12685,7 +12685,7 @@ async def run_inbox_scan():
 
     try:
 
-        from skills._services.document.scanner_service import InboxScanner
+        from hub._services.document.scanner_service import InboxScanner
 
         scanner = InboxScanner()
 
@@ -13196,7 +13196,7 @@ def get_report_workflow_service():
     global _report_workflow_service
     if _report_workflow_service is None:
         sys.path.insert(0, str(BACH_DIR))
-        from skills._services.document.report_workflow_service import ReportWorkflowService
+        from hub._services.document.report_workflow_service import ReportWorkflowService
         _report_workflow_service = ReportWorkflowService()
     return _report_workflow_service
 
@@ -13425,7 +13425,7 @@ async def list_pending_reports():
     """Listet wartende Ordner für Berichte."""
     try:
         sys.path.insert(0, str(BACH_DIR))
-        from skills._services.document.report_workflow_service import list_pending_reports
+        from hub._services.document.report_workflow_service import list_pending_reports
         pending = list_pending_reports()
         return {"success": True, "pending": pending}
     except Exception as e:
