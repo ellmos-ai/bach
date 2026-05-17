@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -8,9 +8,9 @@ inject -- Injektor-Steuerung und Aufgaben-Zuweisung
 
 BESCHREIBUNG
 ============
-Der inject-Handler verwaltet das Injektor-System fuer automatisierte
+Der inject-Handler verwaltet das Injektor-System für automatisierte
 Kontext-Einspeisungen und Task-Zuweisung. Injektoren sind Plugins, die
-bei bestimmten Triggern (Woerter, Zeitpunkte, Task-Abschluss) automatisch
+bei bestimmten Triggern (Wörter, Zeitpunkte, Task-Abschluss) automatisch
 hilfreiche Hinweise oder Aktionen einspeisen.
 
 OPERATIONEN
@@ -23,10 +23,10 @@ toggle <name>
   Schaltet einen Injektor an oder aus.
   Syntax: --inject toggle <name>
 
-  Verfuegbare Injektoren:
-    strategy   Hilfreiche Gedanken bei Trigger-Woertern
+  Verfügbare Injektoren:
+    strategy   Hilfreiche Gedanken bei Trigger-Wörtern
     context    Kontext-Hinweise bei Stichworten
-    time       Regelmaessige Zeit-Updates (Timebeat)
+    time       Regelmäßige Zeit-Updates (Timebeat)
     between    Auto-Erinnerung nach Task-Done
 
 task <minutes>
@@ -40,7 +40,7 @@ decompose <id>
 
 BEISPIELE
 =========
-# Status aller Injektoren pruefen
+# Status aller Injektoren prüfen
 --inject status
 
 # Strategy-Injektor aktivieren

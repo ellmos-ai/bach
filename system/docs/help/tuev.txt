@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -6,28 +6,28 @@
 TUEV-HANDLER
 ============
 
-Workflow-Qualitaetssicherung und Testfall-Management fuer BACH-Workflows.
-Der TUeV-Handler verwaltet den Status, die Gueltigkeit und die Qualitaetsmetriken
-von Workflows ueber ihre Lebenszyklen.
+Workflow-Qualitätssicherung und Testfall-Management für BACH-Workflows.
+Der TUeV-Handler verwaltet den Status, die Gueltigkeit und die Qualitätsmetriken
+von Workflows über ihre Lebenszyklen.
 
 
 HANDLER-NAME
 ============
 
 bach tuev     - Workflow-TUeV und Gueltigkeit
-bach usecase  - Testfall-Definition und Ausfuehrung
+bach usecase  - Testfall-Definition und Ausführung
 
 
 BESCHREIBUNG
 ============
 
-Der TUeV-Handler (Test, Ueberpruefen, Validierung) verwaltet:
+Der TUeV-Handler (Test, Überprüfen, Validierung) verwaltet:
 
   * Registrierung von Workflows in der Bach-Datenbank
   * Tracking der TUeV-Gueltigkeit (Standard: 90 Tage)
-  * Uebersicht ueber abgelaufene/bald faellige Workflows
+  * Übersicht über abgelaufene/bald fällige Workflows
   * Verwaltung von Testfaellen (Usecases) pro Workflow
-  * Status und Qualitaets-Score pro Testfall
+  * Status und Qualitäts-Score pro Testfall
 
 Der Handler arbeitet mit:
   * Datenbank: data/bach.db (workflow_tuev, usecases Tabellen)
@@ -42,7 +42,7 @@ TUEV-OPERATIONEN:
 
   bach tuev
   bach tuev status        - Status aller Workflows anzeigen
-  bach tuev check WFNAME  - Einzelnen Workflow und seine Usecases pruefen
+  bach tuev check WFNAME  - Einzelnen Workflow und seine Usecases prüfen
   bach tuev run           - Alle abgelaufenen Workflows auflisten
   bach tuev renew WFNAME  - TUeV erneuern (90 Tage Gueltigkeit)
   bach tuev init          - Workflows aus skills/workflows/ registrieren
@@ -50,10 +50,10 @@ TUEV-OPERATIONEN:
 USECASE-OPERATIONEN:
 
   bach usecase list [WF]       - Alle oder gefilterte Testfaelle anzeigen
-  bach usecase add WFNAME      - Neuen Testfall hinzufuegen (SQL-Template)
+  bach usecase add WFNAME      - Neuen Testfall hinzufügen (SQL-Template)
   bach usecase show ID         - Testfall-Details mit Input/Output
-  bach usecase run ID          - Testfall ausfuehren und pruefen
-  bach usecase run-all WFNAME  - Alle Testfaelle eines Workflows ausfuehren
+  bach usecase run ID          - Testfall ausführen und prüfen
+  bach usecase run-all WFNAME  - Alle Testfaelle eines Workflows ausführen
 
 
 BEISPIELE
@@ -62,14 +62,14 @@ BEISPIELE
 1. Neue Workflows in DB aufnehmen:
    $ bach tuev init
    [TUeV] Workflows initialisiert
-     Hinzugefuegt: 5
-     Uebersprungen: 0
+     Hinzugefügt: 5
+     Übersprungen: 0
 
-2. Status-Uebersicht (sortiert nach Ablaufdatum):
+2. Status-Übersicht (sortiert nach Ablaufdatum):
    $ bach tuev status
-   [WORKFLOW-TUeV] Status-Uebersicht
+   [WORKFLOW-TUeV] Status-Übersicht
 
-   ABGELAUFEN (sofort pruefen!):
+   ABGELAUFEN (sofort prüfen!):
      [!] bugfix-protokoll           Score: 75% | Status: pending
 
    BALD FAELLIG (< 14 Tage):
@@ -78,9 +78,9 @@ BEISPIELE
    OK:
      [OK] main-workflow             Score: 92% | 30d
 
-3. Workflow-Pruefung mit Usecases:
+3. Workflow-Prüfung mit Usecases:
    $ bach tuev check bugfix-protokoll
-   [TUeV] Pruefung: bugfix-protokoll
+   [TUeV] Prüfung: bugfix-protokoll
    Pfad: skills/workflows/bugfix-protokoll.md
    Status: pending
    Score: 75%
@@ -89,14 +89,14 @@ BEISPIELE
      [?] Einfacher Testfall (?)
      [OK] Edge-Case mit Fehler (pass)
 
-4. TUeV erneuern nach erfolgreicher Pruefung:
+4. TUeV erneuern nach erfolgreicher Prüfung:
    $ bach tuev renew bugfix-protokoll
    [TUeV] bugfix-protokoll erneuert
      Gueltig bis: 2026-06-02
 
-5. Neuen Testfall hinzufuegen:
+5. Neuen Testfall hinzufügen:
    $ bach usecase add data-pipeline
-   SQL zum Einfuegen:
+   SQL zum Einfügen:
    ---------------------
    INSERT INTO usecases (title, description, workflow_name, ...)
 
@@ -105,10 +105,10 @@ BEISPIELE
    Beispiel:
    $ bach db query "INSERT INTO usecases (...) VALUES (...)"
 
-6. Testfall ausfuehren:
+6. Testfall ausführen:
    $ bach usecase run 5
    [USECASE] Test #5: Einfacher Test
-   [INFO] Manuelle Pruefung erforderlich.
+   [INFO] Manuelle Prüfung erforderlich.
 
    Ergebnis eintragen:
    $ bach db query "UPDATE usecases SET test_result='pass', test_score=90 WHERE id=5"
@@ -129,4 +129,4 @@ SIEHE AUCH
 
   bach db          - Direkte Datenbank-Abfragen
   hub/base.py      - BaseHandler Basis-Klasse
-  skills/workflows/ - Verfuegbare Workflow-Dateien
+  skills/workflows/ - Verfügbare Workflow-Dateien

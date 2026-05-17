@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -12,27 +12,27 @@ Handler zur automatischen Erkennung wiederkehrender LLM-Ticks und Injektion von
 Korrektur-Feedback. Verfolgt Auftrittsfrequenz und deaktiviert Patterns
 automatisch nach definierten Inaktivitaetsperioden (max_inactive_count).
 
-Foerdert konsistente Verhaltensmuster durch Feedback-Blöcke im Prompt.
+Fördert konsistente Verhaltensmuster durch Feedback-Blöcke im Prompt.
 Supports DB-Persistenz oder JSON-Fallback (data/meta_feedback_patterns.json).
 
 ## OPERATIONEN
 
 check_response(response: str) -> list[dict]
   Scannt Response auf aktive Patterns. Trackt Hits/Misses. Gibt gefundene
-  Patterns mit Details zurueck.
+  Patterns mit Details zurück.
 
 inject_corrections(prompt: str) -> str
-  Fuegt [BACH-META-FEEDBACK]-Block mit aktiven Korrektionen zum Prompt ein.
+  Fügt [BACH-META-FEEDBACK]-Block mit aktiven Korrektionen zum Prompt ein.
   Nur Patterns mit frequency > 0 werden injiziert.
 
 add_pattern(pattern, correction, pattern_type, max_inactive_count)
   Neues Pattern mit Regex oder Substring-Matching. Speichert in DB oder JSON.
 
 remove_pattern(pattern_id: int) -> bool
-  Loescht Pattern aus Persistierung.
+  Löscht Pattern aus Persistierung.
 
 reactivate_pattern(pattern_id: int) -> bool
-  Reaktiviert deaktiviertes Pattern, setzt inactive_count zurueck.
+  Reaktiviert deaktiviertes Pattern, setzt inactive_count zurück.
 
 _record_hit(pattern: dict)
   Erhoet frequency, setzt inactive_count auf 0.
@@ -45,14 +45,14 @@ _pattern_matches(pattern: dict, text: str) -> bool
 
 ## DEFAULT-PATTERNS
 
-ID 1: Englische Fuellwoerter (here, let me, I'll)
+ID 1: Englische Fuellwörter (here, let me, I'll)
   Correction: "Antworte IMMER auf Deutsch."
 
 ID 2: Emoji-Detektion (Unicode-Ranges)
   Correction: "Verwende KEINE Emojis in Antworten."
 
-ID 3: Uebertriebene Entschuldigungen
-  Correction: "Keine uebertriebenen Entschuldigungen."
+ID 3: Übertriebene Entschuldigungen
+  Correction: "Keine übertriebenen Entschuldigungen."
 
 ## BEISPIELE
 
@@ -62,14 +62,14 @@ Initialisierung mit DB:
 Initialisierung mit JSON-Fallback:
   handler = MetaFeedbackInjector(base_path=Path("system"))
 
-Response ueberpruefen:
+Response überprüfen:
   matches = handler.check_response("Here is my answer...")
-  # matches enthaelt Pattern-IDs 1, 2, ... mit aktuellem State
+  # matches enthält Pattern-IDs 1, 2, ... mit aktuellem State
 
 Feedback vor Neuversuch injizieren:
   corrected_prompt = handler.inject_corrections(original_prompt)
 
-Neues Pattern hinzufuegen:
+Neues Pattern hinzufügen:
   handler.add_pattern(
     pattern=r"(?i)\bactually\b",
     correction="Vermeide 'actually' in Deutsch-Antworten.",
@@ -91,10 +91,10 @@ PATTERNFELD-SCHEMA
   id (int)
   pattern (str): Regex oder Substring
   pattern_type (str): "regex" oder "substring"
-  correction (str): Feedback-Text fuer Prompt
+  correction (str): Feedback-Text für Prompt
   frequency (int): Anzahl Hits
   inactive_count (int): Misses seit letztem Hit
-  max_inactive_count (int): Schwelle fuer Auto-Deaktivierung (default: 10)
+  max_inactive_count (int): Schwelle für Auto-Deaktivierung (default: 10)
   active (int): 1 (aktiv) oder 0 (inaktiv)
   created_at (str): ISO-Timestamp
   updated_at (str): ISO-Timestamp

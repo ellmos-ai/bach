@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 EMOJI-SYSTEM (KONZEPT-DOKU)
 ============================
@@ -10,7 +10,7 @@ Policy-Module und Tools zur Emoji-Handhabung.
 HINWEIS: Keine automatische System-weite Konvertierung -
 Policy-Funktionen muessen manuell aufgerufen werden.
 
-VERFUEGBARE MODULE:
+VERFÜGBARE MODULE:
 
 1. Policy-Modul (system/tools/_policies/emoji_safe.py)
    - emoji_to_safe(text): Emoji → ASCII-Tags via emoji.demojize()
@@ -53,4 +53,4 @@ ANWENDUNG:
 WARUM?
   - UTF-8 Encoding-Probleme vermeiden
   - Mojibake verhindern
-  - Konsistenz ueber alle Systeme
+  - Konsistenz über alle Systeme

@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-10
-# Naechste Pruefung: 2026-08-10
+# Nächste Prüfung: 2026-08-10
 
 WATCHER - Mistral Always-On Daemon
 ====================================
@@ -9,7 +9,7 @@ WATCHER - Mistral Always-On Daemon
 BESCHREIBUNG
 ------------
 Der Watcher-Daemon macht BACH "always-on" - inspiriert von OpenClaw/molt.bot.
-Mistral (lokal via Ollama, kostenlos) laeuft dauerhaft im Hintergrund und
+Mistral (lokal via Ollama, kostenlos) läuft dauerhaft im Hintergrund und
 klassifiziert eingehende Events. Bei Bedarf startet er Claude Code Sessions.
 
 ARCHITEKTUR
@@ -61,7 +61,7 @@ Mistral klassifiziert jeden Event in eine von 4 Aktionen:
 EVENT SOURCES
 -------------
   connector_messages   Telegram/Discord Nachrichten (via Connector-System)
-  filesystem           Neue Dateien in ueberwachten Ordnern
+  filesystem           Neue Dateien in überwachten Ordnern
   task_queue           Neue/dringende BACH Tasks (P1/P2)
   scheduled            Zeitplan-basierte Events (Cron)
 
@@ -90,7 +90,7 @@ VORAUSSETZUNGEN
 ---------------
 - Ollama installiert und gestartet
 - Mistral-Modell geladen (ollama pull mistral)
-- Connector-System konfiguriert (fuer Message-Quellen)
+- Connector-System konfiguriert (für Message-Quellen)
 
 DATENBANK
 ---------

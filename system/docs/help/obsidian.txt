@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -20,7 +20,7 @@ status
   Daily Notes, BACH Wiki, Tasks-Datei). Keine Argumente erforderlich.
 
 sync
-  Fuehrt alle Syncs durch: Daily Note des heutigen Tages, aktuelle Tasks,
+  Führt alle Syncs durch: Daily Note des heutigen Tages, aktuelle Tasks,
   Wiki-Artikel. Keine Argumente erforderlich.
 
 config [path]
@@ -30,12 +30,12 @@ config [path]
 
 daily
   Erstellt oder zeigt die Daily Note des heutigen Tages (YYYY-MM-DD.md im
-  Verzeichnis "Daily Notes"). Enthaelt Offene-Tasks-Zaehler und letzte 3
+  Verzeichnis "Daily Notes"). Enthält Offene-Tasks-Zaehler und letzte 3
   Arbeitsnotizen aus memory_working.
 
 tasks
   Synchronisiert aktive Tasks (pending, in_progress) aus der Tabelle tasks
-  in die Datei "BACH Tasks.md". Sortierung nach Prioritaet (P1-P3) und ID.
+  in die Datei "BACH Tasks.md". Sortierung nach Priorität (P1-P3) und ID.
 
 wiki
   Exportiert alle Artikel aus wiki_articles in das Verzeichnis "BACH Wiki".
@@ -47,10 +47,10 @@ BEISPIELE
 Vault konfigurieren:
   bach obsidian config /path/to/My\ Vault
 
-Status pruefen:
+Status prüfen:
   bach obsidian status
 
-Alle Sync-Kategorien durchfuehren:
+Alle Sync-Kategorien durchführen:
   bach obsidian sync
 
 Nur heutige Daily Note erstellen:
@@ -69,8 +69,8 @@ data/bach.db                       Datenbank (Tabellen: tasks, memory_working,
                                    wiki_articles, memory_facts)
 
 Obsidian Vault (bei Konfiguration):
-  {vault}/Daily Notes/             Verzeichnis fuer Daily Notes
-  {vault}/BACH Wiki/               Verzeichnis fuer Wiki-Artikel
+  {vault}/Daily Notes/             Verzeichnis für Daily Notes
+  {vault}/BACH Wiki/               Verzeichnis für Wiki-Artikel
   {vault}/BACH Tasks.md            Tasks-Synchronisierungsdatei
 
 SIEHE AUCH

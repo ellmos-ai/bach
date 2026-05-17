@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -9,18 +9,18 @@ BESCHREIBUNG
 ============
 Synchronisiert Dateisystem-Inhalte mit der BACH-Datenbank. Liest Skills und
 Tools aus Dateien (Markdown, Text, Python) und aktualisiert/erstellt entsprechende
-Datenbankeintraege. Vergleicht Aenderungen mittels SHA256-Hashing.
+Datenbankeinträge. Vergleicht Änderungen mittels SHA256-Hashing.
 
 OPERATIONEN
 ===========
 skills              Skills-Inhalte von Dateien in DB laden
 tools               Tools-Inhalte von Dateien in DB laden
 all                 Beides synchronisieren (Skills + Tools)
-status              Sync-Status anzeigen, aenderte Dateien hervorheben
+status              Sync-Status anzeigen, änderte Dateien hervorheben
 
 OPTIONEN
 ========
---dry-run           Aenderungen nur anzeigen, nicht ausfuehren
+--dry-run           Änderungen nur anzeigen, nicht ausführen
 --force             Hash-Vergleich ignorieren, alles neu laden
 
 BEISPIELE
@@ -28,18 +28,18 @@ BEISPIELE
 bach --sync skills
     Synchronisiert alle Skills aus skills/ in die Datenbank.
     Findet: .md, .txt, .py Dateien (rekursiv).
-    Ueberspringt: Dateien mit _ oder . am Anfang (ausser .py).
+    Überspringt: Dateien mit _ oder . am Anfang (ausser .py).
 
 bach --sync tools
     Synchronisiert alle Python-Tools aus tools/ in die Datenbank.
     Findet: *.py Dateien (rekursiv).
-    Ueberspringt: Dateien mit _ oder . am Anfang.
+    Überspringt: Dateien mit _ oder . am Anfang.
 
 bach --sync all --dry-run
-    Zeigt geplante Aenderungen ohne sie auszufuehren.
+    Zeigt geplante Änderungen ohne sie auszufuehren.
 
 bach --sync status
-    Prueft Aenderungen: vergleicht Datei-Hashes mit DB-Hashes.
+    Prüft Änderungen: vergleicht Datei-Hashes mit DB-Hashes.
     Meldet: [GEAENDERT], [FEHLT], [NEU], [OK].
 
 bach --sync all --force
@@ -47,8 +47,8 @@ bach --sync all --force
 
 DATEIEN
 =======
-skills/                 Quelle fuer Skill-Dateien (.md, .txt, .py)
-tools/                  Quelle fuer Tool-Python-Dateien (.py)
+skills/                 Quelle für Skill-Dateien (.md, .txt, .py)
+tools/                  Quelle für Tool-Python-Dateien (.py)
 data/bach.db            Zieldatenbank
                         Tabellen: skills, tools
                         Spalten: name, path, content_hash, description, ...

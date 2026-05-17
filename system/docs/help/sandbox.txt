@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -7,7 +7,7 @@ SANDBOX HANDLER
 
 BESCHREIBUNG
 ============
-Isolierte Code-Ausfuehrung fuer Python-Skripte, Code-Evaluationen, Unit-Tests und
+Isolierte Code-Ausführung für Python-Skripte, Code-Evaluationen, Unit-Tests und
 Shell-Befehle. Ersetzt E2B MCP. Alle Operationen laufen mit 30 Sekunden Timeout und
 PYTHONIOENCODING=utf-8. Ausgaben werden auf max. 3000 Zeichen (stdout) bzw. 1000 Zeichen
 (stderr) begrenzt.
@@ -18,7 +18,7 @@ OPERATIONEN
 
 RUN
 ---
-Fuehrt Python-Datei in Sandbox-Prozess aus.
+Führt Python-Datei in Sandbox-Prozess aus.
 
 Syntax: bach sandbox run <datei> [arg1] [arg2] ...
 
@@ -40,15 +40,15 @@ Syntax: bach sandbox eval "<code>"
 Parameter:
   <code>      - Python-Expression oder Statement (in Anfuehrungszeichen)
 
-Besonderheit: Versucht zuerst eval(), faellt auf exec() zurueck (fuer Statements).
-Rueckgabewert (wenn nicht None) wird zu stdout gedruckt.
+Besonderheit: Versucht zuerst eval(), fällt auf exec() zurück (für Statements).
+Rückgabewert (wenn nicht None) wird zu stdout gedruckt.
 
 cwd wird auf temp-Verzeichnis gesetzt.
 
 
 TEST
 ----
-Fuehrt pytest auf Python-Datei aus.
+Führt pytest auf Python-Datei aus.
 
 Syntax: bach sandbox test <datei>
 
@@ -57,33 +57,33 @@ Parameter:
 
 Flags: -v (verbose), --tb=short (kurze Tracebacks)
 
-Timeout: 60 Sekunden (doppelt gegenueber run/eval)
+Timeout: 60 Sekunden (doppelt gegenüber run/eval)
 
 cwd wird auf system/-Verzeichnis gesetzt.
 
 
 SHELL
 -----
-Fuehrt Shell-Befehl in isoliertem Verzeichnis aus.
+Führt Shell-Befehl in isoliertem Verzeichnis aus.
 
 Syntax: bach sandbox shell "<cmd>"
 
 Parameter:
   <cmd>       - Beliebiger Shell-Befehl (z.B. "ls -la", "pip list")
 
-cwd wird auf temporaeres leeres Verzeichnis gesetzt (Cleanup nach Ausfuehrung).
+cwd wird auf temporaeres leeres Verzeichnis gesetzt (Cleanup nach Ausführung).
 
 
 BEISPIELE
 =========
 
-# Python-Datei mit Parametern ausfuehren:
+# Python-Datei mit Parametern ausführen:
 bach sandbox run tools/data_processor.py input.csv output.json
 
 # Ausdruck evaluieren:
 bach sandbox eval "import json; json.dumps({'test': 123})"
 
-# Unit-Tests ausfuehren:
+# Unit-Tests ausführen:
 bach sandbox test tools/test_handler.py
 
 # Shell-Befehl mit Timeout:
@@ -99,6 +99,6 @@ docs/help/sandbox.txt   - Diese Datei
 SIEHE AUCH
 ==========
 hub/base.py             - BaseHandler (Basisklasse)
-tools/                  - Zielverzeichnis fuer Skripte
-TIMEOUT                 - 30 Sekunden Standard, 60 Sekunden fuer Test
+tools/                  - Zielverzeichnis für Skripte
+TIMEOUT                 - 30 Sekunden Standard, 60 Sekunden für Test
 PYTHONIOENCODING        - utf-8 (Windows-kompatibel)

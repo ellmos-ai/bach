@@ -12,10 +12,10 @@ Scannt Python-Dateien nach:
   - GUI-Texten (setText, setWindowTitle, QLabel, etc.)
   - Deutschen Keywords (Datei, Bearbeiten, Speichern, etc.)
 
-Nuetzlich fuer:
+Nützlich für:
   - Internationalisierung (i18n) vorbereiten
   - Hardcoded Strings finden
-  - Uebersetzungs-Listen erstellen
+  - Übersetzungs-Listen erstellen
 
 Extrahiert aus: A3 Entwicklungsschleife Advanced/TranslationSystem.py
 
@@ -25,7 +25,7 @@ Usage:
     python c_german_scanner.py <ordner> --export translations.json
 
 Autor: Claude (adaptiert)
-Abhaengigkeiten: keine (nur stdlib)
+Abhängigkeiten: keine (nur stdlib)
 
 VERWENDUNG
 ----------------------------------------

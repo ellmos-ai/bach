@@ -1,34 +1,34 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-05-10
 
 BACH NUTZERMODI (v1.1.37)
 =========================
 
-BACH unterstuetzt 4 verschiedene Startup-Modi, die bestimmen,
+BACH unterstützt 4 verschiedene Startup-Modi, die bestimmen,
 welche Komponenten beim Start automatisch gestartet werden.
 
-VERFUEGBARE MODI
+VERFÜGBARE MODI
 ----------------
   gui      GUI-Modus (Standard)
            - Startet GUI Dashboard im Browser
-           - Oeffnet http://127.0.0.1:8000
-           - Ideal fuer interaktive Nutzung
+           - Öffnet http://127.0.0.1:8000
+           - Ideal für interaktive Nutzung
 
   text     Text-Modus
            - Startet nur Konsole mit bach.py
-           - Kein Browser wird geoeffnet
-           - Ideal fuer Terminal-fokussierte Arbeit
+           - Kein Browser wird geöffnet
+           - Ideal für Terminal-fokussierte Arbeit
 
   dual     Dual-Modus
            - Startet GUI + separate Konsole
            - Beide Interfaces parallel nutzbar
-           - Ideal fuer Power-User
+           - Ideal für Power-User
 
   silent   Silent-Modus
            - Nichts wird automatisch gestartet
            - Nur Startup-Bericht ausgegeben
-           - Ideal fuer Scripts und Automatisierung
+           - Ideal für Scripts und Automatisierung
 
 MODUS AENDERN
 -------------
@@ -61,7 +61,7 @@ BEISPIELE
 # Normal starten (verwendet gespeicherten Modus)
 bach --startup
 
-# Modus dauerhaft auf Text aendern
+# Modus dauerhaft auf Text ändern
 bach --startup mode text
 
 # Einmalig im Silent-Modus starten
@@ -74,8 +74,8 @@ HINWEISE
 --------
 - Der Modus wird bei --startup automatisch angezeigt
 - GUI-Server bleibt im Hintergrund aktiv bis zum Shutdown
-- Im Text-Modus oeffnet sich ein neues Konsolenfenster
-- Silent-Modus eignet sich fuer Cron-Jobs und Automations
+- Im Text-Modus öffnet sich ein neues Konsolenfenster
+- Silent-Modus eignet sich für Cron-Jobs und Automations
 
 SIEHE AUCH
 ----------

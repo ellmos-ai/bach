@@ -1,17 +1,17 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
 HANDLER-NAME
 ============
-Unified Search Handler fuer BACH (SQ064 + SQ047)
+Unified Search Handler für BACH (SQ064 + SQ047)
 
 
 BESCHREIBUNG
 ============
-Volltext-Suche (FTS5) ueber alle BACH-Quellen: Wiki-Artikel, Memory (Working/
+Volltext-Suche (FTS5) über alle BACH-Quellen: Wiki-Artikel, Memory (Working/
 Fakten/Lessons), Dokumentationen, KnowledgeDigest Skills/Wiki und beliebige
-gescannte Verzeichnisse. Unterstuetzt erweiterte Filter nach Quelle, Tags und
+gescannte Verzeichnisse. Unterstützt erweiterte Filter nach Quelle, Tags und
 Limit. Automatische Indexierung mit Duplikat-Erkennung via Hash-Vergleich.
 
 
@@ -19,7 +19,7 @@ OPERATIONEN
 ===========
 
 SUCHE (Default)
-  <query>                       Volltext-Suche ueber alle Quellen
+  <query>                       Volltext-Suche über alle Quellen
   <query> --source SOURCE       Nur in Quelle suchen (wiki|document|memory_*)
   <query> --tag TAG             Filter nach Tag (mehrfach kombinierbar)
   <query> --limit N             Max. Treffer (Default: 20)
@@ -32,10 +32,10 @@ INDEXIERUNG
   index <pfad> --no-tags        Ohne automatische Tag-Ableitung
 
 VERWALTUNG
-  status                        Index-Statistiken und Quelle-Uebersicht
+  status                        Index-Statistiken und Quelle-Übersicht
   rebuild                       Index leeren und komplett neu aufbauen
-  tags                          Alle verfuegbaren Tags auflisten
-  tags TAG1 TAG2                Eintraege mit diesen Tags finden
+  tags                          Alle verfügbaren Tags auflisten
+  tags TAG1 TAG2                Einträge mit diesen Tags finden
   tags --limit N                Top-N Tags nach Haeufigkeit
   dupes                         Duplikate finden (gleiches Hash, Pfade)
   help                          Diese Hilfe anzeigen

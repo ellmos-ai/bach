@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 RHETORIK
 ========
@@ -15,17 +15,17 @@ Kernaussage: Rhetorik ist Kognitive Strategie + Sprachliche Verpackung.
 
 1.1 Verstaerkungs-Operatoren
 -----------------------------
-Erhoehen Wirkung, Intensitaet oder Wichtigkeit.
-  - Amplifikation     -> etwas groesser machen
+Erhöhen Wirkung, Intensitaet oder Wichtigkeit.
+  - Amplifikation     -> etwas größer machen
   - Emphase           -> Betonung durch Wiederholung/Struktur
-  - Steigerung (Klimax) -> A -> B -> C, jeweils staerker
+  - Steigerung (Klimax) -> A -> B -> C, jeweils stärker
   - Superlativierung  -> "der wichtigste Punkt..."
 
 1.2 Abschwächungs-Operatoren
 -----------------------------
-Daempfen, relativieren, entschaerfen.
+Daempfen, relativieren, entschärfen.
   - Litotes           -> "nicht schlecht"
-  - Hedging           -> "es koennte sein, dass..."
+  - Hedging           -> "es könnte sein, dass..."
   - Relativierung     -> "im Vergleich dazu..."
 
 1.3 Struktur-Operatoren
@@ -38,8 +38,8 @@ Ordnen Gedanken und lenken Aufmerksamkeit.
 
 1.4 Bedeutungs-Operatoren
 --------------------------
-Veraendern, wie etwas verstanden wird.
-  - Metapher          -> Bedeutung uebertragen
+Verändern, wie etwas verstanden wird.
+  - Metapher          -> Bedeutung übertragen
   - Analogie          -> Vergleichsstruktur
   - Definition        -> Begriff festlegen
   - Reframing         -> Bedeutung umdeuten
@@ -61,7 +61,7 @@ Steuern, worauf das Publikum achtet.
 
 1.7 Interaktions-Operatoren
 ----------------------------
-Binden das Gegenueber ein.
+Binden das Gegenüber ein.
   - Rhetorische Frage
   - Direkte Ansprache
   - Gemeinschafts-Frame -> "wir alle kennen das..."
@@ -69,7 +69,7 @@ Binden das Gegenueber ein.
 
 1.8 Glaubwürdigkeits-Operatoren
 --------------------------------
-Erhoehen Vertrauen.
+Erhöhen Vertrauen.
   - Selbstoffenbarung
   - Transparenz
   - Fehler zugeben
@@ -79,20 +79,20 @@ Erhoehen Vertrauen.
 2. RHETORISCHE PATTERNS (Kombinationen)
 ========================================
 
-2.1 Problem-Ursache-Loesung Pattern
+2.1 Problem-Ursache-Lösung Pattern
 ------------------------------------
 Operatoren: Framing, Kausalitaet, Strukturierung
-Form: Problem benennen -> Ursache erklaeren -> Loesung praesentieren
+Form: Problem benennen -> Ursache erklären -> Lösung praesentieren
 
 2.2 Einwand-Vorwegnahme Pattern
 --------------------------------
 Operatoren: Perspektivwechsel, Reframing, Logos
-Form: "Sie koennten jetzt denken... aber tatsaechlich..."
+Form: "Sie könnten jetzt denken... aber tatsaechlich..."
 
 2.3 Story-Frame Pattern
 ------------------------
 Operatoren: Metapher, Sequenzierung, Pathos
-Form: Situation -> Konflikt -> Wendepunkt -> Loesung
+Form: Situation -> Konflikt -> Wendepunkt -> Lösung
 
 2.4 Sandwich-Pattern
 ---------------------
@@ -117,7 +117,7 @@ Form: "Studien zeigen... Experten bestaetigen..."
 2.8 Minimal-Widerstand Pattern
 -------------------------------
 Operatoren: Abschwaechung, Hedging
-Form: "Vielleicht waere es sinnvoll..."
+Form: "Vielleicht wäre es sinnvoll..."
 
 2.9 Reframing-Pattern
 ----------------------
@@ -127,12 +127,12 @@ Form: "Das ist nicht ein Problem -- das ist eine Chance."
 2.10 Socratisches Pattern
 --------------------------
 Operatoren: Fragen, Perspektivwechsel
-Form: "Was waere, wenn...?"
+Form: "Was wäre, wenn...?"
 
 2.11 Momentum-Pattern
 ----------------------
 Operatoren: Klimax, Sequenzierung
-Form: "Zuerst... dann... schliesslich..."
+Form: "Zuerst... dann... schließlich..."
 
 2.12 Reduktion-Pattern
 -----------------------
@@ -141,15 +141,15 @@ Form: "Eigentlich geht es nur um zwei Dinge..."
 
 2.13 Spiegelungs-Pattern
 -------------------------
-Operatoren: Perspektivuebernahme
+Operatoren: Perspektivübernahme
 Form: "Ich hoere, dass dir wichtig ist..."
 
 2.14 Vereinfachungs-Pattern
 ----------------------------
 Operatoren: Normalisieren, Metapher
-Form: "Stell dir vor, es waere wie..."
+Form: "Stell dir vor, es wäre wie..."
 
-2.15 Ueberraschungs-Pattern
+2.15 Überraschungs-Pattern
 ----------------------------
 Operatoren: Kontrast, Reframing
 Form: "Die meisten denken X -- aber das Gegenteil ist wahr."
@@ -172,7 +172,7 @@ Form: "Stell dir vor, du stehst morgens auf und..."
 2.19 Gegenbeweis-Pattern
 -------------------------
 Operatoren: Testen, Vergleichen
-Form: "Wenn das stimmen wuerde, dann..."
+Form: "Wenn das stimmen würde, dann..."
 
 2.20 Minimal-Argument Pattern
 ------------------------------
@@ -185,11 +185,11 @@ Form: "Es gibt nur EINEN Grund, warum das wichtig ist..."
 
 Cold Open       -> direkt mit starker Aussage starten
 Hook            -> Aufmerksamkeit in 3 Sekunden
-Call-Back       -> spaeter auf frueheren Punkt zurueckkommen
-Echoing         -> Schluesselwoerter wiederholen
+Call-Back       -> später auf frueheren Punkt zurückkommen
+Echoing         -> Schlüsselwörter wiederholen
 Contrast-Hook   -> "Die schlechte Nachricht... die gute Nachricht..."
 False Start     -> bewusst unterbrechen, um Spannung zu erzeugen
-Micro-Pause     -> Wirkung erhoehen
+Micro-Pause     -> Wirkung erhöhen
 Labeling        -> Emotionen benennen ("Das wirkt frustrierend...")
 Priming         -> Erwartung setzen
 Anchoring       -> Vergleichspunkt setzen
@@ -199,14 +199,14 @@ Anchoring       -> Vergleichspunkt setzen
 ==============================
 Metakognitive Strategien als rhetorische Selbststeuerung:
 
-  Selbstueberwachung -> Koerpersprache, Ton, Tempo kontrollieren
+  Selbstüberwachung -> Körpersprache, Ton, Tempo kontrollieren
   Fehleranalyse      -> Redeanalyse, Feedbackschleifen
   Meta-Fragen        -> "Was ist meine Kernbotschaft"
   Strategiewahl      -> Ethos/Pathos/Logos-Balance
   Reflexion          -> Nachbereitung einer Rede
   Meta-Planung       -> Redeaufbau, Dramaturgie
 
-Rhetorik = nicht nur reden, sondern ueber das Reden nachdenken.
+Rhetorik = nicht nur reden, sondern über das Reden nachdenken.
 
 
 5. BEZUG ZU TECHNISCHEN PATTERNS
@@ -215,7 +215,7 @@ Viele Operator-Patterns haben rhetorische Zwillinge:
 
   Classification Pipeline  -> Zielgruppenanalyse
   Scoring & Ranking        -> Argumentgewichtung
-  Rule-Based Filtering     -> Relevanzfilter fuer Inhalte
+  Rule-Based Filtering     -> Relevanzfilter für Inhalte
   Anomaly Detection        -> Widersprueche erkennen
   Progressive Refinement   -> Argument schrittweise aufbauen
   Human-in-the-Loop        -> Publikumsreaktionen einbeziehen
@@ -232,7 +232,7 @@ Logos (logische Argumentation)
   -> Denkstrategien: Hypothesenbildung, Kausales Denken
 
 Ethos (Glaubwuerdigkeit)
-  -> Selbstueberwachung, Fehleranalyse, Konsistenz
+  -> Selbstüberwachung, Fehleranalyse, Konsistenz
   -> Metakognition: Reflexion, Meta-Fragen
 
 Pathos (Emotionale Wirkung)
@@ -243,9 +243,9 @@ Pathos (Emotionale Wirkung)
 7. ANWENDUNG IN BACH
 ====================
 
-Rhetorische Operatoren koennen KI-Systeme verbessern:
-  - Bessere Erklaerbarkeit (Vereinfachungs-Pattern)
-  - Bessere Fehlermeldungen (Problem-Ursache-Loesung)
+Rhetorische Operatoren können KI-Systeme verbessern:
+  - Bessere Erklärbarkeit (Vereinfachungs-Pattern)
+  - Bessere Fehlermeldungen (Problem-Ursache-Lösung)
   - Bessere User-Guidance (Signposting, Strukturierung)
   - Bessere Kommunikation (Partner-System)
 

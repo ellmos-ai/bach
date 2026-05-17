@@ -7,32 +7,32 @@ Pfad: docs/help/tools/python_editing.txt
 BESCHREIBUNG
 ------------
 Tools zum Bearbeiten, Analysieren und Aufteilen von Python-Dateien.
-Besonders nuetzlich fuer:
+Besonders nützlich für:
   - Grosse Python-Dateien (500+ Zeilen)
   - Code-Review und Refactoring
   - LLM-Kontextmanagement (Token sparen)
-  - Strukturierte Code-Aenderungen
+  - Strukturierte Code-Änderungen
 
 WICHTIG: PYTHON_CLI_EDITOR
 ==========================
-Das Haupt-Tool fuer Python-Bearbeitung hat eine eigene, ausfuehrliche
+Das Haupt-Tool für Python-Bearbeitung hat eine eigene, ausführliche
 Dokumentation wegen seiner Komplexitaet und Wichtigkeit:
 
   bach --help tools/python_cli_editor
 
-Der python_cli_editor ist speziell fuer AI-Assistenten gebaut:
+Der python_cli_editor ist speziell für AI-Assistenten gebaut:
   - Struktur anzeigen statt ganze Datei lesen (Token sparen)
   - Gezielt Methoden/Klassen bearbeiten
-  - Chirurgische Aenderungen statt komplette Rewrites
+  - Chirurgische Änderungen statt komplette Rewrites
 
-Kurzuebersicht python_cli_editor:
+Kurzübersicht python_cli_editor:
   bach python_cli_editor script.py --show-all      # Struktur anzeigen
   bach python_cli_editor script.py --show 50-80    # Zeilen 50-80
   bach python_cli_editor script.py --imports       # Nur Imports
   bach python_cli_editor script.py --classes       # Nur Klassen
   bach python_cli_editor script.py --add code.py --in-class MyClass --save
 
-Fuer Details: bach --help tools/python_cli_editor
+Für Details: bach --help tools/python_cli_editor
 
 PYCUTTER: c_pycutter
 ====================
@@ -42,7 +42,7 @@ ANWENDUNGSFAELLE:
   - Code-Review: Jede Klasse einzeln betrachten
   - LLM-Kontext: Nur relevante Klasse laden
   - Dokumentation: Klassen-weise Doku erstellen
-  - Refactoring: Uebersicht bei grossen Dateien
+  - Refactoring: Übersicht bei grossen Dateien
 
 GRUNDBEFEHLE:
 
@@ -52,7 +52,7 @@ GRUNDBEFEHLE:
   # In bestimmten Ordner ausgeben
   bach c_pycutter main.py --output-dir ./extracted
 
-  # JSON-Output (fuer Weiterverarbeitung)
+  # JSON-Output (für Weiterverarbeitung)
   bach c_pycutter main.py --json
 
 OPTIONEN:
@@ -73,7 +73,7 @@ BEISPIEL-WORKFLOW:
   # 2. Einzelne Klasse bearbeiten
   # (in separatem Editor oder mit python_cli_editor)
   
-  # 3. Aenderungen zurueck uebernehmen
+  # 3. Änderungen zurück übernehmen
   # (manuell oder mit Diff-Tool)
 
 METHOD ANALYZER: c_method_analyzer
@@ -83,9 +83,9 @@ Tiefgehende Analyse von Python-Code auf Probleme und Struktur.
 FUNKTIONEN:
   - Methoden-Inventar (alle Methoden mit Zeilennummern)
   - Aufruf-Analyse (welche Methode ruft welche auf)
-  - Import-Pruefung (genutzt vs. ungenutzt)
-  - Tippfehler-Erkennung (aehnliche Namen)
-  - Signal-Connect-Pruefung (Qt/Tk)
+  - Import-Prüfung (genutzt vs. ungenutzt)
+  - Tippfehler-Erkennung (ähnliche Namen)
+  - Signal-Connect-Prüfung (Qt/Tk)
   - Attribut-vor-Init Erkennung
 
 GRUNDBEFEHLE:
@@ -135,10 +135,10 @@ TYPISCHE WORKFLOWS
 1. GROSSE DATEI VERSTEHEN
    Erst Struktur, dann Details:
    
-   # Ueberblick bekommen
+   # Überblick bekommen
    bach python_cli_editor grosse_datei.py --show-all
    
-   # Oder aufteilen fuer Review
+   # Oder aufteilen für Review
    bach c_pycutter grosse_datei.py
 
 2. PROBLEME VOR COMMIT FINDEN
@@ -149,7 +149,7 @@ TYPISCHE WORKFLOWS
    Zeigt: Tippfehler, ungenutzte Methoden, fehlende Referenzen
 
 3. REFACTORING VORBEREITEN
-   Abhaengigkeiten verstehen:
+   Abhängigkeiten verstehen:
    
    # Wer ruft wen auf?
    bach c_method_analyzer script.py --verbose
@@ -172,15 +172,15 @@ WANN WELCHES TOOL?
 | Aufgabe                      | Tool                |
 |------------------------------|---------------------|
 | Struktur anzeigen            | python_cli_editor   |
-| Gezielt Code aendern         | python_cli_editor   |
+| Gezielt Code ändern         | python_cli_editor   |
 | Datei in Teile zerlegen      | c_pycutter          |
 | Probleme/Bugs finden         | c_method_analyzer   |
-| Imports pruefen              | c_method_analyzer   |
+| Imports prüfen              | c_method_analyzer   |
 | Tippfehler finden            | c_method_analyzer   |
 
 CONTEXT-INJEKTOR
 ----------------
-Der ContextInjector erkennt Stichwoerter und empfiehlt diese Tools:
+Der ContextInjector erkennt Stichwörter und empfiehlt diese Tools:
 
   "python bearbeiten"  -> bach python_cli_editor <datei> --show-all
   "klasse bearbeiten"  -> bach python_cli_editor <datei> --show-all
@@ -191,7 +191,7 @@ Der ContextInjector erkennt Stichwoerter und empfiehlt diese Tools:
 
 SIEHE AUCH
 ----------
-  bach --help tools/python_cli_editor  Ausfuehrliche Editor-Doku (WICHTIG!)
+  bach --help tools/python_cli_editor  Ausführliche Editor-Doku (WICHTIG!)
   bach --help tools/imports            Import-Handling
-  bach --help tools/code_quality       Code-Qualitaet (Encoding etc.)
+  bach --help tools/code_quality       Code-Qualität (Encoding etc.)
   bach --help tools/analysis           Weitere Analyse-Tools

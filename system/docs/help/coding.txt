@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 CODING-STANDARDS
 ================
@@ -24,7 +24,7 @@ CODING-STANDARDS
 3. CONSOLE
    - Keine Emojis in print()
    - Stattdessen: [INFO], [OK], [ERROR], [WARN]
-   - Console-Fix wenn noetig:
+   - Console-Fix wenn nötig:
      sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 4. EMOJIS
@@ -34,8 +34,8 @@ CODING-STANDARDS
 
 5. JSON-BEARBEITUNG
    - ERSTE WAHL: bach.py oder Python-Script
-   - NIE fc_str_replace fuer JSON
-   - NIE PowerShell fuer JSON
+   - NIE fc_str_replace für JSON
+   - NIE PowerShell für JSON
    - Bei Problemen: bach c_json_repair <datei>
 
 6. IMPORTS

@@ -1,22 +1,22 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-23
-# Naechste Pruefung: 2026-08-23
+# Nächste Prüfung: 2026-08-23
 
 BRIDGE LOCK & FACKEL - Koordination bei Mehrfachinstanzen
 ==========================================================
 
 Stand: 2026-02-23 v1.0.0 (ENT-45)
 
-UEBERBLICK
+ÜBERBLICK
 ==========
 Die BACH Bridge (claude_bridge) nutzt zwei Lock-Ebenen um sicherzustellen,
 dass zu einem Zeitpunkt immer nur EINE Bridge-Instanz aktiv ist:
 
   Ebene 1 — LOCK-DATEI (lokal):     verhindert zwei Instanzen auf demselben PC
-  Ebene 2 — FACKEL-SYSTEM (global): verhindert parallelen Betrieb ueber OneDrive
+  Ebene 2 — FACKEL-SYSTEM (global): verhindert parallelen Betrieb über OneDrive
 
-Beide Ebenen sind unabhaengig und ergaenzen sich.
+Beide Ebenen sind unabhängig und ergänzen sich.
 
 
 EBENE 1: LOCK-DATEI
@@ -26,22 +26,22 @@ Datei: %TEMP%\bach_bridge.lock  (lokaler Temp-Ordner)
 Mechanismus:
   - Beim Start: msvcrt File-Lock auf bach_bridge.lock
   - Zweite Instanz auf demselben PC: erkennt Lock → beendet sich
-  - Beim sauberen Beenden: Lock wird freigegeben und Datei geloescht
+  - Beim sauberen Beenden: Lock wird freigegeben und Datei gelöscht
   - Beim Absturz: Lock bleibt (OS gibt ihn frei sobald Prozess tot)
 
-Wann noetig: IMMER — auch auf Einzelsystemen ohne OneDrive.
+Wann nötig: IMMER — auch auf Einzelsystemen ohne OneDrive.
 
 
 EBENE 2: FACKEL-SYSTEM
 =======================
-Tabelle: bridge_session_lock in bach.db (ueber OneDrive synchronisiert)
+Tabelle: bridge_session_lock in bach.db (über OneDrive synchronisiert)
 
-  Wann noetig:
-    Nur wenn dieselbe bach.db ueber OneDrive (oder anderen Sync-Dienst)
-    auf mehreren PCs geteilt wird. Zwei Bridges wuerden sonst gleichzeitig
+  Wann nötig:
+    Nur wenn dieselbe bach.db über OneDrive (oder anderen Sync-Dienst)
+    auf mehreren PCs geteilt wird. Zwei Bridges würden sonst gleichzeitig
     in dieselbe DB schreiben → Konflikte, doppelte Nachrichten, Race Conditions.
 
-    Bei rein lokalem BACH (kein Sync) genuegt der Lock-File. Das Fackel-System
+    Bei rein lokalem BACH (kein Sync) genügt der Lock-File. Das Fackel-System
     schadet aber auch nicht — es gewinnt einfach immer wenn kein anderer PC
     konkurriert.
 
@@ -52,17 +52,17 @@ Tabelle: bridge_session_lock in bach.db (ueber OneDrive synchronisiert)
   Force-Takeover (ENT-45, ab 2026-02-23):
     - Wer zuletzt die Fackel anfragt, bekommt sie — immer
     - Kein "blockiert"-Fehler mehr
-    - Alter Halter erhaelt automatisch Signal via Heartbeat-Ausfall
+    - Alter Halter erhält automatisch Signal via Heartbeat-Ausfall
 
 
 FACKEL-VERLUST: ABLAUF
 =======================
-Wenn PC-B die Fackel von PC-A uebernimmt:
+Wenn PC-B die Fackel von PC-A übernimmt:
 
   1. PC-B schreibt pc_name='PC-B' in bridge_session_lock
-  2. PC-A: naechster Heartbeat schlaegt fehl (0 rows updated)
-  3. PC-A prueft: check_fackel_mine() → False
-  4. PC-A loggt: "FACKEL VERLOREN: PC-B hat die Fackel uebernommen"
+  2. PC-A: nächster Heartbeat schlaegt fehl (0 rows updated)
+  3. PC-A prüft: check_fackel_mine() → False
+  4. PC-A loggt: "FACKEL VERLOREN: PC-B hat die Fackel übernommen"
   5. PC-A sendet Telegram-Nachricht: "Fackel an PC-B abgegeben"
   6. PC-A: geordneter Shutdown, Exit-Code 2 (FACKEL_LOST)
   7. Tray auf PC-A: erkennt Exit-Code 2 → kein Neustart → Tray beendet sich
@@ -73,25 +73,25 @@ TRAY-LOCK
 Datei: %TEMP%\bach_bridge_tray.lock
 
   - Verhindert zwei Tray-Instanzen auf demselben PC
-  - Wird vom Daemon genutzt um zu pruefen ob Tray noch laeuft
+  - Wird vom Daemon genutzt um zu prüfen ob Tray noch läuft
     (Tray-Kopplung: Daemon beendet sich wenn Tray stirbt)
-  - Wird im finally-Block des Trays geloescht (bei sauberem Beenden)
+  - Wird im finally-Block des Trays gelöscht (bei sauberem Beenden)
   - Bei Absturz des Trays: Lock bleibt → Daemon erkennt toten Tray
-    nach naechstem Check (alle 30s) und beendet sich
+    nach nächstem Check (alle 30s) und beendet sich
 
 
 EXIT-CODES DES DAEMONS
 =======================
   0   Normales Beenden (Benutzer hat "Beenden" gewählt)
   1   Fehler beim Start (Lock belegt o.ä.)
-  2   FACKEL_LOST — Fackel durch anderen PC uebernommen
+  2   FACKEL_LOST — Fackel durch anderen PC übernommen
       → Tray startet Daemon NICHT neu bei Exit-Code 2
 
 
 ARCHITEKTUR: CONNECTORS VS. BRIDGE
 ====================================
 Die Bridge (claude_bridge) ist der einzige Dienst der einen eigenen
-Daemon-Prozess hat und Koordination benoetigt.
+Daemon-Prozess hat und Koordination benötigt.
 
 Die Connectors (telegram_connector.py, discord_connector.py, etc.) sind
 reine Adapter-Module ohne eigenen Daemon — sie werden vom Bridge-Daemon
@@ -106,7 +106,7 @@ aufgerufen und brauchen kein eigenes Lock/Fackel-System.
 
 DIAGNOSE
 ========
-  Fackel-Status pruefen:
+  Fackel-Status prüfen:
     python -c "
     import sqlite3, json
     from pathlib import Path
@@ -120,8 +120,8 @@ DIAGNOSE
     data/logs/claude_bridge.log
 
   Relevante Log-Meldungen:
-    "Fackel erworben: Fackel uebernommen (Force-Takeover von X)" — normaler Takeover
-    "FACKEL VERLOREN: X hat die Fackel uebernommen"             — dieser PC verliert
+    "Fackel erworben: Fackel übernommen (Force-Takeover von X)" — normaler Takeover
+    "FACKEL VERLOREN: X hat die Fackel übernommen"             — dieser PC verliert
     "Heartbeat fehlgeschlagen (DB-Problem)"                     — kurzer DB-Fehler
 
 

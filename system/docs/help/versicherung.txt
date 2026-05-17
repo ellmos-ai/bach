@@ -1,21 +1,21 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 2.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 VERSICHERUNG - Versicherungsverwaltung
 =======================================
 
 BESCHREIBUNG:
-  Verwaltung aller Versicherungspolicen mit Fristen, Kuendigungsterminen
+  Verwaltung aller Versicherungspolicen mit Fristen, Kündigungsterminen
   und Beitraegen. Daten liegen in bach.db/fin_insurances.
-  GUI-Zugriff ueber das Finanz-Modul (Versicherungen-Tab).
+  GUI-Zugriff über das Finanz-Modul (Versicherungen-Tab).
 
 STATUS:
-  Vollstaendiger CLI-Handler implementiert in hub/versicherung.py
+  Vollständiger CLI-Handler implementiert in hub/versicherung.py
   - CLI: bach versicherung <operation> (list, show, add, edit, delete, status, fristen, check, claim)
   - GUI: Finanz-Modul > Versicherungen (CRUD von Gemini implementiert)
-  - Direkte DB-Abfrage (fuer Agents/Experten)
+  - Direkte DB-Abfrage (für Agents/Experten)
 
 DATENBANK:
   Tabellen:
@@ -29,12 +29,12 @@ DATENBANK:
     tarif_name               Tarifbezeichnung
     police_nr                Policennummer (UNIQUE)
     sparte                   Haftpflicht, BU, KFZ, Hausrat, Rechtsschutz, ...
-    status                   aktiv | gekuendigt | beitragsfrei | ruhend
+    status                   aktiv | gekündigt | beitragsfrei | ruhend
     beginn_datum             Vertragsbeginn
     ablauf_datum             Vertragsende
-    kuendigungsfrist_monate  Kuendigungsfrist in Monaten (Default: 3)
-    verlaengerung_monate     Auto-Verlaengerung (Default: 12)
-    naechste_kuendigung      Naechster Kuendigungstermin
+    kündigungsfrist_monate  Kündigungsfrist in Monaten (Default: 3)
+    verlängerung_monate     Auto-Verlängerung (Default: 12)
+    nächste_kündigung      Nächster Kündigungstermin
     beitrag                  Beitrag als Betrag
     zahlweise                monatlich | quartalsweise | halbjaehrlich | jaehrlich
     steuer_relevant_typ      Vorsorgeaufwendungen etc.
@@ -42,7 +42,7 @@ DATENBANK:
     notizen                  Freitext
     created_at, updated_at   Timestamps
 
-VERKNUEPFUNGEN:
+VERKNÜPFUNGEN:
   - financial_emails: E-Mails von Versicherungen (category = 'versicherung')
   - ordner_pfad: Echte Dokumente unter einem lokal konfigurierten Versicherungsdokumente-Pfad
   - user_data_folders: Registrierter Ordner 'user/versicherungen'
@@ -54,7 +54,7 @@ AKTUELLE DATEN:
 
 CLI-BEFEHLE:
   bach versicherung list                    Alle aktiven Versicherungen
-  bach versicherung list --all              Inkl. gekuendigte
+  bach versicherung list --all              Inkl. gekündigte
   bach versicherung list --sparte <sparte>  Nach Sparte filtern
   bach versicherung list --status <status>  Nach Status filtern
 
@@ -63,13 +63,13 @@ CLI-BEFEHLE:
   bach versicherung add --anbieter "X" --sparte "Y" [Optionen]
     Pflicht: --anbieter, --sparte
     Optionen: --beitrag, --zahlweise, --police, --tarif, --beginn,
-              --ablauf, --kuendigung, --frist, --steuer, --ordner, --note
+              --ablauf, --kündigung, --frist, --steuer, --ordner, --note
 
   bach versicherung edit <id> [Felder]      Versicherung bearbeiten
-  bach versicherung delete <id>             Status -> gekuendigt setzen
+  bach versicherung delete <id>             Status -> gekündigt setzen
 
   bach versicherung status                  Dashboard mit Statistiken
-  bach versicherung fristen [--tage N]      Kuendigungsfristen anzeigen (Default: 90 Tage)
+  bach versicherung fristen [--tage N]      Kündigungsfristen anzeigen (Default: 90 Tage)
   bach versicherung check                   Portfolio-Analyse
 
   bach versicherung claim add <id> --datum DD.MM.YYYY --beschreibung "Text" [--betrag X]

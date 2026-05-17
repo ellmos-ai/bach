@@ -8,14 +8,14 @@ BESCHREIBUNG
 file_cleaner.py - Dateien nach Alter/Muster bereinigen
 ======================================================
 
-Findet und loescht alte Dateien oder Dateien nach Muster.
-Nuetzlich fuer Backup-Ordner, Logs, temporaere Dateien.
+Findet und löscht alte Dateien oder Dateien nach Muster.
+Nützlich für Backup-Ordner, Logs, temporaere Dateien.
 
 Usage:
-    python file_cleaner.py <ordner> --age 30           # Aelter als 30 Tage
+    python file_cleaner.py <ordner> --age 30           # Älter als 30 Tage
     python file_cleaner.py <ordner> --pattern "*.log"  # Nach Muster
     python file_cleaner.py <ordner> --keep 5           # Behalte 5 neueste
-    python file_cleaner.py <ordner> --execute          # Tatsaechlich loeschen
+    python file_cleaner.py <ordner> --execute          # Tatsaechlich löschen
 
 Autor: BACH v1.1
 

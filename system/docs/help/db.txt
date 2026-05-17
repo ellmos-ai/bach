@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -7,25 +7,25 @@ HANDLER: db
 ================================================================================
 
 BESCHREIBUNG
-  Datenbank-Operationen fuer die zentrale BACH-Instanz. Verwaltet SQLite-Daten,
-  fuehrt Queries aus, exportiert Tabellen und erstellt Backups. Ersetzt Supabase
-  MCP als lokale Loesung.
+  Datenbank-Operationen für die zentrale BACH-Instanz. Verwaltet SQLite-Daten,
+  führt Queries aus, exportiert Tabellen und erstellt Backups. Ersetzt Supabase
+  MCP als lokale Lösung.
 
 OPERATIONEN
-  status             Zeigt Datenbank-Uebersicht (Tabellen, Groesse, Version)
+  status             Zeigt Datenbank-Übersicht (Tabellen, Größe, Version)
   tables             Listet alle Tabellen mit Zeilenanzahlen auf
   info <tabelle>     Details: Schema, Spalten, dist_type-Verteilung, Beispiele
-  query "SQL"        Fuehrt SQL-Query aus (SELECT oder DML)
+  query "SQL"        Führt SQL-Query aus (SELECT oder DML)
   schema <tabelle>   Zeigt CREATE TABLE Statement mit Indices
   count <tabelle>    Zeilenanzahl einer einzelnen Tabelle
   export <tabelle>   Exportiert Tabelle als CSV oder JSON
                      Optionen: --format csv|json (default: csv)
-  insert <tabelle>   Fuegt Datensatz ein (JSON-Format)
+  insert <tabelle>   Fügt Datensatz ein (JSON-Format)
   backup             Erstellt Quick-Backup in data/_backups/
 
 BEISPIELE
   bach db status
-    -> Zeigt Datenbank-Status, Tabellenzahl, Groesse, Views, Indices
+    -> Zeigt Datenbank-Status, Tabellenzahl, Größe, Views, Indices
 
   bach db tables
     -> Listet alle Tabellen mit Zeilenanzahlen auf
@@ -34,7 +34,7 @@ BEISPIELE
     -> Zeigt Schema, Spalten, dist_type-Verteilung und 5 Beispielzeilen
 
   bach db query "SELECT * FROM agents WHERE status='active' LIMIT 10"
-    -> Fuehrt Query aus, zeigt max 50 Zeilen
+    -> Führt Query aus, zeigt max 50 Zeilen
 
   bach db schema prompts
     -> Zeigt CREATE TABLE und INDEX-Statements
@@ -43,7 +43,7 @@ BEISPIELE
     -> Exportiert 'runs' als JSON nach data/export/runs_YYYYMMDD_HHMMSS.json
 
   bach db insert tasks '{"title":"Test","priority":1}'
-    -> Fuegt Datensatz in 'tasks' ein (validiert Spalten)
+    -> Fügt Datensatz in 'tasks' ein (validiert Spalten)
 
   bach db backup
     -> Erstellt data/_backups/bach_quick_YYYYMMDD_HHMMSS.db

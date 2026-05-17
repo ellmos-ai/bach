@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -8,7 +8,7 @@ CV - Lebenslauf-Verwaltung und -Generierung
 BESCHREIBUNG
 ------------
 Handler zur Generierung und Verwaltung von Lebenslaeufen basierend auf
-Daten aus der BACH-Datenbasis. Sammelt persoenliche Daten, berufliche
+Daten aus der BACH-Datenbasis. Sammelt persönliche Daten, berufliche
 Kontakte und Karriereinformationen aus registrierten Ordnern und
 generiert einen ASCII-formatierten Lebenslauf.
 
@@ -36,16 +36,16 @@ DATENQUELLEN
 ------------
 Der Handler sammelt Daten aus folgenden Quellen:
 
-  1. Persoenliche Daten: assistant_user_profile-Tabelle
+  1. Persönliche Daten: assistant_user_profile-Tabelle
   2. Berufliche Referenzen: contacts (category: "beruflich")
   3. Karriere-Ordner: Arbeitgeber, Zeugnisse, Fortbildungen (bei --scan)
 
 STATUS-AUSGABE
 --------------
 Der "status"-Befehl zeigt:
-  - Anzahl persoenlicher Datensaetze
+  - Anzahl persönlicher Datensaetze
   - Berufliche Referenzen (aktiv)
-  - Registrierte Ordner (mit Existenzpruefung)
+  - Registrierte Ordner (mit Existenzprüfung)
   - Status des CV-Generators
 
 DATEIEN

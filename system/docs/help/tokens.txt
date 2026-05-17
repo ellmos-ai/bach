@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -11,7 +11,7 @@ BESCHREIBUNG
 ============
 Der tokens-Handler erfasst und analysiert den Verbrauch von LLM-Tokens
 (Input/Output) sowie die anfallenden Kosten in EUR. Daten werden aus der
-monitor_tokens-Tabelle in bach.db abgefragt. Unterstuetzt Zeitfenster von
+monitor_tokens-Tabelle in bach.db abgefragt. Unterstützt Zeitfenster von
 heute, letzte 7 Tage und 30 Tage.
 
 
@@ -20,7 +20,7 @@ OPERATIONEN
 Abrufbar mit: bach --tokens <operation>
 
 status   (default)  Zusammenfassung: Heute / Woche / Monat
-today               Detailliert: letzte 20 Eintraege des heutigen Tages
+today               Detailliert: letzte 20 Einträge des heutigen Tages
 week                Nach Tag gruppiert: letzte 7 Tage mit Kostensummen
 report              Bericht nach Model + aktuelle Preise (30 Tage)
 

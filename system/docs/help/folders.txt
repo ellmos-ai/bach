@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -12,9 +12,9 @@ Datenbank. Speichert Metadaten wie Ordnertyp, Besitzer und Zugriffszeitpunkt.
 BESCHREIBUNG
 ------------
 
-Der folders Handler ermoeglicht die zentrale Verwaltung von user_data_folders.
-Ordner werden nach Typ kategorisiert (data, archive, export, temp) und koennen
-Agent- oder Expert-Eigentuemer haben. Alle Aenderungen betreffen nur die DB,
+Der folders Handler ermöglicht die zentrale Verwaltung von user_data_folders.
+Ordner werden nach Typ kategorisiert (data, archive, export, temp) und können
+Agent- oder Expert-Eigentuemer haben. Alle Änderungen betreffen nur die DB,
 nicht das Dateisystem.
 
 
@@ -33,7 +33,7 @@ OPERATIONEN
   bach folders remove <id>                       Ordner aus DB entfernen
                                                  (Dateien bleiben erhalten)
 
-  bach folders move <id> <neuer_pfad>            Pfad in DB aendern
+  bach folders move <id> <neuer_pfad>            Pfad in DB ändern
                                                  (Dateien nicht verschoben)
 
 
@@ -44,9 +44,9 @@ BEISPIELE
   bach folders list
   Ausgabe: Tabelle mit ID, Typ, Agent/Expert und Pfad
 
-  # Neuen Daten-Ordner hinzufuegen
+  # Neuen Daten-Ordner hinzufügen
   bach folders add "Projekte/Forschung"
-  Ausgabe: [OK] Ordner hinzugefuegt (ID: 23): Projekte/Forschung
+  Ausgabe: [OK] Ordner hinzugefügt (ID: 23): Projekte/Forschung
 
   # Ordner mit Typ und Agent-Zuordnung
   bach folders add "Archive/Legacy" --type archive --agent archiveBot
@@ -60,7 +60,7 @@ BEISPIELE
   bach folders remove 23
   Ausgabe: [OK] Ordner entfernt (ID: 23)
 
-  # Ordner-Pfad aendern (z.B. nach Umbenennung)
+  # Ordner-Pfad ändern (z.B. nach Umbenennung)
   bach folders move 23 "Projekte/Forschung-v2"
   Ausgabe: [OK] Pfad aktualisiert (ID: 23): Projekte/Forschung-v2
 
@@ -82,9 +82,9 @@ Zuordnungen:
 
 Datenbankverhalten:
   - list: Verbundene Abfrage mit bach_agents und bach_experts
-  - add: Gibt neue Ordner-ID zurueck
-  - remove: Loescht nur DB-Eintrag, nicht Dateisystem
-  - move: Aendert folder_path und updated last_accessed Zeitstempel
+  - add: Gibt neue Ordner-ID zurück
+  - remove: Löscht nur DB-Eintrag, nicht Dateisystem
+  - move: Ändert folder_path und updated last_accessed Zeitstempel
 
 
 FEHLERBEHANDLUNG
@@ -109,6 +109,6 @@ DATEIEN
 SIEHE AUCH
 ----------
 
-  help agents              Agenten-Ueberblick und Struktur
+  help agents              Agenten-Überblick und Struktur
   help experts             Expert-Verwaltung
   help bash_paths          Verzeichnisstruktur der BACH installation

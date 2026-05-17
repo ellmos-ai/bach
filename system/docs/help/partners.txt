@@ -1,6 +1,6 @@
-# Portabilitaet: SYSTEM
+# Portabilität: SYSTEM
 # Zuletzt validiert: 2026-02-08 (Claude)
-# Naechste Pruefung: 2026-05-08
+# Nächste Prüfung: 2026-05-08
 # Ressourcen: [partner_recognition, connections, messages, delegation_rules tables]
 
 PARTNERS - Kommunikations-Partner Profile
@@ -11,7 +11,7 @@ STAND: 2026-02-08
 Das Partner-System (Schicht 5) orchestriert die Zusammenarbeit zwischen 
 menschlichen Usern, lokalen Modellen (Ollama) und externen Agenten (Claude, Gemini).
 
-PARTNER-UEBERSICHT (Snapshot)
+PARTNER-ÜBERSICHT (Snapshot)
 -----------------------------
 | ID  | Partner        | Typ          | Workspace / Backend            |
 |-----|----------------|--------------|--------------------------------|

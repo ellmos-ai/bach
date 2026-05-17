@@ -10,9 +10,9 @@ Auto-Logger - Protokolliert automatisch alle Aktionen
 
 Zweistufiges System:
 1. auto_log.txt        - Letzte 300 Zeilen (Kurzzeitgedaechtnis)
-2. auto_log_extended.txt - Aeltere Eintraege, max 30 Tage (Archiv)
+2. auto_log_extended.txt - Ältere Einträge, max 30 Tage (Archiv)
 
-Nach 30 Tagen werden Eintraege endgueltig geloescht.
+Nach 30 Tagen werden Einträge endgueltig gelöscht.
 
 VERWENDUNG
 ----------------------------------------

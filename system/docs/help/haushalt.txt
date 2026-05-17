@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -9,7 +9,7 @@ haushalt
 BESCHREIBUNG
 ============
 Haushaltsmanagement mit Routinen, Inventar, Einkaufslisten und Kostenplanung.
-Verwaltet taegliche Aufgaben, Vorratsverwaltung mit Ampel-System (rot/gelb/gruen),
+Verwaltet tägliche Aufgaben, Vorratsverwaltung mit Ampel-System (rot/gelb/gruen),
 Lieferanten und Fixkosten. Integration mit Routine Handler und BACH Unified Database.
 
 
@@ -17,28 +17,28 @@ OPERATIONEN
 ===========
 
 status
-  Haushalts-Dashboard: Routinen-Ueberblick, Inventar-Ampel, monatliche Fixkosten,
-  Einkaufsliste, oberfaellige Routinen. Kombination aller Subsysteme.
+  Haushalts-Dashboard: Routinen-Überblick, Inventar-Ampel, monatliche Fixkosten,
+  Einkaufsliste, oberfällige Routinen. Kombination aller Subsysteme.
   Syntax: bach haushalt status
 
 due [TAGE]
   Faellige Aufgaben in den kommenden N Tagen (Standard: 7 Tage).
-  Trennt ueberfaellige (ROT) von anstehenden (GELB) Routinen.
+  Trennt überfällige (ROT) von anstehenden (GELB) Routinen.
   Syntax: bach haushalt due | bach haushalt due 14
 
 today
-  Tages-Uebersicht: Was steht heute an? (Routinen + Termine).
+  Tages-Übersicht: Was steht heute an? (Routinen + Termine).
   Ladet DailyOverview Service.
   Syntax: bach haushalt today
 
 week
   Wochenplan (Mo-So): Routinen + Termine mit Zeitangabe.
-  Markiert Ueberfallige in der aktuellen Woche.
+  Markiert Überfallige in der aktuellen Woche.
   Syntax: bach haushalt week
 
 costs
-  Monatliche Fixkosten-Uebersicht.
-  Berechnet monatliche Lasten aus Vertraegen (fin_contracts):
+  Monatliche Fixkosten-Übersicht.
+  Berechnet monatliche Lasten aus Verträgen (fin_contracts):
   - monatlich: direkt
   - jaehrlich: /12
   - quartalsweise: /3
@@ -50,12 +50,12 @@ kosten-monat [FILTER]
   Syntax: bach haushalt kosten-monat | bach haushalt kosten-monat "auto"
 
 add-kosten NAME KATEGORIE BETRAG INTERVALL
-  Irregulare Kosten hinzufuegen.
+  Irregulare Kosten hinzufügen.
   INTERVALL: monatlich|quartalsweise|jaehrlich|einmalig
   Syntax: bach haushalt add-kosten "TÜV" "auto" 150 "jaehrlich"
 
 kosten-list [FILTER]
-  Alle Kosten-Eintraege anzeigen mit Status.
+  Alle Kosten-Einträge anzeigen mit Status.
   Syntax: bach haushalt kosten-list
 
 insurance-check
@@ -64,11 +64,11 @@ insurance-check
   Syntax: bach haushalt insurance-check
 
 shopping
-  Einkaufsliste: Alle noch zu kaufenden Artikel mit Prioritaet.
+  Einkaufsliste: Alle noch zu kaufenden Artikel mit Priorität.
   Syntax: bach haushalt shopping
 
 add-shopping NAME [KATEGORIE] [PRIORITAET]
-  Artikel zur Einkaufsliste hinzufuegen.
+  Artikel zur Einkaufsliste hinzufügen.
   PRIORITAET: normal|hoch|niedrig (Standard: normal)
   Syntax: bach haushalt add-shopping "Milch" "Lebensmittel" "hoch"
 
@@ -77,12 +77,12 @@ done-shopping ID [ID2 ID3...]
   Syntax: bach haushalt done-shopping 5 6 7
 
 inventory
-  Vorratsbestand mit Ampel-Uebersicht (rot/gelb/gruen).
+  Vorratsbestand mit Ampel-Übersicht (rot/gelb/gruen).
   Benutzt InventoryEngine mit Lagerschwellen.
   Syntax: bach haushalt inventory
 
 add-item NAME KATEGORIE LAGERSCHWELLE [LAGERMAX]
-  Artikel zum Inventar hinzufuegen.
+  Artikel zum Inventar hinzufügen.
   LAGERSCHWELLE: Wert, bei dem rot angezeigt wird.
   Syntax: bach haushalt add-item "Olivenoel" "Kochen" 0.5 2
 
@@ -100,24 +100,24 @@ pull-check
   Syntax: bach haushalt pull-check
 
 ampel
-  Ampel-Uebersicht: Alle Inventar-Artikel mit Status (ROT/GELB/GRUEN).
+  Ampel-Übersicht: Alle Inventar-Artikel mit Status (ROT/GELB/GRUEN).
   Syntax: bach haushalt ampel
 
 order [ARTIKEL] [MENGE]
-  Order fuer Artikel anlegen oder ausstehende Orders anzeigen.
+  Order für Artikel anlegen oder ausstehende Orders anzeigen.
   Syntax: bach haushalt order | bach haushalt order "Olivenoel" 5
 
 supplier
-  Lieferanten anzeigen mit Kontakt und verfuegbaren Artikeln.
+  Lieferanten anzeigen mit Kontakt und verfügbaren Artikeln.
   Syntax: bach haushalt supplier
 
 add-supplier NAME KONTAKT [VERSANDTAGE]
-  Lieferant hinzufuegen.
+  Lieferant hinzufügen.
   VERSANDTAGE: Durchschnittliche Lieferzeit (Standard: 5).
   Syntax: bach haushalt add-supplier "BioGro GmbH" "info@biogro.de" 3
 
 export-routine [FILTER]
-  Routinen exportieren fuer externe Nutzung/Backup.
+  Routinen exportieren für externe Nutzung/Backup.
   Optional: Filter nach Kategorie.
   Syntax: bach haushalt export-routine | bach haushalt export-routine "Kueche"
 
@@ -132,13 +132,13 @@ BEISPIELE
 1. Dashboard anzeigen:
    bach haushalt status
 
-2. Ueberfaellige Routinen fuer diese Woche:
+2. Überfällige Routinen für diese Woche:
    bach haushalt due 7
 
 3. Wochenplan mit Routinen + Terminen:
    bach haushalt week
 
-4. Artikel zur Einkaufsliste hinzufuegen:
+4. Artikel zur Einkaufsliste hinzufügen:
    bach haushalt add-shopping "Mehl" "Lebensmittel" "normal"
 
 5. Wareneingang buchen:
@@ -150,7 +150,7 @@ BEISPIELE
 7. Monatliche Fixkosten:
    bach haushalt costs
 
-8. Irregulare Kosten hinzufuegen:
+8. Irregulare Kosten hinzufügen:
    bach haushalt add-kosten "KFZ-Versicherung" "auto" 80 "monatlich"
 
 
@@ -161,7 +161,7 @@ hub/_services/household/             Household Services
   inventory_engine.py                Inventar + Ampel-Logik
   shopping_service.py                Einkaufslisten-Verwaltung
 hub/_services/dashboard/
-  daily_overview.py                  Tages-Uebersicht
+  daily_overview.py                  Tages-Übersicht
 
 
 DATENBANK-TABELLEN
@@ -174,9 +174,9 @@ bach.db / Unified Database (seit v1.1.84):
 - household_stock_transactions    Ein/Ausbuchungen (Audit Log)
 - household_shopping              Einkaufslisten
 - household_costs                 Irregulaere Kosten
-- assistant_calendar              Termine (fuer Wochenplan)
-- fin_contracts                   Vertraege (fuer Fixkosten)
-- fin_insurances                  Versicherungen (fuer Status-Dashboard)
+- assistant_calendar              Termine (für Wochenplan)
+- fin_contracts                   Verträge (für Fixkosten)
+- fin_insurances                  Versicherungen (für Status-Dashboard)
 
 
 SIEHE AUCH

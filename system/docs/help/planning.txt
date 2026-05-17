@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 2.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 PLANUNGSVERFAHREN
 =================
@@ -17,30 +17,30 @@ PLANUNG ERSTELLEN (MANUELL):
   2. Struktur (Empfohlen):
      - Hintergrund (Warum?)
      - Ziel (Was soll erreicht werden?)
-     - Technische Analyse (Komponenten, Dateien, Abhaengigkeiten)
+     - Technische Analyse (Komponenten, Dateien, Abhängigkeiten)
      - Umsetzungsplan mit Task-Zerlegung
 
   3. Tasks in BACH-Datenbank anlegen:
      bach task add "Teil 1" --category development --priority P2
      bach task add "Teil 2" --category development --priority P3
 
-  4. Abhaengigkeiten setzen (falls erforderlich):
+  4. Abhängigkeiten setzen (falls erforderlich):
      bach task depends <id> --on <andere_id>
 
 ZEITBUDGET-REGELN (Empfehlungen):
   Sehr selten:  1-2 Min   (Konstante umbenennen)
-  Selten:       2-3 Min   (Import hinzufuegen)
+  Selten:       2-3 Min   (Import hinzufügen)
   OFT:          3-6 Min   (Funktion implementieren)
   Manchmal:     8-11 Min  (Komplexere Logik)
-  Selten:       12 Min    (Groesseres Refactoring)
-  NIE:          >15 Min   (Technisch nicht moeglich)
+  Selten:       12 Min    (Größeres Refactoring)
+  NIE:          >15 Min   (Technisch nicht möglich)
 
 TASK-BEFEHLE:
-  bach task add <titel>              Task hinzufuegen
+  bach task add <titel>              Task hinzufügen
   bach task add <titel> --category development --priority P2
   bach task list pending             Offene Tasks anzeigen
-  bach task depends <id>             Abhaengigkeiten anzeigen
-  bach task depends <id> --on <id2>  Abhaengigkeit setzen
+  bach task depends <id>             Abhängigkeiten anzeigen
+  bach task depends <id> --on <id2>  Abhängigkeit setzen
   bach task show <id>                Task-Details anzeigen
   bach task done <id>                Task als erledigt markieren
 
@@ -52,7 +52,7 @@ WORKFLOW-BEISPIEL:
      bach task add "Schema erweitern" --category development --priority P2
      bach task add "Handler implementieren" --category development --priority P2
      bach task add "Tests schreiben" --category development --priority P3
-  3. Abhaengigkeiten setzen:
+  3. Abhängigkeiten setzen:
      bach task depends 302 --on 301  # Handler haengt von Schema ab
      bach task depends 303 --on 302  # Tests haengen von Handler ab
   4. Schrittweise abarbeiten:

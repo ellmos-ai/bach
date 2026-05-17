@@ -1,31 +1,31 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-17 (Claude Opus 4.6)
-# Naechste Pruefung: 2026-08-17
+# Nächste Prüfung: 2026-08-17
 # Ressourcen: [Multi-LLM-Protocol, Bridge, Schwarm-System, Claude Code Docs]
 
-LLM-KOMMUNIKATION -- UEBERBLICK ALLER METHODEN
+LLM-KOMMUNIKATION -- ÜBERBLICK ALLER METHODEN
 ================================================
 
 Stand: 2026-02-17
-Kontext: Wie koennen LLM-Instanzen (Claude, Gemini, Ollama) miteinander
+Kontext: Wie können LLM-Instanzen (Claude, Gemini, Ollama) miteinander
          und mit der Aussenwelt kommunizieren? Katalog aller bekannten
-         Methoden, bewertet nach Eignung fuer verschiedene Szenarien.
+         Methoden, bewertet nach Eignung für verschiedene Szenarien.
 
 21 KOMMUNIKATIONSFORMEN
 ========================
 
 HINWEIS: 15 generische Methoden (1-15) + 6 BACH-spezifische (16-21).
-Die generischen Methoden sind auf jedes LLM-System uebertragbar.
+Die generischen Methoden sind auf jedes LLM-System übertragbar.
 Die BACH-spezifischen nutzen BACHs eigene Infrastruktur.
 
 1. DATEIEN HINTERLASSEN (Drop-File)
 -----------------------------------
-   Methode:    LLM schreibt Datei, anderes LLM liest sie spaeter
+   Methode:    LLM schreibt Datei, anderes LLM liest sie später
    Richtung:   Unidirektional (Schreiber -> Leser)
-   Latenz:     Hoch (Leser muss aktiv pruefen)
-   Beispiel:   Agent schreibt ergebnis.txt, naechster Agent liest sie
-   Staerke:    Einfachst moegliche Methode, keine Infrastruktur noetig
+   Latenz:     Hoch (Leser muss aktiv prüfen)
+   Beispiel:   Agent schreibt ergebnis.txt, nächster Agent liest sie
+   Stärke:    Einfachst mögliche Methode, keine Infrastruktur nötig
    Schwaeche:  Kein Benachrichtigungsmechanismus, Timing-Probleme
    BACH:       Grundlegende Methode in vielen Workflows
 
@@ -33,9 +33,9 @@ Die BACH-spezifischen nutzen BACHs eigene Infrastruktur.
 ----------------------------------------
    Methode:    Alle LLM-Partner lesen/schreiben dieselbe MEMORY.md
    Richtung:   Bidirektional (alle lesen und schreiben)
-   Latenz:     Session-basiert (Aenderungen wirken ab naechster Session)
-   Beispiel:   Claude schreibt Lesson Learned, Gemini liest es naechste Session
-   Staerke:    Automatisch injiziert bei Session-Start (Claude Code)
+   Latenz:     Session-basiert (Änderungen wirken ab nächster Session)
+   Beispiel:   Claude schreibt Lesson Learned, Gemini liest es nächste Session
+   Stärke:    Automatisch injiziert bei Session-Start (Claude Code)
    Schwaeche:  200-Zeilen-Limit, keine Echtzeit, manuell gepflegt
    BACH:       Aktuell je eine pro Partner; SQ043 plant gemeinsame Memory-DB
 
@@ -45,21 +45,21 @@ Die BACH-spezifischen nutzen BACHs eigene Infrastruktur.
    Richtung:   Bidirektional, Multi-Party
    Latenz:     Sofort (bei DB-Zugriff innerhalb einer Session)
    Beispiel:   Agent speichert Fact, anderer Agent fragt Facts ab
-   Staerke:    Strukturiert, durchsuchbar, gewichtet, persistent
+   Stärke:    Strukturiert, durchsuchbar, gewichtet, persistent
    Schwaeche:  Braucht DB-Zugriffs-Handler, nicht automatisch injiziert
-   BACH:       facts, lessons, context_triggers in bach.db (890+ Eintraege)
+   BACH:       facts, lessons, context_triggers in bach.db (890+ Einträge)
 
 4. INJEKTOREN ALS KOMMUNIKATION
 ---------------------------------
    Methode:    System-Reminders werden in den Nachrichtenstrom injiziert
    Richtung:   System -> LLM (unidirektional)
-   Latenz:     Sofort (bei naechster Nachricht)
+   Latenz:     Sofort (bei nächster Nachricht)
    Beispiel:   Hook injiziert Nachricht via hook_additional_context
    Varianten:
      a) Claude Code Injektoren (52 Typen, nicht steuerbar)
      b) BACH Injektoren (5 Typen, LLM-steuerbar)
      c) Hook-basiert (UserPromptSubmit liest "Inbox"-Datei)
-   Staerke:    Erscheint im Kontext ohne aktives Abrufen
+   Stärke:    Erscheint im Kontext ohne aktives Abrufen
    Schwaeche:  CC-Injektoren nicht vom User/LLM kontrollierbar
    BACH:       ContextInjector, SessionInjector, PartnerInjector,
                HealthInjector, SpendenInjector
@@ -69,35 +69,35 @@ Die BACH-spezifischen nutzen BACHs eigene Infrastruktur.
 --------------------------------------
    Methode:    Agenten hinterlassen Marker-Dateien (Pheromone)
                Andere Agenten lesen die Marker und passen Verhalten an
-   Richtung:   Indirekt bidirektional (ueber Umgebung)
+   Richtung:   Indirekt bidirektional (über Umgebung)
    Latenz:     Sofort (File-System)
    Beispiel:   Bot schreibt .visited.log, andere meiden besuchte Bereiche
    Marker:     .done, .in_progress, .visited.log, .counter, .flag
-   Staerke:    Keine direkte Kommunikation noetig, skaliert gut
-   Schwaeche:  Keine Garantie dass Marker gelesen wird, Verdunstung noetig
+   Stärke:    Keine direkte Kommunikation nötig, skaliert gut
+   Schwaeche:  Keine Garantie dass Marker gelesen wird, Verdunstung nötig
    BACH:       data/swarm/map/, maintenance_swarm.py, marauders_map.py
    Siehe auch: trampelpfadanalyse.md (Kapitel 2: Schwarm-Verfahren)
 
-6. HANDOFF-DATEIEN (Explizite Uebergabe)
+6. HANDOFF-DATEIEN (Explizite Übergabe)
 ------------------------------------------
-   Methode:    Strukturiertes Uebergabedokument zwischen Instanzen
+   Methode:    Strukturiertes Übergabedokument zwischen Instanzen
    Richtung:   Unidirektional (Vorgaenger -> Nachfolger)
    Latenz:     Sofort (Datei wird vor Start des Nachfolgers geschrieben)
    Beispiel:   Marble-Run: handoff.md mit Task, Status, Ergebnis, Feedback
-   Staerke:    Volle Kontextweitergabe, strukturiert, nachvollziehbar
-   Schwaeche:  Nur fuer serielle Ketten, nicht fuer parallele Kommunikation
+   Stärke:    Volle Kontextweitergabe, strukturiert, nachvollziehbar
+   Schwaeche:  Nur für serielle Ketten, nicht für parallele Kommunikation
    BACH:       tools/llmauto/state/handoff.md (Murmelbahn-Pipeline)
 
 7. BRIDGE / CONNECTORS (Externe Kanaele)
 ------------------------------------------
-   Methode:    BACH sendet/empfaengt Nachrichten ueber externe Dienste
+   Methode:    BACH sendet/empfaengt Nachrichten über externe Dienste
    Richtung:   Bidirektional (BACH <-> Mensch/anderes System)
-   Latenz:     Sekunden (abhaengig vom Dienst)
+   Latenz:     Sekunden (abhängig vom Dienst)
    Beispiel:   User schreibt Telegram-Nachricht, BACH antwortet
    Kanaele:    Telegram (Beta), Discord (Beta), HomeAssistant (Beta),
                Signal (geplant), WhatsApp (geplant)
-   Staerke:    Kommunikation mit der realen Welt, nicht nur LLM-zu-LLM
-   Schwaeche:  Abhaengig von externen APIs, Scraping-basiert bei manchen
+   Stärke:    Kommunikation mit der realen Welt, nicht nur LLM-zu-LLM
+   Schwaeche:  Abhängig von externen APIs, Scraping-basiert bei manchen
    BACH:       connectors/, hub/connector.py, Bridge-System
    Siehe auch: bridge.txt, connectors.txt
 
@@ -108,7 +108,7 @@ Die BACH-spezifischen nutzen BACHs eigene Infrastruktur.
    Latenz:     Sofort (Message-Queue innerhalb der Session)
    Beispiel:   Team-Lead sendet Aufgabe an Researcher, bekommt Ergebnis
    Features:   SendMessage, TaskList, TaskCreate, TaskUpdate, Broadcast
-   Staerke:    Anthropic-native, gut integriert, parallele Arbeit
+   Stärke:    Anthropic-native, gut integriert, parallele Arbeit
    Schwaeche:  Nur innerhalb einer Claude Code Session, kein Opus/Sonnet-Mix
    BACH:       Nicht direkt integriert (Claude Code Feature, nicht BACH)
 
@@ -117,10 +117,10 @@ Die BACH-spezifischen nutzen BACHs eigene Infrastruktur.
    Methode:    Commits + Commit-Messages als Nachrichten zwischen Instanzen
    Richtung:   Bidirektional (Push/Pull)
    Latenz:     Minuten (Commit + Push + Pull)
-   Beispiel:   Worker committed Aenderung, Reviewer liest git diff + Message
-   Staerke:    Versioniert, nachvollziehbar, Standard-Tooling
-   Schwaeche:  Overhead fuer kleine Nachrichten, braucht Repo
-   BACH:       Nicht systematisch genutzt, aber moeglich (SQ020 Versionierung)
+   Beispiel:   Worker committed Änderung, Reviewer liest git diff + Message
+   Stärke:    Versioniert, nachvollziehbar, Standard-Tooling
+   Schwaeche:  Overhead für kleine Nachrichten, braucht Repo
+   BACH:       Nicht systematisch genutzt, aber möglich (SQ020 Versionierung)
 
 10. DB-TABELLEN ALS KANAL
 ---------------------------
@@ -128,20 +128,20 @@ Die BACH-spezifischen nutzen BACHs eigene Infrastruktur.
     Richtung:   Bidirektional, Multi-Party
     Latenz:     Sofort (innerhalb einer Session bei DB-Zugriff)
     Beispiel:   Agent schreibt Nachricht in messages-Tabelle, Empfaenger pollt
-    Staerke:    Strukturiert, persistent, durchsuchbar, bereits vorhanden
-    Schwaeche:  Polling noetig (kein Push), braucht Handler
+    Stärke:    Strukturiert, persistent, durchsuchbar, bereits vorhanden
+    Schwaeche:  Polling nötig (kein Push), braucht Handler
     BACH:       bach.db hat Infrastruktur, aber kein explizites Message-System
 
 11. HOOKS (Event-basierte Injektion)
 --------------------------------------
-    Methode:    Shell-Kommando wird bei Event ausgefuehrt, Ergebnis injiziert
+    Methode:    Shell-Kommando wird bei Event ausgeführt, Ergebnis injiziert
     Richtung:   Extern -> LLM (unidirektional pro Hook-Aufruf)
     Latenz:     Sofort (bei jedem User-Prompt oder Tool-Call)
     Beispiel:   UserPromptSubmit-Hook liest "Inbox"-Datei und injiziert Inhalt
     Hook-Typen: PreToolUse, PostToolUse, SessionStart, UserPromptSubmit, etc.
-    Staerke:    Einfachster Weg fuer Inter-Instanz-Messaging ohne Source-Patch
-    Schwaeche:  Nur bei Events (nicht on-demand), Hook-Konfiguration noetig
-    BACH:       Empfohlener Ansatz fuer Claude Code Integration
+    Stärke:    Einfachster Weg für Inter-Instanz-Messaging ohne Source-Patch
+    Schwaeche:  Nur bei Events (nicht on-demand), Hook-Konfiguration nötig
+    BACH:       Empfohlener Ansatz für Claude Code Integration
     Siehe auch: claude-code-injections.txt (Abschnitt "Messaging-System")
 
 12. MCP-SERVER ALS VERMITTLER
@@ -149,40 +149,40 @@ Die BACH-spezifischen nutzen BACHs eigene Infrastruktur.
     Methode:    Gemeinsamer MCP-Server den mehrere LLM-Instanzen nutzen
     Richtung:   Bidirektional (alle Instanzen rufen gleichen Server auf)
     Latenz:     Sofort (Tool-Call)
-    Beispiel:   ellmos-codecommander-mcp als Shared-Service fuer alle Claude-Instanzen
-    Staerke:    Standardisiert (MCP-Protokoll), tool-basiert, erweiterbar
+    Beispiel:   ellmos-codecommander-mcp als Shared-Service für alle Claude-Instanzen
+    Stärke:    Standardisiert (MCP-Protokoll), tool-basiert, erweiterbar
     Schwaeche:  Server muss laufen, kein Push-Mechanismus
     BACH:       ellmos-codecommander-mcp (14 Tools), ellmos-filecommander-mcp (38 Tools)
 
 13. PROCESS-CHAINING (.bat als Signal)
 ----------------------------------------
-    Methode:    Ein Prozess startet den naechsten via Batch-Datei
+    Methode:    Ein Prozess startet den nächsten via Batch-Datei
     Richtung:   Unidirektional (Vorgaenger -> Nachfolger)
     Latenz:     Sofort (Prozess-Start)
     Beispiel:   Marble-Run: Opus Worker beendet sich, .bat startet Sonnet Reviewer
-    Staerke:    Deterministisch, keine Infrastruktur, BS-nativ
+    Stärke:    Deterministisch, keine Infrastruktur, BS-nativ
     Schwaeche:  Nur serielle Ketten, kein Feedback-Kanal (braucht Handoff-Datei)
     BACH:       tools/llmauto/ (llmauto-CLI) (Murmelbahn-System)
 
 14. SHARED FILESYSTEM (File-Watcher)
 --------------------------------------
-    Methode:    Agenten ueberwachen gemeinsames Verzeichnis auf Aenderungen
-    Richtung:   Bidirektional (alle koennen schreiben/lesen)
+    Methode:    Agenten überwachen gemeinsames Verzeichnis auf Änderungen
+    Richtung:   Bidirektional (alle können schreiben/lesen)
     Latenz:     Sekunden (Polling-Intervall des Watchers)
     Beispiel:   Agent schreibt neue_aufgabe.json, Watcher erkennt und reagiert
-    Staerke:    Einfach, keine spezielle Infrastruktur
-    Schwaeche:  Polling-basiert, Race Conditions moeglich, OneDrive-Sync-Probleme
-    BACH:       Grundsaetzlich moeglich, nicht systematisch implementiert
+    Stärke:    Einfach, keine spezielle Infrastruktur
+    Schwaeche:  Polling-basiert, Race Conditions möglich, OneDrive-Sync-Probleme
+    BACH:       Grundsaetzlich möglich, nicht systematisch implementiert
 
 15. STDOUT/STDIN-PIPING
 -------------------------
-    Methode:    Ausgabe eines Prozesses wird direkt zur Eingabe des naechsten
+    Methode:    Ausgabe eines Prozesses wird direkt zur Eingabe des nächsten
     Richtung:   Unidirektional (Producer -> Consumer)
     Latenz:     Sofort (Pipe)
     Beispiel:   claude --print "Analysiere X" | claude --print "Bewerte: $(cat -)"
-    Staerke:    Unix-Philosophie, minimaler Overhead, kein Dateisystem noetig
+    Stärke:    Unix-Philosophie, minimaler Overhead, kein Dateisystem nötig
     Schwaeche:  Nur Text, kein strukturierter Kontext, keine Persistenz
-    BACH:       Nicht genutzt (Claude Code unterstuetzt --print aber kein stdin-Pipe)
+    BACH:       Nicht genutzt (Claude Code unterstützt --print aber kein stdin-Pipe)
 
 BACH-SPEZIFISCHE KOMMUNIKATIONSFORMEN (16-21)
 ===============================================
@@ -195,8 +195,8 @@ BACH-SPEZIFISCHE KOMMUNIKATIONSFORMEN (16-21)
     Beispiel:   Claude erkennt dass Gemini online ist via .gemini_presence
     Features:   Presence, Locking, Handshake, Heartbeat, Agent-Detection
     Bekannte:   claude, gemini, copilot, ollama, perplexity, mistral-watcher
-    Staerke:    Koordination ohne zentrale Instanz, Race-Condition-sicher
-    Schwaeche:  Dateisystem-basiert (langsamer als DB), Stale-Presence moeglich
+    Stärke:    Koordination ohne zentrale Instanz, Race-Condition-sicher
+    Schwaeche:  Dateisystem-basiert (langsamer als DB), Stale-Presence möglich
     BACH:       hub/multi_llm_protocol.py (V3), CLI: bach llm presence/check/lock
 
 17. PARTNER-PRESENCE DB (Stempelkarten)
@@ -206,7 +206,7 @@ BACH-SPEZIFISCHE KOMMUNIKATIONSFORMEN (16-21)
     Latenz:     Sofort (DB-Abfrage)
     Beispiel:   bach llm status -> zeigt wer online ist und was er tut
     Features:   clock_in(), clock_out(), heartbeat(), get_online_partners()
-    Staerke:    Zuverlaessiger als Dateien, persistenter Status
+    Stärke:    Zuverlaessiger als Dateien, persistenter Status
     Schwaeche:  Braucht DB-Zugriff, nicht dateisystem-kompatibel
     BACH:       hub/multi_llm_protocol.py (PartnerPresenceDB Klasse)
 
@@ -218,20 +218,20 @@ BACH-SPEZIFISCHE KOMMUNIKATIONSFORMEN (16-21)
     Beispiel:   bach msg send gemini "Analysiere dieses Bild"
     Features:   Send, Read, Watch (Polling), Ping, Lesebestaetigung (--ack)
     Status:     unread, read, archived
-    Staerke:    Strukturiert, persistent, durchsuchbar, Lesebestaetigung
+    Stärke:    Strukturiert, persistent, durchsuchbar, Lesebestaetigung
     Schwaeche:  Pull-basiert (kein Push), braucht aktives Polling
     BACH:       hub/messages.py, DB-Tabelle: messages
 
 19. BENACHRICHTIGUNGS-SYSTEM (Multi-Channel Push)
 --------------------------------------------------
-    Methode:    Ausgehende Benachrichtigungen ueber externe Kanaele
+    Methode:    Ausgehende Benachrichtigungen über externe Kanaele
     Richtung:   Unidirektional (BACH -> Extern)
     Latenz:     Sekunden
     Kanaele:    Discord (Webhook), Telegram (Bot API), Slack (Webhook),
                 Email (SMTP/SSL), Signal (Direct), Generic Webhook
     Beispiel:   bach notify send telegram "Task erledigt"
-    Staerke:    Multi-Channel, konfigurierbar
-    Schwaeche:  Nur ausgehend (kein Empfang ueber notify)
+    Stärke:    Multi-Channel, konfigurierbar
+    Schwaeche:  Nur ausgehend (kein Empfang über notify)
     BACH:       hub/notify.py, CLI: bach notify setup/send/test/list
 
 20. QUEUE PROCESSOR & SMART ROUTER
@@ -241,19 +241,19 @@ BACH-SPEZIFISCHE KOMMUNIKATIONSFORMEN (16-21)
     Latenz:     Sekunden (Poll-Intervalle: Telegram 15s, Discord 60s)
     Features:   Retry/Backoff (5 Stufen: 30s-480s), Circuit Breaker (5 Fehler)
     Smart:      Parst Commands aus Nachrichten ("/task add Test")
-    Staerke:    Zuverlaessig, selbstheilend, Command-Erkennung
+    Stärke:    Zuverlaessig, selbstheilend, Command-Erkennung
     Schwaeche:  Komplex, braucht laufenden Daemon
     BACH:       hub/_services/connector/queue_processor.py, smart_router.py
 
 21. GEMINI DELEGATION PROTOCOL
 --------------------------------
     Methode:    Task-Dateien in gemini/inbox/, Ergebnisse in gemini/outbox/
-    Richtung:   Bidirektional (Claude -> Gemini und zurueck)
+    Richtung:   Bidirektional (Claude -> Gemini und zurück)
     Latenz:     Minuten bis Stunden (manuell oder via Google Drive Sync)
     Trigger:    Keyword, Token-Budget, Dokument-Laenge, explizit
-    Beispiel:   Claude erstellt Research-Task, Gemini arbeitet ab, Ergebnis zurueck
-    Staerke:    Nutzt Geminis Staerken (grosse Dokumente, Bilder)
-    Schwaeche:  Manueller Transfer noetig (oder Google Drive Sync)
+    Beispiel:   Claude erstellt Research-Task, Gemini arbeitet ab, Ergebnis zurück
+    Stärke:    Nutzt Geminis Stärken (grosse Dokumente, Bilder)
+    Schwaeche:  Manueller Transfer nötig (oder Google Drive Sync)
     BACH:       skills/workflows/gemini-delegation.md
 
 VERGLEICHSMATRIX
@@ -261,7 +261,7 @@ VERGLEICHSMATRIX
 
   Methode              | Richtung | Latenz   | Persistenz | Skalierung | Komplexitaet
   ---------------------|----------|----------|------------|------------|-------------
-  GENERISCH (uebertragbar auf jedes LLM-System):
+  GENERISCH (übertragbar auf jedes LLM-System):
   1  Drop-File         | Uni      | Hoch     | Ja         | Gut        | Minimal
   2  MEMORY.md         | Bi       | Session  | Ja         | Begrenzt   | Gering
   3  Gemeinsame DB     | Multi    | Sofort   | Ja         | Sehr gut   | Mittel
@@ -303,14 +303,14 @@ EMPFEHLUNGEN NACH ANWENDUNGSFALL
 BACH-SPEZIFISCHE ARCHITEKTUR
 ==============================
 
-BACHs Staerke ist die Kombination mehrerer Methoden:
-- Bridge (7) fuer die Aussenwelt
+BACHs Stärke ist die Kombination mehrerer Methoden:
+- Bridge (7) für die Aussenwelt
 - DB (3+10) als zentraler Wissensspeicher
-- Injektoren (4) fuer proaktive Kontext-Anreicherung
-- Stigmergy (5) fuer Schwarm-Operationen
-- Handoff (6) + Process-Chaining (13) fuer Marble-Run-Pipelines
+- Injektoren (4) für proaktive Kontext-Anreicherung
+- Stigmergy (5) für Schwarm-Operationen
+- Handoff (6) + Process-Chaining (13) für Marble-Run-Pipelines
 
-Im Gegensatz dazu ist Claude Code auf eine Methode pro Szenario beschraenkt:
+Im Gegensatz dazu ist Claude Code auf eine Methode pro Szenario beschränkt:
 Team-Modus (8) ODER Injektoren (4), nicht kombinierbar.
 
 BACH kann alle 15 Methoden gleichzeitig nutzen und dynamisch wechseln --

@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -12,9 +12,9 @@ bach update - Versions- und Update-Verwaltung
 
 BESCHREIBUNG
 ============
-Verwaltet Updates, Versionierung und System-Integritaet. Prueft auf verfuegbare
+Verwaltet Updates, Versionierung und System-Integrität. Prüft auf verfügbare
 Updates aus Git, spielt diese ein mit automatischen Backups und Datenmigra-
-tionen, und verifiziert Systemintegritaet nach jedem Update. Unterstuetzt auch
+tionen, und verifiziert Systemintegritaet nach jedem Update. Unterstützt auch
 Rollbacks zu Pre-Update-Backups.
 
 
@@ -22,8 +22,8 @@ OPERATIONEN
 ===========
 
 CHECK
-Auf Updates pruefen (Git-basiert). Vergleicht lokale Commits mit Upstream-Branch
-und zeigt ausstehende Aenderungen an. Funktioniert nur in Git-Repositories.
+Auf Updates prüfen (Git-basiert). Vergleicht lokale Commits mit Upstream-Branch
+und zeigt ausstehende Änderungen an. Funktioniert nur in Git-Repositories.
 
 STATUS (oder ohne Parameter)
 Zeigt aktuelle Version, Schema-Version, Update-Zeitstempel und Verifizierungs-
@@ -31,59 +31,59 @@ status an. Listet angewandte Migrationen und Git-Informationen auf.
 
 APPLY [--dry-run]
 Spielte Update ein mit 5-Phasen-Workflow: (1) Pre-Update-Backup erstellen,
-(2) Git pull --rebase ausfuehren, (3) Migrationen ausfuehren, (4) System
+(2) Git pull --rebase ausführen, (3) Migrationen ausführen, (4) System
 verifizieren, (5) version.json aktualisieren. Mit --dry-run nur Vorschau.
 
 ROLLBACK [--dry-run]
-Rollt zur letzten Pre-Update-Sicherung zurueck. Findet neuestes pre_update_*.zip
+Rollt zur letzten Pre-Update-Sicherung zurück. Findet neuestes pre_update_*.zip
 und stellt bach.db wieder her. Sichert aktuelle DB als .db.pre_rollback.
 
 VERIFY
-Prueft System-Integritaet: Handler importierbar, version.json vorhanden, bach.db
+Prüft System-Integrität: Handler importierbar, version.json vorhanden, bach.db
 lesbar, Migrationen konsistent, kritische Verzeichnisse (hub, core, data, skills)
 vorhanden. Zeigt Fehlerdetails und aktualisiert last_verified.
 
 MIGRATIONS [list|run]
-list (default): Zeigt alle verfuegbaren Migrationen mit Status (angewandt/ausstehend).
-run: Fuehrt ausstehende Migrationen aus (.py oder .sql), aktualisiert schema_version.
+list (default): Zeigt alle verfügbaren Migrationen mit Status (angewandt/ausstehend).
+run: Führt ausstehende Migrationen aus (.py oder .sql), aktualisiert schema_version.
 
 
 BEISPIELE
 =========
 
 bach update check
-  Prueft auf verfuegbare Updates aus Git-Upstream.
+  Prüft auf verfügbare Updates aus Git-Upstream.
 
 bach update status
   Zeigt Version 1.2.3, letzte Aktualisierung, Verifizierungsstatus, und
   angewandte Migrationen.
 
 bach update apply --dry-run
-  Zeigt 5-Phasen-Prozess ohne Aenderungen.
+  Zeigt 5-Phasen-Prozess ohne Änderungen.
 
 bach update apply
-  Spielte vollstaendigen Update ein mit Backup, Pull, Migrationen, Verifikation.
+  Spielte vollständigen Update ein mit Backup, Pull, Migrationen, Verifikation.
 
 bach update verify
-  Prueft alle 6 Punkte: Handler, version.json, bach.db, Migrationen, Verzeichnisse.
+  Prüft alle 6 Punkte: Handler, version.json, bach.db, Migrationen, Verzeichnisse.
 
 bach update rollback --dry-run
-  Zeigt letztes Backup an (Dateiname, Groesse, Datum) ohne Aktion.
+  Zeigt letztes Backup an (Dateiname, Größe, Datum) ohne Aktion.
 
 bach update rollback
   Stellt bach.db aus letztem pre_update_*.zip wieder her.
 
 bach update migrations
-  Listet verfuegbare und ausstehende Migrationen mit Zaehler.
+  Listet verfügbare und ausstehende Migrationen mit Zaehler.
 
 bach update migrations run
-  Fuehrt alle ausstehenden Migrationen aus, aktualisiert Tracking.
+  Führt alle ausstehenden Migrationen aus, aktualisiert Tracking.
 
 
 DATEIEN
 =======
 data/version.json
-  Zentrale Versionsdatei. Enthaelt: version, schema_version, updated_at,
+  Zentrale Versionsdatei. Enthält: version, schema_version, updated_at,
   last_verified, verification_status, migrations_applied[].
 
 data/bach.db
@@ -95,11 +95,11 @@ _backups/
   bach.db, version.json, alle Config-JSONs aus data/.
 
 data/migrations/
-  Verzeichnis fuer Migration-Dateien (.py oder .sql). Version.json verfolgt
+  Verzeichnis für Migration-Dateien (.py oder .sql). Version.json verfolgt
   migrations_applied[].
 
 hub/, core/, data/, skills/
-  Kritische Verzeichnisse. Verifikation prueft auf Existenz aller 4.
+  Kritische Verzeichnisse. Verifikation prüft auf Existenz aller 4.
 
 
 SIEHE AUCH

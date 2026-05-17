@@ -1,14 +1,14 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 MESSAGES - Nachrichtensystem
 ============================
 
 BESCHREIBUNG
-Internes Nachrichtensystem fuer Kommunikation zwischen User,
-System und Agenten. Erreichbar ueber CLI und Web-GUI.
+Internes Nachrichtensystem für Kommunikation zwischen User,
+System und Agenten. Erreichbar über CLI und Web-GUI.
 
 Ohne --from wird automatisch der eingestempelte Partner verwendet.
 
@@ -35,15 +35,15 @@ bach msg ping              Ungelesene Nachrichten AN mich anzeigen
 bach msg ping --from <p>   Nachrichten an spezifischen Partner
 
 bach msg watch             Polling-Modus: Auf neue Nachrichten warten (Ctrl+C)
-bach msg watch --from <p>  Polling fuer spezifischen Partner
+bach msg watch --from <p>  Polling für spezifischen Partner
 
-bach msg delete <id>       Nachricht(en) loeschen
-bach msg delete 1 2 3      Mehrere Nachrichten loeschen
-bach msg delete <id> --dry-run  Vorschau (ohne Aenderung)
+bach msg delete <id>       Nachricht(en) löschen
+bach msg delete 1 2 3      Mehrere Nachrichten löschen
+bach msg delete <id> --dry-run  Vorschau (ohne Änderung)
 
 bach msg archive <id>      Nachricht(en) archivieren
 bach msg archive 1 2 3     Mehrere Nachrichten archivieren
-bach msg archive <id> --dry-run  Vorschau (ohne Aenderung)
+bach msg archive <id> --dry-run  Vorschau (ohne Änderung)
 
 bach msg help              Hilfe anzeigen
 
@@ -77,7 +77,7 @@ STATUS-WERTE
 unread                     Ungelesen
 read                       Gelesen
 archived                   Archiviert
-deleted                    Geloescht
+deleted                    Gelöscht
 
 WEB-GUI
 -------
@@ -126,7 +126,7 @@ bach msg list --outbox
 # Auf neue Nachrichten warten
 bach msg watch
 
-# Status pruefen
+# Status prüfen
 bach msg count
 
 CONNECTOR-INTEGRATION (v1.1.0)
@@ -139,7 +139,7 @@ werden automatisch in die Inbox geroutet:
 Sender-Format: "connector:sender_id" (z.B. "telegram:123456")
 Kontext-Hints werden automatisch als metadata gespeichert.
 
-Ausgehende Nachrichten werden ueber die Queue versendet:
+Ausgehende Nachrichten werden über die Queue versendet:
 
   bach connector send <name> <empfaenger> <text>
 
@@ -152,12 +152,12 @@ Siehe: bach --help connector
 
 REST-API (Port 8001)
 --------------------
-Verfuegbar wenn Headless API laeuft:
+Verfügbar wenn Headless API läuft:
 
   POST /api/v1/messages/send      Nachricht in Queue einreihen
   GET  /api/v1/messages/queue     Queue-Status
   GET  /api/v1/messages/inbox     Inbox lesen (Paginierung, Filter)
-  POST /api/v1/messages/route     Routing manuell ausloesen
+  POST /api/v1/messages/route     Routing manuell auslösen
 
 Beispiel:
   curl localhost:8001/api/v1/messages/inbox?status=unread&limit=10

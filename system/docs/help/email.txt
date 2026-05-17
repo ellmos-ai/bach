@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -6,7 +6,7 @@ HANDLER-NAME: email
 Email-Versand via Gmail API mit integrierter Draft-Sicherheit.
 
 BESCHREIBUNG:
-Der Email-Handler ermoeglicht sicheren E-Mail-Versand ueber die Gmail API.
+Der Email-Handler ermöglicht sicheren E-Mail-Versand über die Gmail API.
 Jede Email wird zuerst als Entwurf erstellt und muss explizit mit 'confirm'
 bestaetigt werden, bevor sie gesendet wird. Dies verhindert versehentliche
 Email-Versaendung.
@@ -16,12 +16,12 @@ OPERATIONEN:
   send <to> <subject> <body>              Entwurf erstellen (Hauptbefehl)
     Optionen: --cc <email>, --bcc <email>, --attach <dateipfad>
 
-  draft <to> <subject> <body>             Alias fuer send
+  draft <to> <subject> <body>             Alias für send
 
   confirm <id>                            Entwurf bestaetigen und senden
     Optionen: --by <name>
 
-  cancel <id>                             Entwurf verwerfen (loeschen)
+  cancel <id>                             Entwurf verwerfen (löschen)
 
   drafts                                  Offene Entwuerfe auflisten
     Alias: list (leerer Befehl zeigt auch Entwuerfe)
@@ -29,10 +29,10 @@ OPERATIONEN:
   sent                                    Gesendete Mails anzeigen
 
   show <id>                               Entwurf-Details anzeigen
-    Zeigt vollstaendigen Text, Empfaenger, CC/BCC, Status
+    Zeigt vollständigen Text, Empfaenger, CC/BCC, Status
 
   setup                                   Gmail API Scopes erweitern (einmalig)
-    Benoetigt OAuth2-Authentifizierung fuer readonly + send
+    Benötigt OAuth2-Authentifizierung für readonly + send
 
   test                                    Test-Email an eigene Adresse senden
 
@@ -78,7 +78,7 @@ SICHERHEIT:
 
 KONFIGURATION:
 
-  Account: Gesteuert ueber ~/.config/paper_publisher/config.json oder
+  Account: Gesteuert über ~/.config/paper_publisher/config.json oder
            lokale OAuth2-Token unter _services/mail/tokens/
 
 FEHLERBEHANDLUNG:
@@ -91,5 +91,5 @@ FEHLERBEHANDLUNG:
 SIEHE AUCH:
 
   docs/help/base.txt                      Handler-Basisklasse
-  docs/help/telegram.txt                  Telegram-Integration fuer Remote-Control
+  docs/help/telegram.txt                  Telegram-Integration für Remote-Control
   _services/mail/README.md                Gmail API Setup-Anleitung

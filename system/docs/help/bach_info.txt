@@ -1,6 +1,6 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Zuletzt validiert: 2026-02-08 (Claude Sonnet 4.5 - Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 BACH INFO
 =========
@@ -25,7 +25,7 @@ VERWENDUNG
 Das System wird primär über dieses CLI (`bach.py`) oder das Web-Dashboard gesteuert.
 
 BEFEHLE
-bach --help             Uebersicht aller Themen
+bach --help             Übersicht aller Themen
 bach status             Aktueller Systemstatus
 bach task list          Offene Aufgaben anzeigen
 bach mem read           Aktuelles Gedaechtnis abrufen
@@ -34,7 +34,7 @@ ARCHITEKTUR
 CLI/GUI/MCP --> Hub Handler --> Skills/Tools --> Datenbanken/Dateisystem/Partner
 
 SIEHE AUCH
-wiki/was_ist_bach.txt      Ausfuehrliche Definition & Vergleich
+wiki/was_ist_bach.txt      Ausführliche Definition & Vergleich
 system/ARCHITECTURE.md          Architektur-Dokumentation (Schichten-Modell)
 docs/help/architecture.txt           Technische Details
 docs/help/features.txt               Feature-Liste

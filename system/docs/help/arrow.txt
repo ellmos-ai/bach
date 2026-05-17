@@ -1,12 +1,12 @@
-# Portabilitaet: EXTERNAL
+# Portabilität: EXTERNAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2027-02-08
+# Nächste Prüfung: 2027-02-08
 
 # BachForelle (The Arrow) - Cross-Reference
 
 ## WARNUNG: EXTERNE DOKUMENTATION
-Diese Datei beschreibt **BachForelle**, ein SEPARATES Projekt ausserhalb von BACH v2 Vanilla.
+Diese Datei beschreibt **BachForelle**, ein SEPARATES Projekt außerhalb von BACH v2 Vanilla.
 
 **Korrekte Pfade:**
 - BachForelle: `%ONEDRIVE_AI_ROOT%\BachForelle\`

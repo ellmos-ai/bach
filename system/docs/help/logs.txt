@@ -1,29 +1,29 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-02-08 (Log-Pfad Konsolidierung)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 LOGS - Auto-Logging System
 ==========================
 
 BESCHREIBUNG
 BACH protokolliert automatisch alle Aktionen.
-Zweistufiges System fuer effiziente Speicherung.
+Zweistufiges System für effiziente Speicherung.
 
 ARCHITEKTUR
 -----------
-system/data/logs/auto_log.txt          Letzte 300 Eintraege (Kurzzeitgedaechtnis)
-system/data/logs/auto_log_extended.txt Aeltere Eintraege, max 30 Tage
+system/data/logs/auto_log.txt          Letzte 300 Einträge (Kurzzeitgedaechtnis)
+system/data/logs/auto_log_extended.txt Ältere Einträge, max 30 Tage
 
-Nach 30 Tagen werden Eintraege automatisch geloescht.
+Nach 30 Tagen werden Einträge automatisch gelöscht.
 
 CLI-BEFEHLE
 -----------
-bach --logs tail [n]         Letzte n Eintraege (Standard: 20)
+bach --logs tail [n]         Letzte n Einträge (Standard: 20)
 bach --logs extended         Extended-Archiv anzeigen
-bach --logs count            Anzahl Eintraege
+bach --logs count            Anzahl Einträge
 
-python tools/autolog.py --tail 50      Letzte 50 Eintraege
+python tools/autolog.py --tail 50      Letzte 50 Einträge
 python tools/autolog.py --extended     Extended-Archiv
 python tools/autolog.py --count        Statistik
 python tools/autolog.py --log "Text"   Manueller Eintrag
@@ -33,7 +33,7 @@ LOG-FORMAT
 [YYYY-MM-DD HH:MM:SS] TYP: Nachricht
 
 Typen:
-  CMD      Ausgefuehrter Befehl
+  CMD      Ausgeführter Befehl
   TOOL     Tool-Aufruf
   SESSION  Session-Start/Ende
 

@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.2.0
 # Zuletzt validiert: 2026-02-08 (Claude)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 # Ressourcen: [tools/injectors.py, hub/inject.py]
 
 INJEKTOR-SYSTEM (Kognitive Orchestrierung)
@@ -12,14 +12,14 @@ Stand: 2026-02-08
 Injektoren simulieren DENKEN und ASSOZIATIONEN als ZENTRALE EXEKUTIVE.
 Sie orchestrieren die kognitive Verarbeitung in drei Ebenen:
 - STATISCH: Wissensbasis (Wiki, Help, Kontext)
-- PROZESSBEGLEITEND: Aktive Steuerung waehrend der Arbeit
+- PROZESSBEGLEITEND: Aktive Steuerung während der Arbeit
 - PROAKTIV: Memory-Abrufe und System-Logs
 
-Default: Alle AN (koennen jederzeit abgeschaltet werden).
+Default: Alle AN (können jederzeit abgeschaltet werden).
 
 COOLDOWN-MANAGEMENT (v1.1.75)
 -----------------------------
-Injektoren werden nach Anzeige fuer X Minuten stumm geschaltet:
+Injektoren werden nach Anzeige für X Minuten stumm geschaltet:
 - Strategy:  2 Minuten
 - Context:   1 Minute
 - Between:   3 Minuten
@@ -36,7 +36,7 @@ DIE 5 INJEKTOREN MIT TEILFUNKTIONEN
    - Entscheidungshilfe bei Verzweigungen
    - Fehleranalyse ("Fehler sind wertvolle Informationen")
 
-   Trigger-Woerter: fehler, komplex, blockiert, schwierig, problem
+   Trigger-Wörter: fehler, komplex, blockiert, schwierig, problem
    Beispiel: "Fehler" -> "Fehler sind wertvolle Informationen"
    Cooldown: 2 Minuten
 
@@ -48,23 +48,23 @@ DIE 5 INJEKTOREN MIT TEILFUNKTIONEN
    - Anforderungsanalyse
    - Integration mit Connector-Routing (siehe unten)
 
-   Trigger: Stichwoerter im Text (siehe TOOL-TRIGGER unten)
+   Trigger: Stichwörter im Text (siehe TOOL-TRIGGER unten)
    Nicht aggressiv - nur Hinweise
    Cooldown: 1 Minute
 
 3. TIME-INJEKTOR (Zeitgefuehl)
    Teilfunktionen:
-   - Timebeat: Regelmaessige Zeit-Updates
+   - Timebeat: Regelmäßige Zeit-Updates
    - Zeitbudget-Awareness
 
    Default-Intervall: 60 Sekunden
    Hilft beim Zeitgefuehl und Session-Management
    Kein Cooldown (eigener Intervall-Mechanismus)
 
-4. BETWEEN-INJEKTOR (Qualitaetskontrolle)
+4. BETWEEN-INJEKTOR (Qualitätskontrolle)
    Teilfunktionen:
-   - Qualitaetskontrolle nach Task-Done
-   - Uebergang zur naechsten Aufgabe regeln
+   - Qualitätskontrolle nach Task-Done
+   - Übergang zur nächsten Aufgabe regeln
    - Ergebnis-Check: Validierung gegen Anforderungen
 
    Trigger: Nach "bach task done"
@@ -75,11 +75,11 @@ DIE 5 INJEKTOREN MIT TEILFUNKTIONEN
    Teilfunktionen:
    - Tool-Erinnerung bei Session-Start (einmalig)
    - Warnung vor Tool-Duplikaten beim Erstellen
-   - Kategorisierte Tool-Uebersicht
+   - Kategorisierte Tool-Übersicht
 
    Kategorien: OCR, Daten-Import, Domain-Handler, Code-Analyse,
                Encoding, Import-Handling, Konvertierung
-   Trigger: Text enthaelt "neues tool", "tool erstellen" etc.
+   Trigger: Text enthält "neues tool", "tool erstellen" etc.
    Cooldown: 5 Minuten
 
 KOGNITIVE ORCHESTRIERUNG (Diagramm)
@@ -107,8 +107,8 @@ KOGNITIVE ORCHESTRIERUNG (Diagramm)
   |  |   +-- Anforderungsanalyse                                |
   |  |   +-- Connector-Routing Integration (siehe unten)        |
   |  +-- between_injector (Cooldown: 3min)                      |
-  |  |   +-- Qualitaetskontrolle                                |
-  |  |   +-- Task-Uebergang                                     |
+  |  |   +-- Qualitätskontrolle                                |
+  |  |   +-- Task-Übergang                                     |
   |  |   +-- Ergebnis-Validierung                               |
   |  +-- time_injector (kein Cooldown)                          |
   |  |   +-- Zeitgefuehl (Timebeat)                             |
@@ -128,7 +128,7 @@ BEFEHLE
 -------
   bach --inject status         Zeigt Status aller Injektoren (inkl. Cooldown)
   bach --inject toggle <name>  Schaltet an/aus
-  bach --inject task <min>     Aufgabe fuer X Minuten
+  bach --inject task <min>     Aufgabe für X Minuten
   bach --inject decompose <id> Zerlegt Aufgabe
 
 TOGGLE-NAMEN:
@@ -142,7 +142,7 @@ COOLDOWN-STATUS ANZEIGEN:
 
 TOOL-TRIGGER (Context-Injektor)
 -------------------------------
-Der Context-Injektor erkennt Stichwoerter und empfiehlt Tools:
+Der Context-Injektor erkennt Stichwörter und empfiehlt Tools:
 
   PYTHON-BEARBEITUNG
   ------------------
@@ -163,7 +163,7 @@ Der Context-Injektor erkennt Stichwoerter und empfiehlt Tools:
   "umlaute kaputt"        -> bach c_encoding_fixer <datei>
   "utf-8"                 -> bach c_encoding_fixer <datei>
   "emoji"                 -> bach c_emoji_scanner <datei>
-  "einrueckung"           -> bach c_indent_checker <datei>
+  "einrückung"           -> bach c_indent_checker <datei>
 
   IMPORT-HANDLING
   ---------------
@@ -230,7 +230,7 @@ ROUTING-PIPELINE (queue_processor.py):
 VORTEIL:
 - Eingehende Nachrichten bekommen SOFORT Kontext-Hinweise
 - LLM sieht bereits relevante Tool-Empfehlungen
-- Keine manuelle Suche nach Tools noetig
+- Keine manuelle Suche nach Tools nötig
 - Kontext wird als Metadata mitgeliefert (nicht im Text)
 
 BEISPIEL:
@@ -240,11 +240,11 @@ BEISPIEL:
   -> LLM bekommt Hint als System-Info, nicht als User-Text
 
 DATENBANK-TRIGGER:
-  Tabelle context_triggers (900+ Eintraege):
+  Tabelle context_triggers (900+ Einträge):
   - trigger_phrase: Suchbegriff (z.B. "python bearbeiten")
   - hint_text: Empfehlung (z.B. "bach python_cli_editor <datei>")
   - Automatisch beim Routing abgefragt
-  - Dynamisch erweiterbar ohne Code-Aenderung
+  - Dynamisch erweiterbar ohne Code-Änderung
 
 KONFIGURATION
 -------------
@@ -262,10 +262,10 @@ In config.json unter "injectors":
 
 WICHTIG
 -------
-- Injektoren koennen auch nerven/ablenken!
+- Injektoren können auch nerven/ablenken!
 - Jederzeit abschaltbar: bach --inject toggle context (oder strategy, time, between)
 - Hinweis bei jeder Strategie-Injection wie man abschaltet
-- KEINE neuen Injektoren noetig - die 5 decken alle Funktionen ab
+- KEINE neuen Injektoren nötig - die 5 decken alle Funktionen ab
 - Cooldowns verhindern nervige Wiederholungen automatisch
 
 CODE-REFERENZ
@@ -279,7 +279,7 @@ KLASSEN & KOMPONENTEN:
   StrategyInjector      - Metakognition, Trigger-basiert
   ContextInjector       - Tool-Empfehlungen, DB-Cache (~100 Trigger)
   TimeInjector          - Timebeat (60s Intervall)
-  BetweenInjector       - Qualitaetskontrolle nach Task-Done
+  BetweenInjector       - Qualitätskontrolle nach Task-Done
   ToolInjector          - Tool-Awareness, Duplikat-Warnung
   CooldownManager       - Cooldown-Verwaltung (strategy=2min, context=1min, between=3min)
   TaskAssigner          - Task-Zuweisung basierend auf Zeitbudget
@@ -290,7 +290,7 @@ DATENBANK-TABELLEN:
 
 SIEHE AUCH
 ----------
-  bach --help tools                      Tool-Uebersicht
+  bach --help tools                      Tool-Übersicht
   bach --help tools/python_cli_editor    Detaillierte Tool-Doku
   bach --help memory                     Memory-System
   bach --help connector                  Connector-System & Message-Routing

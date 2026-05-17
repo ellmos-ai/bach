@@ -1,6 +1,6 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Zuletzt validiert: 2026-02-08 (Claude Sonnet 4.5)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 GESUNDHEIT - Gesundheitsassistent
 =================================
@@ -10,8 +10,8 @@ BESCHREIBUNG:
   Medikamente, Laborwerte, Dokumente, Termine) und Arztkontakte.
   Er dient als zentrales medizinisches Journal.
 
-CLI-BEFEHLE (UEBERSICHT):
-  bach gesundheit status             Dashboard anzeigen (Termine, Auffaelligkeiten)
+CLI-BEFEHLE (ÜBERSICHT):
+  bach gesundheit status             Dashboard anzeigen (Termine, Auffälligkeiten)
   bach gesundheit contacts           Arzt-Kontakte anzeigen
   bach gesundheit contacts -s <fach> Nach Fachgebiet filtern
   bach gesundheit diagnoses          Aktive Diagnosen
@@ -19,7 +19,7 @@ CLI-BEFEHLE (UEBERSICHT):
   bach gesundheit meds               Aktive Medikamente
   bach gesundheit meds --all         Alle Medikamente (inkl. abgesetzt)
   bach gesundheit labs               Laborwerte (letzte 50)
-  bach gesundheit labs --abnormal    Nur auffaellige Werte
+  bach gesundheit labs --abnormal    Nur auffällige Werte
   bach gesundheit labs -t <test>     Nach Test filtern (z.B. -t TSH)
   bach gesundheit docs               Medizinische Dokumente/Befunde
   bach gesundheit docs --type <typ>  Nach Typ filtern (befund|labor|rezept)
@@ -29,7 +29,7 @@ CLI-BEFEHLE (UEBERSICHT):
 
 VORSORGEUNTERSUCHUNGEN:
   bach gesundheit vorsorge           Alle Vorsorgeuntersuchungen anzeigen
-  bach gesundheit vorsorge-faellig   Nur faellige Untersuchungen
+  bach gesundheit vorsorge-fällig   Nur fällige Untersuchungen
   bach gesundheit add-vorsorge "Name" --turnus <monate> --kategorie <typ>
   bach gesundheit vorsorge-done <id> Als erledigt markieren (heute)
   bach gesundheit vorsorge-done <id> --date DD.MM.YYYY
@@ -72,7 +72,7 @@ DATENERFASSUNG (ADD):
   bach gesundheit add-appointment "Titel" [Optionen]
     Optionen: --doctor, --date, --time, --duration, --type, --note
 
-  Tipp: Nutze `bach gesundheit add-... --help` fuer detaillierte Optionen.
+  Tipp: Nutze `bach gesundheit add-... --help` für detaillierte Optionen.
 
   Beispiele:
     bach gesundheit add-diagnosis "Hypothyreose" --icd E03.9 --status aktiv
@@ -84,7 +84,7 @@ DATENERFASSUNG (ADD):
 DETAILS ANZEIGEN:
   bach gesundheit show <typ> <id>
 
-  Verfuegbare Typen:
+  Verfügbare Typen:
     - contact / arzt
     - diagnosis / diagnose
     - med / medication / medikament
@@ -111,10 +111,10 @@ DATENBANK:
   - vorsorge_checks (Vorsorgeuntersuchungen)
 
 INTEGRATION:
-  - LifeAssistant: Liest Termine fuer das Daily Briefing.
+  - LifeAssistant: Liest Termine für das Daily Briefing.
   - Dokumente: Verknuepft mit Dateien in `user/documents/medical/`.
   - Wechselwirkungs-Check: Basis-Datenbank mit 12 haeufigen Interaktionen.
 
 SIEHE AUCH:
-  bach --help abo            (Fuer Fitness-Abos etc.)
+  bach --help abo            (Für Fitness-Abos etc.)
   bach --help contact        (Allgemeine Kontakte)

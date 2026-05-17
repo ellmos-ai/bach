@@ -1,33 +1,33 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-02-08 (Help-Forensik: Export-Formate korrigiert)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 STEUER-HILFE
 ============
 
-Steuer-Agent fuer Werbungskosten-Erfassung.
+Steuer-Agent für Werbungskosten-Erfassung.
 
-UEBERSICHT
+ÜBERSICHT
 ----------
 Der Steuer-Agent hilft bei der systematischen Erfassung von
-Werbungskosten fuer die Steuererklaerung. Er unterstuetzt
+Werbungskosten für die Steuererklärung. Er unterstützt
 mehrere Nutzerprofile und Steuerjahre.
 
 ORDNERSTRUKTUR
 --------------
 user/steuer/
 +-- profile/              Nutzerprofile
-+-- watch/                Ueberwachte Ordner (Konfiguration)
-+-- templates/            Vorlagen fuer neue Jahre
++-- watch/                Überwachte Ordner (Konfiguration)
++-- templates/            Vorlagen für neue Jahre
 +-- [JAHR]/               Pro Steuerjahr
     +-- Werbungskosten/   Werbungskosten (Hauptkategorie)
     |   +-- belege/           Beleg-Ablage
-    |   |   +-- _bundles/         Text-Bundles fuer Batch-Verarbeitung
+    |   |   +-- _bundles/         Text-Bundles für Batch-Verarbeitung
     |   |   +-- _Fahrten&Homeoffice/ Fahrtenbuch, AZN, timeGoat
-    |   |   +-- _Fehlbelege/      Zur User-Pruefung (Nicht-Belege)
+    |   |   +-- _Fehlbelege/      Zur User-Prüfung (Nicht-Belege)
     |   |   +-- _Papierkorb/      Bestaetigte Nicht-Belege
-    |   |   +-- Weitere/          Eingangsordner fuer neue Belege
+    |   |   +-- Weitere/          Eingangsordner für neue Belege
     |   |   +-- [Anbieter]/       Pro Anbieter (amazon.de, eBay, ...)
     |   +-- export/           Erzeugte Berichte und Exporte
     |   |   +-- csv/              CSV-Exporte
@@ -47,9 +47,9 @@ user/steuer/
 CLI-BEFEHLE
 -----------
 
-STATUS & UEBERSICHT:
+STATUS & ÜBERSICHT:
   bach steuer status              Gesamtstatus anzeigen
-  bach steuer status --jahr 2025  Status fuer ein Jahr
+  bach steuer status --jahr 2025  Status für ein Jahr
 
 STEUERJAHR:
   bach steuer init 2026           Neues Steuerjahr anlegen
@@ -57,7 +57,7 @@ STEUERJAHR:
 
 LISTEN:
   bach steuer list                Alle Listen zeigen
-  bach steuer list --jahr 2025    Listen fuer Jahr
+  bach steuer list --jahr 2025    Listen für Jahr
   bach steuer list --liste WERBUNGSKOSTEN
                                   Bestimmte Liste anzeigen
 
@@ -94,7 +94,7 @@ mehrere Posten enthalten. PostenID = BelegNr-PostenNr (z.B. 151-1).
   bach steuer posten list --rechnungsnr NR  Nach Rechnungsnummer filtern
   bach steuer posten list --limit 100       Mit Limit
 
-  bach steuer posten search BEGRIFF         Posten uebergreifend suchen
+  bach steuer posten search BEGRIFF         Posten übergreifend suchen
                                             (sucht in Bezeichnung, Steller,
                                             Bemerkung, Rechnungsnr, PostenID)
 
@@ -121,24 +121,24 @@ mehrere Posten enthalten. PostenID = BelegNr-PostenNr (z.B. 151-1).
 
   bach steuer posten move 151-1 W           In Liste verschieben
   bach steuer posten move 151-1 G --anteil 0.5
-                                            Mit Anteil fuer Gemischte
+                                            Mit Anteil für Gemischte
     Listen-Kuerzel:
     W = WERBUNGSKOSTEN (100% absetzbar)
     G = GEMISCHTE (anteilig absetzbar)
     V = VERWORFEN (nicht absetzbar)
-    Z = ZURUECKGESTELLT (noch zu klaeren)
+    Z = ZURÜCKGESTELLT (noch zu klaeren)
 
-  bach steuer posten delete 151-1           Loeschen (mit Bestaetigung)
+  bach steuer posten delete 151-1           Löschen (mit Bestaetigung)
   bach steuer posten delete 151-1 --force   Ohne Bestaetigung
 
 BATCH-IMPORT (NEU v1.1.4)
 -------------------------
-Fuer schnelle Erfassung mehrerer Posten oder Belege.
+Für schnelle Erfassung mehrerer Posten oder Belege.
 
   bach steuer batch help                    Batch-Hilfe anzeigen
 
   bach steuer batch posten --belegnr 42 --json '[...]'
-                                            Mehrere Posten fuer einen Beleg
+                                            Mehrere Posten für einen Beleg
     JSON-Format:
     [{"bez":"Artikel","brutto":19.99,"liste":"W"},
      {"bez":"Privat","brutto":5.00,"liste":"V","bem":"privat"}]
@@ -159,14 +159,14 @@ Fuer schnelle Erfassung mehrerer Posten oder Belege.
     ]}
 
   bach steuer batch delete --belegnr 42 --force
-                                            Alle Posten eines Belegs loeschen
+                                            Alle Posten eines Belegs löschen
 
   bach steuer batch delete --posten "42-1,42-2,43-1" --force
-                                            Bestimmte Posten loeschen
+                                            Bestimmte Posten löschen
 
   bach steuer batch delete --liste V --limit 100 --force
-                                            Alle VERWORFEN loeschen (max 100)
-                                            VORSICHT: Kann viele Posten loeschen!
+                                            Alle VERWORFEN löschen (max 100)
+                                            VORSICHT: Kann viele Posten löschen!
 
   bach steuer batch move --posten "42-1,42-2" --liste W
                                             Bestimmte Posten verschieben
@@ -179,11 +179,11 @@ Fuer schnelle Erfassung mehrerer Posten oder Belege.
 
 STEUER-TOOLS (NEU v1.1.4)
 -------------------------
-Eigenstaendige Python-Scripts in tools/steuer/.
+Eigenständige Python-Scripts in tools/steuer/.
 
   bach steuer tools list                    Alle Tools auflisten
-  bach steuer tools <name> [args]           Tool ausfuehren (Kurzform)
-  bach steuer tools run <name> [args]       Tool ausfuehren (explizit)
+  bach steuer tools <name> [args]           Tool ausführen (Kurzform)
+  bach steuer tools run <name> [args]       Tool ausführen (explizit)
   bach steuer tools register                Tools in bach.db registrieren
 
 Wichtige Tools:
@@ -192,7 +192,7 @@ Wichtige Tools:
   beleg_parser      Text aus PDFs extrahieren (mit OCR)
   regenerate_txt    Listen-TXTs aus DB regenerieren
   scan_new_belege   Neue Belege finden und registrieren
-  temu_ocr_batch    Batch-OCR fuer Bild-PDFs
+  temu_ocr_batch    Batch-OCR für Bild-PDFs
 
 Direktaufruf:
   bach steuer tools make_bundle amazon 11 67
@@ -205,23 +205,23 @@ PROFILE:
 
 WATCH-ORDNER:
   bach steuer watch list          Watch-Ordner anzeigen
-  bach steuer watch add PFAD      Ordner hinzufuegen
+  bach steuer watch add PFAD      Ordner hinzufügen
   bach steuer watch remove PFAD   Ordner entfernen
-  bach steuer scan                Watch-Ordner pruefen
+  bach steuer scan                Watch-Ordner prüfen
 
 EXPORT:
   bach steuer export              Export (Standard: txt)
   bach steuer export --jahr 2025 --format csv
   bach steuer export --format datev         DATEV Buchungsstapel CSV
-                                            (fuer Steuerberater)
+                                            (für Steuerberater)
   bach steuer export --format csv           Einfaches CSV (Excel-kompatibel)
   bach steuer export --format vorsorge      Anlage Vorsorgeaufwand
                                             (Versicherungsbeitraege)
 
-VOLLSTAENDIGKEITSPRUEFUNG:
-  bach steuer check                         Pruefung durchfuehren
-  bach steuer check --jahr 2025             Fuer bestimmtes Jahr
-                                            Prueft: Belege ohne Posten,
+VOLLSTAENDIGKEITSPRÜFUNG:
+  bach steuer check                         Prüfung durchführen
+  bach steuer check --jahr 2025             Für bestimmtes Jahr
+                                            Prüft: Belege ohne Posten,
                                             Posten ohne Beleg, Luecken in
                                             Belegnummern, fehlende Monate,
                                             Posten ohne MwSt-Betrag
@@ -239,7 +239,7 @@ BANK-IMPORT:
 FINANZAMT-EXPORT (geplant):
   bach steuer finanzamt           ZIP mit allen Werbungskosten erstellen
                                   Erzeugt FINANZAMT_[JAHR].zip mit:
-                                  - WERBUNGSKOSTEN_alle.txt (Uebersicht)
+                                  - WERBUNGSKOSTEN_alle.txt (Übersicht)
                                   - csv/ Ordner mit CSV-Dateien
                                   - Alle referenzierten Belege (PDFs)
 
@@ -248,7 +248,7 @@ FINANZAMT-EXPORT (geplant):
 
 CSV-EXPORT (NEU v1.3.1):
   bach steuer export --format csv CSV-Dateien in csv/ Ordner exportieren
-                                  Fuer Excel/Steuersoftware-Import
+                                  Für Excel/Steuersoftware-Import
 
   Format: Semikolon-getrennt, UTF-8 mit BOM, deutsches Zahlenformat
 
@@ -261,10 +261,10 @@ CSV-EXPORT (NEU v1.3.1):
 PROFILE
 -------
 Profile speichern nutzerspezifische Einstellungen:
-- Beruflicher Kontext (Branche, Taetigkeit)
+- Beruflicher Kontext (Branche, Tätigkeit)
 - Anbieter-Regeln (TEMU, Amazon, ...)
 - Automatische Zuordnungen (Keywords)
-- Standard-Anteile fuer gemischte Nutzung
+- Standard-Anteile für gemischte Nutzung
 
 Profil anlegen:
 1. bach steuer profile create MEINNAME
@@ -279,8 +279,8 @@ Neue Dateinamen in WERBUNGSKOSTEN/ Ordner:
   W     POSTEN_reine.txt         100% absetzbar
   G     POSTEN_gemischt.txt      Anteilig absetzbar (mit Anteil)
   V     POSTEN_verworfen.txt     Nicht absetzbar (privat)
-  Z     POSTEN_unsortiert.txt    Spaeter bearbeiten / unklar
-  -     WERBUNGSKOSTEN_alle.txt  W + G kombiniert (fuer Finanzamt)
+  Z     POSTEN_unsortiert.txt    Später bearbeiten / unklar
+  -     WERBUNGSKOSTEN_alle.txt  W + G kombiniert (für Finanzamt)
 
 BELEG-STATUS
 ------------
@@ -296,27 +296,27 @@ Automatische Vorsortierung neuer Belege in Anbieter-Ordner.
 
 Workflow:
 1. Neue PDFs aus Email/Downloads in belege/Weitere/ legen
-2. Vorfilter ausfuehren:
+2. Vorfilter ausführen:
    python tools/steuer/beleg_vorfilter.py --dry-run   # Vorschau
-   python tools/steuer/beleg_vorfilter.py             # Ausfuehren
+   python tools/steuer/beleg_vorfilter.py             # Ausführen
 3. Ergebnis:
    - Belege werden automatisch in Anbieter-Ordner sortiert
    - Nicht-Belege (Tracking, Versandstatus) -> _Fehlbelege/
-4. User prueft _Fehlbelege/ -> echte Fehlbelege nach _Papierkorb/
+4. User prüft _Fehlbelege/ -> echte Fehlbelege nach _Papierkorb/
 
 Erkennungsmethoden:
 - Dateiname-Muster: RG64116 -> LingoPlay, 32xxxxxx -> TimeTEX
 - PDF-Inhalt: "Anthropic, PBC" -> Anthropic, "TimeTEX" -> TimeTEX
 - Fehlbeleg-Marker: "Sendungsverfolgung", "Tracking" -> _Fehlbelege
 
-Unterstuetzte Anbieter:
+Unterstützte Anbieter:
   Anthropic, TimeTEX, LingoPlay, Autismusverlag, PayPal,
   eBay, Temu, Amazon, Apple, Google
 
 BIDI-SYNC (BIDIREKTIONALER TXT-SYNC)
 -------------------------------------
 Erweiterte Aktionen direkt in TXT-Dateien schreiben.
-Der Sync parst diese und fuehrt sie in der DB aus.
+Der Sync parst diese und führt sie in der DB aus.
 
 AKTIONS-TYPEN:
   MOVE (Verschieben):
@@ -326,17 +326,17 @@ AKTIONS-TYPEN:
     B42 -> W               Alle Posten eines Belegs verschieben
 
   EDIT (Bearbeiten):
-    42-3 :: brutto=19.99   Bruttobetrag aendern
+    42-3 :: brutto=19.99   Bruttobetrag ändern
     42-3 :: bezeichnung=Neuer Name
-    42-3 :: anteil=0.7     Anteil aendern
+    42-3 :: anteil=0.7     Anteil ändern
 
-  DELETE (Loeschen):
-    42-3 DELETE            Einzelnen Posten loeschen
+  DELETE (Löschen):
+    42-3 DELETE            Einzelnen Posten löschen
     42-3 DEL               Kurzform
 
   DEPRECATED (Beleg ausbuchen):
     B42 DEPRECATED         Beleg als ungueltig markieren
-    B42 DEPRECATED Duplikat  Mit Begruendung
+    B42 DEPRECATED Duplikat  Mit Begründung
 
 EINGABE-BEREICH:
   Aktionen in TXT-Dateien im Bereich "EINGABEN" schreiben:
@@ -347,20 +347,20 @@ EINGABE-BEREICH:
   B44 DEPRECATED Storniert
   === ENDE EINGABEN ===
 
-SYNC AUSFUEHREN:
+SYNC AUSFÜHREN:
   python tools/steuer/steuer_sync.py sync
   oder: bach steuer beleg sync
 
 HINWEISE:
   - Aktionen werden bei Sync verarbeitet und dann entfernt
   - Fehlerhafte Aktionen werden im Error-Log gemeldet
-  - Immer erst --dry-run testen (falls verfuegbar)
+  - Immer erst --dry-run testen (falls verfügbar)
 
 TYPISCHER WORKFLOW
 ------------------
 0. Neue Belege vorsortieren (beleg_vorfilter.py)
 
-1. Status pruefen:
+1. Status prüfen:
    bach steuer beleg list --status NICHT_ERFASST
 
 2. Offene Belege nach Anbieter sehen:
@@ -368,12 +368,12 @@ TYPISCHER WORKFLOW
 
 3. Im Chat-Agent Belege erfassen
 
-4. Ergebnis pruefen:
+4. Ergebnis prüfen:
    bach steuer posten list --liste W
 
 BATCH-VERARBEITUNG MIT BUNDLES
 ------------------------------
-Bei vielen Belegen ist Einzelpruefung ineffizient. Stattdessen:
+Bei vielen Belegen ist Einzelprüfung ineffizient. Stattdessen:
 
 1. Bundle erstellen:
    python agents/_experts/steuer/make_bundle.py <quelle> <start> <ende>
@@ -391,7 +391,7 @@ Bei vielen Belegen ist Einzelpruefung ineffizient. Stattdessen:
    - W = Werbungskosten (100% absetzbar)
    - G = Gemischt (anteilig, z.B. 50%)
    - V = Verworfen (privat, Duplikate, Status-Mails)
-   - Z = Zurueckgestellt (noch zu klaeren)
+   - Z = Zurückgestellt (noch zu klaeren)
 
 3. Posten batch-erfassen:
    bach steuer posten add --belegnr 195 --bezeichnung "..." --brutto 55.85 --liste W ...
@@ -404,7 +404,7 @@ HINWEISE ZUR KLASSIFIZIERUNG
 - PayPal: Temu-Zahlungen sind Duplikate (Originale im Temu-Ordner)
 - eBay: Viele Mails pro Kauf (Bestellung, Versand, Zustellung, Rechnung)
         -> Nur die Rechnung/Bestellbestaetigung als Hauptbeleg erfassen
-        -> Status-Mails als V mit 0 EUR erfassen (Vollstaendigkeit)
+        -> Status-Mails als V mit 0 EUR erfassen (Vollständigkeit)
 - Therapie-Material: LEGO, Lernspiele, Fachliteratur = W
 - Software: Microsoft 365, Office = G mit 50%
 - Streaming: Netflix, Disney+ = V (privat)
@@ -422,7 +422,7 @@ Profile werden als TXT-Dateien in user/steuer/profile/ gespeichert.
 CHAT-AGENT
 ----------
 Der Steuer-Agent ist als Chat-Agent unter
-agents/steuer-agent.txt verfuegbar.
+agents/steuer-agent.txt verfügbar.
 
 Er kann:
 - Belege aus PDFs erfassen
@@ -434,7 +434,7 @@ Er kann:
 BEREICHS-READMES (Stichwort-Nachschlagewerke)
 ---------------------------------------------
 Jeder Steuer-Bereich hat eine README.txt mit Stichworttabelle,
-benoetigten Belegen und aktuellen Pauschbetraegen (Stand 2025).
+benötigten Belegen und aktuellen Pauschbetraegen (Stand 2025).
 
   Datei                                              Bereich / Paragraph
   ------------------------------------------------   --------------------------
@@ -450,8 +450,8 @@ benoetigten Belegen und aktuellen Pauschbetraegen (Stand 2025).
 
 Inhalt der READMEs:
   - Definition des Bereichs mit Rechtsgrundlage
-  - Stichworttabelle: Was kann eingereicht werden + benoetigte Belege
-  - Wichtige Pauschbetraege und Hoechstgrenzen
+  - Stichworttabelle: Was kann eingereicht werden + benötigte Belege
+  - Wichtige Pauschbetraege und Höchstgrenzen
   - Praxis-Hinweise
 
 SIEHE AUCH
@@ -459,7 +459,7 @@ SIEHE AUCH
   bach --help tasks                    Allgemeine Aufgaben
   bach --help backup                   Backup-System
   wiki/steuer/_index.txt          Steuer-Wiki (Hintergrundwissen)
-  wiki/steuer/est_bereiche.txt    EStG-Anlagen Uebersicht
+  wiki/steuer/est_bereiche.txt    EStG-Anlagen Übersicht
   wiki/steuer/versicherungen.txt  Absetzbare Versicherungen
   wiki/steuer/sonderausgaben.txt  Sonderausgaben absetzen
   wiki/steuer/fortbildung.txt     Fortbildung und Studium

@@ -1,8 +1,8 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
-COOKBOOK - Rezeptbuch-Tool fuer DB-Doku-Generierung
+COOKBOOK - Rezeptbuch-Tool für DB-Doku-Generierung
 ====================================================
 
 BESCHREIBUNG
@@ -12,7 +12,7 @@ mittels vordefinierter Rezepte. Jedes Rezept beschreibt eine SQL-Abfrage,
 ein Ausgabe-Template und den Output-Pfad. Nutzt die Tabelle 'cookbook_recipes'
 in bach.db zur persistenten Verwaltung.
 
-Unterstuetzte Templates:
+Unterstützte Templates:
   - markdown_table: Markdown-Tabelle mit Spalten-Struktur
   - markdown_list: Strukturierte Markdown-Liste mit Hierarchie
   - json_export: JSON-Export mit Metadaten
@@ -22,23 +22,23 @@ OPERATIONEN
   bach cookbook list                    Alle Rezepte anzeigen (Name, Titel, Typ)
 
   bach cookbook generate <rezept>       Rohfassung aus Rezept generieren
-                                        Liest Rezept-Definition, fuehrt SQL aus,
+                                        Liest Rezept-Definition, führt SQL aus,
                                         wendet Template an, schreibt Output
 
-  bach cookbook delete <name>           Rezept loeschen (mit Warnung fuer CORE)
-                                        Flags: --force (erzwingt Loeschung)
+  bach cookbook delete <name>           Rezept löschen (mit Warnung für CORE)
+                                        Flags: --force (erzwingt Löschung)
 
   bach cookbook help                    Diese Hilfe anzeigen
 
 BEISPIELE
 ---------
-  1. Alle verfuegbaren Rezepte auflisten:
+  1. Alle verfügbaren Rezepte auflisten:
      bach cookbook list
 
   2. Rohfassung aus vorhandenem Rezept generieren:
      bach cookbook generate tools_overview
 
-  3. Rezept loeschen (Bestaetigung bei CORE-Rezepten):
+  3. Rezept löschen (Bestaetigung bei CORE-Rezepten):
      bach cookbook delete my_recipe
      bach cookbook delete core_recipe --force
 
@@ -62,7 +62,7 @@ TABELLEN-SCHEMA
 ---------------
   cookbook_recipes:
     - name (TEXT): Eindeutiger Rezept-Identifikator
-    - title (TEXT): Titel fuer Doku
+    - title (TEXT): Titel für Doku
     - description (TEXT): Optionale Beschreibung
     - recipe_json (TEXT): JSON-Definition (sql_query, template_type, output_file)
     - dist_type (INT): 0=USER, 1=TEMPLATE, 2=CORE

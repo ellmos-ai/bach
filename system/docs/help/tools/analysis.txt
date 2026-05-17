@@ -1,9 +1,9 @@
 ANALYSIS TOOLS - Analyse-Werkzeuge
 ===================================
 
-UEBERSICHT
+ÜBERSICHT
 Die Analysis-Tools in BACH helfen bei der Datenanalyse,
-Code-Inspektion und Systemueberwachung.
+Code-Inspektion und Systemüberwachung.
 
 DATEN-ANALYSE (bach data)
 -------------------------
@@ -18,7 +18,7 @@ Befehle:
   bach data chart <pfad> <typ>  Chart erstellen (bar, line, pie, scatter, hist)
   bach data list                Dateien im input/ Ordner anzeigen
 
-Unterstuetzte Formate:
+Unterstützte Formate:
   - CSV (automatische Trennzeichen-Erkennung)
   - Excel (.xlsx, .xls)
   - JSON
@@ -32,7 +32,7 @@ CODE-ANALYSE
 ------------
 
 code_analyzer.py
-  Analysiert Python-Code auf Qualitaet und Struktur.
+  Analysiert Python-Code auf Qualität und Struktur.
   Aufruf: python tools/code_analyzer.py <datei>
 
 c_method_analyzer.py
@@ -44,7 +44,7 @@ STATISTIK & REPORTS
 -------------------
 
 task_statistics.py
-  Erstellt Statistiken ueber Tasks (done vs pending, Prioritaeten).
+  Erstellt Statistiken über Tasks (done vs pending, Prioritäten).
   Aufruf: python tools/task_statistics.py
 
 reports.py
@@ -59,7 +59,7 @@ SCANNER
 -------
 
 dirscan.py
-  Scannt Verzeichnisse auf Aenderungen.
+  Scannt Verzeichnisse auf Änderungen.
   In --startup integriert.
   Aufruf: python tools/dirscan.py <pfad>
 
@@ -89,5 +89,5 @@ dump_schema.py
 SIEHE AUCH
 ----------
 bach --help data          Data Analysis Hilfe
-bach --help tools         Tool-Uebersicht
+bach --help tools         Tool-Übersicht
 bach --help maintain      Wartungs-Tools

@@ -1,14 +1,14 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 MAINTAIN - BACH Wartungs-Tools
 ==============================
 
-UEBERSICHT
+ÜBERSICHT
 ----------
-Sammlung von Wartungs- und Analyse-Tools fuer BACH.
+Sammlung von Wartungs- und Analyse-Tools für BACH.
 Alle Tools sind CLI-zugaenglich via bach --maintain
 
 BEFEHLE (16)
@@ -19,11 +19,11 @@ BEFEHLE (16)
   bach --maintain export        Export-Tools
   bach --maintain pattern       Dateinamen-Pattern kuerzen
   bach --maintain scan          System nach CLI-Tools scannen
-  bach --maintain clean         Dateien nach Alter/Muster loeschen
+  bach --maintain clean         Dateien nach Alter/Muster löschen
   bach --maintain json          JSON-Dateien reparieren
   bach --maintain heal          Pfad-Korrektur und Selbstheilung
-  bach --maintain registry      Registry-Konsistenz pruefen
-  bach --maintain skills        Skill-Gesundheit pruefen
+  bach --maintain registry      Registry-Konsistenz prüfen
+  bach --maintain skills        Skill-Gesundheit prüfen
   bach --maintain sync          Skills mit Datenbank synchronisieren
   bach --maintain headers       SKILL.md YAML-Header generieren/validieren
   bach --maintain skill-help    Help-Dateien aus SKILL.md generieren
@@ -36,7 +36,7 @@ DOKUMENTATIONS-CHECK
   bach --maintain docs [--dry-run]
   
   Erkennt veraltete Dokumentationen:
-  - Aelter als 60 Tage
+  - Älter als 60 Tage
   - Ungueltige Pfade
   - Fehlende Referenzen
 
@@ -67,7 +67,7 @@ PATTERN TOOL
   
   Optionen:
     --dry-run       Nur anzeigen (default)
-    --execute       Umbenennungen durchfuehren
+    --execute       Umbenennungen durchführen
     --prefix-only   Nur Prefix-Patterns
     --suffix-only   Nur Suffix-Patterns
     -m <n>          Minimale Pattern-Laenge
@@ -84,11 +84,11 @@ FILE CLEANER
   bach --maintain clean <ordner> [optionen]
   
   Optionen:
-    --age <tage>    Dateien aelter als X Tage
+    --age <tage>    Dateien älter als X Tage
     --keep <n>      Nur N neueste behalten
     --pattern <p>   Datei-Pattern (z.B. "*.log")
     -r              Rekursiv suchen
-    --execute       Tatsaechlich loeschen
+    --execute       Tatsaechlich löschen
 
   Beispiele:
     bach --maintain clean ./logs --age 30
@@ -99,9 +99,9 @@ JSON FIXER
   bach --maintain json <datei/ordner> [optionen]
   
   Optionen:
-    --dry-run    Nur pruefen (default)
+    --dry-run    Nur prüfen (default)
     --execute    Tatsaechlich reparieren
-    --backup     Backup vor Aenderung
+    --backup     Backup vor Änderung
 
   Repariert:
     - UTF-8 BOM
@@ -116,9 +116,9 @@ PATH HEALER (NEU)
   Korrigiert veraltete Pfade in BACH-Dateien.
   
   Optionen:
-    --dry-run       Nur pruefen, nichts aendern (default)
+    --dry-run       Nur prüfen, nichts ändern (default)
     --execute       Tatsaechlich korrigieren
-    --target <p>    Nur bestimmte Datei pruefen
+    --target <p>    Nur bestimmte Datei prüfen
     --report        Detaillierten Report generieren
     
   Korrigiert:
@@ -128,7 +128,7 @@ PATH HEALER (NEU)
     - Tools-Verweise
     
   Beispiele:
-    bach --maintain heal                   # Dry-run fuer alle
+    bach --maintain heal                   # Dry-run für alle
     bach --maintain heal --execute         # Alle korrigieren
     bach --maintain heal --target config.py
 
@@ -138,18 +138,18 @@ REGISTRY WATCHER (NEU)
 ----------------------
   bach --maintain registry [optionen]
   
-  Ueberwacht und validiert alle BACH-Registries.
+  Überwacht und validiert alle BACH-Registries.
   
   Optionen:
-    check           Vollstaendiger Check (default)
-    check --db      Nur Datenbank pruefen
-    check --json    Nur JSON-Configs pruefen
+    check           Vollständiger Check (default)
+    check --db      Nur Datenbank prüfen
+    check --json    Nur JSON-Configs prüfen
     partners        Partner-Registry Check (NEU)
     report          Detaillierter Report
     
-  Prueft:
+  Prüft:
     - Existenz der Registry-relevanten DB-Tabellen (tools, skills, agents, partners)
-    - JSON-Konfigurationsdateien (nur noch begruendete Ausnahmen)
+    - JSON-Konfigurationsdateien (nur noch begründete Ausnahmen)
     - Cross-Referenzen zwischen Tabellen
     - partner_recognition + delegation_rules Konsistenz
 
@@ -160,23 +160,23 @@ REGISTRY WATCHER (NEU)
     bach --maintain registry report        # Detaillierter Report
     bach --maintain registry check --db    # Nur Datenbank
     
-  Hinweis: Laeuft automatisch bei --startup (Quick-Check)
+  Hinweis: Läuft automatisch bei --startup (Quick-Check)
 
 SKILL HEALTH MONITOR (NEU)
 --------------------------
   bach --maintain skills [optionen]
   
-  Ueberwacht und validiert alle BACH-Skills und Agenten.
+  Überwacht und validiert alle BACH-Skills und Agenten.
   
   Optionen:
-    check            Vollstaendiger Check (default)
-    check --skills   Nur Skills pruefen
-    check --agents   Nur Agenten pruefen
+    check            Vollständiger Check (default)
+    check --skills   Nur Skills prüfen
+    check --agents   Nur Agenten prüfen
     report           Detaillierter Report
     
-  Prueft:
+  Prüft:
     - Skill-Verzeichnisse (_agents, _experts, _services)
-    - SKILL.md Vollstaendigkeit (name, version, description)
+    - SKILL.md Vollständigkeit (name, version, description)
     - Agent-Definitionen validieren
     - Verwaiste oder fehlerhafte Skills finden
     
@@ -185,7 +185,7 @@ SKILL HEALTH MONITOR (NEU)
     bach --maintain skills report          # Detaillierter Report
     bach --maintain skills check --agents  # Nur Agenten
     
-  Hinweis: Laeuft automatisch bei --startup (Quick-Check)
+  Hinweis: Läuft automatisch bei --startup (Quick-Check)
 
 SYNC TOOL (NEU)
 ---------------
@@ -194,34 +194,34 @@ SYNC TOOL (NEU)
   Synchronisiert skills/ Dateien mit der Datenbank.
 
   Optionen:
-    --dry-run    Nur anzeigen, nichts aendern (default)
-    --verbose    Ausfuehrliche Ausgabe
-    -v           Kurz fuer --verbose
+    --dry-run    Nur anzeigen, nichts ändern (default)
+    --verbose    Ausführliche Ausgabe
+    -v           Kurz für --verbose
 
   Synchronisiert:
     - SKILL.md Metadaten (Name, Version, Beschreibung)
-    - Skill-Status und Abhaengigkeiten
+    - Skill-Status und Abhängigkeiten
     - Agent-Definitionen
 
   Beispiele:
     bach --maintain sync               # Dry-run
     bach --maintain sync --verbose     # Mit Details
-    bach --maintain sync --dry-run -v  # Dry-run ausfuehrlich
+    bach --maintain sync --dry-run -v  # Dry-run ausführlich
 
 HEADERS TOOL (NEU)
 ------------------
   bach --maintain headers [optionen]
 
-  Generiert und validiert YAML-Header fuer SKILL.md Dateien.
+  Generiert und validiert YAML-Header für SKILL.md Dateien.
 
   Optionen:
     --all           Alle Skill-Verzeichnisse scannen (default)
     --path <p>      Bestimmtes Verzeichnis scannen
     --file <f>      Einzelne SKILL.md verarbeiten
     --dry-run       Nur anzeigen (default)
-    --fix           Aenderungen schreiben
+    --fix           Änderungen schreiben
     --update-db     DB-Versionen aus YAML-Headern aktualisieren
-    -v              Ausfuehrlich
+    -v              Ausführlich
 
   Gescannte Verzeichnisse:
     - agents/*/SKILL.md
@@ -244,12 +244,12 @@ SKILL-HELP TOOL (NEU)
   Optionen:
     <name>       Einzelner Skill-Name
     --all        Alle Skills verarbeiten
-    -a           Kurz fuer --all
+    -a           Kurz für --all
     --dry-run    Nur anzeigen, nichts schreiben
-    -n           Kurz fuer --dry-run
+    -n           Kurz für --dry-run
 
   Beispiele:
-    bach --maintain skill-help ati              # Help fuer ATI-Agent
+    bach --maintain skill-help ati              # Help für ATI-Agent
     bach --maintain skill-help --all            # Alle Skills
     bach --maintain skill-help --all --dry-run  # Trockenlauf
 
@@ -259,9 +259,9 @@ WORKFLOWS TOOL (NEU)
 
   Validiert Workflow-Dateien auf konsistentes Format.
 
-  Prueft:
+  Prüft:
     - H1-Titel vorhanden
-    - Beschreibung (> Blockquote, **Zweck:**, ## Uebersicht)
+    - Beschreibung (> Blockquote, **Zweck:**, ## Übersicht)
     - Schritte/Phasen-Struktur
     - Versions-Angabe (optional)
 
@@ -279,14 +279,14 @@ NUL-CLEANER (NEU)
 
   Optionen:
     scan            Nur NUL-Dateien auflisten (default)
-    delete          NUL-Dateien loeschen
-    clean/remove    Alias fuer delete
+    delete          NUL-Dateien löschen
+    clean/remove    Alias für delete
     <pfad>          Bestimmtes Verzeichnis scannen
 
   Beispiele:
     bach --maintain nul                        # Scan BACH-Verzeichnis
     bach --maintain nul scan                   # Nur scannen
-    bach --maintain nul delete                 # Scannen und loeschen
+    bach --maintain nul delete                 # Scannen und löschen
     bach --maintain nul delete C:\Pfad         # Bestimmtes Verzeichnis
 
   Hinweis: NUL-Dateien entstehen auf Windows, wenn versehentlich
@@ -294,7 +294,7 @@ NUL-CLEANER (NEU)
 
 TOOLS
 -----
-  tools/doc_update_checker.py        Dokumentations-Pruefung
+  tools/doc_update_checker.py        Dokumentations-Prüfung
   tools/duplicate_detector.py        Duplikat-Erkennung
   tools/generators/                  Generator-Scripts
     skill_generator.py               Skill-Strukturen
@@ -316,12 +316,12 @@ AUTOMATISCHE CHECKS BEI --startup
 ---------------------------------
 Die folgenden Wartungs-Checks laufen automatisch bei Session-Start:
 
-  1. Directory Scan     - Aenderungen seit letzter Session
+  1. Directory Scan     - Änderungen seit letzter Session
   2. Path Healer        - Dry-run Pfadkorrektur
   3. Registry Watcher   - Quick-Check DB/JSON Konsistenz
   4. Skill Health       - Quick-Check Skills/Agenten
 
-Fuer detaillierte Reports: bach --maintain <tool> report
+Für detaillierte Reports: bach --maintain <tool> report
 
 AKTUELLE TOOL-UBERSICHT (16 Befehle)
 -------------------------------------
@@ -331,11 +331,11 @@ AKTUELLE TOOL-UBERSICHT (16 Befehle)
 4.  export        - Export-Tools
 5.  pattern       - Dateinamen-Pattern kuerzen
 6.  scan          - System nach CLI-Tools scannen
-7.  clean         - Dateien nach Alter/Muster loeschen
+7.  clean         - Dateien nach Alter/Muster löschen
 8.  json          - JSON-Dateien reparieren
 9.  heal          - Pfad-Korrektur und Selbstheilung
-10. registry      - Registry-Konsistenz pruefen
-11. skills        - Skill-Gesundheit pruefen
+10. registry      - Registry-Konsistenz prüfen
+11. skills        - Skill-Gesundheit prüfen
 12. sync          - Skills mit Datenbank synchronisieren
 13. headers       - SKILL.md YAML-Header generieren/validieren
 14. skill-help    - Help-Dateien aus SKILL.md generieren

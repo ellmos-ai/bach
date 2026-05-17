@@ -1,34 +1,34 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-05-09
 
 AGENT LAUNCHER - Agent-Verwaltung und -Prozesssteuerung
 =======================================================
 
-Startet und verwaltet BACH Agenten (Boss-Agenten und Experten) als eigenstaendige
+Startet und verwaltet BACH Agenten (Boss-Agenten und Experten) als eigenständige
 Claude-Prozesse mit Modell- und Modusparametrisierung.
 
 
 BESCHREIBUNG
 ------------
 
-Der agent_launcher Handler ermoeglicht das Lifecycle-Management von Agenten. Agenten
-werden als separate Prozesse gestartet und ueberwacht. Jeder Agent erhaelt eine
+Der agent_launcher Handler ermöglicht das Lifecycle-Management von Agenten. Agenten
+werden als separate Prozesse gestartet und überwacht. Jeder Agent erhält eine
 temporaere CLAUDE.md Datei mit seiner SKILL.md als Identitaetsdefinition.
-Prozess-IDs werden persistiert zur Ueberwachung und Kontrolle.
+Prozess-IDs werden persistiert zur Überwachung und Kontrolle.
 
 
 OPERATIONEN
 -----------
 
-  bach agent list                               Alle verfuegbaren Agents auflisten
+  bach agent list                               Alle verfügbaren Agents auflisten
 
   bach agent start <name> [OPTIONS]             Agent als neuen Prozess starten
     --mode MODE                                   Modus: plan (Planungsmodus) oder
                                                   default (Standard, default)
     --model MODEL                                 Modell: sonnet, opus oder haiku
                                                   (default: sonnet)
-    --dry-run                                     Nur pruefen, nicht starten
+    --dry-run                                     Nur prüfen, nicht starten
 
   bach agent stop <name>                        Laufenden Agent stoppen (Process
                                                 beenden, PID-File aufgeraeumt)
@@ -40,7 +40,7 @@ OPERATIONEN
 BEISPIELE
 ---------
 
-  # Verfuegbare Agents anzeigen
+  # Verfügbare Agents anzeigen
   bach agent list
   Ausgabe: Tabelle mit Name, Typ (boss/expert), Status [RUNNING:pid]/[STOPPED]
 
@@ -54,7 +54,7 @@ BEISPIELE
 
   # Start nur simulieren
   bach agent start ati --dry-run
-  Ausgabe: [DRY-RUN] Wuerde Agent 'ati' starten ...
+  Ausgabe: [DRY-RUN] Würde Agent 'ati' starten ...
 
   # Laufende Agents anzeigen
   bach agent status
@@ -71,9 +71,9 @@ DETAILS
 Agenten-Scanning:
   - Boss-Agenten: agents/ (Verzeichnisse mit SKILL.md)
   - Experten: agents/_experts/ (Verzeichnisse mit SKILL.md)
-  - Ignoriert Eintraege mit underscore-Praefixen
+  - Ignoriert Einträge mit underscore-Praefixen
 
-Prozessausfuehrung:
+Prozessausführung:
   - Windows: start.bat in Temp-Ordner, neues CMD-Fenster
   - Unix/Linux: detached Process mit start_new_session
   - Modell-Optionen: sonnet (default), opus, haiku
@@ -82,7 +82,7 @@ Prozessausfuehrung:
 Persistierung:
   - PID-File: data/agent_pids/<name>.pid (JSON)
   - Inhalt: pid, name, type, model, mode, started, temp_dir
-  - Automatische Aufraeumung toter Prozesse bei Status-Checks
+  - Automatische Aufräumung toter Prozesse bei Status-Checks
   - Temperaere CLAUDE.md: data/temp/agent_<name>/CLAUDE.md
 
 
@@ -92,7 +92,7 @@ FEHLERBEHANDLUNG
   [ERROR] Agent-Name erforderlich               Operand fehlt (list und status
                                                  brauchen keinen Namen)
 
-  [WARN] Agent '<name>' laeuft bereits (PID..) Agent ist schon aktiv
+  [WARN] Agent '<name>' läuft bereits (PID..) Agent ist schon aktiv
 
   [ERROR] Agent '<name>' nicht gefunden         Keine SKILL.md gefunden oder
                                                 Verzeichnis existiert nicht
@@ -117,6 +117,6 @@ DATEIEN
 SIEHE AUCH
 ----------
 
-  help agents              Agenten-Ueberblick (Boss, Experten, Struktur)
+  help agents              Agenten-Überblick (Boss, Experten, Struktur)
   help path                Verzeichnisstruktur und Pfade
   help develop             Neue Agenten entwickeln

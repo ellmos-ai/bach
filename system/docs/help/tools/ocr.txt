@@ -6,7 +6,7 @@ Pfad: docs/help/tools/ocr.txt
 
 BESCHREIBUNG
 ------------
-OCR-Engine fuer Texterkennung in Bildern und PDFs.
+OCR-Engine für Texterkennung in Bildern und PDFs.
 Verwendet Tesseract und ist von DokuZentrum Pro adaptiert.
 
 Pfad: tools/ocr_engine.py
@@ -15,7 +15,7 @@ VORAUSSETZUNGEN
 ---------------
   - Tesseract installiert (tesseract-ocr)
   - Python-Pakete: pytesseract, Pillow
-  - Optional: PyMuPDF (fitz) fuer PDF-Support
+  - Optional: PyMuPDF (fitz) für PDF-Support
 
   Installation:
     pip install pytesseract Pillow PyMuPDF
@@ -32,9 +32,9 @@ Python (Klasse):
   
   engine = OCREngine()
   
-  # Verfuegbarkeit pruefen
+  # Verfügbarkeit prüfen
   if engine.is_available:
-      print("Tesseract verfuegbar!")
+      print("Tesseract verfügbar!")
   
   # Bild erkennen
   result = engine.recognize_image("scan.png")
@@ -45,15 +45,15 @@ Python (Klasse):
   for page in pages:
       print(f"Seite {page.page_num}: {page.text}")
   
-  # Verfuegbare Sprachen
+  # Verfügbare Sprachen
   langs = engine.get_available_languages()
 
 HAUPTKLASSEN
 ------------
 
 OCREngine:
-  is_available            Tesseract verfuegbar?
-  get_available_languages() Verfuegbare Sprachen auflisten
+  is_available            Tesseract verfügbar?
+  get_available_languages() Verfügbare Sprachen auflisten
   recognize_image(path)   Text aus Bild extrahieren
   recognize_pdf(path)     Text aus PDF (auch Bild-PDFs)
 
@@ -83,7 +83,7 @@ Mehrere Sprachen:
 
 BELEG-KURZFORM
 --------------
-Belegscans koennen mit Kurzform aufgerufen werden:
+Belegscans können mit Kurzform aufgerufen werden:
 
   python ocr_engine.py B0006
 
@@ -111,12 +111,12 @@ FEHLERBEHEBUNG
 "pytesseract nicht installiert":
   pip install pytesseract
 
-"PyMuPDF nicht verfuegbar":
+"PyMuPDF nicht verfügbar":
   pip install PyMuPDF
-  (Nur fuer PDF-Support noetig)
+  (Nur für PDF-Support nötig)
 
 Schlechte Erkennung:
-  - Bild-Qualitaet verbessern (DPI erhoehen)
+  - Bild-Qualität verbessern (DPI erhöhen)
   - Richtige Sprache waehlen
   - Bild vorverarbeiten (Kontrast, Skalenkorrektur)
 

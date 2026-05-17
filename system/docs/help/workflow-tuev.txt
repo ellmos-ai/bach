@@ -1,9 +1,9 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
-WORKFLOW-TUEV - Qualitaetssicherung fuer Workflows
+WORKFLOW-TUEV - Qualitätssicherung für Workflows
 ==================================================
 
 Workflows sind das "Gehirn" des Systems. Sie muessen zuverlaessig funktionieren.
@@ -15,12 +15,12 @@ KONZEPT
 1. USECASE-TESTS
    - Sammlung von Testfaellen pro Workflow
    - Definierte Eingaben und erwartete Ausgaben
-   - Automatische Durchfuehrung moeglich
+   - Automatische Durchführung möglich
 
 2. TUEV-ABLAUF
    - Jeder Workflow hat ein Ablaufdatum (tuev_valid_until)
    - Bei Ablauf: Automatisch Wartungs-Task erstellen
-   - Nach erfolgreicher Pruefung: Neues Ablaufdatum
+   - Nach erfolgreicher Prüfung: Neues Ablaufdatum
 
 3. BEWERTUNG
    - sehr gut (90-100%)
@@ -28,22 +28,22 @@ KONZEPT
    - befriedigend (50-69%)
    - ausreichend (30-49%)
    - durchgefallen (<30%)
-   - Note bestimmt Prioritaet der Wartungs-Tasks
+   - Note bestimmt Priorität der Wartungs-Tasks
 
 CLI-BEFEHLE
 -----------
 
 BACH TUEV:
   bach tuev status                    TUeV-Status aller Workflows
-  bach tuev check <workflow>          Einzelnen Workflow pruefen
-  bach tuev run                       Alle faelligen Pruefungen
-  bach tuev renew <workflow>          TUeV erneuern nach Pruefung
+  bach tuev check <workflow>          Einzelnen Workflow prüfen
+  bach tuev run                       Alle fälligen Prüfungen
+  bach tuev renew <workflow>          TUeV erneuern nach Prüfung
   bach tuev init                      Workflows in DB registrieren
 
 BACH USECASE:
   bach usecase list [workflow]        Testfaelle anzeigen
-  bach usecase add <workflow>         Neuen Testfall hinzufuegen
-  bach usecase run <id>               Testfall ausfuehren
+  bach usecase add <workflow>         Neuen Testfall hinzufügen
+  bach usecase run <id>               Testfall ausführen
   bach usecase run-all <workflow>     Alle Testfaelle eines Workflows
   bach usecase show <id>              Testfall-Details anzeigen
 
@@ -51,12 +51,12 @@ DB-SCHEMA
 ---------
 
 usecases:
-  id                   Primaerschluessel
+  id                   Primaerschlüssel
   title                Testfall-Titel
   description          Beschreibung des Testfalls
   workflow_path        Pfad zum Workflow (skills/workflows/...)
   workflow_name        Name des Workflows
-  test_input           JSON: Eingabedaten fuer Test
+  test_input           JSON: Eingabedaten für Test
   expected_output      JSON: Erwartetes Ergebnis
   last_tested          Letzter Testlauf (Zeitstempel)
   test_result          pass/fail/error
@@ -65,13 +65,13 @@ usecases:
   created_by           user/system
 
 workflow_tuev:
-  id                   Primaerschluessel
+  id                   Primaerschlüssel
   workflow_path        Pfad zum Workflow (UNIQUE)
   workflow_name        Name des Workflows
   last_tuev_date       Letzter TUeV-Termin
-  tuev_valid_until     Naechster TUeV faellig
+  tuev_valid_until     Nächster TUeV fällig
   tuev_status          pending/passed/failed/expired
-  test_count           Anzahl durchgefuehrter Tests
+  test_count           Anzahl durchgeführter Tests
   pass_count           Bestandene Tests
   fail_count           Fehlgeschlagene Tests
   avg_score            Durchschnittliche Punktzahl
@@ -80,12 +80,12 @@ TESTPROZESS (3 Teile)
 ---------------------
 
 Teil 1: DURCHFUEHRUNG als Selbsterfahrung
-  - Workflow mit Testdaten ausfuehren
-  - LLM-Perspektive: "Wie war es fuer mich?"
+  - Workflow mit Testdaten ausführen
+  - LLM-Perspektive: "Wie war es für mich?"
   - Probleme, Unklarheiten, Stolpersteine notieren
 
 Teil 2: BEWERTUNG gegen Kriterien
-  - Usecase-Anforderungen pruefen
+  - Usecase-Anforderungen prüfen
   - Festgelegte Kriterien abgleichen
   - Ergebnis vs. Expected Output vergleichen
 
@@ -94,14 +94,14 @@ Teil 3: BENOTUNG und Konsequenzen
   - Note ableiten
   - Bei Fehler: Task zur Verbesserung erstellen
 
-CHECKLISTE fuer neue Workflows
+CHECKLISTE für neue Workflows
 ------------------------------
 
 [ ] Hat der Workflow mindestens 1 Usecase?
 [ ] Sind Eingabe und erwartete Ausgabe definiert?
 [ ] Funktioniert der Workflow ohne User-Daten?
 [ ] Ist der Workflow idempotent (wiederholbar)?
-[ ] Sind Abhaengigkeiten dokumentiert?
+[ ] Sind Abhängigkeiten dokumentiert?
 [ ] Gibt es Error-Handling?
 
 BEISPIEL-USECASE

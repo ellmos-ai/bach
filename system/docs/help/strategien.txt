@@ -1,11 +1,11 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 STRATEGIEN
 ==========
-Grundlegende Handlungsstrategien fuer Problemloesung und Automatisierung.
+Grundlegende Handlungsstrategien für Problemlösung und Automatisierung.
 
 Bezug: docs/help/operatoren.txt, docs/help/denkstrategien.txt
 
@@ -30,7 +30,7 @@ def classify_doc(doc):
 2. BEWERTEN (Scoring)
 =====================
 Strategie: Kriterien definieren, gewichten, Score berechnen.
-Basis fuer Ranking, Automatisierung, Human-Review.
+Basis für Ranking, Automatisierung, Human-Review.
 
 Beispiel (Python):
 ```python
@@ -64,7 +64,7 @@ const relevant = mails.filter(m => !isExcluded(m));
 
 4. TESTEN (Validieren)
 ======================
-Strategie: Daten gegen Regeln, Schemata, Referenzquellen pruefen.
+Strategie: Daten gegen Regeln, Schemata, Referenzquellen prüfen.
 Varianten: Schema-Tests, Business-Regeln, A/B-Vergleich, Cross-Source-Check.
 
 Beispiel - Schema-Test (Python):
@@ -91,14 +91,14 @@ resA = classify_A(doc)
 resB = classify_B(doc)
 
 if resA != resB:
-    # Konflikt markieren, fuer Analyse loggen
+    # Konflikt markieren, für Analyse loggen
     pass
 ```
 
 
 5. PROBLEME DEFINIEREN
 ======================
-Strategie: Problem als Input -> gewuenschter Output -> Constraints formulieren.
+Strategie: Problem als Input -> gewünschter Output -> Constraints formulieren.
 In Code: klare Schnittstellen, erwartete Invarianten, Fehlerklassen.
 
 Beispiel-Formulierung:
@@ -106,13 +106,13 @@ Beispiel-Formulierung:
            Vertrag oder Sonstiges klassifiziert werden."
   Input:   E-Mail (Betreff, Body, Anhaenge, Metadaten)
   Output:  Kategorie + Score + ggf. Extrakte
-  Constraints: keine False-Positives bei Rechnungen ueber X EUR,
+  Constraints: keine False-Positives bei Rechnungen über X EUR,
                Score-Schwellen, Logging
 
 
 6. PROBLEMLOESE-STRATEGIEN
 ==========================
-Generisches Muster fuer strategie-basierte Entscheidungen.
+Generisches Muster für strategie-basierte Entscheidungen.
 
 ```python
 def solve_problem(input_data, strategies):
@@ -158,13 +158,13 @@ strategies = [
 
 BEZUG ZU BACH
 =============
-Diese Strategien sind die Basis fuer:
+Diese Strategien sind die Basis für:
   - Injektoren (Kontext-basierte Entscheidungen) - system/tools/injectors.py
   - Memory-Konsolidierung (Lesson-Ableitung) - system/hub/consolidation.py
   - Workflow-Routing (Skills und Services)
   - Dokumenten-Verarbeitung (OCR, Klassifikation)
 
-Strategien + Operatoren = wiederverwendbare Loesungsbausteine
+Strategien + Operatoren = wiederverwendbare Lösungsbausteine
 
 
 VERWANDTE HELP-DATEIEN

@@ -1,9 +1,9 @@
-# Portabilitaet: USER
+# Portabilität: USER
 # Version: 3.0.0
 # Zuletzt validiert: 2026-03-11
-# Naechste Pruefung: 2026-09-11
+# Nächste Prüfung: 2026-09-11
 
-FOERDERBERICHT
+FÖRDERBERICHT
 ==============
 
 ICF-basierte Entwicklungsberichte erstellen, exportieren und archivieren.
@@ -17,13 +17,13 @@ SCHNELLSTART
   2. Einen der folgenden Wege nutzen:
 
   Weg 1 - Chat (empfohlen):
-    "Erstelle Foerderbericht"
+    "Erstelle Förderbericht"
 
   Weg 2 - Desktop .bat:
-    Foerderbericht_Pipeline.bat (ENTER fuer Auto-Detect)
+    Förderbericht_Pipeline.bat (ENTER für Auto-Detect)
 
   Weg 3 - llmauto Chain:
-    bach chain start foerderbericht
+    bach chain start förderbericht
 
   Weg 4 - CLI:
     bach bericht pipeline
@@ -97,7 +97,7 @@ BEISPIELE
   # Anderer Zeitraum
   bach bericht pipeline --zeitraum "01.07.2025 - 30.06.2026"
 
-  # Status pruefen
+  # Status prüfen
   bach bericht status
   bach bericht list
 

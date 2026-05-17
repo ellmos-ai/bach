@@ -1,28 +1,28 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 BACH Trash-Handler (Papierkorb-System)
 ======================================
 
-Das Trash-System ermoeglicht Soft-Delete mit Wiederherstellung.
+Das Trash-System ermöglicht Soft-Delete mit Wiederherstellung.
 
 BEFEHLE
 -------
-bach trash list            Alle Papierkorb-Eintraege
+bach trash list            Alle Papierkorb-Einträge
 bach trash delete PATH     Datei in Papierkorb
 bach trash restore ID      Datei wiederherstellen
-bach trash purge           Abgelaufene loeschen
+bach trash purge           Abgelaufene löschen
 bach trash info ID         Details anzeigen
 
 OPTIONEN
 --------
---dry-run    Aenderungen nur simulieren
+--dry-run    Änderungen nur simulieren
 
 BEISPIELE
 ---------
-# Datei loeschen
+# Datei löschen
 bach trash delete ./alte_datei.txt
 
 # Inhalt anzeigen
@@ -49,14 +49,14 @@ Tabelle: files_trash (system/db/schema.sql)
 - id: PRIMARY KEY
 - original_path: Urspruenglicher Pfad
 - trash_path: Pfad im Papierkorb
-- size: Dateigroesse in Bytes
-- deleted_at: Loeschzeitpunkt (ISO-8601)
+- size: Dateigröße in Bytes
+- deleted_at: Löschzeitpunkt (ISO-8601)
 - deleted_by: Benutzername (default: "claude")
 - retention_days: Aufbewahrung (default: 30)
 - expires_at: Ablaufdatum (ISO-8601)
 - status: active/restored/purged
 - restored_at: Wiederherstellungszeitpunkt
-- purged_at: Endgueltige Loeschung
+- purged_at: Endgültige Löschung
 
 SIEHE AUCH
 ----------

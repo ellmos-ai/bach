@@ -1,19 +1,19 @@
 BACH Tool: MCP Server
 =====================
 
-Gebundelte MCP-Server fuer Claude Code und Claude Desktop.
+Gebundelte MCP-Server für Claude Code und Claude Desktop.
 
-VERFUEGBARE SERVER
+VERFÜGBARE SERVER
 ------------------
 
-  bach-codecommander   Code-Ausfuehrung und Shell-Befehle (17 Tools)
+  bach-codecommander   Code-Ausführung und Shell-Befehle (17 Tools)
   bach-filecommander   Dateisystem-Operationen (43 Tools)
   n8n-manager-mcp      n8n Workflow-Verwaltung
 
 INSTALLATION
 ------------
 
-Die Server werden ueber npm installiert:
+Die Server werden über npm installiert:
   npm install bach-codecommander-mcp
   npm install bach-filecommander-mcp
   npm install n8n-manager-mcp

@@ -1,6 +1,6 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Zuletzt validiert: 2026-03-04 (Root-Docs-Review)
-# Naechste Pruefung: 2026-09-04
+# Nächste Prüfung: 2026-09-04
 
 CLI-KONVENTIONEN (v2.0 Registry-Based)
 =======================================
@@ -14,15 +14,15 @@ BACH nutzt Auto-Discovery via core/registry.py:
   restore backup → Registry → Tool-Fallback
 
 STANDARD-PATTERN (wie git, npm, docker):
-  bach SUBCOMMAND [args]     Aktion ausfuehren
+  bach SUBCOMMAND [args]     Aktion ausführen
   bach --HANDLER [args]      Handler mit -- Prefix
 
 ZWEI ZUGRIFFSWEGE:
 ----------------------------------------
-1. CLI (fuer Menschen):
+1. CLI (für Menschen):
    python bach.py task list
 
-2. Library-API (fuer LLM/Scripts - BEVORZUGT):
+2. Library-API (für LLM/Scripts - BEVORZUGT):
    from bach_api import task
    task.list()
 
@@ -43,8 +43,8 @@ AGENTEN & EXPERTEN (Fachgebiete):
 ----------------------------------------
   steuer        Steuer-Experte (Finanzamt, Fristen, Belege)
   ati           ATI-Agent (Konzept-Entwicklung)
-  abo           Abo-Service (Kuendigungen, Vertraege)
-  bericht       Bericht-Generator (Foerderberichte ICF)
+  abo           Abo-Service (Kündigungen, Verträge)
+  bericht       Bericht-Generator (Förderberichte ICF)
   gesundheit    Gesundheits-Assistent
   haushalt      Haushalts-Management
   versicherung  Versicherungs-Management
@@ -52,7 +52,7 @@ AGENTEN & EXPERTEN (Fachgebiete):
 SERVICES & INFRASTRUKTUR:
 ----------------------------------------
   gui           Dashboard Steuerung (start, stop, status)
-  scheduler     Hintergrund-Service fuer Wartung (ehemals: daemon)
+  scheduler     Hintergrund-Service für Wartung (ehemals: daemon)
   scan          Input-Scanner (Inbox, OCR)
   connector     Connector-Verwaltung (poll, dispatch, setup-daemon)
   mount         Einbinden externer Ressourcen
@@ -62,12 +62,12 @@ SERVICES & INFRASTRUKTUR:
 
 SELBSTERWEITERUNG & HOOKS:
 ----------------------------------------
-  skills create <name> --type <typ>   Neue Faehigkeit scaffolden
+  skills create <name> --type <typ>   Neue Fähigkeit scaffolden
                                        Typen: tool, agent, expert, handler, service
   skills reload                        Hot-Reload (Registry + Tools + Skills)
   hooks status                         Status aller Hooks und Listener
   hooks events                         Alle Events auflisten
-  hooks log                            Letzte Hook-Ausfuehrungen
+  hooks log                            Letzte Hook-Ausführungen
   hooks test <event>                   Test-Event emittieren
   plugins list                         Geladene Plugins anzeigen
   plugins load <pfad>                  Plugin aus plugin.json laden
@@ -91,15 +91,15 @@ SYSTEM-WERKZEUGE:
 
 HANDLER MIT -- (erweiterte Funktionen):
 ----------------------------------------
-  --startup         Session starten (Initialisierung, --watch fuer Polling)
+  --startup         Session starten (Initialisierung, --watch für Polling)
   --shutdown        Session beenden (Cleanup)
   --status          Gesamt-Status des Systems
   --help [topic]    Hilfe zu Themen/Modulen anzeigen
   --memory          Detaillierter Memory-Handler (facts, lessons)
   --db              Datenbank-Analyse (bach.db Schema/Stats)
   --tokens          Token-Kosten Kontrolle
-  --inject          Injektor-System fuer Tools
-  --context         Kontext-Loader fuer Sessions
+  --inject          Injektor-System für Tools
+  --context         Kontext-Loader für Sessions
   --logs            System-Log Analyse (data/logs/)
   --docs            Doku-Integrity-Check
   --snapshot        Systemzustand einfrieren
@@ -122,13 +122,13 @@ SPEZIALFAELLE:
 
 BEIDE VARIANTEN AKZEPTIERT:
 ----------------------------------------
-Aus historischen Gruenden funktionieren diese oft hybrid:
+Aus historischen Gründen funktionieren diese oft hybrid:
   bach partner list     = bach --partner list
   bach gui start        = bach --gui start
 
 DID-YOU-MEAN (Fuzzy-Matching):
 ----------------------------------------
-Bei Tippfehlern schlaegt BACH aehnliche Befehle vor (Levenshtein ≤2):
+Bei Tippfehlern schlaegt BACH ähnliche Befehle vor (Levenshtein ≤2):
   $ bach parner list → "Meintest du: partner?"
   $ bach taks add    → "Meintest du: task?"
 

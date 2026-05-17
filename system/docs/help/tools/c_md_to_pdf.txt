@@ -9,7 +9,7 @@ Markdown zu PDF Converter - BACH System
 ==================================================
 
 Konvertiert Markdown-Dateien zu professionellen PDFs.
-Standard-Tool fuer User Reports und Dokumentation im BACH-System.
+Standard-Tool für User Reports und Dokumentation im BACH-System.
 
 Usage:
     # Alle .md Files im Workspace
@@ -32,11 +32,11 @@ Features:
   - Command-line Arguments (--output, --workspace-only)
   - Automatische Verzeichniserstellung
   - Professionelles PDF-Layout mit ReportLab
-  - Unterstuetzt Checkboxen ([ ] und [x])
+  - Unterstützt Checkboxen ([ ] und [x])
 
 VERWENDUNG
 ----------------------------------------
-Direkt ausfuehren:
+Direkt ausführen:
     python tools/c_md_to_pdf.py [args]
 
 Oder aus dem BACH-Verzeichnis:

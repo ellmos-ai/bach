@@ -1,6 +1,6 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Zuletzt validiert: 2026-02-08 (Help-Forensik - Connector-Integration)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 # Ressourcen: [CONSOL_REPORT_20260130, hub/consolidation.py, hub/memory.py, bach_api.py]
 
 MEMORY-SYSTEM (Cognitive Model)
@@ -46,7 +46,7 @@ DYNAMISCHES LERNSYSTEM (NEU v1.1.80)
 Im Gegensatz zu traditionellen Systemen sind die Injektoren bei BACH nun DYNAMISCH:
 - TRIGGER-DB: 900+ Trigger aus Lessons, Workflows und Tools werden automatisch generiert.
 - KOGNITIVE LAST: Nur relevanter Kontext wird in die Session geladen.
-- RUECKFLUSS: Erledigte Tasks und gelernte Lektionen verändern das Systemverhalten sofort.
+- RÜCKFLUSS: Erledigte Tasks und gelernte Lektionen verändern das Systemverhalten sofort.
 
 CONNECTOR-INTEGRATION (NEU v2.0 - 2026-02-08)
 ---------------------------------------------
@@ -69,14 +69,14 @@ DATENBANK-TABELLEN:
 KONFIDENZ-SYSTEM:
 =================
 
-Das Memory-System verwendet Konfidenz-Werte zur Qualitaetsbewertung von Fakten.
+Das Memory-System verwendet Konfidenz-Werte zur Qualitätsbewertung von Fakten.
 
 KONFIDENZ-SKALA (0.0 - 1.0):
   1.0       Absolut sicher (verifiziert, mehrfach bestaetigt)
   0.8-0.9   Sehr sicher (aus zuverlaessiger Quelle)
   0.5-0.7   Moderat (Annahme oder Beobachtung)
   0.3-0.4   Unsicher (Vermutung)
-  0.0-0.2   Sehr unsicher (zu pruefen)
+  0.0-0.2   Sehr unsicher (zu prüfen)
 
 VISUELLE DARSTELLUNG:
   Konfidenz wird als Balken angezeigt: [*****] = 1.0, [***  ] = 0.6, [*    ] = 0.2
@@ -84,7 +84,7 @@ VISUELLE DARSTELLUNG:
 QUELLEN-TRACKING:
   Jeder Fakt kann eine Quelle haben (--source), z.B. "user", "system", "observation"
 
-BEFEHLE (Vollstaendig):
+BEFEHLE (Vollständig):
 =======================
 
 GRUNDBEFEHLE:
@@ -108,7 +108,7 @@ LIBRARY API (bach_api.py):
 
 KONFIDENZ-BEFEHLE:
   bach --memory certain             Nur sichere Fakten anzeigen (>=0.8)
-  bach --memory uncertain           Unsichere Fakten zur Pruefung (<0.5)
+  bach --memory uncertain           Unsichere Fakten zur Prüfung (<0.5)
   bach --memory confidence KEY 0.9  Konfidenz eines Fakts aktualisieren
 
 SESSION-BEFEHLE:
@@ -163,7 +163,7 @@ FALSCH (veraltet):
 SESSION-BERICHT FORMAT:
 =======================
 
-Empfohlenes Format fuer den Summary-Text:
+Empfohlenes Format für den Summary-Text:
 
   "THEMA: Kurzbeschreibung.
    
@@ -174,20 +174,20 @@ Empfohlenes Format fuer den Summary-Text:
    ERSTELLT: X neue Tasks
    
    NAECHSTE SCHRITTE:
-   1. Prioritaet 1
-   2. Prioritaet 2"
+   1. Priorität 1
+   2. Priorität 2"
 
 Alternativ kompakt:
-  "ATI-Architektur, 9 Tasks erstellt. Naechste: ati.py Handler"
+  "ATI-Architektur, 9 Tasks erstellt. Nächste: ati.py Handler"
 
 BEST PRACTICES:
 ===============
 
 1. Session-Start:
-   - bach --startup ausfuehren
+   - bach --startup ausführen
    - Liest letzte Session aus memory_sessions
 
-2. Waehrend Session:
+2. Während Session:
    - bach mem write "wichtige Erkenntnis"
    - bach --memory fact "projekt.name:BACH"
 
@@ -196,7 +196,7 @@ BEST PRACTICES:
    - bach --memory session "Zusammenfassung"
 
 4. Lessons Learned:
-   - bach lesson add "Titel: Loesung"
+   - bach lesson add "Titel: Lösung"
    - Eigener Handler, nicht --memory!
 
 DATENBANK-SCHEMA:
@@ -209,7 +209,7 @@ memory_sessions:
   - summary             Session-Bericht
   - tasks_created       Anzahl erstellter Tasks
   - tasks_completed     Anzahl erledigter Tasks
-  - continuation_context  Fuer naechste Session
+  - continuation_context  Für nächste Session
 
 ARCHITEKTUR-DIAGRAMM
 ====================
@@ -263,11 +263,11 @@ DER LERNPROZESS ALS KREISLAUF:
 │        │                                                            │
 │        v                                                            │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │  RUECKFLUSS -> Injektoren aktualisieren                       │  │
-│  │  System verhaelt sich ANDERS = echtes Lernen                  │  │
+│  │  RÜCKFLUSS -> Injektoren aktualisieren                       │  │
+│  │  System verhält sich ANDERS = echtes Lernen                  │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │        │                                                            │
-│        └──────> zurueck zu MEMORY (neuer Zustand)                   │
+│        └──────> zurück zu MEMORY (neuer Zustand)                   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -313,8 +313,8 @@ SOLL-Zustand (in Arbeit):
                        -> Workflows -> Automation
                        -> Patterns -> Delegation
 
-Der "Rueckfluss" von konsolidiertem Wissen in die Injektoren
-ist das fehlende Stueck fuer echtes Lernen.
+Der "Rückfluss" von konsolidiertem Wissen in die Injektoren
+ist das fehlende Stück für echtes Lernen.
 
 Siehe auch:
   --help injectors     (Injektor-System)
@@ -323,4 +323,4 @@ Siehe auch:
 
 ---
 Version: 1.3.0 | Aktualisiert: 2026-02-08
-(Connector-Integration dokumentiert, Library API + Headless API ergaenzt)
+(Connector-Integration dokumentiert, Library API + Headless API ergänzt)

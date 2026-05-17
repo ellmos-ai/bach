@@ -3,7 +3,7 @@ BACH Tool: Converters
 
 Datei-Konvertierung zwischen verschiedenen Formaten.
 
-VERFUEGBARE KONVERTER
+VERFÜGBARE KONVERTER
 ---------------------
 
   md_to_pdf            Markdown zu PDF (Dual-Engine: Edge Headless + ReportLab)
@@ -21,8 +21,8 @@ VERWENDUNG
 MD_TO_PDF
 ---------
 
-Konvertiert Markdown zu PDF ueber zwei Engines:
-  1. Edge Headless (primaer) - hohe Qualitaet
+Konvertiert Markdown zu PDF über zwei Engines:
+  1. Edge Headless (primaer) - hohe Qualität
   2. ReportLab (Fallback) - ohne Browser
 
 MODUL

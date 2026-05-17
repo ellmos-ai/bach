@@ -1,6 +1,6 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Zuletzt validiert: 2026-02-08 (Claude Sonnet 4.5 - Help-Forensik)
-# Naechste Pruefung: 2027-02-08
+# Nächste Prüfung: 2027-02-08
 # Quellen: [ARCHITECTURE.md, SKILL.md, core/, bach_api.py]
 
 BACH ARCHITEKTUR (Personal Agentic OS)
@@ -149,4 +149,4 @@ SIEHE AUCH
 docs/help/bach_info.txt       Was ist BACH?
 docs/help/memory.txt          Das Gedaechtnis-System
 docs/help/partner.txt         Zusammenarbeit der KIs
-wiki/was_ist_bach.txt  Ausfuehrliche Synopse
+wiki/was_ist_bach.txt  Ausführliche Synopse

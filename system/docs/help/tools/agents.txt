@@ -1,7 +1,7 @@
 AGENT TOOLS - Agenten-Werkzeuge
 ================================
 
-UEBERSICHT
+ÜBERSICHT
 Agent-Tools in BACH verwalten und steuern AI-Agenten
 und deren Interaktionen.
 
@@ -9,7 +9,7 @@ AGENT FRAMEWORK
 ---------------
 agent_framework.py
 
-Kern-Framework fuer alle BACH-Agenten.
+Kern-Framework für alle BACH-Agenten.
 Features:
   - Agent-Registrierung
   - Capability-Matching
@@ -21,10 +21,10 @@ AGENT CLI
 ---------
 agent_cli.py
 
-Kommandozeile fuer Agent-Interaktion.
+Kommandozeile für Agent-Interaktion.
 Befehle:
   - list: Alle Agenten anzeigen
-  - status: Agent-Status pruefen
+  - status: Agent-Status prüfen
   - activate: Agent aktivieren
   - deactivate: Agent deaktivieren
 
@@ -35,12 +35,12 @@ AGENT SERVICE INTEGRATION
 agent_service_integration.py
 
 Verbindet Agenten mit BACH-Services.
-Ermoeglicht:
+Ermöglicht:
   - Service-Discovery
   - Automatische Routing
   - Load-Balancing
 
-VERFUEGBARE AGENTEN
+VERFÜGBARE AGENTEN
 -------------------
 
 Verzeichnis: agents/
@@ -50,7 +50,7 @@ Verzeichnis: agents/
   research.txt      Research-Agent (Recherche)
   entwickler.txt    Allgemeiner Entwickler
   production.txt    Produktions-Agent
-  foerderplaner/    Foerderplan-Assistent
+  foerderplaner/    Förderplan-Assistent
 
 AGENT-KONVENTION
 ----------------
@@ -58,7 +58,7 @@ AGENT-KONVENTION
 Siehe: skills/AGENT_KONVENTION.md
 
 Hierarchie:
-  BOSS-Agenten:   Vollstaendige Kontrolle, langfristig
+  BOSS-Agenten:   Vollständige Kontrolle, langfristig
   Experts:        Spezialisiert, kurzfristig
   Services:       Automatische Hintergrund-Tasks
 
@@ -75,14 +75,14 @@ DELEGATION AN AGENTEN
 
   bach delegate "task" --to=<agent>
 
-Verfuegbare Ziele:
+Verfügbare Ziele:
   ollama, gemini, copilot, perplexity, human
 
 ENTWICKLER-AGENT
 ----------------
 entwickler_agent.py
 
-Spezialisierter Agent fuer Entwicklungs-Aufgaben.
+Spezialisierter Agent für Entwicklungs-Aufgaben.
 Kann:
   - Code generieren
   - Bugs analysieren
@@ -92,7 +92,7 @@ PRODUCTION-AGENT
 ----------------
 production_agent.py
 
-Fuer Produktions-Deployments.
+Für Produktions-Deployments.
 Features:
   - Build-Prozesse
   - Deployment-Checks

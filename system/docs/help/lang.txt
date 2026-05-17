@@ -1,16 +1,16 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
 HANDLER-NAME
 ============
-lang - Mehrsprachigkeit und Uebersetzungs-Verwaltung
+lang - Mehrsprachigkeit und Übersetzungs-Verwaltung
 
 BESCHREIBUNG
 ============
 Der LANG-Handler verwaltet mehrsprachige Inhalte in BACH. Er scannt Code nach
-deutschen Strings, fuehrt Uebersetzungen durch, validiert fehlende
-Uebersetzungen und verwaltet ein Basis-Woerterbuch mit 119 deutschen Begriffen.
+deutschen Strings, führt Übersetzungen durch, validiert fehlende
+Übersetzungen und verwaltet ein Basis-Wörterbuch mit 119 deutschen Begriffen.
 Nutzt SQLite-Datenbank (bach.db) mit Tabellen: languages_config,
 languages_translations, languages_dictionary.
 
@@ -19,22 +19,22 @@ OPERATIONEN
   status              Sprachkonfiguration und Statistiken anzeigen
   scan                Code-Verzeichnisse nach deutschen Strings durchsuchen
   scan --namespace    Nur bestimmten Bereich scannen (cli, gui, help, skills)
-  list                Alle Uebersetzungen anzeigen
+  list                Alle Übersetzungen anzeigen
   list --lang <code>  Nur bestimmte Sprache (z.B. de/en/es/ru/ja/zh)
-  missing             Fehlende Uebersetzungen (Standard: de ohne en)
-  missing --target es Fehlende spanische Uebersetzungen
-  translate           Auto-Uebersetzung starten (basierend auf Woerterbuch)
-  translate --target en  Auto-Uebersetzung fuer Zielsprache
-  add <key>           Manuell Uebersetzung hinzufuegen (--de, --en, --es ... oder --lang/--text)
+  missing             Fehlende Übersetzungen (Standard: de ohne en)
+  missing --target es Fehlende spanische Übersetzungen
+  translate           Auto-Übersetzung starten (basierend auf Wörterbuch)
+  translate --target en  Auto-Übersetzung für Zielsprache
+  add <key>           Manuell Übersetzung hinzufügen (--de, --en, --es ... oder --lang/--text)
   add-language <code> Neue Sprache registrieren (z.B. fr, es, pt)
-  export              Fuer LLM-Review exportieren (JSON-Format, Standard: de -> en)
-  export --target zh  Fuer Chinesisch exportieren
+  export              Für LLM-Review exportieren (JSON-Format, Standard: de -> en)
+  export --target zh  Für Chinesisch exportieren
   import <datei>      LLM-Review-Datei importieren und integrieren
   set <lang>          Standard-Sprache setzen (z.B. de/en/es/ru/ja/zh)
-  dict status         Woerterbuch-Status anzeigen
-  dict init           Basis-Woerterbuch (119 Begriffe) laden
+  dict status         Wörterbuch-Status anzeigen
+  dict init           Basis-Wörterbuch (119 Begriffe) laden
   dict add <src> <dst> [--source-lang de --target-lang es]
-  dict search <term>  Begriff im Woerterbuch suchen
+  dict search <term>  Begriff im Wörterbuch suchen
 
 BEISPIELE
 =========
@@ -45,11 +45,11 @@ BEISPIELE
   bach lang scan
   bach lang scan --namespace cli
 
-# Fehlende Uebersetzungen identifizieren
+# Fehlende Übersetzungen identifizieren
   bach lang missing
   bach lang missing --target es
 
-# Manuell uebersetzen
+# Manuell übersetzen
   bach lang add "speichern" --de "Speichern" --en "Save"
   bach lang add "speichern" --es "Guardar" --ru "Sohranit"
 
@@ -59,14 +59,14 @@ BEISPIELE
   [... LLM bearbeitet Datei ...]
   bach lang import export.json
 
-# Neue Sprache hinzufuegen (Französisch)
+# Neue Sprache hinzufügen (Französisch)
   bach lang add-language fr
 
 # Standard-Sprache auf English setzen
   bach lang set en
   bach lang set ja
 
-# Woerterbuch-Basis laden (119 Eintraege)
+# Wörterbuch-Basis laden (119 Einträge)
   bach lang dict init
 
 DATEIEN
@@ -74,13 +74,13 @@ DATEIEN
 Implementierung: hub/lang.py (LangHandler-Klasse)
 Datenbank:      data/bach.db (SQLite)
   - Tabelle languages_config: Standard-Sprache, Fallback, Auto-Translate-Flag
-  - Tabelle languages_translations: Alle Uebersetzungen mit Metadaten
-  - Tabelle languages_dictionary: Basis-Woerterbuch (119 Begriffe)
-Export-Format:  JSON (Uebersetzungen + Metadaten, kompatibel mit LLM-Tools)
+  - Tabelle languages_translations: Alle Übersetzungen mit Metadaten
+  - Tabelle languages_dictionary: Basis-Wörterbuch (119 Begriffe)
+Export-Format:  JSON (Übersetzungen + Metadaten, kompatibel mit LLM-Tools)
 Release-Artefakte: system/exports/translations/ (Manifest, Locale-Dateien, Seed-SQL)
 
 SIEHE AUCH
 ==========
   bach cli        - Befehlszeilen-Schnittstelle
-  bach backup     - Datenbank-Backups (Uebersetzungen schreiben zu bach.db)
-  bach help       - Help-System fuer alle Handler
+  bach backup     - Datenbank-Backups (Übersetzungen schreiben zu bach.db)
+  bach help       - Help-System für alle Handler

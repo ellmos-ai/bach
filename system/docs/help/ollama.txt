@@ -1,18 +1,18 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-02-08 (Forensik - URL/Import/Syntax-Fixes)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 BACH OLLAMA-INTEGRATION
 =======================
-Lokaler LLM-Server fuer Token-Sparmodus und Offline-Nutzung.
+Lokaler LLM-Server für Token-Sparmodus und Offline-Nutzung.
 
 BEFEHLE
 -------
-bach ollama status           Verbindung pruefen, installierte Modelle
+bach ollama status           Verbindung prüfen, installierte Modelle
 bach ollama ask "prompt"     Direkte Anfrage an Ollama
 bach ollama embed "text"     Embedding generieren
-bach ollama models           Verfuegbare Modelle auflisten
+bach ollama models           Verfügbare Modelle auflisten
 
 OPTIONEN
 --------
@@ -20,7 +20,7 @@ OPTIONEN
 
 BEISPIELE
 ---------
-# Status pruefen
+# Status prüfen
 bach ollama status
 
 # Einfache Frage
@@ -29,8 +29,8 @@ bach ollama ask "Was ist BACH?" --model=llama3.2
 # Code-Review delegieren
 bach ollama ask "Review diesen Code: def add(a,b): return a+b"
 
-# Embedding fuer Suche
-bach ollama embed "Suchtext fuer RAG"
+# Embedding für Suche
+bach ollama embed "Suchtext für RAG"
 
 INTEGRATION MIT PARTNER-SYSTEM
 ------------------------------
@@ -38,13 +38,13 @@ Ollama ist als lokaler Partner registriert und wird automatisch
 bei hohem Token-Verbrauch bevorzugt:
 
 Zone 3 (60-80% Tokens):  Ollama wird bevorzugt
-Zone 4 (80-100%):        Nur Human/Notfall (Ollama noch moeglich)
+Zone 4 (80-100%):        Nur Human/Notfall (Ollama noch möglich)
 
 Automatische Delegation:
   bach partner delegate "Task" --to=ollama
 
 Fallback bei Netzwerkproblemen:
-  bach ollama ask "Task"   (direkte lokale Ausfuehrung)
+  bach ollama ask "Task"   (direkte lokale Ausführung)
 
 VORAUSSETZUNGEN
 ---------------
@@ -52,7 +52,7 @@ VORAUSSETZUNGEN
 - Standard-Port: http://localhost:11434
 - Mindestens ein Modell muss gepullt sein
 
-Installation pruefen:
+Installation prüfen:
   ollama --version
   ollama list
 
@@ -64,15 +64,15 @@ TROUBLESHOOTING
 ---------------
 Fehler: "Connection refused"
   → Ollama-Server starten: ollama serve
-  → Port pruefen: http://localhost:11434
+  → Port prüfen: http://localhost:11434
 
 Fehler: "Model not found"
   → Modell pullen: ollama pull llama3.2
-  → Modellnamen pruefen: ollama list
+  → Modellnamen prüfen: ollama list
 
 Langsame Antworten:
   → Kleineres Modell waehlen (llama3.2 statt llama3.1:70b)
-  → GPU-Nutzung pruefen (CUDA/Metal)
+  → GPU-Nutzung prüfen (CUDA/Metal)
 
 Speicherprobleme:
   → Kleineres Modell verwenden
@@ -91,6 +91,6 @@ Anpassung via:
 
 SIEHE AUCH
 ----------
-bach help partner          Partner-System Uebersicht
+bach help partner          Partner-System Übersicht
 bach help delegate         Task-Delegation
 bach help tools            Tool-Inventar (ollama_client.py)

@@ -1,19 +1,19 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.3.0
 # Zuletzt validiert: 2026-05-17 (gui stop implementiert)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 GUI - Web-Dashboard
 ===================
 
 BESCHREIBUNG
-Das GUI-Modul stellt ein Web-Dashboard fuer BACH bereit.
+Das GUI-Modul stellt ein Web-Dashboard für BACH bereit.
 Basiert auf FastAPI mit HTML/CSS/JS Frontend.
 Wird automatisch mit --startup im Hintergrund gestartet.
 
 ZWEI SERVER:
   - GUI Server (Port 8000):    Web-Dashboard mit HTML-Templates
-  - Headless API (Port 8001):  Pure REST-API fuer Programme
+  - Headless API (Port 8001):  Pure REST-API für Programme
 
 BEFEHLE
 -------
@@ -23,12 +23,12 @@ bach gui start-bg           Server im Hintergrund starten
 bach gui start-bg --port 9000  Hintergrund mit anderem Port
 bach gui stop               Server stoppen (Port 8000)
 bach gui stop --port 9000   Server auf anderem Port stoppen
-bach gui status             Server-Status pruefen
+bach gui status             Server-Status prüfen
 bach gui info               GUI-Informationen anzeigen
 
 MANUELLER START
 ---------------
-start/_internal/start_gui.bat   Batch-Datei fuer Windows (oeffnet Browser)
+start/_internal/start_gui.bat   Batch-Datei für Windows (öffnet Browser)
 
 AUTOMATISCHER START
 -------------------
@@ -54,7 +54,7 @@ DASHBOARDS (Erweitert)
 /tools         Tool-Verwaltung
 /tokens        Token-Statistik
 /steuer        Steuer-Workflows
-/financial     Finanz-Uebersicht
+/financial     Finanz-Übersicht
 /gesundheit    Gesundheits-Tracking
 /kontakte      Kontaktverwaltung
 /routinen      Routinen-Editor
@@ -68,23 +68,23 @@ DASHBOARDS (Erweitert)
 /inbox_editor  Inbox-Editor
 /maintenance   Wartungs-Dashboard
 /partners      Partner-Verwaltung
-/persoenlich   Persoenliche Einstellungen
+/persoenlich   Persönliche Einstellungen
 /ati           ATI-System
 /usecases      Use-Cases
-/workflow_tuev Workflow-Pruefung
+/workflow_tuev Workflow-Prüfung
 /prompt-generator  Prompt-Generator
-/foerderplaner Foerderplaner
+/foerderplaner Förderplaner
 /anonymization Anonymisierung
 
 FEATURES
 --------
 - Dashboard mit System-Status
-- Task-Uebersicht (User + Gescannte)
+- Task-Übersicht (User + Gescannte)
 - Message-System (CLI-Anbindung: bach msg)
 - Wartungs-Jobs
 - REST-API mit automatischer Dokumentation (/docs)
 
-CLI <-> GUI VERKNUEPFUNG
+CLI <-> GUI VERKNÜPFUNG
 ------------------------
 Nachrichten:
   CLI: bach msg send/list/read/unread
@@ -108,7 +108,7 @@ STRUKTUR
 gui/
 ├── server.py          FastAPI Backend (alle APIs integriert)
 ├── daemon_service.py  Hintergrund-Service
-├── file_watcher.py    Datei-Ueberwachung
+├── file_watcher.py    Datei-Überwachung
 ├── sync_service.py    Synchronisation
 ├── api_webhook.py     Webhook-Handler
 ├── __init__.py        Modul-Init
@@ -137,7 +137,7 @@ POST /api/tasks               Task erstellen
 POST /api/tasks/export        Tasks exportieren
 GET  /api/tasks/{id}          Task Details
 PUT  /api/tasks/{id}          Task aktualisieren
-DELETE /api/tasks/{id}        Task loeschen
+DELETE /api/tasks/{id}        Task löschen
 GET  /api/scanned-tasks       Gescannte Tasks
 GET  /api/assignees           Task-Zuweisungen
 
@@ -146,22 +146,22 @@ GET  /api/messages            Nachrichten (messages Tabelle)
 POST /api/messages            Nachricht erstellen
 PUT  /api/messages/{id}/read  Als gelesen markieren
 PUT  /api/messages/{id}/archive  Nachricht archivieren
-PUT  /api/messages/{id}/delete   Nachricht loeschen
+PUT  /api/messages/{id}/delete   Nachricht löschen
 
 Daemon:
 GET  /api/daemon/jobs         Daemon-Jobs
 POST /api/daemon/jobs         Job erstellen
 PUT  /api/daemon/jobs/{id}/toggle  Job aktivieren/deaktivieren
-POST /api/daemon/jobs/{id}/run     Job manuell ausfuehren
-GET  /api/daemon/runs         Job-Ausfuehrungen
+POST /api/daemon/jobs/{id}/run     Job manuell ausführen
+GET  /api/daemon/runs         Job-Ausführungen
 GET  /api/daemon/status       Daemon-Status
 POST /api/daemon/start        Daemon starten
 POST /api/daemon/stop         Daemon stoppen
 POST /api/daemon/kill-all     Alle Jobs beenden
-PUT  /api/daemon/config       Daemon-Konfiguration aendern
+PUT  /api/daemon/config       Daemon-Konfiguration ändern
 
 Memory:
-GET  /api/memory/overview     Memory-Uebersicht
+GET  /api/memory/overview     Memory-Übersicht
 GET  /api/memory/working      Working Memory
 GET  /api/memory/lessons      Lessons
 GET  /api/memory/facts        Fakten
@@ -169,9 +169,9 @@ GET  /api/memory/sessions     Sessions
 POST /api/memory/working      Working Memory Entry erstellen
 POST /api/memory/lessons      Lesson erstellen
 POST /api/memory/facts        Fakt erstellen
-DELETE /api/memory/facts/{id}       Fakt loeschen
-DELETE /api/memory/working/{id}     Working Entry loeschen
-DELETE /api/memory/lessons/{id}     Lesson loeschen
+DELETE /api/memory/facts/{id}       Fakt löschen
+DELETE /api/memory/working/{id}     Working Entry löschen
+DELETE /api/memory/lessons/{id}     Lesson löschen
 GET  /api/memory/stats/db     DB-Statistiken
 POST /api/memory/maintenance/cleanup  Memory-Cleanup
 GET  /api/memory/sessions/{id}       Session-Details
@@ -184,7 +184,7 @@ GET  /api/skills/{id}         Skill-Details
 Tools:
 GET  /api/tools               Tools auflisten
 GET  /api/tools/{name}        Tool-Details
-POST /api/tools/{name}/run    Tool ausfuehren
+POST /api/tools/{name}/run    Tool ausführen
 
 Agents:
 GET  /api/agents              Agent-Liste
@@ -199,7 +199,7 @@ POST /api/ati/session/start   ATI-Session starten
 POST /api/ati/session/start-cli  ATI CLI-Session
 POST /api/ati/tasks           ATI-Task erstellen
 PUT  /api/ati/tasks/{id}      ATI-Task aktualisieren
-DELETE /api/ati/tasks/{id}    ATI-Task loeschen
+DELETE /api/ati/tasks/{id}    ATI-Task löschen
 
 Financial:
 GET  /api/financial/status    Financial-Status
@@ -207,19 +207,19 @@ GET  /api/financial/emails    Financial-Emails
 GET  /api/financial/emails/{id}  Email-Details
 GET  /api/financial/subscriptions  Abonnements
 GET  /api/financial/subscriptions-unified  Vereinigte Abos
-DELETE /api/financial/subscriptions/{id}  Abo loeschen
+DELETE /api/financial/subscriptions/{id}  Abo löschen
 GET  /api/financial/categories  Kategorien
 POST /api/financial/sync      Financial-Sync
 POST /api/financial/save-json  JSON speichern
 GET  /api/financial/config    Financial-Config
 PUT  /api/financial/config    Config aktualisieren
-PUT  /api/financial/emails/{id}/status  Email-Status aendern
+PUT  /api/financial/emails/{id}/status  Email-Status ändern
 GET  /api/financial/export    Financial exportieren
 GET  /api/financial/accounts  Email-Accounts
 POST /api/financial/accounts  Account erstellen
 PUT  /api/financial/accounts/{id}/toggle  Account aktivieren
 POST /api/financial/accounts/{id}/test  Account testen
-DELETE /api/financial/accounts/{id}  Account loeschen
+DELETE /api/financial/accounts/{id}  Account löschen
 GET  /api/financial/imap-presets  IMAP-Presets
 GET  /api/financial/gmail/find-credentials  Gmail-Credentials
 POST /api/financial/gmail/setup  Gmail-Setup
@@ -227,36 +227,36 @@ GET  /api/financial/gmail/status  Gmail-Status
 GET  /api/financial/profiles  Profile
 POST /api/financial/profiles  Profil erstellen
 PUT  /api/financial/profiles/{id}  Profil aktualisieren
-DELETE /api/financial/profiles/{id}  Profil loeschen
+DELETE /api/financial/profiles/{id}  Profil löschen
 GET  /api/financial/false-positives  False-Positives
 POST /api/financial/false-positives  False-Positive erstellen
-DELETE /api/financial/false-positives/{id}  False-Positive loeschen
+DELETE /api/financial/false-positives/{id}  False-Positive löschen
 POST /api/financial/profiles/test  Profil testen
 POST /api/financial/profiles/import  Profile importieren
-GET  /api/financial/contracts  Vertraege
+GET  /api/financial/contracts  Verträge
 POST /api/financial/contracts  Vertrag erstellen
 PUT  /api/financial/contracts/{id}  Vertrag aktualisieren
-DELETE /api/financial/contracts/{id}  Vertrag loeschen
+DELETE /api/financial/contracts/{id}  Vertrag löschen
 GET  /api/financial/insurances  Versicherungen
 GET  /api/financial/deadlines  Deadlines
 POST /api/financial/insurances  Versicherung erstellen
 PUT  /api/financial/insurances/{id}  Versicherung aktualisieren
-DELETE /api/financial/insurances/{id}  Versicherung loeschen
+DELETE /api/financial/insurances/{id}  Versicherung löschen
 GET  /api/financial/bank-accounts  Bank-Accounts
 POST /api/financial/bank-accounts  Bank-Account erstellen
 PUT  /api/financial/bank-accounts/{id}  Bank-Account aktualisieren
-DELETE /api/financial/bank-accounts/{id}  Bank-Account loeschen
+DELETE /api/financial/bank-accounts/{id}  Bank-Account löschen
 GET  /api/financial/credits  Kredite
 POST /api/financial/credits  Kredit erstellen
 PUT  /api/financial/credits/{id}  Kredit aktualisieren
-DELETE /api/financial/credits/{id}  Kredit loeschen
+DELETE /api/financial/credits/{id}  Kredit löschen
 
 Steuer:
 GET  /api/steuer/dokumente/unlinked  Unverlinkte Steuer-Dokumente
 POST /api/steuer/posten/{id}/link  Dokument verlinken
 POST /api/steuer/match-bank  Bank-Matching
 
-Bericht (Foerderplaner):
+Bericht (Förderplaner):
 GET  /api/bericht/status      Bericht-Status
 GET  /api/bericht/clients     Klienten
 POST /api/bericht/export      Bericht exportieren
@@ -265,18 +265,18 @@ POST /api/bericht/generate    Bericht generieren
 Mounts:
 GET  /api/mounts              Mounts auflisten
 POST /api/mounts              Mount erstellen
-DELETE /api/mounts/{alias}    Mount loeschen
+DELETE /api/mounts/{alias}    Mount löschen
 POST /api/mounts/restore      Mounts wiederherstellen
 
 Scanner:
-POST /api/scanner/trigger     Scanner ausloesen
+POST /api/scanner/trigger     Scanner auslösen
 POST /api/scanner/run         Scanner starten
 GET  /api/scanner/status      Scanner-Status
 GET  /api/scanner/tools       Scanner-Tools
 GET  /api/scanner/config      Scanner-Config
 
 Wartung:
-POST /api/wartung/trigger     Wartung ausloesen
+POST /api/wartung/trigger     Wartung auslösen
 GET  /api/wartung/status      Wartungs-Status
 
 Tokens:
@@ -293,11 +293,11 @@ POST /api/inbox/config        Config aktualisieren
 GET  /api/inbox/folders       Ordner
 POST /api/inbox/folders       Ordner erstellen
 PUT  /api/inbox/folders       Ordner aktualisieren
-DELETE /api/inbox/folders     Ordner loeschen
+DELETE /api/inbox/folders     Ordner löschen
 GET  /api/inbox/rules         Regeln
 POST /api/inbox/rules         Regel erstellen
 PUT  /api/inbox/rules/{id}    Regel aktualisieren
-DELETE /api/inbox/rules/{id}  Regel loeschen
+DELETE /api/inbox/rules/{id}  Regel löschen
 POST /api/inbox/scan          Inbox scannen
 GET  /api/inbox/unsorted      Unsortierte Elemente
 POST /api/inbox/sort          Elemente sortieren
@@ -316,10 +316,10 @@ GET  /api/help               Help-Dateien auflisten
 GET  /api/docs/help/{name}        Help-Datei lesen
 PUT  /api/docs/help/{name}        Help-Datei aktualisieren
 POST /api/help               Help-Datei erstellen
-DELETE /api/docs/help/{name}      Help-Datei loeschen
+DELETE /api/docs/help/{name}      Help-Datei löschen
 GET  /api/docs/help/search/{term} Help durchsuchen
 
-Anonymization (Foerderplaner):
+Anonymization (Förderplaner):
 GET  /api/anonymization/clients  Klienten
 POST /api/anonymization/profile  Profil erstellen
 POST /api/anonymization/upload  Dokument hochladen
@@ -349,31 +349,31 @@ Auto-Sessions:
 POST /api/auto-sessions/launch  Session starten
 
 Session:
-GET  /api/session/activities  Aktivitaeten
+GET  /api/session/activities  Aktivitäten
 POST /api/session/generate-summary  Summary generieren
 POST /api/session/end        Session beenden
 
 Recurring:
 GET  /api/recurring           Wiederkehrende Tasks
-POST /api/recurring/check    Check ausfuehren
-POST /api/recurring/trigger/{id}  Task ausloesen
+POST /api/recurring/check    Check ausführen
+POST /api/recurring/trigger/{id}  Task auslösen
 
 Use-Cases:
 GET  /api/usecases            Use-Cases
 GET  /api/usecases/{id}       Use-Case-Details
 POST /api/usecases            Use-Case erstellen
 PUT  /api/usecases/{id}       Use-Case aktualisieren
-DELETE /api/usecases/{id}     Use-Case loeschen
+DELETE /api/usecases/{id}     Use-Case löschen
 POST /api/usecases/{id}/test  Use-Case testen
 POST /api/usecases/test-all   Alle testen
-POST /api/usecases/{id}/execute  Use-Case ausfuehren
+POST /api/usecases/{id}/execute  Use-Case ausführen
 
 Kontakte:
 GET  /api/contacts            Kontakte
 GET  /api/contacts/{id}       Kontakt-Details
 POST /api/contacts            Kontakt erstellen
 PUT  /api/contacts/{id}       Kontakt aktualisieren
-DELETE /api/contacts/{id}     Kontakt loeschen
+DELETE /api/contacts/{id}     Kontakt löschen
 GET  /api/contacts/export     Kontakte exportieren
 
 Routinen:
@@ -381,14 +381,14 @@ GET  /api/routines            Routinen
 GET  /api/routines/{id}       Routinen-Details
 POST /api/routines            Routine erstellen
 PUT  /api/routines/{id}       Routine aktualisieren
-POST /api/routines/{id}/complete  Routine abschliessen
-DELETE /api/routines/{id}     Routine loeschen
+POST /api/routines/{id}/complete  Routine abschließen
+DELETE /api/routines/{id}     Routine löschen
 GET  /api/routines/export     Routinen exportieren
 
 Denkarium:
-GET  /api/denkarium           Eintraege auflisten (Filter: entry_type, category, limit, search)
+GET  /api/denkarium           Einträge auflisten (Filter: entry_type, category, limit, search)
 POST /api/denkarium           Eintrag erstellen
-DELETE /api/denkarium/{id}    Eintrag loeschen
+DELETE /api/denkarium/{id}    Eintrag löschen
 POST /api/denkarium/{id}/promote  Eintrag promoten (zu Task/Memory/Lesson)
 
 WebSockets:
@@ -396,13 +396,13 @@ GET  /api/ws/status           WebSocket-Status
 
 Workflow-TÜV:
 GET  /api/workflow-tuev       Workflows
-POST /api/workflow-tuev/{id}/check  Workflow pruefen
-POST /api/workflow-tuev/check-all  Alle pruefen
+POST /api/workflow-tuev/{id}/check  Workflow prüfen
+POST /api/workflow-tuev/check-all  Alle prüfen
 POST /api/workflow-tuev/sync  Workflows synchronisieren
 GET  /api/workflow-tuev/content  Workflow-Content
 
 AI Headless:
-POST /api/ai/headless/run     AI-Task ausfuehren
+POST /api/ai/headless/run     AI-Task ausführen
 
 Bach-Agents:
 GET  /api/bach-agents         Bach-Agents auflisten
@@ -410,10 +410,10 @@ GET  /api/bach-agents         Bach-Agents auflisten
 
 HEADLESS API (Port 8001) - Programmatischer Zugriff
 -----------------------------------------------------
-Zweck: Pure REST-API ohne HTML, fuer Skripte/Programme
+Zweck: Pure REST-API ohne HTML, für Skripte/Programme
 
 Auth:
-  - Localhost (127.0.0.1, ::1, localhost): Kein Auth noetig (Trust-Modus)
+  - Localhost (127.0.0.1, ::1, localhost): Kein Auth nötig (Trust-Modus)
   - Remote: X-BACH-Key Header ODER ?api_key= Parameter
   - Key: Auto-generiert beim ersten Start → data/.api_key
 
@@ -442,13 +442,13 @@ Messages (Queue + Inbox):
 POST /api/v1/messages/send     Nachricht in Queue einreihen (connector_messages)
 GET  /api/v1/messages/queue    Queue-Status (pending/failed/dead pro Connector)
 GET  /api/v1/messages/inbox    Inbox lesen (Filter: status, sender, Paginierung)
-POST /api/v1/messages/route    Routing manuell ausloesen (in → inbox)
+POST /api/v1/messages/route    Routing manuell auslösen (in → inbox)
 
 System:
 GET  /api/v1/status            System-Status (Tasks, Memory, DB-Size)
 POST /api/v1/backup            Backup erstellen
 GET  /api/v1/skills            Skills auflisten (Filter: type, limit)
-GET  /api/v1/health            Health-Check (oeffentlich, kein Auth)
+GET  /api/v1/health            Health-Check (öffentlich, kein Auth)
 
 BEISPIELE
 ---------
@@ -459,7 +459,7 @@ GUI Server (Port 8000):
   # Oder: Server starten (blockierend)
   bach gui start
 
-  # Browser oeffnen
+  # Browser öffnen
   http://127.0.0.1:8000
 
   # API-Dokumentation
@@ -471,7 +471,7 @@ GUI Server (Port 8000):
   # Server stoppen
   bach gui stop
 
-  # Status pruefen
+  # Status prüfen
   bach gui status
 
 Headless API (Port 8001):
@@ -506,9 +506,9 @@ Headless API (Port 8001):
 
 UMGEBUNGSVARIABLEN
 ------------------
-BACH_NO_BROWSER=1   Browser wird beim GUI-Start nicht automatisch geoeffnet.
-                    Nuetzlich wenn die GUI auf einem Remote-Host laeuft
-                    (z.B. Mac Studio) und lokal kein Browser benoetigt wird.
+BACH_NO_BROWSER=1   Browser wird beim GUI-Start nicht automatisch geöffnet.
+                    Nützlich wenn die GUI auf einem Remote-Host läuft
+                    (z.B. Mac Studio) und lokal kein Browser benötigt wird.
 
 SIEHE AUCH
 ----------

@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -8,11 +8,11 @@ NEWSPAPER HANDLER
 BESCHREIBUNG
 ============
 
-Taegliche PDF-Zeitung aus News-Items. Sammelt Artikel aus verschiedenen
+Tägliche PDF-Zeitung aus News-Items. Sammelt Artikel aus verschiedenen
 Quellen, generiert eine formatierte HTML/PDF-Zeitung und stellt diese
-ueber konfigurierbare Kanaele (Telegram, Email, Desktop) zu.
+über konfigurierbare Kanaele (Telegram, Email, Desktop) zu.
 
-Abhaengig von: NewsHandler (hub/news.py)
+Abhängig von: NewsHandler (hub/news.py)
 Datenquellen: hub/_services/newspaper/config.json, user/newspaper/
 
 OPERATIONEN
@@ -21,7 +21,7 @@ OPERATIONEN
 generate [--date YYYY-MM-DD]
   Zeitung generieren. Nutzt gesamelte News-Items aus der Datenbank.
   Erstellt HTML und PDF im Verzeichnis user/newspaper/.
-  Standardmaessig fuer heute; --date setzt explizites Datum.
+  Standardmäßig für heute; --date setzt explizites Datum.
   Beispiel: bach newspaper generate --date 2026-02-18
 
 deliver [--channel telegram|email|desktop]
@@ -78,6 +78,6 @@ Relative Pfade zu system/:
 SIEHE AUCH
 ==========
 
-  news.py             NewsHandler (Quellsystem fuer News-Items)
+  news.py             NewsHandler (Quellsystem für News-Items)
   base.py             BaseHandler (Basis-Klasse)
   notify.py           Notification-System (Zustellung)

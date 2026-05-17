@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -12,7 +12,7 @@ settings
 BESCHREIBUNG
 ============
 Der Settings Handler verwaltet Systemeinstellungen in der BACH-Datenbank
-(system_config Tabelle). Settings sind Schluessel-Wert-Paare mit optionalen
+(system_config Tabelle). Settings sind Schlüssel-Wert-Paare mit optionalen
 Kategorien, Beschreibungen und Verteilungstypen (USER/TEMPLATE/CORE).
 
 OPERATIONEN
@@ -30,7 +30,7 @@ GET
 ---
 bach settings get <key>
 
-Einzelnen Wert lesen mit vollstaendigen Metadaten.
+Einzelnen Wert lesen mit vollständigen Metadaten.
 Zeigt: Key, Value, Type, Category, Description, Dist-Type, Updated-Timestamp
 
 SET
@@ -39,17 +39,17 @@ bach settings set <key>=<value> [--category=CAT] [--desc=TEXT]
 
 Neuen Wert setzen oder existierenden aktualisieren.
 - Neue Settings erhalten dist_type=0 (USER)
-- CORE-Settings (dist_type=2) koennen nicht geaendert werden
+- CORE-Settings (dist_type=2) können nicht geändert werden
 - Option --category: Settings in Kategorie ablegen
-- Option --desc: Beschreibung hinzufuegen
+- Option --desc: Beschreibung hinzufügen
 - Startet Partner-MD-Update bei integration.*-Keys
 
 RESET
 -----
 bach settings reset <key>
 
-Setting loeschen. CORE-Settings koennen nicht geloescht werden.
-Nur USER und TEMPLATE koennen entfernt werden.
+Setting löschen. CORE-Settings können nicht gelöscht werden.
+Nur USER und TEMPLATE können entfernt werden.
 
 EXPORT
 ------
@@ -62,14 +62,14 @@ IMPORT
 ------
 bach settings import <dateiname>
 
-Settings aus JSON-Datei importieren. Ueberschreibt nur USER/TEMPLATE,
-CORE-Settings bleiben unberuehrt. Zeigt Anzahl importiert/uebersprungen.
+Settings aus JSON-Datei importieren. Überschreibt nur USER/TEMPLATE,
+CORE-Settings bleiben unberuehrt. Zeigt Anzahl importiert/übersprungen.
 
 CATEGORIES
 ----------
 bach settings categories
 
-Alle verfuegbaren Kategorien mit Eintragszaehlung anzeigen.
+Alle verfügbaren Kategorien mit Eintragszaehlung anzeigen.
 
 BEISPIELE
 =========
@@ -89,7 +89,7 @@ $ bach settings set log.level=DEBUG --category=behavior --desc="Logging Verbosit
 Setting aktualisieren:
 $ bach settings set log.level=INFO
 
-Setting loeschen:
+Setting löschen:
 $ bach settings reset log.level
 
 Settings exportieren und speichern:
@@ -108,7 +108,7 @@ bach.db (system_config)  Datenbank Tabelle (Pfad: BACH_DB)
 
 VERWANDTE KATEGORIEN
 ====================
-claude_permissions       Permission-Profile fuer Claude Code (siehe permissions.txt)
+claude_permissions       Permission-Profile für Claude Code (siehe permissions.txt)
 
 SIEHE AUCH
 ==========

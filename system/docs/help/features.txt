@@ -1,18 +1,18 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 3.12.3
 # Zuletzt validiert: 2026-05-17 (Feature-Liste mit CHANGELOG abgeglichen)
-# Naechste Pruefung: 2026-11-17
+# Nächste Prüfung: 2026-11-17
 
 BACH v3 - FEATURES
 ====================
 
-Uebersicht aller implementierten Features und deren Status.
+Übersicht aller implementierten Features und deren Status.
 
 ARCHITEKTUR v2.0 (NEU)
 ----------------------
 Registry-Based Handler-System mit Auto-Discovery:
 - 109+ Handler in hub/ automatisch erkannt
-- Library-API (bach_api.py) fuer programmatischen Zugriff
+- Library-API (bach_api.py) für programmatischen Zugriff
 - Dual-Init Handler (Path + App Support)
 - Multi-Handler-Dateien (time.py, tuev.py)
 - Kognitive Injektoren integriert
@@ -32,7 +32,7 @@ TASK-MANAGEMENT
 ---------------
 bach task add "..."         Neue Aufgabe erstellen
 bach task list              Aufgaben anzeigen
-bach task done T001         Aufgabe abschliessen
+bach task done T001         Aufgabe abschließen
 bach task edit T001 "..."   Aufgabe bearbeiten
 
 MEMORY-SYSTEM
@@ -58,7 +58,7 @@ bach scan tasks             Gescannte Tasks anzeigen
 WARTUNG (Scheduler, ehemals Daemon)
 -------------------------------------
 bach scheduler jobs            Jobs anzeigen
-bach scheduler run J001        Job ausfuehren
+bach scheduler run J001        Job ausführen
 bach scheduler status          Scheduler-Status anzeigen
 (Alias: bach daemon ... funktioniert weiterhin)
 
@@ -94,7 +94,7 @@ bach backup restore X       Backup wiederherstellen
 DATENBANK
 ---------
 bach --db status            DB-Status
-bach --db query "SQL"       SQL ausfuehren
+bach --db query "SQL"       SQL ausführen
 
 CONNECTOR-SYSTEM v2.0 (NEU)
 ---------------------------
@@ -108,7 +108,7 @@ bach connector messages     Nachrichten anzeigen
 bach connector poll <name>  Einmal pollen (Nachrichten holen)
 bach connector dispatch     Queue abarbeiten (Nachrichten versenden)
 bach connector queue-status Queue-Statistiken (pending/failed/dead)
-bach connector retry [id]   Dead-Letter zuruecksetzen
+bach connector retry [id]   Dead-Letter zurücksetzen
 
 Daemon-Integration:
   poll_and_route (alle 2min) - Pollen + Routing
@@ -117,8 +117,8 @@ Daemon-Integration:
 Features:
 - Retry mit exponentiellen Backoff (30s bis 480s)
 - Circuit Breaker (nach 5 Fehlern 5min Cooldown)
-- Dead-Letter Queue fuer fehlgeschlagene Nachrichten
-- Kontext-Trigger fuer Injektoren beim Routing
+- Dead-Letter Queue für fehlgeschlagene Nachrichten
+- Kontext-Trigger für Injektoren beim Routing
 
 VOICE SERVICE (NEU)
 -------------------
@@ -165,7 +165,7 @@ IMPLEMENTIERTE GUI DASHBOARDS
 - Skills Board (Agents, Experts, Skills, Tools)
 - Memory Board (Working, Facts, Lessons, Sessions)
 - Financial (Finanzassistent / Insurance)
-- Foerderplaner (Client Pipeline)
+- Förderplaner (Client Pipeline)
 - Gesundheit (Gesundheitsassistent - Beta)
 - ATI (Konzept-Entwicklung)
 
@@ -180,24 +180,24 @@ GEPLANTE FEATURES
 
 NEU SEIT v3.6
 --------------
-+ ProSync DB-Sync: Cross-System-Synchronisation ueber OneDrive (v3.9)
++ ProSync DB-Sync: Cross-System-Synchronisation über OneDrive (v3.9)
 + Buddha Chat Services: Telegram-Bot mit 5 Backends, 13 Tools (v3.9)
 + Schwarm-System: 4 Muster (Parallel, Hierarchie, Stigmergy, Konsensus) (v3.8)
-+ Permission-Profile: Remote Control fuer Claude Code (v3.8)
-+ Foerderbericht-Pipeline: DSGVO-Anonymisierung, ICF-Prompts (v3.9)
-+ Agent-Personas: Display-Names, Multi-Strategie-Aufloesung (v3.9)
++ Permission-Profile: Remote Control für Claude Code (v3.8)
++ Förderbericht-Pipeline: DSGVO-Anonymisierung, ICF-Prompts (v3.9)
++ Agent-Personas: Display-Names, Multi-Strategie-Auflösung (v3.9)
 + Security Gate: Code-Injection-Scan bei Plugin-Installation (v3.9)
 + 3241 Tests in 63 Dateien, Linux-Support verifiziert (v3.11)
 + GUI Interactivity Audit: 32 Templates, 8 kritische Fixes (v3.11)
-+ Encoding-Haertung: UTF-8 Safety fuer alle Subprozesse (v3.12)
-+ i18n: 14.655 Uebersetzungen (EN, ES, JA, RU, ZH) (v3.12)
++ Encoding-Haertung: UTF-8 Safety für alle Subprozesse (v3.12)
++ i18n: 14.655 Übersetzungen (EN, ES, JA, RU, ZH) (v3.12)
 + bach gui stop: Server-Stop-Kommando (v3.12)
 
 CHANGELOG v2.0 (2026-02-06 bis 2026-02-08)
 -------------------------------------------
 [v2.0.0 - 2026-02-08] Registry-Based + Connector v2.0 + Voice
 + Registry-Based Handler-System (Auto-Discovery, 64+ Handler)
-+ Library-API (bach_api.py) fuer programmatischen Zugriff
++ Library-API (bach_api.py) für programmatischen Zugriff
 + Connector-System v2.0: Queue, Retry/Backoff, Circuit Breaker
 + Runtime-Adapter: Telegram, Discord, HomeAssistant
 + Voice Service: STT (Whisper/Vosk), TTS (pyttsx3), Wake-Word
@@ -222,5 +222,5 @@ WEITERE RESSOURCEN
 - Architektur-Doku: docs/con3_ANFORDERUNGSANALYSE.md
 - Changelog: memory/MEMORY.md (Abschnitt bach.py v2.0)
 - Tests: system/tests/ (test_core.py, test_smoke.py)
-- REST-API Swagger: http://localhost:8001/api/docs (wenn Server laeuft)
+- REST-API Swagger: http://localhost:8001/api/docs (wenn Server läuft)
 - Library-API Beispiele: system/bach_api.py (Docstring)

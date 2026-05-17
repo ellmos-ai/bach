@@ -1,6 +1,6 @@
-# Portabilitaet: SYSTEM
+# Portabilität: SYSTEM
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-05-08
+# Nächste Prüfung: 2026-05-08
 # Ressourcen: [system_identity table], [hub/dist.py], [tools/generators/distribution_system.py]
 # Status: HANDLER DEFEKT - dist-Routing funktioniert nicht
 
@@ -9,7 +9,7 @@ IDENTITY-SYSTEM
 
 Stand: 2026-02-08
 
-Das Identity-System gewaehrleistet die Integritaet und Identifikation der BACH-Instanz.
+Das Identity-System gewährleistet die Integrität und Identifikation der BACH-Instanz.
 Funktionen sind im Distribution-Handler implementiert, aber das CLI-Routing ist defekt.
 
 TABELLE: system_identity (Zentrales Singleton)
@@ -19,7 +19,7 @@ TABELLE: system_identity (Zentrales Singleton)
   - instance_name:    Individueller Name (z.B. "BACH_Alpha")
   - version:          Aktuelle BACH-Version (z.B. v1.1.83)
   - created_at:       Erstellungsdatum
-  - seal_status:      Integritaets-Status ('intact' | 'broken')
+  - seal_status:      Integritäts-Status ('intact' | 'broken')
   - kernel_hash:      SHA256 der System-Kern-Dateien
   - last_verified:    Letzter Verifizierungs-Zeitpunkt
   - current_mode:     Betriebsmodus (default: 'developer')
@@ -29,14 +29,14 @@ TABELLE: system_identity (Zentrales Singleton)
 SIEGEL-MECHANISMUS
 ------------------
   1. Boot-Check: Bei jedem Startup wird der Kernel-Hash berechnet
-  2. Vergleich: Stimmt der Hash mit der DB ueberein?
+  2. Vergleich: Stimmt der Hash mit der DB überein?
   3. Status: Bei Abweichung wird das Siegel "gebrochen" (broken)
   4. Warnung: Ein gebrochenes Siegel weist auf manuelle Eingriffe hin
 
 CLI-BEFEHLE (DOKUMENTIERT, aber DEFEKT)
 ----------------------------------------
   bach --dist status         System-Status mit Siegel-Info anzeigen
-  bach --dist verify         Siegel-Integritaet pruefen
+  bach --dist verify         Siegel-Integrität prüfen
 
 PROBLEM: Der dist-Handler (hub/dist.py) existiert und implementiert diese
 Funktionen, aber das CLI-Routing in bach.py ruft ihn nicht korrekt auf.
@@ -65,4 +65,4 @@ SIEHE AUCH
 ----------
   docs/help/maintain.txt        Wartungs-Tools (keine Identity-Funktion)
   docs/help/distribution.txt    Distribution & Releases
-  docs/help/bach_info.txt       System-Uebersicht
+  docs/help/bach_info.txt       System-Übersicht

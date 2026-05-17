@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -18,7 +18,7 @@ OPERATIONEN
 ===========
 
 status
-  Performance-Bericht anzeigen. Liefert aktuellen ueberblick ueber System-Metriken
+  Performance-Bericht anzeigen. Liefert aktuellen überblick über System-Metriken
   und allgemeine Performance-Indikatoren.
 
 review [days]
@@ -30,7 +30,7 @@ gaps
   Bereiche mit niedriger Abdeckung oder Performance-Problemen.
 
 log
-  Reflection-Metriken aus der Datenbank anzeigen. Zeigt die letzten 20 Eintraege
+  Reflection-Metriken aus der Datenbank anzeigen. Zeigt die letzten 20 Einträge
   vom Typ 'REFLECTION:*' aus der memory_working Tabelle.
 
 
@@ -47,7 +47,7 @@ BEISPIELE
     -> Listet alle identifizierten Schwachstellen auf
 
   bach reflection log
-    -> Zeigt die letzten 20 Reflection-Metriken-Eintraege
+    -> Zeigt die letzten 20 Reflection-Metriken-Einträge
 
 
 DATEIEN
@@ -57,7 +57,7 @@ hub/reflection.py
   Handler-Implementation mit Operation-Definitionen und Datenbank-Abfragen.
 
 agents/reflection/reflection_analyzer.py
-  SelfReflection-Klasse fuer Analyse-Logik und Report-Generierung.
+  SelfReflection-Klasse für Analyse-Logik und Report-Generierung.
 
 data/bach.db
   Zentrale SQLite-Datenbank mit Memory-Tabellen:
@@ -74,7 +74,7 @@ docs/help/memory.txt
   Dokumentation des Memory-Systems und Tabellen-Struktur.
 
 docs/help/tasks.txt
-  Task-Management zur Ergaenzung von Performance-Analysen.
+  Task-Management zur Ergänzung von Performance-Analysen.
 
 agents/reflection/
   Weitere Analyse-Module und Metrik-Definitionen.

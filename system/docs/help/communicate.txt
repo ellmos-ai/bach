@@ -1,6 +1,6 @@
-# Portabilitaet: SYSTEM
+# Portabilität: SYSTEM
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-05-08
+# Nächste Prüfung: 2026-05-08
 # Ressourcen: [messages table, hub/messages.py, hub/partner.py]
 
 COMMUNICATE - Partner-Kommunikationssystem
@@ -72,7 +72,7 @@ Canva:        MCP Connection Test
 
 TOKEN-ZONEN (Delegation)
 ------------------------
-Zone 1 (0-30%):   Alle Partner verfuegbar
+Zone 1 (0-30%):   Alle Partner verfügbar
 Zone 2 (30-60%):  Guenstige Partner (Ollama bevorzugt)
 Zone 3 (60-80%):  Nur lokale Partner
 Zone 4 (80-100%): Nur Notfall (Human + Ollama)

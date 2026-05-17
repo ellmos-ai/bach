@@ -1,16 +1,16 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 DATA ANALYSIS - BACH Datenanalyse-Befehle
 ==========================================
 
-BACH bietet einfache Datenanalyse-Funktionen fuer CSV, Excel und JSON.
+BACH bietet einfache Datenanalyse-Funktionen für CSV, Excel und JSON.
 
 INSTALLATION
 ------------
-Benoetigt: pip install pandas matplotlib
+Benötigt: pip install pandas matplotlib
 
 BEFEHLE
 -------
@@ -19,12 +19,12 @@ bach data list
   Zeigt alle Dateien im input/ Ordner an.
 
 bach data load <pfad>
-  Laedt Datei und zeigt Basisinfos (Zeilen, Spalten, Datentypen).
-  Unterstuetzte Formate: CSV, Excel (.xlsx/.xls), JSON
+  Lädt Datei und zeigt Basisinfos (Zeilen, Spalten, Datentypen).
+  Unterstützte Formate: CSV, Excel (.xlsx/.xls), JSON
 
 bach data describe <pfad>
   Zeigt deskriptive Statistik (mean, std, min, max, quartile).
-  Nur fuer numerische Spalten.
+  Nur für numerische Spalten.
 
 bach data head <pfad> [--rows N]
   Zeigt die ersten N Zeilen (Standard: 10).
@@ -37,11 +37,11 @@ bach data chart <pfad> --type TYPE --x COL [--y COL] [--output NAME]
   X-Spalte erforderlich, Y-Spalte optional (wird automatisch gewaehlt).
 
   Chart-Typen:
-    bar     - Balkendiagramm (benoetigt X und Y)
-    line    - Liniendiagramm (benoetigt X und Y)
-    pie     - Kreisdiagramm (benoetigt X, Y optional fuer Werte)
-    scatter - Streudiagramm (benoetigt X und Y)
-    hist    - Histogramm (benoetigt nur X)
+    bar     - Balkendiagramm (benötigt X und Y)
+    line    - Liniendiagramm (benötigt X und Y)
+    pie     - Kreisdiagramm (benötigt X, Y optional für Werte)
+    scatter - Streudiagramm (benötigt X und Y)
+    hist    - Histogramm (benötigt nur X)
 
 VERZEICHNISSE
 -------------
@@ -58,7 +58,7 @@ bach data load user/data-analysis/input/sales.csv
 bach data describe user/data-analysis/input/sales.csv
 bach data head user/data-analysis/input/sales.csv --rows 20
 
-# Korrelation pruefen
+# Korrelation prüfen
 bach data corr user/data-analysis/input/metrics.xlsx
 
 # Charts erstellen
@@ -70,7 +70,7 @@ bach data chart input/data.csv --type hist --x alter
 
 TIPPS
 -----
-- Dateien im input/ Ordner koennen mit kurzem Namen referenziert werden
+- Dateien im input/ Ordner können mit kurzem Namen referenziert werden
 - Charts werden automatisch in charts/ gespeichert (PNG, 150 DPI)
 - Bei grossen Dateien: erst head, dann describe
 - Chart-Befehle erfordern matplotlib: pip install matplotlib
@@ -78,11 +78,11 @@ TIPPS
 
 SIEHE AUCH
 ----------
-bach --help tools     # Alle verfuegbaren Tools
-bach --help features  # BACH Features-Uebersicht
+bach --help tools     # Alle verfügbaren Tools
+bach --help features  # BACH Features-Übersicht
 
 VERSION
 -------
-Eingefuehrt in BACH v1.1.25 (2026-01-21)
-Chart-Befehle vollstaendig implementiert (bar, line, pie, scatter, hist)
+Eingeführt in BACH v1.1.25 (2026-01-21)
+Chart-Befehle vollständig implementiert (bar, line, pie, scatter, hist)
 Handler: system/hub/data_analysis.py

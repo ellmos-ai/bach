@@ -3,7 +3,7 @@ BACH TOOLS INDEX
 Generiert: 2026-01-23 10:36
 Anzahl Tools: 67
 
-TOOL-UEBERSICHT
+TOOL-ÜBERSICHT
 ------------------------------------------------------------
 agent_cli                      BACH Agent CLI v1.0.0
 agent_framework                Agent Framework v1.0.0
@@ -25,7 +25,7 @@ c_md_to_pdf                    Markdown zu PDF Converter - RecludOS User Reports
 c_method_analyzer              c_method_analyzer.py - Python Code Analyzer für Claude
 c_pycutter                     c_pycutter.py - Python-Klassen-Extractor
 c_sqlite_viewer                sqlite_viewer_cli.py - CLI-Adapter für SQLite Viewer
-c_standard_fixer               c_standard_fixer.py - Toolchain fuer haeufige Code-Probleme
+c_standard_fixer               c_standard_fixer.py - Toolchain für haeufige Code-Probleme
 c_umlaut_fixer                 c_umlaut_fixer.py - Repariert kaputte deutsche Umlaute in Py
 c_universal_converter          Universal Data Converter
 c_youtube_extractor            c_youtube_extractor.py - Extrahiert YouTube Video-IDs aus UR
@@ -40,7 +40,7 @@ entwickler_agent               Entwickler-Agent v1.0.0
 export_txt                     Exportiert Steuer-Posten in TXT-Dateien - alle Listen + Doku
 exporter                       exporter.py
 file_cleaner                   file_cleaner.py - Dateien nach Alter/Muster bereinigen
-foerderplaner_cli               Foerderplaner CLI - Kommandozeilen-Tool für Förderplanung
+foerderplaner_cli               Förderplaner CLI - Kommandozeilen-Tool für Förderplanung
 gemini_start                   BACH Gemini Starter
 generate_skills_report         generate_skills_report.py - Generiert nutzerfreundlichen Ski
 injectors                      Injector System - Automatische Hilfe und Kontext
@@ -70,7 +70,7 @@ task_statistics                task_statistics.py - Statistik-Auswertung für _d
 token_monitor                  BACH Token Monitor
 tool_discovery                 tool_discovery.py - Problem-basierte Tool-Empfehlung
 tool_registry_boot             Boot Integration für Tool Registry
-tool_scanner                   tool_scanner.py - Scannt System nach verfuegbaren CLI-Tools
+tool_scanner                   tool_scanner.py - Scannt System nach verfügbaren CLI-Tools
 universal_compiler             UNIVERSAL COMPILER v2.0
 
 ------------------------------------------------------------

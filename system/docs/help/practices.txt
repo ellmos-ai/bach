@@ -1,13 +1,13 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 BEST PRACTICES
 ==============
 
 BACH CLI ERSTE WAHL:
-  Fuer alle Operationen IMMER bach.py nutzen
+  Für alle Operationen IMMER bach.py nutzen
   - Tasks           --> bach task add/list/done
   - Memory          --> bach mem write/read
   - Skills          --> bach --skills list/search
@@ -35,7 +35,7 @@ REGELWERK-INDEX:
   Namenskonventionen        --help naming
   Datenformate              --help formats
   Bekannte Probleme         --help lessons
-  Tool-Uebersicht           --help tools
+  Tool-Übersicht           --help tools
   Tool-Praefixe             --help naming (Abschnitt TOOL-PRAEFIXE)
   Policy-Validatoren        tools/_policies/
 
@@ -44,8 +44,8 @@ ARCHITEKTUR-PRINZIPIEN:
 Diese Regeln gelten systemweit:
 
 1. KONZEPTE ZENTRAL IN DOCS/ ABLEGEN
-   Alle CONCEPT_*.md gehoeren nach docs/ (Root-Verzeichnis).
-   EIN Ort fuer alle Plaene = bessere Uebersicht.
+   Alle CONCEPT_*.md gehören nach docs/ (Root-Verzeichnis).
+   EIN Ort für alle Plaene = bessere Übersicht.
 
    Nach Umsetzung: Konzept nach docs/_archive verschieben.
 
@@ -55,8 +55,8 @@ Diese Regeln gelten systemweit:
    - skills/SKILL.md    = Agent/Skill-Dokumentation
    - skills/*.md        = Agent-Hauptdokument (ATI.md, STEUER.md)
 
-   REGEL: Dezentrale .md sind NUR fuer Navigation und Skill-Doku,
-          NICHT fuer Konzepte oder Plaene.
+   REGEL: Dezentrale .md sind NUR für Navigation und Skill-Doku,
+          NICHT für Konzepte oder Plaene.
 
 2. DOCS/ ORDNERSTRUKTUR
    docs/ betrifft die ENTWICKLUNG des Systems:
@@ -67,11 +67,11 @@ Diese Regeln gelten systemweit:
    analyse/           Analyse-Ergebnisse und Berichte
    reference/         Referenz-Dokumentation
    (root)             CONCEPT_*.md - Alle Konzepte zentral
-                      EIN Ort fuer alle Plaene zur Umsetzung
+                      EIN Ort für alle Plaene zur Umsetzung
 
    user/ betrifft die NUTZUNG des Systems:
    - Reports die durch Nutzung entstehen
-   - Nicht fuer System-Entwicklung
+   - Nicht für System-Entwicklung
 
 3. EVOLUTIONAERE MIGRATION
    Keine harten Brueche bei Umbenennungen/Umstrukturierungen.
@@ -80,12 +80,12 @@ Diese Regeln gelten systemweit:
 4. EINE UNIFIED DATENBANK
    bach.db      = Einzige Haupt-DB (210+ Tabellen, alles drin)
 
-   Hinweis: user.db wurde in v1.1.84 in bach.db zusammengefuehrt.
+   Hinweis: user.db wurde in v1.1.84 in bach.db zusammengeführt.
    registry.db (Distribution) und archive.db (Archiv) sind
    Spezial-DBs, nicht Teil des Kern-Systems.
 
 5. DATENBANK VOR JSON (RecludOS-Lehre!)
-   JSON-Dateien nur in begruendeten Ausnahmefaellen.
+   JSON-Dateien nur in begründeten Ausnahmefaellen.
    Standard ist IMMER die Datenbank.
 
    JSON erlaubt nur wenn:
@@ -98,7 +98,7 @@ Diese Regeln gelten systemweit:
 
 6. DIST_TYPE DREISCHRITT
    2 = CORE (Systemdatei, Distribution ist Backup)
-   1 = TEMPLATE (1x Snapshot fuer Reset)
+   1 = TEMPLATE (1x Snapshot für Reset)
    0 = USER (Userdaten, normale Rotation)
 
 7. HELP ALS WAHRHEIT

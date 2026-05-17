@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 2.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 # Status: VERALTET - Ersetzt durch messages.py Handler
 
 MESSAGEBOX-SYSTEM (VERALTET)
@@ -35,8 +35,8 @@ ALTE DOKUMENTATION (nur noch historisch)
 KONZEPT (alt):
   - Ein Thema = eine TXT-Datei
   - Nachrichten werden Themen zugeordnet
-  - Index (JSON) fuer schnellen Zugriff
-  - Auto-Archivierung bei Groessenlimit
+  - Index (JSON) für schnellen Zugriff
+  - Auto-Archivierung bei Größenlimit
 
 ORDNER (alt):
   DATA/inbox/               Aktive Themen (existiert nicht mehr)
@@ -52,5 +52,5 @@ CLI-BEFEHLE (alt, nicht mehr funktional):
   python messagebox_backend.py restore <id>
 
 MIGRATION:
-  Das alte System wurde nicht migriert. Bei Bedarf koennen alte
+  Das alte System wurde nicht migriert. Bei Bedarf können alte
   Themen-Dateien aus Backups wiederhergestellt werden.

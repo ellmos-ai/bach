@@ -1,21 +1,21 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 ENTWICKLUNGSMODUS (Dev-Zyklus)
 ==============================
 
 BESCHREIBUNG
 ------------
-BACH wird in einem 8-Phasen-Zyklus entwickelt. Jedes Feature durchlaeuft
+BACH wird in einem 8-Phasen-Zyklus entwickelt. Jedes Feature durchläuft
 den gleichen Ablauf: Von der Anforderung bis zum validierten Usecase.
 
 DER ZYKLUS
 ----------
 
-  Phase 1: Feature-Wuensche     Anforderungen funktional formulieren
-  Phase 2: Ist-Stand pruefen    Was gibt es schon? Duplikate vermeiden
+  Phase 1: Feature-Wünsche     Anforderungen funktional formulieren
+  Phase 2: Ist-Stand prüfen    Was gibt es schon? Duplikate vermeiden
   Phase 3: Funktionale Planung  Workflows, Agenten, Experten, Skills, Services
   Phase 4: Functional Frontend  Skill-Dateien, Workflows, Agent-Profile erstellen
   Phase 5: Backend planen       CLI-Handler, DB-Schema, API-Endpoints
@@ -25,8 +25,8 @@ DER ZYKLUS
 
 GRUNDPRINZIPIEN
 ---------------
-  1. Systemisch First     Wiederverwendbar fuer jeden User
-  2. CLI First            Alles ueber Terminal steuerbar
+  1. Systemisch First     Wiederverwendbar für jeden User
+  2. CLI First            Alles über Terminal steuerbar
   3. dist_type Isolation  User-Daten getrennt (0/1/2/3)
   4. Functional First     Erst beschreiben, dann implementieren
   5. Usecases als Tests   Validierung UND Anforderungsquelle
@@ -46,7 +46,7 @@ EBENEN DER PLANUNG (Phase 3)
   Ebene      Frage                        Ort
   ---------  ---------------------------  -------------------------
   Workflow   WANN/WIE koordinieren?       skills/workflows/*.md
-  Agent      WER fuehrt aus?              agents/*.txt
+  Agent      WER führt aus?              agents/*.txt
   Experte    WER hat Fachwissen?          agents/_experts/*/
   Skill      WAS wird getan?              skills/_services/*.md
   Service    WIE technisch?               skills/_services/*/

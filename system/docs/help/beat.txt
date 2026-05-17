@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 BEAT - Unified Zeit-Anzeige
 ===========================
@@ -63,8 +63,8 @@ BEISPIELE
 ZUSAMMENSPIEL MIT INJEKTOREN
 ----------------------------
 
-Die Zeit-Anzeigen werden ueber das Injektor-System ausgegeben.
-`bach beat` ist die einheitliche Steuerung dafuer.
+Die Zeit-Anzeigen werden über das Injektor-System ausgegeben.
+`bach beat` ist die einheitliche Steuerung dafür.
 
 Alte Befehle (deprecated):
   --inject toggle timebeat     -> bach beat on|off

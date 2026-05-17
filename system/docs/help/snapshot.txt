@@ -1,6 +1,6 @@
-# Portabilitaet: SYSTEM
+# Portabilität: SYSTEM
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-05-08
+# Nächste Prüfung: 2026-05-08
 # Ressourcen: [session_snapshots table, hub/snapshot.py]
 
 BACH SNAPSHOT SYSTEM

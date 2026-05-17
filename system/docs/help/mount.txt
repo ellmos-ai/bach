@@ -1,12 +1,12 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
 MOUNT HANDLER
 =============
 
-Anbindung externer Ordner als Symlinks/Junctions im Arbeitsbereich. Verwaltung ueber
-die Datenbank connections-Tabelle mit Persistenz ueber System-Neustarts.
+Anbindung externer Ordner als Symlinks/Junctions im Arbeitsbereich. Verwaltung über
+die Datenbank connections-Tabelle mit Persistenz über System-Neustarts.
 
 
 BESCHREIBUNG
@@ -25,12 +25,12 @@ ADD: Externen Ordner anbinden
   Beispiel: bach mount add C:\Data\Forschung research
   - Erstellt Junction: hub/user/research -> C:\Data\Forschung
   - Speichert in DB connections-Tabelle (type='mount')
-  - Ueberschreibt vorhandene Mounts mit gleichem Alias
+  - Überschreibt vorhandene Mounts mit gleichem Alias
 
 REMOVE: Anbindung entfernen
   Syntax: bach mount remove <alias>
   Beispiel: bach mount remove research
-  - Loescht Junction aus hub/user/<alias>
+  - Löscht Junction aus hub/user/<alias>
   - Entfernt Eintrag aus DB connections-Tabelle
   - Junction muss existieren, sonst wird Fehler ignoriert
 
@@ -42,8 +42,8 @@ LIST: Aktive Mounts anzeigen (Standard-Operation)
 
 RESTORE: Junctions aus DB wiederherstellen
   Syntax: bach mount restore
-  - Erstellt alle Junctions fuer active Mounts neu (Falls nach Umzug verloren)
-  - Ueberspringt bereits existierende Junctions
+  - Erstellt alle Junctions für active Mounts neu (Falls nach Umzug verloren)
+  - Überspringt bereits existierende Junctions
   - Meldet Fehler wenn Quellpfad nicht existiert
 
 
@@ -61,7 +61,7 @@ BEISPIELE
 
 3. Nach Systemumzug wiederherstellen:
    bach mount restore
-   -> Alle Junctions aus DB neu erstellt (wenn Quellpfade noch verfuegbar)
+   -> Alle Junctions aus DB neu erstellt (wenn Quellpfade noch verfügbar)
 
 4. Dry-Run vor Operation:
    bach mount --dry-run add C:\Quelle test
@@ -73,7 +73,7 @@ DATEIEN
 
 Betroffene Dateien (relativ zu system/):
   hub/mount.py              - Handler-Implementation
-  hub/user/                 - Verzeichnis fuer Junctions
+  hub/user/                 - Verzeichnis für Junctions
   data/bach.db              - Persistente Storage (connections-Tabelle)
   docs/help/mount.txt       - Diese Datei
 
@@ -82,6 +82,6 @@ SIEHE AUCH
 ==========
 
   hub/base.py               - BaseHandler Interface
-  data/                     - Datenbank-Schema fuer connections
+  data/                     - Datenbank-Schema für connections
   bach.py --help            - Allgemeine BACH-Hilfe
 

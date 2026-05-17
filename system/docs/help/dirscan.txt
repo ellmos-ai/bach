@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 DIRECTORY TRUTH
 ===============
@@ -11,7 +11,7 @@ Automatische Verzeichnis-Zustandsverwaltung.
 KONZEPT:
   - Startup: IST-Zustand erfassen, mit SOLL vergleichen
   - Shutdown: Aktueller Zustand wird neuer SOLL
-  - Heuristik: Claude-Aenderungen sind gewollt
+  - Heuristik: Claude-Änderungen sind gewollt
 
 ABLAUF:
 
@@ -22,28 +22,28 @@ ABLAUF:
 2. Folgende Starts
    - IST-Zustand scannen
    - Vergleich mit SOLL
-   - Externe Aenderungen anzeigen (User hat was geaendert)
+   - Externe Änderungen anzeigen (User hat was geändert)
 
 3. Shutdown
    - Aktueller Zustand wird neuer SOLL
-   - Claudes Aenderungen sind jetzt "Standard"
+   - Claudes Änderungen sind jetzt "Standard"
 
 IGNORIERT:
   - __pycache__
   - .pyc Dateien
   - .git, .idea, .vscode
-  - auto_log.txt (aendert sich staendig)
+  - auto_log.txt (aendert sich ständig)
   - current.md (Memory)
 
-AUSGABE BEI AENDERUNGEN:
+AUSGABE BEI ÄNDERUNGEN:
   + Neue Ordner/Dateien
-  - Geloeschte Ordner/Dateien
+  - Gelöschte Ordner/Dateien
   ~ Modifizierte Dateien
 
 VORTEILE:
-  - Claude muss nicht manuell tracken was sich geaendert hat
-  - Externe Aenderungen (User) werden erkannt
-  - Eigene Aenderungen automatisch uebernommen
+  - Claude muss nicht manuell tracken was sich geändert hat
+  - Externe Änderungen (User) werden erkannt
+  - Eigene Änderungen automatisch übernommen
 
 INTEGRATION:
   - Automatisch in hub/startup.py (DirectoryScanner bei Startup)

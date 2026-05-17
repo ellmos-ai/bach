@@ -1,15 +1,15 @@
 BACH Tool: File Operations
 ==========================
 
-Dateisystem-Werkzeuge fuer Analyse und Bereinigung.
+Dateisystem-Werkzeuge für Analyse und Bereinigung.
 
-VERFUEGBARE TOOLS
+VERFÜGBARE TOOLS
 -----------------
 
   dirscan              Verzeichnis-Scanner mit Statistiken
   duplicate_detector   Datei-Duplikate finden
   encoding_fixer       Encoding-Probleme beheben (UTF-8)
-  file_cleaner         Temporaere/unnoetige Dateien entfernen
+  file_cleaner         Temporaere/unnötige Dateien entfernen
   file_manager         Datei-Operationen (Verschieben, Umbenennen)
 
 VERWENDUNG
@@ -17,7 +17,7 @@ VERWENDUNG
 
   bach --tools file_ops scan <pfad>        Verzeichnis analysieren
   bach --tools file_ops duplicates <pfad>  Duplikate finden
-  bach --tools file_ops encoding <pfad>    Encoding pruefen/fixen
+  bach --tools file_ops encoding <pfad>    Encoding prüfen/fixen
   bach --tools file_ops clean <pfad>       Bereinigung
 
 MODUL

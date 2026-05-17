@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.2.0
 # Zuletzt validiert: 2026-03-12 (Persona-System SUGAR v3.8.0 dokumentiert)
-# Naechste Pruefung: 2026-09-12
+# Nächste Prüfung: 2026-09-12
 
 BACH AGENTEN-SYSTEM
 ==================
@@ -31,7 +31,7 @@ Boss-Agenten koordinieren, Experten sind spezialisiert:
        +-- [Experte 2]
 
 
-VERFUEGBARE AGENTEN (agents/)
+VERFÜGBARE AGENTEN (agents/)
 -------------------------------------
 
 [BERUFLICH]
@@ -49,9 +49,9 @@ VERFUEGBARE AGENTEN (agents/)
   Research (research)
     Wissenschaftliche Recherche (PubMed, Perplexity, Consensus)
 
-  Bueroassistent (bueroassistent) — Persona: Clara
-    Steuern, Foerderplanung, Dokumentation
-    Experten: Steuer (Theodor), Foerderplaner (Florian)
+  Büroassistent (bueroassistent) — Persona: Clara
+    Steuern, Förderplanung, Dokumentation
+    Experten: Steuer (Theodor), Förderplaner (Florian)
 
   Reflection (reflection)
     Selbstreflexion und Meta-Analyse
@@ -59,7 +59,7 @@ VERFUEGBARE AGENTEN (agents/)
 
 [PRIVAT]
 
-  Persoenlicher Assistent (persoenlicher-assistent) — Persona: Paul
+  Persönlicher Assistent (persoenlicher-assistent) — Persona: Paul
     Terminverwaltung, Recherche, Kommunikation
     Experten: Haushaltsmanagement (Martha)
 
@@ -77,7 +77,7 @@ VERFUEGBARE AGENTEN (agents/)
 [TEST]
 
   Test-Agent (test-agent)
-    Fuer Tests und Experimente
+    Für Tests und Experimente
 
 
 PERSONA-SYSTEM (SUGAR v3.8.0)
@@ -91,11 +91,11 @@ menschliche Vornamen + Charakter-Beschreibungen in der Datenbank.
     persona         Charakter-Text (z.B. "Pragmatischer Handwerker...")
 
   Befehle:
-    bach agent rename <name> <neuer-name>   Display-Name aendern
+    bach agent rename <name> <neuer-name>   Display-Name ändern
     bach agent list                          Zeigt Personas in Klammern
     bach agent info <name>                   Details inkl. Persona
 
-  Namensaufloesung (resolve_agent_name):
+  Namensauflösung (resolve_agent_name):
     1. Exakter System-Name (z.B. "steuer-agent")
     2. Display-Name (z.B. "Theodor")
     3. Substring (z.B. "theo")
@@ -113,7 +113,7 @@ menschliche Vornamen + Charakter-Beschreibungen in der Datenbank.
     ati                       | Atlas   | Pragmatischer Handwerker
     bueroassistent            | Clara   | Strukturierte Organisatorin
     finanz-assistent          | Felix   | Aufmerksamer Sparfuchs
-    gesundheitsassistent      | Helena  | Fuersorgliche Begleiterin
+    gesundheitsassistent      | Helena  | Fürsorgliche Begleiterin
     persoenlicher-assistent   | Paul    | Vielseitiger Allrounder
 
 
@@ -122,18 +122,18 @@ menschliche Vornamen + Charakter-Beschreibungen in der Datenbank.
     System-Name               | Persona     | Charakter
     steuer-agent              | Theodor     | Peniler Steuerberater
     financial_mail            | Frieda      | Mail-Detektivin
-    aboservice                | Anton       | Kuendigungskoenig
+    aboservice                | Anton       | Kündigungskönig
     gesundheitsverwalter      | Gustav      | Archivar der Befunde
-    psycho-berater            | Sophie      | Einfuehlsame Zuhoererin
+    psycho-berater            | Sophie      | Einfühlsame Zuhörerin
     health_import             | Hugo        | Gewissenhafter Datenpfleger
     haushaltsmanagement       | Martha      | Sparsame Hauswirtschafterin
-    foerderplaner             | Florian     | Foerdermittel-Experte
+    foerderplaner             | Florian     | Fördermittel-Experte
     bewerbungsexperte         | Benjamin    | Karriere-Coach
-    data-analysis             | Diana       | Zahlenfluesterin
-    decision-briefing         | Dietrich    | Kuehler Stratege
+    data-analysis             | Diana       | Zahlenflüsterin
+    decision-briefing         | Dietrich    | Kühler Stratege
     report_generator          | Rita        | Effiziente Berichtsmaschine
     mr_tiktak                 | Mr. TikTak  | Strategischer Taktiker
-    transkriptions-service    | Tristan     | Geduldiger Zuhoerer
+    transkriptions-service    | Tristan     | Geduldiger Zuhörer
     wikiquizzer               | Wilhelm     | Quizmaster
 
   Template: skills/_templates/TEMPLATE_PERSONA.md
@@ -176,7 +176,7 @@ VERZEICHNISSE
 
 WICHTIG: Agenten und Experten sind unterschiedliche Konzepte!
   - Agenten (Boss): Koordinieren und delegieren (agents/)
-  - Experten: Spezialisierte Ausfuehrung (agents/_experts/)
+  - Experten: Spezialisierte Ausführung (agents/_experts/)
   - Einige in Help gelistete "Agenten" sind eigentlich Experten:
     * steuer-agent -> _experts/steuer/
     * foerderplaner -> _experts/foerderplaner/
@@ -199,17 +199,17 @@ DATENBANKEN
 WORKFLOW
 --------
 
-1. Agent aktivieren (ueber Skill oder CLI)
-2. Agent laedt Skill-Definition und User-Daten
+1. Agent aktivieren (über Skill oder CLI)
+2. Agent lädt Skill-Definition und User-Daten
 3. Persona wird als System-Prompt injiziert (display_name + persona)
 4. Bei Spezialthema: Delegation an Experten
-5. Experte fuehrt aus, Boss-Agent fasst zusammen
+5. Experte führt aus, Boss-Agent fasst zusammen
 
 
 GUI
 ---
 
-  http://127.0.0.1:8000/agents     Agenten-Uebersicht
+  http://127.0.0.1:8000/agents     Agenten-Übersicht
   http://127.0.0.1:8000/ati        ATI-Agent Details
   http://127.0.0.1:8000/steuer     Steuer-Agent Details
 
@@ -238,7 +238,7 @@ Pflicht-Dateien:
      (nicht rolle.txt, nicht CONCEPT.md als Ersatz)
   2. SKILL.md MUSS YAML-Frontmatter enthalten:
      name, version, type, description (Minimum)
-  3. CONCEPT.md ist OPTIONAL (fuer detaillierte Konzepte)
+  3. CONCEPT.md ist OPTIONAL (für detaillierte Konzepte)
   4. rolle.txt ist DEPRECATED (in SKILL.md migrieren)
 
 Persona-System (SUGAR v3.8.0 -- implementiert):
@@ -248,15 +248,15 @@ Persona-System (SUGAR v3.8.0 -- implementiert):
 
   Konzept: Persona (wer) + Skill (was) + Session (wie)
     - Persona: Charakter mit Stil und Grenzen (DB + optional Datei)
-    - Skill: Faehigkeit mit Code und Instruktionen (exportierbar)
+    - Skill: Fähigkeit mit Code und Instruktionen (exportierbar)
     - Session: Laufzeitumgebung (tools, turns, model)
 
-  Addressing: Agent ueber Persona-Name ansprechbar
+  Addressing: Agent über Persona-Name ansprechbar
     (z.B. "Frag Theodor wegen der Steuer")
 
   Zukunft: Persona-Dateien in agents/personas/ (schrittweise Migration)
 
-Anthropic-Kompatibilitaet:
+Anthropic-Kompatibilität:
 
   - Skills sind exportierbar (offener Standard, LobeHub/Cursor etc.)
   - Personas/Agents sind NICHT portierbar (nur Claude Code / BACH)
@@ -270,7 +270,7 @@ SIEHE AUCH
 ----------
 
   bach help skill_standards  Anthropic Skill-Standards
-  bach help actors           Ueberblick ueber Akteure
+  bach help actors           Überblick über Akteure
   bach help bach_paths       Verzeichnisstruktur
   bach help practices        Architektur-Prinzipien
   bach help ati              ATI Software-Entwickler Details

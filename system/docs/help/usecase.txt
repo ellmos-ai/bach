@@ -1,7 +1,7 @@
-# Portabilitaet: SYSTEM
+# Portabilität: SYSTEM
 # Version: 1.1.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-05-08
+# Nächste Prüfung: 2026-05-08
 
 USECASES - Workflow-Testfaelle und TUeV-System
 ===============================================
@@ -14,8 +14,8 @@ Usecases sind Teil des BACH-TUeV-Systems und dienen als:
   3. ANFORDERUNGSNACHWEIS Was ist implementiert, was fehlt noch?
 
 Usecases werden in der SQLite-DB gespeichert (Tabelle: usecases)
-und sind mit Workflows verknuepft (workflow_tuev Tabelle).
-`workflow_path` ist optional: aeltere oder grobere Testfaelle koennen nur
+und sind mit Workflows verknüpft (workflow_tuev Tabelle).
+`workflow_path` ist optional: ältere oder grobere Testfaelle können nur
 einen Bereich/Kategorienamen tragen. `bach usecase run` soll dann trotzdem
 laufen und den Testfall im manuellen Datenmodus anzeigen.
 
@@ -29,7 +29,7 @@ USECASE-FORMAT
   VORBEDINGUNG:  Was muss vorhanden sein?
   EINGABE:       Was gibt der User ein / welche Daten liegen vor?
   ERWARTUNG:     Was soll herauskommen?
-  PRUEFT:        Welche Komponenten werden getestet?
+  PRÜFT:        Welche Komponenten werden getestet?
 
 AKTUELLE USECASES
 -----------------
@@ -65,15 +65,15 @@ USECASE ALS TEST
 USECASE ALS ANFORDERUNG
 ------------------------
   Fehlgeschlagene Usecases decken Luecken auf:
-  - Fehlende Tools         -> Task fuer Tool-Erstellung
-  - Fehlende CLI-Befehle   -> Task fuer CLI-Handler
-  - Fehlende DB-Tabellen   -> Task fuer Schema-Erweiterung
-  - Fehlende Workflows     -> Task fuer Workflow-Erstellung
+  - Fehlende Tools         -> Task für Tool-Erstellung
+  - Fehlende CLI-Befehle   -> Task für CLI-Handler
+  - Fehlende DB-Tabellen   -> Task für Schema-Erweiterung
+  - Fehlende Workflows     -> Task für Workflow-Erstellung
 
   Neue Usecase-Ideen sind immer willkommen:
     bach task add "USECASE_NNN Kurztitel: Beschreibung" --prio P3
 
-RUECKKOPPLUNG IN DEN ENTWICKLUNGSZYKLUS
+RÜCKKOPPLUNG IN DEN ENTWICKLUNGSZYKLUS
 -----------------------------------------
 
   Phase 8 (Usecases)
@@ -89,25 +89,25 @@ CLI-BEFEHLE
 
 USECASE-VERWALTUNG:
   bach usecase list [workflow]       Alle Testfaelle (optional gefiltert)
-  bach usecase add <workflow>        Hinweise zum Hinzufuegen (SQL-Template)
+  bach usecase add <workflow>        Hinweise zum Hinzufügen (SQL-Template)
   bach usecase show <id>             Details eines Testfalls anzeigen
-  bach usecase run <id>              Einzelnen Testfall ausfuehren
+  bach usecase run <id>              Einzelnen Testfall ausführen
   bach usecase run-all <workflow>    Alle Tests eines Workflows
 
 TUEV-VERWALTUNG:
   bach tuev status                   TUeV-Status aller Workflows
-  bach tuev check <workflow>         Einzelnen Workflow pruefen
-  bach tuev run                      Alle faelligen Pruefungen
-  bach tuev renew <workflow>         TUeV erneuern nach Pruefung
+  bach tuev check <workflow>         Einzelnen Workflow prüfen
+  bach tuev run                      Alle fälligen Prüfungen
+  bach tuev renew <workflow>         TUeV erneuern nach Prüfung
   bach tuev init                     Workflows aus skills/workflows/ registrieren
 
 USECASE ERSTELLEN
 -----------------
-Usecases werden direkt in die DB eingefuegt:
+Usecases werden direkt in die DB eingefügt:
 
   bach db query "INSERT INTO usecases (title, description, workflow_name, test_input, expected_output, created_by) VALUES ('Testfall-Titel', 'Beschreibung', 'workflow-name', '{}', '{}', 'user')"
 
-Oder via GUI: /usecases (wenn GUI-Server laeuft)
+Oder via GUI: /usecases (wenn GUI-Server läuft)
 
 KOMPONENTEN-ABDECKUNG
 ---------------------

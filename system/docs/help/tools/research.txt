@@ -6,13 +6,13 @@ Pfad: docs/help/tools/research.txt
 
 BESCHREIBUNG
 ------------
-Research Agent fuer wissenschaftliche Literaturrecherche.
+Research Agent für wissenschaftliche Literaturrecherche.
 Integriert verschiedene externe Recherche-Tools und
 strukturiert den Review-Prozess.
 
 Pfad: tools/research_agent.py
 
-VERFUEGBARE EXTERNE TOOLS
+VERFÜGBARE EXTERNE TOOLS
 -------------------------
 Der Research Agent empfiehlt und verlinkt:
 
@@ -38,7 +38,7 @@ Beispiele:
 
 SEARCH-BEFEHL
 -------------
-Fuehrt Recherche durch und empfiehlt passende Tools.
+Führt Recherche durch und empfiehlt passende Tools.
 
   python research_agent.py search "BRCA1 mutation breast cancer"
 
@@ -59,9 +59,9 @@ Erstellt strukturierten Literatur-Review-Plan.
   python research_agent.py review --topic "Depression vs Fatigue" --years 5
 
 5-Phasen-Plan:
-  1. Ueberblick (5 min)     - Perplexity fuer Kontext
+  1. Überblick (5 min)     - Perplexity für Kontext
   2. Systematische Suche    - PubMed + Consensus (15 min)
-  3. Screening (10 min)     - NotebookLM fuer Clustering
+  3. Screening (10 min)     - NotebookLM für Clustering
   4. Volltext-Analyse       - Claude/Gemini (20 min)
   5. Synthese (10 min)      - Zusammenfassung + Gaps
 
@@ -78,7 +78,7 @@ Ausgabe:
   - Version
   - Anzahl Suchen gesamt
   - Letzte Suche
-  - Verfuegbare Tools
+  - Verfügbare Tools
 
 PYTHON-INTEGRATION
 ------------------

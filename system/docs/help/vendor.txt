@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08 (Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 VENDOR - Externe Code-Quellen
 ==============================
@@ -10,7 +10,7 @@ STAND: 2026-02-06
 
 BESCHREIBUNG
 ------------
-Das _vendor/-Verzeichnis enthaelt Kopien von externem Code, der in
+Das _vendor/-Verzeichnis enthält Kopien von externem Code, der in
 BACH-Services integriert wird. Jeder Vendor hat ein eigenes Verzeichnis
 mit PROVENANCE.md (Herkunft, Commit, Lizenz).
 
@@ -18,12 +18,12 @@ SPEICHERORT
 -----------
 system/hub/_services/document/_vendor/
 
-VERFUEGBARE VENDORS
+VERFÜGBARE VENDORS
 -------------------
 
   anthropic_docx/     Word XML Pack/Unpack, Validate, Tracked Changes
                       Quelle: github.com/anthropics/skills (skills/docx)
-                      Nutzen: Template-Debugging, Aenderungsverfolgung
+                      Nutzen: Template-Debugging, Änderungsverfolgung
 
   anthropic_pdf/      PDF-Formular-Extraktion, Ausfuellung, Konvertierung
                       Quelle: github.com/anthropics/skills (skills/pdf)
@@ -43,7 +43,7 @@ VERFUEGBARE VENDORS
 NUTZUNG IM CODE
 ---------------
 
-  # PDF-Verarbeitung (empfohlen: ueber Service-Layer)
+  # PDF-Verarbeitung (empfohlen: über Service-Layer)
   from hub._services.document.pdf_service import PDFProcessor
 
   PDFProcessor.extract_text("datei.pdf")
@@ -64,7 +64,7 @@ VENDOR-KONVENTIONEN
   1. Jeder Vendor bekommt ein eigenes Verzeichnis
   2. PROVENANCE.md ist Pflicht (Quelle, Commit, Datum, Lizenz)
   3. __init__.py als Python-Package
-  4. Keine Aenderungen am Vendor-Code (Verbatim Copy)
+  4. Keine Änderungen am Vendor-Code (Verbatim Copy)
   5. Updates: Neuen Commit kopieren, PROVENANCE.md aktualisieren
 
 VERWANDTE TOOLS
@@ -77,5 +77,5 @@ VERWANDTE TOOLS
 SIEHE AUCH
 ----------
 bach --help cookbooks          Anthropic Cookbooks Referenz
-bach --help tools              Tool-Uebersicht
-_vendor/README.md              Vendor-Uebersichtstabelle
+bach --help tools              Tool-Übersicht
+_vendor/README.md              Vendor-Übersichtstabelle

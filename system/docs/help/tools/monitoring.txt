@@ -1,32 +1,32 @@
 BACH MONITORING TOOLS
 =====================
 
-Tools zur Systemueberwachung, Konsistenzpruefung und Fehlererkennung.
+Tools zur Systemüberwachung, Konsistenzprüfung und Fehlererkennung.
 
 SCHNELLSTART
 ------------
-  bach --maintain registry     # DB/JSON Konsistenz pruefen
-  bach --maintain skills       # Skill-Gesundheit pruefen
+  bach --maintain registry     # DB/JSON Konsistenz prüfen
+  bach --maintain skills       # Skill-Gesundheit prüfen
   bach --status               # Systemstatus anzeigen
 
-UEBERSICHT MONITORING-TOOLS
+ÜBERSICHT MONITORING-TOOLS
 ---------------------------
 tools/maintenance/
-├── registry_watcher.py       # DB-JSON Konsistenzpruefung
+├── registry_watcher.py       # DB-JSON Konsistenzprüfung
 └── skill_health_monitor.py   # Skill-Validierung
 
 REGISTRY WATCHER
 ----------------
-Prueft Konsistenz zwischen SQLite-Datenbank und JSON-Konfigurationen.
+Prüft Konsistenz zwischen SQLite-Datenbank und JSON-Konfigurationen.
 
   python tools/maintenance/registry_watcher.py check
   python tools/maintenance/registry_watcher.py repair
 
-Was wird geprueft:
+Was wird geprüft:
 - Tabellen-Existenz in bach.db
 - JSON-Konfig-Dateien Validitaet
-- Referentielle Integritaet
-- Orphaned Records (Waisen-Eintraege)
+- Referentielle Integrität
+- Orphaned Records (Waisen-Einträge)
 
 SKILL HEALTH MONITOR
 --------------------
@@ -35,19 +35,19 @@ Validiert alle BACH-Skills und Agenten.
   python tools/maintenance/skill_health_monitor.py check
   python tools/maintenance/skill_health_monitor.py report
 
-Was wird geprueft:
-- SKILL.md Vollstaendigkeit
+Was wird geprüft:
+- SKILL.md Vollständigkeit
 - Agent-Manifeste
 - Verzeichnisstruktur
 - Verwaiste Skills
 
 TOKEN MONITORING
 ----------------
-Ueberwacht Token-Verbrauch fuer Kostenkontrolle.
+Überwacht Token-Verbrauch für Kostenkontrolle.
 
 Tabelle: monitor_tokens
 - session_id, tokens_used, timestamp
-- Token-Zonen (1-4) fuer Partner-Delegation
+- Token-Zonen (1-4) für Partner-Delegation
 
   bach --memory status         # Token-Zone anzeigen
   SELECT * FROM monitor_tokens; # Rohdaten
@@ -59,7 +59,7 @@ Tabelle: monitor_processes
 - Wartungs-Daemon-Status
 - Background-Jobs
 
-  bach daemon status           # Wartungs-Daemon pruefen
+  bach daemon status           # Wartungs-Daemon prüfen
   bach --status               # Gesamtstatus
 
 SUCCESS MONITORING
@@ -67,14 +67,14 @@ SUCCESS MONITORING
 Tabelle: monitor_success
 - Erfolgsraten von Tools
 - Fehlerhistorie
-- Lernmuster fuer Verbesserungen
+- Lernmuster für Verbesserungen
 
 AUTOMATISCHE CHECKS BEI --startup
 ---------------------------------
 Diese Checks laufen automatisch bei Session-Start:
 
-1. Directory Scan         # Aenderungen seit letzter Session
-2. Path Healer (dry-run)  # Pfadkorrektur-Vorschlaege
+1. Directory Scan         # Änderungen seit letzter Session
+2. Path Healer (dry-run)  # Pfadkorrektur-Vorschläge
 3. Registry Watcher       # DB/JSON Konsistenz
 4. Skill Health Monitor   # Skills/Agenten Zustand
 
@@ -104,7 +104,7 @@ Monitoring-Daten werden in Logs gespeichert:
   logs/errors/               # Fehler-Logs
 
 Auswertung:
-  bach --logs tail 20          # Letzte 20 Log-Eintraege
+  bach --logs tail 20          # Letzte 20 Log-Einträge
   bach --logs search "error"   # Nach Fehlern suchen
 
 ALARME UND WARNUNGEN
@@ -115,14 +115,14 @@ ALARME UND WARNUNGEN
 
 TIPPS
 -----
-- --maintain Befehle regelmaessig ausfuehren
+- --maintain Befehle regelmäßig ausführen
 - Bei Problemen: bach --maintain heal --execute
 - Token-Verbrauch im Auge behalten (Zone 2-3)
-- Fehler-Logs bei Problemen pruefen
+- Fehler-Logs bei Problemen prüfen
 
 SIEHE AUCH
 ----------
-  bach --help maintain         # Wartungs-Uebersicht
+  bach --help maintain         # Wartungs-Übersicht
   bach --help startup          # Startup-Checks
   bach --help logs             # Log-System
   tools/TOOLS_CONCEPT.md       # Tool-Konzept

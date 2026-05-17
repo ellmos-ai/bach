@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -8,7 +8,7 @@ CALENDAR - Termin- und Kalenderverwaltung
 BESCHREIBUNG
 ------------
 Termin- und Kalenderverwaltung mit Datenbankunterstützung. Zeigt kommende Termine
-aus assistant_calendar kombiniert mit faelligen Haushaltsroutinen (household_routines).
+aus assistant_calendar kombiniert mit fälligen Haushaltsroutinen (household_routines).
 Unterstützt Termine mit Ort, Typ, Status und optionalen Beschreibungen.
 
 OPERATIONEN
@@ -16,11 +16,11 @@ OPERATIONEN
   bach calendar today                         Heute anzeigen
   bach calendar week                          Diese Woche (KW)
   bach calendar month                         Dieser Monat
-  bach calendar list [TAGE]                   Naechste N Tage (default 30)
+  bach calendar list [TAGE]                   Nächste N Tage (default 30)
   bach calendar add "TITEL" [OPTIONEN]        Termin anlegen
   bach calendar show <ID>                     Termin-Details
   bach calendar done <ID>                     Termin als erledigt
-  bach calendar delete <ID>                   Termin loeschen
+  bach calendar delete <ID>                   Termin löschen
   bach calendar help                          Diese Hilfe
 
 ADD-OPTIONEN
@@ -45,7 +45,7 @@ BEISPIELE
 
 AUSGABE-FORMAT
 ---------------
-[KALENDER] Zeitbereich - N Eintraege
+[KALENDER] Zeitbereich - N Einträge
 
   --- WD DD.MM. ---
     [ID>3] HH:MM Titel @ Ort [Status]

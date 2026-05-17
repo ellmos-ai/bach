@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -7,7 +7,7 @@ API-PROBER - REST-API Erkennung und Dokumentation
 
 BESCHREIBUNG
 ------------
-Delegiert an das MODULAR_AGENTS/ApiProber-Modul fuer die automatische Erkennung
+Delegiert an das MODULAR_AGENTS/ApiProber-Modul für die automatische Erkennung
 und Dokumentation von REST-APIs. Tastet URLs ab, speichert Endpoints und
 Parameter in einer lokalen Datenbank und exportiert die Ergebnisse.
 
@@ -28,11 +28,11 @@ OPERATIONEN
     Endpoints mit Methoden und Auth-Status, Probe-Run-Statistiken.
 
   export <service> [--format md|json]
-    Exportiert API-Dokumentation fuer einen Service als Markdown oder JSON.
+    Exportiert API-Dokumentation für einen Service als Markdown oder JSON.
     Default-Format ist Markdown.
 
   config [--show]
-    Zeigt die aktuelle ApiProber-Konfiguration an, einschliesslich Timeout-
+    Zeigt die aktuelle ApiProber-Konfiguration an, einschließlich Timeout-
     Einstellungen (B36-Fix: connect_timeout_s, read_timeout_s).
 
 BEISPIELE
@@ -62,4 +62,4 @@ DATEIEN
 SIEHE AUCH
 ----------
   help orchestrator  -- ProbeOrchestrator (interne API-Erkennungs-Engine)
-  help handler       -- Handler-Systemuebersicht
+  help handler       -- Handler-Systemübersicht

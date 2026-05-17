@@ -7,22 +7,22 @@ BESCHREIBUNG
 ----------------------------------------
 BACH Registry Watcher v1.0.0
 
-Automatische Ueberwachung und Konsistenzpruefung aller System-Registries.
+Automatische Überwachung und Konsistenzprüfung aller System-Registries.
 Portiert von RecludOS, integriert mit BACH Database-System.
 
 Features:
-- Existenz-Pruefung: Registrierte Eintraege vs Dateisystem
+- Existenz-Prüfung: Registrierte Einträge vs Dateisystem
 - Syntax-Validierung: JSON-Dateien
-- Cross-Reference: DB-Eintraege vs Dateien
+- Cross-Reference: DB-Einträge vs Dateien
 - Health-Reports generieren
 - Benachrichtigung bei Problemen
 
 Usage:
-  python registry_watcher.py check              # Alle Registries pruefen
+  python registry_watcher.py check              # Alle Registries prüfen
   python registry_watcher.py report             # Health-Report erstellen
-  python registry_watcher.py tools              # Nur Tools pruefen
-  python registry_watcher.py skills             # Nur Skills pruefen
-  python registry_watcher.py agents             # Nur Agents pruefen
+  python registry_watcher.py tools              # Nur Tools prüfen
+  python registry_watcher.py skills             # Nur Skills prüfen
+  python registry_watcher.py agents             # Nur Agents prüfen
   python registry_watcher.py --fix              # Probleme automatisch beheben (sicher)
 
 VERWENDUNG

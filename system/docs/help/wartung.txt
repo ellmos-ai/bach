@@ -1,12 +1,12 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-02-08 (Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 BACH WARTUNG (System-Jobs)
 ==========================
 
-Der Wartungs-Handler fuehrt automatisch geplante System-Jobs aus - z.B. Backups,
+Der Wartungs-Handler führt automatisch geplante System-Jobs aus - z.B. Backups,
 Token-Checks, Datenbereinigung oder eigene Scripts.
 
 HANDLER:  system/hub/scheduler.py (ehemals: daemon.py)
@@ -24,27 +24,27 @@ BEFEHLE
   bach daemon stop           Laufenden Daemon stoppen
   bach daemon status         Status und letzte Laeufe anzeigen
   bach daemon jobs           Alle definierten Jobs auflisten
-  bach daemon run <ID>       Job manuell ausfuehren
+  bach daemon run <ID>       Job manuell ausführen
   bach daemon logs [N]       Letzte N Log-Zeilen anzeigen (Standard: 20)
 
 
-SESSION-BEFEHLE (Session-Daemon fuer automatische Claude-Sessions)
+SESSION-BEFEHLE (Session-Daemon für automatische Claude-Sessions)
 ------------------------------------------------------------------
 
   bach daemon session start [--profile NAME]   Session-Daemon starten
   bach daemon session stop                     Session-Daemon stoppen
   bach daemon session status                   Session-Status anzeigen
-  bach daemon session trigger [--profile NAME] Session manuell ausloesen
-  bach daemon session profiles                 Verfuegbare Profile auflisten
+  bach daemon session trigger [--profile NAME] Session manuell auslösen
+  bach daemon session profiles                 Verfügbare Profile auflisten
 
 
 JOB-TYPEN
 ---------
 
   interval    Periodisch (z.B. "30m", "1h", "24h")
-  cron        Cron-Ausdruck (z.B. "0 3 * * *" = taeglich 03:00)
-  manual      Nur manuell ausfuehrbar
-  chain       Chain-Ausfuehrung (job.command = chain_id)
+  cron        Cron-Ausdruck (z.B. "0 3 * * *" = täglich 03:00)
+  manual      Nur manuell ausführbar
+  chain       Chain-Ausführung (job.command = chain_id)
   event       Event-basiert (TODO)
 
 
@@ -53,8 +53,8 @@ BEISPIEL-JOBS
 
   Name           Typ        Schedule    Beschreibung
   ----------------------------------------------------------------
-  backup-daily   interval   24h         Taegliches Backup erstellen
-  token-check    interval   30m         Token-Verbrauch pruefen
+  backup-daily   interval   24h         Tägliches Backup erstellen
+  token-check    interval   30m         Token-Verbrauch prüfen
   cleanup        cron       0 4 * * *   Alte Logs bereinigen
 
 
@@ -77,8 +77,8 @@ Via API:
 LOG-DATEIEN
 -----------
 
-  data/logs/daemon.log                     Wartungs-Aktivitaeten
-  data/logs/session_daemon.log             Session-Aktivitaeten
+  data/logs/daemon.log                     Wartungs-Aktivitäten
+  data/logs/session_daemon.log             Session-Aktivitäten
   data/daemon.pid                          PID-Datei (wenn laufend)
   hub/_services/daemon/daemon.pid          Session-Daemon PID
 
@@ -87,16 +87,16 @@ TECHNISCHE DETAILS
 ------------------
 
 - Jobs werden aus bach.db geladen (Tabelle: scheduler_jobs)
-- Ausfuehrungen in scheduler_runs protokolliert
+- Ausführungen in scheduler_runs protokolliert
 - Timeout pro Job konfigurierbar (Standard: 300s)
 - Bei Fehler optional Retry (max_retries konfigurierbar)
 - Alle 5 Minuten werden Jobs neu geladen
 - EIGENER DAEMON-PROZESS (Python Interval-Loop)
-- OneDrive wird waehrend Daemon-Betrieb pausiert (Windows)
+- OneDrive wird während Daemon-Betrieb pausiert (Windows)
 - Verhindert Sync-Konflikte bei Datei-Operationen
 - Integration mit Recurring Tasks (Check alle 5 Min)
 
-Optional: pip install croniter (fuer erweiterte Cron-Ausdruecke)
+Optional: pip install croniter (für erweiterte Cron-Ausdrücke)
 
 
 ABGRENZUNG: DREI HANDLER-SYSTEME
@@ -105,7 +105,7 @@ ABGRENZUNG: DREI HANDLER-SYSTEME
   ┌─────────────────────────────────────────────────────────────────┐
   │  WARTUNG                                                        │
   ├─────────────────────────────────────────────────────────────────┤
-  │  Fuehrt Shell/Python-Befehle AUS                                │
+  │  Führt Shell/Python-Befehle AUS                                │
   │  Zeitgesteuert (cron/interval)                                  │
   │  Ohne Claude-Beteiligung                                        │
   │  Handler:  system/hub/daemon.py                                  │
@@ -119,7 +119,7 @@ ABGRENZUNG: DREI HANDLER-SYSTEME
   ├─────────────────────────────────────────────────────────────────┤
   │  Erstellt TASKS als Erinnerungen                                │
   │  Intervall-basiert (Tage)                                       │
-  │  Fuer Claude/User zur Bearbeitung                               │
+  │  Für Claude/User zur Bearbeitung                               │
   │  Handler:  system/hub/recurring.py                              │
   │  Service:  system/hub/_services/recurring/                      │
   │  GUI:      KEINE (nur CLI + in /daemon integriert)              │
@@ -138,8 +138,8 @@ ABGRENZUNG: DREI HANDLER-SYSTEME
   │  Daemon:   JA (session_daemon.py)                               │
   └─────────────────────────────────────────────────────────────────┘
 
-  Beispiel Wartung:          "bach backup create" taeglich um 03:00
-  Beispiel Recurring:        "Self-Check faellig" -> Task fuer Claude
+  Beispiel Wartung:          "bach backup create" täglich um 03:00
+  Beispiel Recurring:        "Self-Check fällig" -> Task für Claude
   Beispiel Prompt-Generator: Prompt alle 30 Min an ATI Agent senden
 
 

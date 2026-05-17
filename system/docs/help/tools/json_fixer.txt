@@ -17,7 +17,7 @@ Repariert kaputte JSON-Dateien:
 Usage:
     python json_fixer.py <datei>           # Einzelne Datei
     python json_fixer.py <ordner>          # Alle JSON im Ordner
-    python json_fixer.py <path> --dry-run  # Nur pruefen
+    python json_fixer.py <path> --dry-run  # Nur prüfen
     python json_fixer.py <path> --backup   # Mit Backup
 
 Autor: BACH v1.1

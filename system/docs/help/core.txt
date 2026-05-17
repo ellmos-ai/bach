@@ -1,14 +1,14 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-02-08 (Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 BACH KERN-KONZEPT
 =================
 
 "Der Agent ist die Rolle und die zielorientierte Absicht darin.
-Workflows sind das Gehirn zur Ausfuehrung.
-Skills, Tools und Services sind die Werkzeuge zur Ausfuehrung.
+Workflows sind das Gehirn zur Ausführung.
+Skills, Tools und Services sind die Werkzeuge zur Ausführung.
 Zusammen sind sie der Kern."
 
 DIE VIER SAEULEN
@@ -23,7 +23,7 @@ DIE VIER SAEULEN
 │  │   AGENT     │    │  WORKFLOW   │    │  SKILLS/TOOLS/SVC   │  │
 │  │             │    │             │    │                     │  │
 │  │  Rolle +    │───>│  Gehirn     │───>│  Werkzeuge          │  │
-│  │  Absicht    │    │  Steuerung  │    │  Ausfuehrung        │  │
+│  │  Absicht    │    │  Steuerung  │    │  Ausführung        │  │
 │  │             │    │             │    │                     │  │
 │  │  WER + WARUM│    │  WIE        │    │  WOMIT              │  │
 │  └─────────────┘    └─────────────┘    └─────────────────────┘  │
@@ -40,27 +40,27 @@ AGENT = Rolle + zielorientierte Absicht
 
 Beispiele:
   - Entwickler-Agent: Schreibt Code, debuggt, testet
-  - Persoenlicher Assistent: Hilft User bei Alltag
+  - Persönlicher Assistent: Hilft User bei Alltag
   - Recherche-Experte: Sucht und bewertet Informationen
 
 Speicherort: agents/*.txt
 
-WORKFLOW = Gehirn zur Ausfuehrung
+WORKFLOW = Gehirn zur Ausführung
 ---------------------------------
 
-- WIE wird die Aufgabe ausgefuehrt?
+- WIE wird die Aufgabe ausgeführt?
 - Steuert den Ablauf, die Reihenfolge, die Entscheidungen
-- Prozedurales Wissen: Schritt-fuer-Schritt Anleitung
+- Prozedurales Wissen: Schritt-für-Schritt Anleitung
 
 Beispiele:
   - Bugfix-Workflow: Reproduzieren -> Analysieren -> Fixen -> Testen
   - Review-Workflow: Lesen -> Bewerten -> Kommentieren -> Entscheiden
-  - Startup-Workflow: Pruefen -> Laden -> Initialisieren -> Bereit
+  - Startup-Workflow: Prüfen -> Laden -> Initialisieren -> Bereit
 
 Speicherort: skills/workflows/*.md
 
 Workflows sind ZENTRAL weil:
-  1. Sie die eigentliche Steuerung uebernehmen
+  1. Sie die eigentliche Steuerung übernehmen
   2. Sie Skills, Tools und Services orchestrieren
   3. Sie testbar sind (Usecase-Tests)
   4. Sie wiederverwendbar sind
@@ -68,8 +68,8 @@ Workflows sind ZENTRAL weil:
 SKILLS / TOOLS / SERVICES = Werkzeuge
 -------------------------------------
 
-- WOMIT wird die Aufgabe ausgefuehrt?
-- Konkrete Faehigkeiten und Funktionen
+- WOMIT wird die Aufgabe ausgeführt?
+- Konkrete Fähigkeiten und Funktionen
 - Werden von Workflows aufgerufen
 
 | Typ     | Beschreibung              | Speicherort           |
@@ -111,36 +111,36 @@ BEWUSSTSEIN DES LLM
 
 Das operierende LLM muss wissen:
 1. WELCHE Agents existieren (agents/)
-2. WELCHE Workflows verfuegbar sind (skills/workflows/)
+2. WELCHE Workflows verfügbar sind (skills/workflows/)
 3. WELCHE Skills/Tools/Services es gibt (skills/, tools/)
 
 Dies wird erreicht durch:
 - Handler-Registry (system/core/registry.py) - Auto-Discovery von Handlern
 - Tool-Auto-Discovery (tools/tool_auto_discovery.py) - Scannt Tools in DB
-- DB-Eintraege (tools-Tabelle, hierarchy_items)
-- Startup-Uebersicht zeigt Session-Kontext
+- DB-Einträge (tools-Tabelle, hierarchy_items)
+- Startup-Übersicht zeigt Session-Kontext
 
 Siehe: --help startup, --help tools
 
 QUALITAETSSICHERUNG (WORKFLOW-TUEV)
 -----------------------------------
 
-Workflows sind so wichtig, dass sie geprueft werden muessen:
+Workflows sind so wichtig, dass sie geprüft werden muessen:
 
 1. USECASE-TESTS
    - Sammlung von Testfaellen in DB
-   - Automatische Durchfuehrung
+   - Automatische Durchführung
    - Bewertung: sehr gut / gut / befriedigend / ausreichend / durchgefallen
 
 2. TUEV-ABLAUF
    - Workflows haben Ablaufdatum
    - Bei Ablauf: Wartungs-Task automatisch erstellen
-   - Nach Pruefung: Neues Ablaufdatum setzen
+   - Nach Prüfung: Neues Ablaufdatum setzen
 
-3. CHECKLISTE fuer neue Komponenten
+3. CHECKLISTE für neue Komponenten
    [ ] Funktioniert ohne User-Daten?
    [ ] CLI-Befehl vorhanden?
-   [ ] Input aus Dateien/Ordnern moeglich?
+   [ ] Input aus Dateien/Ordnern möglich?
    [ ] Output in strukturierte DB?
    [ ] Scan/Import wiederholbar (idempotent)?
    [ ] Keine Hardcoded-Pfade?

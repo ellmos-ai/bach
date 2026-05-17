@@ -51,7 +51,7 @@ AUSGABE-BEISPIEL:
     [OK] core.app.App
     [FAIL] gui.main.MainWindow -> ImportError: No module named 'missing'
   
-  [2/5] Zirkulaere Imports pruefen...
+  [2/5] Zirkulaere Imports prüfen...
     [WARN] core.utils -> core.app -> core.utils (Zirkel!)
   
   [3/5] __init__.py Analyse...
@@ -78,7 +78,7 @@ GRUNDBEFEHLE:
   # Datei organisieren
   bach c_import_organizer script.py
 
-  # Nur pruefen ohne Aenderung
+  # Nur prüfen ohne Änderung
   bach c_import_organizer script.py --dry-run
 
   # JSON-Ausgabe
@@ -88,7 +88,7 @@ GRUNDBEFEHLE:
   cat script.py | bach c_import_organizer --stdin
 
 OPTIONEN:
-  --dry-run   Nur anzeigen, nicht aendern
+  --dry-run   Nur anzeigen, nicht ändern
   --json      JSON-Output
   --stdin     Code von stdin lesen
 
@@ -135,18 +135,18 @@ TYPISCHE WORKFLOWS
    
    Ausgabe zeigt: A -> B -> A (Zirkel!)
    
-   Loesung: Gemeinsame Abhaengigkeiten in drittes Modul auslagern.
+   Lösung: Gemeinsame Abhängigkeiten in drittes Modul auslagern.
 
 3. VOR CODE-REVIEW
    Imports aufraumen bevor Code reviewt wird:
    
    bach c_import_organizer script.py
    
-   Oder fuer ganzes Projekt:
+   Oder für ganzes Projekt:
    for f in *.py; do bach c_import_organizer "$f"; done
 
 4. NACH REFACTORING
-   Nach grossem Umbau Imports pruefen:
+   Nach grossem Umbau Imports prüfen:
    
    # Erst diagnostizieren
    bach c_import_diagnose src/
@@ -155,7 +155,7 @@ TYPISCHE WORKFLOWS
    for f in src/*.py; do bach c_import_organizer "$f"; done
 
 5. NEUES PROJEKT EINRICHTEN
-   __init__.py Dateien pruefen:
+   __init__.py Dateien prüfen:
    
    bach c_import_diagnose mein_paket/
    
@@ -173,7 +173,7 @@ Innerhalb jeder Gruppe: alphabetisch sortiert.
 
 CONTEXT-INJEKTOR
 ----------------
-Der ContextInjector erkennt Stichwoerter und empfiehlt diese Tools:
+Der ContextInjector erkennt Stichwörter und empfiehlt diese Tools:
 
   "imports sortieren"  -> bach c_import_organizer <datei>
   "import problem"     -> bach c_import_diagnose <projekt>
@@ -181,7 +181,7 @@ Der ContextInjector erkennt Stichwoerter und empfiehlt diese Tools:
 
 INTEGRATION MIT ANDEREN TOOLS
 =============================
-Kombiniere mit python_cli_editor fuer vollstaendiges Bild:
+Kombiniere mit python_cli_editor für vollständiges Bild:
 
   # Imports anzeigen (gruppiert)
   bach python_cli_editor script.py --imports
@@ -192,5 +192,5 @@ Kombiniere mit python_cli_editor fuer vollstaendiges Bild:
 SIEHE AUCH
 ----------
   bach --help tools/python_editing   Python-Dateien bearbeiten
-  bach --help tools/code_quality     Code-Qualitaet (Encoding etc.)
+  bach --help tools/code_quality     Code-Qualität (Encoding etc.)
   bach python_cli_editor --help      Imports anzeigen mit --imports

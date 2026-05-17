@@ -7,7 +7,7 @@ BESCHREIBUNG
 ----------------------------------------
 c_youtube_extractor.py - Extrahiert YouTube Video-IDs aus URLs
 
-Unterstuetzte Formate:
+Unterstützte Formate:
   - https://www.youtube.com/watch?v=VIDEO_ID
   - https://youtu.be/VIDEO_ID
   - https://www.youtube.com/shorts/VIDEO_ID
@@ -24,7 +24,7 @@ Usage:
     echo "https://youtu.be/dQw4w9WgXcQ" | python c_youtube_extractor.py --stdin
 
 Autor: Claude (adaptiert)
-Abhaengigkeiten: keine (nur stdlib)
+Abhängigkeiten: keine (nur stdlib)
 
 VERWENDUNG
 ----------------------------------------

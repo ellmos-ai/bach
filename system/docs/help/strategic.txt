@@ -1,6 +1,6 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 # Ressourcen: [system/ROADMAP.md]
 
 STRATEGISCHE DOKUMENTE - METAKOGNITION
@@ -8,16 +8,16 @@ STRATEGISCHE DOKUMENTE - METAKOGNITION
 
 STAND: 2026-02-08
 
-UEBERSICHT
+ÜBERSICHT
 ----------
 BACH verwendet drei zentrale Dokumente zur langfristigen Steuerung und Metakognition:
 
   system/ROADMAP.md      Vision, Phasen, langfristige Ziele
-  system/CHANGELOG.md    Aenderungshistorie (Versionen, Datum, Details)
+  system/CHANGELOG.md    Änderungshistorie (Versionen, Datum, Details)
 
-Ergaenzend:
+Ergänzend:
 - Lessons und strategische Erkenntnisse landen in memory/MEMORY.md.
-- Bugs werden zusaetzlich ueber das Task-System (Kategorie: maintenance/bug) getrackt.
+- Bugs werden zusätzlich über das Task-System (Kategorie: maintenance/bug) getrackt.
 
 EINORDNUNG IM MEMORY-SYSTEM
 ---------------------------
@@ -33,7 +33,7 @@ EINORDNUNG IM MEMORY-SYSTEM
   |                          v                                    |
   |  +-----------------------------------------------------------+|
   |  |                    TASK-SYSTEM (Planung)                  ||
-  |  |  Konkrete, ausfuehrbare Aufgaben                           ||
+  |  |  Konkrete, ausführbare Aufgaben                           ||
   |  |  bach task list / add / done                              ||
   |  +-----------------------------------------------------------+|
   |                          |                                    |
@@ -73,7 +73,7 @@ Dieser Prozess überführt operative Daten in strategische Dokumente:
   Sessions ---[bach consolidate compress]---> Context (DB)
   Tasks (done) ---[Manuelle Pflege]---> memory/MEMORY.md
 
-BEFEHLE ZUR UNTERSTUETZUNG:
+BEFEHLE ZUR UNTERSTÜTZUNG:
   bach consolidate status                    Zeigt Konsolidierungs-Status
   bach consolidate compress --batch          Gruppiert Sessions (einfach)
   bach consolidate compress --run            Komprimiert mit Regelwerk
@@ -86,5 +86,5 @@ SIEHE AUCH
   docs/help/tasks.txt             Task-System
   docs/help/memory.txt            Memory-System
   system/ROADMAP.md          Aktuelle Phase & Meilensteine
-  system/CHANGELOG.md        Aenderungshistorie
+  system/CHANGELOG.md        Änderungshistorie
   memory/MEMORY.md           Kritische Erkenntnisse & Lessons

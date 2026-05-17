@@ -12,14 +12,14 @@ ZWEI BACKENDS
   --cli         Gemini CLI (headless, vollautomatisch mit --yolo)
   --gui         Antigravity (Prompt wird in Zwischenablage kopiert)
 
-WICHTIG: Antigravity hat keinen Headless-Modus! Fuer Automatisierung
+WICHTIG: Antigravity hat keinen Headless-Modus! Für Automatisierung
          MUSS die Gemini CLI verwendet werden (--cli).
 
 VERWENDUNG
 ----------------------------------------
 python tools/gemini_start.py [BACKEND] [OPTIONS]
 
-  BACKEND (erforderlich fuer nicht-Auto):
+  BACKEND (erforderlich für nicht-Auto):
     --cli              Gemini CLI (vollautomatisch)
     --gui              Antigravity (Prompt in Clipboard)
 
@@ -33,7 +33,7 @@ python tools/gemini_start.py [BACKEND] [OPTIONS]
   OPTIONEN:
     --tasks N          Anzahl Tasks im Auto-Modus (default: 2)
     --prompt "TEXT"    Custom Prompt direkt angeben
-    --list             Verfuegbare Prompt-Vorlagen auflisten
+    --list             Verfügbare Prompt-Vorlagen auflisten
     --dry-run          Nur Befehl anzeigen, nicht starten
 
 CLI-BEISPIELE (vollautomatisch)
@@ -53,19 +53,19 @@ GUI-BEISPIELE (Prompt in Zwischenablage)
 GUI-WORKFLOW:
   1. Script startet Antigravity
   2. Prompt wird in Zwischenablage kopiert
-  3. User klickt in Chat, drueckt Ctrl+V, Enter
+  3. User klickt in Chat, drückt Ctrl+V, Enter
 
 PROMPT-VORLAGEN (partners/gemini/prompts/)
 ----------------------------------------
   auto.txt      Auto-Modus: Tasks sofort abarbeiten (nur CLI)
   bulk.txt      Bulk-Modus: ALLE Tasks ohne Limit
   default.txt   Interaktiv: Wartet auf Anweisungen
-  analyse.txt   Fuehrt alle Analyse-Scripts aus
-  research.txt  Recherche-Modus fuer Themenanalyse
+  analyse.txt   Führt alle Analyse-Scripts aus
+  research.txt  Recherche-Modus für Themenanalyse
 
 INDIVIDUELLER PROMPT
 ----------------------------------------
-Bearbeite partners/gemini/startprompt_gemini.txt fuer eigene Anweisungen.
+Bearbeite partners/gemini/startprompt_gemini.txt für eigene Anweisungen.
 Wird mit --individual geladen.
 
 BATCH-STARTER

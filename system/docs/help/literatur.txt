@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -9,23 +9,23 @@ HANDLER-NAME
   literatur
 
 BESCHREIBUNG
-Vollstaendige Literaturverwaltung mit Quellen-, Zitat- und Zusammenfassungs-
-verwaltung. Unterstuetzt 5 Zitationsstile (APA, MLA, Chicago, DIN, Harvard),
+Vollständige Literaturverwaltung mit Quellen-, Zitat- und Zusammenfassungs-
+verwaltung. Unterstützt 5 Zitationsstile (APA, MLA, Chicago, DIN, Harvard),
 BibTeX-Export und durchsuchbare Datenbank. Portiert aus LitZentrum.
 Speichert alles in bach.db (Tabellen: lit_sources, lit_quotes, lit_summaries).
 
 OPERATIONEN
-  add                   Quelle hinzufuegen
+  add                   Quelle hinzufügen
   list                  Quellen auflisten
   search                Quellen durchsuchen
   show                  Quelldetails anzeigen
   edit                  Quelle bearbeiten
-  delete                Quelle loeschen
-  quote                 Zitat hinzufuegen
+  delete                Quelle löschen
+  quote                 Zitat hinzufügen
   quotes                Zitate einer Quelle anzeigen
   cite                  Zitation formatieren (APA/MLA/Chicago/DIN/Harvard)
   export                BibTeX-Export
-  summary               Zusammenfassung hinzufuegen/anzeigen
+  summary               Zusammenfassung hinzufügen/anzeigen
   stats                 Datenbankstatistik anzeigen
   help                  Hilfe anzeigen
 
@@ -41,13 +41,13 @@ QUELLEN HINZUFUEGEN
 
 QUELLEN VERWALTEN
   bach literatur list                    (letzte 20)
-  bach literatur list --limit 50         (limit aendern)
+  bach literatur list --limit 50         (limit ändern)
   bach literatur list --type article     (nur artikel)
   bach literatur list --status read      (nur gelesene)
   bach literatur search "LSTM"           (durchsuchen)
   bach literatur show 5                  (details)
   bach literatur edit 5 --year 2024 --status read
-  bach literatur delete 3                (loescht auch quotes/summaries)
+  bach literatur delete 3                (löscht auch quotes/summaries)
 
 ZITATE UND ZITATION
   bach literatur quote 5 "This is a great insight" --page 42
@@ -66,7 +66,7 @@ EXPORT
   bach literatur export                  (letzte 50 als bibtex)
   bach literatur export --all            (alles exportieren)
   bach literatur export --ids 1,2,3 --out refs.bib
-  bach literatur stats                   (uebersicht)
+  bach literatur stats                   (übersicht)
 
 FELDOPTIONEN (bei add/edit)
   --author "Name1; Name2; Name3"         (mehrere autoren mit ;)

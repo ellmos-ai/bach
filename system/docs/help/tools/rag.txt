@@ -1,7 +1,7 @@
 BACH Tool: RAG (Retrieval-Augmented Generation)
 ================================================
 
-Vektorbasierte Dokumentensuche fuer BACH.
+Vektorbasierte Dokumentensuche für BACH.
 
 VERWENDUNG
 ----------
@@ -13,14 +13,14 @@ INGEST
 ------
 
 Liest Dokumente ein und erstellt Vektoren:
-  - Unterstuetzte Formate: .txt, .md, .pdf, .py
+  - Unterstützte Formate: .txt, .md, .pdf, .py
   - Speicherung in document_vectors Tabelle
 
 SEARCH
 ------
 
-Semantische Aehnlichkeitssuche ueber indexierte Dokumente.
-Gibt relevante Textabschnitte mit Score zurueck.
+Semantische Ähnlichkeitssuche über indexierte Dokumente.
+Gibt relevante Textabschnitte mit Score zurück.
 
 MODUL
 -----

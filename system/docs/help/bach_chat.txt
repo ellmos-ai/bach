@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.1
 # Zuletzt validiert: 2026-05-15 (ThreadingHTTPServer, LaunchAgent-Korrektur)
 
@@ -14,7 +14,7 @@ HTTP Control API und einem cross-platform System Tray.
 Architektur (3 Schichten):
   - model_backend.py:   Pluggbare Backend-Abstraktion (Ollama, Claude CLI,
                          Codex CLI, Claude API, OpenAI API)
-  - chat_runtime.py:    Backend-unabhaengige Chat-Runtime mit Tool-Use-Loop,
+  - chat_runtime.py:    Backend-unabhängige Chat-Runtime mit Tool-Use-Loop,
                          Kontextmanagement, Sicherheitsmodi, Zusammenfassung
   - telegram_chat.py:   Telegram-Bot mit allen Befehlen + Control API
   - chat_tray.py:       Cross-platform System Tray (macOS/Windows/Linux)
@@ -23,8 +23,8 @@ Backends:
   - ollama:     Lokaler Ollama-Server mit nativem Tool-Use
   - claude:     Claude Code CLI (--continue Session, eigene Tools)
   - codex:      Codex CLI (GPT-Modelle, eigene Tools)
-  - claude-api: Anthropic API (benoetigt ANTHROPIC_API_KEY)
-  - openai:     OpenAI API (benoetigt OPENAI_API_KEY)
+  - claude-api: Anthropic API (benötigt ANTHROPIC_API_KEY)
+  - openai:     OpenAI API (benötigt OPENAI_API_KEY)
 
 Sicherheitsmodi:
   - safe:  Nur lesende Tools (ls, cat, grep, git, docker, etc.)
@@ -35,18 +35,18 @@ Sicherheitsmodi:
 TELEGRAM BEFEHLE
 -----------------
   /start                    Willkommensnachricht
-  /clear                    Konversation zuruecksetzen
+  /clear                    Konversation zurücksetzen
   /backend [name] [model]   Backend wechseln (ollama|claude|codex|claude-api|openai)
   /model <name>             Modell wechseln
   /mode [safe|full]         Sicherheitsmodus
-  /think                    Denkmodus AN (gruendlich)
+  /think                    Denkmodus AN (gründlich)
   /nothink                  Denkmodus AUS (schnell)
   /settings                 Alle Einstellungen anzeigen
   /status                   System-Status
   /remember <text>          BACH Memory: Merken
   /recall <suche>           BACH Memory: Suchen
   /facts                    BACH Memory: Fakten
-  /bach <cmd>               BACH-Befehl ausfuehren
+  /bach <cmd>               BACH-Befehl ausführen
   /task <text>              Task anlegen
   /tasks                    Offene Tasks
   /maxrounds [N]            Max Tool-Runden setzen (0=unbegrenzt)
@@ -58,7 +58,7 @@ CONTROL API (Port 8081)
 -----------------------
   GET  /                    Web-Dashboard (HTML)
   GET  /api/status          Aktueller Status (inkl. Tool-Aktivitaet)
-  GET  /api/backends        Verfuegbare Backends mit Status
+  GET  /api/backends        Verfügbare Backends mit Status
   GET  /api/models          Modelle des aktuellen Backends
   POST /api/backend         Backend wechseln: {"name": "claude", "model": "opus"}
   POST /api/mode            Modus setzen: {"mode": "safe"}
@@ -74,13 +74,13 @@ SYSTEM TRAY
 
   Funktionen:
     - Status-Icon: Gruen (safe), Orange (full), Rot (nicht verbunden)
-    - Backend-Submenu: Alle Backends mit Verfuegbarkeit
+    - Backend-Submenu: Alle Backends mit Verfügbarkeit
     - Modell-Submenu: Modelle des aktuellen Backends
     - Modus-Toggle: Safe/Full
     - Think-Toggle: AN/AUS
     - Max Tool-Runden: Presets (5/10/20/Unbegrenzt)
     - Tool-Aktivitaet: Aktuelles Tool + Runde im Tray-Titel
-    - Web-Dashboard oeffnen
+    - Web-Dashboard öffnen
     - Cross-platform: macOS, Windows, Linux (via pystray)
 
   Remote-Tray (von anderem System):
@@ -125,13 +125,13 @@ KONFIGURATION
   Umgebungsvariablen:
     TELEGRAM_BOT_TOKEN       Bot-Token (Alternative zu Datei)
     TELEGRAM_OWNER_ID        Chat-ID des Owners
-    OLLAMA_MODEL             Standard-Modell ueberschreiben
-    OLLAMA_URL               Ollama-URL ueberschreiben
+    OLLAMA_MODEL             Standard-Modell überschreiben
+    OLLAMA_URL               Ollama-URL überschreiben
     BACH_CONTROL_PORT        Control API Port (default: 8081)
-    BACH_HOST                Default-Host fuer Tray/GUI (z.B. macstudvonlukas)
-    BACH_NO_BROWSER          =1: Browser nicht automatisch oeffnen (Remote-GUI)
-    ANTHROPIC_API_KEY        Fuer claude-api Backend
-    OPENAI_API_KEY           Fuer openai Backend
+    BACH_HOST                Default-Host für Tray/GUI (z.B. macstudvonlukas)
+    BACH_NO_BROWSER          =1: Browser nicht automatisch öffnen (Remote-GUI)
+    ANTHROPIC_API_KEY        Für claude-api Backend
+    OPENAI_API_KEY           Für openai Backend
 
 
 HINWEISE
@@ -139,7 +139,7 @@ HINWEISE
   Threading: Die Control API nutzt ThreadingHTTPServer (ab v1.1.1).
   ChatRuntime hat keine Locks um shared State (sessions, current_tool,
   tool_round, last_tools). Bei Single-User-Betrieb unkritisch, aber bei
-  gleichzeitigen API-Anfragen waehrend laufender Tool-Ausfuehrung kann
+  gleichzeitigen API-Anfragen während laufender Tool-Ausführung kann
   es zu Race Conditions kommen. Workaround: Nur einen Chat gleichzeitig.
 
 
@@ -150,7 +150,7 @@ MIGRATION VON CLAUDE BRIDGE
   - bridge_tray.py   -> chat_tray.py (System Tray)
   - config.json      -> ~/.config/bach/telegram_chat.json
 
-  Vorteile gegenueber Claude Bridge:
+  Vorteile gegenüber Claude Bridge:
   - 5 Backends statt nur Claude CLI
   - BACH-Integration (Memory, Tasks, Injektoren)
   - Control API + Web-Dashboard

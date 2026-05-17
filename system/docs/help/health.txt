@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -6,26 +6,26 @@ HANDLER-NAME
 ============
 
 health - HealthCheckHandler
-Systemgesundheitspruefungen und Netzwerk-Diagnose
+Systemgesundheitsprüfungen und Netzwerk-Diagnose
 
 
 BESCHREIBUNG
 ============
 
-Fuehrt Diagnose-Checks des Systems aus: Disk-Space, Netzwerk-Erreichbarkeit,
-DNS-Aufloesung, Datenbank-Groesse und NAS-Kapazitaet. Schwellwerte: Disk-Warnung
+Führt Diagnose-Checks des Systems aus: Disk-Space, Netzwerk-Erreichbarkeit,
+DNS-Auflösung, Datenbank-Größe und NAS-Kapazität. Schwellwerte: Disk-Warnung
 <100 GB frei, NAS-Warnung >80% belegt, DB-Warnung >500 MB.
 
 
 OPERATIONEN
 ===========
 
-status       Alle Checks ausfuehren und Bericht anzeigen
-disk         Disk-Space des SystemDrive pruefen + alle verfuegbaren Laufwerke
+status       Alle Checks ausführen und Bericht anzeigen
+disk         Disk-Space des SystemDrive prüfen + alle verfügbaren Laufwerke
 ping <host>  Host-Erreichbarkeit testen (Default: fritz.box)
-dns          DNS-Aufloesung auf 3 Test-Hosts pruefen (google.com, anthropic.com, github.com)
+dns          DNS-Auflösung auf 3 Test-Hosts prüfen (google.com, anthropic.com, github.com)
 network      Komplette Netzwerk-Checks: FritzBox, Google DNS, Cloudflare + DNS
-nas          NAS-Kapazitaet und Belegung pruefen (fritz.nas / FRITZ.NAS / NAS / /mnt/nas)
+nas          NAS-Kapazität und Belegung prüfen (fritz.nas / FRITZ.NAS / NAS / /mnt/nas)
 all          Alle Checks kombiniert (status und all sind identisch)
 
 
@@ -35,7 +35,7 @@ BEISPIELE
 # Schneller Status-Check
 bach health status
 
-# NAS-Kapazitaet pruefen
+# NAS-Kapazität prüfen
 bach health nas
 
 # Spezifischen Host anpingen (z.B. 8.8.8.8)

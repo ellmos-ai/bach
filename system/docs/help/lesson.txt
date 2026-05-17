@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -6,19 +6,19 @@ HANDLER-NAME
   lesson
 
 BESCHREIBUNG
-  Lessons Learned Management - Dokumentation von Problemen, Loesungen und Best Practices.
+  Lessons Learned Management - Dokumentation von Problemen, Lösungen und Best Practices.
   Speichert Lektionen in der SQLite-Datenbank (data/bach.db) mit Kategorie, Severity und
-  Zeitstempel. Unterstuetzt volle Verwaltung: Hinzufuegen, Bearbeiten, Deaktivieren und Suche.
+  Zeitstempel. Unterstützt volle Verwaltung: Hinzufügen, Bearbeiten, Deaktivieren und Suche.
 
 OPERATIONEN
-  add              Neue Lesson hinzufuegen mit Titel und Loesung
+  add              Neue Lesson hinzufügen mit Titel und Lösung
   edit             Lesson bearbeiten (Titel, Solution, Category, Severity)
   deactivate       Lesson deaktivieren (mit optionalem Grund)
   list             Alle aktiven Lessons anzeigen (optional gefiltert nach Kategorie)
   last             Letzte n Lessons anzeigen (Standard: 5)
-  search           Lessons nach Schluesselwort durchsuchen
-  show             Vollstaendige Details einer Lesson mit ID
-  categories       Verfuegbare Kategorien anzeigen
+  search           Lessons nach Schlüsselwort durchsuchen
+  show             Vollständige Details einer Lesson mit ID
+  categories       Verfügbare Kategorien anzeigen
 
 KATEGORIEN
   bug, workflow, tool, integration, performance, general
@@ -27,7 +27,7 @@ SEVERITY-LEVEL
   low, medium, high, critical
 
 BEISPIELE
-  # Lesson mit Titel und Loesung hinzufuegen
+  # Lesson mit Titel und Lösung hinzufügen
   bach lesson add "DB-Pfad: Immer data/bach.db verwenden"
 
   # Mit Kategorie und Severity
@@ -45,16 +45,16 @@ BEISPIELE
   # Alle Lessons einer Kategorie anzeigen
   bach lesson list bug
 
-  # Nach Schluesselwort suchen
+  # Nach Schlüsselwort suchen
   bach lesson search "database"
 
-  # Vollstaendige Details anzeigen
+  # Vollständige Details anzeigen
   bach lesson show 5
 
   # Lesson deaktivieren
   bach lesson deactivate 5 --reason "Nicht mehr relevant"
 
-  # Verfuegbare Kategorien zeigen
+  # Verfügbare Kategorien zeigen
   bach lesson categories
 
 DATEIEN

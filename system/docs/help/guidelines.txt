@@ -1,6 +1,6 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 GUIDELINES - Dokumentations-Standards
 =====================================
@@ -28,12 +28,12 @@ METADATEN-PFLICHT (NEU 2026-01)
 -------------------------------
 Jede Dokumentationsdatei MUSS folgenden Header haben:
 
-  # Portabilitaet: UNIVERSAL | SYSTEM | USER
+  # Portabilität: UNIVERSAL | SYSTEM | USER
   # Zuletzt validiert: YYYY-MM-DD
-  # Naechste Pruefung: YYYY-MM-DD
+  # Nächste Prüfung: YYYY-MM-DD
   # Quellen: [Optional]
 
-Pruefungs-Intervalle:
+Prüfungs-Intervalle:
   SYSTEM:    +3 Monate  (code-gekoppelt, aendert sich haeufig)
   UNIVERSAL: +6 Monate  (allgemein gueltig, stabil)
   USER:      +12 Monate (nutzer-spezifisch, langlebig)
@@ -71,7 +71,7 @@ wiki/<spezial>.txt   Externes Wissen
 SKILL_<n>.md              Skill-Dokumentation
 KONZEPT_<n>.md            Konzept-Dokument
 <n>_ANALYSE.md            Analyse-Bericht
-<Thema>_Vorschlag.md      Vorschlaege (awaiting approval)
+<Thema>_Vorschlag.md      Vorschläge (awaiting approval)
 
 QUALITAETSKRITERIEN
 -------------------
@@ -84,6 +84,6 @@ docs/help/*.txt Dateien:
 
 SIEHE AUCH
 ----------
-user/_archive/Guidelines_Vorschlag.md    Vollstaendiges Konzept (archiviert)
+user/_archive/Guidelines_Vorschlag.md    Vollständiges Konzept (archiviert)
 bach --help practices                    Architektur-Prinzipien
 bach --help naming                       Naming Conventions

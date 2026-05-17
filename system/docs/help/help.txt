@@ -1,25 +1,25 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 HELP - Das BACH Hilfe-System
 =============================
 
 BESCHREIBUNG
-Das help-System bietet kontextbezogene Dokumentation fuer alle BACH-Komponenten.
+Das help-System bietet kontextbezogene Dokumentation für alle BACH-Komponenten.
 Jedes Thema hat eine eigene .txt Datei im docs/help/-Verzeichnis.
 
 CLI-BEFEHLE
 -----------
-bach --help                 Alle verfuegbaren Themen anzeigen
+bach --help                 Alle verfügbaren Themen anzeigen
 bach --help [thema]         Hilfe zu einem bestimmten Thema
 bach --help tasks           Beispiel: Hilfe zum Task-System
 bach --help steuer          Beispiel: Hilfe zum Steuer-Agenten
 bach --help tools/name      Beispiel: Hilfe aus Unterordner
 bach --help tool_name       Beispiel: Tool-Info aus Datenbank
 
-VERFUEGBARE THEMEN
+VERFÜGBARE THEMEN
 ------------------
 System:         startup, shutdown, architecture, features
 Tasks:          tasks, between-tasks, planning, workflow
@@ -42,7 +42,7 @@ STRUKTUR EINER HELP-DATEI
 NEUE HELP-DATEI ERSTELLEN
 -------------------------
 1. Datei unter docs/help/[thema].txt anlegen
-2. Format von bestehender Datei uebernehmen
+2. Format von bestehender Datei übernehmen
 3. Mindestens: Titel, Beschreibung, CLI-Befehle
 4. Registrierung in bach --help automatisch
 
@@ -58,11 +58,11 @@ BEST PRACTICES
 - Kurz und praegnant halten (unter 100 Zeilen)
 - CLI-Befehle immer zuerst dokumentieren
 - Beispiele sind hilfreicher als Theorie
-- Bei Aenderungen: help-Datei mitaktualisieren
+- Bei Änderungen: help-Datei mitaktualisieren
 
 WIKI & ERWEITERUNGEN
 --------------------
-Das wiki/-Unterverzeichnis enthaelt erweiterte Dokumentation:
+Das wiki/-Unterverzeichnis enthält erweiterte Dokumentation:
 wiki/*.txt
 
 Unterordner-Zugriff:

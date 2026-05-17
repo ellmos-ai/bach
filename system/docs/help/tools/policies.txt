@@ -7,7 +7,7 @@ Pfad: docs/help/tools/policies.txt
 BESCHREIBUNG
 ------------
 Policies sind wiederverwendbare Code-Snippets die BACH-Standards
-durchsetzen. Sie werden in neue Projekte injiziert und sorgen fuer
+durchsetzen. Sie werden in neue Projekte injiziert und sorgen für
 konsistente Handhabung von:
   - Encoding (UTF-8, Windows-Console)
   - JSON (Emoji-safe, Encoding-Fallback)
@@ -21,7 +21,7 @@ SPEICHERORT
     json_safe.py          Sichere JSON-Operationen
     CONCEPT_naming_convention.md   Namenskonvention (Konzept)
 
-VERFUEGBARE POLICIES
+VERFÜGBARE POLICIES
 ====================
 
 1. encoding_header (v1.0)
@@ -44,25 +44,25 @@ TYPISCHER CODE:
 
 2. emoji_safe (v1.0)
 --------------------
-Sichere Emoji-Handhabung fuer Speicherung/Transfer.
+Sichere Emoji-Handhabung für Speicherung/Transfer.
 
 FUNKTIONEN:
-  emoji_to_safe(text)      Emoji -> ASCII-safe (fuer DB/Files)
-  emoji_to_display(text)   ASCII-safe -> Emoji (fuer Anzeige)
+  emoji_to_safe(text)      Emoji -> ASCII-safe (für DB/Files)
+  emoji_to_display(text)   ASCII-safe -> Emoji (für Anzeige)
 
 VERWENDUNG:
   from _policies.emoji_safe import emoji_to_safe
   safe_text = emoji_to_safe("Hello [TOOL]")  # -> "Hello :wrench:"
 
 ABHAENGIGKEIT:
-  Benoetigt: pip install emoji (optional, graceful fallback)
+  Benötigt: pip install emoji (optional, graceful fallback)
 
 3. json_safe (v1.0)
 -------------------
 Sichere JSON-Operationen mit Emoji/Encoding-Handling.
 
 FUNKTIONEN:
-  json_load_safe(filepath)       Laedt mit Encoding-Fallback
+  json_load_safe(filepath)       Lädt mit Encoding-Fallback
   json_save_safe(data, filepath) Speichert mit Emoji-Konvertierung
   json_dumps_safe(data)          Serialisiert ensure_ascii=False
 
@@ -103,7 +103,7 @@ Policies werden vom ATI-Bootstrapper in neue Projekte injiziert:
 
   bach ati bootstrap my-tool --template python-cli
 
-STANDARD-POLICIES fuer Python-CLI:
+STANDARD-POLICIES für Python-CLI:
   - encoding_header (immer)
   - json_safe (wenn JSON verwendet)
   - emoji_safe (wenn Ausgabe an Console)
@@ -112,9 +112,9 @@ Siehe: agents/ati/ATI_PROJECT_BOOTSTRAPPING.md
 
 NAMING CONVENTION (Konzept)
 ===========================
-Geplante Namenskonvention fuer Tool-Dateien:
+Geplante Namenskonvention für Tool-Dateien:
 
-  c_  -> CLI-optimiert fuer AI (c_encoding_fixer.py)
+  c_  -> CLI-optimiert für AI (c_encoding_fixer.py)
   b_  -> BACH-Kern (b_backup.py)
   a_  -> Agent-Runner (a_entwickler.py)
   t_  -> Test-Tools (t_runner.py)
@@ -139,10 +139,10 @@ TYPISCHE ANWENDUNGSFAELLE
    -> encoding_header automatisch injizieren
 
 2. JSON-KONFIGURATION
-   -> json_safe fuer sichere Speicherung
+   -> json_safe für sichere Speicherung
 
 3. CONSOLE-AUSGABE MIT EMOJIS
-   -> emoji_safe fuer Windows-Kompatibilitaet
+   -> emoji_safe für Windows-Kompatibilität
 
 4. BESTEHENDEN CODE STANDARDISIEREN
    -> c_standard_fixer nutzt Policies intern
@@ -151,4 +151,4 @@ SIEHE AUCH
 ----------
   bach --help tools/code_quality   Encoding/JSON-Fixer
   bach --help ati                  ATI Agent und Bootstrapping
-  bach --help tools                Tool-Uebersicht
+  bach --help tools                Tool-Übersicht

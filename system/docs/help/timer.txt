@@ -1,12 +1,12 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 TIMER - Stoppuhr
 ================
 
-Misst verstrichene Zeit. Mehrere Timer gleichzeitig moeglich.
+Misst verstrichene Zeit. Mehrere Timer gleichzeitig möglich.
 
 CLI-BEFEHLE
 -----------
@@ -16,7 +16,7 @@ CLI-BEFEHLE
   bach timer stop               Letzten/einzigen Timer stoppen
   bach timer stop "Recherche"   Benannten Timer stoppen
   bach timer list               Alle aktiven Timer anzeigen
-  bach timer clear              Alle Timer loeschen
+  bach timer clear              Alle Timer löschen
 
 AUSGABE-FORMAT
 --------------
@@ -45,11 +45,11 @@ BEISPIELE
   bach timer start "Session"
   -> Timer 'Session' gestartet
 
-  # Zusaetzlichen Timer fuer Teilaufgabe
+  # Zusätzlichen Timer für Teilaufgabe
   bach timer start "Bugfix"
   -> Timer 'Bugfix' gestartet
 
-  # Status pruefen
+  # Status prüfen
   bach timer list
   -> Session: 45:12
   -> Bugfix:  05:23

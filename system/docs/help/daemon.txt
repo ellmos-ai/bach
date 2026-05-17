@@ -1,23 +1,23 @@
-# Portabilitaet: SYSTEM
+# Portabilität: SYSTEM
 # Zuletzt validiert: 2026-05-17
 # Nächste Prüfung: 2026-11-15
 
 DAEMON - Hintergrund-Jobs und Scheduler
 =======================================
-HINWEIS: "bach daemon" ist ein Alias fuer "bach scheduler".
+HINWEIS: "bach daemon" ist ein Alias für "bach scheduler".
 Aktuelle Dokumentation: bach --help scheduler
 
 STAND: 2026-02-08 (Alias seit 2026-02-28)
 
 WICHTIGE POLICY
 ---------------
-**ALLE DAEMON-JOBS SIND STANDARDMAESSIG DEAKTIVIERT.**
+**ALLE DAEMON-JOBS SIND STANDARDMÄßIG DEAKTIVIERT.**
 
-Grund: Automatische Prozesse koennen mit aktiven Chat-Sessions
+Grund: Automatische Prozesse können mit aktiven Chat-Sessions
 und dem Prompt Generator kollidieren. Jobs werden nur manuell
-aktiviert wenn benoetigt.
+aktiviert wenn benötigt.
 
-Der Daemon pausiert automatisch OneDrive-Sync waehrend des Betriebs
+Der Daemon pausiert automatisch OneDrive-Sync während des Betriebs
 um Sync-Konflikte zu vermeiden.
 
 Siehe: docs/CONCEPT_daemon_policy.md
@@ -27,20 +27,20 @@ CLI-BEFEHLE
   bach daemon jobs              Alle Jobs anzeigen
   bach daemon status            Daemon-Status
   bach daemon doctor            Scheduler-Preflight und Recovery-Hinweise
-  bach daemon start [--bg]      Scheduler starten (--bg fuer Hintergrund)
+  bach daemon start [--bg]      Scheduler starten (--bg für Hintergrund)
   bach daemon stop              Scheduler stoppen
-  bach daemon run <ID>          Einzelnen Job manuell ausfuehren
-  bach daemon logs [N]          Letzte Log-Eintraege anzeigen (Standard: 20)
+  bach daemon run <ID>          Einzelnen Job manuell ausführen
+  bach daemon logs [N]          Letzte Log-Einträge anzeigen (Standard: 20)
 
 SESSION-SYSTEM [DEPRECATED]
 ---------------------------
   ⚠️  DEPRECATED seit 2026-05-17.
-  Grund: Nutzte pyautogui fuer Tastatur-Simulation (Ctrl+Alt+Space, Paste, Enter).
+  Grund: Nutzte pyautogui für Tastatur-Simulation (Ctrl+Alt+Space, Paste, Enter).
   Erzeugte unkontrollierte Prompt-Injektionen in aktive Sessions.
 
   ERSATZ: Buddha Control API (:8081/api/chat) oder Claude Code /loop.
 
-  Die CLI-Befehle existieren noch fuer Rueckwaertskompatibilitaet:
+  Die CLI-Befehle existieren noch für Rückwaertskompatibilitaet:
   bach daemon session status                   Session-Status anzeigen
   bach daemon session doctor                   Session-Preflight und Recovery-Hinweise
   bach daemon session pause/resume/steer       Operator-Steuerung
@@ -48,14 +48,14 @@ SESSION-SYSTEM [DEPRECATED]
 JOB-TYPEN
 ---------
   interval    Wiederholung nach Zeitspanne (z.B. 24h, 30m)
-  cron        Zeitplan-basiert (z.B. "0 2 * * *" = taeglich 2 Uhr)
-  event       Event-basierter Trigger (extern ausgeloest)
-  manual      Nur manuell ausfuehrbar
-  chain       Verkettete Job-Ausfuehrung (Chain-System)
+  cron        Zeitplan-basiert (z.B. "0 2 * * *" = täglich 2 Uhr)
+  event       Event-basierter Trigger (extern ausgelöst)
+  manual      Nur manuell ausführbar
+  chain       Verkettete Job-Ausführung (Chain-System)
 
-Der Daemon prueft automatisch alle 5 Minuten auf faellige Recurring Tasks.
+Der Daemon prüft automatisch alle 5 Minuten auf fällige Recurring Tasks.
 
-VERFUEGBARE JOBS (alle standardmaessig AUS)
+VERFÜGBARE JOBS (alle standardmäßig AUS)
 -------------------------------------------
 Hinweis: Job-Liste ist dynamisch. Aktuelle Jobs via: bach daemon jobs
 
@@ -66,7 +66,7 @@ Beispiel-Jobs:
   2   backup                    24h         Automatisches Backup
   3   inbox-scan                30m         Inbox-Ordner verarbeiten
   4   consolidate-weight        24h         Memory-Gewichtungen (Decay)
-  5   consolidate-archive       24h         Alte Eintraege archivieren
+  5   consolidate-archive       24h         Alte Einträge archivieren
   6   consolidate-index         7d          Help/Wiki Index aktualisieren
   7   consolidate-compress      24h         Sessions komprimieren
   8   consolidate-we            7d          Woechentliche Konsolidierung
@@ -77,11 +77,11 @@ Connector-Jobs (v2.0, via bach connector setup-daemon):
   --  connector_poll_and_route  2m          Connectors pollen + Inbox-Routing
   --  connector_dispatch        1m          Ausgehende Queue mit Retry versenden
 
-JOB MANUELL AUSFUEHREN
+JOB MANUELL AUSFÜHREN
 ----------------------
 Empfohlene Methode statt automatischem Scheduler:
 
-  # Job einmalig ausfuehren
+  # Job einmalig ausführen
   bach daemon run 1         # Scanner einmal laufen lassen
   bach daemon run 2         # Backup einmal erstellen
 
@@ -95,8 +95,8 @@ GUI
   http://127.0.0.1:8000/daemon    Daemon-Dashboard
 
   - Jobs aktivieren/deaktivieren
-  - Manuell ausfuehren
-  - Letzte Ausfuehrungen sehen
+  - Manuell ausführen
+  - Letzte Ausführungen sehen
 
 SIEHE AUCH
 ----------

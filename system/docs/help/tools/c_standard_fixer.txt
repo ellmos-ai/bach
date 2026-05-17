@@ -5,13 +5,13 @@ Quelle: tools/c_standard_fixer.py
 
 BESCHREIBUNG
 ----------------------------------------
-c_standard_fixer.py - Toolchain fuer haeufige Code-Probleme
+c_standard_fixer.py - Toolchain für haeufige Code-Probleme
 
-Fuehrt mehrere Fixer nacheinander aus:
+Führt mehrere Fixer nacheinander aus:
   1. BOM-Fix (entfernt/korrigiert Byte Order Mark)
   2. Encoding-Fix (utf-8 sicherstellen)
   3. Umlaut-Fix (kaputte deutsche Umlaute reparieren)
-  4. Indent-Check (Einrueckungsprobleme erkennen)
+  4. Indent-Check (Einrückungsprobleme erkennen)
 
 Usage:
     python c_standard_fixer.py <datei.py>
@@ -21,7 +21,7 @@ Usage:
     python c_standard_fixer.py --list-tools
 
 Konfiguration:
-    Die aktiven Tools koennen in STANDARD_FIXER_CONFIG angepasst werden.
+    Die aktiven Tools können in STANDARD_FIXER_CONFIG angepasst werden.
 
 Autor: Claude
 Version: 1.0

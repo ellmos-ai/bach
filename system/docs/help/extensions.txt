@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -9,7 +9,7 @@ STAND: 2026-03-04
 
 Der Extensions Handler verwaltet externe BACH-Extensions: Desktop-Anwendungen,
 Spezial-Tools und Desktop-GUIs, die nicht Teil des Kern-Systems sind.
-Extensions werden im Verzeichnis extensions/ abgelegt und koennen synchronisiert,
+Extensions werden im Verzeichnis extensions/ abgelegt und können synchronisiert,
 durchsucht und gestartet werden.
 
 STRUKTUR
@@ -45,7 +45,7 @@ BESCHREIBUNG
 Extensions sind modulare, portable Desktop-Anwendungen mit folgenden Merkmalen:
 
 - Jede Extension hat ein eigenes Verzeichnis mit SKILL.md
-- START.bat optional fuer Windows-Start (Fallback: direkte Python-Ausfuehrung)
+- START.bat optional für Windows-Start (Fallback: direkte Python-Ausführung)
 - SKILL.md oder README.md enthalten Beschreibungen
 - Automatische Erkennung von Hauptdateien: main.py, app.py, <name>.py
 - Sync in DB registriert Extensions als Skills (type='extension')
@@ -60,20 +60,20 @@ list:    Auflistung aller vorhandenen Extensions mit:
          - Speicherort
 
 show:    Detailanzeige einer Extension:
-         - Vollstaendiger Pfad
+         - Vollständiger Pfad
          - Dateiauflistung mit Grossen
          - SKILL.md Vorschau (bis 500 Zeichen)
          - Fuzzy-Matching bei nicht exaktem Namen
 
 run:     Startet eine Extension:
-         - Windows: START.bat ausfuehren (neues Fenster)
+         - Windows: START.bat ausführen (neues Fenster)
          - Fallback: Hauptdatei direkt mit Python starten
-         - Hauptdatei nach Prioritaet: main.py > app.py > <name>.py
+         - Hauptdatei nach Priorität: main.py > app.py > <name>.py
 
 sync:    Synchronisiert Extensions mit Datenbank (bach.db):
-         - Fuegt neue Extensions hinzu (type='extension')
+         - Fügt neue Extensions hinzu (type='extension')
          - Aktualisiert Pfade und Beschreibungen existierender Extensions
-         - --dry-run zeigt Aenderungen an ohne zu schreiben
+         - --dry-run zeigt Änderungen an ohne zu schreiben
 
 search:  Volltextsuche nach:
          - Extension-Name (Case-insensitive)
@@ -93,9 +93,9 @@ BEISPIELE
   bach extensions run myapp
   bach extensions run knowledgedigest
 
-  # In Datenbank synchronisieren (neu erkannte Extensions hinzufuegen)
+  # In Datenbank synchronisieren (neu erkannte Extensions hinzufügen)
   bach extensions sync
-  bach extensions sync --dry-run      # Vorschau ohne Aenderungen
+  bach extensions sync --dry-run      # Vorschau ohne Änderungen
 
   # Nach Extension suchen
   bach extensions search "data"

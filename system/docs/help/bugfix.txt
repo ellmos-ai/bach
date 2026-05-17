@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 BUGFIX PROTOKOLL - SCHNELLREFERENZ
 ===================================
@@ -15,11 +15,11 @@ Bei Fehlern IMMER diese Reihenfolge:
 
 2. IMPORT-DIAGNOSE
    python system/tools/c_import_diagnose.py <ordner>
-   Prueft: Circular Imports, fehlende Module
+   Prüft: Circular Imports, fehlende Module
 
 3. CODE-ANALYSE
    python system/tools/c_method_analyzer.py <datei>
-   Prueft: Attribut vor Definition, Signal-Callbacks
+   Prüft: Attribut vor Definition, Signal-Callbacks
 
 4. ISOLIERTES TESTEN
    Minimales Test-Script erstellen
@@ -27,7 +27,7 @@ Bei Fehlern IMMER diese Reihenfolge:
 
 5. 20-MINUTEN-REGEL
    Nach 20 Min ohne Fortschritt: STOP
-   Bug-Report erstellen, spaeter fortsetzen
+   Bug-Report erstellen, später fortsetzen
 
 SCHNELL-CHECK:
 

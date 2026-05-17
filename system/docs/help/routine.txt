@@ -1,6 +1,6 @@
-# Portabilitaet: USER
+# Portabilität: USER
 # Zuletzt validiert: 2026-02-08 (Help-Forensik v2 Registry-Based)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 # Ressourcen: [household_routines table, hub/routine.py]
 
 ROUTINE - Haushaltsroutinen-Verwaltung
@@ -37,7 +37,7 @@ CLI-BEFEHLE (bach routine)
 
   add "Name" [--freq/-f <Freq>] [--cat/-c <Kat>] [--dur/-d <Min>] [--note <Text>] [--schedule <Zeit>]
                 Erstellt neue Routine mit optionalen Parametern:
-                --freq/-f   Frequenz (taeglich, woechentlich, monatlich, jaehrlich, etc.)
+                --freq/-f   Frequenz (täglich, woechentlich, monatlich, jaehrlich, etc.)
                 --cat/-c    Kategorie (Kueche, Bad, Wohnzimmer, etc.)
                 --dur/-d    Dauer in Minuten
                 --note      Notiz
@@ -49,7 +49,7 @@ CLI-BEFEHLE (bach routine)
 FREQUENZEN (vollständige Liste)
 -------------------------------
 Unterstützte Frequenz-Werte für --freq:
-  taeglich, täglich, daily
+  täglich, täglich, daily
   woechentlich, wöchentlich, weekly
   2-woechentlich, 2-wöchentlich, biweekly
   monatlich, monthly

@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 ACTORS MODEL - 6-Kategorien Akteure-System
 ==========================================
@@ -21,7 +21,7 @@ Rolle: Entscheider, Auftraggeber, Feedback-Geber
 
 Schnittstellen:
   - MessageBox/       Primaere Kommunikation
-  - User/             Persoenlicher Bereich
+  - User/             Persönlicher Bereich
   - Workspace/        Aktiver Arbeitsbereich
 
 Modi:
@@ -58,7 +58,7 @@ Eigenschaften:
 -------------------
 Rolle: Spezialisierte Aufgaben, Delegation, Token-Ersparnis
 
-Verfuegbar:
+Verfügbar:
   - Ollama (lokal)    llama3.2, mistral, codellama
   - Gemini (extern)   Deep Research, lange Dokumente
   - Copilot           Office-Integration
@@ -73,7 +73,7 @@ Delegations-Trigger:
 
 4. OPERATING SYSTEM
 -------------------
-Rolle: Grundlegende Infrastruktur und lokale Ausfuehrung
+Rolle: Grundlegende Infrastruktur und lokale Ausführung
 
 Umfasst:
   - Windows/Linux OS
@@ -124,7 +124,7 @@ Hierarchie der Entscheidungen:
   1. User entscheidet bei kritischen Fragen
   2. Claude koordiniert und orchestriert
   3. Tools fuehren aus
-  4. Andere AIs unterstuetzen bei Bedarf
+  4. Andere AIs unterstützen bei Bedarf
 
 Token-Bewusstsein:
   - Claude ist Token-limitiert
@@ -147,17 +147,17 @@ Operating AI (Claude):
   -> Ollama (API, Queue)
   -> Gemini (Drive Delegation)
   -> OS (Desktop Commander)
-  -> Tools (direkte Ausfuehrung)
+  -> Tools (direkte Ausführung)
   -> MCP-Server (PubMed, Canva, Drive)
 
 User:
   -> Claude (Chat, MessageBox)
   -> OS (direkte Nutzung)
-  -> Tools (manuelle Ausfuehrung)
+  -> Tools (manuelle Ausführung)
 
 Ollama:
   <- Claude (Delegation)
-  -> OS (lokale Ausfuehrung)
+  -> OS (lokale Ausführung)
 
 Gemini:
   <- Claude (Drive Delegation)
@@ -167,7 +167,7 @@ Gemini:
 CLI-ZUGRIFF
 ===========
 bach --connections list          Connections anzeigen
-bach --connections db            Alias fuer list
+bach --connections db            Alias für list
 bach --connections db --type ai  AI-Partner
 bach --connections actors        Actors-Model anzeigen
 bach --connections partners      Partner-Profile anzeigen
@@ -180,14 +180,14 @@ AGENTEN-SYSTEM
 Neben den 6 Akteuren gibt es ein hierarchisches Agenten-System:
 
 Boss-Agenten (koordinieren):
-  - Persoenlicher Assistent (privat)
+  - Persönlicher Assistent (privat)
   - Gesundheitsassistent (privat)
-  - Bueroassistent (beruflich)
+  - Büroassistent (beruflich)
 
 Experten (spezialisiert):
   - Haushaltsmanagement
   - Gesundheitsverwalter, Psycho-Berater
-  - Steuer-Agent, Foerderplaner
+  - Steuer-Agent, Förderplaner
 
 Mehr Infos: bach --help agents
 

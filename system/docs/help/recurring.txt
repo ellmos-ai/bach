@@ -1,19 +1,19 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.0
 # Zuletzt validiert: 2026-02-08 (Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 RECURRING TASKS - Wiederkehrende Aufgaben
 =========================================
 
-Das Recurring-System erstellt automatisch Tasks wenn sie faellig sind.
-Anders als Wartung (die Jobs ausfuehrt) generiert Recurring nur
-Erinnerungs-Tasks fuer Claude oder den User.
+Das Recurring-System erstellt automatisch Tasks wenn sie fällig sind.
+Anders als Wartung (die Jobs ausführt) generiert Recurring nur
+Erinnerungs-Tasks für Claude oder den User.
 
 HANDLER:  hub/recurring.py
 SERVICE:  hub/_services/recurring/
 GUI:      KEINE (nur CLI + in /daemon Seite integriert)
-DAEMON:   JA (Daemon prueft alle 5 Min - gui/daemon_service.py)
+DAEMON:   JA (Daemon prüft alle 5 Min - gui/daemon_service.py)
 
 
 BEFEHLE
@@ -22,7 +22,7 @@ BEFEHLE
   bach --recurring              Alle wiederkehrenden Tasks anzeigen
   bach --recurring list         (Alias)
   bach --recurring check        Faellige Tasks erstellen
-  bach --recurring trigger ID   Task manuell ausloesen
+  bach --recurring trigger ID   Task manuell auslösen
   bach --recurring done ID      Als erledigt markieren (aktualisiert last_run)
   bach --recurring enable ID    Task aktivieren
   bach --recurring disable ID   Task deaktivieren
@@ -36,17 +36,17 @@ ABGRENZUNG: DREI HANDLER-SYSTEME
   ├─────────────────────────────────────────────────────────────────┤
   │  Erstellt TASKS als Erinnerungen                                │
   │  Intervall-basiert (Tage)                                       │
-  │  Fuer Claude/User zur Bearbeitung                               │
+  │  Für Claude/User zur Bearbeitung                               │
   │  Handler:  hub/recurring.py                            │
   │  Service:  hub/_services/recurring/                             │
   │  GUI:      KEINE (nur CLI)                                      │
-  │  Daemon:   JA (prueft alle 5 Min via daemon_service.py)         │
+  │  Daemon:   JA (prüft alle 5 Min via daemon_service.py)         │
   └─────────────────────────────────────────────────────────────────┘
 
   ┌─────────────────────────────────────────────────────────────────┐
   │  WARTUNG (docs/help/wartung.txt)                                     │
   ├─────────────────────────────────────────────────────────────────┤
-  │  Fuehrt Shell/Python-Befehle AUS                                │
+  │  Führt Shell/Python-Befehle AUS                                │
   │  Zeitgesteuert (cron/interval)                                  │
   │  Ohne Claude-Beteiligung                                        │
   │  Handler:  hub/daemon.py                               │
@@ -73,17 +73,17 @@ WANN WAS NUTZEN?
   Recurring verwenden wenn:
   - Claude soll erinnert werden
   - Task erfordert Intelligenz/Analyse
-  - Flexibler Zeitpunkt (bei naechster Session)
+  - Flexibler Zeitpunkt (bei nächster Session)
 
   Wartung verwenden wenn:
   - Ein Script automatisch laufen soll (z.B. Backup, Scan)
-  - Keine Intelligenz/Entscheidung noetig
+  - Keine Intelligenz/Entscheidung nötig
   - Zeitpunkt wichtig (z.B. nachts um 3:00)
 
   Prompt-Generator verwenden wenn:
   - Claude-Session automatisch starten soll
   - Prompt-Vorlagen verwendet werden
-  - Zeitgesteuerte Claude-Arbeit noetig
+  - Zeitgesteuerte Claude-Arbeit nötig
 
 
 AKTUELLE RECURRING TASKS
@@ -92,37 +92,37 @@ AKTUELLE RECURRING TASKS
   ATI-Agent Tasks:
   ----------------
   1. self_check (14d)
-     BACH SELF-CHECK: SKILL.md und Lessons pruefen
+     BACH SELF-CHECK: SKILL.md und Lessons prüfen
 
   2. onboarding_scan (7d)
-     Neue Tools pruefen: bach ati onboard --check
+     Neue Tools prüfen: bach ati onboard --check
 
   3. code_quality (30d)
-     Code-Qualitaet pruefen: c_method_analyzer auf alle Tools
+     Code-Qualität prüfen: c_method_analyzer auf alle Tools
 
   System-Tasks:
   -------------
   4. backup_check (7d)
-     BACH Backup pruefen: bach backup status
+     BACH Backup prüfen: bach backup status
 
   5. memory_cleanup (30d)
-     Memory-Archiv pruefen: alte Eintraege archivieren
+     Memory-Archiv prüfen: alte Einträge archivieren
 
   6. integration_check (30d)
-     Anschlussanalyse durchfuehren
+     Anschlussanalyse durchführen
      Workflow: skills/workflows/system-anschlussanalyse.md
 
   Dokumentations-Tasks:
   ---------------------
   7. roadmap_review (14d)
-     ROADMAP.md Review: Erledigte Tasks markieren, Prioritaeten pruefen
+     ROADMAP.md Review: Erledigte Tasks markieren, Prioritäten prüfen
 
   8. wiki_author (21d)
      Wiki-Autoren: Agenten-Wissensluecken identifizieren + fuellen
      Workflow: skills/workflows/wiki-author.md
 
   9. help_forensic (14d)
-     Help-Forensik: Ist vs Soll pruefen, bei Abweichung korrigieren
+     Help-Forensik: Ist vs Soll prüfen, bei Abweichung korrigieren
      Workflow: skills/workflows/help-forensic.md
 
   10. doc_freshness (60d)
@@ -140,9 +140,9 @@ KONFIGURATION
       "enabled": true,
       "interval_days": 30,
       "target": "tasks",        // oder "ati_tasks"
-      "priority": "P3",         // nur fuer target=tasks
-      "priority_score": 50,     // nur fuer target=ati_tasks
-      "aufwand": "mittel",      // nur fuer target=ati_tasks
+      "priority": "P3",         // nur für target=tasks
+      "priority_score": 50,     // nur für target=ati_tasks
+      "aufwand": "mittel",      // nur für target=ati_tasks
       "task_text": "Beschreibung...",
       "last_run": "2026-01-22T21:30:00"
     }
@@ -152,11 +152,11 @@ KONFIGURATION
 DAEMON-INTEGRATION
 ------------------
 
-Der BACH Daemon-Service (gui/daemon_service.py) prueft automatisch
-alle 5 Minuten auf faellige recurring Tasks.
+Der BACH Daemon-Service (gui/daemon_service.py) prüft automatisch
+alle 5 Minuten auf fällige recurring Tasks.
 
-Zusaetzlich kann manuell geprueft werden:
-- `bach --startup` zeigt faellige Tasks an
+Zusätzlich kann manuell geprüft werden:
+- `bach --startup` zeigt fällige Tasks an
 - `bach --recurring check` erstellt sie sofort als echte Tasks
 
 
@@ -166,7 +166,7 @@ NEUEN RECURRING TASK HINZUFUEGEN
 1. config.json bearbeiten:
    hub/_services/recurring/config.json
 
-2. Neuen Eintrag hinzufuegen:
+2. Neuen Eintrag hinzufügen:
    "mein_task": {
      "enabled": true,
      "interval_days": 14,
@@ -185,11 +185,11 @@ TECHNISCHE DETAILS
   Handler:       hub/recurring.py
   Service:       hub/_services/recurring/recurring_tasks.py
   Config:        hub/_services/recurring/config.json
-  Daemon-Modul:  gui/daemon_service.py (prueft alle 5 Min)
+  Daemon-Modul:  gui/daemon_service.py (prüft alle 5 Min)
 
-WICHTIG: Recurring Tasks werden vom BACH Daemon automatisch geprueft
+WICHTIG: Recurring Tasks werden vom BACH Daemon automatisch geprüft
 (alle 5 Minuten). Manuelle Checks mit `bach --recurring check` sind
-jederzeit moeglich.
+jederzeit möglich.
 
 
 SIEHE AUCH
@@ -198,4 +198,4 @@ SIEHE AUCH
   bach --help wartung           Wartungs-Jobs (Shell-Befehle, GUI vorhanden)
   bach --help prompt-generator  Prompt-Management (GUI geplant)
   bach --help tasks             Task-System
-  bach --help startup           Session-Start (zeigt faellige Tasks)
+  bach --help startup           Session-Start (zeigt fällige Tasks)

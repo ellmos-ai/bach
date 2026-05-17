@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -9,18 +9,18 @@ smarthome - Smart Home Integration (FritzBox TR-064)
 
 BESCHREIBUNG
 ============
-Stellt Verbindungs- und Geraeteninformationen von einer FritzBox zur Verfuegung.
-Nutzt die TR-064 SOAP-API fuer sichere UPnP-Kommunikation ueber HTTP auf
-fritz.box:49000. Keine Authentifizierung oder externe Abhaengigkeiten erforderlich.
+Stellt Verbindungs- und Geräteninformationen von einer FritzBox zur Verfügung.
+Nutzt die TR-064 SOAP-API für sichere UPnP-Kommunikation über HTTP auf
+fritz.box:49000. Keine Authentifizierung oder externe Abhängigkeiten erforderlich.
 
 
 OPERATIONEN
 ===========
-status       Zeige Verbindungsstatus, Uptime, externe IP und Geraeteanzahl
-devices      Auflisten aller verbundenen Geraete mit IP, MAC und Status (online/offline)
+status       Zeige Verbindungsstatus, Uptime, externe IP und Geräteanzahl
+devices      Auflisten aller verbundenen Geräte mit IP, MAC und Status (online/offline)
 wifi         WLAN-Informationen: SSID, Status, Kanal
 bandwidth    Maximale Download- und Upload-Raten (Mbit/s)
-reconnect    Erzwinge Neuverbindung zum Internet (dry-run unterstuetzt)
+reconnect    Erzwinge Neuverbindung zum Internet (dry-run unterstützt)
 info         FritzBox-Informationen: Modell, Firmware, Seriennummer, Uptime
 help         Diese Hilfe anzeigen
 
@@ -28,11 +28,11 @@ help         Diese Hilfe anzeigen
 BEISPIELE
 =========
 bach smarthome status
-  -> Zeige Verbindungsstatus und Geraeteanzahl
+  -> Zeige Verbindungsstatus und Geräteanzahl
 
 bach smarthome devices
-  -> Alle verbundenen Geraete mit IP, MAC und Online-Status
-  -> Limit: max. 30 Geraete pro Abruf
+  -> Alle verbundenen Geräte mit IP, MAC und Online-Status
+  -> Limit: max. 30 Geräte pro Abruf
 
 bach smarthome wifi
   -> WLAN-SSID, Aktivitaetsstatus und Kanal
@@ -42,17 +42,17 @@ bach smarthome bandwidth
 
 bach smarthome reconnect
   -> Internet-Verbindung trennen und neu aufbauen
-  -> Neue IP innerhalb ~10 Sekunden verfuegbar
-  -> Mit --dry-run: Simulation ohne Ausfuehrung
+  -> Neue IP innerhalb ~10 Sekunden verfügbar
+  -> Mit --dry-run: Simulation ohne Ausführung
 
 bach smarthome info
-  -> Geraetedetails (Modell, Firmware-Version, Serial)
+  -> Gerätedetails (Modell, Firmware-Version, Serial)
 
 
 DATEIEN
 =======
 hub/smarthome.py     Handler-Implementierung (SmartHomeHandler-Klasse)
-data/bach.db         Zieldatenbank fuer Profil "smarthome"
+data/bach.db         Zieldatenbank für Profil "smarthome"
 
 
 SIEHE AUCH

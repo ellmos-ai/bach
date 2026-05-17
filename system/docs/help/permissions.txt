@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-06
 
@@ -11,12 +11,12 @@ permissions
 
 BESCHREIBUNG
 ============
-Der Permissions Handler verwaltet Permission-Profile fuer Claude Code in der
+Der Permissions Handler verwaltet Permission-Profile für Claude Code in der
 BACH-Datenbank (system_config Tabelle, Kategorie: claude_permissions).
 
 Zwei vorkonfigurierte Profile:
   - normal:          Standard-Permissions (fragt bei kritischen Tools nach)
-  - remote_control:  Alle Tools vorfreigeschaltet fuer Mobile-App-Nutzung
+  - remote_control:  Alle Tools vorfreigeschaltet für Mobile-App-Nutzung
 
 Profile werden in der DB gespeichert und bei Aktivierung in die Datei
 ~/.claude/settings.json geschrieben. Beim Deaktivieren wird der vorherige
@@ -27,7 +27,7 @@ HINTERGRUND
 Claude Code Remote Control (Mobile App) ignoriert --dangerously-skip-permissions
 aufgrund eines bekannten Bugs (GitHub Issue #29214). Die allow-Regeln in
 settings.json werden jedoch auch von Remote Control respektiert. Daher werden
-die Permissions ueber Profile in der BACH-DB verwaltet und bei Bedarf in die
+die Permissions über Profile in der BACH-DB verwaltet und bei Bedarf in die
 settings.json geschrieben.
 
 OPERATIONEN
@@ -50,18 +50,18 @@ SET
 ---
 bach permissions set <profil> allow=<Tool> [allow=<Tool2>] [deny=<Tool3>]
 
-Regeln zu einem Profil hinzufuegen.
+Regeln zu einem Profil hinzufügen.
 - allow=Tool:  Tool ohne Bestaetigung erlauben
 - deny=Tool:   Tool verbieten
-- Wildcards moeglich: mcp__bach-*__* (alle BACH MCP Tools)
-- Aenderungen am aktiven Profil werden sofort in settings.json uebernommen
+- Wildcards möglich: mcp__bach-*__* (alle BACH MCP Tools)
+- Änderungen am aktiven Profil werden sofort in settings.json übernommen
 
 REMOVE
 ------
 bach permissions remove <profil> allow=<Tool> [deny=<Tool2>]
 
 Regeln aus einem Profil entfernen.
-Aenderungen am aktiven Profil werden sofort in settings.json uebernommen.
+Änderungen am aktiven Profil werden sofort in settings.json übernommen.
 
 ACTIVATE
 --------
@@ -78,7 +78,7 @@ DEACTIVATE
 ----------
 bach permissions deactivate
 
-Zum Normal-Profil zurueckkehren:
+Zum Normal-Profil zurückkehren:
 1. Backup aus DB wiederherstellen
 2. settings.json aktualisieren
 3. Aktives Profil auf "normal" setzen
@@ -88,15 +88,15 @@ SYNC
 bach permissions sync
 
 Aktuelle allow/deny-Regeln aus settings.json in das aktive DB-Profil
-importieren. Nuetzlich wenn Regeln manuell in settings.json geaendert wurden.
+importieren. Nützlich wenn Regeln manuell in settings.json geändert wurden.
 
 RESET
 -----
 bach permissions reset <profil>
 
-Profil auf die vordefinierten Defaults zuruecksetzen.
-Verfuegbare Defaults: normal, remote_control.
-Aenderungen am aktiven Profil werden sofort in settings.json uebernommen.
+Profil auf die vordefinierten Defaults zurücksetzen.
+Verfügbare Defaults: normal, remote_control.
+Änderungen am aktiven Profil werden sofort in settings.json übernommen.
 
 STATUS
 ------
@@ -114,8 +114,8 @@ INIT
 bach permissions init
 
 Erstellt die Default-Profile (normal, remote_control) in der DB.
-Idempotent: ueberspringt bereits vorhandene Profile.
-Wird automatisch beim ersten Remote-Control-Start ausgefuehrt.
+Idempotent: überspringt bereits vorhandene Profile.
+Wird automatisch beim ersten Remote-Control-Start ausgeführt.
 
 BEISPIELE
 =========
@@ -129,7 +129,7 @@ $ bach permissions list
 Remote-Control-Profil Details:
 $ bach permissions show remote_control
 
-Neues Tool zum Remote-Control-Profil hinzufuegen:
+Neues Tool zum Remote-Control-Profil hinzufügen:
 $ bach permissions set remote_control allow=mcp__slack__*
 
 Tool aus Profil entfernen:
@@ -138,16 +138,16 @@ $ bach permissions remove remote_control allow=mcp__slack__*
 Remote-Control-Profil aktivieren (vor Mobile-Session):
 $ bach permissions activate remote_control
 
-Zurueck zum Normal-Profil:
+Zurück zum Normal-Profil:
 $ bach permissions deactivate
 
-Aktuellen Zustand pruefen:
+Aktuellen Zustand prüfen:
 $ bach permissions status
 
-Manuell geaenderte settings.json in DB uebernehmen:
+Manuell geänderte settings.json in DB übernehmen:
 $ bach permissions sync
 
-Profil auf Defaults zuruecksetzen:
+Profil auf Defaults zurücksetzen:
 $ bach permissions reset remote_control
 
 REMOTE CONTROL WORKFLOW
@@ -193,7 +193,7 @@ DATEIEN
 =======
 hub/claude_permissions.py         Handler-Implementierung
 start/_internal/claude_remote_control.py  Automatischer Starter
-start/_internal/claude_remote_control.bat Wrapper fuer Starter
+start/_internal/claude_remote_control.bat Wrapper für Starter
 start/bach.bat                    Boot-Menue (Menuepunkt [P])
 ~/.claude/settings.json           Claude Code Settings (Ziel-Datei)
 bach.db (system_config)           Profil-Speicher in DB

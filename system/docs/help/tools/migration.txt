@@ -1,9 +1,9 @@
 BACH Tool: Migration
 ====================
 
-Datenbank- und Struktur-Migrationen fuer BACH.
+Datenbank- und Struktur-Migrationen für BACH.
 
-VERFUEGBARE TOOLS
+VERFÜGBARE TOOLS
 -----------------
 
   migrate_skills_hierarchy  Skills-Hierarchie in neues Format migrieren
@@ -20,7 +20,7 @@ SQL-Migrationen liegen in data/schema/migrations/:
 VERWENDUNG
 ----------
 
-  bach upgrade                  Alle ausstehenden Migrationen ausfuehren
+  bach upgrade                  Alle ausstehenden Migrationen ausführen
   bach --tools migration skills Skills-Hierarchie migrieren
 
 MODUL

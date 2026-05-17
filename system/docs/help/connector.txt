@@ -1,17 +1,17 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 CONNECTOR - Externe Kommunikationsverbindungen
 ===============================================
 
 BESCHREIBUNG
 Verwaltet externe Kommunikationsverbindungen (Telegram, Discord,
-HomeAssistant, etc.) und fuehrt sie aus. Unterstuetzt automatisches
+HomeAssistant, etc.) und führt sie aus. Unterstützt automatisches
 Polling, Queue-Versand mit Retry/Backoff und Circuit Breaker.
 
-UNTERSTUETZTE TYPEN
+UNTERSTÜTZTE TYPEN
 -------------------
   telegram        Telegram Bot API (getUpdates Polling)
   discord         Discord Bot (REST API)
@@ -20,7 +20,7 @@ UNTERSTUETZTE TYPEN
   signal          Signal Messenger (geplant, signal-cli)
   whatsapp        WhatsApp (geplant, Baileys)
 
-Runtime-Adapter verfuegbar: telegram, discord, homeassistant
+Runtime-Adapter verfügbar: telegram, discord, homeassistant
 
 CLI-BEFEHLE
 -----------
@@ -46,11 +46,11 @@ Runtime:
 Queue-Management:
   bach connector setup-daemon            Daemon-Jobs registrieren (einmalig)
   bach connector queue-status            Queue-Statistiken (pending/failed/dead)
-  bach connector retry <id|all>          Dead-Letter zuruecksetzen
+  bach connector retry <id|all>          Dead-Letter zurücksetzen
 
 ZUVERLAESSIGE ZUSTELLUNG (v2.0)
 -------------------------------
-Das Message-System arbeitet mit dem Daemon zusammen fuer
+Das Message-System arbeitet mit dem Daemon zusammen für
 automatische Zustellung auch ohne aktive CLI-Session.
 
 Einrichtung:
@@ -73,18 +73,18 @@ Fehlgeschlagene Nachrichten werden mit exponentiellem Backoff
 wiederholt: 30s, 60s, 120s, 240s, 480s (~15 Minuten gesamt).
 
 Nach 5 Fehlversuchen (konfigurierbar) wird die Nachricht als
-"Dead Letter" markiert. Dead Letters koennen manuell
-zurueckgesetzt werden:
+"Dead Letter" markiert. Dead Letters können manuell
+zurückgesetzt werden:
 
-  bach connector retry all             Alle Dead Letters zuruecksetzen
-  bach connector retry 42              Einzelne Nachricht zuruecksetzen
+  bach connector retry all             Alle Dead Letters zurücksetzen
+  bach connector retry 42              Einzelne Nachricht zurücksetzen
 
 CIRCUIT BREAKER
 ---------------
-Nach 5 aufeinanderfolgenden Fehlern wird ein Connector fuer
+Nach 5 aufeinanderfolgenden Fehlern wird ein Connector für
 5 Minuten gesperrt (disabled_until). Weitere Sende-/Poll-Versuche
-werden uebersprungen bis der Cooldown abgelaufen ist. Danach
-wird der Zaehler automatisch zurueckgesetzt.
+werden übersprungen bis der Cooldown abgelaufen ist. Danach
+wird der Zaehler automatisch zurückgesetzt.
 
 KONTEXT-INTEGRATION
 -------------------
@@ -107,12 +107,12 @@ Ergebnis in messages.metadata (JSON):
 
 REST-API
 --------
-Verfuegbar wenn Headless API laeuft (Port 8001):
+Verfügbar wenn Headless API läuft (Port 8001):
 
   POST /api/v1/messages/send      Nachricht in Queue einreihen
   GET  /api/v1/messages/queue     Queue-Status (pending/failed/dead)
   GET  /api/v1/messages/inbox     Inbox lesen (Paginierung, Filter)
-  POST /api/v1/messages/route     Routing manuell ausloesen
+  POST /api/v1/messages/route     Routing manuell auslösen
 
 Beispiele:
   curl localhost:8001/api/v1/messages/queue
@@ -128,7 +128,7 @@ POLL-INTERVALLE (Default)
   homeassistant    300s        Events, weniger dringend
   webhook          N/A         Push-basiert, kein Polling
 
-Ueberschreibbar per auth_config JSON: {"poll_interval": 30}
+Überschreibbar per auth_config JSON: {"poll_interval": 30}
 
 DATENBANK
 ---------
@@ -142,7 +142,7 @@ Relevante Spalten connector_messages:
   status          TEXT (pending/sent/failed/dead)
   retry_count     INTEGER (aktuelle Versuchsnummer)
   max_retries     INTEGER (Default 5)
-  next_retry_at   TEXT (naechster Retry-Zeitpunkt)
+  next_retry_at   TEXT (nächster Retry-Zeitpunkt)
 
 Relevante Spalten connections:
   consecutive_failures  INTEGER (Circuit-Breaker-Zaehler)

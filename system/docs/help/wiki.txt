@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -12,9 +12,9 @@ wiki - Wiki-Artikel verwalten und durchsuchen
 BESCHREIBUNG
 ============
 Der Wiki Handler verwaltet lokale Wissensdatenbanken (wiki/ Verzeichnis) mit
-Unterstuetzung fuer Artikel im Hauptordner und themenspezifische Unterordner.
-Artikel werden als UTF-8 Textdateien gespeichert. Der Handler unterstuetzt
-Datenbank-Indexierung (sync) zur performanten Volltextsuche ueber FTS5.
+Unterstützung für Artikel im Hauptordner und themenspezifische Unterordner.
+Artikel werden als UTF-8 Textdateien gespeichert. Der Handler unterstützt
+Datenbank-Indexierung (sync) zur performanten Volltextsuche über FTS5.
 
 OPERATIONEN
 ===========
@@ -29,7 +29,7 @@ sync          Wiki- und Help-Dateien in Datenbank spiegeln (Index aktualisieren)
 BEISPIELE
 =========
 Bach wiki list
-  Zeige alle verfuegbaren Artikel und Themenordner
+  Zeige alle verfügbaren Artikel und Themenordner
 
 Bach wiki folders
   Liste alle Themenordner mit Artikelanzahl auf
@@ -47,16 +47,16 @@ Bach wiki search "kubernetes"
   Suche in allen Artikeln mit FTS5 oder Fallback-Scan
 
 Bach wiki search "deployment pipeline"
-  Suche mit mehreren Woertern (in Anfuehrungszeichen)
+  Suche mit mehreren Wörtern (in Anfuehrungszeichen)
 
 Bach wiki provenance
-  Zeige die zuletzt indexierten Artikel mit Herkunft und Privacy-Einschaetzung
+  Zeige die zuletzt indexierten Artikel mit Herkunft und Privacy-Einschätzung
 
 Bach wiki provenance steuer/elster
-  Zeige Provenance fuer genau einen Artikel
+  Zeige Provenance für genau einen Artikel
 
 Bach wiki sync
-  Aktualisiere Datenbank-Index (nach manuellen Datei-Aenderungen)
+  Aktualisiere Datenbank-Index (nach manuellen Datei-Änderungen)
 
 DATEIEN
 =======
@@ -67,13 +67,13 @@ wiki/<ordner>/*.txt      Unterordner-Artikel (z.B. wiki/steuer/elster.txt)
 wiki/<ordner>/_index.txt Optionale Ordner-Beschreibung
 wiki/_index.txt          Optionale Hauptlisten-Beschreibung
 data/bach.db             Datenbank mit sync-Index (wiki_articles Tabelle)
-docs/help/               Help-Dateien (zusaetzliche Indexierung via sync)
+docs/help/               Help-Dateien (zusätzliche Indexierung via sync)
 
 SIEHE AUCH
 ==========
 bach help config     Handler-Eigenschaften
 bach help base       Basis-Handler-Dokumentation
-bach list handlers   Alle verfuegbaren Handler
+bach list handlers   Alle verfügbaren Handler
 bach wiki sync       Datenbank-Indexierung
 
 HINWEISE
@@ -81,6 +81,6 @@ HINWEISE
 - Artikel ohne Pfad-Praefixe oder spezielle Ordner-Befehle: automatisch im
   Hauptordner gesucht
 - Unterordner-Syntax (/) normalisiert Backslashes zu Slashes (Windows-kompatibel)
-- FTS5-Suche priorisiert ueber Fallback-Dateisystem-Scan wenn Datenbank existiert
-- Fuzzy-Matching bei nicht gefundenen Artikeln zeigt aehnliche Dateinamen
-- "sync" muss manuell aufgerufen werden nach direkten Datei-Aenderungen
+- FTS5-Suche priorisiert über Fallback-Dateisystem-Scan wenn Datenbank existiert
+- Fuzzy-Matching bei nicht gefundenen Artikeln zeigt ähnliche Dateinamen
+- "sync" muss manuell aufgerufen werden nach direkten Datei-Änderungen

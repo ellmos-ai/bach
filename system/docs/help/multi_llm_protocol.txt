@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -8,16 +8,16 @@ multi_llm_protocol.py - Koordination paralleler LLM-Agenten
 
 BESCHREIBUNG
 ============
-Protokoll V3 fuer sichere parallele Arbeit mehrerer KI-Agenten (Claude, Gemini,
-Copilot, Ollama, Perplexity, Mistral). Ueberwacht Praesenz, verwaltet
-exklusive Dateizugriffe und synchronisiert Agent-Aktivitaeten ueber
-Presence-Dateien, Locks und Handshake-Signale. Zusaetzlich: DB-basiertes
-Stempelkarten-System fuer Live-Status in partner_presence Tabelle.
+Protokoll V3 für sichere parallele Arbeit mehrerer KI-Agenten (Claude, Gemini,
+Copilot, Ollama, Perplexity, Mistral). Überwacht Praesenz, verwaltet
+exklusive Dateizugriffe und synchronisiert Agent-Aktivitäten über
+Presence-Dateien, Locks und Handshake-Signale. Zusätzlich: DB-basiertes
+Stempelkarten-System für Live-Status in partner_presence Tabelle.
 
 OPERATIONEN
 ===========
 bach llm presence [dir] [task]      Presence im Verzeichnis erstellen
-bach llm check [dir]                Andere Agenten in Verzeichnis pruefen
+bach llm check [dir]                Andere Agenten in Verzeichnis prüfen
 bach llm lock <datei|ordner>        Lock auf Datei oder Verzeichnis erwerben
 bach llm unlock [datei]             Eigene Locks freigeben
 bach llm handshake [dir]            Handshake mit anderen Agenten starten
@@ -37,7 +37,7 @@ KERN-PROTOKOLL V3
    - Backoff: 5 Sekunden zwischen Versuchen
 
 3. BACKUP-System
-   - <datei>.bak vor Aenderung
+   - <datei>.bak vor Änderung
    - Automatisch in safe_write/safe_append
 
 4. HANDSHAKE-Protokoll
@@ -48,7 +48,7 @@ KERN-PROTOKOLL V3
 5. DB-STEMPELKARTEN (v1.1.71)
    - partner_presence Tabelle
    - clock_in/clock_out bei Startup/Shutdown
-   - current_task + last_heartbeat fuer Live-Status
+   - current_task + last_heartbeat für Live-Status
    - Heartbeat-Timeout: 5 Minuten (konfigurierbar)
 
 BEISPIELE
@@ -56,7 +56,7 @@ BEISPIELE
 # Agent aktivieren
 bach llm presence /c/Users/User/project processing
 
-# Andere Agenten pruefen
+# Andere Agenten prüfen
 bach llm check /c/Users/User/project
 
 # Lock auf Datei erwerben
@@ -94,7 +94,7 @@ Generierte Dateien (im Arbeitsverzeichnis):
   .<agent>_presence                  Praesenz-Marker
   <datei>.lock.<agent>               Datei-Lock
   <ordner>/.dirlock.<agent>          Ordner-Lock
-  <datei>.bak                        Backup vor Aenderung
+  <datei>.bak                        Backup vor Änderung
   .handshake_<agent>                 Handshake-Signal/Response
 
 SIEHE AUCH

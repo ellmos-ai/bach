@@ -1,13 +1,13 @@
 BACH Tool: Testing
 ==================
 
-Test-Framework fuer BACH-Systemtests und -Vergleiche.
+Test-Framework für BACH-Systemtests und -Vergleiche.
 
-VERFUEGBARE TOOLS
+VERFÜGBARE TOOLS
 -----------------
 
-  run_b_tests            BACH-Systemtests ausfuehren
-  compare_systems        Systemvergleiche durchfuehren
+  run_b_tests            BACH-Systemtests ausführen
+  compare_systems        Systemvergleiche durchführen
   run_comparison_custom  Benutzerdefinierte Vergleiche
   populate_tests         Test-Daten generieren
   query_tests            Test-Ergebnisse abfragen
@@ -15,7 +15,7 @@ VERFUEGBARE TOOLS
 VERWENDUNG
 ----------
 
-  bach --tools testing run               Alle Tests ausfuehren
+  bach --tools testing run               Alle Tests ausführen
   bach --tools testing compare <a> <b>   Systeme vergleichen
   bach --tools testing populate          Testdaten erstellen
 

@@ -1,24 +1,24 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
-BACH DOKUMENTATION - Uebersicht
+BACH DOKUMENTATION - Übersicht
 ================================
 
-Zentrale Anlaufstelle fuer alle BACH-Dokumentation.
+Zentrale Anlaufstelle für alle BACH-Dokumentation.
 
 KERN-DOKUMENTE
 --------------
 
 Root-Ebene:
   SKILL.md              Master-Kontext, Identitaet, Verhaltensregeln
-  README.md             Projekt-Uebersicht
+  README.md             Projekt-Übersicht
 
 system/:
   ARCHITECTURE.md       Technische Architektur, Komponenten
   ROADMAP.md            Entwicklungsplan, Meilensteine
-  CHANGELOG.md          Versionshistorie, Aenderungen
+  CHANGELOG.md          Versionshistorie, Änderungen
 
 HELP-SYSTEM (system/docs/help/)
 --------------------------
@@ -52,7 +52,7 @@ ENTWICKLUNG:
   --help coding          Coding-Standards
 
 VERZEICHNISSE:
-  --help list            Alle verfuegbaren Themen
+  --help list            Alle verfügbaren Themen
 
 FEATURES (seit v1.1.85):
   --help agent/<name>    Agent-Dokumente (z.B. --help agent/ati)
@@ -77,7 +77,7 @@ DOCS-ORDNER (docs/)
 
   docs/                  Aktuelle Konzepte und Analysen
   docs/_archive/         Archivierte/erledigte Konzepte
-  docs/_ideas/           Ideen fuer die Zukunft
+  docs/_ideas/           Ideen für die Zukunft
   docs/_test_and_reports/ Test-Ergebnisse und Berichte
   docs/analyse/          Analytische Dokumente
   docs/reference/        Externe Referenzen (cookbooks, etc.)
@@ -94,7 +94,7 @@ CODE-DOKUMENTATION
 DATENBANK-SCHEMA
 ----------------
 
-  system/db/schema.sql   Vollstaendiges DB-Schema (210+ Tabellen)
+  system/db/schema.sql   Vollständiges DB-Schema (210+ Tabellen)
   system/data/bach.db    SQLite-Datenbank
 
 CLI-Zugriff:
@@ -139,8 +139,8 @@ HANDLER-ARCHITEKTUR
 
 Help Handler:      system/hub/help.py
   - Zeigt .txt Dateien aus system/docs/help/
-  - Unterstuetzt Unterordner (tools/, wiki/)
-  - Alias-System fuer agents, workflows, _experts
+  - Unterstützt Unterordner (tools/, wiki/)
+  - Alias-System für agents, workflows, _experts
   - Tool-Direktzugriff aus DB (v1.1.38+)
 
 Docs Handler:      system/hub/docs.py

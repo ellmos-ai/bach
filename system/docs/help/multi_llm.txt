@@ -1,14 +1,14 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.71
 # Zuletzt validiert: 2026-02-08 (Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 MULTI-LLM PROTOCOL - Koordination paralleler Agenten
 =====================================================
 
 Stand: 2026-01-28 v1.1.71
 
-Protokoll V3 fuer sichere parallele Arbeit mehrerer LLMs
+Protokoll V3 für sichere parallele Arbeit mehrerer LLMs
 (Claude, Gemini, Copilot, Ollama, Perplexity) im selben
 Dateisystem. Entwickelt durch Claude + Gemini Experiment
 am 2026-01-28.
@@ -33,7 +33,7 @@ WARUM?
 - Automatisches Ein-/Ausstempeln in partner_presence DB
 - Partner-Awareness: Erkennt wer noch online ist
 - Protokoll V3 wird bei mehreren Partnern automatisch empfohlen
-- Between-Task Check erinnert an Partner-Pruefung
+- Between-Task Check erinnert an Partner-Prüfung
 
 CLI-BEFEHLE
 -----------
@@ -64,7 +64,7 @@ Inhalt:
 
 Regeln:
 - Heartbeat alle 30-60 Sekunden aktualisieren
-- Heartbeat aelter als 2 Minuten = Agent inaktiv
+- Heartbeat älter als 2 Minuten = Agent inaktiv
 - Bei Session-Ende: status auf FINISHED setzen
 
 2. LOCKING-SYSTEM
@@ -75,27 +75,27 @@ Lock-Datei: <datei>.lock.<agent>
 Beispiel:   PROTOKOL.md.lock.claude
 
 Workflow:
-  1. list_directory - Pruefen ob fremder .lock.* existiert
+  1. list_directory - Prüfen ob fremder .lock.* existiert
   2. Falls ja -> WARTEN (5 Sek Backoff, dann erneut)
   3. Falls nein -> Lock erstellen
   4. Backup erstellen (<datei>.bak)
   5. Datei bearbeiten
-  6. Lock SOFORT loeschen
+  6. Lock SOFORT löschen
 
 Lock-Inhalt:
   agent: claude
   locked_at: 2026-01-28T01:00:00
   file: PROTOKOL.md
 
-Timeout: Lock aelter als 5 Minuten gilt als "stale"
-         und kann von anderem Agent geloescht werden.
+Timeout: Lock älter als 5 Minuten gilt als "stale"
+         und kann von anderem Agent gelöscht werden.
 
 3. BACKUP-SYSTEM
 ----------------
-VOR jeder Aenderung an geteilten Dateien:
+VOR jeder Änderung an geteilten Dateien:
 - Backup erstellen: <datei>.bak
 - Erst danach schreiben
-- Backup bleibt fuer Recovery
+- Backup bleibt für Recovery
 
 4. HANDSHAKE-PROTOKOLL
 ----------------------
@@ -125,8 +125,8 @@ Meta-Ebene (asynchron):
   bach msg read <id>
 
 Echtzeit (im Arbeitsordner):
-  Presence-Dateien fuer Status
-  In-File-Kommunikation (Eintraege mit Timestamp)
+  Presence-Dateien für Status
+  In-File-Kommunikation (Einträge mit Timestamp)
 
 In-File-Format:
   [HH:MM] [Agent] Nachricht oder Aktion
@@ -134,7 +134,7 @@ In-File-Format:
 WORKFLOW: GEMEINSAME DATEI BEARBEITEN
 =====================================
 
-1. Presence pruefen:
+1. Presence prüfen:
    bach llm check
 
 2. Lock erwerben:
@@ -186,7 +186,7 @@ DATEIEN IM ARBEITSORDNER
 .gemini_presence       Presence Gemini
 DATEI.lock.claude      Lock von Claude
 DATEI.lock.gemini      Lock von Gemini
-DATEI.bak              Backup vor Aenderung
+DATEI.bak              Backup vor Änderung
 .handshake_claude      Handshake-Signal
 .handshake_gemini      Handshake-Antwort
 
@@ -194,15 +194,15 @@ TROUBLESHOOTING
 ===============
 
 Problem: Lock bleibt haengen
-Loesung: Lock aelter als 5 Min wird als stale betrachtet
-         und automatisch ignoriert. Manuell loeschen OK.
+Lösung: Lock älter als 5 Min wird als stale betrachtet
+         und automatisch ignoriert. Manuell löschen OK.
 
 Problem: Agent erkennt anderen nicht
-Loesung: Presence-Datei pruefen. Heartbeat aktuell?
+Lösung: Presence-Datei prüfen. Heartbeat aktuell?
 
 Problem: Race Condition trotz Lock
-Loesung: Pruefen ob list_directory VOR Lock-Erstellung
-         ausgefuehrt wird. Timing-Problem?
+Lösung: Prüfen ob list_directory VOR Lock-Erstellung
+         ausgeführt wird. Timing-Problem?
 
 HANDLER
 -------
@@ -221,7 +221,7 @@ bach --help messages       Nachrichten
 
 STEMPELKARTEN-SYSTEM (v1.1.71)
 ==============================
-DB-basierte Partner-Praesenz fuer automatische Awareness.
+DB-basierte Partner-Praesenz für automatische Awareness.
 
 TABELLE: partner_presence
   id               INTEGER PRIMARY KEY
@@ -231,7 +231,7 @@ TABELLE: partner_presence
   clocked_out      TEXT     Ausstempel-Zeitpunkt
   last_heartbeat   TEXT     Letzte Aktivitaet
   current_task     TEXT     Aktuelle Aufgabe
-  session_id       TEXT     Zugehoerige Session
+  session_id       TEXT     Zugehörige Session
 
 AUTOMATISCH:
 - Bei --startup: Clock-In (alte crashed Sessions markiert)
@@ -243,5 +243,5 @@ MANUELL (optional):
 - Status: bach llm status
 
 TIMEOUT:
-- Heartbeat aelter als 5 Minuten = Partner inaktiv
-- Crashed Sessions werden bei naechstem Startup bereinigt
+- Heartbeat älter als 5 Minuten = Partner inaktiv
+- Crashed Sessions werden bei nächstem Startup bereinigt

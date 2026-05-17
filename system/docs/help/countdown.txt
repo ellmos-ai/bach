@@ -1,12 +1,12 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 COUNTDOWN - Countdown mit Trigger
 ==================================
 
-Countdown-Timer der bei Ablauf optional einen Befehl ausfuehrt.
+Countdown-Timer der bei Ablauf optional einen Befehl ausführt.
 
 CLI-BEFEHLE
 -----------
@@ -52,7 +52,7 @@ BEISPIELE
 
   # Mit automatischem Shutdown
   bach countdown start session 01:00:00 --after "shutdown 'Session beendet'"
-  -> Bei Ablauf wird "bach --shutdown 'Session beendet'" ausgefuehrt
+  -> Bei Ablauf wird "bach --shutdown 'Session beendet'" ausgeführt
 
   # Pomodoro-Timer (25 Min)
   bach countdown start focus 00:25:00
@@ -62,7 +62,7 @@ BEISPIELE
   bach countdown pause focus
   bach countdown resume focus
 
-  # Status pruefen
+  # Status prüfen
   bach countdown list
   -> session: 45:12 verbleibend
   -> focus:   19:45 verbleibend (PAUSIERT)
@@ -70,14 +70,14 @@ BEISPIELE
 TRIGGER (--after)
 -----------------
 
-Der --after Befehl wird bei Ablauf ausgefuehrt:
+Der --after Befehl wird bei Ablauf ausgeführt:
 
   --after "shutdown 'Zeit um'"     Session beenden
   --after "msg send user 'Pause!'" Nachricht senden
   --after "task done 123"          Task als erledigt markieren
 
 Bei Ablauf wird der Befehl in eine Queue geschrieben.
-Der naechste CLI-Aufruf fuehrt ihn aus (oder der Daemon).
+Der nächste CLI-Aufruf führt ihn aus (oder der Daemon).
 
 USECASES
 --------

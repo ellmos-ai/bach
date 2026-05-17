@@ -1,6 +1,6 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 # Quellen: docs/_archive/CONCEPT_user_folder_attachment.md, system/hub/mount.py
 
 BACH USER-MOUNTS (KONZEPT)
@@ -10,24 +10,24 @@ Stand: 2026-02-08
 
 WAS SIND USER-MOUNTS?
 ---------------------
-User-Mounts sind eine implementierte Funktion (seit 2026-01-28, Task SYS_001), um externe Speicherorte (z.B. NAS, externe Festplatten, Cloud-Ordner wie Google Drive) transparent in das BACH-Dateisystem einzubinden. Anstatt Daten in den BACH-Ordner zu kopieren, werden sie virtuell verknuepft.
+User-Mounts sind eine implementierte Funktion (seit 2026-01-28, Task SYS_001), um externe Speicherorte (z.B. NAS, externe Festplatten, Cloud-Ordner wie Google Drive) transparent in das BACH-Dateisystem einzubinden. Anstatt Daten in den BACH-Ordner zu kopieren, werden sie virtuell verknüpft.
 
 FUNKTIONSWEISE
 --------------
 Das System nutzt "Directory Junctions" oder "Symlinks", um externe Pfade als Unterordner im `user/`-Verzeichnis bereitzustellen.
-Der `filesystem_scanner` und `dirscan` koennen diese Pfade dann wie lokale Ordner durchsuchen, indizieren und Dateien verarbeiten (z.B. fuer OCR oder Extraktion).
+Der `filesystem_scanner` und `dirscan` können diese Pfade dann wie lokale Ordner durchsuchen, indizieren und Dateien verarbeiten (z.B. für OCR oder Extraktion).
 
 ZIELSETZUNG
 -----------
 *   **Keine Redundanz**: Originaldaten bleiben an ihrem Ort.
-*   **Transparenz**: Alle BACH-Tools koennen auf die Daten zugreifen.
+*   **Transparenz**: Alle BACH-Tools können auf die Daten zugreifen.
 *   **Persistenz**: Verbindungen werden in der Datenbank (`connections`-Tabelle) gespeichert und bei Bedarf (nach Neustart) wiederhergestellt.
 
 BEISPIEL
 --------
 Ein User hat Steuerunterlagen auf `E:\Archiv\Steuer`.
 Via User-Mount wird dies eingebunden als: `user/mounts/archiv_steuer/`.
-Der Steuer-Agent kann nun auf `user/mounts/archiv_steuer/2025/` zugreifen, als waere es lokal.
+Der Steuer-Agent kann nun auf `user/mounts/archiv_steuer/2025/` zugreifen, als wäre es lokal.
 
 TECHNISCHE DETAILS
 ------------------
@@ -41,7 +41,7 @@ TECHNISCHE DETAILS
 
 STATUS
 ------
-IMPLEMENTIERT (seit 2026-01-28). Vollstaendig funktionsfaehig. CLI-Befehle verfuegbar. GUI-Integration geplant fuer spaetere Phase.
+IMPLEMENTIERT (seit 2026-01-28). Vollständig funktionsfähig. CLI-Befehle verfügbar. GUI-Integration geplant für spätere Phase.
 
 SIEHE AUCH
 ----------

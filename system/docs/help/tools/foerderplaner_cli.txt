@@ -5,7 +5,7 @@ Quelle: tools/foerderplaner_cli.py
 
 BESCHREIBUNG
 ----------------------------------------
-Foerderplaner CLI - Kommandozeilen-Tool für Förderplanung
+Förderplaner CLI - Kommandozeilen-Tool für Förderplanung
 Durchsucht ICF-Struktur, Wissensdatenbank und schlägt Methoden/Material vor
 
 VERWENDUNG

@@ -1,11 +1,11 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08 (Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 DENKSTRATEGIEN
 ==============
-Kognitive und metakognitive Strategien fuer Informationsverarbeitung.
+Kognitive und metakognitive Strategien für Informationsverarbeitung.
 
 Bezug: Lernsystem-Analyse, docs/help/operatoren.txt, docs/help/rhetorik.txt
 
@@ -24,7 +24,7 @@ BACH: Task-Breakdown, Workflow-Phasen
 1.2 Mustererkennung
 -------------------
 Wiederkehrende Strukturen erkennen.
-  - aehnliche Fehler in Logs
+  - ähnliche Fehler in Logs
   - wiederkehrende Dokumenttypen
 BACH: Lessons-Learned Pattern-Matching
 
@@ -36,19 +36,19 @@ Neues durch Vergleich mit Bekanntem verstehen.
 
 1.4 Hypothesenbildung
 ---------------------
-Annahmen formulieren, bevor man prueft.
+Annahmen formulieren, bevor man prüft.
   - "Wenn Score niedrig, fehlt vermutlich ein Pflichtfeld"
 
 1.5 Deduktives Denken
 ---------------------
-Vom Allgemeinen auf den Einzelfall schliessen.
+Vom Allgemeinen auf den Einzelfall schließen.
   - "Alle Rechnungen haben Rechnungsnummer -> dieses Dokument
      hat keine -> vermutlich keine Rechnung"
 
 1.6 Induktives Denken
 ---------------------
-Vom Einzelfall auf Regeln schliessen.
-  - "In 90% der Faelle enthaelt 'Rechnung' im Betreff
+Vom Einzelfall auf Regeln schließen.
+  - "In 90% der Faelle enthält 'Rechnung' im Betreff
      eine echte Rechnung"
 BACH: Lessons-Learned Ableitung
 
@@ -64,8 +64,8 @@ Problem aus anderer Sicht betrachten.
 
 1.9 Szenariodenken
 ------------------
-"Was waere wenn"-Varianten durchspielen.
-  - "Was passiert, wenn API ausfaellt"
+"Was wäre wenn"-Varianten durchspielen.
+  - "Was passiert, wenn API ausfällt"
   - "Was, wenn Klassifikation falsch liegt"
 BACH: Modus (2) Nachdenken
 
@@ -74,14 +74,14 @@ BACH: Modus (2) Nachdenken
 Wichtige Informationen zuerst verarbeiten.
   - kritische Fehler vor Warnungen
   - Rechnungen vor Newslettern
-BACH: Task-Prioritaeten (P1 > P2 > P3)
+BACH: Task-Prioritäten (P1 > P2 > P3)
 
 
-2. METAKOGNITIVE STRATEGIEN (Denken ueber Denken)
+2. METAKOGNITIVE STRATEGIEN (Denken über Denken)
 ==================================================
 Steuern WIE man sein eigenes Denken steuert.
 
-2.1 Selbstueberwachung (Monitoring)
+2.1 Selbstüberwachung (Monitoring)
 -----------------------------------
 Eigenes Denken beobachten.
   - "Verstehe ich das Problem wirklich"
@@ -102,7 +102,7 @@ BACH: Lessons-Learned (Bug-Kategorie)
 
 2.4 Meta-Fragen stellen
 -----------------------
-Fragen ueber den Denkprozess selbst.
+Fragen über den Denkprozess selbst.
   - "Welche Informationen fehlen mir"
   - "Welche Operatoren brauche ich hier"
 
@@ -114,13 +114,13 @@ Bewusst entscheiden, welche Denkstrategie passt.
 2.6 Reflexion
 -------------
 Nachtraegliches Bewerten des Denkprozesses.
-  - "Warum hat diese Loesung funktioniert"
-  - "Was wuerde ich naechstes Mal anders machen"
+  - "Warum hat diese Lösung funktioniert"
+  - "Was würde ich nächstes Mal anders machen"
 BACH: Session-Summary, Konsolidierung
 
 2.7 Metamodellierung
 --------------------
-Das Problem in ein abstrakteres Modell ueberfuehren.
+Das Problem in ein abstrakteres Modell überfuehren.
   - "Das ist ein Klassifikationsproblem"
   - "Das ist ein Routing-Problem"
 
@@ -171,7 +171,7 @@ Denkstrategien haben direkte rhetorische Entsprechungen:
   Analogiebildung    -> Metaphern, Vergleiche
   Hypothesenbildung  -> Argumente vorbereiten, Gegenargumente antizipieren
   Deduktion/Induktion-> Logische Argumentation
-  Szenariodenken     -> "Was waere wenn"-Argumente
+  Szenariodenken     -> "Was wäre wenn"-Argumente
   Priorisieren       -> Kernbotschaft, Elevator Pitch
 
 Rhetorik = Kognitive Strategie + Sprachliche Verpackung

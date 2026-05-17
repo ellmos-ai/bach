@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.2.0
 # Zuletzt validiert: 2026-05-13
 
@@ -13,13 +13,13 @@ BEFEHL
 ------
 bach --startup                    Komplettes Startprotokoll
 bach --startup quick              Schnellstart (ohne Directory-Scan)
-bach --startup mode <m>           Startup-Modus aendern (gui|text|dual|silent)
+bach --startup mode <m>           Startup-Modus ändern (gui|text|dual|silent)
 bach --startup --mode=<m>         Einmalig mit anderem Modus starten
 bach --startup --partner=NAME     Partner-spezifische Session (NEU v1.1.38)
 
 PARTNER-SESSIONS (v1.1.38)
 --------------------------
-Ermoeglicht Partner-spezifisches Session-Management:
+Ermöglicht Partner-spezifisches Session-Management:
 
   bach --startup --partner=claude   Startet Claude-Session
   bach --startup --partner=gemini   Startet Gemini-Session
@@ -29,7 +29,7 @@ Ermoeglicht Partner-spezifisches Session-Management:
 
 VORTEILE:
 - Vorherige Session desselben Partners wird automatisch geschlossen
-- Parallele Sessions fuer verschiedene Partner moeglich
+- Parallele Sessions für verschiedene Partner möglich
 - Verhindert "verwaiste" offene Sessions bei wiederholtem Startup
 - Automatische Stempelkarte (Clock-In/Out) in partner_presence Tabelle
 
@@ -51,7 +51,7 @@ BEISPIEL:
   # Gemini startet Arbeit
   bach --startup --partner=gemini --mode=silent
 
-  # Spaeter: Gemini startet neu -> alte Session wird geschlossen
+  # Später: Gemini startet neu -> alte Session wird geschlossen
   bach --startup --partner=gemini --mode=silent
   [AUTO-CLOSE] Vorherige GEMINI-Session beendet: session_20260126_...
 
@@ -64,13 +64,13 @@ BEISPIEL:
 DATENBANK:
   memory_sessions.partner_id speichert den Partner-Namen.
   partner_presence speichert Stempelkarte (online/offline/crashed).
-  Default: "user" fuer manuelle Sessions.
+  Default: "user" für manuelle Sessions.
 
 NUTZERMODI (v1.1.37)
 --------------------
-BACH unterstuetzt 4 Startup-Modi:
+BACH unterstützt 4 Startup-Modi:
 
-  gui      GUI Dashboard oeffnet im Browser (Standard)
+  gui      GUI Dashboard öffnet im Browser (Standard)
   text     Nur Konsole, kein Browser
   dual     GUI + Konsole parallel
   silent   Nichts automatisch starten
@@ -80,11 +80,11 @@ Details: bach --help modes
 
 PROSYNC (vor Startup-Protokoll)
 -------------------------------
-Wenn ProSync aktiviert ist (bach setup prosync --multi-system), fuehrt
+Wenn ProSync aktiviert ist (bach setup prosync --multi-system), führt
 bach.py VOR dem Startup-Protokoll einen DB-Sync durch:
   - Pull: Neuere Backups aus dem Transit-Hub laden und mergen
   - Push (bei Exit): Eigenes Backup in den Transit-Hub schreiben
-ProSync laeuft in bach.py main(), nicht im Startup-Handler.
+ProSync läuft in bach.py main(), nicht im Startup-Handler.
 Details: bach --help db_sync
 
 AGENT-RECOVERY-TIPP
@@ -99,24 +99,24 @@ Agent-Fenster sofort wieder schließt:
 
 ABLAUF (v1.1.31)
 ----------------
-Das Startup-Protokoll fuehrt folgende Schritte aus:
+Das Startup-Protokoll führt folgende Schritte aus:
 
 1. [DIRECTORY SCAN]
-   - Prueft Aenderungen seit letzter Session
-   - Zeigt neue/geloeschte/geaenderte Dateien
-   - Wird bei "quick" uebersprungen
+   - Prüft Änderungen seit letzter Session
+   - Zeigt neue/gelöschte/geänderte Dateien
+   - Wird bei "quick" übersprungen
 
 2. [PROBLEMS FIRST]
    - Automatische Fehlermeldung (von CHIAH)
    - Zeigt Fehler der letzten 24 Stunden
 
 3. [PATH HEALER CHECK] *** NEU v1.1.18 ***
-   - Dry-Run Pruefung auf Pfadprobleme
+   - Dry-Run Prüfung auf Pfadprobleme
    - Zeigt Dateien mit fehlerhaften Pfaden
    - Reparieren: bach --maintain heal --execute
 
 4. [REGISTRY WATCHER] *** NEU v1.1.21 ***
-   - Prueft DB/JSON Konsistenz
+   - Prüft DB/JSON Konsistenz
    - Zeigt fehlende Tabellen, ungueltige JSON
    - Details: bach --maintain registry
 
@@ -130,7 +130,7 @@ Das Startup-Protokoll fuehrt folgende Schritte aus:
    - Tasks erstellt/erledigt
    - WICHTIG: "NAECHSTE SCHRITTE" = continuation_context
 
-7. [SNAPSHOT VERFUEGBAR] *** NEU v1.1.17 ***
+7. [SNAPSHOT VERFÜGBAR] *** NEU v1.1.17 ***
    - Zeigt letzten Snapshot (wenn heute erstellt)
    - Anzahl offener Tasks im Snapshot
    - Fortsetzen: bach snapshot load
@@ -143,21 +143,21 @@ Das Startup-Protokoll fuehrt folgende Schritte aus:
    - Neue Session-ID wird in memory_sessions erstellt
 
 10. [NACHRICHTEN]
-    - Prueft ungelesene Nachrichten in MessageBox
+    - Prüft ungelesene Nachrichten in MessageBox
     - Zeigt Absender und Betreff
     - Details: bach msg unread
 
 11. [PERIODISCHE TASKS] *** NEU v1.1.18 ***
-    - Zeigt faellige Recurring Tasks
+    - Zeigt fällige Recurring Tasks
     - Erstellen: bach --recurring check
 
 12. [BACH SYSTEM-TASKS]
     - Zeigt offene/erledigte BACH Framework-Tasks
-    - Top 3 nach Prioritaet (P1 > P2 > P3)
+    - Top 3 nach Priorität (P1 > P2 > P3)
     - Alle: bach task list
 
 13. [ATI AGENT]
-    - Prueft ob ATI-Ordner existiert
+    - Prüft ob ATI-Ordner existiert
     - Software-Entwickler-Agent Status
 
 14. [LESSONS LEARNED]
@@ -165,7 +165,7 @@ Das Startup-Protokoll fuehrt folgende Schritte aus:
     - Details: bach lesson last
 
 15. [AUTOLOG]
-    - Eintraege aus system/data/logs/auto_log.txt
+    - Einträge aus system/data/logs/auto_log.txt
     - Letzte 3 Befehle
     - Mehr: bach --logs tail 20
 
@@ -203,9 +203,9 @@ OUTPUT-BEISPIEL
 
  *** NAECHSTE SCHRITTE ***
    P2: shutdown.txt aktualisieren
-   P2: memory.txt pruefen
+   P2: memory.txt prüfen
 
-[SNAPSHOT VERFUEGBAR]
+[SNAPSHOT VERFÜGBAR]
  Letzter: auto_shutdown_20260122_1230 (12:30)
  Tasks im Snapshot: 5
  --> bach snapshot load zum Fortsetzen

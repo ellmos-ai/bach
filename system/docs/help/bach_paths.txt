@@ -1,12 +1,12 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 2.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 BACH PATHS - Zentrale Pfadverwaltung
 =====================================
 
-bach_paths.py ist die "Single Source of Truth" fuer alle Pfade in BACH.
+bach_paths.py ist die "Single Source of Truth" für alle Pfade in BACH.
 Keine hartcodierten Pfade mehr - alles zentral an einem Ort.
 
 STANDORT
@@ -15,22 +15,22 @@ system/hub/bach_paths.py
 
 HAUPTFUNKTION: get_path(name)
 -----------------------------
-Die wichtigste Funktion - gibt den Pfad zu einem benannten Verzeichnis zurueck.
+Die wichtigste Funktion - gibt den Pfad zu einem benannten Verzeichnis zurück.
 
 Beispiele:
     from bach_paths import get_path
 
     tools_dir = get_path("tools")           # system/tools/
-    template = get_path("bericht_template") # Vorlage fuer Berichte
+    template = get_path("bericht_template") # Vorlage für Berichte
     db = get_path("db")                     # bach.db Datenbank
     berichte = get_path("berichte")         # Berichte-Verzeichnis
 
-IMPORT VON UEBERALL
+IMPORT VON ÜBERALL
 -------------------
 Methode 1 - Wenn hub/ im sys.path (z.B. in hub/_services/):
     from bach_paths import BACH_ROOT, get_path
 
-Methode 2 - Universal (funktioniert von ueberall):
+Methode 2 - Universal (funktioniert von überall):
     import sys
     from pathlib import Path
 
@@ -45,7 +45,7 @@ Methode 2 - Universal (funktioniert von ueberall):
 
     from bach_paths import BACH_ROOT, get_path
 
-VERFUEGBARE PFADE
+VERFÜGBARE PFADE
 -----------------
 Hierarchie:     root, bach, system, hub
 System:         data, gui, skills, dist
@@ -53,17 +53,17 @@ Skills:         tools, help, agents, experts, workflows, partners, services, tem
 Data:           logs, backups, archive, trash, messages
 Root:           user, docs, exports, extensions
 Datenbanken:    db, bach_db, archive_db
-User:           user_documents, persoenlich
+User:           user_documents, persönlich
 Steuer:         steuer, steuer_2025, belege, bundles
 Partner:        gemini, claude, ollama
-Berichte:       foerderplanung, berichte, berichte_output, berichte_klienten, berichte_data, berichte_bundles, klienten, quarantine
+Berichte:       förderplanung, berichte, berichte_output, berichte_klienten, berichte_data, berichte_bundles, klienten, quarantine
 Templates:      bericht_template
 Extern:         wissensdatenbank
 
 BEISPIEL: Tool-Import
 ---------------------
 Problem: Tools liegen in system/tools/
-Loesung mit bach_paths:
+Lösung mit bach_paths:
 
     try:
         from c_ocr_engine import ocr_pdf
@@ -83,16 +83,16 @@ BEISPIEL: Template-Pfad
 
 WEITERE FUNKTIONEN
 ------------------
-list_paths()              - Alle verfuegbaren Pfade als Dict
+list_paths()              - Alle verfügbaren Pfade als Dict
 get_tool_path(name)       - Findet Tool in tools/ oder Unterordnern
 get_partner_dir(partner)  - Partner-Verzeichnis (gemini, claude, ollama)
 get_belege_path(anbieter) - Belege-Pfad mit optionalem Anbieter
 resolve(relpath)          - Relativen Pfad aufloesen
-validate()                - Alle kritischen Pfade pruefen
+validate()                - Alle kritischen Pfade prüfen
 
 DB-OVERRIDES
 ------------
-Pfade koennen in der DB ueberschrieben werden:
+Pfade können in der DB überschrieben werden:
 
     from bach_paths import set_path_override, get_path_with_override
 
@@ -111,7 +111,7 @@ CLI NUTZUNG
     python bach_paths.py --overrides         # DB-Overrides anzeigen
     python bach_paths.py --json              # Ausgabe als JSON
 
-VARIABLEN (fuer direkten Import)
+VARIABLEN (für direkten Import)
 --------------------------------
     from bach_paths import (
         BACH_ROOT,      # Repository-Root
@@ -129,18 +129,18 @@ SELF-HEALING
 ------------
 bach_paths berechnet alle Pfade relativ zum eigenen Standort.
 Wenn BACH verschoben wird, funktioniert alles weiterhin -
-keine manuellen Anpassungen noetig.
+keine manuellen Anpassungen nötig.
 
 PFAD-HEILUNG: NICHT NOETIG
 --------------------------
-bach_paths.py macht manuelle Pfad-Heilung ueberfluessig!
+bach_paths.py macht manuelle Pfad-Heilung überfluessig!
 Alle Laufzeit-Pfade werden dynamisch berechnet.
 
-Nur fuer Dokumentations-Updates (Help-Texte, Wiki, Markdown):
+Nur für Dokumentations-Updates (Help-Texte, Wiki, Markdown):
   bach --maintain docs-paths
 
 SIEHE AUCH
 ----------
-- bach path validate               Pfade pruefen
+- bach path validate               Pfade prüfen
 - bach --help path                 Path-Handler Doku
 - bach --help tools/path_healer    Dokumentations-Pfad-Updater

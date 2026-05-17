@@ -1,12 +1,12 @@
-# Portabilitaet: SYSTEM
+# Portabilität: SYSTEM
 # Version: 1.1.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-05-08
+# Nächste Prüfung: 2026-05-08
 
 TEST - BACH Test- und QA-System
 ================================
 
-UEBERSICHT
+ÜBERSICHT
 ----------
 Systematisches Testen von BACH und Vergleich mit anderen Systemen.
 Nutzt B-Tests (automatisiert), O-Tests (funktional) und E-Tests (subjektiv).
@@ -16,14 +16,14 @@ BEFEHLE
   bach --test self [PROFIL]     BACH selbst testen (default: QUICK)
   bach --test run <path>        Anderes System testen
   bach --test compare <path>    System mit BACH vergleichen
-  bach --test profiles          Verfuegbare Profile anzeigen
+  bach --test profiles          Verfügbare Profile anzeigen
   bach --test results [system]  Testergebnisse anzeigen
 
 TESTPROFILE
 -----------
   QUICK         Schnelltest (~5 Min) - B001, O001
   STANDARD      Standard (~20 Min) - B001-B005, O001-O003
-  FULL          Vollstaendig (~40 Min) - Alle Tests
+  FULL          Vollständig (~40 Min) - Alle Tests
   OBSERVATION   Nur B-Tests (~15 Min)
   OUTPUT        Nur O-Tests (~20 Min)
   MEMORY_FOCUS  Memory-Fokus (~10 Min)
@@ -37,7 +37,7 @@ DREI TESTPERSPEKTIVEN
   O-Tests (Ausgabe)       Funktional, Input->Output, Python-Scripts
                           "Funktioniert es?"
   
-  E-Tests (Erfahrung)     Intern, subjektiv, Claude-gefuehrt
+  E-Tests (Erfahrung)     Intern, subjektiv, Claude-geführt
                           "Wie fuehlt es sich an?"
 
 BEWERTUNGSSKALA

@@ -1,11 +1,11 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
 PROFILER
 ========
 
-Handler fuer Datei- und Ordner-Analyse im BACH-System.
+Handler für Datei- und Ordner-Analyse im BACH-System.
 
 
 BESCHREIBUNG
@@ -13,10 +13,10 @@ BESCHREIBUNG
 
 Der PROFILER Handler bietet Funktionen zur Analyse und Verwaltung von Dateien:
 - Suche nach Dateien mit Keyword-Matching
-- Detaillierte Datei- und Ordner-Profile (Groesse, Kategorie, Metadaten)
+- Detaillierte Datei- und Ordner-Profile (Größe, Kategorie, Metadaten)
 - SHA256-Hash-Berechnung
 - Automatische Datei-Kategorisierung (8 vordefinierte Kategorien)
-- Ordner-Statistiken mit Groessenausgaben nach Dateityp
+- Ordner-Statistiken mit Größenausgaben nach Dateityp
 
 
 OPERATIONEN
@@ -30,7 +30,7 @@ search <keyword> [--path=DIR] [--type=ext]
   Beispiel: profiler search config --path=. --type=json
 
 profile <path>
-  Analysiere Datei oder Ordner. Gibt Groesse, Kategorie und Metadaten aus.
+  Analysiere Datei oder Ordner. Gibt Größe, Kategorie und Metadaten aus.
   Beispiel: profiler profile data/myfile.txt
 
 hash <path>
@@ -42,12 +42,12 @@ categorize <path>
   Beispiel: profiler categorize document.docx
 
 stats <path>
-  Zeige detaillierte Ordner-Statistiken: Dateianzahl, Gesamtgroesse,
+  Zeige detaillierte Ordner-Statistiken: Dateianzahl, Gesamtgröße,
   Verteilung nach Kategorie mit Speichernutzung.
   Beispiel: profiler stats ./projects
 
 status
-  Zeige ProFiler-Status und verfuegbare Kategorien.
+  Zeige ProFiler-Status und verfügbare Kategorien.
 
 
 BEISPIELE
@@ -60,7 +60,7 @@ profiler profile /home/cfm-cosmology/results
   -> Ordner-Profil: 1243 Dateien, 15.7 GB, 8 Unterordner
 
 profiler hash data/model.pkl
-  -> SHA256: a7f8c3e9d... (Dateigroesse: 2.3 MB)
+  -> SHA256: a7f8c3e9d... (Dateigröße: 2.3 MB)
 
 profiler categorize config.json
   -> config.json: Daten (.json)
@@ -69,7 +69,7 @@ profiler stats ./documents
   -> Ordner-Statistiken mit Kategorisierung (Dokumente: 234 Dateien 456 MB, etc.)
 
 profiler status
-  -> ProFiler Status und Kategorien-Uebersicht
+  -> ProFiler Status und Kategorien-Übersicht
 
 
 KATEGORIEN
@@ -84,7 +84,7 @@ KATEGORIEN
   Archive     - .zip, .rar, .7z, .tar, .gz, .bz2
   Code        - .py, .js, .ts, .html, .css, .java, .c, .cpp, .rs, .go, .sql
   Daten       - .json, .xml, .yaml, .yml, .toml, .ini, .cfg
-  Ausfuehrbar - .exe, .msi, .bat, .cmd, .ps1, .sh
+  Ausführbar - .exe, .msi, .bat, .cmd, .ps1, .sh
   Sonstige    - Alle anderen Endungen
 
 

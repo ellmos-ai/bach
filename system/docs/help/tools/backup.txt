@@ -8,14 +8,14 @@ BESCHREIBUNG
 ------------
 Tools zur Datensicherung und Wiederherstellung von BACH-Daten:
   - Lokale Backups erstellen und verwalten
-  - NAS-Backups (wenn verfuegbar)
-  - Template-Restore (Originaldateien zuruecksetzen)
+  - NAS-Backups (wenn verfügbar)
+  - Template-Restore (Originaldateien zurücksetzen)
   - Distribution-Pakete erstellen
 
 HAUPT-TOOL: backup_manager.py
 =============================
-Zentrales Tool fuer alle Backup-Operationen.
-Kann direkt oder ueber CLI aufgerufen werden.
+Zentrales Tool für alle Backup-Operationen.
+Kann direkt oder über CLI aufgerufen werden.
 
 GRUNDBEFEHLE:
 
@@ -33,7 +33,7 @@ GRUNDBEFEHLE:
   bach restore backup latest          Neuestes Backup
   bach restore backup latest --force  Ohne Bestaetigung
 
-  # Template zuruecksetzen
+  # Template zurücksetzen
   bach restore template SKILL.md      Auf Original
 
 DIST_TYPE KONZEPT
@@ -68,7 +68,7 @@ NICHT gesichert (CORE/TEMPLATE):
 
 BACKUP-ROTATION
 ===============
-Automatische Rotation verhindert Speicherueberlauf:
+Automatische Rotation verhindert Speicherüberlauf:
 
   Lokal (data/_backups/):            7 Backups behalten
   NAS:                  30 Backups behalten
@@ -95,28 +95,28 @@ backup_manager.py kann auch direkt aufgerufen werden:
 
 SNAPSHOTS (Session-basiert)
 ===========================
-Fuer Session-Snapshots siehe Memory-System:
+Für Session-Snapshots siehe Memory-System:
 
   bach snapshot create           Manueller Snapshot
   bach snapshot load             Letzten Snapshot laden
   bach snapshot list             Snapshots anzeigen
 
-  -> Automatisch bei Shutdown (bei >= 3 Aenderungen)
+  -> Automatisch bei Shutdown (bei >= 3 Änderungen)
   -> Gespeichert in session_snapshots Tabelle
 
 DISTRIBUTION-BEFEHLE
 ====================
-Pakete fuer Verteilung erstellen:
+Pakete für Verteilung erstellen:
 
   bach dist create base       Basis-Paket erstellen
   bach dist list                 Pakete anzeigen
   bach dist status               Verteilungsstatus
-  bach dist verify               Integritaet pruefen
+  bach dist verify               Integrität prüfen
 
 TYPISCHE ANWENDUNGSFAELLE
 =========================
 
-1. VOR GROESSEREN AENDERUNGEN
+1. VOR GRÖSSEREN ÄNDERUNGEN
    Sicherheits-Backup erstellen:
    bach backup create
 
@@ -128,11 +128,11 @@ TYPISCHE ANWENDUNGSFAELLE
    Letzte funktionierende Version:
    bach restore backup latest
 
-4. SKILL.MD ZURUECKSETZEN
-   Bei kaputten Aenderungen:
+4. SKILL.MD ZURÜCKSETZEN
+   Bei kaputten Änderungen:
    bach restore template SKILL.md
 
-5. PAKET FUER ANDEREN RECHNER
+5. PAKET FÜR ANDEREN RECHNER
    Distribution erstellen:
    bach dist create base
 
@@ -147,7 +147,7 @@ VERWANDTE SKILLS
 
 SIEHE AUCH
 ----------
-  bach --help backup             Vollstaendige Backup-Hilfe
+  bach --help backup             Vollständige Backup-Hilfe
   bach --help dist               Distribution-Befehle
   bach --help memory             Memory/Snapshot-System
-  bach --help tools              Tool-Uebersicht
+  bach --help tools              Tool-Übersicht

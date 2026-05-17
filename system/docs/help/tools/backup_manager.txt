@@ -15,11 +15,11 @@ Verwaltet:
 BEFEHLE
 ----------------------------------------
 python backup_manager.py create [--to-nas]
-    Erstellt vollstaendiges User-Backup
-    --to-nas: Zusaetzlich auf NAS kopieren
+    Erstellt vollständiges User-Backup
+    --to-nas: Zusätzlich auf NAS kopieren
 
 python backup_manager.py list [--nas]
-    Listet verfuegbare Backups
+    Listet verfügbare Backups
     --nas: NAS-Backups statt lokale anzeigen
 
 python backup_manager.py info <name>
@@ -31,7 +31,7 @@ python backup_manager.py restore backup <name> [--force] [--no-auto-backup]
     --no-auto-backup: Kein Sicherheits-Backup vor Restore
 
 python backup_manager.py restore template <file>
-    Setzt Template-Datei auf Original zurueck
+    Setzt Template-Datei auf Original zurück
 
 python backup_manager.py restore dist <name>
     [GEPLANT] Distribution wiederherstellen - noch nicht implementiert
@@ -42,8 +42,8 @@ python backup_manager.py snapshot <file>
 AUTOMATISCHE FEATURES
 ----------------------------------------
 - Auto-Backup: Vor jedem Restore wird automatisch ein Sicherheits-Backup erstellt
-- Rotation lokal: Max. 7 Backups (aeltere werden automatisch geloescht)
-- Rotation NAS: Max. 30 Backups (aeltere werden automatisch geloescht)
+- Rotation lokal: Max. 7 Backups (ältere werden automatisch gelöscht)
+- Rotation NAS: Max. 30 Backups (ältere werden automatisch gelöscht)
 
 GESICHERTE DATEN
 ----------------------------------------

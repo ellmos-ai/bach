@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -9,7 +9,7 @@ integration
 BESCHREIBUNG
 ============
 LLM-Partner-Integration und BACH-Kontext-Synchronisation. Verwaltet die Verbindung zu
-externen KI-Systemen (Claude, Gemini, Ollama) ueber strukturierte Markdown-Datei-Blöcke
+externen KI-Systemen (Claude, Gemini, Ollama) über strukturierte Markdown-Datei-Blöcke
 mit eindeutigen Markern. Basis: Stufe-2-Managed (CLAUDE.md/GEMINI.md/OLLAMA.md Push).
 
 Teil von SQ038: Claude Code Integration & LLM-Partner-Brücke.

@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-02-08 (Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 BACH PROMPT-GENERATOR
 =====================
@@ -21,7 +21,7 @@ KONZEPT
 
 Das Board bietet systemweites Prompt-Management mit folgenden Features:
 
-  1. Texteditor fuer Startprompt (mit Reset-Funktion)
+  1. Texteditor für Startprompt (mit Reset-Funktion)
   2. Vorlagen-Auswahl (System/Agenten/Eigene)
   3. Vier Sendeoptionen
   4. Daemon-Steuerung (Zeitplanung)
@@ -32,8 +32,8 @@ SENDEOPTIONEN (4 Modi)
 
   1. ALS TASK
      - Prompt wird als Task in die Warteschlange gestellt
-     - Asynchrone Abarbeitung durch naechste Claude-Session
-     - Keine sofortige Ausfuehrung
+     - Asynchrone Abarbeitung durch nächste Claude-Session
+     - Keine sofortige Ausführung
 
   2. DIREKT SESSION
      - Startet sofort eine neue Claude-Session
@@ -42,11 +42,11 @@ SENDEOPTIONEN (4 Modi)
 
   3. TEXT KOPIEREN
      - Kopiert den Prompt in die Zwischenablage
-     - User fuegt manuell in Claude ein
-     - Fuer Anpassungen vor dem Senden
+     - User fügt manuell in Claude ein
+     - Für Anpassungen vor dem Senden
 
   4. DAEMON-STEUERUNG
-     - Automatisierte Prompt-Ausfuehrung
+     - Automatisierte Prompt-Ausführung
      - Konfigurierbar: Intervall, Sperrzeiten, Max-Sessions
      - Single-Prompt oder Multi-Prompt Rotation
 
@@ -54,9 +54,9 @@ SENDEOPTIONEN (4 Modi)
 VORLAGEN-SYSTEM
 ---------------
 
-  System-Vorlagen (nicht editierbar, fuer Reset):
+  System-Vorlagen (nicht editierbar, für Reset):
     - minimal.txt      Basis: Lies SKILL.md, fuehre bach.py aus
-    - task.txt         Task-Ausfuehrung mit JSON-Output
+    - task.txt         Task-Ausführung mit JSON-Output
     - review.txt       Code-Review mit Scoring
 
   Agenten-Vorlagen:
@@ -72,12 +72,12 @@ VORLAGEN-SYSTEM
 DAEMON-STEUERUNG
 ----------------
 
-Erweiterte Optionen fuer automatisierte Sessions:
+Erweiterte Optionen für automatisierte Sessions:
 
   Intervall:        Minuten zwischen Sessions (default: 30)
   Max Sessions:     Limit pro Durchlauf (0 = unbegrenzt)
   Sperrzeiten:      Start/Ende der Ruhezeit (default: 22:00-08:00)
-  Hoechstdauer:     Max. Minuten pro Session (default: 15)
+  Höchstdauer:     Max. Minuten pro Session (default: 15)
 
   Modi:
     Single Prompt:  Immer derselbe Prompt
@@ -130,10 +130,10 @@ ABGRENZUNG: DREI HANDLER-SYSTEME
   ├─────────────────────────────────────────────────────────────────┤
   │  Prompts erstellen, verwalten, senden                           │
   │  Manuell oder automatisiert                                     │
-  │  Systemweit fuer alle Agenten                                   │
+  │  Systemweit für alle Agenten                                   │
   │  Handler:  FEHLT (nicht in Registry)                            │
   │  Service:  hub/_services/prompt_generator/prompt_generator.py   │
-  │  GUI:      gui/prompt_manager.py (PySide6, eigenstaendig)       │
+  │  GUI:      gui/prompt_manager.py (PySide6, eigenständig)       │
   │  Daemon:   JA (session_daemon.py)                               │
   │  API:      FEHLT (nicht in bach_api.py)                         │
   └─────────────────────────────────────────────────────────────────┘
@@ -141,7 +141,7 @@ ABGRENZUNG: DREI HANDLER-SYSTEME
   ┌─────────────────────────────────────────────────────────────────┐
   │  WARTUNG (docs/help/wartung.txt)                                     │
   ├─────────────────────────────────────────────────────────────────┤
-  │  Shell/Python-Befehle ausfuehren (Backup, Cleanup)              │
+  │  Shell/Python-Befehle ausführen (Backup, Cleanup)              │
   │  Keine Prompts, nur Befehle                                     │
   │  Handler:  hub/daemon.py (registriert)                          │
   │  Service:  gui/api/daemon_api.py + DB                           │
@@ -181,12 +181,12 @@ TECHNISCHE BASIS
         ├── ati.json
         └── wartung.json
 
-  GUI: gui/prompt_manager.py (PySide6, eigenstaendig)
+  GUI: gui/prompt_manager.py (PySide6, eigenständig)
 
   FEHLENDE INTEGRATION:
     - Kein Handler in hub/ (nicht in Registry)
     - Kein bach_api Modul (fehlt in bach_api.py)
-    - Aufruf via "bach.py prompt" NICHT moeglich
+    - Aufruf via "bach.py prompt" NICHT möglich
 
 
 BEKANNTE PROBLEME

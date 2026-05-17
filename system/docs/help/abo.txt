@@ -1,13 +1,13 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 ABO - Abonnement- und Vertragsverwaltung
 =========================================
 
 BESCHREIBUNG:
-  Verwaltet laufende Abonnements und Vertraege (Streaming, Software,
+  Verwaltet laufende Abonnements und Verträge (Streaming, Software,
   Internet, Mobilfunk etc.). Erkennt Abos automatisch aus Steuer-Posten
   und berechnet monatliche/jaehrliche Kosten.
 
@@ -26,7 +26,7 @@ CLI-BEFEHLE:
   bach abo sync-mail         Abos aus E-Mails synchronisieren
 
 OPTIONEN:
-  --jahr YYYY    Steuerjahr fuer Scan (Default: aktuelles Jahr)
+  --jahr YYYY    Steuerjahr für Scan (Default: aktuelles Jahr)
   --dry-run      Scan nur simulieren
 
 DATENBANK:
@@ -34,18 +34,18 @@ DATENBANK:
 
   abo_subscriptions - Erkannte/verwaltete Abos
     id, name, anbieter, kategorie, betrag_monatlich,
-    zahlungsintervall, kuendigungslink, erkannt_am,
+    zahlungsintervall, kündigungslink, erkannt_am,
     bestaetigt (0/1), aktiv (0/1)
 
-  abo_payments - Zahlungsverknuepfungen zu Steuer-Posten
+  abo_payments - Zahlungsverknüpfungen zu Steuer-Posten
     id, subscription_id, posten_id, betrag, datum
 
   abo_patterns - Bekannte Anbieter-Erkennungsmuster
-    id, pattern, anbieter, kategorie, kuendigungslink
+    id, pattern, anbieter, kategorie, kündigungslink
 
   fin_contracts - Manuelle Vertragsverwaltung (parallel)
     id, name, kategorie, anbieter, kundennummer, vertragsnummer,
-    betrag, intervall, kuendigungsfrist_tage, ablauf_datum, ...
+    betrag, intervall, kündigungsfrist_tage, ablauf_datum, ...
 
 WORKFLOW:
   1. bach abo init           (einmalig: Tabellen + Default-Patterns)
@@ -53,7 +53,7 @@ WORKFLOW:
   3. bach abo list           (zeigt Ergebnisse)
   4. bach abo confirm <id>   (bestaetige echte Abos)
   5. bach abo dismiss <id>   (entferne Fehlerkennungen)
-  6. bach abo costs          (Kostenueberblick)
+  6. bach abo costs          (Kostenüberblick)
   7. bach abo sync-mail      (E-Mail-Abos importieren, optional)
 
 BEKANNTE PATTERNS (Auswahl):
@@ -62,9 +62,9 @@ BEKANNTE PATTERNS (Auswahl):
   Anthropic/Claude, GitHub, JetBrains, 1Password, NordVPN, ExpressVPN
 
 ZUSAMMENSPIEL:
-  - bach steuer: Steuer-Posten als Datenquelle fuer Abo-Scan
+  - bach steuer: Steuer-Posten als Datenquelle für Abo-Scan
   - GUI: Abos CRUD (#573, von Gemini implementiert)
-  - fin_contracts: Manuelle Vertraege (ergaenzt automatische Erkennung)
+  - fin_contracts: Manuelle Verträge (ergänzt automatische Erkennung)
   - financial_emails: E-Mails mit Abo-Bezug (category = 'abo')
 
 BEISPIELE:
@@ -80,7 +80,7 @@ BEISPIELE:
   # Nur bestaetigte Abos:
   bach abo list --bestaetigt
 
-  # Kostenueberblick nach Kategorie:
+  # Kostenüberblick nach Kategorie:
   bach abo costs
 
   # Abo bestaetigen:
@@ -92,7 +92,7 @@ BEISPIELE:
   # E-Mail-Abos importieren:
   bach abo sync-mail
 
-  # Export fuer Haushaltsplanung:
+  # Export für Haushaltsplanung:
   bach abo export
 
   # Bekannte Patterns anzeigen:

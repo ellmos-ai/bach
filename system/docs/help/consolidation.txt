@@ -1,6 +1,6 @@
-# Portabilitaet: SYSTEM
+# Portabilität: SYSTEM
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-05-08
+# Nächste Prüfung: 2026-05-08
 # Ressourcen: [hub/consolidation.py, memory_consolidation table]
 
 MEMORY-KONSOLIDIERUNG
@@ -81,7 +81,7 @@ Diese existierenden Tools sind Teil der Konsolidierung:
 
 DATENBANK-SCHEMA
 ----------------
-memory_consolidation (AKTIV, 350+ Eintraege):
+memory_consolidation (AKTIV, 350+ Einträge):
 
   id                INTEGER PRIMARY KEY
   source_table      TEXT        -- memory_sessions, memory_lessons, etc.
@@ -99,17 +99,17 @@ memory_consolidation (AKTIV, 350+ Eintraege):
 WORKFLOW: SESSION -> KONTEXT
 ----------------------------
 1. Session endet (--shutdown)
-2. autolog_analyzer.py extrahiert Aktivitaeten
+2. autolog_analyzer.py extrahiert Aktivitäten
 3. context_compressor.py erstellt Zusammenfassung
 4. Zusammenfassung in memory_sessions gespeichert
 5. [DAEMON] Nach X Sessions: Komprimierung zu Context
-6. [KI-REVIEW] Prueft Sinnstruktur, korrigiert
+6. [KI-REVIEW] Prüft Sinnstruktur, korrigiert
 7. Ergebnis in memory_context mit Triggern
 
 WORKFLOW: FACT -> WIKI/HELP
 ---------------------------
 1. Neuer Fact wird erstellt: bach --memory fact "thema:wert"
-2. consolidate-index prueft: Existiert Help/Wiki zu "thema"?
+2. consolidate-index prüft: Existiert Help/Wiki zu "thema"?
 3. Falls nein: Task erstellen "Wiki-Eintrag zu [thema] erstellen"
 4. Wiki-Autor erstellt Eintrag
 5. Fact wird aktualisiert mit Pfad-Verweis
@@ -117,7 +117,7 @@ WORKFLOW: FACT -> WIKI/HELP
 WORKFLOW: WIKI/HELP -> FACTS INDEX
 ----------------------------------
 1. consolidate-index scannt docs/help/*.txt und wiki/*.txt
-2. Fuer jeden Eintrag: Existiert Fact?
+2. Für jeden Eintrag: Existiert Fact?
 3. Falls nein: Fact erstellen als Index
    HELP.memory -> "Memory-System Dokumentation"
    WIKI.gemini -> "Google Gemini KI-Modelle"
@@ -126,9 +126,9 @@ WORKFLOW: WIKI/HELP -> FACTS INDEX
 SCHWELLENWERTE (KONFIGURIERBAR)
 -------------------------------
   weight_threshold_archive: 0.2   Unter diesem Wert: Archivieren
-  weight_threshold_delete:  0.05  Unter diesem Wert: Loeschen
-  decay_rate_default:       0.95  Taeglicher Verfall (5%)
-  boost_on_access:          0.1   Gewichts-Erhoehung bei Abruf
+  weight_threshold_delete:  0.05  Unter diesem Wert: Löschen
+  decay_rate_default:       0.95  Täglicher Verfall (5%)
+  boost_on_access:          0.1   Gewichts-Erhöhung bei Abruf
   sessions_before_compress: 10    Sessions bis Komprimierung
   days_before_archive:      90    Tage bis Archivierung
 
@@ -141,7 +141,7 @@ NEUE OPERATIONEN (v1.1.80+)
                    - theme_packet_generator.py
                    - trigger_maintainer.py
 
-  forget           Deaktiviert/loescht Eintraege mit weight < 0.05
+  forget           Deaktiviert/löscht Einträge mit weight < 0.05
                    - memory_lessons: is_active = 0
                    - memory_working: is_active = 0
                    - memory_facts: DELETE

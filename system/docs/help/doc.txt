@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -6,8 +6,8 @@
 doc - Dokumenten-Index und Volltextsuche
 
 ## BESCHREIBUNG
-Verwaltung eines FTS5-basierten Dokumenten-Index fuer Volltextsuche. Der Handler
-indiziert Ordner und Dateien, ermoeglicht schnelle Suchen in Dokumenten und bietet
+Verwaltung eines FTS5-basierten Dokumenten-Index für Volltextsuche. Der Handler
+indiziert Ordner und Dateien, ermöglicht schnelle Suchen in Dokumenten und bietet
 Zusatzfunktionen wie Duplikat-Erkennung und Datenschutz-Klassifizierung.
 
 Datenspeicherung: bach.db / Tabellen document_index, document_fts (FTS5)
@@ -31,10 +31,10 @@ DATEI-SCAN (folder_scan):
 
 ANALYSE & DATENSCHUTZ (INT06):
   dedup <pfad>           Duplikate nach SHA256 erkennen
-  dedup <pfad> --min-size N  Nur Dateien >= N Bytes beruecksichtigen
+  dedup <pfad> --min-size N  Nur Dateien >= N Bytes berücksichtigen
   dedup <pfad> -n        Duplikate nicht rekursiv suchen
   classify <pfad>        Ordner scannen auf sensible Daten (Ampel-Bewertung)
-  classify <datei>       Einzelne Datei auf Datenschutz pruefen
+  classify <datei>       Einzelne Datei auf Datenschutz prüfen
 
 SONSTIGE:
   help                   Diese Hilfe anzeigen
@@ -46,7 +46,7 @@ bach doc index ~/Documents
 bach doc search "backup strategie"
 bach doc search "config" --limit 5
 
-# Index neu aufbauen und Status pruefen
+# Index neu aufbauen und Status prüfen
 bach doc rebuild
 bach doc status
 
@@ -79,6 +79,6 @@ Datenbank:
 
 ## SIEHE AUCH
 
-- bach api  (Python-API fuer programmatischen Zugriff)
+- bach api  (Python-API für programmatischen Zugriff)
 - hub/base.py  (BaseHandler-Basisklasse)
 - tools/document_indexer.py  (DocumentIndexer-API)

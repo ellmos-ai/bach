@@ -7,7 +7,7 @@ Pfad: docs/help/tools/mapping.txt
 BESCHREIBUNG
 ------------
 Feature-Mapping-Tools zum Vergleichen und Analysieren
-von Features ueber verschiedene Systeme hinweg.
+von Features über verschiedene Systeme hinweg.
 Teil des BACH_STREAM Projekts.
 
 Pfad: tools/mapping/
@@ -38,13 +38,13 @@ feature_matrix(category=None):
   python query_features.py matrix --category "Memory"
   
   Symbole:
-    +  = implemented (vollstaendig)
+    +  = implemented (vollständig)
     ~  = partial (teilweise)
     ?  = geplant/unbekannt
     -  = nicht vorhanden
 
 feature_synopsis(feature_name):
-  Vergleicht ein einzelnes Feature ueber alle Systeme.
+  Vergleicht ein einzelnes Feature über alle Systeme.
   Zeigt Pfade, Technologie, Notizen.
   
   python query_features.py synopsis "Working Memory"

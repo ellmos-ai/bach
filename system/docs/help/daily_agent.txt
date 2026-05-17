@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -10,8 +10,8 @@ BESCHREIBUNG
 Der Daily Agent ist ein BACH Handler, der einen persisenten Claude Code Agent
 mit --continue startet und die tägliche Task-Queue abarbeitet. Der Agent kann
 Morgen-Briefings mit modularen Komponenten generieren und Session-Summaries
-speichern. Die Agent-Instanz wird ueberwacht (PID-Tracking) und kann gezielt
-beendet werden. Briefing-Module koennen ein-/ausgeschaltet werden.
+speichern. Die Agent-Instanz wird überwacht (PID-Tracking) und kann gezielt
+beendet werden. Briefing-Module können ein-/ausgeschaltet werden.
 
 
 OPERATIONEN
@@ -22,13 +22,13 @@ OPERATIONEN
   bach daily-agent briefing             Morgen-Briefing (aktive Module)
   bach daily-agent summary              Abend-Zusammenfassung generieren
   bach daily-agent config               Briefing-Module listen
-  bach daily-agent modules              Alias fuer config
+  bach daily-agent modules              Alias für config
   bach daily-agent toggle <modul>       Modul ein-/ausschalten
 
 Briefing-Module (toggle):
   task_briefing                         Offene Tasks (Standard: AN)
   message_briefing                      Ungelesene Nachrichten (AN)
-  news_briefing                         News-Ueberblick (AN)
+  news_briefing                         News-Überblick (AN)
   session_briefing                      Letzte Session (AN)
   weather_briefing                      Wetter (Standard: AUS)
   calendar_briefing                     Kalender-Termine (AUS)
@@ -60,12 +60,12 @@ message_briefing:   Zaehler ungelesener Nachrichten (status='unread')
 news_briefing:      Ungelesene News aus news_items (Top-Kategorien + 3 Titel)
 session_briefing:   Letzter memory_sessions.summary (gekuerzt auf 120 Zeichen)
 weather_briefing:   Versucht weather_service (Koordinaten hardcodiert auf 0,0)
-calendar_briefing:  Heutige Termine aus calendar_events (5 naechste Events)
+calendar_briefing:  Heutige Termine aus calendar_events (5 nächste Events)
 
 
 FEHLERBEHANDLUNG
 ----------------
-- Agent wird im Hintergrund gestartet (stdout/stderr unterdrueckt)
+- Agent wird im Hintergrund gestartet (stdout/stderr unterdrückt)
 - PID-File muss manuell gelöscht werden, falls Prozess crashed
 - Briefing-Module ignorieren stille DB-Fehler (z.B. wenn news_items nicht existiert)
 - stop speichert Summary AUCH wenn Agent bereits tot ist

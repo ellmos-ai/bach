@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -9,23 +9,23 @@ denkarium -- Logbuch + Gedanken-Sammler
 
 BESCHREIBUNG
 ============
-Der Denkarium-Handler verwaltet zwei Modi fuer Notizen und Reflexionen:
+Der Denkarium-Handler verwaltet zwei Modi für Notizen und Reflexionen:
 
   denkarium  Freie Gedanken, Ideen und Reflexionen (flexibel kategorisierbar)
   logbuch    Chronologisches Tagebuch mit Sternzeit-Markierung
 
-Alle Eintraege werden in sqlite3 gespeichert (denkarium_entries Tabelle) und
-koennen durchsucht, kategorisiert, bewertet und zu Tasks/Wiki befuerdert werden.
+Alle Einträge werden in sqlite3 gespeichert (denkarium_entries Tabelle) und
+können durchsucht, kategorisiert, bewertet und zu Tasks/Wiki befürdert werden.
 
 
 OPERATIONEN
 ===========
 bach denkarium write TEXT [--type=logbuch] [--cat=KATEGORIE] [--title=TITEL] [--mood=1-5]
     Neuen Eintrag schreiben. Default: type=denkarium, cat=notiz
-    Beispiel: bach denkarium write "Idee fuer Automation" --type=denkarium --cat=idee
+    Beispiel: bach denkarium write "Idee für Automation" --type=denkarium --cat=idee
 
 bach denkarium read [--type=logbuch|denkarium] [--cat=KATEGORIE] [--limit=N]
-    Letzte N Eintraege auflisten (default limit=10)
+    Letzte N Einträge auflisten (default limit=10)
     Beispiel: bach denkarium read --type=logbuch --limit=5
 
 bach denkarium search SUCHBEGRIFF
@@ -37,14 +37,14 @@ bach denkarium brainstorm THEMA
     Beispiel: bach denkarium brainstorm "KI-Architektur"
 
 bach denkarium promote ENTRY-ID task|wiki
-    Denkarium-Eintrag zu Task oder Wiki befoerdern
+    Denkarium-Eintrag zu Task oder Wiki befördern
     Beispiel: bach denkarium promote 42 task
 
 bach denkarium categories
     Alle verwendeten Kategorien mit Eintragszaehlung auflisten
 
 bach denkarium stats
-    Gesamtstatistik: Anzahl, Zeitspanne, Befoerderungen
+    Gesamtstatistik: Anzahl, Zeitspanne, Beförderungen
 
 
 BEISPIELE
@@ -57,13 +57,13 @@ BEISPIELE
 
 3. Brainstorm starten:
    bach denkarium brainstorm "Neue Feature-Ideen"
-   bach denkarium write "Caching-Layer hinzufuegen" --cat=idee
+   bach denkarium write "Caching-Layer hinzufügen" --cat=idee
 
-4. Gedanken durchsuchen und zur Task befoerdern:
+4. Gedanken durchsuchen und zur Task befördern:
    bach denkarium search "wichtig"
    bach denkarium promote 15 task
 
-5. Letzte Woche Logbuch-Eintraege ansehen:
+5. Letzte Woche Logbuch-Einträge ansehen:
    bach denkarium read --type=logbuch --limit=20
 
 
@@ -75,15 +75,15 @@ DATEIEN
 
 SIEHE AUCH
 ==========
-  tasks    -- Aufgabenverwaltung (Ziel fuer promote-Operationen)
-  wiki     -- Wiki-System (optionales Ziel fuer Befoerderung)
+  tasks    -- Aufgabenverwaltung (Ziel für promote-Operationen)
+  wiki     -- Wiki-System (optionales Ziel für Beförderung)
   base     -- BaseHandler API (hub/base.py)
 
 
 NOTIZEN
 =======
-- Sternzeit: Logbuch-Eintraege ohne explizites --title erhalten "Sternzeit YYYY-MM-DD HH:MM"
+- Sternzeit: Logbuch-Einträge ohne explizites --title erhalten "Sternzeit YYYY-MM-DD HH:MM"
 - Kategorien: Frei wahlbar (notiz, idee, brainstorm, etc.)
-- Mood-Rating: Optional, 1-5 Skala fuer Reflexion-Tracking
+- Mood-Rating: Optional, 1-5 Skala für Reflexion-Tracking
 - Promote zu Task: Erstellt neuen Task mit standard priority=3, status=pending
 - Promote zu Wiki: Markiert Eintrag, komplexe Wiki-Integration durch separaten Handler

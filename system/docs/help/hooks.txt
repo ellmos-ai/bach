@@ -1,26 +1,26 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-13 (Claude Opus 4.6)
-# Naechste Pruefung: 2026-08-13
+# Nächste Prüfung: 2026-08-13
 
 BACH HOOK-FRAMEWORK
 ===================
 
 Stand: 2026-02-13
 
-Hooks sind ein erweiterbares Event-System fuer BACHs Lifecycle.
+Hooks sind ein erweiterbares Event-System für BACHs Lifecycle.
 Sie erlauben es, eigene Logik an zentrale System-Events anzuhaengen,
-OHNE bestehenden Code zu aendern.
+OHNE bestehenden Code zu ändern.
 
 WICHTIG: HOOKS != INJEKTOREN
 -----------------------------
   Hooks     = Technisches Framework (Lifecycle-Events, Plugin-Integration)
   Injektoren = Kognitives Subsystem (Denksimulation, kognitive Entlastung)
 
-Hooks und Injektoren arbeiten unabhaengig voneinander.
-Injektoren bleiben als eigenstaendiges Subsystem erhalten.
+Hooks und Injektoren arbeiten unabhängig voneinander.
+Injektoren bleiben als eigenständiges Subsystem erhalten.
 
-VERFUEGBARE EVENTS (17)
+VERFÜGBARE EVENTS (17)
 ------------------------
   Event                    Wann                            Kontext-Keys
   ----------------------   ----------------------------    -------------------------
@@ -32,7 +32,7 @@ VERFUEGBARE EVENTS (17)
   after_command            Nach jedem CLI-Befehl           handler, operation, success, args
   after_task_create        Nach Task-Erstellung            task_id, title
   after_task_done          Nach Task-Abschluss             task_id, title
-  after_task_delete        Nach Task-Loeschung             task_id
+  after_task_delete        Nach Task-Löschung             task_id
   after_memory_write       Nach Memory-Eintrag             type, content
   after_lesson_add         Nach Lesson-Erstellung          lesson_id, title, category, severity
   after_skill_create       Nach Skill-Erstellung           name, type, path
@@ -46,7 +46,7 @@ CLI-BEFEHLE
 -----------
   bach hooks status            Status aller Hooks und Listener
   bach hooks events            Alle Events mit Beschreibung auflisten
-  bach hooks log               Letzte Hook-Ausfuehrungen anzeigen
+  bach hooks log               Letzte Hook-Ausführungen anzeigen
   bach hooks test <event>      Test-Event emittieren (Debugging)
 
   Kurzform:
@@ -63,7 +63,7 @@ API-NUTZUNG
 
   hooks.on('after_task_create', mein_handler, name='mein_plugin')
 
-  # Listener mit Prioritaet (niedriger = frueher, default=50)
+  # Listener mit Priorität (niedriger = frueher, default=50)
   hooks.on('after_startup', check_updates, priority=10, name='updater')
 
   # Listener entfernen
@@ -75,13 +75,13 @@ API-NUTZUNG
   # Status abfragen
   print(hooks.status())
 
-  # Pruefen ob Event Listener hat
+  # Prüfen ob Event Listener hat
   if hooks.has_listeners('after_startup'):
-      print("Startup wird ueberwacht")
+      print("Startup wird überwacht")
 
 EIGENE HOOKS REGISTRIEREN
 --------------------------
-AI-Partner koennen eigene Hooks registrieren um BACH zu erweitern:
+AI-Partner können eigene Hooks registrieren um BACH zu erweitern:
 
   from core.hooks import hooks
 
@@ -106,7 +106,7 @@ SICHERHEIT
     blockiert NIEMALS die eigentliche Operation
   - Listener erhalten nur Lese-Kontext (dict), keinen Schreibzugriff
   - Priorisierung verhindert Reihenfolge-Konflikte
-  - Hook-Log (bach hooks log) fuer Debugging
+  - Hook-Log (bach hooks log) für Debugging
 
 ARCHITEKTUR
 -----------

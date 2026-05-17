@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-28
-# Naechste Pruefung: 2026-08-28
+# Nächste Prüfung: 2026-08-28
 # Ressourcen: [hub/prompt.py, prompt_templates, prompt_boards, prompt_versions]
 
 PROMPT - Prompt-Template-Verwaltung
@@ -10,14 +10,14 @@ PROMPT - Prompt-Template-Verwaltung
 STAND: 2026-02-28
 
 Das Prompt-System verwaltet wiederverwendbare Prompt-Templates mit
-Versionierung und Organisationsmoeglichkeit via Boards.
+Versionierung und Organisationsmöglichkeit via Boards.
 
 Ref: B42
 
 KERNKONZEPTE
 ------------
 - TEMPLATES: Wiederverwendbare Prompt-Texte mit Name, Kategorie, Tags
-- VERSIONEN: Jede Aenderung erzeugt eine neue Version (Historie)
+- VERSIONEN: Jede Änderung erzeugt eine neue Version (Historie)
 - BOARDS: Sammlungen von Templates (thematische Gruppen)
 
 CLI-BEFEHLE (bach prompt)
@@ -27,20 +27,20 @@ CLI-BEFEHLE (bach prompt)
   add <name> <text>               Neues Template erstellen
   get <id_oder_name>              Template + Versionshistorie anzeigen
   update <id_oder_name> <text>    Neue Version erstellen
-  delete <id_oder_name>           Template loeschen
+  delete <id_oder_name>           Template löschen
   search <query>                  Templates durchsuchen
   boards                          Alle Boards anzeigen
   board <titel>                   Board anzeigen/erstellen/verwalten
 
-OPTIONEN FUER ADD
+OPTIONEN FÜR ADD
 -----------------
   --category CAT    Kategorie (z.B. "analyse", "schreiben")
   --tags t1,t2      Tags (kommagetrennt)
   --purpose TEXT    Verwendungszweck
 
-OPTIONEN FUER BOARD
+OPTIONEN FÜR BOARD
 -------------------
-  --add-prompt ID         Prompt zu Board hinzufuegen
+  --add-prompt ID         Prompt zu Board hinzufügen
   --remove-prompt ID      Prompt aus Board entfernen
   --description TEXT      Board-Beschreibung setzen/aktualisieren
 
@@ -53,7 +53,7 @@ BEISPIELE
 
   # Template erstellen
   bach prompt add "Zusammenfassung" "Fasse den folgenden Text zusammen:" --category schreiben
-  bach prompt add "Code-Review" "Pruefe diesen Code auf Fehler:" --tags "dev,review" --purpose "Code-Qualitaet"
+  bach prompt add "Code-Review" "Prüfe diesen Code auf Fehler:" --tags "dev,review" --purpose "Code-Qualität"
 
   # Template anzeigen (mit Versionshistorie)
   bach prompt get 42
@@ -63,7 +63,7 @@ BEISPIELE
   bach prompt update 42 "Fasse den folgenden Text praegnant zusammen:"
   bach prompt update "Zusammenfassung" "Neue Version des Textes..."
 
-  # Template loeschen
+  # Template löschen
   bach prompt delete 42
 
   # Suchen (in Name, Text, Tags)
@@ -73,9 +73,9 @@ BEISPIELE
   # Boards verwalten
   bach prompt boards                                      # Alle Boards
   bach prompt board "Schreiben"                           # Board erstellen/anzeigen
-  bach prompt board "Schreiben" --add-prompt 42           # Prompt hinzufuegen
+  bach prompt board "Schreiben" --add-prompt 42           # Prompt hinzufügen
   bach prompt board "Schreiben" --remove-prompt 42        # Prompt entfernen
-  bach prompt board "Schreiben" --description "Schreib-Prompts fuer den Alltag"
+  bach prompt board "Schreiben" --description "Schreib-Prompts für den Alltag"
 
 VERSIONIERUNG
 -------------
@@ -86,14 +86,14 @@ Versionshistorie ist bei `bach prompt get <id>` sichtbar:
   VERSIONEN (2):
     Nr    Erstellt                   Text (Vorschau)
     1     2026-01-15T10:30:00        Alter Text...
-    2     2026-02-01T14:00:00        Naechste Version...
+    2     2026-02-01T14:00:00        Nächste Version...
 
 CONFLICT RESOLUTION (--confidence)
 ------------------------------------
-Beim `add` kann Konfidenz angegeben werden (fuer Shared Memory):
+Beim `add` kann Konfidenz angegeben werden (für Shared Memory):
   bach prompt add <name> <text> --confidence 0.8
 
-Bei Konflikten (gleicher Key, Namespace) gewinnt hoehere Konfidenz.
+Bei Konflikten (gleicher Key, Namespace) gewinnt höhere Konfidenz.
 
 DATENBANK
 ---------

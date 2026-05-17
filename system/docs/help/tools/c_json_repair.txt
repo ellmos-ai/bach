@@ -7,7 +7,7 @@ BESCHREIBUNG
 ----------------------------------------
 c_json_repair.py - Vollautomatisches JSON-Reparatur-System
 
-Nutzt `pip install emoji` fuer beste Ergebnisse (Multi-Language, aktuell).
+Nutzt `pip install emoji` für beste Ergebnisse (Multi-Language, aktuell).
 Fallback auf lokale gemoji.json wenn emoji-Paket nicht installiert.
 
 Workflow:
@@ -17,7 +17,7 @@ Workflow:
 
 Usage:
     python c_json_repair.py <file.json>              # Reparieren
-    python c_json_repair.py <file.json> --dry-run    # Nur pruefen
+    python c_json_repair.py <file.json> --dry-run    # Nur prüfen
     python c_json_repair.py --update-gemoji          # Gemoji aktualisieren
     python c_json_repair.py --stats                  # Statistiken
 

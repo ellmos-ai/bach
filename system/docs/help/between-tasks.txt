@@ -1,15 +1,15 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 # HINWEIS: Dieser Eintrag wurde nach between.txt migriert
 #
 # Siehe: bach help between
 #
-# Die Between-Tasks Funktionalitaet wurde erweitert und unterstuetzt jetzt:
+# Die Between-Tasks Funktionalität wurde erweitert und unterstützt jetzt:
 # - Anpassbare Profile (DEFAULT, FOCUS, REVIEW, LEARNING, AUTOSESSION)
 # - CLI-Befehle: bach between on/off/status/use
 # - Profil-Verwaltung: bach between profile list/show (add/edit/delete noch nicht implementiert)
 #
-# Vollstaendige Dokumentation: docs/help/between.txt
+# Vollständige Dokumentation: docs/help/between.txt

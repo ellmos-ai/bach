@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -8,7 +8,7 @@ SESSION-HANDLER
 HANDLER-NAME
 ============
 
-session - Session-Verwaltung fuer BACH (SESSION_001-006)
+session - Session-Verwaltung für BACH (SESSION_001-006)
 
 BESCHREIBUNG
 ============
@@ -16,8 +16,8 @@ BESCHREIBUNG
 Der session-Handler verwaltet Arbeitssitzungen mit Laufzeit-Tracking,
 Task-Verwaltung und kontextbewussten Denkanstossen. Integriert Startup-
 und Shutdown-Prozesse, berechnet verbleibende Zeit und warnt vor
-Session-Ende. Unterstuetzt Between-Task-Checks zur Optimierung von
-Task-Abhaengigkeiten und Blockierungen.
+Session-Ende. Unterstützt Between-Task-Checks zur Optimierung von
+Task-Abhängigkeiten und Blockierungen.
 
 OPERATIONEN
 ===========
@@ -26,7 +26,7 @@ start                  Session starten (delegiert an StartupHandler)
 status                 Aktiven Session-Status mit Denkanstossen anzeigen
 end                    Session beenden (delegiert an ShutdownHandler)
 check                  Zeitberechnung: Laufzeit, geplantes Ende, Rest
-next                   Naechster Task mit Between-Task-Checks
+next                   Nächster Task mit Between-Task-Checks
 
 Check-Optionen:
   --duration / -d      Verbleibende Zeit anzeigen
@@ -47,7 +47,7 @@ Zeitberechnung (mit Warnung bei Session-Ende):
 Sitzungsdauer auf 180 Minuten setzen:
   bach session check --set-duration=180
 
-Naechsten Task mit Between-Checks anzeigen:
+Nächsten Task mit Between-Checks anzeigen:
   bach session next
 
 Session beenden:
@@ -68,18 +68,18 @@ FUNKTIONSWEISE
 ==============
 
 1. Laufzeit-Tracking: Berechnet Dauer seit start_at, warnt bei
-   Ueberschreitung der geplanten Dauer (Default 120 Min).
+   Überschreitung der geplanten Dauer (Default 120 Min).
 
 2. Denkanstossen (SESSION_003): Zeitbasiert (Mittag, Feierabend),
    Task-basiert (alt, blockiert, keine Erledigung) oder allgemein
    (Doku, Reviews, Backups).
 
 3. Between-Task-Checks (SESSION_006):
-   - Erkennt blockierte Tasks mit erfuellten Abhaengigkeiten
+   - Erkennt blockierte Tasks mit erfuellten Abhängigkeiten
    - Erinnert an in_progress Tasks
    - Lesson-Learned nach 5 abgeschlossenen Tasks
 
-4. Task-Empfehlung nach Prioritaet (P1 > P2 > P3) und Alter
+4. Task-Empfehlung nach Priorität (P1 > P2 > P3) und Alter
 
 SIEHE AUCH
 ==========

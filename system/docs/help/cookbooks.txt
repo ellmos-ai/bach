@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08 (Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 COOKBOOKS - Anthropic Referenz-Material
 ========================================
@@ -12,59 +12,59 @@ BESCHREIBUNG
 ------------
 Ausgewaehlte Notebooks und Scripts aus dem offiziellen Anthropic
 claude-cookbooks Repository. Dienen als Referenz und Inspiration
-fuer BACH-Weiterentwicklungen -- nicht als direkt ausfuehrbarer Code.
+für BACH-Weiterentwicklungen -- nicht als direkt ausführbarer Code.
 
 SPEICHERORT
 -----------
 docs/reference/anthropic_cookbooks/
 
-VERFUEGBARE COOKBOOKS
+VERFÜGBARE COOKBOOKS
 ---------------------
 
   memory/
     memory_tool.py                        Tool-basiertes LLM-Memory
     BACH-Vergleich: bach --memory ist deutlich ausgereifter
                     (SQLite, Sessions, Confidence, 10 Ops)
-    Nuetzlich fuer: Tool-Definition-Pattern, Prompt-Engineering
+    Nützlich für: Tool-Definition-Pattern, Prompt-Engineering
 
   compaction/
     session_memory_compaction.ipynb        Session-Zusammenfassung
     automatic-context-compaction.ipynb     Token-basiertes Auto-Compact
     BACH-Vergleich: prompt_manager.py mit Kontext-Kompression
-    Nuetzlich fuer: Token-Zaehlung, Komprimierungs-Prompts
+    Nützlich für: Token-Zaehlung, Komprimierungs-Prompts
 
   text_to_sql/
     guide.ipynb                           Natural Language → SQL
-    BACH-Relevanz: Integrationsplan fuer "bach --db query"
-    Nuetzlich fuer: Schema-Kontext, SQL-Validierung, Retry-Loop
+    BACH-Relevanz: Integrationsplan für "bach --db query"
+    Nützlich für: Schema-Kontext, SQL-Validierung, Retry-Loop
 
   orchestrator/
     orchestrator_workers.ipynb            Orchestrator-Worker Pattern
     prompts/                              3 Agent-Prompt-Templates
       citations_agent.md                  Quellenverweise
       research_lead_agent.md              Recherche-Steuerung
-      research_subagent.md                Recherche-Ausfuehrung
+      research_subagent.md                Recherche-Ausführung
     BACH-Vergleich: agents/_experts/ + hub/_services/
-    Nuetzlich fuer: Agent-Prompt-Vorlagen, Ergebnis-Synthese
+    Nützlich für: Agent-Prompt-Vorlagen, Ergebnis-Synthese
 
   tool_search/
     tool_search_with_embeddings.ipynb     Semantische Tool-Suche
     BACH-Vergleich: _try_run_tool() nutzt Prefix-Match
-    Nuetzlich fuer: Embedding-basierte Tool-Discovery
+    Nützlich für: Embedding-basierte Tool-Discovery
 
 INTEGRATION IN BACH
 -------------------
 
-  Prioritaet 1 (kurzfristig):
+  Priorität 1 (kurzfristig):
     - text_to_sql → neuer "bach --db query" Handler
     - compaction → Token-Zaehlung in prompt_manager.py
 
-  Prioritaet 2 (mittelfristig):
+  Priorität 2 (mittelfristig):
     - orchestrator → Refactoring der Agent-Orchestrierung
-    - tool_search → Upgrade fuer tool_discovery.py
+    - tool_search → Upgrade für tool_discovery.py
 
-  Prioritaet 3 (langfristig):
-    - memory → Vergleich fuer Quality-Checks
+  Priorität 3 (langfristig):
+    - memory → Vergleich für Quality-Checks
 
 QUELLEN
 -------
@@ -91,5 +91,5 @@ WEITERE REFERENZEN
 SIEHE AUCH
 ----------
 bach --help vendor              Vendor-Code (anthropic_docx/pdf/xlsx)
-bach --help tools               Tool-Uebersicht
-docs/reference/analyse_anthropic_skills_cookbooks.md   Vollstaendige Analyse
+bach --help tools               Tool-Übersicht
+docs/reference/analyse_anthropic_skills_cookbooks.md   Vollständige Analyse

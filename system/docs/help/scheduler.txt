@@ -1,4 +1,4 @@
-# Portabilitaet: SYSTEM
+# Portabilität: SYSTEM
 # Version: 1.0.0
 # Zuletzt validiert: 2026-05-15
 # Nächste Prüfung: 2026-11-15
@@ -9,18 +9,18 @@ SCHEDULER - Hintergrund-Jobs und Scheduler-Service
 
 STAND: 2026-02-28
 
-Hinweis: `bach scheduler ...` ist der neue Name fuer den Scheduler.
-Der alte Befehl `bach daemon ...` ist weiterhin als Alias verfuegbar.
+Hinweis: `bach scheduler ...` ist der neue Name für den Scheduler.
+Der alte Befehl `bach daemon ...` ist weiterhin als Alias verfügbar.
 
 WICHTIGE POLICY
 ---------------
-**ALLE SCHEDULER-JOBS SIND STANDARDMAESSIG DEAKTIVIERT.**
+**ALLE SCHEDULER-JOBS SIND STANDARDMÄßIG DEAKTIVIERT.**
 
-Grund: Automatische Prozesse koennen mit aktiven Chat-Sessions
+Grund: Automatische Prozesse können mit aktiven Chat-Sessions
 und dem Prompt Generator kollidieren. Jobs werden nur manuell
-aktiviert wenn benoetigt.
+aktiviert wenn benötigt.
 
-Der Scheduler pausiert automatisch OneDrive-Sync waehrend des Betriebs
+Der Scheduler pausiert automatisch OneDrive-Sync während des Betriebs
 um Sync-Konflikte zu vermeiden.
 
 Siehe: docs/CONCEPT_daemon_policy.md
@@ -33,10 +33,10 @@ CLI-BEFEHLE (bach scheduler)
   status --json     Scheduler-Status als JSON
   doctor            Scheduler-Preflight und Recovery-Hinweise
   doctor --json     Scheduler-Preflight als JSON
-  start [--bg]      Scheduler-Service starten (--bg fuer Hintergrund)
+  start [--bg]      Scheduler-Service starten (--bg für Hintergrund)
   stop              Scheduler-Service stoppen
-  run <ID>          Einzelnen Job manuell ausfuehren
-  logs [N]          Letzte Log-Eintraege anzeigen (Standard: 20)
+  run <ID>          Einzelnen Job manuell ausführen
+  logs [N]          Letzte Log-Einträge anzeigen (Standard: 20)
   jobs --json       Scheduler-Jobs mit berechnetem Status als JSON
 
 SESSION-SYSTEM
@@ -52,8 +52,8 @@ SESSION-SYSTEM
   session resume [--profile NAME]         Pause für Profil aufheben
   session steer [--profile NAME] "Text"   Steuerhinweis für die nächste Session vormerken
   session clear-steer [--profile NAME]    Steuerhinweise für Profil löschen
-  session trigger [--profile NAME] Session manuell ausloesen
-  session profiles                 Verfuegbare Profile auflisten
+  session trigger [--profile NAME] Session manuell auslösen
+  session profiles                 Verfügbare Profile auflisten
 
   Beispiel mit Dry-Run:
     bach scheduler session trigger --profile wartung --dry-run
@@ -66,14 +66,14 @@ JOB-TYPEN
 ---------
 
   interval    Wiederholung nach Zeitspanne (z.B. 24h, 30m)
-  cron        Zeitplan-basiert (z.B. "0 2 * * *" = taeglich 2 Uhr)
-  event       Event-basierter Trigger (extern ausgeloest)
-  manual      Nur manuell ausfuehrbar
-  chain       Verkettete Job-Ausfuehrung (Chain-System)
+  cron        Zeitplan-basiert (z.B. "0 2 * * *" = täglich 2 Uhr)
+  event       Event-basierter Trigger (extern ausgelöst)
+  manual      Nur manuell ausführbar
+  chain       Verkettete Job-Ausführung (Chain-System)
 
-Der Scheduler prueft automatisch alle 5 Minuten auf faellige Recurring Tasks.
+Der Scheduler prüft automatisch alle 5 Minuten auf fällige Recurring Tasks.
 
-VERFUEGBARE JOBS (alle standardmaessig AUS)
+VERFÜGBARE JOBS (alle standardmäßig AUS)
 -------------------------------------------
 Hinweis: Job-Liste ist dynamisch. Aktuelle Jobs via: bach scheduler jobs
 
@@ -84,7 +84,7 @@ Beispiel-Jobs:
   2   backup                    24h         Automatisches Backup
   3   inbox-scan                30m         Inbox-Ordner verarbeiten
   4   consolidate-weight        24h         Memory-Gewichtungen (Decay)
-  5   consolidate-archive       24h         Alte Eintraege archivieren
+  5   consolidate-archive       24h         Alte Einträge archivieren
   6   consolidate-index         7d          Help/Wiki Index aktualisieren
   7   consolidate-compress      24h         Sessions komprimieren
   8   consolidate-we            7d          Woechentliche Konsolidierung
@@ -95,14 +95,14 @@ Connector-Jobs (v2.0, via bach connector setup-scheduler):
   --  connector_poll_and_route  2m          Connectors pollen + Inbox-Routing
   --  connector_dispatch        1m          Ausgehende Queue mit Retry versenden
 
-JOB MANUELL AUSFUEHREN
+JOB MANUELL AUSFÜHREN
 ----------------------
 Empfohlene Methode statt automatischem Scheduler:
 
-  # Job einmalig ausfuehren
+  # Job einmalig ausführen
   bach scheduler run 1         # Scanner einmal laufen lassen
   bach scheduler run 2         # Backup einmal erstellen
-  bach scheduler jobs --json   # Jobs fuer externe Tools/Agenten
+  bach scheduler jobs --json   # Jobs für externe Tools/Agenten
 
   # Oder direkt den Befehl
   bach scan run                # Scanner
@@ -114,13 +114,13 @@ GUI
   http://127.0.0.1:8000/scheduler    Scheduler-Dashboard
 
   - Jobs aktivieren/deaktivieren
-  - Manuell ausfuehren
-  - Letzte Ausfuehrungen sehen
+  - Manuell ausführen
+  - Letzte Ausführungen sehen
 
 ALIAS: bach daemon ...
 ----------------------
 Der frueherer Befehlsname `bach daemon` ist weiterhin als Alias
-fuer Rueckwaertskompatibilitaet verfuegbar. Beide Befehlsformen
+für Rückwaertskompatibilitaet verfügbar. Beide Befehlsformen
 sind aequivalent:
 
   bach daemon jobs      ==  bach scheduler jobs
@@ -129,7 +129,7 @@ sind aequivalent:
 
 SIEHE AUCH
 ----------
-  bach --help daemon           Aeltere Dokumentation (Alias)
+  bach --help daemon           Ältere Dokumentation (Alias)
   docs/CONCEPT_daemon_policy.md    Scheduler-Richtlinien
   bach --help connector        Connector-System (Queue, Retry)
   bach --help maintain         Wartungs-Tools

@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.0
 # Zuletzt validiert: 2026-02-08 (Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 TOOLS - Tool-Verwaltung
 =======================
@@ -22,13 +22,13 @@ bach --tools db                Alle DB-Tools auflisten (CLI + extern)
 bach --tools db --type cli     Nur CLI-Tools anzeigen
 bach --tools db --type external Nur externe KI-Tools anzeigen
 bach --tools show <n>       Tool-Details anzeigen
-bach --tools run <n> [args] Python-Tool ausfuehren
+bach --tools run <n> [args] Python-Tool ausführen
 bach --tools search <term>     Tools durchsuchen (Dateisystem + DB)
 bach --tools migrate           Migration der Connections starten
 
 DIREKTAUFRUF VIA BACH (empfohlen)
 ---------------------------------
-Tools koennen direkt ueber bach.py aufgerufen werden - ohne --tools run:
+Tools können direkt über bach.py aufgerufen werden - ohne --tools run:
 
   bach <toolname> [argumente]
 
@@ -43,14 +43,14 @@ Beispiele:
 
 Vorteile:
   - Kuerzer als: bach --tools run c_encoding_fixer datei.py
-  - Tab-Completion moeglich
+  - Tab-Completion möglich
   - Gleiche Syntax wie direkter Python-Aufruf
 
-Hinweis: Funktioniert fuer alle Tools in tools/*.py
+Hinweis: Funktioniert für alle Tools in tools/*.py
 
-TOOL-UEBERSICHTEN
+TOOL-ÜBERSICHTEN
 -----------------
-Verschiedene Wege um verfuegbare Tools zu finden:
+Verschiedene Wege um verfügbare Tools zu finden:
 
   bach --tools list              Alle Python-Tools (tools/*.py)
   bach --tools db                Alle DB-Tools (CLI + extern)
@@ -59,9 +59,9 @@ Verschiedene Wege um verfuegbare Tools zu finden:
   bach --help tools              Diese Hilfe
   bach --help tools/_index       Index der Tool-Dokumentationen
 
-Fuer spezifische Tool-Hilfe:
+Für spezifische Tool-Hilfe:
   bach <tool> --help             Argparse-Hilfe des Tools
-  bach --help tools/<tool>       Ausfuehrliche Dokumentation (falls vorhanden)
+  bach --help tools/<tool>       Ausführliche Dokumentation (falls vorhanden)
 
 TOOL-DISCOVERY (NEU v1.1.27)
 ----------------------------
@@ -86,7 +86,7 @@ PYTHON-TOOLS (tools/)
 ---------------------
 Praefix-Konvention (siehe: bach --help naming):
 
-  c_*        CLI-optimiert fuer AI (Claude/recludOS)
+  c_*        CLI-optimiert für AI (Claude/recludOS)
              - Klare Outputs, encoding-sicher, JSON-safe
   b_*        BACH-Kern (System-kritisch)
   a_*        Agent-Runner
@@ -137,7 +137,7 @@ PYTHON-TOOLS NACH FUNKTION
   c_duplicate_detector.py   bach --maintain duplicates  Duplikat-Erkennung
   c_pattern_tool.py         bach --maintain pattern     Dateinamen-Patterns
   c_tool_scanner.py         bach --maintain scan        CLI-Tools Discovery
-  c_file_cleaner.py         bach --maintain clean       Alte Dateien loeschen
+  c_file_cleaner.py         bach --maintain clean       Alte Dateien löschen
   c_json_fixer.py           bach --maintain json        JSON reparieren
   c_sync_registry.py        Registry synchronisieren
   c_json_registry_cleaner.py Registry-Bereinigung
@@ -151,7 +151,7 @@ PYTHON-TOOLS NACH FUNKTION
   skill_generator.py        bach --maintain generate    Skill-Strukturen erstellen
   exporter.py               bach --maintain export      Skills/Agents exportieren
 
-  Profile fuer skill_generator:
+  Profile für skill_generator:
     MICRO    - Nur Datei(en), kein Ordnersystem
     LIGHT    - Minimal (SKILL.md + config + data)
     STANDARD - Standard-Skill mit einfachem Memory
@@ -178,9 +178,9 @@ PYTHON-TOOLS NACH FUNKTION
   c_json_fixer.py           JSON reparieren (alt)
   c_import_organizer.py     Imports sortieren
   c_import_diagnose.py      Import-Probleme finden
-  c_indent_checker.py       Einrueckung pruefen
+  c_indent_checker.py       Einrückung prüfen
   c_umlaut_fixer.py         Umlaute korrigieren
-  c_german_scanner.py       Deutsche Woerter finden
+  c_german_scanner.py       Deutsche Wörter finden
   c_method_analyzer.py      Methoden analysieren
   c_pycutter.py             Python-Dateien aufteilen
   c_sqlite_viewer.py        SQLite-Datenbanken anzeigen
@@ -223,14 +223,14 @@ PYTHON-TOOLS NACH FUNKTION
 
   Tool                      CLI-Befehl                  Funktion
   ------------------------  --------------------------  ----------------------------
-  test_runner.py            bach --test run             Test-Ausfuehrung
-  run_b_tests.py            bach --test self            B-Tests ausfuehren
-  run_o_tests.py            bach --test ops             O-Tests ausfuehren
+  test_runner.py            bach --test run             Test-Ausführung
+  run_b_tests.py            bach --test self            B-Tests ausführen
+  run_o_tests.py            bach --test ops             O-Tests ausführen
 
   Testprofile (testing/profiles/):
-    QUICK.json          - Schnelle Pruefung
+    QUICK.json          - Schnelle Prüfung
     STANDARD.json       - Standard-Suite
-    FULL.json           - Vollstaendige Pruefung
+    FULL.json           - Vollständige Prüfung
     MEMORY_FOCUS.json   - Memory-Tests
     TASK_FOCUS.json     - Task-Tests
     OUTPUT.json         - Output-Tests
@@ -325,16 +325,16 @@ PYTHON-TOOLS NACH FUNKTION
 
 ### User-Tools (tools/_user/)
 
-  System-spezifische Tools (nicht fuer Distribution):
+  System-spezifische Tools (nicht für Distribution):
   - auto_backup_orchestrator.py   FTP-Backup
   - fritzbox_wlan_control.py      WLAN-Steuerung
-  - backup_watchdog.py            Backup-Ueberwachung
+  - backup_watchdog.py            Backup-Überwachung
 
   Siehe: tools/_user/README.md
 
 CLI-TOOLS (bach.db)
 -------------------
-Verfuegbare Kategorien:
+Verfügbare Kategorien:
   archive         7z (Komprimierung)
   editor          notepad++
   ide             code (VS Code)
@@ -364,8 +364,8 @@ Wichtige Felder:
 - name          TEXT UNIQUE
 - type          TEXT (cli, external, internal)
 - category      TEXT
-- command       TEXT (fuer CLI-Tools)
-- endpoint      TEXT (fuer externe Tools)
+- command       TEXT (für CLI-Tools)
+- endpoint      TEXT (für externe Tools)
 - description   TEXT
 - capabilities  JSON-Array
 - use_for       TEXT
@@ -376,10 +376,10 @@ MIGRATION
 Die Tools wurden aus JSON-Dateien in die Datenbank migriert.
 Die Quell-Dateien existieren nicht mehr (connections/ wurde aufgeloest).
 
-Migration-Status pruefen:
+Migration-Status prüfen:
   bach --tools migrate --status
 
-Falls erneute Migration noetig (nur bei Reset):
+Falls erneute Migration nötig (nur bei Reset):
   python tools/migrate_connections.py
 
 BEISPIELE
@@ -397,7 +397,7 @@ bach --tools db --type cli
 bach --tools show ffmpeg
 bach --tools show chatgpt
 
-# Tool ausfuehren
+# Tool ausführen
 bach --tools run c_encoding_fixer datei.py
 
 # Direktaufruf (empfohlen)
@@ -419,7 +419,7 @@ bach --test run QUICK
 
 # MCP Server (NEU)
 python tools/mcp_server.py
-# Dann via Claude Code verfuegbar (bach:/ Resources + Tools)
+# Dann via Claude Code verfügbar (bach:/ Resources + Tools)
 
 TOOL-INVENTAR (~83 Tools)
 -------------------------
@@ -439,7 +439,7 @@ Gesamt-Statistik nach Kategorie:
 
 Naming-Convention (Praefixe):
 
-  c_*   CLI-optimiert fuer AI (40+ Tools)
+  c_*   CLI-optimiert für AI (40+ Tools)
   b_*   BACH-Kern (System-kritisch)
   a_*   Agent-Runner Tools
   t_*   Test-Tools
@@ -460,26 +460,26 @@ Quelle: Archiviert in user/_archive/BACH_NATIVE_TOOLS_MAPPING.md
 
 DETAILLIERTE TOOL-DOKUMENTATION
 --------------------------------
-Fuer komplexe Tools gibt es ausfuehrliche Dokumentation in docs/help/tools/:
+Für komplexe Tools gibt es ausführliche Dokumentation in docs/help/tools/:
 
-  Verfuegbare Dokumentationen:
+  Verfügbare Dokumentationen:
   ---------------------------
   docs/help/tools/python_cli_editor.txt   Python-Dateien strukturiert bearbeiten
-                                     (Klassen/Methoden anzeigen, einfuegen,
-                                     loeschen, Edit-Workflow, Export)
+                                     (Klassen/Methoden anzeigen, einfügen,
+                                     löschen, Edit-Workflow, Export)
 
   docs/help/tools/_index.txt              Index aller Tool-Dokumentationen
 
   Abruf:
   ------
-  bach --help tools/python_cli_editor    Ausfuehrliche Doku lesen
-  bach --help tools/_index               Uebersicht verfuegbarer Doku
+  bach --help tools/python_cli_editor    Ausführliche Doku lesen
+  bach --help tools/_index               Übersicht verfügbarer Doku
   bach --help tools                      Diese allgemeine Tool-Hilfe
 
   Wann braucht ein Tool eigene Doku?
   ----------------------------------
   - Viele Optionen (>10 Parameter)
-  - Komplexe Workflows moeglich
+  - Komplexe Workflows möglich
   - Haeufig genutzt
   - Beispiele wichtig zum Verstaendnis
 
@@ -489,7 +489,7 @@ Fuer komplexe Tools gibt es ausfuehrliche Dokumentation in docs/help/tools/:
 
 CONTEXT-INJEKTOR (automatische Tool-Hinweise)
 ---------------------------------------------
-Der ContextInjector erkennt Stichwoerter und empfiehlt passende Tools.
+Der ContextInjector erkennt Stichwörter und empfiehlt passende Tools.
 Beispiele:
 
   Stichwort              Tool-Empfehlung
@@ -505,7 +505,7 @@ Beispiele:
   "pfad reparieren"      bach c_path_healer <datei>
   "mcp starten"          python tools/mcp_server.py
 
-Siehe: bach --help injectors (vollstaendige Trigger-Liste)
+Siehe: bach --help injectors (vollständige Trigger-Liste)
 
 SIEHE AUCH
 ----------
@@ -513,7 +513,7 @@ docs/help/tools/_index.txt      Detaillierte Tool-Dokumentation (Index)
 docs/help/tools/*.txt           Einzelne Tool-Dokumentationen
 docs/help/injectors.txt         Automatische Tool-Hinweise (ContextInjector)
 bach --help connections    Connections-Verwaltung
-bach --help dirscan           Directory Scanner (Aenderungsueberwachung)
+bach --help dirscan           Directory Scanner (Änderungsüberwachung)
 bach --help maintain       Wartungs-Tools
 bach --help test           Test-System
 bach --help naming         Namenskonventionen (Tool-Praefixe)

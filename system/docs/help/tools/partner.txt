@@ -6,13 +6,13 @@ Pfad: docs/help/tools/partner.txt
 
 BESCHREIBUNG
 ------------
-Diese Tools ermoeglichen die Kommunikation zwischen BACH und
+Diese Tools ermöglichen die Kommunikation zwischen BACH und
 externen Partnern (Ollama, Gemini, etc.), System-Analyse und 
 automatisches Routing von Aufgaben.
 
 Pfad: tools/partner_communication/
 
-UEBERSICHT
+ÜBERSICHT
 ----------
 
   Tool                        Zeilen   Funktion
@@ -29,11 +29,11 @@ UEBERSICHT
 
 TOOL 1: communication.py
 ========================
-Zentrales Tool fuer Partner-Erkennung und Message-Routing.
+Zentrales Tool für Partner-Erkennung und Message-Routing.
 
 FUNKTIONEN:
   - Automatische Partner-Erkennung (Claude, Ollama, Gemini, etc.)
-  - Health-Checks fuer Partner-Verfuegbarkeit
+  - Health-Checks für Partner-Verfügbarkeit
   - Token-aware Message-Routing
   - Partner-Status-Abfragen
 
@@ -47,7 +47,7 @@ VERWENDUNG (Python):
   # Partner erkennen
   partners = detect_partners()
   
-  # Health pruefen
+  # Health prüfen
   status = check_health("ollama")
   
   # Nachricht routen
@@ -98,9 +98,9 @@ FUNKTIONEN:
   - DNA-Tracking (Instanz-Identitaet)
   - 5 Interaktionsprotokolle:
     * Handshake - Gegenseitige Erkennung
-    * Compare   - Faehigkeiten vergleichen
+    * Compare   - Fähigkeiten vergleichen
     * Request   - Import-Anfragen
-    * Transfer  - Datenuebertragung
+    * Transfer  - Datenübertragung
     * Receipt   - Empfangsbestaetigung
 
 VERWENDUNG (Python):
@@ -112,7 +112,7 @@ VERWENDUNG (Python):
   # Handshake starten
   result = initiate_handshake("gemini")
   
-  # Protokoll ausfuehren
+  # Protokoll ausführen
   execute_protocol("transfer", target="ollama", data=payload)
 
 ───────────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ VERWENDUNG (Python):
 
 TOOL 5: real_tools.py
 =====================
-Identifiziert echte CLI-Tools fuer Delegation.
+Identifiziert echte CLI-Tools für Delegation.
 
 FUNKTIONEN:
   - EXE/CMD/BAT-Tools finden
@@ -182,7 +182,7 @@ PARTNER-WORKSPACE
 SIEHE AUCH
 ----------
   docs/help/partner.txt        Partner-System CLI-Befehle
-  docs/help/partners.txt       Partner-Netzwerk Uebersicht
+  docs/help/partners.txt       Partner-Netzwerk Übersicht
   docs/help/delegate.txt       Delegation-Details
   docs/help/communicate.txt    Kommunikationsprotokolle
   

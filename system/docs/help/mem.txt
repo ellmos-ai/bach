@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -12,9 +12,9 @@ BESCHREIBUNG
 ================================================================================
 Der mem Handler verwaltet das BACH-Gedaechtnissystem mit zwei Hauptfunktionen:
 
-1. WORKING MEMORY: Bereinigung abgelaufener Eintraege aus der Working Memory
+1. WORKING MEMORY: Bereinigung abgelaufener Einträge aus der Working Memory
 2. MEMORY DECAY: Automatisches Verfall von Facts, Lessons und Working Memory
-   Basis fuer SQ043 (Runde 30C)
+   Basis für SQ043 (Runde 30C)
 
 Speichert kritische Kontextinformationen mit konfigurierbarem Lebenszykus.
 
@@ -30,9 +30,9 @@ working - Working Memory Management
   bach mem working set-expires
   bach mem working set-expires --dry-run
 
-  status/analyze:     Zeige Working Memory Status und kategorisierte Eintraege
-  cleanup:            Bereinige abgelaufene Eintraege (Option: --dry-run)
-  set-expires:        Setze Expires-Werte fuer alte Eintraege (Option: --dry-run)
+  status/analyze:     Zeige Working Memory Status und kategorisierte Einträge
+  cleanup:            Bereinige abgelaufene Einträge (Option: --dry-run)
+  set-expires:        Setze Expires-Werte für alte Einträge (Option: --dry-run)
 
 
 decay - Memory Decay (Facts/Lessons/Working)
@@ -47,16 +47,16 @@ decay - Memory Decay (Facts/Lessons/Working)
   --facts:            Nur Facts verringern (Relevanz-Score)
   --lessons:          Nur Lessons verringern (Zuverlaessigkeit)
   --working:          Nur Working Memory verringern (Sicherheit)
-  --dry-run:          Vorschau ohne Datenbankveraenderungen
+  --dry-run:          Vorschau ohne Datenbankveränderungen
 
 ================================================================================
 BEISPIELE
 ================================================================================
 
-# Status der Working Memory pruefen
+# Status der Working Memory prüfen
 bach mem working status
 
-# Analyse: Welche Eintraege sind abgelaufen?
+# Analyse: Welche Einträge sind abgelaufen?
 bach mem working analyze
 
 # Cleanup simulieren
@@ -97,5 +97,5 @@ SIEHE AUCH
 ================================================================================
 
 bach db      - Direkter Datenbankzugriff (bach db list-tables)
-bach help    - Uebersicht aller Handler
+bach help    - Übersicht aller Handler
 bach help db - Datenbankhandler (Tabellen, Schema)

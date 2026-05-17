@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -17,7 +17,7 @@ BESCHREIBUNG
 Der press-Handler erstellt und verwaltet professionelle Pressemitteilungen und
 Positionspapiere. Dokumente werden via LaTeX-Templates compiliert und als
 PDF-Dateien exportiert. Die Verwaltung erfolgt durch die bach.db-Tabelle
-press_documents mit Status-Verfolgung und Email-Versand-Moeglichkeiten.
+press_documents mit Status-Verfolgung und Email-Versand-Möglichkeiten.
 
 Voraussetzung: MiKTeX oder TeX Live (pdflatex/xelatex erforderlich)
 
@@ -28,11 +28,11 @@ OPERATIONEN
 create --type <type> --title "..." [--body "..."]
   Neues Dokument erstellen. Typen: pressemitteilung, positionspapier
   Beispiel: bach press create --type pressemitteilung --title "Neuerungen 2026"
-  Rueckgabe: Dokument-ID und PDF-Pfad bei Erfolg, Entwurf bei LaTeX-Fehler
+  Rückgabe: Dokument-ID und PDF-Pfad bei Erfolg, Entwurf bei LaTeX-Fehler
 
 templates
-  Verfuegbare LaTeX-Templates anzeigen
-  Zeigt: Template-Name, Pfad, Dateigroesse in Bytes
+  Verfügbare LaTeX-Templates anzeigen
+  Zeigt: Template-Name, Pfad, Dateigröße in Bytes
 
 list
   Alle gespeicherten Dokumente anzeigen (neueste zuerst)
@@ -46,11 +46,11 @@ show <id>
 
 send <id> --to <email>
   Dokument per Email versenden
-  Nutzt: NotifyHandler fuer Email-Versand
-  Aenderungen: Status auf "sent", sent_at und sent_to in DB aktualisiert
+  Nutzt: NotifyHandler für Email-Versand
+  Änderungen: Status auf "sent", sent_at und sent_to in DB aktualisiert
 
 config [--logo <pfad>] [--author "..."] [--email <...>] [--org <...>]
-  Konfiguration anzeigen oder aendern
+  Konfiguration anzeigen oder ändern
   Speichert: JSON-Konfiguration in agents/_experts/press/config.json
   Optionen: logo_path, author, contact_email, organization
 
@@ -72,7 +72,7 @@ BEISPIELE
 4. Dokument versenden:
    bach press send 5 --to redaktion@company.com
 
-5. Konfiguration aendern:
+5. Konfiguration ändern:
    bach press config --author "Max Mustermann" --email info@company.com
 
 

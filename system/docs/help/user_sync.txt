@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -13,30 +13,30 @@ BESCHREIBUNG
 ============
 Der user_sync Handler synchronisiert Benutzerprofil-Daten zwischen der
 Markdown-Datei USER.md (im BACH-Root-Verzeichnis) und der SQLite-Tabelle
-user_profile in bach.db. Es werden zwei Synchronisations-Richtungen unterstuetzt:
+user_profile in bach.db. Es werden zwei Synchronisations-Richtungen unterstützt:
 
 1. USER.md -> DB beim BACH-Startup (Block 0.07)
 2. DB -> USER.md beim BACH-Shutdown (Block 5.7)
 
 Erkannte Felder: Name, Standort, Sprache, Beruf, GitHub, E-Mail, Rolle.
-USER.md liegt eine Ebene ueber dem system/-Verzeichnis (BACH-Root).
+USER.md liegt eine Ebene über dem system/-Verzeichnis (BACH-Root).
 
 OPERATIONEN
 ===========
 sync_to_db(dry_run=False)
   Liest USER.md und speichert Felder in user_profile Tabelle.
-  Dry-Run: Nur pruefen, nicht schreiben.
+  Dry-Run: Nur prüfen, nicht schreiben.
   Status-Meldung bei fehlender Datei oder leerer user_profile Tabelle.
 
 sync_to_file()
   Liest user_profile aus DB und aktualisiert Felder in USER.md.
-  Behaelt die Struktur und Formatierung von USER.md.
+  Behält die Struktur und Formatierung von USER.md.
   Aktualisiert nur erkannte Felder (**Name:**, etc.).
 
 from_bach_root(bach_root)
   Factory-Methode: Erstellt UserSync-Instanz aus system/-Pfad.
 
-Convenience-Funktionen fuer bach.py:
+Convenience-Funktionen für bach.py:
   sync_user_md_to_db(bach_root, dry_run=False)
   sync_db_to_user_md(bach_root)
 
@@ -48,11 +48,11 @@ syncer = UserSync.from_bach_root('system/')
 result = syncer.sync_to_db()
 print(result)  # {'status': 'ok', 'synced': 5}
 
-# DB in USER.md zurueckschreiben (Shutdown)
+# DB in USER.md zurückschreiben (Shutdown)
 result = syncer.sync_to_file()
 print(result)  # {'status': 'ok', 'updated_fields': 3}
 
-# Dry-Run: Nur pruefen
+# Dry-Run: Nur prüfen
 result = syncer.sync_to_db(dry_run=True)
 print(result)  # {'status': 'dry_run', 'data': {...}}
 
@@ -65,5 +65,5 @@ data/bach.db           -- SQLite-DB mit user_profile Tabelle
 SIEHE AUCH
 ==========
 bach.py                -- Startup-/Shutdown-Orchestrierung (Block 0.07 / 5.7)
-user_profile           -- DB-Tabelle fuer Profil-Daten
+user_profile           -- DB-Tabelle für Profil-Daten
 ../CLAUDE.md           -- BACH System-Dokumentation

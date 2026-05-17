@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-02-08 (Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 WORKFLOW - BACH Arbeitsablaeufe
 ================================
@@ -17,26 +17,26 @@ WORKFLOW-SPEICHERORT
   agents/_experts/steuer/     Steuer-Workflows (7 .md Dateien)
   DB: skills-Tabelle          type='workflow' (automatisch synchronisiert)
 
-VERFUEGBARE WORKFLOWS
+VERFÜGBARE WORKFLOWS
 ---------------------
   System-Workflows (10):
   ----------------------
   bugfix-protokoll.md            Fehlerkorrektur-Prozess
-  cli-aenderung-checkliste.md    CLI-Befehl hinzufuegen
+  cli-änderung-checkliste.md    CLI-Befehl hinzufügen
   dev-zyklus.md                  Entwicklungszyklus (8 Phasen)
   ordner-flattening.md           Ordner-Struktur abflachen
   projekt-aufnahme.md            Neues Projekt aufnehmen
   service-agent-validator.md     Service/Agent Validator
   system-anschlussanalyse.md     Integrations-Check
-  system-aufraeumen.md           Aufraeumen und Archivieren
+  system-aufräumen.md           Aufräumen und Archivieren
   system-mapping.md              System kartieren
-  system-synopse.md              System-Uebersicht erstellen
+  system-synopse.md              System-Übersicht erstellen
   system-testverfahren.md        Test-Prozeduren
 
   Dokumentations-Workflows (4):
   -----------------------------
   docs-analyse.md                Dokumentations-Analyse
-  help-forensic.md               Help Ist-Soll Pruefung (Recurring: 14d)
+  help-forensic.md               Help Ist-Soll Prüfung (Recurring: 14d)
   wiki-author.md                 Wiki-Beitraege erstellen (Recurring: 21d)
   migrate-rename.md              Datei-Umbenennung mit Wrapper
 
@@ -48,11 +48,11 @@ VERFUEGBARE WORKFLOWS
   Analyse-Workflows (4):
   ----------------------
   agent-skill-finder.md          Agent-Skill Mapping Analyse
-  skill-abdeckungsanalyse.md     Skill-Coverage pruefen
+  skill-abdeckungsanalyse.md     Skill-Coverage prüfen
   synthese.md                    Dokumente zusammenfuehren
   ing-strategie.md               ING Banking Workflow
 
-  Persoenliche-Workflows (1):
+  Persönliche-Workflows (1):
   ---------------------------
   cv-generierung.md              Lebenslauf erstellen/aktualisieren
 
@@ -71,13 +71,13 @@ VERFUEGBARE WORKFLOWS
 WANN WELCHEN WORKFLOW
 ---------------------
   Bug gefunden?           -> bugfix-protokoll.md
-  Neuer CLI-Befehl?       -> cli-aenderung-checkliste.md
+  Neuer CLI-Befehl?       -> cli-änderung-checkliste.md
   Neues Projekt?          -> projekt-aufnahme.md
   System analysieren?     -> system-mapping.md oder system-synopse.md
-  Aufraeumen?             -> system-aufraeumen.md
-  Integration pruefen?    -> system-anschlussanalyse.md
+  Aufräumen?             -> system-aufräumen.md
+  Integration prüfen?    -> system-anschlussanalyse.md
   Gemini nutzen?          -> gemini-delegation.md
-  Help pruefen?           -> help-forensic.md (Recurring: 14d)
+  Help prüfen?           -> help-forensic.md (Recurring: 14d)
   Wiki erweitern?         -> wiki-author.md (Recurring: 21d)
   Datei umbenennen?       -> migrate-rename.md
   Ordner vereinfachen?    -> ordner-flattening.md
@@ -95,7 +95,7 @@ STANDARD SESSION-WORKFLOW
 1. bach startup                # Session starten (Standard: GUI-Mode)
 2. ROADMAP.md lesen            # Aufgabe waehlen
 3. Aufgabe bearbeiten
-4. Zwischen-Tasks: bach status # Zeit pruefen
+4. Zwischen-Tasks: bach status # Zeit prüfen
 5. bach shutdown               # Session beenden
 
 SESSION TIMING
@@ -117,7 +117,7 @@ ABGRENZUNG: WORKFLOW vs TEAM-FLOW
   │  WORKFLOW                  │  TEAM-FLOW (geplant)           │
   ├────────────────────────────┼────────────────────────────────┤
   │  EIN Akteur                │  MEHRERE Akteure               │
-  │  Schritt-Anleitung         │  Uebergabe-Management          │
+  │  Schritt-Anleitung         │  Übergabe-Management          │
   │  Text in .md Datei         │  Strukturiert in DB/JSON       │
   │  skills/workflows/        │  GUI Skills-Board (geplant)    │
   └────────────────────────────┴────────────────────────────────┘
@@ -131,7 +131,7 @@ CLI-BEFEHLE
 
   bach startup                 Session starten (Default: GUI)
   bach startup quick           Schnellstart ohne Dir-Scan
-  bach startup mode            Modus aendern: gui|text|dual|silent
+  bach startup mode            Modus ändern: gui|text|dual|silent
 
   bach status                  Systemstatus anzeigen
 
@@ -145,7 +145,7 @@ WORKFLOW LESEN
   skills/workflows/<name>.md
   agents/_experts/steuer/<name>.md
 
-  # Mit Help-System (Alias-Unterstuetzung):
+  # Mit Help-System (Alias-Unterstützung):
   bach help workflow/bugfix-protokoll
   bach help workflow/help-forensic
 

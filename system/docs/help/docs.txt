@@ -1,15 +1,15 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 DOCS - Menschenlesbare Dokumentation
 =====================================
 
 BESCHREIBUNG
 ------------
-Neben dem help-System (fuer KI optimiert) gibt es zwei menschenlesbare
-Dokumentationen mit ASCII-Grafiken und Uebersichten.
+Neben dem help-System (für KI optimiert) gibt es zwei menschenlesbare
+Dokumentationen mit ASCII-Grafiken und Übersichten.
 
 DOKUMENTATIONSEBENEN
 --------------------
@@ -36,7 +36,7 @@ DOKUMENTE
 
   docs/README.txt
   ---------------
-  Entwicklungsdokumentation - Uebersicht ueber docs/ Ordnerstruktur.
+  Entwicklungsdokumentation - Übersicht über docs/ Ordnerstruktur.
   - Konzepte (CONCEPT_*.md)
   - Analysen und Reports
   - Archivierte Altkonzepte (_archive/)
@@ -48,10 +48,10 @@ DOKUMENTE
 
   system/ARCHITECTURE.md
   ----------------------
-  System-Architektur fuer Entwickler.
+  System-Architektur für Entwickler.
   - Vision & Design-Philosophie
   - High-Level Architektur-Diagramme
-  - Hub & Handler Pattern erklaert
+  - Hub & Handler Pattern erklärt
   - Datenbankschema visualisiert
   - Datenfluss-Diagramme
   - Erweiterungsanleitungen
@@ -63,32 +63,32 @@ DOKUMENTE
 ABGRENZUNG
 ----------
   docs/help/*.txt             Operative Referenz, maschinenlesbar, konsistent
-  docs/README.txt        Entwickler-Uebersicht, Ordnerstruktur
+  docs/README.txt        Entwickler-Übersicht, Ordnerstruktur
   system/ARCHITECTURE.md Technisches Verstaendnis, Architektur, Design
 
   help ist die PRIMAERE Dokumentation.
-  docs/README.txt und ARCHITECTURE.md verweisen auf help fuer Details.
+  docs/README.txt und ARCHITECTURE.md verweisen auf help für Details.
 
 AKTUALISIERUNG
 --------------
-Bei groesseren Aenderungen am System sollten alle Ebenen
+Bei größeren Änderungen am System sollten alle Ebenen
 aktualisiert werden:
 
   1. docs/help/*.txt           - Befehle, Operationen (IMMER aktuell halten)
-  2. docs/README.txt      - Bei Konzept-/Ordner-Aenderungen
-  3. system/ARCHITECTURE.md - Bei Architektur-Aenderungen
+  2. docs/README.txt      - Bei Konzept-/Ordner-Änderungen
+  3. system/ARCHITECTURE.md - Bei Architektur-Änderungen
 
-GITHUB-VEROEFFENTLICHUNG
+GITHUB-VERÖFFENTLICHUNG
 ------------------------
-Bei Veroeffentlichung auf GitHub:
+Bei Veröffentlichung auf GitHub:
 
   - system/ARCHITECTURE.md als Haupteinstieg verlinken
-  - docs/README.txt fuer Entwickler-Uebersicht
+  - docs/README.txt für Entwickler-Übersicht
   - help-System als integrierte Dokumentation erwaehnen
 
 DATEIPFADE
 ----------
-  docs/README.txt              Entwickler-Uebersicht
+  docs/README.txt              Entwickler-Übersicht
   system/ARCHITECTURE.md       Architektur-Dokumentation
   system/docs/help/*.txt            Operative Hilfe (diese Dateien)
   system/wiki/*.txt       Hintergrundwissen

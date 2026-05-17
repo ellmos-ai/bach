@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-21 (SQ063)
-# Naechste Pruefung: 2026-08-21
+# Nächste Prüfung: 2026-08-21
 
 BACH SEAL - INTEGRITÄTSPRÜFUNG
 ===============================

@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 BETWEEN - Zwischen-Checks mit Profilen
 ======================================
@@ -19,13 +19,13 @@ CLI-BEFEHLE
   Profile verwalten:
   bach between profile add "Name"     Neues Profil erstellen
   bach between profile edit "Name"    Profil bearbeiten
-  bach between profile delete "Name"  Profil loeschen
+  bach between profile delete "Name"  Profil löschen
   bach between profile list           Alle Profile anzeigen
   bach between profile show "Name"    Profil-Details
 
   Profil aktivieren:
-  bach between use "Name"          Profil fuer Session aktivieren
-  bach between use default         Zurueck zum Standard-Profil (nutzt "default" als Name)
+  bach between use "Name"          Profil für Session aktivieren
+  bach between use default         Zurück zum Standard-Profil (nutzt "default" als Name)
 
 PROFIL-STRUKTUR
 ---------------
@@ -33,7 +33,7 @@ PROFIL-STRUKTUR
   {
     "name": "Algebra",
     "description": "Mathematik-Aufgaben mit Verifikation",
-    "message": "ZWISCHEN-CHECK:\n1. Kontrolliere Ergebnis\n2. Pruefe Rechenweg\n3. Dokumentiere",
+    "message": "ZWISCHEN-CHECK:\n1. Kontrolliere Ergebnis\n2. Prüfe Rechenweg\n3. Dokumentiere",
     "trigger_on": ["task done", "task complete"],
     "is_default": false
   }
@@ -43,14 +43,14 @@ STANDARD-PROFILE
 
   1. DEFAULT
      Generischer Between-Check (aktuelles Verhalten)
-     "1. Zeit-Check  2. Memory OK?  3. Naechste Aufgabe?"
+     "1. Zeit-Check  2. Memory OK?  3. Nächste Aufgabe?"
 
   2. FOCUS
-     Minimaler Check fuer fokussierte Arbeit
+     Minimaler Check für fokussierte Arbeit
      "Weitermachen oder Pause?"
 
   3. REVIEW
-     Ausfuehrlicher Check mit Code-Review Hinweisen
+     Ausführlicher Check mit Code-Review Hinweisen
      "1. Code reviewen  2. Tests laufen?  3. Dokumentiert?"
 
   4. LEARNING
@@ -64,7 +64,7 @@ STANDARD-PROFILE
 BEISPIELE
 ---------
 
-  # Neues Profil fuer Mathe-Aufgaben
+  # Neues Profil für Mathe-Aufgaben
   bach between profile add "Mathe"
   -> Profil 'Mathe' erstellt (bearbeiten mit: between profile edit)
 
@@ -74,9 +74,9 @@ BEISPIELE
 
   # Profil aktivieren
   bach between use "Mathe"
-  -> Profil 'Mathe' fuer diese Session aktiviert
+  -> Profil 'Mathe' für diese Session aktiviert
 
-  # Zurueck zu Standard
+  # Zurück zu Standard
   bach between use default
 
 AUSGABE-FORMAT
@@ -84,10 +84,10 @@ AUSGABE-FORMAT
 
   [BETWEEN-TASKS]
   1. Kontrolliere das Ergebnis der letzten Aufgabe
-  2. Pruefe Rechenweg auf Fehler
+  2. Prüfe Rechenweg auf Fehler
   3. Dokumentiere Zwischenschritte
 
-  Tipp: --status fuer Uebersicht
+  Tipp: --status für Übersicht
 
 PERSISTENZ
 ----------
@@ -110,11 +110,11 @@ USECASES
 
   2. LERN-SESSIONS
      Profil "Learning" mit Reflexionsfragen
-     -> Foerdert bewusstes Lernen
+     -> Fördert bewusstes Lernen
 
   3. CODE-REVIEW
      Profil "Review" mit Review-Checkliste
-     -> Qualitaetssicherung
+     -> Qualitätssicherung
 
   4. FOKUS-MODUS
      Profil "Focus" mit minimalem Check

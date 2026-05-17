@@ -1,29 +1,29 @@
-FOERDERBERICHT-PIPELINE
+FÖRDERBERICHT-PIPELINE
 =======================
 
-End-to-End Berichtserstellung: Vom Aktenordner zum fertigen Foerderbericht.
+End-to-End Berichtserstellung: Vom Aktenordner zum fertigen Förderbericht.
 Name und Geburtsdatum werden automatisch aus dem Ordnernamen erkannt.
 
 ORDNERSTRUKTUR
 --------------
   data_roh/          User legt Aktenordner ein (AI liest NICHT direkt)
   data_ano/          Anonymisierte Einzeldateien (AI darf lesen)
-  data_bundled/      Gebuendelter Text + Prompt fuer LLM
+  data_bundled/      Gebuendelter Text + Prompt für LLM
   output_berichte/   Fertiger Bericht (de-anonymisiert, Endprodukt)
 
 ROLLENTRENNUNG (WICHTIG)
 -------------------------
   Der USER stellt die Klienten-Akte in data_roh/ ein.
   Die AI startet NUR das Pipeline-Script -- sie stellt KEINE Akten ein,
-  kopiert KEINE Akten, und prueft NICHT ob eine Akte vorhanden ist.
+  kopiert KEINE Akten, und prüft NICHT ob eine Akte vorhanden ist.
   Das Script meldet selbst: "Akte gefunden, Prozess gestartet" oder
   "Fehler: Keine Akte in data_roh/ eingestellt".
 
 VERWENDUNG (4 Standardwege)
 ----------------------------
-  1. Chat:    "Erstelle Foerderbericht" (empfohlen, Auto-Detect)
-  2. .bat:    Foerderbericht_Pipeline.bat (3x ENTER fuer Auto-Detect)
-  3. Chain:   bach chain start foerderbericht
+  1. Chat:    "Erstelle Förderbericht" (empfohlen, Auto-Detect)
+  2. .bat:    Förderbericht_Pipeline.bat (3x ENTER für Auto-Detect)
+  3. Chain:   bach chain start förderbericht
   4. CLI:     bach bericht pipeline (Auto-Detect)
 
 OPTIONEN
@@ -31,14 +31,14 @@ OPTIONEN
   --zeitraum "01.01.2025 - 31.12.2025"   Berichtszeitraum
   --backend claude_code|llmauto           LLM-Backend (default: claude_code)
   --model claude-sonnet-4-6              LLM-Modell
-  --eltern "Mutter Name" "Vater Name"   Elternnamen (fuer Anonymisierung)
+  --eltern "Mutter Name" "Vater Name"   Elternnamen (für Anonymisierung)
   --no-cleanup                           Zwischenordner nicht leeren
 
 ABLAUF (3-Phasen-Flow)
 ----------------------
 
   Phase 1 -- prepare_prompt() [Python, ohne AI]:
-    1. Validierung: data_roh/ darf nicht leer sein, Ein-Klient-Regel pruefen
+    1. Validierung: data_roh/ darf nicht leer sein, Ein-Klient-Regel prüfen
     2. Auto-Detect: Name + Geburtsdatum aus Ordnername erkennen
     3. Profil: Temporaeres Anonymisierungsprofil (Tarnname, Fake-Daten)
     4. Anonymisierung: Dateien anonymisieren -> data_ano/
@@ -52,7 +52,7 @@ ABLAUF (3-Phasen-Flow)
   Phase 3 -- finish_report() [Python, ohne AI]:
     9. JSON de-anonymisieren (via session_info.json mit allen Mappings)
    10. Word generieren -> output_berichte/
-   11. Cleanup: ALLE Zwischendaten + Legacy-Ordner loeschen
+   11. Cleanup: ALLE Zwischendaten + Legacy-Ordner löschen
 
   Vollautomatisch (.bat/llmauto/CLI):
     run_full_pipeline() ruft intern prepare_prompt() + _call_llm() + finish_report() auf
@@ -63,12 +63,12 @@ DOKUMENTEN-PRIORISIERUNG
 -------------------------
   HOCH:    Aktuelle Protokolle, Aktendeckblatt, Hilfeplan, Bewilligung
   MITTEL:  proAutismus-Berichte, Arztberichte (<10J), Schulberichte, Mails
-  NIEDRIG: Arztberichte aelter als 10 Jahre
+  NIEDRIG: Arztberichte älter als 10 Jahre
 
 HILFEPLAN-ZIELE (WICHTIG)
 --------------------------
   Wenn ein Hilfeplan vorliegt, werden dessen Rahmenziele/Ergebnisziele
-  als primaere Foerderziele uebernommen. Nur Themen ausserhalb der
+  als primaere Förderziele übernommen. Nur Themen außerhalb der
   Hilfeplan-Ziele kommen in die neue_ziele Tabelle.
   Umlaut-Postprocessing (ue->ue, ae->ae, oe->oe) wird automatisch
   wort-basiert angewendet (keine Falsch-Positiven bei "aktuell" etc.).
@@ -77,11 +77,11 @@ SICHERHEIT
 ----------
   - data_roh/ wird NIEMALS direkt von AI gelesen
   - LLM sieht NUR anonymisierte Daten (Tarnnamen)
-  - De-Anonymisierung ueber session_info.json mit allen Mappings
+  - De-Anonymisierung über session_info.json mit allen Mappings
   - Kein persistentes Profil (Session-basiert)
   - .pipeline_lock verhindert parallele Durchlaeufe
   - OneDrive-Sync wird automatisch pausiert/fortgesetzt
-  - Cleanup loescht ALLE Zwischendaten + Legacy-Ordner
+  - Cleanup löscht ALLE Zwischendaten + Legacy-Ordner
 
 LLM-BACKENDS
 -------------
@@ -94,7 +94,7 @@ TROUBLESHOOTING
   "data_roh/ ist leer"    -> Aktenordner in data_roh/ einlegen
   "ClaudeRunner Fehler"   -> claude CLI nicht im PATH, llmauto nutzen
   "Import-Fehler"         -> pip install python-docx openpyxl
-  OneDrive-Lock           -> Dateien schliessen, kurz warten, neu starten
+  OneDrive-Lock           -> Dateien schließen, kurz warten, neu starten
 
 DATEIEN
 -------

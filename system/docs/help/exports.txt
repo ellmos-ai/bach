@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -8,15 +8,15 @@ EXPORTS - DB-zu-Markdown Export-Scripts
 BESCHREIBUNG
 ============
 
-BACH exportiert Datenbank-Inhalte als Markdown-Dateien fuer einfache
+BACH exportiert Datenbank-Inhalte als Markdown-Dateien für einfache
 Lesbarkeit und Versionierung. Die Export-Scripts lesen aus bach.db und
-erzeugen strukturierte .md-Dateien im data/-Verzeichnis. Zusaetzlich
-gibt es den Skill-Export fuer Standalone-Pakete.
+erzeugen strukturierte .md-Dateien im data/-Verzeichnis. Zusätzlich
+gibt es den Skill-Export für Standalone-Pakete.
 
-Alle Scripts liegen in tools/ und sind direkt ausfuehrbar.
+Alle Scripts liegen in tools/ und sind direkt ausführbar.
 
 
-UEBERSICHT
+ÜBERSICHT
 ==========
 
   Script                  Erzeugt                   Quelle (DB-Tabellen)
@@ -36,7 +36,7 @@ EINZELBESCHREIBUNGEN
 AGENTS_EXPORT
 -------------
 Exportiert alle registrierten Agenten mit Synergien. Liest aus der
-agents-Tabelle und agent_synergies, erzeugt eine formatierte Uebersicht
+agents-Tabelle und agent_synergies, erzeugt eine formatierte Übersicht
 mit Name, Typ, Status und Synergie-Beziehungen.
 
   python tools/agents_export.py
@@ -46,7 +46,7 @@ CHAINS_EXPORT
 -------------
 Exportiert Toolchains (verkettete Tool-Aufrufe). Liest aus der
 toolchains-Tabelle, zeigt Ketten-Definition, Trigger und
-Ausfuehrungshistorie.
+Ausführungshistorie.
 
   python tools/chains_export.py
   Ausgabe: data/CHAINS.md
@@ -54,7 +54,7 @@ Ausfuehrungshistorie.
 PARTNERS_EXPORT
 ---------------
 Exportiert Multi-LLM-Partner-Konfiguration. Liest delegation_rules
-und partner_recognition aus der DB. Zeigt Partner-Profile, Staerken,
+und partner_recognition aus der DB. Zeigt Partner-Profile, Stärken,
 Delegations-Regeln und Erkennungsmuster.
 
   python tools/partners_export.py
@@ -63,7 +63,7 @@ Delegations-Regeln und Erkennungsmuster.
 WORKFLOWS_EXPORT
 ----------------
 Scannt skills/workflows/ nach Workflow-Dateien (.md) und erstellt eine
-Uebersicht. Extrahiert Metadaten (Titel, Ziel, Schritte) per Regex
+Übersicht. Extrahiert Metadaten (Titel, Ziel, Schritte) per Regex
 aus dem Dateiinhalt.
 
   python tools/workflows_export.py
@@ -80,13 +80,13 @@ Beschreibung, beteiligte Handler und Erfolgsquote.
 SKILL_EXPORT
 ------------
 Exportiert einen einzelnen Skill als Standalone-ZIP-Paket mit
-Abhaengigkeitsaufloesung. Kopiert SKILL.md, Tools, Workflows und
+Abhängigkeitsauflösung. Kopiert SKILL.md, Tools, Workflows und
 erzeugt eine requirements.txt.
 
   python tools/skill_export.py <skill-name> [--output <pfad.zip>]
-  Ausgabe: ZIP-Datei mit vollstaendiger Skill-Struktur
+  Ausgabe: ZIP-Datei mit vollständiger Skill-Struktur
 
-  Hinweis: Fuer umfangreichere Exports (Agent, OS) siehe exporter.py
+  Hinweis: Für umfangreichere Exports (Agent, OS) siehe exporter.py
   und builder.txt (bach help builder).
 
 
@@ -103,7 +103,7 @@ python tools/usecases_export.py
 # Einzelnen Skill exportieren
 python tools/skill_export.py recherche --output recherche_v1.zip
 
-# Exportierte Markdown-Dateien pruefen
+# Exportierte Markdown-Dateien prüfen
 ls data/*.md
 
 
@@ -117,11 +117,11 @@ tools/workflows_export.py   Workflow-Export
 tools/usecases_export.py    Use-Case-Export
 tools/skill_export.py       Skill-Standalone-Export
 
-data/AGENTS.md              Generierte Agent-Uebersicht
-data/CHAINS.md              Generierte Toolchain-Uebersicht
-data/PARTNERS.md            Generierte Partner-Uebersicht
-data/WORKFLOWS.md           Generierte Workflow-Uebersicht
-data/USECASES.md            Generierte Use-Case-Uebersicht
+data/AGENTS.md              Generierte Agent-Übersicht
+data/CHAINS.md              Generierte Toolchain-Übersicht
+data/PARTNERS.md            Generierte Partner-Übersicht
+data/WORKFLOWS.md           Generierte Workflow-Übersicht
+data/USECASES.md            Generierte Use-Case-Übersicht
 
 
 SIEHE AUCH

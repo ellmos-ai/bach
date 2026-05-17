@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -8,41 +8,41 @@ web_parse
 
 BESCHREIBUNG
 ===
-Laedt Webseiten herunter und konvertiert HTML zu Markdown. Unterstuetzt
+Lädt Webseiten herunter und konvertiert HTML zu Markdown. Unterstützt
 optionale Bereinigung (Entfernung von Navigation, Header, Footer, Aside).
 Implementiert Caching mit MD5-Hash-basiertem Dateinamen.
 
 OPERATIONEN
 ===
 url <url>
-  URL laden, vollstaendigen HTML-zu-Markdown-Inhalt ausgeben.
-  Cache wird automatisch ueberprueft und aktualisiert.
+  URL laden, vollständigen HTML-zu-Markdown-Inhalt ausgeben.
+  Cache wird automatisch überprüft und aktualisiert.
 
 clean <url>
   URL laden und nur Hauptinhalt parsen (Navigation, Header, Footer, Aside
   entfernt). Links werden nicht geparsed bei clean-Modus.
 
 cache list
-  Alle gecachten Dateien anzeigen. Gibt Dateinamen, Groesse (KB), URL und
+  Alle gecachten Dateien anzeigen. Gibt Dateinamen, Größe (KB), URL und
   Zeitstempel aus.
 
 cache clear
   Cache-Verzeichnis leeren (Abfrage: Alle .md-Dateien in data/cache/web
-  werden geloescht).
+  werden gelöscht).
 
 BEISPIELE
 ===
 bach web-parse url https://example.com
-  Vollstaendigen Inhalt von example.com als Markdown ausgeben.
+  Vollständigen Inhalt von example.com als Markdown ausgeben.
 
 bach web-parse clean https://example.com/article
   Nur Artikel-Hauptinhalt ohne Nav/Header/Footer als Markdown.
 
 bach web-parse cache list
-  Gecachte Seiten anzeigen mit Groessen.
+  Gecachte Seiten anzeigen mit Größen.
 
 bach web-parse cache clear
-  Gesamten Cache loeschen.
+  Gesamten Cache löschen.
 
 DATEIEN
 ===
@@ -57,7 +57,7 @@ hub/web_parse.py
 
 SIEHE AUCH
 ===
-Abhaengigkeiten: requests (pip install requests), html2text (optional).
+Abhängigkeiten: requests (pip install requests), html2text (optional).
 Fallback-Konvertierung mit Regex wenn html2text nicht installiert.
 User-Agent wird gesetzt (BACH WebParse/1.0).
 Timeout: 20 Sekunden pro Request.

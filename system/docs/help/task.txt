@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -9,15 +9,15 @@ TASK-HANDLER
 BESCHREIBUNG
 ============
 
-Der Task-Handler verwaltet Aufgaben in der BACH-Datenbank. Unterstuetzt
-Prioritaeten (P1-P4), Multi-ID-Operationen, Abhängigkeiten, Zuweisungen an
+Der Task-Handler verwaltet Aufgaben in der BACH-Datenbank. Unterstützt
+Prioritäten (P1-P4), Multi-ID-Operationen, Abhängigkeiten, Zuweisungen an
 Partner und Status-Management (pending/done/blocked).
 
 
 OPERATIONEN
 ===========
 
-add <titel>              Task hinzufuegen
+add <titel>              Task hinzufügen
   Optionen: --priority P1-P4, --description TEXT, --category TEXT
 
 list [status]            Tasks auflisten
@@ -37,19 +37,19 @@ block <id> [id2...]      Task(s) blockieren
 
 unblock <id> [id2...]    Task(s) entblocken
 
-reopen <id> [id2...]     Task(s) wieder oeffnen (done -> pending)
+reopen <id> [id2...]     Task(s) wieder öffnen (done -> pending)
 
-delete <id> [id2...]     Task(s) loeschen
+delete <id> [id2...]     Task(s) löschen
 
-priority <id> <P1-P4>    Prioritaet aendern
+priority <id> <P1-P4>    Priorität ändern
 
 assign <id> [id2...]     Task(s) zuweisen
   Option: --to PARTNER (CLAUDE, GEMINI, COPILOT, OLLAMA, CHATGPT, etc.)
 
-depends <id>             Abhaengigkeiten verwalten
-  --on <id2>       Neue Abhaengigkeit hinzufuegen
-  --remove <id2>   Abhaengigkeit entfernen
-  --clear          Alle Abhaengigkeiten loeschen
+depends <id>             Abhängigkeiten verwalten
+  --on <id2>       Neue Abhängigkeit hinzufügen
+  --remove <id2>   Abhängigkeit entfernen
+  --clear          Alle Abhängigkeiten löschen
 
 
 BEISPIELE
@@ -72,9 +72,9 @@ Zuweisungen:
   bach task assign 100 101 --to GEMINI
   bach task list --assigned CLAUDE
 
-Abhaengigkeiten:
+Abhängigkeiten:
   bach task depends 306 --on 305    # Task 306 wartet auf 305
-  bach task depends 306              # Abhaengigkeiten anzeigen
+  bach task depends 306              # Abhängigkeiten anzeigen
   bach task depends 306 --remove 305
 
 
@@ -95,6 +95,6 @@ NOTES
 =====
 
 Multi-ID Support: Mehrere Task-IDs in einer Operation (z.B. done, block, assign)
-Abhaengigkeitserkennung: Tasks werden automatisch mit (BLOCKED)-Flag bei
-unvollendeten Abhaengigkeiten angezeigt
+Abhängigkeitserkennung: Tasks werden automatisch mit (BLOCKED)-Flag bei
+unvollendeten Abhängigkeiten angezeigt
 Hooks: after_task_create, after_task_done werden bei Operationen emittiert

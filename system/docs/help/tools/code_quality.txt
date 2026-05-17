@@ -1,4 +1,4 @@
-CODE QUALITY TOOLS - Code-Qualitaet und Fixes
+CODE QUALITY TOOLS - Code-Qualität und Fixes
 =============================================
 
 Stand: 2026-01-23
@@ -11,11 +11,11 @@ Tools zur Behebung haeufiger Code-Probleme:
   - Kaputte Umlaute und Sonderzeichen
   - Emojis in Code (Windows-Console-Problem)
   - JSON-Reparatur
-  - Einrueckungsprobleme
+  - Einrückungsprobleme
 
 HAUPT-TOOL: c_standard_fixer
 ============================
-Das Sammel-Tool fuehrt mehrere Fixer nacheinander aus.
+Das Sammel-Tool führt mehrere Fixer nacheinander aus.
 Empfohlen als erste Wahl bei Code-Problemen.
 
 ENTHALTENE FIXES:
@@ -23,14 +23,14 @@ ENTHALTENE FIXES:
   2. Encoding-Fix   Stellt UTF-8 sicher
   3. JSON-Repair    Repariert JSON (bei .json Dateien)
   4. Umlaut-Fix     Repariert kaputte deutsche Umlaute
-  5. Indent-Check   Prueft Einrueckung (nur Diagnose)
+  5. Indent-Check   Prüft Einrückung (nur Diagnose)
 
 GRUNDBEFEHLE:
 
   # Einzelne Datei reparieren
   bach c_standard_fixer script.py
 
-  # Nur pruefen ohne Aenderung
+  # Nur prüfen ohne Änderung
   bach c_standard_fixer script.py --dry-run
 
   # Ordner rekursiv verarbeiten
@@ -40,20 +40,20 @@ GRUNDBEFEHLE:
   bach c_standard_fixer script.py --only bom,encoding
   bach c_standard_fixer script.py --only umlaut
 
-  # Verfuegbare Tools anzeigen
+  # Verfügbare Tools anzeigen
   bach c_standard_fixer --list-tools
 
   # Mit detaillierter Ausgabe
   bach c_standard_fixer script.py --verbose
 
 OPTIONEN:
-  --dry-run       Nur pruefen, keine Aenderungen
+  --dry-run       Nur prüfen, keine Änderungen
   --recursive     Unterordner einbeziehen
   --verbose, -v   Detaillierte Ausgabe
   --only=TOOLS    Nur bestimmte Tools (kommagetrennt)
-  --list-tools    Verfuegbare Tools anzeigen
+  --list-tools    Verfügbare Tools anzeigen
 
-TOOL-NAMEN fuer --only:
+TOOL-NAMEN für --only:
   bom_fix, encoding_fix, json_repair, umlaut_fix, indent_check
 
 BACKUP:
@@ -69,7 +69,7 @@ WARNUNG:
 
 JSON-REPARATUR: c_json_repair
 =============================
-Spezialisiertes Tool fuer JSON-Probleme.
+Spezialisiertes Tool für JSON-Probleme.
 
 FUNKTIONEN:
   - Emoji zu ASCII konvertieren ([TOOL], [OK], etc.)
@@ -82,10 +82,10 @@ GRUNDBEFEHLE:
   # JSON reparieren
   bach c_json_repair config.json
 
-  # Nur pruefen
+  # Nur prüfen
   bach c_json_repair config.json --dry-run
 
-  # JSON-Ausgabe (fuer Scripts)
+  # JSON-Ausgabe (für Scripts)
   bach c_json_repair config.json --json
 
   # Emoji-Datenbank aktualisieren
@@ -95,13 +95,13 @@ GRUNDBEFEHLE:
   bach c_json_repair --stats
 
 OPTIONEN:
-  --dry-run        Nur pruefen, keine Aenderungen
+  --dry-run        Nur prüfen, keine Änderungen
   --json           JSON-Output (maschinenlesbar)
   --update-gemoji  Emoji-Datenbank aktualisieren
   --stats          Reparatur-Statistiken anzeigen
 
 EMOJI-KONVERTIERUNG (Beispiele):
-  [WRENCH] <- Schraubenschluessel-Emoji
+  [WRENCH] <- Schraubenschlüssel-Emoji
   [OK]     <- Gruener Haken
   [X]      <- Rotes X
   [WARN]   <- Warnung-Dreieck
@@ -111,7 +111,7 @@ EMOJI-KONVERTIERUNG (Beispiele):
 
 JSON-FIXER (Alternative): json_fixer
 ====================================
-Einfacheres Tool fuer grundlegende JSON-Probleme.
+Einfacheres Tool für grundlegende JSON-Probleme.
 
 FUNKTIONEN:
   - BOM entfernen
@@ -127,7 +127,7 @@ GRUNDBEFEHLE:
   # Alle JSON in Ordner
   bach json_fixer data/
 
-  # Nur pruefen
+  # Nur prüfen
   bach json_fixer config.json --dry-run
 
   # Mit Backup
@@ -139,8 +139,8 @@ WANN WELCHES TOOL?
 
 EINZEL-TOOLS (in c_standard_fixer enthalten)
 ============================================
-Diese Tools werden normalerweise ueber c_standard_fixer aufgerufen,
-koennen aber auch einzeln genutzt werden:
+Diese Tools werden normalerweise über c_standard_fixer aufgerufen,
+können aber auch einzeln genutzt werden:
 
 c_encoding_fixer.py
   Encoding auf UTF-8 korrigieren
@@ -151,7 +151,7 @@ c_umlaut_fixer.py
   bach c_umlaut_fixer script.py
 
 c_indent_checker.py
-  Einrueckungsprobleme finden (Tab vs Space, inkonsistent)
+  Einrückungsprobleme finden (Tab vs Space, inkonsistent)
   bach c_indent_checker script.py
 
 c_emoji_scanner.py
@@ -159,7 +159,7 @@ c_emoji_scanner.py
   bach c_emoji_scanner script.py
 
 c_german_scanner.py
-  Deutsche Woerter/Umlaute finden
+  Deutsche Wörter/Umlaute finden
   bach c_german_scanner script.py
 
 EMPFEHLUNG: Nutze c_standard_fixer statt Einzel-Tools.
@@ -182,16 +182,16 @@ TYPISCHE ANWENDUNGSFAELLE
 4. EMOJIS CRASHEN WINDOWS-CONSOLE
    Emojis zu ASCII konvertieren:
    bach c_json_repair datei.json
-   # oder fuer Python:
+   # oder für Python:
    bach c_standard_fixer script.py
 
 5. VOR COMMIT
-   Alle Code-Dateien pruefen:
+   Alle Code-Dateien prüfen:
    bach c_standard_fixer src/ --recursive --dry-run
 
 CONTEXT-INJEKTOR
 ----------------
-Der ContextInjector erkennt Stichwoerter und empfiehlt diese Tools:
+Der ContextInjector erkennt Stichwörter und empfiehlt diese Tools:
 
   "encoding problem"  -> bach c_standard_fixer <datei>
   "umlaute kaputt"    -> bach c_standard_fixer <datei>
@@ -201,7 +201,7 @@ Der ContextInjector erkennt Stichwoerter und empfiehlt diese Tools:
 
 SIEHE AUCH
 ----------
-  bach --help tools              Tool-Uebersicht
+  bach --help tools              Tool-Übersicht
   bach --help lessons            Bekannte Probleme (Standard-Fixer Bug)
   bach --help tools/imports      Import-Probleme
   bach --help tools/python_editing  Python-Dateien bearbeiten

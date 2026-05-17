@@ -1,15 +1,15 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08 (Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 PROBLEMLOESUNG - Strukturiertes Denken
 ======================================
 
 BESCHREIBUNG
 ------------
-Problemloesungs- und Analyse-Strategien fuer komplexe Aufgaben.
-Strukturierte Denkprozesse fuer schwierige Situationen.
+Problemlösungs- und Analyse-Strategien für komplexe Aufgaben.
+Strukturierte Denkprozesse für schwierige Situationen.
 
 PROBLEMLOESUNGS-ANSAETZE
 ------------------------
@@ -20,7 +20,7 @@ PROBLEMLOESUNGS-ANSAETZE
    Wann nutzen: Grosse, komplexe Probleme die sich zerlegen lassen.
 
 2. ROOT CAUSE ANALYSIS (5 Whys)
-   Symptom -> Warum? -> Warum? -> Warum? -> Ursache -> Loesung
+   Symptom -> Warum? -> Warum? -> Warum? -> Ursache -> Lösung
    
    Wann nutzen: Wenn unklar ist, was das eigentliche Problem ist.
 
@@ -30,16 +30,16 @@ PROBLEMLOESUNGS-ANSAETZE
    Wann nutzen: Wenn Anforderungen zu restriktiv sind.
 
 4. ANALOGIE-SUCHE
-   Neues Problem -> Aehnliches bekanntes Problem -> Loesung adaptieren
+   Neues Problem -> Ähnliches bekanntes Problem -> Lösung adaptieren
    
-   Wann nutzen: Bei neuartigen Problemen ohne offensichtliche Loesung.
+   Wann nutzen: Bei neuartigen Problemen ohne offensichtliche Lösung.
 
 ANALYSE-METHODEN
 ----------------
 
   Methode      Anwendung
   ----------   -----------------------------------------
-  SWOT         Staerken/Schwaechen/Chancen/Risiken
+  SWOT         Stärken/Schwaechen/Chancen/Risiken
   Pro/Contra   Entscheidungsfindung
   Pareto       80/20 Priorisierung (wichtigste 20% finden)
   Fishbone     Ursachenanalyse (Ishikawa-Diagramm)
@@ -54,15 +54,15 @@ Bei Unsicherheit:
 
 Bei Komplexitaet:
   1. Was ist der einfachste erste Schritt?
-  2. Was wuerde ein Experte tun?
-  3. Was waere die 80%-Loesung?
+  2. Was würde ein Experte tun?
+  3. Was wäre die 80%-Lösung?
 
 PRAKTISCHE TIPPS
 ----------------
 - Beginne immer mit dem einfachsten Schritt
-- Dokumentiere Denkprozesse fuer spaetere Referenz
+- Dokumentiere Denkprozesse für spätere Referenz
 - Bei Blockade: Pause machen, Problem neu formulieren
-- 80%-Loesungen sind oft besser als 100%-Plaene
+- 80%-Lösungen sind oft besser als 100%-Plaene
 
 SIEHE AUCH
 ----------

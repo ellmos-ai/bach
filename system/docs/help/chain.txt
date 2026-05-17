@@ -1,7 +1,7 @@
-# Portabilitaet: SYSTEM
+# Portabilität: SYSTEM
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-28
-# Naechste Pruefung: 2026-08-28
+# Nächste Prüfung: 2026-08-28
 # Ressourcen: [hub/chain.py, toolchains, scheduler_jobs]
 
 CHAIN - Verkettete Tool-Befehle und LLM-Ketten
@@ -19,7 +19,7 @@ ZWEI CHAIN-TYPEN
 
 1. TOOLCHAINS (Datenbank)
    Sequentielle BACH-Befehle ohne LLM. Gespeichert in bach.db.
-   Eignen sich fuer automatisierte Workflows.
+   Eignen sich für automatisierte Workflows.
 
 2. LLMAUTO-KETTEN (JSON-Dateien)
    LLM-Agenten-Ketten via MarbleRun (llmauto). Laufen als
@@ -29,10 +29,10 @@ CLI-BEFEHLE - TOOLCHAINS (DB)
 -----------------------------
 
   list              Alle Chains anzeigen (Toolchains + llmauto)
-  run <id>          Toolchain ausfuehren
+  run <id>          Toolchain ausführen
   add "JSON"        Neue Toolchain erstellen
   show <id>         Details ansehen
-  delete <id>       Toolchain loeschen
+  delete <id>       Toolchain löschen
   log <id>          Logs einer Toolchain anzeigen
 
 CLI-BEFEHLE - LLMAUTO-KETTEN (JSON)
@@ -42,13 +42,13 @@ CLI-BEFEHLE - LLMAUTO-KETTEN (JSON)
   start <name>      Kette starten (Hintergrundprozess)
   stop <name>       Kette stoppen
   status [name]     Status anzeigen (alle oder bestimmte Kette)
-  reset <name>      State einer Kette zuruecksetzen
+  reset <name>      State einer Kette zurücksetzen
 
-OPTIONEN FUER CREATE
+OPTIONEN FÜR CREATE
 ---------------------
 
-  --mode once|loop   Ausfuehrungs-Modus (Standard: once)
-  --skill PATH       SKILL.md-Pfad fuer den Agenten
+  --mode once|loop   Ausführungs-Modus (Standard: once)
+  --skill PATH       SKILL.md-Pfad für den Agenten
   --model MODEL      KI-Modell (sonnet, opus, haiku)
 
 BEISPIELE
@@ -57,11 +57,11 @@ BEISPIELE
   # Toolchain auflisten
   bach chain list
 
-  # Toolchain ausfuehren
+  # Toolchain ausführen
   bach chain run 1
 
   # Toolchain erstellen (JSON-Format)
-  bach chain add '{"name":"taeglich","steps":["bach backup create","bach scan run"]}'
+  bach chain add '{"name":"täglich","steps":["bach backup create","bach scan run"]}'
 
   # Details einer Toolchain
   bach chain show 1
@@ -93,14 +93,14 @@ TOOLCHAIN JSON-FORMAT
     ]
   }
 
-  Jeder Schritt ist ein vollstaendiger bach-Befehl.
-  Schritte werden sequentiell ausgefuehrt.
+  Jeder Schritt ist ein vollständiger bach-Befehl.
+  Schritte werden sequentiell ausgeführt.
 
 LLMAUTO-KETTEN
 --------------
 
-llmauto-Ketten laufen als eigenstaendige Claude-Code-Prozesse
-im Hintergrund. Sie nutzen MarbleRun fuer die Orchestrierung.
+llmauto-Ketten laufen als eigenständige Claude-Code-Prozesse
+im Hintergrund. Sie nutzen MarbleRun für die Orchestrierung.
 
   data/chains/<name>/          Ketten-Verzeichnis
     config.json                Ketten-Konfiguration

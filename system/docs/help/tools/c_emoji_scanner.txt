@@ -7,7 +7,7 @@ BESCHREIBUNG
 ----------------------------------------
 c_emoji_scanner.py - Emoji-Scanner mit Gemoji/emoji-Paket Integration
 
-Scannt Dateien nach Emojis und zeigt welche automatisch aufgeloest werden koennen.
+Scannt Dateien nach Emojis und zeigt welche automatisch aufgeloest werden können.
 Nutzt dasselbe Backend wie c_json_repair.py (emoji-Paket oder gemoji.json Fallback).
 
 Usage:

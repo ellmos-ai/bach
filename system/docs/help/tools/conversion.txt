@@ -1,7 +1,7 @@
 CONVERSION TOOLS - Konvertierungs-Werkzeuge
 ===========================================
 
-UEBERSICHT
+ÜBERSICHT
 Die Conversion-Tools in BACH wandeln Dateiformate um
 und reparieren/standardisieren Dateien.
 
@@ -9,8 +9,8 @@ UNIVERSAL CONVERTER
 -------------------
 c_universal_converter.py
 
-Universelles Konvertierungs-Tool fuer viele Formate.
-Unterstuetzt:
+Universelles Konvertierungs-Tool für viele Formate.
+Unterstützt:
   - Text -> PDF
   - Markdown -> PDF/HTML
   - JSON -> CSV
@@ -70,7 +70,7 @@ c_import_organizer.py
   Aufruf: python tools/c_import_organizer.py <datei>
 
 c_indent_checker.py
-  Prueft und korrigiert Einrueckung.
+  Prüft und korrigiert Einrückung.
   Optionen: --tabs, --spaces N
   Aufruf: python tools/c_indent_checker.py <datei>
 
@@ -82,19 +82,19 @@ export_txt.py
   Aufruf: python tools/export_txt.py <datei>
 
 exporter.py
-  Allgemeiner Exporter fuer verschiedene Formate.
+  Allgemeiner Exporter für verschiedene Formate.
   Aufruf: python tools/exporter.py <datei> --format <fmt>
 
 BATCH-OPERATIONEN
 -----------------
 
 batch_file_ops.py
-  Fuehrt Datei-Operationen auf mehreren Dateien aus.
+  Führt Datei-Operationen auf mehreren Dateien aus.
   Operationen: rename, copy, move, convert
   Aufruf: python tools/batch_file_ops.py <operation> <pattern>
 
 SIEHE AUCH
 ----------
-bach --help tools         Tool-Uebersicht
+bach --help tools         Tool-Übersicht
 bach --help backup        Backup-Tools
 bach --help maintain      Wartungs-Tools

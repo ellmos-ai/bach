@@ -7,7 +7,7 @@ BESCHREIBUNG
 ----------------------------------------
 BACH Sync Utilities v1.0
 ========================
-Zentrale Funktionen fuer Datei-Hashing und Aenderungserkennung.
+Zentrale Funktionen für Datei-Hashing und Änderungserkennung.
 
 Verwendung:
   from tools.sync_utils import file_hash, content_hash, has_changed, SyncTracker

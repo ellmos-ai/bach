@@ -8,9 +8,9 @@ BESCHREIBUNG
 c_umlaut_fixer.py - Repariert kaputte deutsche Umlaute in Python-Dateien
 
 Behebt typische Encoding-Probleme wie:
-  - Lschen -> Loeschen
-  - ffnen -> oeffnen
-  - ber -> ueber
+  - Lschen -> Löschen
+  - ffnen -> öffnen
+  - ber -> über
   
 Extrahiert aus: A1 ProFiler/_Wartung/fix_profiler_complete.py
 
@@ -20,7 +20,7 @@ Usage:
     python c_umlaut_fixer.py <datei.py> --json
 
 Autor: Claude (adaptiert)
-Abhaengigkeiten: keine (nur stdlib)
+Abhängigkeiten: keine (nur stdlib)
 
 VERWENDUNG
 ----------------------------------------

@@ -3,7 +3,7 @@ BACH Tool: JSON
 
 JSON-Verarbeitung, Reparatur und Registry-Bereinigung.
 
-VERFUEGBARE TOOLS
+VERFÜGBARE TOOLS
 -----------------
 
   json_config_cli       JSON-Konfigurationsdateien verwalten

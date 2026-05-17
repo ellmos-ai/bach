@@ -1,22 +1,22 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 2.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 # Status: NICHT IMPLEMENTIERT - Siehe Alternativen
 
 SYSTEM-CHECKS
 =============
 
 HINWEIS: Der geplante --selfcheck Befehl wurde nicht implementiert.
-Die Funktionalitaet ist VERTEILT auf existierende Handler.
+Die Funktionalität ist VERTEILT auf existierende Handler.
 
-ALTERNATIVEN FUER SYSTEM-CHECKS:
+ALTERNATIVEN FÜR SYSTEM-CHECKS:
 
 1. STARTUP-CHECKS (automatisch)
    bach startup run
 
-   Fuehrt aus:
-   - Directory Scan (neue/geaenderte Dateien)
+   Führt aus:
+   - Directory Scan (neue/geänderte Dateien)
    - Path Healer Check (Pfadprobleme)
    - Registry Watcher (DB/JSON-Konsistenz)
    - Skill Health Monitor (Skill/Agent-Validierung)
@@ -26,7 +26,7 @@ ALTERNATIVEN FUER SYSTEM-CHECKS:
 2. WARTUNGS-TOOLS
    bach maintain list
 
-   Verfuegbare Checks:
+   Verfügbare Checks:
    - maintain heal      - Pfad-Korrektur
    - maintain registry  - Datenbank-Konsistenz
    - maintain skills    - Skill-Gesundheit
@@ -36,14 +36,14 @@ ALTERNATIVEN FUER SYSTEM-CHECKS:
 3. WORKFLOW-QUALITAET
    bach tuev run
 
-   Prueft Workflows auf Struktur und Konsistenz
+   Prüft Workflows auf Struktur und Konsistenz
 
 4. BACKUP-STATUS
    bach backup status
 
    Zeigt letzte Sicherungen und Alter
 
-PERIODISCHE PRUEFUNG:
+PERIODISCHE PRÜFUNG:
   Die automatischen Checks laufen bei JEDEM "bach startup run".
   Kein separates 30-Tage-Intervall notwendig.
 

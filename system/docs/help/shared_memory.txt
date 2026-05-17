@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-28
-# Naechste Pruefung: 2026-08-28
+# Nächste Prüfung: 2026-08-28
 # Ressourcen: [hub/shared_memory.py, shared_memory_*, shared_context_triggers]
 
 SHARED MEMORY - Multi-Agent Memory-Verwaltung
@@ -9,9 +9,9 @@ SHARED MEMORY - Multi-Agent Memory-Verwaltung
 
 STAND: 2026-02-28
 
-Das Shared Memory System ermoeglicht den gemeinsamen Speicherzugriff
+Das Shared Memory System ermöglicht den gemeinsamen Speicherzugriff
 mehrerer Agenten (Claude, Gemini, etc.). Im Gegensatz zum normalen
-Memory-System koennen hier mehrere Partner gleichzeitig lesen und
+Memory-System können hier mehrere Partner gleichzeitig lesen und
 schreiben.
 
 Ref: SQ043 Stufe A-2
@@ -24,31 +24,31 @@ ARCHITEKTUR
   Agent C ─┘                                └─> Changes-Feed
 
 Eigenschaften:
-  - Multi-Agent-faehig (agent_id, namespace)
+  - Multi-Agent-fähig (agent_id, namespace)
   - Visibility-Levels (private, team, global)
-  - Decay-Tracking fuer automatisches Cleanup
+  - Decay-Tracking für automatisches Cleanup
   - Conflict Resolution via Konfidenz-Werte
-  - dist_type fuer Distribution-System
+  - dist_type für Distribution-System
 
 CLI-BEFEHLE (bach shared-mem)
 ------------------------------
 
 FACTS (Geteilte Fakten):
   facts list                    Alle shared Facts anzeigen
-  facts add <key> <value>       Neuen Fact hinzufuegen
+  facts add <key> <value>       Neuen Fact hinzufügen
   facts get <id>                Bestimmten Fact anzeigen
-  facts delete <id>             Fact loeschen
+  facts delete <id>             Fact löschen
 
 LESSONS (Geteilte Lektionen):
   lessons list                  Alle shared Lessons anzeigen
-  lessons add <titel>           Neue Lesson hinzufuegen
+  lessons add <titel>           Neue Lesson hinzufügen
   lessons activate <id>         Lesson aktivieren
   lessons deactivate <id>       Lesson deaktivieren
 
 WORKING MEMORY (Kurzzeitgedaechtnis):
-  working list                  Aktive Eintraege anzeigen
-  working add <inhalt>          Eintrag hinzufuegen
-  working cleanup               Abgelaufene Eintraege loeschen
+  working list                  Aktive Einträge anzeigen
+  working add <inhalt>          Eintrag hinzufügen
+  working cleanup               Abgelaufene Einträge löschen
   working current-task <text>   Aktuellen Task setzen (max. 1 pro Agent)
 
 SESSIONS:
@@ -57,20 +57,20 @@ SESSIONS:
   sessions archive <tage>       Alte Sessions archivieren
 
 CONSOLIDATION (Speicher-Gewichtung):
-  consolidation list            Consolidation-Eintraege anzeigen
+  consolidation list            Consolidation-Einträge anzeigen
   consolidation stats           Statistiken anzeigen
-  consolidation add <t> <id>    Eintrag manuell hinzufuegen
-  consolidation consolidate     Schwache Eintraege konsolidieren
-  consolidation run             Decay-Logik ausfuehren (B57)
+  consolidation add <t> <id>    Eintrag manuell hinzufügen
+  consolidation consolidate     Schwache Einträge konsolidieren
+  consolidation run             Decay-Logik ausführen (B57)
 
-KONTEXT & AENDERUNGEN:
+KONTEXT & ÄNDERUNGEN:
   context                       Kontext-Block generieren (B55)
-  changes <timestamp>           Aenderungen seit Zeitstempel (B58)
+  changes <timestamp>           Änderungen seit Zeitstempel (B58)
 
 BEISPIELE
 ---------
 
-  # Fact hinzufuegen
+  # Fact hinzufügen
   bach shared-mem facts add "api.endpoint" "https://api.example.com"
   bach shared-mem facts add "server.ip" "192.168.1.1" --agent CLAUDE --confidence 0.9
 
@@ -81,13 +81,13 @@ BEISPIELE
   bach shared-mem working current-task "Migration von PyMuPDF auf pypdf"
   bach shared-mem working current-task "BACH Release vorbereiten" --agent GEMINI
 
-  # Kontext-Block generieren (fuer Agenten-Initialisierung)
+  # Kontext-Block generieren (für Agenten-Initialisierung)
   bach shared-mem context
 
-  # Aenderungen seit gestern abfragen
+  # Änderungen seit gestern abfragen
   bach shared-mem changes 2026-02-27T00:00:00
 
-  # Decay-Logik ausfuehren (Speicher-Cleanup)
+  # Decay-Logik ausführen (Speicher-Cleanup)
   bach shared-mem consolidation run
   bach shared-mem consolidation run --dry-run
 
@@ -96,19 +96,19 @@ CONFLICT RESOLUTION (B56)
 
 Beim `facts add` mit bestehendem Key:
   - Neuer Confidence >= bestehender Confidence → Eintrag wird aktualisiert
-  - Neuer Confidence < bestehender Confidence → Eintrag bleibt unveraendert
+  - Neuer Confidence < bestehender Confidence → Eintrag bleibt unverändert
 
   Beispiel:
     bach shared-mem facts add "version" "2.5" --confidence 0.9
-    # Ueberschreibt bestehenden Eintrag wenn dessen Confidence < 0.9
+    # Überschreibt bestehenden Eintrag wenn dessen Confidence < 0.9
 
 DECAY-SYSTEM (B57)
 ------------------
 
-`consolidation run` fuehrt Decay-Logik durch:
+`consolidation run` führt Decay-Logik durch:
   - Jeder Eintrag: weight *= decay_rate (Standard: 95% Erhalt)
   - Unterschreitet weight den threshold (Standard: 0.1) → Archivierung
-  - Haeufig aufgerufene Eintraege erhalten Boost und werden seltener archiviert
+  - Haeufig aufgerufene Einträge erhalten Boost und werden seltener archiviert
 
 CONTEXT-BLOCK (B55)
 --------------------
@@ -118,7 +118,7 @@ CONTEXT-BLOCK (B55)
   ## Shared Memory Context
 
   ### Current Tasks
-  - **CLAUDE**: Migration laeuft (seit ...)
+  - **CLAUDE**: Migration läuft (seit ...)
 
   ### Top Facts
   - **api.endpoint** [0.9]: https://api.example.com
@@ -126,20 +126,20 @@ CONTEXT-BLOCK (B55)
   ### Aktive Lessons
   - [high] Windows: UTF-8 mit PYTHONIOENCODING setzen
 
-Wird fuer Agenten-Initialisierung genutzt.
+Wird für Agenten-Initialisierung genutzt.
 
 CHANGES-FEED (B58)
 -------------------
 
-`bach shared-mem changes <timestamp>` liefert alle Aenderungen
+`bach shared-mem changes <timestamp>` liefert alle Änderungen
 seit dem angegebenen ISO-Zeitstempel:
 
   bach shared-mem changes 2026-02-28T10:00:00
 
-Nuetzlich fuer Agenten-Synchronisation: Ein Agent prueft regelmaessig
-ob andere Agenten Fakten oder Lektionen hinzugefuegt haben.
+Nützlich für Agenten-Synchronisation: Ein Agent prüft regelmäßig
+ob andere Agenten Fakten oder Lektionen hinzugefügt haben.
 
-OPTIONEN FUER FACTS ADD
+OPTIONEN FÜR FACTS ADD
 -----------------------
 
   --agent <id>              Agent-ID (Standard: GLOBAL)
@@ -147,7 +147,7 @@ OPTIONEN FUER FACTS ADD
   --visibility <level>      private|team|global (Standard: global)
   --confidence <0.0-1.0>    Konfidenz-Wert (Standard: 0.5)
 
-OPTIONEN FUER LESSONS ADD
+OPTIONEN FÜR LESSONS ADD
 --------------------------
 
   --severity info|warn|high|critical   Schwere (Standard: info)
@@ -168,14 +168,14 @@ UNTERSCHIED ZUM NORMALEN MEMORY
 ---------------------------------
 
   Normales Memory (bach mem, bach --memory):
-    - Fuer EINEN Agenten/Partner
+    - Für EINEN Agenten/Partner
     - memory_working, memory_facts, memory_lessons
 
   Shared Memory (bach shared-mem):
-    - Fuer MEHRERE Agenten gleichzeitig
+    - Für MEHRERE Agenten gleichzeitig
     - Visibility-Control (private/team/global)
     - Conflict Resolution via Konfidenz
-    - Decay-System fuer Cleanup
+    - Decay-System für Cleanup
 
 DATEIEN
 -------

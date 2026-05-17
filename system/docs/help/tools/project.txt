@@ -3,7 +3,7 @@ BACH Tool: Project
 
 Projekt-Verwaltung und Code-Generierung.
 
-VERFUEGBARE TOOLS
+VERFÜGBARE TOOLS
 -----------------
 
   audit_bundler         Projekt-Audit als Bundle exportieren

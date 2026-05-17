@@ -1,16 +1,16 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.1
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 ANBIETER - Anbieterspezifische Regeln
 =====================================
 
 BESCHREIBUNG
-Regeln fuer die Verarbeitung von Rechnungen und Belegen
+Regeln für die Verarbeitung von Rechnungen und Belegen
 verschiedener Online-Anbieter.
 
-WICHTIG: Dies ist eine reine Dokumentationsdatei ohne zugehoerigen
+WICHTIG: Dies ist eine reine Dokumentationsdatei ohne zugehörigen
 Handler. Die Regeln sind in Steuer-Expert-Scripts implementiert:
 - system/agents/_experts/steuer/temu_ocr_batch.py
 - system/agents/_experts/steuer/steuer_batch.py
@@ -35,27 +35,27 @@ Erfassungsregeln:
    (Preise sind volatil auf der Website)
 
 2. PRODUKTNAMEN
-   Falls Text fehlt oder unvollstaendig:
+   Falls Text fehlt oder unvollständig:
    - Logisch herleiten aus Kontext
-   - Besser: Produkt auf temu.com suchen fuer korrekte Bezeichnung
+   - Besser: Produkt auf temu.com suchen für korrekte Bezeichnung
 
 3. DOKUMENTTYP
    Als "Bestellbestaetigung (ersatzweise Rechnung)" markieren
 
 4. NACHTRAEGLICHE VALIDIERUNG
-   Falls spaeter Originalquittungen hochgeladen werden,
+   Falls später Originalquittungen hochgeladen werden,
    Daten abgleichen und aktualisieren
 
-Hinweis fuer Finanzamt:
+Hinweis für Finanzamt:
 Originalquittungen werden nur auf Nachfrage bereitgestellt.
 Bestellbestaetigungen dienen als Erstnachweis.
 
 
 AMAZON
 ======
-(Platzhalter fuer zukuenftige Regeln)
+(Platzhalter für zukuenftige Regeln)
 
-Bei Bedarf ergaenzen:
+Bei Bedarf ergänzen:
 - Rechnungsformat
 - Besonderheiten bei Marketplace-Verkaeufen
 - Prime-Mitgliedschaftsbelege
@@ -63,16 +63,16 @@ Bei Bedarf ergaenzen:
 
 EBAY
 ====
-(Platzhalter fuer zukuenftige Regeln)
+(Platzhalter für zukuenftige Regeln)
 
-Bei Bedarf ergaenzen:
+Bei Bedarf ergänzen:
 - PayPal-Verkuepfung
 - Privatverkaeufe vs. gewerbliche
 
 
 WEITERE ANBIETER
 ================
-Bei Bedarf hier ergaenzen:
+Bei Bedarf hier ergänzen:
 - Aliexpress
 - Wish
 - Shein
@@ -93,11 +93,11 @@ IMPLEMENTIERTE ANBIETER IN BELEG_VORFILTER.PY
 SIEHE AUCH
 ----------
 bach steuer help       Steuer-Handler Hilfe
-bach steuer tools      Verfuegbare Steuer-Tools anzeigen
+bach steuer tools      Verfügbare Steuer-Tools anzeigen
 
 TOOLS
 -----
-temu_ocr_batch.py      Batch-OCR fuer Temu-Belege (Bild-basierte PDFs)
-steuer_batch.py        Anbieter-Parser fuer Amazon, Temu, eBay
+temu_ocr_batch.py      Batch-OCR für Temu-Belege (Bild-basierte PDFs)
+steuer_batch.py        Anbieter-Parser für Amazon, Temu, eBay
 beleg_vorfilter.py     Automatisches Sortieren von Belegen
 beleg_parser.py        LLM-basierte Beleg-Extraktion

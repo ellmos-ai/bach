@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-05-10
 
@@ -11,8 +11,8 @@ setup check
 BESCHREIBUNG
 ===
 
-Validiert ob alle BACH-Abhaengigkeiten vorhanden und konfiguriert sind.
-Fuehrt keine Aenderungen durch, nur Pruefung mit Status-Ausgabe.
+Validiert ob alle BACH-Abhängigkeiten vorhanden und konfiguriert sind.
+Führt keine Änderungen durch, nur Prüfung mit Status-Ausgabe.
 
 
 BEFEHL
@@ -21,10 +21,10 @@ BEFEHL
 bach setup check
 
 
-PRUEFUNGEN
+PRÜFUNGEN
 ===
 
-1. npm verfuegbar              Muss im PATH sein (fuer MCP-Server-Installation)
+1. npm verfügbar              Muss im PATH sein (für MCP-Server-Installation)
 2. ellmos-codecommander-mcp    Global installiertes npm-Paket (17 Tools)
 3. ellmos-filecommander-mcp    Global installiertes npm-Paket (43 Tools)
 4. Secrets-Datei               ~/.bach/bach_secrets.json muss existieren und valides JSON sein
@@ -36,20 +36,20 @@ PRUEFUNGEN
 STATUS-CODES
 ===
 
-[OK]    Pruefung bestanden
-[!!]    Pruefung fehlgeschlagen (Aktion erforderlich)
+[OK]    Prüfung bestanden
+[!!]    Prüfung fehlgeschlagen (Aktion erforderlich)
 [--]    Optionale Komponente nicht installiert (kein Fehler)
-[??]    Pruefung konnte nicht durchgefuehrt werden
+[??]    Prüfung konnte nicht durchgeführt werden
 
 
 BEISPIELE
 ===
 
 bach setup check
-  Alle Abhaengigkeiten pruefen mit Status-Ausgabe
+  Alle Abhängigkeiten prüfen mit Status-Ausgabe
 
 bach setup full-install
-  Bei Fehlern: Vollstaendige Installation durchfuehren
+  Bei Fehlern: Vollständige Installation durchführen
 
 
 DATEIEN

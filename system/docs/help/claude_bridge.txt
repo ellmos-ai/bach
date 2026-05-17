@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.0
 # Zuletzt validiert: 2026-05-08
 # Status: LEGACY — Nachfolger: BACH Chat Service (help bach_chat)
@@ -13,14 +13,14 @@ HINWEIS: Claude Bridge wurde durch den BACH Chat Service abgeloest.
 BESCHREIBUNG
 ------------
 Claude Bridge ist ein Telegram-Bot-Handler, der bidirektionale Kommunikation
-zwischen Telegram-Chats und BACH/Claude Code CLI ermoeglicht. Der Daemon
+zwischen Telegram-Chats und BACH/Claude Code CLI ermöglicht. Der Daemon
 laueft im Hintergrund, verarbeitet eingehende Nachrichten, delegiert
-laengere Aufgaben an Worker-Threads und sendet Ergebnisse via Telegram.
+längere Aufgaben an Worker-Threads und sendet Ergebnisse via Telegram.
 
 Architektur:
   - Chat-Claude:   Verarbeitet jede Telegram-Nachricht in neuem Context
-  - Worker-Claude: Fuer laengere/autonome Tasks (mit Status-Updates)
-  - Daemon:        Ueberwacht Permissions, Budget und Lifecycle
+  - Worker-Claude: Für längere/autonome Tasks (mit Status-Updates)
+  - Daemon:        Überwacht Permissions, Budget und Lifecycle
   - Security:      Challenge-Response-System mit konfigurierbarem Passwort
 
 
@@ -33,10 +33,10 @@ OPERATIONEN
   bach claude-bridge test "msg"         Test-Nachricht simulieren (lokal)
   bach claude-bridge logs [N]           Letzte N Log-Zeilen (default: 20)
   bach claude-bridge workers            Letzte 10 Worker mit Status/Fehler
-  bach claude-bridge password <pw>      Passwort fuer Vollzugriff aendern
-  bach claude-bridge setup              Interaktiver Setup-Wizard fuer neue Nutzer
+  bach claude-bridge password <pw>      Passwort für Vollzugriff ändern
+  bach claude-bridge setup              Interaktiver Setup-Wizard für neue Nutzer
   bach claude-bridge challenge [user]   Security Challenge generieren
-  bach claude-bridge verify <ans>       Challenge-Antwort pruefen [--user=ID]
+  bach claude-bridge verify <ans>       Challenge-Antwort prüfen [--user=ID]
 
 
 TELEGRAM BEFEHLE (im Chat aktivieren)
@@ -44,13 +44,13 @@ TELEGRAM BEFEHLE (im Chat aktivieren)
   toggle                                Vollzugriff ein/aus (1h Auto-Lock)
   mode                                  Aktuellen Modus anzeigen
   budget                                Budget-Status anzeigen
-  workers                               Letzte Worker-Uebersicht
+  workers                               Letzte Worker-Übersicht
   stop                                  Laufende Worker sofort beenden
 
 
 BEISPIELE
 ---------
-  # Daemon starten und 2s warten, dann Status pruefen
+  # Daemon starten und 2s warten, dann Status prüfen
   $ bach claude-bridge start
   $ sleep 2
   $ bach claude-bridge status
@@ -86,7 +86,7 @@ KONFIGURATION
 -------------
 Siehe config.json:
   - permissions.default_mode: "restricted" | "interactive" | "full"
-  - permissions.password: Passwort fuer Vollzugriff
+  - permissions.password: Passwort für Vollzugriff
   - telegram.token: Bot-Token (via Setup setzen)
   - workers.max_concurrent: Max. gleichzeitige Worker (default: 3)
   - budget.hourly_limit: API-Kosten-Limit pro Stunde

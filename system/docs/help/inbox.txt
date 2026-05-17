@@ -1,17 +1,17 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.0
 # Zuletzt validiert: 2026-02-08 (Help-Forensik - Daemon-Integration)
-# Naechste Pruefung: 2026-08-07
+# Nächste Prüfung: 2026-08-07
 
 BACH INBOX-SYSTEM
 =================
 
-Automatisierte Dokumenten-Sortierung mit Watchdog-Ueberwachung.
+Automatisierte Dokumenten-Sortierung mit Watchdog-Überwachung.
 
 KONZEPT
 -------
 
-Das Inbox-System ueberwacht Eingangsordner (Downloads, Scans) und
+Das Inbox-System überwacht Eingangsordner (Downloads, Scans) und
 sortiert Dateien automatisch nach Regeln in Zielordner.
 
 KONFIGURATION
@@ -30,7 +30,7 @@ INBOX_FOLDERS.TXT FORMAT
   C:\Users\User\Scans | manual | pdf,jpg | inbox
 
   MODUS: auto (automatisch sortieren) oder manual (nur sammeln)
-  FILTER: Dateiendungen (kommasepariert) oder * fuer alle
+  FILTER: Dateiendungen (kommasepariert) oder * für alle
   ZIEL: inbox (Transfer-Zone) oder relativer BACH-Pfad
 
 INBOX_CONFIG.JSON
@@ -113,7 +113,7 @@ Verarbeitungsablauf (beide Modi):
 1. Datei erscheint in Watch-Ordner (z.B. Downloads)
 2. Scanner wartet bis Datei stabil (keine Schreibzugriffe)
 3. Datei wird nach Transfer-Zone verschoben
-4. Regel-Engine prueft Muster (Dateiname, Inhalt, OCR)
+4. Regel-Engine prüft Muster (Dateiname, Inhalt, OCR)
 5. Treffer: Datei wird in Zielordner verschoben
 6. Kein Treffer: Bleibt in unsortiert, Task wird erstellt
 

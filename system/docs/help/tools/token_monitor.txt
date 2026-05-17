@@ -11,7 +11,7 @@ BACH Token Monitor
 Funktion get_token_zone() zur Token-aware Delegation.
 
 Zonen-Definition (aus DELEG_002):
-- Zone 1: 0-70%   - Alle Partner verfuegbar
+- Zone 1: 0-70%   - Alle Partner verfügbar
 - Zone 2: 70-85%  - Mittlere Sparsamkeit
 - Zone 3: 85-95%  - Nur lokale Partner (Ollama)
 - Zone 4: 95-100% - Notfall-Delegation
@@ -31,13 +31,13 @@ Direktaufruf:
 Hinweis: Der Befehl "bach tools run token_monitor" ist aktuell nicht
 im Tool-Registry registriert. Nutze stattdessen "bach --tokens status".
 
-VERFUEGBARE FUNKTIONEN
+VERFÜGBARE FUNKTIONEN
 ----------------------------------------
-get_token_zone()           - Hauptfunktion fuer Zone-Ermittlung
+get_token_zone()           - Hauptfunktion für Zone-Ermittlung
 get_current_budget_percent() - Holt aktuelles Budget aus DB
 log_token_check()          - Loggt Token-Check in DB
-log_ollama_usage()         - Spezialisiert fuer Ollama-Tokens
-check_emergency_shutdown() - Prueft ob kritischer Verbrauch (95%+) erreicht
+log_ollama_usage()         - Spezialisiert für Ollama-Tokens
+check_emergency_shutdown() - Prüft ob kritischer Verbrauch (95%+) erreicht
 format_zone_status()       - Formatiert CLI-Ausgabe
 
 HINWEISE

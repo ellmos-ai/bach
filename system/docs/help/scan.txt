@@ -1,22 +1,22 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
 SCAN - Task-Scanner und Verzeichnis-Analyse
 =============================================
 
-DEPRECATED: Dieser Handler bleibt fuer Backward-Compatibility. Neu: bach ati scan
+DEPRECATED: Dieser Handler bleibt für Backward-Compatibility. Neu: bach ati scan
 
-SCAN ist ein Legacyhandler fuer die Verwaltung von Task-Scanning und Verzeichnis-
+SCAN ist ein Legacyhandler für die Verwaltung von Task-Scanning und Verzeichnis-
 Analysen. Der Scanner arbeitet mit der ATI-Infrastruktur und der SQLite-Datenbank
-bach.db zusammen. Moderne Scan-Operationen laufen ueber 'bach ati scan'.
+bach.db zusammen. Moderne Scan-Operationen laufen über 'bach ati scan'.
 
 BEFEHLE
 =======
 
 bach scan run              Scanner starten (ATI-Task-Scanner)
 bach scan status           Letzten Scan-Status anzeigen
-bach scan tasks            Gescannte Tasks anzeigen (--tool X fuer Filter)
+bach scan tasks            Gescannte Tasks anzeigen (--tool X für Filter)
 bach scan tools            Registrierte Tools anzeigen
 bach scan dir PATH         Beliebiges Verzeichnis scannen
 
@@ -25,7 +25,7 @@ OPERATIONEN
 
 RUN
 ---
-Fuehrt den ATI-Task-Scanner aus und scannt alle registrierten Tools nach Tasks.
+Führt den ATI-Task-Scanner aus und scannt alle registrierten Tools nach Tasks.
 Gibt Zusammenfassung aus: Tools gescannt, Tasks gefunden, neue und aktualisierte
 Tasks. Speichert Ergebnisse in ati_scan_runs Tabelle (bach.db).
 
@@ -38,9 +38,9 @@ Zeigt Status des letzten Scans aus Datenbank:
 
 TASKS
 -----
-Listet offene und in Arbeit befindliche Tasks mit Prioritaets-Sortierung.
-Zeigt: Tool-Name, Task-Text (gekuerzt), Aufwand, Status, Prioritaets-Score.
-Auf max. 20 Tasks beschraenkt.
+Listet offene und in Arbeit befindliche Tasks mit Prioritäts-Sortierung.
+Zeigt: Tool-Name, Task-Text (gekuerzt), Aufwand, Status, Prioritäts-Score.
+Auf max. 20 Tasks beschränkt.
 
 Mit --tool FILTER: Filtert Tasks nach Tool-Name (substring-Match).
 
@@ -52,7 +52,7 @@ Status und Scan-Datum. Sortiert nach Task-Count. Max. 30 Tools.
 DIR
 ---
 Scannt ein beliebiges Verzeichnis mit DirectoryScanner (tools/dirscan.py).
-Zeigt Verzeichnisbaum, Dateilisten und Dateigroessen.
+Zeigt Verzeichnisbaum, Dateilisten und Dateigrößen.
 
 BEISPIELE
 =========
@@ -60,7 +60,7 @@ BEISPIELE
 # Scanner starten
 bach scan run
 
-# Status pruefen
+# Status prüfen
 bach scan status
 
 # Alle offenen Tasks

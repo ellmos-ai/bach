@@ -1,21 +1,21 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 # Ressourcen: [connections table, hub/connector.py, docs/help/connector.txt]
 
-CONNECTIONS - Verbindungen & Integrationen (Uebersicht)
+CONNECTIONS - Verbindungen & Integrationen (Übersicht)
 =======================================================
 
 STAND: 2026-02-08
 
-Das Connections-System ist die zentrale Datenbank-Tabelle fuer ALLE
+Das Connections-System ist die zentrale Datenbank-Tabelle für ALLE
 technischen Verbindungen in BACH. Es gibt ZWEI verschiedene Subsysteme
 mit unterschiedlichen Zwecken:
 
 1. CONNECTOR-SYSTEM (NEU, v2.0)
 --------------------------------
 Externe Kommunikationsverbindungen (Telegram, Discord, HomeAssistant).
-Vollstaendiges Message-System mit Queue, Retry, Circuit Breaker.
+Vollständiges Message-System mit Queue, Retry, Circuit Breaker.
 
 **DETAILS → siehe docs/help/connector.txt**
 
@@ -28,7 +28,7 @@ API: gui/api/messages_api.py (4 REST-Endpoints)
 
 2. AI/MCP-CONNECTIONS (LEGACY)
 -------------------------------
-Technische Infrastruktur fuer AI-Partner und MCP-Server.
+Technische Infrastruktur für AI-Partner und MCP-Server.
 Verwaltet Endpoints, API-Keys, OAuth-Tokens.
 
 CLI: bach --connections list/show
@@ -61,13 +61,13 @@ Kategorien (category):
 
 VERWENDUNG
 ----------
-Die meisten Nutzer benoetigen NUR das **Connector-System**.
+Die meisten Nutzer benötigen NUR das **Connector-System**.
 
-Fuer externe Kommunikation (Telegram, Discord, HomeAssistant):
+Für externe Kommunikation (Telegram, Discord, HomeAssistant):
   → bach connector --help
   → docs/help/connector.txt (dedizierte Dokumentation)
 
-Fuer AI-Partner und MCP-Server:
+Für AI-Partner und MCP-Server:
   → bach --connections list
   → bach --help partner
 

@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-05-10
 
@@ -8,17 +8,17 @@ BACH INSTALLATION
 
 BESCHREIBUNG
 ============
-Anleitung fuer die Erstinstallation von BACH. BACH ist ein Personal Agentic OS,
-das lokal laeuft und KI-Modelle orchestriert.
+Anleitung für die Erstinstallation von BACH. BACH ist ein Personal Agentic OS,
+das lokal läuft und KI-Modelle orchestriert.
 
 
 VORAUSSETZUNGEN
 ===============
 - Python >= 3.10
-- npm (fuer MCP-Server)
+- npm (für MCP-Server)
 - > 100 MB freier Speicher
-- Optional: OneDrive (fuer Multi-System-Sync)
-- Optional: Tailscale (fuer Remote-Zugang zum Server)
+- Optional: OneDrive (für Multi-System-Sync)
+- Optional: Tailscale (für Remote-Zugang zum Server)
 
 
 SCHNELLSTART
@@ -27,10 +27,10 @@ SCHNELLSTART
 git clone https://github.com/ellmos-ai/bach.git
 cd bach
 
-# 2. Voraussetzungen pruefen
+# 2. Voraussetzungen prüfen
 bach setup preflight
 
-# 3. Vollstaendige Installation
+# 3. Vollständige Installation
 bach setup full-install
 
 # 4. Erste Session starten
@@ -39,7 +39,7 @@ bach --startup
 
 FULL-INSTALL SCHRITTE
 =====================
-"bach setup full-install" fuehrt diese Schritte automatisch aus:
+"bach setup full-install" führt diese Schritte automatisch aus:
 
 1. Pre-Flight Check      Python, npm, Speicher, Schreibrechte
 2. ProSync               Single- oder Multi-System konfigurieren (Default: single)
@@ -51,18 +51,18 @@ FULL-INSTALL SCHRITTE
 8. Help-Docs (optional)  Help-Dateien für gewählte Sprache generieren (EN-Fallback)
 9. Validierung           Abschluss-Check aller Komponenten
 
-Optional: --with-n8n fuer n8n-Manager-MCP, --lang <code> fuer Sprachauswahl (de/en/es/ru/ja/zh),
---config <json> fuer Batch-Konfiguration.
+Optional: --with-n8n für n8n-Manager-MCP, --lang <code> für Sprachauswahl (de/en/es/ru/ja/zh),
+--config <json> für Batch-Konfiguration.
 
 
 NUTZUNGSSZENARIEN
 =================
 BACH hat eine Installation. Nach der Installation entscheiden Konfigurationsoptionen
-ueber das Deployment-Szenario.
+über das Deployment-Szenario.
 
 Single-System (Default)
 -----------------------
-BACH laeuft auf einem Rechner, keine Synchronisation noetig.
+BACH läuft auf einem Rechner, keine Synchronisation nötig.
 
   bach setup full-install
   # ProSync bleibt deaktiviert (Default)
@@ -70,7 +70,7 @@ BACH laeuft auf einem Rechner, keine Synchronisation noetig.
 Multi-System mit OneDrive
 -------------------------
 BACH liegt in OneDrive und wird auf mehreren Rechnern genutzt.
-Jedes System hat eine lokale Datenbank (~/.bach/bach.db), die ueber
+Jedes System hat eine lokale Datenbank (~/.bach/bach.db), die über
 ProSync synchronisiert wird.
 
   bach setup full-install
@@ -79,8 +79,8 @@ ProSync synchronisiert wird.
 
 Server (Headless)
 -----------------
-BACH laeuft auf einem Server (z.B. Mac Studio, Linux-Server) und wird
-ueber Telegram, Web-GUI oder System-Tray ferngesteuert.
+BACH läuft auf einem Server (z.B. Mac Studio, Linux-Server) und wird
+über Telegram, Web-GUI oder System-Tray ferngesteuert.
 
   bach setup full-install
   # Danach Connectors aktivieren:
@@ -89,7 +89,7 @@ ueber Telegram, Web-GUI oder System-Tray ferngesteuert.
   # - System Tray: hub/_services/chat/chat_tray.py --port 8081
   # - CLI Chat: hub/_services/chat/buddha_cli.py
 
-Bei Multi-System-Server zusaetzlich:
+Bei Multi-System-Server zusätzlich:
   bach setup prosync --multi-system
 
 

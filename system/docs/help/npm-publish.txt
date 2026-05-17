@@ -1,14 +1,14 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Zuletzt validiert: 2026-02-15 (Opus 4.6)
-# Naechste Pruefung: 2026-05-15
+# Nächste Prüfung: 2026-05-15
 # Ressourcen: [NPM Registry, GitHub Repos]
 
-NPM PUBLISH - MCP Server Veroeffentlichung
+NPM PUBLISH - MCP Server Veröffentlichung
 ============================================
 
 STAND: 2026-02-15
 
-Workflow zum Veroeffentlichen der BACH MCP Server auf NPM und GitHub.
+Workflow zum Veröffentlichen der BACH MCP Server auf NPM und GitHub.
 
 PAKETE
 ------
@@ -25,7 +25,7 @@ NPM AUTHENTIFIZIERUNG
   Methode: Granular Access Token mit "Bypass 2FA"
   Token-Name: bach-publisher 2
   Erstellt: 2026-02-15
-  Laeuft ab: 2026-05-16
+  Läuft ab: 2026-05-16
   Gespeichert in: ~/.npmrc
 
   WICHTIG: Classic Automation Tokens funktionieren NICHT mehr (EOTP-Fehler).
@@ -41,22 +41,22 @@ NPM AUTHENTIFIZIERUNG
 
 NPM PUBLISH WORKFLOW
 ---------------------
-  1. Token pruefen:
+  1. Token prüfen:
      npm whoami    -> muss "lukisch" ausgeben
 
-  2. Build manuell ausfuehren (wegen & im Pfad KI&AI):
+  2. Build manuell ausführen (wegen & im Pfad KI&AI):
      node "<pfad>/node_modules/typescript/bin/tsc" --project "<pfad>/tsconfig.json"
 
-  3. npm publish ausfuehren (kein OTP, kein Browser noetig):
+  3. npm publish ausführen (kein OTP, kein Browser nötig):
      cd <projektverzeichnis>
      npm publish --ignore-scripts
 
 BEKANNTE PROBLEME
 ------------------
-  - & im Pfad "KI&AI" stoert npm scripts (prepublishOnly)
+  - & im Pfad "KI&AI" stört npm scripts (prepublishOnly)
     -> Workaround: --ignore-scripts (Build vorher manuell)
   - npm run build schlaegt fehl im Projektverzeichnis
-    -> Workaround: tsc direkt ueber node aufrufen
+    -> Workaround: tsc direkt über node aufrufen
   - Classic Automation Tokens loesen EOTP-Fehler aus
     -> Workaround: Granular Access Token mit "Bypass 2FA"
 
@@ -71,13 +71,13 @@ VERSION BUMP CHECKLISTE
   [ ] package.json version
   [ ] src/index.ts version (server config)
   [ ] CHANGELOG.md neuer Eintrag
-  [ ] README.md falls Features sich aendern
+  [ ] README.md falls Features sich ändern
   [ ] Build testen
   [ ] Git commit + tag + push
   [ ] npm publish --ignore-scripts
 
 SIEHE AUCH
 ----------
-  docs/help/tools.txt         Tool-Uebersicht
+  docs/help/tools.txt         Tool-Übersicht
   docs/help/coding.txt        Coding-Standards
-  skills/workflows/npm-mcp-publish.md  Ausfuehrliches Protokoll
+  skills/workflows/npm-mcp-publish.md  Ausführliches Protokoll

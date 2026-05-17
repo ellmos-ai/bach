@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.0
 # Zuletzt validiert: 2026-02-08 (Claude)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 # Ressourcen: [tools/_policies/CONCEPT_naming_convention.md]
 
 NAMENSKONVENTIONEN
@@ -32,13 +32,13 @@ Praefixe kennzeichnen den Typ und Einsatzzweck eines Tools.
 
   PRAEFIX   BEDEUTUNG                BEISPIELE
   -------   ----------------------   ---------------------------
-  c_        CLI-optimiert fuer AI    c_encoding_fixer.py
+  c_        CLI-optimiert für AI    c_encoding_fixer.py
             (Claude/recludOS)        c_json_repair.py
             - Klare, parsbare Outputs
             - Encoding-sicher (UTF-8)
 
   m_        Maintain/Wartung         m_migrate_triggers.py
-            - Aufraeum-Tools         m_cleanup_logs.py
+            - Aufräum-Tools         m_cleanup_logs.py
             - Migrations-Scripts
 
   b_        BACH-Kern (System)       backup_manager.py
@@ -46,14 +46,14 @@ Praefixe kennzeichnen den Typ und Einsatzzweck eines Tools.
             - Kritische Funktionen
 
   check_    Validatoren              check_my_tasks.py
-            - Einmalige Pruefungen
+            - Einmalige Prüfungen
 
   fix_      Quick-Fixes              fix_injectors.py
             - Repariert spezifische Bugs
 
 SKILL-SPEZIFISCHE TOOLS (NEU)
 -----------------------------
-Tools die nur fuer einen Skill relevant sind:
+Tools die nur für einen Skill relevant sind:
 
   Namenskonvention: <skill>_<funktion>.py
 
@@ -82,7 +82,7 @@ Jedes Tool braucht einen Standard-Header:
   Updated: YYYY-MM-DD
   Anthropic-Compatible: True
 
-  VERSIONS-HINWEIS: Pruefe auf neuere Versionen
+  VERSIONS-HINWEIS: Prüfe auf neuere Versionen
 
   Description:
       Was das Tool tut.
@@ -107,12 +107,12 @@ SKILL-DATEIEN
 -------------
   SKILL.md        Hauptdefinition (Pflicht)
   config.json     Konfiguration (Optional)
-  README.md       Nur fuer Navigation (Nicht fuer Konzepte!)
+  README.md       Nur für Navigation (Nicht für Konzepte!)
 
 TASK-IDS & PROJEKTE
 -------------------
   IDs:         Numerisch (1, 2, 712) - Automatisch vergeben.
-  Labels/Pfx:  Fuer die Beschreibung genutzte Gruppen:
+  Labels/Pfx:  Für die Beschreibung genutzte Gruppen:
                SYS_    System-Kern
                WF_     Workflow-Entwicklung
                GUI_    Frontend-Themen
@@ -127,7 +127,7 @@ VERBOTEN
 
 SIEHE AUCH
 ----------
-  bach --help tools            Tool-Verwaltung und Ausfuehrung
+  bach --help tools            Tool-Verwaltung und Ausführung
   bach --help skills           Skill-System
   system/tools/_policies/      Policy-Validatoren
   system/skills/_templates/    Standard-Templates

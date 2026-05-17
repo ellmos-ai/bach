@@ -1,26 +1,26 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 OPERATOREN-TAXONOMIE
 ====================
-Vollstaendige Klassifikation der Datenverarbeitungs-Operatoren
-fuer Watcher, Toolchains, Injektoren und Automatisierung.
+Vollständige Klassifikation der Datenverarbeitungs-Operatoren
+für Watcher, Toolchains, Injektoren und Automatisierung.
 
 Bezug: Lernsystem-Analyse (user/_archive/ANALYSE_Lernsysteme_BACH_vs_recludOS.md)
 
 
 1. ERKENNUNGS-OPERATOREN ("Sinne")
 ===================================
-Wie das System Veraenderungen in der Umwelt wahrnimmt.
+Wie das System Veränderungen in der Umwelt wahrnimmt.
 
 1.1 Polling (periodisches Abfragen)
 ------------------------------------
-Regelmaessiges Pruefen eines Zustands.
+Regelmäßiges Prüfen eines Zustands.
   - Verzeichnisinhalt bei t0 und t1 vergleichen
   - API alle 5 Minuten abfragen
-  - Cron-Jobs fuer Systemmetriken
+  - Cron-Jobs für Systemmetriken
 BACH: TimeInjector, Daemon-Checks, Session-Start-Scan
 
 1.2 Event-Driven (Push-basiert)
@@ -46,7 +46,7 @@ Wie das System Daten versteht und einordnet.
 
 2.1 Vergleichen
 ---------------
-Zwei oder mehr Werte gegenueberstellen.
+Zwei oder mehr Werte gegenüberstellen.
   - Hash-Vergleich
   - Feld A == Feld B
   - Zeitstempel t0 < t1
@@ -54,7 +54,7 @@ Zwei oder mehr Werte gegenueberstellen.
 2.2 Messen
 ----------
 Quantitative Eigenschaften bestimmen.
-  - Dateigroesse
+  - Dateigröße
   - Latenzzeit
   - CPU-Auslastung
   - Anzahl neuer Datensaetze
@@ -91,16 +91,16 @@ Gruppen zusammenfassen oder verdichten.
 2.7 Korrelieren
 ---------------
 Beziehungen zwischen Datenpunkten erkennen.
-  - Log-Events mit Request-ID verknuepfen
+  - Log-Events mit Request-ID verknüpfen
   - Sensorwert + Zeitstempel + Standort
   - Fehler + vorherige Systemlast
 BACH: Assoziatives Memory (memory_associations)
 
 2.8 Validieren
 --------------
-Pruefen, ob Daten Regeln erfuellen.
+Prüfen, ob Daten Regeln erfuellen.
   - JSON-Schema-Validierung
-  - IBAN-Pruefung
+  - IBAN-Prüfung
   - Pflichtfelder vorhanden?
 
 2.9 Normalisieren
@@ -117,7 +117,7 @@ Wie das System Daten umwandelt.
 
 3.1 Extrahieren
 ---------------
-Informationen aus Rohdaten herausloesen.
+Informationen aus Rohdaten herauslösen.
   - OCR aus PDF
   - Regex aus Text
   - JSON-Felder aus API-Antwort
@@ -125,23 +125,23 @@ BACH: OCR-Pipeline, RAG Chunking
 
 3.2 Transformieren
 ------------------
-Daten in eine andere Form ueberfuehren.
+Daten in eine andere Form überfuehren.
   - CSV -> JSON
   - Text -> Tokens
   - Bild -> Thumbnail
 
 3.3 Anreichern (Enrichment)
 ----------------------------
-Daten mit zusaetzlichen Informationen ergaenzen.
+Daten mit zusätzlichen Informationen ergänzen.
   - Geo-Lookup (IP -> Land)
-  - Kundendaten aus CRM ergaenzen
-  - KI-basierte Klassifikation hinzufuegen
+  - Kundendaten aus CRM ergänzen
+  - KI-basierte Klassifikation hinzufügen
 BACH: RAG Search (semantische Anreicherung)
 
 3.4 Zusammenfuehren (Merge/Join)
 ---------------------------------
 Mehrere Datenquellen kombinieren.
-  - Tabellen per Schluessel verbinden
+  - Tabellen per Schlüssel verbinden
   - Logs aus mehreren Services zusammenfuehren
   - E-Mail + CRM-Eintrag matchen
 
@@ -153,7 +153,7 @@ Mehrere Datenquellen kombinieren.
 ----------------
 Reihenfolgen herstellen oder analysieren.
   - Sortieren nach Zeitstempel
-  - Workflow-Schritte nacheinander ausfuehren
+  - Workflow-Schritte nacheinander ausführen
   - Ereignisfolgen rekonstruieren
 BACH: Toolchain-Engine (hub/chain.py), Session-Reihenfolge
 
@@ -161,8 +161,8 @@ BACH: Toolchain-Engine (hub/chain.py), Session-Reihenfolge
 ---------------------------
 Daten in Zeitfenster einteilen.
   - 5-Minuten-Durchschnitt
-  - Rolling Window fuer Sensorwerte
-  - Sliding Window fuer Log-Analysen
+  - Rolling Window für Sensorwerte
+  - Sliding Window für Log-Analysen
 
 
 5. KONTROLL-OPERATOREN
@@ -171,7 +171,7 @@ Daten in Zeitfenster einteilen.
 5.1 Debouncing
 --------------
 Mehrere schnelle Ereignisse zu einem zusammenfassen.
-  - Dateiaenderungen buendeln
+  - Dateiänderungen buendeln
   - UI-Events reduzieren
   - API-Requests throttlen
 
@@ -203,13 +203,13 @@ BACH: Memory-System (alle 5 Schichten), Session-State
 
 6.2 Stateless Processing
 -------------------------
-Jede Verarbeitung ist unabhaengig.
+Jede Verarbeitung ist unabhängig.
   - Hash einer Datei berechnen
   - JSON validieren
   - Regex-Match
 
 
-7. META-OPERATOREN (hoehere Abstraktion)
+7. META-OPERATOREN (höhere Abstraktion)
 =========================================
 
 7.1 Orchestrieren
@@ -238,7 +238,7 @@ BACH: Session-Logging, Task-Statistik, Daemon-Status
 
 8. OPERATOR-PATTERNS (Kombinationen)
 =====================================
-Typische Kombinationen von Operatoren fuer wiederkehrende Aufgaben.
+Typische Kombinationen von Operatoren für wiederkehrende Aufgaben.
 
 8.1 Scoring & Ranking Pattern (#9)
 -----------------------------------
@@ -252,25 +252,25 @@ Operatoren: Messen, Bewerten, Aggregieren, Sortieren.
 Zweck: Daten in Klassen einteilen.
 Operatoren: Extrahieren, Normalisieren, Klassifizieren, Validieren.
   - Dokumenttyp (Rechnung/Vertrag/Mahnung)
-  - Ticket-Prioritaet (Low/Medium/High)
+  - Ticket-Priorität (Low/Medium/High)
 
 8.3 Rule-Based Filtering Pattern (#11)
 ---------------------------------------
-Zweck: Ausschliessen anhand fester Regeln.
-Operatoren: Filtern, Validieren, Ausschliessen.
+Zweck: Ausschließen anhand fester Regeln.
+Operatoren: Filtern, Validieren, Ausschließen.
   - Absender auf Blacklist
   - Dateien ohne Anhang verwerfen
 
 8.4 Threshold Alert Pattern (#12)
 ----------------------------------
-Zweck: Alarm bei Grenzwertueberschreitung.
+Zweck: Alarm bei Grenzwertüberschreitung.
 Operatoren: Messen, Vergleichen, Bewerten, Event-Trigger.
   - CPU > 80%
   - mehr als 10 Fehler in 5 Minuten
 
 8.5 Anomaly Detection Light Pattern (#13)
 ------------------------------------------
-Zweck: Auffaellige Werte erkennen (einfach).
+Zweck: Auffällige Werte erkennen (einfach).
 Operatoren: Messen, Aggregieren, Vergleichen, Fensterung.
   - Wert > Mittelwert + Faktor
   - ploetzlicher Sprung in Dateianzahl
@@ -314,7 +314,7 @@ Operatoren: Testen, Retry, Fallback, Bewerten.
 Zweck: Zwei Strategien gegeneinander testen.
 Operatoren: Testen, Vergleichen, Bewerten, Aggregieren.
   - zwei Klassifikationsmodelle
-  - zwei Regelsets fuer Mailrouting
+  - zwei Regelsets für Mailrouting
 
 8.12 Multi-Criteria Decision Pattern (#20)
 -------------------------------------------
@@ -332,10 +332,10 @@ Operatoren: Klassifizieren, Filtern, Routing.
 
 8.14 Confidence-Based Handling Pattern (#22)
 ---------------------------------------------
-Zweck: Verhalten abhaengig von Sicherheit/Score.
+Zweck: Verhalten abhängig von Sicherheit/Score.
 Operatoren: Bewerten, Klassifizieren, Filtern.
   - Score > 0.9 -> auto buchen
-  - Score 0.6-0.9 -> manuelle Pruefung
+  - Score 0.6-0.9 -> manuelle Prüfung
 
 8.15 Progressive Refinement Pattern (#23)
 ------------------------------------------
@@ -346,8 +346,8 @@ Operatoren: Klassifizieren, Anreichern, Transformieren.
 
 8.16 Sanity Check Pattern (#24)
 --------------------------------
-Zweck: Einfache Plausibilitaetspruefungen.
-Operatoren: Testen, Validieren, Ausschliessen.
+Zweck: Einfache Plausibilitaetsprüfungen.
+Operatoren: Testen, Validieren, Ausschließen.
   - Betrag > 0
   - Datum nicht in der Zukunft
 
@@ -382,7 +382,7 @@ Operatoren: Bewerten, Klassifizieren, Routing.
 
 BEZUG ZUM LERNPROZESS
 =====================
-Die Operatoren bilden das Werkzeug-Set fuer alle 3 Modi:
+Die Operatoren bilden das Werkzeug-Set für alle 3 Modi:
 
   (1) Energiesparen: Polling + Filtern + Regeln abrufen
   (2) Nachdenken:    Korrelieren + Klassifizieren + Szenarien
@@ -392,11 +392,11 @@ Erkennungs-Operatoren = Sinne (Wahrnehmung)
 Analyse-Operatoren    = Verarbeitung (Denken)
 Transformations-Op.   = Handeln (Aktion)
 Meta-Operatoren       = Steuerung (Zentrale Exekutive)
-Operator-Patterns     = Kombinierte Loesungsmuster
+Operator-Patterns     = Kombinierte Lösungsmuster
 
 
 VERWANDTE HELP-DATEIEN
 ======================
-  --help strategien      Kategorisieren, Bewerten, Ausschliessen, Testen
+  --help strategien      Kategorisieren, Bewerten, Ausschließen, Testen
   --help denkstrategien  Kognitive Strategien (Chunking, Mustererkennung, etc.)
   --help rhetorik        Rhetorische Operatoren und Patterns

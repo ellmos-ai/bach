@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -23,7 +23,7 @@ OPERATIONEN
     Detaillierte Informationen einer API (URL, Auth, Endpoints, Beispiele)
 
   bach api endpoint add <api_name> <METHOD> <path> [--desc "..."]
-    Endpoint zu existierender API hinzufuegen (z.B. POST /v1/chat/completions)
+    Endpoint zu existierender API hinzufügen (z.B. POST /v1/chat/completions)
 
   bach api verify [<name>]
     Alle APIs oder einzelne API testen (HTTP HEAD-Request, Timeout: 10s)
@@ -32,7 +32,7 @@ OPERATIONEN
     APIs nach Keyword in Name, Beschreibung, Tags durchsuchen
 
   bach api remove <name>
-    API aus Datenbank loeschen
+    API aus Datenbank löschen
 
   bach api help
     Diese Hilfe anzeigen
@@ -45,10 +45,10 @@ BEISPIELE
   # Mit Provider und Tags
   bach api add github https://api.github.com --auth oauth --provider GitHub --tags "git,development"
 
-  # Endpoint hinzufuegen
+  # Endpoint hinzufügen
   bach api endpoint add openai POST /v1/chat/completions --desc "Chat Completion"
 
-  # Suchen und Pruefen
+  # Suchen und Prüfen
   bach api search openai
   bach api verify openai
   bach api list

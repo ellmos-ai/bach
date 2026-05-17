@@ -1,6 +1,6 @@
-# Portabilitaet: USER
+# Portabilität: USER
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2027-02-08
+# Nächste Prüfung: 2027-02-08
 # Ressourcen: [assistant_calendar table, hub/calendar_handler.py]
 
 CALENDAR - Termin- und Kalenderverwaltung
@@ -13,7 +13,7 @@ verschiedenen Quellen (Termine, Erinnerungen, Routinen).
 
 KERNKONZEPTE
 ------------
-- KOMBINATION: Zeigt Assistenten-Kalender UND faellige Haushaltsroutinen an.
+- KOMBINATION: Zeigt Assistenten-Kalender UND fällige Haushaltsroutinen an.
 - ANSICHTEN: Optimiert für CLI (Today, Week, Month).
 - PERSISTENZ: Speicherung in der zentralen `bach.db`.
 

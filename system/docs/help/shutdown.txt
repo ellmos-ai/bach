@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.0
 # Zuletzt validiert: 2026-05-10
 
@@ -21,17 +21,17 @@ SHUTDOWN-TYPEN
 --------------
 KOMPLETT (Standard):
 - Directory-Scan aktualisieren
-- Auto-Snapshot bei >= 3 Aenderungen
+- Auto-Snapshot bei >= 3 Änderungen
 - Session in DB speichern
 - Task-Statistik zaehlen
 
 QUICK:
 - Keine Dir-Scan-Aktualisierung
 - Speichert kurze Notiz
-- Fuer Pausen wenn Session bald weitergeht
+- Für Pausen wenn Session bald weitergeht
 
 EMERGENCY:
-- Nur Emergency-Notiz speichern (Prioritaet 10)
+- Nur Emergency-Notiz speichern (Priorität 10)
 - Bei Abbruch/Timeout verwenden
 - Minimal-Sicherung des Zustands
 
@@ -39,15 +39,15 @@ ABLAUF KOMPLETT (v1.1.17)
 -------------------------
 1. [DIRECTORY SCAN]
    - SOLL-Zustand aktualisieren
-   - Aenderungen dokumentieren
+   - Änderungen dokumentieren
 
 2. [AUTO-SNAPSHOT] *** NEU v1.1.17 ***
-   - Bei >= 3 Aenderungen: Automatischer Snapshot
+   - Bei >= 3 Änderungen: Automatischer Snapshot
    - Name: auto_YYYYMMDD_HHMMSS
    - Fortsetzen: bach snapshot load
 
 3. [SESSION SPEICHERN]
-   - Session in memory_sessions abschliessen
+   - Session in memory_sessions abschließen
    - Summary wird gespeichert
    - Auto-Memory Fallback (v1.1.15):
      Wenn kein Summary gegeben -> aus Autolog generieren
@@ -68,10 +68,10 @@ OUTPUT-BEISPIEL
 =======================================================
 
 [DIRECTORY SCAN]
- SOLL-Zustand aktualisiert (5 Aenderungen)
+ SOLL-Zustand aktualisiert (5 Änderungen)
 
 [AUTO-SNAPSHOT]
- [OK] Auto-Snapshot erstellt (5 Aenderungen)
+ [OK] Auto-Snapshot erstellt (5 Änderungen)
 
 [SESSION SPEICHERN]
  [OK] Session session_20260122_1300 abgeschlossen
@@ -94,9 +94,9 @@ VOR Shutdown den Session-Bericht speichern:
 
 Oder Summary direkt beim Shutdown angeben:
 
-  bach --shutdown "Help-Dateien aktualisiert. NEXT: memory.txt pruefen"
+  bach --shutdown "Help-Dateien aktualisiert. NEXT: memory.txt prüfen"
 
-WICHTIG: Session-Berichte gehoeren in memory_sessions (DB),
+WICHTIG: Session-Berichte gehören in memory_sessions (DB),
          NICHT in memory/archive/*.md Dateien!
 
 AUTO-MEMORY FALLBACK (v1.1.15)
@@ -112,7 +112,7 @@ WANN WELCHER SHUTDOWN
 ---------------------
 | Situation | Befehl | Grund |
 |-----------|--------|-------|
-| Aufgabe fertig | --shutdown | Vollstaendige Dokumentation |
+| Aufgabe fertig | --shutdown | Vollständige Dokumentation |
 | Kurze Pause | --shutdown quick | Schnell, bald weiter |
 | Timeout/Abbruch | --shutdown emergency | Mindest-Sicherung |
 
@@ -145,7 +145,7 @@ Wenn ProSync aktiviert ist (bach setup prosync --multi-system), wird
 bei Session-Ende ein DB-Backup in den Transit-Hub geschrieben:
   - Push: Lokale DB als .bachdb-Backup exportieren
   - Ziel: OneDrive/.SYNC/bach_db_transit/
-ProSync laeuft via atexit-Hook in bach.py, nicht im Shutdown-Handler.
+ProSync läuft via atexit-Hook in bach.py, nicht im Shutdown-Handler.
 Details: bach --help db_sync
 
 VERSIONSHISTORIE
@@ -153,7 +153,7 @@ VERSIONSHISTORIE
 v1.1.0   Basis-Shutdown mit Dir-Scan
 v1.1.14  + Task-Statistik
 v1.1.15  + Auto-Memory Fallback aus Autolog
-v1.1.17  + Auto-Snapshot bei >= 3 Aenderungen
+v1.1.17  + Auto-Snapshot bei >= 3 Änderungen
 v1.1.71  + Partner Clock-Out (Stempelkarte)
 
 SIEHE AUCH

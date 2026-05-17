@@ -1,16 +1,16 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 MIGRATE - Evolutionaere Datei-Migration
 =======================================
 
 KONZEPT
 -------
-Bei Datei-Umbenennungen oder Pfadaenderungen:
-Statt alle Verweise auf einmal zu aendern, nutze eine Wrapper-Datei.
-Verweise werden organisch korrigiert durch taegliche Nutzung.
+Bei Datei-Umbenennungen oder Pfadänderungen:
+Statt alle Verweise auf einmal zu ändern, nutze eine Wrapper-Datei.
+Verweise werden organisch korrigiert durch tägliche Nutzung.
 
 WARUM?
 ------
@@ -26,8 +26,8 @@ VORGEHEN
 
 2. Wrapper erstellen (alte_datei.md):
    - Status-Hinweis "umgeleitet"
-   - Log-Tabelle fuer Besucher
-   - Anleitung: Herkunft pruefen + korrigieren
+   - Log-Tabelle für Besucher
+   - Anleitung: Herkunft prüfen + korrigieren
    - Link zur neuen Datei
 
 3. Kritische Verweise SOFORT korrigieren:
@@ -55,7 +55,7 @@ Status: Diese Datei wurde umbenannt zu `neue_datei.md`
 ## Anleitung
 
 1. Log-Eintrag hinterlassen
-2. Herkunft pruefen (was hat dich hergeschickt?)
+2. Herkunft prüfen (was hat dich hergeschickt?)
 3. Verweis dort korrigieren
 4. Zur eigentlichen Datei gehen
 
@@ -68,7 +68,7 @@ JA (Wrapper sinnvoll):
   - Von verschiedenen Partnern referenziert
   - Keine kritische System-Datei
 
-NEIN (direkt alle aendern):
+NEIN (direkt alle ändern):
   - Wenige, bekannte Verweise
   - Kritische System-Dateien
   - Performance-kritische Pfade
@@ -78,7 +78,7 @@ CLEANUP
 Nach 30 Tagen oder wenn Log leer:
   bach trash delete <wrapper>
 
-AUTOMATISCHE UNTERSTUETZUNG
+AUTOMATISCHE UNTERSTÜTZUNG
 ---------------------------
   bach --maintain heal       Findet veraltete Pfade automatisch
   bach --maintain docs       Erkennt veraltete Dokumentation

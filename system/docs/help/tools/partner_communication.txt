@@ -3,7 +3,7 @@ BACH Tool: Partner Communication
 
 KI-Partner-Kommunikation und Interaktionsprotokoll.
 
-VERFUEGBARE TOOLS
+VERFÜGBARE TOOLS
 -----------------
 
   ai_compatible           KI-kompatible Nachrichten formatieren
@@ -15,13 +15,13 @@ VERFUEGBARE TOOLS
 ZUSAMMENSPIEL
 -------------
 
-BACH unterstuetzt Multi-Agent-Kommunikation zwischen:
+BACH unterstützt Multi-Agent-Kommunikation zwischen:
   - Claude (claude-code / claude-desktop)
   - Gemini (antigravity)
   - GPT (codex)
 
-Nachrichten werden ueber CLAUDE.md / GEMINI.md / GPT.md ausgetauscht.
-Sync ueber OneDrive/.SYNC/ (Laptop <-> Workstation).
+Nachrichten werden über CLAUDE.md / GEMINI.md / GPT.md ausgetauscht.
+Sync über OneDrive/.SYNC/ (Laptop <-> Workstation).
 
 MODUL
 -----

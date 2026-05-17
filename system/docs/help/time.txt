@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -9,9 +9,9 @@ BESCHREIBUNG
 ============================================================================
 
 Der Time Handler verwaltet das Zeit-Management-System in BACH. Er bietet
-Funktionalitaeten fuer Uhrzeit-Anzeigen, Timer, Countdowns und zeitbasierte
+Funktionalitäten für Uhrzeit-Anzeigen, Timer, Countdowns und zeitbasierte
 Profil-Verwaltung (Between). Alle Module verwenden die zentrale TimeManager
-fuer koordinierte Operationen.
+für koordinierte Operationen.
 
 Basis-Verzeichnis: data/ (Zustandsdateien)
 Module: tools/time_system.py
@@ -24,7 +24,7 @@ CLOCK
 -----
   bach clock on              - Uhrzeit-Anzeige aktivieren
   bach clock off             - Uhrzeit-Anzeige deaktivieren
-  bach clock status          - Status der Uhrzeit-Anzeige pruefen
+  bach clock status          - Status der Uhrzeit-Anzeige prüfen
   bach clock interval <sek>  - Anzeige-Intervall in Sekunden setzen
 
 TIMER
@@ -32,7 +32,7 @@ TIMER
   bach timer start [name]    - Timer starten (default: "default")
   bach timer stop [name]     - Timer stoppen
   bach timer list            - Alle aktiven Timer anzeigen
-  bach timer clear           - Alle Timer loeschen
+  bach timer clear           - Alle Timer löschen
 
 COUNTDOWN
 ---------
@@ -72,11 +72,11 @@ bach timer stop work
 # Countdown mit Alarm: 5 Minuten Pause
 bach countdown start pause 00:05:00 --after "echo Pause vorbei!"
 
-# Between-Profile laden (z.B. Buero-Stunden)
+# Between-Profile laden (z.B. Büro-Stunden)
 bach between status
 bach between use office-hours
 
-# Globale Zeit-Status ueberpruefen
+# Globale Zeit-Status überprüfen
 bach beat
 bach beat on           # Alle Zeit-Module aktivieren
 bach beat interval 60  # Alle 60 Sekunden aktualisieren

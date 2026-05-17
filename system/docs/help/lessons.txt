@@ -1,6 +1,6 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Zuletzt validiert: 2026-02-08 (Sonnet 4.5)
-# Naechste Pruefung: 2026-04-08
+# Nächste Prüfung: 2026-04-08
 # Ressourcen: [memory_lessons table, hub/lesson.py, bach_api.lesson]
 
 LESSONS LEARNED - Wissensmanagement
@@ -9,11 +9,11 @@ LESSONS LEARNED - Wissensmanagement
 STAND: 2026-02-08
 
 System zum Erfassen und Abrufen von Erkenntnissen, Bug-Fixes und Best Practices.
-Lessons sind der Kern des "Rueckflusses" in das Systemverhalten.
+Lessons sind der Kern des "Rückflusses" in das Systemverhalten.
 
 CLI-BEFEHLE
 -----------
-  bach lesson add "Titel: Loesung"     Neue Lesson hinzufügen
+  bach lesson add "Titel: Lösung"     Neue Lesson hinzufügen
   bach lesson edit ID [Optionen]       Lesson bearbeiten (v1.1.70)
   bach lesson deactivate ID [-r REASON] Deaktivieren (v1.1.70)
   bach lesson last [n]                 Letzte n Lessons (Standard: 5)
@@ -23,7 +23,7 @@ CLI-BEFEHLE
 LIBRARY API
 -----------
   from bach_api import lesson
-  lesson.add("Titel: Loesung", "--category", "bug")
+  lesson.add("Titel: Lösung", "--category", "bug")
   lesson.list("bug")
   lesson.edit(42, "--title", "Neuer Titel")
   lesson.deactivate(42, "--reason", "Obsolet")
@@ -64,30 +64,30 @@ BEISPIELE
   bach lesson edit 42 --title "Neuer Titel" --severity critical
 
   # Lesson deaktivieren
-  bach lesson deactivate 42 --reason "Durch bessere Loesung ersetzt"
+  bach lesson deactivate 42 --reason "Durch bessere Lösung ersetzt"
 
 BEKANNTE PROBLEME & LOESUNGEN (Auszug)
 =====================================
 
 1. MULTI-LLM SHARED FILES (workflow)
    Problem: Race Conditions bei gleichzeitiger Bearbeitung.
-   Loesung: IMMER `bach llm lock <datei>` vor Schreibzugriff nutzen.
+   Lösung: IMMER `bach llm lock <datei>` vor Schreibzugriff nutzen.
 
 2. CLI-FIRST PRINZIP (workflow)
    Problem: Manuelle Datei-Edits umgehen Injektoren/Monitoring.
-   Loesung: Alles was via CLI geht (task, lesson, mem) IMMER via CLI tun.
+   Lösung: Alles was via CLI geht (task, lesson, mem) IMMER via CLI tun.
 
 3. WINDOWS ENCODING (bug)
    Problem: Emojis crashen oft die Standard-Windows-Konsole.
-   Loesung: In Python `io.TextIOWrapper` mit UTF-8 Fallback für stdout nutzen.
+   Lösung: In Python `io.TextIOWrapper` mit UTF-8 Fallback für stdout nutzen.
 
 4. DB-DATEI SPERREN (performance)
    Problem: Lock-Fehler bei parallelem Zugriff vieler Prozesse.
-   Loesung: Kurze Transaktionen und WAL-Mode (Write-Ahead Logging).
+   Lösung: Kurze Transaktionen und WAL-Mode (Write-Ahead Logging).
 
 5. DOCS-UPDATE (bug)
    Problem: Veraltete Versionen in SKILL.md blockieren Sessions.
-   Loesung: `python tools/doc_update_checker.py` regelmäßig laufen lassen.
+   Lösung: `python tools/doc_update_checker.py` regelmäßig laufen lassen.
 
 INTEGRATION
 -----------

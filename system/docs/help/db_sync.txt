@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 2.0.0
 # Zuletzt validiert: 2026-05-10
 
@@ -35,19 +35,19 @@ bach db backup
   Traeger: Lokal, keine Remote-Anfrage.
 
 bach db sync
-  Fuehrt vollstaendigen Sync durch: Pull (neuere Backups) + Merge + Push (eigenes Backup).
+  Führt vollständigen Sync durch: Pull (neuere Backups) + Merge + Push (eigenes Backup).
   Konflikt-Check: Wenn andere PCs aktiv sind (Heartbeat < 5min), wird nach Bestätigung gefragt.
-  Flags: --auto oder -y fuer non-interactive Mode.
+  Flags: --auto oder -y für non-interactive Mode.
   Merge-Strategie: Neuere Zeilen (Timestamp) gewinnen (INSERT OR REPLACE).
 
 bach db status
-  Zeigt Status anzeigen: Lokale DB, Backup-Ordner, letzte 10 Backups (Host, Zeit, Groesse),
+  Zeigt Status anzeigen: Lokale DB, Backup-Ordner, letzte 10 Backups (Host, Zeit, Größe),
   aktive PCs und deren Heartbeat.
 
 bach db cleanup
-  Loescht alte Backups basierend auf Retention-Policy.
+  Löscht alte Backups basierend auf Retention-Policy.
   Regel: Behalte neueste 10 pro Host ODER alles jünger als 7 Tage (konfigurierbar).
-  Gibt Anzahl geloeschter Backups aus.
+  Gibt Anzahl gelöschter Backups aus.
 
 bach db enable
   Aktiviert Auto-Sync bei Startup/Exit (setzt Konfigurationsflag).
@@ -67,10 +67,10 @@ bach db sync
 # Unbeaufsichtigter Sync (Cronjob/Automation)
 bach db sync --auto
 
-# Status vor Sync pruefen (zeigt aktive PCs und Backups)
+# Status vor Sync prüfen (zeigt aktive PCs und Backups)
 bach db status
 
-# Cleanup veralteter Backups manuell ausloesen
+# Cleanup veralteter Backups manuell auslösen
 bach db cleanup
 
 
@@ -90,15 +90,15 @@ data/bach.db
   OneDrive-Fallback-DB (wird nicht mehr direkt beschrieben bei aktivem ProSync).
 
 OneDrive/.SYNC/bach_db_transit/
-  Transit-Hub fuer .bachdb-Dateien und heartbeat.json.
-  Heartbeat: Verfolgt aktive PCs (Hostname, PID, Zeitstempel) fuer Konflikt-Detection.
+  Transit-Hub für .bachdb-Dateien und heartbeat.json.
+  Heartbeat: Verfolgt aktive PCs (Hostname, PID, Zeitstempel) für Konflikt-Detection.
 
 data/config/db_sync_enabled
-  Flag fuer ProSync-Aktivierung (erstellt durch "bach setup prosync --multi-system").
+  Flag für ProSync-Aktivierung (erstellt durch "bach setup prosync --multi-system").
 
 
 SIEHE AUCH
 ==========
 - docs/help/setup.txt: bach setup prosync (Konfiguration)
 - hub/bach_paths.py: BACH_DB, PROSYNC_TRANSIT_DIR, LOCAL_BACH_DIR
-- basehandler / Handler-Framework: Siehe base.py fuer Schnittstelle
+- basehandler / Handler-Framework: Siehe base.py für Schnittstelle

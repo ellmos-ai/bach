@@ -1,7 +1,7 @@
 BACH SKILLS TOOLS
 =================
 
-Tools zur Verwaltung, Ueberwachung und Validierung von BACH-Skills.
+Tools zur Verwaltung, Überwachung und Validierung von BACH-Skills.
 
 SCHNELLSTART
 ------------
@@ -11,14 +11,14 @@ SCHNELLSTART
 
 WAS SIND SKILLS?
 ----------------
-Skills sind wiederverwendbare Faehigkeiten-Module in BACH:
+Skills sind wiederverwendbare Fähigkeiten-Module in BACH:
 - _agents/: Boss-Agenten (ATI, Steuer-Agent, etc.)
 - _experts/: Experten-Skills (data-analysis, etc.)
 - _services/: Service-Skills (communicate, recurring, etc.)
 
 SKILL HEALTH MONITOR
 --------------------
-Ueberwacht und validiert alle Skills.
+Überwacht und validiert alle Skills.
 
 Befehle:
   python tools/maintenance/skill_health_monitor.py check
@@ -26,19 +26,19 @@ Befehle:
   python tools/maintenance/skill_health_monitor.py check --agents
   python tools/maintenance/skill_health_monitor.py report
 
-Was wird geprueft:
-- SKILL.md Vollstaendigkeit (name, version, description)
+Was wird geprüft:
+- SKILL.md Vollständigkeit (name, version, description)
 - Agent-Manifest (manifest.json)
 - Verzeichnisstruktur
 - Verwaiste oder fehlerhafte Skills
 
 Integration in --startup:
-Der Skill Health Monitor laeuft automatisch bei Session-Start
+Der Skill Health Monitor läuft automatisch bei Session-Start
 und meldet Probleme in der Startup-Ausgabe.
 
 SKILL EXPORT/IMPORT
 -------------------
-Skills koennen exportiert und auf anderen Systemen installiert werden.
+Skills können exportiert und auf anderen Systemen installiert werden.
 
 Export:
   bach skill export SKILLNAME
@@ -50,7 +50,7 @@ Import:
 
 ATI EXPORT (Agent-spezifisch):
   bach ati export
-  -> Exportiert ATI-Agent mit allen Abhaengigkeiten
+  -> Exportiert ATI-Agent mit allen Abhängigkeiten
 
 SKILL-VERZEICHNISSTRUKTUR
 -------------------------
@@ -91,7 +91,7 @@ VALIDIERUNG
 Pflichtfelder: name, version, description
 Empfohlen: last_updated, author, dependencies
 
-Agenten brauchen zusaetzlich:
+Agenten brauchen zusätzlich:
 - manifest.json (PFLICHT)
 - README.md (empfohlen)
 - CHANGELOG.md (empfohlen)
@@ -113,7 +113,7 @@ CLI-BEFEHLE
 
 TIPPS
 -----
-- Skill Health Monitor laeuft bei jedem --startup
+- Skill Health Monitor läuft bei jedem --startup
 - Probleme werden als Warnings/Errors gemeldet
 - Bei neuen Skills: SKILL.md mit korrektem Frontmatter erstellen
 - Agenten immer mit manifest.json erstellen

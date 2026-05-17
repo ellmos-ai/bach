@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 2.1.0
 # Zuletzt validiert: 2026-04-05
 
@@ -7,15 +7,15 @@ PFADVERWALTUNG IN BACH
 
 WICHTIG: Pfade werden in BACH AUTOMATISCH verwaltet!
 -------------------------------------------------------
-bach_paths.py ist die "Single Source of Truth" fuer alle Pfade.
+bach_paths.py ist die "Single Source of Truth" für alle Pfade.
 Alle Pfade werden dynamisch berechnet — wenn BACH verschoben wird,
 funktioniert alles automatisch. Manuelle Pfad-Reparaturen sind
-im Normalfall NICHT noetig.
+im Normalfall NICHT nötig.
 
   from bach_paths import get_path, BACH_ROOT, TOOLS_DIR
   tools = get_path("tools")      # Immer korrekt, egal wo BACH liegt
 
-Siehe: bach --help bach_paths     (Vollstaendige Doku)
+Siehe: bach --help bach_paths     (Vollständige Doku)
 
 
 WANN IST MANUELLE PFAD-AKTUALISIERUNG NOETIG?
@@ -27,7 +27,7 @@ Nur wenn sich Pfade in DOKUMENTATION und KOMMENTAREN befinden
   - Markdown-Doku (.md)
   - Docstrings in Python-Dateien
 
-Fuer diesen Zweck gibt es den Doc Path Updater:
+Für diesen Zweck gibt es den Doc Path Updater:
 
   bach --maintain docs-paths             # Dry-Run (nur anzeigen)
   bach --maintain docs-paths --apply     # Tatsaechlich korrigieren
@@ -39,12 +39,12 @@ WAS WURDE FRUEHER FALSCH GEMACHT?
 ----------------------------------
 Der alte "path_healer.py" (RecludOS-Relikt) versuchte ALLE Dateien
 zu heilen, inklusive Python-Code. Das war:
-1. Ueberfluessig (bach_paths.py loest das dynamisch)
+1. Überfluessig (bach_paths.py loest das dynamisch)
 2. Gefaehrlich (nicht-idempotente Regeln korrumpierten 101 Dateien)
 3. Nie korrekt integriert (falscher Dateiname im CLI-Handler)
 
-Seit v2.1.0 ist das Tool auf Dokumentations-Updates beschraenkt
-und idempotent (kann beliebig oft ausgefuehrt werden).
+Seit v2.1.0 ist das Tool auf Dokumentations-Updates beschränkt
+und idempotent (kann beliebig oft ausgeführt werden).
 
 
 SIEHE AUCH

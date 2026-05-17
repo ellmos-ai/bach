@@ -1,18 +1,18 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.0
 # Zuletzt validiert: 2026-05-06
 
 HANDLER-NAME
 ============
 
-Status Handler - Schnelle Systemuebersicht des BACH-Systems
+Status Handler - Schnelle Systemübersicht des BACH-Systems
 
 
 BESCHREIBUNG
 ============
 
-Der Status Handler bietet einen schnellen Ueberblick ueber den aktuellen Zustand
-des BACH-Systems. Er zeigt Informationen ueber aktive Sessions, online Partner,
+Der Status Handler bietet einen schnellen Überblick über den aktuellen Zustand
+des BACH-Systems. Er zeigt Informationen über aktive Sessions, online Partner,
 Memory-Bestaende, ungelesene Nachrichten, offene Tasks, registrierte Tools und
 die Systemgesundheit an. Alle Informationen werden direkt aus `data/bach.db`
 ermittelt.
@@ -24,7 +24,7 @@ OPERATIONEN
 show
     Zeigt den kompletten Systemstatus an (Standard-Operation).
     Befehl: bach --status [show]
-    Rueckgabe: Formatierte Text-Ausgabe mit allen Statusmeldungen
+    Rückgabe: Formatierte Text-Ausgabe mit allen Statusmeldungen
 
 
 BEISPIELE
@@ -49,7 +49,7 @@ Partner
     - Vorschau der Partner-Namen
 
 Memory
-    - Anzahl Eintraege in Working Memory, Facts und Lessons
+    - Anzahl Einträge in Working Memory, Facts und Lessons
 
 Chat
     - Anzahl ungelesener Nachrichten aus `messages`
@@ -59,7 +59,7 @@ Tasks
     - Separat: Anzahl P1/P2-Tasks und blockierte Tasks
 
 Tools
-    - Gesamtzahl verfuegbarer Tools aus der `tools`-Tabelle
+    - Gesamtzahl verfügbarer Tools aus der `tools`-Tabelle
 
 Health
     - OK: Datenbank vorhanden und Kern-Tabellen lesbar
@@ -83,7 +83,7 @@ Wichtige Tabellen:
 SIEHE AUCH
 ==========
 
-- hub/startup.py: Startup-Report mit ausfuehrlicherem Session-Kontext
+- hub/startup.py: Startup-Report mit ausführlicherem Session-Kontext
 - hub/base.py: BaseHandler-Klasse
 - hub/messages.py: Nachrichten-Status und Inbox
 - hub/task.py: Task-Zaehler und Task-Details

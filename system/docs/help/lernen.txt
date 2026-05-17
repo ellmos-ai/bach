@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 LERNEN - Memory als Lernprozess
 ================================
@@ -57,13 +57,13 @@ PRAKTISCHE ANWENDUNG
    Was ist der Kern? Was ist die Regel?
 
 3. Als Lesson speichern
-   bach lesson add "Titel: Erkenntnis/Loesung"
+   bach lesson add "Titel: Erkenntnis/Lösung"
 
-4. Im Kontext verfuegbar
+4. Im Kontext verfügbar
    Lesson wird bei relevantem Kontext injiziert
 
 SIEHE AUCH
 ----------
-bach memory status         Memory-System Uebersicht
+bach memory status         Memory-System Übersicht
 bach lesson list           Lessons Learned System
 bach shutdown              Konsolidierung bei Session-Ende

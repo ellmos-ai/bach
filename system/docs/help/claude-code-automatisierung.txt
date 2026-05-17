@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08 (6 Monate)
+# Nächste Prüfung: 2026-08-08 (6 Monate)
 
 CLAUDE CODE AUTOMATISIERUNG
 ============================
@@ -223,10 +223,10 @@ Parameter                       Beschreibung
 
 11. REMOTE CONTROL (MOBILE APP)
 -------------------------------
-Claude Code kann ueber die Claude Mobile App ferngesteuert werden.
+Claude Code kann über die Claude Mobile App ferngesteuert werden.
 Bekannter Bug: --dangerously-skip-permissions greift nicht bei Remote Control.
 
-Loesung: BACH Permission-Profile verwenden:
+Lösung: BACH Permission-Profile verwenden:
 
     # Automatisch (empfohlen):
     # Desktop: Claude_RemoteControl.bat
@@ -244,7 +244,7 @@ Loesung: BACH Permission-Profile verwenden:
     bach permissions show remote_control
     bach permissions status
 
-Siehe: permissions.txt fuer vollstaendige Dokumentation.
+Siehe: permissions.txt für vollständige Dokumentation.
 
 
 SICHERHEITSHINWEISE

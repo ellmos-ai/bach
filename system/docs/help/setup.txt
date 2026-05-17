@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.0
 # Zuletzt validiert: 2026-05-10
 
@@ -11,8 +11,8 @@ setup
 BESCHREIBUNG
 ===
 
-Konfiguriert das BACH-System vollstaendig: installiert MCP-Server (npm), validiert
-Abhaengigkeiten, synchronisiert Secrets und User-Profile, und fuehrt Praeflight-Checks
+Konfiguriert das BACH-System vollständig: installiert MCP-Server (npm), validiert
+Abhängigkeiten, synchronisiert Secrets und User-Profile, und führt Praeflight-Checks
 durch. Teil der PEANUT-Release (B37) mit optionalen n8n-Manager-MCP.
 
 
@@ -25,19 +25,19 @@ mcp             Installiert MCP-Server (codecommander, filecommander) global via
 n8n             Installiert optionales n8n-manager-mcp Paket und registriert in
                 Claude Code MCP-Config.
 
-check           Validiert ob alle Abhaengigkeiten vorhanden und konfiguriert sind:
+check           Validiert ob alle Abhängigkeiten vorhanden und konfiguriert sind:
                 npm, MCP-Pakete, Secrets-Datei, bach.db, USER.md.
 
 secrets         Initialisiert oder synchronisiert ~/.bach/bach_secrets.json mit
                 der Secrets-Datenbank.
 
 user            Verwaltet USER.md: personalisiert aus DB falls noch Template,
-                oder synct geparste Daten zurueck in DB.
+                oder synct geparste Daten zurück in DB.
 
-preflight       Fuehrt Pre-Install-Checks durch: Python >= 3.10, npm vorhanden,
+preflight       Führt Pre-Install-Checks durch: Python >= 3.10, npm vorhanden,
                 data/ beschreibbar, > 100 MB Speicherplatz frei.
 
-prosync         Konfiguriert ProSync fuer Multi-System-Nutzung.
+prosync         Konfiguriert ProSync für Multi-System-Nutzung.
                 --multi-system    Aktiviert DB-Sync (BACH auf mehreren Rechnern)
                 --single-system   Deaktiviert DB-Sync (nur dieses System)
                 Ohne Flag: Zeigt aktuellen Status an. Default: single-system.
@@ -46,12 +46,12 @@ hooks           Installiert Claude Code Hooks (DB-Schutz etc.) in die
                 Claude Code Settings (~/.claude/settings.json).
 
 hooks-remove    Entfernt BACH-installierte Claude Code Hooks (reversibel).
-                Entfernt nur von BACH registrierte Hook-Eintraege.
+                Entfernt nur von BACH registrierte Hook-Einträge.
 
 lang <de|en>    Schaltet Root-Dokumente (README, QUICKSTART, etc.) zwischen
                 Deutsch und Englisch um.
 
-full-install    Vollstaendige Installation in einem Durchlauf (preflight, prosync,
+full-install    Vollständige Installation in einem Durchlauf (preflight, prosync,
                 mcp, hooks, secrets, user). Optional: --with-n8n oder --config <json>.
 
 
@@ -62,7 +62,7 @@ bach setup mcp
   Installiert codecommander-mcp und filecommander-mcp, aktualisiert ~/.claude.json
 
 bach setup check
-  Prueft alle Abhaengigkeiten mit Status-Ausgabe
+  Prüft alle Abhängigkeiten mit Status-Ausgabe
 
 bach setup n8n
   Installiert n8n-manager-mcp (optional)
@@ -77,13 +77,13 @@ bach setup prosync --multi-system
   Aktiviert ProSync: lokale DB (~/.bach/bach.db) + OneDrive-Transit-Sync
 
 bach setup prosync --single-system
-  Deaktiviert ProSync (Default fuer neue Installationen)
+  Deaktiviert ProSync (Default für neue Installationen)
 
 bach setup full-install --with-n8n
-  Vollstaendige Installation inkl. n8n-Manager
+  Vollständige Installation inkl. n8n-Manager
 
 bach setup user
-  Personalisiert USER.md aus DB oder synct USER.md Aenderungen in DB
+  Personalisiert USER.md aus DB oder synct USER.md Änderungen in DB
 
 
 DATEIEN

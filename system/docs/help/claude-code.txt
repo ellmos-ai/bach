@@ -1,12 +1,12 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 2.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 CLAUDE CODE - KURZREFERENZ
 ==========================
 
-Claude Code ist das offizielle CLI-Tool von Anthropic fuer Claude.
+Claude Code ist das offizielle CLI-Tool von Anthropic für Claude.
 Aktuell: Version 2.1.37+ (Stand Feb 2026)
 
 INSTALLATION (EMPFOHLEN: Native, NICHT npm!)
@@ -38,7 +38,7 @@ STARTEN
 WICHTIGE KOMMANDOS
 ------------------
   claude update            Updates installieren
-  claude doctor            Installation pruefen
+  claude doctor            Installation prüfen
   claude mcp               MCP-Server konfigurieren
   claude install           Zu Native-Installation migrieren
   claude setup-token       Auth-Token einrichten
@@ -46,32 +46,32 @@ WICHTIGE KOMMANDOS
 MODELLE (Stand 2026)
 --------------------
   --model default          Je nach Account (Pro/Max/Teams: Opus 4.6)
-  --model sonnet           Claude Sonnet 4.5 (schnell, taegliche Tasks)
+  --model sonnet           Claude Sonnet 4.5 (schnell, tägliche Tasks)
   --model opus             Claude Opus 4.6 (komplex, beste Reasoning)
   --model haiku            Claude Haiku (schnellstes, guenstigstes)
   --model sonnet[1m]       Sonnet mit 1M Token Context
-  --model opusplan         Opus fuer Plan-Mode, Sonnet fuer Execution
+  --model opusplan         Opus für Plan-Mode, Sonnet für Execution
 
   Effort Level (Opus 4.6): low, medium, high (Standard)
   Env: CLAUDE_CODE_EFFORT_LEVEL=low|medium|high
 
-WICHTIGE OPTIONEN (Auswahl - 50+ verfuegbar!)
+WICHTIGE OPTIONEN (Auswahl - 50+ verfügbar!)
 ----------------------------------------------
   -c, --continue           Letzte Session fortsetzen
   -r, --resume [id]        Session per ID/Name fortsetzen
-  -p, --print              Ausgabe drucken und beenden (fuer Pipes)
+  -p, --print              Ausgabe drucken und beenden (für Pipes)
   --model <alias|name>     Modell waehlen
-  --add-dir <dir>          Zusaetzliche Verzeichnisse erlauben
+  --add-dir <dir>          Zusätzliche Verzeichnisse erlauben
   --system-prompt "..."    System-Prompt ERSETZEN
   --append-system-prompt "..." System-Prompt ERWEITERN (empfohlen!)
   --tools "Bash,Edit,Read" Nur bestimmte Tools aktivieren
   --allowedTools "..."     Tools ohne Permission-Prompt
   --disallowedTools "..."  Tools verbieten
   --permission-mode <mode> Plan/acceptEdits/default
-  --dangerously-skip-permissions  Alle Prompts ueberspringen (ACHTUNG!)
+  --dangerously-skip-permissions  Alle Prompts überspringen (ACHTUNG!)
   --output-format json     JSON Output (text/json/stream-json)
   --max-turns N            Max. agentic Turns (print mode)
-  --max-budget-usd N       Max. Dollar fuer API Calls
+  --max-budget-usd N       Max. Dollar für API Calls
   --chrome                 Chrome Browser Integration
   --ide                    Auto-Connect zu IDE
   --verbose                Verbose Logging
@@ -93,11 +93,11 @@ PERMISSIONS
   --dangerously-skip-permissions  ALLE Prompts umgehen (Vorsicht!)
   --allow-dangerously-skip-permissions  Bypass erlauben (nicht aktivieren)
 
-  BACH Permission-Profile (empfohlen fuer Remote Control):
+  BACH Permission-Profile (empfohlen für Remote Control):
     bach permissions list              Profile anzeigen
     bach permissions activate <profil> Profil in settings.json schreiben
     bach permissions deactivate        Normal-Profil wiederherstellen
-    -> Siehe: permissions.txt fuer Details
+    -> Siehe: permissions.txt für Details
 
 AUSGABEFORMATE (mit -p)
 -----------------------
@@ -113,11 +113,11 @@ SYSTEM-PROMPT FLAGS
   --append-system-prompt "..."       ERWEITERT Default-Prompt (empfohlen!)
   --append-system-prompt-file <file> ERWEITERT mit Datei (print mode)
 
-  Faustregel: --append-* bevorzugen (behaelt Claude Code Faehigkeiten)
+  Faustregel: --append-* bevorzugen (behält Claude Code Fähigkeiten)
 
 SUBAGENTS (--agents Flag)
 -------------------------
-  JSON-Format fuer Custom Subagents:
+  JSON-Format für Custom Subagents:
   --agents '{
     "reviewer": {
       "description": "Code reviewer",
@@ -151,19 +151,19 @@ BEISPIELE
   # Letzte Session fortsetzen
   claude -c
 
-  # Non-interaktiv (fuer Scripts)
+  # Non-interaktiv (für Scripts)
   claude -p "Liste alle Python-Dateien auf"
 
-  # Mit zusaetzlichem Verzeichnis
+  # Mit zusätzlichem Verzeichnis
   claude --add-dir "C:\MeinProjekt"
 
   # Custom System Prompt (erweitert, nicht ersetzt)
   claude --append-system-prompt "Nutze TypeScript, keine any-Types"
 
-  # Opus fuer Planning, Sonnet fuer Execution
+  # Opus für Planning, Sonnet für Execution
   claude --model opusplan
 
-  # JSON Output fuer Scripting
+  # JSON Output für Scripting
   claude -p --output-format json "Finde alle TODOs"
 
   # Mit MCP-Server Config
@@ -196,7 +196,7 @@ AUTO-UPDATES
 
 SIEHE AUCH
 ----------
-  https://code.claude.com/docs/en/cli-reference  Vollstaendige CLI-Referenz
+  https://code.claude.com/docs/en/cli-reference  Vollständige CLI-Referenz
   https://code.claude.com/docs/en/setup          Setup & Installation
   permissions.txt                           BACH Permission-Profile
   claude-code-automatisierung.txt           Automatisierung

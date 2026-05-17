@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 2.0.2
 # Zuletzt validiert: 2026-02-08 (Claude Sonnet 4.5)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 # Ressourcen: [skills table, skill_sources.json]
 
 BACH SKILLS SYSTEM (Architektur v2.0)
@@ -9,19 +9,19 @@ BACH SKILLS SYSTEM (Architektur v2.0)
 
 Stand: 2026-02-08
 
-Skills sind spezialisierte Faehigkeiten, die LLMs erweitern.
+Skills sind spezialisierte Fähigkeiten, die LLMs erweitern.
 Sie sind modular in Schicht 3 (Logic & Skill) organisiert.
 
 VERSIONS-CHECK-PRINZIP (NEU)
 ----------------------------
 IMMER die neueste Version verwenden - egal ob lokal oder zentral:
 
-  bach --skills version <name>  # Pruefe Versionen
-  bach --tools version <name>   # Pruefe Tool-Versionen
+  bach --skills version <name>  # Prüfe Versionen
+  bach --tools version <name>   # Prüfe Tool-Versionen
 
 SKILL-STRUKTUR: EIN SKILL = EIN ORDNER (NEU)
 --------------------------------------------
-Jeder Skill, Agent, Expert ist vollstaendig autark in einem eigenen Ordner:
+Jeder Skill, Agent, Expert ist vollständig autark in einem eigenen Ordner:
 
   FLAT (Standard, < 5 Dateien):
   ----------------------------
@@ -59,12 +59,12 @@ KOMPONENTEN-TYPEN
   Agent       _agents/<name>/     Orchestriert Experten, eigener Ordner
   Expert      _experts/<name>/    Tiefes Domaenenwissen, eigener Ordner
   Service     _services/<name>/   Allgemein, Handler-nah, eigener Ordner
-  Connector   _connectors/<name>/ Adapter fuer externe Dienste
+  Connector   _connectors/<name>/ Adapter für externe Dienste
   Partner     partners/<name>/   Partner-Integrationen (konsolidiert)
-  OS-Skill    _os/<name>/         OS-spezifische Funktionalitaet
+  OS-Skill    _os/<name>/         OS-spezifische Funktionalität
   Workflow    _workflows/         KEIN Ordner (1 Datei = 1 Workflow)
   Tool (allg) system/tools/       Wiederverwendbar, kein Skill-Bezug
-  Tool (spez) Im Skill-Ordner     Nur fuer diesen Skill
+  Tool (spez) Im Skill-Ordner     Nur für diesen Skill
 
 TOOL-DUPLIZIERUNG
 -----------------
@@ -74,15 +74,15 @@ REGEL: Im Zweifel doppelt halten!
   agents/_experts/steuer/steuer_ocr.py     # Skill-spezifische Version
 
 Vorteile:
-- Koennen unabhaengig weiterentwickelt werden
+- Können unabhängig weiterentwickelt werden
 - Skill bleibt autark
-- Keine Abhaengigkeitskonflikte
+- Keine Abhängigkeitskonflikte
 
 WICHTIG: tools/ liegt unter system/tools/ (NICHT unter skills/tools/)
 
 CONNECTORS (NEU 2026-02)
 ------------------------
-_connectors/ enthaelt Adapter fuer externe Dienste:
+_connectors/ enthält Adapter für externe Dienste:
 - telegram_connector.py - Telegram Bot API Integration
 - discord_connector.py - Discord Bot Integration
 - homeassistant_connector.py - Home Assistant Integration
@@ -120,9 +120,9 @@ Exportierte Skills muessen OHNE BACH funktionieren:
 
   bach --skills export <name>  # Erstellt autarkes Paket
 
-Export enthaelt:
+Export enthält:
 - SKILL.md mit Header
-- manifest.json (Abhaengigkeiten, Versionen)
+- manifest.json (Abhängigkeiten, Versionen)
 - Alle spezifischen Tools
 - Alle spezifischen Workflows
 - README.md (Standalone-Anleitung)
@@ -134,16 +134,16 @@ SKILL-QUELLEN & SICHERHEIT
   Klasse        Quellen                           Vorgehen
   -----------   -------------------------------   ----------------------
   Goldstandard  Selbst geschrieben                Beste Integration
-  Trusted       anthropics/skills, cookbooks      Nach Pruefung 1:1 OK
+  Trusted       anthropics/skills, cookbooks      Nach Prüfung 1:1 OK
   Untrusted     Andere GitHub-Repos               NUR neu schreiben
   Blacklist     data/skill_blacklist.json         VERBOTEN
 
-Pruefung: data/skill_sources.json
+Prüfung: data/skill_sources.json
 
 DB-SYNCHRONISATION
 ------------------
 Alle Skills werden bidirektional zwischen Dateisystem und DB abgeglichen:
-- Tabelle: skills (aktuell 876 Eintraege)
+- Tabelle: skills (aktuell 876 Einträge)
 - Felder: name, type, path, content_hash, is_active, version
 - Erweiterte Felder: category, priority, trigger_phrases, dist_type, template_content, content
 - Statistik: bach --skills list
@@ -152,7 +152,7 @@ CLI-BEFEHLE
 -----------
   bach skills list               Alle Skills auflisten
   bach skills show <name>        Inhalt und Metadaten
-  bach skills search <term>      Nach Funktionalitaet suchen
+  bach skills search <term>      Nach Funktionalität suchen
   bach skills version <name>     Versions-Check (lokal vs zentral)
   bach skills export <name>      Autarkes Paket erstellen (v2.0)
   bach skills install <path>     Skill aus ZIP/Verzeichnis importieren
@@ -162,10 +162,10 @@ CLI-BEFEHLE
 
 SELBSTERWEITERUNG (NEU v2.5)
 -----------------------------
-  bach skills create <name> --type <typ>   Neue Faehigkeit scaffolden
+  bach skills create <name> --type <typ>   Neue Fähigkeit scaffolden
   bach skills reload                        Hot-Reload ohne Neustart
 
-  Unterstuetzte Typen fuer 'create':
+  Unterstützte Typen für 'create':
 
     --type tool       Erstellt: system/tools/<name>.py
                        Python-Script mit Standard-Template
@@ -180,9 +180,9 @@ SELBSTERWEITERUNG (NEU v2.5)
                        Template mit Standard-Header
 
     --type handler    Erstellt: system/hub/<name>.py
-                       Sofort als CLI-Befehl verfuegbar!
+                       Sofort als CLI-Befehl verfügbar!
                        BaseHandler-Subklasse mit get_operations()
-                       Nach 'reload' ueber bach <name> erreichbar
+                       Nach 'reload' über bach <name> erreichbar
 
     --type service    Erstellt: system/skills/_services/<name>/
                        Ordner mit __init__.py und service.py
@@ -192,7 +192,7 @@ SELBSTERWEITERUNG (NEU v2.5)
     1. bach skills create mein-tool --type handler
     2. hub/mein_tool.py bearbeiten (Logik implementieren)
     3. bach skills reload
-    4. bach mein-tool help  (sofort verfuegbar!)
+    4. bach mein-tool help  (sofort verfügbar!)
 
   Hooks nach Create/Reload:
     after_skill_create → wird nach jedem 'create' emittiert
@@ -201,13 +201,13 @@ SELBSTERWEITERUNG (NEU v2.5)
 GUI (Skills Board)
 ------------------
 Das interaktive Skills Board zeigt die gesamte Hierarchie,
-den Sync-Status und ermoeglicht direktes Editieren.
+den Sync-Status und ermöglicht direktes Editieren.
 
   http://127.0.0.1:8000/skills
 
 SIEHE AUCH
 ----------
-  bach help agents             Agenten-Uebersicht
+  bach help agents             Agenten-Übersicht
   bach help tools              Tool-Verwaltung
   bach help workflow           Workflow-System
   bach help naming             Namenskonventionen

@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 CLOCK - Uhrzeit-Anzeige
 =======================
@@ -50,7 +50,7 @@ BEISPIELE
   # Uhrzeit alle 5 Minuten
   bach clock interval 300
 
-  # Status pruefen
+  # Status prüfen
   bach clock status
   -> Clock: AN | Intervall: 60s | Letzte: 14:35
 

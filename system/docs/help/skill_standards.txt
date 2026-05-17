@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-12 (Claude Opus 4.6)
-# Naechste Pruefung: 2026-09-12
+# Nächste Prüfung: 2026-09-12
 # Ressourcen: [skill_init.py, skills table]
 
 ANTHROPIC / AGENTSKILLS.IO SKILL-STANDARDS
@@ -9,12 +9,12 @@ ANTHROPIC / AGENTSKILLS.IO SKILL-STANDARDS
 
 Stand: 2026-03-12
 
-Anthropic und agentskills.io definieren einen offenen Standard fuer
+Anthropic und agentskills.io definieren einen offenen Standard für
 KI-Skills, der von Claude Code, Codex CLI, Cursor, ChatGPT und
-weiteren Plattformen unterstuetzt wird. Dieser Standard erlaubt es,
-Skills plattformuebergreifend zu verteilen und zu installieren.
+weiteren Plattformen unterstützt wird. Dieser Standard erlaubt es,
+Skills plattformübergreifend zu verteilen und zu installieren.
 
-BACH unterstuetzt diesen Standard nativ und kann bestehende Skills
+BACH unterstützt diesen Standard nativ und kann bestehende Skills
 in das Anthropic-kompatible Format exportieren.
 
 
@@ -24,7 +24,7 @@ Ein Anthropic-kompatibler Skill ist ein Ordner mit folgender Struktur:
 
   my-skill/
   +-- SKILL.md              # Hauptdefinition (Pflicht)
-  +-- scripts/              # Ausfuehrbare Skripte (optional)
+  +-- scripts/              # Ausführbare Skripte (optional)
   |   +-- setup.sh
   |   +-- run.py
   +-- references/           # Referenz-Dokumentation (optional)
@@ -44,7 +44,7 @@ Jede SKILL.md beginnt mit einem YAML-Frontmatter-Block:
   ---
   name: my-skill-name
   description: >
-    Kurze Beschreibung der Faehigkeit, die dieser Skill bereitstellt.
+    Kurze Beschreibung der Fähigkeit, die dieser Skill bereitstellt.
     Maximal 1024 Zeichen.
   license: MIT
   compatibility:
@@ -67,7 +67,7 @@ Pflichtfelder:
 Optionale Felder:
   license         Lizenz-Bezeichner (MIT, Apache-2.0, etc.)
   compatibility   Liste kompatibler Plattformen
-  metadata        Freies Key-Value fuer Autor, Version, Tags etc.
+  metadata        Freies Key-Value für Autor, Version, Tags etc.
   allowed-tools   Whitelist der Tools, die der Skill nutzen darf
 
 Nach dem Frontmatter folgt der eigentliche Skill-Body als Markdown.
@@ -84,16 +84,16 @@ effizient zu nutzen:
     ob der Skill relevant ist, ohne den Body zu lesen.
 
   Stufe 2 -- SKILL.md Body (< 5000 Tokens)
-    Der vollstaendige Instruktions-Text der SKILL.md.
+    Der vollständige Instruktions-Text der SKILL.md.
     Wird geladen, wenn der Skill aktiviert/installiert wird.
-    Enthaelt alle Regeln, Workflows und Anweisungen.
+    Enthält alle Regeln, Workflows und Anweisungen.
 
   Stufe 3 -- Bundled Resources (on demand)
     Dateien aus references/, scripts/ und assets/.
     Werden nur geladen, wenn der Skill sie explizit anfordert
-    oder das LLM sie fuer die aktuelle Aufgabe benoetigt.
+    oder das LLM sie für die aktuelle Aufgabe benötigt.
 
-Dieses Verfahren haelt den initialen Token-Verbrauch niedrig und
+Dieses Verfahren hält den initialen Token-Verbrauch niedrig und
 skaliert erst bei Bedarf.
 
 
@@ -101,7 +101,7 @@ REFERENCE-FILES BENENNUNG
 --------------------------
 Dateien im references/-Ordner folgen einer Namenskonvention:
 
-  core-*.md              Grundlegende Konzepte und Uebersicht
+  core-*.md              Grundlegende Konzepte und Übersicht
   features-*.md          Feature-Dokumentation und API-Referenz
   best-practices-*.md    Empfohlene Vorgehensweisen
   advanced-*.md          Fortgeschrittene Themen und Optimierung
@@ -116,7 +116,7 @@ Diese Konvention erlaubt es LLMs, gezielt nach der richtigen
 Detailtiefe zu suchen.
 
 
-BACH-UNTERSTUETZUNG
+BACH-UNTERSTÜTZUNG
 --------------------
 BACH kann Anthropic-kompatible Skills direkt scaffolden:
 
@@ -128,7 +128,7 @@ Dieser Befehl nutzt intern skill_init.py und erstellt:
 - references/ Ordner (leer)
 - assets/ Ordner (leer)
 
-Bestehende BACH-Skills koennen exportiert werden:
+Bestehende BACH-Skills können exportiert werden:
 
   bach skills export <name> --format anthropic
 
@@ -146,7 +146,7 @@ VERGLEICH: BACH-INTERN VS ANTHROPIC-KOMPATIBEL
   Name-Feld           name (frei)              name (kebab-case, 64Z)
   Typ-Feld            type (Pflicht)           -- (nicht vorhanden)
   Version             version (Pflicht)        metadata.version (opt.)
-  Abhaengigkeiten     dependencies (Pflicht)   -- (nicht formalisiert)
+  Abhängigkeiten     dependencies (Pflicht)   -- (nicht formalisiert)
   Tools               Im Skill-Ordner          scripts/
   Doku                Im Skill-Ordner          references/
   Statische Dateien   data/ oder assets/       assets/
@@ -155,9 +155,9 @@ VERGLEICH: BACH-INTERN VS ANTHROPIC-KOMPATIBEL
   Export              bach skills export        Natives Format
 
 BACH-interne Skills haben mehr Metadaten (type, dependencies,
-trigger_phrases), die beim Export in metadata-Felder uebertragen
+trigger_phrases), die beim Export in metadata-Felder übertragen
 werden. Anthropic-kompatible Skills sind schlanker, aber weniger
-ausdruecklich.
+ausdrücklich.
 
 
 SKILLS VS. AGENTS (ANTHROPIC)
@@ -170,21 +170,21 @@ Im Anthropic-Oekosystem sind Skills und Agents zwei separate Konzepte:
 
   Agent:  Proprietaer (nur Claude Code / Agent SDK)
           Definiert in: .claude/agents/<name>.md
-          Zweck: Isolierte Ausfuehrung, eigenes Context Window
+          Zweck: Isolierte Ausführung, eigenes Context Window
 
-Agents werden NICHT im Skill-Ordner definiert. Sie koennen aber
+Agents werden NICHT im Skill-Ordner definiert. Sie können aber
 zusammenarbeiten:
 
-  - Skill kann Agent ausloesen:  context: fork + agent: <name>
+  - Skill kann Agent auslösen:  context: fork + agent: <name>
   - Agent kann Skills vorladen:  skills: [my-skill]
 
-Fuer LobeHub/Marketplace ist nur der Skill-Export relevant (offen,
+Für LobeHub/Marketplace ist nur der Skill-Export relevant (offen,
 portierbar). Claude Code Agents sind optional und nicht portierbar.
 
 Beim Export von BACH-Agenten:
   - Sub-Agent-Definitionen -> references/
   - Orchestrierungs-Code -> scripts/
-  - Optional: .claude/agents/<name>.md fuer Claude Code Nutzer
+  - Optional: .claude/agents/<name>.md für Claude Code Nutzer
 
 
 SIEHE AUCH

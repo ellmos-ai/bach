@@ -1,15 +1,15 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-08 (Help-Forensik)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 ANTIGRAVITY - SCHNELLREFERENZ
 =============================
 
 Google Antigravity ist eine Agent-first Development Platform.
-Ausfuehrliche Dokumentation: wiki/antigravity.txt
+Ausführliche Dokumentation: wiki/antigravity.txt
 
-KURZUEBERSICHT
+KURZÜBERSICHT
 --------------
   Was:        VS Code Fork mit autonomen KI-Agenten
   Download:   https://antigravity.google/download
@@ -17,10 +17,10 @@ KURZUEBERSICHT
 
 CLI-BEFEHLE
 -----------
-  antigravity [pfad]              Editor oeffnen
+  antigravity [pfad]              Editor öffnen
   antigravity chat "Prompt"       Chat starten (GUI!)
   antigravity chat -m agent       Agent-Modus
-  antigravity --add-mcp {...}     MCP-Server hinzufuegen
+  antigravity --add-mcp {...}     MCP-Server hinzufügen
 
 TASTENKUERZEL
 -------------
@@ -50,6 +50,6 @@ BACH-INTEGRATION
 
 SIEHE AUCH
 ----------
-  wiki/antigravity.txt   Vollstaendige Dokumentation
+  wiki/antigravity.txt   Vollständige Dokumentation
   wiki/gemini.txt        Gemini KI-Modelle
   docs/help/partners.txt           KI-Partner System

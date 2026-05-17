@@ -5,11 +5,11 @@ Quelle: tools/tool_scanner.py
 
 BESCHREIBUNG
 ----------------------------------------
-tool_scanner.py - Scannt System nach verfuegbaren CLI-Tools
+tool_scanner.py - Scannt System nach verfügbaren CLI-Tools
 ===========================================================
 
 Findet installierte Tools und vergleicht mit registrierten Tools.
-Nuetzlich fuer Tool-Discovery und System-Inventar.
+Nützlich für Tool-Discovery und System-Inventar.
 
 Usage:
     python tool_scanner.py scan           # System scannen

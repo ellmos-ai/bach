@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -10,13 +10,13 @@ BESCHREIBUNG
 ============
 Echtzeit-Dokumentationssuche mit FTS5 (Full-Text Search). Ersetzt Context7 MCP.
 Durchsucht docs/, wiki/, docs/help/ und gecachte Web-Dokumentationen.
-Nutzt SQLite-Indexierung fuer schnelle Abfragen; Fallback auf LIKE-Suche.
+Nutzt SQLite-Indexierung für schnelle Abfragen; Fallback auf LIKE-Suche.
 
 OPERATIONEN
 ===========
 
 search <query>
-  Volltextsuche ueber alle indexierten Dokumente.
+  Volltextsuche über alle indexierten Dokumente.
   Limit: 20 Treffer (FTS5 Ranking).
   Fallback: LIKE-Suche bei fehlender FTS5.
   Bei leeren Ergebnissen: Direkte Dateisuche in docs/, wiki/, docs/help/.
@@ -24,7 +24,7 @@ search <query>
 index
   Baut Suchindex neu auf oder aktualisiert ihn.
   Verarbeitet: .md, .txt, .rst, .py Dateien.
-  Prueft via MD5-Checksum ob Update noetig ist.
+  Prüft via MD5-Checksum ob Update nötig ist.
   Extrahiert Titel aus erster Zeile (ohne #).
   Schreibt: document_index, document_fts.
 
@@ -34,7 +34,7 @@ lookup <library> <topic>
   Nutzt 'library' und 'doc_type' Spalten.
 
 fetch <url>
-  Laedt Dokumentationsseite herunter, konvertiert HTML zu Markdown,
+  Lädt Dokumentationsseite herunter, konvertiert HTML zu Markdown,
   cached in data/cache/docs/ (MD5-Hash als Dateiname).
   Nutzt html2text (optimal) oder Regex-Fallback.
   Registriert URL mit Library-Name in document_index.
@@ -67,7 +67,7 @@ DATEIEN
 data/bach.db
   SQLite-Datenbank mit Tabellen:
   - document_index: Metadaten + Inhalt aller Dokumente
-  - document_fts: FTS5 Virtual Table fuer Volltextsuche
+  - document_fts: FTS5 Virtual Table für Volltextsuche
 
 data/cache/docs/
   Gecachte Web-Dokumentationen (MD5-Hash.md)
@@ -76,8 +76,8 @@ data/cache/docs/
 docs/
 wiki/
 docs/help/
-  Quell-Verzeichnisse fuer lokale Doku.
-  Durchsucht recursiv waehrend index-Operation.
+  Quell-Verzeichnisse für lokale Doku.
+  Durchsucht recursiv während index-Operation.
 
 SIEHE AUCH
 ==========

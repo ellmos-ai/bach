@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-13 (Claude Opus 4.6)
-# Naechste Pruefung: 2026-08-13
+# Nächste Prüfung: 2026-08-13
 
 BACH SELF-EXTENSION (Selbsterweiterung)
 =======================================
@@ -9,17 +9,17 @@ BACH SELF-EXTENSION (Selbsterweiterung)
 Stand: 2026-02-13
 
 BACH ist ein sich selbst erweiterndes System. AI-Partner sollen
-BACH aktiv verbessern, neue Faehigkeiten erstellen und das System
+BACH aktiv verbessern, neue Fähigkeiten erstellen und das System
 an neue Anforderungen anpassen.
 
 KERNPRINZIP: BACH NUTZEN = BACH ERWEITERN
 ------------------------------------------
 Jeder Zugriff ist eine Gelegenheit das System zu verbessern.
-Fehlende Faehigkeiten werden NICHT gemeldet, sondern ERSTELLT.
+Fehlende Fähigkeiten werden NICHT gemeldet, sondern ERSTELLT.
 
 SELF-EXTENSION LOOP
 --------------------
-  1. ERKENNEN  → Fehlende Faehigkeit identifizieren
+  1. ERKENNEN  → Fehlende Fähigkeit identifizieren
   2. ERSTELLEN → Neuen Skill/Tool/Handler scaffolden
   3. REGISTRIEREN → Hot-Reload, Registry aktualisieren
   4. NUTZEN    → Sofort verwenden
@@ -27,7 +27,7 @@ SELF-EXTENSION LOOP
 
 NEUE FAEHIGKEITEN ERSTELLEN
 -----------------------------
-Mit `bach skills create` werden 5 Komponenten-Typen unterstuetzt:
+Mit `bach skills create` werden 5 Komponenten-Typen unterstützt:
 
   bach skills create voice-processor --type tool
     → Erstellt: system/tools/voice_processor.py
@@ -46,7 +46,7 @@ Mit `bach skills create` werden 5 Komponenten-Typen unterstuetzt:
 
   bach skills create api-gateway --type handler
     → Erstellt: system/hub/api_gateway.py
-    → Sofort als CLI-Befehl verfuegbar (bach api-gateway ...)
+    → Sofort als CLI-Befehl verfügbar (bach api-gateway ...)
     → BaseHandler-Subklasse mit get_operations()
 
   bach skills create data-sync --type service
@@ -58,9 +58,9 @@ NACH DER ERSTELLUNG: HOT-RELOAD
 ---------------------------------
   bach skills reload
     → Registry neu laden (neue Handler erkennen)
-    → Tool-Discovery ausfuehren
+    → Tool-Discovery ausführen
     → Skills-DB synchronisieren
-    → KEIN Neustart noetig!
+    → KEIN Neustart nötig!
 
 ODER per API:
   from bach_api import app
@@ -70,22 +70,22 @@ ODER per API:
 
 HOOK-INTEGRATION
 -----------------
-Neue Faehigkeiten koennen sich in das Hook-System einhaengen:
+Neue Fähigkeiten können sich in das Hook-System einhaengen:
 
   from core.hooks import hooks
 
-  # Eigene Logik bei System-Events ausfuehren
+  # Eigene Logik bei System-Events ausführen
   hooks.on('after_task_create', meine_logik, name='mein_plugin')
   hooks.on('after_startup', startup_check, name='mein_plugin')
 
-  Verfuegbare Events: bach hooks events
+  Verfügbare Events: bach hooks events
 
 BEISPIEL: KOMPLETTER SELF-EXTENSION WORKFLOW
 ----------------------------------------------
 
   Schritt 1: Bedarf erkennen
   -------------------------
-  "Ich brauche einen Handler fuer Zeiterfassung"
+  "Ich brauche einen Handler für Zeiterfassung"
 
   Schritt 2: Scaffolden
   ----------------------
@@ -94,8 +94,8 @@ BEISPIEL: KOMPLETTER SELF-EXTENSION WORKFLOW
   Schritt 3: Implementieren
   --------------------------
   → hub/zeiterfassung.py bearbeiten
-  → Operations hinzufuegen (start, stop, list, report)
-  → DB-Tabelle in db/schema.sql ergaenzen wenn noetig
+  → Operations hinzufügen (start, stop, list, report)
+  → DB-Tabelle in db/schema.sql ergänzen wenn nötig
 
   Schritt 4: Hot-Reload
   ----------------------
@@ -131,13 +131,13 @@ WAS KANN ERWEITERT WERDEN?
   Help-Dateien     Textdatei in docs/help/ erstellen       docs/help/<topic>.txt
   Aliases          Kurzform in aliases.py             core/aliases.py
 
-REGELN FUER SELBSTERWEITERUNG
+REGELN FÜR SELBSTERWEITERUNG
 -------------------------------
   1. Handler First: Jede Funktion als Handler in hub/
   2. Self-Healing: Fehler sofort korrigieren
   3. Fix-or-Task: Klein = sofort fixen, gross = Task erstellen
   4. Lesson Learned: Nach jeder Erweiterung dokumentieren
-  5. Hot-Reload: Immer `bach skills reload` nach Aenderungen
+  5. Hot-Reload: Immer `bach skills reload` nach Änderungen
   6. Testen: Neue Handler mit `bach <name> help` validieren
 
 SIEHE AUCH

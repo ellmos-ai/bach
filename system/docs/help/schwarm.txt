@@ -1,7 +1,7 @@
-# Portabilitaet: SYSTEM
+# Portabilität: SYSTEM
 # Version: 3.0.0
 # Zuletzt validiert: 2026-05-17
-# Naechste Pruefung: 2026-11-17
+# Nächste Prüfung: 2026-11-17
 # Ressourcen: [hub/schwarm.py, tools/schwarm/, skills/workflows/schwarm-operationen.md]
 
 SWARM - Parallele LLM-Operationen und Schwarm-Intelligenz
@@ -10,7 +10,7 @@ SWARM - Parallele LLM-Operationen und Schwarm-Intelligenz
 STAND: 2026-05-17 (v3.11.1)
 CLI: bach swarm (alias: bach schwarm)
 
-Das Swarm-System ermoeglicht parallele LLM-Ausfuehrung mit verschiedenen
+Das Swarm-System ermöglicht parallele LLM-Ausführung mit verschiedenen
 Koordinationsmustern. Mehrere LLM-Instanzen arbeiten gleichzeitig an
 Teilaufgaben und werden automatisch koordiniert.
 
@@ -20,14 +20,14 @@ SWARM PATTERNS
 --------------
 
 1. PARALLEL-CHUNKS [AKTIV]
-   Aufgabe wird in Chunks aufgeteilt, parallel verarbeitet, zusammengefuegt.
-   Einsatz: Uebersetzung, Code-Review, Dokumentation.
+   Aufgabe wird in Chunks aufgeteilt, parallel verarbeitet, zusammengefügt.
+   Einsatz: Übersetzung, Code-Review, Dokumentation.
    Koordination: Zentral (Chunker + Aggregator)
    Skalierung: Hoch (linear mit Worker-Anzahl)
 
 2. HIERARCHY (Boss + Worker) [AKTIV]
    Ein Coordinator verteilt Aufgaben an Worker, ein Aggregator fasst zusammen.
-   Einsatz: Komplexe Projekte mit Abhaengigkeiten.
+   Einsatz: Komplexe Projekte mit Abhängigkeiten.
    Koordination: Zentral (Boss-Worker-Pattern)
    Skalierung: Mittel (durch Boss begrenzt)
 
@@ -35,19 +35,19 @@ SWARM PATTERNS
    Agenten hinterlassen Spuren (Pheromone) in SharedMemory.
    Andere Agenten folgen starken Pfaden.
    Einsatz: Exploration, Optimierung, dezentrale Koordination.
-   Koordination: Dezentral (indirekt ueber Umgebung)
+   Koordination: Dezentral (indirekt über Umgebung)
    Skalierung: Hoch (emergent)
 
 4. CONSENSUS (Mehrheitsentscheid) [AKTIV]
-   Mehrere LLMs beantworten dieselbe Frage unabhaengig.
+   Mehrere LLMs beantworten dieselbe Frage unabhängig.
    Konsens wird durch Similarity-Scoring oder Majority-Vote ermittelt.
-   Einsatz: Kritische Entscheidungen, Qualitaetssicherung.
+   Einsatz: Kritische Entscheidungen, Qualitätssicherung.
    Koordination: Zentral (Voter + Evaluator)
    Skalierung: Niedrig (O(n) Kosten pro Frage)
 
    Methoden:
-     similarity  Paarweise Textaehnlichkeit, hoechster Avg-Score gewinnt
-     majority    Antworten gruppieren, groesste Gruppe gewinnt
+     similarity  Paarweise Textähnlichkeit, höchster Avg-Score gewinnt
+     majority    Antworten gruppieren, größte Gruppe gewinnt
 
 5. SPECIALIST (Boss-Routing) [AKTIV]
    Bereits in BACH integriert (11 Boss-Agenten).
@@ -57,20 +57,20 @@ CLI-BEFEHLE
 -----------
 
   bach swarm list
-      Verfuegbare Schwarm-Muster mit Status anzeigen.
+      Verfügbare Schwarm-Muster mit Status anzeigen.
 
   bach swarm run <muster> <aufgabe>
-      Schwarm-Muster ausfuehren.
+      Schwarm-Muster ausführen.
       Beispiel: bach swarm run consensus "Was ist der beste Python-Linter?"
 
   bach swarm translate [optionen]
-      Parallel-Chunks-Uebersetzung (DE->EN) fuer BACH-Texte.
+      Parallel-Chunks-Übersetzung (DE->EN) für BACH-Texte.
 
       Optionen:
-        --namespace <ns>    Nur einen Namespace uebersetzen
+        --namespace <ns>    Nur einen Namespace übersetzen
         --workers N         Parallele Worker (default: 8)
         --chunk-size N      Texte pro API-Call (default: 10)
-        --limit N           Max. Texte uebersetzen
+        --limit N           Max. Texte übersetzen
         --inventory         Nur Status anzeigen
         --dry-run           Simulation ohne API-Aufrufe
 
@@ -89,7 +89,7 @@ CLI-BEFEHLE
         --compare           Beide Modi vergleichen
         --parallel          Nur paralleler Modus
         --sequential        Nur sequentieller Modus
-        --run               Benchmark tatsaechlich ausfuehren
+        --run               Benchmark tatsaechlich ausführen
         --workers N         Parallele Worker (default: 3)
         --category CAT      software_dev, research, wiki
         --model MODEL       LLM-Modell (default: haiku)
@@ -114,8 +114,8 @@ Jeder Schwarm-Run wird in der DB protokolliert (Tabelle: schwarm_runs).
 Erfasst werden: Muster, Aufgabe, Tokens (in/out), Kosten (USD),
 Worker-Anzahl, Dauer, Status. Abrufbar via: bach swarm status
 
-Kosten-Schaetzung (pro 1M Tokens):
-  Haiku:   $1.00 Input / $5.00 Output   (guenstig, fuer Bulk)
+Kosten-Schätzung (pro 1M Tokens):
+  Haiku:   $1.00 Input / $5.00 Output   (guenstig, für Bulk)
   Sonnet:  $3.00 Input / $15.00 Output   (Standard)
   Opus:    $15.00 Input / $75.00 Output   (Premium)
 
@@ -137,7 +137,7 @@ DATEIEN
   system/tools/schwarm/              Tool-Sammlung
     __init__.py                      Paket-Init
     runner.py                        Claude CLI Wrapper + Kosten-Tracking
-    translate_swarm.py               Parallel-Chunks-Uebersetzung (SQ062)
+    translate_swarm.py               Parallel-Chunks-Übersetzung (SQ062)
     summarize_chunks.py              Chunk-Zusammenfassungen (SQ047)
     benchmark.py                     Performance-Benchmark
     consensus.py                     Konsensus-Muster
@@ -145,10 +145,10 @@ DATEIEN
 BEISPIELE
 ---------
 
-  # Fehlende Uebersetzungen pruefen
+  # Fehlende Übersetzungen prüfen
   bach swarm translate --inventory
 
-  # Uebersetzung starten (8 Worker, 10er Chunks)
+  # Übersetzung starten (8 Worker, 10er Chunks)
   bach swarm translate --workers 8 --chunk-size 10
 
   # 5 Voter fragen, Konsens via Majority ermitteln

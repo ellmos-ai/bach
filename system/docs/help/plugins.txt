@@ -1,15 +1,15 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 2.1.0
 # Zuletzt validiert: 2026-05-06 (Codex)
-# Naechste Pruefung: 2026-11-06
+# Nächste Prüfung: 2026-11-06
 
 BACH PLUGIN-API
 ===============
 
 Stand: 2026-05-06
 
-Die Plugin-API ermoeglicht dynamische Erweiterung von BACH zur Laufzeit.
-Plugins koennen Tools, Hooks, Workflows und Handler registrieren --
+Die Plugin-API ermöglicht dynamische Erweiterung von BACH zur Laufzeit.
+Plugins können Tools, Hooks, Workflows und Handler registrieren --
 imperativ (via Code) oder deklarativ (via `plugin.json`).
 
 CLI-BEFEHLE
@@ -22,8 +22,8 @@ CLI-BEFEHLE
   bach plugins info <name>       Details zu einem Plugin
   bach plugins create <name>     Plugin-Manifest erstellen (Scaffolding)
   bach plugins caps              Capability-Profile anzeigen
-  bach plugins trust <name> <l>  Trust-Level eines Plugins aendern
-  bach plugins audit [limit]     Letzte Capability-Pruefungen anzeigen
+  bach plugins trust <name> <l>  Trust-Level eines Plugins ändern
+  bach plugins audit [limit]     Letzte Capability-Prüfungen anzeigen
 
   Kurzform:
   bach plugin list               (Alias: plugin -> plugins)
@@ -63,7 +63,7 @@ API-NUTZUNG (Imperativ)
 
 PLUGIN-MANIFEST (Deklarativ)
 ----------------------------
-Erstelle ein `plugin.json` fuer automatisches Laden:
+Erstelle ein `plugin.json` für automatisches Laden:
 
   bach plugins create mein-plugin
 
@@ -123,14 +123,14 @@ PLUGIN-LIFECYCLE
 ----------------
   1. Erstellen:  bach plugins create <name>
   2. Entwickeln: plugin.json + handlers.py bearbeiten
-  3. Pruefen:    bach plugins inspect <pfad/plugin.json>
+  3. Prüfen:    bach plugins inspect <pfad/plugin.json>
   4. Laden:      bach plugins load <pfad/plugin.json>
   5. Nutzen:     Hooks feuern, Tools aufrufen, CLI-Befehle nutzen
   6. Entladen:   bach plugins unload <name>
 
 CAPABILITY-SYSTEM (Stufe 1 Sandbox)
 -----------------------------------
-Plugins deklarieren benoetigte Faehigkeiten. BACH prueft und
+Plugins deklarieren benötigte Fähigkeiten. BACH prüft und
 durchsetzt basierend auf dem Trust-Level der Quelle.
 
   Definierte Capabilities:
@@ -144,27 +144,27 @@ durchsetzt basierend auf dem Trust-Level der Quelle.
     handler_register Neue CLI-Handler registrieren
     workflow_create  Workflows erstellen
     network          Netzwerk-Zugriff (HTTP/API)
-    shell            Shell-Befehle ausfuehren
-    desktop          Desktop-/GUI-Automation ausfuehren
+    shell            Shell-Befehle ausführen
+    desktop          Desktop-/GUI-Automation ausführen
     mcp              MCP-Server konfigurieren oder anbinden
 
-  Trust-Profile (verknuepft mit `data/skill_sources.json`):
+  Trust-Profile (verknüpft mit `data/skill_sources.json`):
     goldstandard     trust=100  Alle Capabilities
     trusted          trust=80   Alles ausser shell + desktop + mcp + network
     untrusted        trust=20   Nur db_read, file_read, hook_listen
     blacklist        trust=0    Nichts erlaubt
 
   Enforcement:
-    - register_tool()     prueft `tool_register`
-    - register_hook()     prueft `hook_listen`
-    - register_handler()  prueft `handler_register`
-    - register_workflow() prueft `workflow_create`
-    - load_plugin()       prueft alle angeforderten Capabilities
-    - inspect/load prueft Setup-Guards fail-closed fuer shell/desktop/mcp
+    - register_tool()     prüft `tool_register`
+    - register_hook()     prüft `hook_listen`
+    - register_handler()  prüft `handler_register`
+    - register_workflow() prüft `workflow_create`
+    - load_plugin()       prüft alle angeforderten Capabilities
+    - inspect/load prüft Setup-Guards fail-closed für shell/desktop/mcp
 
 SETUP-GUARDS (SEC-PLUGIN-003)
 -----------------------------
-Starker Zugriff ueber Setup-Metadaten wird vor dem Runtime-Import blockiert,
+Starker Zugriff über Setup-Metadaten wird vor dem Runtime-Import blockiert,
 wenn Voraussetzungen nicht explizit und fail-closed beschrieben sind.
 
   Gefaehrliche Oberflaechen:
@@ -174,7 +174,7 @@ wenn Voraussetzungen nicht explizit und fail-closed beschrieben sind.
     - `setup.fail_closed = true`
     - `setup.checks = [...]` mit passenden Guard-Checks
 
-  Unterstuetzte Check-Typen:
+  Unterstützte Check-Typen:
     command_exists
     env_present
     path_exists
@@ -204,9 +204,9 @@ SICHERHEIT
   - Capability-Enforcement in allen `register_*()` Methoden
   - Trust-Level aus `skill_sources.json` (4-Stufen-System)
   - Manifest-first Inspection: Aktivierung, Provider, Modelle, Setup ohne Runtime-Import
-  - Fail-closed Setup-Guards fuer Shell/Desktop/MCP vor Plugin-Load
+  - Fail-closed Setup-Guards für Shell/Desktop/MCP vor Plugin-Load
   - Statische Code-Analyse: eval, exec, subprocess, os.system
-  - Audit-Log fuer Nachvollziehbarkeit
+  - Audit-Log für Nachvollziehbarkeit
   - Fehlerhafte Hooks werden gefangen, brechen nichts ab
   - Plugin-Entladen entfernt alle Registrierungen sauber
   - Audit via: `bach plugins audit`, `bach plugins info <name>`

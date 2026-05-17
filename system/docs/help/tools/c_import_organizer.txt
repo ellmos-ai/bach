@@ -23,7 +23,7 @@ Usage:
     python c_import_organizer.py --stdin < code.py
 
 Autor: Claude (adaptiert)
-Abhaengigkeiten: keine (nur stdlib)
+Abhängigkeiten: keine (nur stdlib)
 
 VERWENDUNG
 ----------------------------------------

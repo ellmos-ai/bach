@@ -8,11 +8,11 @@ BESCHREIBUNG
 ----------------------------------------
 BACH Audit Bundler v1.0
 =======================
-Erstellt Audit-Pakete fuer externe Reviews.
+Erstellt Audit-Pakete für externe Reviews.
 
 Zwei Bundles:
 1. KONZEPT-Bundle (zuerst): Dokumentation, Konzepte, Ideen
-2. IMPLEMENTATION-Bundle (spaeter): Code, DB-Schemas, Scripts
+2. IMPLEMENTATION-Bundle (später): Code, DB-Schemas, Scripts
 
 Usage:
     python c_audit_bundler.py --konzept      # Bundle 1: Konzepte
@@ -29,4 +29,4 @@ HINWEISE
 ----------------------------------------
 - Automatisch generiert aus Docstring
 - Bei Fragen: bach tools show c_audit_bundler
-- Hinweis: Datei wurde von audit_bundler.py zu c_audit_bundler.py umbenannt (c_ Prefix fuer Coding-Kategorie)
+- Hinweis: Datei wurde von audit_bundler.py zu c_audit_bundler.py umbenannt (c_ Prefix für Coding-Kategorie)

@@ -1,11 +1,11 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 2.0.0
 # Zuletzt validiert: 2026-02-08 (Help-Forensik Fix)
-# Naechste Pruefung: 2026-08-08
+# Nächste Prüfung: 2026-08-08
 
 ATI - Advanced Tool Integration Agent
 
-ATI (Agent fuer Technische Implementierung) ist der Tool-Integrations-Agent
+ATI (Agent für Technische Implementierung) ist der Tool-Integrations-Agent
 von BACH. ATI = BATCHI - BACH (das Delta, was BACH noch fehlt).
 Er bietet Daemon-Steuerung, Session-Management, Task-Verwaltung, Scanner,
 Projekt-Bootstrapping, Code-Analyse und Build-Automatisierung.
@@ -17,15 +17,15 @@ bach ati status                   ATI-Status und Daemon-Info anzeigen
 bach ati start                    Headless Session-Daemon starten
 bach ati stop                     Session-Daemon stoppen
 bach ati session                  Manuelle Session starten
-bach ati session --dry-run        Session-Trockenlauf (keine Aenderungen)
+bach ati session --dry-run        Session-Trockenlauf (keine Änderungen)
 
 BEFEHLE - TASK MANAGEMENT
 =========================
 
 bach ati task list                ATI-Tasks anzeigen
-bach ati task add "TITEL"         Neuen ATI-Task hinzufuegen
+bach ati task add "TITEL"         Neuen ATI-Task hinzufügen
 bach ati task done ID             Task als erledigt markieren
-bach ati task depends ID DEP      Abhaengigkeit zwischen Tasks setzen
+bach ati task depends ID DEP      Abhängigkeit zwischen Tasks setzen
 bach ati task blocked             Blockierte Tasks anzeigen
 bach ati check                    Between-Task-Checkliste anzeigen
 bach ati problems                 Problems First - Fehler priorisiert anzeigen
@@ -64,12 +64,12 @@ BEFEHLE - PROJEKT-MIGRATION
 
 bach ati migrate PATH --analyze           Bestehendes Projekt analysieren
 bach ati migrate PATH --template TYPE     Projekt auf Template migrieren
-bach ati migrate my-project --dry-run     Trockenlauf (keine Aenderungen)
+bach ati migrate my-project --dry-run     Trockenlauf (keine Änderungen)
 
 BEFEHLE - MODULE
 ================
 
-bach ati modules list             Verfuegbare Module auflisten
+bach ati modules list             Verfügbare Module auflisten
 
 TEMPLATES
 =========
@@ -77,7 +77,7 @@ TEMPLATES
 python-cli     Python CLI-Anwendung mit setuptools/pyproject.toml
                Struktur: src/, tests/, docs/, _modules/, _policies/
 
-llm-skill      LLM Skill fuer BACH/Claude
+llm-skill      LLM Skill für BACH/Claude
                Struktur: SKILL.md, _config/, _data/, _docs/
 
 llm-agent      LLM Agent
@@ -103,7 +103,7 @@ _policies/
 BEISPIELE
 =========
 
-# Daemon starten und Status pruefen
+# Daemon starten und Status prüfen
 bach ati start
 bach ati status
 
@@ -136,13 +136,13 @@ MIGRATION-WORKFLOW
               Zeigt: Compliance-Score, fehlende Verzeichnisse, Probleme
 
 2. Dry-Run:   bach ati migrate PATH --template TYPE --dry-run
-              Zeigt was passieren wuerde ohne Aenderungen
+              Zeigt was passieren würde ohne Änderungen
 
 3. Migration: bach ati migrate PATH --template TYPE
-              Fuehrt Migration aus (erstellt Backup automatisch)
+              Führt Migration aus (erstellt Backup automatisch)
 
 4. Verify:    bach ati migrate PATH --analyze
-              Prueft neuen Compliance-Score
+              Prüft neuen Compliance-Score
 
 HINWEISE
 ========
@@ -162,7 +162,7 @@ HINWEISE
 VERWANDT
 ========
 
-bach --help builder        Build-Skill fuer Projekte
+bach --help builder        Build-Skill für Projekte
 bach --help distribution   Distribution-System
 bach --help coding         Coding-Konventionen
 bach --help maintain       Wartungs-Tools (Pfadheilung)

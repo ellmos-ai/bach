@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-05-10
 
@@ -8,7 +8,7 @@ CLUTCH - Agentische Fahrassistenz (clutch-bridge)
 BESCHREIBUNG
 ------------
 Clutch ist BACHs Bridge zu clutch-bridge, einem agentischen Fahrassistenz-Modul.
-Es analysiert Fahraufgaben, zeigt Metriken und ueberwacht den Systemzustand.
+Es analysiert Fahraufgaben, zeigt Metriken und überwacht den Systemzustand.
 
 Hinweis: Erfordert das clutch-bridge Paket. Ohne dieses Paket sind alle
 Operationen deaktiviert.
@@ -19,7 +19,7 @@ OPERATIONEN
   bach clutch status          Gesamtstatus aller clutch-bridge Komponenten
   bach clutch analyse         Task analysieren (StreckenAnalyse + Gas/Bremse)
   bach clutch metriken        Fahrtenbuch-Metriken anzeigen
-  bach clutch fitness         Fahrschule Fitness-Uebersicht
+  bach clutch fitness         Fahrschule Fitness-Übersicht
   bach clutch health          Bordcomputer Health-Status
 
 

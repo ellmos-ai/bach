@@ -1,4 +1,4 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-03-04
 
@@ -10,14 +10,14 @@ dist - Distribution System Handler (dist_type-basiert)
 BESCHREIBUNG
 ============
 Verwaltet Snapshots, Releases und Distribution-Pakete des BACH Systems.
-Staendige Sicherung via dist_type-Klassifizierung (CORE=2, TMPL=1, USER=0).
-Unterstuetzt Versionierung, Siegel-Integritaet und Portabilitaet.
+Ständige Sicherung via dist_type-Klassifizierung (CORE=2, TMPL=1, USER=0).
+Unterstützt Versionierung, Siegel-Integrität und Portabilität.
 
 
 OPERATIONEN
 ===========
 status           System-Status (Siegel, dist_type Statistiken)
-verify           Siegel-Integritaet pruefen
+verify           Siegel-Integrität prüfen
 classify         dist_type Verteilung anzeigen (CORE/TMPL/USER)
 snapshot         Snapshot erstellen (manuell oder automatisch)
 release          Release mit Versionsnummer erstellen
@@ -30,7 +30,7 @@ BEISPIELE
 =========
 Basis-Befehle:
   bach --dist status                  -> System-Status mit Siegel & Statistiken
-  bach --dist verify                  -> Siegel-Integritaet pruefen
+  bach --dist verify                  -> Siegel-Integrität prüfen
   bach --dist classify                -> dist_type Verteilung (Tabelle pro Tabelle)
 
 Snapshots:
@@ -44,12 +44,12 @@ Releases:
   bach --dist list releases           -> Letzte 20 Releases anzeigen
 
 Distribution (Wiederherstellen & Installieren):
-  bach --dist restore --list          -> Verfuegbare ZIPs im dist/ zeigen
+  bach --dist restore --list          -> Verfügbare ZIPs im dist/ zeigen
   bach --dist restore NAME.zip        -> Aus dist/NAME.zip wiederherstellen
   bach --dist restore NAME.zip --no-backup  -> Ohne Backup-Snapshot
   bach --dist restore NAME.zip --target /x  -> In anderes Verz. extrahieren
   bach --dist install NAME.zip D:\\Path  -> In neuem Ordner installieren
-  bach --dist install --list          -> Verfuegbare ZIPs anzeigen
+  bach --dist install --list          -> Verfügbare ZIPs anzeigen
 
 
 DATEIEN

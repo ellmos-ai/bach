@@ -1,7 +1,7 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.0.0
 # Zuletzt validiert: 2026-02-17 (Claude Opus 4.6)
-# Naechste Pruefung: 2026-08-17
+# Nächste Prüfung: 2026-08-17
 # Ressourcen: [cli.js (gebundelt), github.com/anthropics/claude-code]
 
 CLAUDE CODE INJEKTIONS-SYSTEM -- ANATOMIE
@@ -11,7 +11,7 @@ Stand: 2026-02-17
 Quelle: Reverse-Engineering aus cli.js v2.1.44 (minifiziert)
 Methode: Regex-Analyse + systematische Prompt-Tests
 
-UEBERBLICK
+ÜBERBLICK
 ----------
 Claude Code injiziert sogenannte "System-Reminders" in den Nachrichtenstrom
 zwischen User und LLM. Das LLM (Claude) sieht diese als Teil der Konversation,
@@ -19,7 +19,7 @@ kann aber nicht unterscheiden ob sie vom User oder vom System stammen --
 ausser am <system-reminder> XML-Tag.
 
 Anders als BACHs Injektor-System (siehe: injectors.txt) hat der User bei
-Claude Code KEINE direkte Kontrolle ueber die Injektionen. Das LLM kann
+Claude Code KEINE direkte Kontrolle über die Injektionen. Das LLM kann
 sie weder an- noch abschalten.
 
 ARCHITEKTUR
@@ -58,7 +58,7 @@ KERN-FUNKTIONEN (deobfusciert)
     Einfachste Funktion im System.
 
   s5(messages)
-    Iteriert ueber Message-Array und wendet Px() auf alle
+    Iteriert über Message-Array und wendet Px() auf alle
     Text-Inhalte an. Bulk-Operation.
 
 ALLE 52 INJEKTIONS-TYPEN
@@ -76,7 +76,7 @@ Datei-Operationen (12):
   directory               Verzeichnis-Listing (via ls)
   compact_file_reference  Kompakte Datei-Referenz
   selected_lines_in_ide   User hat Zeilen in IDE selektiert
-  opened_file_in_ide      User hat Datei in IDE geoeffnet
+  opened_file_in_ide      User hat Datei in IDE geöffnet
 
 Memory/Kontext (4):
   nested_memory           Inhalt von Memory-Unterfiles
@@ -90,12 +90,12 @@ Task/Todo-Management (5):
   task_progress           Task-Fortschrittsmeldung (generisch)
   task_status             Task-Status: killed/stopped + Details
   todo                    Todo-Eintrag
-  todo_reminder           Todo-Nudge (aelteres System, gleicher Mechanismus)
+  todo_reminder           Todo-Nudge (älteres System, gleicher Mechanismus)
 
 Plan-Modus (5):
   plan_mode               Plan-Modus aktiviert
   plan_mode_exit          Plan-Modus verlassen
-  plan_mode_reentry       Zurueck in Plan-Modus (liest existierenden Plan)
+  plan_mode_reentry       Zurück in Plan-Modus (liest existierenden Plan)
   plan_file_reference     Referenz auf Plan-Datei
   verify_plan_reminder    "Plan implementiert, bitte verifizieren"
 
@@ -109,8 +109,8 @@ Team/Agenten (5):
 Hooks (10):
   hook_blocking_error     Hook hat Aktion blockiert (mit Fehlermeldung)
   hook_success            Hook erfolgreich (nur SessionStart/UserPromptSubmit)
-  hook_additional_context Hook liefert zusaetzlichen Kontext
-  hook_error_during_execution  Hook-Fehler waehrend Ausfuehrung (no-op)
+  hook_additional_context Hook liefert zusätzlichen Kontext
+  hook_error_during_execution  Hook-Fehler während Ausführung (no-op)
   hook_non_blocking_error Nicht-blockierender Hook-Fehler (no-op)
   hook_cancelled          Hook abgebrochen (no-op)
   hook_stopped_continuation   Hook hat Fortsetzung gestoppt
@@ -123,7 +123,7 @@ Ressourcen/Budget (2):
   budget_usd              "USD budget: $X/$Y; $Z remaining"
 
 Skills/MCP (4):
-  skill_listing           Liste verfuegbarer Skills
+  skill_listing           Liste verfügbarer Skills
   invoked_skills          Aufgerufene Skills
   dynamic_skill           Dynamischer Skill (no-op, returns [])
   mcp_resource            MCP-Ressource geladen
@@ -163,13 +163,13 @@ TIMING-KONSTANTEN
   }
 
   Hinweis: "Turns" zaehlt alle LLM-Interaktionen inkl. Tool-Aufrufe,
-  nicht nur User-Nachrichten. Deshalb erscheinen Nudges unregelmaessig
+  nicht nur User-Nachrichten. Deshalb erscheinen Nudges unregelmäßig
   aus User-Perspektive.
 
 TRIGGER-LOGIK (Task-Reminder, deobfusciert)
 -------------------------------------------
   function shouldInjectTaskReminder(messages) {
-      // Nur wenn Task-Tools verfuegbar
+      // Nur wenn Task-Tools verfügbar
       if (!taskToolsEnabled()) return false;
       if (messages.length === 0) return false;
 
@@ -183,7 +183,7 @@ TRIGGER-LOGIK (Task-Reminder, deobfusciert)
           turnsSinceLastUse++;
       }
 
-      // Pruefe ob Reminder faellig
+      // Prüfe ob Reminder fällig
       if (turnsSinceLastUse >= 10 && turnsSinceLastReminder >= 10) {
           let tasks = getAllTasks();
           return { type: "task_reminder", content: tasks };
@@ -199,7 +199,7 @@ Folgende Typen enthalten explizite "NEVER mention"-Anweisungen:
   todo_reminder:     "Make sure that you NEVER mention this reminder to the user"
   date_change:       "DO NOT mention this to the user explicitly"
   nested_memory:     "Don't tell the user this, since they are already aware"
-    (bei CLAUDE.md/MEMORY.md Aenderungen)
+    (bei CLAUDE.md/MEMORY.md Änderungen)
 
 VERGLEICH: CLAUDE CODE vs. BACH INJEKTOREN
 ------------------------------------------
@@ -215,7 +215,7 @@ VERGLEICH: CLAUDE CODE vs. BACH INJEKTOREN
   Geheimhaltung         | 4 Typen mit "NEVER"    | Keine (transparent)
   Trigger               | Turn-Count             | Keywords + Zeit + Events
   DB-Integration        | Keine                  | 900+ dynamische Trigger
-  Self-Extension        | Nicht moeglich         | Via context_triggers DB
+  Self-Extension        | Nicht möglich         | Via context_triggers DB
   Open Source            | cli.js (minifiziert)   | Voll lesbar (Python)
 
 WESENTLICHE UNTERSCHIEDE:
@@ -227,29 +227,29 @@ WESENTLICHE UNTERSCHIEDE:
 
 POTENTIAL: MESSAGING-SYSTEM
 ----------------------------
-Die Injektions-Infrastruktur koennte fuer Inter-Instanz-Kommunikation
+Die Injektions-Infrastruktur könnte für Inter-Instanz-Kommunikation
 genutzt werden:
 
   1. HOOKS (einfachster Weg):
      hook_additional_context bei UserPromptSubmit --
      liest Nachricht aus Datei und injiziert als Kontext.
-     Kein Source-Patching noetig.
+     Kein Source-Patching nötig.
 
   2. NESTED MEMORY:
      Dateien im Memory-Ordner werden automatisch injiziert.
-     Aenderung von aussen = Nachricht ans LLM.
-     Einschraenkung: Nur bei Session-Start oder CLAUDE.md/MEMORY.md Aenderungen.
+     Änderung von aussen = Nachricht ans LLM.
+     Einschränkung: Nur bei Session-Start oder CLAUDE.md/MEMORY.md Änderungen.
 
   3. CRITICAL_SYSTEM_REMINDER:
-     Generischer Typ fuer beliebige Nachrichten.
+     Generischer Typ für beliebige Nachrichten.
      Muesste programmatisch getriggert werden (Source-Patch).
 
   4. TEAM MAILBOX:
-     Bereits vorhandenes Messaging fuer Teams.
+     Bereits vorhandenes Messaging für Teams.
      Nur im Team-Modus aktiv (l8() Check).
 
 EMPFEHLUNG: Hook-basierter Ansatz ist am praktikabelsten.
-Ein UserPromptSubmit-Hook koennte eine "Inbox"-Datei pruefen und
+Ein UserPromptSubmit-Hook könnte eine "Inbox"-Datei prüfen und
 Nachrichten als hook_additional_context injizieren.
 
 EXPERIMENTELLE ERGEBNISSE (Session 2026-02-17)
@@ -258,7 +258,7 @@ Systematischer Test mit 14+ Nachrichten:
 
   - Task-Nudge erscheint nicht strikt alle 10 Nachrichten, weil
     Tool-Calls als eigene Turns zaehlen
-  - Keyword-Trigger fuer Task-Nudge: WIDERLEGT (reines Turn-Counting)
+  - Keyword-Trigger für Task-Nudge: WIDERLEGT (reines Turn-Counting)
   - User-Nachrichtenlaenge: kein Einfluss auf Trigger
   - Eigene (LLM) Outputs triggern keine Nudges
   - Muster: Nudges haeufen sich nach Tool-intensiven Runden

@@ -1,15 +1,15 @@
-# Portabilitaet: UNIVERSAL
+# Portabilität: UNIVERSAL
 # Version: 1.1.0
-# Zuletzt validiert: 2026-02-08 (Forensik - Export + erweiterte Felder hinzugefuegt)
-# Naechste Pruefung: 2026-08-08
+# Zuletzt validiert: 2026-02-08 (Forensik - Export + erweiterte Felder hinzugefügt)
+# Nächste Prüfung: 2026-08-08
 
 CONTACT - Kontaktverwaltung
 ===========================
 
 BESCHREIBUNG:
-  Verwaltet persoenliche und geschaeftliche Kontakte mit Freitextsuche,
-  Kontext-Filterung und Geburtstags-Uebersicht. Kontakte werden per
-  Soft-Delete deaktiviert (nicht geloescht).
+  Verwaltet persönliche und geschaeftliche Kontakte mit Freitextsuche,
+  Kontext-Filterung und Geburtstags-Übersicht. Kontakte werden per
+  Soft-Delete deaktiviert (nicht gelöscht).
 
 BEFEHLE:
   bach contact list              Alle aktiven Kontakte anzeigen
@@ -20,14 +20,14 @@ BEFEHLE:
   bach contact show <id>         Kontakt-Details anzeigen
   bach contact edit <id>         Kontakt bearbeiten
   bach contact delete <id>       Kontakt deaktivieren (Soft-Delete)
-  bach contact birthday          Geburtstage (naechste 30 Tage)
-  bach contact birthday 90       Geburtstage (naechste 90 Tage)
+  bach contact birthday          Geburtstage (nächste 30 Tage)
+  bach contact birthday 90       Geburtstage (nächste 90 Tage)
   bach contact export            Alle Kontakte exportieren (Text/CSV/vCard)
   bach contact export --type arzt --format csv  Arzt-Kontakte als CSV
   bach contact export --format vcard --file out.vcf  vCard-Export in Datei
   bach contact help              Diese Hilfe
 
-OPTIONEN FUER ADD/EDIT:
+OPTIONEN FÜR ADD/EDIT:
   --context, -c   Kontext (privat|beruflich|versicherung|finanzen|arzt|sonstige)
   --email, -e     E-Mail-Adresse
   --phone, -p     Telefon (Festnetz)
@@ -38,9 +38,9 @@ OPTIONEN FUER ADD/EDIT:
   --position      Position/Rolle im Unternehmen
   --tags          Tags kommagetrennt (z.B. "dev,it,freelance")
   --note          Notiz (bei edit: wird an bestehende Notizen angehaengt)
-  --name          Name aendern (nur bei edit)
+  --name          Name ändern (nur bei edit)
 
-OPTIONEN FUER EXPORT:
+OPTIONEN FÜR EXPORT:
   --type, -t      Nur bestimmten Kontext exportieren (arzt, privat, etc.)
   --format, -f    Exportformat: txt (default), csv, vcard
   --file, -o      Ausgabedatei (sonst Konsolen-Output)
@@ -68,7 +68,7 @@ BEISPIELE:
   # Kontakt suchen:
   bach contact search Mueller
 
-  # Telefonnummer und Firma aendern:
+  # Telefonnummer und Firma ändern:
   bach contact edit 5 --phone 030-99999 --company "Neue GmbH" --note "Gewechselt ab Jan 2026"
 
   # Alle Versicherungskontakte:
@@ -87,7 +87,7 @@ BEISPIELE:
 ZUSAMMENSPIEL:
   - Getrennt von health_contacts (Arzt-Kontakte im Gesundheitsmodul)
   - contacts = zentrale Kontakttabelle (CLI + GUI + vCard-Export)
-  - GUI: Kontakte-Tab (wenn verfuegbar)
+  - GUI: Kontakte-Tab (wenn verfügbar)
 
 BEKANNTE EINSCHRAENKUNGEN:
   - "bach contact list --all" zeigt inaktive Kontakte OHNE visuelle Markierung
