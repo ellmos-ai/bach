@@ -1,5 +1,5 @@
 # Portabilitaet: SYSTEM
-# Zuletzt validiert: 2026-05-15
+# Zuletzt validiert: 2026-05-17
 # Nächste Prüfung: 2026-11-15
 
 DAEMON - Hintergrund-Jobs und Scheduler
@@ -32,17 +32,18 @@ CLI-BEFEHLE
   bach daemon run <ID>          Einzelnen Job manuell ausfuehren
   bach daemon logs [N]          Letzte Log-Eintraege anzeigen (Standard: 20)
 
-SESSION-SYSTEM
---------------
-  bach daemon session start [--profile NAME]   Session-Daemon starten
-  bach daemon session stop                     Session-Daemon stoppen
+SESSION-SYSTEM [DEPRECATED]
+---------------------------
+  ⚠️  DEPRECATED seit 2026-05-17.
+  Grund: Nutzte pyautogui fuer Tastatur-Simulation (Ctrl+Alt+Space, Paste, Enter).
+  Erzeugte unkontrollierte Prompt-Injektionen in aktive Sessions.
+
+  ERSATZ: Buddha Control API (:8081/api/chat) oder Claude Code /loop.
+
+  Die CLI-Befehle existieren noch fuer Rueckwaertskompatibilitaet:
   bach daemon session status                   Session-Status anzeigen
   bach daemon session doctor                   Session-Preflight und Recovery-Hinweise
-  bach daemon session trigger [--profile NAME] Session manuell ausloesen
-  bach daemon session profiles                 Verfuegbare Profile auflisten
-
-  Beispiel mit Dry-Run:
-    bach daemon session trigger --profile wartung --dry-run
+  bach daemon session pause/resume/steer       Operator-Steuerung
 
 JOB-TYPEN
 ---------

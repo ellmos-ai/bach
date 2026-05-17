@@ -1,0 +1,106 @@
+# Portability: UNIVERSAL
+# Version: 1.1.0
+# Last validated: 2026-05-17
+
+HANDLER NAME
+===
+
+setup
+
+
+DESCRIPTION
+===
+
+Configures the BACH system completely: installs MCP servers (npm), validates
+dependencies, synchronizes secrets and user profiles, and runs preflight checks.
+Part of PEANUT release (B37) with optional n8n-Manager-MCP.
+
+
+OPERATIONS
+===
+
+mcp             Installs MCP servers (codecommander, filecommander) globally via npm
+                and updates Claude Code configuration (~/.claude.json).
+
+n8n             Installs optional n8n-manager-mcp package and registers in
+                Claude Code MCP config.
+
+check           Validates whether all dependencies are present and configured:
+                npm, MCP packages, secrets file, bach.db, USER.md.
+
+secrets         Initializes or synchronizes ~/.bach/bach_secrets.json with
+                the secrets database.
+
+user            Manages USER.md: personalizes from DB if still template,
+                or syncs parsed data back into DB.
+
+preflight       Runs pre-install checks: Python >= 3.10, npm available,
+                data/ writable, > 100 MB disk space free.
+
+prosync         Configures ProSync for multi-system usage.
+                --multi-system    Enables DB sync (BACH on multiple machines)
+                --single-system   Disables DB sync (this system only)
+                Without flag: Shows current status. Default: single-system.
+
+hooks           Installs Claude Code hooks (DB protection etc.) into
+                Claude Code settings (~/.claude/settings.json).
+
+hooks-remove    Removes BACH-installed Claude Code hooks (reversible).
+                Only removes hook entries registered by BACH.
+
+lang <de|en>    Switches root documents (README, QUICKSTART, etc.) between
+                German and English.
+
+full-install    Complete installation in one pass (preflight, prosync,
+                mcp, hooks, secrets, user). Optional: --with-n8n or --config <json>.
+
+
+EXAMPLES
+===
+
+bach setup mcp
+  Installs codecommander-mcp and filecommander-mcp, updates ~/.claude.json
+
+bach setup check
+  Checks all dependencies with status output
+
+bach setup n8n
+  Installs n8n-manager-mcp (optional)
+
+bach setup preflight
+  Validates Python, npm, disk space before installation
+
+bach setup prosync
+  Shows current ProSync status (multi- or single-system)
+
+bach setup prosync --multi-system
+  Enables ProSync: local DB (~/.bach/bach.db) + OneDrive transit sync
+
+bach setup prosync --single-system
+  Disables ProSync (default for new installations)
+
+bach setup full-install --with-n8n
+  Complete installation including n8n manager
+
+bach setup user
+  Personalizes USER.md from DB or syncs USER.md changes into DB
+
+
+FILES
+===
+
+hub/setup.py                        This handler
+data/bach.db                        BACH database (assistant_user_profile, secrets)
+data/bach_secrets.json              Secrets vault (~/.bach/bach_secrets.json)
+../USER.md                          User profile (template or personalized)
+~/.claude.json                      Claude Code MCP server config
+
+
+SEE ALSO
+===
+
+hub/base.py                         BaseHandler (superclass)
+hub/secrets_handler.py              SecretsHandler (secrets management)
+docs/help/check.txt                 Validation after installation
+docs/help/install.txt               Initial installation and scenarios
+docs/help/db_sync.txt               ProSync: multi-system DB synchronization

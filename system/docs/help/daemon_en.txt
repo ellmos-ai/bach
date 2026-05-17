@@ -1,0 +1,105 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+
+DAEMON - Background Jobs and Scheduler
+=======================================
+NOTE: "bach daemon" is an alias for "bach scheduler".
+Current documentation: bach --help scheduler
+
+STATUS: 2026-05-17 (Alias since 2026-02-28)
+
+IMPORTANT POLICY
+----------------
+**ALL DAEMON JOBS ARE DISABLED BY DEFAULT.**
+
+Reason: Automated processes can collide with active chat sessions
+and the prompt generator. Jobs are only manually activated when needed.
+
+The daemon automatically pauses OneDrive sync during operation
+to avoid sync conflicts.
+
+See: docs/CONCEPT_daemon_policy.md
+
+CLI COMMANDS
+------------
+  bach daemon jobs              Show all jobs
+  bach daemon status            Daemon status
+  bach daemon doctor            Scheduler preflight and recovery hints
+  bach daemon start [--bg]      Start scheduler (--bg for background)
+  bach daemon stop              Stop scheduler
+  bach daemon run <ID>          Run a single job manually
+  bach daemon logs [N]          Show last log entries (default: 20)
+
+SESSION SYSTEM [DEPRECATED]
+----------------------------
+  Warning: DEPRECATED since 2026-05-17.
+  Reason: Used pyautogui for keyboard simulation (Ctrl+Alt+Space, Paste, Enter).
+  Created uncontrolled prompt injections into active sessions.
+
+  REPLACEMENT: Buddha Control API (:8081/api/chat) or Claude Code /loop.
+
+  CLI commands still exist for backwards compatibility:
+  bach daemon session status                   Session status
+  bach daemon session doctor                   Session preflight and recovery hints
+  bach daemon session pause/resume/steer       Operator steering
+
+JOB TYPES
+---------
+  interval    Repeats after time span (e.g. 24h, 30m)
+  cron        Schedule-based (e.g. "0 2 * * *" = daily at 2 AM)
+  event       Event-based trigger (externally triggered)
+  manual      Manual execution only
+  chain       Chained job execution (chain system)
+
+The daemon automatically checks for due recurring tasks every 5 minutes.
+
+AVAILABLE JOBS (all disabled by default)
+-----------------------------------------
+Note: Job list is dynamic. Current jobs via: bach daemon jobs
+
+Example jobs:
+  ID  Name                      Schedule    Function
+  --  ------------------------  ----------  --------------------------------
+  1   scanner                   60m         Scan software folders for tasks
+  2   backup                    24h         Automatic backup
+  3   inbox-scan                30m         Process inbox folder
+  4   consolidate-weight        24h         Memory weightings (decay)
+  5   consolidate-archive       24h         Archive old entries
+  6   consolidate-index         7d          Update help/wiki index
+  7   consolidate-compress      24h         Compress sessions
+  8   consolidate-we            7d          Weekly consolidation
+  9   Nightly Maintenance       cron 0 2    Nightly maintenance chain
+  10  Weekly Backup             cron 0 3 0  Weekly backup
+
+Connector jobs (v2.0, via bach connector setup-daemon):
+  --  connector_poll_and_route  2m          Poll connectors + inbox routing
+  --  connector_dispatch        1m          Send outgoing queue with retry
+
+RUNNING A JOB MANUALLY
+-----------------------
+Recommended method instead of automatic scheduler:
+
+  # Run job once
+  bach daemon run 1         # Run scanner once
+  bach daemon run 2         # Create backup once
+
+  # Or run command directly
+  bach scan run             # Scanner
+  bach backup create        # Backup
+  bach consolidate run      # Consolidation
+
+GUI
+---
+  http://127.0.0.1:8000/daemon    Daemon dashboard
+
+  - Enable/disable jobs
+  - Run manually
+  - View last executions
+
+SEE ALSO
+--------
+  docs/CONCEPT_daemon_policy.md   Daemon policies
+  docs/help/connector.txt         Connector system (queue, retry)
+  docs/help/maintain.txt          Maintenance tools
+  docs/help/backup.txt            Backup system
+  docs/help/consolidation.txt     Memory consolidation
