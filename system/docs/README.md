@@ -1,7 +1,7 @@
 # BACH Dokumentation
 
-Zentrale Dokumentationsreferenz fuer User und LLMs.
-Alle Hilfe-Artikel sind ueber CLI abrufbar:
+Zentrale Dokumentationsreferenz für User und LLMs.
+Alle Hilfe-Artikel sind über CLI abrufbar:
 
 ```bash
 bach help <thema>              # Handler & Konzepte
@@ -24,8 +24,8 @@ help.run("<thema>")            # Programmatischer Zugriff
 docs/
 ├── README.md                  ← Diese Datei
 ├── docs/help/                      ← CLI-Referenz (bach help <thema>)
-│   ├── *.txt                  ← Handler- & Konzept-Artikel (~110 Stueck)
-│   └── tools/                 ← Tool-spezifische Artikel (~80 Stueck)
+│   ├── *.txt                  ← Handler- & Konzept-Artikel (~110 Stück)
+│   └── tools/                 ← Tool-spezifische Artikel (~80 Stück)
 │       └── _index.txt         ← Tool-Index
 └── *.md                       ← Entwickler-Dokumentation, Konzepte
 ```
@@ -39,7 +39,7 @@ docs/
 | Thema | CLI-Befehl | Beschreibung |
 |-------|-----------|--------------|
 | architecture | `bach help architecture` | Gesamtarchitektur, Verzeichnisstruktur |
-| bach_info | `bach help bach_info` | Was ist BACH, Ueberblick |
+| bach_info | `bach help bach_info` | Was ist BACH, Überblick |
 | cli | `bach help cli` | CLI-Konventionen, alle Subcommands |
 | features | `bach help features` | Feature-Matrix |
 | guidelines | `bach help guidelines` | Entwicklungsrichtlinien |
@@ -63,7 +63,7 @@ docs/
 | tasks | `bach help tasks` | Task-Verwaltung (add, list, done) |
 | task | `bach help task` | Task-Handler Referenz |
 | planning | `bach help planning` | Aufgabenplanung |
-| between-tasks | `bach help between-tasks` | Qualitaetschecks zwischen Tasks |
+| between-tasks | `bach help between-tasks` | Qualitätschecks zwischen Tasks |
 | workflow | `bach help workflow` | Workflow-System |
 | workflow-tuev | `bach help workflow-tuev` | Workflow-Validierung |
 
@@ -171,20 +171,20 @@ docs/
 
 | Thema | CLI-Befehl | Beschreibung |
 |-------|-----------|--------------|
-| time | `bach help time` | Zeit-System (Uebersicht) |
+| time | `bach help time` | Zeit-System (Übersicht) |
 | clock | `bach help clock` | Uhrzeit-Anzeige |
 | timer | `bach help timer` | Timer-Modul |
 | countdown | `bach help countdown` | Countdown-Modul |
 | between | `bach help between` | Between-Checks |
 | beat | `bach help beat` | Alle Zeit-Infos |
-| daily_agent | `bach help daily_agent` | Taeglicher Agent |
+| daily_agent | `bach help daily_agent` | Täglicher Agent |
 
 ### Skills & Tools
 
 | Thema | CLI-Befehl | Beschreibung |
 |-------|-----------|--------------|
 | skills | `bach help skills` | Skill-System |
-| tools | `bach help tools` | Tool-Uebersicht (Gesamtliste) |
+| tools | `bach help tools` | Tool-Übersicht (Gesamtliste) |
 | builder | `bach help builder` | Skill/Agent Erstellung & Export |
 | exports | `bach help exports` | DB-zu-Markdown Export-Scripts |
 | coding | `bach help coding` | Coding-Konventionen |
@@ -195,7 +195,7 @@ docs/
 | Thema | CLI-Befehl | Beschreibung |
 |-------|-----------|--------------|
 | maintain | `bach help maintain` | Wartungs-Handler |
-| wartung | `bach help wartung` | Wartungs-Uebersicht |
+| wartung | `bach help wartung` | Wartungs-Übersicht |
 | recurring | `bach help recurring` | Wiederkehrende Aufgaben |
 | selfcheck | `bach help selfcheck` | Selbstdiagnose |
 | tuev | `bach help tuev` | System-TUEV |
@@ -206,7 +206,7 @@ docs/
 
 | Thema | CLI-Befehl | Beschreibung |
 |-------|-----------|--------------|
-| injectors | `bach help injectors` | Injektor-Uebersicht (6 Stueck) |
+| injectors | `bach help injectors` | Injektor-Übersicht (6 Stück) |
 | meta_feedback_injector | `bach help meta_feedback_injector` | Meta-Feedback Injektor |
 | reminder_injector | `bach help reminder_injector` | Erinnerungs-Injektor |
 | context | `bach help context` | Kontext-Injektor |
@@ -221,7 +221,7 @@ docs/
 
 | Thema | CLI-Befehl | Beschreibung |
 |-------|-----------|--------------|
-| identity | `bach help identity` | System-Identitaet |
+| identity | `bach help identity` | System-Identität |
 | data | `bach help data` | Datenverzeichnis |
 | bach_paths | `bach help bach_paths` | Pfad-Konfiguration |
 | formats | `bach help formats` | Datei-Formate |
@@ -239,20 +239,20 @@ docs/
 
 ## Tool-Dokumentation (docs/help/tools/)
 
-Einzeldokumentation fuer ~80 Python-Tools. Zugriff:
+Einzeldokumentation für ~80 Python-Tools. Zugriff:
 
 ```bash
 bach help tools/<name>         # z.B. bach help tools/c_encoding_fixer
 ```
 
-### Uebersichts-Artikel
+### Übersichts-Artikel
 
 | Artikel | Beschreibung |
 |---------|-------------|
 | `tools/_index` | Alphabetischer Index aller Tools |
-| `tools/policies` | Namenskonventionen, Praefixe |
+| `tools/policies` | Namenskonventionen, Präfixe |
 | `tools/analysis` | Analyse-Tools |
-| `tools/code_quality` | Code-Qualitaet |
+| `tools/code_quality` | Code-Qualität |
 | `tools/conversion` | Format-Konvertierung |
 | `tools/imports` | Import-Management |
 | `tools/monitoring` | Monitoring-Tools |
@@ -268,10 +268,10 @@ bach help tools/<name>         # z.B. bach help tools/c_encoding_fixer
 | `c_audit_bundler` | Audit-Bundle Erstellung |
 | `c_emoji_scanner` | Emoji finden/ersetzen |
 | `c_encoding_fixer` | Encoding reparieren |
-| `c_german_scanner` | Deutsche Woerter finden |
+| `c_german_scanner` | Deutsche Wörter finden |
 | `c_import_diagnose` | Import-Probleme diagnostizieren |
 | `c_import_organizer` | Imports sortieren |
-| `c_indent_checker` | Einrueckung pruefen |
+| `c_indent_checker` | Einrückung prüfen |
 | `c_json_repair` | JSON reparieren |
 | `c_license_generator` | Lizenzdateien erstellen |
 | `c_md_to_pdf` | Markdown zu PDF |
@@ -315,7 +315,7 @@ bach help tools/<name>         # z.B. bach help tools/c_encoding_fixer
 | `backup_manager` | Backup-Verwaltung |
 | `doc_update_checker` | Dokumentations-Check |
 | `duplicate_detector` | Duplikat-Erkennung |
-| `file_cleaner` | Alte Dateien loeschen |
+| `file_cleaner` | Alte Dateien löschen |
 | `json_fixer` | JSON reparieren |
 | `path_healer` | Pfade reparieren |
 | `pattern_tool` | Dateinamen-Patterns |
@@ -345,7 +345,7 @@ bach help tools/<name>         # z.B. bach help tools/c_encoding_fixer
 | `tool_discovery` | Tool-Erkennung |
 | `tool_registry_boot` | Registry-Initialisierung |
 | `tool_scanner` | Tool-Scanner |
-| `registry_watcher` | Registry-Ueberwachung |
+| `registry_watcher` | Registry-Überwachung |
 | `universal_compiler` | Universal Compiler |
 | `python_cli_editor` | Python CLI Editor |
 
@@ -363,11 +363,11 @@ bach help tools/<name>         # z.B. bach help tools/c_encoding_fixer
 | `gemini_start` | Gemini-Session starten |
 | `mapping` | Feature-Mapping |
 | `partner` | Partner-Tools |
-| `foerderplaner_cli` | Foerderplan-CLI |
+| `foerderplaner_cli` | Förderplan-CLI |
 
 ---
 
-## Fuer LLMs: Schnellzugriff
+## Für LLMs: Schnellzugriff
 
 ```python
 from bach_api import help
@@ -375,7 +375,7 @@ from bach_api import help
 # Hilfe lesen
 help.run("cli")                # CLI-Referenz
 help.run("tasks")              # Task-System
-help.run("tools")              # Tool-Uebersicht
+help.run("tools")              # Tool-Übersicht
 help.run("architecture")       # Architektur
 
 # Tool-spezifisch
@@ -383,9 +383,9 @@ help.run("tools/c_encoding_fixer")
 help.run("tools/exporter")
 ```
 
-**Empfohlene Lesereihenfolge fuer neue LLM-Sessions:**
+**Empfohlene Lesereihenfolge für neue LLM-Sessions:**
 1. `bach_info` -- Was ist BACH
-2. `cli` -- Verfuegbare Befehle
+2. `cli` -- Verfügbare Befehle
 3. `architecture` -- Systemaufbau
 4. `features` -- Feature-Matrix
 5. `tasks` -- Task-System

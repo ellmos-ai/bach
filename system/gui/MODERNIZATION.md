@@ -16,17 +16,17 @@ Stand: 2026-05-17
 ## Legacy: Prompt-Manager (gui/prompt_manager.py)
 
 - Weiterhin nutzbar, keine aktive Weiterentwicklung
-- PyQt6-Abhaengigkeit bleibt optional
-- Nicht entfernt, da bestehende Nutzer ihn verwenden koennten
+- PyQt6-Abhängigkeit bleibt optional
+- Nicht entfernt, da bestehende Nutzer ihn verwenden könnten
 - Bei Start: Hinweis auf moderne Alternativen
 
-## Primaer-Interfaces
+## Primär-Interfaces
 
 ### 1. Claude Code CLI (bach.py)
 - Vollzugriff auf alle Handler via `bach` Befehle
-- Library-API fuer LLMs (`bach_api`)
+- Library-API für LLMs (`bach_api`)
 - Session-Management mit Startup/Shutdown
-- Empfohlen fuer alle LLM-Interaktionen
+- Empfohlen für alle LLM-Interaktionen
 
 ### 2. BACH Chat Service (hub/_services/chat/)
 - Nachfolger der Claude Bridge (claude_bridge/ ist deprecated)

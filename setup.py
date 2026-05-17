@@ -204,7 +204,7 @@ class BACHSetup:
         subprocess.run(
             [sys.executable, "-m", "pip", "install", "-r", str(requirements)],
             check=True,
-            capture_output=True
+            capture_output=True, encoding='utf-8', errors='replace'
         )
 
         # Extras (falls angegeben)
@@ -213,7 +213,7 @@ class BACHSetup:
             subprocess.run(
                 [sys.executable, "-m", "pip", "install", f"bach[{extras_str}]"],
                 check=True,
-                capture_output=True
+                capture_output=True, encoding='utf-8', errors='replace'
             )
 
     def _step_s2_db_init(self, _):

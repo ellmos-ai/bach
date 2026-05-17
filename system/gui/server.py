@@ -3485,7 +3485,8 @@ bach --memory session
             if sys.platform == "win32":
                 subprocess.run(
                     ["powershell", "-Command", f"Set-Clipboard -Value '{prompt.replace(chr(39), chr(39)+chr(39))}'"],
-                    capture_output=True, creationflags=0x08000000
+                    capture_output=True, creationflags=0x08000000,
+                    encoding='utf-8', errors='replace'
                 )
             elif sys.platform == "darwin":
                 subprocess.run(["pbcopy"], input=prompt.encode("utf-8"), capture_output=True)
@@ -13082,6 +13083,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "pong", "timestamp": datetime.now().isoformat()})
 
     except WebSocketDisconnect:
+
+        pass
+
+    finally:
 
         ws_manager.disconnect(websocket)
 
