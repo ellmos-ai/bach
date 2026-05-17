@@ -6,8 +6,8 @@ REM ============================================================
 title BACH llmauto
 setlocal enabledelayedexpansion
 
-set "LLMAUTO_DIR=%~dp0..\..\system\tools\llmauto"
-set CHAINS_DIR=%LLMAUTO_DIR%\chains
+set "LLMAUTO_DIR=%~dp0..\..\system\tools"
+set "CHAINS_DIR=%LLMAUTO_DIR%\llmauto\chains"
 
 echo.
 echo  ===================================================
@@ -15,8 +15,8 @@ echo   BACH llmauto - Ketten starten
 echo  ===================================================
 echo.
 
-if not exist "%LLMAUTO_DIR%\llmauto.py" (
-    echo  llmauto nicht gefunden: %LLMAUTO_DIR%
+if not exist "%LLMAUTO_DIR%\llmauto\llmauto.py" (
+    echo  llmauto nicht gefunden: %LLMAUTO_DIR%\llmauto\
     pause
     exit /b 1
 )

@@ -1,16 +1,16 @@
 # GUI Modernisierung - Strategie
 
-Stand: 2026-02-16
+Stand: 2026-05-17
 
-## Interface-Hierarchie (neu)
+## Interface-Hierarchie
 
-| Interface | Status | Zielgruppe | Prioritaet |
+| Interface | Status | Zielgruppe | Priorität |
 |-----------|--------|------------|------------|
 | **Claude Code CLI** | AKTIV | LLM-Sessions, Entwickler | Hoch |
-| **Telegram Bridge** | AKTIV | Mobil, Remote, Chat | Hoch |
-| **Zeitgesteuerte Agents** | GEPLANT | Autonome Tages-Sessions | Mittel |
+| **BACH Chat Service** | AKTIV | Mobil, Remote, Chat | Hoch |
+| **Zeitgesteuerte Agents** | AKTIV | Autonome Loop-/Tages-Sessions | Mittel |
 | **REST API (headless)** | AKTIV | Scripts, Integrationen | Mittel |
-| **Web-Dashboard** | AKTIV | Monitoring, Status | Niedrig |
+| **Web-Dashboard** | AKTIV | Monitoring, Status, 29 Module | Mittel |
 | **Prompt-Manager (PyQt6)** | LEGACY | Desktop-Power-User | Niedrig |
 
 ## Legacy: Prompt-Manager (gui/prompt_manager.py)
@@ -28,14 +28,18 @@ Stand: 2026-02-16
 - Session-Management mit Startup/Shutdown
 - Empfohlen fuer alle LLM-Interaktionen
 
-### 2. Telegram Bridge (hub/_services/claude_bridge/)
-- Chat-basierter Zugang zu BACH
-- Permission-System (restricted/full)
-- Worker fuer laengere Aufgaben
-- Mobiler Zugang von ueberall
+### 2. BACH Chat Service (hub/_services/chat/)
+- Nachfolger der Claude Bridge (claude_bridge/ ist deprecated)
+- Multi-Backend: Ollama, Claude CLI, Codex CLI, Claude API, OpenAI API
+- Telegram-Bot (@bach_assistant_bot) mit Tool-Use, Voice/OCR
+- Web-Dashboard (:8081) mit Backend/Modus-Steuerung
+- System Tray (chat_tray.py, cross-platform)
+- CLI Chat (buddha_cli.py)
+- Permission-System (safe/full Modi)
 
-### 3. Zeitgesteuerte Agents (GEPLANT)
-- Tages-Agent der morgens startet (via Task Scheduler/cron)
-- Claude Code mit --continue fuer persistente Session
-- Abend-Summary in BACH Memory
-- Siehe: hub/daily_agent.py
+### 3. Zeitgesteuerte Agents
+- Loop-Skripte (15min/30min/1h) für automatische Sessions
+- Tages-Agent (hub/daily_agent.py) für tägliche Routinen
+- Wartungs-Session (claude_maintenance.bat)
+- Agent-Starter mit Modell- und Modus-Auswahl
+- Siehe: start/_internal/claude_loop_*.bat, agent_start.bat
