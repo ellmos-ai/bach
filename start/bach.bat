@@ -132,10 +132,18 @@ popd
 echo       [OK] GUI Server gestartet
 
 echo [2/4] Starte BACH System Tray...
-pushd "!CHAT_DIR!"
-start "" pythonw chat_tray.py
-popd
-echo       [OK] System Tray gestartet
+set "TRAY_HOST=127.0.0.1"
+if not "!BACH_HOST!"=="" set "TRAY_HOST=!BACH_HOST!"
+curl -s --max-time 2 "http://!TRAY_HOST!:8081/api/status" >nul 2>&1
+if !ERRORLEVEL! equ 0 (
+    pushd "!CHAT_DIR!"
+    start "" pythonw chat_tray.py --host "!TRAY_HOST!"
+    popd
+    echo       [OK] System Tray gestartet ^(verbunden mit !TRAY_HOST!:8081^)
+) else (
+    echo       [SKIP] System Tray uebersprungen ^(keine Control API auf !TRAY_HOST!:8081^)
+    echo              Starte Chat Service separat mit [B] oder nutze [W] fuer Server-Modus
+)
 
 echo [3/4] Starte PromptBoard...
 set "PROMPTBOARD_DIR=!ROOT_DIR!\..\..\..\.SOFTWARE\LLM\REL-PUB_PromptBoard"
