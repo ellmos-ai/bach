@@ -63,7 +63,7 @@ if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 SCRIPT_DIR = Path(__file__).parent
-BASE_PATH = Path(r"C:\Users\User\OneDrive\.SOFTWARE")
+BASE_PATH = Path(os.environ.get("BACH_SOFTWARE_DIR", Path.home() / "OneDrive" / ".SOFTWARE"))
 LOG_FILE = SCRIPT_DIR / "_logs" / "compile_log.txt"
 
 # ==================== HELPER ====================
@@ -198,7 +198,7 @@ class UniversalCompiler:
             cmd.append(str(py_file))
             
             try:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300)
                 
                 if result.returncode == 0:
                     temp_exe = temp_path / f"{exe_name}.exe"
@@ -296,7 +296,7 @@ class UniversalCompiler:
         log(f"  Icon: {icon.name if icon else 'keins'}")
         
         try:
-            result = subprocess.run(cmd, cwd=tool_path, capture_output=True, text=True, timeout=300)
+            result = subprocess.run(cmd, cwd=tool_path, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300)
             
             if result.returncode == 0:
                 exe_path = tool_path / "dist" / f"{exe_name}.exe"
