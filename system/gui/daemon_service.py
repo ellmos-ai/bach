@@ -34,7 +34,7 @@ try:
     # Relativer Import innerhalb BACH
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from skills._services.recurring.recurring_tasks import check_recurring_tasks
+    from hub._services.recurring.recurring_tasks import check_recurring_tasks
     HAS_RECURRING = True
 except ImportError:
     HAS_RECURRING = False
@@ -55,7 +55,7 @@ LOG_DIR = BACH_DIR / "data" / "logs"
 DAEMON_PID_FILE = DATA_DIR / "daemon.pid"
 
 # Logging konfigurieren
-LOG_DIR.mkdir(exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',

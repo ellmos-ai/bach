@@ -108,7 +108,7 @@ class BACHTray:
     @property
     def _icon_image(self):
         if self.state["connected"]:
-            if self.state["mode"] == "full":
+            if self.state.get("mode") == "full":
                 return self._make_icon((255, 165, 0, 255))
             return self._make_icon((0, 200, 100, 255))
         return self._make_icon((180, 40, 40, 255))
@@ -125,8 +125,10 @@ class BACHTray:
                 status += f" ({self.state['backend_cli']})"
             items.append(pystray.MenuItem(f"Backend: {status}", None, enabled=False))
             items.append(pystray.MenuItem(f"Modell: {self.state['model']}", None, enabled=False))
+            mode_str = (self.state.get("mode") or "safe").upper()
+            think_str = "AN" if self.state.get("think") else "AUS"
             items.append(pystray.MenuItem(
-                f"Modus: {self.state['mode'].upper()} | Denken: {'AN' if self.state['think'] else 'AUS'}",
+                f"Modus: {mode_str} | Denken: {think_str}",
                 None, enabled=False,
             ))
             items.append(pystray.Menu.SEPARATOR)
