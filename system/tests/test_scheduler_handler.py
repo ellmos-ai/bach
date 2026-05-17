@@ -420,6 +420,43 @@ class TestDoctorPayloads:
         data = json.loads(text)
         assert data["service"]["kind"] == "session_scheduler"
 
+    def test_session_doctor_warns_when_legacy_runtime_is_deprecated(self, tmp_path):
+        base = tmp_path / "system"
+        base.mkdir()
+        (base / "gui").mkdir()
+        data_dir = base / "data"
+        data_dir.mkdir()
+        (data_dir / "logs").mkdir()
+        session_dir = base / "hub" / "_services" / "daemon"
+        profiles_dir = session_dir / "profiles"
+        profiles_dir.mkdir(parents=True)
+
+        (session_dir / "session_daemon.py").write_text('"""DEPRECATED legacy daemon"""', encoding="utf-8")
+        (session_dir / "auto_session.py").write_text('"""DEPRECATED legacy trigger"""', encoding="utf-8")
+        (session_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "enabled": False,
+                    "quiet_start": "22:00",
+                    "quiet_end": "08:00",
+                    "jobs": [{"profile": "ati", "interval_minutes": 30, "enabled": False}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (profiles_dir / "ati.json").write_text("{}", encoding="utf-8")
+
+        h = SchedulerHandler(base)
+        payload = h._session_doctor_payload()
+        checks = {check["name"]: check for check in payload["checks"]}
+
+        assert payload["summary"]["overall_status"] == "warn"
+        assert payload["summary"]["ready"] is True
+        assert payload["summary"]["can_start"] is False
+        assert checks["policy"]["status"] == "warn"
+        assert checks["policy"]["details"]["deprecated"] is True
+        assert any("Buddha Control API" in step for step in payload["next_steps"])
+
     def test_format_doctor_text_structure(self, sched_env):
         h = sched_env["handler"]
         payload = {
@@ -864,12 +901,62 @@ class TestSessionStatus:
         assert data["service"]["running"] is False
         assert "ati" in data["profiles"]
 
+    def test_session_status_json_marks_deprecated_runtime(self, tmp_path):
+        base = tmp_path / "system"
+        base.mkdir()
+        (base / "gui").mkdir()
+        data_dir = base / "data"
+        data_dir.mkdir()
+        (data_dir / "logs").mkdir()
+        session_dir = base / "hub" / "_services" / "daemon"
+        profiles_dir = session_dir / "profiles"
+        profiles_dir.mkdir(parents=True)
+
+        (session_dir / "session_daemon.py").write_text('"""DEPRECATED legacy daemon"""', encoding="utf-8")
+        (session_dir / "auto_session.py").write_text('"""DEPRECATED legacy trigger"""', encoding="utf-8")
+        (session_dir / "config.json").write_text(
+            json.dumps({"enabled": False, "jobs": [{"profile": "ati", "interval_minutes": 30, "enabled": False}]}),
+            encoding="utf-8",
+        )
+        (profiles_dir / "ati.json").write_text("{}", encoding="utf-8")
+
+        h = SchedulerHandler(base)
+        ok, text = h._session_status(json_output=True)
+        assert ok is True
+        data = json.loads(text)
+        assert data["service"]["deprecated"] is True
+        assert data["service"]["available_actions"] == []
+        assert "Buddha Control API (:8081/api/chat)" in data["service"]["recommended_replacements"]
+
     def test_session_profiles(self, sched_env):
         h = sched_env["handler"]
         ok, text = h._session_profiles()
         assert ok is True
         assert "ati" in text
         assert "ATI Profil" in text
+        assert text.count("--- Verwendung ---") == 1
+
+    def test_session_start_requires_force_when_runtime_is_deprecated(self, tmp_path):
+        base = tmp_path / "system"
+        base.mkdir()
+        (base / "gui").mkdir()
+        data_dir = base / "data"
+        data_dir.mkdir()
+        (data_dir / "logs").mkdir()
+        session_dir = base / "hub" / "_services" / "daemon"
+        profiles_dir = session_dir / "profiles"
+        profiles_dir.mkdir(parents=True)
+
+        (session_dir / "session_daemon.py").write_text('"""DEPRECATED legacy daemon"""', encoding="utf-8")
+        (session_dir / "auto_session.py").write_text('"""DEPRECATED legacy trigger"""', encoding="utf-8")
+        (session_dir / "config.json").write_text(json.dumps({"enabled": False, "jobs": []}), encoding="utf-8")
+        (profiles_dir / "ati.json").write_text("{}", encoding="utf-8")
+
+        h = SchedulerHandler(base)
+        ok, text = h._session_start(["--profile", "ati"], dry_run=False)
+        assert ok is False
+        assert "--force" in text
+        assert "deprecated" in text.lower()
 
     def test_session_profiles_missing_dir(self, empty_env):
         h = empty_env

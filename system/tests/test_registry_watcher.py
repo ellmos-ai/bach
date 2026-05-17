@@ -279,3 +279,46 @@ def test_registry_watcher_dedupes_duplicate_tool_rows(tmp_path):
     assert result["valid"] == ["current_tool"]
     assert [item["name"] for item in result["stale_db_entries"]] == ["legacy_tool"]
     assert [item["name"] for item in result["external_entries"]] == ["git"]
+
+
+def test_registry_watcher_database_only_reports_required_tables(tmp_path):
+    base, db_path = _init_base(tmp_path)
+
+    result = RegistryWatcher(base_path=base).check_database()
+
+    assert result["mode"] == "db_only"
+    assert result["db_path"] == str(db_path)
+    assert result["summary"]["healthy"] is True
+    assert result["summary"]["tables_checked"] == 4
+    assert result["summary"]["tables_present"] == 4
+    assert result["summary"]["missing_tables"] == []
+    assert result["tables"]["tools"]["table"] == "tools"
+    assert result["tables"]["tools"]["exists"] is True
+
+
+def test_registry_watcher_main_accepts_db_flag(monkeypatch, capsys):
+    class FakeWatcher:
+        def check_database(self):
+            return {
+                "db_path": "C:/temp/bach.db",
+                "tables": {
+                    "tools": {"table": "tools", "exists": True, "rows": 5},
+                },
+                "summary": {
+                    "healthy": True,
+                    "tables_checked": 1,
+                    "tables_present": 1,
+                    "missing_tables": [],
+                    "recommendation": "Alles gut",
+                },
+            }
+
+        def generate_db_report(self, results):
+            return f"DB-ONLY {results['summary']['tables_present']}"
+
+    monkeypatch.setattr(module, "RegistryWatcher", FakeWatcher)
+    monkeypatch.setattr(sys, "argv", ["registry_watcher.py", "check", "--db"])
+
+    module.main()
+
+    assert capsys.readouterr().out.strip() == "DB-ONLY 1"

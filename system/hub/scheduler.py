@@ -479,6 +479,7 @@ class SchedulerHandler(BaseHandler):
             self._check_runtime_dir("session_dir", self.session_dir, "Session-Service-Verzeichnis"),
             self._check_pid_state("runtime_state", self.session_pid_file, running_pid, "Session-Scheduler"),
             self._check_session_config(config_file),
+            self._check_session_runtime_policy(),
             self._check_session_profiles(),
             self._check_file_exists("trigger_script", auto_session, "Auto-Session-Trigger", required=False),
         ]
@@ -499,9 +500,15 @@ class SchedulerHandler(BaseHandler):
         }
 
         summary = self._summarize_checks(checks)
+        policy_check = next((check for check in checks if check["name"] == "policy"), None)
+        policy_details = policy_check.get("details") if policy_check else {}
         summary["ready"] = summary["error"] == 0
         summary["running"] = bool(running_pid)
-        summary["can_start"] = summary["ready"] and not running_pid
+        summary["can_start"] = (
+            summary["ready"]
+            and not running_pid
+            and not bool(policy_details.get("deprecated"))
+        )
         payload["summary"] = summary
 
         next_steps = []
@@ -516,6 +523,16 @@ class SchedulerHandler(BaseHandler):
             for check in checks
         ):
             next_steps.append("In `hub/_services/daemon/config.json` mindestens einen Session-Job konfigurieren.")
+        if policy_check and policy_check["status"] == "warn":
+            if policy_details.get("deprecated"):
+                next_steps.append(
+                    "Die Legacy-Session-Automation nicht mehr regulär starten; stattdessen Buddha Control API (:8081/api/chat), BACH GUI Dashboard (:8000) oder Claude Code /loop bzw. /schedule nutzen."
+                )
+                next_steps.append(
+                    "Legacy-Tests nur bewusst mit `bach scheduler session start --profile ati --force` oder `bach scheduler session trigger --profile ati --force` ausführen."
+                )
+            elif policy_details.get("config_enabled") is False:
+                next_steps.append("Falls die Session-Automation wieder gebraucht wird, `hub/_services/daemon/config.json` gezielt reaktivieren.")
         if any(check["name"] == "profiles" and check["status"] == "error" for check in checks):
             next_steps.append("Den Profilordner `hub/_services/daemon/profiles/` wiederherstellen.")
         elif any(check["name"] == "profiles" and check["status"] == "warn" for check in checks):
@@ -988,9 +1005,9 @@ class SchedulerHandler(BaseHandler):
         elif sub_cmd == "trigger":
             return self._session_trigger(sub_args, dry_run)
         elif sub_cmd == "profiles":
-            return self._session_profiles()
+            return self._session_profiles_v2()
         else:
-            return self._session_help()
+            return self._session_help_v2()
 
     def _session_help(self) -> tuple:
         """Zeigt Session-Hilfe."""
@@ -1013,6 +1030,95 @@ class SchedulerHandler(BaseHandler):
             "  --profile NAME    Profil waehlen (default: ati)",
             "  --dry-run         Nur simulieren"
         ]
+        return (True, "\n".join(output))
+
+    def _session_help_v2(self) -> tuple:
+        """Zeigt die Session-Hilfe mit Policy-Hinweisen."""
+        policy = self._session_runtime_policy()
+        output = [
+            "=== SESSION SYSTEM (System-Service) ===",
+            "",
+            "Befehle:",
+            "  bach scheduler session start [--profile NAME]   Scheduler starten (Legacy)",
+            "  bach scheduler session stop                      Scheduler stoppen",
+            "  bach scheduler session status                    Status anzeigen",
+            "  bach scheduler session doctor                    Preflight und Recovery-Hinweise",
+            "  bach scheduler session pause [--profile NAME] [Grund]   Trigger fuer Profil pausieren",
+            "  bach scheduler session resume [--profile NAME]          Pause fuer Profil aufheben",
+            "  bach scheduler session steer [--profile NAME] \"Hinweis\"  Hinweis fuer naechste Session vormerken",
+            "  bach scheduler session clear-steer [--profile NAME]     Hinweis-Queue für Profil leeren",
+            "  bach scheduler session trigger [--profile NAME]  Session manuell (Legacy)",
+            "  bach scheduler session profiles                  Profile auflisten",
+            "",
+            "Optionen:",
+            "  --profile NAME    Profil waehlen (default: ati)",
+            "  --dry-run         Nur simulieren",
+            "  --force           Deprecated Legacy-Pfade bewusst trotzdem nutzen",
+        ]
+        if policy["deprecated"]:
+            output.extend([
+                "",
+                "Hinweis:",
+                f"  {policy['message']}",
+                "  Empfohlene Alternativen:",
+            ])
+            for replacement in policy["recommended_replacements"]:
+                output.append(f"  - {replacement}")
+        return (True, "\n".join(output))
+
+    def _session_profiles_v2(self) -> tuple:
+        """Listet verfügbare Profile ohne doppelte Verwendungsblöcke."""
+        if not self.session_profiles_dir.exists():
+            return (False, f"[ERROR] Profilordner nicht gefunden: {self.session_profiles_dir}")
+
+        profiles = list(self.session_profiles_dir.glob("*.json"))
+        if not profiles:
+            return (True, "Keine Profile definiert.\n\nErstelle Profile in: " + str(self.session_profiles_dir))
+
+        policy = self._session_runtime_policy()
+        output = [
+            "=== SESSION PROFILE ===",
+            ""
+        ]
+
+        for pf in profiles:
+            try:
+                data = json.loads(pf.read_text(encoding="utf-8"))
+                name = pf.stem
+                desc = data.get("description", "-")
+                source = data.get("task_source", "ati_tasks")
+                max_tasks = data.get("max_tasks", 3)
+                timeout = data.get("timeout_minutes", 15)
+
+                output.extend([
+                    f"[{name}]",
+                    f"  Beschreibung: {desc[:50]}",
+                    f"  Task-Quelle:  {source}",
+                    f"  Max Tasks:    {max_tasks}",
+                    f"  Timeout:      {timeout} Min",
+                    ""
+                ])
+            except Exception:
+                output.append(f"[{pf.stem}] (Fehler beim Laden)")
+
+        output.extend([
+            "--- Verwendung ---",
+            "bach scheduler session start --profile NAME",
+            "bach scheduler session trigger --profile NAME",
+            "bach scheduler session steer --profile NAME \"Hinweis\"",
+            "bach scheduler session clear-steer --profile NAME"
+        ])
+
+        if policy["deprecated"]:
+            output.extend([
+                "",
+                "--- Legacy-Hinweis ---",
+                policy["message"],
+                f"Legacy-Start/Trigger nur bewusst mit {policy['legacy_override_flag']}.",
+            ])
+            for replacement in policy["recommended_replacements"]:
+                output.append(f"- {replacement}")
+
         return (True, "\n".join(output))
 
     def _get_profile_from_args(self, args: list, default: str = "ati") -> str:
@@ -1093,6 +1199,88 @@ class SchedulerHandler(BaseHandler):
             "steer_file": str(self._session_steer_file(profile)),
         }
 
+    def _session_read_config(self) -> dict:
+        """Liest die Session-Config robust für Policy-/Status-Entscheidungen."""
+        config_file = self.session_dir / "config.json"
+        payload = self._session_read_json(config_file, {})
+        return payload if isinstance(payload, dict) else {}
+
+    def _has_deprecation_marker(self, path: Path) -> bool:
+        """Prüft, ob eine Datei als deprecated markiert ist."""
+        if not path.exists():
+            return False
+        try:
+            preview = path.read_text(encoding="utf-8", errors="replace")[:4000]
+        except OSError:
+            return False
+        return "DEPRECATED" in preview.upper()
+
+    def _session_runtime_policy(self) -> dict:
+        """Ermittelt, ob die Legacy-Session-Automation regulär nutzbar ist."""
+        config = self._session_read_config()
+        replacements = [
+            "Buddha Control API (:8081/api/chat)",
+            "BACH GUI Dashboard (:8000)",
+            "Claude Code /loop oder /schedule",
+        ]
+        daemon_deprecated = self._has_deprecation_marker(self.session_daemon)
+        trigger_script = self.session_dir / "auto_session.py"
+        trigger_deprecated = self._has_deprecation_marker(trigger_script)
+        deprecated = daemon_deprecated or trigger_deprecated
+        config_enabled = bool(config.get("enabled", True))
+
+        if deprecated:
+            message = (
+                "Die pyautogui-basierte Legacy-Session-Automation ist deprecated "
+                "und sollte nicht mehr regulär gestartet werden."
+            )
+            if not config_enabled:
+                message += " `config.json` hält sie zusätzlich bewusst deaktiviert."
+        elif not config_enabled:
+            message = "Die Session-Automation ist in `config.json` derzeit deaktiviert."
+        else:
+            message = "Die Session-Automation ist nicht als deprecated markiert."
+
+        return {
+            "deprecated": deprecated,
+            "daemon_deprecated": daemon_deprecated,
+            "trigger_deprecated": trigger_deprecated,
+            "config_enabled": config_enabled,
+            "message": message,
+            "recommended_replacements": replacements,
+            "legacy_override_flag": "--force",
+        }
+
+    def _check_session_runtime_policy(self) -> dict:
+        """Bewertet die Legacy-/Deaktivierungs-Policy des Session-Systems."""
+        policy = self._session_runtime_policy()
+        details = {
+            "script": str(self.session_daemon),
+            "trigger_script": str(self.session_dir / "auto_session.py"),
+            "config_file": str(self.session_dir / "config.json"),
+            "deprecated": policy["deprecated"],
+            "daemon_deprecated": policy["daemon_deprecated"],
+            "trigger_deprecated": policy["trigger_deprecated"],
+            "config_enabled": policy["config_enabled"],
+            "recommended_replacements": policy["recommended_replacements"],
+            "legacy_override_flag": policy["legacy_override_flag"],
+        }
+
+        if policy["deprecated"] or not policy["config_enabled"]:
+            return {
+                "name": "policy",
+                "status": "warn",
+                "message": policy["message"],
+                "details": details,
+            }
+
+        return {
+            "name": "policy",
+            "status": "ok",
+            "message": policy["message"],
+            "details": details,
+        }
+
     def _session_is_running(self) -> int:
         """Prueft ob Session-Scheduler laeuft. Gibt PID oder 0 zurueck."""
         if not self.session_pid_file.exists():
@@ -1124,6 +1312,16 @@ class SchedulerHandler(BaseHandler):
             return (False, f"[WARN] Session-Scheduler laeuft bereits (PID {pid})")
 
         profile = self._get_profile_from_args(args)
+        policy = self._session_runtime_policy()
+        force = "--force" in args
+
+        if policy["deprecated"] and not force:
+            replacements = "; ".join(policy["recommended_replacements"])
+            return (
+                False,
+                f"[WARN] {policy['message']} Nutze stattdessen: {replacements}. "
+                f"Nur fuer bewusste Legacy-Tests mit {policy['legacy_override_flag']} fortfahren.",
+            )
 
         if dry_run:
             return (True, f"[DRY-RUN] Wuerde Session-Scheduler mit Profil '{profile}' starten")
@@ -1295,8 +1493,12 @@ class SchedulerHandler(BaseHandler):
         pid = self._session_is_running()
         profile_names = set()
         config_jobs = []
+        policy = self._session_runtime_policy()
 
         if json_output:
+            available_actions = ["stop", "trigger"] if pid else ["start", "trigger"]
+            if policy["deprecated"] and not pid:
+                available_actions = []
             payload = {
                 "generated_at": datetime.now().isoformat(),
                 "service": {
@@ -1304,8 +1506,13 @@ class SchedulerHandler(BaseHandler):
                     "pid": pid or None,
                     "script": str(self.session_daemon),
                     "pid_file": str(self.session_pid_file),
-                    "available_actions": ["stop", "trigger"] if pid else ["start", "trigger"],
+                    "available_actions": available_actions,
                     "control_actions": ["pause", "resume", "steer", "clear-steer"],
+                    "deprecated": policy["deprecated"],
+                    "config_enabled": policy["config_enabled"],
+                    "deprecation_message": policy["message"] if policy["deprecated"] else None,
+                    "recommended_replacements": policy["recommended_replacements"] if policy["deprecated"] else [],
+                    "legacy_override_flag": policy["legacy_override_flag"],
                 },
                 "config": {},
                 "profiles": [],
@@ -1361,6 +1568,18 @@ class SchedulerHandler(BaseHandler):
             f"Script:      {self.session_daemon}",
             f"PID-File:    {self.session_pid_file}",
         ])
+
+        if policy["deprecated"]:
+            output.extend([
+                "",
+                "--- Policy ---",
+                f"Status:       [DEPRECATED]",
+                f"Hinweis:      {policy['message']}",
+                "Alternativen:",
+            ])
+            for replacement in policy["recommended_replacements"]:
+                output.append(f"  - {replacement}")
+            output.append(f"Legacy-Override: {policy['legacy_override_flag']}")
 
         # Config laden
         config_file = self.session_dir / "config.json"
@@ -1443,6 +1662,16 @@ class SchedulerHandler(BaseHandler):
             return (False, f"[ERROR] auto_session.py nicht gefunden: {auto_session}")
 
         profile = self._get_profile_from_args(args)
+        policy = self._session_runtime_policy()
+        force = "--force" in args
+
+        if policy["deprecated"] and not force:
+            replacements = "; ".join(policy["recommended_replacements"])
+            return (
+                False,
+                f"[WARN] {policy['message']} Nutze stattdessen: {replacements}. "
+                f"Nur fuer bewusste Legacy-Tests mit {policy['legacy_override_flag']} fortfahren.",
+            )
 
         cmd = [sys.executable, str(auto_session), "--profile", profile]
         if dry_run or "--dry-run" in args:
@@ -1492,50 +1721,7 @@ class SchedulerHandler(BaseHandler):
 
     def _session_profiles(self) -> tuple:
         """Listet verfuegbare Profile."""
-        import json
-
-        if not self.session_profiles_dir.exists():
-            return (False, f"[ERROR] Profilordner nicht gefunden: {self.session_profiles_dir}")
-
-        profiles = list(self.session_profiles_dir.glob("*.json"))
-
-        if not profiles:
-            return (True, "Keine Profile definiert.\n\nErstelle Profile in: " + str(self.session_profiles_dir))
-
-        output = [
-            "=== SESSION PROFILE ===",
-            ""
-        ]
-
-        for pf in profiles:
-            try:
-                data = json.loads(pf.read_text(encoding='utf-8'))
-                name = pf.stem
-                desc = data.get('description', '-')
-                source = data.get('task_source', 'ati_tasks')
-                max_tasks = data.get('max_tasks', 3)
-                timeout = data.get('timeout_minutes', 15)
-
-                output.extend([
-                    f"[{name}]",
-                    f"  Beschreibung: {desc[:50]}",
-                    f"  Task-Quelle:  {source}",
-                    f"  Max Tasks:    {max_tasks}",
-                    f"  Timeout:      {timeout} Min",
-                    ""
-                ])
-            except Exception:
-                output.append(f"[{pf.stem}] (Fehler beim Laden)")
-
-            output.extend([
-            "--- Verwendung ---",
-            "bach scheduler session start --profile NAME",
-            "bach scheduler session trigger --profile NAME",
-            "bach scheduler session steer --profile NAME \"Hinweis\"",
-            "bach scheduler session clear-steer --profile NAME"
-        ])
-
-        return (True, "\n".join(output))
+        return self._session_profiles_v2()
 
 
 # Rueckwaertskompatibilitaet: DaemonHandler ist ein Alias fuer SchedulerHandler

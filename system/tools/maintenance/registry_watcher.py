@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
-BACH Registry Watcher v1.1.2
+BACH Registry Watcher v1.1.3
 
 Registry-Checks fuer das aktuelle BACH-Layout.
 
@@ -13,6 +13,7 @@ Features:
 
 Usage:
   python registry_watcher.py check              # Alle Registries pruefen
+  python registry_watcher.py check --db         # Nur DB-Tabellen pruefen
   python registry_watcher.py report             # Health-Report speichern
   python registry_watcher.py tools              # Nur Tools pruefen
   python registry_watcher.py skills             # Nur Skills pruefen
@@ -55,7 +56,7 @@ IGNORED_DIR_NAMES = {"__pycache__", "node_modules", ".git", ".pytest_cache"}
 class RegistryWatcher:
     """Layout-aware Registry-Konsistenzpruefung fuer BACH."""
 
-    VERSION = "1.1.2"
+    VERSION = "1.1.3"
 
     def __init__(self, db_path: Optional[Path] = None, base_path: Optional[Path] = None):
         candidate_db = Path(db_path) if db_path is not None else None
@@ -118,6 +119,69 @@ class RegistryWatcher:
             "checks": checks,
             "summary": self._build_summary(checks),
         }
+
+    def check_database(self) -> Dict:
+        """Prueft nur die fuer den Registry-Watcher relevanten DB-Tabellen."""
+        required_tables = {
+            "tools": "tools",
+            "skills": "skills",
+            "agents": "bach_agents",
+            "partners": "partner_recognition",
+        }
+
+        result = {
+            "timestamp": datetime.now().isoformat(),
+            "version": self.VERSION,
+            "mode": "db_only",
+            "db_path": str(self.db_path),
+            "tables": {},
+            "summary": {
+                "healthy": False,
+                "tables_checked": len(required_tables),
+                "tables_present": 0,
+                "missing_tables": [],
+                "recommendation": "",
+            },
+        }
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                for label, table_name in required_tables.items():
+                    cursor.execute(
+                        """
+                        SELECT name
+                        FROM sqlite_master
+                        WHERE type = 'table' AND name = ?
+                        """,
+                        (table_name,),
+                    )
+                    exists = cursor.fetchone() is not None
+                    rows = None
+                    if exists:
+                        cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+                        rows = int(cursor.fetchone()[0])
+                        result["summary"]["tables_present"] += 1
+                    else:
+                        result["summary"]["missing_tables"].append(table_name)
+
+                    result["tables"][label] = {
+                        "table": table_name,
+                        "exists": exists,
+                        "rows": rows,
+                    }
+        except Exception as exc:
+            result["error"] = str(exc)
+            result["summary"]["recommendation"] = "DB-Zugriff fehlgeschlagen"
+            return result
+
+        result["summary"]["healthy"] = not result["summary"]["missing_tables"]
+        if result["summary"]["healthy"]:
+            result["summary"]["recommendation"] = "Alle Registry-Tabellen vorhanden"
+        else:
+            missing = ", ".join(result["summary"]["missing_tables"])
+            result["summary"]["recommendation"] = f"Fehlende Tabellen: {missing}"
+        return result
 
     def check_tools(self) -> Dict:
         """Prueft die Tools-Registry gegen den rekursiven tools/-Baum."""
@@ -437,6 +501,31 @@ class RegistryWatcher:
         )
         return filepath
 
+    def generate_db_report(self, results: Dict) -> str:
+        """Formatiert den DB-Only-Check fuer die CLI."""
+        lines = [
+            "[REGISTRY-DB] Datenbank-Check",
+            f"  DB: {results.get('db_path')}",
+        ]
+
+        for label, info in results.get("tables", {}).items():
+            status = "OK" if info.get("exists") else "FEHLT"
+            row_info = ""
+            if info.get("exists"):
+                row_info = f" ({info.get('rows', 0)} Zeilen)"
+            lines.append(f"  [{status}] {label}: {info.get('table')}{row_info}")
+
+        if results.get("error"):
+            lines.append(f"  [ERROR] {results['error']}")
+
+        summary = results.get("summary", {})
+        lines.append(
+            "  Zusammenfassung: "
+            f"{summary.get('tables_present', 0)}/{summary.get('tables_checked', 0)} Tabellen vorhanden"
+        )
+        lines.append(f"  Empfehlung: {summary.get('recommendation', '')}")
+        return "\n".join(lines)
+
     def _build_summary(self, checks: Dict[str, Dict]) -> Dict:
         actionable = 0
         stale = 0
@@ -734,12 +823,28 @@ def main() -> None:
         choices=["check", "report", "tools", "skills", "agents", "partners"],
         help="Befehl",
     )
+    parser.add_argument(
+        "--db",
+        action="store_true",
+        help="Nur die Registry-relevanten DB-Tabellen pruefen",
+    )
     parser.add_argument("--json", action="store_true", help="JSON-Ausgabe")
     args = parser.parse_args()
+
+    if args.db and args.command != "check":
+        parser.error("--db ist nur mit 'check' verfuegbar.")
 
     watcher = RegistryWatcher()
 
     if args.command == "check":
+        if args.db:
+            results = watcher.check_database()
+            print(
+                json.dumps(results, indent=2, ensure_ascii=False)
+                if args.json
+                else watcher.generate_db_report(results)
+            )
+            return
         results = watcher.check_all()
         print(json.dumps(results, indent=2, ensure_ascii=False) if args.json else watcher.generate_report(results))
         return
