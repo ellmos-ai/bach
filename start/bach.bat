@@ -22,8 +22,11 @@ echo  \ \  __^< \ \  __ \\ \ \____\ \  __ \
 echo   \ \_____\\ \_\ \_\\ \_____\\ \_\ \_\
 echo    \/_____/ \/_/\/_/ \/_____/ \/_/\/_/
 echo.
-echo   Personal AI Operating System v3.11.1
+echo   Personal AI Operating System v3.12.0
 echo   ==================================================
+echo.
+echo   --- SCHNELLSTART --------------------------------
+echo   [D]  Default Start (GUI + Tray + PromptBoard)
 echo.
 echo   --- VERBINDEN ----------------------------------
 echo   [W]  Buddha Connect (Server-Modus)
@@ -74,6 +77,7 @@ echo.
 
 set /p "choice=  Auswahl: "
 
+if /i "!choice!"=="D" goto default_start
 if /i "!choice!"=="W" goto server_connect
 if /i "!choice!"=="B" goto bridge_start
 if /i "!choice!"=="S" goto bridge_status
@@ -103,6 +107,64 @@ if /i "!choice!"=="Q" goto end
 
 echo   Ungueltige Auswahl.
 timeout /t 2 >nul
+goto menu
+
+REM ============================================================
+REM  DEFAULT START (GUI + Chat Tray + PromptBoard)
+REM ============================================================
+:default_start
+title BACH Default Start
+cls
+echo.
+echo  ============================================
+echo   BACH DEFAULT START
+echo   Web-GUI + System Tray + PromptBoard
+echo  ============================================
+echo.
+
+echo [1/4] Starte Web-GUI (Port 8000)...
+pushd "!SYS_DIR!"
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000" ^| findstr "LISTENING" 2^>nul') do (
+    taskkill /F /PID %%a >nul 2>&1
+)
+start "BACH Server" /min cmd /k "set PYTHONIOENCODING=utf-8 && python gui\server.py --port 8000"
+popd
+echo       [OK] GUI Server gestartet
+
+echo [2/4] Starte BACH System Tray...
+pushd "!CHAT_DIR!"
+start "" pythonw chat_tray.py
+popd
+echo       [OK] System Tray gestartet
+
+echo [3/4] Starte PromptBoard...
+set "PROMPTBOARD_DIR=!ROOT_DIR!\..\..\..\.SOFTWARE\LLM\REL-PUB_PromptBoard"
+if exist "!PROMPTBOARD_DIR!\src\promptboard.py" (
+    pushd "!PROMPTBOARD_DIR!"
+    start "PromptBoard" pythonw src\promptboard.py
+    popd
+    echo       [OK] PromptBoard gestartet
+) else (
+    echo       [SKIP] PromptBoard nicht gefunden
+)
+
+echo [4/4] Oeffne Web-GUI im Browser...
+timeout /t 3 /nobreak >nul
+start "" "http://127.0.0.1:8000"
+echo       [OK] Browser geoeffnet
+echo.
+echo  ============================================
+echo   BACH laeuft!
+echo  ============================================
+echo   GUI:         http://127.0.0.1:8000
+echo   System Tray: Im Infobereich pruefen
+echo   PromptBoard: Im Infobereich pruefen
+echo  ============================================
+echo.
+echo   Zum Beenden: Tray-Icons rechtsklick -^> Beenden
+echo   GUI stoppen: Ctrl+C im Server-Fenster
+echo.
+pause
 goto menu
 
 REM ============================================================

@@ -1,0 +1,90 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH INSTALLATION
+=================
+
+
+DESCRIPTION
+===========
+Guide for the first-time installation of BACH. BACH is a Personal Agentic OS
+that runs locally and orchestrates AI models.
+
+
+PREREQUISITES
+=============
+- Python >= 3.10
+- npm (for MCP servers)
+- > 100 MB free storage
+- Optional: OneDrive (for multi-system sync)
+- Optional: Tailscale (for remote access to server)
+
+
+QUICKSTART
+==========
+# 1. Clone repository
+git clone https://github.com/ellmos-ai/bach.git
+cd bach
+
+# 2. Check prerequisites
+bach setup preflight
+
+# 3. Full installation (with optional language)
+bach setup full-install [--lang en]
+
+# 4. Start first session
+bach --startup
+
+
+FULL-INSTALL STEPS
+==================
+"bach setup full-install" runs these steps automatically:
+
+1. Pre-Flight Check      Python, npm, storage, write permissions
+2. ProSync               Configure single or multi-system (default: single)
+3. MCP Servers           ellmos-codecommander-mcp, ellmos-filecommander-mcp
+4. Claude Code Hooks     DB protection and other hooks in ~/.claude/
+5. Secrets               Initialize ~/.bach/bach_secrets.json
+6. User Profile          Personalize USER.md and sync with DB
+7. Language (optional)   Set interface language and swap docs
+8. Help-Docs (optional)  Generate help files for chosen language (EN fallback)
+9. Validation            Final check of all components
+
+Optional flags:
+  --lang <code>      Set system language (de/en/es/ru/ja/zh)
+  --with-n8n         Install n8n Manager MCP
+  --config <json>    Batch configuration file
+
+
+USAGE SCENARIOS
+===============
+BACH has one installation. After installation, configuration options
+determine the deployment scenario.
+
+Single-System (Default)
+  One machine, one installation.
+  bach setup full-install
+
+Multi-System (OneDrive Sync)
+  Multiple machines share one installation via OneDrive.
+  bach setup full-install --config multi-system.json
+
+Server (Headless)
+  Runs as background service (Mac Studio, Linux server).
+  bach setup full-install --config server.json
+
+
+AFTER INSTALLATION
+==================
+  bach --startup             Start a new session
+  bach --help                Browse help topics
+  bach status                System status
+  start/bach.bat             Windows boot menu (GUI, Tray, Chat)
+
+
+SEE ALSO
+--------
+  docs/help/setup_en.txt         Setup handler details
+  docs/help/architecture_en.txt  System architecture
+  docs/help/backup_en.txt        Backup & restore

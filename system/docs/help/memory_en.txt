@@ -1,0 +1,100 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [hub/consolidation.py, hub/memory.py, bach_api.py]
+
+MEMORY SYSTEM (Cognitive Model)
+================================
+
+STATUS: 2026-05-17
+
+Definition: BACH uses a cognitive memory system modeled after human memory.
+It goes beyond simple storage and integrates active weighting, decay
+(forgetting) and boost (remembering).
+
+THE 5 COGNITIVE TYPES:
+-----------------------
+
+1. WORKING MEMORY (memory_working)
+   - "Short-term memory"
+   - Focus: Current session, volatile.
+   - Command: `bach mem write "..."`
+
+2. EPISODIC MEMORY (memory_sessions)
+   - "The experience journal"
+   - Stores completed sessions (360+).
+   - Command: `bach --memory session "..."`
+
+3. SEMANTIC MEMORY (memory_facts, docs/help/, wiki/)
+   - "World knowledge"
+   - Facts, definitions, architecture (230+ facts).
+   - Command: `bach --memory fact "..."`
+
+4. PROCEDURAL MEMORY (memory_lessons, tools/, skills/)
+   - "Know-how" / "Best Practices"
+   - How things are done (workflows, tools).
+   - Command: `bach lesson add "..."`
+
+5. ASSOCIATIVE MEMORY (memory_context, context_triggers)
+   - "The bridge"
+   - Links knowledge via triggers to the current situation.
+   - Command: `bach --memory search "..."`
+   - Integration: context_triggers also fire during connector routing
+
+DYNAMIC LEARNING SYSTEM (v1.1.80+)
+------------------------------------
+Unlike traditional systems, BACH's injectors are now DYNAMIC:
+- TRIGGER-DB: 900+ triggers from lessons, workflows and tools are auto-generated.
+- COGNITIVE LOAD: Only relevant context is loaded into the session.
+- FEEDBACK: Completed tasks and learned lessons immediately change system behavior.
+
+CONNECTOR INTEGRATION (v2.0+)
+---------------------------------------------
+context_triggers are now also used during connector routing:
+- Incoming Telegram/Discord/HomeAssistant messages pass through context_triggers
+- Recognized triggers are attached as metadata to messages.metadata
+- LLM automatically receives relevant context (e.g., "Tax" -> Tax facts)
+- See: --help connector (Context Integration section)
+
+DATABASE TABLES:
+  memory_working       Temporary notes (is_active flag)
+  memory_facts         Global facts (cat: user, project, system, domain)
+  memory_lessons       Insights (severity: info, warn, critical)
+  memory_sessions      Session history (with summary & context)
+  memory_consolidation Tracking metadata (weight, last_accessed)
+  memory_context       Source paths with triggers (legacy)
+  context_triggers     900+ dynamic triggers (lessons/workflows/tools)
+                       -> Fire in injectors + connector routing
+
+CONFIDENCE SYSTEM:
+=================
+
+The memory system uses confidence values for quality assessment of facts.
+
+CONFIDENCE SCALE (0.0 - 1.0):
+  1.0       Absolutely certain (verified, multiple confirmations)
+  0.8-0.9   Very certain (from reliable source)
+  0.5-0.7   Moderate (assumption or observation)
+  0.3-0.4   Uncertain (guess)
+  0.0-0.2   Very uncertain (needs checking)
+
+USAGE:
+  bach --memory fact "key:value" --confidence 0.9
+  bach --memory fact "key:value" --confidence 0.5 --cat project
+
+DEFAULT CONFIDENCE:
+  Facts from AI: 0.7
+  Facts from user: 0.9
+  Facts from verification: 1.0
+
+CORE COMMANDS:
+  bach mem write "..."          Write to working memory
+  bach mem read                 Read current memory
+  bach mem fact "key:value"     Store a fact
+  bach mem search "query"       Search across memory types
+  bach lesson add "..."         Add a lesson
+  bach consolidate run          Run consolidation pipeline
+
+SEE ALSO
+  docs/help/consolidation_en.txt    Memory consolidation
+  docs/help/lessons.txt             Best practices & insights

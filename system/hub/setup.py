@@ -585,7 +585,13 @@ class SetupHandler(BaseHandler):
         return True, "\n".join([summary] + out)
 
     def _full_install(self, args):
-        """Vollstaendige BACH-Installation in einem Durchlauf."""
+        """Vollstaendige BACH-Installation in einem Durchlauf.
+
+        Options:
+            --config <file>   JSON config file
+            --lang <code>     Set system language (de/en/es/ru/ja/zh)
+            --with-n8n        Install n8n integration
+        """
         config = {}
         # --config flag parsen
         if "--config" in args:
@@ -597,6 +603,13 @@ class SetupHandler(BaseHandler):
                 else:
                     return False, f"Config-Datei nicht gefunden: {config_path}"
 
+        # --lang flag parsen
+        install_lang = config.get("language", None)
+        if "--lang" in args:
+            idx = args.index("--lang")
+            if idx + 1 < len(args):
+                install_lang = args[idx + 1].strip().lower()
+
         results = []
         steps = [
             ("Pre-Flight Check", self._preflight),
@@ -606,6 +619,11 @@ class SetupHandler(BaseHandler):
             ("Secrets", lambda a: self._setup_secrets()),
             ("User-Profil", lambda a: self._setup_user()),
         ]
+
+        # Optional: Language
+        if install_lang:
+            steps.append(("Sprache", lambda a, _l=install_lang: self._swap_doc_language(_l)))
+            steps.append(("Help-Docs", lambda a, _l=install_lang: self._generate_help_docs(_l)))
 
         # Optional: n8n
         if config.get("install_n8n", False) or "--with-n8n" in args:
@@ -799,7 +817,9 @@ class SetupHandler(BaseHandler):
 
         Wird vor _cleanup_templates() aufgerufen. Kopiert nur wenn die
         echte .md noch nicht existiert (erster Start nach git clone).
+        Handles both *.template.md (EN) and *.template.de.md (DE).
         """
+        import shutil
         root = self.base_path.parent  # BACH/
         created = []
 
@@ -807,7 +827,6 @@ class SetupHandler(BaseHandler):
             real_file = root / template.name.replace(".template.md", ".md")
             if not real_file.exists():
                 try:
-                    import shutil
                     shutil.copy2(template, real_file)
                     created.append(f"  [INIT] {real_file.name} aus Template erstellt")
                 except OSError:
@@ -816,7 +835,7 @@ class SetupHandler(BaseHandler):
         return created
 
     def _cleanup_templates(self) -> list:
-        """Loescht .template.md Dateien wenn die entsprechende .md existiert.
+        """Loescht .template.md und .template.de.md Dateien wenn die echte .md existiert.
 
         Templates bleiben in Git getrackt (fuer neue Installationen), werden
         aber lokal geloescht sobald die personalisierten Dateien existieren.
@@ -824,8 +843,14 @@ class SetupHandler(BaseHandler):
         root = self.base_path.parent  # BACH/
         cleaned = []
 
-        for template in root.glob("*.template.md"):
-            real_file = root / template.name.replace(".template.md", ".md")
+        for template in root.glob("*.template*.md"):
+            name = template.name
+            if ".template.de.md" in name:
+                real_file = root / name.replace(".template.de.md", ".md")
+            elif ".template.md" in name:
+                real_file = root / name.replace(".template.md", ".md")
+            else:
+                continue
             if real_file.exists():
                 try:
                     template.unlink()
@@ -1244,6 +1269,27 @@ class SetupHandler(BaseHandler):
             results.append(f"\n  [WARN] Systemsprache konnte nicht gesetzt werden: {e}")
 
         return True, "\n".join(results)
+
+    def _generate_help_docs(self, lang: str) -> tuple:
+        """Generiert Help-Dateien aus der DB für die gewählte Sprache."""
+        try:
+            sys.path.insert(0, str(self.base_path))
+            from tools.help_docs_generator import generate, stats as help_stats
+
+            st = help_stats()
+            if not st or lang not in st:
+                return True, f"Keine Help-Docs für Sprache '{lang}' in der DB vorhanden (übersprungen)."
+
+            result = generate(lang=lang)
+            if result["errors"]:
+                return False, (
+                    f"Help-Docs generiert: {result['generated']} Dateien, "
+                    f"aber {len(result['errors'])} Fehler:\n"
+                    + "\n".join(f"  - {e}" for e in result["errors"])
+                )
+            return True, f"Help-Docs generiert: {result['generated']} Dateien für '{lang}'."
+        except Exception as e:
+            return True, f"Help-Docs-Generator nicht verfügbar: {e} (übersprungen)"
 
     # =========================================================================
     # Secrets Setup

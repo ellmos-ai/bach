@@ -1,0 +1,40 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH INFO
+=========
+
+DEFINITION
+BACH (Best-of BATCH + CHIAH) is a local, portable "Agentic Operating System" -
+a working environment for LLM-based AI assistants. It combines agent frameworks,
+RAG systems, and cognitive psychology into a personal "nervous system" for AIs.
+
+CORE FEATURES (The 7 Pillars)
+1. Cognitive Memory Model: 5 types analogous to human memory
+   (Working, Episodic, Semantic, Procedural, Associative).
+2. Active Consolidation: The system learns, forgets, and weighs information
+   via decay, boost, and nightly compression.
+3. Multi-Partner Delegation: Orchestration of Claude, Gemini, and Ollama.
+4. CLI-First + GUI: Full control via terminal or web dashboard (8+ specialized boards).
+5. Portable & Local: SQLite-based, no cloud dependency, full data sovereignty.
+6. Domain Agents: 20+ specialists (ATI, Tax, Finance Assistant, Health, etc.).
+7. Self-Healing: Automatic maintenance, path healing, and documentation forensics.
+
+USAGE
+The system is primarily controlled via this CLI (`bach.py`) or the web dashboard.
+
+COMMANDS
+bach --help             Overview of all topics
+bach status             Current system status
+bach task list          Show open tasks
+bach mem read           Retrieve current memory
+
+ARCHITECTURE
+CLI/GUI/MCP --> Hub Handlers --> Skills/Tools --> Databases/Filesystem/Partners
+
+SEE ALSO
+wiki/was_ist_bach.txt           Detailed definition & comparison
+system/ARCHITECTURE.md          Architecture documentation (layer model)
+docs/help/architecture_en.txt   Technical details
+docs/help/features.txt          Feature list

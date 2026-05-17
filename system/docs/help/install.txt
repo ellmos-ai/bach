@@ -47,9 +47,12 @@ FULL-INSTALL SCHRITTE
 4. Claude Code Hooks     DB-Schutz und andere Hooks in ~/.claude/
 5. Secrets               ~/.bach/bach_secrets.json initialisieren
 6. User-Profil           USER.md personalisieren und mit DB synchronisieren
-7. Validierung           Abschluss-Check aller Komponenten
+7. Sprache (optional)    Systemsprache setzen und Dokumente umschalten
+8. Help-Docs (optional)  Help-Dateien für gewählte Sprache generieren (EN-Fallback)
+9. Validierung           Abschluss-Check aller Komponenten
 
-Optional: --with-n8n fuer n8n-Manager-MCP, --config <json> fuer Batch-Konfiguration.
+Optional: --with-n8n fuer n8n-Manager-MCP, --lang <code> fuer Sprachauswahl (de/en/es/ru/ja/zh),
+--config <json> fuer Batch-Konfiguration.
 
 
 NUTZUNGSSZENARIEN

@@ -14,7 +14,7 @@ NEU (v1.1.38): Tool-Direktzugriff
 from pathlib import Path
 import sqlite3
 from .base import BaseHandler
-from .lang import t
+from .lang import get_lang, t
 
 
 class HelpHandler(BaseHandler):
@@ -96,17 +96,31 @@ class HelpHandler(BaseHandler):
         result += "\n\nNutzung: --help <topic>"
         return True, result
     
+    def _resolve_lang_file(self, base_file: Path) -> Path:
+        """Resolves language-specific help file based on system language.
+
+        Convention: topic.txt = DE (default), topic_en.txt = EN variant.
+        If system language is EN and _en.txt exists, prefer that.
+        """
+        lang = get_lang()
+        if lang == "en":
+            stem = base_file.stem
+            en_file = base_file.parent / f"{stem}_en.txt"
+            if en_file.exists():
+                return en_file
+        return base_file
+
     def _show_topic(self, topic: str) -> tuple:
         """Zeigt Hilfe zu einem bestimmten Thema.
-        
+
         Unterstuetzt:
-          topic             -> docs/help/topic.txt
+          topic             -> docs/help/topic.txt (or topic_en.txt if lang=en)
           folder/topic      -> docs/help/folder/topic.txt
           folder            -> docs/help/folder/_index.txt (falls vorhanden)
         """
         # Normalisieren: Backslash zu Slash, Leerzeichen zu Underscore
         topic = topic.lower().replace("\\", "/").replace("-", "_").replace(" ", "_")
-        
+
         # Pfad aufbauen
         if "/" in topic:
             # Unterordner-Pfad: tools/python_cli_editor
@@ -114,7 +128,7 @@ class HelpHandler(BaseHandler):
             folder = parts[0]
             subtopic = parts[1] if len(parts) > 1 else "_index"
             txt_file = self.help_dir / folder / f"{subtopic}.txt"
-            
+
             # Fallback: Ordner-Index
             if not txt_file.exists() and len(parts) == 1:
                 txt_file = self.help_dir / folder / "_index.txt"
@@ -135,6 +149,10 @@ class HelpHandler(BaseHandler):
                     index_file = folder_path / "_index.txt"
                     if index_file.exists():
                         txt_file = index_file
+
+        # Language-aware resolution
+        if txt_file.exists():
+            txt_file = self._resolve_lang_file(txt_file)
 
         if not txt_file.exists():
             # NEU v1.1.85: Alias-System fuer skills-Strukturen
