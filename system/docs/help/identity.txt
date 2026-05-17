@@ -1,16 +1,15 @@
 # Portabilität: SYSTEM
-# Zuletzt validiert: 2026-02-08
-# Nächste Prüfung: 2026-05-08
-# Ressourcen: [system_identity table], [hub/dist.py], [tools/generators/distribution_system.py]
-# Status: HANDLER DEFEKT - dist-Routing funktioniert nicht
+# Zuletzt validiert: 2026-05-17
+# Nächste Prüfung: 2026-08-17
+# Ressourcen: [instance_identity table], [hub/dist.py], [tools/generators/distribution_system.py]
 
 IDENTITY-SYSTEM
 ===============
 
-Stand: 2026-02-08
+Stand: 2026-05-17
 
 Das Identity-System gewährleistet die Integrität und Identifikation der BACH-Instanz.
-Funktionen sind im Distribution-Handler implementiert, aber das CLI-Routing ist defekt.
+Funktionen sind im Distribution-Handler implementiert und über CLI erreichbar.
 
 TABELLE: system_identity (Zentrales Singleton)
 ----------------------------------------------
@@ -33,14 +32,14 @@ SIEGEL-MECHANISMUS
   3. Status: Bei Abweichung wird das Siegel "gebrochen" (broken)
   4. Warnung: Ein gebrochenes Siegel weist auf manuelle Eingriffe hin
 
-CLI-BEFEHLE (DOKUMENTIERT, aber DEFEKT)
-----------------------------------------
+CLI-BEFEHLE
+-----------
   bach --dist status         System-Status mit Siegel-Info anzeigen
   bach --dist verify         Siegel-Integrität prüfen
-
-PROBLEM: Der dist-Handler (hub/dist.py) existiert und implementiert diese
-Funktionen, aber das CLI-Routing in bach.py ruft ihn nicht korrekt auf.
-Nur "bach dist list" funktioniert.
+  bach --dist classify       dist_type Verteilung anzeigen
+  bach --dist snapshot NAME  Snapshot erstellen
+  bach --dist release NAME   Release erstellen
+  bach --dist list           Snapshots/Releases auflisten
 
 NICHT IMPLEMENTIERT
 -------------------
@@ -53,8 +52,7 @@ IMPLEMENTATION
 --------------
   Handler:        system/hub/dist.py (DistHandler)
   Backend:        system/tools/generators/distribution_system.py
-  Operations:     status, verify, scan, snapshot, release, restore, install, list
-  Funktioniert:   Nur "list" - alle anderen Operationen werden nicht geroutet
+  Operations:     status, verify, classify, snapshot, release, restore, install, list
 
 KONTEXT
 -------

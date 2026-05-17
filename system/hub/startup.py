@@ -112,33 +112,34 @@ class StartupHandler(BaseHandler):
             tuple: (session_closed: bool, session_id: str or None)
         """
         conn = self._get_conn()
-        cursor = conn.cursor()
+        try:
+            cursor = conn.cursor()
 
-        # Suche nach aktiver Session des Partners
-        cursor.execute("""
-            SELECT id, session_id FROM memory_sessions
-            WHERE partner_id = ? AND ended_at IS NULL
-            ORDER BY id DESC LIMIT 1
-        """, (partner_id,))
-        row = cursor.fetchone()
-
-        if row:
-            session_db_id, session_id = row
-            now = datetime.now().isoformat()
-
-            # Session automatisch schliessen
+            # Suche nach aktiver Session des Partners
             cursor.execute("""
-                UPDATE memory_sessions
-                SET ended_at = ?,
-                    summary = COALESCE(summary, '') || ' [AUTO-CLOSED: Neue Session gestartet]'
-                WHERE id = ?
-            """, (now, session_db_id))
-            conn.commit()
-            conn.close()
-            return True, session_id
+                SELECT id, session_id FROM memory_sessions
+                WHERE partner_id = ? AND ended_at IS NULL
+                ORDER BY id DESC LIMIT 1
+            """, (partner_id,))
+            row = cursor.fetchone()
 
-        conn.close()
-        return False, None
+            if row:
+                session_db_id, session_id = row
+                now = datetime.now().isoformat()
+
+                # Session automatisch schliessen
+                cursor.execute("""
+                    UPDATE memory_sessions
+                    SET ended_at = ?,
+                        summary = COALESCE(summary, '') || ' [AUTO-CLOSED: Neue Session gestartet]'
+                    WHERE id = ?
+                """, (now, session_db_id))
+                conn.commit()
+                return True, session_id
+
+            return False, None
+        finally:
+            conn.close()
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
         # Modus-Aenderung
@@ -651,6 +652,7 @@ class StartupHandler(BaseHandler):
         # 0.75 KERNEL SEAL CHECK - Integritätsprüfung (SQ021)
         # ══════════════════════════════════════════════════════════════
         if not quick and not dry_run:
+            conn = None
             try:
                 conn = self._get_conn()
                 cursor = conn.execute("SELECT kernel_hash FROM instance_identity LIMIT 1")
@@ -683,11 +685,14 @@ class StartupHandler(BaseHandler):
                         results.append(f" [!] {len(missing)}/5 CORE-Dateien fehlen")
                         results.append(" --> Integritaet kompromittiert?")
                         results.append(" --> bach seal check fuer Details")
-
-                conn.close()
-                # Kein gespeicherter Hash → Skip (noch nicht initialisiert)
             except Exception as e:
                 pass  # Silent fail - nicht kritisch
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
 
         # ══════════════════════════════════════════════════════════════
         # 0.8 SKILL HEALTH MONITOR - Skill/Agent Validierung
@@ -970,6 +975,7 @@ class StartupHandler(BaseHandler):
         # ══════════════════════════════════════════════════════════════
         # 2.7 GESUNDHEIT REMINDERS - Termine + Faellige Vorsorge
         # ══════════════════════════════════════════════════════════════
+        conn_health = None
         try:
             conn_health = self._get_conn()
             conn_health.row_factory = sqlite3.Row
@@ -1022,8 +1028,6 @@ class StartupHandler(BaseHandler):
             except Exception:
                 pass  # Tabelle existiert evtl. nicht
 
-            conn_health.close()
-
             if health_lines:
                 results.append("")
                 for hl in health_lines:
@@ -1031,11 +1035,18 @@ class StartupHandler(BaseHandler):
 
         except Exception:
             pass  # Silent fail - nicht kritisch
+        finally:
+            if conn_health:
+                try:
+                    conn_health.close()
+                except Exception:
+                    pass
 
         # ══════════════════════════════════════════════════════════════
         # 3. NEUE SESSION REGISTRIEREN
         # ══════════════════════════════════════════════════════════════
         if not dry_run:
+            conn = None
             try:
                 conn = self._get_conn()
                 session_id = f"session_{now.strftime('%Y%m%d_%H%M%S')}"
@@ -1052,11 +1063,16 @@ class StartupHandler(BaseHandler):
                 """, (session_id, now.isoformat()))
 
                 conn.commit()
-                conn.close()
                 results.append("")
                 results.append(f"[SESSION] {session_id} gestartet (Partner: {partner_id})")
             except Exception as e:
                 pass  # Nicht kritisch
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
         
         # ══════════════════════════════════════════════════════════════
         # 4. NACHRICHTEN CHECK + DIREKTE INJEKTION (v1.1.72)
@@ -1179,9 +1195,10 @@ class StartupHandler(BaseHandler):
         # ══════════════════════════════════════════════════════════════
         results.append("")
         results.append("[BACH SYSTEM-TASKS]")
+        conn = None
         try:
             conn = self._get_conn()
-            
+
             # System-Tasks aus bach.db/tasks
             open_tasks = conn.execute("""
                 SELECT COUNT(*) FROM tasks WHERE status IN ('pending', 'open', 'in_progress')
@@ -1189,14 +1206,14 @@ class StartupHandler(BaseHandler):
             done_tasks = conn.execute("""
                 SELECT COUNT(*) FROM tasks WHERE status = 'done'
             """).fetchone()[0]
-            
+
             results.append(f" {open_tasks} offen, {done_tasks} erledigt")
-            
+
             # Top 3 nach Prioritaet
             top_tasks = conn.execute("""
-                SELECT id, title FROM tasks 
+                SELECT id, title FROM tasks
                 WHERE status IN ('pending', 'open', 'in_progress')
-                ORDER BY 
+                ORDER BY
                     CASE WHEN title LIKE 'P1%' THEN 1
                          WHEN title LIKE 'P2%' THEN 2
                          WHEN title LIKE 'P3%' THEN 3
@@ -1204,26 +1221,31 @@ class StartupHandler(BaseHandler):
                     id
                 LIMIT 3
             """).fetchall()
-            
+
             if top_tasks:
                 results.append(" Top-Aufgaben:")
                 for tid, title in top_tasks:
                     results.append(f"   [{tid}] {title[:45]}")
                 results.append("")
                 results.append(" --> bach task list fuer alle")
-            
-            conn.close()
         except Exception as e:
             results.append(f" [ERROR] {e}")
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         
         # ══════════════════════════════════════════════════════════════
         # 5.5 DELEGATION-VORSCHLAEGE - Tasks mit Partner-Keywords matchen
         # ══════════════════════════════════════════════════════════════
         results.append("")
         results.append("[DELEGATION-VORSCHLAEGE]")
+        conn = None
         try:
             conn = self._get_conn()
-            
+
             # Keyword -> Partner Mapping (aus partner_registry.json abgeleitet)
             delegation_keywords = {
                 "ollama": ["embed", "draft", "bulk", "zusammenfass", "embedding", "vektor"],
@@ -1231,14 +1253,14 @@ class StartupHandler(BaseHandler):
                 "copilot": ["code", "review", "refactor", "implement", "debug", "fix"],
                 "perplexity": ["quelle", "source", "web", "aktuell", "news", "search"]
             }
-            
+
             # Offene Tasks holen
             tasks = conn.execute("""
-                SELECT id, title FROM tasks 
+                SELECT id, title FROM tasks
                 WHERE status IN ('pending', 'open', 'in_progress')
                 ORDER BY id
             """).fetchall()
-            
+
             suggestions = []
             for task_id, title in tasks:
                 title_lower = title.lower()
@@ -1250,7 +1272,7 @@ class StartupHandler(BaseHandler):
                     else:
                         continue
                     break
-            
+
             if suggestions:
                 results.append(f" {len(suggestions)} Task(s) mit Delegations-Potenzial:")
                 for task_id, title, partner in suggestions[:3]:
@@ -1260,21 +1282,26 @@ class StartupHandler(BaseHandler):
                 results.append(" --> bach partner delegate \"task\" --to=PARTNER")
             else:
                 results.append(" Keine passenden Keywords in offenen Tasks")
-            
-            conn.close()
         except Exception as e:
             results.append(f" [SKIP] {e}")
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         
         # ══════════════════════════════════════════════════════════════
         # 5.6 PARTNER-AUSLASTUNG WARNUNG - Doppelbearbeitung verhindern
         # ══════════════════════════════════════════════════════════════
+        conn = None
         try:
             conn = self._get_conn()
-            
+
             # Tasks nach Partner-Zuweisung (category-Feld) gruppieren
             partner_tasks = conn.execute("""
-                SELECT LOWER(category) as cat, COUNT(*) as cnt 
-                FROM tasks 
+                SELECT LOWER(category) as cat, COUNT(*) as cnt
+                FROM tasks
                 WHERE status IN ('pending', 'open', 'in_progress')
                 AND LOWER(category) NOT IN ('user', 'bach', 'system', 'gui', 'wiki', 'agents', 'core', 'mail', 'integ', 'ollama', 'task', 'deprecate')
                 AND category IS NOT NULL
@@ -1283,7 +1310,7 @@ class StartupHandler(BaseHandler):
                 HAVING cnt > 1
                 ORDER BY cnt DESC
             """).fetchall()
-            
+
             if partner_tasks:
                 results.append("")
                 results.append("[PARTNER-AUSLASTUNG WARNUNG]")
@@ -1292,10 +1319,14 @@ class StartupHandler(BaseHandler):
                     results.append(f"   {partner.upper()}: {count} offene Tasks")
                 results.append(" HINWEIS: Doppelbearbeitung vermeiden!")
                 results.append(" --> bach task list --filter PARTNER fuer Details")
-            
-            conn.close()
         except Exception as e:
             pass  # Silent fail - nicht kritisch
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         
         # ══════════════════════════════════════════════════════════════
         # 6. ATI-HINWEIS (Software-Entwickler-Agent)
@@ -1309,13 +1340,14 @@ class StartupHandler(BaseHandler):
         # ══════════════════════════════════════════════════════════════
         results.append("")
         results.append("[LESSONS LEARNED]")
+        conn = None
         try:
             conn = self._get_conn()
             count = conn.execute("SELECT COUNT(*) FROM memory_lessons WHERE is_active=1").fetchone()[0]
             if count > 0:
                 results.append(f" {count} Lessons gespeichert")
                 lessons = conn.execute("""
-                    SELECT category, title FROM memory_lessons 
+                    SELECT category, title FROM memory_lessons
                     WHERE is_active=1 ORDER BY created_at DESC LIMIT 3
                 """).fetchall()
                 for cat, title in lessons:
@@ -1323,9 +1355,14 @@ class StartupHandler(BaseHandler):
                 results.append(" --> bach lesson last fuer Details")
             else:
                 results.append(" Keine Lessons vorhanden")
-            conn.close()
         except Exception as e:
             results.append(f" [ERROR] {e}")
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         
         # ══════════════════════════════════════════════════════════════
         # 8. AUTOLOG (.txt - bleibt Datei-basiert!)
@@ -1461,13 +1498,13 @@ class StartupHandler(BaseHandler):
         # ══════════════════════════════════════════════════════════════
         # 13. SYNC CHECK (SYNC_004b - Optional bei auto_sync_enabled)
         # ══════════════════════════════════════════════════════════════
+        conn = None
         try:
             conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM system_config WHERE key = 'auto_sync_enabled'")
             row = cursor.fetchone()
             auto_sync = row and row[0] == 'true'
-            conn.close()
             
             if auto_sync:
                 results.append("")
@@ -1488,7 +1525,13 @@ class StartupHandler(BaseHandler):
                     results.append(" [OK] Datenbank konsistent mit Dateisystem")
         except Exception as e:
             pass  # Silent fail - nicht kritisch
-        
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
         # Footer
         results.append("")
         results.append("=" * 55)
