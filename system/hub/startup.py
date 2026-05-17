@@ -791,32 +791,33 @@ class StartupHandler(BaseHandler):
         # ══════════════════════════════════════════════════════════════
         results.append("")
         results.append("[LETZTE SESSION]")
+        conn = None
         try:
             conn = self._get_conn()
             last_session = conn.execute("""
-                SELECT session_id, started_at, ended_at, summary, 
+                SELECT session_id, started_at, ended_at, summary,
                        tasks_created, tasks_completed, continuation_context
-                FROM memory_sessions 
+                FROM memory_sessions
                 WHERE ended_at IS NOT NULL
                 ORDER BY id DESC LIMIT 1
             """).fetchone()
-            
+
             if last_session:
                 sid, started, ended, summary, created, completed, continuation = last_session
-                
+
                 # Datum formatieren
                 date = ended[:10] if ended else "?"
                 time_end = ended[11:16] if ended and len(ended) > 11 else "?"
-                
+
                 results.append(f" Session: {sid}")
                 results.append(f" Beendet: {date} {time_end}")
                 results.append(f" Tasks: +{created or 0} erstellt, {completed or 0} erledigt")
-                
+
                 # Summary (erste Zeile)
                 if summary:
                     first_line = summary.split('\n')[0][:50]
                     results.append(f" Thema: {first_line}...")
-                
+
                 # WICHTIG: continuation_context = was als naechstes kommt
                 if continuation:
                     results.append("")
@@ -826,33 +827,35 @@ class StartupHandler(BaseHandler):
                             results.append(f"   {line.strip()[:50]}")
             else:
                 results.append(" Keine vorherige Session gefunden")
-            
-            conn.close()
         except Exception as e:
             results.append(f" [ERROR] {e}")
+        finally:
+            if conn:
+                conn.close()
         
         # ══════════════════════════════════════════════════════════════
         # 1.5 SNAPSHOT CHECK - Letzten Snapshot anzeigen
         # ══════════════════════════════════════════════════════════════
+        conn = None
         try:
             conn = self._get_conn()
             import json
             snapshot = conn.execute("""
-                SELECT id, name, snapshot_data, created_at FROM session_snapshots 
+                SELECT id, name, snapshot_data, created_at FROM session_snapshots
                 ORDER BY created_at DESC LIMIT 1
             """).fetchone()
-            
+
             if snapshot:
                 snap_id, snap_name, snap_data, snap_time = snapshot
                 # Nur anzeigen wenn Snapshot heute oder gestern erstellt wurde
                 snap_date = snap_time[:10] if snap_time else ""
                 today = datetime.now().strftime('%Y-%m-%d')
-                
+
                 if snap_date == today:
                     results.append("")
                     results.append("[SNAPSHOT VERFUEGBAR]")
                     results.append(f" Letzter: {snap_name} ({snap_time[11:16]})")
-                    
+
                     # Offene Tasks aus Snapshot
                     try:
                         data = json.loads(snap_data) if snap_data else {}
@@ -861,38 +864,41 @@ class StartupHandler(BaseHandler):
                             results.append(f" Tasks im Snapshot: {len(tasks)}")
                     except (json.JSONDecodeError, TypeError, KeyError, AttributeError):
                         pass
-                    
+
                     results.append(" --> bach snapshot load zum Fortsetzen")
-            
-            conn.close()
-        except Exception as e:
-            pass  # Silent fail - nicht kritisch
+        except Exception:
+            pass
+        finally:
+            if conn:
+                conn.close()
         
         # ══════════════════════════════════════════════════════════════
         # 2. MEMORY CHECK - Aktuelle Notizen und Fakten
         # ══════════════════════════════════════════════════════════════
         results.append("")
         results.append("[MEMORY CHECK]")
+        conn = None
         try:
             conn = self._get_conn()
             working = conn.execute("SELECT COUNT(*) FROM memory_working WHERE is_active=1").fetchone()[0]
             facts = conn.execute("SELECT COUNT(*) FROM memory_facts").fetchone()[0]
             lessons = conn.execute("SELECT COUNT(*) FROM memory_lessons WHERE is_active=1").fetchone()[0]
-            
+
             results.append(f" Working: {working} | Facts: {facts} | Lessons: {lessons}")
-            
+
             # Letzte Notiz anzeigen
             last_note = conn.execute("""
-                SELECT content, created_at FROM memory_working 
+                SELECT content, created_at FROM memory_working
                 WHERE is_active=1 ORDER BY created_at DESC LIMIT 1
             """).fetchone()
             if last_note:
                 time = last_note[1][11:16] if last_note[1] else "?"
                 results.append(f" Letzte Notiz [{time}]: {last_note[0][:40]}...")
-            
-            conn.close()
         except Exception as e:
             results.append(f" [ERROR] {e}")
+        finally:
+            if conn:
+                conn.close()
 
         # ══════════════════════════════════════════════════════════════
         # 2.5 RESSOURCEN-UEBERSICHT - Was steht zur Verfuegung? (v1.1.82)

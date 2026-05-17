@@ -1,12 +1,12 @@
 # Portabilität: USER
-# Zuletzt validiert: 2026-02-08
-# Nächste Prüfung: 2027-02-08
+# Zuletzt validiert: 2026-05-17
+# Nächste Prüfung: 2026-11-17
 # Ressourcen: [assistant_calendar table, hub/calendar_handler.py]
 
 CALENDAR - Termin- und Kalenderverwaltung
 =========================================
 
-STAND: 2026-02-08
+STAND: 2026-05-17
 
 Das Kalender-System (Schicht 3) bündelt zeitkritische Informationen aus 
 verschiedenen Quellen (Termine, Erinnerungen, Routinen).

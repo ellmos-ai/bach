@@ -210,7 +210,7 @@ class GuiHandler(BaseHandler):
             if sys.platform == "win32":
                 subprocess.run(
                     ["taskkill", "/PID", str(pid), "/F"],
-                    capture_output=True, timeout=10
+                    capture_output=True, encoding="utf-8", errors="replace", timeout=10
                 )
             else:
                 import os
