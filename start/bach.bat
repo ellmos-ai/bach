@@ -413,7 +413,7 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000" ^| findstr "LISTENING
 if exist "gui\__pycache__" rd /s /q "gui\__pycache__" >nul 2>&1
 set TIMESTAMP=%TIME:~0,2%%TIME:~3,2%%TIME:~6,2%
 set TIMESTAMP=!TIMESTAMP: =0!
-start "BACH Server" cmd /k python gui\server.py --port 8000
+start "BACH Server" cmd /k "set PYTHONIOENCODING=utf-8 && python gui\server.py --port 8000"
 timeout /t 3 >nul
 start "" "http://127.0.0.1:8000?nocache=!TIMESTAMP!"
 popd

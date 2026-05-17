@@ -20,8 +20,9 @@ Basiert auf: DaemonManager/backend.py
 
 
 import sys
-
 import os
+
+os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 
 import json
 

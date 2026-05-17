@@ -25,6 +25,8 @@ import json
 import logging
 import os
 import sys
+
+os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 import tempfile
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer

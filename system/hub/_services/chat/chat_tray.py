@@ -14,8 +14,11 @@ Start:
 """
 import argparse
 import json
+import os
 import sys
 import threading
+
+os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 import time
 import urllib.request
 import urllib.error
