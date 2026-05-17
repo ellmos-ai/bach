@@ -1,0 +1,25 @@
+BACH Tool: Testing
+------------------
+
+Test framework for BACH system tests and comparisons.
+
+AVAILABLE TOOLS
+-----------------
+
+  run_b_tests Run BACH system tests
+  compare_systems Perform system comparisons
+  run_comparison_custom Custom comparisons
+  populate_tests Generate test data
+  query_tests Query test results
+
+USE
+----------
+
+  bach --tools testing run               Run all tests
+  bach --tools testing compare <a> <b>   Compare systems
+  bach --tools testing populate          Create test data
+
+MODULE
+-----
+
+  tools/testing/ (5 scripts)

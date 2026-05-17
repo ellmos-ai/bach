@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+------------
+
+notify - BACH の通知システム
+
+
+説明
+------------
+
+さまざまな外部チャネル経由で通知を送信します。サポートされています
+Discord、Signal、電子メール、電報、Webhook、Slack。メッセージが入っています
+データベース (connector_messages) はログに記録され、次の時点まで保留される可能性があります。
+それぞれのチャネルの準備ができています。
+
+すべての構成は、bach.db の接続テーブルに保存されます。
+認証は、トークンまたは電子メールとパスワードの組み合わせによって行われます。
+
+
+操作
+-----------
+
+send <チャンネル> <テキスト>
+  設定されたチャネル経由で通知を送信します。
+  Example: bach notify send discord "Process completed"
+
+setup <channel> [endpoint] [--token=X] [--email=X]
+  チャネルを再構成または更新します。
+  - チャネル: discord、シグナル、電子メール、電報、webhook、slack
+  - エンドポイント: API URL またはサーバー アドレス (Telegram の場合はオプション)
+  - --token=X: 認証トークン (ボット トークンなど)
+  - --email=X: SMTP ログイン用の電子メール アドレス
+  例: bach Notice setup telegram --token=123456:ABC-DEF
+
+test <channel>
+  テスト メッセージを送信して構成を確認します。
+  例: バッチ通知テスト スラック
+
+リスト
+  設定されているすべての通知チャネルをステータスとともに表示します。
+  表示: チャネル名、タイプ、エンドポイント、アクティブ/非アクティブ、送信数、最終送信。
+
+ステータス
+  「リスト」と同じ - すべてのチャンネルのステータス
+
+history [--limit N]
+  最近の通知を表示します (デフォルト: 20)。
+  表示: チャンネル名、ステータス (送信済み/保留中)、タイムスタンプ、メッセージ テキスト。
+  例: bach Notice History --limit 50
+
+
+例
+---------
+
+Discord Webhook の設定:
+  bach notify setup discord https://discord.com/api/webhooks/ABC/XYZ
+
+Telegram ボットのセットアップ:
+  bach notify setup telegram --token=123456:ABC-DEF-GHI
+
+Gmail 経由でメールを送信:
+  bach notify setup email smtp.gmail.com --token=APP_PASSWORD --email=user@gmail.com
+
+Slack Webhook の追加:
+  bach notify setup slack https://hooks.slack.com/services/T00/B00/XX
+
+通知のテスト:
+  bach notify test discord
+
+メッセージの送信:
+  bach notify send discord "Backup erfolgreich abgeschlossen"
+
+過去 10 件の通知の履歴:
+  bach notify history --limit 10
+
+
+FILES
+-------
+
+data/bach.db
+  テーブルを含むデータベース:
+  - 接続: 保存されたチャネル構成 (エンドポイント、トークンなど)
+  - Connector_messages: すべての受信/送信メッセージをログに記録します
+
+user/secrets/secrets.json
+  オプション: 中央シークレット ファイル (Telegram 用に優先的に読み取られます)。
+  形式: {"telegram": {"bot_token": "...", "chat_id": "..."}}
+
+
+関連項目
+----------
+
+hub/base.py - BaseHandler クラス
+Hub/notify.py - 完全なハンドラー実装
+data/ - Bach データベースと構成
+docs/handlers.txt - 一般的なハンドラーのドキュメント

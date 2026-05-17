@@ -1,0 +1,37 @@
+Herramienta BACH: c_standard_fixer
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/c_standard_fixer.py
+
+DESCRIPCIÓN
+----------------------------------------
+c_standard_fixer.py - Cadena de herramientas para problemas de código comunes
+
+Ejecuta varios reparadores uno tras otro:
+  1. Corrección de BOM (marca de orden de bytes eliminada/corregida)
+  2. Corrección de codificación (asegúrese de que UTF-8)
+  3. Umlaut Fix (reparar diéresis alemanas rotas)
+  4. Verificación de sangría (identificar problemas de sangría)
+
+Uso:
+    python c_standard_fixer.py <archivo.py>
+    python c_standard_fixer.py <archivo.py> --ejecución en seco
+    python c_standard_fixer.py <carpeta> --recursivo
+    python c_standard_fixer.py <archivo.py> --solo bom, diéresis
+    python c_standard_fixer.py --list-tools
+
+Configuración:
+    Las herramientas activas se pueden personalizar en STANDARD_FIXER_CONFIG.
+
+Autor: Claude
+Versión: 1.0
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan c_standard_fixer [args]
+o directamente: python tools/c_standard_fixer.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente a partir de docstring
+- Si tiene alguna pregunta: las herramientas de Bach muestran c_standard_fixer

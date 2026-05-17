@@ -1,0 +1,33 @@
+BACH ツール: c_umlaut_fixer
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/c_umlaut_fixer.py
+
+説明
+----------------------------------------
+c_umlaut_fixer.py - Python ファイル内の壊れたドイツ語のウムラウトを修復します
+
+次のような典型的なエンコードの問題を修正します。
+  - 削除 -> 削除
+  - 開く -> 開く
+  - about -> about
+
+抽出元: A1 ProFiler/_Wartung/fix_profiler_complete.py
+
+使用法:
+    python c_umlaut_fixer.py <file.py>
+    python c_umlaut_fixer.py <file.py> --dry-run
+    python c_umlaut_fixer.py <file.py> --json
+
+著者: クロード (適応)
+依存関係: なし (stdlib のみ)
+
+USE
+----------------------------------------
+python bach.py ツールは c_umlaut_fixer [args] を実行します
+または直接: python tools/c_umlaut_fixer.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成
+- 質問がある場合: bach tools show c_umlaut_fixer

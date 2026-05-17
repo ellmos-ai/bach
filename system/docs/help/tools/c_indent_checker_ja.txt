@@ -1,0 +1,35 @@
+BACH ツール: c_indent_checker
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/c_indent_checker.py
+
+説明
+----------------------------------------
+c_indent_checker.py - Python インデント チェッカー
+
+目的: Python ファイルの一般的なインデント エラーをチェックします。
+       - 構造体 (def、if、class など) の後にコロンがありません。
+       - ブロック外でのリターン/イールド
+       - タブとスペースの混合
+
+作成者: クロード (indent_gui_checker.py から適応)
+依存関係: os、re、json (stdlib)
+
+使用法:
+    python c_indent_checker.py <ファイルまたはフォルダー> [--recursive] [--log] [--json]
+
+例:
+    python c_indent_checker.py script.py # 単一ファイル
+    python c_indent_checker.py ./src --recursive # フォルダー全体
+    python c_indent_checker.py ./src --log # ログファイルを作成します
+    python c_indent_checker.py script.py --json # JSON 出力
+
+USE
+----------------------------------------
+python bach.py ツールは c_indent_checker [args] を実行します
+または直接: python tools/c_indent_checker.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成
+- 質問がある場合: bach tools show c_indent_checker

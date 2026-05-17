@@ -1,0 +1,82 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [context_triggers table, data/context_sources.json]
+
+CONTEXT SOURCE SYSTEM (Dynamic Injections)
+-------------------------------------------
+
+DATE: 2026-02-08
+
+Central registry for all knowledge sources with dynamic triggers.
+
+SOURCE CATEGORIES:
+-------------------
+1. ALWAYS AVAILABLE (injection priority 8-10)
+   - lessons_learned Known bugs & fixes
+   - best_practices Best practices
+   - problems Problem Monitor (critical/urgent)
+
+2. ON REQUEST / EVENT BASED
+   - strategies meta-cognitive aids
+   - meta_cognitive Mental support
+   - changelog history
+   - longterm_memory Archived sessions
+   - contacts External tools/APIs
+   - help BACH help files
+
+DYNAMIC TRIGGERS
+------------------
+Triggers are partly in JSON (word_triggers), partly in DB (context_triggers):
+- JSON: data/context_sources.json (9 sources, ~45 word_triggers)
+- DB: context_triggers table (1012 entries - extended trigger logic)
+- Types: tool_discovery, lesson_hit, workflow_guide, theme_packet
+- Weighting: weight 1-10, Auto-Inject Flag
+
+CLI COMMANDS
+-----------
+  bach sources status             Status of all sources (Enabled/Weight)
+  bach sources toggle <id>        Switch source on/off
+  bach sources inject <id>        Switch auto-injection on/off
+  bach sources get <id> [query]   Get content of a source
+  bach sources search <query>     Check which source fires on trigger
+  bach sources contacts [query]   Find contacts/APIs
+  bach sources problems           Check error log
+
+NOTE: "bach sources sync" is NOT implemented in the handler.
+
+CONFIGURATION
+-------------
+The global control of the sources is done via `data/context_sources.json`:
+- enabled: Source generally available
+- injection_enabled: Allowed to be injected without an explicit request
+- weight: base priority (1-10)
+- word_triggers: Keywords for trigger matching
+- event_triggers: Event-based triggers (startup, error)
+
+Handler path: system/hub/sources.py
+
+SOURCE CONTENT
+---------------
+The handler can provide direct content via "bach sources get <id>":
+- lessons_learned: Delivers docs/help/lessons.txt (exists, but is lesson documentation)
+- best_practices: Reads docs/help/practices.txt (exists)
+- strategies: Hardcoded strategies (blocked, complex, unclear, tired)
+- help: Reads docs/help/*.txt files (90+ files available)
+- changelog: Extracted from SKILL.md (system/SKILL.md)
+- problems: Scans data/logs/*.log and blocked tasks in DB
+
+NOTE: "lessons_learned" returns docs/help/lessons.txt, not the lessons DB.
+Use for Lessons DB: bach lesson list/search
+
+NOTE ABOUT CONTACTS
+--------------------
+Since v1.1.84, contacts are stored in bach.db (tables: contacts,
+health_contacts). The old contacts.json no longer exists.
+The "bach sources contacts" command now uses the DB tables directly.
+
+SEE ALSO
+----------
+  --help injectors The injector system
+  --help consolidation From event to source
+  docs/help/memory.txt Cognitive model

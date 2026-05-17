@@ -1,0 +1,82 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WEB_SCRAPE HANDLER
+------------------
+
+ハンドラー名
+------------
+
+web-scrape (WebScrapeHandler)
+
+Playwright MCP の代替。 HTTP リクエストに対するブラウザ制御を提供し、
+正規表現ベースのデータ抽出。オプション: スクリーンショット用の Selenium。
+
+
+説明
+------------
+
+web_scrape ハンドラーにより、Web スクレイピング、HTML 分析、および
+スクリーンショットのキャプチャ。 BACH CLI 経由で堅牢に動作します。
+エラーハンドラー。スクリーンショットをキャッシュ ディレクトリに保存します。
+
+依存関係:
+  - リクエスト (必須、HTTP リクエスト)
+  - セレン (オプション、スクリーンショット)
+  - Chrome/Chromium (オプション、スクリーンショット WebDriver)
+
+
+操作
+-----------
+
+<url> を取得
+  HTTP GET: 完全な HTML 本文をロードして表示します。
+  5000 文字を超えると切り捨てられます。ステータス、コンテンツ タイプ、サイズを表示します。
+
+left <url>
+  リンク抽出: すべての <a href> にリンク テキストが含まれます。 HTMLタグをクリーンアップします。
+  javascript:、mailto:、アンカー (#) は無視されます。最大。リンク数は50。重複排除済み。
+
+フォーム <url>
+  フォーム認識: アクション/メソッドを含む <form>、すべての <input>、<textarea>、
+  <選択>。フィールドのタイプ (テキスト、送信など) と名前を表示します。
+
+スクリーンショット <url>
+  Selenium を使用したスクリーンショット (ヘッドレス、1280x1024)。に保存します
+  data/cache/scrape/ ハッシュベースのファイル名。 Chrome ドライバーが必要です。
+
+ヘッダー <url>
+  応答ヘッダーを表示: 応答のすべての HTTP ヘッダー + ステータス コード。
+
+
+例
+---------
+
+bach web-scrape get https://example.com
+  example.com からコンテンツを取得します
+
+bach web-scrape links https://github.com/lukisch
+  GitHub プロファイル上のすべてのリンクをリストします
+
+bach web-scrape forms https://example.com/login
+  ログイン ページのフォームを分析する
+
+bach web-scrape screenshot https://example.com
+  PNG スクリーンショットを作成 (セレンが必要)
+
+bach web-scrape headers https://example.com
+  HTTP ヘッダー (ユーザー エージェント、Cookie など)
+
+
+FILES
+-------
+
+hub/web_scrape.py ハンドラーの実装を確認します。
+data/cache/scrape/ スクリーンショット出力
+
+
+関連項目
+----------
+
+hub/base.py BaseHandler クラス

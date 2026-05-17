@@ -1,0 +1,52 @@
+BACH ツール: Structure_generator
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/ Structure_generator.py
+
+説明
+----------------------------------------
+structure_generator.py
+----------------------
+スペクトル上でスキルとエージェントの構造を生成します。
+
+バージョン: 1.0.0
+作成日: 2026-01-14
+組み合わせ: skill_generator_v3.py + Agent_generator_v1.py
+
+コンセプト:
+  スキルとエージェントはスペクトルであり、厳密なカテゴリではありません。
+  最も単純な部分的な機能から完全なオーケストレーターまで。
+
+プロファイル (昇順):
+  MICRO = ファイルのみ、フォルダー システムなし (絶対的な共有機能)
+  LIGHT = 最小構成(SKILL.md + _config + _data)
+  STANDARD = 単純な記憶力を持つスキル
+  EXTENDED = マイクロスキルを備えたスキル
+  AGENT = スキルをワークフローに統合します
+  AGENT_FULL = フル エージェント (OS に近い)
+
+MODI:
+  --embedded = OS 内で使用するため (軽量)
+  --standalone = 外部使用用 (フル、デフォルト)
+
+使用法:
+    python Structure_generator.py <名前> <プロファイル> [宛先フォルダー] [--embedded|--standalone]
+
+例:
+    Python Structure_generator.py 分析 MICRO
+    python Structure_generator.py 検索 STANDARD
+    Python Structure_generator.py 書き込みアシスタント AGENT
+    python Structure_generator.py プロジェクト マネージャー AGENT_FULL
+
+OS の場合 → os_generator.py
+エクスポート→exporter.py
+
+USE
+----------------------------------------
+python bach.pyツールの場合は、structural_generator [args]を実行します。
+または直接: python tools/structural_generator.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- ご質問がある場合: bach tools show Structure_generator

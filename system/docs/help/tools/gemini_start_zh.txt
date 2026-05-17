@@ -1,0 +1,87 @@
+巴赫工具：gemini_start
+--------------------------------------------------
+生成：2026-01-24（更新）
+来源：tools/gemini_start.py
+
+描述
+----------------------------------------
+BACH Gemini Starter - 启动 Gemini CLI（无头）或 Antigravity (GUI)。
+
+两个后端
+----------------------------------------
+  --cli Gemini CLI（无头，使用 --yolo 全自动）
+  --gui Antigravity（提示被复制到剪贴板）
+
+重要：Antigravity 没有无头模式！用于自动化
+         必须使用 Gemini CLI (--cli)。
+
+使用
+----------------------------------------
+python tools/gemini_start.py [后端] [选项]
+
+  后端（非自动所需）：
+    --cli Gemini CLI（全自动）
+    --gui 反重力（剪贴板中提示）
+
+  模式：
+    （无）自动模式（仅与 --cli 一起使用）
+    --bulk 批量模式，无任务限制
+    --default Interactive（等待指令）
+    --individual 使用startprompt_gemini.txt
+    --mode NAME 使用提示/NAME.txt
+
+  选项：
+    --tasks 自动模式下的 N 个任务（默认值：2）
+    --prompt "TEXT" 直接指定自定义提示
+    --list 列出可用的提示模板
+    --dry-run 仅显示命令，不启动
+
+CLI 示例（全自动）
+----------------------------------------
+  python tools/gemini_start.py --cli # 自动（2 个任务）
+  python tools/gemini_start.py --cli --tasks 5 # 自动（5 个任务）
+  python tools/gemini_start.py --cli --bulk # 所有任务（无尽）
+  python tools/gemini_start.py --cli --mode Analysis # 分析模式
+
+GUI示例（提示到剪贴板）
+----------------------------------------
+  python tools/gemini_start.py --gui --bulk # 批量提示
+  python tools/gemini_start.py --gui --default # 交互式提示
+  python tools/gemini_start.py --gui --individual # 用户提示符
+  python tools/gemini_start.py --gui --mode Analysis # 分析提示
+
+GUI-WORKFLOW:
+  1. 脚本启动Antigravity
+  2.及时复制到剪贴板
+  3. 用户点击进入聊天，按 Ctrl+V，输入
+
+提示模板 (partners/gemini/prompts/)
+----------------------------------------
+  auto.txt 自动模式：立即处理任务（仅限 CLI）
+  bulk.txt 批量模式：所有任务，无限制
+  default.txt 交互式：等待指令
+  Analysis.txt 执行所有分析脚本
+  Research.txt 用于主题分析的研究模式
+
+自定义提示
+----------------------------------------
+编辑partners/gemini/startprompt_gemini.txt 以获取您自己的说明。
+加载 --individual。
+
+BATCH-STARTER
+----------------------------------------
+或者：partners/gemini/start_gemini.bat
+显示带有 CLI/GUI 选择的交互式菜单。
+
+要求
+----------------------------------------
+  CLI模式：npm install -g gemini-cli
+               双子座身份验证登录
+  GUI 模式：反重力已安装并位于路径
+
+另请参阅
+----------------------------------------
+  wiki/gemini.txt Gemini 详细信息（CLI、API、定价）
+  wiki/antigravity.txt 反重力 IDE
+  docs/help/partners.txt 合作伙伴网络
+  Partners/gemini/_README.md 工作区文档

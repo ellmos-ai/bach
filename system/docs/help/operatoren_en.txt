@@ -1,0 +1,401 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+OPERATOR TAXONOMY
+--------------------
+Complete classification of data processing operators
+for watchers, toolchains, injectors and automation.
+
+Reference: Learning system analysis (user/_archive/ANALYSE_Lernsysteme_BACH_vs_recludOS.md)
+
+
+1. DETECTION OPERATORS ("Senses")
+-----------------------------------
+How the system perceives changes in the environment.
+
+1.1 Polling (periodic querying)
+------------------------------------
+Regular checking of a state.
+  - Compare directory contents at t0 and t1
+  - Poll API every 5 minutes
+  - Cron jobs for system metrics
+BACH: TimeInjector, daemon checks, session start scan
+
+1.2 Event-Driven (push-based)
+-------------------------------
+Reaction to external events.
+  - File system events (inotify)
+  - Webhooks (GitHub, Stripe)
+  - Message queues (Kafka, RabbitMQ)
+BACH: Not yet implemented. Toolchain events as a first step.
+
+1.3 Snapshot diffing
+--------------------
+Compare two states and extract deviations.
+  - Compare file hashes
+  - Database snapshot vs. live data
+  - Detect configuration drift
+BACH: RAG tools/rag/ingest.py (MD5 Change Detection), DirScan
+
+
+2. ANALYSIS OPERATORS
+---------------------
+How the system understands and classifies data.
+
+2.1 Compare
+---------------
+Compare two or more values.
+  - Hash comparison
+  - Field A == Field B
+  - Timestamp t0 < t1
+
+2.2 Measurement
+----------
+Determine quantitative properties.
+  - File size
+  - Latency
+  - CPU usage
+  - Number of new data sets
+
+2.3 Filtering
+-----------
+Reduce data using rules.
+  - Only files > 10 MB
+  - Only emails with subject “Invoice”
+  - Only API responses with status 200
+
+2.4 Classify
+------------------
+Classify data into categories.
+  - Spam vs. non-spam
+  - Recognize document type (invoice, contract, reminder)
+  - Log level (INFO, WARN, ERROR)
+BACH: OCR categorization (Office Lens), skill types
+
+2.5 Grouping
+--------------
+Summarize data by characteristics.
+  - Group logs by service
+  - Group invoices by month
+  - Group files by file type
+
+2.6 Aggregate
+---------------
+Combine or condense groups.
+  - Total of all invoice amounts
+  - Average CPU load
+  - Number of files per folder
+
+2.7 Correlate
+---------------
+Detect relationships between data points.
+  - Link log events with request ID
+  - Sensor value + timestamp + location
+  - Error + previous system load
+BACH: Associative memory (memory_associations)
+
+2.8 Validate
+--------------
+Check whether data fulfills rules.
+  - JSON schema validation
+  - IBAN check
+  - Required fields available?
+
+2.9 Normalize
+-----------------
+Bring data into a uniform format.
+  - Unify date formats
+  - Match upper/lower case
+  - Currency conversion
+
+
+3. TRANSFORMATION OPERATORS
+-----------------------------
+How the system transforms data.
+
+3.1 Extract
+---------------
+Extract information from raw data.
+  - OCR from PDF
+  - Regex from text
+  - JSON fields from API response
+BACH: OCR pipeline, RAG chunking
+
+3.2 Transform
+------------------
+Transform data into a different form.
+  - CSV -> JSON
+  - Text -> Tokens
+  - Image -> Thumbnail
+
+3.3 Enrichment
+----------------------------
+Supplement data with additional information.
+  - Geo lookup (IP -> Country)
+  - Add customer data from CRM
+  - Add AI based classification
+BACH: RAG Search (semantic enrichment)
+
+3.4 Merge/Join
+---------------------------------
+Combine multiple data sources.
+  - Connect tables using keys
+  - Merge logs from multiple services
+  - Match email + CRM entry
+
+
+4. TIME-RELATED OPERATORS
+--------------------------
+
+4.1 Sequencing
+----------------
+Create or analyze sequences.
+  - Sort by timestamp
+  - Execute workflow steps one after the other
+  - Reconstruct sequences of events
+BACH: Toolchain engine (hub/chain.py), session order
+
+4.2 Windowing
+---------------------------
+Divide data into time windows.
+  - 5 minute average
+  - Rolling window for sensor values
+  - Sliding window for log analysis
+
+
+5. CONTROL OPERATORS
+----------------------
+
+5.1 Debouncing
+--------------
+Combine multiple fast events into one.
+  - Bundle file changes
+  - Reduce UI events
+  - Throttle API requests
+
+5.2 Rate limiting
+-----------------
+Limit how often something can happen.
+  - Max. 10 API calls per minute
+  - Throttle email notifications
+BACH: Token budget zones (concept from recludOS)
+
+5.3 Retry strategies
+--------------------
+Retry logic in case of errors.
+  - Exponential backoff
+  - Fixed retry intervals
+  - Retry until timeout
+
+
+6. MEMORY AND STATE OPERATORS
+-------------------------------------
+
+6.1 Stateful Processing
+------------------------
+Previous values ​​are saved.
+  - Remember last hash
+  - Save latest API status
+  - Sliding window with status
+BACH: Memory system (all 5 layers), session state
+
+6.2 Stateless Processing
+-------------------------
+Each processing is independent.
+  - Calculate hash of a file
+  - Validate JSON
+  - Regex Match
+
+
+7. META-OPERATORS (higher abstraction)
+-----------------------------------------
+
+7.1 Orchestrate
+-----------------
+Connect multiple operators into a workflow.
+  - n8n pipelines
+  - Airflow DAGs
+  - Kubernetes CronJobs + Workers
+BACH: Toolchain engine (hub/chain.py), workflows (skills/workflows/), dev cycle
+
+7.2 Optimize
+--------------
+Make data processing more efficient.
+  - Caching
+  - Parallelization
+  - Indexing
+
+7.3 Observability
+-------------------------------
+Record and interpret system states.
+  - Logging
+  - Metrics
+  -Tracing
+BACH: Session logging, task statistics, daemon status
+
+
+8. OPERATOR PATTERNS (combinations)
+-------------------------------------
+Typical combinations of operators for recurring tasks.
+
+8.1 Scoring & Ranking Pattern (#9)
+-----------------------------------
+Purpose: evaluate and sort elements.
+Operators: measure, evaluate, aggregate, sort.
+  - Sort emails by relevance
+  - Rank documents according to "probability calculation"
+
+8.2 Classification Pipeline Pattern (#10)
+------------------------------------------
+Purpose: Divide data into classes.
+Operators: Extract, Normalize, Classify, Validate.
+  - Document type (invoice/contract/reminder)
+  - Ticket priority (Low/Medium/High)
+
+8.3 Rule-Based Filtering Pattern (#11)
+---------------------------------------
+Purpose: Exclude based on fixed rules.
+Operators: Filter, Validate, Exclude.
+  - Blacklisted sender
+  - Discard files without attachments
+
+8.4 Threshold Alert Pattern (#12)
+----------------------------------
+Purpose: Alarm when limit values are exceeded.
+Operators: measuring, comparing, evaluating, event triggers.
+  - CPU > 80%
+  - more than 10 errors in 5 minutes
+
+8.5 Anomaly Detection Light Pattern (#13)
+------------------------------------------
+Purpose: Detect unusual values (simple).
+Operators: measure, aggregate, compare, windowing.
+  - Value > mean + factor
+  - sudden jump in file count
+
+8.6 Deduplication Pattern (#14)
+--------------------------------
+Purpose: Detect and remove duplicates.
+Operators: compare, group, aggregate, filter.
+  - duplicate invoices
+  - duplicate emails / IDs
+
+8.7 Canonicalization Pattern (#15)
+-----------------------------------
+Purpose: convert data to canonical form.
+Operators: Normalize, Transform, Validate.
+  - Standardize names, addresses, date formats
+
+8.8 Golden Record Pattern (#16)
+--------------------------------
+Purpose: determine the "best" version of a data record.
+Operators: Merge, Evaluate, Aggregate, Validate.
+  - Customer data from multiple systems
+  - Master data maintenance
+
+8.9 Multi-Stage Validation Pattern (#17)
+-----------------------------------------
+Purpose: Validation in stages.
+Operators: Validate, Classify, Filter.
+  - Syntax -> Semantics -> Business Rules
+  - "soft" vs. "hard" incorrect data sets
+
+8.10 Fallback Resolution Pattern (#18)
+---------------------------------------
+Purpose: Alternative paths in the event of errors.
+Operators: Test, Retry, Fallback, Evaluate.
+  - primary API down -> secondary API
+  - AI classification uncertain -> Rules
+
+8.11 A/B Testing Pattern (#19)
+-------------------------------
+Purpose: Test two strategies against each other.
+Operators: testing, comparing, evaluating, aggregating.
+  - two classification models
+  - two sets of rules for mail routing
+
+8.12 Multi-Criteria Decision Pattern (#20)
+-------------------------------------------
+Purpose: Decision based on several criteria.
+Operators: Measure, Evaluate, Aggregate, Ranking.
+  - "best" allocation to cost center
+  - Prioritization of tickets
+
+8.13 Routing by Category Pattern (#21)
+---------------------------------------
+Purpose: Routing by category.
+Operators: Classifying, filtering, routing.
+  - Invoices -> Accounting
+  - Applications -> HR
+
+8.14 Confidence-Based Handling Pattern (#22)
+---------------------------------------------
+Purpose: Behavior depending on security/score.
+Operators: Evaluate, classify, filter.
+  - Score > 0.9 -> book auto
+  - Score 0.6-0.9 -> manual testing
+
+8.15 Progressive Refinement Pattern (#23)
+------------------------------------------
+Purpose: Step-by-step refinement.
+Operators: Classify, Enrich, Transform.
+  - rough category -> fine subcategory
+  - first document type, then content extraction
+
+8.16 Sanity Check Pattern (#24)
+--------------------------------
+Purpose: Simple plausibility checks.
+Operators: Test, Validate, Exclude.
+  - Amount > 0
+  - Date not in the future
+
+8.17 Cross-Source Consistency Pattern (#25)
+--------------------------------------------
+Purpose: Test data against another source.
+Operators: compare, merge, validate.
+  - Invoice amount vs. ERP
+  - Customer number vs. CRM
+
+8.18 Error Classification Pattern (#26)
+----------------------------------------
+Purpose: Categorize error types.
+Operators: Classify, Group, Aggregate.
+  - Network errors vs. data errors
+  - User error vs. system error
+
+8.19 Recovery Strategy Pattern (#27)
+-------------------------------------
+Purpose: Defined response to errors.
+Operators: Testing, Retry, Fallback, Logging.
+  - Queue -> Dead Letter Queue
+  - manual post-processing list
+
+8.20 Human-in-the-Loop Pattern (#28)
+-------------------------------------
+Purpose: Involve humans when there is uncertainty.
+Operators: Evaluate, Classify, Routing.
+  - Score too low -> Review Inbox
+  - Conflict cases -> Release process
+
+
+RELATION TO THE LEARNING PROCESS
+---------------------
+The operators form the tool set for all 3 modes:
+
+  (1) Energy saving: polling + filtering + retrieving rules
+  (2) Think: Correlate + Classify + Scenarios
+  (3) Consolidation: Aggregate + Normalize + Group
+
+Recognition operators = senses (perception)
+Analysis operators = processing (thinking)
+Transformation Op.   = act (action)
+Meta-operators = control (central executive)
+Operator Patterns = Combined Solution Patterns
+
+
+RELATED HELP FILES
+----------------------
+  --help strategies Categorize, evaluate, exclude, test
+  --help thinking strategies Cognitive strategies (chunking, pattern recognition, etc.)
+  --help rhetoric Rhetorical operators and patterns

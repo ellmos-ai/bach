@@ -1,0 +1,168 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [hub/schwarm.py, tools/schwarm/, skills/workflows/schwarm-operationen.md]
+
+SWARM - Parallel LLM operations and swarm intelligence
+------------------------------------------------------------
+
+Status: 2026-05-17 (v3.11.1)
+CLI: bach swarm (alias: bach swarm)
+
+The Swarm system enables parallel LLM execution with different
+coordination patterns. Several LLM instances are working at the same time
+Subtasks and are automatically coordinated.
+
+Ref: SQ016
+
+SWARM PATTERNS
+--------------
+
+1. PARALLEL CHUNKS [ACTIVE]
+   Task is divided into chunks, processed in parallel and merged.
+   Use: translation, code review, documentation.
+   Coordination: Central (Chunker + Aggregator)
+   Scaling: High (linear with worker count)
+
+2. HIERARCHY (Boss + Worker) [ACTIVE]
+   A coordinator distributes tasks to workers, an aggregator summarizes them.
+   Use: Complex projects with dependencies.
+   Coordination: Central (Boss Worker Pattern)
+   Scaling: Medium (limited by boss)
+
+3. STIGMERGY (pheromone based) [ACTIVE]
+   Agents leave traces (pheromones) in SharedMemory.
+   Other agents follow strong paths.
+   Use: exploration, optimization, decentralized coordination.
+   Coordination: Decentralized (indirectly via environment)
+   Scaling: High (emergent)
+
+4. CONSENSUS (majority decision) [ACTIVE]
+   Multiple LLMs answer the same question independently.
+   Consensus is determined by similarity scoring or majority voting.
+   Use: Critical decisions, quality assurance.
+   Coordination: Central (voter + evaluator)
+   Scaling: Low (O(n) cost per question)
+
+   Methods:
+     similarity Pairwise text similarity, highest Avg score wins
+     Group majority answers, largest group wins
+
+5. SPECIALIST (Boss Routing) [ACTIVE]
+   Already integrated into BACH (11 boss agents).
+   Task is routed to the appropriate specialist.
+
+CLI COMMANDS
+-----------
+
+  bach swarm list
+      Show available swarm patterns with status.
+
+  bach swarm run <muster> <aufgabe>
+      Run swarm pattern.
+      Example: bach swarm run consensus "What is the best Python linter?"
+
+  bach swarm translate [optionen]
+      Parallel chunks translation (DE->EN) for BACH texts.
+
+      Options:
+        --namespace <ns> Translate only one namespace
+        --workers N Parallel Workers (default: 8)
+        --chunk-size N texts per API call (default: 10)
+        --limit N Max. translate texts
+        --inventory Show status only
+        --dry-run simulation without API calls
+
+  bach swarm summarize [optionen]
+      Generate chunk summaries (parallel chunks level 3).
+
+      Options:
+        --batch-size N chunks per batch (default: 10)
+        --model MODEL haiku or sonnet (default: haiku)
+        --dry-run simulation
+
+  bach swarm benchmark [optionen]
+      Performance benchmark: sequential vs. parallel.
+
+      Options:
+        --compare Compare both modes
+        --parallel Parallel mode only
+        --sequential Sequential mode only
+        --run actually run benchmark
+        --workers N Parallel Workers (default: 3)
+        --category CAT software_dev, research, wiki
+        --model MODEL LLM model (default: haiku)
+        --export FILE Export results as JSON
+
+  bach swarm consensus "<frage>" [optionen]
+      Consensus vote: Multiple LLMs answer the same question.
+
+      Options:
+        --voters N number of voters (default: 3, min: 2)
+        --model MODEL haiku, sonnet, opus (default: haiku)
+        --method METHOD similarity or majority (default: similarity)
+
+  bach swarm status [N]
+      Show last N swarm runs (default: 20).
+      Including cost statistics and token consumption.
+
+COST TRACKING
+---------------
+
+Every swarm run is logged in the DB (table: swarm_runs).
+What is recorded: pattern, task, tokens (in/out), costs (USD),
+Worker number, duration, status. Available via: bach swarm status
+
+Cost estimate (per 1M tokens):
+  Haiku: $1.00 input / $5.00 output (cheap, for bulk)
+  Sonnet: $3.00 input / $15.00 output (default)
+  Opus: $15.00 input / $75.00 output (Premium)
+
+DB schema (swarm_runs):
+  id, pattern, task, tokens_in, tokens_out, cost_usd,
+  workers, duration_ms, status, result_summary, created_at
+
+CONFIGURATION
+-------------
+
+API key sources (fallback order):
+1. BACH Secrets system (~/.bach/bach_secrets.json)
+2. Environment variable ANTHROPIC_API_KEY
+
+FILES
+-------
+
+system/hub/schwarm.py handler (auto-discovery)
+  system/tools/swarm/ tool collection
+    __init__.py package init
+    runner.py Claude CLI wrapper + cost tracking
+    translate_swarm.py Parallel Chunks Translation (SQ062)
+    summarize_chunks.py Chunk summaries (SQ047)
+    benchmark.py Performance benchmark
+    consensus.py consensus patterns
+
+EXAMPLES
+---------
+
+  # Check missing translations
+  bach swarm translate --inventory
+
+  # Start translation (8 workers, 10 chunks)
+  bach swarm translate --workers 8 --chunk-size 10
+
+  #5 Ask voters, determine consensus via majority
+  bach swarm consensus "Soll ich asyncio oder threading verwenden?" --voters 5 --method majority
+
+  # Benchmark with comparison and export
+  bach swarm benchmark --compare --workers 5 --export results.json
+
+  # Status of all swarm runs (last 50)
+  bach swarm status 50
+
+SEE ALSO
+----------
+
+- chain.txt (LLM chains / llmauto)
+- agent.txt (Boss agent system)
+- skills/workflows/schwarm-operationen.md (sample documentation)
+- skills/workflows/schwarm-wahlsbaum.md (routing logic)

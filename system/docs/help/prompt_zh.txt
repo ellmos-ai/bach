@@ -1,0 +1,121 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[hub/prompt.py、prompt_templates、prompt_boards、prompt_versions]
+
+PROMPT - 提示模板管理
+-------------------------------------
+
+日期：2026-02-28
+
+提示系统管理可重用的提示模板
+通过面板进行版本控制和组织选项。
+
+参考：B42
+
+核心概念
+------------
+- 模板：可重复使用的提示文本，包含名称、类别、标签
+- 版本：每次更改都会创建一个新版本（历史）
+- 板：模板集合（主题组）
+
+CLI 命令（巴赫提示符）
+--------------------------
+
+  list [--category CAT] 列出所有模板
+  添加 <名称> <文本> 创建新模板
+  获取 <id_or_name> 模板 + 显示版本历史记录
+  update <id_or_name> <text> Create new version
+  删除 <id_or_name> 删除模板
+  搜索 <查询> 搜索模板
+  板 查看所有板
+  board <title> 查看/创建/管理板
+
+添加选项
+-----------------
+  --category CAT 类别（例如“分析”、“写入”）
+  --tags t1,t2 标签（逗号分隔）
+  --目的文本目的
+
+董事会选项
+-------------------
+  --add-prompt 将 ID 提示添加到板上
+  --remove-prompt 从板上删除 ID 提示
+  --description TEXT 设置/更新板描述
+
+示例
+---------
+
+  # 列出模板
+  bach prompt list
+  bach prompt list --category analyse
+
+  # 创建模板
+  bach prompt add "Zusammenfassung" "Fasse den folgenden Text zusammen:" --category schreiben
+  bach prompt add "Code-Review" "Pruefe diesen Code auf Fehler:" --tags "dev,review" --purpose "Code-Qualitaet"
+
+  # 显示模板（带有版本历史记录）
+  bach prompt get 42
+  bach prompt get "Zusammenfassung"
+
+  # 更新模板（创建版本）
+  bach prompt update 42 "Fasse den folgenden Text praegnant zusammen:"
+  bach prompt update "Zusammenfassung" "Neue Version des Textes..."
+
+  # 删除模板
+  bach prompt delete 42
+
+  # 搜索（名称、文本、标签）
+  bach prompt search "zusammenfass"
+  bach prompt search "code"
+
+  # 管理版块
+  bach prompt boards                                      # 所有版块
+  bach prompt board "Schreiben"                           # 创建/查看版块
+  bach prompt board "Schreiben" --add-prompt 42           # 添加提示
+  bach prompt board "Schreiben" --remove-prompt 42        # 删除提示
+  bach prompt board "Schreiben" --description "Schreib-Prompts fuer den Alltag"
+
+版本控制
+-------------
+
+当您`更新`时，旧文本会自动保存为版本。
+版本历史记录在`bach prompt get <id>`中可见：
+
+  版本 (2)：
+    没有创建文本（预览）
+    1 2026-01-15T10:30:00 旧文本...
+    2 2026-02-01T14:00:00 下一个版本...
+
+冲突解决方案（--confidence）
+------------------------------------
+可以使用“add”指定置信度（对于共享内存）：
+  bach prompt add <name> <text> --confidence 0.8
+
+如果发生冲突（相同的密钥、名称空间），则较高的置信度获胜。
+
+数据库
+---------
+
+  提示模板：
+    id、名称、用途、文本、标签、类别、
+    创建的_at、更新的_at、dist_type
+
+  提示版本：
+    id、prompt_id、version_number、文本、标签、created_at
+
+  提示板：
+    ID、标题、描述、创建于
+
+  提示板项目：
+    id、board_id、prompt_id、added_at
+
+文件
+-------
+  hub/prompt.py 处理程序实现
+
+另请参见
+----------
+  bach --help tasks        任务系统
+  bach --help memory       内存系统
+  bach --help skills       SKILL.md 系统

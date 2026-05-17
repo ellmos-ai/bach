@@ -1,0 +1,226 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+API-интерфейс плагина BACH
+---------------
+
+По состоянию на 6 мая 2026 г.
+
+ API-интерфейс плагина обеспечивает динамическое расширение BACH во время выполнения.
+Плагины могут регистрировать инструменты, хуки, рабочие процессы и обработчики.
+императивный (через код) или декларативный (через `plugin.json`).
+
+КОМАНДЫ CLI
+-----------
+  bach plugins list              Показать все загруженные плагины
+  bach plugins inspect <pfad>    Предварительный просмотр манифеста без загрузки во время выполнения
+  bach plugins load <pfad>       Загрузить плагин из плагина.json
+  bach plugins unload <name>     Выгрузить плагин
+  bach plugins tools             Показать все инструменты плагина
+  bach plugins info <name>       Подробнее о плагине
+  bach plugins create <name>     Создать манифест плагина (Scaffolding)
+  bach plugins caps              Показать профили возможностей
+  bach plugins trust <name> <l>  Изменить уровень доверия плагин
+  bach plugins audit [limit]     Показать последние проверки возможностей
+
+  Краткая форма:
+  bach plugin list               (Псевдоним: плагин -> плагины)
+
+ИСПОЛЬЗОВАНИЕ API (императивное требование)
+-----------------------
+  из плагинов импорта core.plugin_api
+  # Или: из плагинов импорта bach_api
+
+  # Регистрация инструмента
+  защита my_tool(текст):
+      return f"Обработано: {текст}"
+
+  плагины.register_tool("my_tool", my_tool, "Описание")
+  результат = плагины.call_tool("my_tool", "input")
+
+  # Регистрация хука
+  защита on_task(ctx):
+      print(f"Задача создана: {ctx['task_id']}")
+
+  плагины.register_hook("after_task_create", on_task, плагин="мой-плагин")
+
+  # Обработчики регистрации (новая команда CLI)
+  из Hub.base импортировать BaseHandler
+  класс MyHandler(BaseHandler):
+      ...
+
+  плагины.register_handler("my_cmd", MyHandler, плагин="мой-плагин")
+
+  # Создать рабочий процесс
+  плагины.register_workflow("мой-рабочий процесс", "# Рабочий процесс\n...", плагин="мой-плагин")
+
+  # Администрация
+  печать(plugins.list_plugins())
+  плагины.inspect_plugin("плагины/мой-плагин/плагин.json")
+  плагины.unload_plugin("my-plugin")
+
+МАНИФЕСТ ПЛАГИНА (декларативный)
+----------------------------
+Создайте `plugin.json` для автоматической загрузки:
+
+  bach plugins create mein-plugin
+
+Формат манифеста (`plugin.json`):
+  {
+    "name": "мой-плагин",
+    "manifest_version": "1.1",
+    "версия": "1.0.0",
+    "description": "Что делает плагин",
+    "автор": "Клод",
+    "источник": "золотой стандарт",
+    "capabilities": ["db_read", "hook_listen"],
+    "активация": {"режим": "вручную", "включено": true},
+    "провайдеры": [],
+    "модели": [],
+    "настройка": {
+      "requires": ["Node.js", "Код Клода"],
+      "env": ["ANTHROPIC_API_KEY"],
+      "notes": "Зачем нужна настройка",
+      «fail_closed»: правда,
+      "поверхности": ["оболочка", "mcp"],
+      "проверяет": [
+        {"type": "command_exists", "command": "npx"},
+        {"type": "mcp_server_known", "package": "ellmos-codecommander-mcp"}
+      ]
+    },
+    "крючки": [
+      {
+        "event": "after_task_done",
+        "модули": "handlers.py",
+        "handler": "on_task_done",
+        «приоритет»: 50
+      }
+    ],
+    "обработчики": [
+      {"имя": "my_cmd", "файл": "my_handler.py"}
+    ],
+    "рабочие процессы": [
+      {"имя": "мой-рабочий процесс", "файл": "workflow.md"}
+    ]
+  }
+
+Загрузка:
+  bach plugins inspect plugins/mein-plugin/plugin.json
+  bach plugins load plugins/mein-plugin/plugin.json
+
+ТИПЫ РЕГИСТРАЦИИ
+--------------------
+  Тип описания метода API
+  -------- ---------------------- ----------------------------------
+  Инструмент Register_tool() Зарегистрируйте вызываемый как инструмент
+  Хук Register_hook() Регистрация прослушивателей событий
+  Рабочий процесс Register_workflow() Создать файл Markdown
+  Обработчик Register_handler() Новая команда CLI среды выполнения
+
+PLUGIN-LIFECYCLE
+----------------
+  1. Создать: плагины bach создают <имя>
+  2. Разработка: отредактируйте плагин.json + handlers.py.
+  3. Проверьте: плагины bach проверяют <path/plugin.json>
+  4. Загрузка: плагины bach загружают <path/plugin.json>
+  5. Использование: активировать перехватчики, вызывать инструменты, использовать команды CLI.
+  6. Выгрузка: плагины bach выгружают <имя>
+
+СИСТЕМА ВОЗМОЖНОСТЕЙ (песочница уровня 1)
+-----------------------------------
+Плагины объявляют необходимые возможности. БАХ проверяет и
+применяется на основе уровня доверия источника.
+
+  Определенные возможности:
+    db_read Чтение базы данных
+    db_write Запись базы данных
+    file_read Чтение файлов
+    file_write Запись файлов
+    ook_listen Прослушивать события
+    ook_emit Выдавать события
+    tool_register Регистрация новых инструментов
+    handler_register Регистрация новых обработчиков CLI
+    workflow_create Создание рабочих процессов
+    сеть Доступ к сети (HTTP/API)
+    оболочка Выполнение команд оболочки
+    рабочий стол Запуск автоматизации рабочего стола/графического интерфейса
+    Настройте или подключите сервер mcp MCP
+
+Профиль доверия (связан с `data/skill_sources.json`):
+    золотой стандарт доверия=100 Все возможности
+    доверенное доверие = 80 Все, кроме оболочки + рабочего стола + mcp + сети
+    ненадежное доверие = 20 Только db_read, file_read,ook_listen
+    черный список Trust=0 Ничего не разрешено
+
+  Правоприменение:
+    - Register_tool() проверяет `tool_register`
+    - Register_hook() проверяет `hook_listen`
+    - Register_handler() проверяет `handler_register`
+    - Register_workflow() проверяет `workflow_create`
+    - load_plugin() проверяет все запрошенные возможности
+    - проверка/загрузка проверок установки защиты при сбое закрытия для оболочки/рабочего стола/mcp
+
+SETUP-GUARDS (SEC-PLUGIN-003)
+-----------------------------
+Сильный доступ через метаданные настройки блокируется перед импортом во время выполнения,
+если требования не описаны явно и закрываются при сбое.
+
+  Опасные поверхности:
+    оболочка, рабочий стол, mcp
+
+  Обязательно для таких установок:
+    - `setup.fail_closed = true`
+    - `setup.checks = [...]` с соответствующими защитными проверками
+
+  Поддерживаемые типы проверок:
+    команда_существует
+    env_present
+    путь_существует
+    python_import
+    mcp_server_known
+    Desktop_enabled
+    флаг_разрешения
+
+  Ожидаемое покрытие чеков:
+    оболочка -> command_exists, env_present, path_exists, python_import
+    рабочий стол -> Desktop_enabled, path_exists, command_exists, env_present
+    mcp -> mcp_server_known, command_exists, env_present, path_exists
+
+  Пример:
+    "настройка": {
+      "requires": ["Claude Desktop", "Node.js"],
+      «fail_closed»: правда,
+      "поверхности": ["mcp"],
+      "проверяет": [
+        {"type": "command_exists", "command": "npx"},
+        {"type": "mcp_server_known", "package": "ellmos-codecommander-mcp"}
+      ]
+    }
+
+БЕЗОПАСНОСТЬ
+----------
+  - Обеспечение возможности во всех методах `register_*()`.
+  - Уровень доверия из `skill_sources.json` (4-уровневая система)
+  - Проверка манифеста: активация, поставщики, модели, настройка без импорта во время выполнения.
+  - Защита от сбоев установки для оболочки/рабочего стола/MCP перед загрузкой плагина.
+  - Статический анализ кода: eval, exec, subprocess, os.system
+  - Журнал аудита для отслеживания
+  - Неисправные крючки ловятся и ничего не ломают
+  - При выгрузке плагина полностью удаляются все регистрации.
+  - Аудит через: `аудит плагинов bach`, `информация о плагинах bach <name>`
+
+ARCHITECTURE
+-----------
+  core/capabilities.py Singleton CapabilityManager (принудительное исполнение)
+  core/plugin_api.py PluginRegistry Singleton (управление плагинами)
+  обработчик CLIhub/plugins.py(`bach плагины...`)
+  core/hooks.py Фреймворк для перехвата
+  data/skill_sources.json Профили доверия и сопоставление возможностей
+
+СМ. ТАКЖЕ
+----------
+  bach help hooks          Hook Framework
+  bach help skills         Система навыков
+  bach help self-extension Selbsterweiterungs-System
+  bach help cli            Соглашения CLI

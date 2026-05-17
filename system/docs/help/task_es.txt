@@ -1,0 +1,100 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+
+MANEJADOR DE TAREAS
+------------
+
+DESCRIPCIÓN
+------------
+
+El manejador de tareas administra las tareas en la base de datos BACH. Apoyado
+Prioridades (P1-P4), operaciones de identificación múltiple, dependencias, asignaciones
+Gestión de socios y estados (pendiente/hecho/bloqueado).
+
+
+OPERACIONES
+-----------
+
+add <title> Agregar tarea
+  Opciones: --prioridad P1-P4, --descripción TEXTO, --categoría TEXTO
+
+lista [estado] Listar tareas
+  Estado: pendiente (predeterminado), abierto (heredado), en progreso, listo, bloqueado, todo
+  Opciones: --filter TERM, --assigned PARTNER, --unassigned
+
+show <id> Mostrar detalles de la tarea
+
+edit <id> Editar tarea (título, descripción, categoría)
+  Opciones: --title TEXTO, --description TEXTO, --category TEXTO, --assigned NAME
+
+done <id> [id2...] Marcar tarea(s) como completada
+  Opción: --note TEXT
+
+block <id> [id2...] Bloquear tarea(s).
+  Opción: --reason TEXTO
+
+desbloquear <id> [id2...] desbloquear tarea(s)
+
+reabrir <id> [id2...] reabrir tarea(s) (hecho -> pendiente)
+
+eliminar <id> [id2...] eliminar tarea(s)
+
+prioridad <id> <P1-P4> cambiar prioridad
+
+asignar <id> [id2...] tarea(s) asignar
+  Opción: --a SOCIO (CLAUDE, GEMINI, COPILOTO, OLLAMA, CHATGPT, etc.)
+
+depende <id> Administrar dependencias
+  --on <id2> Agregar nueva dependencia
+  --remove <id2> Eliminar dependencia
+  --clear Borrar todas las dependencias
+
+
+EJEMPLOS
+---------
+
+Crear tarea:
+  bach task add "API implementieren" --priority P1 --category development
+
+Enumerar tareas:
+  bach task list                    # Solo pendiente
+  bach task list in_progress        # Actualmente en progreso
+  bach task list all                # Todas
+  bach task list blocked --assigned GEMINI
+
+Operaciones de identificación múltiple:
+  bach task done 319 320 321 --note "Alle Help-Dateien erstellt"
+  bach task block 100 101 --reason "Wartet auf API-Review"
+
+Asignaciones:
+  bach task assign 100 101 --to GEMINI
+  bach task list --assigned CLAUDE
+
+Dependencias:
+  bach task depends 306 --on 305    # La tarea 306 está esperando 305
+  bach task depends 306              # Mostrar dependencias
+  bach task depends 306 --remove 305
+
+
+ARCHIVOS
+-------
+
+data/bach.db Base de datos SQLite (tabla de tareas)
+
+
+VER TAMBIÉN
+----------
+
+bach help                Ayuda general
+bach hook help           Sistema de enlace
+
+
+NOTAS
+=====
+
+Compatibilidad con múltiples ID: múltiples ID de tareas en una sola operación (por ejemplo, hecho, bloqueado, asignado)
+Detección de dependencia: las tareas se agregan automáticamente con el indicador (BLOQUEADO)
+Se muestran las dependencias inacabadas.
+Ganchos: after_task_create, after_task_done se emiten durante las operaciones

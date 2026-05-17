@@ -1,0 +1,197 @@
+PYTHON EDITING TOOLS - Edit Python files
+-------------------------------------------------
+
+As of: 2026-01-23
+Path: docs/help/tools/python_editing.txt
+
+DESCRIPTION
+------------
+Tools for editing, analyzing and splitting Python files.
+Particularly useful for:
+  - Large Python files (500+ lines)
+  - Code review and refactoring
+  - LLM context management (save tokens)
+  - Structured code changes
+
+IMPORTANT: PYTHON_CLI_EDITOR
+--------------------------
+The main Python editing tool has its own detailed
+Documentation because of its complexity and importance:
+
+  bach --help tools/python_cli_editor
+
+The python_cli_editor is built specifically for AI assistants:
+  - Show structure instead of reading entire file (save tokens)
+  - Edit specific methods/classes
+  - Surgical changes instead of complete rewrites
+
+Quick overview python_cli_editor:
+  bach python_cli_editor script.py --show-all      # Show structure
+  bach python_cli_editor script.py --show 50-80    # Lines 50-80
+  bach python_cli_editor script.py --imports       # Only imports
+  bach python_cli_editor script.py --classes       # Only classes
+  bach python_cli_editor script.py --add code.py --in-class MyClass --save
+
+For details: bach --help tools/python_cli_editor
+
+PYCUTTER: c_pycutter
+--------------------
+Breaks large Python files into separate text files per Class.
+
+APPLICATION CASES:
+  - Code review: Look at each class individually
+  - LLM context: Load only relevant class
+  - Documentation: Create class-wise documentation
+  - Refactoring: Overview of large files
+
+BASIC COMMANDS:
+
+  # Split file (creates subfolders)
+  bach c_pycutter main.py
+
+  # Output to specific folder
+  bach c_pycutter main.py --output-dir ./extracted
+
+  # JSON output (for further processing)
+  bach c_pycutter main.py --json
+
+OPTIONS:
+  --output-dir DIR Output directory
+  --json JSON output instead of files
+
+OUTPUT STRUCTURE:
+  main_20260123_120000/
+    Auxiliary functions.txt # Imports, global functions
+    ClassA.txt # Code of class ClassA
+    ClassB.txt # Code of class ClassB
+    ...
+
+EXAMPLE WORKFLOW:
+  # 1. Split large file
+  bach c_pycutter riesige_app.py --output-dir ./review
+
+  #2. Edit individual class
+  # (in separate editor or with python_cli_editor)
+
+  # 3. Apply changes back
+  # (manually or with diff tool)
+
+METHOD ANALYZER: c_method_analyzer
+----------------------------------
+In-depth analysis of Python code for problems and structure.
+
+FUNCTIONS:
+  - Method inventory (all methods with line numbers)
+  - Call analysis (which method calls which)
+  - Import check (used vs. unused)
+  - Typo detection (similar names)
+  - Signal Connect test (Qt/Tk)
+  - Attribute-before-init detection
+
+BASIC COMMANDS:
+
+  # Analyze file
+  bach c_method_analyzer script.py
+
+  # JSON output
+  bach c_method_analyzer script.py --json
+
+  # Summary only
+  bach c_method_analyzer script.py --summary
+
+  # Analyze specific class
+  bach c_method_analyzer script.py --class MyClass
+
+OPTIONS:
+  --json JSON output (machine readable)
+  --summary Compact summary only
+  --class NAME Parse only specific class
+  --verbose Detailed output
+
+OUTPUT EXAMPLE:
+  === METHOD ANALYZER: script.py ===
+
+  [CLASSES]
+    MyClass (lines 15-120)
+      - __init__ (17)
+      - process_data (35)
+      - _helper (80) <- never called!
+
+  [POTENTIAL PROBLEMS]
+    Line 42: self._hepler() - typo? Did you mean: _helper
+    Line 67: self.button.connect(self.on_click) - on_click not found
+
+  [UNUSED IMPORTS]
+    - import json (line 3)
+
+  [STATISTICS]
+    Classes: 2
+    Methods: 15
+    Lines: 320
+
+TYPICAL WORKFLOWS
+------------------
+
+1. UNDERSTANDING BIG FILE
+   First structure, then details:
+
+   # get an overview
+   bach python_cli_editor grosse_datei.py --show-all
+
+   # Or split for review
+   bach c_pycutter grosse_datei.py
+
+2. FIND PROBLEMS BEFORE COMMIT
+   Analyze code:
+
+   bach c_method_analyzer script.py
+
+   Shows: typos, unused methods, missing references
+
+3. PREPARE REFACTORING
+   Understanding dependencies:
+
+   # Who calls who?
+   bach c_method_analyzer script.py --verbose
+
+   # Look at the class in isolation
+   bach c_pycutter script.py
+
+4. SAVE TOKENS (AI context)
+   Instead of reading the entire file:
+
+   # Load structure only
+   bach python_cli_editor script.py --show-all
+
+   # Then select the relevant method
+   bach python_cli_editor script.py --show 150-180
+
+WHEN WHICH TOOL?
+------------------
+
+| Task | Tool |
+|--------------------------------|---------------------|
+| Show structure | python_cli_editor |
+| Change code specifically | python_cli_editor |
+| Split file into parts | c_pycutter |
+| Find problems/bugs | c_method_analyzer |
+| Check imports | c_method_analyzer |
+| Find typos | c_method_analyzer
+
+|CONTEXT INJECTOR
+----------------
+The ContextInjector recognizes keywords and recommends these tools:
+
+  "edit python" -> bach python_cli_editor <file> --show-all
+  "edit class" -> bach python_cli_editor <file> --show-all
+  "edit method" -> bach python_cli_editor <file> --show-all
+  "code structure" -> bach python_cli_editor <file> --show-all
+  "split file" -> bach c_pycutter <file>
+  "too big" -> bach c_pycutter <file>
+
+SEE ALSO
+----------
+  bach --help tools/python_cli_editor  Detailed editor documentation (IMPORTANT!)
+  bach --help tools/imports            Import handling
+  bach --help tools/code_quality       Code quality (encoding etc.)
+  bach --help tools/analysis           Other analysis tools

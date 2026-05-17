@@ -1,0 +1,153 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+パイプライン ハンドラー
+----------------
+
+パイプライン ハンドラーは、BACH の自動データ処理パイプラインを管理します。
+パイプラインは、pipelines/ の下に保存される JSON 定義として構成されます。
+手動または時間制御で実行できます。
+
+
+OPERATIONS
+-----------
+
+list-available
+  利用可能なすべてのパイプライン定義 (pipelines/ 内の JSON ファイル) を表示します。
+  ID、名前、タイプ、説明、スケジュールを指定します。
+  使用法: bach パイプライン list-available
+
+list
+  データベースからインストールされているすべてのパイプラインを表示します。
+  インストール日と最終実行時刻を指定します。
+  使用法: bach パイプライン リスト
+
+ステータス <パイプライン ID>
+  パイプラインの詳細なステータスを表示します。
+  構成の詳細と過去 5 回の実行と統計が含まれます。
+  使用法: Bach パイプライン ステータス <pipeline-id>
+
+install <pipeline-id>
+  パイプラインを対話的にインストールします。
+  構成パラメーターをクエリします (JSON からの config_questions)。
+  構成を Pipeline_configs テーブルに保存します。
+  パイプラインがすでに存在する場合は再インストールを提供します。
+  使用法: bach パイプライン install <pipeline-id>
+
+run <pipeline-id>
+  インストールされたパイプラインを実行します。
+  動的にentry_pointクラスをロードし、インスタンスを作成してmethod()を呼び出します。
+  統計 (items_processed、errors_count) を含むエントリを Pipeline_runs に作成します。
+  メタデータ (tasks_found/items_processed、errors/errors_count) を含む Result-Dict が必要です。
+  使用法: bach パイプライン実行 <パイプライン ID>
+
+スケジュール <パイプライン ID>
+  パイプラインのスケジューラー ジョブを有効にします。
+  スケジュールフィールド（日次/時次/週次/月次）を cron 式に変換します。
+  is_active=1 を指定して、scheduler_jobs エントリを作成します。
+  標準時間: 毎日 6:00、毎時、月曜日 6:00、毎月 1 日 6:00。
+  使用法: Bach パイプライン スケジュール <パイプライン ID>
+
+スケジュール解除 <パイプライン ID>
+  スケジューラ ジョブを無効にします (is_active=0 を設定)。
+  使用法: bach パイプラインのスケジュール解除 <pipeline-id>
+
+
+FILES
+-------
+
+hub/pipeline.py
+  PipelineHandler クラスによるハンドラーの実装。
+
+pipelines/*.json
+  パイプラインの定義。必須フィールド:
+  - id: 一意のID (例: "ati")
+  - name: 表示名
+  - バージョン: バージョン番号
+  - type: パイプラインのタイプ (例: "sync"、"import")
+  - 説明: 説明
+  - スケジュール: 「毎日」、「時間ごと」、「毎週」、「毎月」または cron 文字列
+  -entry_point: Python モジュールへのパス (system/ からの相対パス)
+  - class: モジュール内のクラス
+  - メソッド: メソッド (デフォルト: "実行")
+  - config_questions: 質問を含む配列 {キー、プロンプト、タイプ、デフォルト}
+
+data/bach.db
+  テーブル:
+  - Pipeline_configs: インストールされたパイプライン + ユーザー固有の構成
+  - Pipeline_runs: 統計を含む実行履歴
+  -scheduler_jobs: Cron ジョブ (スケジュール操作によって作成)
+
+
+例
+---------
+
+パイプライン定義 (pipelines/ati.json):
+{
+  "id": "アティ",
+  "name": "記事タイトルインポーター",
+  "バージョン": "1.0.0",
+  "タイプ": "インポート",
+  "description": "ソースから記事タイトルをインポートします",
+  "スケジュール": "毎日",
+  "entry_point": "agents/ati/importer.py",
+  "クラス": "ATIIImporter",
+  "メソッド": "実行",
+  "config_questions": [
+    {
+      "キー": "ソース URL",
+      "prompt": "タイトルインポートのソースURL",
+      "タイプ": "テキスト",
+      「デフォルト」: 「https://example.com/feed」
+    }
+  ]
+}
+
+インストール (対話型):
+$bach パイプラインのインストール
+=== インストール: 記事タイトルインポーター ===
+説明: ソースから記事タイトルをインポートします。
+タイプ: インポート
+スケジュール: 毎日
+
+構成:
+タイトルインポート元URL [https://example.com/feed]
+> https://custom.com/feed
+  -> 変更: https://custom.com/feed
+
+✓ 設定が完了しました
+パイプライン「ati」をインストールします...
+✓ パイプライン「ati」がインストールされました
+
+
+パイプライン クラス (agents/ati/importer.py):
+クラス ATIImporter:
+    def __init__(self, db_path, config):
+        self.db_path = db_path
+        self.config = 設定
+        self.items_processed = 0
+        self.errors = []
+
+    デフォルト実行(自分自身):
+        # 実装...
+        戻り値 {
+            "items_processed": self.items_processed,
+            "エラー": self.errors
+        }
+
+
+バージョン:
+$bach パイプラインの実行
+=== パイプラインの実行: 記事タイトル インポーター ===
+実行ID: 42
+✓ パイプラインの実行が成功しました
+  アイテム: 15、エラー: 0
+
+
+関連項目
+----------
+
+scheduler - 自動ジョブのスケジューラ (時間制御された実行)
+daemon - バックグラウンド プロセスのデーモン管理
+agents/ - パイプラインのエントリポイントのエージェント実装

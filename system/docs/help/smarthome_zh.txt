@@ -1,0 +1,62 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+------------
+smarthome - 智能家居集成 (FritzBox TR-064)
+
+
+描述
+------------
+提供来自 FritzBox 的连接和设备信息。
+使用 TR-064 SOAP API 通过 HTTP 进行安全 UPnP 通信
+弗里茨盒子：49000。无需身份验证或外部依赖项。
+
+
+操作
+-----------
+状态 显示连接状态、正常运行时间、外部 IP 和设备计数
+devices 列出所有已连接设备的 IP、MAC 和状态（在线/离线）
+wifi WLAN 信息：SSID、状态、信道
+带宽 最大下载和上传速率 (Mbps)
+reconnect 强制重新连接到互联网（支持试运行）
+info FritzBox 信息：型号、固件、序列号、正常运行时间
+帮助 显示此帮助
+
+
+示例
+---------
+bach smarthome status
+  -> 显示连接状态和设备数量
+
+bach smarthome devices
+  -> 所有已连接设备的 IP、MAC 和在线状态
+  -> 限制：最大。每次检索 30 台设备
+
+bach smarthome wifi
+  -> WLAN SSID、活动状态和通道
+
+bach smarthome bandwidth
+  -> 下载和上传最大值（以 Mbit/s 为单位）
+
+bach smarthome reconnect
+  -> 断开并重新连接互联网连接
+  -> 新 IP 在约 10 秒内可用
+  -> 使用--dry-run：模拟而不执行
+
+bach smarthome info
+  -> 设备详细信息（型号、固件版本、序列号）
+
+
+文件
+-------
+hub/smarthome.py 处理程序实现（SmartHomeHandler 类）
+data/bach.db 配置文件“smarthome”的目标数据库
+
+
+另请参见
+----------
+hub/base.py BaseHandler 基类
+FritzBox 文档：https://avm.de (TR-064 SOAP API)
+可访问性：fritz.box 必须在本地网络中解析

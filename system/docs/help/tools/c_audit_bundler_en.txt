@@ -1,0 +1,32 @@
+BACH Tool: c_audit_bundler
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Updated: 2026-02-05 (Forensics correction)
+Source: tools/c_audit_bundler.py
+
+DESCRIPTION
+----------------------------------------
+BACH Audit Bundler v1.0
+-----------------------
+Creates audit packages for external reviews.
+
+Two bundles:
+1. CONCEPT bundle (first): documentation, concepts, ideas
+2. IMPLEMENTATION bundle (later): Code, DB schemas, scripts
+
+Usage:
+    python c_audit_bundler.py --concept # Bundle 1: Concepts
+    python c_audit_bundler.py --implementation # Bundle 2: Code
+    python c_audit_bundler.py --all # Both bundles
+    python c_audit_bundler.py --help # Help
+
+USE
+----------------------------------------
+python bach.py tools run c_audit_bundler [args]
+or directly: python tools/c_audit_bundler.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show c_audit_bundler
+- Note: File was renamed from audit_bundler.py to c_audit_bundler.py (c_ prefix for coding category)

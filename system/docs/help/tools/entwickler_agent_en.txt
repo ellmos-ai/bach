@@ -1,0 +1,27 @@
+BACH Tool: developer_agent
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/developer_agent.py
+
+DESCRIPTION
+----------------------------------------
+Developer Agent v1.0.0
+RecludOS software development agent
+Complete implementation (Phase 1-6)
+
+Phase 1: ✅ Project & task management
+Phase 2: ✅ Code Analysis & Generation
+Phase 3: ✅ Service integration (editor/compiler)
+Phase 4: ✅ Intelligence (Debugging, Patterns)
+Phase 5: ✅ Collaboration (feedback loop)
+Phase 6: ✅ Testing & Polish
+
+USE
+----------------------------------------
+python bach.py tools run developer_agent [args]
+or directly: python tools/developer_agent.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show developer_agent

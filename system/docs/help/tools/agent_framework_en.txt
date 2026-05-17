@@ -1,0 +1,34 @@
+BACH Tool: agent_framework
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/agent_framework.py
+
+DESCRIPTION
+----------------------------------------
+Agent Framework v1.0.0
+
+Central framework for RecludOS agents.
+Connects agents to services, external tools and connections.
+
+Features:
+- Agent loader and registry management
+- Service integration (scheduling, media, mail, etc.)
+- External AI tool recommendations
+- Connection management (MCP, APIs, CLIs)
+
+Usage:
+  python agent_framework.py list # All agents
+  python agent_framework.py info <agent> # Agent details
+  python agent_framework.py tools <agent> # Recommended tools
+  python agent_framework.py services <agent> # Linked services
+  python agent_framework.py activate <agent> # activate agent
+
+USE
+----------------------------------------
+python bach.py tools run agent_framework [args]
+or directly: python tools/agent_framework.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show agent_framework

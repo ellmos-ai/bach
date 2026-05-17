@@ -1,0 +1,36 @@
+Herramienta BACH: registro_watcher
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/registry_watcher.py
+
+DESCRIPCIÓN
+----------------------------------------
+BACH Registry Watcher v1.0.0
+
+Monitoreo automático y verificación de coherencia de todos los registros del sistema.
+Portado desde RecludOS, integrado con el sistema de base de datos BACH.
+
+Características:
+- Verificación de existencia: entradas registradas vs sistema de archivos
+- Validación de sintaxis: archivos JSON
+- Referencia cruzada: entradas de base de datos frente a archivos
+- Generar informes de salud.
+- Notificación de problemas
+
+Uso:
+  python registro_watcher.py check # Verificar todos los registros
+  python registro_watcher.py informe # Crear informe de salud
+  python registro_watcher.py herramientas # Verificar solo herramientas
+  python registro_watcher.py habilidades # Verificar solo habilidades
+  python registra_watcher.py agentes # Solo verificar agentes
+  python registro_watcher.py --fix # Solucionar problemas automáticamente (de forma segura)
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan registro_watcher [args]
+o directamente: python tools/registry_watcher.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tiene alguna pregunta: las herramientas de bach muestran registro_watcher

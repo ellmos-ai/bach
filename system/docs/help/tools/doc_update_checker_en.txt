@@ -1,0 +1,33 @@
+BACH Tool: doc_update_checker
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/doc_update_checker.py
+
+DESCRIPTION
+----------------------------------------
+BACH Documentation Update Checker v1.0.1
+
+Automatically detect and update outdated documentation.
+Ported from RecludOS, integrated with BACH memory system.
+
+Features:
+- Detects outdated documents (>60 days, invalid paths)
+- Generates update suggestions
+- Creates update reports
+- Can automatically perform simple updates
+
+Usage:
+  python doc_update_checker.py check # Check
+  python doc_update_checker.py report # Create report
+  python doc_update_checker.py auto-update # auto-update (safe)
+  python doc_update_checker.py schedule # For micro routines
+
+USE
+----------------------------------------
+python bach.py tools run doc_update_checker [args]
+or directly: python tools/doc_update_checker.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show doc_update_checker

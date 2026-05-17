@@ -1,0 +1,65 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+===
+web_parse
+
+DESCRIPCIÓN
+===
+Descarga páginas web y convierte HTML a Markdown. Apoyado
+limpieza opcional (eliminación de navegación, encabezado, pie de página, aparte).
+Implementa el almacenamiento en caché de nombres de archivos basado en hash MD5.
+
+OPERACIONES
+===
+url <url>
+  Cargue la URL, envíe HTML completo al contenido de Markdown.
+  La caché se comprueba y actualiza automáticamente.
+
+clean <url>
+  Cargue la URL y analice solo el contenido principal (navegación, encabezado, pie de página, aparte)
+  eliminado). Los enlaces no se analizan en modo limpio.
+
+lista de caché
+  Mostrar todos los archivos en caché. Especifica el nombre del archivo, el tamaño (KB), la URL y
+  Marca de tiempo desactivada.
+
+borrar caché
+  Directorio de caché vacío (Consulta: Todos los archivos .md en data/cache/web
+  será eliminado).
+
+EJEMPLOS
+===
+bach web-parse url https://example.com
+  Genera el contenido completo de example.com como Markdown.
+
+bach web-parse clean https://example.com/article
+  Solo el contenido principal del artículo sin navegación/encabezado/pie de página como Markdown.
+
+bach web-parse cache list
+  Mostrar páginas almacenadas en caché con tamaños.
+
+bach web-parse cache clear
+  Borrar todo el caché.
+
+ARCHIVOS
+===
+data/cache/web/
+  Directorio de caché. Hash MD5 de la URL (12 caracteres) + sufijo "_clean"
+  si modo limpio + extensión .md.
+  Ejemplo: abc1234def56_clean.md
+
+hub/web_parse.py
+  Implementación del controlador Subclase BaseHandler, solicitud HTTP con
+  solicitudes, HTML a Markdown con html2text o expresión regular alternativa.
+
+VER TAMBIÉN
+===
+Dependencias: solicitudes (solicitudes de instalación de pip), html2text (opcional).
+Conversión alternativa con expresiones regulares si html2text no está instalado.
+El agente de usuario está configurado (BACH WebParse/1.0).
+Tiempo de espera: 20 segundos por solicitud.
+Las entidades HTML se decodifican (&amp;, &lt;, &gt;, &quot;, &nbsp;).
+Los archivos de caché contienen metacomentarios con URL, marca de tiempo y modo.

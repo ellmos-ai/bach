@@ -1,0 +1,97 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+TIMER - Cronómetro
+----------------
+
+Mide el tiempo transcurrido. Múltiples temporizadores posibles al mismo tiempo.
+
+COMANDOS CLI
+-----------
+
+  bach timer start              Iniciar temporizador sin nombre
+  bach timer start "Recherche"  Iniciar temporizador con nombre
+  bach timer stop               Detener el último/único temporizador
+  bach timer stop "Recherche"   Detener temporizador con nombre
+  bach timer list               Mostrar todos los temporizadores activos
+  bach timer clear              Eliminar todos los temporizadores
+
+FORMATO DE SALIDA
+--------------
+
+  [TIMER] Investigación: 05:23 | Sesión: 45:12
+
+Los temporizadores activos se muestran con cada salida CLI.
+
+PERSISTENCIA
+----------
+
+  Archivo: datos/.timer_state
+
+  Contenido:
+  {
+    "temporizadores": {
+      "Investigación": "2026-01-30T14:00:00",
+      "Sesión": "2026-01-30T13:50:00"
+    }
+  }
+
+EJEMPLOS
+---------
+
+  # Iniciar temporizador de sesión
+  bach timer start "Session"
+  -> Temporizador 'Sesión' iniciado
+
+  # Temporizador adicional para subtarea
+  bach timer start "Bugfix"
+  -> Temporizador 'Corrección de errores' iniciado
+
+  # Verificar estado
+  bach timer list
+  -> Sesión: 45:12
+  -> Corrección de errores: 05:23
+
+  # Detener el temporizador de corrección de errores
+  bach timer stop "Bugfix"
+  -> Temporizador 'Corrección de errores' detenido: 05:23
+
+CASOS DE USO
+--------
+
+  1. SEGUIMIENTO DE LA SESIÓN
+     bach timer start "Session"
+     ...trabajar...
+     bach timer stop "Session"
+     -> Muestra cuánto duró la sesión
+
+  2. SEGUIMIENTO DE TAREAS
+     bach timer start "Task-123"
+     ... Editar tarea ...
+     bach timer stop "Task-123"
+     -> El tiempo se puede anotar en el comentario de la tarea
+
+  3. SEGUIMIENTO PARALELO
+     bach timer start "Gesamt"
+     bach timer start "Recherche"
+     ...investigación...
+     bach timer stop "Recherche"
+     bach timer start "Coding"
+     ... código ...
+     bach timer stop "Coding"
+     bach timer stop "Gesamt"
+     -> Muestra la distribución del tiempo
+
+INTERPLAY
+-------------
+
+El temporizador es parte del sistema de tiempo:
+  --ayuda reloj Visualización de la hora
+  --ayuda cuenta regresiva Cuenta regresiva con disparador
+  --ayuda entre cheques
+  --help beat Visualización de hora unificada
+
+---
+Versión: 1.0 | Estado: Implementado (v1.1.83)
+Controlador: system/hub/time.py (TimerHandler)

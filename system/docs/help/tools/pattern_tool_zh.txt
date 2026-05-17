@@ -1,0 +1,35 @@
+巴赫工具：pattern_tool
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/pattern_tool.py
+
+描述
+----------------------------------------
+pattern_tool.py - 通过模式识别缩短文件名
+------------------------------------------------------------
+
+将pattern_renamer.py 和pattern_trimmer.py 组合在一个工具中。
+
+功能：
+- PREFIX：删除组的公共前缀
+- 后缀：从组中删除常见后缀
+- BOTH：前缀和后缀组合
+
+用法：
+    python pattern_tool.py <文件夹> --dry-run
+    python pattern_tool.py <文件夹> --执行
+    python pattern_tool.py <文件夹> --仅前缀
+    python pattern_tool.py <文件夹> --仅后缀
+    python pattern_tool.py <folder> -m 5 # 最少 5 个字符模式
+
+作者：BACH v1.1
+
+使用
+----------------------------------------
+python bach.py 工具运行pattern_tool [args]
+或直接： python tools/pattern_tool.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：巴赫工具显示pattern_tool

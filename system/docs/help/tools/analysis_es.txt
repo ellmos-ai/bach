@@ -1,0 +1,93 @@
+HERRAMIENTAS DE ANÁLISIS - Herramientas de análisis
+-----------------------------------
+
+VISIÓN GENERAL
+Las herramientas de análisis de BACH ayudan con el análisis de datos,
+Inspección de código y monitoreo del sistema.
+
+ANÁLISIS DE DATOS (datos de Bach)
+-------------------------
+Ruta: hub/data_analysis.py
+Estado: Implementado (v1.1.25)
+
+Comandos:
+  bach data load <pfad>         Cargar archivo y mostrar información
+  bach data describe <pfad>     Estadísticas descriptivas (media, estándar, mín, máximo)
+  bach data head <pfad> [--rows N]  Primeras N líneas (predeterminado: 10)
+  bach data corr <pfad>         Matriz de correlación de columnas numéricas
+  bach data chart <pfad> <typ>  Crear gráfico (barras, líneas, circulares, dispersión, hist)
+  bach data list                Mostrar archivos en entrada/carpeta
+
+Formatos admitidos:
+  - CSV (reconocimiento automático de separadores)
+  - Excel (.xlsx, .xls)
+  - JSON
+
+Directorios:
+  usuario/análisis de datos/entrada/archivos de entrada
+  archivos de usuario/análisis de datos/salida/resultados
+  usuario/análisis-de-datos/gráficos/ Gráficos generados
+
+ANÁLISIS DE CÓDIGO
+------------
+
+code_analyzer.py
+  Analiza el código Python en busca de calidad y estructura.
+  Llamada: python tools/code_analyzer.py <archivo>
+
+c_method_analyzer.py
+  Analiza métodos y funciones en archivos Python.
+  Encuentra métodos largos, funciones complejas.
+  Llamada: python tools/c_method_analyzer.py <archivo>
+
+ESTADÍSTICAS E INFORMES
+-------------------
+
+task_statistics.py
+  Crea estadísticas sobre tareas (realizadas versus pendientes, prioridades).
+  Llamada: herramientas de Python/task_statistics.py
+
+reports.py
+  Genera varios informes del sistema.
+  Llamada: herramientas de Python/reports.py
+
+generate_skills_report.py
+  Crea un informe de cobertura de habilidades.
+  Llamada: python tools/generate_skills_report.py
+
+SCANNER
+-------
+
+dirscan.py
+  Explora directorios en busca de cambios.
+  Integrado en --startup.
+  Llamada: python tools/dirscan.py <ruta>
+
+tool_scanner.py
+  Busca y registra herramientas en el sistema.
+  Llamada: python tools/tool_scanner.py
+
+duplicate_detector.py
+  Encuentra archivos duplicados por hash.
+  Llamada: python tools/duplicate_detector.py <ruta>
+
+INSPECCIÓN DEL SISTEMA
+-----------------
+
+c_sqlite_viewer.py
+  Inspecciona bases de datos SQLite (bach.db, bach.db).
+  Llamada: python tools/c_sqlite_viewer.py <db>
+
+inspect_db_tables.py
+  Muestra el esquema de la tabla y las estadísticas.
+  Llamada: herramientas de Python/inspect_db_tables.py
+
+dump_schema.py
+  Exporta el esquema de base de datos como SQL.
+  Llamada: python tools/dump_schema.py
+
+VER TAMBIÉN
+----------
+bach --help data          Ayuda de análisis de datos
+bach --help tools         Descripción general de herramientas
+bach --help maintain      Herramientas de mantenimiento

@@ -1,0 +1,25 @@
+BACH 工具：测试
+------------------
+
+BACH 系统测试和比较的测试框架。
+
+可用工具
+-----------------
+
+  run_b_tests 运行 BACH 系统测试
+  Compare_systems 执行系统比较
+  run_comparison_custom 自定义比较
+  populate_tests 生成测试数据
+  query_tests 查询测试结果
+
+使用
+----------
+
+  bach --tools testing run               运行所有测试
+  bach --tools testing compare <a> <b>   比较系统
+  bach --tools testing populate          创建测试数据
+
+MODULE
+-----
+
+  工具/测试/（5 个脚本）

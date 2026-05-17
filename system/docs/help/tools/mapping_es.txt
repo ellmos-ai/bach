@@ -1,0 +1,111 @@
+HERRAMIENTAS DE MAPEO - Comparación de características entre sistemas
+---------------------------------------------------
+
+A partir de: 2026-01-23
+Ruta: docs/help/tools/mapping.txt
+
+DESCRIPCIÓN
+------------
+Herramientas de mapeo de características para comparar y analizar
+de características en diferentes sistemas.
+Parte del proyecto BACH_STREAM.
+
+Ruta: herramientas/mapping/
+
+FILES
+-------
+  query_features.py Consultar y comparar características
+  populate_features.py Rellenar base de datos con características
+  esquema.sql Esquema de base de datos
+
+BASE DE DATOS
+---------
+Ubicación: BACH_STREAM/MAPPING/feature_mapping.db
+
+Tablas:
+  sistemas Sistemas registrados (CHIAH, BATCH, recludOS, etc.)
+  características Definiciones de características
+  feature_categories Categorización (Memoria, GUI, Tareas, etc.)
+  implementaciones Qué sistema tiene qué característica
+
+FUNCIONES PRINCIPALES
+---------------
+
+feature_matrix(categoría=Ninguna):
+  Muestra qué sistema tiene qué característica.
+
+  matriz query_features.py de Python
+  matriz python query_features.py --categoría "Memoria"
+
+  Símbolos:
+    + = implementado (completo)
+    ~ = parcial
+    ?  = planeado/desconocido
+    - = no presente
+
+feature_synopsis(feature_name):
+  Compara una única característica en todos los sistemas.
+  Muestra caminos, tecnología, notas.
+
+  python query_features.py sinopsis "Memoria de trabajo"
+
+SISTEMAS REGISTRADOS
+--------------------
+  _CHIAH v3.1 Sistema CLI original
+  _Sistema basado en concentrador BATCH v2.5
+  Marco del agente recludOS v3.3.0
+  BACH v1.1 Lo mejor de la sinopsis (este sistema)
+  Utilidad de canalización RAG portátil con IA
+  Plantillas Plantillas de proyectos
+
+CATEGORÍAS DE FUNCIONES
+------------------
+  01 Gestión de tareas Gestión de tareas
+  02 Sistemas de memoria de memoria.
+     21 Memoria de corta duración basada en sesiones
+     22 memoria persistente a largo plazo
+     23 Ponderación de la fuente del contexto de la memoria
+  03 Inicio/apagado de la gestión de sesiones
+  04 paneles web GUI
+  05 Procesos en segundo plano de mantenimiento (daemon)
+  06 Herramientas Utilidades
+  07 Comunicación Mensajería, socios
+  08 Sistema de ayuda a la documentación
+  09 Agentes Agentes jefes, expertos
+  10 Seguridad de respaldo
+  11 Recuperación de RAG/incrustaciones aumentada
+  12 operaciones de archivos Sistema de archivos
+
+USE
+----------
+
+Generar matriz de características:
+  python tools/mapping/query_features.py matriz
+
+Filtrado por categoría:
+  python tools/mapping/query_features.py matriz --categoría "GUI"
+
+Sinopsis de la característica:
+  python tools/mapping/query_features.py sinopsis "Inyectores"
+
+Ingrese nuevas funciones:
+  python tools/mapping/populate_features.py
+
+INTEGRACIÓN CON BACH
+--------------------
+El sistema de mapeo ayuda con:
+  - Migración de sistemas anteriores
+  - Identificación de características faltantes.
+  - Documentación del estado de implementación
+
+Ver también: docs/con2_ANFORDERUNGSANALYSE.md
+
+VER TAMBIÉN
+----------
+  docs/help/architecture.txt Arquitectura del sistema BACH
+  docs/consense_diff_2.md Requisitos abiertos
+  ROADMAP.md Hoja de ruta con todos
+  skills/SKILL_ANALYSE.md Coeficientes de cobertura
+
+VERSIÓN: v1.0.0 (2026-01-23)
+Líneas: ~334 (query_features.py), ~313 (populate_features.py)

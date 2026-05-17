@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+計画プロセス
+-----------------
+
+いつ計画するか?
+  15 分未満 直接編集
+  15～30分 オプション構造
+  > 30 分を計画する必要があります
+
+計画を作成する (手動):
+
+  1. docs/ または docs/_ideas/ にコンセプト ドキュメントを作成します。
+  2. 構造 (推奨):
+     - 背景 (なぜ?)
+     ・目標（何を達成すべきか？）
+     - 技術分析 (コンポーネント、ファイル、依存関係)
+     - タスク分解を伴う実装計画
+
+  3. BACH データベースにタスクを作成します。
+     bach task add "Teil 1" --category development --priority P2
+     bach task add "Teil 2" --category development --priority P3
+
+  4. 依存関係を設定します (必要な場合):
+     bach task depends <id> --on <andere_id>
+
+時間予算ルール (推奨事項):
+  非常にまれ: 1 ～ 2 分 (定数の名前変更)
+  レア: 2 ～ 3 分 (インポートを追加)
+  多くの場合: 3 ～ 6 分 (関数の実装)
+  場合によって: 8 ～ 11 分 (より複雑なロジック)
+  レア: 12 分 (大規模なリファクタリング)
+  決して: 15 分を超える (技術的に不可能)
+
+タスク コマンド:
+  bach task add <titel>              タスクを追加
+  bach task add <titel> --category development --priority P2
+  bach task list pending             開いているタスクを表示
+  bach task depends <id>             依存関係を表示
+  bach task depends <id> --on <id2>  依存関係を設定
+  bach task show <id>                タスクの詳細を表示
+  bach task done <id>                タスクを完了としてマーク
+
+  参照: bach タスクのヘルプ
+
+ワークフローの例:
+  1. docs/_ideas/my_feature.md にコンセプトを記述します。
+  2. タスクを作成します:
+     bach task add "Schema erweitern" --category development --priority P2
+     bach task add "Handler implementieren" --category development --priority P2
+     bach task add "Tests schreiben" --category development --priority P3
+  3. 依存関係を設定します:
+     bach task depends 302 --on 301  # ハンドラーはスキーマに依存します
+     bach task depends 303 --on 302  # テストはハンドラーに依存します
+  4. 段階的に処理します:
+     bach task done 301
+     bach task list pending  # 302 はブロックされなくなりました

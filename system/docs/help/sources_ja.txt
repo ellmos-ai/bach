@@ -1,0 +1,82 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [context_triggers テーブル、data/context_sources.json]
+
+コンテキスト ソース システム (動的インジェクション)
+-------------------------------------------
+
+日付: 2026-02-08
+
+動的トリガーを持つすべてのナレッジ ソースの中央レジストリ。
+
+ソース カテゴリ:
+-------------------
+1。常に利用可能 (注入優先度 8 ～ 10)
+   -lessons_learned 既知のバグと修正
+   - best_practices ベストプラクティス
+   - 問題 問題モニター (重大/緊急)
+
+2.リクエストに応じて / イベントベース
+   - メタ認知補助戦略
+   - メタ認知 メンタルサポート
+   - 変更ログ履歴
+   - longterm_memory アーカイブされたセッション
+   - 連絡先 外部ツール/API
+   - help BACH ヘルプ ファイル
+
+DYNAMIC TRIGGERS
+------------------
+トリガーの一部は JSON (word_triggers)、一部は DB (context_triggers) にあります。
+- JSON: data/context_sources.json (9 ソース、~45 word_triggers)
+- DB: context_triggers テーブル (1012 エントリ - 拡張トリガー ロジック)
+- 種類: ツールディスカバリ、レッスンヒット、ワークフローガイド、テーマパケット
+- 重み付け: 重み 1 ～ 10、自動挿入フラグ
+
+CLI コマンド
+-----------
+  bach sources status             すべてのソースのステータス (有効/重み)
+  bach sources toggle <id>        ソースのオン/オフの切り替え
+  bach sources inject <id>        自動インジェクションのオン/オフの切り替え
+  bach sources get <id> [query]   ソースのコンテンツの取得
+  bach sources search <query>     トリガーでどのソースが起動するかを確認
+  bach sources contacts [query]   連絡先/API の検索
+  bach sources problems           エラー ログの確認
+
+注: 「バッチ ソースの同期」は、 handler.
+
+設定
+-------------
+ソースのグローバル制御は `data/context_sources.json` 経由で行われます。
+- 有効: ソースは一般公開されています
+- injection_enabled: 明示的なリクエストなしで注入が許可されます
+- 重み: 基本優先度 (1 ～ 10)
+- word_triggers: トリガーマッチング用のキーワード
+-event_triggers: イベントベースのトリガー (起動、エラー)
+
+ハンドラー パス: system/hub/sources.py
+
+ソース コンテンツ
+---------------
+ハンドラーは、「bachsources get <id>」を介して直接コンテンツを提供できます。
+-lessons_learned: docs/help/lessons.txt を配信します (存在しますが、レッスンのドキュメントです)
+- best_practices: docs/help/practices.txt を読み取ります (存在します)。
+- 戦略: ハードコードされた戦略 (ブロックされている、複雑、不明瞭、疲れている)
+- help: docs/help/*.txt ファイルを読み取ります (90 以上のファイルが利用可能)
+- 変更ログ: SKILL.md (system/SKILL.md) から抽出
+- 問題: data/logs/*.log と DB 内のブロックされたタスクをスキャンします
+
+注意: 「lessons_learned」は、レッスン DB ではなく、docs/help/lessons.txt を返します。
+レッスン DB に使用: bach レッスン リスト/検索
+
+連絡先についての注意
+--------------------
+v1.1.84 以降、連絡先は bach.db に保存されます (テーブル: contacts、
+健康_連絡先)。古い contacts.json はもう存在しません。
+「bachsourcescontacts」コマンドは DB テーブルを直接使用するようになりました。
+
+関連項目
+----------
+  --help injectors インジェクター システム
+  --help 統合 イベントからソースまで
+  docs/help/memory.txt 認知モデル

@@ -1,0 +1,105 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+------------
+multi_llm_protocol.py - 并行 LLM 代理的协调
+
+描述
+------------
+协议 V3，用于多个 AI 代理（Claude、Gemini、
+副驾驶、奥拉马、困惑、米斯特拉尔）。监控存在、管理
+独占文件访问并同步代理活动
+存在文件、锁和握手信号。另外：基于数据库
+为partner_presence表中的实时状态标记卡系统。
+
+操作
+-----------
+bach llm presence [dir] [task]      在目录中创建存在
+bach llm check [dir]                检查目录中的其他代理
+bach llm lock <datei|ordner>        获取文件或目录上的锁定
+bach llm unlock [datei]             释放您自己的锁
+bach llm handshake [dir]            开始与其他代理握手
+bach llm status [dir]               多LLM状态+数据库显示实时状态
+
+核心协议V3
+-----------------
+1.存在系统（文件）
+   - .<agent>_presence：心跳、状态、工作状态
+   - 120 秒不活动后超时
+   - 状态：活动，已完成
+
+2。锁定系统（文件+文件夹）
+   - 文件：<文件>.lock.<代理>
+   - 文件夹：<文件夹>/.dirlock.<代理>
+   - 锁定超时：300 秒（释放陈旧的锁）
+   - 退避：两次尝试之间间隔 5 秒
+
+3。备份系统
+   - 更改前的<文件>.bak
+   - 自动在 safe_write/safe_append
+
+4.握手协议
+   - .handshake_<agent> 文件
+   - 自动代理发现
+   - 最多等待30 秒确认
+
+5。 DB 邮票卡 (v1.1.71)
+   - 合作伙伴状态表
+   - 启动/关闭时的时钟输入/时钟输出
+   - current_task + last_heartbeat 用于实时状态
+   - 心跳超时：5 分钟（可配置）
+
+示例
+---------
+# 激活代理
+bach llm presence /c/Users/User/project processing
+
+# 检查其他代理
+bach llm check /c/Users/User/project
+
+# 获取文件锁定
+bach llm lock /c/Users/User/project/results.txt
+
+# 释放锁定
+bach llm unlock /c/Users/User/project/results.txt
+
+# 开始握手
+bach llm handshake /c/Users/User/project
+
+# 完成状态（包括数据库实时状态）
+bach llm status /c/Users/User/project
+
+# 安全写入操作（API）
+protocol.safe_write(Path("data.txt"), "Content", timeout=60)
+
+# 安全追加 (API)
+protocol.safe_append(Path("log.txt"), "New line\n", timeout=60)
+
+# DB: 启动时打卡
+db = PartnerPresenceDB(Path("data/bach.db"), agent_name='claude')
+db.clock_in(task="Research",working_dir="/project", session_id="uuid-123")
+
+# DB：获取实时状态
+Partners = db.get_online_partners(timeout_months=5)
+
+FILES
+-------
+文件访问（相对于system/）：
+  hub/multi_llm_protocol.py 类 MultiLLMProtocol、MultiLLMHandler
+  data/bach.db Partner_presence 表（印章卡）
+
+生成的文件（在工作目录中）：
+  .<agent>_presence 存在标记
+  <文件>.lock.<代理> 文件锁
+  <folder>/.dirlock.<agent> 文件夹锁定
+  <文件>.bak 更改前备份
+  .handshake_<agent> 握手信号/响应
+
+另请参见
+----------
+bach --help                 常规帮助页面
+hub/base.py BaseHandler 类
+data/schema.sqlpartner_presence 表定义
+第62课、第63课发展史（克劳德+双子座实验）

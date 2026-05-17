@@ -1,0 +1,30 @@
+Инструмент BACH: Batch_file_ops
+--------------------------------------------------
+Создано: 23 января 2026 г., 10:36.
+Источник: инструменты/batch_file_ops.py
+
+ОПИСАНИЕ
+----------------------------------------
+batch_file_ops.py — Пакетные операции с файлами
+
+Собирает и удаляет/перемещает/копирует файлы по шаблону.
+
+Использование:
+    python patch_file_ops.py delete <folder> --pattern "*.py"
+    python patch_file_ops.py delete <folder> --pattern "TOOLS_*.py"
+    python patch_file_ops.py move <источник> <пункт назначения> --pattern "*.txt"
+    python patch_file_ops.py copy <источник> <назначение> --pattern "*.md"
+    список python patch_file_ops.py <папка> --pattern "*"
+    python patch_file_ops.py delete <folder> --pattern "*.py" --dry-run
+
+Автор: Claude
+
+USE
+----------------------------------------
+инструменты python bach.py запускают пакетный файл_ops [args]
+или напрямую: инструменты Python/batch_file_ops.py [args]
+
+ПРИМЕЧАНИЯ
+----------------------------------------
+- автоматически генерируется из строки документации.
+- Если у вас есть вопросы: инструменты bach показывают пакетный файл_ops.

@@ -1,0 +1,27 @@
+BACH ツール: task_statistics
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/task_statistics.py
+
+説明
+----------------------------------------
+task_statistics.py - _done.json の統計評価
+
+完了したタスクを分析し、以下を提供します。
+- 週ごとのタスク
+- 努力の配分
+- 1日あたりのセッション数
+- ツールのアクティビティ
+
+バージョン: 1.0
+作成日: 2026-01-10
+
+使用
+----------------------------------------
+python bach.py ツールは task_statistics [args] を実行します
+または直接: python tools/task_statistics.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成
+- 質問がある場合: bach tools show task_statistics

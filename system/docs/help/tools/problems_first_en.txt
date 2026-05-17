@@ -1,0 +1,22 @@
+BACH Tool: problems_first
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/problems_first.py
+
+DESCRIPTION
+----------------------------------------
+Problems First - Automatic error detection
+----------------------------------------------
+
+Ported from CHIAH to BACH.
+Scans Auto-Log and other sources for problems.
+
+USE
+----------------------------------------
+python bach.py tools run problems_first [args]
+or directly: python tools/problems_first.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show problems_first

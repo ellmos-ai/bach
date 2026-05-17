@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MIGRATE - Evolutionary file migration
+---------------------------------------
+
+CONCEPT
+-------
+For file renaming or path changes:
+Instead of changing all references at once, use a wrapper file.
+References are corrected organically through daily use.
+
+WHY?
+------
+- No hard breaks
+- References will be updated gradually
+- Each partner corrects what was sent to them
+- No forgotten references
+
+PROCEDURE
+--------
+1. Rename file:
+   mv old_file.md new_file.md
+
+2. Create wrapper (old_file.md):
+   - Status message “redirected”
+   - Log table for visitors
+   - Instructions: Check + correct origin
+   - Link to the new file
+
+3. Correct critical references IMMEDIATELY:
+   - docs/help/*.txt (primary documentation)
+   - System code that uses path directly
+   - CLI handler
+
+4. Other evolutionary migrants migrate:
+   - Correct partners when using
+   - Path Healer finds automatically
+   - Manual discovery
+
+WRAPPER-TEMPLATE
+----------------
+# OLD_FILE - REDIVERTED
+
+Status: This file has been renamed to `new_file.md`
+
+## Migration-Log
+
+| Date | Who | Origin | Reference corrected? |
+|-------|-----|----------|---------------------|
+| | | |
+
+|## Instructions
+
+1. Leave a log entry
+2. Check your origins (what sent you here?)
+3. Correct the reference there
+4. Go to the actual file
+
+**Target file:** [new_file.md](new_file.md)
+
+WHEN WRAPPER?
+-------------
+YES (wrapper makes sense):
+  - Lots of potential referrals
+  - Referenced by various partners
+  - No critical system file
+
+NO (change all directly):
+  - Few known references
+  - Critical system files
+  - Performance critical paths
+
+CLEANUP
+-------
+After 30 days or when log empty:
+  bach trash delete <wrapper>
+
+AUTOMATIC SUPPORT
+---------------------------
+  bach --maintain heal       Finds outdated paths automatically
+  bach --maintain docs       Detects outdated documentation
+
+EXAMPLE
+--------
+ROADMAP_ADVANCED.md → ROADMAP.md (2026-01-24):
+
+  1. mv ROADMAP_ADVANCED.md ROADMAP.md
+  2. Wrapper ROADMAP_ADVANCED.md created
+  3. docs/help/formats.txt corrected (critical)
+  4. 20+ other references → evolutionary
+
+SEE ALSO
+----------
+  skills/workflows/migrate-rename.md Detailed workflow
+  docs/help/practices.txt Principle #3: Evolutionary Migration
+  bach --maintain heal                  Automatic path correction
+  bach --maintain docs                  Detects outdated documentation

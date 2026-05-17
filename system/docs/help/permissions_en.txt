@@ -1,0 +1,205 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PERMISSIONS HANDLER - Claude Code Permission Profiles
+-----------------------------------------------------
+
+HANDLER NAME
+------------
+permissions
+
+DESCRIPTION
+------------
+The Permissions Handler manages permission profiles for Claude Code in the
+BACH database (system_config table, category: claude_permissions).
+
+Two preconfigured profiles:
+  - normal: standard permissions (ask for critical tools)
+  - remote_control: All tools pre-activated for mobile app use
+
+Profiles are saved in the DB and, when activated, in the file
+~/.claude/settings.json written. When deactivated, the previous
+State automatically restored (backup mechanism).
+
+BACKGROUND
+-----------
+Claude Code Remote Control (Mobile App) ignores --dangerously-skip-permissions
+due to a known bug (GitHub Issue #29214). The allow rules in
+However, settings.json are also respected by Remote Control. Therefore will
+The permissions are managed via profiles in the BACH-DB and, if necessary, in the
+settings.json written.
+
+OPERATIONS
+-----------
+
+LIST
+----
+bach permissions list
+
+Show all saved profiles with number of allow/deny rules.
+Marks the currently active profile with [ACTIVE].
+
+SHOW
+----
+bach permissions show <profil>
+
+Detailed view of a profile: description, all allow and deny rules.
+
+SET
+---
+bach permissions set <profil> allow=<Tool> [allow=<Tool2>] [deny=<Tool3>]
+
+Add rules to a profile.
+- allow=Tool: Allow tool without confirmation
+- deny=Tool: Deny tool
+- Wildcards possible: mcp__bach-*__* (all BACH MCP tools)
+- Changes to the active profile are immediately reflected in settings.json
+
+REMOVE
+------
+bach permissions remove <profil> allow=<Tool> [deny=<Tool2>]
+
+Remove rules from a profile.
+Changes to the active profile are immediately reflected in settings.json.
+
+ACTIVATE
+--------
+bach permissions activate <profil>
+
+Activate profile:
+1. Backup the current permissions from settings.json to DB
+2. Write profile rules in settings.json
+3. Remember active profile in DB
+
+Other settings (hooks, model, language etc.) remain untouched.
+
+DEACTIVATE
+----------
+bach permissions deactivate
+
+Return to normal profile:
+1. Restore backup from DB
+2. Update settings.json
+3. Set active profile to "normal"
+
+SYNC
+----
+bach permissions sync
+
+Current allow/deny rules from settings.json into the active DB profile
+import. Useful if rules have been changed manually in settings.json.
+
+RESET
+-----
+bach permissions reset <profil>
+
+Reset profile to the predefined defaults.
+Available defaults: normal, remote_control.
+Changes to the active profile are immediately reflected in settings.json.
+
+STATUS
+------
+bach permissions status
+
+Shows:
+- Active profile and path to settings.json
+- Number of allow/deny rules live in settings.json
+- Number of allow/deny rules in the DB
+- Whether DB and settings.json are synchronous
+- Whether a backup is available
+
+INIT
+----
+bach permissions init
+
+Creates the default profiles (normal, remote_control) in the DB.
+Idempotent: skips existing profiles.
+Is executed automatically when the remote control is started for the first time.
+
+EXAMPLES
+---------
+
+Create default profiles:
+$ bach permissions init
+
+View all profiles:
+$ bach permissions list
+
+Remote Control Profile Details:
+$ bach permissions show remote_control
+
+Add new tool to remote control profile:
+$ bach permissions set remote_control allow=mcp__slack__*
+
+Remove tool from profile:
+$ bach permissions remove remote_control allow=mcp__slack__*
+
+Activate remote control profile (before mobile session):
+$ bach permissions activate remote_control
+
+Back to normal profile:
+$ bach permissions deactivate
+
+Check current status:
+$ bach permissions status
+
+Apply manually changed settings.json into DB:
+$ bach permissions sync
+
+Reset profile to defaults:
+$ bach permissions reset remote_control
+
+REMOTE CONTROL WORKFLOW
+-----------------------
+
+Automatically (recommended):
+  1. Desktop: Double click on Claude_RemoteControl.bat
+  2. BACH Menu: Key [P] in the Boot Menu
+  -> Script activates profile, starts Claude, restores profile
+
+Manually:
+  1. bach permissions activate remote_control
+  2. claude --dangerously-skip-permissions
+  3. Enter /rc, scan QR code
+  4. After completion: bach permissions deactivate
+
+PROFILE ARCHITECTURE
+------------------
+
++---------------------------------+
+  |     BACH DB (system_config) |
+  |  category: claude_permissions |
+  |                                 |
+  |  normal: {allow, deny} |
+  |  remote_control: {allow, deny} |
+  |  active_profile: "normal" |
+  |  backup: {allow, deny} |
+  +---------------------------------+
+            |  activate/deactivate
+            v
+  +---------------------------------+
+  |   ~/.claude/settings.json |
+  |   permissions.allow/deny |
+  |   (hooks, model etc. remain) |
+  +---------------------------------+
+            |
+            v
+  +---------------------------------+
+  |   Claude Code (local + remote) |
+  +---------------------------------+
+
+FILES
+-------
+hub/claude_permissions.py Handler implementation
+start/_internal/claude_remote_control.py Automatic launcher
+start/_internal/claude_remote_control.bat Wrapper for starter
+start/bach.bat boot menu (menu item [P])
+~/.claude/settings.json Claude Code Settings (target file)
+bach.db (system_config) Profile storage in DB
+
+SEE ALSO
+----------
+settings.txt Settings Handler (system_config table)
+claude-code.txt Claude Code Quick Reference
+claude-code-automatization.txt Claude Code Automation

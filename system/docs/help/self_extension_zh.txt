@@ -1,0 +1,148 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH SELF-EXTENSION（自扩展）
+---------------------------------------
+
+截至：2026-02-13
+
+BACH 是一个自扩展系统。人工智能合作伙伴应该
+积极改进BACH，创造新的能力和系统
+适应新的要求。
+
+核心原则：使用BACH = 扩展BACH
+------------------------------------------
+每一次访问都是改进系统的机会。
+缺失的技能不会被报告，但会被创建。
+
+自我扩展循环
+--------------------
+  1. 识别 → 识别缺失的技能
+  2.创建→支架新技能/工具/处理程序
+  3.注册→热重载，更新注册表
+  4. 使用 → 立即使用
+  5.反思 → 吸取经验教训，注册钩子
+
+创建新技能
+-----------------------------
+使用“bach Skills create”，支持 5 种组件类型：
+
+  bach skills create voice-processor --type tool
+    → 创建：system/tools/voice_processor.py
+    → 标准模板脚手架
+    → 实施后即可使用
+
+  bach skills create email-agent --type agent
+    → 创建：system/agents/email-agent/SKILL.md
+    → 带有 SKILL.md 模板的自己的文件夹
+    → 协调其他专家/工具
+
+  bach skills create tax-expert --type expert
+    → 创建：system/agents/_experts/tax-expert/SKILL.md
+    → 带有 SKILL.md 模板的自己的文件夹
+    → 深厚的领域知识
+
+  bach skills create api-gateway --type handler
+    → 创建：system/hub/api_gateway.py
+    → 可立即作为 CLI 命令使用（bach api-gateway ...）
+    → BaseHandler 子类具有 get_operations()
+
+  bach skills create data-sync --type service
+    → 创建：system/skills/_services/data-sync/
+    → 使用 __init__.py 和 service.py 进行服务
+    → 处理程序附近，一般使用
+
+创建后：热重新加载
+---------------------------------
+  bach skills reload
+    → 重新加载注册表（检测新的处理程序）
+    → 运行工具发现
+    → 同步技能数据库
+    → 无需重新启动！
+
+或通过 API：
+  从 bach_api 导入应用程序
+  一个=应用程序（）
+  计数 = a.reload_registry()
+  print(f"{count} handler returned")
+
+HOOK INTEGRATION
+-----------------
+新能力可以挂接到钩子系统中：
+
+  从 core.hooks 导入钩子
+
+  # 对系统事件执行你自己的逻辑
+  hooks.on('after_task_create', my_logic, name='my_plugin')
+  hooks.on('after_startup',startup_check, name='my_plugin')
+
+  可用事件：bach hooks 事件
+
+示例：完整的自我扩展工作流程
+----------------------------------------------
+
+  第 1 步：认识需求
+  ------------------------
+  “我需要一个时间跟踪处理程序”
+
+  第 2 步：脚手架
+  ----------------------
+  bach skills create zeiterfassung --type handler
+
+  第三步：实施
+  --------------------------
+  → 编辑 hub/zeiterfassung.py
+  → 添加操作（启动、停止、列表、报告）
+  → 如果需要，将数据库表添加到 db/schema.sql
+
+  第 4 步：热重载
+  ----------------------
+  bach skills reload
+
+  第5步：立即使用
+  -----------------------
+  bach zeiterfassung start "Projektarbeit"
+  bach zeiterfassung stop
+  bach zeiterfassung report --today
+
+  第 6 步：注册钩子（可选）
+  ------------------------------------------------------
+  从 core.hooks 导入钩子
+  hooks.on('after_task_done', lambda ctx: 时间记录.stop())
+
+  第 7 步：保存课程
+  ----------------------------
+  bach lesson add "Zeiterfassung: Handler-Pattern mit start/stop/list/report"
+
+可以扩展什么？
+----------------------------
+  区域如何处
+  --------------- -------------------------------- -------------------------
+  CLI 命令在 hub/ hub/<name>.py 中创建新处理程序
+  将工具Python脚本放在tools/tools/<name>.py中
+  Agents 带有 SKILL.md 的代理文件夹agents/<name>/
+  专家 包含 SKILL.md 的专家文件夹 Agents/_experts/<name>/
+  服务 创建服务文件夹 Skills/_services/<name>/
+  工作流程 创建 Markdown 文件 Skills/workflows/<name>.md
+  注册 Hooks 监听器 core/hooks.py: hooks.on()
+  db/create db/migrations/ 中的数据库模式迁移
+  帮助文件 在 docs/help/ docs/help/<topic>.txt 中创建文本文件
+  aliases.py core/aliases.py 中的别名简写形式
+
+自我扩展规则
+-------------------------------
+  1. 处理程序优先：hub/中的每个函数都作为处理程序
+  2.自我修复：立即纠正错误
+  3. 修复或任务：小 = 立即修复，大 = 创建任务
+  4. 经验教训：每次扩展后的文档
+  5.热重载：更改后始终“巴赫技能重新加载”
+  6. 测试：使用 `bach <name> help` 验证新处理程序
+
+另请参见
+----------
+  bach help hooks            Hook 框架
+  bach help skills           技能系统
+  bach help cli              CLI 约定
+  bach help architecture     系统架构
+  Skills/workflows/self-extension.md 详细工作流程

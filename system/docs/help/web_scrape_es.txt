@@ -1,0 +1,82 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WEB_SCRAPE HANDLER
+------------------
+
+NOMBRE DEL MANEJADOR
+------------
+
+web-scrape (WebScrapeHandler)
+
+Reemplazo para Playwright MCP. Proporciona control del navegador sobre solicitudes HTTP y
+Extracción de datos basada en expresiones regulares. Opcional: Selenium para capturas de pantalla.
+
+
+DESCRIPCIÓN
+------------
+
+El controlador web_scrape permite el web scraping, análisis HTML y
+Captura de pantalla. Funciona a través de BACH CLI con robusta
+Manejadores de errores. Almacena capturas de pantalla en el directorio de caché.
+
+Dependencias:
+  - solicitudes (obligatorias, solicitudes HTTP)
+  - selenio (opcional, capturas de pantalla)
+  - Chrome/Chromium (Opcional, Captura de pantalla WebDriver)
+
+
+OPERACIONES
+-----------
+
+get <url>
+  HTTP GET: carga y muestra el cuerpo HTML completo.
+  Se trunca a >5000 caracteres. Muestra estado, tipo de contenido, tamaño.
+
+left <url>
+  Extracción de enlaces: Todo <a href> con texto de enlace. Limpia etiquetas HTML,
+  ignora javascript:, mailto:, ancla (#). Máx. 50 enlaces. Deduplicado.
+
+formularios <url>
+  Reconocimiento de formulario: <formulario> con acción/método, todo <input>, <textarea>,
+  <seleccionar>. Muestra tipos de campos (texto, envío, etc.) y nombres.
+
+captura de pantalla <url>
+  Captura de pantalla con Selenium (sin cabeza, 1280x1024). Guarda en
+  data/cache/scrape/ con nombre de archivo basado en hash. Requiere el controlador de Chrome.
+
+headers <url>
+  Mostrar encabezados de respuesta: Todos los encabezados HTTP de la respuesta + código de estado.
+
+
+EJEMPLOS
+---------
+
+bach web-scrape get https://example.com
+  Obtener contenido de example.com
+
+bach web-scrape links https://github.com/lukisch
+  Listar todos los enlaces en el perfil de GitHub
+
+bach web-scrape forms https://example.com/login
+  Analizar formularios en la página de inicio de sesión
+
+bach web-scrape screenshot https://example.com
+  Crear captura de pantalla PNG (necesita selenio)
+
+bach web-scrape headers https://example.com
+  Verifique los encabezados HTTP (agente de usuario, cookies, etc.)
+
+
+FILES
+-------
+
+hub/web_scrape.py Implementación del controlador
+data/cache/scrape/ Salida de captura de pantalla
+
+
+VER TAMBIÉN
+----------
+
+hub/base.py Clase BaseHandler

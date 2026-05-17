@@ -1,0 +1,22 @@
+巴赫工具：universal_compiler
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/universal_compiler.py
+
+描述
+----------------------------------------
+通用编译器 v2.0
+使用 PyInstaller 将 Python 项目编译为 EXE。
+从 TASKS.txt 读取配置或使用自动检测。
+
+创建时间：2026 年 1 月 3 日
+
+使用
+----------------------------------------
+python bach.py 工具运行 universal_compiler [args]
+或直接： python tools/universal_compiler.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：巴赫工具显示universal_compiler

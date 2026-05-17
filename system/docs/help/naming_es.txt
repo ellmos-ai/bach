@@ -1,0 +1,132 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [tools/_policies/CONCEPT_naming_convention.md]
+
+CONVENCIONES DE NOMBRE
+------------------
+
+A partir de: 2026-02-08
+
+FORMATOS DE MARCA DE TIEMPO
+-------------------
+  ID de sesión: AAAAMMDD_HHMM (20260111_0315)
+  ID de chat: msg_YYYYMMDD_HHMMSS (msg_20260111_031504)
+  Documento: DD.MM.AAAA (01/11/2026)
+  Campos JSON: ISO 8601 (2026-01-11T03:15:04)
+
+ARCHIVOS
+-------
+  Informe: Informe_AAAAMMDD_HHMM.md
+  Análisis forense: REPORT_AAAA-MM-DD_Thema.md
+  Concepto: CONCEPT_Name.md o CONCEPT_Name.md
+  Análisis: ANALYSIS_Name.md
+  Investigación: RECHERCHE_Nombre.md
+  Esquema: *_schema.md
+  Plantilla: TEMPLATE_Name.md
+
+TOOL-PRAEFIXES (tools/*.py)
+--------------------------
+Los prefijos identifican el tipo y propósito de una herramienta.
+
+  EJEMPLOS DE SIGNIFICADO DE PRAEFIX
+  ------- ---------------------- ------------------------
+  c_ CLI optimizado para IA c_encoding_fixer.py
+            (Claude/recludOS) c_json_repair.py
+            - Salidas claras y analizables
+            - Codificación segura (UTF-8)
+
+  m_ Mantener m_migrate_triggers.py
+            - Herramientas de limpieza m_cleanup_logs.py
+            - Scripts de migración
+
+  b_ BACH core (sistema) backup_manager.py
+            - Utilizado por bach.py bach_auto_discovery.py
+            - Funciones críticas
+
+  check_validadores check_my_tasks.py
+            - Pruebas únicas
+
+  fix_ Soluciones rápidas fix_injectors.py
+            - Corrige errores específicos
+
+HERRAMIENTAS ESPECÍFICAS DE HABILIDADES (NUEVAS)
+-----------------------------
+Herramientas que solo son relevantes para una habilidad:
+
+  Convención de nomenclatura: <habilidad>_<función>.py
+
+  Ejemplos:
+    tax_scanner.py # Específico del experto en impuestos
+    tax_sync.py # Experto en impuestos específico
+    task_scanner.py # Agente ATI específico (en agentes/ati/scanner/)
+
+  Ubicación:
+    - General: herramientas/c_ocr_engine.py
+    - Específico: agentes/_experts/steuer/steuer_scanner.py
+    - Herramienta de agente: agentes/ati/scanner/task_scanner.py
+
+  REGLA: En caso de duda, ¡duplica!
+  Las herramientas específicas de habilidades DEBEN incluirse en la exportación.
+
+PYTHON-TOOL-HEADER (NUEVO - obligatorio)
+----------------------------------
+Cada herramienta necesita un encabezado estándar:
+
+  """
+  Herramienta: nombre_herramienta
+  Versión: XYZ
+  Autor: [autor]
+  Creado: AAAA-MM-DD
+  Actualizado: AAAA-MM-DD
+  Compatible con antrópicos: Verdadero
+
+  NOTA DE VERSIÓN: Busque versiones más recientes
+
+  Descripción:
+      Qué hace la herramienta.
+  """
+
+  __versión__ = "X.Y.Z"
+  __author__ = "[autor]"
+
+Plantilla: system/skills/_templates/TEMPLATE_TOOL.py
+
+NOMBRES DE CARPETAS DE HABILIDADES
+------------------
+  Formato: minúsculas con guión
+
+  Ejemplos:
+    agentes/desarrolladores/
+    agentes/asistente-personal/
+    agentes/_expertos/impuestos/
+    agentes/_expertos/foerderplaner/
+
+ARCHIVOS DE HABILIDADES
+-------------
+  Definición principal de SKILL.md (obligatorio)
+  Configuración config.json (opcional)
+  README.md Sólo para navegación (¡no para conceptos!)
+
+TASK-IDS & PROJECTS
+-------------------
+  ID: Numérico (1, 2, 712) - Asignado automáticamente.
+  Labels/Pfx: Grupos utilizados para la descripción:
+               SYS_ núcleo del sistema
+               WF_ Desarrollo del flujo de trabajo
+               GUI_ Temas de interfaz
+               FIN_ módulo de finanzas
+               SALUD_ Análisis forense y mantenimiento
+               HABILIDAD_ Arquitectura de habilidades (NUEVO)
+               LANG_ Internacionalización
+
+PROHIBIDO
+--------
+  Nombre del archivo: / \ : * ? " < > | Diéresis
+
+VER TAMBIÉN
+----------
+  bach --help tools            Gestión y ejecución de herramientas
+  bach --help skills           Sistema de habilidades
+ system/tools/_policies/ Validadores de políticas
+  system/skills/_templates/Plantillas predeterminadas

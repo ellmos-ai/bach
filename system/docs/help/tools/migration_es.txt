@@ -1,0 +1,30 @@
+Herramienta BACH: Migración
+--------------------
+
+Migraciones de bases de datos y estructuras para BACH.
+
+HERRAMIENTAS DISPONIBLES
+-----------------
+
+  migrar_skills_hierarchy Migrar jerarquía de habilidades a un nuevo formato
+
+CARPETA DE MIGRACIONES
+-----------------
+
+Las migraciones SQL están en datos/esquema/migraciones/:
+  001-035 Migraciones numeradas (cronológicas)
+  doc_* Migraciones específicas de documentos
+  fin_* Migraciones financieras
+  tax_* Migraciones fiscales
+
+USE
+----------
+
+  bach upgrade                  Ejecutar todas las migraciones pendientes
+  bach --tools migration skills Skills-Hierarchie migrieren
+
+MODULE
+-----
+
+  herramientas/migración/ (1 herramienta)
+  datos/esquema/migraciones/ (más de 35 migraciones de SQL/Python)

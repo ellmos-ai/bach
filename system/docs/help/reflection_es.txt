@@ -1,0 +1,80 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+REFLECTION HANDLER
+------------------
+
+DESCRIPCIÓN
+------------
+
+El Reflection Handler analiza la autorreflexión y el rendimiento del sistema BACH.
+Evalúa información de las tablas de memoria (trabajo, sesiones, lecciones, hechos).
+y muestra informes detallados de rendimiento, análisis de tendencias e identificados.
+Vulnerabilidades.
+
+
+OPERACIONES
+-----------
+
+estado
+  Ver informe de rendimiento. Proporciona una descripción general actualizada de las métricas del sistema.
+  e indicadores generales de desempeño.
+
+revisión [días]
+  Analice el rendimiento de los últimos N días (predeterminado: 7 días).
+  Ejemplo: la revisión 14 muestra las últimas dos semanas.
+
+lagunas
+  Identificar puntos débiles y brechas. Analiza el contenido de la memoria y muestra
+  Áreas con baja cobertura o problemas de rendimiento.
+
+log
+  Ver métricas de reflexión de la base de datos. Muestra las últimas 20 entradas.
+  de tipo 'REFLEXIÓN:*' de la tabla de trabajo_memoria.
+
+
+EJEMPLOS
+---------
+
+  bach reflection status
+    -> Muestra el informe de rendimiento actual con todas las métricas
+
+  bach reflection review 30
+    -> Analiza el rendimiento de los últimos 30 días con tendencias detalladas
+
+  bach reflection gaps
+    -> Enumera todas las vulnerabilidades identificadas
+
+  bach reflection log
+    -> Muestra las últimas 20 entradas de métricas de reflexión
+
+
+FILES
+-------
+
+hub/reflection.py
+  Implementación del controlador con definiciones de operaciones y consultas de bases de datos.
+
+agents/reflection/reflection_analyzer.py
+  Clase SelfReflection para lógica de análisis y generación de informes.
+
+data/bach.db
+  Base de datos central SQLite con tablas de memoria:
+  - Memory_working: Memoria de trabajo actual (escriba 'nota' con REFLECTION:*)
+  -memory_sessions: historial de sesiones
+  -memory_lessons: Lecciones aprendidas
+  - Memory_facts: Datos almacenados
+
+
+VER TAMBIÉN
+----------
+
+docs/help/memory.txt
+  Documentación del sistema de memoria y estructura de tablas.
+
+docs/help/tasks.txt
+  Gestión de tareas para complementar el análisis de desempeño.
+
+agentes/reflexión/
+  Módulos de análisis adicionales y definiciones de métricas.

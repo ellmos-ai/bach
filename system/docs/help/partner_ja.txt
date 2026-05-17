@@ -1,0 +1,119 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [partner_recognition table、partner_presence table、hub/partner.py、tools/mcp_server.py]
+
+BACH PARTNER SYSTEM (Federated Intelligence)
+---------------------------------------------
+
+DATE: 2026-02-08
+
+パートナー システムは、異なる AI 間のコラボレーションを管理します
+
+
+登録パートナー (bach.db)
+------------------------------
+**AI パートナー:**
+- クロード、ジェミニ、オラマ (アクティブ)
+- ChatGPT、Copilot、Mistral、Perplexity (アクティブ)
+- 人類ローカル、カスタム エージェント (非アクティブ)
+
+**人間パートナー:**
+- 人間 (ユーザー/管理者)
+
+コア コンポーネント
+----------------
+1。ロジック (パートナー認識): 誰が何をできるのか? (キャップ、ゾーン、コスト層)
+2. 物理 (接続): エンドポイントはどこですか? (APIキー、URL)
+3. プレゼンス (partner_presence): 現在「出勤」しているのは誰ですか?
+4. プロトコル (llm / msg): どのように連携しますか? (ロック、メッセージ)
+5. コネクタ (hub/connector.py): 外部通信 (Telegram、Discord)
+
+CLI コマンド (--partner)
+-----------------------
+  bach partner list              登録されているすべてのパートナーのリスト
+  bach partner status            ネットワークの状態 (オンライン ステータス、トークン ゾーン)
+  bach partner info <name>       特定のパートナーの詳細を表示
+  bach partner active            現在アクティブなパートナーのリスト
+  bach partner delegate <task>   最も効率的なパートナーにタスクを割り当てる
+
+コネクタ コマンド (--connector)
+-------------------------------
+  bach connector list            すべてコネクタ (Telegram、Discord など)
+  bach connector status          すべてのアクティブなコネクタのステータス
+  bach connector send <name> <recipient> <text>  コネクタ経由でメッセージを送信
+  bach connector poll <name>     コネクタからメッセージを取得
+  bach connector messages [name] Empfangene Nachrichten anzeigen
+
+DELEGATE-FLAGS
+--------------
+デリゲート コマンドは次のオプションをサポートします。
+  --partner delegate <タスク> タスクを自動的にルーティングします
+  --partner delegate <タスク> --to=NAME 特定のパートナーへの委任
+  --partner delegate <タスク> --zone=N 強制ゾーン (1-4)
+  --パートナー デリゲート <タスク> --fallback-local
+  --partner delegate <タスク> --fal Ollama へのオフライン フォールバック (短縮形式)
+
+MULTI-LLM 調整 (新しい v1.1.73 以降)
+-------------------------------------
+並列作業での競合を避けるために、次のルールが適用されます。
+- ロック: `bach llm lock <file>` は、2 つの AI が同じファイルを変更することを防ぎます。
+- メッセージ: 直接投票の場合は `bach msg send <target> "text"` を送信します。
+
+ゾーン システム (トークン認識)
+------------------------------
+ルーティングはトークン バジェット (レイヤー 5) に基づいて自動的に行われます。
+- ゾーン 1 (予算の 30% 未満): クロード (最高品質)
+- ゾーン 2 (30-60%): ジェミニ / クロード (混合)
+- ゾーン 3 (60-80%): オラマ (ローカル/無料)
+- ゾーン 4 (80-100%): 人間 (緊急/完了)
+
+データベース オブジェクト
+-----------------
+- パートナー認識: マスター データ (10 人のパートナー: クロード、ジェミニ、オラマなど)
+- Partner_presence: 現在のセッションとスタンプ カード (40 以上のログ)
+- 接続: 技術プロファイル (8 接続以上)
+- interaction_protocols: コラボレーションのプロトコル (10 個以上のエントリ)
+- Connector_messages: 外部システムとの間のメッセージ (Telegram、Discord)
+
+WF の例 (GEMINI)
+--------------------
+  1. 「bach msg ping --from gemini」を確認します。
+  2. 作業: `bach llm lock Research.md` -> 編集 -> `unlock`。
+  3. 完了: `bach タスク完了 ID`
+
+MCP サーバー統合 (v2.2)
+------------------------------
+BACH MCP サーバーは、クロード コードのパートナー機能を提供します:
+
+**ツール:**
+- Partner_list - すべてのパートナーをリストします
+- Partner_status - ステータスとトークン ゾーンを表示
+
+**クロード コードで使用:**
+「」パイソン
+# サーバーの実行中に MCP ツールが自動的に使用可能になります
+result = mcp.call_tool("パートナーリスト")
+```
+
+パートナー ワークスペース
+-----------------
+現在 (2026 年 2 月 1 日以降): system/partners/
+- クロード/受信ボックス、クロード/送信ボックス
+- ジェミニ/受信ボックス、ジェミニ/送信ボックス
+- ollama/inbox、ollama/outbox
+
+非推奨 (2026-02-01 より前): system/partners/
+- 古いレポートのある gemini/outbox/ のみ (2026-02-06)
+- 新しいレポートは、partners/gemini/outbox/に移動します
+
+関連項目
+----------
+  bach connector --help     コネクタ システム (テレグラム、ディスコード)
+  bach llm --help           マルチ LLM プロトコル (ロック)
+  bach msg --help           メッセージング システム
+  bach tokens --help        トークン モニターとクォータ
+  docs/help/maintain.txt ネットワーク整合性チェック
+
+バージョン: v1.2.0 (2026-02-08)
+ソース: Hub/partner.py、tools/mcp_server.py、partners/

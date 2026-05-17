@@ -1,0 +1,106 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+## HANDLER NAME
+
+meta_feedback_injector
+
+## DESCRIPTION
+
+Handler for automatically detecting recurring LLM ticks and injecting them
+Correction feedback. Tracks occurrence frequency and disables patterns
+automatically after defined periods of inactivity (max_inactive_count).
+
+Promotes consistent behavior patterns through feedback blocks in the prompt.
+Supports DB persistence or JSON fallback (data/meta_feedback_patterns.json).
+
+## OPERATIONS
+
+check_response(response: str) -> list[dict]
+  Scans response to active patterns. Tracks hits/misses. There are found ones
+  Patterns with details back.
+
+inject_corrections(prompt: str) -> str
+  Inserts [BACH-META-FEEDBACK] block with active corrections to the prompt.
+  Only patterns with frequency > 0 are injected.
+
+add_pattern(pattern, correction, pattern_type, max_inactive_count)
+  New pattern with regex or substring matching. Saves to DB or JSON.
+
+remove_pattern(pattern_id: int) -> bool
+  Deletes pattern from persistence.
+
+reactivate_pattern(pattern_id: int) -> bool
+  Reactivates deactivated pattern, resets inactive_count.
+
+_record_hit(pattern: dict)
+  Increases frequency, sets inactive_count to 0.
+
+_record_miss(pattern: dict)
+  Increases inactive_count. Disabled if >= max_inactive_count.
+
+_pattern_matches(pattern: dict, text: str) -> bool
+  Regex/substring matching against text.
+
+## DEFAULT-PATTERNS
+
+ID 1: English filling words (here, let me, I'll)
+  Correction: "ALWAYS answer in German."
+
+ID 2: Emoji detection (Unicode ranges)
+  Correction: "Do NOT use emojis in replies."
+
+ID 3: Exaggerated apologies
+  Correction: "No exaggerated excuses."
+
+## EXAMPLES
+
+Initialization with DB:
+  handler = MetaFeedbackInjector(base_path=Path("system"), db=bach.db)
+
+Initialization with JSON fallback:
+  handler = MetaFeedbackInjector(base_path=Path("system"))
+
+Check response:
+  matches = handler.check_response("Here is my answer...")
+  # matches contains pattern IDs 1, 2, ... with current state
+
+Inject feedback before retrying:
+  corrected_prompt = handler.inject_corrections(original_prompt)
+
+Add new pattern:
+  handler.add_pattern(
+    pattern=r"(?i)\bactually\b",
+    correction="Avoid 'actually' in German answers.",
+    pattern_type="regex"
+  )
+
+Reactivate pattern after inactivity:
+  handler.reactivate_pattern(pattern_id=1)
+
+## FILES
+
+hub/meta_feedback_injector.py
+  Implementation (282 lines, MIT license)
+
+data/meta_feedback_patterns.json
+  JSON fallback persistence (created by _save_json)
+
+PATTERN FIELD SCHEMA
+  id (int)
+  pattern (str): Regex or Substring
+  pattern_type (str): "regex" or "substring"
+  correction (str): Feedback text for prompt
+  frequency (int): Number of hits
+  inactive_count (int): Misses since last hit
+  max_inactive_count (int): threshold for auto-deactivation (default: 10)
+  active (int): 1 (active) or 0 (inactive)
+  created_at (str): ISO timestamp
+  updated_at (str): ISO timestamp
+
+## SEE ALSO
+
+bach_api              - Central handler registry and initialization
+meta_feedback         - Related feedback mechanisms (if any)
+bach.db (schema) - meta_feedback_patterns table with all columns

@@ -1,0 +1,35 @@
+Herramienta BACH: c_indent_checker
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/c_indent_checker.py
+
+DESCRIPCIÓN
+----------------------------------------
+c_indent_checker.py - Comprobador de sangría de Python
+
+Propósito: Comprueba los archivos de Python en busca de errores de sangría comunes:
+       - Faltan dos puntos después de las estructuras (def, if, class, etc.)
+       - retorno/rendimiento fuera de los bloques
+       - Mezcla de tabulaciones y espacios
+
+Autor: Claude (adaptado de indent_gui_checker.py)
+Dependencias: os, re, json (stdlib)
+
+Uso:
+    python c_indent_checker.py <archivo_o_carpeta> [--recursivo] [--log] [--json]
+
+Ejemplos:
+    python c_indent_checker.py script.py # Archivo único
+    python c_indent_checker.py ./src --recursive # Carpeta completa
+    python c_indent_checker.py ./src --log # Crear archivo de registro
+    python c_indent_checker.py script.py --json # salida JSON
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan c_indent_checker [args]
+o directamente: python tools/c_indent_checker.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente a partir de docstring
+- Si tiene alguna pregunta: las herramientas de Bach muestran c_indent_checker

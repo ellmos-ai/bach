@@ -1,0 +1,23 @@
+Herramienta BACH: duplicado_detector
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/duplicate_detector.py
+
+DESCRIPCIÓN
+----------------------------------------
+Comprobación previa a la creación y detección de duplicados - Fase 3
+-------------------------------------------------
+
+Evita los duplicados comprobando antes de la creación de la herramienta.
+
+Versión: 1.0.0
+
+USE
+----------------------------------------
+python bach.py tools ejecuta duplicado_detector [args]
+o directamente: python tools/duplicate_detector.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente a partir de docstring
+- Si tienes alguna pregunta: las herramientas de bach muestran duplicado_detector

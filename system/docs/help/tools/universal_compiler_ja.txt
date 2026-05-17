@@ -1,0 +1,22 @@
+BACH ツール: universal_compiler
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/universal_compiler.py
+
+説明
+----------------------------------------
+ユニバーサル コンパイラー v2.0
+PyInstaller を使用して Python プロジェクトを EXE にコンパイルします。
+TASKS.txt から構成を読み取るか、自動検出を使用します。
+
+作成日: 2026 年 1 月 3 日
+
+使用
+----------------------------------------
+python bach.py tools run universal_compiler [args]
+または直接: python tools/universal_compiler.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成
+- 質問がある場合: bach tools show universal_compiler

@@ -1,0 +1,110 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+UPDATE HANDLER
+--------------
+
+HANDLER NAME
+------------
+bach update - Versions- und Update-Verwaltung
+
+
+DESCRIPTION
+------------
+Manages updates, versioning and system integrity. Checks for available ones
+Updates from Git, imports them with automatic backups and data migration
+functions, and verifies system integrity after every update. Also supports
+Rollbacks to pre-update backups.
+
+
+OPERATIONS
+-----------
+
+CHECK
+Check for updates (Git-based). Compares local commits with upstream branch
+and displays pending changes. Only works in Git repositories.
+
+STATUS (or without parameters)
+Shows current version, schema version, update timestamp and verification
+status. Lists applied migrations and Git information.
+
+APPLY [--dry-run]
+Installed update with 5-phase workflow: (1) Create pre-update backup,
+(2) Run Git pull --rebase, (3) Run migrations, (4) System
+verify, (5) update version.json. With --dry-run only preview.
+
+ROLLBACK [--dry-run]
+Rolls back to the last pre-update backup. Finds latest pre_update_*.zip
+and restores bach.db. Saves current DB as .db.pre_rollback.
+
+VERIFY
+Checks system integrity: handler importable, version.json available, bach.db
+readable, migrations consistent, critical directories (hub, core, data, skills)
+available. Shows error details and updates last_verified.
+
+MIGRATIONS [list|run]
+list (default): Shows all available migrations with status (applied/pending).
+run: Runs pending migrations (.py or .sql), updates schema_version.
+
+
+EXAMPLES
+---------
+
+bach update check
+  Checks for available updates from Git upstream.
+
+bach update status
+  Shows version 1.2.3, latest update, verification status, and
+  applied migrations.
+
+bach update apply --dry-run
+  Shows 5 phase process with no changes.
+
+bach update apply
+  Installed the full update with backup, pull, migrations, verification.
+
+bach update verify
+  Checks all 6 points: handlers, version.json, bach.db, migrations, directories.
+
+bach update rollback --dry-run
+  Shows last backup (file name, size, date) without action.
+
+bach update rollback
+  Restores bach.db from last pre_update_*.zip.
+
+bach update migrations
+  Lists available and pending migrations with count.
+
+bach update migrations run
+  Executes all pending migrations, updates tracking.
+
+
+FILES
+-------
+data/version.json
+  Central version file. Contains: version, schema_version, updated_at,
+  last_verified, verification_status, migrations_applied[].
+
+data/bach.db
+  SQLite database. Is backed up before every update and during rollbacks
+  restored.
+
+_backups/
+  Pre-update backups as pre_update_X.Y.Z_YYYYMMdd_HHmm.zip. Included
+  bach.db, version.json, all config JSONs from data/.
+
+data/migrations/
+  Directory for migration files (.py or .sql). Version.json tracked
+  migrations_applied[].
+
+hub/, core/, data/, skills/
+  Critical directories. Verification checks for existence of all 4.
+
+
+SEE ALSO
+----------
+core      - BACH core handler
+verify    - Verification details
+backup    - Backup strategies
+git       - Git integration

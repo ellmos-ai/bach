@@ -1,0 +1,71 @@
+BACH ツール:backup_manager
+--------------------------------------------------
+生成:2026-02-05
+ソース: tools/backup_manager.py
+
+説明
+----------------------------------------
+backup_manager.py - BACH バックアップおよび復元システム
+
+管理:
+- ユーザーバックアップ (dist_type=0) -> data/_backups/*.zip
+- テンプレートスナップショット (dist_type=1) -> dist/snapshots/*.orig
+- 配布-復元 (dist_type=2) -> [まだ実装されていません]
+
+コマンド
+----------------------------------------
+python Backup_manager.py create [--to-nas]
+    完全なユーザーバックアップを作成します
+    --to-nas: NAS に追加コピーします
+
+python Backup_manager.py リスト [--nas]
+    利用可能なバックアップを一覧表示します
+    --nas: ローカルのバックアップではなく NAS バックアップを表示
+
+python Backup_manager.py info <名前>
+    バックアップの詳細を表示 (マニフェスト)
+
+pythonbackup_manager.py バックアップ <名前> [--force] [--no-auto-backup]
+    ユーザーのバックアップを復元します
+    --force: 確認なし
+    --no-auto-backup: 復元前にセキュリティ バックアップはありません
+
+python Backup_manager.py 復元テンプレート <ファイル>
+    テンプレート ファイルを元の状態にリセットします
+
+pythonbackup_manager.pyrestaurantdist<name>
+    [計画中] 配布の復元 - まだ実装されていません
+
+python Backup_manager.py スナップショット <ファイル>
+    dist/snapshots/
+
+自動機能
+----------------------------------------
+- 自動バックアップ: 各復元の前にセキュリティ バックアップが自動的に作成されます。
+- ローカル回転: 最大。 7 つのバックアップ (古いものは自動的に削除されます)
+- ローテーション NAS: 最大。 30 個のバックアップ (古いものは自動的に削除されます)
+
+バックアップされたデータ
+----------------------------------------
+データベース テーブル:
+  - タスク
+  - メモリセッション
+  - 思い出のレッスン
+  - メモリコンテキスト
+  - モニタートークン
+  - モニター成功
+
+ディレクトリ:
+  -記憶/
+  - ログ/
+  - user/
+
+USE
+----------------------------------------
+python bach.py ツールは、backup_manager [args] を実行します。
+または直接: python tools/backup_manager.py [args]
+
+NOTES
+----------------------------------------
+- system_config または標準からの NAS パス: \\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
+- Bach バージョンはバックアップ マニフェストに保存されます

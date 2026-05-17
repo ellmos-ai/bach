@@ -1,0 +1,246 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MULTI-LLM PROTOCOL - Coordination of parallel agents
+-----------------------------------------------------
+
+As of: 2026-01-28 v1.1.71
+
+Protocol V3 for secure parallel work of multiple LLMs
+(Claude, Gemini, Copilot, Ollama, Perplexity) in the same
+File system. Developed by Claude + Gemini Experiment
+on 2026-01-28.
+
+IMPORTANT: START RIGHT
+------------------------
+ALL partners must start with a stamp card!
+
+  # Claude starts
+  bach --startup --partner=claude --mode=silent
+
+  # Gemini launches
+  bach --startup --partner=gemini --mode=silent
+
+  # New partner (with own name)
+  bach --startup --partner=simonAI --mode=silent
+
+  # New partner (without name)
+  bach --startup --partner=new --mode=silent
+
+WHY?
+- Automatic clocking in/out in partner_presence DB
+- Partner awareness: Detects who is still online
+- Protocol V3 is automatically recommended for several partners
+- Between-task check reminds of partner check
+
+CLI COMMANDS
+-----------
+bach llm presence [dir] [task]  Create/update presence
+bach llm check [dir]            Detect other agents
+bach llm lock <datei>           Acquire lock
+bach llm unlock [datei]         Release lock
+bach llm handshake [dir]        Start handshake protocol
+bach llm status [dir]           Show status
+
+PROTOCOL V3 COMPONENTS
+------------------------
+
+1. PRESENCE SYSTEM
+------------------
+Each agent creates a presence file in the working directory:
+
+File: .<agent>_presence (e.g. .claude_presence)
+
+Contents:
+  Agent: Claude
+  status: ACTIVE|FINISHED
+  started: 2026-01-28T01:00:00
+  heartbeat: 2026-01-28T01:05:00
+  working_on: TASK_DESCRIPTION
+  current_file: file.txt
+  lock_status: FREE|LOCKED|WAITING
+
+Rules:
+- Update heartbeat every 30-60 seconds
+- Heartbeat older than 2 minutes = agent inactive
+- At session end: set status to FINISHED
+
+2. LOCKING SYSTEM
+-----------------
+Before write access to shared files:
+
+Lock file: <file>.lock.<agent>
+Example: PROTOKOL.md.lock.claude
+
+Workflow:
+  1. list_directory - Check whether foreign .lock.* exists
+  2. If yes -> WAIT (5 sec backoff, then again)
+  3. If no -> create lock
+  4. Create backup (<file>.bak)
+  5. Edit file
+  6. Delete lock IMMEDIATELY
+
+Lock contents:
+  Agent: Claude
+  locked_at: 2026-01-28T01:00:00
+  file: PROTOKOL.md
+
+Timeout: Lock older than 5 minutes is considered "stale"
+         and can be deleted by another agent.
+
+3. BACKUP SYSTEM
+----------------
+BEFORE any changes to shared files:
+- Create backup: <file>.bak
+- Only write afterwards
+- Backup remains for recovery
+
+4. HANDSHAKE PROTOCOL
+----------------------
+Auto-detection when agents meet:
+
+Procedure:
+  1. Agent A creates presence
+  2. Agent A detects Agent B (via detect_other_agents)
+  3. Agent A created: .handshake_<agent_a>
+  4. Agent B detects handshake request
+  5. Agent B replies: .handshake_<agent_b> with ACCEPTED
+  6. Both enable protocol V3
+
+Handshake file:
+  from: claude
+  to: gemini
+  time: 2026-01-28T01:00:00
+  status: ACCEPTED
+  protocol: V3
+
+COMMUNICATION
+-------------
+
+Meta level (asynchronous):
+  bach msg send <partner> "Nachricht"
+  bach msg list
+  bach msg read <id>
+
+Real time (in the working folder):
+  Presence files for status
+  In-file communication (entries with timestamp)
+
+In-file format:
+  [HH:MM] [Agent] Message or Action
+
+WORKFLOW: EDIT SHARED FILE
+-------------------------------------
+
+1. Check presence:
+   bach llm check
+
+2. Acquire Lock:
+   bach llm lock DATEI.md
+
+3. Create backup:
+   (automatically with safe_write)
+
+4. Edit file
+
+5. Release lock:
+   bach llm unlock DATEI.md
+
+6. Update presence:
+   bach llm presence . "Fertig"
+
+EXAMPLE SESSION
+----------------
+
+# Agent A starts
+bach llm presence . "Task_123"
+bach llm check              # -> "No other agents"
+
+# Agent B starts
+bach llm presence . "Task_456"
+bach llm check              # -> "claude: ACTIVE"
+
+# Agent A wants to edit SHARED.txt
+bach llm lock SHARED.txt    # -> "Lock acquired"
+# ... processed ...
+bach llm unlock SHARED.txt
+
+# Agent B waits automatically if lock exists
+bach llm lock SHARED.txt    # -> Waits until A finished
+
+KNOWN AGENTS
+----------------
+
+- claude Claude (Anthropic)
+- gemini Gemini (Google)
+- copilot GitHub Copilot
+- ollama Local LLMs
+- perplexity Perplexity AI
+
+FILES IN THE WORKING FOLDER
+------------------------
+
+.claude_presence Presence Claude
+.gemini_presence Presence Gemini
+FILE.lock.claude Lock from Claude
+FILE.lock.gemini Lock from Gemini
+FILE.bak backup before change
+.handshake_claude Handshake signal
+.handshake_gemini Handshake answer
+
+TROUBLESHOOTING
+---------------
+
+Problem: Lock gets stuck
+Solution: Lock older than 5 minutes is considered stale
+         and automatically ignored. Delete manually OK.
+
+Problem: Agent does not recognize others
+Solution: Check presence file. Heartbeat current?
+
+Problem: Race condition despite lock
+Solution: Check whether list_directory BEFORE lock creation
+         is executed. Timing problem?
+
+HANDLER
+-------
+hub/multi_llm_protocol.py Protocol implementation
+
+LESSONS
+-------
+Lesson #62: Multi-LLM parallel work basics
+Lesson #63: Multi-LLM Protocol V3
+
+SEE ALSO
+----------
+bach --help partner   Partner System
+bach --help messages       Messages
+
+
+STAMP CARD SYSTEM (v1.1.71)
+------------------------------
+DB-based partner presence for automatic awareness.
+
+TABLE: partner_presence
+  id INTEGER PRIMARY KEY
+  partner_name TEXT partner ID (claude, gemini, user, ...)
+  status TEXT online|offline|crashed
+  clocked_in TEXT Clock-in time
+  clocked_out TEXT Clock out time
+  last_heartbeat TEXT Last activity
+  current_task TEXT Current task
+  session_id TEXT Associated session
+
+AUTOMATIC:
+- At --startup: Clock-In (old crashed sessions marked)
+- With --shutdown: clock out
+- Partner awareness in startup output
+
+MANUAL (optional):
+- Heartbeat: bach llm presence. "Task_XYZ"
+- Status: bach llm status
+
+TIMEOUT:
+- Heartbeat older than 5 minutes = partner inactive
+- Crashed sessions will be cleaned up at the next startup

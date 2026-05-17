@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+------------
+N8nManagerHandler
+
+
+描述
+------------
+BACH 的 n8n 工作流程管理器集成。管理 n8n 实例和
+通过 REST API 和可选 MCP 服务器的工作流程。默认端口：5678。
+
+配置文件：n8n-manager
+软件包：n8n-manager-mcp（可选，可以通过“bach setup n8n”安装）
+连接：http://localhost:5678（可配置）
+
+
+操作
+-----------
+状态 检查 n8n 实例和 MCP 服务器安装
+            指示连接状态。
+
+list 列出可用的工作流程（通过 n8n REST API）
+            显示 ID、名称、活动状态。
+
+sync 工作流同步准备工作
+            需要 MCP 服务器。委托给 Claude Code Tools。
+
+
+示例
+---------
+handler = N8nManagerHandler()
+
+# 检查状态
+result = handler.handle('status')
+
+# 列出工作流程
+result = handler.handle('list')
+
+# 启用同步
+result = handler.handle('sync')
+
+# 具有自定义 URL 的处理程序
+handler = N8nManagerHandler('http://n8n.example.com:5678')
+
+
+FILES
+-------
+hub/n8n_manager.py 处理程序实现
+docs/help/n8n_manager.txt 此文件
+
+
+另请参阅
+----------
+bach setup n8n                 全局安装 MCP 服务器
+MODULAR_AGENTS/n8nManager/ n8n Manager 参考 (README.md)
+SQ081 n8n 工作流程管理器要求

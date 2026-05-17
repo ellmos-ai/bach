@@ -1,0 +1,20 @@
+Herramienta BACH: Register_skills
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/register_skills.py
+
+DESCRIPCIÓN
+----------------------------------------
+Registrar habilidades en bach.db
+------------------------------
+Escanea la carpeta skills/ y registra todos los archivos de habilidades en la base de datos.
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan Register_skills [args]
+o directamente: python tools/register_skills.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: herramientas de bach muestran Register_skills

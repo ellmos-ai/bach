@@ -1,0 +1,29 @@
+巴赫工具：tool_scanner
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/tool_scanner.py
+
+描述
+----------------------------------------
+tool_scanner.py - 扫描系统中可用的 CLI 工具
+-----------------------------------------------------------
+
+查找已安装的工具并与注册的工具进行比较。
+对于工具发现和系统清单很有用。
+
+用法：
+    python tool_scanner.py scan # 扫描系统
+    python tool_scanner.py --json # JSON 输出
+    python tool_scanner.py Compare # 与注册表比较
+
+作者：BACH v1.1（基于partner_scanner.py）
+
+使用
+----------------------------------------
+python bach.py tools run tool_scanner [args]
+或直接： python tools/tool_scanner.py [args]
+
+注释
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示 tool_scanner

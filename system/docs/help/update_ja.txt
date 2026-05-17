@@ -1,0 +1,110 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+更新ハンドラ
+--------------
+
+ハンドラ名
+------------
+bach update - Versions- und Update-Verwaltung
+
+
+説明
+------------
+更新、バージョン管理、およびシステムの整合性を管理します。利用可能なものを確認します
+Git から更新し、自動バックアップとデータ移行でインポートします。
+機能し、更新のたびにシステムの整合性を検証します。もサポート
+更新前のバックアップへのロールバック。
+
+
+操作
+-----------
+
+チェック
+更新を確認します (Git ベース)。ローカルコミットを上流ブランチと比較します
+保留中の変更が表示されます。 Git リポジトリでのみ動作します。
+
+STATUS (またはパラメータなし)
+現在のバージョン、スキーマのバージョン、更新タイムスタンプ、検証を表示します。
+ステータス。適用された移行と Git 情報をリストします。
+
+APPLY [--dry-run]
+5 段階のワークフローでインストールされたアップデート: (1) アップデート前のバックアップを作成します。
+(2) Git pull --rebase の実行、(3) 移行の実行、(4) システム
+確認し、(5) version.json を更新します。 --dry-run を使用するとプレビューのみ
+
+ROLLBACK [--dry-run]
+更新前の最後のバックアップにロールバックします。最新の pre_update_*.zip を検索します
+そして、bach.dbを復元します。現在の DB を .db.pre_rollback として保存します。
+
+VERIFY
+システムの整合性をチェックします: ハンドラーはインポート可能、version.json は利用可能、bach.db
+可読性、移行の一貫性、重要なディレクトリ (ハブ、コア、データ、スキル)
+利用可能です。エラーの詳細を表示し、last_verified を更新します。
+
+MIGRATIONS [list|run]
+list (デフォルト): 利用可能なすべての移行をステータス (適用済み/保留中) とともに表示します。
+run: 保留中の移行 (.py または .sql) を実行し、schema_version を更新します。
+
+
+例
+---------
+
+bach update check
+  アップストリームの Git から利用可能なアップデートを確認します。
+
+bach update status
+  バージョン 1.2.3、最新のアップデート、検証ステータス、および
+  適用された移行。
+
+bach update apply --dry-run
+  変更のない 5 段階のプロセスを示します。
+
+bach update apply
+  バックアップ、プル、移行、検証を含む完全なアップデートをインストールしました。
+
+bach update verify
+  ハンドラー、version.json、bach.db、移行、ディレクトリの 6 つのポイントをすべてチェックします。
+
+bach update rollback --dry-run
+  アクションを行わなかった最後のバックアップ (ファイル名、サイズ、日付) を表示します。
+
+bach update rollback
+  最後の pre_update_*.zip から bach.db を復元します。
+
+bach update migrations
+  利用可能な移行と保留中の移行を数とともにリストします。
+
+bach update migrations run
+  保留中の移行をすべて実行し、追跡を更新します。
+
+
+FILES
+-------
+data/version.json
+  中央バージョンのファイル。含まれるもの: version、schema_version、updated_at、
+  last_verified、verification_status、migrations_applied[].
+
+data/bach.db
+  SQLiteデータベース。すべての更新前およびロールバック中にバックアップされます
+  復元されました。
+
+_backups/
+  更新前のバックアップを pre_update_X.Y.Z_YYYYMMdd_HHmm.zip として更新します。付属
+  bach.db、version.json、data/.
+
+data/migrations/ からのすべての構成 JSON
+  移行ファイル (.py または .sql) のディレクトリ。 Version.json の追跡
+  Migrations_applied[].
+
+ハブ/、コア/、データ/、スキル/
+  重要なディレクトリ。検証では、4 つすべてが存在するかどうかがチェックされます。
+
+
+関連項目
+----------
+core      - BACH コア ハンドラー
+verify    - 検証の詳細
+backup    - バックアップ戦略
+git       - Git 統合

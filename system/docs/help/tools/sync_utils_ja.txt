@@ -1,0 +1,23 @@
+BACH ツール: sync_utils
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/sync_utils.py
+
+説明
+----------------------------------------
+BACH Sync Utilities v1.0
+------------------------
+ファイルのハッシュと変更検出のための中心的な機能。
+
+使用法:
+  tools.sync_utils から file_hash、content_hash、has_changed、SyncTracker をインポート
+
+USE
+----------------------------------------
+python bach.py tools run sync_utils [args]
+または直接: python tools/sync_utils.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show sync_utils

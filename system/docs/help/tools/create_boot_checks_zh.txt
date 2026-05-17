@@ -1,0 +1,19 @@
+BACH 工具：create_boot_checks
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/create_boot_checks.py
+
+描述
+----------------------------------------
+boot_checks 创建表 - CRITICAL 用于预提示检查
+创建时间：2026-01-21（BACH 会话）
+
+使用
+----------------------------------------
+python bach.py 工具运行 create_boot_checks [args]
+或者直接： python tools/create_boot_checks.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示 create_boot_checks

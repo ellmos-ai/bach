@@ -1,0 +1,33 @@
+BACH ツール: json_fixer
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/json_fixer.py
+
+説明
+----------------------------------------
+json_fixer.py - JSON ファイルを修復
+---------------------------------------
+
+壊れた JSON ファイルを修復します:
+- BOM の削除
+- 末尾のカンマ
+- 個人のオッズ
+- エスケープされていない文字列
+
+使用法:
+    python json_fixer.py <file> # 単一ファイル
+    python json_fixer.py <folder> # フォルダー内のすべての JSON
+    python json_fixer.py <パス> --dry-run # チェックのみ
+    python json_fixer.py <パス> --backup # バックアップあり
+
+作成者: BACH v1.1
+
+使用
+----------------------------------------
+python bach.py tools run json_fixer [args]
+または直接: python tools/json_fixer.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show json_fixer

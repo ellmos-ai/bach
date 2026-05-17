@@ -1,0 +1,31 @@
+Herramienta BACH: agent_service_integration
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/agent_service_integration.py
+
+DESCRIPCIÓN
+----------------------------------------
+Integración Agente-Servicio-Conexión v2.0.0 (versión DB)
+
+Vincula agentes con servicios, conexiones y herramientas externas.
+Punto de contacto central para la activación de agentes y enrutamiento de herramientas.
+
+CAMBIADO: ¡Ahora lee desde bach.db en lugar de archivos JSON!
+
+Uso:
+  python agent_service_integration.py matriz # Mostrar matriz de conexión
+  python agent_service_integration.py agente <nombre> # Conexiones del agente
+  python agent_service_integration.py recomendar <tarea> # Recomendación de herramienta
+  python agent_service_integration.py estado # Estado general
+  python herramientas agent_service_integration.py [tipo] # Listar herramientas
+  python agent_service_integration.py conexiones # Listar conexiones
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan agent_service_integration [args]
+o directamente: python tools/agent_service_integration.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde docstring
+- Si tiene alguna pregunta: las herramientas de bach muestran agent_service_integration

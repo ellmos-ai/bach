@@ -1,0 +1,153 @@
+备份工具 - 数据备份和恢复
+---------------------------------------------------
+
+截至：2026-01-23
+路径：docs/help/tools/backup.txt
+
+描述
+------------
+BACH数据的数据备份和恢复工具：
+  - 创建和管理本地备份
+  - NAS 备份（如果有）
+  - 模板恢复（重置原始文件）
+  - 创建分发包
+
+主要工具：backup_manager.py
+-----------------------------
+所有备份操作的中央工具。
+可以直接访问或通过 CLI 访问。
+
+基本命令：
+
+  # 创建备份
+  bach backup create                  本地备份
+  bach backup create --to-nas         带NAS副本
+
+  # 查看备份
+  bach backup list                    本地备份
+  bach backup list --nas              查看NAS备份
+  bach backup info <n>                备份详情
+
+  # 恢复
+  bach restore backup <n>             特定备份
+  bach restore backup latest          最新备份
+  bach restore backup latest --force  无需确认
+
+  # 重置模板
+  bach restore template SKILL.md      至原始
+
+DIST_TYPE CONCEPT
+-----------------
+备份系统基于分布类型：
+
+  距离类型 = 2（核心）
+    -> 分发是备份
+    -> bach.py、集线器/、工具/、技能/、文档/帮助/
+    -> 未单独固定
+
+  dist_type = 1（模板）
+    -> 安装期间的 1x 快照
+    -> 巴赫恢复模板 <文件>
+
+  距离类型 = 0 (用户数据)
+    -> 正常备份轮换
+    -> 任务、内存、日志、收件箱
+
+备份了什么？
+-------------------
+USER_DATA (dist_type = 0)：
+  任务 所有任务、状态、历史记录
+  内存/会话、长期、档案
+  日志/会话日志
+  用户/收件箱/消息、议程
+
+不安全（核心/模板）：
+  bach.py、schema.sql、集线器/
+  工具/、技能/、文档/帮助/
+  （是发行版的一部分）
+
+备份轮换
+---------------
+自动轮换可防止内存溢出：
+
+  本地(data/_backups/)：保留7个备份
+  NAS：保留 30 个备份
+  OneDrive：自动（版本历史记录）
+
+存储位置
+------------
+  本地：BACH/system/data/_backups/
+  NAS：\\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
+  发行版：BACH/distributions/
+
+注意：
+  NAS只能在家庭网络中访问！
+  不存在时请勿使用--to-nas。
+
+直接工具使用
+--------------------
+backup_manager.py也可以直接调用：
+
+  python tools/backup_manager.py create [--to-nas]
+  python 工具/backup_manager.py 列表 [--nas]
+  python tools/backup_manager.py 恢复备份 <n>
+  python tools/backup_manager.py 恢复模板 <文件>
+
+快照（基于会话）
+---------------------------
+有关会话快照，请参阅内存系统：
+
+  bach snapshot create           手动快照
+  bach snapshot load             加载最后一个快照
+  bach snapshot list             显示快照
+
+  -> 关闭时自动（有 >= 3 处更改）
+  -> 存储在 session_snapshots 表中
+
+分发命令
+--------------------
+创建分发包：
+
+  bach dist create base       创建基础包
+  bach dist list                 查看包
+  bach dist status               分发状态
+  bach dist verify               检查完整性
+
+典型用例
+-------------------------
+
+1.重大变更之前
+   创建安全备份：
+   bach backup create
+
+2。每日（家庭网络）
+   使用 NAS 副本备份：
+   bach backup create --to-nas
+
+3.崩溃/错误后
+   最新工作版本：
+   bach restore backup latest
+
+4。重置技能.MD
+   对于损坏的更改：
+   bach restore template SKILL.md
+
+5。适用于另一台计算机的软件包
+   创建发行版：
+   bach dist create base
+
+6。继续会话
+   重启/聊天更改后：
+   bach snapshot load
+
+相关技能
+----------------
+  技能/_services/builder.md 创建、导出、分发、备份
+  docs/BACKUP_SYSTEM.md 原创概念
+
+另请参阅
+----------
+  bach --help backup             完整备份帮助
+  bach --help dist               分发命令
+  bach --help memory             内存/快照系统
+  bach --help tools              工具概述

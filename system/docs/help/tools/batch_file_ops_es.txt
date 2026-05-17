@@ -1,0 +1,30 @@
+Herramienta BACH: batch_file_ops
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/batch_file_ops.py
+
+DESCRIPCIÓN
+----------------------------------------
+batch_file_ops.py - Operaciones de archivos por lotes
+
+Recopila y elimina/mueve/copia archivos por patrón.
+
+Uso:
+    python batch_file_ops.py eliminar <carpeta> --pattern "*.py"
+    python batch_file_ops.py eliminar <carpeta> --pattern "TOOLS_*.py"
+    python batch_file_ops.py mover <fuente> <destino> --pattern "*.txt"
+    python batch_file_ops.py copiar <fuente> <destino> --pattern "*.md"
+    python batch_file_ops.py lista <carpeta> --pattern "*"
+    python batch_file_ops.py eliminar <carpeta> --pattern "*.py" --dry-run
+
+Autor: Claude
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan batch_file_ops [args]
+o directamente: python tools/batch_file_ops.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente a partir de docstring
+- Si tiene alguna pregunta: las herramientas de bach muestran batch_file_ops

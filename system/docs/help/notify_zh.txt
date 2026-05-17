@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+------------
+
+notify - BACH 通知系统
+
+
+描述
+------------
+
+通过各种外部渠道发送通知。支持
+Discord、Signal、电子邮件、Telegram、Webhooks 和 Slack。消息在
+数据库 (connector_messages) 已记录并可以挂起，直到
+相应的通道已准备就绪。
+
+所有配置都存储在 bach.db 的连接表中。
+身份验证通过令牌或电子邮件/密码组合进行。
+
+
+操作
+-----------
+
+发送 <通道> <文本>
+  通过配置的通道发送通知。
+  示例： bach 通知发送不和谐“进程已完成”
+
+setup <channel> [endpoint] [--token=X] [--email=X]
+  重新配置或更新通道。
+  - 渠道：discord、信号、电子邮件、电报、webhook、slack
+  - 端点：API URL 或服务器地址（Telegram 可选）
+  - --token=X：身份验证令牌（例如机器人令牌）
+  - --email=X: SMTP登录的电子邮件地址
+  示例： bach 通知设置电报 --token=123456:ABC-DEF
+
+test <channel>
+  发送测试消息以检查配置。
+  示例： bach 通知测试 slack
+
+list
+  显示所有已配置的通知渠道及其状态。
+  显示：通道名称、类型、端点、活动/非活动、发送计数、上次发送。
+
+状态
+  与“列表”相同 - 所有通道的状态。
+
+历史记录 [--limit N]
+  显示最近的通知（默认值：20）。
+  显示：通道名称、状态（已发送/待处理）、时间戳、消息文本。
+  示例： bach 通知历史记录 --limit 50
+
+
+示例
+---------
+
+配置 Discord webhook：
+  bach notify setup discord https://discord.com/api/webhooks/ABC/XYZ
+
+设置 Telegram 机器人：
+  bach notify setup telegram --token=123456:ABC-DEF-GHI
+
+通过 Gmail 发送电子邮件：
+  bach notify setup email smtp.gmail.com --token=APP_PASSWORD --email=user@gmail.com
+
+添加 Slack webhook：
+  bach notify setup slack https://hooks.slack.com/services/T00/B00/XX
+
+测试通知：
+  bach notify test discord
+
+发送消息：
+  bach notify send discord "Backup erfolgreich abgeschlossen"
+
+最近 10 条通知的历史记录：
+  bach notify history --limit 10
+
+
+FILES
+-------
+
+data/bach.db
+  带表的数据库：
+  - 连接：保存的通道配置（端点、令牌等）
+  - Connector_messages：记录所有传入/传出消息
+
+user/secrets/secrets.json
+  可选：中央机密文件（优先读取 Telegram）。
+  格式：{"telegram": {"bot_token": "...", "chat_id": "..."}}
+
+
+另请参见
+----------
+
+hub/base.py - BaseHandler 类
+hub/notify.py - 完整的处理程序实现
+data/ - 巴赫数据库和配置
+docs/handlers.txt - 常规处理程序文档

@@ -1,0 +1,32 @@
+Инструмент BACH: policy_control
+--------------------------------------------------
+Создано: 23 января 2026 г., 10:36.
+Источник: инструменты/policy_control.py
+
+ОПИСАНИЕ
+----------------------------------------
+policy_control.py — Центральное внедрение фрагмента кода
+
+Внедряет стандартизированные политики кода в проекты Python.
+Поддерживает встроенное внедрение (небольшие фрагменты) и внешние файлы (большие).
+
+Использование:
+    python policy_control.py <file.py> --inject emoji_safe
+    python policy_control.py <file.py> --setstandardfixer
+    python policy_control.py <file.py> --check emoji_safe
+    python policy_control.py <папка> --setstandardfixer --recursive
+    python policy_control.py --list
+    python policy_control.py --list-sets
+
+Автор: Клод
+Версия: 1.0
+
+USE
+----------------------------------------
+инструменты Python bach.py запускают policy_control [args]
+или напрямую: python Tools/policy_control.py [args]
+
+ПРИМЕЧАНИЯ
+----------------------------------------
+- автоматически генерируется из строки документации.
+- Если у вас есть вопросы: инструменты bach показывают policy_control.

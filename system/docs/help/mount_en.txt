@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MOUNT HANDLER
+-------------
+
+Connection of external folders as symlinks/junctions in the workspace. administration about
+the database connections table with persistence over system restarts.
+
+
+DESCRIPTION
+------------
+
+The mount handler includes external folders in the user/ directory (hub/user/).
+Windows junctions are used that are automatically restored during restore
+become. All mounts are managed in data/bach.db with status is_active.
+
+
+OPERATIONS
+-----------
+
+ADD: Attach external folder
+  Syntax: bach mount add <path> <alias>
+  Example: bach mount add C:\Data\Research research
+  - Created junction: hub/user/research -> C:\Data\Research
+  - Saves in DB connections table (type='mount')
+  - Overwrites existing mounts with the same alias
+
+REMOVE: Remove connection
+  Syntax: bach mount remove <alias>
+  Example: bach mount remove research
+  - Deletes junction from hub/user/<alias>
+  - Removed entry from DB connections table
+  - Junction must exist, otherwise error will be ignored
+
+LIST: Show active mounts (standard operation)
+  Syntax: bach mount list
+  - Shows all mounts from DB with status [OK]/[--] and [EXISTS]/[MISSING]
+  - [OK] = is_active=1, [--] = is_active=0
+  - [EXISTS] = junction path exists, [MISSING] = does not exist
+
+RESTORE: Restore junctions from DB
+  Syntax: bach mount restore
+  - Recreates all junctions for active mounts (if lost after move)
+  - Skips existing junctions
+  - Reports errors if source path does not exist
+
+
+EXAMPLES
+---------
+
+1. Include file server in project:
+   bach mount add \\SERVER\shared projdata
+   -> hub/user/projdata becomes symlink to \\SERVER\shared
+
+2. Connect multiple folders:
+   bach mount add C:\Daten data
+   bach mount add D:\Archive archive
+   bach mount list
+
+3. Restore after system move:
+   bach mount restore
+   -> All junctions recreated from DB (if source paths are still available)
+
+4. Dry run before operation:
+   bach mount --dry-run add C:\Quelle test
+   bach mount --dry-run remove test
+
+
+FILES
+-------
+
+Affected files (relative to system/):
+  hub/mount.py - Handler implementation
+  hub/user/ - Directory for junctions
+  data/bach.db - Persistent Storage (connections table)
+  docs/help/mount.txt - This file
+
+
+SEE ALSO
+----------
+
+  hub/base.py - BaseHandler Interface
+  data/ - Database schema for connections
+  bach.py --help - General BACH help

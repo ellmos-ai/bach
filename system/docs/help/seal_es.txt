@@ -1,0 +1,90 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SELLO BACH - VERIFICACIÓN DE INTEGRIDAD
+-------------------------------
+
+Comprueba la integridad del núcleo BACH (todos los archivos CORE).
+Advierte sobre cambios, pero NO bloquea (ENT-13, ENT-14).
+
+
+USE
+----------
+
+  # Mostrar estado del kernel
+  bach seal status
+
+  # Verificación de integridad completa
+  bach seal check
+
+  # Recalcular el hash del kernel
+  bach seal repair
+
+
+KERNEL-SCOPE
+------------
+
+Todos los archivos con dist_type=2 (CORE) = ~510 archivos:
+  - herramientas/ (322 archivos)
+  - hub/ (95 archivos)
+  - habilidades/ (89 archivos)
+  - Root (4 archivos: bach.py, setup.py, etc.)
+
+
+FILOSOFÍA DEL SELLO
+------------------
+
+ADVERTENCIA, SIN BLOQUEO (ENT-13):
+  - El usuario tiene CONTROL TOTAL sobre su BACH
+  - El sello sólo avisa, pero no impide nada.
+  - Sin DRM, sin bloqueo
+  - El usuario decide si los cambios están bien
+
+
+COMPROBACIÓN AUTOMÁTICA
+--------------------
+
+Para --startup:
+  - Verificación de muestra (5 archivos CORE, sección 0.75)
+  - Sin prueba completa (rendimiento)
+  - Advertencia sobre cambios
+
+
+KERNEL-HASH
+-----------
+
+SHA256 en todos los archivos CORE:
+  - Calculado automáticamente
+  - Almacenado en la tabla system_state
+  - Consistente con el sistema dist_type
+
+
+EJEMPLOS
+---------
+
+  # Verificar el estado actual del sello
+  bach seal status
+
+  # Verificación de integridad completa
+  bach seal check
+
+  # Recalcular el hash del kernel (después de un cambio deliberado)
+  bach seal repair
+
+
+IMPORTANTE
+-------
+
+- Se detectan cambios en los archivos CORE
+- El usuario puede aceptar cambios (reparación del sello)
+- Sin reversión automática
+- Se recomienda realizar una copia de seguridad antes de los cambios CORE
+
+
+VER TAMBIÉN
+----------
+
+  bach --help restore       Restaurar plantilla
+  bach --help upgrade       Actualizar sistema
+  bach --help downgrade     Restablecer versión

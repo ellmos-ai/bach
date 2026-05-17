@@ -1,0 +1,79 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+------------
+obsidian - Sincronización de Obsidian Vault
+
+DESCRIPCIÓN
+------------
+El Obsidian Handler sincroniza una Obsidian Vault local con datos BACH.
+Gestiona tres categorías de sincronización: notas diarias, tareas
+(gestión de tareas) y Wiki (base de conocimientos). Todos los datos provienen del
+bach.db (tablas: tareas, memoria_trabajo, wiki_artículos).
+
+OPERACIONES
+-----------
+status
+  Muestra el estado de sincronización (ruta de la bóveda, estructura de directorios, existencia de
+  Notas Diarias, Wiki BACH, Archivo de Tareas). No se requieren argumentos.
+
+sincronización
+  Realiza todas las sincronizaciones: nota diaria de hoy, tareas actuales,
+  Artículo de wiki. No se requieren argumentos.
+
+config [ruta]
+  Establece o muestra la ruta de la Bóveda de Obsidiana. Con el argumento <ruta> el
+  Ruta configurada y almacenada en Memory_facts (categoría = 'sistema', clave =
+  'obsidian_vault_path'). Sin argumento muestra la ruta actual.
+
+diariamente
+  Crea o muestra la nota diaria de hoy (AAAA-MM-DD.md en
+  directorio "Notas diarias"). Contiene contador de tareas abiertas y las 3 últimas
+  Notas de trabajo de Memory_working.
+
+tareas
+  Sincroniza las tareas activas (pendientes, en progreso) desde la tabla de tareas.
+  en el archivo “BACH Tasks.md”. Ordenando por prioridad (P1-P3) e ID.
+
+wiki
+  Exporta todos los artículos de wiki_articles al directorio "BACH Wiki".
+  Los nombres de los archivos se limpian (solo alfanuméricos, espacios, guiones,
+  guión bajo); el título se deriva del campo de título o del nombre del archivo.
+
+EJEMPLOS
+---------
+Configurar Vault:
+  bach obsidian config /path/to/My\ Vault
+
+Verificar estado:
+  bach obsidian status
+
+Realizar todas las categorías de sincronización:
+  bach obsidian sync
+
+Crear solo la nota diaria de hoy:
+  bach obsidian daily
+
+Actualizar tareas:
+  bach obsidian tasks
+
+Exportar wiki:
+  bach obsidian wiki
+
+ARCHIVOS
+-------
+hub/obsidian.py Implementación del controlador
+base de datos data/bach.db (tablas: tareas, memoria_trabajo,
+                                   wiki_articles, Memory_facts)
+
+Bóveda de obsidiana (cuando está configurada):
+  {vault}/Notas diarias/ Directorio de notas diarias
+  {vault}/BACH Wiki/ Directorio de artículos wiki
+  {vault}/BACH Tasks.md Archivo de sincronización de tareas
+
+VER TAMBIÉN
+----------
+base.py Clase BaseHandler
+Documentación BACH esquema bach.db, estructura Memory_facts

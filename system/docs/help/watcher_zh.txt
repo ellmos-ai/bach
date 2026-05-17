@@ -1,0 +1,108 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WATCHER - Mistral 始终在线守护进程
+------------------------------------
+
+描述
+------------
+Watcher 守护进程使 BACH “始终在线” - 灵感来自 OpenClaw/molt.bot。
+Mistral（通过 Ollama 本地，免费）永久在后台运行，并且
+对传入事件进行分类。如有必要，他会启动 Claude Code Sessions。
+
+架构
+-----------
+                    观察者守护进程（始终开启）
+                    |
+    +----------------+----------------+
+    |               |               |
+  连接器 文件系统 任务队列
+  （电报，（收件箱，（新/紧急
+   Discord）下载）BACH 任务）
+    |               |               |
+    +--------+--------+--------+------+
+            |
+            v
+     米斯特拉尔分类器
+     （OllamaClient -> 米斯特拉尔：最新）
+            |
+  +---------+---------+----------+
+  |         |         |          |
+响应升级日志_仅忽略
+直接克劳德
+  |         |         |
+  维维维
+回复 克劳德事件
+通过会话日志
+启动连接器
+
+命令
+-------
+  bach watcher start              在后台启动守护程序
+  bach watcher stop               停止守护程序
+  bach watcher status             状态、事件、统计
+  bach watcher classify "text"    手动对文本进行分类（测试）
+  bach watcher logs [N]           最后N个日志行
+  bach watcher events [N]         最后N个分类事件
+
+分类
+--------------
+Mistral将每个事件分类为4个操作之一：
+
+  动作 说明 示例
+  --------------- ----------------------------------- ------------------------
+  RESPOND_DIRECT 米斯特拉尔回答自己“你好吗？” ->“好！”
+  ESCALATE_CLAUDE 启动 Claude 会话“重构处理程序”
+  LOG_ONLY 仅记录，无操作“备份已完成”
+  忽略 丢弃垃圾邮件、广告
+
+事件来源
+-------------
+  Connector_messages 电报/Discord 消息（通过连接器系统）
+  文件系统 受监控文件夹中的新文件
+  task_queue 新/紧急 BACH 任务 (P1/P2)
+  预定的基于时间表的事件 (Cron)
+
+安全防护
+------------------
+- 冷却时间：分钟。克劳德升级之间间隔 5 分钟
+- 每日限制：每天最多 20 次升级
+- 克劳德检查：如果克劳德已经在线，则不会升级
+- 屏幕锁定：屏幕锁定时不会升级
+- 安静时间：可配置（默认：23:00-07:00）
+
+配置
+-------------
+文件：hub/_services/watcher/config.json
+
+重要设置：
+  启用守护进程开/关
+  poll_interval_seconds 轮询间隔（默认：15s）
+  Quiet_start/quiet_end 安静时间
+  Mistra_model Ollama 模型（默认：Mistral：最新）
+  escalation_cooldown_seconds 分钟升级之间的时间
+  max_daily_escalations 每天最大升级次数
+  来源。* 激活/停用事件源
+
+要求
+---------------
+- Ollama 安装并启动
+- 米斯特拉尔模型加载（ollama拉米斯特拉尔）
+- 配置连接器系统（用于消息源）
+
+数据库
+---------
+  Connector_messages.watcher_classified 跟踪Watcher是否已经看到消息
+  watcher_event_log 所有分类事件及其结果
+
+日志文件
+-----------
+  data/logs/watcher_daemon.log 守护进程活动和分类
+
+另请参见
+----------
+  bach help connector     连接器系统（Telegram/Discord）
+  bach help partners      合作伙伴系统
+  bach help daemon        会话守护进程
+  bach help injectors     注入器系统

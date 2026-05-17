@@ -1,0 +1,56 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+------------
+tokens - Consumo de tokens y seguimiento de costos
+
+
+DESCRIPCIÓN
+------------
+El manejador de tokens registra y analiza el consumo de tokens LLM
+(Entrada/Salida), así como los costes incurridos en EUR. Los datos se toman de la
+Tabla monitor_tokens consultada en bach.db. Soporta ventanas de tiempo de
+hoy, últimos 7 días y 30 días.
+
+
+OPERACIONES
+-----------
+Disponible con: bach --tokens <operación>
+
+status (predeterminado) Resumen: Hoy / Semana / Mes
+hoy Detallado: últimas 20 entradas de hoy
+semana Agrupado por día: últimos 7 días con costos totales
+report Informe por modelo + precios actuales (30 días)
+
+
+EJEMPLOS
+---------
+Ver estado actual:
+  bach --tokens status
+  bach --tokens
+
+Ver costos hoy:
+  bach --tokens today
+
+Analizar consumo semanal:
+  bach --tokens week
+
+Informe detallado:
+  bach --tokens report
+
+
+ARCHIVOS
+-------
+Código fuente: hub/tokens.py
+Controlador base: hub/base.py
+Base de datos: data/bach.db (tabla monitor_tokens)
+Tabla de precios: data/bach.db (tabla de precios de monitor)
+
+
+VER TAMBIÉN
+----------
+bach_api Acceso programático a controladores
+Comandos y esquema de la base de datos monitor-db
+Interfaz del controlador base.py y manejo de errores

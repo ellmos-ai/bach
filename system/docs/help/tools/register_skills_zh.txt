@@ -1,0 +1,20 @@
+巴赫工具：register_skills
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/register_skills.py
+
+描述
+----------------------------------------
+在 bach.db 中注册技能
+------------------------------
+扫描 Skills/ 文件夹并注册数据库中的所有技能文件。
+
+USE
+----------------------------------------
+python bach.py tools run register_skills [args]
+或直接： python tools/register_skills.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示 register_skills

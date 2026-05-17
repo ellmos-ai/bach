@@ -1,0 +1,65 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+===
+web_parse
+
+DESCRIPTION
+===
+Downloads web pages and converts HTML to Markdown. Supported
+optional cleanup (removal of navigation, header, footer, aside).
+Implements MD5 hash based filename caching.
+
+OPERATIONS
+===
+url <url>
+  Load URL, output full HTML to Markdown content.
+  Cache is automatically checked and updated.
+
+clean <url>
+  Load URL and parse only main content (navigation, header, footer, aside
+  removed). Links are not parsed in clean mode.
+
+cache list
+  Show all cached files. Specifies file name, size (KB), URL and
+  Timestamp off.
+
+cache clear
+  Empty cache directory (Query: All .md files in data/cache/web
+  will be deleted).
+
+EXAMPLES
+===
+bach web-parse url https://example.com
+  Output complete content from example.com as Markdown.
+
+bach web-parse clean https://example.com/article
+  Only article main content without nav/header/footer as Markdown.
+
+bach web-parse cache list
+  Show cached pages with sizes.
+
+bach web-parse cache clear
+  Clear entire cache.
+
+FILES
+===
+data/cache/web/
+  Cache directory. MD5 hash of the URL (12 characters) + suffix "_clean"
+  if clean mode + .md extension.
+  Example: abc1234def56_clean.md
+
+hub/web_parse.py
+  Handler implementation BaseHandler subclass, HTTP request with
+  requests, HTML-to-Markdown with html2text or fallback regex.
+
+SEE ALSO
+===
+Dependencies: requests (pip install requests), html2text (optional).
+Fallback conversion with regex if html2text is not installed.
+User agent is set (BACH WebParse/1.0).
+Timeout: 20 seconds per request.
+HTML entities are decoded (&amp;, &lt;, &gt;, &quot;, &nbsp;).
+Cache files contain meta comment with URL, timestamp, mode.

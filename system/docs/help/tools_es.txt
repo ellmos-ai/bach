@@ -1,0 +1,518 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HERRAMIENTAS - Gestión de herramientas
+-----------------------
+
+DESCRIPCIÓN
+------------
+BACH gestiona tres tipos de herramientas:
+1. Herramientas Python: Scripts en herramientas/ (codificación, control, migración)
+2. Herramientas CLI: programas de línea de comandos (git, ffmpeg, python)
+3. Herramientas de IA externas: servicios de IA basados en web (ChatGPT, Midjourney)
+
+La CLI y las herramientas externas se administran en la base de datos (bach.db/tools).
+
+COMANDOS CLI
+-----------
+bach --tools list              Listar herramientas de Python (sistema de archivos)
+bach --tools db                Listar todas las herramientas de base de datos (CLI + externas)
+bach --tools db --type cli     Mostrar solo herramientas CLI
+bach --tools db --type external Nur externe KI-Tools anzeigen
+bach --tools show <n>       Mostrar detalles de herramientas
+bach --tools run <n> [args] Python-Tool ausfuehren
+bach --tools search <term>     Herramientas de búsqueda (sistema de archivos + DB)
+bach --tools migrate           Iniciar migración de conexiones
+
+LLAMADA DIRECTA VÍA BACH (recomendado)
+---------------------------------
+Las herramientas se pueden llamar directamente a través de bach.py - sin ejecutar --tools:
+
+  bach <toolname> [argumente]
+
+Ejemplos:
+  bach python_cli_editor script.py --show-all     Mostrar estructura
+  bach c_encoding_fixer datei.py                  Reparar codificación
+  bach c_import_organizer datei.py --save         Ordenar importaciones
+  bach c_json_repair kaputt.json                  Reparar JSON
+  bach c_pycutter grosse_datei.py                 Dividir archivo
+  bach c_sqlite_viewer data/bach.db               Mostrar DB
+  bach code_analyzer projekt/                     Analizar código
+
+Ventajas:
+  - Más corto que: bach --tools ejecuta c_encoding_fixer file.py
+  - Es posible completar la pestaña
+  - Misma sintaxis que la llamada directa de Python
+
+Nota: funciona para todas las herramientas en tools/*.py
+
+TOOL OVERVIEWS
+-----------------
+Diferentes formas de encontrar herramientas disponibles:
+
+  bach --tools list              Todas las herramientas de Python (tools/*.py)
+  bach --tools db                Todas las herramientas de base de datos (CLI + externas)
+  bach --tools search <term>     Buscar por término
+  bach tool suggest "problem"    Recomendación basada en problemas
+  bach --help tools              Esta ayuda
+  bach --help tools/_index       Índice de documentación de herramientas
+
+Para ayuda de herramientas específicas:
+  bach <tool> --help             Herramienta argparse ayuda
+  bach --help tools/<tool>       Documentación detallada (si está disponible)
+
+DESCUBRIMIENTO DE HERRAMIENTAS (NUEVA v1.1.27)
+----------------------------
+Coincidencia de herramientas basada en problemas: describe un problema y obtén recomendaciones de herramientas.
+
+bach tool suggest "Encoding-Problem in Datei"  Recomendación de herramientas basada en el problema
+bach tool suggest "JSON reparieren"            Encuentra json_repair_tool.py
+bach tool patterns                             Mostrar todos los patrones de problemas
+
+Cómo funciona:
+1. Extracción de palabras clave de la descripción del problema.
+2. Comparación de más de 15 categorías de problemas
+3. Recomendación basada en puntuaciones de herramientas adecuadas
+
+Categorías de problemas: codificación, json_repair, code_analysis, import_issues,
+formato, base de datos, conversión, copia de seguridad, limpieza, documentación,
+path_issues, duplicado, emoji, german_text, tax
+
+Código: tools/tool_discovery.py (195 líneas)
+
+PYTHON-TOOLS (tools/)
+---------------------
+Convención de prefijo (ver: bach --help naming):
+
+  c_* CLI optimizada para IA (Claude/recludOS)
+             - Salidas claras, codificación segura, JSON seguro
+  b_* Núcleo BACH (sistema crítico)
+  a_* Agente corredor
+  t_* Herramientas de prueba
+  m_* Mantener/mantenimiento
+  g_* Herramientas generadoras
+
+Prefijos antiguos (se migrarán):
+  agente_* -> a_*
+  copia de seguridad_* -> b_* o m_*
+  migrar_* -> m_*
+
+Prefijos de dominio (permanecer):
+  ollama_* Integración de Ollama
+  tax_* Herramientas de impuestos (en herramientas/tax/)
+
+HERRAMIENTAS DE PYTHON POR FUNCIÓN
+--------------------------
+
+### CLI accesible (a través del controlador)
+
+  Función de controlador de directorio
+  ------------- -------------------- ----------------------------
+  testing/ --test sistema de prueba (pruebas B/O/E)
+  generadores/ --mantener generar generadores de habilidades/agentes
+  mapeo/ mapeo de características (directo)
+
+### funciones principales
+
+  Función de herramienta
+  -------------------------------------- ----------------------------
+  autolog.py Sistema de registro automático
+  autolog_analyzer.py Análisis de registro automático
+  backup_manager.py Gestión de copias de seguridad
+  injectors.py Sistema de inyectores
+  c_dirscan.py Escaneo de directorio
+  session_analyzer.py Análisis de sesión
+  time_system.py Sistema de tiempo
+  token_monitor.py Monitoreo de tokens
+  Success_tracker.py Seguimiento de éxito
+  fs_protection.py Protección del sistema de archivos
+
+### Mantenimiento (a través del controlador --maintain)
+
+  Función de comando CLI de herramienta
+  ----------------------- ------------------------- ----------------------
+  doc_update_checker.py bach --mantener verificación de documentación de documentos
+  c_duplicate_detector.py bach --mantener duplicados Detección de duplicados
+  c_pattern_tool.py bach --mantener patrón Patrones de nombre de archivo
+  c_tool_scanner.py bach --mantener escaneo Descubrimiento de herramientas CLI
+  c_file_cleaner.py bach --mantener limpio Eliminar archivos antiguos
+  c_json_fixer.py bach --mantener json Reparar JSON
+  c_sync_registry.py Sincronizar registro
+  c_json_registry_cleaner.py Limpieza del registro
+  backup_manager.py Gestión de copias de seguridad
+  nulcleaner.py Eliminar carácter NUL
+
+### Herramientas generadoras (tools/generators/)
+
+Función de comando CLI de herramienta
+  ----------------------- ------------------------- ----------------------
+  Skill_generator.py bach --mantener generar Crear estructuras de habilidades
+  exporter.py bach --mantener exportación Habilidades/Agentes de exportación
+
+  Perfiles para Skill_generator:
+    MICRO: solo archivos, sin sistema de carpetas
+    LUZ - Mínimo (SKILL.md + config + datos)
+    ESTÁNDAR: habilidad estándar con memoria simple
+    EXTENDIDO - Habilidad compleja con microhabilidades
+
+### Herramientas de mapeo (tools/mapping/)
+
+  Función de herramienta
+  -------------------------------------- ----------------------------
+  query_features.py Matriz de funciones de consulta
+  Base de datos populate_features.py
+  esquema de base de datos esquema.sql
+
+  Importante: ¡La variable DB_PATH debe ajustarse!
+
+### Coding-Tools
+
+  Función de herramienta
+  -------------------------------------- ----------------------------
+  c_encoding_fixer.py Corregir codificación
+  c_emoji_scanner.py Buscar/reemplazar emoji
+  c_standard_fixer.py Aplicar estándares de código
+  c_json_repair.py Reparar JSON
+  c_json_fixer.py Reparar JSON (antiguo)
+  c_import_organizer.py Ordenar importaciones
+  c_import_diagnose.py Encuentra problemas de importación
+  c_indent_checker.py Comprobar sangría
+  c_umlaut_fixer.py Corregir diéresis
+  c_german_scanner.py Buscar palabras en alemán
+  c_method_analyzer.py Analizar métodos
+  c_pycutter.py Dividir archivos Python
+  c_sqlite_viewer.py Ver bases de datos SQLite
+  c_license_generator.py Crear archivos de licencia
+  c_md_to_pdf.py Rebaja a PDF
+  Conversión de formato c_universal_converter.py
+  c_universal_compiler.py Compilador universal
+  c_youtube_extractor.py Extracción de YouTube
+  c_code_analyzer.py Análisis de código
+  c_code_generator.py Generación de código
+  c_python_cli_editor.py Editar Python de forma estructurada
+  c_structure_generator.py Generador de estructuras
+  c_header_migrate.py Migración de encabezado
+  call_graph.py Análisis de gráficos de llamadas
+
+### Herramientas de control
+
+  Función de herramienta
+  -------------------------------------- ----------------------------
+  steuer_scanner.py Escanear recibos
+  sincronización tax_sync.py
+  tax_batch.py Procesamiento por lotes
+  tax_apply.py aplicar categorías
+  setup_steuer_db.py Configuración de base de datos
+  scan_new_belege.py Detectar nuevos recibos
+  rename_belege.py Cambiar el nombre de los recibos
+  show_posten.py Mostrar publicaciones
+  temu_ocr_batch.py Lote de Temu OCR
+  ocr_engine.py Motor OCR
+
+### Herramientas Ollama
+
+  Función de herramienta
+  -------------------------------------- ----------------------------
+  ollama_benchmark.py puntos de referencia
+  ollama_summarize.py Resúmenes
+  ollama_worker.py Proceso de trabajo
+
+### Herramientas de prueba (tools/testing/)
+
+  Función de comando CLI de herramienta
+  ----------------------- ------------------------- ----------------------
+  test_runner.py bach --test run Ejecución de prueba
+  run_b_tests.py bach --test self Ejecutar pruebas B
+  run_o_tests.py bach --test ops Ejecutar pruebas O
+
+  Perfiles de prueba (testing/profiles/):
+    QUICK.json - Comprobación rápida
+    STANDARD.json - Suite estándar
+    FULL.json - Verificación completa
+    MEMORY_FOCUS.json: pruebas de memoria
+    TASK_FOCUS.json: pruebas de tareas
+    OUTPUT.json - Pruebas de salida
+    OBSERVATION.json - Pruebas de observación
+
+### Integración MCP (NUEVO v2.2)
+
+  Función de herramienta
+  -------------------------------------- ----------------------------
+  mcp_server.py Servidor MCP v2.0 (654 líneas)
+                            - 23 herramientas (Tarea, Memoria, Lección, Copia de seguridad, Control)
+                            - 8 Recursos (Tareas, Estado, Memoria, Habilidades, Contactos)
+                            - 3 mensajes (información diaria, revisión de tareas, resumen de sesión)
+
+  Instalación:
+    pip instalar mcp
+    herramientas de Python/mcp_server.py
+
+  Configuración del código Claude (~/.claude/claude_code_config.json):
+    {
+      "mcpServers": {
+        "bach": {
+          "comando": "pitón",
+          "args": ["C:/ruta/a/system/tools/mcp_server.py"]
+        }
+      }
+    }
+
+### Gestión de habilidades (NUEVO)
+
+Función de herramienta
+  -------------------------------------- ----------------------------
+  c_skill_init.py Inicializar estructura de habilidades
+  c_skill_package.py Paquete de habilidades
+  c_skill_validate.py Validación de habilidades
+  Skill_export.py Exportar habilidades
+  Skill_header_gen.py Generar encabezado de habilidad
+  Skill_help_gen.py Generar ayuda sobre habilidades
+
+### Herramientas de proyecto (NUEVO)
+
+  Función de herramienta
+  -------------------------------------- ----------------------------
+  c_project_bundler.py Paquete de proyectos
+  c_audit_bundler.py Crear paquete de auditoría
+  c_path_healer.py Reparación de ruta
+  batch_file_ops.py Operaciones de archivos por lotes
+
+### Análisis y monitoreo
+
+  Función de herramienta
+  -------------------------------------- ----------------------------
+  verificación de la base de datos db_check.py
+  debug_scan.py Escaneo de depuración
+  forensic_db_scan.py Escaneo forense de base de datos
+  carpeta_diff_scanner.py Análisis de diferencias de carpetas
+  custom_analysis.py Análisis personalizado
+  esquema_reader.py Lector de esquemas
+  problemas_first.py Enfoque de problemas primero
+  reports.py Sistema de informes
+
+### Generador y ayudante
+
+  Función de herramienta
+  -------------------------------------- ----------------------------
+  c_dictionary_builder.py Generador de diccionarios
+  lección_trigger_generator.py Generador de activación de lecciones
+  theme_packet_generator.py Generador de paquetes de temas
+  flujo de trabajo_trigger_generator.py Generador de desencadenadores de flujo de trabajo
+  trigger_maintainer.py Mantenimiento del disparador
+  context_compressor.py Compresión de contexto
+  Translate_batch.py Traducción por lotes
+
+### Integración e importación
+
+  Función de herramienta
+  -------------------------------------- ----------------------------
+  gemini_llm.py Integración de Gemini LLM
+  data_importer.py Importación de datos
+  document_indexer.py Indexación de documentos
+  doc_search.py Búsqueda de documentos
+  inbox_watcher.py Vigilante de la bandeja de entrada
+  user_console.py Consola de usuario
+
+### Agentes y descubrimiento automático
+
+  Función de herramienta
+  -------------------------------------- ----------------------------
+  c_headless_agent.py Agente sin cabeza
+  bach_auto_discovery.py Sistema de descubrimiento automático
+  tool_auto_discovery.py Herramienta de descubrimiento automático
+
+### Herramientas de usuario (tools/_user/)
+
+  Herramientas específicas del sistema (no para distribución):
+  - auto_backup_orchestrator.py Copia de seguridad FTP
+  - fritzbox_wlan_control.py Control WLAN
+  - backup_watchdog.py monitoreo de respaldo
+
+  Ver: tools/_user/README.md
+
+CLI-TOOLS (bach.db)
+-------------------
+Categorías disponibles:
+  archivo 7z (compresión)
+  bloc de notas del editor++
+  código ide (código VS)
+  multimedia ffmpeg (vídeo/audio)
+  rizo de red, ssh
+  administrador_paquete pip, pip3
+  Python en tiempo de ejecución, nodo
+  grep de procesamiento de texto
+  version_control git
+
+HERRAMIENTAS AI EXTERNAS (bach.db)
+--------------------------
+Categorías:
+  llm ChatGPT, Claude, Gemini, Copiloto, Mistral, Groq
+  imagen Mitad del viaje, Ideograma, Leonardo, Flux, Magnífico
+  vídeo Pasarela, Luma, Pika, Sonido
+  audio ElevenLabs, Suno, Udio, Descript, Auphonic
+  investigación Perplejidad, Consenso, Obtener, NotebookLM, Scite
+  dev Cursor, Bolt, Espacio de trabajo del copiloto, Replit, Windsurf
+  edu Gamma, Notion AI, Goblin Tools, Taskade
+
+ESQUEMA DE BASE DE DATOS
+----------------
+Tabla: herramientas (en data/bach.db)
+
+Campos importantes:
+- nombre TEXTO ÚNICO
+- escriba TEXTO (cli, externo, interno)
+- categoría TEXTO
+- comando TEXTO (para herramientas CLI)
+- TEXTO de punto final (para herramientas externas)
+- descripción TEXTO
+- capacidades de matriz JSON
+- use_para TEXTO
+- is_available BOOLEAN
+
+MIGRACIÓN
+---------
+Las herramientas se migraron desde archivos JSON a la base de datos.
+Los archivos fuente ya no existen (las conexiones/se han disuelto).
+
+Verifique el estado de la migración:
+  bach --tools migrate --status
+
+Si es necesaria una nueva migración (solo con reinicio):
+  python tools/migrate_connections.py
+
+EJEMPLOS
+---------
+# Listar herramientas Python
+bach --tools list
+
+# Todas las herramientas registradas (DB)
+bach --tools db
+
+# Solo herramientas CLI
+bach --tools db --type cli
+
+# Detalles de la herramienta
+bach --tools show ffmpeg
+bach --tools show chatgpt
+
+# Ejecutar herramienta
+bach --tools run c_encoding_fixer datei.py
+
+# Llamada directa (recomendado)
+bach c_encoding_fixer datei.py
+bach c_skill_init neuer_skill
+bach c_project_bundler ./projekt
+
+# Buscar
+bach --tools search video
+
+# Herramientas de mantenimiento
+bach --maintain list
+bach --maintain docs
+bach --maintain pattern ./docs --dry-run
+
+# Herramientas de prueba
+bach --test profiles
+bach --test run QUICK
+
+# Servidor MCP (NUEVO)
+herramientas de Python/mcp_server.py
+# Luego disponible a través de Claude Code (bach:/ Recursos + Herramientas)
+
+INVENTARIO DE HERRAMIENTAS (~83 herramientas)
+-------------------------
+Estadísticas totales por categoría:
+
+Número de categoría Descripción
+  ----------------- ------ ----------------------------
+  Sistema de agente Agent/Framework 8, integración de servicios, MCP
+  Desarrollo 25 análisis de código, pruebas, utilidades de proyecto.
+  Base de datos 8 SQLite, migración, esquema
+  Documento 15 OCR, conversión, procesamiento de textos
+  Financiero/Impuesto 22 Paquete completo de impuestos
+  Mantenimiento 15 Copia de seguridad, distribución, limpieza, registro
+  Extracción de YouTube de Media 2, Gemini LLM
+  Utilidad/Ayudante 22 Pólizas, Generadores, Monitoreo, Otros
+  Gestión de habilidades 6 Iniciar habilidad, empaquetar, validar, exportar
+
+Convención de nomenclatura (prefijos):
+
+  c_* CLI optimizado para IA (más de 40 herramientas)
+  b_* Núcleo BACH (sistema crítico)
+  a_* Herramientas del corredor de agentes
+  t_* Herramientas de prueba
+  m_* Mantener herramientas
+  g_* Herramientas generadoras
+  (-) Dominio/Utilidad (más de 43 herramientas)
+
+Potencial de sinergia con suites externas:
+
+  Sinergia de herramientas BACH con
+  ---------------------- ----------------------------
+  Impuestos/Suite Finanzas Suite (Presupuesto, Gastos)
+  ocr_engine.py DokuZentrum Pro
+  c_md_to_pdf.py Exportación de obsidiana
+  c_youtube_extractor.py Media Suite
+
+Fuente: Archivado en user/_archive/BACH_NATIVE_TOOLS_MAPPING.md
+
+DOCUMENTACIÓN DETALLADA DE LAS HERRAMIENTAS
+--------------------------------
+Para herramientas complejas hay documentación detallada en docs/help/tools/:
+
+  Documentación disponible:
+  ---------------------
+  docs/help/tools/python_cli_editor.txt Editar archivos Python de forma estructurada
+                                     (Mostrar, insertar clases/métodos,
+                                     eliminar, editar flujo de trabajo, exportar)
+
+  docs/help/tools/_index.txt Índice de toda la documentación de la herramienta
+
+  Recuperación:
+  ------
+  bach --help tools/python_cli_editor    Leer documentación detallada
+  bach --help tools/_index               Resumen de la documentación disponible
+  bach --help tools                      Esta herramienta general ayuda
+
+  ¿Cuándo necesita una herramienta su propia documentación?
+  ----------------------------------
+  - Muchas opciones (>10 parámetros)
+  - Posibilidad de flujos de trabajo complejos
+  - De uso frecuente
+  - Ejemplos importantes para la comprensión
+
+  Sólo se utilizan herramientas sencillas:
+  - Cadena de documentación en el archivo Python
+  - argparse --help (bach <tool> --help)
+
+CONTEXT INYECTOR (sugerencias automáticas de herramientas)
+---------------------------------------------
+El ContextInjector reconoce palabras clave y recomienda herramientas adecuadas.
+Ejemplos:
+
+  Recomendación de herramienta para palabras clave
+  --------------------- ------------------------------------------
+  "problema de codificación" bach c_encoding_fixer <archivo>
+  "ordenar importaciones" bach c_import_organizer <archivo>
+  "editar python" bach c_python_cli_editor <archivo> --mostrar todo
+  "archivo dividido" bach c_pycutter <archivo>
+  "ver sqlite" bach c_sqlite_viewer <db>
+  La herramienta Bach "buscar herramienta" sugiere 'descripción'
+  "crear habilidad" bach c_skill_init <nombre>
+  "paquete de proyecto" bach c_project_bundler <ruta>
+  "ruta de reparación" bach c_path_healer <archivo>
+  "start mcp" python tools/mcp_server.py
+
+Ver: bach --help injectors (lista completa de activadores)
+
+VER TAMBIÉN
+----------
+docs/help/tools/_index.txt Documentación detallada de la herramienta (índice)
+docs/help/tools/*.txt Documentación de herramienta individual
+docs/help/injectors.txt Notas automáticas de herramientas (ContextInjector)
+bach --help connections    Gestión de conexiones
+bach --help dirscan           Directory Scanner (monitoreo de cambios)
+bach --help maintain       Herramientas de mantenimiento
+bach --help test           Sistema de prueba
+bach --help naming         Convenciones de nomenclatura (prefijos de herramientas)

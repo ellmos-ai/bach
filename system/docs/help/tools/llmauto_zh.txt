@@ -1,0 +1,36 @@
+BACH 工具：LLMauto (MarbleRun)
+------------------------------
+
+具有状态管理功能的自动化 LLM 链执行。
+
+使用
+----------
+
+  bach --tools llmauto run <chain.yaml>    运行链
+  bach --tools llmauto list                显示可用链
+  bach --tools llmauto benchmark           性能基准
+
+链格式
+-------------
+
+链被定义为 YAML，其步骤如下：
+可以顺序或并行执行。
+
+MODI
+----
+
+  一个接一个的连续步骤
+  平行的步骤 平行的
+  Conditional 条件执行
+
+STATE
+-------
+
+链状态存储在state.json中以供恢复
+中断后。
+
+模块
+-----
+
+  工具/llmauto/（MarbleRun 引擎）
+  GitHub: github.com/lukisch/MarbleRun

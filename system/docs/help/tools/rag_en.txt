@@ -1,0 +1,29 @@
+BACH Tool: RAG (Retrieval-Augmented Generation)
+------------------------------------------------
+
+Vector-based document search for BACH.
+
+USE
+----------
+
+  bach --tools rag ingest <pfad>     Index documents
+  bach --tools rag search <query>    Semantic search
+
+INGEST
+------
+
+Reads documents and creates vectors:
+  - Supported formats: .txt, .md, .pdf, .py
+  - Storage in document_vectors table
+
+SEARCH
+------
+
+Semantic similarity search via indexed documents.
+Returns relevant sections of text with a score.
+
+MODULE
+-----
+
+  tools/rag/ (ingest.py, search.py)
+  DB table: document_vectors (Migration 020)

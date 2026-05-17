@@ -1,0 +1,41 @@
+巴赫工具：os_generator
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/os_generator.py
+
+描述
+----------------------------------------
+通用LLM操作系统结构生成器v3.0
+
+为通用LLM操作系统v3.0创建完整的基础结构
+基于 BACH_STREAM 分析结果的演变。
+
+与 v2.0 相比的改进：
+- 添加了_backup/系统（垃圾/、快照/）。
+- 通过备份检查改进了启动顺序
+- 扩展了会话生命周期文档
+- 具有备份集成的微例程
+- 具有备份阶段的优化关闭协议
+
+三大支柱：内存+工具+通信
+
+作者：BACH_STREAM Generator
+日期：2026-01-13
+版本：3.0.0
+
+使用方法：
+    python os_generator_v3.py [名称] [目标文件夹]
+
+示例：
+    python os_generator_v3.py 我的操作系统
+    python os_generator_v3.py my-os "C:\Projects"
+
+USE
+----------------------------------------
+python bach.py 工具运行 os_generator [args]
+或直接： python tools/os_generator.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示 os_generator

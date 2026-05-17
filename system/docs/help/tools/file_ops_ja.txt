@@ -1,0 +1,26 @@
+BACH ツール: ファイル操作
+--------------------------
+
+分析およびクリーンアップ用のファイル システム ツール。
+
+利用可能なツール
+-----------------
+
+  dirscan ディレクトリ スキャナー (統計情報付き)
+  Duplicate_detector ファイルの重複を検索します
+  coding_fixer エンコードの問題を修正する (UTF-8)
+  file_cleaner 一時ファイルや不要なファイルを削除します
+  file_manager ファイル操作 (移動、名前変更)
+
+使用
+----------
+
+  bach --tools file_ops scan <pfad>        ディレクトリの分析
+  bach --tools file_ops duplicates <pfad>  重複の検索
+  bach --tools file_ops encoding <pfad>    エンコーディングのチェック/修正
+  bach --tools file_ops clean <pfad>       クリーンアップ
+
+MODULE
+-----
+
+  tools/file_ops/ (5 つのツール)

@@ -1,0 +1,137 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 下次考试：2026-11-15
+# 资源：[hub/scheduler.py、gui/daemon_service.py、scheduler_jobs、scheduler_runs]
+
+SCHEDULER - 后台作业和调度程序服务
+----------------------------------------------------
+
+日期：2026-02-28
+
+注意：“bach Scheduler ...”是调度程序的新名称。
+旧命令“bach daemon ...”仍可用作别名。
+
+重要策略
+---------------
+**默认情况下禁用所有调度程序作业。**
+
+原因：自动进程可以与活动聊天会话一起使用
+和提示发生器发生碰撞。工作只是手动的
+如果需要，则激活。
+
+调度程序在操作期间自动暂停 OneDrive 同步
+以避免同步冲突。
+
+请参阅：docs/CONCEPT_daemon_policy.md
+
+CLI 命令（bach 调度程序）
+-----------------------------
+
+  职位 显示所有职位
+  状态 调度程序状态
+  status --json 调度程序状态为 JSON
+  医生调度程序飞行前和恢复注意事项
+  doctor --json 调度程序预检为 JSON
+  start [--bg] 启动调度程序服务（--bg 表示后台）
+  stop 停止调度程序服务
+  run <ID> 手动运行单个作业
+  logs [N] 显示最新日志条目（默认值：20）
+  jobs --json 计算状态为 JSON 的调度程序作业
+
+SESSION-SYSTEM
+--------------
+
+  session start [--profile NAME] 启动会话调度程序
+  会话停止 停止会话调度程序
+  会话状态 显示会话状态
+  会话状态 --json JSON 格式的会话状态
+  会议医生会议飞行前和恢复说明
+  session doctor --json 会话预检为 JSON
+  会话暂停 [--profile NAME] [原因] 暂停配置文件触发器
+  会话恢复 [--profile NAME] 取消暂停配置文件
+  session steer [--profile NAME] "Text" 保存下一个会话的控制信息
+  session clear-steer [--profile NAME] 清除配置文件控制指令
+  会话触发器 [--profile NAME] 手动触发会话
+  会话配置文件 列出可用的配置文件
+
+  试运行示例：
+    bach scheduler session trigger --profile wartung --dry-run
+
+  操作员控制示例：
+    bach scheduler session steer --profile ati "Bitte heute nur Health-Checks und Docs anfassen."
+    bach scheduler session status --json
+
+作业类型
+---------
+
+  间隔一段时间后重复（例如24h、30m）
+  基于 cron 计划（例如“0 2 * * *” = 每天凌晨 2 点）
+  event 基于事件的触发器（外部触发）
+  手动 只能手动执行
+  chain 链式作业执行（链式系统）
+
+调度程序每 5 分钟自动检查一次到期的重复任务。
+
+可用作业（默认情况下全部关闭）
+-------------------------------------------
+注意：作业列表是动态的。当前工作来自： bach 调度程序工作
+
+示例工作：
+  ID 名称 日程功能
+  ------------------------------------------------------------------------------------------------------------------
+  1 台扫描仪 60m 扫描软件文件夹中的任务
+  2备份 24小时自动备份
+  3 次收件箱扫描过程 30m 收件箱文件夹
+  4 个巩固权重 24 小时记忆权重（衰减）
+  5 合并归档 24 小时归档旧条目
+  6 合并索引 7d 帮助/Wiki 更新索引
+  7 次巩固压缩 24 小时压缩疗程
+  8 合并-我们 7 天 每周合并
+  9 每晚维护 cron 0 2 每晚维护链
+  10 每周备份 cron 0 3 0 每周备份
+
+连接器作业（v2.0，通过 bach 连接器设置调度程序）：
+  -- Connector_poll_and_route 2m 连接器花粉 + 收件箱路由
+  -- Connector_dispatch 1m 通过重试发送传出队列
+
+手动执行作业
+----------------------
+推荐方法而不是自动调度程序：
+
+  # 运行作业一次
+  bach scheduler run 1         # 运行扫描仪一次
+  bach scheduler run 2         # 创建备份一次
+  bach scheduler jobs --json   # 外部工具/代理的作业
+
+  # 或者直接命令
+  bach scan run                # 扫描
+  bach backup create           # 备份
+  bach consolidate run         # 合并
+
+GUI
+---
+  http://127.0.0.1:8000/scheduler 调度程序仪表板
+
+  - 启用/禁用作业
+  - 手动运行
+  - 查看最新执行
+
+ALIAS: bach daemon ...
+----------------------
+之前的命令名称 `bach daemon` 仍然是一个别名
+可用于向后兼容。两种形式的命令
+是等效的：
+
+  bach daemon jobs      == bach 调度程序作业
+  bach daemon status    == bach 调度程序状态
+  bach daemon start     == bach 调度程序启动
+
+另请参阅
+----------
+  bach --help daemon           旧文档（别名）
+docs/CONCEPT_daemon_policy.md 调度程序策略
+  bach --help connector        连接器系统（队列、重试）
+  bach --help maintain         维护工具
+  bach --help backup           备份系统
+  bach --help consolidation    内存整合

@@ -1,0 +1,18 @@
+巴赫工具：ollama_summarize
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/ollama_summarize.py
+
+描述
+----------------------------------------
+Ollama 会话报告摘要
+
+使用
+----------------------------------------
+python bach.py 工具运行 ollama_summarize [args]
+或直接： python tools/ollama_summarize.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：bach 工具显示 ollama_summarize

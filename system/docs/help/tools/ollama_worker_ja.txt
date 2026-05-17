@@ -1,0 +1,25 @@
+BACH ツール: ollama_worker
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/ollama_worker.py
+
+説明
+----------------------------------------
+OLLAMA WORKER - 非同期ジョブ処理
+--------------------------------------
+バックグラウンドで実行され、保留中/Ollama 経由でジョブを処理します。
+完了後に結果を書き込みます/.
+
+使用法:
+  python ollama_worker.py # すべての保留中のジョブを一度処理します
+  python ollama_worker.py --daemon # 永続的に実行
+
+USE
+----------------------------------------
+python bach.py tools run ollama_worker [args]
+または直接: python tools/ollama_worker.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成されます
+- 質問がある場合: bach tools show ollama_worker

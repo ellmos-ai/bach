@@ -1,0 +1,144 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WORKFLOW-TUEV - Quality assurance for workflows
+--------------------------------------------------
+
+Workflows are the "brain" of the system. They must function reliably.
+The Workflow-TUeV ensures that workflows are tested regularly.
+
+CONCEPT
+-------
+
+1. USECASE TESTS
+   - Collection of test cases per workflow
+   - Defined inputs and expected outputs
+   - Automatic execution possible
+
+2. TUEV PROCEDURE
+   - Each workflow has an expiration date (tuev_valid_until)
+   - When expires: Automatically create maintenance task
+   - After successful check: New expiry date
+
+3. RATING
+   - very good (90-100%)
+   - good (70-89%)
+   - satisfactory (50-69%)
+   - sufficient (30-49%)
+   - failed (<30%)
+   - Note determines priority of the maintenance tasks
+
+CLI COMMANDS
+-----------
+
+BACH TUEV:
+  bach tuev status                    TUeV status of all workflows
+  bach tuev check <workflow>          Check individual workflow
+  bach tuev run                       All due checks
+  bach tuev renew <workflow>          Renew TUeV after check
+  bach tuev init                      Register workflows in DB
+
+BACH USECASE:
+  bach usecase list [workflow]        Show test cases
+  bach usecase add <workflow>         New test case add
+  bach usecase run <id>               Execute test case
+  bach usecase run-all <workflow>     All test cases of a workflow
+  bach usecase show <id>              Show test case details
+
+DB SCHEMA
+---------
+
+usecases:
+  id primary key
+  title Test case title
+  description Description of the test case
+  workflow_path Path to the workflow (skills/workflows/...)
+  workflow_name Name of the workflow
+  test_input JSON: input data for test
+  expected_output JSON: Expected result
+  last_tested Last test run (time stamp)
+  test_result pass/fail/error
+  test_score score 0-100
+  tuev_valid_until Expiry date of this test case
+  created_by user/system
+
+workflow_tuev:
+  id primary key
+  workflow_path Path to the workflow (UNIQUE)
+  workflow_name Name of the workflow
+  last_tuev_date Last TUeV date
+  tuev_valid_until Next TUeV due
+  tuev_status pending/passed/failed/expired
+  test_count Number of tests carried out
+  pass_count Tests passed
+  fail_count Failed tests
+  avg_score Average score
+
+TEST PROCESS (3 parts)
+---------------------
+
+Part 1: IMPLEMENTATION as self-experience
+  - Run workflow with test data
+  - LLM perspective: “How was it for me?”
+  - Note problems, ambiguities, stumbling blocks
+
+Part 2: EVALUATION against criteria
+  - Check usecase requirements
+  - Compare defined criteria
+  - Compare result vs. expected output
+
+Part 3: GRADING and consequences
+  - Calculate score (0-100)
+  - Derive grade
+  - If there is an error: create a task for improvement
+
+CHECKLIST for new workflows
+------------------------------
+
+[ ] Does the workflow have at least 1 usecase?
+[ ] Are input and expected output defined?
+[ ] Does the workflow work without user data?
+[ ] Is the workflow idempotent (repeatable)?
+[ ] Are dependencies documented?
+[ ] Is there error handling?
+
+EXAMPLE USECASE
+----------------
+
+  Workflow: bugfix log
+
+  Test case: "Simple syntax error"
+  test_input: {
+    "bug_description": "SyntaxError in main.py line 42",
+    "file_path": "tests/sample_bug.py"
+  }
+  expected_output: {
+    "status": "fixed",
+    "changes_made": true,
+    "test_passed": true
+  }
+
+AUTOMATION
+---------------
+
+Daemon job (planned):
+  Name: tuev-check
+  Command: bach tuev run
+  Interval: 7d (weekly)
+
+If TUeV has expired:
+  -> Task "Renew Workflow X TUeV" created (priority based on score)
+
+SEE ALSO
+----------
+
+  --help workflows workflow system
+  --help usecase Usecase testing details
+  --help core core concept (agent/workflow/skills)
+  --help dev development workflow
+
+---
+Version: 1.1 | Created: 2026-01-30
+Status: Implemented (v1.1.83)
+Handler: system/hub/tuev.py (TuevHandler + UsecaseHandler)

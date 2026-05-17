@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MOUNT HANDLER
+-------------
+
+ワークスペース内のシンボリックリンク/ジャンクションとしての外部フォルダーの接続。管理について
+システムの再起動後も持続するデータベース接続テーブル。
+
+
+説明
+------------
+
+マウント ハンドラーには、user/ ディレクトリ (hub/user/) 内の外部フォルダーが含まれます。
+復元中に自動的に復元される Windows ジャンクションが使用されます。
+になる。すべてのマウントは data/bach.db でステータス is_active で管理されます。
+
+
+操作
+-----------
+
+追加: 外部フォルダーをアタッチします。
+  構文: bach mount add <パス> <エイリアス>
+  例: bach mount add C:\Data\Research Research
+  - 作成されたジャンクション: ハブ/ユーザー/リサーチ -> C:\Data\Research
+  - DB接続テーブルに保存(type='mount')
+  - 既存のマウントを同じエイリアスで上書きします
+
+REMOVE: 接続を削除します
+  構文: bach mount delete <エイリアス>
+  例: バック マウントの削除の研究
+  - ハブ/ユーザー/<エイリアス>からジャンクションを削除します
+  - DB 接続テーブルからエントリを削除しました
+  - ジャンクションが存在する必要があります。存在しない場合、エラーは無視されます
+
+リスト: アクティブなマウントを表示します (標準操作)
+  構文: bach マウント リスト
+  - DB からのすべてのマウントをステータス [OK]/[--] および [EXISTS]/[MISSING] で表示します。
+  - [OK] = is_active=1、[--] = is_active=0
+  - [EXISTS] = ジャンクション パスが存在します、[MISSING] = 存在しません
+
+RESTORE: DB からジャンクションを復元します
+  構文: バッチマウント復元
+  - アクティブなマウントのすべてのジャンクションを再作成します (移動後に失われた場合)
+  - 既存のジャンクションをスキップします
+  - ソース パスが存在しない場合はエラーを報告します
+
+
+例
+---------
+
+1。ファイル サーバーをプロジェクトに含めます:
+   bach mount add \\SERVER\shared projdata
+   -> Hub/user/projdata は \\SERVER\shared
+
+2 へのシンボリックリンクになります。複数のフォルダーを接続します:
+   bach mount add C:\Daten data
+   bach mount add D:\Archive archive
+   bach mount list
+
+3.システム移動後の復元:
+   bach mount restore
+   -> DB から再作成されたすべてのジャンクション (ソース パスがまだ利用可能な場合)
+
+4。操作前のドライラン:
+   bach mount --dry-run add C:\Quelle test
+   bach mount --dry-run remove test
+
+
+FILES
+-------
+
+影響を受けるファイル (system/ に関連):
+  Hub/mount.py - ハンドラーの実装
+  Hub/user/ - ジャンクションのディレクトリ
+  data/bach.db - 永続ストレージ (接続テーブル)
+  docs/help/mount.txt - このファイル
+
+
+関連項目
+----------
+
+  Hub/base.py - BaseHandler インターフェイス
+  data/ - 接続用のデータベース スキーマ
+  bach.py --help - BACH の一般的なヘルプ

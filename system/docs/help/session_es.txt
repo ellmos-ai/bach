@@ -1,0 +1,90 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MANEJADOR DE SESIÓN
+---------------
+
+NOMBRE DEL MANEJADOR
+------------
+
+session - Gestión de sesiones para BACH (SESSION_001-006)
+
+DESCRIPCIÓN
+------------
+
+El manejador de sesiones gestiona sesiones de trabajo con seguimiento del tiempo de ejecución,
+Gestión de tareas y pensamiento consciente del contexto. Integra inicio
+y procesos de parada, calcula el tiempo restante y avisa
+Fin de sesión. Admite comprobaciones entre tareas para optimizar
+Dependencias y bloqueo de tareas.
+
+OPERACIONES
+-----------
+
+start Iniciar sesión (delegada a StartupHandler)
+estado Muestra el estado de la sesión activa con elementos para reflexionar
+end Finalizar sesión (delegada a ShutdownHandler)
+Cálculo del tiempo de verificación: duración, finalización prevista, restante.
+next Siguiente tarea con comprobaciones entre tareas
+
+Opciones de comprobación:
+  --duration / -d Mostrar el tiempo restante
+  --set-duration=MIN Establecer la duración de la sesión en minutos
+
+EJEMPLOS
+---------
+
+Iniciar una nueva sesión:
+  bach session start
+
+Mostrar el estado con elementos para reflexionar:
+  bach session status
+
+Cálculo del tiempo (con advertencia al final de la sesión):
+  bach session check --duration
+
+Establecer la duración de la sesión en 180 minutos:
+  bach session check --set-duration=180
+
+Mostrar la siguiente tarea con comprobaciones intermedias:
+  bach session next
+
+Finalizar sesión:
+  bach session end
+
+ARCHIVOS
+-------
+
+data/bach.db Fuente de la base de datos (tablas:
+                                 sesiones_memoria, tareas, lecciones_memoria)
+
+data/user_config.json Configuración de sesión
+                                 (session_duration_minutos)
+
+hub/session.py Implementación del controlador
+
+CÓMO FUNCIONA
+--------------
+
+1. Seguimiento del tiempo de ejecución: calcula la duración desde start_at, advierte en
+   Exceder la duración planificada (por defecto 120 minutos).
+
+2. Para reflexionar (SESSION_003): Basado en el tiempo (almuerzo, después del trabajo),
+   Basado en tareas (antiguo, bloqueado, no completado) o general
+   (Documentación, revisiones, copias de seguridad).
+
+3. Comprobaciones entre tareas (SESSION_006):
+   - Detecta tareas bloqueadas con dependencias cumplidas.
+   - Recuerda las tareas en progreso
+   - Lección aprendida tras completar 5 tareas
+
+4. Recomendación de tarea por prioridad (P1 > P2 > P3) y edad
+
+VER TAMBIÉN
+----------
+
+hub/startup.py Controlador de inicio (inicialización de sesión)
+controlador de apagado hub/shutdown.py (terminación de sesión)
+controlador de tareas hub/task.py (administración de tareas)
+esquema de base de datos data/bach.db

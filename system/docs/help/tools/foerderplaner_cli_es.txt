@@ -1,0 +1,19 @@
+Herramienta BACH: foerderplaner_cli
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/foerderplaner_cli.py
+
+DESCRIPCIÓN
+----------------------------------------
+Foerderplaner CLI: herramienta de línea de comandos para la planificación de financiación
+Busca la estructura ICF, la base de conocimientos y sugiere métodos/materiales
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan foerderplaner_cli [args]
+o directamente: python tools/foerderplaner_cli.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tiene alguna pregunta: herramientas de bach muestra foerderplaner_cli

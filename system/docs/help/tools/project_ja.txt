@@ -1,0 +1,26 @@
+BACH ツール: プロジェクト
+------------------
+
+プロジェクト管理とコード生成。
+
+利用可能なツール
+-----------------
+
+  Audit_bundler プロジェクト監査をバンドルとしてエクスポート
+  License_generator ライセンス ファイルを生成する
+  pattern_tool コードパターン認識
+  project_bundler プロジェクトをパッケージとしてバンドルします
+  Structure_generator プロジェクト構造の作成
+
+USE
+----------
+
+  bach --tools project audit <pfad>      プロジェクトの監査
+  bach --tools project license <typ>     ライセンスの生成 (MIT、Apache など)
+  bach --tools project bundle <pfad>     プロジェクトのバンドル
+  bach --tools project structure <name>  新しいプロジェクト構造の作成
+
+MODULE
+-----
+
+  ツール/プロジェクト/ (5 ツール)

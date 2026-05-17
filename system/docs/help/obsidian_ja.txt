@@ -1,0 +1,79 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+------------
+obsidian - Obsidian Vault の同期
+
+説明
+------------
+Obsidian ハンドラーは、ローカルの Obsidian Vault を BACH データと同期します。
+3 つの同期カテゴリを管理します: 毎日のメモ、タスク
+(タスク管理) と Wiki (知識ベース)。すべてのデータは
+bach.db (テーブル: タスク、メモリワーキング、wiki_記事)。
+
+オペレーション
+-----------
+ステータス
+  同期ステータス（ボールトのパス、ディレクトリ構造、
+  毎日のメモ、BACH Wiki、タスク ファイル)。引数は必要ありません。
+
+同期
+  すべての同期を実行します: 今日のデイリーノート、現在のタスク、
+  ウィキの記事。引数は必要ありません。
+
+config [パス]
+  Obsidian Vault のパスを設定または表示します。引数 <path> を指定すると、
+  設定され、memory_facts に保存されたパス (category='system', key=
+  「obsidian_vault_path」)。引数を指定しないと、現在のパスが表示されます。
+
+毎日
+  今日のデイリーノート (YYYY-MM-DD.md) を作成または表示します。
+  「デイリーノート」ディレクトリ）。開いているタスクのカウンターと最後の 3 件が含まれます
+  memory_working.
+
+タスクからの作業メモ
+  アクティブなタスク (保留中、進行中) をタスク テーブルから同期します。
+  ファイル「BACH Tasks.md」にコピーします。優先度 (P1 ～ P3) と ID による並べ替え。
+
+wiki
+  wiki_articles からすべての記事を「BACH Wiki」ディレクトリにエクスポートします。
+  ファイル名はクリーンアップされます (英数字のみ、スペース、ハイフン、
+  アンダースコア);タイトルはタイトル フィールドまたはファイル名から取得されます。
+
+例
+---------
+Vault の設定:
+  bach obsidian config /path/to/My\ Vault
+
+ステータスの確認:
+  bach obsidian status
+
+すべての同期カテゴリの実行:
+  bach obsidian sync
+
+今日のデイリー ノートのみ作成:
+  bach obsidian daily
+
+タスクの更新:
+  bach obsidian tasks
+
+Wiki のエクスポート:
+  bach obsidian wiki
+
+FILES
+-------
+hub/obsidian.py ハンドラーの実装
+data/bach.db データベース (テーブル: タスク、memory_working、
+                                   wiki_articles、memory_facts)
+
+Obsidian Vault (構成時):
+  {vault}/Daily Notes/ Daily Notes のディレクトリ
+  {vault}/BACH Wiki/ Wiki 記事のディレクトリ
+  {vault}/BACH Tasks.md タスク同期ファイル
+
+関連項目
+----------
+base.py BaseHandler クラス
+BACH ドキュメント bach.db スキーマ、memory_facts 構造

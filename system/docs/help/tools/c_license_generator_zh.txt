@@ -1,0 +1,33 @@
+巴赫工具：c_license_generator
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/c_license_generator.py
+
+描述
+----------------------------------------
+c_license_generator.py - 第三方许可证生成器
+
+用途：生成所有已安装的 THIRD_PARTY_LICENSES.txt
+       pip 包许可证。使用 pip-licenses（如果需要则安装）。
+
+作者：Claude（改编自generate_third_party_licenses.py）
+依赖项：subprocess、os、json (stdlib) + pip-licenses（将自动安装）
+
+用法：
+    python c_license_generator.py [--output <file>] [--format plain|json|csv] [--json]
+
+示例：
+    python c_license_generator.py # 默认值：THIRD_PARTY_LICENSES.txt
+    python c_license_generator.py --output licenses.txt # 自己的文件名
+    python c_license_generator.py --format json # JSON 格式
+    python c_license_generator.py --json # 机器可读输出
+
+使用
+----------------------------------------
+python bach.py 工具运行 c_license_generator [args]
+或直接： python tools/c_license_generator.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示 c_license_generator

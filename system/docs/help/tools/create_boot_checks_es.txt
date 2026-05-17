@@ -1,0 +1,19 @@
+Herramienta BACH: create_boot_checks
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/create_boot_checks.py
+
+DESCRIPCIÓN
+----------------------------------------
+boot_checks Crear tabla: CRÍTICO para comprobaciones previas al aviso
+Creado: 2026-01-21 (Sesión BACH)
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan create_boot_checks [args]
+o directamente: python tools/create_boot_checks.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tiene alguna pregunta: las herramientas de bach muestran create_boot_checks

@@ -1,0 +1,21 @@
+BACH ツール: success_tracker
+--------------------------------------------------
+生成: 2026-01-23 10:36
+出典: tools/success_tracker.py
+
+説明
+----------------------------------------
+サクセス トラッカー - 基本実装
+RecludOS v3.1.1
+
+6 つのアクター カテゴリの成功指標を追跡します。
+
+使用
+----------------------------------------
+python bach.py ツールは success_tracker [args] を実行します
+または直接: python tools/success_tracker.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show success_tracker

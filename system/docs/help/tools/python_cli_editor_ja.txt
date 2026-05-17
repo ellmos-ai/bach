@@ -1,0 +1,81 @@
+BACH ツール: python_cli_editor
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/python_cli_editor.py
+
+説明
+----------------------------------------
+python_cli_editor.py - Python コード エディター CLI v2.0
+
+構造化された方法で Python ファイルを分析および編集します。
+クラス、メソッド、インポートを表示し、対象を絞った編集を可能にします。
+
+著者: BACH 寄稿者
+バージョン: 2.0.0
+日付: 2026-01-13
+
+------------------------------------------------------------
+新機能 v2.0:
+------------------------------------------------------------
+
+ライン番号:
+  --lines / --no-lines 行番号のオン/オフ (デフォルト: オン)
+
+挿入:
+  --add CODE コードを挿入します (ファイルからまたは直接)
+  --at-start ファイルの先頭 (インポート後)
+  --at-end ファイルの最後
+  --at-imports インポートセクション内
+  --in-class NAME クラス名内 (最後)
+  --before NAME 要素 NAME の前
+  --after NAME 要素 NAME の後
+  --at-line N N 行目
+
+削除:
+  --delete NAME クラス、メソッド、または関数を削除します
+
+行を編集:
+  --change-line N 行 N を編集します (対話式または --content を使用)
+  --content "CODE" --change-line
+
+SAVE の新しいコンテンツ:
+  --test オリジナルを変更せずにテスト ファイルを作成します
+  --save 自動バックアップを使用して直接保存します
+
+------------------------------------------------------------
+例:
+------------------------------------------------------------
+
+# 行番号付きの構造を表示します
+python python_cli_editor.py script.py --show-all --lines
+
+# 最後に新しい関数を挿入します
+python python_cli_editor.py script.py --add new_func.py --at-end --save
+
+# メソッドをクラスに挿入します
+python python_cli_editor.py script.py --add method.py --in-class MyClass --save
+
+# インポートを追加
+python python_cli_editor.py script.py --add "import os" --at-imports --save
+
+# クラスを削除
+python python_cli_editor.py script.py --delete MyClass --save
+
+# 行を変更
+python python_cli_editor.py script.py --change-line 42 --content "x = 100" --save
+
+# 要素の前後に挿入
+python python_cli_editor.py script.py --add helper.py --before MainClass --save
+python python_cli_editor.py script.py --add cleanup.py --after process_data --save
+
+------------------------------------------------------------
+
+USE
+----------------------------------------
+python bach.py ツールは python_cli_editor [args] を実行します
+または直接: python tools/python_cli_editor.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show python_cli_editor

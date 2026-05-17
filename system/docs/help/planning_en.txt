@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PLANNING PROCESS
+-----------------
+
+WHEN TO PLAN?
+  < 15 min Edit directly
+  15-30 min Optional structure
+  > 30 min MUST be structured
+
+CREATE PLANNING (MANUAL):
+
+  1. Create concept document in docs/ or docs/_ideas/
+  2. Structure (Recommended):
+     - Background (Why?)
+     - Goal (What should be achieved?)
+     - Technical analysis (components, files, dependencies)
+     - Implementation plan with task decomposition
+
+  3. Create tasks in the BACH database:
+     bach task add "Teil 1" --category development --priority P2
+     bach task add "Teil 2" --category development --priority P3
+
+  4. Set dependencies (if necessary):
+     bach task depends <id> --on <andere_id>
+
+TIME BUDGET RULES (recommendations):
+  Very rare: 1-2 min (rename constant)
+  Rare: 2-3 min (add import)
+  OFTEN: 3-6 min (implement function)
+  Sometimes: 8-11 min (More complex logic)
+  Rare: 12 Min (Major Refactoring)
+  NEVER: >15 min (technically not possible)
+
+TASK COMMANDS:
+  bach task add <titel>              Add task
+  bach task add <titel> --category development --priority P2
+  bach task list pending             Show open tasks
+  bach task depends <id>             Show dependencies
+  bach task depends <id> --on <id2>  Set dependency
+  bach task show <id>                Show task details
+  bach task done <id>                Mark task as completed
+
+  See also: bach task help
+
+WORKFLOW EXAMPLE:
+  1. Write the concept in docs/_ideas/my_feature.md
+  2. Create tasks:
+     bach task add "Schema erweitern" --category development --priority P2
+     bach task add "Handler implementieren" --category development --priority P2
+     bach task add "Tests schreiben" --category development --priority P3
+  3. Set dependencies:
+     bach task depends 302 --on 301  # Handler depends on schema
+     bach task depends 303 --on 302  # Tests depend on handler
+  4. Process step by step:
+     bach task done 301
+     bach task list pending  # 302 is no longer blocked

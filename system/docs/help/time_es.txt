@@ -1,0 +1,108 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MANEJADOR DE TIEMPO
+----------------------------------------------------------------------------
+
+DESCRIPCIÓN
+----------------------------------------------------------------------------
+
+El Manejador de Tiempo gestiona el sistema de gestión del tiempo en BACH. el ofrece
+Funcionalidades para visualización de tiempo, temporizadores, cuentas regresivas y basadas en tiempo.
+Gestión de perfiles (Entre). Todos los módulos utilizan el TimeManager central
+para operaciones coordinadas.
+
+Directorio base: datos/ (archivos de estado)
+Módulos: tools/time_system.py
+
+
+OPERACIONES
+----------------------------------------------------------------------------
+
+RELOJ
+-----
+  bach clock on              - Activar visualización de la hora
+  bach clock off             - Desactivar visualización de la hora
+  bach clock status          - Comprobar estado de la visualización de la hora
+  bach clock interval <sek>  - Establecer intervalo de visualización en segundos
+
+TIMER
+-----
+  bach timer start [name]    - Iniciar temporizador (predeterminado: "predeterminado")
+  bach timer stop [name]     - Detener temporizador
+  bach timer list            - Mostrar todos los temporizadores activos
+  bach timer clear           - Eliminar todos los temporizadores
+
+CUENTA ATRÁS
+---------
+  bach countdown start <name> <HH:MM:SS> [--after 'befehl']
+                             - Iniciar la cuenta regresiva con comando opcional
+                               (Forma corta: solo <HH:MM:SS> -> name="timer")
+  bach countdown stop <name> - Countdown abbrechen
+  bach countdown pause <name> - Countdown pausieren
+  bach countdown resume <name> - Countdown fortsetzen
+  bach countdown list        - Mostrar todas las cuentas atrás
+
+ENTRE
+-------
+  bach between on            - Activar entre comprobaciones
+  bach between off           - Desactivar entre comprobaciones
+  bach between status        - Mostrar estado
+  bach between use <name>    - Activar perfil
+  bach between profile list  - Listar perfiles
+  bach between profile show <name> - Profil Details anzeigen
+
+BEAT
+----
+  bach beat                  - Mostrar toda la información de tiempo
+  bach beat on               - Activar todas las visualizaciones de tiempo
+  bach beat off              - Desactivar todas las visualizaciones de tiempo
+  bach beat interval <sek>   - Conjunto global intervalo
+
+
+EJEMPLOS
+----------------------------------------------------------------------------
+
+# Iniciar medición del cronómetro y consulta después de 30 segundos
+bach timer start work
+# ... trabajo...
+bach timer stop work
+
+# Cuenta regresiva con alarma: descanso de 5 minutos
+bach countdown start pause 00:05:00 --after "echo Pause vorbei!"
+
+# Carga entre perfiles (por ejemplo, horario de oficina)
+bach between status
+bach between use office-hours
+
+# Verificar el estado de la hora global
+bach beat
+bach beat on           # Activar todos los módulos de tiempo
+bach beat interval 60  # Actualizar cada 60 segundos
+
+
+ARCHIVOS
+----------------------------------------------------------------------------
+
+Archivos de estado (relativos al sistema/):
+
+  data/.clock_state - Configuración de visualización de la hora
+  data/.timer_state - Gestión del estado del temporizador
+  data/.countdown_state - Gestión del estado de cuenta atrás
+  data/.between_state - Entre el administrador de perfiles
+
+Módulo:
+
+  hub/time.py - Implementación del controlador
+  herramientas/time_system.py - TimeManager, ClockModule, TimerModule,
+                           Módulo de cuenta regresiva, BetweenManager
+
+
+VER TAMBIÉN
+----------------------------------------------------------------------------
+
+  API del controlador base: docs/help/base.txt
+  Configuración: config/time_config.json
+  Especificación del sistema de tiempo: docs/TIME-SYSTEM.md
+  Gestión de perfiles: docs/BETWEEN-PROFILES.md

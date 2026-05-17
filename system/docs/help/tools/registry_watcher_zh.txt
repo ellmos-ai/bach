@@ -1,0 +1,36 @@
+巴赫工具：registry_watcher
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/registry_watcher.py
+
+描述
+----------------------------------------
+BACH注册表观察器v1.0.0
+
+所有系统注册表的自动监控和一致性检查。
+移植自RecludOS，集成BACH数据库系统。
+
+特点：
+- 存在性检查：注册条目与文件系统
+- 语法验证：JSON 文件
+- 交叉引用：数据库条目与文件
+- 生成健康报告
+- 问题通知
+
+用法：
+  pythonregistry_watcher.py check # 检查所有注册表
+  pythonregistry_watcher.pyreport # 创建健康报告
+  pythonregistry_watcher.pytools # 仅检查工具
+  pythonregistry_watcher.py Skills # 仅检查技能
+  pythonregistry_watcher.pyagents # 只检查代理
+  pythonregistry_watcher.py --fix # 自动（安全）修复问题
+
+使用
+----------------------------------------
+python bach.py 工具运行registry_watcher [args]
+或直接： python tools/registry_watcher.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：巴赫工具显示registry_watcher

@@ -1,0 +1,62 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+------------
+smarthome - スマート ホーム統合 (FritzBox TR-064)
+
+
+説明
+------------
+FritzBox から接続およびデバイス情報を提供します。
+HTTP 経由の安全な UPnP 通信には TR-064 SOAP API を使用します
+フリッツボックス：49000。認証や外部依存関係は必要ありません。
+
+
+OPERATIONS
+-----------
+status 接続ステータス、稼働時間、外部 IP およびデバイス数を表示します。
+デバイス 接続されているすべてのデバイスを IP、MAC、ステータス (オンライン/オフライン) とともにリストします。
+Wi-Fi WLAN 情報: SSID、ステータス、チャネル
+帯域幅 最大ダウンロードおよびアップロード速度 (Mbps)
+reconnect インターネットへの強制再接続 (ドライランをサポート)
+info FritzBox 情報: モデル、ファームウェア、シリアル番号、稼働時間
+ヘルプ このヘルプを表示
+
+
+例
+---------
+bach smarthome status
+  -> 接続ステータスとデバイス数を表示
+
+bach smarthome devices
+  -> IP、MAC、オンラインステータスを含むすべての接続デバイス
+  -> 制限: 最大。取得ごとに 30 デバイス
+
+bach smarthome wifi
+  -> WLAN SSID、アクティビティ ステータス、チャネル
+
+bach smarthome bandwidth
+  -> ダウンロードとアップロードの最大値 (Mbit/s)
+
+bach smarthome reconnect
+  -> インターネット接続を切断して再接続します
+  -> 新しい IP は 10 秒以内に利用可能になります
+  -> --dry-run あり: 実行なしのシミュレーション
+
+bach smarthome info
+  -> デバイスの詳細 (モデル、ファームウェア バージョン、シリアル)
+
+
+ファイル
+-------
+hub/smarthome.py ハンドラーの実装 (SmartHomeHandler クラス)
+data/bach.db プロファイル「smarthome」のターゲット データベース
+
+
+関連項目
+----------
+hub/base.py BaseHandler 基本クラス
+FritzBox ドキュメント: https://avm.de (TR-064 SOAP API)
+アクセシビリティ: fritz.box はローカル ネットワークで解決される必要があります

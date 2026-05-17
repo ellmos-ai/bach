@@ -1,0 +1,62 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH RESTORE - TEMPLATE RESTORE
+------------------------------------------
+
+TEMPLATE ファイル (dist_type=1) および CORE ファイル (dist_type=2) を復元します
+配布マニフェストから。
+
+
+使用
+----------
+
+  # 単一ファイルを復元します
+  bach restore <datei-pfad>
+
+  # すべての TEMPLATE ファイルを回復します
+  bach restore --all
+
+  # CORE ファイルを回復します (警告あり)
+  bach restore --core
+
+  # ドライラン (表示のみ、実行ではない)
+  bach restore --dry-run <datei-pfad>
+
+
+DIST_TYPE SYSTEM
+----------------
+
+  0 = USER_DATA 個人ファイル、回復不可
+  1 = TEMPLATE カスタマイズ可能なシステム テンプレート、復元可能
+  2 = CORE システム コア、回復可能 (警告あり)
+
+
+重要
+-------
+
+- USER_DATA (dist_type=0) は決して上書きされません
+- CORE-Restore では変更が失われるため警告が表示されます
+- コアを復元する前にバックアップをお勧めします
+
+
+例
+---------
+
+  # SKILL.md を復元 (テンプレート)
+  bach restore SKILL.md
+
+  # すべてのコネクタ テンプレートを復元します
+  bach restore system/connectors/templates/
+
+  # どのファイルが復元されるかを確認します
+  bach restore --dry-run --all
+
+
+関連項目
+----------
+
+  bach --help upgrade       新しい BACH バージョンにアップグレード
+  bach --help downgrade     古いバージョンにダウングレード
+  bach --help seal          整合性チェック

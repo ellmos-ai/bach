@@ -1,0 +1,63 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [tabla session_snapshots, hub/snapshot.py]
+
+BACH SNAPSHOT SYSTEM
+--------------------
+
+Estado: 2026-02-08
+
+Las instantáneas de sesión garantizan el "estado mental" exacto de una sesión de IA.
+Esto permite cargar un contexto en una nueva instancia o
+reanudar después de un bloqueo/apagado.
+
+COMANDOS
+-------
+  bach --snapshot create [name]  Guardar el estado actual.
+  bach --snapshot list           Instantáneas disponibles (automáticas y manuales).
+  bach --snapshot load [ID]      Restaura la memoria de trabajo y las tareas.
+  bach --snapshot delete <ID>    Elimina instantáneas antiguas.
+
+CONCEPTO: EL ÁRBOL DE ESTADOS
+-----------------------
+Una instantánea en BACH consta de los siguientes componentes:
+1. ID DE SESIÓN: contexto de la sesión actual
+2. TAREAS ABIERTAS: Qué tareas estaban activas/abiertas (hasta 10)
+3. MEMORIA RECIENTE: Últimas entradas de la memoria de trabajo (últimas 5)
+4. METADATOS DE INSTANTÁNEA: Marca de tiempo, Tipo (automático/manual), Nombre
+
+DIFERENCIA CON OTROS SISTEMAS
+-------------------------------
+- MEMORIA: Conocimiento importante (a largo plazo).
+- REGISTROS: Qué se hizo (histórico).
+- INSTANTÁNEA: Dónde estamos ahora (operativo).
+
+AUTOMÁTICO
+---------
+Las instantáneas se pueden crear de forma automática o manual. El tipo de instantánea
+diferencia entre 'manual' (a través de --snapshot create) y 'automático' (potencialmente
+mediante --shutdown). La implementación admite ambos tipos.
+
+DATABASE
+---------
+Tabla: `session_snapshots` (system/db/schema.sql, líneas 226-239)
+Campos:
+  - id, id_sesión, tipo_instantánea, nombre
+  - snapshot_data (JSON: contiene tareas_abiertas, memoria_reciente, creado_at)
+  - memoria_de_trabajo, tareas_abiertas, archivos_activos (campos JSON separados, opcionales)
+  - token_usage, context_hash, notas
+  - create_at (Marca de tiempo)
+
+EJEMPLOS
+---------
+  bach --snapshot create "Vor Grossumbau"  # Copia de seguridad manual
+  bach --snapshot list                     # Verificar estado
+  bach --snapshot load 42                  # Restaurar ID 42
+  bach --snapshot delete 42                # Eliminar instantánea 42
+
+VER TAMBIÉN
+----------
+  docs/help/memory.txt Consolidación de memoria
+  docs/help/maintain.txt Comprobación de integridad
+  bach --help startup  Inicio de sesión

@@ -1,0 +1,55 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Estado: NO IMPLEMENTADO - Ver Alternativas
+
+COMPROBACIONES DEL SISTEMA
+-------------
+
+NOTA: El comando --selfcheck planificado no se ha implementado.
+La funcionalidad se DISTRIBUYE entre los controladores existentes.
+
+ALTERNATIVAS PARA VERIFICACIONES DEL SISTEMA:
+
+1. COMPROBACIONES DE ARRANQUE (automáticas)
+   bach startup run
+
+   Ejecuta:
+   - Exploración de directorios (archivos nuevos/modificados)
+   - Path Healer Check (problemas de ruta)
+   - Vigilante del registro (consistencia DB/JSON)
+   - Monitor de salud de habilidades (validación de habilidades/agente)
+   - Limpiador NUL (archivos NUL de Windows)
+   - Problemas primero (análisis de errores de 24 horas)
+
+2. HERRAMIENTAS DE MANTENIMIENTO
+   bach maintain list
+
+   Cheques disponibles:
+   - mantener la curación - corrección de ruta
+   - mantener el registro - coherencia de la base de datos
+   - mantener habilidades - salud de habilidades
+   - mantener json - reparación JSON
+   - mantener nulo - eliminar archivos NUL
+
+3. CALIDAD DEL FLUJO DE TRABAJO
+   bach tuev run
+
+   Comprueba la estructura y coherencia de los flujos de trabajo
+
+4. ESTADO DE COPIA DE SEGURIDAD
+   bach backup status
+
+   Muestra las últimas copias de seguridad y su antigüedad
+
+COMPROBACIÓN PERIÓDICA:
+  Las comprobaciones automáticas se ejecutan con CADA “ejecución de inicio de bach”.
+  No es necesario un intervalo separado de 30 días.
+
+LOGS:
+  Registros de inicio: sistema/datos/registros/
+  Mantener registros: salida a la consola
+
+RECOMENDACIÓN:
+  Al inicio de la sesión: ejecución de inicio de bach
+  En caso de problemas: mantener bach [funcionamiento]

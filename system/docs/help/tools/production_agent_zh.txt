@@ -1,0 +1,27 @@
+巴赫工具：生产代理
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/production_agent.py
+
+描述
+----------------------------------------
+Production Agent v1.0.0
+
+内容制作：音乐、播客、视频、文本、故事、公关。
+集成外部AI工具和RecludOS服务。
+
+用法：
+  python production_agent.py 列表
+  python Production_agent.py music --prompt“爵士乐器”
+  python Production_agent.py video --提示“海浪”
+  python production_agent.py 推荐 <category>
+
+USE
+----------------------------------------
+python bach.py 工具运行 production_agent [args]
+或直接： python tools/product_agent.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示 production_agent

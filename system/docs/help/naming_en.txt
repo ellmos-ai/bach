@@ -1,0 +1,132 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [tools/_policies/CONCEPT_naming_convention.md]
+
+NAMMING CONVENTIONS
+------------------
+
+As of: 2026-02-08
+
+TIMESTAMP FORMATS
+-------------------
+  Session ID: YYYYMMDD_HHMM (20260111_0315)
+  Chat ID: msg_YYYYMMDD_HHMMSS (msg_20260111_031504)
+  Document: DD.MM.YYYY (01/11/2026)
+  JSON fields: ISO 8601 (2026-01-11T03:15:04)
+
+FILES
+-------
+  Report: Report_YYYYMMDD_HHMM.md
+  Forensics: REPORT_YYYY-MM-DD_Thema.md
+  Concept: CONCEPT_Name.md or CONCEPT_Name.md
+  Analysis: ANALYSIS_Name.md
+  Research: RECHERCHE_Name.md
+  Schema: *_schema.md
+  Template: TEMPLATE_Name.md
+
+TOOL-PRAEFIXES (tools/*.py)
+--------------------------
+Prefixes identify the type and purpose of a tool.
+
+  PRAEFIX MEANING EXAMPLES
+  ------- ---------------------- ------------------------
+  c_ CLI optimized for AI c_encoding_fixer.py
+            (Claude/recludOS) c_json_repair.py
+            - Clear, parsable outputs
+            - Encoding-safe (UTF-8)
+
+  m_ Maintain m_migrate_triggers.py
+            - Cleanup tools m_cleanup_logs.py
+            - Migration scripts
+
+  b_ BACH core (system) backup_manager.py
+            - Used by bach.py bach_auto_discovery.py
+            - Critical functions
+
+  check_ validators check_my_tasks.py
+            - One-off tests
+
+  fix_ Quick Fixes fix_injectors.py
+            - Fixes specific bugs
+
+SKILL-SPECIFIC TOOLS (NEW)
+-----------------------------
+Tools that are only relevant for a skill:
+
+  Naming convention: <skill>_<function>.py
+
+  Examples:
+    tax_scanner.py # Tax Expert specific
+    tax_sync.py # Tax expert specific
+    task_scanner.py # ATI agent specific (in agents/ati/scanner/)
+
+  Location:
+    - General: tools/c_ocr_engine.py
+    - Specific: agents/_experts/steuer/steuer_scanner.py
+    - Agent tool: agents/ati/scanner/task_scanner.py
+
+  RULE: When in doubt, double up!
+  Skill-specific tools MUST be included in the export.
+
+PYTHON-TOOL-HEADER (NEW - mandatory)
+----------------------------------
+Every tool needs a standard header:
+
+  """
+  Tool: tool_name
+  Version: X.Y.Z
+  Author: [author]
+  Created: YYYY-MM-DD
+  Updated: YYYY-MM-DD
+  Anthropic-Compatible: True
+
+  VERSION NOTE: Check for newer versions
+
+  Description:
+      What the tool does.
+  """
+
+  __version__ = "X.Y.Z"
+  __author__ = "[author]"
+
+Template: system/skills/_templates/TEMPLATE_TOOL.py
+
+SKILL FOLDER NAMES
+------------------
+  Format: lowercase-with-hyphen
+
+  Examples:
+    agents/developers/
+    agents/personal-assistant/
+    agents/_experts/tax/
+    agents/_experts/foerderplaner/
+
+SKILL FILES
+-------------
+  SKILL.md main definition (mandatory)
+  config.json configuration (optional)
+  README.md Only for navigation (not for concepts!)
+
+TASK-IDS & PROJECTS
+-------------------
+  IDs: Numeric (1, 2, 712) - Automatically assigned.
+  Labels/Pfx: Groups used for the description:
+               SYS_ system core
+               WF_ Workflow development
+               GUI_ Frontend Themes
+               FIN_ Finance module
+               HEALTH_ Forensics & Maintenance
+               SKILL_ Skill Architecture (NEW)
+               LANG_ Internationalization
+
+BANNED
+--------
+  Filename: / \ : * ? " < > | Umlauts
+
+SEE ALSO
+----------
+  bach --help tools            Tool management and execution
+  bach --help skills           Skill system
+ system/tools/_policies/ Policy validators
+  system/skills/_templates/ Default templates

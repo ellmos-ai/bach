@@ -1,0 +1,18 @@
+BACH Tool: ollama_benchmark
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/ollama_benchmark.py
+
+DESCRIPTION
+----------------------------------------
+Ollama Benchmark Analysis & Visualization
+
+USE
+----------------------------------------
+python bach.py tools run ollama_benchmark [args]
+or directly: python tools/ollama_benchmark.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show ollama_benchmark

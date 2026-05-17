@@ -124,7 +124,7 @@ def generate_licenses(
             cmd.append("--format=plain")
         
         # Lizenzen generieren
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', check=True)
         
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(proc.stdout)

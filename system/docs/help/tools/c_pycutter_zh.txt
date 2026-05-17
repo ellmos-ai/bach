@@ -1,0 +1,33 @@
+巴赫工具：c_pycutter
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/c_pycutter.py
+
+描述
+----------------------------------------
+c_pycutter.py - Python 类提取器
+
+用途：将 Python 文件分解为每个类的单独文本文件，
+       加上一个用于导入、函数和全局代码的辅助函数functions.txt。
+       非常适合代码审查、文档或 LLM 上下文管理。
+
+作者：Claude（改编自 pyCuttertxt.py）
+依赖项：ast、os、datetime (stdlib)
+
+用法：
+    python c_pycutter.py <python_file> [--output-dir <dir>] [--json]
+
+示例：
+    python c_pycutter.py main.py # 在当前目录下输出
+    python c_pycutter.py main.py --output-dir ./out # 输出到./out
+    python c_pycutter.py main.py --json # JSON 输出以供进一步处理
+
+USE
+----------------------------------------
+python bach.py 工具运行 c_pycutter [args]
+或直接： python tools/c_pycutter.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示 c_pycutter

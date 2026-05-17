@@ -1,0 +1,93 @@
+ANALYSIS TOOLS - Analysis tools
+-----------------------------------
+
+OVERVIEW
+The analysis tools in BACH help with data analysis,
+Code inspection and system monitoring.
+
+DATA ANALYSIS (bach data)
+-------------------------
+Path: hub/data_analysis.py
+Status: Implemented (v1.1.25)
+
+Commands:
+  bach data load <pfad>         Load file and show info
+  bach data describe <pfad>     Descriptive statistics (mean, std, min, max)
+  bach data head <pfad> [--rows N]  First N lines (default: 10)
+  bach data corr <pfad>         Correlation matrix of numeric columns
+  bach data chart <pfad> <typ>  Create chart (bar, line, pie, scatter, hist)
+  bach data list                Show files in input/ folder
+
+Supported formats:
+  - CSV (automatic separator recognition)
+  - Excel (.xlsx, .xls)
+  - JSON
+
+Directories:
+  user/data-analysis/input/ input files
+  user/data-analysis/output/ result files
+  user/data-analysis/charts/ Generated charts
+
+CODE ANALYSIS
+------------
+
+code_analyzer.py
+  Analyzes Python code for quality and structure.
+  Call: python tools/code_analyzer.py <file>
+
+c_method_analyzer.py
+  Analyzes methods and functions in Python files.
+  Finds long methods, complex functions.
+  Call: python tools/c_method_analyzer.py <file>
+
+STATISTICS & REPORTS
+-------------------
+
+task_statistics.py
+  Creates statistics about tasks (done vs pending, priorities).
+  Call: python tools/task_statistics.py
+
+reports.py
+  Generates various system reports.
+  Call: python tools/reports.py
+
+generate_skills_report.py
+  Creates skill coverage report.
+  Call: python tools/generate_skills_report.py
+
+SCANNER
+-------
+
+dirscan.py
+  Scans directories for changes.
+  Integrated into --startup.
+  Call: python tools/dirscan.py <path>
+
+tool_scanner.py
+  Finds and registers tools in the system.
+  Call: python tools/tool_scanner.py
+
+duplicate_detector.py
+  Finds duplicate files by hash.
+  Call: python tools/duplicate_detector.py <path>
+
+SYSTEM INSPECTION
+-----------------
+
+c_sqlite_viewer.py
+  Inspects SQLite databases (bach.db, bach.db).
+  Call: python tools/c_sqlite_viewer.py <db>
+
+inspect_db_tables.py
+  Shows table schema and statistics.
+  Call: python tools/inspect_db_tables.py
+
+dump_schema.py
+  Exports DB schema as SQL.
+  Call: python tools/dump_schema.py
+
+SEE ALSO
+----------
+bach --help data          Data Analysis Help
+bach --help tools         Tool overview
+bach --help maintain      Maintenance tools

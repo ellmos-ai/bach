@@ -1,0 +1,56 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+------------
+tokens - Token Consumption and Cost Tracking
+
+
+DESCRIPTION
+------------
+The tokens handler records and analyzes the consumption of LLM tokens
+(Input/Output) as well as the costs incurred in EUR. Data is taken from the
+monitor_tokens table queried in bach.db. Supports time windows of
+today, last 7 days and 30 days.
+
+
+OPERATIONS
+-----------
+Available with: bach --tokens <operation>
+
+status (default) Summary: Today / Week / Month
+today Detailed: last 20 entries of today
+week Grouped by day: last 7 days with cost totals
+report Report by model + current prices (30 days)
+
+
+EXAMPLES
+---------
+Check current status:
+  bach --tokens status
+  bach --tokens
+
+View costs today:
+  bach --tokens today
+
+Analyze weekly consumption:
+  bach --tokens week
+
+Detailed report:
+  bach --tokens report
+
+
+FILES
+-------
+Source code: hub/tokens.py
+Base handler: hub/base.py
+Database: data/bach.db (monitor_tokens table)
+Pricing table: data/bach.db (monitor_pricing table)
+
+
+SEE ALSO
+----------
+bach_api Programmatic access to handlers
+monitor-db database commands and schema
+base.py handler interface and error handling

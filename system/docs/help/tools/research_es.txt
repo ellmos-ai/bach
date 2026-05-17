@@ -1,0 +1,147 @@
+HERRAMIENTAS DE INVESTIGACIÓN - Investigación científica
+--------------------------------------------
+
+A partir de: 2026-01-23
+Ruta: docs/help/tools/research.txt
+
+DESCRIPCIÓN
+------------
+Agente de investigación para la investigación de literatura científica.
+Integra varias herramientas de investigación externas y
+estructura el proceso de revisión.
+
+Ruta: tools/research_agent.py
+
+HERRAMIENTAS EXTERNAS DISPONIBLES
+-------------------------
+El Agente de Investigación recomienda y vincula:
+
+  Literatura biomédica de PubMed (NIH)
+  Perplejidad investigación impulsada por IA con fuentes
+  Búsqueda de evidencia científica por consenso
+  NotebookLM Herramienta de análisis/agrupación de Google
+  Obtener asistente de investigación de IA
+  Análisis de citas de scite con contexto
+
+USE
+----------
+
+comandos CLI:
+  python research_agent.py buscar "consulta"
+  revisión de python research_agent.py --tema "tema" --años 5
+  python research_agent.py estado
+
+Ejemplos:
+  python research_agent.py busca "terapia génica CRISPR"
+  revisión de python research_agent.py --tema "Biomarcadores de depresión" --años 3
+  python research_agent.py status
+
+COMANDO DE BÚSQUEDA
+-------------
+Realiza investigaciones y recomienda herramientas apropiadas.
+
+  python research_agent.py buscar "cáncer de mama con mutación BRCA1"
+
+Salida:
+  - Herramientas recomendadas basadas en palabras clave.
+  - URL directas a los portales de búsqueda.
+  - Se guarda el historial
+
+Detección de palabras clave:
+  - genes, proteínas, enfermedades, clínicas -> PubMed
+  - estudio, evidencia, investigación -> consenso
+  - General -> Perplejidad
+
+COMANDO DE REVISIÓN
+-------------
+Crea un plan estructurado de revisión de literatura.
+
+  revisión de python research_agent.py --tema "Depresión versus fatiga" --años 5
+
+Plan de 5 fases:
+  1. Descripción general (5 min): perplejidad por el contexto
+  2. Búsqueda sistemática - PubMed + Consenso (15 min)
+  3. Proyección (10 min) - NotebookLM para clustering
+  4. Análisis de texto completo - Claude/Gemini (20 min)
+  5. Síntesis (10 min) - Resumen + Gaps
+
+Directorio de salida:
+  user/services_output/research/
+
+COMANDO DE ESTADO
+-------------
+Muestra el estado y el historial del agente.
+
+  Estado de python research_agent.py
+
+Salida:
+  - versión
+  - Número total de búsquedas
+  - Búsqueda final
+  - Herramientas disponibles
+
+INTEGRACIÓN DE PYTHON
+------------------
+from tools.research_agent import ResearchAgent
+
+agent = ResearchAgent()
+
+# Iniciar búsqueda
+resultado = agente.búsqueda("Biomarcadores de Alzheimer")
+para rec en resultado["recomendaciones"]:
+    print(f"{rec['tool']}: {rec['url']}")
+
+# Crear plan de revisión
+plan = agent.create_review_plan("Depresión", años=3)
+
+# Obtener estado
+status = agent.get_status()
+
+EJEMPLO DE FLUJO DE TRABAJO
+-----------------
+Flujo de trabajo de investigación típico:
+
+1. DEFINIR TEMA
+   python research_agent.py buscar "diferenciación de fatiga por depresión"
+
+2. CREAR PLAN DE REVISIÓN
+   revisión de python research_agent.py --tema "Depresión versus fatiga" --años 5
+
+3. USAR HERRAMIENTAS (manualmente)
+   - PubMed: búsqueda sistemática
+   - Consenso: Evaluación de la evidencia
+   - NotebookLM: PDF de clústeres
+
+4. GUARDAR RESULTADOS
+   Salida en: usuario/salida_servicios/research/
+
+CACHE E HISTORIAL
+------------------
+Las consultas de búsqueda se guardan:
+  tools/cache/search_history.json
+
+Se conservan las últimas 100 búsquedas.
+
+INTEGRACIÓN CON BACH
+--------------------
+El agente de investigación es parte del ecosistema BACH:
+
+  bach tool suggest research     # Información de la herramienta
+  bach --help tools/research     # Esta ayuda
+
+Planes futuros:
+  bach research "query"          # Acceso CLI directo
+  bach research plan "topic"     # Plan de revisión
+
+VER TAMBIÉN
+----------
+  wiki/ai_portable.txt Tubería RAG portátil AI
+  docs/help/tools/partner.txt Herramientas de socios (integración de Perplexity)
+  docs/help/delegate.txt Delegación a socios de investigación
+
+  PubMed: https://pubmed.ncbi.nlm.nih.gov/
+  Perplejidad: https://www.perplexity.ai/
+  Consenso: https://consensus.app/
+
+VERSIÓN: v1.0.0 (2026-01-23)
+Líneas: ~205 (research_agent.py)

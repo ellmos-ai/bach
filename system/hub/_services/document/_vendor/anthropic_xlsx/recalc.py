@@ -113,7 +113,7 @@ def recalc(filename, timeout=30):
     elif platform.system() == "Darwin" and has_gtimeout():
         cmd = ["gtimeout", str(timeout)] + cmd
 
-    result = subprocess.run(cmd, capture_output=True, text=True, env=get_soffice_env())
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', env=get_soffice_env())
 
     if result.returncode != 0 and result.returncode != 124:  
         error_msg = result.stderr or "Unknown error during recalculation"

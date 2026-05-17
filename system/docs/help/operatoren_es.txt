@@ -1,0 +1,401 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+TAXONOMÍA DE OPERADORES
+--------------------
+Clasificación completa de operadores de procesamiento de datos
+para observadores, cadenas de herramientas, inyectores y automatización.
+
+Referencia: Análisis de sistemas de aprendizaje (user/_archive/ANALYSE_Lernsysteme_BACH_vs_recludOS.md)
+
+
+1. OPERADORES DE DETECCIÓN ("Sentidos")
+-----------------------------------
+Cómo percibe el sistema los cambios en el entorno.
+
+1.1 Sondeo (consulta periódica)
+------------------------------------
+Comprobación periódica de un estado.
+  - Comparar el contenido del directorio en t0 y t1
+  - Encuesta API cada 5 minutos
+  - Trabajos cron para métricas del sistema.
+BACH: TimeInjector, comprobaciones de demonios, escaneo de inicio de sesión
+
+1.2 Basado en eventos (basado en push)
+-------------------------------
+Reacción a eventos externos.
+  - Eventos del sistema de archivos (inotificar)
+  - Webhooks (GitHub, Stripe)
+  - Colas de mensajes (Kafka, RabbitMQ)
+BACH: Aún no implementado. Eventos de la cadena de herramientas como primer paso.
+
+1.3 Diferenciación de instantáneas
+--------------------
+Comparar dos estados y extraer desviaciones.
+  - Comparar hashes de archivos
+  - Instantánea de la base de datos versus datos en vivo
+  - Detectar deriva de configuración
+BACH: RAG tools/rag/ingest.py (Detección de cambios MD5), DirScan
+
+
+2. OPERADORES DE ANÁLISIS
+---------------------
+Cómo el sistema entiende y clasifica los datos.
+
+2.1 Comparar
+---------------
+Comparar dos o más valores.
+  - Comparación de hash
+  - Campo A == Campo B
+  - Marca de tiempo t0 < t1
+
+2.2 Medición
+----------
+Determinar propiedades cuantitativas.
+  - Tamaño del archivo
+  - Latencia
+  - uso de CPU
+  - Número de nuevos conjuntos de datos
+
+2.3 Filtrado
+-----------
+Reducir datos mediante reglas.
+  - Sólo archivos > 10 MB
+  - Sólo correos electrónicos con asunto “Factura”
+  - Solo respuestas API con estado 200
+
+2.4 Clasificar
+------------------
+Clasificar datos en categorías.
+  - Spam versus no spam
+  - Reconocer el tipo de documento (factura, contrato, recordatorio)
+  - Nivel de registro (INFO, ADVERTENCIA, ERROR)
+BACH: Categorización OCR (Office Lens), tipos de habilidades
+
+2.5 Agrupación
+--------------
+Resumir datos por características.
+  - Registros de grupo por servicio.
+  - Facturas grupales por mes.
+  - Agrupar archivos por tipo de archivo
+
+2.6 Agregar
+---------------
+Combinar o condensar grupos.
+  - Total de todos los importes de la factura.
+  - Carga promedio de CPU
+  - Número de archivos por carpeta
+
+2.7 Correlacionar
+---------------
+Detectar relaciones entre puntos de datos.
+  - Vincular eventos de registro con ID de solicitud
+  - Valor del sensor + marca de tiempo + ubicación
+  - Error + carga anterior del sistema
+BACH: Memoria asociativa (memory_associations)
+
+2.8 Validar
+--------------
+Comprobar si los datos cumplen las reglas.
+  - Validación del esquema JSON
+  - cheque IBAN
+  - ¿Campos obligatorios disponibles?
+
+2.9 Normalizar
+-----------------
+Traer los datos a un formato uniforme.
+  - Unificar formatos de fecha
+  - Coincidencia de mayúsculas/minúsculas
+  - Conversión de moneda
+
+
+3. OPERADORES DE TRANSFORMACIÓN
+-----------------------------
+Cómo el sistema transforma los datos.
+
+3.1 Extraer
+---------------
+Extraer información de los datos sin procesar.
+  - OCR desde PDF
+  - Regex del texto
+  - Campos JSON de la respuesta API
+BACH: canalización de OCR, fragmentación de RAG
+
+3.2 Transformar
+------------------
+Transformar datos a una forma diferente.
+  -CSV->JSON
+  - Texto -> Fichas
+  - Imagen -> Miniatura
+
+3.3 Enriquecimiento
+----------------------------
+Complementar datos con información adicional.
+  - Búsqueda geográfica (IP -> País)
+  - Agregar datos de clientes desde CRM
+  - Agregar clasificación basada en IA
+BACH: Búsqueda RAG (enriquecimiento semántico)
+
+3.4 Fusionar/Unir
+---------------------------------
+Combinar múltiples fuentes de datos.
+  - Conectar tablas usando claves.
+  - Fusionar registros de múltiples servicios
+  - Coincidir correo electrónico + entrada de CRM
+
+
+4. OPERADORES RELACIONADOS CON EL TIEMPO
+--------------------------
+
+4.1 Secuenciación
+----------------
+Crear o analizar secuencias.
+  - Ordenar por marca de tiempo
+  - Ejecutar los pasos del flujo de trabajo uno tras otro.
+  - Reconstruir secuencias de eventos.
+BACH: motor de cadena de herramientas (hub/chain.py), orden de sesión
+
+4.2 Ventanas
+---------------------------
+Dividir datos en ventanas de tiempo.
+  - promedio de 5 minutos
+  - Ventana móvil para valores de sensores.
+  - Ventana deslizante para análisis de registros
+
+
+5. OPERADORES DE CONTROL
+----------------------
+
+5.1 Antirrebote
+--------------
+Combine múltiples eventos rápidos en uno.
+  - Paquete de cambios de archivos.
+  - Reducir los eventos de la interfaz de usuario
+  - Acelerar las solicitudes de API
+
+5.2 Limitación de velocidad
+-----------------
+Limita la frecuencia con la que algo puede suceder.
+  - Máx. 10 llamadas API por minuto
+  - Acelerar las notificaciones por correo electrónico
+BACH: Zonas de presupuesto de tokens (concepto de recludOS)
+
+5.3 Estrategias de reintento
+--------------------
+Lógica de reintento en caso de errores.
+  - Retroceso exponencial
+  - Intervalos de reintento fijos
+  - Reintentar hasta que se agote el tiempo
+
+
+6. OPERADORES DE MEMORIA Y ESTADO
+-------------------------------------
+
+6.1 Procesamiento con estado
+------------------------
+Se guardan los valores anteriores.
+  - Recuerda el último hash
+  - Guardar el último estado de API
+  - Ventana corredera con estado.
+BACH: Sistema de memoria (las 5 capas), estado de sesión
+
+6.2 Procesamiento sin estado
+-------------------------
+Cada procesamiento es independiente.
+  - Calcular el hash de un archivo.
+  - Validar JSON
+  - Coincidencia de expresiones regulares
+
+
+7. META-OPERADORES (abstracción superior)
+-----------------------------------------
+
+7.1 Orquestar
+-----------------
+Conecte múltiples operadores en un flujo de trabajo.
+  - tuberías n8n
+  - DAG de flujo de aire
+  - Kubernetes CronJobs + Trabajadores
+BACH: motor de cadena de herramientas (hub/chain.py), flujos de trabajo (skills/workflows/), ciclo de desarrollo
+
+7.2 Optimizar
+--------------
+Hacer que el procesamiento de datos sea más eficiente.
+  - Almacenamiento en caché
+  - Paralelización
+  - Indexación
+
+7.3 Observabilidad
+-------------------------------
+Registrar e interpretar estados del sistema.
+  - Registro
+  - Métricas
+  -Rastreo
+BACH: registro de sesiones, estadísticas de tareas, estado del demonio
+
+
+8. PATRONES DE OPERADOR (combinaciones)
+-------------------------------------
+Combinaciones típicas de operadores para tareas recurrentes.
+
+8.1 Patrón de puntuación y clasificación (#9)
+-----------------------------------
+Propósito: evaluar y ordenar elementos.
+Operadores: medir, evaluar, agregar, clasificar.
+  - Ordenar correos electrónicos por relevancia
+  - Clasificar documentos según el "cálculo de probabilidad"
+
+8.2 Patrón de canalización de clasificación (#10)
+------------------------------------------
+Propósito: Dividir datos en clases.
+Operadores: Extraer, Normalizar, Clasificar, Validar.
+  - Tipo de documento (factura/contrato/recordatorio)
+  - Prioridad del ticket (Baja/Media/Alta)
+
+8.3 Patrón de filtrado basado en reglas (#11)
+---------------------------------------
+Propósito: Excluir según reglas fijas.
+Operadores: Filtrar, Validar, Excluir.
+  - Remitente en la lista negra
+  - Descartar archivos sin archivos adjuntos
+
+8.4 Patrón de alerta de umbral (#12)
+----------------------------------
+Propósito: Alarma cuando se exceden los valores límite.
+Operadores: medir, comparar, evaluar, desencadenadores de eventos.
+  - CPU > 80%
+  - más de 10 errores en 5 minutos
+
+8.5 Patrón de luz de detección de anomalías (#13)
+------------------------------------------
+Propósito: Detectar valores inusuales (simple).
+Operadores: medir, agregar, comparar, ventanas.
+  - Valor > media + factor
+  - salto repentino en el recuento de archivos
+
+8.6 Patrón de deduplicación (#14)
+--------------------------------
+Propósito: Detectar y eliminar duplicados.
+Operadores: comparar, agrupar, agregar, filtrar.
+  - facturas duplicadas
+  - correos electrónicos/ID duplicados
+
+8.7 Patrón de canonicalización (#15)
+-----------------------------------
+Propósito: convertir datos a forma canónica.
+Operadores: Normalizar, Transformar, Validar.
+  - Estandarizar nombres, direcciones, formatos de fecha
+
+8.8 Patrón de registro dorado (#16)
+--------------------------------
+Propósito: determinar la "mejor" versión de un registro de datos.
+Operadores: Fusionar, Evaluar, Agregar, Validar.
+  - Datos de clientes de múltiples sistemas.
+  - Mantenimiento de datos maestros
+
+8.9 Patrón de Validación de Múltiples Etapas (#17)
+-----------------------------------------
+Propósito: Validación en etapas.
+Operadores: Validar, Clasificar, Filtrar.
+  - Sintaxis -> Semántica -> Reglas de Negocio
+  - Conjuntos de datos incorrectos "blandos" frente a "duros"
+
+8.10 Patrón de resolución alternativa (#18)
+---------------------------------------
+Propósito: Rutas alternativas en caso de errores.
+Operadores: Probar, Reintentar, Reservar, Evaluar.
+  - API principal inactiva -> API secundaria
+  - Clasificación de IA incierta -> Reglas
+
+8.11 Patrón de prueba A/B (#19)
+-------------------------------
+Propósito: Probar dos estrategias entre sí.
+Operadores: probar, comparar, evaluar, agregar.
+  - dos modelos de clasificación
+  - dos conjuntos de reglas para el enrutamiento de correo
+
+8.12 Patrón de decisión multicriterio (#20)
+-------------------------------------------
+Propósito: Decisión basada en varios criterios.
+Operadores: Medir, Evaluar, Agregar, Clasificar.
+  - "mejor" asignación al centro de costes
+  - Priorización de tickets
+
+8.13 Patrón de enrutamiento por categoría (#21)
+---------------------------------------
+Propósito: Enrutamiento por categoría.
+Operadores: Clasificación, filtrado, enrutamiento.
+  - Facturas -> Contabilidad
+  - Aplicaciones -> RRHH
+
+8.14 Patrón de manejo basado en la confianza (#22)
+---------------------------------------------
+Propósito: Comportamiento dependiendo de la seguridad/puntuación.
+Operadores: Evaluar, clasificar, filtrar.
+  - Puntuación > 0,9 -> reservar automáticamente
+  - Puntuación 0,6-0,9 -> prueba manual
+
+8.15 Patrón de refinamiento progresivo (#23)
+------------------------------------------
+Propósito: Refinamiento paso a paso.
+Operadores: Clasificar, Enriquecer, Transformar.
+  - categoría aproximada -> subcategoría fina
+  - primer tipo de documento, luego extracción de contenido
+
+8.16 Patrón de verificación de cordura (#24)
+--------------------------------
+Propósito: Verificaciones de plausibilidad simples.
+Operadores: Probar, Validar, Excluir.
+  - Importe > 0
+  - Fecha no futura
+
+8.17 Patrón de coherencia entre fuentes (#25)
+--------------------------------------------
+Propósito: Probar datos con otra fuente.
+Operadores: comparar, fusionar, validar.
+  - Monto de la factura vs. ERP
+  - Número de cliente frente a CRM
+
+8.18 Patrón de clasificación de errores (n.º 26)
+----------------------------------------
+Propósito: Categorizar los tipos de errores.
+Operadores: Clasificar, Agrupar, Agregar.
+  - Errores de red versus errores de datos
+  - Error de usuario vs. error del sistema
+
+8.19 Patrón de estrategia de recuperación (#27)
+-------------------------------------
+Propósito: Respuesta definida a errores.
+Operadores: Prueba, Reintento, Reserva, Registro.
+  - Cola -> Cola de mensajes fallidos
+  - lista de posprocesamiento manual
+
+8.20 Patrón Human-in-the-Loop (#28)
+-------------------------------------
+Propósito: Involucrar a los humanos cuando hay incertidumbre.
+Operadores: Evaluar, Clasificar, Enrutar.
+  - Puntuación demasiado baja -> Revisar bandeja de entrada
+  - Casos de conflicto -> Proceso de liberación
+
+
+RELACIÓN CON EL PROCESO DE APRENDIZAJE
+---------------------
+Los operadores forman el conjunto de herramientas para los 3 modos:
+
+  (1) Ahorro de energía: sondeo + filtrado + recuperación de reglas
+  (2) Pensar: Correlacionar + Clasificar + Escenarios
+  (3) Consolidación: Agregar + Normalizar + Grupo
+
+Operadores de reconocimiento = sentidos (percepción)
+Operadores de análisis = procesamiento (pensamiento)
+Operación de transformación.   = acto (acción)
+Metaoperadores = control (ejecutivo central)
+Patrones de operador = Patrones de solución combinados
+
+
+ARCHIVOS DE AYUDA RELACIONADOS
+----------------------
+  --estrategias de ayuda Categorizar, evaluar, excluir, probar
+  --ayuda a estrategias de pensamiento Estrategias cognitivas (fragmentación, reconocimiento de patrones, etc.)
+  --ayuda a la retórica Operadores y patrones retóricos

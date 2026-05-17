@@ -1,0 +1,131 @@
+OCR 工具 - 使用 Tesseract 进行文本识别
+---------------------------------------
+
+截至：2026-01-23
+路径：docs/help/tools/ocr.txt
+
+描述
+------------
+用于图像和 PDF 中文本识别的 OCR 引擎。
+使用 Tesseract 并改编自 DokuZentrum Pro。
+
+路径：tools/ocr_engine.py
+
+要求
+---------------
+  - 安装了 Tesseract (tesseract-ocr)
+  - Python 包：pytesseract、Pillow
+  - 可选：PyMuPDF (fitz) 用于 PDF 支持
+
+  安装：
+    pip install pytesseract Pillow PyMuPDF
+
+使用
+----------
+
+CLI（简单）：
+  python ocr_engine.py <pdf_path>
+  python ocr_engine.py B0006 # 文档简写形式
+
+Python (类):
+  从tools.ocr_engine导入OCREngine，OCRResult
+
+  引擎 = OCREngine()
+
+  # 检查可用性
+  如果engine.is_available：
+      print("Tesseract 可用！")
+
+  # 识别图像
+  结果 = engine.recognize_image("scan.png")
+  打印（结果.文本）
+
+  # 识别PDF
+  页面=engine.recognize_pdf（“文档.pdf”）
+  对于页中的页：
+      print(f"第 {page.page_num}: {page.text}")
+
+  # 可用语言
+  langs = engine.get_available_languages()
+
+主要类
+------------
+
+OCREngine:
+  is_available 超立方体可用吗？
+  get_available_languages() 列出可用语言
+  recognize_image(path) 从图像中提取文本
+  recognize_pdf(path) PDF 中的文本（也是图像 PDF）
+
+OCR结果：
+  成功 成功（布尔值）
+  文本 已识别的文本
+  置信度置信度值（0-100）
+  语言 使用的语言
+  error 失败时的错误文本
+
+OCRPageResult:
+  page_num 页码
+  文本页文本
+  信心
+  word_count 字数统计
+
+语言
+--------
+标准：“deu+eng”（德语 + 英语）
+
+其他语言：
+  engine.recognize_image("image.png", language="fra")
+  engine.recognize_pdf("doc.pdf", language="deu")
+
+多种语言：
+  language="deu+eng+fra"
+
+职业简短形式
+--------------
+凭证扫描可以用简短形式调用：
+
+  python ocr_engine.py B0006
+
+自动搜索：
+  - 用户/tax/belege/B0006.pdf
+  - user/steuer/belege/B0006.png
+
+与税务代理集成
+----------------------------
+税务代理使用 OCR 引擎来：
+  - 提取发票金额
+  - 识别收据数据
+  - 创建可文本搜索的 PDF
+
+  bach steuer beleg scan B0006
+
+错误修复
+--------------
+
+“未找到 Tesseract”：
+  - 安装超立方体
+  - 在 PATH 中包含路径
+  - 或者： OCREngine(tesseract_path="C:/Program Files/...")
+
+"pytesseract 未安装"：
+  pip install pytesseract
+
+“PyMuPDF 不可用”：
+  pip 安装 PyMuPDF
+  （仅需要 PDF 支持）
+
+错误检测：
+  - 提高图像质量（增加 DPI）
+  - 选择正确的语言
+  - 预处理图像（对比度、比例校正）
+
+另请参见
+----------
+  docs/help/steuer.txt 使用 OCR 的税务代理
+  工具/税务/税务工具
+
+  docs/MAIL_PROFILE_SYSTEM.md 基于电子邮件的文档捕获
+
+版本：v1.0.0 (2026-01-23)
+行数：~323 (ocr_engine.py)

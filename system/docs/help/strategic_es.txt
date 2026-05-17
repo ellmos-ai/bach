@@ -1,0 +1,90 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [system/ROADMAP.md]
+
+DOCUMENTOS ESTRATÉGICOS - METACOGNICIÓN
+---------------------------------------
+
+Estado: 2026-02-08
+
+VISIÓN GENERAL
+----------
+BACH utiliza tres documentos centrales para el control y la metacognición a largo plazo:
+
+  system/ROADMAP.md Visión, fases, objetivos a largo plazo
+  system/CHANGELOG.md Historial de cambios (versiones, fecha, detalles)
+
+Además:
+- Las lecciones y los conocimientos estratégicos terminan en la memoria/MEMORIA.md.
+- Los errores también se rastrean a través del sistema de tareas (categoría: mantenimiento/error).
+
+CLASIFICACIÓN EN EL SISTEMA DE MEMORIA
+---------------------------
+
+  +-----------------------------------------------------------------+
+  |                    METACOGNICIÓN (estrategia) |
+  |  +-----------------------------------------------------------------+|
+  |  | sistema/ROADMAP.md | sistema/CHANGELOG.md | memoria/MEMORIA.md||
+  |  | documentos/con3_*.md | Análisis |                 ||
+  |  +-----------------------------------------------------------------+|
+  |                          |                                    |
+  |                          | Derivación |
+  |                          v |
+  |  +-----------------------------------------------------------------+|
+  |  |                    SISTEMA DE TAREAS (planificación) ||
+  |  |  Tareas concretas y ejecutables ||
+  |  |  lista de tareas de bach / agregar / listo ||
+  |  +-----------------------------------------------------------------+|
+  |                          |                                    |
+  |                          | Ejecución |
+  |                          v |
+  |  +-----------------------------------------------------------------+|
+  |  |              SISTEMA DE MEMORIA (Operativo) ||
+  |  |  sesiones_de_memoria | lecciones_de_memoria | memoria_trabajando ||
+  |  +-----------------------------------------------------------------+|
+  +-----------------------------------------------------------------+
+
+Circuito:
+  1. La estrategia define los objetivos (system/ROADMAP.md)
+  2. Las metas se convierten en tareas (sistema de tareas)
+  3. Las tareas generan actividades (sesiones/registro)
+  4. Los eventos se consolidan (consolidación de bach)
+  5. Actualizar estrategia de resultados (memoria/MEMORIA.md)
+
+ESTILOS DE DOCUMENTO
+--------------
+
+system/ROADMAP.md:
+  - Enfoque: visión, fases, hitos.
+  - Granularidad: Bloques gruesos (por ejemplo, "Fase 12: Impuesto").
+  - Objetivo: Orientación para agentes socios (¿Dónde estamos?).
+
+memory/MEMORY.md:
+  - Enfoque: Ideas críticas y lecciones aprendidas.
+  - Estilo: Documentación estructurada de problemas y soluciones.
+  - Categorías: Organizado por característica/módulo.
+
+CONSOLIDACIÓN A ESTRATEGIA
+---------------------------
+Este proceso transforma datos operativos en documentos estratégicos:
+
+  Datos sin procesar ---[fin de sesión de bach]---> Sesiones (DB)
+  Sesiones ---[compresión de consolidación de Bach]---> Contexto (DB)
+  Tareas (realizadas) ---[Mantenimiento manual]---> memoria/MEMORIA.md
+
+COMANDOS DE SOPORTE:
+  bach consolidate status                    Muestra el estado de consolidación
+  bach consolidate compress --batch          Sesiones de grupos (simples)
+  bach consolidate compress --run            Comprimido con conjunto de reglas
+  bach consolidate review                    Crea tareas de revisión para wiki/docs
+  bach consolidate run                       Ejecuta todos los procesos
+
+VER TAMBIÉN
+----------
+  docs/help/consolidation.txt Consolidación de memoria
+  docs/help/tasks.txt Sistema de tareas
+  docs/help/memory.txt Sistema de memoria
+  system/ROADMAP.md Fase actual e hitos
+  system/CHANGELOG.md Historial de cambios
+  Memory/MEMORY.md Ideas y lecciones críticas

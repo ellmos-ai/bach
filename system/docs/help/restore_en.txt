@@ -1,0 +1,62 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH RESTORE - TEMPLATE RESTORE
+------------------------------------------
+
+Restores TEMPLATE files (dist_type=1) and CORE files (dist_type=2)
+from the distribution manifest.
+
+
+USE
+----------
+
+  # Restore single file
+  bach restore <datei-pfad>
+
+  # Recover all TEMPLATE files
+  bach restore --all
+
+  # Recover CORE files (with warning)
+  bach restore --core
+
+  # Dry-Run (view only, not execute)
+  bach restore --dry-run <datei-pfad>
+
+
+DIST_TYPE SYSTEM
+----------------
+
+  0 = USER_DATA Personal files, NOT recoverable
+  1 = TEMPLATE Customizable system templates, RESTORABLE
+  2 = CORE System core, recoverable (with warning)
+
+
+IMPORTANT
+-------
+
+- USER_DATA (dist_type=0) is NEVER overwritten
+- CORE-Restore shows warning because changes will be lost
+- Backup is recommended before CORE restore
+
+
+EXAMPLES
+---------
+
+  # Restore SKILL.md (TEMPLATE)
+  bach restore SKILL.md
+
+  # Restore all connector templates
+  bach restore system/connectors/templates/
+
+  # Check which files would be restored
+  bach restore --dry-run --all
+
+
+SEE ALSO
+----------
+
+  bach --help upgrade       Upgrade to newer BACH version
+  bach --help downgrade     Downgrade to older version
+  bach --help seal          Integrity check

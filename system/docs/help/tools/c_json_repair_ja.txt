@@ -1,0 +1,35 @@
+BACH ツール: c_json_repair
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/c_json_repair.py
+
+説明
+----------------------------------------
+c_json_repair.py - 完全自動 JSON 修復システム
+
+最良の結果を得るために `pip install emoji` を使用します (多言語、最新)。
+絵文字パッケージがインストールされていない場合は、ローカル gemoji.json にフォールバックします。
+
+ワークフロー:
+1. 絵文字が見つかりました -> 絵文字パッケージまたは gemoji.json 経由で検索します
+2. 見つかった -> 名前から自動 ASCII (例: "レンチ" -> "[WRENCH]")
+3. 見つかりません -> Quarantaene [Q:XXXX] (非常にまれです)
+
+使用法:
+    python c_json_repair.py <file.json> # 修復
+    python c_json_repair.py <file.json> --dry-run # チェックのみ
+    python c_json_repair.py --update-gemoji # Gemoji を更新する
+    python c_json_repair.py --stats # 統計
+
+著者: クロード
+バージョン: 3.1.0 - 絵文字パッケージのサポート + フォールバック付き
+
+USE
+----------------------------------------
+python bach.py ツールは c_json_repair [args] を実行します
+または直接: python tools/c_json_repair.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成されます
+- 質問がある場合: bach tools show c_json_repair

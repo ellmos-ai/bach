@@ -1,0 +1,518 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ツール - ツール管理
+-----------------------
+
+説明
+------------
+BACH は 3 種類のツールを管理します。
+1. Python ツール: tools/ のスクリプト (コーディング、制御、移行)
+2. CLI ツール: コマンド ライン プログラム (git、ffmpeg、python)
+3. 外部 AI ツール: Web ベースの AI サービス (ChatGPT、Midjourney)
+
+CLI および外部ツールはデータベース (bach.db/tools) で管理されます。
+
+CLI コマンド
+-----------
+bach --tools list              Python ツール (ファイル システム) のリスト
+bach --tools db                すべての DB ツール (CLI + 外部) のリスト
+bach --tools db --type cli     CLI ツールのみを表示
+bach --tools db --type external Nur externe KI-Tools anzeigen
+bach --tools show <n>       ツールの詳細を表示
+bach --tools run <n> [args] Python-Tool ausfuehren
+bach --tools search <term>     検索ツール (ファイル システム + DB)
+bach --tools migrate           移行の開始接続
+
+BACH 経由の直接呼び出し (推奨)
+---------------------------------
+ツールは bach.py 経由で直接呼び出すことができます - --tools run なし:
+
+  bach <toolname> [argumente]
+
+例:
+  bach python_cli_editor script.py --show-all     構造を表示
+  bach c_encoding_fixer datei.py                  エンコーディングを修復
+  bach c_import_organizer datei.py --save         インポートを並べ替え
+  bach c_json_repair kaputt.json                  JSON を修復
+  bach c_pycutter grosse_datei.py                 ファイルを分割
+  bach c_sqlite_viewer data/bach.db               DB を表示
+  bach code_analyzer projekt/                     コード分析
+
+利点:
+  - 以下より短い: bach --tools run c_encoding_fixer file.py
+  - タブ補完可能
+  - Python の直接呼び出しと同じ構文
+
+注: tools/*.py 内のすべてのツールで動作します
+
+ツールの概要
+-----------------
+利用可能なツールを見つけるためのさまざまな方法:
+
+  bach --tools list              すべての Python ツール (tools/*.py)
+  bach --tools db                すべての DB ツール (CLI + 外部)
+  bach --tools search <term>     用語で検索
+  bach tool suggest "problem"    問題ベースの推奨事項
+  bach --help tools              このヘルプ
+  bach --help tools/_index       ツール ドキュメントのインデックス
+
+特定のツールのヘルプ:
+  bach <tool> --help             ツールargparse ヘルプ
+  bach --help tools/<tool>       詳細なドキュメント (利用可能な場合)
+
+TOOL-DISCOVERY (新規 v1.1.27)
+----------------------------
+問題ベースのツール マッチング: 問題を説明し、ツールの推奨事項を取得します。
+
+bach tool suggest "Encoding-Problem in Datei"  問題に基づいたツールの推奨事項
+bach tool suggest "JSON reparieren"            json_repair_tool.py を検索
+bach tool patterns                             すべての問題パターンを表示
+
+仕組み:
+1. 問題内容からのキーワード抽出
+2. 15 以上の問題カテゴリとのマッチング
+3. 適切なツールのスコアベースの推奨
+
+問題カテゴリ: エンコーディング、json_repair、code_analysis、import_issues、
+フォーマット、データベース、変換、バックアップ、クリーンアップ、ドキュメント、
+path_issues、重複、絵文字、ドイツ語テキスト、税金
+
+コード: tools/tool_discovery.py (195 行)
+
+PYTHON-TOOLS (tools/)
+---------------------
+接頭辞規則 (参照: bach --help 命名):
+
+  AI 用に最適化された c_* CLI (Claude/recludOS)
+             - 明確な出力、エンコードセーフ、JSON セーフ
+  b_* BACH コア (システムクリティカル)
+  a_* エージェント ランナー
+  t_* テストツール
+  m_* メンテナンス/メンテナンス
+  g_* ジェネレーター ツール
+
+レガシー プレフィックス (移行予定):
+  エージェント_* -> a_*
+  バックアップ_* -> b_* または m_*
+  移行_* -> m_*
+
+ドメイン プレフィックス (残留):
+  ollama_* Ollama の統合
+  Tax_* 税務ツール (tools/tax/ 内)
+
+機能別の Python ツール
+--------------------------
+
+### CLI にアクセス可能 (ハンドラー経由)
+
+  ディレクトリハンドラ関数
+  ------------------------ ----------------------------------------------------
+  testing/ --test テストシステム (B/O/E テスト)
+  ジェネレーター/ --maintain スキル/エージェント ジェネレーターを生成します。
+  マッピング/(直接) 機能マッピング
+
+###コア関数
+
+  ツール機能
+  -------------------------------------- ----------------------------
+  autolog.py 自動ロギング システム
+  autolog_analyzer.py 自動ログ分析
+  backup_manager.py バックアップ管理
+  injectors.py インジェクター システム
+  c_dirscan.py ディレクトリ スキャン
+  session_analyzer.py セッション分析
+  time_system.py 時刻システム
+  token_monitor.py トークンの監視
+  success_tracker.py 成功の追跡
+  fs_protection.py ファイルシステム保護
+
+### メンテナンス (--maintain ハンドラー経由)
+
+  ツールのCLIコマンド機能
+  ------------------------ ------------------------ ------------------------
+  doc_update_checker.py bach --ドキュメントドキュメントのチェックを維持します
+  c_duplicate_detector.py bach --重複を維持する 重複検出
+  c_pattern_tool.py bach --maintain pattern ファイル名パターン
+  c_tool_scanner.py bach --maintain scan CLI ツール検出
+  c_file_cleaner.py bach --maintain clean 古いファイルを削除します
+  c_json_fixer.py bach --maintain json JSON を修正する
+  c_sync_registry.py レジストリを同期する
+  c_json_registry_cleaner.py レジストリのクリーンアップ
+  backup_manager.py バックアップ管理
+  nulcleaner.py NUL 文字を削除
+
+### ジェネレーター ツール (tools/generators/)
+
+ツールのCLIコマンド機能
+  ------------------------ ------------------------ ------------------------
+  skill_generator.py bach --maintain generated スキル構造の作成
+  importer.py bach --maintain export スキル/エージェントのエクスポート
+
+  skill_generator のプロファイル:
+    MICRO - ファイルのみ、フォルダー システムなし
+    ライト - 最小限 (SKILL.md + config + data)
+    STANDARD - 単純な記憶を持つ標準的なスキル
+    拡張 - マイクロ スキルを伴う複雑なスキル
+
+### マッピング ツール (tools/mapping/)
+
+  ツール機能
+  -------------------------------------- ----------------------------
+  query_features.py クエリ特徴マトリックス
+  Populate_features.py データベース
+  schema.sql DB スキーマ
+
+  重要: DB_PATH 変数を調整する必要があります!
+
+### コーディング ツール
+
+  ツール機能
+  -------------------------------------- ----------------------------
+  c_encoding_fixer.py エンコーディングを修正する
+  c_emoji_scanner.py 絵文字の検索/置換
+  c_standard_fixer.py コード標準を適用する
+  c_json_repair.py JSON を修復する
+  c_json_fixer.py JSON を修正 (古い)
+  c_import_organizer.py インポートの並べ替え
+  c_import_diagnose.py インポートの問題を検索する
+  c_indent_checker.py インデントをチェックする
+  c_umlaut_fixer.py ウムラウトを修正する
+  c_german_scanner.py ドイツ語の単語を検索する
+  c_method_analyzer.py 分析メソッド
+  c_pycutter.py Python ファイルの分割
+  c_sqlite_viewer.py SQLite データベースを表示する
+  c_license_generator.py ライセンス ファイルの作成
+  c_md_to_pdf.py PDF へのマークダウン
+  c_universal_converter.py 形式の変換
+  c_universal_compiler.py ユニバーサル コンパイラ
+  c_youtube_extractor.py YouTube 抽出
+  c_code_analyzer.py コード分析
+  c_code_generator.py コード生成
+  c_python_cli_editor.py 構造化された方法で Python を編集する
+  c_struct_generator.py 構造体ジェネレーター
+  c_header_maigrate.py ヘッダーの移行
+  call_graph.py コール グラフ分析
+
+### 制御ツール
+
+  ツール機能
+  -------------------------------------- ----------------------------
+  steuer_scanner.py 領収書をスキャンする
+  Tax_sync.py の同期
+  Tax_batch.py バッチ処理
+  Tax_apply.py カテゴリを適用する
+  setup_steuer_db.py DBセットアップ
+  scan_new_belege.py 新しいレシートを検出する
+  rename_belege.py 領収書の名前を変更する
+  show_posten.py 投稿を表示
+  temu_ocr_batch.py Temu OCR バッチ
+  ocr_engine.py OCR エンジン
+
+### Ollama ツール
+
+  ツール機能
+  -------------------------------------- ----------------------------
+  ollama_benchmark.py ベンチマーク
+  ollama_summarize.py 概要
+  ollama_worker.py ワーカー プロセス
+
+### テスト ツール (tools/testing/)
+
+  ツールのCLIコマンド機能
+  ------------------------ ------------------------ ------------------------
+  test_runner.py bach --test run テストの実行
+  run_b_tests.py bach --test self B テストを実行する
+  run_o_tests.py bach --test ops O テストを実行します
+
+  テスト プロファイル (testing/profiles/):
+    QUICK.json - クイックチェック
+    STANDARD.json - 標準スイート
+    FULL.json - 完全チェック
+    MEMORY_FOCUS.json - メモリテスト
+    TASK_FOCUS.json - タスクのテスト
+    OUTPUT.json - 出力テスト
+    OBSERVATION.json - 観測テスト
+
+### MCP 統合 (新規 v2.2)
+
+  ツール機能
+  -------------------------------------- ----------------------------
+  mcp_server.py MCP サーバー v2.0 (654 行)
+                            - 23 ツール (タスク、メモリー、レッスン、バックアップ、コントロール)
+                            - 8 つのリソース (タスク、ステータス、メモリ、スキル、連絡先)
+                            - 3 つのプロンプト (毎日のブリーフィング、タスクのレビュー、セッションの概要)
+
+  インストール:
+    pip インストール mcp
+    Python ツール/mcp_server.py
+
+  クロード コード構成 (~/.claude/claude_code_config.json):
+    {
+      "mcpサーバー": {
+        "バッハ": {
+          "コマンド": "Python",
+          "args": ["C:/path/to/system/tools/mcp_server.py"]
+        }
+      }
+    }
+
+### スキル管理 (新規)
+
+ツール機能
+  -------------------------------------- ----------------------------
+  c_skill_init.py スキル構造の初期化
+  c_skill_package.py パッケージスキル
+  c_skill_validate.py スキルの検証
+  skill_export.py スキルのエクスポート
+  skill_header_gen.py スキルヘッダーの生成
+  skill_help_gen.py スキル ヘルプの生成
+
+### プロジェクト ツール (新規)
+
+  ツール機能
+  -------------------------------------- ----------------------------
+  c_project_bundler.py プロジェクト バンドラー
+  c_audit_bundler.py 監査バンドルの作成
+  c_path_healer.py パス修復
+  batch_file_ops.py バッチ ファイル操作
+
+### 分析と監視
+
+  ツール機能
+  -------------------------------------- ----------------------------
+  db_check.py データベースチェック
+  debug_scan.py デバッグスキャン
+  forensic_db_scan.py フォレンジック DB スキャン
+  folder_diff_scanner.py フォルダの差分分析
+  custom_analysis.py カスタム分析
+  schema_reader.py スキーマリーダー
+  issues_first.py 問題優先のアプローチ
+  reports.py レポート システム
+
+### ジェネレータとヘルパー
+
+  ツール機能
+  -------------------------------------- ----------------------------
+  c_dictionary_builder.py 辞書ビルダー
+  lesson_trigger_generator.py レッスントリガージェネレーター
+  theme_packet_generator.py テーマ パケット ジェネレーター
+  workflow_trigger_generator.py ワークフロー トリガー ジェネレーター
+  trigger_maintainer.py トリガーのメンテナンス
+  context_compressor.py コンテキスト圧縮
+  translation_batch.py バッチ翻訳
+
+### 統合とインポート
+
+  ツール機能
+  -------------------------------------- ----------------------------
+  gemini_llm.py Gemini LLM の統合
+  data_importer.py データのインポート
+  document_indexer.py ドキュメントのインデックス作成
+  doc_search.py ドキュメント検索
+  inbox_watcher.py 受信トレイウォッチャー
+  user_console.py ユーザー コンソール
+
+### エージェントと自動検出
+
+  ツール機能
+  -------------------------------------- ----------------------------
+  c_headless_agent.py ヘッドレスエージェント
+  bach_auto_discovery.py 自動検出システム
+  tool_auto_discovery.py ツール自動検出
+
+### ユーザー ツール (tools/_user/)
+
+  システム固有のツール (配布用ではありません):
+  - auto_backup_orchestrator.py FTP バックアップ
+  - fritzbox_wlan_control.py WLAN 制御
+  -backup_watchdog.py バックアップ監視
+
+  参照: tools/_user/README.md
+
+CLI-TOOLS (bach.db)
+-------------------
+利用可能なカテゴリ:
+  アーカイブ 7z (圧縮)
+  エディターメモ帳++
+  IDE コード (VS コード)
+  マルチメディア ffmpeg (ビデオ/オーディオ)
+  ネットワークカール、SSH
+  package_manager pip、pip3
+  ランタイムPython、ノード
+  text_processing grep
+  version_control git
+
+外部 AI ツール (bach.db)
+--------------------------
+カテゴリ:
+  llm ChatGPT、クロード、ジェミニ、副操縦士、ミストラル、グロク
+  画像 ミッドジャーニー、表意文字、レオナルド、フラックス、素晴らしい
+  ビデオ 滑走路、ルマ、ピカ、サウンド
+  オーディオ イレブンラボ、Suno、Udio、Descript、Auphonic
+  研究 Perplexity、コンセンサス、Elicit、NotebookLM、Scite
+  開発カーソル、ボルト、コパイロット ワークスペース、Replit、Windsurf
+  edu Gamma、Notion AI、ゴブリン ツール、Taskade
+
+データベース スキーマ
+----------------
+テーブル: ツール (data/bach.db 内)
+
+重要なフィールド:
+- ユニークな名前のテキスト
+- タイプ TEXT (cli、外部、内部)
+- カテゴリテキスト
+- コマンド TEXT (CLI ツール用)
+- エンドポイント TEXT (外部ツール用)
+- 説明テキスト
+- 機能の JSON 配列
+- テキストに使用
+- is_available BOOLEAN
+
+MIGRATION
+---------
+ツールは JSON ファイルからデータベースに移行されました。
+ソース ファイルはもう存在しません (接続/ が解消されました)。
+
+移行ステータスを確認します:
+  bach --tools migrate --status
+
+新たな移行が必要な場合 (リセットの場合のみ):
+  python tools/merge_connections.py
+
+例
+---------
+# Python ツールのリスト
+bach --tools list
+
+# すべての登録済みツール (DB)
+bach --tools db
+
+# CLI ツールのみ
+bach --tools db --type cli
+
+# ツールの詳細
+bach --tools show ffmpeg
+bach --tools show chatgpt
+
+# ツールの実行
+bach --tools run c_encoding_fixer datei.py
+
+# 直接呼び出し (推奨)
+bach c_encoding_fixer datei.py
+bach c_skill_init neuer_skill
+bach c_project_bundler ./projekt
+
+# 検索
+bach --tools search video
+
+# メンテナンス ツール
+bach --maintain list
+bach --maintain docs
+bach --maintain pattern ./docs --dry-run
+
+# テスト ツール
+bach --test profiles
+bach --test run QUICK
+
+# MCP サーバー (新規)
+Pythonツール/mcp_server.py
+# その後、Claude Code 経由で利用可能になります (bach:/ Resources + Tools)
+
+TOOL INVENTORY (~83 tools)
+-------------------------
+カテゴリ別の合計統計:
+
+カテゴリ番号 説明
+  ------ ------ ----------------------------
+  Agent/Framework 8 エージェント システム、サービス統合、MCP
+  開発 25 コード分析、テスト、プロジェクト ユーティリティ
+  データベース 8 SQLite、移行、スキーマ
+  資料15 OCR、変換、テキスト処理
+  財務/税務 22 完全な税務スイート
+  メンテナンス 15 バックアップ、配布、クリーンアップ、レジストリ
+  メディア 2 YouTube 抽出、Gemini LLM
+  ユーティリティ/ヘルパー 22 ポリシー、ジェネレーター、モニタリング、その他
+  スキル管理 6 スキルの初期化、パッケージ化、検証、エクスポート
+
+命名規則 (プレフィックス):
+
+  c_* AI 用に最適化された CLI (40 以上のツール)
+  b_* BACH コア (システムクリティカル)
+  a_* エージェント ランナー ツール
+  t_* テストツール
+  m_* ツールのメンテナンス
+  g_* ジェネレータ ツール
+  (-) ドメイン/ユーティリティ (43 以上のツール)
+
+外部スイートとの相乗効果の可能性:
+
+  BACH ツールとの相乗効果
+  ------------------------ ----------------------------
+  税/財務スイート (予算、経費)
+  ocr_engine.py DokuZentrum Pro
+  c_md_to_pdf.py 黒曜石のエクスポート
+  c_youtube_extractor.py Media Suite
+
+ソース: user/_archive/BACH_NATIVE_TOOLS_MAPPING.md にアーカイブ
+
+詳細なツールのドキュメント
+--------------------------------
+複雑なツールについては、docs/help/tools/:
+
+ に詳細なドキュメントがあります。  利用可能なドキュメント:
+  -------------------------
+  docs/help/tools/python_cli_editor.txt 構造化された方法で Python ファイルを編集する
+                                     (表示、クラス/メソッドの挿入、
+                                     削除、ワークフローの編集、エクスポート)
+
+  docs/help/tools/_index.txt すべてのツール ドキュメントのインデックス
+
+  取得:
+  ------
+  bach --help tools/python_cli_editor    詳細なドキュメントを読む
+  bach --help tools/_index               利用可能なドキュメントの概要
+  bach --help tools                      この一般的なツールのヘルプ
+
+  ツールに独自のドキュメントが必要になるのはどのような場合ですか?
+  ----------------------------------
+  - 多くのオプション (パラメータが 10 を超える)
+  - 複雑なワークフローが可能
+  - 頻繁に使用される
+  - 理解するために重要な例
+
+  単純なツールは以下のみを使用します。
+  - Python ファイル内の docstring
+  - argparse --help (bach <tool> --help)
+
+CONTEXT INJECTOR (自動ツール ヒント)
+---------------------------------------------
+ContextInjector はキーワードを認識し、適切なツールを推奨します。
+例:
+
+  キーワードツールの推奨事項
+  --------------------- --------------------------------------
+  「エンコーディングの問題」 bach c_encoding_fixer <ファイル>
+  "インポートの並べ替え" bach c_import_organizer <ファイル>
+  「Python の編集」 bach c_python_cli_editor <ファイル> --show-all
+  「ファイルを分割」 bach c_pycutter <ファイル>
+  "view sqlite" bach c_sqlite_viewer <db>
+  「ツールを検索」バッハツールが「説明」を提案します
+  "スキルの作成" bach c_skill_init <名前>
+  「プロジェクト バンドル」 bach c_project_bundler <パス>
+  「修復パス」 bach c_path_healer <ファイル>
+  "start mcp" python tools/mcp_server.py
+
+参照: bach --help injectors (完全なトリガー リスト)
+
+関連項目
+----------
+docs/help/tools/_index.txt 詳細なツール ドキュメント (インデックス)
+docs/help/tools/*.txt 個々のツールのドキュメント
+docs/help/injectors.txt 自動ツールのメモ (ContextInjector)
+bach --help connections    接続管理
+bach --help dirscan           ディレクトリ スキャナ (変更監視)
+bach --help maintain       メンテナンス ツール
+bach --help test           テスト システム
+bach --help naming         命名規則 (ツール プレフィックス)

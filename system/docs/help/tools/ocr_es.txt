@@ -1,0 +1,131 @@
+HERRAMIENTAS OCR - Reconocimiento de texto con Tesseract
+---------------------------------------
+
+A partir de: 2026-01-23
+Ruta: docs/help/tools/ocr.txt
+
+DESCRIPCIÓN
+------------
+Motor OCR para reconocimiento de texto en imágenes y PDF.
+Utiliza Tesseract y está adaptado de DokuZentrum Pro.
+
+Ruta: tools/ocr_engine.py
+
+REQUISITOS
+---------------
+  - Tesseract instalado (tesseract-ocr)
+  - Paquetes de Python: pytesseract, Pillow
+  - Opcional: PyMuPDF (fitz) para soporte de PDF
+
+  Instalación:
+    pip install pytesseract Almohada PyMuPDF
+
+USE
+----------
+
+CLI (simple):
+  python ocr_engine.py <ruta_pdf>
+  python ocr_engine.py B0006 # Documento en formato corto
+
+Python (clase):
+  desde tools.ocr_engine importar OCREngine, OCRResult
+
+  motor = OCREngine()
+
+  # Consultar disponibilidad
+  si motor.is_disponible:
+      print("¡Teseracto disponible!")
+
+  # Reconocer imagen
+  resultado = motor.recognize_image("escanear.png")
+  imprimir(resultado.texto)
+
+  # Reconocer PDF
+  paginas = motor.recognize_pdf("documento.pdf")
+  para página en páginas:
+      print(f"Página {página.page_num}: {página.texto}")
+
+  # Idiomas disponibles
+  idiomas = motor.get_available_languages()
+
+CLASES PRINCIPALES
+------------
+
+OCREngine:
+  is_available Tesseract disponible?
+  get_available_languages() Listar idiomas disponibles
+  reconocer_imagen(ruta) Extraer texto de la imagen
+  reconocer_pdf(ruta) Texto de PDF (también archivos PDF de imágenes)
+
+OCRResult:
+  éxito éxito (bool)
+  texto Texto reconocido
+  valor de confianza (0-100)
+  idioma Idioma utilizado
+  error Texto de error en caso de fallo
+
+OCRPageResult:
+  page_num Número de página
+  texto de la página de texto
+  confianza
+  word_count Recuento de palabras
+
+IDIOMAS
+--------
+Estándar: "deu+eng" (alemán + inglés)
+
+Otros idiomas:
+  motor.recognize_image("imagen.png", idioma="fra")
+  Engine.recognize_pdf("doc.pdf", language="deu")
+
+Múltiples idiomas:
+  language="deu+eng+fra"
+
+VOCACIÓN EN FORMATO CORTO
+--------------
+Los escaneos de cupones se pueden consultar en formato abreviado:
+
+  python ocr_engine.py B0006
+
+Busca automáticamente en:
+  - usuario/tax/belege/B0006.pdf
+  - user/steuer/belege/B0006.png
+
+INTEGRACIÓN CON EL AGENTE TRIBUTARIO
+----------------------------
+El agente fiscal utiliza el motor OCR para:
+  - Extraer importes de facturas
+  - Reconocer datos de recibo.
+  - Crear archivos PDF con capacidad de búsqueda de texto
+
+  bach steuer beleg scan B0006
+
+CORRECCIÓN DE ERRORES
+--------------
+
+"Tesseract no encontrado":
+  - Instalar Teseracto
+  - Incluir ruta en PATH
+  - O: OCREngine(tesseract_path="C:/Archivos de programa/...")
+
+"pytesseract no instalado":
+  pip install pytesseract
+
+"PyMuPDF no disponible":
+  pip instalar PyMuPDF
+  (Sólo es necesario para soporte PDF)
+
+Mala detección:
+  - Mejorar la calidad de la imagen (aumentar DPI)
+  - Elija el idioma correcto
+  - Imagen de preprocesamiento (contraste, corrección de escala)
+
+VER TAMBIÉN
+----------
+  docs/help/steuer.txt Agente fiscal con OCR
+  herramientas/impuestos/herramientas fiscales
+
+  docs/MAIL_PROFILE_SYSTEM.md Captura de documentos basada en correo electrónico
+
+VERSIÓN: v1.0.0 (2026-01-23)
+Líneas: ~323 (ocr_engine.py)

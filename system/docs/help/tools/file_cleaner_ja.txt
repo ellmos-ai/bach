@@ -1,0 +1,30 @@
+BACH ツール: file_cleaner
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/file_cleaner.py
+
+説明
+----------------------------------------
+file_cleaner.py - 経過時間/パターンに基づいてファイルをクリーンアップ
+------------------------------------------------------
+
+古いファイルまたはパターンに基づいてファイルを検索して削除します。
+バックアップ フォルダー、ログ、一時ファイルに役立ちます。
+
+使用法:
+    python file_cleaner.py <フォルダ> --age 30 # 30 日以上古い
+    python file_cleaner.py <フォルダー> --pattern "*.log" # パターン別
+    python file_cleaner.py <フォルダ> --keep 5 # 5 つを最新に保つ
+    python file_cleaner.py <folder> --execute # 実際には削除
+
+作者: BACH v1.1
+
+使用
+----------------------------------------
+python bach.py tools run file_cleaner [args]
+または直接: python tools/file_cleaner.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show file_cleaner

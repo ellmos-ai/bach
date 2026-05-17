@@ -1,0 +1,518 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+TOOLS - Tool management
+-----------------------
+
+DESCRIPTION
+------------
+BACH manages three types of tools:
+1. Python tools: Scripts in tools/ (coding, control, migration)
+2. CLI tools: command line programs (git, ffmpeg, python)
+3. External AI tools: Web-based AI services (ChatGPT, Midjourney)
+
+The CLI and external tools are managed in the database (bach.db/tools).
+
+CLI COMMANDS
+-----------
+bach --tools list              List Python tools (file system)
+bach --tools db                List all DB tools (CLI + external)
+bach --tools db --type cli     Show CLI tools only
+bach --tools db --type external Nur externe KI-Tools anzeigen
+bach --tools show <n>       Tool details show
+bach --tools run <n> [args] Python-Tool ausfuehren
+bach --tools search <term>     Search tools (file system + DB)
+bach --tools migrate           Start migration of connections
+
+DIRECT CALL VIA BACH (recommended)
+---------------------------------
+Tools can be called directly via bach.py - without --tools run:
+
+  bach <toolname> [argumente]
+
+Examples:
+  bach python_cli_editor script.py --show-all     Show structure
+  bach c_encoding_fixer datei.py                  Repair encoding
+  bach c_import_organizer datei.py --save         Sort imports
+  bach c_json_repair kaputt.json                  Repair JSON
+  bach c_pycutter grosse_datei.py                 Split file
+  bach c_sqlite_viewer data/bach.db               Show DB
+  bach code_analyzer projekt/                     Code analyze
+
+Advantages:
+  - Shorter than: bach --tools run c_encoding_fixer file.py
+  - Tab completion possible
+  - Same syntax as direct Python call
+
+Note: Works for all tools in tools/*.py
+
+TOOL OVERVIEWS
+-----------------
+Different ways to find available tools:
+
+  bach --tools list              All Python tools (tools/*.py)
+  bach --tools db                All DB tools (CLI + external)
+  bach --tools search <term>     Search by term
+  bach tool suggest "problem"    Problem-based recommendation
+  bach --help tools              This help
+  bach --help tools/_index       Index of Tool documentation
+
+For specific tool help:
+  bach <tool> --help             Tool argparse help
+  bach --help tools/<tool>       Detailed documentation (if available)
+
+TOOL-DISCOVERY (NEW v1.1.27)
+----------------------------
+Problem-based tool matching: Describe a problem and get tool recommendations.
+
+bach tool suggest "Encoding-Problem in Datei"  Tool recommendation based on problem
+bach tool suggest "JSON reparieren"            Finds json_repair_tool.py
+bach tool patterns                             Show all problem patterns
+
+How it works:
+1. Keyword extraction from problem description
+2. Matching against 15+ problem categories
+3. Score-based recommendation of suitable tools
+
+Problem categories: encoding, json_repair, code_analysis, import_issues,
+formatting, database, conversion, backup, cleanup, documentation,
+path_issues, duplicate, emoji, german_text, tax
+
+Code: tools/tool_discovery.py (195 lines)
+
+PYTHON-TOOLS (tools/)
+---------------------
+Prefix convention (see: bach --help naming):
+
+  c_* CLI optimized for AI (Claude/recludOS)
+             - Clear outputs, encoding-safe, JSON-safe
+  b_* BACH core (system critical)
+  a_* Agent Runner
+  t_* Test tools
+  m_* Maintain/maintenance
+  g_* Generator tools
+
+Legacy prefixes (will be migrated):
+  agent_* -> a_*
+  backup_* -> b_* or m_*
+  migrate_* -> m_*
+
+Domain prefixes (stay):
+  ollama_* Ollama integration
+  tax_* Tax tools (in tools/tax/)
+
+PYTHON TOOLS BY FUNCTION
+--------------------------
+
+### CLI accessible (via handler)
+
+  Directory handler function
+  ------------- -------------------- ----------------------------
+  testing/ --test test system (B/O/E tests)
+  generators/ --maintain generate Skill/Agent generators
+  mapping/ (direct) feature mapping
+
+### core functions
+
+  Tool function
+  -------------------------------------- ----------------------------
+  autolog.py Auto logging system
+  autolog_analyzer.py AutoLog analysis
+  backup_manager.py Backup management
+  injectors.py Injector system
+  c_dirscan.py Directory scan
+  session_analyzer.py Session analysis
+  time_system.py Time system
+  token_monitor.py Token monitoring
+  success_tracker.py Success tracking
+  fs_protection.py Filesystem protection
+
+### Maintenance (via --maintain handler)
+
+  Tool CLI command function
+  ----------------------- ------------------------- ----------------------------
+  doc_update_checker.py bach --maintain docs documentation check
+  c_duplicate_detector.py bach --maintain duplicates Duplicate detection
+  c_pattern_tool.py bach --maintain pattern Filename patterns
+  c_tool_scanner.py bach --maintain scan CLI Tools Discovery
+  c_file_cleaner.py bach --maintain clean Delete old files
+  c_json_fixer.py bach --maintain json Fix JSON
+  c_sync_registry.py Synchronize registry
+  c_json_registry_cleaner.py Registry cleanup
+  backup_manager.py Backup management
+  nulcleaner.py Remove NUL character
+
+### Generator tools (tools/generators/)
+
+Tool CLI command function
+  ----------------------- ------------------------- ----------------------------
+  skill_generator.py bach --maintain generate Create skill structures
+  exporter.py bach --maintain export Export Skills/Agents
+
+  Profiles for skill_generator:
+    MICRO - File(s) only, no folder system
+    LIGHT - Minimal (SKILL.md + config + data)
+    STANDARD - Standard skill with simple memory
+    EXTENDED - Complex skill with micro skills
+
+### Mapping tools (tools/mapping/)
+
+  Tool function
+  -------------------------------------- ----------------------------
+  query_features.py Query feature matrix
+  Populate_features.py database
+  schema.sql DB schema
+
+  Important: DB_PATH variable must be adjusted!
+
+### Coding-Tools
+
+  Tool function
+  -------------------------------------- ----------------------------
+  c_encoding_fixer.py Fix encoding
+  c_emoji_scanner.py Find/replace emoji
+  c_standard_fixer.py Apply code standards
+  c_json_repair.py Repair JSON
+  c_json_fixer.py Fix JSON (old)
+  c_import_organizer.py Sort imports
+  c_import_diagnose.py Find import problems
+  c_indent_checker.py Check indentation
+  c_umlaut_fixer.py Correct umlauts
+  c_german_scanner.py Find German words
+  c_method_analyzer.py Analyze methods
+  c_pycutter.py Split Python files
+  c_sqlite_viewer.py View SQLite databases
+  c_license_generator.py Create license files
+  c_md_to_pdf.py Markdown to PDF
+  c_universal_converter.py format conversion
+  c_universal_compiler.py Universal compiler
+  c_youtube_extractor.py YouTube extraction
+  c_code_analyzer.py Code analysis
+  c_code_generator.py Code generation
+  c_python_cli_editor.py Edit Python in a structured manner
+  c_structure_generator.py Structure generator
+  c_header_migrate.py Header migration
+  call_graph.py Call Graph Analysis
+
+### Control Tools
+
+  Tool function
+  -------------------------------------- ----------------------------
+  steuer_scanner.py Scan receipts
+  tax_sync.py synchronization
+  tax_batch.py Batch processing
+  tax_apply.py apply categories
+  setup_steuer_db.py DB setup
+  scan_new_belege.py Detect new receipts
+  rename_belege.py Rename receipts
+  show_posten.py Show posts
+  temu_ocr_batch.py Temu OCR Batch
+  ocr_engine.py OCR engine
+
+### Ollama tools
+
+  Tool function
+  -------------------------------------- ----------------------------
+  ollama_benchmark.py benchmarks
+  ollama_summarize.py Summaries
+  ollama_worker.py Worker Process
+
+### Testing Tools (tools/testing/)
+
+  Tool CLI command function
+  ----------------------- ------------------------- ----------------------------
+  test_runner.py bach --test run Test execution
+  run_b_tests.py bach --test self Run B tests
+  run_o_tests.py bach --test ops Run O tests
+
+  Test profiles (testing/profiles/):
+    QUICK.json - Quick check
+    STANDARD.json - Standard suite
+    FULL.json - Complete check
+    MEMORY_FOCUS.json - Memory tests
+    TASK_FOCUS.json - Task tests
+    OUTPUT.json - Output tests
+    OBSERVATION.json - Observation Tests
+
+### MCP Integration (NEW v2.2)
+
+  Tool function
+  -------------------------------------- ----------------------------
+  mcp_server.py MCP Server v2.0 (654 lines)
+                            - 23 tools (Task, Memory, Lesson, Backup, Control)
+                            - 8 Resources (Tasks, Status, Memory, Skills, Contacts)
+                            - 3 prompts (Daily Briefing, Task Review, Session Summary)
+
+  Installation:
+    pip install mcp
+    python tools/mcp_server.py
+
+  Claude Code Config (~/.claude/claude_code_config.json):
+    {
+      "mcpServers": {
+        "bach": {
+          "command": "python",
+          "args": ["C:/path/to/system/tools/mcp_server.py"]
+        }
+      }
+    }
+
+### Skill Management (NEW)
+
+Tool function
+  -------------------------------------- ----------------------------
+  c_skill_init.py Initialize skill structure
+  c_skill_package.py Package skills
+  c_skill_validate.py Skill validation
+  skill_export.py Export skills
+  skill_header_gen.py Generate skill header
+  skill_help_gen.py Generate Skill Help
+
+### Project Tools (NEW)
+
+  Tool function
+  -------------------------------------- ----------------------------
+  c_project_bundler.py Project bundler
+  c_audit_bundler.py Create audit bundle
+  c_path_healer.py Path repair
+  batch_file_ops.py Batch file operations
+
+### Analysis & Monitoring
+
+  Tool function
+  -------------------------------------- ----------------------------
+  db_check.py database check
+  debug_scan.py Debug scan
+  forensic_db_scan.py Forensics DB scan
+  folder_diff_scanner.py Folder diff analysis
+  custom_analysis.py Custom analysis
+  schema_reader.py Schema reader
+  problems_first.py Problems-First approach
+  reports.py Report System
+
+### Generator & Helper
+
+  Tool function
+  -------------------------------------- ----------------------------
+  c_dictionary_builder.py Dictionary builder
+  lesson_trigger_generator.py Lesson trigger generator
+  theme_packet_generator.py Theme packet generator
+  workflow_trigger_generator.py Workflow trigger generator
+  trigger_maintainer.py Trigger maintenance
+  context_compressor.py Context compression
+  translate_batch.py Batch translation
+
+### Integration & Import
+
+  Tool function
+  -------------------------------------- ----------------------------
+  gemini_llm.py Gemini LLM Integration
+  data_importer.py Data import
+  document_indexer.py Document indexing
+  doc_search.py Document search
+  inbox_watcher.py Inbox Watcher
+  user_console.py User-Console
+
+### Agents & Auto-Discovery
+
+  Tool function
+  -------------------------------------- ----------------------------
+  c_headless_agent.py Headless agent
+  bach_auto_discovery.py Auto discovery system
+  tool_auto_discovery.py Tool Auto-Discovery
+
+### User Tools (tools/_user/)
+
+  System-specific tools (not for distribution):
+  - auto_backup_orchestrator.py FTP backup
+  - fritzbox_wlan_control.py WLAN control
+  - backup_watchdog.py backup monitoring
+
+  See: tools/_user/README.md
+
+CLI-TOOLS (bach.db)
+-------------------
+Available categories:
+  archive 7z (compression)
+  editor notepad++
+  ide code (VS Code)
+  multimedia ffmpeg (video/audio)
+  network curl, ssh
+  package_manager pip, pip3
+  runtime python, node
+  text_processing grep
+  version_control git
+
+EXTERNAL AI TOOLS (bach.db)
+--------------------------
+Categories:
+  llm ChatGPT, Claude, Gemini, Copilot, Mistral, Groq
+  image Midjourney, Ideogram, Leonardo, Flux, Magnific
+  video Runway, Luma, Pika, Sound
+  audio ElevenLabs, Suno, Udio, Descript, Auphonic
+  research Perplexity, Consensus, Elicit, NotebookLM, Scite
+  dev Cursor, Bolt, Copilot Workspace, Replit, Windsurf
+  edu Gamma, Notion AI, Goblin Tools, Taskade
+
+DATABASE SCHEMA
+----------------
+Table: tools (in data/bach.db)
+
+Important fields:
+- name TEXT UNIQUE
+- type TEXT (cli, external, internal)
+- category TEXT
+- command TEXT (for CLI tools)
+- endpoint TEXT (for external tools)
+- description TEXT
+- capabilities JSON array
+- use_for TEXT
+- is_available BOOLEAN
+
+MIGRATION
+---------
+The tools were migrated from JSON files to the database.
+The source files no longer exist (connections/ has been dissolved).
+
+Check migration status:
+  bach --tools migrate --status
+
+If renewed migration is necessary (only with reset):
+  python tools/migrate_connections.py
+
+EXAMPLES
+---------
+# List Python tools
+bach --tools list
+
+# All registered tools (DB)
+bach --tools db
+
+# CLI tools only
+bach --tools db --type cli
+
+# Tool details
+bach --tools show ffmpeg
+bach --tools show chatgpt
+
+# Run tool
+bach --tools run c_encoding_fixer datei.py
+
+# Direct call (recommended)
+bach c_encoding_fixer datei.py
+bach c_skill_init neuer_skill
+bach c_project_bundler ./projekt
+
+# Search
+bach --tools search video
+
+# Maintenance tools
+bach --maintain list
+bach --maintain docs
+bach --maintain pattern ./docs --dry-run
+
+# Test tools
+bach --test profiles
+bach --test run QUICK
+
+# MCP Server (NEW)
+python tools/mcp_server.py
+# Then available via Claude Code (bach:/ Resources + Tools)
+
+TOOL INVENTORY (~83 tools)
+-------------------------
+Total statistics by category:
+
+Category Number Description
+  ----------------- ------ ----------------------------
+  Agent/Framework 8 agent system, service integration, MCP
+  Development 25 code analysis, testing, project utilities
+  Database 8 SQLite, migration, schema
+  Document 15 OCR, conversion, text processing
+  Financial/Tax 22 Complete tax suite
+  Maintenance 15 Backup, Distribution, Cleanup, Registry
+  Media 2 YouTube Extraction, Gemini LLM
+  Utility/Helper 22 Policies, Generators, Monitoring, Other
+  Skill Management 6 Skill Init, Package, Validate, Export
+
+Naming convention (prefixes):
+
+  c_* CLI optimized for AI (40+ tools)
+  b_* BACH core (system critical)
+  a_* Agent runner tools
+  t_* Test tools
+  m_* Maintain tools
+  g_* Generator tools
+  (-) Domain/Utility (43+ Tools)
+
+Synergy potential with external suites:
+
+  BACH tool synergy with
+  ---------------------- ----------------------------
+  Tax/ Suite Finance Suite (Budget, Expense)
+  ocr_engine.py DokuZentrum Pro
+  c_md_to_pdf.py Obsidian Export
+  c_youtube_extractor.py Media Suite
+
+Source: Archived in user/_archive/BACH_NATIVE_TOOLS_MAPPING.md
+
+DETAILED TOOL DOCUMENTATION
+--------------------------------
+For complex tools there is detailed documentation in docs/help/tools/:
+
+  Available documentation:
+  ---------------------------
+  docs/help/tools/python_cli_editor.txt Edit Python files in a structured manner
+                                     (Show, insert classes/methods,
+                                     delete, edit workflow, export)
+
+  docs/help/tools/_index.txt Index of all tool documentation
+
+  Retrieval:
+  ------
+  bach --help tools/python_cli_editor    Read detailed documentation
+  bach --help tools/_index               Overview of available documentation
+  bach --help tools                      This general tool help
+
+  When does a tool need its own documentation?
+  ----------------------------------
+  - Many options (>10 parameters)
+  - Complex workflows possible
+  - Frequently used
+  - Examples important for understanding
+
+  Simple tools only use:
+  - Docstring in the Python file
+  - argparse --help (bach <tool> --help)
+
+CONTEXT INJECTOR (automatic tool hints)
+---------------------------------------------
+The ContextInjector recognizes keywords and recommends suitable tools.
+Examples:
+
+  Keyword tool recommendation
+  --------------------- ------------------------------------------
+  "encoding problem" bach c_encoding_fixer <file>
+  "sort imports" bach c_import_organizer <file>
+  "edit python" bach c_python_cli_editor <file> --show-all
+  "split file" bach c_pycutter <file>
+  "view sqlite" bach c_sqlite_viewer <db>
+  "find tool" bach tool suggest 'description'
+  "create skill" bach c_skill_init <name>
+  "project bundle" bach c_project_bundler <path>
+  "repair path" bach c_path_healer <file>
+  "start mcp" python tools/mcp_server.py
+
+See: bach --help injectors (full trigger list)
+
+SEE ALSO
+----------
+docs/help/tools/_index.txt Detailed tool documentation (index)
+docs/help/tools/*.txt Individual tool documentation
+docs/help/injectors.txt Automatic tool notes (ContextInjector)
+bach --help connections    Connections management
+bach --help dirscan           Directory Scanner (change monitoring)
+bach --help maintain       Maintenance tools
+bach --help test           Test system
+bach --help naming         Naming conventions (tool prefixes)

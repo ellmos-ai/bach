@@ -1,0 +1,37 @@
+BACH Tool: c_youtube_extractor
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/c_youtube_extractor.py
+
+DESCRIPTION
+----------------------------------------
+c_youtube_extractor.py - Extracts YouTube video IDs from URLs
+
+Supported formats:
+  - https://www.youtube.com/watch?v=VIDEO_ID
+  - https://youtu.be/VIDEO_ID
+  - https://www.youtube.com/shorts/VIDEO_ID
+  - https://www.youtube.com/embed/VIDEO_ID
+  - Direct Video ID (11 characters)
+
+Extracted from: TOOLS/MEDIA/ForYou-Playlist/YouTubePlaylist.py
+
+Usage:
+    python c_youtube_extractor.py <url>
+    python c_youtube_extractor.py <url1> <url2> <url3>
+    python c_youtube_extractor.py --file urls.txt
+    python c_youtube_extractor.py --json <url>
+    echo "https://youtu.be/dQw4w9WgXcQ" | python c_youtube_extractor.py --stdin
+
+Author: Claude (adapted)
+Dependencies: none (stdlib only)
+
+USE
+----------------------------------------
+python bach.py tools run c_youtube_extractor [args]
+or directly: python tools/c_youtube_extractor.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show c_youtube_extractor

@@ -1,0 +1,26 @@
+BACH Tool: Project
+------------------
+
+Project management and code generation.
+
+AVAILABLE TOOLS
+-----------------
+
+  audit_bundler Export project audit as a bundle
+  license_generator Generate license files
+  pattern_tool Code pattern recognition
+  project_bundler Bundle project as a package
+  structure_generator Create project structure
+
+USE
+----------
+
+  bach --tools project audit <pfad>      Audit project
+  bach --tools project license <typ>     Generate license (MIT, Apache, etc.)
+  bach --tools project bundle <pfad>     Bundle project
+  bach --tools project structure <name>  Create new project structure
+
+MODULE
+-----
+
+  tools/project/ (5 tools)

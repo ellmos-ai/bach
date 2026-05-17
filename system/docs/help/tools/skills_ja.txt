@@ -1,0 +1,131 @@
+BACH スキル ツール
+-----------------
+
+BACH スキルを管理、監視、検証するためのツール。
+
+クイック スタート
+------------
+  bach --maintain skills                    # スキル ヘルス チェック
+  bach skill list                          # スキルのリスト
+  bach skill export NAME                   # スキルのエクスポート
+
+スキルとは?
+----------------
+スキルは BACH で再利用可能なスキル モジュールです。
+- _agents/: 上司のエージェント (ATI、税務代理人など)
+- _experts/: 専門スキル（データ分析など）
+- _services/: サービス スキル (コミュニケーション、繰り返しなど)
+
+スキル ヘルス モニター
+--------------------
+すべてのスキルを監視し、検証します。
+
+コマンド:
+  python tools/maintenance/skill_health_monitor.py チェック
+  python tools/maintenance/skill_health_monitor.py check --skills
+  python tools/maintenance/skill_health_monitor.py check --agents
+  python tools/maintenance/skill_health_monitor.py レポート
+
+チェック内容:
+- SKILL.md の完全性 (名前、バージョン、説明)
+- エージェントマニフェスト (manifest.json)
+- ディレクトリ構造
+- 孤立または壊れたスキル
+
+--startup への統合:
+Skill Health Monitor はセッションの開始時に自動的に実行されます
+
+
+スキルのエクスポート/インポート
+-------------------
+スキルをエクスポートして他のシステムにインストールできます。
+
+エクスポート:
+  bach skill export SKILLNAME
+  -> すべてのファイルとmanifest.jsonを含むSKILLNAME.zipを作成しました
+
+インポート:
+  bach skill install PFAD/skill.zip
+  -> 解凍してスキルに統合/
+
+ATI EXPORT (エージェント固有):
+  bach ati export
+  -> ATI エージェントをすべての依存関係とともにエクスポートします
+
+スキル ディレクトリ構造
+-------------------------
+skills/
+§── SKILL.md # main SKILL.md (BACH本体)
+§── AGENT_KONVENTION.md # エージェントルール
+§── SKILL_ANALYSE.md # カバレッジ解析
+│
+§── _agents/ # ボスエージェント
+│ §── ati/ # ソフトウェア開発者エージェント
+│ §── Tax-agent.txt # 税務代理人
+│ ━─……
+│
+§── _experts/ # エキスパートモジュール
+│ └── データ分析/ # データ分析エキスパート
+│
+└── _services/ # バックグラウンド サービス
+    §── communication.md # パートナー通信
+    └── 定期的/ # 定期的なタスク
+
+SKILL.MD 形式
+---------------
+各 SKILL.md には YAML 前付が必要です:
+
+---
+name: スキル名
+バージョン: 1.0.0
+説明: 簡単な説明
+last_updated: 2026-01-23
+---
+
+# スキル名
+
+コンテンツとドキュメント...
+
+VALIDATION
+-----------
+必須フィールド: 名前、バージョン、説明
+推奨: last_updated、作成者、依存関係
+
+エージェントには次のものも必要です。
+- マニフェスト.json (必須)
+- README.md (推奨)
+- CHANGELOG.md (推奨)
+
+データベース統合
+---------------------
+スキルは bach.db に登録されます:
+
+  スキルから * を選択します。                    # すべてのスキル
+  SELECT * FROM エージェント;                    # すべてのエージェント
+  SELECT * FROM エージェントシナジー;           # エージェント関係
+
+CLI コマンド
+-----------
+  bach --maintain skills      # ヘルスチェック (--startup)
+  bach skill list             # DB からスキルをリストする
+  bach skill export NAME      # スキルをエクスポート
+  bach skill install PFAD     # スキルをインストール
+
+ヒント
+-----
+- スキル ヘルス モニターは --startup ごとに実行されます
+- 問題は警告/エラーとして報告されます
+- 新しいスキルの場合: 正しい前付を含む SKILL.md を作成します。
+- 常に、manifest.json を使用してエージェントを作成します
+
+関連項目
+----------
+  bach --help agents           # エージェントのドキュメント
+  bach --help ati              # ATI エージェントの詳細
+  bach --help maintain         # メンテナンス ツール
+  skill/AGENT_KONVENTION.md # エージェント ルール
+
+---
+バージョン: 1.0.0
+作成日: 2026-01-23
+BACH ツールのドキュメントの一部:

@@ -1,0 +1,33 @@
+巴赫工具：doc_update_checker
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/doc_update_checker.py
+
+描述
+----------------------------------------
+BACH 文档更新检查器 v1.0.1
+
+自动检测和更新过时的文档。
+移植自RecludOS，集成BACH内存系统。
+
+特点：
+- 检测过期文档（>60 天，无效路径）
+- 生成更新建议
+- 创建更新报告
+- 可以自动执行简单的更新
+
+用法：
+  python doc_update_checker.py check # 检查
+  python doc_update_checker.py reports # 创建报告
+  python doc_update_checker.py auto-update # 自动更新（安全）
+  python doc_update_checker.py Schedule # 对于微例程
+
+使用
+----------------------------------------
+python bach.py工具运行doc_update_checker [args]
+或直接： python tools/doc_update_checker.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：bach 工具显示 doc_update_checker

@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WIKI 处理程序
+------------
+
+处理程序名称
+------------
+wiki - 管理和搜索 wiki 文章
+
+描述
+------------
+Wiki 处理程序管理本地知识数据库（wiki/目录）。
+支持主文件夹和特定于主题的子文件夹中的文章。
+文章保存为 UTF-8 文本文件。处理程序支持
+数据库索引（同步），通过 FTS5 进行高性能全文搜索。
+
+操作
+-----------
+列表 列出所有 wiki 文章（带有子文件夹）
+列出所有主题文件夹及其文章数
+<topic> 显示文章（例如 bach wiki linux）
+<文件夹>/<主题> 子文件夹中的文章（例如 bach wiki Tax/elster）
+搜索 搜索文章（FTS5 或后备扫描）
+显示来源元数据、证据类型、个人参考和隐私信息
+同步数据库中的镜像 wiki 和帮助文件（更新索引）
+
+示例
+---------
+Bach wiki 列表
+  显示所有可用文章和主题文件夹
+
+Bach wiki 文件夹
+  列出所有主题文件夹以及文章计数
+
+Bach wiki docker
+  显示文章 wiki/docker.txt
+
+巴赫 wiki 资助/icf
+  显示子文件夹中的文章：wiki/foerderung/icf.txt
+
+Bach wikitax/elster
+  显示子文件夹中的文章：wiki/steuer/elster.txt
+
+Bach wiki 搜索“kubernetes”
+  使用 FTS5 或回退扫描搜索所有文章
+
+Bach wiki 搜索“部署管道”
+  使用多个单词搜索（用引号引起来）
+
+Bach wiki 出处
+  显示最近索引的文章以及来源和隐私评估
+
+巴赫维基起源税/埃尔斯特
+  仅显示一篇文章的出处
+
+Bach wiki 同步
+  更新数据库索引（手动更改文件后）
+
+FILES
+-------
+wiki/ 包含文章的 Wiki 主文件夹
+wiki/*.txt 主文件夹中的文章（例如 wiki/docker.txt）
+wiki/<folder>/ 主题文件夹（例如 wiki/tax/）
+wiki/<folder>/*.txt 子文件夹文章（例如 wiki/steuer/elster.txt）
+wiki/<folder>/_index.txt 可选文件夹描述
+wiki/_index.txt 可选主列表描述
+具有同步索引的 data/bach.db 数据库（wiki_articles 表）
+docs/help/ 帮助文件（通过同步进行附加索引）
+
+另请参见
+----------
+bach help config     处理程序属性
+bach help base       基本处理程序文档
+bach list handlers   所有可用处理程序
+bach wiki sync       数据库索引
+
+注释
+--------
+- 没有路径前缀或特殊文件夹命令的文章：自动在
+  搜索主文件夹
+- 子文件夹语法 (/) 将反斜杠标准化为斜杠（Windows 兼容）
+- 如果数据库存在，FTS5 搜索优先于后备文件系统扫描
+- 未找到的项目的模糊匹配显示相似的文件名
+- 直接文件更改后必须手动调用“sync”

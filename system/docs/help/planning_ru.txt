@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ПРОЦЕСС ПЛАНИРОВАНИЯ
+-----------------
+
+КОГДА ПЛАНИРОВАТЬ?
+  < 15 минут Редактировать напрямую
+  15–30 мин. Дополнительная структура
+  > 30 мин ДОЛЖНО быть структурировано
+
+СОЗДАТЬ ПЛАНИРОВАНИЕ (РУЧНОЕ):
+
+  1. Создайте концептуальный документ в docs/ или docs/_ideas/.
+  2. Структура (рекомендуется):
+     - Предыстория (Почему?)
+     - Цель (Чего следует достичь?)
+     - Технический анализ (компоненты, файлы, зависимости)
+     - План реализации с декомпозицией задач
+
+  3. Создайте задачи в базе данных BACH:
+     bach task add "Teil 1" --category development --priority P2
+     bach task add "Teil 2" --category development --priority P3
+
+  4. Установите зависимости (при необходимости):
+     bach task depends <id> --on <andere_id>
+
+ПРАВИЛА БЮДЖЕТА ВРЕМЕНИ (рекомендации):
+  Очень редко: 1–2 минуты (постоянное переименование)
+  Редко: 2–3 минуты (добавить импорт)
+  ЧАСТО: 3–6 мин (реализовать функцию)
+  Иногда: 8-11 минут (Более сложная логика)
+  Редко: 12 минут (крупный рефакторинг)
+  НИКОГДА: >15 минут (технически невозможно)
+
+КОМАНДЫ ЗАДАЧИ:
+  bach task add <titel>              Добавить задачу
+  bach task add <titel> --category development --priority P2
+  bach task list pending             Показать открытые задачи
+  bach task depends <id>             Показать зависимости
+  bach task depends <id> --on <id2>  Установить зависимость
+  bach task show <id>                Показать детали задачи
+  bach task done <id>                Отметить задачу как выполненную
+
+  См. также: Справка по задаче Баха
+
+ПРИМЕЧАНИЕ РАБОЧЕГО ПРОЦЕССА:
+  1. Напишите концепцию в docs/_ideas/my_feature.md.
+  2. Создавайте задачи:
+     bach task add "Schema erweitern" --category development --priority P2
+     bach task add "Handler implementieren" --category development --priority P2
+     bach task add "Tests schreiben" --category development --priority P3
+  3. Установите зависимости:
+     bach task depends 302 --on 301  # Обработчик зависит от схемы
+     bach task depends 303 --on 302  # Тесты зависят от обработчика
+  4. Процесс пошагово:
+     bach task done 301
+     bach task list pending  #302 больше не блокируется

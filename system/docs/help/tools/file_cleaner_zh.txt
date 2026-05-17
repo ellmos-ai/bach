@@ -1,0 +1,30 @@
+巴赫工具：file_cleaner
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/file_cleaner.py
+
+描述
+----------------------------------------
+file_cleaner.py - 按年龄/模式清理文件
+------------------------------------------------------
+
+查找并删除旧文件或按模式的文件。
+对于备份文件夹、日志、临时文件很有用。
+
+用法：
+    python file_cleaner.py <folder> --age 30 # 超过 30 天
+    python file_cleaner.py <folder> --pattern "*.log" # 按模式
+    python file_cleaner.py <folder> --keep 5 # 保持 5 最新
+    python file_cleaner.py <folder> --execute # 实际删除
+
+作者：BACH v1.1
+
+使用
+----------------------------------------
+python bach.py 工具运行 file_cleaner [args]
+或直接： python tools/file_cleaner.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach tools show file_cleaner

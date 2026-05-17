@@ -1,0 +1,121 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [hub/prompt.py, prompt_templates, prompt_boards, prompt_versions]
+
+PROMPT - Prompt template management
+-------------------------------------
+
+DATE: 2026-02-28
+
+The prompt system manages reusable prompt templates with
+Versioning and organization options via boards.
+
+Ref: B42
+
+CORE CONCEPTS
+------------
+- TEMPLATES: Reusable prompt texts with name, category, tags
+- VERSIONS: Every change creates a new version (history)
+- BOARDS: Collections of templates (thematic groups)
+
+CLI COMMANDS (bach prompt)
+--------------------------
+
+  list [--category CAT] List all templates
+  add <name> <text> Create new template
+  get <id_or_name> template + show version history
+  update <id_or_name> <text> Create new version
+  delete <id_or_name> Delete template
+  search <query> Search templates
+  boards View all boards
+  board <title> View/create/manage board
+
+OPTIONS FOR ADD
+-----------------
+  --category CAT category (e.g. "analysis", "write")
+  --tags t1,t2 tags (comma separated)
+  --purpose TEXT Purpose
+
+OPTIONS FOR BOARD
+-------------------
+  --add-prompt Add ID prompt to board
+  --remove-prompt Remove ID prompt from board
+  --description TEXT Set/update board description
+
+EXAMPLES
+---------
+
+  # List templates
+  bach prompt list
+  bach prompt list --category analyse
+
+  # Create template
+  bach prompt add "Zusammenfassung" "Fasse den folgenden Text zusammen:" --category schreiben
+  bach prompt add "Code-Review" "Pruefe diesen Code auf Fehler:" --tags "dev,review" --purpose "Code-Qualitaet"
+
+  # Show template (with version history)
+  bach prompt get 42
+  bach prompt get "Zusammenfassung"
+
+  # Update template (created version)
+  bach prompt update 42 "Fasse den folgenden Text praegnant zusammen:"
+  bach prompt update "Zusammenfassung" "Neue Version des Textes..."
+
+  # Delete template
+  bach prompt delete 42
+
+  # Search (in name, text, tags)
+  bach prompt search "zusammenfass"
+  bach prompt search "code"
+
+  # Manage boards
+  bach prompt boards                                      # All boards
+  bach prompt board "Schreiben"                           # Create/view board
+  bach prompt board "Schreiben" --add-prompt 42           # Add prompt
+  bach prompt board "Schreiben" --remove-prompt 42        # Remove prompt
+  bach prompt board "Schreiben" --description "Schreib-Prompts fuer den Alltag"
+
+VERSIONING
+-------------
+
+When you `update`, the old text is automatically saved as a version.
+Version history is visible at `bach ​​prompt get <id>`:
+
+  VERSIONS (2):
+    No Created Text (Preview)
+    1 2026-01-15T10:30:00 Old text...
+    2 2026-02-01T14:00:00 Next version...
+
+CONFLICT RESOLUTION (--confidence)
+------------------------------------
+Confidence can be specified with `add` (for shared memory):
+  bach prompt add <name> <text> --confidence 0.8
+
+In case of conflicts (same key, namespace), higher confidence wins.
+
+DATABASE
+---------
+
+  prompt_templates:
+    id, name, purpose, text, tags, category,
+    created_at, updated_at, dist_type
+
+  prompt_versions:
+    id, prompt_id, version_number, text, tags, created_at
+
+  prompt_boards:
+    id, title, description, created_at
+
+  prompt_board_items:
+    id, board_id, prompt_id, added_at
+
+FILES
+-------
+  hub/prompt.py Handler implementation
+
+SEE ALSO
+----------
+  bach --help tasks        Task system
+  bach --help memory       Memory system
+  bach --help skills       SKILL.md system

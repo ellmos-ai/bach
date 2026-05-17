@@ -1,0 +1,100 @@
+CONVERSION TOOLS - Conversion tools
+-------------------------------------------
+
+OVERVIEW
+The conversion tools in BACH convert file formats
+and repair/standardize files.
+
+UNIVERSAL CONVERTER
+-------------------
+c_universal_converter.py
+
+Universal conversion tool for many formats.
+Supports:
+  - Text -> PDF
+  - Markdown -> PDF/HTML
+  - JSON -> CSV
+  - Excel -> CSV
+  - Images (resize, format)
+
+Call: python tools/c_universal_converter.py <input> <output>
+
+MARKDOWN -> PDF
+---------------
+c_md_to_pdf.py
+
+Converts Markdown files into PDF with styling.
+Features:
+  - Code highlighting
+  - Tables
+  - Embed images
+
+Call: python tools/c_md_to_pdf.py <md file> [--output <pdf>]
+
+ENCODING & TEXT
+---------------
+
+c_encoding_fixer.py
+  Fixes encoding problems (UTF-8, Latin-1, etc.)
+  Automatically detects incorrect coding.
+  Call: python tools/c_encoding_fixer.py <file>
+
+c_umlaut_fixer.py
+  Fixes German umlauts in files.
+  Replaces broken characters (ae->ä, ue->ü, etc.)
+  Call: python tools/c_umlaut_fixer.py <file>
+
+c_standard_fixer.py
+  Standardizes code formatting.
+  Removes trailing whitespace, unifies line endings.
+  Call: python tools/c_standard_fixer.py <file>
+
+JSON TOOLS
+----------
+
+c_json_repair.py
+  Repairs broken JSON files.
+  Fixes missing commas, quotes, brackets.
+  Call: python tools/c_json_repair.py <file>
+
+json_fixer.py
+  Alternative JSON repair with advanced options.
+  Call: python tools/json_fixer.py <file>
+
+CODE TOOLS
+----------
+
+c_import_organizer.py
+  Sorts and organizes Python imports.
+  Grouped: Standard, Third-Party, Local.
+  Call: python tools/c_import_organizer.py <file>
+
+c_indent_checker.py
+  Checks and corrects indentation.
+  Options: --tabs, --spaces N
+  Call: python tools/c_indent_checker.py <file>
+
+EXPORT
+------
+
+export_txt.py
+  Exports files as plain text.
+  Call: python tools/export_txt.py <file>
+
+exporter.py
+  General exporter for various formats.
+  Call: python tools/exporter.py <file> --format <fmt>
+
+BATCH OPERATIONS
+-----------------
+
+batch_file_ops.py
+  Performs file operations on multiple files.
+  Operations: rename, copy, move, convert
+  Call: python tools/batch_file_ops.py <operation> <pattern>
+
+SEE ALSO
+----------
+bach --help tools         Tool overview
+bach --help backup        Backup tools
+bach --help maintain      Maintenance tools

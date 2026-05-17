@@ -1,0 +1,34 @@
+BACH ツール:agent_framework
+--------------------------------------------------
+生成:2026-01-23 10:36
+ソース: tools/agent_framework.py
+
+説明
+----------------------------------------
+エージェント フレームワーク v1.0.0
+
+RecludOS エージェントの中心的なフレームワーク。
+エージェントをサービス、外部ツール、接続に接続します。
+
+特徴:
+- エージェントローダーとレジストリ管理
+- サービス統合 (スケジュール、メディア、メールなど)
+- 外部 AI ツールの推奨事項
+- 接続管理 (MCP、API、CLI)
+
+使用法:
+  python Agent_framework.py list # すべてのエージェント
+  python Agent_framework.py info <agent> # エージェントの詳細
+  python Agent_framework.py tools <agent> # 推奨ツール
+  python Agent_framework.py services <agent> # リンクされたサービス
+  python Agent_framework.py activate <agent> # エージェントをアクティブ化
+
+USE
+----------------------------------------
+python bach.py tools run Agent_framework [args]
+または直接: python tools/agent_framework.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- ご質問がある場合: bach tools showagent_framework

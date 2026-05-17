@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+------------
+N8nManagerHandler
+
+
+DESCRIPTION
+------------
+n8n Workflow Manager Integration for BACH. Manages n8n instances and
+Workflows via REST API and optional MCP server. Default port: 5678.
+
+Profile: n8n-manager
+Package: n8n-manager-mcp (optional, can be installed via “bach setup n8n”)
+Connection: http://localhost:5678 (configurable)
+
+
+OPERATIONS
+-----------
+status Checks n8n instance and MCP server installation
+            Indicates connection status.
+
+list Lists available workflows (via n8n REST API)
+            Shows ID, name, active status.
+
+sync Preparation for workflow synchronization
+            Requires MCP server. Delegated to Claude Code Tools.
+
+
+EXAMPLES
+---------
+handler = N8nManagerHandler()
+
+# Check status
+result = handler.handle('status')
+
+# List workflows
+result = handler.handle('list')
+
+# Enable sync
+result = handler.handle('sync')
+
+# Handler with custom URL
+handler = N8nManagerHandler('http://n8n.example.com:5678')
+
+
+FILES
+-------
+hub/n8n_manager.py Handler implementation
+docs/help/n8n_manager.txt This file
+
+
+SEE ALSO
+----------
+bach setup n8n                 Install MCP server globally
+MODULAR_AGENTS/n8nManager/ n8n Manager Reference (README.md)
+SQ081 n8n Workflow Manager Requirement

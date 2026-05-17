@@ -1,0 +1,99 @@
+# 可移植性：通用
+
+PARTNER-CONFIG-MANAGER
+----------------------
+
+管理 BACH 自动进入配置文件
+法学硕士合作伙伴（Claude Code、Gemini、Ollama）。检测已安装的合作伙伴并
+使用基于模板的配置块注册 BACH。
+
+SQ015 的一部分：LLM 不可知论和注册过程。
+
+
+描述
+------------
+
+处理程序自动将 BACH 集成到各种 LLM 环境中。
+它基于模板并支持合作伙伴类型：
+  - claude-code（检测目录：~/.claude）
+  -gemini（检测目录：~/.gemini）
+  - ollama（检测目录：~/.ollama）
+
+从模板创建新的配置文件，BACH_ROOT_PATH为
+自动插入。重复注册是幂等的。
+
+
+操作
+-----------
+
+detect_active_partners()
+  通过检查其检测目录来检测已安装的合作伙伴。
+  返回： 合作伙伴名称列表（例如 ["claude-code", "ollama"]）
+
+register_partner(partner: str)
+  将 BACH 输入合作伙伴的配置文件中。
+  - 从 templates/{PARTNER_MD_TEMPLATE.md} 加载模板
+  - 将 [BACH_ROOT_PATH] 替换为当前 BACH 根路径
+  - 如果尚未输入 BACH，则创建新文件或追加
+  - 返回：（成功：bool，消息：str）
+
+unregister_partner(partner: str)
+  从合作伙伴的配置文件中删除 BACH 块。
+  - 搜索“#BACH Integration”标记
+  - 删除块直到下一个顶级标题
+  - 幂等：没有丢失文件/块错误
+  - 返回：（成功：bool，消息：str）
+
+register_all_detected()
+  在所有认可的合作伙伴中注册 BACH。
+  返回：列表（合作伙伴：str，成功：bool，消息：str）
+
+
+示例
+---------
+
+编程（bach_api）：
+
+  从 bach_api 导入 PartnerConfigManager
+  从路径库导入路径
+
+  经理 = PartnerConfigManager(Path("/path/to/BACH"))
+
+  # 认可所有合作伙伴
+  合作伙伴 = manager.detect_active_partners()
+  print(partners) # ["claude-code"]
+
+  # 注册巴赫
+  成功, msg = manager.register_partner("claude-code")
+  print(msg) # ✓ CLAUDE.md 创建: ~/.CLAUDE.md
+
+  #大家注册
+  结果 = manager.register_all_detected()
+
+
+文件
+-------
+
+集线器/partner_config_manager.py
+  使用 PartnerConfigManager 类和 CLI 函数实现处理程序。
+
+templates/CLAUDE_MD_TEMPLATE.md
+  Claude 代码集成模板。将替换为 BACH_ROOT_PATH。
+
+templates/GEMINI_MD_TEMPLATE.md
+  Gemini 集成模板。
+
+templates/OLLAMA_MD_TEMPLATE.md
+  Ollama 集成模板。
+
+~/.CLAUDE.md、~/.GEMINI.md、~/.OLLAMA.md
+  用户的目标文件。将在主目录中创建。
+
+
+另请参阅
+----------
+
+SQ015（系统要求）：LLM 不可知论和注册流程
+SQ038：改进的用于块移除的标记系统（计划中）
+bach.py：带有“partner”子命令的 CLI 入口点
+bach_api.py：用于编程使用的 Python API

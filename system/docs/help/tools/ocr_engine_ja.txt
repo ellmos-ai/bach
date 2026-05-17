@@ -1,0 +1,25 @@
+BACH ツール: ocr_engine
+--------------------------------------------------
+生成: 2026-01-23 10:36
+出典: tools/ocr_engine.py
+
+説明
+----------------------------------------
+BACH OCR エンジン
+---------------
+Tesseract によるテキスト認識。
+DokuZentrum Pro から適応
+
+使用法:
+    python ocr_engine.py <pdf_path>
+    python ocr_engine.py B0006 # バウチャーの短い形式
+
+USE
+----------------------------------------
+python bach.py tools run ocr_engine [args]
+または直接: python tools/ocr_engine.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成されます
+- 質問がある場合: bach tools show ocr_engine

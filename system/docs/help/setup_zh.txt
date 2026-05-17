@@ -1,0 +1,106 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+===
+
+setup
+
+
+DESCRIPTION
+===
+
+完全配置 BACH 系统：安装 MCP 服务器 (npm)，经过验证
+依赖关系、同步机密和用户配置文件并执行预检检查
+通过。 PEANUT 版本 (B37) 的一部分，带有可选的 n8n 管理器 MCP。
+
+
+操作
+===
+
+mcp 通过 npm 全局安装 MCP 服务器（codecommander、filecommander）
+                并更新了 Claude 代码配置 (~/.claude.json)。
+
+n8n 安装可选的 n8n-manager-mcp 包并在中注册
+                Claude Code MCP-Config.
+
+check 验证所有依赖项是否存在并已配置：
+                npm、MCP 包、机密文件、bach.db、USER.md。
+
+secrets 初始化或同步 ~/.bach/bach_secrets.json
+                Secrets 数据库。
+
+user 管理 USER.md：如果仍然是模板，则从 DB 进行个性化，
+                或将解析后的数据同步回数据库。
+
+preflight 执行安装前检查：Python >= 3.10，npm 可用，
+                data/ 可写，> 100 MB 可用存储空间。
+
+prosync 配置 ProSync 以供多系统使用。
+                --multi-system 启用数据库同步（多台计算机上的 BACH）
+                --single-system 禁用数据库同步（仅限此系统）
+                无标志：显示当前状态。默认值：单系统。
+
+hooks 将 Claude 代码挂钩（数据库保护等）安装到
+                Claude 代码设置 (~/.claude/settings.json)。
+
+hooks-remove 删除 BACH 安装的 Claude 代码挂钩（可逆）。
+                仅删除 BACH 注册的挂钩条目。
+
+lang <de|en> 中间根文档（README、QUICKSTART 等）。
+                德语和英语。
+
+full-install 一次性完成安装（预检、prosync、
+                mcp、钩子、秘密、用户）。可选：--with-n8n 或 --config <json>。
+
+
+示例
+===
+
+bach setup mcp
+  安装了 codecommander-mcp 和 filecommander-mcp，更新了 ~/.claude.json
+
+bach setup check
+  检查所有依赖关系并输出状态
+
+bach setup n8n
+  安装 n8n-manager-mcp（可选）
+
+bach setup preflight
+  安装前验证 Python、npm、磁盘空间
+
+bach setup prosync
+  显示当前 ProSync 状态（多系统或单系统）
+
+bach setup prosync --multi-system
+  启用 ProSync：本地数据库 (~/.bach/bach.db) + OneDrive Transit Sync
+
+bach setup prosync --single-system
+  禁用 ProSync（新安装的默认设置）
+
+bach setup full-install --with-n8n
+  完整安装，包括 n8n 管理器
+
+bach setup user
+  从数据库个性化 USER.md 或将 USER.md 更改同步到数据库
+
+
+FILES
+===
+
+hub/setup.py 此处理程序
+data/bach.db BACH 数据库（assistant_user_profile，秘密）
+data/bach_secrets.json 秘密库 (~/.bach/bach_secrets.json)
+../USER.md 用户个人资料（模板或个性化）
+~/.claude.json 克劳德代码 MCP 服务器配置
+
+
+另请参见
+===
+
+hub/base.py BaseHandler（超类）
+hub/secrets_handler.py SecretsHandler（秘密管理）
+docs/help/check.txt 安装后验证
+docs/help/install.txt 初始安装和场景
+docs/help/db_sync.txt ProSync：多系统数据库同步

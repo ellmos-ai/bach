@@ -1,0 +1,132 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[tools/_policies/CONCEPT_naming_convention.md]
+
+命名约定
+------------------
+
+截至：2026-02-08
+
+时间戳格式
+-------------------
+  会话 ID：YYYYMMDD_HHMM (20260111_0315)
+  聊天 ID：msg_YYYYMMDD_HHMMSS (msg_20260111_031504)
+  文档：DD.MM.YYYY (01/11/2026)
+  JSON 字段：ISO 8601 (2026-01-11T03:15:04)
+
+文件
+-------
+  报告：Report_YYYYMMDD_HHMM.md
+  取证：REPORT_YYYY-MM-DD_Thema.md
+  概念：CONCEPT_Name.md 或 CONCEPT_Name.md
+  分析：ANALYSIS_Name.md
+  研究：RECHERCHE_Name.md
+  架构：*_schema.md
+  模板：TEMPLATE_Name.md
+
+TOOL-PRAEFIXES (tools/*.py)
+--------------------------
+前缀标识工具的类型和用途。
+
+  前缀 含义 示例
+  ------- ---------------------- ------------------------
+  c_ 针对 AI 优化的 CLI c_encoding_fixer.py
+            （克劳德/recludOS）c_json_repair.py
+            - 清晰、可解析的输出
+            - 编码安全 (UTF-8)
+
+  m_维护m_migrate_triggers.py
+            - 清理工具m_cleanup_logs.py
+            - 迁移脚本
+
+  b_BACH核心（系统）backup_manager.py
+            - 由 bach.py 使用 bach_auto_discovery.py
+            - 关键功能
+
+  check_ 验证器 check_my_tasks.py
+            - 一次性测试
+
+  fix_ 快速修复 fix_injectors.py
+            - 修复特定错误
+
+技能特定工具（新）
+-----------------------------
+仅与技能相关的工具：
+
+  命名约定：<技能>_<功能>.py
+
+  示例：
+    tax_scanner.py # 税务专家特定
+    tax_sync.py # 税务专家特定
+    task_scanner.py # ATI 代理特定（在agents/ati/scanner/中）
+
+  地点：
+    - 常规：tools/c_ocr_engine.py
+    - 具体：agents/_experts/steuer/steuer_scanner.py
+    - 代理工具：agents/ati/scanner/task_scanner.py
+
+  规则：如有疑问，请加倍！
+  导出中必须包含特定于技能的工具。
+
+PYTHON-TOOL-HEADER（新 - 强制）
+----------------------------------
+每个工具都需要一个标准标头：
+
+  ”“”
+  工具：工具名称
+  版本：X.Y.Z
+  作者：[作者]
+  创建时间：YYYY-MM-DD
+  更新日期：年-月-日
+  人类兼容：正确
+
+  版本说明：检查是否有较新版本
+
+  说明：
+      该工具的作用。
+  “”“
+
+  __版本__ =“X.Y.Z”
+  __author__ = "[作者]"
+
+模板：system/skills/_templates/TEMPLATE_TOOL.py
+
+技能文件夹名称
+------------------
+  格式：小写加连字符
+
+  示例：
+    代理商/开发商/
+    代理/私人助理/
+    代理/_专家/税务/
+    特工/_experts/foerderplaner/
+
+技能文件
+-------------
+  SKILL.md 主要定义（强制）
+  config.json 配置（可选）
+  README.md 仅用于导航（不适用于概念！）
+
+TASK-IDS 和项目
+-------------------
+  ID：数字 (1, 2, 712) - 自动分配。
+  标签/Pfx：用于描述的组：
+               SYS_系统核心
+               WF_工作流程开发
+               GUI_前端主题
+               FIN_财务模块
+               健康_取证与维护
+               技能_技能架构（新）
+               LANG_ 国际化
+
+禁止
+--------
+  文件名： / \ ： * ？ " < > | 变音符号
+
+另请参见
+----------
+  bach --help tools            工具管理和执行
+  bach --help skills           技能系统
+ system/tools/_policies/ 策略验证器
+  system/skills/_templates/ 默认模板

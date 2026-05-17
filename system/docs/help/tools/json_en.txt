@@ -1,0 +1,24 @@
+BACH Tool: JSON
+---------------
+
+JSON processing, repair and registry cleaning.
+
+AVAILABLE TOOLS
+-----------------
+
+  json_config_cli Manage JSON configuration files
+  json_fixer Fix broken JSON files
+  json_registry_cleaner Tool clean registry
+  json_repair Automatically correct JSON syntax
+
+USE
+----------
+
+  bach --tools json fix <datei.json>      Repair broken JSON
+  bach --tools json config <key> [value]  Read/set configuration
+  bach --tools json clean-registry        Clean registry
+
+MODULE
+-----
+
+  tools/json/ (4 tools)

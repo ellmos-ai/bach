@@ -1,0 +1,70 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PROBLEM SOLVING - Structured Thinking
+--------------------------------------
+
+DESCRIPTION
+------------
+Problem solving and analysis strategies for complex tasks.
+Structured thought processes for difficult situations.
+
+PROBLEM-SOLVING APPROACHES
+------------------------
+
+1. DIVIDE & CONQUER
+   Problem -> Subproblems -> Solve individually -> Combine
+
+   When to use: Large, complex problems that can be broken down.
+
+2. ROOT CAUSE ANALYSIS (5 Whys)
+   Symptom -> Why? -> Why? -> Why? -> Cause -> Solution
+
+   When to use: When it is unclear what the actual problem is.
+
+3. CONSTRAINT RELAXATION
+   Unsolvable -> relax constraints -> solve -> tighten constraints
+
+   When to use: When requirements are too restrictive.
+
+4. ANALOGY SEARCH
+   New problem -> Similar known problem -> Adapt solution
+
+   When to use: For novel problems without an obvious solution.
+
+ANALYSIS METHODS
+----------------
+
+  Method application
+  ---------- ----------------------------------------
+  SWOT strengths/weaknesses/opportunities/risks
+  Pro/Con decision making
+  Pareto 80/20 prioritization (find the most important 20%)
+  Fishbone Root Cause Analysis (Ishikawa Diagram)
+
+DECISION HEURISTICS
+-------------------------
+
+When Uncertainty:
+  1. What is the worst case scenario?
+  2. Is it reversible?
+  3. What is the cost of inaction?
+
+With complexity:
+  1. What is the easiest first step?
+  2. What would an expert do?
+  3. What would be the 80% solution?
+
+PRACTICAL TIPS
+----------------
+- Always start with the easiest step
+- Document thought processes for future reference
+- If there is a blockage: take a break, reformulate the problem
+- 80% solutions are often better than 100% plans
+
+SEE ALSO
+----------
+docs/help/denkstrategie.txt Cognitive and metacognitive strategies
+docs/help/strategies.txt Categorize, evaluate, test
+docs/help/operators.txt Basic operators and patterns

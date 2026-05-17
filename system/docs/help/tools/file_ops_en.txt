@@ -1,0 +1,26 @@
+BACH Tool: File Operations
+--------------------------
+
+File system tools for analysis and cleanup.
+
+AVAILABLE TOOLS
+-----------------
+
+  dirscan directory scanner with statistics
+  duplicate_detector Find file duplicates
+  encoding_fixer Fix encoding problems (UTF-8)
+  file_cleaner Remove temporary/unnecessary files
+  file_manager File operations (move, rename)
+
+USE
+----------
+
+  bach --tools file_ops scan <pfad>        Analyze directory
+  bach --tools file_ops duplicates <pfad>  Find duplicates
+  bach --tools file_ops encoding <pfad>    Check/fix encoding
+  bach --tools file_ops clean <pfad>       Cleanup
+
+MODULE
+-----
+
+  tools/file_ops/ (5 tools)

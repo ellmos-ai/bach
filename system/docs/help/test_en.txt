@@ -1,0 +1,61 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+TEST - BACH test and QA system
+--------------------------------
+
+OVERVIEW
+----------
+Systematic testing of BACH and comparison with other systems.
+Uses B-tests (automated), O-tests (functional) and E-tests (subjective).
+
+COMMANDS
+-------
+  bach --test self [PROFIL]     Test BACH yourself (default: QUICK)
+  bach --test run <path>        Test another system
+  bach --test compare <path>    Compare system with BACH
+  bach --test profiles          Show available profiles
+  bach --test results [system]  Show test results
+
+TEST PROFILES
+-----------
+  QUICK rapid test (~5 min) - B001, O001
+  STANDARD Standard (~20 min) - B001-B005, O001-O003
+  FULL Complete (~40 min) - All tests
+  OBSERVATION B tests only (~15 min)
+  OUTPUT O tests only (~20 min)
+  MEMORY_FOCUS Memory focus (~10 min)
+  TASK_FOCUS Task focus (~10 min)
+
+THREE TEST PERSPECTIVES
+---------------------
+  B-tests (observation) External, automated, Python scripts
+                          "What exists?"
+
+  O-tests (output) Functional, input->output, Python scripts
+                          "Does it work?"
+
+  E-tests (experience) Internal, subjective, Claude-led
+                          "How does it feel?"
+
+RATING SCALE
+---------------
+  5 = Excellent
+  4 = Good
+  3 = Acceptable
+  2 = Poor
+  1 = Critical
+
+EXAMPLES
+---------
+  bach --test self              Quick self-test
+  bach --test self STANDARD     Standard self-test
+  bach --test compare "C:\X"    Compare BACH with another system
+  bach --test results           Show all results
+
+IMPLEMENTATION
+---------------
+  Handler: system/hub/test.py
+  Status: Test infrastructure (tools/testing/) NOT available
+  Note: Handler exists, but tools/agent are still missing

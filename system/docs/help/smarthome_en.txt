@@ -1,0 +1,62 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+------------
+smarthome - Smart Home Integration (FritzBox TR-064)
+
+
+DESCRIPTION
+------------
+Provides connection and device information from a FritzBox.
+Uses the TR-064 SOAP API for secure UPnP communication over HTTP
+fritz.box:49000. No authentication or external dependencies required.
+
+
+OPERATIONS
+-----------
+status Show connection status, uptime, external IP and device count
+devices List all connected devices with IP, MAC and status (online/offline)
+wifi WLAN information: SSID, status, channel
+bandwidth Maximum download and upload rates (Mbps)
+reconnect Force reconnection to the Internet (dry-run supported)
+info FritzBox information: model, firmware, serial number, uptime
+help Show this help
+
+
+EXAMPLES
+---------
+bach smarthome status
+  -> Show connection status and number of devices
+
+bach smarthome devices
+  -> All connected devices with IP, MAC and online status
+  -> Limit: max. 30 devices per retrieval
+
+bach smarthome wifi
+  -> WLAN SSID, activity status and channel
+
+bach smarthome bandwidth
+  -> Download and upload maximums in Mbit/s
+
+bach smarthome reconnect
+  -> Disconnect and reconnect to the Internet connection
+  -> New IP available within ~10 seconds
+  -> With --dry-run: simulation without execution
+
+bach smarthome info
+  -> Device details (model, firmware version, serial)
+
+
+FILES
+-------
+hub/smarthome.py Handler implementation (SmartHomeHandler class)
+data/bach.db Target database for profile "smarthome"
+
+
+SEE ALSO
+----------
+hub/base.py BaseHandler base class
+FritzBox documentation: https://avm.de (TR-064 SOAP API)
+Accessibility: fritz.box must be resolved in the local network

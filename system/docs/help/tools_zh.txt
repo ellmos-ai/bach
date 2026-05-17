@@ -1,0 +1,518 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+工具 - 工具管理
+-----------------------
+
+描述
+------------
+BACH 管理三种类型的工具：
+1.Python工具：tools/中的脚本（编码、控制、迁移）
+2. CLI工具：命令行程序（git、ffmpeg、python）
+3. 外部 AI 工具：基于 Web 的 AI 服务（ChatGPT、Midjourney）
+
+CLI 和外部工具在数据库（bach.db/tools）中管理。
+
+CLI 命令
+-----------
+bach --tools list              列出 Python 工具（文件系统）
+bach --tools db                列出所有 DB 工具（CLI + 外部）
+bach --tools db --type cli     仅显示 CLI 工具
+bach --tools db --type external Nur externe KI-Tools anzeigen
+bach --tools show <n>       工具详细信息显示
+bach --tools run <n> [args] Python-Tool ausfuehren
+bach --tools search <term>     搜索工具（文件系统 + DB）
+bach --tools migrate           开始连接迁移
+
+DIRECT CALL VIA BACH（推荐）
+---------------------------------
+工具可以直接通过 bach.py 调用 - 无需 --tools run:
+
+  bach <toolname> [argumente]
+
+示例：
+  bach python_cli_editor script.py --show-all     显示结构
+  bach c_encoding_fixer datei.py                  修复编码
+  bach c_import_organizer datei.py --save         排序导入
+  bach c_json_repair kaputt.json                  修复 JSON
+  bach c_pycutter grosse_datei.py                 分割文件
+  bach c_sqlite_viewer data/bach.db               显示 DB
+  bach code_analyzer projekt/                     代码分析
+
+优点：
+  - 短于：bach --tools run c_encoding_fixer file.py
+  - 可以完成选项卡
+  - 与直接 Python 调用相同的语法
+
+注意：适用于 tools/*.py 中的所有工具
+
+工具概述
+-----------------
+查找可用工具的不同方式：
+
+  bach --tools list              所有 Python 工具 (tools/*.py)
+  bach --tools db                所有 DB 工具（CLI + 外部）
+  bach --tools search <term>     按术语搜索
+  bach tool suggest "problem"    基于问题的推荐
+  bach --help tools              本帮助
+  bach --help tools/_index       工具文档索引
+
+特定工具帮助：
+  bach <tool> --help             工具 argparse帮助
+  bach --help tools/<tool>       详细文档（如果有）
+
+TOOL-DISCOVERY（新 v1.1.27）
+----------------------------
+基于问题的工具匹配：描述问题并获取工具推荐。
+
+bach tool suggest "Encoding-Problem in Datei"  基于问题的工具推荐
+bach tool suggest "JSON reparieren"            查找 json_repair_tool.py
+bach tool patterns                             显示所有问题模式
+
+工作原理：
+1.问题描述中的关键词提取
+2. 15+问题类别匹配
+3. 基于分数推荐合适的工具
+
+问题类别：encoding、json_repair、code_analysis、import_issues、
+格式化、数据库、转换、备份、清理、文档、
+path_issues、duplicate、emoji、german_text、tax
+
+代码：tools/tool_discovery.py（195 行）
+
+PYTHON-TOOLS (tools/)
+---------------------
+前缀约定（请参阅：bach --help 命名）：
+
+  针对 AI 优化的 c_* CLI (Claude/recludOS)
+             - 清晰的输出、编码安全、JSON 安全
+  b_* BACH 核心（系统关键）
+  a_* 特工跑者
+  t_* 测试工具
+  m_* 维护/维护
+  g_* 生成器工具
+
+旧版前缀（将迁移）：
+  代理_* -> a_*
+  backup_* -> b_* 或 m_*
+  migrate_* -> m_*
+
+域前缀（停留）：
+  ollama_* ollama 集成
+  tax_* 税务工具（在 tools/tax/ 中）
+
+PYTHON 工具按功能
+--------------------------
+
+### CLI 可访问（通过处理程序）
+
+  目录处理函数
+  ------------- -------------------- ----------------------------
+  testing/ --test 测试系统（B/O/E 测试）
+  Generators/ --maintain 生成技能/代理生成器
+  映射/（直接）特征映射
+
+###核心功能
+
+  工具功能
+  -------------------------------------------------- ----------------------------------------
+  autolog.py 自动日志系统
+  autolog_analyzer.py 自动日志分析
+  backup_manager.py 备份管理
+  jectors.py 喷油器系统
+  c_dirscan.py 目录扫描
+  session_analyzer.py 会话分析
+  time_system.py 时间系统
+  token_monitor.py 令牌监控
+  success_tracker.py 成功跟踪
+  fs_protection.py 文件系统保护
+
+### 维护（通过--maintain 处理程序）
+
+  工具CLI命令功能
+  ----------------------- ------------------------- ----------------------------------------
+  doc_update_checker.py bach --维护文档文档检查
+  c_duplicate_detector.py bach --维护重复项重复检测
+  c_pattern_tool.py bach --维护模式 文件名模式
+  c_tool_scanner.py bach --维护扫描 CLI 工具发现
+  c_file_cleaner.py bach --maintain clean 删除旧文件
+  c_json_fixer.py bach --维护 json 修复 JSON
+  c_sync_registry.py 同步注册表
+  c_json_registry_cleaner.py 注册表清理
+  backup_manager.py 备份管理
+  nulcleaner.py 删除 NUL 字符
+
+### 生成器工具 (tools/generators/)
+
+工具CLI命令功能
+  ----------------------- ------------------------- ----------------------------------------
+  Skill_generator.py bach --maintaingenerate 创建技能结构
+  exporter.py bach --维护导出导出技能/代理
+
+  Skill_generator 的配置文件：
+    MICRO - 仅文件，无文件夹系统
+    LIGHT - 最小（SKILL.md + 配置 + 数据）
+    标准 - 标准技能和简单记忆
+    扩展 - 具有微观技能的复杂技能
+
+### 映射工具（工具/映射/）
+
+  工具功能
+  -------------------------------------------------- ----------------------------------------
+  query_features.py 查询特征矩阵
+  Populate_features.py 数据库
+  schema.sql 数据库架构
+
+  重要提示：必须调整 DB_PATH 变量！
+
+### Coding-Tools
+
+  工具功能
+  -------------------------------------------------- ----------------------------------------
+  c_encoding_fixer.py 修复编码
+  c_emoji_scanner.py 查找/替换表情符号
+  c_standard_fixer.py 应用代码标准
+  c_json_repair.py 修复 JSON
+  c_json_fixer.py 修复 JSON（旧）
+  c_import_organizer.py 对导入进行排序
+  c_import_diagnose.py 查找导入问题
+  c_indent_checker.py 检查缩进
+  c_umlaut_fixer.py 正确的变音符号
+  c_german_scanner.py 查找德语单词
+  c_method_analyzer.py 分析方法
+  c_pycutter.py 分割Python文件
+  c_sqlite_viewer.py 查看SQLite数据库
+  c_license_generator.py 创建许可证文件
+  c_md_to_pdf.py Markdown 转 PDF
+  c_universal_converter.py格式转换
+  c_universal_compiler.py 通用编译器
+  c_youtube_extractor.py YouTube 提取
+  c_code_analyzer.py 代码分析
+  c_code_generator.py 代码生成
+  c_python_cli_editor.py 以结构化方式编辑 Python
+  c_struct_generator.py 结构生成器
+  c_header_migrate.py 标头迁移
+  call_graph.py 调用图分析
+
+### 控制工具
+
+  工具功能
+  -------------------------------------------------- ----------------------------------------
+  steuer_scanner.py 扫描收据
+  tax_sync.py同步
+  tax_batch.py 批处理
+  tax_apply.py 应用类别
+  setup_steuer_db.py 数据库设置
+  scan_new_belege.py 检测新收据
+  rename_belege.py 重命名收据
+  show_posten.py 显示帖子
+  temu_ocr_batch.py Temu OCR 批处理
+  ocr_engine.py OCR 引擎
+
+### Ollama 工具
+
+  工具功能
+  -------------------------------------------------- ----------------------------------------
+  ollama_benchmark.py 基准测试
+  ollama_summarize.py 摘要
+  ollama_worker.py 工作进程
+
+### 测试工具(tools/testing/)
+
+  工具CLI命令功能
+  ----------------------- ------------------------- ----------------------------------------
+  test_runner.py bach --test run 测试执行
+  run_b_tests.py bach --test self 运行 B 测试
+  run_o_tests.py bach --test ops 运行 O 测试
+
+  测试配置文件（测试/配置文件/）：
+    QUICK.json - 快速检查
+    STANDARD.json - 标准套件
+    FULL.json - 完整检查
+    MEMORY_FOCUS.json - 内存测试
+    TASK_FOCUS.json - 任务测试
+    OUTPUT.json - 输出测试
+    OBSERVATION.json - 观察测试
+
+### MCP 集成（新 v2.2）
+
+  工具功能
+  -------------------------------------------------- ----------------------------------------
+  mcp_server.py MCP 服务器 v2.0（654 行）
+                            - 23 个工具（任务、内存、课程、备份、控制）
+                            - 8 种资源（任务、状态、内存、技能、联系人）
+                            - 3 个提示（每日简报、任务回顾、会议摘要）
+
+  安装：
+    pip 安装 mcp
+    python 工具/mcp_server.py
+
+  克劳德代码配置（~/.claude/claude_code_config.json）：
+    {
+      “mcp服务器”：{
+        “巴赫”：{
+          “命令”：“蟒蛇”，
+          “args”：[“C：/path/to/system/tools/mcp_server.py”]
+        }
+      }
+    }
+
+### 技能管理（新）
+
+工具功能
+  -------------------------------------------------- ----------------------------------------
+  c_skill_init.py 初始化技能结构
+  c_skill_package.py 封装技能
+  c_skill_validate.py 技能验证
+  Skill_export.py 导出技能
+  Skill_header_gen.py 生成技能头
+  Skill_help_gen.py 生成技能帮助
+
+### 项目工具（新）
+
+  工具功能
+  -------------------------------------------------- ----------------------------------------
+  c_project_bundler.py 项目捆绑器
+  c_audit_bundler.py 创建审计包
+  c_path_healer.py 路径修复
+  batch_file_ops.py 批处理文件操作
+
+### 分析与监控
+
+  工具功能
+  -------------------------------------------------- ----------------------------------------
+  db_check.py 数据库检查
+  debug_scan.py 调试扫描
+  forensic_db_scan.py 取证数据库扫描
+  folder_diff_scanner.py 文件夹差异分析
+  custom_analysis.py 自定义分析
+  schema_reader.py 模式阅读器
+  issues_first.py 问题优先方法
+  reports.py 报告系统
+
+### 生成器和助手
+
+  工具功能
+  -------------------------------------------------- ----------------------------------------
+  c_dictionary_builder.py 字典构建器
+  Lesson_trigger_generator.py 课程触发器生成器
+  theme_packet_generator.py 主题包生成器
+  workflow_trigger_generator.py 工作流触发器生成器
+  trigger_maintainer.py 触发器维护
+  context_compressor.py 上下文压缩
+  translate_batch.py 批量翻译
+
+### 集成&导入
+
+  工具功能
+  -------------------------------------------------- ----------------------------------------
+  gemini_llm.py Gemini LLM 集成
+  data_importer.py 数据导入
+  document_indexer.py 文档索引
+  doc_search.py 文档搜索
+  inbox_watcher.py 收件箱观察者
+  user_console.py 用户控制台
+
+### 代理和自动发现
+
+  工具功能
+  -------------------------------------------------- ----------------------------------------
+  c_headless_agent.py 无头代理
+  bach_auto_discovery.py 自动发现系统
+  tool_auto_discovery.py 工具自动发现
+
+### 用户工具(tools/_user/)
+
+  系统特定工具（不用于分发）：
+  - auto_backup_orchestrator.py FTP 备份
+  - fritzbox_wlan_control.py 无线局域网控制
+  - backup_watchdog.py 备份监控
+
+  请参阅：tools/_user/README.md
+
+CLI-TOOLS (bach.db)
+-------------------
+可用类别：
+  存档 7z（压缩）
+  编辑器记事本++
+  IDE代码（VS代码）
+  多媒体 ffmpeg（视频/音频）
+  网络卷曲、ssh
+  包管理器 pip、pip3
+  运行时 python，节点
+  文本处理 grep
+  version_control git
+
+外部人工智能工具 (bach.db)
+--------------------------
+类别：
+  llm ChatGPT、克劳德、双子座、副驾驶、米斯特拉尔、格罗克
+  图像中途，表意文字，达芬奇，通量，宏伟
+  视频 跑道、Luma、Pika、声音
+  音频 ElevenLabs、Suno、Udio、Descript、Auphonic
+  研究困惑、共识、Elicit、NotebookLM、Scite
+  开发光标、Bolt、副驾驶工作区、Replit、Windsurf
+  edu Gamma、Notion AI、Goblin Tools、Taskade
+
+数据库架构
+----------------
+表：工具（在 data/bach.db 中）
+
+重要字段：
+- 名称文本唯一
+- 类型 TEXT（cli、外部、内部）
+- 类别文本
+- 命令 TEXT（用于 CLI 工具）
+- 端点文本（用于外部工具）
+- 描述文本
+- 功能 JSON 数组
+- 用于文本
+- is_available BOOLEAN
+
+MIGRATION
+---------
+工具已从 JSON 文件迁移到数据库。
+源文件不再存在（connections/ 已解散）。
+
+检查迁移状态：
+  bach --tools migrate --status
+
+如果需要重新迁移（仅重置）：
+  python tools/migrate_connections.py
+
+示例
+---------
+# 列出 Python 工具
+bach --tools list
+
+# 所有注册工具 (DB)
+bach --tools db
+
+# 仅 CLI 工具
+bach --tools db --type cli
+
+# 工具详细信息
+bach --tools show ffmpeg
+bach --tools show chatgpt
+
+# 运行工具
+bach --tools run c_encoding_fixer datei.py
+
+# 直接调用（推荐）
+bach c_encoding_fixer datei.py
+bach c_skill_init neuer_skill
+bach c_project_bundler ./projekt
+
+# 搜索
+bach --tools search video
+
+# 维护工具
+bach --maintain list
+bach --maintain docs
+bach --maintain pattern ./docs --dry-run
+
+# 测试工具
+bach --test profiles
+bach --test run QUICK
+
+# MCP 服务器（新）
+python 工具/mcp_server.py
+# 然后可通过 Claude Code 获取（bach:/ 资源 + 工具）
+
+工具库存（~83 种工具）
+-------------------------
+按类别划分的总统计数据：
+
+类别编号 说明
+  ----------------- ------------------ ----------------------------------------
+  Agent/Framework 8代理系统、服务集成、MCP
+  开发 25 代码分析、测试、项目实用程序
+  数据库 8 SQLite、迁移、模式
+  文档15 OCR、转换、文本处理
+  财务/税务 22 完整的税务套件
+  维护 15 备份、分发、清理、注册表
+  媒体 2 YouTube 提取，Gemini 法学硕士
+  实用程序/助手 22 策略、生成器、监控、其他
+  技能管理 6 技能初始化、打包、验证、导出
+
+命名约定（前缀）：
+
+  针对 AI 优化的 c_* CLI（40 多个工具）
+  b_* BACH 核心（系统关键）
+  a_* 代理运行工具
+  t_* 测试工具
+  m_* 维护工具
+  g_* 生成器工具
+  (-) 领域/实用程序（43+ 工具）
+
+与外部套件的协同潜力：
+
+  BACH 工具与
+  ---------------------------------- ----------------------------------------
+  税务/套房财务套房（预算、费用）
+  ocr_engine.py DokuZentrum Pro
+  c_md_to_pdf.py 黑曜石导出
+  c_youtube_extractor.py 媒体套件
+
+来源：存档于 user/_archive/BACH_NATIVE_TOOLS_MAPPING.md
+
+详细工具文档
+--------------------------------
+对于复杂工具，文档/help/tools/ 中有详细文档：
+
+  可用文档：
+  ----------------------------
+  docs/help/tools/python_cli_editor.txt 以结构化方式编辑 Python 文件
+                                     （显示、插入类/方法，
+                                     删除、编辑工作流程、导出）
+
+  docs/help/tools/_index.txt 所有工具文档的索引
+
+  检索：
+  ------
+  bach --help tools/python_cli_editor    阅读详细文档
+  bach --help tools/_index               可用文档概述
+  bach --help tools                      此通用工具帮助
+
+  工具什么时候需要自己的文档？
+  ----------------------------------
+  - 许多选项（>10 个参数）
+  - 可能存在复杂的工作流程
+  - 经常使用
+  - 对于理解很重要的示例
+
+  简单工具仅使用：
+  - Python 文件中的文档字符串
+  - argparse --help (bach <tool> --help)
+
+CONTEXT INJECTOR (自动工具提示)
+---------------------------------------------
+ContextInjector 识别关键字并推荐合适的工具。
+示例：
+
+  关键词工具推荐
+  ----------------------------------------------------------------------------------------
+  “编码问题” bach c_encoding_fixer <文件>
+  “排序导入” bach c_import_organizer <文件>
+  “编辑 python” 巴赫 c_python_cli_editor <文件> --show-all
+  “分割文件” bach c_pycutter <文件>
+  “查看 sqlite”巴赫 c_sqlite_viewer <db>
+  “查找工具”巴赫工具建议“描述”
+  “创建技能” bach c_skill_init <名称>
+  “项目包” bach c_project_bundler <路径>
+  “修复路径” bach c_path_healer <文件>
+  “start mcp” python tools/mcp_server.py
+
+请参阅：bach --help 注入器（完整触发器列表）
+
+另请参阅
+----------
+docs/help/tools/_index.txt 详细的工具文档（索引）
+docs/help/tools/*.txt 单独的工具文档
+docs/help/injectors.txt 自动工具注释 (ContextInjector)
+bach --help connections    连接管理
+bach --help dirscan           目录扫描器（更改监控）
+bach --help maintain       维护工具
+bach --help test           测试系统
+bach --help naming         命名约定（工具前缀）

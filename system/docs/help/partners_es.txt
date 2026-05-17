@@ -1,0 +1,75 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [reconocimiento_partner, conexiones, mensajes, tablas de reglas_delegación]
+
+PARTNERS - Perfiles de socios de comunicación
+-----------------------------------------
+
+Estado: 2026-02-08
+
+El sistema de socios (capa 5) orquesta la colaboración entre
+usuarios humanos, modelos locales (Ollama) y agentes externos (Claude, Gemini).
+
+RESUMEN DE SOCIOS (instantánea)
+-----------------------------
+| identificación | Socio | Tipo | Espacio de trabajo/backend |
+|-----|----------------|--------------|--------------------------------|
+| 001 | Usuario | Humano | Usuario/Cuadro de mensajes/ |
+| 002 | Claudio | IA | socios/claude/ |
+| 003 | Ollamá | IA local | 127.0.0.1:11434 |
+| 004 | Géminis | agente | Antigravedad (Local) |
+| 006 | PubMed | API de MCP | Servidor de investigación
+
+|ENFOQUE DE SOCIO: GÉMINIS
+---------------------
+- BACKEND: Antigravity (Google DeepMind Toolchain).
+- ARRANQUE: `system/partners/gemini/start_gemini.bat`
+- ESPACIO DE TRABAJO: `system/partners/gemini/` (modelo Bandeja de entrada/Salida).
+- REGLAS: Ver `system/partners/gemini/GEMINI.md`
+
+ENFOQUE DE SOCIO: CLAUDE
+---------------------
+- BACKEND: Anthropic Sonnet (a través de Claude Desktop/MCP).
+- ROL: Operador de IA (Orquestador).
+- ESPACIO DE TRABAJO: `system/partners/claude/`
+
+COORDINACIÓN vía MENSAJES
+-------------------------
+Los socios se comunican a través del sistema `messages` (bach.db).
+Comandos:
+  bach msg send <recipient> "text" --from <sender>
+  bach msg list --inbox     (Mostrar bandeja de entrada)
+  bach msg unread           (Mostrar no leídos)
+  bach msg read <id>        (Leer mensaje)
+
+SERVICIOS Y TABLAS (bach.db)
+----------------------------
+- `partner_recognition`: perfiles de socios (herramientas, capacidades, zonas)
+- `conexiones`: puntos finales técnicos (claves API, URL)
+- `mensajes`: historial de chat persistente (bandeja de entrada/salida)
+- `delegation_rules`: Zonas de delegación basadas en tokens
+
+HIGIENE DE LAS COMUNICACIONES
+----------------------
+1. Cada sesión comienza con `bach --startup`
+2. Verifique las tareas: `lista de tareas de bach --asignada <socio>`
+3. Almacene los resultados en `outbox/` (por ejemplo, REPORT_*.md)
+4. Completar tareas: `tarea de bach realizada <id> "Notiz"`
+5. Enviar mensajes: `bach msg enviar <a> "texto" --de <remitente>`
+
+VER TAMBIÉN
+----------
+  docs/help/partner.txt Lógica y roles de delegación
+  docs/help/communicate.txt Protocolo de interacción
+  docs/help/messages.txt Sintaxis del mensaje
+  system/partners/_README.md Estructura de la carpeta de socios
+
+CLI ACCESS
+-----------
+  bach --partner list                  Lista de todos los socios
+  bach --partner status                Resumen del estado
+  bach --partner info <name>           Detalles del socio
+  bach --partner delegate <task>       Delegar tarea (con reconocimiento de token)
+  bach --connections list              Registro de conexión
+  bach msg list                        Ver mensajes

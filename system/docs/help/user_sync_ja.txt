@@ -1,0 +1,69 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+USER_SYNC ハンドラー
+-----------------
+
+ハンドラー名
+------------
+user_sync -- USER.md と user_profile 間の双方向同期
+
+説明
+------------
+user_sync ハンドラーは、USER.md と user_profile 間のユーザー プロファイル データを同期します。
+マークダウン ファイル USER.md (BACH ルート ディレクトリ内) と SQLite テーブル
+bach.db の user_profile。
+
+1 という 2 つの同期方向がサポートされています。 USER.md -> BACH起動時のDB（ブロック0.07）
+2. BACH シャットダウン中の DB -> USER.md (ブロック 5.7)
+
+認識されるフィールド: 名前、場所、言語、職業、GitHub、電子メール、役割。
+USER.md は、system/ ディレクトリ (BACH ルート) の 1 つ上のレベルです。
+
+OPERATIONS
+-----------
+sync_to_db(dry_run=False)
+  USER.md を読み取り、フィールドを user_profile テーブルに保存します。
+  予行演習: 確認するだけで、書き込まないでください。
+  ファイルが見つからない、または user_profile テーブルが空の場合のステータス メッセージ。
+
+sync_to_file()
+  DB から user_profile を読み取り、USER.md 内のフィールドを更新します。
+  USER.md の構造と書式設定を保持します。
+  認識されたフィールド (**Name:** など) のみを更新します。
+
+from_bach_root(bach_root)
+  ファクトリ メソッド: system/path から UserSync インスタンスを作成します。
+
+bach.py の便利な関数:
+  sync_user_md_to_db(bach_root、dry_run=False)
+  sync_db_to_user_md(bach_root)
+
+例
+---------
+# Python コード: USER.md を DB に書き込む
+Hub.user_sync から UserSync をインポート
+syncer = UserSync.from_bach_root('system/')
+結果 = syncer.sync_to_db()
+print(result) # {'status': 'ok', 'synced': 5}
+
+# DB を USER.md に書き戻す (シャットダウン)
+結果 = syncer.sync_to_file()
+print(result) # {'status': 'ok', 'updated_fields': 3}
+
+# ドライラン: チェックのみ
+結果 = syncer.sync_to_db(dry_run=True)
+print(result) # {'status': 'dry_run', 'data': {...}}
+
+FILES
+-------
+hub/user_sync.py -- 実装 (クラス UserSync + 便利な関数)
+../USER.md -- 同期されたプロファイル (BACH ルート)
+data/bach.db -- user_profile テーブルを含む SQLite DB
+
+関連項目
+----------
+bach.py -- 起動/シャットダウン オーケストレーション (ブロック 0.07 / 5.7)
+user_profile -- プロファイル データの DB テーブル
+../CLAUDE.md -- BACH システムのドキュメント

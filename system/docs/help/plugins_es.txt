@@ -1,0 +1,226 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+API del complemento BACH
+---------------
+
+A partir de: 2026-05-06
+
+La API del complemento permite la expansión dinámica de BACH en tiempo de ejecución.
+Los complementos pueden registrar herramientas, ganchos, flujos de trabajo y controladores.
+imperativo (a través del código) o declarativo (a través de `plugin.json`).
+
+COMANDOS CLI
+-----------
+  bach plugins list              Mostrar todos los complementos cargados
+  bach plugins inspect <pfad>    Primera vista previa del manifiesto sin carga en tiempo de ejecución
+  bach plugins load <pfad>       Cargar el complemento desde plugin.json
+  bach plugins unload <name>     Descargar el complemento
+  bach plugins tools             Mostrar todas las herramientas del complemento
+  bach plugins info <name>       Detalles de un complemento
+  bach plugins create <name>     Crear manifiesto del complemento (scaffolding)
+  bach plugins caps              Mostrar perfiles de capacidad
+  bach plugins trust <name> <l>  Cambiar el nivel de confianza de un complemento
+  bach plugins audit [limit]     Mostrar el último comprobaciones de capacidad
+
+  Forma corta:
+  bach plugin list               (Alias: complemento -> complementos)
+
+USO DE API (Imperativo)
+-----------------------
+  desde core.plugin_api importar complementos
+  # O: desde bach_api importar complementos
+
+  # Registrar herramienta
+  def mi_herramienta(texto):
+      devolver f"Procesado: {texto}"
+
+  plugins.register_tool("mi_herramienta", mi_herramienta, "Descripción")
+  resultado = plugins.call_tool("mi_herramienta", "entrada")
+
+  # Registrar gancho
+  def en_tarea(ctx):
+      print(f"Tarea creada: {ctx['task_id']}")
+
+  plugins.register_hook("after_task_create", on_task, plugin="my-plugin")
+
+  # Registrar controladores (nuevo comando CLI)
+  desde hub.base importar BaseHandler
+  clase MiManejador(BaseHandler):
+      ...
+
+  plugins.register_handler("my_cmd", MyHandler, plugin="my-plugin")
+
+  # Crear flujo de trabajo
+  plugins.register_workflow("mi-flujo de trabajo", "# Flujo de trabajo\n...", plugin="mi-complemento")
+
+  # Administración
+  imprimir(plugins.list_plugins())
+  complementos.inspect_plugin("complementos/mi-complemento/plugin.json")
+  plugins.unload_plugin("my-plugin")
+
+MANIFESTO DE PLUGIN (Declarativo)
+----------------------------
+Cree un `plugin.json` para carga automática:
+
+  bach plugins create mein-plugin
+
+Formato de manifiesto (`plugin.json`):
+  {
+    "nombre": "mi-complemento",
+    "manifest_version": "1.1",
+    "versión": "1.0.0",
+    "description": "Qué hace el complemento",
+    "autor": "claude",
+    "fuente": "estándar oro",
+    "capacidades": ["db_read", "hook_listen"],
+    "activación": {"modo": "manual", "habilitado": verdadero},
+    "proveedores": [],
+    "modelos": [],
+    "configuración": {
+      "requiere": ["Node.js", "Código Claude"],
+      "entorno": ["ANTHROPIC_API_KEY"],
+      "notes": "Por qué es necesaria la configuración",
+      "fail_closed": verdadero,
+      "superficies": ["shell", "mcp"],
+      "cheques": [
+        {"tipo": "command_exists", "comando": "npx"},
+        {"tipo": "mcp_server_known", "paquete": "ellmos-codecommander-mcp"}
+      ]
+    },
+    "ganchos": [
+      {
+        "evento": "after_task_done",
+        "módulos": "handlers.py",
+        "handler": "on_task_done",
+        "prioridad": 50
+      }
+    ],
+    "manipuladores": [
+      {"nombre": "my_cmd", "archivo": "my_handler.py"}
+    ],
+    "flujos de trabajo": [
+      {"nombre": "mi-flujo de trabajo", "archivo": "workflow.md"}
+    ]
+  }
+
+Cargar:
+  bach plugins inspect plugins/mein-plugin/plugin.json
+  bach plugins load plugins/mein-plugin/plugin.json
+
+TIPOS DE REGISTRO
+--------------------
+  Tipo Descripción del método API
+  -------- ---------------------- ---------------------------------
+  Herramienta Register_tool() Registrar invocable como herramienta
+  Hook Register_hook() Registrar oyentes de eventos
+  Flujo de trabajo Register_workflow() Crear archivo Markdown
+  Controlador Register_handler() Nuevo comando CLI de tiempo de ejecución
+
+PLUGIN-LIFECYCLE
+----------------
+  1. Crear: los complementos de bach crean <nombre>
+  2. Desarrollar: editar plugin.json + handlers.py
+  3. Verifique: los complementos de bach inspeccionan <ruta/plugin.json>
+  4. Cargar: los complementos de bach cargan <ruta/plugin.json>
+  5. Uso: activar ganchos, llamar a herramientas, usar comandos CLI
+  6. Descargar: los complementos de bach descargan <nombre>
+
+SISTEMA DE CAPACIDADES (Nivel 1 Sandbox)
+-----------------------------------
+Los complementos declaran las capacidades requeridas. controles BACH y
+aplicado según el nivel de confianza de la fuente.
+
+  Capacidades definidas:
+    db_read Leer base de datos
+    db_write Escribir base de datos
+    file_read Leer archivos
+    file_write Escribir archivos
+    hook_listen Escuchar eventos
+    hook_emit Emitir eventos
+    tool_register Registrar nuevas herramientas
+    handler_register Registrar nuevos controladores CLI
+    flujo de trabajo_create Crear flujos de trabajo
+    red Acceso a la red (HTTP/API)
+    shell Ejecutar comandos de shell
+    escritorio Ejecutar automatización de escritorio/GUI
+    Configurar o conectar el servidor mcp MCP
+
+Perfil de confianza (vinculado a `data/skill_sources.json`):
+    confianza estándar de oro=100 Todas las capacidades
+    confianza confiable = 80 Todo excepto shell + escritorio + mcp + red
+    confianza no confiable = 20 Solo db_read, file_read, hook_listen
+    confianza en la lista negra = 0 No se permite nada
+
+  Aplicación:
+    - Register_tool() comprueba `tool_register`
+    - Register_hook() comprueba `hook_listen`
+    - Register_handler() comprueba `handler_register`
+    - Register_workflow() comprueba `workflow_create`
+    - load_plugin() comprueba todas las capacidades solicitadas
+    - inspeccionar/cargar comprobaciones protecciones de configuración cerradas por error para shell/escritorio/mcp
+
+SETUP-GUARDS (SEC-PLUGIN-003)
+-----------------------------
+El acceso fuerte a través de metadatos de configuración está bloqueado antes de la importación del tiempo de ejecución,
+si los requisitos no se describen explícitamente y se cierran por error.
+
+  Superficies peligrosas:
+    shell, escritorio, mcp
+
+  Obligatorio para tales configuraciones:
+    - `setup.fail_closed = verdadero`
+    - `setup.checks = [...]` con controles de guardia apropiados
+
+  Tipos de cheques admitidos:
+    comando_existe
+    env_presente
+    ruta_existe
+    importación_python
+    mcp_servidor_conocido
+    escritorio_enabled
+    bandera_permiso
+
+  Cobertura de cheque esperada:
+    shell -> command_exists, env_present, path_exists, python_import
+    escritorio -> escritorio_enabled, ruta_existe, comando_existe, env_presente
+    mcp -> mcp_server_known, command_exists, env_present, path_exists
+
+  Ejemplo:
+    "configuración": {
+      "requiere": ["Claude Desktop", "Node.js"],
+      "fail_closed": verdadero,
+      "superficies": ["mcp"],
+      "cheques": [
+        {"tipo": "command_exists", "comando": "npx"},
+        {"tipo": "mcp_server_known", "paquete": "ellmos-codecommander-mcp"}
+      ]
+    }
+
+SEGURIDAD
+----------
+  - Aplicación de capacidad en todos los métodos `register_*()`
+  - Nivel de confianza de `skill_sources.json` (sistema de 4 niveles)
+  - Inspección del primer manifiesto: activación, proveedores, modelos, configuración sin importación de tiempo de ejecución
+  - Protectores de configuración cerrados ante fallos para shell/escritorio/MCP antes de cargar el complemento
+  - Análisis de código estático: eval, exec, subprocess, os.system
+  - Registro de auditoría para trazabilidad
+  - Los ganchos defectuosos quedan atrapados y no rompen nada.
+  - La descarga del complemento elimina limpiamente todos los registros.
+  - Auditoría a través de: `auditoría de complementos de bach`, `información de complementos de bach <nombre>`
+
+ARQUITECTURA
+-----------
+  core/capabilities.py CapabilityManager Singleton (aplicación)
+  core/plugin_api.py PluginRegistry singleton (administración de complementos)
+  Controlador CLI hub/plugins.py (`complementos de bach...`)
+  core/hooks.py Marco de gancho
+  data/skill_sources.json Perfiles de confianza y mapeo de capacidades
+
+VER TAMBIÉN
+----------
+  bach help hooks          Hook Framework
+  bach help skills         Sistema de habilidades
+  bach help self-extension Selbsterweiterungs-System
+  bach help cli            Convenciones CLI

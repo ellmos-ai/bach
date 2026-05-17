@@ -1,0 +1,154 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+用例 - 工作流程测试用例和 TUeV 系统
+-----------------------------------------------
+
+描述
+------------
+用例是 BACH-TUeV 系统的一部分，用作：
+  1. 功能测试 验证工作流程是否有效？
+  2. 质量保证 所有组件都能协同工作吗？
+  3. 要求 实现了什么，还缺少什么？
+
+用例存储在 SQLite DB 中（表：usecases）
+并链接到工作流程（workflow_tuev 表）。
+`workflow_path` 是可选的：旧的或更粗糙的测试用例只能
+有区域/类别名称。无论如何应该`bach usecase run`
+以手动数据模式运行并显示测试用例。
+
+处理程序：system/hub/tuev.py (TuevHandler + UsecaseHandler)
+
+USECASE FORMAT
+--------------
+
+  USECASE_NNN：短标题
+
+  前提条件：必须具备什么？
+  输入：用户输入什么/哪些数据可用？
+  期望：结果应该是什么？
+  检查：正在测试哪些组件？
+
+当前用例
+-----------------
+用例现在位于数据库中（用例表）。
+广告：bach 用例列表
+
+历史用例 ID（来自旧任务系统）：
+  USECASE_001 恢复代理
+  USECASE_002 办公室镜头扫描仪
+  USECASE_003 文档搜索
+  USECASE_004 医生报告甲状腺
+  USECASE_005 家庭日常事务
+  USECASE_006 保险建议
+
+查看数据库中当前的用例：
+  bach usecase list
+  bach db query "SELECT id, title, workflow_name, test_result FROM usecases"
+
+USECASE AS A TEST
+----------------
+  一个用例测试完整的穿刺：
+
+  用户输入 -> 代理/技能 -> 工具 -> 数据库 -> 结果
+
+  这会自动验证：
+  - CLI 命令有效吗？
+  - 数据库模式正确吗？
+  - 可用且可访问的工具？
+  - 帮助文件是最新的吗？
+  - 注射器根据关键字触发？
+  - 结果可用且正确？
+
+用例作为要求
+------------------------
+  失败的用例揭示了差距：
+  - 缺少工具 -> 工具创建任务
+  - 缺少 CLI 命令 -> CLI 处理程序的任务
+  - 缺少数据库表 -> 模式扩展任务
+  - 缺少工作流程 -> 工作流程创建任务
+
+  总是欢迎新的用例想法：
+    bach task add "USECASE_NNN Kurztitel: Beschreibung" --prio P3
+
+开发周期反馈
+-----------------------------------------
+
+  第 8 阶段（用例）
+       │
+       ├── 失败了？ -> 第一阶段的新任务
+       ├── 成功了吗？    -> 功能已验证
+       └── 新主意？      -> 新用例任务
+
+  用例是开发周期中的第 8 阶段（请参阅：bach --help dev）
+
+CLI 命令
+-----------
+
+用例管理：
+  bach usecase list [workflow]       所有测试用例（可选过滤）
+  bach usecase add <workflow>        添加说明（SQL 模板）
+  bach usecase show <id>             显示测试用例的详细信息
+  bach usecase run <id>              执行单个测试用例
+  bach usecase run-all <workflow>    工作流程的所有测试
+
+TUeV 管理：
+  bach tuev status                   所有工作流程的 TUeV 状态
+  bach tuev check <workflow>         检查各个工作流程工作流程
+  bach tuev run                      所有到期检查
+  bach tuev renew <workflow>         检查后续订 TUeV
+  bach tuev init                     从技能/工作流程/注册工作流程
+
+创建用例
+-----------------
+用例直接插入到数据库中：
+
+  bach db query "INSERT INTO usecases (title, description, workflow_name, test_input, expected_output, created_by) VALUES ('Testfall-Titel', 'Beschreibung', 'workflow-name', '{}', '{}', 'user')"
+
+或通过 GUI：/usecases（如果 GUI 服务器正在运行）
+
+组件覆盖范围
+---------------------
+  好的用例涵盖不同的领域：
+
+  示例用例区域
+  --------------- ------------------------------------------
+  OCR 和文档USECASE_004（医生报告）
+  搜索USECASE_003（文档搜索）
+  生成USECASE_001 (CV)
+  家庭USECASE_005（例程）
+  金融USECASE_006（保险）
+  扫描仪USECASE_002（办公镜头）
+
+  尚未涵盖（想法）：
+  - 税务工作流程（端到端：收据 -> 导出）
+  - 合作伙伴委托（克劳德 -> 双子座 -> 结果）
+  - 备份和恢复（备份->恢复）
+  - 多法学硕士协调
+
+数据库结构
+------------------
+  表：用例
+    - ID、标题、描述
+    - 工作流程名称、工作流程路径
+    - 测试输入（JSON），预期输出（JSON）
+    - 最后测试、测试结果、测试分数
+    - 创建者、创建者、更新者
+
+  表：workflow_tuev
+    - 工作流程名称、工作流程路径
+    - tuev_status、last_tuev_date、tuev_valid_until
+    - avg_score、test_count、pass_count
+
+另请参见
+----------
+  bach tuev status                          TUeV 仪表板
+  bach --help dev                           开发周期（8 个阶段）
+  bach --help test                          技术测试程序 (B/O/E)
+  system/skills/workflows/dev-cycle.md 详细的开发工作流程
+  system/hub/tuev.py 处理程序实现
+  system/db/schema.sql 数据库模式（用例+workflow_tuev）
+
+---
+版本：1.1.0 |创建时间：2026-01-28 |更新日期：2026-02-08

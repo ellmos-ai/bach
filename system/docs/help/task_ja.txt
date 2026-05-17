@@ -1,0 +1,100 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+
+タスク ハンドラー
+------------
+
+説明
+------------
+
+タスク ハンドラーは、BACH データベース内のタスクを管理します。サポートされています
+優先順位 (P1 ～ P4)、マルチ ID 操作、依存関係、割り当て
+パートナーとステータス管理 (保留中/完了/ブロック)。
+
+
+OPERATIONS
+-----------
+
+add <title> タスクを追加
+  オプション: --priority P1-P4、--description TEXT、--category TEXT
+
+list [status] タスクのリスト
+  ステータス: 保留中 (デフォルト)、オープン (レガシー)、進行中、完了、ブロック済み、すべて
+  オプション: --filter TERM、--assigned PARTNER、--unassigned
+
+show <id> タスクの詳細を表示
+
+edit <id> タスクを編集 (タイトル、説明、カテゴリ)
+  オプション: --title TEXT、--description TEXT、--category TEXT、--assigned NAME
+
+done <id> [id2...] タスクを完了としてマークします
+  オプション: --note TEXT
+
+block <id> [id2...] タスクをブロックします。
+  オプション: --reason TEXT
+
+ブロック解除 <id> [id2...] タスクのブロックを解除
+
+reopen <id> [id2...] タスクを再開 (完了 -> 保留中)
+
+削除 <id> [id2...] タスクの削除
+
+優先度 <id> <P1-P4> 優先度の変更
+
+割り当て <id> [id2...] タスクの割り当て
+  オプション: --to PARTNER (CLAUDE、GEMINI、COPILOT、OLLAMA、CHATGPT など)
+
+depends <id> 依存関係の管理
+  --on <id2> 新しい依存関係を追加します
+  --remove <id2> 依存関係を削除します
+  --clear すべての依存関係をクリア
+
+
+例
+---------
+
+タスクの作成:
+  bach task add "API implementieren" --priority P1 --category development
+
+タスクのリスト:
+  bach task list                    # 保留中のみ
+  bach task list in_progress        # 現在進行中
+  bach task list all                # すべて
+  bach task list blocked --assigned GEMINI
+
+マルチ ID 操作:
+  bach task done 319 320 321 --note "Alle Help-Dateien erstellt"
+  bach task block 100 101 --reason "Wartet auf API-Review"
+
+割り当て:
+  bach task assign 100 101 --to GEMINI
+  bach task list --assigned CLAUDE
+
+依存関係:
+  bach task depends 306 --on 305    # タスク 306 は 305 を待機中
+  bach task depends 306              # 依存関係の表示
+  bach task depends 306 --remove 305
+
+
+FILES
+-------
+
+data/bach.db SQLite データベース (タスクtable)
+
+
+関連項目
+----------
+
+bach help                一般的なヘルプ
+bach hook help           フック システム
+
+
+注意事項
+=====
+
+マルチ ID サポート: 1 つの操作で複数のタスク ID (例: 完了、ブロック、割り当て)
+依存関係の検出: タスクは (BLOCKED) フラグとともに自動的に追加されます
+未完了の依存関係が表示される
+フック: after_task_create、after_task_done は操作中に発行されます。

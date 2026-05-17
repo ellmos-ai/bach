@@ -1,0 +1,108 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+时间处理程序
+----------------------------------------------------------------------------
+
+描述
+----------------------------------------------------------------------------
+
+时间处理程序管理 BACH 中的时间管理系统。他提供
+时间显示、计时器、倒计时和基于时间的功能
+配置文件管理（之间）。所有模块都使用中央 TimeManager
+用于协调操作。
+
+基目录：data/（状态文件）
+模块：tools/time_system.py
+
+
+操作
+----------------------------------------------------------------------------
+
+时钟
+-----
+  bach clock on              - 激活时间显示
+  bach clock off             - 停用时间显示
+  bach clock status          - 检查时间显示的状态
+  bach clock interval <sek>  - 设置显示间隔（以秒为单位）
+
+定时器
+-----
+  bach timer start [name]    - 启动计时器（默认：“默认”）
+  bach timer stop [name]     - 停止计时器
+  bach timer list            - 显示所有活动计时器
+  bach timer clear           - 所有计时器删除
+
+COUNTDOWN
+---------
+  bach countdown start <name> <HH:MM:SS> [--after 'befehl']
+                             - 使用可选命令开始倒计时
+                               （缩写：仅 <HH:MM:SS> -> name="timer"）
+  bach countdown stop <name> - Countdown abbrechen
+  bach countdown pause <name> - Countdown pausieren
+  bach countdown resume <name> - Countdown fortsetzen
+  bach countdown list        - 显示所有倒计时
+
+BETWEEN
+-------
+  bach between on            - 在检查之间激活
+  bach between off           - 在检查之间停用
+  bach between status        - 显示状态
+  bach between use <name>    - 激活配置文件
+  bach between profile list  - 列出配置文件
+  bach between profile show <name> - Profil Details anzeigen
+
+BEAT
+----
+  bach beat                  - 显示所有时间信息
+  bach beat on               - 激活所有时间显示
+  bach beat off              - 停用所有时间显示
+  bach beat interval <sek>   - 全局设置间隔
+
+
+示例
+----------------------------------------------------------------------------
+
+# 30 秒后开始计时器测量和查询
+bach timer start work
+# ... 工作...
+bach timer stop work
+
+# 闹钟倒计时：休息 5 分钟
+bach countdown start pause 00:05:00 --after "echo Pause vorbei!"
+
+# 配置文件之间的负载（例如办公时间）
+bach between status
+bach between use office-hours
+
+# 检查全局时间状态
+bach beat
+bach beat on           # 激活所有时间模块
+bach beat interval 60  # 每 60 秒更新一次
+
+
+文件
+----------------------------------------------------------------------------
+
+状态文件（相对于系统/）：
+
+  data/.clock_state - 时间显示设置
+  data/.timer_state - 定时器状态管理
+  data/.countdown_state - 倒计时状态管理
+  data/. Between_state - 配置文件管理器之间
+
+模块：
+
+  hub/time.py - 处理程序实现
+  工具/time_system.py - TimeManager，ClockModule，TimerModule，
+                           CountdownModule、BetweenManager
+
+
+另请参见
+----------------------------------------------------------------------------
+
+  基本处理程序 API：docs/help/base.txt
+  配置：config/time_config.json
+  时间系统规范：docs/TIME-SYSTEM.md
+  配置文件管理：docs/BETWEEN-PROFILES.md

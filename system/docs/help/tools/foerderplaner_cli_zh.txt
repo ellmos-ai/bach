@@ -1,0 +1,19 @@
+巴赫工具：foerderplaner_cli
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/foerderplaner_cli.py
+
+描述
+----------------------------------------
+Foerderplaner CLI - 用于资金规划的命令行工具
+搜索 ICF 结构、知识库并建议方法/材料
+
+使用
+----------------------------------------
+python bach.py 工具运行 foerderplaner_cli [args]
+或者直接： python tools/foerderplaner_cli.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示 foerderplaner_cli

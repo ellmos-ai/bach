@@ -1,0 +1,90 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH SEAL - INTEGRITY CHECK
+-------------------------------
+
+Checks the integrity of the BACH kernel (all CORE files).
+Warns about changes, but does NOT lock (ENT-13, ENT-14).
+
+
+USE
+----------
+
+  # Show kernel status
+  bach seal status
+
+  # Full integrity check
+  bach seal check
+
+  # Recalculate kernel hash
+  bach seal repair
+
+
+KERNEL-SCOPE
+------------
+
+All files with dist_type=2 (CORE) = ~510 files:
+  - tools/ (322 files)
+  - hub/ (95 files)
+  - skills/ (89 files)
+  - Root (4 files: bach.py, setup.py, etc.)
+
+
+SEAL PHILOSOPHY
+------------------
+
+WARNING, NO LOCK (ENT-13):
+  - User has FULL CONTROL over his BACH
+  - Seal only warns, but doesn't prevent anything
+  - No DRM, no lockdown
+  - User decides whether changes are OK
+
+
+AUTOMATIC CHECK
+--------------------
+
+For --startup:
+  - Sample check (5 CORE files, section 0.75)
+  - No full test (performance)
+  - Warning about changes
+
+
+KERNEL-HASH
+-----------
+
+SHA256 across all CORE files:
+  - Calculated automatically
+  - Stored in system_state table
+  - Consistent with dist_type system
+
+
+EXAMPLES
+---------
+
+  # Check current seal status
+  bach seal status
+
+  # Full integrity check
+  bach seal check
+
+  # Recalculate kernel hash (after deliberate change)
+  bach seal repair
+
+
+IMPORTANT
+-------
+
+- Changes to CORE files are detected
+- User can accept changes (seal repair)
+- No automatic rollback
+- Backup recommended before CORE changes
+
+
+SEE ALSO
+----------
+
+  bach --help restore       Template restore
+  bach --help upgrade       Update system
+  bach --help downgrade     Reset version

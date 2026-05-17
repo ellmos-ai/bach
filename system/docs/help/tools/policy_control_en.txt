@@ -1,0 +1,32 @@
+BACH Tool: policy_control
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/policy_control.py
+
+DESCRIPTION
+----------------------------------------
+policy_control.py - Central Code Snippet Injection
+
+Injects standardized code policies into Python projects.
+Supports inline injection (small snippets) and external files (large ones).
+
+Usage:
+    python policy_control.py <file.py> --inject emoji_safe
+    python policy_control.py <file.py> --set standardfixer
+    python policy_control.py <file.py> --check emoji_safe
+    python policy_control.py <folder> --set standardfixer --recursive
+    python policy_control.py --list
+    python policy_control.py --list-sets
+
+Author: Claude
+Version: 1.0
+
+USE
+----------------------------------------
+python bach.py tools run policy_control [args]
+or directly: python tools/policy_control.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show policy_control

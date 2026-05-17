@@ -1,0 +1,177 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MESSAGES - messaging system
+----------------------------
+
+DESCRIPTION
+Internal messaging system for communication between users,
+System and agents. Accessible via CLI and web GUI.
+
+Without --from, the clocked in partner is automatically used.
+
+CLI COMMANDS
+-----------
+bach msg list              Show all messages
+bach msg list --inbox      Inbox only
+bach msg list --outbox     Sent messages only
+bach msg list --limit 20   With limit (default: 10)
+
+bach msg inbox             Show inbox (short form)
+bach msg outbox            Show outbox (short form)
+
+bach msg unread            Unread messages show
+bach msg count             Message counter
+
+bach msg send <to> <text>  Send message (as user/active partner)
+bach msg send <to> <text> --from <partner>  Send from partner
+
+bach msg read <id>         Read message (marked as read)
+bach msg read <id> --ack   Read with automatic read confirmation
+
+bach msg ping              Show unread messages TO me
+bach msg ping --from <p>   Messages to specific partner
+
+bach msg watch             Polling mode: Wait for new messages (Ctrl+C)
+bach msg watch --from <p>  Polling for specific partner
+
+bach msg delete <id>       Message(s) delete
+bach msg delete 1 2 3      Delete multiple messages
+bach msg delete <id> --dry-run  Preview (without changes)
+
+bach msg archive <id>      Archive message(s)
+bach msg archive 1 2 3     Archive multiple messages
+bach msg archive <id> --dry-run  Preview (without changes)
+
+bach msg help              Show help
+
+MULTI-PARTNER SUPPORT
+---------------------
+Send partners with their own identity:
+
+  bach msg send user "Bericht fertig" --from gemini
+  bach msg send user "Task erledigt" --from claude
+  bach msg send user "Verarbeitung abgeschlossen" --from ollama
+
+Logic:
+  --from user -> message in user OUTBOX (default)
+  --from <other> -> message in user INBOX (unread)
+
+Partner identities:
+  user user (human)
+  Claude Claude (Operating AI)
+  gemini Gemini (External AI via Antigravity)
+  ollama Ollama (Local AI)
+  system system messages
+
+RECIPIENT
+----------
+system system messages
+user User messages
+agent:<name> Specific agent (e.g. agent:coder)
+
+STATUS VALUES
+------------
+unread Unread
+read Read
+archived Archived
+deleted Deleted
+
+WEB-GUI
+-------
+http://127.0.0.1:8000/messages
+
+Features:
+- Inbox/Outbox/Archive view
+- Write a new message
+- Mark as read
+- Show message detail
+
+DATABASE
+---------
+Table: messages (in data/bach.db)
+
+Fields:
+- id INTEGER PRIMARY KEY
+- direction TEXT (inbox/outbox)
+- transmitter TEXT
+- recipient TEXT
+- subject TEXT (planned - not currently used)
+- body TEXT
+- status TEXT (unread/read/archived/deleted)
+- priority INTEGER
+- created_at TIMESTAMP
+- read_at TIMESTAMP
+- archived_at TIMESTAMP
+
+EXAMPLES
+---------
+# Send message
+bach msg send system "Backup abgeschlossen"
+
+# Show unread messages
+bach msg unread
+
+# Read message
+bach msg read 5
+
+# Read message with confirmation
+bach msg read 5 --ack
+
+# All outbox messages
+bach msg list --outbox
+
+# Wait for new messages
+bach msg watch
+
+# Check status
+bach msg count
+
+CONNECTOR INTEGRATION (v1.1.0)
+------------------------------
+Messages from external connectors (Telegram, Discord, etc.)
+are automatically routed to the inbox:
+
+  connector_messages (in) → route_incoming() → messages (inbox)
+
+Sender format: "connector:sender_id" (e.g. "telegram:123456")
+Context hints are automatically saved as metadata.
+
+Outgoing messages are sent via the queue:
+
+  bach connector send <name> <empfaenger> <text>
+
+Reliable delivery with retry/backoff via daemon:
+
+  bach connector setup-daemon    # Register jobs
+  bach daemon start --bg         # Start daemon
+
+See: bach --help connector
+
+REST API (Port 8001)
+--------------------
+Available when Headless API is running:
+
+  POST /api/v1/messages/send Enqueue message
+  GET /api/v1/messages/queue Queue status
+  GET /api/v1/messages/inbox Read inbox (pagination, filter)
+  POST /api/v1/messages/route Trigger routing manually
+
+Example:
+  curl localhost:8001/api/v1/messages/inbox?status=unread&limit=10
+
+HANDLER
+-------
+hub/messages.py CLI handler (Inbox/Outbox)
+hub/connector.py Connector handler (queue, routing)
+gui/api/messages_api.py REST API Endpoints
+gui/server.py GUI endpoints (/api/messages)
+
+SEE ALSO
+----------
+bach --help connector      Connector system (queue, retry, circuit breaker)
+bach --help gui            Web dashboard
+bach --help daemon         Background jobs
+bach --help injectors      Context injectors
+bach --help wartung        Maintenance jobs (automatic tasks)

@@ -1,0 +1,101 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [tabla de tareas, tabla ati_tasks, hub/task.py, bach_api.py]
+
+TAREAS - sistema de tareas
+-----------------------
+
+Estado: 2026-02-08
+
+El sistema de tareas (capa 5) organiza el trabajo entre el usuario y
+Agentes socios (Claude, Gemini, etc.).
+
+CONCEPTOS BÁSICOS
+------------
+- TAREAS MANUALES: A través de `bach task add` (tabla: `tareas`).
+- TAREAS ESCANEADAS: A partir de comentarios de código (tabla: `ati_tasks`).
+- MULTISOCIO: Asignación vía `--assigned` a agentes o usuarios.
+- DISTI-NIVEL: Las tareas se separan mediante `dist_type` (Usuario/Plantilla/Núcleo).
+
+DOS RUTAS DE ACCESO (NUEVO desde v2.0)
+-------------------------------
+BACH tiene DOS rutas de acceso paralelas: ambas usan los mismos controladores + DB:
+
+1. CLI (para personas en la terminal):
+     La tarea python bach.py agrega "Título" --prioridad P4
+
+2. API DE BIBLIOTECA (PREFERIDA para LLM/Scripts):
+     de la tarea de importación bach_api
+     task.add("Título", "--prioridad", "P4")
+     tarea.lista()
+     task.done(42, "--note", "Listo")
+
+COMANDOS CLI (tarea bach)
+-----------------------
+  agregar <título> Crea tarea (--prioridad P1-P4, --descripción, --categoría)
+  lista [estado] Resumen filtrado (pendiente/abierto/en_progreso/hecho/bloqueado/todo)
+  lista --filter Filtrar por término en el título
+  lista: tareas asignadas para un socio específico
+  lista --tareas no asignadas sin asignación
+  mostrar detalles de <ID>, incluida la descripción y el historial
+  editar <ID> Edita la tarea (--título, --descripción, --categoría, --asignado)
+  done <ID> Marca la tarea como completada (Multi-ID, --nota)
+  block <ID> Bloquea tareas (multi-ID, --reason)
+  desbloquear <ID> Desbloquea tareas (Multi-ID)
+  Reabrir <ID> Vuelve a abrir las tareas completadas (Multi-ID)
+  eliminar <ID> Elimina tareas de forma permanente (ID múltiple)
+  prioridad <ID> <P> Cambia la prioridad (P1-P4)
+  asignar <ID> Asignación al socio (--a GEMINI/COPILOT/etc.)
+  depende <ID> Muestra dependencias
+    --on <X> Agregar dependencia (la tarea espera a X)
+    --remove <X> Elimina la dependencia
+    --clear Borra todas las dependencias
+
+EJEMPLOS DE BIBLIOTECA-API
+---------------------
+  de la tarea de importación bach_api
+
+  # Crear tarea
+  task.add("Escribir documentación", "--priority", "P2", "--category", "docs")
+
+  # Listar tareas
+  tarea.lista("pendiente")
+  task.list("open") # Estado heredado
+  task.list("in_progress") # Actualmente en progreso
+  tarea.lista("todos", "--asignados", "GEMINI")
+  tarea.lista("--no asignado")
+
+  # Editar tareas
+  task.edit(42, "--title", "Nuevo título")
+  task.done(100, 101, 102, "--note", "Todo listo")
+  task.assign(200, "--to", "COPILOTO")
+
+  # dependencias
+  task.depends(306, "--on", "305") # La tarea 306 espera a 305
+  task.depends(306) # Mostrar dependencias
+
+SCAN-TASKS (hub/ati.py)
+-----------------------
+  bach ati onboard --check    Escanea el sistema de archivos en busca de nuevas tareas.
+  bach scan tasks             Enumera tareas de `ati_tasks`.
+
+DATABASE (capa 1)
+---------------------
+- `tareas`: id, título, descripción, estado, prioridad, asignado_a, delegado_a,
+  depende_de, categoría, etiquetas, creado_en, completado_en, actualizado_en, dist_type.
+- `ati_tasks`: Tareas escaneadas con enlace de origen (Archivo/Línea).
+- Ruta de base de datos: system/data/bach.db
+
+GUI & INTEGRATION (planificada)
+---------------------------
+El **Tablero de tareas** (/tasks) está planificado como una vista Kanban que
+Permite mover tareas entre columnas de estado.
+
+VER TAMBIÉN
+----------
+  system/bach_api.py Módulo API de biblioteca (acceso preferencial)
+  system/hub/task.py Implementación de TaskHandler
+  docs/help/delegate.txt Delegación a socios
+  docs/help/maintain.txt Comprobación y limpieza de integridad
+  bach --help ati      The Automated Tool Incorporator

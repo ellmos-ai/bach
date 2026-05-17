@@ -1,0 +1,80 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+VENDOR – Источники внешнего кода
+------------------------------
+
+ДАТА: 06.02.2026
+
+ОПИСАНИЕ
+------------
+Каталог _vendor/ содержит копии внешнего кода, расположенного в
+Услуги BACH интегрированы. У каждого поставщика есть свой каталог.
+с PROVENANCE.md (происхождение, фиксация, лицензия).
+
+РАСПОЛОЖЕНИЕ
+-----------
+system/hub/_services/document/_vendor/
+
+ДОСТУПНЫЕ ПОСТАВЩИКИ
+-------------------
+
+  anthropic_docx/ Пакет/распаковка Word XML, проверка, отслеживание изменений
+                      Источник: github.com/anthropics/skills (skills/docx)
+                      Преимущества: отладка шаблонов, отслеживание изменений
+
+  anthropic_pdf/ Извлечение PDF-форм, заполнение, преобразование
+                      Источник: github.com/anthropics/skills (skills/pdf).
+                      Преимущества: налоговые поступления, заполнение форм
+                      Интеграция: pdf_service.py (PDFProcessor)
+
+  anthropic_xlsx/ Excel Recalc, пакет/распаковка/проверка Office XML
+                      Источник: github.com/anthropics/skills (skills/xlsx)
+                      Преимущество: финансовый экспорт по формулам
+
+  redaction_detector.py Regex+Fuzzy+Blacklist Обнаружение конфиденциальных данных
+                          Источник: ДокуЦентрум
+
+  pdf_schwaerzer_pro.py PDF-чернение + шифрование AES-256
+                          Источник: PDFSchwaerzer Pro
+
+ИСПОЛЬЗОВАНИЕ В КОДЕ
+---------------
+
+  # Обработка PDF (рекомендуется: через сервисный уровень)
+  из хаба._services.document.pdf_service import PDFProcessor
+
+  PDFProcessor.extract_text("файл.pdf")
+  PDFProcessor.get_metadata("файл.pdf")
+  PDFProcessor.extract_form_fields("file.pdf")
+  PDFProcessor.fill_form("file.pdf", {"поле": "значение"}, "out.pdf")
+  PDFProcessor.to_images("file.pdf", "output_dir/")
+  PDFProcessor.check_fillable("file.pdf")
+
+  # Модули поставщиков напрямую (только если уровня сервиса недостаточно)
+  импортировать систему
+  sys.path.insert(0, str(vendor_dir))
+  from extract_form_structure import extract_form_structure
+
+СОГЛАШЕНИЯ ПОСТАВЩИКОВ
+-------------------
+
+  1. У каждого поставщика свой каталог.
+  2. PROVENANCE.md обязателен (источник, коммит, дата, лицензия)
+  3. __init__.py как пакет Python
+  4. Никаких изменений в коде поставщика (дословная копия)
+  5. Обновления: скопируйте новый коммит, обновите PROVENANCE.md
+
+СВЯЗАННЫЕ ИНСТРУМЕНТЫ
+---------------
+
+  инструменты/c_skill_init.py Создать новый навык (антропный стандарт)
+  инструменты/c_skill_validate.py Проверьте SKILL.md
+  Tools/c_skill_package.py Package Skill
+
+СМОТРИ ТАКЖЕ
+----------
+bach --help cookbooks          Справочник по антропным кулинарным книгам
+bach --help tools              Обзор инструмента
+_vendor/README.md Обзорная таблица поставщиков

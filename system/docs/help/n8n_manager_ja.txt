@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+------------
+N8nManagerHandler
+
+
+説明
+------------
+BACH 用の n8n ワークフロー マネージャーの統合。 n8n インスタンスを管理し、
+REST API およびオプションの MCP サーバーを介したワークフロー。デフォルトのポート: 5678。
+
+プロファイル: n8n-manager
+パッケージ: n8n-manager-mcp (オプション、「bach setup n8n」経由でインストール可能)
+接続: http://localhost:5678 (構成可能)
+
+
+OPERATIONS
+-----------
+status n8n インスタンスと MCP サーバーのインストールを確認します
+            接続ステータスを示します。
+
+list 利用可能なワークフローをリストします (n8n REST API 経由)
+            ID、名前、アクティブなステータスを表示します。
+
+sync ワークフロー同期の準備
+            MCPサーバーが必要です。クロード コード ツールに委任されます。
+
+
+例
+---------
+handler = N8nManagerHandler()
+
+# ステータスを確認します
+result = handler.handle('status')
+
+# ワークフローをリストする
+result = handler.handle('list')
+
+# 同期を有効にする
+result = handler.handle('sync')
+
+# カスタム URL を持つハンドラー
+handler = N8nManagerHandler('http://n8n.example.com:5678')
+
+
+FILES
+-------
+hub/n8n_manager.py ハンドラーの実装
+docs/help/n8n_manager.txt このファイル
+
+
+関連項目
+----------
+bach setup n8n                 MCP サーバーをグローバルにインストール
+MODULAR_AGENTS/n8nManager/ n8n Manager リファレンス (README.md)
+SQ081 n8n ワークフロー マネージャーの要件

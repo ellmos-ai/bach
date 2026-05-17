@@ -1,0 +1,33 @@
+巴赫工具：c_encoding_fixer
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/c_encoding_fixer.py
+
+描述
+----------------------------------------
+c_encoding_fixer.py - 修复文本文件中的编码问题
+
+目的：纠正编码错误（Mojibake、不正确的 UTF-8 解码等）
+       与 ftfy 图书馆。自动创建备份。
+
+作者：Claude（改编自 EncodingFixxer.py）
+依赖项：ftfy（pip install ftfy）、os、json（stdlib）
+
+用法：
+    python c_encoding_fixer.py <file_or_folder> [--no-backup] [--recursive] [--json]
+
+示例：
+    python c_encoding_fixer.py script.py # 单个文件
+    python c_encoding_fixer.py ./src --recursive # 整个文件夹
+    python c_encoding_fixer.py file.py --no-backup # 不带备份
+    python c_encoding_fixer.py file.py --json # JSON 输出
+
+USE
+----------------------------------------
+python bach.py 工具运行 c_encoding_fixer [args]
+或直接： python tools/c_encoding_fixer.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：bach 工具显示 c_encoding_fixer

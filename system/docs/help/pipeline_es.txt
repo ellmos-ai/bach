@@ -1,0 +1,153 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PIPELINE HANDLER
+----------------
+
+El controlador de tuberías gestiona tuberías de procesamiento de datos automatizadas en BACH.
+Las canalizaciones se configuran como definiciones JSON almacenadas en canalizaciones/
+y puede ejecutarse manualmente o con control de tiempo.
+
+
+OPERACIONES
+-----------
+
+lista-disponible
+  Muestra todas las definiciones de canalizaciones disponibles (archivos JSON en canalizaciones/).
+  Especifica ID, nombre, tipo, descripción y programación.
+  Uso: lista de tuberías de bach-disponibles
+
+lista
+  Muestra todas las canalizaciones instaladas desde la base de datos.
+  Especifica la fecha de instalación y la última hora de ejecución.
+  Uso: lista de tuberías de bach
+
+status <pipeline-id>
+  Muestra el estado detallado de una tubería.
+  Incluye detalles de configuración y las últimas 5 ejecuciones con estadísticas.
+  Uso: estado de la tubería de bach <pipeline-id>
+
+instalar <pipeline-id>
+  Instala interactivamente una tubería.
+  Parámetros de configuración de consultas (config_questions desde JSON),
+  guarda la configuración en la tabla pipeline_configs.
+  Ofrece reinstalación si ya existe una canalización.
+  Uso: instalación de tubería de Bach <pipeline-id>
+
+ejecutar <pipeline-id>
+  Ejecuta una tubería instalada.
+  Carga dinámicamente la clase Entry_Point, crea una instancia y llama al método().
+  Crea una entrada en pipeline_runs con estadísticas (elementos_procesados, errores_recuento).
+  Espera Result-Dict con metadatos (tasks_found/items_processed, errores/errors_count).
+  Uso: ejecución de tubería de Bach <pipeline-id>
+
+programación <pipeline-id>
+  Habilita el trabajo del programador para la canalización.
+  Convierte el campo de programación (diario/hora/semanal/mensual) a expresión cron,
+  crea la entrada Scheduler_jobs con is_active=1.
+  Horarios estándar: diario 6:00, cada hora, lunes 6:00, 1 de mes 6:00.
+  Uso: programación de tubería de bach <pipeline-id>
+
+unschedule <pipeline-id>
+  Deshabilita el trabajo del programador (establece is_active=0).
+  Uso: bach pipeline unschedule <pipeline-id>
+
+
+ARCHIVOS
+-------
+
+hub/pipeline.py
+  Implementación del controlador con la clase PipelineHandler.
+
+pipelines/*.json
+  Definiciones de canalización. Campos obligatorios:
+  - id: ID único (por ejemplo, "ati")
+  - nombre: nombre para mostrar
+  - versión: número de versión
+  - tipo: tipo de canalización (por ejemplo, "sincronizar", "importar")
+  - descripción: Descripción
+  - programación: "diaria", "cada hora", "semanal", "mensual" o cadena cron
+  - Entry_point: Ruta al módulo Python (relativo al sistema/)
+  - clase: Clase en el módulo
+  - método: método (predeterminado: "ejecutar")
+  - config_questions: Matriz con preguntas {clave, mensaje, tipo, predeterminado}
+
+data/bach.db
+  Tablas:
+  - pipeline_configs: Canalizaciones instaladas + configuración específica del usuario
+  - pipeline_runs: historial de ejecución con estadísticas
+  - Scheduler_jobs: trabajos cron (creados mediante operación programada)
+
+
+EJEMPLOS
+---------
+
+Definición de canalización (pipelines/ati.json):
+{
+  "identificación": "ati",
+  "name": "Importador de títulos de artículos",
+  "versión": "1.0.0",
+  "tipo": "importar",
+  "description": "Importa títulos de artículos desde fuentes",
+  "horario": "diario",
+  "entry_point": "agentes/ati/importer.py",
+  "clase": "ATIIImportador",
+  "método": "ejecutar",
+  "preguntas_config": [
+    {
+      "clave": "origen_url",
+      "prompt": "URL de origen para importar títulos",
+      "tipo": "texto",
+      "predeterminado": "https://example.com/feed"
+    }
+  ]
+}
+
+Instalación (interactiva):
+$bach instalación de tubería ati
+=== Instalación: Importador del título del artículo ===
+Descripción: Importa títulos de artículos desde fuentes.
+Tipo: importar
+Horario: diario
+
+Configuración:
+URL de origen para importar títulos [https://example.com/feed]
+> https://custom.com/feed
+  -> Cambiado: https://custom.com/feed
+
+ ✓ Configuración completada
+Instalar tubería 'ati'...
+✓ Tubería 'ati' instalada
+
+
+Clase de tubería (agents/ati/importer.py):
+clase ATIImportador:
+    def __init__(self, db_path, configuración):
+        self.db_path = ruta_db
+        self.config = configuración
+        self.items_processed = 0
+        self.errors = []
+
+    def ejecutar (yo):
+        # Implementación...
+        devolver {
+            "elementos_procesados": self.elementos_procesados,
+            "errores": auto.errores
+        }
+
+
+Versión:
+$bach oleoducto ejecutado ati
+=== Ejecución de canalización: Importador de títulos de artículos ===
+ID de ejecución: 42
+✓ La tubería se ejecutó exitosamente
+  Elementos: 15, Errores: 0
+
+
+VER TAMBIÉN
+----------
+
+scheduler - Programador para trabajos automatizados (ejecución controlada por tiempo)
+daemon - Gestión de demonios para procesos en segundo plano
+agentes/ - Implementaciones de agentes para puntos de entrada de canalización

@@ -1,0 +1,154 @@
+政策 - 可重用代码标准
+------------------------------------------
+
+截至：2026-01-23
+路径：docs/help/tools/policies.txt
+
+描述
+------------
+策略是 BACH 标准的可重用代码片段
+强制执行。它们被注入新项目并确保
+一致的处理：
+  - 编码（UTF-8、Windows 控制台）
+  - JSON（表情符号安全，编码后备）
+  - 文件名（前缀约定）
+
+位置
+-----------
+  工具/_政策/
+    coding_header.py UTF-8 和控制台修复
+    emoji_safe.py 表情符号转换
+    json_safe.py 安全 JSON 操作
+    CONCEPT_naming_convention.md 命名约定（概念）
+
+可用政策
+--------------------
+
+1。 coding_header (v1.0)
+-------------------------
+UTF-8 编码标头和 Windows 控制台修复。
+在文件开头注入。
+
+注入：
+  - Shebang: #!/usr/bin/env python3
+  - 编码：# -*- 编码：utf-8 -*-
+  - Windows 控制台编码修复
+
+典型代码：
+  #!/usr/bin/env python3
+  # -*- 编码：utf-8 -*-
+
+  导入系统
+  如果 sys.platform == 'win32':
+      sys.stdout.reconfigure（编码='utf-8'，错误='替换'）
+
+2。 emoji_safe (v1.0)
+--------------------
+用于存储/传输的安全表情符号处理。
+
+特点：
+  emoji_to_safe(text) 表情符号 -> ASCII 安全（对于数据库/文件）
+  emoji_to_display(text) ASCII 安全 -> 表情符号（用于显示）
+
+使用：
+  从 _policies.emoji_safe 导入 emoji_to_safe
+  safe_text = emoji_to_safe("你好 [工具]") # -> "你好：扳手："
+
+依赖：
+  必需：pip install emoji（可选，优雅的后备）
+
+3。 json_safe (v1.0)
+-------------------
+带有表情符号/编码处理的安全 JSON 操作。
+
+特点：
+  json_load_safe(filepath) 使用编码回退加载
+  json_save_safe(data, filepath) 通过表情符号转换保存
+  json_dumps_safe(data) 序列化ensure_ascii=False
+
+使用：
+  从 _policies.json_safe 导入 json_load_safe, json_save_safe
+
+  # 加载（尝试过 utf-8、utf-8-sig、latin-1、cp1252）
+  数据 = json_load_safe("config.json")
+
+  # 保存（将表情符号转换为：短代码：）
+  json_save_safe(data, "config.json", Convert_emojis=True)
+
+策略格式
+-------------
+每个策略具有以下结构：
+
+  #!/usr/bin/env python3
+  # -*- 编码：utf-8 -*-
+  ”“”
+  政策：名称
+  版本：1.0
+  尺寸：小/中/大
+  描述：该政策的作用是什么
+  “”“
+
+  # === 政策：名称：版本 ===
+  ...代码...
+  # === END:名称 ===
+
+尺码类别:
+  小 -> 内联注入（几行）
+  介质 -> 外部文件（自己的模块）
+  大 -> 多个文件
+
+ATI 项目引导
+-------------------------
+ATI 引导程序将策略注入到新项目中：
+
+  bach ati bootstrap my-tool --template python-cli
+
+Python CLI 的标准策略：
+  - 编码头（总是）
+  - json_safe（如果使用 JSON）
+  - emoji_safe（输出到控制台时）
+
+参见：agents/ati/ATI_PROJECT_BOOTSTRAPPING.md
+
+命名约定（概念）
+---------------------------
+工具文件的计划命名约定：
+
+  c_ -> 针对 AI 优化的 CLI (c_encoding_fixer.py)
+  b_ -> BACH 核心 (b_backup.py)
+  a_ -> 代理运行程序 (a_developer.py)
+  t_ -> 测试工具 (t_runner.py)
+  m_ -> 维护 (m_cleanup.py)
+  g_ -> 生成器工具 (g_skill.py)
+
+状态：概念 - 尚未实现
+请参阅：tools/_policies/CONCEPT_naming_convention.md
+
+创建您自己的策略
+-----------------------
+
+1。在tools/_policies/中创建文件
+2. 包含 NAME、VERSION、SIZE、DESCRIPTION 的策略标头
+3. # === POLICY:name:version === 之间标记代码
+4. 可选：在project_bootstrapper.py中注册
+
+典型用途
+-------------------------
+
+1。新的Python项目
+   -> 自动注入encoding_header
+
+2. JSON配置
+   -> json_safe 用于安全存储
+
+3.带表情符号的主机版
+   -> emoji_safe 用于 Windows 兼容性
+
+4。标准化现有代码
+   -> c_standard_fixer 在内部使用策略
+
+另请参见
+----------
+  bach --help tools/code_quality   编码/JSON-Fixer
+  bach --help ati                  ATI 代理和引导
+  bach --help tools                工具概述

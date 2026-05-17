@@ -1,0 +1,80 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+VENDOR - External Code Sources
+------------------------------
+
+DATE: 2026-02-06
+
+DESCRIPTION
+------------
+The _vendor/ directory contains copies of external code located in
+BACH services are integrated. Each vendor has its own directory
+with PROVENANCE.md (origin, commit, license).
+
+LOCATION
+-----------
+system/hub/_services/document/_vendor/
+
+AVAILABLE VENDORS
+-------------------
+
+  anthropic_docx/ Word XML Pack/Unpack, Validate, Tracked Changes
+                      Source: github.com/anthropics/skills (skills/docx)
+                      Benefits: template debugging, change tracking
+
+  anthropic_pdf/ PDF form extraction, filling, conversion
+                      Source: github.com/anthropics/skills (skills/pdf)
+                      Benefits: tax receipts, filling out forms
+                      Integration: pdf_service.py (PDFProcessor)
+
+  anthropic_xlsx/ Excel Recalc, Office XML Pack/Unpack/Validate
+                      Source: github.com/anthropics/skills (skills/xlsx)
+                      Benefit: Financial exports with formulas
+
+  redaction_detector.py Regex+Fuzzy+Blacklist Sensitive data detection
+                          Source: DokuZentrum
+
+  pdf_schwaerzer_pro.py PDF blackening + AES-256 encryption
+                          Source: PDFSchwaerzer Pro
+
+USE IN CODE
+---------------
+
+  # PDF processing (recommended: via service layer)
+  from hub._services.document.pdf_service import PDFProcessor
+
+  PDFProcessor.extract_text("file.pdf")
+  PDFProcessor.get_metadata("file.pdf")
+  PDFProcessor.extract_form_fields("file.pdf")
+  PDFProcessor.fill_form("file.pdf", {"field": "value"}, "out.pdf")
+  PDFProcessor.to_images("file.pdf", "output_dir/")
+  PDFProcessor.check_fillable("file.pdf")
+
+  # Vendor modules directly (only if service layer is not enough)
+  import sys
+  sys.path.insert(0, str(vendor_dir))
+  from extract_form_structure import extract_form_structure
+
+VENDOR CONVENTIONS
+-------------------
+
+  1. Each vendor gets its own directory
+  2. PROVENANCE.md is mandatory (source, commit, date, license)
+  3. __init__.py as a Python package
+  4. No changes to the vendor code (Verbatim Copy)
+  5. Updates: Copy new commit, update PROVENANCE.md
+
+RELATED TOOLS
+---------------
+
+  tools/c_skill_init.py Create new skill (Anthropic standard)
+  tools/c_skill_validate.py Validate SKILL.md
+  tools/c_skill_package.py Package Skill
+
+SEE ALSO
+----------
+bach --help cookbooks          Anthropic Cookbooks Reference
+bach --help tools              Tool overview
+_vendor/README.md Vendor overview table

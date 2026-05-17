@@ -1,0 +1,18 @@
+BACH Tool: export_txt
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/export_txt.py
+
+DESCRIPTION
+----------------------------------------
+Exports tax items in TXT files - all lists + document directory
+
+USE
+----------------------------------------
+python bach.py tools run export_txt [args]
+or directly: python tools/export_txt.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show export_txt

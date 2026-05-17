@@ -1,0 +1,82 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[context_triggers 表，data/context_sources.json]
+
+上下文源系统（动态注入）
+-------------------------------------------
+
+日期：2026-02-08
+
+所有具有动态触发器的知识源的中央注册表。
+
+源类别：
+-------------------
+1.始终可用（注射优先级 8-10）
+   - Lesson_learned 已知错误和修复
+   - best_practices 最佳实践
+   - 问题 问题监视器（关键/紧急）
+
+2。根据要求/基于事件
+   - 元认知策略辅助
+   - 元认知心理支持
+   - 变更日志历史
+   - longterm_memory 存档会话
+   - 联系外部工具/API
+   - 帮助 BACH 帮助文件
+
+动态触发器
+------------------
+触发器部分位于 JSON (word_triggers) 中，部分位于 DB (context_triggers) 中：
+- JSON：data/context_sources.json（9 个源，~45 个 word_triggers）
+- DB：context_triggers 表（1012 个条目 - 扩展触发逻辑）
+- 类型：tool_discovery、lesson_hit、workflow_guide、theme_packet
+- 权重：权重 1-10，自动注入标志
+
+CLI 命令
+-----------
+  bach sources status             所有源的状态（启用/权重）
+  bach sources toggle <id>        打开/关闭源
+  bach sources inject <id>        打开/关闭自动注入
+  bach sources get <id> [query]   获取源的内容
+  bach sources search <query>     检查触发器触发哪个源
+  bach sources contacts [query]   查找联系人/API
+  bach sources problems           检查错误日志
+
+注意：“bach 源同步”未在handler.
+
+配置
+-------------
+源的全局控制是通过“data/context_sources.json”完成的：
+- 启用：来源普遍可用
+-injection_enabled：允许在没有明确请求的情况下注入
+- 权重：基本优先级（1-10）
+- word_triggers：触发匹配的关键字
+- event_triggers：基于事件的触发器（启动、错误）
+
+处理程序路径：system/hub/sources.py
+
+源内容
+---------------
+处理程序可以通过“bach resources get <id>”提供直接内容：
+- Lessons_learned：提供 docs/help/lessons.txt（存在，但是课程文档）
+- best_practices：读取 docs/help/practices.txt （存在）
+- 策略：硬编码策略（受阻、复杂、不清楚、疲倦）
+- 帮助：读取 docs/help/*.txt 文件（90 多个可用文件）
+- 变更日志：摘自 SKILL.md (system/SKILL.md)
+- 问题：扫描 data/logs/*.log 并阻止数据库中的任务
+
+注意：“lessons_learned”返回 docs/help/lessons.txt，而不是课程数据库。
+用于课程数据库：bach 课程列表/搜索
+
+关于联系人的注释
+--------------------
+自 v1.1.84 起，联系人存储在 bach.db 中（表：联系人、
+健康联系人）。旧的 contact.json 不再存在。
+“bach 来源联系人”命令现在直接使用数据库表。
+
+另请参阅
+----------
+  --help注射器 注射器系统
+  --help 整合 从事件到来源
+  docs/help/memory.txt 认知模型

@@ -1,0 +1,259 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+RETÓRICA
+--------
+Operadores y patrones retóricos como estrategias de pensamiento aplicadas.
+
+Afirmación central: La retórica es estrategia cognitiva + empaquetado lingüístico.
+
+
+1. OPERADORES RETÓRICOS (elementos básicos)
+------------------------------------------
+
+1.1 Operadores de refuerzo
+-----------------------------
+Aumentar el impacto, la intensidad o la importancia.
+  - Amplificación -> hacer algo más grande
+  - Énfasis -> énfasis a través de repetición/estructura
+  - Incremento (clímax) -> A -> B -> C, cada cual más fuerte
+  - Superlativización -> "el punto más importante..."
+
+1.2 Operadores de atenuación
+-----------------------------
+Atenuar, relativizar, desactivar.
+  - Litotes -> "no está mal"
+  - Cobertura -> "podría ser que..."
+  - Relativización -> "comparado con..."
+
+1.3 Operadores de estructura
+------------------------
+Ordenar pensamientos y dirigir la atención.
+  - Tríada -> estructura de 3 puntos
+  - Encuadre -> Establecer contexto
+  - Señalización -> "en primer lugar... en segundo lugar..."
+  - Contrastando -> A vs. B
+
+1.4 Operadores de significado
+--------------------------
+Cambiar la forma en que se entiende algo.
+  - Metáfora -> transferir significado
+  - Analogía -> estructura de comparación
+  - Definición -> Establecer término
+  - Reencuadre -> Reinterpretar significado
+
+1.5 Operadores de persuasión
+----------------------------
+Apuntar a la aprobación.
+  - Logos -> argumentos lógicos
+  - Éthos -> credibilidad
+  - Pathos -> Emoción
+  - Referencia a la autoridad -> "Los estudios muestran..."
+
+1.6 Operadores de percepción
+----------------------------
+Controlar a qué presta atención la audiencia.
+  - Centrarse -> "lo que importa es..."
+  - Distracción -> mover tema
+  - Visualización selectiva -> mostrar sólo aspectos relevantes
+
+1.7 Operadores de interacción
+----------------------------
+Incluir a la otra persona.
+  - Pregunta retórica
+  - Aproximación directa
+  - Marco comunitario -> "todos sabemos que..."
+  - Anticipación de objeciones -> "Quizás te estés preguntando..."
+
+1.8 Operadores de Credibilidad
+--------------------------------
+Incrementar la confianza.
+  - Auto-divulgación
+  - Transparencia
+  - admitir errores
+  - Mostrar coherencia
+
+
+2. PATRONES RETÓRICOS (combinaciones)
+----------------------------------------
+
+2.1 Patrón problema-causa-solución
+------------------------------------
+Operadores: encuadre, causalidad, estructuración
+Formulario: Nombrar el problema -> Explicar la causa -> Presentar la solución
+
+2.2 Patrón de anticipación de objeciones
+--------------------------------
+Operadores: cambio de perspectiva, reencuadre, logos
+Forma: "Ahora podrías pensar... pero en realidad..."
+
+2.3 Patrón de marco de historia
+------------------------
+Operadores: Metáfora, Secuenciación, Pathos
+Formulario: Situación -> Conflicto -> Punto de inflexión -> Solución
+
+2.4 Patrón sándwich
+---------------------
+Operadores: refuerzo, debilitamiento
+Forma: Positivo -> Crítica -> Positivo
+
+2.5 Patrón de contraste
+---------------------
+Operadores: Contrastar, enfocar
+Forma: "No X, sino Y."
+
+2.6 Patrón de tríada
+--------------------
+Operadores: Estructuración, refuerzo
+Formulario: "Rápido. Claro. Eficaz."
+
+2.7 Patrón de autoridad
+------------------------
+Operadores: Ethos, Logos
+Formulario: "Los estudios muestran... los expertos confirman..."
+
+2.8 Patrón de resistencia mínima
+-------------------------------
+Operadores: Debilitamiento, Cobertura
+Formulario: "Tal vez tendría sentido..."
+
+2.9 Patrón de reencuadre
+----------------------
+Operadores: Cambio de significado
+Formulario: "Esto no es un problema, esto es una oportunidad".
+
+2.10 Patrón socrático
+--------------------------
+Operadores: preguntas, cambio de perspectiva
+Formulario: "¿Qué pasaría si...?"
+
+2.11 Patrón de impulso
+----------------------
+Operadores: Clímax, secuenciación
+Formulario: "Primero... luego... finalmente..."
+
+2.12 Patrón de reducción
+-----------------------
+Operadores: fragmentación, enfoque
+Formulario: "En realidad se trata sólo de dos cosas..."
+
+2.13 Patrón de espejo
+-------------------------
+Operadores: Toma de perspectiva
+Formulario: "He oído que es importante para ti..."
+
+2.14 Patrón de simplificación
+----------------------------
+Operadores: Normalizar, Metáfora
+Formulario: "Imagina que fuera como..."
+
+2.15 Patrón sorpresa
+----------------------------
+Operadores: Contraste, Reencuadre
+Forma: "La mayoría de la gente piensa X, pero es todo lo contrario".
+
+2.16 Patrón de coherencia
+------------------------
+Operadores: ethos, repetición
+Formulario: "Como dije..."
+
+2.17 Patrón de precisión
+-------------------------
+Operadores: definición, enfoque
+Formulario: "Por 'eficiencia' me refiero específicamente a..."
+
+2.18 Patrón de activación emocional
+-------------------------------
+Operadores: Pathos, narración de historias
+Formulario: "Imagínese levantarse por la mañana y..."
+
+2.19 Patrón de contraevidencia
+-------------------------
+Operadores: probar, comparar
+Formulario: "Si eso fuera cierto, entonces..."
+
+2.20 Patrón de argumento mínimo
+------------------------------
+Operadores: priorización, reducción
+Formulario: "Sólo hay UNA razón por la que esto es importante..."
+
+
+3. TRUCOS RETÓRICOS (técnicas precisas)
+-------------------------------------------
+
+Cold Open -> comience directamente con una declaración contundente
+Gancho -> Atención en 3 segundos
+Devolución de llamada -> volver al punto anterior más tarde
+Haciendo eco -> repetir palabras clave
+Gancho de contraste -> "Las malas noticias... las buenas noticias..."
+Inicio en falso -> interrumpir deliberadamente para crear tensión
+Micro-pausa -> aumentar efecto
+Etiquetar -> nombrar emociones ("Eso parece frustrante...")
+Preparación -> establecer expectativas
+Anclaje -> Establecer punto de comparación
+
+
+4. RETÓRICA Y METACOGNICIÓN
+------------------------------
+Estrategias metacognitivas como autocontrol retórico:
+
+  Autocontrol -> controlar el lenguaje corporal, el tono, el ritmo
+  Análisis de errores -> análisis de voz, bucles de retroalimentación
+  Metapreguntas -> "¿Cuál es mi mensaje central?"
+  Elección de estrategia -> equilibrio ethos/pathos/logos
+  Reflexión -> Seguimiento de un discurso
+  Metaplanificación -> estructura del habla, dramaturgia
+
+Retórica = no sólo hablar, sino pensar en hablar.
+
+
+5. RELACIONADOS CON PATRONES TÉCNICOS
+---------------------------------
+Muchos patrones de operadores tienen gemelos retóricos:
+
+  Canal de clasificación -> Análisis del grupo objetivo
+  Puntuación y clasificación -> Ponderación de argumentos
+  Filtrado basado en reglas -> Filtro de relevancia para contenido
+  Detección de anomalías -> detectar contradicciones
+  Refinamiento progresivo -> Construir el argumento paso a paso
+  Human-in-the-Loop -> Incluir reacciones de la audiencia
+  Resolución alternativa -> Manejo de objeciones
+
+Esto no es una coincidencia: la retórica es un proceso de procesamiento de información.
+
+
+6. LOS TRES PILARES DE LA RETÓRICA
+---------------------------------
+
+Logos (argumentación lógica)
+  -> Deducción, inducción, comparaciones, pruebas, contraevidencias.
+  -> Estrategias de pensamiento: formación de hipótesis, pensamiento causal
+
+Ethos (credibilidad)
+  -> Autocontrol, análisis de errores, coherencia.
+  -> Metacognición: reflexión, metapreguntas
+
+Pathos (impacto emocional)
+  -> Reconocimiento de patrones, narración de historias, analogías.
+  -> Estrategias de pensamiento: cambio de perspectiva, pensamiento de escenarios
+
+
+7. APLICACIÓN EN BACH
+--------------------
+
+Los operadores retóricos pueden mejorar los sistemas de IA:
+  - Mejor explicabilidad (patrón de simplificación)
+  - Mejores mensajes de error (problema-causa-solución)
+  - Mejor orientación al usuario (señalización, estructuración)
+  - Mejor comunicación (sistema de socios)
+
+Estrategias de pensamiento = operadores internos (procesamiento)
+Retórica = operadores externos (comunicación)
+
+
+ARCHIVOS DE AYUDA RELACIONADOS
+----------------------
+  --operadores de ayuda Operadores y patrones básicos
+  --ayuda a estrategias de pensamiento Estrategias cognitivas y metacognitivas
+  --estrategias de ayuda para categorizar, evaluar, probar, etc.

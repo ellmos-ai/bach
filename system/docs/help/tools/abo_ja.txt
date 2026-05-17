@@ -1,0 +1,58 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 最終検証日: 2026-05-17
+# 次のレビュー: 2027-05-17
+
+サブスクリプション管理 (サブスクリプション管理)
+---------------------------------------
+
+説明
+税金項目からの定期的な支払い (サブスクリプション) を検出します。
+確認を管理し、コストの概要を作成します。
+
+コマンド
+-------
+bach abo scan              税項目の分析、サブスクリプションの認識
+bach abo list              認識されたすべてのサブスクリプションの表示
+bach abo confirm ID        サブスクリプションの認識の確認
+bach abo dismiss ID        エラー検出の削除
+bach abo costs             月次コスト計算書
+bach abo export            予算計画用にエクスポート
+bach abo patterns          既知のサブスクリプション パターンを表示
+bach abo init              データベース テーブルを初期化
+bach abo sync-mail         電子メールからサブスクリプションを同期
+
+検出
+---------
+分析されたtax_posten およびサブスクリプションに基づいてサブスクリプションを識別しますに:
+  - 同じプロバイダーへの繰り返しの支払い
+  - 一定の量（小さな偏差）
+  - 既知のサブスクリプション プロバイダー パターン (DB サポート)
+
+スコアしきい値: 50 ポイント (構成可能)
+
+オプション
+--------
+  --year YYYY 税年フィルター (デフォルト: 当年)
+  --dry-run プレビューのみ。何も保存しません
+
+サンプル
+---------
+  bach abo scan
+  bach abo scan --jahr 2025 --dry-run
+  bach abo list
+  bach abo costs
+  bach abo confirm 42
+  bach abo export
+
+ハンドラー
+-------
+  Hub/abo.py (AboHandler)
+  tools/abo/abo_scanner.py (AboScanner)
+  Hub/_services/mail/mail_abo_sync_service.py (メール統合)
+
+関連項目
+----------
+  bach --help steuer       税務管理
+  bach --help financial    財務概要

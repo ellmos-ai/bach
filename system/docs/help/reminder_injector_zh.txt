@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+-----------------------------------------------------------------------------
+提醒注入器 (SQ040) -- 将内存注入 LLM 提示
+
+描述
+-----------------------------------------------------------------------------
+提醒注入器管理内存并将其注入 LLM 提示
+每次通话之前。根据触发条件触发提醒
+有选择地插入到 [BACH-REMINDERS] 块中。实施情况
+支持DB和JSON后备存储。
+
+支持的触发条件：
+  - 始终：始终处于活动状态（无条件）
+  - on_task：仅当任务正在运行时
+  - time_based：仅在某个时间窗口内（HH:MM-HH:MM）
+  - keywords_match：仅当用户输入中出现关键字时
+
+OPERATIONS
+-----------------------------------------------------------------------------
+list_reminders(active_only=True)
+  以列表[dict]的形式返回所有活动提醒（或全部）。
+
+add_reminder(message, trigger_condition="always", trigger_value=None,
+             优先级=5)
+  创建新提醒。根据条件触发值：
+    - 总是：trigger_value被忽略
+    - on_task：忽略trigger_value
+    - 基于时间：“HH:MM-HH:MM”（例如“09:00-17:00”）
+    -keyword_match：“keyword1，keyword2，...”（逗号分隔）
+  优先级：低值 = 更重要（0 = 最高优先级）。
+
+update_reminder(reminder_id, **kwargs)
+  更新提醒。允许的字段：消息、trigger_condition、
+  触发值，活动，优先级。成功则返回 True。
+
+delete_reminder(reminder_id)
+  删除提醒（然后将被 list_reminders 忽略）。
+  成功时返回 True。
+
+get_active_reminders(context)
+  返回与当前上下文相关的提醒文本列表
+  适合。 Context-Dict 可以包含：active_task、user_input。
+
+inject(prompt, context)
+  在提示之前添加活动提醒。返回：
+    [巴赫提醒]
+      1. <最高优先级提醒>
+      2. <下次提醒>
+    [/巴赫提醒]
+    <原始提示>
+
+示例
+-----------------------------------------------------------------------------
+# 为活动任务创建提醒
+inj = ReminderInjector(路径(“系统”), db=无)
+inj.add_reminder("对长时间任务使用焦点模式。",
+                 trigger_condition="on_task",priority=1)
+
+# 基于时间的提醒（上午 9 点至下午 5 点）
+inj.add_reminder("确保备份正在运行。",
+                 触发条件=“基于时间”，
+                 trigger_value="09:00-17:00",priority=3)
+
+# 基于关键词的提醒
+inj.add_reminder("使用 BACH API，而不是直接访问数据库！",
+                 触发条件=“关键字匹配”，
+                 trigger_value="database, db, sql",priority=2)
+
+# 在提示中插入提醒
+context = {"active_task": "研究", "user_input": "数据库查询"}
+Modified_prompt = inj.inject("XYZ 是如何工作的？", context)
+
+FILES
+-----------------------------------------------------------------------------
+hub/reminder_injector.py 主要实现
+data/reminders.json JSON 后备（数据库错误情况）
+docs/help/reminder_injector.txt 此帮助文件
+
+另请参见
+-----------------------------------------------------------------------------
+task_manager.py -- 任务管理（on_task 触发器的上下文）
+bach_api.py -- 跨中心 API

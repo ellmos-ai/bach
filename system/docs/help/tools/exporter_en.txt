@@ -1,0 +1,45 @@
+BACH Tool: exporter
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/exporter.py
+
+DESCRIPTION
+----------------------------------------
+exporter.py
+-----------
+Export tool for skills, agents and OS.
+
+Version: 1.0.0
+Created: 2026-01-14
+
+CONCEPT:
+  In the OS, skills/agents are lightweight (use OS infrastructure).
+  For external use they must be "packaged" with their own infrastructure.
+
+COMMANDS:
+  skill Exports a skill from the OS as a standalone
+  agent Exports an agent with his skills
+  os-fresh Creates a fresh OS package (without user data)
+  os-reset Resets an OS (deletes user data)
+
+Usage:
+    python exporter.py skill <name> --from-os <os-path> [--output <zip>]
+    python exporter.py agent <name> --from-os <os-path> [--output <zip>]
+    python exporter.py os-fresh <os-path> [--output <zip>] [--version <v>]
+    python exporter.py os-reset <os-path> [--backup] [--confirm]
+
+Examples:
+    python exporter.py skill research --from-os ./my-os
+    python exporter.py agent write-assistant --from-os ./my-os
+    python exporter.py os-fresh ./my-os --output os-v1.0.zip
+    python exporter.py os-reset ./my-os --backup
+
+USE
+----------------------------------------
+python bach.py tools run exporter [args]
+or directly: python tools/exporter.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show exporter

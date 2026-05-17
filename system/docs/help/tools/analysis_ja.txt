@@ -1,0 +1,93 @@
+分析ツール - 分析ツール
+-----------------------------------
+
+概要
+BACH の分析ツールはデータ分析に役立ちます。
+コード検査とシステム監視。
+
+データ分析 (バッチ データ)
+-------------------------
+パス: Hub/data_analysis.py
+ステータス: 実装済み (v1.1.25)
+
+コマンド:
+  bach data load <pfad>         ファイルをロードして情報を表示
+  bach data describe <pfad>     記述統計 (平均、標準、最小、最大)
+  bach data head <pfad> [--rows N]  最初の N 行 (デフォルト: 10)
+  bach data corr <pfad>         数値列の相関行列
+  bach data chart <pfad> <typ>  チャートの作成 (棒、折れ線、円、散布図、履歴)
+  bach data list                入力/フォルダー内のファイルを表示
+
+サポートされている形式:
+  - CSV（区切り文字自動認識）
+  - Excel (.xlsx、.xls)
+  - JSON
+
+ディレクトリ:
+  ユーザー/データ分析/入力/入力ファイル
+  ユーザー/データ分析/出力/結果ファイル
+  user/data-analysis/charts/ 生成されたグラフ
+
+コード分析
+------------
+
+code_analyzer.py
+  Python コードの品質と構造を分析します。
+  呼び出し: python tools/code_analyzer.py <ファイル>
+
+c_method_analyzer.py
+  Python ファイル内のメソッドと関数を分析します。
+  長いメソッドや複雑な関数を検索します。
+  呼び出し: python tools/c_method_analyzer.py <ファイル>
+
+統計とレポート
+-------------------
+
+task_statistics.py
+  タスクに関する統計を作成します (完了済みか保留中か、優先度)。
+  呼び出し: python tools/task_statistics.py
+
+reports.py
+  さまざまなシステムレポートを生成します。
+  呼び出し: python tools/reports.py
+
+generate_skills_report.py
+  スキルカバレッジレポートを作成します。
+  呼び出し: python tools/generate_skills_report.py
+
+SCANNER
+-------
+
+dirscan.py
+  ディレクトリをスキャンして変更を確認します。
+  --startup に統合されました。
+  呼び出し: python tools/dirscan.py <パス>
+
+tool_scanner.py
+  システム内のツールを検索して登録します。
+  呼び出し: python tools/tool_scanner.py
+
+duplicate_detector.py
+  ハッシュによって重複ファイルを検索します。
+  呼び出し: python tools/duplicate_detector.py <パス>
+
+システム検査
+-----------------
+
+c_sqlite_viewer.py
+  SQLite データベース (bach.db、bach.db) を検査します。
+  呼び出し: python tools/c_sqlite_viewer.py <db>
+
+inspect_db_tables.py
+  テーブルのスキーマと統計を表示します。
+  呼び出し: python tools/inspect_db_tables.py
+
+dump_schema.py
+  DBスキーマをSQLとしてエクスポートします。
+  呼び出し: python tools/dump_schema.py
+
+関連項目
+----------
+bach --help data          データ分析ヘルプ
+bach --help tools         ツールの概要
+bach --help maintain      メンテナンス ツール

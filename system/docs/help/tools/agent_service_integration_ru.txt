@@ -1,0 +1,31 @@
+Инструмент BACH: Agent_service_integration
+--------------------------------------------------
+Сгенерировано: 23 января 2026 г., 10:36.
+Источник: инструменты/agent_service_integration.py
+
+ОПИСАНИЕ
+----------------------------------------
+Интеграция агента-сервиса-соединения v2.0.0 (версия базы данных)
+
+Связывает агентов со службами, соединениями и внешними инструментами.
+Центральная точка контакта для активации агентов и маршрутизации инструментов.
+
+ИЗМЕНЕНО: теперь читается из bach.db вместо файлов JSON!
+
+Использование:
+  python Agent_service_integration.py матрица # Показать матрицу соединений
+  python Agent_service_integration.py агент <имя> # Подключения агента
+  python Agent_service_integration.py рекомендует <задача> # Рекомендация инструмента
+  python Agent_service_integration.py status # Общий статус
+  python Agent_service_integration.py инструменты [тип] # Список инструментов
+  python Agent_service_integration.py Connections # Список соединений
+
+USE
+----------------------------------------
+инструменты Python bach.py запускают Agent_service_integration [args]
+или напрямую: python Tools/agent_service_integration.py [args]
+
+ПРИМЕЧАНИЯ
+----------------------------------------
+- Автоматически генерируется из строки документации.
+- Если у вас есть вопросы: инструменты bach показывают Agent_service_integration.

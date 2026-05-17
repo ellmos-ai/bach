@@ -1,0 +1,97 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+タイマー - ストップウォッチ
+----------------
+
+経過時間を測定します。複数のタイマーを同時に使用可能。
+
+CLI コマンド
+-----------
+
+  bach timer start              名前のないタイマーを開始
+  bach timer start "Recherche"  名前付きタイマーを開始
+  bach timer stop               最後/唯一のタイマーを停止
+  bach timer stop "Recherche"   名前付きタイマーを停止
+  bach timer list               アクティブなタイマーをすべて表示
+  bach timer clear              すべてのタイマーを削除
+
+出力形式
+--------------
+
+  [タイマー] 研究: 05:23 |セッション: 45:12
+
+すべての CLI 出力でアクティブなタイマーが表示されます。
+
+パーシステンシー
+----------
+
+  ファイル: data/.timer_state
+
+  内容:
+  {
+    「タイマー」: {
+      "研究": "2026-01-30T14:00:00",
+      「セッション」: 「2026-01-30T13:50:00」
+    }
+  }
+
+例
+---------
+
+  # セッションタイマーを開始します
+  bach timer start "Session"
+  -> タイマー「セッション」が開始されました
+
+  # サブタスクの追加タイマー
+  bach timer start "Bugfix"
+  -> タイマー「バグ修正」が開始されました
+
+  # ステータスを確認します
+  bach timer list
+  -> セッション: 45:12
+  -> バグ修正: 05:23
+
+  # バグ修正タイマーを停止します
+  bach timer stop "Bugfix"
+  -> タイマー「バグ修正」が停止しました: 05:23
+
+ユースケース
+--------
+
+  1. セッション追跡
+     bach timer start "Session"
+     ...仕事 ...
+     bach timer stop "Session"
+     -> セッションの持続時間を示します
+
+  2. タスクの追跡
+     bach timer start "Task-123"
+     ... タスクを編集 ...
+     bach timer stop "Task-123"
+     -> 時間はタスクのコメントに記録できます
+
+  3. 並行トラッキング
+     bach timer start "Gesamt"
+     bach timer start "Recherche"
+     ...研究...
+     bach timer stop "Recherche"
+     bach timer start "Coding"
+     ... コード ...
+     bach timer stop "Coding"
+     bach timer stop "Gesamt"
+     -> 時間分布を表示
+
+INTERPLAY
+-------------
+
+タイマーは時間システムの一部です:
+  --help Clock 時間表示
+  --help countdown トリガーによるカウントダウン
+  -- チェック間のヘルプ
+  --help beat 統一時刻表示
+
+---
+バージョン: 1.0 |ステータス: 実装済み (v1.1.83)
+ハンドラー: system/hub/time.py (TimerHandler)

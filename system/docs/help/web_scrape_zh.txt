@@ -1,0 +1,82 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WEB_SCRAPE HANDLER
+------------------
+
+处理程序名称
+------------
+
+web-scrape (WebScrapeHandler)
+
+Playwright MCP 的替代品。提供浏览器对 HTTP 请求的控制
+基于正则表达式的数据提取。可选：用于屏幕截图的 Selenium。
+
+
+描述
+------------
+
+web_scrape 处理程序支持网页抓取、HTML 分析和
+截图捕捉。通过 BACH CLI 工作，具有强大的功能
+错误处理程序。将屏幕截图存储在缓存目录中。
+
+依赖项：
+  - 请求（强制，HTTP 请求）
+  - 硒（可选，屏幕截图）
+  - Chrome/Chromium（可选，屏幕截图 WebDriver）
+
+
+操作
+-----------
+
+get <url>
+  HTTP GET：加载并显示完整的 HTML 正文。
+  在超过 5000 个字符处截断。显示状态、内容类型、大小。
+
+left <url>
+  链接提取：所有带有链接文本的<a href>。清理 HTML 标签，
+  忽略 javascript:、mailto:、锚点 (#)。最大限度。 50 个链接。已删除重复数据。
+
+表单 <url>
+  表单识别：<form>带有action/method，全部<input>，<textarea>，
+  <选择>。显示字段类型（文本、提交等）和名称。
+
+屏幕截图 <url>
+  使用 Selenium 的屏幕截图（无头，1280x1024）。保存于
+  data/cache/scrape/ 具有基于哈希的文件名。需要 Chrome 驱动程序。
+
+headers <url>
+  显示响应标头：响应的所有 HTTP 标头 + 状态代码。
+
+
+示例
+---------
+
+bach web-scrape get https://example.com
+  从 example.com 获取内容
+
+bach web-scrape links https://github.com/lukisch
+  列出 GitHub 个人资料上的所有链接
+
+bach web-scrape forms https://example.com/login
+  分析登录页面上的表单
+
+bach web-scrape screenshot https://example.com
+  创建 PNG 屏幕截图（需要 selenium）
+
+bach web-scrape headers https://example.com
+  检查 HTTP 标头（用户代理、cookie 等）
+
+
+文件
+-------
+
+hub/web_scrape.py 处理程序实现
+data/cache/scrape/ 屏幕截图输出
+
+
+另请参见
+----------
+
+hub/base.py BaseHandler 类

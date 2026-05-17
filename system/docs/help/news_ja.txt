@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ニュース ハンドラー
+------------
+
+説明
+------------
+
+RSS フィード、Web ページ、YouTube チャンネルからニュースを集約します。ソースを保存します
+bach.db 内の記事は、分類と読み取りステータスの追跡をサポートしています。
+URL 構造に基づく自動タイプ検出 (RSS/Web/YouTube)。
+
+OPERATIONS
+-----------
+
+add <url> [--type TYPE] [--category CAT] [--name NAME]
+  新しいソースを追加します。
+  TYPE: RSS、Web、YouTube (指定しない場合は自動検出)
+  CATEGORY: 組織カテゴリ (デフォルト: 「一般」)
+  NAME: 表示名 (デフォルト: URL から抽出)
+  YouTube URL: /channel/UC... は RSS フィードに変換されます
+
+リスト
+  登録されているすべてのソースをステータスとともに表示します。
+  表示: ID、名前、タイプ、URL、カテゴリ、アクティブ/非アクティブ ステータス、
+         最後の呼び出し、エラー数
+
+フェッチ [--ソース ID]
+  新しい記事を入手します。
+  --source ID: 特定のソースのみ (デフォルト: すべてアクティブ)
+  サポート: RSS 解析 (feedparser を使用)、単純な Web ページ
+
+アイテム [--unread] [--category CAT] [--limit N]
+  保存されたニュース記事を表示します。
+  --unread: 未読アイテムのみ (デフォルト: すべて)
+  --category CAT: カテゴリでフィルターします。
+  --limit N: 最大数を表示 (デフォルト: 20)
+  マーキング: * = 未読、スペース = 既読
+
+読み取り <ID|all>
+  記事を既読としてマークします。
+  ID: 特定のアイテムID
+  all: すべての未読アイテム
+
+<ID> を削除
+  ソースと関連記事をすべて削除します。
+  FOREIGN KEY
+
+カテゴリによるカスケード削除
+  ソース/ステータス数を含むすべてのカテゴリの概要。
+
+統計
+  統計: ソース、カテゴリ、記事、未読、
+  最新 3 回の取得とタイムスタンプ。
+
+ヘルプ
+  このヘルプを表示します。
+
+例
+---------
+
+RSS ソースの追加:
+  bach news add https://example.com/feed.xml --category technik --name "Beispiel Tech"
+
+YouTube チャンネルの購読:
+  bach news add https://youtube.com/channel/UCxxxxxx --name "Mein Lieblingskanal"
+
+Web ページの監視:
+  bach news add https://example.com --type web --category news
+
+ニュースの取得と表示:
+  bach news fetch
+  bach news items --unread --limit 10
+
+カテゴリの参照:
+  bach news categories
+  bach news items --category technik
+
+すべての未読を既読としてマーク:
+  bach news read all
+
+ファイル
+-------
+
+データベース: data/bach.db
+  - news_sources: メタデータを含むソース (ID、名前、URL、タイプ、カテゴリ、ステータス)
+  - news_items: 既読フラグ、発行日および取得日のある記事
+
+依存関係:
+  - feedparser: RSS 解析用 (オプション、要求される場合があります)
+  - urllib: Web ページ (stdlib) の場合
+
+関連項目
+----------
+
+hub/base.py 操作ディスパッチ用の BaseHandler
+data/bach.db ソースと項目を含む SQLite データベース

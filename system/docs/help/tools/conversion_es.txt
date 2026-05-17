@@ -1,0 +1,100 @@
+HERRAMIENTAS DE CONVERSIÓN - Herramientas de conversión
+-------------------------------------------
+
+VISIÓN GENERAL
+Las herramientas de conversión en BACH convierten formatos de archivos
+y reparar/estandarizar archivos.
+
+CONVERTIDOR UNIVERSAL
+-------------------
+c_universal_converter.py
+
+Herramienta de conversión universal para muchos formatos.
+Soporta:
+  - Texto -> PDF
+  - Rebajas -> PDF/HTML
+  - JSON -> CSV
+  - Excel -> CSV
+  - Imágenes (cambiar tamaño, formato)
+
+Llamada: python tools/c_universal_converter.py <entrada> <salida>
+
+MARKDOWN -> PDF
+---------------
+c_md_to_pdf.py
+
+Convierte archivos Markdown en PDF con estilo.
+Características:
+  - Resaltado de código
+  - Mesas
+  - Incrustar imágenes
+
+Llamada: python tools/c_md_to_pdf.py <archivo md> [--output <pdf>]
+
+CODIFICACIÓN Y TEXTO
+---------------
+
+c_encoding_fixer.py
+  Soluciona problemas de codificación (UTF-8, Latin-1, etc.)
+  Detecta automáticamente la codificación incorrecta.
+  Llamada: python tools/c_encoding_fixer.py <archivo>
+
+c_umlaut_fixer.py
+  Corrige diéresis alemanas en archivos.
+  Reemplaza caracteres rotos (ae->ä, ue->ü, etc.)
+  Llamada: python tools/c_umlaut_fixer.py <archivo>
+
+c_standard_fixer.py
+  Estandariza el formato del código.
+  Elimina los espacios en blanco finales, unifica los finales de línea.
+  Llamada: python tools/c_standard_fixer.py <archivo>
+
+JSON TOOLS
+----------
+
+c_json_repair.py
+  Repara archivos JSON rotos.
+  Corrige comas, comillas y corchetes faltantes.
+  Llamada: python tools/c_json_repair.py <archivo>
+
+json_fixer.py
+  Reparación JSON alternativa con opciones avanzadas.
+  Llamada: python tools/json_fixer.py <archivo>
+
+HERRAMIENTAS DE CÓDIGO
+----------
+
+c_import_organizer.py
+  Ordena y organiza las importaciones de Python.
+  Agrupados: Estándar, Terceros, Local.
+  Llamada: python tools/c_import_organizer.py <archivo>
+
+c_indent_checker.py
+  Comprueba y corrige la sangría.
+  Opciones: --tabs, --spaces N
+  Llamada: python tools/c_indent_checker.py <archivo>
+
+EXPORTAR
+------
+
+export_txt.py
+  Exporta archivos como texto sin formato.
+  Llamada: python tools/export_txt.py <archivo>
+
+exporter.py
+  Exportador general para varios formatos.
+  Llamada: python tools/exporter.py <archivo> --format <fmt>
+
+OPERACIONES POR LOTES
+-----------------
+
+batch_file_ops.py
+  Realiza operaciones de archivos en múltiples archivos.
+  Operaciones: renombrar, copiar, mover, convertir
+  Llamada: python tools/batch_file_ops.py <operación> <patrón>
+
+VER TAMBIÉN
+----------
+bach --help tools         Descripción general de herramientas
+bach --help backup        Herramientas de respaldo
+bach --help maintain      Herramientas de mantenimiento

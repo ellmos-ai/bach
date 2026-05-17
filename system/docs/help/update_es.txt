@@ -1,0 +1,110 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+UPDATE HANDLER
+--------------
+
+NOMBRE DEL MANEJADOR
+------------
+bach update - Versions- und Update-Verwaltung
+
+
+DESCRIPCIÓN
+------------
+Administra actualizaciones, control de versiones e integridad del sistema. Consulta por los disponibles
+Actualizaciones desde Git, las importa con copias de seguridad automáticas y migración de datos
+funciones y verifica la integridad del sistema después de cada actualización. También apoya
+Reversiones a copias de seguridad previas a la actualización.
+
+
+OPERACIONES
+-----------
+
+COMPROBAR
+Buscar actualizaciones (basado en Git). Compara las confirmaciones locales con la rama ascendente
+y muestra los cambios pendientes. Sólo funciona en repositorios de Git.
+
+STATUS (o sin parámetros)
+Muestra la versión actual, la versión del esquema, la marca de tiempo de actualización y la verificación.
+estado. Enumera las migraciones aplicadas y la información de Git.
+
+APPLY [--dry-run]
+Actualización instalada con flujo de trabajo de 5 fases: (1) Crear copia de seguridad previa a la actualización,
+(2) Ejecute Git pull --rebase, (3) Ejecute migraciones, (4) Sistema
+verificar, (5) actualizar version.json. Con vista previa solo de ejecución en seco.
+
+ROLLBACK [--ejecución en seco]
+Retrocede a la última copia de seguridad previa a la actualización. Encuentra el último pre_update_*.zip
+y restaura bach.db. Guarda la base de datos actual como .db.pre_rollback.
+
+VERIFY
+Comprueba la integridad del sistema: controlador importable, versión.json disponible, bach.db
+directorios legibles, migraciones consistentes y críticos (centro, núcleo, datos, habilidades)
+disponible. Muestra detalles del error y actualiza last_verified.
+
+MIGRACIONES [lista|ejecutar]
+lista (predeterminada): muestra todas las migraciones disponibles con estado (aplicada/pendiente).
+ejecutar: ejecuta migraciones pendientes (.py o .sql), actualiza la versión_esquema.
+
+
+EJEMPLOS
+---------
+
+bach update check
+  Comprueba si hay actualizaciones disponibles desde Git upstream.
+
+bach update status
+  Muestra la versión 1.2.3, la última actualización, el estado de verificación y
+  migraciones aplicadas.
+
+bach update apply --dry-run
+  Muestra un proceso de 5 fases sin cambios.
+
+bach update apply
+  Instalé la actualización completa con copia de seguridad, extracción, migraciones y verificación.
+
+bach update verify
+  Comprueba los 6 puntos: controladores, versión.json, bach.db, migraciones, directorios.
+
+bach update rollback --dry-run
+  Muestra la última copia de seguridad (nombre de archivo, tamaño, fecha) sin acción.
+
+bach update rollback
+  Restaura bach.db desde el último pre_update_*.zip.
+
+bach update migrations
+  Listas migraciones disponibles y pendientes con recuento.
+
+bach update migrations run
+  Ejecuta todas las migraciones pendientes, seguimiento de actualizaciones.
+
+
+FILES
+-------
+data/version.json
+  Archivo de versión central. Contiene: versión, versión_esquema, actualizado_en,
+  último_verificado, estado_de_verificación, migraciones_aplicadas[].
+
+data/bach.db
+  Base de datos SQLite. Se realiza una copia de seguridad antes de cada actualización y durante las reversiones.
+  restaurado.
+
+_backups/
+  Copias de seguridad previas a la actualización como pre_update_X.Y.Z_YYYYMMdd_HHmm.zip. Incluido
+  bach.db, version.json, todos los JSON de configuración de data/.
+
+data/migrations/
+  Directorio para archivos de migración (.py o .sql). Versión.json rastreada
+  migraciones_aplicadas[].
+
+hub/, core/, data/, skills/
+  Directorios críticos. Verificación verifica la existencia de los 4.
+
+
+VER TAMBIÉN
+----------
+core      - Controlador central BACH
+verify    - Detalles de verificación
+backup    - Estrategias de respaldo
+git       - Integración de Git

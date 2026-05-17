@@ -1,0 +1,30 @@
+巴赫工具：batch_file_ops
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/batch_file_ops.py
+
+描述
+----------------------------------------
+batch_file_ops.py - 批处理文件操作
+
+按模式收集和删除/移动/复制文件。
+
+用法：
+    python batch_file_ops.py 删除 <文件夹> --pattern "*.py"
+    python batch_file_ops.py 删除 <文件夹> --pattern "TOOLS_*.py"
+    python batch_file_ops.py move <源> <目标> --pattern "*.txt"
+    python batch_file_ops.py copy <源> <目标> --pattern "*.md"
+    python batch_file_ops.py list <文件夹> --pattern "*"
+    python batch_file_ops.py删除<文件夹> --pattern "*.py" --dry-run
+
+作者：Claude
+
+使用
+----------------------------------------
+python bach.py工具运行batch_file_ops [args]
+或直接： python tools/batch_file_ops.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：巴赫工具显示batch_file_ops

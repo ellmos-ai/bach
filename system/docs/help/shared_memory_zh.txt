@@ -1,0 +1,187 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[hub/shared_memory.py、shared_memory_*、shared_context_triggers]
+
+共享内存 - 多代理内存管理
+-----------------------------------------------
+
+日期：2026-02-28
+
+共享内存系统启用共享内存访问
+几个特工（克劳德、双子座等）。与正常情况相反
+内存系统允许多个伙伴同时读取和读取
+写。
+
+参考：SQ043 A-2 级
+
+架构
+-----------
+
+  特工A─┐
+  代理 B ─┤─>shared_memory_* (bach.db) <─┬─> 上下文块
+  特工 C ─┘ └─> 改变饲料
+
+特点：
+  - 多代理能力（agent_id、命名空间）
+  - 可见性级别（私人、团队、全球）
+  - 自动清理的衰变跟踪
+  - 通过置信值解决冲突
+  - 分发系统的 dist_type
+
+CLI 命令（bach 共享内存）
+------------------------------
+
+FACTS（共享事实）：
+  事实列表 显示所有共享事实
+  facts add <key> <value> 添加新事实
+  facts get <id> 显示具体事实
+  facts delete <id> 删除fact
+
+LESSONS（共享课程）：
+  课程列表 显示所有共享课程
+  课程添加 <标题> 添加新课程
+  课程激活 <id> 激活课程
+  课程停用 <id> 停用课程
+
+工作记忆（短期记忆）：
+  工作列表 显示活动条目
+  工作添加 <内容> 添加条目
+  工作清理 删除过期条目
+  工作当前任务 <文本> 设置当前任务（每个代理最多 1 个）
+
+会话：
+  会话列表 [N] 显示会话（默认值：20）
+  当前会话 显示活动会话
+  会话存档 <tage> 存档旧会话
+
+CONSOLIDATION（内存加权）：
+  合并列表 显示合并条目
+  合并统计 查看统计数据
+  solidity add <t> <id> 手动添加条目
+  整合 整合弱势条目
+  合并运行执行衰减逻辑（B57）
+
+上下文和变化：
+  context 生成上下文块 (B55)
+  更改 <timestamp> 自时间戳 (B58) 以来的更改
+
+示例
+---------
+
+  # 添加事实
+  bach shared-mem facts add "api.endpoint" "https://api.example.com"
+  bach shared-mem facts add "server.ip" "192.168.1.1" --agent CLAUDE --confidence 0.9
+
+  # 分享课程
+  bach shared-mem lessons add "Windows: UTF-8 mit PYTHONIOENCODING setzen" --severity high
+
+  # 设置当前任务（会话锚点）
+  bach shared-mem working current-task "Migration von PyMuPDF auf pypdf"
+  bach shared-mem working current-task "BACH Release vorbereiten" --agent GEMINI
+
+  # 生成上下文块（用于代理初始化）
+  bach shared-mem context
+
+  # 自昨天以来查询变化
+  bach shared-mem changes 2026-02-27T00:00:00
+
+  # 执行衰减逻辑（内存清理）
+  bach shared-mem consolidation run
+  bach shared-mem consolidation run --dry-run
+
+冲突解决方案 (B56)
+--------------------------
+
+当 `facts add` 与现有密钥时：
+  - 新信心 >= 现有信心 → 条目已更新
+  - 新置信度 < 现有置信度 → 条目保持不变
+
+  示例：
+    bach shared-mem facts add "version" "2.5" --confidence 0.9
+    # 如果置信度 < 0.9，则覆盖现有条目
+
+DECAY-SYSTEM (B57)
+------------------
+
+`consolidation run` 执行衰减逻辑：
+  - 每个条目：权重 *= Decay_rate（默认值：95% 保留率）
+  - 如果体重低于阈值（默认：0.1）→ 存档
+  - 经常访问的条目会得到提升，并且归档的频率会降低
+
+CONTEXT-BLOCK (B55)
+--------------------
+
+`bach share-mem context` 生成一个 Markdown 块：
+
+  ## 共享内存上下文
+
+  ### 当前任务
+  - **CLAUDE**：迁移正在运行（自...）
+
+  ### 最重要的事实
+  - **api.endpoint** [0.9]：https://api.example.com
+
+  ### 活跃课程
+  - [高] Windows：使用 PYTHONIOENCODING 设置 UTF-8
+
+用于代理初始化。
+
+CHANGES-FEED (B58)
+-------------------
+
+`bach 共享内存更改 <timestamp>` 返回所有更改
+自指定的 ISO 时间戳以来：
+
+  bach shared-mem changes 2026-02-28T10:00:00
+
+对于代理同步很有用：代理定期检查
+其他特工是否添加了事实或教训。
+
+添加事实的选项
+-----------------------
+
+  --agent <id> 代理 ID（默认值：GLOBAL）
+  --namespace <ns> 命名空间（默认：默认）
+  --visibility <level> private|team|global (默认值：全局)
+  --confidence <0.0-1.0> 置信度值（默认值：0.5）
+
+添加课程的选项
+--------------------------
+
+  --severity info|warn|high|critical 严重性（默认值：info）
+  --agent <id> 代理 ID（默认值：GLOBAL）
+  --namespace <ns> 命名空间（默认：默认）
+
+数据库表
+------------------
+
+shared_memory_facts 共享事实（键值）
+  shared_memory_lessons 共享课程
+  shared_memory_sessions 共享会话历史记录
+  共享内存工作短期内存（is_active，expires_at）
+  share_memory_consolidation 衰减跟踪（权重、衰减率、阈值）
+  shared_context_triggers 共享上下文触发器
+
+与普通内存不同
+---------------------------------
+
+  正常记忆（bach mem、bach --memory）：
+    - 适用于一位代理商/合作伙伴
+    - 记忆工作、记忆事实、记忆课程
+
+  共享内存（巴赫共享内存）：
+    - 同时适用于多个代理
+    - 可见性控制（私人/团队/全局）
+    - 通过信任解决冲突
+    - 用于清理的衰减系统
+
+文件
+-------
+  hub/shared_memory.py 处理程序实现
+
+另请参见
+----------
+  bach --help memory        普通内存系统（单代理）
+  bach --help consolidation Konsolidierungs-Engine
+  bach --help connector     连接器系统（多伙伴）

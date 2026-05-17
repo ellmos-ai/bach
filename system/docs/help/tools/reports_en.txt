@@ -1,0 +1,25 @@
+BACH Tool: reports
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/reports.py
+
+DESCRIPTION
+----------------------------------------
+reports.py - Creates change reports for other control routines
+
+Generates readable Markdown reports from directory changes.
+Saves in: reports/<alias>_changes_<date>.md
+
+Usage:
+    python reports.py <alias>
+    python reports.py skills
+
+USE
+----------------------------------------
+python bach.py tools run reports [args]
+or directly: python tools/reports.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show reports

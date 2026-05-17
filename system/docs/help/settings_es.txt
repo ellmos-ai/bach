@@ -1,0 +1,119 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MANEJADOR DE CONFIGURACIÓN
+---------------
+
+NOMBRE DEL MANEJADOR
+------------
+configuración
+
+DESCRIPCIÓN
+------------
+El controlador de configuración administra la configuración del sistema en la base de datos BACH
+(tabla system_config). Las configuraciones son pares clave-valor con opción
+Categorías, descripciones y tipos de distribución (USUARIO/PLANTILLA/CORE).
+
+OPERACIONES
+-----------
+
+LISTA
+----
+bach settings list
+bach settings list --category=KATEGORIE
+
+Mostrar todas las configuraciones guardadas. Opcionalmente filtrado por categoría.
+La salida muestra: Clave, Valor, Tipo, Categoría, Descripción, Tipo de distribución (USUARIO/TMPL/CORE)
+
+GET
+---
+bach settings get <key>
+
+Leer valor individual con metadatos completos.
+Muestra: clave, valor, tipo, categoría, descripción, tipo de distribución, marca de tiempo actualizada
+
+SET
+---
+bach settings set <key>=<value> [--category=CAT] [--desc=TEXT]
+
+Establecer un nuevo valor o actualizar uno existente.
+- Las nuevas configuraciones obtienen dist_type=0 (USUARIO)
+- La configuración CORE (dist_type=2) no se puede cambiar
+- Opción --categoría: almacenar la configuración en la categoría
+- Opción --desc: agregar descripción
+- Inicia la actualización del MD del socio en la integración.*-Keys
+
+RESET
+-----
+bach settings reset <key>
+
+Eliminar configuración. La configuración CORE no se puede eliminar.
+Solo se pueden eliminar USUARIO y PLANTILLA.
+
+EXPORTAR
+------
+bach settings export [dateiname]
+
+Exporta todas las configuraciones como JSON. Salida a stdout sin nombre de archivo.
+Formato: {clave: {valor, tipo, categoría, descripción, dist_type}}
+
+IMPORTAR
+------
+bach settings import <dateiname>
+
+Importar configuración desde un archivo JSON. Sólo sobrescribe USUARIO/PLANTILLA,
+La configuración CORE no se ve afectada. Muestra el número importado/omitido.
+
+CATEGORÍAS
+----------
+bach settings categories
+
+Mostrar todas las categorías disponibles con recuento de entradas.
+
+EJEMPLOS
+---------
+
+Enumerar todas las configuraciones:
+Lista de configuración de $ bach
+
+Filtrar por categoría:
+Lista de configuraciones de $ bach --category=security
+
+Leer configuración:
+La configuración de $ bach obtiene db.backup_interval
+
+Establecer configuración (nueva):
+Configuración de $ bach establecida log.level=DEBUG --category=behavior --desc="Logging Verbositaet"
+
+Actualizar configuración:
+$ configuración de bach establecida log.level=INFO
+
+Eliminar configuración:
+$ bach settings reset log.level
+
+Exportar y guardar configuración:
+$bach configuración exportar settings_backup.json
+
+Importar configuración:
+$bach configuración importar settings_backup.json
+
+Lista de categorías:
+$ categorías de configuración de bach
+
+ARCHIVOS
+-------
+hub/settings.py Implementación del controlador (relativo: hub/settings.py)
+tabla de base de datos bach.db (system_config) (ruta: BACH_DB)
+
+CATEGORÍAS RELACIONADAS
+--------------------
+claude_permissions Perfiles de permiso para Claude Code (ver permisos.txt)
+
+VER TAMBIÉN
+----------
+hub/base.py BaseHandler (relativo: hub/base.py)
+hub/bach_paths.py BACH_DB constante (relativa: hub/bach_paths.py)
+hub/claude_permissions.py Controlador de permisos (relativo: hub/claude_permissions.py)
+docs/BACH-SCHEMA.md Esquema de base de datos (relativo: docs/BACH-SCHEMA.md)
+permisos.txt Código Claude Perfiles de permisos

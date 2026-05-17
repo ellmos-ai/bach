@@ -1,0 +1,37 @@
+Herramienta BACH: Servidor MCP
+---------------------
+
+Servidores MCP incluidos para Claude Code y Claude Desktop.
+
+SERVIDORES DISPONIBLES
+------------------
+
+  ejecución de código bach-codecommander y comandos de shell (17 herramientas)
+  operaciones del sistema de archivos bach-filecommander (43 herramientas)
+  n8n-manager-mcp Gestión del flujo de trabajo n8n
+
+INSTALACIÓN
+------------
+
+Los servidores se instalan a través de npm:
+  npm instala código bachcommander-mcp
+  npm instala bach-filecommander-mcp
+  npm install n8n-manager-mcp
+
+CONFIGURACIÓN
+-------------
+
+Código Claude: ~/.claude.json (--scope usuario)
+Claude Desktop: AppData/Roaming/Claude/claude_desktop_config.json
+
+PROFILE
+-------
+
+Los perfiles MCP en ~/.claude/profiles/ incluyen combinaciones de servidores:
+  base, investigación, software, ai-lab, agitación, completo
+
+MÓDULO
+-----
+
+  herramientas/mcp/ (3 servidores, Node.js/TypeScript)
+  Fuentes: OneDrive/.TOPICS/.AI/.MCP/

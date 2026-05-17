@@ -1,0 +1,27 @@
+BACH Tool: task_statistics
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/task_statistics.py
+
+DESCRIPTION
+----------------------------------------
+task_statistics.py - Statistics evaluation for _done.json
+
+Analyzes completed tasks and delivers:
+- Tasks per week
+- Effort distribution
+- Sessions per day
+- Tool Activity
+
+Version: 1.0
+Created: 2026-01-10
+
+USE
+----------------------------------------
+python bach.py tools run task_statistics [args]
+or directly: python tools/task_statistics.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show task_statistics

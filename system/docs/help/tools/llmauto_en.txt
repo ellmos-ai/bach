@@ -1,0 +1,36 @@
+BACH Tool: LLMauto (MarbleRun)
+------------------------------
+
+Automated LLM chain execution with state management.
+
+USE
+----------
+
+  bach --tools llmauto run <chain.yaml>    Run chain
+  bach --tools llmauto list                Show available chains
+  bach --tools llmauto benchmark           Performance benchmark
+
+CHAIN FORMATS
+-------------
+
+Chains are defined as YAML with steps that
+can be executed sequentially or in parallel.
+
+MODI
+----
+
+  sequential steps one after the other
+  parallel steps parallel
+  conditional Conditional execution
+
+STATE
+-------
+
+Chain state is stored in state.json for resume
+after interruptions.
+
+MODULE
+-----
+
+  tools/llmauto/ (MarbleRun Engine)
+  GitHub: github.com/lukisch/MarbleRun

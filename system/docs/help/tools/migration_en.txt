@@ -1,0 +1,30 @@
+BACH Tool: Migration
+--------------------
+
+Database and structure migrations for BACH.
+
+AVAILABLE TOOLS
+-----------------
+
+  migrate_skills_hierarchy Migrate skills hierarchy to new format
+
+MIGRATIONS FOLDER
+-----------------
+
+SQL migrations are in data/schema/migrations/:
+  001-035 Numbered migrations (chronological)
+  doc_* Document-specific migrations
+  fin_* Financial migrations
+  tax_* Tax migrations
+
+USE
+----------
+
+  bach upgrade                  Run all pending migrations
+  bach --tools migration skills Skills-Hierarchie migrieren
+
+MODULE
+-----
+
+  tools/migration/ (1 tool)
+  data/schema/migrations/ (35+ SQL/Python migrations)

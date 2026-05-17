@@ -1,0 +1,38 @@
+BACH Tool: c_german_scanner
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/c_german_scanner.py
+
+DESCRIPTION
+----------------------------------------
+c_german_scanner.py - Finds German strings in Python projects
+
+Scans Python files for:
+  - Strings with umlauts (ae, oe, ue, ss)
+  - GUI texts (setText, setWindowTitle, QLabel, etc.)
+  - German keywords (file, edit, save, etc.)
+
+Useful for:
+  - Prepare for internationalization (i18n).
+  - Find hardcoded strings
+  - Create translation lists
+
+Extracted from: A3 development loop Advanced/TranslationSystem.py
+
+Usage:
+    python c_german_scanner.py <folder>
+    python c_german_scanner.py <folder> --json
+    python c_german_scanner.py <folder> --export translations.json
+
+Author: Claude (adapted)
+Dependencies: none (stdlib only)
+
+USE
+----------------------------------------
+python bach.py tools run c_german_scanner [args]
+or directly: python tools/c_german_scanner.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show c_german_scanner

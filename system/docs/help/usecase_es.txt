@@ -1,0 +1,154 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CASES DE USO - Casos de prueba de flujo de trabajo y sistema TUeV
+-----------------------------------------------
+
+DESCRIPCIÓN
+------------
+Los casos de uso son parte del sistema BACH-TUeV y sirven como:
+  1. PRUEBAS DE FUNCIONES ¿Valida un flujo de trabajo funcionando?
+  2. GARANTÍA DE CALIDAD ¿Todos los componentes funcionan juntos?
+  3. REQUISITOS ¿Qué está implementado, qué falta todavía?
+
+Los casos de uso se almacenan en la base de datos SQLite (tabla: casos de uso)
+y están vinculados a flujos de trabajo (tabla workflow_tuev).
+`workflow_path` es opcional: los casos de prueba más antiguos o más aproximados solo pueden
+tener un nombre de área/categoría. `bach usecase run` debería entonces de todos modos
+ejecute y muestre el caso de prueba en modo de datos manual.
+
+Handler: system/hub/tuev.py (TuevHandler + UsecaseHandler)
+
+USECASE FORMAT
+--------------
+
+  USECASE_NNN: Título corto
+
+  CONDICIÓN PREVIA: ¿Qué debe estar presente?
+  ENTRADA: ¿Qué ingresa el usuario/qué datos están disponibles?
+  EXPECTATIVA: ¿Cuál debería ser el resultado?
+  COMPROBACIONES: ¿Qué componentes se están probando?
+
+CASOS DE USO ACTUALES
+-----------------
+Los casos de uso ahora están en la base de datos (tabla de casos de uso).
+Anuncios con: lista de casos de uso de bach
+
+ID históricos de casos de uso (del sistema de tareas anterior):
+  USECASE_001 Reanudar agente
+  USECASE_002 Escáner de lentes de oficina
+  USECASE_003 Búsqueda de documentos
+  USECASE_004 Doctor reporta tiroides
+  USECASE_005 Rutinas del hogar
+  USECASE_006 Asesoramiento sobre seguros
+
+Ver casos de uso actuales en BD:
+  bach usecase list
+  bach db query "SELECT id, title, workflow_name, test_result FROM usecases"
+
+USECASE COMO PRUEBA
+----------------
+  Un caso de uso prueba la punción completa:
+
+  Entrada de usuario -> Agente/Habilidad -> Herramientas -> Base de datos -> Resultado
+
+  Esto valida automáticamente:
+  - ¿Los comandos CLI funcionan?
+  - ¿Esquema de base de datos correcto?
+  - ¿Herramientas disponibles y accesibles?
+  - ¿Archivos de ayuda actualizados?
+  - ¿Los inyectores se activan con palabras clave?
+  - ¿Resultado utilizable y correcto?
+
+CASO DE USO COMO REQUISITO
+------------------------
+  Los casos de uso fallidos revelan lagunas:
+  - Herramientas faltantes -> tarea para la creación de herramientas
+  - Faltan comandos CLI -> Tarea para el controlador CLI
+  - Faltan tablas de base de datos -> tarea para la extensión del esquema
+  - Flujos de trabajo faltantes -> tarea para la creación de flujo de trabajo
+
+  Nuevas ideas de casos de uso siempre son bienvenidas:
+    bach task add "USECASE_NNN Kurztitel: Beschreibung" --prio P3
+
+COMENTARIOS SOBRE EL CICLO DE DESARROLLO
+-----------------------------------------
+
+  Fase 8 (casos de uso)
+       │
+       ├── ¿Falló? -> Nueva tarea en la fase 1
+       ├── ¿Exitoso?    -> Característica validada
+       └── ¿Nueva idea?      -> Nueva tarea de caso de uso
+
+  Los casos de uso son la fase 8 en el ciclo de desarrollo (ver: bach --help dev)
+
+COMANDOS CLI
+-----------
+
+GESTIÓN DE CASES DE USO:
+  bach usecase list [workflow]       Todos los casos de prueba (filtrados opcionalmente)
+  bach usecase add <workflow>        Notas sobre cómo agregar (plantilla SQL)
+  bach usecase show <id>             Mostrar detalles de un caso de prueba
+  bach usecase run <id>              Ejecutar un solo caso de prueba
+  bach usecase run-all <workflow>    Todas las pruebas de un flujo de trabajo
+
+ADMINISTRACIÓN TUeV:
+  bach tuev status                   Estado TUeV de todos flujos de trabajo
+  bach tuev check <workflow>         Verificar flujos de trabajo individuales
+  bach tuev run                      Todas las comprobaciones debidas
+  bach tuev renew <workflow>         Renovar TUeV después de la verificación
+  bach tuev init                     Registrar flujos de trabajo de habilidades/flujos de trabajo/
+
+CREAR CASO DE USO
+-----------------
+Los casos de uso se insertan directamente en la base de datos:
+
+  bach db query "INSERT INTO usecases (title, description, workflow_name, test_input, expected_output, created_by) VALUES ('Testfall-Titel', 'Beschreibung', 'workflow-name', '{}', '{}', 'user')"
+
+O a través de GUI: /usecases (si el servidor GUI se está ejecutando)
+
+COBERTURA DE COMPONENTES
+---------------------
+  Los buenos casos de uso cubren diferentes áreas:
+
+  Área de caso de uso de ejemplo
+  --------------- ------------------------------------------
+  OCR y documentos USECASE_004 (informes médicos)
+  Buscar USECASE_003 (búsqueda de documentos)
+  Generación USECASE_001 (CV)
+  Hogar USECASE_005 (Rutinas)
+  Finanzas USECASE_006 (Seguros)
+  Escáner USECASE_002 (lente de oficina)
+
+  Aún no cubierto (ideas):
+  - Flujo de trabajo fiscal (de un extremo a otro: recibo -> exportación)
+  - Delegación de socios (Claude -> Géminis -> resultado)
+  - Copia de seguridad y restauración (Copia de seguridad -> Restaurar)
+  - Coordinación multi-LLM
+
+ESTRUCTURA DE LA BASE DE DATOS
+------------------
+  Tabla: casos de uso
+    - identificación, título, descripción
+    - nombre_flujo de trabajo, ruta_flujo de trabajo
+    - entrada_prueba (JSON), salida_esperada (JSON)
+    - último_probado, resultado_prueba, puntuación_prueba
+    - creado_por, creado_en, actualizado_en
+
+  Tabla: flujo de trabajo_tuev
+    - nombre_flujo de trabajo, ruta_flujo de trabajo
+    - tuev_status, last_tuev_date, tuev_valid_until
+    - avg_score, test_count, pass_count
+
+VER TAMBIÉN
+----------
+  bach tuev status                          Tablero TUeV
+  bach --help dev                           Ciclo de desarrollo (8 fases)
+  bach --help test                          Procedimientos de prueba técnicos (B/O/E)
+  system/skills/workflows/dev-cycle.md Flujo de trabajo de desarrollo detallado
+  system/hub/tuev.py Implementación del controlador
+  system/db/schema.sql Esquema de base de datos (casos de uso + flujo de trabajo_tuev)
+
+---
+Versión: 1.1.0 | Creado: 2026-01-28 | Actualizado: 2026-02-08

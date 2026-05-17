@@ -1,0 +1,111 @@
+MAPPING TOOLS - Feature comparison between systems
+---------------------------------------------------
+
+As of: 2026-01-23
+Path: docs/help/tools/mapping.txt
+
+DESCRIPTION
+------------
+Feature mapping tools for comparing and analyzing
+of features across different systems.
+Part of the BACH_STREAM project.
+
+Path: tools/mapping/
+
+FILES
+-------
+  query_features.py Query and compare features
+  populate_features.py Populate database with features
+  schema.sql Database schema
+
+DATABASE
+---------
+Location: BACH_STREAM/MAPPING/feature_mapping.db
+
+Tables:
+  systems Registered systems (CHIAH, BATCH, recludOS, etc.)
+  features Feature definitions
+  feature_categories Categorization (Memory, GUI, Tasks, etc.)
+  implementations Which system has which feature
+
+MAIN FUNCTIONS
+---------------
+
+feature_matrix(category=None):
+  Shows which system has which feature.
+
+  python query_features.py matrix
+  python query_features.py matrix --category "Memory"
+
+  Symbols:
+    + = implemented (complete)
+    ~ = partial
+    ?  = planned/unknown
+    - = not present
+
+feature_synopsis(feature_name):
+  Compares a single feature across all systems.
+  Shows paths, technology, notes.
+
+  python query_features.py synopsis "Working Memory"
+
+REGISTERED SYSTEMS
+--------------------
+  _CHIAH v3.1 Original CLI-First System
+  _BATCH v2.5 Hub based system
+  recludOS v3.3.0 agent framework
+  BACH v1.1 Best-of Synopsis (this system)
+  AI-Portable RAG Pipeline Utility
+  Templates Project Templates
+
+FEATURE CATEGORIES
+------------------
+  01 Task management Task management
+  02 Memory memory systems
+     21 Memory short-term session-based
+     22 memory long-term persistent
+     23 Memory Context Source Weighting
+  03 Session management startup/shutdown
+  04 GUI web dashboards
+  05 Maintenance background processes (daemon)
+  06 Tools Utilities
+  07 Communication Messaging, partners
+  08 Documentation help system
+  09 Agents Boss agents, experts
+  10 Backup Security
+  11 RAG/Embeddings Retrieval Augmented
+  12 file operations Filesystem
+
+USE
+----------
+
+Generate feature matrix:
+  python tools/mapping/query_features.py matrix
+
+Filtered by category:
+  python tools/mapping/query_features.py matrix --category "GUI"
+
+Feature synopsis:
+  python tools/mapping/query_features.py synopsis "Injectors"
+
+Enter new features:
+  python tools/mapping/populate_features.py
+
+INTEGRATION WITH BACH
+--------------------
+The mapping system helps with:
+  - Migration of previous systems
+  - Identification of missing features
+  - Documentation of the implementation status
+
+See also: docs/con2_ANFORDERUNGSANALYSE.md
+
+SEE ALSO
+----------
+  docs/help/architecture.txt BACH system architecture
+  docs/consense_diff_2.md Open requirements
+  ROADMAP.md Roadmap with todos
+  skills/SKILL_ANALYSE.md Coverage coefficients
+
+VERSION: v1.0.0 (2026-01-23)
+Lines: ~334 (query_features.py), ~313 (populate_features.py)

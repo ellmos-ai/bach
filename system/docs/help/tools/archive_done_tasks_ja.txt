@@ -1,0 +1,22 @@
+BACH ツール: archive_done_tasks
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/archive_done_tasks.py
+
+説明
+----------------------------------------
+archive_done_tasks.py - 完了したタスクをtasks.jsonから_done.jsonに移動します
+
+使用法:
+    python archive_done_tasks.py # ドライラン (何が起こるかを示します)
+    python archive_done_tasks.py --apply # 実際に実行します
+
+USE
+----------------------------------------
+python bach.py tools run archive_done_tasks [args]
+または直接: python tools/archive_done_tasks.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成されます
+- 質問がある場合: bach tools show archive_done_tasks

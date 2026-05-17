@@ -1,0 +1,30 @@
+BACH 工具：迁移
+--------------------
+
+BACH 的数据库和结构迁移。
+
+可用工具
+-----------------
+
+  migrate_skills_hierarchy 将技能层次结构迁移到新格式
+
+MIGRATIONS 文件夹
+-----------------
+
+SQL 迁移位于 data/schema/migrations/ 中：
+  001-035 编号迁移（按时间顺序）
+  doc_* 特定于文档的迁移
+  fin_* 金融移民
+  tax_* 税务迁移
+
+使用
+----------
+
+  bach upgrade                  运行所有挂起的迁移
+  bach --tools migration skills Skills-Hierarchie migrieren
+
+模块
+-----
+
+  工具/迁移/（1 个工具）
+  data/schema/migrations/（35+ SQL/Python 迁移）

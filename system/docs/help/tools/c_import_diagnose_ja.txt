@@ -1,0 +1,35 @@
+BACH Tool: c_import_diagnose
+--------------------------------------------------
+Generiert: 2026-01-23 10:36
+Quelle: tools/c_import_diagnose.py
+
+BESCHREIBUNG
+----------------------------------------
+Import-Diagnose-Tool für Python-Projekte
+-----------------------------------------
+Systematische Analyse von Import-Problemen und Access Violations.
+
+Führt folgende Tests durch:
+1. Einzelne Module isoliert importieren
+2. Import-Reihenfolge variieren
+3. Circular Import Detection
+4. __init__.py Analyse
+5. Timing-Tests mit Delays
+6. Crash-Punkt lokalisieren
+
+Verwendung:
+    python c_import_diagnose.py <projekt_src_pfad> [--json] [--modules module1:Class1,module2:Class2]
+
+Beispiel:
+    python c_import_diagnose.py C:\MeinProjekt\src --json
+    python c_import_diagnose.py . --modules core.app:App,gui.main:MainWindow
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run c_import_diagnose [args]
+oder direkt: python tools/c_import_diagnose.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show c_import_diagnose

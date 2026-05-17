@@ -1,0 +1,94 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SCAN - タスク スキャナーとディレクトリ分析
+---------------------------------------------
+
+非推奨: このハンドラーは下位互換性のために残されています。新規: bach ati scan
+
+SCAN は、タスク スキャンとディレクトリ スキャンを管理するためのレガシー ハンドラーです。
+分析します。スキャナーは ATI インフラストラクチャと SQLite データベースで動作します
+bach.dbも一緒に。最新のスキャン操作は「bach ati scan」経由で実行されます。
+
+コマンド
+-------
+
+bach scan run              スキャナーの開始 (ATI タスク スキャナー)
+bach scan status           最後のスキャン ステータスを表示
+bach scan tasks            スキャンされたタスクを表示 (--tool はタスクの登録済みツールをすべてスキャンします。
+出力の概要: スキャンされたツール、見つかったタスク、新規および更新されたタスク
+タスク。結果を ati_scan_runs テーブル (bach.db) に保存します。
+bach scan tools            STATUS
+bach scan dir PATH         データベースからの最後のスキャンのステータスを表示します。
+- タイムスタンプと期間
+- 前回のスキャンでのツールとタスクの数
+- 全体的な統計: 登録されたツール、スキャンされたタスク、オープンなタスク
+
+TASKS
+-----------
+
+オープンなタスクと進行中のタスクを優先順位を付けてリストします。
+表示: ツール名、タスクテキスト (短縮)、作業量、ステータス、優先度スコア。
+最大 20 タスクに制限されます。
+---
+ --tool FILTER を使用: ツール名でタスクをフィルタリングします (部分文字列の一致)。
+
+TOOLS
+------
+ati_tool_registry から登録されたツールをタスク番号とともにリストします。
+ステータスとスキャン日。タスク数で並べ替えます。最大。 30 ツール。
+
+DIR
+-----
+DirectoryScanner (tools/dirscan.py) で任意のディレクトリをスキャンします。
+ディレクトリ ツリー、ファイル リスト、ファイル サイズを表示します。
+
+例
+
+# スキャナーを開始
+-----
+# ステータスを確認
+
+# すべての開いているタスク
+---
+# 特定のツールのタスク
+
+# 登録されているツールを表示
+---------
+
+# ディレクトリをスキャン
+bach scan run
+
+データ ソース
+bach scan status
+
+データベース: data/bach.db (SQLite)
+テーブル: ati_scan_runs、ati_tasks、ati_tool_registry
+スキャナー：agents/ati/scanner/task_scanner.py (TaskScanner)
+Dir Scanner: tools/dirscan.py (DirectoryScanner)
+bach scan tasks
+
+関連項目
+bach scan tasks --tool featureX
+
+ATI エージェント (最新のスキャン コマンド)
+bach scan tools
+
+ビルド自動化
+bach scan dir C:\Projekte\myapp
+bach scan dir /c/Users/User/OneDrive
+
+DATENQUELLEN
+------------
+
+Datenbank:    data/bach.db (SQLite)
+Tabellen:     ati_scan_runs, ati_tasks, ati_tool_registry
+Scanner:      agents/ati/scanner/task_scanner.py (TaskScanner)
+Dir-Scanner:  tools/dirscan.py (DirectoryScanner)
+
+SIEHE AUCH
+----------
+
+bach --help ati        ATI Agent (moderne Scan-Befehle)
+bach --help builder    Build-Automatisierung

@@ -1,0 +1,169 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WORKFLOW - BACH Arbeitsablaeufe
+--------------------------------
+
+BESCHREIBUNG
+------------
+Workflows beschreiben WANN man WELCHEN Skill in WELCHER Reihenfolge einsetzt.
+Ein Workflow ist eine Anleitung zum strategischen Einsatz von Skills.
+
+WORKFLOW-SPEICHERORT
+--------------------
+  skills/workflows/          Alle BACH Workflows (22 .md Dateien)
+  agents/_experts/steuer/     Steuer-Workflows (7 .md Dateien)
+  DB: skills-Tabelle          type='workflow' (automatisch synchronisiert)
+
+VERFUEGBARE WORKFLOWS
+---------------------
+  System-Workflows (10):
+  ----------------------
+  bugfix-protokoll.md            Fehlerkorrektur-Prozess
+  cli-aenderung-checkliste.md    CLI-Befehl hinzufuegen
+  dev-zyklus.md                  Entwicklungszyklus (8 Phasen)
+  ordner-flattening.md           Ordner-Struktur abflachen
+  projekt-aufnahme.md            Neues Projekt aufnehmen
+  service-agent-validator.md     Service/Agent Validator
+  system-anschlussanalyse.md     Integrations-Check
+  system-aufraeumen.md           Aufraeumen und Archivieren
+  system-mapping.md              System kartieren
+  system-synopse.md              System-Uebersicht erstellen
+  system-testverfahren.md        Test-Prozeduren
+
+  Dokumentations-Workflows (4):
+  -----------------------------
+  docs-analyse.md                Dokumentations-Analyse
+  help-forensic.md               Help Ist-Soll Pruefung (Recurring: 14d)
+  wiki-author.md                 Wiki-Beitraege erstellen (Recurring: 21d)
+  migrate-rename.md              Datei-Umbenennung mit Wrapper
+
+  Partner-Workflows (2):
+  ----------------------
+  gemini-delegation.md           Aufgaben an Gemini delegieren
+  google-drive.md                Google Drive Nutzung
+
+  Analyse-Workflows (4):
+  ----------------------
+  agent-skill-finder.md          Agent-Skill Mapping Analyse
+  skill-abdeckungsanalyse.md     Skill-Coverage pruefen
+  synthese.md                    Dokumente zusammenfuehren
+  ing-strategie.md               ING Banking Workflow
+
+  Persoenliche-Workflows (1):
+  ---------------------------
+  cv-generierung.md              Lebenslauf erstellen/aktualisieren
+
+  Steuer-Workflows (7):
+  ---------------------
+  HINWEIS: Diese Workflows liegen in agents/_experts/steuer/
+
+  steuer-beleg-scan.md                  Belege scannen und erfassen
+  steuer-fahrtkosten-homeoffice.md      Fahrtkosten + Homeoffice berechnen
+  steuer-finanzamt-export.md            Finanzamt-Export erstellen
+  steuer-sonderausgaben-erfassen.md     Sonderausgaben erfassen
+  steuer-telekommunikation-eigenbeleg.md Internet/Telefon 20% Pauschale
+  steuer-versicherungen-erfassen.md     Versicherungen steuerlich erfassen
+  steuer-werbungskosten-erfassen.md     Werbungskosten erfassen
+
+WANN WELCHEN WORKFLOW
+---------------------
+  Bug gefunden?           -> bugfix-protokoll.md
+  Neuer CLI-Befehl?       -> cli-aenderung-checkliste.md
+  Neues Projekt?          -> projekt-aufnahme.md
+  System analysieren?     -> system-mapping.md oder system-synopse.md
+  Aufraeumen?             -> system-aufraeumen.md
+  Integration pruefen?    -> system-anschlussanalyse.md
+  Gemini nutzen?          -> gemini-delegation.md
+  Help pruefen?           -> help-forensic.md (Recurring: 14d)
+  Wiki erweitern?         -> wiki-author.md (Recurring: 21d)
+  Datei umbenennen?       -> migrate-rename.md
+  Ordner vereinfachen?    -> ordner-flattening.md
+  Fahrtkosten/Homeoffice? -> steuer-fahrtkosten-homeoffice.md
+  Belege scannen?         -> steuer-beleg-scan.md
+  Werbungskosten?         -> steuer-werbungskosten-erfassen.md
+  Sonderausgaben?         -> steuer-sonderausgaben-erfassen.md
+  Versicherungen Steuer?  -> steuer-versicherungen-erfassen.md
+  Internet/Telefon?       -> steuer-telekommunikation-eigenbeleg.md
+  Finanzamt Export?       -> steuer-finanzamt-export.md
+  Entwicklungszyklus?     -> dev-zyklus.md (8 Phasen)
+
+STANDARD SESSION-WORKFLOW
+-------------------------
+1. bach startup                # Session starten (Standard: GUI-Mode)
+2. ROADMAP.md lesen            # Aufgabe waehlen
+3. Aufgabe bearbeiten
+4. Zwischen-Tasks: bach status # Zeit pruefen
+5. bach shutdown               # Session beenden
+
+SESSION TIMING
+--------------
+  Timeout-Schutz:  Claude kann nach ~13 Min abbrechen
+  Empfehlung:      Alle 10 Min kurzen Status dokumentieren
+  Bei langen Tasks: bach memory session "STATUS: ..."
+
+AUFGABENGROESSE
+---------------
+  <5 Min     Einfach erledigen
+  ~15 Min    Memory aktuell halten
+  >30 Min    Vorstrukturieren (Teilaufgaben erstellen)
+  >1h        Als Planungsaufgabe aufnehmen
+
+ABGRENZUNG: WORKFLOW vs TEAM-FLOW
+---------------------------------
+┌────────────────────────────┬─ ───────────────────────────────┐
+  │ WORKFLOW │ TEAM FLOW (planned) │
+  ├────────────────────────────┼─ ───────────────────────────────┤
+  │ ONE actor │ MULTIPLE actors │
+  │ Step instructions │ Handover management │
+  │ Text in .md file │ Structured in DB/JSON │
+  │ skills/workflows/ │ GUI skills board (planned) │
+  └──────────────────── ────────┴──────────── ────────────────────┘
+
+CLI COMMANDS
+-----------
+  bach help workflow           These Help
+  bach help between-tasks      Intermediate task checks
+  bach help startup            Session start
+  bach help shutdown           Session end
+
+  bach startup                 Start session (default: GUI)
+  bach startup quick           Quick start without Dir scan
+  bach startup mode            Change mode: gui|text|dual|silent
+
+  bach status                  Show system status
+
+  bach shutdown                End session (with Dir scan)
+  bach shutdown quick          Quick without Dir scan
+  bach shutdown emergency      Emergency - only save working memory
+
+WORKFLOW READ
+--------------
+  # Directly in the file system:
+  skills/workflows/<name>.md
+  agents/_experts/steuer/<name>.md
+
+  # With help system (alias support):
+  bach help workflow/bugfix-protokoll
+  bach help workflow/help-forensic
+
+  # In the chat client:
+  Read tool: skills/workflows/bugfix-protocol.md
+
+CREATE NEW WORKFLOW
+------------------------
+1. Create file: skills/workflows/mein-workflow.md
+2. Note format:
+   - Title with #
+   - Steps numbered
+   - Conditions clearly formulated
+   - References to other workflows/skills
+
+SEE ALSO
+----------
+  bach help tasks              Task system
+  bach help maintain           Maintenance tools
+  bach help startup            Session start protocol
+  bach help skills             Skills system
+  docs/con4_CONCEPT_Skill_Architecture_v2_70.md Skill architecture

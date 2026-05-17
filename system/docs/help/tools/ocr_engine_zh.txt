@@ -1,0 +1,25 @@
+巴赫工具：ocr_engine
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/ocr_engine.py
+
+描述
+----------------------------------------
+BACH OCR 引擎
+---------------
+使用 Tesseract 进行文本识别。
+改编自 DokuZentrum Pro。
+
+用法：
+    python ocr_engine.py <pdf_path>
+    python ocr_engine.py B0006 # 凭证简写
+
+USE
+----------------------------------------
+python bach.py 工具运行 ocr_engine [args]
+或直接： python tools/ocr_engine.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：bach 工具显示 ocr_engine

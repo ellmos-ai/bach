@@ -1,0 +1,93 @@
+# 可移植性：通用
+
+路径
+====
+
+`bach path`从`hub/bach_paths.py`创建中央路径注册表
+可以直接通过 CLI 和 API 使用。输出是人类可读的
+以及适合自动化的`--json`。
+
+
+命令
+-------
+
+  bach path
+    显示分组的最重要的 BACH 路径。
+
+  bach path <name>
+  bach path get <name>
+    显示带有元数据的单个注册路径。
+
+  bach path list [--json]
+    列出完整的注册表。
+
+  bach path resolve <relativer-pfad> [--from-root] [--json]
+    解析针对“system/”或存储库根目录的相对路径。
+
+  bach path overrides [--json]
+    显示来自`system_config`的活动数据库路径覆盖。
+
+  bach path validate [--json]
+    检查关键、重要和可选路径。
+
+  bach path set <name> <pfad>
+    在规范的 BACH DB 中存储路径覆盖。
+
+
+示例
+---------
+
+  bach path
+    -> 运营商总结
+
+  bach path db
+    -> 规范数据库路径
+
+  bach path list --json
+    -> 以 JSON 格式完成注册表
+
+  bach path resolve docs/README.md --from-root
+    -> 相对于仓库根目录的绝对路径
+
+  bach path overrides
+    -> 检查活动数据库覆盖
+
+
+JSON-SURFACES
+-------------
+
+这些调用提供机器可读的答案：
+
+  bach path --json
+  bach path list --json
+  bach path db --json
+  bach path overrides --json
+  bach path validate --json
+  bach path resolve docs/help/path.txt --json
+
+
+重要细节
+----------------
+
+- 源仍然是“hub/bach_paths.py”（单一事实来源）。
+- 如果“base_path”是外部路径，处理程序会将路径镜像到活动路径
+  运行时根目录，以便测试和可移植实例产生干净的结果
+  收到。
+- 覆盖是从活动根的规范数据库中读取的，并且
+  写入，而不是来自全局硬编码路径。
+
+
+文件
+-------
+
+  hub/path.py CLI/API 处理程序
+  hub/bach_paths.py 中央路径注册表
+  data/bach.db `system_config` 用于路径覆盖
+
+
+另请参见
+----------
+
+  帮助代理 代理 CLI
+  帮助调度程序 调度程序状态区域
+  帮助工具 工具概述

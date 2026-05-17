@@ -1,0 +1,105 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MEJORES PRÁCTICAS
+--------------
+
+BACH CLI PRIMERA ELECCIÓN:
+  Utilice SIEMPRE bach.py para todas las operaciones
+  - Tareas --> tarea de bach agregar/listar/hecho
+  - Memoria --> bach mem escribir/leer
+  - Habilidades --> bach --lista de habilidades/búsqueda
+  - Herramientas --> lista/ejecución de herramientas de Bach
+
+¿POR QUÉ?
+  - Codificación segura (UTF-8)
+  - Valida la estructura
+  - Sin corrupción
+  - Operaciones nucleares
+  - Interfaz uniforme
+
+ALTERNATIVAS (SÓLO SI CLI NO FUNCIONA):
+  1. Secuencia de comandos de Python con bach_paths.py
+  2. Consulta directa a la base de datos (¡solo lectura!)
+  3. ¡Nunca edites JSON manualmente!
+
+ÍNDICE DE REGLAS:
+  ¿Qué?                      ¿Dónde?
+  Sintaxis CLI --ayuda cli
+  Reglas de la memoria: ayudan a la memoria.
+  Sistema de tareas: tareas de ayuda
+  Estándares de codificación: codificación de ayuda
+  Estructura de carpetas --ayuda bach_paths
+  Convenciones de nomenclatura --ayuda para nombrar
+  Formatos de datos: formatos de ayuda
+  Problemas conocidos: lecciones de ayuda
+  Descripción general de la herramienta: herramientas de ayuda
+  Prefijos de herramientas: ayuda para nombrar (sección PREFIJOS DE HERRAMIENTAS)
+  Herramientas/_políticas de validadores de políticas/
+
+PRINCIPIOS ARQUITECTÓNICOS:
+-----------------------
+Estas reglas se aplican en todo el sistema:
+
+1. CONCEPTOS DE ALMACENAMIENTO CENTRALMENTE EN DOCS/
+   Todos los CONCEPT_*.md pertenecen a docs/ (directorio raíz).
+   UN lugar para todos los planes = mejor descripción general.
+
+   Después de la implementación: mueva el concepto a docs/_archive.
+
+   ARCHIVOS MARKDOWN EN EL SISTEMA:
+   - docs/CONCEPT_*.md = conceptos y planes (¡central!)
+   - */README.md = guía de carpetas, índice
+   - skills/SKILL.md = Agente/documentación de habilidades
+   - skills/*.md = Documento principal del agente (ATI.md, STEUER.md)
+
+   REGLA: Los .md descentralizados son SÓLO para navegación y documentación de habilidades,
+          NO para conceptos o planos.
+
+2. DOCUMENTOS/ESTRUCTURA DE CARPETAS
+   docs/ se refiere al DESARROLLO del sistema:
+
+   _archive/ Conceptos antiguos archivados (implementados/obsoletos)
+   _ideas/Conceptos a largo plazo (aún no aprobados)
+   _test_and_reports/ Análisis de desarrolladores, estados actuales, pruebas
+   análisis/resultados de análisis e informes
+   referencia/documentación de referencia
+   (root) CONCEPT_*.md - Todos los conceptos de forma centralizada
+                      UN lugar para implementar todos los planes
+
+   usuario/ se refiere al USO del sistema:
+   - Informes que surgen a través del uso.
+   - No para el desarrollo de sistemas
+
+3. MIGRACIÓN EVOLUTIVA
+   No hay interrupciones bruscas al cambiar el nombre o reestructurar.
+   Migrar estructuras antiguas paso a paso, no todas a la vez.
+
+4. UNA BASE DE DATOS UNIFICADA
+   bach.db = Base de datos principal única (más de 210 tablas, todo lo que contiene)
+
+   Nota: user.db se fusionó con bach.db en v1.1.84.
+   registro.db (distribución) y archive.db (archivo) son
+   Bases de datos especiales, que no forman parte del sistema central.
+
+5. BASE DE DATOS ANTES DE JSON (¡doctrina Recludos!)
+   Archivos JSON sólo en casos excepcionales justificados.
+   El valor predeterminado es SIEMPRE la base de datos.
+
+   JSON sólo permite si:
+   - Específico del usuario (recién creado, no migrado)
+   - La transparencia es importante (el usuario debe editar directamente)
+   - Carácter del proceso (de corta duración, procesamiento)
+   - Formato de intercambio de importación/exportación
+
+   Detalles: docs/help/formats.txt
+
+6. DIST_TYPE TRES PASOS
+   2 = CORE (archivo del sistema, la distribución es una copia de seguridad)
+   1 = PLANTILLA (1x instantánea para restablecer)
+   0 = USUARIO (datos de usuario, rotación normal)
+
+7. LA AYUDA COMO VERDAD
+   docs/help/*.txt es la documentación principal.
+   En caso de objeción: docs/help/wins.

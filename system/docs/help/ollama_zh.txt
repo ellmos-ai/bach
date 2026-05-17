@@ -1,0 +1,95 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH OLLAMA INTEGRATION
+-----------------------
+用于令牌保存模式和离线使用的本地 LLM 服务器。
+
+命令
+-------
+bach ollama status           检查连接、已安装模型
+bach ollama ask "prompt"     直接请求 Ollama
+bach ollama embed "text"     生成嵌入
+bach ollama models           列出可用模型
+
+选项
+--------
+--model=NAME 选择模型（默认：llama3.2）
+
+示例
+---------
+# 检查状态
+bach ollama status
+
+# 简单问题
+bach ollama ask "Was ist BACH?" --model=llama3.2
+
+# 委托代码审核
+bach ollama ask "Review diesen Code: def add(a,b): return a+b"
+
+# 嵌入搜索
+bach ollama embed "Suchtext fuer RAG"
+
+与合作伙伴系统集成
+------------------------------
+Ollama 已注册为本地合作伙伴并自动
+高代币消耗的首选：
+
+区域 3（60-80% 代币）：Ollama 是首选
+区域 4 (80-100%)：仅人力/紧急情况（Ollama 仍然可行）
+
+自动委派：
+  bach partner delegate "Task" --to=ollama
+
+网络问题时的回退：
+  bach ollama ask "Task"   （直接本地执行）
+
+要求
+---------------
+- Ollama 必须在本地安装
+- 默认端口：http://localhost:11434
+- 必须至少拉出一个模型
+
+检查安装：
+  乌拉马——版本
+  ollama 列表
+
+安装模型：
+  llama 拉 llama3.2
+  ollama pull codellama
+
+故障排除
+---------------
+错误：“连接被拒绝”
+  → 启动 Ollama 服务器：ollamaserve
+  → 检查端口：http://localhost:11434
+
+错误：“找不到模型”
+  → 拉型号：ollama拉llama3.2
+  → 检查型号名称：ollama list
+
+缓慢回答：
+  → 选择较小的模型（llama3.2 而不是 llama3.1:70b）
+  → 检查 GPU 使用情况 (CUDA/Metal)
+
+内存问题：
+  → 使用较小的模型
+  → 卸载其他模型：ollama stop
+
+CONFIGURATION
+-------------
+BACH 中的Ollama 设置：
+  - 合作伙伴 ID：ollama
+  - 类型：本地
+  - 标准型号：llama3.2（可配置）
+  - 超时：120 秒
+
+调整方式：
+  bach partner info ollama
+
+另请参阅
+----------
+bach help partner          合作伙伴系统概述
+bach help delegate         任务委派
+bach help tools            工具清单 (ollama_client.py)

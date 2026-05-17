@@ -1,0 +1,326 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [CONSOL_REPORT_20260130, hub/consolidation.py, hub/memory.py, bach_api.py]
+
+SISTEMA DE MEMORIA (Modelo cognitivo)
+--------------------------------
+
+FECHA: 2026-01-30
+
+Definición: BACH utiliza un sistema de memoria cognitiva similar al humano
+está modelado en la memoria. Va más allá de simplemente almacenar y
+integra ponderación activa, decaimiento (olvido) y impulso (recuerdo).
+
+LOS 5 TIPOS COGNITIVOS:
+-----------------------
+
+1. MEMORIA DE TRABAJO (memoria_trabajando)
+   - "La memoria a corto plazo"
+   - Enfoque: Sesión actual, fugaz.
+   - Comando: `bach ​​mem write "..."`
+
+2. MEMORIA EPISODICA (memory_sessions)
+   - "El diario de aventuras"
+   - Guarda sesiones completadas (360+).
+   - Comando: `bach ​​--sesión de memoria "..."`
+
+3. MEMORIA SEMÁNTICA (memory_facts, docs/help/, wiki/)
+   - "Conocimiento mundial"
+   - Hechos, Definiciones, Arquitectura (más de 230 hechos).
+   - Comando: `bach ​​--hecho de memoria "..."`
+
+4. MEMORIA PROCESAL (memoria_lecciones, herramientas/, habilidades/)
+   - “Las Habilidades” / “Mejores Prácticas”
+   - Cómo se hacen las cosas (flujos de trabajo, herramientas).
+   - Comando: `lección de bach agregar "..."`
+
+5. MEMORIA ASOCIATIVA (memory_context, context_triggers)
+   - "El Puente"
+   - Conecta el conocimiento con la situación actual a través de desencadenantes.
+   - Comando: `bach --búsqueda de memoria "..."`
+   - Integración: los context_triggers también se activan durante el enrutamiento del conector
+
+SISTEMA DE APRENDIZAJE DINÁMICO (NUEVO v1.1.80)
+------------------------------------
+A diferencia de los sistemas tradicionales, los inyectores en BACH ahora son DINÁMICOS:
+- TRIGGER-DB: más de 900 activadores de lecciones, flujos de trabajo y herramientas se generan automáticamente.
+- CARGA COGNITIVA: Solo se carga el contexto relevante en la sesión.
+- COMENTARIOS: Las tareas completadas y las lecciones aprendidas cambian inmediatamente el comportamiento del sistema.
+
+INTEGRACIÓN DEL CONECTOR (NUEVA v2.0 - 2026-02-08)
+---------------------------------------------
+context_triggers ahora también se utilizan en el enrutamiento del conector:
+- Los mensajes entrantes de Telegram/Discord/HomeAssistant pasan por context_triggers
+- Los desencadenantes detectados se agregan como metadatos a message.metadata
+- LLM obtiene automáticamente el contexto relevante (por ejemplo, "impuestos" → hechos fiscales)
+- Ver: --help conector (sección de integración de contexto)
+
+TABLAS DE BASE DE DATOS:
+  Memory_working Notas temporales (marca is_active)
+  Memory_facts Hechos globales (cat: usuario, proyecto, sistema, dominio)
+  Información sobre Memory_lessons (gravedad: información, advertencia, crítica)
+  historial de sesiones de Memory_sessions (con resumen y contexto)
+  metadatos de seguimiento de consolidación de memoria (peso, último acceso)
+  rutas de origen de memoria_contexto con activadores (heredados)
+  context_triggers Más de 900 activadores dinámicos (lecciones/flujos de trabajo/herramientas)
+                       → Disparo en inyectores + guiado de conectores
+
+SISTEMA DE CONFIANZA:
+-----------------
+
+El sistema de memoria utiliza valores de confianza para evaluar la calidad de los hechos.
+
+ESCALA DE CONFIANZA (0,0 - 1,0):
+  1.0 Absolutamente seguro (verificado, confirmado varias veces)
+  0,8-0,9 Muy seguro (de una fuente confiable)
+  0,5-0,7 Moderado (suposición u observación)
+  0,3-0,4 Incierto (conjetura)
+  0,0-0,2 Muy incierto (por comprobar)
+
+REPRESENTACIÓN VISUAL:
+  La confianza se muestra como una barra: [*****] = 1,0, [*** ] = 0,6, [* ] = 0,2
+
+SEGUIMIENTO DE FUENTE:
+  Cada hecho puede tener una fuente (--source), p.e. "usuario", "sistema", "observación"
+
+COMANDOS (Completo):
+-----------------------
+
+COMANDOS BÁSICOS:
+  bach mem write "..."              Llenar memoria de trabajo
+  bach --memory facts               Recuperar conocimiento semántico
+  bach --memory fact "key:value"    Guardar nuevo dato
+  bach --memory session "..."       Guardar informe de sesión
+  bach --memory search "..."        Búsqueda asociativa
+  bach --memory status              Estado de memoria detallado
+  bach --memory provenance          Origen, tipo de evidencia, referencia personal e información de privacidad
+  bach --status                     Ver estado de memoria en el encabezado
+
+BIBLIOTECA API (bach_api.py):
+  desde la memoria de importación bach_api
+  memoria.write("Nota") Memoria de trabajo
+  memoria.facts() Todos los hechos
+  memoria.fact("clave:valor") Guardar hecho
+  Memory.search("consulta") Buscar asociativamente
+  memoria.status() Estado
+  memoria.session("Resumen") Finalizar sesión
+
+COMANDOS DE CONFIANZA:
+  bach --memory certain             Mostrar solo ciertos hechos (>=0.8)
+  bach --memory uncertain           Hechos inciertos para verificar (<0.5)
+  bach --memory confidence KEY 0.9  Actualizar confianza de un hecho
+
+COMANDOS DE SESIÓN:
+  bach --memory sessions            Mostrar todas las sesiones
+  bach --memory sessions N          Mostrar las últimas N sesiones
+
+VISTAS DE PROCEDENCIA:
+  bach --memory provenance              Últimas entradas de todas las áreas de memoria
+  bach --memory provenance facts 10     Solo hechos con fuente, evidencia y privacidad aviso
+  bach --memory provenance sessions 5   Resúmenes de sesiones con perspectiva de socio/privacidad
+
+GUARDE LOS HECHOS CON CONFIANZA:
+  bach --memory fact "key:value" --conf=0.8 --source="user"
+
+  Parámetros:
+    --conf=Valor de confianza X (0,0-1,0), predeterminado: 0,5
+    --source=X Fuente del hecho (p. ej. "usuario", "sistema", "observación")
+
+CONSOLIDACIÓN:
+  bach consolidate run              Iniciar procesos de aprendizaje (Decay/Boost)
+
+API SIN CABEZA (servidor GUI):
+  GET /api/memory/facts?limit=50 Todos los hechos (JSON)
+  POST /api/memory/facts Crear nuevo hecho
+  DEL /api/memory/facts/<id> Eliminar hecho
+  OBTENER /api/memory/lessons?limit=50 Todas las lecciones
+  POST /api/memory/lessons Crear nueva lección
+  DEL /api/memory/lessons/<id> Deshabilitar lección
+
+VER TAMBIÉN:
+  --ayuda a los inyectores El sistema del inyector
+  --ayuda a la consolidación Motor de consolidación
+  --help conector Integración del conector (context_triggers)
+  docs/help/lessons.txt Manejo de lecciones
+  API de biblioteca bach_api.py (módulo de memoria)
+  SKILL.md Inicialización del sistema
+
+FLUJO DE TRABAJO DE APAGADO:
+------------------
+
+CORRECTO (nuevo):
+  1. bach --shutdown escaneo de directorio + nota
+  2. bach --memory session "..." Guardar informe de sesión en DB
+
+  O todo en uno:
+  bach --memory session "THEMA: Was gemacht wurde. NAECHSTE: Was noch kommt."
+
+MAL (obsoleto):
+  - Crear archivos Markdown en memoria/archivo/
+  - Guardar informes de sesión como archivos .md
+
+FORMATO DE INFORME DE SESIÓN:
+-----------------------
+
+Formato recomendado para el texto de resumen:
+
+  "TEMA: Breve descripción.
+
+ TERMINADO:
+   - Tarea 1
+   - Tarea 2
+
+   CREADO: X nuevas tareas
+
+   PRÓXIMOS PASOS:
+   1. Prioridad 1
+   2. Prioridad 2"
+
+Alternativamente compacto:
+  "Arquitectura ATI, 9 tareas creadas. Siguiente: controlador ati.py"
+
+MEJORES PRÁCTICAS:
+---------------
+
+1. Inicio de sesión:
+   - Ejecute bach --startup
+   - Lee la última sesión de memory_sessions
+
+2. Durante la sesión:
+   - bach mem escribe "idea importante"
+   - bach --memory fact "proyecto.nombre:BACH"
+
+3. Fin de sesión:
+   -bach --apagado
+   - bach --sesión de memoria "Resumen"
+
+4. Lecciones aprendidas:
+   - lección de bach agregar "Título: Solución"
+   - Controlador propio, no --memory!
+
+ESQUEMA DE BASE DE DATOS:
+-----------------
+
+memory_sessions:
+  - session_id ID único (session_AAAAMMDD_HHMMSS)
+  - iniciado_a la hora de inicio
+  - end_at hora de finalización (NULL si está activo)
+  - informe resumido de la sesión
+  - task_created Número de tareas creadas
+  - task_completed Número de tareas completadas
+  - continuación_context Para la próxima sesión
+
+DIAGRAMA DE ARQUITECTURA
+--------------------
+
+Comparación visual humana <-> memoria BACH:
+  docs/ARCHITECTURE_DIAGRAMS.md -> Diagrama 4: Sistema de memoria
+
+Muestra los 5 tipos cognitivos con equivalente humano
+y procesos activos (olvido, recuerdo, aprendizaje, atención,
+Consolidación del sueño, metacognición).
+
+MODELO COGNITIVO: EL APRENDIZAJE COMO CIRCUITO DE MEMORIA
+-----------------------------------------------
+
+Tesis: “El aprendizaje es una forma de memoria”.
+(Desarrollado: Usuario + Claude + Gemini, enero de 2026)
+
+EL PROCESO DE APRENDIZAJE COMO CIRCUITO:
+
+```
+┌────────────────────────────────── ───────────────────────────────────┐
+│ MEMORIA / TESORO DE LA EXPERIENCIA (almacenamiento a largo plazo) │
+│ ┌─────────────────────────────── ────────────────────────────────┐ │
+│ │ Lecciones: ¿Qué funcionó? ¿Qué no?               │ │
+│ │ Flujos de trabajo: ¿CÓMO funciona? (Memoria procesal) │ │
+│ │ Sesiones - ¿Cuál era mi objetivo? (Orientación hacia el futuro) │ │
+│ │ Hechos - docs/help/ + wiki/ + hechos (conocimiento mundial) │ │
+│ │ Mejores prácticas.  - Experiencias realizadas respecto a reglas │ │
+│ └─────────────────────────────── ────────────────────────────────┘ │
+│ │ │
+│ │ RECUPERACIÓN ──> automático: inyectores │
+│ │ ──> consciente: pensando │
+│ v │
+│ ┌─────────────────────────────── ────────────────────────────────┐ │
+│ │ AHORA NIVEL │ │
+│ │ (1) AHORRE ENERGÍA: recupere reglas, actúe automáticamente │ │
+│ │ (2) PENSAR: Provocar inyectores, jugar escenarios │ │
+│ │ -> ACCIÓN -> Resultado (= nuevo EVENTO) │ │
+│ └─────────────────────────────── ────────────────────────────────┘ │
+│ │ │
+│v EVENTO │
+│ ┌─────────────────────────────── ────────────────────────────────┐ │
+│ │ GUARDAR -> lecciones, hechos, sesiones │ │
+│ └─────────────────────────────── ────────────────────────────────┘ │
+│ │ │
+│ v │
+│ ┌─────────────────────────────── ────────────────────────────────┐ │
+│ │ CONSOLIDACIÓN (= dormir) │ │
+│ │ Comprimir, formar mejores prácticas, extraer lecciones │ │
+│ └─────────────────────────────── ────────────────────────────────┘ │
+│ │ │
+│ v │
+│ ┌─────────────────────────────── ────────────────────────────────┐ │
+│ │ BACKFLOW -> Actualizar inyectores │ │
+│ │ El sistema se comporta DIFERENTE = aprendizaje real │ │
+│ └─────────────────────────────── ────────────────────────────────┘ │
+│ │ │
+│ └──────>volver a MEMORIA (nuevo estado) │
+└────────────────────────────────── ───────────────────────────────────┘
+```
+
+ASIGNACIÓN: MEMORIA HUMANA <-> BACH
+--------------------------------------------
+
+| Humano | Equivalente BACH | Función |
+|--------------------------------|--------------------------------|---------------------------------|
+| Ejecutivo Central | Inyectores | Controlar la atención |
+| Memoria de trabajo | memoria_trabajando | Sesión actual |
+| Memoria procesal | Flujos de trabajo, herramientas/, habilidades/ | CÓMO hacer algo |
+| Memoria episódica | lecciones_de_memoria, sesiones_de_memoria| QUÉ PASÓ |
+| Memoria semántica | docs/ayuda/, wiki/, memoria_facts | Conocimiento mundial (casi vacío*) |
+| Conocimiento de reglas | Mejores prácticas, SKILL.md | Experiencias comprobadas
+
+|*) La memoria semántica en BACH está casi vacía debido al conocimiento del mundo
+   ya está incluido en los datos de entrenamiento de LLM.
+
+INYECTORES COMO “PENSAMIENTOS”
+-------------------------
+
+Los inyectores corresponden a pensamientos en el pensamiento humano:
+- AUTOMÁTICO: Activa la concordancia de palabras clave (como asociaciones inconscientes)
+- CONSCIENTE: Provocación dirigida a través de preguntas (como el pensamiento)
+
+Dos modos de procesamiento:
+  (1) AHORRO DE ENERGÍA: Rápido, basado en reglas, automático
+      -> Fuego de inyectores, acción directa.
+  (2) PENSAR - Lento, asociativo, consciente
+      -> Reflexiona sobre los inyectores, juega escenarios.
+  (3) CONSOLIDACIÓN: sin conexión, comprimiendo (= dormir)
+      -> consolidación de bach (trabajo demonio)
+
+ESTADO ACTUAL Y OBJETIVO
+----------------------
+
+Estado REAL (parcialmente dinámico desde v1.1.80):
+  Conocimiento -> Memoria (DB) -> Activador DB (más de 900 activadores dinámicos)
+  Los inyectores son parcialmente dinámicos (activador DB + dictados de Python)
+
+estado OBJETIVO (en progreso):
+  Conocimiento -> Memoria (DB) -> Inyectores -> Cambios de comportamiento
+                       -> Flujos de trabajo -> Automatización
+                       -> Patrones -> Delegación
+
+El “reflujo” del conocimiento consolidado hacia los inyectores
+es la pieza que falta para el aprendizaje real.
+
+Ver también:
+  --ayuda a los inyectores (sistema de inyectores)
+  --ayuda a la consolidación (motor de consolidación)
+  docs/archive/ANALYSE_Lernsysteme_BACH_vs_recludOS.md (análisis completo)
+
+---
+Versión: 1.3.0 | Actualizado: 2026-02-08
+(Integración del conector documentada, API de biblioteca + API sin cabeza agregada)

@@ -1,0 +1,22 @@
+Herramienta BACH: problemas_first
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/problems_first.py
+
+DESCRIPCIÓN
+----------------------------------------
+Problems First - Detección automática de errores
+----------------------------------------------
+
+Portado de CHIAH a BACH.
+Analiza el registro automático y otras fuentes en busca de problemas.
+
+USE
+----------------------------------------
+python bach.py tools ejecuta problemas_first [args]
+o directamente: python tools/problems_first.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tiene alguna pregunta: las herramientas de Bach muestran problemas_primero

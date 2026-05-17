@@ -1,0 +1,87 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ИМЯ ОБРАБОТЧИКА
+------------
+Унифицированный обработчик поиска для BACH (SQ064 + SQ047)
+
+
+ОПИСАНИЕ
+------------
+Полнотекстовый поиск (FTS5) по всем источникам BACH: статьи Wiki, память (работает/
+Факты/Уроки), Документация, KnowledgeDigest Skills/Wiki и любые
+сканированные каталоги. Поддерживает расширенные фильтры по источнику, тегам и
+предел. Автоматическое индексирование с обнаружением дубликатов посредством сравнения хешей.
+
+
+ОПЕРАЦИИ
+-----------
+
+ПОИСК (по умолчанию)
+  <query> Полнотекстовый поиск по всем источникам
+  <query> --source SOURCE Искать только в источнике (wiki|document|memory_*)
+  <query> --tag TAG фильтровать по тегу (можно комбинировать несколько раз)
+  <запрос> --limit N Макс. попаданий (по умолчанию: 20)
+
+ИНДЕКСИРОВАНИЕ
+  index Индексировать все источники BACH
+  index Knowledgedigest|kd KnowledgeDigest + Index Wiki
+  index wiki|память|документы Индексировать один источник
+  индекс <путь> каталог сканирования (стиль ProFiler)
+  index <path> --no-tags Без автоматического создания тегов
+
+УПРАВЛЕНИЕ
+  статистика индекса статуса и обзор источников
+  перестроить пустой индекс и полностью перестроить
+  теги Список всех доступных тегов
+  теги TAG1 TAG2 Найти записи с этими тегами
+  tags --limit N Top-N тегов по частоте
+  дураки находят дубликаты (тот же хэш, пути)
+  help Показать эту справку
+
+
+ПРИМЕРЫ
+---------
+
+Базовый поиск:
+  bach search python
+  bach search "machine learning"
+
+С источником:
+  bach search encoding --source memory_lesson
+  bach search entwickler --source knowledgedigest_skill
+
+С тегами и ограничением:
+  bach search database --tag production --limit 50
+  bach search bridge --tag connector --tag network
+
+Индексирование:
+  bach search index                    # Все источники
+  bach search index knowledgedigest    # Только KD
+  bach search index /c/Users/User/Docs # Verzeichnis
+  bach search index .                  # Текущий каталог
+
+Администрирование:
+  bach search status                   # Статистика
+  bach search rebuild                  # Полный переиндекс
+  bach search tags                     # Все теги
+  bach search tags health system       # Поиск тегов
+  bach search dupes                    # Дубликаты
+
+
+ФАЙЛЫ
+-------
+
+hub/search.py Реализация SearchHandler
+инструменты/unified_search.py Унифицированная поисковая система (FTS5)
+База данных индексов data/bach.db (SQLite, FTS5)
+docs/help/search.txt Этот файл
+
+
+СМ. ТАКЖЕ
+----------
+
+docs/help/index.txt Интерфейс командной строки BACH
+docs/OPERATIONS.md Все обработчики и операции
+Tools/unified_search.py Документация по движку (индексный формат, синтаксис FTS5)

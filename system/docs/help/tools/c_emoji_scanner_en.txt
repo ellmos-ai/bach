@@ -1,0 +1,29 @@
+BACH Tool: c_emoji_scanner
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/c_emoji_scanner.py
+
+DESCRIPTION
+----------------------------------------
+c_emoji_scanner.py - Emoji scanner with Gemoji/emoji package integration
+
+Scans files for emojis and shows which ones can be automatically resolved.
+Uses the same backend as c_json_repair.py (emoji package or gemoji.json fallback).
+
+Usage:
+    python c_emoji_scanner.py <file_or_folder>
+    python c_emoji_scanner.py --scan-batch # All _BATCH JSON files
+    python c_emoji_scanner.py --status # System status
+
+Author: Claude
+Version: 3.0 - Unified with c_json_repair.py
+
+USE
+----------------------------------------
+python bach.py tools run c_emoji_scanner [args]
+or directly: python tools/c_emoji_scanner.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show c_emoji_scanner

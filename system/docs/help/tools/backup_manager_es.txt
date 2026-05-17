@@ -1,0 +1,71 @@
+Herramienta BACH: backup_manager
+--------------------------------------------------
+Generado: 2026-02-05
+Fuente: tools/backup_manager.py
+
+DESCRIPCIÓN
+----------------------------------------
+backup_manager.py - Sistema de copia de seguridad y restauración BACH
+
+Administra:
+- Copia de seguridad del usuario (dist_type=0) -> data/_backups/*.zip
+- Instantáneas de plantilla (dist_type=1) -> dist/snapshots/*.orig
+- Distribución-Restaurar (dist_type=2) -> [AÚN NO IMPLEMENTADO]
+
+COMANDOS
+----------------------------------------
+python backup_manager.py create [--to-nas]
+    Crea una copia de seguridad completa del usuario.
+    --to-nas: Copia adicional a NAS
+
+python backup_manager.py lista [--nas]
+    Listas de copias de seguridad disponibles
+    --nas: muestra copias de seguridad NAS en lugar de las locales
+
+python backup_manager.py info <nombre>
+    Mostrar detalles de la copia de seguridad (manifiesto)
+
+python backup_manager.py restaurar copia de seguridad <nombre> [--force] [--no-auto-backup]
+    Restaura la copia de seguridad del usuario
+    --force: Sin confirmación
+    --no-auto-backup: No hay copia de seguridad de seguridad antes de la restauración
+
+python backup_manager.py plantilla de restauración <archivo>
+    Restablece el archivo de plantilla al original
+
+python backup_manager.py restaurar dist <nombre>
+    [PLANTADO] Restaurar distribución - aún no implementado
+
+instantánea de python backup_manager.py <archivo>
+    Crea una instantánea de un archivo según dist/snapshots/
+
+CARACTERÍSTICAS AUTOMÁTICAS
+----------------------------------------
+- Copia de seguridad automática: se crea automáticamente una copia de seguridad de seguridad antes de cada restauración
+- Rotación local: Máx. 7 copias de seguridad (las más antiguas se eliminan automáticamente)
+- Rotación NAS: Máx. 30 copias de seguridad (las más antiguas se eliminan automáticamente)
+
+DATOS RESPALDADOS
+----------------------------------------
+Tablas de base de datos:
+  - tareas
+  - sesiones_de_memoria
+  - lecciones_de_memoria
+  - contexto_memoria
+  -monitor_tokens
+  - monitor_success
+
+Directorios:
+  -memoria/
+  - registros/
+  - usuario/
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan backup_manager [args]
+o directamente: python tools/backup_manager.py [args]
+
+NOTAS
+----------------------------------------
+- Ruta NAS desde system_config o estándar: \\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
+- La versión de Bach se guarda en el manifiesto de respaldo.

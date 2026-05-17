@@ -1,0 +1,36 @@
+BACH ツール: c_import_organizer
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/c_import_organizer.py
+
+説明
+----------------------------------------
+c_import_organizer.py - PEP8 に従って Python インポートを整理します
+
+機能:
+  - すべての import/from ステートメントを収集します
+  - 重複を削除します
+  - アルファベット順に並べ替えます (最初にインポート、次に from)
+  - すべてのインポートをファイルの先頭に配置します
+  - 複数の空白行をクリーンアップします
+
+抽出元: A1 ProFiler/PythonBox.py (ImportOptimizer)
+
+使用法:
+    python c_import_organizer.py <file.py>
+    python c_import_organizer.py <file.py> --dry-run
+    python c_import_organizer.py <file.py> --json
+    python c_import_organizer.py --stdin < code.py
+
+著者: クロード (適応)
+依存関係: なし (stdlib のみ)
+
+USE
+----------------------------------------
+python bach.py ツールは c_import_organizer [args] を実行します
+または直接: python tools/c_import_organizer.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成
+- 質問がある場合: bach tools show c_import_organizer

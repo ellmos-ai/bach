@@ -1,0 +1,84 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MODOS DE USUARIO DE BACH (v1.1.37)
+-------------------------
+
+BACH admite 4 modos de inicio diferentes que determinan
+qué componentes se inician automáticamente al inicio.
+
+MODOS DISPONIBLES
+----------------
+  Modo GUI GUI (predeterminado)
+           - Inicia el panel GUI en el navegador
+           - Abre http://127.0.0.1:8000
+           - Ideal para uso interactivo
+
+  modo texto texto
+           - Sólo inicia la consola con bach.py
+           - No se abre ningún navegador
+           - Ideal para trabajos centrados en terminales
+
+  modo dual dual
+           - Lanza GUI + consola separada
+           - Ambas interfaces se pueden utilizar en paralelo
+           - Ideal para usuarios avanzados
+
+  modo silencioso silencioso
+           - Nada comienza automáticamente
+           - Sólo salida del informe de inicio
+           - Ideal para scripts y automatización
+
+CAMBIAR MODO
+-------------
+Persistente (guardar en configuración):
+  bach --startup mode gui
+  bach --startup mode text
+  bach --startup mode dual
+  bach --startup mode silent
+
+Una vez (solo este arranque):
+  bach --startup --mode=gui
+  bach --startup --mode=text
+
+CONFIGURACIÓN
+-------------
+El modo actual se guarda en system/data/user_config.json:
+
+  {
+    "startup_mode": "gui",
+    "modos_inicio": {
+      "gui": {"gui": verdadero, "consola": falso},
+      "texto": {"gui": falso, "consola": verdadero},
+      "dual": {"gui": verdadero, "consola": verdadero},
+      "silencioso": {"gui": falso, "consola": falso}
+    }
+  }
+
+EJEMPLOS
+---------
+# Iniciar normalmente (usa el modo guardado)
+bach --startup
+
+# Cambiar el modo permanentemente a texto
+bach --startup mode text
+
+# Iniciar una vez en modo silencioso
+bach --startup --mode=silent
+
+# Inicio rápido sin escaneo de directorios en modo GUI
+bach --startup quick --mode=gui
+
+NOTAS
+--------
+- El modo se muestra automáticamente en --startup
+- El servidor GUI permanece activo en segundo plano hasta que se apaga
+- En modo texto se abre una nueva ventana de consola
+- El modo silencioso es adecuado para trabajos cron y automatizaciones
+
+VER TAMBIÉN
+----------
+  ayuda inicio - Detalles del registro de inicio
+  ayuda gui - documentación del panel GUI
+  ayuda para cerrar - finalizar sesión

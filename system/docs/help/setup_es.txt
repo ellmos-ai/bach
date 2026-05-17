@@ -1,0 +1,106 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+===
+
+configuración
+
+
+DESCRIPCIÓN
+===
+
+Configura completamente el sistema BACH: instala el servidor MCP (npm), validado
+Dependencias, sincroniza secretos y perfiles de usuario y realiza comprobaciones previas
+a través. Parte de la versión PEANUT (B37) con administrador n8n MCP opcional.
+
+
+OPERACIONES
+===
+
+mcp Instala servidores MCP (codecommander, filecommander) globalmente a través de npm
+                y configuración actualizada del código Claude (~/.claude.json).
+
+n8n Instala el paquete n8n-manager-mcp opcional y se registra en
+                Claude Code MCP-Config.
+
+check Valida si todas las dependencias están presentes y configuradas:
+                npm, paquetes MCP, archivo secretos, bach.db, USER.md.
+
+secrets Inicializa o sincroniza ~/.bach/bach_secrets.json con
+                la base de datos de Secretos.
+
+usuario Administra USER.md: personalizado desde la base de datos si todavía es una plantilla,
+                o sincroniza los datos analizados con la base de datos.
+
+preflight Realiza comprobaciones previas a la instalación: Python >= 3.10, npm disponible,
+                datos/escribibles, > 100 MB de espacio de almacenamiento libre.
+
+prosync Configura ProSync para uso multisistema.
+                --multi-system Habilita la sincronización de bases de datos (BACH en varias computadoras)
+                --single-system Deshabilitar la sincronización de base de datos (solo este sistema)
+                Sin bandera: muestra el estado actual. Valor predeterminado: sistema único.
+
+hooks Instala enlaces de código Claude (protección de base de datos, etc.) en el
+                Configuración de Claude Code (~/.claude/settings.json).
+
+hooks-remove Elimina los ganchos de Claude Code instalados en BACH (reversible).
+                Solo elimina las entradas de gancho registradas por BACH.
+
+lang <de|en> Documentos raíz intermedios (README, QUICKSTART, etc.).
+                Alemán e inglés.
+
+full-install Instalación completa de una sola vez (preflight, prosync,
+                mcp, ganchos, secretos, usuarios). Opcional: --with-n8n o --config <json>.
+
+
+EJEMPLOS
+===
+
+bach setup mcp
+  Codecommander-mcp y filecommander-mcp instalados, actualizados ~/.claude.json
+
+bach setup check
+  Comprueba todas las dependencias con salida de estado
+
+bach setup n8n
+  Instala n8n-manager-mcp (opcional)
+
+bach setup preflight
+  Valida Python, npm y espacio en disco antes de la instalación
+
+bach setup prosync
+  Muestra el estado actual de ProSync (sistema único o múltiple)
+
+bach setup prosync --multi-system
+  Habilita ProSync: base de datos local (~/.bach/bach.db) + OneDrive Transit Sync
+
+bach setup prosync --single-system
+  Desactiva ProSync (predeterminado para nuevas instalaciones)
+
+bach setup full-install --with-n8n
+  Instalación completa incluyendo n8n manager
+
+bach setup user
+  Personaliza USER.md desde DB o sincroniza los cambios de USER.md con DB
+
+
+FILES
+===
+
+hub/setup.py Este controlador
+data/bach.db Base de datos BACH (assistant_user_profile, Secretos)
+data/bach_secrets.json Bóveda de secretos (~/.bach/bach_secrets.json)
+../USER.md Perfil de usuario (plantilla o personalizado)
+~/.claude.json Configuración del servidor MCP de Claude Code
+
+
+VER TAMBIÉN
+===
+
+hub/base.py BaseHandler (superclase)
+hub/secrets_handler.py SecretsHandler (gestión de secretos)
+docs/help/check.txt Validación después de la instalación
+docs/help/install.txt Instalación inicial y escenarios
+docs/help/db_sync.txt ProSync: sincronización de base de datos multisistema

@@ -1,0 +1,132 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+
+TUEV-HANDLER
+------------
+
+Workflow quality assurance and test case management for BACH workflows.
+The TUeV handler manages the status, validity and quality metrics
+of workflows over their life cycles.
+
+
+HANDLER NAME
+------------
+
+bach tuev     - Workflow TUeV and validity
+bach usecase  - Test case definition and execution
+
+
+DESCRIPTION
+------------
+
+The TUeV handler (test, checking, validation) manages:
+
+  * Registration of workflows in the Bach database
+  * Tracking of TUeV validity (standard: 90 days)
+  * Overview of expired/soon due workflows
+  * Management of test cases (use cases) per workflow
+  * Status and quality score per test case
+
+The handler works with:
+  * Database: data/bach.db (workflow_tuev, usecases tables)
+  * Workflows: skills/workflows/ (*.md files)
+  * Test input/output as JSON in DB
+
+
+OPERATIONS
+-----------
+
+TUeV-OPERATIONS:
+
+  bach tuev
+  bach tuev status        - Show status of all workflows
+  bach tuev check WFNAME  - Check individual workflow and its use cases
+  bach tuev run           - List all expired workflows
+  bach tuev renew WFNAME  - Renew TUeV (90 days validity)
+  bach tuev init          - Workflows from skills/workflows/ register
+
+USECASE OPERATIONS:
+
+  bach usecase list [WF]       - All or show filtered test cases
+  bach usecase add WFNAME      - Add new test case (SQL template)
+  bach usecase show ID         - Test case details with input/output
+  bach usecase run ID          - Execute and check test case
+  bach usecase run-all WFNAME  - Execute all test cases of a workflow
+
+
+EXAMPLES
+---------
+
+1. Add new workflows to DB:
+   $ bach tuev init
+   [TUeV] Workflows initialized
+     Added: 5
+     Skipped: 0
+
+2. Status overview (sorted by expiry date):
+   $ bach tuev status
+   [WORKFLOW-TUeV] Status overview
+
+   EXPIRED (check immediately!):
+     [!] bugfix log Score: 75% | Status: pending
+
+   DUE SOON (< 14 days):
+     [~] data pipeline Score: 88% | 5d
+
+   OK:
+     [OK] main workflow Score: 92% | 30d
+
+3. Workflow check with use cases:
+   $ bach tuev check bugfix log
+   [TUeV] Test: bugfix protocol
+   Path: skills/workflows/bugfix-protocol.md
+   Status: pending
+   Score: 75%
+
+   Use cases: 2
+     [?] Simple test case (?)
+     [OK] Edge case with error (pass)
+
+4. Renew TUeV after successful test:
+   $ bach tuev renew bugfix protocol
+   [TUeV] bugfix protocol renewed
+     Valid until: 2026-06-02
+
+5. Add new test case:
+   $bach usecase add data-pipeline
+   SQL to insert:
+   ---------------------
+   INSERT INTO usecases (title, description, workflow_name, ...)
+
+   Or via GUI: /usecases
+
+   Example:
+   $ bach db query "INSERT INTO usecases (...) VALUES (...)"
+
+6. Execute test case:
+   $bach usecase run 5
+   [USECASE] Test #5: Simple test
+   [INFO] Manual check required.
+
+   Enter result:
+   $ bach db query "UPDATE usecases SET test_result='pass', test_score=90 WHERE id=5"
+
+
+FILES
+-------
+
+Relative to system/:
+
+  data/bach.db - SQLite database with TUeV/Usecase tables
+  skills/workflows/*.md - workflow files (are initialized)
+  hub/tuev.py - TuevHandler and UsecaseHandler classes
+
+
+SEE ALSO
+----------
+
+  bach db          - Direct database queries
+  hub/base.py - BaseHandler base class
+  skills/workflows/ - Available workflow files

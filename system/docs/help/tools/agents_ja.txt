@@ -1,0 +1,115 @@
+AGENT TOOLS - Agenten-Werkzeuge
+--------------------------------
+
+UEBERSICHT
+Agent-Tools in BACH verwalten und steuern AI-Agenten
+und deren Interaktionen.
+
+AGENT FRAMEWORK
+---------------
+agent_framework.py
+
+Kern-Framework fuer alle BACH-Agenten.
+Features:
+  - Agent-Registrierung
+  - Capability-Matching
+  - Synergie-Management
+
+Aufruf: Wird intern verwendet
+
+AGENT CLI
+---------
+agent_cli.py
+
+Kommandozeile fuer Agent-Interaktion.
+Befehle:
+  - list: Alle Agenten anzeigen
+  - status: Agent-Status pruefen
+  - activate: Agent aktivieren
+  - deactivate: Agent deaktivieren
+
+Aufruf: python tools/agent_cli.py <befehl>
+
+AGENT SERVICE INTEGRATION
+-------------------------
+agent_service_integration.py
+
+Verbindet Agenten mit BACH-Services.
+Ermoeglicht:
+  - Service-Discovery
+  - Automatische Routing
+  - Load-Balancing
+
+VERFUEGBARE AGENTEN
+-------------------
+
+Verzeichnis: agents/
+
+  ati/              Software-Entwickler (ATI)
+  steuer-agent.txt  Steuer-Assistent
+  research.txt      Research-Agent (Recherche)
+  entwickler.txt    Allgemeiner Entwickler
+  production.txt    Produktions-Agent
+  foerderplaner/    Foerderplan-Assistent
+
+AGENT-KONVENTION
+----------------
+
+Siehe: skills/AGENT_KONVENTION.md
+
+Hierarchie:
+  BOSS-Agenten:   Vollstaendige Kontrolle, langfristig
+  Experts:        Spezialisiert, kurzfristig
+  Services:       Automatische Hintergrund-Tasks
+
+AGENT-BEFEHLE IN BACH
+---------------------
+
+  bach --help agents       Agent-Dokumentation
+  bach --help ati          ATI-Agent Hilfe
+  bach ati bootstrap       Projekt erstellen (ATI)
+  bach ati migrate         Projekt migrieren (ATI)
+
+DELEGATION AN AGENTEN
+---------------------
+
+  bach delegate "task" --to=<agent>
+
+Verfuegbare Ziele:
+  ollama, gemini, copilot, perplexity, human
+
+ENTWICKLER-AGENT
+----------------
+entwickler_agent.py
+
+Spezialisierter Agent fuer Entwicklungs-Aufgaben.
+Kann:
+  - Code generieren
+  - Bugs analysieren
+  - Tests erstellen
+
+PRODUCTION-AGENT
+----------------
+production_agent.py
+
+Fuer Produktions-Deployments.
+Features:
+  - Build-Prozesse
+  - Deployment-Checks
+  - Rollback-Support
+
+RESEARCH-AGENT
+--------------
+research_agent.py
+
+Recherche und Informationssammlung.
+Quellen:
+  - Web-Search
+  - Dokumentation
+  - Interne Wissensbasis
+
+SIEHE AUCH
+----------
+bach --help delegate      Delegation-System
+bach --help partner       Partner-Kommunikation
+skills/AGENT_KONVENTION.md  Agent-Richtlinien

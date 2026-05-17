@@ -1,0 +1,220 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH PROMPT GENERATOR
+---------------------
+
+The Prompt Generator is a GUI board for creating, managing and
+Sending prompts to Claude sessions - manual or automated.
+
+STATUS: FUNCTIONAL (web GUI, service implemented)
+HANDLER: NOT REGISTERED (no bach.py integration)
+SERVICE: hub/_services/prompt_generator/
+GUI: gui/templates/prompt-generator.html (web-based)
+NOTE: Desktop app (prompt_manager.py, PyQt6) has been removed (v1.1.8)
+
+
+CONCEPT
+-------
+
+The board provides system-wide prompt management with the following features:
+
+  1. Text editor for start prompt (with reset function)
+  2. Template selection (System/Agents/Own)
+  3. Four sending options
+  4. Daemon Control (Scheduling)
+
+
+SEND OPTIONS (4 modes)
+----------------------
+
+  1. AS A TASK
+     - Promptly queued as a task
+     - Asynchronous processing by the next Claude session
+     - No immediate execution
+
+  2. DIRECT SESSION
+     - Immediately starts a new Claude session
+     - Prompt is sent via quick entry (Ctrl+Alt+Space).
+     - Blocking until the end of the session
+
+  3. COPY TEXT
+     - Copies the prompt to the clipboard
+     - User inserts manually into Claude
+     - For adjustments before sending
+
+  4. DAEMON CONTROLS
+     - Automated prompt execution
+     - Configurable: interval, blocking times, max sessions
+     - Single-prompt or multi-prompt rotation
+
+
+TEMPLATES SYSTEM
+---------------
+
+  System templates (not editable, for reset):
+    - minimal.txt Basis: Read SKILL.md, execute bach.py
+    - task.txt Task execution with JSON output
+    - review.txt code review with scoring
+
+  Agent templates:
+    - ati.txt software development (ATI Agent)
+    - tax.txt accounting (tax agent)
+    - maintenance.txt BACH system maintenance
+
+  Own templates:
+    - User created/customized prompts
+    - Stored in DB (prompt_templates table)
+
+
+DAEMON CONTROL
+----------------
+
+Advanced options for automated sessions:
+
+  Interval: minutes between sessions (default: 30)
+  Max Sessions: Limit per run (0 = unlimited)
+  Blocking times: start/end of the rest period (default: 10:00 p.m. - 8:00 a.m.)
+  Maximum duration: Max. minutes per session (default: 15)
+
+  Modes:
+    Single Prompt: Always the same prompt
+    Multi Prompt: Rotation through different templates
+
+  One-Line: Only 1 session active at the same time (default)
+
+
+GUI LAYOUT (gui/prompt_manager.py - IMPLEMENTED)
+---------------------------------------------------
+
+  PySide6 based dark theme manager with:
+  - Tab 1: Prompt Editor + Templates (System/Agents/Custom)
+  - Tab 2: Daemon control (intervals, rest times, profiles)
+  - Tab 3: Template management
+  - Tab 4: Profile management
+  - System tray icon
+  - Single Instance Lock
+
+  Call: python system/gui/prompt_manager.py
+
+
+CLI COMMANDS (CURRENT)
+---------------------
+
+DIRECT CALL (service script):
+  cd system/hub/_services/prompt_generator
+  python prompt_generator.py list
+  python prompt_generator.py get <path>
+  python prompt_generator.py generate <path>
+  python prompt_generator.py copy <path>
+  python prompt_generator.py session [agent]
+  python prompt_generator.py start [agent]
+  python prompt_generator.py status
+
+START GUI:
+  python system/gui/prompt_manager.py
+
+BACH.PY INTEGRATION:
+  MISSING - No handler registered!
+  "python bach.py prompt list" does NOT work
+  "python bach.py --prompt list" DOES NOT work
+
+
+DEFINITION: THREE HANDLER SYSTEMS
+--------------------------------
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ PROMPT GENERATOR │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Create, manage, send prompts │
+  │ Manual or automated │
+  │ System-wide for all agents │
+  │ Handler: MISSING (not in registry) │
+  │ Service: hub/_services/prompt_generator/prompt_generator.py │
+  │ GUI: gui/prompt_manager.py (PySide6, standalone) │
+  │ Daemon: YES (session_daemon.py) │
+  │ API: MISSING (not in bach_api.py) │
+  └──────────────────────────────── ─────────────────────────────────┘
+
+┌──────────────────────────────── ─────────────────────────────────┐
+  │ MAINTENANCE (docs/help/maintenance.txt) │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Execute shell/Python commands (backup, cleanup) │
+  │ No prompts, just commands │
+  │ Handler: hub/daemon.py (registered) │
+  │ Service: gui/api/daemon_api.py + DB │
+  │ GUI: /daemon (web dashboard) │
+  │ Daemon: YES (own process) │
+  └────────────────────────────────── ───────────────────────────────┘
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ RECURRING (docs/help/recurring.txt) │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Creates tasks as reminders │
+  │ No prompt sending │
+  │ Handler: hub/recurring.py (registered) │
+  │ Service: hub/_services/recurring/ │
+  │ GUI: NONE (CLI only) │
+  │ Daemon: NO (check when called) │
+  └─────────────────── ──────────────────── ──────────────────────────┘
+
+
+TECHNICAL BASE
+----------------
+
+  Service folder: hub/_services/prompt_generator/
+    ├── README.md documentation
+    ├── config.json configuration (daemon settings)
+    ├── prompt_generator.py main logic (CLI + API)
+    ├── templates/ template folder
+    │ ├── system/ read-only templates
+    │ │ ├── minimal.txt
+    │ │ ├── task.txt
+    │ │ └── review.txt
+    │ └── agents/Editable templates
+    │ ├── ati.txt
+    │ ├── tax.txt
+    │ └── maintenance.txt
+    └── profiles/ daemon profiles
+        ├── ati.json
+        └── maintenance.json
+
+  GUI: gui/prompt_manager.py (PySide6, standalone)
+
+  LACK OF INTEGRATION:
+    - No handler in hub/ (not in registry)
+    - No bach_api module (missing in bach_api.py)
+    - Calling via "bach.py prompt" NOT possible
+
+
+KNOWN PROBLEMS
+-----------------
+
+1. NO BACH.PY INTEGRATION
+   - Service is functional, but not in bach.py registry
+   - "python bach.py prompt list" → Error
+   - Workaround: Direct service call (see CLI COMMANDS)
+
+2. NO BACH_API INTEGRATION
+   - No "prompt" module in bach_api.py
+   - Library API not usable
+   - Workaround: Import service directly
+
+3. PATH INCONSISTENCY
+   - Help file referenced skills/_services/ (old)
+   - Actually in hub/_services/ (correct)
+
+MIGRATION REQUIRED:
+  - Create handler in hub/prompt.py
+  - Register in Registry (BaseHandler class)
+  - expand bach_api.py with prompt = _HandlerProxy("prompt")
+
+
+SEE ALSO
+----------
+
+  help maintenance maintenance jobs (shell commands)
+  help recurring Recurring task reminders (no GUI)
+  help ati ATI Software Developer Agent
+  help daemon Daemon management (maintenance vs. session daemon)

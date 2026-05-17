@@ -1,0 +1,29 @@
+BACH ツール: RAG (検索拡張生成)
+------------------------------------------------
+
+BACH のベクトルベースのドキュメント検索
+
+USE
+----------
+
+  bach --tools rag ingest <pfad>     ドキュメントのインデックス作成
+  bach --tools rag search <query>    セマンティック検索
+
+INGEST
+------
+
+ドキュメントを読み取り、ベクトルを作成します。
+  - サポートされている形式: .txt、.md、.pdf、.py
+  - document_vectors テーブル内のストレージ
+
+SEARCH
+------
+
+インデックス付きドキュメントによる意味的類似性検索。
+テキストの関連セクションをスコアとともに返します。
+
+MODULE
+-----
+
+  tools/rag/ (ingest.py、search.py)
+  DBテーブル：document_vectors（移行020）

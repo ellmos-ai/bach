@@ -1,0 +1,147 @@
+研究ツール - 科学研究
+--------------------------------------------
+
+現在: 2026-01-23
+パス: docs/help/tools/research.txt
+
+説明
+------------
+科学文献研究のためのリサーチ エージェント。
+さまざまな外部リサーチツールを統合し、
+
+
+パス: tools/research_agent.py
+
+利用可能な外部ツール
+-------------------------
+Research Agent の推奨とリンク:
+
+  PubMed 生物医学文献 (NIH)
+  Perplexity AI を活用したソースを活用した研究
+  コンセンサス科学的証拠の検索
+  NotebookLM Google クラスタリング/分析ツール
+  AI研究アシスタントを引き出す
+  コンテキストを使用したサイト引用分析
+
+USE
+----------
+
+CLI コマンド:
+  python Research_agent.py 検索「クエリ」
+  python Research_agent.py review --topic "topic" --years 5
+  python Research_agent.py ステータス
+
+例:
+  python Research_agent.py 検索 "CRISPR 遺伝子治療"
+  python Research_agent.py レビュー --トピック「うつ病バイオマーカー」 -- 年 3
+  python Research_agent.py ステータス
+
+検索コマンド
+-------------
+調査を実行し、適切なツールを推奨します。
+
+  python Research_agent.py 検索 "BRCA1 変異乳がん"
+
+出力:
+  - キーワードに基づいたおすすめツール
+  - 検索ポータルへのダイレクト URL
+  - 履歴が保存されます
+
+キーワード検出:
+  - 遺伝子、タンパク質、疾患、臨床 -> PubMed
+  - 研究、証拠、研究 -> コンセンサス
+  - 一般 -> 混乱
+
+レビューコマンド
+-------------
+構造化文献レビュー計画を作成します。
+
+  python Research_agent.py レビュー --トピック「うつ病 vs 疲労」 --5 年
+
+5 段階計画:
+  1. 概要 (5 分) - 文脈の複雑さ
+  2. 体系的な検索 - PubMed + コンセンサス (15 分)
+  3. スクリーニング (10 分) - クラスタリングのための NotebookLM
+  4. 全文分析 - クロード/ジェミニ (20 分)
+  5. 合成 (10 分) - 概要 + ギャップ
+
+出力ディレクトリ:
+  user/services_output/research/
+
+ステータス コマンド
+-------------
+エージェントのステータスと履歴を表示します。
+
+  python Research_agent.py ステータス
+
+出力:
+  - バージョン
+  - 総検索数
+  - 最終検索
+  - 利用可能なツール
+
+PYTHON Integration
+------------------
+tools.research_agent import ResearchAgent
+
+agent = ResearchAgent()
+
+# 検索開始
+result = Agent.search("アルツハイマー病バイオマーカー")
+結果["推奨事項"]のrecの場合:
+    print(f"{rec['tool']}: {rec['url']}")
+
+# レビュー計画を作成する
+plan = Agent.create_review_plan("うつ病", years=3)
+
+# ステータスを取得する
+status = Agent.get_status()
+
+ワークフローの例
+-----------------
+典型的な調査ワークフロー:
+
+1。トピックを定義する
+   python Research_agent.py 検索「うつ病疲労の区別」
+
+2.レビュー計画の作成
+   python Research_agent.py レビュー --トピック「うつ病と疲労」 --5 年
+
+3。ツールを使用する (手動)
+   - PubMed: 体系的な検索
+   - コンセンサス: 証拠の評価
+   - NotebookLM: PDF をクラスター化します
+
+4。結果を保存する
+   出力場所: user/services_output/research/
+
+キャッシュと履歴
+------------------
+検索クエリが保存されます:
+  tools/cache/search_history.json
+
+最後の 100 件の検索が保持されます。
+
+BACH との統合
+--------------------
+Research Agent は BACH エコシステムの一部です:
+
+  bach tool suggest research     # ツール情報
+  bach --help tools/research     # このヘルプ
+
+将来の計画:
+  bach research "query"          # 直接 CLI アクセス
+  bach research plan "topic"     # 計画のレビュー
+
+関連項目
+----------
+  wiki/ai_portable.txt AI ポータブル RAG パイプライン
+  docs/help/tools/partner.txt パートナー ツール (Perplexity 統合)
+  docs/help/delegate.txt 研究パートナーへの委任
+
+  PubMed: https://pubmed.ncbi.nlm.nih.gov/
+  パープレクシティ: https://www.perplexity.ai/
+  コンセンサス: https://consensus.app/
+
+バージョン: v1.0.0 (2026-01-23)
+行数: ~205 (research_agent.py)

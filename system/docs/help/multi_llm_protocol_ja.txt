@@ -1,0 +1,105 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+------------
+multi_llm_protocol.py - 並列 LLM エージェントの調整
+
+説明
+------------
+複数の AI エージェント (Claude、Gemini、
+副操縦士、オラマ、パープレクシティ、ミストラル）。プレゼンスの監視、管理
+排他的なファイル アクセスとエージェントのアクティビティの同期
+プレゼンス ファイル、ロック、ハンドシェイク信号。さらに: DB ベース
+Partner_presence テーブルのライブ ステータスのスタンプ カード システム。
+
+操作
+-----------
+bach llm presence [dir] [task]      ディレクトリにプレゼンスを作成
+bach llm check [dir]                ディレクトリ内の他のエージェントをチェック
+bach llm lock <datei|ordner>        ファイルまたはディレクトリのロックを取得
+bach llm unlock [datei]             自分のロックを解放
+bach llm handshake [dir]            他のエージェントとのハンドシェイクを開始
+bach llm status [dir]               マルチ LLM ステータス + DB ライブ ステータスを表示
+
+コア プロトコル V3
+-----------------
+1。 PRESENCEシステム（ファイル）
+   - .<agent>_presence: ハートビート、ステータス、作業ステータス
+   - 120 秒間の非アクティブ状態の後のタイムアウト
+   - ステータス: アクティブ、終了
+
+2.ロックシステム (ファイル + フォルダー)
+   - ファイル: <ファイル>.lock.<エージェント>
+   - フォルダー: <フォルダー>/.dirlock.<エージェント>
+   - ロックのタイムアウト: 300 秒 (古いロックを解放します)
+   - バックオフ: 試行間の間隔は 5 秒
+
+3.バックアップシステム
+   - 変更前の<ファイル>.bak
+   -safe_write/safe_append で自動的に
+
+4。ハンドシェイクプロトコル
+   - .handshake_<agent> ファイル
+   - エージェントの自動検出
+   - 最大待機時間確認には 30 秒かかります
+
+5. DBスタンプカード(v1.1.71)
+   - パートナープレゼンステーブル
+   - 起動時/シャットダウン時のクロックイン/クロックアウト
+   - ライブステータスの current_task + last_heartbeat
+   - ハートビート タイムアウト: 5 分 (構成可能)
+
+例
+---------
+# エージェントをアクティブにする
+bach llm presence /c/Users/User/project processing
+
+# 他のエージェントをチェック
+bach llm check /c/Users/User/project
+
+# ファイルのロックを取得
+bach llm lock /c/Users/User/project/results.txt
+
+# ロックを解放
+bach llm unlock /c/Users/User/project/results.txt
+
+# ハンドシェイクを開始
+bach llm handshake /c/Users/User/project
+
+# 完了ステータス (DB ライブ ステータスを含む)
+bach llm status /c/Users/User/project
+
+# セキュア書き込み操作 (API)
+protocol.safe_write(Path("data.txt"), "Content", timeout=60)
+
+# 安全な追加 (API)
+protocol.safe_append(Path("log.txt"), "改行\n", timeout=60)
+
+# DB: 起動時にクロックイン
+db = PartnerPresenceDB(Path("data/bach.db")、agent_name='claude')
+db. Clock_in(task="Research", working_dir="/project", session_id="uuid-123")
+
+# DB: ライブ ステータスを取得する
+Partners = db.get_online_partners(timeout_ minutes=5)
+
+FILES
+-------
+ファイル アクセス (system/ に相対):
+  Hub/multi_llm_protocol.py クラス MultiLLMProtocol、MultiLLMHandler
+  data/bach.db Partner_presence テーブル (スタンプ カード)
+
+生成されたファイル (作業ディレクトリ内):
+  .<agent>_presence プレゼンス マーカー
+  <ファイル>.lock.<エージェント> ファイルロック
+  <folder>/.dirlock.<agent> フォルダのロック
+  変更前の<ファイル>.bakバックアップ
+  .handshake_<agent> ハンドシェイク シグナル/レスポンス
+
+関連項目
+----------
+bach --help                 一般的なヘルプ ページ
+hub/base.py BaseHandler クラス
+data/schema.sql Partner_presence テーブル定義
+レッスン #62、#63 開発の歴史 (クロード + ジェミニの実験)

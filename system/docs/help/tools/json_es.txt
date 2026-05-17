@@ -1,0 +1,24 @@
+Herramienta BACH: JSON
+---------------
+
+Procesamiento JSON, reparación y limpieza de registro.
+
+HERRAMIENTAS DISPONIBLES
+-----------------
+
+  json_config_cli Administrar archivos de configuración JSON
+  json_fixer Reparar archivos JSON rotos
+  json_registry_cleaner Herramienta limpiar registro
+  json_repair Corregir automáticamente la sintaxis JSON
+
+USE
+----------
+
+  bach --tools json fix <datei.json>      Reparar JSON roto
+  bach --tools json config <key> [value]  Leer/establecer configuración
+  bach --tools json clean-registry        Limpiar registro
+
+MODULE
+-----
+
+  herramientas/json/ (4 herramientas)

@@ -1,0 +1,35 @@
+巴赫工具：c_import_diagnose
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/c_import_diagnose.py
+
+描述
+----------------------------------------
+Python项目的导入诊断工具
+-----------------------------------------
+导入问题和访问违规的系统分析。
+
+执行以下测试：
+1. 单独导入各个模块
+2. 进口顺序不同
+3. 循环进口检测
+4.__init__.py分析
+5. 有延迟的时序测试
+6.定位崩溃点
+
+使用方法：
+    python c_import_diagnose.py <project_src_path> [--json] [--modules module1:Class1,module2:Class2]
+
+示例：
+    python c_import_diagnose.py C:\MyProject\src --json
+    python c_import_diagnose.py 。 --modules core.app:App,gui.main:MainWindow
+
+USE
+----------------------------------------
+python bach.py 工具运行 c_import_diagnose [args]
+或直接： python tools/c_import_diagnose.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：bach 工具显示 c_import_diagnose

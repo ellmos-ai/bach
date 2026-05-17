@@ -1,0 +1,33 @@
+BACH Tool: json_fixer
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/json_fixer.py
+
+DESCRIPTION
+----------------------------------------
+json_fixer.py - Repair JSON files
+---------------------------------------
+
+Repairs broken JSON files:
+- Remove BOM
+- Trailing commas
+- Individual odds
+- Unescaped Strings
+
+Usage:
+    python json_fixer.py <file> # Single file
+    python json_fixer.py <folder> # All JSON in the folder
+    python json_fixer.py <path> --dry-run # Check only
+    python json_fixer.py <path> --backup # With backup
+
+Author: BACH v1.1
+
+USE
+----------------------------------------
+python bach.py tools run json_fixer [args]
+or directly: python tools/json_fixer.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show json_fixer

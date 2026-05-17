@@ -1,0 +1,30 @@
+BACH ツール: tool_discovery
+--------------------------------------------------
+生成: 2026-01-23 10:36
+Source: tools/tool_discovery.py
+
+DESCRIPTION
+----------------------------------------
+tool_discovery.py - Problem-based tool recommendation
+-----------------------------------------------------
+
+Analyzes problem descriptions and recommends suitable BACH tools.
+
+Usage:
+    python tool_discovery.py は「ウムラウトのエンコーディングの問題」を提案します
+    python tool_discovery.py リストパターン
+    python tool_discovery.py --json
+
+著者: BACH v1.1
+バージョン: 1.0.0
+作成日: 2026-01-21
+
+使用
+----------------------------------------
+python bach.py tools run tools_discovery [args]
+または直接: python tools/tool_discovery.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- ご質問がある場合: bach tools show tools_discovery

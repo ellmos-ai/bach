@@ -1,0 +1,33 @@
+BACH ツール: c_license_generator
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/c_license_generator.py
+
+説明
+----------------------------------------
+c_license_generator.py - サードパーティ ライセンス ジェネレーター
+
+目的: すべてがインストールされた THIRD_PARTY_LICENSES.txt を生成します
+       pip パッケージのライセンス。 pip-licenses を使用します (必要に応じてインストールされます)。
+
+作成者: Claude (generate_third_party_licenses.py から適応)
+依存関係: サブプロセス、os、json (stdlib) + pip-licenses (自動的にインストールされます)
+
+使用法:
+    python c_license_generator.py [--output <ファイル>] [--format plain|json|csv] [--json]
+
+例:
+    python c_license_generator.py # デフォルト: THIRD_PARTY_LICENSES.txt
+    python c_license_generator.py --output License.txt # 独自のファイル名
+    python c_license_generator.py --format json # JSON形式
+    python c_license_generator.py --json # 機械可読出力
+
+USE
+----------------------------------------
+python bach.py ツールは c_license_generator [args] を実行します
+または直接: python tools/c_license_generator.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show c_license_generator

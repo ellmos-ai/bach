@@ -1,0 +1,31 @@
+BACH ツール: コンバータ
+---------------------
+
+異なる形式間のファイル変換。
+
+利用可能なコンバータ
+---------------------
+
+  md_to_pdf PDF へのマークダウン (デュアル エンジン: Edge ヘッドレス + ReportLab)
+  universal_converter ユニバーサル ファイル形式コンバーター
+  universal_compiler プロジェクトをコンパイルします (LaTeX、Markdown など)
+  youtube_extractor YouTube トランスクリプトとメタデータを抽出
+
+USE
+----------
+
+  bach --tools converters md_to_pdf <input.md> [-o output.pdf]
+  bach --tools converters convert <input> <format>
+  bach --tools converters youtube <url>
+
+MD_TO_PDF
+---------
+
+2 つのエンジンを介して Markdown を PDF に変換します。
+  1. Edge ヘッドレス (プライマリ) - 高品質
+  2. ReportLab (フォールバック) - ブラウザなし
+
+MODULE
+-----
+
+  ツール/コンバーター/ (コンバーター 4 個)

@@ -1,0 +1,58 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Última validación: 2026-05-17
+# Próxima revisión: 2027-05-17
+
+Gestión de suscripciones (gestión de suscripciones)
+---------------------------------------
+
+DESCRIPCIÓN
+Detecta pagos recurrentes (suscripciones) de partidas fiscales,
+gestiona confirmaciones y crea resúmenes de costos.
+
+COMANDOS
+-------
+bach abo scan              Analizar elementos de impuestos, reconocer suscripciones
+bach abo list              Mostrar todas las suscripciones reconocidas
+bach abo confirm ID        Confirmar el reconocimiento de suscripciones
+bach abo dismiss ID        Eliminar detección de errores
+bach abo costs             Declaración de costos mensuales
+bach abo export            Exportar para planificación presupuestaria
+bach abo patterns          Mostrar patrones de suscripción conocidos
+bach abo init              Inicializar tablas de bases de datos
+bach abo sync-mail         Sincronizar suscripciones de correos electrónicos
+
+DETECCIÓN
+---------
+Analizó tax_posten e identifica suscripciones basadas en:
+  - Pagos repetidos al mismo proveedor
+  - Cantidades constantes (pequeña desviación)
+  - Patrones de proveedores de suscripción conocidos (compatibles con DB)
+
+Umbral de puntuación: 50 puntos (configurable)
+
+OPCIONES
+--------
+  --año Año fiscal del filtro AAAA (predeterminado: año actual)
+  --ejecución en seco Solo vista previa, no guarde nada
+
+EJEMPLOS
+---------
+  bach abo scan
+  bach abo scan --jahr 2025 --dry-run
+  bach abo list
+  bach abo costs
+  bach abo confirm 42
+  bach abo export
+
+HANDLER
+-------
+  hub/abo.py (AboHandler)
+  herramientas/abo/abo_scanner.py (AboScanner)
+  hub/_services/mail/mail_abo_sync_service.py (integración de correo)
+
+VER TAMBIÉN
+----------
+  bach --help steuer       Administración Tributaria
+  bach --help financial    Descripción general financiera

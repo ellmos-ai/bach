@@ -1,0 +1,102 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PROFILER
+--------
+
+BACH システムにおけるファイルおよびフォルダー分析用のハンドラー。
+
+
+説明
+------------
+
+PROFILER ハンドラーは、ファイルを分析および管理するための機能を提供します。
+- キーワードが一致するファイルを検索します
+- 詳細なファイルとフォルダーのプロファイル (サイズ、カテゴリ、メタデータ)
+- SHA256ハッシュ計算
+- 自動ファイル分類 (8 つの事前定義されたカテゴリ)
+- ファイルタイプ別のサイズ出力付きフォルダー統計
+
+
+OPERATIONS
+-----------
+
+search <keyword> [--path=DIR] [--type=ext]
+  ファイルシステムをキーワードで検索します。最大。 50ヒット。
+  オプション:
+    --path=DIR 検索パス (デフォルト: .)
+    --type=ext ファイルタイプのみをフィルタリングします (例: py、txt、json)
+  例: プロファイラー検索構成 --path=。 --type=json
+
+プロファイル <パス>
+  ファイルまたはフォルダーを分析します。サイズ、カテゴリ、メタデータを出力します。
+  例: プロファイラー プロファイル データ/myfile.txt
+
+ハッシュ <パス>
+  ファイルの SHA256 ハッシュを計算します。
+  例: プロファイラー ハッシュ archive.zip
+
+categorize <パス>
+  拡張子に基づいて自動ファイルカテゴリを決定します。
+  例: プロファイラー カテゴリ document.docx
+
+stats <パス>
+  詳細なフォルダー統計を表示します: ファイル数、合計サイズ、
+  メモリ使用量カテゴリ別の分布。
+  例: プロファイラー統計 ./projects
+
+status
+  ProFiler のステータスと利用可能なカテゴリを表示します。
+
+
+例
+---------
+
+プロファイラーの検索要件 --path=。 --type=txt
+  -> 名前に「requirements」を含むファイルを最大 50 個検索します (.txt のみ)
+
+profiler profile /home/cfm-cosmology/results
+  -> フォルダー プロファイル: 1243 ファイル、15.7 GB、8 サブフォルダー
+
+プロファイラー ハッシュ データ/model.pkl
+  -> SHA256: a7f8c3e9d... (ファイル サイズ: 2.3 MB)
+
+プロファイラー カテゴライズ config.json
+  -> config.json: データ (.json)
+
+プロファイラー統計 ./documents
+  -> カテゴリ別のフォルダー統計 (ドキュメント: 234 ファイル、456 MB など)
+
+プロファイラーのステータス
+  -> ProFiler のステータスとカテゴリの概要
+
+
+カテゴリ
+----------
+
+8 つの定義済みファイル カテゴリ:
+
+  ドキュメント - .pdf、.doc、.docx、.txt、.odt、.xls、.xlsx、.csv、.pptx
+  画像 - .jpg、.jpeg、.png、.gif、.bmp、.svg、.webp、.tiff、.ico
+  オーディオ - .mp3、.wav、.flac、.ogg、.aac、.wma、.m4a
+  ビデオ - .mp4、.avi、.mkv、.mov、.wmv、.flv、.webm
+  アーカイブ - .zip、.rar、.7z、.tar、.gz、.bz2
+  コード - .py、.js、.ts、.html、.css、.java、.c、.cpp、.rs、.go、.sql
+  データ - .json、.xml、.yaml、.yml、.toml、.ini、.cfg
+  実行可能ファイル - .exe、.msi、.bat、.cmd、.ps1、.sh
+  その他 - 他のすべての末尾
+
+
+FILES
+-------
+
+hub/profiler.py ハンドラー実装 (hub/)
+extensions/ProFiler/ 拡張ディレクトリ (オプション)
+
+
+関連項目
+----------
+
+hub/base.py - BaseHandler クラス
+docs/help/handler.txt - ハンドラーのドキュメント全般

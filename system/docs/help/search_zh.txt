@@ -1,0 +1,87 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+------------
+BACH 统一搜索处理程序 (SQ064 + SQ047)
+
+
+描述
+------------
+跨所有 BACH 源的全文搜索 (FTS5)：Wiki 文章、内存（工作/
+事实/课程）、文档、KnowledgeDigest 技能/Wiki 以及任何
+扫描的目录。支持按源、标签和进行高级过滤
+限制。通过哈希比较进行重复检测的自动索引。
+
+
+操作
+-----------
+
+搜索（默认）
+  <query> 跨所有来源的全文搜索
+  <query> --source SOURCE 仅在源中搜索 (wiki|document|memory_*)
+  <query> --tag TAG 按标签过滤（可组合多次）
+  <查询> --limit N 最大。点击数（默认：20）
+
+索引
+  索引 所有 BACH 来源的索引
+  索引知识文摘|kd 知识文摘 + 维基百科索引
+  索引 wiki|内存|文档 索引单一来源
+  index <path> 扫描目录（ProFiler 样式）
+  index <path> --no-tags 没有自动标签派生
+
+管理
+  状态索引统计和来源概述
+  重建空索引并完全重建
+  标签 列出所有可用标签
+  标签 TAG1 TAG2 查找带有这些标签的条目
+  Tags --按频率限制 N 个 Top-N 标签
+  欺骗者找到重复项（相同的哈希值、路径）
+  help 显示此帮助
+
+
+示例
+---------
+
+基本搜索：
+  bach search python
+  bach search "machine learning"
+
+使用源：
+  bach search encoding --source memory_lesson
+  bach search entwickler --source knowledgedigest_skill
+
+使用标签和限制：
+  bach search database --tag production --limit 50
+  bach search bridge --tag connector --tag network
+
+索引：
+  bach search index                    # 所有源
+  bach search index knowledgedigest    # 仅 KD
+  bach search index /c/Users/User/Docs # Verzeichnis
+  bach search index .                  # 当前目录
+
+管理：
+  bach search status                   # 统计数据
+  bach search rebuild                  # 完全重新索引
+  bach search tags                     # 所有标签
+  bach search tags health system       # 搜索标签
+  bach search dupes                    # 重复项
+
+
+文件
+-------
+
+hub/search.py SearchHandler 实现
+工具/unified_search.py 统一搜索引擎 (FTS5)
+data/bach.db 索引数据库（SQLite、FTS5）
+docs/help/search.txt 此文件
+
+
+另请参见
+----------
+
+docs/help/index.txt BACH 命令行界面
+docs/OPERATIONS.md 所有处理程序和操作
+tools/unified_search.py 引擎文档（索引格式、FTS5语法）

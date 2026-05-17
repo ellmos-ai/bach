@@ -1,0 +1,80 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+反射处理程序
+------------------
+
+描述
+------------
+
+反射处理程序分析 BACH 系统的自反射和性能。
+他评估记忆表中的信息（工作、课程、课程、事实）
+并显示详细的绩效报告、趋势分析和确定的
+漏洞。
+
+
+操作
+-----------
+
+状态
+  查看绩效报告。提供系统指标的最新概述
+  和一般绩效指标。
+
+审核[天]
+  分析过去 N 天的表现（默认值：7 天）。
+  示例：评论 14 显示过去两周。
+
+差距
+  找出薄弱环节和差距。分析内存内容并显示
+  覆盖率较低或存在性能问题的区域。
+
+log
+  查看数据库中的反射指标。显示最近 20 条记录
+  来自内存工作表的“REFLECTION:*”类型。
+
+
+示例
+---------
+
+  bach reflection status
+    -> 显示包含所有指标的当前绩效报告
+
+  bach reflection review 30
+    -> 分析过去 30 天的表现并提供详细趋势
+
+  bach reflection gaps
+    -> 列出所有已识别的漏洞
+
+  bach reflection log
+    -> 显示最后 20 个反射指标条目
+
+
+文件
+-------
+
+hub/reflection.py
+  具有操作定义和数据库查询的处理程序实现。
+
+agents/reflection/reflection_analyzer.py
+  用于分析逻辑和报告生成的 SelfReflection 类。
+
+data/bach.db
+  带有内存表的中央 SQLite 数据库：
+  - memory_working：当前工作内存（输入“note”并带有 REFLECTION:*）
+  - memory_sessions：会话历史记录
+  - memory_lessons：吸取的教训
+  - memory_facts：存储的事实
+
+
+另请参见
+----------
+
+docs/help/memory.txt
+  内存系统和表结构的文档。
+
+docs/help/tasks.txt
+  任务管理以补充性能分析。
+
+agents/reflection/
+  附加分析模块和指标定义。

@@ -1,0 +1,96 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Next review: 2026-08-12
+
+BACH UPGRADE - SYSTEM UPDATE
+-------------------------------------
+
+Updates versioned BACH components selectively by file or category.
+
+
+USE
+----------
+
+  # View upgrade status
+  bach upgrade status
+
+  # Show available versions of a file
+  bach upgrade list hub/backup.py
+
+  # Check available updates
+  bach upgrade check
+
+  # Selective category upgrades
+  bach upgrade core
+  bach upgrade templates
+  bach upgrade agents
+  bach upgrade skills
+  bach upgrade hub
+  bach upgrade tools
+  bach upgrade connectors
+  bach upgrade partners
+  bach upgrade docs
+  bach upgrade gui
+
+  # Dry-Run (view only, do not execute)
+  bach upgrade agents --dry-run
+
+
+CATEGORIES
+----------
+
+  core System core (dist_type=2)
+  templates templates and templates (dist_type=1)
+  agents Boss agents and experts
+  skills skills and protocols
+  hub Hub handler
+  tools tools
+  connectors connector system
+  partners partner files
+  docs documentation
+  gui GUI files
+
+
+IMPORTANT
+-------
+
+- Upgrade only overwrites versioned files from distribution/manifest.
+- USER_DATA remains untouched.
+- Backup is recommended before major upgrades.
+- Versions are tracked in `dist_file_versions`.
+
+
+EXAMPLES
+---------
+
+  # Update core files only
+  bach upgrade core
+
+  # Only update templates
+  bach upgrade templates
+
+  # Preview agent files only
+  bach upgrade agents --dry-run
+
+  # Restore/upgrade documentation
+  bach upgrade docs
+
+  # View available versions of a file
+  bach upgrade list hub/backup.py
+
+
+VERSIONING
+-------------
+
+- Hash + Auto-Increment System (ENT-09)
+- Only versioned distribution files can be moved via `bach upgrade`
+- USER_DATA is from the user and is not versioned
+
+
+SEE ALSO
+----------
+
+  bach --help restore       Template recovery
+  bach --help downgrade     Downgrade to older version
+  bach --help seal          Integrity check

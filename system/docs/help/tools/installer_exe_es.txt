@@ -1,0 +1,130 @@
+# Portability: WINDOWS
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Última validación: 2026-05-17
+# Próxima revisión: 2027-05-17
+
+INSTALLER.EXE / START.EXE EVALUACIÓN
+-------------------------------------
+
+ESTADO: Evaluación completada (2026-05-17)
+RECOMENDACIÓN: Sí, útil, pero como función de fase 2 después de una versión estable.
+
+
+PRO (ventajas)
+--------------
+
+1. FACILIDAD DE USUARIO
+   - Un doble clic en lugar de conocimiento del terminal
+   - No se requiere configuración manual de Python/npm
+   - Integración del menú Inicio (estándar de Windows)
+   - Desinstalación a través de Windows "Quitar programas"
+
+2. PORTABILIDAD
+   - Python integrado: sin dependencia del sistema
+   - Ruedas incluidas: no se requiere Internet durante la instalación
+   - Entorno determinista: Mismas versiones en todos los sistemas
+
+3. IMPRESIÓN PROFESIONAL
+   - Lanzamiento de GitHub con descarga .exe (estándar para herramientas de Windows)
+   - Archivo autoextraíble con barra de progreso
+   - Es posible visualizar iconos, marcas y licencias
+
+4. EVITACIÓN DE ERRORES
+   - No hay problema de RUTA, no hay "python no encontrado"
+   - Aislamiento de Virtualenv automáticamente
+   - Comprobación previa al vuelo integrada (memoria, derechos, puertos)
+
+
+CONTRA (desventajas)
+------------------
+
+1. ESFUERZO
+   - ~40-60 horas de desarrollo + pruebas
+   - Más de 20 modos de inicio en bach.bat deben funcionar con las rutas del instalador
+   - Cada actualización necesita una nueva compilación .exe (o actualizador automático)
+
+2. TAMAÑO
+   - Python integrado + Deps: instalador de ~200-400 MB
+   - Sin Python incorporado: ~50 MB, pero luego se requiere Python
+
+3. COMPLEJIDAD
+   - PyInstaller/Nuitka/cx_Freeze tienen peculiaridades de Windows
+   - Antivirus falsos positivos para archivos .exe desconocidos
+   - Se requiere certificado de firma de código para la confianza (~100-400 EUR/año)
+
+4. MANTENIMIENTO
+   - Cada actualización de dependencia → nueva compilación
+   - Bloqueos de Windows Defender SmartScreen sin firma
+   - El escenario OneDrive (multisistema) no coincide con .exe-Install
+
+5. PROBLEMAS ESPECÍFICOS DE BACH
+   - Sincronización de OneDrive: .exe instalado localmente, BACH vive en OneDrive
+   - Los servidores MCP necesitan npm (no se pueden incluir en .exe)
+   - Los enlaces de código de Claude requieren claude-cli (externo)
+   - Pilar 2/3 (tareas LLM, configuración de usuario) no se puede automatizar
+
+
+RECOMENDACIÓN DE ARQUITECTURA
+----------------------
+
+FASE 1 (ahora): "Lanzador de lotes inteligente" — start.exe como contenedor
+  - PyInstaller .exe de archivo único que solo llama a bach.bat
+  - Comprueba la disponibilidad de Python, muestra un mensaje de error si no está allí
+  - Opcionalmente se fija al menú de inicio/barra de tareas
+  - Esfuerzo: ~4 horas
+  - Ventaja: Se puede implementar inmediatamente, mínimo esfuerzo de mantenimiento
+
+FASE 2 (después del lanzamiento): Instalador completo
+  - Inno Setup o NSIS (marcos de instalación de Windows probados)
+  - Instalación integrada de Python + pip desde las ruedas incluidas
+  - Inicialización completa de la base de datos
+  - Menú Inicio + acceso directo en el escritorio
+  - Esfuerzo: ~40 horas (incluidas las pruebas de todos los modos)
+
+FASE 3 (opcional): Actualización automática
+  - GitHub lanza API para verificación de versiones
+  - Actualizaciones delta (solo archivos modificados)
+  - Esfuerzo: ~20 horas
+
+
+OPCIONES TÉCNICAS
+-------------------
+
+A) PyInstaller (recomendado para start.exe)
+   - Modo de un archivo (--onefile)
+   - Comunidad amplia y bien documentada.
+   - Desventaja: Inicio lento (descomprime la carpeta temporal)
+
+B) Inno Setup (recomendado para installer.exe)
+   - Estándar de facto para instaladores de Windows
+   - Scripts Pascal para lógica compleja
+   - Compresión, desinstalación, registro.
+   - Gratis, de código abierto
+
+C) Nuitka (Alternativa)
+   - Compila Python en C → real .exe
+   - Inicio más rápido que PyInstaller
+   - Desventaja: compilación más compleja, mayor tiempo de compilación
+
+D) cx_Freeze (alternativa)
+   - Similar a PyInstaller, pero carpetas en lugar de archivos individuales
+   - Inicio más rápido que PyInstaller
+   - Desventaja: No hay modo de archivo único
+
+
+PRÓXIMOS PASOS
+----------------
+
+1. [ ] Decisión: ¿Fase 1 inmediatamente o esperar después del lanzamiento?
+2. [] Si es la Fase 1: Crear la especificación PyInstaller para start.exe
+3. [] Si es la fase 2: preparar el script de configuración de Inno con Python integrado
+4. [ ] Obtenga un certificado de firma de código (opcional, contra SmartScreen)
+
+
+VER TAMBIÉN
+----------
+  menú de inicio start/bach.bat (lanzador actual)
+  docs/help/install.txt instrucciones de instalación
+  setup.py Instalador de Python (Pilar 1)
+  Documento conceptual ENT-45_INSTALLER_3D_MODELL.md (en .dev/)

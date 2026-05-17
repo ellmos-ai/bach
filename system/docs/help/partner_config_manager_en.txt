@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+
+PARTNER-CONFIG-MANAGER
+----------------------
+
+Manages the automatic entry of BACH into configuration files of
+LLM partners (Claude Code, Gemini, Ollama). Detects installed partners and
+registers BACH with template-based configuration blocks.
+
+Part of SQ015: LLM agnostics & registration process.
+
+
+DESCRIPTION
+------------
+
+The handler automates the integration of BACH into various LLM environments.
+It is based on templates and supports the partner types:
+  - claude-code (detection directory: ~/.claude)
+  - gemini (detection directory: ~/.gemini)
+  - ollama (detection directory: ~/.ollama)
+
+New configuration files are created from templates, BACH_ROOT_PATH is
+inserted automatically. Repeated registration is idempotent.
+
+
+OPERATIONS
+-----------
+
+detect_active_partners()
+  Detects installed partners by checking their detection directories.
+  Returns: List of partner names (e.g. ["claude-code", "ollama"])
+
+register_partner(partner: str)
+  Enters BACH into the configuration file of a partner.
+  - Loads template from templates/{PARTNER_MD_TEMPLATE.md}
+  - Replaces [BACH_ROOT_PATH] with current BACH root path
+  - Creates new file or appends if BACH is not yet entered
+  - Return: (success: bool, message: str)
+
+unregister_partner(partner: str)
+  Removes BACH block from a partner's configuration file.
+  - Searches for "#BACH Integration" marker
+  - Removes block until next top level header
+  - Idempotent: No missing file/block errors
+  - Returns: (success: bool, message: str)
+
+register_all_detected()
+  Registers BACH in all recognized partners.
+  Returns: List of (partner: str, success: bool, message: str)
+
+
+EXAMPLES
+---------
+
+Programmatic (bach_api):
+
+  from bach_api import PartnerConfigManager
+  from pathlib import Path
+
+  manager = PartnerConfigManager(Path("/path/to/BACH"))
+
+  # Recognize all partners
+  partners = manager.detect_active_partners()
+  print(partners) # ["claude-code"]
+
+  # Register BACH
+  success, msg = manager.register_partner("claude-code")
+  print(msg) # ✓ CLAUDE.md created: ~/.CLAUDE.md
+
+  # Register everyone
+  results = manager.register_all_detected()
+
+
+FILES
+-------
+
+hub/partner_config_manager.py
+  Handler implementation with PartnerConfigManager class and CLI functions.
+
+templates/CLAUDE_MD_TEMPLATE.md
+  Template for Claude code integration. Will be replaced with BACH_ROOT_PATH.
+
+templates/GEMINI_MD_TEMPLATE.md
+  Template for Gemini integration.
+
+templates/OLLAMA_MD_TEMPLATE.md
+  Template for Ollama integration.
+
+~/.CLAUDE.md, ~/.GEMINI.md, ~/.OLLAMA.md
+  Target files for users. Will be created in the home directory.
+
+
+SEE ALSO
+----------
+
+SQ015 (System Requirement): LLM Agnostics & Registration Process
+SQ038: Improved marker system for block removal (planned)
+bach.py: CLI entry point with "partner" subcommands
+bach_api.py: Python API for programmatic use

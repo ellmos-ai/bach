@@ -1,0 +1,152 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH MAINTENANCE (System Jobs)
+--------------------------
+
+The maintenance handler automatically executes scheduled system jobs - e.g. backups,
+Token checks, data cleansing or your own scripts.
+
+HANDLER: system/hub/scheduler.py (formerly: daemon.py)
+SERVICE: system/gui/daemon_service.py + DB (scheduler_jobs, scheduler_runs)
+GUI: /daemon (http://localhost:8000/daemon)
+
+Note: "bach daemon ..." and "bach scheduler ..." are aliases.
+
+
+COMMANDS
+-------
+
+  bach daemon start          Start maintenance daemon in foreground (Ctrl+C terminated)
+  bach daemon start --bg     Start maintenance daemon in background
+  bach daemon stop           Stop running daemon
+  bach daemon status         Show status and last runs
+  bach daemon jobs           All defined List jobs
+  bach daemon run <ID>       Run job manually
+  bach daemon logs [N]       Show last N log lines (default: 20)
+
+
+SESSION COMMANDS (session daemon for automatic Claude sessions)
+------------------------------------------------------------------
+
+  bach daemon session start [--profile NAME]   Start session daemon
+  bach daemon session stop                     Stop session daemon
+  bach daemon session status                   Show session status
+  bach daemon session trigger [--profile NAME] Session manuell ausloesen
+  bach daemon session profiles                 List available profiles
+
+
+JOB TYPES
+---------
+
+  interval Periodic (e.g. "30m", "1h", "24h")
+  cron Cron expression (e.g. "0 3 * * *" = daily 03:00)
+  manual Can only be executed manually
+  chain Chain execution (job.command = chain_id)
+  event Event-based (TODO)
+
+
+EXAMPLE JOBS
+-------------
+
+  Name Type Schedule Description
+  ----------------------------------------------------------------
+  backup-daily interval 24h Create daily backup
+  token-check interval 30m Check token consumption
+  cleanup cron 0 4 * * * Clean up old logs
+
+
+CREATE JOBS
+--------------
+
+Via GUI dashboard (http://localhost:8000/daemon):
+  - Maintenance > "New Job"
+
+Via API:
+  POST /api/daemon/jobs
+  {
+    "name": "my-job",
+    "job_type": "interval",
+    "schedule": "1h",
+    "command": "python tools/my_script.py"
+  }
+
+
+LOG FILES
+-----------
+
+  data/logs/daemon.log Maintenance activities
+  data/logs/session_daemon.log Session activities
+  data/daemon.pid PID file (if running)
+  hub/_services/daemon/daemon.pid Session daemon PID
+
+
+TECHNICAL DETAILS
+------------------
+
+- Jobs are loaded from bach.db (table: scheduler_jobs)
+- Runs logged in scheduler_runs
+- Timeout per job configurable (default: 300s)
+- Optional Retry in case of error (max_retries configurable)
+- Jobs are reloaded every 5 minutes
+- OWN DAEMON PROCESS (Python interval loop)
+- OneDrive is paused during daemon operation (Windows)
+- Prevents sync conflicts during file operations
+- Integration with recurring tasks (check every 5 minutes)
+
+Optional: pip install croniter (for extended cron expressions)
+
+
+DEFINITION: THREE HANDLER SYSTEMS
+--------------------------------
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ MAINTENANCE │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Runs shell/Python commands OFF │
+  │ Time-controlled (cron/interval) │
+  │ Without Claude involvement │
+  │ Handler: system/hub/daemon.py │
+  │ Service: system/gui/daemon_service.py + DB │
+  │ GUI: /daemon (existing) │
+  │ Daemon: YES (own process) │
+  └────────────────────────────────── ───────────────────────────────┘
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ RECURRING │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Creates TASKS as reminders │
+  │ Interval-based (days) │
+  │ For Claude/User to edit │
+  │ Handler: system/hub/recurring.py │
+  │ Service: system/hub/_services/recurring/ │
+  │ GUI: NONE (CLI only + integrated in /daemon) │
+  │ Daemon: NO (check when called) │
+  └──────────────────────────────── ─────────────────────────────────┘
+
+┌──────────────────────────────── ─────────────────────────────────┐
+  │ PROMPT GENERATOR │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Sends prompts to Claude sessions │
+  │ Manual or automated │
+  │ Template system with editor │
+  │ Handler: (under development) │
+  │ Service: system/hub/_services/prompt_generator/ │
+  │ GUI: /prompt-generator (planned) │
+  │ Daemon: YES (session_daemon.py) │
+  └────────────────────────────────── ───────────────────────────────┘
+
+  Example maintenance: "bach backup create" every day at 3:00 a.m
+  Example Recurring: "Self-Check due" -> Task for Claude
+  Example prompt generator: Send prompt to ATI Agent every 30 minutes
+
+
+SEE ALSO
+----------
+
+  bach gui start              Web dashboard with job management
+  bach --help backup          Backup system
+  bach --help dirscan            Directory Scanner
+  bach --help recurring       Recurring tasks (no GUI)
+  bach --help prompt-generator  Prompt management (GUI scheduled)

@@ -1,0 +1,83 @@
+# Portability: USER
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [tabla de rutinas_domésticas, hub/routine.py]
+
+RUTINA - Gestión de rutinas del hogar
+--------------------------------------
+
+Estado: 2026-02-08
+
+El sistema de rutinas (capa 3) gestiona las tareas recurrentes en el hogar
+y área privada con cálculo automático de intervalos.
+
+CONCEPTOS BÁSICOS
+------------
+- FRECUENCIA: De diaria a anual (reprogramación automática).
+- ESTADO: Las tareas vencidas están marcadas con `!!!`.
+- CENTRALIZACIÓN: Todas las rutinas están en `bach.db`.
+
+COMANDOS CLI (rutina bach)
+--------------------------
+  lista [--todos] [-c <categoría>]
+                Resumen de todas las rutinas activas.
+                --all también muestra los inactivos, -c filtra por categoría.
+                Ejemplo: lista de rutinas de bach -c Kueche
+
+  show <ID> Muestra detalles de una única rutina.
+                Ejemplo: rutina de bach show 3
+
+  vencimiento [días] Muestra las tareas vencidas para el período seleccionado.
+                Predeterminado: 7 días. Ejemplo: rutina de bach vence el 14
+
+  hecho <ID> [ID2...] [--nota "Texto"]
+                Marca las rutinas como completadas y establece una nueva fecha.
+                Posibilidad de múltiples identificaciones, opcionalmente con una nota.
+                Ejemplo: rutina de bach realizada 3 5 --nota "Limpieza básica"
+
+  agregue "Nombre" [--freq/-f <Freq>] [--cat/-c <Cat>] [--dur/-d <Min>] [--note <Texto>] [--schedule <Hora>]
+                Crea una nueva rutina con parámetros opcionales:
+                --freq/-f Frecuencia (diaria, semanal, mensual, anual, etc.)
+                --categoría cat/-c (cocina, baño, salón, etc.)
+                --dur/-d Duración en minutos
+                --nota nota
+                --schedule Detalles del horario
+                Ejemplo: rutina de bach agregar "aspirar" --freq semanal --sala de estar --dur 30
+
+  ayuda Muestra esta ayuda.
+
+FREQUENCIES (lista completa)
+-------------------------------
+Valores de frecuencia admitidos para --freq:
+  diario, diario, diario
+  semanal, semanal, semanal
+  Quincenal, quincenal, quincenal
+  mensual, mensual
+  trimestre, trimestralmente
+  semestralmente, semestralmente
+  anualmente, anualmente, anualmente
+
+SINTAXIS ABM
+----------
+Marcador:
+  !!!  = Vencido
+  + = Activo
+  - = Inactivo
+
+BASE DE DATOS (capa 1)
+---------------------
+- Tabla: `rutinas_domésticas` (en `bach.db`).
+- Campos: id, nombre, frecuencia, horario, categoría, duración_minutos,
+          último_hecho, próximo_vencimiento, está_activo, notas, creado_en.
+- Estadísticas: número variable (dependiendo del contenido de la base de datos).
+
+GUI & INTEGRACIÓN
+-----------------
+El **Panel del Hogar** en la GUI muestra visualmente el estado de las rutinas.
+Las rutinas también están integradas en el controlador de "calendario" global.
+
+VER TAMBIÉN
+----------
+  bach calendar         Vista combinada de citas y rutinas
+  bach --help gesundheit  Herramientas domésticas adicionales (inventario)
+  docs/help/maintain.txt Historial de reubicación de base de datos (Usuario->Bach)

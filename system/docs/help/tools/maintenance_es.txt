@@ -1,0 +1,34 @@
+Herramienta BACH: Mantenimiento
+----------------------
+
+Herramientas de mantenimiento y cuidado del sistema BACH.
+
+HERRAMIENTAS DISPONIBLES
+-----------------
+
+  archive_done_tasks Archivar tareas completadas
+  create_boot_checks Generar comprobaciones de arranque
+  doc_path_updater Actualizar rutas de documentación
+  generate_skills_report Generar informe de habilidades
+  header_migrate Migrar encabezados de archivos
+
+USE
+----------
+
+  bach --tools maintenance archive     Mover tareas completadas al archivo
+  bach --tools maintenance skills      Generar informe de habilidades
+  bach --tools maintenance headers     Realizar migración de encabezados
+
+INTERPLAY CON MAINTAIN HANDLER
+-----------------------------------
+
+El controlador de mantenimiento (mantenimiento de bach) utiliza estas herramientas internamente:
+  bach maintain health     Verificación del estado del sistema
+  bach maintain services   Verificar el estado del servicio
+  bach maintain registry   Actualización del registro de herramientas
+  bach maintain tasks      Limpieza de tareas
+
+MÓDULO
+-----
+
+  herramientas/mantenimiento/ (5 scripts)

@@ -1,0 +1,102 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PROFILER
+--------
+
+BACH 系统中文件和文件夹分析的处理程序。
+
+
+描述
+------------
+
+PROFILER 处理程序提供用于分析和管理文件的功能：
+- 搜索与关键字匹配的文件
+- 详细的文件和文件夹配置文件（大小、类别、元数据）
+- SHA256哈希计算
+- 自动文件分类（8 个预定义类别）
+- 按文件类型输出大小的文件夹统计信息
+
+
+操作
+-----------
+
+搜索 <关键字> [--path=DIR] [--type=ext]
+  通过关键字搜索文件系统。最大限度。 50 次点击。
+  选项：
+    --path=DIR 搜索路径（默认值：.）
+    --type=ext 仅过滤文件类型（例如 py、txt、json）
+  示例：探查器搜索配置 --path=。 --type=json
+
+配置文件 <路径>
+  分析文件或文件夹。输出大小、类别和元数据。
+  示例：分析器配置文件 data/myfile.txt
+
+hash <path>
+  计算文件的 SHA256 哈希值。
+  示例：探查器哈希 archive.zip
+
+分类 <path>
+  根据扩展名确定自动文件类别。
+  示例：探查器分类 document.docx
+
+stats <path>
+  显示详细的文件夹统计信息：文件数量、总大小、
+  按内存使用类别分布。
+  示例：探查器统计 ./projects
+
+status
+  显示 ProFiler 状态和可用类别。
+
+
+示例
+---------
+
+探查器搜索要求 --path=。 --类型=txt
+  -> 查找最多 50 个名称中带有“requirements”的文件（仅限 .txt）
+
+profiler profile /home/cfm-cosmology/results
+  -> 文件夹配置文件：1243 个文件，15.7 GB，8 个子文件夹
+
+分析器哈希数据/model.pkl
+  -> SHA256: a7f8c3e9d...（文件大小：2.3 MB）
+
+分析器对 config.json 进行分类
+  -> config.json：数据 (.json)
+
+分析器统计信息 ./documents
+  -> 文件夹统计与分类（文档：234 个文件 456 MB 等）
+
+分析器状态
+  -> ProFiler 状态和类别概述
+
+
+类别
+----------
+
+8 个预定义文件类别：
+
+  文档 - .pdf、.doc、.docx、.txt、.odt、.xls、.xlsx、.csv、.pptx
+  图片 - .jpg、.jpeg、.png、.gif、.bmp、.svg、.webp、.tiff、.ico
+  音频 - .mp3、.wav、.flac、.ogg、.aac、.wma、.m4a
+  视频 - .mp4、.avi、.mkv、.mov、.wmv、.flv、.webm
+  档案 - .zip、.rar、.7z、.tar、.gz、.bz2
+  代码 - .py、.js、.ts、.html、.css、.java、.c、.cpp、.rs、.go、.sql
+  数据 - .json、.xml、.yaml、.yml、.toml、.ini、.cfg
+  可执行文件 - .exe、.msi、.bat、.cmd、.ps1、.sh
+  其他 - 所有其他结尾
+
+
+文件
+-------
+
+hub/profiler.py 处理程序实现 (hub/)
+extensions/ProFiler/ 扩展目录（可选）
+
+
+另请参见
+----------
+
+hub/base.py - BaseHandler 类
+docs/help/handler.txt - 一般处理程序文档

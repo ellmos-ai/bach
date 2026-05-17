@@ -1,0 +1,36 @@
+BACH Tool: c_import_organizer
+--------------------------------------------------
+Generiert: 2026-01-23 10:36
+Quelle: tools/c_import_organizer.py
+
+BESCHREIBUNG
+----------------------------------------
+c_import_organizer.py - Organisiert Python-Imports nach PEP8
+
+Funktionen:
+  - Sammelt alle import/from-Statements
+  - Entfernt Duplikate
+  - Sortiert alphabetisch (erst import, dann from)
+  - Platziert alle Imports am Dateianfang
+  - Bereinigt mehrfache Leerzeilen
+
+Extrahiert aus: A1 ProFiler/PythonBox.py (ImportOptimizer)
+
+Usage:
+    python c_import_organizer.py <datei.py>
+    python c_import_organizer.py <datei.py> --dry-run
+    python c_import_organizer.py <datei.py> --json
+    python c_import_organizer.py --stdin < code.py
+
+Autor: Claude (adaptiert)
+Abhaengigkeiten: keine (nur stdlib)
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run c_import_organizer [args]
+oder direkt: python tools/c_import_organizer.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show c_import_organizer

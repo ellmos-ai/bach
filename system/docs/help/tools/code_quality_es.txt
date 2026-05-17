@@ -1,0 +1,207 @@
+HERRAMIENTAS DE CALIDAD DEL CÓDIGO - Calidad del código y correcciones
+---------------------------------------------
+
+A partir de: 2026-01-23
+Ruta: docs/help/tools/code_quality.txt
+
+DESCRIPCIÓN
+------------
+Herramientas para solucionar problemas comunes de código:
+  - Errores de codificación (UTF-8, BOM, Mojibake)
+  - Diéresis rotas y caracteres especiales.
+  - Emojis en código (problema de la consola de Windows)
+  - Reparación JSON
+  - Problemas de sangría
+
+HERRAMIENTA PRINCIPAL: c_standard_fixer
+----------------------------
+La herramienta de recopilación ejecuta varios reparadores uno tras otro.
+Recomendado como primera opción para problemas de código.
+
+ CORRECCIONES INCLUIDAS:
+  1. BOM Fix elimina la marca de orden de bytes
+  2. La corrección de codificación garantiza UTF-8
+  3. JSON-Repair Repara JSON (para archivos .json)
+  4. Umlaut Fix Arregla diéresis alemanas rotas
+  5. Indent-Check Comprueba la sangría (solo diagnóstico)
+
+COMANDOS BÁSICOS:
+
+  # Reparar archivo individual
+  bach c_standard_fixer script.py
+
+  # Solo verifica sin cambios
+  bach c_standard_fixer script.py --dry-run
+
+  # Procesar carpetas de forma recursiva
+  bach c_standard_fixer projekt/ --recursive
+
+  # Aplicar solo correcciones específicas
+  bach c_standard_fixer script.py --only bom,encoding
+  bach c_standard_fixer script.py --only umlaut
+
+  # Mostrar herramientas disponibles
+  bach c_standard_fixer --list-tools
+
+  # Con salida detallada
+  bach c_standard_fixer script.py --verbose
+
+OPCIONES:
+  --ejecución en seco Solo verifique, no hay cambios
+  --incluir subcarpetas recursivas
+  --verbose, -v Salida detallada
+  --only=TOOLS Sólo ciertas herramientas (separadas por comas)
+  --list-tools Mostrar herramientas disponibles
+
+NOMBRES DE HERRAMIENTAS para --solo:
+  bom_fix, encoding_fix, json_repair, umlaut_fix, indent_check
+
+RESPALDO:
+  Crea automáticamente archivos .standardfixer.bak
+
+TIPOS DE ARCHIVO:
+  Procesado: .py, .md, .txt, .json
+  Ignorado: __pycache__, .git, venv, node_modules, .bak
+
+ADVERTENCIA:
+  NO aplique a batch_manager.py (error conocido).
+  Ver: bach --help schools
+
+REPARACIÓN JSON: c_json_repair
+-----------------------------
+Herramienta especializada para problemas JSON.
+
+FUNCIONES:
+  - Convertir emoji a ASCII ([HERRAMIENTA], [OK], etc.)
+  - Reparar Mojibake (secuencias Unicode rotas)
+  - Corregir nuevas líneas en cadenas.
+  - Eliminar lista de materiales
+
+COMANDOS BÁSICOS:
+
+  # Reparar JSON
+  bach c_json_repair config.json
+
+  # Solo revisa
+  bach c_json_repair config.json --dry-run
+
+  # Salida JSON (para scripts)
+  bach c_json_repair config.json --json
+
+  # Actualizar la base de datos de emoji
+  bach c_json_repair --update-gemoji
+
+  # Ver estadísticas
+  bach c_json_repair --stats
+
+OPCIONES:
+  --ejecución en seco Solo verifique, no hay cambios
+  --json Salida JSON (legible por máquina)
+  --update-gemoji Actualiza la base de datos de emojis
+  --stats Mostrar estadísticas de reparación
+
+CONVERSIÓN EMOJI (ejemplos):
+  [LLAVE] <- emoji de llave inglesa
+  [Aceptar] <- Marca verde
+  [X] <- X roja
+  [ADVERTENCIA] <- triángulo de advertencia
+  [CARPETA] <- carpeta emoji
+  [ARCHIVO] <- archivo emoji
+  -> <- Arrow Unicode
+
+JSON FIXER (alternativa): json_fixer
+------------------------------------
+Herramienta más sencilla para problemas JSON básicos.
+
+FUNCIONES:
+  - Eliminar lista de materiales
+  - Eliminar comas finales
+  - Cuotas simples a probabilidades dobles.
+  - Reparar cadenas sin escape
+
+COMANDOS BÁSICOS:
+
+  # Archivo único
+  bach json_fixer config.json
+
+  # Todo JSON en la carpeta
+  bach json_fixer data/
+
+  # Solo revisa
+  bach json_fixer config.json --dry-run
+
+  # Con copia de seguridad
+  bach json_fixer config.json --backup
+
+¿CUÁNDO QUÉ HERRAMIENTA?
+  c_json_repair -> Problemas de emoji, reparaciones complejas
+  json_fixer -> Errores de sintaxis simples (comas, comillas)
+
+HERRAMIENTAS ÚNICAS (incluidas en c_standard_fixer)
+--------------------------------------------
+Estas herramientas generalmente se llaman a través de c_standard_fixer,
+pero también se puede utilizar individualmente:
+
+c_encoding_fixer.py
+  Corregir codificación en UTF-8
+  bach c_encoding_fixer script.py
+
+c_umlaut_fixer.py
+  Reparar diéresis alemanas rotas (ae->ä, ue->ü, etc.)
+  bach c_umlaut_fixer script.py
+
+c_indent_checker.py
+  Encuentra problemas de sangría (Tab vs Espacio, inconsistente)
+  bach c_indent_checker script.py
+
+c_emoji_scanner.py
+  Buscar emojis en archivos
+  bach c_emoji_scanner script.py
+
+c_german_scanner.py
+  Buscar palabras/diéresis en alemán
+  bach c_german_scanner script.py
+
+RECOMENDACIÓN: Utilice c_standard_fixer en lugar de herramientas individuales.
+
+CASOS DE USO TÍPICOS
+-------------------------
+
+1. POR CLON DE GIT (Windows)
+   Problemas de codificación causados por diferentes sistemas:
+   bach c_standard_fixer projekt/ --recursive
+
+2. DESPUÉS DE COPIAR/PEGAR DESDE LA WEB
+   Caracteres especiales rotos:
+   bach c_standard_fixer datei.py --only umlaut,encoding
+
+3. JSON NO SE CARGA
+   Error de sintaxis o codificación:
+   bach c_json_repair config.json
+
+4. EMOJIS ESTALLA LA CONSOLA DE WINDOWS
+   Convertir emojis a ASCII:
+   bach c_json_repair datei.json
+   # o para Python:
+   bach c_standard_fixer script.py
+
+5. ANTES DE COMPROMETERSE
+   Verifique todos los archivos de código:
+   bach c_standard_fixer src/ --recursive --dry-run
+
+CONTEXT INYECTOR
+----------------
+El ContextInjector reconoce palabras clave y recomienda estas herramientas:
+
+  "problema de codificación" -> bach c_standard_fixer <archivo>
+  "diéresis rota" -> bach c_standard_fixer <archivo>
+  "problema json" -> bach c_json_repair <archivo>
+  "emoji" -> bach c_emoji_scanner <archivo>
+  "utf-8" -> bach c_encoding_fixer <archivo>
+
+VER TAMBIÉN
+----------
+  bach --help tools              Descripción general de la herramienta
+  bach --help lessons            Problemas conocidos (error del solucionador estándar)
+  bach --help tools/imports      Problemas de importación
+  bach --help tools/python_editing  Edición de archivos Python

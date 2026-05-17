@@ -1,0 +1,90 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SESSION HANDLER
+---------------
+
+HANDLER NAME
+------------
+
+session - Session management for BACH (SESSION_001-006)
+
+DESCRIPTION
+------------
+
+The session handler manages work sessions with runtime tracking,
+Task management and context-aware thinking. Integrates startup
+and shutdown processes, calculates remaining time and warns
+Session end. Supports between-task checks to optimize
+Task dependencies and blocking.
+
+OPERATIONS
+-----------
+
+start Start session (delegated to StartupHandler)
+status Show active session status with food for thought
+end End session (delegated to ShutdownHandler)
+check time calculation: duration, planned end, remaining
+next Next task with between-task checks
+
+Check options:
+  --duration / -d Show remaining time
+  --set-duration=MIN Set session duration in minutes
+
+EXAMPLES
+---------
+
+Start new session:
+  bach session start
+
+Show status with food for thought:
+  bach session status
+
+Time calculation (with warning at session end):
+  bach session check --duration
+
+Set session duration to 180 minutes:
+  bach session check --set-duration=180
+
+Show next task with between checks:
+  bach session next
+
+End session:
+  bach session end
+
+FILES
+-------
+
+data/bach.db Database source (tables:
+                                 memory_sessions, tasks, memory_lessons)
+
+data/user_config.json Session configuration
+                                 (session_duration_minutes)
+
+hub/session.py Handler implementation
+
+HOW IT WORKS
+--------------
+
+1. Runtime tracking: Calculates duration since start_at, warns at
+   Exceeding the planned duration (default 120 minutes).
+
+2. Food for thought (SESSION_003): Time-based (lunch, after work),
+   Task-based (old, blocked, not completed) or general
+   (Documentation, reviews, backups).
+
+3. Between-task checks (SESSION_006):
+   - Detects blocked tasks with fulfilled dependencies
+   - Reminds of in_progress tasks
+   - Lesson learned after completing 5 tasks
+
+4. Task recommendation by priority (P1 > P2 > P3) and age
+
+SEE ALSO
+----------
+
+hub/startup.py Startup handler (session initialization)
+hub/shutdown.py shutdown handler (session termination)
+hub/task.py task handler (task management)
+data/bach.db database schema

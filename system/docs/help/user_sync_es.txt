@@ -1,0 +1,69 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+USER_SYNC HANDLER
+-----------------
+
+HANDLER NAME
+------------
+user_sync -- Sincronización bidireccional entre USER.md y user_profile
+
+DESCRIPCIÓN
+------------
+El controlador user_sync sincroniza los datos del perfil de usuario entre
+Archivo Markdown USER.md (en el directorio raíz de BACH) y la tabla SQLite
+perfil_usuario en bach.db. Se admiten dos direcciones de sincronización:
+
+1. USER.md -> DB al iniciar BACH (Bloque 0.07)
+2. DB -> USER.md durante el cierre de BACH (Bloque 5.7)
+
+Campos reconocidos: nombre, ubicación, idioma, profesión, GitHub, correo electrónico, rol.
+USER.md está un nivel por encima del directorio system/ (raíz BACH).
+
+OPERACIONES
+-----------
+sync_to_db(dry_run=False)
+  Lee USER.md y guarda los campos en la tabla user_profile.
+  Ejecución en seco: solo verifique, no escriba.
+  Mensaje de estado si falta el archivo o si la tabla user_profile está vacía.
+
+sync_to_file()
+  Lee user_profile de DB y actualiza los campos en USER.md.
+  Conserva la estructura y el formato de USER.md.
+  Actualiza solo los campos reconocidos (**Nombre:**, etc.).
+
+from_bach_root(bach_root)
+  Método de fábrica: crea una instancia de UserSync a partir del sistema/ruta.
+
+Funciones convenientes para bach.py:
+  sync_user_md_to_db(bach_root, dry_run=False)
+  sync_db_to_user_md(bach_root)
+
+EJEMPLOS
+---------
+# Código Python: escribir USER.md en la base de datos
+desde hub.user_sync importar UserSync
+sincronizador = UserSync.from_bach_root('sistema/')
+resultado = sincronizar.sync_to_db()
+print(resultado) # {'status': 'ok', 'synced': 5}
+
+# Escribir base de datos nuevamente en USER.md (apagar)
+resultado = sincronizar.sync_to_file()
+print(resultado) # {'status': 'ok', 'updated_fields': 3}
+
+# Ejecución en seco: solo verificación
+resultado = sincronizar.sync_to_db(dry_run=True)
+print(resultado) # {'status': 'dry_run', 'data': {...}}
+
+FILES
+-------
+hub/user_sync.py -- Implementación (clase UserSync + funciones de conveniencia)
+../USER.md -- Perfil sincronizado (raíz BACH)
+data/bach.db -- SQLite DB con tabla user_profile
+
+VER TAMBIÉN
+----------
+bach.py -- Orquestación de inicio/apagado (Bloque 0.07 / 5.7)
+user_profile - tabla de base de datos para datos de perfil
+../CLAUDE.md -- Documentación del sistema BACH

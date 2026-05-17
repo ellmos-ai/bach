@@ -1,0 +1,95 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH OLLAMA の統合
+-----------------------
+トークン節約モードとオフライン使用のためのローカル LLM サーバー。
+
+コマンド
+-------
+bach ollama status           接続、インストールされているモデルを確認
+bach ollama ask "prompt"     Ollama に直接リクエスト
+bach ollama embed "text"     埋め込みを生成
+bach ollama models           利用可能なモデルを一覧表示
+
+オプション
+--------
+--model=NAME モデルを選択 (デフォルト: llama3.2)
+
+例
+---------
+# ステータスを確認
+bach ollama status
+
+# 簡単な質問
+bach ollama ask "Was ist BACH?" --model=llama3.2
+
+#コード レビューを委任する
+bach ollama ask "Review diesen Code: def add(a,b): return a+b"
+
+# 検索用の埋め込み
+bach ollama embed "Suchtext fuer RAG"
+
+パートナー システムとの統合
+------------------------------
+Ollama はローカル パートナーとして登録され、自動的に
+トークン消費量が多い場合に推奨:
+
+ゾーン 3 (トークン 60 ～ 80%): Ollama が推奨されます
+ゾーン 4 (80 ～ 100%): 人間/緊急のみ (Ollama は引き続き可能)
+
+自動委任:
+  bach partner delegate "Task" --to=ollama
+
+ネットワーク問題の場合のフォールバック:
+  bach ollama ask "Task"   (直接ローカル実行)
+
+要件
+---------------
+- Ollama はローカルにインストールする必要があります
+- デフォルトのポート: http://localhost:11434
+- 少なくとも 1 つのモデルをプルする必要があります
+
+インストールを確認してください:
+  オラマ --バージョン
+  ollam リスト
+
+インストールモデル:
+  オラマ プル ラマ3.2
+  オラマ プル コデラマ
+
+トラブルシューティング
+---------------
+エラー: 「接続が拒否されました」
+  → Ollama サーバーを開始します: olllamaserve
+  → ポートを確認してください: http://localhost:11434
+
+エラー: 「モデルが見つかりません」
+  → プルモデル: ollam プル llama3.2
+  → モデル名を確認してください: ollam リスト
+
+遅い答え:
+  → より小さいモデルを選択してください (llama3.1:70b ではなく、llama3.2)
+  → GPU の使用状況を確認します (CUDA/メタル)
+
+メモリの問題:
+  → より小さいモデルを使用する
+  → 他のモデルをアンロードします: ollam stop
+
+CONFIGURATION
+-------------
+BACH での Ollama 設定:
+  - パートナー ID: ollam
+  - タイプ: ローカル
+  - 標準モデル：llama3.2（設定可能）
+  - タイムアウト: 120 秒
+
+調整方法:
+  bach partner info ollama
+
+関連項目
+----------
+bach help partner          パートナー システムの概要
+bach help delegate         タスクの委任
+bach help tools            ツール インベントリ (ollama_client.py)

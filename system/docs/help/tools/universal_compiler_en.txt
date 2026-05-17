@@ -1,0 +1,22 @@
+BACH Tool: universal_compiler
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/universal_compiler.py
+
+DESCRIPTION
+----------------------------------------
+UNIVERSAL COMPILER v2.0
+Compiles Python projects to EXE using PyInstaller.
+Reads configuration from TASKS.txt or uses auto-detect.
+
+Created: January 3rd, 2026
+
+USE
+----------------------------------------
+python bach.py tools run universal_compiler [args]
+or directly: python tools/universal_compiler.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show universal_compiler

@@ -1,0 +1,32 @@
+Herramienta BACH: Policy_control
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/policy_control.py
+
+DESCRIPCIÓN
+----------------------------------------
+policy_control.py - Inyección central de fragmentos de código
+
+Inyecta políticas de código estandarizadas en proyectos de Python.
+Admite inyección en línea (fragmentos pequeños) y archivos externos (grandes).
+
+Uso:
+    python Policy_control.py <archivo.py> --inject emoji_safe
+    python Policy_control.py <archivo.py> --establecer reparador estándar
+    python Policy_control.py <archivo.py> --check emoji_safe
+    python Policy_control.py <carpeta> --establecer reparador estándar --recursivo
+    Python Policy_control.py --lista
+    python Policy_control.py --list-sets
+
+Autor: Claude
+Versión: 1.0
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan Policy_control [args]
+o directamente: python tools/policy_control.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tiene alguna pregunta: las herramientas de bach muestran política_control

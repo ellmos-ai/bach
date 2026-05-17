@@ -1,0 +1,37 @@
+巴赫工具：c_youtube_extractor
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/c_youtube_extractor.py
+
+描述
+----------------------------------------
+c_youtube_extractor.py - 从 URL 中提取 YouTube 视频 ID
+
+支持的格式：
+  - https://www.youtube.com/watch?v=VIDEO_ID
+  - https://youtu.be/VIDEO_ID
+  - https://www.youtube.com/shorts/VIDEO_ID
+  - https://www.youtube.com/embed/VIDEO_ID
+  - 直接视频 ID（11 个字符）
+
+摘自：TOOLS/MEDIA/ForYou-Playlist/YouTubePlaylist.py
+
+用法：
+    python c_youtube_extractor.py <url>
+    python c_youtube_extractor.py <url1> <url2> <url3>
+    python c_youtube_extractor.py --文件 urls.txt
+    python c_youtube_extractor.py --json <url>
+    回声“https://youtu.be/dQw4w9WgXcQ”| python c_youtube_extractor.py --stdin
+
+作者：Claude（改编）
+依赖项：无（仅限 stdlib）
+
+使用
+----------------------------------------
+python bach.py 工具运行 c_youtube_extractor [args]
+或直接： python tools/c_youtube_extractor.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：巴赫工具显示 c_youtube_extractor

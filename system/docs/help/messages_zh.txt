@@ -1,0 +1,177 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+消息 - 消息系统
+----------------------------
+
+描述
+用于用户之间通信的内部消息系统，
+系统和代理。可通过 CLI 和 Web GUI 访问。
+
+如果没有 --from，则自动使用计时伙伴。
+
+CLI 命令
+-----------
+bach msg list              显示所有消息
+bach msg list --inbox      仅收件箱
+bach msg list --outbox     仅发送的消息
+bach msg list --limit 20   有限制（默认：10）
+
+bach msg inbox             显示收件箱（简短形式）
+bach msg outbox            显示发件箱（简短形式）
+
+bach msg unread            未读消息显示
+bach msg count             消息计数器
+
+bach msg send <to> <text>  发送消息（作为用户/活动合作伙伴）
+bach msg send <to> <text> --from <partner>  发送自合作伙伴
+
+bach msg read <id>         已读消息（标记为已读）
+bach msg read <id> --ack   阅读并自动确认已读
+
+bach msg ping              向我显示未读消息
+bach msg ping --from <p>   发给特定合作伙伴的消息
+
+bach msg watch             轮询模式：等待新消息(Ctrl+C)
+bach msg watch --from <p>  轮询特定合作伙伴
+
+bach msg delete <id>       消息删除
+bach msg delete 1 2 3      删除多条消息
+bach msg delete <id> --dry-run  预览（无更改）
+
+bach msg archive <id>      存档消息
+bach msg archive 1 2 3     存档多条消息
+bach msg archive <id> --dry-run  预览（无更改）
+
+bach msg help              显示帮助
+
+多合作伙伴支持
+---------------------
+使用自己的身份发送合作伙伴：
+
+  bach msg send user "Bericht fertig" --from gemini
+  bach msg send user "Task erledigt" --from claude
+  bach msg send user "Verarbeitung abgeschlossen" --from ollama
+
+逻辑：
+  --来自用户 -> 用户发件箱中的消息（默认）
+  --from <other> -> 用户收件箱中的消息（未读）
+
+合作伙伴身份：
+  用户 用户（人类）
+  克劳德·克劳德（人工智能操作）
+  双子座 Gemini（通过反重力的外部人工智能）
+  ollama Ollama（本地 AI）
+  系统系统消息
+
+接收者
+----------
+系统系统消息
+用户 用户留言
+代理：<名称> 特定代理（例如代理：编码器）
+
+状态值
+------------
+未读 未读
+读 读
+已存档 已存档
+已删除 已删除
+
+WEB-GUI
+-------
+http://127.0.0.1:8000/messages
+
+特点：
+- 收件箱/发件箱/存档视图
+- 写一条新消息
+- 标记为已读
+- 显示消息详细信息
+
+数据库
+---------
+表：消息（在 data/bach.db 中）
+
+字段：
+- id 整数主键
+- 方向文本（收件箱/发件箱）
+- 发射机文本
+- 收件人文本
+- 主题文本（计划 - 目前未使用）
+- 正文文本
+- 状态文本（未读/已读/已存档/已删除）
+- 优先级整数
+- 创建于时间戳
+- read_at 时间戳
+- archived_at TIMESTAMP
+
+示例
+---------
+# 发送消息
+bach msg send system "Backup abgeschlossen"
+
+# 显示未读消息
+bach msg unread
+
+# 读取消息
+bach msg read 5
+
+# 阅读并确认消息
+bach msg read 5 --ack
+
+# 所有发件箱消息
+bach msg list --outbox
+
+# 等待新消息
+bach msg watch
+
+# 检查状态
+bach msg count
+
+连接器集成 (v1.1.0)
+------------------------------
+来自外部连接器（Telegram、Discord 等）的消息
+自动路由到收件箱：
+
+  Connector_messages（in）→route_incoming（）→messages（收件箱）
+
+发件人格式：“connector：sender_id”（例如“telegram：123456”）
+上下文提示自动保存为元数据。
+
+传出消息通过队列发送：
+
+  bach connector send <name> <empfaenger> <text>
+
+通过守护程序进行重试/退避的可靠传送：
+
+  bach connector setup-daemon    # 注册作业
+  bach daemon start --bg         # 启动守护程序
+
+请参阅：bach --help 连接器
+
+REST API（端口 8001）
+--------------------
+在 Headless API 运行时可用：
+
+  POST /api/v1/messages/发送入队消息
+  GET /api/v1/messages/queue 队列状态
+  GET /api/v1/messages/inbox 读取收件箱（分页、过滤）
+  POST /api/v1/messages/route 手动触发路由
+
+示例：
+  curl localhost:8001/api/v1/messages/inbox?status=unread&limit=10
+
+HANDLER
+-------
+hub/messages.py CLI 处理程序（收件箱/发件箱）
+hub/connector.py 连接器处理程序（队列、路由）
+gui/api/messages_api.py REST API 端点
+gui/server.py GUI 端点 (/api/messages)
+
+另请参见
+----------
+bach --help connector      连接器系统（队列、重试、断路器）
+bach --help gui            Web 仪表板
+bach --help daemon         后台作业
+bach --help injectors      上下文注入器
+bach --help wartung        维护作业（自动任务）

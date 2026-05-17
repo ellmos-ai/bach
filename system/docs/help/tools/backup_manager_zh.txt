@@ -1,0 +1,70 @@
+巴赫工具：backup_manager
+--------------------------------------------------
+生成：2026-02-05
+来源：tools/backup_manager.py
+
+描述
+----------------------------------------
+backup_manager.py - BACH 备份和恢复系统
+
+管理：
+- 用户备份 (dist_type=0) -> data/_backups/*.zip
+- 模板快照 (dist_type=1) -> dist/snapshots/*.orig
+- 分发-恢复 (dist_type=2) -> [尚未实现]
+
+命令
+----------------------------------------
+python backup_manager.py create [--to-nas]
+    创建完整的用户备份
+    --to-nas: 另外复制到 NAS
+
+python backup_manager.py 列表 [--nas]
+    列出可用的备份
+    --nas：显示 NAS 备份而不是本地备份
+
+python backup_manager.py info <name>
+    显示备份详细信息（清单）
+
+python backup_manager.py 恢复备份 <名称> [--force] [--no-auto-backup]
+    恢复用户备份
+    --force: 无需确认
+    --no-auto-backup: 恢复前没有安全备份
+
+python backup_manager.py 恢复模板 <文件>
+    将模板文件重置为原始
+
+python backup_manager.py Restore dist <name>
+    [计划] 恢复分发 - 尚未实现
+
+python backup_manager.py snapshot <文件>
+    根据 dist/snapshots/
+
+自动功能
+----------------------------------------
+创建文件快照
+
+- 自动备份：在每次恢复之前自动创建安全备份
+本地旋转：最大。 7 个备份（较旧的会自动删除）
+- 旋转 NAS：最大。 30 个备份（较旧的会自动删除）
+----------------------------------------
+备份数据
+
+数据库表：
+  - 任务
+  - 内存会话
+  - 记忆课程
+  - 内存上下文
+  - 监控令牌
+  - Monitor_success
+
+目录：
+  -内存/
+  - 日志/
+  - user/
+----------------------------------------
+USE
+
+python bach.py 工具运行 backup_manager [args]
+或直接： python tools/backup_manager.py [args]
+----------------------------------------
+NOTES

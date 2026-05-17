@@ -1,0 +1,75 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [partner_recognition、connections、messages、delegation_rules tables]
+
+PARTNERS - 通信パートナー プロファイル
+-----------------------------------------
+
+ステータス: 2026-02-08
+
+パートナー システム (レイヤー 5) は、パートナー間のコラボレーションを調整します。
+人間のユーザー、ローカル モデル (Ollama)、および外部エージェント (Claude、Gemini)。
+
+パートナーの概要 (スナップショット)
+-----------------------------
+| ID |パートナー |タイプ |ワークスペース / バックエンド |
+|-----|----------------|--------------|----------------------------|
+| 001 |ユーザー |人間 |ユーザー/メッセージボックス/ |
+| 002 |クロード | AI |パートナー/クロード/ |
+| 003 |オラマ |ローカルAI | 127.0.0.1:11434 |
+| 004 |ジェミニ |エージェント |反重力 (ローカル) |
+| 006 |パブメッド | MCP API |研究サーバー
+
+|パートナー焦点: GEMINI
+---------------------
+- バックエンド: 反重力 (Google DeepMind ツールチェーン)。
+- スターター: `system/partners/gemini/start_gemini.bat`
+- ワークスペース: `system/partners/gemini/` (受信箱/送信箱モデル)。
+- ルール: `system/partners/gemini/GEMINI.md` を参照
+
+パートナー フォーカス: クロード
+---------------------
+- バックエンド: Anthropic Sonnet (Claude Desktop/MCP 経由)。
+- 役割: AI の操作 (オーケストレーター)。
+- ワークスペース: `system/partners/claude/`
+
+メッセージによる調整
+-------------------------
+パートナーは、`messages` システム (bach.db) を介して通信します。
+コマンド:
+  bach msg send <recipient> "text" --from <sender>
+  bach msg list --inbox     (受信箱を表示)
+  bach msg unread           (未読を表示)
+  bach msg read <id>        (メッセージを読む)
+
+サービスとテーブル (bach.db)
+----------------------------
+- `partner_recognition`: パートナー プロファイル (ツール、機能、ゾーン)
+- 「接続」: 技術的なエンドポイント (API キー、URL)
+- `messages`: 永続的なチャット履歴 (受信箱/送信箱)
+- `delegation_rules`: トークンベースの委任ゾーン
+
+通信衛生
+----------------------
+1。各セッションは「bach --startup」で始まります
+2. タスクを確認します: `bach task list --assigned <partner>`
+3. 結果を `outbox/` に保存します (例: REPORT_*.md)
+4. タスクを完了します: `バッチタスク完了 <id> "Notiz"`
+5. メッセージを送信します: `bach msg send <to> "text" --from <sender>`
+
+関連項目
+----------
+  docs/help/partner.txt 委任ロジックと役割
+  docs/help/communicate.txt 対話プロトコル
+  docs/help/messages.txt メッセージの構文
+  system/partners/_README.md パートナー フォルダーの構造
+
+CLI アクセス
+-----------
+  bach --partner list                  すべてのパートナーのリスト
+  bach --partner status                ステータスの概要
+  bach --partner info <name>           パートナーの詳細
+  bach --partner delegate <task>       タスクの委任 (トークン対応)
+  bach --connections list              接続レジストリ
+  bach msg list                        メッセージの表示

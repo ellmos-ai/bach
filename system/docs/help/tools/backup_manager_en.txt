@@ -1,0 +1,71 @@
+BACH Tool: backup_manager
+--------------------------------------------------
+Generated: 2026-02-05
+Source: tools/backup_manager.py
+
+DESCRIPTION
+----------------------------------------
+backup_manager.py - BACH Backup & Restore System
+
+Manages:
+- User backup (dist_type=0) -> data/_backups/*.zip
+- Template snapshots (dist_type=1) -> dist/snapshots/*.orig
+- Distribution-Restore (dist_type=2) -> [NOT YET IMPLEMENTED]
+
+COMMANDS
+----------------------------------------
+python backup_manager.py create [--to-nas]
+    Creates complete user backup
+    --to-nas: Additionally copy to NAS
+
+python backup_manager.py list [--nas]
+    Lists available backups
+    --nas: show NAS backups instead of local ones
+
+python backup_manager.py info <name>
+    Show backup details (manifest)
+
+python backup_manager.py restore backup <name> [--force] [--no-auto-backup]
+    Restores user backup
+    --force: Without confirmation
+    --no-auto-backup: No security backup before restore
+
+python backup_manager.py restore template <file>
+    Resets template file to original
+
+python backup_manager.py restore dist <name>
+    [PLANTED] Restore distribution - not implemented yet
+
+python backup_manager.py snapshot <file>
+    Creates snapshot of a file according to dist/snapshots/
+
+AUTOMATIC FEATURES
+----------------------------------------
+- Auto-Backup: A security backup is automatically created before each restore
+- Local rotation: Max. 7 backups (older ones are automatically deleted)
+- Rotation NAS: Max. 30 backups (older ones are automatically deleted)
+
+BACKED DATA
+----------------------------------------
+Database tables:
+  - tasks
+  - memory_sessions
+  - memory_lessons
+  - memory_context
+  - monitor_tokens
+  - monitor_success
+
+Directories:
+  -memory/
+  - logs/
+  - user/
+
+USE
+----------------------------------------
+python bach.py tools run backup_manager [args]
+or directly: python tools/backup_manager.py [args]
+
+NOTES
+----------------------------------------
+- NAS path from system_config or standard: \\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
+- Bach version is saved in backup manifest

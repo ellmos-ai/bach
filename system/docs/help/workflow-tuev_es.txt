@@ -1,0 +1,144 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WORKFLOW-TUEV - Garantía de calidad para los flujos de trabajo
+--------------------------------------------------
+
+Los flujos de trabajo son el "cerebro" del sistema. Deben funcionar de forma fiable.
+Workflow-TUeV garantiza que los flujos de trabajo se prueben periódicamente.
+
+CONCEPTO
+-------
+
+1. PRUEBAS DE CASO DE USO
+   - Colección de casos de prueba por flujo de trabajo.
+   - Entradas definidas y salidas esperadas.
+   - Ejecución automática posible
+
+2. PROCEDIMIENTO TUEV
+   - Cada flujo de trabajo tiene una fecha de vencimiento (tuev_valid_until)
+   - Cuando caduca: crear automáticamente una tarea de mantenimiento
+   - Después de una verificación exitosa: Nueva fecha de vencimiento
+
+3. CALIFICACIÓN
+   - muy bueno (90-100%)
+   - bueno (70-89%)
+   - satisfactorio (50-69%)
+   - suficiente (30-49%)
+   - fallido (<30%)
+   - La nota determina la prioridad de las tareas de mantenimiento
+
+COMANDOS CLI
+-----------
+
+BACH TUEV:
+  bach tuev status                    Estado TUeV de todos los flujos de trabajo
+  bach tuev check <workflow>          Verificar flujo de trabajo individual
+  bach tuev run                       Todas las comprobaciones debidas
+  bach tuev renew <workflow>          Renovar TUeV después de la verificación
+  bach tuev init                      Registrar flujos de trabajo en DB
+
+BACH USECASE:
+  bach usecase list [workflow]        Mostrar casos de prueba
+  bach usecase add <workflow>         Nuevo caso de prueba agregar
+  bach usecase run <id>               Ejecutar caso de prueba
+  bach usecase run-all <workflow>     Todos los casos de prueba de un flujo de trabajo
+  bach usecase show <id>              Mostrar caso de prueba detalles
+
+ESQUEMA DE BD
+---------
+
+casos de uso:
+  identificación de clave primaria
+  título Título del caso de prueba
+  descripción Descripción del caso de prueba
+  workflow_path Ruta al flujo de trabajo (habilidades/flujos de trabajo/...)
+  nombre_flujo de trabajo Nombre del flujo de trabajo
+  test_input JSON: datos de entrada para la prueba
+  expected_output JSON: resultado esperado
+  last_tested Última ejecución de prueba (marca de tiempo)
+  test_result pasa/falla/error
+  puntuación test_score 0-100
+  tuev_valid_until Fecha de vencimiento de este caso de prueba
+  creado_por usuario/sistema
+
+workflow_tuev:
+  identificación de clave primaria
+  workflow_path Ruta al flujo de trabajo (ÚNICO)
+  nombre_flujo de trabajo Nombre del flujo de trabajo
+  last_tuev_date Última fecha TUeV
+  tuev_valid_until Próximo TUeV vence
+  tuev_status pendiente/aprobado/fallido/caducado
+  test_count Número de pruebas realizadas
+  pass_count Pruebas superadas
+  fail_count Pruebas fallidas
+  avg_score Puntuación media
+
+PROCESO DE PRUEBA (3 partes)
+---------------------
+
+Parte 1: IMPLEMENTACIÓN como autoexperiencia
+  - Ejecutar flujo de trabajo con datos de prueba.
+  - Perspectiva del LLM: “¿Cómo fue para mí?”
+  - Anotar problemas, ambigüedades, obstáculos
+
+Parte 2: EVALUACIÓN frente a criterios
+  - Verifique los requisitos del caso de uso
+  - Comparar criterios definidos
+  - Comparar el resultado con el resultado esperado
+
+Parte 3: CALIFICACIÓN y consecuencias
+  - Calcular puntuación (0-100)
+  - Derivar calificación
+  - Si hay un error: crear una tarea para mejorar
+
+CHECKLIST para nuevos flujos de trabajo
+------------------------------
+
+[ ] ¿El flujo de trabajo tiene al menos 1 caso de uso?
+[ ] ¿Están definidos los insumos y los resultados esperados?
+[] ¿El flujo de trabajo funciona sin datos del usuario?
+[] ¿El flujo de trabajo es idempotente (repetible)?
+[ ] ¿Están documentadas las dependencias?
+[ ] ¿Hay manejo de errores?
+
+CASO DE USO DE EJEMPLO
+----------------
+
+  Flujo de trabajo: registro de corrección de errores
+
+  Caso de prueba: "Error de sintaxis simple"
+  entrada_prueba: {
+    "bug_description": "Error de sintaxis en la línea 42 de main.py",
+    "file_path": "pruebas/sample_bug.py"
+  }
+  salida_esperada: {
+    "estado": "fijo",
+    "cambios_realizados": verdadero,
+    "test_passed": verdadero
+  }
+
+AUTOMATIZACIÓN
+---------------
+
+Trabajo demonio (planificado):
+  Nombre: tuev-check
+  Comando: bach tuev ejecutar
+  Intervalo: 7 días (semanal)
+
+Si TUeV ha caducado:
+  -> Tarea "Renovar flujo de trabajo X TUeV" creada (prioridad basada en puntuación)
+
+VER TAMBIÉN
+----------
+
+  --ayuda al sistema de flujo de trabajo
+  --help usecase Detalles de prueba de casos de uso
+  --concepto central de ayuda (agente/flujo de trabajo/habilidades)
+  --ayuda al flujo de trabajo de desarrollo de desarrollo
+
+---
+Versión: 1.1 | Creado: 2026-01-30
+Estado: Implementado (v1.1.83)
+Controlador: system/hub/tuev.py (TuevHandler + UsecaseHandler)

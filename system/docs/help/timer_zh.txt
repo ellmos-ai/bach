@@ -1,0 +1,97 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+计时器 - 秒表
+----------------
+
+测量经过的时间。可以同时使用多个计时器。
+
+CLI 命令
+-----------
+
+  bach timer start              启动未命名计时器
+  bach timer start "Recherche"  启动命名计时器
+  bach timer stop               停止最后一个/唯一计时器
+  bach timer stop "Recherche"   停止命名计时器
+  bach timer list               显示所有活动计时器
+  bach timer clear              删除所有计时器
+
+输出格式
+--------------
+
+  [计时器] 研究：05:23 |会话：45:12
+
+每个 CLI 输出都会显示活动计时器。
+
+持久性
+----------
+
+  文件：data/.timer_state
+
+  内容：
+  {
+    “计时器”：{
+      “研究”：“2026-01-30T14:00:00”，
+      “会话”：“2026-01-30T13:50:00”
+    }
+  }
+
+示例
+---------
+
+  # 启动会话计时器
+  bach timer start "Session"
+  -> 计时器“会话”开始
+
+  # 子任务的附加计时器
+  bach timer start "Bugfix"
+  -> 计时器“错误修复”已启动
+
+  # 检查状态
+  bach timer list
+  -> 会议时间：45:12
+  -> 错误修复：05:23
+
+  # 停止错误修复计时器
+  bach timer stop "Bugfix"
+  -> 计时器“Bugfix”停止：05:23
+
+用例
+--------
+
+  1. 会话跟踪
+     bach timer start "Session"
+     ...工作...
+     bach timer stop "Session"
+     -> 显示会话持续了多长时间
+
+  2. 任务追踪
+     bach timer start "Task-123"
+     ... 编辑任务...
+     bach timer stop "Task-123"
+     -> 时间可以在任务注释中注明
+
+  3. 并行追踪
+     bach timer start "Gesamt"
+     bach timer start "Recherche"
+     ...研究...
+     bach timer stop "Recherche"
+     bach timer start "Coding"
+     ...代码...
+     bach timer stop "Coding"
+     bach timer stop "Gesamt"
+     -> 显示时间分布
+
+INTERPLAY
+-------------
+
+计时器是时间系统的一部分：
+  --help Clock 时间显示
+  --help countdown 带触发器的倒计时
+  --检查之间的帮助
+  --helpbeat 统一时间显示
+
+---
+版本：1.0 |状态：已实施 (v1.1.83)
+处理程序：system/hub/time.py (TimerHandler)

@@ -1,0 +1,193 @@
+パートナー コミュニケーション ツール - パートナーの検出とメッセージ ルーティング
+-------------------------------------------------------------------
+
+現在: 2026-01-23
+パス: docs/help/tools/partner.txt
+
+説明
+------------
+これらのツールにより、BACH と
+外部パートナー (Ollama、Gemini など)、システム分析、
+タスクの自動ルーティング。
+
+パス: tools/partner_communication/
+
+概要
+----------
+
+  ツールライン機能
+  ───────────────────────
+  communication.py 678パートナー認識、ヘルスチェック
+  system_explorer.py 458 OS ソフトウェアの検出
+  interaction_protocol.py 1225 インスタンス ハンドシェイク、DNA 追跡
+  ai_compatibility.py 200 フィルタ AI 互換ソフトウェア
+  real_tools.py 198 Real CLI ツールの識別
+
+  合計: 5 つのツール、約 2,759 行
+
+─────────────────────────────
+
+ツール 1: communication.py
+------------------------
+パートナーの検出とメッセージ ルーティングのための中心的なツール。
+
+機能:
+  - 自動パートナー認識 (クロード、オラマ、ジェミニなど)
+  - パートナーが利用できるかどうかのヘルスチェック
+  - トークンを認識したメッセージルーティング
+  - パートナー ステータスのクエリ
+
+使用 (Python):
+  tools.partner_communication.communication import から (
+      パートナーの検出、
+      健康チェック、
+      ルートメッセージ
+  )
+
+  # パートナーを認識する
+  パートナー = detect_partners()
+
+  # 健康状態をチェックする
+  status = check_health("ollam")
+
+  # ルートメッセージ
+  route_message("リサーチ タスク", target="gemini")
+
+CLI (計画中):
+  bach partner detect "Task-Beschreibung"
+  bach partner health
+  bach partner route --to gemini --message "..."
+
+────────────────────────
+
+ツール 2: system_explorer.py
+--------------------------
+オペレーティング システムをスキャンして、インストールされているソフトウェアを探します。
+
+機能:
+  - Windows レジストリをスキャンします
+  - AI 互換ソフトウェアを特定する
+  - カタログツールの機能
+  - ソフトウェア インベントリの作成
+
+使用 (Python):
+  tools.partner_communication.system_explorer インポートから (
+      スキャンシステム、
+      get_ai_tools、
+      リスト機能
+  )
+
+  # スキャンシステム
+  ソフトウェア = scan_system()
+
+  # AI ツールのみ
+  ai_tools = get_ai_tools()
+
+CLI (計画中):
+  bach partner scan
+  bach partner scan --ai-only
+
+─────────────────────────
+
+ツール 3: interaction_protocol.py
+-------------------------------
+BACH インスタンス間のハンドシェイクとプロトコル。
+
+機能:
+  - インスタンス間のハンドシェイク
+  - DNA追跡（個体識別）
+  - 5 つの対話プロトコル:
+    * ハンドシェイク - 相互承認
+    * 比較 - スキルを比較します
+    * リクエスト - インポートリクエスト
+    *転送 - データ転送
+    * 受領 - 受領の確認
+
+使用 (Python):
+  tools.partner_communication.interaction_protocol import から (
+      ハンドシェイクの開始、
+      プロトコルの実行
+  )
+
+  # ハンドシェイクを開始する
+  result =Initial_handshake("gemini")
+
+  # プロトコルの実行
+  execute_protocol("transfer", target="ollama", data=payload)
+
+────────────────────────────────
+
+ツール 4: ai_compatibility.py
+------------------------
+システム スキャンから AI 互換ソフトウェアをフィルタリングします。
+
+機能:
+  - AIツールのレジストリを検索
+  - LLM クライアント (Ollama、LM Studio など) を特定します。
+  - APIエンドポイントの検出
+  - 抽出機能
+
+使用 (Python):
+  tools.partner_communication.ai_compatibility インポートから (
+      スキャン_ai_ソフトウェア、
+      get_llm_clients
+  )
+
+  ai_tools = scan_ai_software()
+  llms = get_llm_clients()
+
+─────────────── ──────────
+
+ツール 5: real_tools.py
+---------------------
+委任用の実際の CLI ツールを識別します。
+
+機能:
+  - EXE/CMD/BAT ツールを見つける
+  - Python スクリプトのカタログ化
+  - ツールの引数を分析する
+  - 委任候補の決定
+
+使用 (Python):
+  tools.partner_communication.real_tools からインポート (
+      find_cli_tools、
+      分析ツール
+  )
+
+  tools = find_cli_tools()
+  info =analyze_tool("git")
+
+─────────────────
+
+データベース統合
+---------------------
+ツールは次の BACH テーブルを使用します。
+
+  接続パートナーのエンドポイントと URL
+  パートナー認識機能、ゾーン、ステータス
+  delegation_rules トークンベースのルーティング ルール
+  comm_messages メッセージ ログ
+
+PARTNER-WORKSPACE
+-----------------
+  パートナー/
+  §── _TASKS.md # 中央タスクの割り当て
+  §── クロード/
+  │ §── inbox/ # 注文の受信
+  │ §── 送信トレイ/ # レポート
+  │ └── workspace/ 作業ファイル数
+  §── ジェミニ/
+  └── オラマ/
+
+関連項目
+----------
+docs/help/partner.txt パートナー システムの CLI コマンド
+  docs/help/partners.txt パートナー ネットワークの概要
+  docs/help/delegate.txt 委任の詳細
+  docs/help/communicate.txt 通信プロトコル
+
+  skill/_services/communicate.md スキルの定義
+  tools/partner_communication/README.md 開発者ドキュメント
+
+バージョン: v1.0.0 (2026-01-23)
+ソース: tools/partner_communication/README.md

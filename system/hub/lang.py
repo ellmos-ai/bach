@@ -358,6 +358,44 @@ class LangHandler(BaseHandler):
         """Zielordner fuer releasefaehige Sprach-Artefakte."""
         return self.base_path / "exports" / "translations"
 
+    def _release_manifest_source(self) -> str:
+        """Neutraler DB-Hinweis fuer releasefaehige Artefakte."""
+        return "runtime_db"
+
+    def _sanitize_release_value(self, value):
+        """Entfernt lokale Benutzerpfade aus releasefaehigen Sprach-Artefakten."""
+        if isinstance(value, str):
+            value = re.sub(
+                r"[A-Za-z]:\\Users\\[^\\\r\n\"']+\\OneDrive\\[^\"\r\n']+",
+                "<BACH_WORKSPACE>",
+                value,
+            )
+            value = re.sub(
+                r"[A-Za-z]:/Users/[^/\r\n\"']+/OneDrive/[^\"\r\n']+",
+                "<BACH_WORKSPACE>",
+                value,
+            )
+            value = re.sub(
+                r"[A-Za-z]:\\Users\\[^\\\r\n\"']+",
+                "%USERPROFILE%",
+                value,
+            )
+            value = re.sub(
+                r"[A-Za-z]:/Users/[^/\r\n\"']+",
+                "%USERPROFILE%",
+                value,
+            )
+            return value
+        if isinstance(value, list):
+            return [self._sanitize_release_value(item) for item in value]
+        if isinstance(value, dict):
+            return {key: self._sanitize_release_value(item) for key, item in value.items()}
+        return value
+
+    def _sanitize_release_row(self, row) -> dict:
+        """Konvertiert DB-Zeilen in releasefaehige, pfadbereinigte Dicts."""
+        return {key: self._sanitize_release_value(value) for key, value in dict(row).items()}
+
     def _write_release_exports(self, conn) -> Path:
         """Spiegelt den aktuellen Sprachstand aus der DB in releasebezogene Dateien."""
         export_dir = self._release_export_dir()
@@ -375,9 +413,10 @@ class LangHandler(BaseHandler):
                 pass
         else:
             config_payload["enabled_languages"] = self._get_enabled_languages(conn, include_detected=True)
+        config_payload = self._sanitize_release_value(config_payload)
 
         translations_payload = [
-            dict(row) for row in conn.execute("""
+            self._sanitize_release_row(row) for row in conn.execute("""
                 SELECT key, namespace, language, value, is_verified, source, created_at, updated_at
                 FROM languages_translations
                 ORDER BY namespace, key, language
@@ -385,7 +424,7 @@ class LangHandler(BaseHandler):
         ]
 
         dictionary_payload = [
-            dict(row) for row in conn.execute("""
+            self._sanitize_release_row(row) for row in conn.execute("""
                 SELECT term, translation, source_lang, target_lang, is_preferred, usage_count, context, created_at
                 FROM languages_dictionary
                 ORDER BY source_lang, target_lang, term, translation
@@ -455,7 +494,7 @@ class LangHandler(BaseHandler):
         manifest_payload = {
             "generated_at": datetime.now().isoformat(),
             "export_kind": "languages_release_snapshot",
-            "source_db": str(self.db_path),
+            "source_db": self._release_manifest_source(),
             "counts": {
                 "config_rows": 1 if config_payload else 0,
                 "translations": len(translations_payload),

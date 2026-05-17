@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+-----------------------------------------------------------------------------
+リマインダー インジェクター (SQ040) -- LLM プロンプトにメモリを挿入
+
+説明
+-----------------------------------------------------------------------------
+リマインダー インジェクターは、メモリを管理し、LLM プロンプトにメモリを挿入します
+すべての電話の前に。リマインダーはトリガー条件に基づいてトリガーされます
+[BACH-REMINDERS] ブロックに選択的に挿入されます。実装
+DB および JSON フォールバック ストレージをサポートします。
+
+サポートされるトリガー条件:
+  - always: 常にアクティブ (条件なし)
+  - on_task: タスクの実行中のみ
+  - time_based: 特定の時間枠内のみ (HH:MM-HH:MM)
+  -keyword_match: ユーザー入力にキーワードが含まれる場合のみ
+
+OPERATIONS
+-----------------------------------------------------------------------------
+list_reminders(active_only=True)
+  すべてのアクティブなリマインダー (またはすべて) を list[dict] として返します。
+
+add_reminder(message,trigger_condition="always",trigger_value=None,
+             優先度=5)
+  新しいリマインダーを作成します。条件に応じたトリガー値:
+    - 常に:trigger_value は無視されます
+    - on_task: トリガー値は無視されました
+    - 時間ベース: "HH:MM-HH:MM" (例: "09:00-17:00")
+    - キーワード一致: "キーワード 1、キーワード 2、..." (カンマ区切り)
+  優先順位: 低い値 = より重要 (0 = 最高の優先順位)。
+
+update_reminder(reminder_id, **kwargs)
+  更新リマインダー。許可されるフィールド: message、trigger_condition、
+  トリガー値、アクティブ、優先度。成功すると True を返します。
+
+delete_reminder(reminder_id)
+  リマインダーを削除します (list_reminders によって無視されます)。
+  成功すると True を返します。
+
+get_active_reminders(context)
+  現在のコンテキストに関連するリマインダーテキストのリストを返します。
+  フィットします。 Context-Dict には、active_task、user_input を含めることができます。
+
+inject(prompt, context)
+  プロンプトの前にアクティブなリマインダーを追加します。戻り値:
+    [バッハのリマインダー]
+      1. <最優先リマインダー>
+      2. <次のリマインダー>
+    [/バッハのリマインダー]
+    <元のプロンプト>
+
+例
+-----------------------------------------------------------------------------
+# アクティブなタスクのリマインダーを作成する
+inj = ReminderInjector(Path("system"), db=None)
+inj.add_reminder("長時間のタスクにはフォーカス モードを使用します。",
+                 trigger_condition="on_task"、priority=1)
+
+# 時間ベースのリマインダー (午前 9 時～午後 5 時)
+inj.add_reminder("バックアップが実行されていることを確認します。",
+                 トリガー条件 = "時間ベース"、
+                 trigger_value="09:00-17:00", priority=3)
+
+# キーワードベースのリマインダー
+inj.add_reminder("DB への直接アクセスではなく、BACH API を使用してください!",
+                 トリガー条件 = "キーワード一致",
+                 trigger_value="database, db, sql", priority=2)
+
+# プロンプトにリマインダーを挿入します
+context = {"active_task": "リサーチ", "user_input": "データベース クエリ"}
+Modified_prompt = inj.inject("XYZ はどのように機能しますか?", context)
+
+FILES
+-----------------------------------------------------------------------------
+hub/reminder_injector.py 主な実装
+data/reminders.json JSON フォールバック (DB エラーの場合)
+docs/help/reminder_injector.txt このヘルプ ファイル
+
+関連項目
+-----------------------------------------------------------------------------
+task_manager.py -- タスク管理 (on_task トリガーのコンテキスト)
+bach_api.py -- クロスハブ API

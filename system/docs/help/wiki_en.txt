@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+WIKI HANDLER
+------------
+
+HANDLER NAME
+------------
+wiki - Manage and search wiki articles
+
+DESCRIPTION
+------------
+The Wiki Handler manages local knowledge databases (wiki/directory).
+Support for articles in the main folder and topic-specific subfolders.
+Articles are saved as UTF-8 text files. The handler supports
+Database indexing (sync) for high-performance full-text search via FTS5.
+
+OPERATIONS
+-----------
+list List all wiki articles (with subfolders)
+folders List all topic folders with article count
+<topic> Show article (e.g. bach wiki linux)
+<folder>/<topic> Article from subfolder (e.g. bach wiki tax/elster)
+search Search articles (FTS5 or fallback scan)
+Show provenance metadata, evidence type, personal reference and privacy information
+sync Mirror wiki and help files in database (update index)
+
+EXAMPLES
+---------
+Bach wiki list
+  Show all available articles and topic folders
+
+Bach wiki folders
+  List all topic folders with article count
+
+Bach wiki docker
+  Show articles wiki/docker.txt
+
+Bach wiki funding/icf
+  Show articles from subfolder: wiki/foerderung/icf.txt
+
+Bach wiki tax/elster
+  Show articles from subfolder: wiki/steuer/elster.txt
+
+Bach wiki search "kubernetes"
+  Search in all articles with FTS5 or fallback scan
+
+Bach wiki search "deployment pipeline"
+  Search with multiple words (in quotation marks)
+
+Bach wiki provenance
+  Show the most recently indexed articles with origin and privacy assessment
+
+Bach wiki provenance tax/elster
+  Show provenance for exactly one article
+
+Bach wiki sync
+  Update database index (after manual file changes)
+
+FILES
+-------
+wiki/ Wiki main folder with articles
+wiki/*.txt Articles in the main folder (e.g. wiki/docker.txt)
+wiki/<folder>/ topic folder (e.g. wiki/tax/)
+wiki/<folder>/*.txt Subfolder articles (e.g. wiki/steuer/elster.txt)
+wiki/<folder>/_index.txt Optional folder description
+wiki/_index.txt Optional master list description
+data/bach.db database with sync index (wiki_articles table)
+docs/help/ Help files (additional indexing via sync)
+
+SEE ALSO
+----------
+bach help config     Handler properties
+bach help base       Basic handler documentation
+bach list handlers   All available handlers
+bach wiki sync       Database indexing
+
+NOTES
+--------
+- Articles without path prefixes or special folder commands: automatically in
+  Main folder searched
+- Subfolder syntax (/) normalizes backslashes to slashes (Windows compatible)
+- FTS5 search prioritized over fallback file system scan if database exists
+- Fuzzy matching for items not found shows similar file names
+- "sync" must be called manually after direct file changes

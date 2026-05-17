@@ -1,0 +1,25 @@
+BACH Tool: ollama_worker
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/ollama_worker.py
+
+DESCRIPTION
+----------------------------------------
+OLLAMA WORKER - Async job processing
+--------------------------------------
+Runs in the background, processes jobs from pending/ via Ollama,
+writes results after completed/.
+
+Usage:
+  python ollama_worker.py # Process all pending jobs once
+  python ollama_worker.py --daemon # Run permanently
+
+USE
+----------------------------------------
+python bach.py tools run ollama_worker [args]
+or directly: python tools/ollama_worker.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show ollama_worker

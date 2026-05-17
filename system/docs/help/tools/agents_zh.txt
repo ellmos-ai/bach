@@ -1,0 +1,115 @@
+代理工具 - 代理工具
+--------------------------------
+
+概述
+BACH 中的代理工具管理和控制 AI 代理
+及其交互。
+
+代理框架
+---------------
+agent_framework.py
+
+所有 BACH 代理的核心框架。
+特点：
+  - 代理注册
+  - 能力匹配
+  - 协同管理
+
+调用：内部使用
+
+AGENT CLI
+---------
+agent_cli.py
+
+用于代理交互的命令行。
+命令：
+  - 列表：显示所有代理
+  - 状态：检查代理状态
+  - 激活：激活代理
+  - deactivate：停用代理
+
+调用：python tools/agent_cli.py <命令>
+
+代理服务集成
+-------------------------
+agent_service_integration.py
+
+将代理连接到 BACH 服务。
+允许：
+  - 服务发现
+  - 自动路由
+  - 负载平衡
+
+可用代理
+-------------------
+
+目录：agents/
+
+  ati/软件开发商（ATI）
+  Tax-agent.txt 税务助理
+  Research.txt 研究代理（研究）
+  developer.txt 一般开发者
+  Production.txt 生产代理
+  资金规划师/资金计划助理
+
+代理人公约
+----------------
+
+参见：技能/AGENT_KONVENTION.md
+
+层次结构：
+  BOSS特工：完全掌控，长期有效
+  专家：专业、短期
+  服务：自动后台任务
+
+BACH 中的代理命令
+---------------------
+
+  bach --help agents       代理文档
+  bach --help ati          ATI 代理帮助
+  bach ati bootstrap       创建项目 (ATI)
+  bach ati migrate         迁移项目 (ATI)
+
+委托给代理
+---------------------
+
+  bach delegate "task" --to=<agent>
+
+可用目标：
+  ollama、双子座、副驾驶、困惑、人类
+
+DEVELOPER AGENT
+----------------
+developer_agent.py
+
+用于开发任务的专门代理。
+可以：
+  - 生成代码
+  - 分析错误
+  - 创建测试
+
+生产代理
+----------------
+生产代理.py
+
+用于生产部署。
+特点：
+  - 构建流程
+  - 部署检查
+  - 回滚支持
+
+研究代理
+--------------
+research_agent.py
+
+研究和信息收集。
+资料来源：
+  - 网络搜索
+  - 文档
+  - 内部知识库
+
+另请参阅
+----------
+bach --help delegate      授权系统
+bach --help partner       合作伙伴沟通
+技能/AGENT_KONVENTION.md 代理指南

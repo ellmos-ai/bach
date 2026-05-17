@@ -1,0 +1,58 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+Subscription management (subscription management)
+---------------------------------------
+
+DESCRIPTION
+Detects recurring payments (subscriptions) from tax items,
+manages confirmations and creates cost overviews.
+
+COMMANDS
+-------
+bach abo scan              Analyze tax items, recognize subscriptions
+bach abo list              Show all recognized subscriptions
+bach abo confirm ID        Confirm subscription recognition
+bach abo dismiss ID        Remove error detection
+bach abo costs             Monthly cost statement
+bach abo export            Export for budget planning
+bach abo patterns          Show known subscription patterns
+bach abo init              Initialize database tables
+bach abo sync-mail         Synchronize subscriptions from emails
+
+DETECTION
+---------
+Analyzed tax_posten and identifies subscriptions based on:
+  - Repeated payments to the same provider
+  - Constant amounts (small deviation)
+  - Known subscription provider patterns (DB-supported)
+
+Score threshold: 50 points (configurable)
+
+OPTIONS
+--------
+  --year YYYY filter tax year (default: current year)
+  --dry-run Preview only, do not save anything
+
+EXAMPLES
+---------
+  bach abo scan
+  bach abo scan --jahr 2025 --dry-run
+  bach abo list
+  bach abo costs
+  bach abo confirm 42
+  bach abo export
+
+HANDLER
+-------
+  hub/abo.py (AboHandler)
+  tools/abo/abo_scanner.py (AboScanner)
+  hub/_services/mail/mail_abo_sync_service.py (mail integration)
+
+SEE ALSO
+----------
+  bach --help steuer       Tax Administration
+  bach --help financial    Financial Overview

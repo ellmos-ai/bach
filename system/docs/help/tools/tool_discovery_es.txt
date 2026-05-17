@@ -1,0 +1,30 @@
+Herramienta BACH: tool_discovery
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/tool_discovery.py
+
+DESCRIPCIÓN
+----------------------------------------
+tool_discovery.py - Recomendación de herramientas basada en problemas
+-----------------------------------------------------
+
+Analiza descripciones de problemas y recomienda herramientas BACH adecuadas.
+
+Uso:
+    python tool_discovery.py sugiere "problema de codificación con diéresis"
+    patrones de lista de python tool_discovery.py
+    python tool_discovery.py --json
+
+Autor: BACH v1.1
+Versión: 1.0.0
+Creado: 2026-01-21
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan tool_discovery [args]
+o directamente: python tools/tool_discovery.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: herramientas de bach muestra tool_discovery

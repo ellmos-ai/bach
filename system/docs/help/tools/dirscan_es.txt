@@ -1,0 +1,23 @@
+Herramienta BACH: dirscan
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/dirscan.py
+
+DESCRIPCIÓN
+----------------------------------------
+Directory Scanner - Gestión automática del estado REAL/OBJETIVO
+------------------------------------------------------------
+
+- Inicio: Captura del estado actual
+- Apagado: Cambios = nuevo estado OBJETIVO
+- Heurística: Se desean cambios en Claude
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan dirscan [args]
+o directamente: python tools/dirscan.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tiene alguna pregunta: las herramientas de Bach muestran dirscan

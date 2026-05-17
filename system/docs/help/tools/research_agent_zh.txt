@@ -1,0 +1,26 @@
+巴赫工具：research_agent
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/research_agent.py
+
+描述
+----------------------------------------
+Research Agent v1.0.0
+
+科学研究和文献分析。
+集成 PubMed、Perplexity、Consensus 和 NotebookLM。
+
+用法：
+  python Research_agent.py 搜索“查询”
+  python Research_agent.py 评论 --topic "topic" --years 5
+  python Research_agent.py status
+
+使用
+----------------------------------------
+python bach.py工具运行research_agent [args]
+或直接： python tools/research_agent.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：巴赫工具显示research_agent

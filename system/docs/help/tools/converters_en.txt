@@ -1,0 +1,31 @@
+BACH Tool: Converters
+---------------------
+
+File conversion between different formats.
+
+AVAILABLE CONVERTERS
+---------------------
+
+  md_to_pdf Markdown to PDF (Dual Engine: Edge Headless + ReportLab)
+  universal_converter Universal file format converter
+  universal_compiler Compiles projects (LaTeX, Markdown, etc.)
+  youtube_extractor Extract YouTube transcripts and metadata
+
+USE
+----------
+
+  bach --tools converters md_to_pdf <input.md> [-o output.pdf]
+  bach --tools converters convert <input> <format>
+  bach --tools converters youtube <url>
+
+MD_TO_PDF
+---------
+
+Converts Markdown to PDF via two engines:
+  1. Edge Headless (primary) - high quality
+  2. ReportLab (fallback) - without browser
+
+MODULE
+-----
+
+  tools/converters/ (4 converters)

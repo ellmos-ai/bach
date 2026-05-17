@@ -1,0 +1,33 @@
+BACH Tool: c_umlaut_fixer
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/c_umlaut_fixer.py
+
+DESCRIPTION
+----------------------------------------
+c_umlaut_fixer.py - Repairs broken German umlauts in Python files
+
+Fixes typical encoding problems such as:
+  - Delete -> Delete
+  - open -> open
+  - about -> about
+
+Extracted from: A1 ProFiler/_Wartung/fix_profiler_complete.py
+
+Usage:
+    python c_umlaut_fixer.py <file.py>
+    python c_umlaut_fixer.py <file.py> --dry-run
+    python c_umlaut_fixer.py <file.py> --json
+
+Author: Claude (adapted)
+Dependencies: none (stdlib only)
+
+USE
+----------------------------------------
+python bach.py tools run c_umlaut_fixer [args]
+or directly: python tools/c_umlaut_fixer.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show c_umlaut_fixer

@@ -1,0 +1,196 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [skill_init.py, skills table]
+
+ANTHROPIC / AGENTSKILLS.IO SKILL STANDARDS
+------------------------------------------
+
+As of: 2026-03-12
+
+Anthropic and agentskills.io define an open standard for
+AI skills provided by Claude Code, Codex CLI, Cursor, ChatGPT and
+other platforms are supported. This standard allows
+Distribute and install skills across platforms.
+
+BACH supports this standard natively and can use existing skills
+export to Anthropic-compatible format.
+
+
+STANDARD DIRECTORY STRUCTURE
+-----------------------------
+An Anthropic-compatible skill is a folder with the following structure:
+
+  my-skill/
+  +-- SKILL.md # Main definition (required)
+  +-- scripts/ # Executable scripts (optional)
+  |   +-- setup.sh
+  |   +-- run.py
+  +-- references/ # Reference documentation (optional)
+  |   +-- core-overview.md
+  |   +-- features-api.md
+  |   +-- best-practices-testing.md
+  |   +-- advanced-caching.md
+  +-- assets/ # Static files (optional)
+      +-- logo.png
+      +-- config-template.json
+
+
+SKILL.MD -- YAML-FRONTMATTER
+-----------------------------
+Each SKILL.md starts with a YAML-Frontmatter block:
+
+  ---
+  name: my-skill-name
+  description: >
+    Short description of the ability this skill provides.
+    Maximum 1024 characters.
+  license: WITH
+  compatibility:
+    - claude code
+    - codex cli
+  metadata:
+    author: lukisch
+    version: 1.0.0
+    tags: [automation, code review]
+  allowed tools:
+    - Bash
+    - Read
+    - Edit
+  ---
+
+Required fields:
+  name Max 64 characters, kebab case (a-z, 0-9, hyphen)
+  description Max 1024 characters, free text
+
+Optional fields:
+  license License identifier (MIT, Apache 2.0, etc.)
+  compatibility List of compatible platforms
+  metadata Free key value for author, version, tags etc.
+  allowed-tools Whitelist of tools that the skill is allowed to use
+
+The actual skill body follows as markdown after the front matter.
+
+
+PROGRESSIVE DISCLOSURE (3 STAGES)
+----------------------------------
+The standard uses a three-stage loading process to generate token budgets
+to use efficiently:
+
+  Level 1 -- Metadata (~100 tokens)
+    Frontmatter only (name, description, metadata).
+    Loads while browsing/searching. Allows the LLM to decide
+    whether the skill is relevant without reading the body.
+
+  Level 2 -- SKILL.md Body (< 5000 Tokens)
+    The complete instruction text of SKILL.md.
+    Loaded when the skill is activated/installed.
+    Contains all rules, workflows and instructions.
+
+  Level 3 -- Bundled Resources (on demand)
+    Files from references/, scripts/ and assets/.
+    Are only loaded if the skill explicitly requests them
+    or the LLM needs them for the current task.
+
+This procedure keeps the initial token consumption low and
+only scales when necessary.
+
+
+REFERENCE FILES NAMING
+--------------------------
+Files in the references/ folder follow a naming convention:
+
+  core-*.md Basic concepts and overview
+  features-*.md Feature documentation and API reference
+  best-practices-*.md Recommended practices
+  advanced-*.md Advanced topics and optimization
+
+Examples:
+  references/core-overview.md
+  references/features-query-api.md
+  references/best-practices-error-handling.md
+  references/advanced-performance-tuning.md
+
+This convention allows LLMs to specifically search for the right one
+Search depth of detail.
+
+
+BACH SUPPORT
+--------------------
+BACH can directly scaffold Anthropic-compatible skills:
+
+  bach skills create <name> --format anthropic
+
+This command internally uses skill_init.py and creates:
+- SKILL.md with correct front matter
+- scripts/folder (empty)
+- references/ folder (empty)
+- assets/ folder (empty)
+
+Existing BACH skills can be exported:
+
+  bach skills export <name> --format anthropic
+
+The export converts the BACH-internal header into
+Anthropic-compatible front matter and reorganizes the files.
+
+
+COMPARISON: BACH-INTERNAL VS ANTHROPIC-COMPATIBLE
+------------------------------------------------
+
+Aspect internal to BACH Anthropic standard
+  ----------------- --------------------- ----------------------
+  Main file SKILL.md SKILL.md
+  Header YAML (extended) YAML (Frontmatter)
+  Name field name (free) name (kebab case, 64Z)
+  Type field type (mandatory) -- (not available)
+  Version version (mandatory) metadata.version (opt.)
+  Dependencies dependencies (mandatory) -- (not formalized)
+  Tools In the skill folder scripts/
+  Documentation in the skill folder references/
+  Static files data/ or assets/ assets/
+  Workflows _workflows/ or locally In SKILL.md Body
+  DB sync Yes (skills table) No
+  Export bach skills export Native format
+
+BACH-internal skills have more metadata (type, dependencies,
+trigger_phrases), which are transferred to metadata fields during export
+become. Anthropic-compatible skills are leaner, but fewer
+expressly.
+
+
+SKILLS VS. AGENTS (ANTHROPIC)
+------------------------------
+In the Anthropic ecosystem, skills and agents are two separate concepts:
+
+  Skill: Open standard (agentskills.io), portable
+          Defined in: .claude/skills/<name>/SKILL.md
+          Purpose: instructions, knowledge, workflows
+
+  Agent: Proprietaer (Claude Code / Agent SDK only)
+          Defined in: .claude/agents/<name>.md
+          Purpose: Isolated execution, own context window
+
+Agents are NOT defined in the skill folder. But you can
+work together:
+
+  - Skill can trigger agent: context: fork + agent: <name>
+  - Agent can preload skills: skills: [my-skill]
+
+Only the skill export is relevant for LobeHub/Marketplace (open,
+portable). Claude Code Agents are optional and not portable.
+
+When exporting BACH agents:
+  - Sub-agent definitions -> references/
+  - Orchestration code -> scripts/
+  - Optional: .claude/agents/<name>.md for Claude Code users
+
+
+SEE ALSO
+----------
+  bach help skills              BACH Skills System (Architecture v2.0)
+  bach help skill_export        Export of existing skills
+  bach help naming              Naming conventions
+  bach wiki lobehub             LobeHub Marketplace
+  docs/help/skills.txt Detailed skill documentation
+  wiki/skills_board.txt Skills Board GUI

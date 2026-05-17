@@ -1,0 +1,216 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[技能表，skill_sources.json]
+
+BACH 技能系统（架构 v2.0）
+-------------------------------------
+
+截至：2026-02-08
+
+技能是扩展 LLM 的专业技能。
+它们在第 3 层（逻辑和技能）中以模块化方式组织。
+
+版本检查原则（新）
+----------------------------
+始终使用最新版本 - 无论是本地版本还是中央版本：
+
+  bach --skills version <name>  # 检查版本
+  bach --tools version <name>   # 检查工具版本
+
+技能结构：一项技能 = 一个文件夹（新）
+--------------------------------------------
+每个技能、代理、专家在其自己的文件夹中完全自给自足：
+
+  FLAT（标准，< 5 个文件）：
+  ----------------------------
+  代理商/开发商/
+  +-- SKILL.md # 带标准头的定义
+  +-- tool_xyz.py # 特定工具（直接在root中）
+  +--workflow_abc.md # 具体工作流程（直接在root中）
+  +-- config.json # 可选
+
+  复杂（>= 5 个文件）：
+  ----------------------
+  代理/_专家/税务/
+  +-- 技能.md
+  +--tools/ # 许多工具的子文件夹
+  +--workflows/ # 许多工作流程的子文件夹
+  +-- data/ # 具体数据
+
+层次结构和类别
+-----------------------
+技能/
++-- _agents/agents（编排，自己的文件夹）
++-- _experts/ 专家（领域知识，自己的文件夹）
++-- _services/ Services（处理程序附近，自己的文件夹）
++-- _connectors/ 适配器（Telegram、Discord、HA、自己的文件夹）
++-- 合作伙伴/合作伙伴集成（自己的文件夹）
++-- _os/ 操作系统特定技能（自己的文件夹）
++-- _workflows/ 工作流程（无文件夹，1 个文件 = 1 个工作流程）
++-- _templates/ 标准模板 (TEMPLATE_*.md)
+
+组件类型
+-----------------
+
+  类型文件夹特征
+  ------------------------------------------------------------------------------------
+  Agent _agents/<name>/ 编排专家，自己的文件夹
+  专家 _experts/<name>/ 深厚的领域知识，自己的文件夹
+  Service _services/<name>/ 常规，handler相关，自己的文件夹
+  Connector _connectors/<name>/ 外部服务适配器
+  合作伙伴合作伙伴/<名称>/合作伙伴集成（合并）
+  操作系统技能 _os/<名称>/ 操作系统特定功能
+  Workflow _workflows/ NO 文件夹（1 个文件 = 1 个工作流程）
+  工具（通用）系统/工具/可重复使用，与技能无关
+  工具（特定） 在技能文件夹中 仅适用于此技能
+
+工具重复
+-----------------
+规则：如有疑问，请将其复制！
+
+  system/tools/c_ocr_engine.py # 通用版本
+  Agents/_experts/steuer/steuer_ocr.py # 技能专用版本
+
+优点：
+- 可独立开发
+- 技能保持自给自足
+- 无依赖性冲突
+
+重要：tools/ 位于 system/tools/ 下（不在 Skills/tools/ 下）
+
+CONNECTORS（新 2026-02）
+------------------------
+_connectors/ 包含外部服务的适配器：
+- telegram_connector.py - Telegram Bot API 集成
+-discord_connector.py -Discord 机器人集成
+- homeassistant_connector.py - 家庭助理集成
+- base.py - 基本连接器类
+- SKILL.md - 连接器文档
+
+连接器是连接外部平台的专门服务。
+它们主要使用异步通信和事件队列。
+
+STANDARD HEADER（强制）
+-------------------------
+每个组件都需要一个 YAML-Frontmatter 标头：
+
+  ---
+  姓名：[姓名]
+  版本：X.Y.Z
+  类型：技能|代理|专家|服务 |连接器|合作伙伴|操作系统 |工作流程
+  作者：[作者]
+  创建时间：YYYY-MM-DD
+  更新日期：YYYY-MM-DD
+  人类兼容：true
+  依赖项：
+    工具：[]
+    服务：[]
+    工作流程：[]
+  描述：>
+    [说明]
+  ---
+
+模板：skills/_templates/TEMPLATE_*.md
+
+导出系统
+-------------
+导出的技能必须在没有 BACH 的情况下工作：
+
+  bach --skills export <name>  # 创建自给自足的包
+
+导出包含：
+- 带标题的 SKILL.md
+-manifest.json（依赖项、版本）
+- 所有特定工具
+- 所有特定工作流程
+- README.md（独立指南）
+- 所需的巴赫所有一般资源
+
+技能来源和安全
+--------------------------
+
+  类源方法
+  ---------- --------------------------------- ----------------------
+  黄金标准 自写 最佳集成
+  值得信赖的人类/技能、烹饪书 测试后 1:1 OK
+  不受信任 仅重写其他 GitHub 存储库
+  黑名单 data/skill_blacklist.json 禁止
+
+检查：data/skill_sources.json
+
+数据库同步
+------------------
+所有技能在文件系统和数据库之间双向同步：
+- 表：技能（目前有 876 个条目）
+- 字段：名称、类型、路径、content_hash、is_active、版本
+- 高级字段：类别、优先级、trigger_phrases、dist_type、template_content、内容
+- 统计：bach --技能列表
+
+CLI 命令
+-----------
+  bach skills list               列出所有技能
+  bach skills show <name>        内容和元数据
+  bach skills search <term>      搜索功能
+  bach skills version <name>     版本检查（本地与中央）
+  bach skills export <name>      创建自给自足的包(v2.0)
+  bach skills install <path>     从ZIP/目录导入技能
+  bach skills export-agent <n>   将技能导出为Claude Code Agent
+  bach skills hierarchy          从数据库显示层次结构
+  bach skills hierarchy <typ>    仅显示类型（代理/专家/技能/服务/工作流程）
+
+自我扩展（新 v2.5）
+-----------------------------
+  bach skills create <name> --type <typ>   脚手架新功能
+  bach skills reload                        无需重新启动即可热重载
+
+  “创建”支持的类型：
+
+    --type 工具已创建：system/tools/<名称>.py
+                       带有标准模板的 Python 脚本
+                       实施后即可使用
+
+    --type 代理已创建：system/agents/<名称>/SKILL.md
+                       自己的文件夹，编排其他组件
+                       带有标准标题的模板
+
+    --type Expert 创建：system/agents/_experts/<name>/SKILL.md
+                       自己的文件夹，深厚的领域知识
+                       带有标准标题的模板
+
+    --type handler 创建：system/hub/<name>.py
+                       可立即作为 CLI 命令使用！
+                       具有 get_operations() 的 BaseHandler 子类
+                       “重新加载”后可通过 bach <name> 访问
+
+    --type 服务已创建：system/skills/_services/<名称>/
+                       包含 __init__.py 和 service.py 的文件夹
+                       Handler-close，一般可用
+
+  工作流程：
+    1. bach技能创建my-tool --type handler
+    2.编辑hub/my_tool.py（实现逻辑）
+    3.巴赫技能重装
+    4. bach mein-tool 帮助（立即可用！）
+
+  创建/重新加载后的挂钩：
+    after_skill_create → 在每次“创建”后发出
+    after_skill_reload → 在每次“重新加载”后发出
+
+GUI（技能板）
+------------------
+交互式技能板显示整个层次结构，
+同步状态并启用直接编辑。
+
+  http://127.0.0.1:8000/skills
+
+另请参见
+----------
+  bach help agents             代理概述
+  bach help tools              工具管理
+  bach help workflow           工作流系统
+  bach help naming             命名约定
+  bach help hooks              Hook 框架（14 个事件）
+  bach help self-extension     自我扩展系统
+  SKILL.md 核心技能定义
+  data/skill_sources.json 技能来源和版本

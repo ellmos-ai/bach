@@ -1,0 +1,111 @@
+绘图工具 - 系统之间的功能比较
+---------------------------------------------------
+
+截至：2026-01-23
+路径：docs/help/tools/mapping.txt
+
+描述
+------------
+用于比较和分析的特征映射工具
+跨不同系统的功能。
+BACH_STREAM 项目的一部分。
+
+路径：tools/mapping/
+
+FILES
+-------
+  query_features.py 查询和比较特征
+  populate_features.py 用特征填充数据库
+  schema.sql 数据库架构
+
+DATABASE
+---------
+位置：BACH_STREAM/MAPPING/feature_mapping.db
+
+表：
+  系统 注册系统（CHIAH、BATCH、recludOS 等）
+  特征 特征定义
+  feature_categories 分类（内存、GUI、任务等）
+  哪个系统有哪个功能
+
+主要功能
+---------------
+
+feature_matrix(category=None):
+  显示哪个系统具有哪些功能。
+
+  python query_features.py 矩阵
+  python query_features.py 矩阵 --category "内存"
+
+  符号：
+    + = 实施（完成）
+    ~ = 部分
+    ？  = 计划/未知
+    - = 不存在
+
+feature_synopsis(feature_name)：
+  比较所有系统中的单个功能。
+  显示路径、技术、注释。
+
+  python query_features.py 摘要“工作内存”
+
+注册系统
+--------------------
+  _CHIAH v3.1 原创 CLI-First 系统
+  _BATCH v2.5 基于集线器的系统
+  recludOS v3.3.0 代理框架
+  BACH v1.1 Best-of Synopsis（本系统）
+  AI-便携式RAG管道实用程序
+  模板 项目模板
+
+功能类别
+------------------
+  01 任务管理 任务管理
+  02 记忆记忆系统
+     21 基于短期会话的记忆
+     22记忆长期持久
+     23 内存上下文源加权
+  03 会话管理启动/关闭
+  04 GUI 网络仪表板
+  05 维护后台进程（daemon）
+  06 工具实用程序
+  07 沟通消息、合作伙伴
+  08 文档帮助系统
+  09 Agents Boss 代理商、专家
+  10 备份安全
+  11 RAG/嵌入检索增强
+  12 文件操作 Filesystem
+
+USE
+----------
+
+生成特征矩阵：
+  python tools/mapping/query_features.py 矩阵
+
+按类别过滤：
+  pythontools/mapping/query_features.py矩阵--category“GUI”
+
+功能概要：
+  python tools/mapping/query_features.py 摘要“注入器”
+
+输入新功能：
+  python tools/mapping/populate_features.py
+
+与 BACH 集成
+--------------------
+映射系统有助于：
+  - 以前系统的迁移
+  - 识别缺失的特征
+  - 实施状态文档
+
+另请参阅：docs/con2_ANFORDERUNGSANALYSE.md
+
+另请参阅
+----------
+  docs/help/architecture.txt BACH 系统架构
+  docs/consense_diff_2.md 开放要求
+  ROADMAP.md 包含待办事项的路线图
+  技能/SKILL_ANALYSE.md 覆盖系数
+
+版本：v1.0.0 (2026-01-23)
+行：〜334（query_features.py），〜313（populate_features.py）

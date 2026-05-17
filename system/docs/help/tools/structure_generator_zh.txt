@@ -1,0 +1,52 @@
+巴赫工具：structure_generator
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/structural_generator.py
+
+描述
+----------------------------------------
+structure_generator.py
+----------------------
+在频谱上生成技能和代理结构。
+
+版本：1.0.0
+创建时间：2026-01-14
+组合：skill_generator_v3.py + agent_generator_v1.py
+
+概念：
+  技能和代理人是一个谱系，而不是硬性类别。
+  从最简单的部分功能到完整的编排器。
+
+配置文件（升序）：
+  MICRO = 仅文件，无文件夹系统（绝对共享功能）
+  LIGHT = 最小结构（SKILL.md + _config + _data）
+  标准 = 具有简单记忆能力的技能
+  扩展 = 具有微观技能的技能
+  AGENT = 将技能编排到工作流程中
+  AGENT_FULL = 完整代理（更接近操作系统）
+
+MODI：
+  --embedded = 在操作系统中使用（轻量级）
+  --standalone = 供外部使用（完整，默认）
+
+用法：
+    python Structure_generator.py <名称> <配置文件> [目标文件夹] [--embedded|--standalone]
+
+示例：
+    python Structure_generator.py 分析 MICRO
+    python Structure_generator.py 搜索标准
+    python Structure_generator.py 编写助手AGENT
+    python Structure_generator.py 项目管理器 AGENT_FULL
+
+对于操作系统 → os_generator.py
+对于导出→exporter.py
+
+使用
+----------------------------------------
+python bach.py工具运行structure_generator [args]
+或直接： python tools/structural_generator.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：巴赫工具显示结构生成器

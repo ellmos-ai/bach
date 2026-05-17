@@ -1,0 +1,89 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+------------
+
+Manejador de estado: descripción general rápida del sistema BACH
+
+
+DESCRIPCIÓN
+------------
+
+El Manejador de estado ofrece una descripción general rápida del estado actual
+del sistema BACH. Muestra información sobre sesiones activas, socios en línea,
+Reservas de memoria, mensajes no leídos, tareas abiertas, herramientas registradas y
+la salud del sistema. Toda la información se toma directamente de `data/bach.db`
+determinado.
+
+
+OPERACIONES
+-----------
+
+mostrar
+    Muestra el estado completo del sistema (funcionamiento estándar).
+    Comando: bach --status [mostrar]
+    Retorno: Salida de texto formateado con todos los mensajes de estado
+
+
+EJEMPLOS
+---------
+
+1. Mostrar el estado del sistema (forma estándar)
+   $bach --estado
+
+2. Consulta de estado con operación explícita
+   $ bach --status show
+
+
+CAMPOS DE SALIDA
+--------------
+
+Sesión
+    - ID de sesión activa y socio si hay una sesión abierta
+    - De lo contrario: "No hay sesión activa"
+
+Socio
+    - Número de socios actualmente registrados en línea
+    - Vista previa de los nombres de los socios
+
+Memoria
+    - Número de entradas en Memoria de Trabajo, Hechos y Lecciones
+
+Chat
+    - Número de mensajes no leídos de `mensajes`
+
+Tareas
+    - Número de tareas abiertas (`status='pendiente'`)
+    - Por separado: Número de tareas P1/P2 y tareas bloqueadas
+
+Herramientas
+    - Número total de herramientas disponibles en la tabla `herramientas`
+
+Salud
+    - OK: la base de datos existe y las tablas principales son legibles.
+    - ERROR: `bach.db` falta o las consultas principales fallan
+
+
+FUENTES DE DATOS (relativas al sistema/)
+---------------------------------
+
+datos/bach.db
+    Base de datos central en tiempo de ejecución
+
+Tablas importantes:
+    - `memoria_sesiones`
+    - `presencia_socio`
+    - `memoria_trabajo`, `memoria_hechos`, `memoria_lecciones`
+    - `mensajes`
+    - `tareas`
+    - `tools`
+
+VER TAMBIÉN
+----------
+
+- hub/startup.py: Informe de inicio con un contexto de sesión más detallado
+- hub/base.py: clase BaseHandler
+- hub/messages.py: estado del mensaje y bandeja de entrada
+- hub/task.py: contador de tareas y detalles de la tarea

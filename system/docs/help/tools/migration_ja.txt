@@ -1,0 +1,30 @@
+BACH ツール: 移行
+--------------------
+
+BACH のデータベースと構造の移行。
+
+利用可能なツール
+-----------------
+
+  merge_skills_hierarchy スキル階層を新しい形式に移行します
+
+MIGRATIONS FOLDER
+-----------------
+
+SQL 移行は data/schema/migrations/ にあります。
+  001-035 番号付き移住（年代順）
+  doc_* ドキュメント固有の移行
+  fin_* 金融移行
+  Tax_* 税金の移行
+
+USE
+----------
+
+  bach upgrade                  すべての保留中の移行を実行
+  bach --tools migration skills Skills-Hierarchie migrieren
+
+MODULE
+-----
+
+  ツール/移行/ (1 ツール)
+  データ/スキーマ/移行/ (35 個以上の SQL/Python 移行)

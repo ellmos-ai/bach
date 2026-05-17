@@ -2303,7 +2303,7 @@ async def get_daemon_status():
             if os.name == 'nt':
                 output = subprocess.check_output(
                     ['tasklist', '/FI', f'PID eq {pid}'],
-                    stderr=subprocess.DEVNULL).decode()
+                    stderr=subprocess.DEVNULL).decode('utf-8', errors='replace')
                 running = str(pid) in output
             else:
                 os.kill(pid, 0)
@@ -2399,7 +2399,7 @@ async def start_daemon(background_tasks: BackgroundTasks):
                 import subprocess as _sp
                 output = _sp.check_output(
                     ['tasklist', '/FI', f'PID eq {pid}'],
-                    stderr=_sp.DEVNULL).decode()
+                    stderr=_sp.DEVNULL).decode('utf-8', errors='replace')
                 daemon_running = str(pid) in output
             else:
                 os.kill(pid, 0)
@@ -4872,7 +4872,7 @@ async def api_steuer_match_bank(payload: dict = Body(...)):
 
     try:
 
-        process = subprocess.run(cmd, capture_output=True, text=True, cwd=str(BACH_DIR))
+        process = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=str(BACH_DIR))
 
         return {
 

@@ -1,0 +1,154 @@
+POLICIES - Reusable Code Standards
+------------------------------------------
+
+As of: 2026-01-23
+Path: docs/help/tools/policies.txt
+
+DESCRIPTION
+------------
+Policies are reusable code snippets of the BACH standards
+enforce. They are injected into new projects and ensure
+consistent handling of:
+  - Encoding (UTF-8, Windows Console)
+  - JSON (emoji-safe, encoding fallback)
+  - Filenames (prefix convention)
+
+LOCATION
+-----------
+  tools/_policies/
+    encoding_header.py UTF-8 and console fix
+    emoji_safe.py Emoji conversion
+    json_safe.py Safe JSON operations
+    CONCEPT_naming_convention.md Naming Convention (Concept)
+
+AVAILABLE POLICIES
+--------------------
+
+1. encoding_header (v1.0)
+-------------------------
+UTF-8 Encoding Header and Windows Console Fix.
+Injected at the beginning of the file.
+
+INJECTED:
+  - Shebang: #!/usr/bin/env python3
+  - Encoding: # -*- coding: utf-8 -*-
+  - Windows Console Encoding Fix
+
+TYPICAL CODE:
+  #!/usr/bin/env python3
+  # -*- coding: utf-8 -*-
+
+  import sys
+  if sys.platform == 'win32':
+      sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+2. emoji_safe (v1.0)
+--------------------
+Safe emoji handling for storage/transfer.
+
+FEATURES:
+  emoji_to_safe(text) Emoji -> ASCII-safe (for DB/Files)
+  emoji_to_display(text) ASCII-safe -> Emoji (for display)
+
+USE:
+  from _policies.emoji_safe import emoji_to_safe
+  safe_text = emoji_to_safe("Hello [TOOL]") # -> "Hello :wrench:"
+
+DEPENDENCY:
+  Required: pip install emoji (optional, graceful fallback)
+
+3. json_safe (v1.0)
+-------------------
+Safe JSON operations with emoji/encoding handling.
+
+FEATURES:
+  json_load_safe(filepath) Loads with encoding fallback
+  json_save_safe(data, filepath) Saves with emoji conversion
+  json_dumps_safe(data) Serialized ensure_ascii=False
+
+USE:
+  from _policies.json_safe import json_load_safe, json_save_safe
+
+  # Load (tried utf-8, utf-8-sig, latin-1, cp1252)
+  data = json_load_safe("config.json")
+
+  # Save (converts emojis to :shortcodes:)
+  json_save_safe(data, "config.json", convert_emojis=True)
+
+POLICY FORMAT
+-------------
+Each policy has the following structure:
+
+  #!/usr/bin/env python3
+  # -*- coding: utf-8 -*-
+  """
+  POLICY: name
+  VERSION: 1.0
+  SIZE: small/medium/large
+  DESCRIPTION: What does the policy do
+  """
+
+  # === POLICY:name:version ===
+  ...code...
+  # === END:name ===
+
+SIZE CLASSES:
+  small -> inline injection (few lines)
+  medium -> External file (own module)
+  large -> Multiple files
+
+ATI PROJECT BOOTSTRAPPING
+-------------------------
+Policies are injected into new projects by the ATI bootstrapper:
+
+  bach ati bootstrap my-tool --template python-cli
+
+STANDARD POLICIES for Python CLI:
+  - encoding_header (always)
+  - json_safe (if using JSON)
+  - emoji_safe (when output to console)
+
+See: agents/ati/ATI_PROJECT_BOOTSTRAPPING.md
+
+NAMING CONVENTION (concept)
+---------------------------
+Planned naming convention for tool files:
+
+  c_ -> CLI optimized for AI (c_encoding_fixer.py)
+  b_ -> BACH core (b_backup.py)
+  a_ -> Agent Runner (a_developer.py)
+  t_ -> Test Tools (t_runner.py)
+  m_ -> Maintain (m_cleanup.py)
+  g_ -> Generator tools (g_skill.py)
+
+Status: CONCEPT - not yet implemented
+See: tools/_policies/CONCEPT_naming_convention.md
+
+CREATE YOUR OWN POLICY
+-----------------------
+
+1. Create file in tools/_policies/
+2. Policy header with NAME, VERSION, SIZE, DESCRIPTION
+3. Mark code between # === POLICY:name:version ===
+4. Optional: Register in project_bootstrapper.py
+
+TYPICAL USES
+-------------------------
+
+1. NEW PYTHON PROJECT
+   -> Automatically inject encoding_header
+
+2. JSON CONFIGURATION
+   -> json_safe for secure storage
+
+3. CONSOLE EDITION WITH EMOJIS
+   -> emoji_safe for Windows compatibility
+
+4. STANDARDIZE EXISTING CODE
+   -> c_standard_fixer uses policies internally
+
+SEE ALSO
+----------
+  bach --help tools/code_quality   Encoding/JSON-Fixer
+  bach --help ati                  ATI Agent and Bootstrapping
+  bach --help tools                Tool overview

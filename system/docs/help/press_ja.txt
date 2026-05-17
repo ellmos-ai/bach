@@ -1,0 +1,95 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+プレス ハンドラー
+-------------
+
+ハンドラー名
+------------
+
+press - プレス リリースとポジション ペーパー
+
+
+説明
+------------
+
+プレス ハンドラーは、専門的なプレス リリースとポジション ペーパーを作成および管理します。
+ポジションペーパー。ドキュメントは LaTeX テンプレートを介してコンパイルされ、次のように保存されます。
+PDF ファイルがエクスポートされました。管理は bach.db テーブルを通じて行われます
+ステータス追跡および電子メール送信オプションを備えた press_documents。
+
+要件: MiKTeX または TeX Live (pdflatex/xelatex が必要)
+
+
+操作
+-----------
+
+create --type <type> --title "..." [--body "..."]
+  新しいドキュメントを作成します。種類：プレスリリース、ポジションペーパー
+  例: bach press create --type press release --title "イノベーション 2026"
+  戻り値: 成功した場合はドキュメント ID と PDF パス、LaTeX エラーが発生した場合はドラフト
+
+テンプレート
+  利用可能な LaTeX テンプレートを表示する
+  表示: テンプレート名、パス、バイト単位のファイル サイズ
+
+リスト
+  保存されているすべてのドキュメントを表示します (最新のものから順)
+  表示: ID、タイプ、ステータス (ドラフト/コンパイル/送信)、PDF ステータス、作成日
+  並べ替え: created_at による降順
+
+<id> を表示
+  ID付き文書の詳細情報を表示
+  内容：タイプ、タイトル、ステータス、PDFパス、本文（最大300文字）、
+           作成日、発送情報
+
+<id> --<電子メール> に送信
+  文書を電子メールで送信する
+  用途: 電子メール送信用の NotifyHandler
+  変更: DB
+
+config [--logo <path>] [--author "..."] [--email <...>] [--org <...>] でステータスが「sent」、sent_at、sent_to に更新されました。
+  構成の表示または変更
+  保存: Agents/_experts/press/config.json に JSON 設定が保存されます。
+  オプション: logo_path、author、contact_email、organization
+
+
+例
+---------
+
+1。プレスリリースを作成:
+   bach press create --type pressemitteilung \
+     --title "2026 年の新製品の特長" \
+     --body "Lorem ipsum dolor sit amet..."
+
+2.すべてのドキュメントをリストします:
+   bach press list
+
+3.特定のドキュメントを表示します:
+   bach press show 5
+
+4。ドキュメントを送信します:
+   bach press send 5 --to redaktion@company.com
+
+5.構成の変更:
+   bach press config --author "Max Mustermann" --email info@company.com
+
+
+FILES
+-------
+
+システム/:
+
+ に関連  data/bach.db 文書データベース
+  Agents/_experts/press/ プレスハンドラーディレクトリ
+  Agents/_experts/press/config.json 構成ファイル (JSON)
+  Agents/_experts/press/press_compiler.py LaTeX コンパイラ モジュール
+
+
+関連項目
+----------
+
+  Hub/base.py BaseHandlerクラス（ハンドラ基本構造）
+  Hub/notify.py NotifyHandler (メール送信)
+  Agents/_experts/press/ テンプレートを含む Press Expert ディレクトリ

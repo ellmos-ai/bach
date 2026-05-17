@@ -1,0 +1,30 @@
+BACH Tool: batch_file_ops
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/batch_file_ops.py
+
+DESCRIPTION
+----------------------------------------
+batch_file_ops.py - Batch file operations
+
+Collects and deletes/moves/copies files by pattern.
+
+Usage:
+    python batch_file_ops.py delete <folder> --pattern "*.py"
+    python batch_file_ops.py delete <folder> --pattern "TOOLS_*.py"
+    python batch_file_ops.py move <source> <destination> --pattern "*.txt"
+    python batch_file_ops.py copy <source> <destination> --pattern "*.md"
+    python batch_file_ops.py list <folder> --pattern "*"
+    python batch_file_ops.py delete <folder> --pattern "*.py" --dry-run
+
+Author: Claude
+
+USE
+----------------------------------------
+python bach.py tools run batch_file_ops [args]
+or directly: python tools/batch_file_ops.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show batch_file_ops

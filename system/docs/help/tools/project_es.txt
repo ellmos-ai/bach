@@ -1,0 +1,26 @@
+Herramienta BACH: Proyecto
+------------------
+
+Gestión de proyectos y generación de código.
+
+HERRAMIENTAS DISPONIBLES
+-----------------
+
+  audit_bundler Exportar auditoría de proyecto como un paquete
+  License_generator Generar archivos de licencia
+  pattern_tool Reconocimiento de patrones de código
+  project_bundler Paquete de proyecto como paquete
+  Structure_generator Crear estructura de proyecto
+
+USE
+----------
+
+  bach --tools project audit <pfad>      Auditar proyecto
+  bach --tools project license <typ>     Generar licencia (MIT, Apache, etc.)
+  bach --tools project bundle <pfad>     Proyecto de paquete
+  bach --tools project structure <name>  Crear nueva estructura de proyecto
+
+MÓDULO
+-----
+
+  herramientas/proyecto/ (5 herramientas)

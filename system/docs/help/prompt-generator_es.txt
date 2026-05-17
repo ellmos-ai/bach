@@ -1,0 +1,220 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+GENERADOR DE INDICACIONES BACH
+---------------------
+
+El Generador de indicaciones es una placa GUI para crear, gestionar y
+Envío de mensajes a sesiones de Claude: manual o automatizado.
+
+ESTADO: FUNCIONAL (GUI web, servicio implementado)
+MANEJADOR: NO REGISTRADO (sin integración bach.py)
+SERVICIO: hub/_services/prompt_generator/
+GUI: gui/templates/prompt-generator.html (basado en web)
+NOTA: Se eliminó la aplicación de escritorio (prompt_manager.py, PyQt6) (v1.1.8)
+
+
+CONCEPTO
+-------
+
+La placa proporciona administración de avisos en todo el sistema con las siguientes características:
+
+  1. Editor de texto para mensaje de inicio (con función de reinicio)
+  2. Selección de plantilla (Sistema/Agentes/Propia)
+  3. Cuatro opciones de envío
+  4. Control de demonios (programación)
+
+
+OPCIONES DE ENVÍO (4 modos)
+----------------------
+
+  1. COMO TAREA
+     - Inmediatamente en cola como tarea
+     - Procesamiento asincrónico para la próxima sesión de Claude
+     - Sin ejecución inmediata
+
+  2. SESIÓN DIRECTA
+     - Inicia inmediatamente una nueva sesión de Claude.
+     - El mensaje se envía mediante entrada rápida (Ctrl+Alt+Espacio).
+     - Bloqueo hasta el final de la sesión
+
+  3. COPIAR TEXTO
+     - Copia el mensaje al portapapeles.
+     - El usuario inserta manualmente en Claude
+     - Para ajustes antes del envío
+
+  4. CONTROLES DEL DEMONIO
+     - Ejecución automática de avisos
+     - Configurable: intervalo, tiempos de bloqueo, sesiones máximas
+     - Rotación de un solo mensaje o de varios mensajes
+
+
+SISTEMA DE PLANTILLAS
+---------------
+
+  Plantillas del sistema (no editables, para restablecer):
+    - minimal.txt Base: leer SKILL.md, ejecutar bach.py
+    - task.txt Ejecución de tareas con salida JSON
+    - revisión del código review.txt con puntuación
+
+  Plantillas de agentes:
+    - Desarrollo de software ati.txt (Agente ATI)
+    - contabilidad tax.txt (agente fiscal)
+    - mantenimiento.txt mantenimiento del sistema BACH
+
+  Plantillas propias:
+    - Avisos creados/personalizados por el usuario
+    - Almacenado en DB (tabla Prompt_templates)
+
+
+DAEMON CONTROL
+----------------
+
+Opciones avanzadas para sesiones automatizadas:
+
+  Intervalo: minutos entre sesiones (predeterminado: 30)
+  Sesiones máximas: límite por ejecución (0 = ilimitado)
+  Horarios de bloqueo: inicio/fin del periodo de descanso (por defecto: 22:00 - 8:00)
+  Duración máxima: Máx. minutos por sesión (predeterminado: 15)
+
+  Modos:
+    Aviso único: siempre el mismo aviso
+    Mensaje múltiple: Rotación a través de diferentes plantillas
+
+  Una línea: solo 1 sesión activa al mismo tiempo (predeterminado)
+
+
+DISEÑO DE GUI (gui/prompt_manager.py - IMPLEMENTADO)
+---------------------------------------------------
+
+  Administrador de temas oscuros basado en PySide6 con:
+  - Pestaña 1: Editor de mensajes + Plantillas (Sistema/Agentes/Personalizado)
+  - Pestaña 2: Control de demonios (intervalos, tiempos de descanso, perfiles)
+  - Pestaña 3: Gestión de plantillas
+  - Pestaña 4: Gestión de perfiles
+  - Icono de la bandeja del sistema
+  - Bloqueo de instancia única
+
+  Llamada: python system/gui/prompt_manager.py
+
+
+COMANDOS CLI (ACTUAL)
+---------------------
+
+LLAMADA DIRECTA (script de servicio):
+  sistema de CD/hub/_services/prompt_generator
+  Lista de Python Prompt_generator.py
+  Python Prompt_generator.py obtiene <ruta>
+  python Prompt_generator.py generar <ruta>
+  python Prompt_generator.py copiar <ruta>
+  python Prompt_generator.py sesión [agente]
+  python Prompt_generator.py inicio [agente]
+  Estado de python Prompt_generator.py
+
+INICIAR GUI:
+  python system/gui/prompt_manager.py
+
+INTEGRACIÓN BACH.PY:
+  FALTA - ¡Ningún manejador registrado!
+  La "lista de mensajes de Python bach.py" NO funciona
+  "python bach.py --prompt list" NO funciona
+
+
+DEFINICIÓN: TRES SISTEMAS DE MANEJADOR
+--------------------------------
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ GENERADOR DE INDICACIONES │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Crear, administrar, enviar indicaciones │
+  │ Manual o automatizado │
+  │ Todo el sistema para todos los agentes │
+  │ Controlador: FALTANTE (no en el registro) │
+  │ Servicio: hub/_services/prompt_generator/prompt_generator.py │
+  │ GUI: gui/prompt_manager.py (PySide6, independiente) │
+  │ Daemon: SÍ (session_daemon.py) │
+  │ API: FALTANTE (no en bach_api.py) │
+  └──────────────────────────────── ─────────────────────────────────┘
+
+┌──────────────────────────────── ─────────────────────────────────┐
+  │ MANTENIMIENTO (docs/help/maintenance.txt) │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Ejecutar comandos de Shell/Python (copia de seguridad, limpieza) │
+  │ Sin indicaciones, solo comandos │
+  │ Controlador: hub/daemon.py (registrado) │
+  │ Servicio: gui/api/daemon_api.py + DB │
+  │ GUI: /daemon (panel de control web) │
+  │ Daemon: SI (proceso propio) │
+  └────────────────────────────────── ───────────────────────────────┘
+
+  ┌──────────────────────────────── ─────────────────────────────────┐
+  │ RECURRENTE (docs/help/recurring.txt) │
+  ├──────────────────────────────── ─────────────────────────────────┤
+  │ Crea tareas como recordatorios │
+  │ Sin envío rápido │
+  │ Controlador: hub/recurring.py (registrado) │
+  │ Servicio: hub/_servicios/recurrente/ │
+  │ GUI: NINGUNO (solo CLI) │
+  │ Daemon: NO (marque cuando lo llamen) │
+  └─────────────────── ──────────────────── ──────────────────────────┘
+
+
+BASE TÉCNICA
+----------------
+
+  Carpeta de servicio: hub/_services/prompt_generator/
+    ├── documentación README.md
+    ├── configuración de config.json (configuración del demonio)
+    ├── Prompt_generator.py lógica principal (CLI + API)
+    ├── plantillas/carpeta de plantillas
+    │ ├── sistema/plantillas de solo lectura
+    │ │ ├── mínimo.txt
+    │ │ ├── tarea.txt
+    │ │ └── reseña.txt
+    │ └── agentes/Plantillas editables
+    │ ├── ati.txt
+    │ ├── impuestos.txt
+    │ └── mantenimiento.txt
+    └── perfiles/perfiles de demonio
+        ├── ati.json
+        └── mantenimiento.json
+
+  GUI: gui/prompt_manager.py (PySide6, independiente)
+
+  FALTA DE INTEGRACIÓN:
+    - No hay controlador en hub/ (no en registro)
+    - No hay módulo bach_api (falta en bach_api.py)
+    - Llamar a través del "indicador bach.py" NO es posible
+
+
+PROBLEMAS CONOCIDOS
+-----------------
+
+1. SIN INTEGRACIÓN BACH.PY
+   - El servicio es funcional, pero no en el registro bach.py.
+   - "lista de mensajes de python bach.py" → Error
+   - Solución alternativa: llamada de servicio directa (consulte COMANDOS CLI)
+
+2. SIN INTEGRACIÓN BACH_API
+   - No hay módulo "aviso" en bach_api.py
+   - API de biblioteca no utilizable
+   - Solución alternativa: importar el servicio directamente
+
+3. INCONSISTENCIA DEL CAMINO
+   - Archivo de ayuda al que se hace referencia skills/_services/ (antiguo)
+   - Actualmente en hub/_services/ (correcto)
+
+MIGRACIÓN REQUERIDA:
+  - Crear controlador en hub/prompt.py
+  - Registrarse en el Registro (clase BaseHandler)
+  - expanda bach_api.py con el mensaje = _HandlerProxy("prompt")
+
+
+VER TAMBIÉN
+----------
+
+  ayudar a trabajos de mantenimiento de mantenimiento (comandos de shell)
+  ayuda recurrente Recordatorios de tareas recurrentes (sin GUI)
+  ayuda ati Agente desarrollador de software ATI
+  ayuda demonio Gestión de demonios (mantenimiento versus demonio de sesión)

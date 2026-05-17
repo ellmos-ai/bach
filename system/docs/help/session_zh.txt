@@ -1,0 +1,90 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+会话处理程序
+---------------
+
+处理程序名称
+------------
+
+session - BACH 的会话管理 (SESSION_001-006)
+
+描述
+------------
+
+会话处理程序通过运行时跟踪来管理工作会话，
+任务管理和情境感知思维。集成启动
+和关闭过程，计算剩余时间并发出警告
+会议结束。支持任务间检查以优化
+任务依赖性和阻塞。
+
+操作
+-----------
+
+start 启动会话（委托给 StartupHandler）
+状态 显示活动会话状态，值得深思
+end 结束会话（委托给 ShutdownHandler）
+检查时间计算：持续时间、计划结束时间、剩余时间
+next 具有任务间检查的下一个任务
+
+检查选项：
+  --duration / -d 显示剩余时间
+  --set-duration=MIN 设置会话持续时间（以分钟为单位）
+
+示例
+---------
+
+开始新会话：
+  bach session start
+
+显示深思熟虑的状态：
+  bach session status
+
+时间计算（会话结束时发出警告）：
+  bach session check --duration
+
+将会话持续时间设置为 180 分钟：
+  bach session check --set-duration=180
+
+在检查之间显示下一个任务：
+  bach session next
+
+结束会话：
+  bach session end
+
+文件
+-------
+
+data/bach.db 数据库源（表：
+                                 memory_sessions、tasks、memory_lessons)
+
+data/user_config.json 会话配置
+                                 (session_duration_分钟)
+
+hub/session.py 处理程序实现
+
+它是如何工作的
+--------------
+
+1.运行时跟踪：计算自 start_at 以来的持续时间，在以下时间发出警告
+   超出计划持续时间（默认 120 分钟）。
+
+2.深思熟虑 (SESSION_003)：基于时间（午餐、下班后），
+   基于任务（旧的、阻塞的、未完成的）或一般
+   （文档、评论、备份）。
+
+3。任务间检查 (SESSION_006)：
+   - 检测具有已完成依赖关系的阻塞任务
+   - 提醒进行中的任务
+   - 完成 5 项任务后获得的经验教训
+
+4。按优先级 (P1 > P2 > P3) 和年龄推荐任务
+
+另请参见
+----------
+
+hub/startup.py 启动处理程序（会话初始化）
+hub/shutdown.py 关闭处理程序（会话终止）
+hub/task.py 任务处理程序（任务管理）
+data/bach.db 数据库架构

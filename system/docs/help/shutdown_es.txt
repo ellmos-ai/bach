@@ -1,0 +1,165 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+APAGADO - Finalizar sesión
+--------------------------
+
+DESCRIPCIÓN
+El protocolo de apagado finaliza una sesión BACH y la guarda
+Informe de sesión y actualiza el estado del directorio.
+
+COMANDOS
+-------
+bach --shutdown              Apagado completo (predeterminado)
+bach --shutdown "Summary"    Con resumen de sesión
+bach --shutdown quick        Rápido sin escaneo de directorios
+bach --shutdown emergency    Emergencia: solo guardar estado
+bach --shutdown --partner=NAME  Apagado específico del socio (v1.1.71)
+
+TIPOS DE APAGADO
+--------------
+COMPLETO (predeterminado):
+- Actualizar escaneo de directorio
+- Instantánea automática cuando >= 3 cambios
+- Guardar sesión en DB
+- Contar estadísticas de tareas
+
+RÁPIDO:
+- No hay actualización de escaneo de directorios
+- Guarda una nota breve
+- Para descansos si la sesión continúa próximamente
+
+EMERGENCIA:
+- Guardar solo notas de emergencia (prioridad 10)
+- Uso en caso de cancelación/tiempo de espera
+- Copia de seguridad mínima del estado
+
+PROCESO COMPLETO (v1.1.17)
+-------------------------
+1. [ESCANEO DEL DIRECTORIO]
+   - Actualizar el estado de OBJETIVO
+   - Cambios de documentos
+
+2. [INSTANTÁNEA AUTOMÁTICA] ***NUEVA v1.1.17***
+   - Si>= 3 cambios: instantánea automática
+   - Nombre: auto_AAAAMMDD_HHMMSS
+   - Continuar: carga de instantáneas de Bach
+
+3. [GUARDAR SESIÓN]
+   - Sesión completa en Memory_Sessions.
+   - Se guarda el resumen
+   - Recuperación automática de memoria (v1.1.15):
+     Si no se proporciona ningún resumen -> generar desde Autolog
+
+4. [ESTADO DE LA MEMORIA]
+   - Muestra el contador de trabajo/hechos/sesiones
+
+5. [ESTADÍSTICAS DE TAREAS] *** v1.1.14 ***
+   - Cuenta tareas creadas/completas
+   - Almacena en memoria_sesiones
+
+EJEMPLO DE SALIDA
+---------------
+-------------------------------------------------------
+          APAGADO COMPLETO
+-------------------------------------------------------
+ Hora: 2026-01-22 13:15
+-------------------------------------------------------
+
+[ESCANEO DEL DIRECTORIO]
+ Estado OBJETIVO actualizado (5 cambios)
+
+[AUTO-SNAPSHOT]
+ [OK] Instantánea automática creada (5 cambios)
+
+[GUARDAR SESIÓN]
+ [OK] Sesión session_20260122_1300 completada
+
+[ESTADO DE LA MEMORIA]
+ Trabajando: 3 | Hechos: 5 | Sesiones: 12
+
+[ESTADÍSTICAS DE TAREAS]
+ +2 creado, 1 hecho (esta sesión)
+
+-------------------------------------------------------
+ Sesión FINALIZADA
+-------------------------------------------------------
+
+GUARDAR INFORME DE SESIÓN
+-------------------------
+Guarde el informe de sesión ANTES del cierre:
+
+  bach --memory session "THEMA: Was gemacht. NAECHSTE: Was kommt."
+
+O especifique el resumen directamente durante el cierre:
+
+  bach --shutdown "Help-Dateien aktualisiert. NEXT: memory.txt pruefen"
+
+IMPORTANTE: Los informes de sesión pertenecen a memoria_sesiones (DB),
+         ¡NO en archivos de memoria/archivo/*.md!
+
+AUTO-MEMORY FALLBACK (v1.1.15)
+------------------------------
+Si Claude no especifica un resumen, se creará uno automáticamente
+generado a partir del registro automático. Formato:
+
+  [AUTO-FALLBACK] Comandos: 15 (8 únicos) || lista de tareas, lectura de memoria, ...
+
+Esta es una red de seguridad: ¡el resumen manual es mejor!
+
+CUÁNDO APAGAR
+---------------------
+| Situación | comando | razón |
+|-----------|--------|-------|
+| Tarea completada | --apagar | Documentación completa |
+| Breve descanso | --apagado rápido | Rápido, sigue adelante pronto |
+| Tiempo de espera/Abortar | --cierre de emergencia | Copia de seguridad mínima
+
+|FUENTES DE DATOS
+-------------
+- Memory_sessions: informes de sesión, contadores de tareas
+-memory_working: notas de emergencia
+- session_snapshots: Instantáneas automáticas
+
+HANDLER
+-------
+hub/shutdown.py Controlador de apagado (basado en DB)
+
+PARTNER SHUTDOWN (v1.1.71)
+--------------------------
+Para sesiones de socio, el socio se registra automáticamente:
+
+  bach --shutdown --partner=claude   Claude ficha de salida
+  bach --shutdown --partner=gemini   Gemini ficha de salida
+
+La tarjeta de sello (tabla de presencia de socio) se actualiza:
+  - estado: en línea -> fuera de línea
+  - clocked_out: marca de tiempo establecida
+
+Sin --partner, "usuario" se asume como socio.
+
+PROSYNC (al salir)
+------------------
+Si ProSync está activado (bach setup prosync --multi-system), es
+Al final de la sesión, se escribe una copia de seguridad de la base de datos en el centro de tránsito:
+  - Push: Exportar base de datos local como copia de seguridad .bachdb
+  - Objetivo: OneDrive/.SYNC/bach_db_transit/
+ProSync se ejecuta a través del enlace atexit en bach.py, no en el controlador de apagado.
+Detalles: bach --help db_sync
+
+HISTORIAL DE VERSIONES
+----------------
+v1.1.0 Apagado básico con escaneo de directorios
+v1.1.14 + estadísticas de tareas
+v1.1.15 + Reserva de memoria automática desde Autolog
+v1.1.17 + Instantánea automática cuando >= 3 cambios
+v1.1.71 + Salida del socio (tarjeta de sello)
+
+VER TAMBIÉN
+----------
+bach --help startup        Iniciar sesión
+bach --help memory         Sistema de memoria (sesión, hechos)
+bach --help snapshot       Administrar instantáneas
+bach --help tasks          Gestión de tareas
+bach --help db_sync        ProSync: Sincronización de base de datos multisistema

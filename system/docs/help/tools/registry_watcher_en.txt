@@ -1,0 +1,36 @@
+BACH Tool: registry_watcher
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/registry_watcher.py
+
+DESCRIPTION
+----------------------------------------
+BACH Registry Watcher v1.0.0
+
+Automatic monitoring and consistency check of all system registries.
+Ported from RecludOS, integrated with BACH database system.
+
+Features:
+- Existence check: Registered entries vs file system
+- Syntax validation: JSON files
+- Cross-Reference: DB entries vs files
+- Generate health reports
+- Notification of problems
+
+Usage:
+  python registry_watcher.py check # Check all registries
+  python registry_watcher.py report # Create health report
+  python registry_watcher.py tools # Check tools only
+  python registry_watcher.py skills # Check skills only
+  python registry_watcher.py agents # Only check agents
+  python registry_watcher.py --fix # Fix problems automatically (safely)
+
+USE
+----------------------------------------
+python bach.py tools run registry_watcher [args]
+or directly: python tools/registry_watcher.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show registry_watcher

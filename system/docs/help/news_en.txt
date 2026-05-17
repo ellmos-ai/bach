@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NEWS HANDLER
+------------
+
+DESCRIPTION
+------------
+
+Aggregates news from RSS feeds, web pages and YouTube channels. Saves sources
+and articles in the bach.db, supports categorization and read status tracking.
+Automatic type detection (RSS/Web/YouTube) based on URL structure.
+
+OPERATIONS
+-----------
+
+add <url> [--type TYPE] [--category CAT] [--name NAME]
+  Add new source.
+  TYPE: rss, web, youtube (auto-detected if not specified)
+  CATEGORY: Organizational category (default: “general”)
+  NAME: Displayed name (default: extracted from URL)
+  YouTube URLs: /channel/UC... will be converted to RSS feed
+
+list
+  View all registered sources with status.
+  Shows: ID, name, type, URL, category, active/inactive status,
+         last calls, error count
+
+fetch [--source ID]
+  Get new articles.
+  --source ID: Specific source only (default: all active)
+  Supports: RSS parsing (with feedparser), simple web pages
+
+items [--unread] [--category CAT] [--limit N]
+  View saved news articles.
+  --unread: Only unread items (default: all)
+  --category CAT: Filter by category
+  --limit N: Show maximum number (default: 20)
+  Marking: * = unread, space = read
+
+read <ID|all>
+  Mark article as read.
+  ID: Specific item ID
+  all: All unread items
+
+remove <ID>
+  Delete source and all related articles.
+  Cascading deletion via FOREIGN KEY
+
+categories
+  Overview of all categories with source/status counts.
+
+stats
+  Statistics: sources, categories, articles, unread,
+  last 3 retrievals with timestamp.
+
+help
+  Show this help.
+
+EXAMPLES
+---------
+
+Add RSS source:
+  bach news add https://example.com/feed.xml --category technik --name "Beispiel Tech"
+
+Subscribe to YouTube channel:
+  bach news add https://youtube.com/channel/UCxxxxxx --name "Mein Lieblingskanal"
+
+Monitor web page:
+  bach news add https://example.com --type web --category news
+
+Retrieve and display news:
+  bach news fetch
+  bach news items --unread --limit 10
+
+Browse categories:
+  bach news categories
+  bach news items --category technik
+
+Mark all unread as read:
+  bach news read all
+
+FILES
+-------
+
+Database: data/bach.db
+  - news_sources: sources with metadata (ID, name, URL, type, category, status)
+  - news_items: Articles with read flag, publication and retrieval date
+
+Dependencies:
+  - feedparser: For RSS parsing (optional, may be requested)
+  - urllib: For web pages (stdlib)
+
+SEE ALSO
+----------
+
+hub/base.py BaseHandler for operation dispatch
+data/bach.db SQLite database with sources and items

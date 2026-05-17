@@ -1,0 +1,36 @@
+BACH ツール: c_method_analyzer
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/c_method_analyzer.py
+
+説明
+----------------------------------------
+c_method_analyzer.py - クロード用 Python コード アナライザー
+
+目的: メソッド、呼び出し、インポート、および潜在的な問題について Python コードを分析します。
+       MethodsAnalyser3.py から抽出 - GUI が削除され、CLI インターフェースが追加されました。
+
+作成者: Claude (ユーザー ツールから適応)
+バージョン: 2.0 (信号チェック、属性チェック、エンコード修正を含むように拡張)
+依存関係: ast、コレクション、difflib、datetime (すべての標準ライブラリ)
+
+関数:
+- 分析ファイル(パス) -> 分析結果: メイン分析
+-generate_report(result) -> str: フォーマットされたレポート
+- get_summary(result) -> dict: さらなる処理のためのコンパクトな概要
+
+v2.0 の新機能:
+- Windows コンソールのエンコーディングの修正
+- Signal-Connect チェック (.connect(self.X) -> X は存在しますか?)
+- init 前の属性検出 (self.X = ... の前に self.X が使用される)
+- タイプミス検出の改善 (_show_X vs show_X)
+
+使用
+----------------------------------------
+python bach.py tools run c_method_analyzer [args]
+または直接: python tools/c_method_analyzer.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成されます
+- 質問がある場合: bach tools show c_method_analyzer

@@ -1,0 +1,226 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH PLUGIN API
+---------------
+
+現在: 2026-05-06
+
+プラグイン API により、実行時に BACH を動的に拡張できます。
+プラグインはツール、フック、ワークフロー、ハンドラーを登録できます --
+命令型 (コード経由) または宣言型 (`plugin.json` 経由)。
+
+CLI コマンド
+-----------
+  bach plugins list              ロードされているすべてのプラグインを表示
+  bach plugins inspect <pfad>    ランタイムロードなしでマニフェストファーストプレビュー
+  bach plugins load <pfad>       plugin.json からプラグインをロード
+  bach plugins unload <name>     プラグインをアンロード
+  bach plugins tools             すべてのプラグイン ツールを表示
+  bach plugins info <name>       プラグインの詳細
+  bach plugins create <name>     プラグイン マニフェストを作成 (スキャフォールディング)
+  bach plugins caps              機能プロファイルを表示
+  bach plugins trust <name> <l>  プラグインの信頼レベル
+  bach plugins audit [limit]     最新の機能チェックを表示
+
+  短い形式:
+  bach plugin list               (エイリアス: plugin -> plugins)
+
+API の使用法 (命令的)
+-----------------------
+  core.plugin_api からプラグインをインポート
+  # または: bach_api インポート プラグインから
+
+  # ツールの登録
+  def my_tool(テキスト):
+      return f"処理されました: {text}"
+
+  plugins.register_tool("my_tool", my_tool, "説明")
+  result = plugins.call_tool("my_tool", "input")
+
+  # フックを登録する
+  def on_task(ctx):
+      print(f"タスクが作成されました: {ctx['task_id']}")
+
+  plugins.register_hook("after_task_create", on_task, plugin="my-plugin")
+
+  # ハンドラーの登録 (新しい CLI コマンド)
+  Hub.base から BaseHandler をインポート
+  クラスMyHandler(BaseHandler):
+      ...
+
+  plugins.register_handler("my_cmd", MyHandler, plugin="my-plugin")
+
+  # ワークフローを作成する
+  plugins.register_workflow("my-workflow", "# Workflow\n...", plugin="my-plugin")
+
+  # 管理
+  print(plugins.list_plugins())
+  plugins.inspect_plugin("plugins/my-plugin/plugin.json")
+  plugins.unload_plugin("my-plugin")
+
+プラグイン マニフェスト (宣言型)
+----------------------------
+自動読み込み用に `plugin.json` を作成します:
+
+  bach plugins create mein-plugin
+
+マニフェスト形式 (`plugin.json`):
+  {
+    "名前": "私のプラグイン",
+    "manifest_version": "1.1",
+    "バージョン": "1.0.0",
+    "description": "プラグインの機能",
+    "作者": "クロード",
+    "ソース": "ゴールドスタンダード",
+    "capabilities": ["db_read", "hook_listen"],
+    "アクティベーション": {"モード": "手動", "有効": true},
+    「プロバイダー」: [],
+    「モデル」: [],
+    「セットアップ」: {
+      "requires": ["Node.js", "クロード コード"],
+      "env": ["ANTHROPIC_API_KEY"],
+      "notes": "セットアップが必要な理由",
+      "fail_closed": true、
+      "表面": ["シェル", "mcp"],
+      「チェック」: [
+        {"タイプ": "command_exists", "コマンド": "npx"},
+        {"タイプ": "mcp_server_known"、"パッケージ": "ellmos-codecommander-mcp"}
+      ]
+    }、
+    「フック」: [
+      {
+        "イベント": "タスク完了後",
+        "モジュール": "handlers.py",
+        "ハンドラー": "on_task_done",
+        「優先度」：50
+      }
+    ]、
+    「ハンドラー」: [
+      {"名前": "my_cmd"、"ファイル": "my_handler.py"}
+    ]、
+    「ワークフロー」: [
+      {"名前": "my-workflow", "ファイル": "workflow.md"}
+    ]
+  }
+
+ロード:
+  bach plugins inspect plugins/mein-plugin/plugin.json
+  bach plugins load plugins/mein-plugin/plugin.json
+
+登録タイプ
+--------------------
+  タイプ API メソッドの説明
+  ---------- ----------------------------- -----------------------------
+  ツール register_tool() ツールとして呼び出し可能なレジスタ
+  Hook register_hook() イベントリスナーの登録
+  ワークフロー register_workflow() Markdown ファイルの作成
+  ハンドラー register_handler() 新しいランタイム CLI コマンド
+
+PLUGIN-LIFECYCLE
+----------------
+  1. 作成: bach plugins create <name>
+  2. 開発: plugin.json + handlers.py を編集します。
+  3. チェック: bach プラグインが <path/plugin.json> を検査する
+  4. ロード: bach プラグインのロード <path/plugin.json>
+  5. 用途: ファイアフック、ツールの呼び出し、CLI コマンドの使用
+  6. アンロード: bach plugins unload <name>
+
+CAPABILITY SYSTEM (レベル 1 サンドボックス)
+-----------------------------------
+プラグインは必要な機能を宣言します。 BACHチェックと
+ソースの信頼レベルに基づいて適用されます。
+
+  定義された機能:
+    db_read データベースの読み取り
+    db_write データベースの書き込み
+    file_read ファイルの読み取り
+    file_write ファイルの書き込み
+    hook_listen イベントをリッスンする
+    hack_emit イベントを発行する
+    tool_register 新しいツールを登録する
+    handler_register 新しい CLI ハンドラーを登録する
+    workflow_create ワークフローの作成
+    ネットワーク ネットワークアクセス（HTTP/API）
+    シェル シェルコマンドを実行する
+    デスクトップ デスクトップ/GUI オートメーションを実行する
+    mcp MCP サーバーの構成または接続
+
+信頼プロファイル (`data/skill_sources.json` にリンク):
+    goldstandard trust=100 すべての機能
+    trusted trust=80 シェル + デスクトップ + mcp + ネットワークを除くすべて
+    untrusted trust=20 db_read、file_read、hook_listen のみ
+    ブラックリスト trust=0 何も許可されません
+
+  施行:
+    - register_tool() は `tool_register` をチェックします
+    - register_hook() は `hook_listen` をチェックします
+    - register_handler() は `handler_register` をチェックします
+    - register_workflow() は `workflow_create` をチェックします
+    -load_plugin() は要求されたすべての機能をチェックします
+    - 検査/ロード チェックのセットアップ ガードは、shell/desktop/mcp に対してフェールクローズされます
+
+SETUP-GUARDS (SEC-PLUGIN-003)
+-----------------------------
+セットアップ メタデータを介した強力なアクセスは、ランタイム インポートの前にブロックされます。
+要件が明示的に記述されておらず、フェールクローズされた場合。
+
+  危険な表面:
+    シェル、デスクトップ、mcp
+
+  このような設定では必須です:
+    - `setup.fail_closed = true`
+    - `setup.checks = [...]` 適切なガード チェックを使用します
+
+  サポートされているチェックの種類:
+    コマンド_存在
+    env_present
+    path_exists
+    python_import
+    mcp_server_known
+    デスクトップ対応
+    許可フラグ
+
+  予想される小切手の範囲:
+    シェル -> command_exists、env_present、path_exists、python_import
+    デスクトップ -> デスクトップ有効、パス_存在、コマンド存在、環境存在
+    mcp -> mcp_server_known、command_exists、env_present、path_exists
+
+  例:
+    「セットアップ」: {
+      "requires": ["クロード デスクトップ", "Node.js"],
+      "fail_closed": true、
+      "表面": ["mcp"],
+      「チェック」: [
+        {"タイプ": "command_exists", "コマンド": "npx"},
+        {"タイプ": "mcp_server_known"、"パッケージ": "ellmos-codecommander-mcp"}
+      ]
+    }
+
+安全性
+----------
+  - すべての `register_*()` メソッドでの機能の強制
+  - `skill_sources.json`からの信頼レベル(4レベルシステム)
+  - マニフェストファースト検査: アクティベーション、プロバイダー、モデル、ランタイムインポートなしのセットアップ
+  - プラグインロード前のシェル/デスクトップ/MCP のフェールクローズ セットアップ ガード
+  - 静的コード分析: eval、exec、サブプロセス、os.system
+  - 追跡可能性のための監査ログ
+  - 欠陥のあるフックが引っかかり、何も壊れません。
+  - プラグインをアンロードすると、すべての登録が完全に削除されます
+  - 監査経由: `bach plugins Audit`、`bach plugins info <name>`
+
+ARCHITECTURE
+-----------
+  core/capabilities.py CapabilityManager シングルトン (施行)
+  core/plugin_api.py PluginRegistry シングルトン (プラグイン管理)
+  Hub/plugins.py CLI ハンドラー (`bach plugins ...`)
+  core/hooks.py フックフレームワーク
+  data/skill_sources.json 信頼プロファイルと機能マッピング
+
+関連項目
+----------
+  bach help hooks          フック フレームワーク
+  bach help skills         スキル システム
+  bach help self-extension Selbsterweiterungs-System
+  bach help cli            CLI 規約

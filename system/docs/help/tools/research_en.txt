@@ -1,0 +1,147 @@
+RESEARCH TOOLS - Scientific research
+--------------------------------------------
+
+As of: 2026-01-23
+Path: docs/help/tools/research.txt
+
+DESCRIPTION
+------------
+Research Agent for scientific literature research.
+Integrates various external research tools and
+structures the review process.
+
+Path: tools/research_agent.py
+
+AVAILABLE EXTERNAL TOOLS
+-------------------------
+The Research Agent recommends and links:
+
+  PubMed Biomedical Literature (NIH)
+  Perplexity AI-powered research with sources
+  Consensus Scientific Evidence Search
+  NotebookLM Google clustering/analyzing tool
+  Elicit AI research assistant
+  Scite citation analysis with context
+
+USE
+----------
+
+CLI commands:
+  python research_agent.py search "query"
+  python research_agent.py review --topic "topic" --years 5
+  python research_agent.py status
+
+Examples:
+  python research_agent.py search "CRISPR gene therapy"
+  python research_agent.py review --topic "Depression biomarkers" --years 3
+  python research_agent.py status
+
+SEARCH COMMAND
+-------------
+Performs research and recommends appropriate tools.
+
+  python research_agent.py search "BRCA1 mutation breast cancer"
+
+Output:
+  - Recommended tools based on keywords
+  - Direct URLs to the search portals
+  - History is saved
+
+Keyword detection:
+  - genes, proteins, diseases, clinical -> PubMed
+  - study, evidence, research -> consensus
+  - General -> Perplexity
+
+REVIEW COMMAND
+-------------
+Creates structured literature review plan.
+
+  python research_agent.py review --topic "Depression vs Fatigue" --years 5
+
+5-Phase Plan:
+  1. Overview (5 min) - Perplexity for context
+  2. Systematic search - PubMed + Consensus (15 min)
+  3. Screening (10 min) - NotebookLM for clustering
+  4. Full text analysis - Claude/Gemini (20 min)
+  5. Synthesis (10 min) - Summary + Gaps
+
+Output directory:
+  user/services_output/research/
+
+STATUS COMMAND
+-------------
+Shows agent status and history.
+
+  python research_agent.py status
+
+Output:
+  - version
+  - Total number of searches
+  - Final search
+  - Available tools
+
+PYTHON INTEGRATION
+------------------
+from tools.research_agent import ResearchAgent
+
+agent = ResearchAgent()
+
+# Start search
+result = agent.search("Alzheimer biomarkers")
+for rec in result["recommendations"]:
+    print(f"{rec['tool']}: {rec['url']}")
+
+# Create review plan
+plan = agent.create_review_plan("Depression", years=3)
+
+# Get status
+status = agent.get_status()
+
+WORKFLOW EXAMPLE
+-----------------
+Typical research workflow:
+
+1. DEFINE TOPIC
+   python research_agent.py search "depression fatigue differentiation"
+
+2. CREATE REVIEW PLAN
+   python research_agent.py review --topic "Depression vs Fatigue" --years 5
+
+3. USE TOOLS (manually)
+   - PubMed: Systematic search
+   - Consensus: Evidence evaluation
+   - NotebookLM: Cluster PDFs
+
+4. SAVE RESULTS
+   Output in: user/services_output/research/
+
+CACHE AND HISTORY
+------------------
+Search queries are saved:
+  tools/cache/search_history.json
+
+Last 100 searches are retained.
+
+INTEGRATION WITH BACH
+--------------------
+The Research Agent is part of the BACH ecosystem:
+
+  bach tool suggest research     # Tool info
+  bach --help tools/research     # This help
+
+Future plans:
+  bach research "query"          # Direct CLI access
+  bach research plan "topic"     # Review plan
+
+SEE ALSO
+----------
+  wiki/ai_portable.txt AI Portable RAG pipeline
+  docs/help/tools/partner.txt Partner tools (Perplexity integration)
+  docs/help/delegate.txt Delegation to research partners
+
+  PubMed: https://pubmed.ncbi.nlm.nih.gov/
+  Perplexity: https://www.perplexity.ai/
+  Consensus: https://consensus.app/
+
+VERSION: v1.0.0 (2026-01-23)
+Lines: ~205 (research_agent.py)

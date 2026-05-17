@@ -1,0 +1,25 @@
+Herramienta BACH: informes
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/reports.py
+
+DESCRIPCIÓN
+----------------------------------------
+reports.py: crea informes de cambios para otras rutinas de control
+
+Genera informes Markdown legibles a partir de cambios de directorio.
+Guarda en: informes/<alias>_changes_<fecha>.md
+
+Uso:
+    python informes.py <alias>
+    habilidades de python reports.py
+
+USE
+----------------------------------------
+python herramientas de bach.py ejecutan informes [args]
+o directamente: python tools/reports.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna duda: las herramientas de bach muestran informes

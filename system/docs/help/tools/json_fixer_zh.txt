@@ -1,0 +1,33 @@
+巴赫工具：json_fixer
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/json_fixer.py
+
+描述
+----------------------------------------
+json_fixer.py - 修复 JSON 文件
+---------------------------------------
+
+修复损坏的 JSON 文件：
+- 删除物料清单
+- 尾随逗号
+- 个人赔率
+- 未转义的字符串
+
+用法：
+    python json_fixer.py <file> # 单个文件
+    python json_fixer.py <folder> # 文件夹中的所有 JSON
+    python json_fixer.py <path> --dry-run # 仅检查
+    python json_fixer.py <path> --backup # 带备份
+
+作者：BACH v1.1
+
+使用
+----------------------------------------
+python bach.py 工具运行 json_fixer [args]
+或直接： python tools/json_fixer.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示 json_fixer

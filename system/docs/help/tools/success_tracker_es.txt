@@ -1,0 +1,21 @@
+Herramienta BACH: Success_tracker
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/success_tracker.py
+
+DESCRIPCIÓN
+----------------------------------------
+Success Tracker - Implementación básica
+RecludOS v3.1.1
+
+Rastrea métricas de éxito para las 6 categorías de actores.
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan Success_tracker [args]
+o directamente: python tools/success_tracker.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tiene alguna pregunta: las herramientas de Bach muestran Success_tracker

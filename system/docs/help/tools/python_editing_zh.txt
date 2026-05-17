@@ -1,0 +1,197 @@
+PYTHON 编辑工具 - 编辑 Python 文件
+-------------------------------------------------
+
+截至：2026-01-23
+路径：docs/help/tools/python_editing.txt
+
+描述
+------------
+用于编辑、分析和分割Python文件的工具。
+特别适用于：
+  - 大型 Python 文件（500 多行）
+  - 代码审查和重构
+  - LLM上下文管理（保存令牌）
+  - 结构化代码更改
+
+重要：PYTHON_CLI_EDITOR
+--------------------------
+主要的Python编辑工具有其自己的详细信息
+文档因其复杂性和重要性：
+
+  bach --help tools/python_cli_editor
+
+python_cli_editor 是专门为 AI 助手构建的：
+  - 显示结构而不是读取整个文件（保存令牌）
+  - 编辑特定方法/类
+  - 外科手术式更改而不是完全重写
+
+快速概述 python_cli_editor:
+  bach python_cli_editor script.py --show-all      # 显示结构
+  bach python_cli_editor script.py --show 50-80    # 第 50-80 行
+  bach python_cli_editor script.py --imports       # 仅导入
+  bach python_cli_editor script.py --classes       # 仅类
+  bach python_cli_editor script.py --add code.py --in-class MyClass --save
+
+详细信息： bach --help tools/python_cli_editor
+
+PYCUTTER: c_pycutter
+--------------------
+将大型 Python 文件分成每个类的单独文本文件。
+
+应用案例：
+  - 代码审查：单独查看每个类
+  - LLM上下文：仅加载相关类
+  - 文档：创建类文档
+  - 重构：大文件概述
+
+基本命令：
+
+  # 分割文件（创建子文件夹）
+  bach c_pycutter main.py
+
+  # 输出到特定文件夹
+  bach c_pycutter main.py --output-dir ./extracted
+
+  # JSON 输出（用于进一步处理）
+  bach c_pycutter main.py --json
+
+选项：
+  --output-dir DIR 输出目录
+  --json JSON 输出而不是文件
+
+输出结构：
+  main_20260123_120000/
+    辅助函数.txt # 导入、全局函数
+    ClassA.txt # ClassA类的代码
+    ClassB.txt # ClassB 类的代码
+    ...
+
+示例工作流程：
+  # 1.分割大文件
+  bach c_pycutter riesige_app.py --output-dir ./review
+
+  #2.编辑个人班级
+  #（在单独的编辑器中或使用 python_cli_editor）
+
+  # 3. 应用更改
+  #（手动或使用 diff 工具）
+
+方法分析器：c_method_analyzer
+----------------------------------
+深入分析 Python 代码的问题和结构。
+
+功能：
+  - 方法清单（所有带有行号的方法）
+  - 调用分析（哪个方法调用哪个）
+  - 导入检查（已使用与未使用）
+  - 拼写错误检测（相似名称）
+  - 信号连接测试（Qt/Tk）
+  - 初始化前属性检测
+
+基本命令：
+
+  # 分析文件
+  bach c_method_analyzer script.py
+
+  # JSON 输出
+  bach c_method_analyzer script.py --json
+
+  # 仅摘要
+  bach c_method_analyzer script.py --summary
+
+  # 分析具体类
+  bach c_method_analyzer script.py --class MyClass
+
+OPTIONS:
+  --json JSON输出（机器可读）
+  --summary 仅紧凑摘要
+  --class NAME 仅解析特定类
+  --verbose 详细输出
+
+输出示例：
+  === 方法分析器：script.py ===
+
+  [课程]
+    MyClass（第 15-120 行）
+      - __init__ (17)
+      - 处理数据 (35)
+      - _helper (80) <- 从未打电话过！
+
+  [潜在问题]
+    第 42 行：self._hepler() - 拼写错误？您的意思是：_helper
+    第 67 行：self.button.connect(self.on_click) - on_click 未找到
+
+  [未使用的进口]
+    - 导入 json（第 3 行）
+
+  [统计数据]
+    班级：2
+    方法：15
+    行数：320
+
+典型工作流程
+------------------
+
+1。了解大文件
+   先结构，后细节：
+
+   # 概览
+   bach python_cli_editor grosse_datei.py --show-all
+
+   # 或拆分以供审核
+   bach c_pycutter grosse_datei.py
+
+2.提交前发现问题
+   分析代码：
+
+   bach c_method_analyzer script.py
+
+   显示：拼写错误、未使用的方法、缺少参考文献
+
+3。准备重构
+   了解依赖关系：
+
+   # 谁给谁打电话？
+   bach c_method_analyzer script.py --verbose
+
+   # 隔离地查看类
+   bach c_pycutter script.py
+
+4.保存代币（AI 环境）
+   而不是读取整个文件：
+
+   # 仅加载结构
+   bach python_cli_editor script.py --show-all
+
+   # 然后选择相关方法
+   bach python_cli_editor script.py --show 150-180
+
+WHEN WHICH TOOL?
+------------------
+
+|任务|工具|
+|--------------------------------|--------------------------------|
+|显示结构| python_cli_editor |
+|具体更改代码 | python_cli_editor |
+|将文件拆分为多个部分 | c_pycutter |
+|查找问题/错误 | c_method_analyzer | c_method_analyzer |
+|检查进口| c_method_analyzer | c_method_analyzer |
+|查找错别字 | c_method_analyzer
+
+|上下文注入器
+----------------
+ContextInjector 识别关键字并推荐这些工具：
+
+  “编辑 python”-> 巴赫 python_cli_editor <文件> --show-all
+  “编辑类”-> 巴赫 python_cli_editor <文件> --show-all
+  “编辑方法”-> bach python_cli_editor <文件> --show-all
+  “代码结构”-> bach python_cli_editor <文件> --show-all
+  “分割文件”-> bach c_pycutter <文件>
+  “太大”-> bach c_pycutter <文件>
+
+另请参见
+----------
+  bach --help tools/python_cli_editor  详细的编辑器文档（重要！）
+  bach --help tools/imports            导入处理
+  bach --help tools/code_quality       代码质量（编码等）
+  bach --help tools/analysis           其他分析工具

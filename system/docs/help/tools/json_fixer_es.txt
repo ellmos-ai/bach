@@ -1,0 +1,33 @@
+Herramienta BACH: json_fixer
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/json_fixer.py
+
+DESCRIPCIÓN
+----------------------------------------
+json_fixer.py - Reparar archivos JSON
+---------------------------------------
+
+Repara archivos JSON rotos:
+- Eliminar lista de materiales
+- Comas al final
+- Cuotas individuales
+- Cadenas sin escape
+
+Uso:
+    python json_fixer.py <archivo> # Archivo único
+    python json_fixer.py <carpeta> # Todo JSON en la carpeta
+    python json_fixer.py <ruta> --dry-run # Verificar solo
+    python json_fixer.py <ruta> --backup # Con copia de seguridad
+
+Autor: BACH v1.1
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan json_fixer [args]
+o directamente: python tools/json_fixer.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tiene alguna pregunta: las herramientas de Bach muestran json_fixer

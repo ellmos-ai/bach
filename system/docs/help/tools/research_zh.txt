@@ -1,0 +1,147 @@
+研究工具 - 科学研究
+--------------------------------------------
+
+截至：2026-01-23
+路径：docs/help/tools/research.txt
+
+描述
+------------
+科学文献研究的研究代理。
+整合各种外部研究工具
+构建审核流程。
+
+路径：tools/research_agent.py
+
+可用的外部工具
+-------------------------
+研究代理推荐和链接：
+
+  PubMed 生物医学文献 (NIH)
+  困惑人工智能驱动的研究与来源
+  共识科学证据搜索
+  NotebookLM Google 聚类/分析工具
+  引出人工智能研究助理
+  使用上下文
+
+USE
+----------
+
+CLI 命令进行 Scite 引文分析：
+  python Research_agent.py 搜索“查询”
+  python Research_agent.py 评论 --topic "topic" --years 5
+  python Research_agent.py status
+
+示例：
+  python Research_agent.py 搜索“CRISPR基因疗法”
+  python Research_agent.py 评论 --主题“抑郁症生物标志物” --years 3
+  python Research_agent.py status
+
+搜索命令
+-------------
+执行研究并推荐适当的工具。
+
+  python Research_agent.py 搜索“BRCA1 突变乳腺癌”
+
+输出：
+  - 根据关键词推荐工具
+  - 搜索门户的直接 URL
+  - 历史记录被保存
+
+关键字检测：
+  - 基因、蛋白质、疾病、临床 -> PubMed
+  - 研究、证据、研究 -> 共识
+  - 常规 -> 困惑
+
+审核命令
+-------------
+创建结构化文献审核计划。
+
+  python Research_agent.py review --topic“抑郁与疲劳”--years 5
+
+5阶段计划：
+  1. 概述（5 分钟）- 上下文的困惑
+  2. 系统检索 - PubMed + 共识（15 分钟）
+  3. 筛选（10 分钟）- 用于聚类的 NotebookLM
+  4. 全文分析 - Claude/Gemini（20 分钟）
+  5. 综合（10 分钟）- 摘要 + 差距
+
+输出目录：
+  user/services_output/research/
+
+状态命令
+-------------
+显示代理状态和历史记录。
+
+  python Research_agent.py status
+
+输出：
+  - 版本
+  - 搜索总数
+  - 最终搜索
+  - 可用工具
+
+PYTHON INTEGRATION
+------------------
+from tools.research_agent import ResearchAgent
+
+agent = ResearchAgent()
+
+# 开始搜索
+result = agent.search("阿尔茨海默病生物标志物")
+对于结果中的记录[“推荐”]：
+    print(f"{rec['tool']}: {rec['url']}")
+
+# 创建审核计划
+plan = agent.create_review_plan("Depression",years=3)
+
+# 获取状态
+status = agent.get_status()
+
+工作流程示例
+-----------------
+典型的研究工作流程：
+
+1。定义主题
+   python Research_agent.py 搜索“抑郁疲劳分化”
+
+2。制定审核计划
+   python Research_agent.py 评论 --主题“抑郁与疲劳”--5 年
+
+3。使用工具（手动）
+   - PubMed：系统搜索
+   - 共识：证据评估
+   - NotebookLM：集群 PDF
+
+4。保存结果
+   输出在：user/services_output/research/
+
+缓存和历史记录
+------------------
+搜索查询被保存：
+  tools/cache/search_history.json
+
+保留最后 100 个搜索。
+
+与 BACH 集成
+--------------------
+研究代理是 BACH 生态系统的一部分：
+
+  bach tool suggest research     # 工具信息
+  bach --help tools/research     # 此帮助
+
+未来计划：
+  bach research "query"          # 直接 CLI 访问
+  bach research plan "topic"     # 审查计划
+
+另请参阅
+----------
+  wiki/ai_portable.txt AI 便携式 RAG 管道
+  docs/help/tools/partner.txt 合作伙伴工具（Perplexity 集成）
+  docs/help/delegate.txt 委托给研究合作伙伴
+
+  PubMed：https://pubmed.ncbi.nlm.nih.gov/
+  困惑：https://www.perplexity.ai/
+  共识：https://consensus.app/
+
+版本：v1.0.0 (2026-01-23)
+行数：~205 (research_agent.py)

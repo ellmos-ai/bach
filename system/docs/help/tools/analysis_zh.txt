@@ -1,0 +1,93 @@
+分析工具 - 分析工具
+-----------------------------------
+
+概述
+BACH 中的分析工具有助于数据分析，
+代码检查和系统监控。
+
+数据分析（巴赫数据）
+-------------------------
+路径：hub/data_analysis.py
+状态：已实施 (v1.1.25)
+
+命令：
+  bach data load <pfad>         加载文件并显示信息
+  bach data describe <pfad>     描述性统计数据（平均值、标准差、最小值、最大值）
+  bach data head <pfad> [--rows N]  前 N 行（默认：10）
+  bach data corr <pfad>         数字列的相关矩阵
+  bach data chart <pfad> <typ>  创建图表（条形图、折线图、饼图、散点图、直方图）
+  bach data list                在输入/文件夹中显示文件
+
+支持的格式：
+  - CSV（自动分隔符识别）
+  - Excel（.xlsx、.xls）
+  - JSON
+
+目录：
+  用户/数据分析/输入/输入文件
+  用户/数据分析/输出/结果文件
+  user/data-analysis/charts/ 生成的图表
+
+代码分析
+------------
+
+code_analyzer.py
+  分析 Python 代码的质量和结构。
+  调用：python tools/code_analyzer.py <文件>
+
+c_method_analyzer.py
+  分析 Python 文件中的方法和函数。
+  查找长方法、复杂函数。
+  调用：python tools/c_method_analyzer.py <文件>
+
+统计和报告
+-------------------
+
+task_statistics.py
+  创建有关任务的统计信息（已完成与待处理、优先级）。
+  调用：python tools/task_statistics.py
+
+reports.py
+  生成各种系统报告。
+  调用： python tools/reports.py
+
+generate_skills_report.py
+  创建技能覆盖率报告。
+  调用： python tools/generate_skills_report.py
+
+SCANNER
+-------
+
+dirscan.py
+  扫描目录以查找更改。
+  集成到--startup 中。
+  调用：python tools/dirscan.py <路径>
+
+tool_scanner.py
+  在系统中查找并注册工具。
+  调用： python tools/tool_scanner.py
+
+duplicate_detector.py
+  通过哈希查找重复文件。
+  调用：python tools/duplicate_detector.py <路径>
+
+系统检查
+-----------------
+
+c_sqlite_viewer.py
+  检查 SQLite 数据库（bach.db、bach.db）。
+  调用： python tools/c_sqlite_viewer.py <db>
+
+inspect_db_tables.py
+  显示表架构和统计信息。
+  调用： python tools/inspect_db_tables.py
+
+dump_schema.py
+  将数据库架构导出为 SQL。
+  调用：python tools/dump_schema.py
+
+另请参见
+----------
+bach --help data          数据分析帮助
+bach --help tools         工具概述
+bach --help maintain      维护工具

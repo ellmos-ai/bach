@@ -1,0 +1,102 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PROFILER
+--------
+
+Handler para el análisis de archivos y carpetas en el sistema BACH.
+
+
+DESCRIPCIÓN
+------------
+
+El PROFILER Handler ofrece funciones para analizar y gestionar archivos:
+- Buscar archivos con coincidencia de palabras clave
+- Perfiles detallados de archivos y carpetas (tamaño, categoría, metadatos)
+- Cálculo de hash SHA256
+- Categorización automática de archivos (8 categorías predefinidas)
+- Estadísticas de carpetas con salida de tamaño por tipo de archivo
+
+
+OPERACIONES
+-----------
+
+buscar <palabra clave> [--path=DIR] [--type=ext]
+  Buscar sistema de archivos por palabra clave. Máx. 50 golpes.
+  Opciones:
+    --path=ruta de búsqueda DIR (predeterminado: .)
+    --type=ext Filtrar solo el tipo de archivo (por ejemplo, py, txt, json)
+  Ejemplo: configuración de búsqueda del generador de perfiles --path=. --type=json
+
+perfil <ruta>
+  Analizar archivo o carpeta. Tamaño de salida, categoría y metadatos.
+  Ejemplo: datos del perfil del generador de perfiles/myfile.txt
+
+hash <ruta>
+  Calcula el hash SHA256 de un archivo.
+  Ejemplo: hash del perfilador archive.zip
+
+categorize <ruta>
+  Determine la categoría de archivo automática según la extensión.
+  Ejemplo: el generador de perfiles categoriza document.docx
+
+stats <ruta>
+  Mostrar estadísticas detalladas de la carpeta: número de archivos, tamaño total,
+  Distribución por categoría de uso de memoria.
+  Ejemplo: estadísticas del perfilador ./projects
+
+status
+  Muestra el estado de ProFiler y las categorías disponibles.
+
+
+EJEMPLOS
+---------
+
+requisitos de búsqueda del perfilador --path=. --tipo=texto
+  -> Encuentra hasta 50 archivos con "requisitos" en el nombre (solo .txt)
+
+perfil de perfil /home/cfm-cosmology/results
+  -> Perfil de carpeta: 1243 archivos, 15,7 GB, 8 subcarpetas
+
+profiler hash data/model.pkl
+  -> SHA256: a7f8c3e9d... (Tamaño de archivo: 2,3 MB)
+
+profiler categorizar config.json
+  -> config.json: Datos (.json)
+
+estadísticas del perfilador ./documentos
+  -> Estadísticas de carpetas con categorización (documentos: 234 archivos 456 MB, etc.)
+
+estado del perfilador
+  -> Estado de ProFiler y descripción general de categorías
+
+
+CATEGORÍAS
+----------
+
+8 categorías de archivos predefinidas:
+
+  Documentos: .pdf, .doc, .docx, .txt, .odt, .xls, .xlsx, .csv, .pptx
+  Imágenes: .jpg, .jpeg, .png, .gif, .bmp, .svg, .webp, .tiff, .ico
+  Audio: .mp3, .wav, .flac, .ogg, .aac, .wma, .m4a
+  Vídeo: .mp4, .avi, .mkv, .mov, .wmv, .flv, .webm
+  Archivos: .zip, .rar, .7z, .tar, .gz, .bz2
+  Código: .py, .js, .ts, .html, .css, .java, .c, .cpp, .rs, .go, .sql
+  Datos: .json, .xml, .yaml, .yml, .toml, .ini, .cfg
+  Ejecutable: .exe, .msi, .bat, .cmd, .ps1, .sh
+  Otro: todas las demás terminaciones
+
+
+FILES
+-------
+
+hub/profiler.py Implementación del controlador (hub/)
+extensions/ProFiler/ Directorio de extensiones (opcional)
+
+
+VER TAMBIÉN
+----------
+
+hub/base.py - Clase BaseHandler
+docs/help/handler.txt: documentación del controlador en general

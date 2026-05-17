@@ -1,0 +1,23 @@
+BACH Tool: duplicate_detector
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/duplicate_detector.py
+
+DESCRIPTION
+----------------------------------------
+Pre-Create Check & Duplicate Detection - Phase 3
+-------------------------------------------------
+
+Prevents duplicates by checking before tool creation.
+
+Version: 1.0.0
+
+USE
+----------------------------------------
+python bach.py tools run duplicate_detector [args]
+or directly: python tools/duplicate_detector.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show duplicate_detector

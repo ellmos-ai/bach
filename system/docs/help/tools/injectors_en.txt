@@ -1,0 +1,25 @@
+BACH Tool: injectors
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/injectors.py
+
+DESCRIPTION
+----------------------------------------
+Injector System - Automatic help and context
+------------------------------------------------
+
+Injectors that relieve Claude's cognitive load:
+- StrategyInjector: Helpful thoughts on trigger words
+- ContextInjector: Auto-context for keywords
+- TimeInjector: Regular time updates
+- BetweenInjector: Auto-reminders after task done
+
+USE
+----------------------------------------
+python bach.py tools run injectors [args]
+or directly: python tools/injectors.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show injectors

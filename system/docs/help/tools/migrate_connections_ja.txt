@@ -1,0 +1,32 @@
+BACH ツール: merge_connections
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/merge_connections.py
+
+説明
+----------------------------------------
+データベースへの接続の移行
+--------------------------------
+
+アーカイブされた JSON レジストリを bach.db テーブルに移行します。
+- external_ki_tools_registry.json -> ツール (type='external')
+-connections_overview.json/cli_tools -> ツール (type='cli')
+- connection_overview.json/mcp_servers -> 接続 (type='mcp')
+- claude_registry.json -> 接続 (type='ai')
+
+使用法:
+    python merge_connections.py [--dry-run]
+    python merge_connections.py --status
+    python merge_connections.py --help
+
+バージョン: 1.0.0
+
+使用
+----------------------------------------
+python bach.py ツールは、mitigration_connections [args] を実行します。
+または直接: python tools/merge_connections.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- ご不明な点がございましたら、bach tools show mitig_connections をご覧ください。

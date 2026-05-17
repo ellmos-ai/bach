@@ -1,0 +1,36 @@
+BACH Tool: c_method_analyzer
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/c_method_analyzer.py
+
+DESCRIPTION
+----------------------------------------
+c_method_analyzer.py - Python Code Analyzer for Claude
+
+Purpose: Analyzes Python code for methods, calls, imports and potential problems.
+       Extracted from MethodsAnalyser3.py - GUI removed, CLI interface added.
+
+Author: Claude (adapted from user tool)
+Version: 2.0 (extended to include signal check, attribute check, encoding fix)
+Dependencies: ast, collections, difflib, datetime (all standard libraries)
+
+Functions:
+- analyze_file(path) -> AnalysisResult: Main analysis
+- generate_report(result) -> str: Formatted report
+- get_summary(result) -> dict: Compact summary for further processing
+
+New in v2.0:
+- Windows Console Encoding Fix
+- Signal-Connect check (.connect(self.X) -> does X exist?)
+- Attribute-before-init detection (self.X used before self.X = ...)
+- Improved typo detection (_show_X vs show_X)
+
+USE
+----------------------------------------
+python bach.py tools run c_method_analyzer [args]
+or directly: python tools/c_method_analyzer.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show c_method_analyzer

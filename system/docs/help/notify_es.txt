@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+------------
+
+notify - Sistema de notificaciones para BACH
+
+
+DESCRIPCIÓN
+------------
+
+Envía notificaciones a través de varios canales externos. Apoyado
+Discord, Signal, Correo electrónico, Telegram, Webhooks y Slack. Los mensajes están en
+La base de datos (connector_messages) está registrada y puede estar pendiente hasta
+el canal respectivo está listo.
+
+Todas las configuraciones se almacenan en la tabla de conexiones de bach.db.
+La autenticación se realiza mediante tokens o combinaciones de correo electrónico y contraseña.
+
+
+OPERACIONES
+-----------
+
+enviar <canal> <texto>
+  Enviar notificación a través de un canal configurado.
+  Ejemplo: bach notificar enviar discordia "Proceso completado"
+
+setup <canal> [punto final] [--token=X] [--email=X]
+  Reconfigurar o actualizar el canal.
+  - canales: discordia, señal, correo electrónico, telegrama, webhook, slack
+  - punto final: URL de API o dirección del servidor (opcional para Telegram)
+  - --token=X: token de autenticación (por ejemplo, token de bot)
+  - --email=X: Dirección de correo electrónico para iniciar sesión SMTP
+  Ejemplo: telegrama de configuración de notificación de bach --token=123456:ABC-DEF
+
+test <canal>
+  Envíe un mensaje de prueba para verificar la configuración.
+  Ejemplo: bach notificar prueba de holgura
+
+lista
+  Muestra todos los canales de notificación configurados con estado.
+  Muestra: nombre del canal, tipo, punto final, activo/inactivo, recuento de envíos, último envío.
+
+estado
+  Idéntico a 'lista' - estado de todos los canales.
+
+historial [--limit N]
+  Mostrar notificaciones recientes (predeterminado: 20).
+  Muestra: nombre del canal, estado (enviado/pendiente), marca de tiempo, texto del mensaje.
+  Ejemplo: historial de notificaciones de bach --limit 50
+
+
+EJEMPLOS
+---------
+
+Configurar webhook de Discord:
+  bach notify setup discord https://discord.com/api/webhooks/ABC/XYZ
+
+Configurar bot de Telegram:
+  bach notify setup telegram --token=123456:ABC-DEF-GHI
+
+Enviar correo electrónico a través de Gmail:
+  bach notify setup email smtp.gmail.com --token=APP_PASSWORD --email=user@gmail.com
+
+Agregar webhook de Slack:
+  bach notify setup slack https://hooks.slack.com/services/T00/B00/XX
+
+Notificación de prueba:
+  bach notify test discord
+
+Enviar mensaje:
+  bach notify send discord "Backup erfolgreich abgeschlossen"
+
+Historial de las últimas 10 notificaciones:
+  bach notify history --limit 10
+
+
+ARCHIVOS
+-------
+
+datos/bach.db
+  Base de datos con tablas:
+  - conexiones: configuraciones de canales guardadas (punto final, token, etc.)
+  - Connector_messages: registra todos los mensajes entrantes/salientes
+
+user/secrets/secrets.json
+  Opcional: Archivo de secretos central (leído con prioridad para Telegram).
+  Formato: {"telegram": {"bot_token": "...", "chat_id": "..."}}
+
+
+VER TAMBIÉN
+----------
+
+hub/base.py - Clase BaseHandler
+hub/notify.py: implementación completa del controlador
+data/ - Base de datos y configuración de Bach
+docs/handlers.txt: documentación general del controlador

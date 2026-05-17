@@ -1,0 +1,84 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH USER MODES (v1.1.37)
+-------------------------
+
+BACH supports 4 different startup modes that determine
+which components start automatically at startup.
+
+AVAILABLE MODES
+----------------
+  gui GUI mode (default)
+           - Launches GUI Dashboard in the browser
+           - Opens http://127.0.0.1:8000
+           - Ideal for interactive use
+
+  text text mode
+           - Only starts console with bach.py
+           - No browser is opened
+           - Ideal for terminal-focused work
+
+  dual dual mode
+           - Launches GUI + separate console
+           - Both interfaces can be used in parallel
+           - Ideal for power users
+
+  silent silent mode
+           - Nothing starts automatically
+           - Only startup report output
+           - Ideal for scripts and automation
+
+CHANGE MODE
+-------------
+Persistent (save in config):
+  bach --startup mode gui
+  bach --startup mode text
+  bach --startup mode dual
+  bach --startup mode silent
+
+One-time (only this boot):
+  bach --startup --mode=gui
+  bach --startup --mode=text
+
+CONFIGURATION
+-------------
+The current mode is saved in system/data/user_config.json:
+
+  {
+    "startup_mode": "gui",
+    "startup_modes": {
+      "gui": {"gui": true, "console": false},
+      "text": {"gui": false, "console": true},
+      "dual": {"gui": true, "console": true},
+      "silent": {"gui": false, "console": false}
+    }
+  }
+
+EXAMPLES
+---------
+# Start normally (uses saved mode)
+bach --startup
+
+# Change mode permanently to text
+bach --startup mode text
+
+# Start once in silent mode
+bach --startup --mode=silent
+
+# Quick start without dir scan in GUI mode
+bach --startup quick --mode=gui
+
+NOTES
+--------
+- The mode is automatically displayed on --startup
+- GUI server remains active in the background until shutdown
+- In text mode a new console window opens
+- Silent mode is suitable for cron jobs and automations
+
+SEE ALSO
+----------
+  help startup - Startup log details
+  help gui - GUI Dashboard documentation
+  help shutdown - end session

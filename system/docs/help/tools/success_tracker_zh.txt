@@ -1,0 +1,21 @@
+巴赫工具： success_tracker
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/success_tracker.py
+
+描述
+----------------------------------------
+成功跟踪器 - 基本实现
+RecludOS v3.1.1
+
+跟踪 6 个参与者类别的成功指标。
+
+使用
+----------------------------------------
+python bach.py 工具运行 success_tracker [args]
+或直接： python tools/success_tracker.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：巴赫工具显示 success_tracker

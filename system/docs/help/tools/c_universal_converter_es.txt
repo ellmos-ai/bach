@@ -1,0 +1,40 @@
+Herramienta BACH: c_universal_converter
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/c_universal_converter.py
+
+DESCRIPCIÓN
+----------------------------------------
+Universal Data Converter
+------------------------
+Convierte entre formatos JSON, YAML, TOML, XML y TOON.
+
+Uso:
+  GUI: python c_universal_converter.py
+  CLI: python c_universal_converter.py file1.json file2.yaml --to yaml
+
+Formatos admitidos:
+  - JSON (.json)
+  -YAML (.yaml, .yml)
+  -TOML (.toml)
+  -XML (.xml)
+  - TOON (.toon) - Notación de objetos orientada a tokens (cumple con las especificaciones)
+
+Dependencias:
+  pip install pyyaml toml xmltodict tkinterdnd2
+
+Especificación de TOON: https://github.com/toon-format/toon
+
+Autor: Claude para el sistema _BATCH
+Versión: 2.0.0
+Fecha: 2026-01-06
+
+USE
+----------------------------------------
+las herramientas de python bach.py ejecutan c_universal_converter [args]
+o directamente: python tools/c_universal_converter.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente a partir de docstring
+- Si tiene alguna pregunta: las herramientas de bach muestran c_universal_converter

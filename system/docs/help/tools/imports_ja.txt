@@ -1,0 +1,196 @@
+インポート ツール - Python インポート処理
+--------------------------------------
+
+現在: 2026-01-23
+パス: docs/help/tools/imports.txt
+
+説明
+------------
+Python インポートを診断および整理するためのツール:
+  - インポートの問題の検索 (欠落、循環、未使用)
+  - インポートの並べ替えとクリーンアップ (PEP8 準拠)
+
+これらのツールで解決できる一般的な問題:
+  - 「モジュールが見つかりませんエラー」 / 「インポートエラー」
+  - 循環インポート (A が B をインポート、B が A をインポート)
+  - 混沌とした輸入注文
+  - 二重インポート
+  - コードの先頭ではなく途中でインポートします
+
+インポート診断: c_import_diagnose
+----------------------------------
+インポートの問題を体系的に分析します。
+
+機能:
+  - 個々のモジュールを個別にインポートする
+  - インポート順序を変更する
+  - 循環インポートの検出
+  - __init__.py を解析する
+  - 遅延のあるタイミングテスト
+  - クラッシュポイントを特定する
+
+基本コマンド:
+
+  # プロジェクトを分析する
+  bach c_import_diagnose projekt/src/
+
+  # JSON 出力あり
+  bach c_import_diagnose projekt/src/ --json
+
+  # 特定のモジュールをテストします
+  bach c_import_diagnose . --modules core.app:App,gui.main:MainWindow
+
+オプション:
+  --json JSON 出力 (機械可読)
+  --modules M1:C1,M2:C2 特定のモジュール:テスト クラス
+
+出力例:
+  === インポート診断 ===
+
+  [1/5] 個々のモジュールをテストします...
+    [OK] core.app.App
+    [FAIL] gui.main.MainWindow -> ImportError: 'missing' という名前のモジュールがありません
+
+  [2/5] 循環インポートを確認してください...
+    [警告] core.utils -> core.app -> core.utils (サークル!)
+
+  [3/5] __init__.py 解析...
+    [OK] core/__init__.py
+    [欠落] gui/__init__.py
+
+  === 推奨事項 ===
+  1. 不足しているモジュール「missing」をインストールします
+  2. 循環インポート core.utils <-> core.app を解決します。
+  3. gui/__init__.py を作成します
+
+インポート オーガナイザー: c_import_organizer
+------------------------------------
+PEP8 に従って Python インポートをソートおよびクリーンアップします。
+
+機能:
+  - ファイルの先頭ですべてのインポートを収集します
+  - 重複を削除
+  - アルファベット順に並べ替えます (最初にインポート、次に from)
+  - 複数の空白行をクリーンアップ
+
+基本コマンド:
+
+  # ファイルを整理する
+  bach c_import_organizer script.py
+
+  # 変更せずに確認してください
+  bach c_import_organizer script.py --dry-run
+
+  # JSON 出力
+  bach c_import_organizer script.py --json
+
+  # 標準入力から読み取る
+  猫スクリプト.py | bach c_import_organizer --stdin
+
+オプション:
+  --dry-run 表示のみ、変更しない
+  --json JSON 出力
+  --stdin stdin からコードを読み取ります
+
+例の前/後:
+
+  前:
+  ---------------------
+  OS をインポートします
+
+  def foo():
+      pathlibインポートパスから
+      パス
+
+  インポートシステム
+  import List の入力から
+  インポート OS # 重複しています!
+  ----------------------
+
+  後:
+  ---------------------
+  OSをインポートする
+  インポートシステム
+  pathlibインポートパスから
+  import List の入力から
+
+  def foo():
+      パスする
+  ----------
+
+一般的なワークフロー
+------------------
+
+1.デバッグ「インポートエラー」。
+   プロジェクトを分析してクラッシュ ポイントを見つけます:
+
+   bach c_import_diagnose projekt/src/ --json
+
+   その後は推奨事項に従ってください。
+
+2.循環インポートを探す
+   モジュールが相互にインポートする場合:
+
+   bach c_import_diagnose projekt/src/
+
+   出力は次のようになります: A -> B -> A (コンパス!)
+
+   解決策: 共通の依存関係を 3 番目のモジュールにアウトソーシングします。
+
+3.コードレビューの前に
+   コードをレビューする前にインポートをクリーンアップします:
+
+   bach c_import_organizer script.py
+
+   またはプロジェクト全体に対して:
+   *.py の f について; do bach c_import_organizer "$f";完了
+
+4。リファクタリング後
+   主要な変換後、インポートを確認します:
+
+   # まず診断してください
+   bach c_import_diagnose src/
+
+   #その後掃除する
+   src/*.py の f について; do bach c_import_organizer "$f";完了
+
+5。新しいプロジェクトをセットアップする
+   __init__.py ファイルをチェックします:
+
+   bach c_import_diagnose mein_paket/
+
+   欠落している __init__.py ファイルを表示します。
+
+PEP8 インポート順序
+-----------------------
+c_import_organizer は PEP8 標準に従って並べ替えます:
+
+  1.標準ライブラリ（import os、import sys）
+  2. サードパーティ (インポートリクエスト、インポート numpy)
+  3. ローカル インポート (.import モジュールから)
+
+各グループ内: アルファベット順に並べ替えられます。
+
+CONTEXT INJECTOR
+----------------
+ContextInjector はキーワードを認識し、次のツールを推奨します。
+
+  「インポートの並べ替え」 -> bach c_import_organizer <ファイル>
+  「インポートの問題」 -> bach c_import_diagnose <プロジェクト>
+  「インポートが見つかりません」 -> bach c_import_diagnose <プロジェクト>
+
+他のツールとの統合
+-----------------------------
+完全なイメージを得るには python_cli_editor と組み合わせます:
+
+  # インポートを表示 (グループ化)
+  bach python_cli_editor script.py --imports
+
+  # 次に整理します
+  bach c_import_organizer script.py
+
+関連項目
+----------
+  bach --help tools/python_editing   Python ファイルを編集
+  bach --help tools/code_quality     コードの品質 (エンコーディングなど)
+  bach python_cli_editor --help      --imports でインポートを表示

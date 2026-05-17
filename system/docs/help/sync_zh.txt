@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SYNC HANDLER
+------------
+
+描述
+------------
+将文件系统内容与 BACH 数据库同步。阅读技能和
+文件（Markdown、文本、Python）中的工具并相应地更新/创建
+数据库条目。使用 SHA256 散列比较更改。
+
+操作
+-----------
+技能 将文件的技能内容加载到数据库中
+工具 将文件的工具内容加载到数据库中
+全部 两者同步（技能+工具）
+status 显示同步状态，突出显示更改的文件
+
+选项
+--------
+--dry-run 只显示更改，不执行它们
+--force 忽略哈希比较，重新加载所有内容
+
+示例
+---------
+bach --sync skills
+    将 Skills/ 中的所有技能同步到数据库中。
+    查找：.md、.txt、.py 文件（递归）。
+    跳过：带有 _ 或 .在开头（.py 除外）。
+
+bach --sync tools
+    将 tools/ 中的所有 Python 工具同步到数据库中。
+    查找：*.py 文件（递归）。
+    跳过：带有 _ 或 .在开始的时候。
+
+bach --sync all --dry-run
+    显示计划的更改而不执行它们。
+
+bach --sync status
+    检查更改：将文件哈希值与数据库哈希值进行比较。
+    报告：[已更改]、[缺失]、[新]、[确定]。
+
+bach --sync all --force
+    强制重新加载所有文件（忽略哈希比较）。
+
+FILES
+-------
+skills/ 技能文件源（.md、.txt、.py）
+工具/Python 工具文件源 (.py)
+data/bach.db 目标数据库
+                        表：技能、工具
+                        列：名称、路径、content_hash、描述...
+
+另请参见
+----------
+docs/help/ 更多处理程序文档
+hub/sync.py 实现（源代码）

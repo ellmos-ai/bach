@@ -1,0 +1,152 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH MAINTENANCE（系统作业）
+--------------------------
+
+维护处理程序自动执行计划的系统作业 - 例如备份，
+令牌检查、数据清理或您自己的脚本。
+
+HANDLER：system/hub/scheduler.py（以前：daemon.py）
+服务：system/gui/daemon_service.py + DB（scheduler_jobs，scheduler_runs）
+GUI: /daemon (http://localhost:8000/daemon)
+
+注意：“bach daemon ...”和“bach Scheduler ...”是别名。
+
+
+命令
+-------
+
+  bach daemon start          在前台启动维护守护进程（Ctrl+C 终止）
+  bach daemon start --bg     在后台启动维护守护进程
+  bach daemon stop           停止运行守护进程
+  bach daemon status         显示状态和上次运行
+  bach daemon jobs           所有定义的列出作业
+  bach daemon run <ID>       手动运行作业
+  bach daemon logs [N]       显示最后 N 日志行（默认： 20)
+
+
+会话命令（用于自动 Claude 会话的会话守护进程）
+------------------------------------------------------------------
+
+  bach daemon session start [--profile NAME]   启动会话守护进程
+  bach daemon session stop                     停止会话守护进程
+  bach daemon session status                   显示会话状态
+  bach daemon session trigger [--profile NAME] Session manuell ausloesen
+  bach daemon session profiles                 列出可用的配置文件
+
+
+作业类型
+---------
+
+  间隔 定期（例如“30m”、“1h”、“24h”）
+  cron Cron 表达式（例如“0 3 * * *” = 每日 03:00）
+  手动 只能手动执行
+  chain 链执行（job.command = chain_id）
+  event 基于事件 (TODO)
+
+
+示例作业
+-------------
+
+  名称 类型 时间表 说明
+  ----------------------------------------------------------------
+  backup-daily 间隔 24h 创建每日备份
+  token-check 间隔 30m 检查 token 消耗情况
+  cleanup cron 0 4 * * * 清理旧日志
+
+
+创建作业
+--------------
+
+通过 GUI 仪表板 (http://localhost:8000/daemon)：
+  - 维护>“新工作”
+
+通过 API：
+  POST /api/守护进程/作业
+  {
+    “姓名”：“我的工作”，
+    "job_type": "间隔",
+    “时间表”：“1小时”，
+    “命令”：“python工具/my_script.py”
+  }
+
+
+日志文件
+-----------
+
+  data/logs/daemon.log 维护活动
+  data/logs/session_daemon.log 会话活动
+  data/daemon.pid PID 文件（如果正在运行）
+  hub/_services/daemon/daemon.pid 会话守护进程 PID
+
+
+技术详细信息
+------------------
+
+- 作业从 bach.db 加载（表：scheduler_jobs）
+- 运行记录在scheduler_runs中
+- 每个作业的超时可配置（默认值：300 秒）
+- 出现错误时可选择重试（max_retries 可配置）
+- 作业每 5 分钟重新加载一次
+- 自己的守护进程（Python间隔循环）
+- OneDrive 在守护程序操作期间暂停 (Windows)
+- 防止文件操作期间的同步冲突
+- 与重复任务集成（每 5 分钟检查一次）
+
+可选：pip install croniter（用于扩展 cron 表达式）
+
+
+定义：三个处理程序系统
+--------------------------------
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │ 维护保养 │
+  ├──────────────────────────────────────────────────────────────────┤
+  │ 关闭运行 shell/Python 命令 │
+  │ 时间控制（cron/interval） │
+  │ 没有克劳德参与 │
+  │ 处理程序：system/hub/daemon.py │
+  │ 服务：system/gui/daemon_service.py + DB │
+  │ GUI: /daemon (现有) │
+  │ 守护进程：是（自己的进程） │
+  └──────────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │ 重复发生 │
+  ├──────────────────────────────────────────────────────────────────┤
+  │ 创建任务作为提醒 │
+  │ 基于时间间隔（天） │
+  │ 供克劳德/用户编辑 │
+  │ 处理程序：system/hub/recurring.py │
+  │ 服务：system/hub/_services/recurring/ │
+  │ GUI：无（仅限 CLI + 集成在 /daemon 中） │
+  │ 守护进程：NO（调用时检查）│
+  └──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+  │ 提示发生器 │
+  ├──────────────────────────────────────────────────────────────────┤
+  │ 向 Claude 会话发送提示 │
+  │ 手动或自动 │
+  │ 带编辑器的模板系统 │
+  │ 处理程序：（正在开发中） │
+  │ 服务：system/hub/_services/prompt_generator/ │
+  │ GUI: /prompt-generator (计划中) │
+  │ 守护进程：是 (session_daemon.py) │
+  └──────────────────────────────────────────────────────────────────┘
+
+  维护示例：每天凌晨 3:00 进行“bach backup create”
+  重复示例：“自查到期”-> 克劳德的任务
+  提示生成器示例：每 30 分钟向 ATI 代理发送提示
+
+
+另请参阅
+----------
+
+  bach gui start              具有作业管理功能的 Web 仪表板
+  bach --help backup          备份系统
+  bach --help dirscan            目录扫描程序
+  bach --help recurring       重复任务（无 GUI）
+  bach --help prompt-generator  提示管理（GUI 计划）

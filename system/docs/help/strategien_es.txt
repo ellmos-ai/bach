@@ -1,0 +1,173 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ESTRATEGIAS
+----------
+Estrategias de actuación básicas para la resolución de problemas y automatización.
+
+Referencia: docs/help/operators.txt, docs/help/denkstrategie.txt
+
+
+1. CATEGORIZAR
+-----------------
+Estrategia: Reglas, heurísticas o modelos asignan datos a clases.
+Operadores: Extraer -> Normalizar -> Clasificar -> Validar
+
+Ejemplo (Python):
+```pitón
+def clasificar_doc(doc):
+    texto = doc["texto"].inferior()
+    si "factura" en el texto:
+        devolver "factura"
+    si "contrato" en el texto:
+        devolver "contrato"
+    devolver "otro"
+```
+
+
+2. EVALUAR (puntuación)
+---------------------
+Estrategia: Definir criterios, ponderarlos, calcular la puntuación.
+Base para clasificación, automatización, revisión humana.
+
+Ejemplo (Python):
+```pitón
+def puntuación_invoice(correo):
+    puntuación = 0
+    si "factura" en el correo["asunto"].inferior():
+        puntuación += 0,5
+    si corresponde (a.endswith(".pdf") para un correo electrónico ["adjuntos"]):
+        puntuación += 0,3
+    si "iba" en el correo["cuerpo"].inferior():
+        puntuación += 0,2
+    puntuación de retorno
+```
+
+
+3. EXCLUIR
+----------------
+Estrategia: Definir criterios negativos (listas negras, patrones, límites).
+El "corte" temprano reduce el ruido.
+
+Ejemplo (JavaScript):
+```javascript
+la función está excluida (correo) {
+  const lista negra = ["noreply@", "newsletter@"];
+  return lista negra.alguna(b => mail.from.includes(b));
+}
+
+const relevante = mails.filter(m => !isExcluded(m));
+```
+
+
+4. PRUEBAS (Validación)
+----------------------
+Estrategia: Verificar datos con reglas, esquemas y fuentes de referencia.
+Variantes: pruebas de esquema, reglas comerciales, comparación A/B, verificación de fuentes cruzadas.
+
+Ejemplo: prueba de esquema (Python):
+```pitón
+def validar_factura(d):
+    pruebas = [
+        ("cantidad", lambda x: x no es Ninguno y x > 0),
+        ("número_factura", lambda x: bool(x)),
+        ("fecha", lambda x: x no es Ninguno),
+    ]
+    errores = []
+    para campo, regla en pruebas:
+        si no es regla (d.get (campo)):
+            errores.append(campo)
+    errores de devolución
+```
+
+Ejemplo: prueba A/B (Python):
+```pitón
+def clasificar_A(doc): ...
+def clasificar_B(doc): ...
+
+resA = clasificar_A(doc)
+resB = clasificar_B(doc)
+
+si resA != resB:
+    # Marcar conflicto, registrar para análisis
+    pasar
+```
+
+
+5. DEFINIR PROBLEMAS
+----------------------
+Estrategia: Problema como entrada -> salida deseada -> formular restricciones.
+En código: interfaces claras, invariantes esperadas, clases de error.
+
+Ejemplo de formulación:
+  Problema: "Los correos electrónicos entrantes deberían enviarse automáticamente como una factura,
+           contrato u otro."
+  Entrada: Correo electrónico (asunto, cuerpo, archivos adjuntos, metadatos)
+  Salida: Categoría + Puntuación + extractos si es necesario
+  Restricciones: no hay falsos positivos para facturas superiores a X EUR,
+               Umbrales de puntuación, registro
+
+
+6. ESTRATEGIAS DE RESOLUCIÓN DE PROBLEMAS
+--------------------------
+Patrón genérico para decisiones basadas en estrategias.
+
+```python
+def resolver_problema(input_data, estrategias):
+    """
+    estrategias: Lista de estrategias con:
+      - nombre
+      - condición(input_data) -> bool
+      - acción(input_data) -> resultado
+    """
+    para s en estrategias:
+        si s["condición"](input_data):
+            devolver {
+                "estrategia": s["nombre"],
+                "resultado": s["acción"](input_data)
+            }
+    devolver {
+        "estrategia": Ninguna,
+        "resultado": Ninguno
+    }
+```
+
+Ejemplos de estrategias (basadas en la confianza):
+```pitón
+estrategias = [
+    {
+        "nombre": "alta_confianza_auto",
+        "condición": lambda d: d["puntuación"] >= 0,9,
+        "acción": lambda d: {"modo": "auto", "ruta": "contabilidad"}
+    },
+    {
+        "nombre": "medium_confidence_review",
+        "condición": lambda d: 0,6 <= d["puntuación"] < 0,9,
+        "acción": lambda d: {"modo": "revisión", "ruta": "inbox_review"}
+    },
+    {
+        "nombre": "low_confidence_ignore",
+        "condición": lambda d: d["puntuación"] < 0,6,
+        "acción": lambda d: {"modo": "ignorar", "ruta": Ninguno}
+    },
+]
+```
+
+
+REFERENCIA A BACH
+-------------
+Estas estrategias son la base para:
+  - Inyectores (decisiones basadas en contexto) - system/tools/injectors.py
+  - Consolidación de memoria (derivación de lecciones) - system/hub/consolidation.py
+  - Enrutamiento del flujo de trabajo (habilidades y servicios)
+  - Procesamiento de documentos (OCR, clasificación)
+
+Estrategias + operadores = módulos de solución reutilizables
+
+
+ARCHIVOS DE AYUDA RELACIONADOS
+----------------------
+  --operadores de ayuda Operadores y patrones básicos
+  --ayuda a estrategias de pensamiento Estrategias cognitivas
+  --ayuda a la retórica Operadores retóricos

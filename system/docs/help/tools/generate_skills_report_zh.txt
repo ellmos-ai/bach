@@ -1,0 +1,20 @@
+巴赫工具：generate_skills_report
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/generate_skills_report.py
+
+描述
+----------------------------------------
+generate_skills_report.py - 生成用户友好的技能报告
+
+创建：user/SKILLS_REPORT.md
+
+使用
+----------------------------------------
+python bach.py 工具运行generate_skills_report [args]
+或直接： python tools/generate_skills_report.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：巴赫工具显示generate_skills_report

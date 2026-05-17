@@ -1,0 +1,26 @@
+BACH ツール: Research_agent
+--------------------------------------------------
+生成: 2026-01-23 10:36
+出典: tools/research_agent.py
+
+説明
+----------------------------------------
+Research Agent v1.0.0
+
+科学研究および文献分析。
+PubMed、Perplexity、Consensus、NotebookLM を統合します。
+
+使用法:
+  python Research_agent.py 検索「クエリ」
+  python Research_agent.py review --topic "topic" --years 5
+  python Research_agent.py ステータス
+
+使用
+----------------------------------------
+python bach.py ツールは Research_agent [args] を実行します
+または直接: python tools/research_agent.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- ご質問がある場合: bach tools show Research_agent

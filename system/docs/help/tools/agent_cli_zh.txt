@@ -1,0 +1,38 @@
+巴赫工具：agent_cli
+--------------------------------------------------
+生成时间：2026-01-23 10:36
+来源：tools/agent_cli.py
+
+描述
+----------------------------------------
+BACH Agent CLI v1.0.0
+---------------------
+
+用于管理 BACH 代理和专家的 CLI 工具。
+
+功能：
+- 列出并激活代理
+- 查看专家
+- 初始化用户文件夹
+- 应用数据库模式
+
+用法：
+    python agent_cli.py list # 所有代理
+    python agent_cli.py Experts # 所有专家
+    python agent_cli.py info <agent> # 代理详细信息
+    python agent_cli.py init <agent> # 创建用户文件夹
+    python agent_cli.py setup-db # 初始化数据库
+    python agent_cli.py status # 系统状态
+
+作者：BACH系统
+日期：2026-01-20
+
+使用
+----------------------------------------
+python bach.py工具运行agent_cli [args]
+或直接： python tools/agent_cli.py [args]
+
+NOTES
+----------------------------------------
+- 从 Docstring 自动生成
+- 如果您有任何疑问：bach 工具显示 agent_cli

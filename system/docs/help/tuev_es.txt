@@ -1,0 +1,132 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+
+TUEV-HANDLER
+------------
+
+Garantía de calidad del flujo de trabajo y gestión de casos de prueba para flujos de trabajo BACH.
+El controlador TUeV gestiona las métricas de estado, validez y calidad.
+de flujos de trabajo a lo largo de sus ciclos de vida.
+
+
+NOMBRE DEL MANEJADOR
+------------
+
+bach tuev     - TUeV y validez del flujo de trabajo
+bach usecase  - Definición y ejecución de casos de prueba
+
+
+DESCRIPCIÓN
+------------
+
+El manejador TUeV (prueba, verificación, validación) gestiona:
+
+  * Registro de flujos de trabajo en la base de datos de Bach.
+  * Seguimiento de la validez del TUeV (estándar: 90 días)
+  * Descripción general de los flujos de trabajo vencidos o vencidos próximamente
+  * Gestión de casos de prueba (casos de uso) por flujo de trabajo
+  * Estado y puntuación de calidad por caso de prueba
+
+El controlador trabaja con:
+  * Base de datos: data/bach.db (workflow_tuev, tablas de casos de uso)
+  * Flujos de trabajo: habilidades/flujos de trabajo/ (archivos *.md)
+  * Entrada/salida de prueba como JSON en DB
+
+
+OPERACIONES
+-----------
+
+TUeV-OPERACIONES:
+
+  bach tuev
+  bach tuev status        - Mostrar el estado de todos los flujos de trabajo
+  bach tuev check WFNAME  - Verificar el flujo de trabajo individual y sus casos de uso
+  bach tuev run           - Listar todos los flujos de trabajo caducados
+  bach tuev renew WFNAME  - Renovar TUeV (validez de 90 días)
+  bach tuev init          - Flujos de trabajo de habilidades/flujos de trabajo/registro
+
+OPERACIONES DE CASES DE USO:
+
+  bach usecase list [WF]       - Todos o mostrar casos de prueba filtrados
+  bach usecase add WFNAME      - Agregar nueva prueba case (plantilla SQL)
+  bach usecase show ID         - Detalles del caso de prueba con entrada/salida
+  bach usecase run ID          - Ejecutar y verificar el caso de prueba
+  bach usecase run-all WFNAME  - Ejecutar todos los casos de prueba de un flujo de trabajo
+
+
+EJEMPLOS
+---------
+
+1. Agregue nuevos flujos de trabajo a la base de datos:
+   $ bach tuev init
+   [TUeV] Flujos de trabajo inicializados
+     Añadido: 5
+     Saltado: 0
+
+2. Resumen de estado (ordenado por fecha de caducidad):
+   $ bach tuev estado
+   [WORKFLOW-TUeV] Descripción general del estado
+
+   EXPIRADO (¡compruébelo inmediatamente!):
+     [!] registro de corrección de errores Puntuación: 75% | Estado: pendiente
+
+   VENCE PRONTO (< 14 días):
+     [~] canalización de datos Puntuación: 88% | 5d
+
+   Bien:
+     [OK] Flujo de trabajo principal Puntuación: 92 % | 30d
+
+3. Verificación del flujo de trabajo con casos de uso:
+   $ bach tuev comprobar el registro de corrección de errores
+   [TUeV] Prueba: protocolo de corrección de errores
+   Ruta: habilidades/flujos de trabajo/bugfix-protocol.md
+   Estado: pendiente
+   Puntuación: 75%
+
+   Casos de uso: 2
+     [?] Caso de prueba simple (?)
+     [OK] Caso extremo con error (aprobado)
+
+4. Renovar TUeV después de una prueba exitosa:
+   $ bach tuev renovar protocolo de corrección de errores
+   [TUeV] protocolo de corrección de errores renovado
+     Válido hasta: 2026-06-02
+
+5. Agregar nuevo caso de prueba:
+   Caso de uso de $bach agregar canalización de datos
+   SQL para insertar:
+   ---------------------
+   INSERTAR EN casos de uso (título, descripción, nombre_flujo de trabajo, ...)
+
+   O mediante GUI: /usecases
+
+   Ejemplo:
+   $ bach consulta de base de datos "INSERTAR EN casos de uso (...) VALORES (...)"
+
+6. Ejecutar caso de prueba:
+   Ejecución 5 del caso de uso de $bach
+   [CASO DE USO] Prueba n.º 5: prueba sencilla
+   [INFO] Se requiere verificación manual.
+
+   Introduzca el resultado:
+   $ bach consulta de base de datos "ACTUALIZAR casos de uso SET test_result='pass', test_score=90 WHERE id=5"
+
+
+ARCHIVOS
+-------
+
+Relativo al sistema/:
+
+  data/bach.db - Base de datos SQLite con tablas TUeV/Usecase
+  skills/workflows/*.md - archivos de flujo de trabajo (se inicializan)
+  hub/tuev.py - Clases TuevHandler y UsecaseHandler
+
+
+VER TAMBIÉN
+----------
+
+  bach db          - Consultas directas a bases de datos
+  hub/base.py - Clase base BaseHandler
+  skills/workflows/ - Archivos de flujo de trabajo disponibles

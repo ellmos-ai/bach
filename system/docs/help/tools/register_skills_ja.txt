@@ -1,0 +1,20 @@
+BACH ツール: register_skills
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/register_skills.py
+
+説明
+----------------------------------------
+bach.db にスキルを登録
+------------------------------
+スキル/フォルダーをスキャンし、DB にすべてのスキル ファイルを登録します。
+
+使用
+----------------------------------------
+python bach.py tools run register_skills [args]
+または直接: python tools/register_skills.py [args]
+
+NOTES
+----------------------------------------
+- Docstring から自動的に生成
+- 質問がある場合: bach tools show register_skills

@@ -1,0 +1,35 @@
+BACH Tool: pattern_tool
+--------------------------------------------------
+Generiert: 2026-01-23 10:36
+Quelle: tools/pattern_tool.py
+
+BESCHREIBUNG
+----------------------------------------
+pattern_tool.py - Dateinamen kuerzen durch Pattern-Erkennung
+------------------------------------------------------------
+
+Kombiniert pattern_renamer.py und pattern_trimmer.py in einem Tool.
+
+Funktionen:
+- PREFIX: Gemeinsame Prefixe bei Gruppen entfernen
+- SUFFIX: Gemeinsame Suffixe bei Gruppen entfernen
+- BOTH: Prefix und Suffix kombiniert
+
+Usage:
+    python pattern_tool.py <ordner> --dry-run
+    python pattern_tool.py <ordner> --execute
+    python pattern_tool.py <ordner> --prefix-only
+    python pattern_tool.py <ordner> --suffix-only
+    python pattern_tool.py <ordner> -m 5  # Min 5 Zeichen Pattern
+
+Autor: BACH v1.1
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run pattern_tool [args]
+oder direkt: python tools/pattern_tool.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show pattern_tool

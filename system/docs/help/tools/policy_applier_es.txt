@@ -1,0 +1,29 @@
+Herramienta BACH: Policy_applier
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/policy_applier.py
+
+DESCRIPCIÓN
+----------------------------------------
+PolicyApplier - Sistema de Gestión de Políticas BACH
+----------------------------------------------
+Versión: 1.0.0
+Fecha: 2026-01-22
+
+Tarea: BOOTSTRAP_010 - Fase 3.2: Clase PolicyApplier y comprobaciones de validación
+
+Función:
+- Lee políticas BACH de carpetas _policies/
+- Aplica políticas a los proyectos.
+- Realiza controles de validación.
+- Genera informes de cumplimiento
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan Policy_applier [args]
+o directamente: python tools/policy_applier.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tienes alguna pregunta: herramientas de bach show Policy_applier

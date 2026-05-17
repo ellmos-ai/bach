@@ -1,0 +1,35 @@
+巴赫工具：c_indent_checker
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/c_indent_checker.py
+
+描述
+----------------------------------------
+c_indent_checker.py - Python 缩进检查器
+
+用途：检查 Python 文件是否存在常见缩进错误：
+       - 结构后缺少冒号（def、if、class 等）
+       - 块外返回/收益
+       - 制表符和空格的混合
+
+作者：Claude（改编自 indent_gui_checker.py）
+依赖项：os、re、json（stdlib）
+
+用法：
+    python c_indent_checker.py <file_or_folder> [--recursive] [--log] [--json]
+
+示例：
+    python c_indent_checker.py script.py # 单个文件
+    python c_indent_checker.py ./src --recursive # 整个文件夹
+    python c_indent_checker.py ./src --log # 创建日志文件
+    python c_indent_checker.py script.py --json # JSON 输出
+
+USE
+----------------------------------------
+python bach.py 工具运行 c_indent_checker [args]
+或直接： python tools/c_indent_checker.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：bach 工具显示 c_indent_checker

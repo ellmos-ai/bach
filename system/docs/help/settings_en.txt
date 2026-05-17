@@ -1,0 +1,119 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SETTINGS HANDLER
+---------------
+
+HANDLER NAME
+------------
+settings
+
+DESCRIPTION
+------------
+The Settings Handler manages system settings in the BACH database
+(system_config table). Settings are key-value pairs with optional
+Categories, descriptions and distribution types (USER/TEMPLATE/CORE).
+
+OPERATIONS
+-----------
+
+LIST
+----
+bach settings list
+bach settings list --category=KATEGORIE
+
+Show all saved settings. Optionally filtered by category.
+Output shows: Key, Value, Type, Category, Description, Dist-Type (USER/TMPL/CORE)
+
+GET
+---
+bach settings get <key>
+
+Read individual value with complete metadata.
+Shows: Key, Value, Type, Category, Description, Dist-Type, Updated-Timestamp
+
+SET
+---
+bach settings set <key>=<value> [--category=CAT] [--desc=TEXT]
+
+Set new value or update existing one.
+- New settings get dist_type=0 (USER)
+- CORE settings (dist_type=2) cannot be changed
+- Option --category: Store settings in category
+- Option --desc: add description
+- Starts partner MD update at integration.*-Keys
+
+RESET
+-----
+bach settings reset <key>
+
+Delete setting. CORE settings cannot be deleted.
+Only USER and TEMPLATE can be removed.
+
+EXPORT
+------
+bach settings export [dateiname]
+
+Export all settings as JSON. Output to stdout without filename.
+Format: {key: {value, type, category, description, dist_type}}
+
+IMPORT
+------
+bach settings import <dateiname>
+
+Import settings from JSON file. Only overwrites USER/TEMPLATE,
+CORE settings remain unaffected. Shows number imported/skipped.
+
+CATEGORIES
+----------
+bach settings categories
+
+Show all available categories with entry count.
+
+EXAMPLES
+---------
+
+List all settings:
+$ bach settings list
+
+Filter by category:
+$ bach settings list --category=security
+
+Read setting:
+$ bach settings get db.backup_interval
+
+Set setting (new):
+$ bach settings set log.level=DEBUG --category=behavior --desc="Logging Verbositaet"
+
+Update setting:
+$ bach settings set log.level=INFO
+
+Delete setting:
+$ bach settings reset log.level
+
+Export and save settings:
+$bach settings export settings_backup.json
+
+Import settings:
+$bach settings import settings_backup.json
+
+List categories:
+$ bach settings categories
+
+FILES
+-------
+hub/settings.py Handler implementation (relative: hub/settings.py)
+bach.db (system_config) database table (path: BACH_DB)
+
+RELATED CATEGORIES
+--------------------
+claude_permissions Permission profiles for Claude Code (see permissions.txt)
+
+SEE ALSO
+----------
+hub/base.py BaseHandler (relative: hub/base.py)
+hub/bach_paths.py BACH_DB constant (relative: hub/bach_paths.py)
+hub/claude_permissions.py Permissions Handler (relative: hub/claude_permissions.py)
+docs/BACH-SCHEMA.md Database Schema (relative: docs/BACH-SCHEMA.md)
+permissions.txt Claude Code Permission profiles

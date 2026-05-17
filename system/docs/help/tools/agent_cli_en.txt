@@ -1,0 +1,38 @@
+BACH Tool: agent_cli
+--------------------------------------------------
+Generiert: 2026-01-23 10:36
+Quelle: tools/agent_cli.py
+
+BESCHREIBUNG
+----------------------------------------
+BACH Agent CLI v1.0.0
+---------------------
+
+CLI-Tool zur Verwaltung von BACH Agenten und Experten.
+
+Features:
+- Agenten auflisten und aktivieren
+- Experten anzeigen
+- User-Ordner initialisieren
+- Datenbank-Schema anwenden
+
+Usage:
+    python agent_cli.py list                    # Alle Agenten
+    python agent_cli.py experts                 # Alle Experten
+    python agent_cli.py info <agent>            # Agent-Details
+    python agent_cli.py init <agent>            # User-Ordner erstellen
+    python agent_cli.py setup-db                # Datenbank initialisieren
+    python agent_cli.py status                  # System-Status
+
+Autor: BACH System
+Datum: 2026-01-20
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run agent_cli [args]
+oder direkt: python tools/agent_cli.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show agent_cli

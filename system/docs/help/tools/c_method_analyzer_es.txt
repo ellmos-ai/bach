@@ -1,0 +1,36 @@
+Herramienta BACH: c_method_analyzer
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/c_method_analyzer.py
+
+DESCRIPCIÓN
+----------------------------------------
+c_method_analyzer.py - Analizador de código Python para Claude
+
+Propósito: Analiza el código Python en busca de métodos, llamadas, importaciones y problemas potenciales.
+       Extraído de MethodsAnalyser3.py: GUI eliminada, interfaz CLI agregada.
+
+Autor: Claude (adaptado de la herramienta del usuario)
+Versión: 2.0 (ampliada para incluir verificación de señal, verificación de atributos y corrección de codificación)
+Dependencias: ast, collections, difflib, datetime (todas las bibliotecas estándar)
+
+Funciones:
+- analizar_archivo (ruta) -> Resultado del análisis: análisis principal
+- generate_report(resultado) -> str: informe formateado
+- get_summary(resultado) -> dict: Resumen compacto para procesamiento posterior
+
+Nuevo en v2.0:
+- Corrección de codificación de la consola de Windows
+- Comprobación de conexión de señal (.connect(self.X) -> ¿existe X?)
+- Detección de atributo antes del inicio (self.X usado antes de self.X =...)
+- Detección de errores tipográficos mejorada (_show_X vs show_X)
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan c_method_analyzer [args]
+o directamente: python tools/c_method_analyzer.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente a partir de docstring
+- Si tiene alguna pregunta: las herramientas de Bach muestran c_method_analyzer

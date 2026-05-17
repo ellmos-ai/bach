@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+------------
+
+notify - Notification system for BACH
+
+
+DESCRIPTION
+------------
+
+Sends notifications via various external channels. Supported
+Discord, Signal, Email, Telegram, Webhooks and Slack. Messages are in
+The database (connector_messages) is logged and can be pending until
+the respective channel is ready.
+
+All configurations are stored in the connections table of bach.db.
+Authentication takes place via tokens or email/password combinations.
+
+
+OPERATIONS
+-----------
+
+send <channel> <text>
+  Send notification via a configured channel.
+  Example: bach notify send discord "Process completed"
+
+setup <channel> [endpoint] [--token=X] [--email=X]
+  Reconfigure or update channel.
+  - channels: discord, signal, email, telegram, webhook, slack
+  - endpoint: API URL or server address (optional for Telegram)
+  - --token=X: authentication token (e.g. bot token)
+  - --email=X: Email address for SMTP login
+  Example: bach notify setup telegram --token=123456:ABC-DEF
+
+test <channel>
+  Send test message to check configuration.
+  Example: bach notify test slack
+
+list
+  Show all configured notification channels with status.
+  Shows: channel name, type, endpoint, active/inactive, send count, last sent.
+
+status
+  Identical to 'list' - status of all channels.
+
+history [--limit N]
+  Show recent notifications (default: 20).
+  Shows: channel name, status (sent/pending), timestamp, message text.
+  Example: bach notify history --limit 50
+
+
+EXAMPLES
+---------
+
+Configure Discord webhook:
+  bach notify setup discord https://discord.com/api/webhooks/ABC/XYZ
+
+Set up Telegram bot:
+  bach notify setup telegram --token=123456:ABC-DEF-GHI
+
+Send email via Gmail:
+  bach notify setup email smtp.gmail.com --token=APP_PASSWORD --email=user@gmail.com
+
+Add Slack webhook:
+  bach notify setup slack https://hooks.slack.com/services/T00/B00/XX
+
+Test notification:
+  bach notify test discord
+
+Send message:
+  bach notify send discord "Backup erfolgreich abgeschlossen"
+
+History of the last 10 notifications:
+  bach notify history --limit 10
+
+
+FILES
+-------
+
+data/bach.db
+  Database with tables:
+  - connections: Saved channel configurations (endpoint, token, etc.)
+  - connector_messages: Log all incoming/outgoing messages
+
+user/secrets/secrets.json
+  Optional: Central secrets file (read with priority for Telegram).
+  Format: {"telegram": {"bot_token": "...", "chat_id": "..."}}
+
+
+SEE ALSO
+----------
+
+hub/base.py - BaseHandler class
+hub/notify.py - Complete handler implementation
+data/ - Bach database and config
+docs/handlers.txt - General handler documentation

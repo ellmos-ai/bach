@@ -1,0 +1,100 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PROFILE HANDLER
+-------------------------------------------------------------------------------
+
+DESCRIPTION
+-------------------------------------------------------------------------------
+
+The Profile Handler manages the user profile in BACH, combining
+Data from two sources: a persistent JSON configuration (user/profile.json)
+and learned preferences from the SQLite database (bach.db, table
+assistant_user_profile). The handler supports viewing, editing
+and exporting profile information.
+
+
+OPERATIONS
+-------------------------------------------------------------------------------
+
+show
+  Combined profile view (JSON + DB)
+  Shows: name, role, language, timezone, OS from profile.json
+  Shows: Learned preferences from the database (by categories)
+  Syntax: profile show
+
+edit <category> <key> <value>
+  Set or update profile property in the database
+  Allowed categories: preference, habit, peculiarity
+  Saves with confidence "high" and source "user-input"
+  Syntax: profile edit preference language German
+
+update <category> <key> <value>
+  Alias for edit (identical functionality)
+  Syntax: profile update custom editor vim
+
+stats
+  Shows profile statistics
+  JSON version, updated date and number of DB entries
+  Breaks down DB entries by category
+  Syntax: profile stats
+
+json
+  Shows the contents of user/profile.json as formatted JSON
+  Syntax: profile json
+
+db
+  Shows all learned entries from assistant_user_profile
+  Includes category, key, value and confidence level
+  Sorted by category and key
+  Syntax: profile db
+
+export
+  Export profile as a complete overview
+  Combined representation of all profiles from JSON and DB
+  Contains: Basics, Traits, Values, Goals, Preferences, Learned
+  Syntax: profile export
+
+
+EXAMPLES
+-------------------------------------------------------------------------------
+
+Show profile:
+  $ bach profile show
+
+Add new preference:
+  $ bach profile edit preference coding_language python
+
+Teach habit:
+  $ bach profile edit habit morning_up 0700
+
+View statistics:
+  $ bach profile stats
+
+Export complete profile as text:
+  $ bach profile export
+
+Check database entries:
+  $ bach profile db
+
+
+FILES
+-------------------------------------------------------------------------------
+
+user/profile.json
+  Main profile file with static data (name, role, OS, timezone)
+  JSON format with sections: meta, stats, traits, values, goals, preferences
+
+data/bach.db
+  SQLite database with table assistant_user_profile
+  Saves learned profiles per category (preference, habit, peculiarity)
+  Each entry carries confidence levels and creation/modification times
+
+
+SEE ALSO
+-------------------------------------------------------------------------------
+
+docs/help/base.txt Handler Basics
+data/bach.db profile database
+user/profile.json Profile configuration

@@ -1,0 +1,93 @@
+# Portability: UNIVERSAL
+
+PATH
+====
+
+`bach path` makes the central path registry from `hub/bach_paths.py`
+Can be used directly via CLI and API. The output is both human-readable
+as well as with `--json` suitable for automation.
+
+
+COMMANDS
+-------
+
+  bach path
+    Shows the most important BACH paths grouped.
+
+  bach path <name>
+  bach path get <name>
+    Displays a single registered path with metadata.
+
+  bach path list [--json]
+    Lists the complete registry.
+
+  bach path resolve <relativer-pfad> [--from-root] [--json]
+    Resolves a relative path against `system/` or the repo root.
+
+  bach path overrides [--json]
+    Shows active DB path overrides from `system_config`.
+
+  bach path validate [--json]
+    Checks critical, important and optional paths.
+
+  bach path set <name> <pfad>
+    Stores a path override in the canonical BACH DB.
+
+
+EXAMPLES
+---------
+
+  bach path
+    -> Summary for operators
+
+  bach path db
+    -> Canonical database path
+
+  bach path list --json
+    -> Complete registry as JSON
+
+  bach path resolve docs/README.md --from-root
+    -> Absolute path relative to the repo root
+
+  bach path overrides
+    -> Check active DB overrides
+
+
+JSON-SURFACES
+-------------
+
+These calls provide machine-readable answers:
+
+  bach path --json
+  bach path list --json
+  bach path db --json
+  bach path overrides --json
+  bach path validate --json
+  bach path resolve docs/help/path.txt --json
+
+
+IMPORTANT DETAILS
+----------------
+
+- Source remains `hub/bach_paths.py` (Single Source of Truth).
+- If the `base_path` is foreign, the handler mirrors paths to the active one
+  Runtime root so that tests and portable instances produce clean results
+  received.
+- Overrides are read from the canonical DB of the active root and
+  written, not from a globally hard-coded path.
+
+
+FILES
+-------
+
+  hub/path.py CLI/API handler
+  hub/bach_paths.py Central path registry
+  data/bach.db `system_config` for path overrides
+
+
+SEE ALSO
+----------
+
+  help agent Agent CLI
+  help scheduler Scheduler status areas
+  help tools tool overview

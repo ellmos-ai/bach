@@ -1,0 +1,33 @@
+巴赫工具：c_umlaut_fixer
+--------------------------------------------------
+生成：2026-01-23 10:36
+来源：tools/c_umlaut_fixer.py
+
+描述
+----------------------------------------
+c_umlaut_fixer.py - 修复 Python 文件中损坏的德语变音符号
+
+修复典型的编码问题，例如：
+  - 删除 -> 删除
+  - 打开 -> 打开
+  - 关于 -> 关于
+
+摘自：A1 ProFiler/_Wartung/fix_profiler_complete.py
+
+用法：
+    python c_umlaut_fixer.py <文件.py>
+    python c_umlaut_fixer.py <file.py> --dry-run
+    python c_umlaut_fixer.py <file.py> --json
+
+作者：Claude（改编）
+依赖项：无（仅 stdlib）
+
+使用
+----------------------------------------
+python bach.py 工具运行 c_umlaut_fixer [args]
+或直接： python tools/c_umlaut_fixer.py [args]
+
+注释
+----------------------------------------
+- 从文档字符串自动生成
+- 如果您有任何疑问：bach 工具显示 c_umlaut_fixer

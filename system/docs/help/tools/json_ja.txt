@@ -1,0 +1,24 @@
+BACH ツール: JSON
+---------------
+
+JSON の処理、修復、レジストリのクリーニング。
+
+利用可能なツール
+-----------------
+
+  json_config_cli JSON 構成ファイルを管理する
+  json_fixer 壊れた JSON ファイルを修正する
+  json_registry_cleaner レジストリをクリーンアップするツール
+  json_repair JSON 構文を自動的に修正します
+
+使用
+----------
+
+  bach --tools json fix <datei.json>      破損した JSON を修復
+  bach --tools json config <key> [value]  構成の読み取り/設定
+  bach --tools json clean-registry        レジストリのクリーンアップ
+
+MODULE
+-----
+
+  tools/json/ (4 つのツール)

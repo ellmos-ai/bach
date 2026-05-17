@@ -1,0 +1,81 @@
+BACH Tool: python_cli_editor
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/python_cli_editor.py
+
+DESCRIPTION
+----------------------------------------
+python_cli_editor.py - Python Code Editor CLI v2.0
+
+Analyzes and edits Python files in a structured manner.
+Shows classes, methods, imports and enables targeted editing.
+
+Author: BACH Contributors
+Version: 2.0.0
+Date: 2026-01-13
+
+------------------------------------------------------------
+NEW FEATURES v2.0:
+------------------------------------------------------------
+
+LINE NUMBERS:
+  --lines / --no-lines line numbers on/off (default: on)
+
+INSERT:
+  --add CODE Insert code (from file or directly)
+  --at-start At the beginning of the file (after imports)
+  --at-end At the end of the file
+  --at-imports In the import section
+  --in-class NAME In class NAME (at the end)
+  --before NAME Before element NAME
+  --after NAME After element NAME
+  --at-line N On line N
+
+DELETE:
+  --delete NAME Deletes class, method or function
+
+EDIT LINES:
+  --change-line N Edit line N (interactively or with --content)
+  --content "CODE" New content for --change-line
+
+SAVE:
+  --test Create test file without modifying original
+  --save Saves directly with automatic backup
+
+------------------------------------------------------------
+EXAMPLES:
+------------------------------------------------------------
+
+# Show structure with line numbers
+python python_cli_editor.py script.py --show-all --lines
+
+# Insert new function at the end
+python python_cli_editor.py script.py --add new_func.py --at-end --save
+
+# Insert method into class
+python python_cli_editor.py script.py --add method.py --in-class MyClass --save
+
+# Add import
+python python_cli_editor.py script.py --add "import os" --at-imports --save
+
+# Delete class
+python python_cli_editor.py script.py --delete MyClass --save
+
+# Change line
+python python_cli_editor.py script.py --change-line 42 --content "x = 100" --save
+
+# Insert before/after element
+python python_cli_editor.py script.py --add helper.py --before MainClass --save
+python python_cli_editor.py script.py --add cleanup.py --after process_data --save
+
+------------------------------------------------------------
+
+USE
+----------------------------------------
+python bach.py tools run python_cli_editor [args]
+or directly: python tools/python_cli_editor.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from Docstring
+- If you have any questions: bach tools show python_cli_editor

@@ -1,0 +1,154 @@
+POLÍTICAS - Estándares de códigos reutilizables
+------------------------------------------
+
+A partir de: 2026-01-23
+Ruta: docs/help/tools/policies.txt
+
+DESCRIPCIÓN
+------------
+Las políticas son fragmentos de código reutilizables de los estándares BACH
+hacer cumplir. Se inyectan en nuevos proyectos y aseguran
+manejo consistente de:
+  - Codificación (UTF-8, Consola de Windows)
+  - JSON (seguro para emojis, codificación alternativa)
+  - Nombres de archivos (convención de prefijo)
+
+UBICACIÓN
+-----------
+  herramientas/_políticas/
+    encoding_header.py UTF-8 y corrección de consola
+    emoji_safe.py Conversión de emojis
+    json_safe.py Operaciones JSON seguras
+    CONCEPT_naming_convention.md Convención de nomenclatura (Concepto)
+
+POLÍTICAS DISPONIBLES
+--------------------
+
+1. encoding_header (v1.0)
+-------------------------
+Encabezado de codificación UTF-8 y corrección de la consola de Windows.
+Inyectado al principio del archivo.
+
+INJECTADO:
+  - Shebang: #!/usr/bin/env python3
+  - Codificación: # -*- codificación: utf-8 -*-
+  - Corrección de codificación de la consola de Windows
+
+CÓDIGO TÍPICO:
+  #!/usr/bin/env python3
+  # -*- codificación: utf-8 -*-
+
+  sistema de importación
+  si sys.platform == 'win32':
+      sys.stdout.reconfigure(codificación='utf-8', errores='reemplazar')
+
+2. emoji_safe (v1.0)
+--------------------
+Manejo seguro de emoji para almacenamiento/transferencia.
+
+CARACTERÍSTICAS:
+  emoji_to_safe(texto) Emoji -> ASCII-seguro (para bases de datos/archivos)
+  emoji_to_display(texto) ASCII-safe -> Emoji (para visualización)
+
+USE:
+  desde _policies.emoji_safe importar emoji_to_safe
+  safe_text = emoji_to_safe("Hola [HERRAMIENTA]") # -> "Hola :llave inglesa:"
+
+DEPENDENCIA:
+  Requerido: pip install emoji (opcional, elegante respaldo)
+
+3. json_safe (v1.0)
+-------------------
+Operaciones JSON seguras con manejo de emoji/codificación.
+
+CARACTERÍSTICAS:
+  json_load_safe(filepath) Cargas con codificación alternativa
+  json_save_safe(datos, ruta de archivo) Guarda con conversión de emoji
+  json_dumps_safe(datos) Serializado asegurar_ascii=False
+
+USO:
+  desde _policies.json_safe importe json_load_safe, json_save_safe
+
+  # Cargar (probé utf-8, utf-8-sig, latin-1, cp1252)
+  datos = json_load_safe("config.json")
+
+  # Guardar (convierte emojis en: shortcodes:)
+  json_save_safe(data, "config.json", convert_emojis=True)
+
+FORMATO DE POLÍTICA
+-------------
+Cada política tiene la siguiente estructura:
+
+  #!/usr/bin/env python3
+  # -*- codificación: utf-8 -*-
+  """
+  POLÍTICA: nombre
+  VERSIÓN: 1.0
+  TAMAÑO: pequeño/mediano/grande
+  DESCRIPCIÓN: ¿Qué hace la póliza?
+  """
+
+  # === POLÍTICA:nombre:versión ===
+  ...código...
+  # === FINAL:nombre ===
+
+CLASES DE TAMAÑO:
+  pequeño -> inyección en línea (pocas líneas)
+  medio -> Archivo externo (módulo propio)
+  grande -> Múltiples archivos
+
+BOOTSTRAPPING DE PROYECTO ATI
+-------------------------
+El programa previo de ATI inyecta políticas en nuevos proyectos:
+
+  bach ati bootstrap my-tool --template python-cli
+
+POLÍTICAS ESTÁNDAR para Python CLI:
+  - encoding_header (siempre)
+  - json_safe (si usa JSON)
+  - emoji_safe (cuando se envía a la consola)
+
+Ver: agentes/ati/ATI_PROJECT_BOOTSTRAPPING.md
+
+CONVENCIÓN DE NOMBRE (concepto)
+---------------------------
+Convención de nomenclatura planificada para archivos de herramientas:
+
+  c_ -> CLI optimizado para IA (c_encoding_fixer.py)
+  b_ -> Núcleo BACH (b_backup.py)
+  a_ -> Agente Runner (a_developer.py)
+  t_ -> Herramientas de prueba (t_runner.py)
+  m_ -> Mantener (m_cleanup.py)
+  g_ -> Herramientas generadoras (g_skill.py)
+
+Estado: CONCEPTO - aún no implementado
+Consulte: tools/_policies/CONCEPT_naming_convention.md
+
+CREA TU PROPIA POLÍTICA
+-----------------------
+
+1. Crear archivo en herramientas/_policies/
+2. Encabezado de política con NOMBRE, VERSIÓN, TAMAÑO, DESCRIPCIÓN
+3. Marcar código entre # === POLÍTICA:nombre:versión ===
+4. Opcional: Regístrese en project_bootstrapper.py
+
+USOS TÍPICOS
+-------------------------
+
+1. NUEVO PROYECTO PYTHON
+   -> Inyectar automáticamente encoding_header
+
+2. CONFIGURACIÓN JSON
+   -> json_safe para almacenamiento seguro
+
+3. EDICIÓN DE CONSOLA CON EMOJIS
+   -> emoji_safe para compatibilidad con Windows
+
+4. ESTANDARIZAR EL CÓDIGO EXISTENTE
+   -> c_standard_fixer usa políticas internamente
+
+VER TAMBIÉN
+----------
+  bach --help tools/code_quality   Codificación/JSON-Fixer
+  bach --help ati                  Agente ATI y Bootstrapping
+  bach --help tools                Descripción general de la herramienta

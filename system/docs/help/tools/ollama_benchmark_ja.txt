@@ -1,0 +1,18 @@
+BACH ツール: ollama_benchmark
+--------------------------------------------------
+生成: 2026-01-23 10:36
+ソース: tools/ollama_benchmark.py
+
+説明
+----------------------------------------
+Ollama ベンチマーク分析と視覚化
+
+使用
+----------------------------------------
+python bach.py tools run ollama_benchmark [args]
+または直接: python tools/ollama_benchmark.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成
+- 質問がある場合: bach tools show ollama_benchmark

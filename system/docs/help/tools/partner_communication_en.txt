@@ -1,0 +1,29 @@
+BACH Tool: Partner Communication
+---------------------------------
+
+AI partner communication and interaction protocol.
+
+AVAILABLE TOOLS
+-----------------
+
+  ai_compatible Format AI compatible messages
+  communication Send/receive messages to partners
+  gemini_start Initialize Gemini session
+  interaction_protocol Manage interaction protocol
+  real_tools Forward real tool calls to partners
+
+INTERACTION
+-------------
+
+BACH supports multi-agent communication between:
+  - Claude (claude-code / claude-desktop)
+  - Gemini (antigravity)
+  - GPT (codex)
+
+Messages are exchanged via CLAUDE.md / GEMINI.md / GPT.md.
+Sync via OneDrive/.SYNC/ (laptop <-> workstation).
+
+MODULE
+-----
+
+  tools/partner_communication/ (5 modules)

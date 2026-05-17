@@ -1,0 +1,259 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+RHETORIC
+--------
+Rhetorical operators and patterns as applied thinking strategies.
+
+Core statement: Rhetoric is cognitive strategy + linguistic packaging.
+
+
+1. RHETORICAL OPERATORS (basic building blocks)
+------------------------------------------
+
+1.1 Reinforcement operators
+-----------------------------
+Increase impact, intensity or importance.
+  - Amplification -> make something bigger
+  - Emphasis -> emphasis through repetition/structure
+  - Increase (climax) -> A -> B -> C, each stronger
+  - Superlativization -> "the most important point..."
+
+1.2 Attenuation operators
+-----------------------------
+Attenuate, relativize, defuse.
+  - Litotes -> "not bad"
+  - Hedging -> "it could be that..."
+  - Relativization -> "compared to..."
+
+1.3 Structure operators
+------------------------
+Order thoughts and direct attention.
+  - Triad -> 3-point structure
+  - Framing -> Set context
+  - Signposting -> "firstly... secondly..."
+  - Contrasting -> A vs. B
+
+1.4 Meaning operators
+--------------------------
+Change how something is understood.
+  - Metaphor -> transferring meaning
+  - Analogy -> comparison structure
+  - Definition -> Set term
+  - Reframing -> Reinterpret meaning
+
+1.5 Persuasion operators
+----------------------------
+Aim for approval.
+  - Logos -> logical arguments
+  - Ethos -> credibility
+  - Pathos -> Emotion
+  - Reference to authority -> "Studies show..."
+
+1.6 Perception operators
+----------------------------
+Control what the audience pays attention to.
+  - Focusing -> "what matters is..."
+  - Distraction -> move topic
+  - Selective display -> only show relevant aspects
+
+1.7 Interaction operators
+----------------------------
+Include the other person.
+  - Rhetorical question
+  - Direct approach
+  - Community frame -> "we all know that..."
+  - Objection anticipation -> "You may be wondering..."
+
+1.8 Credibility Operators
+--------------------------------
+Increase trust.
+  - Self-disclosure
+  - Transparency
+  - admit mistakes
+  - Show consistency
+
+
+2. RHETORICAL PATTERNS (combinations)
+----------------------------------------
+
+2.1 Problem-cause-solution pattern
+------------------------------------
+Operators: framing, causality, structuring
+Form: Name the problem -> Explain the cause -> Present the solution
+
+2.2 Objection anticipation pattern
+--------------------------------
+Operators: change of perspective, reframing, logos
+Form: "You might think now... but actually..."
+
+2.3 Story-Frame Pattern
+------------------------
+Operators: Metaphor, Sequencing, Pathos
+Form: Situation -> Conflict -> Turning Point -> Solution
+
+2.4 Sandwich Pattern
+---------------------
+Operators: reinforcement, weakening
+Form: Positive -> Criticism -> Positive
+
+2.5 Contrast Pattern
+---------------------
+Operators: Contrasting, focusing
+Form: "Not X, but Y."
+
+2.6 Triad Pattern
+--------------------
+Operators: Structuring, reinforcement
+Form: "Fast. Clear. Effective."
+
+2.7 Authority Pattern
+------------------------
+Operators: Ethos, Logos
+Form: "Studies show... experts confirm..."
+
+2.8 Minimum Resistance Pattern
+-------------------------------
+Operators: Weakening, Hedging
+Form: "Perhaps it would make sense..."
+
+2.9 Reframing Pattern
+----------------------
+Operators: Shift in meaning
+Form: "This is not a problem - this is an opportunity."
+
+2.10 Socratic Pattern
+--------------------------
+Operators: questions, change of perspective
+Form: "What if...?"
+
+2.11 Momentum Pattern
+----------------------
+Operators: Climax, sequencing
+Form: "First... then... finally..."
+
+2.12 Reduction Pattern
+-----------------------
+Operators: Chunking, focusing
+Form: "It's actually just about two things..."
+
+2.13 Mirroring Pattern
+-------------------------
+Operators: Perspective taking
+Form: "I hear that it is important to you..."
+
+2.14 Simplification Pattern
+----------------------------
+Operators: Normalize, Metaphor
+Form: "Imagine it was like..."
+
+2.15 Surprise Pattern
+----------------------------
+Operators: Contrast, Reframing
+Form: "Most people think X -- but the opposite is true."
+
+2.16 Consistency Pattern
+------------------------
+Operators: ethos, repetition
+Form: "As I said..."
+
+2.17 Precision Pattern
+-------------------------
+Operators: definition, focusing
+Form: "By 'efficiency' I mean specifically..."
+
+2.18 Emotional Trigger Pattern
+-------------------------------
+Operators: Pathos, storytelling
+Form: "Imagine getting up in the morning and..."
+
+2.19 Counter-evidence pattern
+-------------------------
+Operators: testing, comparing
+Form: "If that were true, then..."
+
+2.20 Minimal Argument Pattern
+------------------------------
+Operators: prioritization, reduction
+Form: "There is only ONE reason why this is important..."
+
+
+3. RHETORICAL TRICKS (precise techniques)
+-------------------------------------------
+
+Cold Open -> start directly with a strong statement
+Hook -> Attention in 3 seconds
+Call-Back -> come back to the previous point later
+Echoing -> repeat key words
+Contrast hook -> "The bad news... the good news..."
+False Start -> deliberately interrupt to create tension
+Micro-break -> increase effect
+Labeling -> name emotions ("That seems frustrating...")
+Priming -> setting expectations
+Anchoring -> Set comparison point
+
+
+4. RHETORIC AND METACOGNITION
+------------------------------
+Metacognitive strategies as rhetorical self-control:
+
+  Self-monitoring -> control body language, tone, pace
+  Error analysis -> speech analysis, feedback loops
+  Meta questions -> “What is my core message”
+  Choice of strategy -> ethos/pathos/logos balance
+  Reflection -> Follow-up to a speech
+  Meta-planning -> speech structure, dramaturgy
+
+Rhetoric = not just talking, but thinking about speaking.
+
+
+5. RELATED TO TECHNICAL PATTERNS
+---------------------------------
+Many operator patterns have rhetorical twins:
+
+  Classification Pipeline -> Target group analysis
+  Scoring & Ranking -> Argument weighting
+  Rule-Based Filtering -> Relevance filter for content
+  Anomaly Detection -> detect contradictions
+  Progressive Refinement -> Build the argument step by step
+  Human-in-the-Loop -> Include audience reactions
+  Fallback Resolution -> Dealing with Objections
+
+This is no coincidence: Rhetoric is an information processing process.
+
+
+6. THE THREE PILLARS OF RHETORIC
+---------------------------------
+
+Logos (logical argumentation)
+  -> Deduction, induction, comparisons, tests, counter-evidence
+  -> Thinking strategies: Hypothesis formation, causal thinking
+
+Ethos (credibility)
+  -> Self-monitoring, error analysis, consistency
+  -> Metacognition: reflection, meta-questions
+
+Pathos (emotional impact)
+  -> Pattern recognition, storytelling, analogies
+  -> Thinking strategies: change of perspective, scenario thinking
+
+
+7. APPLICATION IN BACH
+--------------------
+
+Rhetorical operators can improve AI systems:
+  - Better explainability (simplification pattern)
+  - Better error messages (problem-cause-solution)
+  - Better user guidance (sign posting, structuring)
+  - Better communication (partner system)
+
+Thinking strategies = internal operators (processing)
+Rhetoric = external operators (communication)
+
+
+RELATED HELP FILES
+----------------------
+  --help operators Basic operators and patterns
+  --help thinking strategies Cognitive and metacognitive strategies
+  --help strategies Categorize, evaluate, test, etc.

@@ -1,0 +1,115 @@
+HERRAMIENTAS DEL AGENTE - Herramientas del agente
+--------------------------------
+
+VISIÓN GENERAL
+Las herramientas de agentes en BACH gestionan y controlan agentes de IA
+y sus interacciones.
+
+MARCO DE AGENTE
+---------------
+agent_framework.py
+
+Marco central para todos los agentes BACH.
+Características:
+  - Registro de agente
+  - Coincidencia de capacidades
+  - Gestión de sinergias
+
+Llamada: Utilizada internamente
+
+AGENT CLI
+---------
+agent_cli.py
+
+Línea de comando para la interacción del agente.
+Comandos:
+  - lista: Mostrar todos los agentes
+  - estado: comprobar el estado del agente
+  - activar: activar agente
+  - desactivar: desactivar agente
+
+Llamar: python tools/agent_cli.py <comando>
+
+INTEGRACIÓN DEL SERVICIO DEL AGENTE
+-------------------------
+agent_service_integration.py
+
+Conecta agentes a los servicios BACH.
+Permite:
+  - Descubrimiento de servicios
+  - Enrutamiento automático
+  - Equilibrio de carga
+
+AGENTES DISPONIBLES
+-------------------
+
+Directorio: agentes/
+
+  ati/desarrollador de software (ATI)
+  agente-impuesto.txt asistente fiscal
+  research.txt Agente de investigación (investigación)
+  desarrollador.txt Desarrollador general
+  agente de producción production.txt
+  planificador de financiación/asistente del plan de financiación
+
+CONVENCIÓN DEL AGENTE
+----------------
+
+Ver: skills/AGENT_KONVENTION.md
+
+Jerarquía:
+  Agentes BOSS: control total, a largo plazo
+  Expertos: Especializados, de corta duración.
+  Servicios: Tareas automáticas en segundo plano
+
+COMANDOS DE AGENTE EN BACH
+---------------------
+
+  bach --help agents       Documentación del agente
+  bach --help ati          Ayuda del agente ATI
+  bach ati bootstrap       Crear proyecto (ATI)
+  bach ati migrate         Migrar proyecto (ATI)
+
+DELEGACIÓN A AGENTES
+---------------------
+
+  bach delegate "task" --to=<agent>
+
+Destinos disponibles:
+  ollama, gemini, copiloto, perplejidad, humano
+
+AGENTE DESARROLLADOR
+----------------
+developer_agent.py
+
+Agente especializado para tareas de desarrollo.
+Puede:
+  - Generar código
+  - Analizar errores
+  - Crear pruebas
+
+PRODUCTION-AGENT
+----------------
+production_agent.py
+
+Para implementaciones de producción.
+Características:
+  - Construir procesos
+  - Comprobaciones de implementación
+  - Soporte Rollback
+
+AGENTE DE INVESTIGACIÓN
+--------------
+research_agent.py
+
+Investigación y recopilación de información.
+Fuentes:
+  - Búsqueda web
+  - Documentación
+  - Base de conocimientos interna
+
+VER TAMBIÉN
+----------
+bach --help delegate      Sistema de delegación
+bach --help partner       Comunicación con socios
+habilidades/AGENT_KONVENTION.md Directrices para agentes

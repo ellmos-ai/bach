@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+------------
+N8nManagerHandler
+
+
+DESCRIPCIÓN
+------------
+Integración de n8n Workflow Manager para BACH. Gestiona instancias n8n y
+Flujos de trabajo a través de API REST y servidor MCP opcional. Puerto predeterminado: 5678.
+
+Perfil: n8n-manager
+Paquete: n8n-manager-mcp (opcional, se puede instalar mediante “bach setup n8n”)
+Conexión: http://localhost:5678 (configurable)
+
+
+OPERACIONES
+-----------
+status Comprueba la instancia n8n y la instalación del servidor MCP
+            Indica el estado de la conexión.
+
+list Enumera los flujos de trabajo disponibles (a través de la API REST n8n)
+            Muestra ID, nombre y estado activo.
+
+sync Preparación para la sincronización del flujo de trabajo
+            Requiere servidor MCP. Delegado a Claude Code Tools.
+
+
+EJEMPLOS
+---------
+handler = N8nManagerHandler()
+
+# Verificar estado
+resultado = handler.handle('status')
+
+# Listar flujos de trabajo
+resultado = handler.handle('lista')
+
+# Habilitar sincronización
+resultado = handler.handle('sync')
+
+# Controlador con URL personalizada
+controlador = N8nManagerHandler('http://n8n.example.com:5678')
+
+
+FILES
+-------
+hub/n8n_manager.py Implementación del controlador
+docs/help/n8n_manager.txt Este archivo
+
+
+VER TAMBIÉN
+----------
+bach setup n8n                 Instalar el servidor MCP globalmente
+MODULAR_AGENTS/n8nManager/Referencia de n8n Manager (README.md)
+Requisito del administrador de flujo de trabajo SQ081 n8n

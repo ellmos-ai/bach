@@ -1,0 +1,32 @@
+Инструмент BACH:migrate_connections
+--------------------------------------------------
+Создано: 23 января 2026 г., 10:36.
+Источник: инструменты/migrate_connections.py
+
+ОПИСАНИЕ
+----------------------------------------
+Миграция подключений к базе данных
+--------------------------------
+
+Мигрирует заархивированные реестры JSON в таблицы bach.db:
+- external_ki_tools_registry.json -> инструменты (type='external')
+- Connections_overview.json/cli_tools -> инструменты (type='cli')
+- Connections_overview.json/mcp_servers -> соединения (type='mcp')
+- claude_registry.json -> соединения (type='ai')
+
+Использование:
+    pythonmigrate_connections.py [--dry-run]
+    pythonmigrate_connections.py --status
+    pythonmigrate_connections.py --help
+
+Версия: 1.0.0
+
+ИСПОЛЬЗОВАТЬ
+----------------------------------------
+инструменты Python bach.py запускаютmigrate_connections [args]
+или напрямую: python Tools/migrate_connections.py [args]
+
+ПРИМЕЧАНИЯ
+----------------------------------------
+- Автоматически генерируется из Docstring
+- Если у вас есть вопросы: инструменты bach показываютmigrate_connections.

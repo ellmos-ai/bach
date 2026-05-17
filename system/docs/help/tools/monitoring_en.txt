@@ -1,0 +1,133 @@
+BACH MONITORING TOOLS
+---------------------
+
+Tools for system monitoring, consistency checking and error detection.
+
+QUICK START
+------------
+  bach --maintain registry     # Check DB/JSON consistency
+  bach --maintain skills       # Check skill health
+  bach --status               # Show system status
+
+OVERVIEW MONITORING TOOLS
+---------------------------
+tools/maintenance/
+├── registry_watcher.py # DB-JSON consistency check
+└── skill_health_monitor.py # Skill validation
+
+REGISTRY WATCHER
+----------------
+Checks consistency between SQLite database and JSON configurations.
+
+  python tools/maintenance/registry_watcher.py check
+  python tools/maintenance/registry_watcher.py repair
+
+What is checked:
+- Table existence in bach.db
+- JSON config files validity
+- Referential integrity
+- Orphaned Records
+
+SKILL HEALTH MONITOR
+--------------------
+Validates all BACH skills and agents.
+
+  python tools/maintenance/skill_health_monitor.py check
+  python tools/maintenance/skill_health_monitor.py report
+
+What is checked:
+- SKILL.md completeness
+- Agent manifests
+- Directory structure
+- Orphaned skills
+
+TOKEN MONITORING
+----------------
+Monitors token consumption for cost control.
+
+Table: monitor_tokens
+- session_id, tokens_used, timestamp
+- Token zones (1-4) for partner delegation
+
+  bach --memory status         # Show token zone
+  SELECT * FROM monitor_tokens; # Raw data
+
+PROCESS MONITORING
+------------------
+Table: monitor_processes
+- Ongoing processes
+- Maintenance daemon status
+- Background jobs
+
+  bach daemon status           # Check maintenance daemon
+  bach --status               # Overall status
+
+SUCCESS MONITORING
+------------------
+Table: monitor_success
+- Success rates of tools
+- Error history
+- Learning patterns for improvements
+
+AUTOMATIC CHECKS AT --startup
+---------------------------------
+These checks run automatically when the session starts:
+
+1. Directory Scan # Changes since last session
+2. Path Healer (dry-run) # Path correction suggestions
+3. Registry Watcher # DB/JSON consistency
+4. Skill Health Monitor # Skills/Agents Condition
+
+Problems are reported as warnings in startup output.
+
+DATABASE TABLES
+------------------
+27 tables in bach.db, of which relevant to monitoring:
+
+  monitor_tokens # Token tracking
+  monitor_success # Success rates
+  monitor_processes # Process status
+
+CLI COMMANDS
+-----------
+  bach --maintain heal        # Path correction (dry run)
+  bach --maintain registry    # DB/JSON consistency
+  bach --maintain skills      # Skill health
+  bach --maintain docs        # Documentation check
+  bach --status              # Overall status
+
+LOGS AND EVALUATION
+-------------------
+Monitoring data is stored in logs:
+
+  logs/auto_log_extended.txt # Command log
+  logs/errors/ # Error logs
+
+Evaluation:
+  bach --logs tail 20          # Last 20 log entries
+  bach --logs search "error"   # Search for errors
+
+ALARMS AND WARNINGS
+--------------------
+- Token zone 3/4: Warning for high consumption
+- Skill error: Warning on --startup
+- DB inconsistency: Error with repair suggestion
+
+TIPS
+-----
+- Execute --maintain commands regularly
+- In case of problems: bach --maintain heal --execute
+- Keep an eye on token consumption (Zone 2-3)
+- Check error logs for problems
+
+SEE ALSO
+----------
+  bach --help maintain         # Maintenance overview
+  bach --help startup          # Startup checks
+  bach --help logs             # Log system
+  tools/TOOLS_CONCEPT.md # Tool concept
+
+---
+Version: 1.0.0
+Created: 2026-01-23
+Part of: BACH Tool documentation

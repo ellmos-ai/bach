@@ -1,0 +1,121 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [hub/prompt.py、prompt_templates、prompt_boards、prompt_versions]
+
+PROMPT - プロンプト テンプレート管理
+-------------------------------------
+
+日付: 2026-02-28
+
+プロンプト システムは、再利用可能なプロンプト テンプレートを次のように管理します。
+ボードによるバージョン管理と編成のオプション。
+
+参照: B42
+
+コアコンセプト
+------------
+- テンプレート: 名前、カテゴリ、タグを含む再利用可能なプロンプトテキスト
+- バージョン: すべての変更により新しいバージョン (履歴) が作成されます。
+- ボード: テンプレートのコレクション (テーマ別グループ)
+
+CLI コマンド (bach プロンプト)
+--------------------------
+
+  list [--category CAT] すべてのテンプレートをリストします。
+  add <名前> <テキスト> 新しいテンプレートを作成する
+  <id_or_name> テンプレートを取得 + バージョン履歴を表示
+  update <id_or_name> <text> 新しいバージョンを作成する
+  delete <id_or_name> テンプレートを削除します
+  search <クエリ> 検索テンプレート
+  ボード すべてのボードを表示
+  board <title> ボードの表示/作成/管理
+
+追加のオプション
+-----------------
+  --category CAT カテゴリ (例: 「分析」、「書き込み」)
+  --tags t1、t2 タグ (カンマ区切り)
+  --目的 テキスト 目的
+
+ボードのオプション
+-------------------
+  --add-prompt ID プロンプトをボードに追加します
+  --remove-prompt ボードから ID プロンプトを削除します
+  --description テキスト ボードの説明を設定/更新
+
+例
+---------
+
+  # リストテンプレート
+  bach prompt list
+  bach prompt list --category analyse
+
+  # テンプレートを作成
+  bach prompt add "Zusammenfassung" "Fasse den folgenden Text zusammen:" --category schreiben
+  bach prompt add "Code-Review" "Pruefe diesen Code auf Fehler:" --tags "dev,review" --purpose "Code-Qualitaet"
+
+  # テンプレートを表示 (バージョン履歴付き)
+  bach prompt get 42
+  bach prompt get "Zusammenfassung"
+
+  # テンプレートを更新します (作成されたバージョン)
+  bach prompt update 42 "Fasse den folgenden Text praegnant zusammen:"
+  bach prompt update "Zusammenfassung" "Neue Version des Textes..."
+
+  # テンプレートを削除
+  bach prompt delete 42
+
+  # 検索 (名前、テキスト、タグ)
+  bach prompt search "zusammenfass"
+  bach prompt search "code"
+
+  # ボードの管理
+  bach prompt boards                                      # すべてのボード
+  bach prompt board "Schreiben"                           # ボードの作成/表示
+  bach prompt board "Schreiben" --add-prompt 42           # プロンプトの追加
+  bach prompt board "Schreiben" --remove-prompt 42        # プロンプトの削除
+  bach prompt board "Schreiben" --description "Schreib-Prompts fuer den Alltag"
+
+バージョン管理
+-------------
+
+「更新」すると、古いテキストがバージョンとして自動的に保存されます。
+バージョン履歴は、`bach prompt get <id>` で表示されます:
+
+  バージョン (2):
+    テキストが作成されていません (プレビュー)
+    1 2026-01-15T10:30:00 古いテキスト...
+    2 2026-02-01T14:00:00 次のバージョン...
+
+競合解決 (--confidence)
+------------------------------------
+信頼性は `add` で指定できます (共有メモリの場合):
+  bach prompt add <name> <text> --confidence 0.8
+
+競合 (同じキー、名前空間) の場合、信頼性が高い方が優先されます。
+
+DATABASE
+---------
+
+  プロンプト_テンプレート:
+    ID、名前、目的、テキスト、タグ、カテゴリ、
+    作成済み_at、更新_at、dist_type
+
+  プロンプト_バージョン:
+    id, prompt_id, version_number, text, tags, created_at
+
+  プロンプトボード:
+    ID、タイトル、説明、作成場所
+
+  プロンプトボードアイテム:
+    id、board_id、prompt_id、added_at
+
+ファイル
+-------
+  Hub/prompt.py ハンドラーの実装
+
+関連項目
+----------
+  bach --help tasks        タスク システム
+  bach --help memory       メモリ システム
+  bach --help skills       SKILL.md システム

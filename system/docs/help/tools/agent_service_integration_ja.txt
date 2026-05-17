@@ -1,0 +1,31 @@
+BACH ツール:agent_service_integration
+--------------------------------------------------
+生成:2026-01-23 10:36
+ソース: tools/agent_service_integration.py
+
+説明
+----------------------------------------
+エージェント-サービス-接続統合 v2.0.0 (DB バージョン)
+
+エージェントをサービス、接続、外部ツールとリンクします。
+エージェントのアクティブ化とツールのルーティングのための中央連絡先。
+
+変更: JSON ファイルではなく、bach.db から読み取るようになりました!
+
+使用法:
+  python Agent_service_integration.py マトリックス # 接続マトリックスを表示
+  python Agent_service_integration.py エージェント <名前> # エージェント接続
+  python Agent_service_integration.py recommend <タスク> # ツールの推奨事項
+  python Agent_service_integration.py status # 全体的なステータス
+  python Agent_service_integration.py tools [type] # ツールをリストする
+  python Agent_service_integration.py 接続 # 接続をリストする
+
+USE
+----------------------------------------
+python bach.py ツールは、agent_service_integration を実行します [args]
+または直接: python tools/agent_service_integration.py [args]
+
+NOTES
+----------------------------------------
+- docstring から自動的に生成されます
+- ご質問がある場合: bach tools showagent_service_integration

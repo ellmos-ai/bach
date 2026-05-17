@@ -1,0 +1,130 @@
+# Portability: WINDOWS
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+INSTALLER.EXE / START.EXE EVALUATION
+-------------------------------------
+
+STATUS: Evaluation completed (2026-05-17)
+RECOMMENDATION: Yes, useful — but as a phase 2 feature after a stable release.
+
+
+PRO (advantages)
+--------------
+
+1. USER FRIENDLINESS
+   - A double click instead of terminal knowledge
+   - No manual Python/npm setup required
+   - Start menu integration (Windows standard)
+   - Uninstallation via Windows "Remove programs"
+
+2. PORTABILITY
+   - Embedded Python: No system dependency
+   - Wheels bundled: No internet required during installation
+   - Deterministic environment: Same versions on every system
+
+3. PROFESSIONAL IMPRESSION
+   - GitHub release with .exe download (standard for Windows tools)
+   - Self-extracting archive with progress bar
+   - Icon, branding, license display possible
+
+4. ERROR AVOIDANCE
+   - No PATH problem, no “python not found”
+   - Virtualenv isolation automatically
+   - Pre-flight check built in (memory, rights, ports)
+
+
+CONTRA (disadvantages)
+------------------
+
+1. EFFORT
+   - ~40-60 hours of development + testing
+   - 20+ launch modes in bach.bat must work with installer paths
+   - Every update needs new .exe build (or auto-updater)
+
+2. SIZE
+   - Embedded Python + Deps: ~200-400 MB installer
+   - Without embedded Python: ~50 MB, but then Python requirement
+
+3. COMPLEXITY
+   - PyInstaller/Nuitka/cx_Freeze have Windows peculiarities
+   - Antivirus false positives for unknown .exe files
+   - Code signing certificate required for trust (~100-400 EUR/year)
+
+4. MAINTENANCE
+   - Every dependency update → new build
+   - Windows Defender SmartScreen blocks without a signature
+   - OneDrive scenario (multi-system) is a bad match for .exe-Install
+
+5. BACH-SPECIFIC PROBLEMS
+   - OneDrive sync: .exe installed locally, BACH lives in OneDrive
+   - MCP servers need npm (cannot be bundled in .exe)
+   - Claude code hooks require claude-cli (external)
+   - Pillar 2/3 (LLM tasks, user config) cannot be automated
+
+
+ARCHITECTURE RECOMMENDATION
+----------------------
+
+PHASE 1 (now): "Smart Batch Launcher" — start.exe as a wrapper
+  - PyInstaller single-file .exe which only calls bach.bat
+  - Checks Python availability, shows error message if not there
+  - Optionally pins to the start menu/taskbar
+  - Effort: ~4 hours
+  - Advantage: Can be implemented immediately, minimal maintenance effort
+
+PHASE 2 (after release): Complete installer
+  - Inno Setup or NSIS (proven Windows installer frameworks)
+  - Embedded Python + pip install from included wheels
+  - Full DB initialization
+  - Start menu + desktop shortcut
+  - Effort: ~40 hours (including testing of all modes)
+
+PHASE 3 (optional): Auto-Updater
+  - GitHub Releases API for version checking
+  - Delta updates (changed files only)
+  - Effort: ~20 hours
+
+
+TECHNICAL OPTIONS
+-------------------
+
+A) PyInstaller (recommended for start.exe)
+   - One-file mode (--onefile)
+   - Well documented, broad community
+   - Disadvantage: Slow startup (unzips temp folder)
+
+B) Inno Setup (recommended for installer.exe)
+   - De facto standard for Windows installers
+   - Pascal scripting for complex logic
+   - Compression, uninstallation, registry
+   - Free, Open Source
+
+C) Nuitka (Alternative)
+   - Compiles Python to C → real .exe
+   - Faster startup than PyInstaller
+   - Disadvantage: More complex build, longer compilation time
+
+D) cx_Freeze (alternative)
+   - Similar to PyInstaller, but folders instead of single files
+   - Faster startup than PyInstaller
+   - Disadvantage: No single file mode
+
+
+NEXT STEPS
+----------------
+
+1. [ ] Decision: Phase 1 immediately or wait after the release?
+2. [ ] If Phase 1: Create PyInstaller spec for start.exe
+3. [ ] If Phase 2: Prepare Inno Setup Script with Embedded Python
+4. [ ] Get a code signing certificate (optional, against SmartScreen)
+
+
+SEE ALSO
+----------
+  start/bach.bat boot menu (current launcher)
+  docs/help/install.txt installation instructions
+  setup.py Python installer (Pillar 1)
+  ENT-45_INSTALLER_3D_MODELL.md concept document (in .dev/)

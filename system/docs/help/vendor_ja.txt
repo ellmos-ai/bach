@@ -1,0 +1,80 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ベンダー - 外部コード ソース
+------------------------------
+
+日付: 2026-02-06
+
+説明
+------------
+_vendor/ ディレクトリには、次の場所にある外部コードのコピーが含まれています。
+BACH サービスが統合されています。各ベンダーには独自のディレクトリがあります
+PROVENANCE.md (オリジン、コミット、ライセンス) を使用します。
+
+場所
+-----------
+system/hub/_services/document/_vendor/
+
+利用可能なベンダー
+-------------------
+
+  anthropic_docx/ Word XML パック/解凍、検証、変更の追跡
+                      出典: github.com/anthropics/skills (skills/docx)
+                      利点: テンプレートのデバッグ、変更の追跡
+
+  anthropic_pdf/ PDF フォームの抽出、入力、変換
+                      出典: github.com/anthropics/skills (スキル/pdf)
+                      特典: 税金の領収書、フォームへの記入
+                      統合: pdf_service.py (PDFProcessor)
+
+  anthropic_xlsx/ Excel 再計算、Office XML パック/アンパック/検証
+                      出典: github.com/anthropics/skills (skills/xlsx)
+                      利点: 数式を使用した金融輸出
+
+  redaction_detector.py 正規表現 + ファジー + ブラックリスト 機密データの検出
+                          出典: DokuZentrum
+
+  pdf_schwaerzer_pro.py PDF 黒化 + AES-256 暗号化
+                          出典: PDFSchwaerzer Pro
+
+コードで使用
+---------------
+
+  # PDF処理（推奨：サービス層経由）
+  Hub._services.document.pdf_service から PDFProcessor をインポート
+
+  PDFProcessor.extract_text("file.pdf")
+  PDFProcessor.get_metadata("file.pdf")
+  PDFProcessor.extract_form_fields("file.pdf")
+  PDFProcessor.fill_form("file.pdf", {"フィールド": "値"}, "out.pdf")
+  PDFProcessor.to_images("file.pdf", "output_dir/")
+  PDFProcessor.check_fillable("file.pdf")
+
+  # ベンダーモジュールを直接（サービス層が十分でない場合のみ）
+  インポートシステム
+  sys.path.insert(0, str(vendor_dir))
+  抽出フォーム構造からインポート抽出フォーム構造
+
+ベンダー規約
+-------------------
+
+  1. 各ベンダーは独自のディレクトリを取得します
+  2. PROVENANCE.md は必須です (ソース、コミット、日付、ライセンス)
+  3. Python パッケージとしての __init__.py
+  4. ベンダーコードの変更なし（逐語コピー）
+  5. 更新: 新しいコミットをコピーし、PROVENANCE.md を更新
+
+関連ツール
+---------------
+
+  tools/c_skill_init.py 新しいスキルの作成 (Anthropic 標準)
+  tools/c_skill_validate.py SKILL.md を検証する
+  tools/c_skill_package.py パッケージ スキル
+
+関連項目
+----------
+bach --help cookbooks          Anthropic Cookbooks リファレンス
+bach --help tools              ツールの概要
+_vendor/README.md ベンダー概要表
