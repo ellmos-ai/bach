@@ -24,21 +24,26 @@ SOFTWARE.
 """
 
 """
-BACH Auto-Session v1.1
-======================
-System-Service fuer automatische Claude-Session-Starts.
+BACH Auto-Session v1.1 [DEPRECATED]
+====================================
+⚠️  DEPRECATED seit 2026-05-17.
+    Grund: Nutzt pyautogui um Tastatureingaben zu simulieren (Ctrl+Alt+Space,
+    Paste, Enter). Erzeugt unkontrollierte Prompt-Injektionen in aktive Sessions.
 
-WICHTIG: Dies ist ein SYSTEM-SERVICE, nicht ATI-spezifisch!
-Kann mit verschiedenen Prompt-Profilen/Agenten verwendet werden.
+    ERSATZ: Buddha Control API (:8081/api/chat) oder Claude Code /loop.
+    Siehe session_daemon.py für Details.
 
-Usage:
+EHEMALIGER ZWECK:
+  System-Service fuer automatische Claude-Session-Starts via GUI-Automation.
+
+Usage (DEPRECATED):
   python auto_session.py                    # Default-Profil
   python auto_session.py --profile ati      # ATI-Profil
   python auto_session.py --profile wartung  # Wartungs-Profil
   python auto_session.py --dry-run          # Nur Prompt anzeigen
   python auto_session.py --force            # Auch bei gesperrtem Screen
 
-Abhaengigkeiten:
+Abhaengigkeiten (NICHT MEHR NÖTIG):
   pip install pyautogui pyperclip
 """
 

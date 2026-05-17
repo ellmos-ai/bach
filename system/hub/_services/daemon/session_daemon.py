@@ -24,14 +24,24 @@ SOFTWARE.
 """
 
 """
-BACH Session Daemon v1.1
-========================
-System-Service fuer automatische Claude-Sessions.
+BACH Session Daemon v1.1 [DEPRECATED]
+======================================
+⚠️  DEPRECATED seit 2026-05-17.
+    Grund: Nutzt pyautogui-basierte GUI-Automation um Prompts in aktive
+    Claude-Sessions zu injizieren. Erzeugt "Zombie-Prompt"-Verhalten.
 
-WICHTIG: Dies ist ein SYSTEM-SERVICE, nicht ATI-spezifisch!
-Kann mit verschiedenen Prompt-Profilen/Agenten verwendet werden.
+    ERSATZ: Browser-basierte Task-Delegation über:
+    - BACH GUI Dashboard (:8000) → Daemon-Tab für Task-Management
+    - Buddha Control API (:8081/api/chat) für Background-Delegation
+    - Claude Code /loop oder /schedule für wiederkehrende Tasks
 
-Usage:
+    Dieser Daemon sollte NICHT mehr gestartet werden.
+    Config (config.json) ist auf enabled=false gesetzt.
+
+EHEMALIGER ZWECK:
+  System-Service fuer automatische Claude-Sessions via pyautogui.
+
+Usage (DEPRECATED):
   python session_daemon.py                    # Startet mit default Profil
   python session_daemon.py --profile ati      # ATI-Profil
   python session_daemon.py --profile wartung  # Wartungs-Profil

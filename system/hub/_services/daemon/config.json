@@ -1,14 +1,14 @@
 {
-  "enabled": true,
+  "enabled": false,
   "quiet_start": "22:00",
   "quiet_end": "08:00",
-  "ignore_quiet": true,
+  "ignore_quiet": false,
   "jobs": [
     {
       "profile": "ati",
       "interval_minutes": 15,
-      "enabled": true,
-      "last_run": "2026-02-01T04:33:01.216099"
+      "enabled": false,
+      "last_run": "2026-05-17T04:19:57.007310"
     },
     {
       "profile": "wartung",
