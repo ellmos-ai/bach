@@ -218,9 +218,13 @@ popd
 echo       [OK] Tray gestartet
 
 echo [3/3] Oeffne Zugangswege...
-timeout /t 2 /nobreak >nul
-start "" "http://!BACH_HOST_TARGET!:8000"
-echo       [OK] GUI Dashboard geoeffnet
+if "!BACH_NO_BROWSER!"=="1" (
+    echo       [SKIP] Browser nicht geoeffnet ^(BACH_NO_BROWSER=1^)
+) else (
+    timeout /t 2 /nobreak >nul
+    start "" "http://!BACH_HOST_TARGET!:8000"
+    echo       [OK] GUI Dashboard geoeffnet
+)
 echo.
 echo  ============================================
 echo   Verbunden mit !BACH_HOST_TARGET!
