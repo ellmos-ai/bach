@@ -1,7 +1,7 @@
 # Portabilitaet: UNIVERSAL
-# Version: 3.6.0
-# Zuletzt validiert: 2026-03-04 (Root-Docs-Review)
-# Naechste Pruefung: 2026-09-04
+# Version: 3.12.3
+# Zuletzt validiert: 2026-05-17 (Feature-Liste mit CHANGELOG abgeglichen)
+# Naechste Pruefung: 2026-11-17
 
 BACH v3 - FEATURES
 ====================
@@ -177,6 +177,21 @@ GEPLANTE FEATURES
 - Voice Full-Stack    Vollständige Voice-Interface-Integration (STT/TTS/Wake)
 - Signal Connector    Erweiterung Connector-System um Signal-Messenger
 - WhatsApp Connector  Erweiterung Connector-System um WhatsApp
+
+NEU SEIT v3.6
+--------------
++ ProSync DB-Sync: Cross-System-Synchronisation ueber OneDrive (v3.9)
++ Buddha Chat Services: Telegram-Bot mit 5 Backends, 13 Tools (v3.9)
++ Schwarm-System: 4 Muster (Parallel, Hierarchie, Stigmergy, Konsensus) (v3.8)
++ Permission-Profile: Remote Control fuer Claude Code (v3.8)
++ Foerderbericht-Pipeline: DSGVO-Anonymisierung, ICF-Prompts (v3.9)
++ Agent-Personas: Display-Names, Multi-Strategie-Aufloesung (v3.9)
++ Security Gate: Code-Injection-Scan bei Plugin-Installation (v3.9)
++ 3241 Tests in 63 Dateien, Linux-Support verifiziert (v3.11)
++ GUI Interactivity Audit: 32 Templates, 8 kritische Fixes (v3.11)
++ Encoding-Haertung: UTF-8 Safety fuer alle Subprozesse (v3.12)
++ i18n: 14.655 Uebersetzungen (EN, ES, JA, RU, ZH) (v3.12)
++ bach gui stop: Server-Stop-Kommando (v3.12)
 
 CHANGELOG v2.0 (2026-02-06 bis 2026-02-08)
 -------------------------------------------

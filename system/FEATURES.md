@@ -1,9 +1,9 @@
-# Feature-Analyse: BACH v3.7.0-waterfall
+# Feature-Analyse: BACH v3.12.3-coffee
 
 ## Projektuebersicht
 
 **Projektname:** BACH
-**Version:** 3.6.0-spaghetti
+**Version:** 3.12.3-coffee
 **Status:** Production-Ready
 **Typ:** Textbasiertes Betriebssystem fuer LLMs
 
@@ -368,28 +368,42 @@ Events: `before_startup`, `after_startup`, `before_shutdown`, `after_shutdown`, 
 
 ## Zusammenfassung
 
-BACH v3.7.0-waterfall ist ein vollstaendiges textbasiertes Betriebssystem fuer KI-Agenten mit folgenden Kennzahlen:
+BACH v3.12.3-coffee ist ein vollstaendiges textbasiertes Betriebssystem fuer KI-Agenten mit folgenden Kennzahlen:
 
 | Metrik | Wert |
 |--------|------|
-| Tabellen in bach.db | 138 |
+| Tabellen in bach.db | 145+ |
 | Handler-Module | 109+ |
 | Tools | 373+ |
 | Skills | 932+ |
+| Tests | 3241 |
 | Protokoll-Workflows | 54 |
-| Kognitive Injektoren | 6 (+2 seit v3.4) |
+| Kognitive Injektoren | 8 |
 | Hook-Events | 14 |
 | MCP-Tools | 23 |
 | Wiki-Artikel | 263 |
 | Help-Dateien | 93+ |
-| Schema-Migrationen | 32 |
+| Uebersetzungen (i18n) | 14.655 |
+| Schema-Migrationen | 35+ |
 | Zugriffsmodi | 4 (CLI, API, GUI, MCP) |
-| Partner-LLMs | 3 (Claude, Gemini, Ollama) |
+| Partner-LLMs | 5 (Claude, Gemini, Ollama, Codex, OpenAI) |
 
 **Kernprinzipien:** Database-First, Handler-First, Self-Healing, Self-Extension, Portable, Multi-Agent-faehig, 100% lokal.
+
+### Seit v3.6 hinzugekommen
+
+- **ProSync** (v3.9): Cross-System DB-Sync ueber OneDrive-Transit, 137 syncbare Tabellen
+- **Buddha Chat Services** (v3.9): Multi-Backend Telegram-Bot mit 13 BACH-Tools, Control API, System Tray
+- **Schwarm-System** (v3.8): 4 Muster (Parallel, Hierarchie, Stigmergy, Konsensus), CLI-Integration
+- **Permission-Profile** (v3.8): Claude Code Remote Control mit Profil-Switching
+- **Foerderbericht-Pipeline** (v3.9): DSGVO-konforme Anonymisierung, ICF-Prompt-Generierung
+- **Agent-Personas** (v3.9): Multi-Strategie Namensaufloesung, Display-Names, 20 Default-Personas
+- **Security Gate** (v3.9): Code-Injection-Scan bei Plugin/Skill-Installation, Quarantaene
+- **Cross-Platform** (v3.11): Linux-Support verifiziert, bash.sh Launcher, plattformbedingte Subprozesse
+- **Encoding-Haertung** (v3.12): UTF-8 Safety fuer alle subprocess-Aufrufe auf Windows
 
 ---
 
 *Erstellt: 2026-02-05*
-*Aktualisiert: 2026-03-04*
-*System: BACH Feature-Analyse v3.7.0-waterfall*
+*Aktualisiert: 2026-05-17*
+*System: BACH Feature-Analyse v3.12.3-coffee*

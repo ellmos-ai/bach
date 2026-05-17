@@ -2,8 +2,9 @@
 
 > Design-Manifest und Architektur-Dokumentation
 
-**Version:** 3.6.0-spaghetti
-**Stand:** 2026-03-04
+**Version:** 3.12.3-coffee
+**Stand Hauptteil:** 2026-03-04 (v3.6)
+**Stand Anhang:** 2026-05-17 (v3.7–v3.12)
 **Zielgruppe:** Entwickler, Kontributoren, fortgeschrittene Nutzer
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
@@ -13,9 +14,9 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 ## Inhaltsverzeichnis
 
 1. [Vision & Philosophie](#vision--philosophie)
-2. [Execution Stack: 3-Schichten-Modell](#execution-stack-3-schichten-modell) *(NEU v3.2)*
-3. [Handler-System & Auto-Discovery](#handler-system--auto-discovery) *(NEU v3.2)*
-4. [Shared Memory & USMC](#shared-memory--usmc) *(NEU v3.2)*
+2. [Execution Stack: 3-Schichten-Modell](#execution-stack-3-schichten-modell)
+3. [Handler-System & Auto-Discovery](#handler-system--auto-discovery)
+4. [Shared Memory & USMC](#shared-memory--usmc)
 5. [Systemuebersicht](#systemuebersicht)
 6. [Kernprinzipien](#kernprinzipien)
 7. [Architektur-Diagramme](#architektur-diagramme)
@@ -23,6 +24,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 9. [Erweiterbarkeit](#erweiterbarkeit)
 10. [Konventionen](#konventionen)
 11. [Versionierung](#versionierung)
+12. [Ergänzungen seit v3.6](#ergänzungen-seit-v36-kurzübersicht)
 
 ---
 
@@ -1069,9 +1071,47 @@ BACH_ROOT/
 | 2.2.0 | 2026-02-08 | MCP-Server v2.2, Message-System v2.0 |
 | 2.5.0 | 2026-02-13 | Directory Restructuring, Self-Extension, Capability System |
 | **3.2.0-butternut** | **2026-02-28** | **Execution Stack, Prompt-System, USMC Bridge, SharedMemory-Erweiterungen** |
+| 3.5.0-milk | 2026-03-04 | Directory-Truth, PathHealer, Multi-Instanz-Guard |
+| 3.6.0-spaghetti | 2026-03-04 | Help-Expert-Review (192+ Dateien), Root-Docs-Review, FEATURES.md Rewrite |
+| 3.8.0-sugar | 2026-03-08 | Schwarm-Handler (4 Muster), Permission-Profile, Remote Control, 5 Therapie-Skills |
+| 3.9.0-tiramisu | 2026-05-10 | ProSync DB-Sync, Buddha Chat Services (5 Backends), 13 Tools, Förderbericht-Pipeline |
+| 3.11.0-coffee | 2026-05-16 | 3241 Tests, GUI Interactivity Audit, Linux-Support, MCP Cross-Platform |
+| **3.12.3-coffee** | **2026-05-17** | **Encoding-Härtung, Privacy-Hygiene, i18n (14.655 Übersetzungen)** |
+
+---
+
+## Ergänzungen seit v3.6 (Kurzübersicht)
+
+### ProSync (v3.9)
+
+Cross-System-Datenbanksynchronisation über OneDrive-Transit. Jedes System führt
+eine lokale DB (`~/.bach/bach.db`), ProSync synchronisiert 137 Tabellen
+bidirektional. Pull bei Startup, Push bei Shutdown, atexit-Hook als Fallback.
+
+### Buddha Chat Services (v3.9)
+
+Multi-Backend Telegram-Bot (`@bach_assistant_bot`) mit 5 Backends:
+Ollama (lokal), Claude CLI, Codex CLI, Claude API, OpenAI API.
+
+Komponenten in `hub/_services/chat/`:
+- `chat_runtime.py` — Kern-Logik mit 13 BACH-Tools (Safe/Full-Modi)
+- `chat_tray.py` — Cross-Platform System-Tray (pystray)
+- `telegram_chat.py` — Telegram-Bot mit Voice/OCR
+- Control API auf Port 8081 mit Web-Dashboard
+
+### Schwarm-System (v3.8)
+
+4 Schwarm-Muster: Parallel (Epstein), Hierarchie, Stigmergy, Konsensus.
+CLI: `bach schwarm run/list/translate/summarize/benchmark`.
+Kosten-Tracking pro Run in `schwarm_runs`-Tabelle.
+
+### Test-Suite (v3.11)
+
+3241 Tests in 63 Test-Dateien. Abdeckung: Handler, Services, GUI-Templates,
+MCP-Server. Linux-Support verifiziert (Ubuntu 24.04, 321/332 Smoke-Tests).
 
 ---
 
 *Dieses Dokument ist Teil der BACH-Entwicklerdokumentation.*
 *Fuer operative Befehle siehe: `bach --help`*
-*Erstellt: 2026-01-29 | Aktualisiert: 2026-02-28 (v3.2.0-butternut)*
+*Erstellt: 2026-01-29 | Aktualisiert: 2026-05-17 (v3.12.3-coffee)*
