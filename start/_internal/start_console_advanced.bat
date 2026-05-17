@@ -5,7 +5,7 @@ REM  Fuer erfahrene Benutzer mit direktem bach.py Zugriff
 REM =====================================================
 
 REM Ins System-Verzeichnis wechseln
-cd /d "%~dp0..\system"
+cd /d "%~dp0..\..\system"
 
 title BACH Advanced Console
 

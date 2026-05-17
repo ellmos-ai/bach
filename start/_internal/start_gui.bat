@@ -4,7 +4,7 @@ REM  BACH GUI Server starten (Debug Modus)
 REM =====================================================
 
 REM Ins System-Verzeichnis wechseln
-cd /d "%~dp0..\system"
+cd /d "%~dp0..\..\system"
 set PYTHONIOENCODING=utf-8
 
 echo  BACH GUI Server

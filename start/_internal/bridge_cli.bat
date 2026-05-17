@@ -4,7 +4,7 @@ REM BACH Bridge - CLI-Modus (ohne Tray)
 REM ============================================
 
 echo [BACH] Starte Bridge im CLI-Modus...
-cd /d "%~dp0..\system\hub\_services\claude_bridge"
+cd /d "%~dp0..\..\system\hub\_services\claude_bridge"
 
 REM Prüfe ob Bridge bereits läuft (Lock liegt im Temp-Ordner)
 if exist "%TEMP%\bach_bridge.lock" (

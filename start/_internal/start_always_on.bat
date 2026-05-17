@@ -8,7 +8,7 @@ REM ============================================================
 title BACH Always-On: Mistral Watcher
 
 REM Absoluten Pfad auflösen (vermeidet Probleme mit & im Pfad)
-pushd "%~dp0..\system"
+pushd "%~dp0..\..\system"
 set "BACH_DIR=%CD%"
 popd
 set "WATCHER_DIR=!BACH_DIR!\hub\_services\watcher"

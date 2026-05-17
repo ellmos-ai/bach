@@ -5,7 +5,7 @@ REM Startet immer: Tray + Daemon (gekoppelt)
 REM ============================================
 
 echo [BACH] Bridge Standard-Start...
-cd /d "%~dp0..\system\hub\_services\claude_bridge"
+cd /d "%~dp0..\..\system\hub\_services\claude_bridge"
 
 REM Prüfe ob TRAY schon läuft
 if exist "%TEMP%\bach_bridge_tray.lock" (
