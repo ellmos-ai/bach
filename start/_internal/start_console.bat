@@ -5,6 +5,7 @@ REM =====================================================
 
 REM Ins System-Verzeichnis wechseln
 cd /d "%~dp0..\system"
+set PYTHONIOENCODING=utf-8
 
 title BACH User-Konsole
 

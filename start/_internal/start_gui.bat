@@ -5,6 +5,7 @@ REM =====================================================
 
 REM Ins System-Verzeichnis wechseln
 cd /d "%~dp0..\system"
+set PYTHONIOENCODING=utf-8
 
 echo  BACH GUI Server
 echo  ================
@@ -29,14 +30,19 @@ set TIMESTAMP=%TIMESTAMP: =0%
 echo  Starte Server...
 
 REM WICHTIG: "cmd /k" haelt das Fenster offen, damit du Fehlermeldungen siehst!
-start "BACH Server Log - NICHT SCHLIESSEN" cmd /k python gui\server.py --port 8000
+start "BACH Server Log - NICHT SCHLIESSEN" cmd /k "set PYTHONIOENCODING=utf-8 && python gui\server.py --port 8000"
 
 REM Kurz warten
 timeout /t 3 >nul
 
 REM Browser oeffnen MIT Cache-Buster Parameter
-echo  Oeffne Browser (mit Cache-Buster)...
-start "" "http://127.0.0.1:8000?nocache=%TIMESTAMP%"
+if defined BACH_NO_BROWSER (
+    echo  [SKIP] Browser nicht geoeffnet (BACH_NO_BROWSER gesetzt)
+    echo  URL: http://127.0.0.1:8000
+) else (
+    echo  Oeffne Browser (mit Cache-Buster)...
+    start "" "http://127.0.0.1:8000?nocache=%TIMESTAMP%"
+)
 
 echo.
 echo  [OK] Versuche zu verbinden...

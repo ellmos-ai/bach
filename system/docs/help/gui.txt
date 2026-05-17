@@ -26,7 +26,7 @@ bach gui info               GUI-Informationen anzeigen
 
 MANUELLER START
 ---------------
-user/start_gui.bat          Batch-Datei fuer Windows (oeffnet Browser)
+start/_internal/start_gui.bat   Batch-Datei fuer Windows (oeffnet Browser)
 
 AUTOMATISCHER START
 -------------------

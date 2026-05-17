@@ -309,6 +309,7 @@ REM ============================================================
 :always_on
 title BACH Always-On: Mistral Watcher
 cls
+set PYTHONIOENCODING=utf-8
 echo.
 echo  ============================================
 echo   BACH ALWAYS-ON MODUS
@@ -383,6 +384,7 @@ REM ============================================================
 :console
 title BACH User-Konsole
 pushd "!SYS_DIR!"
+set PYTHONIOENCODING=utf-8
 python tools\user_console.py
 popd
 pause
@@ -429,6 +431,7 @@ goto menu
 :gemini
 title BACH Gemini Starter
 pushd "!SYS_DIR!"
+set PYTHONIOENCODING=utf-8
 :gemini_menu
 cls
 echo ============================================================
