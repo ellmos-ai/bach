@@ -1,0 +1,69 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+КАЛЕНДАРЬ - управление встречами и календарем
+==========================================
+
+ОПИСАНИЕ
+------------
+Управление встречами и календарем с поддержкой базы данных. Показывает предстоящие даты
+из Assistant_calendar в сочетании с домашними делами (household_routines).
+Поддерживает встречи с указанием местоположения, типа, статуса и дополнительных описаний.
+
+ОПЕРАЦИИ
+-----------
+  bach calendar today                         Показать сегодня
+  bach calendar week                          На этой неделе (неделя)
+  bach calendar month                         В этом месяце
+  bach calendar list [TAGE]                   Следующие N дней (по умолчанию 30)
+  bach calendar add "TITEL" [OPTIONEN]        Создать встречу
+  bach calendar show <ID>                     Сведения о встрече
+  bach calendar done <ID>                     Встреча как завершенная
+  bach calendar delete <ID>                   Удалить встречу
+  bach calendar help                          Эта помощь
+
+ДОБАВИТЬ ОПЦИИ
+------------
+  -d, --date <ДАТА> ГГГГ-ММ-ДД или ДД.ММ.ГГГГ (по умолчанию: сегодня)
+  -t, --time <ВРЕМЯ> ЧЧ:ММ (по умолчанию: 09:00)
+  --end <ВРЕМЯ> Время окончания (ЧЧ:ММ)
+  --location <LOCATION> Место встречи
+  --type <ТИП> встреча|напоминание|задача (по умолчанию: встреча)
+  --note <ТЕКСТ> Описание
+
+ПРИМЕРЫ
+---------
+  bach calendar today
+  bach calendar week
+  bach calendar list 60
+  bach calendar add "Zahnarzt" -d 15.02.2026 -t 10:30 --location "Praxis"
+  bach calendar add "Treffen" -d 2026-03-10 -t 14:00 --end 15:30 --note "Besprechung"
+  bach calendar show 5
+  bach calendar done 5
+  bach calendar delete 5
+
+ФОРМАТ ВЫВОДА
+---------------
+[КАЛЕНДАРЬ] Диапазон времени - N записей
+
+  --- ВД ДД.ММ. ---
+    [ID>3] ЧЧ:ММ Должность @ Местоположение [Статус]
+    [RID>2] ---- Имя процедуры (частота, категория)
+
+БАЗА ДАННЫХ
+---------
+  Файл: data/bach.db
+  Таблицы: Assistant_calendar (id, title, event_type, start_datetime,
+                                   end_datetime, местоположение, описание, статус)
+              домашние_рутины (идентификатор, имя, частота, категория, следующий_выход)
+
+ФАЙЛЫ
+-------
+  Обработчик:hub/calendar_handler.py
+  Документация: docs/help/calendar_handler.txt
+
+СМОТРИ ТАКЖЕ
+----------
+  DB_004_TERMINDATENBANK_ANALYSE.md (схема базы данных)
+  Hub/base.py (реализация BaseHandler)

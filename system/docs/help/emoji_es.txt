@@ -1,0 +1,55 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SISTEMA EMOJI (CONCEPT DOCU)
+============================
+
+Módulos de políticas y herramientas para el manejo de emoji.
+NOTA: No hay conversión automática en todo el sistema.
+Las funciones de política deben llamarse manualmente.
+
+MÓDULOS DISPONIBLES:
+
+1. Módulo de políticas (system/tools/_policies/emoji_safe.py)
+   - emoji_to_safe(texto): Emoji → Etiquetas ASCII mediante emoji.demojize()
+   - emoji_to_display(texto): etiquetas ASCII → emoji a través de emoji.emojize()
+
+2. Herramienta de escáner (system/tools/c_emoji_scanner.py)
+   - CLI: python c_emoji_scanner.py --status
+   - CLI: python c_emoji_scanner.py --scan-batch
+   - CLI: python c_emoji_scanner.py <archivo/carpeta>
+   - No integrado como comando BACH
+
+3. Reparación JSON (sistema/herramientas/c_json_repair.py)
+   - Utiliza conversión de emoji en el proceso de reparación
+
+EJEMPLOS DE CONVERSIÓN:
+  ✅ → :check_mark_button:
+  ❌ → :cross_mark:
+  ⚠️ → :advertencia:
+  📁 → :archivo_carpeta:
+  📄 → :page_facing_up:
+  🔧 → :llave inglesa:
+  💡 → :light_bulb:
+
+ANULACIONES ASCII (personalizadas, definidas en herramientas):
+  🟢 → [VERDE]
+  🟡 → [AMARILLO]
+  🔴 → [ROJO]
+  ✅ → [Aceptar]
+  ❌ → [X]
+  ⚠ → [ADVERTENCIA]
+  → → ->
+  ← → <-
+  ↔ → <->
+
+APLICACIÓN:
+  - Archivos JSON: se prefieren etiquetas ASCII (convertir manualmente)
+  - Rebaja: se permiten emojis
+  - Registros: se prefieren etiquetas ASCII 
+
+ ¿POR QUÉ?
+  - Evite problemas de codificación UTF-8
+  - Prevenir Mojibake
+  - Coherencia en todos los sistemas.

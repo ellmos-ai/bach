@@ -1,0 +1,61 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+コンテキスト - コンテキスト検索と長期記憶
+=============================================
+
+説明
+------------
+コンテキスト ハンドラーにより、コンテキストの包括的な検索と管理が可能になります。
+情報。メモリアーカイブ、チャット履歴、タスクの説明を検索します
+そしてシステムファイル。新しいセッション前の自動コンテキスト読み込みに最適です。
+
+オペレーション
+-----------
+  bach context auto                    関連するコンテキストを自動的に読み込みます
+                                       (最後のメモリエントリ、優先タスク、
+                                        学んだ教訓、警告)
+
+  bach context search BEGRIFF          検索用語ですべてのソースを検索
+  [--from DATUM] [--to DATUM] AND/OR/NOT ロジックをサポート
+  [--scope AREA] スコープ: 'all'|'longterm'|'system'
+
+  bach context longterm                メモリ アーカイブを時間順に並べて表示
+  [--from DATUM] [--to DATE] YYYY-MM-DD 形式の日付フィルター
+                                       最大値を表示します。 20 エントリ + カウンタ
+
+  bach context recent [N]              最後の N 個のメモリ エントリを表示
+                                       デフォルト: N が指定されていない場合は 5
+
+例
+---------
+  # 自動コンテキストをロード (セッション開始)
+  bach context auto
+
+  # 用語を検索
+  bach context search "deployment pipeline"
+  bach context search "FEHLER regression" --from 2026-02-01 --to 2026-03-01
+  bach context search "Python unittest" --scope system
+
+  # メモリの検索
+  bach context longterm
+  bach context longterm --from 2026-02-15
+
+  # 最近のエントリ
+  bach context recent
+  bach context recent 10
+
+ファイル
+-------
+  ハンドラー: Hub/context.py
+  メモリアーカイブ:memory/*.md
+  タスク管理:memory/tasks.json
+  レッスン: docs/help/lessons.txt
+  ログ ディレクトリ: data/logs/
+
+関連項目
+----------
+  bach search     - ワークスペース内のファイルの検索
+  bach memory     - メモリ エントリの作成/管理
+  bach status     - 現在のセッション情報

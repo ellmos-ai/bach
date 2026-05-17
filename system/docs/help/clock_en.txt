@@ -1,0 +1,69 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CLOCK - Time display
+=======================
+
+Displays the current time in CLI output.
+
+CLI COMMANDS
+-----------
+
+  bach clock on              Activate time display
+  bach clock off             Deactivate time display
+  bach clock status          Show current status
+  bach clock interval <sek>  Set interval in seconds
+
+INTERVAL
+---------
+
+  interval 0 time for EVERY output
+  interval 60 Time only if >= 60 seconds since last display
+  interval 300 Time every 5 minutes
+
+OUTPUT FORMAT
+--------------
+
+  [CLOCK] 14:35
+
+PERSISTENCY
+----------
+
+  File: data/.clock_state
+
+  Contents:
+  {
+    "enabled": true,
+    "interval": 60,
+    "last_shown": "2026-01-30T14:35:00"
+  }
+
+EXAMPLES
+---------
+
+  # Time of each output
+  bach clock on
+  bach clock interval 0
+
+  # Time every 5 minutes
+  bach clock interval 300
+
+  # Check status
+  bach clock status
+  -> Clock: ON | Interval: 60s | Last: 2:35 p.m.
+
+INTERPLAY
+-------------
+
+Clock is part of the time system:
+  --help timer stopwatch
+  --help countdown Countdown with trigger
+  --help between between checks
+  --help beat Unified time display
+
+All time functions are summarized via `bach beat`.
+
+---
+Version: 1.0 | Status: Implemented (v1.1.83)
+See: docs/CONCEPT_time_system.md

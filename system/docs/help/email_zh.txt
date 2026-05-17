@@ -1,0 +1,95 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理者姓名：电子邮件
+通过具有集成草稿安全功能的 Gmail API 发送电子邮件。
+
+说明：
+电子邮件处理程序支持通过 Gmail API 安全发送电子邮件。
+每封电子邮件首先创建为草稿，并且必须明确标记为“确认”。
+发送前必须确认。这样可以防止意外发生
+电子邮件发送。
+
+操作：
+
+  发送 <to> <subject> <body> 创建草稿（主命令）
+    选项：--cc <电子邮件>、--bcc <电子邮件>、--attach <文件路径>
+
+  草稿 <to> <subject> <body> 发送的别名
+
+  确认 <id> 确认并发送草稿
+    选项：--by <名称>
+
+  取消 <id> 放弃（删除）草稿
+
+  草稿 列出未决草稿
+    别名：list（空命令也显示草稿）
+
+  已发送 显示已发送的电子邮件
+
+  show <id> 显示草稿详细信息
+    显示全文、收件人、抄送/密件抄送、状态
+
+  设置 Gmail API 扩展范围（一次性）
+    只读 + 发送需要 OAuth2 身份验证
+
+  测试 发送测试邮件到您自己的地址
+
+  help 显示此帮助文本
+
+示例：
+
+  1. 使用位置参数创建草稿：
+     bach email send user@example.com "Betreff" "Hallo Welt"
+
+  2. 使用命名参数草稿：
+     bach email send user@example.com --subject "Meeting" --body "Termin: 14:00"
+
+  3. 抄送及附件：
+     bach email send user@example.com \
+       --主题“报告”\
+       --body“查看文件”\
+       --cc admin@example.com\
+       --附加C:\documents\report.pdf
+
+  4.发送草稿：
+     bach email confirm 42
+
+  5. 丢弃草稿：
+     bach email cancel 42
+
+  6. 查看所有打开的草稿：
+     bach email drafts
+
+文件：
+
+  hub/email.py 这个处理程序（EmailHandler 类）
+  _services/mail/email_sender.py Gmail API 集成，草稿管理
+  _services/mail/account_manager.py OAuth2 令牌管理
+  data/bach.db 本地电子邮件元数据（草稿记录）
+
+安全：
+
+  - 草稿模型：每封电子邮件首先保存为草稿
+  - 显式确认：只有“确认”才实际发送
+  - 令牌范围：只读 + 发送（Gmail API oauth2）
+  - 错误处理：错误记录在数据库中（show <id> 显示详细信息）
+
+配置：
+
+  帐户：通过 ~/.config/paper_publisher/config.json 控制或
+           本地 OAuth2 令牌位于 _services/mail/tokens/
+
+错误处理：
+
+  - 无效的电子邮件地址将被立即拒绝
+  - 将报告缺少的主题/文本
+  - Gmail 错误会记录主题和 ID
+  - 可以通过取消随时丢弃草稿
+
+另请参阅：
+
+  docs/help/base.txt 处理程序基类
+  docs/help/telegram.txt Telegram 集成用于远程控制
+  _services/mail/README.md Gmail API 设置指南

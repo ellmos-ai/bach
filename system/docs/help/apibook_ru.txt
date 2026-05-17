@@ -1,0 +1,75 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+APIBOOK — Центральная документация по API
+======================================
+
+ОПИСАНИЕ
+------------
+Управляет центральной базой данных всех используемых API. URL-адрес магазина,
+Тип аутентификации, конечные точки, описания и статус проверки.
+Использует SQLite (bach.db) с таблицей api_book.
+
+OPERATIONS
+-----------
+  bach api add <name> <base_url> [--auth key|oauth|none] [--desc "..."] [--provider "..."] [--tags "a,b"]
+    Зарегистрируйте или обновите API
+
+  bach api list
+    Показать все зарегистрированные API (статус, аутентификация, проверка)
+
+  bach api show <name>
+    Подробная информация об API (URL, аутентификация, конечные точки, примеры)
+
+  bach api endpoint add <api_name> <METHOD> <path> [--desc "..."]
+    Добавьте конечную точку в существующий API (например, POST /v1/chat/completions)
+
+  bach api verify [<name>]
+    Протестируйте все API или отдельные API (запрос HTTP HEAD, время ожидания: 10 с)
+
+  bach api search <keyword>
+    Поиск API по ключевым словам в названии, описании, тегах
+
+  bach api remove <name>
+    Удалить API из базы данных
+
+  bach api help
+    Показать эту справку
+
+ПРИМЕРЫ
+---------
+  # Регистрация API
+  bach api add openai https://api.openai.com --auth key --desc "OpenAI API"
+
+  # С провайдером и тегами
+  bach api add github https://api.github.com --auth oauth --provider GitHub --tags "git,development"
+
+  # Добавить конечную точку
+  bach api endpoint add openai POST /v1/chat/completions --desc "Chat Completion"
+
+  # Поиск и проверка
+  bach api search openai
+  bach api verify openai
+  bach api list
+
+  # Показать детали
+  bach api show github
+
+БАЗА ДАННЫХ
+---------
+  Таблица: api_book
+  Столбцы: идентификатор, имя (УНИКАЛЬНОЕ), поставщик, base_url, auth_type, описание,
+           endpoints_json, example_json, теги, Last_verified, is_active,
+           создано_at, обновлено_at, dist_type
+
+ФАЙЛЫ
+-------
+  Обработчик:hub/apibook.py
+  База данных: data/bach.db (SQLite)
+
+СМОТРИ ТАКЖЕ
+----------
+  bach.py — точка входа в CLI
+  hub/base.py — класс BaseHandler
+  данные/bach.db — база данных

@@ -1,0 +1,49 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# ソース: docs/_archive/CONCEPT_user_folder_attachment.md、system/hub/mount.py
+
+BACH ユーザー マウント (コンセプト)
+==========================
+
+現在: 2026-02-08
+
+ユーザー マウントとは?
+---------------------
+ユーザー マウントは、透過的に統合するために実装された機能 (2026 年 1 月 28 日以降、タスク SYS_001)外部ストレージの場所 (例: NAS、外付けハード ドライブ、Google ドライブなどのクラウド フォルダー) を BACH ファイル システムに追加します。データを BACH フォルダーにコピーする代わりに、仮想的にリンクされます。
+
+仕組み
+--------------
+システムは「ディレクトリ ジャンクション」または「シンボリック リンク」を使用して、`user/` ディレクトリ内のサブフォルダーとして外部パスを提供します。
+`filesystem_scanner` と `dirscan` は、ローカル フォルダーと同様にこれらのパスを検索し、インデックスを付けてファイルを処理します (OCR や抽出など)。
+
+目的
+-----------
+* **冗長性なし**: 元のデータは所定の位置に残ります。
+* **透明性**: すべての BACH ツールがデータにアクセスできます。
+* **永続性**: 接続はデータベース (`connections` テーブル) に保存され、必要に応じて (再起動後) 復元されます。
+
+例
+--------
+ユーザーは `E:\Archive\Tax` に税務書類を持っています。
+これは、ユーザー マウントを介して `user/mounts/archiv_steuer/` として統合されます。
+税務担当者は、ローカルであるかのように `user/mounts/archiv_steuer/2025/` にアクセスできるようになりました。
+
+技術的な詳細
+------------------
+* **DB テーブル**: `connections` (type='mount', name='alias', endpoint='source_path')
+* **ハンドラー**: `system/hub/mount.py` (mklink コマンドを管理)
+* **CLI コマンド**:
+    - `bach mount add <パス> <エイリアス>` - フォルダーをマウントします
+    - `bach mount delete <alias>` - マウントを削除します
+    - `bach mount list` - アクティブなマウントを表示します
+    - `bach mountrestor` - 再起動後にマウントを復元します
+
+ステータス
+------
+実装済み (2026-01-28 以降)。完全に機能的です。 CLI コマンドが利用可能です。 GUI 統合は後の段階で計画されています。
+
+関連項目
+----------
+wiki/it_tools/filecommander.txt ファイル操作
+docs/_archive/CONCEPT_user_folder_attachment.md 技術コンセプト (アーカイブ)

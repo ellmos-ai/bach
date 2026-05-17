@@ -1,0 +1,127 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [hub/chain.py, toolchains, scheduler_jobs]
+
+CHAIN - Chained tool commands and LLM chains
+================================================
+
+Status: 2026-02-28
+
+The chain system allows the chaining of BACH commands (toolchains)
+and the management of LLM agent chains via MarbleRun/llmauto.
+
+Ref: SYS_002, SQ074
+
+TWO CHAIN TYPES
+----------------
+
+1. TOOLCHAINS (database)
+   Sequential BACH instructions without LLM. Stored in bach.db.
+   Suitable for automated workflows.
+
+2. LLMAUTO CHAINS (JSON files)
+   LLM agent chains via MarbleRun (llmauto). Run as
+   Background processes.
+
+CLI COMMANDS - TOOLCHAINS (DB)
+-----------------------------
+
+  list Show all chains (toolchains + llmauto)
+  run <id> Run toolchain
+  add "JSON" Create new toolchain
+  show <id> View details
+  delete <id> Delete toolchain
+  log <id> View logs of a toolchain
+
+CLI COMMANDS - LLMAUTO CHAINS (JSON)
+-------------------------------------
+
+  create <name> Create new llmauto chain
+  start <name> start chain (background process)
+  stop <name> Stop chain
+  status [name] Show status (all or specific chain)
+  reset <name> Reset state of a chain
+
+OPTIONS FOR CREATE
+---------------------
+
+  --mode once|loop execution mode (default: once)
+  --skill PATH SKILL.md path for the agent
+  --model MODEL AI model (sonnet, opus, haiku)
+
+EXAMPLES
+---------
+
+  # List toolchain
+  bach chain list
+
+  # Run toolchain
+  bach chain run 1
+
+  # Create toolchain (JSON format)
+  bach chain add '{"name":"taeglich","steps":["bach backup create","bach scan run"]}'
+
+  # Details of a toolchain
+  bach chain show 1
+
+  # View logs
+  bach chain log 1
+
+  # create llmauto chain
+  bach chain create mein-workflow
+  bach chain create analyse --mode once --model opus
+
+  # control llmauto chain
+  bach chain start mein-workflow
+  bach chain status
+  bach chain status mein-workflow
+  bach chain stop mein-workflow
+  bach chain reset mein-workflow
+
+TOOLCHAIN ​​JSON FORMAT
+---------------------
+
+  {
+    "name": "Name of the chain",
+    "description": "Description",
+    "steps": [
+      "bach task list",
+      "bach backup create",
+      "bach scan run"
+    ]
+  }
+
+  Each step is a complete bach command.
+  Steps are executed sequentially.
+
+LLMAUTO CHAINS
+--------------
+
+llmauto chains run as independent Claude code processes
+in the background. They use MarbleRun for orchestration.
+
+  data/chains/<name>/ Chain directory
+    config.json chain configuration
+    state.json Current state
+    SKILL.md Agent Statement
+
+DATABASE
+---------
+
+  toolchains:
+    id, name, description, steps_json, created_at, updated_at
+
+  toolchain_runs:
+    id, chain_id, status, started_at, ended_at, log
+
+FILES
+-------
+  hub/chain.py handler implementation
+  data/chains/ llmauto chain configurations
+
+SEE ALSO
+----------
+  bach --help scheduler    Scheduler system (jobs)
+  bach --help agent        Agent launcher
+  bach --help tasks        Task system

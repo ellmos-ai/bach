@@ -1,0 +1,78 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DEVELOPMENT MODE (Dev Cycle)
+==============================
+
+DESCRIPTION
+------------
+BACH is developed in an 8 phase cycle. Every feature goes through
+the same process: from the requirement to the validated use case.
+
+THE CYCLE
+----------
+
+  Phase 1: Functionally formulate feature requests and requirements
+  Phase 2: Check current status What is already there? Avoid duplicates
+  Phase 3: Functional planning workflows, agents, experts, skills, services
+  Phase 4: Create functional frontend skill files, workflows, agent profiles
+  Phase 5: Backend plan CLI handlers, DB schema, API endpoints
+  Phase 6: Implement backend Python code, tools, DB migrations
+  Phase 7: Technical tests B/O/E tests, bug fix log
+  Phase 8: Usecases End-to-end validation from the user perspective
+
+BASIC PRINCIPLES
+---------------
+  1. Systemic First Reusable for every user
+  2. CLI First Everything can be controlled via terminal
+  3. dist_type isolation user data separated (0/1/2/3)
+  4. Functional First Describe first, then implement
+  5. Usecases as tests Validation AND requirements source
+
+THE CIRCUIT
+-------------
+
+  Use cases (Phase 8) generate new requirements (Phase 1).
+  Failed use cases become bugs or feature requests.
+  Successful use cases validate the system.
+
+  Phase 8 -> Phase 1 -> Phase 2 -> ... -> Phase 8 (cycle)
+
+LEVEL OF PLANNING (Phase 3)
+-----------------------------
+
+  Level question location
+  --------- -------------------------- ------------------------
+  Coordinate workflow WHEN/HOW?       skills/workflows/*.md
+  Agent WHO executes?              agents/*.txt
+  Expert WHO has specialist knowledge?          agents/_experts/*/
+  Skill WHAT is being done?              skills/_services/*.md
+  Service HOW technical?               skills/_services/*/
+  Tool WHAT is being worked on?       tools/*.py
+
+CHECKLIST NEW SERVICE (Phase 6)
+-----------------------------------
+  [ ] Works without user data (empty DB)?
+  [ ] CLI command available?
+  [ ] Input from files/folders?
+  [ ] Output in structured DB?
+  [ ] dist_type set automatically?
+  [ ] Scan/import repeatable (idempotent)?
+  [ ] No hardcoded path?
+  [ ] Tool registered?
+  [ ] Help file created?
+
+WORKFLOW FILE
+--------------
+  Detailed process: skills/workflows/dev-cycle.md
+
+SEE ALSO
+----------
+  bach --help usecase           Usecase documentation (Phase 8)
+  bach --help test              Testing procedures (Phase 7)
+  bach --help practices         Architecture principles
+  docs/_archive/WICHTIG_SYSTEMISCH_FIRST.md Core principle
+
+---
+Version: 1.0.0 | Created: 2026-01-28

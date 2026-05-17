@@ -1,0 +1,14 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+# NOTA: Esta entrada ha sido migrada a Between.txt
+#
+# Ver: ayuda de bach entre
+#
+# La funcionalidad entre tareas se ha ampliado y ahora admite:
+# - Perfiles personalizables (DEFAULT, ENFOQUE, REVISIÓN, APRENDIZAJE, AUTOSESIÓN)
+# - Comandos CLI: alternar entre encendido/apagado/estado/uso
+# - Gestión de perfiles: alternar entre la lista de perfiles/mostrar (agregar/editar/eliminar aún no implementado)
+#
+# Documentación completa: docs/help/between.txt

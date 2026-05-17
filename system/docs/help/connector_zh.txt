@@ -1,0 +1,182 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+连接器 - 外部通信连接
+===============================================
+
+描述
+管理外部通信连接（Telegram、Discord、
+HomeAssistant 等）并执行它。支持自动
+轮询、具有重试/退避和断路器的队列调度。
+
+支持的类型
+-------------------
+  telegram Telegram Bot API（getUpdates 轮询）
+  不和谐 不和谐机器人（REST API）
+  homeassistant 家庭助理（REST API）
+  webhook 传入 webhook（基于推送）
+  signal Signal Messenger（计划中，signal-cli）
+  Whatsapp WhatsApp（计划，Baileys）
+
+可用的运行时适配器：telegram、discord、homeassistant
+
+CLI 命令
+-----------
+
+管理：
+  bach connector list                    显示所有连接器
+  bach connector status                  状态 + 统计数据
+  bach connector add <type> <name> [url] Neuen Connector registrieren
+  bach connector remove <name>           删除连接器
+  bach connector enable <name>           激活
+  bach connector disable <name>          停用
+
+消息：
+  bach connector messages [name]         显示消息
+  bach connector unprocessed             未处理的消息
+  bach connector route                   将消息（收件箱）守护进程一起路由
+即使没有活动的 CLI 会话也会自动交付。
+  bach connector send <name> <to> <text> In ausgehende Queue einreihen
+
+设置：
+  1. bach Connector setup-daemon # 一次性：创建 2 个守护进程作业
+  2. bach daemon start --bg # 在后台启动守护进程
+  bach connector poll <name>             从现在开始自动:
+  - 每 1-2 分钟进行一次 Telegram/Discord 轮询
+  - 收件箱中的传入消息（带有上下文提示）
+  - 每分钟处理一次传出队列
+  - 失败的发送重复最多 5 次，并带有退避
+  bach connector dispatch <name>         守护进程作业：
+  Connector_poll_and_route（2 分钟间隔） 轮询和路线
+  Connector_dispatch（1 分钟间隔）调度队列
+
+重试和退避
+  bach connector setup-daemon            失败的消息以指数退避发送
+重复：30 秒、60 秒、120 秒、240 秒、480 秒（总共约 15 分钟）。
+  bach connector queue-status            5 次失败尝试后（可配置），消息显示为
+标记为“死信”。死信可以手动完成
+可以重置：
+  bach connector retry <id|all>          重置所有死信
+
+重置单个消息
+-------------------------------
+断路器
+
+连续5次错误后连接器
+禁用 5 分钟 (disabled_until)。进一步的发送/轮询尝试
+会被跳过，直到冷却时间结束。之后
+计数器自动重置。
+
+上下文集成
+
+传入消息通过两个路由
+触发系统过滤（联想记忆）：
+
+  a) ContextInjector（硬编码，约 100 个触发器）
+     → messages.metadata 中的injector_hint
+-----------------
+  b) context_triggers 表（动态，900 多个触发器）
+     → messages.metadata 中的 context_triggers
+
+messages.metadata (JSON) 中的结果：
+  {
+    "来源": "电报:123456",
+    "injector_hint": "[CONTEXT] 备份：bach 备份创建...",
+    "context_triggers": ["备份", "备份"],
+    “routed_at”：“2026-02-08T22:00:00”
+  }
+
+  bach connector retry all             REST API
+  bach connector retry 42              在 Headless API 运行时可用（端口 8001）：
+
+  POST /api/v1/messages/发送入队消息
+  GET /api/v1/messages/queue 队列状态（待处理/失败/死亡）
+  GET /api/v1/messages/inbox 读取收件箱（分页、过滤）
+  POST /api/v1/messages/route 手动触发路由
+---------------
+示例：
+  卷曲本地主机：8001/api/v1/messages/queue
+  curl -X POST localhost:8001/api/v1/messages/send \
+    -H“内容类型：application/json”\
+    -d '{"connector":"telegram_main","recipient":"123","content":"Hello"}'
+
+轮询间隔（默认）
+-------------------
+  类型 区间理性
+  telegram 60 年代的 getUpdates 很便宜
+  不和谐 120 秒 REST 轮询、速率限制
+  homeassistant 300s 事件，不太紧急
+  webhook N/A 基于推送，无轮询
+
+可通过 auth_config 覆盖 JSON: {"poll_interval": 30}
+
+数据库
+
+表:
+  连接器配置+断路器状态
+  Connector_messages消息队列（传入/传出，重试跟踪）
+  消息收件箱/发件箱（路由消息）
+  Scheduler_jobs 自动轮询/调度作业
+
+相关列connector_messages：
+  状态文本（待处理/已发送/失败/死亡）
+  retry_count INTEGER（当前尝试次数）
+  max_retries INTEGER（默认 5）
+  next_retry_at TEXT（下次重试时间）
+--------
+相关列连接：
+  Continuous_failures INTEGER（断路器计数器）
+  disabled_until TEXT（锁定直到时间戳）
+
+FILES
+
+hub/connector.py CLI 处理程序
+  hub/_services/connector/queue_processor.py 队列处理器（核心）
+  gui/api/messages_api.py REST API 路由器
+  连接器/base.py 抽象基类
+  连接器/telegram_connector.py 电报适配器
+  连接器/discord_connector.py Discord 适配器
+  连接器/homeassistant_connector.py HA 适配器
+  db/migrations/001_connector_queue_upgrade.sql 模式迁移
+
+另请参见
+-------------------------
+内部消息系统
+
+后台作业
+
+上下文注入器
+---------
+Tabellen:
+  connections         Connector-Konfiguration + Circuit-Breaker-Status
+  connector_messages  Nachrichten-Queue (ein-/ausgehend, Retry-Tracking)
+  messages            Inbox/Outbox (geroutete Nachrichten)
+  scheduler_jobs         Automatische Poll/Dispatch-Jobs
+
+Relevante Spalten connector_messages:
+  status          TEXT (pending/sent/failed/dead)
+  retry_count     INTEGER (aktuelle Versuchsnummer)
+  max_retries     INTEGER (Default 5)
+  next_retry_at   TEXT (naechster Retry-Zeitpunkt)
+
+Relevante Spalten connections:
+  consecutive_failures  INTEGER (Circuit-Breaker-Zaehler)
+  disabled_until        TEXT (Sperre bis Timestamp)
+
+DATEIEN
+-------
+  hub/connector.py                           CLI-Handler
+  hub/_services/connector/queue_processor.py Queue-Processor (Kern)
+  gui/api/messages_api.py                    REST-API Router
+  connectors/base.py                 Abstrakte Basisklasse
+  connectors/telegram_connector.py   Telegram-Adapter
+  connectors/discord_connector.py    Discord-Adapter
+  connectors/homeassistant_connector.py  HA-Adapter
+  db/migrations/001_connector_queue_upgrade.sql  Schema-Migration
+
+SIEHE AUCH
+----------
+  bach --help messages        Internes Nachrichtensystem
+  bach --help daemon          Hintergrund-Jobs
+  bach --help injectors       Kontext-Injektoren

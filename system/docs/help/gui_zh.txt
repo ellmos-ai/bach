@@ -1,0 +1,501 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+GUI - 网络仪表板
+===================
+
+描述
+GUI 模块为 BACH 提供了一个 Web 仪表板。
+基于具有 HTML/CSS/JS 前端的 FastAPI。
+使用 --startup 在后台自动启动。
+
+两个服务器：
+  - GUI 服务器（端口 8000）：带有 HTML 模板的 Web 仪表板
+  - Headless API（端口 8001）：用于程序的纯 REST API
+
+命令
+-------
+bach gui start              启动服务器（阻塞，端口 8000）
+bach gui start --port 9000  另一个端口上的服务器
+bach gui start-bg           在后台启动服务器
+bach gui start-bg --port 9000  使用另一个端口的后台
+bach gui status             检查服务器状态
+bach gui info               显示 GUI 信息
+
+手动启动
+---------------
+Windows 的 user/start_gui.bat 批处理文件（打开浏览器）
+
+自动启动
+-------------------
+bach --startup              自动启动 GUI在后台
+                            （请参阅输出中的 [GUI SERVER] 部分）
+
+要求
+---------------
+pip install fastapi uvicorn
+
+仪表板（基本）
+------------------
+/ 带有状态卡和快速操作的主页
+/tasks 任务管理（过滤、CRUD、状态更改）
+/messages 消息（收件箱/发件箱、撰写）
+/守护进程维护（作业、运行、切换）
+/docs API 文档 (Swagger)
+
+仪表板（高级）
+----------------------
+/agents 代理管理
+/记忆记忆/知识库
+/tools 工具管理
+/tokens 代币统计
+/tax 税务工作流程
+/financial 财务概览
+/health 健康追踪
+/contacts 联系人管理
+/routines 例程编辑器
+/skills-board 技能板
+/tasks_board 看板任务板
+/logs 日志查看器
+/help 帮助系统
+/wiki 维基页面
+/inbox 收件箱视图
+/inbox_editor 收件箱编辑器
+/maintenance 维护仪表板
+/partners 合作伙伴管理
+/personal 个人设置
+/ati ATI系统
+/usecase 用例
+/workflow_tuev 工作流程检查
+/prompt-generator 提示生成器
+/foerderplaner 资金规划师
+/anonymization 匿名
+
+功能
+--------
+- 带有系统状态的仪表板
+- 任务概述（用户+扫描）
+- 消息系统（CLI 连接：bach msg）
+- 维护工作
+- 带有自动文档的 REST API (/docs)
+
+CLI <-> GUI 链接
+------------------------
+新闻：
+  CLI：巴赫消息发送/列表/已读/未读
+  GUI：/消息（收件箱/发件箱、撰写）
+  DB：bach.db -> 消息表
+  启动：未读项目显示在 --startup
+
+任务：
+  CLI：巴赫任务添加/列表/完成
+  GUI：/任务（CRUD、过滤器、状态）
+  DB：bach.db -> 任务表
+
+维护：
+  CLI：bach 守护进程列表/运行/切换
+  GUI：/daemon（作业、运行、切换）
+  DB: bach.db -> Scheduler_jobs, Scheduler_runs
+
+
+结构
+--------
+gui/
+├── server.py FastAPI后端（集成所有API）
+├── daemon_service.py 后台服务
+├── file_watcher.py 文件观察器
+├──sync_service.py同步
+├── api_webhook.py Webhook 处理程序
+├── __init__.py 模块初始化
+├── 静态/
+│ ├── css/main.css 样式
+│ └── js/
+│ ├── api.js API客户端
+│ ├── app.js 主要逻辑
+│ ├── nav.js 导航
+│ └── Skills-board.js 技能板逻辑
+└── 模板/
+    ├──index.html首页
+    ├──tasks.html 任务管理
+    ├── messages.html 消息
+    ├── daemon.html 守护进程管理器
+    └── ...（30 多个模板）
+
+API 端点（GUI 服务器 - 端口 8000）
+---------------------------------------
+状态：
+GET /api/status 系统状态
+
+任务：
+GET /api/tasks 用户任务
+POST /api/tasks 创建任务
+POST /api/tasks/export 导出任务
+GET /api/tasks/{id} 任务详细信息
+PUT /api/tasks/{id} 更新任务
+DELETE /api/tasks/{id} 删除任务
+GET /api/scanned-tasks 扫描任务
+GET /api/assignees 任务分配
+
+消息（CLI 管理）：
+GET /api/messages 消息（消息表）
+POST /api/messages 创建消息
+PUT /api/messages/{id}/read 标记为已读
+PUT /api/messages/{id}/archive 存档消息
+PUT /api/messages/{id}/delete 删除消息
+
+守护进程：
+GET /api/daemon/jobs 守护进程作业
+POST /api/daemon/jobs 创建作业
+PUT /api/daemon/jobs/{id}/切换启用/禁用作业
+POST /api/daemon/jobs/{id}/run 手动运行作业
+GET /api/daemon/runs 作业执行
+GET /api/daemon/status 守护进程状态
+POST /api/daemon/start 启动守护进程
+POST /api/daemon/stop 停止守护进程
+POST /api/daemon/kill-all 杀死所有作业
+PUT /api/daemon/config 更改守护程序配置
+
+内存：
+GET /api/memory/overview 内存概览
+GET /api/memory/working 工作内存
+GET /api/memory/lessons 课程
+GET /api/memory/facts 事实
+GET /api/memory/sessions 会话
+POST /api/memory/working 创建工作内存条目
+POST /api/memory/lessons 创建课程
+POST /api/memory/facts 创建事实
+DELETE /api/memory/facts/{id} 删除事实
+DELETE /api/memory/working/{id} 删除工作条目
+DELETE /api/memory/lessons/{id} 删除课程
+GET /api/memory/stats/db 数据库统计信息
+POST /api/memory/maintenance/cleanup 内存清理
+GET /api/memory/sessions/{id} 会话详细信息
+
+技能：
+GET /api/skills 列出技能
+GET /api/skills/categories 技能类别
+GET /api/skills/{id} 技能详细信息
+
+工具：
+GET /api/tools 列出工具
+GET /api/tools/{name} 工具详细信息
+POST /api/tools/{name}/run 运行工具
+
+代理：
+GET /api/agents 代理列表
+PUT /api/agents/{id}/切换启用/禁用代理
+
+ATI:
+GET /api/ati/stats ATI 统计数据
+GET /api/ati/tasks ATI 任务
+GET /api/ati/tasks/{id} ATI 任务详细信息
+GET /api/ati/sessions ATI 会话
+POST /api/ati/session/start 启动 ATI 会话
+POST /api/ati/session/start-cli ATI CLI 会话
+POST /api/ati/tasks 创建 ATI 任务
+PUT /api/ati/tasks/{id} 更新 ATI 任务
+DELETE /api/ati/tasks/{id} 删除 ATI 任务
+
+财务：
+GET /api/financial/status 财务状况
+GET /api/financial/emails 财务电子邮件
+获取 /api/financial/emails/{id} 电子邮件详细信息
+GET /api/financial/subscriptions 订阅
+GET /api/financial/subscriptions-unified United 订阅
+DELETE /api/financial/subscriptions/{id} 删除订阅
+GET /api/financial/categories 类别
+POST /api/financial/sync 金融同步
+POST /api/financial/save-json 保存 JSON
+GET /api/financial/config 财务配置
+PUT /api/financial/config 更新配置
+PUT /api/financial/emails/{id}/status 更改电子邮件状态
+GET /api/financial/export 出口金融
+GET /api/financial/accounts 电子邮件帐户
+POST /api/financial/accounts 创建帐户
+PUT /api/financial/accounts/{id}/toggle 启用帐户
+POST /api/financial/accounts/{id}/test 测试帐户
+DELETE /api/financial/accounts/{id} 删除账户
+GET /api/financial/imap-presets IMAP 预设
+GET /api/financial/gmail/find-credentials Gmail 凭据
+POST /api/financial/gmail/setup Gmail 设置
+GET /api/financial/gmail/status Gmail 状态
+GET /api/financial/profiles 配置文件
+POST /api/financial/profiles 创建个人资料
+PUT /api/financial/profiles/{id} 更新配置文件
+DELETE /api/financial/profiles/{id} 删除个人资料
+GET /api/financial/误报 误报
+POST /api/financial/false-positives 创建误报
+DELETE /api/financial/false-positives/{id} 删除误报
+POST /api/financial/profiles/test 测试配置文件
+POST /api/financial/profiles/import 导入配置文件
+GET /api/financial/contracts 合同
+POST /api/financial/contracts 创建合约
+PUT /api/financial/contracts/{id} 更新合约
+DELETE /api/financial/contracts/{id} 删除合同
+GET /api/financial/insurances 保险
+GET /api/financial/deadlines 截止日期
+POST /api/financial/insurances 创建保险
+PUT /api/financial/insurances/{id} 更新保险
+DELETE /api/financial/insurances/{id} 删除保险
+GET /api/financial/bank-accounts 银行账户
+POST /api/financial/bank-accounts 创建银行帐户
+PUT /api/financial/bank-accounts/{id} 更新银行账户
+DELETE /api/financial/bank-accounts/{id} 删除银行账户
+GET /api/financial/credits 积分
+POST /api/financial/credits 创建信用
+PUT /api/financial/credits/{id} 更新信用
+DELETE /api/financial/credits/{id} 删除信用
+
+税：
+GET /api/tax/documents/unlinked 未链接的税务文件
+POST /api/tax/posten/{id}/link 链接文档
+POST /api/tax/match-bank 银行匹配
+
+报告（资金规划师）：
+GET /api/report/status 报告状态
+GET /api/report/clients 客户端
+POST /api/report/export 导出报告
+POST /api/report/generate 生成报告
+
+坐骑：
+GET /api/mounts 列出挂载点
+POST /api/mounts 创建挂载
+DELETE /api/mounts/{alias} 删除挂载
+POST /api/mounts/restore 恢复安装
+
+扫描仪：
+POST /api/scanner/trigger 触发扫描器
+POST /api/scanner/run 启动扫描仪
+GET /api/scanner/status 扫描仪状态
+GET /api/scanner/tools 扫描工具
+GET /api/scanner/config Scanner-Config
+
+维护：
+POST /api/maintenance/trigger 触发器维护
+GET /api/maintenance/status 维护状态
+
+令牌：
+GET /api/tokens/usage 令牌使用情况
+
+日志：
+获取 /api/system/logs 日志文件
+GET /api/system/logs/{name} 读取日志文件
+
+收件箱：
+GET /api/inbox/status 收件箱状态
+GET /api/inbox/config 收件箱配置
+POST /api/inbox/config 更新配置
+获取 /api/inbox/folders 文件夹
+POST /api/inbox/folders 创建文件夹
+PUT /api/inbox/folders 更新文件夹
+DELETE /api/inbox/folders 删除文件夹
+GET /api/inbox/rules 规则
+POST /api/inbox/rules 创建规则
+PUT /api/inbox/rules/{id} 更新规则
+DELETE /api/inbox/rules/{id} 删除规则
+POST /api/inbox/scan 扫描收件箱
+GET /api/inbox/unsorted 未排序的元素
+POST /api/inbox/sort 对元素进行排序
+GET /api/inbox/preview/{file} 文件预览
+GET /api/inbox/analyze/{file} 分析文件
+PUT /api/inbox/settings 更新设置
+
+技能板：
+GET /api/skills-board/item-file 读取物品文件
+PUT /api/skills-board/item-file 保存项目文件
+GET /api/skills-board/hierarchy 读取层次结构
+PUT /api/skills-board/hierarchy 保存层次结构
+
+帮助系统：
+GET /api/help 列出帮助文件
+GET /api/docs/help/{name} 读取帮助文件
+PUT /api/docs/help/{name} 更新帮助文件
+POST /api/help 创建帮助文件
+DELETE /api/docs/help/{name} 删除帮助文件
+GET /api/docs/help/search/{term} 搜索帮助
+
+匿名 (Foerderplaner)：
+GET /api/anonymization/clients 客户端
+POST /api/anonymization/profile 创建配置文件
+POST /api/anonymization/upload 上传文档
+POST /api/report/session/start 启动报告会话
+POST /api/report/session/{id}/import 导入
+POST /api/report/session/{id}/profile 配置文件
+POST /api/report/session/{id}/anonymize 匿名
+POST /api/report/session/{id}/prompt 提示
+POST /api/report/session/{id}/generate 生成
+POST /api/report/session/{id}/cleanup 清理
+GET /api/report/session/{id} 会话详细信息
+GET /api/report/pending 待处理报告
+
+提示生成器：
+获取 /api/prompt-generator/templates 模板
+GET /api/prompt-generator/template/{path} 读取模板
+POST /api/prompt-generator/send/task 作为任务发送
+POST /api/prompt-generator/send/session 发送到会话
+POST /api/prompt-generator/send/copy 到剪贴板
+GET /api/prompt-generator/daemon/status 守护进程状态
+PUT /api/prompt-generator/daemon/config 守护进程配置
+POST /api/prompt-generator/start-desktop 启动桌面
+POST /api/prompt-generator/daemon/toggle 守护进程切换
+POST /api/prompt-generator/templates/save 保存模板
+
+自动会话：
+POST /api/auto-sessions/launch 启动会话
+
+会话：
+GET /api/session/activities 活动
+POST /api/session/generate-summary 生成摘要
+POST /api/session/end 结束会话
+
+重复：
+GET /api/recurring 重复任务
+POST /api/recurring/check 执行检查
+POST /api/recurring/trigger/{id} 触发任务
+
+用例：
+GET /api/usecases 用例
+GET /api/usecases/{id} 用例详细信息
+POST /api/usecases 创建用例
+PUT /api/usecases/{id} 更新用例
+DELETE /api/usecases/{id} 删除用例
+POST /api/usecases/{id}/test 测试用例
+POST /api/usecases/test-all 测试全部
+POST /api/usecases/{id}/execute 执行用例
+
+联系人：
+获取 /api/contacts 联系人
+获取 /api/contacts/{id} 联系方式详细信息
+POST /api/contacts 创建联系人
+PUT /api/contacts/{id} 更新联系人
+DELETE /api/contacts/{id} 删除联系人
+GET /api/contacts/export 导出联系人
+
+例程：
+GET /api/routines 例程
+GET /api/routines/{id} 例程详细信息
+POST /api/routines 创建例程
+PUT /api/routines/{id} 更新例程
+POST /api/routines/{id}/complete 完整例程
+DELETE /api/routines/{id} 删除例程
+GET /api/routines/export 导出例程
+
+WebSockets：
+GET /api/ws/status WebSocket 状态
+
+工作流程 TÜV:
+GET /api/workflow-tuev 工作流程
+POST /api/workflow-tuev/{id}/check 检查工作流程
+POST /api/workflow-tuev/check-all 检查全部
+POST /api/workflow-tuev/sync 同步工作流程
+GET /api/workflow-tuev/content 工作流程内容
+
+AI Headless：
+POST /api/ai/headless/run 运行 AI 任务
+
+Bach 代理：
+GET /api/bach-agents 列出 Bach 代理
+
+
+HEADLESS API（端口 8001）- 编程访问
+-----------------------------------------------------
+用途：无 HTML 的纯 REST API，用于脚本/程序
+
+身份验证：
+  - 本地主机（127.0.0.1，::1，本地主机）：无需身份验证（信任模式）
+  - 远程：X-BACH-Key 标头或 ?api_key= 参数
+  - Key：首次启动时自动生成 → data/.api_key
+
+启动：
+  python gui/api/headless.py [--端口 8001] [--key YOUR_KEY]
+
+文档：
+  http://localhost:8001/api/docs (Swagger)
+  http://localhost:8001/api/redoc (ReDoc)
+
+端点（前缀：/api/v1）：
+
+任务：
+GET /api/v1/tasks 列出任务（过滤器：状态、优先级、限制）
+POST /api/v1/tasks 创建任务
+GET /api/v1/tasks/{id} 任务详细信息
+PUT /api/v1/tasks/{id} 更新任务
+
+内存：
+GET /api/v1/memory/facts 事实（过滤器：类别、min_confidence）
+GET /api/v1/memory/lessons 课程（过滤器：类别、限制）
+GET /api/v1/memory/search 搜索内存（参数：q）
+POST /api/v1/memory 创建内存条目
+
+消息（队列 + 收件箱）：
+POST /api/v1/messages/send 将消息放入队列中 (connector_messages)
+GET /api/v1/messages/queue 队列状态（每个连接器待处理/失败/死亡）
+GET /api/v1/messages/inbox 读取收件箱（过滤器：状态、发件人、分页）
+POST /api/v1/messages/route 手动触发路由（在 → 收件箱中）
+
+系统：
+GET /api/v1/status 系统状态（任务、内存、数据库大小）
+POST /api/v1/backup 创建备份
+GET /api/v1/skills 列出技能（过滤器：类型、限制）
+GET /api/v1/health 健康检查（公共，无身份验证）
+
+示例
+---------
+GUI 服务器（端口 8000）：
+  # 在后台启动服务器
+  bach gui start-bg
+
+  # 或者：启动服务器（阻塞）
+  bach gui start
+
+  # 打开浏览器
+  http://127.0.0.1:8000
+
+  # API 文档
+  http://127.0.0.1:8000/docs
+
+  # 服务器在不同的端口
+  bach gui start --port 9000
+
+  # 检查状态
+  bach gui status
+
+Headless API（端口 8001）：
+  # 启动服务器
+  python gui/api/headless.py --端口 8001
+
+  # 使用自定义 API 密钥
+  python gui/api/headless.py --key MY_KEY
+
+  # API 文档
+  http://localhost:8001/api/docs
+
+  # 创建任务（localhost = 无身份验证）
+  卷曲 -X POST http://localhost:8001/api/v1/tasks\
+       -H“内容类型：application/json”\
+       -d '{"标题": "测试", "优先级": "P2"}'
+
+  # 从远程使用 API 密钥
+  卷曲-X GET http://REMOTE:8001/api/v1/status\
+       -H "X-BACH-Key: YOUR_KEY"
+
+  # 发送消息
+  卷曲 -X POST http://localhost:8001/api/v1/messages/send\
+       -H“内容类型：application/json”\
+       -d '{“连接器”：“信号”，“接收者”：“+49...”，“内容”：“测试”}'
+
+  # 队列状态
+  卷曲 http://localhost:8001/api/v1/messages/queue
+
+  # 阅读收件箱
+  curl "http://localhost:8001/api/v1/messages/inbox?status=unread&limit=20"
+
+另请参见
+----------
+bach --help wartung         维护作业
+bach --help tasks           任务管理
+bach --help messages        消息 CLI
+bach --help connector       连接器系统
+gui/api/headless.py Headless API 源
+gui/api/messages_api.py 消息 API 路由器

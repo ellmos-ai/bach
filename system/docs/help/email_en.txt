@@ -1,0 +1,95 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME: email
+Email sending via Gmail API with integrated draft security.
+
+DESCRIPTION:
+The email handler enables secure email sending via the Gmail API.
+Every email is first created as a draft and must be explicitly marked with 'confirm'.
+must be confirmed before it is sent. This prevents accidental ones
+Email sending.
+
+OPERATIONS:
+
+  send <to> <subject> <body> Create draft (main command)
+    Options: --cc <email>, --bcc <email>, --attach <filepath>
+
+  draft <to> <subject> <body> Alias ​​for send
+
+  confirm <id> Confirm and send draft
+    Options: --by <name>
+
+  cancel <id> Discard (delete) draft
+
+  drafts List open drafts
+    Alias: list (empty command also shows drafts)
+
+  sent Show sent emails
+
+  show <id> Show draft details
+    Shows full text, recipient, CC/BCC, status
+
+  setup Gmail API Expand Scopes (one-time)
+    Requires OAuth2 authentication for readonly + send
+
+  test Send test email to your own address
+
+  help Show this help text
+
+EXAMPLES:
+
+  1. Create draft with positional args:
+     bach email send user@example.com "Betreff" "Hallo Welt"
+
+  2. Draft with Named Args:
+     bach email send user@example.com --subject "Meeting" --body "Termin: 14:00"
+
+  3. With CC and attachment:
+     bach email send user@example.com \
+       --subject "Report" \
+       --body "See file" \
+       --cc admin@example.com\
+       --attach C:\documents\report.pdf
+
+  4. Send draft:
+     bach email confirm 42
+
+  5. Discard draft:
+     bach email cancel 42
+
+  6. View all open drafts:
+     bach email drafts
+
+FILES:
+
+  hub/email.py This handler (EmailHandler class)
+  _services/mail/email_sender.py Gmail API integration, draft management
+  _services/mail/account_manager.py OAuth2 token management
+  data/bach.db Local email metadata (draft records)
+
+SECURITY:
+
+  - Draft model: Every email is first saved as a draft
+  - Explicit confirmation: Only 'confirm' actually sends
+  - Token scopes: readonly + send (Gmail API oauth2)
+  - Error handling: Errors are logged in DB (show <id> shows details)
+
+CONFIGURATION:
+
+  Account: Controlled via ~/.config/paper_publisher/config.json or
+           local OAuth2 tokens at _services/mail/tokens/
+
+ERROR HANDLING:
+
+  - Invalid email addresses are immediately rejected
+  - Missing subject/text will be reported
+  - Gmail errors are logged with subject and ID
+  - Draft can be discarded at any time with cancel
+
+SEE ALSO:
+
+  docs/help/base.txt Handler base class
+  docs/help/telegram.txt Telegram integration for remote control
+  _services/mail/README.md Gmail API Setup Guide

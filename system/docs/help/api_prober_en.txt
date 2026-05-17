@@ -1,0 +1,65 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+API PROBER - REST API discovery and documentation
+==================================================
+
+DESCRIPTION
+------------
+Delegated to the MODULAR_AGENTS/ApiProber module for automatic discovery
+and documentation of REST APIs. Scans URLs, saves endpoints and
+parameters in a local database and exports the results.
+
+OPERATIONS
+-----------
+  probe <url> [--depth N] [--delay-ms N] [--max-requests N]
+    Samples an API URL. Depth controls recursion depth,
+    delay-ms the waiting time between requests, max-requests limit.
+    Saves results to local DB.
+
+  list
+    Lists all known services from the local database.
+    Shows name, base URL, endpoint count and timestamp of the last one
+    Probings per service.
+
+  status <service name>
+    Detailed information about a service: base URL, server header,
+    Endpoints with methods and auth status, probe run statistics.
+
+  export <service> [--format md|json]
+    Exports API documentation for a service as Markdown or JSON.
+    Default format is Markdown.
+
+  config [--show]
+    Displays the current ApiProber configuration, including timeout
+    Settings (B36 fix: connect_timeout_s, read_timeout_s).
+
+EXAMPLES
+---------
+  bach api-prober probe https://api.github.com --depth 2
+    Samples GitHub API at depth 2 and saves results.
+
+  bach api-prober list
+    Shows all services detected so far.
+
+  bach api-prober status github
+    Detailed information about the GitHub API (if any).
+
+  bach api-prober export github --format json
+    Exports GitHub API documentation as JSON.
+
+  bach api-prober config
+    Shows current timeout and configuration parameters.
+
+FILES
+-------
+  Handler: hub/api_prober.py
+  Module: MODULAR_AGENTS/ApiProber/ (external)
+  DB: config.json -> get_db_path()
+  Exports: config.json -> get_export_dir()
+
+SEE ALSO
+----------
+  help orchestrator -- ProbeOrchestrator (internal API discovery engine)
+  help handler -- Handler system overview

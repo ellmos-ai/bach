@@ -1,0 +1,210 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH v3 - CARACTERÍSTICAS
+====================
+
+Descripción general de todas las funciones implementadas y su estado.
+
+ARQUITECTURA v2.0 (NUEVA)
+----------------------
+Sistema de controlador basado en registro con descubrimiento automático:
+- Más de 109 controladores en el centro/detectados automáticamente
+- API de biblioteca (bach_api.py) para acceso programático
+- Controlador de inicio dual (ruta + compatibilidad con aplicaciones)
+- Archivos multicontrolador (time.py, tuev.py)
+- Inyectores cognitivos integrados
+
+Dos vías de acceso:
+1. CLI: tarea python bach.py agregar "..." --prioridad P4
+2. API de biblioteca: de la tarea de importación bach_api; task.add("...", "--priority", "P4")
+
+COMANDOS CLI (núcleo)
+------------------
+bach --startup              Iniciar sesión (con DirScan, GUI)
+bach --shutdown             Finalizar sesión (memoria de archivo)
+bach --status               Mostrar estado del sistema
+bach --help [thema]         Ayuda (más de 60 temas)
+
+GESTIÓN DE TAREAS
+---------------
+bach task add "..."         Crear nueva tarea
+bach task list              Mostrar tareas
+bach task done T001         Completar tarea
+bach task edit T001 "..."   Edición de tarea
+
+SISTEMA DE MEMORIA
+-------------
+bach mem write "..."        Escribir a la memoria
+bach mem read               Leer memoria
+bach mem context            Mostrar contexto
+bach mem archive            Archivar sesión
+
+MENSAJES
+-----------
+bach msg send "..."         Enviar mensaje
+bach msg list               Ver mensajes
+bach msg read M001          Leer mensaje
+bach msg unread             Mostrar no leídos
+
+ESCÁNER
+-------
+bach scan run               Herramientas de escaneo
+bach scan status            Estado de escaneo
+bach scan tasks             Mostrar tareas escaneadas
+
+MANTENIMIENTO (programador, anteriormente demonio)
+-------------------------------------
+bach scheduler jobs            Mostrar trabajos
+bach scheduler run J001        Ejecutar trabajo
+bach scheduler status          Mostrar estado del programador
+(Alias: bach demonio... continúa funcionando)
+
+GUI y API REST
+--------------
+bach gui start              Iniciar panel web (puerto 8000)
+bach gui start-bg           Iniciar en segundo plano
+bach gui status             Estado del servidor
+
+API REST (servidor sin cabeza):
+  python gui/api/headless.py --puerto 8001
+  Puntos finales:
+    GET /api/v1/tasks Listar tareas
+    POST /api/v1/tasks Crear tarea
+    GET /api/v1/memory/facts Obtener datos
+    POST /api/v1/messages/send Mensaje en cola
+    OBTENER /api/v1/messages/inbox Leer bandeja de entrada
+    OBTENER /api/v1/status Estado del sistema
+  Swagger Docs: http://localhost:8001/api/docs
+
+INJECTORES
+----------
+bach --inject status        Estado del inyector
+bach --inject toggle X      Inyector encendido/apagado
+bach --inject task 5        Tarea de presupuesto de tiempo
+
+BACKUP
+------
+bach backup create          Crear copia de seguridad
+bach backup list            Ver copias de seguridad
+bach backup restore X       Restaurar copia de seguridad
+
+BASE DE DATOS
+---------
+bach --db status            Estado de la base de datos
+bach --db query "SQL"       Ejecutar SQL
+
+CONNECTOR SYSTEM v2.0 (NUEVO)
+---------------------------
+Entrega de mensajes confiable con cola, reintento/retroceso, disyuntor.
+Adaptador de tiempo de ejecución: Telegram, Discord, HomeAssistant
+
+bach connector list         Mostrar conectores
+bach connector status       Estado de los conectores activos
+bach connector add <type>   Registrar nuevo conector
+bach connector messages     Mostrar mensajes
+bach connector poll <name>  Encuesta una vez (obtener mensajes)
+bach connector dispatch     Cola de proceso (enviar mensajes)
+bach connector queue-status Queue-Statistiken (pending/failed/dead)
+bach connector retry [id]   Restablecer mensajes no entregados
+
+Integración de demonio:
+  poll_and_route (cada 2 minutos) - polen + enrutamiento
+  despacho (cada 1 minuto) - cola de procesos
+
+Características:
+- Reintentar con retroceso exponencial (30 s a 480 s)
+- Disyuntor (5 minutos de recuperación después de 5 errores)
+- Cola de mensajes fallidos para mensajes fallidos.
+- Activadores de contexto para inyectores durante el enrutamiento
+
+SERVICIO DE VOZ (NUEVO)
+-------------------
+STT (Voz a Texto): Whisper (en línea), Vosk (fuera de línea)
+TTS (Texto a voz): pyttsx3 (Windows SAPI5/espeak)
+Palabra de activación: openwakeword (opcional), reserva de teclado
+
+Ruta de la herramienta: system/hub/_services/voice/voice_stt.py
+Integración: Puede integrarse en el sistema de conectores
+
+MATRIZ DE CARACTERÍSTICAS
+--------------
+
+| Área | Debería | es | Estado |
+|------------------|------|------|--------|
+| Comandos CLI | 20 | 60+ | Aceptar |
+| Temas de ayuda | 21 | 60+ | Aceptar |
+| Controlador (Registro)| 12 | 109+ | Aceptar |
+| Habilidades (Archivo) | 30 | 50+ | Aceptar |
+| Habilidades (JSON) | 50 | 0 | JSON* |
+| Herramientas (Archivo) | 30 | 90+ | Aceptar |
+| Herramientas (Registro) | 60 | 85 | Aceptar |
+| Puntos finales GUI | 30 | 80+ | Aceptar |
+| Puntos finales de API REST| 10 | 12 | Aceptar |
+| Tablas de base de datos | 25 | 138 | Aceptar |
+| Conectores | 3 | 3+ | OK 
+
+|*) Las habilidades y los expertos se administran principalmente a través de skills_hierarchy.json.
+
+Handler (descubrimiento automático en hub/):
+  abo, agentes, ati, copia de seguridad, cadena, calendario, conexiones,
+  conector, consolidación, contacto, contexto, cv, demonio (=programador), análisis_de_datos,
+  db, dist, doc, documentos, extensiones, fs, gui, hogar, salud,
+  ayuda, bandeja de entrada, inyectar, idioma, lección, registros, mantener, memoria, mensajes,
+  monte, multi_llm_protocol, notificar, obsidiana, ollama, compañero, camino,
+  perfil, perfilador, recurrente, reflexión, rutina, escaneo, sesión,
+  apagado, habilidades, smarthome, instantánea, fuentes, inicio, estado,
+  impuestos, sincronización, tarea, prueba, tiempo, tokens, herramientas, basura, tuev, actualización,
+  seguros, wiki
+
+TABLEROS GUI IMPLEMENTADOS
+-----------------------------
+- Página de inicio (descripción general, tokens, bandeja de entrada)
+- Tablero de Habilidades (Agentes, Expertos, Habilidades, Herramientas)
+- Tablero de Memoria (Trabajo, Hechos, Lecciones, Sesiones)
+- Financiero (Asistente Financiero / Seguros)
+- Planificador de financiación (canal de clientes)
+- Salud (Asistente de salud - Beta)
+- ATI (desarrollo de concepto)
+
+CARACTERÍSTICAS PLANIFICADAS
+-----------------
+- Skill-Sync Sincronización automática de archivos <-> Jerarquía
+- Contexto compartido verdadero multi-LLM compartido en diferentes modelos
+- Los agentes en modo autónomo pueden realizar tareas de forma independiente (bucle)
+- Voice Full-Stack Integración completa de la interfaz de voz (STT/TTS/Wake)
+- Sistema de conector de extensión Signal Connector para incluir mensajero de señal
+- Sistema de conector de extensión WhatsApp Connector a WhatsApp
+
+CHANGELOG v2.0 (2026-02-06 a 2026-02-08)
+-------------------------------------------
+[v2.0.0 - 2026-02-08] Basado en Registro + Conector v2.0 + Voz
++ Sistema de controlador basado en registro (descubrimiento automático, más de 64 controladores)
++ API de biblioteca (bach_api.py) para acceso programático
++ Sistema de conector v2.0: cola, reintento/retroceso, disyuntor
++ Adaptador de tiempo de ejecución: Telegram, Discord, HomeAssistant
++ Servicio de voz: STT (Whisper/Vosk), TTS (pyttsx3), Wake Word
++ Servidor sin cabeza API REST (puerto 8001, 12 puntos finales)
++ Integración de demonio (poll_and_route + trabajos de despacho)
++ Migración de esquemas con seguimiento de reintentos y disyuntor
++ Esquema de base de datos: más de 210 tablas (única fuente de verdad)
++ 50 pruebas (test_core + test_smoke) - todas verdes
++ Rutas de registro consolidadas (solo sistema/datos/registros/)
++ Carpeta _partners consolidada (solo sistema/partners/)
+
+VER TAMBIÉN
+----------
+bach --help gui         Detalles del panel web
+bach --help tasks       Gestión de tareas
+bach --help wartung     Mantenimiento (trabajos/daemon)
+bach --help dirscan     Sistema de escáner
+bach --help connector   Detalles del sistema de conector
+
+OTROS RECURSOS
+------------------
+- Documentación de arquitectura: docs/con3_ANFORDERUNGSANALYSE.md
+- Registro de cambios: memoria/MEMORIA.md (sección bach.py v2.0)
+- Pruebas: sistema/pruebas/ (test_core.py, test_smoke.py)
+- REST API Swagger: http://localhost:8001/api/docs (si el servidor se está ejecutando)
+- Ejemplos de API de biblioteca: system/bach_api.py (Docstring)

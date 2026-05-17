@@ -1,0 +1,60 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CV - CV management and generation
+=============================================
+
+DESCRIPTION
+------------
+Handler for generating and managing CVs based on
+Data from the BACH database. Collects personal information, professional information
+Contacts and career information from registered folders and
+generates an ASCII-formatted resume.
+
+OPERATIONS
+-----------
+  bach cv generate               Generate and display resume
+  bach cv generate --output DATEI Lebenslauf in Datei speichern
+  bach cv generate --scan        Scan registered folders before generation
+  bach cv generate -o DATEI      Short form of --output
+  bach cv status                 View resume database status
+
+EXAMPLES
+---------
+  bach cv generate
+  bach cv generate --output ~/lebenslauf.txt
+  bach cv generate --scan --output cv_komplett.txt
+  bach cv status
+
+OPTIONS
+--------
+  --output FILE, -o FILE Save generated resume to FILE
+  --scan Scans folders for career data before generation
+
+DATA SOURCES
+------------
+The handler collects data from the following sources:
+
+  1. Personal data: assistant_user_profile table
+  2. Professional references: contacts (category: "professional")
+  3. Career folder: employers, certificates, training (with --scan)
+
+STATUS OUTPUT
+--------------
+The "status" command shows:
+  - Number of personal data records
+  - Professional references (active)
+  - Registered folders (with existence check)
+  - CV generator status
+
+FILES
+-------
+  Handler: hub/cv.py
+  Generator: agents/_experts/bewerbungsexperte/cv_generator.py
+  Database: data/bach.db
+
+SEE ALSO
+----------
+  --profile Management of user profile information
+  --contacts Management of contacts and references

@@ -1,0 +1,49 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Fuentes: docs/_archive/CONCEPT_user_folder_attachment.md, system/hub/mount.py
+
+MONTAJES DE USUARIO BACH (CONCEPT)
+==========================
+
+A partir de: 2026-02-08
+
+¿QUÉ SON LOS MONTAJES DE USUARIO?
+---------------------
+Los montajes de usuario son una función implementada (desde 2026-01-28, Tarea SYS_001) para Integre de forma transparente ubicaciones de almacenamiento externas (p. ej. NAS, discos duros externos, carpetas en la nube como Google Drive) en el sistema de archivos BACH. En lugar de copiar datos en la carpeta BACH, se vincula virtualmente.
+
+CÓMO FUNCIONA
+--------------
+El sistema utiliza "uniones de directorios" o "enlaces simbólicos" para proporcionar rutas externas como subcarpetas en el directorio `usuario/`.
+`filesystem_scanner` y `dirscan` pueden buscar estas rutas como carpetas locales, indexarlas y procesar archivos (por ejemplo, para OCR o extracción).
+
+OBJECTIVE
+-----------
+* **Sin redundancia**: los datos originales permanecen en su lugar.
+* **Transparencia**: Todas las herramientas BACH pueden acceder a los datos.
+* **Persistencia**: Las conexiones se guardan en la base de datos (tabla `conexiones`) y se restauran cuando es necesario (después del reinicio).
+
+EJEMPLO
+--------
+Un usuario tiene documentos fiscales en `E:\Archive\Tax`.
+Esto se integra a través del montaje del usuario como: `user/mounts/archiv_steuer/`.
+El agente fiscal ahora puede acceder a `user/mounts/archiv_steuer/2025/` como si fuera local.
+
+DETALLES TÉCNICOS
+------------------
+* **Tabla DB**: `connections` (type='mount', name='alias', endpoint='source_path')
+* **Handler**: `system/hub/mount.py` (administra los comandos mklink)
+* **Comandos CLI**:
+    - `bach mount add <ruta> <alias>` - carpeta de montaje
+    - `bach mount remove <alias>` - Quitar montaje
+    - `lista de monturas de Bach` - Mostrar monturas activas
+    - `restauración de montaje en Bach` - Restaurar montajes después del reinicio
+
+ESTADO
+------
+IMPLEMENTADO (desde 2026-01-28). Completamente funcional. Comandos CLI disponibles. Integración de GUI planificada para una fase posterior.
+
+VER TAMBIÉN
+----------
+wiki/it_tools/filecommander.txt Operaciones de archivos
+docs/_archive/CONCEPT_user_folder_attachment.md Concepto técnico (archivado)

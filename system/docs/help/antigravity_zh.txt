@@ -1,0 +1,54 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ANTIGRAVITY - 快速参考
+=============================
+
+Google Antigravity 是一个代理优先的开发平台。
+详细文档：wiki/antigravity.txt
+
+简要概述
+--------------
+  内容：带有自主 AI 代理的 VS Code 分支
+  下载：https://antigravity.google/download
+  路径：C:\Users\User\AppData\Local\Programs\Antigravity\
+
+CLI 命令
+-----------
+  反重力 [路径] 打开编辑器
+  反重力聊天 开始“提示”聊天（GUI！）
+  反重力聊天 -m agent 代理模式
+  antigravity --add-mcp {...} 添加 MCP 服务器
+
+键盘快捷键
+-------------
+  Cmd+L 切换代理面板
+  Cmd+I 内联补全
+  Cmd+E 切换编辑器/管理器
+
+开发模式
+----------------
+  代理驱动的自动驾驶仪（自主）
+  审查驱动 经许可（推荐）
+  代理辅助用户控制
+
+重要路径
+--------------
+  .gemini\antigravity\brain\ 任务列表（可引导！）
+  .gemini\antigravity\skills\ 全球技能
+  .agent\skills\ 工作区技能
+  .agent\workflows\ 工作流程 (/slash-commands)
+
+BACH 集成
+----------------
+  开始：start/start_gemini.bat（交互式）
+  脚本：pythontools/partner_communication/gemini_start.py
+  收件箱：系统/合作伙伴/gemini/收件箱/
+  发件箱：系统/合作伙伴/gemini/发件箱/
+
+另请参阅
+----------
+  wiki/antigravity.txt 完整文档
+  wiki/gemini.txt Gemini AI 模型
+  docs/help/partners.txt 人工智能合作伙伴系统

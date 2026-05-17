@@ -1,0 +1,102 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PROVEEDOR - Reglas específicas del proveedor
+=====================================
+
+DESCRIPCIÓN
+Reglas para procesar facturas y recibos.
+varios proveedores en línea.
+
+IMPORTANTE: Este es puramente un archivo de documentación sin ninguna información asociada
+Manejador. Las reglas se implementan en guiones de expertos en impuestos:
+- sistema/agentes/_experts/steuer/temu_ocr_batch.py
+- sistema/agentes/_experts/steuer/steuer_batch.py
+- sistema/agentes/_experts/steuer/beleg_vorfilter.py
+- system/agents/_experts/steuer/beleg_parser.py
+
+Los recibos se almacenan en subcarpetas:
+usuario/documentos/asistente_personal/tax/AAAA/costos publicitarios/belege/[proveedor]/
+
+TEMU
+====
+
+Contexto:
+Las facturas de TEMU se importan desde confirmaciones de pedidos por correo electrónico,
+no de recibos originales. Esta es una solución, hay
+Recuperar automáticamente los recibos originales lleva mucho tiempo.
+
+Reglas de entrada:
+
+1. PRECIOS
+   Extraiga siempre los archivos PDF del correo electrónico
+   (Los precios son volátiles en el sitio web)
+
+2. NOMBRES DE PRODUCTOS
+   Si falta texto o está incompleto:
+   - Derivar lógicamente del contexto.
+   - Mejor: busque el producto en temu.com para obtener el nombre correcto
+
+3. TIPO DE DOCUMENTO
+   Marcar como “Confirmación de pedido (alternativamente factura)”
+
+4. VALIDACIÓN POSTERIOR
+   Si los recibos originales se cargan más tarde,
+   Comparar y actualizar datos
+
+Nota para Hacienda:
+Los recibos originales solo se proporcionarán a pedido.
+Las confirmaciones de pedido sirven como prueba inicial.
+
+
+AMAZON
+======
+(Marcador de posición para reglas futuras)
+
+Agregue si es necesario:
+- Formato de factura
+- Características especiales de las ventas en el mercado.
+- Recibos de membresía Prime
+
+
+EBAY
+====
+(Marcador de posición para reglas futuras)
+
+Agregue si es necesario:
+- Conexión PayPal
+- Ventas privadas vs. comerciales
+
+
+OTROS PROVEEDORES
+================
+Si es necesario, agregue aquí:
+-Aliexpress
+-Deseo
+- Shein
+- Otros comercios minoristas en línea con formatos de factura especiales
+
+
+PROVEEDORES IMPLEMENTADOS EN BELEG_VORFILTER.PY
+==============================================
+- Temu (temu.com, Whaleco)
+- Amazon (amazon.de, amazon.com)
+- eBay (ebay.de, ebay.com)
+- PayPal (paypal.com)
+- Google Play
+- manzana
+- Medimops
+
+
+VER TAMBIÉN
+----------
+bach steuer help       Ayuda de Tax Handler
+bach steuer tools      Mostrar herramientas de impuestos disponibles
+
+HERRAMIENTAS
+-----
+temu_ocr_batch.py OCR por lotes para recibos de Temu (PDF basados en imágenes)
+steuer_batch.py Analizador de proveedores para Amazon, Temu, eBay
+beleg_vorfilter.py Clasificación automática de recibos
+beleg_parser.py Extracción de documentos basada en LLM

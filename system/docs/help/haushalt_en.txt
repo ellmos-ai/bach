@@ -1,0 +1,187 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DEALER NAME
+============
+household
+
+DESCRIPTION
+============
+Household management with routines, inventory, shopping lists and cost planning.
+Manages daily tasks, inventory management with traffic light system (red/yellow/green),
+Suppliers and fixed costs. Integration with Routine Handler and BACH Unified Database.
+
+
+OPERATIONS
+===========
+
+status
+  Household dashboard: routine overview, inventory traffic light, monthly fixed costs,
+  Shopping list, superficial routines. Combination of all subsystems.
+  Syntax: bach household status
+
+due [DAYS]
+  Tasks due in the next N days (default: 7 days).
+  Separates overdue (RED) from pending (YELLOW) routines.
+  Syntax: bach household due | bach household due 14
+
+today
+  Daily overview: What's happening today? (Routines + appointments).
+  Loads DailyOverview Service.
+  Syntax: bach household today
+
+week
+  Weekly plan (Mon-Sun): routines + appointments with time.
+  Marks overdue items in the current week.
+  Syntax: bach household week
+
+costs
+  Monthly fixed cost overview.
+  Calculates monthly loads from contracts (fin_contracts):
+  - monthly: direct
+  - annually: /12
+  - quarterly: /3
+  Syntax: bach household costs
+
+costs-month [FILTER]
+  Expected irregular costs per month (insurance, maintenance).
+  Optional: Filter by category.
+  Syntax: bach household costs-month | bach household costs-month "auto"
+
+add-costs NAME CATEGORY AMOUNT INTERVAL
+  Add irregular costs.
+  INTERVAL: monthly|quarterly|yearly|once
+  Syntax: bach household add costs "TÜV" "auto" 150 "annually"
+
+cost list [FILTER]
+  Show all cost entries with status.
+  Syntax: bach household cost list
+
+insurance check
+  Insurance check: All active policies with contributions.
+  Loads fin_insurances, calculates monthly sum.
+  Syntax: bach household insurance check
+
+shopping
+  Shopping list: All items still to be purchased with priority.
+  Syntax: bach household shopping
+
+add-shopping NAME [CATEGORY] [PRIORITY]
+  Add items to shopping list.
+  PRIORITY: normal|high|low (default: normal)
+  Syntax: bach household add-shopping "milk" "food" "high"
+
+done-shopping ID [ID2 ID3...]
+  Mark item as purchased.
+  Syntax: bach household done-shopping 5 6 7
+
+inventory
+  Inventory with traffic light overview (red/yellow/green).
+  Uses InventoryEngine with sleepers.
+  Syntax: bach household inventory
+
+add-item NAME CATEGORY STORAGE THRESHOLD [LAGERMAX]
+  Add items to inventory.
+  STORAGE THRESHOLD: Value at which red is displayed.
+  Syntax: bach household add-item "olive oil" "cooking" 0.5 2
+
+stock-in ITEM NAME QUANTITY [DATE]
+  Post goods receipt (to warehouse). Creates transaction.
+  Syntax: bach household stock-in "Olivenoel" 1.5 2026-03-04
+
+stock-out ITEM NAME QUANTITY [DATE]
+  Post consumption (from warehouse). Creates transaction.
+  Syntax: bach household stock-out "Olivenoel" 0.3 2026-03-04
+
+pull-check
+  Shopping Pull List: Which items need to be purchased?
+  Shows RED (Below Threshold) and YELLOW (Below Max) items.
+  Syntax: bach household pull-check
+
+traffic light
+  Traffic light overview: All inventory items with status (RED/YELLOW/GREEN).
+  Syntax: bach household traffic light
+
+order [ITEM] [QTY]
+  Create orders for items or view pending orders.
+  Syntax: bach household order | bach household order "Olivenoel" 5
+
+supplier
+  Show suppliers with contact and available items.
+  Syntax: bach household supplier
+
+add-supplier NAME CONTACT [SHIPPING DAYS]
+  Add supplier.
+  SHIPPING DAYS: Average delivery time (default: 5).
+  Syntax: bach household add-supplier "BioGro GmbH" "info@biogro.de" 3
+
+export routine [FILTER]
+  Export routines for external use/backup.
+  Optional: Filter by category.
+  Syntax: bach household export routine | bach household export routine "Kitchen"
+
+help
+  View this help.
+  Syntax: bach household help
+
+
+EXAMPLES
+=========
+
+1. View Dashboard:
+   bach haushalt status
+
+2. Overdue routines for this week:
+   bach haushalt due 7
+
+3. Weekly plan with routines + appointments:
+   bach haushalt week
+
+4. Add items to shopping list:
+   bach haushalt add-shopping "Mehl" "Lebensmittel" "normal"
+
+5. Post goods receipt:
+   bach haushalt stock-in "Mehl" 2.5
+
+6. Shopping Pull List (What’s missing?):
+   bach haushalt pull-check
+
+7. Monthly fixed costs:
+   bach haushalt costs
+
+8. Add irregular costs:
+   bach haushalt add-kosten "KFZ-Versicherung" "auto" 80 "monatlich"
+
+
+FILES
+=======
+hub/household.py main handler
+hub/_services/household/Household Services
+  inventory_engine.py inventory + traffic light logic
+  shopping_service.py Shopping list management
+hub/_services/dashboard/
+  daily_overview.py Daily overview
+
+
+DATABASE TABLES
+===================
+bach.db / Unified Database (since v1.1.84):
+- household_routines Daily tasks/routine management
+- household_inventory items with thresholds
+- household_orders Orders to suppliers
+- household_suppliers supplier contacts
+- household_stock_transactions bookings in/out (audit log)
+- household_shopping shopping lists
+- household_costs Irregular costs
+- assistant_calendar appointments (for weekly plan)
+- fin_contracts contracts (for fixed costs)
+- fin_insurances insurance (for status dashboard)
+
+
+SEE ALSO
+==========
+bach routine ...                  Routine management (individual states)
+bach routine done <id>            Mark routine as completed
+bach fin costs                    Financial cost management
+bach calendar ...                 Appointment management

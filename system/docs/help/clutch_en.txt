@@ -1,0 +1,39 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CLUTCH - Agentic driving assistance (clutch-bridge)
+===================================================
+
+DESCRIPTION
+------------
+Clutch is BACH's bridge to clutch-bridge, an agentic driving assistance module.
+It analyzes driving tasks, displays metrics and monitors system health.
+
+Note: Requires the clutch-bridge package. Everyone is without this package
+Operations disabled.
+
+
+OPERATIONS
+-----------
+  bach clutch status          Overall status of all clutch-bridge components
+  bach clutch analyse         Analyze task (route analysis + gas/brake)
+  bach clutch metriken        Show logbook metrics
+  bach clutch fitness         Driving school fitness overview
+  bach clutch health          On-board computer health status
+
+
+REQUIREMENTS
+---------------
+  - clutch-bridge module must be installed
+  - Is automatically recognized when importing
+
+
+FILES
+-------
+  Handler: hub/clutch.py
+
+
+SEE ALSO
+----------
+  help status System status

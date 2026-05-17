@@ -1,0 +1,48 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DATA FORMATS
+============
+
+Status: 2026-02-08
+
+BASIC RULE: DATABASE BEFORE JSON
+------------------------------
+BACH uses SQLite (`bach.db`) as primary data storage (currently 210+ tables).
+JSON files are ONLY permitted in justified exceptional cases.
+
+WHEN DATABASE (STANDARD)?
+--------------------------
+  - Persistent system data (tools, tasks, config)
+  - Historical data (logs, sessions, lessons learned)
+  - Large data sets (Wiki, Med-Research)
+  - Integrity (Hash-Based Validation)
+
+WHEN JSON IS ALLOWED (EXCEPTIONS)?
+------------------------------
+1. COMPLEX HIERARCHIES: `system/data/skills_hierarchy.json` (Interactive Trees).
+2. LOCAL CONFIG: If required individually (e.g. UI preferences).
+3. MCP-CONFIG: If Claude Desktop Integration is desired.
+4. Ephemeral process data: Temporary snapshots when required.
+
+OTHER FORMATS
+--------------
+  - TOON: Token optimized datasets for LLM injection.
+  - MD: Documentation and report output (`outbox/`).
+
+MIGRATION JSON -> DB (Completed successfully)
+-----------------------------------------------
+- `partner_registry.json` -> `partner_recognition` (table)
+- `connections.json` -> `connections` (table)
+- `injectors.txt` -> `automation_injectors` (table)
+- `inbox_folders.txt` -> `folder_scans` (table)
+
+CONVERSION
+-------------
+  python system/tools/c_universal_converter.py <file> --to [json|yaml|toml|xml|toon]
+
+SEE ALSO
+----------
+  docs/help/maintain.txt Integrity check and seal mechanism
+  bach --db status     Current status of the 210+ tables

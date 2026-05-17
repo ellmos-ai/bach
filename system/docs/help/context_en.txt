@@ -1,0 +1,61 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CONTEXT - Context search and long-term memory
+=============================================
+
+DESCRIPTION
+------------
+The Context Handler enables comprehensive search and management of contextual
+information. It searches memory archives, chat histories, task descriptions
+and system files. Ideal for automatic context loading before new sessions.
+
+OPERATIONS
+-----------
+  bach context auto                    Automatically load relevant context
+                                       (last memory entries, priority tasks,
+                                        Lessons learned, warnings)
+
+  bach context search BEGRIFF          Search all sources with search term
+  [--from DATUM] [--to DATUM] Supports AND/OR/NOT logic
+  [--scope AREA] Scope: 'all'|'longterm'|'system'
+
+  bach context longterm                Show memory archive sorted by time
+  [--from DATUM] [--to DATE] Date filter in the format YYYY-MM-DD
+                                       Shows max. 20 entries + counter
+
+  bach context recent [N]              Show last N memory entries
+                                       Default: 5 if N is not specified
+
+EXAMPLES
+---------
+  # Load auto context (session start)
+  bach context auto
+
+  # Search for terms
+  bach context search "deployment pipeline"
+  bach context search "FEHLER regression" --from 2026-02-01 --to 2026-03-01
+  bach context search "Python unittest" --scope system
+
+  # Search memory
+  bach context longterm
+  bach context longterm --from 2026-02-15
+
+  # Recent Entries
+  bach context recent
+  bach context recent 10
+
+FILES
+-------
+  Handler: hub/context.py
+  Memory archive: memory/*.md
+  Task management: memory/tasks.json
+  Lessons: docs/help/lessons.txt
+  Log directory: data/logs/
+
+SEE ALSO
+----------
+  bach search     - Search files in the workspace
+  bach memory     - Create/manage memory entries
+  bach status     - Current session information

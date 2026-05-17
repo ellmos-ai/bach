@@ -1,0 +1,93 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+連絡先 - 管理者に連絡します
+===========================
+
+説明:
+  フリーテキスト検索を使用して個人およびビジネスの連絡先を管理します。
+  コンテキストフィルタリングと誕生日の概要。連絡先は次の方法で送信されます
+  論理的な削除は無効になっています (削除されていません)。
+
+コマンド:
+  bach contact list              すべてのアクティブな連絡先を表示
+  bach contact list --all        すべての連絡先を表示します。非アクティブな連絡先
+  bach contact list -c privat    コンテキストによるフィルタ
+  bach contact search <term>     フリーテキスト検索 (名前、メール、電話、会社、メモ、タグ)
+  bach contact add "Name"        新しい連絡先の作成
+  bach contact show <id>         連絡先の詳細を表示
+  bach contact edit <id>         連絡先を編集
+  bach contact delete <id>       連絡先を非アクティブ化 (論理削除)
+  bach contact birthday          誕生日 (今後 30 日間)
+  bach contact birthday 90       誕生日 (今後 90 日間)
+  bach contact export            すべての連絡先をエクスポート (テキスト/CSV/vCard)
+  bach contact export --type arzt --format csv  医師の連絡先を次のようにエクスポートCSV
+  bach contact export --format vcard --file out.vcf  vCard をファイルにエクスポート
+  bach contact help              このヘルプ
+
+追加/編集のオプション:
+  --context、-c context (民間|専門|保険|金融|医師|その他)
+  --email、-e メールアドレス
+  --phone、-p 電話 (固定電話)
+  --mobile、-m 携帯電話番号
+  --アドレス、-アドレス
+  --誕生日、-b 誕生日 (DD.MM.YYYY または YYYY-MM-DD)
+  --会社 会社/組織
+  --position 社内での役職・役割
+  --tags カンマで区切られたタグ (例: "dev,it,freelance")
+  --note メモ (edit: が既存のメモに追加される場合)
+  --name 名前の変更 (編集のみ)
+
+エクスポートのオプション:
+  --type、-t 特定のコンテキスト (doctor、private など) のみをエクスポートします。
+  --format、-f エクスポート形式: txt (デフォルト)、csv、vcard
+  --file、-o 出力ファイル (それ以外の場合はコンソール出力)
+
+コンテキスト:
+  プライベートな友人、家族、知人
+  専門的な仕事の同僚、ビジネス上の連絡先
+  保険のアドバイザー、代理店
+  金融税務顧問、銀行顧問
+  医師、セラピスト、薬局
+  other その他すべて
+
+データベース:
+  メインテーブル: bach.db/contacts
+  フィールド: ID、名前、カテゴリ、電子メール、電話、phone_mobile、番地、誕生日、
+          組織、役職、タグ、メモ、is_active、created_at、updated_at
+
+例:
+  # すべての詳細を含む連絡先を作成します:
+  bach contact add "Dr. Mueller" --context arzt --phone 030-12345 --email mueller@example.de --address "Hauptstr. 1, 10115 Berlin"
+
+  # 会社および役職との専門的な連絡先:
+  bach contact add "Lisa Schmidt" --context beruflich --company "Beispiel GmbH" --position "Teamlead" --tags "dev,it" --email lisa@example.com
+
+  # 連絡先を検索:
+  bach contact search Mueller
+
+  # 電話番号と会社を変更します:
+  bach contact edit 5 --phone 030-99999 --company "Neue GmbH" --note "Gewechselt ab Jan 2026"
+
+  # すべての保険の連絡先:
+  bach contact list -c versicherung
+
+  # もうすぐ誕生日が来るのは誰ですか?
+  bach contact birthday 60
+
+  # エクスポートの例:
+  bach contact export                              # コンソールのテキスト形式
+  bach contact export --format csv                 # コンソールの CSV
+  bach contact export --type arzt --format csv     # 医師の連絡先のみ CSV として
+  bach contact export --format vcard --file kontakte.vcf  # ファイル内の vCard
+  bach contact export --file export.csv            # ファイル内の CSV
+
+INTERPLAY:
+  - health_contacts (健康モジュール内の医師の連絡先) から分離します。
+  - 連絡先 = 中央連絡先テーブル (CLI + GUI + vCard エクスポート)
+  - GUI: [連絡先] タブ (利用可能な場合)
+
+既知の制限事項:
+  - 「bach contact list --all」は、非アクティブな連絡先を視覚的なマークなしで表示します
+  - タグは検索では検索されますが、リストビューでは表示されません

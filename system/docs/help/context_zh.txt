@@ -1,0 +1,61 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+上下文 - 上下文搜索和长期记忆
+=============================================
+
+描述
+------------
+上下文处理程序可以全面搜索和管理上下文
+信息。它搜索内存档案、聊天记录、任务描述
+和系统文件。非常适合在新会话之前自动加载上下文。
+
+操作
+-----------
+  bach context auto                    自动加载相关上下文
+                                       （最后的记忆条目、优先任务、
+                                        经验教训，警告）
+
+  bach context search BEGRIFF          使用搜索词搜索所有来源
+  [--from DATUM] [--to DATUM] 支持 AND/OR/NOT 逻辑
+  [--scope AREA] 范围：'all'|'longterm'|'system'
+
+  bach context longterm                显示按时间排序的内存存档
+  [--from DATUM] [--to DATE] 日期过滤器，格式为 YYYY-MM-DD
+                                       显示最大20 个条目 + 计数器
+
+  bach context recent [N]              显示最后 N 个内存条目
+                                       默认值：5（如果未指定 N）
+
+示例
+---------
+  # 加载自动上下文（会话开始）
+  bach context auto
+
+  # 搜索术语
+  bach context search "deployment pipeline"
+  bach context search "FEHLER regression" --from 2026-02-01 --to 2026-03-01
+  bach context search "Python unittest" --scope system
+
+  # 搜索内存
+  bach context longterm
+  bach context longterm --from 2026-02-15
+
+  # 最近条目
+  bach context recent
+  bach context recent 10
+
+文件
+-------
+  处理程序：hub/context.py
+  内存存档：内存/*.md
+  任务管理：内存/tasks.json
+  课程：docs/help/lessons.txt
+  日志目录：data/logs/
+
+另请参见
+----------
+  bach search     - 搜索工作区中的文件
+  bach memory     - 创建/管理内存条目
+  bach status     - 当前会话信息

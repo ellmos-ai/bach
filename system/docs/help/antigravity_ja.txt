@@ -1,0 +1,54 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ANTIGRAVITY - クイック リファレンス
+=============================
+
+Google Antigravity は、エージェントファーストの開発プラットフォームです。
+詳細なドキュメント: wiki/antigravity.txt
+
+簡単な概要
+--------------
+  内容: 自律型 AI エージェントを備えた VS Code フォーク
+  ダウンロード: https://antigravity.google/download
+  パス: C:\Users\User\AppData\Local\Programs\Antigravity\
+
+CLI コマンド
+-----------
+  反重力 [パス] エディターを開く
+  反重力チャット 「プロンプト」チャットを開始します (GUI!)
+  反重力チャット -m エージェント エージェント モード
+  antigravity --add-mcp {...} MCP サーバーを追加します
+
+キーボード ショートカット
+-------------
+  Cmd+L エージェントパネルの切り替え
+  Cmd+I インライン補完
+  Cmd+E エディター/マネージャーの切り替え
+
+開発モード
+----------------
+  エージェント主導の自動操縦 (自律)
+  レビュー主導 許可を得て (推奨)
+  制御中のエージェント支援ユーザー
+
+重要なパス
+--------------
+  .gemini\antigravity\brain\ タスク リスト (読みやすい!)
+  .gemini\antigravity\skills\ グローバル スキル
+  .agent\skills\ ワークスペース スキル
+  .agent\workflows\ ワークフロー (/slash-commands)
+
+BACH 統合
+----------------
+  開始: start/start_gemini.bat (対話型)
+  スクリプト: python tools/partner_communication/gemini_start.py
+  受信箱: system/partners/gemini/inbox/
+  送信ボックス: system/partners/gemini/outbox/
+
+関連項目
+----------
+  wiki/antigravity.txt 完全なドキュメント
+  wiki/gemini.txt Gemini AI モデル
+  docs/help/partners.txt AIパートナーシステム

@@ -1,0 +1,130 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+エクスポート - DB から Markdown へのエクスポート スクリプト
+=======================================
+
+説明
+============
+
+BACH はデータベースの内容を Markdown ファイルとしてエクスポートし、簡単に
+可読性とバージョン管理。エクスポート スクリプトは bach.db から読み取られ、
+data/ ディレクトリに構造化された .md ファイルを作成します。さらに
+スタンドアロン パッケージにはスキル エクスポートがあります。
+
+すべてのスクリプトは tools/ にあり、直接実行できます。
+
+
+概要
+==========
+
+  スクリプトはソース（DBテーブル）を作成します
+  ---------------------- ----------------------- ----------------------- -----------------------------
+  Agents_export.py データ/AGENTS.md エージェント、agent_synergies
+  chains_export.py データ/CHAINS.md ツールチェーン (bach.db)
+  Partners_export.py データ/PARTNERS.md delegation_rules、
+                                                    パートナーの認識
+  workflows_export.py data/WORKFLOWS.md skill/workflows/ (スキャン)
+  usecases_export.py データ/USECASES.md ユースケース (bach.db)
+  skill_export.py ZIP パッケージ skill/ (ファイル システム)
+
+
+個別の説明
+====================
+
+AGENTS_EXPORT
+-------------
+登録されているすべてのエージェントをシナジーとともにエクスポートします。からの読み取り
+エージェントテーブルとagent_synergies、フォーマットされた概要を作成します
+
+
+ 名前、タイプ、ステータス、相乗関係を示します。
+
+  Python ツール/agents_export.py
+  出力: data/AGENTS.md
+-------------
+CHAINS_EXPORT
+
+ツールチェーン (チェーンされたツール呼び出し) をエクスポートします。からの読み取り
+ツールチェーン テーブル。チェーン定義、トリガー、および
+実行履歴。
+
+  Pythonツール/chains_export.py
+  出力: data/CHAINS.md
+---------------
+PARTNERS_EXPORT
+
+マルチ LLM パートナー構成をエクスポートします。 delegation_rules を読み取ります
+DBからのpartner_recognitionと。パートナーのプロフィール、強み、
+委任ルールと認識パターン。
+
+  Python ツール/partners_export.py
+  出力: data/PARTNERS.md
+----------------
+WORKFLOWS_EXPORT
+
+スキル/workflows/ をスキャンしてワークフロー ファイル (.md) を作成します。
+概要。正規表現を介してメタデータ (タイトル、目標、ステップ) を抽出します
+ファイルの内容から。
+
+  python tools/workflows_export.py
+  出力: data/WORKFLOWS.md
+---------------
+USECASES_EXPORT
+
+ユースケース テーブルからユースケースをエクスポートします。シナリオ名を表示します。
+説明、関連するハンドラー、および成功率。
+
+  python tools/usecases_export.py
+  出力: data/USECASES.md
+------------
+SKILL_EXPORT
+
+単一のスキルをスタンドアロン ZIP パッケージとしてエクスポートします。
+依存関係の解決。 SKILL.md、ツール、ワークフロー、および
+requirements.txt を作成します。
+
+  python tools/skill_export.py <スキル名> [--output <パス.zip>]
+  出力: 完全なスキル構造を含む ZIP ファイル
+
+
+  注: より広範なエクスポート (エージェント、OS) については、exporter.py を参照してください。
+  および builder.txt (bach help builder)。
+=========
+
+例
+
+# すべての DB エクスポートを一度に更新します
+Python ツール/agents_export.py
+Pythonツール/chains_export.py
+Python ツール/partners_export.py
+python tools/workflows_export.py
+python tools/usecases_export.py
+
+# 単一のスキルをエクスポートする
+python tools/skill_export.py recherche --output recherche_v1.zip
+
+
+# エクスポートされた Markdown ファイルを確認する
+ls data/*.md
+=======
+
+FILES
+
+tools/agents_export.py エージェントのエクスポート
+tools/chains_export.py ツールチェーンのエクスポート
+tools/partners_export.py パートナー エクスポート
+tools/workflows_export.py ワークフローのエクスポート
+tools/usecases_export.py ユースケースのエクスポート
+tools/skill_export.py スキル スタンドアロン エクスポート
+
+
+data/AGENTS.md 生成されたエージェントの概要
+data/CHAINS.md 生成されたツールチェーンの概要
+data/PARTNERS.md 生成されたパートナーの概要
+data/WORKFLOWS.md 生成されたワークフローの概要
+data/USECASES.md 生成されたユースケースの概要
+==========
+
+関連項目

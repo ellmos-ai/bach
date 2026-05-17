@@ -1,0 +1,41 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BUGFIX PROTOCOL - QUICK REFERENCE
+===================================
+
+For errors, ALWAYS follow this order:
+
+1. STANDARD FIXER FIRST
+   python system/tools/c_standard_fixer.py <file>
+   Fixes: BOM, encoding, umlauts, JSON issues
+   -> Problem solved? Work saved!
+
+2. IMPORT DIAGNOSIS
+   python system/tools/c_import_diagnose.py <folder>
+   Checks: Circular Imports, missing modules
+
+3. CODE ANALYSIS
+   python system/tools/c_method_analyzer.py <file>
+   Checks: Attribute before definition, signal callbacks
+
+4. ISOLATED TESTING
+   Create minimal test script
+   Narrow down gradually
+
+5. 20 MINUTE RULE
+   After 20 minutes without progress: STOP
+   Create a bug report, continue later
+
+QUICK CHECK:
+
+| Error type | First action |
+|---------------------|------------------------|
+| Import error | c_import_diagnose.py |
+| AttributeError | c_method_analyzer.py |
+| Silent Crash | c_method_analyzer.py |
+| Encoding/BOM | c_standard_fixer.py 
+
+|NOTE: This file documents standalone tools, not a handler.
+         Detailed bugfix workflows: skills/workflows/bugfix-protocol.md

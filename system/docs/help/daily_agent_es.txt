@@ -1,0 +1,79 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+AGENTE DIARIO - Agente diario autónomo con sesión persistente
+============================================================
+
+DESCRIPCIÓN
+------------
+El Agente Diario es un controlador BACH que ejecuta un Agente Claude Code persistente
+comienza con --continue y procesa la cola de tareas diarias. El agente puede
+Genere sesiones informativas matutinas con componentes modulares y resúmenes de sesiones.
+guardar. La instancia del agente es monitoreada (seguimiento PID) y puede ser dirigida
+ser terminado. Los módulos de información se pueden activar/desactivar.
+
+
+OPERACIONES
+-----------
+  bach daily-agent start                Iniciar agente (Código Claude --continuar)
+  bach daily-agent stop                 Detener agente + resumen de sesión
+  bach daily-agent status               Mostrar PID e información de tiempo de ejecución
+  bach daily-agent briefing             Iniciar sesión informativa de la mañana (módulos activos)
+  bach daily-agent summary              Generar resumen de la tarde
+  bach daily-agent config               Listar módulos de sesión informativa
+  bach daily-agent modules              Alias para configuración
+  bach daily-agent toggle <modul>       Módulo Activar/desactivar
+
+Módulos de sesión informativa (alternar):
+  task_briefing Tareas abiertas (predeterminado: activado)
+  message_briefing Mensajes no leídos (ON)
+  news_briefing Resumen de noticias (AN)
+  session_briefing Última sesión (ON)
+  Weather_briefing Clima (predeterminado: APAGADO)
+  calendar_briefing Citas del calendario (OFF)
+
+
+EJEMPLOS
+---------
+  bach daily-agent start                Inicia agente con modelo 'sonnet'
+  bach daily-agent start --model=opus   Inicia con modelo 'opus'
+  bach daily-agent status               Muestra PID y hora de inicio
+  bach daily-agent briefing             Genera resumen con módulos activos
+  bach daily-agent toggle news_briefing Deaktiviert News-Modul
+  bach daily-agent summary              Muestra tareas completadas hoy
+  bach daily-agent stop                 Detiene agente + guarda resumen
+
+
+ARCHIVOS
+-------
+  Controlador: hub/daily_agent.py
+  Archivo PID: data/daily_agent.pid (JSON con PID, hora de inicio, modelo)
+  Base de datos: data/bach.db (briefing_config, tareas, memoria_trabajo, ...)
+  Resúmenes: resúmenes generados en stdout/Logs
+
+
+DETALLES DEL MÓDULO
+-------------
+task_briefing: 10 tareas pendientes principales (título abreviado), posiblemente trabajos recurrentes
+message_briefing: contador de mensajes no leídos (estado='no leído')
+news_briefing: noticias no leídas de news_items (categorías principales + 3 títulos)
+session_briefing: Últimas sesiones de memoria.summary (acortado a 120 caracteres)
+Weather_briefing: Probé Weather_Service (coordenadas codificadas en 0.0)
+calendar_briefing: Eventos de hoy de calendar_events (5 próximos eventos)
+
+
+MANEJO DE ERRORES
+----------------
+- El agente se inicia en segundo plano (stdout/stderr suprimido)
+- El archivo PID debe eliminarse manualmente si el proceso falla
+- Los módulos informativos ignoran los errores silenciosos de la base de datos (por ejemplo, si news_items no existe)
+- detener guarda el resumen INCLUSO si el agente ya está muerto
+
+
+VER TAMBIÉN
+----------
+  bach --help
+  bach scheduler              (tareas periódicas)
+  concentrador/base.py(BaseHandler)
+  documentos/ayuda/memoria.txt

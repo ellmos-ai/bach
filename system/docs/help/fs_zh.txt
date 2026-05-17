@@ -1,0 +1,97 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+============
+fs - 文件系统保护 CLI
+
+用于完整性检查和恢复 BACH 系统核心文件的处理程序。
+保护关键文件免遭意外删除或损坏。
+
+
+描述
+============
+fs 处理程序管理 BACH 文件系统的快照和清单系统。
+它按保护级别（dist_type）对文件进行分类：
+  - dist_type=2：CORE（系统必备文件，优先级最高）
+  - dist_type=1：TEMPLATE（模板，中等优先级）
+  - dist_type=0：USER（用户数据，无自动化）
+
+依赖关系：
+  -tools/fs_protection.py（FSProtection 类）
+  -tools/fs_protection.py（PathClassifier 类）
+  - data/bach.db（清单数据库）
+  - dist/snapshots/*.orig（快照存档）
+
+
+操作
+===========
+检查[默认]
+    检查所有受监控文件的完整性。
+    将当前文件与 dist/snapshots/ 中的快照进行比较。
+    输出丢失/损坏文件的状态和列表。
+    调用： bach fs check
+
+heal [file] 或 --all [--force]
+    恢复丢失或损坏的文件。
+    - bach fsheal <文件>：从快照恢复特定文件
+    - bach fsheal --all：恢复所有丢失的文件
+    - --force 标志：覆盖而不警告
+    返回：（成功，消息）
+
+分类<路径>
+    显示路径的分类和保护级别。
+    输出 dist_type (0/1/2) 和保护级别 (USER/TEMPLATE/CORE)。
+    调用： bach fs recognize /path/to/file
+
+scan [无参数]
+    按 dist_type 扫描 system/ 目录和组。
+    输出每个类别的文件数。
+    调用：bach fs scan
+
+status [无参数]
+    使用元数据显示当前保护状态：
+    - dist/snapshots/ 中的快照数量
+    - bach.db 中的清单条目
+    - 上次完整性检查的时间戳 (fs_manifest.json)
+    - 上次备份的时间戳
+    调用：bach fs status
+
+
+示例
+=========
+1。检查系统完整性：
+   $巴赫fs检查
+
+2。恢复所有丢失的核心文件：
+   $ 巴赫 fs 治愈 --all
+
+3.修复特定损坏的文件：
+   $ 巴赫 fs 治愈集线器/base.py
+
+4。检查文件的分类：
+   $ bach fs 分类数据/bach.db
+
+5。查看文件系统统计信息：
+   $bach fs 扫描
+
+6。查看当前保护状态：
+   $ bach fs status
+
+
+FILES
+=======
+hub/fs.py 处理程序实现（160 行）
+tools/fs_protection.py FSProtection + PathClassifier 类
+data/bach.db SQLite 清单数据库
+data/fs_manifest.json 元数据（last_check、last_backup）
+dist/snapshots/ 快照存档（*.orig 文件）
+
+
+另请参见
+==========
+dist 快照管理（bach dist 快照）
+base.py BaseHandler抽象类
+tools/fs_protection.py 技术文档
+BACH_SYSTEM.md 系统架构与设计

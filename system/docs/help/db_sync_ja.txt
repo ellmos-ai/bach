@@ -1,0 +1,104 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+============
+db_sync - ProSync: マルチシステム DB 同期
+
+
+説明
+============
+ProSync は、複数のシステム間で BACH データベースを同期します。
+
+アーキテクチャ:
+- 各システムにはローカル DB (~/.bach/bach.db) があります。
+- OneDrive はトランジット ハブとして機能します (.SYNC/bach_db_transit/)
+- BACH の開始 (プル) と終了 (プッシュ) で同期します。
+- 137 のテーブルが動的に認識され同期されます
+
+スマート マージ: タイムスタンプ列を持つテーブルは最終書き込み優先を使用します
+ハートビートによる競合チェックあり (5 分のウィンドウ)。スキーマドリフト防止
+共有列の検出と名前付き INSERT を使用します。シークレットはバックアップから作成されます
+削除されました。自動クリーンアップ戦略: ホストごとに最新のバックアップを保持します。
+さらに、X 日以内のすべて (デフォルト: 7 日、ホストごとに 10)。
+
+ProSync はオプションです。単一システムのインストールでは同期は必要ありません。
+構成: bach setup prosync --multi-system / --single-system.
+
+
+操作
+===========
+bach db backup
+  bach.db の手動バックアップを作成しました。
+  形式: bach_HOSTNAME_TIMESTAMP.bachdb (例: bach_LAPTOP_2026-03-04T14-30-00.bachdb)
+  Traeger: リモート要求ではなく、ローカル要求です。
+
+bach db sync
+  完全同期を実行します: プル (新しいバックアップ) + マージ + プッシュ (独自のバックアップ)。
+  競合チェック: 他の PC がアクティブな場合 (ハートビート < 5 分)、確認が求められます。
+  フラグ: --auto または -y (非対話型モードの場合)。
+  マージ戦略: 新しい行 (タイムスタンプ) が優先されます (INSERT OR REPLACE)。
+
+bach db status
+  ステータスを表示: ローカル DB、バックアップ フォルダー、最新の 10 件のバックアップ (ホスト、時間、サイズ)、
+  アクティブな PC とそのハートビート。
+
+bach db cleanup
+  保持ポリシーに基づいて古いバックアップを削除します。
+  ルール: ホストごとに最新の 10 件、または 7 日未満のものを保持します (構成可能)。
+  削除されたバックアップの数を返します。
+
+bach db enable
+  起動時/終了時の自動同期を有効にします (構成フラグを設定します)。
+
+bach db disable
+  自動同期を無効にします。
+
+
+例
+=========
+# 危険な操作の前に手動バックアップ
+bach db backup
+
+# 競合チェックで同期 (対話型)
+bach db sync
+
+# 無人同期 (cron ジョブ/自動化)
+bach db sync --auto
+
+# 同期前にステータスを確認 (アクティブな PC とバックアップを表示)
+bach db status
+
+# 古いバックアップのクリーンアップを手動でトリガー
+bach db cleanup
+
+
+ファイル
+=======
+相対system/:
+
+hub/db_sync.py
+  コア実装 (DBSyncManager、DBSyncHandler)。
+  動的テーブル認識: 137 個の同期可能なテーブル (ハードコーディングの代わりに)。
+  共有列 + 名前付き INSERT によるスキーマのドリフトセーフ。
+
+~/.bach/bach.db
+  ローカル実稼働データベース (ProSync 以降のプライマリ DB)。
+
+data/bach.db
+  OneDrive フォールバック DB (ProSync がアクティブな場合は直接記述されなくなりました)。
+
+OneDrive/.SYNC/bach_db_transit/
+  .bachdb ファイルと heartbeat.json のトランジット ハブ。
+  ハートビート: 競合検出のためにアクティブな PC (ホスト名、PID、タイムスタンプ) を追跡します。
+
+data/config/db_sync_enabled
+  ProSync アクティベーションのフラグ (「bach setup prosync --multi-system」で作成)。
+
+
+関連項目
+==========
+- docs/help/setup.txt: bach setup prosync (構成)
+- Hub/bach_paths.py: BACH_DB、PROSYNC_TRANSIT_DIR、LOCAL_BACH_DIR
+- Basehandler / ハンドラー フレームワーク: インターフェイスについては、base.py を参照してください。

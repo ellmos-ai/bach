@@ -1,0 +1,63 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ディレクトリの真実
+===============
+
+自動ディレクトリ状態管理。
+
+コンセプト:
+  - 起動: 実際のステータスを記録し、TARGET と比較します
+  - シャットダウン: 現在のステータスが新しいTARGETになります
+  - ヒューリスティック: クロードの変更が必要です
+
+プロセス:
+
+1。最初のスタート
+   - 現在の状態 = TARGET 状態
+   - data/directory_truth.json
+
+2 に保存されます。次のスタート
+   - スキャンの現在のステータス
+   - SHOULDとの比較
+   - 外部の変更を表示します (ユーザーが何かを変更しました)
+
+3.シャットダウン
+   - 現在のステータスが新しいTARGETになります
+   - クロードの変更は「標準」になりました
+
+無視されます:
+  - __pycache__
+  - .pyc ファイル
+  - .git、.idea、.vscode
+  - auto_log.txt (常に変更されます)
+  - current.md (メモリ)
+
+変更時の出力:
+  + 新しいフォルダー/ファイル
+  - 削除されたフォルダー/ファイル
+  ~ 変更されたファイル
+
+利点:
+  - クロードは何が変更されたかを手動で追跡する必要がありません
+  - 外部変更(ユーザー)が認識される
+  - 独自の変更が自動的に採用されました
+
+統合:
+  - Hub/startup.py で自動的に (起動時の DirectoryScanner)
+  - Hub/shutdown.py に自動的に保存 (シャットダウン中に状態を保存)
+  - 独自のハンドラーなし、ツールベース (tools/c_dirscan.py)
+
+CLI (手動):
+  python c_dirscan.py # ステータスを表示
+  python c_dirscan.py --scan # 現在の状態をスキャンします
+  python c_dirscan.py --compare # IS と SHOULD の比較
+  python c_dirscan.py --update # SHOULD 状態を更新します
+  python c_dirscan.py --path /path # 他のディレクトリ
+  python c_dirscan.py --json # JSON 出力
+
+ファイル:
+  - ツール：system/tools/c_dirscan.py（DirectoryScannerクラス）
+  - データ: system/data/directory_truth.json (最初のスキャン時に生成)
+  - 構造: {タイムスタンプ、ディレクトリ[]、ファイル{パス: {ハッシュ、サイズ}}}

@@ -1,0 +1,210 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH v3 - 機能
+====================
+
+実装されているすべての機能とそのステータスの概要。
+
+アーキテクチャ v2.0 (新規)
+----------------------
+自動検出機能を備えたレジストリベースのハンドラー システム:
+- ハブ内の 109 以上のハンドラー / 自動的に検出
+- プログラムによるアクセスのためのライブラリ API (bach_api.py)
+- デュアル初期化ハンドラー (パス + アプリのサポート)
+- マルチハンドラーファイル (time.py、tuev.py)
+- コグニティブ インジェクターを統合
+
+2 つのアクセス パス:
+1. CLI: python bach.py タスク追加 "..." --priority P4
+2. ライブラリ API: bach_api インポート タスクから。 task.add("...", "--priority", "P4")
+
+CLI コマンド (コア)
+------------------
+bach --startup              セッションの開始 (DirScan、GUI を使用)
+bach --shutdown             セッションの終了 (アーカイブ メモリ)
+bach --status               システム ステータスの表示
+bach --help [thema]         ヘルプ (60 以上のトピック)
+
+タスク管理
+---------------
+bach task add "..."         新しいタスクの作成
+bach task list              タスクの表示
+bach task done T001         タスクの完了
+bach task edit T001 "..."   タスク編集
+
+メモリ システム
+-------------
+bach mem write "..."        メモリへの書き込み
+bach mem read               メモリの読み取り
+bach mem context            コンテキストの表示
+bach mem archive            セッションのアーカイブ
+
+メッセージ
+-----------
+bach msg send "..."         メッセージの送信
+bach msg list               メッセージの表示
+bach msg read M001          メッセージの読み取り
+bach msg unread             未読の表示
+
+スキャナ
+-------
+bach scan run               スキャン ツール
+bach scan status            スキャン ステータス
+bach scan tasks             スキャンされたタスクの表示
+
+メンテナンス (スケジューラ、以前のデーモン)
+-------------------------------------
+bach scheduler jobs            表示ジョブ
+bach scheduler run J001        ジョブの実行
+bach scheduler status          スケジューラのステータスの表示
+(エイリアス: bach デーモン ... 動作し続けます)
+
+GUI および REST API
+--------------
+bach gui start              Web ダッシュボードの開始 (ポート 8000)
+bach gui start-bg           バックグラウンドで開始
+bach gui status             サーバーのステータス
+
+REST API (ヘッドレス サーバー):
+  Python gui/api/headless.py --ポート 8001
+  エンドポイント:
+    GET /api/v1/tasks タスクの一覧表示
+    POST /api/v1/tasks タスクの作成
+    GET /api/v1/memory/facts ファクトの取得
+    POST /api/v1/messages/send エンキューメッセージ
+    GET /api/v1/messages/inbox 受信トレイを読み取る
+    GET /api/v1/status システムステータス
+  Swagger ドキュメント: http://localhost:8001/api/docs
+
+INJECTORS
+----------
+bach --inject status        インジェクター ステータス
+bach --inject toggle X      インジェクター オン/オフ
+bach --inject task 5        時間予算タスク
+
+BACKUP
+------
+bach backup create          バックアップの作成
+bach backup list            バックアップの表示
+bach backup restore X       バックアップの復元
+
+DATABASE
+---------
+bach --db status            DB ステータス
+bach --db query "SQL"       SQL の実行
+
+CONNECTOR SYSTEM v2.0 (新規)
+---------------------------
+信頼性の高いメッセージ配信キュー、再試行/バックオフ、サーキット ブレーカー。
+ランタイム アダプター: Telegram、Discord、HomeAssistant
+
+bach connector list         コネクタの表示
+bach connector status       アクティブなコネクタのステータス
+bach connector add <type>   新しいコネクタの登録
+bach connector messages     メッセージの表示
+bach connector poll <name>  1 回ポーリング (メッセージの取得)
+bach connector dispatch     キューの処理 (メッセージの送信)
+bach connector queue-status Queue-Statistiken (pending/failed/dead)
+bach connector retry [id]   デッド レターのリセット
+
+デーモンの統合:
+  poll_and_route (2分ごと) - 花粉 + ルーティング
+  ディスパッチ (1 分ごと) - キューを処理
+
+特徴:
+- 指数バックオフによる再試行 (30 秒から 480 秒)
+- サーキット ブレーカー (5 回のエラー後に 5 分間のクールダウン)
+- 失敗したメッセージの配信不能キュー
+- ルーティング中のインジェクターのコンテキスト トリガー
+
+音声サービス (新規)
+-------------------
+STT (Speech-to-Text): Whisper (オンライン)、Vosk (オフライン)
+TTS (テキスト読み上げ): pyttsx3 (Windows SAPI5/espeak)
+ウェイク ワード: openwakeword (オプション)、キーボード フォールバック
+
+ツール パス: system/hub/_services/voice/voice_stt.py
+統合: コネクタ システムに統合可能
+
+機能マトリックス
+--------------
+
+|エリア |すべきです |です |ステータス |
+|------|------|------|----------|
+| CLI コマンド | 20 | 60歳以上 | OK |
+|ヘルプトピック | 21 | 60歳以上 | OK |
+|ハンドラー (レジストリ)| 12 | 109+ | OK |
+|スキル(ファイル) | 30 | 50+ | OK |
+|スキル (JSON) | 50 | 0 | JSON* |
+|ツール (ファイル) | 30 | 90+ | OK |
+|ツール (レジストリ) | 60 | 85 | OK |
+| GUI エンドポイント | 30 | 80+ | OK |
+| REST API エンドポイント| 10 | 12 | OK |
+| DBテーブル | 25 | 138 | OK |
+|コネクタ | 3 | 3+ | OK 
+
+|*) スキルとエキスパートは主に skill_hierarchy.json によって管理されます。
+
+ハンドラー (hub/ の自動検出):
+  abo、エージェント、ati、バックアップ、レポート、カレンダー、チェーン、接続、
+  コネクタ、統合、連絡先、コンテキスト、CV、デーモン (= スケジューラー)、data_analysis、
+  db、dist、doc、docs、拡張機能、fs、健康、gui、家庭、健康、
+  ヘルプ、受信箱、注入、言語、レッスン、ログ、保守、メモリ、メッセージ、
+  マウント、multi_llm_protocol、通知、黒曜石、オラマ、パートナー、パス、
+  プロファイル、プロファイラー、繰り返し、リフレクション、ルーチン、スキャン、セッション、
+  シャットダウン、スキル、スマートホーム、スナップショット、ソース、スタートアップ、ステータス、
+  税金、同期、タスク、テスト、時間、トークン、ツール、ゴミ箱、tuev、更新、
+  保険、wiki
+
+実装された GUI ダッシュボード
+-----------------------------
+- ホームページ (概要、トークン、受信箱)
+- スキルボード (エージェント、エキスパート、スキル、ツール)
+- メモリーボード (作業、事実、レッスン、セッション)
+- 財務 (財務アシスタント/保険)
+- ファンディング プランナー (クライアント パイプライン)
+- 健康 (健康アシスタント - ベータ版)
+- ATI (コンセプト開発)
+
+計画中の機能
+-----------------
+- Skill-Sync ファイルの自動同期 <-> 階層
+- マルチ LLM 共有 さまざまなモデル間で真の共有コンテキスト
+- 自律モードのエージェントは独立してタスクを実行できます (ループ)
+- 音声フルスタック 完全な音声インターフェイス統合 (STT/TTS/Wake)
+- 信号メッセンジャーを含む信号コネクタ拡張コネクタ システム
+- WhatsApp への WhatsApp コネクタ拡張コネクタ システム
+
+CHANGELOG v2.0 (2026-02-06 ～ 2026-02-08)
+-------------------------------------------
+[v2.0.0 - 2026-02-08] レジストリベース + コネクタ v2.0 + 音声
++ レジストリベースのハンドラー システム (自動検出、64 以上のハンドラー)
++ プログラムによるアクセスのためのライブラリ API (bach_api.py)
++ コネクタ システム v2.0: キュー、再試行/バックオフ、サーキット ブレーカー
++ ランタイムアダプター: Telegram、Discord、HomeAssistant
++ 音声サービス: STT (Whisper/Vosk)、TTS (pyttsx3)、ウェイクワード
++ REST API ヘッドレス サーバー (ポート 8001、12 エンドポイント)
++ デーモンの統合 (poll_and_route + ジョブのディスパッチ)
++ 再試行追跡とサーキット ブレーカーを備えたスキーマ移行
++ DB スキーマ: 210 以上のテーブル (単一の信頼できる情報源)
++ 50 のテスト (test_core + test_smoke) - すべて緑色
++ ログパスの統合 (system/data/logs/ のみ)
++ _partners フォルダーの統合 (system/partners/ のみ)
+
+関連項目
+----------
+bach --help gui         Web ダッシュボードの詳細
+bach --help tasks       タスク管理
+bach --help wartung     メンテナンス (ジョブ/デーモン)
+bach --help dirscan     スキャナ システム
+bach --help connector   コネクタ システムの詳細
+
+その他のリソース
+------------------
+- アーキテクチャ ドキュメント: docs/con3_ANFORDERUNGSANALYSE.md
+- 変更ログ:memory/MEMORY.md (セクション bach.py v2.0)
+- テスト: system/tests/ (test_core.py、test_smoke.py)
+- REST API Swagger: http://localhost:8001/api/docs (サーバーが実行中の場合)
+- ライブラリ API の例: system/bach_api.py (Docstring)

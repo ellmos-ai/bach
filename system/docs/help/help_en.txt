@@ -1,0 +1,85 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HELP - The BACH help system
+=============================
+
+DESCRIPTION
+The help system provides context-related documentation for all BACH components.
+Each topic has its own .txt file in the docs/help/ directory.
+
+CLI COMMANDS
+-----------
+bach --help                 Show all available topics
+bach --help [thema]         Help on a specific topic
+bach --help tasks           Example: help on the task system
+bach --help steuer          Example: help on the tax agent
+bach --help tools/name      Example: help from subfolder
+bach --help tool_name       Example: tool info from database
+
+AVAILABLE TOPICS
+------------------
+System: startup, shutdown, architecture, features
+Tasks: tasks, between-tasks, planning, workflow
+Memory: memory, lessons, logs, sources
+Agents: agents, actors, communicate, partners
+Tools: tools, maintain, backup, distribution
+Data: dirscan, trash
+GUI: gui, maintenance, prompt generator, recurring
+Special: tax, coding, bugfix, injectors
+External: vendor, cookbooks
+Other: identity, naming, practices, formats, emoji
+
+STRUCTURE OF A HELP FILE
+-------------------------
+1. TITLE - Name in capital letters
+2. DESCRIPTION - What does this component do?
+3. CLI COMMANDS - What commands are there?
+4. OTHER SECTIONS - Concepts, Examples, Tips
+
+CREATE NEW HELP FILE
+-------------------------
+1. Create file under docs/help/[topic].txt
+2. Adopt format from existing file
+3. At least: title, description, CLI commands
+4. Registration in bach --help automatically
+
+HELP FILES VS OTHER DOCS
+---------------------------
+docs/help/*.txt CLI reference, quick lookup
+skills/*.md Agent profiles, complex concepts
+docs/*.md Developer documentation, concepts
+SKILL.md Main entry point
+
+BEST PRACTICES
+--------------
+- Keep it short and to the point (under 100 lines)
+- Always document CLI commands first
+- Examples are more helpful than theory
+- In case of changes: update the help file
+
+WIKI & EXTENSIONS
+--------------------
+The wiki/ subdirectory contains extended documentation:
+wiki/*.txt
+
+Subfolder access:
+  bach --help tools/python_cli_editor
+  bach --help wiki/antigravity
+
+Tool database access (NEW v1.1.38):
+  bach --help path_healer     Tool info from bach.db
+  bach --help tool_scanner    Shows type, path, capabilities
+
+Skill aliases (NEW v1.1.85):
+  bach --help agent/ati       Shows agents/ati/ATI.md
+  bach --help workflow/bugfix Zeigt skills/workflows/bugfix-protokoll.md
+  bach --help expert/steuer   Shows agents/_experts/steuer/TAUER.md
+
+SEE ALSO
+----------
+bach --help tasks           Task System
+bach --help memory          Memory System
+bach --help agents          Agent System
+SKILL.md Main documentation

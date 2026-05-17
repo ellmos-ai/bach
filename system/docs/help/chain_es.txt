@@ -1,0 +1,127 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [hub/chain.py, toolchains, Scheduler_jobs]
+
+CHAIN - Comandos de herramientas encadenados y cadenas LLM
+================================================
+
+Estado: 2026-02-28
+
+El sistema de cadena permite el encadenamiento de comandos BACH (cadenas de herramientas)
+y la gestión de cadenas de agentes LLM a través de MarbleRun/llmauto.
+
+Ref: SYS_002, SQ074
+
+DOS TIPOS DE CADENA
+----------------
+
+1. CADENAS DE HERRAMIENTAS (base de datos)
+   Instrucciones BACH secuenciales sin LLM. Almacenado en bach.db.
+   Adecuado para flujos de trabajo automatizados.
+
+2. CADENAS LLMAUTO (archivos JSON)
+   Cadenas de agentes LLM a través de MarbleRun (llmauto). Ejecutar como
+   Procesos en segundo plano.
+
+COMANDOS CLI - CADENAS DE HERRAMIENTAS (DB)
+-----------------------------
+
+  list Mostrar todas las cadenas (cadenas de herramientas + llmauto)
+  ejecutar <id> Ejecutar cadena de herramientas
+  agregar "JSON" Crear nueva cadena de herramientas
+  mostrar <id> Ver detalles
+  eliminar <id> Eliminar cadena de herramientas
+  log <id> Ver registros de una cadena de herramientas
+
+COMANDOS CLI - LLMAUTO CHAINS (JSON)
+-------------------------------------
+
+  crear <nombre> Crear nueva cadena llmauto
+  iniciar <nombre> iniciar cadena (proceso en segundo plano)
+  detener <nombre> Detener cadena
+  estado [nombre] Mostrar estado (todo o cadena específica)
+  reset <nombre> Restablecer el estado de una cadena
+
+OPCIONES PARA CREAR
+---------------------
+
+  --mode once|modo de ejecución de bucle (predeterminado: una vez)
+  --skill PATH SKILL.md ruta para el agente
+  --model MODELO Modelo AI (soneto, opus, haiku)
+
+EJEMPLOS
+---------
+
+  # Listar cadena de herramientas
+  bach chain list
+
+  # Ejecutar cadena de herramientas
+  bach chain run 1
+
+  # Crear cadena de herramientas (formato JSON)
+  bach chain add '{"name":"taeglich","steps":["bach backup create","bach scan run"]}'
+
+  # Detalles de una cadena de herramientas
+  bach chain show 1
+
+  # Ver registros
+  bach chain log 1
+
+  # crear cadena llmauto
+  bach chain create mein-workflow
+  bach chain create analyse --mode once --model opus
+
+  # controlar la cadena llmauto
+  bach chain start mein-workflow
+  bach chain status
+  bach chain status mein-workflow
+  bach chain stop mein-workflow
+  bach chain reset mein-workflow
+
+FORMATO JSON DE CADENA DE HERRAMIENTAS
+---------------------
+
+  {
+    "name": "Nombre de la cadena",
+    "descripción": "Descripción",
+    "pasos": [
+      "lista de tareas de Bach",
+      "crear copia de seguridad de bach",
+      "ejecución de escaneo de bach"
+    ]
+  }
+
+  Cada paso es un comando de Bach completo.
+  Los pasos se ejecutan secuencialmente.
+
+LLMAUTO CHAINS
+--------------
+
+llmauto chains se ejecutan como procesos de código Claude independientes
+en el fondo. Usan MarbleRun para la orquestación.
+
+  data/chains/<nombre>/ Directorio de cadena
+    configuración de la cadena config.json
+    state.json Estado actual
+    Declaración del agente SKILL.md
+
+BASE DE DATOS
+---------
+
+  cadenas de herramientas:
+    id, nombre, descripción, pasos_json, creado_en, actualizado_en
+
+  ejecuciones_cadena de herramientas:
+    id, id_cadena, estado, iniciado_en, finalizado_en, registro
+
+ARCHIVOS
+-------
+  Implementación del controlador hub/chain.py
+  configuraciones de datos/cadenas/cadena llmauto
+
+VER TAMBIÉN
+----------
+  bach --help scheduler    Sistema de programación (trabajos)
+  bach --help agent        Lanzador de agentes
+  bach --help tasks        Sistema de tareas

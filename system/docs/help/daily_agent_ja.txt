@@ -1,0 +1,79 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DAILY AGENT - 永続セッションを持つ自律型デイリー エージェント
+============================================================
+
+説明
+------------
+デイリー エージェントは、永続的なクロード コード エージェントを実行する BACH ハンドラーです。
+-- continue で始まり、毎日のタスクキューを処理します。エージェントができることは、
+モジュール式コンポーネントとセッションの概要を使用して朝のブリーフィングを生成する
+保存します。エージェント インスタンスは監視され (PID 追跡)、ターゲットにされる可能性があります。
+終了される。ブリーフィング モジュールはオン/オフを切り替えることができます。
+
+
+操作
+-----------
+  bach daily-agent start                エージェントの開始 (クロード コード --継続)
+  bach daily-agent stop                 エージェント + セッションの概要を停止
+  bach daily-agent status               PID およびランタイム情報を表示
+  bach daily-agent briefing             朝のブリーフィング (アクティブなモジュール)
+  bach daily-agent summary              夜のサマリーを生成
+  bach daily-agent config               ブリーフィング モジュールの一覧表示
+  bach daily-agent modules              構成のエイリアス
+  bach daily-agent toggle <modul>       モジュールのオン/オフの切り替え
+
+ブリーフィング モジュール (トグル):
+  task_briefing オープンタスク (デフォルト: ON)
+  message_briefing 未読メッセージ (ON)
+  news_briefing ニュース概要 (AN)
+  session_briefing 最後のセッション (ON)
+  Weather_briefing 天気 (デフォルト: OFF)
+  Calendar_briefing カレンダーの予定 (オフ)
+
+
+例
+---------
+  bach daily-agent start                モデル 'sonnet' でエージェントを開始
+  bach daily-agent start --model=opus   モデル 'opus' で開始
+  bach daily-agent status               PID と開始時刻を表示
+  bach daily-agent briefing             アクティブなモジュールでブリーフィングを生成
+  bach daily-agent toggle news_briefing Deaktiviert News-Modul
+  bach daily-agent summary              今日完了したタスクを表示
+  bach daily-agent stop                 エージェントを停止 + 概要を保存
+
+
+ファイル
+-------
+  ハンドラー: Hub/daily_agent.py
+  PID ファイル: data/daily_agent.pid (PID、開始時刻、モデルを含む JSON)
+  DB: data/bach.db (briefing_config、tasks、memory_working、...)
+  ブリーフ: 標準出力/ログに生成されたブリーフィング
+
+
+モジュールの詳細
+-------------
+task_briefing: 上位 10 個の保留中のタスク (タイトルは短縮されています)、おそらく定期的なジョブ
+message_briefing: 未読メッセージのカウンター (status='unread')
+news_briefing: news_items の未読ニュース (上位カテゴリー + 3 タイトル)
+session_briefing: 前回のmemory_sessions.summary (120文字に短縮)
+Weather_briefing: Weather_service を試しました (座標は 0.0 にハードコードされています)
+Calendar_briefing: Calendar_events からの今日のイベント (次の 5 つのイベント)
+
+
+エラー処理
+----------------
+- エージェントはバックグラウンドで起動されています (stdout/stderr は抑制されています)
+- プロセスがクラッシュした場合は、PID ファイルを手動で削除する必要があります
+- ブリーフィング モジュールはサイレント DB エラーを無視します (例: news_items が存在しない場合)
+- エージェントがすでに死亡している場合でも、停止すると概要が保存されます
+
+
+関連項目
+----------
+  bach --help
+  bach scheduler              (定期タスク)
+  ハブ/base.py(BaseHandler)
+  docs/help/memory.txt

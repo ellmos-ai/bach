@@ -1,0 +1,68 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+============
+dist - 配布システム ハンドラー (dist_type ベース)
+
+
+説明
+============
+BACH システムのスナップショット、リリース、配布パッケージを管理します。
+dist_type 分類による定数バックアップ (CORE=2、TMPL=1、USER=0)。
+バージョン管理、シールの整合性、移植性をサポートします。
+
+
+OPERATIONS
+===========
+status システム ステータス (seal、dist_type 統計)
+シールの完全性を確認する
+分類 dist_type 分布を表示 (CORE/TMPL/USER)
+スナップショット スナップショットを作成します (手動または自動)
+release バージョン番号を使用してリリースを作成する
+復元 dist/ フォルダー内の配布 zip から復元します
+install ディストリビューションを新しいフォルダーにインストールします
+list スナップショット/リリース/ZIP の一覧表示
+
+
+例
+=========
+基本的なコマンド:
+  bach --dist status                  -> シールと統計情報を含むシステム ステータス
+  bach --dist verify                  -> シールの整合性の確認
+  bach --dist classify                -> dist_type 分布 (テーブルごとのテーブル)
+
+スナップショット:
+  bach --dist snapshot NAME           -> 名前を指定して手動スナップショットを作成
+  bach --dist snapshot TEST "Desc"    -> オプションの説明を使用
+  bach --dist snapshot --list         -> 最新 20 個のスナップショット リスト
+
+リリース:
+  bach --dist release v1.0.0          -> バージョンを指定してリリースを作成番号
+  bach --dist release v1.0.0 "Notes"  -> リリース ノートあり
+  bach --dist list releases           -> 過去 20 のリリースを表示
+
+配布 (復元およびインストール):
+  bach --dist restore --list          -> dist/ 内の利用可能な ZIP を表示
+  bach --dist restore NAME.zip        -> dist/NAME.zip から復元
+  bach --dist restore NAME.zip --no-backup  -> バックアップ スナップショットなし
+  bach --dist restore NAME.zip --target /x  -> 別のディレクトリに。抽出
+  bach --dist install NAME.zip D:\\Path  -> 新しいフォルダーにインストール
+  bach --dist install --list          -> 利用可能な ZIP を表示
+
+
+ファイル
+=======
+ハンドラー: Hub/dist.py
+バックエンド: tools/distribution.py
+データベース: bach.db (スナップショット、リリース、メタデータ)
+Dist フォルダー: dist/ (配布 zip)
+スナップショット: logs/snapshots/ (マニフェストとメタデータ)
+
+
+関連項目
+==========
+  ハブ/ - すべてのハンドラー
+  tools/distribution.py - 配布マネージャーの実装
+  docs/help/ - その他のハンドラー ヘルプ

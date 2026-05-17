@@ -1,0 +1,56 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DATA_ANALYSIS - 使用 pandas 和 matplotlib 进行数据分析
+========================================================
+
+描述
+------------
+用于分析和可视化数据文件（CSV、Excel、JSON）的处理程序。
+支持的操作：加载、描述性统计、数据查看、
+相关性和图表创建。
+
+要求：安装 pandas（图表推荐使用 matplotlib）
+
+操作
+-----------
+  bach data load <path>                  加载文件并显示信息
+  bach data describe <path>              描述性统计数据（平均值、标准差、最小值、最大值）
+  bach data head <path> [--rows N]       前 N 行（默认值：10）
+  bach data corr <path>                  相关矩阵（仅限数字列）
+  bach data chart <path> [Optionen]      创建图表
+    --type [bar|line|scatter|pie|hist] 图表类型（默认：bar）
+    --x <column> X轴列名
+    --y <column> Y 轴列名称
+    --output <文件> 输出文件名
+  bach data list                         显示输入/文件夹中的文件
+
+示例
+---------
+  bach data load sales.csv
+  bach data describe data/results.xlsx
+  bach data head data/metrics.csv --rows 20
+  bach data corr dataset.json
+  bach data chart sales.csv --type bar --x month --y revenue
+  bach data chart data/values.csv --type scatter --x x_val --y y_val --output scatter.png
+  bach data list
+
+目录
+-------------
+  用户/数据分析/输入/输入文件
+  用户/数据分析/输出/分析结果
+  用户/数据分析/图表/生成的图表（PNG）
+
+文件
+-------
+  处理程序：hub/data_analysis.py
+
+支持的格式
+---------------------
+  CSV/TXT、XLSX/XLS、JSON
+
+另请参阅
+----------
+  bach help
+  bach --version

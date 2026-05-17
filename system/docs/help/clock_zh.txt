@@ -1,0 +1,69 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CLOCK - 时间显示
+=======================
+
+在 CLI 输出中显示当前时间。
+
+CLI 命令
+-----------
+
+  bach clock on              激活时间显示
+  bach clock off             停用时间显示
+  bach clock status          显示当前状态
+  bach clock interval <sek>  设置时间间隔（以秒为单位）
+
+INTERVAL
+---------
+
+  每个输出间隔 0 时间
+  间隔 60 仅当自上次显示以来 >= 60 秒时才显示时间
+  间隔 300 每 5 分钟一次
+
+输出格式
+--------------
+
+  [时钟] 14:35
+
+坚持
+----------
+
+  文件：data/.clock_state
+
+  内容：
+  {
+    “启用”：正确，
+    “间隔”：60，
+    “最后显示”：“2026-01-30T14:35:00”
+  }
+
+示例
+---------
+
+  # 每次输出的时间
+  bach clock on
+  bach clock interval 0
+
+  # 每5分钟一次
+  bach clock interval 300
+
+  # 检查状态
+  bach clock status
+  -> 时钟：开 |间隔：60 秒 |最后时间：下午 2:35
+
+INTERPLAY
+-------------
+
+时钟是时间系统的一部分：
+  --帮助计时器秒表
+  --help countdown 带触发器的倒计时
+  --检查之间的帮助
+  --helpbeat 统一时间显示
+
+所有时间功能均通过`bachbeat`进行汇总。
+
+---
+版本: 1.0 |状态：已实施 (v1.1.83)
+请参阅：docs/CONCEPT_time_system.md

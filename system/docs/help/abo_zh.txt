@@ -1,0 +1,98 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ABO - 订阅和合同管理
+=========================================
+
+描述：
+  管理持续订阅和合同（流媒体、软件、
+  互联网、移动通信等）。自动识别税项订阅
+  并计算每月/每年的费用。
+
+CLI 命令：
+  bach abo help              显示帮助
+  bach abo init              创建数据库表（一次性）
+  bach abo scan              搜索订阅的税项
+  bach abo list              显示所有认可的订阅
+  bach abo list --alle       包括。已停用
+  bach abo list --bestaetigt Nur bestaetigte
+  bach abo confirm <id>      确认订阅检测
+  bach abo dismiss <id>      删除错误检测
+  bach abo costs             按类别划分的成本细分
+  bach abo export            CSV 导出(data/abo_export.csv)
+  bach abo patterns          显示已知订阅模式
+  bach abo sync-mail         从电子邮件同步订阅
+
+选项：
+  --year YYYY 扫描纳税年度（默认：当年）
+  --dry-run 仅扫描模拟
+
+数据库：
+  bach.db 中的表：
+
+  abo_subscriptions - 检测/管理的订阅
+    id、名称、提供商、类别、每月金额、
+    付款间隔、取消链接、recognize_on、
+    已确认 (0/1)，有效 (0/1)
+
+  abo_payments - 税项付款链接
+    id、subscription_id、item_id、金额、日期
+
+  abo_patterns - 已知提供商检测模式
+    id、模式、提供商、类别、取消链接
+
+  fin_contracts - 手动合同管理（并行）
+    id、名称、类别、提供商、客户编号、合同编号、
+    金额、间隔、通知 period_days、expiry_date、...
+
+工作流程：
+  1. bach abo init（一次性：表+默认模式）
+  2. bach订阅扫描（搜索tax_posten）
+  3. bach abo列表（显示结果）
+  4. bach abo inform <id>（确认真实订阅）
+  5. bach abo Dismiss <id>（删除虚假标识符）
+  6.巴赫订阅费用（费用概览）
+  7. bach abo 同步邮件（导入电子邮件订阅，可选）
+
+已知模式（选择）：
+  Netflix、Spotify、Microsoft 365、Adobe、亚马逊 Prime、迪士尼+、
+  Apple/iCloud、YouTube Premium、Dropbox、Google One、ChatGPT/OpenAI、
+  Anthropic/Claude、GitHub、JetBrains、1Password、NordVPN、ExpressVPN
+
+互动：
+  - 巴赫税：税项作为订阅扫描的数据源
+  - GUI：订阅 CRUD（#573，由 Gemini 实现）
+  - fin_contracts：手动合约（添加自动检测）
+  - Financial_emails：订阅相关电子邮件（类别 = 'abo'）
+
+示例：
+  # 初始设置：
+  bach abo init
+
+  # 从税务数据中检测订阅：
+  bach abo scan --jahr 2025
+
+  # 列出所有订阅（包括停用的订阅）：
+  bach abo list --alle
+
+  # 仅确认订阅:
+  bach abo list --bestaetigt
+
+  # 按类别划分的成本概览：
+  bach abo costs
+
+  # 确认订阅:
+  bach abo confirm 8
+
+  # 删除错误检测:
+  bach abo dismiss 3
+
+  # 导入电子邮件订阅:
+  bach abo sync-mail
+
+  # 导出用于预算规划：
+  bach abo export
+
+  # 显示已知模式：
+  bach abo patterns

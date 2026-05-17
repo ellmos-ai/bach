@@ -1,0 +1,160 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+EXTENSIONS - Desktop tools and special apps
+=============================================
+
+Status: 2026-03-04
+
+The Extensions Handler manages external BACH extensions: desktop applications,
+Special tools and desktop GUIs that are not part of the core system.
+Extensions are stored in the extensions/ directory and can be synchronized,
+searched and started.
+
+STRUCTURE
+--------
+
+  extensions/
+    ext1/
+      SKILL.md Extension metadata
+      START.bat startup file (Windows)
+      README.md documentation
+      main.py main program
+      requirements.txt Python dependencies
+    ext2/
+      ...
+
+HANDLER NAME
+------------
+
+extensions
+
+CLI COMMANDS (bach extensions)
+-----------------------------
+
+  list List all extensions
+  show <name> Show details about an extension
+  run <name> Start extension (START.bat or main.py)
+  sync Extensions synchronize with database
+  search <term> Search Extensions
+
+DESCRIPTION
+------------
+
+Extensions are modular, portable desktop applications with the following features:
+
+- Each extension has its own directory with SKILL.md
+- START.bat optional for Windows start (fallback: direct Python execution)
+- SKILL.md or README.md contain descriptions
+- Automatic detection of main files: main.py, app.py, <name>.py
+- Sync in DB registers extensions as skills (type='extension')
+
+OPERATIONS
+-----------
+
+list: List of all existing extensions with:
+         - Number of .py files
+         - Flags: [SKILL] if SKILL.md, [START] if START.bat
+         - Description (from SKILL.md or README.md)
+         - Storage location
+
+show: Detailed display of an extension:
+         - Full path
+         - File listing with sizes
+         - SKILL.md preview (up to 500 characters)
+         - Fuzzy matching if the name is not exact
+
+run: Starts an extension:
+         - Windows: Run START.bat (new window)
+         - Fallback: Start main file directly with Python
+         - Main file by priority: main.py > app.py > <name>.py
+
+sync: Synchronizes extensions with database (bach.db):
+         - Adds new extensions (type='extension')
+         - Updates paths and descriptions of existing extensions
+         - --dry-run shows changes without writing
+
+search: full-text search for:
+         - Extension name (case-insensitive)
+         - Description (case-insensitive)
+         - Shows hits with snippet
+
+EXAMPLES
+---------
+
+  # List all extensions
+  bach extensions list
+
+  # Details about an extension (e.g. 'myapp')
+  bach extensions show myapp
+
+  # Start extension
+  bach extensions run myapp
+  bach extensions run knowledgedigest
+
+  # Synchronize in database (add newly discovered extensions)
+  bach extensions sync
+  bach extensions sync --dry-run      # Preview without changes
+
+  # Search for extension
+  bach extensions search "data"
+  bach extensions search "analysis"
+
+FILES
+-------
+
+  hub/extensions.py handler implementation
+  extensions/ Extensions directory (relative to system/)
+  extensions/<name>/SKILL.md Extension metadata
+  extensions/<name>/START.bat Windows startup file
+  extensions/<name>/README.md documentation
+  extensions/<name>/requirements.txt Dependencies (optional)
+  data/bach.db database with extension registry
+
+DATABASE
+---------
+
+  bach.db:
+    skills table with type='extension'
+      - name Extension name
+      - type 'extension'
+      - category Category (e.g. 'extension')
+      - path Directory path
+      - description description
+      - is_active 1 (enabled) or 0 (disabled)
+      - version version (default: 1.0.0)
+      - dist_type 2 (Extension)
+
+SKILL.md FORMAT
+---------------
+
+Minimum format:
+
+  description: Short description of the extension
+  author: Name
+  version: 1.0.0
+  category: tool|gui|analysis|utils
+
+The description is automatically taken from SKILL.md or README.md by the handler
+extracted and stored in the database.
+
+START MECHANISM
+----------------
+
+1. bash extensions run <name> is called
+2. Handler looks in extensions/<name>/
+3. START.bat exists? -> Windows: cmd /c start <START.bat>
+4. Else: Find main file (main.py, app.py, <name>.py)
+5. Main file present? -> python <main file>
+6. Error if no startup file found
+
+On non-Windows systems: START.bat is ignored, only Python fallback
+
+SEE ALSO
+----------
+
+  bach --help skills          SKILL.md system (metadata)
+  bach --help dist            Distribution and Packaging
+  extensions/ Extensions directory
+  Research/_tools/ Research tools (examples)

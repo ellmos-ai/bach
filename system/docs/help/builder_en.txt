@@ -1,0 +1,54 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BUILDER - Skill/Agent creation & export
+==========================================
+
+BACH COMMAND (preferred)
+-------------------------
+bach skills export <name>               Export skill (v2.0)
+bach skills list                        List all skills
+bach skills version <name>              Version check
+
+
+TOOLS IN system/tools/
+---------------------------
+c_structure_generator.py <n> <profile> Create skill/agent
+c_structure_generator.py <n> --embedded For BACH (lightweight)
+
+generators/os_generator.py <n> [target] Create new OS
+generators/exporter.py skill <n> Export skill
+generators/distribution_system.py Distribution system
+
+
+PROFILE SPECTRUM
+----------------
+MICRO Only SKILL.md (1 file)
+LIGHT Minimal structure (~5 files)
+STANDARD With Memory (~12 files)
+EXTENDED With micro skills (~20 files)
+AGENT With Workflows (~30 files)
+AGENT_FULL Complete (~50 files)
+
+
+DIST_TYPE SYSTEM
+----------------
+2 = CORE Always package
+1 = TEMPLATE Reset to original
+0 = USER Do not export
+
+
+QUICK COMMANDS
+--------------
+Export skill: bach skills export analysis
+List skills: bach skills list
+Version check: bach skills version analysis
+
+
+RELATED HANDLER
+-------------------
+system/hub/skills.py SkillsHandler (v2.0)
+
+
+See also: builder.md (hub/_services/)

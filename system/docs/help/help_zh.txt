@@ -1,0 +1,85 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+帮助 - 巴赫帮助系统
+=============================
+
+描述
+帮助系统提供所有 BACH 组件的上下文相关文档。
+每个主题在 docs/help/ 目录中都有自己的 .txt 文件。
+
+CLI 命令
+-----------
+bach --help                 显示所有可用主题
+bach --help [thema]         有关特定主题的帮助
+bach --help tasks           示例：有关任务系统的帮助
+bach --help steuer          示例：有关税务代理的帮助
+bach --help tools/name      示例：来自子文件夹的帮助
+bach --help tool_name       示例：来自数据库的工具信息
+
+可用主题
+------------------
+系统：启动、关闭、体系结构、功能
+任务：任务、任务间、计划、工作流程
+记忆：记忆、教训、日志、来源
+代理人：代理人、行动者、沟通者、伙伴
+工具：工具、维护、备份、分发
+数据：dirscan、垃圾
+GUI：GUI、维护、提示生成器、循环
+特别：税收、编码、错误修复、注入器
+外部：供应商、食谱
+其他：身份、命名、实践、格式、表情符号
+
+帮助文件的结构
+-------------------------
+1。标题 - 大写字母的姓名
+2. 描述 - 该组件有什么作用？
+3. CLI 命令 - 有哪些命令？
+4. 其他部分 - 概念、示例、提示
+
+创建新的帮助文件
+-------------------------
+1。在 docs/help/[topic].txt 下创建文件
+2. 采用现有文件的格式
+3.至少：标题、描述、CLI命令
+4. 在 bach 中注册 --help 自动
+
+帮助文件 VS 其他文档
+---------------------------
+docs/help/*.txt CLI 参考，快速查找
+Skills/*.md 代理配置文件，复杂概念
+docs/*.md 开发人员文档、概念
+SKILL.md 主要入口点
+
+最佳实践
+--------------
+- 保持简短明了（100 行以下）
+- 始终首先记录 CLI 命令
+- 例子比理论更有帮助
+- 如果发生更改：更新帮助文件
+
+WIKI 和扩展
+--------------------
+wiki/ 子目录包含扩展文档：
+wiki/*.txt
+
+子文件夹访问：
+  bach --help tools/python_cli_editor
+  bach --help wiki/antigravity
+
+工具数据库访问（新 v1.1.38）：
+  bach --help path_healer     来自 bach.db 的工具信息
+  bach --help tool_scanner    显示类型、路径、功能
+
+技能别名（新 v1.1.85）：
+  bach --help agent/ati       显示代理/ati/ATI.md
+  bach --help workflow/bugfix Zeigt skills/workflows/bugfix-protokoll.md
+  bach --help expert/steuer   显示代理/_experts/steuer/TAUER.md
+
+SEE ALSO
+----------
+bach --help tasks           任务系统
+bach --help memory          内存系统
+bach --help agents          代理系统
+SKILL.md 主要文档

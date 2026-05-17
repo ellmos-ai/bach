@@ -1,0 +1,63 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CLAUDE PERMISSIONS - 管理 Claude Code 权限配置文件
+==============================================================
+
+描述
+------------
+管理 Claude Code 的权限配置文件。配置文件定义了哪些
+Claude代码允许自动使用（allow）的工具以及哪些块
+成为（否认）。存储在BACH数据库中，应用于
+~/.claude/settings.json.
+
+
+操作
+-----------
+  bach permissions list                 显示所有配置文件
+  bach permissions show <profil>        配置文件详细信息
+  bach permissions set <profil> allow=Tool    添加规则
+  bach permissions set <profil> deny=Tool     添加规则
+  bach permissions remove <profil> allow=Tool Regel entfernen
+  bach permissions activate <profil>    激活配置文件
+  bach permissions deactivate           返回正常配置文件
+  bach permissions sync                 将settings.json导入数据库
+  bach permissions reset <profil>       将配置文件重置为默认值
+  bach permissions status               显示当前状态
+  bach permissions init                 数据库创建中的默认配置文件
+
+
+示例
+---------
+  # 查看个人资料
+  bach permissions list
+
+  # 启用严格配置
+  bach permissions activate strict
+
+  # 允许工具
+  bach permissions set default allow=Bash
+
+  # 导入当前settings.json
+  bach permissions sync
+
+
+DEFAULT-PROFILE
+---------------
+  默认标准配置文件（中等访问）
+  严格限制（最少的工具使用）
+  开发高级（所有开发工具）
+
+
+文件
+-------
+  处理程序：hub/claude_permissions.py
+  配置：~/.claude/settings.json（将被修改）
+  数据库表：claude_permission_profiles
+
+
+另请参见
+----------
+  帮助设置 设置处理程序（挂钩）
+  帮助安全 安全设置

@@ -1,0 +1,187 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL DISTRIBUIDOR
+============
+hogar
+
+DESCRIPCIÓN
+============
+Gestión del hogar con rutinas, inventario, listas de compras y planificación de costos.
+Gestiona tareas diarias, gestión de inventario con sistema de semáforo (rojo/amarillo/verde),
+Proveedores y costos fijos. Integración con Routine Handler y Base de Datos Unificada BACH.
+
+
+OPERACIONES
+===========
+
+status
+  Panel de control del hogar: resumen de rutinas, semáforo de inventario, costos fijos mensuales,
+  Lista de compras, rutinas superficiales. Combinación de todos los subsistemas.
+  Sintaxis: estado del hogar de bach
+
+debido [DÍAS]
+  Tareas que vencen en los próximos N días (predeterminado: 7 días).
+  Separa las rutinas vencidas (ROJAS) de las pendientes (AMARILLAS).
+  Sintaxis: hogar bach debido | hogar de bach que vence el 14
+
+hoy
+  Resumen diario: ¿Qué está pasando hoy? (Rutinas + citas).
+  Carga el servicio DailyOverview.
+  Sintaxis: hogar bach hoy
+
+semana
+  Plan semanal (lun-dom): rutinas + citas con tiempo.
+  Marca los artículos vencidos en la semana actual.
+  Sintaxis: semana del hogar de bach
+
+costos
+  Resumen de costos fijos mensuales.
+  Calcula cargas mensuales de contratos (fin_contracts):
+  - mensual: directo
+  - anualmente: /12
+  - trimestral: /3
+  Sintaxis: costos del hogar bach
+
+costos-mes [FILTRO]
+  Costos irregulares esperados por mes (seguros, mantenimiento).
+  Opcional: Filtrar por categoría.
+  Sintaxis: costos del hogar bach-mes | bach costos del hogar-mes "auto"
+
+add-costs NOMBRE CATEGORÍA CANTIDAD INTERVALO
+  Agregue costos irregulares.
+  INTERVALO: mensual|trimestral|anual|una vez
+  Sintaxis: costos adicionales para el hogar de bach "TÜV" "auto" 150 "anualmente"
+
+lista de costos [FILTRO]
+  Mostrar todas las entradas de costos con estado.
+  Sintaxis: lista de costos del hogar de Bach
+
+verificación de seguro
+  Verificación de seguros: Todas las pólizas activas con aportes.
+  Carga fin_insurances, calcula la suma mensual.
+  Sintaxis: cheque de seguro de hogar de bach
+
+compras
+  Lista de compras: Todos los artículos aún por comprar con prioridad.
+  Sintaxis: compras domésticas de bach
+
+add-shopping NOMBRE [CATEGORÍA] [PRIORIDAD]
+  Agregue artículos a la lista de compras.
+  PRIORIDAD: normal|alta|baja (predeterminado: normal)
+  Sintaxis: bach hogar add-shopping "leche" "comida" "alta"
+
+done-shopping ID [ID2 ID3...]
+  Marcar el artículo como comprado.
+  Sintaxis: hogar bach hecho-compras 5 6 7
+
+inventario
+  Inventario con descripción general del semáforo (rojo/amarillo/verde).
+  Utiliza InventoryEngine con traviesas.
+  Sintaxis: inventario del hogar de bach
+
+add-item NOMBRE CATEGORÍA UMBRAL DE ALMACENAMIENTO [LAGERMAX]
+  Agregar artículos al inventario.
+  UMBRAL DE ALMACENAMIENTO: Valor en el que se muestra el color rojo.
+  Sintaxis: bach hogar add-item "aceite de oliva" "cocinar" 0.5 2
+
+stock-in NOMBRE DEL ARTÍCULO CANTIDAD [FECHA]
+  Contabilizar la entrada de mercancías (al almacén). Crea transacción.
+  Sintaxis: stock doméstico bach "Olivenoel" 1.5 2026-03-04
+
+agotado NOMBRE DEL ARTÍCULO CANTIDAD [FECHA]
+  Post consumo (desde almacén). Crea transacción.
+  Sintaxis: desabastecimiento del hogar bach "Olivenoel" 0.3 2026-03-04
+
+pull-check
+  Lista de compras: ¿Qué artículos se deben comprar?
+  Muestra elementos ROJO (por debajo del umbral) y AMARILLO (por debajo del máximo).
+  Sintaxis: bach hogar pull-check
+
+semáforo
+  Descripción general del semáforo: todos los artículos del inventario con estado (ROJO/AMARILLO/VERDE).
+  Sintaxis: semáforo doméstico de bach
+
+pedido [ARTÍCULO] [CANTIDAD]
+  Cree pedidos de artículos o vea pedidos pendientes.
+  Sintaxis: orden del hogar bach | pedido del hogar bach "Olivenoel" 5
+
+proveedor
+  Mostrar proveedores con contacto y artículos disponibles.
+  Sintaxis: proveedor doméstico bach
+
+add-supplier NOMBRE CONTACTO [DÍAS DE ENVÍO]
+  Agregar proveedor.
+  DÍAS DE ENVÍO: Tiempo medio de entrega (por defecto: 5).
+  Sintaxis: bach hogar add-supplier "BioGro GmbH" "info@biogro.de" 3
+
+rutina de exportación [FILTRO]
+  Exportar rutinas para uso externo/copia de seguridad.
+  Opcional: Filtrar por categoría.
+  Sintaxis: rutina de exportación del hogar bach | Rutina de exportación del hogar de Bach "Cocina"
+
+ayuda
+  Ver esta ayuda.
+  Sintaxis: bach ayuda doméstica
+
+
+EJEMPLOS
+=========
+
+1. Ver panel:
+   bach haushalt status
+
+2. Rutinas atrasadas para esta semana:
+   bach haushalt due 7
+
+3. Plan semanal con rutinas + citas:
+   bach haushalt week
+
+4. Agregar artículos a la lista de compras:
+   bach haushalt add-shopping "Mehl" "Lebensmittel" "normal"
+
+5. Contabilizar la entrada de mercancías:
+   bach haushalt stock-in "Mehl" 2.5
+
+6. Lista de compras (¿Qué falta?):
+   bach haushalt pull-check
+
+7. Costos fijos mensuales:
+   bach haushalt costs
+
+8. Añadir costes irregulares:
+   bach haushalt add-kosten "KFZ-Versicherung" "auto" 80 "monatlich"
+
+
+ARCHIVOS
+=======
+controlador principal hub/household.py
+hub/_services/household/Servicios domésticos
+  inventario_motor.py inventario + lógica de semáforo
+  shopping_service.py Gestión de listas de compras
+concentrador/_servicios/panel/
+  daily_overview.py Resumen diario
+
+
+TABLAS DE BASE DE DATOS
+===================
+bach.db / Base de datos unificada (desde v1.1.84):
+- Household_routines Tareas diarias/gestión de rutinas
+- artículos del inventario del hogar con umbrales
+- Household_orders Pedidos a proveedores
+- contactos de proveedores de hogares_suppliers
+- reservas de entrada/salida de transacciones_de_hogar (registro de auditoría)
+- listas de compras hogar_shopping
+- costos_hogar Costos irregulares
+- citas Assistant_calendar (para plan semanal)
+- contratos fin_contracts (para costos fijos)
+- fin_insurances seguro (para el panel de estado)
+
+
+VER TAMBIÉN
+==========
+bach routine ...                  Gestión de rutinas (estados individuales)
+bach routine done <id>            Marcar rutina como completada
+bach fin costs                    Gestión de costos financieros
+bach calendar ...                 Gestión de citas

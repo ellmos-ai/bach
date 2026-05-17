@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+============
+docs-search
+
+説明
+============
+FTS5 (全文検索) によるリアルタイムのドキュメント検索。 Context7 MCP を置き換えます。
+docs/、wiki/、docs/help/、およびキャッシュされた Web ドキュメントを検索します。
+高速なクエリのために SQLite インデックスを使用します。 LIKE 検索へのフォールバック。
+
+OPERATIONS
+===========
+
+検索 <クエリ>
+  すべてのインデックス付きドキュメントの全文検索。
+  制限: 20 ヒット (FTS5 ランキング)。
+  フォールバック: FTS5 が見つからない場合の LIKE 検索。
+  空の結果の場合: docs/、wiki/、docs/help/.
+
+index でファイルを直接検索します。
+  検索インデックスを再構築または更新します。
+  プロセス: .md、.txt、.rst、.py ファイル。
+  MD5 チェックサムを介してアップデートが必要かどうかを確認します。
+  最初の行 (# なし) からタイトルを抽出します。
+  書き込み: document_index、document_fts。
+
+ルックアップ <ライブラリ> <トピック>
+  ライブラリ固有のドキュメントを検索します。
+  制限: 10 ヒット。
+  「library」列と「doc_type」列を使用します。
+
+fetch <url>
+  ドキュメント ページをダウンロードし、HTML を Markdown に変換し、
+  data/cache/docs/ にキャッシュされます (ファイル名として MD5 ハッシュ)。
+  html2text (最適) または正規表現フォールバックを使用します。
+  document_indexにURLをライブラリ名とともに登録します。
+  タイムアウト: 15 秒。
+
+統計
+  インデックス統計を表示します: 合計、ローカル、Web、ライブラリ。
+  パラメータがない場合のデフォルトの動作。
+
+例
+=========
+
+bach docs-search search "SQLite optimization"
+  -> docs/、wiki/、docs/help/
+
+bach docs-search index
+ で「SQLite 最適化」を検索します。  -> インデックスの構築/更新
+
+bach docs-search lookup numpy array_operations
+  -> 「numpy」ライブラリドキュメントで「array_operations」を検索
+
+bach docs-search fetch https://docs.python.org/3/library/sqlite3.html
+  -> HTML ページのダウンロード、キャッシュ、インデックス作成
+
+bach docs-search stats
+  -> インデックス統計を表示
+
+ファイル
+=======
+data/bach.db
+  テーブルを含む SQLite データベース:
+  - document_index: すべてのドキュメントのメタデータ + コンテンツ
+  - document_fts: 全文検索用の FTS5 仮想テーブル
+
+data/cache/docs/
+  キャッシュされた Web ドキュメント (MD5-Hash.md)
+  フェッチ操作によって生成されます。
+
+docs/
+ウィキ/
+ドキュメント/ヘルプ/
+  ローカルドキュメントのソースディレクトリ。
+  インデックス操作中に再帰的に検索します。
+
+関連項目
+==========
+docs/help/ その他のハンドラー ドキュメント
+データ/データベースとキャッシュフォルダー
+Hub/base.py BaseHandler の実装

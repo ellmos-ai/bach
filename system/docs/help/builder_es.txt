@@ -1,0 +1,54 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CONSTRUCTOR - Creación y exportación de habilidades/agentes
+==========================================
+
+COMANDO BACH (preferido)
+-------------------------
+bach skills export <name>               Exportar habilidades (v2.0)
+bach skills list                        Enumerar todas las habilidades
+bach skills version <name>              Verificación de versión
+
+
+HERRAMIENTAS EN system/tools/
+---------------------------
+c_structure_generator.py <n> <perfil> Crear habilidad/agente
+c_structure_generator.py <n> --embedded Para BACH (ligero)
+
+generators/os_generator.py <n> [destino] Crear nuevo sistema operativo
+generadores/exporter.py habilidad <n> Exportar habilidad
+generadores/distribution_system.py Sistema de distribución
+
+
+PROFILE SPECTRUM
+----------------
+MICRO Solo SKILL.md (1 archivo)
+LUZ Estructura mínima (~5 archivos)
+ESTÁNDAR Con memoria (~12 archivos)
+EXTENDIDO Con microhabilidades (~20 archivos)
+AGENTE con flujos de trabajo (~30 archivos)
+AGENT_FULL Completo (~50 archivos)
+
+
+DIST_TYPE SYSTEM
+----------------
+2 = CORE Siempre paquete
+1 = PLANTILLA Restablecer al original
+0 = USUARIO No exportar
+
+
+COMANDOS RÁPIDOS
+--------------
+Exportar habilidad: análisis de exportación de habilidades de bach
+Lista de habilidades: lista de habilidades de bach
+Verificación de versión: análisis de versión de habilidades de bach
+
+
+MANEJADOR RELACIONADO
+-------------------
+system/hub/skills.py SkillsHandler (v2.0)
+
+
+Ver también: builder.md (hub/_services/)

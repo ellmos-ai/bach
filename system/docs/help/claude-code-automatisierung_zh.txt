@@ -1,0 +1,268 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CLAUDE 代码自动化
+============================
+
+通过命令行 (CLI) 自动化 Claude Code 的说明。
+
+
+概述
+---------
+Claude Code 可以在非交互模式下操作，这意味着
+集成到脚本、CI/CD 管道和自动化工作流程已启用。
+
+
+1.非交互模式（-p / --print）
+----------------------------------------
+自动化最重要的参数。克劳德给出答案
+并结束。
+
+    # 简单的请求
+    claude -p“向我解释一下这个函数的作用”
+
+    # 通过管道输入文件
+    猫 mycode.py | claude -p“分析这段代码”
+
+    # 关于标准输入
+    echo "2+2 是什么？" |克劳德-p
+
+
+2。脚本输出格式
+-------------------------------
+文本（默认）：
+    claude -p“您的请求”
+
+JSON（单个结果）：
+    claude -p "列出 5 种编程语言" --output-format json
+
+Stream JSON（实时流式传输）：
+    claude -p“编写测试”--输出格式stream-json
+
+
+3。权限和安全
+--------------------------------
+全自动，无需确认：
+    # 注意：仅在安全/隔离的环境中使用！
+    claude -p "创建一个index.html" --dangerously-skip-permissions
+
+选择权限模式：
+    # 计划模式：克劳德计划在执行前改变
+    claude -p“重构代码”--权限模式计划
+
+    # DontAsk模式：执行期间不查询
+    claude -p "更新依赖项" --permission-mode dontAsk
+
+使用有限的工具：
+    # 只允许某些工具
+    claude -p "显示 git 状态" --allowedTools "Bash(git:*)"
+
+    # 禁止某些工具
+    claude -p“分析代码”--disallowedTools“编辑写入”
+
+    # 禁用除特定工具之外的所有工具
+    claude -p“只读”--tools“读取”
+
+
+4。会话管理
+---------------------
+继续上一个会话：
+    claude --Continue
+
+通过 ID 继续特定会话：
+    claude --resume SESSION_ID
+
+在简历上创建新的会话 ID：
+    克劳德--继续--fork-session
+
+
+5。预算和模型控制
+------------------------------
+    # 设置预算限额（以美元为单位）
+    claude -p“复杂分析”--max-budget-usd 1.00
+
+    # 选择型号
+    claude -p“快速问题”--模型十四行诗
+    claude -p“复杂任务”--模型作品
+
+    # 过载情况下的后备模型
+    克劳德-p“请求”--后备模型十四行诗
+
+
+6。自定义系统提示
+-------------------------
+    # 设置自己的系统提示符
+    claude -p "请求" --system-prompt "你是Python专家"
+
+    # 展开系统提示
+    claude -p“请求”--append-system-prompt“始终用德语回答”
+
+
+7。 CI/CD 集成
+--------------------
+示例：管道中的代码审查
+
+    #!/bin/bash
+    # 代码审查.sh
+    claude -p“查看此代码以了解安全问题和最佳实践”\
+      --输出格式json\
+      --危险地跳过权限 \
+      --最大预算美元 1.00\
+      --model sonnet
+
+示例：自动文档
+
+    #!/bin/bash
+    # 生成文档.sh
+    猫 src/main.py | claude -p "以 Markdown 格式创建 API 文档" \
+      --输出格式文本\
+      --dangerously-skip-permissions > docs/API.md
+
+示例：测试生成
+
+    #!/bin/bash
+    # 生成_tests.sh
+    claude -p "为 src/utils.py 中的函数生成单元测试" \
+      --危险地跳过权限 \
+      --allowedTools“读写”\
+      --最大预算美元 0.50
+
+
+8。双向流
+----------------------------
+用于与实时通信的复杂集成：
+
+    克劳德-p“...”\
+      --输入格式流-json\
+      --输出格式流-json\
+      --包括部分消息
+
+
+9。 MCP 服务器集成
+-------------------------
+    # 加载 MCP 配置（JSON 文件或字符串）
+    claude -p“请求”--mcp-config ./mcp-config.json
+
+    # 加载多个配置
+    claude -p“请求”--mcp-config ./config1.json ./config2.json
+
+    # 仅使用 Config 中的 MCP 服务器
+    claude -p“请求”--mcp-config ./mcp-config.json --strict-mcp-config
+
+    # 管理MCP服务器
+    claude mcp # 交互式管理
+    claude mcp --help # 显示 MCP 命令
+
+
+10.高级功能
+-----------------------
+结构化 JSON 输出：
+    # 验证 JSON 模式
+    claude -p "Give me user data" --json-schema '{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}'
+
+使用代理：
+    # 预先配置的代理
+    claude -p“审查代码”--代理审查者
+
+    # 定义你自己的代理
+    claude -p "Request" --agents '{"tester": {"description": "测试代码", "prompt": "您是 QA 专家"}}'
+
+插件集成：
+    # 从目录加载插件
+    claude -p "request" --plugin-dir ./my-plugins
+
+允许其他目录：
+    # 扩展工具访问
+    claude -p "分析多个项目" --add-dir /path/to/project1 /path/to/project2
+
+调试模式：
+    # 带过滤器
+    claude -p“请求”--debug“api，hooks”
+
+    # 没有特定类别
+    claude -p“请求”--debug“！1p，！文件”
+
+    # 将调试日志写入文件
+    claude -p "request" --debug-file ./debug.log
+
+
+重要参数参考
+---------------------------
+参数说明
+--------- ------------
+-p, --print 非交互模式（自动化所需）
+--输出格式文本、json、流json
+--输入格式文本，流-json
+--dangerously-skip-permissions 无确认对话框
+--permission-mode AcceptEdits、bypassPermissions、默认、委托、dontAsk、计划
+--allowedTools 允许的工具（例如“Bash(git:*) Read”）
+--disallowedTools 禁止使用的工具
+--tools 工具列表或“”表示无工具，“默认”表示所有工具
+--max-budget-usd 美元预算限额
+--model 模型（十四行诗、作品或全名）
+--fallback-model 过载时的回退
+--system-prompt 自己的系统提示符
+--append-system-prompt 展开系统提示符
+--继续 继续上一个会话
+--resume 通过 ID 恢复会话
+--fork-session 继续时的新会话 ID
+--session-id 设置特定会话 ID (UUID)
+--mcp-config MCP 服务器配置
+--strict-mcp-config 仅使用 Config 中的 MCP
+--json-schema 用于验证输出的 JSON 模式
+--agent 预配置代理
+--agents 自己的代理（JSON 格式）
+--plugin-dir 插件目录
+--add-dir 允许附加目录
+--debug 带有可选过滤器的调试模式
+--debug-file 将调试日志写入文件
+--no-session-persistence 不保存会话（仅与--print一起使用）
+
+
+11.远程控制（移动应用程序）
+-------------------------------
+Claude Code 可以通过 Claude 移动应用程序远程控制。
+已知错误：--dangerously-skip-permissions 不适用于远程控制。
+
+解决方案：使用 BACH 权限配置文件：
+
+    # 自动（推荐）：
+    # 桌面：Claude_RemoteControl.bat
+    # BACH 菜单：[P] 键
+
+    # 手册：
+    bach permissions activate remote_control
+    克劳德——危险地跳过权限
+    # -> 进入/rc，扫描二维码
+    # 完成后：
+    bach permissions deactivate
+
+    # 自定义配置文件：
+    bach permissions set remote_control allow=mcp__neuer_server__*
+    bach permissions show remote_control
+    bach permissions status
+
+请参阅：permissions.txt 以获取完整文档。
+
+
+安全说明
+-------------------
+1. --dangerously-skip-permissions 仅在隔离环境中
+   （沙箱、容器）。
+2.设定预算限额以避免意外成本
+3. 如果可能，使用 --allowedTools 限制工具
+4. 不要通过管道向 Claude 发送敏感数据
+
+
+另请参阅
+----------
+- claude --help 完整帮助
+- 克劳德医生安装检查
+- claude mcp 管理 MCP 服务器
+- claude插件插件管理
+- claude setup-token 设置持久的身份验证令牌
+- claude install [目标] 安装本机版本（稳定/最新/版本）
+- claude update 检查更新
+- claude-code.txt 一般克劳德代码信息
+- Permissions.txt BACH 权限配置文件（远程控制）

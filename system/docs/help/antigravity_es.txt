@@ -1,0 +1,54 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ANTIGRAVITY - REFERENCIA RÁPIDA
+=============================
+
+Google Antigravity es una plataforma de desarrollo centrada en el agente.
+Documentación detallada: wiki/antigravity.txt
+
+BREVE DESCRIPCIÓN GENERAL
+--------------
+  Qué: bifurcación de VS Code con agentes autónomos de IA
+  Descargar: https://antigravity.google/download
+  Ruta: C:\Users\User\AppData\Local\Programs\Antigravity\
+
+COMANDOS CLI
+-----------
+  antigravedad [ruta] Abrir editor
+  chat antigravedad Inicie el chat "Preguntar" (¡GUI!)
+  chat antigravedad -m agente Modo agente
+  antigravity --add-mcp {...} Agregar servidor MCP
+
+ATAJO DE TECLADO
+-------------
+  Cmd+L alternar panel de agente
+  Cmd+I finalización en línea
+  Cmd+E Cambiar Editor/Administrador
+
+MODOS DE DESARROLLO
+----------------
+  Piloto automático impulsado por agentes (autónomo)
+  Basado en reseñas Con permiso (recomendado)
+  Usuario asistido por agente en control
+
+RUTAS IMPORTANTES
+--------------
+  .gemini\antigravity\brain\ listas de tareas (¡DIRIGIBLES!)
+  .gemini\antigravity\skills\ Habilidades Globales
+  .agent\skills\ Habilidades del espacio de trabajo
+  .agent\workflows\ Flujos de trabajo (/slash-commands)
+
+INTEGRACIÓN BACH
+----------------
+  Inicio: start/start_gemini.bat (Interactivo)
+  Guión: herramientas de Python/partner_communication/gemini_start.py
+  Bandeja de entrada: system/partners/gemini/inbox/
+  Bandeja de salida: system/partners/gemini/outbox/
+
+VER TAMBIÉN
+----------
+  wiki/antigravity.txt Documentación completa
+  wiki/gemini.txt Modelos de IA de Géminis
+  docs/help/partners.txt Sistema de socios de IA

@@ -1,0 +1,160 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [hub/consolidation.py、memory_consolidation table]
+
+メモリ統合
+=====================
+
+日付: 2026-02-08
+
+統合とは?
+-----------------------
+統合は、生データ (セッション、レッスン、
+作業記憶) は意味構造を作成し、それを文脈に移します。 
+
+人間の睡眠に似たもの:
+- 経験は処理され、重要なものは保持されます。
+- 繰り返しにより接続が強化され (ブースト)、使用されない場合はフェードします (ディケイ)。
+- 概要は詳細を削減し、本質を保持します。
+
+統合レベル (パイプライン)
+---------------------------------
+
+  RAW データ (セッション、ワーキングメモリ) --[分析]--> ASM (メタデータ)
+  ASM (メタデータ) --[AI レビュー]--> ESSENCE (レッスン、コンテキスト)
+  ESSENCE --[インデックス作成]--> TRIGGER-DB (連想メモリ)
+
+TABLES (v1.1.80+ アクティブ)
+-------------------------
+  Memory_sessions の生データ (360 個以上のエントリ)
+  Memory_lessons 精製された洞察 (70 エントリ以上)
+  Memory_consolidation 追跡とスコア (350 以上のエントリ)
+  context_triggers 連想ブリッジ (900 以上のトリガー)
+
+CLI コマンド (バッチ統合)
+------------------------------
+  status 統計と統合予定を表示します。
+  run 利用可能なすべての統合ステップ (重み付け、アーカイブ、インデックス、同期トリガー、忘れ) を実行します。
+  compress セッションをコンテキストエントリに圧縮します。
+               --cleanup: 空のセッションをクリーンアップします。
+               --batch: セッションを日ごとにグループ化します。
+               --run: ルールセットを使用した完全圧縮
+  重み 関連性スコアの更新 (減衰/増加)。
+  アーカイブ 古い知識を長期アーカイブに移動します。
+  インデックス 事実、ヘルプ、Wiki の比較。
+  review 手動検証用のレビュー タスクを作成します。
+  init 既存のエントリの追跡を初期化します。
+  sync-triggers 動的コンテキスト トリガーを更新します (新規 v1.1.80)。
+  忘れる 未使用のエントリを削除します (重み < しきい値)。
+  reclassify 誤って分類されたエントリを修正します (新規 v1.1.81)。
+
+デーモン統合
+------------------
+統合はバックグラウンド ジョブ (scheduler_jobs) として実行できます。
+- `consolidate-weight`: 毎日 (減衰シミュレーション)。
+- `consolidate-archive`: 毎週 (アーカイブ チェック)。
+- `consolidate-index`: ファクト インデックスを更新します。
+
+(注: デーモン ジョブを設定する必要があります - docs/help/daemon.txt を参照)
+
+真実:
+統合を実行するたびにログ エントリが作成され、疑わしい場合にはログ エントリが作成されます。 
+タスクを確認します (#category: メンテナンス)。
+
+関連項目
+----------
+  docs/help/memory.txt 認知記憶モデル
+  docs/help/lessons.txt ベスト プラクティスと洞察
+  docs/help/daemon.txt デーモン ジョブ
+  Hub/consolidation.py ロジックの実装
+  ARCHITECTURE.md システム アーキテクチャ (メモリ モデル)
+
+サブプロセス (すでに存在します)
+--------------------------------
+これらの既存のツールは統合の一部です:
+
+  tools/autolog_analyzer.py セッション分析 (ASM_003)
+  tools/context_compressor.py 圧縮 (ASM_004/005)
+  スキル/ワークフロー/wiki-* Wiki 作成者
+  スキル/ワークフロー/ヘルプ-* ヘルプ作成者
+
+データベース スキーマ
+----------------
+memory_consolidation (アクティブ、350 以上のエントリ):
+
+  id 整数主キー
+  source_table TEXT --memory_sessions、memory_lessons など。
+  source_id INTEGER -- ソース テーブルの ID
+  times_accessed INTEGER -- アクセス カウンタ
+  last_accessed TIMESTAMP -- 最終アクセス日
+  重み REAL -- 関連性スコア (0.0-1.0)
+  decay_rate REAL -- 減衰率
+  しきい値 REAL -- アーカイブしきい値
+  ステータス TEXT -- アクティブ、アーカイブ済み、削除済み
+  consolidated_to INTEGER --memory_context 内の ID (統合されている場合)
+  created_at TIMESTAMP
+  updated_at タイムスタンプ
+
+ワークフロー: セッション -> コンテキスト
+----------------------------
+1。セッションが終了します (--shutdown)
+2. autolog_analyzer.py はアクティビティを抽出します
+3. context_compressor.py は概要を作成します
+4.memory_sessionsに保存される概要
+5. [DAEMON] X セッション後: コンテキストへの圧縮
+6. [AI REVIEW] 意味構造のチェック、修正
+7. 結果はトリガー付きのmemory_context
+
+WORKFLOW: FACT -> WIKI/HELP
+---------------------------
+1。新しいファクトが作成されます: bach --memory fat "topic:value"
+2. consolidate-index チェック: 「トピック」に関するヘルプ/Wiki は存在しますか?
+3.「いいえ」の場合: タスク「[トピック] に関する Wiki エントリを作成する」を作成します。
+4. Wiki 作者がエントリを作成する
+5. ファクトはパス参照で更新されます
+
+ワークフロー: WIKI/ヘルプ -> ファクトインデックス
+----------------------------------
+1. consolidate-index は docs/help/*.txt および wiki/*.txt をスキャンします。
+2. 各エントリについて: 事実は存在しますか?
+3.「いいえ」の場合: ファクトをインデックスとして作成します
+   HELP.memory -> 「メモリ システムのドキュメント」
+   WIKI.gemini -> 「Google Gemini AI モデル」
+4. 事実は簡単な検索として役立ちます
+
+しきい値 (構成可能)
+-------------------------------
+  Weight_threshold_archive: 0.2 この値未満: アーカイブ
+  Weight_threshold_delete: 0.05 この値未満: 削除
+  Decay_rate_default: 0.95 毎日の減衰 (5%)
+  boost_on_access: アクセス時に重量が 0.1 増加
+  session_before_compress: 圧縮前の 10 セッション
+  days_before_archive: アーカイブまであと 90 日
+
+新しい操作 (v1.1.80 以降)
+---------------------------
+  sync-triggers 以下から動的トリガーを更新します。
+                   - workflow_trigger_generator.py
+                   -lesson_trigger_generator.py
+                   -tool_auto_discovery.py
+                   - テーマパケット_ジェネレーター.py
+                   -trigger_maintainer.py
+
+  remember 重みが 0.05 未満のエントリを非アクティブ化/削除します
+                   - メモリレッスン: is_active = 0
+                   - メモリワーキング: is_active = 0
+                   - 記憶事実: 削除
+
+  reclassify 誤った分類を修正します。
+                   - レッスン -> コンテキスト (使用頻度が高い)
+                   ・ワーキング→レッスン（レッスンパターンあり）
+                   - 作業 -> ファクト (キー:値形式)
+                   - Wiki のないファクト -> タスクの作成
+
+                   手動変換:
+                     bach consolidate reclassify lesson 42 context
+
+                   自動分析:
+                     bach consolidate reclassify
+                     bach consolidate reclassify --fix

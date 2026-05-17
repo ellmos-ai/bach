@@ -1,0 +1,120 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HEALTH - Health Assistant
+=================================
+
+DESCRIPTION:
+  The health assistant manages medical data (diagnoses,
+  Medication, laboratory values, documents, appointments) and doctor contacts.
+  It serves as a central medical journal.
+
+CLI COMMANDS (OVERVIEW):
+  bach gesundheit status             Show dashboard (appointments, abnormalities)
+  bach gesundheit contacts           Show doctor contacts
+  bach gesundheit contacts -s <fach> Nach Fachgebiet filtern
+  bach gesundheit diagnoses          Active diagnoses
+  bach gesundheit diagnoses --all    All diagnoses (including cured/refuted)
+  bach gesundheit meds               Active medications
+  bach gesundheit meds --all         All medications (including discontinued)
+  bach gesundheit labs               Lab values (last 50)
+  bach gesundheit labs --abnormal    Only abnormal ones Values
+  bach gesundheit labs -t <test>     Filter by test (e.g. -t TSH)
+  bach gesundheit docs               Medical documents/findings
+  bach gesundheit docs --type <typ>  Filter by type (findings|laboratory|prescription)
+  bach gesundheit appointments       Upcoming doctor's appointments
+  bach gesundheit appointments --past Vergangene Termine
+  bach gesundheit help               Detailed command help
+
+PREVENTIVE EXAMINATIONS:
+  bach gesundheit vorsorge           Show all preventive examinations
+  bach gesundheit vorsorge-faellig   Only due examinations
+  bach gesundheit add-vorsorge "Name" --turnus <monate> --kategorie <typ>
+  bach gesundheit vorsorge-done <id> Als erledigt markieren (heute)
+  bach gesundheit vorsorge-done <id> --date DD.MM.YYYY
+
+  Examples:
+    bach gesundheit add-vorsorge "Darmspiegelung" --turnus 120 --kategorie Krebs
+    bach gesundheit add-vorsorge "Hautkrebsscreening" --turnus 24 --ab-alter 35
+    bach gesundheit vorsorge-done 1 --date 15.01.2026
+
+EXPORT FUNCTIONS:
+  bach gesundheit export                      Doctor contacts (default)
+  bach gesundheit export --entity diagnoses   Export diagnoses
+  bach gesundheit export --entity meds        Export medications
+  bach gesundheit export --entity labs        Export laboratory values
+  bach gesundheit export --entity all         Health passport (all)
+  bach gesundheit export --format csv         Export as CSV
+  bach gesundheit export --format vcard       Export as vCard 3.0
+  bach gesundheit export --file <pfad>        Save to file
+  bach gesundheit export -s <fach>            Only specific subject area
+
+  Example: bach gesundheit export --entity all --file gesundheitspass.txt
+
+PROACTIVE FUNCTIONS:
+  bach gesundheit reminders          Reminders (medications, prevention, appointments)
+  bach gesundheit interactions       Interaction check of active medications
+
+DATA COLLECTION (ADD):
+  bach gesundheit add-diagnosis "Name" [Optionen]
+    Options: --icd, --date, --status, --severity, --doctor, --note
+
+  bach gesundheit add-med "Name" [Optionen]
+    Options: --ingredient, --dosage, --schedule, --diagnosis, --start, --note
+
+  bach gesundheit add-lab "Test" [Optionen]
+    Options: --value, --unit, --ref-min, --ref-max, --date, --abnormal, --doctor
+
+  bach gesundheit add-doc "Titel" [Optionen]
+    Options: --type, --file, --summary, --date, --doctor, --diagnosis
+
+  bach gesundheit add-appointment "Titel" [Optionen]
+    Options: --doctor, --date, --time, --duration, --type, --note
+
+  Tip: Use `bach ​​gesundheit add-... --help` for detailed options.
+
+  Examples:
+    bach gesundheit add-diagnosis "Hypothyreose" --icd E03.9 --status aktiv
+    bach gesundheit add-med "L-Thyroxin" --dosage 75mcg --schedule morgens
+    bach gesundheit add-lab "TSH" --value 2.5 --unit mU/L --ref-min 0.4 --ref-max 4.0
+    bach gesundheit add-doc "Blutwerte Jan 2026" --type labor --file /pfad/datei.pdf
+    bach gesundheit add-appointment "Kontrolle" --doctor 1 --date 15.02.2026 --time 10:00
+
+SHOW DETAILS:
+  bach gesundheit show <typ> <id>
+
+  Available types:
+    - contact / doctor
+    - diagnosis / diagnosis
+    - med / medication / drug
+    - lab / laboratory value
+    - doc / document
+    - appointment / appointment
+    - precaution / checkup
+
+  Examples:
+    bach gesundheit show contact 1
+    bach gesundheit show diagnosis 1
+    bach gesundheit show med 1
+    bach gesundheit show lab 1
+    bach gesundheit show vorsorge 1
+
+DATABASE:
+  Tables in bach.db (Unified DB since v1.1.84):
+  - health_contacts (doctors)
+  - health_diagnoses (diagnoses, ICD codes)
+  - health_medications (medications, dosage, intake schedule)
+  - health_lab_values (lab values, reference ranges)
+  - health_documents (findings, doctor's letters)
+  - health_appointments (doctor's appointments)
+  - precaution_checks (preventive examinations)
+
+INTEGRATION:
+  - LifeAssistant: Reads appointments for the daily briefing.
+  - Documents: Linked to files in `user/documents/medical/`.
+  - Interaction check: Basic database with 12 frequent interactions.
+
+SEE ALSO:
+  bach --help abo            (For fitness subscriptions etc.)
+  bach --help contact        (General contacts)

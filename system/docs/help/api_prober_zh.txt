@@ -1,0 +1,65 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+API PROBER - REST API 发现和文档
+==================================================
+
+描述
+------------
+委托给 MODULAR_AGENTS/ApiProber 模块进行自动发现
+以及 REST API 的文档。扫描 URL、保存端点并
+本地数据库中的参数并导出结果。
+
+操作
+-----------
+  探测 <url> [--深度 N] [--delay-ms N] [--max-requests N]
+    对 API URL 进行采样。 Depth控制递归深度，
+    delay-ms 请求之间的等待时间，max-requests 限制。
+    将结果保存到本地数据库。
+
+  列表
+    列出本地数据库中的所有已知服务。
+    显示最后一个的名称、基本 URL、端点计数和时间戳
+    每项服务的探测。
+
+  状态<服务名称>
+    有关服务的详细信息：基本 URL、服务器标头、
+    具有方法和身份验证状态的端点、探针运行统计信息。
+
+  导出 <服务> [--格式 md|json]
+    将服务的 API 文档导出为 Markdown 或 JSON。
+    默认格式为 Markdown。
+
+  配置[--显示]
+    显示当前 ApiProber 配置，包括超时
+    设置（B36 修复：connect_timeout_s、read_timeout_s）。
+
+示例
+---------
+  bach api-prober probe https://api.github.com --depth 2
+    在深度 2 处对 GitHub API 进行采样并保存结果。
+
+  bach api-prober list
+    显示迄今为止检测到的所有服务。
+
+  bach api-prober status github
+    有关 GitHub API 的详细信息（如果有）。
+
+  bach api-prober export github --format json
+    将 GitHub API 文档导出为 JSON。
+
+  bach api-prober config
+    显示当前超时和配置参数。
+
+文件
+-------
+  处理程序：hub/api_prober.py
+  模块：MODULAR_AGENTS/ApiProber/（外部）
+  数据库：config.json -> get_db_path()
+  导出：config.json -> get_export_dir()
+
+另请参见
+----------
+  帮助orchestrator——ProbeOrchestrator（内部API发现引擎）
+  help handler -- Handler系统概述

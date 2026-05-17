@@ -1,0 +1,63 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+目录真相
+===============
+
+自动目录状态管理。
+
+概念：
+  - 启动：记录实际状态，与TARGET进行比较
+  - 关闭：当前状态成为新目标
+  - 启发式：需要克劳德进行更改
+
+进程：
+
+1。第一次开始
+   - 当前状态 = 目标状态
+   - 存储在 data/directory_truth.json
+
+2.以下开始
+   - 扫描当前状态
+   - 与“应该”的比较
+   - 显示外部更改（用户更改了某些内容）
+
+3。关机
+   - 当前状态成为新目标
+   - 克劳德的更改现在是“标准”
+
+忽略：
+  - __pycache__
+  - .pyc 文件
+  - .git、.idea、.vscode
+  - auto_log.txt（不断变化）
+  - current.md（内存）
+
+更改输出：
+  + 新文件夹/文件
+  - 删除的文件夹/文件
+  ~ 修改后的文件
+
+好处：
+  - Claude 不必手动跟踪发生的变化
+  - 外部更改（用户）被识别
+  - 自动采用自己的更改
+
+集成：
+  - 自动在 hub/startup.py 中（启动时的 DirectoryScanner）
+  - 自动在 hub/shutdown.py 中（关闭期间保存状态）
+  - 没有自己的处理程序，基于工具（tools/c_dirscan.py）
+
+CLI（手动）：
+  python c_dirscan.py # 显示状态
+  python c_dirscan.py --scan # 扫描当前状态
+  python c_dirscan.py --compare # 比较 IS 与 SHOULD
+  python c_dirscan.py --update # 更新应该状态
+  python c_dirscan.py --path /path # 其他目录
+  python c_dirscan.py --json # JSON 输出
+
+文件:
+  - 工具：system/tools/c_dirscan.py（DirectoryScanner 类）
+  - 数据：system/data/directory_truth.json（首次扫描期间生成）
+  - 结构：{时间戳，目录[]，文件{路径：{散列，大小}}}

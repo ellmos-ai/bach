@@ -1,0 +1,82 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+バックアップと復元
+================
+
+バックアップ システムは dist_type の概念に基づいています:
+
+  dist_type = 2 (CORE) → ディストリビューションはバックアップです
+  dist_type = 1 (TEMPLATE) → インストール中の 1x スナップショット
+  dist_type = 0 (USER_DATA) → 通常のバックアップ ローテーション
+
+コマンド
+-------
+
+  # バックアップを作成します
+  bach backup create                  ローカル バックアップ
+  bach backup create --to-nas         NAS にもコピーします
+
+  # バックアップの表示
+  bach backup list                    ローカル バックアップ
+  bach backup list --nas              NAS バックアップ
+  bach backup info <name>             バックアップの詳細
+
+  # 復元 (userdata_*.zip バックアップのみ)
+  bach restore backup <name>          特定のバックアップ
+  bach restore backup latest          最新のバックアップ
+
+  # テンプレートをリセット (backup_manager.py 経由のみ)
+  python system/tools/backup_manager.py テンプレート SKILL.md の復元
+
+何がバックアップされていますか?
+-------------------
+
+  dist_type = 0 (USER_DATA):
+    §── タスク (すべてのタスク、ステータス、履歴)
+    §── メモリ/ (セッション、長期、アーカイブ)
+    §── data/logs/ (セッションログ、統合パス)
+    └── user/ (受信箱、メッセージ、アジェンダ)
+
+  保護されていません (dist_type >= 1):
+    §── bach.py、schema.sql、hub/
+    §── tools/、skills/、docs/help/
+    └── (配布の一部です)
+
+バックアップローテーション
+---------------
+
+  ローカル (_backups/): 7 つのバックアップを保持します
+  NAS: 30 個のバックアップを保持する
+  OneDrive: 自動 (バージョン履歴)
+
+ストレージの場所
+------------
+
+  ローカル: system/_backups/
+  NAS: \\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
+  ログ: system/data/logs/ (統合)
+
+ツール
+-----
+
+  system/tools/backup_manager.py 直接呼び出しが可能:
+    python system/tools/backup_manager.py create [--to-nas]
+    Python system/tools/backup_manager.py リスト [--nas]
+    python system/tools/backup_manager.py 情報 <名前>
+    python system/tools/backup_manager.py バックアップを復元 <名前>
+    python system/tools/backup_manager.py 復元テンプレート <ファイル>
+    python system/tools/backup_manager.py スナップショット <ファイル>
+
+API
+---
+
+  POST /api/v1/backup バックアップの作成 (ヘッドレス)
+  /api/v1/backup/list バックアップのリストを取得
+
+関連スキル
+----------------
+
+  skill/_service/builder.md → 作成、エクスポート、配布、バックアップ、復元
+  docs/BACKUP_SYSTEM.md → _BATCH の元のコンセプト

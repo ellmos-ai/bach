@@ -1,0 +1,89 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+GUIDELINES - Documentation Standards
+=====================================
+
+Status: 2026-02-08
+
+THREE-LEVEL SYSTEM
+-------------------
+1. OPERATIONAL (docs/help/*.txt)
+   - HOW do I use BACH?
+   - Focus: CLI commands, guides, references.
+   - Format: TXT (ASCII compatible, max. 250 lines).
+
+2. KNOWLEDGE (wiki/*.txt)
+   - WHAT is X?
+   - Focus: background knowledge, domain knowledge, AI theory.
+   - Format: TXT (ASCII compatible).
+
+3. CONCEPTUAL (skills/**/*.md, docs/*.md)
+   - WHY & HOW is it built?
+   - Focus: architectures, workflows, deeper analysis.
+   - Format: MarkDown (richly illustrated/structured).
+
+METADATA MANDATORY (NEW 2026-01)
+-------------------------------
+Every documentation file MUST have the following header:
+
+  # Portability: UNIVERSAL | SYSTEM | USER
+  # Last validated: YYYY-MM-DD
+  # Next test: YYYY-MM-DD
+  # Sources: [Optional]
+
+Check intervals:
+  SYSTEM: +3 months (code-linked, changes frequently)
+  UNIVERSAL: +6 months (generally valid, stable)
+  USER: +12 months (user-specific, long-lasting)
+
+TX/TXT STRUCTURE (Classic)
+---------------------------
+  TITLE IN CAPITAL LETTERS
+  ========================
+  [metadata header]
+
+  DESCRIPTION
+  [What does this feature do]
+
+  COMMANDS
+  bach [befehl] [argumente]
+
+  EXAMPLES
+  [Concrete use cases]
+
+  SEE ALSO
+  [Links to other docs/help/ or wiki/ files]
+
+LIFE CYCLE ANALYZES
+---------------------
+1. CREATION: user/ANALYSE_Thema.md
+2. EVALUATION: Findings → docs/help/ OR wiki/. Tasks → Task system.
+3. ARCHIVING: Move to user/_archive/ after completion.
+
+NAMING CONVENTIONS
+------------------
+docs/help/<topic>.txt Simple topic
+docs/help/<command>.txt CLI command documentation
+wiki/<special>.txt External knowledge
+
+SKILL_<n>.md Skill documentation
+CONCEPT_<n>.md concept document
+<n>_ANALYSE.md Analysis report
+<Topic>_Proposal.md Suggestions (awaiting approval)
+
+QUALITY CRITERIA
+-------------------
+docs/help/*.txt Files:
+- Max. 250 lines (recommended under 150)
+- No Markdown syntax (ASCII compatible)
+- All commands documented
+- At least 1 example
+- SEE ALSO Reference
+
+SEE ALSO
+----------
+user/_archive/Guidelines_Proposition.md Complete concept (archived)
+bach --help practices                    Architecture Principles
+bach --help naming                       Naming Conventions

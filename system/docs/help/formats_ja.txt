@@ -1,0 +1,48 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+データ形式
+============
+
+ステータス: 2026-02-08
+
+基本ルール: JSON の前のデータベース
+------------------------------
+BACH はプライマリ データ ストレージとして SQLite (`bach.db`) を使用します (現在 210 以上のテーブル)。
+JSON ファイルは、正当な例外的な場合にのみ許可されます。
+
+WHEN DATABASE (STANDARD)?
+--------------------------
+  - 永続的なシステム データ (ツール、タスク、構成)
+  - 履歴データ (ログ、セッション、学んだ教訓)
+  - 大規模なデータセット (Wiki、Med-Research)
+  - 整合性 (ハッシュベースの検証)
+
+JSON が許可される場合 (例外)?
+------------------------------
+1。複雑な階層: `system/data/skills_hierarchy.json` (インタラクティブ ツリー)。
+2. ローカル設定: 個別に必要な場合 (UI 設定など)。
+3. MCP-CONFIG: Claude デスクトップ統合が必要な場合。
+4. 一時的なプロセス データ: 必要な場合の一時スナップショット。
+
+その他の形式
+--------------
+  - TOON: LLM インジェクション用にトークン最適化されたデータセット。
+  - MD: ドキュメントとレポートの出力 (`outbox/`)。
+
+MIGRATION JSON -> DB (正常に完了)
+-----------------------------------------------
+- `partner_registry.json` -> `partner_recognition` (テーブル)
+- `connections.json` -> `connections` (テーブル)
+- `injectors.txt` -> `automation_injectors` (表)
+- `inbox_folders.txt` -> `folder_scans` (テーブル)
+
+変換
+-------------
+  python system/tools/c_universal_converter.py <file> --to [json|yaml|toml|xml|toon]
+
+関連項目
+----------
+  docs/help/maintain.txt 整合性チェックとシールのメカニズム
+  bach --db status     210 を超えるテーブルの現在のステータス

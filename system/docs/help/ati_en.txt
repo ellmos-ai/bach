@@ -1,0 +1,167 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ATI - Advanced Tool Integration Agent
+
+ATI (Agent for Technical Implementation) is the tool integration agent
+by BACH. ATI = BATCHI - BACH (the delta, which BACH is still missing).
+It offers daemon control, session management, task management, scanner,
+Project bootstrapping, code analysis and build automation.
+
+COMMANDS - DAEMON & SESSIONS
+===========================
+
+bach ati status                   Show ATI status and daemon info
+bach ati start                    Start headless session daemon
+bach ati stop                     Stop session daemon
+bach ati session                  Start manual session
+bach ati session --dry-run        Session dry run (no changes)
+
+COMMANDS - TASK MANAGEMENT
+=========================
+
+bach ati task list                ATI tasks show
+bach ati task add "TITEL"         Add new ATI task
+bach ati task done ID             Mark task as completed
+bach ati task depends ID DEP      Set dependency between tasks
+bach ati task blocked             Show blocked tasks
+bach ati check                    Show between-task checklist
+bach ati problems                 Problems First - show errors prioritized
+bach ati context KEYWORD          Test context triggers
+
+COMMANDS - SCANNERS
+=================
+
+bach ati scan                     Scan software projects
+bach ati scan status              Show last scan status
+bach ati scan tasks               Scanned tasks show
+bach ati onboard PATH             Onboard a new project
+
+COMMANDS - TOOLS & PATHS
+=======================
+
+bach ati path NAME                Show path to a tool
+bach ati path --list              List all tool paths
+
+COMMANDS - EXPORT & INSTALL
+==========================
+
+bach ati export                   Export ATI agent as ZIP
+bach ati export --dry-run         Export dry run (shows what is being exported)
+bach ati install PFAD.zip         Install ATI export
+
+COMMANDS - PROJECT BOOTSTRAPPING
+===============================
+
+bach ati bootstrap NAME --template TYPE  Create new project with template
+bach ati bootstrap my-tool --template python-cli
+bach ati bootstrap my-skill --template llm-skill
+
+COMMANDS - PROJECT MIGRATION
+===========================
+
+bach ati migrate PATH --analyze           Analyze existing project
+bach ati migrate PATH --template TYPE     Migrate project to template
+bach ati migrate my-project --dry-run     Dry run (no changes)
+
+COMMANDS - MODULES
+================
+
+bach ati modules list             List available modules
+
+TEMPLATES
+=========
+
+python-cli Python CLI application with setuptools/pyproject.toml
+               Structure: src/, tests/, docs/, _modules/, _policies/
+
+llm-skill LLM skill for BACH/Claude
+               Structure: SKILL.md, _config/, _data/, _docs/
+
+llm-agent LLM Agent
+               Structure: AGENT.md, _skills/, _tools/
+
+REUSABLE MODULES
+========================
+
+_modules/ and modules/
+├── path_healer.py Path self-healing (from RecludOS/VFDistiller)
+├── distribution.py tier system, seal, release management (modules/)
+├── encoding.py UTF-8, BOM handling, encoding correction (modules/)
+└── validation.py Schema validation (planned)
+
+BACH-POLICIES
+=============
+
+_policies/
+├── naming_convention.md File naming conventions
+├── encoding_policy.md UTF-8 standard, no BOM
+└── path_rules.json Relative paths, not hardcoded paths
+
+EXAMPLES
+=========
+
+# Start daemon and check status
+bach ati start
+bach ati status
+
+# Manage tasks
+bach ati task list
+bach ati task add "Feature X implementieren"
+bach ati task done 1
+
+# Scan and onboard project
+bach ati scan
+bach ati onboard C:\Projekte\neues-tool
+
+# Create new Python CLI project
+bach ati bootstrap rechnungs-tool --template python-cli
+
+# Analyze existing project
+bach ati migrate C:\Projekte\altes-tool --analyze
+
+# Migrate project to BACH structure (dry run)
+bach ati migrate C:\Projekte\altes-tool --template python-cli --dry-run
+
+# Export ATI and install somewhere else
+bach ati export
+bach ati install C:\Downloads\ati_export.zip
+
+MIGRATION-WORKFLOW
+==================
+
+1. Analysis: bach ati migrate PATH --analyze
+              Shows: compliance score, missing directories, problems
+
+2. Dry-Run: bach ati migrate PATH --template TYPE --dry-run
+              Shows what would happen without changes
+
+3. Migration: bach ati migrate PATH --template TYPE
+              Executes migration (creates backup automatically)
+
+4. Verify: bach ati migrate PATH --analyze
+              Checking new compliance score
+
+NOTES
+========
+
+- ATI uses project_bootstrapper.py (agents/ati/tools/)
+- Templates are located in agents/ati/templates/
+- Modules are located in agents/ati/_modules/ and modules/
+- Policies are located in agents/ati/_policies/
+- Scanners are located in agents/ati/scanner/
+- Session daemon is located in agents/ati/session/
+- Export is in agents/ati/export/
+- Onboarding is located in agents/ati/onboarding/
+- Data is in data/ati/ and data/bach.db
+- Documentation: agents/ati/ATI.md
+- Bootstrapping concept: agents/ati/ATI_PROJECT_BOOTSTRAPPING.md
+
+RELATED
+========
+
+bach --help builder        Build skill for projects
+bach --help distribution   Distribution system
+bach --help coding         Coding conventions
+bach --help maintain       Maintenance tools (path healing)

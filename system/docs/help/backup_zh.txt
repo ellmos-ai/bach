@@ -1,0 +1,82 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+备份和恢复
+================
+
+备份系统基于dist_type概念：
+
+  dist_type = 2 (CORE) → 分发是备份
+  dist_type = 1 (模板) → 安装期间的 1x 快照
+  dist_type = 0 (USER_DATA) → 正常备份循环
+
+命令
+-------
+
+  # 创建备份
+  bach backup create                  本地备份
+  bach backup create --to-nas         同时复制到NAS
+
+  # 查看备份
+  bach backup list                    本地备份
+  bach backup list --nas              NAS 备份
+  bach backup info <name>             备份详情
+
+  # 恢复（仅 userdata_*.zip 备份）
+  bach restore backup <name>          特定备份
+  bach restore backup latest          最新备份
+
+  # 重置模板（仅通过 backup_manager.py）
+  python system/tools/backup_manager.py 恢复模板 SKILL.md
+
+正在备份什么？
+-------------------
+
+  dist_type = 0（用户数据）：
+    ├── 任务（所有任务、状态、历史）
+    ├── 记忆/（会话、长期、档案）
+    ├── data/logs/ (会话日志，统一路径)
+    └── 用户/（收件箱、消息、议程）
+
+  不安全（dist_type >= 1）：
+    ├── bach.py, schema.sql, hub/
+    ├── 工具/、技能/、文档/帮助/
+    └──（发行版的一部分）
+
+备份轮换
+---------------
+
+  本地（_backups/）：保留7个备份
+  NAS：保留 30 个备份
+  OneDrive：自动（版本历史记录）
+
+存储位置
+------------
+
+  本地：系统/_backups/
+  NAS：\\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
+  日志：系统/数据/日志/（合并）
+
+工具
+-----
+
+  system/tools/backup_manager.py 可以直接调用：
+    python system/tools/backup_manager.py create [--to-nas]
+    python system/tools/backup_manager.py 列表 [--nas]
+    python system/tools/backup_manager.py info <名称>
+    python system/tools/backup_manager.py 恢复备份 <name>
+    python system/tools/backup_manager.py 恢复模板 <文件>
+    python system/tools/backup_manager.py 快照 <文件>
+
+API
+---
+
+  POST /api/v1/backup 创建备份（无头）
+  GET /api/v1/backup/list 列出备份
+
+相关技能
+----------------
+
+  技能/_service/builder.md → 创建、导出、分发、备份、恢复
+  docs/BACKUP_SYSTEM.md → _BATCH 的原始概念

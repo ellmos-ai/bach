@@ -1,0 +1,201 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ACTORS MODEL - 6-Category Actor System
+==========================================
+
+DESCRIPTION
+The Actors Model describes the 6 actor categories in BACH
+work together. It replaces the old 4-actor model.
+
+Version: 2.0.0
+
+THE 6 ACTORS
+=============
+
+1. USER (one or more)
+----------------------------
+Role: decision maker, client, feedback provider
+
+Interfaces:
+  - MessageBox/Primary Communication
+  - User/personal area
+  - Workspace/Active workspace
+
+Modes:
+  - Single-User Standard (current)
+  - Multi-user future (admin, standard, guest)
+
+Interaction:
+  - Directly via chat (Claude.ai / API)
+  - Asynchronous via MessageBox (.txt/.md files)
+  - Manually via file system
+
+
+2. OPERATING AI - "Genie in the Bottle"
+----------------------------------------
+Role: Central Intelligence, Reasoning, Orchestration
+
+Current: Claude (Anthropic)
+Interchangeable: Yes - system is designed to be AI-agnostic
+
+Tasks:
+  - Reasoning and decision making
+  - Task orchestration and delegation
+  - Code generation and review
+  - Documentation and analysis
+  - User communication
+
+Features:
+  - Token limit: ~190,000 per session
+  - No persistent memory
+  - Access to tools via MCP/Desktop Commander
+
+
+3. OTHER AIs/LLMs
+-------------------
+Role: Specialized tasks, delegation, token savings
+
+Available:
+  - Ollama (local) llama3.2, mistral, codellama
+  - Gemini (external) Deep Research, long documents
+  - Copilot Office integration
+  - GPT alternative (inactive)
+
+Delegation trigger:
+  - Token shortage (>70%)
+  - Bulk processing
+  - Specialized tasks
+  - Parallel processing
+
+
+4. OPERATING SYSTEM
+-------------------
+Role: Basic infrastructure and local execution
+
+Includes:
+  - Windows/Linux OS
+  - Installed software
+  - Ollama Runtime
+  - Python/Node.js
+  - File system
+
+Access via:
+  - Desktop Commander (MCP)
+  - File Commander (MCP)
+  - Direct shell commands
+
+
+5. INTEGRATED TOOLS & SCRIPTS
+------------------------------
+Role: in-house developments, automation, special tasks
+
+Categories:
+  - Coding tools c_encoding_fixer, c_json_repair, etc.
+  - Tax tools tax_scanner, tax_sync, etc.
+  - Agent scripts agent_framework, developer_agent
+  - Backup tools backup_manager
+  - Migration migrate_connections
+
+Administration:
+  bach tools list     List Python scripts (file system)
+  bach tools db       DB registered tools (CLI + external AI)
+
+
+6. ONLINE TOOLS (without AI)
+-------------------------
+Role: Specialized web services
+
+Categories:
+  - Generators PDF, QR codes, etc.
+  - Databases APIs, registries
+  - Converter format conversion
+  - Research non-AI search engines
+
+Note: Difference to AI tools like ChatGPT/Midjourney!
+
+
+INTERACTION PRINCIPLES
+=======================
+
+Hierarchy of decisions:
+  1. User decides on critical questions
+  2. Claude coordinates and orchestrates
+  3. Tools run
+  4. Other AIs support token awareness if needed:
+  - Claude is token limited
+  - Delegation saves tokens
+  - Bulk Ops to Ollama
+  - Research on Gemini
+
+Communication channels:
+  - Direct: Claude <-> User (Chat)
+  - Async: MessageBox (files)
+  - API: MCP Server, REST
+  - Delegation: Inbox/Outbox System
+
+CONNECTION MATRIX
+
+
+Operating AI (Claude):
+  -> User (direct, MessageBox)
+  -> Ollama (API, queue)
+  -> Gemini (Drive Delegation)
+  -> OS (Desktop Commander)
+  -> Tools (direct execution)
+  -> MCP server (PubMed, Canva, Drive)
+==================
+
+User:
+  -> Claude (Chat, Message Box)
+  -> OS (direct use)
+  -> Tools (manual execution)
+
+Ollama:
+  <- Claude (delegation)
+  -> OS (local version)
+
+Gemini:
+  <- Claude (Drive Delegation)
+  -> Cloud (external processing)
+
+CLI ACCESS
+
+
+Show connections
+===========
+bach --connections list          Alias for list
+bach --connections db            AI partner
+bach --connections db --type ai  Show actors model
+bach --connections actors        Show partner profiles
+bach --connections partners      This help
+bach --help actors               AGENT SYSTEM
+
+
+In addition to the 6 actors, there is a hierarchical agent system:
+==============
+
+Boss agents (coordinate):
+  - Personal assistant (private)
+  - Health assistant (private)
+  - Office assistant (professional)
+
+Experts (specialized):
+  - Household management
+  - Health administrator, psycho-counselor
+  - Tax agent, funding planner
+
+More information: bach --help agents
+
+SEE ALSO
+
+
+Connections management
+----------
+bach --connections list    Actors model
+bach --connections actors  Tool management (file system)
+bach --connections partners Partner-Profile
+bach tools list            Tool management (database)
+bach tools db              Agent system
+bach --help agents         Agenten-System

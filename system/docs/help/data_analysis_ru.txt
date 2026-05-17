@@ -1,0 +1,56 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DATA_ANALYSIS — анализ данных с помощью pandas и matplotlib
+========================================================
+
+ОПИСАНИЕ
+------------
+Обработчик для анализа и визуализации файлов данных (CSV, Excel, JSON).
+Поддерживаемые операции: загрузка, описательная статистика, просмотр данных,
+Корреляции и создание диаграмм.
+
+Требование: установлены pandas (для диаграмм рекомендуется matplotlib)
+
+ОПЕРАЦИИ
+-----------
+  bach data load <path>                  Загрузить файл и отобразить информацию
+  bach data describe <path>              Описательная статистика (среднее, стандартное, минимальное, максимальное)
+  bach data head <path> [--rows N]       Первые N строк (по умолчанию: 10)
+  bach data corr <path>                  Матрица корреляции (только числовые столбцы)
+  bach data chart <path> [Optionen]      Создать диаграмму
+    --type [bar|line|scatter|pie|hist] Тип диаграммы (по умолчанию: гистограмма)
+    --x <столбец> имя столбца оси X
+    --y <столбец> имя столбца по оси Y
+    --output <файл> Имя выходного файла
+  bach data list                         Показать файлы во входной/папке
+
+ПРИМЕРЫ
+---------
+  bach data load sales.csv
+  bach data describe data/results.xlsx
+  bach data head data/metrics.csv --rows 20
+  bach data corr dataset.json
+  bach data chart sales.csv --type bar --x month --y revenue
+  bach data chart data/values.csv --type scatter --x x_val --y y_val --output scatter.png
+  bach data list
+
+КАТАЛОГ
+-------------
+  пользователь/анализ данных/входные/входные файлы
+  пользователь/анализ данных/выходные данные/Результаты анализа
+  пользователь/анализ данных/диаграммы/Сгенерированные диаграммы (PNG)
+
+ФАЙЛЫ
+-------
+  Обработчик:hub/data_anaлиз.py
+
+ПОДДЕРЖИВАЕМЫЕ ФОРМАТЫ
+---------------------
+  CSV/TXT, XLSX/XLS, JSON
+
+СМОТРИ ТАКЖЕ
+----------
+  bach help
+  bach --version

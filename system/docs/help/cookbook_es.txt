@@ -1,0 +1,74 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+COOKBOOK - Herramienta de libro de recetas para la generación de documentación de bases de datos
+====================================================
+
+DESCRIPCIÓN
+------------
+El Cookbook Handler genera versiones de documentos sin procesar a partir de tablas de bases de datos
+utilizando recetas predefinidas. Cada receta describe una consulta SQL,
+una plantilla de salida y la ruta de salida. Utiliza la tabla 'cookbook_recipes'
+en bach.db para una gestión persistente.
+
+Plantillas compatibles:
+  - markdown_table: tabla de rebajas con estructura de columnas
+  - markdown_list: lista de Markdown estructurada con jerarquía
+  - json_export: exportación JSON con metadatos
+
+OPERACIONES
+-----------
+  bach cookbook list                    Mostrar todas las recetas (nombre, título, tipo)
+
+  bach cookbook generate <rezept>       Generar una versión sin formato a partir de la receta
+                                        Lee la definición de la receta, ejecuta SQL,
+                                        aplica la plantilla, escribe el resultado
+
+  bach cookbook delete <name>           Eliminar receta (con advertencia para CORE)
+                                        Banderas: --force (forzar eliminación)
+
+  bach cookbook help                    Mostrar esta ayuda
+
+EJEMPLOS
+---------
+  1. Enumere todas las recetas disponibles:
+     bach cookbook list
+
+  2. Genere una versión sin formato a partir de una receta existente:
+     bach cookbook generate tools_overview
+
+  3. Eliminar receta (confirmación para recetas CORE):
+     bach cookbook delete my_recipe
+     bach cookbook delete core_recipe --force
+
+PROBLEMA
+-------
+  Directorio de salida: datos/generado/
+
+  El nombre del archivo se determina a partir de la receta:
+  - Campo de salida en receta_json si está presente
+  - Alternativa: <nombre de la receta>.md
+
+  Los archivos generados contienen marcadores de generación automática con marca de tiempo.
+
+ARCHIVOS
+-------
+  Controlador: hub/cookbook.py
+  Base de datos: data/bach.db (tabla: cookbook_recipes)
+  Salida: datos/generado/*.md
+
+TABLE-SCHEMA
+---------------
+  recetas_libro de cocina:
+    - nombre (TEXTO): Identificador único de receta
+    - título (TEXTO): Título del documental
+    - descripción (TEXTO): Descripción opcional
+    - receta_json (TEXTO): definición JSON (sql_query, tipo_plantilla, archivo_salida)
+    - dist_type (INT): 0=USUARIO, 1=PLANTILLA, 2=NÚCLEO
+    - create_at (TIMESTAMP): hora de creación
+
+VER TAMBIÉN
+----------
+  BACH_Dev/docs/SQ069_REZEPTBUCH_KONZEPT.md Concepto de libro de recetas (SQ069)
+  clase hub/base.py BaseHandler

@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+================================================================================
+MANEJADOR: db
+================================================================================
+
+DESCRIPCIÓN
+  Operaciones de base de datos para la instancia central de BACH. Gestiona datos SQLite,
+  ejecuta consultas, exporta tablas y crea copias de seguridad. Reemplaza Supabase
+  MCP como solución local.
+
+OPERACIONES
+  estado Muestra una descripción general de la base de datos (tablas, tamaño, versión)
+  tablas Enumera todas las tablas con recuentos de filas
+  info <tabla> Detalles: esquema, columnas, distribución dist_type, ejemplos
+  query "SQL" Ejecuta la consulta SQL (SELECT o DML)
+  esquema <tabla> Muestra la instrucción CREATE TABLE con índices
+  count <table> Número de filas en una sola tabla
+  export <table> Exporta la tabla como CSV o JSON
+                     Opciones: --format csv|json (predeterminado: csv)
+  insert <tabla> Inserta un registro de datos (formato JSON)
+  backup Crea una copia de seguridad rápida en data/_backups/
+
+EJEMPLOS
+  bach db status
+    -> Muestra el estado de la base de datos, número de tabla, tamaño, vistas, índices
+
+  bach db tables
+    -> Enumera todas las tablas con recuentos de filas
+
+  bach db info agents
+    -> Muestra esquema, columnas, distribución dist_type y 5 filas de ejemplo
+
+  bach db query "SELECT * FROM agents WHERE status='active' LIMIT 10"
+    -> Ejecuta la consulta, muestra un máximo de 50 líneas
+
+  bach db schema prompts
+    -> Muestra declaraciones CREATE TABLE e INDEX
+
+  bach db export runs --format json
+    -> Exporta 'ejecuciones' como JSON a data/export/runs_YYYYMMDD_HHMMSS.json
+
+  bach db insert tasks '{"title":"Test","priority":1}'
+    -> Inserta conjunto de datos en 'tareas' (valida columnas)
+
+  bach db backup
+    -> Datos creados/_backups/bach_quick_AAAAMMDD_HHMMSS.db
+
+ARCHIVOS
+  data/bach.db Base de datos central SQLite
+  datos/exportar/Exportar archivos (CSV, JSON)
+  data/_backups/ Quick-Backups
+
+VER TAMBIÉN
+  clase base.py BaseHandler
+  directorio de datos/base de datos
+  Ayuda CLI de Bach: bach --help

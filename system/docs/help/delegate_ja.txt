@@ -1,0 +1,72 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [hub/partner.py、tools/partner_communication/gemini_start.py、partners/gemini/start_gemini.bat]
+
+BACH パートナー委任
+=======================
+
+日付: 2026-02-08
+
+委任により、内部でのタスクの分散が可能になります
+
+
+専門知識とトークン経済学に基づいたパートナー ネットワークの管理。
+
+ハンドラー: system/hub/partner.py (JSON_001 移行以降 DB ベース)
+------------
+コア タスク
+
+- CLI または MessageBox 経由のタスク委任 (data/messages/message_box.md)
+- 「バッチパートナーステータス」による進捗状況の監視
+- ゾーンに基づくトークン対応の選択 (monitor_tokens DB テーブル)
+- ローカル パートナーへのオフライン フォールバック (--fallback-local フラグ)
+--------------------------
+CLI コマンド (bach パートナー)
+
+  list 登録されているすべてのパートナーとそのステータスを表示します
+  ステータス アクティブなパートナーと委任ゾーンの概要
+  info <name> 特定のパートナーに関する詳細
+  active アクティブなパートナーのみをリストします
+  デリゲート タスクをパートナーに転送します (トークン対応)
+                --to=NAME 特定のパートナー
+                --zone=N 強制ゾーン (1 ～ 4)
+                --fallback-local オフライン時にローカル AI (Ollama) に切り替えます
+---------------
+GEMINI ワークフロー
+
+Gemini は、詳細な分析と長編コンテンツの主要パートナーです:
+
+1。割り当て:
+   `バッハ パートナー デリゲート "タスク テキスト" --to=gemini`
+   あるいは: MessageBox 経由の委任 (data/messages/message_box.md)
+
+2。開始:
+   「partners/gemini/start_gemini.bat」経由
+   Antigravity は、.gemini/GEMINI.md
+
+3 からコンテキストを自動的に読み込みます。編集:
+   パートナーは `partners/gemini/workspace/`
+
+4 で独立して作業します。結論:
+   レポートを「partners/gemini/outbox/」に保存します
+   タスクを完了としてマークします: `bach タスク完了 ID`
+-----------------------
+トークン ゾーンと戦略
+
+bach.db の Monitor_tokens.budget_percent に基づきます:
+
+- ゾーン 1 (0-30%): すべてのパートナーが利用可能 (クロード、ジェミニなど)
+- ゾーン 2 (30-60%): 低コストのパートナーが優先 (Gemini、Ollama)
+- ゾーン 3 (60-80%): ローカル AI のみ (Ollama)
+- ゾーン 4 (80-100%): 人間のみ (介入が必要)
+-------------------
+アーキテクチャ上の注意
+
+委任は DB ベースです (JSON_001 移行以降):
+- Partner_recognition テーブルのパートナー
+- delegation_rules テーブルのゾーン ルール
+- Monitor_tokens テーブルのトークン バジェット
+- data/messages/message_box.md の委任メッセージ
+----------
+関連項目

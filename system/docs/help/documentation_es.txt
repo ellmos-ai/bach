@@ -1,0 +1,151 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DOCUMENTACIÓN BACH - Descripción general
+================================
+
+Punto de contacto central para toda la documentación BACH.
+
+DOCUMENTOS BÁSICOS
+--------------
+
+Nivel raíz:
+  SKILL.md Dominar el contexto, la identidad, las reglas de conducta.
+  README.md descripción general del proyecto
+
+sistema/:
+  ARQUITECTURA.md Arquitectura técnica, componentes.
+  Plan de desarrollo de ROADMAP.md, hitos
+  CHANGELOG.md historial de versiones, cambios
+
+HELP-SYSTEM (system/docs/help/)
+--------------------------
+
+Llamada: python bach.py --help <tema>
+
+CONCEPTOS:
+  --concepto central de ayuda (agente/flujo de trabajo/habilidades/herramientas)
+  --ayuda al sistema de memoria (5 tipos cognitivos + circuito de aprendizaje)
+  --ayuda al sistema de inyectores de inyectores (consejos automáticos)
+  --ayudar a la consolidación (compresión, decadencia, impulso)
+  --ayuda a iniciar el registro de inicio
+
+SISTEMA:
+  --tareas de ayuda Gestión de tareas
+  --ayuda lecciones Sistema de lecciones aprendidas
+  --ayudar al socio Sistema de socios (Multi-LLM)
+  --help daemon servicio de demonio
+
+TIEMPO:
+  --ayuda reloj Visualización de la hora
+  --ayuda cronómetro temporizador
+  --ayuda cuenta regresiva Cuenta regresiva con disparador
+  --ayuda entre cheques
+  --ayuda a superar el Sistema de Tiempo Unificado
+
+DESARROLLO:
+  --ayudar al flujo de trabajo de desarrollo del desarrollador
+  --ayuda caso de uso Pruebas de casos de uso
+  --ayuda a corregir errores Registro de corrección de errores
+  --ayuda a codificar estándares de codificación
+
+DIRECTORIOS:
+  --lista de ayuda Todos los temas disponibles
+
+CARACTERÍSTICAS (desde v1.1.85):
+  --help agent/<nombre> documentos del agente (por ejemplo, --help agent/ati)
+  --ayuda flujo de trabajo/<nombre> Documentos de flujo de trabajo
+  --ayuda experto/<nombre> Documentos expertos
+  --help <nombre_herramienta> Información de la herramienta de la base de datos
+
+JERARQUÍA DE HABILIDADES (sistema/habilidades/)
+-----------------------------------
+
+  agentes/perfiles de agentes (roles)
+  habilidades/flujos de trabajo/definiciones de flujos de trabajo (22 flujos de trabajo)
+  agentes/_expertos/Configuraciones expertas
+  habilidades/_servicios/ descripciones de servicios
+  habilidades/_templates/ Plantillas
+  configuraciones de socios/socios de LLM
+  Conectores/Conexiones externas
+  skills/_os/ Configuraciones específicas del sistema operativo
+
+CARPETA DOCS (docs/)
+-------------------
+
+  docs/Conceptos y análisis actuales
+  docs/_archive/ Conceptos archivados/completados
+  docs/_ideas/ Ideas para el futuro
+  docs/_test_and_reports/ Resultados e informes de pruebas
+  docs/análisis/Documentos analíticos
+  docs/reference/ Referencias externas (libros de cocina, etc.)
+
+DOCUMENTACIÓN DEL CÓDIGO
+------------------
+
+  punto de entrada principal system/bach.py (basado en registro v2.0)
+  system/bach_api.py API de biblioteca (tarea, memoria, copia de seguridad, etc.)
+  sistema/núcleo/módulos principales (registro, aplicación, base de datos, base)
+  implementaciones del controlador system/hub/*.py (descubrimiento automático)
+  system/tools/*.py Tool-Scripts
+
+ESQUEMA DE BASE DE DATOS
+----------------
+
+  system/db/schema.sql Esquema de base de datos completo (más de 210 tablas)
+  system/data/bach.db Base de datos SQLite
+
+Acceso CLI:
+  python bach.py --db esquema Mostrar esquema de base de datos
+  python bach.py --db tablas Mostrar todas las tablas
+
+REFERENCIA RÁPIDA
+---------------
+
+  ¿Qué es BACH?          --ayuda wiki/was_ist_bach
+  ¿Cómo empiezo?        --ayuda al inicio
+  ¿Cómo termino?        --ayuda a apagar
+  ¿Crear tarea?        --tareas de ayuda
+  ¿Guardar lección?      --lecciones de ayuda
+  ¿Usar memoria?         --memoria de ayuda
+
+JERARQUÍA DE DOCUMENTACIÓN
+-------------------------
+
+```
+SKILL.md <- contexto maestro (siempre lee LLM)
+    │
+    ├── ARQUITECTURA.md <- Detalles técnicos
+    │
+    ├── docs/help/ <- Instrucciones operativas
+    │ ├── core.txt <- concepto central
+    │ ├── memoria.txt <- sistema de memoria
+    │ └── ...
+    │
+    ├── habilidades/ <- Definiciones funcionales
+    │ ├── _agentes/
+    │ ├── _flujos de trabajo/
+    │ └── ...
+    │
+    └── docs/ <- conceptos, análisis
+        ├── CONCEPTO_*.md
+        └── archivo/
+```
+
+ARQUITECTURA DEL MANEJADOR
+-------------------
+
+Manejador de ayuda: system/hub/help.py
+  - Muestra archivos .txt de system/docs/help/
+  - Admite subcarpetas (herramientas/, wiki/)
+  - Sistema de alias para agentes, flujos de trabajo, _expertos
+  - Acceso directo a la herramienta desde la base de datos (v1.1.38+)
+
+Docs Handler: system/hub/docs.py
+  - Listas/búsquedas de documentos/carpetas
+  - Agrupados por CONCEPTOS, ANÁLISIS, ESQUEMAS, OTROS
+  - Operaciones: listar, mostrar, buscar
+
+---
+Versión: 1.0.1 | Creado: 2026-01-30 | Actualizado: 2026-02-08

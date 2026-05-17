@@ -1,0 +1,186 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ESTRATEGIAS DE PENSAMIENTO
+==============
+Estrategias cognitivas y metacognitivas para el procesamiento de la información.
+
+Referencia: Análisis de sistemas de aprendizaje, docs/help/operators.txt, docs/help/rhetorik.txt
+
+
+1. ESTRATEGIAS COGNITIVAS (procesamiento de información)
+===================================================
+Controlar CÓMO procesar la información.
+
+1.1 Fragmentación
+-----------------------
+Dividir información compleja en unidades más pequeñas.
+  - divide la gran tarea en 5 pasos
+  - Dividir el texto en secciones.
+BACH: Desglose de tareas, fases del flujo de trabajo
+
+1.2 Reconocimiento de patrones
+-------------------
+Reconocer estructuras recurrentes.
+  - errores similares en los registros
+  - tipos de documentos recurrentes
+BACH: Coincidencia de patrones de lecciones aprendidas
+
+1.3 Hacer analogías
+-------------------
+Comprender cosas nuevas comparándolas con lo conocido.
+  - "El enrutamiento del correo es como el enrutamiento de la red"
+  - "Los operadores son como bloques de Lego"
+
+1.4 Formación de hipótesis
+---------------------
+Formular suposiciones antes de realizar las pruebas.
+  - "Si la puntuación es baja, probablemente falte un campo obligatorio"
+
+1.5 Pensamiento deductivo
+---------------------
+Inferir del caso general al individual.
+  - "Todas las facturas tienen número de factura -> este documento
+     no tiene -> probablemente no tiene cálculo"
+
+1.6 Pensamiento inductivo
+---------------------
+Deducir reglas a partir de casos individuales.
+  - "En el 90% de los casos el asunto contiene 'Factura'
+     una factura real"
+BACH: Derivación de lecciones aprendidas
+
+1.7 Pensamiento causal
+-------------------
+Reconocimiento de relaciones causa-efecto.
+  - "El error aumenta -> La carga de la CPU aumenta -> probablemente cuello de botella"
+
+1.8 Cambio de perspectiva
+---------------------
+Mira el problema desde una perspectiva diferente.
+  - Perspectiva del usuario versus perspectiva del desarrollador
+
+1.9 Pensamiento de escenarios
+------------------
+Juega a través de variantes de “qué pasaría si”.
+  - "¿Qué pasa si falla la API?"
+  - "¿Qué pasa si la clasificación es incorrecta?"
+BACH: Modo (2) Pensamiento
+
+1.10 Priorizar
+-----------------
+Procesar primero la información importante.
+  - errores críticos antes de las advertencias
+  - Facturas antes de newsletters
+BACH: Prioridades de tareas (P1 > P2 > P3)
+
+
+2. ESTRATEGIAS METACOGNITIVAS (Pensar en pensar)
+==================================================
+Controla CÓMO controlas tu propio pensamiento.
+
+2.1 Autocontrol
+-----------------------------------
+Observa tu propio pensamiento.
+  - "¿Realmente entiendo el problema?"
+  - "¿Qué suposiciones estoy haciendo ahora mismo?"
+
+2.2 Autorregulación
+--------------------
+Adaptar activamente el proceso de pensamiento.
+  - Reducir la velocidad
+  - Cambiar estrategia (por ejemplo, de hipótesis -> prueba)
+
+2.3 Análisis de errores
+-----------------
+Identifica tus propios errores de pensamiento.
+  - Error de confirmación
+  - conclusiones apresuradas
+BACH: Lecciones aprendidas (categoría de error)
+
+2.4 Haga metapreguntas
+-----------------------
+Preguntas sobre el proceso de pensamiento en sí.
+  - “¿Qué información me falta?”
+  - "¿Qué operadores necesito aquí?"
+
+2.5 Elección de la estrategia
+-----------------
+Decida conscientemente qué estrategia de pensamiento es la correcta.
+  - "¿Necesito reconocimiento de patrones o formación de hipótesis?"
+
+2.6 Reflexión
+-------------
+Evaluación posterior del proceso de pensamiento.
+  - "¿Por qué funcionó esta solución?"
+  - “¿Qué haría diferente la próxima vez?”
+BACH: Resumen de sesión, consolidación
+
+2.7 Metamodelado
+--------------------
+Transferir el problema a un modelo más abstracto.
+  - "Este es un problema de clasificación"
+  - "Este es un problema de enrutamiento"
+
+2.8 Meta-Abstracción
+--------------------
+Reducir la complejidad mirando la esencia.
+  - "En realidad se trata sólo de tres variables"
+
+2.9 Metacomparaciones
+-------------------
+Comparación entre estrategias de pensamiento.
+  - "La formación de hipótesis fue ineficaz -> mejor basada en datos"
+
+2.10 Metaplanificación
+-----------------
+Planificar cómo pensar antes de pensar.
+BACH: Modo (2) Pensamiento = provocar conscientemente inyectores
+
+
+3. RELACIONADOS CON LOS MODOS BACH
+=====================
+
+Modo (1) Ahorro de energía:
+  - Reconocimiento de patrones (automático)
+  - Priorizar (obtener reglas)
+  - Deducción (conclusiones rápidas)
+
+Modo (2) Reflexión:
+  - Pensamiento de escenarios
+  - Cambio de perspectiva
+  - Formación de hipótesis.
+  - Hacer metapreguntas
+  - Elección de estrategia
+
+Modo (3) Consolidación:
+  - Pensamiento inductivo (derivar reglas)
+  - Reflexión
+  - Análisis de errores
+  - Meta-Abstracción
+
+
+4. RELACIONADO CON LA RETÓRICA
+====================
+Las estrategias de pensamiento tienen contrapartes retóricas directas:
+
+  Fragmento -> Delineado, regla de los 3 puntos
+  Reconocimiento de patrones -> topoi (patrones de argumentos), arquetipos de historias
+  Hacer analogías -> metáforas, comparaciones
+  Formación de hipótesis -> preparar argumentos, anticipar contraargumentos
+  Deducción/Inducción-> Razonamiento Lógico
+  Pensamiento de escenarios -> Argumentos del tipo “¿Qué pasaría si?”
+  Priorizar -> Mensaje central, discurso de elevación
+
+Retórica = Estrategia cognitiva + Paquete lingüístico
+
+Ver: --help retórica
+
+
+ARCHIVOS DE AYUDA RELACIONADOS
+======================
+--operadores de ayuda Operadores y patrones básicos
+  --estrategias de ayuda para categorizar, evaluar, probar, etc.
+  --ayuda a la retórica Operadores y patrones retóricos
+  --help metacognition Entrada Wiki sobre metacognición

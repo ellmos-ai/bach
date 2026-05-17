@@ -1,0 +1,39 @@
+# Portability: EXTERNAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+# BachForelle (The Arrow) - Cross-Reference
+
+## WARNING: EXTERNAL DOCUMENTATION
+This file describes **BachForelle**, a SEPARATE project outside of BACH v2 Vanilla.
+
+**Correct paths:**
+- BachForelle: `C:\Users\User\OneDrive\.AI\BachForelle\`
+- BachFliege: `C:\Users\User\OneDrive\.AI\BachFliege\`
+
+## What is BachForelle?
+BachForelle is a lightweight, LLM-First variant of BACH.
+It is a STANDALONE project with a separate codebase.
+
+**Philosophy:**
+* LLM is an orchestrator (not just a user)
+* No boot process required
+* Modular skills instead of hub routing
+* Focus: Memory + Multi-LLM
+
+## For BACH v2 vanilla users
+**BachForelle is NOT part of BACH v2 Vanilla.**
+
+If you want to use BachForelle:
+1. Go to the BachForelle folder
+2. Read `C:\Users\User\OneDrive\.AI\BachForelle\README.md`
+3. Read `C:\Users\User\OneDrive\.AI\BachForelle\SKILL.md`
+
+## BACH v2 Vanilla does NOT have an "arrow" command
+This help file only exists as a cross-reference for users who use both systems.
+
+For BACH v2 Vanilla features see:
+```bash
+python bach.py help
+python bach.py help <command>
+```

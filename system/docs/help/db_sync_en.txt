@@ -1,0 +1,104 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+============
+db_sync - ProSync: Multi-System DB Synchronization
+
+
+DESCRIPTION
+============
+ProSync synchronizes BACH databases between multiple systems.
+
+Architecture:
+- Each system has a local DB (~/.bach/bach.db)
+- OneDrive serves as a transit hub (.SYNC/bach_db_transit/)
+- Sync at BACH start (pull) and exit (push)
+- 137 tables are dynamically recognized and synchronized
+
+Smart Merge: Tables with timestamp columns use last write wins
+with conflict check via heartbeat (5-minute window). Schema drift-proof
+through shared columns detection and named INSERT. Secrets are created from backups
+removed. Automatic cleanup strategy: Keep latest backups per host
+plus everything under X days (default: 7 days, 10 per host).
+
+ProSync is optional. Single-system installations do not require sync.
+Configuration: bach setup prosync --multi-system / --single-system.
+
+
+OPERATIONS
+===========
+bach db backup
+  Created manual backup of bach.db.
+  Format: bach_HOSTNAME_TIMESTAMP.bachdb (Example: bach_LAPTOP_2026-03-04T14-30-00.bachdb)
+  Traeger: Local, not a remote request.
+
+bach db sync
+  Performs full sync: Pull (newer backups) + Merge + Push (own backup).
+  Conflict check: If other PCs are active (heartbeat < 5min), confirmation is asked.
+  Flags: --auto or -y for non-interactive mode.
+  Merge strategy: Newer lines (timestamp) gain (INSERT OR REPLACE).
+
+bach db status
+  Shows status: Local DB, backup folder, last 10 backups (host, time, size),
+  active PCs and their heartbeat.
+
+bach db cleanup
+  Deletes old backups based on retention policy.
+  Rule: Keep newest 10 per host OR anything younger than 7 days (configurable).
+  Returns number of deleted backups.
+
+bach db enable
+  Enables auto-sync on startup/exit (sets configuration flag).
+
+bach db disable
+  Disables auto-sync.
+
+
+EXAMPLES
+=========
+# Manual backup before risky operation
+bach db backup
+
+# Sync with conflict check (interactive)
+bach db sync
+
+# Unattended sync (cron job/automation)
+bach db sync --auto
+
+# Check status before sync (shows active PCs and backups)
+bach db status
+
+# Manually trigger cleanup of outdated backups
+bach db cleanup
+
+
+FILES
+=======
+Relative to system/:
+
+hub/db_sync.py
+  Core implementation (DBSyncManager, DBSyncHandler).
+  Dynamic table recognition: 137 syncable tables (instead of hardcoded).
+  Schema drift-safe through shared-columns + named INSERT.
+
+~/.bach/bach.db
+  Local production database (primary DB since ProSync).
+
+data/bach.db
+  OneDrive fallback DB (no longer described directly when ProSync is active).
+
+OneDrive/.SYNC/bach_db_transit/
+  Transit hub for .bachdb files and heartbeat.json.
+  Heartbeat: Tracks active PCs (hostname, PID, timestamp) for conflict detection.
+
+data/config/db_sync_enabled
+  Flag for ProSync activation (created by "bach setup prosync --multi-system").
+
+
+SEE ALSO
+==========
+- docs/help/setup.txt: bach setup prosync (configuration)
+- hub/bach_paths.py: BACH_DB, PROSYNC_TRANSIT_DIR, LOCAL_BACH_DIR
+- basehandler / handler framework: See base.py for interface

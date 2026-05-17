@@ -1,0 +1,53 @@
+# Portability: USER
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [assistant_calendar table, hub/calendar_handler.py]
+
+CALENDAR - appointment and calendar management
+=========================================
+
+Status: 2026-02-08
+
+The calendar system (layer 3) bundles time-critical information 
+various sources (appointments, reminders, routines).
+
+CORE CONCEPTS
+------------
+- COMBINATION: Displays assistant calendars AND due household routines.
+- VIEWS: Optimized for CLI (Today, Week, Month).
+- PERSISTENCE: Storage in the central `bach.db`.
+
+CLI COMMANDS (bach calendar)
+---------------------------
+  today Appointments and due routines for today.
+  week Weekly overview (Mon-Sun) with weekday names.
+  month All entries of the current month.
+  list All upcoming appointments (default: 30 days).
+  add "Title" Creates a new appointment (assistant_calendar).
+  show <ID> Shows appointment details.
+  done <ID> Marks an appointment as done.
+  delete <ID> Deletes an appointment.
+  help Displays help.
+
+DISPLAY FORMAT
+--------------
+  [Mon 28.01.] ---------------------------------------
+    09:00 Dentist Dr. Müller
+    [R04] ---- Clean up the kitchen (daily, household)
+
+DATABASE (layer 1)
+---------------------
+- `assistant_calendar`: Manual appointments of the user.
+- `household_routines`: Recurring tasks (display only).
+- `calendar_events`: (Optional) System events.
+
+GUI & INTEGRATION
+-----------------
+The **Assistant Dashboard** in the GUI provides a graphical weekly and 
+Monthly view. The calendar serves as a timeline for Layer 5 Automation.
+
+SEE ALSO
+----------
+  bach routine         Household Routine Management
+  bach --help clock    Time and Timestamp Tools
+  docs/help/memory.txt Timing of sessions

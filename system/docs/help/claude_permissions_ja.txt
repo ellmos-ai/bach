@@ -1,0 +1,63 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+クロード権限 - クロード コード権限プロファイルの管理
+==============================================================
+
+説明
+------------
+クロード コードの権限プロファイルを管理します。プロファイルはどれを定義するか
+クロード コードが自動的に使用できるツール (許可) とどのブロックをブロックするか
+（否定）になる。 BACH データベースに保存され、適用される
+~/.claude/settings.json.
+
+
+操作
+-----------
+  bach permissions list                 すべてのプロファイルを表示
+  bach permissions show <profil>        プロファイルの詳細
+  bach permissions set <profil> allow=Tool    ルールを追加
+  bach permissions set <profil> deny=Tool     ルールを追加
+  bach permissions remove <profil> allow=Tool Regel entfernen
+  bach permissions activate <profil>    プロファイルをアクティブにする
+  bach permissions deactivate           通常のプロファイルに戻る
+  bach permissions sync                 settings.json を DB にインポート
+  bach permissions reset <profil>       プロファイルをデフォルトにリセット
+  bach permissions status               現在のステータスを表示
+  bach permissions init                 DB 作成のデフォルト プロファイル
+
+
+例
+---------
+  # プロフィールを表示
+  bach permissions list
+
+  # 厳密なプロファイルを有効にする
+  bach permissions activate strict
+
+  # ツールを許可します
+  bach permissions set default allow=Bash
+
+  # 現在の settings.json をインポート
+  bach permissions sync
+
+
+DEFAULT-PROFILE
+---------------
+  デフォルトの標準プロファイル (中程度のアクセス)
+  厳密な制限付き (最小限のツールの使用)
+  開発 アドバンスト (すべての開発ツール)
+
+
+ファイル
+-------
+  ハンドラー: Hub/claude_permissions.py
+  設定: ~/.claude/settings.json (変更されます)
+  DB テーブル: claude_permission_profiles
+
+
+関連項目
+----------
+  セットアップのヘルプ セットアップ ハンドラー (フック)
+  ヘルプ セキュリティ セキュリティ設定

@@ -1,0 +1,40 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+巴赫信息
+=========
+
+定义
+BACH（Best-of BATCH + CHIAH）是一个本地、便携式“代理操作系统” - 
+基于法学硕士的人工智能助理的工作环境。它结合了代理框架， 
+RAG 系统和认知心理学成为人工智能的个人“神经系统”。
+
+核心特征（七大支柱）
+1.认知记忆模型：类似于人类记忆的5种类型
+   （工作、情景、语义、程序、联想）。
+2.主动巩固：系统学习、遗忘和加权信息
+   通过衰减、增强和夜间压缩。
+3、多方委托：Claude、Gemini、Ollama的编排。
+4. CLI-First + GUI：通过终端或 Web 仪表板完全控制（8 个以上专用板）。
+5. 便携&本地：基于SQLite，无云要求，完全数据主权。
+6. 领域代理：20+ 名专家（ATI、税务、财务助理、健康等）。
+7. 自我修复：自动维护、路径修复和文档取证。
+
+使用
+该系统主要通过此 CLI (`bach.py`) 或 Web 仪表板进行控制。
+
+命令
+bach --help             所有主题概述
+bach status             当前系统状态
+bach task list          显示打开的任务
+bach mem read           检索当前内存
+
+架构
+CLI/GUI/MCP --> 集线器处理程序 --> 技能/工具 --> 数据库/文件系统/合作伙伴
+
+另请参见
+wiki/was_ist_bach.txt 详细定义和比较
+system/ARCHITECTURE.md 架构文档（层模型）
+docs/help/architecture.txt 技术细节
+docs/help/features.txt 功能列表

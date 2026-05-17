@@ -1,0 +1,182 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+РАЗЪЕМ - Внешние коммуникационные соединения
+===============================================
+
+ОПИСАНИЕ
+Управляет внешними коммуникационными соединениями (Telegram, Discord,
+HomeAssistant и т. д.) и выполняет его. Поддерживает автоматический
+Опрос, отправка очереди с повтором/отсрочкой и автоматическим выключателем.
+
+ПОДДЕРЖИВАЕМЫЕ ТИПЫ
+-------------------
+  Telegram Bot API (опрос getUpdates)
+  Discord Discord Бот (REST API)
+  домашний помощник (REST API)
+  webhook Входящие вебхуки (на основе push)
+  сигнал Signal Messenger (планируется, signal-cli)
+  WhatsApp WhatsApp (планируется, Baileys)
+
+Доступны адаптеры времени выполнения: Telegram, Discord, HomeAssistant
+
+КОМАНДЫ CLI
+-----------
+
+Администрирование:
+  bach connector list                    Показать все соединители
+  bach connector status                  Статус + Статистика
+  bach connector add <type> <name> [url] Neuen Connector registrieren
+  bach connector remove <name>           Удалить соединитель
+  bach connector enable <name>           Активировать
+  bach connector disable <name>          Деактивировать
+
+Сообщения:
+  bach connector messages [name]         Показать сообщения
+  bach connector unprocessed             Необработанные сообщения
+  bach connector route                   Маршрутизация сообщений (Входящие) Демон вместе для
+Автоматическая доставка даже без активного сеанса CLI.
+  bach connector send <name> <to> <text> In ausgehende Queue einreihen
+
+Настройка:
+  1. Настройка-демон соединителя bach # Единоразово: создать 2 задания демона
+  2. bach daemon start --bg # Запускать демон в фоновом режиме
+  bach connector poll <name>             С этого момента автоматически:
+  - Telegram/Discord опрос каждые 1-2 минуты
+  - Входящие сообщения в папке «Входящие» (с контекстными подсказками)
+  - Исходящая очередь обрабатывается каждую минуту
+  - Неудачные отправки повторяются до 5 раз с отсрочкой
+  bach connector dispatch <name>         заданий Daemon:
+  Connector_poll_and_route (интервал 2 минуты) Опросы и маршруты
+  Connector_dispatch (интервал 1 минуты) Очередь отправки
+
+ПОВТОРНЫЕ И ОТВЕДЕНИЯ
+  bach connector setup-daemon            Ошибочные сообщения отправляются с экспоненциальной задержкой
+повторяется: 30 с, 60 с, 120 с, 240 с, 480 с (всего ~15 минут).
+  bach connector queue-status            После 5 неудачных попыток (настраивается) сообщение отображается в виде
+С пометкой «Мертвое письмо». Мертвые письма можно сделать вручную
+можно сбросить:
+  bach connector retry <id|all>          Сбросить все недоставленные буквы
+
+Сбросить отдельное сообщение
+-------------------------------
+АВТОМАТИЧЕСКИЙ ВЫКЛЮЧАТЕЛЬ
+
+После 5 последовательных ошибок разъем для
+Отключено на 5 минут (disabled_until). Дальнейшие попытки отправки/опроса
+пропускаются до истечения времени восстановления. После этого
+счетчик автоматически сбрасывается.
+
+ИНТЕГРАЦИЯ КОНТЕКСТА
+
+Входящие сообщения маршрутизируются через два
+Триггерные системы фильтруются (ассоциативная память):
+
+  а) ContextInjector (жестко закодировано, ~100 триггеров)
+     → injector_hint в messages.metadata
+-----------------
+  б) таблица context_triggers (динамическая, более 900 триггеров)
+     → context_triggers в messages.metadata
+
+Результат в messages.metadata (JSON):
+  {
+    "источник": "телеграмма:123456",
+    "injector_hint": "[CONTEXT] Резервное копирование: создание резервной копии ...",
+    "context_triggers": ["резервная копия", "резервная копия"],
+    "routed_at": "2026-02-08T22:00:00"
+  }
+
+  bach connector retry all             REST API
+  bach connector retry 42              Доступно, когда запущен Headless API (порт 8001):
+
+  POST /api/v1/messages/send Поставить сообщение в очередь
+  GET /api/v1/messages/queue Состояние очереди (ожидание/сбой/мертвый)
+  GET /api/v1/messages/inbox Чтение входящих сообщений (нумерация страниц, фильтр)
+  POST /api/v1/messages/route Запуск маршрутизации вручную
+---------------
+Примеры:
+  локал хост: 8001/api/v1/сообщения/очередь
+  Curl -X POST localhost:8001/api/v1/messages/send \
+    -H "Тип контента: приложение/json" \
+    -d '{"connector":"telegram_main","recipient":"123","content":"Hello"}'
+
+ИНТЕРВАЛЫ ОПРОСА (по умолчанию)
+-------------------
+  Тип Интервальный Рациональный
+  Телеграмма 60-х годов, getUpdates стоит дешево
+  опрос Discord 120s REST, ограничения скорости
+  события homeassistant 300s, менее срочные
+  webhook Н/Д На основе push-уведомлений, без опроса
+
+Переопределяется через auth_config JSON: {"poll_interval": 30}
+
+БАЗА ДАННЫХ
+
+Таблицы:
+  соединения конфигурация разъема + состояние автоматического выключателя
+  Очередь сообщений Connector_messages (входящие/исходящие, отслеживание повторов)
+  сообщения Входящие/Исходящие (маршрутизируемые сообщения)
+  Scheduler_jobs Автоматические задания опроса/отправки
+
+Соответствующие столбцы Connector_messages:
+  статус ТЕКСТ (ожидание/отправлено/не удалось/неактивно)
+  retry_count INTEGER (текущий номер попытки)
+  max_retries ЦЕЛОЕ ЧИСЛО (по умолчанию 5)
+  next_retry_at TEXT (время следующей повторной попытки)
+--------
+Соединения соответствующих столбцов:
+  последовательные_отказы ЦЕЛОЕ ЧИСЛО (счетчик автоматического выключателя)
+  Disabled_until TEXT (блокировка до отметки времени)
+
+ФАЙЛЫ
+
+обработчик CLIhub/connector.py
+  Hub/_services/connector/queue_processor.py Процессор очереди (ядро)
+  gui/api/messages_api.py Маршрутизатор REST API
+  Connectors/base.py Абстрактный базовый класс
+  Connectors/telegram_connector.py Адаптер Telegram
+  соединители/discord_connector.py Адаптер Discord
+  Connectors/homeassistant_connector.py адаптер высокой доступности
+  db/migrations/001_connector_queue_upgrade.sql Миграция схемы
+
+СМОТРИТЕ ТАКЖЕ
+-------------------------
+Внутренняя система обмена сообщениями
+
+Фоновые задания
+
+Инжекторы контекста
+---------
+Tabellen:
+  connections         Connector-Konfiguration + Circuit-Breaker-Status
+  connector_messages  Nachrichten-Queue (ein-/ausgehend, Retry-Tracking)
+  messages            Inbox/Outbox (geroutete Nachrichten)
+  scheduler_jobs         Automatische Poll/Dispatch-Jobs
+
+Relevante Spalten connector_messages:
+  status          TEXT (pending/sent/failed/dead)
+  retry_count     INTEGER (aktuelle Versuchsnummer)
+  max_retries     INTEGER (Default 5)
+  next_retry_at   TEXT (naechster Retry-Zeitpunkt)
+
+Relevante Spalten connections:
+  consecutive_failures  INTEGER (Circuit-Breaker-Zaehler)
+  disabled_until        TEXT (Sperre bis Timestamp)
+
+DATEIEN
+-------
+  hub/connector.py                           CLI-Handler
+  hub/_services/connector/queue_processor.py Queue-Processor (Kern)
+  gui/api/messages_api.py                    REST-API Router
+  connectors/base.py                 Abstrakte Basisklasse
+  connectors/telegram_connector.py   Telegram-Adapter
+  connectors/discord_connector.py    Discord-Adapter
+  connectors/homeassistant_connector.py  HA-Adapter
+  db/migrations/001_connector_queue_upgrade.sql  Schema-Migration
+
+SIEHE AUCH
+----------
+  bach --help messages        Internes Nachrichtensystem
+  bach --help daemon          Hintergrund-Jobs
+  bach --help injectors       Kontext-Injektoren

@@ -1,0 +1,162 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CLI CONVENTIONS (v2.0 Registry-Based)
+=======================================
+
+ARCHITECTURE:
+----------------------------------------
+BACH uses auto-discovery via core/registry.py:
+- Handlers in hub/*.py are found automatically
+- No more static handler map (like in v1.x)
+- Routing order: --handler → Inline Commands → skill export →
+  restore backup → Registry → Tool Fallback
+
+STANDARD PATTERN (like git, npm, docker):
+  bach SUBCOMMAND [args]     Execute action
+  bach --HANDLER [args]      Handler with -- prefix
+
+TWO ACCESS PATHS:
+----------------------------------------
+1. CLI (for humans):
+   python bach.py task list
+
+2. Library API (for LLM/Scripts - PREFERRED):
+   from bach_api import task
+   task.list()
+
+CORE SUBCOMMANDS (management):
+----------------------------------------
+  task task management (add, list, done, block, next)
+  mem Working Memory (write, read, status, archive)
+  memory Extended memory handler (facts, lessons, archive)
+  msg messaging system (send, list, read, ping)
+  lesson Lessons Learned (add, list, search, archive)
+  backup Backup of the databases
+  restore Restore from backup
+  dist distributions & release management
+  partner partner network (coordination Claude/Gemini/Ollama)
+  session Session Management & Summaries
+
+AGENTS & EXPERTS (specialties):
+----------------------------------------
+  tax tax expert (tax office, deadlines, receipts)
+  ati ATI agent (concept development)
+  abo subscription service (cancellations, contracts)
+  report report generator (funding reports ICF)
+  health health assistant
+  household budget management
+  insurance Insurance Management
+
+SERVICES & INFRASTRUCTURE:
+----------------------------------------
+  gui dashboard control (start, stop, status)
+  scheduler background service for maintenance (formerly: daemon)
+  scan input scanner (Inbox, OCR)
+  connector Connector management (poll, dispatch, setup-daemon)
+  mount Mounting external resources
+  chain toolchain engine (automation)
+  routine routine management (morning/evening/project start)
+  recurring Recurring tasks
+
+SELF EXPANSION & HOOKS:
+----------------------------------------
+  skills create <name> --type <type> Scaffold new ability
+                                       Types: tool, agent, expert, handler, service
+  skills reload Hot Reload (Registry + Tools + Skills)
+  hooks status Status of all hooks and listeners
+  hooks events List all events
+  hooks log Last hook executions
+  hooks test <event> Emit test event
+  plugins list Show loaded plugins
+  plugins load <path> Load plugin from plugin.json
+  plugins unload <name> Unload plugin
+  plugins create <name> Scaffold plugin manifest
+  plugins tools Show all plugin tools
+
+SYSTEM TOOLS:
+----------------------------------------
+  wiki knowledge base (wiki/)
+  tools management of internal scripts
+  tuev validation & testing system
+  usecase test cases (part of tuev)
+  clock time system (now, format, parse)
+  timer Start/stop timer
+  countdown Create countdown
+  beat Unified time display (Clock, Timer, Countdown, Between)
+  between time between two points in time
+  maintain maintenance functions (db optimize, logs clean)
+  test test runner (smoke, integration, full)
+
+HANDLER WITH -- (extended functions):
+----------------------------------------
+  --startup start session (initialization, --watch for polling)
+  --shutdown End session (cleanup)
+  --status Overall status of the system
+  --help [topic] Show help for topics/modules
+  --memory Detailed memory handler (facts, lessons)
+  --db database analysis (bach.db schema/stats)
+  --tokens Token cost control
+  --inject injector system for tools
+  --context Context loader for sessions
+  --logs system log analysis (data/logs/)
+  --docs documentation integrity check
+  --snapshot Freeze system state
+  --trash trash & restore
+  --fs file system protection (check, heal, status)
+  --connections Connections & Actors-Model
+
+INLINE COMMANDS (tools-based, no handler):
+----------------------------------------
+fs file system protection (check, heal, classify, scan)
+  file file manager (read, write, copy, move, delete)
+  ocr OCR engine (document ID or PDF path)
+  llm Multi-LLM Protocol (--partner=<name>)
+  map call graph / dependency mapper
+
+SPECIAL CASES:
+----------------------------------------
+  skill export Skill export with dependency resolution
+  restore backup <file> restore backup
+
+BOTH VARIANTS ACCEPTED:
+----------------------------------------
+For historical reasons, these often work hybrid:
+  bach partner list     = bach --partner list
+  bach gui start        = bach --gui start
+
+DID-YOU-MEAN (fuzzy matching):
+----------------------------------------
+If there are typos, BACH suggests similar commands (Levenshtein ≤2):
+  $ bach parner list → "Did you mean: partner?"
+  $ bach taks add → "Did you mean: task?"
+
+TOOL FALLBACK:
+----------------------------------------
+If no handler is found, BACH tries a tool from tools/:
+  bach skill_export  → tools/skill_export.py
+  bach backup_manager → tools/backup_manager.py
+
+REGISTERED HANDLERS (as of 2026-03-04):
+----------------------------------------
+109+ handlers via auto-discovery (hub/*.py):
+abo, agents, ati, backup, beat, report, between, calendar, chain, clock,
+connections, connector, consolidation, contact, context, countdown, cv,
+daemon (=scheduler), data, db, dist, doc, docs, email, extensions, fs, health, gui,
+household, health check, help, hooks, inject, long, lesson, logs, maintain,
+mem, memory, mount, msg, notify, obsidian, ollama, partner, path, profile,
+profiler, recurring, reflection, routine, scan, session, shutdown, skill,
+skills, smarthome, snapshot, sources, startup, status, tax, sync, task,
+test, timer, tokens, tool, tools, trash, tuev, update, usecase,
+insurance, wiki
+
+SEE ALSO:
+----------------------------------------
+  help practices rule index
+  help naming naming conventions
+  help coding Coding standards
+  help actors Actors model (Connections)
+  help partners partner profiles
+  help hooks hook framework (14 events)
+  help self-extension self-extension system

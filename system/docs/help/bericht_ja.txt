@@ -1,0 +1,113 @@
+# Portability: USER
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+資金調達レポート
+==============
+
+ICF ベースの開発レポートを作成、エクスポート、アーカイブします。
+すべてのクライアントデータは自動的に匿名化されます。
+data_roh/ 内のフォルダー名から名前と生年月日が認識されます。
+
+QUICKSTART
+------------
+
+  1. ファイルフォルダをdata_roh/に挿入します（形式：「姓、名」）
+  2. 次のいずれかの方法を使用します。
+
+  方法 1 - チャット (推奨):
+    「資金調達レポートを作成する」
+
+  方法 2 - デスクトップ .bat:
+    Foerderbericht_Pipeline.bat (自動検出の場合は Enter)
+
+  方法 3 - llmauto チェーン:
+    bach chain start foerderbericht
+
+  方法 4 - CLI:
+    bach bericht pipeline
+
+  3. 完成したレポートは、output_reports/
+
+COMMANDS
+-------
+
+  bach bericht pipeline [name] [geburtsdatum] [optionen]
+ にあります。    エンドツーエンドのパイプライン: data_raw -> Output_reports
+    名前/生年月日はオプション（フォルダー名から自動検出）。
+    --期間「01/01/2025 - 12/31/2025」レポート期間
+    --backend claude_code|llmauto LLM バックエンド (デフォルト: claude_code)
+    --parents "mother" "father" 親の名前を匿名化します
+    --no-cleanup 中間フォルダーを保持します
+
+  bach bericht list
+    すべてのクライアント フォルダーをステータス (JSON/DOCX が存在する) とともにリストします。
+
+  bach bericht status
+    すべてのフォルダーのパイプライン ステータスを表示します。
+
+  bach bericht generate <json-datei> -o <output> [-t vorlage]
+    Word テンプレートに JSON ファイルのデータを入力します。
+
+  bach bericht export <klient-ordner> -p <passwort>
+    レポートの匿名化を解除します。
+
+  bach bericht archive [name]
+    完成したレポートをアーカイブに移動します。
+
+  bach bericht help
+    このヘルプを表示します。
+
+LLM-BACKENDS
+-------------
+
+  claude_code (デフォルト) サブプロセスとしてのクロード コード CLI
+  llmauto llmauto チェーン システム
+  anthropic_sdk 直接 API 呼び出し (ANTHROPIC_API_KEY が必要)
+
+  標準パスは claude_code と llmauto です。
+  anthropic_sdk は単なるオプションの代替手段です (API キーの設定はありません)。
+
+PIPELINE FOLDER (4 + README のみ)
+---------------------------------
+
+  data_roh/ クライアント ファイルを挿入します (1 フォルダー = 1 クライアント!)
+       ↓
+  data_ano/ [自動] 匿名化されたファイル
+       ↓
+  data_bundled/ [自動] バンドル + プロンプト + LLM 応答
+       ↓
+  Output_reports/ [自動] 完成したレポート (匿名化されていない、最終製品)
+
+  README.md の説明
+
+  これ以上のフォルダーはありません。従来のフォルダー (data/、output/、bundles/、
+  Reports_ano/、Reports_clean/) はクリーンアップ中に自動的に削除されます。
+
+例
+---------
+
+  # 全自動 (フォルダー名から名前を認識)
+  bach bericht pipeline
+
+  # 明示的な情報がある場合
+  bach bericht pipeline "Max Mustermann" "15.03.2016"
+
+  #その他の期間
+  bach bericht pipeline --zeitraum "01.07.2025 - 30.06.2026"
+
+  # ステータスを確認
+  bach bericht status
+  bach bericht list
+
+関連ファイル
+-----------------
+
+  Hub/_services/document/foerderbericht_pipeline.py オーケストレーター
+  Hub/_services/document/pipeline_runner.py CLI ランナー
+  Hub/report.py CLI ハンドラー
+  tools/llmauto/chains/foerderbericht.json チェーン構成
+  Hub/_services/document/anonymizer_service.py 匿名化
+  Hub/_services/document/document_pipeline.py ドキュメント スキャナー
+  skill/_templates/report_template_geiger_universal.docx Word テンプレート
+  ユーザー/ドキュメント/foerderplaner/レポート/作業フォルダー

@@ -1,0 +1,139 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[messages 表、hub/messages.py、hub/partner.py]
+
+COMMUNICATE - 合作伙伴通信系统
+==========================================
+
+日期：2026-02-08
+
+通信系统（第 4 层）管理信息交换
+所有实例（人类和人工智能）之间。
+
+核心概念
+------------
+1。消息传递：数据库中的持久消息路由。
+2. 协议：标准化流程（握手、请求、传输）。
+3. WORKSPACES：文件交换的物理目录（system/partners/）。
+4. 存在：活跃的在线状态和观察机制。
+
+注册合作伙伴 (10)
+-------------------------
+内部系统：
+  用户 用户 [✓ 活动]
+  克劳德 克劳德 (Opus 4.6) [✓ 活跃]
+  bach      BACH Core System       [✓ 活跃]
+
+本地 AI:
+  llama Mistral 7B [✓ 活跃]
+  美洲驼 美洲驼 3 8B [✓ 活动]
+
+外部 AI：
+  双子座 谷歌双子座 [✓ 活跃]
+  gpt OpenAI GPT [○ 不活动]
+
+API：
+  pubmed PubMed MCP [✓ 有效]
+
+服务：
+  驱动 Google Drive [✓ 活动]
+
+工具：
+  canva Canva MCP [✓ 活跃]
+
+合作伙伴检测
+-----------------
+关键字自动触发合作伙伴选择：
+
+  ollama：批量、嵌入、无令牌、电子邮件草稿
+  pubmed：基因、蛋白质、疾病、临床、生物医学
+  google_drive：谷歌驱动器，查找文档，搜索驱动器
+  Canva：设计、演示、海报、信息图表
+  双子座：深入研究、长文档、概念分析
+
+路由通道
+---------------
+|合作伙伴|频道 |状态 |
+|--------|---------|--------|
+|乌拉马 |直接 API、队列 | ✓ |
+|用户 |留言框 | ✓ |
+|发表 | MCP 服务器 | ✓ |
+|画布| MCP 服务器 | ✓ |
+|谷歌驱动器 |应用程序接口 | ✓ |
+|双子座|合作伙伴/双子座/ | ✓ 
+
+|健康检查
+-------------
+Ollama：curl http://127.0.0.1:11434/api/tags
+Google Drive：API 令牌检查
+PubMed：MCP 连接测试
+Canva：MCP 连接测试
+
+令牌区域（委托）
+------------------------
+区域 1 (0-30%)：所有合作伙伴可用
+区域 2 (30-60%)：廉价合作伙伴（Ollama 优先）
+区域 3 (60-80%)：仅限本地合作伙伴
+区域 4 (80-100%)：仅限紧急情况（人类 + Ollama）
+
+CLI 命令（bach msg）
+----------------------
+  list [--inbox/--outbox] [--limit N] 显示所有邮件。
+  未读 仅未读消息。
+  发送 <NAME> <TEXT> [--from SENDER] 发送消息。
+  read <ID> [--ack] 读取消息并可选择确认。
+  ping [--from NAME] 显示未读内容至合作伙伴。
+  观看 [--from NAME] 实时投票（每 10 秒检查一次）。
+  count 显示消息数。
+  删除 <ID> [ID2...] 删除消息。
+  archive <ID> [ID2...] 存档消息。
+
+消息类型
+-----------------
+- 任务：给合作伙伴的订单（通过 `_TASKS.md` + `msg send`）。
+- 信息：状态更新和报告（“发件箱/”）。
+- 警报：错误消息和升级（问题监视器）。
+
+交互协议
+----------------------
+1。握手：相互识别和功能检查（健康）。
+2. 请求：对数据或服务的正式请求。
+3. 传输：通过工作区或数据库进行物理传输。
+4. 确认：确认收货和处理（收据）。
+
+数据库表
+------------------
+连接合作伙伴端点和工具
+Partner_recognition 合作伙伴能力和区域
+delegate_rules 基于令牌的委托
+messages 消息协议（由 hub/messages.py 使用）
+comm_messages 替代消息表（未积极使用）
+
+PARTNER-WORKSPACES
+------------------
+每个合作伙伴在“system/partners/”下都有一个标准化的文件夹结构：
+  - 收件箱/传入数据/请求。
+  - 发件箱/结果/报告。
+  -workspace/ 临时工作区。
+
+守护进程和自动化
+-------------------
+守护进程作业 `msg-cleanup` 存档 30 天后读取的消息。
+像 Gemini 这样的合作伙伴使用“bach msg watch”来实时回复 Claude。
+
+处理程序和工具
+---------------
+hub/messages.py 消息系统 CLI（542 行）
+hub/partner.py 合作伙伴管理（514行）
+tools/partner_communication/ 合作伙伴交互工具：
+  -interaction_protocol.py实例通信
+  - system_explorer.py 软件发现
+  - ai_complete.py AI兼容层
+  - communications.py 通信实用程序
+
+另请参见
+----------
+  bach partner --help    合作伙伴管理和委派
+  bach msg --help        消息系统命令
+  docs/help/maintain.txt 合作伙伴健康检查

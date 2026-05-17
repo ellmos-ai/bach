@@ -1,0 +1,72 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH 降级 - 重置版本
+======================================
+
+将 BACH 重置为以前的版本。使用历史
+来自 dist_file_versions (SQ020) 的版本。
+
+
+使用
+----------
+
+  # 显示文件的可用版本
+  bach downgrade list <datei-pfad>
+
+  # 将单个文件恢复到版本
+  bach downgrade <datei-pfad> --version <version>
+
+  # 重置整个系统以释放
+  bach downgrade --release <release-id>
+
+  # 试运行（仅查看，不要运行）
+  bach downgrade --dry-run <datei-pfad> --version <version>
+
+
+版本
+---------
+
+版本号：v1、v2、v3、...
+  - 基于哈希（SHA256 自动检测更改）
+  - 自动增量提供人类可读的顺序
+
+
+重要
+-------
+
+- 降级仅适用于核心+模板文件
+- 旧版本存储在 dist_file_versions 中
+- USER_DATA没有版本控制（属于用户）
+- 建议在降级之前备份
+
+
+示例
+---------
+
+  # 查看 bach.py​​ 的版本
+  bach downgrade list system/bach.py
+
+  # 将 bach.py​​ 重置为版本 3
+  bach downgrade system/bach.py --version v3
+
+  # 检查哪些文件将被更改
+  bach downgrade --dry-run --release r2
+
+
+与升级相结合
+-----------------------
+
+升级和降级一起工作：
+  - 升级自动保存旧版本
+  - 降级使用保存的版本
+  - 双向系统（向前+向后）
+
+
+另请参见
+----------
+
+  bach --help upgrade       升级到新版本
+  bach --help restore       模板恢复
+  bach --help seal          完整性检查

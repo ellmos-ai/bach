@@ -1,0 +1,94 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+クックブック - Anthropic 参考資料
+========================================
+
+日付: 2026-02-06
+
+説明
+------------
+公式 Anthropic から厳選されたノートブックとスクリプト
+クロードクックブックリポジトリ。参考やインスピレーションとして役立つ
+BACH のさらなる開発用 -- 直接実行可能なコードとしてではありません。
+
+保管場所
+-----------
+docs/reference/anthropic_cookbooks/
+
+利用可能なクックブック
+---------------------
+
+  記憶/
+    Memory_tool.py ツールベースの LLM メモリ
+    BACH の比較: bach --memory ははるかに成熟しています
+                    (SQLite、セッション、信頼性、10 オペレーション)
+    用途: ツール定義パターン、プロンプト エンジニアリング
+
+  圧縮/
+    session_memory_compaction.ipynb セッションの概要
+    auto-context-compaction.ipynb トークンベースの自動圧縮
+    BACHの比較: コンテキスト圧縮を使用したprompt_manager.py
+    用途: トークンカウント、圧縮プロンプト
+
+  text_to_sql/
+    guide.ipynb 自然言語 → SQL
+    BACH 関連性: 「bach --db query」の統合計画
+    用途: スキーマ コンテキスト、SQL 検証、再試行ループ
+
+  オーケストレーター/
+    Orchestrator_workers.ipynb オーケストレーター ワーカー パターン
+    プロンプト/ 3 つのエージェント プロンプト テンプレート
+      citations_agent.md ソース参照
+      Research_lead_agent.md 研究管理
+      Research_subagent.md 研究の実行
+    BACH の比較: エージェント/_experts/ + ハブ/_services/
+    用途: エージェント プロンプト テンプレート、結果合成
+
+  ツール検索/
+    tool_search_with_embeddings.ipynb セマンティック ツール検索
+    BACH 比較: _try_run_tool() は接頭辞一致を使用します
+    用途: 埋め込みベースのツール検出
+
+BACH への統合
+-------------------
+
+  優先度 1 (短期):
+    - text_to_sql → 新しい「bach --db query」ハンドラー
+    - 圧縮→prompt_manager.pyでのトークンカウント
+
+  優先順位 2 (中期):
+    - オーケストレーター → エージェントオーケストレーションのリファクタリング
+    - tools_search → tool_discovery.py のアップグレード
+
+  優先度 3 (長期):
+    - メモリ → 品質チェックのための比較
+
+ソース
+-------
+
+  リポジトリ: github.com/anthropics/claude-cookbooks
+  コミット: 7cb72a9
+  日付: 2026-02-06
+  ライセンス: Apache 2.0
+
+その他の参考資料
+------------------
+
+  docs/reference/mcp-builder/ MCP サーバーのベスト プラクティス
+    SKILL.md スキル定義
+    Reference/mcp_best_practices.md MCP パターン
+    Reference/python_mcp_server.md Python MCP サーバー
+    Reference/node_mcp_server.md ノード MCP サーバー
+    参照/評価.md MCP 評価
+
+  tools/testing/playwright/ ブラウザ テスト リファレンス
+    with_server.py サーバー管理
+    例/ 3 つのスクリプト例
+
+関連項目
+----------
+bach --help vendor              ベンダー コード (anthropic_docx/pdf/xlsx)
+bach --help tools               ツールの概要
+docs/reference/analyse_anthropic_skills_cookbooks.md 完全な分析

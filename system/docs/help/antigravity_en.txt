@@ -1,0 +1,54 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ANTIGRAVITY - QUICK REFERENCE
+=============================
+
+Google Antigravity is an agent-first development platform.
+Detailed documentation: wiki/antigravity.txt
+
+BRIEF OVERVIEW
+--------------
+  What: VS Code fork with autonomous AI agents
+  Download: https://antigravity.google/download
+  Path: C:\Users\User\AppData\Local\Programs\Antigravity\
+
+CLI COMMANDS
+-----------
+  antigravity [path] Open editor
+  antigravity chat Start "Prompt" chat (GUI!)
+  antigravity chat -m agent Agent mode
+  antigravity --add-mcp {...} Add MCP server
+
+KEYBOARD SHORTCUT
+-------------
+  Cmd+L toggle agent panel
+  Cmd+I inline completion
+  Cmd+E Switch Editor/Manager
+
+DEVELOPMENT MODES
+----------------
+  Agent-driven autopilot (autonomous)
+  Review-driven With permission (recommended)
+  Agent-assisted user in control
+
+IMPORTANT PATHS
+--------------
+  .gemini\antigravity\brain\ task lists (LEADABLE!)
+  .gemini\antigravity\skills\ Global Skills
+  .agent\skills\ Workspace Skills
+  .agent\workflows\ Workflows (/slash-commands)
+
+BACH INTEGRATION
+----------------
+  Start: start/start_gemini.bat (Interactive)
+  Script: python tools/partner_communication/gemini_start.py
+  Inbox: system/partners/gemini/inbox/
+  Outbox: system/partners/gemini/outbox/
+
+SEE ALSO
+----------
+  wiki/antigravity.txt Complete documentation
+  wiki/gemini.txt Gemini AI models
+  docs/help/partners.txt AI partner system

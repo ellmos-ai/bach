@@ -1,0 +1,41 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BUGFIX 协议 - 快速参考
+===================================
+
+对于错误，请始终遵循以下顺序：
+
+1。标准固定器优先
+   python system/tools/c_standard_fixer.py <文件>
+   修复：BOM、编码、元音变音、JSON 问题
+   -> 问题解决了吗？工作得救了！
+
+2。导入诊断
+   python system/tools/c_import_diagnose.py <文件夹>
+   检查：循环导入、缺少模块
+
+3。代码分析
+   python system/tools/c_method_analyzer.py <文件>
+   检查：定义之前的属性、信号回调
+
+4。隔离测试
+   创建最小的测试脚本
+   逐渐缩小范围
+
+5。 20 分钟规则
+   20 分钟后没有进展：停止
+   创建错误报告，稍后继续
+
+快速检查：
+
+|错误类型 |第一个行动|
+|--------------------------------|------------------------------------|
+|导入错误 | | c_import_diagnose.py |
+|属性错误 | c_method_analyzer.py |
+|无声崩溃 | c_method_analyzer.py |
+|编码/BOM | c_standard_fixer.py 
+
+|注意：此文件记录独立工具，而不是处理程序。
+         详细的错误修复工作流程：skills/workflows/bugfix-protocol.md

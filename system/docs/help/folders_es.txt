@@ -1,0 +1,114 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CARPETAS - Gestión y asignaciones de carpetas
+===========================================
+
+Gestiona la asignación de carpetas de datos a agentes y expertos en el BACH
+Base de datos. Almacena metadatos como el tipo de carpeta, el propietario y el tiempo de acceso.
+
+
+DESCRIPCIÓN
+------------
+
+El controlador de carpetas permite la administración central de carpetas_de_datos_de_usuario.
+Las carpetas se clasifican por tipo (datos, archivo, exportación, temperatura) y se pueden
+Tener agente o propietario experto. Todos los cambios sólo afectan a la base de datos,
+no el sistema de archivos.
+
+
+OPERACIONES
+-----------
+
+  bach folders list                              Mostrar todas las asignaciones de carpetas
+                                                 con ID, tipo, propietario y ruta
+
+  bach folders add <pfad> [OPTIONS]              Registrar nueva carpeta
+    --type <tipo> Tipo de carpeta: datos, archivo, exportación,
+                                                 temperatura (predeterminado: datos)
+    --agent <nombre> mapeo de agente (opcional)
+    --expert <nombre> Mapeo experto (opcional)
+
+  bach folders remove <id>                       Eliminar carpeta de la base de datos
+                                                 (Los archivos se conservan)
+
+  bach folders move <id> <neuer_pfad>            Cambiar ruta en la base de datos
+                                                 (Archivos no movidos)
+
+
+EJEMPLOS
+---------
+
+  # Mostrar todas las carpetas registradas
+  bach folders list
+  Salida: Tabla con ID, Tipo, Agente/Experto y Ruta
+
+  # Agregar nueva carpeta de datos
+  bach folders add "Projekte/Forschung"
+  Salida: [OK] Carpeta agregada (ID: 23): Proyectos/Investigación
+
+  # Carpeta con mapeo de tipo y agente
+  bach folders add "Archive/Legacy" --type archive --agent archiveBot
+  La carpeta se registra como archivo y se asigna a los agentes
+
+  # Carpeta con asignación de experto
+  bach folders add "Expert-Daten" --type data --expert nlp_expert
+  La carpeta está asignada a un experto
+
+  # Eliminar carpeta de la base de datos (el contenido permanece)
+  bach folders remove 23
+  Salida: [OK] Carpeta eliminada (ID: 23)
+
+  # Cambiar la ruta de la carpeta (por ejemplo, después de cambiar el nombre)
+  bach folders move 23 "Projekte/Forschung-v2"
+  Salida: [OK] Ruta actualizada (ID: 23): Proyectos/Investigación-v2
+
+
+DETALLES
+-------
+
+Tipos de carpetas:
+  data     - Datos de trabajo generales (predeterminado)
+  archive  - Datos archivados/completados
+  export   - Resultados exportados
+  temp     - Datos de trabajo temporales
+
+Asignaciones:
+  - Agente o Experto (opcional)
+  - Los nombres de los agentes deben existir en bach_agents
+  - Los nombres de los expertos deben existir en bach_experts
+  - Error con nombres inexistentes
+
+Comportamiento de la base de datos:
+  - lista: consulta conectada con bach_agents y bach_experts
+  - agregar: devuelve el ID de la nueva carpeta
+  - eliminar: solo elimina la entrada de la base de datos, no el sistema de archivos
+  - mover: cambiar la ruta_carpeta y la marca de tiempo actualizada del último acceso
+
+
+MANEJO DE ERRORES
+----------------
+
+  Tipo de carpeta no válido: X Solo datos/archivo/exportación/temp
+  Agente no encontrado: <nombre> El nombre no existe en bach_agents
+  Experto no encontrado: <nombre> el nombre no existe en bach_experts
+  Error: falta el argumento requerido <id>
+  Carpeta no encontrada (ID: <id>) No hay fila en la base de datos
+
+
+ARCHIVOS
+-------
+
+  Controlador: hub/folders.py
+  Base de datos: bach.db (tabla: carpetas_datos_usuario)
+  Esquema: id, ruta_carpeta, tipo_carpeta, id_agente, id_experto, creado_en,
+          último acceso, dist_type
+
+
+VER TAMBIÉN
+----------
+
+  agentes de ayuda Descripción general y estructura del agente
+  ayuda expertos administración experta
+  ayuda bash_paths Estructura de directorios de la instalación de BACH

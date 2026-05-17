@@ -1,0 +1,120 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+健康 - 健康助理
+=================================
+
+描述：
+  健康助理管理医疗数据（诊断、
+  药物、实验室值、文件、预约）和医生联系方式。
+  它充当中央医学期刊。
+
+CLI 命令（概述）：
+  bach gesundheit status             显示仪表板（预约、异常）
+  bach gesundheit contacts           显示医生联系人
+  bach gesundheit contacts -s <fach> Nach Fachgebiet filtern
+  bach gesundheit diagnoses          有效诊断
+  bach gesundheit diagnoses --all    所有诊断（包括治愈/驳回）
+  bach gesundheit meds               有效药物
+  bach gesundheit meds --all         所有药物（包括已停药）
+  bach gesundheit labs               实验室值（最后 50 个）
+  bach gesundheit labs --abnormal    仅异常值
+  bach gesundheit labs -t <test>     按测试过滤（例如 -t TSH）
+  bach gesundheit docs               医疗文件/调查结果
+  bach gesundheit docs --type <typ>  按类型过滤（调查结果|实验室|处方）
+  bach gesundheit appointments       即将进行的医生预约
+  bach gesundheit appointments --past Vergangene Termine
+  bach gesundheit help               详细命令帮助
+
+预防性检查：
+  bach gesundheit vorsorge           显示所有预防性检查
+  bach gesundheit vorsorge-faellig   仅到期检查
+  bach gesundheit add-vorsorge "Name" --turnus <monate> --kategorie <typ>
+  bach gesundheit vorsorge-done <id> Als erledigt markieren (heute)
+  bach gesundheit vorsorge-done <id> --date DD.MM.YYYY
+
+  示例：
+    bach gesundheit add-vorsorge "Darmspiegelung" --turnus 120 --kategorie Krebs
+    bach gesundheit add-vorsorge "Hautkrebsscreening" --turnus 24 --ab-alter 35
+    bach gesundheit vorsorge-done 1 --date 15.01.2026
+
+导出功能：
+  bach gesundheit export                      医生联系人（默认）
+  bach gesundheit export --entity diagnoses   导出诊断
+  bach gesundheit export --entity meds        导出药物
+  bach gesundheit export --entity labs        导出实验室值
+  bach gesundheit export --entity all         健康护照（全部）
+  bach gesundheit export --format csv         导出为CSV
+  bach gesundheit export --format vcard       导出为vCard 3.0
+  bach gesundheit export --file <pfad>        保存到文件
+  bach gesundheit export -s <fach>            仅特定主题区域
+
+  示例： bach gesundheit export --entity all --file gesundheitspass.txt
+
+主动功能：
+  bach gesundheit reminders          提醒（药物、预防、预约）
+  bach gesundheit interactions       有效药物的交互检查
+
+数据收集（添加）：
+  bach gesundheit add-diagnosis "Name" [Optionen]
+    选项：--icd、--date、--status、--severity、--doctor、--note
+
+  bach gesundheit add-med "Name" [Optionen]
+    选项：--ingredient、--dosage、--schedule、--diagnosis、--start、--note
+
+  bach gesundheit add-lab "Test" [Optionen]
+    选项：--value、--unit、--ref-min、--ref-max、--date、--abnormal、--doctor
+
+  bach gesundheit add-doc "Titel" [Optionen]
+    选项：--type、--file、--summary、--date、--doctor、--diagnosis
+
+  bach gesundheit add-appointment "Titel" [Optionen]
+    选项：--doctor、--date、--time、--duration、--type、--note
+
+  提示：使用 `bach gesundheit add-... --help` 了解详细选项。
+
+  示例：
+    bach gesundheit add-diagnosis "Hypothyreose" --icd E03.9 --status aktiv
+    bach gesundheit add-med "L-Thyroxin" --dosage 75mcg --schedule morgens
+    bach gesundheit add-lab "TSH" --value 2.5 --unit mU/L --ref-min 0.4 --ref-max 4.0
+    bach gesundheit add-doc "Blutwerte Jan 2026" --type labor --file /pfad/datei.pdf
+    bach gesundheit add-appointment "Kontrolle" --doctor 1 --date 15.02.2026 --time 10:00
+
+显示详细信息：
+  bach gesundheit show <typ> <id>
+
+  可用类型：
+    - 联系人/医生
+    - 诊断/诊断
+    - 医学/药物/药物
+    - 实验室/实验室值
+    - 文档/文件
+    - 预约/约会
+    - 预防/检查
+
+  示例：
+    bach gesundheit show contact 1
+    bach gesundheit show diagnosis 1
+    bach gesundheit show med 1
+    bach gesundheit show lab 1
+    bach gesundheit show vorsorge 1
+
+数据库：
+  bach.db 中的表（自 v1.1.84 起的统一数据库）：
+  - health_contacts（医生）
+  - health_diagnoses（诊断、ICD 代码）
+  - health_medications（药物、剂量、摄入时间表）
+  - health_lab_values（实验室值、参考范围）
+  - 健康文件（调查结果、医生信函）
+  - health_appointments（医生预约）
+  -Prevention_checks（预防性检查）
+
+集成：
+  - LifeAssistant：阅读每日简报的预约。
+  - 文档：链接到“user/documents/medical/”中的文件。
+  - 互动检查：具有 12 种频繁互动的基本数据库。
+
+另请参阅：
+  bach --help abo            （健身订阅等）
+  bach --help contact        （一般联系人）

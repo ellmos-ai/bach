@@ -1,0 +1,151 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH 文档 - 概述
+================================
+
+所有 BACH 文档的中心联系点。
+
+核心文档
+--------------
+
+根级别：
+  SKILL.md 掌握背景、身份、行为规则
+  README.md 项目概述
+
+system/:
+  ARCHITECTURE.md 技术架构、组件
+  ROADMAP.md 开发计划、里程碑
+  CHANGELOG.md 版本历史记录，更改
+
+帮助系统 (system/docs/help/)
+--------------------------
+
+调用：python bach.py --help <主题>
+
+概念：
+  --help core 核心概念（代理/工作流程/技能/工具）
+  --帮助记忆记忆系统（5种认知类型+学习回路）
+  --help注射器注射器系统（自动提示）
+  --帮助巩固巩固（压缩、衰减、提升）
+  --helpstartup启动日志
+
+SYSTEM:
+  --helptasks 任务管理
+  --help Lessons 经验教训系统
+  --帮助合伙人合伙人制度（Multi-LLM）
+  --help daemon 守护进程服务
+
+时间：
+  --help Clock 时间显示
+  --帮助计时器秒表
+  --help countdown 带触发器的倒计时
+  --检查之间的帮助
+  --帮助打败统一时间系统
+
+开发：
+  --help dev 开发工作流程
+  --help usecase 用例测试
+  --help bugfix 错误修复日志
+  --helpcoding 编码标准
+
+目录：
+  --help list 所有可用主题
+
+功能（自 v1.1.85 起）：
+  --help agent/<名称> 代理文档（例如 --help agent/ati）
+  --helpworkflow/<名称> 工作流程文档
+  --help Expert/<名称> 专家文档
+  --help <工具名称> 来自数据库的工具信息
+
+技能层次结构 (system/skills/)
+-----------------------------------
+
+  代理/代理配置文件（角色）
+  技能/工作流程/工作流程定义（22 个工作流程）
+  Agents/_experts/ 专家配置
+  技能/_services/ 服务描述
+  技能/_templates/ 模板
+  合作伙伴/合作伙伴 LLM 配置
+  连接器/外部连接
+  Skills/_os/ 特定于操作系统的配置
+
+文档文件夹 (docs/)
+-------------------
+
+  文档/当前概念和分析
+  docs/_archive/ 已归档/已完成的概念
+  docs/_ideas/ 对未来的想法
+  docs/_test_and_reports/ 测试结果和报告
+  文档/分析/分析文档
+  docs/reference/ 外部参考资料（食谱等）
+
+代码文档
+------------------
+
+  system/bach.py 主入口点（基于 v2.0 注册表）
+  system/bach_api.py 库API（任务、内存、备份等）
+  系统/核心/核心模块（注册表、应用程序、数据库、基础）
+  system/hub/*.py 处理程序实现（自动发现）
+  system/tools/*.py 工具脚本
+
+数据库架构
+----------------
+
+  system/db/schema.sql 完整的数据库模式（210+表）
+  system/data/bach.db SQLite 数据库
+
+CLI 访问：
+  python bach.py --db schema 显示数据库模式
+  python bach.py --dbtables 显示所有表
+
+快速参考
+---------------
+
+  什么是巴赫？          --帮助维基/was_ist_bach
+  我该如何开始？        --帮助启动
+  我该如何完成？        --帮助关机
+  创建任务？        --帮助任务
+  保存课程？      --帮助课程
+  使用内存？         --help memory
+
+文档层次结构
+-------------------------
+
+```
+SKILL.md <- 主上下文（始终读取 LLM）
+    │
+    ├── ARCHITECTURE.md <- 技术细节
+    │
+    ├── docs/help/ <- 操作说明
+    │ ├── core.txt <- 核心概念
+    │ ├── memory.txt <- 内存系统
+    │ └── ...
+    │
+    ├── 技能/ <- 功能定义
+    │ ├── _代理/
+    │ ├── _工作流程/
+    │ └── ...
+    │
+    └── 文档/ <- 概念、分析
+        ├── CONCEPT_*.md
+        └── 存档/
+```
+
+处理程序架构
+-------------------
+
+帮助处理程序：system/hub/help.py
+  - 显示来自 system/docs/help/ 的 .txt 文件
+  - 支持子文件夹（tools/、wiki/）
+  - 代理、工作流程、_experts 的别名系统
+  - 从数据库直接访问工具（v1.1.38+）
+
+文档处理程序：system/hub/docs.py
+  - 列表/搜索文档/文件夹
+  - 按概念、分析、原理图、其他分组
+  - 操作：列表、显示、搜索
+
+---
+版本：1.0.1 |创建时间：2026-01-30 |更新日期：2026-02-08

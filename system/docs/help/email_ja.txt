@@ -1,0 +1,95 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名: 電子メール
+統合されたドラフト セキュリティを備えた Gmail API 経由で電子メールを送信します。
+
+説明:
+電子メール ハンドラーにより、Gmail API を介した安全な電子メール送信が可能になります。
+すべての電子メールは最初に下書きとして作成され、明示的に「確認」のマークを付ける必要があります。
+送信する前に確認する必要があります。これにより偶発的な事故が防止されます
+電子メール送信。
+
+操作:
+
+  send <to> <subject> <body> ドラフトの作成 (メインコマンド)
+    オプション: --cc <電子メール>、--bcc <電子メール>、--attach <ファイルパス>
+
+  ドラフト <to> <件名> <本文> 送信用のエイリアス
+
+  confirm <id> ドラフトを確認して送信します
+    オプション: --by <名前>
+
+  cancel <id> ドラフトを破棄 (削除) 
+
+  下書き 開いている下書きをリストする
+    エイリアス: list (空のコマンドはドラフトも表示します)
+
+  送信済み 送信済みメールを表示
+
+  show <id> ドラフトの詳細を表示
+    全文、受信者、CC/BCC、ステータスを表示します
+
+  Gmail API のセットアップ スコープの拡張 (1 回限り)
+    読み取り専用 + 送信には OAuth2 認証が必要です
+
+  test テストメールを自分のアドレスに送信します
+
+  help このヘルプ テキストを表示
+
+例:
+
+  1. 位置引数を使用してドラフトを作成します:
+     bach email send user@example.com "Betreff" "Hallo Welt"
+
+  2. 名前付き引数を使用したドラフト:
+     bach email send user@example.com --subject "Meeting" --body "Termin: 14:00"
+
+  3. CC とアタッチメント付き:
+     bach email send user@example.com \
+       --件名「レポート」\
+       --body "ファイルを参照" \
+       --cc admin@example.com\
+       --attach C:\documents\report.pdf
+
+  4. ドラフトを送信します:
+     bach email confirm 42
+
+  5. ドラフトを破棄します:
+     bach email cancel 42
+
+  6. 開いているすべての下書きを表示します:
+     bach email drafts
+
+ファイル:
+
+  Hub/email.py このハンドラ (EmailHandler クラス)
+  _services/mail/email_sender.py Gmail API 統合、下書き管理
+  _services/mail/account_manager.py OAuth2 トークン管理
+  data/bach.db ローカル電子メール メタデータ (ドラフト レコード)
+
+セキュリティ:
+
+  - ドラフト モデル: すべての電子メールは最初にドラフトとして保存されます。
+  - 明示的な確認: 「確認」のみが実際に送信されます。
+  - トークンのスコープ: 読み取り専用 + 送信 (Gmail API oauth2)
+  - エラー処理: エラーは DB に記録されます (<id> を表示すると詳細が表示されます)
+
+CONFIGURATION:
+
+  アカウント: ~/.config/paper_publisher/config.json または
+           ローカル OAuth2 トークン (_services/mail/tokens/
+
+エラー処理:
+
+)  - 無効なメールアドレスは即座に拒否されます
+  - 件名/テキストが欠落している場合は報告されます
+  - Gmail エラーは件名と ID とともに記録されます
+  - 下書きはキャンセルでいつでも破棄できます
+
+関連項目:
+
+  docs/help/base.txt ハンドラー基本クラス
+  docs/help/telegram.txt リモート制御のためのテレグラムの統合
+  _services/mail/README.md Gmail API セットアップ ガイド

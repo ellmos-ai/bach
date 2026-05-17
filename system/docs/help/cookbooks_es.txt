@@ -1,0 +1,94 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+LIBROS DE COCINA - Material de referencia Antrópico
+========================================
+
+FECHA: 2026-02-06
+
+DESCRIPCIÓN
+------------
+Cuadernos y guiones seleccionados del Antrópico oficial
+Repositorio de libros de cocina de Claude. Servir de referencia e inspiración
+para futuros desarrollos de BACH, no como código directamente ejecutable.
+
+UBICACIÓN DE ALMACENAMIENTO
+-----------
+docs/reference/anthropic_cookbooks/
+
+LIBROS DE COCINA DISPONIBLES
+---------------------
+
+  memoria/
+    Memory_tool.py Memoria LLM basada en herramientas
+    Comparación de BACH: Bach: la memoria es mucho más sofisticada
+                    (SQLite, Sesiones, Confianza, 10 Operaciones)
+    Útil para: Patrones de definición de herramientas, ingeniería rápida
+
+  compactación/
+    session_memory_compaction.ipynb Resumen de sesión
+    compactación-contexto-automática.ipynb Compactación automática basada en tokens
+    Comparación de BACH: Prompt_manager.py con compresión de contexto
+    Útil para: recuento de tokens, indicaciones de compresión
+
+  texto_a_sql/
+    Guide.ipynb Lenguaje Natural → SQL
+    Relevancia de BACH: plan de integración para "consulta bach --db"
+    Útil para: contexto de esquema, validación de SQL, bucle de reintento
+
+  orquestador/
+    Orchestrator_workers.ipynb Patrón de trabajador del orquestador
+    mensajes/ 3 plantillas de mensajes de agente
+      citations_agent.md Referencias fuente
+      research_lead_agent.md Control de investigación
+      research_subagent.md Ejecución de la investigación
+    Comparación BACH: agentes/_expertos/ + hub/_servicios/
+    Útil para: plantillas de mensajes de agente, síntesis de resultados
+
+  búsqueda_herramienta/
+    tool_search_with_embeddings.ipynb Búsqueda de herramientas semánticas
+    Comparación de BACH: _try_run_tool() utiliza coincidencia de prefijo
+    Útil para: Descubrimiento de herramientas basadas en incrustaciones
+
+INTEGRACIÓN EN BACH
+-------------------
+
+  Prioridad 1 (corto plazo):
+    - text_to_sql → nuevo controlador "bach --db query"
+    - compactación → recuento de tokens en Prompt_manager.py
+
+  Prioridad 2 (medio plazo):
+    - orquestador → Refactorización de la orquestación de agentes
+    - tool_search → Actualizar para tool_discovery.py
+
+  Prioridad 3 (largo plazo):
+    - memoria → comparación para controles de calidad
+
+FUENTES
+-------
+
+  Repositorio: github.com/anthropics/claude-cookbooks
+  Confirmar: 7cb72a9
+  Fecha: 2026-02-06
+  Licencia: Apache 2.0
+
+OTRAS REFERENCIAS
+------------------
+
+  docs/reference/mcp-builder/ Mejores prácticas del servidor MCP
+    SKILL.md definición de habilidad
+    referencia/mcp_best_practices.md Patrones MCP
+    referencia/python_mcp_server.md Servidor Python MCP
+    referencia/node_mcp_server.md Servidor MCP de nodo
+    referencia/evaluación.md Evaluación MCP
+
+  herramientas/pruebas/dramaturgo/Referencia de prueba del navegador
+    with_server.py Gestión del servidor
+    ejemplos/ 3 scripts de ejemplo
+
+VER TAMBIÉN
+----------
+bach --help vendor              Código de proveedor (anthropic_docx/pdf/xlsx)
+bach --help tools               Descripción general de la herramienta
+docs/reference/analyse_anthropic_skills_cookbooks.md Análisis completo

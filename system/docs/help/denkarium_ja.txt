@@ -1,0 +1,89 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+============
+デンカリウム -- ログブック + 思考コレクター
+
+
+説明
+============
+ペンシーブ ハンドラーは、メモと考察の 2 つのモードを管理します。
+
+  denkarium 自由な発想、アイデア、考察（柔軟に分類可能）
+  logbuch 恒星時マーク付き年表
+
+すべてのエントリは sqlite3 (denkarium_entries テーブル) に保存され、
+検索、分類、評価を行い、タスク/wiki に昇格させることができます。
+
+
+操作
+===========
+bach denkarium write TEXT [--type=logbuch] [--cat=KATEGORIE] [--title=TITEL] [--mood=1-5]
+    新しいエントリーを書きます。デフォルト: type=denkarium、cat=note
+    例: bach denkarium 書き込み "自動化のためのアイデア" --type=denkarium --cat=idee
+
+bach denkarium read [--type=logbuch|denkarium] [--cat=KATEGORIE] [--limit=N]
+    最後の N 個のエントリをリストします (デフォルトの制限 = 10)
+    例: bach denkarium read --type=logbuch --limit=5
+
+bach denkarium search SUCHBEGRIFF
+    コンテンツ、タイトル、カテゴリで検索 (最大 20 件がヒット)
+    例: bach denkarium 検索 "オートメーション"
+
+bach denkarium brainstorm THEMA
+    テンプレートを使用して新しいブレインストーミング エントリを作成する
+    例: バッハ デンカリウム ブレインストーミング「AI アーキテクチャ」
+
+bach denkarium promote ENTRY-ID task|wiki
+    ペンシーブのタスクまたは Wiki へのエントリを促進する
+    例: バッハ デンカリウム プロモート 42 タスク
+
+bach denkarium categories
+    使用されているすべてのカテゴリをエントリ数とともにリストします
+
+bach denkarium stats
+    全体的な統計: 数、期間、プロモーション
+
+
+例
+=========
+1。クイックノート (標準ペンシーブ):
+   bach denkarium write "Morgen Backend-Refactoring planen"
+
+2.評価:
+   bach denkarium write "Produktive Session, viel erreicht" --type=logbuch --mood=5
+
+3 のログブック エントリ。ブレーンストーミングを開始します:
+   bach denkarium brainstorm "Neue Feature-Ideen"
+   bach denkarium write "Caching-Layer hinzufuegen" --cat=idee
+
+4.考えを検索し、タスクにプロモートします:
+   bach denkarium search "wichtig"
+   bach denkarium promote 15 task
+
+5.先週のログブック エントリを表示します:
+   bach denkarium read --type=logbuch --limit=20
+
+
+ファイル
+=======
+  data/bach.db SQLite データベース (テーブル: denkarium_entries)
+  docs/help/denkarium.txt このヘルプ ファイル
+
+
+関連項目
+==========
+  タスク -- タスク管理 (プロモート操作の対象)
+  wiki -- Wiki システム (プロモーションのオプションの宛先)
+  Base -- BaseHandler API (hub/base.py)
+
+
+注意事項
+=======
+- 開始時刻: 明示的な --title のないログブック エントリは "Startime YYYY-MM-DD HH:MM" を取得します
+- カテゴリ: 自由に選択可能 (メモ、アイデア、ブレインストーミングなど)
+- 気分評価: オプション、反射追跡用の 1 ～ 5 スケール
+- タスクにプロモート: 標準の優先度 = 3、ステータス = 保留中の新しいタスクを作成します。
+- Wiki への昇格: エントリをマークし、別のハンドラーによる複雑な Wiki 統合

@@ -1,0 +1,160 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [hub/consolidation.py, tabla de consolidación de memoria]
+
+CONSOLIDACIÓN DE MEMORIA
+=====================
+
+FECHA: 2026-02-08
+
+¿QUÉ ES LA CONSOLIDACIÓN?
+-----------------------
+La consolidación es el proceso activo que resulta de los datos sin procesar (sesiones, lecciones,
+Memoria de trabajo) crea estructuras de significado y las transfiere al contexto. 
+
+Análogo al sueño humano:
+- Se procesan experiencias y se retienen cosas importantes.
+- La repetición fortalece las conexiones (Boost), los desvanecimientos no utilizados (Decay).
+- El resumen reduce los detalles, retiene la esencia.
+
+NIVELES DE CONSOLIDACIÓN (pipeline)
+---------------------------------
+
+  DATOS SIN PROCESAR (Sesiones, Memoria de trabajo) --[Análisis]--> ASM (Metadatos)
+  ASM (Metadatos) --[Revisión de IA]--> ESENCIA (Lecciones, Contexto)
+  ESENCIA --[Indexación]--> TRIGGER-DB (Memoria Asociativa)
+
+TABLAS (v1.1.80+ Activa)
+-------------------------
+  datos sin procesar de sesiones de memoria (más de 360 entradas)
+  Memory_lessons Conocimientos purificados (más de 70 entradas)
+  Memory_consolidation Seguimiento y puntuaciones (más de 350 entradas)
+  context_triggers Puentes asociativos (más de 900 activadores)
+
+COMANDOS CLI (consolidación de bach)
+------------------------------
+  estado Muestra estadísticas y consolidaciones pendientes.
+  run Ejecuta todos los pasos de consolidación disponibles (peso, archivo, índice, desencadenadores de sincronización, olvidar).
+  compress Compresión de sesiones a entradas de contexto.
+               --cleanup: Limpia sesiones vacías
+               --batch: Sesiones grupales por día
+               --run: Compresión completa con conjunto de reglas
+  Actualizaciones de puntuación de relevancia de peso (decaimiento/aumento).
+  archivo Traslado del conocimiento obsoleto al archivo a largo plazo.
+  índice Comparación entre hechos, ayuda y wiki.
+  review Crea tareas de revisión para validación manual.
+  init Inicializa el seguimiento de las entradas existentes.
+  sync-triggers Actualiza los activadores de contexto dinámico (NUEVO v1.1.80).
+  olvidar Eliminar entradas no utilizadas (peso <umbral).
+  reclasificar Corregir entradas categorizadas incorrectamente (NUEVO v1.1.81).
+
+INTEGRACIÓN DE DAEMON
+------------------
+La consolidación se puede ejecutar como un trabajo en segundo plano (scheduler_jobs):
+- `consolidate-weight`: Diario (simulación de decaimiento).
+- `consolidar-archivo`: Semanal (verificación de archivo).
+- `consolidate-index`: Actualizar el índice de hechos.
+
+(Nota: los trabajos del demonio deben configurarse; consulte docs/help/daemon.txt)
+
+VERACIDAD:
+Cada ejecución de consolidación crea entradas de registro y en caso de dudas 
+Revisar tareas (#categoría: mantenimiento).
+
+VER TAMBIÉN
+----------
+  docs/help/memory.txt Modelo de memoria cognitiva
+  docs/help/lessons.txt Mejores prácticas y conocimientos
+  docs/help/daemon.txt Trabajos de demonio
+  hub/consolidation.py Implementación de la lógica
+  ARQUITECTURA.md Arquitectura del sistema (modelo de memoria)
+
+SUBPROCESOS (YA EXISTEN)
+--------------------------------
+Estas herramientas existentes son parte de la consolidación:
+
+  tools/autolog_analyzer.py Análisis de sesión (ASM_003)
+  tools/context_compressor.py Compresión (ASM_004/005)
+  habilidades/flujos de trabajo/wiki-* Autores de wiki
+  skills/workflows/help-* Autores de ayuda
+
+ESQUEMA DE BASE DE DATOS
+----------------
+memory_consolidation (ACTIVO, más de 350 entradas):
+
+  id INTEGER CLAVE PRIMARIA
+  source_table TEXTO - sesiones_de_memoria, lecciones_de_memoria, etc.
+  source_id INTEGER: ID en la tabla fuente
+  times_accessed INTEGER -- Contador de acceso
+  last_accessed TIMESTAMP - Último acceso
+  peso REAL - puntuación de relevancia (0,0-1,0)
+  decay_rate REAL -- Tasa de decaimiento
+  umbral REAL - Umbral de archivado
+  estado TEXTO: activo, archivado, eliminado
+  consolidado_a INTEGER - ID en contexto_memoria (si está consolidado)
+  creado_en la MARCA DE TIEMPO
+  actualizado_en MARCA DE TIEMPO
+
+FLUJO DE TRABAJO: SESIÓN -> CONTEXTO
+----------------------------
+1. La sesión finaliza (--shutdown)
+2. autolog_analyzer.py extrae actividades
+3. context_compressor.py crea un resumen
+4. Resumen almacenado en memoria_sesiones
+5. [DAEMON] Después de X sesiones: compresión al contexto
+6. [REVISIÓN AI] Comprueba la estructura del significado, corregida
+7. Resultado en contexto_memoria con activadores
+
+FLUJO DE TRABAJO: HECHO -> WIKI/AYUDA
+---------------------------
+1. Se crea un nuevo hecho: bach --hecho de memoria "tema:valor"
+2. comprobaciones de índice consolidado: ¿Existe Ayuda/Wiki para el “tema”?
+3. Si no: cree la tarea "Crear entrada wiki sobre [tema]"
+4. El autor de la wiki crea una entrada
+5. El hecho se actualiza con la referencia de ruta
+
+FLUJO DE TRABAJO: WIKI/AYUDA -> ÍNDICE DE HECHOS
+----------------------------------
+1. escaneos de índice consolidado docs/help/*.txt y wiki/*.txt
+2. Para cada entrada: ¿Existe el hecho?
+3. Si no: crea un hecho como índice.
+   HELP.memory -> "Documentación del sistema de memoria"
+   WIKI.gemini -> "Modelos de IA de Google Gemini"
+4. Los hechos sirven como una búsqueda rápida
+
+VALOR UMBRAL (CONFIGURABLE)
+-------------------------------
+  weight_threshold_archive: 0.2 Por debajo de este valor: Archivo
+  weight_threshold_delete: 0.05 Por debajo de este valor: eliminar
+  decay_rate_default: 0,95 Decaimiento diario (5%)
+  boost_on_access: aumento de peso de 0,1 al acceder
+  session_before_compress: 10 sesiones antes de la compresión
+  days_before_archive: 90 días hasta el archivo
+
+NUEVAS OPERACIONES (v1.1.80+)
+---------------------------
+  sync-triggers Actualiza los activadores dinámicos de:
+                   - flujo de trabajo_trigger_generator.py
+                   - lección_trigger_generator.py
+                   - herramienta_auto_discovery.py
+                   - theme_packet_generator.py
+                   - trigger_maintainer.py
+
+  olvidar Desactiva/borra entradas con peso < 0,05
+                   - lecciones_de_memoria: is_active = 0
+                   - memoria_trabajando: is_active = 0
+                   - hechos_memoria: BORRAR
+
+  reclasificar Corrige categorizaciones incorrectas:
+                   - Lección -> Contexto (con alto uso)
+                   - Trabajando -> Lección (con patrón de lección)
+                   - Trabajando -> Hecho (con clave: formato de valor)
+                   - Hecho sin Wiki -> Crear Tarea
+
+                   Conversión manual:
+                     bach consolidate reclassify lesson 42 context
+
+                   Análisis automático:
+                     bach consolidate reclassify
+                     bach consolidate reclassify --fix

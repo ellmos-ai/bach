@@ -1,0 +1,212 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+クロード コード - クイック リファレンス
+==========================
+
+クロード コードは、Anthropic のクロード用公式 CLI ツールです。
+現在: バージョン 2.1.37+ (2026 年 2 月現在)
+
+インストール (推奨: npm ではなくネイティブ!)
+---------------------------------------------
+  # Windows PowerShell
+  IRM https://claude.ai/install.ps1 | iex
+
+  # macOS/Linux/WSL
+  カール -fsSL https://claude.ai/install.sh |バッシュ
+
+  # あるいは: Homebrew
+  brew install --cask クロード コード
+
+  # 別の方法: WinGet
+  winget インストール Anthropic.ClaudeCode
+
+  # 非推奨 (非推奨):
+  npm install -g @anthropic-ai/claude-code
+
+START
+-------
+  クロード # インタラクティブセッションを開始する
+  クロード。                 # 現在のディレクトリから開始
+  claude "Prompt" # プロンプトから開始
+  クロード -c # 最後のセッションを再開します
+  claude -r # 続行するセッションを選択してください
+  claude -p "query" # 非対話型 (SDK モードで終了)
+
+重要なコマンド
+------------------
+  クロードアップデート アップデートをインストールする
+  クロードドクターチェックのインストール
+  クロード mcp MCP サーバーを構成する
+  クロードインストール ネイティブ インストールに移行する
+  claude setup-token 認証トークンをセットアップします
+
+モデル (2026 年現在)
+--------------------
+  --モデルのデフォルト アカウントに応じて (Pro/Max/Teams: Opus 4.6)
+  --model Sonnet Claude Sonnet 4.5 (高速な日常タスク)
+  --model opus Claude Opus 4.6 (複雑で最良の推論)
+  --モデル俳句 クロード俳句 (最速、最安)
+  --model Sonnet[1m] 1M トークン コンテキストを持つソネット
+  --model opusplan 計画モードの場合は Opus、実行の場合は Sonnet
+
+  努力レベル (Opus 4.6): 低、中、高 (デフォルト)
+  環境: CLAUDE_CODE_EFFORT_LEVEL=low|medium|high
+
+重要なオプション (選択 - 50 以上が利用可能!)
+----------------------------------------------
+  -c, -- continue 最後のセッションを続行します
+  -r, --resume [id] ID/名前でセッションを再開します
+  -p、--print 出力を印刷して終了します (パイプの場合)
+  --model <エイリアス|名前> モデルを選択します
+  --add-dir <dir> 追加のディレクトリを許可します
+  --system-prompt "..." システム プロンプトを置き換えます
+  --append-system-prompt "..." システム プロンプトを拡張します (推奨)
+  --tools "Bash,Edit,Read" 特定のツールのみを有効にする
+  --allowedTools "..." 権限のないツールのプロンプト
+  --disallowedTools "..." ツールを禁止します
+  --permission-mode <モード> Plan/acceptEdits/default
+  --dangerously-skip-permissions すべてのプロンプトをスキップします (注意!)
+  --output-format json JSON 出力 (text/json/stream-json)
+  --max-turns N 最大。エージェントターン (印刷モード)
+  --max-budget-usd N 最大。 API呼び出しにかかるドル
+  --chrome Chrome ブラウザの統合
+  --ide IDE への自動接続
+  --verbose 詳細なログ記録
+  --debug "api,mcp" カテゴリを使用したデバッグ モード
+  --mcp-config <file> JSON から MCP サーバーをロードします
+  --agents '{...}' カスタム サブエージェントを定義します
+  --fork-session 再開時の新しいセッション ID
+  --from-pr N GitHub からのセッション PR N
+  --remote "task" claude.ai で Web セッションを開始します
+  --teleport ローカルで Web セッションを続行
+
+権限
+-----------
+  --permission-mode <モード>
+    デフォルトの標準（要求）
+    acceptEdits 編集を自動的に受け入れる
+    plan プラン モードのみ
+
+  --dangerously-skip-permissions すべてのプロンプトをバイパスします (注意してください!)
+  --allow-dangerously-skip-permissions バイパスを許可します (有効にしない)
+
+  BACH 権限プロファイル (リモート制御に推奨):
+    bach permissions list              プロファイルを表示
+    bach permissions activate <profil> Profil in settings.json schreiben
+    bach permissions deactivate        通常のプロファイルを復元
+    -> 詳細については、permissions.txt を参照してください
+
+出力形式 (-p を使用)
+-----------------------
+  --output-format テキスト テキスト (デフォルト)
+  --output-format json JSON (単一の結果)
+  --output-format stream-json リアルタイム ストリーミング
+  --include-partial-messages 部分イベント (stream-json を使用)
+
+SYSTEM-PROMPT FLAGS
+-------------------
+  --system-prompt "..." はデフォルトのプロンプト全体を置き換えます
+  --system-prompt-file <file> ファイルと置き換えます (印刷モードのみ)
+  --append-system-prompt "..." 拡張 デフォルトのプロンプト (推奨)
+  --append-system-prompt-file <ファイル> ファイルで拡張 (印刷モード)
+
+  経験則: --append-* (クロード コードの機能を保持)
+
+SUBAGENTS (--agents フラグ) を優先します。
+-------------------------
+カスタム サブエージェントの JSON 形式:
+  --エージェント '{
+    「査読者」: {
+      "説明": "コードレビュー担当者",
+      "prompt": "あなたは上級コードレビュー担当者です...",
+      "ツール": ["読み取り"、"Grep"、"Glob"]、
+      "モデル": "ソネット"
+    }
+  }'
+
+環境変数 (選択)
+-----------------------------
+  ANTHROPIC_MODEL=<エイリアス|名前> デフォルトのモデル
+  ANTHROPIC_DEFAULT_OPUS_MODEL=... Opus エイリアスのマッピング
+  ANTHROPIC_DEFAULT_SONNET_MODEL=... ソネット エイリアス マッピング
+  ANTHROPIC_DEFAULT_HAIKU_MODEL=... Haiku エイリアスのマッピング
+  CLAUDE_CODE_SUBAGENT_MODEL=... サブエージェント モデル
+  CLAUDE_CODE_EFFORT_LEVEL=低|中|高オーパス努力
+  DISABLE_PROMPT_CACHING=1 プロンプト キャッシュをグローバルに実行する
+  DISABLE_AUTOUPDATER=1 自動更新を無効にする
+  CLAUDE_CODE_GIT_BASH_PATH=... Git Bash パス (Windows)
+
+例
+---------
+  # BACH ディレクトリで対話型
+  cd "C:\Users\User\OneDrive\.TOPICS\.AI\.OS\BACH"
+  クロード
+
+  # Opus 4.6 と拡張コンテキストを使用
+  クロード --モデル作品[1m]
+
+  # 最後のセッションを再開する
+  クロード -c
+
+  # 非対話型 (スクリプトの場合)
+  クロード -p "すべての Python ファイルをリストします"
+
+  # 追加ディレクトリあり
+  クロード --add-dir "C:\MyProject"
+
+  # カスタム システム プロンプト (拡張され、置き換えられません)
+  クロード --append-system-prompt "TypeScript を使用し、any-type は使用しない"
+
+  # 計画のためのオーパス、実行のためのソネット
+  クロード --モデル作品計画
+
+  # スクリプト用の JSON 出力
+  claude -p --output-format json "すべての TODO を検索"
+
+  # MCP サーバー設定あり
+  クロード --mcp-config ./mcp.json
+
+  # Chrome の統合
+  クロード --クロム
+
+  # 最大予算を制限する
+  claude -p --max-budget-usd 5.00 "大規模な分析"
+
+認証
+--------------
+  1. Claude Pro/Max (推奨): claude.ai アカウント経由でログインします。
+  2. クロード コンソール: console.anthropic.com 経由の OAuth
+  3. チーム/エンタープライズ: claude.ai 経由でチーム ログイン
+  4. クラウド プロバイダー: Bedrock/Vertex/Foundry 構成
+
+自動更新
+------------
+  ネイティブ インストール: 数時間ごとに自動更新 (バックグラウンドで)
+  Homebrew/WinGet: `brew upgrade` / `winget upgrade` を使用して手動で
+
+  リリースチャンネル:
+    - 最新 (標準、新機能即時)
+    - 安定しています (~1 週間前、回帰をスキップします)
+
+  設定: /config → 自動更新チャネル
+  または: settings.json → "autoUpdatesChannel": "stable"
+
+関連項目
+----------
+  https://code.claude.com/docs/en/cli-reference 完全な CLI リファレンス
+  https://code.claude.com/docs/en/setup セットアップとインストール
+  Permissions.txt BACH 権限プロファイル
+  claude-code-automatization.txt 自動化
+  wiki/claude-code.txt BACH Wiki (利用可能な場合)
+  wiki/gemini.txt ジェミニ CLI/反重力
+  wiki/ollama.txt ローカル LLM
+
+ソース (2026 年 2 月 8 日現在)
+--------------------------
+  - https://code.claude.com/docs/en/cli-reference
+  - https://code.claude.com/docs/en/setup
+  - https://code.claude.com/docs/en/model-config
+  - https://www.npmjs.com/package/@anthropic-ai/claude-code
+  - https://github.com/anthropics/claude-code

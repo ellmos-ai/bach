@@ -1,0 +1,166 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH チャット サービス - マルチ バックエンド テレグラム ボット + コントロール API + システム トレイ
+==========================================================================
+
+説明
+------------
+BACH チャット サービスは、Claude Bridge の後継です。彼は 1 つを提案します
+プラグ可能な LLM バックエンドを備えた BACH 統合 Telegram ボット、1 つ
+HTTP コントロール API とクロスプラットフォーム システム トレイ。
+
+アーキテクチャ (3 層):
+  - model_backend.py: プラグ可能なバックエンド抽象化 (Ollama、Claude CLI、
+                         Codex CLI、Claude API、OpenAI API)
+  - chat_runtime.py: ツール使用ループを備えたバックエンドに依存しないチャット ランタイム、
+                         コンテキスト管理、セキュリティモード、概要
+  - telegram_chat.py: すべてのコマンド + 制御 API を備えたテレグラム ボット
+  - chat_tray.py: クロスプラットフォーム システム トレイ (macOS/Windows/Linux)
+
+バックエンド:
+  - ollama: ネイティブ ツールを使用するローカル Ollama サーバー
+  - クロード: クロード コード CLI (--セッションを継続、独自のツール)
+  - codex: Codex CLI (GPT モデル、独自のツール)
+  - claude-api: Anthropic API (ANTHROPIC_API_KEY が必要)
+  - openai: OpenAI API (OPENAI_API_KEY が必要)
+
+セキュリティ モード:
+  - 安全: 読み取り専用ツール (ls、cat、grep、git、docker など)
+  - full: 書き込みツール (execute_command、write_file) も使用
+           アクティベーション: /mode full が確認されました
+
+
+テレグラム コマンド
+-----------------
+  /ウェルカムメッセージの開始
+  /リセット会話をクリア
+  /backend [名前] [モデル] バックエンドの切り替え (ollama|claude|codex|claude-api|openai)
+  /model <名前> モデルを変更します
+  /mode [safe|full] セーフティモード
+  /think思考モードON(スルー)
+  /nothink 思考モード OFF (高速)
+  /settings すべての設定を表示
+  /status システムステータス
+  /remember <テキスト> バッハメモリー: 覚えておいてください
+  /recall <検索> BACH メモリ: 検索
+  /facts BACH メモリ: 事実
+  /bach <cmd> BACH コマンドを実行します。
+  /task <テキスト> タスクの作成
+  /tasks タスクを開く
+  /maxrounds [N] 工具の最大ラウンド数を設定します (0=無制限)
+  音声メッセージのささやき文字起こし -> チャット
+  写真 OCR テキスト認識 -> チャット
+
+
+CONTROL API (ポート 8081)
+-----------------------
+  GET / Web ダッシュボード (HTML)
+  GET /api/status 現在のステータス (ツールのアクティビティを含む)
+  GET /api/backends 利用可能なバックエンドとステータス
+  GET /api/models 現在のバックエンドのモデル
+  POST /api/backend バックエンドの切り替え: {"name": "claude", "model": "opus"}
+  POST /api/mode モードを設定します: {"mode": "safe"}
+  POST /api/model モデルを設定: {"model": "qwen3.5:35b-a3b"}
+  POST /api/think 思考モード: {"think": true}
+  POST /api/max_tool_rounds 最大ツールラウンド: {"ラウンド": 10} (0=無制限)
+  POST /api/chat チャット メッセージ: {"prompt": "...", "chat_id": "..."}
+
+
+システム トレイ
+-----------
+  開始: python chat_tray.py [--host HOST] [--port PORT]
+
+  特徴:
+    - ステータスアイコン：緑（安全）、オレンジ（フル）、赤（未接続）
+    - バックエンド サブメニュー: 可用性のあるすべてのバックエンド
+    - モデルサブメニュー: 現在のバックエンドのモデル
+    - モード切り替え: セーフ/フル
+    - 思考切り替え: オン/オフ
+    - 最大ツールラウンド: プリセット (5/10/20/無制限)
+    - ツールアクティビティ: 現在のツール + トレイタイトルのラウンド
+    - Web ダッシュボードを開く
+    - クロスプラットフォーム: macOS、Windows、Linux (pystray 経由)
+
+  リモート トレイ (別のシステムから):
+    python chat_tray.py --host macstudvonlukas --port 8081
+
+
+ファイル
+-------
+  ボット: Hub/_services/chat/telegram_chat.py
+  ランタイム: Hub/_services/chat/chat_runtime.py
+  バックエンド: Hub/_services/llm/model_backend.py
+  トレイ: Hub/_services/chat/chat_tray.py
+  構成: ~/.config/bach/telegram_chat.json
+  トークン: ~/.credentials/telegram_bot_token
+  所有者 ID: ~/.credentials/telegram_owner_id
+  プロンプト: data/system_prompt_buddha.txt
+  ログ: ~/Library/Logs/bach/telegram-bot.log (macOS)、data/logs/ (Windows)
+
+  LaunchAgents (macOS):
+    com.bach.telegram-bot 電報ボット
+    com.bach.chat-tray システム トレイ
+    com.bach.gui-server GUI ダッシュボード (:8000)
+
+  Crontab (macOS):
+    */5 * * * * sync_mirror.sh OneDrive ミラー同期
+    0 */6 * * *rotate_logs.sh ログのローテーション
+
+
+設定
+-------------
+~/.config/bach/telegram_chat.json:
+    {
+      "bot_token": "...",
+      "owner_id": "...",
+      「ベーキング」: {
+        "タイプ": "オラマ",
+        "base_url": "http://localhost:11434",
+        "default_model": "qwen3.5:35b-a3b"
+      }
+    }
+
+  環境変数:
+    TELEGRAM_BOT_TOKEN ボットトークン (ファイルの代替)
+    TELEGRAM_OWNER_ID オーナーのチャットID
+    OLLAMA_MODEL 標準モデルを上書きする
+    OLLAMA_URL オラマ URL を上書きする
+    BACH_CONTROL_PORT 制御 API ポート (デフォルト: 8081)
+    BACH_HOST トレイ/GUI のデフォルトのホスト (例: macstudvonlukas)
+    BACH_NO_BROWSER =1: ブラウザを自動的に開きません (リモート GUI)
+    ANTHROPIC_API_KEY claude-api バックエンドの場合
+    OPENAI_API_KEY openai バックエンドの場合
+
+
+注意事項
+--------
+  スレッド: コントロール API は ThreadingHTTPServer (v1.1.1 以降) を使用します。
+  ChatRuntime には共有状態 (セッション、current_tool、
+  ツールラウンド、ラストツール）。シングルユーザー操作では重要ではありませんが、
+  ツールの実行中の同時 API リクエスト
+  競合状態が発生します。回避策: 一度にチャットは 1 つだけです。
+
+
+クロード ブリッジの移行
+----------------------------
+  BACH チャット サービスは、機能的にはクロード ブリッジを置き換えます。
+  - Bridge_daemon.py -> telegram_chat.py (テレグラムボット)
+  - Bridge_tray.py -> chat_tray.py (システムトレイ)
+  - config.json -> ~/.config/bach/telegram_chat.json
+
+  クロードブリッジの利点:
+  - Claude CLI だけではなく 5 つのバックエンド
+  - BACH 統合 (メモリ、タスク、インジェクター)
+  - 制御API + Webダッシュボード
+  - 音声（ウィスパー）+ OCR（テッセラクト）
+  - クロスプラットフォームトレイ
+  - クリーンな 3 層アーキテクチャ
+
+
+関連項目
+----------
+  help claude_bridge 旧クロード橋 (レガシー)
+  ヘルプコネクタ コネクタシステム
+  ヘルプ LLM 通信 LLM 通信方法

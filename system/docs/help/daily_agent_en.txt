@@ -1,0 +1,79 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DAILY AGENT - Autonomous daily agent with persistent session
+============================================================
+
+DESCRIPTION
+------------
+The Daily Agent is a BACH handler that runs a persistent Claude Code Agent
+starts with --continue and processes the daily task queue. The agent can
+Generate morning briefings with modular components and session summaries
+save. The agent instance is monitored (PID tracking) and can be targeted
+be terminated. Briefing modules can be switched on/off.
+
+
+OPERATIONS
+-----------
+  bach daily-agent start                Start agent (Claude Code --continue)
+  bach daily-agent stop                 Stop agent + session summary
+  bach daily-agent status               Show PID and runtime info
+  bach daily-agent briefing             Morning briefing (active modules)
+  bach daily-agent summary              Generate evening summary
+  bach daily-agent config               List briefing modules
+  bach daily-agent modules              Alias for config
+  bach daily-agent toggle <modul>       Module Switch on/off
+
+Briefing modules (toggle):
+  task_briefing Open tasks (default: ON)
+  message_briefing Unread messages (ON)
+  news_briefing News overview (AN)
+  session_briefing Last session (ON)
+  weather_briefing Weather (default: OFF)
+  calendar_briefing Calendar appointments (OFF)
+
+
+EXAMPLES
+---------
+  bach daily-agent start                Starts agent with model 'sonnet'
+  bach daily-agent start --model=opus   Starts with model 'opus'
+  bach daily-agent status               Shows PID and start time
+  bach daily-agent briefing             Generates briefing with active modules
+  bach daily-agent toggle news_briefing Deaktiviert News-Modul
+  bach daily-agent summary              Shows tasks completed today
+  bach daily-agent stop                 Stops agent + saves summary
+
+
+FILES
+-------
+  Handler: hub/daily_agent.py
+  PID file: data/daily_agent.pid (JSON with PID, start time, model)
+  DB: data/bach.db (briefing_config, tasks, memory_working, ...)
+  Briefs: Generated briefings in stdout/Logs
+
+
+MODULE DETAILS
+-------------
+task_briefing: Top 10 pending tasks (title shortened), possibly recurring jobs
+message_briefing: counter of unread messages (status='unread')
+news_briefing: Unread news from news_items (top categories + 3 titles)
+session_briefing: Last memory_sessions.summary (shortened to 120 characters)
+weather_briefing: Tried weather_service (coordinates hardcoded to 0.0)
+calendar_briefing: Today's events from calendar_events (5 next events)
+
+
+ERROR HANDLING
+----------------
+- Agent is started in the background (stdout/stderr suppressed)
+- PID file must be deleted manually if process crashes
+- Briefing modules ignore silent DB errors (e.g. if news_items does not exist)
+- stop saves summary EVEN if agent is already dead
+
+
+SEE ALSO
+----------
+  bach --help
+  bach scheduler              (periodic tasks)
+  hub/base.py(BaseHandler)
+  docs/help/memory.txt

@@ -1,0 +1,44 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NORMAS DE CODIFICACIÓN
+================
+
+1. CAMINOS
+   - Los caminos relativos son el estándar de oro.
+   - Sin código C:\Users\...
+   - Utilice la ruta (__archivo__).padre
+   - Para preguntas sobre rutas: --help bach_paths
+
+2. CODIFICACIÓN
+   - UTF-8 EN TODAS PARTES
+   - SIEMPRE especifique codificación='utf-8'
+   - Nunca confíes en los valores predeterminados del sistema
+
+   Correcto:
+     contenido = Ruta("archivo.txt").read_text(codificación="utf-8")
+     con open("file.txt", "w", encoding="utf-8") como f:
+
+3. CONSOLA
+   - No hay emojis impresos()
+   - En su lugar: [INFO], [OK], [ERROR], [ADVERTENCIA]
+   - Corrección de consola si es necesario:
+     sys.stdout.reconfigure(codificación='utf-8', errores='reemplazar')
+
+4. emojis
+   - ¡Permitido en archivos, pero solo registrados!
+   - Registro: sistema/tools/c_emoji_scanner.py (ASCII_OVERRIDES)
+   - Escáner: bach c_emoji_scanner <archivo>
+
+5. EDICIÓN JSON
+   - PRIMERA ELECCIÓN: bach.py o script Python
+   - NUNCA fc_str_replace para JSON
+   - NUNCA PowerShell para JSON
+   - En caso de problemas: bach c_json_repair <archivo>
+
+6. IMPORTACIONES
+   - Biblioteca estándar primero
+   - Luego tercero
+   - Luego módulos locales
+   - Herramienta: bach c_import_organizer <archivo>

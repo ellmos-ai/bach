@@ -1,0 +1,89 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ANÁLISIS DE DATOS: comandos de análisis de datos de BACH
+==========================================
+
+BACH ofrece funciones simples de análisis de datos para CSV, Excel y JSON.
+
+INSTALACIÓN
+------------
+Requiere: pip install pandas matplotlib
+
+COMANDOS
+-------
+
+bach data list
+  Muestra todos los archivos en la carpeta input/.
+
+bach data load <pfad>
+  Carga el archivo y muestra información básica (filas, columnas, tipos de datos).
+  Formatos admitidos: CSV, Excel (.xlsx/.xls), JSON
+
+bach data describe <pfad>
+  Muestra estadísticas descriptivas (media, estándar, mínimo, máximo, cuartiles).
+  Sólo para columnas numéricas.
+
+bach data head <pfad> [--rows N]
+  Muestra las primeras N líneas (predeterminado: 10).
+
+bach data corr <pfad>
+  Muestra la matriz de correlación de todas las columnas numéricas.
+
+bach data chart <pfad> --type TYPE --x COL [--y COL] [--output NAME]
+  Crea un gráfico y lo guarda en charts/.
+  Se requiere columna X, columna Y opcional (seleccionada automáticamente).
+
+  Tipos de gráficos:
+    bar     - Gráfico de barras (requiere X e Y)
+    line    - Gráfico de líneas (requiere X e Y)
+    pie     - Gráfico circular (requiere
+├── entrada/ # Coloque los archivos fuente aquí
+├── salida/# Resultados procesados
+└── gráficos/ # Gráficos generados
+    scatter - EJEMPLOS
+    hist    - # Cargar y analizar archivo
+
+# Verificar correlación
+-------------
+# Crear gráficos
+
+TIPS
+---------
+
+- Se puede hacer referencia a los archivos en la carpeta de entrada/ con nombres cortos
+- Los gráficos se guardan automáticamente en gráficos/ (PNG, 150 DPI)
+- Para archivos grandes: primero encabezar, luego describir
+- Los comandos de gráficos requieren matplotlib: pip install matplotlib
+- La columna Y se selecciona automáticamente para barra/línea/dispersión si no se especifica
+bach data load user/data-analysis/input/sales.csv
+bach data describe user/data-analysis/input/sales.csv
+bach data head user/data-analysis/input/sales.csv --rows 20
+
+VER TAMBIÉN
+bach data corr user/data-analysis/input/metrics.xlsx
+
+# Todas las herramientas disponibles
+bach data chart input/sales.csv --type bar --x monat --y umsatz
+bach data chart metrics.xlsx --type line --x date --y value --output trend
+bach data chart input/survey.csv --type pie --x kategorie --y anzahl
+bach data chart input/metrics.xlsx --type scatter --x x_wert --y y_wert
+bach data chart input/data.csv --type hist --x alter
+
+# Descripción general de las funciones de BACH
+-----
+VERSIÓN
+
+Introducido en BACH v1.1.25 (2026-01-21)
+Comandos de gráficos completamente implementados (barra, línea, circular, dispersión, hist)
+Controlador: system/hub/data_analysis.py
+----------
+bach --help tools     # Alle verfuegbaren Tools
+bach --help features  # BACH Features-Uebersicht
+
+VERSION
+-------
+Eingefuehrt in BACH v1.1.25 (2026-01-21)
+Chart-Befehle vollstaendig implementiert (bar, line, pie, scatter, hist)
+Handler: system/hub/data_analysis.py

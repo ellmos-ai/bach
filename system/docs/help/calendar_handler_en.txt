@@ -1,0 +1,69 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CALENDAR - appointment and calendar management
+==========================================
+
+DESCRIPTION
+------------
+Appointment and calendar management with database support. Shows upcoming dates
+from assistant_calendar combined with due household routines (household_routines).
+Supports appointments with location, type, status and optional descriptions.
+
+OPERATIONS
+-----------
+  bach calendar today                         Show today
+  bach calendar week                          This week (week)
+  bach calendar month                         This month
+  bach calendar list [TAGE]                   Next N days (default 30)
+  bach calendar add "TITEL" [OPTIONEN]        Create appointment
+  bach calendar show <ID>                     Appointment details
+  bach calendar done <ID>                     Appointment as completed
+  bach calendar delete <ID>                   Delete appointment
+  bach calendar help                          This help
+
+ADD OPTIONS
+------------
+  -d, --date <DATE> YYYY-MM-DD or DD.MM.YYYY (default: today)
+  -t, --time <TIME> HH:MM (default: 09:00)
+  --end <TIME> End time (HH:MM)
+  --location <LOCATION> Appointment location
+  --type <TYPE> appointment|reminder|task (default: appointment)
+  --note <TEXT> Description
+
+EXAMPLES
+---------
+  bach calendar today
+  bach calendar week
+  bach calendar list 60
+  bach calendar add "Zahnarzt" -d 15.02.2026 -t 10:30 --location "Praxis"
+  bach calendar add "Treffen" -d 2026-03-10 -t 14:00 --end 15:30 --note "Besprechung"
+  bach calendar show 5
+  bach calendar done 5
+  bach calendar delete 5
+
+OUTPUT FORMAT
+---------------
+[CALENDAR] Time range - N entries
+
+  --- WD DD.MM. ---
+    [ID>3] HH:MM Title @ Location [Status]
+    [RID>2] ---- Routine name (frequency, category)
+
+DATABASE
+---------
+  File: data/bach.db
+  Tables: assistant_calendar (id, title, event_type, start_datetime,
+                                   end_datetime, location, description, status)
+              household_routines (id, name, frequency, category, next_due)
+
+FILES
+-------
+  Handler: hub/calendar_handler.py
+  Documentation: docs/help/calendar_handler.txt
+
+SEE ALSO
+----------
+  DB_004_TERMINDATENBANK_ANALYSE.md (database schema)
+  hub/base.py (BaseHandler implementation)

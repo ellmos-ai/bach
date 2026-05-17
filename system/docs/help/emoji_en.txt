@@ -1,0 +1,55 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+EMOJI SYSTEM (CONCEPT DOCU)
+============================
+
+Policy modules and tools for emoji handling.
+NOTE: No automatic system-wide conversion -
+Policy functions must be called manually.
+
+AVAILABLE MODULES:
+
+1. Policy module (system/tools/_policies/emoji_safe.py)
+   - emoji_to_safe(text): Emoji → ASCII tags via emoji.demojize()
+   - emoji_to_display(text): ASCII tags → emoji via emoji.emojize()
+
+2. Scanner tool (system/tools/c_emoji_scanner.py)
+   - CLI: python c_emoji_scanner.py --status
+   - CLI: python c_emoji_scanner.py --scan-batch
+   - CLI: python c_emoji_scanner.py <file/folder>
+   - Not integrated as a BACH command
+
+3. JSON repair (system/tools/c_json_repair.py)
+   - Uses emoji conversion in the repair process
+
+CONVERSION EXAMPLES:
+  ✅ → :check_mark_button:
+  ❌ → :cross_mark:
+  ⚠️ → :warning:
+  📁 → :file_folder:
+  📄 → :page_facing_up:
+  🔧 → :wrench:
+  💡 → :light_bulb:
+
+ASCII OVERRIDES (custom, defined in tools):
+  🟢 → [GREEN]
+  🟡 → [YELLOW]
+  🔴 → [RED]
+  ✅ → [OK]
+  ❌ → [X]
+  ⚠ → [WARN]
+  → → ->
+  ← → <-
+  ↔ → <->
+
+APPLICATION:
+  - JSON files: ASCII tags preferred (convert manually)
+  - Markdown: Emojis allowed
+  - Logs: ASCII tags preferred
+
+WHY?
+  - Avoid UTF-8 encoding problems
+  - Prevent Mojibake
+  - Consistency across all systems

@@ -1,0 +1,44 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+コーディング標準
+================
+
+1.パス
+   - 相対パスはゴールドスタンダードです
+   - ハードコーディングされた C:\Users\... はありません
+   - Path(__file__).parentを使用する
+   - パスに関する質問の場合: --help bach_paths
+
+2。エンコーディング
+   - どこでも UTF-8
+   - 常にencoding='utf-8'を指定してください
+   - システムのデフォルトに依存しない
+
+   正解:
+     content = Path("file.txt").read_text(encoding="utf-8")
+     open("file.txt", "w",coding="utf-8") を f:
+
+3 として使用します。コンソール
+   - print() には絵文字はありません
+   - 代わりに: [情報]、[OK]、[エラー]、[警告]
+   - 必要に応じてコンソールを修正します。
+     sys.stdout.reconfigure(encoding='utf-8'、errors='replace')
+
+4.絵文字
+   - ファイル内で使用できますが、登録されているもののみです。
+   - レジストリ: system/tools/c_emoji_scanner.py (ASCII_OVERRIDES)
+   - スキャナ: bach c_emoji_scanner <ファイル>
+
+5。 JSON編集
+   - 最初の選択: bach.py または Python スクリプト
+   - JSON には fc_str_replace を使用しないでください
+   - JSON 用の PowerShell は決して使用しないでください
+   - 問題が発生した場合: bach c_json_repair <ファイル>
+
+6。輸入
+   - 最初に標準ライブラリ
+   - 次にサードパーティ
+   - 次にローカルモジュール
+   - ツール: bach c_import_organizer <ファイル>

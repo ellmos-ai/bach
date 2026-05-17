@@ -1,0 +1,75 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+APIBOOK - 中央 API ドキュメント
+======================================
+
+説明
+------------
+使用されるすべての API の中央データベースを管理します。ストアURL、
+認証タイプ、エンドポイント、説明、検証ステータス。
+SQLite (bach.db) とテーブル api_book を使用します。
+
+OPERATIONS
+-----------
+  bach api add <name> <base_url> [--auth key|oauth|none] [--desc "..."] [--provider "..."] [--tags "a,b"]
+    API の登録または更新
+
+  bach api list
+    登録されているすべての API を表示 (ステータス、認証、検証)
+
+  bach api show <name>
+    API の詳細情報 (URL、認証、エンドポイント、例)
+
+  bach api endpoint add <api_name> <METHOD> <path> [--desc "..."]
+    既存の API にエンドポイントを追加します (例: POST /v1/chat/completions)
+
+  bach api verify [<name>]
+    すべての API または個別の API をテストします (HTTP HEAD リクエスト、タイムアウト: 10 秒)
+
+  bach api search <keyword>
+    名前、説明、タグのキーワードで API を検索
+
+  bach api remove <name>
+    データベースから API を削除
+
+  bach api help
+    このヘルプを表示
+
+例
+---------
+  # API を登録します
+  bach api add openai https://api.openai.com --auth key --desc "OpenAI API"
+
+  # プロバイダーとタグ付き
+  bach api add github https://api.github.com --auth oauth --provider GitHub --tags "git,development"
+
+  # エンドポイントを追加
+  bach api endpoint add openai POST /v1/chat/completions --desc "Chat Completion"
+
+  # 検索して確認します
+  bach api search openai
+  bach api verify openai
+  bach api list
+
+  # 詳細を表示
+  bach api show github
+
+データベース
+---------
+  テーブル: api_book
+  列: ID、名前 (一意)、プロバイダー、base_url、auth_type、説明、
+           endpoints_json、examples_json、タグ、last_verified、is_active、
+           created_at、updated_at、dist_type
+
+ファイル
+-------
+  ハンドラー: Hub/apibook.py
+  データベース: data/bach.db (SQLite)
+
+関連項目
+----------
+  bach.py - CLI エントリ ポイント
+  Hub/base.py - BaseHandler クラス
+  data/bach.db - データベース

@@ -1,0 +1,68 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+============
+dist - Manejador del sistema de distribución (basado en tipo_dist)
+
+
+DESCRIPCIÓN
+============
+Administra instantáneas, lanzamientos y paquetes de distribución del sistema BACH.
+Copia de seguridad constante mediante clasificación dist_type (CORE=2, TMPL=1, USER=0).
+Admite control de versiones, integridad del sello y portabilidad.
+
+
+OPERACIONES
+===========
+status Estado del sistema (sello, estadísticas de dist_type)
+verificar la integridad del sello
+clasificar dist_type Mostrar distribución (CORE/TMPL/USER)
+instantánea Crear instantánea (manual o automáticamente)
+lanzamiento Crear lanzamiento con número de versión
+restaurar Restaurar desde zip de distribución en la carpeta dist/
+instalar Instalar la distribución en una nueva carpeta
+list Listar instantáneas/lanzamientos/ZIPs
+
+
+EJEMPLOS
+=========
+Comandos básicos:
+  bach --dist status                  -> Estado del sistema con sello y estadísticas
+  bach --dist verify                  -> Verificar la integridad del sello
+  bach --dist classify                -> distribución dist_type (tabla por tabla)
+
+Instantáneas:
+  bach --dist snapshot NAME           -> Crear instantánea manual con nombre
+  bach --dist snapshot TEST "Desc"    -> Con descripción opcional
+  bach --dist snapshot --list         -> Lista de las últimas 20 instantáneas
+
+Versiones:
+  bach --dist release v1.0.0          -> Crear versión con número de versión
+  bach --dist release v1.0.0 "Notes"  -> Con notas de la versión
+  bach --dist list releases           -> Mostrar las últimas 20 versiones
+
+Distribución (restaurar e instalar):
+  bach --dist restore --list          -> Mostrar archivos ZIP disponibles en dist/
+  bach --dist restore NAME.zip        -> Restaurar desde dist/NAME.zip
+  bach --dist restore NAME.zip --no-backup  -> Sin instantánea de respaldo
+  bach --dist restore NAME.zip --target /x  -> A otro directorio. extraer
+  bach --dist install NAME.zip D:\\Path  -> Instalar en una nueva carpeta
+  bach --dist install --list          -> Mostrar archivos ZIP disponibles
+
+
+ARCHIVOS
+=======
+Handler: hub/dist.py
+Backend: herramientas/distribución.py
+Base de datos: bach.db (instantáneas, lanzamientos, metadatos)
+Carpeta dist: dist/ (zips de distribución)
+Instantáneas: registros/instantáneas/ (manifiesto y metadatos)
+
+
+VER TAMBIÉN
+==========
+  hub/ - Todos los controladores
+  tools/distribution.py - Implementación del administrador de distribución
+  docs/help/ - Más ayuda para el controlador

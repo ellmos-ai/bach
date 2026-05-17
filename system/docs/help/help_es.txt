@@ -1,0 +1,85 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+AYUDA - El sistema de ayuda BACH
+=============================
+
+DESCRIPCIÓN
+El sistema de ayuda proporciona documentación contextual para todos los componentes de BACH.
+Cada tema tiene su propio archivo .txt en el directorio docs/help/.
+
+COMANDOS CLI
+-----------
+bach --help                 Mostrar todos los temas disponibles
+bach --help [thema]         Ayuda sobre un tema específico
+bach --help tasks           Ejemplo: ayuda en el sistema de tareas
+bach --help steuer          Ejemplo: ayuda en el agente fiscal
+bach --help tools/name      Ejemplo: ayuda desde la subcarpeta
+bach --help tool_name       Ejemplo: información de la herramienta desde la base de datos
+
+TEMAS DISPONIBLES
+------------------
+Sistema: inicio, apagado, arquitectura, características
+Tareas: tareas, entre tareas, planificación, flujo de trabajo.
+Memoria: memoria, lecciones, registros, fuentes.
+Agentes: agentes, actores, comunicadores, socios.
+Herramientas: herramientas, mantenimiento, copia de seguridad, distribución.
+Datos: dirscan, basura
+GUI: interfaz gráfica de usuario, mantenimiento, generador de avisos, recurrente
+Especial: impuestos, codificación, corrección de errores, inyectores
+Externo: vendedor, libros de cocina.
+Otros: identidad, naming, prácticas, formatos, emoji
+
+ESTRUCTURA DE UN ARCHIVO DE AYUDA
+-------------------------
+1. TÍTULO - Nombre en mayúsculas
+2. DESCRIPCIÓN - ¿Qué hace este componente?
+3. COMANDOS CLI: ¿Qué comandos hay?
+4. OTRAS SECCIONES - Conceptos, ejemplos, consejos
+
+CREAR NUEVO ARCHIVO DE AYUDA
+-------------------------
+1. Cree un archivo en docs/help/[topic].txt
+2. Adoptar el formato del archivo existente
+3. Al menos: título, descripción, comandos CLI
+4. Registro en bach --help automáticamente
+
+ARCHIVOS DE AYUDA VS OTROS DOCUMENTOS
+---------------------------
+docs/help/*.txt Referencia CLI, búsqueda rápida
+skills/*.md Perfiles de agentes, conceptos complejos
+docs/*.md Documentación para desarrolladores, conceptos
+SKILL.md Punto de entrada principal
+
+MEJORES PRÁCTICAS
+--------------
+- Sea breve y directo (menos de 100 líneas)
+- Siempre documente primero los comandos CLI
+- Los ejemplos son más útiles que la teoría.
+- En caso de cambios: actualice el archivo de ayuda
+
+WIKI & EXTENSIONS
+--------------------
+El subdirectorio wiki/ contiene documentación ampliada:
+wiki/*.txt
+
+Acceso a subcarpetas:
+  bach --help tools/python_cli_editor
+  bach --help wiki/antigravity
+
+Acceso a la base de datos de herramientas (NUEVO v1.1.38):
+  bach --help path_healer     Información de herramientas de bach.db
+  bach --help tool_scanner    Muestra tipo, ruta, capacidades
+
+Alias de habilidades (NUEVO v1.1.85):
+  bach --help agent/ati       Muestra agentes/ati/ATI.md
+  bach --help workflow/bugfix Zeigt skills/workflows/bugfix-protokoll.md
+  bach --help expert/steuer   Muestra agentes/_experts/steuer/TAUER.md
+
+VER TAMBIÉN
+----------
+bach --help tasks           Tarea Sistema
+bach --help memory          Sistema de memoria
+bach --help agents          Sistema de agente
+SKILL.md Documentación principal

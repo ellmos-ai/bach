@@ -1,0 +1,212 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+КОД CLAUDE — КРАТКАЯ СПРАВКА
+==========================
+
+Claude Code — это официальный инструмент командной строки Anthropic для Claude.
+Текущая версия: версия 2.1.37+ (по состоянию на февраль 2026 г.)
+
+УСТАНОВКА (РЕКОМЕНДУЕТСЯ: встроенная, НЕ npm!)
+---------------------------------------------
+  # Windows PowerShell
+  ирм https://claude.ai/install.ps1 | иекс
+
+  # macOS/Linux/WSL
+  локон -fsSL https://claude.ai/install.sh | баш
+
+  # Альтернатива: Домашнее пиво
+  Brew install --cask claude-code
+
+  # Альтернатива: WinGet
+  winget install Anthropic.ClaudeCode
+
+  # УСТАРЕЛО (не рекомендуется):
+  npm install -g @anthropic-ai/claude-code
+
+START
+-------
+  claude # Начать интерактивный сеанс
+  Клод.                 # Начинаем с текущего каталога
+  claude "Prompt" # Начать с приглашения
+  claude -c # Возобновить последний сеанс
+  claude -r # Выбор сеанса для продолжения
+  claude -p "query" # Неинтерактивный режим (режим SDK, затем выход)
+
+ВАЖНЫЕ КОМАНДЫ
+------------------
+  обновление Клауда Установить обновления
+  Клод доктор проверяет установку
+  claude mcp Настройка сервера MCP
+  claude install Миграция на собственную установку
+  claude setup-token Настройка токенов аутентификации
+
+МОДЕЛИ (по состоянию на 2026 г.)
+--------------------
+  --модель по умолчанию В зависимости от учетной записи (Pro/Max/Teams: Opus 4.6)
+  --модель сонета Claude Sonnet 4.5 (быстрые ежедневные задания)
+  --модель опуса Клода Опуса 4.6 (сложное, лучшее рассуждение)
+  --модель хайку Клода Хайку (самая быстрая, самая дешевая)
+  --model sonnet[1m] Сонет с контекстом токена 1M
+  --model opusplan Opus для режима плана, Sonnet для исполнения
+
+  Уровень усилий (опус 4.6): низкий, средний, высокий (по умолчанию).
+  Окружение: CLAUDE_CODE_EFFORT_LEVEL=низкий|средний|высокий
+
+ВАЖНЫЕ ОПЦИИ (выбор — доступно более 50!)
+----------------------------------------------
+  -c, --continue Продолжить последний сеанс
+  -r, --resume [id] Возобновить сеанс по идентификатору/имени
+  -p, --print Распечатать вывод и выйти (для каналов)
+  --model <псевдоним|имя> Выбрать модель
+  --add-dir <каталог> Разрешить дополнительные каталоги
+  --system-prompt "..." ЗАМЕНИТЬ системное приглашение
+  --append-system-prompt "..." РАСШИРИТЬ системное приглашение (рекомендуется!)
+  --tools «Bash,Edit,Read» Включить только определенные инструменты
+  --allowedTools "..." Инструменты без запроса разрешения
+  --disallowedTools "..." Запретить инструменты
+  --permission-mode <режим> Plan/acceptEdits/default
+  --dangerously-skip-permissions Пропустить все запросы (ВНИМАНИЕ!)
+  --output-format json Вывод JSON (text/json/stream-json)
+  --max-turns N Макс. агентские обороты (режим печати)
+  --max-budget-usd N Макс. долларов за вызовы API
+  --chrome интеграция с браузером Chrome
+  --ide Автоматическое подключение к IDE
+  --verbose Подробное журналирование
+  --debug "api,mcp" Режим отладки с категориями
+  --mcp-config <файл> Загрузить сервер MCP из JSON
+  --agents '{...}' Определить пользовательские субагенты
+  --fork-session Новый идентификатор сеанса при возобновлении
+  --from-pr N Сессии из GitHub PR N
+  --remote "task" Начать веб-сессию на claude.ai
+  --teleport продолжить веб-сессию локально
+
+РАЗРЕШЕНИЯ
+-----------
+  --permission-mode <режим>
+    стандарт по умолчанию (запрашивает)
+    AcceptEdits Автоматически принимать изменения
+    план Только в режиме плана
+
+  --dangerously-skip-permissions Пропустить ВСЕ запросы (будьте осторожны!)
+  --allow-dangerously-skip-permissions Разрешить обход (не включать)
+
+  Профили разрешений BACH (рекомендуется для удаленного управления):
+    bach permissions list              Показать профили
+    bach permissions activate <profil> Profil in settings.json schreiben
+    bach permissions deactivate        Восстановить обычный профиль
+    -> Подробнее см. в файле Permissions.txt
+
+ФОРМАТЫ ВЫВОДА (с -p)
+-----------------------
+  --output-format текст текст (по умолчанию)
+  --output-format json JSON (один результат)
+  --output-formatstream-json Потоковая передача в реальном времени
+  --include-partial-messages частичные события (с потоком-json)
+
+SYSTEM-PROMPT FLAGS
+-------------------
+  --system-prompt "..." ЗАМЕНЯЕТ всю подсказку по умолчанию
+  --system-prompt-file <файл> ЗАМЕНЯЕТ на файл (только в режиме печати)
+  --append-system-prompt "..." РАСШИРЕННОЕ Подсказка по умолчанию (рекомендуется!)
+  --append-system-prompt-file <файл> РАСШИРЕН файлом (режим печати)
+
+  Эмпирическое правило: отдавайте предпочтение --append-* (сохраняет возможности Клода Кода)
+
+СУБАГЕНТЫ (флаг --agents)
+-------------------------
+Формат JSON для пользовательских субагентов:
+  --агенты '{
+    "рецензент": {
+      "description": "Проверщик кода",
+      "prompt": "Вы старший рецензент кода...",
+      "tools": ["Чтение", "Grep", "Glob"],
+      «модель»: «сонет»
+    }
+  }'
+
+ПЕРЕМЕННЫЕ СРЕДЫ (выбор)
+-----------------------------
+  ANTHROPIC_MODEL=<псевдоним|имя> Модель по умолчанию
+  ANTHROPIC_DEFAULT_OPUS_MODEL=... Сопоставление псевдонимов опуса
+  ANTHROPIC_DEFAULT_SONNET_MODEL=... Сопоставление псевдонимов сонета
+  ANTHROPIC_DEFAULT_HAIKU_MODEL=... Сопоставление псевдонимов Haiku
+  CLAUDE_CODE_SUBAGENT_MODEL=... Модель субагента
+  CLAUDE_CODE_EFFORT_LEVEL=низкое|среднее|высокое усилие опуса
+  DISABLE_PROMPT_CACHING=1 Запрашивать глобальное кэширование
+  DISABLE_AUTOUPDATER=1 Отключить автоматическое обновление.
+  CLAUDE_CODE_GIT_BASH_PATH=... Путь к Git Bash (Windows)
+
+ПРИМЕРЫ
+---------
+  # Интерактив в каталоге BACH
+  cd "C:\Users\User\OneDrive\.TOPICS\.AI\.OS\BACH"
+  Клод
+
+  # С Opus 4.6 и расширенным контекстом
+  Клод --модель опус[1м]
+
+  # Возобновить последний сеанс
+  Клод -c
+
+  # Неинтерактивный (для скриптов)
+  claude -p "Вывести список всех файлов Python" 
+
+  # С дополнительным каталогом
+  Клод --add-dir "C:\MyProject"
+
+  # Пользовательская системная подсказка (расширена, не заменена)
+  claude --append-system-prompt «Использовать TypeScript, никаких типов»
+
+  # Опус для планирования, Сонет для исполнения
+  Клод --модель плана опуса
+
+  # Вывод JSON для сценариев
+  claude -p --output-format json «Найти все задачи»
+
+  # С конфигурацией сервера MCP
+  Клод --mcp-config ./mcp.json
+
+  # Интеграция Chrome
+  Клод --chrome
+
+  # Ограничить максимальный бюджет
+  claude -p --max-budget-usd 5.00 «Большой анализ»
+
+АУТЕНТИФИКАЦИЯ
+--------------
+  1. Claude Pro/Max (рекомендуется): войти через учетную запись claude.ai.
+  2. Клод Консоль: OAuth через console.anthropic.com.
+  3. Команды/Предприятие: вход в команду через claude.ai.
+  4. Поставщик облачных услуг: конфигурация Bedrock/Vertex/Foundry
+
+АВТООБНОВЛЕНИЯ
+------------
+  Родная установка: автоматическое обновление каждые несколько часов (в фоновом режиме).
+  Homebrew/WinGet: Вручную с помощью `brew update`/`winget update`
+
+  Каналы выпуска:
+    - последние (стандартные, новые функции сразу)
+    - стабильно (около 1 недели, регресс отсутствует)
+
+  Конфигурация: /config → Канал автоматического обновления.
+  Или: settings.json → «autoUpdatesChannel»: «stable»
+
+СМОТРИ ТАКЖЕ
+----------
+  https://code.claude.com/docs/en/cli-reference Полный справочник по CLI
+  https://code.claude.com/docs/en/setup Настройка и установка
+  Permissions.txt Профили разрешений BACH
+  claude-code-automatization.txt Автоматизация
+  wiki/claude-code.txt Wiki BACH (если доступно)
+  wiki/gemini.txt Gemini CLI/Антигравитация
+  wiki/ollama.txt Местные LLM
+
+ИСТОЧНИКИ (по состоянию на 8 февраля 2026 г.)
+--------------------------
+  - https://code.claude.com/docs/en/cli-reference
+  - https://code.claude.com/docs/en/setup
+  - https://code.claude.com/docs/en/model-config
+  - https://www.npmjs.com/package/@anthropic-ai/claude-code
+  - https://github.com/anthropics/claude-code

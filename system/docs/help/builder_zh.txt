@@ -1,0 +1,54 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+构建器 - 技能/代理创建和导出
+==========================================
+
+BACH 命令（首选）
+-------------------------
+bach skills export <name>               导出技能 (v2.0)
+bach skills list                        列出所有技能
+bach skills version <name>              版本检查
+
+
+system/tools/中的工具
+---------------------------
+c_struction_generator.py <n> <profile> 创建技能/代理
+c_struct_generator.py <n> --embedded 对于 BACH（轻量级）
+
+generators/os_generator.py <n> [目标] 创建新操作系统
+Generators/exporter.py Skill <n> 导出技能
+Generators/distribution_system.py 分发系统
+
+
+配置谱
+----------------
+仅 MICRO SKILL.md（1 个文件）
+LIGHT 最小结构（~5 个文件）
+标准带内存（约 12 个文件）
+扩展 具有微技能（约 20 个文件）
+带有工作流程的代理（约 30 个文件）
+AGENT_FULL 完整（约 50 个文件）
+
+
+DIST_TYPE SYSTEM
+----------------
+2 = CORE 始终打包
+1 = 模板重置为原始值
+0 = USER 不导出
+
+
+QUICK COMMANDS
+--------------
+导出技能：巴赫技能导出分析
+列表技能：巴赫技能列表
+版本检查：bach技能版本分析
+
+
+相关处理程序
+-------------------
+system/hub/skills.py SkillsHandler (v2.0)
+
+
+另请参阅：builder.md (hub/_services/)

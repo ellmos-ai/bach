@@ -1,0 +1,63 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+VERDAD DEL DIRECTORIO
+===============
+
+Gestión automática del estado del directorio.
+
+CONCEPTO:
+  - Inicio: registrar el estado real, comparar con TARGET
+  - Apagado: el estado actual se convierte en nuevo OBJETIVO
+  - Heurística: Se desean cambios en Claude
+
+PROCESO:
+
+1. primer comienzo
+   - Estado actual = estado OBJETIVO
+   - Almacenado en data/directory_truth.json
+
+2. Siguientes comienzos
+   - Escanear el estado actual
+   - Comparación con DEBE
+   - Mostrar cambios externos (el usuario ha cambiado algo)
+
+3. apagar
+   - El estado actual se convierte en nuevo OBJETIVO
+   - Los cambios de Claude ahora son "estándar"
+
+IGNORADOS:
+  - __pycache__
+  - archivos .pyc
+  - .git, .idea, .vscode
+  - auto_log.txt (cambiando constantemente)
+  - current.md (Memoria)
+
+SALIDA EN CAMBIOS:
+  + Nuevas carpetas/archivos
+  - Carpetas/archivos eliminados
+  ~ Archivos modificados
+
+BENEFICIOS:
+  - Claude no tiene que realizar un seguimiento manual de lo que ha cambiado
+  - Se reconocen los cambios externos (usuario)
+  - Cambios propios adoptados automáticamente
+
+INTEGRACIÓN:
+  - Automáticamente en hub/startup.py (DirectoryScanner al inicio)
+  - Automáticamente en hub/shutdown.py (guardar estado durante el apagado)
+  - Sin controlador propio, basado en herramientas (tools/c_dirscan.py)
+
+CLI (MANUAL):
+  python c_dirscan.py # Mostrar estado
+  python c_dirscan.py --scan # Escanear el estado actual
+  python c_dirscan.py --compare # Comparación ES vs DEBE
+  python c_dirscan.py --update # La actualización DEBE estado
+  python c_dirscan.py --path /path # Otro directorio
+  python c_dirscan.py --json # Salida JSON
+
+ARCHIVOS:
+  - Herramienta: system/tools/c_dirscan.py (clase DirectoryScanner)
+  - Datos: system/data/directory_truth.json (generado durante el primer escaneo)
+  - Estructura: {marca de tiempo, directorios[], archivos{ruta: {hash, tamaño}}}

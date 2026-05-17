@@ -1,0 +1,94 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+COOKBOOKS - Anthropic 参考资料
+========================================
+
+日期：2026-02-06
+
+描述
+------------
+来自官方 Anthropic 的精选笔记本和脚本
+克劳德食谱存储库。作为参考和启发
+用于 BACH 的进一步开发 - 不是直接可执行的代码。
+
+存储位置
+-----------
+docs/reference/anthropic_cookbooks/
+
+可用的 COOKBOOKS
+---------------------
+
+  内存/
+    memory_tool.py 基于工具的LLM内存
+    巴赫对比：巴赫——记忆成熟得多
+                    （SQLite、会话、置信度、10 次操作）
+    适用于：工具定义模式、提示工程
+
+  压实/
+    session_memory_compaction.ipynb 会话摘要
+    automatic-context-compaction.ipynb 基于令牌的自动压缩
+    BACH 比较：prompt_manager.py 与上下文压缩
+    有用处：令牌计数、压缩提示
+
+  文本到sql/
+    guide.ipynb 自然语言 → SQL
+    BACH 相关性：“bach --db 查询”的集成计划
+    适用于：架构上下文、SQL 验证、重试循环
+
+  协调器/
+    Orchestrator_workers.ipynb Orchestrator 工作模式
+    提示/ 3 个代理提示模板
+      itations_agent.md 来源参考
+      Research_lead_agent.md 研究控制
+      Research_subagent.md 研究执行
+    BACH 比较：agents/_experts/ + hub/_services/
+    适用于：代理提示模板、结果合成
+
+  工具搜索/
+    tool_search_with_embeddings.ipynb 语义工具搜索
+    BACH比较：_try_run_tool()使用前缀匹配
+    适用于：基于嵌入的工具发现
+
+BACH 中的集成
+-------------------
+
+  优先级 1（短期）：
+    - text_to_sql → 新的“bach --db 查询”处理程序
+    - 压缩→prompt_manager.py 中的令牌计数
+
+  优先级 2（中期）：
+    - Orchestrator → 代理编排重构
+    - tool_search → 升级tool_discovery.py
+
+  优先事项 3（长期）：
+    - 内存 → 质量检查比较
+
+来源
+-------
+
+  存储库：github.com/anthropics/claude-cookbooks
+  提交：7cb72a9
+  日期：2026-02-06
+  许可证：Apache 2.0
+
+其他参考
+------------------
+
+  docs/reference/mcp-builder/ MCP 服务器最佳实践
+    SKILL.md 技能定义
+    参考/mcp_best_practices.md MCP 模式
+    参考/python_mcp_server.md Python MCP 服务器
+    Reference/node_mcp_server.md 节点 MCP 服务器
+    参考/evaluation.md MCP 评估
+
+  工具/测试/剧作家/浏览器测试参考
+    with_server.py 服务器管理
+    示例/ 3 个示例脚本
+
+另请参阅
+----------
+bach --help vendor              供应商代码 (anthropic_docx/pdf/xlsx)
+bach --help tools               工具概述
+docs/reference/analysis_anthropic_skills_cookbooks.md 完整分析

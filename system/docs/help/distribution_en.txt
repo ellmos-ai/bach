@@ -1,0 +1,59 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [data/schema_distribution.sql, hub/dist.py, hub/sync.py, db/schema.sql]
+
+DISTRIBUTION SYSTEM
+===================
+
+As of: 2026-02-08
+
+The distribution system separates the system core from user data and release templates.
+
+4-TIER MODEL (dist_type):
+  dist_type = 0 KERNEL Absolutely immutable (base system)
+  dist_type = 1 CORE system file (readonly / distribution backup)
+  dist_type = 2 EXTENSION release template (1x snapshot for reset)
+  dist_type = 3 USER_DATA Individual user data (not in the repo)
+
+CLI COMMANDS
+-----------
+  bach --dist status              System status (seal, mode, files)
+  bach --dist verify              Check seal integrity
+  bach --dist scan                Scan and register files
+  bach --dist snapshot NAME       Create snapshot
+  bach --dist release NAME        Create release
+  bach --dist restore ZIP         Restore from distribution ZIP
+  bach --dist install ZIP ZIEL    Install distribution in new folder
+  bach --dist list [snapshots]    Snapshots list
+
+RELEASE WORKFLOW
+----------------
+  1. Create snapshot: `bach --dist snapshot "pre-release"`
+  2. Create release: `bach --dist release "v1.2.0"`
+  3. Distribution ZIP is created in dist/
+  4. Reset: `bach fs heal --all` restores files from snapshots
+  5. Restore: `bach --dist restore bach_vanilla_1.2.0.zip`
+
+DATABASE & FILESYSTEM INTEGRATION
+----------------------------------
+  - Skills & tools are synchronized bidirectionally (`bach ​​--sync skills`).
+  - `dist_type` columns can be found in around 60 tables (see db/schema.sql).
+  - File manifest in `distribution_manifest` table.
+  - OneDrive/Git secures the distribution, BACH ensures the integrity.
+
+NOTE ABOUT THE DATABASE
+---------------------
+There is only one central `data/bach.db` (since v2.0 in system/db/schema.sql).
+Many tables use `dist_type` for logical separation:
+  - dist_type=0: kernel data (absolutely immutable)
+  - dist_type=1: Core data (system critical)
+  - dist_type=2: Extension data (resettable)
+  - dist_type=3: User data (not in the installer)
+
+SEE ALSO
+----------
+  bach --sync help         Skills and tools synchronization
+  bach fs help             File system operations (heal, verify)
+  docs/help/guidelines.txt Documentation standards
+  system/db/schema.sql Full DB schema (210+ tables)

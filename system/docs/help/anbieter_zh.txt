@@ -1,0 +1,102 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+提供商 - 提供商特定规则
+=====================================
+
+描述
+发票和收据处理规则
+各种在线提供商。
+
+重要：这纯粹是一个文档文件，没有任何相关信息
+处理程序。这些规则在税务专家脚本中实施：
+- 系统/代理/_experts/steuer/temu_ocr_batch.py
+- 系统/代理/_experts/steuer/steuer_batch.py
+- 系统/代理/_experts/steuer/beleg_vorfilter.py
+- system/agents/_experts/steuer/beleg_parser.py
+
+收据存储在子文件夹中：
+用户/文档/personal_assistant/tax/YYYY/广告费用/belege/[provider]/
+
+TEMU
+====
+
+上下文：
+TEMU 发票是从电子邮件订单确认中导入的，
+不是来自原始收据。这是一个解决方法，有
+自动检索原始收据非常耗时。
+
+录入规则：
+
+1．价格
+   始终从电子邮件 PDF 中提取
+   （价格在网站上波动）
+
+2。产品名称
+   如果文本丢失或不完整：
+   - 从上下文中逻辑推导出来
+   - 更好：在 temu.com 上搜索产品以获得正确的名称
+
+3。文件类型
+   标记为“订单确认（或者发票）”
+
+4.后续验证
+   如果稍后上传原始收据，
+   比较和更新数据
+
+税务局注意事项：
+仅应要求提供原始收据。
+订单确认作为初始证据。
+
+
+亚马逊
+======
+（未来规则的占位符）
+
+如有必要，添加：
+- 发票格式
+- 市场销售的特点
+- Prime 会员收据
+
+
+EBAY
+====
+（未来规则的占位符）
+
+如有必要，添加：
+- 贝宝连接
+- 私人销售与商业销售
+
+
+其他提供商
+================
+如有必要，请在此处添加：
+- 速卖通
+-愿望
+- 谢因
+- 其他具有特殊发票格式的在线零售商
+
+
+BELEG_VORFILTER.PY 中实施的提供商
+==============================================
+- Temu（temu.com、Whaleco）
+- 亚马逊（amazon.de、amazon.com）
+- 易趣（ebay.de、ebay.com）
+- 贝宝 (paypal.com)
+- 谷歌播放
+- 苹果
+- Medimops
+
+
+另请参阅
+----------
+bach steuer help       税务处理程序帮助
+bach steuer tools      显示可用的税务工具
+
+工具
+-----
+temu_ocr_batch.py Temu 收据的批量 OCR（基于图像的 PDF）
+steuer_batch.py Amazon、Temu、eBay 的供应商解析器
+beleg_vorfilter.py 收据自动排序
+beleg_parser.py 基于LLM的文档提取

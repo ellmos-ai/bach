@@ -1,0 +1,89 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+============
+denkarium -- cuaderno de bitácora + recopilador de pensamientos
+
+
+DESCRIPCIÓN
+============
+El manejador del pensadero gestiona dos modos para notas y reflexiones:
+
+  denkarium Pensamientos, ideas y reflexiones libres (se pueden clasificar de forma flexible)
+  logbuch Diario cronológico con marca de tiempo sideral
+
+Todas las entradas se almacenan en sqlite3 (tabla denkarium_entries) y
+se puede buscar, categorizar, calificar y promocionar a tareas/wiki.
+
+
+OPERACIONES
+===========
+bach denkarium write TEXT [--type=logbuch] [--cat=KATEGORIE] [--title=TITEL] [--mood=1-5]
+    Escribe una nueva entrada. Predeterminado: tipo=denkarium, cat=nota
+    Ejemplo: bach denkarium escribe "Idea para la automatización" --type=denkarium --cat=idee
+
+bach denkarium read [--type=logbuch|denkarium] [--cat=KATEGORIE] [--limit=N]
+    Enumere las últimas N entradas (límite predeterminado = 10)
+    Ejemplo: lectura de bach denkarium --type=logbuch --limit=5
+
+bach denkarium search SUCHBEGRIFF
+    Búsqueda en contenidos, títulos y categorías (máx. 20 visitas)
+    Ejemplo: búsqueda de bach denkarium "Automatización"
+
+bach denkarium brainstorm THEMA
+    Crear una nueva entrada de lluvia de ideas con plantilla
+    Ejemplo: lluvia de ideas de bach denkarium sobre “arquitectura de IA”
+
+bach denkarium promote ENTRY-ID task|wiki
+    Promocionar la entrada del pensadero a la tarea o wiki
+    Ejemplo: bach denkarium promueve la tarea 42
+
+bach denkarium categories
+    Listar todas las categorías utilizadas con recuento de entradas
+
+bach denkarium stats
+    Estadísticas generales: número, duración, ascensos
+
+
+EJEMPLOS
+=========
+1. Nota rápida (Pensador estándar):
+   bach denkarium write "Morgen Backend-Refactoring planen"
+
+2. Entrada del libro de registro con calificación:
+   bach denkarium write "Produktive Session, viel erreicht" --type=logbuch --mood=5
+
+3. Iniciar una lluvia de ideas:
+   bach denkarium brainstorm "Neue Feature-Ideen"
+   bach denkarium write "Caching-Layer hinzufuegen" --cat=idee
+
+4. Buscar pensamientos y promoverlos en la tarea:
+   bach denkarium search "wichtig"
+   bach denkarium promote 15 task
+
+5. Ver las entradas del diario de la semana pasada:
+   bach denkarium read --type=logbuch --limit=20
+
+
+ARCHIVOS
+=======
+  data/bach.db Base de datos SQLite (tabla: denkarium_entries)
+  docs/help/denkarium.txt Este archivo de ayuda
+
+
+VER TAMBIÉN
+==========
+  tareas - gestión de tareas (objetivo para promover operaciones)
+  wiki - Sistema Wiki (destino opcional para promoción)
+  base -- BaseHandler API (hub/base.py)
+
+
+NOTAS
+=======
+- Hora de inicio: las entradas del libro de registro sin título explícito obtienen "Hora de inicio AAAA-MM-DD HH:MM"
+- Categorías: de libre elección (nota, idea, lluvia de ideas, etc.)
+- Calificación del estado de ánimo: opcional, escala del 1 al 5 para seguimiento de la reflexión
+- Promocionar a tarea: crea una nueva tarea con prioridad estándar = 3, estado = pendiente
+- Promocionar a Wiki: marca la entrada, integración compleja de wiki a través de un controlador separado

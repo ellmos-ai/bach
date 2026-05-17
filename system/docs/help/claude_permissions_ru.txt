@@ -1,0 +1,63 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+РАЗРЕШЕНИЯ CLAUDE - Управление профилями разрешений Claude Code
+==============================================================
+
+ОПИСАНИЕ
+------------
+Управляет профилями разрешений для Claude Code. Профили определяют, какие из них
+Инструменты кода Клода разрешено использовать автоматически (разрешить) и какие блоки
+стать (отрицать). Хранится в базе данных BACH, применяется к
+~/.claude/settings.json.
+
+
+ОПЕРАЦИИ
+-----------
+  bach permissions list                 Показать все профили
+  bach permissions show <profil>        Подробности профиля
+  bach permissions set <profil> allow=Tool    Добавить правило
+  bach permissions set <profil> deny=Tool     Добавить правило
+  bach permissions remove <profil> allow=Tool Regel entfernen
+  bach permissions activate <profil>    Активировать профиль
+  bach permissions deactivate           Вернуться к обычному профилю
+  bach permissions sync                 Импортировать settings.json в БД
+  bach permissions reset <profil>       Сбросить профиль к настройкам по умолчанию
+  bach permissions status               Показать текущий статус
+  bach permissions init                 Профили по умолчанию в БД создать
+
+
+ПРИМЕРЫ
+---------
+  # Просмотр профилей
+  bach permissions list
+
+  # Включить строгий профиль
+  bach permissions activate strict
+
+  # Разрешить инструмент
+  bach permissions set default allow=Bash
+
+  # Импортировать текущие настройки.json
+  bach permissions sync
+
+
+DEFAULT-PROFILE
+---------------
+  Стандартный профиль по умолчанию (умеренный доступ)
+  строгий ограниченный (минимальное использование инструментов)
+  разработка Расширенный (все инструменты разработки)
+
+
+ФАЙЛЫ
+-------
+  Обработчик:hub/claude_permissions.py
+  Конфигурация: ~/.claude/settings.json (будет изменена)
+  Таблица БД: claude_permission_profiles
+
+
+СМОТРИ ТАКЖЕ
+----------
+  помогите настроить обработчики установки (хуки)
+  справка по безопасности Настройки безопасности

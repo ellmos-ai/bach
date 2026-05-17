@@ -1,0 +1,139 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [messages table, hub/messages.py, hub/partner.py]
+
+COMMUNICATE - Partner communication system
+==========================================
+
+DATE: 2026-02-08
+
+The communication system (layer 4) manages the exchange of information
+between all instances (humans & AIs).
+
+CORE CONCEPTS
+------------
+1. MESSAGING: Persistent message routing in the DB.
+2. PROTOCOLS: Standardized processes (handshake, request, transfer).
+3. WORKSPACES: Physical directories for file exchange (system/partners/).
+4. PRESENCE: Active online status and watch mechanisms.
+
+REGISTERED PARTNERS (10)
+-------------------------
+Internal System:
+  user User [✓ Active]
+  claude Claude (Opus 4.6) [✓ Active]
+  bach      BACH Core System       [✓ Active]
+
+Local AI:
+  ollama Mistral 7B [✓ Active]
+  llama Llama 3 8B [✓ Active]
+
+External AI:
+  gemini Google Gemini [✓ Active]
+  gpt OpenAI GPT [○ Inactive]
+
+APIs:
+  pubmed PubMed MCP [✓ Active]
+
+Services:
+  drive Google Drive [✓ Active]
+
+Tools:
+  canva Canva MCP [✓ Active]
+
+PARTNER DETECTION
+-----------------
+Keywords automatically trigger partner selection:
+
+  ollama: bulk, embedding, token-free, draft email
+  pubmed: genes, proteins, diseases, clinical, biomedical
+  google_drive: google drive, find document, search drive
+  canva: design, presentation, poster, infographic
+  gemini: deep research, long document, concept analysis
+
+ROUTING CHANNELS
+---------------
+| Partner | Channels | Status |
+|---------|---------|--------|
+| ollama | Direct API, Queue | ✓ |
+| user | MessageBox | ✓ |
+| pubmed | MCP Server | ✓ |
+| canva | MCP Server | ✓ |
+| google_drive | API | ✓ |
+| gemini | partners/gemini/ | ✓ 
+
+|HEALTH CHECKS
+-------------
+Ollama: curl http://127.0.0.1:11434/api/tags
+Google Drive: API token check
+PubMed: MCP Connection Test
+Canva: MCP Connection Test
+
+TOKEN ZONES (Delegation)
+------------------------
+Zone 1 (0-30%): All partners available
+Zone 2 (30-60%): Cheap partners (Ollama preferred)
+Zone 3 (60-80%): Local partners only
+Zone 4 (80-100%): Emergency only (Human + Ollama)
+
+CLI COMMANDS (bach msg)
+----------------------
+  list [--inbox/--outbox] [--limit N] Show all messages.
+  unread Only unread messages.
+  send <NAME> <TEXT> [--from SENDER] Send message.
+  read <ID> [--ack] Read message and optionally confirm.
+  ping [--from NAME] Show unread TO partners.
+  watch [--from NAME] Live polling (check every 10s).
+  count Show message count.
+  delete <ID> [ID2...] Delete message(s).
+  archive <ID> [ID2...] Archive message(s).
+
+MESSAGE TYPES
+-----------------
+- TASK: Orders to partners (via `_TASKS.md` + `msg send`).
+- INFO: Status updates and reports (`outbox/`).
+- ALERT: Error messages and escalations (problem monitor).
+
+INTERACTION PROTOCOLS
+----------------------
+1. HANDSHAKE: Mutual recognition and function check (health).
+2. REQUEST: Formal request for data or service.
+3. TRANSFER: Physical transfer via Workspace or DB.
+4. CONFIRM: Confirmation of receipt and processing (Receipt).
+
+DATABASE TABLES
+------------------
+connections partner endpoints and tools
+partner_recognition Partner capabilities and zones
+delegation_rules Token-based delegation
+messages Message protocol (used by hub/messages.py)
+comm_messages Alternative message table (not actively used)
+
+PARTNER-WORKSPACES
+------------------
+Each partner has a standardized folder structure under `system/partners/`:
+  - inbox/Incoming data/requests.
+  - outbox/results/reports.
+  - workspace/ Temporary workspace.
+
+DAEMON & AUTOMATION
+-------------------
+The daemon job `msg-cleanup` archives read messages after 30 days.
+Partners like Gemini use `bach msg watch` to respond to Claude in real time.
+
+HANDLER & TOOLS
+---------------
+hub/messages.py Messaging System CLI (542 lines)
+hub/partner.py partner management (514 lines)
+tools/partner_communication/ Tools for partner interaction:
+  - interaction_protocol.py instance communication
+  - system_explorer.py software discovery
+  - ai_compatible.py AI compatibility layer
+  - communication.py Communication Utilities
+
+SEE ALSO
+----------
+  bach partner --help    Partner Management and Delegation
+  bach msg --help        Message System Commands
+  docs/help/maintain.txt Partner Health Checks

@@ -1,0 +1,113 @@
+# Portability: USER
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ОТЧЕТ О ФИНАНСИРОВАНИИ
+==============
+
+Создавайте, экспортируйте и архивируйте отчеты о разработке на основе ICF.
+Все данные клиента автоматически анонимизируются.
+Имя и дата рождения распознаются по имени папки в data_roh/.
+
+QUICKSTART
+------------
+
+  1. Вставьте папку с файлами в data_roh/ (формат: «фамилия, имя»)
+  2. Используйте один из следующих способов:
+
+  Способ 1 – Чат (рекомендуется):
+    «Создать отчет о финансировании»
+
+  Способ 2 — Рабочий стол .bat:
+    Foerderbericht_Pipeline.bat (ВВОД для автоматического обнаружения)
+
+  Способ 3 — Цепочка llmauto:
+    bach chain start foerderbericht
+
+  Способ 4 — CLI:
+    bach bericht pipeline
+
+  3. Готовый отчет находится в output_reports/
+
+COMMANDS
+-------
+
+  bach bericht pipeline [name] [geburtsdatum] [optionen]
+    Сквозной конвейер: data_raw -> output_reports
+    Имя/дата рождения необязательно (автоматически определяется по названию папки).
+    --период «01.01.2025 – 31.12.2025» отчетный период
+    --backend claude_code|llmauto Серверная часть LLM (по умолчанию: claude_code)
+    --parents «мать» «отец» Анонимизировать имена родителей
+    --no-cleanup Сохранить промежуточные папки
+
+  bach bericht list
+    Перечисляет все клиентские папки со статусом (присутствует JSON/DOCX).
+
+  bach bericht status
+    Показывает состояние конвейера всех папок.
+
+  bach bericht generate <json-datei> -o <output> [-t vorlage]
+    Заполняет шаблон Word данными из файла JSON.
+
+  bach bericht export <klient-ordner> -p <passwort>
+    Деанонимизирует отчет.
+
+  bach bericht archive [name]
+    Перемещает готовый отчет в архив.
+
+  bach bericht help
+    Отображает эту справку.
+
+LLM-BACKENDS
+-------------
+
+  claude_code (DEFAULT) CLI Claude Code как подпроцесс
+  Цепная система llmauto llmauto
+  anthropic_sdk Прямой вызов API (требуется ANTHROPIC_API_KEY)
+
+  Стандартные пути — claude_code и llmauto.
+  anthropic_sdk — это просто необязательная альтернатива (ключ API не настроен).
+
+ПАПКА КОНВЕЙЕРА (только 4 + README)
+---------------------------------
+
+  data_roh/ Вставить файл клиента (1 папка = 1 клиент!)
+       ↓
+  data_ano/ [Авто] Анонимные файлы
+       ↓
+  data_bundled/ [Авто] пакет + подсказка + ответ LLM
+       ↓
+  output_reports/ [Авто] Готовый отчет (деанонимизированный, конечный продукт)
+
+  Инструкции README.md
+
+  Больше никаких папок. Устаревшие папки (data/, output/, Bundles/,
+  Reports_ano/, Reports_clean/) автоматически удаляются во время очистки.
+
+ПРИМЕРЫ
+---------
+
+  # Полностью автоматический (имя распознается по имени папки)
+  bach bericht pipeline
+
+  # С явной информацией
+  bach bericht pipeline "Max Mustermann" "15.03.2016"
+
+  # Другой период
+  bach bericht pipeline --zeitraum "01.07.2025 - 30.06.2026"
+
+  # Проверить статус
+  bach bericht status
+  bach bericht list
+
+СВЯЗАННЫЕ ФАЙЛЫ
+-----------------
+
+  Hub/_services/document/foerderbericht_pipeline.py Оркестратор
+  Hub/_services/document/pipeline_runner.py CLI-раннер
+  обработчик CLIhub/report.py
+  инструменты/llmauto/chains/foerderbericht.json Конфигурация цепочки
+  Hub/_services/document/anonymizer_service.py Анонимизация
+  Hub/_services/document/document_pipeline.py Сканер документов
+  навыки/_templates/report_template_geiger_universal.docx Шаблон Word
+  папка user/documents/foerderplaner/Reports/Work

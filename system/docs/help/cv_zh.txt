@@ -1,0 +1,60 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CV - CV 管理和生成
+=============================================
+
+描述
+------------
+用于生成和管理基于以下内容的 CV 的处理程序
+数据来自 BACH 数据库。收集个人信息、专业信息
+已注册文件夹中的联系人和职业信息以及
+生成 ASCII 格式的简历。
+
+操作
+-----------
+  bach cv generate               生成并显示简历
+  bach cv generate --output DATEI Lebenslauf in Datei speichern
+  bach cv generate --scan        生成前扫描已注册的文件夹
+  bach cv generate -o DATEI      --output 的简写形式
+  bach cv status                 查看简历数据库状态
+
+示例
+---------
+  bach cv generate
+  bach cv generate --output ~/lebenslauf.txt
+  bach cv generate --scan --output cv_komplett.txt
+  bach cv status
+
+选项
+--------
+  --output FILE, -o FILE 将生成的简历保存到 FILE
+  --scan 在生成之前扫描文件夹中的职业数据
+
+数据源
+------------
+处理程序从以下来源收集数据：
+
+  1.个人数据：assistant_user_profile表
+  2. 专业推荐人：联系人（类别：“专业”）
+  3. 职业文件夹：雇主、证书、培训（使用--scan）
+
+STATUS OUTPUT
+--------------
+“status”命令显示：
+  - 个人数据集数量
+  - 专业推荐信（主动）
+  - 注册文件夹（带有存在检查）
+  - CV 生成器状态
+
+文件
+-------
+  处理程序：hub/cv.py
+  生成器：agents/_experts/bewerbungsexperte/cv_generator.py
+  数据库：data/bach.db
+
+另请参阅
+----------
+  --profile 用户个人资料信息管理
+  --contacts 联系人和推荐人管理

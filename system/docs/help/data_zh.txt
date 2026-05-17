@@ -1,0 +1,89 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+数据分析 - BACH 数据分析命令
+==========================================
+
+BACH 为 CSV、Excel 和 JSON 提供简单的数据分析功能。
+
+安装
+------------
+需要： pip install pandas matplotlib
+
+命令
+-------
+
+bach data list
+  显示 input/ 文件夹中的所有文件。
+
+bach data load <pfad>
+  加载文件并显示基本信息（行、列、数据类型）。
+  支持的格式：CSV、Excel (.xlsx/.xls)、JSON
+
+bach data describe <pfad>
+  显示描述性统计数据（平均值、标准差、最小值、最大值、四分位数）。
+  仅适用于数字列。
+
+bach data head <pfad> [--rows N]
+  显示前 N 行（默认值：10）。
+
+bach data corr <pfad>
+  显示所有数字列的相关矩阵。
+
+bach data chart <pfad> --type TYPE --x COL [--y COL] [--output NAME]
+  创建图表并将其保存在图表/中。
+  X 列必需，Y 列可选（自动选择）。
+
+  图表类型：
+    bar     - 条形图（需要 X 和 Y）
+    line    - 折线图（需要 X 和 Y）
+    pie     - 饼图（需要
+├── input/ # 将源文件放在这里
+├── output/ # 处理结果
+└── Charts/ # 生成图表
+    scatter - 示例
+    hist    - # 加载并分析文件
+
+# 检查相关性
+-------------
+# 创建图表
+
+TIPS
+---------
+
+- input/ 文件夹中的文件可以用短名称引用
+- 图表自动保存在图表/（PNG，150 DPI）中
+- 对于大文件：先是头部，然后是描述
+- 图表命令需要 matplotlib：pip install matplotlib
+- 如果未指定，则自动为条形图/折线图/散点图选择 Y 列
+bach data load user/data-analysis/input/sales.csv
+bach data describe user/data-analysis/input/sales.csv
+bach data head user/data-analysis/input/sales.csv --rows 20
+
+另请参阅
+bach data corr user/data-analysis/input/metrics.xlsx
+
+# 所有可用工具
+bach data chart input/sales.csv --type bar --x monat --y umsatz
+bach data chart metrics.xlsx --type line --x date --y value --output trend
+bach data chart input/survey.csv --type pie --x kategorie --y anzahl
+bach data chart input/metrics.xlsx --type scatter --x x_wert --y y_wert
+bach data chart input/data.csv --type hist --x alter
+
+# BACH 功能概述
+-----
+版本
+
+在 BACH v1.1.25 (2026-01-21) 中引入
+完全实现图表命令（条形图、折线图、饼图、散点图、直方图）
+处理程序：system/hub/data_analysis.py
+----------
+bach --help tools     # Alle verfuegbaren Tools
+bach --help features  # BACH Features-Uebersicht
+
+VERSION
+-------
+Eingefuehrt in BACH v1.1.25 (2026-01-21)
+Chart-Befehle vollstaendig implementiert (bar, line, pie, scatter, hist)
+Handler: system/hub/data_analysis.py

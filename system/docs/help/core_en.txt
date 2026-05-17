@@ -1,0 +1,161 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH CORE CONCEPT
+=================
+
+"The agent is the role and the goal-oriented intention within it.
+Workflows are the brain for execution.
+Skills, tools and services are the tools for execution.
+Together they are the core."
+
+THE FOUR PILLARS
+----------------
+
+```
+┌──────────────────────────────── ─────────────────────────────────┐
+│ THE CORE │
+├──────────────────────────────── ─────────────────────────────────┤
+│ │
+│ ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐ │
+│ │ AGENT │ │ WORKFLOW │ │ SKILLS/TOOLS/SVC │ │
+│ │ │ │ │ │ │ │
+│ │ role + │───>│ brain │───>│ tools │ │
+│ │ Intent │ │ Control │ │ Execution │ │
+│ │ │ │ │ │ │ │
+│ │ WHO + WHY│ │ HOW │ │ WHAT WITH WHAT │ │
+│ └─────────────┘ └─────────────┘ └─────────────────────┘ │
+│ │
+└──────────────────────────────── ─────────────────────────────────┘
+```
+
+AGENT = role + goal-oriented intention
+---------------------------------------
+
+- WHO am I in this task?
+- WHY am I doing this? (goal, motivation)
+- Defines perspective and decision-making framework
+
+Examples:
+  - Developer Agent: Writes code, debugs, tests
+  - Personal assistant: Helps users with everyday life
+  - Research expert: Searches and evaluates information
+
+Storage location: agents/*.txt
+
+WORKFLOW = brain for execution
+---------------------------------
+
+- HOW is the task carried out?
+- Controls the process, the order, the decisions
+- Procedural knowledge: step-by-step instructions
+
+Examples:
+  - Bugfix workflow: Reproduce -> Analyze -> Fix -> Test
+  - Review workflow: Read -> Rate -> Comment -> Decide
+  - Startup workflow: Check -> Load -> Initialize -> Ready
+
+Storage location: skills/workflows/*.md
+
+Workflows are CENTRAL because:
+  1. You take over the actual control
+  2. You orchestrate skills, tools and services
+  3. They are testable (usecase tests)
+  4. They are reusable
+
+SKILLS / TOOLS / SERVICES = tools
+-------------------------------------
+
+- WHAT is the task carried out with?
+- Specific skills and functions
+- Are called by workflows
+
+| Type | Description | Location |
+|---------|--------------------------|--------------------------------|
+| Skills | Knowledge + Instructions (.txt) | skills/*.txt |
+| Tools | Python scripts (.py) | tools/*.py |
+| Services| External Services | via API/CLI 
+
+|INTERPLAY
+-------------
+
+```
+User request
+     │
+     v
+┌─────────────┐
+│ AGENT │ "I am a developer, goal: fix bug"
+└─────────────┘
+     │
+     v
+┌─────────────┐
+│ WORKFLOW │ "1. Reproduce 2. Analyze 3. Fix"
+└─────────────┘
+     │
+     v
+┌────────────────── ───────────────────┐
+│ SKILLS / TOOLS / SERVICES │
+│ - debugger.py (tool) │
+│ - git-workflow.txt (Skill) │
+│ - test runner (service) │
+└────────────────── ───────────────────┘
+     │
+     v
+Result
+```
+
+LLM AWARENESS
+-------------------
+
+The operating LLM must know:
+1. WHICH agents exist (agents/)
+2. WHICH workflows are available (skills/workflows/)
+3. WHICH skills/tools/services there are (skills/, tools/)
+
+This is achieved by:
+- Handler Registry (system/core/registry.py) - Auto-discovery of handlers
+- Tool-Auto-Discovery (tools/tool_auto_discovery.py) - Scans tools into DB
+- DB entries (tools table, hierarchy_items)
+- Startup overview shows session context
+
+See: --help startup, --help tools
+
+QUALITY ASSURANCE (WORKFLOW-TUEV)
+-----------------------------------
+
+Workflows are so important that they have to be checked:
+
+1. USECASE TESTS
+   - Collection of test cases in DB
+   - Automatic execution
+   - Rating: very good / good / satisfactory / sufficient / failed
+
+2. TUEV PROCEDURE
+   - Workflows have expiration dates
+   - When expires: Create maintenance task automatically
+   - After checking: Set new expiry date
+
+3. CHECKLIST for new components
+   [ ] Works without user data?
+   [ ] CLI command available?
+   [ ] Input from files/folders possible?
+   [ ] Output in structured DB?
+   [ ] Scan/import repeatable (idempotent)?
+   [ ] No hardcoded paths?
+
+See: WF-TUEV Tasks (under development)
+
+RELATED CONCEPTS
+------------------
+
+- docs/help/memory.txt - Memory as a cognitive model
+- docs/help/agents.txt - Agent system details
+- docs/help/workflow.txt - Workflow system details
+- docs/help/skills.txt - Skills hierarchy
+- docs/help/tools.txt - Tool system details
+- system/ARCHITECTURE.md - Overall architecture
+
+---
+Version: 1.0.1 | Created: 2026-01-30 | Updated: 2026-02-08
+(Core concept: Agent/Workflow/Skills/Tools)

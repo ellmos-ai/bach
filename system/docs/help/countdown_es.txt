@@ -1,0 +1,107 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CUENTA REGRESIVA - Cuenta regresiva con disparador
+==================================
+
+Temporizador de cuenta regresiva que opcionalmente ejecuta un comando cuando expira.
+
+COMANDOS CLI
+-----------
+
+  bach countdown start <name> HH:MM:SS              Iniciar cuenta regresiva
+  bach countdown start <name> HH:MM:SS --after "cmd" Mit Trigger-Befehl
+  bach countdown stop <name>                         Cancelar cuenta regresiva
+  bach countdown list                                Cuenta regresiva activa
+  bach countdown pause <name>                        Pausa
+  bach countdown resume <name>                       Reanudar
+
+FORMATO DE SALIDA
+--------------
+
+  Normal: sesión de [CUENTA ATRÁS]: 45:12 restantes
+  Advertencia: [!] sesión: ¡Solo quedan 04:58!
+
+La advertencia aparece cuando quedan < 5 minutos.
+
+PERSISTENCIA
+----------
+
+  Archivo: datos/.countdown_state
+
+  Contenido:
+  {
+    "cuenta atrás": {
+      "sesión": {
+        "end_time": "2026-01-30T15:00:00",
+        "after_command": "apagar 'Hora a las'",
+        "pausado": falso,
+        "remaining_on_pause": nulo
+      }
+    }
+  }
+
+EJEMPLOS
+---------
+
+  # Cuenta regresiva de sesión de 1 hora 
+  bach countdown start session 01:00:00
+  -> Cuenta atrás 'sesión' iniciada: 01:00:00
+
+  # Con apagado automático
+  bach countdown start session 01:00:00 --after "shutdown 'Session beendet'"
+  -> Cuando caduca, se ejecuta "bach --shutdown 'Sesión finalizada'"
+
+  # Temporizador Pomodoro (25 min)
+  bach countdown start focus 00:25:00
+  -> Cuenta regresiva 'enfoque' iniciada: 00:25:00
+
+  # Pausar y reanudar
+  bach countdown pause focus
+  bach countdown resume focus
+
+  # Verificar estado
+  bach countdown list
+  -> sesión: 45:12 restantes
+  -> foco: 19:45 restantes (PAUSED)
+
+TRIGGER (--after)
+-----------------
+
+El comando --after se ejecuta cuando expira:
+
+  --después de "apagar 'Hora a las'" Finalizar sesión
+  --después de "mensaje enviar usuario '¡Pausa!'" Enviar mensaje
+  --después de "tarea realizada 123" Marcar tarea como completada
+
+Cuando se ejecuta, el comando se escribe en una cola.
+La siguiente llamada CLI lo ejecuta (o el demonio).
+
+USECASES
+--------
+
+  1. LÍMITE DE SESIÓN
+     bach countdown start session 02:00:00 --after "shutdown 'Limit erreicht'"
+     -> Finalización automática de la sesión después de 2 horas
+
+  2. TÉCNICA POMODORO
+     bach countdown start focus 00:25:00 --after "msg send user 'Pause machen!'"
+     -> Recordatorio para hacer una pausa después de 25 minutos
+
+  3. RECORDATORIO DE PLAZO
+     bach countdown start deadline 04:00:00
+     -> Aviso a < 5 minutos, luego actuar manualmente
+
+INTERPLAY
+-------------
+
+La cuenta regresiva es parte del sistema de tiempo:
+  --ayuda reloj Visualización de la hora
+  --ayuda cronómetro temporizador
+  --ayuda entre cheques
+  --help beat Visualización de hora unificada
+
+---
+Versión: 1.0 | Estado: Implementado (v1.1.83)
+Ver: docs/CONCEPT_time_system.md

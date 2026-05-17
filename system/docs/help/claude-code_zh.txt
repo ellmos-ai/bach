@@ -1,0 +1,212 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CLAUDE CODE - 快速参考
+==========================
+
+Claude Code 是 Anthropic 的 Claude 官方 CLI 工具。
+当前：版本 2.1.37+（截至 2026 年 2 月）
+
+安装（推荐：本机，而不是 npm！）
+---------------------------------------------
+  # Windows PowerShell
+  irm https://claude.ai/install.ps1 | iex
+
+  # macOS/Linux/WSL
+  卷曲-fsSL https://claude.ai/install.sh | bash
+
+  # 或者：自制
+  酿造安装--桶克劳德代码
+
+  # 或者：WinGet
+  winget 安装 Anthropic.ClaudeCode
+
+  # 已弃用（不推荐）：
+  npm install -g @anthropic-ai/claude-code
+
+开始
+-------
+  claude # 开始交互式会话
+  克劳德。                 # 从当前目录开始
+  claude "Prompt" # 从提示开始
+  claude -c # 恢复上一个会话
+  claude -r # 选择会话继续
+  claude -p "query" # 非交互（SDK 模式，然后退出）
+
+重要命令
+------------------
+  克劳德更新 安装更新
+  克劳德医生检查安装
+  claude mcp 配置 MCP 服务器
+  claude install 迁移到本机安装
+  claude setup-token 设置身份验证令牌
+
+模型（截至 2026 年）
+--------------------
+  --model 默认值 取决于帐户（Pro/Max/Teams：Opus 4.6）
+  --model sonnet Claude Sonnet 4.5（快速，日常任务）
+  --model opus Claude Opus 4.6（复杂，最佳推理）
+  --模型俳句 Claude Haiku（最快、最便宜）
+  --model sonnet[1m] 具有 1M 令牌上下文的十四行诗
+  --model opusplan Opus 用于计划模式，Sonnet 用于执行
+
+  努力程度（Opus 4.6）：低、中、高（默认）
+  环境：CLAUDE_CODE_EFFORT_LEVEL=低|中|高
+
+重要选项（选择 - 50 多个可用！）
+----------------------------------------------
+  -c, --Continue 继续上一个会话
+  -r, --resume [id] 按 ID/名称恢复会话
+  -p, --print 打印输出并退出（对于管道）
+  --model <别名|名称> 选择型号
+  --add-dir <dir> 允许其他目录
+  --system-prompt "..." 替换系统提示符
+  --append-system-prompt "..." EXTEND 系统提示符（推荐！）
+  --tools "Bash,Edit,Read" 仅启用某些工具
+  --allowedTools "..." 工具无权限提示
+  --disallowedTools "..." 禁止使用工具
+  --permission-mode <模式> 计划/acceptEdits/default
+  --dangerously-skip-permissions 跳过所有提示（注意！）
+  --output-format json JSON 输出 (text/json/stream-json)
+  --max-turns N 最大。代理转向（打印模式）
+  --max-budget-usd N 最大预算API 调用的美元
+  --chrome Chrome浏览器集成
+  --ide 自动连接到 IDE
+  --verbose 详细日志记录
+  --debug "api,mcp" 带类别的调试模式
+  --mcp-config <文件> 从 JSON 加载 MCP 服务器
+  --agents '{...}' 定义自定义子代理
+  --fork-session 简历上的新会话 ID
+  --from-pr N 来自 GitHub PR N 的会话
+  --remote "task" 在 claude.ai 上启动网络会话
+  --teleport 在本地继续网络会话
+
+权限
+-----------
+  --权限模式 <模式>
+    默认标准（要求）
+    AcceptEdits 自动接受编辑
+    计划 仅计划模式
+
+  --dangerously-skip-permissions 绕过所有提示（小心！）
+  --allow-dangerously-skip-permissions 允许绕过（不启用）
+
+  BACH 权限配置文件（建议用于远程控制）：
+    bach permissions list              显示配置文件
+    bach permissions activate <profil> Profil in settings.json schreiben
+    bach permissions deactivate        恢复正常配置文件
+    -> 请参阅：permissions.txt 了解详细信息
+
+输出格式（使用 -p）
+-----------------------
+  --output-format text 文本（默认）
+  --output-format json JSON（单个结果）
+  --output-format stream-json 实时流式传输
+  --include-partial-messages 部分事件（带有stream-json）
+
+系统提示标志
+-------------------
+  --system-prompt "..." 替换整个默认提示
+  --system-prompt-file <文件> 替换为文件（仅限打印模式）
+  --append-system-prompt "..." EXTENDED 默认提示（推荐！）
+  --append-system-prompt-file <文件> 使用文件扩展（打印模式）
+
+  经验法则：更喜欢 --append-* （保留克劳德代码能力）
+
+SUBAGENTS（--agents 标志）
+-------------------------
+自定义子代理的 JSON 格式：
+  --代理'{
+    “评论家”：{
+      "description": "代码审查者",
+      "prompt": "您是高级代码审查员......",
+      “工具”：[“读取”，“Grep”，“Glob”]，
+      “模型”：“十四行诗”
+    }
+  }'
+
+环境变量（选择）
+-----------------------------
+  ANTHROPIC_MODEL=<别名|名称> 默认模型
+  ANTHROPIC_DEFAULT_OPUS_MODEL=... Opus 别名映射
+  ANTHROPIC_DEFAULT_SONNET_MODEL=... Sonnet 别名映射
+  ANTHROPIC_DEFAULT_HAIKU_MODEL=...俳句别名映射
+  CLAUDE_CODE_SUBAGENT_MODEL=... 子代理模型
+  CLAUDE_CODE_EFFORT_LEVEL=低|中|高作品努力
+  DISABLE_PROMPT_CACHING=1 全局提示缓存
+  DISABLE_AUTOUPDATER=1 禁用自动更新
+  CLAUDE_CODE_GIT_BASH_PATH=... Git Bash 路径 (Windows)
+
+示例
+---------
+  # 在BACH目录下交互
+  cd "C:\Users\User\OneDrive\.TOPICS\.AI\.OS\BACH"
+  克劳德
+
+  # 使用 Opus 4.6 和扩展上下文
+  克劳德 --模型作品[1m]
+
+  # 恢复上次会话
+  克劳德-c
+
+  # 非交互式（对于脚本）
+  claude -p“列出所有Python文件”
+
+  # 带有附加目录
+  克劳德 --add-dir "C:\MyProject"
+
+  # 自定义系统提示符（扩展，未替换）
+  claude --append-system-prompt“使用 TypeScript，无任何类型”
+
+  # 作品用于计划，十四行诗用于执行
+  克劳德——模型作品计划
+
+  # 用于脚本编写的 JSON 输出
+  claude -p --output-format json "查找所有 TODO"
+
+  # 使用 MCP 服务器配置
+  克劳德 --mcp-config ./mcp.json
+
+  # Chrome 集成
+  克劳德--铬
+
+  # 限制最大预算
+  claude -p --max-budget-usd 5.00 “大分析”
+
+身份验证
+--------------
+  1. Claude Pro/Max（推荐）：通过claude.ai账户登录
+  2. Claude Console：通过 console.anthropic.com 进行 OAuth
+  3. Teams/Enterprise：通过claude.ai团队登录
+  4. 云提供商：Bedrock/Vertex/Foundry 配置
+
+自动更新
+------------
+  本机安装：每隔几个小时自动更新（在后台）
+  Homebrew/WinGet：手动使用“brew升级”/“winget升级”
+
+  发布渠道：
+    - 最新（标准，立即新功能）
+    - 稳定（~1 周大，跳过回归）
+
+  配置：/config → 自动更新频道
+  或者：settings.json → "autoUpdatesChannel": "stable"
+
+另请参见
+----------
+  https://code.claude.com/docs/en/cli-reference 完整 CLI 参考
+  https://code.claude.com/docs/en/setup 设置和安装
+  Permissions.txt BACH 权限配置文件
+  claude-code-automatization.txt 自动化
+  wiki/claude-code.txt 巴赫 Wiki（如果有）
+  wiki/gemini.txt Gemini CLI/反重力
+  wiki/ollama.txt 本地法学硕士
+
+来源（截至 2026 年 2 月 8 日）
+--------------------------
+  - https://code.claude.com/docs/en/cli-reference
+  - https://code.claude.com/docs/en/setup
+  - https://code.claude.com/docs/en/model-config
+  - https://www.npmjs.com/package/@anthropic-ai/claude-code
+  - https://github.com/anthropics/claude-code

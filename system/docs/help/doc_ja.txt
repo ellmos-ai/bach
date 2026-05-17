@@ -1,0 +1,84 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+## ハンドラー名
+doc - ドキュメント インデックスと全文検索
+
+## 説明
+全文検索用の FTS5 ベースのドキュメント インデックスの管理。ハンドラー
+フォルダーとファイルのインデックスを作成し、ドキュメントとオファーの素早い検索を可能にします
+重複検出やデータ保護分類などの追加機能。
+
+データ ストレージ: bach.db / tables document_index、document_fts (FTS5)
+
+## OPERATIONS
+
+FTS5-INDEX (全文検索):
+  Index <path> フォルダに再帰的にインデックスを付けます
+  Index <パス> -n フォルダーのインデックスを再帰的に作成しません
+  Index <file> 個々のファイルのインデックスを作成します
+  search <クエリ> 全文検索 (FTS5)
+  search <クエリ> --limit N 結果を N に制限します (デフォルト: 20)
+  ステータス インデックス統計の表示
+  FTS インデックスを最初から再構築する
+  clear --force インデックス全体をクリアします (--force フラグが必要)
+
+ファイル スキャン (folder_scan):
+  scan <パス> フォルダをスキャンしてDBに登録
+  最近 [日] 新しいドキュメントを表示します (デフォルト: 7 日)
+  フォルダ 登録されているすべてのフォルダと統計を表示
+
+分析とデータ保護 (INT06):
+  dedup <path> SHA256 に従って重複を検出します。
+  dedup <path> --min-size N N バイト以上のファイルのみを考慮します
+  dedup <パス> -n 重複を再帰的に検索しません
+  分類 <パス> 機密データのフォルダーをスキャンします (信号機の評価)
+  分類 <ファイル> データ保護について個々のファイルを確認します
+
+OTHER:
+  help このヘルプを表示
+
+## 例
+
+# フォルダーのインデックス作成と検索
+bach doc index ~/Documents
+bach doc search "backup strategie"
+bach doc search "config" --limit 5
+
+# インデックスの再構築とステータスの確認
+bach doc rebuild
+bach doc status
+
+# 新しいファイルと登録フォルダーの表示
+bach doc recent
+bach doc recent 30
+bach doc folders
+
+# 重複とデータ保護
+bach doc dedup ~/Downloads --min-size 1024
+bach doc classify ~/Documents
+bach doc classify /path/to/file.txt
+
+## ファイル
+
+実装:
+  Hub/doc.py DocHandler クラス、Dispatcher
+
+委任ツール:
+  tools/document_indexer.py FTS5 インデックス作成
+  Hub/_services/document/dedup_scanner.py 重複検出
+  Hub/_services/document/privacy_classifier.py プライバシー分類
+
+スキャナーの統合:
+  Skills/tools/folder_diff_scanner.py ファイル インベントリ スキャン (スキャン操作)
+
+データベース:
+  data/bach.db SQLite データベース ファイル
+  data/migrations/doc_001_fts5.sql スキーマ移行
+
+## 関連項目
+
+- bach api (プログラムによるアクセス用の Python API)
+- Hub/base.py (BaseHandler 基本クラス)
+- tools/document_indexer.py (DocumentIndexer API)

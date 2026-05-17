@@ -1,0 +1,114 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+文件夹 - 文件夹管理和分配
+===========================================
+
+管理 BACH 中代理和专家的数据文件夹分配
+数据库。存储元数据，例如文件夹类型、所有者和访问时间。
+
+
+描述
+------------
+
+文件夹处理程序支持对 user_data_folders 进行集中管理。
+文件夹按类型（数据、存档、导出、临时）进行分类，并且可以
+有代理人或专家业主。所有更改仅影响数据库，
+不是文件系统。
+
+
+操作
+-----------
+
+  bach folders list                              显示所有文件夹映射
+                                                 包含 ID、类型、所有者和路径
+
+  bach folders add <pfad> [OPTIONS]              注册新文件夹
+    --type <类型> 文件夹类型：数据、存档、导出、
+                                                 温度（默认值：数据）
+    --agent <名称> 代理映射（可选）
+    --expert <名称> 专家映射（可选）
+
+  bach folders remove <id>                       从数据库中删除文件夹
+                                                 （保留文件）
+
+  bach folders move <id> <neuer_pfad>            更改数据库中的路径
+                                                 （文件未移动）
+
+
+示例
+---------
+
+  # 显示所有已注册的文件夹
+  bach folders list
+  输出：包含 ID、类型、代理/专家和路径的表
+
+  # 添加新数据文件夹
+  bach folders add "Projekte/Forschung"
+  输出：[确定]已添加文件夹（ID：23）：项目/研究
+
+  # 具有类型和代理映射的文件夹
+  bach folders add "Archive/Legacy" --type archive --agent archiveBot
+  文件夹被注册为存档并分配给代理
+
+  # 包含专家任务的文件夹
+  bach folders add "Expert-Daten" --type data --expert nlp_expert
+  文件夹已分配给专家
+
+  # 从数据库中删除文件夹（内容保留）
+  bach folders remove 23
+  输出：[OK] 文件夹已删除 (ID: 23)
+
+  # 更改文件夹路径（例如重命名后）
+  bach folders move 23 "Projekte/Forschung-v2"
+  输出：[确定] 更新路径（ID：23）：项目/研究-v2
+
+
+详细信息
+-------
+
+文件夹类型：
+  data     - 一般工作数据（默认）
+  archive  - 存档/已完成数据
+  export   - 导出结果
+  temp     - 临时工作数据
+
+作业：
+  - 代理人或专家（可选）
+  - 代理名称必须存在于 bach_agents 中
+  - 专家名称必须存在于 bach_experts 中
+  - 名称不存在的错误
+
+数据库行为：
+  - 列表：与 bach_agents 和 bach_experts 连接的查询
+  - 添加：返回新文件夹 ID
+  - 删除：仅删除数据库条目，不删除文件系统
+  - 移动：更改folder_path并更新last_accessed时间戳
+
+
+错误处理
+----------------
+
+  无效的文件夹类型：X 仅数据/存档/导出/临时
+  未找到代理：<名称> 名称在 bach_agents 中不存在
+  未找到专家：<name> 名称在 bach_experts 中不存在
+  错误：<id> 缺少必需的参数
+  未找到文件夹（ID：<id>）数据库中没有行
+
+
+文件
+-------
+
+  处理程序：hub/folders.py
+  数据库：bach.db（表：user_data_folders）
+  架构：id、folder_path、folder_type、agent_id、expert_id、created_at、
+          最后访问的，dist_type
+
+
+另请参见
+----------
+
+  帮助代理 Agent概述和结构
+  帮助专家 专家管理
+  help bash_paths BACH 安装的目录结构

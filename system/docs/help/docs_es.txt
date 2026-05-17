@@ -1,0 +1,100 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DOCS: documentación legible por humanos
+=====================================
+
+DESCRIPCIÓN
+------------
+Además del sistema de ayuda (optimizado para IA), hay dos legibles por humanos
+Documentación con gráficos ASCII y resúmenes.
+
+NIVELES DE DOCUMENTACIÓN
+--------------------
+BACH tiene tres niveles de documentación:
+
+  ┌──────────────────────────────── ────────────────────────────────┐
+  │ NIVEL │ GRUPO OBJETIVO │ UBICACIÓN │
+  ├──────────────────────────────── ────────────────────────────────┤
+  │ docs/README.txt │ Desarrollador │ docs/ │
+  │ (Desarrollo) │ Colaboradores │ │
+  ├──────────────────────────────── ────────────────────────────────┤
+  │ ARQUITECTURA.md │ Desarrollador │ sistema/ │
+  │ (Arquitectura) │ Profundo │ │
+  ├──────────────────────────────── ────────────────────────────────┤
+  │ docs/help/*.txt │ Agentes de IA │ system/docs/help/ │
+  │ (Operativo) │ Claude, etc. │ │
+  ├──────────────────────────────── ────────────────────────────────┤
+  │ wiki/*.txt │ Todo │ sistema/wiki/ │
+  │ (experiencia) │ │ │
+  └─────────────────── ──────────────────── ─────────────────────────┘
+
+DOCUMENTOS
+---------
+
+  docs/README.txt
+  ---------------
+  Documentación de desarrollo: descripción general de la estructura de documentos/carpetas.
+  - Conceptos (CONCEPT_*.md)
+  - Análisis e informes.
+  - Conceptos antiguos archivados (_archive/)
+  - Ideas a largo plazo (_ideas/)
+  - Pruebas e informes (_test_and_reports/)
+
+  Público objetivo: desarrolladores, contribuyentes
+  Formato: Texto plano con referencias
+
+  sistema/ARQUITECTURA.md
+  ----------------------
+  Arquitectura de sistemas para desarrolladores.
+  - Visión y filosofía de diseño.
+  - Diagramas de arquitectura de alto nivel.
+  - Explicación del patrón Hub & Handler
+  - Esquema de base de datos visualizado.
+  - Diagramas de flujo de datos
+  - Instrucciones de expansión
+  - Convenciones
+
+  Público objetivo: desarrolladores, colaboradores, usuarios avanzados
+  Formato: Markdown con diagramas ASCII
+
+DEPARACIÓN
+----------
+  docs/help/*.txt Referencia operativa, legible por máquina, coherente
+  docs/README.txt Descripción general del desarrollador, estructura de carpetas
+  system/ARQUITECTURA.md Comprensión técnica, arquitectura, diseño
+
+  La ayuda es la documentación PRIMARIA.
+  docs/README.txt y ARCHITECTURE.md consulte la ayuda para obtener más detalles.
+
+ACTUALIZACIÓN
+--------------
+Para cambios importantes en el sistema, todos los niveles deben
+para actualizar:
+
+  1. docs/help/*.txt - comandos, operaciones (SIEMPRE manténgase actualizado)
+  2. docs/README.txt: para cambios de concepto/carpeta
+  3. system/ARCHITECTURE.md - Para cambios de arquitectura
+
+PUBLICACIÓN GITHUB
+------------------------
+Al publicar en GitHub:
+
+  - Sistema de enlace/ARQUITECTURA.md como entrada principal
+  - docs/README.txt para una descripción general del desarrollador
+  - mencionar el sistema de ayuda como documentación integrada
+
+RUTAS DE ARCHIVOS
+----------
+  docs/README.txt Descripción general del desarrollador
+  system/ARCHITECTURE.md Documentación de arquitectura
+  system/docs/help/*.txt Ayuda operativa (estos archivos)
+  system/wiki/*.txt Conocimientos previos
+
+VER TAMBIÉN
+----------
+  bach --help list         Todos los temas de ayuda
+  bach wiki list           Todos los artículos de Wiki
+  docs/help/practices.txt Principios de arquitectura
+  docs/help/naming.txt Convenciones de nomenclatura

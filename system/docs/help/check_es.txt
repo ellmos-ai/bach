@@ -1,0 +1,68 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+===
+
+verificación de configuración
+
+
+DESCRIPCIÓN
+===
+
+Valida si todas las dependencias de BACH están presentes y configuradas.
+No realiza ningún cambio, solo verifica con la salida de estado.
+
+
+COMMAND
+===
+
+bach setup check
+
+
+CHECKS
+===
+
+1. npm disponible Debe estar en la RUTA (para la instalación del servidor MCP)
+2. ellmos-codecommander-mcp Paquete npm instalado globalmente (17 herramientas)
+3. ellmos-filecommander-mcp Paquete npm instalado globalmente (43 herramientas)
+4. El archivo secreto ~/.bach/bach_secrets.json debe existir y ser JSON válido
+5. La base de datos bach.db en data/bach.db debe existir
+6. Verificación de información del servidor MCP opcional (no hay errores si no está instalado)
+7. USER.md Debe existir y ser personalizado (sin marcador de PLANTILLA)
+
+
+CÓDIGOS DE ESTADO
+===
+
+[OK] Verificación aprobada
+[!!] Verificación fallida (se requiere acción)
+[--] Componente opcional no instalado (sin error)
+[??] No se ha podido realizar la comprobación
+
+
+EJEMPLOS
+===
+
+bach setup check
+  Verifique todas las dependencias con salida de estado 
+
+bach setup full-install
+  En caso de errores: realice la instalación completa
+
+
+FILES
+===
+
+hub/setup.py SetupHandler._check()
+~/.bach/bach_secrets.json Bóveda de secretos
+data/bach.db Base de datos BACH
+../USER.md Perfil de usuario
+
+
+VER TAMBIÉN
+===
+
+docs/help/setup.txt Controlador de configuración (todas las operaciones)
+docs/help/install.txt Instalación inicial y escenarios

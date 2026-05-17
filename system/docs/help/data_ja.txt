@@ -1,0 +1,89 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+データ分析 - BACH データ分析コマンド
+==========================================
+
+BACH は、CSV、Excel、および JSON のシンプルなデータ分析機能を提供します。
+
+インストール
+------------
+必要なもの: pip install pandas matplotlib
+
+コマンド
+-------
+
+bach data list
+  input/ フォルダー内のすべてのファイルを表示します。
+
+bach data load <pfad>
+  ファイルをロードし、基本情報 (行、列、データ型) を表示します。
+  サポートされている形式: CSV、Excel (.xlsx/.xls)、JSON
+
+bach data describe <pfad>
+  記述統計 (平均、標準、最小、最大、四分位数) を表示します。
+  数値列のみ。
+
+bach data head <pfad> [--rows N]
+  最初の N 行を表示します (デフォルト: 10)。
+
+bach data corr <pfad>
+  すべての数値列の相関行列を表示します。
+
+bach data chart <pfad> --type TYPE --x COL [--y COL] [--output NAME]
+  チャートを作成し、charts/ に保存します。
+  X 列は必須、Y 列はオプション (自動的に選択)。
+
+  グラフの種類:
+    bar     - 棒グラフ (X および Y が必要)
+    line    - 折れ線グラフ (X および Y が必要)
+    pie     - 円グラフ (必須)
+§── input/ # ここにソースファイルを置きます
+§── 出力/ # 処理結果
+└── charts/ # 生成されたチャート
+    scatter - 例
+    hist    - # ファイルをロードして分析する
+
+# 相関関係を確認する
+-------------
+# チャートを作成する
+
+ヒント
+---------
+
+- input/ フォルダー内のファイルは短い名前で参照できます
+- チャートは自動的にチャートに保存されます/ (PNG、150 DPI)
+- 大きなファイルの場合: 最初に見出し、次に説明
+- チャート コマンドには matplotlib が必要です: pip install matplotlib
+- 指定されていない場合、棒/線/散布図に対して Y 列が自動的に選択されます
+bach data load user/data-analysis/input/sales.csv
+bach data describe user/data-analysis/input/sales.csv
+bach data head user/data-analysis/input/sales.csv --rows 20
+
+関連項目
+bach data corr user/data-analysis/input/metrics.xlsx
+
+# 利用可能なすべてのツール
+bach data chart input/sales.csv --type bar --x monat --y umsatz
+bach data chart metrics.xlsx --type line --x date --y value --output trend
+bach data chart input/survey.csv --type pie --x kategorie --y anzahl
+bach data chart input/metrics.xlsx --type scatter --x x_wert --y y_wert
+bach data chart input/data.csv --type hist --x alter
+
+# BACH 機能の概要
+-----
+バージョン
+
+BACH v1.1.25 (2026-01-21) で導入
+完全に実装されたチャート コマンド (棒、折れ線、円、散布図、ヒスト)
+ハンドラー: system/hub/data_analysis.py
+----------
+bach --help tools     # Alle verfuegbaren Tools
+bach --help features  # BACH Features-Uebersicht
+
+VERSION
+-------
+Eingefuehrt in BACH v1.1.25 (2026-01-21)
+Chart-Befehle vollstaendig implementiert (bar, line, pie, scatter, hist)
+Handler: system/hub/data_analysis.py

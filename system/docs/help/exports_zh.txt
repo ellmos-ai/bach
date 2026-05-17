@@ -1,0 +1,133 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+导出 - DB 到 Markdown 导出脚本
+=======================================
+
+描述
+============
+
+BACH 将数据库内容导出为 Markdown 文件，以方便使用
+可读性和版本控制。导出脚本从 bach.db 读取并
+在 data/ 目录中创建结构化 .md 文件。另外
+有独立包的技能导出。
+
+所有脚本都在tools/中，可以直接执行。
+
+
+概述
+==========
+
+  脚本创建源（数据库表）
+  ---------------------- ----------------------- ----------------------- ----------------------
+  Agents_export.py 数据/AGENTS.md 代理，agent_synergies
+  chain_export.py data/CHAINS.md 工具链 (bach.db)
+  Partners_export.py 数据/PARTNERS.md delegate_rules，
+                                                    合作伙伴认可
+  workflows_export.py data/WORKFLOWS.md 技能/workflows/（扫描）
+  usecases_export.py 数据/USECASES.md 用例 (bach.db)
+  Skill_export.py ZIP 包 Skills/（文件系统）
+
+
+个人描述
+====================
+
+AGENTS_EXPORT
+-------------
+导出具有协同作用的所有注册代理。读取自
+代理表和agent_synergys，创建格式化的概述
+具有名称、类型、状态和协同关系。
+
+  python 工具/agents_export.py
+  输出：data/AGENTS.md
+
+CHAINS_EXPORT
+-------------
+导出工具链（链式工具调用）。读取自
+工具链表，显示链定义、触发器和
+执行历史记录。
+
+  python 工具/chains_export.py
+  输出：data/CHAINS.md
+
+PARTNERS_EXPORT
+---------------
+导出多LLM合作伙伴配置。读取 delegate_rules
+和来自数据库的partner_recognition。显示合作伙伴概况、优势、
+委托规则和识别模式。
+
+  python 工具/partners_export.py
+  输出：data/PARTNERS.md
+
+WORKFLOWS_EXPORT
+----------------
+扫描技能/工作流程/以查找工作流程文件 (.md) 并创建一个
+概述。通过正则表达式提取元数据（标题、目标、步骤）
+从文件内容。
+
+  python 工具/workflows_export.py
+  输出：data/WORKFLOWS.md
+
+USECASES_EXPORT
+---------------
+从用例表中导出用例。显示场景名称，
+描述、涉及的处理程序和成功率。
+
+  python 工具/usecases_export.py
+  输出：data/USECASES.md
+
+SKILL_EXPORT
+------------
+将单个技能导出为独立的 ZIP 包
+依赖解析。复制 SKILL.md、工具、工作流程和
+创建一个requirements.txt。
+
+  python tools/skill_export.py <技能名称> [--output <path.zip>]
+  输出：包含完整技能结构的 ZIP 文件
+
+  注意：有关更广泛的导出（代理、操作系统），请参阅exporter.py
+  和 builder.txt（巴赫帮助构建器）。
+
+
+示例
+=========
+
+# 立即更新所有数据库导出
+python 工具/agents_export.py
+python 工具/chains_export.py
+python 工具/partners_export.py
+python 工具/workflows_export.py
+python tools/usecases_export.py
+
+# 导出单个技能
+python tools/skill_export.py recherche --output recherche_v1.zip
+
+# 检查导出的 Markdown 文件
+ls data/*.md
+
+
+FILES
+=======
+
+tools/agents_export.py 代理导出
+tools/chains_export.py 工具链导出
+tools/partners_export.py 合作伙伴导出
+tools/workflows_export.py 工作流程导出
+tools/usecases_export.py 用例导出
+tools/skill_export.py 技能独立导出
+
+data/AGENTS.md 生成的代理概述
+data/CHAINS.md 生成的工具链概述
+data/PARTNERS.md 生成的合作伙伴概述
+data/WORKFLOWS.md 生成的工作流程概述
+data/USECASES.md 生成的用例概述
+
+
+另请参见
+==========
+
+构建器技能/代理创建和导出（巴赫帮助构建器）
+工具/导出器 高级导出：技能、代理、os-fresh、os-reset
+分布式系统
+sync DB 同步（文件 -> DB，反向）

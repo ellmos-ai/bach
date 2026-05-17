@@ -1,0 +1,63 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+============
+
+health - HealthCheckHandler
+Comprobaciones de estado del sistema y diagnósticos de red
+
+
+DESCRIPCIÓN
+============
+
+Ejecuta comprobaciones de diagnóstico del sistema: espacio en disco, accesibilidad de red,
+Resolución DNS, tamaño de base de datos y capacidad NAS. Umbrales: advertencia de disco
+<100 GB libres, advertencia de NAS >80 % ocupado, advertencia de base de datos >500 MB.
+
+
+OPERACIONES
+===========
+
+estado Ejecute todas las comprobaciones y muestre el informe
+disco Verifique el espacio en disco de SystemDrive + todas las unidades disponibles
+ping <host> Probar la disponibilidad del host (predeterminado: fritz.box)
+dns Verifique la resolución de DNS en 3 hosts de prueba (google.com, anthropic.com, github.com)
+red Comprobaciones completas de red: FritzBox, Google DNS, Cloudflare + DNS
+nas Consultar capacidad y ocupación del NAS (fritz.nas / FRITZ.NAS / NAS / /mnt/nas)
+all Todas las comprobaciones combinadas (el estado y todas son idénticas)
+
+
+EJEMPLOS
+=========
+
+# Comprobación rápida de estado
+bach health status
+
+# Verificar la capacidad del NAS
+bach health nas
+
+# Hacer ping al host específico (por ejemplo, 8.8.8.8)
+bach health ping 8.8.8.8
+
+# Diagnóstico de red
+bach health network
+
+# Espacio en disco de todas las unidades
+bach health disk
+
+
+ARCHIVOS
+=======
+
+hub/health.py Implementación del controlador de salud
+data/bach.db Registros en la tabla de memoria_trabajo
+                        (Las comprobaciones se registran con marca de tiempo)
+
+
+VER TAMBIÉN
+==========
+
+hub/base.py BaseHandler (clase base)
+docs/help/ Otra documentación del controlador

@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+================================================================================
+HANDLER: db
+================================================================================
+
+DESCRIPTION
+  Database operations for the central BACH instance. Manages SQLite data,
+  executes queries, exports tables and creates backups. Replaces Supabase
+  MCP as a local solution.
+
+OPERATIONS
+  status Shows database overview (tables, size, version)
+  tables Lists all tables with row counts
+  info <table> Details: schema, columns, dist_type distribution, examples
+  query "SQL" Executes SQL query (SELECT or DML)
+  schema <table> Shows CREATE TABLE statement with indices
+  count <table> Number of rows in a single table
+  export <table> Exports table as CSV or JSON
+                     Options: --format csv|json (default: csv)
+  insert <table> Inserts data record (JSON format)
+  backup Creates quick backup in data/_backups/
+
+EXAMPLES
+  bach db status
+    -> Shows database status, table number, size, views, indices
+
+  bach db tables
+    -> Lists all tables with row counts
+
+  bach db info agents
+    -> Shows schema, columns, dist_type distribution and 5 example rows
+
+  bach db query "SELECT * FROM agents WHERE status='active' LIMIT 10"
+    -> Executes query, shows max 50 lines
+
+  bach db schema prompts
+    -> Shows CREATE TABLE and INDEX statements
+
+  bach db export runs --format json
+    -> Exports 'runs' as JSON to data/export/runs_YYYYMMDD_HHMMSS.json
+
+  bach db insert tasks '{"title":"Test","priority":1}'
+    -> Inserts data set into 'tasks' (validates columns)
+
+  bach db backup
+    -> Created data/_backups/bach_quick_YYYYMMDD_HHMMSS.db
+
+FILES
+  data/bach.db Central SQLite database
+  data/export/ Export files (CSV, JSON)
+  data/_backups/ Quick-Backups
+
+SEE ALSO
+  base.py BaseHandler class
+  data/ database directory
+  Bach CLI help: bach --help

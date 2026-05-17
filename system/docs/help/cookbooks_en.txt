@@ -1,0 +1,94 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+COOKBOOKS - Anthropic reference material
+========================================
+
+DATE: 2026-02-06
+
+DESCRIPTION
+------------
+Selected notebooks and scripts from the official Anthropic
+claude-cookbooks repository. Serve as reference and inspiration
+for BACH further developments -- not as directly executable code.
+
+STORAGE LOCATION
+-----------
+docs/reference/anthropic_cookbooks/
+
+AVAILABLE COOKBOOKS
+---------------------
+
+  memory/
+    memory_tool.py Tool-based LLM memory
+    BACH comparison: bach --memory is much more mature
+                    (SQLite, Sessions, Confidence, 10 Ops)
+    Useful for: Tool definition patterns, prompt engineering
+
+  compaction/
+    session_memory_compaction.ipynb Session summary
+    automatic-context-compaction.ipynb Token-based auto-compact
+    BACH comparison: prompt_manager.py with context compression
+    Useful for: token counting, compression prompts
+
+  text_to_sql/
+    guide.ipynb Natural Language → SQL
+    BACH relevance: Integration plan for "bach --db query"
+    Useful for: Schema context, SQL validation, retry loop
+
+  orchestrator/
+    orchestrator_workers.ipynb Orchestrator Worker Pattern
+    prompts/ 3 agent prompt templates
+      citations_agent.md Source references
+      research_lead_agent.md Research control
+      research_subagent.md Research execution
+    BACH comparison: agents/_experts/ + hub/_services/
+    Useful for: agent prompt templates, result synthesis
+
+  tool_search/
+    tool_search_with_embeddings.ipynb Semantic tool search
+    BACH comparison: _try_run_tool() uses prefix match
+    Useful for: Embedding-based tool discovery
+
+INTEGRATION IN BACH
+-------------------
+
+  Priority 1 (short term):
+    - text_to_sql → new "bach --db query" handler
+    - compaction → token counting in prompt_manager.py
+
+  Priority 2 (medium term):
+    - orchestrator → Refactoring of agent orchestration
+    - tool_search → Upgrade for tool_discovery.py
+
+  Priority 3 (long-term):
+    - memory → comparison for quality checks
+
+SOURCES
+-------
+
+  Repository: github.com/anthropics/claude-cookbooks
+  Commit: 7cb72a9
+  Date: 2026-02-06
+  License: Apache 2.0
+
+OTHER REFERENCES
+------------------
+
+  docs/reference/mcp-builder/ MCP Server Best Practices
+    SKILL.md skill definition
+    reference/mcp_best_practices.md MCP Patterns
+    reference/python_mcp_server.md Python MCP Server
+    reference/node_mcp_server.md Node MCP Server
+    reference/evaluation.md MCP Evaluation
+
+  tools/testing/playwright/ Browser Testing Reference
+    with_server.py Server management
+    examples/ 3 example scripts
+
+SEE ALSO
+----------
+bach --help vendor              Vendor code (anthropic_docx/pdf/xlsx)
+bach --help tools               Tool overview
+docs/reference/analyse_anthropic_skills_cookbooks.md Complete analysis

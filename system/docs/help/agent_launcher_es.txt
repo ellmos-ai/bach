@@ -1,0 +1,122 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+LANZADOR DE AGENTES - Gestión de agentes y control de procesos
+=======================================================
+
+Inicia y gestiona agentes BACH (agentes jefes y expertos) como independientes
+Claude procesa con parametrización de modelo y modo.
+
+
+DESCRIPCIÓN
+------------
+
+El controlador agent_launcher permite la gestión del ciclo de vida de los agentes. agentes
+se inician y supervisan como procesos separados. Cada agente recibe uno
+archivo temporal CLAUDE.md con su SKILL.md como definición de identidad.
+Los ID de proceso se conservan para monitoreo y control.
+
+
+OPERACIONES
+-----------
+
+  bach agent list                               Enumerar todos los agentes disponibles
+
+  bach agent start <name> [OPTIONS]             Iniciar agente como un nuevo proceso
+    --modo modo MODO: plan (modo de planificación) o
+                                                  predeterminado (predeterminado, predeterminado)
+    --modelo MODELO Modelo: soneto, opus o haiku
+                                                  (predeterminado: soneto)
+    --dry-run Solo verificar, no iniciar
+
+  bach agent stop <name>                        Detener la ejecución del agente (finalizar el proceso
+, archivo PID limpio)
+
+  bach agent status                             Mostrar todos los agentes en ejecución
+                                                con PID, modelo, hora de inicio
+
+
+EJEMPLOS
+---------
+
+  # Mostrar agentes disponibles
+  bach agent list
+  Salida: Tabla con nombre, tipo (jefe/experto), estado [RUNNING:pid]/[STOPPED]
+
+  # Iniciar agente en modo estándar (soneto)
+  bach agent start ati
+  Salida: [OK] Se inició el agente 'ati', se muestran las carpetas PID y Temp
+
+  # Agente de lanzamiento con modelo y modo específicos 
+  bach agent start research --model opus --mode plan
+  Juicio con Claude Opus en modo plan
+
+  # Solo simular inicio 
+  bach agent start ati --dry-run
+  Salida: [DRY-RUN] Iniciaría el agente 'ati' ...
+
+  # Mostrar agentes en ejecución
+  bach agent status
+  Salida: Tabla de todos los procesos en ejecución con PID, hora de inicio, estado
+
+  # agente final
+  bach agent stop ati
+  Salida: [OK] Agente 'ati' (PID xyz) detenido
+
+
+DETALLES
+-------
+
+Escaneo del agente:
+  - Agentes jefes: agentes/ (directorios con SKILL.md)
+  - Expertos: agentes/_expertos/ (directorios con SKILL.md)
+  - Ignora las entradas con prefijos de subrayado
+
+Ejecución del proceso:
+  - Windows: start.bat en la carpeta Temp, nueva ventana CMD
+  - Unix/Linux: Proceso separado con start_new_session
+  - Opciones de modelo: soneto (predeterminado), opus, haiku
+  - Opciones de modo: predeterminado (predeterminado), plan
+
+Persistencia:
+  - Archivo PID: data/agent_pids/<nombre>.pid (JSON)
+  - Contenido: pid, nombre, tipo, modelo, modo, iniciado, temp_dir
+  - Limpieza automática de procesos inactivos durante las comprobaciones de estado.
+  - Temperaere CLAUDE.md: data/temp/agent_<nombre>/CLAUDE.md
+
+
+MANEJO DE ERRORES
+----------------
+
+  [ERROR] Nombre del agente requerido Falta operando (lista y estado)
+                                                 no necesito un nombre)
+
+  [ADVERTENCIA] El agente '<nombre>' ya se está ejecutando (PID..) El agente ya está activo
+
+  [ERROR] Agente '<nombre>' no encontrado No se encontró SKILL.md o
+                                                El directorio no existe
+
+  [ERROR] Modo no válido: X Sólo se permite 'plan' o 'predeterminado'
+
+  [ERROR] Modelo no válido: X Sólo 'soneto', 'opus', 'haiku'
+
+  [ERROR] CLI 'claude' no encontrada Código Claude no instalado
+
+
+ARCHIVOS
+-------
+
+  Controlador: hub/agent_launcher.py
+  Agentes: agentes/*/SKILL.md
+  Expertos: agentes/_experts/*/SKILL.md
+  Registro PID: data/agent_pids/*.pid (JSON)
+  Archivos temporales: data/temp/agent_*/
+
+
+VER TAMBIÉN
+----------
+
+  agentes de ayuda descripción general del agente (jefe, expertos, estructura)
+  ruta de ayuda Estructura de directorios y rutas
+  ayudar a desarrollar Desarrollar nuevos agentes

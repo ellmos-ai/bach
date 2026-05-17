@@ -1,0 +1,89 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+============
+denkarium -- 日志+思想收集器
+
+
+描述
+============
+冥想盆处理程序管理两种笔记和反思模式：
+
+  denkarium 自由思想、创意和反思（可灵活分类）
+  logbuch 带恒星时标记的时间日记
+
+所有条目都存储在 sqlite3（denkarium_entries 表）中
+可以搜索、分类、评级并提升到tasks/wiki。
+
+
+操作
+===========
+bach denkarium write TEXT [--type=logbuch] [--cat=KATEGORIE] [--title=TITEL] [--mood=1-5]
+    写一个新条目。默认值：type=denkarium，cat=note
+    示例： bach denkarium 写“Idee for Automation” --type=denkarium --cat=idee
+
+bach denkarium read [--type=logbuch|denkarium] [--cat=KATEGORIE] [--limit=N]
+    列出最后 N 个条目（默认限制=10）
+    示例： bach denkarium read --type=logbuch --limit=5
+
+bach denkarium search SUCHBEGRIFF
+    按内容、标题和类别搜索（最多 20 条搜索结果）
+    示例：bach denkarium 搜索“自动化”
+
+bach denkarium brainstorm THEMA
+    使用模板创建新的头脑风暴条目
+    示例：bach denkarium 头脑风暴“AI 架构”
+
+bach denkarium promote ENTRY-ID task|wiki
+    促进 pensieve 进入任务或 wiki
+    示例：bach denkarium 升级 42 任务
+
+bach denkarium categories
+    列出所有已使用的类别及其条目数
+
+bach denkarium stats
+    总体统计：数量、时间跨度、促销
+
+
+示例
+=========
+1.快速注释（标准冥想盆）：
+   bach denkarium write "Morgen Backend-Refactoring planen"
+
+2。日志条目的评级为：
+   bach denkarium write "Produktive Session, viel erreicht" --type=logbuch --mood=5
+
+3。开始头脑风暴：
+   bach denkarium brainstorm "Neue Feature-Ideen"
+   bach denkarium write "Caching-Layer hinzufuegen" --cat=idee
+
+4。搜索想法并将其提升到任务中：
+   bach denkarium search "wichtig"
+   bach denkarium promote 15 task
+
+5。查看上周的日志条目：
+   bach denkarium read --type=logbuch --limit=20
+
+
+文件
+=======
+  data/bach.db SQLite 数据库（表：denkarium_entries）
+  docs/help/denkarium.txt 此帮助文件
+
+
+另请参阅
+==========
+  任务——任务管理（促进运营的目标）
+  wiki -- Wiki 系统（可选的推广目的地）
+  base -- BaseHandler API (hub/base.py)
+
+
+注释
+=======
+- 开始时间：没有显式的日志条目 --title 获取“开始时间 YYYY-MM-DD HH:MM”
+- 类别：可自由选择（笔记、想法、头脑风暴等）
+- 情绪评级：可选，1-5 级用于反射跟踪
+- 升级为任务：创建标准优先级 = 3、状态 = 待处理的新任务
+- 升级到 Wiki：标记条目，通过单独的处理程序进行复杂的 Wiki 集成

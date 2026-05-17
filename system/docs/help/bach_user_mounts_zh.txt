@@ -1,0 +1,49 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 来源：docs/_archive/CONCEPT_user_folder_attachment.md、system/hub/mount.py
+
+BACH 用户挂载（概念）
+==========================
+
+截至：2026-02-08
+
+什么是用户挂载？
+---------------------
+用户挂载是一个已实现的功能（自 2026 年 1 月 28 日起，任务 SYS_001），用于透明地集成外部存储位置（例如 NAS、外部硬盘驱动器、Google Drive 等云文件夹）到 BACH 文件系统中。它不是将数据复制到 BACH 文件夹中，而是虚拟链接。
+
+工作原理
+--------------
+系统使用“目录连接”或“符号链接”来提供外部路径作为“user/”目录中的子文件夹。
+然后，“filesystem_scanner”和“dirscan”可以像本地文件夹一样搜索这些路径，对其进行索引并处理文件（例如用于 OCR 或提取）。
+
+目标
+-----------
+* **无冗余**：原始数据保留在原处。
+* **透明度**：所有 BACH 工具都可以访问数据。
+* **持久性**：连接保存在数据库（`connections` 表）中，并在必要时恢复（重新启动后）。
+
+示例
+--------
+用户在 `E:\Archive\Tax` 上有税务文档。
+这是通过用户挂载集成的：“user/mounts/archiv_steuer/”。
+税务代理现在可以像在本地一样访问“user/mounts/archiv_steuer/2025/”。
+
+技术详细信息
+------------------
+* **数据库表**：“连接”（类型='安装'，名称='别名'，端点='源路径'）
+* **Handler**: `system/hub/mount.py` （管理 mklink 命令）
+* **CLI 命令**：
+    - `bach mount add <路径> <别名>` - 安装文件夹
+    - `bach 安装删除<别名>` - 删除安装
+    - `bach mount list` - 显示活动安装
+    - `bach mount Restore` - 重新启动后恢复安装
+
+状态
+------
+已实施（自 2026 年 1 月 28 日起）。功能齐全。 CLI 命令可用。 GUI 集成计划在稍后阶段进行。
+
+另请参见
+----------
+wiki/it_tools/filecommander.txt 文件操作
+docs/_archive/CONCEPT_user_folder_attachment.md 技术概念（已存档）

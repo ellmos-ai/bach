@@ -1,0 +1,160 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+扩展 - 桌面工具和特殊应用程序
+=============================================
+
+状态：2026-03-04
+
+扩展处理程序管理外部 BACH 扩展：桌面应用程序、
+不属于核心系统的特殊工具和桌面 GUI。
+扩展存储在extensions/目录下，可以同步，
+搜索并开始。
+
+结构
+--------
+
+  扩展/
+    外部1/
+      SKILL.md 扩展元数据
+      START.bat 启动文件 (Windows)
+      README.md 文档
+      main.py 主程序
+      requirements.txt Python 依赖项
+    外部2/
+      ...
+
+处理程序名称
+------------
+
+扩展
+
+CLI 命令（巴赫扩展）
+-----------------------------
+
+  list 列出所有扩展
+  show <name> 显示有关扩展的详细信息
+  运行 <name> 启动扩展（START.bat 或 main.py）
+  同步扩展与数据库同步
+  search <term> 搜索扩展
+
+描述
+------------
+
+扩展是模块化、可移植的桌面应用程序，具有以下功能：
+
+- 每个扩展都有自己的目录，其中包含 SKILL.md
+- START.bat 对于 Windows 启动是可选的（后备：直接 Python 执行）
+- SKILL.md 或 README.md 包含描述
+- 自动检测主文件：main.py、app.py、<name>.py
+- DB 中的同步将扩展注册为技能（type='extension'）
+
+操作
+-----------
+
+列表：所有现有扩展的列表：
+         - .py 文件的数量
+         - 标志：如果是 SKILL.md，则为 [SKILL]；如果是 START.bat，则为 [START]
+         - 描述（来自 SKILL.md 或 README.md）
+         - 存储位置
+
+show：扩展的详细显示：
+         - 完整路径
+         - 包含大小的文件列表
+         - SKILL.md 预览（最多 500 个字符）
+         - 如果名称不准确，则模糊匹配
+
+run：启动扩展：
+         - Windows：运行 START.bat（新窗口）
+         - 后备：直接使用 Python 启动主文件
+         - 按优先级排列的主文件：main.py > app.py > <name>.py
+
+sync：将扩展与数据库（bach.db）同步：
+         - 添加新扩展（type='extension'）
+         - 更新现有扩展的路径和描述
+         - --dry-run 显示更改，无需写入
+
+搜索：全文搜索：
+         - 扩展名（不区分大小写）
+         - 描述（不区分大小写）
+         - 显示带有片段的点击
+
+示例
+---------
+
+  # 列出所有扩展
+  bach extensions list
+
+  # 有关扩展的详细信息（例如“myapp”）
+  bach extensions show myapp
+
+  # 启动扩展
+  bach extensions run myapp
+  bach extensions run knowledgedigest
+
+  # 在数据库中同步（添加新发现的扩展）
+  bach extensions sync
+  bach extensions sync --dry-run      # 预览而不进行更改
+
+  # 搜索扩展名
+  bach extensions search "data"
+  bach extensions search "analysis"
+
+文件
+-------
+
+  hub/extensions.py 处理程序实现
+  Extensions/ 扩展目录（相对于 system/）
+  extensions/<name>/SKILL.md 扩展元数据
+  Extensions/<名称>/START.bat Windows 启动文件
+  扩展/<名称>/README.md 文档
+  extensions/<name>/requirements.txt 依赖项（可选）
+  data/bach.db 数据库，带有扩展注册表
+
+DATABASE
+---------
+
+  巴赫.数据库：
+    type='extension' 的技能表
+      - 名称 扩展名
+      - 输入“扩展名”
+      - 类别类别（例如“扩展名”）
+      -path 目录路径
+      - 描述描述
+      - is_active 1（启用）或 0（禁用）
+      - 版本版本（默认：1.0.0）
+      - dist_type 2（扩展名）
+
+SKILL.md 格式
+---------------
+
+最小格式：
+
+  描述：扩展的简短描述
+  作者： 姓名
+  版本：1.0.0
+  类别：tool|gui|analysis|utils
+
+处理程序自动从 SKILL.md 或 README.md 中获取描述
+提取并存储在数据库中。
+
+启动机制
+----------------
+
+1。 bash 扩展 run <name> 被调用
+2. Handler在extensions/<name>/中查找
+3. START.bat存在吗？ -> Windows: cmd /c start <START.bat>
+4. 否则：查找主文件（main.py、app.py、<name>.py）
+5. 主文件存在吗？ -> python <主文件>
+6. 如果找不到启动文件，则会出错
+
+在非 Windows 系统上：忽略 START.bat，仅使用 Python 回退
+
+另请参阅
+----------
+
+  bach --help skills          SKILL.md 系统（元数据）
+  bach --help dist            分发和打包
+  扩展/扩展目录
+  Research/_tools/ 研究工具（示例）

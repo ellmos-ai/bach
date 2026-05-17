@@ -1,0 +1,74 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+COOKBOOK - Cookbook tool for DB documentation generation
+====================================================
+
+DESCRIPTION
+------------
+The Cookbook Handler generates raw document versions from database tables
+using predefined recipes. Each recipe describes an SQL query,
+an output template and the output path. Uses the table 'cookbook_recipes'
+in bach.db for persistent management.
+
+Supported templates:
+  - markdown_table: Markdown table with column structure
+  - markdown_list: Structured Markdown list with hierarchy
+  - json_export: JSON export with metadata
+
+OPERATIONS
+-----------
+  bach cookbook list                    Show all recipes (name, title, type)
+
+  bach cookbook generate <rezept>       Generate raw version from recipe
+                                        Reads recipe definition, executes SQL,
+                                        applies template, writes output
+
+  bach cookbook delete <name>           Delete recipe (with warning for CORE)
+                                        Flags: --force (force deletion)
+
+  bach cookbook help                    Show this help
+
+EXAMPLES
+---------
+  1. List all available recipes:
+     bach cookbook list
+
+  2. Generate raw version from existing recipe:
+     bach cookbook generate tools_overview
+
+  3. Delete recipe (confirmation for CORE recipes):
+     bach cookbook delete my_recipe
+     bach cookbook delete core_recipe --force
+
+ISSUE
+-------
+  Output directory: data/generated/
+
+  File name is determined from recipe:
+  - Output field in recipe_json if present
+  - Fallback: <recipe name>.md
+
+  Generated files contain auto-generation markers with timestamp.
+
+FILES
+-------
+  Handler: hub/cookbook.py
+  Database: data/bach.db (table: cookbook_recipes)
+  Output: data/generated/*.md
+
+TABLE-SCHEMA
+---------------
+  cookbook_recipes:
+    - name (TEXT): Unique recipe identifier
+    - title (TEXT): Title for documentary
+    - description (TEXT): Optional description
+    - recipe_json (TEXT): JSON definition (sql_query, template_type, output_file)
+    - dist_type (INT): 0=USER, 1=TEMPLATE, 2=CORE
+    - created_at (TIMESTAMP): creation time
+
+SEE ALSO
+----------
+  BACH_Dev/docs/SQ069_REZEPTBUCH_KONZEPT.md Recipe book concept (SQ069)
+  hub/base.py BaseHandler class

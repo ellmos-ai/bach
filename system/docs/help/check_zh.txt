@@ -1,0 +1,68 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+===
+
+设置检查
+
+
+描述
+===
+
+验证是否所有 BACH 依赖项都存在并已配置。
+不进行任何更改，仅检查状态输出。
+
+
+命令
+===
+
+bach setup check
+
+
+检查
+===
+
+1。 npm 可用 必须位于 PATH 中（用于 MCP 服务器安装）
+2. ellmos-codecommander-mcp 全局安装的npm包（17个工具）
+3. ellmos-filecommander-mcp 全局安装的npm包（43个工具）
+4. 秘密文件 ~/.bach/bach_secrets.json 必须存在并且是有效的 JSON
+5. data/bach.db中的bach.db数据库必须存在
+6.可选的MCP服务器信息检查（如果不安装则不会出错）
+7. USER.md 必须存在并进行个性化（无模板标记）
+
+
+状态代码
+===
+
+[OK] 检查通过
+[!!] 检查失败（需要采取措施）
+[--] 可选组件未安装（无错误）
+[??] 无法进行检查
+
+
+示例
+===
+
+bach setup check
+  使用状态输出检查所有依赖关系
+
+bach setup full-install
+  如果出现错误：执行完整安装
+
+
+FILES
+===
+
+hub/setup.py SetupHandler._check()
+~/.bach/bach_secrets.json 秘密库
+data/bach.db BACH数据库
+../USER.md 用户配置文件
+
+
+另请参见
+===
+
+docs/help/setup.txt 设置处理程序（所有操作）
+docs/help/install.txt 初始安装和场景

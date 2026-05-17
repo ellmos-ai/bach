@@ -1,0 +1,130 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BRIDGE LOCK & FACKEL - Coordination for multiple instances
+==========================================================
+
+As of: 2026-02-23 v1.0.0 (ENT-45)
+
+OVERVIEW
+==========
+The BACH Bridge (claude_bridge) uses two lock levels to ensure
+that only ONE bridge instance is active at a time:
+
+  Level 1 — LOCK FILE (local): prevents two instances on the same PC
+  Level 2 — TORCH SYSTEM (global): prevents parallel operation via OneDrive
+
+Both levels are independent and complement each other.
+
+
+LEVEL 1: LOCK FILE
+===================
+File: %TEMP%\bach_bridge.lock (local temp folder)
+
+Mechanism:
+  - At startup: msvcrt file lock on bach_bridge.lock
+  - Second instance on the same PC: detects Lock → exits
+  - When exiting cleanly: Lock is released and file is deleted
+  - In the event of a crash: Lock remains (OS releases it as soon as the process is dead)
+
+When necessary: ALWAYS - even on individual systems without OneDrive.
+
+
+LEVEL 2: TORCH SYSTEM
+=======================
+Table: bridge_session_lock in bach.db (synchronized via OneDrive)
+
+  When necessary:
+    Only if the same bach.db is via OneDrive (or other sync service)
+    shared across multiple PCs. Otherwise two bridges would be at the same time
+    write to the same DB → conflicts, duplicate messages, race conditions.
+
+    For purely local BACH (no sync) the lock file is sufficient. The torch system
+    But it doesn't hurt either - it just always wins when no other PC does
+    competes.
+
+  Heartbeat:
+    - Active daemon sends a heartbeat every 60s (time stamp in DB)
+    - No heartbeat > 5 min → Torch is considered expired (crash protection)
+
+  Force Takeover (ENT-45, from 2026-02-23):
+    - The last person to request the torch gets it - always
+    - No more “blocked” error
+    - Old holder automatically receives signal via heartbeat failure
+
+
+TORCH LOSS: EXPIRY
+=======================
+When PC-B takes over the torch from PC-A:
+
+  1. PC-B writes pc_name='PC-B' to bridge_session_lock
+  2. PC-A: next heartbeat fails (0 rows updated)
+  3. PC-A checks: check_fackel_mine() → False
+  4. PC-A logs: "TORCH LOST: PC-B has taken the torch"
+  5. PC-A sends Telegram message: "Torch handed over to PC-B"
+  6. PC-A: ordered shutdown, exit code 2 (FACKEL_LOST)
+  7. Tray on PC-A: detects exit code 2 → no restart → tray exits
+
+
+TRAY-LOCK
+=========
+File: %TEMP%\bach_bridge_tray.lock
+
+  - Prevents two tray instances on the same PC
+  - Used by the daemon to check whether the tray is still running
+    (Tray coupling: Daemon exits when tray dies)
+  - Is deleted in the finally block of the tray (when exiting cleanly)
+  - If the tray crashes: Lock remains → Daemon detects dead tray
+    after the next check (every 30s) and exits
+
+
+EXIT CODES OF THE DAEMON
+=======================
+  0 Normal exit (user selected "Exit")
+  1 error when starting (lock occupied or similar)
+  2 FACKEL_LOST — Torch taken over by another PC
+      → Tray DOES NOT restart daemon at exit code 2
+
+
+ARCHITECTURE: CONNECTORS VS. BRIDGE
+====================================
+The Bridge (claude_bridge) is the only service that has its own
+Daemon process has and needs coordination.
+
+The connectors (telegram_connector.py, discord_connector.py, etc.) are
+pure adapter modules without their own daemon — they are used by the bridge daemon
+called and do not need their own lock/torch system.
+
+  Bridge daemon → has lock file + torch
+  telegram_connector.py → adapter, no lock
+  discord_connector.py → adapter, no lock
+  signal_connector.py → adapter, no lock
+  homeassistant_connector.py → adapter, no lock
+
+
+DIAGNOSIS
+========
+  Check torch status:
+    python -c "
+    import sqlite3, json
+    from pathlib import Path
+    db = Path('data/bach.db')
+    conn = sqlite3.connect(str(db))
+    rows = conn.execute('SELECT * FROM bridge_session_lock').fetchall()
+    for r in rows: print(r)
+    "
+
+  Bridge log:
+    data/logs/claude_bridge.log
+
+  Relevant log messages:
+    "Torch acquired: Torch taken (force takeover from X)" — normal takeover
+    “TORCH LOST: X has taken the torch” — this PC loses
+    "Heartbeat failed (DB problem)" — short DB error
+
+
+RELATED DECISIONS
+=========================
+  ENT-45 flare: force takeover, exit code 2, tray self-termination
+  SQ013 Bridge implementation

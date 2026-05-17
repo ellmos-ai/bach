@@ -1,0 +1,89 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+============
+denkarium -- logbook + thought collector
+
+
+DESCRIPTION
+============
+The pensieve handler manages two modes for notes and reflections:
+
+  denkarium Free thoughts, ideas and reflections (can be flexibly categorized)
+  logbuch Chronological diary with sidereal time marking
+
+All entries are stored in sqlite3 (denkarium_entries table) and
+can be searched, categorized, rated and promoted to tasks/wiki.
+
+
+OPERATIONS
+===========
+bach denkarium write TEXT [--type=logbuch] [--cat=KATEGORIE] [--title=TITEL] [--mood=1-5]
+    Write a new entry. Default: type=denkarium, cat=note
+    Example: bach denkarium write "Idee for automation" --type=denkarium --cat=idee
+
+bach denkarium read [--type=logbuch|denkarium] [--cat=KATEGORIE] [--limit=N]
+    List last N entries (default limit=10)
+    Example: bach denkarium read --type=logbuch --limit=5
+
+bach denkarium search SUCHBEGRIFF
+    Search in content, titles and categories (max. 20 hits)
+    Example: bach denkarium search "Automation"
+
+bach denkarium brainstorm THEMA
+    Create a new brainstorm entry with template
+    Example: bach denkarium brainstorm “AI architecture”
+
+bach denkarium promote ENTRY-ID task|wiki
+    Promote pensieve entry to task or wiki
+    Example: bach denkarium promote 42 task
+
+bach denkarium categories
+    List all used categories with entry count
+
+bach denkarium stats
+    Overall statistics: number, time span, promotions
+
+
+EXAMPLES
+=========
+1. Quick Note (Standard Pensieve):
+   bach denkarium write "Morgen Backend-Refactoring planen"
+
+2. Logbook entry with rating:
+   bach denkarium write "Produktive Session, viel erreicht" --type=logbuch --mood=5
+
+3. Start brainstorm:
+   bach denkarium brainstorm "Neue Feature-Ideen"
+   bach denkarium write "Caching-Layer hinzufuegen" --cat=idee
+
+4. Search thoughts and promote them to the task:
+   bach denkarium search "wichtig"
+   bach denkarium promote 15 task
+
+5. View last week's logbook entries:
+   bach denkarium read --type=logbuch --limit=20
+
+
+FILES
+=======
+  data/bach.db SQLite database (table: denkarium_entries)
+  docs/help/denkarium.txt This help file
+
+
+SEE ALSO
+==========
+  tasks -- task management (target for promote operations)
+  wiki -- Wiki system (optional destination for promotion)
+  base -- BaseHandler API (hub/base.py)
+
+
+NOTES
+=======
+- Startime: Logbook entries without explicit --title get "Startime YYYY-MM-DD HH:MM"
+- Categories: freely selectable (note, idea, brainstorm, etc.)
+- Mood rating: Optional, 1-5 scale for reflection tracking
+- Promote to Task: Creates new task with standard priority=3, status=pending
+- Promote to Wiki: Marks entry, complex wiki integration through separate handler

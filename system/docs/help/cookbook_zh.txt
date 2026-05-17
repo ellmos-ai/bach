@@ -1,0 +1,74 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+COOKBOOK - 用于生成数据库文档的 Cookbook 工具
+====================================================
+
+描述
+------------
+Cookbook Handler 从数据库表生成原始文档版本
+使用预定义的食谱。每个配方都描述一个 SQL 查询，
+输出模板和输出路径。使用表“cookbook_recipes”
+在 bach.db 中进行持久管理。
+
+支持的模板：
+  - markdown_table：具有列结构的 Markdown 表
+  - markdown_list：具有层次结构的结构化 Markdown 列表
+  - json_export：带有元数据的 JSON 导出
+
+操作
+-----------
+  bach cookbook list                    显示所有菜谱（名称、标题、类型）
+
+  bach cookbook generate <rezept>       从菜谱生成原始版本
+                                        读取配方定义，执行SQL，
+                                        应用模板，写入输出
+
+  bach cookbook delete <name>           删除配方（带有核心警告）
+                                        标志：--force（强制删除）
+
+  bach cookbook help                    显示此帮助
+
+示例
+---------
+  1.列出所有可用的食谱：
+     bach cookbook list
+
+  2. 从现有配方生成原始版本：
+     bach cookbook generate tools_overview
+
+  3.删除菜谱（确认CORE菜谱）：
+     bach cookbook delete my_recipe
+     bach cookbook delete core_recipe --force
+
+ISSUE
+-------
+  输出目录：data/ generated/
+
+  文件名由配方确定：
+  - Recipe_json 中的输出字段（如果存在）
+  - 后备：<配方名称>.md
+
+  生成的文件包含带时间戳的自动生成标记。
+
+文件
+-------
+  处理程序：hub/cookbook.py
+  数据库：data/bach.db（表：cookbook_recipes）
+  输出：数据/生成/*.md
+
+表架构
+---------------
+  食谱：
+    - 名称（文本）：唯一的配方标识符
+    - 标题（文本）：纪录片的标题
+    - 描述（文本）：可选描述
+    - Recipe_json (TEXT)：JSON 定义（sql_query、template_type、output_file）
+    - dist_type (INT)：0=用户，1=模板，2=核心
+    -created_at（时间戳）：创建时间
+
+另请参见
+----------
+  BACH_Dev/docs/SQ069_REZEPTBUCH_KONZEPT.md 食谱书概念 (SQ069)
+  hub/base.py BaseHandler 类

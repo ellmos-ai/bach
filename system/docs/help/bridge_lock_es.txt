@@ -1,0 +1,130 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BRIDGE LOCK & FACKEL - Coordinación para múltiples instancias
+==========================================================
+
+A partir de: 2026-02-23 v1.0.0 (ENT-45)
+
+RESUMEN
+==========
+El puente BACH (claude_bridge) utiliza dos niveles de bloqueo para garantizar
+que solo UNA instancia de puente esté activa a la vez:
+
+  Nivel 1: BLOQUEAR ARCHIVO (local): evita dos instancias en la misma PC
+  Nivel 2 — SISTEMA TORCH (global): evita el funcionamiento paralelo a través de OneDrive
+
+Ambos niveles son independientes y se complementan entre sí.
+
+
+NIVEL 1: BLOQUEAR ARCHIVO
+===================
+Archivo: %TEMP%\bach_bridge.lock (carpeta temporal local)
+
+Mecanismo:
+  - Al inicio: bloqueo del archivo msvcrt en bach_bridge.lock
+  - Segunda instancia en la misma PC: detecta Lock → sale
+  - Al salir limpiamente: se libera el bloqueo y se elimina el archivo
+  - En caso de falla: el bloqueo permanece (el sistema operativo lo libera tan pronto como el proceso finaliza)
+
+Cuando sea necesario: SIEMPRE, incluso en sistemas individuales sin OneDrive.
+
+
+NIVEL 2: SISTEMA TORCH
+=======================
+Tabla: bridge_session_lock en bach.db (sincronizado a través de OneDrive)
+
+  Cuando sea necesario:
+    Sólo si el mismo bach.db es a través de OneDrive (u otro servicio de sincronización)
+    compartido entre varias PC. De lo contrario, habría dos puentes al mismo tiempo.
+    escribir en la misma base de datos → conflictos, mensajes duplicados, condiciones de carrera.
+
+    Para BACH puramente local (sin sincronización), el archivo de bloqueo es suficiente. El sistema de antorcha
+    Pero tampoco hace daño: siempre gana cuando ningún otro PC lo hace.
+    compite.
+
+  Latido del corazón:
+    - El demonio activo envía un latido cada 60 segundos (marca de tiempo en la base de datos)
+    - Sin latidos > 5 min → La antorcha se considera caducada (protección contra choques)
+
+  Toma de control forzada (ENT-45, del 23 de febrero de 2026):
+    - La última persona que solicita la antorcha la recibe - siempre
+    - No más errores "bloqueados"
+    - El antiguo soporte recibe automáticamente la señal a través de una falla en el latido del corazón
+
+
+PÉRDIDA DE LA ANTORCHA: CADUCIDAD
+=======================
+Cuando la PC-B toma el control de la antorcha de la PC-A:
+
+  1. PC-B escribe pc_name='PC-B' en bridge_session_lock
+  2. PC-A: el siguiente latido falla (0 filas actualizadas)
+  3. Comprobaciones de PC-A: check_fackel_mine() → Falso
+  4. Registros de PC-A: "ANTORCHA PERDIDA: PC-B ha tomado la antorcha"
+  5. La PC-A envía un mensaje de Telegram: "Antorcha entregada a la PC-B"
+  6. PC-A: apagado ordenado, código de salida 2 (FACKEL_LOST)
+  7. Bandeja en la PC-A: detecta el código de salida 2 → no se reinicia → la bandeja sale
+
+
+TRAY-LOCK
+=========
+Archivo: %TEMP%\bach_bridge_tray.lock
+
+  - Evita dos instancias de bandeja en la misma PC
+  - Utilizado por el demonio para comprobar si la bandeja todavía se está ejecutando.
+    (Acoplamiento de bandeja: Daemon sale cuando la bandeja muere)
+  - Se elimina en el bloque final de la bandeja (al salir limpiamente)
+  - Si la bandeja falla: el bloqueo permanece → Daemon detecta una bandeja muerta
+    después del siguiente chequeo (cada 30s) y sale
+
+
+CÓDIGOS DE SALIDA DEL DEMONIO
+=======================
+  0 Salida normal (el usuario selecciona "Salir")
+  1 error al arrancar (cerradura ocupada o similar)
+  2 FACKEL_LOST — Antorcha tomada por otra PC
+      → La bandeja NO reinicia el demonio en el código de salida 2
+
+
+ARQUITECTURA: CONECTORES VS. BRIDGE
+====================================
+El Bridge (claude_bridge) es el único servicio que tiene su propio
+El proceso demonio tiene y necesita coordinación.
+
+Los conectores (telegram_connector.py, discord_connector.py, etc.) son
+módulos adaptadores puros sin su propio demonio: son utilizados por el demonio puente
+llamado y no necesita su propio sistema de cerradura/linterna.
+
+  Puente demonio → tiene archivo de bloqueo + antorcha
+  telegram_connector.py → adaptador, sin bloqueo
+  discord_connector.py → adaptador, sin bloqueo
+  signal_connector.py → adaptador, sin bloqueo
+  homeassistant_connector.py → adaptador, sin bloqueo
+
+
+DIAGNÓSTICO
+========
+  Verificar el estado de la antorcha:
+    pitón -c "
+    importar sqlite3, json
+    desde pathlib importar ruta
+    base de datos = Ruta('datos/bach.db')
+    conexión = sqlite3.connect(str(db))
+    filas = conn.execute('SELECT * FROM bridge_session_lock').fetchall()
+    para r en filas: imprimir(r)
+    "
+
+  Registro de puente:
+    datos/logs/claude_bridge.log
+
+  Mensajes de registro relevantes:
+    "Antorcha adquirida: Antorcha tomada (forzar la toma de control de X)" — toma de control normal
+    “ANTORCHA PERDIDA: X ha cogido la antorcha”: este PC pierde
+    "Error de latido (problema de base de datos)": error breve de base de datos
+
+
+DECISIONES RELACIONADAS
+=========================
+  ENT-45 flare: toma de control forzada, código de salida 2, autoterminación de bandeja
+  SQ013 Implementación de puente

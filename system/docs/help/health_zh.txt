@@ -1,0 +1,63 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+============
+
+health - HealthCheckHandler
+系统运行状况检查和网络诊断
+
+
+描述
+============
+
+运行系统诊断检查：磁盘空间、网络可访问性、
+DNS 解析、数据库大小和 NAS 容量。阈值：磁盘警告
+<100 GB 可用，NAS 警告 >80% 占用，DB 警告 >500 MB。
+
+
+操作
+===========
+
+状态 运行所有检查并显示报告
+磁盘 检查系统驱动器+所有可用驱动器的磁盘空间
+ping <host> 测试主机可用性（默认：fritz.box）
+dns 检查 3 个测试主机上的 DNS 解析（google.com、anthropic.com、github.com）
+网络 完整的网络检查：FritzBox、Google DNS、Cloudflare + DNS
+nas 检查 NAS 容量和占用率 (fritz.nas / FRITZ.NAS / NAS / /mnt/nas)
+all 所有检查组合（状态和所有都相同）
+
+
+示例
+=========
+
+# 快速状态检查
+bach health status
+
+# 检查 NAS 容量
+bach health nas
+
+# Ping 特定主机（例如 8.8.8.8）
+bach health ping 8.8.8.8
+
+# 网络诊断
+bach health network
+
+# 所有驱动器的磁盘空间
+bach health disk
+
+
+文件
+=======
+
+hub/health.py 运行状况处理程序实现
+data/bach.db Memory_working 表中的日志记录
+                        （检查记录有时间戳）
+
+
+另请参见
+==========
+
+hub/base.py BaseHandler（基类）
+docs/help/ 其他处理程序文档

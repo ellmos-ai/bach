@@ -1,0 +1,61 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CONTEXTO - Búsqueda de contexto y memoria a largo plazo
+=============================================
+
+DESCRIPCIÓN
+------------
+El controlador de contexto permite la búsqueda y gestión integral de datos contextuales.
+información. Busca archivos de memoria, historiales de chat, descripciones de tareas.
+y archivos del sistema. Ideal para la carga automática de contexto antes de nuevas sesiones.
+
+OPERACIONES
+-----------
+  bach context auto                    Cargar automáticamente contexto relevante
+                                       (últimas entradas de memoria, tareas prioritarias,
+                                        Lecciones aprendidas, advertencias)
+
+  bach context search BEGRIFF          Buscar en todas las fuentes con el término de búsqueda
+  [--from DATUM] [--to DATUM] Soporta lógica Y/O/NO
+  [--scope AREA] Alcance: 'todos'|'largo plazo'|'sistema'
+
+  bach context longterm                Mostrar archivo de memoria ordenado por tiempo
+  [--from DATUM] [--to DATE] Filtro de fecha en el formato AAAA-MM-DD
+                                       Muestra máx. 20 entradas + contador
+
+  bach context recent [N]              Mostrar las últimas N entradas de memoria
+                                       Valor predeterminado: 5 si no se especifica N
+
+EJEMPLOS
+---------
+  # Cargar contexto automático (inicio de sesión)
+  bach context auto
+
+  # Buscar términos
+  bach context search "deployment pipeline"
+  bach context search "FEHLER regression" --from 2026-02-01 --to 2026-03-01
+  bach context search "Python unittest" --scope system
+
+  # Memoria de búsqueda
+  bach context longterm
+  bach context longterm --from 2026-02-15
+
+  # Entradas recientes
+  bach context recent
+  bach context recent 10
+
+ARCHIVOS
+-------
+  Controlador: hub/context.py
+  Archivo de memoria: memoria/*.md
+  Gestión de tareas: memoria/tasks.json
+  Lecciones: docs/help/lessons.txt
+  Directorio de registro: data/logs/
+
+VER TAMBIÉN
+----------
+  bach search     - Buscar archivos en el espacio de trabajo
+  bach memory     - Crear/administrar entradas de memoria
+  bach status     - Información de la sesión actual

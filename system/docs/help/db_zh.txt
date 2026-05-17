@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+================================================================================
+处理程序：db
+================================================================================
+
+描述
+  中央 BACH 实例的数据库操作。管理 SQLite 数据，
+  执行查询、导出表并创建备份。取代 Supabase
+  MCP 作为本地解决方案。
+
+操作
+  状态 显示数据库概览（表、大小、版本）
+  列出所有表的行数
+  info <table> 详细信息：架构、列、dist_type 分布、示例
+  query "SQL" 执行 SQL 查询（SELECT 或 DML）
+  schema <table> 显示带有索引的 CREATE TABLE 语句
+  count <table> 单个表中的行数
+  export <table> 将表导出为 CSV 或 JSON
+                     选项：--format csv|json （默认值：csv）
+  insert <table> 插入数据记录（JSON 格式）
+  backup 在 data/_backups/
+
+示例
+  bach db status
+ 中创建快速备份    -> 显示数据库状态、表号、大小、视图、索引
+
+  bach db tables
+    -> 列出所有表的行数
+
+  bach db info agents
+    -> 显示架构、列、dist_type 分布和 5 个示例行
+
+  bach db query "SELECT * FROM agents WHERE status='active' LIMIT 10"
+    -> 执行查询，最多显示 50 行
+
+  bach db schema prompts
+    -> 显示 CREATE TABLE 和 INDEX 语句
+
+  bach db export runs --format json
+    -> 将“runs”作为 JSON 导出到 data/export/runs_YYYYMMDD_HHMMSS.json
+
+  bach db insert tasks '{"title":"Test","priority":1}'
+    -> 将数据集插入“任务”（验证列）
+
+  bach db backup
+    -> 创建数据/_backups/bach_quick_YYYYMMDD_HHMMSS.db
+
+文件
+  data/bach.db 中央 SQLite 数据库
+  数据/导出/导出文件（CSV、JSON）
+  data/_backups/ 快速备份
+
+另请参见
+  base.py BaseHandler 类
+  数据/数据库目录
+  巴赫 CLI 帮助：bach --help

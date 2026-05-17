@@ -1,0 +1,98 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ABO - gestión de suscripciones y contratos
+=========================================
+
+DESCRIPCIÓN:
+  Gestiona suscripciones y contratos en curso (streaming, software,
+  Internet, comunicaciones móviles, etc.). Reconoce automáticamente suscripciones de partidas fiscales.
+  y calcula los costos mensuales/anuales.
+
+COMANDOS CLI:
+  bach abo help              Mostrar ayuda
+  bach abo init              Crear tablas de base de datos (una sola vez)
+  bach abo scan              Buscar elementos de impuestos para suscripciones
+  bach abo list              Mostrar todas las suscripciones reconocidas
+  bach abo list --alle       Incl. desactivado
+  bach abo list --bestaetigt Nur bestaetigte
+  bach abo confirm <id>      Confirmar detección de suscripción
+  bach abo dismiss <id>      Eliminar detección de errores
+  bach abo costs             Desglose de costos por categoría
+  bach abo export            Exportación CSV (data/abo_export.csv)
+  bach abo patterns          Mostrar patrones de suscripción conocidos
+  bach abo sync-mail         Sincronizar suscripciones desde correos electrónicos
+
+OPCIONES:
+  --año AAAA año fiscal para escanear (predeterminado: año actual)
+  --el escaneo en seco solo simula
+
+BASE DE DATOS:
+  Tablas en bach.db:
+
+  abo_subscriptions - Suscripciones detectadas/administradas
+    id, nombre, proveedor, categoría, monto_mensual,
+    intervalo de pago, enlace de cancelación, reconocido_on,
+    confirmado (0/1), activo (0/1)
+
+  abo_payments - Enlaces de pago a partidas tributarias
+    id, id_suscripción, id_artículo, importe, fecha
+
+  abo_patterns - Patrones de detección de proveedores conocidos
+    id, patrón, proveedor, categoría, enlace de cancelación
+
+  fin_contracts - Gestión manual de contratos (paralela)
+    id, nombre, categoría, proveedor, número de cliente, número de contrato,
+    importe, intervalo, periodo_días de aviso, fecha_de_caducidad, ...
+
+FLUJO DE TRABAJO:
+  1. bach abo init (único: tablas + patrones predeterminados)
+  2. escaneo de suscripción a bach (búsquedas en tax_posten)
+  3. bach abo list (muestra resultados)
+  4. bach abo confirm <id> (confirmar suscripciones reales)
+  5. bach abo descartar <id> (eliminar identificadores falsos)
+  6. costos de suscripción a bach (resumen de costos)
+  7. bach abo sync-mail (importar suscripciones de correo electrónico, opcional)
+
+PATRONES CONOCIDOS (selección):
+  Netflix, Spotify, Microsoft 365, Adobe, Amazon Prime, Disney+,
+  Apple/iCloud, YouTube Premium, Dropbox, Google One, ChatGPT/OpenAI,
+  Antrópico/Claude, GitHub, JetBrains, 1Password, NordVPN, ExpressVPN
+
+INTERPLAY:
+  - impuesto de bach: elementos impositivos como fuente de datos para el escaneo de suscripciones
+  - GUI: Suscripciones CRUD (#573, implementado por Gemini)
+  - fin_contracts: Contratos manuales (agrega detección automática)
+  - Financial_emails: correos electrónicos relacionados con suscripciones (categoría = 'abo')
+
+EJEMPLOS:
+  # Configuración inicial:
+  bach abo init
+
+  # Detectar suscripciones a partir de datos fiscales:
+  bach abo scan --jahr 2025
+
+  # Listar todas las suscripciones (incluidas las desactivadas):
+  bach abo list --alle
+
+  # Solo suscripciones confirmadas:
+  bach abo list --bestaetigt
+
+  # Resumen de costos por categoría:
+  bach abo costs
+
+  # Confirmar suscripción:
+  bach abo confirm 8
+
+  # Eliminar detección de errores:
+  bach abo dismiss 3
+
+  # Importar suscripciones de correo electrónico:
+  bach abo sync-mail
+
+  # Exportación para planificación presupuestaria:
+  bach abo export
+
+  # Mostrar patrones conocidos:
+  bach abo patterns

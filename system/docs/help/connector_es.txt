@@ -1,0 +1,182 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CONECTOR - Conexiones de comunicación externa
+===============================================
+
+DESCRIPCIÓN
+Gestiona conexiones de comunicación externa (Telegram, Discord,
+HomeAssistant, etc.) y lo ejecuta. Soporta automático
+Sondeo, despacho de cola con reintento/retroceso y disyuntor.
+
+TIPOS COMPATIBLES
+-------------------
+  telegram Telegram Bot API (encuesta getUpdates)
+  discordia Discord Bot (API REST)
+  asistente de hogar Asistente de hogar (REST API)
+  webhook Webhooks entrantes (basados en push)
+  señal Signal Messenger (planificada, señal-cli)
+  whatsapp WhatsApp (planificado, Baileys)
+
+Adaptadores de tiempo de ejecución disponibles: telegram, discord, homeassistant
+
+COMANDOS CLI
+-----------
+
+Administración:
+  bach connector list                    Mostrar todos los conectores
+  bach connector status                  Estado + Estadísticas
+  bach connector add <type> <name> [url] Neuen Connector registrieren
+  bach connector remove <name>           Quitar conector
+  bach connector enable <name>           Activar
+  bach connector disable <name>          Desactivar
+
+Mensajes:
+  bach connector messages [name]         Mostrar mensajes
+  bach connector unprocessed             Mensajes no procesados
+  bach connector route                   Enrutar mensajes (Bandeja de entrada) Daemon juntos para
+Entrega automática incluso sin una sesión CLI activa.
+  bach connector send <name> <to> <text> In ausgehende Queue einreihen
+
+Configuración:
+  1. configuración-daemon del conector bach # Una vez: crea 2 trabajos de demonio
+  2. bach daemon start --bg # Iniciar demonio en segundo plano
+  bach connector poll <name>             A partir de ahora automáticamente:
+  - Telegram/Discord sondeados cada 1-2 minutos
+  - Mensajes entrantes en la Bandeja de entrada (con sugerencias de contexto)
+  - Cola saliente procesada cada minuto.
+  - Envíos fallidos repetidos hasta 5 veces con retroceso
+  bach connector dispatch <name>         Trabajos de demonio:
+  Connector_poll_and_route (intervalo de 2 min) Encuestas y rutas
+  Connector_dispatch (intervalo de 1 min) Cola de despachos
+
+REINTENTO Y RETROCESO
+  bach connector setup-daemon            Los mensajes fallidos se envían con un retroceso exponencial
+repetido: 30 s, 60 s, 120 s, 240 s, 480 s (~15 minutos en total).
+  bach connector queue-status            Después de 5 intentos fallidos (configurable), el mensaje se muestra como
+Marcado como "Letra muerta". Los mensajes fallidos se pueden hacer manualmente.
+se puede restablecer:
+  bach connector retry <id|all>          Restablecer todos los mensajes fallidos
+
+Restablecer mensaje individual
+-------------------------------
+INTERRUPTOR
+
+Después de 5 errores consecutivos, un conector para
+Deshabilitado durante 5 minutos (disabled_until). Más intentos de envío/encuesta
+se omiten hasta que el tiempo de reutilización haya expirado. Después de eso
+el contador se reinicia automáticamente.
+
+INTEGRACIÓN DE CONTEXTO
+
+Los mensajes entrantes se enrutan a través de dos
+Sistemas de disparo filtrados (memoria asociativa):
+
+  a) ContextInjector (codificado, ~100 activadores)
+     → injector_hint en mensajes.metadatos
+-----------------
+  b) tabla context_triggers (dinámica, más de 900 activadores)
+     → context_triggers en mensajes.metadata
+
+Resultado en mensajes.metadata (JSON):
+  {
+    "fuente": "telegrama:123456",
+    "injector_hint": "[CONTEXTO] Copia de seguridad: creación de copia de seguridad de bach...",
+    "context_triggers": ["copia de seguridad", "copia de seguridad"],
+    "routed_at": "2026-02-08T22:00:00"
+  }
+
+  bach connector retry all             API REST
+  bach connector retry 42              Disponible cuando se ejecuta la API sin cabeza (puerto 8001):
+
+  POST /api/v1/messages/send Mensaje en cola
+  GET /api/v1/messages/queue Estado de la cola (pendiente/fallida/inactiva)
+  GET /api/v1/messages/inbox Leer bandeja de entrada (paginación, filtro)
+  POST /api/v1/messages/route Activar enrutamiento manualmente
+---------------
+Ejemplos:
+  curl localhost:8001/api/v1/messages/queue
+  curl -X POST localhost:8001/api/v1/messages/send \
+    -H "Tipo de contenido: aplicación/json" \
+    -d '{"connector":"telegram_main","recipient":"123","content":"Hello"}'
+
+INTERVALOS DE ENCUESTA (predeterminado)
+-------------------
+  Tipo Intervalo Racional
+  Telegram 60s getUpdates es barato
+  discord 120s sondeo REST, límites de velocidad
+  eventos de homeassistant 300s, menos urgentes
+  webhook N/A Basado en push, sin sondeo
+
+Reemplazable mediante auth_config JSON: {"poll_interval": 30}
+
+DATABASE
+
+Tablas:
+  conexiones configuración conector + estado disyuntor
+  conector_messages cola de mensajes (entrantes/salientes, seguimiento de reintentos)
+  mensajes Bandeja de entrada/salida (mensajes enrutados)
+  Scheduler_jobs Trabajos de sondeo/despacho automáticos
+
+Columnas relevantes Connector_messages:
+  estado TEXTO (pendiente/enviado/fallido/muerto)
+  retry_count INTEGER (número de intento actual)
+  max_retries ENTERO (predeterminado 5)
+  next_retry_at TEXT (próximo momento de reintento)
+--------
+Conexiones de columnas relevantes:
+  consecutivos_failures INTEGER (contador de disyuntores)
+  disabled_until TEXTO (bloquear hasta la marca de tiempo)
+
+ARCHIVOS
+
+controlador CLI hub/connector.py
+  hub/_services/connector/queue_processor.py Procesador de cola (núcleo)
+  gui/api/messages_api.py Enrutador API REST
+  conectores/base.py Clase base abstracta
+  conectores/telegram_connector.py Adaptador de Telegram
+  conectores/discord_connector.py Adaptador de discordia
+  conectores/homeassistant_connector.py Adaptador HA
+  db/migrations/001_connector_queue_upgrade.sql Migración de esquemas
+
+VER TAMBIÉN
+-------------------------
+Sistema de mensajería interna
+
+Trabajos en segundo plano
+
+Inyectores de contexto
+---------
+Tabellen:
+  connections         Connector-Konfiguration + Circuit-Breaker-Status
+  connector_messages  Nachrichten-Queue (ein-/ausgehend, Retry-Tracking)
+  messages            Inbox/Outbox (geroutete Nachrichten)
+  scheduler_jobs         Automatische Poll/Dispatch-Jobs
+
+Relevante Spalten connector_messages:
+  status          TEXT (pending/sent/failed/dead)
+  retry_count     INTEGER (aktuelle Versuchsnummer)
+  max_retries     INTEGER (Default 5)
+  next_retry_at   TEXT (naechster Retry-Zeitpunkt)
+
+Relevante Spalten connections:
+  consecutive_failures  INTEGER (Circuit-Breaker-Zaehler)
+  disabled_until        TEXT (Sperre bis Timestamp)
+
+DATEIEN
+-------
+  hub/connector.py                           CLI-Handler
+  hub/_services/connector/queue_processor.py Queue-Processor (Kern)
+  gui/api/messages_api.py                    REST-API Router
+  connectors/base.py                 Abstrakte Basisklasse
+  connectors/telegram_connector.py   Telegram-Adapter
+  connectors/discord_connector.py    Discord-Adapter
+  connectors/homeassistant_connector.py  HA-Adapter
+  db/migrations/001_connector_queue_upgrade.sql  Schema-Migration
+
+SIEHE AUCH
+----------
+  bach --help messages        Internes Nachrichtensystem
+  bach --help daemon          Hintergrund-Jobs
+  bach --help injectors       Kontext-Injektoren

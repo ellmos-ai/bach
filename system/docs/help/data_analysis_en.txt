@@ -1,0 +1,56 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DATA_ANALYSIS - Data analysis with pandas and matplotlib
+========================================================
+
+DESCRIPTION
+------------
+Handler for analyzing and visualizing data files (CSV, Excel, JSON).
+Supported operations: loading, descriptive statistics, data view,
+Correlations and chart creation.
+
+Requirement: pandas installed (matplotlib recommended for charts)
+
+OPERATIONS
+-----------
+  bach data load <path>                  Load file and display info
+  bach data describe <path>              Descriptive statistics (mean, std, min, max)
+  bach data head <path> [--rows N]       First N rows (default: 10)
+  bach data corr <path>                  Correlation matrix (numeric columns only)
+  bach data chart <path> [Optionen]      Create chart
+    --type [bar|line|scatter|pie|hist] Chart type (default: bar)
+    --x <column> X-axis column name
+    --y <column> Y-axis column name
+    --output <file> Output filename
+  bach data list                         Show files in input/ folder
+
+EXAMPLES
+---------
+  bach data load sales.csv
+  bach data describe data/results.xlsx
+  bach data head data/metrics.csv --rows 20
+  bach data corr dataset.json
+  bach data chart sales.csv --type bar --x month --y revenue
+  bach data chart data/values.csv --type scatter --x x_val --y y_val --output scatter.png
+  bach data list
+
+DIRECTORIES
+-------------
+  user/data-analysis/input/ input files
+  user/data-analysis/output/ Analysis results
+  user/data-analysis/charts/ Generated charts (PNG)
+
+FILES
+-------
+  Handler: hub/data_analysis.py
+
+SUPPORTED FORMATS
+---------------------
+  CSV/TXT, XLSX/XLS, JSON
+
+SEE ALSO
+----------
+  bach help
+  bach --version

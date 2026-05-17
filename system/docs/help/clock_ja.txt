@@ -1,0 +1,69 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CLOCK - 時間表示
+=======================
+
+CLI 出力で現在時刻を表示します。
+
+CLI コマンド
+-----------
+
+  bach clock on              時間表示をアクティブにする
+  bach clock off             時間表示を非アクティブにする
+  bach clock status          現在のステータスを表示
+  bach clock interval <sek>  間隔を秒単位で設定
+
+INTERVAL
+---------
+
+  すべての出力の間隔 0 時間
+  間隔 60 最後の表示から 60 秒以上の場合のみの時間
+  間隔 300 5 分ごとの時間
+
+出力形式
+--------------
+
+  [時計] 14:35
+
+持続性
+----------
+
+  ファイル: data/. Clock_state
+
+  内容:
+  {
+    "有効": true、
+    「間隔」: 60、
+    "last_shown": "2026-01-30T14:35:00"
+  }
+
+例
+---------
+
+  # 各出力の時間
+  bach clock on
+  bach clock interval 0
+
+  # 5 分ごとの時間
+  bach clock interval 300
+
+  # ステータスを確認します
+  bach clock status
+  -> 時計: オン |間隔: 60秒 |最終: 午後 2 時 35 分
+
+インタープレイ
+-------------
+
+時計は時間システムの一部です:
+  --ヘルプタイマーストップウォッチ
+  --help countdown トリガーによるカウントダウン
+  -- チェック間のヘルプ
+  --help beat 統一時刻表示
+
+すべての時刻関数は `bach Beat` を介して要約されます。
+
+---
+バージョン: 1.0 |ステータス: 実装済み (v1.1.83)
+参照: docs/CONCEPT_time_system.md

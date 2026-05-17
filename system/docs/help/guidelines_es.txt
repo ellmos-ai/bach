@@ -1,0 +1,89 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DIRECTRICES - Estándares de documentación
+=====================================
+
+Estado: 2026-02-08
+
+SISTEMA DE TRES NIVELES
+-------------------
+1. OPERACIONAL (docs/help/*.txt)
+   - ¿CÓMO uso BACH?
+   - Enfoque: comandos CLI, guías, referencias.
+   - Formato: TXT (compatible con ASCII, máx. 250 líneas).
+
+2. CONOCIMIENTO (wiki/*.txt)
+   - ¿QUÉ es X?
+   - Enfoque: conocimientos previos, conocimientos del dominio, teoría de la IA.
+   - Formato: TXT (compatible con ASCII).
+
+3. CONCEPTUAL (habilidades/**/*.md, docs/*.md)
+   - ¿POR QUÉ y CÓMO se construye?
+   - Enfoque: arquitecturas, flujos de trabajo, análisis más profundos.
+   - Formato: MarkDown (muy ilustrado/estructurado).
+
+METADATOS OBLIGATORIOS (NUEVO 2026-01)
+-------------------------------
+Cada archivo de documentación DEBE tener el siguiente encabezado:
+
+  # Portabilidad: UNIVERSAL | SISTEMA | USUARIO
+  # Última validación: AAAA-MM-DD
+  # Próxima prueba: AAAA-MM-DD
+  # Fuentes: [Opcional]
+
+Intervalos de verificación:
+  SISTEMA: +3 meses (vinculado a código, cambia con frecuencia)
+  UNIVERSAL: +6 meses (válido general, estable)
+  USUARIO: +12 meses (específico de usuario, de larga duración)
+
+ESTRUCTURA TX/TXT (Clásico)
+---------------------------
+  TÍTULO EN LETRAS MAYÚSCULAS
+  =========================
+  [encabezado de metadatos]
+
+  DESCRIPCIÓN
+  [¿Qué hace esta función]
+
+  COMANDOS
+  bach [befehl] [argumente]
+
+  EJEMPLOS
+  [Casos de uso concretos]
+
+  VER TAMBIÉN
+  [Enlaces a otros documentos/ayuda/o wiki/archivos]
+
+ANÁLISIS DEL CICLO DE VIDA
+---------------------
+1. CREACIÓN: usuario/ANALYSE_Thema.md
+2. EVALUACIÓN: Hallazgos → docs/help/ O wiki/. Tareas → Sistema de tareas.
+3. ARCHIVO: Mover a usuario/_archive/ después de finalizar.
+
+CONVENCIONES DE NOMBRE
+------------------
+docs/help/<topic>.txt Tema simple
+docs/help/<comando>.txt Documentación del comando CLI
+wiki/<especial>.txt Conocimiento externo
+
+SKILL_<n>.md Documentación de habilidades
+CONCEPT_<n>.md documento conceptual
+<n>_ANALYSE.md Informe de análisis
+<Tema>_Proposal.md Sugerencias (en espera de aprobación)
+
+CRITERIOS DE CALIDAD
+-------------------
+docs/help/*.txt Archivos:
+- Máx. 250 líneas (recomendado menos de 150)
+- Sin sintaxis Markdown (compatible con ASCII)
+- Todos los comandos documentados
+- Al menos 1 ejemplo
+- VER TAMBIÉN Referencia
+
+VER TAMBIÉN
+----------
+user/_archive/Guidelines_Proposition.md Concepto completo (archivado)
+bach --help practices                    Principios de arquitectura
+bach --help naming                       Convenciones de nomenclatura

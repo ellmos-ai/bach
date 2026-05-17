@@ -1,0 +1,79 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [connections table, hub/connector.py, docs/help/connector.txt]
+
+CONNECTIONS - Connections & Integrations (Overview)
+=======================================================
+
+DATE: 2026-02-08
+
+The Connections system is the central database table for EVERYONE
+technical connections in BACH. There are TWO different subsystems
+with different purposes:
+
+1. CONNECTOR SYSTEM (NEW, v2.0)
+--------------------------------
+External communication connections (Telegram, Discord, HomeAssistant).
+Complete message system with queue, retry, circuit breaker.
+
+**DETAILS → see docs/help/connector.txt**
+
+CLI: bach connector <operation>
+Operations: list, status, add, remove, poll, dispatch, setup-daemon, etc.
+
+Handler: hub/connector.py
+Services: hub/_services/connector/queue_processor.py
+API: gui/api/messages_api.py (4 REST endpoints)
+
+2. AI/MCP-CONNECTIONS (LEGACY)
+-------------------------------
+Technical infrastructure for AI partners and MCP servers.
+Manages endpoints, API keys, OAuth tokens.
+
+CLI: bach --connections list/show
+Handlers: hub/connections.py (?)
+
+Types:
+  - AI partners: claude, ollama, gemini (Anthropic, Local, Google)
+  - MCP server: pubmed, canva, gdrive (Model Context Protocol)
+
+IMPORTANT: CONNECTIONS vs PARTNER vs CONNECTOR
+--------------------------------------------
+- CONNECTIONS (table): Central registry of ALL connections
+- CONNECTOR (Subsystem): External communication (Telegram, Discord, ...)
+- PARTNER (logic): Delegation & Expertise (WHO does WHAT?)
+
+DATABASE TABLE
+-----------------
+Table: connections
+Fields:
+  - name, type, category, endpoint, is_active
+  - auth_type, auth_config (JSON with credentials)
+  - success_count, error_count, last_used
+  - consecutive_failures, disabled_until (circuit breaker, connectors only)
+
+Categories (category):
+  - 'connector': External communication (Telegram, Discord, ...)
+  - 'ai': AI partners (Claude, Ollama, Gemini)
+  - 'mcp': MCP server (PubMed, Canva, ...)
+  - 'api': Other APIs
+
+USE
+----------
+Most users ONLY need the **Connector system**.
+
+For external communication (Telegram, Discord, HomeAssistant):
+  → bach connector --help
+  → docs/help/connector.txt (dedicated documentation)
+
+For AI partners and MCP servers:
+  → bach --connections list
+  → bach --help partner
+
+SEE ALSO
+----------
+  docs/help/connector.txt Connector system (Telegram, Discord, HA)
+  bach --help partner    Logical delegation & zones
+  bach --help messages   Internal messaging system
+  bach --help daemon     Background jobs (poll_and_route, dispatch)

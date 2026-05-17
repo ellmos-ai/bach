@@ -1,0 +1,104 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+============
+db_sync - ProSync: Sincronización de bases de datos multisistema
+
+
+DESCRIPCIÓN
+============
+ProSync sincroniza bases de datos BACH entre múltiples sistemas.
+
+Arquitectura:
+- Cada sistema tiene una base de datos local (~/.bach/bach.db)
+- OneDrive sirve como centro de tránsito (.SYNC/bach_db_transit/)
+- Sincronización al iniciar BACH (tirar) y salir (empujar)
+- 137 tablas se reconocen y sincronizan dinámicamente 
+
+ Fusión inteligente: las tablas con columnas de marca de tiempo utilizan las últimas victorias de escritura
+con verificación de conflictos mediante latido del corazón (ventana de 5 minutos). Esquema a prueba de deriva
+a través de la detección de columnas compartidas y denominada INSERT. Los secretos se crean a partir de copias de seguridad.
+eliminado. Estrategia de limpieza automática: mantenga las copias de seguridad más recientes por host
+más todo lo que esté en X días (predeterminado: 7 días, 10 por host).
+
+ProSync es opcional. Las instalaciones de un solo sistema no requieren sincronización.
+Configuración: configuración de bach prosync --multi-system / --single-system.
+
+
+OPERACIONES
+===========
+bach db backup
+  Copia de seguridad manual creada de bach.db.
+  Formato: bach_HOSTNAME_TIMESTAMP.bachdb (Ejemplo: bach_LAPTOP_2026-03-04T14-30-00.bachdb)
+  Traeger: Solicitud local, no remota.
+
+bach db sync
+  Realiza sincronización completa: Pull (copias de seguridad más recientes) + Merge + Push (copia de seguridad propia).
+  Verificación de conflictos: si otras PC están activas (latidos < 5 min), se solicita confirmación.
+  Banderas: --auto o -y para modo no interactivo.
+  Estrategia de fusión: las líneas más nuevas (marca de tiempo) ganan (INSERTAR O REEMPLAZAR).
+
+bach db status
+  Muestra el estado: base de datos local, carpeta de respaldo, últimas 10 copias de seguridad (host, hora, tamaño),
+  PC activas y sus latidos.
+
+bach db cleanup
+  Elimina copias de seguridad antiguas según la política de retención.
+  Regla: mantenga los 10 más recientes por host O cualquier valor inferior a 7 días (configurable).
+  Devuelve el número de copias de seguridad eliminadas.
+
+bach db enable
+  Habilita la sincronización automática al inicio/salida (establece el indicador de configuración).
+
+bach db disable
+  Deshabilita la sincronización automática.
+
+
+EJEMPLOS
+=========
+# Copia de seguridad manual antes de una operación riesgosa
+bach db backup
+
+# Sincronización con verificación de conflictos (interactiva)
+bach db sync
+
+# Sincronización desatendida (trabajo cron/automatización)
+bach db sync --auto
+
+# Verifique el estado antes de la sincronización (muestra PC activas y copias de seguridad)
+bach db status
+
+# Activar manualmente la limpieza de copias de seguridad obsoletas
+bach db cleanup
+
+
+ARCHIVOS
+=======
+Relativo al sistema/:
+
+hub/db_sync.py
+  Implementación principal (DBSyncManager, DBSyncHandler).
+  Reconocimiento dinámico de tablas: 137 tablas sincronizables (en lugar de codificadas).
+  Esquema seguro a través de columnas compartidas + llamado INSERT.
+
+~/.bach/bach.db
+  Base de datos de producción local (base de datos principal desde ProSync).
+
+data/bach.db
+  Base de datos alternativa de OneDrive (ya no se describe directamente cuando ProSync está activo).
+
+OneDrive/.SYNC/bach_db_transit/
+  Centro de tránsito para archivos .bachdb y heartbeat.json.
+  Heartbeat: rastrea las PC activas (nombre de host, PID, marca de tiempo) para detectar conflictos.
+
+data/config/db_sync_enabled
+  Indicador para la activación de ProSync (creado por "bach setup prosync --multi-system").
+
+
+VER TAMBIÉN
+==========
+- docs/help/setup.txt: bach setup prosync (configuración)
+- hub/bach_paths.py: BACH_DB, PROSYNC_TRANSIT_DIR, LOCAL_BACH_DIR
+- basehandler/handler framework: consulte base.py para ver la interfaz

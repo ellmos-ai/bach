@@ -1,0 +1,102 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+プロバイダ - プロバイダ固有のルール
+=====================================
+
+説明
+請求書と領収書の処理ルール
+
+
+重要: これは単なるドキュメント ファイルであり、関連情報はありません。
+ハンドラー。ルールは税務専門家スクリプトに実装されています。
+- system/agents/_experts/steuer/temu_ocr_batch.py
+- システム/エージェント/_experts/steuer/steuer_batch.py
+- system/agents/_experts/steuer/beleg_vorfilter.py
+- system/agents/_experts/steuer/beleg_parser.py
+
+領収書はサブフォルダーに保存されます。
+user/documents/personal_assistant/tax/YYYY/広告費/belege/[プロバイダー]/
+
+TEMU
+====
+
+コンテキスト:
+TEMU 請求書は注文確認メールからインポートされます。
+領収書の原本からではありません。これは回避策です、
+レシートの原本を自動的に取得するのは非常に時間がかかります。
+
+入力ルール:
+
+1。価格
+   常に電子メールの PDF から抽出する
+   (価格はウェブサイト上で変動します)
+
+2.製品名
+   テキストが欠落しているか不完全な場合:
+   - コンテキストから論理的に導き出す
+   - より良い: temu.com で製品を検索して正しい名前を見つけます
+
+3。文書の種類
+   「注文確認 (または請求書)」としてマークします
+
+4.その後の検証
+   後で領収書の原本をアップロードすると、
+   データの比較と更新
+
+税務署向けのメモ:
+領収書の原本はリクエストがあった場合にのみ提供されます。
+注文確認は最初の証明として機能します。
+
+
+AMAZON
+======
+(今後のルールのプレースホルダー)
+
+必要に応じて次を追加します。
+- 請求書のフォーマット
+- マーケットプレイス販売の特徴
+- プライム メンバーシップの領収書
+
+
+EBAY
+====
+(今後のルールのプレースホルダー)
+
+必要に応じて次を追加します。
+- PayPal接続
+- 個人販売と商用
+
+
+その他のプロバイダ
+================
+必要に応じて、ここに追加します:
+- アリエクスプレス
+-願い
+- シェイン
+- 特殊な請求書形式を使用するその他のオンライン小売業者
+
+
+BELEG_VORFILTER.PY に実装されているプロバイダ
+==============================================
+- Temu (temu.com、Whaleco)
+- アマゾン (amazon.de、amazon.com)
+- eBay (ebay.de、ebay.com)
+- ペイパル (paypal.com)
+- Google Play
+- アップル
+- Medimops
+
+
+関連項目
+----------
+bach steuer help       税務ハンドラーのヘルプ
+bach steuer tools      利用可能な税務ツールを表示
+
+ツール
+-----
+temu_ocr_batch.py Temu 領収書のバッチ OCR (画像ベースの PDF)
+steuer_batch.py Amazon、Temu、eBay のベンダー パーサー
+beleg_vorfilter.py レシートの自動仕分け
+beleg_parser.py LLM ベースのドキュメント抽出

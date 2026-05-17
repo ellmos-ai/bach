@@ -1,0 +1,107 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+COUNTDOWN - Countdown with trigger
+==================================
+
+Countdown timer that optionally executes a command when it expires.
+
+CLI COMMANDS
+-----------
+
+  bach countdown start <name> HH:MM:SS              Start countdown
+  bach countdown start <name> HH:MM:SS --after "cmd" Mit Trigger-Befehl
+  bach countdown stop <name>                         Cancel countdown
+  bach countdown list                                Active countdowns
+  bach countdown pause <name>                        Pause
+  bach countdown resume <name>                       Resume
+
+OUTPUT FORMAT
+--------------
+
+  Normal: [COUNTDOWN] session: 45:12 remaining
+  Warning: [!] session: Only 04:58 left!
+
+Warning appears when < 5 minutes remain.
+
+PERSISTENCY
+----------
+
+  File: data/.countdown_state
+
+  Contents:
+  {
+    "countdowns": {
+      "session": {
+        "end_time": "2026-01-30T15:00:00",
+        "after_command": "shutdown 'Time at'",
+        "paused": false,
+        "remaining_on_pause": null
+      }
+    }
+  }
+
+EXAMPLES
+---------
+
+  #1-hour session countdown
+  bach countdown start session 01:00:00
+  -> Countdown 'session' started: 01:00:00
+
+  # With automatic shutdown
+  bach countdown start session 01:00:00 --after "shutdown 'Session beendet'"
+  -> When it expires, "bach --shutdown 'Session ended'" is executed
+
+  # Pomodoro Timer (25 Min)
+  bach countdown start focus 00:25:00
+  -> Countdown 'focus' started: 00:25:00
+
+  # Pause and Resume
+  bach countdown pause focus
+  bach countdown resume focus
+
+  # Check status
+  bach countdown list
+  -> session: 45:12 remaining
+  -> focus: 19:45 remaining (PAUSED)
+
+TRIGGER (--after)
+-----------------
+
+The --after command is executed when it expires:
+
+  --after "shutdown 'Time at'" End session
+  --after "msg send user 'Break!'" Send message
+  --after "task done 123" Mark task as completed
+
+When executed, the command is written to a queue.
+The next CLI call executes it (or the daemon).
+
+USECASES
+--------
+
+  1. SESSION LIMIT
+     bach countdown start session 02:00:00 --after "shutdown 'Limit erreicht'"
+     -> Automatic session end after 2 hours
+
+  2. POMODORO TECHNIQUE
+     bach countdown start focus 00:25:00 --after "msg send user 'Pause machen!'"
+     -> Reminder to pause after 25 minutes
+
+  3. DEADLINE REMINDER
+     bach countdown start deadline 04:00:00
+     -> Warning at < 5 minutes, then act manually
+
+INTERPLAY
+-------------
+
+Countdown is part of the time system:
+  --help clock Time display
+  --help timer stopwatch
+  --help between between checks
+  --help beat Unified time display
+
+---
+Version: 1.0 | Status: Implemented (v1.1.83)
+See: docs/CONCEPT_time_system.md

@@ -1,0 +1,56 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DATA_ANALYSIS - Análisis de datos con pandas y matplotlib
+========================================================
+
+DESCRIPCIÓN
+------------
+Manejador para analizar y visualizar archivos de datos (CSV, Excel, JSON).
+Operaciones soportadas: carga, estadísticas descriptivas, vista de datos,
+Correlaciones y creación de gráficos.
+
+Requisito: pandas instalado (se recomienda matplotlib para gráficos)
+
+OPERACIONES
+-----------
+  bach data load <path>                  Cargar archivo y mostrar información
+  bach data describe <path>              Estadísticas descriptivas (media, estándar, mínimo, máximo)
+  bach data head <path> [--rows N]       Primeras N filas (predeterminado: 10)
+  bach data corr <path>                  Matriz de correlación (solo columnas numéricas)
+  bach data chart <path> [Optionen]      Crear gráfico
+    --type [barra|línea|dispersión|circular|hist] Tipo de gráfico (predeterminado: barra)
+    --x <columna> Nombre de la columna del eje X
+    --y <columna> Nombre de la columna del eje Y
+    --output <archivo> Nombre del archivo de salida
+  bach data list                         Mostrar archivos en entrada/carpeta
+
+EJEMPLOS
+---------
+  bach data load sales.csv
+  bach data describe data/results.xlsx
+  bach data head data/metrics.csv --rows 20
+  bach data corr dataset.json
+  bach data chart sales.csv --type bar --x month --y revenue
+  bach data chart data/values.csv --type scatter --x x_val --y y_val --output scatter.png
+  bach data list
+
+DIRECTORIOS
+-------------
+  usuario/análisis de datos/entrada/archivos de entrada
+  usuario/análisis de datos/salida/Resultados del análisis
+  usuario/análisis-de-datos/gráficos/ Gráficos generados (PNG)
+
+ARCHIVOS
+-------
+  Controlador: hub/data_analysis.py
+
+FORMATOS SOPORTADOS
+---------------------
+  CSV/TXT, XLSX/XLS, JSON
+
+VER TAMBIÉN
+----------
+  bach help
+  bach --version

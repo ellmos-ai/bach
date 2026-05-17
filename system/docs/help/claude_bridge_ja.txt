@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# ステータス: LEGACY — 後継: BACH チャット サービス (help bach_chat)
+
+CLAUDE BRIDGE - Telegram <-> Claude Code CLI Integration (LEGACY)
+==================================================================
+
+注: Claude Bridge は BACH チャット サービスに置き換えられました。
+         新しいサービスは 5 つのバックエンド、コントロール API、Web ダッシュボードを提供します
+         クロスプラットフォーム システム トレイ。参照: help bach_chat
+
+説明
+------------
+Claude Bridge は、双方向通信を可能にする Telegram ボット ハンドラーです。
+Telegram チャットと BACH/Claude Code CLI の間。悪魔
+バックグラウンドで実行され、受信メッセージを処理し、デリゲートします
+より長いタスクをワーカー スレッドに送信し、結果を Telegram 経由で送信します。
+
+アーキテクチャ:
+  - Chat-Claude: 新しいコンテキストですべての Telegram メッセージを処理します
+  - Worker-Claude: 長期/自律タスク用 (ステータス更新あり)
+  - デーモン: 権限、予算、ライフサイクルを監視します。
+  - セキュリティ: パスワードを設定可能なチャレンジ/レスポンス システム
+
+
+操作
+-----------
+  bach claude-bridge start              バックグラウンドでデーモンを開始
+  bach claude-bridge stop               デーモンを終了
+  bach claude-bridge status             ステータス: デーモン、ワーカー、予算、モード
+  bach claude-bridge mode               許可モードを表示 (設定から)
+  bach claude-bridge test "msg"         テスト メッセージをシミュレート (ローカル)
+  bach claude-bridge logs [N]           最後の N ログ行 (デフォルト: 20)
+  bach claude-bridge workers            ステータス/エラーのある最後の 10 ワーカー
+  bach claude-bridge password <pw>      フルのパスワードを変更アクセス
+  bach claude-bridge setup              新規ユーザー向けの対話型セットアップ ウィザード
+  bach claude-bridge challenge [user]   セキュリティ チャレンジの生成
+  bach claude-bridge verify <ans>       チャレンジの回答を確認 [--user=ID]
+
+
+テレグラム コマンド (チャットでアクティブ化)
+-------------------------------------
+  フルアクセスのオン/オフを切り替えます (1 時間の自動ロック)
+  モード 現在のモードを表示
+  予算 予算ステータスの表示
+  ワーカー 最後のワーカーの概要
+  stop 実行中のワーカーを直ちに終了します
+
+
+例
+---------
+  # デーモンを起動して 2 秒待ってからステータスを確認します
+  $bach クロードブリッジの開始
+  $スリープ2
+  $ バッハ クロード ブリッジ ステータス
+
+  # テストメッセージをローカルでシミュレートする
+  $ bach claude-bridge test 「こんにちは、調子はどうですか?」
+
+  # ログの最後の 50 行を表示
+  $ バッハ クロード ブリッジ ログ 50
+
+  # 新しいパスワードを設定します (その後、デーモンを再起動します)
+  $バッハ・クロード・ブリッジのパスワード「MyNewPW123」
+  $ バッハ クロード ブリッジ ストップ
+  $ バッハ クロード ブリッジ スタート
+
+  # セキュリティチャレンジの生成と検証
+  $bach クロードブリッジ チャレンジ user_123
+  $ bach claude-bridge verify "AnswerText" --user=user_123
+
+
+ファイル
+-------
+  ハンドラー: Hub/claude_bridge.py
+  デーモン: Hub/_services/claude_bridge/bridge_daemon.py
+  構成: Hub/_services/claude_bridge/config.json
+  セットアップ: Hub/_services/claude_bridge/setup_wizard.py
+  セキュリティ: Hub/_services/claude_bridge/security.py
+  ログ: data/logs/claude_bridge.log
+  DB: data/bach.db (テーブル: claude_bridge_workers)
+
+
+設定
+-------------
+config.json を参照:
+  - 権限.デフォルトモード: "制限付き" | 「インタラクティブ」 | 「いっぱい」
+  - Permissions.password: フルアクセス用のパスワード
+  - telegram.token: ボット トークン (セットアップで設定)
+  -workers.max_concurrent: 最大。同時実行ワーカー (デフォルト: 3)
+  - Budget.hourly_limit: 1 時間あたりの API コスト制限
+
+
+関連項目
+----------
+  ヘルプコネクタ コネクタシステム（テレグラムなど）
+  ヘルプパートナーパートナーシステム（Multi-LLM）
+  Hub/_services/claude_bridge/ ハンドラー ディレクトリ

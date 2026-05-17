@@ -1,0 +1,72 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BAJAR DE BACH - RESTABLECER VERSIÓN
+======================================
+
+Restablece BACH a una versión anterior. Usos históricos
+Versiones de dist_file_versions (SQ020).
+
+
+USE
+----------
+
+  # Mostrar versiones disponibles de un archivo
+  bach downgrade list <datei-pfad>
+
+  # Revertir archivo individual a la versión
+  bach downgrade <datei-pfad> --version <version>
+
+  # Restablecer todo el sistema para liberar 
+  bach downgrade --release <release-id>
+
+  # Ejecución en seco (solo ver, no ejecutar)
+  bach downgrade --dry-run <datei-pfad> --version <version>
+
+
+VERSIONES
+---------
+
+Números de versión: v1, v2, v3, ...
+  - Basado en hash (SHA256 detecta cambios automáticamente)
+  - El incremento automático proporciona un orden legible por humanos
+
+
+IMPORTANTE
+-------
+
+- La degradación funciona SÓLO para archivos CORE + PLANTILLA
+- Las versiones antiguas se almacenan en dist_file_versions
+- USER_DATA no tiene versionado (pertenece al usuario)
+- Se recomienda realizar una copia de seguridad antes de degradar
+
+
+EJEMPLOS
+---------
+
+  # Ver versiones de bach.py
+  bach downgrade list system/bach.py
+
+  # restablecer bach.py ​​​​a la versión 3
+  bach downgrade system/bach.py --version v3
+
+  # Verifique qué archivos se cambiarán
+  bach downgrade --dry-run --release r2
+
+
+COMBINADO CON ACTUALIZAR
+-----------------------
+
+La actualización y la degradación funcionan juntas:
+  - La actualización guarda la versión anterior automáticamente
+  - La degradación utiliza versiones guardadas
+  - Sistema bidireccional (adelante + atrás)
+
+
+VER TAMBIÉN
+----------
+
+  bach --help upgrade       Actualizar a una versión más reciente
+  bach --help restore       Recuperación de plantilla
+  bach --help seal          Verificación de integridad

@@ -1,0 +1,105 @@
+CANAL DE INFORMES DE FINANCIACIÓN
+=======================
+
+Creación de informes de un extremo a otro: desde la carpeta de archivos hasta el informe de financiación terminado.
+El nombre y la fecha de nacimiento se reconocen automáticamente a partir del nombre de la carpeta.
+
+ESTRUCTURA DE CARPETA
+--------------
+  data_roh/ El usuario inserta la carpeta de archivos (AI NO lee directamente)
+  data_ano/ Archivos individuales anónimos (la IA puede leer)
+  data_bundled/ Texto incluido + aviso para LLM
+  output_reports/ Informe terminado (anonimizado, producto final)
+
+SEPARACIÓN DE FUNCIONES (IMPORTANTE)
+-------------------------
+  El USUARIO coloca el fichero del cliente en data_roh/.
+  La IA SÓLO inicia el script de canalización; NO envía archivos,
+  NO copia archivos y NO verifica si existe un archivo.
+  El propio script informa: "Archivo encontrado, proceso iniciado" o
+  "Error: No hay ningún archivo configurado en data_roh/".
+
+USE (4 formas estándar)
+----------------------------
+  1. Chat: "Crear informe de financiación" (recomendado, Detección automática)
+  2. .bat: Foerderbericht_Pipeline.bat (3x ENTER para detección automática)
+  3. Cadena: informe de financiación inicial de la cadena Bach
+  4. CLI: canalización de informes de Bach (detección automática)
+
+OPCIONES
+--------
+  --período "01/01/2025 - 31/12/2025" período de informe
+  --backend claude_code|llmauto LLM backend (predeterminado: claude_code)
+  --modelo claude-sonnet-4-6 modelo LLM
+  --padres "nombre de la madre" "nombre del padre" nombres de los padres (para anonimización)
+  --no-cleanup No vaciar la carpeta intermedia
+
+PROCESO (flujo trifásico)
+----------------------
+
+  Fase 1: prepare_prompt() [Python, sin IA]:
+    1. Validación: data_roh/ no puede estar vacío, verifique la regla de un solo cliente
+    2. Detección automática: detecta nombre + fecha de nacimiento a partir del nombre de la carpeta
+    3. Perfil: Perfil de anonimización temporal (nombre disfrazado, datos falsos)
+    4. Anonimización: anonimizar archivos -> data_ano/
+    5. Agrupación: Extraer texto -> data_bundled/ (priorizado: el más nuevo primero)
+    6. Mensaje: mensaje de LLM con esquema ICF -> data_bundled/prompt.txt
+
+  Fase 2: la IA lee el mensaje.txt y genera una respuesta JSON:
+    7. La IA lee el archivo Prompt.txt anónimo (forma de chat/subagente)
+    8. Respuesta JSON -> data_bundled/llm_response.txt
+
+  Fase 3: Finish_report() [Python, sin IA]:
+    9. Anonimizar JSON (a través de session_info.json con todas las asignaciones)
+   10. Generar Word -> informes_salida/
+   11. Limpieza: eliminar TODOS los datos intermedios + carpetas heredadas
+
+  Completamente automático (.bat/llmauto/CLI):
+    run_full_pipeline() llama internamente a prepare_prompt() + _call_llm() + Finish_report()
+
+  NOTA: SÓLO UN CLIENTE POR PASE en data_roh/!
+
+PRIORIZACIÓN DE DOCUMENTOS
+-------------------------
+  ALTA: Protocolos vigentes, portada de expediente, plan de asistencia, aprobación
+  MEDIO: informes proAutismo, informes médicos (<10 años), informes escolares, correos electrónicos
+  BAJA: Informes médicos de más de 10 años
+
+AYUDA A PLANIFICAR METAS (IMPORTANTE)
+--------------------------
+  Si hay un plan de asistencia disponible, se incluirán sus objetivos marco/objetivos de resultados.
+  adoptados como principales objetivos de financiación. Solo temas fuera de eso
+  Ayude a que los objetivos del plan vayan a la tabla new_goals.
+  El posprocesamiento de diéresis (ue->ue, ae->ae, oe->oe) es automático
+  aplicado basado en palabras (sin falsos positivos para “actual”, etc.).
+
+SEGURIDAD
+----------
+  - data_roh/ NUNCA es leído directamente por AI
+  - LLM SOLO ve datos anonimizados (nombres en clave)
+  - Anonimización a través de session_info.json con todas las asignaciones
+  - Sin perfil persistente (basado en sesiones)
+  - .pipeline_lock evita ejecuciones paralelas
+  - La sincronización de OneDrive se pausa/reanuda automáticamente
+  - La limpieza elimina TODOS los datos intermedios + carpetas heredadas
+
+LLM-BACKENDS
+-------------
+  claude_code (DEFAULT) CLI de Claude Code como subproceso
+  llmauto sistema de cadena llmauto
+  anthropic_sdk Opcional (necesita ANTHROPIC_API_KEY, no configurado)
+
+SOLUCIÓN DE PROBLEMAS
+---------------
+  "data_roh/ está vacío" -> insertar carpeta de archivos en data_roh/
+  "Error de ClaudeRunner" -> Claude CLI no está en la RUTA, use llmauto
+  "Error de importación" -> pip install python-docx openpyxl
+  OneDrive Lock -> Cerrar archivos, esperar un momento, reiniciar
+
+ARCHIVOS
+-------
+  Orquestador: hub/_services/document/foerderbericht_pipeline.py
+  Ejecutor CLI: hub/_services/document/pipeline_runner.py
+  Controlador CLI: hub/report.py (Operación: canalización)
+  Cadena: herramientas/llmauto/chains/foerderbericht.json
+  Plantilla: skills/_templates/report_template_geiger_universal.docx

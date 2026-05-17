@@ -1,0 +1,76 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [hub/partner.py, tools/partner_communication/gemini_start.py, partners/gemini/start_gemini.bat]
+
+BACH PARTNER DELEGATION
+=======================
+
+DATE: 2026-02-08
+
+Delegation enables the distribution of tasks within
+of the partner network based on expertise and token economics.
+
+Handler: system/hub/partner.py (DB-based since JSON_001 migration)
+
+CORE TASKS
+------------
+- Task delegation via CLI or MessageBox (data/messages/message_box.md)
+- Monitoring progress via `bach partner status`
+- Token-aware selection based on zones (monitor_tokens DB table)
+- Offline fallback to local partners (--fallback-local flag)
+
+CLI COMMANDS (bach partner)
+--------------------------
+  list Shows all registered partners and their status
+  status Summary of active partners and delegation zones
+  info <name> Details about a specific partner
+  active List only active partners
+  delegate Transfers a task to a partner (token-aware)
+                --to=NAME Specific partner
+                --zone=N force zone (1-4)
+                --fallback-local Switch to local AI (Ollama) when offline
+
+GEMINI WORKFLOW
+---------------
+Gemini is the primary partner for deep analysis and long-form content:
+
+1. ASSIGNMENT:
+   `bach partner delegate "Task Text" --to=gemini`
+   Alternatively: Delegation via MessageBox (data/messages/message_box.md)
+
+2. START:
+   Via `partners/gemini/start_gemini.bat`
+   Antigravity automatically loads context from .gemini/GEMINI.md
+
+3. EDIT:
+   Partner works independently in `partners/gemini/workspace/`
+
+4. CONCLUSION:
+   Store report in `partners/gemini/outbox/`
+   Mark task as completed: `bach task done ID`
+
+TOKEN ZONES & STRATEGY
+-----------------------
+Based on monitor_tokens.budget_percent from bach.db:
+
+- Zone 1 (0-30%): All partners available (Claude, Gemini, etc.)
+- Zone 2 (30-60%): Low-cost partners preferred (Gemini, Ollama)
+- Zone 3 (60-80%): Local AI only (Ollama)
+- Zone 4 (80-100%): Human only (intervention required)
+
+ARCHITECTURAL NOTE
+-------------------
+Delegation is DB based (since JSON_001 migration):
+- Partner in partner_recognition table
+- Zone rules in delegation_rules table
+- Token budget in monitor_tokens table
+- Delegation messages in data/messages/message_box.md
+
+SEE ALSO
+----------
+docs/help/partner.txt Partner concept (zones, routing)
+wiki/gemini.txt Gemini details
+wiki/antigravity.txt Antigravity editor
+hub/partner.py Partner Handler Implementation
+data/bach.db partner registry (partner_recognition, delegation_rules)

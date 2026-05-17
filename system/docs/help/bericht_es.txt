@@ -1,0 +1,113 @@
+# Portability: USER
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+INFORME DE FINANCIACIÓN
+==============
+
+Crear, exportar y archivar informes de desarrollo basados ​​en ICF.
+Todos los datos del cliente se anonimizan automáticamente.
+El nombre y la fecha de nacimiento se reconocen a partir del nombre de la carpeta en data_roh/.
+
+QUICKSTART
+------------
+
+  1. Inserte la carpeta de archivos en data_roh/ (formato: “apellido, nombre”)
+  2. Utilice una de las siguientes formas:
+
+  Forma 1: Chat (recomendado):
+    “Crear informe de financiación”
+
+  Camino 2 - Escritorio .bat:
+    Foerderbericht_Pipeline.bat (ENTER para detección automática)
+
+  Forma 3 - Cadena llmauto:
+    bach chain start foerderbericht
+
+  Camino 4 - CLI:
+    bach bericht pipeline
+
+  3. El informe terminado está en output_reports/
+
+COMMANDS
+-------
+
+  bach bericht pipeline [name] [geburtsdatum] [optionen]
+    Canalización de un extremo a otro: data_raw -> output_reports
+    Nombre/fecha de nacimiento opcional (detección automática del nombre de la carpeta).
+    --período "01/01/2025 - 31/12/2025" período de informe
+    --backend claude_code|llmauto LLM backend (predeterminado: claude_code)
+    --padres "madre" "padre" Anonimizar los nombres de los padres
+    --no-cleanup Mantener carpetas intermedias
+
+  bach bericht list
+    Enumera todas las carpetas del cliente con estado (JSON/DOCX presente).
+
+  bach bericht status
+    Muestra el estado de la canalización de todas las carpetas.
+
+  bach bericht generate <json-datei> -o <output> [-t vorlage]
+    Llena la plantilla de Word con datos del archivo JSON.
+
+  bach bericht export <klient-ordner> -p <passwort>
+    Desanonimiza el informe.
+
+  bach bericht archive [name]
+    Mueve el informe terminado al archivo.
+
+  bach bericht help
+    Muestra esta ayuda.
+
+LLM-BACKENDS
+-------------
+
+  claude_code (DEFAULT) CLI de Claude Code como subproceso
+  llmauto sistema de cadena llmauto
+  anthropic_sdk Llamada API directa (necesita ANTHROPIC_API_KEY)
+
+  Las rutas estándar son claude_code y llmauto.
+  anthropic_sdk es solo una alternativa opcional (sin clave API configurada).
+
+CARPETA PIPELINE (solo 4 + README)
+---------------------------------
+
+  data_roh/ Insertar archivo de cliente (1 carpeta = 1 cliente!)
+       ↓
+  data_ano/ [Auto] Archivos anónimos
+       ↓
+  data_bundled/ [Auto] paquete + mensaje + respuesta LLM
+       ↓
+  output_reports/ [Auto] Informe terminado (anonimizado, producto final)
+
+  Instrucciones README.md
+
+  No más carpetas. Carpetas heredadas (datos/, salida/, paquetes/,
+  Reports_ano/, Reports_clean/) se eliminan automáticamente durante la limpieza.
+
+EJEMPLOS
+---------
+
+  # Completamente automático (nombre reconocido por el nombre de la carpeta)
+  bach bericht pipeline
+
+  # Con información explícita
+  bach bericht pipeline "Max Mustermann" "15.03.2016"
+
+  # Otro periodo
+  bach bericht pipeline --zeitraum "01.07.2025 - 30.06.2026"
+
+  # Verificar estado
+  bach bericht status
+  bach bericht list
+
+ARCHIVOS RELACIONADOS
+-----------------
+
+  hub/_services/document/foerderbericht_pipeline.py Orquestador
+  hub/_services/document/pipeline_runner.py Ejecutor CLI
+  controlador CLI hub/report.py
+  tools/llmauto/chains/foerderbericht.json Configuración de cadena
+  hub/_services/document/anonymizer_service.py Anonimización
+  hub/_services/document/document_pipeline.py Escáner de documentos
+  skills/_templates/report_template_geiger_universal.docx Plantilla de Word
+  usuario/documentos/foerderplaner/Informes/Carpeta de trabajo

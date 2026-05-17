@@ -1,0 +1,75 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+APIBOOK - 中央 API 文档
+======================================
+
+描述
+------------
+管理所有使用的 API 的中央数据库。存储 URL，
+身份验证类型、端点、描述和验证状态。
+将 SQLite (bach.db) 与表 api_book 结合使用。
+
+操作
+-----------
+  bach api add <name> <base_url> [--auth key|oauth|none] [--desc "..."] [--provider "..."] [--tags "a,b"]
+    注册或更新API
+
+  bach api list
+    显示所有已注册的 API（状态、身份验证、验证）
+
+  bach api show <name>
+    API 的详细信息（URL、身份验证、端点、示例）
+
+  bach api endpoint add <api_name> <METHOD> <path> [--desc "..."]
+    将端点添加到现有 API（例如 POST /v1/chat/completions）
+
+  bach api verify [<name>]
+    测试所有API或单个API（HTTP HEAD请求，超时：10秒）
+
+  bach api search <keyword>
+    按名称、描述、标签中的关键字搜索 API
+
+  bach api remove <name>
+    从数据库删除API
+
+  bach api help
+    显示此帮助
+
+示例
+---------
+  # 注册API
+  bach api add openai https://api.openai.com --auth key --desc "OpenAI API"
+
+  # 带有提供者和标签
+  bach api add github https://api.github.com --auth oauth --provider GitHub --tags "git,development"
+
+  # 添加端点
+  bach api endpoint add openai POST /v1/chat/completions --desc "Chat Completion"
+
+  # 搜索并检查
+  bach api search openai
+  bach api verify openai
+  bach api list
+
+  # 显示详细信息
+  bach api show github
+
+数据库
+---------
+  表：api_book
+  列：id、名称（唯一）、提供商、base_url、auth_type、描述、
+           端点_json、示例_json、标签、last_verified、is_active、
+           创建的_at、更新的_at、dist_type
+
+文件
+-------
+  处理程序：hub/apibook.py
+  数据库：data/bach.db (SQLite)
+
+另请参见
+----------
+  bach.py - CLI 入口点
+  hub/base.py - BaseHandler 类
+  data/bach.db - 数据库

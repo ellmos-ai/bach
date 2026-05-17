@@ -1,0 +1,120 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SALUD - Asistente de Salud
+=================================
+
+DESCRIPCIÓN:
+  El asistente sanitario gestiona los datos médicos (diagnósticos,
+  Medicamentos, valores de laboratorio, documentos, citas) y contactos médicos.
+  Sirve como un diario médico central.
+
+COMANDOS CLI (RESUMEN):
+  bach gesundheit status             Mostrar panel (citas, anomalías)
+  bach gesundheit contacts           Mostrar contactos médicos
+  bach gesundheit contacts -s <fach> Nach Fachgebiet filtern
+  bach gesundheit diagnoses          Diagnósticos activos
+  bach gesundheit diagnoses --all    Todos los diagnósticos (incluidos los curados/refutados)
+  bach gesundheit meds               Medicamentos activos
+  bach gesundheit meds --all         Todos los medicamentos (incluidos los descontinuados)
+  bach gesundheit labs               Valores de laboratorio (últimos 50)
+  bach gesundheit labs --abnormal    Solo los anormales Valores
+  bach gesundheit labs -t <test>     Filtrar por prueba (p. ej. -t TSH)
+  bach gesundheit docs               Documentos/hallazgos médicos
+  bach gesundheit docs --type <typ>  Filtrar por tipo (hallazgos|laboratorio|receta)
+  bach gesundheit appointments       Próximas citas médicas
+  bach gesundheit appointments --past Vergangene Termine
+  bach gesundheit help               Ayuda de comando detallada
+
+EXÁMENES PREVENTIVOS:
+  bach gesundheit vorsorge           Mostrar todos los exámenes preventivos
+  bach gesundheit vorsorge-faellig   Solo exámenes vencidos
+  bach gesundheit add-vorsorge "Name" --turnus <monate> --kategorie <typ>
+  bach gesundheit vorsorge-done <id> Als erledigt markieren (heute)
+  bach gesundheit vorsorge-done <id> --date DD.MM.YYYY
+
+  Ejemplos:
+    bach gesundheit add-vorsorge "Darmspiegelung" --turnus 120 --kategorie Krebs
+    bach gesundheit add-vorsorge "Hautkrebsscreening" --turnus 24 --ab-alter 35
+    bach gesundheit vorsorge-done 1 --date 15.01.2026
+
+FUNCIONES DE EXPORTACIÓN:
+  bach gesundheit export                      Contactos médicos (predeterminado)
+  bach gesundheit export --entity diagnoses   Exportar diagnósticos
+  bach gesundheit export --entity meds        Exportar medicamentos
+  bach gesundheit export --entity labs        Exportar valores de laboratorio
+  bach gesundheit export --entity all         Pasaporte sanitario (todos)
+  bach gesundheit export --format csv         Exportar como CSV
+  bach gesundheit export --format vcard       Exportar como vCard 3.0
+  bach gesundheit export --file <pfad>        Guardar en archivo
+  bach gesundheit export -s <fach>            Solo área temática específica
+
+  Ejemplo: bach gesundheit export --entity all --file gesundheitspass.txt
+
+FUNCIONES PROACTIVAS:
+  bach gesundheit reminders          Recordatorios (medicamentos, prevención, citas)
+  bach gesundheit interactions       Comprobación de interacción de medicamentos activos
+
+RECOPILACIÓN DE DATOS (AÑADIR):
+  bach gesundheit add-diagnosis "Name" [Optionen]
+    Opciones: --icd, --date, --status, --severity, --doctor, --note
+
+  bach gesundheit add-med "Name" [Optionen]
+    Opciones: --ingrediente, --dosage, --schedule, --diagnosis, --start, --note
+
+  bach gesundheit add-lab "Test" [Optionen]
+    Opciones: --value, --unit, --ref-min, --ref-max, --date, --abnormal, --doctor
+
+  bach gesundheit add-doc "Titel" [Optionen]
+    Opciones: --type, --file, --summary, --date, --doctor, --diagnosis
+
+  bach gesundheit add-appointment "Titel" [Optionen]
+    Opciones: --doctor, --fecha, --hora, --duración, --tipo, --nota
+
+  Consejo: Utilice `bach ​​​​gesundheit add-... --help` para obtener opciones detalladas.
+
+  Ejemplos:
+    bach gesundheit add-diagnosis "Hypothyreose" --icd E03.9 --status aktiv
+    bach gesundheit add-med "L-Thyroxin" --dosage 75mcg --schedule morgens
+    bach gesundheit add-lab "TSH" --value 2.5 --unit mU/L --ref-min 0.4 --ref-max 4.0
+    bach gesundheit add-doc "Blutwerte Jan 2026" --type labor --file /pfad/datei.pdf
+    bach gesundheit add-appointment "Kontrolle" --doctor 1 --date 15.02.2026 --time 10:00
+
+MOSTRAR DETALLES:
+  bach gesundheit show <typ> <id>
+
+  Tipos disponibles:
+    - contacto / médico
+    - diagnóstico / diagnóstico
+    - medicamento / medicación / droga
+    - valor de laboratorio / laboratorio
+    - documento / documento
+    - cita / cita
+    - precaución / chequeo
+
+  Ejemplos:
+    bach gesundheit show contact 1
+    bach gesundheit show diagnosis 1
+    bach gesundheit show med 1
+    bach gesundheit show lab 1
+    bach gesundheit show vorsorge 1
+
+BASE DE DATOS:
+  Tablas en bach.db (Base de datos unificada desde v1.1.84):
+  - contactos_de_salud (médicos)
+  - health_diagnoses (diagnósticos, códigos ICD)
+  - salud_medicamentos (medicamentos, dosis, horario de ingesta)
+  -health_lab_values (valores de laboratorio, rangos de referencia)
+  - documentos_de_salud (hallazgos, cartas del médico)
+  - citas_salud (citas con el médico)
+  -precaution_checks (exámenes preventivos)
+
+INTEGRACIÓN:
+  - LifeAssistant: lee las citas para la sesión informativa diaria.
+  - Documentos: Vinculado a archivos en `usuario/documentos/médico/`.
+  - Verificación de interacciones: base de datos básica con 12 interacciones frecuentes.
+
+VER TAMBIÉN:
+  bach --help abo            (Para suscripciones de fitness, etc.)
+  bach --help contact        (Contactos generales)

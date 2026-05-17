@@ -1,0 +1,84 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+## 处理程序名称
+doc - 文档索引和全文搜索
+
+## 描述
+管理基于 FTS5 的全文搜索文档索引。处理程序
+索引文件夹和文件，可以快速搜索文档和优惠
+附加功能，例如重复检测和数据保护分类。
+
+数据存储：bach.db / 表 document_index、document_fts (FTS5)
+
+## 操作
+
+FTS5-INDEX（全文搜索）：
+  index <path> 递归索引文件夹
+  index <path> -n 不要递归索引文件夹
+  index <文件> 索引单个文件
+  搜索 <查询> 全文搜索 (FTS5)
+  search <query> --limit N 将结果限制为 N（默认值：20）
+  status 查看索引统计信息
+  从头开始重建 FTS 索引
+  clear --force 清除整个索引（需要 --force 标志）
+
+文件扫描 (folder_scan)：
+  scan <path> 扫描文件夹并注册到DB中
+  最近 [天] 显示新文档（默认：7 天）
+  文件夹 显示所有已注册的文件夹和统计信息
+
+分析和数据保护 (INT06)：
+  dedup <path> 根据 SHA256 检测重复项
+  dedup <path> --min-size N 只考虑文件 >= N 字节
+  dedup <path> -n 不要递归搜索重复项
+  分类<路径> 扫描文件夹中的敏感数据（红绿灯评级）
+  分类<文件> 检查单个文件的数据保护
+
+其他：
+  help 显示此帮助
+
+## 示例
+
+# 索引和搜索文件夹
+bach doc index ~/Documents
+bach doc search "backup strategie"
+bach doc search "config" --limit 5
+
+# 重建索引并检查状态
+bach doc rebuild
+bach doc status
+
+# 显示新文件和注册文件夹
+bach doc recent
+bach doc recent 30
+bach doc folders
+
+# 重复和数据保护
+bach doc dedup ~/Downloads --min-size 1024
+bach doc classify ~/Documents
+bach doc classify /path/to/file.txt
+
+## 文件
+
+实现：
+  hub/doc.py DocHandler类，Dispatcher
+
+委托工具：
+  工具/document_indexer.py FTS5 索引
+  hub/_services/document/dedup_scanner.py 重复检测
+  hub/_services/document/privacy_classifier.py 隐私分类
+
+扫描仪集成：
+  Skills/tools/folder_diff_scanner.py 文件清单扫描（扫描操作）
+
+数据库：
+  data/bach.db SQLite 数据库文件
+  data/migrations/doc_001_fts5.sql 架构迁移
+
+## 另请参阅
+
+- bach api（用于编程访问的 Python API）
+- hub/base.py（BaseHandler基类）
+-tools/document_indexer.py（DocumentIndexer API）

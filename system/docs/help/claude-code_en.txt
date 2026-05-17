@@ -1,0 +1,212 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CLAUDE CODE - QUICK REFERENCE
+==========================
+
+Claude Code is Anthropic's official CLI tool for Claude.
+Current: Version 2.1.37+ (as of Feb 2026)
+
+INSTALLATION (RECOMMENDED: Native, NOT npm!)
+---------------------------------------------
+  # Windows PowerShell
+  irm https://claude.ai/install.ps1 | iex
+
+  # macOS/Linux/WSL
+  curl -fsSL https://claude.ai/install.sh | bash
+
+  # Alternatively: Homebrew
+  brew install --cask claude-code
+
+  # Alternatively: WinGet
+  winget install Anthropic.ClaudeCode
+
+  # DEPRECATED (not recommended):
+  npm install -g @anthropic-ai/claude-code
+
+START
+-------
+  claude # Start interactive session
+  claude.                 # Start in the current directory
+  claude "Prompt" # Start with prompt
+  claude -c # Resume last session
+  claude -r # Select session to continue
+  claude -p "query" # Non-interactive (SDK mode, then exit)
+
+IMPORTANT COMMANDS
+------------------
+  claude update Install updates
+  claude doctor check installation
+  claude mcp Configure MCP server
+  claude install Migrate to native installation
+  claude setup-token Set up auth tokens
+
+MODELS (as of 2026)
+--------------------
+  --model default Depending on account (Pro/Max/Teams: Opus 4.6)
+  --model sonnet Claude Sonnet 4.5 (fast, daily tasks)
+  --model opus Claude Opus 4.6 (complex, best reasoning)
+  --model haiku Claude Haiku (fastest, cheapest)
+  --model sonnet[1m] Sonnet with 1M token context
+  --model opusplan Opus for plan mode, Sonnet for execution
+
+  Effort Level (Opus 4.6): low, medium, high (default)
+  Env: CLAUDE_CODE_EFFORT_LEVEL=low|medium|high
+
+IMPORTANT OPTIONS (selection - 50+ available!)
+----------------------------------------------
+  -c, --continue Continue last session
+  -r, --resume [id] Resume session by ID/name
+  -p, --print Print output and exit (for pipes)
+  --model <alias|name> Select model
+  --add-dir <dir> Allow additional directories
+  --system-prompt "..." REPLACE system prompt
+  --append-system-prompt "..." EXTEND system prompt (recommended!)
+  --tools "Bash,Edit,Read" Enable only certain tools
+  --allowedTools "..." Tools without permission prompt
+  --disallowedTools "..." Disallow tools
+  --permission-mode <mode> Plan/acceptEdits/default
+  --dangerously-skip-permissions Skip all prompts (ATTENTION!)
+  --output-format json JSON Output (text/json/stream-json)
+  --max-turns N Max. agentic turns (print mode)
+  --max-budget-usd N Max. dollars for API calls
+  --chrome Chrome browser integration
+  --ide Auto-Connect to IDE
+  --verbose Verbose logging
+  --debug "api,mcp" Debug mode with categories
+  --mcp-config <file> Load MCP server from JSON
+  --agents '{...}' Define custom subagents
+  --fork-session New session ID on resume
+  --from-pr N Sessions from GitHub PR N
+  --remote "task" Start web session on claude.ai
+  --teleport continue web session locally
+
+PERMISSIONS
+-----------
+  --permission-mode <mode>
+    default standard (asks for)
+    acceptEdits Automatically accept edits
+    plan Plan mode only
+
+  --dangerously-skip-permissions Bypass ALL prompts (be careful!)
+  --allow-dangerously-skip-permissions Allow bypass (do not enable)
+
+  BACH permission profiles (recommended for remote control):
+    bach permissions list              Show profiles
+    bach permissions activate <profil> Profil in settings.json schreiben
+    bach permissions deactivate        Restore normal profile
+    -> See: permissions.txt for details
+
+OUTPUT FORMATS (with -p)
+-----------------------
+  --output-format text text (default)
+  --output-format json JSON (single result)
+  --output-format stream-json Real-time streaming
+  --include-partial-messages partial events (with stream-json)
+
+SYSTEM-PROMPT FLAGS
+-------------------
+  --system-prompt "..." REPLACES entire default prompt
+  --system-prompt-file <file> REPLACES with file (print mode only)
+  --append-system-prompt "..." EXTENDED Default prompt (recommended!)
+  --append-system-prompt-file <file> EXTENDED with file (print mode)
+
+  Rule of thumb: prefer --append-* (retains Claude Code abilities)
+
+SUBAGENTS (--agents flag)
+-------------------------
+JSON format for Custom Subagents:
+  --agents '{
+    "reviewer": {
+      "description": "Code reviewer",
+      "prompt": "You are a senior code reviewer...",
+      "tools": ["Read", "Grep", "Glob"],
+      "model": "sonnet"
+    }
+  }'
+
+ENVIRONMENT VARIABLES (selection)
+-----------------------------
+  ANTHROPIC_MODEL=<alias|name> Default model
+  ANTHROPIC_DEFAULT_OPUS_MODEL=... Opus Alias Mapping
+  ANTHROPIC_DEFAULT_SONNET_MODEL=... Sonnet Alias Mapping
+  ANTHROPIC_DEFAULT_HAIKU_MODEL=... Haiku Alias Mapping
+  CLAUDE_CODE_SUBAGENT_MODEL=... Subagent model
+  CLAUDE_CODE_EFFORT_LEVEL=low|med|high Opus Effort
+  DISABLE_PROMPT_CACHING=1 Prompt caching globally
+  DISABLE_AUTOUPDATER=1 Disable auto updates
+  CLAUDE_CODE_GIT_BASH_PATH=... Git Bash path (Windows)
+
+EXAMPLES
+---------
+  # Interactive in the BACH directory
+  cd "C:\Users\User\OneDrive\.TOPICS\.AI\.OS\BACH"
+  claude
+
+  # With Opus 4.6 and Extended Context
+  claude --model opus[1m]
+
+  # Resume last session
+  claude -c
+
+  # Non-interactive (for scripts)
+  claude -p "List all Python files"
+
+  # With additional directory
+  claude --add-dir "C:\MyProject"
+
+  # Custom System Prompt (extended, not replaced)
+  claude --append-system-prompt "Use TypeScript, no any-types"
+
+  # Opus for Planning, Sonnet for Execution
+  claude --model opus plan
+
+  # JSON output for scripting
+  claude -p --output-format json "Find all TODOs"
+
+  # With MCP server config
+  claude --mcp-config ./mcp.json
+
+  # Chrome integration
+  claude --chrome
+
+  # Limit Max Budget
+  claude -p --max-budget-usd 5.00 "Big Analysis"
+
+AUTHENTICATION
+--------------
+  1. Claude Pro/Max (recommended): Login via claude.ai account
+  2. Claude Console: OAuth via console.anthropic.com
+  3. Teams/Enterprise: Team login via claude.ai
+  4. Cloud Provider: Bedrock/Vertex/Foundry Config
+
+AUTO-UPDATES
+------------
+  Native installation: auto-update every few hours (in the background)
+  Homebrew/WinGet: Manually with `brew upgrade` / `winget upgrade`
+
+  Release channels:
+    - latest (standard, new features immediately)
+    - stable (~1 week old, skip regressions)
+
+  Config: /config → Auto-update channel
+  Or: settings.json → "autoUpdatesChannel": "stable"
+
+SEE ALSO
+----------
+  https://code.claude.com/docs/en/cli-reference Full CLI reference
+  https://code.claude.com/docs/en/setup Setup & Installation
+  permissions.txt BACH permission profiles
+  claude-code-automatization.txt Automation
+  wiki/claude-code.txt BACH Wiki (if available)
+  wiki/gemini.txt Gemini CLI/Antigravity
+  wiki/ollama.txt Local LLMs
+
+SOURCES (as of 2026-02-08)
+--------------------------
+  - https://code.claude.com/docs/en/cli-reference
+  - https://code.claude.com/docs/en/setup
+  - https://code.claude.com/docs/en/model-config
+  - https://www.npmjs.com/package/@anthropic-ai/claude-code
+  - https://github.com/anthropics/claude-code

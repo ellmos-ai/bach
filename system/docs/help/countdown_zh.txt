@@ -1,0 +1,107 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+COUNTDOWN - 带触发器的倒计时
+==================================
+
+倒计时计时器，可选择在到期时执行命令。
+
+CLI 命令
+-----------
+
+  bach countdown start <name> HH:MM:SS              开始倒计时
+  bach countdown start <name> HH:MM:SS --after "cmd" Mit Trigger-Befehl
+  bach countdown stop <name>                         取消倒计时
+  bach countdown list                                活动倒计时
+  bach countdown pause <name>                        暂停
+  bach countdown resume <name>                       恢复
+
+输出格式
+--------------
+
+  正常：[倒计时]时段：剩余 45:12
+  警告：[!] 会话：仅剩 04:58！
+
+剩余时间 < 5 分钟时会出现警告。
+
+持久性
+----------
+
+  文件：data/.countdown_state
+
+  内容：
+  {
+    “倒计时”：{
+      “会话”：{
+        "end_time": "2026-01-30T15:00:00",
+        "after_command": "关闭'时间'",
+        “暂停”：假，
+        “暂停时剩余”：空
+      }
+    }
+  }
+
+示例
+---------
+
+  #1小时会议倒计时
+  bach countdown start session 01:00:00
+  -> 倒计时“会话”开始：01:00:00
+
+  # 具有自动关闭功能
+  bach countdown start session 01:00:00 --after "shutdown 'Session beendet'"
+  -> 当它过期时，执行“bach --shutdown '会话结束'”
+
+  # 番茄计时器（25 分钟）
+  bach countdown start focus 00:25:00
+  -> 倒计时“焦点”开始：00:25:00
+
+  # 暂停和恢复
+  bach countdown pause focus
+  bach countdown resume focus
+
+  # 检查状态
+  bach countdown list
+  -> 会话：剩余 45:12
+  -> focus: 剩余 19:45 (PAUSED)
+
+TRIGGER (--after)
+-----------------
+
+--after 命令到期时执行：
+
+  --“关闭‘时间’后”结束会话
+  --after "msg send user 'Break!'" 发送消息
+  --after "task done 123" 将任务标记为已完成
+
+执行时，命令将写入队列。
+下一个 CLI 调用将执行它（或守护进程）。
+
+用例
+--------
+
+  1. 会话限制
+     bach countdown start session 02:00:00 --after "shutdown 'Limit erreicht'"
+     -> 2 小时后会话自动结束
+
+  2.番茄工作法
+     bach countdown start focus 00:25:00 --after "msg send user 'Pause machen!'"
+     -> 25 分钟后提醒暂停
+
+  3. 截止日期提醒
+     bach countdown start deadline 04:00:00
+     -> 在 < 5 分钟时发出警告，然后手动采取行动
+
+互动
+-------------
+
+倒计时是时间系统的一部分：
+  --help Clock 时间显示
+  --帮助计时器秒表
+  --检查之间的帮助
+  --helpbeat 统一时间显示
+
+---
+版本：1.0 |状态：已实施 (v1.1.83)
+请参阅：docs/CONCEPT_time_system.md

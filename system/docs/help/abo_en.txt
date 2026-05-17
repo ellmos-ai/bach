@@ -1,0 +1,98 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ABO - subscription and contract management
+=========================================
+
+DESCRIPTION:
+  Manages ongoing subscriptions and contracts (streaming, software,
+  Internet, mobile communications, etc.). Automatically recognizes subscriptions from tax items
+  and calculates monthly/annual costs.
+
+CLI COMMANDS:
+  bach abo help              Show help
+  bach abo init              Create database tables (one-time)
+  bach abo scan              Search tax items for subscriptions
+  bach abo list              Show all recognized subscriptions
+  bach abo list --alle       Incl. deactivated
+  bach abo list --bestaetigt Nur bestaetigte
+  bach abo confirm <id>      Confirm subscription detection
+  bach abo dismiss <id>      Remove error detection
+  bach abo costs             Cost breakdown by category
+  bach abo export            CSV export (data/abo_export.csv)
+  bach abo patterns          Show known subscription patterns
+  bach abo sync-mail         Synchronize subscriptions from emails
+
+OPTIONS:
+  --year YYYY tax year for scan (default: current year)
+  --dry-run scan only simulate
+
+DATABASE:
+  Tables in bach.db:
+
+  abo_subscriptions - Detected/managed subscriptions
+    id, name, provider, category, amount_monthly,
+    payment interval, cancellation link, recognized_on,
+    confirmed (0/1), active (0/1)
+
+  abo_payments - Payment links to tax items
+    id, subscription_id, item_id, amount, date
+
+  abo_patterns - Known provider detection patterns
+    id, pattern, provider, category, cancellation link
+
+  fin_contracts - Manual contract management (parallel)
+    id, name, category, provider, customer number, contract number,
+    amount, interval, notice period_days, expiry_date, ...
+
+WORKFLOW:
+  1. bach abo init (one-off: tables + default patterns)
+  2. bach subscription scan (searches tax_posten)
+  3. bach abo list (shows results)
+  4. bach abo confirm <id> (confirm real subscriptions)
+  5. bach abo dismiss <id> (remove false identifiers)
+  6. bach subscription costs (cost overview)
+  7. bach abo sync-mail (import email subscriptions, optional)
+
+KNOWN PATTERNS (selection):
+  Netflix, Spotify, Microsoft 365, Adobe, Amazon Prime, Disney+,
+  Apple/iCloud, YouTube Premium, Dropbox, Google One, ChatGPT/OpenAI,
+  Anthropic/Claude, GitHub, JetBrains, 1Password, NordVPN, ExpressVPN
+
+INTERPLAY:
+  - bach tax: Tax items as data source for subscription scan
+  - GUI: Subscriptions CRUD (#573, implemented by Gemini)
+  - fin_contracts: Manual contracts (adds automatic detection)
+  - financial_emails: Subscription-related emails (category = 'abo')
+
+EXAMPLES:
+  # Initial Setup:
+  bach abo init
+
+  # Detect subscriptions from tax data:
+  bach abo scan --jahr 2025
+
+  # List all subscriptions (including deactivated ones):
+  bach abo list --alle
+
+  # Only confirmed subscriptions:
+  bach abo list --bestaetigt
+
+  # Cost overview by category:
+  bach abo costs
+
+  # Confirm subscription:
+  bach abo confirm 8
+
+  # Remove error detection:
+  bach abo dismiss 3
+
+  # Import email subscriptions:
+  bach abo sync-mail
+
+  # Export for budget planning:
+  bach abo export
+
+  # Show known patterns:
+  bach abo patterns

@@ -1,0 +1,276 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+SISTEMA DE AGENTES BACH
+==================
+
+Sistema jerárquico de agentes jefes y expertos con sistema persona.
+
+TRES NIVELES
+-----------
+
+  Habilidades Lo Sustancial. Conocimiento, código, flujos de trabajo.
+             Portátil, exportable, el valor real.
+
+  Personas La interfaz. Nombre, estilo, carácter.
+             Personalizable (renombrar agente bach), cuestión de gustos.
+
+  Sesiones La duración. Ventana de contexto, herramientas, giros.
+             Detalle técnico.
+
+ESTRUCTURA
+--------
+
+Los agentes jefe coordinan, los expertos están especializados:
+
+  [Agente jefe]
+       |
+       +-- [Experto 1]
+       +-- [Experto 2]
+
+
+AGENTES DISPONIBLES (agentes/)
+-------------------------------------
+
+[PROFESIONAL]
+
+  ATI (ati/) — Persona: Atlas
+    Agente desarrollador de software con escáner, sesiones.
+    Funciones: Escáner de tareas, Sesiones sin cabeza, Descubrimiento de herramientas
+
+  desarrollador (desarrollador)
+    Agente desarrollador general
+
+  Producción
+    Agente de flujo de trabajo de producción
+
+  Investigación
+    Investigación científica (PubMed, Perplejidad, Consenso)
+
+  Asistente de oficina (asistente de oficina) — Persona: Clara
+    Impuestos, planificación de financiación, documentación.
+    Expertos: fiscal (Theodor), planificador de financiación (Florian)
+
+  reflexión
+    Autorreflexión y metaanálisis 
+
+
+[PRIVADO]
+
+  Asistente personal (asistente personal) — Persona: Paul
+    Gestión de citas, investigación, comunicación.
+    Expertos: Gestión del hogar (Martha)
+
+  Asistente de salud (Asistente de salud) — Persona: Helena
+    Documentación y administración médica.
+    Expertos: administrador sanitario (Gustav), psicoconsejera (Sophie)
+
+  seguro (seguro)
+    Administración de seguros
+
+  Asistente financiero (asistente financiero) - Persona: Felix
+    Planificación financiera y presupuestación
+
+
+[PRUEBA]
+
+  Agente de prueba (agente de prueba)
+    Para pruebas y experimentos
+
+
+SISTEMA PERSONA (SUGAR v3.8.0)
+------------------------------
+
+Desde SUGAR v3.8.0, los agentes y expertos han nombrado personas:
+nombres humanos + descripciones de personajes en la base de datos.
+
+  Columnas de base de datos:
+    display_name Nombre de la persona (por ejemplo, "Atlas", "Theodor")
+    texto de carácter personal (por ejemplo, "Artesano pragmático...")
+
+  Comandos:
+    bach agent rename <name> <neuer-name>   Cambiar nombre para mostrar
+    bach agent list                          Muestra personas entre paréntesis
+    bach agent info <name>                   Detalles que incluyen la persona
+
+  Resolución de nombre (resolve_agent_name):
+    1. Nombre exacto del sistema (por ejemplo, “agente fiscal”)
+    2. Nombre para mostrar (por ejemplo, "Theodor")
+    3. Subcadena (por ejemplo, "theo")
+    4. Fuzzy/Levenshtein (por ejemplo, "teodor")
+
+  Inyección de persona:
+    Cuando se inicia el agente, la persona se inyecta como un mensaje del sistema:
+    "Tu nombre es \"Theodor\". Tu personaje: asesor fiscal del pene..."
+    Ver: hub/agent_launcher.py (_get_persona_info)
+
+
+  Personas del agente jefe:
+
+    Nombre del sistema | Persona | Personaje
+    atí | Atlas | Artesano pragmático
+    asistente de oficina | Clara | Organizador estructurado
+    asistente financiero | Félix | Ahorrista atento
+    asistente de salud | elena | Compañero cariñoso
+    asistente personal | Pablo | Versátil todoterreno
+
+
+  Personas expertas:
+
+    Nombre del sistema | Persona | Personaje
+    agente fiscal | Teodoro | Asesor fiscal del pene
+    correo_financiero | Frida | detective de correo
+    servicio de suscripción | Antón | Rey de la cancelación
+    administrador sanitario | Gustavo | Archivero de hallazgos
+    psicoconsultor | Sofía | Oyente empático
+    importación_salud | Hugo | Guardián de datos concienzudo
+    gestión presupuestaria | Marta | ama de llaves ahorrativa
+    planificador de financiación | Florián | Experto en financiación
+    experto en aplicaciones | Benjamín | Entrenador de carrera
+    análisis de datos | diana | Susurrador de números
+    informe de decisión | Dietrich | Genial estratega
+    generador_de_informe | rita | Motor de informes eficiente
+    señor_tiktak | Sr.TikTok | táctico estratégico
+    servicio de transcripción | Tristán | Oyente paciente
+    wikiconcurso | Guillermo | Maestro de pruebas
+
+  Plantilla: skills/_templates/TEMPLATE_PERSONA.md
+  Migración: data/schema/migrations/034_agent_personas.py
+
+
+COMANDOS CLI
+-----------
+
+  # Lista de agentes
+  bach --agents list
+  herramientas de Python/agent_cli.py lista
+
+  # Mostrar expertos
+  herramientas de Python/expertos de agente_cli.py
+
+  # Detalles del agente
+  python tools/agent_cli.py info <nombre del agente>
+
+  # Cambiar el nombre de la persona
+  bach agent rename <name> <neuer-display-name>
+
+# Inicializar carpeta de usuario
+  herramientas de Python/agent_cli.py iniciar todo
+  python tools/agent_cli.py init <nombre-agente>
+
+  # Configurar base de datos
+  herramientas de Python/agent_cli.py setup-db
+
+  # Estado del sistema
+  herramientas de python/agent_cli.py estado
+
+
+DIRECTORIOS
+-------------
+
+  agentes/definiciones de agentes jefes (11 agentes)
+  agentes/_experts/ Carpeta de expertos con CONCEPT.md (17 expertos)
+  usuario/<agente>/ Carpeta de datos de usuario por agente
+
+IMPORTANTE: ¡Agentes y expertos son conceptos diferentes!
+  - Agentes (Jefe): Coordinar y delegar (agentes/)
+  - Expertos: Ejecución especializada (agentes/_experts/)
+  - Algunos "agentes" enumerados en la Ayuda son en realidad expertos:
+    * agente fiscal -> _expertos/tax/
+    * planificador de financiación -> _experts/foerderplaner/
+    * gestión presupuestaria -> _expertos/gestión presupuestaria/
+    * psicoconsultor -> _expertos/psicoconsultor/
+
+
+BASES DE DATOS
+-----------
+
+  bach.db:
+    - bach_agents (registro de agente + nombre_para mostrar + persona)
+    - bach_experts (registro de expertos + nombre_mostrado + persona)
+    - agent_synergies (sinergias entre agentes)
+
+  bach.db:
+    - Tablas por experto (salud_*, hogar_*, etc.)
+
+
+FLUJO DE TRABAJO
+--------
+
+1. Activar agente (a través de habilidad o CLI)
+2. El agente carga la definición de habilidades y los datos del usuario.
+3. La persona se inyecta como un mensaje del sistema (display_name + persona)
+4. Para temas especiales: delegación a expertos
+5. El experto explica, el agente jefe resume
+
+
+GUI
+---
+
+  http://127.0.0.1:8000/agents Descripción general del agente
+  http://127.0.0.1:8000/ati Detalles del agente ATI
+  http://127.0.0.1:8000/tax Detalles del agente fiscal
+
+
+ARCHIVOS
+-------
+
+  agentes/ati/carpeta de agente ATI
+  agentes/ati/ATI.md Definición de ATI
+  agentes/asistente-personal.txt
+  agentes/asistentedesalud.txt
+  agentes/bueroassistant.txt
+  agentes/agente-fiscal.txt
+  agentes/investigación.txt
+  agentes/desarrolladores.txt
+  agentes/producción.txt
+  agentes/README.md
+
+
+ESTÁNDARES
+---------
+
+Archivos obligatorios:
+
+  1. Cada agente y experto DEBE tener una HABILIDAD.md
+     (ni roll.txt, ni CONCEPT.md como reemplazo)
+  2. SKILL.md DEBE contener YAML-Frontmatter:
+     nombre, versión, tipo, descripción (mínimo)
+  3. CONCEPT.md es OPCIONAL (para conceptos detallados)
+  4. role.txt está DESPRECADO (migrar a SKILL.md)
+
+Persona System (SUGAR v3.8.0 - implementado):
+
+  Todos los agentes y expertos tienen personas nombradas en la base de datos.
+  Las personas constan de display_name (nombre) y persona (personaje).
+
+  Concepto: Persona (quién) + Habilidad (qué) + Sesión (cómo)
+    - Persona: Personaje con estilo y límites (DB + archivo opcional)
+    - Habilidad: Capacidad de utilizar código e instrucciones (exportable)
+    - Sesión: Entorno de ejecución (herramientas, giros, modelo)
+
+  Direccionamiento: Se puede dirigirse al agente a través del nombre de persona
+    (por ejemplo, "Pregúntale a Theodore sobre el impuesto")
+
+  Futuro: Archivos de persona en agentes/personas/ (migración gradual)
+
+Compatibilidad antrópica:
+
+  - Las habilidades son exportables (estándar abierto, LobeHub/Cursor, etc.)
+  - Las personas/agentes NO son portátiles (solo Claude Code/BACH)
+  - Exportar: exportación de habilidades de bach <nombre> --formato antrópico
+  - Nueva habilidad: habilidades de bach crear <nombre> --formato antrópico
+
+  Ver: ayuda de bach skills_standards
+
+
+VER TAMBIÉN
+----------
+
+  bach help skill_standards  Estándares de habilidades antrópicas
+  bach help actors           Descripción general de los actores
+  bach help bach_paths       Estructura de directorios
+  bach help practices        Principios de arquitectura
+  bach help ati              Detalles del desarrollador de software ATI
+  bach wiki lobehub          LobeHub Marketplace

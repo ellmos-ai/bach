@@ -1,0 +1,59 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+================================================================================
+ハンドラー: db
+================================================================================
+
+説明
+  中央 BACH インスタンスのデータベース操作。 SQLiteデータを管理し、
+  クエリを実行し、テーブルをエクスポートし、バックアップを作成します。スーパーベースを置き換える
+  ローカル ソリューションとしての MCP。
+
+操作
+  status データベースの概要 (テーブル、サイズ、バージョン) を表示します。
+  tables すべてのテーブルを行数とともにリストします。
+  info <table> 詳細: スキーマ、列、dist_type 分布、例
+  query "SQL" SQLクエリ(SELECTまたはDML)を実行します。
+  schema <table> インデックスを含む CREATE TABLE ステートメントを示します
+  count <table> 単一テーブル内の行数
+  import <table> テーブルを CSV または JSON としてエクスポートします
+                     オプション: --format csv|json (デフォルト: csv)
+  insert <table> データレコード（JSON形式）を挿入します
+  バックアップ data/_backups/
+
+例
+  bach db status
+ にクイック バックアップを作成します。    -> データベースのステータス、テーブル番号、サイズ、ビュー、インデックスを表示します
+
+  bach db tables
+    -> すべてのテーブルを行数とともにリストします
+
+  bach db info agents
+    -> スキーマ、列、dist_type 分布、および 5 つのサンプル行を表示します
+
+  bach db query "SELECT * FROM agents WHERE status='active' LIMIT 10"
+    -> クエリを実行し、最大 50 行を表示します
+
+  bach db schema prompts
+    -> CREATE TABLE および INDEX ステートメントを表示します
+
+  bach db export runs --format json
+    -> 「runs」を JSON として data/export/runs_YYYYMMDD_HHMMSS.json にエクスポートします
+
+  bach db insert tasks '{"title":"Test","priority":1}'
+    -> データセットを「タスク」に挿入します (列を検証します)
+
+  bach db backup
+    -> 作成されたデータ/_backups/bach_quick_YYYYMMDD_HHMMSS.db
+
+FILES
+  data/bach.db 中央 SQLite データベース
+  data/export/ エクスポートファイル（CSV、JSON）
+  data/_backups/ クイック バックアップ
+
+関連項目
+  Base.py BaseHandler クラス
+  データ/データベースディレクトリ
+  Bach CLI ヘルプ: bach --help

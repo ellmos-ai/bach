@@ -1,0 +1,282 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[cli.js（捆绑），github.com/anthropics/claude-code]
+
+CLAUDE 代码注入系统 -- 解剖
+==========================================
+
+截至：2026-02-17
+来源：cli.js v2.1.44 的逆向工程（缩小）
+方法：正则表达式分析+系统提示测试
+
+概述
+----------
+Claude Code在消息流中注入所谓的“系统提醒”
+用户和LLM之间。法学硕士（克劳德）将此视为对话的一部分，
+但无法区分它们是来自用户还是系统——
+除了 <system-reminder> XML 标签。
+
+与 BACH 的注射器系统（参见：injectors.txt）不同，用户有
+克劳德代码 没有直接控制注射。法学硕士可以
+不要打开或关闭它们。
+
+架构
+-----------
+  用户留言
+      |
+      v
+  克劳德代码 CLI（Node.js、cli.js）
+      |
+      +--> d6() -- 创建用户消息对象
+      |      字段：内容、isMeta、isVisibleInTranscriptOnly、
+      |      isCompactSummary、uuid、时间戳、待办事项、...
+      |      isMeta:true = 在用户记录中不可见
+      |
+      +--> Px() -- 系统提醒包装器
+      |      function Px(A) { return `<系统提醒>\n${A}\n</系统提醒>` }
+      |
+      +--> s5() -- 批量包装器
+      |      将 Px() 应用于消息数组中的所有文本内容
+      |
+      v
+  对 Anthropic 的 API 调用（带有注入系统提醒的消息）
+      |
+      v
+  LLM (Claude) -- 在消息流中看到系统提醒
+
+核心功能（去混淆）
+------------------------------
+  d6({内容, isMeta, ...})
+    创建类型为“user”且角色为“user”的消息对象。
+    isMeta:true 表示：消息在记录中不可见，
+    但将被送往法学硕士。
+
+  像素（文本）
+    <system-reminder> 标签中的换行文本。
+    系统中最简单的功能。
+
+  s5（消息）
+    迭代消息数组并将 Px() 应用于所有消息数组
+    文本内容。批量操作。
+
+所有 52 种注入类型
+-------------------------
+
+文件操作 (12)：
+  文件 文件读取（带内容）
+  has_read_file 文件已被读取（无操作）
+  edited_text_file 文本文件已编辑
+  edited_image_file 已编辑的图像文件（无操作）
+  pdf PDF 阅读
+  pdf_reference PDF 参考
+  图像 图像 读取
+  笔记本 Jupyter 笔记本
+  目录目录列表（通过 ls）
+  Compact_file_reference 压缩文件参考
+  selected_lines_in_ide 用户已在 IDE 中选择行
+  opens_file_in_ide 用户在 IDE 中打开的文件
+
+内存/上下文 (4):
+  nested_memory 内存子文件的内容
+                          格式：“{path}的内容：\n{content}”
+  超内存超内存注入（通用）
+  Compaction_reminder“启用自动压缩，将汇总较旧的消息”
+  date_change "日期已更改。请勿向用户提及此信息"
+
+任务/待办事项管理 (5):
+  task_reminder“最近没有使用过任务工具”（Nudge）
+  task_progress 任务进度消息（通用）
+  task_status 任务状态：已终止/已停止 + 详细信息
+  待办事项 待办事项条目
+  todo_reminder Todo nudge（旧系统，相同机制）
+
+计划模式（5）：
+  plan_mode 计划模式已激活
+  plan_mode_exit 退出计划模式
+  plan_mode_reentry 返回计划模式（读取现有计划）
+  plan_file_reference 计划文件的参考
+  verify_plan_reminder "计划已实施，请核实"
+
+团队/代理 (5):
+  agent_mention“用户想要调用代理 X”
+  delegate_mode 委托模式：仅允许团队工具
+  delegate_mode_exit 退出委托模式
+  team_context 团队上下文注入
+  teammate_mailbox 来自队友的消息（仅在团队模式下）
+
+Hooks (10):
+  hook_blocking_error 挂钩被阻止的操作（带有错误消息）
+  hook_success 挂钩成功（仅限 SessionStart/UserPromptSubmit）
+  hook_additional_context Hook 提供额外的上下文
+  hook_error_during_execution 执行期间发生钩子错误（无操作）
+  hook_non_blocking_error 非阻塞钩子错误（无操作）
+  hook_cancelled 钩子已取消（无操作）
+  hook_stopped_continuation 钩子停止继续
+  hook_system_message 挂钩系统消息
+  hook_permission_decision 挂钩权限决策
+  async_hook_response 异步钩子响应
+
+资源/预算 (2)：
+  token_usage "令牌使用情况：X/Y；剩余 Z"
+  Budget_usd“美元预算：$X/$Y；剩余$Z”
+
+技能/MCP (4)：
+  Skill_listing 可用技能列表
+  invoked_skills 调用的技能
+  dynamic_skill 动态技能（无操作，返回[]）
+  mcp_resource MCP资源加载
+
+其他(5):
+  文本 简单文本
+  queued_command 等待斜杠命令
+  Structured_output 结构化输出
+  诊断 IDE 诊断（新错误/警告）
+  output_style 有效的输出样式（例如“解释性”）
+  Critical_system_reminder 关键系统提醒（通用）
+  command_permissions 命令权限（无操作）
+
+无操作类型（不创建注入）：
+  已经读取的文件、命令权限、已编辑的图像文件、
+  hook_cancelled、hook_error_during_execution、hook_non_blocking_error、
+  dynamic_skill
+
+时序常数
+-----------------
+  Xf6 = {
+      TURNS_SINCE_WRITE：在没有任务工具的情况下 10 圈后 10 次任务微移
+      TURNS_BETWEEN_REMINDERS：10 分钟。任务推动之间 10 轮
+  }
+
+  qt4 = {
+      TURNS_BETWEEN_ATTACHMENTS：每 5 回合 5 个附件提醒
+      FULL_REMINDER_EVERY_N_ATTACHMENTS：每 5 个附件 5 个完整提醒
+  }
+
+  aQY = {
+      TOKEN_COOLDOWN：5000 代币冷却时间（5000 代币后）
+  }
+
+  sQY = {
+      TURNS_BETWEEN_REMINDERS：10 一般提醒间隔
+  }
+
+  注意：“轮次”统计所有 LLM 交互，包括工具调用、
+  不仅仅是用户消息。这就是微移看起来不规则的原因
+  从用户角度。
+
+触发逻辑（任务提醒，去混淆）
+-------------------------------------------
+  函数shouldInjectTaskReminder（消息）{
+      // 仅当任务工具可用时
+      if (!taskToolsEnabled()) 返回 false；
+      if (messages.length === 0) 返回 false;
+
+      // 自上次使用任务工具以来计算轮数
+      让turnSinceLastUse = 0；
+      让turnsSinceLastReminder = 0;
+
+      for (messages.reverse() 中的消息) {
+          if (msg.type === "助手" && msg.usedTool("TaskCreate" || "TaskUpdate"))
+              打破；  //找到的最后一个任务工具使用情况
+          自上次使用以来的次数++；
+      }
+
+      // 检查提醒是否到期
+      if (turnsSinceLastUse >= 10 && TurnsSinceLastReminder >= 10) {
+          让任务 = getAllTasks();
+          return { 类型：“task_reminder”，内容：任务 };
+      }
+      返回假；
+  }
+
+保密说明
+---------------------------
+以下类型包含明确的“永不提及”声明：
+
+  task_reminder：“确保您永远不会向用户提及此提醒”
+  todo_reminder：“确保您永远不会向用户提及此提醒”
+  date_change:“不要向用户明确提及这一点”
+  nested_memory：“不要告诉用户这一点，因为他们已经知道了”
+    （在 CLAUDE.md/MEMORY.md 更改）
+
+比较：CLAUDE CODE 与 BACH INJECTORS
+------------------------------------------
+
+  物业 |克劳德·代码 |巴赫
+  ----------------------|------------------------------------|------------------------
+  建筑|以系统为中心 |以法学硕士为中心
+  控制| CLI 控制法学硕士 |法学硕士控制喷油器
+  用户控制|无（除了钩子）|完全（打开/关闭）
+  法学硕士控制|无 |全（开/关）
+  冷却管理|回合制（刚性）|基于时间（灵活）
+  类型数量 | 52 | 52 5（具有部分功能）
+  保密| 4 个“NEVER”的家伙 |无（透明）
+  触发器|回合计数 |关键词+时间+事件
+  数据库集成|无 | 900 多个动态触发器
+  自我延伸 |不可能|通过 context_triggers 数据库
+  开源 | cli.js（缩小）|完全可读 (Python)
+
+主要差异：
+
+  1. 透明度：巴赫公开通报，克劳德·科德积极隐藏
+  2. 控制：BACH喷油器可以由LLM控制，Claude Codes不能
+  3.灵活性：BACH具有动态DB触发器，Claude Code具有硬编码常量
+  4. 冷却：BACH 使用基于时间（分钟），Claude Code 使用轮流（刚性）
+
+潜力：消息系统
+----------------------------
+注入基础设施可用于实例间通信
+使用：
+
+1. HOOKS（最简单的方法）：
+     UserPromptSubmit 上的 hook_additional_context --
+     从文件读取消息并作为上下文注入。
+     无需修补源代码。
+
+  2. 嵌套内存：
+     内存文件夹中的文件会自动注入。
+     从外部=消息到法学硕士的变化。
+     限制：仅在会话开始或 CLAUDE.md/MEMORY.md 更改时有效。
+
+  3.CRITICAL_SYSTEM_REMINDER：
+     任何消息的通用类型。
+     必须以编程方式触发（源补丁）。
+
+  4.团队邮箱：
+     已有的团队消息传递。
+     仅在团队模式下有效（l8() 检查）。
+
+建议：基于 Hook 的方法是最实用的。
+UserPromptSubmit 挂钩可以检查“收件箱”文件并
+将消息注入为 hook_additional_context。
+
+实验结果（会话 2026-02-17）
+-----------------------------------------------
+使用 14 条以上消息进行系统测试：
+
+  - 任务微调并不严格每 10 条消息出现一次，因为
+    将工具调用计算为单独的轮次
+  - 任务微调的关键字触发器：REFUTED（纯回合计数）
+  - 用户消息长度：对触发没有影响
+  - 自己的（法学硕士）输出不会触发微调
+  - 模式：在工具密集型回合后轻推会累积
+    （因为匝数越多 = 10 时速度越快）
+
+文件
+-------
+  逆向工程来源：
+    C:\Users\User\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\cli.js
+    （11.5 MB，缩小版，版本 2.1.44）
+
+  分析结果：
+    〜/.claude/projects/C--Users-User/memory/claude-code-injections-anatomy.md
+    〜/.claude/projects/C--Users-User/memory/system-injections.log
+
+另请参阅
+----------
+  jectors.txt BACH 喷油器系统（5 个喷油器）
+  claude-code.txt 克劳德代码快速参考
+  claude-code-automatization.txt 克劳德代码自动化
+  memory.txt 内存系统
+  Partner.txt 合作伙伴基础设施

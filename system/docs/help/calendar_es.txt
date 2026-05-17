@@ -1,0 +1,53 @@
+# Portability: USER
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [tabla asistente_calendario, hub/calendar_handler.py]
+
+CALENDARIO - gestión de citas y calendario
+=========================================
+
+Estado: 2026-02-08
+
+El sistema de calendario (capa 3) agrupa información crítica en el tiempo 
+varias fuentes (citas, recordatorios, rutinas).
+
+CONCEPTOS BÁSICOS
+------------
+- COMBINACIÓN: Muestra calendarios asistentes Y rutinas domésticas debidas.
+- VISTAS: Optimizadas para CLI (Hoy, Semana, Mes).
+- PERSISTENCIA: Almacenamiento en el `bach.db` central.
+
+COMANDOS CLI (calendario bach)
+---------------------------
+  hoy Citas y rutinas debidas para hoy.
+  semana Resumen semanal (lunes a domingo) con nombres de días laborables.
+  mes Todas las entradas del mes actual.
+  list Todas las próximas citas (predeterminado: 30 días).
+  agregar "Título" Crea una nueva cita (assistant_calendar).
+  show <ID> Muestra los detalles de la cita.
+  done <ID> Marca una cita como realizada.
+  eliminar <ID> Elimina una cita.
+  ayuda Muestra ayuda.
+
+DISPLAY FORMAT
+--------------
+  [lunes 28.01.] ---------------------------------------
+    09:00 Dentista Dr. Müller
+    [R04] ---- Limpiar la cocina (diario, hogar)
+
+BASE DE DATOS (capa 1)
+---------------------
+- `assistant_calendar`: Citas manuales del usuario.
+- `household_routines`: Tareas recurrentes (solo visualización).
+- `calendar_events`: (Opcional) Eventos del sistema.
+
+GUI & INTEGRACIÓN
+-----------------
+El **Panel del Asistente** en la GUI proporciona un gráfico semanal y 
+Vista mensual. El calendario sirve como línea de tiempo para la automatización de Capa 5.
+
+VER TAMBIÉN
+----------
+  bach routine         Gestión de rutinas domésticas
+  bach --help clock    Herramientas de tiempo y marca de tiempo
+  docs/help/memory.txt Horario de las sesiones

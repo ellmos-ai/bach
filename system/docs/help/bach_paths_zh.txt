@@ -1,0 +1,145 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH 路径 - 中央路径管理
+=====================================
+
+bach_paths.py 是 BACH 中所有路径的“单一事实来源”。
+不再有硬编码路径 - 一切都集中在一处。
+
+位置
+--------
+system/hub/bach_paths.py
+
+主要功能： get_path(name)
+-----------------------------
+最重要的函数 - 返回指定目录的路径。
+
+示例：
+    从 bach_paths 导入 get_path
+
+    tools_dir = get_path(“工具”) # 系统/工具/
+    template = get_path("report_template") # 报告模板
+    db = get_path("db") # bach.db 数据库
+    reports = get_path("reports") # 报告目录
+
+从任何地方导入
+-------------------
+方法 1 - 如果 hub/ 位于 sys.path 中（例如在 hub/_services/ 中）：
+    from bach_paths import BACH_ROOT, get_path
+
+方法 2 - 通用（适用于任何地方）：
+    导入系统
+    从路径库导入路径
+
+    # 自动查找bach_paths.py
+    _current = 路径(__file__).resolve()
+    对于 [_current] + list(_current.parents) 中的 _parent：
+        _hub = _parent /“系统”/“集线器”
+        如果 _hub.exists():
+            如果 str(_hub) 不在 sys.path 中：
+                sys.path.insert(0, str(_hub))
+            打破
+
+    from bach_paths import BACH_ROOT, get_path
+
+可用路径
+-----------------
+层次结构：root、bach、system、hub
+系统：数据、GUI、技能、分布
+技能：工具、帮助、代理、专家、工作流程、合作伙伴、服务、模板
+数据：日志、备份、档案、垃圾、消息
+根：用户、文档、导出、扩展
+数据库：db、bach_db、archive_db
+用户：user_documents，个人
+税：税、tax_2025、收据、捆绑包
+合作伙伴： 双子座、克劳德、奥拉玛
+报告：资金规划、报告、reports_output、reports_clients、reports_data、reports_bundles、clients、quarantine
+模板：report_template
+外部：知识库
+
+示例：工具导入
+---------------------
+问题：工具位于system/tools/
+bach_paths 的解决方案：
+
+    尝试：
+        从 c_ocr_engine 导入 ocr_pdf
+    除了导入错误：
+        从 bach_paths 导入 get_path
+        工具目录 = get_path("工具")
+        如果 str(tools_dir) 不在 sys.path 中：
+            sys.path.insert(0, str(tools_dir))
+        from c_ocr_engine import ocr_pdf
+
+示例：模板路径
+-----------------------
+    从 bach_paths 导入 get_path
+
+    template_path = get_path("报告模板")
+    # -> C:/Users/.../BACH/system/skills/_templates/bericht_template_geiger_universal.docx
+
+其他函数
+------------------
+list_paths() - 所有可用路径作为 Dict
+get_tool_path(name) - 在工具/或子文件夹中查找工具
+get_partner_dir(partner) - 合作伙伴目录（gemini、claude、ollama）
+get_belege_path(provider) - 带有可选提供商的收据路径
+solve(relpath) - 解析相对路径
+validate() - 检查所有关键路径
+
+DB-OVERRIDES
+------------
+路径可以在数据库中被覆盖：
+
+    从 bach_paths 导入 set_path_override, get_path_with_override
+
+    # 设置覆盖
+    set_path_override("知识库", "D:/My/Database")
+
+    # 使用覆盖
+    path = get_path_with_override("知识库")
+
+CLI 用法
+-----------
+    python bach_paths.py templates # 获取单个路径
+    python bach_paths.py --list # 列出所有路径
+    python bach_paths.py --validate # 验证路径
+    python bach_paths.py --set PATH name # 设置覆盖（带名称）
+    python bach_paths.py --overrides # 显示数据库覆盖
+    python bach_paths.py --json # 输出为 JSON
+
+变量（用于直接导入）
+--------------------------------
+    从 bach_paths 导入（
+        BACH_ROOT, # 存储库根
+        SYSTEM_ROOT，#系统/
+        HUB_DIR，#系统/集线器/
+        DATA_DIR, # 系统/数据/
+        SKILLS_DIR, # 系统/技能/
+        TOOLS_DIR，#系统/工具/
+        BACH_DB，#系统/数据/bach.db
+        USER_DIR，#用户/
+        REPORTS_DIR, # 用户/文档/foerderplaner/报告/
+    )
+
+自我修复
+------------
+bach_paths 计算相对于您自己位置的所有路径。
+如果巴赫被移动，一切仍然有效 -
+无需手动调整。
+
+路径修复：不需要
+--------------------------
+bach_paths.py 使手动路径修复变得不必要！
+所有运行时路径都是动态计算的。
+
+仅适用于文档更新（帮助文本、Wiki、Markdown）：
+  bach --maintain docs-paths
+
+另请参见
+----------
+- bach路径验证检查路径
+- bach --help path 路径处理程序文档
+- bach --help tools/path_healer 文档路径更新程序

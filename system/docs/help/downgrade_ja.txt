@@ -1,0 +1,72 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH DOWNGRADE - RESET VERSION
+======================================
+
+BACH を以前のバージョンにリセットします。歴史的なものを使用する
+dist_file_versions (SQ020) からのバージョン。
+
+
+使用
+----------
+
+  # ファイルの利用可能なバージョンを表示
+  bach downgrade list <datei-pfad>
+
+  # 個々のファイルをバージョンに戻す
+  bach downgrade <datei-pfad> --version <version>
+
+  # システム全体をリセットしてリリース
+  bach downgrade --release <release-id>
+
+  # ドライラン (表示のみ、実行しない)
+  bach downgrade --dry-run <datei-pfad> --version <version>
+
+
+バージョン
+---------
+
+バージョン番号: v1、v2、v3、...
+  - ハッシュベース (SHA256 が変更を自動的に検出します)
+  - 自動インクリメントにより人間が判読できる順序が与えられます
+
+
+重要
+-------
+
+- ダウングレードは CORE + TEMPLATE ファイルに対してのみ機能します
+- 古いバージョンは dist_file_versions に保存されます
+- USER_DATA にはバージョン管理がありません (ユーザーに属します)
+- ダウングレード前にバックアップをお勧めします
+
+
+例
+---------
+
+  # bach.py​​ のバージョンを表示
+  bach downgrade list system/bach.py
+
+  # bach.py​​ をバージョン 3 にリセットします
+  bach downgrade system/bach.py --version v3
+
+  # どのファイルが変更されるかを確認します
+  bach downgrade --dry-run --release r2
+
+
+アップグレードと組み合わせる
+-----------------------
+
+アップグレードとダウングレードは連携して機能します:
+  - アップグレードすると古いバージョンが自動的に保存されます
+  - ダウングレードでは保存されたバージョンが使用されます
+  - 双方向システム (順方向 + 逆方向)
+
+
+関連項目
+----------
+
+  bach --help upgrade       新しいバージョンにアップグレード
+  bach --help restore       テンプレートのリカバリ
+  bach --help seal          整合性チェック

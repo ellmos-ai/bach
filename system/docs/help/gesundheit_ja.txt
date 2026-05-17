@@ -1,0 +1,120 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+健康 - 健康アシスタント
+=================================
+
+説明:
+  保健アシスタントは医療データ（診断、
+  薬、検査値、書類、予約）および医師の連絡先。
+  中央の医学ジャーナルとして機能します。
+
+CLI コマンド (概要):
+  bach gesundheit status             ダッシュボード (予約、異常) を表示
+  bach gesundheit contacts           医師の連絡先を表示
+  bach gesundheit contacts -s <fach> Nach Fachgebiet filtern
+  bach gesundheit diagnoses          アクティブな診断
+  bach gesundheit diagnoses --all    すべての診断 (治癒/反駁を含む)
+  bach gesundheit meds               アクティブな投薬
+  bach gesundheit meds --all         すべての投薬 (中断を含む)
+  bach gesundheit labs               検査値 (過去 50)
+  bach gesundheit labs --abnormal    異常な値のみ
+  bach gesundheit labs -t <test>     検査によるフィルタリング (例: -t TSH)
+  bach gesundheit docs               医療文書/所見
+  bach gesundheit docs --type <typ>  種類 (所見|検査機関|処方箋) でフィルタリング
+  bach gesundheit appointments       今後の医師の診察
+  bach gesundheit appointments --past Vergangene Termine
+  bach gesundheit help               詳細なコマンド ヘルプ
+
+予防検査:
+  bach gesundheit vorsorge           すべての予防検査を表示
+  bach gesundheit vorsorge-faellig   期限切れの検査のみ
+  bach gesundheit add-vorsorge "Name" --turnus <monate> --kategorie <typ>
+  bach gesundheit vorsorge-done <id> Als erledigt markieren (heute)
+  bach gesundheit vorsorge-done <id> --date DD.MM.YYYY
+
+  例:
+    bach gesundheit add-vorsorge "Darmspiegelung" --turnus 120 --kategorie Krebs
+    bach gesundheit add-vorsorge "Hautkrebsscreening" --turnus 24 --ab-alter 35
+    bach gesundheit vorsorge-done 1 --date 15.01.2026
+
+エクスポート機能:
+  bach gesundheit export                      医師の連絡先 (デフォルト)
+  bach gesundheit export --entity diagnoses   診断のエクスポート
+  bach gesundheit export --entity meds        薬剤のエクスポート
+  bach gesundheit export --entity labs        検査値のエクスポート
+  bach gesundheit export --entity all         健康パスポート (すべて)
+  bach gesundheit export --format csv         CSV としてエクスポート
+  bach gesundheit export --format vcard       vCard 3.0 としてエクスポート
+  bach gesundheit export --file <pfad>        ファイルに保存
+  bach gesundheit export -s <fach>            特定の対象領域のみ
+
+  例: bach gesundheit export --entity all --file gesundheitspass.txt
+
+プロアクティブな機能:
+  bach gesundheit reminders          リマインダー (投薬、予防、予約)
+  bach gesundheit interactions       有効な薬剤の相互作用チェック
+
+データ収集 (追加):
+  bach gesundheit add-diagnosis "Name" [Optionen]
+    オプション: --icd、--date、--status、--severity、--doctor、--note
+
+  bach gesundheit add-med "Name" [Optionen]
+    オプション: --ingredient、--dosage、--schedule、--diagnosis、--start、--note
+
+  bach gesundheit add-lab "Test" [Optionen]
+    オプション: --value、--unit、--ref-min、--ref-max、--date、--abnormal、--doctor
+
+  bach gesundheit add-doc "Titel" [Optionen]
+    オプション: --type、--file、--summary、--date、--doctor、--diagnosis
+
+  bach gesundheit add-appointment "Titel" [Optionen]
+    オプション: --doctor、--date、--time、--duration、--type、--note
+
+  ヒント: 詳細なオプションについては、`bach gesundheit add-... --help` を使用してください。
+
+  例:
+    bach gesundheit add-diagnosis "Hypothyreose" --icd E03.9 --status aktiv
+    bach gesundheit add-med "L-Thyroxin" --dosage 75mcg --schedule morgens
+    bach gesundheit add-lab "TSH" --value 2.5 --unit mU/L --ref-min 0.4 --ref-max 4.0
+    bach gesundheit add-doc "Blutwerte Jan 2026" --type labor --file /pfad/datei.pdf
+    bach gesundheit add-appointment "Kontrolle" --doctor 1 --date 15.02.2026 --time 10:00
+
+詳細を表示:
+  bach gesundheit show <typ> <id>
+
+  利用可能なタイプ:
+    - 連絡先/医師
+    - 診断/診断
+    - 薬/薬/薬
+    - 研究室/実験室の価値
+    - ドキュメント/ドキュメント
+    - 約束/約束
+    - 予防措置/検査
+
+  例:
+    bach gesundheit show contact 1
+    bach gesundheit show diagnosis 1
+    bach gesundheit show med 1
+    bach gesundheit show lab 1
+    bach gesundheit show vorsorge 1
+
+データベース:
+  bach.db 内のテーブル (v1.1.84 以降の統合 DB):
+  - 健康連絡先 (医師)
+  - health_diagnoses (診断、ICD コード)
+  - health_medications (薬、投与量、摂取スケジュール)
+  - health_lab_values (検査値、参照範囲)
+  - health_documents (所見、医師の手紙)
+  - health_appointments (医師の予約)
+  - 予防策チェック (予防検査)
+
+統合:
+  - LifeAssistant: 毎日のブリーフィングの予定を読み上げます。
+  - ドキュメント: `user/documents/medical/` 内のファイルにリンクされています。
+  - インタラクション チェック: 12 の頻繁なインタラクションを含む基本データベース。
+
+関連項目:
+  bach --help abo            (フィットネスのサブスクリプションなど)
+  bach --help contact        (一般的な連絡先)

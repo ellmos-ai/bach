@@ -1,0 +1,59 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [data/schema_distribution.sql, hub/dist.py, hub/sync.py, db/schema.sql]
+
+SISTEMA DE DISTRIBUCIÓN
+===================
+
+A partir de: 2026-02-08
+
+El sistema de distribución separa el núcleo del sistema de los datos del usuario y las plantillas de lanzamiento.
+
+MODELO DE 4 NIVELES (dist_type):
+  dist_type = 0 KERNEL Absolutamente inmutable (sistema base)
+  dist_type = 1 archivo de sistema CORE (solo lectura/copia de seguridad de distribución)
+  dist_type = 2 plantilla de lanzamiento de EXTENSIÓN (1x instantánea para restablecer)
+  dist_type = 3 USER_DATA Datos de usuario individuales (no en el repositorio)
+
+CLI COMMANDS
+-----------
+  bach --dist status              Estado del sistema (sello, modo, archivos)
+  bach --dist verify              Verificar la integridad del sello
+  bach --dist scan                Escanear y registrar archivos
+  bach --dist snapshot NAME       Crear instantánea
+  bach --dist release NAME        Crear versión
+  bach --dist restore ZIP         Restaurar desde distribución ZIP
+  bach --dist install ZIP ZIEL    Instalar distribución en una nueva carpeta
+  bach --dist list [snapshots]    Lista de instantáneas
+
+LIBERAR FLUJO DE TRABAJO
+----------------
+  1. Cree una instantánea: `bach --dist instantánea "prelanzamiento"`
+  2. Crear versión: `bach --dist versión "v1.2.0"`
+  3. El ZIP de distribución se crea en dist/
+  4. Restablecer: `bach fs heal --all` restaura archivos a partir de instantáneas
+  5. Restaurar: `bach --dist restaurar bach_vanilla_1.2.0.zip`
+
+INTEGRACIÓN DE BASE DE DATOS Y SISTEMA DE ARCHIVOS
+----------------------------------
+  - Las habilidades y herramientas se sincronizan bidireccionalmente (`bach ​​--sync skills`).
+  - Las columnas `dist_type` se pueden encontrar en alrededor de 60 tablas (ver db/schema.sql).
+  - Archivo de manifiesto en la tabla `distribution_manifest`.
+  - OneDrive/Git asegura la distribución, BACH garantiza la integridad.
+
+NOTA SOBRE LA BASE DE DATOS
+---------------------
+Solo hay un `data/bach.db` central (desde v2.0 en system/db/schema.sql).
+Muchas tablas usan `dist_type` para la separación lógica:
+  - dist_type=0: datos del kernel (absolutamente inmutable)
+  - dist_type=1: datos básicos (críticos para el sistema)
+  - dist_type=2: datos de extensión (restablecibles)
+  - dist_type=3: Datos de usuario (no en el instalador)
+
+VER TAMBIÉN
+----------
+  bach --sync help         Sincronización de habilidades y herramientas
+  bach fs help             Operaciones del sistema de archivos (curar, verificar)
+  docs/help/guidelines.txt Estándares de documentación
+  system/db/schema.sql Esquema de base de datos completo (más de 210 tablas)

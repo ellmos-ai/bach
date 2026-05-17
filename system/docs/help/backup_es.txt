@@ -1,0 +1,82 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+COPIA DE SEGURIDAD Y RESTAURACIÓN
+================
+
+El sistema de copia de seguridad se basa en el concepto dist_type:
+
+  dist_type = 2 (CORE) → La distribución ES la copia de seguridad
+  dist_type = 1 (PLANTILLA) → 1x instantánea durante la instalación
+  dist_type = 0 (USER_DATA) → Rotación de copia de seguridad normal
+
+COMANDOS
+-------
+
+  # Crear copia de seguridad
+  bach backup create                  Copia de seguridad local
+  bach backup create --to-nas         También copiar a NAS
+
+  # Ver copias de seguridad
+  bach backup list                    Copias de seguridad locales
+  bach backup list --nas              Copias de seguridad NAS
+  bach backup info <name>             Detalles de la copia de seguridad
+
+  # Restaurar (SÓLO copias de seguridad de userdata_*.zip)
+  bach restore backup <name>          Copia de seguridad específica
+  bach restore backup latest          Última copia de seguridad
+
+  # Restablecer plantilla (SÓLO a través de backup_manager.py)
+  python system/tools/backup_manager.py plantilla de restauración SKILL.md
+
+¿DE QUÉ SE REALIZA UNA COPIA DE SEGURIDAD?
+-------------------
+
+  dist_type = 0 (USER_DATA):
+    ├── tareas (todas las tareas, estado, historial)
+    ├── memoria/ (sesiones, larga duración, archivos)
+    ├── datos/registros/ (registros de sesión, ruta consolidada)
+    └── usuario/ (Bandeja de entrada, Mensajes, Agenda)
+
+  NO asegurado (dist_type >= 1):
+    ├── bach.py, esquema.sql, hub/
+    ├── herramientas/, habilidades/, documentos/ayuda/
+    └── (son parte de la distribución)
+
+ROTACIÓN DE RESPALDO
+---------------
+
+  Local (_backups/): Mantenga 7 copias de seguridad
+  NAS: mantenga 30 copias de seguridad
+  OneDrive: Automático (historial de versiones)
+
+UBICACIONES DE ALMACENAMIENTO
+------------
+
+  Local: sistema/_backups/
+  NAS: \\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
+  Registros: sistema/datos/registros/ (consolidado)
+
+HERRAMIENTAS
+-----
+
+  system/tools/backup_manager.py Llamada directa posible:
+    sistema python/tools/backup_manager.py crear [--to-nas]
+    sistema Python/tools/backup_manager.py lista [--nas]
+    sistema Python/tools/backup_manager.py información <nombre>
+    python system/tools/backup_manager.py restaurar copia de seguridad <nombre>
+    python system/tools/backup_manager.py plantilla de restauración <archivo>
+    python system/tools/backup_manager.py instantánea <archivo>
+
+API
+---
+
+  POST /api/v1/backup Crear copia de seguridad (sin cabeza)
+  OBTENER /api/v1/backup/list Listar copias de seguridad
+
+HABILIDADES RELACIONADAS
+----------------
+
+  skills/_service/builder.md → CREAR, EXPORTAR, DISTRIBUIR, RESPALDAR, RESTAURAR
+  docs/BACKUP_SYSTEM.md → Concepto original de _BATCH

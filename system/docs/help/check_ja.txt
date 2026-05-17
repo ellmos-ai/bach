@@ -1,0 +1,68 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+===
+
+セットアップチェック
+
+
+説明
+===
+
+すべての BACH 依存関係が存在し、構成されているかどうかを検証します。
+変更は行わず、ステータス出力でチェックするだけです。
+
+
+COMMAND
+===
+
+bach setup check
+
+
+CHECKS
+===
+
+1。 npm が利用可能 PATH に存在する必要があります (MCP サーバーのインストール用)
+2. ellmos-codecommander-mcp グローバルにインストールされる npm パッケージ (17 ツール)
+3. ellmos-filecommander-mcp グローバルにインストールされる npm パッケージ (43 ツール)
+4. シークレット ファイル ~/.bach/bach_secrets.json が存在し、有効な JSON である必要があります。
+5. data/bach.db に bach.db データベースが存在する必要があります
+6. オプションの MCP サーバー情報チェック (インストールされていない場合はエラーなし)
+7. USER.md が存在し、パーソナライズされている必要があります (テンプレート マーカーなし)
+
+
+ステータス コード
+===
+
+[OK] チェックに合格しました
+[!!] チェックに失敗しました (アクションが必要です)
+[--] オプションのコンポーネントがインストールされていません (エラーなし)
+[??] チェックを実行できませんでした
+
+
+例
+===
+
+bach setup check
+  ステータス出力ですべての依存関係を確認します
+
+bach setup full-install
+  エラーの場合: 完全なインストールを実行します
+
+
+FILES
+===
+
+hub/setup.py SetupHandler._check()
+~/.bach/bach_secrets.json Secrets Vault
+data/bach.db BACH データベース
+../USER.md ユーザー プロファイル
+
+
+関連項目
+===
+
+docs/help/setup.txt セットアップ ハンドラー (すべての操作)
+docs/help/install.txt 初期インストールとシナリオ

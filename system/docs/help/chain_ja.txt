@@ -1,0 +1,127 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [hub/chain.py、toolchains、scheduler_jobs]
+
+CHAIN - チェーンされたツール コマンドと LLM チェーン
+================================================
+
+ステータス: 2026-02-28
+
+チェーン システムにより、BACH コマンド (ツールチェーン) のチェーンが可能になります。
+MarbleRun/llmauto による LLM エージェント チェーンの管理。
+
+参照: SYS_002、SQ074
+
+2 つのチェーン タイプ
+----------------
+
+1。ツールチェーン (データベース)
+   LLM を使用しないシーケンシャル BACH 命令。 bach.db に保存されます。
+   自動化されたワークフローに適しています。
+
+2. LLMAUTO チェーン (JSON ファイル)
+   LLM エージェントは MarbleRun (llmauto) 経由でチェーンします。として実行
+   バックグラウンド プロセス。
+
+CLI コマンド - ツールチェーン (DB)
+-----------------------------
+
+  list すべてのチェーンを表示 (ツールチェーン + llmauto)
+  run <id> ツールチェーンを実行する
+  「JSON」を追加 新しいツールチェーンを作成する
+  show <id> 詳細を表示
+  delete <id> ツールチェーンを削除します
+  log <id> ツールチェーンのログを表示します
+
+CLI コマンド - LLMAUTO CHAINS (JSON)
+-------------------------------------
+
+  create <name> 新しい llmauto チェーンを作成します
+  start <name> 開始チェーン (バックグラウンドプロセス)
+  stop <name> チェーンを停止します
+  status [名前] ステータス (すべてまたは特定のチェーン) を表示します。
+  リセット <名前> チェーンの状態をリセット
+
+作成のオプション
+---------------------
+
+  --mode 1 回 | ループ実行モード (デフォルト: 1 回)
+  --skill PATH エージェントの SKILL.md パス
+  --model MODEL AI モデル (ソネット、作品、俳句)
+
+例
+---------
+
+  # ツールチェーンをリストする
+  bach chain list
+
+  # ツールチェーンを実行します
+  bach chain run 1
+
+  # ツールチェーンの作成 (JSON 形式)
+  bach chain add '{"name":"taeglich","steps":["bach backup create","bach scan run"]}'
+
+  # ツールチェーンの詳細
+  bach chain show 1
+
+  # ログを表示する
+  bach chain log 1
+
+  # llmauto チェーンを作成します
+  bach chain create mein-workflow
+  bach chain create analyse --mode once --model opus
+
+  # llmauto チェーンを制御
+  bach chain start mein-workflow
+  bach chain status
+  bach chain status mein-workflow
+  bach chain stop mein-workflow
+  bach chain reset mein-workflow
+
+TOOLCHAIN JSON 形式
+---------------------
+
+  {
+    "name": "チェーンの名前",
+    "説明": "説明",
+    「ステップ」: [
+      "バッチタスクリスト",
+      "バッチバックアップの作成",
+      「バッチスキャンの実行」
+    ]
+  }
+
+  各ステップは完全な bach コマンドです。
+  ステップは順番に実行されます。
+
+LLMAUTO チェーン
+--------------
+
+llmauto チェーンは、独立したクロード コード プロセスとして実行されます。
+背景にあります。彼らはオーケストレーションに MarbleRun を使用しています。
+
+  data/chains/<名前>/ チェーンディレクトリ
+    config.json チェーン構成
+    state.json 現在の状態
+    SKILL.md エージェント ステートメント
+
+データベース
+---------
+
+  ツールチェーン:
+    ID、名前、説明、steps_json、created_at、updated_at
+
+  ツールチェーン実行数:
+    id、chain_id、ステータス、started_at、end_at、ログ
+
+ファイル
+-------
+  Hub/chain.py ハンドラーの実装
+  データ/チェーン/llmauto チェーン構成
+
+関連項目
+----------
+  bach --help scheduler    スケジューラー システム (ジョブ)
+  bach --help agent        エージェント ランチャー
+  bach --help tasks        タスク システム

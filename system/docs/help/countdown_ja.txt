@@ -1,0 +1,107 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+COUNTDOWN - トリガーによるカウントダウン
+==================================
+
+期限切れになったときにオプションでコマンドを実行するカウントダウン タイマー。
+
+CLI コマンド
+-----------
+
+  bach countdown start <name> HH:MM:SS              カウントダウンの開始
+  bach countdown start <name> HH:MM:SS --after "cmd" Mit Trigger-Befehl
+  bach countdown stop <name>                         カウントダウンのキャンセル
+  bach countdown list                                アクティブなカウントダウン
+  bach countdown pause <name>                        一時停止
+  bach countdown resume <name>                       再開
+
+出力形式
+--------------
+
+  通常: [COUNTDOWN] セッション: 残り 45:12
+  警告: [!] セッション: 残り 04:58 だけです!
+
+残り 5 分未満になると警告が表示されます。
+
+永続性
+----------
+
+  ファイル: data/.countdown_state
+
+  内容:
+  {
+    「カウントダウン」: {
+      「セッション」: {
+        "end_time": "2026-01-30T15:00:00",
+        "after_command": "シャットダウン '時刻'",
+        「一時停止」: false、
+        "remaining_on_pause": null
+      }
+    }
+  }
+
+例
+---------
+
+  #1 時間セッションのカウントダウン
+  bach countdown start session 01:00:00
+  -> カウントダウン「セッション」が開始されました: 01:00:00
+
+  # 自動シャットダウンあり
+  bach countdown start session 01:00:00 --after "shutdown 'Session beendet'"
+  -> 有効期限が切れると、「bach --shutdown 'セッションが終了しました'」が実行されます
+
+  # ポモドーロ タイマー (25 分)
+  bach countdown start focus 00:25:00
+  -> カウントダウン「フォーカス」が開始されました: 00:25:00
+
+  # 一時停止と再開
+  bach countdown pause focus
+  bach countdown resume focus
+
+  # ステータスを確認します
+  bach countdown list
+  -> セッション: 残り 45:12
+  -> フォーカス: 残り 19:45 (一時停止)
+
+トリガー (--after)
+-----------------
+
+ --after コマンドは有効期限が切れると実行されます:
+
+  --after "shutdown 'Time at'" セッションを終了します
+  --after "msg send user 'Break!'" メッセージを送信します
+  --after "タスク完了 123" タスクを完了としてマークします
+
+実行されると、コマンドはキューに書き込まれます。
+次の CLI 呼び出しによって、それ (またはデーモン) が実行されます。
+
+USECASES
+--------
+
+  1. セッション制限
+     bach countdown start session 02:00:00 --after "shutdown 'Limit erreicht'"
+     -> セッションは 2 時間後に自動的に終了します
+
+  2. ポモドーロテクニック
+     bach countdown start focus 00:25:00 --after "msg send user 'Pause machen!'"
+     -> 25 分後に一時停止するようリマインダー
+
+  3. 締切リマインダー
+     bach countdown start deadline 04:00:00
+     -> 5 分未満で警告し、その後は手動で行動します
+
+インタープレイ
+-------------
+
+カウントダウンは時間システムの一部です:
+  --help Clock 時間表示
+  --ヘルプタイマーストップウォッチ
+  -- チェック間のヘルプ
+  --help beat 統一時刻表示
+
+---
+バージョン: 1.0 |ステータス: 実装済み (v1.1.83)
+参照: docs/CONCEPT_time_system.md

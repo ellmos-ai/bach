@@ -1,0 +1,104 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+============
+db_sync - ProSync：多系统数据库同步
+
+
+描述
+============
+ProSync 在多个系统之间同步BACH 数据库。
+
+架构：
+- 每个系统都有一个本地数据库（~/.bach/bach.db）
+- OneDrive 充当交通枢纽 (.SYNC/bach_db_transit/)
+- 在 BACH 启动（拉）和退出（推）时同步
+- 动态识别和同步 137 个表
+
+智能合并：具有时间戳列的表使用上次写入胜利
+通过心跳进行冲突检查（5 分钟窗口）。架构防漂移
+通过共享列检测并命名为INSERT。秘密是从备份创建的
+已删除。自动清理策略：保留每台主机的最新备份
+加上 X 天以下的所有内容（默认值：7 天，每个主机 10 天）。
+
+ProSync 是可选的。单系统安装不需要同步。
+配置：bach setup prosync --multi-system / --single-system。
+
+
+操作
+===========
+bach db backup
+  创建 bach.db 的手动备份。
+  格式：bach_HOSTNAME_TIMESTAMP.bachdb（示例：bach_LAPTOP_2026-03-04T14-30-00.bachdb）
+  Traeger：本地，不是远程请求。
+
+bach db sync
+  执行完全同步：拉取（较新的备份）+合并+推送（自己的备份）。
+  冲突检查：如果其他 PC 处于活动状态（心跳 < 5 分钟），则要求确认。
+  标志：--auto 或 -y 用于非交互模式。
+  合并策略：较新的行（时间戳）增益（插入或替换）。
+
+bach db status
+  显示状态：本地数据库、备份文件夹、最近 10 个备份（主机、时间、大小）、
+  活动电脑及其心跳。
+
+bach db cleanup
+  根据保留策略删除旧备份。
+  规则：为每个主机保留最新的 10 个或 7 天以内的任何内容（可配置）。
+  返回已删除备份的数量。
+
+bach db enable
+  在启动/退出时启用自动同步（设置配置标志）。
+
+bach db disable
+  禁用自动同步。
+
+
+示例
+=========
+# 在危险操作之前手动备份
+bach db backup
+
+# 与冲突检查同步（交互式）
+bach db sync
+
+# 无人值守同步（计划任务/自动化）
+bach db sync --auto
+
+# 同步前检查状态（显示活动 PC 和备份）
+bach db status
+
+# 手动触发过时备份的清理
+bach db cleanup
+
+
+文件
+=======
+相对于 system/:
+
+hub/db_sync.py
+  核心实现（DBSyncManager、DBSyncHandler）。
+  动态表识别：137 个可同步表（而不是硬编码）。
+  通过共享列+命名 INSERT 实现架构漂移安全。
+
+~/.bach/bach.db
+  本地生产数据库（自 ProSync 以来的主数据库）。
+
+data/bach.db
+  OneDrive 后备数据库（ProSync 处于活动状态时不再直接描述）。
+
+OneDrive/.SYNC/bach_db_transit/
+  .bachdb 文件和 heartbeat.json 的传输中心。
+  Heartbeat：跟踪活动 PC（主机名、PID、时间戳）以进行冲突检测。
+
+data/config/db_sync_enabled
+  ProSync 激活标志（由“bach setup prosync --multi-system”创建）。
+
+
+另请参阅
+==========
+- docs/help/setup.txt：bach setup prosync（配置）
+- hub/bach_paths.py：BACH_DB、PROSYNC_TRANSIT_DIR、LOCAL_BACH_DIR
+- basehandler / handler框架：接口见base.py

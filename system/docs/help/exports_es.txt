@@ -1,0 +1,133 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+EXPORTACIONES: scripts de exportación de DB a Markdown
+=======================================
+
+DESCRIPCIÓN
+============
+
+BACH exporta el contenido de la base de datos como archivos Markdown para facilitar
+Legibilidad y versionado. Los scripts de exportación leen desde bach.db y
+cree archivos .md estructurados en el directorio data/. Además
+Hay una exportación de habilidades para paquetes independientes.
+
+Todos los scripts están en herramientas/ y se pueden ejecutar directamente.
+
+
+VISIÓN GENERAL
+==========
+
+  El script crea la fuente (tablas de base de datos)
+  ---------------------- ----------------------- ----------------------- ----------------------
+  agentes_export.py datos/AGENTES.md agentes, agente_sinergias
+  chains_export.py data/CHAINS.md cadenas de herramientas (bach.db)
+  socios_export.py datos/PARTNERS.md reglas_delegación,
+                                                    reconocimiento_socio
+  flujos de trabajo_export.py datos/WORKFLOWS.md skills/workflows/ (Escanear)
+  usecases_export.py data/USECASES.md casos de uso (bach.db)
+  Skill_export.py Paquete ZIP skills/ (sistema de archivos)
+
+
+DESCRIPCIONES INDIVIDUALES
+====================
+
+AGENTS_EXPORT
+-------------
+Exporta todos los agentes registrados con sinergias. Lee desde el
+tabla de agentes y agent_synergies, crea una descripción general formateada
+con nombre, tipo, estatus y relaciones de sinergia.
+
+  herramientas de Python/agents_export.py
+  Salida: data/AGENTS.md
+
+CHAINS_EXPORT
+-------------
+Exporta cadenas de herramientas (llamadas a herramientas encadenadas). Lee desde el
+tabla de cadenas de herramientas, muestra la definición de la cadena, los activadores y
+Historial de ejecución.
+
+  herramientas de Python/chains_export.py
+  Salida: data/CHAINS.md
+
+PARTNERS_EXPORT
+---------------
+Exporta la configuración de socios de múltiples LLM. Lee delegation_rules
+y socio_reconocimiento de la base de datos. Muestra perfiles de socios, fortalezas,
+Reglas de delegación y patrones de reconocimiento.
+
+  herramientas de Python/partners_export.py
+  Salida: data/PARTNERS.md
+
+WORKFLOWS_EXPORT
+----------------
+Escanea habilidades/flujos de trabajo/ en busca de archivos de flujo de trabajo (.md) y crea uno
+Descripción general. Extrae metadatos (título, objetivo, pasos) mediante expresiones regulares
+del contenido del archivo.
+
+  herramientas de Python/workflows_export.py
+  Salida: data/WORKFLOWS.md
+
+USECASES_EXPORT
+---------------
+Exporta casos de uso desde la tabla de casos de uso. Muestra el nombre del escenario,
+Descripción, manipuladores implicados y tasa de éxito.
+
+  herramientas de Python/usecases_export.py
+  Salida: data/USECASES.md
+
+SKILL_EXPORT
+------------
+Exporta una única habilidad como un paquete ZIP independiente con
+Resolución de dependencia. Copia SKILL.md, herramientas, flujos de trabajo y
+crea un archivo require.txt.
+
+  python tools/skill_export.py <nombre-habilidad> [--output <ruta.zip>]
+  Salida: archivo ZIP con estructura completa de habilidades
+
+  Nota: Para exportaciones más extensas (agente, sistema operativo), consulte exporter.py
+  y builder.txt (constructor de ayuda de Bach).
+
+
+EJEMPLOS
+=========
+
+# Actualizar todas las exportaciones de bases de datos a la vez
+herramientas de Python/agents_export.py
+herramientas de Python/chains_export.py
+herramientas de Python/partners_export.py
+herramientas de Python/workflows_export.py
+python tools/usecases_export.py
+
+# Exportar una sola habilidad
+python tools/skill_export.py buscar --output buscar_v1.zip
+
+# Verificar archivos Markdown exportados
+ls data/*.md
+
+
+ARCHIVOS
+=======
+
+tools/agents_export.py Exportación de agentes
+tools/chains_export.py Exportación de cadena de herramientas
+tools/partners_export.py Exportación de socios
+tools/workflows_export.py Exportación de flujo de trabajo
+tools/usecases_export.py Exportación de casos de uso
+tools/skill_export.py Exportación independiente de habilidades
+
+data/AGENTS.md Descripción general del agente generado
+data/CHAINS.md Descripción general de la cadena de herramientas generada
+data/PARTNERS.md Descripción general de socios generada
+data/WORKFLOWS.md Descripción general del flujo de trabajo generado
+data/USECASES.md Descripción general del caso de uso generado
+
+
+VER TAMBIÉN
+==========
+
+creación y exportación de habilidades/agentes del constructor (constructor de ayuda de bach)
+herramientas/exportador Exportación avanzada: habilidad, agente, os-fresh, os-reset
+sistema de distribución distrital
+sincronización sincronización DB (Archivos -> DB, dirección inversa)

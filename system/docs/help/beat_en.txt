@@ -1,0 +1,109 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BEAT - Unified time display
+===========================
+
+Central control of all time functions (clock, timer, countdown, between).
+
+CLI COMMANDS
+-----------
+
+  bach beat                 Show all time information
+  bach beat on              Activate all time displays
+  bach beat off             Deactivate all time displays
+  bach beat interval <sek>  Set global interval
+
+OUTPUT FORMAT
+--------------
+
+  [BEAT] 2:35 p.m
+    Timer: Session 45:12 | Research 05:23
+    Countdown: focus 19:45 remaining
+    Between: Profile "Algebra" active
+
+COMPONENTS
+-----------
+
+  1. CLOCK - time
+     Shows current time
+     -> bach clock on|off|interval
+
+  2. TIMER - stopwatch
+     Shows running timers
+     -> bach timer start|stop|list
+
+  3. COUNTDOWN - countdown
+     Shows active countdowns
+     -> bach countdown start|stop|list
+
+  4. BETWEEN - intermediate checks
+     Shows active profile
+     -> bach between on|off|use
+
+EXAMPLES
+---------
+
+  # All time information at a glance
+  bach beat
+  -> [BEAT] 14:35
+  -> Timer: Session 45:12
+  -> Countdown:-
+  -> Between: default
+
+  # Turn everything off (focused work)
+  bach beat off
+
+  # Switch everything on with a 2-minute interval
+  bach beat on
+  bach beat interval 120
+
+INTERACTION WITH INJECTORS
+----------------------------
+
+The time displays are output via the injector system.
+`bach beat` is the uniform control for this.
+
+Old commands (deprecated):
+  --inject toggle timebeat -> bach beat on|off
+  --inject toggle between -> bach between on|off
+
+New structure:
+  TimeManager manages clock, timer, countdown
+  BetweenManager manages profiles and checks
+
+ARCHITECTURE
+-----------
+
+  ┌────────────────── ───────────────────┐
+  │ TimeManager │
+  ├────────────────── ───────────────────┤
+  │ ┌─────────┐ ┌─────────┐ ┌────────┐ │
+  │ │ Clock │ │ Timer │ │Countdown│ │
+  │ └─────────┘ └─────────┘ └────────┘ │
+  └────────────────── ───────────────────┘
+               │
+               v
+  ┌────────────────── ───────────────────┐
+  │ BetweenManager │
+  │ (Profile-based between checks) │
+  └────────────────── ───────────────────┘
+               │
+               v
+  ┌────────────────── ───────────────────┐
+  │ InjectorSystem │
+  │ (Output for CLI commands) │
+  └────────────────────── ───────────────┘
+
+SEE ALSO
+----------
+
+  --help clock Time display
+  --help timer stopwatch
+  --help countdown Countdown with trigger
+  --help between between-checks with profiles
+
+---
+Version: 1.0 | Status: Implemented (v1.1.83)
+See: docs/_archive/con4_CONCEPT_time_system_90.md

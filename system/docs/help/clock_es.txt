@@ -1,0 +1,69 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+RELOJ - Visualización de la hora
+=======================
+
+Muestra la hora actual en la salida CLI.
+
+COMANDOS CLI
+-----------
+
+  bach clock on              Activar visualización de la hora
+  bach clock off             Desactivar visualización de la hora
+  bach clock status          Mostrar estado actual
+  bach clock interval <sek>  Establecer intervalo en segundos
+
+INTERVALO
+---------
+
+  intervalo 0 tiempo para CADA salida
+  intervalo 60 Tiempo solo si >= 60 segundos desde la última visualización
+  intervalo 300 Tiempo cada 5 minutos
+
+FORMATO DE SALIDA
+--------------
+
+  [RELOJ] 14:35
+
+PERSISTENCIA
+----------
+
+  Archivo: datos/.clock_state
+
+  Contenido:
+  {
+    "habilitado": verdadero,
+    "intervalo": 60,
+    "last_shown": "2026-01-30T14:35:00"
+  }
+
+EJEMPLOS
+---------
+
+  # Hora de cada salida
+  bach clock on
+  bach clock interval 0
+
+  # Tiempo cada 5 minutos
+  bach clock interval 300
+
+  # Verificar estado
+  bach clock status
+  -> Reloj: ENCENDIDO | Intervalo: 60s | Último: 14:35
+
+INTERPLAY
+-------------
+
+El reloj es parte del sistema horario:
+  --ayuda cronómetro temporizador
+  --ayuda cuenta regresiva Cuenta regresiva con disparador
+  --ayuda entre cheques
+  --help beat Visualización de tiempo unificada
+
+Todas las funciones de tiempo se resumen mediante `bach beat`.
+
+---
+Versión: 1.0 | Estado: Implementado (v1.1.83)
+Ver: docs/CONCEPT_time_system.md

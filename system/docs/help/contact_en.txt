@@ -1,0 +1,93 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CONTACT - Contact management
+===========================
+
+DESCRIPTION:
+  Manages personal and business contacts with free text search,
+  Context filtering and birthday overview. Contacts are sent via
+  Soft delete disabled (not deleted).
+
+COMMANDS:
+  bach contact list              Show all active contacts
+  bach contact list --all        Incl. inactive contacts
+  bach contact list -c privat    Filter by context
+  bach contact search <term>     Free text search (name, email, phone, company, notes, tags)
+  bach contact add "Name"        Create new contact
+  bach contact show <id>         Show contact details
+  bach contact edit <id>         Edit contact
+  bach contact delete <id>       Deactivate contact (soft delete)
+  bach contact birthday          Birthdays (next 30 days)
+  bach contact birthday 90       Birthdays (next 90 days)
+  bach contact export            Export all contacts (Text/CSV/vCard)
+  bach contact export --type arzt --format csv  Doctor contacts as CSV
+  bach contact export --format vcard --file out.vcf  vCard export to file
+  bach contact help              This help
+
+OPTIONS FOR ADD/EDIT:
+  --context, -c context (private|professional|insurance|finance|doctor|other)
+  --email, -e email address
+  --phone, -p telephone (landline)
+  --mobile, -m mobile number
+  --address, -a address
+  --birthday, -b birthday (DD.MM.YYYY or YYYY-MM-DD)
+  --company company/organization
+  --position Position/role in the company
+  --tags Tags separated by commas (e.g. "dev,it,freelance")
+  --note note (if edit: is appended to existing notes)
+  --name Change name (only with edit)
+
+OPTIONS FOR EXPORT:
+  --type, -t Export only specific context (doctor, private, etc.)
+  --format, -f Export format: txt (default), csv, vcard
+  --file, -o output file (otherwise console output)
+
+CONTEXTS:
+  private friends, family, acquaintances
+  professional work colleagues, business contacts
+  insurance insurance advisors, agencies
+  finance tax advisor, bank advisor
+  Doctors, therapists, pharmacies
+  other Everything else
+
+DATABASE:
+  Main table: bach.db/contacts
+  Fields: id, name, category, email, phone, phone_mobile, street, birthday,
+          organization, position, tags, notes, is_active, created_at, updated_at
+
+EXAMPLES:
+  # Create contact with all details:
+  bach contact add "Dr. Mueller" --context arzt --phone 030-12345 --email mueller@example.de --address "Hauptstr. 1, 10115 Berlin"
+
+  # Professional contact with company and position:
+  bach contact add "Lisa Schmidt" --context beruflich --company "Beispiel GmbH" --position "Teamlead" --tags "dev,it" --email lisa@example.com
+
+  # Find contact:
+  bach contact search Mueller
+
+  # Change phone number and company:
+  bach contact edit 5 --phone 030-99999 --company "Neue GmbH" --note "Gewechselt ab Jan 2026"
+
+  # All insurance contacts:
+  bach contact list -c versicherung
+
+  # Who's birthday is coming soon?
+  bach contact birthday 60
+
+  # Export examples:
+  bach contact export                              # Text format in console
+  bach contact export --format csv                 # CSV in console
+  bach contact export --type arzt --format csv     # Only doctor contacts as CSV
+  bach contact export --format vcard --file kontakte.vcf  # vCard in file
+  bach contact export --file export.csv            # CSV in file
+
+INTERPLAY:
+  - Separate from health_contacts (doctor contacts in the health module)
+  - contacts = central contact table (CLI + GUI + vCard export)
+  - GUI: Contacts tab (when available)
+
+KNOWN LIMITATIONS:
+  - "bach contact list --all" shows inactive contacts WITHOUT visual marking
+  - Tags are searched in Search but not displayed in list view

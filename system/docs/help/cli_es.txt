@@ -1,0 +1,162 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CONVENCIONES CLI (v2.0 basada en registro)
+=======================================
+
+ARQUITECTURA:
+----------------------------------------
+BACH utiliza el descubrimiento automático a través de core/registry.py:
+- Los controladores en hub/*.py se encuentran automáticamente
+- No más mapas de controladores estáticos (como en v1.x)
+- Orden de enrutamiento: --handler → Comandos en línea → exportación de habilidades →
+  restaurar copia de seguridad → Registro → Herramienta alternativa
+
+PATRÓN ESTÁNDAR (como git, npm, docker):
+  bach SUBCOMMAND [args]     Ejecutar acción
+  bach --HANDLER [args]      Manejador con -- prefijo
+
+DOS RUTAS DE ACCESO:
+----------------------------------------
+1. CLI (para humanos):
+   Lista de tareas de Python bach.py
+
+2. API de biblioteca (para LLM/Scripts - PREFERIDO):
+   de la tarea de importación bach_api
+   task.list()
+
+SUBCOMANDOS PRINCIPALES (administración):
+----------------------------------------
+  gestión de tareas (agregar, listar, listo, bloquear, siguiente)
+  mem Memoria de trabajo (escritura, lectura, estado, archivo)
+  memoria Manejador de memoria extendida (hechos, lecciones, archivo)
+  sistema de mensajería de mensajes (enviar, listar, leer, ping)
+  lección Lecciones aprendidas (agregar, enumerar, buscar, archivar)
+  copia de seguridad Copia de seguridad de las bases de datos
+  restaurar Restaurar desde copia de seguridad
+  distribuciones dist y gestión de lanzamientos
+  red de socios socios (coordinación Claude/Gemini/Ollama)
+  sesión Gestión de Sesiones y Resúmenes
+
+AGENTES Y EXPERTOS (especialidades):
+----------------------------------------
+  experto en impuestos (oficina de impuestos, plazos, recibos)
+  ati ATI agente (desarrollo de concepto)
+  servicio de suscripción abo (cancelaciones, contratos)
+  generador de informes de informes (informes de financiación ICF)
+  asistente de salud
+  gestión del presupuesto del hogar
+  seguros Gestión de Seguros
+
+SERVICIOS E INFRAESTRUCTURA:
+----------------------------------------
+  control del panel de interfaz gráfica de usuario (inicio, parada, estado)
+  Servicio en segundo plano del programador para mantenimiento (anteriormente: demonio)
+  escáner de entrada de escaneo (bandeja de entrada, OCR)
+  conector Gestión de conectores (encuesta, despacho, demonio de configuración)
+  mount Montaje de recursos externos
+  motor de cadena de herramientas (automatización)
+  gestión de rutina de rutina (mañana/tarde/inicio del proyecto)
+  recurrente Tareas recurrentes
+
+AUTO EXPANSIÓN Y GANCHOS:
+----------------------------------------
+  habilidades crear <nombre> --tipo <tipo> Andamio nueva habilidad
+                                       Tipos: herramienta, agente, experto, manejador, servicio
+  recarga de habilidades Hot Reload (Registro + Herramientas + Habilidades)
+  Estado de los ganchos Estado de todos los ganchos y oyentes.
+  eventos de ganchos Listar todos los eventos
+  registro de ganchos Últimas ejecuciones de ganchos
+  prueba de ganchos <evento> Emitir evento de prueba
+  lista de complementos Mostrar complementos cargados
+  carga de complementos <ruta> Cargar complemento desde plugin.json
+  descargar complementos <nombre> Descargar complemento
+  Los complementos crean el manifiesto del complemento Scaffold <nombre>.
+  herramientas de complementos Mostrar todas las herramientas de complementos
+
+HERRAMIENTAS DEL SISTEMA:
+----------------------------------------
+  base de conocimientos wiki (wiki/)
+  Herramientas de gestión de scripts internos.
+  sistema de prueba y validación tuev
+  casos de prueba de casos de uso (parte de tuev)
+  sistema de hora del reloj (ahora, formatear, analizar)
+  temporizador Iniciar/parar el temporizador
+  cuenta atrás Crear cuenta atrás
+  Beat Pantalla de tiempo unificada (reloj, temporizador, cuenta regresiva, entre)
+  entre el tiempo entre dos puntos en el tiempo
+  mantener funciones de mantenimiento (optimización de base de datos, limpieza de registros)
+  test test runner (humo, integración, completo)
+
+MANEJADOR CON -- (funciones extendidas):
+----------------------------------------
+  --startup inicio de sesión (inicialización, --vigilancia de sondeo)
+  --shutdown Finalizar sesión (limpieza)
+  --status Estado general del sistema
+  --help [tema] Mostrar ayuda para temas/módulos
+  --memory Manejador de memoria detallado (hechos, lecciones)
+  --análisis de base de datos db (esquema/estadísticas de bach.db)
+  --tokens Control de costos de tokens
+  --inyectar sistema inyector para herramientas
+  --context Cargador de contexto para sesiones
+  --logs análisis de registros del sistema (datos/logs/)
+  --docs verificación de integridad de la documentación
+  --instantánea Congelar el estado del sistema
+  --basura de basura y restauración
+  --fs protección del sistema de archivos (verificar, curar, estado)
+  --connections Conexiones y actores-Modelo
+
+COMANDOS EN LÍNEA (basados en herramientas, sin controlador):
+----------------------------------------
+protección del sistema de archivos fs (verificar, curar, clasificar, escanear)
+  administrador de archivos (leer, escribir, copiar, mover, eliminar)
+  ocr Motor OCR (ID del documento o ruta PDF)
+  llm Protocolo Multi-LLM (--partner=<nombre>)
+  gráfico de llamada de mapa/mapeador de dependencias
+
+CASOS ESPECIALES:
+----------------------------------------
+  exportación de habilidades Exportación de habilidades con resolución de dependencia
+  restaurar copia de seguridad <archivo> restaurar copia de seguridad
+
+AMBAS VARIANTES ACEPTADAS:
+----------------------------------------
+Por razones históricas, estas suelen funcionar híbridas:
+  bach partner list     = bach --partner list
+  bach gui start        = bach --gui start
+
+DID-YOU-SEAN (coincidencia difusa):
+----------------------------------------
+Si hay errores tipográficos, BACH sugiere comandos similares (Levenshtein ≤2):
+  $ bach lista de socios → "¿Quiso decir: socio?"
+  $ bach taks add → "¿Quiso decir: tarea?"
+
+RESERVA DE HERRAMIENTA:
+----------------------------------------
+Si no se encuentra ningún controlador, BACH prueba una herramienta desde herramientas/:
+  bach skill_export  → herramientas/skill_export.py
+  bach backup_manager → tools/backup_manager.py
+
+MANEJADORES REGISTRADOS (a partir del 4 de marzo de 2026):
+----------------------------------------
+109+ controladores mediante descubrimiento automático (hub/*.py):
+abo, agentes, ati, copia de seguridad, batea, cadena, calendario,
+conexiones, conector, consolidación, contacto, contexto, cuenta regresiva, cv,
+demonio (= programador), datos, db, dist, doc, docs, correo electrónico, extensiones, fs, salud, gui,
+Hogar, chequeo de salud, ayuda, ganchos, inyectar, largo, lección, registros, mantener,
+mem, memoria, monte, msj, notificar, obsidiana, ollama, pareja, camino, perfil,
+perfilador, recurrente, reflexión, rutina, escaneo, sesión, apagado, habilidad,
+habilidades, hogar inteligente, instantánea, fuentes, inicio, estado, impuestos, sincronización, tarea,
+prueba, temporizador, tokens, herramienta, herramientas, basura, tuev, actualización, caso de uso,
+seguros, wiki
+
+VER TAMBIÉN:
+----------------------------------------
+  índice de reglas de prácticas de ayuda
+  ayuda para nombrar convenciones de nomenclatura
+  ayuda con la codificación Estándares de codificación
+  ayuda actores Modelo de actores (Conexiones)
+  ayuda socios perfiles de socios
+  ayuda ganchos gancho marco (14 eventos)
+  ayuda sistema de autoextensión autoextensible

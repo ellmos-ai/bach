@@ -1,0 +1,84 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+## NOMBRE DEL MANEJADOR
+doc - Índice de documentos y búsqueda de texto completo
+
+## DESCRIPCIÓN
+Gestión de un índice de documentos basado en FTS5 para búsqueda de texto completo. el manejador
+indexa carpetas y archivos, permite búsquedas rápidas en documentos y ofertas
+Funciones adicionales como detección de duplicados y clasificación de protección de datos.
+
+Almacenamiento de datos: bach.db / table document_index, document_fts (FTS5)
+
+## OPERACIONES
+
+FTS5-INDEX (búsqueda de texto completo):
+  index <ruta> Indexar carpetas de forma recursiva
+  index <ruta> -n No indexar carpetas de forma recursiva
+  index <archivo> Indexar archivo individual
+  buscar <consulta> búsqueda de texto completo (FTS5)
+  buscar <consulta> --limit N Limitar resultados a N (predeterminado: 20)
+  estado Ver estadísticas del índice
+  reconstruir el índice FTS desde cero
+  clear --force Borrar el índice completo (requiere el indicador --force)
+
+ESCANEO DE ARCHIVOS (folder_scan):
+  escanear <ruta> Escanear la carpeta y registrarse en la base de datos
+  reciente [días] Mostrar documentos nuevos (predeterminado: 7 días)
+  carpetas Mostrar todas las carpetas registradas y estadísticas
+
+ANÁLISIS Y PROTECCIÓN DE DATOS (INT06):
+  dedup <ruta> Detectar duplicados según SHA256
+  dedup <ruta> --min-size N Solo considera archivos >= N bytes
+  dedup <ruta> -n No buscar duplicados de forma recursiva
+  clasificar <ruta> Escanear carpeta en busca de datos confidenciales (clasificación de semáforo)
+  clasificar <archivo> Verificar archivo individual para protección de datos
+
+OTROS:
+  ayuda Mostrar esta ayuda
+
+## EJEMPLOS
+
+# Indexación y búsqueda de carpetas
+bach doc index ~/Documents
+bach doc search "backup strategie"
+bach doc search "config" --limit 5
+
+# Reconstrucción de índice y comprobación de estado
+bach doc rebuild
+bach doc status
+
+# Mostrando nuevos archivos y carpetas registradas
+bach doc recent
+bach doc recent 30
+bach doc folders
+
+# Duplicados y protección de datos
+bach doc dedup ~/Downloads --min-size 1024
+bach doc classify ~/Documents
+bach doc classify /path/to/file.txt
+
+## ARCHIVOS
+
+Implementación:
+  hub/doc.py Clase DocHandler, Dispatcher
+
+Herramientas delegadas:
+  herramientas/document_indexer.py Indexación FTS5
+  hub/_services/document/dedup_scanner.py Detección de duplicados
+  hub/_services/document/privacy_classifier.py Clasificación de privacidad
+
+Integración del escáner:
+  skills/tools/folder_diff_scanner.py Escaneo de inventario de archivos (operación de escaneo)
+
+Base de datos:
+  data/bach.db Archivo de base de datos SQLite
+  data/migrations/doc_001_fts5.sql Migración de esquema
+
+## VER TAMBIÉN
+
+- bach api (API de Python para acceso programático)
+- hub/base.py (clase base BaseHandler)
+- herramientas/document_indexer.py (API de DocumentIndexer)

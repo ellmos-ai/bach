@@ -1,0 +1,268 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+AUTOMATIZACIÓN DE CLAUDE CODE
+============================
+
+Instrucciones para automatizar Claude Code a través de la línea de comando (CLI).
+
+
+VISIÓN GENERAL
+---------
+Claude Code se puede operar en modo no interactivo, lo que significa que
+Integración en scripts, canales de CI/CD y flujos de trabajo automatizados habilitados.
+
+
+1. MODO NO INTERACTIVO (-p / --print)
+----------------------------------------
+El parámetro más importante para la automatización. Claude da la respuesta
+y termina.
+
+    # Solicitud fácil
+    claude -p "Explícame qué hace esta función"
+
+    # Con entrada de archivo a través de tubería
+    gato mycode.py | claude -p "Analizar este código"
+
+    # Acerca de la entrada estándar
+    echo "¿Qué es 2+2?" | claude -p
+
+
+2. FORMATOS DE SALIDA PARA SCRIPTING
+-------------------------------
+Texto (predeterminado):
+    claude -p "Su solicitud"
+
+JSON (resultado único):
+    claude -p "Lista de 5 lenguajes de programación" --output-format json
+
+Transmitir JSON (transmisión en tiempo real):
+    claude -p "Escribir una prueba" --output-format stream-json
+
+
+3. PERMISOS Y SEGURIDAD
+--------------------------------
+Totalmente automático sin confirmaciones:
+    # PRECAUCIÓN: ¡Úselo únicamente en entornos seguros/aislados!
+    claude -p "Crear un index.html" --dangerfully-skip-permissions
+
+Elija el modo de permiso:
+    # Modo de planificación: Claude planifica los cambios antes de la ejecución.
+    claude -p "Código de refactorización" --plan de modo de permiso
+
+    # Modo DontAsk: sin consultas durante la ejecución
+    claude -p "Actualizar dependencias" --permission-mode dontAsk
+
+Con herramientas limitadas:
+    # Solo permitir ciertas herramientas
+    claude -p "Mostrar estado de git" --allowedTools "Bash(git:*)"
+
+    # Prohibir ciertas herramientas
+    claude -p "Analizar código" --disallowedTools "Editar escritura"
+
+    # Deshabilitar todas las herramientas excepto las específicas
+    claude -p "Solo lectura" --tools "Lectura"
+
+
+4. GESTIÓN DE SESIONES
+---------------------
+Continuar última sesión:
+    claude --continue
+
+Continuar una sesión específica a través de ID:
+    claude --resume SESSION_ID
+
+Crear una nueva ID de sesión en el currículum:
+    claude --continuar --fork-session
+
+
+5. CONTROL DE PRESUPUESTO Y MODELO
+------------------------------
+    # Establecer límite de presupuesto (en USD)
+    claude -p "Análisis complejo" --max-budget-usd 1.00
+
+    # Seleccionar modelo
+    claude -p "Pregunta rápida" --soneto modelo
+    claude -p "Tarea compleja" --modelopus
+
+    # Modelo alternativo en caso de sobrecarga
+    claude -p "solicitud" --soneto modelo alternativo
+
+
+6. PERSONALIZAR EL INDICADOR DEL SISTEMA
+-------------------------
+    # Configure su propio indicador del sistema
+    claude -p "solicitud" --system-prompt "Eres un experto en Python"
+
+    # Expandir el mensaje del sistema
+    claude -p "Solicitud" --append-system-prompt "Responder siempre en alemán"
+
+
+7. INTEGRACIÓN CI/CD
+--------------------
+Ejemplo: revisión de código en proceso
+
+    #!/bin/bash
+    # código_revisión.sh
+    claude -p "Revise este código para conocer problemas de seguridad y mejores prácticas" \
+      --formato de salida json\
+      --omitir-permisos-peligrosamente \
+      --presupuesto-max-usd 1.00\
+      --modelo soneto
+
+Ejemplo: Documentación automática
+
+    #!/bin/bash
+    #generar_docs.sh
+    gato src/main.py | claude -p "Crear documentación API en formato Markdown" \
+      --texto en formato de salida \
+      --dangerfully-skip-permissions > docs/API.md
+
+Ejemplo: generación de prueba
+
+    #!/bin/bash
+    #generar_pruebas.sh
+    claude -p "Generar pruebas unitarias para la función en src/utils.py" \
+      --omitir-permisos-peligrosamente \
+      --allowedTools "Leer Escritura" \
+      --presupuesto-max-usd 0,50
+
+
+8. STREAMING BIDIRECCIONAL
+----------------------------
+Para integraciones complejas con comunicación en tiempo real:
+
+    claude -p "..." \
+      --formato de entrada flujo-json\
+      --formato de salida flujo-json\
+      --incluir-mensajes-parciales
+
+
+9. INTEGRACIÓN DEL SERVIDOR MCP
+-------------------------
+    # Cargar la configuración de MCP (archivo JSON o cadena)
+    claude -p "solicitud" --mcp-config ./mcp-config.json
+
+    # Cargar múltiples configuraciones
+    claude -p "solicitud" --mcp-config ./config1.json ./config2.json
+
+    # Utilice únicamente servidores MCP de Config
+    claude -p "solicitud" --mcp-config ./mcp-config.json --strict-mcp-config
+
+    # Administrar servidores MCP
+    claude mcp # Gestión interactiva
+    claude mcp --help # Mostrar comandos MCP
+
+
+10. CARACTERÍSTICAS AVANZADAS
+-----------------------
+Salida JSON estructurada:
+    # Validar esquema JSON
+    claude -p "Dame datos de usuario" --json-schema '{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}'
+
+Usar agentes:
+    # Agentes preconfigurados
+    claude -p "Revisar código" --agente revisor
+
+    # Defina sus propios agentes
+    claude -p "Solicitud" --agents '{"tester": {"descripción": "Código de prueba", "prompt": "Usted es un experto en control de calidad"}}'
+
+Integración de complementos:
+    # Cargar complementos desde el directorio
+    claude -p "solicitud" --plugin-dir ./my-plugins
+
+Permitir directorios adicionales:
+    # Amplía el acceso a las herramientas
+    claude -p "Analizar múltiples proyectos" --add-dir /path/to/project1 /path/to/project2
+
+Modo de depuración:
+    # Con filtro
+    claude -p "solicitud" --debug "api,hooks"
+
+    # Sin categorías específicas
+    claude -p "solicitud" --debug "!1p,!archivo"
+
+    # Escribir el registro de depuración en el archivo
+    claude -p "solicitud" --debug-file ./debug.log
+
+
+REFERENCIA DE PARÁMETROS IMPORTANTE
+---------------------------
+Descripción del parámetro
+--------- ------------
+-p, --print Modo no interactivo (requerido para la automatización)
+--texto en formato de salida, json, flujo json
+--texto en formato de entrada, flujo-json
+--dangerfully-skip-permissions No hay cuadros de diálogo de confirmación
+--modo-permiso aceptar ediciones, omitir permisos, predeterminado, delegar, no preguntar, planificar
+--allowedTools Herramientas permitidas (por ejemplo, "Bash(git:*) Read")
+--disallowedTools Herramientas prohibidas
+--tools lista de herramientas o "" para ninguna, "predeterminada" para todas
+--max-budget-usd Límite de presupuesto en USD
+--modelo modelo (soneto, obra o nombre completo)
+--fallback-model Retorno en caso de sobrecarga
+--system-prompt Mensaje propio del sistema
+--append-system-prompt Expandir el mensaje del sistema
+--continuar Continuar la última sesión
+--resume Reanudar sesión mediante ID
+--fork-session Nueva ID de sesión cuando continúe
+--session-id Establecer ID de sesión específica (UUID)
+--mcp-config Configuraciones del servidor MCP
+--strict-mcp-config Utilice únicamente MCP desde la configuración
+--json-schema Esquema JSON para salida validada
+--agent Agente preconfigurado
+--agents Agentes propios como JSON
+--plugin-dir Directorios de complementos
+--add-dir Permitir directorios adicionales
+--debug Modo de depuración con filtro opcional
+--debug-file Escribe registros de depuración en un archivo
+--no-session-persistence No guardar sesión (solo con --print)
+
+
+11. CONTROL REMOTO (APLICACIÓN MÓVIL)
+-------------------------------
+Claude Code se puede controlar de forma remota a través de la aplicación móvil Claude.
+Error conocido: --dangerfully-skip-permissions no funciona con control remoto.
+
+Solución: Usar perfiles de permisos BACH:
+
+    # Automático (recomendado):
+    # Escritorio: Claude_RemoteControl.bat
+    # Menú BACH: Tecla [P]
+
+    #Manual:
+    bach permissions activate remote_control
+    claude --omitir-permisos peligrosamente
+    # -> ingresa /rc, escanea el código QR
+    # Después de completar:
+    bach permissions deactivate
+
+    # Personalizar perfiles:
+    bach permissions set remote_control allow=mcp__neuer_server__*
+    bach permissions show remote_control
+    bach permissions status
+
+Consulte: permisos.txt para obtener la documentación completa.
+
+
+INSTRUCCIONES DE SEGURIDAD
+-------------------
+1. --omitir permisos peligrosamente solo en entornos aislados
+   (areneros, contenedores).
+2. Establece límites presupuestarios para evitar costes inesperados
+3. Restrinja las herramientas con --allowedTools si es posible
+4. No envíe datos confidenciales a Claude a través de pipes
+
+
+VER TAMBIÉN
+----------
+- claude --help Ayuda completa
+- control de instalación de claude doctor
+- claude mcp administra el servidor MCP
+- gestión de complementos del complemento claude
+- claude setup-token Configura un token de autenticación duradero
+- claude install [destino] Instalar compilación nativa (estable/última/versión)
+- actualización de claude Buscar actualizaciones
+- claude-code.txt Información general del Código Claude
+- permisos.txt Perfil de permiso BACH (control remoto)

@@ -1,0 +1,139 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [tabla de mensajes, hub/messages.py, hub/partner.py]
+
+COMMUNICATE - Sistema de comunicación del socio
+==========================================
+
+FECHA: 2026-02-08
+
+El sistema de comunicación (capa 4) gestiona el intercambio de información
+entre todas las instancias (humanos e IA).
+
+CONCEPTOS BÁSICOS
+------------
+1. MENSAJERÍA: Enrutamiento de mensajes persistentes en la BD.
+2. PROTOCOLOS: Procesos estandarizados (apretón de manos, solicitud, transferencia).
+3. ESPACIOS DE TRABAJO: Directorios físicos para el intercambio de archivos (sistema/partners/).
+4. PRESENCIA: Mecanismos activos de estado en línea y vigilancia.
+
+SOCIO REGISTRADO (10)
+-------------------------
+Sistema Interno:
+  usuario Usuario [ ✓ Activo]
+  claude Claude (Opus 4.6) [ ✓ Activo]
+  bach      BACH Core System       [ ✓ Activo]
+
+IA local:
+  ollama Mistral 7B [ ✓ Activo ]
+  llama Llama 3 8B [ ✓ Activo]
+
+IA externa:
+  géminis Google Géminis [ ✓ Activo ]
+  gpt OpenAI GPT [○ Inactivo]
+
+API:
+  pubmed PubMed MCP [ ✓ Activo]
+
+Servicios:
+  conducir Google Drive [ ✓ Activo]
+
+Herramientas:
+  canva Canva MCP [ ✓ Activo]
+
+DETECCIÓN DE SOCIOS
+-----------------
+Las palabras clave activan automáticamente la selección de socios:
+
+  ollama: borrador de correo electrónico masivo, incrustado, sin token
+  pubmed: genes, proteínas, enfermedades, clínicas, biomédicas.
+  google_drive: google drive, buscar documento, buscar unidad
+  canva: diseño, presentación, cartel, infografía.
+  Géminis: investigación profunda, documento extenso, análisis de conceptos
+
+CANALES DE RUTA
+---------------
+| Socio | Canales | Estado |
+|---------|---------|--------|
+| ollama | API directa, cola | ✓ |
+| usuario | Cuadro de mensaje | ✓ |
+| publicado | Servidor MCP | ✓ |
+| canva | Servidor MCP | ✓ |
+| google_drive | API | ✓ |
+| géminis | socios/géminis/ | ✓ 
+
+|CHEQUEOS DE SALUD
+-------------
+Ollama: curl http://127.0.0.1:11434/api/tags
+Google Drive: verificación de token API
+PubMed: Prueba de conexión MCP
+Canva: Prueba de conexión MCP
+
+ZONAS TOKEN (Delegación)
+------------------------
+Zona 1 (0-30%): Todos los socios disponibles
+Zona 2 (30-60%): Socios baratos (preferiblemente Ollama)
+Zona 3 (60-80%): solo socios locales
+Zona 4 (80-100%): Solo emergencia (Humano + Ollama)
+
+COMANDOS CLI (mensaje de bach)
+----------------------
+  lista [--entrada/--salida] [--límite N] Mostrar todos los mensajes.
+  no leídos Sólo mensajes no leídos.
+  enviar <NOMBRE> <TEXTO> [--del REMITENTE] Enviar mensaje.
+  leer <ID> [--ack] Leer el mensaje y, opcionalmente, confirmar.
+  ping [--from NAME] Mostrar socios TO no leídos.
+  Mire [--from NAME] encuestas en vivo (verifique cada 10 segundos).
+  count Muestra el recuento de mensajes.
+  eliminar <ID> [ID2...] Eliminar mensaje(s).
+  archive <ID> [ID2...] Archivar mensaje(s).
+
+TIPOS DE MENSAJE
+-----------------
+- TAREA: Pedidos a socios (a través de `_TASKS.md` + `msg send`).
+- INFORMACIÓN: Actualizaciones de estado e informes (`bandeja de salida/`).
+- ALERTA: Mensajes de error y escalamientos (monitor de problemas).
+
+PROTOCOLOS DE INTERACCIÓN
+----------------------
+1. HANDSHAKE: Reconocimiento mutuo y control de funcionamiento (salud).
+2. SOLICITUD: Solicitud formal de datos o servicio.
+3. TRANSFERENCIA: Transferencia física vía Workspace o DB.
+4. CONFIRMAR: Confirmación de recepción y procesamiento (Recibo).
+
+TABLAS DE BASE DE DATOS
+------------------
+conexiones de puntos finales y herramientas de socios
+partner_recognition Capacidades y zonas de socios
+legation_rules Delegación basada en tokens
+mensajes Protocolo de mensajes (utilizado por hub/messages.py)
+comm_messages Tabla de mensajes alternativa (no utilizada activamente)
+
+PARTNER-WORKSPACES
+------------------
+Cada socio tiene una estructura de carpetas estandarizada en `system/partners/`:
+  - bandeja de entrada/datos entrantes/solicitudes.
+  - bandeja de salida/resultados/informes.
+  - espacio de trabajo/espacio de trabajo temporal.
+
+DEMONIO Y AUTOMATIZACIÓN
+-------------------
+Los archivos del trabajo del demonio `msg-cleanup` leen mensajes después de 30 días.
+Socios como Gemini usan `bach msg watch` para responder a Claude en tiempo real.
+
+HANDLER & TOOLS
+---------------
+hub/messages.py CLI del sistema de mensajería (542 líneas)
+hub/partner.py gestión de socios (514 líneas)
+tools/partner_communication/ Herramientas para la interacción con los socios:
+  - comunicación de instancia de interacción_protocol.py
+  - descubrimiento de software system_explorer.py
+  - ai_compatible.py Capa de compatibilidad AI
+  - comunicación.py Utilidades de comunicación
+
+VER TAMBIÉN
+----------
+  bach partner --help    Gestión y delegación de socios
+  bach msg --help        Comandos del sistema de mensajes
+  docs/help/maintain.txt Comprobaciones de estado de los socios

@@ -1,0 +1,74 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+COOKBOOK - DB ドキュメント生成用のクックブック ツール
+====================================================
+
+説明
+------------
+クックブック ハンドラーはデータベース テーブルから生のドキュメント バージョンを生成します
+事前定義されたレシピを使用します。各レシピは SQL クエリを記述します。
+出力テンプレートと出力パス。テーブル「cookbook_recipes」を使用します
+永続的な管理のために bach.db 内にあります。
+
+サポートされているテンプレート:
+  - markdown_table: 列構造を持つマークダウンテーブル
+  - markdown_list: 階層を持つ構造化されたマークダウン リスト
+  - json_export: メタデータ付きの JSON エクスポート
+
+操作
+-----------
+  bach cookbook list                    すべてのレシピ (名前、タイトル、タイプ) を表示
+
+  bach cookbook generate <rezept>       レシピから未加工バージョンを生成
+                                        レシピ定義を読み込み、SQLを実行し、
+                                        テンプレートを適用し、出力を書き込みます
+
+  bach cookbook delete <name>           レシピを削除します (コアに対する警告あり)
+                                        フラグ: --force (強制削除)
+
+  bach cookbook help                    このヘルプを表示
+
+例
+---------
+  1. 利用可能なすべてのレシピをリストします:
+     bach cookbook list
+
+  2. 既存のレシピから生バージョンを生成します:
+     bach cookbook generate tools_overview
+
+  3. レシピを削除します (CORE レシピの確認):
+     bach cookbook delete my_recipe
+     bach cookbook delete core_recipe --force
+
+問題
+-------
+  出力ディレクトリ: data/generated/
+
+  ファイル名はレシピから決定されます。
+  - Recipe_json 内の出力フィールド (存在する場合)
+  - フォールバック: <レシピ名>.md
+
+  生成されたファイルには、タイムスタンプ付きの自動生成マーカーが含まれます。
+
+FILES
+-------
+  ハンドラー: Hub/cookbook.py
+  データベース: data/bach.db (テーブル: Cookbook_recipes)
+  出力: data/generated/*.md
+
+TABLE-SCHEMA
+---------------
+  クックブックレシピ:
+    - 名前 (TEXT): 固有のレシピ識別子
+    - タイトル (TEXT): ドキュメンタリーのタイトル
+    - 説明 (TEXT): オプションの説明
+    - Recipe_json (TEXT): JSON 定義 (sql_query、template_type、output_file)
+    - dist_type (INT): 0=ユーザー、1=テンプレート、2=コア
+    - created_at (TIMESTAMP): 作成時刻
+
+関連項目
+----------
+  BACH_Dev/docs/SQ069_REZEPTBUCH_KONZEPT.md レシピブックのコンセプト (SQ069)
+  Hub/base.py BaseHandler クラス

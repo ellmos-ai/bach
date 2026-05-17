@@ -1,0 +1,89 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+АНАЛИЗ ДАННЫХ — команды анализа данных BACH
+==========================================
+
+BACH предлагает простые функции анализа данных для CSV, Excel и JSON.
+
+УСТАНОВКА
+------------
+Требуется: pip install pandas matplotlib
+
+КОМАНДЫ
+-------
+
+bach data list
+  Отображает все файлы во входной папке/.
+
+bach data load <pfad>
+  Загружает файл и показывает основную информацию (строки, столбцы, типы данных).
+  Поддерживаемые форматы: CSV, Excel (.xlsx/.xls), JSON
+
+bach data describe <pfad>
+  Показывает описательную статистику (среднее, стандартное, минимальное, максимальное, квартили).
+  Только для числовых столбцов.
+
+bach data head <pfad> [--rows N]
+  Показывает первые N строк (по умолчанию: 10).
+
+bach data corr <pfad>
+  Показывает корреляционную матрицу всех числовых столбцов.
+
+bach data chart <pfad> --type TYPE --x COL [--y COL] [--output NAME]
+  Создает диаграмму и сохраняет ее в файлеcharts/.
+  Столбец X обязателен, столбец Y необязателен (выбирается автоматически).
+
+  Типы диаграмм:
+    bar     - Гистограмма (требуются X и Y)
+    line    - Линейная диаграмма (требуются X и Y)
+    pie     - Секторная диаграмма (требуется
+├── input/ # Размещаем здесь исходные файлы
+├── вывод/ # Обработанные результаты
+└── диаграммы/ # Сгенерированные диаграммы
+    scatter - ПРИМЕРЫ
+    hist    - # Загрузка и анализ файла
+
+# Проверка корреляции
+-------------
+# Создание диаграмм
+
+СОВЕТЫ
+---------
+
+- На файлы во входной/папке можно ссылаться с короткими именами
+- Диаграммы автоматически сохраняются в чартах/ (PNG, 150 DPI)
+- Для больших файлов: сначала заголовок, потом описание
+— Для команд диаграммы требуется matplotlib: pip install matplotlib
+- Столбец Y автоматически выбирается для полосы/линии/разброса, если не указано
+bach data load user/data-analysis/input/sales.csv
+bach data describe user/data-analysis/input/sales.csv
+bach data head user/data-analysis/input/sales.csv --rows 20
+
+СМОТРИТЕ ТАКЖЕ
+bach data corr user/data-analysis/input/metrics.xlsx
+
+# Все доступные инструменты
+bach data chart input/sales.csv --type bar --x monat --y umsatz
+bach data chart metrics.xlsx --type line --x date --y value --output trend
+bach data chart input/survey.csv --type pie --x kategorie --y anzahl
+bach data chart input/metrics.xlsx --type scatter --x x_wert --y y_wert
+bach data chart input/data.csv --type hist --x alter
+
+# Обзор функций BACH
+-----
+ВЕРСИЯ
+
+Введено в BACH v1.1.25 (21 января 2026 г.)
+Полностью реализованы команды диаграммы (столбик, линия, круговая диаграмма, разброс, история)
+Обработчик: system/hub/data_anaанализ.py
+----------
+bach --help tools     # Alle verfuegbaren Tools
+bach --help features  # BACH Features-Uebersicht
+
+VERSION
+-------
+Eingefuehrt in BACH v1.1.25 (2026-01-21)
+Chart-Befehle vollstaendig implementiert (bar, line, pie, scatter, hist)
+Handler: system/hub/data_analysis.py

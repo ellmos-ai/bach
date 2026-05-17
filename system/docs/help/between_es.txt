@@ -1,0 +1,134 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ENTRE - Comprobaciones intermedias con perfiles
+======================================
+
+Recordatorios entre tareas. Personalizable a través de perfiles.
+
+COMANDOS CLI
+-----------
+
+  Activado/Desactivado:
+  bach between on                  Activar entre comprobaciones
+  bach between off                 Desactivar
+  bach between status              Mostrar estado
+
+  Administrar perfiles:
+  bach between profile add "Name"     Crear nuevo perfil
+  bach between profile edit "Name"    Editar perfil
+  bach between profile delete "Name"  Eliminar perfil
+  bach between profile list           Ver todos los perfiles
+  bach between profile show "Name"    Detalles del perfil
+
+  Activar perfil:
+  bach between use "Name"          Activar perfil para sesión
+  bach between use default         Volver al perfil estándar (usa "predeterminado" como nombre)
+
+ESTRUCTURA DEL PERFIL
+---------------
+
+  {
+    "nombre": "Álgebra",
+    "description": "Tareas de matemáticas con verificación",
+    "message": "VERIFICACIÓN INTERMEDIA:\n1. Verificar resultado\n2. Verificar método de cálculo\n3. Documento",
+    "trigger_on": ["tarea realizada", "tarea completada"],
+    "is_default": falso
+  }
+
+PERFILES ESTÁNDAR
+----------------
+
+  1. POR DEFECTO
+     Genérico entre cheques (comportamiento actual)
+     "1. Comprobación de tiempo 2. ¿Memoria correcta? 3. ¿Próxima tarea?"
+
+  2. ENFOQUE
+     Control mínimo para un trabajo concentrado
+     "¿Continuar o tomar un descanso?"
+
+  3. REVISIÓN
+     Verificación detallada con notas de revisión de código
+     "1. Revisar el código 2. ¿Ejecutar pruebas? 3. ¿Documentado?"
+
+  4. APRENDIZAJE
+     Consulta con preguntas de reflexión.
+     "1. ¿Qué aprendí? 2. ¿Crear una lección? 3. ¿Entendido?"
+
+  5. SESIÓN DE COCHE
+     Flujo de trabajo de sesión automática con control de tiempo
+     "1. Comprobación de tiempo 2. ¿Duración de la última tarea? 3. ¿Continuar o finalizar la sesión?"
+
+EJEMPLOS
+---------
+
+  # Nuevo perfil para tareas de matemáticas
+  bach between profile add "Mathe"
+  -> Perfil 'Math' creado (editar con: entre edición de perfil)
+
+  # Ver perfil
+  bach between profile show "Mathe"
+  -> Muestra detalles del perfil (edición aún no implementada)
+
+  # Activar perfil
+  bach between use "Mathe"
+  -> Perfil 'Matemáticas' activado para esta sesión
+
+  # Volver al estándar
+  bach between use default
+
+FORMATO DE SALIDA
+--------------
+
+  [ENTRE TAREAS]
+  1. Verifique el resultado de la última tarea.
+  2. Verifique el método de cálculo para detectar errores.
+  3. Documentar los pasos intermedios
+
+  Consejo: --status para descripción general
+
+PERSISTENCIA
+----------
+
+  Tabla: entre_perfiles (bach.db)
+  Perfil activo: datos/.between_state
+
+NOTA
+-------
+
+  La adición/edición/eliminación de perfil aún no está implementada.
+  Utilice DB directamente o espere una versión futura.
+
+USECASES
+--------
+
+  1. PROYECTO ESPECÍFICO
+     Cada proyecto tiene su propio perfil
+     -> Cambiar al cambiar de proyecto
+
+  2. SESIONES DE APRENDIZAJE
+     Perfil de “aprendizaje” con preguntas de reflexión
+     -> Promueve el aprendizaje consciente
+
+  3. REVISIÓN DEL CÓDIGO
+     Perfil de “revisión” con lista de verificación de revisión
+     -> Garantía de calidad
+
+  4. MODO DE ENFOQUE
+     Perfil "Enfoque" con verificación mínima
+     -> Menos interrupción
+
+INTERPLAY
+-------------
+
+Entre es parte del sistema de tiempo:
+  --ayuda reloj Visualización de la hora
+  --ayuda cronómetro temporizador
+  --ayuda cuenta regresiva Cuenta regresiva con disparador
+  --help beat Visualización de hora unificada
+
+---
+Versión: 1.0 | Estado: Implementado (v1.1.83)
+Controlador: system/hub/time.py (BetweenHandler)
+Herramienta: system/tools/time_system.py (BetweenManager)

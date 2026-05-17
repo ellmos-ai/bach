@@ -1,0 +1,79 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [tabla de conexiones, hub/connector.py, docs/help/connector.txt]
+
+CONNECTIONS - Conexiones e integraciones (descripción general)
+=======================================================
+
+FECHA: 2026-02-08
+
+El sistema Connections es la tabla de base de datos central para TODOS
+Conexiones técnicas en BACH. Hay DOS subsistemas diferentes
+con diferentes finalidades:
+
+1. SISTEMA DE CONECTORES (NUEVO, v2.0)
+--------------------------------
+Conexiones de comunicación externa (Telegram, Discord, HomeAssistant).
+Sistema de mensajes completo con cola, reintento, disyuntor.
+
+**DETALLES → ver docs/help/connector.txt**
+
+CLI: conector bach <operación>
+Operaciones: enumerar, estado, agregar, eliminar, sondear, enviar, configurar demonio, etc.
+
+Manejador: hub/connector.py
+Servicios: hub/_services/connector/queue_processor.py
+API: gui/api/messages_api.py (4 puntos finales REST)
+
+2. CONEXIONES AI/MCP (LEGACY)
+-------------------------------
+Infraestructura técnica para socios de IA y servidores MCP.
+Gestiona puntos finales, claves API y tokens OAuth.
+
+CLI: bach --connections list/show
+Controladores: hub/connections.py (?)
+
+Tipos:
+  - Socios de IA: claude, ollama, gemini (antrópico, local, Google)
+  - Servidor MCP: pubmed, canva, gdrive (Protocolo de contexto modelo)
+
+IMPORTANTE: CONNECTIONS vs PARTNER vs CONNECTOR
+--------------------------------------------
+- CONNECTIONS (tabla): Registro central de TODAS las conexiones
+- CONECTOR (Subsistema): Comunicación externa (Telegram, Discord,...)
+- SOCIO (lógica): Delegación y Experiencia (¿QUIÉN hace QUÉ?)
+
+TABLA DE BASE DE DATOS
+-----------------
+Tabla: conexiones
+Campos:
+  - nombre, tipo, categoría, punto final, is_active
+  - auth_type, auth_config (JSON con credenciales)
+  - recuento_éxito, recuento_error, último_usado
+  - fallas_consecutivas, deshabilitadas_hasta (disyuntor, solo conectores)
+
+Categorías (categoría):
+  - 'conector': Comunicación externa (Telegram, Discord,...)
+  - 'ai': socios de IA (Claude, Ollama, Gemini)
+  - 'mcp': servidor MCP (PubMed, Canva, ...)
+  - 'api': Otras API
+
+USO
+----------
+La mayoría de los usuarios SOLO necesitan el **sistema de conector**.
+
+Para comunicación externa (Telegram, Discord, HomeAssistant):
+  → conector bach --ayuda
+  → docs/help/connector.txt (documentación dedicada)
+
+Para socios de IA y servidores MCP:
+  → bach --lista de conexiones
+  → bach --help socio
+
+VER TAMBIÉN
+----------
+  docs/help/connector.txt Sistema conector (Telegram, Discord, HA)
+  bach --help partner    Delegación lógica y zonas
+  bach --help messages   Sistema de mensajería interna
+  bach --help daemon     Trabajos en segundo plano (poll_and_route, despacho)

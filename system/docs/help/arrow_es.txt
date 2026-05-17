@@ -1,0 +1,39 @@
+# Portability: EXTERNAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+# BachForelle (La Flecha) - Referencia cruzada
+
+## ADVERTENCIA: DOCUMENTACIÓN EXTERNA
+Este archivo describe **BachForelle**, un proyecto SEPARADO fuera de BACH v2 Vanilla.
+
+**Rutas correctas:**
+- BachForelle: `C:\Usuarios\Usuario\OneDrive\.AI\BachForelle\`
+- BachFliege: `C:\Users\User\OneDrive\.AI\BachFliege\`
+
+## ¿Qué es BachForelle?
+BachForelle es una variante ligera de BACH LLM-First.
+Es un proyecto INDEPENDIENTE con una base de código separada.
+
+**Filosofía:**
+* LLM es un orquestador (no solo un usuario)
+* No se requiere proceso de arranque
+* Habilidades modulares en lugar de enrutamiento central
+* Enfoque: Memoria + Multi-LLM
+
+## Para usuarios básicos de BACH v2
+**BachForelle NO es parte de BACH v2 Vanilla.**
+
+Si desea utilizar BachForelle:
+1. Vaya a la carpeta BachForelle
+2. Lea `C:\Users\User\OneDrive\.AI\BachForelle\README.md`
+3. Lea `C:\Users\User\OneDrive\.AI\BachForelle\SKILL.md`
+
+## BACH v2 Vanilla NO tiene un comando de "flecha"
+Este archivo de ayuda solo existe como referencia cruzada para los usuarios que usan ambos sistemas.
+
+Para las características de BACH v2 Vanilla, consulte:
+```golpecito
+python bach.py ayuda
+python bach.py ayuda <comando>
+```

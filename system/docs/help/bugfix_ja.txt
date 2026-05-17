@@ -1,0 +1,41 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+バグ修正プロトコル - クイック リファレンス
+===================================
+
+エラーの場合は、常に次の順序に従ってください:
+
+1。標準フィクサーファースト
+   python system/tools/c_standard_fixer.py <ファイル>
+   修正: BOM、エンコーディング、ウムラウト、JSON の問題
+   -> 問題は解決しましたか?作業が保存されました!
+
+2.インポート診断
+   python system/tools/c_import_diagnose.py <フォルダー>
+   チェック: 循環インポート、モジュールの欠落
+
+3.コード分析
+   python system/tools/c_method_analyzer.py <ファイル>
+   チェック: 定義前の属性、シグナル コールバック
+
+4。隔離されたテスト
+   最小限のテスト スクリプトを作成する
+   徐々に絞り込みます
+
+5. 20分ルール
+   20 分経過しても何も進まない場合: 停止
+   バグ レポートを作成し、後で続行します
+
+クイック チェック:
+
+|エラーの種類 |最初のアクション |
+|---------------------|--------------------------|
+|インポートエラー | c_import_diagnose.py |
+|属性エラー | c_method_analyzer.py |
+|サイレントクラッシュ | c_method_analyzer.py |
+|エンコーディング/BOM | c_standard_fixer.py 
+
+|注: このファイルはハンドラーではなく、スタンドアロン ツールを文書化します。
+         詳細なバグ修正ワークフロー: skill/workflows/bugfix-protocol.md

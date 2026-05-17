@@ -1,0 +1,120 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ЗДОРОВЬЕ - Помощник по здоровью
+=================================
+
+ОПИСАНИЕ:
+  Медицинский помощник управляет медицинскими данными (диагнозы,
+  Лекарства, лабораторные показатели, документы, назначения) и контакты врача.
+  Он служит центральным медицинским журналом.
+
+КОМАНДЫ CLI (ОБЗОР):
+  bach gesundheit status             Показать панель мониторинга (назначения, отклонения)
+  bach gesundheit contacts           Показать контакты врача
+  bach gesundheit contacts -s <fach> Nach Fachgebiet filtern
+  bach gesundheit diagnoses          Активные диагнозы
+  bach gesundheit diagnoses --all    Все диагнозы (включая вылеченные/опровергнутые)
+  bach gesundheit meds               Активные лекарства
+  bach gesundheit meds --all         Все лекарства (включая отмененные)
+  bach gesundheit labs               Лабораторные показатели (последние 50)
+  bach gesundheit labs --abnormal    Только аномальные значения
+  bach gesundheit labs -t <test>     Фильтровать по тесту (например, -t ТТГ)
+  bach gesundheit docs               Медицинские документы/заключения
+  bach gesundheit docs --type <typ>  Фильтр по типу (заключения|лаборатория|рецепт)
+  bach gesundheit appointments       Ближайшие приемы к врачу
+  bach gesundheit appointments --past Vergangene Termine
+  bach gesundheit help               Подробная справка по командам
+
+ПРОФИЛАКТИЧЕСКИЕ ОБСЛЕДОВАНИЯ:
+  bach gesundheit vorsorge           Показать все профилактические осмотры
+  bach gesundheit vorsorge-faellig   Только плановые осмотры
+  bach gesundheit add-vorsorge "Name" --turnus <monate> --kategorie <typ>
+  bach gesundheit vorsorge-done <id> Als erledigt markieren (heute)
+  bach gesundheit vorsorge-done <id> --date DD.MM.YYYY
+
+  Примеры:
+    bach gesundheit add-vorsorge "Darmspiegelung" --turnus 120 --kategorie Krebs
+    bach gesundheit add-vorsorge "Hautkrebsscreening" --turnus 24 --ab-alter 35
+    bach gesundheit vorsorge-done 1 --date 15.01.2026
+
+ФУНКЦИИ ЭКСПОРТА:
+  bach gesundheit export                      Контакты врача (по умолчанию)
+  bach gesundheit export --entity diagnoses   Экспорт диагнозов
+  bach gesundheit export --entity meds        Экспорт лекарств
+  bach gesundheit export --entity labs        Экспорт лабораторных показателей
+  bach gesundheit export --entity all         Паспорт здоровья (все)
+  bach gesundheit export --format csv         Экспорт в формате CSV
+  bach gesundheit export --format vcard       Экспорт в формате vCard 3.0
+  bach gesundheit export --file <pfad>        Сохранить в файл
+  bach gesundheit export -s <fach>            Только определенная предметная область
+
+  Пример: bach gesundheit Export --entity all --file gesundheitspass.txt
+
+ПРАКТИВНЫЕ ФУНКЦИИ:
+  bach gesundheit reminders          Напоминания (лекарства, профилактика, встречи)
+  bach gesundheit interactions       Проверка взаимодействия активных лекарств
+
+СБОР ДАННЫХ (ДОБАВИТЬ):
+  bach gesundheit add-diagnosis "Name" [Optionen]
+    Опции: --icd, --date, --status, --severity, --doctor, --note
+
+  bach gesundheit add-med "Name" [Optionen]
+    Опции: --ingredient, --dosage, --schedule, --diagnosis, --start, --note
+
+  bach gesundheit add-lab "Test" [Optionen]
+    Опции: --value, --unit, --ref-min, --ref-max, --date, --abnormal, --doctor
+
+  bach gesundheit add-doc "Titel" [Optionen]
+    Опции: --type, --file, --summary, --date, --doctor, --diagnosis
+
+  bach gesundheit add-appointment "Titel" [Optionen]
+    Опции: --doctor, --date, --time, --duration, --type, --note
+
+  Совет: используйте `bach ​​gesundheit add-... --help` для получения подробных опций.
+
+  Примеры:
+    bach gesundheit add-diagnosis "Hypothyreose" --icd E03.9 --status aktiv
+    bach gesundheit add-med "L-Thyroxin" --dosage 75mcg --schedule morgens
+    bach gesundheit add-lab "TSH" --value 2.5 --unit mU/L --ref-min 0.4 --ref-max 4.0
+    bach gesundheit add-doc "Blutwerte Jan 2026" --type labor --file /pfad/datei.pdf
+    bach gesundheit add-appointment "Kontrolle" --doctor 1 --date 15.02.2026 --time 10:00
+
+ПОКАЗАТЬ ПОДРОБНОСТИ:
+  bach gesundheit show <typ> <id>
+
+  Доступные типы:
+    - контакт/врач
+    - диагноз / диагноз
+    - медицина / лекарство / препарат
+    - лабораторное/лабораторное значение
+    - документ/документ
+    - встреча / встреча
+    - меры предосторожности/осмотр
+
+  Примеры:
+    bach gesundheit show contact 1
+    bach gesundheit show diagnosis 1
+    bach gesundheit show med 1
+    bach gesundheit show lab 1
+    bach gesundheit show vorsorge 1
+
+БАЗА ДАННЫХ:
+  Таблицы в bach.db (Единая БД начиная с версии 1.1.84):
+  - health_contacts (врачи)
+  - health_diagnoses (диагнозы, коды МКБ)
+  - health_medictions (лекарства, дозировка, график приема)
+  - health_lab_values (лабораторные значения, референтные диапазоны)
+  - health_documents (заключения, письма врача)
+  - health_appointments (запись к врачу)
+  - предупредительные_проверки (профилактические осмотры)
+
+ИНТЕГРАЦИЯ:
+  - LifeAssistant: считывает встречи для ежедневного брифинга.
+  - Документы: связаны с файлами в `user/documents/medical/`.
+  - Проверка взаимодействия: Базовая база данных с 12 частыми взаимодействиями.
+
+СМОТРИТЕ ТАКЖЕ:
+  bach --help abo            (Для фитнес-подписок и т. д.)
+  bach --help contact        (Общие контакты)

@@ -1,0 +1,63 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+============
+
+health - HealthCheckHandler
+System health checks and network diagnostics
+
+
+DESCRIPTION
+============
+
+Runs diagnostic checks of the system: disk space, network accessibility,
+DNS resolution, database size and NAS capacity. Thresholds: Disk warning
+<100 GB free, NAS warning >80% occupied, DB warning >500 MB.
+
+
+OPERATIONS
+===========
+
+status Run all checks and display report
+disk Check disk space of the SystemDrive + all available drives
+ping <host> Test host availability (default: fritz.box)
+dns Check DNS resolution on 3 test hosts (google.com, anthropic.com, github.com)
+network Complete network checks: FritzBox, Google DNS, Cloudflare + DNS
+nas Check NAS capacity and occupancy (fritz.nas / FRITZ.NAS / NAS / /mnt/nas)
+all All checks combined (status and all are identical)
+
+
+EXAMPLES
+=========
+
+# Quick status check
+bach health status
+
+# Check NAS capacity
+bach health nas
+
+# Ping specific host (e.g. 8.8.8.8)
+bach health ping 8.8.8.8
+
+# Network diagnostics
+bach health network
+
+# Disk space of all drives
+bach health disk
+
+
+FILES
+=======
+
+hub/health.py Health handler implementation
+data/bach.db Loggings in memory_working table
+                        (Checks are logged with timestamp)
+
+
+SEE ALSO
+==========
+
+hub/base.py BaseHandler (class base)
+docs/help/ Other handler documentation

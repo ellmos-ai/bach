@@ -1,0 +1,145 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH PATHS - Central Path Management
+=====================================
+
+bach_paths.py is the "single source of truth" for all paths in BACH.
+No more hard-coded paths - everything centrally in one place.
+
+LOCATION
+--------
+system/hub/bach_paths.py
+
+MAIN FUNCTION: get_path(name)
+-----------------------------
+The most important function - returns the path to a named directory.
+
+Examples:
+    from bach_paths import get_path
+
+    tools_dir = get_path("tools") # system/tools/
+    template = get_path("report_template") # Template for reports
+    db = get_path("db") # bach.db database
+    reports = get_path("reports") # Reports directory
+
+IMPORT FROM EVERYWHERE
+-------------------
+Method 1 - If hub/ is in the sys.path (e.g. in hub/_services/):
+    from bach_paths import BACH_ROOT, get_path
+
+Method 2 - Universal (works from anywhere):
+    import sys
+    from pathlib import Path
+
+    # Find bach_paths.py automatically
+    _current = Path(__file__).resolve()
+    for _parent in [_current] + list(_current.parents):
+        _hub = _parent / "system" / "hub"
+        if _hub.exists():
+            if str(_hub) not in sys.path:
+                sys.path.insert(0, str(_hub))
+            break
+
+    from bach_paths import BACH_ROOT, get_path
+
+AVAILABLE PATHS
+-----------------
+Hierarchy: root, bach, system, hub
+System: data, gui, skills, dist
+Skills: tools, help, agents, experts, workflows, partners, services, templates
+Data: logs, backups, archives, trash, messages
+Root: user, docs, exports, extensions
+Databases: db, bach_db, archive_db
+User: user_documents, personal
+Tax: tax, tax_2025, receipts, bundles
+Partners: gemini, claude, ollama
+Reports: funding planning, reports, reports_output, reports_clients, reports_data, reports_bundles, clients, quarantine
+Templates: report_template
+External: knowledge database
+
+EXAMPLE: Tool import
+---------------------
+Problem: Tools are in system/tools/
+Solution with bach_paths:
+
+    try:
+        from c_ocr_engine import ocr_pdf
+    except ImportError:
+        from bach_paths import get_path
+        tools_dir = get_path("tools")
+        if str(tools_dir) not in sys.path:
+            sys.path.insert(0, str(tools_dir))
+        from c_ocr_engine import ocr_pdf
+
+EXAMPLE: template path
+-----------------------
+    from bach_paths import get_path
+
+    template_path = get_path("report_template")
+    # -> C:/Users/.../BACH/system/skills/_templates/bericht_template_geiger_universal.docx
+
+OTHER FUNCTIONS
+------------------
+list_paths() - All available paths as Dict
+get_tool_path(name) - Find tool in tools/ or subfolders
+get_partner_dir(partner) - partner directory (gemini, claude, ollama)
+get_belege_path(provider) - Receipts path with optional provider
+resolve(relpath) - Resolve relative path
+validate() - Check all critical paths
+
+DB-OVERRIDES
+------------
+Paths can be overwritten in the DB:
+
+    from bach_paths import set_path_override, get_path_with_override
+
+    # Set override
+    set_path_override("knowledgebase", "D:/My/Database")
+
+    # Use override
+    path = get_path_with_override("knowledgebase")
+
+CLI USAGE
+-----------
+    python bach_paths.py templates # Get a single path
+    python bach_paths.py --list # List all paths
+    python bach_paths.py --validate # Validate paths
+    python bach_paths.py --set PATH name # set override (with name)
+    python bach_paths.py --overrides # Show DB overrides
+    python bach_paths.py --json # Output as JSON
+
+VARIABLES (for direct import)
+--------------------------------
+    from bach_paths import (
+        BACH_ROOT, # Repository root
+        SYSTEM_ROOT, #system/
+        HUB_DIR, # system/hub/
+        DATA_DIR, # system/data/
+        SKILLS_DIR, # system/skills/
+        TOOLS_DIR, # system/tools/
+        BACH_DB, # system/data/bach.db
+        USER_DIR, #user/
+        REPORTS_DIR, # user/documents/foerderplaner/Reports/
+    )
+
+SELF-HEALING
+------------
+bach_paths calculates all paths relative to your own location.
+If BACH is moved, everything will still work -
+no manual adjustments necessary.
+
+PATH HEALING: NOT NECESSARY
+--------------------------
+bach_paths.py makes manual path healing unnecessary!
+All runtime paths are calculated dynamically.
+
+Only for documentation updates (help texts, Wiki, Markdown):
+  bach --maintain docs-paths
+
+SEE ALSO
+----------
+- bach path validate Check paths
+- bach --help path path handler documentation
+- bach --help tools/path_healer Documentation path updater

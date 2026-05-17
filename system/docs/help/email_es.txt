@@ -1,0 +1,95 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR: correo electrónico
+Envío de correo electrónico a través de la API de Gmail con seguridad de borrador integrada.
+
+DESCRIPCIÓN:
+El controlador de correo electrónico permite el envío seguro de correo electrónico a través de la API de Gmail.
+Cada correo electrónico se crea primero como borrador y debe marcarse explícitamente con "confirmar".
+debe ser confirmado antes de ser enviado. Esto evita accidentes
+Envío de correo electrónico.
+
+OPERACIONES:
+
+  enviar <a> <asunto> <cuerpo> Crear borrador (comando principal)
+    Opciones: --cc <correo electrónico>, --bcc <correo electrónico>, --attach <ruta de archivo>
+
+  borrador <a> <asunto> <cuerpo> Alias ​​para enviar
+
+  confirmar <id> Confirmar y enviar borrador
+    Opciones: --by <nombre>
+
+  cancelar <id> Descartar (eliminar) borrador
+
+  borradores Lista de borradores abiertos
+    Alias: lista (el comando vacío también muestra borradores)
+
+  enviado Mostrar correos electrónicos enviados
+
+  show <id> Mostrar detalles del borrador
+    Muestra texto completo, destinatario, CC/CCO, estado
+
+  configurar la API de Gmail Ampliar alcances (una sola vez)
+    Requiere autenticación OAuth2 para solo lectura + envío
+
+  prueba Enviar correo electrónico de prueba a su propia dirección
+
+  ayuda Mostrar este texto de ayuda
+
+EJEMPLOS:
+
+  1. Cree un borrador con argumentos posicionales:
+     bach email send user@example.com "Betreff" "Hallo Welt"
+
+  2. Borrador con argumentos con nombre:
+     bach email send user@example.com --subject "Meeting" --body "Termin: 14:00"
+
+  3. Con CC y archivo adjunto:
+     bach email send user@example.com \
+       --asunto "Informe" \
+       --body "Ver archivo" \
+       --cc admin@ejemplo.com\
+       --adjuntar C:\documents\report.pdf
+
+  4. Enviar borrador:
+     bach email confirm 42
+
+  5. Descartar borrador:
+     bach email cancel 42
+
+  6. Ver todos los borradores abiertos:
+     bach email drafts
+
+ARCHIVOS:
+
+  hub/email.py Este controlador (clase EmailHandler)
+  _services/mail/email_sender.py Integración API de Gmail, gestión de borradores
+  _services/mail/account_manager.py Gestión de tokens OAuth2
+  data/bach.db Metadatos de correo electrónico local (borradores de registros)
+
+SEGURIDAD:
+
+  - Modelo de borrador: cada correo electrónico se guarda primero como borrador
+  - Confirmación explícita: solo se envía "confirmar"
+  - Alcances de token: solo lectura + envío (API de Gmail oauth2)
+  - Manejo de errores: los errores se registran en la base de datos (mostrar <id> muestra detalles)
+
+CONFIGURACIÓN:
+
+  Cuenta: controlada a través de ~/.config/paper_publisher/config.json o
+           tokens locales de OAuth2 en _services/mail/tokens/
+
+MANEJO DE ERRORES:
+
+  - Las direcciones de correo electrónico no válidas se rechazan inmediatamente
+  - Se informará el asunto/texto faltante
+  - Los errores de Gmail se registran con el asunto y el ID.
+  - El borrador se puede descartar en cualquier momento con cancelar
+
+VER TAMBIÉN:
+
+  docs/help/base.txt Clase base del controlador
+  docs/help/telegram.txt Integración de Telegram para control remoto
+  _services/mail/README.md Guía de configuración de la API de Gmail

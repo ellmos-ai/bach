@@ -1,0 +1,161 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CONCEPTO BÁSICO DE BACH
+=================
+
+"El agente es el rol y la intención orientada a objetivos dentro de él.
+Los flujos de trabajo son el cerebro de la ejecución.
+Las habilidades, herramientas y servicios son las herramientas para la ejecución.
+Juntos son el núcleo."
+
+LOS CUATRO PILARES
+----------------
+
+```
+┌──────────────────────────────── ─────────────────────────────────┐
+│ EL NÚCLEO │
+├──────────────────────────────── ─────────────────────────────────┤
+│ │
+│ ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐ │
+│ │ AGENTE │ │ FLUJO DE TRABAJO │ │ HABILIDADES/HERRAMIENTAS/SVC │ │
+│ │ │ │ │ │ │ │
+│ │ rol + │───>│ cerebro │───>│ herramientas │ │
+│ │ Intención │ │ Control │ │ Ejecución │ │
+│ │ │ │ │ │ │ │
+│ │ QUIÉN + POR QUÉ│ │ CÓMO │ │ QUÉ CON QUÉ │ │
+│ └─────────────┘ └─────────────┘ └─────────────────────┘ │
+│ │
+└──────────────────────────────── ─────────────────────────────────┘
+```
+
+AGENTE = rol + intención orientada a objetivos
+---------------------------------------
+
+- ¿QUIÉN soy yo en esta tarea?
+- ¿POR QUÉ estoy haciendo esto? (meta, motivación)
+- Define la perspectiva y el marco de toma de decisiones
+
+Ejemplos:
+  - Agente desarrollador: escribe código, depura, prueba
+  - Asistente personal: ayuda a los usuarios con la vida cotidiana.
+  - Experto en investigación: Busca y evalúa información
+
+Ubicación de almacenamiento: agentes/*.txt
+
+FLUJO DE TRABAJO = cerebro para la ejecución
+---------------------------------
+
+- ¿CÓMO se realiza la tarea?
+- Controla el proceso, el orden, las decisiones.
+- Conocimientos procesales: instrucciones paso a paso
+
+Ejemplos:
+  - Flujo de trabajo de corrección de errores: Reproducir -> Analizar -> Corregir -> Probar
+  - Revisar el flujo de trabajo: Leer -> Calificar -> Comentar -> Decidir
+  - Flujo de trabajo de inicio: Verificar -> Cargar -> Inicializar -> Listo
+
+Ubicación de almacenamiento: skills/workflows/*.md
+
+Los flujos de trabajo son CENTRALES porque:
+  1. Tú asumes el control real
+  2. Usted organiza habilidades, herramientas y servicios
+  3. Son comprobables (pruebas de casos de uso)
+  4. Son reutilizables
+
+HABILIDADES / HERRAMIENTAS / SERVICIOS = herramientas
+-------------------------------------
+
+- ¿CON QUÉ se realiza la tarea?
+- Habilidades y funciones específicas
+- Son llamados por flujos de trabajo
+
+| Tipo | Descripción | Ubicación |
+|---------|--------------------------|--------------------------------|
+| Habilidades | Conocimiento + Instrucciones (.txt) | habilidades/*.txt |
+| Herramientas | Scripts de Python (.py) | herramientas/*.py |
+| Servicios| Servicios Externos | a través de API/CLI 
+
+|INTERPLAY
+-------------
+
+```
+Solicitud de usuario
+     │
+     v
+┌─────────────┐
+│ AGENTE │ "Soy desarrollador, objetivo: corregir error"
+└─────────────┘
+     │
+     v
+┌─────────────┐
+│ FLUJO DE TRABAJO │ "1. Reproducir 2. Analizar 3. Reparar"
+└─────────────┘
+     │
+     v
+┌────────────────── ───────────────────┐
+│ HABILIDADES / HERRAMIENTAS / SERVICIOS │
+│ - debugger.py (herramienta) │
+│ - git-workflow.txt (Habilidad) │
+│ - corredor de prueba (servicio) │
+└────────────────── ───────────────────┘
+     │
+     v
+Resultado
+```
+
+CONOCIMIENTO DEL LLM
+-------------------
+
+El LLM operativo debe saber:
+1. QUÉ agentes existen (agentes/)
+2. QUÉ flujos de trabajo están disponibles (habilidades/flujos de trabajo/)
+3. QUÉ habilidades/herramientas/servicios hay (habilidades/, herramientas/)
+
+Esto se logra mediante:
+- Registro de controladores (system/core/registry.py) - Descubrimiento automático de controladores
+- Herramienta-Auto-Discovery (tools/tool_auto_discovery.py) - Escanea herramientas en DB
+- Entradas de base de datos (tabla de herramientas, jerarquía_elementos)
+- La descripción general del inicio muestra el contexto de la sesión
+
+Ver: --ayuda al inicio, --herramientas de ayuda
+
+GARANTÍA DE CALIDAD (FLUJO DE TRABAJO-TUEV)
+-----------------------------------
+
+Los flujos de trabajo son tan importantes que deben verificarse:
+
+1. PRUEBAS DE CASO DE USO
+   - Colección de casos de prueba en DB
+   - Ejecución automática
+   - Calificación: muy buena / buena / satisfactoria / suficiente / suspensa
+
+2. PROCEDIMIENTO TUEV
+   - Los flujos de trabajo tienen fechas de vencimiento
+   - Cuando caduca: crea una tarea de mantenimiento automáticamente
+   - Después de comprobar: Establecer nueva fecha de caducidad
+
+3. LISTA DE VERIFICACIÓN para componentes nuevos
+   [] ¿Funciona sin datos de usuario?
+   [] ¿Comando CLI disponible?
+   [] ¿Es posible introducir datos desde archivos/carpetas?
+   [] ¿Salida en base de datos estructurada?
+   [] ¿Escanear/importar repetible (idempotente)?
+   [] ¿No hay rutas codificadas?
+
+Ver: Tareas WF-TUEV (en desarrollo)
+
+CONCEPTOS RELACIONADOS
+------------------
+
+- docs/help/memory.txt - La memoria como modelo cognitivo
+- docs/help/agents.txt - Detalles del sistema del agente
+- docs/help/workflow.txt - Detalles del sistema de flujo de trabajo
+- docs/help/skills.txt - Jerarquía de habilidades
+- docs/help/tools.txt - Detalles del sistema de herramientas
+- system/ARCHITECTURE.md - Arquitectura general
+
+---
+Versión: 1.0.1 | Creado: 2026-01-30 | Actualizado: 2026-02-08
+(Concepto central: Agente/Flujo de trabajo/Habilidades/Herramientas)

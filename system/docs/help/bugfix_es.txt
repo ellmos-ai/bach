@@ -1,0 +1,41 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PROTOCOLO DE CORRECCIÓN DE ERRORES - REFERENCIA RÁPIDA
+===================================
+
+Para errores, siga SIEMPRE este orden:
+
+1. FIJADOR ESTÁNDAR PRIMERO
+   sistema Python/tools/c_standard_fixer.py <archivo>
+   Correcciones: BOM, codificación, diéresis, problemas de JSON
+   -> ¿Problema resuelto? ¡Trabajo guardado!
+
+2. DIAGNÓSTICO DE IMPORTACIÓN
+   sistema Python/tools/c_import_diagnose.py <carpeta>
+   Comprobaciones: Importaciones circulares, módulos faltantes
+
+3. ANÁLISIS DE CÓDIGO
+   sistema Python/tools/c_method_analyzer.py <archivo>
+   Comprobaciones: atributo antes de la definición, devoluciones de llamada de señal
+
+4. PRUEBAS AISLADAS
+   Crear un script de prueba mínimo
+   Reducir gradualmente
+
+5. REGLA DE LOS 20 MINUTOS
+   Después de 20 minutos sin progreso: DETENER
+   Crear un informe de error, continuar más tarde
+
+COMPROBACIÓN RÁPIDA:
+
+| Tipo de error | Primera acción |
+|---------------------|------------------------|
+| Error de importación | c_import_diagnose.py |
+| Error de atributo | c_method_analyzer.py |
+| Choque silencioso | c_method_analyzer.py |
+| Codificación/BOM | c_standard_fixer.py 
+
+|NOTA: Este archivo documenta herramientas independientes, no un controlador.
+         Flujos de trabajo detallados de corrección de errores: skills/workflows/bugfix-protocol.md

@@ -1,0 +1,49 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Sources: docs/_archive/CONCEPT_user_folder_attachment.md, system/hub/mount.py
+
+BACH USER MOUNTS (CONCEPT)
+==========================
+
+As of: 2026-02-08
+
+WHAT ARE USER MOUNTS?
+---------------------
+User mounts are an implemented function (since 2026-01-28, Task SYS_001) to transparently integrate external storage locations (e.g. NAS, external hard drives, cloud folders such as Google Drive) into the BACH file system. Instead of copying data into the BACH folder, it is linked virtually.
+
+HOW IT WORKS
+--------------
+The system uses "directory junctions" or "symlinks" to provide external paths as subfolders in the `user/` directory.
+The `filesystem_scanner` and `dirscan` can then search these paths like local folders, index them and process files (e.g. for OCR or extraction).
+
+OBJECTIVE
+-----------
+* **No redundancy**: Original data stays in place.
+* **Transparency**: All BACH tools can access the data.
+* **Persistence**: Connections are saved in the database (`connections` table) and restored when necessary (after reboot).
+
+EXAMPLE
+--------
+A user has tax documents on `E:\Archive\Tax`.
+This is integrated via user mount as: `user/mounts/archiv_steuer/`.
+The tax agent can now access `user/mounts/archiv_steuer/2025/` as if it were local.
+
+TECHNICAL DETAILS
+------------------
+* **DB table**: `connections` (type='mount', name='alias', endpoint='source_path')
+* **Handler**: `system/hub/mount.py` (manages mklink commands)
+* **CLI commands**:
+    - `bach mount add <path> <alias>` - mount folder
+    - `bach mount remove <alias>` - Remove mount
+    - `bach mount list` - Show active mounts
+    - `bach mount restore` - Restore mounts after reboot
+
+STATUS
+------
+IMPLEMENTED (since 2026-01-28). Completely functional. CLI commands available. GUI integration planned for later phase.
+
+SEE ALSO
+----------
+wiki/it_tools/filecommander.txt File operations
+docs/_archive/CONCEPT_user_folder_attachment.md Technical concept (archived)

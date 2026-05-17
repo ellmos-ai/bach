@@ -1,0 +1,69 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CALENDARIO - gestión de citas y calendario
+==========================================
+
+DESCRIPCIÓN
+------------
+Gestión de citas y calendario con soporte de base de datos. Muestra las próximas fechas
+de Assistant_calendar combinado con las rutinas domésticas debidas (household_routines).
+Admite citas con ubicación, tipo, estado y descripciones opcionales.
+
+OPERACIONES
+-----------
+  bach calendar today                         Mostrar hoy
+  bach calendar week                          Esta semana (semana)
+  bach calendar month                         Este mes
+  bach calendar list [TAGE]                   Próximos N días (predeterminado 30)
+  bach calendar add "TITEL" [OPTIONEN]        Crear cita
+  bach calendar show <ID>                     Detalles de la cita
+  bach calendar done <ID>                     Cita como completada
+  bach calendar delete <ID>                   Eliminar cita
+  bach calendar help                          Esta ayuda
+
+AGREGAR OPCIONES
+------------
+  -d, --date <FECHA> AAAA-MM-DD o DD.MM.AAAA (predeterminado: hoy)
+  -t, --time <HORA> HH:MM (predeterminado: 09:00)
+  --end <HORA> Hora de finalización (HH:MM)
+  --location <UBICACIÓN> Ubicación de la cita
+  --tipo <TIPO> cita|recordatorio|tarea (predeterminado: cita)
+  --nota <TEXTO> Descripción
+
+EJEMPLOS
+---------
+  bach calendar today
+  bach calendar week
+  bach calendar list 60
+  bach calendar add "Zahnarzt" -d 15.02.2026 -t 10:30 --location "Praxis"
+  bach calendar add "Treffen" -d 2026-03-10 -t 14:00 --end 15:30 --note "Besprechung"
+  bach calendar show 5
+  bach calendar done 5
+  bach calendar delete 5
+
+FORMATO DE SALIDA
+---------------
+[CALENDARIO] Rango de tiempo - N entradas
+
+  --- WD DD.MM. ---
+    [ID>3] HH:MM Título @ Ubicación [Estado]
+    [RID>2] ---- Nombre de la rutina (frecuencia, categoría)
+
+DATABASE
+---------
+  Archivo: datos/bach.db
+  Tablas: Assistant_calendar (id, título, event_type, start_datetime,
+                                   end_datetime, ubicación, descripción, estado)
+              rutinas_domésticas (id, nombre, frecuencia, categoría, próximo vencimiento)
+
+ARCHIVOS
+-------
+  Controlador: hub/calendar_handler.py
+  Documentación: docs/help/calendar_handler.txt
+
+VER TAMBIÉN
+----------
+  DB_004_TERMINDATENBANK_ANALYSE.md (esquema de base de datos)
+  hub/base.py (implementación de BaseHandler)

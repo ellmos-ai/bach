@@ -1,0 +1,162 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 下次考试：2026-11-13
+# 资源：[hub/agent_launcher.py,agents/,agents/_experts/]
+
+AGENT - 代理启动器和管理
+======================================
+
+日期：2026-05-09
+
+代理系统允许您启动和管理 BACH 代理
+作为单独的克劳德代码进程。每个代理都有自己的
+SKILL.md 最初是作为一种身份。
+
+结构
+--------
+
+  [Boss Agent] -- 坐标和代表
+       |
+       +-- [专家1] -- 专业执行
+       +-- [专家 2]
+
+代理目录：
+  特工/Boss特工（带有SKILL.md）
+  Agents/_experts/ 专家（带有 SKILL.md）
+
+CLI 命令（bach 代理）
+------------------------
+
+  list 列出所有可用的代理
+  start <名称> 启动代理（新终端窗口）
+  stop <名称> 停止运行代理
+  steer <name> "..." 保存运行代理的操作员提示
+  rename <name> <new> 更改代理/专家的显示名称
+  状态 显示所有正在运行的代理
+  医生 [姓名] 特工飞行前和恢复说明
+  list --json 代理，包括 JSON 格式的运行时元数据
+  start <name> --json 启动机器可读的 JSON 响应
+  stop <name> --json 停止响应机器可读的 JSON
+  steer <name> --json 引导响应，包括 JSON 格式的队列状态
+  status --json 以 JSON 格式运行/注册代理
+  doctor [name] --json 诊断机器可读为 JSON
+
+启动选项
+-------------------
+
+  --mode plan|默认模式（默认：default）
+  --model sonnet|opus|haiku AI模型（默认：sonnet）
+  --dry-run 仅检查，不启动
+  --json list/start/stop/status/doctor 的机器可读输出
+
+示例
+---------
+
+  # 列出所有代理（包括运行状态）
+  bach agent list
+
+  # 启动代理
+  bach agent start ati
+  bach agent start research --model opus
+  bach agent start entwickler --mode plan
+  bach agent start ati --dry-run
+  bach agent start ati --dry-run --json
+
+  # 显示正在运行的代理
+  bach agent status
+  bach agent status --json
+  bach agent steer ati "Bitte nur Statusflächen anfassen." --json
+
+  # 检查启动要求和恢复
+  bach agent doctor ati
+  bach agent doctor Theodor --json
+
+  # 停止代理（按名称）
+  bach agent stop ati
+  bach agent stop ati --json
+
+可用代理（选择）
+-----------------------------
+
+  [专业]
+    ati 软件开发代理（扫描仪、会话）
+    开发商 一般开发商代理
+    生产 生产工作流程代理
+    研究 科学研究
+    办公室助理税务、资金规划、文件
+    反思 自我反思和荟萃分析
+
+  [私人]
+    私人助理预约管理、研究
+    健康助理 医疗文件
+    保险保险管理
+
+  [专家]
+    税务专家（在_experts/下）
+    资金规划师 资金申请专家
+    预算管理
+    心理顾问
+
+当前列表：巴赫特工列表
+
+它是如何工作的
+-------------------
+
+1。 `bach agent start <name>` 查找代理的 SKILL.md
+2. 创建临时 CLAUDE.md (data/temp/agent_<name>/)
+3. 将打开一个新的终端窗口，其中包含 Claude Code
+4. PID存储在data/agent_pids/<name>.pid中
+5. `bach agent steer <name> "..."` 在 `OPERATOR_NOTES.md` 中写入操作员注释
+6. `bach agent stop <name>` 结束进程并删除 PID
+
+REQUIREMENTS
+---------------
+- 必须安装 Claude Code CLI（命令：`claude`）
+- 代理必须有 SKILL.md (agents/<name>/SKILL.md)
+
+恢复/故障排除
+--------------------------
+
+如果 `bach agent start ...` 失败或代理窗口立即返回
+关闭，首先运行诊断：
+
+  bach agent doctor ati
+  bach agent doctor ati --json
+
+`doctor` 检查：
+- 是否在 PATH 中找到 Claude Code CLI
+- `data/agent_pids/` 和 `data/temp/` 是否可写
+- 请求的代理及其“SKILL.md”是否可读
+- 是否需要清理过时的 PID 文件
+
+报告后的典型后续步骤：
+- `bach agent start <name> --dry-run` 用于安全的初步测试
+- 用于运行或挂起会话的“bach代理状态--json”
+- 安装 Claude Code CLI 或在本地检查登录/设置
+
+数据库
+---------
+  巴赫.数据库：
+    代理人 代理人登记处
+    agent_synergies 代理之间的协同作用
+
+文件
+-------
+  hub/agent_launcher.py 处理程序实现
+  代理/ Boss 代理文件夹
+  Agents/_experts/ 专家文件夹
+  data/agent_pids/ 正在运行的代理的 PID 文件
+  data/temp/agent_*/ 每个代理的临时 CLAUDE.md
+
+与agents.txt 的区别
+--------------------------
+本文档描述了 AgentLauncherHandler（bach 代理...）。
+有关所有代理和专家的概述：
+  bach --help agents
+
+另请参阅
+----------
+  bach --help agents      代理概述（所有代理）
+  bach --help skills      SKILL.md 系统
+  bach --help ati         ATI 软件开发人员详细信息

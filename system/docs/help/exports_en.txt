@@ -1,0 +1,133 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+EXPORTS - DB-to-Markdown export scripts
+=======================================
+
+DESCRIPTION
+============
+
+BACH exports database contents as Markdown files for easy
+Readability and versioning. The export scripts read from bach.db and
+create structured .md files in the data/ directory. Additionally
+There is a skill export for standalone packages.
+
+All scripts are in tools/ and can be executed directly.
+
+
+OVERVIEW
+==========
+
+  Script creates source (DB tables)
+  ---------------------- ----------------------- ----------------------- ----------------------
+  agents_export.py data/AGENTS.md agents, agent_synergies
+  chains_export.py data/CHAINS.md toolchains (bach.db)
+  partners_export.py data/PARTNERS.md delegation_rules,
+                                                    partner_recognition
+  workflows_export.py data/WORKFLOWS.md skills/workflows/ (Scan)
+  usecases_export.py data/USECASES.md usecases (bach.db)
+  skill_export.py ZIP package skills/ (file system)
+
+
+INDIVIDUAL DESCRIPTIONS
+====================
+
+AGENTS_EXPORT
+-------------
+Exports all registered agents with synergies. Reads from the
+agents table and agent_synergies, creates a formatted overview
+with name, type, status and synergy relationships.
+
+  python tools/agents_export.py
+  Output: data/AGENTS.md
+
+CHAINS_EXPORT
+-------------
+Exports toolchains (chained tool calls). Reads from the
+toolchains table, shows chain definition, triggers and
+Execution history.
+
+  python tools/chains_export.py
+  Output: data/CHAINS.md
+
+PARTNERS_EXPORT
+---------------
+Exports multi-LLM partner configuration. Reads delegation_rules
+and partner_recognition from the DB. Shows partner profiles, strengths,
+Delegation rules and recognition patterns.
+
+  python tools/partners_export.py
+  Output: data/PARTNERS.md
+
+WORKFLOWS_EXPORT
+----------------
+Scans skills/workflows/ for workflow files (.md) and creates one
+Overview. Extracts metadata (title, goal, steps) via regex
+from the file content.
+
+  python tools/workflows_export.py
+  Output: data/WORKFLOWS.md
+
+USECASES_EXPORT
+---------------
+Exports use cases from the usecases table. Shows scenario name,
+Description, handlers involved and success rate.
+
+  python tools/usecases_export.py
+  Output: data/USECASES.md
+
+SKILL_EXPORT
+------------
+Exports a single skill as a standalone ZIP package with
+Dependency resolution. Copies SKILL.md, tools, workflows and
+creates a requirements.txt.
+
+  python tools/skill_export.py <skill-name> [--output <path.zip>]
+  Output: ZIP file with complete skill structure
+
+  Note: For more extensive exports (agent, OS) see exporter.py
+  and builder.txt (bach help builder).
+
+
+EXAMPLES
+=========
+
+# Update all DB exports at once
+python tools/agents_export.py
+python tools/chains_export.py
+python tools/partners_export.py
+python tools/workflows_export.py
+python tools/usecases_export.py
+
+# Export a single skill
+python tools/skill_export.py recherche --output recherche_v1.zip
+
+# Check exported Markdown files
+ls data/*.md
+
+
+FILES
+=======
+
+tools/agents_export.py Agent export
+tools/chains_export.py Toolchain export
+tools/partners_export.py Partner export
+tools/workflows_export.py Workflow export
+tools/usecases_export.py Use case export
+tools/skill_export.py Skill standalone export
+
+data/AGENTS.md Generated agent overview
+data/CHAINS.md Generated toolchain overview
+data/PARTNERS.md Generated partner overview
+data/WORKFLOWS.md Generated workflow overview
+data/USECASES.md Generated use case overview
+
+
+SEE ALSO
+==========
+
+builder Skill/Agent creation & export (bach help builder)
+tools/exporter Advanced export: skill, agent, os-fresh, os-reset
+dist distribution system
+sync DB synchronization (Files -> DB, reverse direction)

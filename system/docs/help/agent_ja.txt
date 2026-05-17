@@ -1,0 +1,162 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 次回試験: 2026-11-13
+# リソース: [hub/agent_launcher.py、agents/、agents/_experts/]
+
+AGENT - エージェント ランチャーと管理
+======================================
+
+日付: 2026-05-09
+
+エージェント システムを使用すると、BACH エージェントを起動および管理できます
+個別のクロード コード プロセスとして。各エージェントには独自のものが付属しています
+SKILL.md はアイデンティティとして始まりました。
+
+構造
+--------
+
+  [ボスエージェント] -- 調整者と代表者
+       |
+       +-- [エキスパート 1] -- 特化した実行
+       +-- [エキスパート 2]
+
+エージェント ディレクトリ:
+  エージェント/ボスエージェント (SKILL.mdあり)
+  Agents/_experts/ Experts (SKILL.md を使用)
+
+CLI コマンド (bach エージェント)
+------------------------
+
+  list 利用可能なすべてのエージェントをリストします
+  start <name> エージェントを開始します (新しいターミナル ウィンドウ)
+  stop <名前> 実行中のエージェントを停止します
+  steer <名前> "..." エージェントを実行するためのオペレーター ヒントを保存します
+  rename <name> <new> エージェント/エキスパートの表示名を変更します。
+  ステータス 実行中のすべてのエージェントを表示
+  医師 [名前] エージェントの飛行前および回復記録
+  実行時メタデータを JSON として含む --json エージェントをリストします
+  start <name> --json 機械可読な JSON としての開始応答
+  stop <name> --json 機械可読な JSON としての応答停止応答
+  steer <name> --json キューステータスを含む応答を JSON としてステアします。
+  status --json JSON として実行/登録されたエージェント
+  医師 [名前] --json JSON として機械で読み取り可能な診断
+
+開始時のオプション
+-------------------
+
+  --mode プラン | デフォルト モード (デフォルト: デフォルト)
+  --model ソネット|作品|俳句 AI モデル (デフォルト: ソネット)
+  --dry-run 確認するだけで、開始しないでください
+  --json list/start/stop/status/doctor の機械可読出力
+
+例
+---------
+
+  # すべてのエージェントをリストします (実行ステータスを含む)
+  bach agent list
+
+  # エージェントを開始します
+  bach agent start ati
+  bach agent start research --model opus
+  bach agent start entwickler --mode plan
+  bach agent start ati --dry-run
+  bach agent start ati --dry-run --json
+
+  # 実行中のエージェントを表示
+  bach agent status
+  bach agent status --json
+  bach agent steer ati "Bitte nur Statusflächen anfassen." --json
+
+  # 開始要件と回復を確認します
+  bach agent doctor ati
+  bach agent doctor Theodor --json
+
+  # エージェントを停止 (名前で)
+  bach agent stop ati
+  bach agent stop ati --json
+
+利用可能なエージェント (選択)
+-----------------------------
+
+  [プロフェッショナル]
+    ati ソフトウェア開発者エージェント (スキャナー、セッション)
+    開発者 一般の開発者代理店
+    プロダクション プロダクション ワークフロー エージェント
+    研究 科学的研究
+    事務アシスタントの税金、資金計画、書類作成
+    反省 自己反省とメタ分析
+
+  [プライベート]
+    パーソナルアシスタントの予約管理、リサーチ
+    保健助手 医療文書
+    保険保険管理
+
+  [専門家]
+    税務専門家 (_experts/ の下)
+    資金調達プランナー 資金調達申請の専門家
+    予算管理
+    心理コンサルタント
+
+現在のリスト: バッハエージェントリスト
+
+仕組み
+-------------------
+
+1. 「bach Agent start <name>」はエージェントの SKILL.md を検索します。
+2. 一時的な CLAUDE.md が作成されます (data/temp/agent_<name>/)
+3. 新しいターミナル ウィンドウが開き、Claude Code が表示されます
+4. PID は data/agent_pids/<name>.pid に保存されます。
+5. `bach Agent steer <name> "..."` は、`OPERATOR_NOTES.md` にオペレーターメモを書き込みます。
+6. `bach Agent stop <name>` はプロセスを終了し、PID を削除します
+
+要件
+---------------
+- Claude Code CLI がインストールされている必要があります (コマンド: `claude`)
+- エージェントには SKILL.md (agents/<name>/SKILL.md) が必要です
+
+リカバリ / トラブルシューティング
+--------------------------
+
+「bach Agent start ...」が失敗した場合、またはエージェント ウィンドウがすぐに戻った場合
+閉じたら、最初に診断を実行します:
+
+  bach agent doctor ati
+  bach agent doctor ati --json
+
+`doctor` チェック:
+- Claude Code CLI が PATH にあるかどうか
+- `data/agent_pids/` と `data/temp/` が書き込み可能かどうか
+- 要求されたエージェントとその `SKILL.md` が読み取り可能かどうか
+- 古い PID ファイルをクリーンアップする必要があるかどうか
+
+レポート後の一般的な次のステップ:
+- 安全な予備テストのための「bach Agent start <name> --dry-run」
+- セッションの実行またはハングのための「bach エージェント ステータス --json」
+- Claude Code CLI をインストールするか、ローカルでログイン/セットアップを確認します
+
+DATABASE
+---------
+  バッハ.db:
+    エージェント エージェントレジストリ
+    Agent_synergies エージェント間の相乗効果
+
+ファイル
+-------
+  Hub/agent_launcher.py ハンドラーの実装
+  エージェント/ボスエージェントフォルダー
+  エージェント/_experts/ エキスパートフォルダー
+  data/agent_pids/ 実行中のエージェントの PID ファイル
+  data/temp/agent_*/ エージェントごとの一時的な CLAUDE.md
+
+agents.txt との違い
+--------------------------
+このドキュメントでは、AgentLauncherHandler (バッチ エージェント ...) について説明します。
+すべてのエージェントとエキスパートの概要については:
+  bach --help agents
+
+関連項目
+----------
+  bach --help agents      エージェントの概要 (すべてのエージェント)
+  bach --help skills      SKILL.md システム
+  bach --help ati         ATI ソフトウェア開発者の詳細

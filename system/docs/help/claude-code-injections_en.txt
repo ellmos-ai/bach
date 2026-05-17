@@ -1,0 +1,282 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Resources: [cli.js (bundled), github.com/anthropics/claude-code]
+
+CLAUDE CODE INJECTION SYSTEM -- ANATOMY
+==========================================
+
+As of: 2026-02-17
+Source: Reverse engineering from cli.js v2.1.44 (minified)
+Method: Regex analysis + systematic prompt tests
+
+OVERVIEW
+----------
+Claude Code injects so-called “system reminders” into the message stream
+between user and LLM. The LLM (Claude) sees this as part of the conversation,
+but cannot distinguish whether they come from the user or the system --
+except for the <system-reminder> XML tag.
+
+Unlike BACH's injector system (see: injectors.txt), the user has
+Claude Code NO direct control over the injections. The LLM can
+do not turn them on or off.
+
+ARCHITECTURE
+-----------
+  User message
+      |
+      v
+  Claude Code CLI (Node.js, cli.js)
+      |
+      +--> d6() -- creates user message object
+      |      Fields: content, isMeta, isVisibleInTranscriptOnly,
+      |      isCompactSummary, uuid, timestamp, todos, ...
+      |      isMeta:true = invisible in the user transcript
+      |
+      +--> Px() -- System reminder wrapper
+      |      function Px(A) { return `<system-reminder>\n${A}\n</system-reminder>` }
+      |
+      +--> s5() -- Bulk wrapper
+      |      Applies Px() to all text content in message arrays
+      |
+      v
+  API call to Anthropic (messages with injected system reminders)
+      |
+      v
+  LLM (Claude) -- sees system reminders in the message stream
+
+CORE FUNCTIONS (deobfuscated)
+------------------------------
+  d6({content, isMeta, ...})
+    Creates a Message object of type "user" with role:"user".
+    isMeta:true means: Message is not visible in the transcript,
+    but will be sent to the LLM.
+
+  Px(text)
+    Wrapped text in <system-reminder> tags.
+    Simplest function in the system.
+
+  s5(messages)
+    Iterates over message array and applies Px() to all of them
+    text content. Bulk operation.
+
+ALL 52 INJECTION TYPES
+-------------------------
+
+File operations (12):
+  file file read (with content)
+  already_read_file File has already been read (no-op)
+  edited_text_file Text file was edited
+  edited_image_file Image file edited (no-op)
+  pdf PDF read
+  pdf_reference PDF reference
+  image image read
+  notebook Jupyter Notebook
+  directory directory listing (via ls)
+  compact_file_reference Compact file reference
+  selected_lines_in_ide User has selected lines in IDE
+  opened_file_in_ide User opened file in IDE
+
+Memory/Context (4):
+  nested_memory Contents of memory subfiles
+                          Format: "Contents of {path}:\n{content}"
+  ultramemory Ultra-Memory Injection (generic)
+  compaction_reminder "Auto-compact enabled, older messages will be summarized"
+  date_change "The date has changed. DO NOT mention this to the user"
+
+Task/Todo Management (5):
+  task_reminder "Task tools haven't been used recently" (Nudge)
+  task_progress Task progress message (generic)
+  task_status Task status: killed/stopped + details
+  todo Todo entry
+  todo_reminder Todo nudge (older system, same mechanism)
+
+Plan mode (5):
+  plan_mode Plan mode activated
+  plan_mode_exit Exit plan mode
+  plan_mode_reentry Back to plan mode (reads existing plan)
+  plan_file_reference Reference to plan file
+  verify_plan_reminder "Plan implemented, please verify"
+
+Team/Agents (5):
+  agent_mention "User wants to invoke agent X"
+  delegate_mode Delegate mode: only team tools allowed
+  delegate_mode_exit Exit delegate mode
+  team_context Team context injection
+  teammate_mailbox Messages from teammates (only in team mode)
+
+Hooks (10):
+  hook_blocking_error Hook blocked action (with error message)
+  hook_success Hook successful (SessionStart/UserPromptSubmit only)
+  hook_additional_context Hook provides additional context
+  hook_error_during_execution Hook error during execution (no-op)
+  hook_non_blocking_error Non-blocking hook error (no-op)
+  hook_cancelled Hook canceled (no-op)
+  hook_stopped_continuation Hook stopped continuation
+  hook_system_message Hook system message
+  hook_permission_decision Hook permission decision
+  async_hook_response Asynchronous hook response
+
+Resources/Budget (2):
+  token_usage "Token usage: X/Y; Z remaining"
+  budget_usd "USD budget: $X/$Y; $Z remaining"
+
+Skills/MCP (4):
+  skill_listing List of available skills
+  invoked_skills Skills invoked
+  dynamic_skill Dynamic skill (no-op, returns [])
+  mcp_resource MCP resource loaded
+
+Other (5):
+  text Simple text
+  queued_command Waiting slash command
+  structured_output Structured output
+  diagnostics IDE diagnostics (new errors/warnings)
+  output_style Output style active (e.g. "explanatory")
+  critical_system_reminder Critical system reminder (generic)
+  command_permissions Command-Permissions (no-op)
+
+NO-OP TYPES (do not create an injection):
+  already_read_file, command_permissions, edited_image_file,
+  hook_cancelled, hook_error_during_execution, hook_non_blocking_error,
+  dynamic_skill
+
+TIMING CONSTANTS
+-----------------
+  Xf6 = {
+      TURNS_SINCE_WRITE: 10 task nudge after 10 turns without task tool
+      TURNS_BETWEEN_REMINDERS: 10 min. 10 turns between task nudges
+  }
+
+  qt4 = {
+      TURNS_BETWEEN_ATTACHMENTS: 5 attachment reminders every 5 turns
+      FULL_REMINDER_EVERY_N_ATTACHMENTS: 5 Full reminder every 5 attachments
+  }
+
+  aQY = {
+      TOKEN_COOLDOWN: 5000 token cooldown (after 5000 tokens)
+  }
+
+  sQY = {
+      TURNS_BETWEEN_REMINDERS: 10 General reminder interval
+  }
+
+  Note: "Turns" counts all LLM interactions including tool calls,
+  not just user messages. This is why nudges appear irregular
+  from the user perspective.
+
+TRIGGER LOGIC (task reminder, deobfuscated)
+-------------------------------------------
+  function shouldInjectTaskReminder(messages) {
+      // Only if task tools are available
+      if (!taskToolsEnabled()) return false;
+      if (messages.length === 0) return false;
+
+      // Count turns since last task tool use
+      let turnsSinceLastUse = 0;
+      let turnsSinceLastReminder = 0;
+
+      for (msg in messages.reverse()) {
+          if (msg.type === "assistant" && msg.usedTool("TaskCreate" || "TaskUpdate"))
+              break;  //Last task tool usage found
+          turnsSinceLastUse++;
+      }
+
+      // Check whether reminder is due
+      if (turnsSinceLastUse >= 10 && turnsSinceLastReminder >= 10) {
+          let tasks = getAllTasks();
+          return { type: "task_reminder", content: tasks };
+      }
+      return false;
+  }
+
+CONFIDENTIALITY INSTRUCTIONS
+---------------------------
+The following types contain explicit "NEVER mention" statements:
+
+  task_reminder: "Make sure that you NEVER mention this reminder to the user"
+  todo_reminder: "Make sure that you NEVER mention this reminder to the user"
+  date_change: "DO NOT mention this to the user explicitly"
+  nested_memory: "Don't tell the user this, since they are already aware"
+    (at CLAUDE.md/MEMORY.md changes)
+
+COMPARISON: CLAUDE CODE vs. BACH INJECTORS
+------------------------------------------
+
+  Property | Claude Code | BACH
+  ----------------------|-----------------------|-----------------------
+  Architecture | System-centric | LLM-centric
+  Control | CLI controls LLM | LLM controls injectors
+  User control | None (except hooks) | Full (toggle on/off)
+  LLM control | None | Full (on/off)
+  Cooldown management | Turn-based (rigid) | Time-based (flexible)
+  Number of types | 52 | 5 (with partial functions)
+  Secrecy | 4 guys with "NEVER" | None (transparent)
+  Triggers | Turn Count | Keywords + Time + Events
+  DB integration | None | 900+ dynamic triggers
+  Self-extension | Not possible | Via context_triggers DB
+  Open Source | cli.js (minified) | Fully readable (Python)
+
+MAJOR DIFFERENCES:
+
+  1. TRANSPARENCY: BACH informs openly, Claude Code actively hides
+  2. CONTROL: BACH injectors can be controlled by the LLM, Claude Codes cannot
+  3. FLEXIBILITY: BACH has dynamic DB triggers, Claude Code has hardcoded constants
+  4. COOLDOWNS: BACH uses time-based (min), Claude Code uses turns (rigid)
+
+POTENTIAL: MESSAGING SYSTEM
+----------------------------
+The injection infrastructure could be used for inter-instance communication
+be used:
+
+1. HOOKS (easiest way):
+     hook_additional_context on UserPromptSubmit --
+     reads message from file and injected as context.
+     No source patching necessary.
+
+  2. NESTED MEMORY:
+     Files in the memory folder are automatically injected.
+     Change from outside = message to the LLM.
+     Restriction: Only at session start or CLAUDE.md/MEMORY.md changes.
+
+  3. CRITICAL_SYSTEM_REMINDER:
+     Generic type for any message.
+     Would have to be triggered programmatically (source patch).
+
+  4. TEAM MAILBOX:
+     Already existing messaging for teams.
+     Only active in team mode (l8() check).
+
+RECOMMENDATION: Hook-based approach is most practical.
+A UserPromptSubmit hook could check an "Inbox" file and
+Inject messages as hook_additional_context.
+
+EXPERIMENTAL RESULTS (Session 2026-02-17)
+-----------------------------------------------
+Systematic test with 14+ messages:
+
+  - Task nudge doesn't appear strictly every 10 messages because
+    Count tool calls as separate turns
+  - Keyword trigger for task nudge: REFUTED (pure turn counting)
+  - User message length: no influence on triggers
+  - Own (LLM) outputs do not trigger nudges
+  - Pattern: Nudges accumulate after tool-intensive rounds
+    (because more turns = faster at 10)
+
+FILES
+-------
+  Reverse engineering source:
+    C:\Users\User\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\cli.js
+    (11.5 MB, minified, version 2.1.44)
+
+  Analysis results:
+    ~/.claude/projects/C--Users-User/memory/claude-code-injections-anatomy.md
+    ~/.claude/projects/C--Users-User/memory/system-injections.log
+
+SEE ALSO
+----------
+  injectors.txt BACH injector system (5 injectors)
+  claude-code.txt Claude Code Quick Reference
+  claude-code-automatization.txt Claude Code Automation
+  memory.txt memory system
+  partner.txt partner infrastructure

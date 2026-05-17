@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Status: LEGACY — Successor: BACH Chat Service (help bach_chat)
+
+CLAUDE BRIDGE - Telegram <-> Claude Code CLI Integration (LEGACY)
+==================================================================
+
+NOTE: Claude Bridge has been replaced by the BACH Chat Service.
+         The new service offers 5 backends, control API, web dashboard
+         and cross-platform system tray. See: help bach_chat
+
+DESCRIPTION
+------------
+Claude Bridge is a Telegram bot handler that enables two-way communication
+between Telegram chats and BACH/Claude Code CLI. The demon
+runs in the background, processes incoming messages, delegates
+longer tasks to worker threads and sends results via Telegram.
+
+Architecture:
+  - Chat-Claude: Processes every Telegram message in a new context
+  - Worker-Claude: For longer/autonomous tasks (with status updates)
+  - Daemon: Monitors permissions, budget and lifecycle
+  - Security: Challenge-Response system with configurable password
+
+
+OPERATIONS
+-----------
+  bach claude-bridge start              Start daemon in the background
+  bach claude-bridge stop               End daemon
+  bach claude-bridge status             Status: daemon, workers, budget, mode
+  bach claude-bridge mode               Show permission mode (from config)
+  bach claude-bridge test "msg"         Simulate test message (locally)
+  bach claude-bridge logs [N]           Last N log lines (default: 20)
+  bach claude-bridge workers            Last 10 workers with Status/Error
+  bach claude-bridge password <pw>      Change password for full access
+  bach claude-bridge setup              Interactive setup wizard for new users
+  bach claude-bridge challenge [user]   Generate security challenge
+  bach claude-bridge verify <ans>       Check challenge answer [--user=ID]
+
+
+TELEGRAM COMMANDS (activate in chat)
+-------------------------------------
+  toggle full access on/off (1h auto-lock)
+  mode Show current mode
+  budget View budget status
+  workers Last worker overview
+  stop End running workers immediately
+
+
+EXAMPLES
+---------
+  # Start daemon and wait 2s, then check status
+  $bach claude-bridge start
+  $sleep 2
+  $ bach claude-bridge status
+
+  # Simulate test message locally
+  $ bach claude-bridge test "Hullo, how are you?"
+
+  # Show last 50 log lines
+  $ bach claude-bridge logs 50
+
+  # Set new password (then restart daemon)
+  $ bach claude-bridge password "MyNewPW123"
+  $ bach claude-bridge stop
+  $ bach claude-bridge start
+
+  # Generate and verify Security Challenge
+  $bach claude-bridge challenge user_123
+  $ bach claude-bridge verify "AnswerText" --user=user_123
+
+
+FILES
+-------
+  Handler: hub/claude_bridge.py
+  Daemon: hub/_services/claude_bridge/bridge_daemon.py
+  Config: hub/_services/claude_bridge/config.json
+  Setup: hub/_services/claude_bridge/setup_wizard.py
+  Security: hub/_services/claude_bridge/security.py
+  Logs: data/logs/claude_bridge.log
+  DB: data/bach.db (table: claude_bridge_workers)
+
+
+CONFIGURATION
+-------------
+See config.json:
+  - permissions.default_mode: "restricted" | "interactive" | "full"
+  - permissions.password: Password for full access
+  - telegram.token: Bot token (set via setup)
+  - workers.max_concurrent: Max. concurrent workers (default: 3)
+  - budget.hourly_limit: API cost limit per hour
+
+
+SEE ALSO
+----------
+  help connector Connector system (Telegram, etc.)
+  help partner partner system (Multi-LLM)
+  hub/_services/claude_bridge/ handler directory

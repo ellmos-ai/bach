@@ -1,0 +1,98 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ABO - サブスクリプションと契約の管理
+=========================================
+
+説明:
+  継続的なサブスクリプションと契約を管理します (ストリーミング、ソフトウェア、
+  インターネット、モバイル通信など）。税項目からサブスクリプションを自動的に認識します
+  
+
+CLI コマンド:
+  bach abo help              ヘルプを表示
+  bach abo init              データベース テーブルの作成 (1 回限り)
+  bach abo scan              サブスクリプションの税項目を検索
+  bach abo list              認識されているすべてのサブスクリプションを表示
+  bach abo list --alle       すべてのサブスクリプションを表示
+  bach abo list --bestaetigt Nur bestaetigte
+  bach abo confirm <id>      非アクティブ化
+  bach abo dismiss <id>      サブスクリプションの検出を確認
+  bach abo costs             エラー検出を削除
+  bach abo export            カテゴリ別のコスト内訳
+  bach abo patterns          CSV エクスポート (data/abo_export.csv)
+  bach abo sync-mail         既知のサブスクリプション パターンを表示
+
+電子メールからサブスクリプションを同期
+
+オプション:
+  --year YYYY スキャンの課税年度 (デフォルト: 現在の年)
+  --dry-run スキャンのみシミュレート
+
+  abo_subscriptions - データベース:
+  bach.db 内のテーブル:
+検出/管理されたサブスクリプション
+
+  abo_payments - ID、名前、プロバイダー、カテゴリ、月額、
+    支払い間隔、キャンセルリンク、認識済み_on、
+    確認済み (0/1)、有効 (0/1)
+税金項目への支払いリンク
+
+  abo_patterns - id、subscription_id、item_id、金額、日付
+既知のプロバイダー検出パターン
+
+  fin_contracts - ID、パターン、プロバイダー、カテゴリ、キャンセルリンク
+手動契約管理 (並列)
+
+    id、名前、カテゴリー、プロバイダー、お客様番号、契約番号、
+    金額、間隔、通知期間日、有効期限日、...
+
+ワークフロー:
+  1. init を実行する (一回限り: テーブル + デフォルトのパターン)
+  2. Bach サブスクリプション スキャン (tax_posten を検索)
+  3. バッハ アボ リスト (結果を表示)
+  4. bach aboconfirm <id> (実際のサブスクリプションを確認します)
+  5. <id> を無視します (誤った識別子を削除します)
+  6. Bach サブスクリプション費用 (費用の概要)
+  7. 同期メールのバックアップ (電子メール購読のインポート、オプション)
+
+既知のパターン (選択):
+  Netflix、Spotify、Microsoft 365、Adobe、Amazon Prime、Disney+、
+  Apple/iCloud、YouTube Premium、Dropbox、Google One、ChatGPT/OpenAI、
+  Anthropic/Claude、GitHub、JetBrains、1Password、NordVPN、ExpressVPN
+
+インタープレイ:
+  - バッチ税: サブスクリプション スキャンのデータ ソースとしての税項目
+  - GUI: サブスクリプション CRUD (#573、Gemini によって実装)
+  - fin_contracts: 手動契約 (自動検出を追加)
+  - Financial_emails: サブスクリプション関連の電子メール (category = 'abo')
+  bach abo init
+
+例:
+  # 初期セットアップ:
+  bach abo scan --jahr 2025
+
+  # 税金データからサブスクリプションを検出します:
+  bach abo list --alle
+
+  # すべてのサブスクリプション (非アクティブ化されたサブスクリプションを含む) をリストします:
+  bach abo list --bestaetigt
+
+  # 確認されたサブスクリプションのみ:
+  bach abo costs
+
+  # カテゴリ別のコストの概要:
+  bach abo confirm 8
+
+  # サブスクリプションを確認します:
+  bach abo dismiss 3
+
+  # エラー検出を削除:
+  bach abo sync-mail
+
+  # 電子メール購読をインポートします:
+  bach abo export
+
+  # 予算計画のためにエクスポート:
+  bach abo patterns

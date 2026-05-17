@@ -1,0 +1,113 @@
+# Portability: USER
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+资金报告
+==============
+
+创建、导出和存档基于 ICF 的开发报告。
+所有客户数据都会自动匿名。
+姓名和出生日期是根据 data_roh/ 中的文件夹名称识别的。
+
+QUICKSTART
+------------
+
+  1. 将文件夹插入data_roh/（格式：“姓氏，名字”）
+  2. 使用以下方法之一：
+
+  方式 1 - 聊天（推荐）：
+    “创建资金报告”
+
+  方式 2 - 桌面 .bat：
+    Foerderbericht_Pipeline.bat（输入用于自动检测）
+
+  方式3-llmauto链：
+    bach chain start foerderbericht
+
+  方式 4 - CLI:
+    bach bericht pipeline
+
+  3. 完成的报告位于output_reports/
+
+COMMANDS
+-------
+
+  bach bericht pipeline [name] [geburtsdatum] [optionen]
+    端到端管道：data_raw -> output_reports
+    姓名/出生日期可选（从文件夹名称自动检测）。
+    --期间“01/01/2025 - 12/31/2025”报告期
+    --backend claude_code|llmauto LLM 后端（默认：claude_code）
+    --parents "mother" "father" 匿名化父母姓名
+    --no-cleanup 保留中间文件夹
+
+  bach bericht list
+    列出所有客户端文件夹及其状态（存在 JSON/DOCX）。
+
+  bach bericht status
+    显示所有文件夹的管道状态。
+
+  bach bericht generate <json-datei> -o <output> [-t vorlage]
+    使用 JSON 文件中的数据填充 Word 模板。
+
+  bach bericht export <klient-ordner> -p <passwort>
+    报告去匿名化。
+
+  bach bericht archive [name]
+    将完成的报告移至存档。
+
+  bach bericht help
+    显示此帮助。
+
+LLM-BACKENDS
+-------------
+
+  claude_code (默认) Claude Code CLI 作为子进程
+  llmauto llmauto 链条系统
+  anthropic_sdk 直接API调用（需要ANTHROPIC_API_KEY）
+
+  标准路径是 claude_code 和 llmauto。
+  anthropic_sdk 只是一个可选的替代方案（未设置 API 密钥）。
+
+管道文件夹（仅 4 + 自述文件）
+---------------------------------
+
+  data_roh/ 插入客户端文件（1 个文件夹 = 1 个客户端！）
+       ↓
+  data_ano/ [自动] 匿名文件
+       ↓
+  data_bundled/ [自动] 捆绑 + 提示 + LLM 响应
+       ↓
+  output_reports/ [自动] 完成的报告（去匿名化，最终产品）
+
+  README.md说明
+
+  没有更多的文件夹。旧文件夹（data/、output/、bundles/、
+  Reports_ano/、Reports_clean/) 会在清理过程中自动删除。
+
+示例
+---------
+
+  # 全自动（从文件夹名称识别名称）
+  bach bericht pipeline
+
+  # 具有明确的信息
+  bach bericht pipeline "Max Mustermann" "15.03.2016"
+
+  # 其他时期
+  bach bericht pipeline --zeitraum "01.07.2025 - 30.06.2026"
+
+  # 检查状态
+  bach bericht status
+  bach bericht list
+
+相关文件
+-----------------
+
+  hub/_services/document/foerderbericht_pipeline.py 协调器
+  hub/_services/document/pipeline_runner.py CLI 运行程序
+  hub/report.py CLI 处理程序
+  tools/llmauto/chains/foerderbericht.json 链配置
+  hub/_services/document/anonymizer_service.py 匿名化
+  hub/_services/document/document_pipeline.py 文档扫描仪
+  Skills/_templates/report_template_geiger_universal.docx Word 模板
+  用户/文档/foerderplaner/报告/工作文件夹

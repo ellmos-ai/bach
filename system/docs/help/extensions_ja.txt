@@ -1,0 +1,160 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+拡張機能 - デスクトップ ツールと特別なアプリ
+=============================================
+
+ステータス: 2026-03-04
+
+拡張機能ハンドラーは、外部 BACH 拡張機能を管理します: デスクトップ アプリケーション、
+コア システムの一部ではない特別なツールとデスクトップ GUI。
+拡張機能は extensions/ ディレクトリに保存され、同期できます。
+
+
+構造
+--------
+
+  拡張子/
+    ext1/
+      SKILL.md 拡張メタデータ
+      START.bat スタートアップ ファイル (Windows)
+      README.md ドキュメント
+      main.py メインプログラム
+      requirements.txt Python の依存関係
+    ext2/
+      ...
+
+ハンドラー名
+------------
+
+拡張機能
+
+CLI コマンド (bach 拡張機能)
+-----------------------------
+
+  list すべての拡張子をリストします。
+  show <name> 拡張機能に関する詳細を表示します
+  run <name> 拡張機能の開始 (START.bat または main.py)
+  sync 拡張機能はデータベースと同期します
+  search <term> 検索拡張機能
+
+説明
+------------
+
+拡張機能は、次の機能を備えたモジュール式のポータブル デスクトップ アプリケーションです:
+
+- 各拡張機能には、SKILL.md を含む独自のディレクトリがあります。
+- Windows 起動用の START.bat はオプション (フォールバック: Python の直接実行)
+- SKILL.md または README.md に説明が含まれています
+- メインファイルの自動検出: main.py、app.py、<name>.py
+- DB の同期は拡張機能をスキルとして登録します (type='extension')
+
+OPERATIONS
+-----------
+
+list: 既存のすべての拡張機能のリスト:
+         - .py ファイルの数
+         - フラグ: SKILL.md の場合は [SKILL]、START.bat の場合は [START]
+         - 説明 (SKILL.md または README.md より)
+         - 保存場所
+
+show: 拡張子の詳細表示:
+         - フルパス
+         - サイズ付きのファイルリスト
+         - SKILL.mdプレビュー（500文字まで）
+         - 名前が正確でない場合のあいまい一致
+
+run: 拡張機能を開始します:
+         - Windows: START.bat を実行します (新しいウィンドウ)
+         - フォールバック: Python でメイン ファイルを直接開始します
+         - メイン ファイルの優先順位: main.py > app.py > <name>.py
+
+sync: 拡張機能をデータベース (bach.db) と同期します。
+         - 新しい拡張機能を追加します (type='extension')
+         - 既存の拡張機能のパスと説明を更新します
+         - --dry-run は変更を書き込まずに表示します
+
+検索: 以下の全文検索:
+         - 拡張子名（大文字と小文字は区別されません）
+         - 説明 (大文字と小文字は区別されません)
+         - スニペット付きのヒットを表示
+
+例
+---------
+
+  # すべての拡張子をリストします
+  bach extensions list
+
+  # 拡張機能に関する詳細 (例: 'myapp')
+  bach extensions show myapp
+
+  # 拡張機能を開始
+  bach extensions run myapp
+  bach extensions run knowledgedigest
+
+  # データベースで同期します (新しく検出された拡張機能を追加します)
+  bach extensions sync
+  bach extensions sync --dry-run      # 変更せずにプレビューします
+
+  # 拡張子を検索
+  bach extensions search "data"
+  bach extensions search "analysis"
+
+FILES
+-------
+
+  Hub/extensions.py ハンドラーの実装
+  extensions/ 拡張機能ディレクトリ (system/ からの相対)
+  extensions/<name>/SKILL.md 拡張機能メタデータ
+  extensions/<名前>/START.bat Windows スタートアップ ファイル
+  extensions/<名前>/README.md ドキュメント
+  extensions/<name>/requirements.txt 依存関係 (オプション)
+  拡張レジストリを備えた data/bach.db データベース
+
+DATABASE
+---------
+
+  バッハ.db:
+    type='extension' のスキルテーブル
+      - name 拡張子名
+      - 「拡張子」と入力します
+      - category カテゴリ (例: '拡張子')
+      - path ディレクトリパス
+      - 説明の説明
+      - is_active 1 (有効) または 0 (無効)
+      - バージョン バージョン (デフォルト: 1.0.0)
+      - dist_type 2 (拡張子)
+
+SKILL.md 形式
+---------------
+
+最小形式:
+
+  description: 拡張機能の簡単な説明
+  著者: 名前
+  バージョン: 1.0.0
+  カテゴリ: ツール|GUI|分析|ユーティリティ
+
+説明はハンドラーによって SKILL.md または README.md から自動的に取得されます。
+
+
+開始メカニズム
+----------------
+
+1。 bash 拡張機能の実行 <名前> が呼び出されます
+2. ハンドラーは extensions/<name>/ を調べます。
+3. START.batは存在しますか? -> Windows: cmd /c start <START.bat>
+4. それ以外の場合: メイン ファイル (main.py、app.py、<name>.py) を検索します。
+5. メインファイルは存在しますか? -> Python <メインファイル>
+6. スタートアップ ファイルが見つからない場合はエラー
+
+Windows 以外のシステム: START.bat は無視され、Python フォールバックのみ
+
+関連項目
+----------
+
+  bach --help skills          SKILL.md システム (メタデータ)
+  bach --help dist            配布とパッケージ化
+  extensions/ 拡張機能ディレクトリ
+  Research/_tools/ 研究ツール (例)

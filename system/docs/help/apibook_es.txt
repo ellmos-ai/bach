@@ -1,0 +1,75 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+APIBOOK - Documentación de API central
+======================================
+
+DESCRIPCIÓN
+------------
+Administra una base de datos central de todas las API utilizadas. URL de tiendas,
+Tipo de autenticación, puntos finales, descripciones y estado de verificación.
+Utiliza SQLite (bach.db) con la tabla api_book.
+
+OPERACIONES
+-----------
+  bach api add <name> <base_url> [--auth key|oauth|none] [--desc "..."] [--provider "..."] [--tags "a,b"]
+    Registrar o actualizar API
+
+  bach api list
+    Mostrar todas las API registradas (estado, autenticación, verificación)
+
+  bach api show <name>
+    Información detallada de una API (URL, Auth, Endpoints, Ejemplos)
+
+  bach api endpoint add <api_name> <METHOD> <path> [--desc "..."]
+    Agregar punto final a la API existente (por ejemplo, POST /v1/chat/completions)
+
+  bach api verify [<name>]
+    Pruebe todas las API o API individuales (solicitud HTTP HEAD, tiempo de espera: 10 s)
+
+  bach api search <keyword>
+    Buscar API por palabra clave en nombre, descripción, etiquetas
+
+  bach api remove <name>
+    Eliminar API de la base de datos
+
+  bach api help
+    Mostrar esta ayuda
+
+EJEMPLOS
+---------
+  # Registrar API
+  bach api add openai https://api.openai.com --auth key --desc "OpenAI API"
+
+  # Con proveedor y etiquetas
+  bach api add github https://api.github.com --auth oauth --provider GitHub --tags "git,development"
+
+  # Agregar punto final
+  bach api endpoint add openai POST /v1/chat/completions --desc "Chat Completion"
+
+  # Buscar y comprobar 
+  bach api search openai
+  bach api verify openai
+  bach api list
+
+  # Mostrar detalles
+  bach api show github
+
+BASE DE DATOS
+---------
+  Tabla: api_book
+  Columnas: id, nombre (ÚNICO), proveedor, base_url, tipo_autenticación, descripción,
+           endpoints_json, ejemplos_json, etiquetas, último_verificado, is_active,
+           creado_at, actualizado_at, dist_type
+
+ARCHIVOS
+-------
+  Controlador: hub/apibook.py
+  Base de datos: data/bach.db (SQLite)
+
+VER TAMBIÉN
+----------
+  bach.py: punto de entrada CLI
+  hub/base.py - clase BaseHandler
+  datos/bach.db - base de datos

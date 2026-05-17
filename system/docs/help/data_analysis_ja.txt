@@ -1,0 +1,56 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DATA_ANALYSIS - pandas と matplotlib を使用したデータ分析
+========================================================
+
+説明
+------------
+データ ファイル (CSV、Excel、JSON) を分析および視覚化するためのハンドラー。
+サポートされている操作: ロード、記述統計、データ ビュー、
+相関関係とグラフの作成。
+
+要件: pandas がインストールされている (グラフには matplotlib を推奨)
+
+操作
+-----------
+  bach data load <path>                  ファイルをロードして情報を表示
+  bach data describe <path>              記述統計 (平均、標準、最小、最大)
+  bach data head <path> [--rows N]       最初の N 行 (デフォルト: 10)
+  bach data corr <path>                  相関行列 (数値列のみ)
+  bach data chart <path> [Optionen]      グラフの作成
+    --type [bar|line|scatter|pie|hist] チャートの種類 (デフォルト: bar)
+    --x <列> X 軸の列名
+    --y <列> Y 軸の列名
+    --output <file> 出力ファイル名
+  bach data list                         input/ フォルダー内のファイルを表示
+
+例
+---------
+  bach data load sales.csv
+  bach data describe data/results.xlsx
+  bach data head data/metrics.csv --rows 20
+  bach data corr dataset.json
+  bach data chart sales.csv --type bar --x month --y revenue
+  bach data chart data/values.csv --type scatter --x x_val --y y_val --output scatter.png
+  bach data list
+
+ディレクトリ
+-------------
+  ユーザー/データ分析/入力/入力ファイル
+  user/data-analysis/output/ 分析結果
+  user/data-analysis/charts/ 生成されたグラフ (PNG)
+
+ファイル
+-------
+  ハンドラー: Hub/data_analysis.py
+
+サポートされている形式
+---------------------
+  CSV/TXT、XLSX/XLS、JSON
+
+関連項目も参照
+----------
+  bach help
+  bach --version

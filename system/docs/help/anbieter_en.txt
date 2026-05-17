@@ -1,0 +1,102 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PROVIDER - Provider Specific Rules
+=====================================
+
+DESCRIPTION
+Rules for processing invoices and receipts
+various online providers.
+
+IMPORTANT: This is purely a documentation file without any associated information
+Handler. The rules are implemented in tax expert scripts:
+- system/agents/_experts/steuer/temu_ocr_batch.py
+- system/agents/_experts/steuer/steuer_batch.py
+- system/agents/_experts/steuer/beleg_vorfilter.py
+- system/agents/_experts/steuer/beleg_parser.py
+
+Receipts are stored in subfolders:
+user/documents/personal_assistant/tax/YYYY/advertising costs/belege/[provider]/
+
+TEMU
+====
+
+Context:
+TEMU invoices are imported from email order confirmations,
+not from original receipts. This is a workaround, there
+Automatically retrieving the original receipts is very time-consuming.
+
+Entry rules:
+
+1. PRICES
+   Always extract from the email PDFs
+   (Prices are volatile on the website)
+
+2. PRODUCT NAMES
+   If text is missing or incomplete:
+   - Derive logically from context
+   - Better: Search product on temu.com for correct name
+
+3. DOCUMENT TYPE
+   Mark as “Order confirmation (alternatively invoice)”
+
+4. SUBSEQUENT VALIDATION
+   If original receipts are uploaded later,
+   Compare and update data
+
+Note for tax office:
+Original receipts will only be provided upon request.
+Order confirmations serve as initial proof.
+
+
+AMAZON
+======
+(Placeholder for future rules)
+
+Add if necessary:
+- Invoice format
+- Special features of marketplace sales
+- Prime membership receipts
+
+
+EBAY
+====
+(Placeholder for future rules)
+
+Add if necessary:
+- PayPal connection
+- Private sales vs. commercial
+
+
+OTHER PROVIDERS
+================
+If necessary, add here:
+- Aliexpress
+-Wish
+- Shein
+- Other online retailers with special invoice formats
+
+
+IMPLEMENTED PROVIDERS IN BELEG_VORFILTER.PY
+==============================================
+- Temu (temu.com, Whaleco)
+- Amazon (amazon.de, amazon.com)
+- eBay (ebay.de, ebay.com)
+- PayPal (paypal.com)
+- Google Play
+- Apple
+- Medimops
+
+
+SEE ALSO
+----------
+bach steuer help       Tax Handler Help
+bach steuer tools      Show available tax tools
+
+TOOLS
+-----
+temu_ocr_batch.py Batch OCR for Temu receipts (image-based PDFs)
+steuer_batch.py Vendor parser for Amazon, Temu, eBay
+beleg_vorfilter.py Automatic sorting of receipts
+beleg_parser.py LLM-based document extraction

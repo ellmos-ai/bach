@@ -1,0 +1,152 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Fuentes: [ARQUITECTURA.md, SKILL.md, core/, bach_api.py]
+
+ARQUITECTURA BACH (SO Personal Agentic)
+======================================
+
+DEFINICIÓN
+BACH es un sistema jerárquico para orquestar modelos de IA.
+Se sienta como un "sistema nervioso" entre la infraestructura (cómputo) y la aplicación.
+
+MODELO DE CAPA
+----------------
+
+0. CAPA NÚCLEO (núcleo/, bach_api.py)
+   Descubrimiento automático basado en registro: carga automática de todos los controladores desde hub/
+   Contenedor de aplicaciones: DI ligero con base de datos + registro con inicialización diferida
+   API de biblioteca: acceso programático sin CLI (bach_api.py)
+   Tipos de base: Resultado, ParsedArgs, OpDef - contratos uniformes
+
+1. CAPA DE ORQUESTRACIÓN (bach.py, sistema asociado, API sin cabeza)
+   Coordina la colaboración de múltiples LLM (Claude, Gemini, Ollama).
+   Gestiona tareas, roles y delegaciones a través del sistema de mensajes.
+   API REST: Puerto 8001 para acceso programático (headless.py)
+
+2. CAPA DE MEMORIA COGNITIVA (memoria_*, motor de consolidación)
+   5 tipos de memoria (de trabajo, episódica, semántica, procedimental, asociativa).
+   Consolidación activa (decadencia, impulso, compresión nocturna).
+
+3. CAPA DE LÓGICA Y HABILIDADES (centro/, habilidades/, jerarquía JSON)
+   Más de 60 controladores descubiertos automáticamente (hub/) y jerarquía de habilidades dinámica.
+   El Skills Board (GUI) controla la asignación de expertos a los agentes.
+   Procesador de cola: hub/_services/connector/ para procesamiento asincrónico
+
+4. CAPA DE EJECUCIÓN (herramientas/)
+   Más de 290 scripts Python especializados para sistemas de archivos, control, análisis, etc.
+   Interfaz estandarizada (prefijo c_) para compatibilidad con IA.
+
+5. DATOS Y PERSISTENCIA (bach.db, data/logs/)
+   Base SQLite con más de 210 tablas (almacenamiento de datos centralizado).
+   Seguimiento de tokens, sesiones, éxito y verdad del directorio.
+   Registros consolidados en datos/registros/ (sistema/registros/ DESPRECADO)
+
+ESTRUCTURA DEL PROYECTO
+---------------
+
+sistema/
+├── bach.py .................... Centro CLI (orquestador)
+├── bach_api.py ................ API de biblioteca (acceso programático)
+├── bach_legacy.py ............. Copia de seguridad (antes de la refactorización del registro)
+├── núcleo/ ........................ Capa de base
+│ ├── base.py ................ Resultado, ParsedArgs, OpDef
+│ ├── registro.py ............ Descubrimiento automático + Enrutamiento de comandos
+│ ├── app.py ................. Contenedor de aplicaciones (DI)
+│ ├── db.py ................. Envoltorio de base de datos
+│ ├── adaptor.py ............. Puente heredado
+│ └── alias.py ............. Alias de comando (mem -> memoria)
+├── datos/
+│ ├── bach.db ................ SQLite (210+ tablas) - "La memoria"
+│ └── logs/ ................. Logs consolidados (SOLO AQUÍ)
+├──db/
+│ └── esquema.sql ............. Fuente única de la verdad (DDL)
+├── hub/ ............................ Módulos manejadores (descubiertos automáticamente)
+│ ├── bach_paths.py .......... gestión de rutas (gobernanza)
+│ └── _servicios/ ............. servicios en segundo plano
+│ ├── conector/ ......... procesador de cola (asíncrono)
+│ └── documento/ .......... reportar flujos de trabajo
+├── herramientas/ .................... Scripts de Python (más de 290 herramientas)
+├── docs/help/ ...................... Sistema de ayuda (.txt)
+├── agentes/ ............ Perfiles de agentes (roles)
+├── socios/ .......... Configuraciones LLM (CONSOLIDADO)
+├── docs/ ...................... Documentación y conceptos
+├── gui/ ....................... panel web (FastAPI)
+│ └── api/ ................... API REST
+│ ├── headless.py ........ Puerto 8001 (API JSON puro)
+│ └── mensajes_api.py .... enrutador de mensajes
+└── usuario/ ...................... Datos de usuario y exportaciones
+
+DIAGRAMA DE ARQUITECTURA (Registro v2.0)
+------------------------------------
+
+┌──────────────────────────────── ─────────────────────────────────┐
+│ CAPA DE ACCESO │
+├───────────────────┬──────────── ─────────┬───────────────────────┤
+│ CLI (bach.py) │ Biblioteca (bach_api) │ REST (headless.py) │
+│ Enrutamiento sys.argv │ Función directa │ Puerto 8001 JSON API │
+└───────────────────┴──────────── ─────────┴───────────────────────┘
+                              ↓
+┌──────────────────────────────── ─────────────────────────────────┐
+│ CAPA NÚCLEO (núcleo/) │
+├───────────────────┬──────────── ─────────┬───────────────────────┤
+│ Contenedor de aplicaciones │ HandlerRegistry │ Base de datos (db.py) │
+│ DI + Lazy Init │ Descubrimiento automático │ Esquema + Migraciones │
+└───────────────────┴──────────── ─────────┴───────────────────────┘
+                              ↓
+┌──────────────────────────────── ─────────────────────────────────┐
+│ CAPA DE MANEJADOR (hub/) │
+│ Más de 60 subclases de BaseHandler: registradas automáticamente │
+├───────────────────┬──────────── ─────────┬───────────────────────┤
+│ tarea.py │ memoria.py │ socio.py │
+│ tax.py │ backup.py │ lección.py │
+│... │... │... │
+└───────────────────┴──────────── ─────────┴───────────────────────┘
+                              ↓
+┌──────────────────────────────── ─────────────────────────────────┐
+│ CAPA DE SERVICIO (hub/_services/) │
+├───────────────────┬──────────── ─────────┬───────────────────────┤
+│ conector/ │ documento/ │ demonio/ │
+│ Procesador de colas │ Flujos de trabajo de informes │ Tareas en segundo plano │
+└───────────────────┴──────────── ─────────┴───────────────────────┘
+                              ↓
+┌──────────────────────────────── ─────────────────────────────────┐
+│ CAPA DE EJECUCIÓN (herramientas/) │
+│ Más de 290 scripts de Python con interfaz c_ estandarizada │
+└──────────────────────────────── ─────────────────────────────────┘
+                              ↓
+┌──────────────────────────────── ─────────────────────────────────┐
+│ CAPA DE PERSISTENCIA │
+├───────────────────┬──────────── ─────────┬───────────────────────┤
+│ bach.db │ datos/registros/ │ usuario/ │
+│ Más de 210 tablas │ Registros consolidados │ Exportaciones e informes │
+└───────────────────┴──────────────── ─────┴───────────────────────┘
+
+CONCEPTOS BÁSICOS
+-------------
+
+* BASADO EN REGISTRO: descubrimiento automático en lugar de mapa de controlador codificado.
+  Los nuevos controladores SOLO necesitan un archivo en hub/ (sin registro).
+
+* ACCESO DUAL: CLI (lista de tareas de python bach.py) Y API de biblioteca (bach_api.task.list()).
+  Ambos usan los mismos controladores + DB - cero gastos generales.
+
+* MULTI-SOCIO: No un agente, sino una red con roles especializados.
+
+* MEMORIA COGNITIVA: La información no solo se almacena, sino que
+  ponderado y "digerido" activamente (consolidación).
+
+* PORTÁTIL Y LOCAL: Todo el sistema está encapsulado en una carpeta y
+  funciona sin necesidad de nube (por ejemplo, con Ollama).
+
+* AUTOREPARACIÓN: Corrección automática de rutas y entradas de registro.
+
+* API HEADLESS: Interfaz REST en el puerto 8001 para integración externa
+  (separado del puerto 8000 del servidor GUI).
+
+VER TAMBIÉN
+----------
+docs/help/bach_info.txt ¿Qué es BACH?
+docs/help/memory.txt El sistema de memoria
+docs/help/partner.txt Cooperación de las IA
+wiki/was_ist_bach.txt Sinopsis detallada

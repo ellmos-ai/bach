@@ -1,0 +1,63 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CLAUDE PERMISSIONS - Manage Claude Code permission profiles
+==============================================================
+
+DESCRIPTION
+------------
+Manages permission profiles for Claude Code. Profiles define which ones
+Tools Claude code is allowed to use automatically (allow) and which blocks
+become (deny). Stored in the BACH database, applied to
+~/.claude/settings.json.
+
+
+OPERATIONS
+-----------
+  bach permissions list                 Show all profiles
+  bach permissions show <profil>        Profile details
+  bach permissions set <profil> allow=Tool    Add rule
+  bach permissions set <profil> deny=Tool     Add rule
+  bach permissions remove <profil> allow=Tool Regel entfernen
+  bach permissions activate <profil>    Activate profile
+  bach permissions deactivate           Return to normal profile
+  bach permissions sync                 Import settings.json into DB
+  bach permissions reset <profil>       Reset profile to defaults
+  bach permissions status               Show current status
+  bach permissions init                 Default profiles in DB create
+
+
+EXAMPLES
+---------
+  # View profiles
+  bach permissions list
+
+  # Enable strict profile
+  bach permissions activate strict
+
+  # Allow tool
+  bach permissions set default allow=Bash
+
+  # Import current settings.json
+  bach permissions sync
+
+
+DEFAULT-PROFILE
+---------------
+  default Standard profile (moderate access)
+  strict Restricted (minimal tool usage)
+  development Advanced (all development tools)
+
+
+FILES
+-------
+  Handler: hub/claude_permissions.py
+  Config: ~/.claude/settings.json (will be modified)
+  DB table: claude_permission_profiles
+
+
+SEE ALSO
+----------
+  help setup Setup handlers (hooks)
+  help security Security settings

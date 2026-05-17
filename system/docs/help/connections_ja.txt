@@ -1,0 +1,79 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [connections table, Hub/connector.py, docs/help/connector.txt]
+
+CONNECTIONS - 接続と統合 (概要)
+=======================================================
+
+DATE: 2026-02-08
+
+Connections システムは、全員のための中央データベース テーブルです。
+BACHの技術的なつながり。 2 つの異なるサブシステムがあります
+さまざまな目的:
+
+1。コネクタ システム (新規、v2.0)
+--------------------------------
+外部通信接続 (Telegram、Discord、HomeAssistant)。
+キュー、再試行、サーキット ブレーカーを備えた完全なメッセージ システム。
+
+**詳細 → docs/help/connector.txt を参照**
+
+CLI: bach コネクタ <操作>
+操作: リスト、ステータス、追加、削除、ポーリング、ディスパッチ、セットアップ デーモンなど
+
+ハンドラー: Hub/connector.py
+サービス: Hub/_services/connector/queue_processor.py
+API: gui/api/messages_api.py (4 つの REST エンドポイント)
+
+2. AI/MCP 接続 (レガシー)
+-------------------------------
+AI パートナーと MCP サーバーのための技術インフラストラクチャ。
+エンドポイント、API キー、OAuth トークンを管理します。
+
+CLI: bach --connections list/show
+ハンドラー: Hub/connections.py (?)
+
+タイプ:
+  - AI パートナー: クロード、オラマ、ジェミニ (Anthropic、Local、Google)
+  - MCP サーバー: pubmed、canva、gdrive (モデル コンテキスト プロトコル)
+
+重要: 接続、パートナー、コネクタ
+--------------------------------------------
+- 接続 (表): すべての接続の中央レジストリ
+- CONNECTOR (サブシステム): 外部通信 (Telegram、Discord など)
+- パートナー (ロジック): 委任と専門知識 (誰が何をするのか?)
+
+データベース テーブル
+-----------------
+テーブル: 接続
+フィールド:
+  - 名前、タイプ、カテゴリ、エンドポイント、is_active
+  - auth_type、auth_config (認証情報を含む JSON)
+  - 成功数、エラー数、最終使用数
+  -Continuous_failures、disabled_until (サーキット ブレーカー、コネクタのみ)
+
+カテゴリ (カテゴリ):
+  - 「コネクタ」: 外部通信 (Telegram、Discord など)
+  - 「ai」: AI パートナー (クロード、オラマ、ジェミニ)
+  - 'mcp': MCP サーバー (PubMed、Canva など)
+  - 'api': その他の API
+
+使用
+----------
+ほとんどのユーザーは **コネクタ システム**のみを必要とします。
+
+外部通信 (Telegram、Discord、HomeAssistant) の場合:
+  → bach コネクタ --ヘルプ
+  → docs/help/connector.txt (専用ドキュメント)
+
+AI パートナーおよび MCP サーバーの場合:
+  → bach --接続リスト
+  → bach --ヘルプパートナー
+
+関連項目
+----------
+  docs/help/connector.txt コネクタ システム (Telegram、Discord、HA)
+  bach --help partner    論理委任とゾーン
+  bach --help messages   内部メッセージング システム
+  bach --help daemon     バックグラウンド ジョブ (poll_and_route、dispatch)

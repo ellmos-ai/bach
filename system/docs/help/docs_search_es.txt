@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+============
+docs-search
+
+DESCRIPCIÓN
+============
+Búsqueda de documentación en tiempo real con FTS5 (Búsqueda de texto completo). Reemplaza el MCP Context7.
+Busca docs/, wiki/, docs/help/ y documentación web almacenada en caché.
+Utiliza indexación SQLite para consultas rápidas; Regrese a la búsqueda ME GUSTA.
+
+OPERACIONES
+===========
+
+búsqueda <consulta>
+  Búsqueda de texto completo de todos los documentos indexados.
+  Límite: 20 visitas (clasificación FTS5).
+  Alternativa: búsqueda LIKE si falta FTS5.
+  Para resultados vacíos: búsqueda directa de archivos en docs/, wiki/, docs/help/.
+
+index
+  Reconstruye o actualiza el índice de búsqueda.
+  Procesos: archivos .md, .txt, .rst, .py.
+  Comprueba mediante suma de comprobación MD5 si es necesaria una actualización.
+  Extrae el título de la primera línea (sin #).
+  Escribe: document_index, document_fts.
+
+lookup <biblioteca> <tema>
+  Busque documentos específicos de la biblioteca.
+  Límite: 10 aciertos.
+  Utiliza las columnas 'biblioteca' y 'tipo_doc'.
+
+fetch <url>
+  Descarga la página de documentación, convierte HTML a Markdown,
+  almacenado en caché en data/cache/docs/ (hash MD5 como nombre de archivo).
+  Utiliza html2text (óptimo) o reserva de expresiones regulares.
+  Registra la URL con el nombre de la biblioteca en document_index.
+  Tiempo de espera: 15 segundos.
+
+estadísticas
+  Muestra estadísticas de índice: Total, Local, Web, Bibliotecas.
+  Operación predeterminada si no hay parámetros.
+
+EJEMPLOS
+=========
+
+bach docs-search search "SQLite optimization"
+  -> Busque "optimización de SQLite" en docs/, wiki/, docs/help/
+
+bach docs-search index
+  -> Crear/actualizar índice
+
+bach docs-search lookup numpy array_operations
+  -> Busque "array_operaciones" en los documentos de la biblioteca "numpy"
+
+bach docs-search fetch https://docs.python.org/3/library/sqlite3.html
+  -> Descargar, almacenar en caché, indexar la página HTML
+
+bach docs-search stats
+  -> Mostrar estadísticas de índice
+
+ARCHIVOS
+=======
+data/bach.db
+  Base de datos SQLite con tablas:
+  - document_index: metadatos + contenido de todos los documentos
+  - document_fts: Tabla virtual FTS5 para búsqueda de texto completo
+
+data/cache/docs/
+  Documentación web almacenada en caché (MD5-Hash.md)
+  Generado por operación de recuperación.
+
+docs/
+wiki/
+documentos/ayuda/
+  Directorios de fuentes para documentación local.
+  Busca recursivamente durante la operación de índice.
+
+VER TAMBIÉN
+==========
+docs/help/ Más documentación del controlador
+carpeta de datos/base de datos y caché
+hub/base.py Implementación de BaseHandler

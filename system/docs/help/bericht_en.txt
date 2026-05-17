@@ -1,0 +1,113 @@
+# Portability: USER
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+FUNDING REPORT
+==============
+
+Create, export and archive ICF-based development reports.
+All client data is automatically anonymized.
+Name and date of birth are recognized from the folder name in data_roh/.
+
+QUICKSTART
+------------
+
+  1. Insert file folder into data_roh/ (format: “last name, first name”)
+  2. Use one of the following ways:
+
+  Way 1 - Chat (recommended):
+    “Create funding report”
+
+  Way 2 - Desktop .bat:
+    Foerderbericht_Pipeline.bat (ENTER for Auto-Detect)
+
+  Way 3 - llmauto Chain:
+    bach chain start foerderbericht
+
+  Way 4 - CLI:
+    bach bericht pipeline
+
+  3. Finished report is in output_reports/
+
+COMMANDS
+-------
+
+  bach bericht pipeline [name] [geburtsdatum] [optionen]
+    End-to-end pipeline: data_raw -> output_reports
+    Name/date of birth optional (auto-detect from folder name).
+    --period "01/01/2025 - 12/31/2025" reporting period
+    --backend claude_code|llmauto LLM backend (default: claude_code)
+    --parents "mother" "father" Anonymize parent names
+    --no-cleanup Keep intermediate folders
+
+  bach bericht list
+    Lists all client folders with status (JSON/DOCX present).
+
+  bach bericht status
+    Shows pipeline status of all folders.
+
+  bach bericht generate <json-datei> -o <output> [-t vorlage]
+    Fills the Word template with data from the JSON file.
+
+  bach bericht export <klient-ordner> -p <passwort>
+    De-anonymizes the report.
+
+  bach bericht archive [name]
+    Moves finished report to archive.
+
+  bach bericht help
+    Displays this help.
+
+LLM-BACKENDS
+-------------
+
+  claude_code (DEFAULT) Claude Code CLI as subprocess
+  llmauto llmauto chain system
+  anthropic_sdk Direct API call (needs ANTHROPIC_API_KEY)
+
+  Standard paths are claude_code and llmauto.
+  anthropic_sdk is just an optional alternative (no API key set up).
+
+PIPELINE FOLDER (only 4 + README)
+---------------------------------
+
+  data_roh/ Insert client file (1 folder = 1 client!)
+       ↓
+  data_ano/ [Auto] Anonymized files
+       ↓
+  data_bundled/ [Auto] bundle + prompt + LLM response
+       ↓
+  output_reports/ [Auto] Finished report (de-anonymized, final product)
+
+  README.md instructions
+
+  No more folders. Legacy folders (data/, output/, bundles/,
+  Reports_ano/, Reports_clean/) are automatically removed during cleanup.
+
+EXAMPLES
+---------
+
+  # Fully automatic (name recognized from folder name)
+  bach bericht pipeline
+
+  # With explicit information
+  bach bericht pipeline "Max Mustermann" "15.03.2016"
+
+  # Other period
+  bach bericht pipeline --zeitraum "01.07.2025 - 30.06.2026"
+
+  # Check status
+  bach bericht status
+  bach bericht list
+
+RELATED FILES
+-----------------
+
+  hub/_services/document/foerderbericht_pipeline.py Orchestrator
+  hub/_services/document/pipeline_runner.py CLI runner
+  hub/report.py CLI handler
+  tools/llmauto/chains/foerderbericht.json Chain Config
+  hub/_services/document/anonymizer_service.py Anonymization
+  hub/_services/document/document_pipeline.py Document scanner
+  skills/_templates/report_template_geiger_universal.docx Word template
+  user/documents/foerderplaner/Reports/Work folder

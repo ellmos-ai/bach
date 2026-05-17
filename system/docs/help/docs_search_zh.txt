@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+============
+文档搜索
+
+描述
+============
+使用 FTS5（全文搜索）进行实时文档搜索。取代 Context7 MCP。
+搜索 docs/、wiki/、docs/help/ 和缓存的 Web 文档。
+使用 SQLite 索引进行快速查询；回退到 LIKE 搜索。
+
+操作
+===========
+
+搜索 <query>
+  所有索引文档的全文搜索。
+  限制：20 次点击（FTS5 排名）。
+  后备：如果 FTS5 丢失，则进行 LIKE 搜索。
+  对于空结果：直接在 docs/、wiki/、docs/help/ 中搜索文件。
+
+index
+  重建或更新搜索索引。
+  进程：.md、.txt、.rst、.py 文件。
+  通过 MD5 校验和检查是否需要更新。
+  从第一行提取标题（不带#）。
+  写入：document_index、document_fts。
+
+lookup <library> <topic>
+  搜索特定于库的文档。
+  限制：10 次点击。
+  使用“library”和“doc_type”列。
+
+fetch <url>
+  下载文档页面，将 HTML 转换为 Markdown，
+  缓存在 data/cache/docs/ （MD5 哈希作为文件名）。
+  使用 html2text（最佳）或正则表达式后备。
+  在 document_index 中注册带有库名称的 URL。
+  超时：15 秒。
+
+统计数据
+  显示索引统计信息：总计、本地、Web、图书馆。
+  如果没有参数则默认操作。
+
+示例
+=========
+
+bach docs-search search "SQLite optimization"
+  -> 在 docs/、wiki/、docs/help/
+
+bach docs-search index
+ 中搜索“SQLite 优化”  -> 构建/更新索引
+
+bach docs-search lookup numpy array_operations
+  -> 在“numpy”库文档中搜索“array_operations”
+
+bach docs-search fetch https://docs.python.org/3/library/sqlite3.html
+  -> 下载、缓存、索引 HTML 页面
+
+bach docs-search stats
+  -> 显示索引统计信息
+
+文件
+=======
+data/bach.db
+  带表的 SQLite 数据库：
+  - document_index：所有文档的元数据+内容
+  - document_fts：用于全文搜索的 FTS5 虚拟表
+
+data/cache/docs/
+  缓存的 Web 文档 (MD5-Hash.md)
+  由获取操作生成。
+
+docs/
+维基/
+文档/帮助/
+  本地文档的源目录。
+  在索引操作期间递归搜索。
+
+另请参见
+==========
+docs/help/ 更多处理程序文档
+data/ 数据库和缓存文件夹
+hub/base.py BaseHandler 实现

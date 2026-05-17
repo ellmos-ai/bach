@@ -1,0 +1,167 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ATI - Advanced Tool Integration Agent
+
+ATI (Agent for Technical Implementation) はツール統合エージェントです
+バッハ著。 ATI = BATCHI - BACH (BACH がまだ欠落しているデルタ)。
+デーモン制御、セッション管理、タスク管理、スキャナー、
+プロジェクトのブートストラップ、コード分析、ビルドの自動化。
+
+コマンド - デーモンとセッション
+===========================
+
+bach ati status                   ATI ステータスとデーモン情報を表示
+bach ati start                    ヘッドレス セッション デーモンを開始
+bach ati stop                     セッション デーモンを停止
+bach ati session                  手動セッションを開始
+bach ati session --dry-run        セッションのドライ ラン (変更なし)
+
+コマンド - タスク管理
+=========================
+
+bach ati task list                ATI タスクを表示
+bach ati task add "TITEL"         新しい ATI タスクを追加
+bach ati task done ID             タスクをマーク完了
+bach ati task depends ID DEP      タスク間の依存関係を設定
+bach ati task blocked             ブロックされたタスクを表示
+bach ati check                    タスク間のチェックリストを表示
+bach ati problems                 問題を最初に表示 - エラーを優先順位付けして表示
+bach ati context KEYWORD          コンテキスト トリガーをテスト
+
+コマンド - スキャナー
+=================
+
+bach ati scan                     ソフトウェア プロジェクトをスキャン
+bach ati scan status              最後のスキャン ステータスを表示
+bach ati scan tasks               スキャンされたタスクを表示
+bach ati onboard PATH             新しいプロジェクトのオンボード
+
+コマンド - ツールとパス
+=======================
+
+bach ati path NAME                ツールへのパスを表示
+bach ati path --list              すべてのツールをリスト表示パス
+
+コマンド - エクスポートとインストール
+==========================
+
+bach ati export                   ATI エージェントを ZIP としてエクスポート
+bach ati export --dry-run         ドライランをエクスポート (エクスポートされる内容を表示)
+bach ati install PFAD.zip         ATI エクスポートをインストール
+
+コマンド - プロジェクトのブートストラップ
+===============================
+
+bach ati bootstrap NAME --template TYPE  テンプレートを使用して新しいプロジェクトを作成
+bach ati bootstrap my-tool --template python-cli
+bach ati bootstrap my-skill --template llm-skill
+
+コマンド - プロジェクトの移行
+===========================
+
+bach ati migrate PATH --analyze           既存のプロジェクトを分析
+bach ati migrate PATH --template TYPE     プロジェクトをテンプレートに移行
+bach ati migrate my-project --dry-run     ドライ ラン (いいえ変更)
+
+コマンド - モジュール
+================
+
+bach ati modules list             利用可能なモジュールのリスト
+
+テンプレート
+=========
+
+python-cli setuptools/pyproject.toml を使用した Python CLI アプリケーション
+               構造: src/、tests/、docs/、_modules/、_policies/
+
+llm-skill BACH/Claude の LLM スキル
+               構造: SKILL.md、_config/、_data/、_docs/
+
+llm-agent LLM エージェント
+               構造: AGENT.md、_skills/、_tools/
+
+再利用可能なモジュール
+========================
+
+_modules/ および modules/
+§── path_healer.py パスの自己修復 (RecludOS/VFDistiller より)
+§── distribution.py 階層システム、シール、リリース管理 (modules/)
+§── エンコーディング.py UTF-8、BOM 処理、エンコーディング修正 (modules/)
+└── validation.py スキーマ検証 (予定)
+
+BACH-POLICIES
+=============
+
+_policies/
+§── names_convention.md ファイルの命名規則
+§── encoding_policy.md UTF-8 標準、BOM なし
+└── path_rules.json ハードコードされたパスではなく、相対パス
+
+例
+=========
+
+# デーモンを起動してステータスを確認
+bach ati start
+bach ati status
+
+# タスクを管理
+bach ati task list
+bach ati task add "Feature X implementieren"
+bach ati task done 1
+
+# プロジェクトをスキャンしてオンボード
+bach ati scan
+bach ati onboard C:\Projekte\neues-tool
+
+# 新しい Python CLI プロジェクトを作成
+bach ati bootstrap rechnungs-tool --template python-cli
+
+# 既存のプロジェクトを分析
+bach ati migrate C:\Projekte\altes-tool --analyze
+
+# プロジェクトを BACH 構造に移行 (ドライ ラン)
+bach ati migrate C:\Projekte\altes-tool --template python-cli --dry-run
+
+# ATI をエクスポートしてどこかにインストールelse
+bach ati export
+bach ati install C:\Downloads\ati_export.zip
+
+移行ワークフロー
+==================
+
+1。分析: PATH をバッチ移行する --analyze
+              表示: コンプライアンス スコア、ディレクトリの欠落、問題
+
+2。ドライラン: bach ati maigrate PATH --template TYPE --dry-run
+              変更なしで何が起こるかを示します
+
+3.移行: bach ati merge PATH --template TYPE
+              マイグレーションを実行します（バックアップを自動的に作成します）
+
+4.確認: bach ati merge PATH --analyze
+              新しいコンプライアンス スコアの確認
+
+注意
+========
+
+- ATI は project_bootstrapper.py (agents/ati/tools/) を使用します
+- テンプレートは、agent/ati/templates/ にあります。
+- モジュールは、agent/ati/_modules/ および modules/ にあります。
+- ポリシーは、agents/ati/_policies/ にあります。
+- スキャナーは、agent/ati/scanner/ にあります。
+- セッションデーモンは、agents/ati/session/ にあります。
+- エクスポートは、agents/ati/export/ にあります。
+- オンボーディングは、agent/ati/onboarding/ にあります。
+- データは data/ati/ および data/bach.db にあります
+- ドキュメント: エージェント/ati/ATI.md
+- ブートストラップの概念: Agents/ati/ATI_PROJECT_BOOTSTRAPPING.md
+
+関連
+========
+
+bach --help builder        プロジェクトのスキルの構築
+bach --help distribution   配布システム
+bach --help coding         コーディング規約
+bach --help maintain       メンテナンス ツール (パス修復)

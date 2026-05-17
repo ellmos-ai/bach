@@ -1,0 +1,69 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+カレンダー - 予定とカレンダーの管理
+==========================================
+
+説明
+------------
+データベースをサポートする予定とカレンダーの管理。今後の日付を表示します
+Assistant_calendar と期限付きの家事ルーチン (household_routines) を組み合わせたもの。
+場所、タイプ、ステータス、およびオプションの説明を含む予定をサポートします。
+
+操作
+-----------
+  bach calendar today                         今日を表示
+  bach calendar week                          今週 (週)
+  bach calendar month                         今月
+  bach calendar list [TAGE]                   次の N 日 (デフォルトは 30)
+  bach calendar add "TITEL" [OPTIONEN]        予定を作成
+  bach calendar show <ID>                     予約の詳細
+  bach calendar done <ID>                     完了した予定
+  bach calendar delete <ID>                   予定を削除
+  bach calendar help                          このヘルプ
+
+オプションを追加
+------------
+  -d, --date <DATE> YYYY-MM-DD または DD.MM.YYYY (デフォルト: 今日)
+  -t, --time <TIME> HH:MM (デフォルト: 09:00)
+  --end <TIME> 終了時刻 (HH:MM)
+  --location <LOCATION> 予約の場所
+  --type <TYPE> 予定|リマインダー|タスク (デフォルト: 予定)
+  --note <テキスト> 説明
+
+例
+---------
+  bach calendar today
+  bach calendar week
+  bach calendar list 60
+  bach calendar add "Zahnarzt" -d 15.02.2026 -t 10:30 --location "Praxis"
+  bach calendar add "Treffen" -d 2026-03-10 -t 14:00 --end 15:30 --note "Besprechung"
+  bach calendar show 5
+  bach calendar done 5
+  bach calendar delete 5
+
+出力形式
+---------------
+[カレンダー] 時間範囲 - N エントリ
+
+  --- WD DD.MM。 ---
+    [ID>3] HH:MM タイトル @ 場所 [ステータス]
+    [RID>2] ---- ルーチン名 (頻度、カテゴリ)
+
+DATABASE
+---------
+  ファイル: data/bach.db
+  テーブル:assistant_calendar (id、title、event_type、start_datetime、
+                                   end_datetime、場所、説明、ステータス)
+              世帯ルーチン (ID、名前、頻度、カテゴリ、次の期限)
+
+ファイル
+-------
+  ハンドラー: Hub/calendar_handler.py
+  ドキュメント: docs/help/calendar_handler.txt
+
+関連項目
+----------
+  DB_004_TERMINDATENBAK_ANALYSE.md (データベース スキーマ)
+  Hub/base.py (BaseHandler 実装)

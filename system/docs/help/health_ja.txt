@@ -1,0 +1,63 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+============
+
+health - HealthCheckHandler
+システム ヘルス チェックとネットワーク診断
+
+
+説明
+============
+
+システムの診断チェックを実行します: ディスク容量、ネットワーク アクセシビリティ、
+DNS 解決、データベース サイズ、NAS 容量。しきい値: ディスク警告
+<100 GB 空き、NAS 警告 >80% 占有、DB 警告 >500 MB。
+
+
+操作
+===========
+
+ステータス すべてのチェックを実行し、レポートを表示します。
+ディスク SystemDrive と利用可能なすべてのドライブのディスク容量を確認します。
+ping <ホスト> ホストの可用性をテストします (デフォルト: fritz.box)
+dns 3 つのテスト ホスト (google.com、anthropic.com、github.com) で DNS 解決を確認します。
+network 完全なネットワークチェック: FritzBox、Google DNS、Cloudflare + DNS
+nas NAS の容量と占有率を確認する (fritz.nas / FRITZ.NAS / NAS / /mnt/nas)
+all すべてのチェックを組み合わせた (ステータスとすべてが同一)
+
+
+例
+=========
+
+# クイック ステータス チェック
+bach health status
+
+# NAS 容量のチェック
+bach health nas
+
+# 特定のホストに ping (例: 8.8.8.8)
+bach health ping 8.8.8.8
+
+# ネットワーク診断
+bach health network
+
+# すべてのドライブのディスク容量
+bach health disk
+
+
+FILES
+=======
+
+hub/health.py ヘルス ハンドラーの実装
+data/bach.dbmemory_workingテーブルのロギング
+                        (チェックはタイムスタンプとともに記録されます)
+
+
+関連項目
+==========
+
+hub/base.py BaseHandler (クラス ベース)
+docs/help/ その他のハンドラーのドキュメント

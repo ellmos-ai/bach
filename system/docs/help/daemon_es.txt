@@ -1,0 +1,108 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Próxima verificación: 2026-11-15
+
+DAEMON - Trabajos en segundo plano y programadores
+=======================================
+NOTA: "bach daemon" es un alias para "bach planificador".
+Documentación actual: bach --help Scheduler
+
+FECHA: 2026-02-08 (Alias desde 2026-02-28)
+
+POLÍTICA IMPORTANTE
+---------------
+**TODOS LOS TRABAJOS DE DAEMON ESTÁN DESHABILITADOS DE FORMA PREDETERMINADA.**
+
+Motivo: Los procesos automáticos pueden funcionar con sesiones de chat activas
+y el generador de avisos chocan. Los trabajos son solo manuales.
+activado si es necesario.
+
+El demonio pausa automáticamente la sincronización de OneDrive durante la operación
+para evitar conflictos de sincronización.
+
+Ver: docs/CONCEPT_daemon_policy.md
+
+COMANDOS CLI
+-----------
+  bach daemon jobs              Mostrar todos los trabajos
+  bach daemon status            Estado del demonio
+  bach daemon doctor            Comprobación previa del programador y notas de recuperación
+  bach daemon start [--bg]      Iniciar el programador (--bg para fondo)
+  bach daemon stop              Detener el programador
+  bach daemon run <ID>          Detener manualmente la ejecución de un solo trabajo
+  bach daemon logs [N]          Mostrar las últimas entradas del registro (predeterminado: 20)
+
+SESIÓN SISTEMA [OBSECUTIVO]
+---------------------------
+  ⚠️ DESPRECADO desde el 17-05-2026.
+  Motivo: Se utilizó pyautogui para la simulación del teclado (Ctrl+Alt+Espacio, Pegar, Enter).
+  Creó inyecciones rápidas incontroladas en sesiones activas.
+
+  REEMPLAZO: API de Buddha Control (:8081/api/chat) o Claude Code /loop.
+
+  Los comandos CLI aún existen para compatibilidad con versiones anteriores:
+  bach daemon session status                   Mostrar estado de sesión
+  bach daemon session doctor                   Comprobación previa de sesión y sugerencias de recuperación
+  bach daemon session pause/resume/steer       Control del operador
+
+TIPOS DE TRABAJO
+---------
+  intervalo Repetición después de un período de tiempo (por ejemplo, 24 h, 30 m)
+  Basado en programación cron (por ejemplo, "0 2 * * *" = 2 a. m. todos los días)
+  evento Activador basado en eventos (activado externamente)
+  manual Sólo se puede ejecutar manualmente
+  chain Ejecución de trabajos encadenados (sistema de cadena)
+
+El demonio comprueba automáticamente si hay tareas recurrentes vencidas cada 5 minutos.
+
+TRABAJOS DISPONIBLES (todos APAGADOS de forma predeterminada)
+-------------------------------------------
+Nota: La lista de trabajos es dinámica. Trabajos actuales a través de: trabajos de bach daemon
+
+Ejemplos de trabajos:
+  Función de programación de nombre de ID
+  -- ----------------------- --------- --------------------------------
+  1 escáner de 60 m Escanear carpetas de software para tareas
+  2 copias de seguridad 24h Copia de seguridad automática
+  3 procesos de escaneo de bandeja de entrada de 30 millones de carpetas de bandeja de entrada
+  4 pesos de memoria de 24 horas de peso consolidado (decaimiento)
+  5 consolidar-archivar 24h Archivar entradas antiguas
+  6 índice de consolidación 7d Ayuda/Índice de actualización de Wiki
+  7 sesiones de compresión de consolidación-compresión de 24 horas
+  8 consolidar-nosotros 7d Consolidación semanal
+  9 Mantenimiento nocturno cron 0 2 Cadena de mantenimiento nocturno
+  10 Copia de seguridad semanal cron 0 3 0 Copia de seguridad semanal
+
+Trabajos del conector (v2.0, a través del demonio de configuración del conector bach):
+  -- conector_poll_and_route Conectores de 2 m polen + enrutamiento de la bandeja de entrada
+  -- Connector_dispatch 1m Enviar cola saliente con reintento
+
+EJECUTAR TRABAJO MANUALMENTE
+----------------------
+Método recomendado en lugar de programador automático:
+
+  # Ejecutar el trabajo una vez
+  bach daemon run 1         # Ejecutar el escáner una vez
+  bach daemon run 2         # Crear copia de seguridad una vez
+
+  # O directamente el comando
+  bach scan run             # Escáner
+  bach backup create        # Copia de seguridad
+  bach consolidate run      # Consolidación
+
+GUI
+---
+  http://127.0.0.1:8000/daemon panel de control del demonio
+
+  - Activar/desactivar trabajos
+  - Ejecutar manualmente
+  - Ver últimos lanzamientos
+
+VER TAMBIÉN
+----------
+  docs/CONCEPT_daemon_policy.md Políticas de demonio
+  docs/help/connector.txt Sistema conector (cola, reintento)
+  docs/help/maintain.txt Herramientas de mantenimiento
+  docs/help/backup.txt sistema de copia de seguridad
+  docs/help/consolidation.txt Consolidación de memoria

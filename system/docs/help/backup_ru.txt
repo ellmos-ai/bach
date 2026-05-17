@@ -1,0 +1,82 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+РЕЗЕРВНОЕ КОПИРОВАНИЕ И ВОССТАНОВЛЕНИЕ
+================
+
+Система резервного копирования основана на концепции dist_type:
+
+  dist_type = 2 (CORE) → Распространение — это резервная копия
+  dist_type = 1 (ШАБЛОН) → 1 снимок во время установки
+  dist_type = 0 (USER_DATA) → Обычная ротация резервных копий
+
+КОМАНДЫ
+-------
+
+  # Создать резервную копию
+  bach backup create                  Локальную резервную копию
+  bach backup create --to-nas         Также скопировать на NAS
+
+  # Просмотр резервных копий
+  bach backup list                    Локальные резервные копии
+  bach backup list --nas              Резервные копии NAS
+  bach backup info <name>             Подробности резервной копии
+
+  # Восстановление (ТОЛЬКО резервные копии userdata_*.zip)
+  bach restore backup <name>          Конкретная резервная копия
+  bach restore backup latest          Последняя резервная копия
+
+  # Сбросить шаблон (ТОЛЬКО через backup_manager.py)
+  python system/tools/backup_manager.py шаблон восстановления SKILL.md
+
+ЧТО КОПИРОВАНО?
+-------------------
+
+  dist_type = 0 (USER_DATA):
+    ├── задачи (все задачи, статус, история)
+    ├── память/ (сессии, долговременная, архивы)
+    ├── data/logs/ (журналы сеансов, объединенный путь)
+    └── пользователь/ (Входящие, Сообщения, Повестка дня)
+
+  НЕ защищено (dist_type >= 1):
+    ├── bach.py,schema.sql,hub/
+    ├── инструменты/, навыки/, документы/помощь/
+    └── (являются частью дистрибутива)
+
+РЕЗЕРВНОЕ ВРАЩЕНИЕ
+---------------
+
+  Локально (_backups/): хранить 7 резервных копий.
+  NAS: хранить 30 резервных копий
+  OneDrive: автоматически (история версий)
+
+МЕСТА ХРАНЕНИЯ
+------------
+
+  Локально: система/_backups/
+  NAS: \\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
+  Журналы: система/данные/журналы/ (объединенные)
+
+ИНСТРУМЕНТЫ
+-----
+
+  system/tools/backup_manager.py Возможен прямой вызов:
+    python system/tools/backup_manager.py создать [--to-nas]
+    список python system/tools/backup_manager.py [--nas]
+    python system/tools/backup_manager.py info <имя>
+    python system/tools/backup_manager.py восстановить резервную копию <имя>
+    Шаблон восстановления python system/tools/backup_manager.py <файл>
+    снимок python system/tools/backup_manager.py <файл>
+
+API
+---
+
+  POST /api/v1/backup Создать резервную копию (без головы)
+  ПОЛУЧИТЬ /api/v1/backup/list Список резервных копий
+
+СВЯЗАННЫЕ НАВЫКИ
+----------------
+
+  навыки/_service/builder.md → СОЗДАНИЕ, ЭКСПОРТ, РАСПРОСТРАНЕНИЕ, РЕЗЕРВНОЕ КОПИРОВАНИЕ, ВОССТАНОВЛЕНИЕ
+  docs/BACKUP_SYSTEM.md → Оригинальная концепция от _BATCH

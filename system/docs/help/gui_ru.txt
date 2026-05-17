@@ -1,0 +1,501 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+Графический интерфейс – веб-панель
+===================
+
+ОПИСАНИЕ
+Модуль графического интерфейса предоставляет веб-панель для BACH.
+На основе FastAPI с интерфейсом HTML/CSS/JS.
+Запускается автоматически в фоновом режиме с помощью --startup.
+
+ДВА СЕРВЕРА:
+  - Сервер графического интерфейса (порт 8000): веб-панель с шаблонами HTML.
+  - Headless API (порт 8001): Pure REST API для программ
+
+КОМАНДЫ
+-------
+bach gui start              Запустить сервер (блокировка, порт 8000)
+bach gui start --port 9000  Сервер на другом порту
+bach gui start-bg           Запустить сервер в фоновом режиме
+bach gui start-bg --port 9000  Фон с другим портом
+bach gui status             Проверить статус сервера
+bach gui info               Показать информацию графического интерфейса
+
+РУЧНОЙ ЗАПУСК
+---------------
+user/start_gui.bat Пакетный файл для Windows (открывает браузер)
+
+АВТОМАТИЧЕСКИЙ START
+-------------------
+bach --startup              Запускает графический интерфейс автоматически в фоновом режиме
+                            (см. раздел [GUI SERVER] в выводе)
+
+ТРЕБОВАНИЯ
+---------------
+pip install fastapi uvicorn
+
+ПАНЕЛИ ПАНЕЛИ (Базовый)
+------------------
+/ Домашняя страница с карточками состояния и быстрыми действиями
+/tasks управление задачами (фильтр, CRUD, изменение статуса)
+/messages Сообщения (Входящие/Исходящие, Написать)
+/ обслуживание демона (задания, запуски, переключение)
+/docs Документация по API (Swagger)
+
+DASHBOARDS (дополнительно)
+----------------------
+/agents Управление агентами
+/память/база знаний
+/tools Управление инструментами
+/tokens Статистика токенов
+/tax налоговые рабочие процессы
+/financial Финансовый обзор
+/health Отслеживание здоровья
+/contacts Управление контактами
+/routines Редактор подпрограмм
+/skills-board Доска навыков
+/tasks_board Доска задач Канбан
+/logs просмотрщик журналов
+/help справочная система
+/вики Вики-страницы
+/inbox Просмотр входящих сообщений
+/inbox_editor Редактор папки «Входящие»
+/maintenance Панель обслуживания
+/партнеры управление партнерами
+/personal Персональные настройки
+/ati система ATI
+/usecases Варианты использования
+/workflow_tuev Проверка рабочего процесса
+/prompt-generator Генератор подсказок
+/foerderplaner планировщик финансирования
+/anonymization Анонимизация
+
+ФУНКЦИИ
+--------
+- Панель мониторинга со статусом системы
+- Обзор задач (пользователь + отсканированные)
+- Система сообщений (соединение CLI: bach msg)
+- Работы по техническому обслуживанию
+- REST API с автоматической документацией (/docs)
+
+CLI <-> GUI LINK
+------------------------
+Новости:
+  CLI: отправить сообщение/список сообщений/прочитать/непрочитать
+  Графический интерфейс: /messages (Входящие/Исходящие, Написать)
+  БД: bach.db -> таблица сообщений
+  Запуск: непрочитанные элементы отображаются в --startup
+
+Tasks:
+  CLI: добавление/список/выполнено задач Баха
+  Графический интерфейс: /tasks (CRUD, фильтры, статус)
+  БД: bach.db -> таблица задач
+
+Обслуживание:
+  CLI: список/запуск/переключение демона bach
+  Графический интерфейс: /daemon (задания, запуски, переключение)
+  БД: bach.db -> Scheduler_jobs, Scheduler_runs
+
+
+СТРУКТУРА
+--------
+gui/
+├── серверная часть server.py FastAPI (все API интегрированы)
+├── daemon_service.py Фоновая служба
+├── file_watcher.py Наблюдатель файлов
+├── синхронизация sync_service.py
+├── api_webhook.py Обработчик веб-перехватчика
+├── __init__.py Модуль инициализации
+├── статический/
+│ ├── css/main.css Стилизация
+│ └── js/
+│ ├── API-клиент api.js
+│ ├── основная логика app.js
+│ ├── навигация nav.js
+│ └── логика доски навыковkill-board.js
+└── шаблоны/
+    ├── домашняя страница index.html
+    ├── Tasks.html Управление задачами
+    ├── messages.html Сообщения
+    ├── daemon.html Менеджер демонов
+    └── ... (более 30 шаблонов)
+
+Конечные точки API (GUI-сервер – порт 8000)
+---------------------------------------
+Состояние:
+GET /api/status Статус системы
+
+Задачи:
+GET /api/tasks Пользовательские задачи
+POST /api/tasks Создать задачу
+POST /api/tasks/export Задачи экспорта
+ПОЛУЧИТЕ /api/tasks/{id} сведения о задаче
+PUT /api/tasks/{id} Задача обновления
+DELETE /api/tasks/{id} Удалить задачу
+GET /api/scanned-tasks Просканированные задачи
+GET /api/assignees назначения задач 
+
+Сообщения (управление CLI):
+GET /api/messages messages (таблица сообщений)
+POST /api/messages Создать сообщение
+PUT /api/messages/{id}/read Отметить как прочитанное
+PUT /api/messages/{id}/archive Архивировать сообщение
+PUT /api/messages/{id}/delete Удалить сообщение
+
+Демон:
+ПОЛУЧИТЬ /api/daemon/jobs Задания демона
+POST /api/daemon/jobs Создать задание
+PUT /api/daemon/jobs/{id}/toggle включить/отключить задание
+POST /api/daemon/jobs/{id}/run Запустить задание вручную
+GET /api/daemon/runs Выполнение заданий
+ПОЛУЧИТЬ /api/daemon/status Статус демона
+POST /api/daemon/start Запустить демон
+POST /api/daemon/stop Остановить демон
+POST /api/daemon/kill-all Уничтожить все задания
+PUT /api/daemon/config Изменить конфигурацию демона
+
+Память:
+GET /api/memory/overview Обзор памяти
+ПОЛУЧИТЬ /api/memory/рабочую рабочую память
+ПОЛУЧИТЬ /api/memory/lessons Уроки
+ПОЛУЧИТЕ /api/memory/facts факты
+GET /api/memory/sessions Сеансы
+POST /api/memory/working Создать запись рабочей памяти
+POST /api/memory/lessons Создать урок
+POST /api/memory/facts Создать факт
+DELETE /api/memory/facts/{id} Удалить факт
+DELETE /api/memory/working/{id} Удалить рабочую запись
+DELETE /api/memory/lessons/{id} Удалить урок
+ПОЛУЧИТЬ /api/memory/stats/db статистику БД
+POST /api/memory/maintenance/cleanup Очистка памяти
+ПОЛУЧИТЕ /api/memory/sessions/{id} сведения о сеансе
+
+Навыки:
+GET /api/skills Список навыков
+ПОЛУЧИТЬ /api/skills/categories Категории навыков
+ПОЛУЧИТЕ /api/skills/{id} сведения о навыке
+
+Инструменты:
+GET /api/tools Список инструментов
+ПОЛУЧИТЕ /api/tools/{name} сведения об инструменте
+POST /api/tools/{name}/run Запустить инструмент
+
+Агенты:
+ПОЛУЧИТЬ список агентов /api/agents
+PUT /api/agents/{id}/toggle включения/отключения агента 
+
+ATI:
+ПОЛУЧИТЬ /api/ati/stats статистику ATI
+ПОЛУЧИТЕ /api/ati/tasks задачи ATI
+ПОЛУЧИТЕ /api/ati/tasks/{id} сведения о задаче ATI
+GET /api/ati/sessions Сеансы ATI
+POST /api/ati/session/start Запуск сеанса ATI
+POST /api/ati/session/start-cli Сеанс ATI CLI
+POST /api/ati/tasks Создать задачу ATI
+PUT /api/ati/tasks/{id} Обновить задачу ATI
+DELETE /api/ati/tasks/{id} Удалить задачу ATI
+
+Финансовые:
+GET /api/financial/status Финансовый статус
+GET /api/financial/emails Финансовые электронные письма
+ПОЛУЧИТЕ /api/financial/emails/{id} данные электронной почты
+ПОЛУЧИТЬ /api/financial/subscriptions Подписки
+ПОЛУЧИТЕ /api/financial/subscriptions-unified Объединенные подписки
+DELETE /api/financial/subscriptions/{id} Удалить подписку
+GET /api/financial/categories Категории
+POST /api/financial/sync Financial-Sync
+POST /api/financial/save-json Сохранить JSON
+ПОЛУЧИТЬ /api/financial/config Financial-Config
+PUT /api/financial/config Обновить конфигурацию
+PUT /api/financial/emails/{id}/status Изменить статус электронной почты
+GET /api/financial/export Экспортный финансовый
+GET /api/financial/accounts Учетные записи электронной почты
+POST /api/financial/accounts Создать учетную запись
+PUT /api/financial/accounts/{id}/toggle Включить учетную запись
+POST /api/financial/accounts/{id}/test Тестовый аккаунт
+DELETE /api/financial/accounts/{id} Удалить аккаунт
+ПОЛУЧИТЬ /api/financial/imap-presets Пресеты IMAP
+ПОЛУЧИТЕ /api/financial/gmail/find-credentials учетные данные Gmail
+POST /api/financial/gmail/setup Настройка Gmail
+ПОЛУЧИТЬ /api/financial/gmail/status Статус Gmail
+ПОЛУЧИТЬ /api/financial/profiles Профили
+POST /api/financial/profiles Создать профиль
+PUT /api/financial/profiles/{id} Обновить профиль
+DELETE /api/financial/profiles/{id} Удалить профиль
+GET /api/financial/false-positives Ложные срабатывания
+POST /api/financial/false-positives Создание ложных срабатываний
+УДАЛИТЬ /api/financial/false-positives/{id} Удалить ложные срабатывания
+POST /api/financial/profiles/test Тестовый профиль
+POST /api/financial/profiles/import Импорт профилей
+GET /api/financial/contracts контракты
+POST /api/financial/contracts Создать контракт
+PUT /api/financial/contracts/{id} Обновить контракт
+DELETE /api/financial/contracts/{id} Удалить контракт
+GET /api/financial/insurances Страхование
+GET /api/financial/deadlines Сроки
+POST /api/financial/insurances Создать страховку
+PUT /api/financial/insurances/{id} Обновить страховку
+DELETE /api/financial/insurances/{id} Удалить страховку
+GET /api/financial/bank-accounts Банковские счета
+POST /api/financial/bank-accounts Создать банковский счет
+PUT /api/financial/bank-accounts/{id} Обновить банковский счет
+DELETE /api/financial/bank-accounts/{id} Удалить банковский счет
+ПОЛУЧИТЬ /api/financial/credits Кредиты
+POST /api/financial/credits Создать кредит
+PUT /api/financial/credits/{id} Обновить кредит
+DELETE /api/financial/credits/{id} Удалить кредит
+
+Налог:
+GET /api/tax/documents/unlinked Несвязанные налоговые документы
+POST /api/tax/posten/{id}/link Ссылка на документ
+POST /api/tax/match-bank Bank Matching
+
+Отчет (планировщик финансирования):
+GET /api/report/status Статус отчета
+ПОЛУЧИТЬ /api/report/clients клиенты
+POST /api/report/export Отчет об экспорте
+POST /api/report/generate Создать отчет
+
+Крепления:
+GET /api/mounts Список монтировок
+POST /api/mounts Создать монтирование
+DELETE /api/mounts/{alias} Удалить монтирование
+POST /api/mounts/restore Восстановить монтирования
+
+Сканер:
+POST /api/scanner/trigger Сканер триггера
+POST /api/scanner/run Запустить сканер
+GET /api/scanner/status Статус сканера
+ПОЛУЧИТЬ /api/scanner/tools Инструменты сканирования
+ПОЛУЧИТЕ /api/scanner/config Scanner-Config
+
+Обслуживание:
+POST /api/maintenance/trigger Обслуживание триггера
+ПОЛУЧИТЕ /api/maintenance/status статус обслуживания
+
+Токены:
+ПОЛУЧИТЕ /api/tokens/usage Использование токена
+
+Журналы:
+ПОЛУЧИТЬ файлы журналов /api/system/logs
+GET /api/system/logs/{name} Чтение файла журнала
+
+Входящие:
+GET /api/inbox/status Статус папки «Входящие»
+ПОЛУЧИТЬ /api/inbox/config Конфигурацию папки «Входящие»
+POST /api/inbox/config Обновить конфигурацию
+ПОЛУЧИТЬ папку /api/inbox/folders
+POST /api/inbox/folders Создать папку
+PUT /api/inbox/folders Папка обновления
+УДАЛИТЬ /api/inbox/folders Удалить папки
+ПОЛУЧИТЬ /api/inbox/rules Правила
+POST /api/inbox/rules Создать правило
+PUT /api/inbox/rules/{id} Обновить правило
+DELETE /api/inbox/rules/{id} Удалить правило
+POST /api/inbox/scan Сканировать входящие
+GET /api/inbox/unsorted Несортированные элементы
+POST /api/inbox/sort Сортировка элементов
+GET /api/inbox/preview/{file} Предварительный просмотр файла
+GET /api/inbox/analyze/{file} Анализировать файл
+PUT /api/inbox/settings Обновить настройки
+
+Доска навыков:
+GET /api/skills-board/item-file Чтение файла элемента
+PUT /api/skills-board/item-file Сохранить файл элемента
+GET /api/skills-board/hierarchy Чтение иерархии
+PUT /api/skills-board/hierarchy Сохранить иерархию
+
+Справочная система:
+GET /api/help Получение списка файлов справки
+GET /api/docs/help/{name} Прочитать файл справки
+PUT /api/docs/help/{name} Обновить файл справки.
+POST /api/help Создать файл справки
+DELETE /api/docs/help/{name} Удалить файл справки
+GET /api/docs/help/search/{term} Справка по поиску
+
+Анонимизация (Foerderplaner):
+ПОЛУЧИТЬ /api/anonymization/clients клиенты
+POST /api/anonymization/profile Создать профиль
+POST /api/anonymization/upload Загрузить документ
+POST /api/report/session/start Начать сеанс отчета
+POST /api/report/session/{id}/import Импорт
+POST /api/report/session/{id}/profile Профиль
+POST /api/report/session/{id}/anonymize Анонимизировать
+POST /api/report/session/{id}/prompt
+POST /api/report/session/{id}/generate Создать
+POST /api/report/session/{id}/cleanup Очистка
+ПОЛУЧИТЕ /api/report/session/{id} сведения о сеансе
+GET /api/report/pending Ожидающие отчеты
+
+Генератор подсказок:
+GET /api/prompt-generator/templates Шаблоны
+GET /api/prompt-generator/template/{path} Чтение шаблона
+POST /api/prompt-generator/send/task Отправить как задачу
+POST /api/prompt-generator/send/session Отправить в сеанс
+POST /api/prompt-generator/send/copy В буфер обмена
+GET /api/prompt-generator/daemon/status Статус демона
+PUT /api/prompt-generator/daemon/config Конфигурация демона
+POST /api/prompt-generator/start-desktop Запустить рабочий стол
+POST /api/prompt-generator/daemon/toggle переключатель демона
+POST /api/prompt-generator/templates/save Сохранить шаблон
+
+Автоматические сеансы:
+POST /api/auto-sessions/launch Начать сеанс
+
+Сеанс:
+GET /api/session/активности
+POST /api/session/generate-summary Создать сводку
+POST /api/session/end Завершить сеанс
+
+Повторяющийся:
+GET /api/recurring Повторяющиеся задачи
+POST /api/recurring/check Выполнить проверку
+Задача триггера POST /api/recurring/trigger/{id}
+
+Случаи использования:
+GET /api/usecases Варианты использования
+GET /api/usecases/{id} Подробности варианта использования
+POST /api/usecases Создать вариант использования
+PUT /api/usecases/{id} Обновить вариант использования
+DELETE /api/usecases/{id} Удалить вариант использования
+POST /api/usecases/{id}/test Тестовый вариант использования
+POST /api/usecases/test-all Проверить все
+POST /api/usecases/{id}/execute Выполнение варианта использования
+
+Контакты:
+GET /api/contacts контакты
+ПОЛУЧИТЕ /api/contacts/{id} контактную информацию
+POST /api/contacts Создать контакт
+PUT /api/contacts/{id} Обновить контакт
+DELETE /api/contacts/{id} Удалить контакт
+GET /api/contacts/export Экспорт контактов
+
+рутины:
+GET /api/routines Подпрограммы
+ПОЛУЧИТЕ /api/routines/{id} сведения о подпрограммах
+POST /api/routines Создать процедуру
+PUT /api/routines/{id} Процедура обновления
+POST /api/routines/{id}/complete Полная процедура
+DELETE /api/routines/{id} Удалить процедуру
+GET /api/routines/export Экспорт подпрограмм
+
+WebSockets:
+ПОЛУЧИТЕ /api/ws/status Статус WebSocket
+
+Рабочий процесс TÜV:
+GET /api/workflow-tuev
+POST /api/workflow-tuev/{id}/check Проверьте рабочий процесс
+POST /api/workflow-tuev/check-all Проверить все
+POST /api/workflow-tuev/sync Синхронизировать рабочие процессы
+GET /api/workflow-tuev/content Workflow-Content
+
+AI Headless:
+POST /api/ai/headless/run Запуск задачи AI
+
+Агенты Баха:
+GET /api/bach-agents Список агентов Bach
+
+
+HEADLESS API (порт 8001) — программный доступ
+-----------------------------------------------------
+Назначение: чистый REST API без HTML, для скриптов/программ
+
+Аутентификация:
+  - Localhost (127.0.0.1,::1, localhost): аутентификация не требуется (режим доверия)
+  - Удаленный: заголовок X-BACH-Key ИЛИ параметры ?api_key=.
+  - Ключ: автоматически генерируется при первом запуске → data/.api_key
+
+Start:
+  python gui/api/headless.py [--port 8001] [--key YOUR_KEY]
+
+Документация:
+  http://localhost:8001/api/docs (Сваггер)
+  http://localhost:8001/api/redoc (ReDoc)
+
+Конечные точки (префикс: /api/v1):
+
+Задачи:
+GET /api/v1/tasks Список задач (фильтр: статус, приоритет, лимит)
+POST /api/v1/tasks Создать задачу
+ПОЛУЧИТЕ /api/v1/tasks/{id} сведения о задаче
+PUT /api/v1/tasks/{id} Задача обновления
+
+Память:
+GET /api/v1/memory/facts факты (фильтр: категория, min_confidence)
+GET /api/v1/memory/lessons Уроки (Фильтр: категория, ограничение)
+GET /api/v1/memory/search Поиск в памяти (параметр: q)
+POST /api/v1/memory Создать запись в памяти
+
+Сообщения (Очередь + Входящие):
+POST /api/v1/messages/send Поместить сообщение в очередь (connector_messages)
+GET /api/v1/messages/queue Состояние очереди (ожидание/сбой/неактивность для каждого соединителя)
+GET /api/v1/messages/inbox Чтение входящих сообщений (фильтр: статус, отправитель, нумерация страниц)
+POST /api/v1/messages/route Запуск маршрутизации вручную (в → входящие)
+
+Система:
+GET /api/v1/status Состояние системы (задачи, память, размер БД)
+POST /api/v1/backup Создать резервную копию
+GET /api/v1/skills Список навыков (фильтр: тип, лимит)
+GET /api/v1/health Health-Check (общедоступный, без аутентификации)
+
+ПРИМЕРЫ
+---------
+GUI-сервер (порт 8000):
+  # Запускаем сервер в фоновом режиме
+  bach gui start-bg
+
+  # Или: Запустить сервер (блокировка)
+  bach gui start
+
+  # Открыть браузер
+  http://127.0.0.1:8000
+
+  # документация по API
+  http://127.0.0.1:8000/docs
+
+  # Сервер на другом порту
+  bach gui start --port 9000
+
+  # Проверка статуса
+  bach gui status
+
+Headless API (порт 8001):
+  # Запускаем сервер
+  python gui/api/headless.py --port 8001
+
+  # С пользовательским ключом API
+  python gui/api/headless.py --key MY_KEY
+
+  # Документы по API
+  http://localhost:8001/api/docs
+
+  # Создать задачу (localhost = нет аутентификации)
+  Curl -X POST http://localhost:8001/api/v1/tasks\
+       -H "Тип контента: приложение/json" \
+       -d '{"title": "Тест", "приоритет": "P2"}'
+
+  # С удаленного доступа с помощью ключа API
+  Curl -X ПОЛУЧИТЬ http://REMOTE:8001/api/v1/status\
+       -H "X-BACH-Ключ: ВАШ_КЛЮЧ"
+
+  # Отправить сообщение
+  Curl -X POST http://localhost:8001/api/v1/messages/send\
+       -H "Тип контента: приложение/json" \
+       -d '{"connector": "signal", "recipient": "+49...", "content": "Test"}'
+
+  # Статус очереди
+  локон http://localhost:8001/api/v1/messages/queue
+
+  # Прочитать входящие
+  curl "http://localhost:8001/api/v1/messages/inbox?status=unread&limit=20"
+
+СМОТРИТЕ ТАКЖЕ
+----------
+bach --help wartung         Задания обслуживания
+bach --help tasks           Управление задачами
+bach --help messages        CLI сообщений
+bach --help connector       Система соединителей
+gui/api/headless.py Источник безголового API
+gui/api/messages_api.py Маршрутизатор API сообщений

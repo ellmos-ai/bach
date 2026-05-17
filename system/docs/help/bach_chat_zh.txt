@@ -1,0 +1,166 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH 聊天服务 - 多后端 Telegram 机器人 + 控制 API + 系统托盘
+==========================================================================
+
+描述
+------------
+BACH 聊天服务是 Claude Bridge 的继承者。他提供了一个
+BACH 集成的 Telegram 机器人，具有可插入的 LLM 后端，一个
+HTTP Control API 和跨平台系统托盘。
+
+架构（3 层）：
+  - model_backend.py：可插入后端抽象（Ollama、Claude CLI、
+                         Codex CLI、Claude API、OpenAI API）
+  - chat_runtime.py：具有工具使用循环的独立于后端的聊天运行时，
+                         上下文管理、安全模式、总结
+  - telegram_chat.py：带有所有命令的 Telegram 机器人 + 控制 API
+  - chat_tray.py：跨平台系统托盘（macOS/Windows/Linux）
+
+后端：
+  - ollama：使用本机工具的本地 Ollama 服务器
+  - claude：Claude Code CLI（--继续会话，自己的工具）
+  - codex：Codex CLI（GPT 模型，自己的工具）
+  - claude-api：人类 API（需要 ANTHROPIC_API_KEY）
+  - openai：OpenAI API（需要 OPENAI_API_KEY）
+
+安全模式：
+  - 安全：只读工具（ls、cat、grep、git、docker 等）
+  - full：还有写入工具（execute_command、write_file）
+           激活：/模式完全确认
+
+
+电报命令
+-----------------
+  /开始欢迎消息
+  /清除重置对话
+  /backend [名称] [型号] 切换后端 (ollama|claude|codex|claude-api|openai)
+  /model <名称> 更改模型
+  /mode [safe|full] 安全模式
+  /think 思维模式开启（彻底）
+  /nothink 思维模式关闭（快速）
+  /settings 显示所有设置
+  /status 系统状态
+  /remember <文本> 巴赫记忆：记住
+  /recall <搜索> 巴赫记忆：搜索
+  /facts 巴赫记忆：事实
+  /bach <cmd> 执行 BACH 命令
+  /task <文本> 创建任务
+  /tasks 打开任务
+  /maxrounds [N] 设置最大工具轮数（0=无限制）
+  语音消息耳语转录 -> 聊天
+  照片 OCR 文字识别 -> 聊天
+
+
+CONTROL API（端口 8081）
+-----------------------
+  获取/网络仪表板 (HTML)
+  GET /api/status 当前状态（包括工具活动）
+  GET /api/backends 可用后端及其状态
+  GET /api/models 当前后端的模型
+  POST /api/backend 切换后端: {"name": "claude", "model": "opus"}
+  POST /api/mode 设置模式：{"mode": "safe"}
+  POST /api/model 设置模型：{"model": "qwen3.5:35b-a3b"}
+  POST /api/think 思考模式：{"think": true}
+  POST /api/max_tool_rounds 最大工具轮次：{"rounds": 10} (0=无限制)
+  POST /api/chat 聊天消息: {"prompt": "...", "chat_id": "..."}
+
+
+系统托盘
+-----------
+  开始： python chat_tray.py [--主机 HOST] [--端口 PORT]
+
+  特点：
+    - 状态图标：绿色（安全）、橙色（已满）、红色（未连接）
+    - 后端子菜单：所有可用的后端
+    - 模型子菜单：当前后端的模型
+    - 模式切换：安全/完整
+    - 思考切换：开/关
+    - 最大工具轮数：预设（5/10/20/无限制）
+    - 工具活动：当前工具+托盘标题中的圆形
+    - 打开网络仪表板
+    - 跨平台：macOS、Windows、Linux（通过 pystray）
+
+  远程托盘（来自另一个系统）：
+    python chat_tray.py --host macstudvonlukas --port 8081
+
+
+文件
+-------
+  机器人：hub/_services/chat/telegram_chat.py
+  运行时：hub/_services/chat/chat_runtime.py
+  后端：hub/_services/llm/model_backend.py
+  托盘：hub/_services/chat/chat_tray.py
+  配置：~/.config/bach/telegram_chat.json
+  令牌：~/.credentials/telegram_bot_token
+  所有者 ID：~/.credentials/telegram_owner_id
+  提示：data/system_prompt_buddha.txt
+  日志：~/Library/Logs/bach/telegram-bot.log (macOS)、data/logs/ (Windows)
+
+  启动代理 (macOS)：
+    com.bach.telegram-bot 电报机器人
+    com.bach.chat-tray 系统托盘
+    com.bach.gui-server GUI 仪表板 (:8000)
+
+  crontab (macOS):
+    */5 * * * *sync_mirror.sh OneDrive镜像同步
+    0 */6 * * *rotate_logs.sh 日志轮转
+
+
+配置
+-------------
+〜/.config/bach/telegram_chat.json：
+    {
+      "bot_token": "...",
+      "owner_id": "...",
+      “烘焙”：{
+        “类型”：“乌拉马”，
+        "base_url": "http://localhost:11434",
+        “default_model”：“qwen3.5：35b-a3b”
+      }
+    }
+
+  环境变量：
+    TELEGRAM_BOT_TOKEN 机器人令牌（文件的替代品）
+    TELEGRAM_OWNER_ID 所有者的聊天 ID
+    OLLAMA_MODEL 覆盖标准模型
+    OLLAMA_URL 覆盖 Ollama URL
+    BACH_CONTROL_PORT 控制API端口（默认：8081）
+    BACH_HOST 托盘/GUI 的默认主机（例如 macstudvonlukas）
+    BACH_NO_BROWSER =1: 不自动打开浏览器（远程 GUI）
+    ANTHROPIC_API_KEY 用于 claude-api 后端
+    OPENAI_API_KEY 用于 openai 后端
+
+
+注释
+--------
+  线程：控制 API 使用 ThreadingHTTPServer（从 v1.1.1 开始）。
+  ChatRuntime 没有围绕共享状态（会话、current_tool、
+  工具轮，最后工具）。对于单用户操作并不重要，但
+  工具运行时同时发出 API 请求
+  出现竞争条件。解决方法：一次只能聊天。
+
+
+CLAUDE BRIDGE 的迁移
+----------------------------
+  BACH 聊天服务在功能上取代了 Claude Bridge：
+  -bridge_daemon.py -> telegram_chat.py（电报机器人）
+  -bridge_tray.py -> chat_tray.py（系统托盘）
+  - config.json -> ~/.config/bach/telegram_chat.json
+
+  相对于克劳德桥的优点：
+  - 5 个后端，而不仅仅是 Claude CLI
+  - BACH 集成（内存、任务、注入器）
+  - 控制 API + Web 仪表板
+  - 语音（耳语）+ OCR（超立方体）
+  - 跨平台托盘
+  - 干净的三层架构
+
+
+另请参阅
+----------
+  帮助 claude_bridge 旧克劳德桥（旧版）
+  帮助连接器 连接器系统
+  帮助llm沟通 LLM沟通方法

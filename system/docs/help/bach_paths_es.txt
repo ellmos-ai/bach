@@ -1,0 +1,145 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH PATHS - Gestión central de rutas
+=====================================
+
+bach_paths.py es la "única fuente de verdad" para todas las rutas en BACH.
+No más rutas codificadas: todo centralmente en un solo lugar.
+
+UBICACIÓN
+--------
+system/hub/bach_paths.py
+
+FUNCIÓN PRINCIPAL: get_path(nombre)
+-----------------------------
+La función más importante: devuelve la ruta a un directorio con nombre.
+
+Ejemplos:
+    desde bach_paths importar get_path
+
+    dir_herramientas = get_path("herramientas") # sistema/herramientas/
+    plantilla = get_path("report_template") # Plantilla para informes
+    db = get_path("db") # base de datos bach.db
+    informes = get_path("reports") # Directorio de informes
+
+IMPORTAR DESDE TODAS PARTES
+-------------------
+Método 1: si hub/ está en sys.path (por ejemplo, en hub/_services/):
+    desde bach_paths import BACH_ROOT, get_path
+
+Método 2 - Universal (funciona desde cualquier lugar):
+    sistema de importación
+    desde pathlib importar ruta
+
+    # Encuentra bach_paths.py automáticamente
+    _actual = Ruta(__archivo__).resolve()
+    para _parent en [_current] + lista(_current.parents):
+        _hub = _parent / "sistema" / "hub"
+        si _hub.existe():
+            si str(_hub) no está en sys.path:
+                sys.path.insert(0, str(_hub))
+            descanso
+
+    desde bach_paths import BACH_ROOT, get_path
+
+RUTAS DISPONIBLES
+-----------------
+Jerarquía: raíz, bach, sistema, hub
+Sistema: datos, gui, habilidades, dist
+Habilidades: herramientas, ayuda, agentes, expertos, flujos de trabajo, socios, servicios, plantillas
+Datos: registros, copias de seguridad, archivos, papelera, mensajes
+Raíz: usuario, documentos, exportaciones, extensiones
+Bases de datos: db, bach_db, archive_db
+Usuario: documentos_usuario, personales
+Impuesto: impuesto, impuesto_2025, recibos, paquetes
+Socios: géminis, claude, ollama
+Informes: planificación de financiación, informes, informes_salida, informes_clientes, informes_datos, informes_paquetes, clientes, cuarentena
+Plantillas: report_template
+Externo: base de datos de conocimientos
+
+EJEMPLO: Importación de herramientas
+---------------------
+Problema: Las herramientas están en el sistema/tools/
+Solución con bach_paths:
+
+    prueba:
+        desde c_ocr_engine importar ocr_pdf
+    excepto ImportError:
+        desde bach_paths importar get_path
+        herramientas_dir = get_path("herramientas")
+        si str(tools_dir) no está en sys.path:
+            sys.path.insert(0, str(tools_dir))
+        desde c_ocr_engine importar ocr_pdf
+
+EJEMPLO: ruta de plantilla
+-----------------------
+    desde bach_paths importar get_path
+
+    ruta_plantilla = get_path("plantilla_informe")
+    # -> C:/Users/.../BACH/system/skills/_templates/bericht_template_geiger_universal.docx
+
+OTRAS FUNCIONES
+------------------
+list_paths() - Todas las rutas disponibles como Dict
+get_tool_path(nombre) - Buscar herramienta en herramientas o subcarpetas
+get_partner_dir(socio) - directorio de socios (géminis, claude, ollama)
+get_belege_path(provider) - Ruta de recibos con proveedor opcional
+resolver(relpath) - Resolver ruta relativa
+validar() - Verificar todas las rutas críticas
+
+DB-OVERRIDES
+------------
+Las rutas se pueden sobrescribir en la base de datos:
+
+    desde bach_paths importe set_path_override, get_path_with_override
+
+    # Establecer anulación
+    set_path_override("base de conocimientos", "D:/Mi/Base de datos")
+
+    # Usar anulación
+    ruta = get_path_with_override("base de conocimientos")
+
+USO DE CLI
+-----------
+    Plantillas python bach_paths.py # Obtener una ruta única
+    python bach_paths.py --list # Listar todas las rutas
+    python bach_paths.py --validate # Validar rutas
+    python bach_paths.py --set nombre de RUTA # set override (con nombre)
+    python bach_paths.py --overrides # Mostrar anulaciones de base de datos
+    python bach_paths.py --json # Salida como JSON
+
+VARIABLES (para importación directa)
+--------------------------------
+    desde bach_paths importar (
+        BACH_ROOT, # raíz del repositorio
+        RAÍZ_SISTEMA, #sistema/
+        HUB_DIR, # sistema/hub/
+        DATA_DIR, # sistema/datos/
+        SKILLS_DIR, # sistema/habilidades/
+        TOOLS_DIR, # sistema/herramientas/
+        BACH_DB, # sistema/datos/bach.db
+        USER_DIR, #usuario/
+        REPORTS_DIR, # usuario/documentos/foerderplaner/Reports/
+    )
+
+SELF-HEALING
+------------
+bach_paths calcula todas las rutas relativas a su propia ubicación.
+Si se mueve BACH, todo seguirá funcionando.
+no es necesario realizar ajustes manuales.
+
+CURACIÓN DE RUTA: NO NECESARIA
+--------------------------
+bach_paths.py hace que la curación de ruta manual sea innecesaria.
+Todas las rutas de ejecución se calculan dinámicamente.
+
+Solo para actualizaciones de documentación (textos de ayuda, Wiki, Markdown):
+  bach --maintain docs-paths
+
+VER TAMBIÉN
+----------
+- validar ruta de bach Comprobar rutas
+- bach --help ruta documentación del controlador de ruta
+- bach --help tools/path_healer Actualizador de ruta de documentación

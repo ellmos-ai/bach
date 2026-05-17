@@ -1,0 +1,84 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+## HANDLER NAME
+doc - Document index and full-text search
+
+## DESCRIPTION
+Management of an FTS5-based document index for full-text search. The handler
+indexes folders and files, enables quick searches in documents and offers
+Additional functions such as duplicate detection and data protection classification.
+
+Data storage: bach.db / tables document_index, document_fts (FTS5)
+
+## OPERATIONS
+
+FTS5-INDEX (full-text search):
+  index <path> Index folders recursively
+  index <path> -n Do not index folders recursively
+  index <file> Index individual file
+  search <query> full text search (FTS5)
+  search <query> --limit N Limit results to N (default: 20)
+  status View index statistics
+  rebuild FTS index from scratch
+  clear --force Clear entire index (requires --force flag)
+
+FILE SCAN (folder_scan):
+  scan <path> Scan folder and register in DB
+  recent [days] Show new documents (default: 7 days)
+  folders Show all registered folders and statistics
+
+ANALYSIS & DATA PROTECTION (INT06):
+  dedup <path> Detect duplicates according to SHA256
+  dedup <path> --min-size N Only consider files >= N bytes
+  dedup <path> -n Do not search for duplicates recursively
+  classify <path> Scan folder for sensitive data (traffic light rating)
+  classify <file> Check individual file for data protection
+
+OTHER:
+  help Show this help
+
+## EXAMPLES
+
+# Indexing and searching folders
+bach doc index ~/Documents
+bach doc search "backup strategie"
+bach doc search "config" --limit 5
+
+# Rebuilding index and checking status
+bach doc rebuild
+bach doc status
+
+# Showing new files and registered folders
+bach doc recent
+bach doc recent 30
+bach doc folders
+
+# Duplicates and data protection
+bach doc dedup ~/Downloads --min-size 1024
+bach doc classify ~/Documents
+bach doc classify /path/to/file.txt
+
+## FILES
+
+Implementation:
+  hub/doc.py DocHandler class, Dispatcher
+
+Delegated tools:
+  tools/document_indexer.py FTS5 indexing
+  hub/_services/document/dedup_scanner.py Duplicate detection
+  hub/_services/document/privacy_classifier.py Privacy Classification
+
+Scanner integration:
+  skills/tools/folder_diff_scanner.py File inventory scan (scan operation)
+
+Database:
+  data/bach.db SQLite database file
+  data/migrations/doc_001_fts5.sql Schema migration
+
+## SEE ALSO
+
+- bach api (Python API for programmatic access)
+- hub/base.py (BaseHandler base class)
+- tools/document_indexer.py (DocumentIndexer API)

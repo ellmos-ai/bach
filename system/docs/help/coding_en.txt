@@ -1,0 +1,44 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CODING STANDARDS
+================
+
+1. PATHS
+   - Relative paths are gold standard
+   - No hardcoded C:\Users\...
+   - Use Path(__file__).parent
+   - For path questions: --help bach_paths
+
+2. ENCODING
+   - UTF-8 EVERYWHERE
+   - ALWAYS specify encoding='utf-8'
+   - Never rely on system default
+
+   Correct:
+     content = Path("file.txt").read_text(encoding="utf-8")
+     with open("file.txt", "w", encoding="utf-8") as f:
+
+3. CONSOLE
+   - No emojis in print()
+   - Instead: [INFO], [OK], [ERROR], [WARN]
+   - Console fix if necessary:
+     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+4. EMOJIS
+   - Allowed in files, but only registered ones!
+   - Registry: system/tools/c_emoji_scanner.py (ASCII_OVERRIDES)
+   - Scanner: bach c_emoji_scanner <file>
+
+5. JSON EDITING
+   - FIRST CHOICE: bach.py or Python script
+   - NEVER fc_str_replace for JSON
+   - NEVER PowerShell for JSON
+   - In case of problems: bach c_json_repair <file>
+
+6. IMPORTS
+   - Standard library first
+   - Then third party
+   - Then local modules
+   - Tool: bach c_import_organizer <file>

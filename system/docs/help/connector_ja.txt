@@ -1,0 +1,182 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+コネクタ - 外部通信接続
+===============================================
+
+説明
+外部通信接続を管理します (Telegram、Discord、
+HomeAssistant など）を選択して実行します。自動をサポート
+ポーリング、再試行/バックオフおよびサーキット ブレーカーを備えたキュー ディスパッチ。
+
+サポートされているタイプ
+-------------------
+  telegram テレグラム ボット API (getUpdates ポーリング)
+  discord Discord Bot (REST API)
+  ホームアシスタント ホームアシスタント (REST API)
+  Webhook 受信 Webhook (プッシュベース)
+  signal Signal Messenger (予定、signal-cli)
+  whatsapp WhatsApp (計画中、Baileys)
+
+利用可能なランタイム アダプター: telegram、discord、homeassistant
+
+CLI コマンド
+-----------
+
+管理:
+  bach connector list                    すべてのコネクタを表示
+  bach connector status                  ステータス + 統計
+  bach connector add <type> <name> [url] Neuen Connector registrieren
+  bach connector remove <name>           コネクタの削除
+  bach connector enable <name>           アクティブ化
+  bach connector disable <name>          非アクティブ化
+
+メッセージ:
+  bach connector messages [name]         メッセージを表示
+  bach connector unprocessed             未処理のメッセージ
+  bach connector route                   ルート メッセージ (受信トレイ) デーモン一緒に
+アクティブな CLI セッションがなくても自動配信されます。
+  bach connector send <name> <to> <text> In ausgehende Queue einreihen
+
+セットアップ:
+  1. bach コネクタ setup-daemon # ワンタイム: 2 つのデーモン ジョブを作成します
+  2. bach daemon start --bg # デーモンをバックグラウンドで起動します
+  bach connector poll <name>             今後は自動的に:
+  - Telegram/Discord は 1 ～ 2 分ごとにポーリングされます
+  - 受信箱の受信メッセージ (コンテキストヒント付き)
+  - 送信キューは毎分処理されます
+  - 失敗した送信はバックオフで最大 5 回繰り返されます
+  bach connector dispatch <name>         デーモン ジョブ:
+  Connector_poll_and_route (2 分間隔) ポーリングとルート
+  Connector_dispatch (1 分間隔) キューをディスパッチします
+
+再試行とバックオフ
+  bach connector setup-daemon            失敗したメッセージは指数バックオフで送信されます
+繰り返し: 30 秒、60 秒、120 秒、240 秒、480 秒 (合計約 15 分)。
+  bach connector queue-status            試行が 5 回失敗した後 (構成可能)、メッセージは次のように表示されます。
+「デッドレター」とマークされています。デッドレターは手動で実行できます
+リセット可能:
+  bach connector retry <id|all>          すべてのデッドレターをリセット
+
+個別のメッセージをリセット
+-------------------------------
+サーキットブレーカー
+
+5回連続エラーが発生した後、コネクタが
+5 分間無効になります (disabled_until)。さらに送信/ポーリングを試みる
+クールダウンが終了するまでスキップされます。その後
+カウンタは自動的にリセットされます。
+
+コンテキスト統合
+
+受信メッセージは 2 つのルートを経由してルーティングされます。
+フィルターされたトリガー システム (連想メモリ):
+
+  a) ContextInjector (ハードコーディング、~100 トリガー)
+     →messages.metadata の injector_hint
+-----------------
+  b) context_triggers テーブル (動的、900 以上のトリガー)
+     →messages.metadata の context_triggers
+
+messages.metadata の結果 (JSON):
+  {
+    "ソース": "電報:123456",
+    "injector_hint": "[CONTEXT] バックアップ: bach バックアップの作成 ...",
+    "context_triggers": ["バックアップ", "バックアップ"],
+    "routed_at": "2026-02-08T22:00:00"
+  }
+
+  bach connector retry all             REST API
+  bach connector retry 42              ヘッドレス API が実行されている場合に利用可能 (ポート 8001):
+
+  POST /api/v1/messages/send エンキューメッセージ
+  GET /api/v1/messages/queue キューのステータス (保留中/失敗/デッド)
+  GET /api/v1/messages/inbox 受信トレイの読み取り (ページネーション、フィルター)
+  POST /api/v1/messages/route ルーティングを手動でトリガーする
+---------------
+例:
+  カールローカルホスト:8001/api/v1/messages/queue
+  curl -X POST localhost:8001/api/v1/messages/send \
+    -H "コンテンツ タイプ: application/json" \
+    -d '{"connector":"telegram_main","recipient":"123","content":"Hello"}'
+
+ポーリング間隔 (デフォルト)
+-------------------
+  タイプ 間隔有理数
+  telegram 60s getUpdates は安いです
+  discord 120s REST ポーリング、レート制限
+  ホームアシスタント 300 のイベント、緊急性は低い
+  webhook 該当なし プッシュベース、ポーリングなし
+
+auth_config JSON: {"poll_interval": 30}
+
+DATABASE
+
+Tables:
+  接続コネクタ構成 + サーキットブレーカーステータス
+  Connector_messages メッセージ キュー (受信/送信、再試行追跡)
+  メッセージの受信ボックス/送信ボックス (ルーティングされたメッセージ)
+  Scheduler_jobs 自動ポーリング/ディスパッチ ジョブ
+
+関連する列 Connector_messages:
+  ステータス TEXT (保留中/送信済み/失敗/デッド)
+  retry_count INTEGER (現在の試行回数)
+  max_retries INTEGER (デフォルトは 5)
+  next_retry_at TEXT (次回の再試行時間)
+--------
+関連する列の接続:
+  Continuous_failures INTEGER (サーキットブレーカーカウンター)
+  disabled_until TEXT (タイムスタンプまでロック)
+
+FILES
+
+Hub/connector.py CLI ハンドラー
+  Hub/_services/connector/queue_processor.py キュー プロセッサ (コア)
+  gui/api/messages_api.py REST API ルーター
+  Connectors/base.py 抽象基本クラス
+  Connectors/telegram_connector.py テレグラムアダプター
+  Connectors/discord_connector.py Discord アダプター
+  Connectors/homeassistant_connector.py HA アダプター
+  db/migrations/001_connector_queue_upgrade.sql スキーマの移行
+
+関連項目
+-------------------------
+内部メッセージング システム
+
+バックグラウンド ジョブ
+
+コンテキスト インジェクター
+---------
+Tabellen:
+  connections         Connector-Konfiguration + Circuit-Breaker-Status
+  connector_messages  Nachrichten-Queue (ein-/ausgehend, Retry-Tracking)
+  messages            Inbox/Outbox (geroutete Nachrichten)
+  scheduler_jobs         Automatische Poll/Dispatch-Jobs
+
+Relevante Spalten connector_messages:
+  status          TEXT (pending/sent/failed/dead)
+  retry_count     INTEGER (aktuelle Versuchsnummer)
+  max_retries     INTEGER (Default 5)
+  next_retry_at   TEXT (naechster Retry-Zeitpunkt)
+
+Relevante Spalten connections:
+  consecutive_failures  INTEGER (Circuit-Breaker-Zaehler)
+  disabled_until        TEXT (Sperre bis Timestamp)
+
+DATEIEN
+-------
+  hub/connector.py                           CLI-Handler
+  hub/_services/connector/queue_processor.py Queue-Processor (Kern)
+  gui/api/messages_api.py                    REST-API Router
+  connectors/base.py                 Abstrakte Basisklasse
+  connectors/telegram_connector.py   Telegram-Adapter
+  connectors/discord_connector.py    Discord-Adapter
+  connectors/homeassistant_connector.py  HA-Adapter
+  db/migrations/001_connector_queue_upgrade.sql  Schema-Migration
+
+SIEHE AUCH
+----------
+  bach --help messages        Internes Nachrichtensystem
+  bach --help daemon          Hintergrund-Jobs
+  bach --help injectors       Kontext-Injektoren

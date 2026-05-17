@@ -1,0 +1,75 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+APIBOOK - Central API documentation
+======================================
+
+DESCRIPTION
+------------
+Manages a central database of all used APIs. Stores URL,
+Authentication type, endpoints, descriptions and verification status.
+Uses SQLite (bach.db) with table api_book.
+
+OPERATIONS
+-----------
+  bach api add <name> <base_url> [--auth key|oauth|none] [--desc "..."] [--provider "..."] [--tags "a,b"]
+    Register or update API
+
+  bach api list
+    Show all registered APIs (status, auth, verification)
+
+  bach api show <name>
+    Detailed information of an API (URL, Auth, Endpoints, Examples)
+
+  bach api endpoint add <api_name> <METHOD> <path> [--desc "..."]
+    Add endpoint to existing API (e.g. POST /v1/chat/completions)
+
+  bach api verify [<name>]
+    Test all APIs or individual API (HTTP HEAD request, timeout: 10s)
+
+  bach api search <keyword>
+    Search APIs by keyword in name, description, tags
+
+  bach api remove <name>
+    Delete API from database
+
+  bach api help
+    Show this help
+
+EXAMPLES
+---------
+  # Register API
+  bach api add openai https://api.openai.com --auth key --desc "OpenAI API"
+
+  # With provider and tags
+  bach api add github https://api.github.com --auth oauth --provider GitHub --tags "git,development"
+
+  # Add endpoint
+  bach api endpoint add openai POST /v1/chat/completions --desc "Chat Completion"
+
+  # Search and check
+  bach api search openai
+  bach api verify openai
+  bach api list
+
+  # Show details
+  bach api show github
+
+DATABASE
+---------
+  Table: api_book
+  Columns: id, name (UNIQUE), provider, base_url, auth_type, description,
+           endpoints_json, examples_json, tags, last_verified, is_active,
+           created_at, updated_at, dist_type
+
+FILES
+-------
+  Handler: hub/apibook.py
+  Database: data/bach.db (SQLite)
+
+SEE ALSO
+----------
+  bach.py - CLI entry point
+  hub/base.py - BaseHandler class
+  data/bach.db - database

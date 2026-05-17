@@ -1,0 +1,39 @@
+# Portability: EXTERNAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+# BachForelle (The Arrow) - 相互参照
+
+## 警告: 外部ドキュメント
+このファイルは、BACH v2 Vanilla の外部にある別のプロジェクトである **BachForelle** について説明しています。
+
+**正しいパス:**
+- BachForelle: `C:\Users\User\OneDrive\.AI\BachForelle\`
+- BachFliege: `C:\Users\User\OneDrive\.AI\BachFliege\`
+
+## BachForelle とは何ですか?
+BachForelle は、BACH の軽量の LLM-First バリアントです。
+これは、別個のコードベースを持つスタンドアロン プロジェクトです。
+
+**哲学:**
+* LLM はオーケストレーターです (単なるユーザーではありません)
+* ブートプロセスは必要ありません
+* ハブルーティングの代わりにモジュラースキル
+* 重点: メモリ + マルチ LLM
+
+## BACH v2 バニラ ユーザー向け
+**BachForelle は BACH v2 Vanilla の一部ではありません。**
+
+BachForelle を使用したい場合:
+1. BachForelle フォルダーに移動します。
+2.「C:\Users\User\OneDrive\.AI\BachForelle\README.md」を読みます。
+3. `C:\Users\User\OneDrive\.AI\BachForelle\SKILL.md`を読み取ります
+
+## BACH v2 Vanillaには「arrow」コマンドがありません
+このヘルプ ファイルは、両方のシステムを使用するユーザーの相互参照としてのみ存在します。
+
+BACH v2 Vanilla の機能については、次を参照してください。
+「」バッシュ
+python bach.py ヘルプ
+python bach.py ヘルプ <コマンド>
+「」

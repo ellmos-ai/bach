@@ -1,0 +1,65 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+API PROBER - REST API の検出とドキュメント
+==================================================
+
+説明
+------------
+自動検出のために MODULAR_AGENTS/ApiProber モジュールに委任されます
+REST API のドキュメント。 URL をスキャンし、エンドポイントを保存し、
+パラメータをローカル データベースに保存し、結果をエクスポートします。
+
+OPERATIONS
+-----------
+  プローブ <url> [--length N] [--lay-ms N] [--max-requests N]
+    API URL をサンプリングします。深さは再帰の深さを制御します。
+    late-ms はリクエスト間の待機時間、max-requests は制限です。
+    結果をローカル DB に保存します。
+
+  リスト
+    ローカル データベースからの既知のサービスをすべてリストします。
+    名前、ベース URL、エンドポイント数、最後のエンドポイントのタイムスタンプを表示します
+    サービスごとのプローブ。
+
+  ステータス <サービス名>
+    サービスに関する詳細情報: ベース URL、サーバー ヘッダー、
+    エンドポイントとメソッドと認証ステータス、プローブ実行統計。
+
+  エクスポート <サービス> [--format md|json]
+    サービスの API ドキュメントを Markdown または JSON としてエクスポートします。
+    デフォルトの形式はマークダウンです。
+
+  設定 [--show]
+    タイムアウトを含む現在の ApiProber 構成を表示します。
+    設定 (B36 修正: connect_timeout_s、read_timeout_s)。
+
+例
+---------
+  bach api-prober probe https://api.github.com --depth 2
+    GitHub API を深さ 2 でサンプリングし、結果を保存します。
+
+  bach api-prober list
+    これまでに検出されたすべてのサービスを表示します。
+
+  bach api-prober status github
+    GitHub API に関する詳細情報 (存在する場合)。
+
+  bach api-prober export github --format json
+    GitHub API ドキュメントを JSON としてエクスポートします。
+
+  bach api-prober config
+    現在のタイムアウトと構成パラメータを表示します。
+
+FILES
+-------
+  ハンドラー: Hub/api_prober.py
+  モジュール: MODULAR_AGENTS/ApiProber/ (外部)
+  DB: config.json -> get_db_path()
+  エクスポート: config.json -> get_export_dir()
+
+関連項目
+----------
+  ヘルプ オーケストレーター -- ProbeOrchestrator (内部 API 検出エンジン)
+  ヘルプ ハンドラー -- ハンドラー システムの概要

@@ -1,0 +1,97 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ハンドラー名
+============
+fs - ファイルシステム保護 CLI
+
+BACH システムのコア ファイルの整合性チェックと復元のためのハンドラー。
+重要なファイルを誤って削除したり破損したりしないように保護します。
+
+
+説明
+============
+fs ハンドラーは、BACH ファイル システムのスナップショットとマニフェスト システムを管理します。
+ファイルを保護レベル (dist_type) ごとに分類します。
+  - dist_type=2: CORE (必須のシステム ファイル、最高の優先度)
+  - dist_type=1: TEMPLATE (テンプレート、優先度中)
+  - dist_type=0: USER (ユーザー データ、自動化なし)
+
+依存関係:
+  - tools/fs_protection.py (FSProtection クラス)
+  - tools/fs_protection.py (PathClassifier クラス)
+  - data/bach.db (マニフェストデータベース)
+  - dist/snapshots/*.orig (スナップショット アーカイブ)
+
+
+OPERATIONS
+===========
+チェック [デフォルト]
+    監視されているすべてのファイルの整合性をチェックします。
+    現在のファイルを dist/snapshots/ のスナップショットと比較します。
+    欠落/破損したファイルのステータスとリストを出力します。
+    呼び出し: bach fs check
+
+heal [file] または --all [--force]
+    紛失または破損したファイルを回復します。
+    - bach fs hell <file>: スナップショットから特定のファイルを復元します
+    - bach fs heal --all: 失われたファイルをすべて復元します。
+    - --force フラグ: 警告なしで上書きします。
+    戻り値: (成功、メッセージ)
+
+classify <パス>
+    パスの分類と保護レベルを示します。
+    dist_type (0/1/2) と保護レベル (USER/TEMPLATE/CORE) を出力します。
+    呼び出し: bach fs assign /path/to/file
+
+scan [引数なし]
+    system/ディレクトリをスキャンし、dist_typeでグループ化します。
+    カテゴリごとのファイル数を出力します。
+    呼び出し: bach fs scan
+
+status [引数なし]
+    現在の保護ステータスをメタデータとともに表示します。
+    - dist/snapshots/ 内のスナップショットの数
+    - bach.db のマニフェスト エントリ
+    - 最後の整合性チェックのタイムスタンプ (fs_manifest.json)
+    - 最後のバックアップのタイムスタンプ
+    呼び出し: bach fs status
+
+
+例
+=========
+1。システムの整合性を確認します。
+   $ bach fs チェック
+
+2.不足しているコア ファイルをすべて回復します。
+   $ bach fs heal --all
+
+3.特定の破損したファイルを修復します。
+   $ bach fs は、hub/base.py
+
+4 を修復します。ファイルの分類を確認します。
+   $ bach fs 分類データ/bach.db
+
+5.ファイル システムの統計を表示します。
+   $bach fs スキャン
+
+6.現在の保護ステータスを表示します。
+   $ bach fs status
+
+
+FILES
+=======
+hub/fs.py ハンドラーの実装 (160 行)
+tools/fs_protection.py FSProtection + PathClassifier クラス
+data/bach.db SQLite マニフェスト データベース
+data/fs_manifest.json メタデータ (last_check、last_backup)
+dist/snapshots/ スナップショット アーカイブ (*.orig ファイル)
+
+
+関連項目
+==========
+dist スナップショット管理 (bach dist スナップショット)
+Base.py BaseHandler 抽象クラス
+tools/fs_protection.py 技術文書
+BACH_SYSTEM.md システムのアーキテクチャと設計

@@ -1,0 +1,282 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [cli.js (incluido), github.com/anthropics/claude-code]
+
+SISTEMA DE INYECCIÓN DE CÓDIGO CLAUDE - ANATOMÍA
+==========================================
+
+A partir de: 2026-02-17
+Fuente: Ingeniería inversa de cli.js v2.1.44 (minimizada)
+Método: análisis de expresiones regulares + pruebas rápidas sistemáticas
+
+RESUMEN
+----------
+Claude Code inyecta los llamados "recordatorios del sistema" en el flujo de mensajes
+entre el usuario y LLM. El LLM (Claude) ve esto como parte de la conversación,
+pero no puede distinguir si provienen del usuario o del sistema.
+excepto la etiqueta XML <system-reminder>.
+
+A diferencia del sistema de inyección de BACH (ver: injectors.txt), el usuario tiene
+Código Claude NO hay control directo sobre las inyecciones. El LLM puede
+no los enciendas ni apagues.
+
+ARQUITECTURA
+-----------
+  Mensaje de usuario
+      |
+      v
+  Claude Código CLI (Node.js, cli.js)
+      |
+      +--> d6() -- crea un objeto de mensaje de usuario
+      |      Campos: contenido, isMeta, isVisibleInTranscriptOnly,
+      |      isCompactSummary, uuid, marca de tiempo, todos, ...
+      |      isMeta:true = invisible en la transcripción del usuario
+      |
+      +--> Px() -- Envoltorio de recordatorio del sistema
+      |      función Px(A) { return `<recordatorio del sistema>\n${A}\n</recordatorio del sistema>` }
+      |
+      +--> s5() -- Envoltorio masivo
+      |      Aplica Px() a todo el contenido de texto en matrices de mensajes
+      |
+      v
+  Llamada API a Anthropic (mensajes con recordatorios del sistema inyectado)
+      |
+      v
+  LLM (Claude) -- ve recordatorios del sistema en el flujo de mensajes
+
+FUNCIONES PRINCIPALES (desofuscadas)
+------------------------------
+  d6({contenido, esMeta, ...})
+    Crea un objeto Mensaje de tipo "usuario" con rol: "usuario".
+    isMeta:true significa: El mensaje no es visible en la transcripción,
+    pero será enviado al LLM.
+
+  Px(texto)
+    Texto ajustado en etiquetas <system-reminder>.
+    Función más simple del sistema.
+
+  s5 (mensajes)
+    Itera sobre la matriz de mensajes y aplica Px() a todos ellos.
+    contenido del texto. Operación masiva.
+
+TODOS LOS 52 TIPOS DE INYECCIÓN
+-------------------------
+
+Operaciones de archivos (12):
+  archivo archivo leído (con contenido)
+  ya_read_file El archivo ya ha sido leído (no operativo)
+  edited_text_file El archivo de texto fue editado
+  edited_image_file Archivo de imagen editado (no operativo)
+  pdf pdf leer
+  pdf_referencia Referencia en PDF
+  imagen imagen leída
+  cuaderno Jupyter cuaderno
+  listado de directorios (a través de ls)
+  compact_file_reference Referencia de archivo compacto
+  selected_lines_in_ide El usuario ha seleccionado líneas en IDE
+  open_file_in_ide Archivo abierto por el usuario en IDE
+
+Memoria/Contexto (4):
+  nested_memory Contenido de los subarchivos de memoria
+                          Formato: "Contenido de {ruta}:\n{contenido}"
+  ultramemory Inyección de Ultra-Memory (genérico)
+  compaction_reminder "Autocompactación habilitada, los mensajes más antiguos se resumirán"
+  date_change "La fecha ha cambiado. NO menciones esto al usuario"
+
+Gestión de tareas/todo (5):
+  task_reminder "Las herramientas de tareas no se han utilizado recientemente" (Empujar)
+  task_progress Mensaje de progreso de la tarea (genérico)
+  task_status Estado de la tarea: finalizada/detenida + detalles
+  entrada todo todo
+  todo_reminder Todo nudge (sistema anterior, mismo mecanismo)
+
+Modo plan (5):
+  plan_mode Modo plan activado
+  plan_mode_exit Salir del modo de plan
+  plan_mode_reentry Volver al modo de plan (lee el plan existente)
+  plan_file_reference Referencia al archivo del plan
+  verificar_plan_reminder "Plan implementado, verifique"
+
+Equipo/Agentes (5):
+  agent_mention "El usuario quiere invocar al agente X"
+  delegado_mode Modo delegado: solo se permiten herramientas de equipo
+  delegado_mode_exit Salir del modo delegado
+  team_context Inyección de contexto de equipo
+  teammate_mailbox Mensajes de compañeros de equipo (solo en modo equipo)
+
+Ganchos (10):
+  hook_blocking_error Acción bloqueada del gancho (con mensaje de error)
+  hook_success Enganche exitoso (sólo SessionStart/UserPromptSubmit)
+  hook_additional_context El gancho proporciona contexto adicional
+  hook_error_during_execution Error de gancho durante la ejecución (no operativo)
+  hook_non_blocking_error Error de enlace sin bloqueo (no operativo)
+  hook_cancelled Gancho cancelado (no operativo)
+  hook_stopped_continuation Gancho detenido continuación
+  hook_system_message Mensaje del sistema de enlace
+  hook_permission_decision Decisión de permiso de gancho
+  async_hook_response Respuesta de enlace asincrónico
+
+Recursos/Presupuesto (2):
+  token_usage "Uso del token: X/Y; queda Z"
+  Budget_usd "Presupuesto en USD: $X/$Y; $Z restantes"
+
+Habilidades/MCP (4):
+  Skill_listing Lista de habilidades disponibles
+  invoked_skills Habilidades invocadas
+  dynamic_skill Habilidad dinámica (no operativa, devuelve [])
+  mcp_resource Recurso MCP cargado
+
+Otro (5):
+  texto texto simple
+  queued_command Esperando comando de barra diagonal
+  salida_estructurada Salida estructurada
+  diagnósticos Diagnósticos IDE (nuevos errores/advertencias)
+  estilo_salida Estilo de salida activo (p. ej., "explicativo")
+  critic_system_reminder Recordatorio crítico del sistema (genérico)
+  command_permissions Comando-Permisos (no-op)
+
+TIPOS NO-OP (no cree una inyección):
+  archivo_ya_leído, permisos_comando, archivo_imagen_editado,
+  gancho_cancelado, gancho_error_durante_ejecución, gancho_no_bloqueo_error,
+  dynamic_skill
+
+CONSTANTES DE TIEMPO
+-----------------
+  Xf6 = {
+      TURNS_SINCE_WRITE: 10 empujones de tarea después de 10 turnos sin herramienta de tarea
+      TURNS_BETWEEN_REMINDERS: 10 min. 10 turnos entre empujones de tarea
+  }
+
+  qt4 = {
+      TURNS_BETWEEN_ATTACHMENTS: 5 recordatorios de archivos adjuntos cada 5 turnos
+      FULL_REMINDER_EVERY_N_ATTACHMENTS: 5 recordatorios completos cada 5 archivos adjuntos
+  }
+
+  aQY = {
+      TOKEN_COOLDOWN: tiempo de reutilización de 5000 tokens (después de 5000 tokens)
+  }
+
+  sQY = {
+      TURNS_BETWEEN_REMINDERS: 10 Intervalo de recordatorio general
+  }
+
+  Nota: "Turnos" cuenta todas las interacciones LLM, incluidas las llamadas a herramientas,
+  no solo mensajes de usuario. Por eso los empujones parecen irregulares
+  desde la perspectiva del usuario.
+
+TRIGGER LOGIC (recordatorio de tarea, desofuscado)
+-------------------------------------------
+  función deberíaInjectTaskReminder (mensajes) {
+      // Sólo si las herramientas de tarea están disponibles
+      si (!taskToolsEnabled()) devuelve falso;
+      si (messages.length === 0) devuelve falso;
+
+      // Cuenta los turnos desde el último uso de la herramienta de tarea
+      let turnSinceLastUse = 0;
+      let turnSinceLastReminder = 0;
+
+      para (msg en mensajes.reverse()) {
+          if (msg.type === "asistente" && msg.usedTool("TaskCreate" || "TaskUpdate"))
+              romper;  //Se encontró el último uso de la herramienta de tarea
+          giraSinceLastUse++;
+      }
+
+      // Comprobar si vence el recordatorio
+      if (turnsSinceLastUse >= 10 && turnsSinceLastReminder >= 10) {
+          dejar tareas = getAllTasks();
+          return {tipo: "task_reminder", contenido: tareas};
+      }
+      devolver falso;
+  }
+
+INSTRUCCIONES DE CONFIDENCIALIDAD
+---------------------------
+Los siguientes tipos contienen declaraciones explícitas de "NUNCA menciones":
+
+  task_reminder: "Asegúrate de NUNCA mencionar este recordatorio al usuario"
+  todo_reminder: "Asegúrate de NUNCA mencionar este recordatorio al usuario"
+  date_change: "NO menciones esto al usuario explícitamente"
+  nested_memory: "No le digas esto al usuario, ya que ya lo sabe"
+    (en CLAUDE.md/MEMORY.md cambios)
+
+COMPARACIÓN: CÓDIGO CLAUDE vs. INYECTORES BACH
+------------------------------------------
+
+  Propiedad | Código Claude | BACH
+  ----------------------|-----------------------|-----------------------
+  Arquitectura | Centrado en el sistema | centrado en LLM
+  Controlar | Controles CLI LLM | LLM controla los inyectores
+  Control de usuario | Ninguno (excepto ganchos) | Completo (activar/desactivar)
+  Control de Maestría en Derecho | Ninguno | Completo (encendido/apagado)
+  Gestión de enfriamiento | Por turnos (rígido) | Basado en tiempo (flexible)
+  Número de tipos | 52 | 5 (con funciones parciales)
+  Secreto | 4 chicos con "NUNCA" | Ninguno (transparente)
+  Desencadenantes | Conteo de turnos | Palabras clave + Hora + Eventos
+  Integración de base de datos | Ninguno | Más de 900 disparadores dinámicos
+  Autoextensión | No es posible | A través de la base de datos context_triggers
+  Código abierto | cli.js (minimizado) | Totalmente legible (Python)
+
+DIFERENCIAS PRINCIPALES:
+
+  1. TRANSPARENCIA: BACH informa abiertamente, Claude Code oculta activamente
+  2. CONTROL: Los inyectores BACH pueden ser controlados por el LLM, los Códigos Claude no
+  3. FLEXIBILIDAD: BACH tiene activadores de base de datos dinámicos, Claude Code tiene constantes codificadas
+  4. ENFRIAMIENTO: BACH usa tiempo (min), Claude Code usa turnos (rígido)
+
+POTENCIAL: SISTEMA DE MENSAJERÍA
+----------------------------
+La infraestructura de inyección podría usarse para la comunicación entre instancias
+ser utilizado:
+
+1. GANCHOS (forma más fácil):
+     hook_additional_context en UserPromptSubmit --
+     lee el mensaje del archivo y lo inyecta como contexto.
+     No es necesario parchear el código fuente.
+
+  2. MEMORIA ANIDADA:
+     Los archivos en la carpeta de memoria se inyectan automáticamente.
+     Cambio desde afuera = mensaje al LLM.
+     Restricción: Sólo al inicio de la sesión o cambios en CLAUDE.md/MEMORY.md.
+
+  3. RECORDATORIO_SISTEMA_CRÍTICO:
+     Tipo genérico para cualquier mensaje.
+     Tendría que activarse mediante programación (parche fuente).
+
+  4. BUZÓN DEL EQUIPO:
+     Mensajería ya existente para equipos.
+     Sólo activo en modo equipo (l8() check).
+
+RECOMENDACIÓN: El enfoque basado en ganchos es el más práctico.
+Un enlace UserPromptSubmit podría verificar un archivo de la "Bandeja de entrada" y
+Inyectar mensajes como hook_additional_context.
+
+RESULTADOS EXPERIMENTALES (Sesión 2026-02-17)
+-----------------------------------------------
+Prueba sistemática con más de 14 mensajes:
+
+  - El empujón de tarea no aparece estrictamente cada 10 mensajes porque
+    Cuente las llamadas de herramientas como giros separados
+  - Activador de palabra clave para empujar la tarea: REFUTED (puro conteo de turnos)
+  - Longitud del mensaje del usuario: no influye en los desencadenantes
+  - Las salidas propias (LLM) no activan empujones
+  - Patrón: los empujones se acumulan después de rondas con uso intensivo de herramientas
+    (porque más vueltas = más rápido a las 10)
+
+ARCHIVOS
+-------
+  Fuente de ingeniería inversa:
+    C:\Users\User\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\cli.js
+    (11,5 MB, minificado, versión 2.1.44)
+
+  Resultados del análisis:
+    ~/.claude/projects/C--Users-User/memory/claude-code-injections-anatomy.md
+    ~/.claude/projects/C--Users-User/memory/system-injections.log
+
+VER TAMBIÉN
+----------
+  injectors.txt Sistema de inyectores BACH (5 inyectores)
+  claude-code.txt Referencia rápida del código Claude
+  claude-code-automatization.txt Automatización de código Claude
+  sistema de memoria memoria.txt
+  partner.txt infraestructura de socios

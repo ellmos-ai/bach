@@ -1,0 +1,100 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DOCS - Human-readable documentation
+=====================================
+
+DESCRIPTION
+------------
+In addition to the help system (optimized for AI), there are two human-readable ones
+Documentation with ASCII graphics and overviews.
+
+DOCUMENTATION LEVELS
+--------------------
+BACH has three documentation levels:
+
+  ┌──────────────────────────────── ────────────────────────────────┐
+  │ LEVEL │ TARGET GROUP │ LOCATION │
+  ├──────────────────────────────── ────────────────────────────────┤
+  │ docs/README.txt │ Developer │ docs/ │
+  │ (Development) │ Contributors │ │
+  ├──────────────────────────────── ────────────────────────────────┤
+  │ ARCHITECTURE.md │ Developer │ system/ │
+  │ (Architecture) │ Deep │ │
+  ├──────────────────────────────── ────────────────────────────────┤
+  │ docs/help/*.txt │ AI Agents │ system/docs/help/ │
+  │ (Operative) │ Claude, etc. │ │
+  ├──────────────────────────────── ────────────────────────────────┤
+  │ wiki/*.txt │ All │ system/wiki/ │
+  │ (expertise) │ │ │
+  └─────────────────── ──────────────────── ─────────────────────────┘
+
+DOCUMENTS
+---------
+
+  docs/README.txt
+  ---------------
+  Development documentation - Overview of docs/folder structure.
+  - Concepts (CONCEPT_*.md)
+  - Analyzes and reports
+  - Archived old concepts (_archive/)
+  - Long-term ideas (_ideas/)
+  - Tests and reports (_test_and_reports/)
+
+  Target audience: developers, contributors
+  Format: Plain text with references
+
+  system/ARCHITECTURE.md
+  ----------------------
+  System architecture for developers.
+  - Vision & design philosophy
+  - High-level architecture diagrams
+  - Hub & Handler Pattern explained
+  - Database schema visualized
+  - Data flow diagrams
+  - Expansion instructions
+  - Conventions
+
+  Target audience: developers, contributors, advanced users
+  Format: Markdown with ASCII diagrams
+
+DEPARATION
+----------
+  docs/help/*.txt Operational reference, machine readable, consistent
+  docs/README.txt Developer overview, folder structure
+  system/ARCHITECTURE.md Technical understanding, architecture, design
+
+  help is the PRIMARY documentation.
+  docs/README.txt and ARCHITECTURE.md refer to help for details.
+
+UPDATE
+--------------
+For major changes to the system, all levels should
+to be updated:
+
+  1. docs/help/*.txt - commands, operations (ALWAYS keep up to date)
+  2. docs/README.txt - For concept/folder changes
+  3. system/ARCHITECTURE.md - For architecture changes
+
+GITHUB PUBLISHING
+------------------------
+When publishing on GitHub:
+
+  - Link system/ARCHITECTURE.md as the main entry
+  - docs/README.txt for developer overview
+  - mention help system as integrated documentation
+
+FILE PATHS
+----------
+  docs/README.txt Developer overview
+  system/ARCHITECTURE.md Architecture documentation
+  system/docs/help/*.txt Operational help (these files)
+  system/wiki/*.txt Background knowledge
+
+SEE ALSO
+----------
+  bach --help list         All Help topics
+  bach wiki list           All Wiki articles
+  docs/help/practices.txt Architecture principles
+  docs/help/naming.txt Naming conventions

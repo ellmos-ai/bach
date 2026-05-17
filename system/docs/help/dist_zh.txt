@@ -1,0 +1,68 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+处理程序名称
+============
+dist - 分发系统处理程序（基于dist_type）
+
+
+描述
+============
+管理B​​ACH 系统的快照、版本和分发包。
+通过 dist_type 分类进行持续备份（CORE=2、TMPL=1、USER=0）。
+支持版本控制、密封完整性和可移植性。
+
+
+操作
+===========
+状态 系统状态（密封、dist_type 统计信息）
+验证密封完整性
+分类 dist_type 显示分布 (CORE/TMPL/USER)
+快照 创建快照（手动或自动）
+发布 使用版本号创建发布
+恢复 从 dist/ 文件夹中的发行版 zip 恢复
+安装 在新文件夹中安装发行版
+list 列出快照/版本/ZIP
+
+
+示例
+=========
+基本命令：
+  bach --dist status                  -> 带密封和统计信息的系统状态
+  bach --dist verify                  -> 检查密封完整性
+  bach --dist classify                -> dist_type 分布（每个表一个表）
+
+快照：
+  bach --dist snapshot NAME           -> 使用名称创建手动快照
+  bach --dist snapshot TEST "Desc"    -> 带可选描述
+  bach --dist snapshot --list         -> 最后 20 个快照列表
+
+发布：
+  bach --dist release v1.0.0          -> 使用版本创建发布编号
+  bach --dist release v1.0.0 "Notes"  -> 带发行说明
+  bach --dist list releases           -> 显示最近 20 个版本
+
+分发（恢复和安装）：
+  bach --dist restore --list          -> 显示 dist/
+  bach --dist restore NAME.zip        -> 从 dist/NAME.zip 恢复
+  bach --dist restore NAME.zip --no-backup  -> 不带备份快照
+  bach --dist restore NAME.zip --target /x  -> 到另一个目录。提取
+  bach --dist install NAME.zip D:\\Path  -> 安装在新文件夹中
+  bach --dist install --list          -> 显示可用的ZIP
+
+
+文件
+=======
+处理程序：hub/dist.py
+后端：tools/distribution.py
+数据库：bach.db（快照、版本、元数据）
+Dist 文件夹：dist/（分发 zip）
+快照：日志/快照/（清单和元数据）
+
+
+另请参见
+==========
+  hub/ - 所有处理程序
+  tools/distribution.py - 分发管理器实施
+  docs/help/ - 更多处理程序帮助

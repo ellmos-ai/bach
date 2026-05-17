@@ -1,0 +1,68 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+===
+
+setup check
+
+
+DESCRIPTION
+===
+
+Validates whether all BACH dependencies are present and configured.
+Does not make any changes, only checks with status output.
+
+
+COMMAND
+===
+
+bach setup check
+
+
+CHECKS
+===
+
+1. npm available Must be in the PATH (for MCP server installation)
+2. ellmos-codecommander-mcp Globally installed npm package (17 tools)
+3. ellmos-filecommander-mcp Globally installed npm package (43 tools)
+4. Secrets file ~/.bach/bach_secrets.json must exist and be valid JSON
+5. bach.db database in data/bach.db must exist
+6. Optional MCP server info check (no error if not installed)
+7. USER.md Must exist and be personalized (no TEMPLATE marker)
+
+
+STATUS CODES
+===
+
+[OK] Check passed
+[!!] Check failed (action required)
+[--] Optional component not installed (no error)
+[??] Check could not be carried out
+
+
+EXAMPLES
+===
+
+bach setup check
+  Check all dependencies with status output
+
+bach setup full-install
+  In case of errors: Perform complete installation
+
+
+FILES
+===
+
+hub/setup.py SetupHandler._check()
+~/.bach/bach_secrets.json Secrets Vault
+data/bach.db BACH database
+../USER.md User profile
+
+
+SEE ALSO
+===
+
+docs/help/setup.txt Setup handler (all operations)
+docs/help/install.txt Initial installation and scenarios

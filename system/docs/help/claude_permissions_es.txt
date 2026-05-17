@@ -1,0 +1,63 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+PERMISOS DE CLAUDE - Administrar perfiles de permisos de Claude Code
+==============================================================
+
+DESCRIPCIÓN
+------------
+Administra perfiles de permisos para Claude Code. Los perfiles definen cuáles
+Herramientas que el código Claude puede usar automáticamente (permitir) y qué bloques
+convertirse (negar). Almacenado en la base de datos BACH, aplicado a
+~/.claude/settings.json.
+
+
+OPERACIONES
+-----------
+  bach permissions list                 Mostrar todos los perfiles
+  bach permissions show <profil>        Detalles del perfil
+  bach permissions set <profil> allow=Tool    Agregar regla
+  bach permissions set <profil> deny=Tool     Agregar regla
+  bach permissions remove <profil> allow=Tool Regel entfernen
+  bach permissions activate <profil>    Activar perfil
+  bach permissions deactivate           Volver al perfil normal
+  bach permissions sync                 Importar settings.json a la base de datos
+  bach permissions reset <profil>       Restablecer el perfil a los valores predeterminados
+  bach permissions status               Mostrar el estado actual
+  bach permissions init                 Perfiles predeterminados en la creación de la base de datos
+
+
+EJEMPLOS
+---------
+  # Ver perfiles
+  bach permissions list
+
+  # Habilitar perfil estricto 
+  bach permissions activate strict
+
+  # Permitir herramienta
+  bach permissions set default allow=Bash
+
+  # Importar configuración actual.json
+  bach permissions sync
+
+
+DEFAULT-PROFILE
+---------------
+  perfil estándar predeterminado (acceso moderado)
+  estricto Restringido (uso mínimo de herramientas)
+  desarrollo Avanzado (todas las herramientas de desarrollo)
+
+
+ARCHIVOS
+-------
+  Controlador: hub/claude_permissions.py
+  Configuración: ~/.claude/settings.json (será modificado)
+  Tabla de base de datos: claude_permission_profiles
+
+
+VER TAMBIÉN
+----------
+  ayuda para configurar Controladores de configuración (ganchos)
+  ayuda seguridad configuración de seguridad

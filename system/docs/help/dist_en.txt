@@ -1,0 +1,68 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+HANDLER NAME
+============
+dist - Distribution System Handler (dist_type-based)
+
+
+DESCRIPTION
+============
+Manages snapshots, releases and distribution packages of the BACH system.
+Constant backup via dist_type classification (CORE=2, TMPL=1, USER=0).
+Supports versioning, seal integrity and portability.
+
+
+OPERATIONS
+===========
+status System status (seal, dist_type statistics)
+verify seal integrity
+classify dist_type Show distribution (CORE/TMPL/USER)
+snapshot Create snapshot (manually or automatically)
+release Create release with version number
+restore Restore from distribution zip in dist/ folder
+install Install distribution in new folder
+list List snapshots/releases/ZIPs
+
+
+EXAMPLES
+=========
+Basic commands:
+  bach --dist status                  -> System status with seal & statistics
+  bach --dist verify                  -> Check seal integrity
+  bach --dist classify                -> dist_type distribution (table per table)
+
+Snapshots:
+  bach --dist snapshot NAME           -> Create manual snapshot with name
+  bach --dist snapshot TEST "Desc"    -> With optional description
+  bach --dist snapshot --list         -> Last 20 snapshots list
+
+Releases:
+  bach --dist release v1.0.0          -> Create release with version number
+  bach --dist release v1.0.0 "Notes"  -> With release notes
+  bach --dist list releases           -> Show last 20 releases
+
+Distribution (restore & install):
+  bach --dist restore --list          -> Show available ZIPs in dist/
+  bach --dist restore NAME.zip        -> Restore from dist/NAME.zip
+  bach --dist restore NAME.zip --no-backup  -> Without backup snapshot
+  bach --dist restore NAME.zip --target /x  -> To another directory. extract
+  bach --dist install NAME.zip D:\\Path  -> Install in new folder
+  bach --dist install --list          -> Show available ZIPs
+
+
+FILES
+=======
+Handler: hub/dist.py
+Backend: tools/distribution.py
+Database: bach.db (snapshots, releases, metadata)
+Dist folder: dist/ (distribution zips)
+Snapshots: logs/snapshots/ (manifest & metadata)
+
+
+SEE ALSO
+==========
+  hub/ - All handlers
+  tools/distribution.py - Distribution Manager Implementation
+  docs/help/ - More handler help

@@ -1,0 +1,60 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CV - CV の管理と生成
+=============================================
+
+説明
+------------
+以下に基づいて CV を生成および管理するためのハンドラー
+BACH データベースからのデータ。個人情報、専門情報を収集します
+登録されているフォルダーから連絡先や経歴情報を取得し、
+ASCII 形式の履歴書を生成します。
+
+操作
+-----------
+  bach cv generate               履歴書を生成および表示
+  bach cv generate --output DATEI Lebenslauf in Datei speichern
+  bach cv generate --scan        生成前に登録済みフォルダーをスキャン
+  bach cv generate -o DATEI      --output の短縮形
+  bach cv status                 履歴書データベースのステータスを表示
+
+例
+---------
+  bach cv generate
+  bach cv generate --output ~/lebenslauf.txt
+  bach cv generate --scan --output cv_komplett.txt
+  bach cv status
+
+オプション
+--------
+  --output FILE、-o FILE 生成された履歴書をファイルに保存します
+  --scan 生成前にキャリア データのフォルダーをスキャンします
+
+データ ソース
+------------
+ハンドラーは次のソースからデータを収集します:
+
+  1. 個人データ:assistant_user_profile テーブル
+  2. 専門的な参照先: 連絡先 (カテゴリ: 「専門家」)
+  3. キャリア フォルダー: 雇用主、証明書、トレーニング (--scan 付き)
+
+ステータス出力
+--------------
+「status」コマンドは次のように表示します。
+  - 個人データセットの数
+  - 専門的な参考文献 (アクティブ)
+  ・登録フォルダ（存在チェックあり）
+  - CV ジェネレーターのステータス
+
+ファイル
+-------
+  ハンドラー: ハブ/cv.py
+  ジェネレーター: Agents/_experts/bewerbungsexperte/cv_generator.py
+  データベース: data/bach.db
+
+関連項目
+----------
+  --profile ユーザープロファイル情報の管理
+  --contacts 連絡先と参照の管理

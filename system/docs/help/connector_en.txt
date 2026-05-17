@@ -1,0 +1,182 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CONNECTOR - External communication connections
+===============================================
+
+DESCRIPTION
+Manages external communication connections (Telegram, Discord,
+HomeAssistant, etc.) and executes it. Supports automatic
+Polling, queue dispatch with retry/backoff and circuit breaker.
+
+SUPPORTED TYPES
+-------------------
+  telegram Telegram Bot API (getUpdates Polling)
+  discord Discord Bot (REST API)
+  homeassistant Home Assistant (REST API)
+  webhook Incoming webhooks (push-based)
+  signal Signal Messenger (planned, signal-cli)
+  whatsapp WhatsApp (planned, Baileys)
+
+Runtime adapters available: telegram, discord, homeassistant
+
+CLI COMMANDS
+-----------
+
+Administration:
+  bach connector list                    Show all connectors
+  bach connector status                  Status + Statistics
+  bach connector add <type> <name> [url] Neuen Connector registrieren
+  bach connector remove <name>           Remove connector
+  bach connector enable <name>           Activate
+  bach connector disable <name>          Deactivate
+
+Messages:
+  bach connector messages [name]         Show messages
+  bach connector unprocessed             Unprocessed messages
+  bach connector route                   Route messages (Inbox) Daemon together for
+Automatic delivery even without an active CLI session.
+  bach connector send <name> <to> <text> In ausgehende Queue einreihen
+
+Setup:
+  1. bach connector setup-daemon # One-time: Create 2 daemon jobs
+  2. bach daemon start --bg # Start daemon in the background
+  bach connector poll <name>             From now on automatically:
+  - Telegram/Discord polled every 1-2 minutes
+  - Incoming messages in Inbox (with context hints)
+  - Outgoing queue processed every minute
+  - Failed sends repeated up to 5x with backoff
+  bach connector dispatch <name>         Daemon jobs:
+  connector_poll_and_route (2 min interval) Polls and routes
+  connector_dispatch (1 min interval) Dispatches queue
+
+RETRY AND BACKOFF
+  bach connector setup-daemon            Failed messages are sent with exponential backoff
+repeated: 30s, 60s, 120s, 240s, 480s (~15 minutes total).
+  bach connector queue-status            After 5 failed attempts (configurable), the message is displayed as
+Marked "Dead Letter". Dead letters can be done manually
+can be reset:
+  bach connector retry <id|all>          Reset all dead letters
+
+Reset individual message
+-------------------------------
+CIRCUIT BREAKER
+
+After 5 consecutive errors a connector for
+Disabled for 5 minutes (disabled_until). Further send/poll attempts
+are skipped until the cooldown has expired. After that
+the counter is automatically reset.
+
+CONTEXT INTEGRATION
+
+Incoming messages are routed through two
+Trigger systems filtered (associative memory):
+
+  a) ContextInjector (hardcoded, ~100 triggers)
+     → injector_hint in messages.metadata
+-----------------
+  b) context_triggers table (dynamic, 900+ triggers)
+     → context_triggers in messages.metadata
+
+Result in messages.metadata (JSON):
+  {
+    "source": "telegram:123456",
+    "injector_hint": "[CONTEXT] Backup: bach backup create ...",
+    "context_triggers": ["backup", "backup"],
+    "routed_at": "2026-02-08T22:00:00"
+  }
+
+  bach connector retry all             REST API
+  bach connector retry 42              Available when Headless API is running (port 8001):
+
+  POST /api/v1/messages/send Enqueue message
+  GET /api/v1/messages/queue Queue status (pending/failed/dead)
+  GET /api/v1/messages/inbox Read inbox (pagination, filter)
+  POST /api/v1/messages/route Trigger routing manually
+---------------
+Examples:
+  curl localhost:8001/api/v1/messages/queue
+  curl -X POST localhost:8001/api/v1/messages/send \
+    -H "Content-Type: application/json" \
+    -d '{"connector":"telegram_main","recipient":"123","content":"Hello"}'
+
+POLL INTERVALS (default)
+-------------------
+  Type Interval Rational
+  telegram 60s getUpdates is cheap
+  discord 120s REST polling, rate limits
+  homeassistant 300s events, less urgent
+  webhook N/A Push-based, no polling
+
+Overridable via auth_config JSON: {"poll_interval": 30}
+
+DATABASE
+
+Tables:
+  connections connector configuration + circuit breaker status
+  connector_messages message queue (incoming/outgoing, retry tracking)
+  messages Inbox/Outbox (routed messages)
+  scheduler_jobs Automatic poll/dispatch jobs
+
+Relevant columns connector_messages:
+  status TEXT (pending/sent/failed/dead)
+  retry_count INTEGER (current attempt number)
+  max_retries INTEGER (default 5)
+  next_retry_at TEXT (next retry time)
+--------
+Relevant columns connections:
+  consecutive_failures INTEGER (circuit breaker counter)
+  disabled_until TEXT (lock until timestamp)
+
+FILES
+
+hub/connector.py CLI handler
+  hub/_services/connector/queue_processor.py Queue processor (core)
+  gui/api/messages_api.py REST API Router
+  connectors/base.py Abstract base class
+  connectors/telegram_connector.py Telegram adapter
+  connectors/discord_connector.py Discord adapter
+  connectors/homeassistant_connector.py HA adapter
+  db/migrations/001_connector_queue_upgrade.sql Schema migration
+
+SEE ALSO
+-------------------------
+Internal messaging system
+
+Background jobs
+
+Context injectors
+---------
+Tabellen:
+  connections         Connector-Konfiguration + Circuit-Breaker-Status
+  connector_messages  Nachrichten-Queue (ein-/ausgehend, Retry-Tracking)
+  messages            Inbox/Outbox (geroutete Nachrichten)
+  scheduler_jobs         Automatische Poll/Dispatch-Jobs
+
+Relevante Spalten connector_messages:
+  status          TEXT (pending/sent/failed/dead)
+  retry_count     INTEGER (aktuelle Versuchsnummer)
+  max_retries     INTEGER (Default 5)
+  next_retry_at   TEXT (naechster Retry-Zeitpunkt)
+
+Relevante Spalten connections:
+  consecutive_failures  INTEGER (Circuit-Breaker-Zaehler)
+  disabled_until        TEXT (Sperre bis Timestamp)
+
+DATEIEN
+-------
+  hub/connector.py                           CLI-Handler
+  hub/_services/connector/queue_processor.py Queue-Processor (Kern)
+  gui/api/messages_api.py                    REST-API Router
+  connectors/base.py                 Abstrakte Basisklasse
+  connectors/telegram_connector.py   Telegram-Adapter
+  connectors/discord_connector.py    Discord-Adapter
+  connectors/homeassistant_connector.py  HA-Adapter
+  db/migrations/001_connector_queue_upgrade.sql  Schema-Migration
+
+SIEHE AUCH
+----------
+  bach --help messages        Internes Nachrichtensystem
+  bach --help daemon          Hintergrund-Jobs
+  bach --help injectors       Kontext-Injektoren

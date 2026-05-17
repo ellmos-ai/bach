@@ -1,0 +1,54 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BUILDER - スキル/エージェントの作成とエクスポート
+==========================================
+
+BACH コマンド (推奨)
+-------------------------
+bach skills export <name>               スキルのエクスポート (v2.0)
+bach skills list                        すべてのスキルのリスト
+bach skills version <name>              バージョン チェック
+
+
+system/tools/
+---------------------------
+c_struct_generator.py 内のツール <n> <profile> スキル/エージェントの作成
+c_struct_generator.py <n> --embedded BACH の場合 (軽量)
+
+generators/os_generator.py <n> [ターゲット] 新しい OS を作成する
+generateders/exporter.py スキル <n> エクスポート スキル
+generators/distribution_system.py 配信システム
+
+
+PROFILE SPECTRUM
+----------------
+MICRO のみ SKILL.md (1 ファイル)
+LIGHT 最小限の構造 (~5 ファイル)
+STANDARD メモリ付き (~12 ファイル)
+拡張 マイクロスキルあり (~20 ファイル)
+エージェントとワークフロー (~30 ファイル)
+AGENT_FULL 完了 (~50 ファイル)
+
+
+DIST_TYPE SYSTEM
+----------------
+2 = CORE 常にパッケージ化
+1 = テンプレートを元にリセット
+0 = ユーザー エクスポートしない
+
+
+クイック コマンド
+--------------
+スキルのエクスポート: Bach スキルのエクスポート分析
+スキル一覧：バッハスキル一覧
+バージョン チェック: bach スキル バージョン分析
+
+
+関連ハンドラー
+-------------------
+system/hub/skills.py SkillsHandler (v2.0)
+
+
+関連項目: builder.md (hub/_services/)

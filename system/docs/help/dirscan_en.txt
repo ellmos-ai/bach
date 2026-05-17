@@ -1,0 +1,63 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DIRECTORY TRUTH
+===============
+
+Automatic directory state management.
+
+CONCEPT:
+  - Startup: Record actual status, compare with TARGET
+  - Shutdown: Current status becomes new TARGET
+  - Heuristic: Claude changes are wanted
+
+PROCESS:
+
+1. First start
+   - Current state = TARGET state
+   - Stored in data/directory_truth.json
+
+2. Following starts
+   - Scan current status
+   - Comparison with SHOULD
+   - Show external changes (user has changed something)
+
+3. shutdown
+   - Current status becomes new TARGET
+   - Claude's changes are now "standard"
+
+IGNORED:
+  - __pycache__
+  - .pyc files
+  - .git, .idea, .vscode
+  - auto_log.txt (constantly changing)
+  - current.md (Memory)
+
+OUTPUT ON CHANGES:
+  + New folders/files
+  - Deleted folders/files
+  ~ Modified Files
+
+BENEFITS:
+  - Claude doesn't have to manually track what has changed
+  - External changes (user) are recognized
+  - Own changes automatically adopted
+
+INTEGRATION:
+  - Automatically in hub/startup.py (DirectoryScanner at Startup)
+  - Automatically in hub/shutdown.py (save state during shutdown)
+  - No own handler, tool-based (tools/c_dirscan.py)
+
+CLI (MANUAL):
+  python c_dirscan.py # Show status
+  python c_dirscan.py --scan # Scan current state
+  python c_dirscan.py --compare # Comparison IS vs SHOULD
+  python c_dirscan.py --update # Update SHOULD state
+  python c_dirscan.py --path /path # Other directory
+  python c_dirscan.py --json # JSON output
+
+FILES:
+  - Tool: system/tools/c_dirscan.py (DirectoryScanner class)
+  - Data: system/data/directory_truth.json (generated during first scan)
+  - Structure: {timestamp, directories[], files{path: {hash, size}}}

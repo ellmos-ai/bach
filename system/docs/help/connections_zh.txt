@@ -1,0 +1,79 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[connections 表、hub/connector.py、docs/help/connector.txt]
+
+CONNECTIONS - 连接和集成（概述）
+=======================================================
+
+日期：2026-02-08
+
+Connections 系统是每个人的中央数据库表
+巴赫的技术联系。有两个不同的子系统
+具有不同的目的：
+
+1。连接器系统（新，v2.0）
+--------------------------------
+外部通信连接（Telegram、Discord、HomeAssistant）。
+具有队列、重试、断路器的完整消息系统。
+
+**详细信息 → 请参阅 docs/help/connector.txt**
+
+CLI：bach 连接器 <操作>
+操作：列表、状态、添加、删除、轮询、调度、设置守护进程等
+
+处理程序：hub/connector.py
+服务：hub/_services/connector/queue_processor.py
+API：gui/api/messages_api.py（4 个 REST 端点）
+
+2. AI/MCP-CONNECTIONS（旧版）
+-------------------------------
+AI 合作伙伴和 MCP 服务器的技术基础设施。
+管理端点、API 密钥、OAuth 令牌。
+
+CLI： bach --connections list/show
+处理程序： hub/connections.py (?)
+
+类型：
+  - AI 合作伙伴：claude、ollama、gemini（Anthropic、Local、Google）
+  - MCP 服务器：pubmed、canva、gdrive（模型上下文协议）
+
+重要：连接 vs 合作伙伴 vs 连接器
+--------------------------------------------
+- 连接（表）：所有连接的中央注册表
+- 连接器（子系统）：外部通信（Telegram、Discord...）
+- 合作伙伴（逻辑）：授权和专业知识（谁做什么？）
+
+数据库表
+-----------------
+表：连接
+领域：
+  - 名称、类型、类别、端点、is_active
+  - auth_type、auth_config（带有凭据的 JSON）
+  - 成功计数、错误计数、上次使用次数
+  - Continuous_failures、disabled_until（仅限断路器、连接器）
+
+Categories（类别）：
+  -“连接器”：外部通信（Telegram、Discord...）
+  -“ai”：人工智能伙伴（Claude、Ollama、Gemini）
+  - 'mcp'：MCP 服务器（PubMed、Canva...）
+  - 'api'：其他 API
+
+使用
+----------
+大多数用户只需要**连接器系统**。
+
+用于外部通信（Telegram、Discord、HomeAssistant）：
+  → 巴赫连接器--帮助
+  → docs/help/connector.txt（专用文档）
+
+对于 AI 合作伙伴和 MCP 服务器：
+  → bach --连接列表
+  → 巴赫 --帮助伙伴
+
+另请参阅
+----------
+  docs/help/connector.txt 连接器系统（Telegram、Discord、HA）
+  bach --help partner    逻辑委派和区域
+  bach --help messages   内部消息系统
+  bach --help daemon     后台作业（poll_and_route、dispatch）

@@ -1,0 +1,114 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+フォルダ - フォルダの管理と割り当て
+===========================================
+
+BACH のエージェントおよび専門家へのデータ フォルダの割り当てを管理します
+データベース。フォルダー タイプ、所有者、アクセス時間などのメタデータを保存します。
+
+
+説明
+------------
+
+フォルダー ハンドラーを使用すると、user_data_folders を集中管理できます。
+フォルダーはタイプ (データ、アーカイブ、エクスポート、一時) ごとに分類されており、
+代理店または専門家の所有者がいる。すべての変更は DB にのみ影響します。
+ファイル システムではありません。
+
+
+操作
+-----------
+
+  bach folders list                              すべてのフォルダ マッピングを表示
+                                                 ID、タイプ、所有者、パスを指定して
+
+  bach folders add <pfad> [OPTIONS]              新しいフォルダーを登録
+    --type <type> フォルダーの種類: データ、アーカイブ、エクスポート、
+                                                 温度 (デフォルト: データ)
+    --agent <名前> エージェント マッピング (オプション)
+    --expert <名前> エキスパート マッピング (オプション)
+
+  bach folders remove <id>                       DB からフォルダーを削除
+                                                 (ファイルは保持されます)
+
+  bach folders move <id> <neuer_pfad>            DB 内のパスを変更
+                                                 (ファイルは移動されません)
+
+
+例
+---------
+
+  # 登録されているフォルダーをすべて表示
+  bach folders list
+  出力: ID、タイプ、エージェント/エキスパート、パスを含むテーブル
+
+  # 新しいデータ フォルダーを追加
+  bach folders add "Projekte/Forschung"
+  出力: [OK] フォルダーが追加されました (ID: 23): Projects/Research
+
+  # タイプとエージェントのマッピングを持つフォルダー
+  bach folders add "Archive/Legacy" --type archive --agent archiveBot
+  フォルダーはアーカイブとして登録され、エージェントに割り当てられます
+
+  # エキスパート割り当てのあるフォルダー
+  bach folders add "Expert-Daten" --type data --expert nlp_expert
+  フォルダーはエキスパートに割り当てられています
+
+  # DB からフォルダーを削除 (コンテンツは残ります)
+  bach folders remove 23
+  出力: [OK] フォルダーが削除されました (ID: 23)
+
+  # フォルダー パスを変更します (名前変更後など)
+  bach folders move 23 "Projekte/Forschung-v2"
+  出力: [OK] 更新されたパス (ID: 23): Projects/Research-v2
+
+
+DETAILS
+-------
+
+フォルダー タイプ:
+  data     - 一般的な作業データ (デフォルト)
+  archive  - アーカイブ/完了したデータ
+  export   - エクスポートされた結果
+  temp     - 一時的な作業データ
+
+割り当て:
+  - エージェントまたはエキスパート (オプション)
+  - エージェント名は bach_agents に存在する必要があります
+  - エキスパート名は bach_experts に存在する必要があります
+  - 存在しない名前によるエラー
+
+データベースの動作:
+  - リスト: bach_agents および bach_experts に接続されたクエリ
+  - add: 新しいフォルダー ID を返します。
+  - 削除: DB エントリのみを削除し、ファイル システムは削除しません。
+  - 移動: フォルダー パスを変更し、最終アクセス タイムスタンプを更新しました
+
+
+エラー処理
+----------------
+
+  無効なフォルダー タイプ: X データ/アーカイブ/エクスポート/一時のみ
+  エージェントが見つかりません: <名前> 名前が bach_agents に存在しません
+  エキスパートが見つかりません: <name> 名が bach_experts に存在しません
+  エラー: <id> 必須の引数がありません
+  フォルダーが見つかりません (ID: <id>) データベースに行がありません
+
+
+FILES
+-------
+
+  ハンドラー: Hub/folders.py
+  データベース: bach.db (テーブル: user_data_folders)
+  スキーマ: id、folder_path、folder_type、agent_id、expert_id、created_at、
+          last_accessed、dist_type
+
+
+関連項目
+----------
+
+  ヘルプエージェント エージェントの概要と構造
+  専門家を支援する 専門家の管理
+  help bash_paths BACH インストールのディレクトリ構造

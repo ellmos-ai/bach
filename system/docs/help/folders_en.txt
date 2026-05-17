@@ -1,0 +1,114 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+FOLDERS - Folder management and assignments
+===========================================
+
+Manages the assignment of data folders to agents and experts in the BACH
+Database. Stores metadata such as folder type, owner and access time.
+
+
+DESCRIPTION
+------------
+
+The folders handler enables the central management of user_data_folders.
+Folders are categorized by type (data, archive, export, temp) and can
+Have agent or expert owner. All changes only affect the DB,
+not the file system.
+
+
+OPERATIONS
+-----------
+
+  bach folders list                              Show all folder mappings
+                                                 with ID, type, owner and path
+
+  bach folders add <pfad> [OPTIONS]              Register new folder
+    --type <type> Folder type: data, archive, export,
+                                                 temp (default: data)
+    --agent <name> agent mapping (optional)
+    --expert <name> Expert mapping (optional)
+
+  bach folders remove <id>                       Remove folder from DB
+                                                 (Files are retained)
+
+  bach folders move <id> <neuer_pfad>            Change path in DB
+                                                 (Files not moved)
+
+
+EXAMPLES
+---------
+
+  # Show all registered folders
+  bach folders list
+  Output: Table with ID, Type, Agent/Expert and Path
+
+  # Add new data folder
+  bach folders add "Projekte/Forschung"
+  Output: [OK] Folder added (ID: 23): Projects/Research
+
+  # Folder with type and agent mapping
+  bach folders add "Archive/Legacy" --type archive --agent archiveBot
+  Folder is registered as an archive and assigned to agents
+
+  # Folder with Expert assignment
+  bach folders add "Expert-Daten" --type data --expert nlp_expert
+  Folder is assigned to an expert
+
+  # Remove folder from DB (content remains)
+  bach folders remove 23
+  Output: [OK] Folder removed (ID: 23)
+
+  # Change folder path (e.g. after renaming)
+  bach folders move 23 "Projekte/Forschung-v2"
+  Output: [OK] Path updated (ID: 23): Projects/Research-v2
+
+
+DETAILS
+-------
+
+Folder types:
+  data     - General work data (default)
+  archive  - Archived/completed data
+  export   - Exported results
+  temp     - Temporary work data
+
+Assignments:
+  - Agent or Expert (optional)
+  - Agent names must exist in bach_agents
+  - Expert names must exist in bach_experts
+  - Error with non-existent names
+
+Database behavior:
+  - list: Connected query with bach_agents and bach_experts
+  - add: Returns new folder ID
+  - remove: Only deletes DB entry, not file system
+  - move: Change folder_path and updated last_accessed timestamp
+
+
+ERROR HANDLING
+----------------
+
+  Invalid folder_type: X Only data/archive/export/temp
+  Agent not found: <name> Name does not exist in bach_agents
+  Expert not found: <name> name does not exist in bach_experts
+  Error: <id> required argument missing
+  Folder not found (ID: <id>) No row in database
+
+
+FILES
+-------
+
+  Handler: hub/folders.py
+  Database: bach.db (table: user_data_folders)
+  Schema: id, folder_path, folder_type, agent_id, expert_id, created_at,
+          last_accessed, dist_type
+
+
+SEE ALSO
+----------
+
+  help agents Agent overview and structure
+  help experts Expert administration
+  help bash_paths Directory structure of the BACH installation

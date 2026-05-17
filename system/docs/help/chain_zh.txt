@@ -1,0 +1,127 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[hub/chain.py、工具链、scheduler_jobs]
+
+CHAIN - 链接工具命令和 LLM 链
+================================================
+
+状态：2026-02-28
+
+链系统允许链接 BACH 命令（工具链）
+以及通过 MarbleRun/llmauto 管理 LLM 代理链。
+
+参考：SYS_002、SQ074
+
+两种链类型
+----------------
+
+1。工具链（数据库）
+   没有 LLM 的连续 BACH 指令。存储在 bach.db 中。
+   适用于自动化工作流程。
+
+2. LLMAUTO 链条（JSON 文件）
+   LLM 代理链通过 MarbleRun (llmauto)。运行为
+   后台进程。
+
+CLI 命令 - 工具链 (DB)
+-----------------------------
+
+  list 显示所有链（工具链 + llmauto）
+  run <id> 运行工具链
+  添加“JSON”创建新工具链
+  显示 <id> 查看详细信息
+  delete <id> 删除工具链
+  log <id> 查看工具链的日志
+
+CLI 命令 - LLMAUTO CHAINS (JSON)
+-------------------------------------
+
+  create <name> 创建新的 llmauto 链
+  start <name> 启动链（后台进程）
+  stop <名称> 停止链
+  status [名称] 显示状态（所有或特定链）
+  reset <name> 重置链的状态
+
+创建选项
+---------------------
+
+  --mode Once|循环执行模式（默认：once）
+  --skill PATH 代理的 SKILL.md 路径
+  --model MODEL AI 模型（十四行诗、作品、俳句）
+
+示例
+---------
+
+  # 列出工具链
+  bach chain list
+
+  # 运行工具链
+  bach chain run 1
+
+  # 创建工具链（JSON格式）
+  bach chain add '{"name":"taeglich","steps":["bach backup create","bach scan run"]}'
+
+  # 工具链的详细信息
+  bach chain show 1
+
+  # 查看日志
+  bach chain log 1
+
+  # 创建 llmauto 链
+  bach chain create mein-workflow
+  bach chain create analyse --mode once --model opus
+
+  # 控制 llmauto 链
+  bach chain start mein-workflow
+  bach chain status
+  bach chain status mein-workflow
+  bach chain stop mein-workflow
+  bach chain reset mein-workflow
+
+TOOLCHAIN ​​JSON 格式
+---------------------
+
+  {
+    "name": "链的名称",
+    “描述”：“描述”，
+    “步骤”：[
+      “巴赫任务清单”，
+      “巴赫备份创建”，
+      “巴赫扫描运行”
+    ]
+  }
+
+  每一步都是一个完整的 bach 命令。
+  步骤按顺序执行。
+
+LLMAUTO CHAINS
+--------------
+
+llmauto 链作为独立的 Claude 代码进程运行
+在后台。他们使用 MarbleRun 进行编排。
+
+  data/chains/<名称>/链目录
+    config.json 链配置
+    state.json 当前状态
+    SKILL.md 代理声明
+
+数据库
+---------
+
+  工具链：
+    id、名称、描述、steps_json、created_at、updated_at
+
+  工具链运行：
+    id、chain_id、状态、开始时间、结束时间、日志
+
+文件
+-------
+  hub/chain.py 处理程序实现
+  data/chains/ llmauto 链配置
+
+另请参见
+----------
+  bach --help scheduler    调度程序系统（作业）
+  bach --help agent        代理启动器
+  bach --help tasks        任务系统

@@ -1,0 +1,145 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH パス - 集中パス管理
+=====================================
+
+bach_paths.py は、BACH のすべてのパスに対する「唯一の信頼できる情報源」です。
+パスをハードコードする必要はもうありません - すべてが 1 か所に集中します。
+
+LOCATION
+--------
+system/hub/bach_paths.py
+
+MAIN FUNCTION: get_path(name)
+-----------------------------
+最も重要な関数 - 名前付きディレクトリへのパスを返します。
+
+例:
+    bach_paths import get_path から
+
+    tools_dir = get_path("ツール") # システム/ツール/
+    template = get_path("report_template") # レポートのテンプレート
+    db = get_path("db") # bach.db データベース
+    reports = get_path("reports") # レポート ディレクトリ
+
+どこからでもインポート
+-------------------
+方法 1 - Hub/ が sys.path にある場合 (例: Hub/_services/):
+    from bach_paths import BACH_ROOT, get_path
+
+方法 2 - ユニバーサル (どこからでも機能):
+    インポートシステム
+    pathlib インポート パスから
+
+    # bach_paths.py を自動的に検索します
+    _current = パス(__file__).resolve()
+    [_current] + list(_current.parents) の _parent の場合:
+        _hub = _parent / "システム" / "ハブ"
+        _hub.exists() の場合:
+            str(_hub) が sys.path にない場合:
+                sys.path.insert(0, str(_hub))
+            休憩
+
+    from bach_paths import BACH_ROOT、get_path
+
+利用可能なパス
+-----------------
+階層: ルート、バッハ、システム、ハブ
+システム: データ、GUI、スキル、距離
+スキル: ツール、ヘルプ、エージェント、エキスパート、ワークフロー、パートナー、サービス、テンプレート
+データ: ログ、バックアップ、アーカイブ、ゴミ箱、メッセージ
+ルート: ユーザー、ドキュメント、エクスポート、拡張機能
+データベース: db、bach_db、archive_db
+ユーザー: user_documents、個人
+税金: 税金、税金_2025、領収書、バンドル
+パートナー：ジェミニ、クロード、オラマ
+レポート: 資金計画、レポート、reports_output、reports_clients、reports_data、reports_bundles、クライアント、隔離
+テンプレート: report_template
+外部: ナレッジ データベース
+
+例: ツールのインポート
+---------------------
+問題: ツールは system/tools/ にあります
+bach_paths を使用した解決策:
+
+    試してみてください:
+        c_ocr_engine から ocr_pdf をインポート
+    ImportError を除く:
+        from bach_paths import get_path
+        tools_dir = get_path("ツール")
+        str(tools_dir) が sys.path にない場合:
+            sys.path.insert(0, str(tools_dir))
+        from c_ocr_engine import ocr_pdf
+
+例: テンプレート パス
+-----------------------
+    bach_paths import get_path から
+
+    template_path = get_path("レポートテンプレート")
+    # -> C:/Users/.../BACH/system/skills/_templates/bericht_template_geiger_universal.docx
+
+その他の関数
+------------------
+list_paths() - 辞書として使用可能なすべてのパス
+get_tool_path(name) - tools/ またはサブフォルダー内のツールを検索します
+get_partner_dir(partner) - パートナー ディレクトリ (gemini、claude、ollama)
+get_belege_path(provider) - オプションのプロバイダーを使用した領収書のパス
+solve(relpath) - 相対パスを解決する
+validate() - すべてのクリティカル パスを確認します
+
+DB-OVERRIDES
+------------
+DB 内のパスは上書きできます:
+
+    bach_paths からインポート set_path_override、get_path_with_override
+
+    # オーバーライドを設定する
+    set_path_override("ナレッジベース", "D:/My/Database")
+
+    # オーバーライドを使用する
+    path = get_path_with_override("knowledgebase")
+
+CLI の使用方法
+-----------
+    python bach_paths.py templates # 単一のパスを取得する
+    python bach_paths.py --list # すべてのパスをリストします
+    python bach_paths.py --validate # パスを検証します
+    python bach_paths.py --set PATH name # オーバーライドを設定します（名前付き）
+    python bach_paths.py --overrides # DB オーバーライドを表示
+    python bach_paths.py --json # JSON として出力
+
+変数 (直接インポート用)
+--------------------------------
+    bach_paths インポートから (
+        BACH_ROOT、# リポジトリ ルート
+        SYSTEM_ROOT、#system/
+        HUB_DIR、# システム/ハブ/
+        DATA_DIR、# システム/データ/
+        SKILLS_DIR、# システム/スキル/
+        TOOLS_DIR、# システム/ツール/
+        BACH_DB、# システム/データ/bach.db
+        USER_DIR、#user/
+        REPORTS_DIR、# user/documents/foerderplaner/Reports/
+    )
+
+自己修復
+------------
+bach_paths は、自分の場所を基準としたすべてのパスを計算します。
+BACH が移動されても、すべては引き続き機能します -
+手動調整は必要ありません。
+
+パス修復: 必要ありません
+--------------------------
+bach_paths.py により、手動パス修復が不要になります。
+すべてのランタイム パスは動的に計算されます。
+
+ドキュメントの更新のみ (ヘルプ テキスト、Wiki、マークダウン):
+  bach --maintain docs-paths
+
+関連項目も参照
+----------
+- bach path validate パスをチェックする
+- bach --help パス パス ハンドラーのドキュメント
+- bach --help tools/path_healer ドキュメント パス アップデーター

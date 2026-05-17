@@ -1,0 +1,214 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH v3 - 功能
+====================
+
+所有已实现功能及其状态的概述。
+
+架构 v2.0（新）
+----------------------
+基于注册表的处理程序系统，具有自动发现功能：
+- 中心/自动检测到 109 多个处理程序
+- 用于编程访问的库 API (bach_api.py)
+- 双初始化处理程序（路径+应用程序支持）
+- 多处理程序文件（time.py、tuev.py）
+- 集成认知注入器
+
+两个访问路径：
+1. CLI: python bach.py 任务添加“...”--优先级 P4
+2.库API：from bach_api导入任务； task.add("...", "--priority", "P4")
+
+CLI 命令（核心）
+------------------
+bach --startup              启动会话（使用 DirScan、GUI）
+bach --shutdown             结束会话（存档内存）
+bach --status               显示系统状态
+bach --help [thema]         帮助（60 多个主题）
+
+任务管理
+---------------
+bach task add "..."         创建新任务
+bach task list              显示任务
+bach task done T001         完成任务
+bach task edit T001 "..."   任务编辑
+
+内存系统
+-------------
+bach mem write "..."        写入内存
+bach mem read               读取内存
+bach mem context            显示上下文
+bach mem archive            存档会话
+
+消息
+-----------
+bach msg send "..."         发送消息
+bach msg list               阅读消息
+bach msg read M001          显示未读
+bach msg unread             扫描仪
+
+扫描工具
+-------
+bach scan run               扫描状态
+bach scan status            显示扫描任务
+bach scan tasks             维护（调度程序，以前的守护程序）
+
+显示作业
+-------------------------------------
+bach scheduler jobs            运行作业
+bach scheduler run J001        显示调度程序状态
+bach scheduler status          （别名：bach 守护进程...继续工作）
+GUI 和 REST API
+
+启动 Web 仪表板（端口 8000）
+--------------
+bach gui start              在后台启动
+bach gui start-bg           服务器状态
+bach gui status             REST API（无头服务器）：
+  python gui/api/headless.py --端口 8001
+  端点：
+    GET /api/v1/tasks 列出任务
+    POST /api/v1/tasks 创建任务
+    GET /api/v1/memory/facts 获取事实
+    POST /api/v1/messages/发送入队消息
+    GET /api/v1/messages/inbox 读取收件箱
+    GET /api/v1/status 系统状态
+  Swagger 文档：http://localhost:8001/api/docs
+
+注入器
+
+注入器状态
+----------
+bach --inject status        注入器开/关
+bach --inject toggle X      时间预算任务
+bach --inject task 5        备份
+
+创建备份
+------
+bach backup create          查看备份
+bach backup list            恢复备份
+bach backup restore X       数据库
+
+数据库状态
+---------
+bach --db status            运行SQL
+bach --db query "SQL"       CONNECTOR SYSTEM v2.0（新）
+
+通过队列进行可靠的消息传递，重试/退避、断路器。
+运行时适配器：Telegram、Discord、HomeAssistant
+---------------------------
+显示连接器
+
+bach connector list         活动连接器的状态
+bach connector status       注册新连接器
+bach connector add <type>   显示消息
+bach connector messages     轮询一次（获取消息）
+bach connector poll <name>  处理队列（发送消息）
+bach connector dispatch     重置死信
+bach connector queue-status Queue-Statistiken (pending/failed/dead)
+bach connector retry [id]   守护进程集成：
+  poll_and_route (每 2 分钟) - 花粉 + 路由
+  调度（每1分钟）-进程队列
+
+特点：
+- 使用指数退避重试（30 秒至 480 秒）
+- 断路器（5 次错误后冷却 5 分钟）
+- 失败消息的死信队列
+- 路由期间注射器的上下文触发器
+
+语音服务（新）
+
+STT（语音到文本）：Whisper（在线）、Vosk（离线）
+TTS（文本转语音）：pyttsx3（Windows SAPI5/espeak）
+唤醒词：openwakeword（可选），键盘回退
+-------------------
+工具路径：system/hub/_services/voice/voice_stt.py
+集成：可集成到连接器系统中
+
+特性矩阵
+
+|面积 |应该|是 |状态 |
+|--------------------|------|------|--------|
+| CLI 命令 | 20 | 60+ |好的 |
+|帮助主题 | 21 | 21 60+ |好的 |
+|处理程序（注册表）| 12 | 12 109+ |好的 |
+|技能（文件）| 30| 50+ |好的 |
+|技能 (JSON) | 50 | 50 0 | JSON* |
+|工具（文件）| 30| 90+ |好的 |
+|工具（注册表）| 60| 85 | 85好的 |
+| GUI 端点 | 30| 80+ |好的 |
+| REST API 端点| 10 | 10 12 | 12好的 |
+|数据库表 | 25 | 25 138 | 138好的 |
+|连接器 | 3 | 3+ |好的 
+--------------
+
+|*) 技能和专家主要通过 Skills_hierarchy.json 进行管理。
+
+处理程序（在 hub/ 中自动发现）：
+  abo、代理、ati、备份、报告、日历、链、连接、
+  连接器、合并、联系人、上下文、cv、守护进程（=调度程序）、data_analysis、
+  db、dist、doc、docs、扩展、fs、健康、gui、家庭、健康、
+  帮助、收件箱、注入、语言、课程、日志、维护、内存、消息、
+  安装、multi_llm_protocol、通知、黑曜石、ollama、合作伙伴、路径、
+  配置文件、分析器、重复、反射、例程、扫描、会话、
+  关机、技能、智能家居、快照、来源、启动、状态、
+  税、同步、任务、测试、时间、令牌、工具、垃圾、tuev、更新、
+  保险，wiki
+
+实施的 GUI 仪表板
+
+- 主页（概述、代币、收件箱）
+- 技能板（代理、专家、技能、工具）
+- 记忆板（工作、事实、教训、会议）
+- 财务（财务助理/保险）
+- 资金规划师（客户渠道）
+- 健康（健康助理 - 测试版）
+- ATI（概念开发）
+-----------------------------
+计划功能
+
+- Skill-Sync 文件自动同步 <-> 层次结构
+- 多法学硕士共享不同模型之间真正的共享背景
+- 自主模式代理可以独立执行任务（循环）
+- 语音全栈 完整的语音接口集成（STT/TTS/Wake）
+- 信号连接器扩展连接器系统，包括信号传递器
+- WhatsApp Connector 扩展连接器系统至 WhatsApp
+-----------------
+CHANGELOG v2.0（2026-02-06 至 2026-02-08）
+
+[v2.0.0 - 2026-02-08] 基于注册表 + 连接器 v2.0 + 语音
++ 基于注册表的处理程序系统（自动发现，超过 64 个处理程序）
++ 用于编程访问的库 API (bach_api.py)
++ 连接器系统 v2.0：队列、重试/退避、断路器
++ 运行时适配器：Telegram、Discord、HomeAssistant
++ 语音服务：STT (Whisper/Vosk)、TTS (pyttsx3)、唤醒词
++ REST API 无头服务器（端口 8001，12 个端点）
++ 守护进程集成（poll_and_route + 调度作业）
++ 具有重试跟踪和断路器的架构迁移
++ 数据库模式：210+ 个表（单一事实来源）
++ 50 次测试 (test_core + test_smoke) - 全绿色
++ 合并日志路径（仅系统/数据/日志/）
++ _partners 文件夹合并（仅限 system/partners/）
+-------------------------------------------
+另请参阅
+
+Web 仪表板详细信息
+----------
+bach --help gui         任务管理
+bach --help tasks       维护（作业/守护进程）
+bach --help wartung     扫描仪系统
+bach --help dirscan     连接器系统详细信息
+bach --help connector   其他资源
+
+- 架构文档：docs/con3_ANFORDERUNGSANALYSE.md
+- 变更日志：内存/MEMORY.md（bach.py v2.0 部分）
+- 测试：系统/测试/（test_core.py，test_smoke.py）
+- REST API Swagger：http://localhost:8001/api/docs（如果服务器正在运行）
+- 库 API 示例：system/bach_api.py（Docstring）
+------------------
+- Architektur-Doku: docs/con3_ANFORDERUNGSANALYSE.md
+- Changelog: memory/MEMORY.md (Abschnitt bach.py v2.0)
+- Tests: system/tests/ (test_core.py, test_smoke.py)
+- REST-API Swagger: http://localhost:8001/api/docs (wenn Server laeuft)
+- Library-API Beispiele: system/bach_api.py (Docstring)

@@ -1,0 +1,76 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Recursos: [hub/partner.py, tools/partner_communication/gemini_start.py, partners/gemini/start_gemini.bat]
+
+BACH PARTNER DELEGATION
+=======================
+
+FECHA: 2026-02-08
+
+La delegación permite la distribución de tareas dentro
+de la red de socios basada en experiencia y economía de tokens.
+
+Handler: system/hub/partner.py (basado en DB desde la migración JSON_001)
+
+TAREAS PRINCIPALES
+------------
+- Delegación de tareas a través de CLI o MessageBox (data/messages/message_box.md)
+- Seguimiento del progreso a través del "estado de socio de Bach"
+- Selección basada en tokens basada en zonas (tabla de base de datos monitor_tokens)
+- Respaldo sin conexión a socios locales (--fallback-local flag)
+
+COMANDOS CLI (socio de bach)
+--------------------------
+  lista Muestra todos los socios registrados y su estado
+  estado Resumen de socios activos y zonas de delegación
+  info <nombre> Detalles sobre un socio específico
+  activo Listar solo socios activos
+  delegado Transfiere una tarea a un socio (consciente de token)
+                --to=NOMBRE Socio específico
+                --zone=N zona de fuerza (1-4)
+                --fallback-local Cambiar a IA local (Ollama) cuando esté desconectado
+
+FLUJO DE TRABAJO DE GEMINI
+---------------
+Gemini es el socio principal para análisis profundos y contenido de formato largo:
+
+1. ASIGNACIÓN:
+   `delegado de socio de bach "Texto de tarea" --to=gemini`
+   Alternativamente: delegación a través de MessageBox (data/messages/message_box.md)
+
+2. INICIO:
+   A través de `partners/gemini/start_gemini.bat`
+   Antigravity carga automáticamente el contexto desde .gemini/GEMINI.md
+
+3. EDITAR:
+   El socio trabaja de forma independiente en `partners/gemini/workspace/`
+
+4. CONCLUSIÓN:
+   Almacenar informe en `partners/gemini/outbox/`
+   Marcar tarea como completada: `ID de tarea de Bach realizada`
+
+ZONAS DE TOKEN Y ESTRATEGIA
+-----------------------
+Basado en monitor_tokens.budget_percent de bach.db:
+
+- Zona 1 (0-30%): todos los socios disponibles (Claude, Gemini, etc.)
+- Zona 2 (30-60%): Preferiblemente socios de bajo costo (Gemini, Ollama)
+- Zona 3 (60-80%): Solo IA local (Ollama)
+- Zona 4 (80-100%): Solo humanos (se requiere intervención)
+
+NOTA ARQUITECTÓNICA
+-------------------
+La delegación está basada en DB (desde la migración JSON_001):
+- Socio en la tabla socio_reconocimiento
+- Reglas de zona en la tabla delegation_rules
+- Presupuesto de token en la tabla monitor_tokens
+- Mensajes de delegación en data/messages/message_box.md
+
+VER TAMBIÉN
+----------
+docs/help/partner.txt Concepto de socio (zonas, enrutamiento)
+wiki/gemini.txt Detalles de Géminis
+wiki/antigravity.txt Editor antigravedad
+hub/partner.py Implementación del controlador de socios
+registro de socios data/bach.db (reconocimiento_partner, reglas_delegación)

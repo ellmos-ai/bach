@@ -1,0 +1,39 @@
+# Portability: EXTERNAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+# BachForelle（箭头）- 交叉引用
+
+## 警告：外部文档
+此文件描述 **BachForelle**，这是 BACH v2 Vanilla 之外的一个单独项目。
+
+**正确路径：**
+- BachForelle: `C:\Users\User\OneDrive\.AI\BachForelle\`
+- BachFliege: `C:\Users\User\OneDrive\.AI\BachFliege\`
+
+## BachForelle 是什么？
+BachForelle 是 BACH 的轻量级、LLM-First 变体。
+这是一个具有独立代码库的独立项目。
+
+**理念：**
+* LLM 是一个协调者（不仅仅是一个用户）
+* 无需启动过程
+* 模块化技能代替集线器路由
+* 重点：记忆 + 多法学硕士
+
+## 对于 BACH v2 vanilla 用户
+**BachForelle 不是 BACH v2 Vanilla 的一部分。**
+
+如果您想使用 BachForelle：
+1. 进入BachForelle文件夹
+2. 阅读 `C:\Users\User\OneDrive\.AI\BachForelle\README.md`
+3. 阅读 `C:\Users\User\OneDrive\.AI\BachForelle\SKILL.md`
+
+## BACH v2 Vanilla 没有“箭头”命令
+此帮助文件仅作为使用这两个系统的用户的交叉引用而存在。
+
+有关 BACH v2 Vanilla 功能，请参阅：
+````bash
+python bach.py 帮助
+python bach.py help <命令>
+````

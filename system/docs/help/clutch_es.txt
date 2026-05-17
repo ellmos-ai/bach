@@ -1,0 +1,39 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CLUTCH - Asistencia agente a la conducción (embrague-puente)
+===================================================
+
+DESCRIPCIÓN
+------------
+Clutch es el puente a embrague-puente de BACH, un módulo de asistencia agente a la conducción.
+Analiza tareas de conducción, muestra métricas y monitorea el estado del sistema.
+
+Nota: Requiere el paquete de puente de embrague. Todos están sin este paquete.
+Operaciones deshabilitadas.
+
+
+OPERACIONES
+-----------
+  bach clutch status          Estado general de todos los componentes del puente de embrague
+  bach clutch analyse         Analizar tarea (análisis de ruta + gas/freno)
+  bach clutch metriken        Mostrar métricas del libro de registro
+  bach clutch fitness         Resumen de aptitud física de la escuela de manejo
+  bach clutch health          Estado de salud del ordenador a bordo
+
+
+REQUISITOS
+---------------
+  - debe instalarse el módulo del puente del embrague
+  - Se reconoce automáticamente al importar
+
+
+ARCHIVOS
+-------
+  Controlador: hub/clutch.py
+
+
+VER TAMBIÉN
+----------
+  estado de ayuda estado del sistema

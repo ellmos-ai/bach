@@ -1,0 +1,59 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[data/schema_distribution.sql, hub/dist.py, hub/sync.py, db/schema.sql]
+
+分发系统
+===================
+
+截至：2026-02-08
+
+分发系统将系统核心与用户数据和发布模板分离。
+
+4-TIER MODEL (dist_type):
+  dist_type = 0 KERNEL 绝对不可变（基础系统）
+  dist_type = 1 CORE系统文件（只读/分发备份）
+  dist_type = 2 扩展发布模板（1x 用于重置的快照）
+  dist_type = 3 USER_DATA 单个用户数据（不在存储库中）
+
+CLI 命令
+-----------
+  bach --dist status              系统状态（密封、模式、文件）
+  bach --dist verify              检查密封完整性
+  bach --dist scan                扫描并注册文件
+  bach --dist snapshot NAME       创建快照
+  bach --dist release NAME        创建版本
+  bach --dist restore ZIP         从发行版ZIP 恢复
+  bach --dist install ZIP ZIEL    在新文件夹中安装发行版
+  bach --dist list [snapshots]    快照列表
+
+发布工作流程
+----------------
+  1. 创建快照： `bach --dist snapshot "pre-release"`
+  2. 创建版本：`bach --dist release "v1.2.0"`
+  3. 在 dist/ 中创建分发 ZIP
+  4.重置：`bach fseal --all`从快照恢复文件
+  5. 恢复：`bach --dist Restore bach_vanilla_1.2.0.zip`
+
+数据库和文件系统集成
+----------------------------------
+  - 技能和工具双向同步（`bach​--sync Skills`）。
+  - `dist_type` 列可以在大约 60 个表中找到（参见 db/schema.sql）。
+  - `distribution_manifest` 表中的文件清单。
+  - OneDrive/Git 确保分发安全，BACH 确保完整性。
+
+关于数据库的说明
+---------------------
+只有一个中央“data/bach.db”（自 v2.0 起位于 system/db/schema.sql）。
+许多表使用“dist_type”进行逻辑分离：
+  - dist_type=0：内核数据（绝对不可变）
+  - dist_type=1：核心数据（系统关键）
+  - dist_type=2：扩展数据（可重置）
+  - dist_type=3：用户数据（不在安装程序中）
+
+另请参见
+----------
+  bach --sync help         技能和工具同步
+  bach fs help             文件系统操作（修复、验证）
+  docs/help/guidelines.txt 文档标准
+  system/db/schema.sql 完整数据库模式（210+表）

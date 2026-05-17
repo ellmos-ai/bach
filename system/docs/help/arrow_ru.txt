@@ -1,0 +1,39 @@
+# Portability: EXTERNAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+# BachForelle (Стрела) – перекрестная ссылка
+
+## ПРЕДУПРЕЖДЕНИЕ: ВНЕШНЯЯ ДОКУМЕНТАЦИЯ
+Этот файл описывает **BachForelle**, ОТДЕЛЬНЫЙ проект вне BACH v2 Vanilla.
+
+**Правильные пути:**
+- BachForelle: `C:\Users\User\OneDrive\.AI\BachForelle\`
+- BachFliege: `C:\Users\User\OneDrive\.AI\BachFliege\`
+
+## Что такое BachForelle?
+BachForelle — это облегченный вариант программы BACH для LLM-First.
+Это АВТОНОМНЫЙ проект с отдельной кодовой базой.
+
+**Философия:**
+* LLM — оркестратор (а не просто пользователь)
+* Процесс загрузки не требуется
+* Модульные навыки вместо маршрутизации концентратора
+* Фокус: Память + Multi-LLM
+
+## Для пользователей BACH v2 vanilla
+**BachForelle НЕ является частью BACH v2 Vanilla.**
+
+Если вы хотите использовать BachForelle:
+1. Перейдите в папку BachForelle.
+2. Прочтите `C:\Users\User\OneDrive\.AI\BachForelle\README.md`
+3. Прочтите `C:\Users\User\OneDrive\.AI\BachForelle\SKILL.md`
+
+## BACH v2 Vanilla НЕ имеет команды «стрелка»
+Этот файл справки существует только в качестве перекрестной ссылки для пользователей, использующих обе системы.
+
+О функциях BACH v2 Vanilla см.:
+``` баш
+помощь в python bach.py
+python bach.py help <команда>
+```

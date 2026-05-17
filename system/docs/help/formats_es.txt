@@ -1,0 +1,48 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+FORMATOS DE DATOS
+============
+
+Estado: 2026-02-08
+
+REGLA BÁSICA: BASE DE DATOS ANTES DE JSON
+------------------------------
+BACH usa SQLite (`bach.db`) como almacenamiento de datos principal (actualmente más de 210 tablas).
+Los archivos JSON SÓLO se permiten en casos excepcionales justificados.
+
+¿CUÁNDO BASE DE DATOS (ESTÁNDAR)?
+--------------------------
+  - Datos persistentes del sistema (herramientas, tareas, configuración)
+  - Datos históricos (registros, sesiones, lecciones aprendidas)
+  - Grandes conjuntos de datos (Wiki, Med-Research)
+  - Integridad (validación basada en hash)
+
+¿CUÁNDO SE PERMITE JSON (EXCEPCIONES)?
+------------------------------
+1. JERARQUÍAS COMPLEJAS: `system/data/skills_hierarchy.json` (Árboles interactivos).
+2. CONFIGURACIÓN LOCAL: Si es necesario individualmente (por ejemplo, preferencias de UI).
+3. MCP-CONFIG: si se desea la integración de Claude Desktop.
+4. Datos de procesos efímeros: Instantáneas temporales cuando sea necesario.
+
+OTROS FORMATOS
+--------------
+  - TOON: conjuntos de datos optimizados para tokens para inyección de LLM.
+  - MD: Documentación y salida de informes (`outbox/`).
+
+MIGRACIÓN JSON -> DB (Completado exitosamente)
+-----------------------------------------------
+- `partner_registry.json` -> `partner_recognition` (tabla)
+- `conexiones.json` -> `conexiones` (tabla)
+- `inyectores.txt` -> `automation_injectors` (tabla)
+- `inbox_folders.txt` -> `folder_scans` (tabla)
+
+CONVERSIÓN
+-------------
+  python system/tools/c_universal_converter.py <archivo> --to [json|yaml|toml|xml|toon]
+
+VER TAMBIÉN
+----------
+  docs/help/maintain.txt Mecanismo de sellado y verificación de integridad
+  bach --db status     Estado actual de las más de 210 tablas

@@ -1,0 +1,105 @@
+FUNDING REPORT PIPELINE
+=======================
+
+End-to-end report creation: From the file folder to the finished funding report.
+Name and date of birth are automatically recognized from the folder name.
+
+FOLDER STRUCTURE
+--------------
+  data_roh/ User inserts file folder (AI does NOT read directly)
+  data_ano/ Anonymized individual files (AI is allowed to read)
+  data_bundled/ Bundled text + prompt for LLM
+  output_reports/ Finished report (de-anonymized, final product)
+
+ROLE SEPARATION (IMPORTANT)
+-------------------------
+  The USER places the client file in data_roh/.
+  The AI ONLY starts the pipeline script -- it does NOT submit files,
+  DOES NOT copy files and does NOT check whether a file exists.
+  The script itself reports: "File found, process started" or
+  "Error: No file set in data_roh/".
+
+USE (4 standard ways)
+----------------------------
+  1. Chat: "Create funding report" (recommended, Auto-Detect)
+  2. .bat: Foerderbericht_Pipeline.bat (3x ENTER for Auto-Detect)
+  3. Chain: bach chain start funding report
+  4. CLI: bach report pipeline (Auto-Detect)
+
+OPTIONS
+--------
+  --period "01/01/2025 - 12/31/2025" reporting period
+  --backend claude_code|llmauto LLM backend (default: claude_code)
+  --model claude-sonnet-4-6 LLM model
+  --parents "mother name" "father name" parent names (for anonymization)
+  --no-cleanup Do not empty intermediate folder
+
+PROCESS (3-phase flow)
+----------------------
+
+  Phase 1 -- prepare_prompt() [Python, without AI]:
+    1. Validation: data_roh/ cannot be empty, check one-client rule
+    2. Auto-Detect: Detect name + date of birth from folder name
+    3. Profile: Temporary anonymization profile (disguised name, fake data)
+    4. Anonymization: Anonymize files -> data_ano/
+    5. Bundling: Extract text -> data_bundled/ (prioritized: newest first)
+    6. Prompt: LLM prompt with ICF schema -> data_bundled/prompt.txt
+
+  Phase 2 -- AI reads prompt.txt, generates JSON response:
+    7. AI reads anonymized prompt.txt (chat/subagent way)
+    8. JSON response -> data_bundled/llm_response.txt
+
+  Phase 3 -- finish_report() [Python, without AI]:
+    9. De-anonymize JSON (via session_info.json with all mappings)
+   10. Generate Word -> output_reports/
+   11. Cleanup: delete ALL intermediate data + legacy folders
+
+  Fully automatic (.bat/llmauto/CLI):
+    run_full_pipeline() internally calls prepare_prompt() + _call_llm() + finish_report()
+
+  NOTE: ONLY ONE CLIENT PER PASS in data_roh/!
+
+DOCUMENT PRIORITIZATION
+-------------------------
+  HIGH: Current protocols, file cover sheet, assistance plan, approval
+  MEDIUM: proAutism reports, doctor reports (<10 years), school reports, emails
+  LOW: Medical reports older than 10 years
+
+HELP PLAN GOALS (IMPORTANT)
+--------------------------
+  If an assistance plan is available, its framework goals/outcome goals will be included
+  adopted as primary funding goals. Only topics outside of that
+  Help plan goals go into the new_goals table.
+  Umlaut postprocessing (ue->ue, ae->ae, oe->oe) is automatic
+  applied word-based (no false positives for “current” etc.).
+
+SAFETY
+----------
+  - data_roh/ is NEVER read directly by AI
+  - LLM ONLY sees anonymized data (code names)
+  - De-anonymization via session_info.json with all mappings
+  - No persistent profile (session-based)
+  - .pipeline_lock prevents parallel runs
+  - OneDrive sync is automatically paused/resume
+  - Cleanup deletes ALL intermediate data + legacy folders
+
+LLM-BACKENDS
+-------------
+  claude_code (DEFAULT) Claude Code CLI as subprocess
+  llmauto llmauto chain system
+  anthropic_sdk Optional (needs ANTHROPIC_API_KEY, not set up)
+
+TROUBLESHOOTING
+---------------
+  "data_roh/ is empty" -> insert file folder into data_roh/
+  "ClaudeRunner error" -> claude CLI not in the PATH, use llmauto
+  "Import error" -> pip install python-docx openpyxl
+  OneDrive Lock -> Close files, wait a moment, restart
+
+FILES
+-------
+  Orchestrator: hub/_services/document/foerderbericht_pipeline.py
+  CLI runner: hub/_services/document/pipeline_runner.py
+  CLI handler: hub/report.py (Operation: pipeline)
+  Chain: tools/llmauto/chains/foerderbericht.json
+  Template: skills/_templates/report_template_geiger_universal.docx

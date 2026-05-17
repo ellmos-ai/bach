@@ -1,0 +1,93 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CONTACTO - Gestión de contactos
+===========================
+
+DESCRIPCIÓN:
+  Gestiona contactos personales y comerciales con búsqueda de texto libre,
+  Filtrado de contexto y descripción general de cumpleaños. Los contactos se envían a través de
+  Eliminación temporal deshabilitada (no eliminada).
+
+COMANDOS:
+  bach contact list              Mostrar todos los contactos activos
+  bach contact list --all        Incl. contactos inactivos
+  bach contact list -c privat    Filtrar por contexto
+  bach contact search <term>     Búsqueda de texto libre (nombre, correo electrónico, teléfono, empresa, notas, etiquetas)
+  bach contact add "Name"        Crear nuevo contacto
+  bach contact show <id>         Mostrar detalles de contacto
+  bach contact edit <id>         Editar contacto
+  bach contact delete <id>       Desactivar contacto (eliminación temporal)
+  bach contact birthday          Cumpleaños (próximos 30 días)
+  bach contact birthday 90       Cumpleaños (próximos 90 días)
+  bach contact export            Exportar todos los contactos (Texto/CSV/vCard)
+  bach contact export --type arzt --format csv  Contactos médicos como CSV
+  bach contact export --format vcard --file out.vcf  exportación vCard a archivo
+  bach contact help              Esta ayuda
+
+OPCIONES PARA AGREGAR/EDITAR:
+  --context, -c contexto (privado|profesional|seguros|finanzas|médico|otro)
+  --correo electrónico, -e dirección de correo electrónico
+  --teléfono, -p teléfono (teléfono fijo)
+  --mobile, -m número de móvil
+  --dirección, -una dirección
+  --cumpleaños, -b cumpleaños (DD.MM.AAAA o AAAA-MM-DD)
+  --empresa empresa/organización
+  --posición Posición/rol en la empresa
+  --tags Etiquetas separadas por comas (por ejemplo, "dev,it,freelance")
+  --nota nota (si se edita: se agrega a las notas existentes)
+  --name Cambiar nombre (solo con edición)
+
+OPCIONES DE EXPORTACIÓN:
+  --type, -t Exporta solo contexto específico (médico, privado, etc.)
+  --format, -f Formato de exportación: txt (predeterminado), csv, vcard
+  --file, -o archivo de salida (de lo contrario, salida de consola)
+
+CONTEXTOS:
+  amigos privados, familiares, conocidos
+  compañeros de trabajo profesionales, contactos comerciales
+  seguros asesores de seguros, agencias
+  asesor fiscal financiero, asesor bancario
+  Médicos, terapeutas, farmacias.
+  otro Todo lo demás
+
+BASE DE DATOS:
+  Tabla principal: bach.db/contacts
+  Campos: id, nombre, categoría, correo electrónico, teléfono, teléfono_móvil, calle, fecha de nacimiento,
+          organización, posición, etiquetas, notas, está_activo, creado_en, actualizado_en
+
+EJEMPLOS:
+  # Crear contacto con todos los detalles:
+  bach contact add "Dr. Mueller" --context arzt --phone 030-12345 --email mueller@example.de --address "Hauptstr. 1, 10115 Berlin"
+
+  # Contacto profesional con empresa y puesto:
+  bach contact add "Lisa Schmidt" --context beruflich --company "Beispiel GmbH" --position "Teamlead" --tags "dev,it" --email lisa@example.com
+
+  # Buscar contacto:
+  bach contact search Mueller
+
+  # Cambiar número de teléfono y empresa:
+  bach contact edit 5 --phone 030-99999 --company "Neue GmbH" --note "Gewechselt ab Jan 2026"
+
+  # Todos los contactos de seguros:
+  bach contact list -c versicherung
+
+  # ¿Quién cumple años pronto?
+  bach contact birthday 60
+
+  # Ejemplos de exportación:
+  bach contact export                              # Formato de texto en consola
+  bach contact export --format csv                 # CSV en consola
+  bach contact export --type arzt --format csv     # Solo contactos médicos como CSV
+  bach contact export --format vcard --file kontakte.vcf  # vCard en archivo
+  bach contact export --file export.csv            # CSV en archivo
+
+INTERPLAY:
+  - Separado de contactos_salud (contactos médicos en el módulo de salud)
+  - contactos = tabla de contactos central (CLI + GUI + exportación vCard)
+  - GUI: pestaña Contactos (cuando esté disponible)
+
+LIMITACIONES CONOCIDAS:
+  - "lista de contactos de Bach --todos" muestra contactos inactivos SIN marca visual
+  - Las etiquetas se buscan en la Búsqueda pero no se muestran en la vista de lista

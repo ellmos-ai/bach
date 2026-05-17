@@ -1,0 +1,268 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+クロード コードの自動化
+============================
+
+コマンド ライン (CLI) を介してクロード コードを自動化する手順。
+
+
+概要
+---------
+クロード コードは非対話モードで操作できます。
+スクリプト、CI/CD パイプライン、自動ワークフローへの統合が可能。
+
+
+1.非インタラクティブ モード (-p / --print)
+----------------------------------------
+自動化にとって最も重要なパラメータ。クロードが答えを出す
+
+
+ そして終了。    #簡単リクエスト
+    クロード -p "この関数が何をするのか説明してください"
+
+    # パイプ経由のファイル入力あり
+    猫のコード.py |クロード -p "このコードを分析します"
+
+    # 標準入力について
+    エコー「2+2って何？」 |クロード -p
+
+
+2。スクリプトの出力形式
+-------------------------------
+テキスト (デフォルト):
+    クロード -p "あなたのリクエスト"
+
+JSON (単一の結果):
+    claude -p "リスト 5 プログラミング言語" --output-format json
+
+Stream JSON (リアルタイム ストリーミング):
+    クロード -p "テストを書く" --output-format stream-json
+
+
+3。権限とセキュリティ
+--------------------------------
+確認なしで完全に自動:
+    # 注意: 安全な隔離された環境でのみ使用してください。
+    claude -p "index.html を作成" --dangerously-skip-permissions
+
+許可モードを選択します:
+    # 計画モード: クロードは実行前に変更を計画します。
+    クロード -p "コードのリファクタリング" --permission-mode plan
+
+    # DontAsk モード: 実行中にクエリは行われません
+    claude -p "依存関係の更新" --permission-mode dontAsk
+
+限定されたツールを使用:
+    # 特定のツールのみを許可する
+    クロード -p "git ステータスを表示" --allowedTools "Bash(git:*)"
+
+    # 特定のツールを禁止する
+    claude -p "コードを分析" --disallowedTools "編集書き込み"
+
+    # 特定のツールを除くすべてのツールを無効にする
+    クロード -p "読み取り専用" --tools "読み取り"
+
+
+4。セッション管理
+---------------------
+最後のセッションを続行:
+    クロード --Continue
+
+ID を使用して特定のセッションを続行します:
+    claude --resume SESSION_ID
+
+再開時に新しいセッション ID を作成:
+    クロード --Continue --fork-session
+
+
+5.予算とモデルの管理
+------------------------------
+    # 予算制限を設定します (USD 単位)
+    クロード -p "複雑な分析" --max-budget-usd 1.00
+
+    # モデルの選択
+    クロード -p "簡単な質問" --モデル ソネット
+    クロード -p "複雑なタスク" --model opus
+
+    # 過負荷時のフォールバックモデル
+    クロード -p "リクエスト" --fallback-model ソネット
+
+
+6。システム プロンプトをカスタマイズ
+-------------------------
+    # 独自のシステムプロンプトを設定する
+    クロード -p "リクエスト" --system-prompt "あなたは Python の専門家です"
+
+    # システムプロンプトを展開します
+    claude -p "リクエスト" --append-system-prompt "常にドイツ語で応答します"
+
+
+7。 CI/CD 統合
+--------------------
+例: パイプラインでのコード レビュー
+
+    #!/bin/bash
+    # コードレビュー.sh
+    claude -p "セキュリティの問題とベスト プラクティスについてこのコードを確認してください" \
+      --出力形式 json\
+      --dangerously-skip-permissions \
+      --最大予算-米ドル 1.00\
+      --model Sonnet
+
+例: 自動ドキュメント
+
+    #!/bin/bash
+    #generate_docs.sh
+    猫 src/main.py | claude -p "Markdown 形式で API ドキュメントを作成" \
+      --出力形式のテキスト\
+      --dangerously-skip-permissions > docs/API.md
+
+例: テスト生成
+
+    #!/bin/bash
+    #generate_tests.sh
+    claude -p "src/utils.py 内の関数の単体テストを生成します" \
+      --dangerously-skip-permissions \
+      --allowedTools "読み取り/書き込み" \
+      --max-budget-usd 0.50
+
+
+8。双方向ストリーミング
+----------------------------
+リアルタイム通信との複雑な統合の場合:
+
+    クロード -p "..." \
+      --input-format ストリーム json\
+      --出力形式ストリームjson\
+      --include-partial-messages
+
+
+9. MCP サーバーの統合
+-------------------------
+    # MCP 構成 (JSON ファイルまたは文字列) をロードします
+    クロード -p "リクエスト" --mcp-config ./mcp-config.json
+
+    # 複数の設定をロードする
+    クロード -p "リクエスト" --mcp-config ./config1.json ./config2.json
+
+    # Config からの MCP サーバーのみを使用する
+    クロード -p "リクエスト" --mcp-config ./mcp-config.json --strict-mcp-config
+
+    # MCP サーバーを管理する
+    クロード・MCP # インタラクティブ管理
+    claude mcp --help # MCP コマンドを表示します
+
+
+10。高度な機能
+-----------------------
+構造化された JSON 出力:
+    # JSON スキーマを検証する
+    claude -p "ユーザー データをください" --json-schema '{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}'
+
+エージェントを使用:
+    # 事前設定されたエージェント
+    クロード -p "コードをレビュー" --エージェントレビューア
+
+    # 独自のエージェントを定義する
+    claude -p "リクエスト" --agents '{"テスター": {"説明": "コードのテスト", "プロンプト": "あなたは QA エキスパートです"}}'
+
+プラグインの統合:
+    # ディレクトリからプラグインをロードする
+    claude -p "request" --plugin-dir ./my-plugins
+
+追加のディレクトリを許可します:
+    # ツールへのアクセスを拡張します
+    claude -p "複数のプロジェクトを分析する" --add-dir /path/to/project1 /path/to/project2
+
+デバッグ モード:
+    # フィルターあり
+    クロード -p "リクエスト" --debug "api,hooks"
+
+    # 特定のカテゴリなし
+    クロード -p "リクエスト" --debug "!1p,!file"
+
+    # デバッグログをファイルに書き込む
+    claude -p "request" --debug-file ./debug.log
+
+
+重要なパラメータ参照
+---------------------------
+パラメータの説明
+--------- ------------
+-p、--print 非対話モード (自動化に必要)
+-- 出力形式テキスト、json、ストリーム json
+--input-format テキスト、stream-json
+--dangerously-skip-permissions 確認ダイアログはありません
+--permission-mode acceptEdits、bypassPermissions、デフォルト、デリゲート、dontAsk、プラン
+--allowedTools 許可されたツール (例: "Bash(git:*) Read")
+--disallowedTools 禁止されているツール
+--tools ツール リスト、または何もない場合は ""、すべての場合は "default"
+--max-budget-usd 予算制限 (USD)
+--model モデル (ソネット、作品、またはフルネーム)
+--fallback-model 過負荷時のフォールバック
+--system-prompt 独自のシステム プロンプト
+--append-system-prompt システム プロンプトを展開します
+--Continue 最後のセッションを続行します
+--resume ID を使用してセッションを再開します
+--fork-session 継続時の新しいセッション ID
+--session-id 特定のセッション ID (UUID) を設定します
+--mcp-config MCP サーバー構成
+--strict-mcp-config Config からの MCP のみを使用します
+--json-schema 検証された出力の JSON スキーマ
+--agent 事前構成されたエージェント
+--agents 自身のエージェントを JSON として表示
+--plugin-dir プラグインのディレクトリ
+--add-dir 追加のディレクトリを許可します
+--debug オプションのフィルターを使用したデバッグ モード
+--debug-file デバッグ ログをファイルに書き込みます
+--no-session-persistence セッションを保存しません (--print を使用した場合のみ)
+
+
+11。リモート コントロール (モバイル アプリ)
+-------------------------------
+クロード コードは、クロード モバイル アプリを介してリモート コントロールできます。
+既知のバグ: --dangerously-skip-permissions はリモート コントロールでは機能しません。
+
+解決策: BACH 権限プロファイルを使用します:
+
+    # 自動 (推奨):
+    # デスクトップ: Claude_RemoteControl.bat
+    # BACH メニュー: キー [P]
+
+    # マニュアル:
+    bach permissions activate remote_control
+    クロード --dangerously-skip-permissions
+    # -> /rc と入力し、QR コードをスキャンします
+    # 完了後:
+    bach permissions deactivate
+
+    # プロファイルのカスタマイズ:
+    bach permissions set remote_control allow=mcp__neuer_server__*
+    bach permissions show remote_control
+    bach permissions status
+
+完全なドキュメントについては、permissions.txt を参照してください。
+
+
+安全上の注意
+-------------------
+1。 --dangerously-skip-permissions は隔離された環境のみで使用します
+   (サンドボックス、コンテナ)。
+2. 予期せぬ出費を避けるために予算制限を設定する
+3. 可能な場合は --allowedTools を使用してツールを制限します
+4. 機密データをパイプ経由でクロードに送信しないでください
+
+
+関連項目
+----------
+- claude --help 完全なヘルプ
+- クロードドクターのインストールチェック
+- クロード mcp MCP サーバーを管理します
+- クロードプラグインプラグイン管理
+- claude setup-token 長期持続する認証トークンをセットアップします。
+- claude install [ターゲット] ネイティブ ビルド (安定版/最新版/バージョン) をインストールします
+- クロードアップデート アップデートをチェックする
+- claude-code.txt 一般的なクロード コード情報
+-permissions.txt BACH 権限プロファイル (リモート コントロール)

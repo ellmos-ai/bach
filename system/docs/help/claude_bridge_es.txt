@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Estado: LEGACY — Sucesor: Servicio de chat BACH (ayuda bach_chat)
+
+CLAUDE BRIDGE - Telegram <-> Integración CLI de Claude Code (LEGACY)
+==================================================================
+
+NOTA: Claude Bridge ha sido reemplazado por el servicio de chat BACH.
+         El nuevo servicio ofrece 5 backends, API de control y panel web.
+         y bandeja del sistema multiplataforma. Ver: ayuda bach_chat
+
+DESCRIPCIÓN
+------------
+Claude Bridge es un controlador de bot de Telegram que permite la comunicación bidireccional
+entre los chats de Telegram y BACH/Claude Code CLI. el demonio
+se ejecuta en segundo plano, procesa mensajes entrantes, delega
+Tareas más largas a subprocesos de trabajo y envía resultados a través de Telegram.
+
+Arquitectura:
+  - Chat-Claude: procesa cada mensaje de Telegram en un nuevo contexto
+  - Worker-Claude: Para tareas más largas/autónomas (con actualizaciones de estado)
+  - Daemon: Supervisa permisos, presupuesto y ciclo de vida.
+  - Seguridad: sistema de desafío-respuesta con contraseña configurable
+
+
+OPERACIONES
+-----------
+  bach claude-bridge start              Iniciar demonio en segundo plano
+  bach claude-bridge stop               Finalizar demonio
+  bach claude-bridge status             Estado: demonio, trabajadores, presupuesto, modo
+  bach claude-bridge mode               Mostrar modo de permiso (desde la configuración)
+  bach claude-bridge test "msg"         Simular mensaje de prueba (localmente)
+  bach claude-bridge logs [N]           Últimas N líneas de registro (predeterminado: 20)
+  bach claude-bridge workers            Últimos 10 trabajadores con estado/error
+  bach claude-bridge password <pw>      Cambiar contraseña completa acceso
+  bach claude-bridge setup              Asistente de configuración interactivo para nuevos usuarios
+  bach claude-bridge challenge [user]   Generar desafío de seguridad
+  bach claude-bridge verify <ans>       Verificar respuesta al desafío [--user=ID]
+
+
+COMANDOS DE TELEGRAMA (activar en chat)
+-------------------------------------
+  activar/desactivar el acceso completo (bloqueo automático de 1 hora)
+  modo Mostrar el modo actual
+  presupuesto Ver estado del presupuesto
+  trabajadores Resumen del último trabajador
+  stop Finalizar los trabajadores en ejecución inmediatamente
+
+
+EJEMPLOS
+---------
+  # Inicie el demonio y espere 2 segundos, luego verifique el estado
+  $ bach claude-puente inicio
+  $dormir 2
+  $ estado de bach claude-bridge
+
+  # Simular mensaje de prueba localmente
+  $ prueba de bach claude-bridge "Hola, ¿cómo estás?"
+
+  # Mostrar las últimas 50 líneas de registro
+  $ troncos de bach claude-bridge 50
+
+  # Establecer una nueva contraseña (luego reiniciar el demonio)
+  $ bach claude-bridge contraseña "MyNewPW123"
+  $ parada de bach claude-bridge
+  $ bach claude-puente inicio
+
+  # Generar y verificar el desafío de seguridad
+  $ bach claude-bridge desafío user_123
+  $ bach claude-bridge verificar "AnswerText" --user=user_123
+
+
+ARCHIVOS
+-------
+  Controlador: hub/claude_bridge.py
+  Demonio: hub/_services/claude_bridge/bridge_daemon.py
+  Configuración: hub/_services/claude_bridge/config.json
+  Configuración: hub/_services/claude_bridge/setup_wizard.py
+  Seguridad: hub/_services/claude_bridge/security.py
+  Registros: data/logs/claude_bridge.log
+  DB: data/bach.db (tabla: claude_bridge_workers)
+
+
+CONFIGURACIÓN
+-------------
+Ver config.json:
+  - permisos.default_mode: "restringido" | "interactivo" | "completo"
+  - permisos.contraseña: Contraseña para acceso completo
+  - telegram.token: token de bot (establecido mediante configuración)
+  - trabajadores.max_concurrent: máx. trabajadores simultáneos (predeterminado: 3)
+  - presupuesto.hourly_limit: límite de costo de API por hora
+
+
+VER TAMBIÉN
+----------
+  conector de ayuda Sistema de conector (Telegram, etc.)
+  Ayudar al sistema de socios asociados (Multi-LLM)
+  hub/_services/claude_bridge/ directorio del controlador

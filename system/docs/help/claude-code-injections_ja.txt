@@ -1,0 +1,282 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [cli.js (バンドル)、github.com/anthropics/claude-code]
+
+クロード コード インジェクション システム -- 分析
+==========================================
+
+現在: 2026-02-17
+出典: cli.js v2.1.44 (縮小) からのリバース エンジニアリング
+方法: 正規表現分析 + 体系的なプロンプト テスト
+
+概要
+----------
+クロード コードは、いわゆる「システム リマインダー」をメッセージ ストリームに挿入します。
+ユーザーとLLMの間で。 LLM (クロード) はこれを会話の一部と見なし、
+しかし、それらがユーザーからのものなのかシステムからのものなのかを区別することはできません --
+<system-reminder> XML タグを除きます。
+
+BACH のインジェクター システム (injectors.txt を参照) とは異なり、ユーザーは
+Claude Code は噴射を直接制御しません。 LLM は次のことができます。
+
+
+アーキテクチャ
+-----------
+ オンまたはオフにしないでください。  ユーザーメッセージ
+      |
+      v
+  クロードコード CLI (Node.js、cli.js)
+      |
+      +--> d6() -- ユーザー メッセージ オブジェクトを作成します
+      |      フィールド: content、isMeta、isVisibleInTranscriptOnly、
+      |      isCompactsummary、uuid、タイムスタンプ、todos、...
+      |      isMeta:true = ユーザートランスクリプトには表示されません
+      |
+      +--> Px() -- システムリマインダーラッパー
+      |      function Px(A) { return `<system-reminder>\n${A}\n</system-reminder>` }
+      |
+      +--> s5() -- バルク ラッパー
+      |      Px() をメッセージ配列内のすべてのテキスト コンテンツに適用します
+      |
+      v
+  Anthropic への API 呼び出し (システム リマインダーが挿入されたメッセージ)
+      |
+      v
+  LLM (クロード) -- メッセージ ストリームにシステム リマインダーが表示されます
+
+コア機能 (難読化解除)
+------------------------------
+  d6({コンテンツ, isMeta, ...})
+    ロール:「user」を持つタイプ「user」のメッセージ オブジェクトを作成します。
+    isMeta:true は、メッセージがトランスクリプトに表示されないことを意味します。
+    ただし、LLM に送信されます。
+
+  ピクセル(テキスト)
+    <system-reminder> タグで囲まれたテキスト。
+    システム内で最も単純な関数。
+
+  s5(メッセージ)
+    メッセージ配列を反復処理し、すべてのメッセージに Px() を適用します。
+    テキストコンテンツ。一括操作。
+
+すべての 52 の注入タイプ
+-------------------------
+
+ファイル操作 (12):
+  ファイル ファイルの読み取り (コンテンツ付き)
+  selected_read_file ファイルはすでに読み取られています (操作なし)
+  edit_text_file テキスト ファイルが編集されました
+  edit_image_file 画像ファイルが編集されました (操作なし)
+  PDF PDFを読む
+  pdf_reference PDF リファレンス
+  イメージイメージ読み取り
+  ノートブック Jupyter ノートブック
+  ディレクトリ ディレクトリのリスト (ls 経由)
+  Compact_file_reference コンパクト ファイル リファレンス
+  selected_lines_in_ide ユーザーが IDE で行を選択しました
+  opens_file_in_ide ユーザーが IDE で開いたファイル
+
+メモリ/コンテキスト (4):
+  nested_memory メモリサブファイルの内容
+                          形式: 「{path} の内容:\n{content}」
+  ultramemory ウルトラメモリーインジェクション (ジェネリック)
+  compaction_reminder "自動圧縮が有効になっているため、古いメッセージが要約されます"
+  date_change "日付が変更されました。これをユーザーに伝えないでください。"
+
+タスク/Todo 管理 (5):
+  task_reminder 「タスク ツールは最近使用されていません」 (ナッジ)
+  task_progress タスク進行状況メッセージ (汎用)
+  task_status タスクのステータス: 強制終了/停止 + 詳細
+  todo Todoエントリ
+  todo_reminder Todo ナッジ (古いシステム、同じメカニズム)
+
+計画モード (5):
+  plan_mode プランモードが有効化されました
+  plan_mode_exit プラン モードを終了します
+  plan_mode_reentry プラン モードに戻る (既存のプランを読み取る)
+  plan_file_reference プラン ファイルへの参照
+  verify_plan_reminder "計画が実施されました。確認してください"
+
+チーム/エージェント (5):
+  Agent_mention "ユーザーはエージェント X を呼び出したいと考えています"
+  delegate_mode デリゲート モード: チーム ツールのみが許可されます
+  delegate_mode_exit デリゲート モードを終了します
+  Team_context チームコンテキストのインジェクション
+  teammate_mailbox チームメイトからのメッセージ (チーム モードのみ)
+
+フック (10):
+  hook_blocking_error フックがブロックされたアクション (エラー メッセージ付き)
+  ook_success フックが成功しました (SessionStart/UserPromptSubmit のみ)
+  hook_Additional_context フックは追加のコンテキストを提供します
+  hook_error_during_execution 実行中のフック エラー (no-op)
+  hook_non_blocking_error ノンブロッキング フック エラー (操作なし)
+  hook_cancelled フックがキャンセルされました (操作なし)
+  hook_stopped_continuation フックは継続を停止しました
+  hook_system_message フック システム メッセージ
+  フック許可の決定
+  async_hook_response 非同期フック応答
+
+リソース/予算 (2):
+  token_usage "トークンの使用量: X/Y; 残り Z"
+  Budget_usd "USD 予算: $X/$Y; 残り $Z"
+
+スキル/MCP (4):
+  skill_listing 利用可能なスキルのリスト
+  invoked_skills 呼び出されたスキル
+  Dynamic_skill ダイナミック スキル (操作なし、[] を返す)
+  mcp_resource MCP リソースがロードされました
+
+その他 (5):
+  テキスト シンプルなテキスト
+  queued_command 待機中のスラッシュコマンド
+  Structured_output 構造化出力
+  診断 IDE 診断 (新しいエラー/警告)
+  Output_style アクティブな出力スタイル (例: "explanatory")
+  Critical_system_reminder クリティカル システム リマインダー (汎用)
+  command_permissions コマンド権限 (操作なし)
+
+NO-OP タイプ (インジェクションを作成しない):
+  既読ファイル、コマンド権限、編集済み画像ファイル、
+  フックキャンセル、フック実行中のフックエラー、フック非ブロッキングエラー、
+  Dynamic_skill
+
+タイミング定数
+-----------------
+  Xf6 = {
+      TURNS_SINCE_WRITE: タスク ツールなしで 10 ターン後に 10 タスク ナッジ
+      TURNS_BETWEEN_REMINDERS: 10 分タスクナッジ間のターンは 10 回
+  }
+
+  qt4 = {
+      TURNS_BETWEEN_ATTACHMENTS: 5 ターンごとに 5 つのアタッチメント リマインダー
+      FULL_REMINDER_EVERY_N_ATTACHMENTS: 5 つの添付ファイルごとに 5 つの完全なリマインダー
+  }
+
+  aQY = {
+      TOKEN_COOLDOWN: 5000 トークンのクールダウン (5000 トークン後)
+  }
+
+  sQY = {
+      TURNS_BETWEEN_REMINDERS: 10 一般的なリマインダーの間隔
+  }
+
+  注: 「ターン」は、ツール呼び出しを含むすべての LLM インタラクションをカウントします。
+  ユーザーメッセージだけではありません。ナッジが不規則に見えるのはこのためです
+  ユーザーの観点から。
+
+トリガー ロジック (タスク リマインダー、難読化解除)
+-------------------------------------------
+  関数 shouldInjectTaskReminder(messages) {
+      // タスクツールが利用可能な場合のみ
+      if (!taskToolsEnabled()) が false を返す場合。
+      if (messages.length === 0) は false を返します;
+
+      // 最後にタスクツールを使用してからのターン数をカウントします
+      ターンを開始しますLastUse = 0;
+      ターンsinceLastReminder = 0;
+
+      for (messages.reverse() のメッセージ) {
+          if (msg.type === "アシスタント" && msg.usedTool("TaskCreate" || "TaskUpdate"))
+              休憩;  //最後に見つかったタスクツールの使用法
+          TurnsinceLastUse++;
+      }
+
+      // リマインダーの期限が迫っているかどうかを確認する
+      if (turnsSinceLastUse >= 10 &&turnsSinceLastReminder >= 10) {
+          let タスク = getAllTasks();
+          return { タイプ: "task_reminder"、コンテンツ: タスク };
+      }
+      false を返します。
+  }
+
+機密保持に関する指示
+---------------------------
+次のタイプには、明示的な「決して言及しないでください」という記述が含まれています。
+
+  task_reminder: "このリマインダーについては決してユーザーに伝えないでください。"
+  todo_reminder: "このリマインダーについては決してユーザーに伝えないでください。"
+  date_change: "これをユーザーに明示的に言及しないでください。"
+  nested_memory: "ユーザーはすでに気づいているので、これをユーザーに伝えないでください。"
+    (CLAUDE.md/MEMORY.md の変更点)
+
+比較: CLAUDE コードと BACH インジェクター
+------------------------------------------
+
+  プロパティ |クロード・コード |バッハ
+  ------------------------|----------------------|--------------------------
+  建築 |システム中心 | LLM中心
+  コントロール | CLI は LLM を制御します | LLM 制御インジェクター
+  ユーザーコントロール |なし (フックを除く) |フル (オン/オフを切り替え)
+  LLM制御 |なし |フル（オン/オフ）
+  クールダウン管理 |ターンベース (リジッド) |時間ベース (柔軟)
+  種類数 | 52 | 5（一部機能あり）
+  秘密 | 「NEVER」を持つ4人の男たち |なし（透明）
+  トリガー |ターン数 |キーワード + 時間 + イベント
+  DB統合 |なし | 900以上のダイナミックトリガー
+  自己拡張 |不可能 | context_triggers DB経由
+  オープンソース | cli.js (縮小版) |完全に読み取り可能 (Python)
+
+主な違い:
+
+  1. 透明性: BACH は公然と情報を提供しますが、Claude Code は積極的に隠します
+  2. 制御: BACH インジェクターは LLM によって制御できますが、クロード コードは制御できません。
+  3. 柔軟性: BACH には動的な DB トリガーがあり、Claude Code にはハードコーディングされた定数があります。
+  4. クールダウン: BACH は時間ベース (分) を使用し、クロード コードはターン (固定) を使用します
+
+可能性: メッセージング システム
+----------------------------
+インジェクション インフラストラクチャはインスタンス間の通信に使用できる可能性があります
+使用される:
+
+1. フック (最も簡単な方法):
+     UserPromptSubmit のフック_追加_コンテキスト --
+     ファイルからメッセージを読み取り、コンテキストとして挿入します。
+     ソースのパッチ適用は必要ありません。
+
+  2. ネストされたメモリ:
+     メモリフォルダー内のファイルは自動的に挿入されます。
+     外部からの変更 = LLM へのメッセージ。
+     制限: セッション開始時または CLAUDE.md/MEMORY.md 変更時のみ。
+
+  3. CRITICAL_SYSTEM_REMINDER:
+     あらゆるメッセージの汎用タイプ。
+     プログラムでトリガーする必要があります (ソース パッチ)。
+
+  4. チームメールボックス:
+     チーム向けの既存のメッセージ。
+     チーム モード (l8() チェック) でのみアクティブになります。
+
+推奨: フックベースのアプローチが最も実用的です。
+UserPromptSubmit フックは「受信箱」ファイルをチェックし、
+メッセージをフック_追加_コンテキストとして挿入します。
+
+実験結果 (セッション 2026-02-17)
+-----------------------------------------------
+14 個以上のメッセージによる体系的なテスト:
+
+  - タスク ナッジは厳密に 10 メッセージごとに表示されるわけではありません。
+    ツール呼び出しを個別のターンとしてカウントする
+  - タスクナッジのキーワードトリガー: REFUTED (純粋なターンカウント)
+  - ユーザーメッセージの長さ: トリガーには影響しません
+  - 独自の (LLM) 出力はナッジをトリガーしません
+  - パターン: ツールを多用したラウンド後にナッジが蓄積される
+    (10 ではターンが多い = 速いため)
+
+ファイル
+-------
+  リバースエンジニアリングソース:
+    C:\Users\User\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\cli.js
+    (11.5 MB、縮小、バージョン 2.1.44)
+
+  分析結果:
+    ~/.claude/projects/C--Users-User/memory/claude-code-injections-anatomy.md
+    ~/.claude/projects/C--Users-User/memory/system-injections.log
+
+関連項目
+----------
+  injectors.txt BACH インジェクター システム (5 インジェクター)
+  claude-code.txt クロード コード クイック リファレンス
+  claude-code-automatization.txt クロード コードの自動化
+  Memory.txt メモリ システム
+  Partner.txt パートナー インフラストラクチャ

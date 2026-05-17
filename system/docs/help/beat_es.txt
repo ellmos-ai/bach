@@ -1,0 +1,109 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BEAT - Visualización de tiempo unificada
+===========================
+
+Control central de todas las funciones de tiempo (reloj, cronómetro, cuenta regresiva, entre).
+
+COMANDOS CLI
+-----------
+
+  bach beat                 Mostrar toda la información de tiempo
+  bach beat on              Activar todas las visualizaciones de tiempo
+  bach beat off             Desactivar todas las visualizaciones de tiempo
+  bach beat interval <sek>  Establecer intervalo global
+
+FORMATO DE SALIDA
+--------------
+
+  [TIEMPO] 2:35 p.m.
+    Temporizador: Sesión 45:12 | Investigación 05:23
+    Cuenta atrás: foco Quedan 19:45
+    Entre: Perfil "Álgebra" activo
+
+COMPONENTES
+-----------
+
+  1. RELOJ - hora
+     Muestra la hora actual
+     -> reloj de bach encendido|apagado|intervalo
+
+  2. TEMPORIZADOR - cronómetro
+     Muestra temporizadores en ejecución
+     -> inicio del temporizador de bach|parada|lista
+
+  3. CUENTA ATRÁS - cuenta atrás
+     Muestra cuentas regresivas activas
+     -> inicio de cuenta regresiva de bach|parada|lista
+
+  4. ENTRE - controles intermedios
+     Muestra perfil activo
+     -> bach entre on|off|use
+
+EJEMPLOS
+---------
+
+  # Información de todos los tiempos de un vistazo 
+  bach beat
+  -> [TIEMPO] 14:35
+  -> Temporizador: Sesión 45:12
+  -> Cuenta regresiva:-
+  -> Entre: predeterminado
+
+  # Apaga todo (trabajo concentrado)
+  bach beat off
+
+  # Encienda todo con un intervalo de 2 minutos
+  bach beat on
+  bach beat interval 120
+
+INTERACCIÓN CON LOS INYECTORES
+----------------------------
+
+Las indicaciones de tiempo se emiten a través del sistema de inyección.
+`bach beat` es el control uniforme para esto.
+
+Comandos antiguos (obsoletos):
+  --inject alternar tiempo de compás -> bach beat activado|desactivado
+  --inject alternar entre -> bach entre on|off
+
+Nueva estructura:
+  TimeManager gestiona el reloj, el temporizador y la cuenta atrás.
+  BetweenManager gestiona perfiles y comprobaciones
+
+ARQUITECTURA
+-----------
+
+  ┌────────────────── ───────────────────┐
+  │ Administrador de tiempo │
+  ├────────────────── ───────────────────┤
+  │ ┌─────────┐ ┌─────────┐ ┌────────┐ │
+  │ │ Reloj │ │ Temporizador │ │Cuenta atrás│ │
+  │ └─────────┘ └─────────┘ └────────┘ │
+  └────────────────── ───────────────────┘
+               │
+               v
+  ┌────────────────── ───────────────────┐
+  │ Entre Gerente │
+  │ (Basado en perfil entre comprobaciones) │
+  └────────────────── ───────────────────┘
+               │
+               v
+  ┌────────────────── ───────────────────┐
+  │Sistema inyector │
+  │ (Salida para comandos CLI) │
+  └────────────────────── ───────────────┘
+
+VER TAMBIÉN
+----------
+
+  --ayuda reloj Visualización de la hora
+  --ayuda cronómetro temporizador
+  --ayuda cuenta regresiva Cuenta regresiva con disparador
+  --ayuda entre comprobaciones entre perfiles
+
+---
+Versión: 1.0 | Estado: Implementado (v1.1.83)
+Ver: docs/_archive/con4_CONCEPT_time_system_90.md

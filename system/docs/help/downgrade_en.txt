@@ -1,0 +1,72 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH DOWNGRADE - RESET VERSION
+======================================
+
+Resets BACH to a previous version. Uses historical
+Versions from dist_file_versions (SQ020).
+
+
+USE
+----------
+
+  # Show available versions of a file
+  bach downgrade list <datei-pfad>
+
+  # Revert individual file to version
+  bach downgrade <datei-pfad> --version <version>
+
+  # Reset entire system to release
+  bach downgrade --release <release-id>
+
+  # Dry-Run (view only, do not run)
+  bach downgrade --dry-run <datei-pfad> --version <version>
+
+
+VERSIONS
+---------
+
+Version numbers: v1, v2, v3, ...
+  - Hash-based (SHA256 automatically detects changes)
+  - Auto-Increment gives human-readable order
+
+
+IMPORTANT
+-------
+
+- Downgrade works ONLY for CORE + TEMPLATE files
+- Old versions are stored in dist_file_versions
+- USER_DATA has no versioning (belongs to the user)
+- Backup is recommended before downgrade
+
+
+EXAMPLES
+---------
+
+  # View versions of bach.py
+  bach downgrade list system/bach.py
+
+  # reset bach.py ​​to version 3
+  bach downgrade system/bach.py --version v3
+
+  # Check which files would be changed
+  bach downgrade --dry-run --release r2
+
+
+COMBINED WITH UPGRADE
+-----------------------
+
+Upgrade and downgrade work together:
+  - Upgrade saves old version automatically
+  - Downgrade uses saved versions
+  - Bidirectional system (forward + back)
+
+
+SEE ALSO
+----------
+
+  bach --help upgrade       Upgrade to newer version
+  bach --help restore       Template recovery
+  bach --help seal          Integrity check

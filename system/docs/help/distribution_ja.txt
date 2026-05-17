@@ -1,0 +1,59 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# リソース: [data/schema_distribution.sql、hub/dist.py、hub/sync.py、db/schema.sql]
+
+ディストリビューション システム
+===================
+
+現在: 2026-02-08
+
+ディストリビューション システムは、システム コアをユーザー データおよびリリース テンプレートから分離します。
+
+4 層モデル (dist_type):
+  dist_type = 0 KERNEL 絶対的に不変 (基本システム)
+  dist_type = 1 CORE システム ファイル (読み取り専用 / 配布バックアップ)
+  dist_type = 2 拡張リリース テンプレート (リセット用の 1x スナップショット)
+  dist_type = 3 USER_DATA 個々のユーザー データ (リポジトリにない)
+
+CLI コマンド
+-----------
+  bach --dist status              システム ステータス (シール、モード、ファイル)
+  bach --dist verify              シールの整合性をチェック
+  bach --dist scan                ファイルをスキャンして登録
+  bach --dist snapshot NAME       スナップショットを作成
+  bach --dist release NAME        リリースを作成
+  bach --dist restore ZIP         ディストリビューション ZIP から復元
+  bach --dist install ZIP ZIEL    新しいフォルダにディストリビューションをインストール
+  bach --dist list [snapshots]    スナップショット リスト
+
+リリース ワークフロー
+----------------
+  1. スナップショットを作成します: `bach --dist スナップショット "プレリリース"`
+  2. リリースを作成します: `bach --dist release "v1.2.0"`
+  3. dist/に配布ZIPが作成される
+  4. リセット: `bach fs hell --all` はスナップショットからファイルを復元します
+  5. 復元: `bach --distリストア bach_vanilla_1.2.0.zip`
+
+データベースとファイルシステムの統合
+----------------------------------
+  - スキルとツールは双方向に同期されます (`bach --sync skill`)。
+  - `dist_type` 列は約 60 のテーブルにあります (db/schema.sql を参照)。
+  - `distribution_manifest` テーブル内のファイルマニフェスト。
+  - OneDrive/Git はディストリビューションを保護し、BACH は整合性を保証します。
+
+データベースに関する注意
+---------------------
+中央の `data/bach.db` は 1 つだけです (system/db/schema.sql の v2.0 以降)。
+多くのテーブルは論理的な分離に `dist_type` を使用します。
+  - dist_type=0: カーネルデータ (絶対的に不変)
+  - dist_type=1: コアデータ (システムクリティカル)
+  - dist_type=2: 拡張データ(再設定可能)
+  - dist_type=3: ユーザー データ (インストーラーには含まれていません)
+
+関連項目
+----------
+  bach --sync help         スキルとツールの同期
+  bach fs help             ファイル システム操作 (修復、検証)
+  docs/help/guidelines.txt 文書標準
+  system/db/schema.sql 完全な DB スキーマ (210 以上のテーブル)

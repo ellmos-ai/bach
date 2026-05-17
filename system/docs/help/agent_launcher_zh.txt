@@ -1,0 +1,122 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+AGENT LAUNCHER - 代理管理和流程控制
+=======================================================
+
+作为独立代理启动和管理 BACH 代理（老板代理和专家）
+Claude 使用模型和模式参数化进行处理。
+
+
+描述
+------------
+
+agent_launcher 处理程序支持代理的生命周期管理。代理人
+作为单独的进程启动和监视。每个代理收到一份
+临时 CLAUDE.md 文件及其 SKILL.md 作为身份定义。
+保留进程 ID 以进行监视和控制。
+
+
+操作
+-----------
+
+  bach agent list                               列出所有可用代理
+
+  bach agent start <name> [OPTIONS]             将代理作为新进程启动
+    --mode MODE模式：plan（计划模式）或
+                                                  默认（默认，默认）
+    --model MODEL 模型：十四行诗、作品或俳句
+                                                  （默认：十四行诗）
+    --dry-run 只检查，不启动
+
+  bach agent stop <name>                        停止运行代理（结束进程
+，PID文件清理）
+
+  bach agent status                             显示所有正在运行的代理
+                                                带 PID、型号、启动时间
+
+
+示例
+---------
+
+  # 显示可用代理
+  bach agent list
+  输出：包含名称、类型（老板/专家）、状态 [RUNNING:pid]/[STOPPED]
+
+ 的表  # 以标准模式启动代理（十四行诗）
+  bach agent start ati
+  输出：[OK] 代理“ati”已启动，显示 PID 和临时文件夹
+
+  # 启动特定型号和模式的代理
+  bach agent start research --model opus --mode plan
+  在计划模式下与 Claude Opus 进行试用
+
+  # 只模拟启动
+  bach agent start ati --dry-run
+  输出：[DRY-RUN] 将启动代理“ati”...
+
+  # 显示正在运行的代理
+  bach agent status
+  输出：所有正在运行的进程表，包含 PID、启动时间、状态
+
+  # 结束代理
+  bach agent stop ati
+  输出：[OK] 代理“ati”（PID xyz）已停止
+
+
+详细信息
+-------
+
+代理扫描：
+  - Boss特工：agents/（带有SKILL.md的目录）
+  - 专家：agents/_experts/（带有 SKILL.md 的目录）
+  - 忽略带有下划线前缀的条目
+
+进程执行：
+  - Windows：Temp 文件夹中的 start.bat，新的 CMD 窗口
+  - Unix/Linux：使用 start_new_session 分离进程
+  - 模型选项：十四行诗（默认）、作品、俳句
+  - 模式选项：default（默认）、plan
+
+Persistence：
+  - PID 文件：data/agent_pids/<名称>.pid (JSON)
+  - 内容：pid、名称、类型、型号、模式、已启动、temp_dir
+  - 在状态检查期间自动清理死进程
+  - Temperaere CLAUDE.md：data/temp/agent_<名称>/CLAUDE.md
+
+
+错误处理
+----------------
+
+  [错误] 需要代理名称 操作数丢失（列表和状态
+                                                 不需要名字）
+
+  [警告] 代理“<名称>”已在运行 (PID..) 代理已处于活动状态
+
+  [错误] 未找到代理“<名称>” 未找到 SKILL.md 或
+                                                目录不存在
+
+  [错误] 模式无效：X 仅允许“计划”或“默认”
+
+  [错误] 无效模型：​​X 仅“十四行诗”、“作品”、“俳句”
+
+  [错误] 'claude' CLI 未找到 Claude 代码未安装
+
+
+文件
+-------
+
+  处理程序：hub/agent_launcher.py
+  代理：agents/*/SKILL.md
+  专家：agents/_experts/*/SKILL.md
+  PID 注册表：data/agent_pids/*.pid (JSON)
+  临时文件：data/temp/agent_*/
+
+
+另请参阅
+----------
+
+  帮助代理代理概述（老板、专家、结构）
+  help path 目录结构和路径
+  帮助开发新代理

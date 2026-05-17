@@ -1,0 +1,108 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 下一步检查：2026-11-15
+
+DAEMON - 后台作业和调度程序
+=======================================
+注意：“bach daemon”是“bach Scheduler”的别名。
+当前文档：bach --help Scheduler
+
+日期：2026-02-08（自 2026-02-28 起的别名）
+
+重要策略
+---------------
+**默认情况下禁用所有守护进程作业。**
+
+原因：自动进程可以与活动聊天会话一起使用
+和提示发生器发生碰撞。工作只是手动的
+如果需要，则激活。
+
+守护进程在操作期间自动暂停 OneDrive 同步
+以避免同步冲突。
+
+请参阅：docs/CONCEPT_daemon_policy.md
+
+CLI 命令
+-----------
+  bach daemon jobs              显示所有作业
+  bach daemon status            守护进程状态
+  bach daemon doctor            调度程序预检和恢复说明
+  bach daemon start [--bg]      启动调度程序（--bg 表示后台）
+  bach daemon stop              停止调度程序
+  bach daemon run <ID>          手动停止单个作业执行
+  bach daemon logs [N]          显示最后的日志条目（默认值：20）
+
+会话系统[已弃用]
+---------------------------
+  ⚠️ 自 2026 年 5 月 17 日起已弃用。
+  原因：使用pyautogui进行键盘模拟（Ctrl+Alt+Space、Paste、Enter）。
+  在活动会话中创建了不受控制的提示注入。
+
+  替换：Buddha Control API (:8081/api/chat) 或 Claude Code /loop。
+
+  为了向后兼容，CLI 命令仍然存在：
+  bach daemon session status                   显示会话状态
+  bach daemon session doctor                   会话预检和恢复提示
+  bach daemon session pause/resume/steer       操作员控制
+
+作业类型
+---------
+  间隔一段时间后重复（例如24h、30m）
+  基于 cron 计划（例如“0 2 * * *” = 每天凌晨 2 点）
+  event 基于事件的触发器（外部触发）
+  手动 只能手动执行
+  chain 链式作业执行（链式系统）
+
+守护进程每 5 分钟自动检查一次到期的重复任务。
+
+可用作业（默认情况下全部关闭）
+-------------------------------------------
+注意：作业列表是动态的。当前职位来自： bach daemon jobs
+
+示例职位：
+  ID 名称 日程功能
+  ------------------------------------------------------------------------------------------------------------------
+  1 台扫描仪 60m 扫描软件文件夹中的任务
+  2备份 24小时自动备份
+  3 次收件箱扫描过程 30m 收件箱文件夹
+  4 个巩固权重 24 小时记忆权重（衰减）
+  5 合并归档 24 小时归档旧条目
+  6 合并索引 7d 帮助/Wiki 更新索引
+  7 次巩固压缩 24 小时压缩疗程
+  8 合并-我们 7 天 每周合并
+  9 每晚维护 cron 0 2 每晚维护链
+  10 每周备份 cron 0 3 0 每周备份
+
+连接器作业（v2.0，通过 bach 连接器设置守护程序）：
+  -- Connector_poll_and_route 2m 连接器花粉 + 收件箱路由
+  -- Connector_dispatch 1m 通过重试发送传出队列
+
+手动执行作业
+----------------------
+推荐方法而不是自动调度程序：
+
+  # 运行作业一次
+  bach daemon run 1         # 运行扫描仪一次
+  bach daemon run 2         # 创建备份一次
+
+  # 或者直接命令
+  bach scan run             # 扫描
+  bach backup create        # 备份
+  bach consolidate run      # 合并
+
+GUI
+---
+  http://127.0.0.1:8000/daemon 守护进程仪表板
+
+  - 启用/禁用作业
+  - 手动运行
+  - 查看最新版本
+
+另请参阅
+----------
+  docs/CONCEPT_daemon_policy.md 守护进程策略
+  docs/help/connector.txt 连接器系统（队列、重试）
+  docs/help/maintain.txt 维护工具
+  docs/help/backup.txt 备份系统
+  docs/help/consolidation.txt 内存整合

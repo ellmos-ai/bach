@@ -1,0 +1,79 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+DAILY AGENT - 具有持久会话的自治日常代理
+============================================================
+
+描述
+------------
+每日代理是运行持久 Claude Code Agent 的 BACH 处理程序
+以 --continue 开头并处理每日任务队列。代理可以
+使用模块化组件和会议摘要生成早间简报
+保存。代理实例受到监控（PID 跟踪）并且可以定位
+被终止。简报模块可以打开/关闭。
+
+
+操作
+-----------
+  bach daily-agent start                启动代理（Claude Code --继续）
+  bach daily-agent stop                 停止代理 + 会话摘要
+  bach daily-agent status               显示 PID 和运行时信息
+  bach daily-agent briefing             上午简报（活动模块）
+  bach daily-agent summary              生成晚间摘要
+  bach daily-agent config               列出简报模块
+  bach daily-agent modules              配置别名
+  bach daily-agent toggle <modul>       模块开关
+
+简报模块（切换）：
+  task_briefing 打开任务（默认：ON）
+  message_briefing 未读消息（开启）
+  news_briefing 新闻概述 (AN)
+  session_briefing 上次会议（开启）
+  Weather_briefing 天气（默认值：关闭）
+  calendar_briefing 日历约会（关闭）
+
+
+示例
+---------
+  bach daily-agent start                以模型“sonnet”启动代理
+  bach daily-agent start --model=opus   以模型“opus”启动
+  bach daily-agent status               显示 PID 和开始时间
+  bach daily-agent briefing             使用活动模块生成简报
+  bach daily-agent toggle news_briefing Deaktiviert News-Modul
+  bach daily-agent summary              显示今天完成的任务
+  bach daily-agent stop                 停止代理 + 保存摘要
+
+
+文件
+-------
+  处理程序：hub/daily_agent.py
+  PID 文件：data/daily_agent.pid（带有 PID、开始时间、型号的 JSON）
+  DB：data/bach.db（简报配置、任务、内存工作、...）
+  简报：在 stdout/Logs 中生成简报
+
+
+模块详细信息
+-------------
+task_briefing：前 10 个待处理任务（标题缩短），可能是重复性作业
+message_briefing：未读消息计数器（status='unread'）
+news_briefing：来自 news_items 的未读新闻（顶级类别 + 3 个标题）
+session_briefing：最后的内存_sessions.summary（缩短为120个字符）
+Weather_briefing：尝试了weather_service（坐标硬编码为0.0）
+calendar_briefing：来自 calendar_events 的今天事件（接下来的 5 个事件）
+
+
+错误处理
+----------------
+- 代理在后台启动（stdout/stderr 被抑制）
+- 如果进程崩溃，必须手动删除PID文件
+- 简报模块忽略静默数据库错误（例如，如果 news_items 不存在）
+- 即使代理已经死亡，停止也会保存摘要
+
+
+另请参阅
+----------
+  bach --help
+  bach scheduler              （定期任务）
+  hub/base.py(BaseHandler)
+  文档/帮助/内存.txt

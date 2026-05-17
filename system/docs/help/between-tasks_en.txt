@@ -1,0 +1,14 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+# NOTE: This entry has been migrated to between.txt
+#
+# See: bach help between
+#
+# The between-tasks functionality has been expanded and now supports:
+# - Customizable profiles (DEFAULT, FOCUS, REVIEW, LEARNING, AUTOSESSION)
+# - CLI commands: bach between on/off/status/use
+# - Profile management: bach between profile list/show (add/edit/delete not yet implemented)
+#
+# Complete documentation: docs/help/between.txt

@@ -1,0 +1,186 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+THINKING STRATEGIES
+==============
+Cognitive and metacognitive strategies for information processing.
+
+Reference: Learning system analysis, docs/help/operators.txt, docs/help/rhetorik.txt
+
+
+1. COGNITIVE STRATEGIES (information processing)
+===================================================
+Control HOW to process information.
+
+1.1 Chunking
+-----------------------
+Break down complex information into smaller units.
+  - divide big task into 5 steps
+  - Divide text into sections
+BACH: Task breakdown, workflow phases
+
+1.2 Pattern recognition
+-------------------
+Recognize recurring structures.
+  - similar errors in logs
+  - recurring document types
+BACH: Lessons-Learned Pattern Matching
+
+1.3 Making analogies
+-------------------
+Understanding new things by comparing them with what is known.
+  - "Mail routing is like network routing"
+  - "Operators are like Lego blocks"
+
+1.4 Hypothesis formation
+---------------------
+Formulate assumptions before testing.
+  - "If the score is low, a mandatory field is probably missing"
+
+1.5 Deductive thinking
+---------------------
+Infer from the general to the individual case.
+  - "All invoices have invoice number -> this document
+     has no -> probably no calculation"
+
+1.6 Inductive thinking
+---------------------
+Deduce rules from individual cases.
+  - "In 90% of cases the subject contains 'Invoice'
+     a real bill"
+BACH: Lessons-Learned Derivation
+
+1.7 Causal Thinking
+-------------------
+Recognizing cause-effect relationships.
+  - "Error increases -> CPU load increases -> probably bottleneck"
+
+1.8 Change of perspective
+---------------------
+Look at the problem from a different perspective.
+  - User perspective vs. developer perspective
+
+1.9 Scenario thinking
+------------------
+Play through “what if” variants.
+  - "What happens if API fails"
+  - "What if classification is wrong"
+BACH: Mode (2) Thinking
+
+1.10 Prioritize
+-----------------
+Process important information first.
+  - critical errors before warnings
+  - Invoices before newsletters
+BACH: Task priorities (P1 > P2 > P3)
+
+
+2. METACOGNITIVE STRATEGIES (Thinking about thinking)
+==================================================
+Control HOW you control your own thinking.
+
+2.1 Self-monitoring
+-----------------------------------
+Observe your own thinking.
+  - "Do I really understand the problem"
+  - "What assumptions am I making right now?"
+
+2.2 Self-regulation
+--------------------
+Actively adapt the thought process.
+  - Reduce speed
+  - Change strategy (e.g. from hypothesis -> test)
+
+2.3 Error analysis
+-----------------
+Identify your own thinking errors.
+  - Confirmation error
+  - hasty conclusions
+BACH: Lessons-Learned (Bug Category)
+
+2.4 Ask meta-questions
+-----------------------
+Questions about the thought process itself.
+  - “What information am I missing?”
+  - "Which operators do I need here?"
+
+2.5 Choice of strategy
+-----------------
+Consciously decide which thinking strategy is right.
+  - "Do I need pattern recognition or hypothesis formation?"
+
+2.6 Reflection
+-------------
+Subsequent evaluation of the thought process.
+  - "Why did this solution work"
+  - “What would I do differently next time?”
+BACH: Session summary, consolidation
+
+2.7 Metamodeling
+--------------------
+Transfer the problem into a more abstract model.
+  - "This is a classification problem"
+  - "This is a routing problem"
+
+2.8 Meta-Abstraction
+--------------------
+Reduce complexity by looking at the essence.
+  - "It's actually only about three variables"
+
+2.9 Meta-Comparisons
+-------------------
+Comparison between thinking strategies.
+  - "Hypothesis formation was ineffective -> better data-driven"
+
+2.10 Meta-Planning
+-----------------
+Planning how to think before you think.
+BACH: Mode (2) Thinking = consciously provoking injectors
+
+
+3. RELATED TO BACH MODES
+=====================
+
+Mode (1) Energy saving:
+  - Pattern recognition (automatic)
+  - Prioritize (get rules)
+  - Deduction (quick conclusions)
+
+Mode (2) Reflection:
+  - Scenario thinking
+  - Change of perspective
+  - Formation of hypotheses
+  - Ask meta questions
+  - Choice of strategy
+
+Mode (3) Consolidation:
+  - Inductive thinking (deriving rules)
+  - Reflection
+  - Error analysis
+  - Meta-Abstraction
+
+
+4. RELATED TO RHETORIC
+====================
+Thinking strategies have direct rhetorical counterparts:
+
+  Chunking -> Outlining, 3-point rule
+  Pattern recognition -> topoi (argument patterns), story archetypes
+  Making analogies -> metaphors, comparisons
+  Formation of hypotheses -> prepare arguments, anticipate counterarguments
+  Deduction/Induction-> Logical Reasoning
+  Scenario thinking -> “What if” arguments
+  Prioritize -> Core Message, Elevator Pitch
+
+Rhetoric = Cognitive Strategy + Linguistic Packaging
+
+See: --help rhetoric
+
+
+RELATED HELP FILES
+======================
+--help operators Basic operators and patterns
+  --help strategies Categorize, evaluate, test, etc.
+  --help rhetoric Rhetorical operators and patterns
+  --help metacognition Wiki entry on metacognition

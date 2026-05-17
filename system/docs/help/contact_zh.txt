@@ -1,0 +1,93 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+联系方式 - 联系方式管理
+===========================
+
+描述：
+  通过免费文本搜索管理个人和业务联系人，
+  上下文过滤和生日概述。联系方式通过发送
+  软删除已禁用（未删除）。
+
+命令：
+  bach contact list              显示所有活动联系人
+  bach contact list --all        包括。非活动联系人
+  bach contact list -c privat    按上下文过滤
+  bach contact search <term>     自由文本搜索（姓名、电子邮件、电话、公司、备注、标签）
+  bach contact add "Name"        创建新联系人
+  bach contact show <id>         显示联系人详细信息
+  bach contact edit <id>         编辑联系人
+  bach contact delete <id>       停用联系人（软删除）
+  bach contact birthday          生日（接下来 30 天）
+  bach contact birthday 90       生日（接下来 90 天）
+  bach contact export            将所有联系人导出（文本/CSV/vCard）
+  bach contact export --type arzt --format csv  将所有联系人导出为CSV
+  bach contact export --format vcard --file out.vcf  vCard 导出到文件
+  bach contact help              此帮助
+
+添加/编辑选项：
+  --context, -c context (私人|专业|保险|金融|医生|其他)
+  --电子邮件, -e 电子邮件地址
+  --phone, -p 电话（固定电话）
+  --mobile, -m 手机号码
+  --地址，-地址
+  --birthday, -b 生日（DD.MM.YYYY 或 YYYY-MM-DD）
+  --公司 公司/组织
+  --position 在公司中的职位/角色
+  --tags 标签以逗号分隔（例如“dev,it,freelance”）
+  --note 注释（如果编辑：附加到现有注释）
+  --name 更改名称（仅可编辑）
+
+导出选项：
+  --type, -t 仅导出特定上下文（医生、私人等）
+  --format, -f 导出格式：txt（默认）、csv、vcard
+  --file, -o 输出文件（否则控制台输出）
+
+上下文：
+  私人朋友、家人、熟人
+  专业工作同事、业务联系
+  保险 保险顾问、机构
+  财务税务顾问、银行顾问
+  医生、治疗师、药房
+  其他一切
+
+数据库：
+  主表：bach.db/contacts
+  字段：id、姓名、类别、电子邮件、电话、phone_mobile、街道、生日、
+          组织、职位、标签、注释、is_active、created_at、updated_at
+
+示例：
+  # 创建包含所有详细信息的联系人：
+  bach contact add "Dr. Mueller" --context arzt --phone 030-12345 --email mueller@example.de --address "Hauptstr. 1, 10115 Berlin"
+
+  # 与公司和职位的专业联系：
+  bach contact add "Lisa Schmidt" --context beruflich --company "Beispiel GmbH" --position "Teamlead" --tags "dev,it" --email lisa@example.com
+
+  # 查找联系人：
+  bach contact search Mueller
+
+  # 更改电话号码和公司：
+  bach contact edit 5 --phone 030-99999 --company "Neue GmbH" --note "Gewechselt ab Jan 2026"
+
+  # 所有保险联系人：
+  bach contact list -c versicherung
+
+  # 谁的生日快到了？
+  bach contact birthday 60
+
+  # 导出示例：
+  bach contact export                              # 控制台中的文本格式
+  bach contact export --format csv                 # 控制台中的 CSV
+  bach contact export --type arzt --format csv     # 仅医生联系人为 CSV
+  bach contact export --format vcard --file kontakte.vcf  # 文件中的 vCard
+  bach contact export --file export.csv            # 文件中的 CSV
+
+INTERPLAY:
+  - 与health_contacts（健康模块中的医生联系人）分开
+  - 联系人 = 中央联系人表（CLI + GUI + vCard 导出）
+  - GUI：联系人选项卡（如果可用）
+
+已知限制：
+  - “bach contact list --all”显示不活动的联系人，没有视觉标记
+  - 标签在搜索中搜索，但不显示在列表视图中

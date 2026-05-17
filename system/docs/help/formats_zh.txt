@@ -1,0 +1,48 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+数据格式
+============
+
+状态：2026-02-08
+
+基本规则：JSON 之前的数据库
+------------------------------
+BACH 使用 SQLite (`bach.db`) 作为主要数据存储（当前有 210 多个表）。
+仅在合理的例外情况下才允许使用 JSON 文件。
+
+何时使用数据库（标准）？
+--------------------------
+  - 持久系统数据（工具、任务、配置）
+  - 历史数据（日志、会话、经验教训）
+  - 大数据集（维基、医学研究）
+  - 完整性（基于哈希的验证）
+
+何时允许使用 JSON（例外）？
+------------------------------
+1。复杂的层次结构：“system/data/skills_hierarchy.json”（交互式树）。
+2. 本地配置：如果单独需要（例如 UI 首选项）。
+3. MCP-CONFIG：如果需要 Claude 桌面集成。
+4. 临时过程数据：需要时的临时快照。
+
+其他格式
+--------------
+  - TOON：用于 LLM 注入的令牌优化数据集。
+  - MD：文档和报告输出（`outbox/`）。
+
+迁移 JSON -> DB（成功完成）
+-----------------------------------------------
+- `partner_registry.json` -> `partner_recognition`（表）
+- `connections.json` -> `connections` （表）
+- `injectors.txt` -> `automation_injectors`（表）
+- `inbox_folders.txt` -> `folder_scans`（表）
+
+转换
+-------------
+  python system/tools/c_universal_converter.py <file> --to [json|yaml|toml|xml|toon]
+
+另请参见
+----------
+  docs/help/maintain.txt 完整性检查和密封机制
+  bach --db status     210+表的当前状态

@@ -1,0 +1,151 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH DOCUMENTATION - Overview
+================================
+
+Central contact point for all BACH documentation.
+
+CORE DOCUMENTS
+--------------
+
+Root level:
+  SKILL.md Master context, identity, rules of conduct
+  README.md project overview
+
+system/:
+  ARCHITECTURE.md Technical architecture, components
+  ROADMAP.md development plan, milestones
+  CHANGELOG.md version history, changes
+
+HELP-SYSTEM (system/docs/help/)
+--------------------------
+
+Call: python bach.py --help <topic>
+
+CONCEPTS:
+  --help core core concept (agent/workflow/skills/tools)
+  --help memory memory system (5 cognitive types + learning circuit)
+  --help injectors injector system (automatic hints)
+  --help consolidation consolidation (compression, decay, boost)
+  --help startup startup log
+
+SYSTEM:
+  --help tasks Task management
+  --help lessons Lessons Learned System
+  --help partner Partner system (Multi-LLM)
+  --help daemon daemon service
+
+TIME:
+  --help clock Time display
+  --help timer stopwatch
+  --help countdown Countdown with trigger
+  --help between between checks
+  --help beat Unified Time System
+
+DEVELOPMENT:
+  --help dev development workflow
+  --help usecase Usecase tests
+  --help bugfix Bugfix log
+  --help coding coding standards
+
+DIRECTORIES:
+  --help list All available topics
+
+FEATURES (since v1.1.85):
+  --help agent/<name> agent documents (e.g. --help agent/ati)
+  --help workflow/<name> Workflow documents
+  --help expert/<name> Expert documents
+  --help <tool_name> Tool information from DB
+
+SKILLS HIERARCHY (system/skills/)
+-----------------------------------
+
+  agents/agent profiles (roles)
+  skills/workflows/workflow definitions (22 workflows)
+  agents/_experts/ Expert configurations
+  skills/_services/ service descriptions
+  skills/_templates/ Templates
+  partners/partner LLM configurations
+  connectors/External connections
+  skills/_os/ OS-specific configurations
+
+DOCS FOLDER (docs/)
+-------------------
+
+  docs/Current concepts and analyses
+  docs/_archive/ Archived/completed concepts
+  docs/_ideas/ Ideas for the future
+  docs/_test_and_reports/ Test results and reports
+  docs/analysis/Analytical documents
+  docs/reference/ External references (cookbooks, etc.)
+
+CODE DOCUMENTATION
+------------------
+
+  system/bach.py main entry point (v2.0 registry-based)
+  system/bach_api.py Library API (task, memory, backup, etc.)
+  system/core/ core modules (registry, app, db, base)
+  system/hub/*.py handler implementations (auto-discovery)
+  system/tools/*.py Tool-Scripts
+
+DATABASE SCHEMA
+----------------
+
+  system/db/schema.sql Complete DB schema (210+ tables)
+  system/data/bach.db SQLite database
+
+CLI access:
+  python bach.py --db schema Show DB schema
+  python bach.py --db tables Show all tables
+
+QUICK REFERENCE
+---------------
+
+  What is BACH?          --help wiki/was_ist_bach
+  How do I start?        --help startup
+  How do I finish?        --help shutdown
+  Create task?        --help tasks
+  Save lesson?      --help lessons
+  Use memory?         --help memory
+
+DOCUMENTATION HIERARCHY
+-------------------------
+
+```
+SKILL.md <- master context (always reads LLM)
+    │
+    ├── ARCHITECTURE.md <- Technical details
+    │
+    ├── docs/help/ <- Operational instructions
+    │ ├── core.txt <- core concept
+    │ ├── memory.txt <- memory system
+    │ └── ...
+    │
+    ├── skills/ <- Functional definitions
+    │ ├── _agents/
+    │ ├── _workflows/
+    │ └── ...
+    │
+    └── docs/ <- concepts, analyses
+        ├── CONCEPT_*.md
+        └── archive/
+```
+
+HANDLER ARCHITECTURE
+-------------------
+
+Help Handler: system/hub/help.py
+  - Shows .txt files from system/docs/help/
+  - Supports subfolders (tools/, wiki/)
+  - Alias system for agents, workflows, _experts
+  - Tool direct access from DB (v1.1.38+)
+
+Docs Handler: system/hub/docs.py
+  - Lists/searches docs/folders
+  - Grouped by CONCEPTS, ANALYSIS, SCHEMATICS, OTHER
+  - Operations: list, show, search
+
+---
+Version: 1.0.1 | Created: 2026-01-30 | Updated: 2026-02-08

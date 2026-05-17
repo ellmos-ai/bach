@@ -1,0 +1,99 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 状态：LEGACY — 后继者：BACH 聊天服务 (help bach_chat)
+
+CLAUDE BRIDGE - Telegram <-> Claude Code CLI 集成 (LEGACY)
+==================================================================
+
+注意：Claude Bridge 已被 BACH 聊天服务取代。
+         新服务提供 5 个后端、控制 API、Web 仪表板
+         和跨平台系统托盘。请参阅：help bach_chat
+
+描述
+------------
+Claude Bridge 是一个 Telegram 机器人处理程序，可实现双向通信
+Telegram 聊天和 BACH/Claude Code CLI 之间。恶魔
+在后台运行，处理传入消息，委托
+更长的任务交给工作线程并通过 Telegram 发送结果。
+
+架构：
+  - Chat-Claude：在新的上下文中处理每条 Telegram 消息
+  - Worker-Claude：用于较长/自主任务（带有状态更新）
+  - 守护进程：监控权限、预算和生命周期
+  - 安全性：具有可配置密码的质询-响应系统
+
+
+操作
+-----------
+  bach claude-bridge start              在后台启动守护进程
+  bach claude-bridge stop               结束守护进程
+  bach claude-bridge status             状态：守护进程、工作人员、预算、模式
+  bach claude-bridge mode               显示权限模式（来自配置）
+  bach claude-bridge test "msg"         模拟测试消息（本地）
+  bach claude-bridge logs [N]           最后 N 条日志行（默认：20）
+  bach claude-bridge workers            最后 10 个工作人员的状态/错误
+  bach claude-bridge password <pw>      更改完全访问权限的密码
+  bach claude-bridge setup              新的交互式设置向导用户
+  bach claude-bridge challenge [user]   生成安全质询
+  bach claude-bridge verify <ans>       检查质询答案[--user=ID]
+
+
+电报命令（在聊天中激活）
+-------------------------------------
+  打开/关闭完全访问权限（1 小时自动锁定）
+  模式 显示当前模式
+  预算 查看预算状态
+  工人 最后一个工人概述
+  stop 立即停止运行工作进程
+
+
+示例
+---------
+  # 启动守护进程并等待2秒，然后检查状态
+  $巴赫·克劳德·布里奇开始
+  $睡觉2
+  $ 巴赫·克劳德-布里奇状态
+
+  # 在本地模拟测试消息
+  $ bach claude-bridge 测试“哈罗，你好吗？”
+
+  # 显示最后 50 行日志
+  $ 巴赫·克劳德·布里奇日志 50
+
+  # 设置新密码（然后重新启动守护进程）
+  $巴赫·克劳德·布里奇密码“MyNewPW123”
+  $ 巴赫克劳德布里奇站
+  $ 巴赫克劳德布里奇开始
+
+  # 生成并验证安全挑战
+  $巴赫·克劳德·布里奇挑战 user_123
+  $ bach claude-bridge 验证“AnswerText”--user=user_123
+
+
+文件
+-------
+  处理程序：hub/claude_bridge.py
+  守护进程：hub/_services/claude_bridge/bridge_daemon.py
+  配置：hub/_services/claude_bridge/config.json
+  设置：hub/_services/claude_bridge/setup_wizard.py
+  安全：hub/_services/claude_bridge/security.py
+  日志：data/logs/claude_bridge.log
+  DB：data/bach.db（表：claude_bridge_workers）
+
+
+配置
+-------------
+参见config.json：
+  - 权限.default_mode：“受限”| “互动”| “满”
+  - requests.password：完全访问的密码
+  - telegram.token：机器人令牌（通过设置设置）
+  -workers.max_concurrent：最大。并发工作人员（默认值：3）
+  -budget.hourly_limit：每小时 API 成本限制
+
+
+另请参阅
+----------
+  help Connector 连接器系统（Telegram 等）
+  帮助合伙人合伙人制度（Multi-LLM）
+  hub/_services/claude_bridge/ 处理程序目录

@@ -1,0 +1,134 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BETWEEN - Interim checks with profiles
+======================================
+
+Reminders between tasks. Customizable through profiles.
+
+CLI COMMANDS
+-----------
+
+  On/Off:
+  bach between on                  Enable between checks
+  bach between off                 Disable
+  bach between status              Show status
+
+  Manage profiles:
+  bach between profile add "Name"     Create new profile
+  bach between profile edit "Name"    Edit profile
+  bach between profile delete "Name"  Delete profile
+  bach between profile list           View all profiles
+  bach between profile show "Name"    Profile details
+
+  Activate profile:
+  bach between use "Name"          Activate profile for session
+  bach between use default         Back to standard profile (uses "default" as name)
+
+PROFILE STRUCTURE
+---------------
+
+  {
+    "name": "Algebra",
+    "description": "Mathematics tasks with verification",
+    "message": "INTERIM CHECK:\n1. Check result\n2. Check calculation method\n3. Document",
+    "trigger_on": ["task done", "task complete"],
+    "is_default": false
+  }
+
+STANDARD PROFILES
+----------------
+
+  1. DEFAULT
+     Generic between check (current behavior)
+     "1. Time check 2. Memory OK? 3. Next task?"
+
+  2. FOCUS
+     Minimal check for focused work
+     "Continue or take a break?"
+
+  3. REVIEW
+     Detailed check with code review notes
+     "1. Review code 2. Run tests? 3. Documented?"
+
+  4. LEARNING
+     Check with reflection questions
+     "1. What learned? 2. Create a lesson? 3. Understood?"
+
+  5. CAR SESSION
+     Auto-session workflow with time control
+     "1. Time check 2. Duration of last task? 3. Continue or end of session?"
+
+EXAMPLES
+---------
+
+  # New profile for math tasks
+  bach between profile add "Mathe"
+  -> Profile 'Math' created (edit with: between profile edit)
+
+  # View profile
+  bach between profile show "Mathe"
+  -> Shows details of the profile (edit not yet implemented)
+
+  # Activate profile
+  bach between use "Mathe"
+  -> Profile 'Math' activated for this session
+
+  # Return to Standard
+  bach between use default
+
+OUTPUT FORMAT
+--------------
+
+  [BETWEEN TASKS]
+  1. Check the result of the last task
+  2. Check the calculation method for errors
+  3. Document intermediate steps
+
+  Tip: --status for overview
+
+PERSISTENCY
+----------
+
+  Table: between_profiles (bach.db)
+  Active profile: data/.between_state
+
+NOTE
+-------
+
+  Profile add/edit/delete are not yet implemented.
+  Use DB directly or wait for future version.
+
+USECASES
+--------
+
+  1. PROJECT SPECIFIC
+     Each project has its own between profile
+     -> Switch when changing projects
+
+  2. LEARNING SESSIONS
+     “Learning” profile with reflection questions
+     -> Promotes conscious learning
+
+  3. CODE REVIEW
+     “Review” profile with review checklist
+     -> Quality assurance
+
+  4. FOCUS MODE
+     Profile "Focus" with minimal check
+     -> Less interruption
+
+INTERPLAY
+-------------
+
+Between is part of the time system:
+  --help clock Time display
+  --help timer stopwatch
+  --help countdown Countdown with trigger
+  --help beat Unified time display
+
+---
+Version: 1.0 | Status: Implemented (v1.1.83)
+Handler: system/hub/time.py (BetweenHandler)
+Tool: system/tools/time_system.py (BetweenManager)

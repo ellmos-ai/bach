@@ -1,0 +1,201 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MODELO DE ACTORES - Sistema de Actores de 6 Categorías
+==========================================
+
+DESCRIPCIÓN
+El Modelo de Actores describe las 6 categorías de actores en BACH
+trabajar juntos. Reemplaza el antiguo modelo de 4 actores.
+
+Versión: 2.0.0
+
+LOS 6 ACTORES
+=============
+
+1. USUARIO (uno o más)
+----------------------------
+Rol: tomador de decisiones, cliente, proveedor de retroalimentación
+
+Interfaces:
+  - Cuadro de mensajes/Comunicación principal
+  - Área de usuario/personal
+  - Espacio de trabajo/Espacio de trabajo activo
+
+Modos:
+  - Estándar de usuario único (actual)
+  - Futuro multiusuario (administrador, estándar, invitado)
+
+Interacción:
+  - Directamente vía chat (Claude.ai / API)
+  - Asíncrono a través de MessageBox (archivos .txt/.md)
+  - Manualmente a través del sistema de archivos
+
+
+2. OPERACIÓN DE IA - "Genio en la botella"
+----------------------------------------
+Rol: Inteligencia central, razonamiento, orquestación
+
+Actual: Claude (Antrópico)
+Intercambiable: Sí, el sistema está diseñado para ser independiente de la IA
+
+Tareas:
+  - Razonamiento y toma de decisiones.
+  - Orquestación y delegación de tareas.
+  - Generación y revisión de código.
+  - Documentación y análisis.
+  - Comunicación con el usuario
+
+Características:
+  - Límite de tokens: ~190.000 por sesión
+  - Sin memoria persistente
+  - Acceso a herramientas a través de MCP/Desktop Commander
+
+
+3. OTROS AI/LLM
+-------------------
+Rol: Tareas especializadas, delegación, ahorro de tokens
+
+Disponible:
+  - Ollama (local) llama3.2, mistral, codellama
+  - Gemini (externo) Investigación profunda, documentos largos
+  - Integración de la oficina del copiloto
+  - Alternativa GPT (inactiva)
+
+Activador de delegación:
+  - Escasez de tokens (>70%)
+  - Procesamiento a granel
+  - Tareas especializadas
+  - Procesamiento paralelo
+
+
+4. SISTEMA OPERATIVO
+-------------------
+Rol: Infraestructura básica y ejecución local
+
+Incluye:
+  - Sistema operativo Windows/Linux
+  - Software instalado
+  - Tiempo de ejecución de Ollama
+  -Python/Node.js
+  - Sistema de archivos
+
+Acceso vía:
+  - Comandante de escritorio (MCP)
+  - Comandante de archivos (MCP)
+  - Comandos directos de shell
+
+
+5. HERRAMIENTAS Y SCRIPTS INTEGRADOS
+------------------------------
+Rol: desarrollos internos, automatización, tareas especiales
+
+Categorías:
+  - Herramientas de codificación c_encoding_fixer, c_json_repair, etc.
+  - Herramientas de impuestos tax_scanner, tax_sync, etc.
+  - Scripts de agente agent_framework, desarrollador_agent
+  - Herramientas de respaldo backup_manager
+  - Migración migrar_conexiones
+
+Administración:
+  bach tools list     Lista de scripts de Python (sistema de archivos)
+  bach tools db       Herramientas registradas de base de datos (CLI + IA externa)
+
+
+6. HERRAMIENTAS ONLINE (sin IA)
+-------------------------
+Rol: Servicios web especializados
+
+Categorías:
+  - Generadores de PDF, códigos QR, etc.
+  - API de bases de datos, registros.
+  - Conversión de formato convertidor
+  - Investigar motores de búsqueda que no sean de IA
+
+Nota: ¡Diferencia con herramientas de IA como ChatGPT/Midjourney!
+
+
+PRINCIPIOS DE INTERACCIÓN
+=======================
+
+Jerarquía de decisiones:
+  1. El usuario decide sobre preguntas críticas.
+  2. Claude coordina y orquesta
+  3. Ejecución de herramientas
+  4. Otras IA respaldan el reconocimiento de tokens si es necesario:
+  - Claude tiene limitaciones simbólicas.
+  - La delegación guarda tokens.
+  - Operaciones masivas a Ollama
+  - Investigación sobre Géminis
+
+Canales de comunicación:
+  - Directo: Claude <-> Usuario (Chat)
+  - Asíncrono: cuadro de mensajes (archivos)
+  - API: servidor MCP, REST
+  - Delegación: Sistema de bandeja de entrada/salida
+
+MATRIZ DE CONEXIÓN
+
+
+IA operativa (Claude):
+  -> Usuario (directo, MessageBox)
+  -> Ollama (API, cola)
+  -> Géminis (Delegación de Impulso)
+  -> SO (comandante de escritorio)
+  -> Herramientas (ejecución directa)
+  -> Servidor MCP (PubMed, Canva, Drive)
+==================
+
+Usuario:
+  -> Claude (Chat, Cuadro de mensajes)
+  -> SO (uso directo)
+  -> Herramientas (ejecución manual)
+
+Ollama:
+  <- Claude (delegación)
+  -> SO (versión local)
+
+Géminis:
+  <- Claude (Delegación de conducción)
+  -> Nube (procesamiento externo)
+
+ACCESO CLI
+
+
+Mostrar conexiones
+===========
+bach --connections list          Alias para lista
+bach --connections db            Socio de IA
+bach --connections db --type ai  Mostrar modelo de actores
+bach --connections actors        Mostrar perfiles de socios
+bach --connections partners      Esta ayuda
+bach --help actors               SISTEMA DE AGENTES
+
+
+Además de los 6 actores, hay un sistema de agentes jerárquico:
+==============
+
+Agentes jefes (coordenadas):
+  - Asistente personal (privado)
+  - Asistente de salud (privado)
+  - Auxiliar de oficina (profesional)
+
+Expertos (especializados):
+  - Gestión del hogar
+  - Administrador de salud, psicoconsejero.
+  - Agente fiscal, planificador de financiación
+
+Más información: bach --agentes de ayuda
+
+VER TAMBIÉN
+
+
+Gestión de conexiones
+----------
+bach --connections list    Modelo de actores
+bach --connections actors  Gestión de herramientas (sistema de archivos)
+bach --connections partners Partner-Profile
+bach tools list            Gestión de herramientas (base de datos)
+bach tools db              Sistema de agentes
+bach --help agents         Agenten-System

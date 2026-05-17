@@ -1,0 +1,55 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+絵文字システム (コンセプト ドキュメント)
+============================
+
+絵文字を処理するためのポリシー モジュールとツール。
+注: システム全体の自動変換はありません -
+ポリシー関数は手動で呼び出す必要があります。
+
+利用可能なモジュール:
+
+1。ポリシーモジュール (system/tools/_policies/emoji_safe.py)
+   - emoji_to_safe(text): emoji.demojize() 経由の絵文字 → ASCII タグ
+   - emoji_to_display(text): ASCII タグ → emoji.emojize()
+
+2 経由の絵文字。スキャナーツール (system/tools/c_emoji_scanner.py)
+   - CLI: python c_emoji_scanner.py --status
+   - CLI: python c_emoji_scanner.py --scan-batch
+   - CLI: python c_emoji_scanner.py <ファイル/フォルダー>
+   - BACH コマンドとして統合されていません
+
+3。 JSON 修復 (system/tools/c_json_repair.py)
+   - 修復プロセスで絵文字変換を使用します
+
+変換例:
+  ✅ → :チェックマークボタン:
+  ❌ → :十字マーク:
+  ⚠️ → :警告:
+  📁 → :ファイルフォルダ:
+  📄 → :page_facing_up:
+  🔧 → :レンチ:
+  💡 → :light_bulb:
+
+ASCII オーバーライド (カスタム、ツールで定義):
+  🟢 → [グリーン]
+  🟡 → [イエロー]
+  🔴 → [レッド]
+  ✅ → [OK]
+  ❌ → [×]
+  ⚠ → [警告]
+  → → ->
+  ← → <-
+  ↔ → <->
+
+アプリケーション:
+  - JSON ファイル: ASCII タグを推奨 (手動で変換)
+  - マークダウン: 絵文字を使用可能
+  - ログ: ASCII タグが優先
+
+なぜですか?
+  - UTF-8 エンコーディングの問題を回避する
+  - 文字化けを防ぐ
+  - すべてのシステムにわたる一貫性

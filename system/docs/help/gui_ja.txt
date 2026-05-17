@@ -1,0 +1,501 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+GUI - Web ダッシュボード
+===================
+
+説明
+GUI モジュールは、BACH 用の Web ダッシュボードを提供します。
+HTML/CSS/JS フロントエンドを備えた FastAPI に基づいています。
+--startup を使用するとバックグラウンドで自動的に起動します。
+
+2 つのサーバー:
+  - GUI サーバー (ポート 8000): HTML テンプレートを備えた Web ダッシュボード
+  - ヘッドレス API (ポート 8001): プログラム用の純粋な REST API
+
+コマンド
+-------
+bach gui start              サーバーの起動 (ブロッキング、ポート 8000)
+bach gui start --port 9000  別のポートのサーバー
+bach gui start-bg           バックグラウンドでサーバーを起動
+bach gui start-bg --port 9000  別のポートでバックグラウンド
+bach gui status             サーバーのステータスを確認
+bach gui info               GUI 情報を表示
+
+手動開始
+---------------
+Windows 用 user/start_gui.bat バッチ ファイル (ブラウザを開く)
+
+自動START
+-------------------
+bach --startup              バックグラウンドで GUI を自動的に開始します
+                            (出力の [GUI SERVER] セクションを参照)
+
+要件
+---------------
+pip install fastapi uvicorn
+
+ダッシュボード (基本)
+------------------
+/ ステータス カードとクイック アクションを備えたホームページ
+/tasks タスク管理（フィルター、CRUD、ステータス変更）
+/messages メッセージ (受信トレイ/送信トレイ、作成)
+/daemon メンテナンス (ジョブ、実行、切り替え)
+/docs API ドキュメント (Swagger)
+
+ダッシュボード (上級)
+----------------------
+/agents エージェント管理
+/memory メモリ/知識ベース
+/tools ツール管理
+/tokens トークン統計
+/tax 税金ワークフロー
+/financial 財務概要
+/health 健康状態の追跡
+/contacts 連絡先管理
+/routines ルーチンエディター
+/skills-board スキルボード
+/tasks_board カンバン タスク ボード
+/logs ログビューア
+/help ヘルプ システム
+/wiki Wiki ページ
+/inbox 受信箱ビュー
+/inbox_editor 受信トレイエディター
+/maintenance メンテナンス ダッシュボード
+/partners パートナー管理
+/personal 個人設定
+/ati ATI システム
+/usecases ユースケース
+/workflow_tuev ワークフローチェック
+/prompt-generator プロンプトジェネレーター
+/foerderplaner ファンディング プランナー
+/anonymization 匿名化
+
+特徴
+--------
+- システム ステータスを示すダッシュボード
+- タスクの概要 (ユーザー + スキャン済み)
+- メッセージシステム（CLI接続：bach msg）
+- メンテナンスの仕事
+- 自動ドキュメントを備えた REST API (/docs)
+
+CLI <-> GUI リンク
+------------------------
+ニュース:
+  CLI: bach msg send/list/read/unread
+  GUI: /messages (受信トレイ/送信トレイ、作成)
+  DB: bach.db -> メッセージテーブル
+  スタートアップ: 未読の項目が --startup に表示されます
+
+タスク:
+  CLI: Bach タスクの追加/リスト/完了
+  GUI: /tasks (CRUD、フィルター、ステータス)
+  DB: bach.db -> タスク テーブル
+
+メンテナンス:
+  CLI: bach デーモンのリスト/実行/切り替え
+  GUI: /daemon (ジョブ、実行、切り替え)
+  DB: bach.db -> スケジューラジョブ、スケジューララン
+
+
+構造
+--------
+gui/
+§── server.py FastAPI バックエンド (すべての API が統合されています)
+§── daemon_service.py バックグラウンドサービス
+§── file_watcher.py ファイルウォッチャー
+§── sync_service.py 同期
+§── api_webhook.py Webhook ハンドラ
+§── __init__.py モジュールの初期化
+§── 静的/
+│ §── css/main.css スタイリング
+│ └─ js/
+│ §── api.js APIクライアント
+│ §── app.js メインロジック
+│ §── nav.js ナビゲーション
+│ └── skill-board.js スキルボードロジック
+└── テンプレート/
+    §──index.htmlホームページ
+    §──tasks.html タスク管理
+    §──messages.html メッセージ
+    §── daemon.html デーモンマネージャー
+    └── ... (30 個以上のテンプレート)
+
+API エンドポイント (GUI サーバー - ポート 8000)
+---------------------------------------
+ステータス:
+GET /api/status システム ステータス
+
+タスク:
+GET /api/tasks ユーザータスク
+POST /api/tasks タスクの作成
+POST /api/tasks/export タスクをエクスポートする
+GET /api/tasks/{id} タスクの詳細
+PUT /api/tasks/{id} タスクを更新します
+DELETE /api/tasks/{id} タスクを削除します
+GET /api/scanned-tasks スキャンされたタスク
+GET /api/assignees タスク割り当て
+
+メッセージ (CLI 管理):
+GET /api/messages メッセージ (メッセージ テーブル)
+POST /api/messages メッセージの作成
+PUT /api/messages/{id}/read 既読としてマーク
+PUT /api/messages/{id}/archive メッセージをアーカイブする
+PUT /api/messages/{id}/delete メッセージを削除
+
+デーモン:
+GET /api/daemon/jobs デーモン ジョブ
+POST /api/daemon/jobs ジョブの作成
+PUT /api/daemon/jobs/{id}/ジョブの有効化/無効化を切り替える
+POST /api/daemon/jobs/{id}/run ジョブを手動で実行する
+GET /api/daemon/runs ジョブの実行
+GET /api/daemon/status デーモンのステータス
+POST /api/daemon/start デーモンを起動します
+POST /api/daemon/stop デーモンを停止します
+POST /api/daemon/kill-all すべてのジョブを強制終了します
+PUT /api/daemon/config デーモン構成を変更します
+
+メモリ:
+GET /api/memory/overview メモリの概要
+GET /api/memory/working ワーキングメモリ
+GET /api/memory/lessons レッスン
+GET /api/memory/facts ファクト
+GET /api/memory/sessions セッション
+POST /api/memory/working ワーキングメモリエントリを作成します
+POST /api/memory/lessons レッスンを作成する
+POST /api/memory/facts ファクトの作成
+DELETE /api/memory/facts/{id} ファクトを削除します
+DELETE /api/memory/working/{id} 作業エントリを削除します
+DELETE /api/memory/lessons/{id} レッスンを削除
+GET /api/memory/stats/db DB統計
+POST /api/memory/maintenance/cleanup メモリのクリーンアップ
+/api/memory/sessions/{id} セッションの詳細を取得
+
+スキル:
+GET /api/skills スキルのリストを取得
+GET /api/skills/categories スキル カテゴリ
+/api/skills/{id} スキルの詳細を取得
+
+ツール:
+GET /api/tools ツールのリストを取得します
+/api/tools/{name} ツールの詳細を取得する
+POST /api/tools/{name}/run ツールを実行
+
+エージェント:
+GET /api/agents エージェントリスト
+PUT /api/agents/{id}/エージェントの有効化/無効化を切り替え
+
+ATI:
+GET /api/ati/stats ATI 統計
+GET /api/ati/tasks ATI タスク
+GET /api/ati/tasks/{id} ATI タスクの詳細
+GET /api/ati/sessions ATI セッション
+POST /api/ati/session/start ATI セッションを開始します
+POST /api/ati/session/start-cli ATI CLI セッション
+POST /api/ati/tasks ATI タスクの作成
+PUT /api/ati/tasks/{id} ATI タスクの更新
+DELETE /api/ati/tasks/{id} ATI タスクを削除
+
+財務:
+GET /api/financial/status 財務状況
+GET /api/financial/emails 財務メール
+/api/financial/emails/{id} のメール詳細を取得する
+GET /api/financial/subscriptions サブスクリプション
+/api/financial/subscriptions-unified United サブスクリプションを取得する
+DELETE /api/financial/subscriptions/{id} サブスクリプションを削除します
+GET /api/financial/categories カテゴリ
+POST /api/financial/sync Financial-Sync
+POST /api/financial/save-json JSON を保存
+GET /api/financial/config Financial-Config
+PUT /api/financial/config 構成を更新
+PUT /api/financial/emails/{id}/status メールのステータスを変更する
+GET /api/financial/export 財務のエクスポート
+GET /api/financial/accounts 電子メールアカウント
+POST /api/financial/accounts アカウントの作成
+PUT /api/financial/accounts/{id}/toggle アカウントを有効にする
+POST /api/financial/accounts/{id}/test テスト アカウント
+DELETE /api/financial/accounts/{id} アカウントを削除
+GET /api/financial/imap-presets IMAP プリセット
+GET /api/financial/gmail/find-credentials Gmail 認証情報
+POST /api/financial/gmail/setup Gmail のセットアップ
+GET /api/financial/gmail/status Gmail ステータス
+GET /api/financial/profiles プロファイル
+POST /api/financial/profile プロファイルの作成
+PUT /api/financial/profiles/{id} プロフィールを更新
+DELETE /api/financial/profiles/{id} プロフィールを削除
+GET /api/financial/false-positives 誤検知
+POST /api/financial/false-positives 誤検知の作成
+DELETE /api/financial/false-positives/{id} 誤検知を削除します
+POST /api/financial/profile/test テストプロファイル
+POST /api/financial/profiles/import プロファイルをインポートする
+GET /api/financial/contracts コントラクト
+POST /api/financial/contracts 契約の作成
+PUT /api/financial/contracts/{id} 契約を更新する
+DELETE /api/financial/contracts/{id} 契約を削除
+GET /api/financial/insurance 保険
+GET /api/financial/deadlines
+POST /api/financial/insurance 保険を作成する
+PUT /api/financial/insurance/{id} 保険を更新します
+DELETE /api/financial/insurances/{id} 保険を削除します
+GET /api/financial/bank-accounts 銀行口座
+POST /api/financial/bank-accounts 銀行口座を作成する
+PUT /api/financial/bank-accounts/{id} 銀行口座を更新します
+DELETE /api/financial/bank-accounts/{id} 銀行口座を削除します
+GET /api/financial/credits クレジット
+POST /api/financial/credit クレジットの作成
+PUT /api/financial/credits/{id} クレジットを更新します
+DELETE /api/financial/credits/{id} クレジットを削除
+
+税金:
+GET /api/tax/documents/unlinked リンクされていない税務書類
+POST /api/tax/posten/{id}/link リンクドキュメント
+POST /api/tax/match-bank 銀行マッチング
+
+レポート (資金調達プランナー):
+GET /api/report/status レポートステータス
+GET /api/report/clients クライアント
+POST /api/report/export レポートのエクスポート
+POST /api/report/generate レポートの生成
+
+マウント:
+GET /api/mounts マウントのリストを取得します
+POST /api/mounts マウントの作成
+DELETE /api/mounts/{alias} マウントを削除します
+POST /api/mounts/restore マウントの復元
+
+スキャナ:
+POST /api/scanner/trigger トリガースキャナ
+POST /api/scanner/run スキャナーの開始
+GET /api/scanner/status スキャナーのステータス
+GET /api/scanner/tools スキャナー ツール
+GET /api/scanner/config Scanner-Config
+
+メンテナンス:
+POST /api/maintenance/trigger トリガーメンテナンス
+GET /api/maintenance/status メンテナンス ステータス
+
+トークン:
+GET /api/tokens/usage トークンの使用状況
+
+ログ:
+/api/system/logs ログ ファイルを取得する
+GET /api/system/logs/{name} ログ ファイルの読み取り
+
+受信箱:
+GET /api/inbox/status 受信トレイのステータス
+GET /api/inbox/config 受信トレイ構成
+POST /api/inbox/config 構成を更新します
+/api/inbox/folders フォルダーを取得する
+POST /api/inbox/folders フォルダーの作成
+PUT /api/inbox/folders フォルダーを更新します
+DELETE /api/inbox/folders フォルダーを削除します
+GET /api/inbox/rules ルール
+POST /api/inbox/rules ルールの作成
+PUT /api/inbox/rules/{id} ルールを更新します
+DELETE /api/inbox/rules/{id} ルールを削除します
+POST /api/inbox/scan 受信トレイをスキャンします
+GET /api/inbox/unsorted 未ソートの要素
+POST /api/inbox/sort 要素をソートする
+GET /api/inbox/preview/{file} ファイルのプレビュー
+GET /api/inbox/analyze/{file} ファイルを分析する
+PUT /api/inbox/settings 設定を更新
+
+スキルボード:
+GET /api/skills-board/item-file アイテムファイルの読み込み
+PUT /api/skills-board/item-file アイテムファイルを保存
+GET /api/skills-board/hierarchy 階層の読み取り
+PUT /api/skills-board/hierarchy 階層を保存
+
+ヘルプ システム:
+GET /api/help ヘルプ ファイルの一覧表示
+GET /api/docs/help/{name} ヘルプ ファイルを読む
+PUT /api/docs/help/{name} ヘルプ ファイルを更新する
+POST /api/help ヘルプ ファイルの作成
+DELETE /api/docs/help/{name} ヘルプ ファイルを削除します
+GET /api/docs/help/search/{term} 検索ヘルプ
+
+匿名化 (Foerderplaner):
+GET /api/anonymization/clients クライアント
+POST /api/anonymization/profile プロファイルの作成
+POST /api/anonymization/upload ドキュメントのアップロード
+POST /api/report/session/start レポート セッションを開始します
+POST /api/report/session/{id}/import インポート
+POST /api/report/session/{id}/profile プロファイル
+POST /api/report/session/{id}/anonymize 匿名化
+POST /api/report/session/{id}/prompt プロンプト
+POST /api/report/session/{id}/generate 生成
+POST /api/report/session/{id}/cleanup クリーンアップ
+/api/report/session/{id} セッションの詳細を取得する
+GET /api/report/pending 保留中のレポート
+
+プロンプト ジェネレーター:
+GET /api/prompt-generator/templates テンプレート
+GET /api/prompt-generator/template/{path} テンプレートを読み取る
+POST /api/prompt-generator/send/task タスクとして送信
+POST /api/prompt-generator/send/session セッションに送信
+POST /api/prompt-generator/send/copy クリップボードへ
+GET /api/prompt-generator/daemon/status デーモンのステータス
+PUT /api/prompt-generator/daemon/config デーモン構成
+POST /api/prompt-generator/start-desktop デスクトップを起動します
+POST /api/prompt-generator/daemon/toggle デーモンの切り替え
+POST /api/prompt-generator/templates/save テンプレートの保存
+
+自動セッション:
+POST /api/auto-sessions/launch セッションの開始
+
+セッション:
+GET /api/session/activities アクティビティ
+POST /api/session/generate-summary サマリーの生成
+POST /api/session/end セッションを終了
+
+繰り返し:
+GET /api/quirting 定期的なタスク
+POST /api/quirting/check チェックを実行
+POST /api/quirting/trigger/{id} トリガー タスク
+
+ユースケース:
+GET /api/usecases ユースケース
+GET /api/usecases/{id} ユースケースの詳細
+POST /api/usecases ユースケースの作成
+PUT /api/usecases/{id} ユースケースを更新する
+DELETE /api/usecases/{id} ユースケースを削除します
+POST /api/usecases/{id}/test テストのユースケース
+POST /api/usecases/test-all すべてをテストする
+POST /api/usecases/{id}/execute ユースケースを実行
+
+連絡先:
+/api/contacts 連絡先を取得する
+/api/contacts/{id} の連絡先詳細を取得する
+POST /api/contacts 連絡先の作成
+PUT /api/contacts/{id} 連絡先を更新
+DELETE /api/contacts/{id} 連絡先を削除
+GET /api/contacts/export 連絡先をエクスポートする
+
+ルーチン:
+GET /api/routines ルーチン
+GET /api/routines/{id} ルーチンの詳細
+POST /api/routines ルーチンの作成
+PUT /api/routines/{id} ルーチンを更新します
+POST /api/routines/{id}/complete ルーチンを完了する
+DELETE /api/routines/{id} ルーチンを削除します
+GET /api/routines/export エクスポート ルーチン
+
+WebSocket:
+GET /api/ws/status WebSocket ステータス
+
+ワークフロー TÜV:
+GET /api/workflow-tuev ワークフロー
+POST /api/workflow-tuev/{id}/check ワークフローの確認
+POST /api/workflow-tuev/check-all すべてチェックする
+POST /api/workflow-tuev/sync ワークフローを同期する
+GET /api/workflow-tuev/content ワークフロー コンテンツ
+
+AI ヘッドレス:
+POST /api/ai/headless/run AI タスクの実行
+
+Bach エージェント:
+GET /api/bach-agents Bach エージェントのリスト
+
+
+HEADLESS API (ポート 8001) - プログラムによるアクセス
+-----------------------------------------------------
+目的: HTML を含まない純粋な REST API、スクリプト/プログラム用
+
+認証:
+  - ローカルホスト (127.0.0.1、::1、ローカルホスト): 認証は必要ありません (信頼モード)
+  - リモート: X-BACH-Key ヘッダーまたは ?api_key= パラメーター
+  - キー: 初回起動時に自動生成 → data/.api_key
+
+起動:
+  python gui/api/headless.py [--port 8001] [--key YOUR_KEY]
+
+ドキュメント:
+  http://localhost:8001/api/docs (Swagger)
+  http://localhost:8001/api/redoc (ReDoc)
+
+エンドポイント (プレフィックス: /api/v1):
+
+タスク:
+GET /api/v1/tasks タスクのリスト (フィルター: ステータス、優先度、制限)
+POST /api/v1/tasks タスクの作成
+/api/v1/tasks/{id} タスクの詳細を取得する
+PUT /api/v1/tasks/{id} タスクを更新
+
+メモリ:
+GET /api/v1/memory/facts ファクト (フィルター: category、min_confidence)
+GET /api/v1/memory/lessons レッスン (フィルター: カテゴリ、制限)
+GET /api/v1/memory/search メモリの検索 (パラメータ: q)
+POST /api/v1/memory メモリ エントリを作成します
+
+メッセージ (キュー + 受信箱):
+POST /api/v1/messages/send メッセージをキューに入れる (connector_messages)
+GET /api/v1/messages/queue キューのステータス (コネクタごとに保留中/失敗/デッド)
+GET /api/v1/messages/inbox 受信箱の読み取り (フィルター: ステータス、送信者、ページネーション)
+POST /api/v1/messages/route 手動でルーティングをトリガーします (→ 受信箱)
+
+システム:
+GET /api/v1/status システムステータス (タスク、メモリ、DB サイズ)
+POST /api/v1/backup バックアップの作成
+GET /api/v1/skills スキルのリスト (フィルター: タイプ、制限)
+GET /api/v1/health Health-Check (パブリック、認証なし)
+
+例
+---------
+GUI サーバー (ポート 8000):
+  # バックグラウンドでサーバーを起動
+  bach gui start-bg
+
+  # または: サーバーを開始 (ブロック)
+  bach gui start
+
+  # ブラウザを開く
+  http://127.0.0.1:8000
+
+  # API ドキュメント
+  http://127.0.0.1:8000/docs
+
+  # 別のポート上のサーバー
+  bach gui start --port 9000
+
+  # ステータスを確認します
+  bach gui status
+
+ヘッドレス API (ポート 8001):
+  # サーバーを起動します
+  Python gui/api/headless.py --ポート 8001
+
+  # カスタム API キーを使用する
+  Python gui/api/headless.py --key MY_KEY
+
+  # API ドキュメント
+  http://localhost:8001/api/docs
+
+  # タスクを作成します (localhost = 認証なし)
+  curl -X POST http://localhost:8001/api/v1/tasks\
+       -H "コンテンツ タイプ: application/json" \
+       -d '{"タイトル": "テスト", "優先度": "P2"}'
+
+  # APIキーを使用してリモートから
+  カール -X GET http://REMOTE:8001/api/v1/status\
+       -H "X-BACH キー: YOUR_KEY"
+
+  # メッセージを送信
+  curl -X POST http://localhost:8001/api/v1/messages/send\
+       -H "コンテンツ タイプ: application/json" \
+       -d '{"コネクタ": "信号", "受信者": "+49...", "コンテンツ": "テスト"}'
+
+  # キューのステータス
+  カール http://localhost:8001/api/v1/messages/queue
+
+  # 受信箱を読む
+  curl "http://localhost:8001/api/v1/messages/inbox?status=unread&limit=20"
+
+関連項目
+----------
+bach --help wartung         メンテナンス ジョブ
+bach --help tasks           タスク管理
+bach --help messages        メッセージ CLI
+bach --help connector       コネクタ システム
+gui/api/headless.py ヘッドレス API ソース
+gui/api/messages_api.py メッセージ API ルーター

@@ -1,0 +1,78 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+MODO DE DESARROLLO (Ciclo Dev)
+==============================
+
+DESCRIPCIÓN
+------------
+BACH se desarrolla en un ciclo de 8 fases. Cada característica pasa por
+el mismo proceso: del requisito al caso de uso validado.
+
+EL CICLO
+----------
+
+  Fase 1: formular funcionalmente solicitudes y requisitos de funciones
+  Fase 2: Verificar el estado actual ¿Qué ya existe? Evite duplicados
+  Fase 3: flujos de trabajo de planificación funcional, agentes, expertos, habilidades, servicios
+  Fase 4: Crear archivos de habilidades funcionales de frontend, flujos de trabajo y perfiles de agentes
+  Fase 5: Controladores CLI del plan backend, esquema de base de datos, puntos finales de API
+  Fase 6: Implementar código Python backend, herramientas y migraciones de bases de datos
+  Fase 7: Pruebas técnicas Pruebas B/O/E, registro de corrección de errores
+  Fase 8: Casos de uso Validación de un extremo a otro desde la perspectiva del usuario
+
+PRINCIPIOS BÁSICOS
+---------------
+  1. Systemic First Reutilizable para cada usuario
+  2. CLI First Todo se puede controlar a través del terminal
+  3. datos de usuario de aislamiento dist_type separados (0/1/2/3)
+  4. Funcional primero Describir primero y luego implementar
+  5. Casos de uso como pruebas Validación Y fuente de requisitos
+
+EL CIRCUITO
+-------------
+
+  Los casos de uso (Fase 8) generan nuevos requisitos (Fase 1).
+  Los casos de uso fallidos se convierten en errores o solicitudes de funciones.
+  Los casos de uso exitosos validan el sistema.
+
+  Fase 8 -> Fase 1 -> Fase 2 -> ... -> Fase 8 (ciclo)
+
+NIVEL DE PLANIFICACIÓN (Fase 3)
+-----------------------------
+
+  Ubicación de la pregunta de nivel
+  --------- -------------------------- ------------------------
+  Coordinar el flujo de trabajo ¿CUÁNDO/CÓMO?       habilidades/flujos de trabajo/*.md
+  ¿Agente QUIÉN ejecuta?              agentes/*.txt
+  Experto ¿QUIÉN tiene conocimientos especializados?          agentes/_expertos/*/
+  Habilidad ¿QUÉ se está haciendo?              habilidades/_servicios/*.md
+  Servicio ¿Qué tan técnico?               habilidades/_servicios/*/
+  Herramienta ¿EN QUÉ se está trabajando?       tools/*.py
+
+CHECKLIST NUEVO SERVICIO (Fase 6)
+-----------------------------------
+  [] ¿Funciona sin datos de usuario (DB vacía)?
+  [] ¿Comando CLI disponible?
+  [] ¿Entrada desde archivos/carpetas?
+  [] ¿Salida en base de datos estructurada?
+  [] dist_type se establece automáticamente?
+  [] ¿Escanear/importar repetible (idempotente)?
+  [] ¿No hay una ruta codificada?
+  [ ] ¿Herramienta registrada?
+  [ ] ¿Se creó el archivo de ayuda?
+
+ARCHIVO DE FLUJO DE TRABAJO
+--------------
+  Proceso detallado: skills/workflows/dev-cycle.md
+
+VER TAMBIÉN
+----------
+  bach --help usecase           Documentación de casos de uso (Fase 8)
+  bach --help test              Procedimientos de prueba (Fase 7)
+  bach --help practices         Principios de arquitectura
+  docs/_archive/WICHTIG_SYSTEMISCH_FIRST.md Principio básico
+
+---
+Versión: 1.0.0 | Creado: 2026-01-28

@@ -1,0 +1,276 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH 代理系统
+==================
+
+带有角色系统的老板代理和专家的分层系统。
+
+三个级别
+-----------
+
+  技能 实质性。知识、代码、工作流程。
+             便携、可出口、真正的价值。
+
+  角色界面。名字、风格、性格。
+             可个性化（巴赫代理重命名），取决于品味。
+
+  会话 持续时间。上下文窗口、工具、回合。
+             技术细节。
+
+结构
+--------
+
+老板代理协调，专家专业：
+
+  [老板代理]
+       |
+       +-- [专家1]
+       +-- [专家 2]
+
+
+可用代理（代理/）
+-------------------------------------
+
+[专业]
+
+  ATI (ati/) — 角色：阿特拉斯
+    具有扫描仪、会话的软件开发代理
+    功能：任务扫描器、无头会话、工具发现
+
+  开发商（开发商）
+    一般开发商代理
+
+  生产
+    生产流程代理
+
+  研究
+    科学研究（PubMed、困惑、共识）
+
+  办公室助理（办公室助理）——角色：克拉拉
+    税收、资金规划、文件
+    专家：税务师（Theodor）、资金规划师（Florian）
+
+  反思
+    自我反思和荟萃分析
+
+
+[私人]
+
+  私人助理（personal-assistant）——角色：保罗
+    预约管理、研究、沟通
+    专家：家务管理（玛莎）
+
+  健康助理（健康助理）——角色：海伦娜
+    医疗文件和管理
+    专家：健康管理员（古斯塔夫）、心理咨询师（苏菲）
+
+  保险（保险）
+    保险管理
+
+  Financial Assistant（财务助理）——角色：菲利克斯
+    财务规划和预算
+
+
+[测试]
+
+  测试代理（测试代理）
+    用于测试和实验
+
+
+PERSONA SYSTEM (SUGAR v3.8.0)
+------------------------------
+
+自 SUGAR v3.8.0 起，代理和专家已命名角色：
+数据库中的人类名字+字符描述。
+
+  数据库列：
+    display_name 角色名字（例如“Atlas”、“Theodor”）
+    人物角色文本（例如“务实的工匠......”）
+
+  命令：
+    bach agent rename <name> <neuer-name>   更改显示名称
+    bach agent list                          在括号中显示角色
+    bach agent info <name>                   包括角色的详细信息
+
+  名称解析（resolve_agent_name）：
+    1. 确切的系统名称（例如“tax-agent”）
+    2. 显示名称（例如“Theodor”）
+    3. 子字符串（例如“theo”）
+    4. 模糊/编辑（例如“teodor”）
+
+  角色注入：
+    当代理启动时，角色将作为系统提示符注入：
+    “你的名字是‘西奥多’。你的角色：阴茎税务顾问……”
+    请参阅：hub/agent_launcher.py (_get_persona_info)
+
+
+  Boss 特工角色：
+
+    系统名称|角色|性格
+    阿蒂|阿特拉斯|务实工匠
+    办公室助理|克拉拉 |结构化组织者
+    财务助理|菲利克斯|细心的节俭者
+    健康助理|海伦娜|贴心伴侣
+    私人助理 |保罗 |多才多艺的全能选手
+
+
+  专家角色：
+
+    系统名称|角色|性格
+    税务代理|西奥多 |阴茎税务顾问
+    财务邮件 |弗里达 |邮件侦探
+    订阅服务|安东|取消王
+    医疗保健管理员|古斯塔夫|调查结果档案管理员
+    心理咨询师|苏菲 |善解人意的倾听者
+    健康进口 |雨果 |认真的数据保管员
+    预算管理|玛莎|节俭管家
+    资金规划师|弗洛里安 |资助专家
+    应用专家|本杰明|职业教练
+    数据分析|戴安娜|数字窃窃私语者
+    决策简报|迪特里希|酷战略家
+    报告生成器 |丽塔|高效的报告引擎
+    抖音先生 |抖音先生 |战略战术家
+    转录服务|特里斯坦|耐心的倾听者
+    维基问答 |威廉 |测验大师
+
+  模板：skills/_templates/TEMPLATE_PERSONA.md
+  迁移：data/schema/migrations/034_agent_personas.py
+
+
+CLI 命令
+-----------
+
+  # 列出代理
+  bach --agents list
+  python 工具/agent_cli.py 列表
+
+  # 显示专家
+  python 工具/agent_cli.py 专家
+
+  # 代理详细信息
+  python tools/agent_cli.py info <代理名称>
+
+  # 重命名角色
+  bach agent rename <name> <neuer-display-name>
+
+# 初始化用户文件夹
+  python 工具/agent_cli.py 初始化全部
+  python tools/agent_cli.py init <代理名称>
+
+  # 设置数据库
+  python 工具/agent_cli.py setup-db
+
+  # 系统状态
+  python 工具/agent_cli.py 状态
+
+
+目录
+-------------
+
+  特工/Boss 特工定义（11 名特工）
+  Agents/_experts/ 包含 CONCEPT.md 的专家文件夹（17 位专家）
+  user/<agent>/ 每个代理的用户数据文件夹
+
+重要：代理和专家是不同的概念！
+  - 代理人（老板）：协调和委托（代理人/）
+  - 专家：专门执行（agents/_experts/）
+  - 帮助中列出的一些“代理”实际上是专家：
+    * 税务代理 -> _experts/tax/
+    * 资金规划师 -> _experts/foerderplaner/
+    * 预算管理->_专家/预算管理/
+    * 心理咨询师 -> _experts/心理咨询师/
+
+
+数据库
+-----------
+
+  巴赫.数据库：
+    - bach_agents（代理注册表+显示名称+角色）
+    - bach_experts（专家注册表+显示名称+角色）
+    - agent_synergies（代理之间的协同作用）
+
+  巴赫.数据库：
+    - 每个专家的表格（健康_*、家庭_*等）
+
+
+工作流程
+--------
+
+1。激活代理（通过技能或 CLI）
+2. Agent加载技能定义和用户数据
+3. Persona作为系统提示符注入（display_name + persona）
+4. 专题：专家代表团
+5.专家讲解，老板代理总结
+
+
+GUI
+---
+
+  http://127.0.0.1:8000/agents 代理概述
+  http://127.0.0.1:8000/ati ATI 代理详细信息
+  http://127.0.0.1:8000/tax 税务代理详细信息
+
+
+文件
+-------
+
+  Agents/ati/ATI 代理文件夹
+  Agents/ati/ATI.md ATI 定义
+  代理/个人助理.txt
+  代理/healthassistant.txt
+  代理/bueroassistant.txt
+  代理/tax-agent.txt
+  代理/research.txt
+  代理/developers.txt
+  代理/生产.txt
+  Agents/README.md
+
+
+标准
+---------
+
+强制文件：
+
+  1. 每个代理和专家都必须有一个技能.md
+     （不是 roll.txt，不是 CONCEPT.md 作为替代品）
+  2. SKILL.md 必须包含 YAML-Frontmatter：
+     名称、版本、类型、描述（至少）
+  3. CONCEPT.md 是可选的（用于详细概念）
+  4. role.txt 已弃用（迁移到 SKILL.md）
+
+Persona 系统（SUGAR v3.8.0 -- 已实施）：
+
+  所有代理和专家都在数据库中命名了人物角色。
+  角色由display_name（名字）和persona（角色）组成。
+
+  概念：角色（谁）+技能（什么）+会话（如何）
+    - 角色：具有风格和边界的角色（数据库+可选文件）
+    - 技能：使用代码和指令的能力（可导出）
+    - 会话：运行时环境（工具、轮次、模型）
+
+  寻址：可以通过角色名称来寻址代理
+    （例如“向西奥多询问税收问题”）
+
+  未来：agents/personas/ 中的角色文件（逐步迁移）
+
+人类兼容性：
+
+  - 技能可导出（开放标准、LobeHub/Cursor 等）
+  - 角色/代理不可移植（仅限克劳德代码/BACH）
+  - 导出：巴赫技能导出 <名称> --format anthropic
+  - 新技能：巴赫技能创建<名称> --format anthropic
+
+  请参阅： bach help Skill_standards
+
+
+另请参阅
+----------
+
+  bach help skill_standards  人类技能标准
+  bach help actors           Actors 概述
+  bach help bach_paths       目录结构
+  bach help practices        架构原则
+  bach help ati              ATI 软件开发人员详细信息
+  bach wiki lobehub          LobeHub Marketplace

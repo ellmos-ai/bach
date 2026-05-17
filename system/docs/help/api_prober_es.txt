@@ -1,0 +1,65 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+API PROBER - Descubrimiento y documentación de API REST
+==================================================
+
+DESCRIPCIÓN
+------------
+Delegado al módulo MODULAR_AGENTS/ApiProber para descubrimiento automático
+y documentación de API REST. Escanea URL, guarda puntos finales y
+parámetros en una base de datos local y exporta los resultados.
+
+OPERACIONES
+-----------
+  sonda <url> [--profundidad N] [--delay-ms N] [--max-requests N]
+    Muestra una URL de API. La profundidad controla la profundidad de la recursividad,
+    delay-ms el tiempo de espera entre solicitudes, límite máximo de solicitudes.
+    Guarda los resultados en la base de datos local.
+
+  lista
+    Enumera todos los servicios conocidos de la base de datos local.
+    Muestra el nombre, la URL base, el recuento de puntos finales y la marca de tiempo del último.
+    Sondeos por servicio.
+
+  estado <nombre del servicio>
+    Información detallada sobre un servicio: URL base, encabezado del servidor,
+    Puntos finales con métodos y estado de autenticación, estadísticas de ejecución de sonda.
+
+  exportar <servicio> [--formato md|json]
+    Exporta documentación API para un servicio como Markdown o JSON.
+    El formato predeterminado es Markdown.
+
+  configuración [--mostrar]
+    Muestra la configuración actual de ApiProber, incluido el tiempo de espera.
+    Configuración (corrección B36: connect_timeout_s, read_timeout_s).
+
+EJEMPLOS
+---------
+  bach api-prober probe https://api.github.com --depth 2
+    Muestra la API de GitHub en profundidad 2 y guarda los resultados.
+
+  bach api-prober list
+    Muestra todos los servicios detectados hasta el momento.
+
+  bach api-prober status github
+    Información detallada sobre la API de GitHub (si corresponde).
+
+  bach api-prober export github --format json
+    Exporta la documentación de la API de GitHub como JSON.
+
+  bach api-prober config
+    Muestra el tiempo de espera actual y los parámetros de configuración.
+
+ARCHIVOS
+-------
+  Controlador: hub/api_prober.py
+  Módulo: MODULAR_AGENTS/ApiProber/ (externo)
+  Base de datos: config.json -> get_db_path()
+  Exportaciones: config.json -> get_export_dir()
+
+VER TAMBIÉN
+----------
+  orquestador de ayuda: ProbeOrchestrator (motor de descubrimiento de API interno)
+  controlador de ayuda - descripción general del sistema controlador

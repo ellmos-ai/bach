@@ -1,0 +1,162 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Next exam: 2026-11-13
+# Resources: [hub/agent_launcher.py, agents/, agents/_experts/]
+
+AGENT - Agent launcher and administration
+======================================
+
+DATE: 2026-05-09
+
+The agent system allows you to start and manage BACH agents
+as separate Claude code processes. Each agent comes with their own
+SKILL.md started as an identity.
+
+STRUCTURE
+--------
+
+  [Boss Agent] -- Coordinates and delegates
+       |
+       +-- [Expert 1] -- Specialized execution
+       +-- [Expert 2]
+
+Agent directories:
+  agents/ Boss agents (with SKILL.md)
+  agents/_experts/ Experts (with SKILL.md)
+
+CLI COMMANDS (bach agent)
+------------------------
+
+  list List all available agents
+  start <name> Start agent (new terminal window)
+  stop <name> Stop running agent
+  steer <name> "..." Save operator hint for running agent
+  rename <name> <new> Change the display name of an agent/expert
+  status Show all running agents
+  doctor [name] Agent preflight and recovery notes
+  list --json agents including runtime metadata as JSON
+  start <name> --json Start response machine-readable as JSON
+  stop <name> --json Stop response machine-readable as JSON
+  steer <name> --json Steer response including queue status as JSON
+  status --json Running/registered agents as JSON
+  doctor [name] --json Diagnosis machine-readable as JSON
+
+OPTIONS FOR START
+-------------------
+
+  --mode plan|default mode (default: default)
+  --model sonnet|opus|haiku AI model (default: sonnet)
+  --dry-run Just check, don't start
+  --json Machine-readable output for list/start/stop/status/doctor
+
+EXAMPLES
+---------
+
+  # List all agents (including running status)
+  bach agent list
+
+  # Start agent
+  bach agent start ati
+  bach agent start research --model opus
+  bach agent start entwickler --mode plan
+  bach agent start ati --dry-run
+  bach agent start ati --dry-run --json
+
+  # Show running agents
+  bach agent status
+  bach agent status --json
+  bach agent steer ati "Bitte nur Statusflächen anfassen." --json
+
+  # Check start requirements and recovery
+  bach agent doctor ati
+  bach agent doctor Theodor --json
+
+  # Stop agent (by name)
+  bach agent stop ati
+  bach agent stop ati --json
+
+AVAILABLE AGENTS (selection)
+-----------------------------
+
+  [PROFESSIONAL]
+    ati software developer agent (scanner, sessions)
+    developer General developer agent
+    production Production workflow agent
+    research Scientific research
+    office assistant taxes, funding planning, documentation
+    reflection Self-reflection and meta-analysis
+
+  [PRIVATE]
+    personal assistant appointment management, research
+    health assistant Medical documentation
+    insurance insurance administration
+
+  [EXPERTS]
+    tax tax expert (under _experts/)
+    funding planner funding application expert
+    budget management
+    psycho-consultant
+
+Current list: bach agent list
+
+HOW IT WORKS
+-------------------
+
+1. `bach agent start <name>` finds the agent's SKILL.md
+2. A temporary CLAUDE.md is created (data/temp/agent_<name>/)
+3. A new terminal window opens with Claude Code
+4. PID is stored in data/agent_pids/<name>.pid
+5. `bach agent steer <name> "..."` writes operator notes in `OPERATOR_NOTES.md`
+6. `bach agent stop <name>` ends the process and deletes the PID
+
+REQUIREMENTS
+---------------
+- Claude Code CLI must be installed (command: `claude`)
+- Agent must have a SKILL.md (agents/<name>/SKILL.md)
+
+RECOVERY / TROUBLESHOOTING
+--------------------------
+
+If `bach agent start ...` fails or an agent window immediately returns
+closes, run the diagnostics first:
+
+  bach agent doctor ati
+  bach agent doctor ati --json
+
+`doctor` checks:
+- whether the Claude Code CLI is found in the PATH
+- whether `data/agent_pids/` and `data/temp/` are writable
+- whether the requested agent and its `SKILL.md` are readable
+- whether outdated PID files need to be cleaned up
+
+Typical next steps after the report:
+- `bach agent start <name> --dry-run` for a safe preliminary test
+- `bach agent status --json` for running or hanging sessions
+- Install Claude Code CLI or check login/setup locally
+
+DATABASE
+---------
+  bach.db:
+    agents agent registry
+    agent_synergies Synergies between agents
+
+FILES
+-------
+  hub/agent_launcher.py Handler implementation
+  agents/ Boss agent folder
+  agents/_experts/ Experts folder
+  data/agent_pids/ PID files of running agents
+  data/temp/agent_*/ Temporary CLAUDE.md per agent
+
+DIFFERENCE TO agents.txt
+--------------------------
+This document describes the AgentLauncherHandler (bach agent ...).
+For an overview of all agents and experts:
+  bach --help agents
+
+SEE ALSO
+----------
+  bach --help agents      Agent overview (all agents)
+  bach --help skills      SKILL.md system
+  bach --help ati         ATI software developer details

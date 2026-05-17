@@ -1,0 +1,97 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+NOMBRE DEL MANEJADOR
+============
+fs - CLI de protección del sistema de archivos
+
+Manejador para verificar la integridad y restaurar archivos principales del sistema BACH.
+Protege archivos críticos contra eliminación accidental o corrupción.
+
+
+DESCRIPCIÓN
+============
+El controlador fs administra una instantánea y un sistema de manifiesto para el sistema de archivos BACH.
+Clasifica archivos por nivel de protección (dist_type):
+  - dist_type=2: CORE (archivos esenciales del sistema, máxima prioridad)
+  - dist_type=1: TEMPLATE (plantillas, prioridad media)
+  - dist_type=0: USUARIO (datos de usuario, sin automatización)
+
+Dependencias:
+  - herramientas/fs_protection.py (clase FFSProtection)
+  - herramientas/fs_protection.py (clase PathClassifier)
+  - data/bach.db (base de datos de manifiesto)
+  - dist/snapshots/*.orig (archivo de instantáneas)
+
+
+OPERACIONES
+===========
+check [predeterminado]
+    Comprueba la integridad de todos los archivos monitoreados.
+    Compara archivos actuales con instantáneas de dist/snapshots/.
+    Estado de salida y lista de archivos faltantes/dañados.
+    Llamada: bach fs check
+
+heal [archivo] o --all [--force]
+    Recupera archivos perdidos o dañados.
+    - bach fs heal <archivo>: Restaura un archivo específico desde una instantánea
+    - bach fs heal --all: Restaura todos los archivos faltantes
+    - --force flag: sobrescribe sin previo aviso
+    Devolución: (éxito, mensaje)
+
+clasificar <ruta>
+    Muestra la clasificación y nivel de protección de un camino.
+    Genera dist_type (0/1/2) y nivel de protección (USUARIO/PLANTILLA/CORE).
+    Llamada: bach fs classify /ruta/al/archivo
+
+scan [sin argumentos]
+    Analiza sistema/directorio y grupos por dist_type.
+    Genera el número de archivos por categoría.
+    Llamada: bach fs scan
+
+status [sin argumentos]
+    Muestra el estado de protección actual con metadatos:
+    - Número de instantáneas en dist/snapshots/
+    - Entradas de manifiesto en bach.db
+    - Marca de tiempo de la última comprobación de integridad (fs_manifest.json)
+    - Marca de tiempo de la última copia de seguridad
+    Llamada: estado de bach fs
+
+
+EJEMPLOS
+=========
+1. Verifique la integridad del sistema:
+   $ cheque de bach fs
+
+2. Recupere todos los archivos principales faltantes:
+   $ bach fs sanar --todos
+
+3. Reparar un archivo dañado específico:
+   $ bach fs sanar hub/base.py
+
+4. Verifique la clasificación de un archivo:
+   $ bach fs clasificar datos/bach.db
+
+5. Ver estadísticas del sistema de archivos:
+   $bach fs escaneo
+
+6. Ver el estado de protección actual:
+   $ bach fs status
+
+
+ARCHIVOS
+=======
+implementación del controlador hub/fs.py (160 líneas)
+herramientas/fs_protection.py FFSProtection + clases PathClassifier
+data/bach.db Base de datos de manifiesto SQLite
+data/fs_manifest.json metadatos (last_check, last_backup)
+dist/snapshots/ archivo de instantáneas (archivos *.orig)
+
+
+VER TAMBIÉN
+==========
+administración de instantáneas dist (instantánea dist bach)
+base.py Clase abstracta BaseHandler
+herramientas/fs_protection.py Documentación técnica
+BACH_SYSTEM.md Arquitectura y diseño del sistema

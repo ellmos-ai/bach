@@ -1,0 +1,268 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CLAUDE CODE AUTOMATION
+============================
+
+Instructions for automating Claude Code via the command line (CLI).
+
+
+OVERVIEW
+---------
+Claude Code can be operated in non-interactive mode, which means the
+Integration into scripts, CI/CD pipelines and automated workflows enabled.
+
+
+1. NON-INTERACTIVE MODE (-p / --print)
+----------------------------------------
+The most important parameter for automation. Claude issues the answer
+and ends.
+
+    # Easy request
+    claude -p "Explain to me what this function does"
+
+    # With file input via pipe
+    cat mycode.py | claude -p "Analyze this code"
+
+    # About stdin
+    echo "What is 2+2?" | claude -p
+
+
+2. OUTPUT FORMATS FOR SCRIPTING
+-------------------------------
+Text (default):
+    claude -p "Your request"
+
+JSON (single result):
+    claude -p "List 5 programming languages" --output-format json
+
+Stream JSON (real-time streaming):
+    claude -p "Write a test" --output-format stream-json
+
+
+3. PERMISSIONS AND SECURITY
+--------------------------------
+Fully automatic without confirmations:
+    # CAUTION: Use only in safe/isolated environments!
+    claude -p "Create an index.html" --dangerously-skip-permissions
+
+Choose permission mode:
+    # Plan mode: Claude plans changes before execution
+    claude -p "Refactor Code" --permission-mode plan
+
+    # DontAsk mode: No queries during execution
+    claude -p "Update dependencies" --permission-mode dontAsk
+
+With limited tools:
+    # Only allow certain tools
+    claude -p "Show git status" --allowedTools "Bash(git:*)"
+
+    # Ban certain tools
+    claude -p "Analyze Code" --disallowedTools "Edit Write"
+
+    # Disable all tools except specific ones
+    claude -p "Read only" --tools "Read"
+
+
+4. SESSION MANAGEMENT
+---------------------
+Continue last session:
+    claude --continue
+
+Continue a specific session via ID:
+    claude --resume SESSION_ID
+
+Create new session ID on resume:
+    claude --continue --fork-session
+
+
+5. BUDGET AND MODEL CONTROL
+------------------------------
+    # Set budget limit (in USD)
+    claude -p "Complex Analysis" --max-budget-usd 1.00
+
+    # Select model
+    claude -p "Quick question" --model sonnet
+    claude -p "Complex task" --model opus
+
+    # Fallback model in case of overload
+    claude -p "request" --fallback-model sonnet
+
+
+6. CUSTOMIZE SYSTEM PROMPT
+-------------------------
+    # Set your own system prompt
+    claude -p "request" --system-prompt "You are a Python expert"
+
+    # Expand system prompt
+    claude -p "Request" --append-system-prompt "Always answer in German"
+
+
+7. CI/CD INTEGRATION
+--------------------
+Example: Code review in pipeline
+
+    #!/bin/bash
+    # code_review.sh
+    claude -p "Review this code for security issues and best practices" \
+      --output format json\
+      --dangerously-skip-permissions \
+      --max-budget-usd 1.00\
+      --model sonnet
+
+Example: Automatic documentation
+
+    #!/bin/bash
+    # generate_docs.sh
+    cat src/main.py | claude -p "Create API documentation in Markdown format" \
+      --output format text \
+      --dangerously-skip-permissions > docs/API.md
+
+Example: test generation
+
+    #!/bin/bash
+    # generate_tests.sh
+    claude -p "Generate unit tests for the function in src/utils.py" \
+      --dangerously-skip-permissions \
+      --allowedTools "Read Write" \
+      --max-budget-usd 0.50
+
+
+8. BIDIRECTIONAL STREAMING
+----------------------------
+For complex integrations with real-time communication:
+
+    claude -p "..." \
+      --input-format stream-json\
+      --output-format stream-json\
+      --include-partial-messages
+
+
+9. MCP SERVER INTEGRATION
+-------------------------
+    # Load MCP configuration (JSON file or string)
+    claude -p "request" --mcp-config ./mcp-config.json
+
+    # Load multiple configs
+    claude -p "request" --mcp-config ./config1.json ./config2.json
+
+    # Only use MCP servers from Config
+    claude -p "request" --mcp-config ./mcp-config.json --strict-mcp-config
+
+    # Manage MCP servers
+    claude mcp # Interactive Management
+    claude mcp --help # Show MCP commands
+
+
+10. ADVANCED FEATURES
+-----------------------
+Structured JSON output:
+    # Validate JSON schema
+    claude -p "Give me user data" --json-schema '{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}'
+
+Use agents:
+    # Pre-configured agents
+    claude -p "Review Code" --agent reviewer
+
+    # Define your own agents
+    claude -p "Request" --agents '{"tester": {"description": "Testing code", "prompt": "You are a QA expert"}}'
+
+Plugin integration:
+    # Load plugins from directory
+    claude -p "request" --plugin-dir ./my-plugins
+
+Allow additional directories:
+    # Expands tool access
+    claude -p "Analyze multiple projects" --add-dir /path/to/project1 /path/to/project2
+
+Debug mode:
+    # With filter
+    claude -p "request" --debug "api,hooks"
+
+    # Without specific categories
+    claude -p "request" --debug "!1p,!file"
+
+    # Write debug log to file
+    claude -p "request" --debug-file ./debug.log
+
+
+IMPORTANT PARAMETER REFERENCE
+---------------------------
+Parameter description
+--------- ------------
+-p, --print Non-interactive mode (required for automation)
+--output format text, json, stream json
+--input-format text, stream-json
+--dangerously-skip-permissions No confirmation dialogs
+--permission-mode acceptEdits, bypassPermissions, default, delegate, dontAsk, plan
+--allowedTools Allowed tools (e.g. "Bash(git:*) Read")
+--disallowedTools Prohibited tools
+--tools tool list or "" for none, "default" for all
+--max-budget-usd Budget limit in USD
+--model model (sonnet, opus, or full name)
+--fallback-model Fallback on overload
+--system-prompt Own system prompt
+--append-system-prompt Expand system prompt
+--continue Continue last session
+--resume Resume session via ID
+--fork-session New session ID when continued
+--session-id Set specific session ID (UUID)
+--mcp-config MCP server configuration(s)
+--strict-mcp-config Only use MCP from Config
+--json-schema JSON schema for validated output
+--agent Preconfigured agent
+--agents Own agents as JSON
+--plugin-dir Plugin directories
+--add-dir Allow additional directories
+--debug Debug mode with optional filter
+--debug-file Write debug logs to file
+--no-session-persistence Do not save session (only with --print)
+
+
+11. REMOTE CONTROL (MOBILE APP)
+-------------------------------
+Claude Code can be controlled remotely via the Claude Mobile App.
+Known bug: --dangerously-skip-permissions does not work with remote control.
+
+Solution: Use BACH permission profiles:
+
+    # Automatic (recommended):
+    # Desktop: Claude_RemoteControl.bat
+    # BACH Menu: Key [P]
+
+    # Manual:
+    bach permissions activate remote_control
+    claude --dangerously-skip-permissions
+    # -> enter /rc, scan QR code
+    # After completion:
+    bach permissions deactivate
+
+    # Customize profiles:
+    bach permissions set remote_control allow=mcp__neuer_server__*
+    bach permissions show remote_control
+    bach permissions status
+
+See: permissions.txt for complete documentation.
+
+
+SAFETY INSTRUCTIONS
+-------------------
+1. --dangerously-skip-permissions only in isolated environments
+   (sandboxes, containers).
+2. Set budget limits to avoid unexpected costs
+3. Restrict tools with --allowedTools if possible
+4. Do not send sensitive data to Claude via pipes
+
+
+SEE ALSO
+----------
+- claude --help Complete help
+- claude doctor installation check
+- claude mcp manage MCP server
+- claude plugin plugin management
+- claude setup-token Set up a long-lasting auth token
+- claude install [target] Install native build (stable/latest/version)
+- claude update Check for updates
+- claude-code.txt General Claude Code information
+- permissions.txt BACH Permission Profile (Remote Control)

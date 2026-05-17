@@ -1,0 +1,212 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+CÓDIGO CLAUDE - REFERENCIA RÁPIDA
+==========================
+
+Claude Code es la herramienta CLI oficial de Anthropic para Claude.
+Actual: Versión 2.1.37+ (a partir de febrero de 2026)
+
+INSTALACIÓN (RECOMENDADA: Nativa, ¡NO npm!)
+---------------------------------------------
+  #WindowsPowerShell
+  irm https://claude.ai/install.ps1 | iex
+
+  #macOS/Linux/WSL
+  curl -fsSL https://claude.ai/install.sh | fiesta
+
+  # Alternativamente: cerveza casera
+  instalación de preparación --cask claude-code
+
+  # Alternativamente: WinGet
+  instalar Winget Anthropic.ClaudeCode
+
+  # DESPRECADO (no recomendado):
+  npm install -g @anthropic-ai/claude-code
+
+INICIO
+-------
+  claude # Iniciar sesión interactiva
+  claudio.                 # Comenzar en el directorio actual
+  claude "Preguntar" # Comenzar con el aviso
+  claude -c # Reanudar la última sesión
+  claude -r # Selecciona sesión para continuar
+  claude -p "consulta" # No interactivo (modo SDK, luego salir)
+
+COMANDOS IMPORTANTES
+------------------
+  actualización de claude Instalar actualizaciones
+  claude doctor comprobar instalación
+  claude mcp Configurar el servidor MCP
+  claude install Migrar a instalación nativa
+  claude setup-token Configurar tokens de autenticación
+
+MODELOS (a partir de 2026)
+--------------------
+  --modelo predeterminado Dependiendo de la cuenta (Pro/Max/Teams: Opus 4.6)
+  --modelo soneto Claude Sonnet 4.5 (tareas diarias rápidas)
+  --modelo opus Claude Opus 4.6 (complejo, mejor razonamiento)
+  --modelo de haiku Claude Haiku (el más rápido y el más barato)
+  --model sonnet[1m] Soneto con contexto de token de 1M
+  --model opusplan Opus para modo plan, Soneto para ejecución
+
+  Nivel de esfuerzo (Opus 4.6): bajo, medio, alto (predeterminado)
+  Env: CLAUDE_CODE_EFFORT_LEVEL=bajo|medio|alto
+
+OPCIONES IMPORTANTES (selección - ¡50+ disponibles!)
+----------------------------------------------
+  -c, --continue Continuar la última sesión
+  -r, --resume [id] Reanudar sesión por ID/nombre
+  -p, --print Imprimir salida y salir (para tuberías)
+  --model <alias|nombre> Seleccionar modelo
+  --add-dir <dir> Permitir directorios adicionales
+  --system-prompt "..." REEMPLAZAR mensaje del sistema
+  --append-system-prompt "..." EXTENDER mensaje del sistema (¡recomendado!)
+  --tools "Bash,Edit,Read" Habilita solo ciertas herramientas
+  --allowedTools "..." Herramientas sin solicitud de permiso
+  --disallowedTools "..." No permitir herramientas
+  --permission-mode <modo> Planificar/aceptarEditaciones/predeterminado
+  --dangerfully-skip-permissions Omitir todas las indicaciones (¡ATENCIÓN!)
+  --output-format json Salida JSON (texto/json/stream-json)
+  --max-vueltas N Máx. giros agentes (modo impresión)
+  --max-presupuesto-usd N Máx. dólares para llamadas API
+  --chrome Integración del navegador Chrome
+  --ide Conexión automática a IDE
+  --verbose Registro detallado
+  --debug "api,mcp" Modo de depuración con categorías
+  --mcp-config <archivo> Cargar el servidor MCP desde JSON
+  --agents '{...}' Definir subagentes personalizados
+  --fork-session Nueva ID de sesión en el currículum
+  --from-pr N Sesiones de GitHub PR N
+  --"tarea" remota Iniciar sesión web en claude.ai
+  --teletransportarse continúa la sesión web localmente
+
+PERMISOS
+-----------
+  --modo-permiso <modo>
+    estándar predeterminado (solicita)
+    AcceptEdits Aceptar ediciones automáticamente.
+    plan Solo modo plan
+
+  --dangerfully-skip-permissions Omita TODAS las indicaciones (¡tenga cuidado!)
+  --allow-dangerfully-skip-permissions Permitir omisión (no habilitar)
+
+  Perfiles de permiso BACH (recomendado para control remoto):
+    bach permissions list              Mostrar perfiles
+    bach permissions activate <profil> Profil in settings.json schreiben
+    bach permissions deactivate        Restaurar perfil normal
+    -> Ver: permisos.txt para más detalles
+
+FORMATOS DE SALIDA (con -p)
+-----------------------
+  --texto en formato de salida (predeterminado)
+  --output-format json JSON (resultado único)
+  --output-format stream-json Transmisión en tiempo real
+  --include-partial-messages eventos parciales (con stream-json)
+
+BANDERAS DE PROMPT DEL SISTEMA
+-------------------
+  --system-prompt "..." REEMPLAZA todo el mensaje predeterminado
+  --system-prompt-file <archivo> REEMPLAZA con archivo (solo modo de impresión)
+  --append-system-prompt "..." EXTENDIDO Mensaje predeterminado (¡recomendado!)
+  --append-system-prompt-file <archivo> EXTENDIDO con archivo (modo de impresión)
+
+  Regla general: prefiera --append-* (conserva las capacidades de Claude Code)
+
+SUBAGENTS (--marcador de agentes)
+-------------------------
+Formato JSON para subagentes personalizados:
+  --agentes '{
+    "revisor": {
+      "description": "Revisor de código",
+      "prompt": "Eres un revisor de código senior...",
+      "herramientas": ["Leer", "Grep", "Glob"],
+      "modelo": "soneto"
+    }
+  }'
+
+VARIABLES DE ENTORNO (selección)
+-----------------------------
+  ANTHROPIC_MODEL=<alias|nombre> Modelo predeterminado
+  ANTHROPIC_DEFAULT_OPUS_MODEL=... Mapeo de alias de Opus
+  ANTHROPIC_DEFAULT_SONNET_MODEL=... Mapeo de alias de soneto
+  ANTHROPIC_DEFAULT_HAIKU_MODEL=... Mapeo de alias de haiku
+  CLAUDE_CODE_SUBAGENT_MODEL=... Modelo de subagente
+  CLAUDE_CODE_EFFORT_LEVEL=bajo|medio|alto Esfuerzo de obra
+  DISABLE_PROMPT_CACHING=1 Solicitar almacenamiento en caché global
+  DISABLE_AUTOUPDATER=1 Deshabilitar actualizaciones automáticas
+  CLAUDE_CODE_GIT_BASH_PATH=... Ruta de Git Bash (Windows)
+
+EJEMPLOS
+---------
+  # Interactivo en el directorio BACH
+  cd "C:\Usuarios\Usuario\OneDrive\.TOPICS\.AI\.OS\BACH"
+  claudio
+
+  # Con Opus 4.6 y Contexto Extendido
+  claude --modelo obra[1m]
+
+  # Reanudar la última sesión
+  claudio -c
+
+  # No interactivo (para guiones)
+  claude -p "Listar todos los archivos Python"
+
+  # Con directorio adicional
+  claude --add-dir "C:\MiProyecto"
+
+  # Aviso del sistema personalizado (ampliado, no reemplazado)
+  claude --append-system-prompt "Usar TypeScript, sin ningún tipo"
+
+  # Opus para la planificación, Soneto para la ejecución
+  claude --plan modelo de obra
+
+  # Salida JSON para secuencias de comandos
+  claude -p --output-format json "Buscar todos los TODO"
+
+  # Con configuración del servidor MCP
+  claude --mcp-config ./mcp.json
+
+  # Integración de Chrome
+  claude --cromo
+
+  # Limitar el presupuesto máximo
+  claude -p --max-budget-usd 5.00 "Gran análisis"
+
+AUTENTICACIÓN
+--------------
+  1. Claude Pro/Max (recomendado): inicie sesión a través de la cuenta claude.ai
+  2. Claude Console: OAuth a través de console.anthropic.com
+  3. Equipos/Empresa: inicio de sesión del equipo a través de claude.ai
+  4. Proveedor de nube: Bedrock/Vertex/Foundry Config
+
+AUTO-ACTUALIZACIONES
+------------
+  Instalación nativa: actualización automática cada pocas horas (en segundo plano)
+  Homebrew/WinGet: Manualmente con `brew Upgrade`/`winget Upgrade`
+
+  Canales de lanzamiento:
+    - más reciente (estándar, nuevas características inmediatamente)
+    - estable (~1 semana de antigüedad, omitir regresiones)
+
+  Configuración: /config → Canal de actualización automática
+  O: settings.json → "autoUpdatesChannel": "estable"
+
+VER TAMBIÉN
+----------
+  https://code.claude.com/docs/en/cli-reference Referencia CLI completa
+  https://code.claude.com/docs/en/setup Configuración e instalación
+  permisos.txt Perfiles de permisos BACH
+  claude-code-automatization.txt Automatización
+  wiki/claude-code.txt Wiki BACH (si está disponible)
+  wiki/gemini.txt Gemini CLI/Antigravedad
+  wiki/ollama.txt LLM locales
+
+FUENTES (al 2026-02-08)
+--------------------------
+  - https://code.claude.com/docs/en/cli-reference
+  - https://code.claude.com/docs/en/setup
+  - https://code.claude.com/docs/en/model-config
+  - https://www.npmjs.com/package/@anthropic-ai/claude-code
+  - https://github.com/anthropics/claude-code

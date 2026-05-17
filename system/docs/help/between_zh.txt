@@ -1,0 +1,134 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BETWEEN - 在任务之间对配置文件进行临时检查
+======================================
+
+提醒。可通过配置文件进行自定义。
+
+CLI 命令
+-----------
+
+  开/关：
+  bach between on                  检查之间启用
+  bach between off                 禁用
+  bach between status              显示状态
+
+  管理个人资料：
+  bach between profile add "Name"     创建新个人资料
+  bach between profile edit "Name"    编辑个人资料
+  bach between profile delete "Name"  删除个人资料
+  bach between profile list           查看所有个人资料
+  bach between profile show "Name"    个人资料详细信息
+
+  激活配置文件：
+  bach between use "Name"          激活会话配置文件
+  bach between use default         返回标准配置文件（使用“默认”作为名称）
+
+配置文件结构
+---------------
+
+  {
+    “名称”：“代数”，
+    "description": "带验证的数学任务",
+    "message": "临时检查：\n1.检查结果\n2.检查计算方法\n3.文档",
+    "trigger_on": ["任务完成", "任务完成"],
+    “is_default”：假
+  }
+
+标准配置文件
+----------------
+
+  1. 默认
+     检查之间的通用（当前行为）
+     “1.时间检查2.内存还好吗？3.下一个任务？”
+
+  2. 聚焦
+     对重点工作进行最少的检查
+     “继续还是休息一下？”
+
+  3. 回顾
+     详细检查代码审查注释
+     “1. 审查代码 2. 运行测试？ 3. 记录在案？”
+
+  4. 学习
+     检查反思问题
+     “1. 学到了什么？2. 创建课程？3. 理解了吗？”
+
+  5. 汽车会议
+     具有时间控制的自动会话工作流程
+     “1. 时间检查 2. 上一个任务的持续时间？ 3. 继续还是结束会话？”
+
+示例
+---------
+
+  # 数学任务的新配置文件
+  bach between profile add "Mathe"
+  -> 创建配置文件“数学”（编辑方式：在配置文件编辑之间）
+
+  # 查看个人资料
+  bach between profile show "Mathe"
+  -> 显示个人资料的详细信息（编辑尚未实施）
+
+  # 激活个人资料
+  bach between use "Mathe"
+  ->为此会话激活配置文件“数学”
+
+  # 返回标准
+  bach between use default
+
+输出格式
+--------------
+
+  [任务之间]
+  1.查看上次任务的结果
+  2、检查计算方法是否有错误
+  3.记录中间步骤
+
+  提示：--status 概述
+
+持久性
+----------
+
+  表：with_profiles (bach.db)
+  活动配置文件：data/. Between_state
+
+注意
+-------
+
+  配置文件添加/编辑/删除尚未实现。
+  直接使用DB或者等待未来版本。
+
+用例
+--------
+
+  1. 项目具体情况
+     每个项目都有自己的配置文件
+     -> 更改项目时切换
+
+  2. 学习课程
+     带有反思问题的“学习”简介
+     -> 促进有意识的学习
+
+  3. 代码审查
+     带有审核清单的“审核”个人资料
+     -> 质量保证
+
+  4. 对焦模式
+     通过最少的检查配置文件“焦点”
+     -> 减少中断
+
+互动
+-------------
+
+之间是时间系统的一部分：
+  --help Clock 时间显示
+  --帮助计时器秒表
+  --help countdown 带触发器的倒计时
+  --helpbeat 统一时间显示
+
+---
+版本：1.0 |状态：已实施 (v1.1.83)
+处理程序：system/hub/time.py (BetweenHandler)
+工具：system/tools/time_system.py (BetweenManager)

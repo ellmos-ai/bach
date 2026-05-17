@@ -1,0 +1,187 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+经销商名称
+============
+家庭
+
+描述
+============
+家庭管理，包括日常事务、库存、购物清单和成本计划。
+管理日常任务，使用交通灯系统（红/黄/绿）进行库存管理，
+供应商和固定成本。与例程处理程序和 BACH 统一数据库集成。
+
+
+操作
+===========
+
+状态
+  家庭仪表盘：日常概览、库存红绿灯、每月固定成本、
+  购物清单，肤浅的例行公事。所有子系统的组合。
+  语法：bach 家庭状况
+
+到期 [DAYS]
+  任务在接下来的 N 天内到期（默认：7 天）。
+  将逾期（红色）例程与待处理（黄色）例程分开。
+  语法： bach family due |巴赫家庭到期日 14
+
+今天
+  每日概述：今天发生了什么？ （例行公事+约会）。
+  加载 DailyOverview 服务。
+  语法：巴赫家庭今天
+
+星期
+  每周计划（周一至周日）：例行公事+时间安排。
+  标记本周逾期的项目。
+  语法：巴赫家庭周
+
+成本
+  每月固定成本概览。
+  计算合同的每月负载 (fin_contracts)：
+  - 每月：直接
+  - 每年：/12
+  - 每季度：/3
+  语法：巴赫家庭成本
+
+成本-月 [FILTER]
+  每月预计的不定期费用（保险、维护）。
+  可选：按类别过滤。
+  语法： bach 家庭费用-月 |巴赫家庭费用-月“汽车”
+
+添加费用 名称 类别 金额 间隔
+  添加不规则成本。
+  间隔：每月|每季度|每年|一次
+  语法：巴赫家庭添加成本“TÜV”“汽车”150“每年”
+
+成本列表[过滤器]
+  显示所有成本条目及其状态。
+  语法：巴赫家庭费用清单
+
+保险支票
+  保险支票：所有有贡献的有效保单。
+  加载 fin_insurances，计算每月金额。
+  语法：巴赫家庭保险支票
+
+购物
+  购物清单：所有仍需优先购买的商品。
+  语法： bach family shopping
+
+add-shopping NAME [CATEGORY] [PRIORITY]
+  将商品添加到购物清单。
+  优先级：正常|高|低（默认：正常）
+  语法：bach family add-shopping "牛奶" "食品" "高"
+
+完成购物 ID [ID2 ID3...]
+  将商品标记为已购买。
+  语法： bach family完成购物5 6 7
+
+库存
+  带有交通灯概览的库存（红/黄/绿）。
+  将 InventoryEngine 与轨枕一起使用。
+  语法： bach 家庭库存
+
+add-item NAME CATEGORY STORAGE THRESHOLD [LAGERMAX]
+  将物品添加到库存中。
+  存储阈值：显示红色的值。
+  语法： bach family add-item "橄榄油" "cooking" 0.5 2
+
+库存 项目名称 数量 [日期]
+  过帐收货（到仓库）。创建交易。
+  语法： bach 家庭库存“Olivenoel”1.5 2026-03-04
+
+库存缺货 商品名称 数量 [日期]
+  后期消耗（来自仓库）。创建交易。
+  语法：巴赫家庭缺货“Olivenoel”0.3 2026-03-04
+
+pull-check
+  购物拉列表：需要购买哪些物品？
+  显示红色（低于阈值）和黄色（低于最大值）项目。
+  语法：bach family pull-check
+
+红绿灯
+  交通灯概览：所有库存项目的状态（红色/黄色/绿色）。
+  语法：bach 家庭交通灯
+
+订单 [ITEM] [QTY]
+  创建商品订单或查看待处理订单。
+  语法： bach family order |巴赫家庭订单“Olivenoel”5
+
+供应商
+  向供应商显示联系方式和可用物品。
+  语法： bach family seller
+
+add-supplier NAME CONTACT [SHIPPING DAYS]
+  添加供应商。
+  运送天数：平均运送时间（默认值：5）。
+  语法： bach family add-supplier "BioGro GmbH" "info@biogro.de" 3
+
+导出例程 [FILTER]
+  导出例程供外部使用/备份。
+  可选：按类别过滤。
+  语法： bach 家庭导出例程 |巴赫家居导出例程《厨房》
+
+帮助
+  查看此帮助。
+  语法：bach family help
+
+
+示例
+=========
+
+1。查看仪表板：
+   bach haushalt status
+
+2。本周逾期的例行公事：
+   bach haushalt due 7
+
+3。包含例行公事+约会的每周计划：
+   bach haushalt week
+
+4。将商品添加到购物清单：
+   bach haushalt add-shopping "Mehl" "Lebensmittel" "normal"
+
+5.过帐收货：
+   bach haushalt stock-in "Mehl" 2.5
+
+6。购物清单（缺少什么？）：
+   bach haushalt pull-check
+
+7.每月固定成本：
+   bach haushalt costs
+
+8。添加不规则成本：
+   bach haushalt add-kosten "KFZ-Versicherung" "auto" 80 "monatlich"
+
+
+文件
+=======
+hub/household.py 主处理程序
+hub/_services/household/家庭服务
+  inventory_engine.py 库存+红绿灯逻辑
+  shopping_service.py 购物清单管理
+集线器/_服务/仪表板/
+  daily_overview.py 每日概述
+
+
+数据库表
+===================
+bach.db /统一数据库（自v1.1.84起）：
+- family_routines 日常任务/日常管理
+- 有阈值的家庭库存项目
+- family_orders 给供应商的订单
+- family_suppliers 供应商联系方式
+- family_stock_transactions 预订进/出（审核日志）
+- family_shopping 购物清单
+- family_costs 非常规费用
+- Assistant_calendar 约会（每周计划）
+- fin_contracts 合同（固定成本）
+- fin_insurances 保险（用于状态仪表板）
+
+
+另请参见
+==========
+bach routine ...                  例行管理（各个状态）
+bach routine done <id>            将例行标记为已完成
+bach fin costs                    财务成本管理
+bach calendar ...                 预约管理

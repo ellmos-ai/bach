@@ -1,0 +1,167 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+ATI - 高级工具集成代理
+
+ATI（技术实施代理）是工具集成代理
+巴赫。 ATI = BATCHI - BACH（增量，BACH 仍然缺失）。
+它提供守护进程控制、会话管理、任务管理、扫描仪、
+项目引导、代码分析和构建自动化。
+
+命令 - 守护进程和会话
+===========================
+
+bach ati status                   显示 ATI 状态和守护进程信息
+bach ati start                    启动无头会话守护进程
+bach ati stop                     停止会话守护进程
+bach ati session                  启动手动会话
+bach ati session --dry-run        会话试运行（无更改）
+
+命令 - 任务管理
+=========================
+
+bach ati task list                ATI 任务显示
+bach ati task add "TITEL"         添加新 ATI 任务
+bach ati task done ID             将任务标记为已完成
+bach ati task depends ID DEP      设置任务之间的依赖关系
+bach ati task blocked             显示被阻止的任务
+bach ati check                    显示任务间清单
+bach ati problems                 问题优先 - 显示优先错误
+bach ati context KEYWORD          测试上下文触发器
+
+命令 - 扫描仪
+=================
+
+bach ati scan                     扫描软件项目
+bach ati scan status              显示上次扫描状态
+bach ati scan tasks               扫描的任务显示
+bach ati onboard PATH             载入新项目
+
+命令 - 工具和路径
+=======================
+
+bach ati path NAME                显示工具路径
+bach ati path --list              列出所有工具路径
+
+命令 - 导出和安装
+==========================
+
+bach ati export                   导出 ATI 代理作为 ZIP
+bach ati export --dry-run         导出试运行（显示正在导出的内容）
+bach ati install PFAD.zip         安装 ATI 导出
+
+命令 - 项目引导
+===============================
+
+bach ati bootstrap NAME --template TYPE  使用模板创建新项目
+bach ati bootstrap my-tool --template python-cli
+bach ati bootstrap my-skill --template llm-skill
+
+命令 - 项目迁移
+===========================
+
+bach ati migrate PATH --analyze           分析现有项目
+bach ati migrate PATH --template TYPE     将项目迁移到模板
+bach ati migrate my-project --dry-run     试运行（无更改）
+
+命令 - 模块
+================
+
+bach ati modules list             列出可用模块
+
+模板
+=========
+
+python-cli Python使用 setuptools/pyproject.toml 的 CLI 应用程序
+               结构：src/、tests/、docs/、_modules/、_policies/
+
+llm-skill BACH/Claude 的 LLM 技能
+               结构：SKILL.md、_config/、_data/、_docs/
+
+llm-agent LLM 代理
+               结构：AGENT.md、_skills/、_tools/
+
+可重用模块
+========================
+
+_modules/和模块/
+├── path_healer.py 路径自我修复（来自RecludOS/VFDistiller）
+├── distribution.py 分层系统、密封、发布管理（modules/）
+├──encoding.py UTF-8、BOM处理、编码修正（modules/）
+└──validation.py 模式验证（计划）
+
+BACH-POLICIES
+=============
+
+_policies/
+├──naming_convention.md 文件命名约定
+├──encoding_policy.md UTF-8标准，无BOM
+└── path_rules.json 相对路径，而非硬编码路径
+
+示例
+=========
+
+# 启动守护进程并检查状态
+bach ati start
+bach ati status
+
+# 管理任务
+bach ati task list
+bach ati task add "Feature X implementieren"
+bach ati task done 1
+
+# 扫描并载入项目
+bach ati scan
+bach ati onboard C:\Projekte\neues-tool
+
+# 创建新的Python CLI 项目
+bach ati bootstrap rechnungs-tool --template python-cli
+
+# 分析现有项目
+bach ati migrate C:\Projekte\altes-tool --analyze
+
+# 将项目迁移到BACH 结构（试运行）
+bach ati migrate C:\Projekte\altes-tool --template python-cli --dry-run
+
+# 导出ATI 并安装在其他地方
+bach ati export
+bach ati install C:\Downloads\ati_export.zip
+
+迁移工作流程
+==================
+
+1.分析：bach ati migrate PATH --analyze
+              显示：合规性分数、丢失目录、问题
+
+2。空运行： bach ati migrate PATH --template TYPE --dry-run
+              显示在没有更改的情况下会发生什么
+
+3。迁移： bach ati migrate PATH --template TYPE
+              执行迁移（自动创建备份）
+
+4.验证： bach ati migrate PATH --analyze
+              检查新的合规性分数
+
+注释
+========
+
+- ATI 使用project_bootstrapper.py (agents/ati/tools/)
+- 模板位于agents/ati/templates/
+- 模块位于agents/ati/_modules/和modules/中
+- 政策位于agents/ati/_policies/
+- 扫描仪位于agents/ati/scanner/
+- 会话守护进程位于agents/ati/session/
+- 导出位于agents/ati/export/
+- Onboarding位于agents/ati/onboarding/
+- 数据位于 data/ati/ 和 data/bach.db 中
+- 文档：agents/ati/ATI.md
+- 引导概念：agents/ati/ATI_PROJECT_BOOTSTRAPPING.md
+
+相关
+========
+
+bach --help builder        构建项目技能
+bach --help distribution   分发系统
+bach --help coding         编码约定
+bach --help maintain       维护工具（路径修复）

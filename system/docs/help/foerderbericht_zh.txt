@@ -1,0 +1,105 @@
+资金报告管道
+=======================
+
+端到端报告创建：从文件夹到完成的资金报告。
+姓名和出生日期会根据文件夹名称自动识别。
+
+文件夹结构
+--------------
+  data_roh/ 用户插入文件夹（AI不直接读取）
+  data_ano/ 匿名个体文件（允许AI读取）
+  data_bundled/ 捆绑文本 + LLM 提示
+  output_reports/ 完成的报告（去匿名化，最终产品）
+
+角色分离（重要）
+-------------------------
+  用户将客户端文件放置在 data_roh/ 中。
+  AI仅启动管道脚本——它不提交文件，
+  不复制文件，也不检查文件是否存在。
+  脚本本身报告：“文件已找到，进程已启动”或
+  “错误：data_roh/ 中未设置文件”。
+
+使用（4 种标准方式）
+----------------------------
+  1. 聊天：“创建资金报告”（推荐，自动检测）
+  2. .bat：Foerderbericht_Pipeline.bat（3x ENTER 用于自动检测）
+  3、链：巴赫链启动融资报告
+  4. CLI：巴赫报告管道（自动检测）
+
+选项
+--------
+  --期间“01/01/2025 - 12/31/2025”报告期
+  --backend claude_code|llmauto LLM 后端（默认：claude_code）
+  --model claude-sonnet-4-6 LLM 模型
+  --parents“母亲姓名”“父亲姓名”父母姓名（用于匿名）
+  --no-cleanup 不要清空中间文件夹
+
+PROCESS (三相流)
+----------------------
+
+  第 1 阶段——prepare_prompt() [Python，无 AI]：
+    1. 验证：data_roh/不能为空，检查one-client规则
+    2. 自动检测：从文件夹名称中检测姓名+出生日期
+    3.个人资料：临时匿名个人资料（伪装姓名、虚假数据）
+    4.匿名化：匿名化文件->data_ano/
+    5. 捆绑：提取文本 -> data_bundled/ （优先级：最新的在前）
+    6. 提示：带有 ICF 模式的 LLM 提示 -> data_bundled/prompt.txt
+
+  第2阶段——AI读取prompt.txt，生成JSON响应：
+    7. AI读取匿名prompt.txt（聊天/子代理方式）
+    8. JSON 响应 -> data_bundled/llm_response.txt
+
+  第 3 阶段 -- finish_report() [Python，无 AI]：
+    9. 去匿名化 JSON（通过包含所有映射的 session_info.json）
+   10.生成Word->output_reports/
+   11.清理：删除所有中间数据+遗留文件夹
+
+  全自动（.bat/llmauto/CLI）：
+    run_full_pipeline() 内部调用prepare_prompt() + _call_llm() + finish_report()
+
+  注意：data_roh/!
+
+文档优先级
+-------------------------
+中每次通过只能有一个客户端  高：当前协议、文件封面、援助计划、批准
+  媒介：支持自闭症的报告、医生报告（<10 年）、学校报告、电子邮件
+  低：超过 10 年的医疗报告
+
+帮助计划目标（重要）
+--------------------------
+  如果有援助计划，将包括其框架目标/成果目标
+  被采纳为主要筹资目标。仅限除此之外的主题
+  帮助计划目标进入 new_goals 表。
+  变音后处理（ue->ue、ae->ae、oe->oe）是自动的
+  应用基于单词的（“当前”等没有误报）。
+
+安全
+----------
+  - data_roh/ 永远不会被 AI 直接读取
+  - LLM 只能看到匿名数据（代号）
+  - 通过 session_info.json 对所有映射进行去匿名化
+  - 无持久配置文件（基于会话）
+  - .pipeline_lock 防止并行运行
+  - OneDrive 同步自动暂停/恢复
+  - 清理删除所有中间数据+旧文件夹
+
+LLM-BACKENDS
+-------------
+  claude_code (默认) Claude Code CLI 作为子进程
+  llmauto llmauto 链条系统
+  anthropic_sdk 可选（需要ANTHROPIC_API_KEY，未设置）
+
+故障排除
+---------------
+  “data_roh/ 为空” -> 将文件夹插入 data_roh/
+  “ClaudeRunner 错误”-> claude CLI 不在 PATH 中，使用 llmauto
+  “导入错误”-> pip install python-docx openpyxl
+  OneDrive 锁定 -> 关闭文件，稍等，重新启动
+
+文件
+-------
+  编排器：hub/_services/document/foerderbericht_pipeline.py
+  CLI 运行程序：hub/_services/document/pipeline_runner.py
+  CLI 处理程序：hub/report.py（操作：管道）
+  链：tools/llmauto/chains/foerderbericht.json
+  模板：skills/_templates/report_template_geiger_universal.docx

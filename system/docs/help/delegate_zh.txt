@@ -1,0 +1,76 @@
+# Portability: SYSTEM
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# 资源：[hub/partner.py、tools/partner_communication/gemini_start.py、partners/gemini/start_gemini.bat]
+
+BACH 合作伙伴委派
+=======================
+
+日期：2026-02-08
+
+委派可以在内部分配任务
+基于专业知识和代币经济的合作伙伴网络。
+
+处理程序：system/hub/partner.py（自 JSON_001 迁移以来基于数据库）
+
+核心任务
+------------
+- 通过 CLI 或 MessageBox 进行任务委托 (data/messages/message_box.md)
+- 通过“巴赫合作伙伴状态”监控进度
+- 基于区域的令牌感知选择（monitor_tokens DB 表）
+- 离线回退到本地合作伙伴（--fallback-local 标志）
+
+CLI 命令（bach 合作伙伴）
+--------------------------
+  列表 显示所有注册合作伙伴及其状态
+  状态 活跃合作伙伴和授权区摘要
+  info <名称> 有关特定合作伙伴的详细信息
+  活跃 只列出活跃合作伙伴
+  delegate 将任务转移给合作伙伴（令牌感知）
+                --to=NAME 特定合作伙伴
+                --zone=N 强制区域 (1-4)
+                --fallback-local 离线时切换到本地 AI (Ollama)
+
+GEMINI 工作流程
+---------------
+Gemini 是深度分析和长篇内容的主要合作伙伴：
+
+1.作业：
+   `巴赫合作伙伴委托“任务文本”--to=gemini`
+   或者：通过 MessageBox 委派 (data/messages/message_box.md)
+
+2。开始：
+   通过“partners/gemini/start_gemini.bat”
+   反重力自动从 .gemini/GEMINI.md
+
+3 加载上下文。编辑：
+   合作伙伴在`partners/gemini/workspace/`
+
+4中独立工作。结论：
+   将报告存储在“partners/gemini/outbox/”中
+   将任务标记为已完成：`bach 任务已完成 ID`
+
+令牌区域和策略
+-----------------------
+基于 bach.db 中的 monitor_tokens.budget_percent：
+
+- 区域 1 (0-30%)：所有可用合作伙伴（Claude、Gemini 等）
+- 区域 2 (30-60%)：首选低成本合作伙伴（Gemini、Ollama）
+- 区域 3 (60-80%)：仅限本地 AI (Ollama)
+- 区域 4 (80-100%)：仅限人类（需要干预）
+
+架构说明
+-------------------
+委托是基于数据库的（自 JSON_001 迁移以来）：
+- Partner_recognition 表中的合作伙伴
+- delegate_rules 表中的区域规则
+- Monitor_tokens 表中的代币预算
+- data/messages/message_box.md 中的委派消息
+
+另请参见
+----------
+docs/help/partner.txt 合作伙伴概念（区域、路由）
+wiki/gemini.txt 双子座详细信息
+wiki/antigravity.txt 反重力编辑器
+hub/partner.py 合作伙伴处理程序实施
+data/bach.db 合作伙伴注册表（partner_recognition、delegation_rules）

@@ -1,0 +1,276 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH AGENTS SYSTEM
+==================
+
+Hierarchical system of boss agents and experts with persona system.
+
+THREE LEVELS
+-----------
+
+  Skills The Substantial. Knowledge, code, workflows.
+             Portable, exportable, the real value.
+
+  Personas The Interface. Name, style, character.
+             Personalizable (bach agent rename), a matter of taste.
+
+  Sessions The duration. Context Window, Tools, Turns.
+             Technical detail.
+
+STRUCTURE
+--------
+
+Boss agents coordinate, experts are specialized:
+
+  [Boss Agent]
+       |
+       +-- [Expert 1]
+       +-- [Expert 2]
+
+
+AVAILABLE AGENTS (agents/)
+-------------------------------------
+
+[PROFESSIONAL]
+
+  ATI (ati/) — Persona: Atlas
+    Software developer agent with scanner, sessions
+    Features: Task Scanner, Headless Sessions, Tool Discovery
+
+  developer (developer)
+    General Developer Agent
+
+  Production
+    Production Workflow Agent
+
+  Research
+    Scientific research (PubMed, Perplexity, Consensus)
+
+  Office assistant (office assistant) — Persona: Clara
+    Taxes, funding planning, documentation
+    Experts: tax (Theodor), funding planner (Florian)
+
+  reflection
+    Self-reflection and meta-analysis
+
+
+[PRIVATE]
+
+  Personal assistant (personal-assistant) — Persona: Paul
+    Appointment management, research, communication
+    Experts: Household Management (Martha)
+
+  Health Assistant (Health Assistant) — Persona: Helena
+    Medical documentation and administration
+    Experts: health administrator (Gustav), psycho-counselor (Sophie)
+
+  insurance (insurance)
+    Insurance administration
+
+  Financial Assistant (financial assistant) — Persona: Felix
+    Financial planning and budgeting
+
+
+[TEST]
+
+  Test agent (test-agent)
+    For testing and experiments
+
+
+PERSONA SYSTEM (SUGAR v3.8.0)
+------------------------------
+
+Since SUGAR v3.8.0, agents and experts have named personas:
+human first names + character descriptions in the database.
+
+  DB columns:
+    display_name Persona first name (e.g. "Atlas", "Theodor")
+    persona character text (e.g. "Pragmatic craftsman...")
+
+  Commands:
+    bach agent rename <name> <neuer-name>   Change display name
+    bach agent list                          Shows personas in brackets
+    bach agent info <name>                   Details including persona
+
+  Name resolution (resolve_agent_name):
+    1. Exact system name (e.g. “tax-agent”)
+    2. Display name (e.g. "Theodor")
+    3. Substring (e.g. "theo")
+    4. Fuzzy/Levenshtein (e.g. "teodor")
+
+  Persona Injection:
+    When the agent starts, the persona is injected as a system prompt:
+    "Your name is \"Theodor\". Your character: penile tax advisor..."
+    See: hub/agent_launcher.py (_get_persona_info)
+
+
+  Boss Agent Personas:
+
+    System name | Persona | Character
+    ati | Atlas | Pragmatic craftsman
+    office assistant | Clara | Structured organizer
+    financial assistant | Felix | Attentive thrifter
+    health assistant | Helena | Caring companion
+    personal assistant | Paul | Versatile all-rounder
+
+
+  Expert Personas:
+
+    System name | Persona | Character
+    tax agent | Theodore | Penile tax advisor
+    financial_mail | Frieda | Mail detective
+    subscription service | Anton | Cancellation King
+    healthcare administrator | Gustav | Archivist of findings
+    psycho-consultant | Sophie | Empathetic listener
+    health_import | Hugo | Conscientious data keeper
+    budget management | Martha | Thrifty housekeeper
+    funding planner | Florian | Funding expert
+    application expert | Benjamin | Career Coach
+    data analysis | Diana | Number whisperer
+    decision briefing | Dietrich | Cool strategist
+    report_generator | Rita | Efficient reporting engine
+    mr_tiktak | Mr. TikTok | Strategic tactician
+    transcription service | Tristan | Patient listener
+    wikiquizzer | William | Quizmaster
+
+  Template: skills/_templates/TEMPLATE_PERSONA.md
+  Migration: data/schema/migrations/034_agent_personas.py
+
+
+CLI COMMANDS
+-----------
+
+  # List Agents
+  bach --agents list
+  python tools/agent_cli.py list
+
+  # Show experts
+  python tools/agent_cli.py experts
+
+  # Agent details
+  python tools/agent_cli.py info <agent name>
+
+  # Rename persona
+  bach agent rename <name> <neuer-display-name>
+
+# Initialize user folder
+  python tools/agent_cli.py init all
+  python tools/agent_cli.py init <agent-name>
+
+  # Set up database
+  python tools/agent_cli.py setup-db
+
+  # System status
+  python tools/agent_cli.py status
+
+
+DIRECTORIES
+-------------
+
+  agents/Boss agent definitions (11 agents)
+  agents/_experts/ Expert folder with CONCEPT.md (17 experts)
+  user/<agent>/ User data folder per agent
+
+IMPORTANT: Agents and experts are different concepts!
+  - Agents (Boss): Coordinate and delegate (agents/)
+  - Experts: Specialized execution (agents/_experts/)
+  - Some "agents" listed in Help are actually experts:
+    * tax agent -> _experts/tax/
+    * funding planner -> _experts/foerderplaner/
+    * budget management -> _experts/budget management/
+    * psycho-consultant -> _experts/psycho-consultant/
+
+
+DATABASES
+-----------
+
+  bach.db:
+    - bach_agents (agent registry + display_name + persona)
+    - bach_experts (expert registry + display_name + persona)
+    - agent_synergies (synergies between agents)
+
+  bach.db:
+    - Tables per expert (health_*, household_*, etc.)
+
+
+WORKFLOW
+--------
+
+1. Activate agent (via skill or CLI)
+2. Agent loads skill definition and user data
+3. Persona is injected as a system prompt (display_name + persona)
+4. For special topics: delegation to experts
+5. Expert explains, boss agent summarizes
+
+
+GUI
+---
+
+  http://127.0.0.1:8000/agents Agent overview
+  http://127.0.0.1:8000/ati ATI Agent Details
+  http://127.0.0.1:8000/tax Tax Agent Details
+
+
+FILES
+-------
+
+  agents/ati/ATI agent folder
+  agents/ati/ATI.md ATI definition
+  agents/personal-assistant.txt
+  agents/healthassistant.txt
+  agents/bueroassistant.txt
+  agents/tax-agent.txt
+  agents/research.txt
+  agents/developers.txt
+  agents/production.txt
+  agents/README.md
+
+
+STANDARDS
+---------
+
+Mandatory files:
+
+  1. Every Agent and Expert MUST have a SKILL.md
+     (not roll.txt, not CONCEPT.md as a replacement)
+  2. SKILL.md MUST contain YAML-Frontmatter:
+     name, version, type, description (minimum)
+  3. CONCEPT.md is OPTIONAL (for detailed concepts)
+  4. role.txt is DEPRECATED (migrate to SKILL.md)
+
+Persona System (SUGAR v3.8.0 -- implemented):
+
+  All agents and experts have named personas in the DB.
+  Personas consist of display_name (first name) and persona (character).
+
+  Concept: Persona (who) + Skill (what) + Session (how)
+    - Persona: Character with style and boundaries (DB + optional file)
+    - Skill: Ability to use code and instructions (exportable)
+    - Session: Runtime environment (tools, turns, model)
+
+  Addressing: Agent can be addressed via persona name
+    (e.g. "Ask Theodore about the tax")
+
+  Future: Persona files in agents/personas/ (gradual migration)
+
+Anthropic compatibility:
+
+  - Skills are exportable (open standard, LobeHub/Cursor etc.)
+  - Personas/Agents are NOT portable (Claude Code / BACH only)
+  - Export: bach skills export <name> --format anthropic
+  - New skill: bach skills create <name> --format anthropic
+
+  See: bach help skill_standards
+
+
+SEE ALSO
+----------
+
+  bach help skill_standards  Anthropic Skill Standards
+  bach help actors           Overview of Actors
+  bach help bach_paths       Directory Structure
+  bach help practices        Architecture Principles
+  bach help ati              ATI Software Developer Details
+  bach wiki lobehub          LobeHub Marketplace

@@ -1,0 +1,160 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+EXTENSIONES - Herramientas de escritorio y aplicaciones especiales
+=============================================
+
+Estado: 2026-03-04
+
+El controlador de extensiones gestiona extensiones BACH externas: aplicaciones de escritorio,
+Herramientas especiales y GUI de escritorio que no forman parte del sistema central.
+Las extensiones se almacenan en el directorio extensiones/ y se pueden sincronizar,
+buscado e iniciado.
+
+ESTRUCTURA
+--------
+
+  extensiones/
+    ext1/
+      Metadatos de la extensión SKILL.md
+      Archivo de inicio START.bat (Windows)
+      Documentación README.md
+      programa principal main.py
+      requisitos.txt Dependencias de Python
+    ext2/
+      ...
+
+NOMBRE DEL MANEJADOR
+------------
+
+extensiones
+
+COMANDOS CLI (extensiones bach)
+-----------------------------
+
+  list Listar todas las extensiones
+  show <nombre> Mostrar detalles sobre una extensión
+  ejecute <nombre> Iniciar extensión (START.bat o main.py)
+  sync Las extensiones se sincronizan con la base de datos.
+  buscar <término> Buscar extensiones
+
+DESCRIPCIÓN
+------------
+
+Las extensiones son aplicaciones de escritorio modulares y portátiles con las siguientes características:
+
+- Cada extensión tiene su propio directorio con SKILL.md
+- START.bat opcional para el inicio de Windows (respaldo: ejecución directa de Python)
+- SKILL.md o README.md contienen descripciones
+- Detección automática de archivos principales: main.py, app.py, <nombre>.py
+- La sincronización en la base de datos registra extensiones como habilidades (tipo='extensión')
+
+OPERACIONES
+-----------
+
+lista: Lista de todas las extensiones existentes con:
+         - Número de archivos .py
+         - Banderas: [SKILL] si SKILL.md, [START] si START.bat
+         - Descripción (de SKILL.md o README.md)
+         - Ubicación de almacenamiento
+
+show: Visualización detallada de una extensión:
+         - Camino completo
+         - Listado de archivos con tamaños.
+         - Vista previa de SKILL.md (hasta 500 caracteres)
+         - Coincidencia aproximada si el nombre no es exacto
+
+ejecutar: Inicia una extensión:
+         - Windows: Ejecute START.bat (nueva ventana)
+         - Respaldo: inicie el archivo principal directamente con Python
+         - Archivo principal por prioridad: main.py > app.py > <nombre>.py
+
+sync: Sincroniza extensiones con la base de datos (bach.db):
+         - Agrega nuevas extensiones (tipo = 'extensión')
+         - Actualiza rutas y descripciones de extensiones existentes.
+         - --ejecución en seco muestra cambios sin escribir
+
+búsqueda: búsqueda de texto completo para:
+         - Nombre de la extensión (no distingue entre mayúsculas y minúsculas)
+         - Descripción (no distingue entre mayúsculas y minúsculas)
+         - Muestra visitas con fragmentos
+
+EJEMPLOS
+---------
+
+  # Listar todas las extensiones
+  bach extensions list
+
+  # Detalles sobre una extensión (por ejemplo, 'miaplicación')
+  bach extensions show myapp
+
+  # Iniciar extensión
+  bach extensions run myapp
+  bach extensions run knowledgedigest
+
+  # Sincronizar en la base de datos (agregar extensiones recién descubiertas)
+  bach extensions sync
+  bach extensions sync --dry-run      # Vista previa sin cambios
+
+  # Buscar extensión
+  bach extensions search "data"
+  bach extensions search "analysis"
+
+ARCHIVOS
+-------
+
+  Implementación del controlador hub/extensions.py
+  extensiones/ Directorio de extensiones (relativo al sistema/)
+  extensiones/<nombre>/SKILL.md Metadatos de extensión
+  extensiones/<nombre>/START.bat Archivo de inicio de Windows
+  extensiones/<nombre>/README.md documentación
+  extensiones/<nombre>/requirements.txt Dependencias (opcional)
+  base de datos data/bach.db con extensión registro
+
+DATABASE
+---------
+
+  bach.db:
+    tabla de habilidades con tipo = 'extensión'
+      - nombre Nombre de la extensión
+      - escriba 'extensión'
+      - categoría Categoría (por ejemplo, 'extensión')
+      - ruta Ruta del directorio
+      - descripción descripción
+      - is_active 1 (habilitado) o 0 (deshabilitado)
+      - versión versión (predeterminada: 1.0.0)
+      - dist_type 2 (Extensión)
+
+SKILL.md FORMATO
+---------------
+
+Formato mínimo:
+
+  descripción: breve descripción de la extensión
+  autor: Nombre
+  versión: 1.0.0
+  categoría: herramienta|gui|análisis|utils
+
+El controlador toma automáticamente la descripción de SKILL.md o README.md
+extraído y almacenado en la base de datos.
+
+MECANISMO DE INICIO
+----------------
+
+1. extensiones de bash ejecutan <nombre> se llama
+2. El controlador busca en extensiones/<nombre>/
+3. ¿Existe START.bat? -> Windows: cmd /c inicio <INICIO.bat>
+4. De lo contrario: busque el archivo principal (main.py, app.py, <nombre>.py)
+5. ¿Archivo principal presente? -> Python <archivo principal>
+6. Error si no se encuentra ningún archivo de inicio
+
+En sistemas que no son Windows: se ignora START.bat, solo el respaldo de Python
+
+VER TAMBIÉN
+----------
+
+  bach --help skills          Sistema SKILL.md (metadatos)
+  bach --help dist            Distribución y empaquetado
+  extensiones/directorio de extensiones
+  Investigación/_herramientas/ Herramientas de investigación (ejemplos)

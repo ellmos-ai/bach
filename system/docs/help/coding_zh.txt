@@ -1,0 +1,44 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+编码标准
+================
+
+1。路径
+   - 相对路径是黄金标准
+   - 没有硬编码 C:\Users\...
+   - 使用路径(__file__).parent
+   - 对于路径问题：--help bach_paths
+
+2。编码
+   - UTF-8 无处不在
+   - 始终指定编码='utf-8'
+   - 永远不要依赖系统默认
+
+   正确：
+     内容 = Path("file.txt").read_text(encoding="utf-8")
+     打开（“file.txt”，“w”，encoding =“utf-8”）作为f：
+
+3。控制台
+   - print() 中没有表情符号
+   - 改为：[信息]、[确定]、[错误]、[警告]
+   - 如有必要，控制台修复：
+     sys.stdout.reconfigure（编码='utf-8'，错误='替换'）
+
+4。表情符号
+   - 允许在文件中使用，但仅限已注册的文件！
+   - 注册表：system/tools/c_emoji_scanner.py (ASCII_OVERRIDES)
+   - 扫描仪：bach c_emoji_scanner <文件>
+
+5。 JSON编辑
+   - 首选：bach.py 或 Python 脚本
+   - 切勿将 fc_str_replace 替换为 JSON
+   - 切勿将 PowerShell 用于 JSON
+   - 如果出现问题：bach c_json_repair <文件>
+
+6。进口
+   - 标准库优先
+   - 然后是第三方
+   - 然后是本地模块
+   - 工具：bach c_import_organizer <文件>

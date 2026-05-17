@@ -1,0 +1,55 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+EMOJI 系统（概念文档）
+============================
+
+用于表情符号处理的策略模块和工具。
+注意：没有自动系统范围的转换 -
+策略函数必须手动调用。
+
+可用模块：
+
+1。策略模块（system/tools/_policies/emoji_safe.py）
+   - emoji_to_safe(text)：表情符号 → ASCII 标签，通过 emoji.demojize()
+   - emoji_to_display(text)：ASCII 标签 → 通过 emoji.emojize()
+
+2 的表情符号。扫描仪工具（system/tools/c_emoji_scanner.py）
+   - CLI: python c_emoji_scanner.py --status
+   - CLI: python c_emoji_scanner.py --scan-batch
+   - CLI: python c_emoji_scanner.py <文件/文件夹>
+   - 未集成为 BACH 命令
+
+3。 JSON修复（system/tools/c_json_repair.py）
+   - 在修复过程中使用表情符号转换
+
+转换示例：
+  ✅ → :check_mark_button:
+  ❌→：交叉标记：
+  ⚠️→：警告：
+  📁 → :文件文件夹:
+  📄 → :page_face_up:
+  🔧 → :扳手:
+  💡 → :light_bulb:
+
+ASCII 覆盖（自定义，在工具中定义）：
+  🟢 → [绿色]
+  🟡 → [黄色]
+  🔴 → [红色]
+  ✅ → [确定]
+  ❌ → [X]
+  ⚠ → [警告]
+  → → ->
+  ← → <-
+  ↔ → <->
+
+应用：
+  - JSON 文件：首选 ASCII 标签（手动转换）
+  - Markdown：允许使用表情符号
+  - 日志：首选 ASCII 标签
+
+为什么？
+  - 避免UTF-8编码问题
+  - 防止莫吉贝克
+  - 所有系统的一致性
