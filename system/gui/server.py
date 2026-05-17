@@ -4078,7 +4078,7 @@ async def maintenance_page():
 
         return FileResponse(daemon_file)
 
-    return HTMLResponse("<h1>Wartung</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template daemon.html nicht gefunden")
 
 
 
@@ -4096,7 +4096,7 @@ async def logs_page():
 
         return FileResponse(logs_file)
 
-    return HTMLResponse("<h1>Logs</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template logs.html nicht gefunden")
 
 
 
@@ -4114,7 +4114,7 @@ async def wiki_page():
 
         return FileResponse(wiki_file)
 
-    return HTMLResponse("<h1>Wiki</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template wiki.html nicht gefunden")
 
 
 
@@ -4124,7 +4124,7 @@ async def agents_page():
     agents_file = TEMPLATES_DIR / "agents.html"
     if agents_file.exists():
         return FileResponse(agents_file)
-    return HTMLResponse("<h1>Agenten</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template agents.html nicht gefunden")
 
 @app.get("/ati", response_class=HTMLResponse)
 @app.get("/agents/ati", response_class=HTMLResponse)
@@ -4133,7 +4133,7 @@ async def ati_agent_page():
     ati_file = TEMPLATES_DIR / "ati.html"
     if ati_file.exists():
         return FileResponse(ati_file)
-    return HTMLResponse("<h1>ATI Agent Dashboard</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template ati.html nicht gefunden")
 
 
 
@@ -4151,7 +4151,7 @@ async def partners_page():
 
         return FileResponse(partners_file)
 
-    return HTMLResponse("<h1>Partner</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template partners.html nicht gefunden")
 
 
 
@@ -4187,7 +4187,7 @@ async def gesundheit_dashboard_page():
 
         return FileResponse(template_file)
 
-    return HTMLResponse("<h1>Gesundheitsassistent</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template gesundheit.html nicht gefunden")
 
 
 
@@ -4203,7 +4203,7 @@ async def persoenlich_dashboard_page():
 
         return FileResponse(template_file)
 
-    return HTMLResponse("<h1>Persoenlicher Assistent</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template persoenlich.html nicht gefunden")
 
 
 
@@ -4213,7 +4213,7 @@ async def foerderplaner_dashboard_page():
     template_file = TEMPLATES_DIR / "anonymization.html"
     if template_file.exists():
         return FileResponse(template_file)
-    return HTMLResponse("<h1>Foerderplaner</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template anonymization.html nicht gefunden")
 
 
 
@@ -4229,7 +4229,7 @@ async def skills_board_page():
 
         return FileResponse(board_file)
 
-    return HTMLResponse("<h1>Skills Board</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template skills-board.html nicht gefunden")
 
 
 @app.get("/skills")
@@ -4270,7 +4270,7 @@ async def denkarium_page():
 
         return FileResponse(f)
 
-    return HTMLResponse("<h1>Denkarium</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template denkarium.html nicht gefunden")
 
 
 
@@ -4504,7 +4504,7 @@ async def tokens_page():
 
         return FileResponse(tokens_file)
 
-    return HTMLResponse("<h1>Token Dashboard</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template tokens.html nicht gefunden")
 
 
 
@@ -4524,7 +4524,7 @@ async def tasks_board_api():
 
         return FileResponse(board_file)
 
-    return HTMLResponse("<h1>Tasks Board</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template tasks_board.html nicht gefunden")
 
 
 
@@ -6223,7 +6223,7 @@ async def financial_page():
 
         return template.read_text(encoding='utf-8')
 
-    return HTMLResponse("<h1>Financial Mail - Template nicht gefunden</h1>")
+    raise HTTPException(status_code=404, detail="Template financial.html nicht gefunden")
 
 
 
@@ -7990,7 +7990,7 @@ async def memory_page():
 
         return template.read_text(encoding='utf-8')
 
-    return HTMLResponse("<h1>Memory Dashboard - Template nicht gefunden</h1>")
+    raise HTTPException(status_code=404, detail="Template memory.html nicht gefunden")
 
 
 
@@ -8690,7 +8690,7 @@ async def tools_page():
 
         return template.read_text(encoding='utf-8')
 
-    return HTMLResponse("<h1>Tools Dashboard - Template nicht gefunden</h1>")
+    raise HTTPException(status_code=404, detail="Template tools.html nicht gefunden")
 
 
 
@@ -9003,7 +9003,7 @@ async def prompt_generator_page():
 
         return template.read_text(encoding='utf-8')
 
-    return HTMLResponse("<h1>Prompt-Generator - Template nicht gefunden</h1>")
+    raise HTTPException(status_code=404, detail="Template prompt-generator.html nicht gefunden")
 
 
 
@@ -11286,7 +11286,7 @@ async def usecases_page():
     usecases_file = TEMPLATES_DIR / "usecases.html"
     if usecases_file.exists():
         return FileResponse(usecases_file)
-    return HTMLResponse("<h1>Usecases</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template usecases.html nicht gefunden")
 
 
 @app.get("/api/usecases")
@@ -11590,7 +11590,7 @@ async def kontakte_page():
     kontakte_file = TEMPLATES_DIR / "kontakte.html"
     if kontakte_file.exists():
         return FileResponse(kontakte_file)
-    return HTMLResponse("<h1>Kontakte</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template kontakte.html nicht gefunden")
 
 
 @app.get("/api/contacts")
@@ -11806,7 +11806,7 @@ async def routinen_page():
     routinen_file = TEMPLATES_DIR / "routinen.html"
     if routinen_file.exists():
         return FileResponse(routinen_file)
-    return HTMLResponse("<h1>Routinen</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template routinen.html nicht gefunden")
 
 
 @app.get("/api/routines")
@@ -13498,7 +13498,7 @@ async def workflow_tuev_page():
     workflow_tuev_file = TEMPLATES_DIR / "workflow_tuev.html"
     if workflow_tuev_file.exists():
         return FileResponse(workflow_tuev_file)
-    return HTMLResponse("<h1>Workflow TÜV</h1><p>Template nicht gefunden</p>")
+    raise HTTPException(status_code=404, detail="Template workflow_tuev.html nicht gefunden")
 
 
 @app.get("/api/workflow-tuev")

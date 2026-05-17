@@ -1,7 +1,7 @@
 # Portabilität: EXTERNAL
 # Version: 1.0.0
-# Zuletzt validiert: 2026-02-08
-# Nächste Prüfung: 2027-02-08
+# Zuletzt validiert: 2026-05-17
+# Nächste Prüfung: 2027-05-17
 
 # BachForelle (The Arrow) - Cross-Reference
 

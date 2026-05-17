@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
-# Zuletzt validiert: 2026-02-08
-# Nächste Prüfung: 2026-08-08
+# Zuletzt validiert: 2026-05-17
+# Nächste Prüfung: 2026-11-17
 # Quellen: docs/_archive/CONCEPT_user_folder_attachment.md, system/hub/mount.py
 
 BACH USER-MOUNTS (KONZEPT)
