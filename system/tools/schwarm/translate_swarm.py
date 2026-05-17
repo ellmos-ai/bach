@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
-translate_swarm.py - Schwarm-Uebersetzung mit Epstein-Methode (SQ062)
+translate_swarm.py - Schwarm-Uebersetzung mit Parallel-Chunks-Methode (SQ062)
 =====================================================================
 
 Uebersetzt fehlende DE->EN Texte in languages_translations via Claude Haiku.
-"Epstein-Methode": Texte in kleine Chunks buendeln, 5-10 parallele Haiku-Instanzen.
+"Parallel-Chunks-Methode": Texte in kleine Chunks buendeln, 5-10 parallele Haiku-Instanzen.
 
 Usage:
     python translate_swarm.py                       # Alle fehlenden uebersetzen
@@ -279,7 +279,7 @@ def write_results_to_db(db_path, all_results):
 def run_swarm(source_lang="de", target_lang="en", namespace=None,
               chunk_size=DEFAULT_CHUNK_SIZE, workers=DEFAULT_WORKERS,
               max_workers=0, limit=0, dry_run=False):
-    """Schwarm-Uebersetzung mit Epstein-Methode."""
+    """Schwarm-Uebersetzung mit Parallel-Chunks-Methode."""
     db_path = get_db_path()
 
     # 1. Fehlende laden
@@ -373,7 +373,7 @@ def run_swarm(source_lang="de", target_lang="en", namespace=None,
         tokens_out = total_chars // 4
         cost = (tokens_in * 1 + tokens_out * 5) / 1_000_000
         log_schwarm_run(
-            pattern="epstein_translate",
+            pattern="parallel_chunks_translate",
             task=f"translate {source_lang}->{target_lang}, {len(missing)} texts",
             tokens_in=tokens_in,
             tokens_out=tokens_out,
@@ -450,7 +450,7 @@ def show_inventory(namespace=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Schwarm-Uebersetzung mit Epstein-Methode (SQ062)"
+        description="Schwarm-Uebersetzung mit Parallel-Chunks-Methode (SQ062)"
     )
     parser.add_argument(
         "--namespace", "-n",

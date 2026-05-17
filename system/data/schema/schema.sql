@@ -2361,7 +2361,7 @@ CREATE TABLE email_drafts (
                 cancelled_at TIMESTAMP
             );
 
-CREATE TABLE epstein_runs (
+CREATE TABLE chunk_indexing_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     finished_at TIMESTAMP,

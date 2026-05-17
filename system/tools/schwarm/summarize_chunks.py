@@ -2,14 +2,14 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
-Epstein-Methode Stufe 3: LLM-Zusammenfassungen fuer Chunks
+Parallel-Chunks-Methode Stufe 3: LLM-Zusammenfassungen fuer Chunks
 SQ047: Wissensindexierung
 
 Zweck:
 - Laedt alle Chunks aus document_chunks (ohne Summary)
 - Generiert LLM-Zusammenfassungen via Claude API
 - Speichert Summaries zurueck in DB
-- Protokolliert Run in epstein_runs
+- Protokolliert Run in chunk_indexing_runs
 
 Usage:
     python summarize_chunks.py [--model haiku|sonnet] [--batch-size 10] [--dry-run]
@@ -60,14 +60,14 @@ class ChunkSummarizer:
 
     def _create_run(self) -> int:
         """
-        Erstellt einen neuen epstein_runs Eintrag.
+        Erstellt einen neuen chunk_indexing_runs Eintrag.
 
         Returns:
             run_id
         """
         conn = self._get_db()
         cursor = conn.execute("""
-            INSERT INTO epstein_runs (started_at, llm_model, status)
+            INSERT INTO chunk_indexing_runs (started_at, llm_model, status)
             VALUES (?, ?, 'running')
         """, (datetime.now().isoformat(), self.model))
         conn.commit()
@@ -77,7 +77,7 @@ class ChunkSummarizer:
 
     def _finish_run(self, status: str = "completed", log: str = ""):
         """
-        Beendet den epstein_run.
+        Beendet den chunk_indexing_run.
 
         Args:
             status: "completed" oder "failed"
@@ -85,7 +85,7 @@ class ChunkSummarizer:
         """
         conn = self._get_db()
         conn.execute("""
-            UPDATE epstein_runs
+            UPDATE chunk_indexing_runs
             SET finished_at = ?,
                 status = ?,
                 chunks_summarized = ?,
@@ -200,7 +200,7 @@ Zusammenfassung:"""
             batch_size: Wie viele Chunks pro Batch? (Rate-Limiting)
             dry_run: Wenn True, nur Simulation (keine DB-Schreibzugriffe)
         """
-        print("=== Epstein-Methode Stufe 3: Chunk-Zusammenfassung ===\n")
+        print("=== Parallel-Chunks Stufe 3: Chunk-Zusammenfassung ===\n")
         print(f"Modell: {self.model}")
         print(f"Batch-Size: {batch_size}")
         print(f"Dry-Run: {'Ja' if dry_run else 'Nein'}\n")
@@ -263,7 +263,7 @@ Zusammenfassung:"""
         try:
             from .runner import log_schwarm_run
             log_schwarm_run(
-                pattern="epstein_summarize",
+                pattern="parallel_chunks_summarize",
                 task=f"summarize {total_chunks} chunks",
                 tokens_in=sum(c.get('chunk_tokens', 0) for c in chunks),
                 tokens_out=self.stats['chunks_summarized'] * 50,
@@ -292,7 +292,7 @@ Zusammenfassung:"""
 def main():
     """CLI-Einstieg."""
     parser = argparse.ArgumentParser(
-        description="Epstein-Methode Stufe 3: LLM-Zusammenfassungen fuer Chunks"
+        description="Parallel-Chunks Stufe 3: LLM-Zusammenfassungen fuer Chunks"
     )
     parser.add_argument(
         '--model',

@@ -1,43 +1,44 @@
 # Portabilitaet: SYSTEM
-# Version: 2.0.0
-# Zuletzt validiert: 2026-03-08
-# Naechste Pruefung: 2026-09-08
+# Version: 3.0.0
+# Zuletzt validiert: 2026-05-17
+# Naechste Pruefung: 2026-11-17
 # Ressourcen: [hub/schwarm.py, tools/schwarm/, skills/workflows/schwarm-operationen.md]
 
-SCHWARM - Parallele LLM-Operationen und Schwarm-Intelligenz
+SWARM - Parallele LLM-Operationen und Schwarm-Intelligenz
 ============================================================
 
-STAND: 2026-03-08 (v3.8.0-SUGAR)
+STAND: 2026-05-17 (v3.11.1)
+CLI: bach swarm (alias: bach schwarm)
 
-Das Schwarm-System ermoeglicht parallele LLM-Ausfuehrung mit verschiedenen
+Das Swarm-System ermoeglicht parallele LLM-Ausfuehrung mit verschiedenen
 Koordinationsmustern. Mehrere LLM-Instanzen arbeiten gleichzeitig an
 Teilaufgaben und werden automatisch koordiniert.
 
 Ref: SQ016
 
-SCHWARM-MUSTER
+SWARM PATTERNS
 --------------
 
-1. EPSTEIN (Parallele Chunks) [AKTIV]
+1. PARALLEL-CHUNKS [AKTIV]
    Aufgabe wird in Chunks aufgeteilt, parallel verarbeitet, zusammengefuegt.
    Einsatz: Uebersetzung, Code-Review, Dokumentation.
    Koordination: Zentral (Chunker + Aggregator)
    Skalierung: Hoch (linear mit Worker-Anzahl)
 
-2. HIERARCHIE (Boss + Worker) [GEPLANT]
+2. HIERARCHY (Boss + Worker) [AKTIV]
    Ein Coordinator verteilt Aufgaben an Worker, ein Aggregator fasst zusammen.
    Einsatz: Komplexe Projekte mit Abhaengigkeiten.
    Koordination: Zentral (Boss-Worker-Pattern)
    Skalierung: Mittel (durch Boss begrenzt)
 
-3. STIGMERGY (Pheromon-basiert) [GEPLANT]
+3. STIGMERGY (Pheromon-basiert) [AKTIV]
    Agenten hinterlassen Spuren (Pheromone) in SharedMemory.
    Andere Agenten folgen starken Pfaden.
    Einsatz: Exploration, Optimierung, dezentrale Koordination.
    Koordination: Dezentral (indirekt ueber Umgebung)
    Skalierung: Hoch (emergent)
 
-4. KONSENSUS (Mehrheitsentscheid) [AKTIV]
+4. CONSENSUS (Mehrheitsentscheid) [AKTIV]
    Mehrere LLMs beantworten dieselbe Frage unabhaengig.
    Konsens wird durch Similarity-Scoring oder Majority-Vote ermittelt.
    Einsatz: Kritische Entscheidungen, Qualitaetssicherung.
@@ -48,22 +49,22 @@ SCHWARM-MUSTER
      similarity  Paarweise Textaehnlichkeit, hoechster Avg-Score gewinnt
      majority    Antworten gruppieren, groesste Gruppe gewinnt
 
-5. SPEZIALIST (Boss-Routing) [GEPLANT]
-   Bereits teilweise in BACH integriert (11 Boss-Agenten).
+5. SPECIALIST (Boss-Routing) [AKTIV]
+   Bereits in BACH integriert (11 Boss-Agenten).
    Aufgabe wird an den passenden Spezialisten geroutet.
 
 CLI-BEFEHLE
 -----------
 
-  bach schwarm list
+  bach swarm list
       Verfuegbare Schwarm-Muster mit Status anzeigen.
 
-  bach schwarm run <muster> <aufgabe>
+  bach swarm run <muster> <aufgabe>
       Schwarm-Muster ausfuehren.
-      Beispiel: bach schwarm run konsensus "Was ist der beste Python-Linter?"
+      Beispiel: bach swarm run consensus "Was ist der beste Python-Linter?"
 
-  bach schwarm translate [optionen]
-      Epstein-Uebersetzung (DE->EN) fuer BACH-Texte.
+  bach swarm translate [optionen]
+      Parallel-Chunks-Uebersetzung (DE->EN) fuer BACH-Texte.
 
       Optionen:
         --namespace <ns>    Nur einen Namespace uebersetzen
@@ -73,15 +74,15 @@ CLI-BEFEHLE
         --inventory         Nur Status anzeigen
         --dry-run           Simulation ohne API-Aufrufe
 
-  bach schwarm summarize [optionen]
-      Chunk-Zusammenfassungen generieren (Epstein Stufe 3).
+  bach swarm summarize [optionen]
+      Chunk-Zusammenfassungen generieren (Parallel-Chunks Stufe 3).
 
       Optionen:
         --batch-size N      Chunks pro Batch (default: 10)
         --model MODEL       haiku oder sonnet (default: haiku)
         --dry-run           Simulation
 
-  bach schwarm benchmark [optionen]
+  bach swarm benchmark [optionen]
       Performance-Benchmark: sequentiell vs. parallel.
 
       Optionen:
@@ -94,7 +95,7 @@ CLI-BEFEHLE
         --model MODEL       LLM-Modell (default: haiku)
         --export FILE       Ergebnisse als JSON exportieren
 
-  bach schwarm consensus "<frage>" [optionen]
+  bach swarm consensus "<frage>" [optionen]
       Konsensus-Abstimmung: Mehrere LLMs beantworten dieselbe Frage.
 
       Optionen:
@@ -102,7 +103,7 @@ CLI-BEFEHLE
         --model MODEL       haiku, sonnet, opus (default: haiku)
         --method METHOD     similarity oder majority (default: similarity)
 
-  bach schwarm status [N]
+  bach swarm status [N]
       Letzte N Schwarm-Runs anzeigen (default: 20).
       Inkl. Kosten-Statistik und Token-Verbrauch.
 
@@ -111,7 +112,7 @@ KOSTEN-TRACKING
 
 Jeder Schwarm-Run wird in der DB protokolliert (Tabelle: schwarm_runs).
 Erfasst werden: Muster, Aufgabe, Tokens (in/out), Kosten (USD),
-Worker-Anzahl, Dauer, Status. Abrufbar via: bach schwarm status
+Worker-Anzahl, Dauer, Status. Abrufbar via: bach swarm status
 
 Kosten-Schaetzung (pro 1M Tokens):
   Haiku:   $1.00 Input / $5.00 Output   (guenstig, fuer Bulk)
@@ -136,7 +137,7 @@ DATEIEN
   system/tools/schwarm/              Tool-Sammlung
     __init__.py                      Paket-Init
     runner.py                        Claude CLI Wrapper + Kosten-Tracking
-    translate_swarm.py               Epstein-Uebersetzung (SQ062)
+    translate_swarm.py               Parallel-Chunks-Uebersetzung (SQ062)
     summarize_chunks.py              Chunk-Zusammenfassungen (SQ047)
     benchmark.py                     Performance-Benchmark
     consensus.py                     Konsensus-Muster
@@ -145,19 +146,19 @@ BEISPIELE
 ---------
 
   # Fehlende Uebersetzungen pruefen
-  bach schwarm translate --inventory
+  bach swarm translate --inventory
 
   # Uebersetzung starten (8 Worker, 10er Chunks)
-  bach schwarm translate --workers 8 --chunk-size 10
+  bach swarm translate --workers 8 --chunk-size 10
 
   # 5 Voter fragen, Konsens via Majority ermitteln
-  bach schwarm consensus "Soll ich asyncio oder threading verwenden?" --voters 5 --method majority
+  bach swarm consensus "Soll ich asyncio oder threading verwenden?" --voters 5 --method majority
 
   # Benchmark mit Vergleich und Export
-  bach schwarm benchmark --compare --workers 5 --export results.json
+  bach swarm benchmark --compare --workers 5 --export results.json
 
   # Status aller Schwarm-Runs (letzte 50)
-  bach schwarm status 50
+  bach swarm status 50
 
 SIEHE AUCH
 ----------

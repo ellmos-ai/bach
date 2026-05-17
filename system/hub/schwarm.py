@@ -1,28 +1,28 @@
 # SPDX-License-Identifier: MIT
 """
-Schwarm Handler - Schwarm-basierte LLM-Ausfuehrungsmuster
+Swarm Handler - LLM Swarm Execution Patterns
 ==========================================================
 
-Verfuegbare Muster:
-  - Epstein:     Parallelisierte Chunk-Verarbeitung (translate, summarize)
-  - Hierarchie:  Manager-Worker-Struktur (geplant)
-  - Stigmergy:   Indirekte Koordination ueber geteilten Zustand (geplant)
-  - Konsensus:   Mehrere LLMs abstimmen lassen
-  - Spezialist:  Aufgabe an spezialisierten Agenten routen (geplant)
+Available patterns:
+  - parallel-chunks:  Parallelized chunk processing (translate, summarize)
+  - hierarchy:        Manager-Worker structure
+  - stigmergy:        Indirect coordination via shared state (pheromone)
+  - consensus:        Multiple LLMs vote on a question
+  - specialist:       Route task to specialized agent
 
-Befehle:
-  bach schwarm list                                  Verfuegbare Muster anzeigen
-  bach schwarm run <muster> <aufgabe>                Schwarm-Muster ausfuehren
-  bach schwarm translate --file <path> [--workers N] [--max-workers N]  Schwarm-Uebersetzung
-  bach schwarm summarize [--batch-size N]                               Chunk-Zusammenfassungen
-  bach schwarm benchmark [--compare] [--workers N] [--max-workers N]    Performance-Benchmark
-  bach schwarm consensus <frage> [--voters N]         Konsensus-Abstimmung
-  bach schwarm hierarchy <aufgabe> [--workers N]      Boss-Worker-Aggregator
-  bach schwarm stigmergy <aufgabe> [--agents N]       Pheromon-basierte Koordination
-  bach schwarm specialist <aufgabe> [--auto-execute]  Routing an spezialisierten Agenten
-  bach schwarm status                                 Schwarm-Run-Historie
+Commands (primary: 'bach swarm', alias: 'bach schwarm'):
+  bach swarm list                                  Show available patterns
+  bach swarm run <pattern> <task>                  Execute swarm pattern
+  bach swarm translate --file <path> [--workers N] Swarm translation
+  bach swarm summarize [--batch-size N]            Chunk summaries
+  bach swarm benchmark [--compare] [--workers N]   Performance benchmark
+  bach swarm consensus <question> [--voters N]     Consensus vote
+  bach swarm hierarchy <task> [--workers N]        Boss-Worker aggregator
+  bach swarm stigmergy <task> [--agents N]         Pheromone-based coordination
+  bach swarm specialist <task> [--auto-execute]    Route to specialist agent
+  bach swarm status                                Run history
 
-Ref: BACH v3.8.0-SUGAR
+Ref: BACH v3.8.0-SUGAR / renamed from 'schwarm' + 'epstein' in v3.11.1
 """
 import json
 import sqlite3
@@ -37,31 +37,30 @@ from .lang import t
 class SchwarmHandler(BaseHandler):
     """Handler fuer Schwarm-basierte LLM-Operationen."""
 
-    # Verfuegbare Schwarm-Muster
     PATTERNS = {
-        "epstein": {
-            "name": "Epstein-Methode",
-            "desc": "Parallelisierte Chunk-Verarbeitung (uebersetzen, zusammenfassen)",
+        "parallel-chunks": {
+            "name": "Parallel Chunks",
+            "desc": "Parallelized chunk processing (translate, summarize)",
             "status": "aktiv",
         },
-        "hierarchie": {
-            "name": "Hierarchie",
-            "desc": "Manager-Worker-Struktur mit Task-Delegation",
+        "hierarchy": {
+            "name": "Hierarchy",
+            "desc": "Manager-Worker structure with task delegation",
             "status": "aktiv",
         },
         "stigmergy": {
             "name": "Stigmergy",
-            "desc": "Indirekte Koordination ueber geteilten Zustand",
+            "desc": "Indirect coordination via shared state (pheromone)",
             "status": "aktiv",
         },
-        "konsensus": {
-            "name": "Konsensus",
-            "desc": "Mehrere LLMs abstimmen, Majority-Vote oder Similarity",
+        "consensus": {
+            "name": "Consensus",
+            "desc": "Multiple LLMs vote, majority-vote or similarity",
             "status": "aktiv",
         },
-        "spezialist": {
-            "name": "Spezialist",
-            "desc": "Aufgabe an spezialisierten Agenten routen",
+        "specialist": {
+            "name": "Specialist",
+            "desc": "Route task to specialized agent",
             "status": "aktiv",
         },
     }
@@ -83,7 +82,7 @@ class SchwarmHandler(BaseHandler):
         return {
             "list": t("schwarm_list_desc", default="Verfuegbare Schwarm-Muster anzeigen"),
             "run": t("schwarm_run_desc", default="Schwarm-Muster ausfuehren: bach schwarm run <muster> <aufgabe>"),
-            "translate": t("schwarm_translate_desc", default="Schwarm-Uebersetzung (Epstein-Methode)"),
+            "translate": t("schwarm_translate_desc", default="Schwarm-Uebersetzung (Parallel Chunks)"),
             "summarize": t("schwarm_summarize_desc", default="Chunk-Zusammenfassungen generieren"),
             "benchmark": t("schwarm_benchmark_desc", default="Performance-Benchmark (sequentiell vs. parallel)"),
             "consensus": t("schwarm_consensus_desc", default="Konsensus-Abstimmung mit mehreren LLMs"),
@@ -151,42 +150,45 @@ class SchwarmHandler(BaseHandler):
     def _run_pattern(self, args: list, dry_run: bool) -> tuple:
         if not args:
             return False, (
-                "Usage: bach schwarm run <muster> <aufgabe>\n\n"
-                "Muster: epstein, konsensus, hierarchie, stigmergy, spezialist\n"
-                "Beispiel: bach schwarm run konsensus \"Was ist der beste Python-Linter?\""
+                "Usage: bach swarm run <pattern> <task>\n\n"
+                "Patterns: parallel-chunks, consensus, hierarchy, stigmergy, specialist\n"
+                "Example: bach swarm run consensus \"Was ist der beste Python-Linter?\""
             )
 
         pattern = args[0].lower()
+        # Legacy aliases
+        pattern = {"epstein": "parallel-chunks", "konsensus": "consensus",
+                   "hierarchie": "hierarchy", "spezialist": "specialist"}.get(pattern, pattern)
         task = " ".join(args[1:]) if len(args) > 1 else ""
 
         if pattern not in self.PATTERNS:
             available = ", ".join(self.PATTERNS.keys())
-            return False, f"Unbekanntes Muster: {pattern}\nVerfuegbar: {available}"
+            return False, f"Unknown pattern: {pattern}\nAvailable: {available}"
 
         if self.PATTERNS[pattern]["status"] != "aktiv":
-            return False, f"Muster '{pattern}' ist noch nicht implementiert (Status: {self.PATTERNS[pattern]['status']})"
+            return False, f"Pattern '{pattern}' not yet implemented (status: {self.PATTERNS[pattern]['status']})"
 
         if not task:
-            return False, f"Aufgabe benoetigt: bach schwarm run {pattern} \"<aufgabe>\""
+            return False, f"Task required: bach swarm run {pattern} \"<task>\""
 
-        # Routing zu aktivem Muster
-        if pattern == "konsensus":
+        # Route to pattern
+        if pattern == "consensus":
             return self._consensus([task], dry_run)
-        elif pattern == "epstein":
+        elif pattern == "parallel-chunks":
             return True, (
-                f"Epstein-Methode wird ueber spezifische Sub-Commands ausgefuehrt:\n"
-                f"  bach schwarm translate --dry-run\n"
-                f"  bach schwarm summarize --dry-run\n"
-                f"  bach schwarm benchmark --compare"
+                f"Parallel Chunks pattern uses specific sub-commands:\n"
+                f"  bach swarm translate --dry-run\n"
+                f"  bach swarm summarize --dry-run\n"
+                f"  bach swarm benchmark --compare"
             )
-        elif pattern == "hierarchie":
+        elif pattern == "hierarchy":
             return self._hierarchy([task], dry_run)
         elif pattern == "stigmergy":
             return self._stigmergy([task], dry_run)
-        elif pattern == "spezialist":
+        elif pattern == "specialist":
             return self._specialist([task], dry_run)
         else:
-            return False, f"Muster '{pattern}' ist noch nicht implementiert."
+            return False, f"Pattern '{pattern}' not yet implemented."
 
     # =========================================================
     # translate -- Wrapper fuer translate_swarm.py

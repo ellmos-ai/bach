@@ -4,7 +4,7 @@
 """
 document_chunker.py — Dokumente in Token-Chunks aufteilen (SQ047)
 
-Teil der Epstein-Methode Wissensindexierung.
+Teil der Parallel-Chunks-Methode Wissensindexierung.
 Zerteilt Dokumente in 400-Token-Chunks mit 80-Token Overlap.
 
 Usage:
@@ -38,7 +38,7 @@ class DocumentChunker:
         Einfache Tokenisierung (Wort-basiert).
 
         Für echtes Token-Counting müsste man tiktoken verwenden,
-        aber für den Epstein-Ansatz reicht Wort-Approximation.
+        aber für den Parallel-Chunks-Ansatz reicht Wort-Approximation.
 
         Args:
             text: Zu tokenisierender Text

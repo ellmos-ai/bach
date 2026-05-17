@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: MIT
 """
-schwarm - Schwarm-basierte LLM-Ausfuehrungsmuster
+schwarm - LLM Swarm Execution Patterns
 ==================================================
-Epstein-Methode, Konsensus, Hierarchie, Stigmergy, Spezialist.
+Patterns: parallel-chunks, consensus, hierarchy, stigmergy, specialist.
 
-Ref: BACH v3.8.0-SUGAR
+Ref: BACH v3.8.0-SUGAR / renamed v3.11.1
 """
 
 from .runner import ClaudeRunner, calculate_dynamic_workers
