@@ -20,17 +20,20 @@ OPERATIONEN
   scan                Code-Verzeichnisse nach deutschen Strings durchsuchen
   scan --namespace    Nur bestimmten Bereich scannen (cli, gui, help, skills)
   list                Alle Uebersetzungen anzeigen
-  list --lang <code>  Nur bestimmte Sprache (de/en)
-  missing             Fehlende Uebersetzungen (Eintraege ohne en-Version)
+  list --lang <code>  Nur bestimmte Sprache (z.B. de/en/es/ru/ja/zh)
+  missing             Fehlende Uebersetzungen (Standard: de ohne en)
+  missing --target es Fehlende spanische Uebersetzungen
   translate           Auto-Uebersetzung starten (basierend auf Woerterbuch)
-  add <key>           Manuell Uebersetzung hinzufuegen (--de, --en Flags)
+  translate --target en  Auto-Uebersetzung fuer Zielsprache
+  add <key>           Manuell Uebersetzung hinzufuegen (--de, --en, --es ... oder --lang/--text)
   add-language <code> Neue Sprache registrieren (z.B. fr, es, pt)
-  export              Fuer LLM-Review exportieren (JSON-Format)
+  export              Fuer LLM-Review exportieren (JSON-Format, Standard: de -> en)
+  export --target zh  Fuer Chinesisch exportieren
   import <datei>      LLM-Review-Datei importieren und integrieren
-  set <lang>          Standard-Sprache setzen (de/en)
+  set <lang>          Standard-Sprache setzen (z.B. de/en/es/ru/ja/zh)
   dict status         Woerterbuch-Status anzeigen
   dict init           Basis-Woerterbuch (119 Begriffe) laden
-  dict add <de> <en>  Begriff manuell zum Woerterbuch hinzufuegen
+  dict add <src> <dst> [--source-lang de --target-lang es]
   dict search <term>  Begriff im Woerterbuch suchen
 
 BEISPIELE
@@ -44,12 +47,15 @@ BEISPIELE
 
 # Fehlende Uebersetzungen identifizieren
   bach lang missing
+  bach lang missing --target es
 
 # Manuell uebersetzen
   bach lang add "speichern" --de "Speichern" --en "Save"
+  bach lang add "speichern" --es "Guardar" --ru "Sohranit"
 
 # LLM-Review vorbereiten
   bach lang export
+  bach lang export --target zh
   [... LLM bearbeitet Datei ...]
   bach lang import export.json
 
@@ -58,6 +64,7 @@ BEISPIELE
 
 # Standard-Sprache auf English setzen
   bach lang set en
+  bach lang set ja
 
 # Woerterbuch-Basis laden (119 Eintraege)
   bach lang dict init
@@ -70,6 +77,7 @@ Datenbank:      data/bach.db (SQLite)
   - Tabelle languages_translations: Alle Uebersetzungen mit Metadaten
   - Tabelle languages_dictionary: Basis-Woerterbuch (119 Begriffe)
 Export-Format:  JSON (Uebersetzungen + Metadaten, kompatibel mit LLM-Tools)
+Release-Artefakte: system/exports/translations/ (Manifest, Locale-Dateien, Seed-SQL)
 
 SIEHE AUCH
 ==========

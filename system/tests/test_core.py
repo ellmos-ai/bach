@@ -216,6 +216,56 @@ class TestDatabase:
         assert len(applied) == 1
         assert applied[0]["filename"] == "001_add_column.sql"
 
+    def test_init_schema_applies_release_language_seed_for_new_db(self):
+        from core.db import Database
+
+        (self.schema_dir / "schema.sql").write_text(
+            """
+            CREATE TABLE IF NOT EXISTS languages_config (
+                id INTEGER PRIMARY KEY,
+                default_language TEXT,
+                enabled_languages TEXT
+            );
+            CREATE TABLE IF NOT EXISTS languages_translations (
+                id INTEGER PRIMARY KEY,
+                key TEXT,
+                namespace TEXT,
+                language TEXT,
+                value TEXT
+            );
+            CREATE TABLE IF NOT EXISTS languages_dictionary (
+                id INTEGER PRIMARY KEY,
+                term TEXT,
+                translation TEXT,
+                source_lang TEXT,
+                target_lang TEXT
+            );
+            """,
+            encoding="utf-8",
+        )
+
+        seed_dir = self.schema_dir / "exports" / "translations"
+        seed_dir.mkdir(parents=True)
+        (seed_dir / "languages_seed.release.sql").write_text(
+            """
+            INSERT OR REPLACE INTO languages_config (id, default_language, enabled_languages)
+            VALUES (1, 'de', '["de","en","es"]');
+            INSERT OR REPLACE INTO languages_translations (id, key, namespace, language, value)
+            VALUES (1, 'save', 'cli', 'es', 'Guardar');
+            """,
+            encoding="utf-8",
+        )
+
+        db = Database(self.db_path, self.schema_dir)
+        db.init_schema()
+
+        row = db.execute_one("SELECT default_language, enabled_languages FROM languages_config WHERE id = 1")
+        translation = db.execute_one("SELECT value FROM languages_translations WHERE key = 'save' AND language = 'es'")
+
+        assert row["default_language"] == "de"
+        assert "es" in row["enabled_languages"]
+        assert translation["value"] == "Guardar"
+
 
 # ═══════════════════════════════════════════════════════════════
 # core/registry.py Tests

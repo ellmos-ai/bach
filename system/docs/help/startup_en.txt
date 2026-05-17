@@ -1,0 +1,202 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+STARTUP - Start a Session
+=========================
+
+DESCRIPTION
+The startup protocol initializes a BACH session with all necessary
+checks and displays the context from the last session.
+
+COMMAND
+------
+bach --startup                    Full startup protocol
+bach --startup quick              Quick start (without directory scan)
+bach --startup mode <m>           Change startup mode (gui|text|dual|silent)
+bach --startup --mode=<m>         Start once with different mode
+bach --startup --partner=NAME     Partner-specific session
+
+PARTNER SESSIONS
+----------------
+Enables partner-specific session management:
+
+  bach --startup --partner=claude   Start Claude session
+  bach --startup --partner=gemini   Start Gemini session
+  bach --startup --partner=user     Standard (default)
+  bach --startup --partner=new      Generate automatic ID (partner_HHMMSS)
+  bach --startup --partner=simonAI  New partner with custom name
+
+BENEFITS:
+- Previous session of same partner is automatically closed
+- Parallel sessions for different partners possible
+- Prevents "orphaned" open sessions on repeated startup
+- Automatic punch card (clock-in/out) in partner_presence table
+
+PUNCH CARD SYSTEM:
+- On startup: Partner is automatically clocked in
+- On shutdown: Partner is automatically clocked out
+- Partner awareness: Shows who else is online
+- Multi-LLM Protocol V3: Activated when multiple partners are present
+
+NEW PARTNERS:
+  # With custom name (recommended)
+  bach --startup --partner=simonAI
+
+  # Without name (generates ID)
+  bach --startup --partner=new      -> partner_143052
+
+EXAMPLE:
+  # Gemini starts work
+  bach --startup --partner=gemini --mode=silent
+
+  # Later: Gemini restarts -> old session is closed
+  bach --startup --partner=gemini --mode=silent
+  [AUTO-CLOSE] Previous GEMINI session ended: session_20260126_...
+
+  # Partner awareness shows:
+  [PARTNER-AWARENESS]
+   *** 1 OTHER PARTNER(S) ONLINE ***
+     CLAUDE: Task_XYZ
+   --> Use Protocol V3! (bach --help multi_llm)
+
+DATABASE:
+  memory_sessions.partner_id stores the partner name.
+  partner_presence stores punch card (online/offline/crashed).
+  Default: "user" for manual sessions.
+
+USER MODES
+----------
+BACH supports 4 startup modes:
+
+  gui      GUI Dashboard opens in browser (default)
+  text     Console only, no browser
+  dual     GUI + console in parallel
+  silent   Nothing started automatically
+
+The mode is stored in data/user_config.json.
+Details: bach --help modes
+
+PROSYNC (before startup protocol)
+---------------------------------
+If ProSync is enabled (bach setup prosync --multi-system), bach.py
+performs a DB sync BEFORE the startup protocol:
+  - Pull: Load newer backups from transit hub and merge
+  - Push (on exit): Write own backup to transit hub
+ProSync runs in bach.py main(), not in the startup handler.
+Details: bach --help db_sync
+
+AGENT RECOVERY TIP
+------------------
+If agent starts are part of the startup/daily check, `bach agent doctor [name]`
+provides a quick preflight diagnosis with recovery hints. Especially useful
+before `bach agent start ...` or when an agent window closes immediately:
+
+  bach agent doctor ati
+  bach agent doctor ati --json
+
+SEQUENCE
+--------
+The startup protocol executes these steps:
+
+1. [DIRECTORY SCAN]
+   - Checks changes since last session
+   - Shows new/deleted/changed files
+   - Skipped with "quick"
+
+2. [PROBLEMS FIRST]
+   - Automatic error report (from CHIAH)
+   - Shows errors from last 24 hours
+
+3. [PATH HEALER CHECK]
+   - Dry-run check for path issues
+   - Shows files with broken paths
+   - Fix: bach --maintain heal --execute
+
+4. [REGISTRY WATCHER]
+   - Checks DB/JSON consistency
+   - Shows missing tables, invalid JSON
+   - Details: bach --maintain registry
+
+5. [SKILL HEALTH]
+   - Validates skills and agents
+   - Shows problems with SKILL.md files
+   - Details: bach --maintain skills
+
+6. [LAST SESSION]
+   - Shows the last completed session
+   - Tasks created/completed
+   - IMPORTANT: "NEXT STEPS" = continuation_context
+
+7. [SNAPSHOT AVAILABLE]
+   - Shows last snapshot (if created today)
+   - Number of open tasks in snapshot
+   - Resume: bach snapshot load
+
+8. [MEMORY CHECK]
+   - Counts working memory, facts, lessons
+   - Shows last note
+
+9. [SESSION REGISTER]
+   - New session ID is created in memory_sessions
+
+10. [MESSAGES]
+    - Checks unread messages in MessageBox
+    - Shows sender and subject
+    - Details: bach msg unread
+
+11. [PERIODIC TASKS]
+    - Shows due recurring tasks
+    - Create: bach --recurring check
+
+12. [BACH SYSTEM TASKS]
+    - Shows open/completed BACH framework tasks
+    - Top 3 by priority (P1 > P2 > P3)
+    - All: bach task list
+
+13. [ATI AGENT]
+    - Checks if ATI folder exists
+    - Software developer agent status
+
+14. [LESSONS LEARNED]
+    - Shows stored lessons
+    - Details: bach lesson last
+
+15. [AUTOLOG]
+    - Entries from system/data/logs/auto_log.txt
+    - Last 3 commands
+    - More: bach --logs tail 20
+
+16. [INJECTORS]
+    - Shows active injectors
+
+17. [STARTUP MODE]
+    - Shows current mode (GUI/TEXT/DUAL/SILENT)
+    - Starts GUI and/or console depending on mode
+    - GUI: http://127.0.0.1:8000 in browser
+    - Text: New console window with bach.py
+
+DATA SOURCES
+------------
+- memory_sessions:    Last session, continuation_context
+- memory_working:     Current notes
+- memory_facts:       Persistent facts
+- memory_lessons:     Lessons learned
+- session_snapshots:  Recovery points
+- tasks:              BACH system tasks
+- messages:           MessageBox (bach.db)
+
+HANDLER
+-------
+hub/startup.py    Startup handler (DB-based)
+
+SEE ALSO
+--------
+bach --help modes          User modes (gui, text, dual, silent)
+bach --help shutdown       End session
+bach --help memory         Memory system
+bach --help maintain       Maintenance tools (heal, registry, skills)
+bach --help snapshot       Manage snapshots
+bach --help tasks          Task management
+bach --help db_sync        ProSync: Multi-system DB sync
+bach --help install        First-time installation and scenarios

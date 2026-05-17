@@ -468,7 +468,7 @@ class TestLanguageSwap:
     def test_invalid_language_fails(self, handler):
         ok, msg = handler._swap_doc_language("fr")
         assert not ok
-        assert "de|en" in msg
+        assert "de|en|es|ja|ru|zh" in msg
 
     def test_none_language_fails(self, handler):
         ok, msg = handler._swap_doc_language(None)
@@ -492,3 +492,17 @@ class TestLanguageSwap:
         ok, msg = handler._swap_doc_language("en")
         assert ok
         assert (root / "README.md").read_text(encoding="utf-8") == "# English"
+
+    def test_swap_to_es_sets_system_language_without_doc_swap(self, handler):
+        root = handler.base_path.parent
+        (root / "README.md").write_text("# English", encoding="utf-8")
+
+        ok, msg = handler._swap_doc_language("es")
+        assert ok
+        assert "Systemsprache" in msg
+        assert (root / "README.md").read_text(encoding="utf-8") == "# English"
+
+        conn = sqlite3.connect(str(handler._canonical_db))
+        row = conn.execute("SELECT default_language FROM languages_config").fetchone()
+        conn.close()
+        assert row[0] == "es"

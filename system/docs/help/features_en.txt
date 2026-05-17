@@ -1,0 +1,179 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+BACH v3 - FEATURES
+====================
+
+Overview of all implemented features and their status.
+
+ARCHITECTURE v2.0
+------------------
+Registry-based handler system with auto-discovery:
+- 109+ handlers in hub/ automatically detected
+- Library API (bach_api.py) for programmatic access
+- Dual-init handlers (path + app support)
+- Multi-handler files (time.py, tuev.py)
+- Cognitive injectors integrated
+
+Two access methods:
+1. CLI:         python bach.py task add "..." --priority P4
+2. Library API: from bach_api import task; task.add("...", "--priority", "P4")
+
+CLI COMMANDS (Core)
+-------------------
+bach --startup              Start session (with DirScan, GUI)
+bach --shutdown             End session (archive memory)
+bach --status               Show system status
+bach --help [topic]         Help (60+ topics)
+
+TASK MANAGEMENT
+---------------
+bach task add "..."         Create new task
+bach task list              Show tasks
+bach task done T001         Complete task
+bach task edit T001 "..."   Edit task
+
+MEMORY SYSTEM
+-------------
+bach mem write "..."        Write to memory
+bach mem read               Read memory
+bach mem context            Show context
+bach mem archive            Archive session
+
+MESSAGES
+--------
+bach msg send "..."         Send message
+bach msg list               Show messages
+bach msg read M001          Read message
+bach msg unread             Show unread
+
+SCANNER
+-------
+bach scan run               Scan tools
+bach scan status            Scan status
+bach scan tasks             Show scanned tasks
+
+MAINTENANCE (Scheduler)
+-----------------------
+bach scheduler jobs            Show jobs
+bach scheduler run J001        Execute job
+bach scheduler status          Show scheduler status
+(Alias: bach daemon ... still works)
+
+GUI & REST API
+--------------
+bach gui start              Start web dashboard (port 8000)
+bach gui start-bg           Start in background
+bach gui status             Server status
+
+REST API (Headless Server):
+  python gui/api/headless.py --port 8001
+  Endpoints:
+    GET  /api/v1/tasks             List tasks
+    POST /api/v1/tasks             Create task
+    GET  /api/v1/memory/facts      Get facts
+    POST /api/v1/messages/send     Enqueue message
+    GET  /api/v1/messages/inbox    Read inbox
+    GET  /api/v1/status            System status
+  Swagger Docs: http://localhost:8001/api/docs
+
+INJECTORS
+---------
+bach --inject status        Injector status
+bach --inject toggle X      Toggle injector on/off
+bach --inject task 5        Time-budget task
+
+BACKUP
+------
+bach backup create          Create backup
+bach backup list            Show backups
+bach backup restore X       Restore backup
+
+DATABASE
+--------
+bach --db status            DB status
+bach --db query "SQL"       Execute SQL
+
+CONNECTOR SYSTEM v2.0
+---------------------
+Reliable message delivery with queue, retry/backoff, circuit breaker.
+Runtime adapters: Telegram, Discord, HomeAssistant
+
+bach connector list         Show connectors
+bach connector status       Active connector status
+bach connector add <type>   Register new connector
+bach connector messages     Show messages
+bach connector poll <name>  Poll once (fetch messages)
+bach connector dispatch     Process queue (send messages)
+bach connector queue-status Queue statistics (pending/failed/dead)
+bach connector retry [id]   Reset dead letters
+
+Daemon integration:
+  poll_and_route (every 2min) - Poll + routing
+  dispatch (every 1min)       - Process queue
+
+Features:
+- Retry with exponential backoff (30s to 480s)
+- Circuit breaker (5min cooldown after 5 failures)
+- Dead-letter queue for failed messages
+- Context triggers for injectors during routing
+
+VOICE SERVICE
+-------------
+STT (Speech-to-Text): Whisper (online), Vosk (offline)
+TTS (Text-to-Speech): pyttsx3 (Windows SAPI5 / espeak)
+Wake-Word: openwakeword (optional), keyboard fallback
+
+Tool path: system/hub/_services/voice/voice_stt.py
+Integration: Can be integrated into connector system
+
+FEATURE MATRIX
+--------------
+
+| Area              | Target | Actual | Status |
+|-------------------|--------|--------|--------|
+| CLI Commands      | 20     | 60+    | OK     |
+| Help Topics       | 21     | 60+    | OK     |
+| Handlers (Reg.)   | 12     | 109+   | OK     |
+| Skills (File)     | 30     | 50+    | OK     |
+| Tools (File)      | 30     | 90+    | OK     |
+| Tools (Registry)  | 60     | 85     | OK     |
+| GUI Endpoints     | 30     | 80+    | OK     |
+| REST API Endpts   | 10     | 12     | OK     |
+| DB Tables         | 25     | 138    | OK     |
+| Connectors        | 3      | 3+     | OK     |
+
+IMPLEMENTED GUI DASHBOARDS
+---------------------------
+- Home (Overview, Tokens, Inbox)
+- Skills Board (Agents, Experts, Skills, Tools)
+- Memory Board (Working, Facts, Lessons, Sessions)
+- Financial (Finance Assistant / Insurance)
+- Foerderplaner (Client Pipeline)
+- Health (Health Assistant - Beta)
+- ATI (Concept Development)
+
+PLANNED FEATURES
+----------------
+- Skill Sync          Automatic file <-> hierarchy sync
+- Multi-LLM Shared    True shared context across models
+- Autonomous Mode     Agents can execute tasks independently (loop)
+- Voice Full-Stack    Complete voice interface integration (STT/TTS/Wake)
+- Signal Connector    Extend connector system with Signal
+- WhatsApp Connector  Extend connector system with WhatsApp
+
+SEE ALSO
+--------
+bach --help gui         Web dashboard details
+bach --help tasks       Task management
+bach --help maintain    Maintenance tools
+bach --help dirscan     Scanner system
+bach --help connector   Connector system details
+
+RESOURCES
+---------
+- Architecture docs: docs/con3_ANFORDERUNGSANALYSE.md
+- Tests: system/tests/ (test_core.py, test_smoke.py)
+- REST API Swagger: http://localhost:8001/api/docs (when server running)
+- Library API examples: system/bach_api.py (docstring)

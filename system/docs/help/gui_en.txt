@@ -1,0 +1,148 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+
+GUI - Web Dashboard
+===================
+
+DESCRIPTION
+The GUI module provides a web dashboard for BACH.
+Based on FastAPI with HTML/CSS/JS frontend.
+Automatically started in background with --startup.
+
+TWO SERVERS:
+  - GUI Server (Port 8000):    Web dashboard with HTML templates
+  - Headless API (Port 8001):  Pure REST API for programs
+
+COMMANDS
+--------
+bach gui start              Start server (blocking, port 8000)
+bach gui start --port 9000  Start on different port
+bach gui start-bg           Start server in background
+bach gui status             Check server status
+bach gui info               Show GUI information
+
+AUTOMATIC START
+---------------
+bach --startup              Starts GUI automatically in background
+                            (see [GUI SERVER] section in output)
+
+PREREQUISITES
+-------------
+pip install fastapi uvicorn
+
+DASHBOARDS (Core)
+-----------------
+/              Home with status cards and quick actions
+/tasks         Task management (filter, CRUD, status change)
+/messages      Messages (inbox/outbox, compose)
+/daemon        Maintenance (jobs, runs, toggle)
+/docs          API documentation (Swagger)
+
+DASHBOARDS (Extended)
+---------------------
+/agents        Agent management
+/memory        Memory/knowledge base
+/tools         Tool management
+/tokens        Token statistics
+/skills-board  Skills board
+/tasks_board   Kanban task board
+/logs          Log viewer
+/help          Help system
+/wiki          Wiki pages
+/inbox         Inbox view
+/maintenance   Maintenance dashboard
+/partners      Partner management
+/prompt-generator  Prompt generator
+/financial     Financial overview
+/steuer        Tax workflows
+/gesundheit    Health tracking
+/kontakte      Contact management
+/routinen      Routine editor
+/ati           ATI system
+/foerderplaner Foerderplaner
+/anonymization Anonymization
+
+FEATURES
+--------
+- Dashboard with system status
+- Task overview (user + scanned)
+- Message system (CLI integration: bach msg)
+- Maintenance jobs
+- REST API with auto-documentation (/docs)
+
+CLI <-> GUI INTEGRATION
+-----------------------
+Messages:
+  CLI: bach msg send/list/read/unread
+  GUI: /messages (Inbox/Outbox, Compose)
+  DB:  bach.db -> messages table
+
+Tasks:
+  CLI: bach task add/list/done
+  GUI: /tasks (CRUD, filter, status)
+  DB:  bach.db -> tasks table
+
+Maintenance:
+  CLI: bach daemon list/run/toggle
+  GUI: /daemon (jobs, runs, toggle)
+  DB:  bach.db -> scheduler_jobs, scheduler_runs
+
+API ENDPOINTS (GUI Server - Port 8000)
+--------------------------------------
+Core:
+  GET  /api/status              System status
+  GET  /api/tasks               User tasks
+  POST /api/tasks               Create task
+  GET  /api/memory/overview     Memory overview
+  GET  /api/skills              List skills
+  GET  /api/tools               List tools
+  GET  /api/agents              Agent list
+
+Full API documentation: http://127.0.0.1:8000/docs (Swagger)
+
+HEADLESS API (Port 8001) - Programmatic Access
+----------------------------------------------
+Purpose: Pure REST API without HTML, for scripts/programs
+
+Auth:
+  - Localhost: No auth needed (trust mode)
+  - Remote: X-BACH-Key header OR ?api_key= parameter
+  - Key: Auto-generated on first start -> data/.api_key
+
+Start:
+  python gui/api/headless.py [--port 8001] [--key YOUR_KEY]
+
+Documentation:
+  http://localhost:8001/api/docs (Swagger)
+  http://localhost:8001/api/redoc (ReDoc)
+
+Key Endpoints (prefix: /api/v1):
+  GET  /api/v1/tasks             List tasks
+  POST /api/v1/tasks             Create task
+  GET  /api/v1/memory/facts      Get facts
+  GET  /api/v1/memory/search     Search memory
+  POST /api/v1/messages/send     Enqueue message
+  GET  /api/v1/messages/inbox    Read inbox
+  GET  /api/v1/status            System status
+  GET  /api/v1/health            Health check (public)
+
+EXAMPLES
+--------
+GUI Server (Port 8000):
+  bach gui start-bg
+  # Open: http://127.0.0.1:8000
+
+Headless API (Port 8001):
+  python gui/api/headless.py --port 8001
+  curl http://localhost:8001/api/v1/status
+  curl -X POST http://localhost:8001/api/v1/tasks \
+       -H "Content-Type: application/json" \
+       -d '{"title": "Test", "priority": "P2"}'
+
+SEE ALSO
+--------
+bach --help tasks           Task management
+bach --help messages        Message CLI
+bach --help connector       Connector system
+bach --help features        Full feature list
