@@ -1,0 +1,83 @@
+# Portability: UNIVERSAL
+# Version: 1.1.1
+# Last validated: 2026-05-15 (Maintenance loop: path correction, Mac verification)
+# Next review: 2026-11-15
+
+BACKUP & RESTORE
+================
+
+The backup system is based on the dist_type concept:
+
+  dist_type = 2 (CORE)      -> Distribution IS the backup
+  dist_type = 1 (TEMPLATE)  -> 1x Snapshot at installation
+  dist_type = 0 (USER_DATA) -> Normal backup rotation
+
+COMMANDS
+--------
+
+  # Create backup
+  bach backup create                  Local backup
+  bach backup create --to-nas         Also copy to NAS
+
+  # List backups
+  bach backup list                    Local backups
+  bach backup list --nas              NAS backups
+  bach backup info <name>             Backup details
+
+  # Restore (ONLY userdata_*.zip backups)
+  bach restore backup <name>          Specific backup
+  bach restore backup latest          Most recent backup
+
+  # Reset template (ONLY via backup_manager.py)
+  python system/tools/backup_manager.py restore template SKILL.md
+
+WHAT IS BACKED UP?
+------------------
+
+  dist_type = 0 (USER_DATA):
+    +-- tasks (all tasks, status, history)
+    +-- memory/ (sessions, longterm, archive)
+    +-- data/logs/ (session logs, consolidated path)
+    +-- user/ (inbox, messages, agenda)
+
+  NOT backed up (dist_type >= 1):
+    +-- bach.py, schema.sql, hub/
+    +-- tools/, skills/, docs/help/
+    +-- (these are part of the distribution)
+
+BACKUP ROTATION
+---------------
+
+  Local (_backups/):       7 backups retained
+  NAS:                    30 backups retained
+  OneDrive:              Automatic (version history)
+
+STORAGE LOCATIONS
+-----------------
+
+  Local:   system/_backups/
+  NAS:     \\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
+  Logs:    system/data/logs/ (consolidated)
+
+TOOLS
+-----
+
+  system/tools/backup_manager.py     Direct invocation:
+    python system/tools/backup_manager.py create [--to-nas]
+    python system/tools/backup_manager.py list [--nas]
+    python system/tools/backup_manager.py info <name>
+    python system/tools/backup_manager.py restore backup <name>
+    python system/tools/backup_manager.py restore template <file>
+    python system/tools/backup_manager.py snapshot <file>
+
+API
+---
+
+  POST /api/v1/backup         Create backup (headless)
+  GET  /api/v1/backup/list    List backups
+
+RELATED SKILLS
+--------------
+
+  skills/_service/builder.md  -> CREATE, EXPORT, DISTRIBUTE, BACKUP, RESTORE
+  docs/BACKUP_SYSTEM.md       -> Original concept from _BATCH

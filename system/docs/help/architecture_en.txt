@@ -1,0 +1,152 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
+# Sources: [ARCHITECTURE.md, SKILL.md, core/, bach_api.py]
+
+BACH ARCHITECTURE (Personal Agentic OS)
+========================================
+
+DEFINITION
+BACH is a hierarchical system for orchestrating AI models.
+It sits as a "nervous system" between infrastructure (compute) and application.
+
+LAYER MODEL
+-----------
+
+0. CORE LAYER (core/, bach_api.py)
+   Registry-Based Auto-Discovery: Automatic loading of all handlers from hub/
+   App Container: Lightweight DI with lazy-initialized DB + Registry
+   Library API: Programmatic access without CLI (bach_api.py)
+   Base Types: Result, ParsedArgs, OpDef - unified contracts
+
+1. ORCHESTRATION LAYER (bach.py, Partner System, Headless API)
+   Coordinates multi-LLM collaboration (Claude, Gemini, Ollama).
+   Manages tasks, roles and delegation via message system.
+   REST API: Port 8001 for programmatic access (headless.py)
+
+2. COGNITIVE MEMORY LAYER (memory_*, Consolidation Engine)
+   5 memory types (Working, Episodic, Semantic, Procedural, Associative).
+   Active consolidation (decay, boost, nightly compression).
+
+3. LOGIC & SKILL LAYER (hub/, skills/, Hierarchy-JSON)
+   60+ auto-discovered handlers (hub/) and dynamic skills hierarchy.
+   The Skills Board (GUI) controls assignment of experts to agents.
+   Queue Processor: hub/_services/connector/ for async processing
+
+4. EXECUTION LAYER (tools/)
+   290+ specialized Python scripts for filesystem, tax, analysis etc.
+   Standardized interface (c_ prefix) for AI compatibility.
+
+5. DATA & PERSISTENCE (bach.db, data/logs/)
+   SQLite foundation with 210+ tables (centralized data storage).
+   Tracking of tokens, sessions, success and directory truth.
+   Logs consolidated in data/logs/ (system/logs/ DEPRECATED)
+
+PROJECT STRUCTURE
+-----------------
+
+system/
++-- bach.py .................... CLI central (orchestrator)
++-- bach_api.py ................ Library API (programmatic access)
++-- bach_legacy.py ............. Backup (pre-registry refactor)
++-- core/ ...................... Foundation layer
+|   +-- base.py ................ Result, ParsedArgs, OpDef
+|   +-- registry.py ............ Auto-discovery + command routing
+|   +-- app.py ................. App container (DI)
+|   +-- db.py .................. Database wrapper
+|   +-- adapter.py ............. Legacy bridge
+|   +-- aliases.py ............. Command aliases (mem -> memory)
++-- data/
+|   +-- bach.db ................ SQLite (210+ tables) - "The memory"
+|   +-- logs/ .................. Consolidated logs (ONLY HERE)
++-- db/
+|   +-- schema.sql ............. Single source of truth (DDL)
++-- hub/ ....................... Handler modules (auto-discovered)
+|   +-- bach_paths.py .......... Path management (governance)
+|   +-- _services/ ............. Background services
+|       +-- connector/ ......... Queue processor (async)
+|       +-- document/ .......... Report workflows
++-- tools/ ..................... Python scripts (290+ tools)
++-- docs/help/ ................. Help system (.txt)
++-- agents/ .................... Agent profiles (roles)
++-- partners/ .................. LLM configurations (CONSOLIDATED)
++-- docs/ ...................... Documentation & concepts
++-- gui/ ....................... Web dashboard (FastAPI)
+|   +-- api/ ................... REST APIs
+|       +-- headless.py ........ Port 8001 (pure JSON API)
+|       +-- messages_api.py .... Message router
++-- user/ ...................... User data & exports
+
+ARCHITECTURE DIAGRAM (Registry v2.0)
+-------------------------------------
+
++------------------------------------------------------------------+
+| ACCESS LAYER                                                      |
++--------------------+----------------------+-----------------------+
+| CLI (bach.py)      | Library (bach_api)   | REST (headless.py)    |
+| sys.argv routing   | Direct function      | Port 8001 JSON API    |
++--------------------+----------------------+-----------------------+
+                              |
++------------------------------------------------------------------+
+| CORE LAYER (core/)                                                |
++--------------------+----------------------+-----------------------+
+| App Container      | HandlerRegistry      | Database (db.py)      |
+| DI + Lazy Init     | Auto-Discovery       | Schema + Migrations   |
++--------------------+----------------------+-----------------------+
+                              |
++------------------------------------------------------------------+
+| HANDLER LAYER (hub/)                                              |
+| 60+ BaseHandler subclasses - automatically registered             |
++--------------------+----------------------+-----------------------+
+| task.py            | memory.py            | partner.py            |
+| steuer.py          | backup.py            | lesson.py             |
+| ...                | ...                  | ...                   |
++--------------------+----------------------+-----------------------+
+                              |
++------------------------------------------------------------------+
+| SERVICE LAYER (hub/_services/)                                    |
++--------------------+----------------------+-----------------------+
+| connector/         | document/            | daemon/               |
+| Queue processor    | Report workflows     | Background tasks      |
++--------------------+----------------------+-----------------------+
+                              |
++------------------------------------------------------------------+
+| EXECUTION LAYER (tools/)                                          |
+| 290+ Python scripts with standardized c_ interface                |
++------------------------------------------------------------------+
+                              |
++------------------------------------------------------------------+
+| PERSISTENCE LAYER                                                 |
++--------------------+----------------------+-----------------------+
+| bach.db            | data/logs/           | user/                 |
+| 210+ tables        | Consolidated logs    | Exports & reports     |
++--------------------+----------------------+-----------------------+
+
+CORE CONCEPTS
+-------------
+
+* REGISTRY-BASED: Auto-discovery instead of hardcoded handler map.
+  New handlers only need a file in hub/ (no registration needed).
+
+* DUAL-ACCESS: CLI (python bach.py task list) AND Library API (bach_api.task.list()).
+  Both use the same handlers + DB - zero overhead.
+
+* MULTI-PARTNER: Not one agent, but a network with specialized roles.
+
+* COGNITIVE MEMORY: Information is not just stored but actively
+  weighted and "digested" (consolidation).
+
+* PORTABLE & LOCAL: The entire system is encapsulated in one folder and
+  works without cloud dependency (e.g. with Ollama).
+
+* SELF-HEALING: Automatic correction of paths and registry entries.
+
+* HEADLESS API: REST interface on port 8001 for external integration
+  (separate from GUI server port 8000).
+
+SEE ALSO
+--------
+docs/help/bach_info.txt       What is BACH?
+docs/help/memory.txt          The memory system
+docs/help/partner.txt         AI collaboration
+wiki/was_ist_bach.txt         Detailed synopsis
