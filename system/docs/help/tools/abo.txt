@@ -1,43 +1,56 @@
-BACH Tool: Abo-Scanner
-======================
+# Portability: UNIVERSAL
+# Last validated: 2026-05-17
+# Next review: 2027-05-17
 
-Erkennt wiederkehrende Zahlungen (Abonnements) aus Steuer-Posten.
+Abo-Verwaltung (Abonnement-Management)
+=======================================
 
-VERWENDUNG
-----------
+BESCHREIBUNG
+Erkennt wiederkehrende Zahlungen (Abonnements) aus Steuer-Posten,
+verwaltet Bestätigungen und erstellt Kostenübersichten.
 
-  bach --tools abo scan [--jahr YYYY] [--dry-run]
-
-FUNKTIONEN
-----------
-
-  scan       Steuer-Posten nach Abo-Mustern durchsuchen
-  list       Erkannte Abonnements anzeigen
+BEFEHLE
+-------
+bach abo scan              Steuer-Posten analysieren, Abos erkennen
+bach abo list              Alle erkannten Abos anzeigen
+bach abo confirm ID        Abo-Erkennung bestätigen
+bach abo dismiss ID        Fehlererkennung entfernen
+bach abo costs             Monatliche Kostenaufstellung
+bach abo export            Export für Haushaltsplanung
+bach abo patterns          Bekannte Abo-Muster anzeigen
+bach abo init              Datenbank-Tabellen initialisieren
+bach abo sync-mail         Abonnements aus E-Mails synchronisieren
 
 ERKENNUNG
 ---------
-
 Analysiert steuer_posten und identifiziert Abonnements anhand von:
   - Wiederholte Zahlungen an gleichen Anbieter
-  - Konstante Betraege (geringe Abweichung)
-  - Bekannte Abo-Anbieter-Patterns (DB-gestuetzt)
+  - Konstante Beträge (geringe Abweichung)
+  - Bekannte Abo-Anbieter-Patterns (DB-gestützt)
 
 Score-Schwelle: 50 Punkte (konfigurierbar)
 
 OPTIONEN
 --------
-
   --jahr YYYY    Steuerjahr filtern (Standard: aktuelles Jahr)
   --dry-run      Nur Vorschau, nichts speichern
 
 BEISPIELE
 ---------
+  bach abo scan
+  bach abo scan --jahr 2025 --dry-run
+  bach abo list
+  bach abo costs
+  bach abo confirm 42
+  bach abo export
 
-  bach --tools abo scan
-  bach --tools abo scan --jahr 2025 --dry-run
-  bach --tools abo list
-
-MODUL
------
-
+HANDLER
+-------
+  hub/abo.py (AboHandler)
   tools/abo/abo_scanner.py (AboScanner)
+  hub/_services/mail/mail_abo_sync_service.py (Mail-Integration)
+
+SIEHE AUCH
+----------
+  bach --help steuer       Steuer-Verwaltung
+  bach --help financial    Finanzübersicht
