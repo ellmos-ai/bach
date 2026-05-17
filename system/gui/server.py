@@ -4466,7 +4466,7 @@ async def denkarium_promote(entry_id: int, request: Request):
 
         else:
 
-            promoted_id = 0
+            raise HTTPException(status_code=400, detail=f"Unbekanntes Ziel: {target}. Erlaubt: task")
 
         from datetime import datetime
 

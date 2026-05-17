@@ -1,12 +1,12 @@
 # Portabilität: SYSTEM
-# Zuletzt validiert: 2026-02-08 (Help-Forensik - Library-API ergänzt)
-# Nächste Prüfung: 2027-02-08
+# Zuletzt validiert: 2026-05-17
+# Nächste Prüfung: 2026-11-17
 # Ressourcen: [tasks table, ati_tasks table, hub/task.py, bach_api.py]
 
 TASKS - Aufgaben-System
 =======================
 
-STAND: 2026-02-08
+STAND: 2026-05-17
 
 Das Task-System (Schicht 5) orchestriert die Arbeit zwischen User und
 Partner-Agenten (Claude, Gemini, etc.).

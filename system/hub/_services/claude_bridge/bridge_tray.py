@@ -276,11 +276,14 @@ class BridgeTray:
         try:
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
-            subprocess.run(
+            result = subprocess.run(
                 [sys.executable, str(DAEMON_SCRIPT), "--test", "toggle"],
                 capture_output=True, text=True, timeout=5, env=env,
                 encoding='utf-8', errors='replace'
             )
+            if result.returncode != 0:
+                icon.notify(f"Toggle fehlgeschlagen (Exit {result.returncode})", "BACH Bridge Fehler")
+                return
             # Modus wird beim naechsten Watchdog-Zyklus synchronisiert
             # Sofort toggeln fuer responsives UI
             if self.permission_mode == "restricted":
@@ -299,11 +302,14 @@ class BridgeTray:
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
             cmd = "budget off" if self.budget_enabled else "budget on"
-            subprocess.run(
+            result = subprocess.run(
                 [sys.executable, str(DAEMON_SCRIPT), "--test", cmd],
                 capture_output=True, timeout=5, env=env,
                 encoding='utf-8', errors='replace'
             )
+            if result.returncode != 0:
+                icon.notify(f"Budget-Toggle fehlgeschlagen (Exit {result.returncode})", "BACH Bridge Fehler")
+                return
             # State direkt aktualisieren fuer responsives UI
             self.budget_enabled = not self.budget_enabled
             self._update_state_file_budget(enabled=self.budget_enabled)
@@ -372,11 +378,14 @@ class BridgeTray:
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
             cmd = "voice off" if self.voice_mode else "voice on"
-            subprocess.run(
+            result = subprocess.run(
                 [sys.executable, str(DAEMON_SCRIPT), "--test", cmd],
                 capture_output=True, timeout=5, env=env,
                 encoding='utf-8', errors='replace'
             )
+            if result.returncode != 0:
+                icon.notify(f"Voice-Toggle fehlgeschlagen (Exit {result.returncode})", "BACH Bridge Fehler")
+                return
             self.voice_mode = not self.voice_mode
             self._update_state_file(voice_mode=self.voice_mode)
             status = "aktiviert" if self.voice_mode else "deaktiviert"

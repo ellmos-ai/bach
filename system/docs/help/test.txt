@@ -1,7 +1,7 @@
 # Portabilität: SYSTEM
 # Version: 1.1.0
-# Zuletzt validiert: 2026-02-08
-# Nächste Prüfung: 2026-05-08
+# Zuletzt validiert: 2026-05-17
+# Nächste Prüfung: 2026-08-17
 
 TEST - BACH Test- und QA-System
 ================================
