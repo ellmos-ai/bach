@@ -47,10 +47,14 @@ CLI-BEFEHLE (bach agent)
 OPTIONEN FÜR START
 ------------------
 
-  --mode plan|default         Modus (Standard: default)
-  --model sonnet|opus|haiku   KI-Modell (Standard: sonnet)
-  --dry-run                   Nur prüfen, nicht starten
-  --json                      Maschinenlesbare Ausgabe für list/start/stop/status/doctor
+  --mode plan|default              Modus (Standard: default)
+  --model sonnet|opus|haiku        KI-Modell (Standard: sonnet)
+  --permission-mode restricted|full
+                                    Rechteprofil für Claude Code (Standard: restricted)
+  --allowed-tools "Read,Grep,..."   Tool-Allowlist im restricted-Modus
+  --max-turns N                     Harte Obergrenze für Claude-Turns
+  --dry-run                         Nur prüfen, nicht starten
+  --json                            Maschinenlesbare Ausgabe für list/start/stop/status/doctor
 
 BEISPIELE
 ---------
@@ -62,6 +66,8 @@ BEISPIELE
   bach agent start ati
   bach agent start research --model opus
   bach agent start entwickler --mode plan
+  bach agent start ati --permission-mode restricted --allowed-tools "Read,Grep,Glob,Bash"
+  bach agent start production --max-turns 12
   bach agent start ati --dry-run
   bach agent start ati --dry-run --json
 
@@ -109,11 +115,12 @@ WIE ES FUNKTIONIERT
 1. `bach agent start <name>` findet die SKILL.md des Agenten
 2. Eine temporäre CLAUDE.md wird erstellt (`data/temp/agent_<name>/`)
 3. Ein neues Terminalfenster öffnet sich mit Claude Code
-4. PID wird in `data/agent_pids/<name>.pid` gespeichert
-5. `bach agent steer <name> "..."` schreibt Operator-Hinweise in `OPERATOR_NOTES.md`
-6. `bach agent status --json` zeigt Queue-Stand, `latest_operator_note` und verfügbare Aktionen maschinenlesbar
-7. `bach agent clear-steer <name>` leert eine veraltete oder erledigte Hinweis-Queue gezielt
-8. `bach agent stop <name>` beendet den Prozess und löscht die PID
+4. Laufzeit-Policy (`permission_mode`, `allowed_tools`, `max_turns`) wird beim Start mitgeführt
+5. PID wird in `data/agent_pids/<name>.pid` gespeichert
+6. `bach agent steer <name> "..."` schreibt Operator-Hinweise in `OPERATOR_NOTES.md`
+7. `bach agent status --json` zeigt Queue-Stand, `latest_operator_note`, Runtime-Policy und verfügbare Aktionen maschinenlesbar
+8. `bach agent clear-steer <name>` leert eine veraltete oder erledigte Hinweis-Queue gezielt
+9. `bach agent stop <name>` beendet den Prozess und löscht die PID
 
 VORAUSSETZUNGEN
 ---------------

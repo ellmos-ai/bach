@@ -49,6 +49,9 @@ OPTIONS FOR START
 
   --mode plan|default mode (default: default)
   --model sonnet|opus|haiku AI model (default: sonnet)
+  --permission-mode restricted|full Claude Code permission profile (default: restricted)
+  --allowed-tools "Read,Grep,..." Tool allowlist for restricted mode
+  --max-turns N Hard cap for Claude turns
   --dry-run Just check, don't start
   --json Machine-readable output for list/start/stop/status/doctor
 
@@ -62,6 +65,8 @@ EXAMPLES
   bach agent start ati
   bach agent start research --model opus
   bach agent start entwickler --mode plan
+  bach agent start ati --permission-mode restricted --allowed-tools "Read,Grep,Glob,Bash"
+  bach agent start production --max-turns 12
   bach agent start ati --dry-run
   bach agent start ati --dry-run --json
 
@@ -109,11 +114,12 @@ HOW IT WORKS
 1. `bach agent start <name>` finds the agent's SKILL.md
 2. A temporary CLAUDE.md is created (data/temp/agent_<name>/)
 3. A new terminal window opens with Claude Code
-4. PID is stored in data/agent_pids/<name>.pid
-5. `bach agent steer <name> "..."` writes operator notes to `OPERATOR_NOTES.md`
-6. `bach agent status --json` exposes queue state, `latest_operator_note`, and available actions
-7. `bach agent clear-steer <name>` clears stale or completed queued hints
-8. `bach agent stop <name>` ends the process and deletes the PID
+4. Runtime policy (`permission_mode`, `allowed_tools`, `max_turns`) is applied at launch time
+5. PID is stored in data/agent_pids/<name>.pid
+6. `bach agent steer <name> "..."` writes operator notes to `OPERATOR_NOTES.md`
+7. `bach agent status --json` exposes queue state, `latest_operator_note`, runtime policy, and available actions
+8. `bach agent clear-steer <name>` clears stale or completed queued hints
+9. `bach agent stop <name>` ends the process and deletes the PID
 
 REQUIREMENTS
 ---------------

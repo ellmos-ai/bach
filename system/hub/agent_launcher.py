@@ -19,14 +19,23 @@ import subprocess
 import json
 import sqlite3
 import shutil
+import re
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
 from .lang import t
 
+try:
+    import yaml
+except ImportError:  # pragma: no cover - optional dependency
+    yaml = None
+
 
 class AgentLauncherHandler(BaseHandler):
     """Handler fuer Agent-Operationen (list, start, stop, steer, status)."""
+
+    DEFAULT_ALLOWED_TOOLS = "Read,Grep,Glob,Bash,WebFetch,WebSearch"
+    VALID_PERMISSION_MODES = {"restricted", "full"}
 
     def __init__(self, base_path_or_app):
         super().__init__(base_path_or_app)
@@ -196,12 +205,21 @@ class AgentLauncherHandler(BaseHandler):
         available_actions: list[str] | None,
         dry_run: bool = False,
         notes: list[dict] | None = None,
+        permission_mode: str | None = None,
+        allowed_tools: str | None = None,
+        max_turns: int | None = None,
+        runtime_defaults: dict | None = None,
     ) -> dict:
         """Erzeugt ein konsistentes Agent-Payload fuer JSON-Kontrollantworten."""
         note_entries = notes if notes is not None else self._read_operator_notes(name, temp_dir=temp_dir)
         actions = list(available_actions or self._available_actions(running, len(note_entries)))
         if len(note_entries) and "clear-steer" not in actions:
             actions.append("clear-steer")
+        resolved_defaults = runtime_defaults or self._runtime_defaults_for_name(name)
+        active_permission_mode = permission_mode or resolved_defaults["permission_mode"]
+        active_allowed_tools = allowed_tools
+        if active_permission_mode != "full" and active_allowed_tools is None:
+            active_allowed_tools = resolved_defaults["allowed_tools"]
         payload = {
             "name": name,
             "display_name": display_name or None,
@@ -216,6 +234,10 @@ class AgentLauncherHandler(BaseHandler):
             "temp_dir": temp_dir,
             "window_title": window_title,
             "pid_file": pid_file,
+            "permission_mode": active_permission_mode,
+            "allowed_tools": None if active_permission_mode == "full" else active_allowed_tools,
+            "max_turns": max_turns if max_turns is not None else resolved_defaults["max_turns"],
+            "runtime_defaults": resolved_defaults,
             "available_actions": actions,
             "pending_operator_notes": len(note_entries),
             "latest_operator_note": note_entries[-1]["message"] if note_entries else None,
@@ -383,27 +405,29 @@ class AgentLauncherHandler(BaseHandler):
         running = bool(running_pid)
         temp_dir = pid_data.get("temp_dir")
         notes = self._read_operator_notes(agent["name"], temp_dir=temp_dir)
-
-        return {
-            "name": agent["name"],
-            "display_name": persona_info.get("display_name") or None,
-            "type": agent["type"],
-            "path": str(agent["path"]),
-            "skill_file": str(agent["skill_file"]),
-            "running": running,
-            "status": "running" if running else "stopped",
-            "pid": running_pid or pid_data.get("pid") or None,
-            "mode": pid_data.get("mode"),
-            "model": pid_data.get("model"),
-            "started_at": started_at,
-            "runtime_seconds": self._compute_runtime_seconds(started_at) if running else None,
-            "temp_dir": temp_dir,
-            "pending_operator_notes": len(notes),
-            "latest_operator_note": notes[-1]["message"] if notes else None,
-            "latest_operator_note_at": notes[-1].get("requested_at") if notes else None,
-            "operator_notes_file": str(self._agent_operator_notes_path(agent["name"], temp_dir=temp_dir, markdown=True)),
-            "available_actions": self._available_actions(running, len(notes)),
-        }
+        payload = self._build_agent_payload(
+            agent["name"],
+            persona_info.get("display_name") or None,
+            agent["type"],
+            running=running,
+            status="running" if running else "stopped",
+            pid=running_pid or pid_data.get("pid") or None,
+            model=pid_data.get("model"),
+            mode=pid_data.get("mode"),
+            started_at=started_at,
+            temp_dir=temp_dir,
+            window_title=pid_data.get("window_title"),
+            pid_file=str(self.pid_dir / f"{agent['name']}.pid"),
+            available_actions=self._available_actions(running, len(notes)),
+            notes=notes,
+            permission_mode=pid_data.get("permission_mode"),
+            allowed_tools=pid_data.get("allowed_tools"),
+            max_turns=pid_data.get("max_turns"),
+            runtime_defaults=self._load_agent_runtime_defaults(agent["skill_file"]),
+        )
+        payload["path"] = str(agent["path"])
+        payload["skill_file"] = str(agent["skill_file"])
+        return payload
 
     def _list_agents(self) -> tuple:
         """Listet alle verfuegbaren Agents."""
@@ -457,6 +481,86 @@ class AgentLauncherHandler(BaseHandler):
             if arg == flag and i + 1 < len(args):
                 return args[i + 1]
         return default
+
+    def _read_skill_frontmatter(self, skill_file: Path) -> dict:
+        """Liest YAML-Frontmatter aus einer SKILL.md-Datei."""
+        if yaml is None:
+            return {}
+        try:
+            content = skill_file.read_text(encoding="utf-8")
+        except OSError:
+            return {}
+
+        match = re.match(r"^---\s*\n(.*?)\n---\s*(?:\n|$)", content, re.DOTALL)
+        if not match:
+            return {}
+
+        try:
+            payload = yaml.safe_load(match.group(1)) or {}
+        except Exception:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _normalize_runtime_defaults(self, payload: dict | None) -> dict:
+        """Normalisiert Agent-Runtime-Defaults aus Frontmatter oder Laufzeitdaten."""
+        payload = payload or {}
+        permission_mode = str(payload.get("permission_mode") or "restricted").strip().lower()
+        if permission_mode not in self.VALID_PERMISSION_MODES:
+            permission_mode = "restricted"
+
+        allowed_tools = payload.get("allowed_tools")
+        if isinstance(allowed_tools, (list, tuple, set)):
+            allowed_tools = ",".join(str(item).strip() for item in allowed_tools if str(item).strip())
+        elif allowed_tools is not None:
+            allowed_tools = str(allowed_tools).strip()
+        if not allowed_tools:
+            allowed_tools = self.DEFAULT_ALLOWED_TOOLS
+
+        max_turns = payload.get("max_turns")
+        try:
+            max_turns = int(max_turns) if max_turns not in (None, "", False) else None
+        except (TypeError, ValueError):
+            max_turns = None
+        if max_turns is not None and max_turns <= 0:
+            max_turns = None
+
+        return {
+            "permission_mode": permission_mode,
+            "allowed_tools": None if permission_mode == "full" else allowed_tools,
+            "max_turns": max_turns,
+        }
+
+    def _load_agent_runtime_defaults(self, skill_file: Path) -> dict:
+        """Lädt optionale Agent-Startdefaults aus der SKILL.md."""
+        metadata = self._read_skill_frontmatter(skill_file)
+        runtime = metadata.get("agent_runtime") or metadata.get("runtime") or {}
+        if not isinstance(runtime, dict):
+            runtime = {}
+        merged = {
+            "permission_mode": runtime.get("permission_mode", metadata.get("permission_mode")),
+            "allowed_tools": runtime.get("allowed_tools", metadata.get("allowed_tools")),
+            "max_turns": runtime.get("max_turns", metadata.get("max_turns")),
+        }
+        return self._normalize_runtime_defaults(merged)
+
+    def _runtime_defaults_for_name(self, name: str) -> dict:
+        """Lädt Runtime-Defaults eines bekannten Agenten anhand seines Namens."""
+        agent_entry = next((item for item in self._scan_agents() if item["name"] == name), None)
+        if not agent_entry:
+            return self._normalize_runtime_defaults({})
+        return self._load_agent_runtime_defaults(agent_entry["skill_file"])
+
+    def _parse_max_turns(self, value) -> int | None:
+        """Validiert eine optionale Max-Turns-Angabe."""
+        if value in (None, "", False):
+            return None
+        try:
+            parsed = int(str(value).strip())
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Max-Turns muss eine positive Ganzzahl sein.") from exc
+        if parsed <= 0:
+            raise ValueError("Max-Turns muss groesser als 0 sein.")
+        return parsed
 
     def _check_runtime_dir(self, name: str, path: Path, label: str) -> dict:
         """Prueft ob ein Laufzeit-Verzeichnis verfuegbar und beschreibbar ist."""
@@ -865,21 +969,25 @@ class AgentLauncherHandler(BaseHandler):
         # Bereits laufend?
         pid = self._is_agent_running(resolved_name)
         if pid:
+            pid_data = self._load_pid_data(resolved_name)
             message = f"[WARN] Agent '{resolved_name}' {t('agent_already_running', default='laeuft bereits')} (PID {pid})"
             payload = self._build_agent_payload(
                 resolved_name,
-                self._get_persona_info(resolved_name).get("display_name"),
+                pid_data.get("display_name") or self._get_persona_info(resolved_name).get("display_name"),
                 agent["type"],
                 running=True,
                 status="running",
                 pid=pid,
-                model=None,
-                mode=None,
-                started_at=None,
-                temp_dir=str(self.temp_dir / f"agent_{resolved_name}"),
-                window_title=None,
+                model=pid_data.get("model"),
+                mode=pid_data.get("mode"),
+                started_at=pid_data.get("started"),
+                temp_dir=pid_data.get("temp_dir") or str(self.temp_dir / f"agent_{resolved_name}"),
+                window_title=pid_data.get("window_title"),
                 pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
                 available_actions=["stop", "steer"],
+                permission_mode=pid_data.get("permission_mode"),
+                allowed_tools=pid_data.get("allowed_tools"),
+                max_turns=pid_data.get("max_turns"),
             )
             return self._action_response(
                 "start",
@@ -919,9 +1027,63 @@ class AgentLauncherHandler(BaseHandler):
         display_name = persona_info.get('display_name', '')
         agent_temp_dir = self.temp_dir / f"agent_{resolved_name}"
         pid_file = self.pid_dir / f"{resolved_name}.pid"
+        runtime_defaults = self._load_agent_runtime_defaults(agent["skill_file"])
+        permission_mode = self._parse_flag(
+            args,
+            "--permission-mode",
+            runtime_defaults["permission_mode"],
+        ).strip().lower()
+        allowed_tools = self._parse_flag(
+            args,
+            "--allowed-tools",
+            runtime_defaults["allowed_tools"] or self.DEFAULT_ALLOWED_TOOLS,
+        ).strip()
+        max_turns_raw = self._parse_flag(
+            args,
+            "--max-turns",
+            str(runtime_defaults["max_turns"]) if runtime_defaults["max_turns"] else "",
+        )
+
+        if permission_mode not in self.VALID_PERMISSION_MODES:
+            message = (
+                f"[ERROR] Ungueltiger Permission-Modus: {permission_mode} "
+                "(restricted, full)"
+            )
+            return self._action_response(
+                "start",
+                name,
+                resolved_name,
+                False,
+                message,
+                json_output=json_output,
+            )
+        if permission_mode != "full" and not allowed_tools:
+            message = "[ERROR] --allowed-tools darf im restricted-Modus nicht leer sein."
+            return self._action_response(
+                "start",
+                name,
+                resolved_name,
+                False,
+                message,
+                json_output=json_output,
+            )
+        try:
+            max_turns = self._parse_max_turns(max_turns_raw)
+        except ValueError as exc:
+            return self._action_response(
+                "start",
+                name,
+                resolved_name,
+                False,
+                f"[ERROR] {exc}",
+                json_output=json_output,
+            )
 
         if dry_run:
-            message = f"[DRY-RUN] Wuerde Agent '{resolved_name}' starten (mode={mode}, model={model})"
+            message = (
+                f"[DRY-RUN] Wuerde Agent '{resolved_name}' starten "
+                f"(mode={mode}, model={model}, permission={permission_mode})"
+            )
             payload = self._build_agent_payload(
                 resolved_name,
                 display_name,
@@ -937,6 +1099,10 @@ class AgentLauncherHandler(BaseHandler):
                 pid_file=str(pid_file),
                 available_actions=["start"],
                 dry_run=True,
+                permission_mode=permission_mode,
+                allowed_tools=None if permission_mode == "full" else allowed_tools,
+                max_turns=max_turns,
+                runtime_defaults=runtime_defaults,
             )
             return self._action_response(
                 "start",
@@ -1019,6 +1185,12 @@ class AgentLauncherHandler(BaseHandler):
 
         # Claude-Prozess starten
         cmd = ["claude", "--model", model]
+        if max_turns is not None:
+            cmd.extend(["--max-turns", str(max_turns)])
+        if permission_mode == "full":
+            cmd.append("--dangerously-skip-permissions")
+        else:
+            cmd.extend(["--allowedTools", allowed_tools])
 
         if mode == "plan":
             cmd.extend(["--plan-mode", "plan"])
@@ -1076,6 +1248,9 @@ class AgentLauncherHandler(BaseHandler):
                 "started": datetime.now().isoformat(),
                 "temp_dir": str(agent_temp_dir),
                 "window_title": title if sys.platform == 'win32' else None,
+                "permission_mode": permission_mode,
+                "allowed_tools": None if permission_mode == "full" else allowed_tools,
+                "max_turns": max_turns,
             }
             pid_file.write_text(json.dumps(pid_data, indent=2), encoding='utf-8')
 
@@ -1086,6 +1261,7 @@ class AgentLauncherHandler(BaseHandler):
                 f"     Typ:    {agent['type']}\n"
                 f"     Modell: {model}\n"
                 f"     Modus:  {mode}\n"
+                f"     Rechte: {permission_mode}\n"
                 f"     Temp:   {agent_temp_dir}"
             )
             payload = self._build_agent_payload(
@@ -1102,6 +1278,10 @@ class AgentLauncherHandler(BaseHandler):
                 window_title=pid_data.get("window_title"),
                 pid_file=str(pid_file),
                 available_actions=["stop", "steer"],
+                permission_mode=permission_mode,
+                allowed_tools=None if permission_mode == "full" else allowed_tools,
+                max_turns=max_turns,
+                runtime_defaults=runtime_defaults,
             )
             return self._action_response(
                 "start",
@@ -1210,6 +1390,9 @@ class AgentLauncherHandler(BaseHandler):
             pid_file=str(pid_file),
             available_actions=["start"],
             dry_run=dry_run,
+            permission_mode=data.get("permission_mode"),
+            allowed_tools=data.get("allowed_tools"),
+            max_turns=data.get("max_turns"),
         )
 
         if dry_run:
@@ -1294,6 +1477,9 @@ class AgentLauncherHandler(BaseHandler):
             available_actions=self._available_actions(running, note_count),
             dry_run=dry_run,
             notes=notes,
+            permission_mode=pid_data.get("permission_mode"),
+            allowed_tools=pid_data.get("allowed_tools"),
+            max_turns=pid_data.get("max_turns"),
         )
 
         if note_count == 0 and not has_queue_files:
@@ -1357,6 +1543,9 @@ class AgentLauncherHandler(BaseHandler):
             pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
             available_actions=self._available_actions(running, 0),
             notes=[],
+            permission_mode=pid_data.get("permission_mode"),
+            allowed_tools=pid_data.get("allowed_tools"),
+            max_turns=pid_data.get("max_turns"),
         )
 
         if cleared:
@@ -1397,6 +1586,9 @@ class AgentLauncherHandler(BaseHandler):
                 window_title=pid_data.get("window_title"),
                 pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
                 available_actions=["start"],
+                permission_mode=pid_data.get("permission_mode"),
+                allowed_tools=pid_data.get("allowed_tools"),
+                max_turns=pid_data.get("max_turns"),
             )
             return self._action_response(
                 "steer",
@@ -1437,6 +1629,9 @@ class AgentLauncherHandler(BaseHandler):
                 available_actions=["stop", "steer"],
                 dry_run=True,
                 notes=notes,
+                permission_mode=pid_data.get("permission_mode"),
+                allowed_tools=pid_data.get("allowed_tools"),
+                max_turns=pid_data.get("max_turns"),
             )
             return self._action_response(
                 "steer",
@@ -1466,6 +1661,9 @@ class AgentLauncherHandler(BaseHandler):
                 pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
                 available_actions=["stop", "steer"],
                 notes=notes,
+                permission_mode=pid_data.get("permission_mode"),
+                allowed_tools=pid_data.get("allowed_tools"),
+                max_turns=pid_data.get("max_turns"),
             )
             return self._action_response(
                 "steer",
@@ -1492,6 +1690,9 @@ class AgentLauncherHandler(BaseHandler):
             pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
             available_actions=["stop", "steer"],
             notes=notes,
+            permission_mode=pid_data.get("permission_mode"),
+            allowed_tools=pid_data.get("allowed_tools"),
+            max_turns=pid_data.get("max_turns"),
         )
         return self._action_response(
             "steer",
@@ -1599,47 +1800,45 @@ class AgentLauncherHandler(BaseHandler):
                 temp_dir = data.get("temp_dir")
                 notes = self._read_operator_notes(name, temp_dir=temp_dir)
 
-                agents.append({
-                    "name": name,
-                    "display_name": display_name,
-                    "type": data.get("type"),
-                    "running": running,
-                    "status": "running" if running else "dead",
-                    "pid": running_pid or data.get("pid") or None,
-                    "model": data.get("model"),
-                    "mode": data.get("mode"),
-                    "started_at": started_at,
-                    "runtime_seconds": self._compute_runtime_seconds(started_at) if running else None,
-                    "temp_dir": temp_dir,
-                    "window_title": data.get("window_title"),
-                    "pid_file": str(pf),
-                    "pending_operator_notes": len(notes),
-                    "latest_operator_note": notes[-1]["message"] if notes else None,
-                    "latest_operator_note_at": notes[-1].get("requested_at") if notes else None,
-                    "operator_notes_file": str(self._agent_operator_notes_path(name, temp_dir=temp_dir, markdown=True)),
-                    "available_actions": self._available_actions(running, len(notes)),
-                })
+                agents.append(
+                    self._build_agent_payload(
+                        name,
+                        display_name,
+                        data.get("type"),
+                        running=running,
+                        status="running" if running else "dead",
+                        pid=running_pid or data.get("pid") or None,
+                        model=data.get("model"),
+                        mode=data.get("mode"),
+                        started_at=started_at,
+                        temp_dir=temp_dir,
+                        window_title=data.get("window_title"),
+                        pid_file=str(pf),
+                        available_actions=self._available_actions(running, len(notes)),
+                        notes=notes,
+                        permission_mode=data.get("permission_mode"),
+                        allowed_tools=data.get("allowed_tools"),
+                        max_turns=data.get("max_turns"),
+                    )
+                )
             except (json.JSONDecodeError, ValueError):
-                agents.append({
-                    "name": pf.stem,
-                    "display_name": None,
-                    "type": None,
-                    "running": False,
-                    "status": "invalid",
-                    "pid": None,
-                    "model": None,
-                    "mode": None,
-                    "started_at": None,
-                    "runtime_seconds": None,
-                    "temp_dir": None,
-                    "window_title": None,
-                    "pid_file": str(pf),
-                    "pending_operator_notes": 0,
-                    "latest_operator_note": None,
-                    "latest_operator_note_at": None,
-                    "operator_notes_file": str(self._agent_operator_notes_path(pf.stem, markdown=True)),
-                    "available_actions": ["start"],
-                })
+                agents.append(
+                    self._build_agent_payload(
+                        pf.stem,
+                        None,
+                        None,
+                        running=False,
+                        status="invalid",
+                        pid=None,
+                        model=None,
+                        mode=None,
+                        started_at=None,
+                        temp_dir=None,
+                        window_title=None,
+                        pid_file=str(pf),
+                        available_actions=["start"],
+                    )
+                )
                 pf.unlink(missing_ok=True)
 
         payload = {

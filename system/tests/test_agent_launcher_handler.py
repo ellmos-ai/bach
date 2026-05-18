@@ -172,6 +172,34 @@ class TestFlags:
         assert handler._parse_flag(["foo"], "--model", "sonnet") == "sonnet"
         assert handler._parse_flag(["--model"], "--model", "sonnet") == "sonnet"
 
+    def test_parse_max_turns(self, handler):
+        assert handler._parse_max_turns("7") == 7
+        assert handler._parse_max_turns("") is None
+
+    def test_parse_max_turns_rejects_invalid(self, handler):
+        with pytest.raises(ValueError):
+            handler._parse_max_turns("0")
+
+    def test_load_agent_runtime_defaults(self, handler):
+        skill_file = handler.agents_dir / "test-boss" / "SKILL.md"
+        skill_file.write_text(
+            "---\n"
+            "name: test-boss\n"
+            "agent_runtime:\n"
+            "  permission_mode: full\n"
+            "  allowed_tools:\n"
+            "    - Read\n"
+            "    - Bash\n"
+            "  max_turns: 9\n"
+            "---\n"
+            "# Test Boss\n",
+            encoding="utf-8",
+        )
+        defaults = handler._load_agent_runtime_defaults(skill_file)
+        assert defaults["permission_mode"] == "full"
+        assert defaults["allowed_tools"] is None
+        assert defaults["max_turns"] == 9
+
 
 # ================================================================
 # OPERATOR NOTES
@@ -331,6 +359,43 @@ class TestStartDryRun:
         ok, msg = handler.handle("start", ["test-boss", "--mode", "invalid"])
         assert ok is False
         assert "Modus" in msg or "mode" in msg.lower()
+
+    def test_start_dry_run_uses_runtime_defaults(self, handler):
+        skill_file = handler.agents_dir / "test-boss" / "SKILL.md"
+        skill_file.write_text(
+            "---\n"
+            "name: test-boss\n"
+            "agent_runtime:\n"
+            "  permission_mode: restricted\n"
+            "  allowed_tools: Read,Grep\n"
+            "  max_turns: 5\n"
+            "---\n"
+            "# Test Boss\n",
+            encoding="utf-8",
+        )
+        ok, msg = handler.handle("start", ["test-boss", "--json"], dry_run=True)
+        assert ok is True
+        data = json.loads(msg)
+        assert data["agent"]["permission_mode"] == "restricted"
+        assert data["agent"]["allowed_tools"] == "Read,Grep"
+        assert data["agent"]["max_turns"] == 5
+        assert data["agent"]["runtime_defaults"]["max_turns"] == 5
+
+    def test_start_invalid_permission_mode(self, handler):
+        ok, msg = handler.handle(
+            "start",
+            ["test-boss", "--permission-mode", "unsafe", "--json"],
+        )
+        assert ok is False
+        assert "Permission-Modus" in msg
+
+    def test_start_invalid_max_turns(self, handler):
+        ok, msg = handler.handle(
+            "start",
+            ["test-boss", "--max-turns", "0", "--json"],
+        )
+        assert ok is False
+        assert "Max-Turns" in msg
 
 
 # ================================================================
