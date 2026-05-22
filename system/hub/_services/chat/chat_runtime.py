@@ -24,6 +24,7 @@ import shlex
 import sqlite3
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -846,6 +847,7 @@ class ChatSession:
         self.tool_round: int = 0
         self.last_tools: list[str] = []
         self.voice_output: bool = False
+        self.last_active: float = 0.0
 
 
 class ChatRuntime:
@@ -970,6 +972,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
     async def process(self, text: str, chat_id: str) -> str:
         """Verarbeitet eine User-Nachricht und gibt die Antwort zurück."""
         session = self.get_session(chat_id)
+        session.last_active = time.time()
         session.messages.append({"role": "user", "content": text})
 
         total = sum(len(m.get("content", "")) for m in session.messages)

@@ -5,7 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH Dashboard</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
 
     <!-- TailwindCSS via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -15,11 +16,11 @@
             theme: {
                 extend: {
                     colors: {
-                        'bach-primary': '#e94560',
-                        'bach-accent': '#4a90d9',
-                        'bach-success': '#2ecc71',
-                        'bach-warning': '#f39c12',
-                        'bach-error': '#e74c3c',
+                        'bach-primary': '#d4485a',
+                        'bach-accent': '#5b8def',
+                        'bach-success': '#4ade80',
+                        'bach-warning': '#f5c542',
+                        'bach-error': '#ef5350',
                     }
                 }
             }
@@ -30,44 +31,15 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
     <style>
-        /* Minimale Custom Styles - meiste Styles durch Tailwind ersetzt */
-
-        /* CSS Variablen für Kompatibilität mit bestehendem System */
-        :root {
-            --primary: #e94560;
-            --accent: #4a90d9;
-            --accent-blue: #4a90d9;
-            --success: #2ecc71;
-            --warning: #f39c12;
-            --error: #e74c3c;
-            --bg: #0f0f23;
-            --bg-dark: #0a0a15;
-            --bg-secondary: #1a1a2e;
-            --bg-tertiary: #16213e;
-            --bg-panel: #16213e;
-            --bg-card: #1a1a2e;
-            --border: #2a2a3e;
-            --text: #e0e0e0;
-            --text-muted: #8e8ea0;
-        }
-
-        /* Dark mode colors */
-        .dark {
-            --bg: #0f0f23;
-            --bg-dark: #0a0a15;
-            --text: #e0e0e0;
-        }
-
-        /* Kompakte Custom Styles - Rest wird durch Tailwind abgedeckt */
-
         .stat-box::after {
             content: '';
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
-            height: 4px;
-            opacity: 0.5;
+            height: 3px;
+            border-radius: 0 0 2px 2px;
+            opacity: 0.6;
         }
 
         .stat-box.green::after { background: var(--success); }
@@ -76,46 +48,65 @@
         .stat-box.accent::after { background: var(--accent); }
 
         .calc-result {
-            background: linear-gradient(135deg, rgba(233, 69, 96, 0.1) 0%, rgba(74, 144, 217, 0.1) 100%);
+            background: linear-gradient(135deg, rgba(212, 72, 90, 0.08) 0%, rgba(91, 141, 239, 0.08) 100%);
         }
 
-        .ai-input-area textarea:focus {
-            height: 80px;
-        }
+        /* Theme-Overrides: Tailwind-Klassen auf CSS-Variablen umleiten */
+
+        /* Backgrounds */
+        [data-theme] .bg-\[\#0b0d14\] { background-color: var(--bg-dark) !important; }
+        [data-theme] .bg-\[\#111420\] { background-color: var(--bg-panel) !important; }
+        [data-theme] .bg-\[\#171b28\] { background-color: var(--bg-card) !important; }
+        [data-theme] .hover\:bg-\[\#111420\]:hover { background-color: var(--bg-panel) !important; }
+        [data-theme] .hover\:bg-\[\#171b28\]:hover { background-color: var(--bg-card) !important; }
+
+        /* Borders */
+        [data-theme] .border-\[\#1e2236\] { border-color: var(--border) !important; }
+        [data-theme] .border-\[\#2a3048\] { border-color: var(--border-hover) !important; }
+        [data-theme] .border-b-2.border-\[\#1e2236\] { border-color: var(--border) !important; }
+        [data-theme] .divide-\[\#2a3048\] > :not([hidden]) ~ :not([hidden]) { border-color: var(--border-hover) !important; }
+
+        /* Text */
+        [data-theme] .text-gray-200 { color: var(--text) !important; }
+        [data-theme] .text-gray-400 { color: var(--text-muted) !important; }
+        [data-theme] .text-gray-500 { color: var(--text-dim) !important; }
+
+        /* Interactive */
+        [data-theme] .focus\:border-bach-accent:focus { border-color: var(--accent) !important; }
+        [data-theme] .hover\:border-bach-accent:hover { border-color: var(--accent) !important; }
     </style>
 </head>
 
 <body x-data="{
-    darkMode: true,
     activeTab: 'overview',
     activeSubTab: 'inbox',
     selectedPartner: 'claude'
 }"
-:class="darkMode ? 'dark bg-[#0f0f23] text-gray-200' : 'bg-gray-50 text-gray-900'"
-class="min-h-screen transition-colors duration-300">
+class="min-h-screen transition-colors duration-300"
+style="background: var(--bg-dark); color: var(--text)">
 
     <div id="main-header"></div>
 
     <main class="container mx-auto px-4 py-6">
         <!-- Dashboard Tabs - Modernisiert mit Alpine.js & Tailwind -->
-        <div class="flex gap-2 border-b-2 border-[#2a2a3e] mb-6">
+        <div class="flex gap-2 border-b-2 border-[#1e2236] mb-6">
             <button
                 @click="activeTab = 'overview'"
-                :class="activeTab === 'overview' ? 'bg-bach-primary text-white' : 'bg-[#1a1a2e] text-gray-400 hover:bg-[#16213e]'"
+                :class="activeTab === 'overview' ? 'bg-bach-primary text-white' : 'bg-[#171b28] text-gray-400 hover:bg-[#111420]'"
                 class="px-4 py-2 rounded-t-lg font-semibold transition-all"
             >
                 Startseite
             </button>
             <button
                 @click="activeTab = 'tokens'"
-                :class="activeTab === 'tokens' ? 'bg-bach-primary text-white' : 'bg-[#1a1a2e] text-gray-400 hover:bg-[#16213e]'"
+                :class="activeTab === 'tokens' ? 'bg-bach-primary text-white' : 'bg-[#171b28] text-gray-400 hover:bg-[#111420]'"
                 class="px-4 py-2 rounded-t-lg font-semibold transition-all"
             >
                 🔋 Tokens
             </button>
             <button
                 @click="activeTab = 'files'"
-                :class="activeTab === 'files' ? 'bg-bach-primary text-white' : 'bg-[#1a1a2e] text-gray-400 hover:bg-[#16213e]'"
+                :class="activeTab === 'files' ? 'bg-bach-primary text-white' : 'bg-[#171b28] text-gray-400 hover:bg-[#111420]'"
                 class="px-4 py-2 rounded-t-lg font-semibold transition-all"
             >
                 📂 Dateien
@@ -126,36 +117,36 @@ class="min-h-screen transition-colors duration-300">
         <div x-show="activeTab === 'overview'" x-transition id="tab-overview">
 
             <!-- AI Console - Modernisiert mit Tailwind & Alpine -->
-            <div class="bg-[#16213e] border border-[#2a2a3e] rounded-xl p-4 mb-6 shadow-lg">
+            <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-4 mb-6 shadow-lg">
                 <div class="flex gap-2 mb-3 flex-wrap">
                     <button
                         @click="selectedPartner = 'claude'"
-                        :class="selectedPartner === 'claude' ? 'bg-bach-accent text-white opacity-100' : 'bg-[#1a1a2e] text-gray-400 opacity-70 hover:opacity-100 hover:border-bach-accent'"
-                        class="px-4 py-2 border border-[#2a2a3e] rounded-full text-sm font-medium transition-all flex items-center gap-2"
+                        :class="selectedPartner === 'claude' ? 'bg-bach-accent text-white opacity-100' : 'bg-[#171b28] text-gray-400 opacity-70 hover:opacity-100 hover:border-bach-accent'"
+                        class="px-4 py-2 border border-[#1e2236] rounded-full text-sm font-medium transition-all flex items-center gap-2"
                         onclick="selectPartner('claude', this)"
                     >
                         <span>🧠</span> Claude
                     </button>
                     <button
                         @click="selectedPartner = 'gemini'"
-                        :class="selectedPartner === 'gemini' ? 'bg-bach-accent text-white opacity-100' : 'bg-[#1a1a2e] text-gray-400 opacity-70 hover:opacity-100 hover:border-bach-accent'"
-                        class="px-4 py-2 border border-[#2a2a3e] rounded-full text-sm font-medium transition-all flex items-center gap-2"
+                        :class="selectedPartner === 'gemini' ? 'bg-bach-accent text-white opacity-100' : 'bg-[#171b28] text-gray-400 opacity-70 hover:opacity-100 hover:border-bach-accent'"
+                        class="px-4 py-2 border border-[#1e2236] rounded-full text-sm font-medium transition-all flex items-center gap-2"
                         onclick="selectPartner('gemini', this)"
                     >
                         <span>✨</span> Gemini
                     </button>
                     <button
                         @click="selectedPartner = 'ollama'"
-                        :class="selectedPartner === 'ollama' ? 'bg-bach-accent text-white opacity-100' : 'bg-[#1a1a2e] text-gray-400 opacity-70 hover:opacity-100 hover:border-bach-accent'"
-                        class="px-4 py-2 border border-[#2a2a3e] rounded-full text-sm font-medium transition-all flex items-center gap-2"
+                        :class="selectedPartner === 'ollama' ? 'bg-bach-accent text-white opacity-100' : 'bg-[#171b28] text-gray-400 opacity-70 hover:opacity-100 hover:border-bach-accent'"
+                        class="px-4 py-2 border border-[#1e2236] rounded-full text-sm font-medium transition-all flex items-center gap-2"
                         onclick="selectPartner('ollama', this)"
                     >
                         <span>🦙</span> Ollama
                     </button>
                     <button
                         @click="selectedPartner = 'planner'"
-                        :class="selectedPartner === 'planner' ? 'bg-bach-accent text-white opacity-100' : 'bg-[#1a1a2e] text-gray-400 opacity-70 hover:opacity-100 hover:border-bach-accent'"
-                        class="px-4 py-2 border border-[#2a2a3e] rounded-full text-sm font-medium transition-all flex items-center gap-2"
+                        :class="selectedPartner === 'planner' ? 'bg-bach-accent text-white opacity-100' : 'bg-[#171b28] text-gray-400 opacity-70 hover:opacity-100 hover:border-bach-accent'"
+                        class="px-4 py-2 border border-[#1e2236] rounded-full text-sm font-medium transition-all flex items-center gap-2"
                         onclick="selectPartner('planner', this)"
                     >
                         <span>📅</span> Planner
@@ -165,7 +156,7 @@ class="min-h-screen transition-colors duration-300">
                     <textarea
                         id="headless-prompt"
                         :placeholder="'Nachricht an ' + selectedPartner.charAt(0).toUpperCase() + selectedPartner.slice(1) + '...'"
-                        class="flex-1 bg-[#0a0a15] border border-[#2a2a3e] rounded-lg text-gray-200 px-3 py-2 resize-none h-[46px] min-h-[46px] focus:outline-none focus:border-bach-accent transition-all"
+                        class="flex-1 bg-[#0b0d14] border border-[#1e2236] rounded-lg text-gray-200 px-3 py-2 resize-none h-[46px] min-h-[46px] focus:outline-none focus:border-bach-accent transition-all"
                         onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendHeadlessPrompt(); }"
                     ></textarea>
                     <button
@@ -182,11 +173,14 @@ class="min-h-screen transition-colors duration-300">
                     </select>
                 </div>
                 <div id="headless-info" class="hidden text-xs mt-2 text-gray-400 pl-1"></div>
+                <div class="flex justify-end mt-2">
+                    <a href="/chat" class="text-xs text-gray-500 hover:text-bach-accent transition-colors">Buddha Chat öffnen →</a>
+                </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <!-- Status Card -->
-                <div class="bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 shadow-lg">
+                <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg">
                     <h2 class="text-xl font-bold mb-4 text-gray-200">System Status</h2>
                     <div class="grid grid-cols-3 gap-4">
                         <div class="text-center">
@@ -205,19 +199,19 @@ class="min-h-screen transition-colors duration-300">
                 </div>
 
                 <!-- Deadlines Card -->
-                <div class="bg-[#16213e] border border-bach-error rounded-xl p-6 shadow-lg hidden" id="deadlines-card">
+                <div class="bg-[#111420] border border-bach-error rounded-xl p-6 shadow-lg hidden" id="deadlines-card">
                     <h2 class="text-xl font-bold mb-4 text-bach-error">⚠️ Kritische Fristen</h2>
                     <div id="deadlines-list" class="space-y-2"></div>
                 </div>
 
                 <!-- Favoriten & Quick Links -->
-                <div class="bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 shadow-lg">
+                <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg">
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-xl font-bold text-gray-200">Favoriten & Tools</h2>
                         <button
                             onclick="toggleFavoritesEdit()"
                             id="edit-favs-btn"
-                            class="px-3 py-1 text-sm bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg hover:border-bach-accent transition-all"
+                            class="px-3 py-1 text-sm bg-[#171b28] border border-[#1e2236] rounded-lg hover:border-bach-accent transition-all"
                         >
                             Bearbeiten
                         </button>
@@ -225,14 +219,14 @@ class="min-h-screen transition-colors duration-300">
                     <div id="favorites-container" class="flex flex-wrap gap-2">
                         <!-- Wird dynamisch geladen -->
                     </div>
-                    <div id="favorites-edit" class="hidden mt-4 pt-4 border-t border-[#2a2a3e]">
+                    <div id="favorites-edit" class="hidden mt-4 pt-4 border-t border-[#1e2236]">
                         <p class="text-sm text-gray-400 mb-2">Verfuegbare Seiten:</p>
                         <div id="available-pages" class="flex flex-wrap gap-2"></div>
                     </div>
                 </div>
 
                 <!-- Recent Tasks -->
-                <div class="bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 shadow-lg">
+                <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg">
                     <h2 class="text-xl font-bold mb-4 text-gray-200">Aktuelle Tasks</h2>
                     <div id="tasks-list" class="space-y-2">
                         <p class="text-gray-400 text-center py-4">Lade...</p>
@@ -240,7 +234,7 @@ class="min-h-screen transition-colors duration-300">
                 </div>
 
                 <!-- Task Statistik / Scanner Monitor -->
-                <div id="scanner-status" class="hidden bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 shadow-lg"></div>
+                <div id="scanner-status" class="hidden bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg"></div>
             </div>
         </div>
 
@@ -256,7 +250,7 @@ class="min-h-screen transition-colors duration-300">
                         <div id="priceDate" class="text-sm text-gray-400 mb-2">Stand: lädt...</div>
                         <button
                             onclick="loadTokenData()"
-                            class="px-4 py-2 bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg hover:border-bach-accent transition-all"
+                            class="px-4 py-2 bg-[#171b28] border border-[#1e2236] rounded-lg hover:border-bach-accent transition-all"
                         >
                             🔄 Aktualisieren
                         </button>
@@ -264,43 +258,43 @@ class="min-h-screen transition-colors duration-300">
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    <div class="stat-box blue relative overflow-hidden bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 text-center transition-all hover:-translate-y-1 hover:border-bach-accent hover:shadow-2xl">
+                    <div class="stat-box blue relative overflow-hidden bg-[#111420] border border-[#1e2236] rounded-xl p-6 text-center transition-all hover:-translate-y-1 hover:border-bach-accent hover:shadow-2xl">
                         <span class="block text-4xl font-extrabold text-bach-accent mb-2" id="exchangeRate">0.0000</span>
                         <span class="block text-xs text-gray-400 uppercase tracking-wider">EUR/USD Kurs</span>
                     </div>
-                    <div class="stat-box accent relative overflow-hidden bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 text-center transition-all hover:-translate-y-1 hover:border-bach-accent hover:shadow-2xl">
+                    <div class="stat-box accent relative overflow-hidden bg-[#111420] border border-[#1e2236] rounded-xl p-6 text-center transition-all hover:-translate-y-1 hover:border-bach-accent hover:shadow-2xl">
                         <span class="block text-4xl font-extrabold text-bach-primary mb-2" id="totalCost">€0.00</span>
                         <span class="block text-xs text-gray-400 uppercase tracking-wider">Kosten (30 Tage)</span>
                     </div>
-                    <div class="stat-box orange relative overflow-hidden bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 text-center transition-all hover:-translate-y-1 hover:border-bach-accent hover:shadow-2xl">
+                    <div class="stat-box orange relative overflow-hidden bg-[#111420] border border-[#1e2236] rounded-xl p-6 text-center transition-all hover:-translate-y-1 hover:border-bach-accent hover:shadow-2xl">
                         <span class="block text-4xl font-extrabold text-bach-warning mb-2" id="totalTokens">0</span>
                         <span class="block text-xs text-gray-400 uppercase tracking-wider">Tokens (Gesamt)</span>
                     </div>
-                    <div class="stat-box green relative overflow-hidden bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 text-center transition-all hover:-translate-y-1 hover:border-bach-accent hover:shadow-2xl">
+                    <div class="stat-box green relative overflow-hidden bg-[#111420] border border-[#1e2236] rounded-xl p-6 text-center transition-all hover:-translate-y-1 hover:border-bach-accent hover:shadow-2xl">
                         <span class="block text-4xl font-extrabold text-bach-success mb-2" id="topModel">-</span>
                         <span class="block text-xs text-gray-400 uppercase tracking-wider">Meistgenutzt</span>
                     </div>
                 </div>
 
-                <div class="bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 shadow-lg mb-8">
+                <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg mb-8">
                     <h2 class="text-2xl font-bold text-gray-200 mb-4">💰 Modell-Preise</h2>
-                    <div class="overflow-x-auto rounded-xl border border-[#2a2a3e]">
+                    <div class="overflow-x-auto rounded-xl border border-[#1e2236]">
                         <table class="w-full border-collapse">
                             <thead>
-                                <tr class="bg-[#1a1a2e]">
-                                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#2a2a3e]">Modell</th>
-                                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#2a2a3e]">Input / 1M</th>
-                                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#2a2a3e]">Output / 1M</th>
-                                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#2a2a3e]">Pro 1K (In/Out)</th>
+                                <tr class="bg-[#171b28]">
+                                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#1e2236]">Modell</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#1e2236]">Input / 1M</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#1e2236]">Output / 1M</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#1e2236]">Pro 1K (In/Out)</th>
                                 </tr>
                             </thead>
-                            <tbody id="priceTable" class="divide-y divide-[#2a2a3e]"></tbody>
+                            <tbody id="priceTable" class="divide-y divide-[#2a3048]"></tbody>
                         </table>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="lg:col-span-2 bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 shadow-lg">
+                    <div class="lg:col-span-2 bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg">
                         <h2 class="text-2xl font-bold text-gray-200 mb-4">🧮 Kosten-Rechner</h2>
                         <div class="space-y-4">
                             <div>
@@ -308,7 +302,7 @@ class="min-h-screen transition-colors duration-300">
                                 <select
                                     id="actionSelect"
                                     onchange="calculateCost()"
-                                    class="w-full bg-[#0a0a15] border border-[#2a2a3e] rounded-lg px-4 py-2 text-gray-200 focus:outline-none focus:border-bach-accent"
+                                    class="w-full bg-[#0b0d14] border border-[#1e2236] rounded-lg px-4 py-2 text-gray-200 focus:outline-none focus:border-bach-accent"
                                 >
                                     <option value="500">Antwort (~500)</option>
                                     <option value="1500">Chat (~1.500)</option>
@@ -324,7 +318,7 @@ class="min-h-screen transition-colors duration-300">
                                     id="customTokens"
                                     placeholder="Token Anzahl"
                                     oninput="calculateCost()"
-                                    class="w-full bg-[#0a0a15] border border-[#2a2a3e] rounded-lg px-4 py-2 text-gray-200 focus:outline-none focus:border-bach-accent"
+                                    class="w-full bg-[#0b0d14] border border-[#1e2236] rounded-lg px-4 py-2 text-gray-200 focus:outline-none focus:border-bach-accent"
                                 >
                             </div>
                             <div>
@@ -332,12 +326,12 @@ class="min-h-screen transition-colors duration-300">
                                 <select
                                     id="modelSelect"
                                     onchange="calculateCost()"
-                                    class="w-full bg-[#0a0a15] border border-[#2a2a3e] rounded-lg px-4 py-2 text-gray-200 focus:outline-none focus:border-bach-accent"
+                                    class="w-full bg-[#0b0d14] border border-[#1e2236] rounded-lg px-4 py-2 text-gray-200 focus:outline-none focus:border-bach-accent"
                                 ></select>
                             </div>
                         </div>
                     </div>
-                    <div class="calc-result border border-[#2a2a3e] rounded-xl p-6 flex flex-col justify-center items-center">
+                    <div class="calc-result border border-[#1e2236] rounded-xl p-6 flex flex-col justify-center items-center">
                         <div class="text-5xl font-extrabold text-bach-success mb-4" id="calcCost">€0.0000</div>
                         <div class="text-sm text-gray-400 text-center" id="calcBreakdown">Bereit</div>
                     </div>
@@ -348,7 +342,7 @@ class="min-h-screen transition-colors duration-300">
         <!-- Tab: Dateien (Integrated Content) -->
         <div x-show="activeTab === 'files'" x-transition id="tab-files">
             <div class="p-4">
-                <div class="flex gap-4 border-b-2 border-[#2a2a3e] mb-6">
+                <div class="flex gap-4 border-b-2 border-[#1e2236] mb-6">
                     <button
                         @click="activeSubTab = 'inbox'"
                         :class="activeSubTab === 'inbox' ? 'text-bach-accent border-bach-accent' : 'text-gray-400 border-transparent hover:text-gray-300'"
@@ -378,7 +372,7 @@ class="min-h-screen transition-colors duration-300">
 
                 <div x-show="activeSubTab === 'inbox'" x-transition id="subtab-inbox">
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div class="bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 shadow-lg">
+                        <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg">
                             <h2 class="text-xl font-bold text-gray-200 mb-4">Status & Ordner</h2>
                             <div class="grid grid-cols-2 gap-4 mb-4">
                                 <div class="text-center">
@@ -392,12 +386,12 @@ class="min-h-screen transition-colors duration-300">
                             </div>
                             <ul class="space-y-1" id="folder-list"></ul>
                         </div>
-                        <div class="bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 shadow-lg">
+                        <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg">
                             <h2 class="text-xl font-bold text-gray-200 mb-4">Review Queue</h2>
                             <div id="unsorted-list" class="max-h-[300px] overflow-y-auto space-y-2 mb-4">Lade...</div>
                             <button
                                 onclick="runScan()"
-                                class="w-full px-4 py-2 bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg hover:border-bach-accent transition-all"
+                                class="w-full px-4 py-2 bg-[#171b28] border border-[#1e2236] rounded-lg hover:border-bach-accent transition-all"
                             >
                                 Scan starten
                             </button>
@@ -407,13 +401,13 @@ class="min-h-screen transition-colors duration-300">
 
                 <div x-show="activeSubTab === 'quarantine'" x-transition id="subtab-quarantine">
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div class="bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 shadow-lg">
+                        <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg">
                             <h2 class="text-xl font-bold text-gray-200 mb-4">Anonymisierung</h2>
                             <div id="anon-clients-list" class="space-y-2">Lade...</div>
                         </div>
-                        <div class="bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 shadow-lg">
+                        <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg">
                             <h2 class="text-xl font-bold text-gray-200 mb-4">Datei Upload</h2>
-                            <div class="border-2 border-dashed border-[#2a2a3e] rounded-lg p-8 text-center text-gray-400 cursor-pointer hover:border-bach-accent hover:text-bach-accent transition-all">
+                            <div class="border-2 border-dashed border-[#1e2236] rounded-lg p-8 text-center text-gray-400 cursor-pointer hover:border-bach-accent hover:text-bach-accent transition-all">
                                 📄 Dateien hier ablegen
                             </div>
                         </div>
@@ -421,31 +415,31 @@ class="min-h-screen transition-colors duration-300">
                 </div>
 
                 <div x-show="activeSubTab === 'connections'" x-transition id="subtab-connections">
-                    <div class="bg-[#16213e] border border-[#2a2a3e] rounded-xl p-6 shadow-lg">
+                    <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg">
                         <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                             <h2 class="text-2xl font-bold text-gray-200">🔗 Externe Verbindungen (Mounts)</h2>
                             <button
                                 onclick="restoreMounts()"
-                                class="px-4 py-2 bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg hover:border-bach-accent transition-all"
+                                class="px-4 py-2 bg-[#171b28] border border-[#1e2236] rounded-lg hover:border-bach-accent transition-all"
                             >
                                 🔄 Alle wiederherstellen
                             </button>
                         </div>
-                        <div class="overflow-x-auto rounded-xl border border-[#2a2a3e] mb-8">
+                        <div class="overflow-x-auto rounded-xl border border-[#1e2236] mb-8">
                             <table class="w-full border-collapse">
                                 <thead>
-                                    <tr class="bg-[#1a1a2e]">
-                                        <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#2a2a3e]">Alias</th>
-                                        <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#2a2a3e]">Pfad</th>
-                                        <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#2a2a3e]">Status</th>
-                                        <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#2a2a3e]">Aktion</th>
+                                    <tr class="bg-[#171b28]">
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#1e2236]">Alias</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#1e2236]">Pfad</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#1e2236]">Status</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b-2 border-[#1e2236]">Aktion</th>
                                     </tr>
                                 </thead>
-                                <tbody id="mounts-list-body" class="divide-y divide-[#2a2a3e]"></tbody>
+                                <tbody id="mounts-list-body" class="divide-y divide-[#2a3048]"></tbody>
                             </table>
                         </div>
 
-                        <div class="border border-[#2a2a3e] rounded-xl p-6">
+                        <div class="border border-[#1e2236] rounded-xl p-6">
                             <h3 class="text-xl font-bold text-gray-200 mb-4">➕ Neuen Ordner anbinden</h3>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                 <div>
@@ -454,7 +448,7 @@ class="min-h-screen transition-colors duration-300">
                                         type="text"
                                         id="mount-alias"
                                         placeholder="z.B. google_drive"
-                                        class="w-full bg-[#0a0a15] border border-[#2a2a3e] rounded-lg px-4 py-2 text-gray-200 focus:outline-none focus:border-bach-accent"
+                                        class="w-full bg-[#0b0d14] border border-[#1e2236] rounded-lg px-4 py-2 text-gray-200 focus:outline-none focus:border-bach-accent"
                                     >
                                 </div>
                                 <div>
@@ -463,7 +457,7 @@ class="min-h-screen transition-colors duration-300">
                                         type="text"
                                         id="mount-path"
                                         placeholder="C:\Users\...\Desktop"
-                                        class="w-full bg-[#0a0a15] border border-[#2a2a3e] rounded-lg px-4 py-2 text-gray-200 focus:outline-none focus:border-bach-accent"
+                                        class="w-full bg-[#0b0d14] border border-[#1e2236] rounded-lg px-4 py-2 text-gray-200 focus:outline-none focus:border-bach-accent"
                                     >
                                 </div>
                             </div>
@@ -482,7 +476,7 @@ class="min-h-screen transition-colors duration-300">
 
         <!-- Modals for Inbox/Files -->
         <div id="process-modal" class="fixed inset-0 bg-black bg-opacity-70 hidden flex items-center justify-center z-[1000]">
-            <div class="bg-[#16213e] border border-[#2a2a3e] rounded-xl p-8 w-full max-w-3xl mx-4 shadow-2xl">
+            <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-8 w-full max-w-3xl mx-4 shadow-2xl">
                 <h2 class="text-2xl font-bold text-gray-200 mb-6">Datei Review</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div
@@ -498,14 +492,14 @@ class="min-h-screen transition-colors duration-300">
                                 type="text"
                                 id="process-target"
                                 required
-                                class="w-full bg-[#0a0a15] border border-[#2a2a3e] rounded-lg px-4 py-2 text-gray-200 focus:outline-none focus:border-bach-accent"
+                                class="w-full bg-[#0b0d14] border border-[#1e2236] rounded-lg px-4 py-2 text-gray-200 focus:outline-none focus:border-bach-accent"
                             >
                         </div>
                         <div class="flex justify-end gap-4 mt-6">
                             <button
                                 type="button"
                                 onclick="closeModal('process-modal')"
-                                class="px-6 py-2 bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg hover:border-bach-accent transition-all"
+                                class="px-6 py-2 bg-[#171b28] border border-[#1e2236] rounded-lg hover:border-bach-accent transition-all"
                             >
                                 Abbruch
                             </button>
@@ -523,24 +517,24 @@ class="min-h-screen transition-colors duration-300">
     </main>
 
     <!-- Ausbaustufen Badges -->
-    <section class="bg-[#0f0f23] border-t border-[#2a2a3e] py-8">
+    <section class="bg-[#0b0d14] border-t border-[#1e2236] py-8">
         <div class="max-w-4xl mx-auto px-4">
             <h3 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-6">Ausbaustufen</h3>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <a href="https://github.com/lukisch/usmc" target="_blank"
-                   class="group bg-[#1a1a2e] border border-[#2a2a3e] rounded-xl p-5 text-center hover:border-bach-accent transition-all">
+                   class="group bg-[#171b28] border border-[#1e2236] rounded-xl p-5 text-center hover:border-bach-accent transition-all">
                     <div class="text-xs font-mono text-gray-500 mb-1">Stufe 1</div>
                     <div class="text-lg font-bold text-bach-accent group-hover:text-white transition-colors">USMC</div>
                     <div class="text-xs text-gray-400 mt-1">United Shared Memory Client</div>
                 </a>
                 <a href="https://github.com/lukisch/rinnsal" target="_blank"
-                   class="group bg-[#1a1a2e] border border-[#2a2a3e] rounded-xl p-5 text-center hover:border-bach-warning transition-all">
+                   class="group bg-[#171b28] border border-[#1e2236] rounded-xl p-5 text-center hover:border-bach-warning transition-all">
                     <div class="text-xs font-mono text-gray-500 mb-1">Stufe 2</div>
                     <div class="text-lg font-bold text-bach-warning group-hover:text-white transition-colors">Rinnsal</div>
                     <div class="text-xs text-gray-400 mt-1">USMC + LLM-Orchestrierung</div>
                 </a>
                 <a href="https://github.com/ellmos-ai/bach" target="_blank"
-                   class="group bg-[#1a1a2e] border border-[#2a2a3e] rounded-xl p-5 text-center hover:border-bach-primary transition-all">
+                   class="group bg-[#171b28] border border-[#1e2236] rounded-xl p-5 text-center hover:border-bach-primary transition-all">
                     <div class="text-xs font-mono text-gray-500 mb-1">Stufe 3</div>
                     <div class="text-lg font-bold text-bach-primary group-hover:text-white transition-colors">BACH</div>
                     <div class="text-xs text-gray-400 mt-1">Vollstaendiges System</div>
@@ -549,12 +543,12 @@ class="min-h-screen transition-colors duration-300">
         </div>
     </section>
 
-    <footer class="bg-[#16213e] border-t border-[#2a2a3e] py-4 text-center">
-        <span class="text-gray-400 text-sm">BACH v1.1.8</span>
+    <footer class="bg-[#111420] border-t border-[#1e2236] py-4 text-center">
+        <span class="text-gray-500 text-xs tracking-wider font-medium">BACH Dashboard</span>
     </footer>
 
     <script src="/static/js/api.js?v=2"></script>
-    <script src="/static/js/nav.js?v=3"></script>
+    <script src="/static/js/nav.js?v=4"></script>
     <script src="/static/js/app.js?v=2"></script>
     <script>
         const esc = escapeHtml;
@@ -590,16 +584,16 @@ class="min-h-screen transition-colors duration-300">
 
                 if (data.mounts && data.mounts.length > 0) {
                     tbody.innerHTML = data.mounts.map(m => `
-                        <tr class="hover:bg-[#1a1a2e] transition-colors">
+                        <tr class="hover:bg-[#171b28] transition-colors">
                             <td class="px-6 py-4"><b class="text-gray-200">${esc(m.alias)}</b></td>
                             <td class="px-6 py-4 text-sm text-gray-400">${esc(m.path)}</td>
                             <td class="px-6 py-4">
-                                <span class="inline-block px-3 py-1 text-xs rounded-full border ${m.active && m.exists ? 'border-bach-success text-bach-success' : 'border-[#2a2a3e] text-gray-400'}">
+                                <span class="inline-block px-3 py-1 text-xs rounded-full border ${m.active && m.exists ? 'border-bach-success text-bach-success' : 'border-[#1e2236] text-gray-400'}">
                                     ${m.active && m.exists ? 'Aktiv' : (m.exists ? 'Verbunden (System)' : 'Fehlt')}
                                 </span>
                             </td>
                             <td class="px-6 py-4">
-                                <button onclick="removeMount(${escapeHtml(JSON.stringify(m.alias))})" class="px-3 py-1 text-xs bg-[#1a1a2e] border border-[#2a2a3e] rounded hover:border-bach-error hover:text-bach-error transition-all">Löschen</button>
+                                <button onclick="removeMount(${escapeHtml(JSON.stringify(m.alias))})" class="px-3 py-1 text-xs bg-[#171b28] border border-[#1e2236] rounded hover:border-bach-error hover:text-bach-error transition-all">Löschen</button>
                             </td>
                         </tr>
                     `).join('');
@@ -715,7 +709,7 @@ class="min-h-screen transition-colors duration-300">
                 const outEur = model.output_per_mtok_usd * rate;
 
                 const row = document.createElement('tr');
-                row.className = 'hover:bg-[#1a1a2e] transition-colors';
+                row.className = 'hover:bg-[#171b28] transition-colors';
                 row.innerHTML = `
                     <td class="px-6 py-4"><span class="font-semibold text-gray-200">${model.name}</span></td>
                     <td class="px-6 py-4"><span class="font-mono font-bold text-bach-success text-lg">€${inEur.toFixed(2)}</span> <span class="text-gray-400 text-sm ml-2">($${model.input_per_mtok_usd.toFixed(2)})</span></td>
@@ -782,7 +776,7 @@ class="min-h-screen transition-colors duration-300">
                 const list = document.getElementById('folder-list');
                 if (!list) return;
                 list.innerHTML = (data.folders || []).map(f => `
-                    <li class="flex justify-between items-center py-2 px-3 border-b border-[#2a2a3e] hover:bg-[#1a1a2e] transition-colors">
+                    <li class="flex justify-between items-center py-2 px-3 border-b border-[#1e2236] hover:bg-[#171b28] transition-colors">
                         <span class="text-sm text-gray-300">${esc(f.path)}</span>
                     </li>
                 `).join('');
@@ -796,9 +790,9 @@ class="min-h-screen transition-colors duration-300">
                 const container = document.getElementById('unsorted-list');
                 if (!container) return;
                 container.innerHTML = (data.files || []).map(f => `
-                    <div onclick="processFile(${escapeHtml(JSON.stringify(f.name))})" class="flex justify-between items-center p-3 bg-[#1a1a2e] rounded-lg border border-[#2a2a3e] cursor-pointer hover:border-bach-accent transition-all">
+                    <div onclick="processFile(${escapeHtml(JSON.stringify(f.name))})" class="flex justify-between items-center p-3 bg-[#171b28] rounded-lg border border-[#1e2236] cursor-pointer hover:border-bach-accent transition-all">
                         <span class="text-gray-200">${esc(f.name)}</span>
-                        <span class="px-3 py-1 bg-[#16213e] rounded text-sm">⚙️</span>
+                        <span class="px-3 py-1 bg-[#111420] rounded text-sm">⚙️</span>
                     </div>
                 `).join('') || '<p class="text-gray-400 text-center py-4">Keine neuen Dateien</p>';
             } catch (e) { console.error(e); }
@@ -827,7 +821,7 @@ class="min-h-screen transition-colors duration-300">
                 const list = document.getElementById('anon-clients-list');
                 if (!list) return;
                 list.innerHTML = (data.clients || []).map(c => `
-                    <div class="p-3 border-b border-[#2a2a3e] hover:bg-[#1a1a2e] transition-colors">
+                    <div class="p-3 border-b border-[#1e2236] hover:bg-[#171b28] transition-colors">
                         <b class="text-gray-200">${esc(c.name)}</b> <span class="text-gray-400">(${esc(c.status)})</span>
                     </div>
                 `).join('') || '<p class="text-gray-400 text-center py-4">Keine Klienten</p>';
@@ -846,7 +840,7 @@ class="min-h-screen transition-colors duration-300">
                     const list = document.getElementById('deadlines-list');
                     card.classList.remove('hidden');
                     list.innerHTML = data.deadlines.map(d => `
-                        <div class="p-3 mb-2 bg-[#1a1a2e] rounded-lg border-l-4 border-bach-error">
+                        <div class="p-3 mb-2 bg-[#171b28] rounded-lg border-l-4 border-bach-error">
                             <div class="font-bold text-gray-200">${esc(d.name)}</div>
                             <div class="text-sm text-gray-400 mt-1">
                                 Bis: ${new Date(d.deadline).toLocaleDateString()}

@@ -185,7 +185,10 @@ class OllamaClient:
         model: str = None,
         system: str = None,
         temperature: float = None,
-        stream: bool = False
+        stream: bool = False,
+        think: Optional[bool] = None,
+        num_predict: Optional[int] = None,
+        options: Optional[Dict[str, Any]] = None,
     ) -> OllamaResponse:
         """
         Generiert Text mit Ollama.
@@ -210,8 +213,15 @@ class OllamaClient:
         
         if system:
             payload["system"] = system
+        merged_options: Dict[str, Any] = dict(options or {})
         if temperature is not None:
-            payload["options"] = {"temperature": temperature}
+            merged_options["temperature"] = temperature
+        if num_predict is not None:
+            merged_options["num_predict"] = num_predict
+        if merged_options:
+            payload["options"] = merged_options
+        if think is not None:
+            payload["think"] = think
         
         try:
             data = self._post("/api/generate", payload)
@@ -233,7 +243,11 @@ class OllamaClient:
         self,
         messages: List[Dict[str, str]],
         model: str = None,
-        stream: bool = False
+        stream: bool = False,
+        think: Optional[bool] = None,
+        temperature: Optional[float] = None,
+        num_predict: Optional[int] = None,
+        options: Optional[Dict[str, Any]] = None,
     ) -> OllamaResponse:
         """
         Chat-Completion mit Ollama.
@@ -253,6 +267,15 @@ class OllamaClient:
             "messages": messages,
             "stream": stream
         }
+        merged_options: Dict[str, Any] = dict(options or {})
+        if temperature is not None:
+            merged_options["temperature"] = temperature
+        if num_predict is not None:
+            merged_options["num_predict"] = num_predict
+        if merged_options:
+            payload["options"] = merged_options
+        if think is not None:
+            payload["think"] = think
         
         try:
             data = self._post("/api/chat", payload)

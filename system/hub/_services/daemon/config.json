@@ -8,7 +8,7 @@
       "profile": "ati",
       "interval_minutes": 15,
       "enabled": false,
-      "last_run": "2026-05-17T04:19:57.007310"
+      "last_run": null
     },
     {
       "profile": "wartung",

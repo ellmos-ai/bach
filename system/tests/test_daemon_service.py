@@ -28,6 +28,7 @@ Unit Tests fuer gui/daemon_service.py
 Tests fuer DaemonService, DaemonJob, Interval-Parsing, Job-Scheduling.
 """
 
+import json
 import sys
 import sqlite3
 import tempfile
@@ -307,6 +308,49 @@ class TestDaemonServiceDB:
         assert "HELLO_DAEMON" in result["output"]
         assert result["duration_seconds"] >= 0
 
+    def test_run_job_injects_scheduler_operator_steer_env(self, tmp_path):
+        db_path = _create_test_db(tmp_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO scheduler_jobs (name, job_type, schedule, command, is_active) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("echo-job", "interval", "1h", "echo HELLO_DAEMON", 1),
+        )
+        conn.commit()
+        conn.close()
+
+        svc = DaemonService(db_path)
+        svc.load_jobs()
+        job_id = list(svc.jobs.keys())[0]
+        steer_file = tmp_path / "scheduler.steer.json"
+        steer_file.write_text(
+            json.dumps(
+                [{"message": "Bitte zuerst Logs prüfen.", "requested_at": "2026-05-20T12:00:00"}],
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        class _Result:
+            returncode = 0
+            stdout = "HELLO_DAEMON\n"
+            stderr = ""
+
+        def fake_run(*args, **kwargs):
+            env = kwargs["env"]
+            assert env["BACH_SCHEDULER_JOB_NAME"] == "echo-job"
+            assert env["BACH_SCHEDULER_TRIGGERED_BY"] == "test"
+            steer = json.loads(env["BACH_SCHEDULER_OPERATOR_STEER"])
+            assert steer[0]["message"] == "Bitte zuerst Logs prüfen."
+            return _Result()
+
+        with patch("gui.daemon_service.SCHEDULER_STEER_FILE", steer_file):
+            with patch("gui.daemon_service.subprocess.run", side_effect=fake_run):
+                result = svc.run_job(job_id, triggered_by="test")
+
+        assert result["success"] is True
+        assert steer_file.exists()
+
     def test_run_job_failure(self, tmp_path):
         db_path = _create_test_db(tmp_path)
         conn = sqlite3.connect(db_path)
@@ -421,6 +465,34 @@ class TestPendingJobs:
         pending = svc.get_pending_jobs()
         assert len(pending) == 1
         assert pending[0].name == "due"
+
+    def test_check_and_run_due_jobs_respects_scheduler_pause(self, tmp_path):
+        db_path = _create_test_db(tmp_path)
+        svc = DaemonService(db_path)
+        svc.jobs = {
+            1: DaemonJob(
+                id=1, name="due", description="", job_type="interval",
+                schedule="1h", command="echo", script_path=None,
+                arguments=None, is_active=True, timeout_seconds=60,
+                retry_on_fail=False, max_retries=0,
+                last_run=None, next_run=datetime.now() - timedelta(seconds=10),
+            ),
+        }
+        pause_file = tmp_path / "scheduler.pause.json"
+        pause_file.write_text(
+            json.dumps(
+                {"reason": "Wartung", "requested_at": "2026-05-20T12:05:00"},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        with patch("gui.daemon_service.SCHEDULER_PAUSE_FILE", pause_file):
+            with patch("gui.daemon_service.threading.Thread") as mock_thread:
+                svc.check_and_run_due_jobs()
+
+        mock_thread.assert_not_called()
+        assert svc._pause_logged is True
 
 
 # ═══════════════════════════════════════════════════════════════

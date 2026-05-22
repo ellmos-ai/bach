@@ -6,6 +6,7 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +14,7 @@ SYSTEM_ROOT = Path(__file__).parent.parent
 if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
+import hub.setup as setup_handler_module
 from hub.setup import SetupHandler
 
 
@@ -457,6 +459,40 @@ class TestPreflight:
     def test_preflight_checks_db_dir(self, handler):
         ok, msg = handler._preflight([])
         assert "data/ beschreibbar" in msg
+
+
+class TestSetupCheck:
+    def test_check_uses_resolved_npm_executable_on_windows(self, handler, tmp_path, monkeypatch):
+        root = handler.base_path.parent
+        (root / "USER.md").write_text("# User", encoding="utf-8")
+
+        fake_home = tmp_path / "home"
+        secrets_dir = fake_home / ".bach"
+        secrets_dir.mkdir(parents=True)
+        (secrets_dir / "bach_secrets.json").write_text(
+            json.dumps({"secrets": {"demo": "value"}}),
+            encoding="utf-8",
+        )
+
+        commands = []
+
+        def fake_run(cmd, **kwargs):
+            commands.append(cmd)
+            package = cmd[3]
+            return SimpleNamespace(returncode=0, stdout=f"{package}@1.0.0", stderr="")
+
+        monkeypatch.setattr(setup_handler_module.shutil, "which", lambda name: "C:\\Program Files\\nodejs\\npm.CMD")
+        monkeypatch.setattr(setup_handler_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(setup_handler_module.Path, "home", staticmethod(lambda: fake_home))
+        monkeypatch.setattr(handler, "_is_npm_package_installed", lambda pkg: False)
+
+        ok, msg = handler._check()
+
+        assert ok
+        assert "[OK] ellmos-codecommander-mcp installiert" in msg
+        assert "[OK] ellmos-filecommander-mcp installiert" in msg
+        assert commands
+        assert all(cmd[0].lower().endswith("npm.cmd") for cmd in commands)
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -5,7 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - Anonymisierung</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         .page-header {
             display: flex;
@@ -133,15 +134,15 @@
         }
 
         .status-badge.active {
-            background: rgba(46, 204, 113, 0.2);
-            color: #2ecc71;
-            border-color: #2ecc71;
+            background: color-mix(in srgb, var(--success) 20%, transparent);
+            color: var(--success);
+            border-color: var(--success);
         }
 
         .status-badge.pending {
-            background: rgba(241, 196, 15, 0.2);
-            color: #f1c40f;
-            border-color: #f1c40f;
+            background: color-mix(in srgb, var(--warning) 20%, transparent);
+            color: var(--warning);
+            border-color: var(--warning);
         }
 
         .progress-container {
@@ -280,7 +281,7 @@
     </main>
 
     <script src="/static/js/api.js"></script>
-    <script src="/static/js/nav.js?v=3"></script>
+    <script src="/static/js/nav.js?v=4"></script>
     <script>
         // Init
         document.addEventListener('DOMContentLoaded', () => {

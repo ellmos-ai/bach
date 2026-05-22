@@ -43,6 +43,7 @@ class SchedulerHandler(BaseHandler):
         self.daemon_script = self.gui_dir / "daemon_service.py"
         self.pid_file = self.data_dir / "daemon.pid"
         self.user_db = self.data_dir / "bach.db"  # Unified DB seit v1.1.84
+        self.scheduler_control_dir = self.data_dir / "scheduler_control"
 
         # Session System (System-Service)
         # Lives under hub/_services after the service migration.
@@ -66,6 +67,10 @@ class SchedulerHandler(BaseHandler):
             "stop": "Scheduler-Service stoppen (GUI Jobs)",
             "status": "Status anzeigen",
             "doctor": "Scheduler-Preflight und Recovery-Hinweise anzeigen",
+            "pause": "Faellige Scheduler-Jobs pausieren",
+            "resume": "Scheduler-Pause aufheben",
+            "steer": "Operator-Hinweise fuer kommende Scheduler-Jobs vormerken",
+            "clear-steer": "Scheduler-Steering-Hinweise loeschen",
             "jobs": "Aktive Jobs auflisten",
             "run": "Job manuell ausfuehren (bach scheduler run ID)",
             "logs": "Letzte Logs anzeigen",
@@ -85,6 +90,14 @@ class SchedulerHandler(BaseHandler):
             return self._start_daemon(background, dry_run)
         elif operation == "stop":
             return self._stop_daemon(dry_run)
+        elif operation == "pause":
+            return self._scheduler_pause(args, dry_run)
+        elif operation == "resume":
+            return self._scheduler_resume(args, dry_run)
+        elif operation == "steer":
+            return self._scheduler_steer(args, dry_run)
+        elif operation == "clear-steer":
+            return self._scheduler_clear_steer(args, dry_run)
         elif operation == "status":
             return self._show_status(json_output=json_output)
         elif operation == "doctor":
@@ -705,12 +718,14 @@ class SchedulerHandler(BaseHandler):
                     "script": str(self.daemon_script),
                     "log_file": str(self.log_dir / "daemon.log"),
                     "available_actions": ["stop"] if running else ["start"],
+                    "control_actions": ["pause", "resume", "steer", "clear-steer"],
                 },
                 "jobs": {
                     "total": 0,
                     "active": 0,
                 },
                 "recent_runs": [],
+                "operator_control": self._scheduler_control_snapshot(),
             }
 
             if self.user_db.exists():
@@ -756,6 +771,7 @@ class SchedulerHandler(BaseHandler):
             f"PID-File:    {self.pid_file}",
             f"Script:      {self.daemon_script}",
         ]
+        controls = self._scheduler_control_snapshot()
 
         # DB-Infos laden
         if self.user_db.exists():
@@ -795,6 +811,15 @@ class SchedulerHandler(BaseHandler):
                     pass
         else:
             output.append(f"\n[WARN] User-DB nicht gefunden: {self.user_db}")
+
+        output.extend([
+            "",
+            "--- Operator Control ---",
+            f"Pause:       {controls['pause_reason'] if controls['pause_requested'] else '-'}",
+            f"Steer-Queue: {controls['pending_steer_count']}",
+        ])
+        if controls["latest_steer_message"]:
+            output.append(f"Letzter Hinweis: {controls['latest_steer_message'][:80]}")
 
         return (True, "\n".join(output))
 
@@ -971,6 +996,222 @@ class SchedulerHandler(BaseHandler):
         except Exception as e:
             return (False, f"[ERROR] Log-Fehler: {e}")
 
+    def _strip_scheduler_control_flags(self, args: list) -> list[str]:
+        """Entfernt Steuer-Flags und liefert den eigentlichen Text-/Grund-Teil."""
+        return [arg for arg in args if arg not in {"--dry-run", "-n", "--json"}]
+
+    def _scheduler_pause_file(self) -> Path:
+        return self.scheduler_control_dir / "scheduler.pause.json"
+
+    def _scheduler_steer_file(self) -> Path:
+        return self.scheduler_control_dir / "scheduler.steer.json"
+
+    def _scheduler_read_json(self, path: Path, default):
+        if not path.exists():
+            return default
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return default
+
+    def _scheduler_get_pause_request(self) -> dict | None:
+        payload = self._scheduler_read_json(self._scheduler_pause_file(), None)
+        if isinstance(payload, dict) and payload.get("reason"):
+            return payload
+        return None
+
+    def _scheduler_peek_steer_requests(self) -> list[dict]:
+        payload = self._scheduler_read_json(self._scheduler_steer_file(), [])
+        if isinstance(payload, list):
+            return [
+                item
+                for item in payload
+                if isinstance(item, dict) and item.get("message")
+            ]
+        return []
+
+    def _scheduler_control_actions(self, snapshot: dict) -> list[str]:
+        actions = ["resume"] if snapshot.get("pause_requested") else ["pause"]
+        actions.append("steer")
+        if snapshot.get("pending_steer_count"):
+            actions.append("clear-steer")
+        return actions
+
+    def _scheduler_control_snapshot(self) -> dict:
+        pause_request = self._scheduler_get_pause_request()
+        steer_requests = self._scheduler_peek_steer_requests()
+        latest = steer_requests[-1] if steer_requests else None
+        snapshot = {
+            "scope": "scheduler",
+            "pause_requested": bool(pause_request),
+            "pause_reason": pause_request.get("reason") if pause_request else None,
+            "pause_requested_at": pause_request.get("requested_at") if pause_request else None,
+            "pending_steer_count": len(steer_requests),
+            "latest_steer_message": latest.get("message") if latest else None,
+            "latest_steer_requested_at": latest.get("requested_at") if latest else None,
+            "pause_file": str(self._scheduler_pause_file()),
+            "steer_file": str(self._scheduler_steer_file()),
+        }
+        snapshot["available_actions"] = self._scheduler_control_actions(snapshot)
+        return snapshot
+
+    def _scheduler_control_response(
+        self,
+        action: str,
+        ok: bool,
+        message: str,
+        *,
+        json_output: bool = False,
+        dry_run: bool = False,
+    ) -> tuple:
+        if not json_output:
+            return ok, message
+
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "action": action,
+            "ok": ok,
+            "message": message,
+            "control": self._scheduler_control_snapshot(),
+        }
+        payload["control"]["dry_run"] = dry_run
+        return ok, self._json_dump(payload)
+
+    def _scheduler_pause(self, args: list, dry_run: bool) -> tuple:
+        """Pausiert fällige Scheduler-Jobs global."""
+        json_output = self._has_flag(args, "--json")
+        reason = " ".join(self._strip_scheduler_control_flags(args)).strip() or "Manuell pausiert"
+        pause_file = self._scheduler_pause_file()
+
+        if dry_run:
+            return self._scheduler_control_response(
+                "pause",
+                True,
+                f"[DRY-RUN] Würde Scheduler pausieren ({reason}) -> {pause_file}",
+                json_output=json_output,
+                dry_run=True,
+            )
+
+        self.scheduler_control_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "reason": reason,
+            "requested_at": datetime.now().isoformat(),
+        }
+        pause_file.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return self._scheduler_control_response(
+            "pause",
+            True,
+            f"[OK] Scheduler pausiert. Grund: {reason}",
+            json_output=json_output,
+        )
+
+    def _scheduler_resume(self, args: list, dry_run: bool) -> tuple:
+        """Hebt eine globale Scheduler-Pause auf."""
+        json_output = self._has_flag(args, "--json")
+        pause_request = self._scheduler_get_pause_request()
+        pause_file = self._scheduler_pause_file()
+
+        if not pause_request:
+            return self._scheduler_control_response(
+                "resume",
+                True,
+                "Keine Scheduler-Pause vorgemerkt.",
+                json_output=json_output,
+            )
+
+        if dry_run:
+            return self._scheduler_control_response(
+                "resume",
+                True,
+                f"[DRY-RUN] Würde Scheduler-Pause aufheben -> {pause_file}",
+                json_output=json_output,
+                dry_run=True,
+            )
+
+        pause_file.unlink(missing_ok=True)
+        return self._scheduler_control_response(
+            "resume",
+            True,
+            "[OK] Scheduler-Pause aufgehoben.",
+            json_output=json_output,
+        )
+
+    def _scheduler_steer(self, args: list, dry_run: bool) -> tuple:
+        """Hinterlegt Operator-Hinweise für kommende Scheduler-Jobs."""
+        json_output = self._has_flag(args, "--json")
+        message = " ".join(self._strip_scheduler_control_flags(args)).strip()
+        if not message:
+            return self._scheduler_control_response(
+                "steer",
+                False,
+                '[ERROR] Hinweis erforderlich: bach scheduler steer "Hinweis"',
+                json_output=json_output,
+            )
+
+        steer_file = self._scheduler_steer_file()
+        current = self._scheduler_peek_steer_requests()
+        payload = current + [
+            {
+                "message": message,
+                "requested_at": datetime.now().isoformat(),
+            }
+        ]
+
+        if dry_run:
+            return self._scheduler_control_response(
+                "steer",
+                True,
+                f"[DRY-RUN] Würde Scheduler-Steering vormerken ({len(payload)} Nachricht(en)) -> {steer_file}",
+                json_output=json_output,
+                dry_run=True,
+            )
+
+        self.scheduler_control_dir.mkdir(parents=True, exist_ok=True)
+        steer_file.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return self._scheduler_control_response(
+            "steer",
+            True,
+            f"[OK] Scheduler-Steering vorgemerkt ({len(payload)} Nachricht(en) in Queue).",
+            json_output=json_output,
+        )
+
+    def _scheduler_clear_steer(self, args: list, dry_run: bool) -> tuple:
+        """Leert die globale Scheduler-Steering-Queue."""
+        json_output = self._has_flag(args, "--json")
+        pending = self._scheduler_peek_steer_requests()
+        steer_file = self._scheduler_steer_file()
+
+        if not pending:
+            return self._scheduler_control_response(
+                "clear-steer",
+                True,
+                "Keine Scheduler-Steering-Hinweise vorgemerkt.",
+                json_output=json_output,
+            )
+
+        if dry_run:
+            return self._scheduler_control_response(
+                "clear-steer",
+                True,
+                f"[DRY-RUN] Würde {len(pending)} Scheduler-Steering-Hinweis(e) löschen -> {steer_file}",
+                json_output=json_output,
+                dry_run=True,
+            )
+
+        steer_file.unlink(missing_ok=True)
+        return self._scheduler_control_response(
+            "clear-steer",
+            True,
+            f"[OK] {len(pending)} Scheduler-Steering-Hinweis(e) gelöscht.",
+            json_output=json_output,
+        )
+
     # =====================================================
     # SESSION SYSTEM (System-Service)
     # =====================================================
@@ -1139,7 +1380,7 @@ class SchedulerHandler(BaseHandler):
             if arg == "--profile" and index + 1 < len(args):
                 skip_next = True
                 continue
-            if arg in {"--dry-run", "-n"}:
+            if arg in {"--dry-run", "-n", "--json"}:
                 continue
             cleaned.append(arg)
         return cleaned
@@ -1187,17 +1428,52 @@ class SchedulerHandler(BaseHandler):
     def _session_control_snapshot(self, profile: str) -> dict:
         pause_request = self._session_get_pause_request(profile)
         steer_requests = self._session_peek_steer_requests(profile)
-        latest = steer_requests[-1]["message"] if steer_requests else None
-        return {
+        latest = steer_requests[-1] if steer_requests else None
+        snapshot = {
             "profile": profile,
             "pause_requested": bool(pause_request),
             "pause_reason": pause_request.get("reason") if pause_request else None,
             "pause_requested_at": pause_request.get("requested_at") if pause_request else None,
             "pending_steer_count": len(steer_requests),
-            "latest_steer_message": latest,
+            "latest_steer_message": latest.get("message") if latest else None,
+            "latest_steer_requested_at": latest.get("requested_at") if latest else None,
             "pause_file": str(self._session_pause_file(profile)),
             "steer_file": str(self._session_steer_file(profile)),
         }
+        snapshot["available_actions"] = self._session_control_actions(snapshot)
+        return snapshot
+
+    def _session_control_actions(self, snapshot: dict) -> list[str]:
+        """Leitet verfügbare Steueraktionen aus dem aktuellen Session-Snapshot ab."""
+        actions = ["resume"] if snapshot.get("pause_requested") else ["pause"]
+        actions.append("steer")
+        if snapshot.get("pending_steer_count"):
+            actions.append("clear-steer")
+        return actions
+
+    def _session_control_response(
+        self,
+        action: str,
+        profile: str,
+        ok: bool,
+        message: str,
+        *,
+        json_output: bool = False,
+        dry_run: bool = False,
+    ) -> tuple:
+        """Formatiert Session-Control-Antworten optional als JSON."""
+        if not json_output:
+            return ok, message
+
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "action": action,
+            "ok": ok,
+            "message": message,
+            "control": self._session_control_snapshot(profile),
+        }
+        payload["control"]["dry_run"] = dry_run
+        return ok, self._json_dump(payload)
 
     def _session_read_config(self) -> dict:
         """Liest die Session-Config robust für Policy-/Status-Entscheidungen."""
@@ -1385,15 +1661,20 @@ class SchedulerHandler(BaseHandler):
 
     def _session_pause(self, args: list, dry_run: bool) -> tuple:
         """Pausiert die Trigger eines Session-Profils."""
+        json_output = self._has_flag(args, "--json")
         profile = self._get_profile_from_args(args)
         reason_tokens = self._strip_profile_and_flags(args)
         reason = " ".join(reason_tokens).strip() or "Manuell pausiert"
         pause_file = self._session_pause_file(profile)
 
         if dry_run:
-            return (
+            return self._session_control_response(
+                "pause",
+                profile,
                 True,
                 f"[DRY-RUN] Wuerde Session-Profil '{profile}' pausieren ({reason}) -> {pause_file}",
+                json_output=json_output,
+                dry_run=True,
             )
 
         self.session_control_dir.mkdir(parents=True, exist_ok=True)
@@ -1406,37 +1687,61 @@ class SchedulerHandler(BaseHandler):
             json.dumps(payload, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
-        return (
+        return self._session_control_response(
+            "pause",
+            profile,
             True,
             f"[OK] Session-Profil '{profile}' pausiert. Grund: {reason}",
+            json_output=json_output,
         )
 
     def _session_resume(self, args: list, dry_run: bool) -> tuple:
         """Hebt eine Session-Pause fuer ein Profil auf."""
+        json_output = self._has_flag(args, "--json")
         profile = self._get_profile_from_args(args)
         pause_file = self._session_pause_file(profile)
         pause_request = self._session_get_pause_request(profile)
 
         if not pause_request:
-            return (True, f"Keine Pause für Session-Profil '{profile}' vorgemerkt.")
+            return self._session_control_response(
+                "resume",
+                profile,
+                True,
+                f"Keine Pause für Session-Profil '{profile}' vorgemerkt.",
+                json_output=json_output,
+            )
 
         if dry_run:
-            return (
+            return self._session_control_response(
+                "resume",
+                profile,
                 True,
                 f"[DRY-RUN] Wuerde Session-Pause fuer '{profile}' aufheben -> {pause_file}",
+                json_output=json_output,
+                dry_run=True,
             )
 
         pause_file.unlink(missing_ok=True)
-        return (True, f"[OK] Session-Pause fuer '{profile}' aufgehoben.")
+        return self._session_control_response(
+            "resume",
+            profile,
+            True,
+            f"[OK] Session-Pause fuer '{profile}' aufgehoben.",
+            json_output=json_output,
+        )
 
     def _session_steer(self, args: list, dry_run: bool) -> tuple:
         """Hinterlegt Operator-Hinweise fuer die naechste Session eines Profils."""
+        json_output = self._has_flag(args, "--json")
         profile = self._get_profile_from_args(args)
         message = " ".join(self._strip_profile_and_flags(args)).strip()
         if not message:
-            return (
+            return self._session_control_response(
+                "steer",
+                profile,
                 False,
                 '[ERROR] Hinweis erforderlich: bach scheduler session steer [--profile NAME] "Hinweis"',
+                json_output=json_output,
             )
 
         steer_file = self._session_steer_file(profile)
@@ -1450,9 +1755,13 @@ class SchedulerHandler(BaseHandler):
         ]
 
         if dry_run:
-            return (
+            return self._session_control_response(
+                "steer",
+                profile,
                 True,
                 f"[DRY-RUN] Wuerde Session-Steering fuer '{profile}' vormerken ({len(payload)} Nachricht(en)) -> {steer_file}",
+                json_output=json_output,
+                dry_run=True,
             )
 
         self.session_control_dir.mkdir(parents=True, exist_ok=True)
@@ -1460,30 +1769,47 @@ class SchedulerHandler(BaseHandler):
             json.dumps(payload, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
-        return (
+        return self._session_control_response(
+            "steer",
+            profile,
             True,
             f"[OK] Session-Steering für '{profile}' vorgemerkt ({len(payload)} Nachricht(en) in Queue).",
+            json_output=json_output,
         )
 
     def _session_clear_steer(self, args: list, dry_run: bool) -> tuple:
         """Leert die vorgemerkte Steering-Queue eines Profils."""
+        json_output = self._has_flag(args, "--json")
         profile = self._get_profile_from_args(args)
         steer_file = self._session_steer_file(profile)
         pending = self._session_peek_steer_requests(profile)
 
         if not pending:
-            return (True, f"Keine Session-Steering-Hinweise für '{profile}' vorgemerkt.")
+            return self._session_control_response(
+                "clear-steer",
+                profile,
+                True,
+                f"Keine Session-Steering-Hinweise für '{profile}' vorgemerkt.",
+                json_output=json_output,
+            )
 
         if dry_run:
-            return (
+            return self._session_control_response(
+                "clear-steer",
+                profile,
                 True,
                 f"[DRY-RUN] Würde {len(pending)} Session-Steering-Hinweis(e) für '{profile}' löschen -> {steer_file}",
+                json_output=json_output,
+                dry_run=True,
             )
 
         steer_file.unlink(missing_ok=True)
-        return (
+        return self._session_control_response(
+            "clear-steer",
+            profile,
             True,
             f"[OK] {len(pending)} Session-Steering-Hinweis(e) für '{profile}' gelöscht.",
+            json_output=json_output,
         )
 
     def _session_status(self, json_output: bool = False) -> tuple:

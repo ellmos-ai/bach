@@ -53,6 +53,9 @@ DATA_DIR = BACH_DIR / "data"
 USER_DB = DATA_DIR / "bach.db"
 LOG_DIR = BACH_DIR / "data" / "logs"
 DAEMON_PID_FILE = DATA_DIR / "daemon.pid"
+CONTROL_DIR = DATA_DIR / "scheduler_control"
+SCHEDULER_PAUSE_FILE = CONTROL_DIR / "scheduler.pause.json"
+SCHEDULER_STEER_FILE = CONTROL_DIR / "scheduler.steer.json"
 
 # Logging konfigurieren
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -100,6 +103,7 @@ class DaemonService:
         self.jobs: Dict[int, DaemonJob] = {}
         self.lock = threading.Lock()
         self._shutdown_event = threading.Event()
+        self._pause_logged = False
         
         # Signal-Handler registrieren
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -115,6 +119,33 @@ class DaemonService:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
+
+    def _read_control_json(self, path: Path, default):
+        """Liest Scheduler-Control-Dateien robust ein."""
+        if not path.exists():
+            return default
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return default
+
+    def _get_pause_request(self) -> Optional[dict]:
+        """Liefert die aktuelle globale Scheduler-Pause, falls vorhanden."""
+        payload = self._read_control_json(SCHEDULER_PAUSE_FILE, None)
+        if isinstance(payload, dict) and payload.get("reason"):
+            return payload
+        return None
+
+    def _peek_steer_requests(self) -> List[dict]:
+        """Liefert vorgemerkte Operator-Hinweise für kommende Scheduler-Jobs."""
+        payload = self._read_control_json(SCHEDULER_STEER_FILE, [])
+        if isinstance(payload, list):
+            return [
+                item
+                for item in payload
+                if isinstance(item, dict) and item.get("message")
+            ]
+        return []
     
     def load_jobs(self):
         """Laedt aktive Jobs aus der Datenbank."""
@@ -214,9 +245,24 @@ class DaemonService:
         job = self.jobs.get(job_id)
         if not job:
             return {"success": False, "error": "Job nicht gefunden"}
-        
+
         logger.info(f"Starte Job '{job.name}' (ID: {job_id})")
-        
+        steer_requests = self._peek_steer_requests()
+        env = os.environ.copy()
+        env["BACH_SCHEDULER_JOB_ID"] = str(job_id)
+        env["BACH_SCHEDULER_JOB_NAME"] = job.name
+        env["BACH_SCHEDULER_TRIGGERED_BY"] = triggered_by
+        if steer_requests:
+            env["BACH_SCHEDULER_OPERATOR_STEER"] = json.dumps(
+                steer_requests,
+                ensure_ascii=False,
+            )
+            logger.info(
+                "Operator-Steering an Job '%s' angehängt (%s Hinweis(e))",
+                job.name,
+                len(steer_requests),
+            )
+
         start_time = datetime.now()
         result = {
             "job_id": job_id,
@@ -235,7 +281,13 @@ class DaemonService:
             
             # Special handling for Chain jobs (B16: ChainHandler-Integration)
             if job.job_type == 'chain':
-                return self._run_chain_job(job, result, start_time, triggered_by)
+                return self._run_chain_job(
+                    job,
+                    result,
+                    start_time,
+                    triggered_by,
+                    steer_requests=steer_requests,
+                )
 
             if job.script_path:
                 cmd_list = [sys.executable, str(job.script_path)]
@@ -247,7 +299,8 @@ class DaemonService:
                     text=True,
                     encoding='utf-8', errors='replace',
                     timeout=job.timeout_seconds,
-                    cwd=str(BACH_DIR)
+                    cwd=str(BACH_DIR),
+                    env=env,
                 )
             else:
                 if not cmd:
@@ -261,7 +314,8 @@ class DaemonService:
                     text=True,
                     encoding='utf-8', errors='replace',
                     timeout=job.timeout_seconds,
-                    cwd=str(BACH_DIR)
+                    cwd=str(BACH_DIR),
+                    env=env,
                 )
             
             result["output"] = process.stdout
@@ -296,7 +350,15 @@ class DaemonService:
         
         return result
     
-    def _run_chain_job(self, job, result: dict, start_time, triggered_by: str) -> dict:
+    def _run_chain_job(
+        self,
+        job,
+        result: dict,
+        start_time,
+        triggered_by: str,
+        *,
+        steer_requests: Optional[List[dict]] = None,
+    ) -> dict:
         """Fuehrt einen Chain-Job via ChainHandler aus (B16).
 
         Command-Formate:
@@ -304,6 +366,23 @@ class DaemonService:
           - "toolchain:<id>"    -> ChainHandler.handle('run', [id])
           - "<name>"            -> ChainHandler.handle('start', [name])  (Default: llmauto)
         """
+        previous_env = {
+            "BACH_SCHEDULER_OPERATOR_STEER": os.environ.get("BACH_SCHEDULER_OPERATOR_STEER"),
+            "BACH_SCHEDULER_JOB_ID": os.environ.get("BACH_SCHEDULER_JOB_ID"),
+            "BACH_SCHEDULER_JOB_NAME": os.environ.get("BACH_SCHEDULER_JOB_NAME"),
+            "BACH_SCHEDULER_TRIGGERED_BY": os.environ.get("BACH_SCHEDULER_TRIGGERED_BY"),
+        }
+        if steer_requests:
+            os.environ["BACH_SCHEDULER_OPERATOR_STEER"] = json.dumps(
+                steer_requests,
+                ensure_ascii=False,
+            )
+        else:
+            os.environ.pop("BACH_SCHEDULER_OPERATOR_STEER", None)
+        os.environ["BACH_SCHEDULER_JOB_ID"] = str(job.id)
+        os.environ["BACH_SCHEDULER_JOB_NAME"] = job.name
+        os.environ["BACH_SCHEDULER_TRIGGERED_BY"] = triggered_by
+
         try:
             from hub.chain import ChainHandler
             chain_handler = ChainHandler(BACH_DIR)
@@ -333,6 +412,12 @@ class DaemonService:
             result["success"] = False
             result["error"] = str(e)
             logger.error(f"Chain-Job '{job.name}' Fehler: {e}")
+        finally:
+            for key, value in previous_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
 
         end_time = datetime.now()
         result["duration_seconds"] = (end_time - start_time).total_seconds()
@@ -404,6 +489,17 @@ class DaemonService:
 
     def check_and_run_due_jobs(self):
         """Prueft und fuehrt faellige Jobs aus."""
+        pause_request = self._get_pause_request()
+        if pause_request:
+            if not self._pause_logged:
+                logger.info("Scheduler durch Operator pausiert: %s", pause_request["reason"])
+                self._pause_logged = True
+            return
+
+        if self._pause_logged:
+            logger.info("Scheduler-Pause aufgehoben - fällige Jobs laufen wieder an")
+            self._pause_logged = False
+
         now = datetime.now()
 
         with self.lock:

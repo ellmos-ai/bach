@@ -5,7 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - Daemon &amp; Chains</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         /* ── Tab Navigation ── */
         .tab-nav {
@@ -85,13 +86,13 @@
         }
 
         .job-status.active {
-            background: #d4edda;
-            color: #155724;
+            background: color-mix(in srgb, var(--success) 18%, var(--bg));
+            color: var(--success);
         }
 
         .job-status.inactive {
-            background: #f8d7da;
-            color: #721c24;
+            background: color-mix(in srgb, var(--error) 18%, var(--bg));
+            color: var(--error);
         }
 
         .run-log {
@@ -118,13 +119,13 @@
         }
 
         .run-result.success {
-            background: #d4edda;
-            color: #155724;
+            background: color-mix(in srgb, var(--success) 18%, var(--bg));
+            color: var(--success);
         }
 
         .run-result.failed {
-            background: #f8d7da;
-            color: #721c24;
+            background: color-mix(in srgb, var(--error) 18%, var(--bg));
+            color: var(--error);
         }
 
         .job-actions {
@@ -209,11 +210,11 @@
         }
 
         .stat-value.running {
-            color: #28a745;
+            color: var(--success);
         }
 
         .stat-value.stopped {
-            color: #6c757d;
+            color: var(--text-muted);
         }
 
         .stat-label {
@@ -223,25 +224,25 @@
         }
 
         .btn-success {
-            background: #28a745;
-            color: white;
+            background: var(--success);
+            color: var(--bg);
             border: none;
         }
 
         .btn-danger {
-            background: #dc3545;
+            background: var(--error);
             color: white;
             border: none;
         }
 
         .btn-warning {
-            background: #ffc107;
-            color: #212529;
+            background: var(--warning);
+            color: var(--bg);
             border: none;
         }
 
         .btn-secondary {
-            background: #6c757d;
+            background: var(--text-muted);
             color: white;
             border: none;
         }
@@ -397,7 +398,7 @@
         }
 
         .step-editor-row button:hover {
-            background: #f8d7da;
+            background: color-mix(in srgb, var(--error) 15%, var(--bg));
         }
     </style>
 </head>
@@ -696,7 +697,7 @@
     </div>
 
     <script src="/static/js/api.js"></script>
-    <script src="/static/js/nav.js?v=3"></script>
+    <script src="/static/js/nav.js?v=4"></script>
     <script>
         // ═══════════════════════════════════════════════════════════════
         // DAEMON & CHAINS DASHBOARD - JavaScript (B28)
@@ -742,12 +743,12 @@
 
             try {
                 await api.put('/api/daemon/config', { max_sessions: value });
-                input.style.borderColor = '#28a745';
+                input.style.borderColor = 'var(--success)';
                 setTimeout(() => { input.style.borderColor = 'var(--border)'; }, 1000);
                 loadStatus();
             } catch (e) {
                 alert('Speichern fehlgeschlagen: ' + e.message);
-                input.style.borderColor = '#dc3545';
+                input.style.borderColor = 'var(--error)';
             }
         }
 
@@ -831,9 +832,9 @@
                     progressText.textContent = `${sessionsGenerated}/${maxSessions}`;
 
                     if (percent >= 100) {
-                        progressFill.style.background = '#dc3545';
+                        progressFill.style.background = 'var(--error)';
                     } else if (percent >= 80) {
-                        progressFill.style.background = '#ffc107';
+                        progressFill.style.background = 'var(--warning)';
                     } else {
                         progressFill.style.background = 'var(--primary)';
                     }
@@ -1082,7 +1083,7 @@
                     container.innerHTML = '<p style="color: var(--text-muted);">Recurring Tasks Modul nicht verfuegbar</p>';
                 } else {
                     console.error('Recurring Tasks laden fehlgeschlagen:', e);
-                    container.innerHTML = '<p style="color: #dc3545;">Fehler beim Laden</p>';
+                    container.innerHTML = '<p style="color: var(--error);">Fehler beim Laden</p>';
                 }
             }
         }
@@ -1103,15 +1104,15 @@
             }
 
             return `
-                <div style="padding: 1rem; background: var(--bg-secondary); border-radius: 8px; ${isDue ? 'border-left: 3px solid #28a745;' : ''}">
+                <div style="padding: 1rem; background: var(--bg-secondary); border-radius: 8px; ${isDue ? 'border-left: 3px solid var(--success);' : ''}">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                         <strong style="font-size: 0.95rem;">${statusIcon} ${task.name || task.id}</strong>
-                        ${!enabled ? '<span style="font-size: 0.7rem; color: #dc3545;">DEAKTIVIERT</span>' : ''}
+                        ${!enabled ? '<span style="font-size: 0.7rem; color: var(--error);">DEAKTIVIERT</span>' : ''}
                     </div>
                     <div style="font-size: 0.8rem; color: var(--text-muted);">
                         <div>Intervall: ${interval}</div>
                         <div>Letzte: ${lastRun}</div>
-                        ${isDue ? '<div style="color: #28a745; font-weight: 500; margin-top: 0.25rem;">FAELLIG</div>' : ''}
+                        ${isDue ? '<div style="color: var(--success); font-weight: 500; margin-top: 0.25rem;">FAELLIG</div>' : ''}
                     </div>
                     <button onclick="triggerRecurringTask('${task.id}')"
                             style="margin-top: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.75rem; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: var(--bg);"
@@ -1272,7 +1273,7 @@
 
             const parts = input.split(/\s+/);
             if (parts.length < 5) {
-                result.innerHTML = '<span style="color: #dc3545;">Ungueltiger Cron-Ausdruck. Format: Minute Stunde Tag Monat Wochentag</span>';
+                result.innerHTML = '<span style="color: var(--error);">Ungueltiger Cron-Ausdruck. Format: Minute Stunde Tag Monat Wochentag</span>';
                 return;
             }
 
@@ -1333,7 +1334,7 @@
 
             } catch (e) {
                 console.error('Chains laden fehlgeschlagen:', e);
-                container.innerHTML = '<p style="color: #dc3545;">Fehler beim Laden der Chains</p>';
+                container.innerHTML = '<p style="color: var(--error);">Fehler beim Laden der Chains</p>';
             }
         }
 
@@ -1355,7 +1356,7 @@
                     if (step.parallel) {
                         const subtools = step.tools || [];
                         return `
-                            <div class="chain-step" style="background: #fff3cd;">
+                            <div class="chain-step" style="background: color-mix(in srgb, var(--warning) 18%, var(--bg));">
                                 <span class="step-num">${i + 1}.</span>
                                 <span>[PARALLEL] ${subtools.length} Tasks: ${subtools.map(s => s.tool).join(', ')}</span>
                             </div>`;
@@ -1638,12 +1639,7 @@
             });
         }
 
-        function escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+        // escapeHtml aus nav.js verwenden (escaped auch Anführungszeichen)
 
         function updateSessionCountdown(seconds) {
             const el = document.getElementById('stat-next-session');
@@ -1651,7 +1647,7 @@
 
             if (seconds <= 0) {
                 el.textContent = 'Jetzt!';
-                el.style.color = '#28a745';
+                el.style.color = 'var(--success)';
                 return;
             }
 
@@ -1660,9 +1656,9 @@
             el.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
             if (seconds < 60) {
-                el.style.color = '#dc3545';
+                el.style.color = 'var(--error)';
             } else if (seconds < 300) {
-                el.style.color = '#ffc107';
+                el.style.color = 'var(--warning)';
             } else {
                 el.style.color = 'var(--primary)';
             }

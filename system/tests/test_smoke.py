@@ -37,6 +37,7 @@ from pathlib import Path
 
 SYSTEM_ROOT = Path(__file__).parent.parent
 BACH_PY = SYSTEM_ROOT / "bach.py"
+SMOKE_TEST_AGENT = "test-agent"
 
 import pytest
 
@@ -54,6 +55,11 @@ def run_bach(*args, timeout=45):
         errors="replace",
     )
     return result.returncode, result.stdout, result.stderr
+
+
+def clear_agent_steer(agent_name):
+    """Reset queued operator notes for deterministic smoke tests."""
+    run_bach("agent", "clear-steer", agent_name, "--json")
 
 
 class TestCLIBackwardsCompat:
@@ -142,6 +148,12 @@ class TestCLIBackwardsCompat:
         code, out, err = run_bach("upgrade", "status")
         assert code == 0
         assert "UPGRADE" in out or "Dateien" in out
+
+    def test_upgrade_check_flag_alias(self):
+        """Test bach upgrade --check (dokumentierter Flag-Alias)."""
+        code, out, err = run_bach("upgrade", "--check")
+        assert code == 0
+        assert "UPGRADE-CHECK" in out or "Keine versionierten Dateien" in out
 
     def test_settings_list(self):
         """Test bach settings list (SQ037)."""
@@ -233,15 +245,29 @@ class TestCLIBackwardsCompat:
         assert "checks" in payload
 
     def test_agent_start_dry_run_json(self):
-        code, out, err = run_bach("agent", "start", "ati", "--dry-run", "--json")
+        clear_agent_steer(SMOKE_TEST_AGENT)
+        code, out, err = run_bach("agent", "start", SMOKE_TEST_AGENT, "--dry-run", "--json")
         assert code == 0, err
         payload = json.loads(out)
         assert payload["action"] == "start"
-        assert payload["requested_name"] == "ati"
-        assert payload["resolved_name"] == "ati"
+        assert payload["requested_name"] == SMOKE_TEST_AGENT
+        assert payload["resolved_name"] == SMOKE_TEST_AGENT
         assert payload["ok"] is True
         assert payload["agent"]["dry_run"] is True
         assert payload["agent"]["available_actions"] == ["start"]
+
+    def test_agent_steer_prelaunch_json(self):
+        clear_agent_steer(SMOKE_TEST_AGENT)
+        try:
+            code, out, err = run_bach("agent", "steer", SMOKE_TEST_AGENT, "Vorstart-Hinweis", "--json")
+            assert code == 0, err
+            payload = json.loads(out)
+            assert payload["action"] == "steer"
+            assert payload["ok"] is True
+            assert payload["agent"]["status"] == "queued"
+            assert payload["agent"]["queued_for_next_start"] is True
+        finally:
+            clear_agent_steer(SMOKE_TEST_AGENT)
 
     def test_scheduler_doctor_json(self):
         code, out, err = run_bach("scheduler", "doctor", "--json")
@@ -297,6 +323,12 @@ class TestCLIBackwardsCompat:
         code, out, err = run_bach("lang", "list")
         assert code == 0
         # Sprachen-Liste sollte angezeigt werden
+
+    def test_lang_report(self):
+        """Test bach lang report (i18n-Drift-Report)."""
+        code, out, err = run_bach("lang", "report")
+        assert code == 0
+        assert "I18N-DRIFT REPORT" in out
 
     def test_skill_help(self):
         """Test bach help skill (Skills verwalten)."""

@@ -71,6 +71,8 @@ class TestProperties:
         assert "status" in ops
         assert "doctor" in ops
         assert "steer" in ops
+        assert "pause" in ops
+        assert "resume" in ops
         assert "clear-steer" in ops
         assert "rename" in ops
 
@@ -105,6 +107,16 @@ class TestHandleRouting:
         ok, msg = handler.handle("clear-steer", [])
         assert ok is False
         assert "clear-steer" in msg
+
+    def test_pause_too_few_args(self, handler):
+        ok, msg = handler.handle("pause", [])
+        assert ok is False
+        assert "pause" in msg.lower()
+
+    def test_resume_too_few_args(self, handler):
+        ok, msg = handler.handle("resume", [])
+        assert ok is False
+        assert "resume" in msg.lower()
 
     def test_rename_too_few_args(self, handler):
         ok, msg = handler.handle("rename", ["test-boss"])
@@ -235,6 +247,42 @@ class TestOperatorNotes:
         assert "Test-Hinweis" in content
         assert "Operator Notes" in content
 
+    def test_pause_request_updates_markdown(self, handler):
+        temp_dir = str(handler.temp_dir / "agent_test-boss")
+        handler._write_operator_notes(
+            "test-boss",
+            [{"message": "Test-Hinweis", "requested_at": "2026-05-16T10:00:00"}],
+            temp_dir=temp_dir,
+        )
+        handler._write_pause_request(
+            "test-boss",
+            {"reason": "Kurz warten", "requested_at": "2026-05-16T10:05:00"},
+            temp_dir=temp_dir,
+        )
+        md_path = handler._agent_operator_notes_path("test-boss", temp_dir=temp_dir, markdown=True)
+        content = md_path.read_text(encoding="utf-8")
+        assert "Pause Request" in content
+        assert "Kurz warten" in content
+        assert "naechsten Start in die initiale CLAUDE.md" in content
+
+    def test_clear_operator_notes_keeps_pause_markdown(self, handler):
+        temp_dir = str(handler.temp_dir / "agent_test-boss")
+        handler._write_operator_notes(
+            "test-boss",
+            [{"message": "Test-Hinweis", "requested_at": "2026-05-16T10:00:00"}],
+            temp_dir=temp_dir,
+        )
+        handler._write_pause_request(
+            "test-boss",
+            {"reason": "Kurz warten", "requested_at": "2026-05-16T10:05:00"},
+            temp_dir=temp_dir,
+        )
+        removed = handler._clear_operator_notes("test-boss", temp_dir=temp_dir)
+        assert removed == 1
+        md_path = handler._agent_operator_notes_path("test-boss", temp_dir=temp_dir, markdown=True)
+        assert md_path.exists()
+        assert "Pause Request" in md_path.read_text(encoding="utf-8")
+
     def test_notes_skip_invalid(self, handler):
         temp_dir = str(handler.temp_dir / "agent_test-boss")
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
@@ -338,6 +386,8 @@ class TestListJson:
         assert "type" in agent
         assert "running" in agent
         assert "available_actions" in agent
+        assert "operator_control" in agent
+        assert "available_actions" in agent["operator_control"]
 
 
 # ================================================================
@@ -497,13 +547,24 @@ class TestLoadPidData:
 
 class TestSteer:
     def test_steer_not_running(self, handler):
-        ok, msg = handler.handle("steer", ["test-boss", "Bitte pruefen"])
-        assert ok is False
+        ok, msg = handler.handle("steer", ["test-boss", "Bitte pruefen", "--json"])
+        assert ok is True
+        payload = json.loads(msg)
+        assert payload["agent"]["status"] == "queued"
+        assert payload["agent"]["pending_operator_notes"] == 1
+        assert payload["agent"]["queued_for_next_start"] is True
+        assert "start" in payload["agent"]["available_actions"]
+        assert "clear-steer" in payload["agent"]["available_actions"]
 
     def test_steer_syntax(self, handler):
         ok, msg = handler.handle("steer", [])
         assert ok is False
         assert "Syntax" in msg
+
+    def test_steer_unknown_agent(self, handler):
+        ok, msg = handler.handle("steer", ["unknown-agent", "Bitte pruefen"])
+        assert ok is False
+        assert "nicht gefunden" in msg
 
     def test_clear_steer_empty_queue(self, handler):
         ok, msg = handler.handle("clear-steer", ["test-boss"])
@@ -525,6 +586,93 @@ class TestSteer:
         assert handler._read_operator_notes("test-boss", temp_dir=temp_dir) == []
         assert not handler._agent_operator_notes_path("test-boss", temp_dir=temp_dir).exists()
         assert not handler._agent_operator_notes_path("test-boss", temp_dir=temp_dir, markdown=True).exists()
+
+    @patch("subprocess.Popen")
+    def test_start_preserves_prelaunch_operator_notes(self, mock_popen, handler):
+        temp_dir = str(handler.temp_dir / "agent_test-boss")
+        handler._write_operator_notes(
+            "test-boss",
+            [{"message": "Vor dem Start pruefen", "requested_at": "2026-05-20T12:00:00"}],
+            temp_dir=temp_dir,
+        )
+        mock_popen.return_value = MagicMock(pid=4321)
+
+        ok, msg = handler.handle("start", ["test-boss", "--json"])
+
+        assert ok is True
+        payload = json.loads(msg)
+        assert payload["agent"]["pending_operator_notes"] == 1
+        assert payload["agent"]["latest_operator_note"] == "Vor dem Start pruefen"
+        notes = handler._read_operator_notes("test-boss", temp_dir=temp_dir)
+        assert len(notes) == 1
+        assert notes[0]["message"] == "Vor dem Start pruefen"
+        claude_md = Path(temp_dir) / "CLAUDE.md"
+        assert claude_md.exists()
+        claude_content = claude_md.read_text(encoding="utf-8")
+        assert "Diese Hinweise waren bereits vor diesem Start vorgemerkt und gelten sofort" in claude_content
+        assert "Vor dem Start pruefen" in claude_content
+        assert "sicheren Checkpoints" in claude_content
+
+
+class TestPauseResume:
+    def _running_pid_fixture(self, handler):
+        temp_dir = handler.temp_dir / "agent_test-boss"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        pid_file = handler.pid_dir / "test-boss.pid"
+        pid_file.write_text(
+            json.dumps(
+                {
+                    "pid": 4242,
+                    "name": "test-boss",
+                    "display_name": "Test Boss",
+                    "type": "boss",
+                    "model": "sonnet",
+                    "mode": "default",
+                    "started": "2026-05-16T12:00:00",
+                    "temp_dir": str(temp_dir),
+                    "window_title": "BACH: Test Boss",
+                }
+            ),
+            encoding="utf-8",
+        )
+        return str(temp_dir)
+
+    def test_pause_not_running(self, handler):
+        ok, msg = handler.handle("pause", ["test-boss", "--json"])
+        assert ok is False
+        payload = json.loads(msg)
+        assert payload["action"] == "pause"
+        assert payload["agent"]["operator_control"]["pause_requested"] is False
+
+    def test_pause_running_sets_control_snapshot(self, handler, monkeypatch):
+        temp_dir = self._running_pid_fixture(handler)
+        monkeypatch.setattr("hub.agent_launcher.AgentLauncherHandler._is_agent_running", lambda self, _name: 4242)
+
+        ok, msg = handler.handle("pause", ["test-boss", "Kurz warten", "--json"])
+
+        assert ok is True
+        payload = json.loads(msg)
+        assert payload["agent"]["operator_control"]["pause_requested"] is True
+        assert payload["agent"]["operator_control"]["pause_reason"] == "Kurz warten"
+        assert payload["agent"]["operator_control"]["available_actions"][0] == "resume"
+        pause_path = handler._agent_pause_request_path("test-boss", temp_dir=temp_dir)
+        assert pause_path.exists()
+
+    def test_resume_clears_pause_request(self, handler, monkeypatch):
+        temp_dir = self._running_pid_fixture(handler)
+        handler._write_pause_request(
+            "test-boss",
+            {"reason": "Kurz warten", "requested_at": "2026-05-16T12:05:00"},
+            temp_dir=temp_dir,
+        )
+        monkeypatch.setattr("hub.agent_launcher.AgentLauncherHandler._is_agent_running", lambda self, _name: 4242)
+
+        ok, msg = handler.handle("resume", ["test-boss", "--json"])
+
+        assert ok is True
+        payload = json.loads(msg)
+        assert payload["agent"]["operator_control"]["pause_requested"] is False
+        assert not handler._agent_pause_request_path("test-boss", temp_dir=temp_dir).exists()
 
 
 # ================================================================

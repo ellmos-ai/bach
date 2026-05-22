@@ -30,6 +30,7 @@ LangHandler - Mehrsprachigkeit und Uebersetzungs-Verwaltung
 CLI-Befehle:
   bach lang status           Sprachkonfiguration anzeigen
   bach lang scan             Code nach deutschen Strings durchsuchen
+  bach lang report           i18n-Drift und Release-Artefakte prüfen
   bach lang list             Alle Uebersetzungen anzeigen
   bach lang missing          Fehlende Uebersetzungen anzeigen
   bach lang translate        Auto-Uebersetzung starten
@@ -45,6 +46,7 @@ Nutzt: bach.db / languages_config, languages_translations, languages_dictionary
 import sqlite3
 import json
 import re
+import html
 from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Optional, Dict, Set
@@ -103,9 +105,34 @@ class LangHandler(BaseHandler):
         "anzeigen", "suchen", "filtern", "sortieren",
         "einstellungen", "optionen", "konfiguration",
         "abbrechen", "bestaetigen", "weiter", "zurueck",
-        "status", "uebersicht", "details", "hilfe",
+        "status", "uebersicht", "details", "hilfe", "allgemein",
         "erstellt", "aktualisiert", "geloescht", "gefunden",
         "verfuegbar", "nicht gefunden", "ungueltig", "erforderlich"
+    ]
+
+    ENGLISH_HINTS = [
+        "save", "load", "open", "close", "cancel", "confirm", "continue",
+        "start", "stop", "pause", "settings", "overview", "details",
+        "status", "warning", "error", "success", "help", "search",
+        "filter", "sort", "delete", "remove", "message", "task",
+        "profile", "dashboard", "retry", "clear", "refresh",
+    ]
+
+    HTML_ATTRIBUTE_PATTERNS = [
+        (
+            "html_attr",
+            re.compile(
+                r'\b(?:title|placeholder|aria-label|alt|value|data-confirm|data-empty|data-error|data-label)\s*=\s*["\']([^"\']+)["\']',
+                re.IGNORECASE,
+            ),
+        ),
+    ]
+
+    JS_UI_PATTERNS = [
+        ("javascript", re.compile(r'(?:alert|confirm|prompt)\s*\(\s*["\']([^"\']+)["\']')),
+        ("javascript", re.compile(r'(?:textContent|innerText|placeholder|title|ariaLabel)\s*=\s*["\']([^"\']+)["\']')),
+        ("javascript", re.compile(r'setAttribute\s*\(\s*["\'](?:title|placeholder|aria-label|data-confirm|data-empty|data-error|data-label)["\']\s*,\s*["\']([^"\']+)["\']')),
+        ("javascript", re.compile(r'(?:throw\s+new\s+Error|new\s+Error)\s*\(\s*["\']([^"\']+)["\']')),
     ]
 
     def __init__(self, base_path: Path):
@@ -171,6 +198,7 @@ class LangHandler(BaseHandler):
         return {
             "status": "Sprachkonfiguration anzeigen",
             "scan": "Code nach deutschen Strings durchsuchen",
+            "report": "i18n-Drift und Release-Artefakte pruefen",
             "list": "Alle Uebersetzungen anzeigen",
             "missing": "Fehlende Uebersetzungen anzeigen",
             "translate": "Auto-Uebersetzung starten",
@@ -574,6 +602,8 @@ class LangHandler(BaseHandler):
             return self._status()
         elif operation == "scan":
             return self._scan(args, dry_run)
+        elif operation == "report":
+            return self._report(args)
         elif operation == "list":
             return self._list(args)
         elif operation == "missing":
@@ -604,6 +634,9 @@ BEFEHLE:
   bach lang status                 Sprachkonfiguration anzeigen
   bach lang scan                   Code nach deutschen Strings durchsuchen
   bach lang scan --namespace cli   Nur bestimmten Bereich scannen
+  bach lang report                 Release-Artefakte + Hardcoded-Copy pruefen
+  bach lang report --namespace gui Nur GUI-Flächen analysieren
+  bach lang report --json          Maschinenlesbarer Drift-Report
   bach lang list                   Alle Uebersetzungen anzeigen
   bach lang list --lang en         Nur englische Uebersetzungen
   bach lang missing                Fehlende Uebersetzungen anzeigen (Standard: de -> en)
@@ -647,6 +680,642 @@ QUELLEN (Prioritaet):
   auto_detected (10) - Nur erkannt, nicht uebersetzt
 
 DATENBANK: bach.db / languages_config, languages_translations, languages_dictionary""")
+
+    def _scan_targets(self, namespace_filter: Optional[str]) -> Dict[str, List[Path]]:
+        """Liefert Scan-Ziele fuer das aktuelle BACH-Layout."""
+        scan_targets = {
+            "cli": [
+                self.base_path / "hub",
+                self.base_path / "bach.py",
+                self.base_path / "bach_api.py",
+            ],
+            "gui": [self.base_path / "gui"],
+            "help": [self.base_path / "docs" / "help"],
+            "skills": [
+                self.base_path / "agents",
+                self.base_path / "skills" / "workflows",
+                self.base_path / "SKILL.md",
+            ],
+            "tools": [self.base_path / "tools"],
+        }
+        if namespace_filter and namespace_filter in scan_targets:
+            return {namespace_filter: scan_targets[namespace_filter]}
+        return scan_targets
+
+    def _should_skip_scan_file(self, file_path: Path) -> bool:
+        """Ignoriert Cache-, Archiv- und Build-Artefakte beim String-Scan."""
+        skip_parts = {"__pycache__", "_archive", ".git", ".pytest_cache", "node_modules"}
+        return any(part in skip_parts for part in file_path.parts)
+
+    def _iter_scan_files(self, target: Path):
+        """Iteriert unterstuetzte Textdateien fuer den String-Scan."""
+        suffixes = (".py", ".txt", ".md", ".html", ".js")
+        if target.is_file():
+            if target.suffix.lower() in suffixes and not self._should_skip_scan_file(target):
+                yield target
+            return
+        if not target.exists():
+            return
+        for suffix in suffixes:
+            for file_path in target.rglob(f"*{suffix}"):
+                if self._should_skip_scan_file(file_path):
+                    continue
+                yield file_path
+
+    def _normalize_candidate_text(self, text: str) -> Optional[str]:
+        """Bereinigt extrahierte Textfragmente fuer die Sprach-Erkennung."""
+        clean = re.sub(r"\s+", " ", text or "").strip(" \t\r\n-*:|#>")
+        if not clean or len(clean) < 3 or len(clean) > 300:
+            return None
+        if any(token in clean for token in ("{{", "}}", "{%", "%}")):
+            return None
+        return clean
+
+    def _extract_markdown_strings(self, file_path: Path) -> Set[str]:
+        """Extrahiert uebersetzbare Zeilen aus Markdown-Dateien."""
+        strings = set()
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return strings
+
+        in_code_block = False
+        in_frontmatter = False
+        frontmatter_seen = 0
+
+        for raw_line in content.splitlines():
+            stripped = raw_line.strip()
+            if stripped.startswith("```"):
+                in_code_block = not in_code_block
+                continue
+            if stripped == "---" and not in_code_block and frontmatter_seen < 2:
+                in_frontmatter = not in_frontmatter
+                frontmatter_seen += 1
+                continue
+            if in_code_block or in_frontmatter or not stripped:
+                continue
+
+            candidate = stripped
+            candidate = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", candidate)
+            candidate = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", candidate)
+            candidate = re.sub(r"`[^`]+`", "", candidate)
+            candidate = re.sub(r"^[-*#>\d\.\)\s]+", "", candidate)
+            candidate = candidate.replace("|", " ")
+            clean = self._normalize_candidate_text(candidate)
+            if clean and self._is_german(clean):
+                strings.add(clean)
+
+        return strings
+
+    def _extract_markup_strings(self, file_path: Path) -> Set[str]:
+        """Extrahiert sichtbare Texte und UI-Attribute aus HTML-Templates."""
+        strings = set()
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return strings
+
+        text_nodes = re.findall(r">([^<>{}]{3,300})<", content)
+        attr_nodes = re.findall(
+            r"""(?:title|placeholder|aria-label|alt|data-confirm)\s*=\s*["']([^"']{3,300})["']""",
+            content,
+            flags=re.IGNORECASE,
+        )
+
+        for candidate in text_nodes + attr_nodes:
+            clean = self._normalize_candidate_text(candidate)
+            if clean and self._is_german(clean):
+                strings.add(clean)
+
+        return strings
+
+    def _extract_inline_markup_candidates(self, text: str) -> List[str]:
+        """Extrahiert sichtbare Texte aus eingebetteten HTML-Snippets, z.B. in JS-Templates."""
+        candidates: List[str] = []
+        cleaned = re.sub(r"{{.*?}}|{%.*?%}|{#.*?#}", "", text or "")
+
+        for match in re.finditer(r">([^<>{}]{3,300})<", cleaned):
+            candidates.append(html.unescape(match.group(1)))
+
+        for match in re.finditer(
+            r"""(?:title|placeholder|aria-label|alt|data-confirm)\s*=\s*["']([^"']{3,300})["']""",
+            cleaned,
+            flags=re.IGNORECASE,
+        ):
+            candidates.append(html.unescape(match.group(1)))
+
+        return candidates
+
+    def _should_skip_script_literal(self, candidate: str, raw_line: str) -> bool:
+        """Filtert technische JS-Literale aus, damit der i18n-Report UI-Texte priorisiert."""
+        text = (candidate or "").strip()
+        line = (raw_line or "").strip()
+        text_lower = text.lower()
+        line_lower = line.lower()
+
+        if not text:
+            return True
+        if "<" in text and ">" in text:
+            return True
+        if line_lower.startswith("console.") or " console." in line_lower:
+            return True
+        if text.startswith(("/api/", "api/", "http://", "https://", "?")):
+            return True
+        if re.match(r"^[a-z]{2}-[A-Z]{2}$", text):
+            return True
+        if re.match(r"^HTTP\s+\$\{[^}]+\}$", text):
+            return True
+        if any(token in text for token in ("/", "?", "=", "&")) and " " not in text:
+            return True
+        if any(
+            marker in line_lower
+            for marker in (
+                "getelementbyid(",
+                "queryselector(",
+                "queryselectorall(",
+                "closest(",
+                "classlist.",
+            )
+        ) and re.match(r"^[a-z0-9]+(?:[-_][a-z0-9]+)+$", text_lower):
+            return True
+        return False
+
+    def _extract_script_strings(self, file_path: Path) -> Set[str]:
+        """Extrahiert UI-relevante String-Literale aus JavaScript-Dateien."""
+        strings = set()
+        try:
+            lines = file_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            return strings
+
+        literal_pattern = re.compile(r"""(?:"([^"\n]{3,300})"|'([^'\n]{3,300})'|`([^`\n]{3,300})`)""")
+        for raw_line in lines:
+            if "<" in raw_line and ">" in raw_line:
+                for candidate in self._extract_inline_markup_candidates(raw_line):
+                    clean = self._normalize_candidate_text(candidate)
+                    if clean and self._is_german(clean):
+                        strings.add(clean)
+            for match in literal_pattern.findall(raw_line):
+                candidate = next((part for part in match if part), "")
+                if self._should_skip_script_literal(candidate, raw_line):
+                    continue
+                clean = self._normalize_candidate_text(candidate)
+                if clean and self._is_german(clean):
+                    strings.add(clean)
+
+        return strings
+
+    def _extract_strings_for_file(self, file_path: Path) -> Set[str]:
+        """Waehlt je nach Dateityp den passenden Extraktor."""
+        suffix = file_path.suffix.lower()
+        if suffix == ".py":
+            return self._extract_german_strings(file_path)
+        if suffix == ".txt":
+            return self._extract_help_strings(file_path)
+        if suffix == ".md":
+            return self._extract_markdown_strings(file_path)
+        if suffix == ".html":
+            return self._extract_markup_strings(file_path)
+        if suffix == ".js":
+            return self._extract_script_strings(file_path)
+        return set()
+
+    def _collect_found_strings(self, namespace_filter: Optional[str] = None) -> Dict[str, Set[str]]:
+        """Sammelt erkannte deutsche Strings je Namespace."""
+        found_strings: Dict[str, Set[str]] = {}
+        for namespace, targets in self._scan_targets(namespace_filter).items():
+            found_strings[namespace] = set()
+            for target in targets:
+                for file_path in self._iter_scan_files(target):
+                    found_strings[namespace].update(self._extract_strings_for_file(file_path))
+        return found_strings
+
+    def _collect_hardcoded_occurrences(self, namespace_filter: Optional[str] = None) -> List[Dict[str, object]]:
+        """Sammelt konkrete Hardcoded-Copy-Fundstellen inklusive Datei und Zeile."""
+        occurrences: List[Dict[str, object]] = []
+        seen = set()
+        for namespace, targets in self._scan_targets(namespace_filter).items():
+            for target in targets:
+                for file_path in self._iter_scan_files(target):
+                    for item in self._extract_detail_records_for_file(file_path, namespace):
+                        key = (
+                            item["namespace"],
+                            item["file"],
+                            item["line"],
+                            item["kind"],
+                            item["text"],
+                        )
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        occurrences.append(item)
+        return occurrences
+
+    def _extract_detail_records_for_file(self, file_path: Path, namespace: str) -> List[Dict[str, object]]:
+        """Waehlt je nach Dateityp den passenden Detail-Extraktor."""
+        suffix = file_path.suffix.lower()
+        if namespace == "gui" and suffix not in {".py", ".html", ".js"}:
+            return []
+        if namespace == "cli" and suffix != ".py":
+            return []
+        if namespace == "help" and suffix != ".txt":
+            return []
+        if suffix == ".py":
+            return self._extract_python_string_details(file_path, namespace)
+        if suffix == ".txt":
+            return self._extract_help_string_details(file_path, namespace)
+        if suffix == ".md":
+            return self._extract_markdown_string_details(file_path, namespace)
+        if suffix == ".html":
+            return self._extract_markup_string_details(file_path, namespace)
+        if suffix == ".js":
+            return self._extract_script_string_details(file_path, namespace)
+        return []
+
+    def _detail_record(
+        self,
+        file_path: Path,
+        namespace: str,
+        line_no: int,
+        text: str,
+        kind: str,
+    ) -> Optional[Dict[str, object]]:
+        """Baut einen normalisierten Detail-Datensatz fuer Hardcoded Copy."""
+        clean = self._normalize_candidate_text(text)
+        if not clean or not self._is_german(clean):
+            return None
+        if clean.count("{") != clean.count("}") or clean.count("[") != clean.count("]"):
+            return None
+        return {
+            "namespace": namespace,
+            "file": file_path.relative_to(self.base_path).as_posix(),
+            "line": line_no,
+            "kind": kind,
+            "text": clean,
+            "suggested_key": self._make_key(clean),
+        }
+
+    def _extract_python_string_details(self, file_path: Path, namespace: str) -> List[Dict[str, object]]:
+        """Extrahiert konkrete Python-Fundstellen mit Zeilennummer."""
+        details: List[Dict[str, object]] = []
+        try:
+            lines = file_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            return details
+
+        runtime_patterns = self.STRING_PATTERNS[:7]
+        for line_no, raw_line in enumerate(lines, 1):
+            for pattern in runtime_patterns:
+                for match in pattern.finditer(raw_line):
+                    record = self._detail_record(file_path, namespace, line_no, match.group(1), "python")
+                    if record:
+                        details.append(record)
+        return details
+
+    def _extract_help_string_details(self, file_path: Path, namespace: str) -> List[Dict[str, object]]:
+        """Extrahiert konkrete Help-Fundstellen mit Zeilennummer."""
+        details: List[Dict[str, object]] = []
+        try:
+            lines = file_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            return details
+
+        for line_no, raw_line in enumerate(lines, 1):
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+            if line_no == 1:
+                record = self._detail_record(file_path, namespace, line_no, stripped, "help")
+                if record:
+                    details.append(record)
+            if line_no < len(lines) and lines[line_no].startswith(("===", "---")):
+                record = self._detail_record(file_path, namespace, line_no, stripped, "help")
+                if record:
+                    details.append(record)
+        return details
+
+    def _extract_markdown_string_details(self, file_path: Path, namespace: str) -> List[Dict[str, object]]:
+        """Extrahiert konkrete Markdown-Fundstellen mit Zeilennummer."""
+        details: List[Dict[str, object]] = []
+        try:
+            lines = file_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            return details
+
+        in_code_block = False
+        in_frontmatter = False
+        frontmatter_seen = 0
+
+        for line_no, raw_line in enumerate(lines, 1):
+            stripped = raw_line.strip()
+            if stripped.startswith("```"):
+                in_code_block = not in_code_block
+                continue
+            if stripped == "---" and not in_code_block and frontmatter_seen < 2:
+                in_frontmatter = not in_frontmatter
+                frontmatter_seen += 1
+                continue
+            if in_code_block or in_frontmatter or not stripped:
+                continue
+
+            candidate = stripped
+            candidate = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", candidate)
+            candidate = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", candidate)
+            candidate = re.sub(r"`[^`]+`", "", candidate)
+            candidate = re.sub(r"^[-*#>\d\.\)\s]+", "", candidate)
+            candidate = candidate.replace("|", " ")
+            record = self._detail_record(file_path, namespace, line_no, candidate, "markdown")
+            if record:
+                details.append(record)
+        return details
+
+    def _extract_markup_string_details(self, file_path: Path, namespace: str) -> List[Dict[str, object]]:
+        """Extrahiert konkrete HTML-/Template-Fundstellen mit Zeilennummer."""
+        details: List[Dict[str, object]] = []
+        try:
+            lines = file_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            return details
+
+        in_script = False
+        in_style = False
+        for line_no, raw_line in enumerate(lines, 1):
+            lower = raw_line.lower()
+            if "<script" in lower:
+                in_script = True
+            if "<style" in lower:
+                in_style = True
+            if in_script or in_style:
+                if "</script>" in lower:
+                    in_script = False
+                if "</style>" in lower:
+                    in_style = False
+                continue
+
+            cleaned = re.sub(r"{{.*?}}|{%.*?%}|{#.*?#}", "", raw_line)
+            for match in re.finditer(r">([^<>{}]{3,300})<", cleaned):
+                record = self._detail_record(file_path, namespace, line_no, match.group(1), "html_text")
+                if record:
+                    details.append(record)
+
+            for match in re.finditer(
+                r"""(?:title|placeholder|aria-label|alt|data-confirm)\s*=\s*["']([^"']{3,300})["']""",
+                cleaned,
+                flags=re.IGNORECASE,
+            ):
+                record = self._detail_record(file_path, namespace, line_no, match.group(1), "html_attr")
+                if record:
+                    details.append(record)
+        return details
+
+    def _extract_script_string_details(self, file_path: Path, namespace: str) -> List[Dict[str, object]]:
+        """Extrahiert konkrete JavaScript-Fundstellen mit Zeilennummer."""
+        details: List[Dict[str, object]] = []
+        try:
+            lines = file_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            return details
+
+        literal_pattern = re.compile(r"""(?:"([^"\n]{3,300})"|'([^'\n]{3,300})'|`([^`\n]{3,300})`)""")
+        for line_no, raw_line in enumerate(lines, 1):
+            if "<" in raw_line and ">" in raw_line:
+                for candidate in self._extract_inline_markup_candidates(raw_line):
+                    record = self._detail_record(file_path, namespace, line_no, candidate, "javascript")
+                    if record:
+                        details.append(record)
+            for match in literal_pattern.findall(raw_line):
+                candidate = next((part for part in match if part), "")
+                if self._should_skip_script_literal(candidate, raw_line):
+                    continue
+                record = self._detail_record(file_path, namespace, line_no, candidate, "javascript")
+                if record:
+                    details.append(record)
+        return details
+
+    def _normalize_translation_records(self, rows) -> Set[tuple]:
+        """Normalisiert DB-/JSON-Uebersetzungen fuer Drift-Vergleiche."""
+        normalized = set()
+        for row in rows or []:
+            key = str(row.get("key") or "").strip()
+            language = self._normalize_language_code(row.get("language"), "")
+            if not key or not language:
+                continue
+
+            normalized.add((
+                key,
+                str(row.get("namespace") or "general").strip() or "general",
+                language,
+                str(row.get("value") or ""),
+            ))
+        return normalized
+
+    def _flatten_locale_entries(self, payload: Optional[dict]) -> Set[tuple]:
+        """Reduziert Locale-Dateien auf Namespace/Key/Value-Tupel."""
+        entries = payload.get("entries") if isinstance(payload, dict) else {}
+        normalized = set()
+        if not isinstance(entries, dict):
+            return normalized
+
+        for namespace, values in entries.items():
+            if not isinstance(values, dict):
+                continue
+            for key, value in values.items():
+                clean_key = str(key).strip()
+                if not clean_key:
+                    continue
+                normalized.add((
+                    str(namespace or "general").strip() or "general",
+                    clean_key,
+                    str(value or ""),
+                ))
+        return normalized
+
+    def _format_translation_record(self, record: tuple) -> str:
+        key, namespace, language, value = record
+        short_value = value if len(value) <= 60 else value[:57] + "..."
+        return f"{namespace}.{key} [{language}] = {short_value}"
+
+    def _format_locale_record(self, record: tuple) -> str:
+        namespace, key, value = record
+        short_value = value if len(value) <= 60 else value[:57] + "..."
+        return f"{namespace}.{key} = {short_value}"
+
+    def _release_artifact_report(
+        self,
+        enabled_languages: List[str],
+        db_config: Dict[str, object],
+        db_rows: List[dict],
+    ) -> Dict[str, object]:
+        """Prueft Manifest, Locale-Dateien und Release-Exports auf Konsistenz."""
+        export_dir = self._release_export_dir()
+        config_path = export_dir / "languages_config.release.json"
+        manifest_path = export_dir / "manifest.release.json"
+        translations_path = export_dir / "languages_translations.release.json"
+        dictionary_path = export_dir / "languages_dictionary.release.json"
+        locales_dir = export_dir / "locales"
+
+        issues: List[str] = []
+        config_payload = {}
+        if config_path.exists():
+            try:
+                config_payload = json.loads(config_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                issues.append(f"Config-Export unlesbar: {exc}")
+        else:
+            issues.append("Config-Export fehlt")
+
+        manifest = {}
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                issues.append(f"Manifest unlesbar: {exc}")
+        else:
+            issues.append("Manifest fehlt")
+
+        translation_rows = []
+        if translations_path.exists():
+            try:
+                translation_rows = json.loads(translations_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                issues.append(f"Translation-Export unlesbar: {exc}")
+        else:
+            issues.append("Translation-Export fehlt")
+
+        dictionary_rows = []
+        if dictionary_path.exists():
+            try:
+                dictionary_rows = json.loads(dictionary_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                issues.append(f"Dictionary-Export unlesbar: {exc}")
+        else:
+            issues.append("Dictionary-Export fehlt")
+
+        locale_codes = []
+        if locales_dir.exists():
+            locale_codes = sorted(path.stem for path in locales_dir.glob("*.json"))
+        else:
+            issues.append("Locale-Ordner fehlt")
+
+        manifest_counts = manifest.get("counts", {}) if isinstance(manifest, dict) else {}
+        expected_locale_count = manifest_counts.get("locale_files")
+        expected_translation_count = manifest_counts.get("translations")
+        expected_dictionary_count = manifest_counts.get("dictionary_entries")
+
+        missing_locales = sorted(code for code in enabled_languages if code not in locale_codes)
+        extra_locales = sorted(code for code in locale_codes if code not in enabled_languages)
+        if missing_locales:
+            issues.append(f"Fehlende Locale-Dateien: {', '.join(missing_locales)}")
+        if extra_locales:
+            issues.append(f"Unerwartete Locale-Dateien: {', '.join(extra_locales)}")
+        if expected_locale_count is not None and expected_locale_count != len(locale_codes):
+            issues.append(f"Locale-Anzahl weicht ab ({expected_locale_count} != {len(locale_codes)})")
+        if expected_translation_count is not None and expected_translation_count != len(translation_rows):
+            issues.append(f"Translation-Count weicht ab ({expected_translation_count} != {len(translation_rows)})")
+        if expected_dictionary_count is not None and expected_dictionary_count != len(dictionary_rows):
+            issues.append(f"Dictionary-Count weicht ab ({expected_dictionary_count} != {len(dictionary_rows)})")
+
+        release_enabled = sorted(
+            {
+                self._normalize_language_code(code, "")
+                for code in (config_payload.get("enabled_languages") or [])
+                if self._normalize_language_code(code, "")
+            }
+        )
+        if release_enabled != sorted(set(enabled_languages)):
+            issues.append(
+                f"Enabled-Languages drift ({release_enabled} != {sorted(set(enabled_languages))})"
+            )
+
+        release_default = self._normalize_language_code(
+            config_payload.get("default_language"), DEFAULT_SOURCE_LANGUAGE
+        )
+        if config_payload and release_default != db_config["default_language"]:
+            issues.append(
+                f"Default-Language drift ({release_default} != {db_config['default_language']})"
+            )
+
+        release_fallback = self._normalize_language_code(
+            config_payload.get("fallback_language"), DEFAULT_TARGET_LANGUAGE
+        )
+        if config_payload and release_fallback != db_config["fallback_language"]:
+            issues.append(
+                f"Fallback-Language drift ({release_fallback} != {db_config['fallback_language']})"
+            )
+
+        if config_payload and bool(config_payload.get("auto_translate")) != bool(db_config["auto_translate"]):
+            issues.append(
+                f"Auto-Translate drift ({bool(config_payload.get('auto_translate'))} != {bool(db_config['auto_translate'])})"
+            )
+
+        sanitized_db_rows = [self._sanitize_release_row(row) for row in db_rows]
+        db_records = self._normalize_translation_records(sanitized_db_rows)
+        release_records = self._normalize_translation_records(translation_rows)
+        missing_in_release = sorted(db_records - release_records)
+        only_in_release = sorted(release_records - db_records)
+        if missing_in_release:
+            issues.append(f"DB-Eintraege fehlen im Translation-Export ({len(missing_in_release)})")
+        if only_in_release:
+            issues.append(f"Release-Export enthaelt fremde Eintraege ({len(only_in_release)})")
+
+        locale_payloads = {}
+        if locales_dir.exists():
+            for locale_file in locales_dir.glob("*.json"):
+                try:
+                    locale_payloads[locale_file.stem] = json.loads(locale_file.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    issues.append(f"Locale-Datei {locale_file.name} unlesbar: {exc}")
+
+        locale_content_issues = []
+        languages_to_check = sorted({
+            *[code for code in enabled_languages if code],
+            *[record[2] for record in db_records],
+            *[record[2] for record in release_records],
+            *locale_codes,
+        })
+        for language in languages_to_check:
+            expected_entries = {
+                (namespace, key, value)
+                for key, namespace, row_language, value in release_records
+                if row_language == language and value != ""
+            }
+            payload = locale_payloads.get(language)
+            if expected_entries and payload is None:
+                issues.append(f"Locale-Datei fuer {language} fehlt trotz {len(expected_entries)} Export-Eintraegen")
+                continue
+            if payload is None:
+                continue
+
+            payload_language = self._normalize_language_code(payload.get("language"), language)
+            if payload_language != language:
+                issues.append(f"Locale-Datei {language}.json meldet language={payload.get('language')!r}")
+
+            actual_entries = self._flatten_locale_entries(payload)
+            missing_entries = sorted(expected_entries - actual_entries)
+            extra_entries = sorted(actual_entries - expected_entries)
+            if missing_entries or extra_entries:
+                locale_content_issues.append({
+                    "language": language,
+                    "missing": missing_entries,
+                    "extra": extra_entries,
+                })
+                issues.append(
+                    f"Locale-Inhalt drift fuer {language} ({len(missing_entries)} fehlend, {len(extra_entries)} extra)"
+                )
+
+        return {
+            "config_exists": config_path.exists(),
+            "manifest_exists": manifest_path.exists(),
+            "manifest_counts": manifest_counts,
+            "translation_count": len(translation_rows),
+            "dictionary_count": len(dictionary_rows),
+            "locale_codes": locale_codes,
+            "issues_count": len(issues),
+            "issues": issues,
+            "missing_in_release": missing_in_release,
+            "only_in_release": only_in_release,
+            "locale_content_issues": locale_content_issues,
+        }
 
     def _status(self) -> tuple:
         """Zeigt Sprachkonfiguration und Statistiken."""
@@ -748,47 +1417,7 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
     def _scan(self, args: list, dry_run: bool) -> tuple:
         """Scannt Code nach deutschen Strings."""
         namespace_filter = self._get_arg(args, "--namespace") or self._get_arg(args, "-n")
-
-        # Scan-Verzeichnisse nach Namespace
-        scan_dirs = {
-            'cli': [self.base_path / "hub"],
-            'gui': [self.base_path / "gui"],
-            'help': [self.base_path / "help"],
-            'skills': [
-                self.base_path / "skills" / "_agents",
-                self.base_path / "skills" / "_experts",
-                self.base_path / "skills" / "_workflows",
-            ],
-            'tools': [self.base_path / "skills" / "tools"],
-        }
-
-        if namespace_filter and namespace_filter in scan_dirs:
-            dirs_to_scan = {namespace_filter: scan_dirs[namespace_filter]}
-        else:
-            dirs_to_scan = scan_dirs
-
-        found_strings: Dict[str, Set[str]] = {}  # namespace -> set of strings
-
-        for namespace, dirs in dirs_to_scan.items():
-            found_strings[namespace] = set()
-            for scan_dir in dirs:
-                if not scan_dir.exists():
-                    continue
-
-                # Python-Dateien scannen
-                for py_file in scan_dir.rglob("*.py"):
-                    if "__pycache__" in str(py_file) or "_archive" in str(py_file):
-                        continue
-                    strings = self._extract_german_strings(py_file)
-                    found_strings[namespace].update(strings)
-
-                # Help/Txt-Dateien scannen
-                for txt_file in scan_dir.rglob("*.txt"):
-                    if "_archive" in str(txt_file):
-                        continue
-                    # Bei Help-Dateien: Titel und Abschnitte extrahieren
-                    strings = self._extract_help_strings(txt_file)
-                    found_strings[namespace].update(strings)
+        found_strings = self._collect_found_strings(namespace_filter)
 
         # In DB einfuegen (wenn nicht dry_run)
         total_found = sum(len(s) for s in found_strings.values())
@@ -849,6 +1478,238 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
                 output.append(f"    - {short}")
 
         return (True, "\n".join(output))
+
+    def _report(self, args: list) -> tuple:
+        """Erzeugt einen kompakten i18n-Drift-Report fuer Release und Hardcoded Copy."""
+        json_output = "--json" in args
+        limit = int(self._get_arg(args, "--limit") or "25")
+        namespace_filter = (
+            self._get_arg(args, "--surface")
+            or self._get_arg(args, "--namespace")
+            or self._get_arg(args, "-n")
+        )
+        occurrences = self._collect_hardcoded_occurrences(namespace_filter)
+        occurrences.sort(key=lambda item: (item["file"], item["line"], item["text"]))
+        found_strings: Dict[str, Set[str]] = {}
+        for item in occurrences:
+            found_strings.setdefault(str(item["namespace"]), set()).add(str(item["text"]))
+        total_found = sum(len(strings) for strings in found_strings.values())
+
+        conn = self._get_db()
+        try:
+            enabled_languages = self._get_enabled_languages(conn, include_detected=True)
+            config = conn.execute("SELECT * FROM languages_config ORDER BY id LIMIT 1").fetchone()
+            db_rows = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT key, namespace, language, value
+                    FROM languages_translations
+                    ORDER BY namespace, key, language
+                    """
+                ).fetchall()
+            ]
+            db_config = {
+                "default_language": self._normalize_language_code(
+                    config["default_language"] if config else DEFAULT_SOURCE_LANGUAGE,
+                    DEFAULT_SOURCE_LANGUAGE,
+                ),
+                "fallback_language": self._normalize_language_code(
+                    config["fallback_language"] if config else DEFAULT_TARGET_LANGUAGE,
+                    DEFAULT_TARGET_LANGUAGE,
+                ),
+                "auto_translate": bool(config["auto_translate"]) if config else False,
+            }
+            existing_de = {
+                ((row["namespace"] or "general"), row["key"])
+                for row in conn.execute(
+                    "SELECT namespace, key FROM languages_translations WHERE language = ?",
+                    (DEFAULT_SOURCE_LANGUAGE,),
+                ).fetchall()
+            }
+            for item in occurrences:
+                tracked = (item["namespace"], item["suggested_key"]) in existing_de
+                item["tracked"] = tracked
+
+            indexed_total = 0
+            missing_total = 0
+            namespace_lines = []
+            for namespace in sorted(found_strings.keys()):
+                strings = found_strings[namespace]
+                indexed = sum(1 for string in strings if (namespace, self._make_key(string)) in existing_de)
+                missing = len(strings) - indexed
+                indexed_total += indexed
+                missing_total += missing
+                namespace_lines.append(
+                    f"  {namespace}: gefunden {len(strings)} | indexiert {indexed} | offen {missing}"
+                )
+
+            release_report = self._release_artifact_report(enabled_languages, db_config, db_rows)
+        finally:
+            conn.close()
+
+        ok = release_report["issues_count"] == 0
+        tracked_occurrences = sum(1 for item in occurrences if item["tracked"])
+        missing_occurrences = len(occurrences) - tracked_occurrences
+        by_kind: Dict[str, int] = {}
+        for item in occurrences:
+            by_kind[item["kind"]] = by_kind.get(item["kind"], 0) + 1
+
+        if json_output:
+            payload = {
+                "ok": ok,
+                "release": {
+                    "manifest_exists": release_report["manifest_exists"],
+                    "config_exists": release_report["config_exists"],
+                    "manifest_counts": release_report.get("manifest_counts") or {},
+                    "translation_count": release_report["translation_count"],
+                    "dictionary_count": release_report["dictionary_count"],
+                    "locale_codes": release_report["locale_codes"],
+                    "issues": release_report["issues"],
+                    "missing_in_release": [
+                        self._format_translation_record(item)
+                        for item in release_report["missing_in_release"]
+                    ],
+                    "only_in_release": [
+                        self._format_translation_record(item)
+                        for item in release_report["only_in_release"]
+                    ],
+                    "locale_content_issues": [
+                        {
+                            "language": issue["language"],
+                            "missing": [
+                                self._format_locale_record(item)
+                                for item in issue["missing"]
+                            ],
+                            "extra": [
+                                self._format_locale_record(item)
+                                for item in issue["extra"]
+                            ],
+                        }
+                        for issue in release_report["locale_content_issues"]
+                    ],
+                },
+                "hardcoded_copy": {
+                    "namespace_filter": namespace_filter,
+                    "total_found": total_found,
+                    "occurrences_total": len(occurrences),
+                    "tracked_occurrences": tracked_occurrences,
+                    "missing_occurrences": missing_occurrences,
+                    "indexed_total": indexed_total,
+                    "missing_total": missing_total,
+                    "by_kind": by_kind,
+                    "by_namespace": [
+                        {
+                            "namespace": namespace,
+                            "found": len(found_strings[namespace]),
+                            "indexed": sum(
+                                1
+                                for string in found_strings[namespace]
+                                if (namespace, self._make_key(string)) in existing_de
+                            ),
+                            "missing": len(found_strings[namespace]) - sum(
+                                1
+                                for string in found_strings[namespace]
+                                if (namespace, self._make_key(string)) in existing_de
+                            ),
+                        }
+                        for namespace in sorted(found_strings.keys())
+                    ],
+                    "details": occurrences[:limit],
+                },
+            }
+            return ok, json.dumps(payload, indent=2, ensure_ascii=False)
+
+        output = [
+            "=== I18N-DRIFT REPORT ===",
+            "",
+            "Release-Artefakte:",
+            f"  Config: {'OK' if release_report['config_exists'] else 'FEHLT'}",
+            f"  Manifest: {'OK' if release_report['manifest_exists'] else 'FEHLT'}",
+            f"  Locale-Dateien: {len(release_report['locale_codes'])} ({', '.join(release_report['locale_codes']) if release_report['locale_codes'] else 'keine'})",
+            f"  Translation-Export: {release_report['translation_count']}",
+            f"  Dictionary-Export: {release_report['dictionary_count']}",
+        ]
+
+        manifest_counts = release_report.get("manifest_counts") or {}
+        if manifest_counts:
+            output.extend([
+                f"  Manifest-Count Translations: {manifest_counts.get('translations', 0)}",
+                f"  Manifest-Count Dictionary:   {manifest_counts.get('dictionary_entries', 0)}",
+                f"  Manifest-Count Locales:      {manifest_counts.get('locale_files', 0)}",
+            ])
+
+        if release_report["issues"]:
+            output.append("  Abweichungen:")
+            for issue in release_report["issues"]:
+                output.append(f"    - {issue}")
+        else:
+            output.append("  Abweichungen: keine")
+
+        if release_report["missing_in_release"]:
+            output.append("  DB fehlt im Release-Export:")
+            for item in release_report["missing_in_release"][:5]:
+                output.append(f"    - {self._format_translation_record(item)}")
+            if len(release_report["missing_in_release"]) > 5:
+                output.append(f"    ... +{len(release_report['missing_in_release']) - 5} weitere")
+
+        if release_report["only_in_release"]:
+            output.append("  Nur im Release-Export:")
+            for item in release_report["only_in_release"][:5]:
+                output.append(f"    - {self._format_translation_record(item)}")
+            if len(release_report["only_in_release"]) > 5:
+                output.append(f"    ... +{len(release_report['only_in_release']) - 5} weitere")
+
+        if release_report["locale_content_issues"]:
+            output.append("  Locale-Inhaltsdrift:")
+            for issue in release_report["locale_content_issues"][:3]:
+                output.append(
+                    f"    - {issue['language']}: {len(issue['missing'])} fehlend, {len(issue['extra'])} extra"
+                )
+                for item in issue["missing"][:2]:
+                    output.append(f"      fehlend: {self._format_locale_record(item)}")
+                for item in issue["extra"][:2]:
+                    output.append(f"      extra: {self._format_locale_record(item)}")
+            if len(release_report["locale_content_issues"]) > 3:
+                output.append(
+                    f"    ... +{len(release_report['locale_content_issues']) - 3} weitere Sprache(n)"
+                )
+
+        output.extend([
+            "",
+            "Hardcoded Copy:",
+            f"  Gefundene Strings: {total_found}",
+            f"  Fundstellen: {len(occurrences)}",
+            f"  Indexierte Fundstellen: {tracked_occurrences}",
+            f"  Offene Fundstellen: {missing_occurrences}",
+            f"  Bereits indexiert: {indexed_total}",
+            f"  Offene DE-Eintraege: {missing_total}",
+            "",
+            "Nach Namespace:",
+        ])
+        output.extend(namespace_lines or ["  keine"])
+
+        if by_kind:
+            output.extend([
+                "",
+                "Nach Typ:",
+            ])
+            for kind, count in sorted(by_kind.items()):
+                output.append(f"  {kind}: {count}")
+
+        if occurrences:
+            output.extend([
+                "",
+                "Beispiele:",
+            ])
+            for item in occurrences[:limit]:
+                status = "indexiert" if item["tracked"] else "offen"
+                output.append(
+                    f"  [{status}] {item['file']}:{item['line']} "
+                    f"({item['kind']}) -> {item['text']}"
+                )
+
+        return ok, "\n".join(output)
 
     def _extract_german_strings(self, file_path: Path) -> Set[str]:
         """Extrahiert deutsche Strings aus einer Python-Datei."""

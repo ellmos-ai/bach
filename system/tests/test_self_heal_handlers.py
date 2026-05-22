@@ -768,6 +768,43 @@ def test_scheduler_status_json_includes_recent_runs(tmp_path):
     assert payload["recent_runs"][0]["result"] == "success"
 
 
+def test_scheduler_status_json_reports_operator_control_snapshot(tmp_path):
+    from hub.scheduler import SchedulerHandler
+
+    base = _init_base(tmp_path)
+    gui_dir = base / "gui"
+    gui_dir.mkdir(parents=True)
+    (gui_dir / "daemon_service.py").write_text("# daemon\n", encoding="utf-8")
+
+    control_dir = base / "data" / "scheduler_control"
+    control_dir.mkdir(parents=True)
+    (control_dir / "scheduler.pause.json").write_text(
+        json.dumps(
+            {"reason": "Wartung", "requested_at": "2026-05-20T12:30:00"},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (control_dir / "scheduler.steer.json").write_text(
+        json.dumps(
+            [{"message": "Bitte nur Health-Checks fahren.", "requested_at": "2026-05-20T12:31:00"}],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    success, message = SchedulerHandler(base).handle("status", ["--json"])
+
+    assert success is True
+    payload = json.loads(message)
+    assert payload["service"]["control_actions"] == ["pause", "resume", "steer", "clear-steer"]
+    assert payload["operator_control"]["pause_requested"] is True
+    assert payload["operator_control"]["pause_reason"] == "Wartung"
+    assert payload["operator_control"]["pending_steer_count"] == 1
+    assert payload["operator_control"]["latest_steer_message"] == "Bitte nur Health-Checks fahren."
+    assert payload["operator_control"]["available_actions"] == ["resume", "steer", "clear-steer"]
+
+
 def test_scheduler_doctor_json_cleans_stale_pid_and_reports_db_counts(tmp_path):
     from hub.scheduler import SchedulerHandler
 
@@ -995,6 +1032,8 @@ def test_scheduler_session_status_json_lists_control_actions(tmp_path):
     assert payload["operator_controls"][0]["profile"] == "ati"
     assert payload["operator_controls"][0]["pending_steer_count"] == 1
     assert payload["operator_controls"][0]["latest_steer_message"] == "Bitte nur Health-Checks anfassen."
+    assert payload["operator_controls"][0]["latest_steer_requested_at"] == "2026-05-16T12:40:00"
+    assert payload["operator_controls"][0]["available_actions"] == ["pause", "steer", "clear-steer"]
 
 
 def test_scheduler_session_clear_steer_deletes_profile_queue(tmp_path):
@@ -1024,6 +1063,25 @@ def test_scheduler_session_clear_steer_deletes_profile_queue(tmp_path):
     assert success is True
     assert "1 Session-Steering-Hinweis(e)" in message
     assert not steer_file.exists()
+
+
+def test_scheduler_session_steer_json_response_exposes_control_snapshot(tmp_path):
+    from hub.scheduler import SchedulerHandler
+
+    base = _init_base(tmp_path)
+    success, message = SchedulerHandler(base).handle(
+        "session",
+        ["steer", "--profile", "ati", "Bitte", "Logs", "--json"],
+    )
+
+    assert success is True
+    payload = json.loads(message)
+    assert payload["action"] == "steer"
+    assert payload["control"]["profile"] == "ati"
+    assert payload["control"]["pending_steer_count"] == 1
+    assert payload["control"]["latest_steer_message"] == "Bitte Logs"
+    assert payload["control"]["latest_steer_requested_at"] is not None
+    assert payload["control"]["available_actions"] == ["pause", "steer", "clear-steer"]
 
 
 def test_scheduler_session_trigger_keeps_steer_queue_on_failure(tmp_path, monkeypatch):

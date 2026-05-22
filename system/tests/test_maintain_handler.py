@@ -113,6 +113,14 @@ class TestRouting:
         assert ok is True
         assert "nicht mehr noetig" in msg or "bach_paths.py" in msg
 
+    def test_health_routes_to_status_handler(self, handler):
+        with patch("hub.maintain.StatusHandler.handle", return_value=(True, "STATUS")) as mocked:
+            ok, msg = handler.handle("health", [], dry_run=False)
+
+        assert ok is True
+        assert msg == "STATUS"
+        mocked.assert_called_once_with("show", [], False)
+
 
 # ═══════════════════════════════════════════════════════════════
 # SCRIPT-NOT-FOUND HANDLING

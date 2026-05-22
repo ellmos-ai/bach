@@ -246,6 +246,71 @@ class TestUtilities:
 
 
 # ---------------------------------------------------------------------------
+# Scheduler control: pause, resume, steer, clear-steer
+# ---------------------------------------------------------------------------
+
+class TestSchedulerControls:
+    def test_scheduler_pause_json_response(self, sched_env):
+        h = sched_env["handler"]
+        ok, text = h.handle("pause", ["Wartung", "--json"])
+
+        assert ok is True
+        payload = json.loads(text)
+        assert payload["action"] == "pause"
+        assert payload["control"]["pause_requested"] is True
+        assert payload["control"]["pause_reason"] == "Wartung"
+        assert payload["control"]["available_actions"] == ["resume", "steer"]
+
+    def test_scheduler_resume_json_response(self, sched_env):
+        h = sched_env["handler"]
+        h.handle("pause", ["Fenster"], dry_run=False)
+
+        ok, text = h.handle("resume", ["--json"])
+
+        assert ok is True
+        payload = json.loads(text)
+        assert payload["action"] == "resume"
+        assert payload["control"]["pause_requested"] is False
+        assert payload["control"]["available_actions"] == ["pause", "steer"]
+
+    def test_scheduler_steer_and_clear_json_response(self, sched_env):
+        h = sched_env["handler"]
+        ok, text = h.handle("steer", ["Bitte", "Logs", "--json"])
+
+        assert ok is True
+        payload = json.loads(text)
+        assert payload["action"] == "steer"
+        assert payload["control"]["pending_steer_count"] == 1
+        assert payload["control"]["latest_steer_message"] == "Bitte Logs"
+        assert payload["control"]["available_actions"] == ["pause", "steer", "clear-steer"]
+
+        ok, text = h.handle("clear-steer", ["--json"])
+
+        assert ok is True
+        payload = json.loads(text)
+        assert payload["action"] == "clear-steer"
+        assert payload["control"]["pending_steer_count"] == 0
+        assert payload["control"]["latest_steer_message"] is None
+        assert payload["control"]["available_actions"] == ["pause", "steer"]
+
+    def test_scheduler_status_json_reports_operator_controls(self, sched_env):
+        h = sched_env["handler"]
+        h.handle("pause", ["Wartung"], dry_run=False)
+        h.handle("steer", ["Nur", "Docs"], dry_run=False)
+
+        ok, text = h.handle("status", ["--json"])
+
+        assert ok is True
+        payload = json.loads(text)
+        assert payload["service"]["control_actions"] == ["pause", "resume", "steer", "clear-steer"]
+        assert payload["operator_control"]["pause_requested"] is True
+        assert payload["operator_control"]["pause_reason"] == "Wartung"
+        assert payload["operator_control"]["pending_steer_count"] == 1
+        assert payload["operator_control"]["latest_steer_message"] == "Nur Docs"
+        assert payload["operator_control"]["available_actions"] == ["resume", "steer", "clear-steer"]
+
+
+# ---------------------------------------------------------------------------
 # Doctor / Diagnostic checks
 # ---------------------------------------------------------------------------
 
@@ -730,6 +795,18 @@ class TestSessionControl:
         data = json.loads(h._session_pause_file("ati").read_text(encoding="utf-8"))
         assert data["reason"] == "Manuell pausiert"
 
+    def test_session_pause_json_response(self, sched_env):
+        h = sched_env["handler"]
+        ok, text = h._session_pause(["--profile", "ati", "Wartung", "--json"], dry_run=False)
+        assert ok is True
+        payload = json.loads(text)
+        assert payload["action"] == "pause"
+        assert payload["control"]["profile"] == "ati"
+        assert payload["control"]["pause_requested"] is True
+        assert payload["control"]["pause_reason"] == "Wartung"
+        assert payload["control"]["available_actions"] == ["resume", "steer"]
+        assert payload["control"]["dry_run"] is False
+
     def test_session_resume(self, sched_env):
         h = sched_env["handler"]
         h._session_pause([], dry_run=False)
@@ -783,6 +860,17 @@ class TestSessionControl:
         assert ok is True
         assert "DRY-RUN" in text
 
+    def test_session_steer_json_response(self, sched_env):
+        h = sched_env["handler"]
+        ok, text = h._session_steer(["--profile", "ati", "Bitte", "Logs", "--json"], dry_run=False)
+        assert ok is True
+        payload = json.loads(text)
+        assert payload["action"] == "steer"
+        assert payload["control"]["pending_steer_count"] == 1
+        assert payload["control"]["latest_steer_message"] == "Bitte Logs"
+        assert payload["control"]["latest_steer_requested_at"] is not None
+        assert payload["control"]["available_actions"] == ["pause", "steer", "clear-steer"]
+
     def test_session_clear_steer(self, sched_env):
         h = sched_env["handler"]
         h._session_steer(["Hinweis"], dry_run=False)
@@ -804,6 +892,17 @@ class TestSessionControl:
         assert ok is True
         assert "DRY-RUN" in text
         assert h._session_steer_file("ati").exists()
+
+    def test_session_clear_steer_json_response(self, sched_env):
+        h = sched_env["handler"]
+        h._session_steer(["Hinweis"], dry_run=False)
+        ok, text = h._session_clear_steer(["--json"], dry_run=False)
+        assert ok is True
+        payload = json.loads(text)
+        assert payload["action"] == "clear-steer"
+        assert payload["control"]["pending_steer_count"] == 0
+        assert payload["control"]["latest_steer_message"] is None
+        assert payload["control"]["available_actions"] == ["pause", "steer"]
 
 
 # ---------------------------------------------------------------------------
@@ -870,6 +969,8 @@ class TestSessionReadHelpers:
         assert snap["pause_reason"] == "Grund"
         assert snap["pending_steer_count"] == 1
         assert snap["latest_steer_message"] == "Tipp"
+        assert snap["latest_steer_requested_at"] is not None
+        assert snap["available_actions"] == ["resume", "steer", "clear-steer"]
 
 
 # ---------------------------------------------------------------------------

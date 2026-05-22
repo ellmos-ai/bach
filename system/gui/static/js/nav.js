@@ -1,7 +1,12 @@
 /**
- * BACH Navigation v2.0
- * Zentrale Navigation mit Dropdown-Submenüs
+ * BACH Navigation v2.1
+ * Zentrale Navigation mit Dropdown-Submenüs + Theme-System
  */
+
+(function() {
+    const t = localStorage.getItem('bach-theme');
+    if (t && t !== 'dark') document.documentElement.setAttribute('data-theme', t);
+})();
 
 const BACH_VERSION = "3.12.1";
 
@@ -45,11 +50,12 @@ const NAV_ITEMS = [
     ]},
     { href: "/tools", label: "Tools" },
     { label: "System", children: [
+        { href: "/daemon", label: "Automation" },
         { href: "/maintenance", label: "Wartung" },
         { href: "/logs", label: "Logs" },
         { href: "/help", label: "Help" },
     ]},
-    { href: `http://${CHAT_HOST}:8081`, label: "Buddha Chat", external: true },
+    { href: "/chat", label: "Buddha Chat" },
 ];
 
 function initNavigation() {
@@ -90,6 +96,8 @@ function initNavigation() {
         return `<a href="${item.href}"${target} class="nav-item${active}">${item.label}</a>`;
     }).join('\n            ');
 
+    const currentTheme = localStorage.getItem('bach-theme') || 'dark';
+
     header.innerHTML = `
         <div class="logo">
             <span class="logo-icon">🎵</span>
@@ -98,9 +106,16 @@ function initNavigation() {
         <nav class="main-nav">
             ${navHtml}
         </nav>
-        <div class="header-status">
-            <span class="status-dot" id="status-dot"></span>
-            <span id="status-text">-</span>
+        <div style="display:flex;align-items:center;">
+            <div class="theme-switcher" id="theme-switcher">
+                <button class="theme-btn${currentTheme === 'dark' ? ' active' : ''}" data-theme="dark" title="Dark">🌙</button>
+                <button class="theme-btn${currentTheme === 'light' ? ' active' : ''}" data-theme="light" title="Light">☀️</button>
+                <button class="theme-btn${currentTheme === 'colorful' ? ' active' : ''}" data-theme="colorful" title="Colorful">🎨</button>
+            </div>
+            <div class="header-status">
+                <span class="status-dot" id="status-dot"></span>
+                <span id="status-text">-</span>
+            </div>
         </div>
     `;
 
@@ -117,6 +132,25 @@ function initNavigation() {
         if (!e.target.closest('.nav-dropdown')) {
             document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
         }
+    });
+
+    document.getElementById('theme-switcher').addEventListener('click', (e) => {
+        const btn = e.target.closest('.theme-btn');
+        if (!btn) return;
+        const theme = btn.dataset.theme;
+        setTheme(theme);
+    });
+}
+
+function setTheme(theme) {
+    if (theme === 'dark') {
+        document.documentElement.removeAttribute('data-theme');
+    } else {
+        document.documentElement.setAttribute('data-theme', theme);
+    }
+    localStorage.setItem('bach-theme', theme);
+    document.querySelectorAll('.theme-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.theme === theme);
     });
 }
 
@@ -151,5 +185,5 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 if (typeof module !== 'undefined') {
-    module.exports = { initNavigation, updateNavStatus, loadNavStatus, NAV_ITEMS, BACH_VERSION };
+    module.exports = { initNavigation, updateNavStatus, loadNavStatus, setTheme, NAV_ITEMS, BACH_VERSION };
 }

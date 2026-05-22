@@ -67,6 +67,14 @@ class AgentLauncherHandler(BaseHandler):
                 "agent_steer_desc",
                 default='Operator-Hinweis fuer laufenden Agenten vormerken (bach agent steer <name> "Hinweis")',
             ),
+            "pause": t(
+                "agent_pause_desc",
+                default="Kooperative Pause fuer laufenden Agenten vormerken (bach agent pause <name> [Grund])",
+            ),
+            "resume": t(
+                "agent_resume_desc",
+                default="Kooperative Pause fuer einen Agenten aufheben (bach agent resume <name>)",
+            ),
             "clear-steer": t(
                 "agent_clear_steer_desc",
                 default="Operator-Hinweise fuer einen Agenten loeschen (bach agent clear-steer <name>)",
@@ -127,6 +135,37 @@ class AgentLauncherHandler(BaseHandler):
             return self._steer_agent(
                 filtered_args[0],
                 " ".join(filtered_args[1:]),
+                dry_run,
+                json_output=json_output,
+            )
+        elif operation == "pause":
+            if not filtered_args:
+                return self._action_response(
+                    "pause",
+                    None,
+                    None,
+                    False,
+                    "[ERROR] Syntax: bach agent pause <name> [Grund]",
+                    json_output=json_output,
+                )
+            return self._pause_agent(
+                filtered_args[0],
+                " ".join(filtered_args[1:]).strip() or "Manuell pausiert",
+                dry_run,
+                json_output=json_output,
+            )
+        elif operation == "resume":
+            if not filtered_args:
+                return self._action_response(
+                    "resume",
+                    None,
+                    None,
+                    False,
+                    "[ERROR] Syntax: bach agent resume <name>",
+                    json_output=json_output,
+                )
+            return self._resume_agent(
+                filtered_args[0],
                 dry_run,
                 json_output=json_output,
             )
@@ -240,10 +279,17 @@ class AgentLauncherHandler(BaseHandler):
             "runtime_defaults": resolved_defaults,
             "available_actions": actions,
             "pending_operator_notes": len(note_entries),
+            "queued_for_next_start": bool(note_entries) and not running,
             "latest_operator_note": note_entries[-1]["message"] if note_entries else None,
             "latest_operator_note_at": note_entries[-1].get("requested_at") if note_entries else None,
             "operator_notes_file": str(self._agent_operator_notes_path(name, temp_dir=temp_dir, markdown=True)),
         }
+        payload["operator_control"] = self._agent_control_snapshot(
+            name,
+            running=running,
+            notes=note_entries,
+            temp_dir=temp_dir,
+        )
         if dry_run:
             payload["dry_run"] = True
         return payload
@@ -258,13 +304,25 @@ class AgentLauncherHandler(BaseHandler):
             return None
         return max(0, int(delta.total_seconds()))
 
+    def _resolved_agent_temp_dir(self, name: str, *, temp_dir: str | None = None) -> str:
+        """Liefert das kanonische Laufzeitverzeichnis eines Agenten."""
+        if temp_dir:
+            return str(Path(temp_dir))
+        pid_temp_dir = self._load_pid_data(name).get("temp_dir")
+        if pid_temp_dir:
+            return str(Path(pid_temp_dir))
+        return str(self.temp_dir / f"agent_{name}")
+
     def _agent_operator_notes_path(self, name: str, *, temp_dir: str | None = None, markdown: bool = False) -> Path:
         """Liefert den Operator-Notizpfad fuer einen Agenten."""
-        base_dir = Path(temp_dir) if temp_dir else Path(
-            self._load_pid_data(name).get("temp_dir") or (self.temp_dir / f"agent_{name}")
-        )
+        base_dir = Path(self._resolved_agent_temp_dir(name, temp_dir=temp_dir))
         filename = "OPERATOR_NOTES.md" if markdown else "operator_notes.json"
         return base_dir / filename
+
+    def _agent_pause_request_path(self, name: str, *, temp_dir: str | None = None) -> Path:
+        """Liefert den Dateipfad fuer kooperative Pause-Anforderungen."""
+        base_dir = Path(self._resolved_agent_temp_dir(name, temp_dir=temp_dir))
+        return base_dir / "operator_pause.json"
 
     def _read_operator_notes(self, name: str, *, temp_dir: str | None = None) -> list[dict]:
         """Liest vorgemerkte Operator-Hinweise."""
@@ -282,42 +340,194 @@ class AgentLauncherHandler(BaseHandler):
             ]
         return []
 
-    def _available_actions(self, running: bool, note_count: int) -> list[str]:
-        """Leitet die sinnvollen Kontrollaktionen aus Status und Queue ab."""
-        actions = ["stop", "steer"] if running else ["start"]
+    def _read_pause_request(self, name: str, *, temp_dir: str | None = None) -> dict | None:
+        """Liest eine kooperative Pause-Anforderung fuer einen Agenten."""
+        path = self._agent_pause_request_path(name, temp_dir=temp_dir)
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if isinstance(payload, dict) and payload.get("reason"):
+            return payload
+        return None
+
+    def _agent_control_actions(self, *, running: bool, pause_requested: bool, note_count: int) -> list[str]:
+        """Leitet verfuegbare kooperative Kontrollaktionen ab."""
+        actions = []
+        if pause_requested:
+            actions.append("resume")
+        elif running:
+            actions.append("pause")
+        actions.append("steer")
         if note_count:
             actions.append("clear-steer")
         return actions
+
+    def _agent_control_snapshot(
+        self,
+        name: str,
+        *,
+        running: bool,
+        notes: list[dict] | None = None,
+        temp_dir: str | None = None,
+    ) -> dict:
+        """Erzeugt einen maschinenlesbaren Snapshot der Agenten-Steuerung."""
+        note_entries = notes if notes is not None else self._read_operator_notes(name, temp_dir=temp_dir)
+        pause_request = self._read_pause_request(name, temp_dir=temp_dir)
+        latest = note_entries[-1] if note_entries else None
+        snapshot = {
+            "scope": "agent",
+            "pause_requested": bool(pause_request),
+            "pause_reason": pause_request.get("reason") if pause_request else None,
+            "pause_requested_at": pause_request.get("requested_at") if pause_request else None,
+            "pending_steer_count": len(note_entries),
+            "latest_steer_message": latest.get("message") if latest else None,
+            "latest_steer_requested_at": latest.get("requested_at") if latest else None,
+            "pause_file": str(self._agent_pause_request_path(name, temp_dir=temp_dir)),
+            "notes_file": str(self._agent_operator_notes_path(name, temp_dir=temp_dir)),
+            "notes_markdown_file": str(self._agent_operator_notes_path(name, temp_dir=temp_dir, markdown=True)),
+        }
+        snapshot["available_actions"] = self._agent_control_actions(
+            running=running,
+            pause_requested=snapshot["pause_requested"],
+            note_count=len(note_entries),
+        )
+        return snapshot
+
+    def _available_actions(self, running: bool, note_count: int) -> list[str]:
+        """Leitet die sinnvollen Kontrollaktionen aus Status und Queue ab."""
+        actions = ["stop", "steer"] if running else ["start", "steer"]
+        if note_count:
+            actions.append("clear-steer")
+        return actions
+
+    def _inactive_status(self, note_count: int) -> str:
+        """Leitet den Nicht-Live-Status eines Agenten aus der Hinweis-Queue ab."""
+        return "queued" if note_count else "stopped"
+
+    def _running_status(self, *, pause_requested: bool) -> str:
+        """Leitet den Live-Status eines Agenten aus dem Kontrollzustand ab."""
+        return "pause-requested" if pause_requested else "running"
+
+    def _refresh_operator_markdown(self, name: str, notes: list[dict], *, temp_dir: str | None = None):
+        """Aktualisiert die menschenlesbare Operator-Datei inklusive Pause-Status."""
+        markdown_path = self._agent_operator_notes_path(name, temp_dir=temp_dir, markdown=True)
+        pause_request = self._read_pause_request(name, temp_dir=temp_dir)
+
+        if not notes and not pause_request:
+            markdown_path.unlink(missing_ok=True)
+            return
+
+        markdown_lines = [
+            "# Operator Notes",
+            "",
+        ]
+        if pause_request:
+            requested_at = pause_request.get("requested_at") or "ohne Zeitstempel"
+            markdown_lines.extend(
+                [
+                    "## Pause Request",
+                    "",
+                    f"- [{requested_at}] {pause_request.get('reason', 'Manuell pausiert')}",
+                    "Bitte am naechsten sicheren Checkpoint anhalten, kurz den aktuellen Stand sichern und auf `bach agent resume` warten.",
+                    "",
+                ]
+            )
+
+        markdown_lines.extend(
+            [
+                "## Steering Notes",
+                "",
+                "Diese Hinweise gelten fuer diese Agenten-Session.",
+                "Bereits vorgemerkte Hinweise werden beim naechsten Start in die initiale CLAUDE.md injiziert.",
+                "Bei laengeren Laeufen regelmaessig pruefen und an sicheren Checkpoints einarbeiten.",
+                "",
+            ]
+        )
+        if notes:
+            for note in notes:
+                requested_at = note.get("requested_at") or "ohne Zeitstempel"
+                markdown_lines.append(f"- [{requested_at}] {note['message']}")
+        else:
+            markdown_lines.append("- Keine vorgemerkten Steering-Hinweise.")
+        markdown_lines.append("")
+        markdown_path.write_text("\n".join(markdown_lines), encoding="utf-8")
 
     def _clear_operator_notes(self, name: str, *, temp_dir: str | None = None) -> int:
         """Entfernt alle vorgemerkten oder veralteten Operator-Hinweise fuer einen Agenten."""
         notes = self._read_operator_notes(name, temp_dir=temp_dir)
         self._agent_operator_notes_path(name, temp_dir=temp_dir).unlink(missing_ok=True)
-        self._agent_operator_notes_path(name, temp_dir=temp_dir, markdown=True).unlink(missing_ok=True)
+        self._refresh_operator_markdown(name, [], temp_dir=temp_dir)
         return len(notes)
+
+    def _write_pause_request(self, name: str, payload: dict, *, temp_dir: str | None = None):
+        """Schreibt eine kooperative Pause-Anforderung."""
+        pause_path = self._agent_pause_request_path(name, temp_dir=temp_dir)
+        pause_path.parent.mkdir(parents=True, exist_ok=True)
+        pause_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        self._refresh_operator_markdown(
+            name,
+            self._read_operator_notes(name, temp_dir=temp_dir),
+            temp_dir=temp_dir,
+        )
+
+    def _clear_pause_request(self, name: str, *, temp_dir: str | None = None) -> bool:
+        """Entfernt eine kooperative Pause-Anforderung."""
+        pause_path = self._agent_pause_request_path(name, temp_dir=temp_dir)
+        existed = pause_path.exists()
+        pause_path.unlink(missing_ok=True)
+        self._refresh_operator_markdown(
+            name,
+            self._read_operator_notes(name, temp_dir=temp_dir),
+            temp_dir=temp_dir,
+        )
+        return existed
 
     def _write_operator_notes(self, name: str, notes: list[dict], *, temp_dir: str | None = None):
         """Schreibt Operator-Hinweise als JSON und Markdown-Spiegel."""
         json_path = self._agent_operator_notes_path(name, temp_dir=temp_dir)
-        markdown_path = self._agent_operator_notes_path(name, temp_dir=temp_dir, markdown=True)
         json_path.parent.mkdir(parents=True, exist_ok=True)
         json_path.write_text(
             json.dumps(notes, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+        self._refresh_operator_markdown(name, notes, temp_dir=temp_dir)
 
-        markdown_lines = [
-            "# Operator Notes",
-            "",
-            "Diese Hinweise wurden nach dem Agent-Start vorgemerkt.",
-            "Bei laengeren Laeufen regelmaessig pruefen und einarbeiten.",
-            "",
+    def _render_operator_prompt_block(self, operator_notes_path: Path, notes: list[dict]) -> str:
+        """Erzeugt den Operator-Block fuer die generierte CLAUDE.md eines Agenten."""
+        lines = [
+            "\n## Operator Notes",
+            (
+                f"Pruefe die Datei `{operator_notes_path.name}` im aktuellen Arbeitsverzeichnis "
+                "regelmaessig an sicheren Checkpoints, besonders nach groesseren Tool-Runden, "
+                "vor Statusmeldungen und vor dem Abschluss. Die Datei kann neben Steering-Hinweisen "
+                "auch kooperative Pause-Anforderungen enthalten."
+            ),
         ]
-        for note in notes:
-            requested_at = note.get("requested_at") or "ohne Zeitstempel"
-            markdown_lines.append(f"- [{requested_at}] {note['message']}")
-        markdown_lines.append("")
-        markdown_path.write_text("\n".join(markdown_lines), encoding="utf-8")
+        if notes:
+            lines.extend(
+                [
+                    "",
+                    "Diese Hinweise waren bereits vor diesem Start vorgemerkt und gelten sofort:",
+                ]
+            )
+            for note in notes:
+                requested_at = note.get("requested_at") or "ohne Zeitstempel"
+                lines.append(f"- [{requested_at}] {note['message']}")
+        else:
+            lines.extend(
+                [
+                    "",
+                    "Aktuell sind keine vorgemerkten Hinweise vorhanden.",
+                ]
+            )
+        lines.append("")
+        return "\n".join(lines) + "\n"
 
     # ------------------------------------------------------------------
     # list
@@ -403,14 +613,14 @@ class AgentLauncherHandler(BaseHandler):
         running_pid = self._is_agent_running(agent["name"])
         started_at = pid_data.get("started")
         running = bool(running_pid)
-        temp_dir = pid_data.get("temp_dir")
+        temp_dir = self._resolved_agent_temp_dir(agent["name"], temp_dir=pid_data.get("temp_dir"))
         notes = self._read_operator_notes(agent["name"], temp_dir=temp_dir)
         payload = self._build_agent_payload(
             agent["name"],
             persona_info.get("display_name") or None,
             agent["type"],
             running=running,
-            status="running" if running else "stopped",
+            status="running" if running else self._inactive_status(len(notes)),
             pid=running_pid or pid_data.get("pid") or None,
             model=pid_data.get("model"),
             mode=pid_data.get("mode"),
@@ -445,7 +655,13 @@ class AgentLauncherHandler(BaseHandler):
 
         for ag in agents:
             pid = self._is_agent_running(ag["name"])
-            status = f"[RUNNING:{pid}]" if pid else "[STOPPED]"
+            notes = self._read_operator_notes(ag["name"])
+            if pid:
+                status = f"[RUNNING:{pid}]"
+            elif notes:
+                status = f"[QUEUED:{len(notes)}]"
+            else:
+                status = "[STOPPED]"
             output.append(f"{ag['name']:25} {ag['type']:8} {status}")
 
         output.extend([
@@ -455,6 +671,8 @@ class AgentLauncherHandler(BaseHandler):
             "bach agent stop <name>     " + t("agent_stop_desc", default="Agent stoppen"),
             "bach agent status          " + t("agent_status_desc", default="Laufende Agents anzeigen"),
             "bach agent steer <n> ...   " + t("agent_steer_desc", default="Operator-Hinweis vormerken"),
+            "bach agent pause <n> ...   " + t("agent_pause_desc", default="Kooperative Pause vormerken"),
+            "bach agent resume <n>      " + t("agent_resume_desc", default="Kooperative Pause aufheben"),
             "bach agent clear-steer <n> " + t("agent_clear_steer_desc", default="Operator-Hinweise loeschen"),
             "bach agent rename <n> <n>  " + t("agent_rename_desc", default="Display-Name aendern")
         ])
@@ -1025,7 +1243,7 @@ class AgentLauncherHandler(BaseHandler):
 
         persona_info = self._get_persona_info(resolved_name)
         display_name = persona_info.get('display_name', '')
-        agent_temp_dir = self.temp_dir / f"agent_{resolved_name}"
+        agent_temp_dir = Path(self._resolved_agent_temp_dir(resolved_name))
         pid_file = self.pid_dir / f"{resolved_name}.pid"
         runtime_defaults = self._load_agent_runtime_defaults(agent["skill_file"])
         permission_mode = self._parse_flag(
@@ -1150,11 +1368,11 @@ class AgentLauncherHandler(BaseHandler):
             temp_dir=str(agent_temp_dir),
             markdown=True,
         )
-        operator_block = (
-            "\n## Operator Notes\n"
-            f"Pruefe bei laengeren Laeufen regelmaessig die Datei `{operator_notes_path.name}` "
-            "im aktuellen Arbeitsverzeichnis. Dort koennen spaetere Operator-Hinweise fuer diese Session auftauchen.\n\n"
+        existing_notes = self._read_operator_notes(
+            resolved_name,
+            temp_dir=str(agent_temp_dir),
         )
+        operator_block = self._render_operator_prompt_block(operator_notes_path, existing_notes)
 
         claude_md_content = (
             f"# BACH Agent: {resolved_name}\n\n"
@@ -1171,7 +1389,15 @@ class AgentLauncherHandler(BaseHandler):
 
         try:
             claude_md.write_text(claude_md_content, encoding='utf-8')
-            self._write_operator_notes(resolved_name, [], temp_dir=str(agent_temp_dir))
+            self._clear_pause_request(
+                resolved_name,
+                temp_dir=str(agent_temp_dir),
+            )
+            self._write_operator_notes(
+                resolved_name,
+                existing_notes,
+                temp_dir=str(agent_temp_dir),
+            )
         except Exception as e:
             message = f"[ERROR] CLAUDE.md konnte nicht geschrieben werden: {e}"
             return self._action_response(
@@ -1262,6 +1488,7 @@ class AgentLauncherHandler(BaseHandler):
                 f"     Modell: {model}\n"
                 f"     Modus:  {mode}\n"
                 f"     Rechte: {permission_mode}\n"
+                f"     Hinweise: {len(existing_notes)} vorgemerkt\n"
                 f"     Temp:   {agent_temp_dir}"
             )
             payload = self._build_agent_payload(
@@ -1277,7 +1504,8 @@ class AgentLauncherHandler(BaseHandler):
                 temp_dir=str(agent_temp_dir),
                 window_title=pid_data.get("window_title"),
                 pid_file=str(pid_file),
-                available_actions=["stop", "steer"],
+                available_actions=self._available_actions(True, len(existing_notes)),
+                notes=existing_notes,
                 permission_mode=permission_mode,
                 allowed_tools=None if permission_mode == "full" else allowed_tools,
                 max_turns=max_turns,
@@ -1324,21 +1552,24 @@ class AgentLauncherHandler(BaseHandler):
         display_name = persona_info.get("display_name")
 
         if not pid_file.exists():
+            temp_dir = self._resolved_agent_temp_dir(resolved_name)
+            notes = self._read_operator_notes(resolved_name, temp_dir=temp_dir)
             message = f"[WARN] Agent '{name}' hat kein PID-File (laeuft nicht)"
             payload = self._build_agent_payload(
                 resolved_name,
                 display_name,
                 None,
                 running=False,
-                status="stopped",
+                status=self._inactive_status(len(notes)),
                 pid=None,
                 model=None,
                 mode=None,
                 started_at=None,
-                temp_dir=None,
+                temp_dir=temp_dir,
                 window_title=None,
                 pid_file=str(pid_file),
-                available_actions=["start"],
+                available_actions=self._available_actions(False, len(notes)),
+                notes=notes,
             )
             return self._action_response(
                 "stop",
@@ -1380,7 +1611,9 @@ class AgentLauncherHandler(BaseHandler):
             data.get("display_name") or display_name,
             data.get("type"),
             running=False,
-            status="stopped",
+            status=self._inactive_status(
+                len(self._read_operator_notes(resolved_name, temp_dir=data.get("temp_dir")))
+            ),
             pid=pid,
             model=data.get("model"),
             mode=data.get("mode"),
@@ -1388,8 +1621,12 @@ class AgentLauncherHandler(BaseHandler):
             temp_dir=data.get("temp_dir"),
             window_title=data.get("window_title"),
             pid_file=str(pid_file),
-            available_actions=["start"],
+            available_actions=self._available_actions(
+                False,
+                len(self._read_operator_notes(resolved_name, temp_dir=data.get("temp_dir"))),
+            ),
             dry_run=dry_run,
+            notes=self._read_operator_notes(resolved_name, temp_dir=data.get("temp_dir")),
             permission_mode=data.get("permission_mode"),
             allowed_tools=data.get("allowed_tools"),
             max_turns=data.get("max_turns"),
@@ -1417,6 +1654,7 @@ class AgentLauncherHandler(BaseHandler):
 
             # PID-File entfernen
             pid_file.unlink(missing_ok=True)
+            self._clear_pause_request(resolved_name, temp_dir=data.get("temp_dir"))
 
             return self._action_response(
                 "stop",
@@ -1440,6 +1678,214 @@ class AgentLauncherHandler(BaseHandler):
                 agent=agent_payload,
             )
 
+    def _pause_agent(self, name: str, reason: str, dry_run: bool, json_output: bool = False) -> tuple:
+        """Merkt eine kooperative Pause fuer einen laufenden Agenten vor."""
+        resolved_name = self._resolve_to_technical_name(name)
+        agent_entry = next((item for item in self._scan_agents() if item["name"] == resolved_name), None)
+        if not agent_entry:
+            return self._action_response(
+                "pause",
+                name,
+                resolved_name,
+                False,
+                f"[ERROR] Agent '{name}' nicht gefunden.",
+                json_output=json_output,
+            )
+
+        pid_data = self._load_pid_data(resolved_name)
+        running_pid = self._is_agent_running(resolved_name)
+        running = bool(running_pid)
+        display_name = pid_data.get("display_name") or self._get_persona_info(resolved_name).get("display_name") or None
+        temp_dir = self._resolved_agent_temp_dir(resolved_name, temp_dir=pid_data.get("temp_dir"))
+        notes = self._read_operator_notes(resolved_name, temp_dir=temp_dir)
+        pause_request = self._read_pause_request(resolved_name, temp_dir=temp_dir)
+
+        agent_payload = self._build_agent_payload(
+            resolved_name,
+            display_name,
+            pid_data.get("type") or agent_entry["type"],
+            running=running,
+            status="running" if running else self._inactive_status(len(notes)),
+            pid=running_pid or pid_data.get("pid") or None,
+            model=pid_data.get("model"),
+            mode=pid_data.get("mode"),
+            started_at=pid_data.get("started"),
+            temp_dir=temp_dir,
+            window_title=pid_data.get("window_title"),
+            pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
+            available_actions=self._available_actions(running, len(notes)),
+            dry_run=dry_run,
+            notes=notes,
+            permission_mode=pid_data.get("permission_mode"),
+            allowed_tools=pid_data.get("allowed_tools"),
+            max_turns=pid_data.get("max_turns"),
+        )
+
+        if not running:
+            return self._action_response(
+                "pause",
+                name,
+                resolved_name,
+                False,
+                f"[WARN] Agent '{display_name or resolved_name}' laeuft nicht. Pause ist nur fuer aktive Laeufe verfuegbar.",
+                json_output=json_output,
+                agent=agent_payload,
+            )
+
+        if pause_request:
+            return self._action_response(
+                "pause",
+                name,
+                resolved_name,
+                True,
+                f"[OK] Fuer '{display_name or resolved_name}' ist bereits eine Pause vorgemerkt.",
+                json_output=json_output,
+                agent=agent_payload,
+            )
+
+        if dry_run:
+            return self._action_response(
+                "pause",
+                name,
+                resolved_name,
+                True,
+                f"[DRY-RUN] Wuerde kooperative Pause fuer '{display_name or resolved_name}' vormerken: {reason}",
+                json_output=json_output,
+                agent=agent_payload,
+            )
+
+        self._write_pause_request(
+            resolved_name,
+            {
+                "reason": reason,
+                "requested_at": datetime.now().isoformat(),
+            },
+            temp_dir=temp_dir,
+        )
+        refreshed = self._build_agent_payload(
+            resolved_name,
+            display_name,
+            pid_data.get("type") or agent_entry["type"],
+            running=running,
+            status="running",
+            pid=running_pid or pid_data.get("pid") or None,
+            model=pid_data.get("model"),
+            mode=pid_data.get("mode"),
+            started_at=pid_data.get("started"),
+            temp_dir=temp_dir,
+            window_title=pid_data.get("window_title"),
+            pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
+            available_actions=self._available_actions(running, len(notes)),
+            notes=notes,
+            permission_mode=pid_data.get("permission_mode"),
+            allowed_tools=pid_data.get("allowed_tools"),
+            max_turns=pid_data.get("max_turns"),
+        )
+        return self._action_response(
+            "pause",
+            name,
+            resolved_name,
+            True,
+            f"[OK] Kooperative Pause fuer '{display_name or resolved_name}' vorgemerkt: {reason}",
+            json_output=json_output,
+            agent=refreshed,
+        )
+
+    def _resume_agent(self, name: str, dry_run: bool, json_output: bool = False) -> tuple:
+        """Hebt eine kooperative Pause eines Agenten auf."""
+        resolved_name = self._resolve_to_technical_name(name)
+        agent_entry = next((item for item in self._scan_agents() if item["name"] == resolved_name), None)
+        if not agent_entry:
+            return self._action_response(
+                "resume",
+                name,
+                resolved_name,
+                False,
+                f"[ERROR] Agent '{name}' nicht gefunden.",
+                json_output=json_output,
+            )
+
+        pid_data = self._load_pid_data(resolved_name)
+        running_pid = self._is_agent_running(resolved_name)
+        running = bool(running_pid)
+        display_name = pid_data.get("display_name") or self._get_persona_info(resolved_name).get("display_name") or None
+        temp_dir = self._resolved_agent_temp_dir(resolved_name, temp_dir=pid_data.get("temp_dir"))
+        notes = self._read_operator_notes(resolved_name, temp_dir=temp_dir)
+        pause_request = self._read_pause_request(resolved_name, temp_dir=temp_dir)
+
+        agent_payload = self._build_agent_payload(
+            resolved_name,
+            display_name,
+            pid_data.get("type") or agent_entry["type"],
+            running=running,
+            status="running" if running else self._inactive_status(len(notes)),
+            pid=running_pid or pid_data.get("pid") or None,
+            model=pid_data.get("model"),
+            mode=pid_data.get("mode"),
+            started_at=pid_data.get("started"),
+            temp_dir=temp_dir,
+            window_title=pid_data.get("window_title"),
+            pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
+            available_actions=self._available_actions(running, len(notes)),
+            dry_run=dry_run,
+            notes=notes,
+            permission_mode=pid_data.get("permission_mode"),
+            allowed_tools=pid_data.get("allowed_tools"),
+            max_turns=pid_data.get("max_turns"),
+        )
+
+        if not pause_request:
+            return self._action_response(
+                "resume",
+                name,
+                resolved_name,
+                True,
+                f"[OK] Fuer '{display_name or resolved_name}' ist keine Pause vorgemerkt.",
+                json_output=json_output,
+                agent=agent_payload,
+            )
+
+        if dry_run:
+            return self._action_response(
+                "resume",
+                name,
+                resolved_name,
+                True,
+                f"[DRY-RUN] Wuerde kooperative Pause fuer '{display_name or resolved_name}' aufheben.",
+                json_output=json_output,
+                agent=agent_payload,
+            )
+
+        self._clear_pause_request(resolved_name, temp_dir=temp_dir)
+        refreshed = self._build_agent_payload(
+            resolved_name,
+            display_name,
+            pid_data.get("type") or agent_entry["type"],
+            running=running,
+            status="running" if running else self._inactive_status(len(notes)),
+            pid=running_pid or pid_data.get("pid") or None,
+            model=pid_data.get("model"),
+            mode=pid_data.get("mode"),
+            started_at=pid_data.get("started"),
+            temp_dir=temp_dir,
+            window_title=pid_data.get("window_title"),
+            pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
+            available_actions=self._available_actions(running, len(notes)),
+            notes=notes,
+            permission_mode=pid_data.get("permission_mode"),
+            allowed_tools=pid_data.get("allowed_tools"),
+            max_turns=pid_data.get("max_turns"),
+        )
+        return self._action_response(
+            "resume",
+            name,
+            resolved_name,
+            True,
+            f"[OK] Kooperative Pause fuer '{display_name or resolved_name}' aufgehoben.",
+            json_output=json_output,
+            agent=refreshed,
+        )
+
     def _clear_steer_agent(self, name: str, dry_run: bool, json_output: bool = False) -> tuple:
         """Leert die Operator-Hinweis-Queue eines Agenten."""
         resolved_name = self._resolve_to_technical_name(name)
@@ -1447,11 +1893,7 @@ class AgentLauncherHandler(BaseHandler):
         running_pid = self._is_agent_running(resolved_name)
         running = bool(running_pid)
         display_name = pid_data.get("display_name") or self._get_persona_info(resolved_name).get("display_name") or None
-        temp_dir = pid_data.get("temp_dir")
-        if not temp_dir:
-            fallback_temp_dir = self.temp_dir / f"agent_{resolved_name}"
-            if fallback_temp_dir.exists():
-                temp_dir = str(fallback_temp_dir)
+        temp_dir = self._resolved_agent_temp_dir(resolved_name, temp_dir=pid_data.get("temp_dir"))
 
         agent_entry = next((item for item in self._scan_agents() if item["name"] == resolved_name), None)
         agent_type = pid_data.get("type") or (agent_entry["type"] if agent_entry else None)
@@ -1466,7 +1908,7 @@ class AgentLauncherHandler(BaseHandler):
             display_name,
             agent_type,
             running=running,
-            status="running" if running else "stopped",
+            status="running" if running else self._inactive_status(note_count),
             pid=running_pid or pid_data.get("pid") or None,
             model=pid_data.get("model"),
             mode=pid_data.get("mode"),
@@ -1533,7 +1975,7 @@ class AgentLauncherHandler(BaseHandler):
             display_name,
             agent_type,
             running=running,
-            status="running" if running else "stopped",
+            status="running" if running else self._inactive_status(0),
             pid=running_pid or pid_data.get("pid") or None,
             model=pid_data.get("model"),
             mode=pid_data.get("mode"),
@@ -1563,42 +2005,24 @@ class AgentLauncherHandler(BaseHandler):
         )
 
     def _steer_agent(self, name: str, message: str, dry_run: bool, json_output: bool = False) -> tuple:
-        """Merkt einen Operator-Hinweis fuer einen laufenden Agenten vor."""
+        """Merkt einen Operator-Hinweis fuer einen Agenten oder dessen naechsten Start vor."""
         resolved_name = self._resolve_to_technical_name(name)
-        pid_data = self._load_pid_data(resolved_name)
-        running_pid = self._is_agent_running(resolved_name)
-        display_name = pid_data.get("display_name") or self._get_persona_info(resolved_name).get("display_name") or None
-        temp_dir = pid_data.get("temp_dir")
-
-        if not running_pid or not temp_dir:
-            message_text = f"[WARN] Agent '{name}' laeuft nicht oder hat kein Laufzeitverzeichnis."
-            agent_payload = self._build_agent_payload(
-                resolved_name,
-                display_name,
-                pid_data.get("type"),
-                running=False,
-                status="stopped",
-                pid=None,
-                model=pid_data.get("model"),
-                mode=pid_data.get("mode"),
-                started_at=pid_data.get("started"),
-                temp_dir=temp_dir,
-                window_title=pid_data.get("window_title"),
-                pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
-                available_actions=["start"],
-                permission_mode=pid_data.get("permission_mode"),
-                allowed_tools=pid_data.get("allowed_tools"),
-                max_turns=pid_data.get("max_turns"),
-            )
+        agent_entry = next((item for item in self._scan_agents() if item["name"] == resolved_name), None)
+        if not agent_entry:
             return self._action_response(
                 "steer",
                 name,
                 resolved_name,
                 False,
-                message_text,
+                f"[ERROR] Agent '{name}' nicht gefunden.",
                 json_output=json_output,
-                agent=agent_payload,
             )
+
+        pid_data = self._load_pid_data(resolved_name)
+        running_pid = self._is_agent_running(resolved_name)
+        running = bool(running_pid)
+        display_name = pid_data.get("display_name") or self._get_persona_info(resolved_name).get("display_name") or None
+        temp_dir = self._resolved_agent_temp_dir(resolved_name, temp_dir=pid_data.get("temp_dir"))
 
         notes = self._read_operator_notes(resolved_name, temp_dir=temp_dir)
         notes.append(
@@ -1616,17 +2040,17 @@ class AgentLauncherHandler(BaseHandler):
             agent_payload = self._build_agent_payload(
                 resolved_name,
                 display_name,
-                pid_data.get("type"),
-                running=True,
-                status="running",
-                pid=running_pid,
+                pid_data.get("type") or agent_entry["type"],
+                running=running,
+                status="running" if running else self._inactive_status(len(notes)),
+                pid=running_pid or pid_data.get("pid") or None,
                 model=pid_data.get("model"),
                 mode=pid_data.get("mode"),
                 started_at=pid_data.get("started"),
                 temp_dir=temp_dir,
                 window_title=pid_data.get("window_title"),
                 pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
-                available_actions=["stop", "steer"],
+                available_actions=self._available_actions(running, len(notes)),
                 dry_run=True,
                 notes=notes,
                 permission_mode=pid_data.get("permission_mode"),
@@ -1649,17 +2073,17 @@ class AgentLauncherHandler(BaseHandler):
             agent_payload = self._build_agent_payload(
                 resolved_name,
                 display_name,
-                pid_data.get("type"),
-                running=True,
-                status="running",
-                pid=running_pid,
+                pid_data.get("type") or agent_entry["type"],
+                running=running,
+                status="running" if running else self._inactive_status(len(notes)),
+                pid=running_pid or pid_data.get("pid") or None,
                 model=pid_data.get("model"),
                 mode=pid_data.get("mode"),
                 started_at=pid_data.get("started"),
                 temp_dir=temp_dir,
                 window_title=pid_data.get("window_title"),
                 pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
-                available_actions=["stop", "steer"],
+                available_actions=self._available_actions(running, len(notes)),
                 notes=notes,
                 permission_mode=pid_data.get("permission_mode"),
                 allowed_tools=pid_data.get("allowed_tools"),
@@ -1678,31 +2102,38 @@ class AgentLauncherHandler(BaseHandler):
         agent_payload = self._build_agent_payload(
             resolved_name,
             display_name,
-            pid_data.get("type"),
-            running=True,
-            status="running",
-            pid=running_pid,
+            pid_data.get("type") or agent_entry["type"],
+            running=running,
+            status="running" if running else self._inactive_status(len(notes)),
+            pid=running_pid or pid_data.get("pid") or None,
             model=pid_data.get("model"),
             mode=pid_data.get("mode"),
             started_at=pid_data.get("started"),
             temp_dir=temp_dir,
             window_title=pid_data.get("window_title"),
             pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
-            available_actions=["stop", "steer"],
+            available_actions=self._available_actions(running, len(notes)),
             notes=notes,
             permission_mode=pid_data.get("permission_mode"),
             allowed_tools=pid_data.get("allowed_tools"),
             max_turns=pid_data.get("max_turns"),
         )
+        if running:
+            success_message = (
+                f"[OK] Operator-Hinweis fuer '{display_name or resolved_name}' vorgemerkt "
+                f"({len(notes)} Nachricht(en) in Queue)."
+            )
+        else:
+            success_message = (
+                f"[OK] Operator-Hinweis fuer '{display_name or resolved_name}' vorgemerkt "
+                f"und fuer den naechsten Start gespeichert ({len(notes)} Nachricht(en) in Queue)."
+            )
         return self._action_response(
             "steer",
             name,
             resolved_name,
             True,
-            (
-                f"[OK] Operator-Hinweis fuer '{display_name or resolved_name}' vorgemerkt "
-                f"({len(notes)} Nachricht(en) in Queue)."
-            ),
+            success_message,
             json_output=json_output,
             agent=agent_payload,
         )

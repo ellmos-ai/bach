@@ -45,8 +45,9 @@ Nutzt: bach.db / dist_file_versions, distribution_releases, distribution_manifes
 Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md
 """
 
-import sqlite3
 import json
+import hashlib
+import sqlite3
 from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Optional, Dict
@@ -94,43 +95,83 @@ class UpgradeHandler(BaseHandler):
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _has_flag(self, args: list, *flags: str) -> bool:
+        """Prueft, ob ein Flag in den CLI-Argumenten gesetzt wurde."""
+        return any(arg in flags for arg in args)
+
+    def _json_dump(self, payload: dict) -> str:
+        """Formatiert JSON konsistent fuer CLI-Ausgaben."""
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    def _json_error(self, message: str, **extra) -> str:
+        """Formatiert maschinenlesbare Fehlerantworten fuer JSON-CLI-Aufrufe."""
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "ok": False,
+            "message": message,
+        }
+        payload.update(extra)
+        return self._json_dump(payload)
+
+    def _resolve_disk_path(self, file_path: str) -> Path:
+        """Loest einen versionierten Dateipfad auf die lokale Datei auf."""
+        if file_path.startswith("system/"):
+            return self.base_path.parent / file_path
+
+        root_candidate = self.base_path.parent / file_path
+        if root_candidate.exists():
+            return root_candidate
+
+        return self.base_path / file_path
+
+    def _hash_file(self, path: Path) -> Optional[str]:
+        """Berechnet den SHA256-Hash einer lokalen Datei."""
+        try:
+            with path.open("rb") as handle:
+                return hashlib.sha256(handle.read()).hexdigest()
+        except OSError:
+            return None
+
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
+        json_output = self._has_flag(args, "--json")
+        filtered_args = [arg for arg in args if arg != "--json"]
+
         if operation == "help" or not operation:
             return self._show_help()
         elif operation == "list":
-            return self._list_versions(args)
+            return self._list_versions(filtered_args, json_output=json_output)
         elif operation == "status":
-            return self._status()
+            return self._status(json_output=json_output)
         elif operation == "check":
-            return self._check_updates()
+            return self._check_updates(json_output=json_output)
         elif operation == "core":
-            return self._upgrade_category("core", args, dry_run)
+            return self._upgrade_category("core", filtered_args, dry_run)
         elif operation == "templates":
-            return self._upgrade_category("templates", args, dry_run)
+            return self._upgrade_category("templates", filtered_args, dry_run)
         elif operation == "agents":
-            return self._upgrade_category("agents", args, dry_run)
+            return self._upgrade_category("agents", filtered_args, dry_run)
         elif operation == "skills":
-            return self._upgrade_category("skills", args, dry_run)
+            return self._upgrade_category("skills", filtered_args, dry_run)
         elif operation == "hub":
-            return self._upgrade_category("hub", args, dry_run)
+            return self._upgrade_category("hub", filtered_args, dry_run)
         elif operation == "tools":
-            return self._upgrade_category("tools", args, dry_run)
+            return self._upgrade_category("tools", filtered_args, dry_run)
         elif operation == "connectors":
-            return self._upgrade_category("connectors", args, dry_run)
+            return self._upgrade_category("connectors", filtered_args, dry_run)
         elif operation == "partners":
-            return self._upgrade_category("partners", args, dry_run)
+            return self._upgrade_category("partners", filtered_args, dry_run)
         elif operation == "docs":
-            return self._upgrade_category("docs", args, dry_run)
+            return self._upgrade_category("docs", filtered_args, dry_run)
         elif operation == "gui":
-            return self._upgrade_category("gui", args, dry_run)
+            return self._upgrade_category("gui", filtered_args, dry_run)
         elif operation == "file":
-            return self._upgrade_file(args, dry_run)
+            return self._upgrade_file(filtered_args, dry_run)
         elif operation == "downgrade":
-            return self._downgrade_file(args, dry_run)
+            return self._downgrade_file(filtered_args, dry_run)
         else:
             # Default: Behandle als Datei-Upgrade
             if operation:
-                return self._upgrade_file([operation] + args, dry_run)
+                return self._upgrade_file([operation] + filtered_args, dry_run)
             return (False, f"Unbekannte Operation: {operation}\nVerfuegbar: {', '.join(self.get_operations().keys())}")
 
     def _show_help(self) -> tuple:
@@ -184,9 +225,20 @@ FUTURE (Optional):
 
 Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
 
-    def _list_versions(self, args: list) -> tuple:
+    def _list_versions(self, args: list, json_output: bool = False) -> tuple:
         """Listet verfuegbare Versionen einer Datei."""
         if not args:
+            if json_output:
+                return (
+                    False,
+                    self._json_error(
+                        "Fehler: Datei fehlt.",
+                        error_code="missing_file",
+                        file_path=None,
+                        hint="bach upgrade --list hub/backup.py",
+                        versions=[],
+                    ),
+                )
             return (False, "Fehler: Datei fehlt.\n\nBeispiel: bach upgrade --list hub/backup.py")
 
         file_path = args[0]
@@ -202,7 +254,38 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
             """, (file_path,)).fetchall()
 
             if not rows:
+                if json_output:
+                    return (
+                        False,
+                        self._json_error(
+                            f"[ERROR] Keine Versionen gefunden fuer: {file_path}",
+                            error_code="no_versions_found",
+                            file_path=file_path,
+                            versions=[],
+                        ),
+                    )
                 return (False, f"[ERROR] Keine Versionen gefunden fuer: {file_path}")
+
+            versions = []
+            for i, row in enumerate(rows):
+                versions.append({
+                    "version": row["version"],
+                    "file_hash": row["file_hash"],
+                    "dist_type": row["dist_type"],
+                    "dist_type_name": {0: "USER", 1: "TEMPLATE", 2: "CORE"}.get(row["dist_type"], "?"),
+                    "created_at": row["created_at"],
+                    "is_current": i == 0,
+                    "is_previous": i == 1,
+                })
+
+            if json_output:
+                payload = {
+                    "generated_at": datetime.now().isoformat(),
+                    "file_path": file_path,
+                    "current_version": versions[0]["version"],
+                    "versions": versions,
+                }
+                return True, self._json_dump(payload)
 
             # Aktuell installierte Version ermitteln (neueste = aktuell)
             current_version = rows[0]['version'] if rows else None
@@ -237,7 +320,7 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
         finally:
             conn.close()
 
-    def _status(self) -> tuple:
+    def _status(self, json_output: bool = False) -> tuple:
         """Zeigt Upgrade-Status an."""
         conn = self._get_db()
         try:
@@ -252,6 +335,26 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                 ORDER BY release_date DESC
                 LIMIT 5
             """).fetchall()
+
+            release_entries = [
+                {
+                    "version": row["version"],
+                    "release_date": row["release_date"],
+                    "status": row["status"],
+                    "is_stable": bool(row["is_stable"]),
+                    "channel": "stable" if row["is_stable"] else (row["status"] or "unstable"),
+                }
+                for row in releases
+            ]
+
+            if json_output:
+                payload = {
+                    "generated_at": datetime.now().isoformat(),
+                    "tracked_files": total_tracked,
+                    "total_versions": total_versions,
+                    "releases": release_entries,
+                }
+                return True, self._json_dump(payload)
 
             output = [
                 "=== UPGRADE SYSTEM STATUS ===",
@@ -282,10 +385,253 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
         finally:
             conn.close()
 
-    def _check_updates(self) -> tuple:
+    def _check_updates(self, json_output: bool = False) -> tuple:
         """Prueft nach verfuegbaren Updates."""
-        # TODO: Implementierung in Phase 2
-        return (True, "[UPGRADE] Update-Check noch nicht implementiert (Phase 2)\n\nAktueller Stand: Phase 1 (Basis-Funktionalitaet)")
+        conn = self._get_db()
+        try:
+            version_rows = conn.execute("""
+                SELECT file_path, version, file_hash, dist_type, created_at
+                FROM dist_file_versions
+                ORDER BY file_path ASC, created_at DESC, version DESC
+            """).fetchall()
+
+            latest_release = conn.execute("""
+                SELECT version, release_date, status, is_stable
+                FROM distribution_releases
+                ORDER BY release_date DESC, version DESC
+                LIMIT 1
+            """).fetchone()
+
+            stable_release = conn.execute("""
+                SELECT version, release_date, status, is_stable
+                FROM distribution_releases
+                WHERE is_stable = 1
+                ORDER BY release_date DESC, version DESC
+                LIMIT 1
+            """).fetchone()
+        finally:
+            conn.close()
+
+        stable_payload = None
+        if stable_release:
+            stable_payload = {
+                "version": stable_release["version"],
+                "release_date": stable_release["release_date"],
+                "status": stable_release["status"],
+                "is_stable": bool(stable_release["is_stable"]),
+            }
+        latest_payload = None
+        if latest_release:
+            latest_payload = {
+                "version": latest_release["version"],
+                "release_date": latest_release["release_date"],
+                "status": latest_release["status"],
+                "is_stable": bool(latest_release["is_stable"]),
+            }
+
+        if not version_rows:
+            if json_output:
+                payload = {
+                    "generated_at": datetime.now().isoformat(),
+                    "release_status": {
+                        "stable": stable_payload,
+                        "latest": latest_payload,
+                    },
+                    "summary": {
+                        "checked_files": 0,
+                        "up_to_date": 0,
+                        "upgrade_candidates": 0,
+                        "local_modifications": 0,
+                        "missing_files": 0,
+                        "unreadable_files": 0,
+                    },
+                    "upgrade_candidates": [],
+                    "local_modifications": [],
+                    "missing_files": [],
+                    "unreadable_files": [],
+                    "no_tracked_versions": True,
+                }
+                return True, self._json_dump(payload)
+
+            output = [
+                "=== UPGRADE-CHECK ===",
+                "",
+                "[INFO] Keine versionierten Dateien in dist_file_versions gefunden.",
+                "",
+                "Befehle:",
+                "  bach upgrade --status             Upgrade-Status anzeigen",
+                "  bach upgrade --list <file>        Verfuegbare Versionen anzeigen",
+            ]
+            return True, "\n".join(output)
+
+        versions_by_file: Dict[str, List[dict]] = {}
+        for row in version_rows:
+            versions_by_file.setdefault(row["file_path"], []).append({
+                "version": row["version"],
+                "file_hash": row["file_hash"],
+                "dist_type": row["dist_type"],
+                "created_at": row["created_at"],
+            })
+
+        up_to_date = 0
+        upgrade_candidates = []
+        local_modifications = []
+        missing_files = []
+        unreadable_files = []
+
+        for file_path, versions in versions_by_file.items():
+            latest = versions[0]
+            disk_path = self._resolve_disk_path(file_path)
+
+            if not disk_path.exists():
+                missing_files.append({
+                    "file_path": file_path,
+                    "latest_version": latest["version"],
+                })
+                continue
+
+            current_hash = self._hash_file(disk_path)
+            if current_hash is None:
+                unreadable_files.append(file_path)
+                continue
+
+            if current_hash == latest["file_hash"]:
+                up_to_date += 1
+                continue
+
+            matched_older = next(
+                (entry for entry in versions[1:] if current_hash == entry["file_hash"]),
+                None,
+            )
+            if matched_older is not None:
+                upgrade_candidates.append({
+                    "file_path": file_path,
+                    "current_version": matched_older["version"],
+                    "latest_version": latest["version"],
+                })
+                continue
+
+            local_modifications.append({
+                "file_path": file_path,
+                "current_version": None,
+                "expected_version": latest["version"],
+                "expected_hash": latest["file_hash"][:12],
+                "current_hash": current_hash[:12],
+            })
+
+        if json_output:
+            payload = {
+                "generated_at": datetime.now().isoformat(),
+                "release_status": {
+                    "stable": stable_payload,
+                    "latest": latest_payload,
+                },
+                "summary": {
+                    "checked_files": len(versions_by_file),
+                    "up_to_date": up_to_date,
+                    "upgrade_candidates": len(upgrade_candidates),
+                    "local_modifications": len(local_modifications),
+                    "missing_files": len(missing_files),
+                    "unreadable_files": len(unreadable_files),
+                },
+                "upgrade_candidates": upgrade_candidates,
+                "local_modifications": local_modifications,
+                "missing_files": missing_files,
+                "unreadable_files": unreadable_files,
+                "no_tracked_versions": False,
+            }
+            return True, self._json_dump(payload)
+
+        output = [
+            "=== UPGRADE-CHECK ===",
+            "",
+        ]
+
+        if stable_release or latest_release:
+            output.append("Release-Stand:")
+            if stable_release:
+                stable_date = (stable_release["release_date"] or "unbekannt")[:10]
+                output.append(
+                    f"  Stabile Linie:        {stable_release['version']} ({stable_date})"
+                )
+            else:
+                output.append("  Stabile Linie:        Keine stabile Release-Markierung gefunden")
+
+            if latest_release:
+                latest_date = (latest_release["release_date"] or "unbekannt")[:10]
+                latest_status = "stable" if latest_release["is_stable"] else (latest_release["status"] or "unstable")
+                output.append(
+                    f"  Neueste bekannte:     {latest_release['version']} ({latest_date}) [{latest_status}]"
+                )
+            output.append("")
+
+        checked_files = len(versions_by_file)
+        output.extend([
+            "Datei-Stand:",
+            f"  Gepruefte Dateien:    {checked_files}",
+            f"  Aktuell:              {up_to_date}",
+            f"  Upgrade-Kandidaten:   {len(upgrade_candidates)}",
+            f"  Lokale Abweichungen:  {len(local_modifications)}",
+            f"  Fehlende Dateien:     {len(missing_files)}",
+        ])
+        if unreadable_files:
+            output.append(f"  Nicht lesbar:         {len(unreadable_files)}")
+        output.append("")
+
+        if upgrade_candidates:
+            output.append("Upgrade-Kandidaten:")
+            for item in upgrade_candidates[:10]:
+                output.append(
+                    f"  - {item['file_path']}  {item['current_version']} -> {item['latest_version']}"
+                )
+            if len(upgrade_candidates) > 10:
+                output.append(f"  ... +{len(upgrade_candidates) - 10} weitere")
+            output.append("")
+
+        if local_modifications:
+            output.append("Lokale Abweichungen:")
+            for item in local_modifications[:10]:
+                output.append(
+                    f"  - {item['file_path']}  erwartet {item['expected_version']} "
+                    f"(Hash {item['expected_hash']}...), lokal {item['current_hash']}..."
+                )
+            if len(local_modifications) > 10:
+                output.append(f"  ... +{len(local_modifications) - 10} weitere")
+            output.append("")
+
+        if missing_files:
+            output.append("Fehlende Dateien:")
+            for item in missing_files[:10]:
+                output.append(
+                    f"  - {item['file_path']}  erwartet {item['latest_version']}"
+                )
+            if len(missing_files) > 10:
+                output.append(f"  ... +{len(missing_files) - 10} weitere")
+            output.append("")
+
+        if unreadable_files:
+            output.append("Nicht lesbare Dateien:")
+            for file_path in unreadable_files[:10]:
+                output.append(f"  - {file_path}")
+            if len(unreadable_files) > 10:
+                output.append(f"  ... +{len(unreadable_files) - 10} weitere")
+            output.append("")
+
+        if not upgrade_candidates and not local_modifications and not missing_files and not unreadable_files:
+            output.extend([
+                "[OK] Keine ausstehenden Datei-Upgrades oder Drift erkannt.",
+                "",
+            ])
+
+        output.extend([
+            "Befehle:",
+            "  bach upgrade <file>              Einzeldatei aktualisieren",
+            "  bach upgrade core --dry-run      CORE-Dateien pruefen",
+            "  bach upgrade docs --dry-run      Doku-Dateien pruefen",
+            "  bach upgrade --list <file>       Versionshistorie anzeigen",
+        ])
+
+        return True, "\n".join(output)
 
     def _upgrade_category(self, category: str, args: list, dry_run: bool) -> tuple:
         """Upgraded eine Kategorie (core/templates/skills/etc.)."""

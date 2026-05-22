@@ -5,7 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - Skills Board</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         .skills-board {
             display: flex;
@@ -106,48 +107,48 @@
 
         /* Type Colors */
         .type-agent {
-            color: #e74c3c;
+            color: var(--error);
         }
 
         .type-expert {
-            color: #27ae60;
+            color: var(--success);
         }
 
         .type-skill {
-            color: #3498db;
+            color: var(--accent-blue);
         }
 
         .type-service {
-            color: #2980b9;
+            color: var(--accent-blue);
         }
 
         .type-workflow {
-            color: #9b59b6;
+            color: var(--accent);
         }
 
         .bg-agent {
-            background: rgba(231, 76, 60, 0.1);
-            border-left: 3px solid #e74c3c;
+            background: color-mix(in srgb, var(--error) 10%, var(--bg-card));
+            border-left: 3px solid var(--error);
         }
 
         .bg-expert {
-            background: rgba(39, 174, 96, 0.1);
-            border-left: 3px solid #27ae60;
+            background: color-mix(in srgb, var(--success) 10%, var(--bg-card));
+            border-left: 3px solid var(--success);
         }
 
         .bg-skill {
-            background: rgba(52, 152, 219, 0.1);
-            border-left: 3px solid #3498db;
+            background: color-mix(in srgb, var(--accent-blue) 10%, var(--bg-card));
+            border-left: 3px solid var(--accent-blue);
         }
 
         .bg-service {
-            background: rgba(41, 128, 185, 0.1);
-            border-left: 3px solid #2980b9;
+            background: color-mix(in srgb, var(--accent-blue) 10%, var(--bg-card));
+            border-left: 3px solid var(--accent-blue);
         }
 
         .bg-workflow {
-            background: rgba(155, 89, 182, 0.1);
-            border-left: 3px solid #9b59b6;
+            background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
+            border-left: 3px solid var(--accent);
         }
 
         /* Tree Items */
@@ -299,7 +300,7 @@
 
         .assigned-item .remove-btn:hover {
             opacity: 1;
-            color: #e74c3c;
+            color: var(--error);
         }
 
         /* Drop Zone */
@@ -577,7 +578,7 @@
 
         .flow-node .remove-flow-node:hover {
             opacity: 1;
-            color: #e74c3c;
+            color: var(--error);
         }
 
         .flow-arrow {
@@ -647,8 +648,8 @@
             flex: 1;
             width: 100%;
             padding: 1rem;
-            background: #1e1e1e;
-            color: #d4d4d4;
+            background: var(--bg-dark);
+            color: var(--text);
             border: 1px solid var(--border);
             border-radius: 8px;
             font-family: 'Consolas', 'Monaco', monospace;
@@ -731,7 +732,7 @@
     </main>
 
     <script src="/static/js/api.js"></script>
-    <script src="/static/js/nav.js?v=3"></script>
+    <script src="/static/js/nav.js?v=4"></script>
     <script src="/static/js/skills-board.js"></script>
 </body>
 

@@ -32,6 +32,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8')
 import tempfile
 import threading
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -1059,6 +1060,12 @@ class ControlHandler(BaseHTTPRequestHandler):
                 if s.last_tools:
                     active_tools = s.last_tools
                     break
+            _SYS_IDS = {"idle-worker", "tray-prompt", "api-delegate", "claude-delegate"}
+            now = time.time()
+            active_user = sum(
+                1 for cid, s in runtime.sessions.items()
+                if cid not in _SYS_IDS and (s.current_tool or now - s.last_active < 120)
+            )
             self._json({
                 "backend": backend_name,
                 "backend_cli": cli_name,
@@ -1068,6 +1075,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 "manages_own_tools": owns_tools,
                 "bach": HAS_BACH,
                 "sessions": len(runtime.sessions),
+                "active_sessions": active_user,
                 "max_tool_rounds": runtime.max_tool_rounds,
                 "current_tool": current_tool,
                 "tool_round": tool_round,

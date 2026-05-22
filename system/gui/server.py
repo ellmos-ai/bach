@@ -1267,7 +1267,7 @@ async def api_get_tasks(status: str = "all", project: str = None, assigned_to: s
             query += " AND category = ?"
             params.append(project)
         if assigned_to:
-            query += " AND assigned_to = ?"
+            query += " AND UPPER(assigned_to) = UPPER(?)"
             params.append(assigned_to)
             
         query += " ORDER BY priority ASC, created_at DESC LIMIT ?"
@@ -1434,6 +1434,24 @@ async def list_assignees():
         "name": "user",
         "display_name": "Benutzer (manuell)",
         "type": "user",
+        "category": None,
+        "status": "online"
+    })
+
+    # Idle Worker Assignees (automatische Ausfuehrung im Leerlauf)
+    assignees.append({
+        "id": "OLLAMA",
+        "name": "OLLAMA",
+        "display_name": "Ollama (Idle Worker)",
+        "type": "idle-worker",
+        "category": None,
+        "status": "online"
+    })
+    assignees.append({
+        "id": "BUDDHA",
+        "name": "BUDDHA",
+        "display_name": "Buddha (Idle Worker)",
+        "type": "idle-worker",
         "category": None,
         "status": "online"
     })
@@ -3877,6 +3895,7 @@ async def list_system_logs():
     """Listet Log-Dateien aus /data/logs (konsolidiert 2026-02-06)."""
     log_dirs = {
         "data": DATA_DIR / "logs",
+        "service": Path.home() / "Library" / "Logs" / "bach",
     }
     logs = []
     for source, log_dir in log_dirs.items():
@@ -3903,7 +3922,11 @@ async def get_log_content(filename: str, lines: int = 500, source: str = "data")
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Ungueltiger Dateiname")
 
-    base = DATA_DIR / "logs"
+    source_dirs = {
+        "data": DATA_DIR / "logs",
+        "service": Path.home() / "Library" / "Logs" / "bach",
+    }
+    base = source_dirs.get(source, DATA_DIR / "logs")
     log_file = base / filename
     if not log_file.exists():
         raise HTTPException(status_code=404, detail="Log nicht gefunden")
@@ -4098,6 +4121,14 @@ async def logs_page():
 
     raise HTTPException(status_code=404, detail="Template logs.html nicht gefunden")
 
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_page():
+    """Buddha Chat Seite."""
+    chat_file = TEMPLATES_DIR / "chat.html"
+    if chat_file.exists():
+        return FileResponse(chat_file)
+    raise HTTPException(status_code=404, detail="Template chat.html nicht gefunden")
 
 
 
@@ -8967,7 +8998,7 @@ async def get_tools(
 
 # ═══════════════════════════════════════════════════════════════
 
-# PROMPT-GENERATOR API (PROMPT_GEN_001-007)
+# PROMPT-GENERATOR API (DEPRECATED — PromptBoard ist jetzt im Unified System Tray)
 
 # ═══════════════════════════════════════════════════════════════
 
@@ -8991,19 +9022,15 @@ except ImportError:
 
 
 
-@app.get("/prompt-generator", response_class=HTMLResponse)
+@app.get("/prompt-generator")
 
 async def prompt_generator_page():
 
-    """Prompt-Generator Dashboard (PROMPT_GEN_001)."""
+    """DEPRECATED: Prompt-Generator wurde durch PromptBoard im Unified System Tray ersetzt."""
 
-    template = TEMPLATES_DIR / "prompt-generator.html"
+    from fastapi.responses import RedirectResponse
 
-    if template.exists():
-
-        return template.read_text(encoding='utf-8')
-
-    raise HTTPException(status_code=404, detail="Template prompt-generator.html nicht gefunden")
+    return RedirectResponse(url="/", status_code=302)
 
 
 

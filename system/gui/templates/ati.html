@@ -5,7 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - ATI Agent Dashboard</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         .ati-grid {
             display: grid;
@@ -75,18 +76,18 @@
         }
 
         .task-priority.high {
-            background: #f8d7da;
-            color: #721c24;
+            background: color-mix(in srgb, var(--error) 18%, var(--bg-card));
+            color: var(--error);
         }
 
         .task-priority.medium {
-            background: #fff3cd;
-            color: #856404;
+            background: color-mix(in srgb, var(--warning) 18%, var(--bg-card));
+            color: var(--warning);
         }
 
         .task-priority.low {
-            background: #d4edda;
-            color: #155724;
+            background: color-mix(in srgb, var(--success) 18%, var(--bg-card));
+            color: var(--success);
         }
 
         .session-item {
@@ -191,15 +192,15 @@
         }
 
         .scanner-status-box.idle {
-            background: #e2e3e5;
+            background: color-mix(in srgb, var(--text-muted) 18%, var(--bg-card));
         }
 
         .scanner-status-box.running {
-            background: #cce5ff;
+            background: color-mix(in srgb, var(--accent-blue) 18%, var(--bg-card));
         }
 
         .scanner-status-box.success {
-            background: #d4edda;
+            background: color-mix(in srgb, var(--success) 18%, var(--bg-card));
         }
 
         .scanned-tasks-list {
@@ -234,18 +235,18 @@
         }
 
         .aufwand.hoch {
-            background: #f8d7da;
-            color: #721c24;
+            background: color-mix(in srgb, var(--error) 18%, var(--bg-card));
+            color: var(--error);
         }
 
         .aufwand.mittel {
-            background: #fff3cd;
-            color: #856404;
+            background: color-mix(in srgb, var(--warning) 18%, var(--bg-card));
+            color: var(--warning);
         }
 
         .aufwand.niedrig {
-            background: #d4edda;
-            color: #155724;
+            background: color-mix(in srgb, var(--success) 18%, var(--bg-card));
+            color: var(--success);
         }
 
         /* Task Actions */
@@ -277,7 +278,7 @@
         }
 
         .task-action-btn.delete {
-            background: #dc3545;
+            background: var(--error);
             color: white;
         }
 
@@ -600,7 +601,7 @@
     </div>
 
     <script src="/static/js/api.js"></script>
-    <script src="/static/js/nav.js?v=3"></script>
+    <script src="/static/js/nav.js?v=4"></script>
     <script>
         // ═══════════════════════════════════════════════════════════════
         // ATI DASHBOARD - JavaScript

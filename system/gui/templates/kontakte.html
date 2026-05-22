@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - Kontakte</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         .kontakte-content {
             padding: 1.5rem;
@@ -40,7 +41,7 @@
         .stat-value {
             font-size: 1.75rem;
             font-weight: bold;
-            color: var(--primary, #4fc3f7);
+            color: var(--accent-blue);
         }
 
         .stat-label {
@@ -75,9 +76,9 @@
             font-size: 0.9rem;
         }
 
-        .btn-primary { background: var(--primary, #4fc3f7); color: #000; }
+        .btn-primary { background: var(--accent-blue); color: #000; }
         .btn-secondary { background: var(--border, #333); color: var(--text, #fff); }
-        .btn-danger { background: #f44336; color: white; }
+        .btn-danger { background: var(--error); color: white; }
         .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
 
         .section {
@@ -121,7 +122,7 @@
         }
 
         .contact-card:hover {
-            border-color: var(--primary, #4fc3f7);
+            border-color: var(--accent-blue);
         }
 
         .contact-header {
@@ -174,8 +175,8 @@
             font-weight: 500;
         }
 
-        .badge.category { background: #2196f3; color: white; }
-        .badge.tag { background: #666; color: white; }
+        .badge.category { background: var(--accent-blue); color: white; }
+        .badge.tag { background: var(--text-muted); color: white; }
 
         /* Modal */
         .modal {
@@ -597,6 +598,6 @@
         }
     </script>
 
-    <script src="/static/js/nav.js?v=3"></script>
+    <script src="/static/js/nav.js?v=4"></script>
 </body>
 </html>

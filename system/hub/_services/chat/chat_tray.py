@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """
-BACH Chat System Tray
-======================
+BACH Unified System Tray
+========================
 
-Cross-platform (macOS/Windows/Linux) System Tray zur Steuerung
-des BACH Telegram Chat Bots über die Control API.
+Cross-platform (macOS/Windows/Linux) System Tray für das BACH OS.
+Steuert: Chat-Backend, Services, Prompts (PromptBoard), Idle Worker.
 
 Voraussetzungen:
   pip install pystray Pillow
 
 Start:
-  python chat_tray.py [--port 8081] [--host 127.0.0.1]
+  python chat_tray.py [--port 8081] [--host macstudvonlukas]
 """
 import argparse
 import json
 import os
+import subprocess
 import sys
 import threading
 
@@ -25,7 +26,6 @@ if hasattr(sys.stdout, 'reconfigure'):
 import time
 import urllib.request
 import urllib.error
-from io import BytesIO
 
 try:
     import pystray
@@ -34,15 +34,36 @@ except ImportError:
     print("Benötigt: pip install pystray Pillow")
     sys.exit(1)
 
+DEFAULT_PROMPTS = {
+    "Aufgaben": {
+        "Offene Tasks zeigen": "Zeige alle offenen Tasks sortiert nach Priorität",
+        "Tagesplan erstellen": "Erstelle einen Tagesplan basierend auf meinen offenen Tasks und Prioritäten",
+        "Nächste Aufgabe": "Was ist die wichtigste Aufgabe die ich als nächstes erledigen sollte?",
+    },
+    "System": {
+        "Systemstatus": "Gib einen Überblick über den aktuellen BACH-Systemstatus",
+        "Wartungscheck": "Führe einen Wartungscheck durch: DB-Größe, Logs, offene Issues",
+        "Übersetzungen prüfen": "Prüfe die Qualität der Übersetzungen in der Datenbank und berichte Probleme",
+    },
+    "Wissen": {
+        "Memory durchsuchen": "Durchsuche mein Memory nach: ",
+        "Zusammenfassung": "Fasse die letzten Aktivitäten und Änderungen zusammen",
+        "Facts abrufen": "Zeige alle gespeicherten Facts",
+    },
+}
+
 
 class BACHTray:
 
     POLL_INTERVAL = 5
+    IDLE_THRESHOLD = 12  # 12 × 5s = 60s ohne Sessions → Idle-Arbeit starten
 
     def __init__(self, host="127.0.0.1", port=8081):
+        self.host = host
         self.base_url = f"http://{host}:{port}"
         self.gui_url = f"http://{host}:8000"
-        self.webchat_url = f"http://{host}:8080"
+        self.webchat_url = f"http://{host}:8081"
+        self.ollama_url = f"http://{host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
         self.state = {
             "backend": "?",
@@ -62,20 +83,37 @@ class BACHTray:
         self.icon = None
         self._stop = threading.Event()
 
+        self.services = {"gui": False, "control": False, "ollama": False}
+
+        self.idle_enabled = False
+        self.idle_consecutive = 0
+        self.idle_task_name = None
+        self.idle_processing = False
+
+        self.prompts = self._load_prompts()
+
     # --- API ---
 
-    def _api(self, method, path, body=None):
-        url = self.base_url + path
+    def _api(self, method, path, body=None, base=None, timeout=5):
+        url = (base or self.base_url) + path
         data = json.dumps(body).encode() if body else None
         req = urllib.request.Request(
             url, data=data, method=method,
             headers={"Content-Type": "application/json"} if data else {},
         )
         try:
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read())
         except (urllib.error.URLError, OSError, json.JSONDecodeError):
             return None
+
+    def _check_url(self, url, timeout=2):
+        try:
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.status == 200
+        except (urllib.error.URLError, OSError):
+            return False
 
     def _refresh(self):
         status = self._api("GET", "/api/status")
@@ -92,6 +130,128 @@ class BACHTray:
         ms = self._api("GET", "/api/models")
         if ms and "models" in ms:
             self.models = ms["models"]
+
+        self.services["control"] = self.state["connected"]
+        self.services["gui"] = self._check_url(self.gui_url + "/")
+        self.services["ollama"] = self._check_url(self.ollama_url + "/api/tags")
+
+    # --- PromptBoard ---
+
+    def _load_prompts(self):
+        config_dir = os.path.expanduser("~/.config/bach")
+        prompts_path = os.path.join(config_dir, "prompts.json")
+        try:
+            with open(prompts_path, encoding="utf-8") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+        return DEFAULT_PROMPTS
+
+    def _copy_to_clipboard(self, text):
+        try:
+            if sys.platform == "darwin":
+                subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
+            elif sys.platform == "win32":
+                subprocess.run(["clip"], input=text.encode("utf-16le"), check=False)
+            else:
+                subprocess.run(["xclip", "-selection", "clipboard"],
+                               input=text.encode("utf-8"), check=False)
+            if self.icon:
+                self.icon.notify("In Zwischenablage kopiert", "BACH Prompt")
+        except FileNotFoundError:
+            pass
+
+    def _send_prompt(self, prompt):
+        result = self._api("POST", "/api/chat", {
+            "prompt": prompt,
+            "chat_id": "tray-prompt",
+        }, timeout=120)
+        if result and result.get("ok"):
+            answer = result.get("answer", "")[:120]
+            if self.icon:
+                self.icon.notify(answer, "BACH Antwort")
+        else:
+            if self.icon:
+                self.icon.notify("Senden fehlgeschlagen", "BACH Prompt")
+
+    def _make_prompt_copy_action(self, text):
+        def action(*_):
+            self._copy_to_clipboard(text)
+        return action
+
+    def _make_prompt_send_action(self, text):
+        def action(*_):
+            threading.Thread(target=self._send_prompt, args=(text,), daemon=True).start()
+        return action
+
+    # --- Idle Worker ---
+
+    def _idle_tick(self):
+        if not self.idle_enabled or self.idle_processing:
+            return
+
+        active = self.state.get("active_sessions", self.state.get("sessions", 0))
+        if active > 0:
+            self.idle_consecutive = 0
+            return
+
+        self.idle_consecutive += 1
+
+        if self.idle_consecutive >= self.IDLE_THRESHOLD:
+            threading.Thread(target=self._process_idle_task, daemon=True).start()
+
+    def _process_idle_task(self):
+        if self.idle_processing:
+            return
+        self.idle_processing = True
+        self._update_icon()
+
+        try:
+            tasks_resp = self._api("GET", "/api/tasks?assigned_to=OLLAMA&status=pending", base=self.gui_url)
+            if not tasks_resp or not tasks_resp.get("success") or not tasks_resp.get("tasks"):
+                tasks_resp = self._api("GET", "/api/tasks?assigned_to=BUDDHA&status=pending", base=self.gui_url)
+
+            if not tasks_resp or not tasks_resp.get("tasks"):
+                return
+
+            task = tasks_resp["tasks"][0]
+            task_id = task.get("id")
+            title = task.get("title", "Unbenannt")
+            desc = task.get("description", "")
+            self.idle_task_name = title
+
+            self._api("PUT", f"/api/tasks/{task_id}",
+                       {"status": "in-progress"}, base=self.gui_url)
+
+            prompt = (
+                f"Du bearbeitest eine zugewiesene Aufgabe im Idle-Modus. "
+                f"Task #{task_id}: {title}"
+            )
+            if desc:
+                prompt += f"\nBeschreibung: {desc}"
+            prompt += "\nBitte erledige die Aufgabe und berichte kurz das Ergebnis."
+
+            result = self._api("POST", "/api/chat", {
+                "prompt": prompt,
+                "chat_id": "idle-worker",
+            }, timeout=300)
+
+            if result and result.get("ok"):
+                self._api("PUT", f"/api/tasks/{task_id}",
+                           {"status": "completed"}, base=self.gui_url)
+                if self.icon:
+                    self.icon.notify(f"Erledigt: {title}", "BACH Idle")
+            else:
+                self._api("PUT", f"/api/tasks/{task_id}",
+                           {"status": "open"}, base=self.gui_url)
+
+        except Exception as e:
+            print(f"[Idle] Fehler: {e}")
+        finally:
+            self.idle_processing = False
+            self.idle_task_name = None
+            self.idle_consecutive = 0
+            self._update_icon()
 
     # --- Icons ---
 
@@ -113,18 +273,20 @@ class BACHTray:
 
     @property
     def _icon_image(self):
+        if self.idle_processing:
+            return self._make_icon((90, 120, 220, 255))  # blue = idle working
         if self.state["connected"]:
             if self.state.get("mode") == "full":
-                return self._make_icon((255, 165, 0, 255))
-            return self._make_icon((0, 200, 100, 255))
-        return self._make_icon((180, 40, 40, 255))
+                return self._make_icon((255, 165, 0, 255))  # orange = full
+            return self._make_icon((0, 200, 100, 255))  # green = connected safe
+        return self._make_icon((180, 40, 40, 255))  # red = disconnected
 
     # --- Menu ---
 
     def _build_menu(self):
         items = []
 
-        # Status
+        # ── Status ──
         if self.state["connected"]:
             status = f"{self.state['backend']}"
             if self.state["backend_cli"]:
@@ -134,8 +296,7 @@ class BACHTray:
             mode_str = (self.state.get("mode") or "safe").upper()
             think_str = "AN" if self.state.get("think") else "AUS"
             items.append(pystray.MenuItem(
-                f"Modus: {mode_str} | Denken: {think_str}",
-                None, enabled=False,
+                f"Modus: {mode_str} | Denken: {think_str}", None, enabled=False,
             ))
             items.append(pystray.Menu.SEPARATOR)
 
@@ -155,7 +316,6 @@ class BACHTray:
             if self.models:
                 model_items = []
                 for m in self.models[:15]:
-                    checked = m == self.state["model"]
                     model_items.append(pystray.MenuItem(
                         m, self._make_model_action(m),
                         checked=lambda item, m=m: m == self.state["model"],
@@ -175,7 +335,6 @@ class BACHTray:
                 lambda *_: self._set_mode("full"),
                 checked=lambda item: self.state["mode"] == "full",
             ))
-
             items.append(pystray.Menu.SEPARATOR)
 
             # Think
@@ -184,7 +343,6 @@ class BACHTray:
                 self._toggle_think,
                 checked=lambda item: self.state["think"],
             ))
-
             items.append(pystray.Menu.SEPARATOR)
 
             # Max Tool-Runden
@@ -215,29 +373,77 @@ class BACHTray:
                     None, enabled=False,
                 ))
 
-            items.append(pystray.Menu.SEPARATOR)
-
-            # Zugangswege
-            items.append(pystray.MenuItem(
-                "GUI Dashboard (:8000)",
-                self._open_gui,
-            ))
-            items.append(pystray.MenuItem(
-                "Web Chat (:8080)",
-                self._open_webchat,
-            ))
-            items.append(pystray.MenuItem(
-                "Telegram (@bach_assistant_bot)",
-                self._open_telegram,
-            ))
-            items.append(pystray.MenuItem(
-                f"Control API ({self.base_url})",
-                self._open_control_api,
-            ))
-
         else:
             items.append(pystray.MenuItem("Nicht verbunden", None, enabled=False))
             items.append(pystray.MenuItem(f"Versuche: {self.base_url}", None, enabled=False))
+
+        items.append(pystray.Menu.SEPARATOR)
+
+        # ── Services ──
+        svc_items = []
+        svc_labels = {
+            "gui": "GUI Dashboard (:8000)",
+            "control": "Control API (:8081)",
+            "ollama": "Ollama (:11434)",
+        }
+        for key, label in svc_labels.items():
+            status_icon = "✅" if self.services.get(key) else "❌"
+            svc_items.append(pystray.MenuItem(
+                f"{status_icon} {label}", None, enabled=False,
+            ))
+        items.append(pystray.MenuItem("Services", pystray.Menu(*svc_items)))
+
+        # ── PromptBoard ──
+        prompt_items = []
+        for category, prompts in self.prompts.items():
+            cat_items = []
+            for name, text in prompts.items():
+                cat_items.append(pystray.MenuItem(
+                    f"\U0001F4CB {name}",
+                    self._make_prompt_copy_action(text),
+                ))
+                cat_items.append(pystray.MenuItem(
+                    f"▶ Senden: {name}",
+                    self._make_prompt_send_action(text),
+                ))
+            prompt_items.append(pystray.MenuItem(category, pystray.Menu(*cat_items)))
+        if prompt_items:
+            items.append(pystray.MenuItem("PromptBoard", pystray.Menu(*prompt_items)))
+
+        items.append(pystray.Menu.SEPARATOR)
+
+        # ── Idle Worker ──
+        idle_label = "Idle-Modus"
+        if self.idle_processing:
+            idle_label += f": {self.idle_task_name or 'Arbeitet...'}"
+        elif self.idle_enabled:
+            idle_label += ": Bereit"
+        else:
+            idle_label += ": AUS"
+
+        idle_items = [
+            pystray.MenuItem(
+                "Idle-Modus aktivieren",
+                self._toggle_idle,
+                checked=lambda item: self.idle_enabled,
+            ),
+        ]
+        if self.idle_processing:
+            idle_items.append(pystray.MenuItem(
+                f"Bearbeitet: {self.idle_task_name or '?'}", None, enabled=False,
+            ))
+        idle_items.append(pystray.MenuItem(
+            f"Schwelle: {self.IDLE_THRESHOLD * self.POLL_INTERVAL}s Leerlauf",
+            None, enabled=False,
+        ))
+        items.append(pystray.MenuItem(idle_label, pystray.Menu(*idle_items)))
+
+        items.append(pystray.Menu.SEPARATOR)
+
+        # ── Zugangswege ──
+        items.append(pystray.MenuItem("GUI Dashboard", self._open_gui))
+        items.append(pystray.MenuItem("Buddha Chat", self._open_webchat))
+        items.append(pystray.MenuItem("Telegram", self._open_telegram))
 
         items.append(pystray.Menu.SEPARATOR)
         items.append(pystray.MenuItem("Beenden", self._quit))
@@ -248,7 +454,7 @@ class BACHTray:
 
     def _notify_error(self, action_name):
         if self.icon:
-            self.icon.notify(f"{action_name} fehlgeschlagen — API nicht erreichbar", "BACH Chat")
+            self.icon.notify(f"{action_name} fehlgeschlagen", "BACH")
 
     def _make_backend_action(self, name):
         def action(*_):
@@ -292,6 +498,15 @@ class BACHTray:
             self._update_icon()
         return action
 
+    def _toggle_idle(self, *_):
+        self.idle_enabled = not self.idle_enabled
+        if not self.idle_enabled:
+            self.idle_consecutive = 0
+        self._update_icon()
+        status = "aktiviert" if self.idle_enabled else "deaktiviert"
+        if self.icon:
+            self.icon.notify(f"Idle-Modus {status}", "BACH")
+
     def _open_gui(self, *_):
         import webbrowser
         webbrowser.open(self.gui_url)
@@ -303,10 +518,6 @@ class BACHTray:
     def _open_telegram(self, *_):
         import webbrowser
         webbrowser.open(self.telegram_url)
-
-    def _open_control_api(self, *_):
-        import webbrowser
-        webbrowser.open(self.base_url)
 
     def _quit(self, *_):
         self._stop.set()
@@ -327,6 +538,7 @@ class BACHTray:
             self._refresh()
             if self.state["connected"] != old_connected or self.state["mode"] != old_mode:
                 self._update_icon()
+            self._idle_tick()
             self._stop.wait(self.POLL_INTERVAL)
 
     # --- Run ---
@@ -334,9 +546,9 @@ class BACHTray:
     def run(self):
         self._refresh()
         self.icon = pystray.Icon(
-            "bach-chat",
+            "bach-system",
             self._icon_image,
-            "BACH Chat",
+            "BACH System",
             self._build_menu(),
         )
 
@@ -347,7 +559,7 @@ class BACHTray:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="BACH Chat System Tray")
+    parser = argparse.ArgumentParser(description="BACH Unified System Tray")
     parser.add_argument("--host", default="127.0.0.1", help="Control API Host")
     parser.add_argument("--port", type=int, default=8081, help="Control API Port")
     args = parser.parse_args()

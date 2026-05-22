@@ -5,7 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - Steuer Agent Dashboard</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         .steuer-grid {
             display: grid;
@@ -112,11 +113,11 @@
         }
 
         .beleg-betrag.einnahme {
-            color: #28a745;
+            color: var(--success);
         }
 
         .beleg-betrag.ausgabe {
-            color: #dc3545;
+            color: var(--error);
         }
 
         .kategorie-badge {
@@ -127,23 +128,23 @@
         }
 
         .kategorie-badge.werbungskosten {
-            background: #cce5ff;
-            color: #004085;
+            background: color-mix(in srgb, var(--accent-blue) 18%, var(--bg-card));
+            color: var(--accent-blue);
         }
 
         .kategorie-badge.sonderausgaben {
-            background: #d4edda;
-            color: #155724;
+            background: color-mix(in srgb, var(--success) 18%, var(--bg-card));
+            color: var(--success);
         }
 
         .kategorie-badge.vorsorge {
-            background: #fff3cd;
-            color: #856404;
+            background: color-mix(in srgb, var(--warning) 18%, var(--bg-card));
+            color: var(--warning);
         }
 
         .kategorie-badge.sonstiges {
-            background: #e2e3e5;
-            color: #383d41;
+            background: color-mix(in srgb, var(--text-muted) 18%, var(--bg-card));
+            color: var(--text-muted);
         }
 
         .action-buttons {
@@ -382,7 +383,7 @@
     </main>
 
     <script src="/static/js/api.js"></script>
-    <script src="/static/js/nav.js?v=3"></script>
+    <script src="/static/js/nav.js?v=4"></script>
     <script>
         // ═══════════════════════════════════════════════════════════════
         // STEUER DASHBOARD - JavaScript

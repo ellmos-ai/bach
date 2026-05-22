@@ -4,7 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <title>BACH - Tasks Board</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         .tasks-container {
             max-width: 100%;
@@ -87,19 +88,19 @@
         }
 
         .task-card.priority-P1 {
-            border-left: 5px solid #ff5252;
+            border-left: 5px solid var(--error);
         }
 
         .task-card.priority-P2 {
-            border-left: 5px solid #ffb142;
+            border-left: 5px solid var(--warning);
         }
 
         .task-card.priority-P3 {
-            border-left: 5px solid #33d9b2;
+            border-left: 5px solid var(--success);
         }
 
         .task-card.priority-P4 {
-            border-left: 5px solid #84817a;
+            border-left: 5px solid var(--text-muted);
         }
 
         .task-header {
@@ -134,7 +135,7 @@
         }
 
         .badge-blocked {
-            background: #ff5252;
+            background: var(--error);
             color: white;
             padding: 0.15rem 0.45rem;
             border-radius: 4px;
@@ -343,7 +344,7 @@
     </div>
 
     <script src="/static/js/api.js"></script>
-    <script src="/static/js/nav.js?v=3"></script>
+    <script src="/static/js/nav.js?v=4"></script>
     <script>
         let tasksData = [];
         let assignees = [];

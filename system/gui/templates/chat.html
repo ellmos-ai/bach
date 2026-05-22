@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BACH – Buddha Chat</title>
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 60px);
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 16px;
+        }
+
+        .chat-status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            margin-top: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        .chat-status .status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 10px;
+            background: var(--bg-elevated, var(--bg-panel));
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text);
+        }
+
+        .chat-status .status-chip .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--success);
+            flex-shrink: 0;
+        }
+
+        .chat-status .status-chip .dot.offline {
+            background: var(--error);
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .chat-messages::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        .msg {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 14px;
+            line-height: 1.55;
+            font-size: 0.92rem;
+            animation: msgIn 0.25s ease-out;
+        }
+
+        @keyframes msgIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .msg.user {
+            align-self: flex-end;
+            background: var(--accent);
+            color: #fff;
+            border-bottom-right-radius: 4px;
+        }
+
+        .msg.bot {
+            align-self: flex-start;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-bottom-left-radius: 4px;
+        }
+
+        .msg.bot pre {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            overflow-x: auto;
+            margin: 8px 0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+            line-height: 1.5;
+        }
+
+        .msg.bot code:not(pre code) {
+            background: var(--bg-dark);
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+        }
+
+        .msg.bot p { margin: 0 0 8px 0; }
+        .msg.bot p:last-child { margin-bottom: 0; }
+        .msg.bot ul, .msg.bot ol { margin: 6px 0; padding-left: 20px; }
+        .msg.bot li { margin: 3px 0; }
+        .msg.bot strong { color: var(--accent-light, var(--accent)); }
+        .msg.bot a { color: var(--accent-blue); text-decoration: underline; }
+
+        .msg.error {
+            align-self: center;
+            background: rgba(var(--error-rgb, 231, 76, 60), 0.1);
+            border: 1px solid var(--error);
+            color: var(--error);
+            font-size: 0.85rem;
+            max-width: 90%;
+        }
+
+        .typing-indicator {
+            align-self: flex-start;
+            display: none;
+            padding: 12px 18px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            border-bottom-left-radius: 4px;
+        }
+
+        .typing-indicator.active { display: flex; gap: 5px; align-items: center; }
+
+        .typing-indicator span {
+            width: 7px;
+            height: 7px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            animation: typingBounce 1.2s infinite ease-in-out;
+        }
+
+        .typing-indicator span:nth-child(2) { animation-delay: 0.15s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.3s; }
+
+        @keyframes typingBounce {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-5px); opacity: 1; }
+        }
+
+        .chat-input-area {
+            flex-shrink: 0;
+            padding: 12px 0 16px;
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        .chat-input-area textarea {
+            flex: 1;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            color: var(--text);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 0.92rem;
+            line-height: 1.45;
+            resize: none;
+            min-height: 46px;
+            max-height: 160px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .chat-input-area textarea:focus {
+            border-color: var(--accent);
+        }
+
+        .chat-input-area textarea::placeholder {
+            color: var(--text-dim, var(--text-muted));
+        }
+
+        .send-btn {
+            width: 46px;
+            height: 46px;
+            border-radius: 12px;
+            background: var(--accent);
+            border: none;
+            color: #fff;
+            font-size: 1.2rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.2s, transform 0.15s;
+            flex-shrink: 0;
+        }
+
+        .send-btn:hover { opacity: 0.85; }
+        .send-btn:active { transform: scale(0.94); }
+        .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            gap: 12px;
+            text-align: center;
+        }
+
+        .empty-state .icon {
+            font-size: 2.8rem;
+            opacity: 0.5;
+        }
+
+        .empty-state .title {
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .empty-state .hint {
+            font-size: 0.85rem;
+            max-width: 360px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <header id="main-header"></header>
+
+    <div class="chat-container">
+        <div class="chat-status" id="chat-status">
+            <div class="status-chip">
+                <span class="dot" id="conn-dot"></span>
+                <span id="s-backend">–</span>
+            </div>
+            <div class="status-chip">
+                <span id="s-model">–</span>
+            </div>
+            <div class="status-chip">
+                <span id="s-mode">–</span>
+            </div>
+        </div>
+
+        <div class="chat-messages" id="messages">
+            <div class="empty-state" id="empty-state">
+                <div class="icon">&#x1F9D8;</div>
+                <div class="title">Buddha Chat</div>
+                <div class="hint">Stelle eine Frage oder gib einen Befehl. Buddha hat Zugriff auf BACH-Tools und kann Aufgaben ausführen.</div>
+            </div>
+        </div>
+
+        <div class="typing-indicator" id="typing">
+            <span></span><span></span><span></span>
+        </div>
+
+        <div class="chat-input-area">
+            <textarea id="input" rows="1" placeholder="Nachricht an Buddha…" autofocus></textarea>
+            <button class="send-btn" id="send-btn" title="Senden">&#x27A4;</button>
+        </div>
+    </div>
+
+    <script src="/static/js/nav.js?v=4"></script>
+    <script>
+    (function() {
+        const CHAT_API = 'http://' + CHAT_HOST + ':8081/api';
+        const CHAT_ID = 'gui-web';
+
+        const messagesEl = document.getElementById('messages');
+        const emptyState = document.getElementById('empty-state');
+        const inputEl = document.getElementById('input');
+        const sendBtn = document.getElementById('send-btn');
+        const typingEl = document.getElementById('typing');
+        let sending = false;
+
+        if (typeof marked !== 'undefined') {
+            marked.setOptions({
+                breaks: true,
+                gfm: true,
+                headerIds: false,
+                mangle: false
+            });
+        }
+
+        function renderMarkdown(text) {
+            if (typeof marked !== 'undefined') {
+                return marked.parse(text);
+            }
+            return escapeHtml(text).replace(/\n/g, '<br>');
+        }
+
+        function addMessage(text, type) {
+            if (emptyState) emptyState.style.display = 'none';
+            const div = document.createElement('div');
+            div.className = 'msg ' + type;
+            if (type === 'user') {
+                div.textContent = text;
+            } else {
+                div.innerHTML = renderMarkdown(text);
+            }
+            messagesEl.appendChild(div);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        function setTyping(active) {
+            typingEl.classList.toggle('active', active);
+            if (active) messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        function autoResize() {
+            inputEl.style.height = 'auto';
+            inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
+        }
+
+        async function send() {
+            const text = inputEl.value.trim();
+            if (!text || sending) return;
+
+            sending = true;
+            sendBtn.disabled = true;
+            inputEl.value = '';
+            autoResize();
+
+            addMessage(text, 'user');
+            setTyping(true);
+
+            try {
+                const resp = await fetch(CHAT_API + '/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: text, chat_id: CHAT_ID })
+                });
+                const data = await resp.json();
+                setTyping(false);
+
+                if (data.ok && data.answer) {
+                    addMessage(data.answer, 'bot');
+                } else {
+                    addMessage(data.error || 'Unbekannter Fehler', 'error');
+                }
+            } catch (e) {
+                setTyping(false);
+                addMessage('Verbindungsfehler: ' + e.message, 'error');
+            } finally {
+                sending = false;
+                sendBtn.disabled = false;
+                inputEl.focus();
+            }
+        }
+
+        sendBtn.addEventListener('click', send);
+
+        inputEl.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                send();
+            }
+        });
+
+        inputEl.addEventListener('input', autoResize);
+
+        async function refreshStatus() {
+            try {
+                const r = await fetch(CHAT_API + '/status');
+                const s = await r.json();
+                document.getElementById('conn-dot').className = 'dot';
+                document.getElementById('s-backend').textContent = s.backend.replace('Backend', '');
+                document.getElementById('s-model').textContent = s.model;
+                document.getElementById('s-mode').textContent = s.mode === 'safe' ? 'Safe' : 'Full';
+            } catch (e) {
+                document.getElementById('conn-dot').className = 'dot offline';
+                document.getElementById('s-backend').textContent = 'Offline';
+                document.getElementById('s-model').textContent = '–';
+                document.getElementById('s-mode').textContent = '–';
+            }
+        }
+
+        refreshStatus();
+        setInterval(refreshStatus, 30000);
+    })();
+    </script>
+</body>
+</html>

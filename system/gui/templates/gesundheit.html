@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - Gesundheitsassistent</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         .health-grid {
             display: grid;
@@ -44,9 +45,9 @@
             color: var(--text-muted);
         }
 
-        .stat-card.health .stat-value { color: #4caf50; }
-        .stat-card.warning .stat-value { color: #ff9800; }
-        .stat-card.info .stat-value { color: #2196f3; }
+        .stat-card.health .stat-value { color: var(--success); }
+        .stat-card.warning .stat-value { color: var(--warning); }
+        .stat-card.info .stat-value { color: var(--accent-blue); }
 
         .tracking-list {
             max-height: 400px;
@@ -90,13 +91,13 @@
             border-radius: 4px;
             font-size: 0.75rem;
             font-weight: 500;
-            background: #e3f2fd;
-            color: #1565c0;
+            background: color-mix(in srgb, var(--accent-blue) 18%, var(--bg-card));
+            color: var(--accent-blue);
         }
 
         .draft-notice {
-            background: #fff3cd;
-            border: 1px solid #ffc107;
+            background: color-mix(in srgb, var(--warning) 18%, var(--bg-card));
+            border: 1px solid var(--warning);
             border-radius: 8px;
             padding: 1.5rem;
             margin-bottom: 1.5rem;
@@ -105,12 +106,12 @@
 
         .draft-notice h3 {
             margin: 0 0 0.5rem 0;
-            color: #856404;
+            color: var(--warning);
         }
 
         .draft-notice p {
             margin: 0;
-            color: #856404;
+            color: var(--warning);
         }
 
         .feature-grid {
@@ -229,6 +230,6 @@
     </main>
 
     <script src="/static/js/api.js"></script>
-    <script src="/static/js/nav.js?v=3"></script>
+    <script src="/static/js/nav.js?v=4"></script>
 </body>
 </html>

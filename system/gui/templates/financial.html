@@ -5,7 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - Finanzassistent</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         .financial-content {
             padding: 1.5rem;
@@ -41,7 +42,7 @@
         .stat-value {
             font-size: 1.75rem;
             font-weight: bold;
-            color: var(--primary, #4fc3f7);
+            color: var(--accent-blue);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -57,27 +58,27 @@
         }
 
         .stat-card.steuer {
-            border-color: #4caf50;
+            border-color: var(--success);
         }
 
         .stat-card.steuer .stat-value {
-            color: #4caf50;
+            color: var(--success);
         }
 
         .stat-card.cost {
-            border-color: #ff9800;
+            border-color: var(--warning);
         }
 
         .stat-card.cost .stat-value {
-            color: #ff9800;
+            color: var(--warning);
         }
 
         .stat-card.error {
-            border-color: #f44336;
+            border-color: var(--error);
         }
 
         .stat-card.error .stat-value {
-            color: #f44336;
+            color: var(--error);
             font-size: 1rem;
         }
 
@@ -129,42 +130,42 @@
         }
 
         .badge.neu {
-            background: #2196f3;
+            background: var(--accent-blue);
             color: white;
         }
 
         .badge.verarbeitet {
-            background: #4caf50;
+            background: var(--success);
             color: white;
         }
 
         .badge.exportiert {
-            background: #9e9e9e;
+            background: var(--text-muted);
             color: white;
         }
 
         .badge.steuer {
-            background: #4caf50;
+            background: var(--success);
             color: white;
         }
 
         .badge.aktiv {
-            background: #4caf50;
+            background: var(--success);
             color: white;
         }
 
         .badge.inaktiv {
-            background: #f44336;
+            background: var(--error);
             color: white;
         }
 
         .badge.gmail {
-            background: #ea4335;
+            background: var(--error);
             color: white;
         }
 
         .badge.imap {
-            background: #2196f3;
+            background: var(--accent-blue);
             color: white;
         }
 
@@ -200,7 +201,7 @@
         .sub-price {
             font-size: 1.25rem;
             font-weight: bold;
-            color: var(--accent-color, #4fc3f7);
+            color: var(--accent-blue);
         }
 
         .actions {
@@ -220,12 +221,12 @@
         }
 
         .btn-primary {
-            background: var(--accent-color, #4fc3f7);
+            background: var(--accent-blue);
             color: #000;
         }
 
         .btn-primary:hover {
-            background: #81d4fa;
+            background: var(--accent-blue);
         }
 
         .btn-secondary {
@@ -238,12 +239,12 @@
         }
 
         .btn-danger {
-            background: #f44336;
+            background: var(--error);
             color: white;
         }
 
         .btn-danger:hover {
-            background: #d32f2f;
+            background: var(--error);
         }
 
         .btn-sm {
@@ -376,8 +377,8 @@
         }
 
         .tab.active {
-            border-bottom-color: var(--accent-color, #4fc3f7);
-            color: var(--accent-color, #4fc3f7);
+            border-bottom-color: var(--accent-blue);
+            color: var(--accent-blue);
         }
 
         .tab-content {
@@ -1162,7 +1163,7 @@
     </div>
 
     <script src="/static/js/api.js?v=2"></script>
-    <script src="/static/js/nav.js?v=3"></script>
+    <script src="/static/js/nav.js?v=4"></script>
     <script>
         const API_BASE = '/api/financial';
         let apiError = false;
@@ -1894,10 +1895,10 @@
                 if (!status.has_credentials) {
                     statusDiv.innerHTML = `
                         <div class="form-group">
-                            <div class="hint" style="color: #f44336;">
+                            <div class="hint" style="color: var(--error);">
                                 Keine credentials.json gefunden!<br><br>
                                 Bitte laden Sie die OAuth-Credentials von der Google Cloud Console herunter:<br>
-                                <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: #4fc3f7;">
+                                <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: var(--accent-blue);">
                                     Google Cloud Console oeffnen
                                 </a><br><br>
                                 Anleitung:<br>
@@ -1934,9 +1935,9 @@
                 } else {
                     statusDiv.innerHTML = `
                         <div class="form-group">
-                            <div class="hint" style="color: #f44336;">
+                            <div class="hint" style="color: var(--error);">
                                 Fehler: ${result.message}<br><br>
-                                ${result.help_url ? `<a href="${result.help_url}" target="_blank" style="color: #4fc3f7;">Hilfe</a>` : ''}
+                                ${result.help_url ? `<a href="${result.help_url}" target="_blank" style="color: var(--accent-blue);">Hilfe</a>` : ''}
                             </div>
                         </div>
                     `;
@@ -1945,7 +1946,7 @@
             } catch (e) {
                 statusDiv.innerHTML = `
                     <div class="form-group">
-                        <div class="hint" style="color: #f44336;">Fehler: ${escapeHtml(e.message)}</div>
+                        <div class="hint" style="color: var(--error);">Fehler: ${escapeHtml(e.message)}</div>
                     </div>
                 `;
             }
@@ -2111,7 +2112,7 @@
                                 ${profile.name}
                                 ${profile.steuer_relevant ? '<span class="badge steuer">Steuer</span>' : ''}
                                 ${profile.recurring ? '<span class="badge">Abo</span>' : ''}
-                                <span class="badge" style="background: ${profile.source === 'system' ? '#666' : '#2196f3'};">${profile.source || 'system'}</span>
+                                <span class="badge" style="background: ${profile.source === 'system' ? 'var(--text-muted)' : 'var(--accent-blue)'};">${profile.source || 'system'}</span>
                             </h4>
                             <small style="color: var(--text-muted);">${profile.id} | ${profile.category}</small>
                         </div>
@@ -2125,7 +2126,7 @@
                     <div style="margin-top: 0.5rem; font-size: 0.85rem;">
                         <div><strong>Sender:</strong> ${senderPatterns}</div>
                         <div><strong>Subject:</strong> ${subjectPatterns}</div>
-                        ${blacklist !== '-' ? `<div style="color: #f44336;"><strong>Blacklist:</strong> ${blacklist}</div>` : ''}
+                        ${blacklist !== '-' ? `<div style="color: var(--error);"><strong>Blacklist:</strong> ${blacklist}</div>` : ''}
                     </div>
                 </div>
             `;
@@ -2284,7 +2285,7 @@
 
                 if (data.best_match) {
                     resultDiv.innerHTML = `
-                        <div style="background: #4caf50; color: white; padding: 1rem; border-radius: 4px;">
+                        <div style="background: var(--success); color: white; padding: 1rem; border-radius: 4px;">
                             <strong>Match:</strong> ${data.best_match.profile_name} (Score: ${data.best_match.score})
                             <br><small>Kategorie: ${data.best_match.category} | Steuer: ${data.best_match.steuer_relevant ? 'Ja' : 'Nein'}</small>
                             <br><small>${data.best_match.details.join(' | ')}</small>
@@ -2292,7 +2293,7 @@
                     `;
                 } else if (data.all_matches?.length > 0) {
                     resultDiv.innerHTML = `
-                        <div style="background: #ff9800; color: white; padding: 1rem; border-radius: 4px;">
+                        <div style="background: var(--warning); color: white; padding: 1rem; border-radius: 4px;">
                             <strong>Kein Match (blockiert)</strong>
                             <br><small>Gefundene Profile: ${data.all_matches.map(m => m.profile_name).join(', ')}</small>
                             <br><small>Grund: ${data.all_matches[0].details.filter(d => d.includes('BLOCKED')).join(', ')}</small>
@@ -2300,14 +2301,14 @@
                     `;
                 } else {
                     resultDiv.innerHTML = `
-                        <div style="background: #f44336; color: white; padding: 1rem; border-radius: 4px;">
+                        <div style="background: var(--error); color: white; padding: 1rem; border-radius: 4px;">
                             <strong>Kein Match</strong>
                             <br><small>${data.total_tested} Profile getestet</small>
                         </div>
                     `;
                 }
             } catch (e) {
-                document.getElementById('test-result').innerHTML = `<div style="color: #f44336;">Fehler: ${escapeHtml(e.message)}</div>`;
+                document.getElementById('test-result').innerHTML = `<div style="color: var(--error);">Fehler: ${escapeHtml(e.message)}</div>`;
             }
         }
 

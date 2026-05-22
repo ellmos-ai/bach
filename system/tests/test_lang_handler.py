@@ -168,7 +168,7 @@ class TestProperties:
     def test_get_operations(self, handler):
         ops = handler.get_operations()
         assert isinstance(ops, dict)
-        for key in ["status", "scan", "list", "missing", "translate",
+        for key in ["status", "scan", "report", "list", "missing", "translate",
                      "add", "add-language", "export", "import", "set", "dict", "help"]:
             assert key in ops
 
@@ -204,6 +204,11 @@ class TestRouting:
         assert ok is False
         assert "Unbekannte Operation" in msg
 
+    def test_report_operation(self, handler):
+        ok, msg = handler.handle("report", [], dry_run=False)
+        assert ok is False
+        assert "I18N-DRIFT REPORT" in msg
+
 
 # ═══════════════════════════════════════════════════════════════
 # STATUS
@@ -223,6 +228,42 @@ class TestStatus:
         assert ok is True
         assert "Gesamt-Eintraege:  4" in msg
         assert "Verifiziert:       2" in msg
+
+
+class TestReportDetails:
+    def test_report_detects_missing_release_artifacts(self, handler):
+        ok, msg = handler.handle("report", [], dry_run=False)
+        assert ok is False
+        assert "Config-Export fehlt" in msg
+        assert "Manifest fehlt" in msg
+
+    def test_report_ok_after_release_exports_exist(self, handler):
+        ok, _ = handler.handle("add", ["gruss", "--de", "Grüße", "--en", "Greetings"], dry_run=False)
+        assert ok is True
+
+        ok, msg = handler.handle("report", [], dry_run=False)
+        assert ok is True
+        assert "Abweichungen: keine" in msg
+
+    def test_report_json_detects_translation_and_locale_drift(self, handler):
+        ok, _ = handler.handle("add", ["save_button", "--de", "Speichern", "--en", "Save"], dry_run=False)
+        assert ok is True
+
+        translations_path = handler.base_path / "exports" / "translations" / "languages_translations.release.json"
+        translations = json.loads(translations_path.read_text(encoding="utf-8"))
+        for row in translations:
+            if row["key"] == "save_button" and row["language"] == "en":
+                row["value"] = "Save now"
+        translations_path.write_text(json.dumps(translations, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        ok, msg = handler.handle("report", ["--json"], dry_run=False)
+        payload = json.loads(msg)
+
+        assert ok is False
+        assert payload["ok"] is False
+        assert payload["release"]["missing_in_release"]
+        assert payload["release"]["only_in_release"]
+        assert payload["release"]["locale_content_issues"]
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -817,6 +858,160 @@ class TestScan:
         assert ok is True
         assert "Wuerde hinzufuegen: 1" in msg
 
+    def test_scan_help_uses_docs_help_layout(self, handler):
+        help_dir = handler.base_path / "docs" / "help"
+        help_dir.mkdir(parents=True, exist_ok=True)
+        (help_dir / "demo.txt").write_text(
+            "Hilfe zu Einstellungen\n======================\nOptionen anzeigen\n---\n",
+            encoding="utf-8",
+        )
+
+        ok, msg = handler.handle("scan", ["--namespace", "help"], dry_run=True)
+        assert ok is True
+        assert "help:" in msg
+        assert "Hilfe zu Einstellungen" in msg
+
+    def test_scan_gui_reads_templates_and_scripts(self, handler):
+        template_dir = handler.base_path / "gui" / "templates"
+        script_dir = handler.base_path / "gui" / "static" / "js"
+        template_dir.mkdir(parents=True, exist_ok=True)
+        script_dir.mkdir(parents=True, exist_ok=True)
+
+        (template_dir / "demo.html").write_text(
+            '<h1>Datei nicht gefunden</h1><button title="Einstellungen speichern">OK</button>',
+            encoding="utf-8",
+        )
+        (script_dir / "demo.js").write_text(
+            'const warning = "Warnung: Datei nicht gefunden";\n',
+            encoding="utf-8",
+        )
+
+        ok, msg = handler.handle("scan", ["--namespace", "gui"], dry_run=True)
+        assert ok is True
+        assert "gui:" in msg
+        assert "Datei nicht gefunden" in msg or "Warnung: Datei nicht gefunden" in msg
+
+
+class TestReport:
+    def test_report_detects_release_artifact_drift(self, handler_with_data):
+        export_dir = handler_with_data.base_path / "exports" / "translations"
+        locales_dir = export_dir / "locales"
+        locales_dir.mkdir(parents=True, exist_ok=True)
+        (export_dir / "manifest.release.json").write_text(
+            json.dumps(
+                {
+                    "counts": {
+                        "translations": 99,
+                        "dictionary_entries": 1,
+                        "locale_files": 2,
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        (export_dir / "languages_translations.release.json").write_text(
+            json.dumps([{"key": "speichern"}], ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (export_dir / "languages_dictionary.release.json").write_text(
+            json.dumps([], ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (locales_dir / "de.json").write_text("{}", encoding="utf-8")
+
+        ok, msg = handler_with_data.handle("report", [], dry_run=False)
+        assert ok is False
+        assert "Abweichungen:" in msg
+        assert "Fehlende Locale-Dateien: en" in msg
+        assert "Translation-Count weicht ab" in msg
+
+    def test_report_json_includes_hardcoded_occurrence_details(self, handler):
+        gui_templates = handler.base_path / "gui" / "templates"
+        gui_js = handler.base_path / "gui" / "static" / "js"
+        gui_templates.mkdir(parents=True, exist_ok=True)
+        gui_js.mkdir(parents=True, exist_ok=True)
+
+        (gui_templates / "sample.html").write_text(
+            '<h1>Status</h1>\n<button title="Bitte speichern">Speichern</button>\n',
+            encoding="utf-8",
+        )
+        (gui_js / "sample.js").write_text(
+            'alert("Warnung: Datei nicht gefunden");\n',
+            encoding="utf-8",
+        )
+
+        conn = sqlite3.connect(str(handler.db_path))
+        conn.execute("""
+            INSERT INTO languages_translations (key, namespace, language, value, is_verified, source, created_at)
+            VALUES ('status', 'gui', 'de', 'Status', 1, 'manual', '2026-01-01')
+        """)
+        conn.commit()
+        conn.close()
+
+        ok, msg = handler.handle("report", ["--json", "--surface", "gui", "--limit", "10"], dry_run=False)
+        assert ok is False
+        payload = json.loads(msg)
+
+        assert payload["hardcoded_copy"]["namespace_filter"] == "gui"
+        assert payload["hardcoded_copy"]["occurrences_total"] >= 3
+        assert payload["hardcoded_copy"]["tracked_occurrences"] >= 1
+        assert payload["hardcoded_copy"]["missing_occurrences"] >= 1
+
+        details = payload["hardcoded_copy"]["details"]
+        assert any(item["file"] == "gui/templates/sample.html" and item["line"] == 1 for item in details)
+        assert any(item["file"] == "gui/static/js/sample.js" and item["kind"] == "javascript" for item in details)
+        assert any(item["text"] == "Status" and item["tracked"] is True for item in details)
+
+    def test_report_text_shows_occurrence_examples(self, handler):
+        gui_templates = handler.base_path / "gui" / "templates"
+        gui_templates.mkdir(parents=True, exist_ok=True)
+        (gui_templates / "report.html").write_text(
+            '<p>Fehler beim Laden</p>\n',
+            encoding="utf-8",
+        )
+
+        ok, msg = handler.handle("report", ["--surface", "gui", "--limit", "5"], dry_run=False)
+        assert ok is False
+        assert "Fundstellen:" in msg
+        assert "Beispiele:" in msg
+        assert "gui/templates/report.html:1" in msg
+
+    def test_report_gui_js_ignores_technical_literals_but_keeps_ui_copy(self, handler):
+        gui_js = handler.base_path / "gui" / "static" / "js"
+        gui_js.mkdir(parents=True, exist_ok=True)
+        sample = gui_js / "noise-filter.js"
+        sample.write_text(
+            "\n".join(
+                [
+                    "const statusText = document.getElementById('status-text');",
+                    "const apiUrl = '/api/status';",
+                    "console.error('[BACH] Dashboard-Fehler:', error);",
+                    "showToast('Bitte speichern', 'error');",
+                    "const fallback = task.category || 'Allgemein';",
+                    "container.innerHTML = '<p class=\"loading\">Fehler beim Laden</p>';",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        ok, msg = handler.handle("report", ["--json", "--surface", "gui", "--limit", "20"], dry_run=False)
+        assert ok is False
+        payload = json.loads(msg)
+        details = [
+            item for item in payload["hardcoded_copy"]["details"]
+            if item["file"] == "gui/static/js/noise-filter.js"
+        ]
+        texts = {item["text"] for item in details}
+
+        assert "Bitte speichern" in texts
+        assert "Allgemein" in texts
+        assert "Fehler beim Laden" in texts
+        assert "status-text" not in texts
+        assert "/api/status" not in texts
+        assert "[BACH] Dashboard-Fehler:" not in texts
+
 
 # ═══════════════════════════════════════════════════════════════
 # _extract_german_strings
@@ -847,6 +1042,32 @@ class TestExtractGermanStrings:
         f.write_bytes(b'\x80\x81\x82')
         result = handler._extract_german_strings(f)
         assert isinstance(result, set)
+
+
+class TestExtractScriptStrings:
+    def test_extract_script_strings_skips_dom_ids_and_paths(self, handler, tmp_path):
+        f = tmp_path / "sample.js"
+        f.write_text(
+            "\n".join(
+                [
+                    "const statusText = document.getElementById('status-text');",
+                    "const apiUrl = '/api/status';",
+                    "showToast('Bitte speichern', 'success');",
+                    "const fallback = task.category || 'Allgemein';",
+                    "container.innerHTML = '<p class=\"loading\">Fehler beim Laden</p>';",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = handler._extract_script_strings(f)
+
+        assert "Bitte speichern" in result
+        assert "Allgemein" in result
+        assert "Fehler beim Laden" in result
+        assert "status-text" not in result
+        assert "/api/status" not in result
 
 
 # ═══════════════════════════════════════════════════════════════

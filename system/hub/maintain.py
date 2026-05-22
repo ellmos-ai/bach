@@ -22,6 +22,7 @@ import subprocess
 from pathlib import Path
 from .base import BaseHandler
 from .lang import t
+from .status import StatusHandler
 
 
 class MaintainHandler(BaseHandler):
@@ -47,6 +48,7 @@ class MaintainHandler(BaseHandler):
             "duplicates": "Duplikat-Erkennung fuer Tools",
             "generate": "Skill/Agent Generator",
             "export": "Export-Tools (Skill/Agent/OS)",
+            "health": "BACH-Gesamtstatus anzeigen",
             "pattern": "Dateinamen-Pattern kuerzen",
             "scan": "System nach CLI-Tools scannen",
             "clean": "Dateien nach Alter/Muster loeschen",
@@ -77,6 +79,8 @@ class MaintainHandler(BaseHandler):
             return self._run_generator(args)
         elif op == "export":
             return self._run_export(args)
+        elif op == "health":
+            return StatusHandler(self.base_path).handle("show", [], dry_run)
         elif op == "pattern":
             return self._run_pattern_tool(args, dry_run)
         elif op == "scan":
@@ -867,6 +871,7 @@ Befehle:
   bach --maintain duplicates          Duplikat-Info
   bach --maintain generate <args>     Skill Generator
   bach --maintain export <args>       Export-Tool
+  bach --maintain health              BACH-Gesamtstatus
   bach --maintain pattern <ordner>    Pattern-Tool
   bach --maintain scan                Tool-Scanner
   bach --maintain clean <ordner>      File-Cleaner
@@ -882,6 +887,7 @@ Befehle:
 Beispiele:
   bach --maintain docs                # Doku pruefen
   bach --maintain docs report         # Markdown-Report erzeugen
+  bach --maintain health              # Status anzeigen
   bach --maintain heal                # Pfade korrigieren
   bach --maintain registry report     # Detaillierter Registry-Report
   bach --maintain skills check        # Skill-Health Check

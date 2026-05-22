@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - Usecases</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         .usecases-content {
             padding: 1.5rem;
@@ -40,7 +41,7 @@
         .stat-value {
             font-size: 1.75rem;
             font-weight: bold;
-            color: var(--primary, #4fc3f7);
+            color: var(--accent-blue);
         }
 
         .stat-label {
@@ -49,12 +50,12 @@
             margin-top: 0.25rem;
         }
 
-        .stat-card.success { border-color: #4caf50; }
-        .stat-card.success .stat-value { color: #4caf50; }
-        .stat-card.warning { border-color: #ff9800; }
-        .stat-card.warning .stat-value { color: #ff9800; }
-        .stat-card.error { border-color: #f44336; }
-        .stat-card.error .stat-value { color: #f44336; }
+        .stat-card.success { border-color: var(--success); }
+        .stat-card.success .stat-value { color: var(--success); }
+        .stat-card.warning { border-color: var(--warning); }
+        .stat-card.warning .stat-value { color: var(--warning); }
+        .stat-card.error { border-color: var(--error); }
+        .stat-card.error .stat-value { color: var(--error); }
 
         .actions {
             display: flex;
@@ -71,10 +72,10 @@
             font-size: 0.9rem;
         }
 
-        .btn-primary { background: var(--primary, #4fc3f7); color: #000; }
+        .btn-primary { background: var(--accent-blue); color: #000; }
         .btn-secondary { background: var(--border, #333); color: var(--text, #fff); }
-        .btn-success { background: #4caf50; color: white; }
-        .btn-danger { background: #f44336; color: white; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-danger { background: var(--error); color: white; }
         .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
 
         .section {
@@ -121,10 +122,10 @@
             font-weight: 500;
         }
 
-        .badge.pass { background: #4caf50; color: white; }
-        .badge.fail { background: #f44336; color: white; }
-        .badge.pending { background: #ff9800; color: #000; }
-        .badge.workflow { background: #2196f3; color: white; }
+        .badge.pass { background: var(--success); color: white; }
+        .badge.fail { background: var(--error); color: white; }
+        .badge.pending { background: var(--warning); color: #000; }
+        .badge.workflow { background: var(--accent-blue); color: white; }
 
         .test-output {
             background: #000;
@@ -198,7 +199,7 @@
         .run-output {
             margin-top: 1rem;
             padding: 1rem;
-            background: #111;
+            background: var(--bg-dark);
             border-radius: 4px;
             font-family: monospace;
             font-size: 0.85rem;
@@ -338,7 +339,7 @@
     </div>
 
     <script src="/static/js/api.js"></script>
-    <script src="/static/js/nav.js?v=3"></script>
+    <script src="/static/js/nav.js?v=4"></script>
     <script>
         const API_BASE = '/api/usecases';
         let currentRunId = null;

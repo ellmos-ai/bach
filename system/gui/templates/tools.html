@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - Tools</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         .tools-layout {
             display: grid;
@@ -158,17 +159,17 @@
         }
 
         .tool-badge.python {
-            background: #306998;
+            background: var(--accent-blue);
             color: white;
         }
 
         .tool-badge.cli {
-            background: #4a5568;
-            color: white;
+            background: var(--text-dim);
+            color: var(--text);
         }
 
         .tool-badge.external {
-            background: #805ad5;
+            background: var(--accent);
             color: white;
         }
 
@@ -366,7 +367,7 @@
     </div>
 
     <script src="/static/js/api.js"></script>
-    <script src="/static/js/nav.js?v=3"></script>
+    <script src="/static/js/nav.js?v=4"></script>
     <script>
         // State
         let allTools = [];

@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - Routinen</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         .routinen-content {
             padding: 1.5rem;
@@ -20,6 +21,45 @@
         .subtitle {
             color: var(--text-muted, #888);
             margin: 0 0 1.5rem 0;
+        }
+
+        /* ── Tab Navigation ── */
+        .tab-nav {
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid var(--border, #333);
+            margin-bottom: 1.5rem;
+        }
+
+        .tab-nav button {
+            padding: 0.75rem 1.5rem;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--text-muted, #888);
+            transition: all 0.2s;
+        }
+
+        .tab-nav button:hover {
+            color: var(--text, #fff);
+            background: rgba(255,255,255,0.03);
+        }
+
+        .tab-nav button.active {
+            color: var(--accent-blue);
+            border-bottom-color: var(--accent-blue);
+            font-weight: 600;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
         }
 
         .stats-grid {
@@ -40,7 +80,7 @@
         .stat-value {
             font-size: 2rem;
             font-weight: bold;
-            color: var(--primary, #4fc3f7);
+            color: var(--accent-blue);
         }
 
         .stat-label {
@@ -49,10 +89,10 @@
             margin-top: 0.5rem;
         }
 
-        .stat-card.due { border-color: #ff9800; }
-        .stat-card.due .stat-value { color: #ff9800; }
-        .stat-card.overdue { border-color: #f44336; }
-        .stat-card.overdue .stat-value { color: #f44336; }
+        .stat-card.due { border-color: var(--warning); }
+        .stat-card.due .stat-value { color: var(--warning); }
+        .stat-card.overdue { border-color: var(--error); }
+        .stat-card.overdue .stat-value { color: var(--error); }
 
         .actions {
             display: flex;
@@ -70,7 +110,7 @@
         }
 
         .btn-primary {
-            background: var(--primary, #4fc3f7);
+            background: var(--accent-blue);
             color: #000;
         }
 
@@ -80,12 +120,12 @@
         }
 
         .btn-success {
-            background: #4caf50;
+            background: var(--success);
             color: white;
         }
 
         .btn-danger {
-            background: #f44336;
+            background: var(--error);
             color: white;
         }
 
@@ -176,15 +216,78 @@
             font-weight: 500;
         }
 
-        .badge.due { background: #ff9800; color: #000; }
-        .badge.overdue { background: #f44336; color: white; }
-        .badge.done { background: #4caf50; color: white; }
+        .badge.due { background: var(--warning); color: #000; }
+        .badge.overdue { background: var(--error); color: white; }
+        .badge.done { background: var(--success); color: white; }
         .badge.inactive { background: #666; color: white; }
 
-        .badge.taeglich { background: #2196f3; color: white; }
-        .badge.woechentlich { background: #9c27b0; color: white; }
-        .badge.monatlich { background: #ff5722; color: white; }
-        .badge.jaehrlich { background: #795548; color: white; }
+        .badge.taeglich { background: var(--accent-blue); color: white; }
+        .badge.woechentlich { background: var(--accent-blue); color: white; }
+        .badge.monatlich { background: var(--warning); color: #000; }
+        .badge.jaehrlich { background: var(--text-dim); color: var(--text); }
+
+        /* ── BACH-Routinen (Scheduler) ── */
+        .jobs-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .jobs-table th, .jobs-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border, #333);
+        }
+
+        .jobs-table th {
+            background: rgba(255,255,255,0.03);
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .job-status {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .job-status.active { background: color-mix(in srgb, var(--success) 18%, var(--bg-card)); color: var(--success); }
+        .job-status.inactive { background: color-mix(in srgb, var(--error) 18%, var(--bg-card)); color: var(--error); }
+
+        .job-actions {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .job-actions button {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.8rem;
+            cursor: pointer;
+            border: 1px solid var(--border, #333);
+            border-radius: 4px;
+            background: var(--bg-card, #1e1e1e);
+            color: var(--text, #fff);
+        }
+
+        .job-actions button:hover {
+            background: var(--accent-blue);
+            color: #000;
+        }
+
+        .link-advanced {
+            display: inline-block;
+            margin-top: 1rem;
+            color: var(--accent-blue);
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+
+        .link-advanced:hover {
+            text-decoration: underline;
+        }
 
         /* Modal */
         .modal {
@@ -252,69 +355,125 @@
     <header class="main-header" id="main-header"></header>
 
     <main class="routinen-content">
-        <h1 class="page-title">Routinen-Dashboard</h1>
-        <p class="subtitle">Wiederkehrende Aufgaben verwalten und tracken</p>
+        <h1 class="page-title">Routinen</h1>
+        <p class="subtitle">Persönliche und automatisierte Routinen verwalten</p>
 
-        <!-- Stats -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-value" id="stat-total">-</div>
-                <div class="stat-label">Routinen gesamt</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="stat-active">-</div>
-                <div class="stat-label">Aktiv</div>
-            </div>
-            <div class="stat-card due">
-                <div class="stat-value" id="stat-due">-</div>
-                <div class="stat-label">Heute faellig</div>
-            </div>
-            <div class="stat-card overdue">
-                <div class="stat-value" id="stat-overdue">-</div>
-                <div class="stat-label">Ueberfaellig</div>
-            </div>
+        <!-- Tab Navigation -->
+        <div class="tab-nav">
+            <button class="active" onclick="switchTab(event, 'personal')">Deine Routinen</button>
+            <button onclick="switchTab(event, 'bach')">BACH-Routinen</button>
         </div>
 
-        <!-- Actions -->
-        <div class="actions">
-            <button class="btn btn-primary" onclick="showAddRoutineModal()">+ Neue Routine</button>
-            <button class="btn btn-secondary" onclick="exportRoutines()">Export TXT</button>
-            <button class="btn btn-secondary" onclick="loadRoutines()">Aktualisieren</button>
-        </div>
-
-        <!-- Faellige Routinen -->
-        <div class="section" id="due-section">
-            <h2>Heute faellig</h2>
-            <div id="due-routines">Lade...</div>
-        </div>
-
-        <!-- Alle Routinen -->
-        <div class="section">
-            <h2>
-                Alle Routinen
-                <div class="filter-bar" style="margin: 0;">
-                    <select id="filter-category" onchange="loadRoutines()">
-                        <option value="">Alle Kategorien</option>
-                        <option value="Haushalt">Haushalt</option>
-                        <option value="Gesundheit">Gesundheit</option>
-                        <option value="Finanzen">Finanzen</option>
-                        <option value="Arbeit">Arbeit</option>
-                        <option value="Sonstiges">Sonstiges</option>
-                    </select>
-                    <select id="filter-interval" onchange="loadRoutines()">
-                        <option value="">Alle Intervalle</option>
-                        <option value="taeglich">Taeglich</option>
-                        <option value="woechentlich">Woechentlich</option>
-                        <option value="monatlich">Monatlich</option>
-                        <option value="jaehrlich">Jaehrlich</option>
-                    </select>
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- TAB 1: DEINE ROUTINEN (Household) -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <div class="tab-content active" id="tab-personal">
+            <!-- Stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total">-</div>
+                    <div class="stat-label">Routinen gesamt</div>
                 </div>
-            </h2>
-            <div id="all-routines">Lade...</div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-active">-</div>
+                    <div class="stat-label">Aktiv</div>
+                </div>
+                <div class="stat-card due">
+                    <div class="stat-value" id="stat-due">-</div>
+                    <div class="stat-label">Heute fällig</div>
+                </div>
+                <div class="stat-card overdue">
+                    <div class="stat-value" id="stat-overdue">-</div>
+                    <div class="stat-label">Überfällig</div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="actions">
+                <button class="btn btn-primary" onclick="showAddRoutineModal()">+ Neue Routine</button>
+                <button class="btn btn-secondary" onclick="exportRoutines()">Export TXT</button>
+                <button class="btn btn-secondary" onclick="loadRoutines()">Aktualisieren</button>
+            </div>
+
+            <!-- Fällige Routinen -->
+            <div class="section" id="due-section">
+                <h2>Heute fällig</h2>
+                <div id="due-routines">Lade...</div>
+            </div>
+
+            <!-- Alle Routinen -->
+            <div class="section">
+                <h2>
+                    Alle Routinen
+                    <div class="filter-bar" style="margin: 0;">
+                        <select id="filter-category" onchange="loadRoutines()">
+                            <option value="">Alle Kategorien</option>
+                            <option value="Haushalt">Haushalt</option>
+                            <option value="Gesundheit">Gesundheit</option>
+                            <option value="Finanzen">Finanzen</option>
+                            <option value="Arbeit">Arbeit</option>
+                            <option value="Sonstiges">Sonstiges</option>
+                        </select>
+                        <select id="filter-interval" onchange="loadRoutines()">
+                            <option value="">Alle Intervalle</option>
+                            <option value="taeglich">Täglich</option>
+                            <option value="woechentlich">Wöchentlich</option>
+                            <option value="monatlich">Monatlich</option>
+                            <option value="jaehrlich">Jährlich</option>
+                        </select>
+                    </div>
+                </h2>
+                <div id="all-routines">Lade...</div>
+            </div>
+        </div>
+
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- TAB 2: BACH-ROUTINEN (Scheduler/Daemon) -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-bach">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="bach-stat-total">-</div>
+                    <div class="stat-label">Jobs gesamt</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="bach-stat-active" style="color: var(--success);">-</div>
+                    <div class="stat-label">Aktive Jobs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="bach-stat-runs">-</div>
+                    <div class="stat-label">Ausführungen heute</div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button class="btn btn-primary" onclick="showAddJobModal()">+ Neuer Job</button>
+                <button class="btn btn-secondary" onclick="loadBachRoutines()">Aktualisieren</button>
+            </div>
+
+            <div class="section">
+                <h2>Zeitgesteuerte Jobs</h2>
+                <table class="jobs-table">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Name</th>
+                            <th>Typ</th>
+                            <th>Schedule</th>
+                            <th>Nächster Lauf</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bach-jobs-body">
+                        <tr><td colspan="6">Lade...</td></tr>
+                    </tbody>
+                </table>
+                <a href="/daemon" class="link-advanced">Erweiterte Verwaltung (Chains, History, Cron-Editor) &rarr;</a>
+            </div>
         </div>
     </main>
 
-    <!-- Modal: Routine hinzufuegen/bearbeiten -->
+    <!-- Modal: Routine hinzufügen/bearbeiten -->
     <div class="modal" id="routine-modal">
         <div class="modal-content">
             <h3 id="routine-modal-title">Neue Routine</h3>
@@ -340,7 +499,7 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Prioritaet</label>
+                        <label>Priorität</label>
                         <select id="routine-priority">
                             <option value="1">Hoch</option>
                             <option value="2" selected>Mittel</option>
@@ -352,10 +511,10 @@
                     <div class="form-group">
                         <label>Intervall</label>
                         <select id="routine-interval">
-                            <option value="taeglich">Taeglich</option>
-                            <option value="woechentlich">Woechentlich</option>
+                            <option value="taeglich">Täglich</option>
+                            <option value="woechentlich">Wöchentlich</option>
                             <option value="monatlich">Monatlich</option>
-                            <option value="jaehrlich">Jaehrlich</option>
+                            <option value="jaehrlich">Jährlich</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -368,24 +527,75 @@
                     <input type="text" id="routine-specific-day" placeholder="z.B. Montag, 1. des Monats">
                 </div>
                 <div class="form-group">
-                    <label>Geschaetzte Dauer (Minuten)</label>
+                    <label>Geschätzte Dauer (Minuten)</label>
                     <input type="number" id="routine-duration" min="0" placeholder="z.B. 30">
                 </div>
                 <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeRoutineModal()">Abbrechen</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('routine-modal')">Abbrechen</button>
                     <button type="submit" class="btn btn-primary">Speichern</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <script src="/static/js/nav.js?v=3"></script>
+    <!-- Modal: Neuer BACH-Job -->
+    <div class="modal" id="job-modal">
+        <div class="modal-content">
+            <h3>Neuer BACH-Job</h3>
+            <form id="job-form" onsubmit="saveJob(event)">
+                <div class="form-group">
+                    <label>Name *</label>
+                    <input type="text" id="job-name" required placeholder="z.B. backup-daily">
+                </div>
+                <div class="form-group">
+                    <label>Beschreibung</label>
+                    <input type="text" id="job-description" placeholder="Optional">
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div class="form-group">
+                        <label>Typ</label>
+                        <select id="job-type">
+                            <option value="interval">Interval (z.B. 30m, 1h)</option>
+                            <option value="cron">Cron-Ausdruck</option>
+                            <option value="manual">Manuell</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Schedule</label>
+                        <input type="text" id="job-schedule" placeholder="z.B. 30m oder 0 3 * * *">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Command *</label>
+                    <input type="text" id="job-command" required placeholder="z.B. python tools/backup.py">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('job-modal')">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Erstellen</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/nav.js?v=4"></script>
     <script>
-        const API_BASE = '/api/routines';
+        const ROUTINES_API = '/api/routines';
 
-        const esc = escapeHtml;
+        // ── Tab Navigation ──
 
-        // Initial laden
+        function switchTab(e, tabName) {
+            document.querySelectorAll('.tab-nav button').forEach(btn => btn.classList.remove('active'));
+            e.target.classList.add('active');
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tabName).classList.add('active');
+
+            if (tabName === 'personal') loadRoutines();
+            if (tabName === 'bach') loadBachRoutines();
+        }
+
+        // ── Deine Routinen ──
+
         document.addEventListener('DOMContentLoaded', () => {
             loadRoutines();
         });
@@ -395,20 +605,18 @@
                 const category = document.getElementById('filter-category').value;
                 const interval = document.getElementById('filter-interval').value;
 
-                let url = `${API_BASE}?`;
+                let url = `${ROUTINES_API}?`;
                 if (category) url += `category=${category}&`;
                 if (interval) url += `interval=${interval}&`;
 
                 const res = await fetch(url);
                 const data = await res.json();
 
-                // Stats
                 document.getElementById('stat-total').textContent = data.stats?.total || 0;
                 document.getElementById('stat-active').textContent = data.stats?.active || 0;
                 document.getElementById('stat-due').textContent = data.stats?.due_today || 0;
                 document.getElementById('stat-overdue').textContent = data.stats?.overdue || 0;
 
-                // Due Section anzeigen/verstecken
                 const dueSection = document.getElementById('due-section');
                 if (data.due_today && data.due_today.length > 0) {
                     dueSection.style.display = 'block';
@@ -417,7 +625,6 @@
                     dueSection.style.display = 'none';
                 }
 
-                // Alle Routinen
                 if (!data.routines || data.routines.length === 0) {
                     document.getElementById('all-routines').innerHTML = '<p>Keine Routinen gefunden</p>';
                     return;
@@ -433,25 +640,25 @@
 
         function renderRoutineCard(routine, showCompleteBtn) {
             const statusBadge = routine.is_overdue
-                ? '<span class="badge overdue">Ueberfaellig</span>'
+                ? '<span class="badge overdue">Überfällig</span>'
                 : routine.is_due_today
                     ? '<span class="badge due">Heute</span>'
                     : '<span class="badge done">OK</span>';
 
-            const intervalBadge = `<span class="badge ${esc(routine.interval_type)}">${esc(routine.interval_type)}</span>`;
+            const intervalBadge = `<span class="badge ${escapeHtml(routine.interval_type)}">${escapeHtml(routine.interval_type)}</span>`;
 
             return `
                 <div class="routine-card">
                     <div class="routine-info">
                         <h4>
-                            ${esc(routine.name)}
+                            ${escapeHtml(routine.name)}
                             ${intervalBadge}
                             ${!routine.is_active ? '<span class="badge inactive">Inaktiv</span>' : ''}
                         </h4>
                         <div class="meta">
-                            ${esc(routine.category || 'Keine Kategorie')}
+                            ${escapeHtml(routine.category || 'Keine Kategorie')}
                             ${routine.duration_minutes ? ' | ' + routine.duration_minutes + ' Min.' : ''}
-                            ${routine.next_due_at ? ' | Naechste: ' + formatDate(routine.next_due_at) : ''}
+                            ${routine.next_due_at ? ' | Nächste: ' + formatDate(routine.next_due_at) : ''}
                         </div>
                     </div>
                     <div class="routine-status">
@@ -468,8 +675,7 @@
 
         function formatDate(dateStr) {
             if (!dateStr) return '-';
-            const d = new Date(dateStr);
-            return d.toLocaleDateString('de-DE');
+            return new Date(dateStr).toLocaleDateString('de-DE');
         }
 
         function showAddRoutineModal() {
@@ -479,13 +685,13 @@
             document.getElementById('routine-modal').classList.add('active');
         }
 
-        function closeRoutineModal() {
-            document.getElementById('routine-modal').classList.remove('active');
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
         }
 
         async function editRoutine(id) {
             try {
-                const res = await fetch(`${API_BASE}/${id}`);
+                const res = await fetch(`${ROUTINES_API}/${id}`);
                 const data = await res.json();
                 const r = data.routine;
                 if (!r) return;
@@ -520,7 +726,7 @@
             };
 
             try {
-                const url = id ? `${API_BASE}/${id}` : API_BASE;
+                const url = id ? `${ROUTINES_API}/${id}` : ROUTINES_API;
                 const method = id ? 'PUT' : 'POST';
                 const res = await fetch(url, {
                     method: method,
@@ -528,7 +734,7 @@
                     body: JSON.stringify(data)
                 });
                 if ((await res.json()).success) {
-                    closeRoutineModal();
+                    closeModal('routine-modal');
                     loadRoutines();
                 }
             } catch (e) { alert('Fehler beim Speichern'); }
@@ -536,24 +742,22 @@
 
         async function completeRoutine(id) {
             try {
-                const res = await fetch(`${API_BASE}/${id}/complete`, { method: 'POST' });
-                if ((await res.json()).success) {
-                    loadRoutines();
-                }
+                const res = await fetch(`${ROUTINES_API}/${id}/complete`, { method: 'POST' });
+                if ((await res.json()).success) loadRoutines();
             } catch (e) { console.error(e); }
         }
 
         async function deleteRoutine(id) {
-            if (!confirm('Routine wirklich loeschen?')) return;
+            if (!confirm('Routine wirklich löschen?')) return;
             try {
-                const res = await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
+                const res = await fetch(`${ROUTINES_API}/${id}`, { method: 'DELETE' });
                 if ((await res.json()).success) loadRoutines();
             } catch (e) { console.error(e); }
         }
 
         async function exportRoutines() {
             try {
-                const res = await fetch(`${API_BASE}/export`);
+                const res = await fetch(`${ROUTINES_API}/export`);
                 const data = await res.json();
                 if (data.success) {
                     alert('Export erstellt: ' + data.file);
@@ -562,8 +766,136 @@
                 }
             } catch (e) { alert('Export fehlgeschlagen'); }
         }
+
+        // ── BACH-Routinen (Scheduler) ──
+
+        async function loadBachRoutines() {
+            try {
+                const [jobsData, statusData] = await Promise.all([
+                    api.get('/api/daemon/jobs'),
+                    api.get('/api/daemon/status').catch(() => null)
+                ]);
+
+                const jobs = jobsData.jobs || [];
+
+                document.getElementById('bach-stat-total').textContent = jobs.length;
+                document.getElementById('bach-stat-active').textContent = jobs.filter(j => j.is_active).length;
+                document.getElementById('bach-stat-runs').textContent = statusData?.stats?.runs_today || 0;
+
+                const tbody = document.getElementById('bach-jobs-body');
+
+                if (jobs.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="color: var(--text-muted);">Keine Jobs definiert. Erstelle einen mit "+ Neuer Job".</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = jobs.map(job => {
+                    const nextRun = job.next_run ? new Date(job.next_run).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
+                    const scheduleDesc = describeCron(job.schedule, job.job_type);
+
+                    return `
+                    <tr>
+                        <td>
+                            <span class="job-status ${job.is_active ? 'active' : 'inactive'}">
+                                ${job.is_active ? 'Aktiv' : 'Inaktiv'}
+                            </span>
+                        </td>
+                        <td>
+                            <strong>${escapeHtml(job.name)}</strong>
+                            ${job.description ? `<div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(job.description)}</div>` : ''}
+                        </td>
+                        <td><code>${escapeHtml(job.job_type)}</code></td>
+                        <td>
+                            <code>${escapeHtml(job.schedule || '-')}</code>
+                            ${scheduleDesc ? `<div style="font-size: 0.75rem; color: var(--text-muted);">${scheduleDesc}</div>` : ''}
+                        </td>
+                        <td>${nextRun}</td>
+                        <td class="job-actions">
+                            <button onclick="toggleBachJob(${job.id})" title="${job.is_active ? 'Deaktivieren' : 'Aktivieren'}">
+                                ${job.is_active ? 'Pause' : 'Start'}
+                            </button>
+                            <button onclick="runBachJob(${job.id})" title="Jetzt ausführen">Run</button>
+                        </td>
+                    </tr>`;
+                }).join('');
+
+            } catch (e) {
+                console.error('BACH-Routinen laden fehlgeschlagen:', e);
+                document.getElementById('bach-jobs-body').innerHTML = '<tr><td colspan="6" style="color: var(--error);">Fehler beim Laden</td></tr>';
+            }
+        }
+
+        function describeCron(schedule, jobType) {
+            if (!schedule) return '';
+            if (jobType === 'interval') {
+                const match = schedule.match(/^(\d+)(s|m|h|d)$/);
+                if (match) {
+                    const units = { s: 'Sekunde(n)', m: 'Minute(n)', h: 'Stunde(n)', d: 'Tag(e)' };
+                    return `Alle ${match[1]} ${units[match[2]] || match[2]}`;
+                }
+                return '';
+            }
+            if (jobType === 'cron') {
+                const parts = schedule.trim().split(/\s+/);
+                if (parts.length >= 5) {
+                    const [min, hour, dom, mon, dow] = parts;
+                    if (dom === '*' && mon === '*' && dow === '*') {
+                        return `Täglich um ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`;
+                    }
+                    const days = { '0': 'So', '1': 'Mo', '2': 'Di', '3': 'Mi', '4': 'Do', '5': 'Fr', '6': 'Sa', '7': 'So' };
+                    if (dow !== '*' && dom === '*') {
+                        return `${days[dow] || dow} um ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`;
+                    }
+                }
+                return '';
+            }
+            if (jobType === 'manual') return 'Nur manuell';
+            return '';
+        }
+
+        async function toggleBachJob(jobId) {
+            try {
+                await api.put(`/api/daemon/jobs/${jobId}/toggle`);
+                loadBachRoutines();
+            } catch (e) {
+                alert('Toggle fehlgeschlagen: ' + e.message);
+            }
+        }
+
+        async function runBachJob(jobId) {
+            if (!confirm('Job jetzt ausführen?')) return;
+            try {
+                await api.post(`/api/daemon/jobs/${jobId}/run`);
+                alert('Job gestartet');
+                setTimeout(loadBachRoutines, 2000);
+            } catch (e) {
+                alert('Start fehlgeschlagen: ' + e.message);
+            }
+        }
+
+        function showAddJobModal() {
+            document.getElementById('job-form').reset();
+            document.getElementById('job-modal').classList.add('active');
+        }
+
+        async function saveJob(event) {
+            event.preventDefault();
+            const data = {
+                name: document.getElementById('job-name').value,
+                description: document.getElementById('job-description').value,
+                job_type: document.getElementById('job-type').value,
+                schedule: document.getElementById('job-schedule').value,
+                command: document.getElementById('job-command').value
+            };
+
+            try {
+                await api.post('/api/daemon/jobs', data);
+                closeModal('job-modal');
+                loadBachRoutines();
+            } catch (e) {
+                alert('Erstellen fehlgeschlagen: ' + e.message);
+            }
+        }
     </script>
-
-
 </body>
 </html>

@@ -154,7 +154,7 @@ class SetupHandler(BaseHandler):
         errors = []
 
         # 1. Pruefen ob npm verfuegbar ist
-        npm_path = shutil.which("npm")
+        npm_path = self._resolve_npm_executable()
         if not npm_path:
             return False, (
                 "npm nicht gefunden. Bitte Node.js installieren:\n"
@@ -181,7 +181,7 @@ class SetupHandler(BaseHandler):
             results.append(f"  Installiere {pkg}...")
             try:
                 proc = subprocess.run(
-                    ["npm", "install", "-g", pkg],
+                    [npm_path, "install", "-g", pkg],
                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120
                 )
                 if proc.returncode == 0:
@@ -287,7 +287,7 @@ class SetupHandler(BaseHandler):
         all_ok = True
 
         # 1. npm
-        npm_path = shutil.which("npm")
+        npm_path = self._resolve_npm_executable()
         if npm_path:
             checks.append("[OK] npm verfuegbar")
         else:
@@ -298,7 +298,7 @@ class SetupHandler(BaseHandler):
         for pkg in ["ellmos-codecommander-mcp", "ellmos-filecommander-mcp"]:
             try:
                 proc = subprocess.run(
-                    ["npm", "list", "-g", pkg, "--depth=0"],
+                    [npm_path, "list", "-g", pkg, "--depth=0"],
                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15
                 )
                 if proc.returncode == 0 and pkg in proc.stdout:
@@ -1311,14 +1311,25 @@ class SetupHandler(BaseHandler):
 
     def _is_npm_package_installed(self, package: str) -> bool:
         """Prueft ob ein npm-Paket global installiert ist."""
+        npm_path = self._resolve_npm_executable()
+        if not npm_path:
+            return False
         try:
             proc = subprocess.run(
-                ["npm", "list", "-g", package, "--depth=0"],
+                [npm_path, "list", "-g", package, "--depth=0"],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15
             )
             return proc.returncode == 0 and package in proc.stdout
         except Exception:
             return False
+
+    def _resolve_npm_executable(self) -> str | None:
+        """Resolve the platform-specific npm executable usable by subprocess."""
+        for candidate in ("npm.cmd", "npm.exe", "npm"):
+            npm_path = shutil.which(candidate)
+            if npm_path:
+                return npm_path
+        return None
 
     def _validate_mcp_install_plan(self, packages: list,
                                    server_configs: dict | None = None) -> tuple:
@@ -1534,7 +1545,7 @@ class SetupHandler(BaseHandler):
             return False, self._format_mcp_validation_error(validation_errors)
 
         # 1. npm pruefen
-        npm_path = shutil.which("npm")
+        npm_path = self._resolve_npm_executable()
         if not npm_path:
             return False, (
                 "npm nicht gefunden. Bitte Node.js installieren:\n"
@@ -1553,7 +1564,7 @@ class SetupHandler(BaseHandler):
             results.append(f"  Installiere {pkg}...")
             try:
                 proc = subprocess.run(
-                    ["npm", "install", "-g", pkg],
+                    [npm_path, "install", "-g", pkg],
                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120
                 )
                 if proc.returncode == 0:

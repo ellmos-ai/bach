@@ -5,7 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>System Logs | BACH</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         .logs-container {
             display: grid;
@@ -76,9 +77,9 @@
         .log-content {
             flex-grow: 1;
             padding: 1.5rem;
-            background: #0d0d1a;
-            color: #d1d1d1;
-            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background: var(--bg-dark);
+            color: var(--text);
+            font-family: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
             font-size: 0.85rem;
             line-height: 1.5;
             overflow: auto;
@@ -92,16 +93,16 @@
         }
 
         .log-line.error {
-            color: #ff5555;
-            background: rgba(255, 0, 0, 0.1);
+            color: var(--error);
+            background: color-mix(in srgb, var(--error) 10%, transparent);
         }
 
         .log-line.warning {
-            color: #ffaa00;
+            color: var(--warning);
         }
 
         .log-line.info {
-            color: #55ff55;
+            color: var(--success);
         }
 
         .search-box {
@@ -162,7 +163,7 @@
     </footer>
 
     <script src="/static/js/api.js"></script>
-    <script src="/static/js/nav.js?v=3"></script>
+    <script src="/static/js/nav.js?v=4"></script>
     <script>
         let allLogs = [];
         let activeLog = null;
@@ -180,7 +181,7 @@
 
         function renderLogList(logs) {
             const list = document.getElementById('log-files-list');
-            const sourceLabels = { data: 'data/logs/' };
+            const sourceLabels = { data: 'data/logs/', service: 'service/' };
             list.innerHTML = logs.map(log => {
                 const logKey = `${log.source}:${log.name}`;
                 const activeKey = `${activeSource}:${activeLog}`;
@@ -208,7 +209,7 @@
             document.getElementById('log-content').innerHTML = '<div class="loading">Lade Inhalt...</div>';
 
             try {
-                const data = await api.get(`/api/system/logs/${filename}?lines=500&source=${activeSource}`);
+                const data = await api.get(`/api/system/logs/${encodeURIComponent(filename)}?lines=500&source=${encodeURIComponent(activeSource)}`);
                 if (data.error) throw new Error(data.error);
 
                 const content = data.content || '';
@@ -245,12 +246,6 @@
             const query = document.getElementById('log-search').value.toLowerCase();
             const filtered = allLogs.filter(log => log.name.toLowerCase().includes(query));
             renderLogList(filtered);
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
         }
 
         document.addEventListener('DOMContentLoaded', loadLogList);
