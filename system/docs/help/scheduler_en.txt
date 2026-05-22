@@ -1,5 +1,5 @@
 # Portability: SYSTEM
-# Last validated: 2026-05-17
+# Last validated: 2026-05-18
 # Next review: 2027-05-17
 # Next exam: 2026-11-15
 # Resources: [hub/scheduler.py, gui/daemon_service.py, scheduler_jobs, scheduler_runs]
@@ -35,6 +35,14 @@ CLI COMMANDS (bach scheduler)
   doctor --json Scheduler preflight as JSON
   start [--bg] Start scheduler service (--bg for background)
   stop Stop scheduler service
+  pause [Reason] Pause due scheduler jobs globally
+  pause [Reason] --json Pause response as JSON
+  resume Clear scheduler pause
+  resume --json Resume response as JSON
+  steer "Text" Queue operator guidance for upcoming scheduler jobs
+  steer "Text" --json Steering response as JSON
+  clear-steer Clear queued scheduler steering notes
+  clear-steer --json Queue cleanup as JSON
   run <ID> Run individual jobs manually
   logs [N] Show latest log entries (default: 20)
   jobs --json Scheduler jobs with calculated status as JSON
@@ -49,17 +57,27 @@ SESSION-SYSTEM
   session doctor Session preflight and recovery notes
   session doctor --json Session preflight as JSON
   session pause [--profile NAME] [Reason] Pause trigger for profile
+  session pause [--profile NAME] [Reason] --json Pause response as JSON
   session resume [--profile NAME] Unpause profile
+  session resume [--profile NAME] --json Resume response as JSON
   session steer [--profile NAME] "Text" Save control information for the next session
+  session steer [--profile NAME] "Text" --json Steering response as JSON
   session clear-steer [--profile NAME] Clear profile control instructions
+  session clear-steer [--profile NAME] --json Queue cleanup as JSON
   session trigger [--profile NAME] Trigger session manually
   session profiles List available profiles
 
   Example with dry run:
     bach scheduler session trigger --profile wartung --dry-run
 
+  Scheduler operator control example:
+    bach scheduler pause "Maintenance window until 2 PM"
+    bach scheduler steer "Please validate logs and docs first." --json
+    bach scheduler status --json
+
   Example with operator control:
     bach scheduler session steer --profile ati "Bitte heute nur Health-Checks und Docs anfassen."
+    bach scheduler session steer --profile ati "Please validate with a dry run first." --json
     bach scheduler session status --json
 
 JOB TYPES

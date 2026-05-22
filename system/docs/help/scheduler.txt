@@ -1,6 +1,6 @@
 # Portabilität: SYSTEM
 # Version: 1.0.0
-# Zuletzt validiert: 2026-05-15
+# Zuletzt validiert: 2026-05-18
 # Nächste Prüfung: 2026-11-15
 # Ressourcen: [hub/scheduler.py, gui/daemon_service.py, scheduler_jobs, scheduler_runs]
 
@@ -35,6 +35,14 @@ CLI-BEFEHLE (bach scheduler)
   doctor --json     Scheduler-Preflight als JSON
   start [--bg]      Scheduler-Service starten (--bg für Hintergrund)
   stop              Scheduler-Service stoppen
+  pause [Grund]     Fällige Scheduler-Jobs global pausieren
+  pause [Grund] --json  Pause-Antwort als JSON
+  resume            Scheduler-Pause aufheben
+  resume --json     Resume-Antwort als JSON
+  steer "Text"      Operator-Hinweise für kommende Scheduler-Jobs vormerken
+  steer "Text" --json  Steering-Antwort als JSON
+  clear-steer       Scheduler-Steering-Hinweise löschen
+  clear-steer --json  Queue-Bereinigung als JSON
   run <ID>          Einzelnen Job manuell ausführen
   logs [N]          Letzte Log-Einträge anzeigen (Standard: 20)
   jobs --json       Scheduler-Jobs mit berechnetem Status als JSON
@@ -49,17 +57,27 @@ SESSION-SYSTEM
   session doctor                   Session-Preflight und Recovery-Hinweise
   session doctor --json            Session-Preflight als JSON
   session pause [--profile NAME] [Grund] Trigger für Profil pausieren
+  session pause [--profile NAME] [Grund] --json Pause-Antwort als JSON
   session resume [--profile NAME]         Pause für Profil aufheben
+  session resume [--profile NAME] --json  Resume-Antwort als JSON
   session steer [--profile NAME] "Text"   Steuerhinweis für die nächste Session vormerken
+  session steer [--profile NAME] "Text" --json Steuer-Antwort als JSON
   session clear-steer [--profile NAME]    Steuerhinweise für Profil löschen
+  session clear-steer [--profile NAME] --json Queue-Bereinigung als JSON
   session trigger [--profile NAME] Session manuell auslösen
   session profiles                 Verfügbare Profile auflisten
 
   Beispiel mit Dry-Run:
     bach scheduler session trigger --profile wartung --dry-run
 
+  Beispiel mit Scheduler-Operator-Steuerung:
+    bach scheduler pause "Wartungsfenster bis 14 Uhr"
+    bach scheduler steer "Bitte bei den nächsten Jobs erst Logs und Docs prüfen." --json
+    bach scheduler status --json
+
   Beispiel mit Operator-Steuerung:
     bach scheduler session steer --profile ati "Bitte heute nur Health-Checks und Docs anfassen."
+    bach scheduler session steer --profile ati "Bitte zuerst Dry-Run prüfen." --json
     bach scheduler session status --json
 
 JOB-TYPEN

@@ -14,12 +14,15 @@ VERWENDUNG
 
   # Upgrade-Status anzeigen
   bach upgrade status
+  bach upgrade status --json
 
   # Verfügbare Versionen einer Datei anzeigen
   bach upgrade list hub/backup.py
+  bach upgrade list hub/backup.py --json
 
   # Verfügbare Updates prüfen
   bach upgrade check
+  bach upgrade check --json
 
   # Selektive Kategorie-Upgrades
   bach upgrade core
@@ -59,6 +62,7 @@ WICHTIG
 - USER_DATA bleibt unangetastet.
 - Backup wird vor größeren Upgrades empfohlen.
 - Versionen werden in `dist_file_versions` getrackt.
+- `--json` wird für `list`, `status` und `check` unterstützt.
 
 
 BEISPIELE
@@ -78,6 +82,9 @@ BEISPIELE
 
   # Verfügbare Versionen einer Datei ansehen
   bach upgrade list hub/backup.py
+
+  # Upgrade-Status für Automationen als JSON abfragen
+  bach upgrade check --json
 
 
 VERSIONIERUNG

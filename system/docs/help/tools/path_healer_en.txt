@@ -2,53 +2,53 @@
 # Last validated: 2026-05-17
 # Next review: 2027-05-17
 
-PFADVERWALTUNG IN BACH
+PATH MANAGEMENT IN BACH
 ----------------------
 
-WICHTIG: Pfade werden in BACH AUTOMATISCH verwaltet!
--------------------------------------------------------
-bach_paths.py ist die "Single Source of Truth" fuer alle Pfade.
-Alle Pfade werden dynamisch berechnet — wenn BACH verschoben wird,
-funktioniert alles automatisch. Manuelle Pfad-Reparaturen sind
-im Normalfall NICHT noetig.
+IMPORTANT: Paths in BACH are managed automatically!
+---------------------------------------------------
+bach_paths.py is the "single source of truth" for all paths.
+All paths are calculated dynamically. If BACH is moved,
+everything continues to work automatically. Manual path repair
+is normally NOT necessary.
 
   from bach_paths import get_path, BACH_ROOT, TOOLS_DIR
-  tools = get_path("tools")      # Immer korrekt, egal wo BACH liegt
+  tools = get_path("tools")      # Always correct, no matter where BACH lives
 
-Siehe: bach --help bach_paths     (Vollstaendige Doku)
+See: bach --help bach_paths     (Full documentation)
 
 
-WANN IST MANUELLE PFAD-AKTUALISIERUNG NOETIG?
-----------------------------------------------
-Nur wenn sich Pfade in DOKUMENTATION und KOMMENTAREN befinden
-(nicht in Code der get_path() nutzt). Betrifft:
-  - Help-Dateien (.txt)
-  - Wiki-Artikel (.txt)
-  - Markdown-Doku (.md)
-  - Docstrings in Python-Dateien
+WHEN IS A MANUAL PATH UPDATE NECESSARY?
+---------------------------------------
+Only when paths appear in DOCUMENTATION and COMMENTS
+(not in code that uses get_path()). This affects:
+  - Help files (.txt)
+  - Wiki articles (.txt)
+  - Markdown documentation (.md)
+  - Docstrings in Python files
 
-Fuer diesen Zweck gibt es den Doc Path Updater:
+For that purpose, use the Doc Path Updater:
 
-  bach --maintain docs-paths             # Dry-Run (nur anzeigen)
-  bach --maintain docs-paths --apply     # Tatsaechlich korrigieren
+  bach --maintain docs-paths             # Dry run (show only)
+  bach --maintain docs-paths --apply     # Actually fix them
 
 Tool: system/tools/maintenance/doc_path_updater.py
 
 
-WAS WURDE FRUEHER FALSCH GEMACHT?
-----------------------------------
-Der alte "path_healer.py" (RecludOS-Relikt) versuchte ALLE Dateien
-zu heilen, inklusive Python-Code. Das war:
-1. Ueberfluessig (bach_paths.py loest das dynamisch)
-2. Gefaehrlich (nicht-idempotente Regeln korrumpierten 101 Dateien)
-3. Nie korrekt integriert (falscher Dateiname im CLI-Handler)
+WHAT WAS WRONG BEFORE?
+----------------------
+The old "path_healer.py" (a RecludOS relic) tried to heal ALL files,
+including Python code. That was:
+1. Unnecessary (bach_paths.py solves this dynamically)
+2. Dangerous (non-idempotent rules corrupted 101 files)
+3. Never integrated correctly (wrong filename in the CLI handler)
 
-Seit v2.1.0 ist das Tool auf Dokumentations-Updates beschraenkt
-und idempotent (kann beliebig oft ausgefuehrt werden).
+Since v2.1.0, the tool is limited to documentation updates
+and is idempotent (it can be run any number of times).
 
 
-SIEHE AUCH
-----------
-- bach --help bach_paths        Zentrale Pfadverwaltung (EMPFOHLEN)
-- bach --help path              Pfade anzeigen und validieren
-- bach --help dirscan           Directory Truth (Zustandsverwaltung)
+SEE ALSO
+--------
+- bach --help bach_paths        Central path management (RECOMMENDED)
+- bach --help path              Show and validate paths
+- bach --help dirscan           Directory Truth (state management)

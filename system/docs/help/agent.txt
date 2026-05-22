@@ -1,13 +1,13 @@
 # Portabilität: SYSTEM
-# Version: 1.1.0
-# Zuletzt validiert: 2026-05-17
-# Nächste Prüfung: 2026-11-17
+# Version: 1.1.1
+# Zuletzt validiert: 2026-05-21
+# Nächste Prüfung: 2026-11-21
 # Ressourcen: [hub/agent_launcher.py, agents/, agents/_experts/]
 
 AGENT - Agent-Launcher und Verwaltung
 =====================================
 
-STAND: 2026-05-17
+STAND: 2026-05-21
 
 Das Agent-System erlaubt das Starten und Verwalten von BACH-Agenten
 als separate Claude-Code-Prozesse. Jeder Agent wird mit seiner eigenen
@@ -31,7 +31,9 @@ CLI-BEFEHLE (bach agent)
   list                        Alle verfügbaren Agents auflisten
   start <name>                Agent starten (neues Terminalfenster)
   stop <name>                 Laufenden Agent stoppen
-  steer <name> "..."          Operator-Hinweis für laufenden Agenten vormerken
+  pause <name> [grund]        Kooperative Pause für laufenden Agenten anfordern
+  resume <name>               Aktive Pauseanforderung für Agenten aufheben
+  steer <name> "..."          Operator-Hinweis für laufenden Agenten oder den nächsten Start vormerken
   clear-steer <name>          Vorgemerkte Operator-Hinweise gezielt löschen
   rename <name> <neu>         Display-Name eines Agenten/Experten ändern
   status                      Alle laufenden Agents anzeigen
@@ -39,6 +41,8 @@ CLI-BEFEHLE (bach agent)
   list --json                 Agenten inkl. Laufzeit-Metadaten als JSON
   start <name> --json         Startantwort maschinenlesbar als JSON
   stop <name> --json          Stop-Antwort maschinenlesbar als JSON
+  pause <name> --json         Pauseantwort inkl. operator_control als JSON
+  resume <name> --json        Resume-Antwort inkl. operator_control als JSON
   steer <name> --json         Steer-Antwort inkl. Queue-Stand als JSON
   clear-steer <name> --json   Queue-Bereinigung inkl. Queue-Stand als JSON
   status --json               Laufende/registrierte Agenten als JSON
@@ -54,7 +58,7 @@ OPTIONEN FÜR START
   --allowed-tools "Read,Grep,..."   Tool-Allowlist im restricted-Modus
   --max-turns N                     Harte Obergrenze für Claude-Turns
   --dry-run                         Nur prüfen, nicht starten
-  --json                            Maschinenlesbare Ausgabe für list/start/stop/status/doctor
+  --json                            Maschinenlesbare Ausgabe für list/start/stop/pause/resume/steer/clear-steer/status/doctor
 
 BEISPIELE
 ---------
@@ -74,8 +78,13 @@ BEISPIELE
   # Laufende Agents anzeigen und steuern
   bach agent status
   bach agent status --json
+  bach agent pause ati "Kurz warten" --json
+  bach agent resume ati --json
   bach agent steer ati "Bitte nur Statusflächen anfassen." --json
   bach agent clear-steer ati --json
+
+  # Hinweis schon vor dem nächsten Start vormerken
+  bach agent steer ati "Bitte zuerst nur Diagnose fahren." --json
 
   # Start-Voraussetzungen und Recovery prüfen
   bach agent doctor ati
@@ -117,10 +126,13 @@ WIE ES FUNKTIONIERT
 3. Ein neues Terminalfenster öffnet sich mit Claude Code
 4. Laufzeit-Policy (`permission_mode`, `allowed_tools`, `max_turns`) wird beim Start mitgeführt
 5. PID wird in `data/agent_pids/<name>.pid` gespeichert
-6. `bach agent steer <name> "..."` schreibt Operator-Hinweise in `OPERATOR_NOTES.md`
-7. `bach agent status --json` zeigt Queue-Stand, `latest_operator_note`, Runtime-Policy und verfügbare Aktionen maschinenlesbar
-8. `bach agent clear-steer <name>` leert eine veraltete oder erledigte Hinweis-Queue gezielt
-9. `bach agent stop <name>` beendet den Prozess und löscht die PID
+6. `bach agent pause <name> [Grund]` schreibt eine kooperative Pauseanforderung nach `operator_pause.json` und spiegelt sie zusätzlich in `OPERATOR_NOTES.md`
+7. `bach agent resume <name>` entfernt diese Pauseanforderung wieder gezielt
+8. `bach agent steer <name> "..."` schreibt Operator-Hinweise in `OPERATOR_NOTES.md` - auch wenn der Agent gerade gestoppt ist
+9. Der nächste `bach agent start <name>` übernimmt vorgemerkte Hinweise, injiziert sie direkt in die generierte `CLAUDE.md` und löscht sie nicht stillschweigend
+10. `bach agent list --json` und `bach agent status --json` zeigen den Laufstatus plus verschachtelten `operator_control`-Snapshot mit `pause_requested`, `pause_reason`, `pending_steer_count`, `latest_steer_message`, Dateipfaden und verfügbaren Aktionen maschinenlesbar
+11. `bach agent clear-steer <name>` leert eine veraltete oder erledigte Hinweis-Queue gezielt
+12. `bach agent stop <name>` beendet den Prozess, entfernt aktive Pauseanforderungen und kann vorgemerkte Steuer-Hinweise bei Bedarf als Queue bestehen lassen
 
 VORAUSSETZUNGEN
 ---------------
@@ -144,7 +156,10 @@ schließt, zuerst die Diagnose ausführen:
 
 Typische nächste Schritte nach dem Report:
 - `bach agent start <name> --dry-run` für einen sicheren Vorabtest
-- `bach agent status --json` bei laufenden oder hängenden Sessions
+- `bach agent list --json` oder `bach agent status --json` bei laufenden, hängenden oder vorgemerkten Sessions
+- `bach agent pause <name> "..." --json`, wenn ein laufender Agent am nächsten sicheren Punkt kooperativ anhalten soll
+- `bach agent resume <name> --json`, wenn eine Pauseanforderung wieder entfernt werden soll
+- `bach agent steer <name> "..." --json`, wenn vor dem nächsten Start bereits Leitplanken gesetzt werden sollen
 - `bach agent clear-steer <name> --json`, wenn erledigte Hinweise in der Queue liegen
 - Claude Code CLI installieren oder Login/Setup lokal prüfen
 

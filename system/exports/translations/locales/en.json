@@ -1,7 +1,7 @@
 {
   "language": "en",
   "label": "English",
-  "generated_at": "2026-05-17T12:49:19.823678",
+  "generated_at": "2026-05-17T18:08:08.835492",
   "entries": {
     "agent": {
       "agent_started": "Agent started",
@@ -2001,6 +2001,10 @@
       "wiki_sync_desc": "Sync help and wiki files to DB",
       "workflow_datei": "WORKFLOW FILE",
       "workflow_gemeinsame_datei_bearbeiten": "WORKFLOW: EDIT SHARED FILE"
+    },
+    "help_doc": {
+      "tools/agent_cli": "BACH Tool: agent_cli\n--------------------------------------------------\nGenerated: 2026-01-23 10:36\nSource: tools/agent_cli.py\n\nDESCRIPTION\n----------------------------------------\nBACH Agent CLI v1.0.0\n---------------------\n\nCLI tool for managing BACH agents and experts.\n\nFeatures:\n- List and activate agents\n- Show experts\n- Initialize user folders\n- Apply the database schema\n\nUsage:\n    python agent_cli.py list                    # All agents\n    python agent_cli.py experts                 # All experts\n    python agent_cli.py info <agent>            # Agent details\n    python agent_cli.py init <agent>            # Create user folder\n    python agent_cli.py setup-db                # Initialize database\n    python agent_cli.py status                  # System status\n\nAuthor: BACH System\nDate: 2026-01-20\n\nUSAGE\n----------------------------------------\npython bach.py tools run agent_cli [args]\nor directly: python tools/agent_cli.py [args]\n\nNOTES\n----------------------------------------\n- Automatically generated from the docstring\n- Questions: bach tools show agent_cli\n",
+      "tools/path_healer": "# Portability: UNIVERSAL\n# Last validated: 2026-05-17\n# Next review: 2027-05-17\n\nPATH MANAGEMENT IN BACH\n----------------------\n\nIMPORTANT: Paths in BACH are managed automatically!\n---------------------------------------------------\nbach_paths.py is the \"single source of truth\" for all paths.\nAll paths are calculated dynamically. If BACH is moved,\neverything continues to work automatically. Manual path repair\nis normally NOT necessary.\n\n  from bach_paths import get_path, BACH_ROOT, TOOLS_DIR\n  tools = get_path(\"tools\")      # Always correct, no matter where BACH lives\n\nSee: bach --help bach_paths     (Full documentation)\n\n\nWHEN IS A MANUAL PATH UPDATE NECESSARY?\n---------------------------------------\nOnly when paths appear in DOCUMENTATION and COMMENTS\n(not in code that uses get_path()). This affects:\n  - Help files (.txt)\n  - Wiki articles (.txt)\n  - Markdown documentation (.md)\n  - Docstrings in Python files\n\nFor that purpose, use the Doc Path Updater:\n\n  bach --maintain docs-paths             # Dry run (show only)\n  bach --maintain docs-paths --apply     # Actually fix them\n\nTool: system/tools/maintenance/doc_path_updater.py\n\n\nWHAT WAS WRONG BEFORE?\n----------------------\nThe old \"path_healer.py\" (a RecludOS relic) tried to heal ALL files,\nincluding Python code. That was:\n1. Unnecessary (bach_paths.py solves this dynamically)\n2. Dangerous (non-idempotent rules corrupted 101 files)\n3. Never integrated correctly (wrong filename in the CLI handler)\n\nSince v2.1.0, the tool is limited to documentation updates\nand is idempotent (it can be run any number of times).\n\n\nSEE ALSO\n--------\n- bach --help bach_paths        Central path management (RECOMMENDED)\n- bach --help path              Show and validate paths\n- bach --help dirscan           Directory Truth (state management)\n"
     },
     "operation": {
       "add": "Add",

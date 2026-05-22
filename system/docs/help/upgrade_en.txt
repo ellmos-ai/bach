@@ -14,12 +14,15 @@ USE
 
   # View upgrade status
   bach upgrade status
+  bach upgrade status --json
 
   # Show available versions of a file
   bach upgrade list hub/backup.py
+  bach upgrade list hub/backup.py --json
 
   # Check available updates
   bach upgrade check
+  bach upgrade check --json
 
   # Selective category upgrades
   bach upgrade core
@@ -59,6 +62,7 @@ IMPORTANT
 - USER_DATA remains untouched.
 - Backup is recommended before major upgrades.
 - Versions are tracked in `dist_file_versions`.
+- `--json` is supported for `list`, `status`, and `check`.
 
 
 EXAMPLES
@@ -78,6 +82,9 @@ EXAMPLES
 
   # View available versions of a file
   bach upgrade list hub/backup.py
+
+  # Query upgrade drift as JSON for automation
+  bach upgrade check --json
 
 
 VERSIONING

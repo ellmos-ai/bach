@@ -19,6 +19,8 @@ OPERATIONEN
   status              Sprachkonfiguration und Statistiken anzeigen
   scan                Code-Verzeichnisse nach deutschen Strings durchsuchen
   scan --namespace    Nur bestimmten Bereich scannen (cli, gui, help, skills)
+  report              i18n-Drift und Release-Artefakte prüfen
+  report --namespace gui  Nur GUI-Flächen prüfen
   list                Alle Übersetzungen anzeigen
   list --lang <code>  Nur bestimmte Sprache (z.B. de/en/es/ru/ja/zh)
   missing             Fehlende Übersetzungen (Standard: de ohne en)
@@ -44,6 +46,10 @@ BEISPIELE
 # Code nach deutschen Texten durchsuchen
   bach lang scan
   bach lang scan --namespace cli
+
+# Release-Artefakte und Hardcoded Copy prüfen
+  bach lang report
+  bach lang report --namespace gui
 
 # Fehlende Übersetzungen identifizieren
   bach lang missing
