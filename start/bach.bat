@@ -9,7 +9,6 @@ popd
 pushd "%~dp0.."
 set "ROOT_DIR=%CD%"
 popd
-set "WATCHER_DIR=!SYS_DIR!\hub\_services\watcher"
 set "CHAT_DIR=!SYS_DIR!\hub\_services\chat"
 set PYTHONIOENCODING=utf-8
 
@@ -22,54 +21,27 @@ echo  \ \  __^< \ \  __ \\ \ \____\ \  __ \
 echo   \ \_____\\ \_\ \_\\ \_____\\ \_\ \_\
 echo    \/_____/ \/_/\/_/ \/_____/ \/_/\/_/
 echo.
-echo   Personal AI Operating System v3.12.3-coffee
+echo   Personal AI Operating System v3.13.0
 echo   ==================================================
 echo.
 echo   --- SCHNELLSTART --------------------------------
-echo   [D]  Default Start (GUI + Tray + PromptBoard)
+echo   [D]  Default Start (GUI + System Tray)
 echo.
-echo   --- VERBINDEN ----------------------------------
+echo   --- KONSOLEN ------------------------------------
+echo   [1]  Claude Code (lokal, volle Rechte)
+echo   [2]  Claude Code (remote, volle Rechte)
+echo   [3]  Codex Konsole
+echo   [4]  Agent beauftragen
+echo.
+echo   --- DIENSTE -------------------------------------
+echo   [B]  Chat Service (Telegram Bot + Tray)
 echo   [W]  Buddha Connect (Server-Modus)
-echo.
-echo   --- BACH CHAT SERVICE --------------------------
-echo   [B]  Chat Service starten (Tray + Bot)
-echo   [S]  Chat Service Status
+echo   [G]  Web-GUI starten (Port 8000)
+echo   [S]  Status anzeigen
 echo   [X]  Chat Service stoppen
 echo.
-echo   --- ALWAYS-ON (Daemon) ------------------------
-echo   [A]  Watcher + Telegram
-echo.
-echo   --- INTERAKTIV --------------------------------
-echo   [1]  User-Konsole (einfaches CLI)
-echo   [2]  Advanced Console (bach.py direkt)
-echo   [3]  Web-Dashboard (Port 8000)
-echo   [5]  Gemini-Partner Menue
-echo.
-echo   --- CLAUDE AUTO-SESSIONS ----------------------
-echo   [6]  Alle Tasks - 15 Min
-echo   [7]  Alle Tasks - 30 Min
-echo   [8]  Alle Tasks - 1 Stunde
-echo   [9]  Zugewiesene Tasks - 15 Min
-echo   [0]  Zugewiesene Tasks - Unbegrenzt
-echo.
-echo   --- CLAUDE SPEZIAL ----------------------------
-echo   [F]  Full Access (skip-permissions)
-echo   [P]  Remote Control (Mobile App, Bypass)
-echo   [M]  Maintenance (Recurring/Backup/Docs)
-echo.
-echo   --- CLAUDE LOOP (Endlos) ----------------------
-echo   [L]  Loop alle 15 Min
-echo   [N]  Loop alle 30 Min
-echo   [H]  Loop jede Stunde
-echo.
-echo   --- AGENTEN -----------------------------------
-echo   [G]  Agent starten (Menue)
-echo.
-echo   --- AUTOMATISIERUNG ----------------------------
-echo   [C]  Neue Kette erstellen (Chain Creator)
-echo   [R]  MarbleRun Kette
-echo   [U]  llmauto Kette
-echo   [T]  Automation Status
+echo   --- ERWEITERT -----------------------------------
+echo   [E]  Erweiterte Optionen (Loops, Sessions, ...)
 echo.
 echo   [Q]  Beenden
 echo   ==================================================
@@ -78,31 +50,16 @@ echo.
 set /p "choice=  Auswahl: "
 
 if /i "!choice!"=="D" goto default_start
+if "!choice!"=="1" goto claude_local
+if "!choice!"=="2" goto claude_remote
+if "!choice!"=="3" goto codex_console
+if "!choice!"=="4" goto agent_start
+if /i "!choice!"=="B" goto chat_start
 if /i "!choice!"=="W" goto server_connect
-if /i "!choice!"=="B" goto bridge_start
-if /i "!choice!"=="S" goto bridge_status
-if /i "!choice!"=="X" goto bridge_stop
-if /i "!choice!"=="A" goto always_on
-if "!choice!"=="1" goto console
-if "!choice!"=="2" goto advanced
-if "!choice!"=="3" goto gui
-if "!choice!"=="5" goto gemini
-if "!choice!"=="6" goto claude_all_15
-if "!choice!"=="7" goto claude_all_30
-if "!choice!"=="8" goto claude_all_1h
-if "!choice!"=="9" goto claude_assigned_15
-if "!choice!"=="0" goto claude_assigned_nolimit
-if /i "!choice!"=="F" goto claude_full
-if /i "!choice!"=="P" goto claude_rc
-if /i "!choice!"=="M" goto claude_maintenance
-if /i "!choice!"=="L" goto loop_15
-if /i "!choice!"=="N" goto loop_30
-if /i "!choice!"=="H" goto loop_1h
-if /i "!choice!"=="G" goto agent_start
-if /i "!choice!"=="C" goto automation_create
-if /i "!choice!"=="R" goto automation_marblerun
-if /i "!choice!"=="U" goto automation_llmauto
-if /i "!choice!"=="T" goto automation_status
+if /i "!choice!"=="G" goto gui
+if /i "!choice!"=="S" goto status
+if /i "!choice!"=="X" goto chat_stop
+if /i "!choice!"=="E" goto extended_menu
 if /i "!choice!"=="Q" goto end
 
 echo   Ungueltige Auswahl.
@@ -110,7 +67,7 @@ timeout /t 2 >nul
 goto menu
 
 REM ============================================================
-REM  DEFAULT START (GUI + Chat Tray + PromptBoard)
+REM  DEFAULT START (GUI + System Tray)
 REM ============================================================
 :default_start
 title BACH Default Start
@@ -118,11 +75,11 @@ cls
 echo.
 echo  ============================================
 echo   BACH DEFAULT START
-echo   Web-GUI + System Tray + PromptBoard
+echo   Web-GUI + System Tray
 echo  ============================================
 echo.
 
-echo [1/4] Starte Web-GUI (Port 8000)...
+echo [1/3] Starte Web-GUI (Port 8000)...
 pushd "!SYS_DIR!"
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000" ^| findstr "LISTENING" 2^>nul') do (
     taskkill /F /PID %%a >nul 2>&1
@@ -131,7 +88,7 @@ start "BACH Server" /min cmd /k "set PYTHONIOENCODING=utf-8 && python gui\server
 popd
 echo       [OK] GUI Server gestartet
 
-echo [2/4] Starte BACH System Tray...
+echo [2/3] Starte BACH System Tray...
 set "TRAY_HOST=127.0.0.1"
 if not "!BACH_HOST!"=="" set "TRAY_HOST=!BACH_HOST!"
 curl -s --max-time 2 "http://!TRAY_HOST!:8081/api/status" >nul 2>&1
@@ -142,21 +99,10 @@ if !ERRORLEVEL! equ 0 (
     echo       [OK] System Tray gestartet ^(verbunden mit !TRAY_HOST!:8081^)
 ) else (
     echo       [SKIP] System Tray uebersprungen ^(keine Control API auf !TRAY_HOST!:8081^)
-    echo              Starte Chat Service separat mit [B] oder nutze [W] fuer Server-Modus
+    echo              Starte Chat Service mit [B] oder nutze [W] fuer Server-Modus
 )
 
-echo [3/4] Starte PromptBoard...
-set "PROMPTBOARD_DIR=!ROOT_DIR!\..\..\..\.SOFTWARE\LLM\REL-PUB_PromptBoard"
-if exist "!PROMPTBOARD_DIR!\src\promptboard.py" (
-    pushd "!PROMPTBOARD_DIR!"
-    start "PromptBoard" pythonw src\promptboard.py
-    popd
-    echo       [OK] PromptBoard gestartet
-) else (
-    echo       [SKIP] PromptBoard nicht gefunden
-)
-
-echo [4/4] Oeffne Web-GUI im Browser...
+echo [3/3] Oeffne Web-GUI im Browser...
 if "!BACH_NO_BROWSER!"=="1" (
     echo       [SKIP] Browser nicht geoeffnet ^(BACH_NO_BROWSER=1^)
 ) else (
@@ -170,12 +116,143 @@ echo   BACH laeuft!
 echo  ============================================
 echo   GUI:         http://127.0.0.1:8000
 echo   System Tray: Im Infobereich pruefen
-echo   PromptBoard: Im Infobereich pruefen
 echo  ============================================
 echo.
-echo   Zum Beenden: Tray-Icons rechtsklick -^> Beenden
+echo   Zum Beenden: Tray-Icon rechtsklick -^> Beenden
 echo   GUI stoppen: Ctrl+C im Server-Fenster
 echo.
+pause
+goto menu
+
+REM ============================================================
+REM  CLAUDE CODE (lokal, volle Rechte)
+REM ============================================================
+:claude_local
+title BACH Claude Code (lokal)
+cls
+echo.
+echo  ============================================
+echo   CLAUDE CODE - Lokale Session
+echo   Volle Rechte (skip-permissions)
+echo  ============================================
+echo.
+pushd "!ROOT_DIR!"
+claude --print "Starte mit lesen und ausfuehren von SKILL.md. Du hast volle Rechte. Arbeite selbststaendig an offenen Tasks, erstelle neue Features, fixe Bugs und fuehre Wartungsaufgaben durch. Frage bei Unklarheiten den User." --dangerously-skip-permissions
+popd
+echo.
+echo [FERTIG] Session beendet.
+pause
+goto menu
+
+REM ============================================================
+REM  CLAUDE CODE (remote, volle Rechte)
+REM ============================================================
+:claude_remote
+title BACH Claude Code (remote)
+cls
+echo.
+echo  ============================================
+echo   CLAUDE CODE - Remote Session
+echo   Volle Rechte + Fernzugriff (Mobile App)
+echo  ============================================
+echo.
+pushd "!ROOT_DIR!"
+if exist "%~dp0_internal\claude_remote_control.py" (
+    python "%~dp0_internal\claude_remote_control.py"
+) else (
+    claude --print "Starte mit lesen und ausfuehren von SKILL.md. Du hast volle Rechte. Remote-Session: Arbeite selbststaendig, der User steuert ggf. ueber Mobile. Frage bei Unklarheiten." --dangerously-skip-permissions
+)
+popd
+echo.
+echo [FERTIG] Session beendet.
+pause
+goto menu
+
+REM ============================================================
+REM  CODEX KONSOLE
+REM ============================================================
+:codex_console
+title BACH Codex Konsole
+cls
+echo.
+echo  ============================================
+echo   CODEX KONSOLE
+echo  ============================================
+echo.
+pushd "!ROOT_DIR!"
+where codex >nul 2>&1
+if !ERRORLEVEL! equ 0 (
+    codex
+) else (
+    echo [FEHLER] Codex nicht gefunden.
+    echo Installieren: npm install -g @openai/codex
+)
+popd
+echo.
+pause
+goto menu
+
+REM ============================================================
+REM  AGENT BEAUFTRAGEN
+REM ============================================================
+:agent_start
+title BACH Agent Starter
+cls
+echo.
+echo  ============================================
+echo   AGENT BEAUFTRAGEN
+echo  ============================================
+echo.
+pushd "!SYS_DIR!"
+
+echo  Verfuegbare Agenten:
+echo  -------------------------------------------
+python -c "import os,json; adir=os.path.join('agents'); [print(f'  [{i+1}] {os.path.splitext(f)[0]}') for i,f in enumerate(sorted(f for f in os.listdir(adir) if f.endswith('.json') and not f.startswith('_')))]" 2>nul
+echo  -------------------------------------------
+echo.
+set /p "agent_choice=  Agent-Nummer (oder Name): "
+set /p "agent_task=  Aufgabe: "
+set /p "agent_model=  Modell [S]onnet/[O]pus/[H]aiku (default: S): "
+
+set "MODEL_FLAG=--model sonnet"
+if /i "!agent_model!"=="O" set "MODEL_FLAG=--model opus"
+if /i "!agent_model!"=="H" set "MODEL_FLAG=--model haiku"
+
+echo.
+echo  Starte Agent mit Aufgabe...
+claude !MODEL_FLAG! --print "!agent_task!" --dangerously-skip-permissions
+popd
+echo.
+echo [FERTIG] Agent-Session beendet.
+pause
+goto menu
+
+REM ============================================================
+REM  CHAT SERVICE (Telegram Bot + Tray)
+REM ============================================================
+:chat_start
+title BACH Chat Service
+cls
+echo.
+echo  ============================================
+echo   BACH CHAT SERVICE - Start
+echo   (Telegram Bot + Control API + System Tray)
+echo  ============================================
+echo.
+pushd "!CHAT_DIR!"
+echo [1/2] Starte Telegram Bot + Control API...
+start "BACH Chat Bot" cmd /k "set PYTHONIOENCODING=utf-8 && python telegram_chat.py"
+timeout /t 3 /nobreak >nul
+echo       [OK] Bot gestartet (Control API auf Port 8081)
+echo.
+echo [2/2] Starte System Tray...
+start "" pythonw chat_tray.py
+echo       [OK] Tray gestartet - Icon pruefen
+popd
+echo.
+echo [OK] Chat Service laeuft
+echo      Dashboard: http://127.0.0.1:8081
+echo      Telegram:  @bach_assistant_bot
 pause
 goto menu
 
@@ -199,14 +276,11 @@ curl -s --max-time 5 "http://!BACH_HOST_TARGET!:8081/api/status" >nul 2>&1
 if !ERRORLEVEL! neq 0 (
     echo.
     echo       [OFFLINE] !BACH_HOST_TARGET! nicht erreichbar.
-    echo.
-    echo       Moegliche Ursachen:
-    echo         - Tailscale nicht aktiv
-    echo         - Mac Studio ausgeschaltet
-    echo         - Anderer Host? SET BACH_HOST=hostname
+    echo       Moegliche Ursachen: Tailscale nicht aktiv, Mac Studio aus
+    echo       SET BACH_HOST=hostname fuer anderen Server
     echo.
     set /p "fallback=  Lokal starten stattdessen? [J/N]: "
-    if /i "!fallback!"=="J" goto bridge_start
+    if /i "!fallback!"=="J" goto chat_start
     goto menu
 )
 echo       [OK] Control API erreichbar
@@ -232,183 +306,14 @@ echo  ============================================
 echo   GUI:       http://!BACH_HOST_TARGET!:8000
 echo   Dashboard: http://!BACH_HOST_TARGET!:8081
 echo   Telegram:  @bach_assistant_bot
-echo   Tray:      System Tray (Icon pruefen)
 echo  ============================================
-echo.
-echo   Tipp: SET BACH_HOST=anderer-host fuer anderen Server
 echo.
 pause
 goto menu
 
 REM ============================================================
-REM  BACH CHAT SERVICE (Telegram Bot + Control API + Tray)
+REM  WEB-GUI
 REM ============================================================
-:bridge_start
-title BACH Chat Service Start
-cls
-echo.
-echo  ============================================
-echo   BACH CHAT SERVICE - Start
-echo   (Telegram Bot + Control API + System Tray)
-echo  ============================================
-echo.
-pushd "!CHAT_DIR!"
-echo [1/2] Starte Telegram Bot + Control API...
-start "BACH Chat Bot" cmd /k "set PYTHONIOENCODING=utf-8 && python telegram_chat.py"
-timeout /t 3 /nobreak >nul
-echo       [OK] Bot gestartet (Control API auf Port 8081)
-echo.
-echo [2/2] Starte System Tray...
-start "" pythonw chat_tray.py
-echo       [OK] Tray gestartet - Icon pruefen
-popd
-echo.
-echo [OK] Chat Service laeuft
-echo      Dashboard: http://127.0.0.1:8081
-echo      Telegram:  @bach_assistant_bot
-pause
-goto menu
-
-:bridge_status
-title BACH Chat Service Status
-cls
-echo.
-echo  ============================================
-echo   BACH CHAT SERVICE - Status
-echo  ============================================
-echo.
-set "STATUS_HOST=127.0.0.1"
-if not "!BACH_HOST!"=="" set "STATUS_HOST=!BACH_HOST!"
-pushd "!SYS_DIR!"
-python -c "import urllib.request,json; r=urllib.request.urlopen('http://!STATUS_HOST!:8081/api/status'); d=json.loads(r.read()); print(f'  Host:     !STATUS_HOST!'); print(f'  Backend:  {d.get(\"backend\",\"?\")}'); print(f'  Modell:   {d.get(\"model\",\"?\")}'); print(f'  Modus:    {d.get(\"mode\",\"?\")}'); print(f'  Think:    {d.get(\"think\",\"?\")}'); print(f'  Sessions: {d.get(\"sessions\",\"?\")}')" 2>nul || echo [WARN] Control API nicht erreichbar (!STATUS_HOST!:8081)
-popd
-echo.
-pause
-goto menu
-
-:bridge_stop
-title BACH Chat Service Stop
-cls
-echo.
-echo  ============================================
-echo   BACH CHAT SERVICE - Stop
-echo  ============================================
-echo.
-echo [INFO] Stoppe Telegram Bot...
-for /f "tokens=2 delims=," %%p in ('wmic process where "commandline like '%%telegram_chat%%'" get processid /format:csv 2^>nul ^| findstr /r "[0-9]"') do (
-    taskkill /f /pid %%p >nul 2>&1
-)
-echo [INFO] Stoppe System Tray...
-for /f "tokens=2 delims=," %%p in ('wmic process where "commandline like '%%chat_tray%%'" get processid /format:csv 2^>nul ^| findstr /r "[0-9]"') do (
-    taskkill /f /pid %%p >nul 2>&1
-)
-echo.
-echo [OK] Chat Service gestoppt
-pause
-goto menu
-
-REM ============================================================
-REM  ALWAYS-ON: Mistral Watcher + Telegram
-REM ============================================================
-:always_on
-title BACH Always-On: Mistral Watcher
-cls
-set PYTHONIOENCODING=utf-8
-echo.
-echo  ============================================
-echo   BACH ALWAYS-ON MODUS
-echo   Mistral Watcher + Telegram/Discord
-echo  ============================================
-echo.
-
-echo [1/4] Pruefe Ollama...
-curl -s http://localhost:11434/api/tags >nul 2>&1
-if !ERRORLEVEL! neq 0 (
-    echo       Ollama nicht erreichbar - starte Ollama...
-    start "" "ollama" serve
-    timeout /t 5 /nobreak >nul
-    curl -s http://localhost:11434/api/tags >nul 2>&1
-    if !ERRORLEVEL! neq 0 (
-        echo [FEHLER] Ollama konnte nicht gestartet werden!
-        pause
-        goto menu
-    )
-)
-echo       [OK] Ollama laeuft
-
-echo [2/4] Pruefe Mistral-Modell...
-pushd "!SYS_DIR!"
-python -c "import urllib.request,json; r=urllib.request.urlopen('http://localhost:11434/api/tags'); d=json.loads(r.read()); models=[m['name'] for m in d.get('models',[])]; print('OK' if any('istral' in m for m in models) else 'MISSING')" 2>nul | findstr "OK" >nul
-if !ERRORLEVEL! neq 0 (
-    echo       Mistral nicht gefunden - lade Modell...
-    ollama pull mistral
-    if !ERRORLEVEL! neq 0 (
-        echo [FEHLER] Mistral konnte nicht geladen werden!
-        popd
-        pause
-        goto menu
-    )
-)
-popd
-echo       [OK] Mistral verfuegbar
-
-echo [3/4] Starte Connector-Dienste...
-python -c "bd=r'!SYS_DIR!'; open(r'%TEMP%\bach_poll_loop.bat','w').write('@echo off\nset PYTHONIOENCODING=utf-8\ncd /d \"'+bd+'\"\n:loop\necho [%%time%%] Polling Connectors...\npython hub\\_services\\connector\\queue_processor.py --action poll_and_route\ntimeout /t 30 /nobreak >nul\ngoto loop\n')"
-python -c "bd=r'!SYS_DIR!'; open(r'%TEMP%\bach_dispatch_loop.bat','w').write('@echo off\nset PYTHONIOENCODING=utf-8\ncd /d \"'+bd+'\"\n:loop\necho [%%time%%] Dispatching...\npython hub\\_services\\connector\\queue_processor.py --action dispatch\ntimeout /t 30 /nobreak >nul\ngoto loop\n')"
-start "BACH Connector Poll" /min "%TEMP%\bach_poll_loop.bat"
-start "BACH Connector Dispatch" /min "%TEMP%\bach_dispatch_loop.bat"
-echo       [OK] Connector Poll + Dispatch (30s) gestartet
-
-echo [4/4] Starte Watcher Daemon...
-echo.
-echo  ============================================
-echo   Alle Dienste aktiv!
-echo   Telegram -^> poll (30s) -^> Mistral (15s) -^> Antwort (30s)
-echo   Stop: Ctrl+C oder Fenster schliessen
-echo  ============================================
-echo.
-
-pushd "!WATCHER_DIR!"
-python watcher_daemon.py
-popd
-
-echo.
-echo [INFO] Watcher beendet - stoppe Connector-Dienste...
-taskkill /fi "WINDOWTITLE eq BACH Connector Poll" /f >nul 2>&1
-taskkill /fi "WINDOWTITLE eq BACH Connector Dispatch" /f >nul 2>&1
-del "%TEMP%\bach_poll_loop.bat" >nul 2>&1
-del "%TEMP%\bach_dispatch_loop.bat" >nul 2>&1
-echo [OK] Alle Dienste gestoppt.
-pause
-goto menu
-
-REM ============================================================
-REM  INTERAKTIV
-REM ============================================================
-:console
-title BACH User-Konsole
-pushd "!SYS_DIR!"
-set PYTHONIOENCODING=utf-8
-python tools\user_console.py
-popd
-pause
-goto menu
-
-:advanced
-title BACH Advanced Console
-pushd "!SYS_DIR!"
-echo =====================================================
-echo  BACH Advanced Console v2.0
-echo =====================================================
-echo.
-echo  Befehle:  python bach.py help ^| task list ^| --status
-echo  Beenden:  exit
-echo =====================================================
-echo.
-cmd /k "set PATH=%CD%;%PATH% && set PYTHONIOENCODING=utf-8"
-popd
-goto menu
-
 :gui
 title BACH GUI Server
 pushd "!SYS_DIR!"
@@ -417,209 +322,206 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000" ^| findstr "LISTENING
     taskkill /F /PID %%a >nul 2>&1
 )
 if exist "gui\__pycache__" rd /s /q "gui\__pycache__" >nul 2>&1
-set TIMESTAMP=%TIME:~0,2%%TIME:~3,2%%TIME:~6,2%
-set TIMESTAMP=!TIMESTAMP: =0!
 start "BACH Server" cmd /k "set PYTHONIOENCODING=utf-8 && python gui\server.py --port 8000"
 timeout /t 3 >nul
 if "!BACH_NO_BROWSER!"=="1" (
     echo  [SKIP] Browser nicht geoeffnet ^(BACH_NO_BROWSER=1^)
     echo  URL: http://127.0.0.1:8000
 ) else (
-    start "" "http://127.0.0.1:8000?nocache=!TIMESTAMP!"
+    start "" "http://127.0.0.1:8000"
 )
 popd
 echo  [OK] GUI gestartet auf http://127.0.0.1:8000
 pause
 goto menu
 
-:gemini
-title BACH Gemini Starter
-pushd "!SYS_DIR!"
-set PYTHONIOENCODING=utf-8
-:gemini_menu
+REM ============================================================
+REM  STATUS
+REM ============================================================
+:status
+title BACH Status
 cls
-echo ============================================================
-echo   BACH GEMINI STARTER
-echo ============================================================
-echo   [D] Default (1 Task)
-echo   [B] Bulk (Alle zugewiesenen Tasks)
-echo   [A] Auto (2 Tasks, headless)
-echo   [N] Analyse       [R] Research
-echo   [W] Wiki-Update   [H] Help-Update
-echo   [O] Docs-Update   [F] Frei (Interaktiv)
-echo   [Q] Zurueck zum Hauptmenue
-echo ============================================================
 echo.
-set /p "gchoice=  Auswahl: "
-if /i "!gchoice!"=="D" ( python tools\partner_communication\gemini_start.py --gui --tasks 1 & goto gemini_menu )
-if /i "!gchoice!"=="B" ( python tools\partner_communication\gemini_start.py --gui --bulk & goto gemini_menu )
-if /i "!gchoice!"=="A" ( python tools\partner_communication\gemini_start.py --cli --auto & goto gemini_menu )
-if /i "!gchoice!"=="N" ( python tools\partner_communication\gemini_start.py --gui --mode analyse & goto gemini_menu )
-if /i "!gchoice!"=="R" ( python tools\partner_communication\gemini_start.py --gui --mode research & goto gemini_menu )
-if /i "!gchoice!"=="W" ( python tools\partner_communication\gemini_start.py --gui --mode wiki-update & goto gemini_menu )
-if /i "!gchoice!"=="H" ( python tools\partner_communication\gemini_start.py --gui --mode help-update & goto gemini_menu )
-if /i "!gchoice!"=="O" ( python tools\partner_communication\gemini_start.py --gui --mode docs-update & goto gemini_menu )
-if /i "!gchoice!"=="F" ( python tools\partner_communication\gemini_start.py --gui --default & goto gemini_menu )
-if /i "!gchoice!"=="Q" ( popd & goto menu )
-echo Ungueltige Auswahl.
+echo  ============================================
+echo   BACH SYSTEM STATUS
+echo  ============================================
+echo.
+set "STATUS_HOST=127.0.0.1"
+if not "!BACH_HOST!"=="" set "STATUS_HOST=!BACH_HOST!"
+
+echo  Control API (!STATUS_HOST!:8081):
+pushd "!SYS_DIR!"
+python -c "import urllib.request,json; r=urllib.request.urlopen('http://!STATUS_HOST!:8081/api/status'); d=json.loads(r.read()); print(f'    Backend:  {d.get(\"backend\",\"?\")}'); print(f'    Modell:   {d.get(\"model\",\"?\")}'); print(f'    Modus:    {d.get(\"mode\",\"?\")}'); print(f'    Think:    {d.get(\"think\",\"?\")}'); print(f'    Sessions: {d.get(\"sessions\",\"?\")}')" 2>nul || echo    [OFFLINE] Control API nicht erreichbar
+
+echo.
+echo  GUI (Port 8000):
+curl -s --max-time 2 "http://127.0.0.1:8000/" >nul 2>&1
+if !ERRORLEVEL! equ 0 ( echo    [ONLINE] ) else ( echo    [OFFLINE] )
+
+echo.
+echo  Ollama (Port 11434):
+curl -s --max-time 2 "http://localhost:11434/api/tags" >nul 2>&1
+if !ERRORLEVEL! equ 0 ( echo    [ONLINE] ) else ( echo    [OFFLINE] )
+
+popd
+echo.
+pause
+goto menu
+
+REM ============================================================
+REM  CHAT SERVICE STOP
+REM ============================================================
+:chat_stop
+title BACH Chat Service Stop
+cls
+echo.
+echo  Stoppe Chat Service...
+for /f "tokens=2 delims=," %%p in ('wmic process where "commandline like '%%telegram_chat%%'" get processid /format:csv 2^>nul ^| findstr /r "[0-9]"') do (
+    taskkill /f /pid %%p >nul 2>&1
+)
+for /f "tokens=2 delims=," %%p in ('wmic process where "commandline like '%%chat_tray%%'" get processid /format:csv 2^>nul ^| findstr /r "[0-9]"') do (
+    taskkill /f /pid %%p >nul 2>&1
+)
+echo [OK] Chat Service gestoppt
+pause
+goto menu
+
+REM ============================================================
+REM  ERWEITERTE OPTIONEN (Submenue)
+REM ============================================================
+:extended_menu
+cls
+echo.
+echo  ============================================
+echo   ERWEITERTE OPTIONEN
+echo  ============================================
+echo.
+echo   --- CLAUDE AUTO-SESSION -----------------------
+echo   [1]  Auto-Session (Zeitlimit + Scope waehlbar)
+echo   [2]  Endlos-Loop (Intervall waehlbar)
+echo.
+echo   --- WARTUNG ------------------------------------
+echo   [M]  Maintenance (Recurring/Backup/Docs)
+echo   [A]  Advanced Console (bach.py direkt)
+echo.
+echo   --- AUTOSTART ----------------------------------
+echo   [C]  Autostart einrichten
+echo   [R]  Autostart entfernen
+echo.
+echo   [Q]  Zurueck zum Hauptmenue
+echo  ============================================
+echo.
+
+set /p "echoice=  Auswahl: "
+
+if "!echoice!"=="1" goto ext_auto_session
+if "!echoice!"=="2" goto ext_loop
+if /i "!echoice!"=="M" goto ext_maintenance
+if /i "!echoice!"=="A" goto ext_advanced
+if /i "!echoice!"=="C" goto ext_autostart
+if /i "!echoice!"=="R" goto ext_autostart_remove
+if /i "!echoice!"=="Q" goto menu
+
+echo   Ungueltige Auswahl.
 timeout /t 2 >nul
-goto gemini_menu
+goto extended_menu
 
-REM ============================================================
-REM  CLAUDE AUTO-SESSIONS
-REM ============================================================
-:claude_all_15
-title BACH Auto: Alle Tasks (15min)
+REM --- Claude Auto-Session (konsolidiert) ---
+:ext_auto_session
+cls
+echo.
+echo  ============================================
+echo   CLAUDE AUTO-SESSION
+echo  ============================================
+echo.
+echo  Zeitlimit:
+echo   [1] 15 Minuten   [2] 30 Minuten   [3] 1 Stunde   [4] Unbegrenzt
+set /p "atime=  Zeitlimit: "
+set "MAX_MIN=15"
+set "MAX_TURNS="
+if "!atime!"=="1" set "MAX_MIN=15"
+if "!atime!"=="2" set "MAX_MIN=30"
+if "!atime!"=="3" set "MAX_MIN=60"
+if "!atime!"=="4" set "MAX_MIN=0"
+echo.
+echo  Scope:
+echo   [A] Alle offenen Tasks   [Z] Nur zugewiesene Tasks
+set /p "ascope=  Scope: "
+set "SCOPE_TEXT=Bearbeite offene Tasks aus 'bach task list' (P1 zuerst)."
+if /i "!ascope!"=="Z" set "SCOPE_TEXT=Bearbeite NUR dir (Claude) zugewiesene Tasks."
+set "TIME_TEXT=Arbeite maximal !MAX_MIN! Minuten, dann Session-Summary und Shutdown."
+if "!MAX_MIN!"=="0" set "TIME_TEXT=Arbeite alle Tasks ab, dann Session-Summary und Shutdown."
+echo.
 pushd "!ROOT_DIR!"
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Bearbeite dann offene Tasks aus 'bach task list' - waehle selbststaendig die wichtigsten aus (P1 zuerst). Arbeite maximal 15 Minuten, dann fuehre 'bach --memory session' mit einer Zusammenfassung aus und beende mit 'bach --shutdown'."
+claude --print "Starte mit lesen und ausfuehren von SKILL.md. !SCOPE_TEXT! !TIME_TEXT!"
 popd
 echo.
 echo [FERTIG] Session beendet.
 pause
-goto menu
+goto extended_menu
 
-:claude_all_30
-title BACH Auto: Alle Tasks (30min)
+REM --- Claude Endlos-Loop (konsolidiert) ---
+:ext_loop
+cls
+echo.
+echo  ============================================
+echo   CLAUDE ENDLOS-LOOP
+echo  ============================================
+echo.
+echo  Intervall zwischen Sessions:
+echo   [1] 15 Minuten   [2] 30 Minuten   [3] 1 Stunde
+set /p "lint=  Intervall: "
+set "LOOP_SEC=900"
+set "LOOP_MAX=40"
+set "LOOP_MIN=12"
+if "!lint!"=="1" ( set "LOOP_SEC=900" & set "LOOP_MAX=40" & set "LOOP_MIN=12" )
+if "!lint!"=="2" ( set "LOOP_SEC=1800" & set "LOOP_MAX=80" & set "LOOP_MIN=25" )
+if "!lint!"=="3" ( set "LOOP_SEC=3600" & set "LOOP_MAX=150" & set "LOOP_MIN=50" )
+echo.
+echo  Loop laeuft. Ctrl+C zum Stoppen.
+echo.
 pushd "!ROOT_DIR!"
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Bearbeite dann offene Tasks aus 'bach task list' - waehle selbststaendig die wichtigsten aus (P1 zuerst). Arbeite maximal 30 Minuten, dann fuehre 'bach --memory session' mit einer Zusammenfassung aus und beende mit 'bach --shutdown'."
+:ext_loop_cycle
+echo [%date% %time%] Starte Session (max !LOOP_MIN! Min)...
+claude --print "Starte mit lesen und ausfuehren von SKILL.md. Bearbeite offene Tasks (P1 zuerst). Max !LOOP_MIN! Min, dann Summary und Shutdown." --max-turns !LOOP_MAX!
+echo [%date% %time%] Naechste Session in !LOOP_SEC! Sekunden... (Ctrl+C = Stop)
+timeout /t !LOOP_SEC! /nobreak
+goto ext_loop_cycle
+
+REM --- Wartung ---
+:ext_maintenance
+pushd "!ROOT_DIR!"
+claude --print "Starte mit lesen und ausfuehren von SKILL.md. Wartungsaufgaben: 1) 'bach --recurring check' 2) 'bach backup status' und ggf. 'bach backup create' 3) 'bach --maintain docs' 4) 'bach consolidate run'. Abschliessend Session-Summary und Shutdown."
 popd
-echo.
-echo [FERTIG] Session beendet.
-pause
-goto menu
+pause & goto extended_menu
 
-:claude_all_1h
-title BACH Auto: Alle Tasks (1h)
-pushd "!ROOT_DIR!"
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Bearbeite dann offene Tasks aus 'bach task list' - waehle selbststaendig die wichtigsten aus (P1 zuerst). Arbeite maximal 60 Minuten, dann fuehre 'bach --memory session' mit einer Zusammenfassung aus und beende mit 'bach --shutdown'."
+REM --- Advanced Console ---
+:ext_advanced
+pushd "!SYS_DIR!"
+echo =====================================================
+echo  BACH Advanced Console
+echo  Befehle: python bach.py help ^| task list ^| --status
+echo  Beenden: exit
+echo =====================================================
+cmd /k "set PATH=%CD%;%PATH% && set PYTHONIOENCODING=utf-8"
 popd
-echo.
-echo [FERTIG] Session beendet.
-pause
-goto menu
+goto extended_menu
 
-:claude_assigned_15
-title BACH Auto: Zugewiesene Tasks (15min)
-pushd "!ROOT_DIR!"
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Bearbeite dann NUR dir (Claude) zugewiesene Tasks aus 'bach task list'. Arbeite maximal 15 Minuten, dann fuehre 'bach --memory session' mit einer Zusammenfassung aus und beende mit 'bach --shutdown'."
-popd
-echo.
-echo [FERTIG] Session beendet.
-pause
-goto menu
+REM --- Autostart ---
+:ext_autostart
+echo  Erstelle Windows Autostart-Eintrag...
+schtasks /create /tn "BACH Chat Tray" /tr "cmd /c \"set PYTHONIOENCODING=utf-8 && pythonw !CHAT_DIR!\chat_tray.py --host 127.0.0.1\"" /sc onlogon /rl highest /f >nul 2>&1
+echo [OK] Autostart-Eintrag erstellt: "BACH Chat Tray"
+pause & goto extended_menu
 
-:claude_assigned_nolimit
-title BACH Auto: Zugewiesene Tasks (unbegrenzt)
-pushd "!ROOT_DIR!"
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Bearbeite dann NUR dir (Claude) zugewiesene Tasks aus 'bach task list'. Arbeite alle zugewiesenen Tasks ab. Nach jeder erledigten Aufgabe pruefe ob weitere zugewiesene Tasks offen sind. Wenn alle erledigt sind, fuehre 'bach --memory session' mit einer Zusammenfassung aus und beende mit 'bach --shutdown'."
-popd
-echo.
-echo [FERTIG] Session beendet.
-pause
-goto menu
+:ext_autostart_remove
+echo  Entferne Windows Autostart-Eintrag...
+schtasks /delete /tn "BACH Chat Tray" /f >nul 2>&1
+echo [OK] Autostart-Eintrag entfernt.
+pause & goto extended_menu
 
-REM ============================================================
-REM  CLAUDE SPEZIAL
-REM ============================================================
-:claude_full
-title BACH Claude: Full Access
-pushd "!ROOT_DIR!"
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Du hast volle Rechte. Arbeite selbststaendig an offenen Tasks, erstelle neue Features, fixe Bugs und fuehre Wartungsaufgaben durch. Nutze 'bach --recurring check' fuer faellige periodische Aufgaben. Frage bei Unklarheiten den User." --dangerously-skip-permissions
-popd
-echo.
-echo [FERTIG] Session beendet.
-pause
-goto menu
-
-:claude_rc
-title BACH Claude: Remote Control
-call "%~dp0_internal\claude_remote_control.bat"
-goto menu
-
-:claude_maintenance
-title BACH Auto: Wartung
-pushd "!ROOT_DIR!"
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Fuehre dann folgende Wartungsaufgaben durch: 1) 'bach --recurring check' fuer faellige periodische Tasks 2) 'bach backup status' und bei Bedarf 'bach backup create' 3) 'bach --maintain docs' fuer Dokumentations-Check 4) 'bach consolidate run' fuer Memory-Konsolidierung. Erstelle abschliessend eine Session-Zusammenfassung mit 'bach --memory session' und beende mit 'bach --shutdown'."
-popd
-echo.
-echo [FERTIG] Wartung beendet.
-pause
-goto menu
-
-REM ============================================================
-REM  CLAUDE LOOP (Endlos)
-REM ============================================================
-:loop_15
-title BACH Loop: Alle 15 Min
-pushd "!ROOT_DIR!"
-:loop_15_cycle
-echo.
-echo [%date% %time%] Starte neue BACH-Session...
-echo ============================================================
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Bearbeite offene Tasks aus 'bach task list' (P1 zuerst). Arbeite maximal 12 Minuten, dann fuehre 'bach --memory session' mit Zusammenfassung aus und beende mit 'bach --shutdown'." --max-turns 40
-echo.
-echo [%date% %time%] Session beendet. Naechste in 15 Minuten... (Ctrl+C = Stop)
-timeout /t 900 /nobreak
-goto loop_15_cycle
-
-:loop_30
-title BACH Loop: Alle 30 Min
-pushd "!ROOT_DIR!"
-:loop_30_cycle
-echo.
-echo [%date% %time%] Starte neue BACH-Session...
-echo ============================================================
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Bearbeite offene Tasks aus 'bach task list' (P1 zuerst). Arbeite maximal 25 Minuten, dann fuehre 'bach --memory session' mit Zusammenfassung aus und beende mit 'bach --shutdown'." --max-turns 80
-echo.
-echo [%date% %time%] Session beendet. Naechste in 30 Minuten... (Ctrl+C = Stop)
-timeout /t 1800 /nobreak
-goto loop_30_cycle
-
-:loop_1h
-title BACH Loop: Jede Stunde
-pushd "!ROOT_DIR!"
-:loop_1h_cycle
-echo.
-echo [%date% %time%] Starte neue BACH-Session...
-echo ============================================================
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Bearbeite offene Tasks aus 'bach task list' (P1 zuerst). Arbeite maximal 50 Minuten, dann fuehre 'bach --memory session' mit Zusammenfassung aus und beende mit 'bach --shutdown'." --max-turns 150
-echo.
-echo [%date% %time%] Session beendet. Naechste in 1 Stunde... (Ctrl+C = Stop)
-timeout /t 3600 /nobreak
-goto loop_1h_cycle
-
-REM ============================================================
-REM  AGENTEN
-REM ============================================================
-:agent_start
-title BACH Agent Starter
-call "%~dp0_internal\agent_start.bat"
-goto menu
-
-REM ============================================================
-REM  AUTOMATISIERUNG
-REM ============================================================
-:automation_create
-title BACH Chain Creator
-call "%~dp0_internal\automation_create.bat"
-goto menu
-
-:automation_marblerun
-title BACH MarbleRun
-call "%~dp0_internal\automation_marblerun.bat"
-goto menu
-
-:automation_llmauto
-title BACH llmauto
-call "%~dp0_internal\automation_llmauto.bat"
-goto menu
-
-:automation_status
-title BACH Automation Status
-call "%~dp0_internal\automation_status.bat"
-goto menu
-
-REM ============================================================
 :end
+echo.
+echo  Auf Wiedersehen!
 endlocal
-exit
+exit /b 0

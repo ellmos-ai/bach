@@ -30,6 +30,12 @@
 /system/storage/
 /system/storage/**
 
+# === LOGS (Evaluierung, Translation-Tests, etc.) ===
+/logs/
+
+# === PID-DATEIEN (Laufzeit) ===
+**/daemon.pid
+
 # === SYSTEM LAUFZEIT-DATEN ===
 /system/data/.clock_state
 /system/data/.injector_cooldowns
