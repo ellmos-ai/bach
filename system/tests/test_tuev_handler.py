@@ -390,8 +390,8 @@ class TestUsecaseRouting:
 
     def test_run_all_no_args(self, usecase):
         ok, msg = usecase.handle("run-all", [])
-        assert ok is False
-        assert "Usage" in msg
+        assert ok is True
+        assert "Keine Testfaelle" in msg
 
     def test_show_no_args(self, usecase):
         ok, msg = usecase.handle("show", [])
@@ -484,6 +484,18 @@ class TestUsecaseRun:
         conn.close()
         assert row["last_tested"] is not None
 
+    def test_dry_run_does_not_update_last_tested(self, seeded_usecase, tmp_tuev):
+        _, db_path, _ = tmp_tuev
+        ok, msg = seeded_usecase.handle("run", ["1"], dry_run=True)
+        assert ok is True
+        assert "[DRY-RUN]" in msg
+
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT last_tested FROM usecases WHERE id = 1").fetchone()
+        conn.close()
+        assert row["last_tested"] is None
+
 
 # ================================================================
 # USECASE: RUN ALL
@@ -501,6 +513,29 @@ class TestUsecaseRunAll:
         assert "Login-Test" in msg
         assert "Fehltest" in msg
         assert "Gesamt: 2" in msg
+        assert "Mit Workflow-Datei:" in msg
+
+    def test_without_workflow_runs_all(self, seeded_usecase):
+        ok, msg = seeded_usecase.handle("run-all", [])
+        assert ok is True
+        assert "Sammeltest fuer alle Testfaelle" in msg
+        assert "Anderer WF Test" in msg
+        assert "Gesamt: 3" in msg
+
+    def test_dry_run_does_not_update_last_tested(self, seeded_usecase, tmp_tuev):
+        _, db_path, _ = tmp_tuev
+        ok, msg = seeded_usecase.handle("run-all", ["test-wf"], dry_run=True)
+        assert ok is True
+        assert "[DRY-RUN]" in msg
+
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, last_tested FROM usecases WHERE workflow_name = 'test-wf' ORDER BY id"
+        ).fetchall()
+        conn.close()
+        assert len(rows) == 2
+        assert all(row["last_tested"] is None for row in rows)
 
 
 # ================================================================
@@ -560,6 +595,25 @@ class TestWorkflowCandidates:
         conn.close()
         assert resolved is not None
         assert resolved.exists()
+
+    def test_resolve_prefers_markdown_file_over_existing_directory(self, seeded_usecase, tmp_tuev):
+        system_dir, db_path, wf_dir = tmp_tuev
+        (wf_dir / "test-wf.md").write_text("# Test", encoding="utf-8")
+        data_dir = system_dir / "test-data"
+        data_dir.mkdir()
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "UPDATE usecases SET workflow_path = ? WHERE id = 1",
+            (str(data_dir),),
+        )
+        conn.commit()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM usecases WHERE id = 1").fetchone()
+        resolved, checked = seeded_usecase._resolve_workflow_path(row, conn)
+        conn.close()
+
+        assert resolved == wf_dir / "test-wf.md"
 
     def test_resolve_missing(self, seeded_usecase, tmp_tuev):
         _, db_path, _ = tmp_tuev

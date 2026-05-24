@@ -917,6 +917,23 @@ Interpersonelle Interaktionen:
 Klient (anonymisiert): {tarnname}
 Berichtszeitraum: {berichtszeitraum}
 
+=== SYSTEM-GRENZEN / DATENSCHUTZ-GATE ===
+
+Du arbeitest AUSSCHLIESSLICH mit dem anonymisierten Dokumenten-Bundle
+aus diesem Prompt. Alles ausserhalb dieses Prompt-Inhalts ist tabu.
+
+VERBOTEN:
+- Keine Dateisystem-Pruefungen
+- Keine Aussagen ueber Dateien, Ordner, Pfade oder Dateinamen
+- Keine Bestaetigungen, ob etwas gespeichert, gefunden oder exportiert wurde
+- Keine Meta-Kommentare ueber deinen Workflow, deine Pruefschritte oder Tools
+- Keine Rueckfragen nach weiteren Dateien oder Dateilisten
+
+Wenn Informationen fehlen:
+- Lass Felder leer oder nutze null, sofern das Schema es erlaubt
+- Erfinde keine Dateisystemdetails
+- Erwaehne NICHT, dass etwas im Dateisystem fehlt oder geprueft werden muesste
+
 === DOKUMENTEN-BUNDLE (CORE + STUFE2) ===
 
 {bundle.core_text}
@@ -937,13 +954,17 @@ Berichtszeitraum: {berichtszeitraum}
 Erstelle einen strukturierten JSON-Output fuer einen ICF-basierten Foerderbericht.
 
 WICHTIGE REGELN:
-1. Antworte NUR mit validem JSON - KEIN Markdown, KEINE Erklaerungen
+1. Antworte NUR mit validem JSON - KEIN Markdown, KEINE Erklaerungen,
+   KEINE Codeblocks, KEINE Metadaten vor oder nach dem JSON
 2. Verwende den anonymisierten Namen wie angegeben
 3. Formuliere im fachlichen Berichtsstil (3. Person, sachlich)
 4. Beziehe dich auf konkrete Beobachtungen aus den Protokollen
-5. ICF-Codes: Verwende AUSSCHLIESSLICH die unten gelisteten ICF-Codes (d1-d9).
+5. Arbeite NUR mit dem Bundle-Text in diesem Prompt
+6. Fuehre KEINE Dateisystem-, Datei-, Ordner- oder Existenzpruefungen aus
+7. Erwaehne KEINE Pfade, Dateinamen, Prompt-Dateien, Speicherorte oder Export-Schritte
+8. ICF-Codes: Verwende AUSSCHLIESSLICH die unten gelisteten ICF-Codes (d1-d9).
    - D880 existiert NICHT. Verwende D1310 oder D1314 fuer Spielverhalten.
-6. DOKUMENTEN-PRIORISIERUNG (WICHTIG - beachte beim Schreiben!):
+9. DOKUMENTEN-PRIORISIERUNG (WICHTIG - beachte beim Schreiben!):
    Die Dokumente sind nach Prioritaet sortiert. Gewichte sie beim Schreiben entsprechend:
    HOHE PRIO:   Aktuelle Einzeltherapie-Protokolle, Aktendeckblatt, Hilfeplan, Bewilligungsbescheid
    MITTLERE PRIO: Berichte von Foerderstellen (z.B. proAutismus), Arztberichte (<10 Jahre),
@@ -1124,6 +1145,73 @@ JSON:
 
         return prompt
 
+    def sanitize_llm_response(self, llm_response: str) -> str:
+        """
+        Entfernt technische Metadaten wie Pfade, Dateinamen und
+        Dateisystem-Hinweise aus der LLM-Antwort.
+        """
+        import re
+
+        if not llm_response:
+            return ""
+
+        path_patterns = (
+            re.compile(r"[A-Za-z]:\\[^\s\"']+"),
+            re.compile(r"(?:/[^/\s\"']+){2,}"),
+        )
+        leak_markers = (
+            "data_roh",
+            "data_ano",
+            "data_bundled",
+            "output_berichte",
+            "prompt.txt",
+            "llm_response.txt",
+            "session_info.json",
+            ".pipeline_lock",
+            "ausgabepfad",
+            "output_path",
+        )
+        workflow_markers = (
+            "ich pruefe",
+            "ich habe geprueft",
+            "datei gefunden",
+            "datei liegt",
+            "datei befindet sich",
+            "ordner enthaelt",
+            "pfad:",
+            "gespeichert:",
+            "bericht erstellt:",
+            "anonymisierter prompt:",
+            "prompt-datei:",
+        )
+
+        cleaned_lines = []
+        removed_any = False
+        for raw_line in llm_response.splitlines():
+            stripped = raw_line.strip()
+            lower = stripped.lower()
+
+            if any(marker in lower for marker in leak_markers):
+                removed_any = True
+                continue
+            if any(lower.startswith(marker) for marker in workflow_markers):
+                removed_any = True
+                continue
+
+            line = raw_line
+            for pattern in path_patterns:
+                if pattern.search(line):
+                    removed_any = True
+                    line = pattern.sub("[REDACTED_PATH]", line)
+            cleaned_lines.append(line)
+
+        cleaned = "\n".join(cleaned_lines).strip()
+        if removed_any and not cleaned:
+            raise ValueError(
+                "LLM-Antwort enthielt nur Metadaten oder Dateisystemhinweise."
+            )
+        return cleaned or llm_response.strip()
+
     def _search_wissensdatenbank(self, topics: List[str], max_chars: int = 3000) -> str:
         """Durchsucht die Wissensdatenbank nach relevanten Inhalten."""
         results = []
@@ -1184,17 +1272,19 @@ JSON:
         Returns:
             Pfad zum fertigen Dokument
         """
-        original_name = session.profile.original_name if session.profile else "Klient"
+        filtered_response = self.sanitize_llm_response(llm_response)
 
         # Versuche JSON zu parsen
-        json_data = self._extract_json_from_response(llm_response)
+        json_data = self._extract_json_from_response(filtered_response)
 
         if json_data:
             # JSON gefunden -> nutze den Generator
             return self._generate_from_json(session, json_data, auto_deanonymize)
 
         # Fallback: Alter Markdown-basierter Ansatz
-        return self._generate_from_markdown(session, llm_response, auto_deanonymize, report_data)
+        return self._generate_from_markdown(
+            session, filtered_response, auto_deanonymize, report_data
+        )
 
     def _extract_json_from_response(self, llm_response: str) -> Optional[Dict]:
         """

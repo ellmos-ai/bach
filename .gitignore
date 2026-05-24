@@ -17,6 +17,23 @@
 /system/data/ollama_config.json
 /system/partners/partner_config.json
 
+# === GENERISCHE CREDENTIAL-DATEIEN (NIEMALS COMMITTEN!) ===
+.env
+.env.*
+*.pem
+*.p12
+*.pfx
+*.key
+*.token
+*.secret
+credentials*.json
+secrets*.json
+*secret*.json
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
 # === MAIL CREDENTIALS (NIEMALS COMMITTEN!) ===
 /system/hub/_services/mail/credentials/
 /system/hub/_services/mail/credentials/*.json

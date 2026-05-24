@@ -141,6 +141,9 @@ class FoerderberichtPipeline:
             prompt_file = self.base_path / "data_bundled" / "prompt.txt"
             prompt = prompt_file.read_text(encoding="utf-8")
             llm_response = self._call_llm(prompt, llm_backend, model)
+            from hub._services.document.report_workflow_service import ReportWorkflowService
+            workflow = ReportWorkflowService(base_path=self.base_path)
+            llm_response = workflow.sanitize_llm_response(llm_response)
             response_file = self.base_path / "data_bundled" / "llm_response.txt"
             response_file.write_text(llm_response, encoding="utf-8")
             result.steps_completed.append(f"llm: {len(llm_response)} Zeichen Response")
@@ -408,7 +411,7 @@ class FoerderberichtPipeline:
                 if Path(clean_report).resolve() != clean_dest.resolve():
                     shutil.copy2(str(clean_report), str(clean_dest))
                 result.output_path = clean_dest
-                result.steps_completed.append(f"bericht: {clean_dest.name}")
+                result.steps_completed.append("bericht: erstellt")
 
             # Cleanup
             if auto_cleanup:

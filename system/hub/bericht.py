@@ -329,7 +329,7 @@ class BerichtHandler(BaseHandler):
             if result.success:
                 lines = [
                     f"Pipeline erfolgreich!",
-                    f"  Bericht: {result.output_path}",
+                    f"  Bericht: erstellt",
                     f"  Tarnname: {result.tarnname}",
                     f"  Dauer: {result.duration_s:.1f}s",
                     "",

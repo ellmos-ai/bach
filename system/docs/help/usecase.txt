@@ -1,23 +1,26 @@
 # Portabilität: SYSTEM
-# Version: 1.1.0
-# Zuletzt validiert: 2026-02-08
-# Nächste Prüfung: 2026-05-08
+# Version: 1.2.0
+# Zuletzt validiert: 2026-05-23
+# Nächste Prüfung: 2026-11-23
 
-USECASES - Workflow-Testfaelle und TUeV-System
+USECASES - Workflow-Testfälle und TÜV-System
 ===============================================
 
 BESCHREIBUNG
 ------------
-Usecases sind Teil des BACH-TUeV-Systems und dienen als:
+Usecases sind Teil des BACH-TÜV-Systems und dienen als:
   1. FEATURE-TESTS        Validiert ein Workflow funktioniert?
-  2. QUALITAETSSICHERUNG  Alle Komponenten spielen zusammen?
+  2. QUALITÄTSSICHERUNG   Alle Komponenten spielen zusammen?
   3. ANFORDERUNGSNACHWEIS Was ist implementiert, was fehlt noch?
 
 Usecases werden in der SQLite-DB gespeichert (Tabelle: usecases)
 und sind mit Workflows verknüpft (workflow_tuev Tabelle).
-`workflow_path` ist optional: ältere oder grobere Testfaelle können nur
+`workflow_path` ist optional: ältere oder grobere Testfälle können nur
 einen Bereich/Kategorienamen tragen. `bach usecase run` soll dann trotzdem
 laufen und den Testfall im manuellen Datenmodus anzeigen.
+`bach usecase run-all` führt Sammeltests jetzt ebenfalls wirklich aus,
+kann optional ohne Workflow-Argument alle Testfälle durchgehen und respektiert
+`--dry-run`, ohne `last_tested` zu verändern.
 
 Handler: system/hub/tuev.py (TuevHandler + UsecaseHandler)
 
@@ -64,7 +67,7 @@ USECASE ALS TEST
 
 USECASE ALS ANFORDERUNG
 ------------------------
-  Fehlgeschlagene Usecases decken Luecken auf:
+  Fehlgeschlagene Usecases decken Lücken auf:
   - Fehlende Tools         -> Task für Tool-Erstellung
   - Fehlende CLI-Befehle   -> Task für CLI-Handler
   - Fehlende DB-Tabellen   -> Task für Schema-Erweiterung
@@ -88,17 +91,22 @@ CLI-BEFEHLE
 -----------
 
 USECASE-VERWALTUNG:
-  bach usecase list [workflow]       Alle Testfaelle (optional gefiltert)
+  bach usecase list [workflow]       Alle Testfälle (optional gefiltert)
   bach usecase add <workflow>        Hinweise zum Hinzufügen (SQL-Template)
   bach usecase show <id>             Details eines Testfalls anzeigen
-  bach usecase run <id>              Einzelnen Testfall ausführen
-  bach usecase run-all <workflow>    Alle Tests eines Workflows
+  bach usecase run <id> [--dry-run]  Einzelnen Testfall ausführen
+  bach usecase run-all [workflow]    Sammeltest für einen Workflow oder alle
 
-TUEV-VERWALTUNG:
-  bach tuev status                   TUeV-Status aller Workflows
+SAMMELTESTS:
+  bach usecase run-all                    Alle Testfälle vorbereiten
+  bach usecase run-all system-synopse     Nur diesen Workflow prüfen
+  bach usecase run-all --dry-run          Nur prüfen, nichts als getestet markieren
+
+TÜV-VERWALTUNG:
+  bach tuev status                   TÜV-Status aller Workflows
   bach tuev check <workflow>         Einzelnen Workflow prüfen
   bach tuev run                      Alle fälligen Prüfungen
-  bach tuev renew <workflow>         TUeV erneuern nach Prüfung
+  bach tuev renew <workflow>         TÜV erneuern nach Prüfung
   bach tuev init                     Workflows aus skills/workflows/ registrieren
 
 USECASE ERSTELLEN
@@ -144,7 +152,7 @@ DATENBANK-STRUKTUR
 
 SIEHE AUCH
 ----------
-  bach tuev status                          TUeV-Dashboard
+  bach tuev status                          TÜV-Dashboard
   bach --help dev                           Entwicklungszyklus (8 Phasen)
   bach --help test                          Technische Testverfahren (B/O/E)
   system/skills/workflows/dev-zyklus.md    Detaillierter Dev-Workflow
@@ -152,4 +160,4 @@ SIEHE AUCH
   system/db/schema.sql                      DB-Schema (usecases + workflow_tuev)
 
 ---
-Version: 1.1.0 | Erstellt: 2026-01-28 | Aktualisiert: 2026-02-08
+Version: 1.2.0 | Erstellt: 2026-01-28 | Aktualisiert: 2026-05-23

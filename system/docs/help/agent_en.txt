@@ -1,13 +1,13 @@
 # Portability: SYSTEM
-# Last validated: 2026-05-21
+# Last validated: 2026-05-23
 # Next review: 2027-05-21
-# Next exam: 2026-11-21
+# Next exam: 2026-11-23
 # Resources: [hub/agent_launcher.py, agents/, agents/_experts/]
 
 AGENT - Agent launcher and administration
 ======================================
 
-DATE: 2026-05-21
+DATE: 2026-05-23
 
 The agent system allows you to start and manage BACH agents
 as separate Claude code processes. Each agent comes with their own
@@ -33,6 +33,7 @@ CLI COMMANDS (bach agent)
   stop <name> Stop running agent
   pause <name> [reason] Request a cooperative pause for a running agent
   resume <name> Clear an active pause request for an agent
+  checkpoint <name> [note] Confirm a safe checkpoint for a running agent
   steer <name> "..." Save an operator hint for a running agent or its next start
   clear-steer <name> Clear queued operator hints for an agent
   rename <name> <new> Change the display name of an agent/expert
@@ -43,6 +44,7 @@ CLI COMMANDS (bach agent)
   stop <name> --json Stop response machine-readable as JSON
   pause <name> --json Pause response including operator_control as JSON
   resume <name> --json Resume response including operator_control as JSON
+  checkpoint <name> --json Checkpoint response including acknowledgement state as JSON
   steer <name> --json Steer response including queue status as JSON
   clear-steer <name> --json Clear-steer response including queue status as JSON
   status --json Running/registered agents as JSON
@@ -79,6 +81,7 @@ EXAMPLES
   bach agent status --json
   bach agent pause ati "Pause after the next checkpoint." --json
   bach agent resume ati --json
+  bach agent checkpoint ati "Safe checkpoint after diagnostics." --json
   bach agent steer ati "Bitte nur Statusflächen anfassen." --json
   bach agent clear-steer ati --json
 
@@ -127,11 +130,12 @@ HOW IT WORKS
 5. PID is stored in data/agent_pids/<name>.pid
 6. `bach agent pause <name> [reason]` writes a cooperative pause request to `operator_pause.json` and mirrors it into `OPERATOR_NOTES.md`
 7. `bach agent resume <name>` clears that pause request explicitly
-8. `bach agent steer <name> "..."` writes operator notes to `OPERATOR_NOTES.md`, even if the agent is currently stopped
-9. The next `bach agent start <name>` preserves queued hints, injects them into the generated `CLAUDE.md`, and does not silently drop them
-10. `bach agent list --json` and `bach agent status --json` expose the run state plus a nested `operator_control` snapshot with `pause_requested`, `pause_reason`, `pending_steer_count`, `latest_steer_message`, file paths, and available actions
-11. `bach agent clear-steer <name>` clears stale or completed queued hints
-12. `bach agent stop <name>` ends the process, clears active pause requests, and can keep queued guidance for the next start
+8. `bach agent checkpoint <name> [note]` writes an explicit checkpoint acknowledgement to `operator_checkpoint.json` and marks that current operator guidance has been seen up to that point
+9. `bach agent steer <name> "..."` writes operator notes to `OPERATOR_NOTES.md`, even if the agent is currently stopped
+10. The next `bach agent start <name>` preserves queued hints, injects them into the generated `CLAUDE.md`, and does not silently drop them
+11. `bach agent list --json` and `bach agent status --json` expose the run state plus a nested `operator_control` snapshot with `pause_requested`, `pause_reason`, `pending_steer_count`, `latest_steer_message`, `last_checkpoint_at`, `awaiting_checkpoint_ack`, file paths, and available actions
+12. `bach agent clear-steer <name>` clears stale or completed queued hints
+13. `bach agent stop <name>` ends the process, clears active pause requests, and can keep queued guidance for the next start
 
 REQUIREMENTS
 ---------------
@@ -158,6 +162,7 @@ Typical next steps after the report:
 - `bach agent list --json` or `bach agent status --json` for running, hanging, or pre-queued sessions
 - `bach agent pause <name> "..." --json` if a running agent should pause cooperatively at the next safe point
 - `bach agent resume <name> --json` if a pause request should be removed again
+- `bach agent checkpoint <name> "..." --json` if a safe checkpoint should be acknowledged explicitly
 - `bach agent steer <name> "..." --json` to stage guardrails before the next launch
 - `bach agent clear-steer <name> --json` when completed hints still remain queued
 - Install Claude Code CLI or check login/setup locally

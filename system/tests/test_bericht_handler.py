@@ -3,7 +3,9 @@
 """Tests for BerichtHandler (hub/bericht.py)."""
 
 import sys
+import types
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -77,3 +79,25 @@ class TestHandle:
     def test_prompt_no_args(self, handler):
         ok, msg = handler.handle("prompt", [])
         assert ok is False
+
+    def test_pipeline_success_redacts_output_path(self, handler):
+        class DummyPipeline:
+            def run_full_pipeline(self, **kwargs):
+                return types.SimpleNamespace(
+                    success=True,
+                    output_path=Path(r"C:\secret\Real Name\Foerderbericht_Real Name_20260523.docx"),
+                    tarnname="Tarn Person",
+                    duration_s=1.2,
+                    steps_completed=["bericht: erstellt"],
+                )
+
+        dummy_module = types.SimpleNamespace(FoerderberichtPipeline=DummyPipeline)
+        with patch.dict(sys.modules, {
+            "hub._services.document.foerderbericht_pipeline": dummy_module,
+        }):
+            ok, msg = handler.handle("pipeline", [])
+
+        assert ok is True
+        assert "Bericht: erstellt" in msg
+        assert "Real Name" not in msg
+        assert "Foerderbericht_Real Name" not in msg

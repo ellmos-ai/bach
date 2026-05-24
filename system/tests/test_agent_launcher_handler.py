@@ -556,6 +556,35 @@ class TestSteer:
         assert "start" in payload["agent"]["available_actions"]
         assert "clear-steer" in payload["agent"]["available_actions"]
 
+    def test_steer_marks_checkpoint_ack_as_pending(self, handler, monkeypatch):
+        temp_dir = str(handler.temp_dir / "agent_test-boss")
+        (handler.temp_dir / "agent_test-boss").mkdir(parents=True, exist_ok=True)
+        pid_file = handler.pid_dir / "test-boss.pid"
+        pid_file.write_text(
+            json.dumps(
+                {
+                    "pid": 4242,
+                    "name": "test-boss",
+                    "display_name": "Test Boss",
+                    "type": "boss",
+                    "model": "sonnet",
+                    "mode": "default",
+                    "started": "2026-05-16T12:00:00",
+                    "temp_dir": temp_dir,
+                    "window_title": "BACH: Test Boss",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("hub.agent_launcher.AgentLauncherHandler._is_agent_running", lambda self, _name: 4242)
+
+        ok, msg = handler.handle("steer", ["test-boss", "Bitte pruefen", "--json"])
+
+        assert ok is True
+        payload = json.loads(msg)
+        assert payload["agent"]["operator_control"]["awaiting_checkpoint_ack"] is True
+        assert "checkpoint" in payload["agent"]["operator_control"]["available_actions"]
+
     def test_steer_syntax(self, handler):
         ok, msg = handler.handle("steer", [])
         assert ok is False
@@ -652,6 +681,7 @@ class TestPauseResume:
 
         assert ok is True
         payload = json.loads(msg)
+        assert payload["agent"]["status"] == "pause-requested"
         assert payload["agent"]["operator_control"]["pause_requested"] is True
         assert payload["agent"]["operator_control"]["pause_reason"] == "Kurz warten"
         assert payload["agent"]["operator_control"]["available_actions"][0] == "resume"
@@ -671,8 +701,53 @@ class TestPauseResume:
 
         assert ok is True
         payload = json.loads(msg)
+        assert payload["agent"]["status"] == "running"
         assert payload["agent"]["operator_control"]["pause_requested"] is False
         assert not handler._agent_pause_request_path("test-boss", temp_dir=temp_dir).exists()
+
+    def test_checkpoint_not_running(self, handler):
+        ok, msg = handler.handle("checkpoint", ["test-boss", "--json"])
+        assert ok is False
+        payload = json.loads(msg)
+        assert payload["action"] == "checkpoint"
+        assert payload["agent"]["operator_control"]["last_checkpoint_at"] is None
+
+    def test_checkpoint_running_records_acknowledgement(self, handler, monkeypatch):
+        temp_dir = self._running_pid_fixture(handler)
+        handler._write_operator_notes(
+            "test-boss",
+            [{"message": "Bitte pruefen", "requested_at": "2026-05-16T12:05:00"}],
+            temp_dir=temp_dir,
+        )
+        monkeypatch.setattr("hub.agent_launcher.AgentLauncherHandler._is_agent_running", lambda self, _name: 4242)
+
+        ok, msg = handler.handle("checkpoint", ["test-boss", "Am sicheren Punkt", "--json"])
+
+        assert ok is True
+        payload = json.loads(msg)
+        assert payload["agent"]["operator_control"]["last_checkpoint_message"] == "Am sicheren Punkt"
+        assert payload["agent"]["operator_control"]["awaiting_checkpoint_ack"] is False
+        checkpoint_path = handler._agent_checkpoint_path("test-boss", temp_dir=temp_dir)
+        assert checkpoint_path.exists()
+        markdown = handler._agent_operator_notes_path("test-boss", temp_dir=temp_dir, markdown=True).read_text(encoding="utf-8")
+        assert "## Last Checkpoint" in markdown
+        assert "Am sicheren Punkt" in markdown
+
+    def test_status_json_shows_pause_requested_for_running_agent(self, handler, monkeypatch):
+        temp_dir = self._running_pid_fixture(handler)
+        handler._write_pause_request(
+            "test-boss",
+            {"reason": "Kurz warten", "requested_at": "2026-05-16T12:05:00"},
+            temp_dir=temp_dir,
+        )
+        monkeypatch.setattr("hub.agent_launcher.AgentLauncherHandler._is_agent_running", lambda self, _name: 4242)
+
+        ok, msg = handler.handle("status", ["--json"])
+
+        assert ok is True
+        payload = json.loads(msg)
+        assert payload["agents"][0]["status"] == "pause-requested"
+        assert payload["agents"][0]["operator_control"]["pause_requested"] is True
 
 
 # ================================================================

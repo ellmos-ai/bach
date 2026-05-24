@@ -73,7 +73,7 @@
       "project": "BACH",
       "task_text": "Wiki-Autoren: Einen Agenten/Experten auswaehlen, Wissensluecken identifizieren, Web-Recherche, Wiki-Beitrag erstellen. Workflow: skills/workflows/wiki-author.md",
       "aufwand": "hoch",
-      "last_run": "2026-05-01T13:08:02.343612"
+      "last_run": "2026-05-23T13:03:32.744008"
     },
     "help_forensic": {
       "enabled": true,

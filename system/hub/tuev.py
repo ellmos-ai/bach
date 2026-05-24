@@ -297,6 +297,8 @@ class TuevHandler(BaseHandler):
 class UsecaseHandler(BaseHandler):
     """Handler fuer bach usecase - Testfaelle"""
 
+    _CONTROL_FLAGS = {"--dry-run", "-n", "--json", "-j"}
+
     def __init__(self, base_path: Path):
         super().__init__(base_path)
         self.db_path = self._canonical_db
@@ -319,6 +321,8 @@ class UsecaseHandler(BaseHandler):
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
+        args = [arg for arg in args if arg not in self._CONTROL_FLAGS]
+
         if operation == "list" or not operation:
             workflow = args[0] if args else None
             return self._list(workflow)
@@ -331,12 +335,11 @@ class UsecaseHandler(BaseHandler):
         elif operation == "run":
             if not args:
                 return False, "Usage: bach usecase run <id>"
-            return self._run(args[0])
+            return self._run(args[0], dry_run=dry_run)
 
         elif operation == "run-all":
-            if not args:
-                return False, "Usage: bach usecase run-all <workflow-name>"
-            return self._run_all(args[0])
+            workflow = args[0] if args else None
+            return self._run_all(workflow, dry_run=dry_run)
 
         elif operation == "show":
             if not args:
@@ -427,7 +430,7 @@ class UsecaseHandler(BaseHandler):
         checked_paths: List[Path] = []
         for candidate in self._workflow_candidates(row, conn):
             checked_paths.append(candidate)
-            if candidate.exists():
+            if candidate.is_file():
                 return candidate, checked_paths
         return None, checked_paths
 
@@ -550,25 +553,80 @@ bach db query "INSERT INTO usecases (title, workflow_name, test_input, expected_
             return value
         return json.dumps(value, ensure_ascii=False)
 
-    def _run(self, usecase_id: str) -> Tuple[bool, str]:
+    def _get_usecases(
+        self, conn: sqlite3.Connection, workflow: Optional[str] = None
+    ) -> List[sqlite3.Row]:
+        """Laedt Usecases optional fuer einen Workflow-Filter."""
+        if workflow:
+            return conn.execute(
+                """
+                SELECT * FROM usecases
+                WHERE workflow_name = ? OR workflow_path LIKE ?
+                ORDER BY id
+                """,
+                (workflow, f"%{workflow}%"),
+            ).fetchall()
+        return conn.execute("SELECT * FROM usecases ORDER BY id").fetchall()
+
+    def _prepare_usecase_run(
+        self, row: sqlite3.Row, conn: sqlite3.Connection, dry_run: bool = False
+    ) -> dict:
+        """Parst Testdaten, loest Workflow-Pfade auf und aktualisiert optional den Zeitstempel."""
+        test_input = self._parse_usecase_payload(row["test_input"])
+        expected_output = self._parse_usecase_payload(row["expected_output"])
+        wf_path, checked_paths = self._resolve_workflow_path(row, conn)
+
+        if not dry_run:
+            conn.execute(
+                """
+                UPDATE usecases SET last_tested = datetime('now') WHERE id = ?
+                """,
+                (row["id"],),
+            )
+
+        return {
+            "row": row,
+            "test_input": test_input,
+            "expected_output": expected_output,
+            "workflow_path": wf_path,
+            "checked_paths": checked_paths,
+            "dry_run": dry_run,
+        }
+
+    @staticmethod
+    def _format_checked_paths(base_path: Path, checked_paths: List[Path]) -> str:
+        preview = []
+        for path in checked_paths[:3]:
+            if path.is_relative_to(base_path):
+                preview.append(str(path.relative_to(base_path)))
+            else:
+                preview.append(str(path))
+        return ", ".join(preview)
+
+    def _run(self, usecase_id: str, dry_run: bool = False) -> Tuple[bool, str]:
         """Fuehrt einen Testfall aus."""
         conn = self._get_conn()
-
-        row = conn.execute("SELECT * FROM usecases WHERE id = ?", (usecase_id,)).fetchone()
-
-        if not row:
-            conn.close()
-            return False, f"[USECASE] Testfall {usecase_id} nicht gefunden"
-
-        # Test-Daten parsen
         try:
-            test_input = self._parse_usecase_payload(row["test_input"])
-            expected_output = self._parse_usecase_payload(row["expected_output"])
-        except Exception as e:
-            conn.close()
-            return False, f"[USECASE] JSON-Fehler: {e}"
+            row = conn.execute("SELECT * FROM usecases WHERE id = ?", (usecase_id,)).fetchone()
 
-        wf_path, checked_paths = self._resolve_workflow_path(row, conn)
+            if not row:
+                return False, f"[USECASE] Testfall {usecase_id} nicht gefunden"
+
+            try:
+                run_data = self._prepare_usecase_run(row, conn, dry_run=dry_run)
+            except Exception as e:
+                return False, f"[USECASE] JSON-Fehler: {e}"
+
+            if not dry_run:
+                conn.commit()
+        finally:
+            conn.close()
+
+        row = run_data["row"]
+        test_input = run_data["test_input"]
+        expected_output = run_data["expected_output"]
+        wf_path = run_data["workflow_path"]
+        checked_paths = run_data["checked_paths"]
 
         lines = [f"[USECASE] Test #{row['id']}: {row['title']}", ""]
         workflow_label = row["workflow_path"] or row["workflow_name"] or "-"
@@ -583,10 +641,7 @@ bach db query "INSERT INTO usecases (title, workflow_name, test_input, expected_
             lines.append(f"Workflow: {workflow_label}")
             lines.append("[WARN] Keine verknuepfte Workflow-Datei gefunden. Der Usecase kann trotzdem manuell geprueft werden.")
             if checked_paths:
-                preview = ", ".join(
-                    str(path.relative_to(self.base_path)) if path.is_relative_to(self.base_path) else str(path)
-                    for path in checked_paths[:3]
-                )
+                preview = self._format_checked_paths(self.base_path, checked_paths)
                 lines.append(f"Gepruefte Pfade: {preview}")
         lines.append("")
 
@@ -601,6 +656,8 @@ bach db query "INSERT INTO usecases (title, workflow_name, test_input, expected_
         lines.append(f"  {self._format_usecase_payload(expected_output)}")
         lines.append("")
         lines.append("[INFO] Automatische Tests fuer Markdown-Workflows werden noch entwickelt.")
+        if dry_run:
+            lines.append("[DRY-RUN] last_tested bleibt unveraendert.")
         lines.append("")
         lines.append("Manuelle Pruefung:")
         lines.append("  1. Workflow-Datei lesen")
@@ -610,39 +667,74 @@ bach db query "INSERT INTO usecases (title, workflow_name, test_input, expected_
         lines.append("Ergebnis eintragen:")
         lines.append(f'  bach db query "UPDATE usecases SET test_result=\'pass\', test_score=90, last_tested=datetime(\'now\') WHERE id={usecase_id}"')
 
-        # Test als durchgefuehrt markieren
-        conn.execute("""
-            UPDATE usecases SET last_tested = datetime('now') WHERE id = ?
-        """, (usecase_id,))
-        conn.commit()
-        conn.close()
-
         return True, "\n".join(lines)
 
-    def _run_all(self, workflow: str) -> Tuple[bool, str]:
-        """Fuehrt alle Testfaelle eines Workflows aus."""
+    def _run_all(self, workflow: Optional[str] = None, dry_run: bool = False) -> Tuple[bool, str]:
+        """Fuehrt alle Testfaelle eines Workflows oder optional alle Usecases aus."""
         conn = self._get_conn()
+        errors = []
+        prepared = []
+        try:
+            rows = self._get_usecases(conn, workflow)
+            if not rows:
+                if workflow:
+                    return True, f"[USECASE] Keine Testfaelle fuer '{workflow}'"
+                return True, "[USECASE] Keine Testfaelle definiert"
 
-        rows = conn.execute("""
-            SELECT * FROM usecases
-            WHERE workflow_name = ? OR workflow_path LIKE ?
-            ORDER BY id
-        """, (workflow, f"%{workflow}%")).fetchall()
-        conn.close()
+            for row in rows:
+                try:
+                    prepared.append(self._prepare_usecase_run(row, conn, dry_run=dry_run))
+                except Exception as exc:
+                    errors.append((row["id"], row["title"], str(exc)))
 
-        if not rows:
-            return True, f"[USECASE] Keine Testfaelle fuer '{workflow}'"
+            if not dry_run:
+                conn.commit()
+        finally:
+            conn.close()
 
-        lines = [f"[USECASE] Teste alle fuer: {workflow}", ""]
+        header = (
+            f"[USECASE] Sammeltest fuer: {workflow}"
+            if workflow
+            else "[USECASE] Sammeltest fuer alle Testfaelle"
+        )
+        lines = [header, ""]
 
-        for r in rows:
-            lines.append(f"  [{r['id']}] {r['title']}")
-            # Hier wuerde jeder Test laufen
+        resolved_count = 0
+        manual_count = 0
+        for run_data in prepared:
+            row = run_data["row"]
+            wf_path = run_data["workflow_path"]
+            mode = "WORKFLOW" if wf_path is not None else "MANUAL"
+            workflow_label = row["workflow_name"] or "-"
+            if wf_path is not None:
+                resolved_count += 1
+                try:
+                    path_display = str(wf_path.relative_to(self.base_path))
+                except ValueError:
+                    path_display = str(wf_path)
+            else:
+                manual_count += 1
+                path_display = self._format_checked_paths(self.base_path, run_data["checked_paths"])
+                if not path_display:
+                    path_display = row["workflow_path"] or workflow_label or "-"
+
+            lines.append(f"  [{row['id']:3}] [{mode}] {row['title']}")
+            lines.append(f"       {workflow_label} -> {path_display}")
+
+        if errors:
+            lines.append("")
+            lines.append("Fehler:")
+            for usecase_id, title, error in errors:
+                lines.append(f"  [{usecase_id:3}] {title}: {error}")
 
         lines.append("")
         lines.append(f"Gesamt: {len(rows)} Testfaelle")
-        lines.append("")
-        lines.append("[INFO] Manuelle Pruefung erforderlich.")
-        lines.append("       Nutze: bach usecase run <id>  fuer Details")
+        lines.append(f"Mit Workflow-Datei: {resolved_count} | Manueller Datenmodus: {manual_count} | Fehler: {len(errors)}")
+        if dry_run:
+            lines.append("[DRY-RUN] last_tested bleibt fuer alle Usecases unveraendert.")
+        else:
+            lines.append("[OK] last_tested wurde fuer alle erfolgreich vorbereiteten Usecases aktualisiert.")
+        lines.append("[INFO] Manuelle Pruefung bleibt erforderlich.")
+        lines.append("       Nutze: bach usecase show <id> oder bach usecase run <id> fuer Details")
 
-        return True, "\n".join(lines)
+        return len(errors) == 0, "\n".join(lines)

@@ -63,6 +63,7 @@ Aktualisiert: 2026-02-05 - Proaktiver Mechanismus
 """
 
 import json
+import os
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -83,6 +84,11 @@ OUTPUT_DIR = _foerderplaner / "output_berichte"
 # DEPRECATED: AnonymizedWorkflow wurde entfernt (duplizierte Logik).
 # Die Anonymisierung wird jetzt ueber report_workflow_service.py / foerderbericht_pipeline.py gesteuert.
 WORKFLOW_AVAILABLE = False
+
+
+def _resolve_document_key_password(password: Optional[str] = None) -> str:
+    """Liest das Dokument-Schlüsselpasswort ohne hart kodierten Default."""
+    return password or os.environ.get("BACH_DOCUMENT_KEY_PASSWORD", "")
 
 
 class FileAccessHook:
@@ -730,7 +736,7 @@ def refresh_cache() -> None:
 # PROAKTIVE FUNKTIONEN (für Chatbot - NIEMALS echte Namen!)
 # ═══════════════════════════════════════════════════════════════
 
-def scan_new_clients(password: str = "bach2026") -> List[dict]:
+def scan_new_clients(password: Optional[str] = None) -> List[dict]:
     """
     HAUPTFUNKTION FÜR CHATBOT: Scannt nach neuen Akten.
 
@@ -738,13 +744,22 @@ def scan_new_clients(password: str = "bach2026") -> List[dict]:
     Sie erstellt automatisch Bundles und gibt NUR anonymisierte Daten zurück.
 
     Args:
-        password: Passwort für Verschlüsselung (default: bach2026)
+        password: Passwort für Verschlüsselung. Falls nicht gesetzt, wird
+            BACH_DOCUMENT_KEY_PASSWORD aus der Umgebung gelesen.
 
     Returns:
         Liste neuer Klienten: [{"client_id": "K_XXX", "tarnname": "...", "files": N}]
         Der Chatbot sieht NIEMALS echte Namen!
     """
-    return get_hook().scan_for_new_clients(password)
+    resolved_password = _resolve_document_key_password(password)
+    if WORKFLOW_AVAILABLE and not resolved_password:
+        return [{
+            "error": (
+                "Kein Dokument-Schlüsselpasswort gesetzt. "
+                "Nutze den Parameter password oder BACH_DOCUMENT_KEY_PASSWORD."
+            )
+        }]
+    return get_hook().scan_for_new_clients(resolved_password)
 
 
 def list_all_clients() -> List[dict]:
@@ -769,13 +784,25 @@ def get_client_data(client_id: str) -> dict:
     return get_hook().get_client_data_by_id(client_id)
 
 
-def ensure_bundles(password: str = "bach2026") -> dict:
+def ensure_bundles(password: Optional[str] = None) -> dict:
     """
     Stellt sicher, dass alle Akten anonymisiert sind.
 
     Sollte VOR jedem Zugriff auf Klientendaten aufgerufen werden.
     """
-    return get_hook().ensure_all_bundles_exist(password)
+    resolved_password = _resolve_document_key_password(password)
+    if WORKFLOW_AVAILABLE and not resolved_password:
+        return {
+            "processed": 0,
+            "new": 0,
+            "errors": 1,
+            "clients": [],
+            "error": (
+                "Kein Dokument-Schlüsselpasswort gesetzt. "
+                "Nutze den Parameter password oder BACH_DOCUMENT_KEY_PASSWORD."
+            ),
+        }
+    return get_hook().ensure_all_bundles_exist(resolved_password)
 
 
 # ═══════════════════════════════════════════════════════════════

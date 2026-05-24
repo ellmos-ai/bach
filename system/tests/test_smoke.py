@@ -330,6 +330,14 @@ class TestCLIBackwardsCompat:
         assert code == 0
         assert "I18N-DRIFT REPORT" in out
 
+    def test_usecase_run_all_dry_run(self):
+        """Test bach usecase run-all --dry-run fuer workflowweite Sammeltests."""
+        code, out, err = run_bach("usecase", "run-all", "system-synopse", "--dry-run", "--json")
+        assert code == 0, err
+        assert "Sammeltest" in out
+        assert "[DRY-RUN]" in out
+        assert "Gesamt:" in out
+
     def test_skill_help(self):
         """Test bach help skill (Skills verwalten)."""
         code, out, err = run_bach("help", "skill")

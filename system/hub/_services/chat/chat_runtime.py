@@ -541,14 +541,16 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 lock_file = pipeline.base_path / ".pipeline_lock"
 
                 if action == "status":
-                    if lock_file.exists():
-                        return f"Pipeline läuft (Lock: {lock_file}). Aktenordner: {pipeline.base_path}"
                     data_roh = pipeline.base_path / "data_roh"
-                    clients = [d.name for d in data_roh.iterdir() if d.is_dir()] if data_roh.exists() else []
+                    client_count = (
+                        len([d for d in data_roh.iterdir() if d.is_dir()])
+                        if data_roh.exists() else 0
+                    )
                     prompt_exists = (pipeline.base_path / "data_bundled" / "prompt.txt").exists()
-                    status = f"Pipeline bereit. Basis: {pipeline.base_path}\n"
-                    status += f"Klienten in data_roh/: {', '.join(clients) if clients else 'keine'}\n"
-                    status += f"Prompt vorhanden: {'ja' if prompt_exists else 'nein'}"
+                    state = "Pipeline läuft." if lock_file.exists() else "Pipeline bereit."
+                    status = state + "\n"
+                    status += f"Akte erkannt: {'ja' if client_count else 'nein'} ({client_count} Ordner)\n"
+                    status += f"Anonymisierter Prompt vorhanden: {'ja' if prompt_exists else 'nein'}"
                     return status
 
                 elif action == "prepare":
@@ -562,7 +564,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     )
                     if result.success:
                         return (f"Phase 1 abgeschlossen. Tarnname: {result.tarnname}\n"
-                                f"Anonymisierter Prompt: {pipeline.base_path / 'data_bundled' / 'prompt.txt'}\n"
+                                f"Anonymisierter Prompt bereit.\n"
                                 f"Dauer: {result.duration_s:.1f}s\nSchritte: {', '.join(result.steps_completed)}")
                     return f"Phase 1 fehlgeschlagen: {result.error}"
 

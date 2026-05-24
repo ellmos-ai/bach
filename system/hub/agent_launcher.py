@@ -75,6 +75,10 @@ class AgentLauncherHandler(BaseHandler):
                 "agent_resume_desc",
                 default="Kooperative Pause fuer einen Agenten aufheben (bach agent resume <name>)",
             ),
+            "checkpoint": t(
+                "agent_checkpoint_desc",
+                default="Sicheren Checkpoint für einen laufenden Agenten bestätigen (bach agent checkpoint <name> [Notiz])",
+            ),
             "clear-steer": t(
                 "agent_clear_steer_desc",
                 default="Operator-Hinweise fuer einen Agenten loeschen (bach agent clear-steer <name>)",
@@ -166,6 +170,22 @@ class AgentLauncherHandler(BaseHandler):
                 )
             return self._resume_agent(
                 filtered_args[0],
+                dry_run,
+                json_output=json_output,
+            )
+        elif operation == "checkpoint":
+            if not filtered_args:
+                return self._action_response(
+                    "checkpoint",
+                    None,
+                    None,
+                    False,
+                    "[ERROR] Syntax: bach agent checkpoint <name> [Notiz]",
+                    json_output=json_output,
+                )
+            return self._checkpoint_agent(
+                filtered_args[0],
+                    " ".join(filtered_args[1:]).strip() or "Sicherer Checkpoint erreicht.",
                 dry_run,
                 json_output=json_output,
             )
@@ -324,6 +344,11 @@ class AgentLauncherHandler(BaseHandler):
         base_dir = Path(self._resolved_agent_temp_dir(name, temp_dir=temp_dir))
         return base_dir / "operator_pause.json"
 
+    def _agent_checkpoint_path(self, name: str, *, temp_dir: str | None = None) -> Path:
+        """Liefert den Dateipfad fuer bestaetigte sichere Checkpoints."""
+        base_dir = Path(self._resolved_agent_temp_dir(name, temp_dir=temp_dir))
+        return base_dir / "operator_checkpoint.json"
+
     def _read_operator_notes(self, name: str, *, temp_dir: str | None = None) -> list[dict]:
         """Liest vorgemerkte Operator-Hinweise."""
         path = self._agent_operator_notes_path(name, temp_dir=temp_dir)
@@ -353,6 +378,55 @@ class AgentLauncherHandler(BaseHandler):
             return payload
         return None
 
+    def _read_checkpoint(self, name: str, *, temp_dir: str | None = None) -> dict | None:
+        """Liest den zuletzt bestaetigten sicheren Checkpoint eines Agenten."""
+        path = self._agent_checkpoint_path(name, temp_dir=temp_dir)
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if isinstance(payload, dict) and payload.get("acknowledged_at"):
+            if not payload.get("message"):
+                payload["message"] = "Sicherer Checkpoint erreicht."
+            return payload
+        return None
+
+    def _parse_iso_datetime(self, value: str | None) -> datetime | None:
+        """Parst ISO-Zeitstempel robust fuer Kontrollvergleiche."""
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            return None
+
+    def _latest_control_request_at(self, pause_request: dict | None, note_entries: list[dict]) -> str | None:
+        """Liefert den juengsten Zeitstempel einer offenen Operator-Anforderung."""
+        candidates: list[tuple[datetime | None, str]] = []
+        if pause_request and pause_request.get("requested_at"):
+            candidates.append(
+                (
+                    self._parse_iso_datetime(pause_request.get("requested_at")),
+                    pause_request["requested_at"],
+                )
+            )
+        latest_note = note_entries[-1] if note_entries else None
+        if latest_note and latest_note.get("requested_at"):
+            candidates.append(
+                (
+                    self._parse_iso_datetime(latest_note.get("requested_at")),
+                    latest_note["requested_at"],
+                )
+            )
+        if not candidates:
+            return None
+        parsed = [item for item in candidates if item[0] is not None]
+        if parsed:
+            return max(parsed, key=lambda item: item[0])[1]
+        return candidates[-1][1]
+
     def _agent_control_actions(self, *, running: bool, pause_requested: bool, note_count: int) -> list[str]:
         """Leitet verfuegbare kooperative Kontrollaktionen ab."""
         actions = []
@@ -360,6 +434,8 @@ class AgentLauncherHandler(BaseHandler):
             actions.append("resume")
         elif running:
             actions.append("pause")
+        if running:
+            actions.append("checkpoint")
         actions.append("steer")
         if note_count:
             actions.append("clear-steer")
@@ -376,7 +452,17 @@ class AgentLauncherHandler(BaseHandler):
         """Erzeugt einen maschinenlesbaren Snapshot der Agenten-Steuerung."""
         note_entries = notes if notes is not None else self._read_operator_notes(name, temp_dir=temp_dir)
         pause_request = self._read_pause_request(name, temp_dir=temp_dir)
+        checkpoint = self._read_checkpoint(name, temp_dir=temp_dir)
         latest = note_entries[-1] if note_entries else None
+        latest_control_request_at = self._latest_control_request_at(pause_request, note_entries)
+        checkpoint_at = checkpoint.get("acknowledged_at") if checkpoint else None
+        checkpoint_dt = self._parse_iso_datetime(checkpoint_at)
+        latest_request_dt = self._parse_iso_datetime(latest_control_request_at)
+        awaiting_checkpoint_ack = False
+        if latest_control_request_at:
+            awaiting_checkpoint_ack = checkpoint_dt is None
+            if checkpoint_dt is not None and latest_request_dt is not None:
+                awaiting_checkpoint_ack = checkpoint_dt < latest_request_dt
         snapshot = {
             "scope": "agent",
             "pause_requested": bool(pause_request),
@@ -385,9 +471,14 @@ class AgentLauncherHandler(BaseHandler):
             "pending_steer_count": len(note_entries),
             "latest_steer_message": latest.get("message") if latest else None,
             "latest_steer_requested_at": latest.get("requested_at") if latest else None,
+            "last_checkpoint_message": checkpoint.get("message") if checkpoint else None,
+            "last_checkpoint_at": checkpoint_at,
+            "latest_control_request_at": latest_control_request_at,
+            "awaiting_checkpoint_ack": awaiting_checkpoint_ack,
             "pause_file": str(self._agent_pause_request_path(name, temp_dir=temp_dir)),
             "notes_file": str(self._agent_operator_notes_path(name, temp_dir=temp_dir)),
             "notes_markdown_file": str(self._agent_operator_notes_path(name, temp_dir=temp_dir, markdown=True)),
+            "checkpoint_file": str(self._agent_checkpoint_path(name, temp_dir=temp_dir)),
         }
         snapshot["available_actions"] = self._agent_control_actions(
             running=running,
@@ -398,7 +489,7 @@ class AgentLauncherHandler(BaseHandler):
 
     def _available_actions(self, running: bool, note_count: int) -> list[str]:
         """Leitet die sinnvollen Kontrollaktionen aus Status und Queue ab."""
-        actions = ["stop", "steer"] if running else ["start", "steer"]
+        actions = ["stop", "steer", "checkpoint"] if running else ["start", "steer"]
         if note_count:
             actions.append("clear-steer")
         return actions
@@ -411,12 +502,31 @@ class AgentLauncherHandler(BaseHandler):
         """Leitet den Live-Status eines Agenten aus dem Kontrollzustand ab."""
         return "pause-requested" if pause_requested else "running"
 
+    def _agent_payload_status(
+        self,
+        name: str,
+        *,
+        running: bool,
+        note_count: int,
+        temp_dir: str | None = None,
+        inactive_status: str | None = None,
+    ) -> str:
+        """Leitet den konsistenten Statuswert fuer Agent-Payloads ab."""
+        if running:
+            return self._running_status(
+                pause_requested=bool(self._read_pause_request(name, temp_dir=temp_dir))
+            )
+        if inactive_status is not None:
+            return inactive_status
+        return self._inactive_status(note_count)
+
     def _refresh_operator_markdown(self, name: str, notes: list[dict], *, temp_dir: str | None = None):
         """Aktualisiert die menschenlesbare Operator-Datei inklusive Pause-Status."""
         markdown_path = self._agent_operator_notes_path(name, temp_dir=temp_dir, markdown=True)
         pause_request = self._read_pause_request(name, temp_dir=temp_dir)
+        checkpoint = self._read_checkpoint(name, temp_dir=temp_dir)
 
-        if not notes and not pause_request:
+        if not notes and not pause_request and not checkpoint:
             markdown_path.unlink(missing_ok=True)
             return
 
@@ -424,6 +534,17 @@ class AgentLauncherHandler(BaseHandler):
             "# Operator Notes",
             "",
         ]
+        if checkpoint:
+            acknowledged_at = checkpoint.get("acknowledged_at") or "ohne Zeitstempel"
+            markdown_lines.extend(
+                [
+                    "## Last Checkpoint",
+                    "",
+                    f"- [{acknowledged_at}] {checkpoint.get('message', 'Sicherer Checkpoint erreicht.')}",
+                    "Dieser Eintrag bestätigt, dass der Agent den aktuellen Operator-Zustand bis zu diesem Checkpoint gesehen hat.",
+                    "",
+                ]
+            )
         if pause_request:
             requested_at = pause_request.get("requested_at") or "ohne Zeitstempel"
             markdown_lines.extend(
@@ -481,6 +602,32 @@ class AgentLauncherHandler(BaseHandler):
         pause_path = self._agent_pause_request_path(name, temp_dir=temp_dir)
         existed = pause_path.exists()
         pause_path.unlink(missing_ok=True)
+        self._refresh_operator_markdown(
+            name,
+            self._read_operator_notes(name, temp_dir=temp_dir),
+            temp_dir=temp_dir,
+        )
+        return existed
+
+    def _write_checkpoint(self, name: str, payload: dict, *, temp_dir: str | None = None):
+        """Schreibt einen bestaetigten sicheren Checkpoint."""
+        checkpoint_path = self._agent_checkpoint_path(name, temp_dir=temp_dir)
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        self._refresh_operator_markdown(
+            name,
+            self._read_operator_notes(name, temp_dir=temp_dir),
+            temp_dir=temp_dir,
+        )
+
+    def _clear_checkpoint(self, name: str, *, temp_dir: str | None = None) -> bool:
+        """Entfernt einen veralteten sicheren Checkpoint."""
+        checkpoint_path = self._agent_checkpoint_path(name, temp_dir=temp_dir)
+        existed = checkpoint_path.exists()
+        checkpoint_path.unlink(missing_ok=True)
         self._refresh_operator_markdown(
             name,
             self._read_operator_notes(name, temp_dir=temp_dir),
@@ -620,7 +767,12 @@ class AgentLauncherHandler(BaseHandler):
             persona_info.get("display_name") or None,
             agent["type"],
             running=running,
-            status="running" if running else self._inactive_status(len(notes)),
+            status=self._agent_payload_status(
+                agent["name"],
+                running=running,
+                note_count=len(notes),
+                temp_dir=temp_dir,
+            ),
             pid=running_pid or pid_data.get("pid") or None,
             model=pid_data.get("model"),
             mode=pid_data.get("mode"),
@@ -673,6 +825,7 @@ class AgentLauncherHandler(BaseHandler):
             "bach agent steer <n> ...   " + t("agent_steer_desc", default="Operator-Hinweis vormerken"),
             "bach agent pause <n> ...   " + t("agent_pause_desc", default="Kooperative Pause vormerken"),
             "bach agent resume <n>      " + t("agent_resume_desc", default="Kooperative Pause aufheben"),
+            "bach agent checkpoint <n>  " + t("agent_checkpoint_desc", default="Sicheren Checkpoint bestätigen"),
             "bach agent clear-steer <n> " + t("agent_clear_steer_desc", default="Operator-Hinweise loeschen"),
             "bach agent rename <n> <n>  " + t("agent_rename_desc", default="Display-Name aendern")
         ])
@@ -1393,6 +1546,10 @@ class AgentLauncherHandler(BaseHandler):
                 resolved_name,
                 temp_dir=str(agent_temp_dir),
             )
+            self._clear_checkpoint(
+                resolved_name,
+                temp_dir=str(agent_temp_dir),
+            )
             self._write_operator_notes(
                 resolved_name,
                 existing_notes,
@@ -1705,7 +1862,12 @@ class AgentLauncherHandler(BaseHandler):
             display_name,
             pid_data.get("type") or agent_entry["type"],
             running=running,
-            status="running" if running else self._inactive_status(len(notes)),
+            status=self._agent_payload_status(
+                resolved_name,
+                running=running,
+                note_count=len(notes),
+                temp_dir=temp_dir,
+            ),
             pid=running_pid or pid_data.get("pid") or None,
             model=pid_data.get("model"),
             mode=pid_data.get("mode"),
@@ -1767,7 +1929,12 @@ class AgentLauncherHandler(BaseHandler):
             display_name,
             pid_data.get("type") or agent_entry["type"],
             running=running,
-            status="running",
+            status=self._agent_payload_status(
+                resolved_name,
+                running=running,
+                note_count=len(notes),
+                temp_dir=temp_dir,
+            ),
             pid=running_pid or pid_data.get("pid") or None,
             model=pid_data.get("model"),
             mode=pid_data.get("mode"),
@@ -1818,7 +1985,12 @@ class AgentLauncherHandler(BaseHandler):
             display_name,
             pid_data.get("type") or agent_entry["type"],
             running=running,
-            status="running" if running else self._inactive_status(len(notes)),
+            status=self._agent_payload_status(
+                resolved_name,
+                running=running,
+                note_count=len(notes),
+                temp_dir=temp_dir,
+            ),
             pid=running_pid or pid_data.get("pid") or None,
             model=pid_data.get("model"),
             mode=pid_data.get("mode"),
@@ -1862,7 +2034,12 @@ class AgentLauncherHandler(BaseHandler):
             display_name,
             pid_data.get("type") or agent_entry["type"],
             running=running,
-            status="running" if running else self._inactive_status(len(notes)),
+            status=self._agent_payload_status(
+                resolved_name,
+                running=running,
+                note_count=len(notes),
+                temp_dir=temp_dir,
+            ),
             pid=running_pid or pid_data.get("pid") or None,
             model=pid_data.get("model"),
             mode=pid_data.get("mode"),
@@ -1882,6 +2059,107 @@ class AgentLauncherHandler(BaseHandler):
             resolved_name,
             True,
             f"[OK] Kooperative Pause fuer '{display_name or resolved_name}' aufgehoben.",
+            json_output=json_output,
+            agent=refreshed,
+        )
+
+    def _checkpoint_agent(self, name: str, message: str, dry_run: bool, json_output: bool = False) -> tuple:
+        """Bestaetigt einen sicheren Checkpoint fuer einen laufenden Agenten."""
+        resolved_name = self._resolve_to_technical_name(name)
+        agent_entry = next((item for item in self._scan_agents() if item["name"] == resolved_name), None)
+        if not agent_entry:
+            return self._action_response(
+                "checkpoint",
+                name,
+                resolved_name,
+                False,
+                f"[ERROR] Agent '{name}' nicht gefunden.",
+                json_output=json_output,
+            )
+
+        pid_data = self._load_pid_data(resolved_name)
+        running_pid = self._is_agent_running(resolved_name)
+        running = bool(running_pid)
+        display_name = pid_data.get("display_name") or self._get_persona_info(resolved_name).get("display_name") or None
+        temp_dir = self._resolved_agent_temp_dir(resolved_name, temp_dir=pid_data.get("temp_dir"))
+        notes = self._read_operator_notes(resolved_name, temp_dir=temp_dir)
+
+        agent_payload = self._build_agent_payload(
+            resolved_name,
+            display_name,
+            pid_data.get("type") or agent_entry["type"],
+            running=running,
+            status="running" if running else self._inactive_status(len(notes)),
+            pid=running_pid or pid_data.get("pid") or None,
+            model=pid_data.get("model"),
+            mode=pid_data.get("mode"),
+            started_at=pid_data.get("started"),
+            temp_dir=temp_dir,
+            window_title=pid_data.get("window_title"),
+            pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
+            available_actions=self._available_actions(running, len(notes)),
+            dry_run=dry_run,
+            notes=notes,
+            permission_mode=pid_data.get("permission_mode"),
+            allowed_tools=pid_data.get("allowed_tools"),
+            max_turns=pid_data.get("max_turns"),
+        )
+
+        if not running:
+            return self._action_response(
+                "checkpoint",
+                name,
+                resolved_name,
+                False,
+                f"[WARN] Agent '{display_name or resolved_name}' läuft nicht. Checkpoints können nur für aktive Läufe bestätigt werden.",
+                json_output=json_output,
+                agent=agent_payload,
+            )
+
+        if dry_run:
+            return self._action_response(
+                "checkpoint",
+                name,
+                resolved_name,
+                True,
+                f"[DRY-RUN] Würde sicheren Checkpoint für '{display_name or resolved_name}' bestätigen: {message}",
+                json_output=json_output,
+                agent=agent_payload,
+            )
+
+        self._write_checkpoint(
+            resolved_name,
+            {
+                "message": message,
+                "acknowledged_at": datetime.now().isoformat(),
+            },
+            temp_dir=temp_dir,
+        )
+        refreshed = self._build_agent_payload(
+            resolved_name,
+            display_name,
+            pid_data.get("type") or agent_entry["type"],
+            running=running,
+            status="running",
+            pid=running_pid or pid_data.get("pid") or None,
+            model=pid_data.get("model"),
+            mode=pid_data.get("mode"),
+            started_at=pid_data.get("started"),
+            temp_dir=temp_dir,
+            window_title=pid_data.get("window_title"),
+            pid_file=str(self.pid_dir / f"{resolved_name}.pid"),
+            available_actions=self._available_actions(running, len(notes)),
+            notes=notes,
+            permission_mode=pid_data.get("permission_mode"),
+            allowed_tools=pid_data.get("allowed_tools"),
+            max_turns=pid_data.get("max_turns"),
+        )
+        return self._action_response(
+            "checkpoint",
+            name,
+            resolved_name,
+            True,
+            f"[OK] Sicherer Checkpoint für '{display_name or resolved_name}' bestätigt: {message}",
             json_output=json_output,
             agent=refreshed,
         )
@@ -1908,7 +2186,12 @@ class AgentLauncherHandler(BaseHandler):
             display_name,
             agent_type,
             running=running,
-            status="running" if running else self._inactive_status(note_count),
+            status=self._agent_payload_status(
+                resolved_name,
+                running=running,
+                note_count=note_count,
+                temp_dir=temp_dir,
+            ),
             pid=running_pid or pid_data.get("pid") or None,
             model=pid_data.get("model"),
             mode=pid_data.get("mode"),
@@ -1975,7 +2258,12 @@ class AgentLauncherHandler(BaseHandler):
             display_name,
             agent_type,
             running=running,
-            status="running" if running else self._inactive_status(0),
+            status=self._agent_payload_status(
+                resolved_name,
+                running=running,
+                note_count=0,
+                temp_dir=temp_dir,
+            ),
             pid=running_pid or pid_data.get("pid") or None,
             model=pid_data.get("model"),
             mode=pid_data.get("mode"),
@@ -2042,7 +2330,12 @@ class AgentLauncherHandler(BaseHandler):
                 display_name,
                 pid_data.get("type") or agent_entry["type"],
                 running=running,
-                status="running" if running else self._inactive_status(len(notes)),
+                status=self._agent_payload_status(
+                    resolved_name,
+                    running=running,
+                    note_count=len(notes),
+                    temp_dir=temp_dir,
+                ),
                 pid=running_pid or pid_data.get("pid") or None,
                 model=pid_data.get("model"),
                 mode=pid_data.get("mode"),
@@ -2075,7 +2368,12 @@ class AgentLauncherHandler(BaseHandler):
                 display_name,
                 pid_data.get("type") or agent_entry["type"],
                 running=running,
-                status="running" if running else self._inactive_status(len(notes)),
+                status=self._agent_payload_status(
+                    resolved_name,
+                    running=running,
+                    note_count=len(notes),
+                    temp_dir=temp_dir,
+                ),
                 pid=running_pid or pid_data.get("pid") or None,
                 model=pid_data.get("model"),
                 mode=pid_data.get("mode"),
@@ -2104,7 +2402,12 @@ class AgentLauncherHandler(BaseHandler):
             display_name,
             pid_data.get("type") or agent_entry["type"],
             running=running,
-            status="running" if running else self._inactive_status(len(notes)),
+            status=self._agent_payload_status(
+                resolved_name,
+                running=running,
+                note_count=len(notes),
+                temp_dir=temp_dir,
+            ),
             pid=running_pid or pid_data.get("pid") or None,
             model=pid_data.get("model"),
             mode=pid_data.get("mode"),
@@ -2186,7 +2489,11 @@ class AgentLauncherHandler(BaseHandler):
                         except OSError:
                             running = False
 
-                status = "[RUNNING]" if running else "[DEAD]"
+                pause_requested = bool(self._read_pause_request(name, temp_dir=data.get("temp_dir")))
+                if running and pause_requested:
+                    status = "[PAUSE-REQ]"
+                else:
+                    status = "[RUNNING]" if running else "[DEAD]"
                 if running:
                     active += 1
                 else:
@@ -2237,7 +2544,13 @@ class AgentLauncherHandler(BaseHandler):
                         display_name,
                         data.get("type"),
                         running=running,
-                        status="running" if running else "dead",
+                        status=self._agent_payload_status(
+                            name,
+                            running=running,
+                            note_count=len(notes),
+                            temp_dir=temp_dir,
+                            inactive_status="dead",
+                        ),
                         pid=running_pid or data.get("pid") or None,
                         model=data.get("model"),
                         mode=data.get("mode"),

@@ -4,6 +4,7 @@
 
 import subprocess
 import sys
+import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -19,6 +20,7 @@ from hub._services.chat.chat_runtime import (
     CMD_TIMEOUT,
     SAFE_BASES,
     _tool,
+    exec_tool,
     is_blocked,
     is_safe_command,
     is_safe_write_path,
@@ -445,3 +447,55 @@ class TestToolHelper:
         desc = "Dateien und Ordner auflisten"
         result = _tool("list_dir", desc, {})
         assert result["function"]["description"] == desc
+
+
+class TestFoerderberichtToolPrivacy:
+    def test_status_hides_paths_and_client_names(self, tmp_path):
+        base_path = tmp_path / "Berichte"
+        (base_path / "data_roh" / "Max Mustermann").mkdir(parents=True)
+        (base_path / "data_bundled").mkdir(parents=True)
+        (base_path / "data_bundled" / "prompt.txt").write_text("prompt", encoding="utf-8")
+
+        class DummyPipeline:
+            def __init__(self):
+                self.base_path = base_path
+
+        dummy_module = types.SimpleNamespace(FoerderberichtPipeline=DummyPipeline)
+        with patch.dict(sys.modules, {
+            "hub._services.document.foerderbericht_pipeline": dummy_module,
+        }):
+            result = exec_tool("foerderbericht", {"action": "status"}, "safe")
+
+        assert "Pipeline bereit." in result
+        assert "Akte erkannt: ja (1 Ordner)" in result
+        assert "Anonymisierter Prompt vorhanden: ja" in result
+        assert "Max Mustermann" not in result
+        assert str(base_path) not in result
+
+    def test_prepare_hides_prompt_path(self, tmp_path):
+        base_path = tmp_path / "Berichte"
+
+        class DummyResult:
+            success = True
+            tarnname = "Tarn Person"
+            duration_s = 2.5
+            steps_completed = ["profil: Tarnname=Tarn Person", "prompt: 1200 Zeichen"]
+
+        class DummyPipeline:
+            def __init__(self):
+                self.base_path = base_path
+
+            def prepare_prompt(self, **kwargs):
+                return DummyResult()
+
+        dummy_module = types.SimpleNamespace(FoerderberichtPipeline=DummyPipeline)
+        with patch.dict(sys.modules, {
+            "hub._services.document.foerderbericht_pipeline": dummy_module,
+        }):
+            result = exec_tool("foerderbericht", {"action": "prepare"}, "safe")
+
+        assert "Phase 1 abgeschlossen." in result
+        assert "Tarnname: Tarn Person" in result
+        assert "Anonymisierter Prompt bereit." in result
+        assert "prompt.txt" not in result
+        assert str(base_path) not in result
