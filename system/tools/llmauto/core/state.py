@@ -141,15 +141,34 @@ class ChainState:
         return self.get_pause_request() is not None
 
     def request_steer(self, message: str):
-        requests = self.peek_steer_requests()
-        requests.append(
-            {
+        appended = self.queue_steer_requests([message])
+        return appended[-1] if appended else None
+
+    def queue_steer_requests(self, requests):
+        """Haengt mehrere Steering-Hinweise robust an die Queue an."""
+        existing = self.peek_steer_requests()
+        appended = []
+
+        for item in requests or []:
+            if isinstance(item, dict):
+                message = str(item.get("message", "")).strip()
+                created_at = item.get("created_at") or item.get("requested_at")
+            else:
+                message = str(item).strip()
+                created_at = None
+
+            if not message:
+                continue
+
+            normalized = {
                 "message": message,
-                "created_at": datetime.now().isoformat(),
+                "created_at": created_at or datetime.now().isoformat(),
             }
-        )
-        self._write_json(self.steer_file, requests)
-        return requests[-1]
+            existing.append(normalized)
+            appended.append(normalized)
+
+        self._write_json(self.steer_file, existing)
+        return appended
 
     def peek_steer_requests(self):
         payload = self._read_json(self.steer_file, [])

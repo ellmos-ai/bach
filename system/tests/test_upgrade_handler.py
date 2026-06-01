@@ -33,10 +33,20 @@ CREATE TABLE distribution_releases (
     description TEXT
 );
 CREATE TABLE distribution_manifest (
-    file_path TEXT PRIMARY KEY,
+    path TEXT PRIMARY KEY,
+    file_path TEXT,
     dist_type INTEGER DEFAULT 2,
+    template_hash TEXT,
+    description TEXT,
+    created_at TEXT,
+    updated_at TEXT,
     current_version TEXT,
     file_hash TEXT
+);
+CREATE TABLE dist_type_defaults (
+    path TEXT PRIMARY KEY,
+    dist_type INTEGER DEFAULT 2,
+    is_file INTEGER DEFAULT 0
 );
 """
 
@@ -208,6 +218,7 @@ class TestStatus:
         assert ok
         assert "Nachverfolgte Dateien: 0" in msg
         assert "Gesamt-Versionen:      0" in msg
+        assert "Release-Eintraege:     0" in msg
 
     def test_status_with_tracked_files(self, handler):
         _seed_versions(handler, "hub/backup.py", 2)
@@ -233,6 +244,9 @@ class TestStatus:
         data = json.loads(msg)
         assert data["tracked_files"] == 1
         assert data["total_versions"] == 2
+        assert data["manifest_entries"] == 0
+        assert data["release_entries"] == 2
+        assert data["repair_recommended"] is False
         assert len(data["releases"]) == 2
         assert data["releases"][0]["channel"] == "beta"
 
@@ -253,6 +267,9 @@ class TestCheckUpdates:
         assert ok
         data = json.loads(msg)
         assert data["no_tracked_versions"] is True
+        assert data["manifest_entries"] == 0
+        assert data["release_entries"] == 0
+        assert data["repair_recommended"] is True
         assert data["summary"]["checked_files"] == 0
         assert data["upgrade_candidates"] == []
 
@@ -341,6 +358,9 @@ class TestCheckUpdates:
         assert ok
         data = json.loads(msg)
         assert data["no_tracked_versions"] is False
+        assert data["manifest_entries"] == 0
+        assert data["release_entries"] == 2
+        assert data["repair_recommended"] is False
         assert data["summary"]["checked_files"] == 4
         assert data["summary"]["up_to_date"] == 1
         assert data["summary"]["upgrade_candidates"] == 1
@@ -348,9 +368,182 @@ class TestCheckUpdates:
         assert data["summary"]["missing_files"] == 1
         assert data["release_status"]["stable"]["version"] == "3.3.0"
         assert data["release_status"]["latest"]["version"] == "3.4.0-beta"
-        assert data["upgrade_candidates"][0]["file_path"] == "hub/backup.py"
-        assert data["local_modifications"][0]["file_path"] == "tools/converter.py"
-        assert data["missing_files"][0]["file_path"] == "agents/demo/SKILL.md"
+
+    def test_check_uses_metadata_fast_path_for_unchanged_latest_files(self, handler, monkeypatch):
+        file_hash = _write_system_file(handler, "core/app.py", "print('current')\n")
+        _insert_version(handler, "core/app.py", "3.0.0", file_hash, "2999-01-01T00:00:00")
+
+        def fail_hash(_path):
+            raise AssertionError("hashing should not be needed for unchanged latest files")
+
+        monkeypatch.setattr(handler, "_hash_file", fail_hash)
+
+        ok, msg = handler.handle("check", ["--json"])
+
+        assert ok
+        data = json.loads(msg)
+        assert data["manifest_entries"] == 0
+        assert data["release_entries"] == 0
+        assert data["repair_recommended"] is True
+        assert data["summary"]["checked_files"] == 1
+        assert data["summary"]["up_to_date"] == 1
+        assert data["summary"]["upgrade_candidates"] == 0
+        assert data["summary"]["local_modifications"] == 0
+
+    def test_check_falls_back_to_hash_when_file_is_newer_than_metadata(self, handler, monkeypatch):
+        file_hash = _write_system_file(handler, "core/app.py", "print('current')\n")
+        _insert_version(handler, "core/app.py", "3.0.0", file_hash, "2000-01-01T00:00:00")
+
+        calls = {"count": 0}
+
+        def count_hash(path):
+            calls["count"] += 1
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+
+        monkeypatch.setattr(handler, "_hash_file", count_hash)
+
+        ok, msg = handler.handle("check", ["--json"])
+
+        assert ok
+        data = json.loads(msg)
+        assert data["manifest_entries"] == 0
+        assert data["release_entries"] == 0
+        assert data["repair_recommended"] is True
+        assert calls["count"] == 1
+        assert data["summary"]["checked_files"] == 1
+        assert data["summary"]["up_to_date"] == 1
+
+
+class TestRepairMetadata:
+    def test_detect_release_date_reads_next_release_previous_release_line(self, handler):
+        bach_root = handler.base_path.parent
+        (bach_root / ".dev").mkdir()
+        (bach_root / ".dev" / "NEXT_RELEASE.md").write_text(
+            "# Demo\n\n**Vorheriger Release:** v9.9.9 (2026-04-03) -- Demo\n",
+            encoding="utf-8",
+        )
+
+        assert handler._detect_release_date("v9.9.9") == "2026-04-03"
+
+    def test_repair_dry_run_reports_pending_manifest_and_versions(self, handler):
+        bach_root = handler.base_path.parent
+        (bach_root / "README.md").write_text("**Version:** v9.9.9\n", encoding="utf-8")
+        (bach_root / "CHANGELOG.md").write_text(
+            "# Demo\n\n## [9.9.9] - 2026-02-02\n\n### Added\n\n- Test.\n",
+            encoding="utf-8",
+        )
+        _write_system_file(handler, "hub/demo.py", "print('demo')\n")
+
+        conn = sqlite3.connect(str(handler.db_path))
+        conn.execute(
+            "INSERT INTO dist_type_defaults (path, dist_type, is_file) VALUES (?, ?, ?)",
+            ("README.md", 2, 1),
+        )
+        conn.execute(
+            "INSERT INTO dist_type_defaults (path, dist_type, is_file) VALUES (?, ?, ?)",
+            ("system/hub/", 2, 0),
+        )
+        conn.commit()
+        conn.close()
+
+        ok, msg = handler.handle("repair", ["--version", "v9.9.9", "--json"], dry_run=True)
+
+        assert ok
+        data = json.loads(msg)
+        assert data["dry_run"] is True
+        assert data["version"] == "v9.9.9"
+        assert data["summary"]["candidate_files"] == 2
+        assert data["summary"]["manifest_inserted"] == 2
+        assert data["summary"]["version_entries_inserted"] == 2
+        assert data["db"]["release_entries_before"] == 0
+        assert data["db"]["release_entries_after"] == 0
+        assert data["release"]["inserted"] == 1
+        assert data["release"]["bootstrapped"] is True
+        assert data["release"]["release_date"] == "2026-02-02"
+        assert data["release"]["status"] == "final"
+        assert data["release_catalog_populated"] is False
+
+        conn = sqlite3.connect(str(handler.db_path))
+        assert conn.execute("SELECT COUNT(*) FROM distribution_manifest").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM dist_file_versions").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM distribution_releases").fetchone()[0] == 0
+        conn.close()
+
+    def test_repair_populates_manifest_and_current_version_rows(self, handler):
+        bach_root = handler.base_path.parent
+        (bach_root / "README.md").write_text("**Version:** v9.9.9\n", encoding="utf-8")
+        (bach_root / "CHANGELOG.md").write_text(
+            "# Demo\n\n## [9.9.9] - 2026-02-02\n\n### Added\n\n- Test.\n",
+            encoding="utf-8",
+        )
+        _write_system_file(handler, "hub/demo.py", "print('demo')\n")
+
+        conn = sqlite3.connect(str(handler.db_path))
+        conn.execute(
+            "INSERT INTO dist_type_defaults (path, dist_type, is_file) VALUES (?, ?, ?)",
+            ("README.md", 2, 1),
+        )
+        conn.execute(
+            "INSERT INTO dist_type_defaults (path, dist_type, is_file) VALUES (?, ?, ?)",
+            ("system/hub/", 2, 0),
+        )
+        conn.commit()
+        conn.close()
+
+        ok, _ = handler.handle("repair", ["--version", "v9.9.9"])
+
+        assert ok
+
+        conn = sqlite3.connect(str(handler.db_path))
+        manifest_paths = {
+            row[0]
+            for row in conn.execute("SELECT path FROM distribution_manifest ORDER BY path").fetchall()
+        }
+        version_rows = conn.execute(
+            "SELECT file_path, version FROM dist_file_versions ORDER BY file_path"
+        ).fetchall()
+        release_rows = conn.execute(
+            "SELECT version, release_date, status, is_stable FROM distribution_releases ORDER BY version"
+        ).fetchall()
+        conn.close()
+
+        assert manifest_paths == {"README.md", "system/hub/demo.py"}
+        assert version_rows == [
+            ("README.md", "v9.9.9"),
+            ("system/hub/demo.py", "v9.9.9"),
+        ]
+        assert release_rows == [("v9.9.9", "2026-02-02", "final", 1)]
+
+    def test_repair_bootstraps_release_catalog_only_when_missing(self, handler):
+        bach_root = handler.base_path.parent
+        (bach_root / "README.md").write_text("**Version:** v9.9.9\n", encoding="utf-8")
+        (bach_root / "CHANGELOG.md").write_text(
+            "# Demo\n\n## [9.9.9] - 2026-02-02\n\n### Added\n\n- Test.\n",
+            encoding="utf-8",
+        )
+        _write_system_file(handler, "hub/demo.py", "print('demo')\n")
+
+        conn = sqlite3.connect(str(handler.db_path))
+        conn.execute(
+            "INSERT INTO dist_type_defaults (path, dist_type, is_file) VALUES (?, ?, ?)",
+            ("system/hub/", 2, 0),
+        )
+        conn.execute(
+            "INSERT INTO distribution_releases (version, release_date, status, is_stable) VALUES (?, ?, ?, ?)",
+            ("v9.9.9", "2026-02-02", "final", 1),
+        )
+        conn.commit()
+        conn.close()
+
+        ok, msg = handler.handle("repair", ["--version", "v9.9.9", "--json"])
+
+        assert ok
+        data = json.loads(msg)
+        assert data["release"]["inserted"] == 0
+        assert data["release"]["skipped_reason"] == "already_present"
+        assert data["db"]["release_entries_before"] == 1
+        assert data["db"]["release_entries_after"] == 1
+        assert data["release_catalog_populated"] is True
 
 
 # ═══════════════════════════════════════════════════════════════

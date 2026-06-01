@@ -3,7 +3,7 @@
 Status Handler - Schnelle System-Uebersicht
 """
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from .base import BaseHandler
 
@@ -39,6 +39,24 @@ class StatusHandler(BaseHandler):
         if where:
             query += f" WHERE {where}"
         return cursor.execute(query, params).fetchone()[0]
+
+    def _get_recent_online_partners(self, cursor, timeout_minutes: int = 5):
+        cutoff = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
+        columns = {
+            row["name"]
+            for row in cursor.execute("PRAGMA table_info(partner_presence)").fetchall()
+        }
+        heartbeat_column = "last_heartbeat" if "last_heartbeat" in columns else "clocked_in"
+
+        return cursor.execute(
+            f"""
+                SELECT partner_name
+                FROM partner_presence
+                WHERE status = 'online' AND COALESCE({heartbeat_column}, clocked_in) > ?
+                ORDER BY clocked_in DESC
+            """,
+            (cutoff,),
+        ).fetchall()
     
     def _show_status(self) -> tuple:
         """Sammelt und zeigt den aktuellen DB-basierten Systemstatus."""
@@ -69,12 +87,7 @@ class StatusHandler(BaseHandler):
                     LIMIT 1
                 """).fetchone()
 
-                online_rows = cursor.execute("""
-                    SELECT partner_name
-                    FROM partner_presence
-                    WHERE status = 'online'
-                    ORDER BY clocked_in DESC
-                """).fetchall()
+                online_rows = self._get_recent_online_partners(cursor)
 
                 working_count = self._count(cursor, "memory_working")
                 facts_count = self._count(cursor, "memory_facts")
@@ -115,8 +128,14 @@ class StatusHandler(BaseHandler):
         else:
             results.append("Session:  Keine aktive Session")
 
+        partner_names = []
         if online_rows:
             partner_names = [row["partner_name"] for row in online_rows]
+
+        if active_session and active_session["partner_id"] not in partner_names:
+            partner_names.insert(0, active_session["partner_id"])
+
+        if partner_names:
             preview = ", ".join(partner_names[:3])
             extra = f" +{len(partner_names) - 3}" if len(partner_names) > 3 else ""
             results.append(f"Partner:  {len(partner_names)} online ({preview}{extra})")

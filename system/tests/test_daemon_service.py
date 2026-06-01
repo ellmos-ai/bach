@@ -29,6 +29,7 @@ Tests fuer DaemonService, DaemonJob, Interval-Parsing, Job-Scheduling.
 """
 
 import json
+import importlib
 import sys
 import sqlite3
 import tempfile
@@ -75,6 +76,22 @@ class TestDaemonJob:
             last_run=None, next_run=None,
         )
         assert job.next_run is None
+
+
+def test_daemon_service_uses_canonical_bach_db(monkeypatch, tmp_path):
+    import hub.bach_paths as bach_paths
+    import gui.daemon_service as daemon_service_module
+
+    canonical_db = tmp_path / "canonical.db"
+    monkeypatch.setattr(bach_paths, "BACH_DB", canonical_db)
+
+    daemon_service_module = importlib.reload(daemon_service_module)
+    try:
+        assert daemon_service_module.USER_DB == canonical_db
+        assert daemon_service_module._resolve_scheduler_db() == canonical_db
+        assert daemon_service_module.DaemonService().db_path == canonical_db
+    finally:
+        importlib.reload(daemon_service_module)
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -154,7 +154,7 @@ TOOLS_SAFE = [
         "model": {"type": "string", "description": "Modellname (nur bei show)"},
     }),
     _tool("bach_command", "BACH-Befehl ausführen (Memory, Tasks, Kalender, Denkarium, News, etc.)", {
-        "handler": {"type": "string", "description": "Handler: status, task, mem, search, help, tools, denkarium, calendar, contact, routine, timer, countdown, news, newspaper, lesson, snapshot, partner, connector, msg, backup, web-parse, web-scrape, skills, agent, maintain, sync, abo, steuer, gesundheit, haushalt, versicherung, inbox, wiki"},
+        "handler": {"type": "string", "description": "Handler: status, task, mem, search, help, tools, denkarium, calendar, contact, routine, timer, countdown, news, newspaper, lesson, snapshot, partner, connector, msg, backup, web-parse, web-scrape, skills, agent, maintain, sync, abo, steuer, gesundheit, mediplaner, haushalt, versicherung, inbox, wiki"},
         "operation": {"type": "string", "description": "Operation: list, add, done, facts, write, read, search, context, today, brainstorm, promote, stats, fetch, generate, create, load"},
         "args": {"type": "array", "items": {"type": "string"}, "description": "Argumente"},
     }, ["handler"]),
@@ -916,6 +916,7 @@ BACH-HANDLER (alle via bach_command nutzbar):
 - countdown list — Countdowns und Timer
 - mem write/read/fact/facts/search/context — Memory-System
 - lesson add/list — Lessons Learned
+- mediplaner export/import/help — JSON-Austausch zwischen BACH-Gesundheitsdaten und MediPlaner
 - help <thema> — Dokumentation zu jedem Thema (260+ Help-Dateien)
 
 WICHTIGSTE REGEL — SUCHE ALS FALLBACK:

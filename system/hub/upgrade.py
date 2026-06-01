@@ -46,10 +46,12 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md
 """
 
 import json
+import os
 import hashlib
+import re
 import sqlite3
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Tuple, Optional, Dict
 from hub.base import BaseHandler
 
@@ -74,6 +76,7 @@ class UpgradeHandler(BaseHandler):
             "list": "Verfuegbare Versionen anzeigen",
             "status": "Upgrade-Status anzeigen",
             "check": "Nach Updates pruefen",
+            "repair": "Distributions-Metadaten aus Dateisystem und Defaults reparieren",
             "core": "CORE-Komponenten upgraden",
             "templates": "TEMPLATE-Dateien upgraden",
             "agents": "Agenten-Dateien upgraden",
@@ -132,6 +135,381 @@ class UpgradeHandler(BaseHandler):
         except OSError:
             return None
 
+    def _parse_timestamp(self, raw_value: Optional[str]) -> Optional[datetime]:
+        """Parst Datenbank-Zeitstempel tolerant."""
+        if not raw_value:
+            return None
+
+        normalized = str(raw_value).strip()
+        if not normalized:
+            return None
+
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+
+        try:
+            return datetime.fromisoformat(normalized)
+        except ValueError:
+            pass
+
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(normalized, fmt)
+            except ValueError:
+                continue
+
+        return None
+
+    def _matches_latest_by_metadata(self, disk_path: Path, latest: dict) -> bool:
+        """Nutzen einen schnellen Metadaten-Abgleich fuer unveraenderte Dateien.
+
+        Wenn der letzte bekannte Versions-/Repair-Zeitstempel neuer als die lokale
+        Datei ist, muss kein voller Hash berechnet werden.
+        """
+        created_at = self._parse_timestamp(latest.get("created_at"))
+        if created_at is None or not latest.get("file_hash"):
+            return False
+
+        try:
+            modified_at = datetime.fromtimestamp(disk_path.stat().st_mtime)
+        except OSError:
+            return False
+
+        # Kleine Toleranz, damit frisch geschriebene Dateien mit derselben Sekunde
+        # nicht unnötig wieder gehasht werden.
+        return modified_at <= (created_at + timedelta(seconds=2))
+
+    def _table_columns(self, conn, table_name: str) -> List[str]:
+        """Liest Spaltennamen einer Tabelle."""
+        try:
+            rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        except sqlite3.Error:
+            return []
+        return [str(row[1]) for row in rows]
+
+    def _manifest_path_column(self, conn) -> Optional[str]:
+        """Ermittelt die Pfad-Spalte des Distribution-Manifests."""
+        columns = self._table_columns(conn, "distribution_manifest")
+        if "path" in columns:
+            return "path"
+        if "file_path" in columns:
+            return "file_path"
+        return None
+
+    def _bach_root(self) -> Path:
+        """Ermittelt das BACH-Root fuer Dateiscans."""
+        if self.base_path.name == "system":
+            return self.base_path.parent
+        return self.base_path
+
+    def _detect_current_version(self) -> str:
+        """Leitet die aktuelle BACH-Version aus Root-Dokumenten ab."""
+        bach_root = self._bach_root()
+
+        readme_path = bach_root / "README.md"
+        if readme_path.exists():
+            try:
+                match = re.search(
+                    r"^\*\*Version:\*\*\s*([^\s]+)",
+                    readme_path.read_text(encoding="utf-8"),
+                    flags=re.MULTILINE,
+                )
+                if match:
+                    return match.group(1).strip()
+            except OSError:
+                pass
+
+        pyproject_path = bach_root / "pyproject.toml"
+        if pyproject_path.exists():
+            try:
+                match = re.search(
+                    r'^version\s*=\s*"([^"]+)"',
+                    pyproject_path.read_text(encoding="utf-8"),
+                    flags=re.MULTILINE,
+                )
+                if match:
+                    version = match.group(1).strip()
+                    return version if version.startswith("v") else f"v{version}"
+            except OSError:
+                pass
+
+        return "v0.0.0-unknown"
+
+    def _release_version_aliases(self, version: Optional[str]) -> List[str]:
+        """Liefert konsistente Versions-Aliase mit und ohne `v`-Praefix."""
+        if not version:
+            return []
+
+        aliases: List[str] = []
+        for candidate in (version.strip(),):
+            if not candidate:
+                continue
+            aliases.append(candidate)
+            if candidate.startswith("v"):
+                aliases.append(candidate[1:])
+            else:
+                aliases.append(f"v{candidate}")
+
+        seen = set()
+        normalized = []
+        for alias in aliases:
+            if alias not in seen:
+                normalized.append(alias)
+                seen.add(alias)
+        return normalized
+
+    def _detect_release_date(self, version: str) -> Optional[str]:
+        """Leitet ein Release-Datum aus Changelog- bzw. Planungsdateien ab."""
+        normalized_version = version[1:] if version.startswith("v") else version
+        bach_root = self._bach_root()
+
+        changelog_path = bach_root / "CHANGELOG.md"
+        if changelog_path.exists():
+            try:
+                match = re.search(
+                    rf"^## \[{re.escape(normalized_version)}\]\s*-\s*(\d{{4}}-\d{{2}}-\d{{2}})\s*$",
+                    changelog_path.read_text(encoding="utf-8"),
+                    flags=re.MULTILINE,
+                )
+                if match:
+                    return match.group(1)
+            except OSError:
+                pass
+
+        next_release_path = bach_root / ".dev" / "NEXT_RELEASE.md"
+        if next_release_path.exists():
+            try:
+                match = re.search(
+                    rf"^\*\*Vorheriger Release:\*\*\s*{re.escape(version)}\s*\((\d{{4}}-\d{{2}}-\d{{2}})\)",
+                    next_release_path.read_text(encoding="utf-8"),
+                    flags=re.MULTILINE,
+                )
+                if match:
+                    return match.group(1)
+            except OSError:
+                pass
+
+        return None
+
+    def _infer_release_channel(self, version: str) -> Tuple[str, bool]:
+        """Leitet Release-Status und Stable-Markierung aus der Versionsbezeichnung ab."""
+        normalized = version.lower()
+        if "alpha" in normalized:
+            return "alpha", False
+        if "beta" in normalized:
+            return "beta", False
+        if re.search(r"(^|[-._])rc(\d+)?($|[-._])", normalized):
+            return "rc", False
+        if "draft" in normalized:
+            return "draft", False
+        return "final", True
+
+    def _read_kernel_hash(self, conn) -> Optional[str]:
+        """Liest den aktuell bekannten Kernel-Hash aus der Instanz-Identitaet."""
+        try:
+            columns = set(self._table_columns(conn, "instance_identity"))
+            if "kernel_hash" not in columns:
+                return None
+            row = conn.execute("SELECT kernel_hash FROM instance_identity LIMIT 1").fetchone()
+            if not row:
+                return None
+            return row[0]
+        except sqlite3.OperationalError:
+            return None
+
+    def _release_catalog_state(self, conn, current_version: Optional[str]) -> Dict[str, object]:
+        """Liefert Release-Katalog-Zustand fuer Status-, Check- und Repair-Pfade."""
+        release_total = conn.execute("SELECT COUNT(*) FROM distribution_releases").fetchone()[0]
+        current_release_registered = False
+        current_release_version = current_version
+        current_version_known = bool(current_version and current_version != "v0.0.0-unknown")
+
+        if release_total > 0 and current_version_known:
+            aliases = self._release_version_aliases(current_version)
+            placeholders = ", ".join("?" for _ in aliases)
+            row = conn.execute(
+                f"SELECT version FROM distribution_releases WHERE version IN ({placeholders}) LIMIT 1",
+                aliases,
+            ).fetchone()
+            if row:
+                current_release_registered = True
+                current_release_version = row[0]
+
+        return {
+            "release_total": release_total,
+            "current_version": current_version,
+            "current_version_known": current_version_known,
+            "current_release_registered": current_release_registered,
+            "current_release_version": current_release_version,
+        }
+
+    def _recover_release_catalog_entry(
+        self,
+        conn,
+        version: str,
+        dry_run: bool,
+    ) -> Dict[str, object]:
+        """Fuegt bei Bedarf einen aktuellen Release-Katalogeintrag wieder ein."""
+        release_state_before = self._release_catalog_state(conn, version)
+        release_total_before = int(release_state_before["release_total"])
+
+        if (
+            not release_state_before["current_version_known"]
+            and release_total_before > 0
+        ):
+            return {
+                "release_inserted": 0,
+                "release_bootstrapped": False,
+                "release_skipped_reason": "unknown_current_version",
+                "release_date": None,
+                "release_status": None,
+                "is_stable": None,
+                "release_entries_before": release_total_before,
+                "release_entries_after": release_total_before,
+                "current_release_registered_before": bool(release_state_before["current_release_registered"]),
+                "current_release_registered_after": bool(release_state_before["current_release_registered"]),
+            }
+
+        if release_state_before["current_release_registered"]:
+            return {
+                "release_inserted": 0,
+                "release_bootstrapped": False,
+                "release_skipped_reason": "already_present",
+                "release_date": None,
+                "release_status": None,
+                "is_stable": None,
+                "release_entries_before": release_total_before,
+                "release_entries_after": release_total_before,
+                "current_release_registered_before": True,
+                "current_release_registered_after": True,
+            }
+
+        if not release_state_before["current_version_known"]:
+            return {
+                "release_inserted": 0,
+                "release_bootstrapped": False,
+                "release_skipped_reason": "unknown_current_version",
+                "release_date": None,
+                "release_status": None,
+                "is_stable": None,
+                "release_entries_before": release_total_before,
+                "release_entries_after": release_total_before,
+                "current_release_registered_before": False,
+                "current_release_registered_after": False,
+            }
+
+        release_columns = set(self._table_columns(conn, "distribution_releases"))
+        release_date = self._detect_release_date(version) or datetime.now().strftime("%Y-%m-%d")
+        release_status, is_stable = self._infer_release_channel(version)
+        kernel_hash = self._read_kernel_hash(conn)
+
+        if not dry_run:
+            insert_columns = ["version"]
+            insert_values = [version]
+
+            if "release_date" in release_columns:
+                insert_columns.append("release_date")
+                insert_values.append(release_date)
+            if "description" in release_columns:
+                insert_columns.append("description")
+                insert_values.append("Recovered current release entry from local BACH metadata")
+            if "changelog" in release_columns:
+                insert_columns.append("changelog")
+                insert_values.append("Recovered by `bach upgrade repair` from README/CHANGELOG metadata.")
+            if "kernel_hash" in release_columns:
+                insert_columns.append("kernel_hash")
+                insert_values.append(kernel_hash)
+            if "status" in release_columns:
+                insert_columns.append("status")
+                insert_values.append(release_status)
+            if "is_stable" in release_columns:
+                insert_columns.append("is_stable")
+                insert_values.append(1 if is_stable else 0)
+
+            placeholders = ", ".join("?" for _ in insert_columns)
+            conn.execute(
+                f"INSERT INTO distribution_releases ({', '.join(insert_columns)}) "
+                f"VALUES ({placeholders})",
+                insert_values,
+            )
+
+        release_entries_after = release_total_before + 1
+        return {
+            "release_inserted": 1,
+            "release_bootstrapped": release_total_before == 0,
+            "release_skipped_reason": None,
+            "release_date": release_date,
+            "release_status": release_status,
+            "is_stable": is_stable,
+            "release_entries_before": release_total_before,
+            "release_entries_after": release_entries_after,
+            "current_release_registered_before": bool(release_state_before["current_release_registered"]),
+            "current_release_registered_after": True,
+        }
+
+    def _load_dist_rules(self, conn) -> Tuple[Dict[str, int], List[Tuple[str, int]]]:
+        """Liest Dist-Type-Regeln aus `dist_type_defaults`."""
+        columns = self._table_columns(conn, "dist_type_defaults")
+        if not {"path", "dist_type", "is_file"}.issubset(columns):
+            return {}, []
+
+        rows = conn.execute(
+            """
+            SELECT path, dist_type, is_file
+            FROM dist_type_defaults
+            ORDER BY LENGTH(path) DESC, path ASC
+            """
+        ).fetchall()
+
+        exact_rules: Dict[str, int] = {}
+        dir_rules: List[Tuple[str, int]] = []
+        for path_value, dist_type, is_file in rows:
+            normalized = str(path_value).replace("\\", "/")
+            if int(is_file):
+                exact_rules[normalized] = int(dist_type)
+            else:
+                dir_rules.append((normalized, int(dist_type)))
+
+        return exact_rules, dir_rules
+
+    def _classify_dist_path(
+        self,
+        relative_path: str,
+        exact_rules: Dict[str, int],
+        dir_rules: List[Tuple[str, int]],
+    ) -> Optional[int]:
+        """Leitet den Dist-Type eines Dateipfads aus Defaults ab."""
+        normalized = relative_path.replace("\\", "/")
+        if normalized in exact_rules:
+            return exact_rules[normalized]
+
+        for prefix, dist_type in dir_rules:
+            if normalized.startswith(prefix):
+                return dist_type
+
+        return None
+
+    def _iter_distribution_files(self):
+        """Iteriert ueber relevante Dateien im BACH-Root."""
+        bach_root = self._bach_root()
+        excluded_dirs = {
+            ".git",
+            "__pycache__",
+            ".pytest_cache",
+            "node_modules",
+            ".venv",
+            "venv",
+            "backups",
+            "logs",
+        }
+
+        for root, dirs, files in os.walk(bach_root):
+            dirs[:] = [name for name in dirs if name not in excluded_dirs]
+            for file_name in files:
+                abs_path = Path(root) / file_name
+                rel_path = abs_path.relative_to(bach_root).as_posix()
+                yield rel_path, abs_path
+
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
         json_output = self._has_flag(args, "--json")
         filtered_args = [arg for arg in args if arg != "--json"]
@@ -144,6 +522,8 @@ class UpgradeHandler(BaseHandler):
             return self._status(json_output=json_output)
         elif operation == "check":
             return self._check_updates(json_output=json_output)
+        elif operation == "repair":
+            return self._repair_metadata(filtered_args, dry_run=dry_run, json_output=json_output)
         elif operation == "core":
             return self._upgrade_category("core", filtered_args, dry_run)
         elif operation == "templates":
@@ -205,6 +585,11 @@ DOWNGRADE:
   bach downgrade <file>                Datei zur vorherigen Version downgraden
   bach downgrade <file> --version X    Auf spezifische Version downgraden
 
+REPAIR:
+  bach upgrade repair                  Manifest + aktuelle Versionen neu aufbauen
+  bach upgrade repair --dry-run        Nur Analyse, keine DB-Aenderung
+  bach upgrade repair --version X      Zielversion fuer neue Versionseintraege
+
 OPTIONEN:
   --dry-run                            Vorschau ohne Aenderungen
   --force                              Ueberschreibe lokale Aenderungen
@@ -215,6 +600,7 @@ DATENBANK: bach.db / dist_file_versions, distribution_releases, distribution_man
 IMPLEMENTIERT (Phase 1-4/4):
   - Verfuegbare Versionen anzeigen (--list)
   - Status anzeigen (--status)
+  - Repair fuer Manifest/Versionen (_repair_metadata)
   - Einzeldatei-Upgrades (_upgrade_file)
   - Kategorie-Upgrades (_upgrade_category) ✓ NEU (Runde 19)
   - Downgrade-Logik (_downgrade_file) ✓ NEU (Runde 19)
@@ -325,8 +711,25 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
         conn = self._get_db()
         try:
             # Statistiken
+            current_version = self._detect_current_version()
             total_tracked = conn.execute("SELECT COUNT(DISTINCT file_path) FROM dist_file_versions").fetchone()[0]
             total_versions = conn.execute("SELECT COUNT(*) FROM dist_file_versions").fetchone()[0]
+            manifest_path_column = self._manifest_path_column(conn)
+            manifest_entries = 0
+            if manifest_path_column:
+                manifest_entries = conn.execute("SELECT COUNT(*) FROM distribution_manifest").fetchone()[0]
+            release_state = self._release_catalog_state(conn, current_version)
+            release_total = int(release_state["release_total"])
+            repair_recommended = (
+                total_versions == 0
+                or total_tracked == 0
+                or (manifest_entries > 0 and manifest_entries < 10)
+                or release_total == 0
+                or (
+                    bool(release_state["current_version_known"])
+                    and not bool(release_state["current_release_registered"])
+                )
+            )
 
             # Releases
             releases = conn.execute("""
@@ -352,6 +755,12 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                     "generated_at": datetime.now().isoformat(),
                     "tracked_files": total_tracked,
                     "total_versions": total_versions,
+                    "manifest_entries": manifest_entries,
+                    "release_entries": release_total,
+                    "repair_recommended": repair_recommended,
+                    "current_version": current_version,
+                    "current_release_registered": bool(release_state["current_release_registered"]),
+                    "current_release_version": release_state["current_release_version"],
                     "releases": release_entries,
                 }
                 return True, self._json_dump(payload)
@@ -362,6 +771,9 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                 "Statistiken:",
                 f"  Nachverfolgte Dateien: {total_tracked}",
                 f"  Gesamt-Versionen:      {total_versions}",
+                f"  Manifest-Eintraege:    {manifest_entries}",
+                f"  Release-Eintraege:     {release_total}",
+                f"  Aktuelle Version:      {current_version}",
                 "",
             ]
 
@@ -373,11 +785,21 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                     output.append(f"  {r['version']:<12}  {date}  [{stable}]")
                 output.append("")
 
+            if repair_recommended:
+                output.extend([
+                    "Hinweis:",
+                    "  Die Distributions-Metadaten wirken unvollstaendig.",
+                    "  bach upgrade repair --dry-run    Diagnose",
+                    "  bach upgrade repair              Manifest/Versionen/Releasekatalog reparieren",
+                    "",
+                ])
+
             output.extend([
                 "Befehle:",
                 "  bach upgrade --check              Nach Updates pruefen",
                 "  bach upgrade --list <file>        Verfuegbare Versionen anzeigen",
                 "  bach upgrade core                 CORE-Komponenten upgraden",
+                "  bach upgrade repair               Distributions-Metadaten reparieren",
             ])
 
             return (True, "\n".join(output))
@@ -409,8 +831,24 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                 ORDER BY release_date DESC, version DESC
                 LIMIT 1
             """).fetchone()
+            manifest_path_column = self._manifest_path_column(conn)
+            manifest_entries = 0
+            if manifest_path_column:
+                manifest_entries = conn.execute("SELECT COUNT(*) FROM distribution_manifest").fetchone()[0]
+            current_version = self._detect_current_version()
+            release_state = self._release_catalog_state(conn, current_version)
+            release_total = int(release_state["release_total"])
         finally:
             conn.close()
+
+        repair_recommended = (
+            release_total == 0
+            or (manifest_entries > 0 and manifest_entries < 10)
+            or (
+                bool(release_state["current_version_known"])
+                and not bool(release_state["current_release_registered"])
+            )
+        )
 
         stable_payload = None
         if stable_release:
@@ -445,11 +883,18 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                         "missing_files": 0,
                         "unreadable_files": 0,
                     },
+                    "manifest_entries": manifest_entries,
+                    "release_entries": release_total,
+                    "repair_recommended": repair_recommended,
+                    "current_version": current_version,
+                    "current_release_registered": bool(release_state["current_release_registered"]),
+                    "current_release_version": release_state["current_release_version"],
                     "upgrade_candidates": [],
                     "local_modifications": [],
                     "missing_files": [],
                     "unreadable_files": [],
                     "no_tracked_versions": True,
+                    "hint": "bach upgrade repair --dry-run",
                 }
                 return True, self._json_dump(payload)
 
@@ -457,10 +902,15 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                 "=== UPGRADE-CHECK ===",
                 "",
                 "[INFO] Keine versionierten Dateien in dist_file_versions gefunden.",
+                f"Manifest-Eintraege: {manifest_entries}",
+                f"Release-Eintraege:  {release_total}",
+                f"Aktuelle Version:   {current_version}",
                 "",
                 "Befehle:",
                 "  bach upgrade --status             Upgrade-Status anzeigen",
                 "  bach upgrade --list <file>        Verfuegbare Versionen anzeigen",
+                "  bach upgrade repair --dry-run     Diagnose fuer Manifest/Versionen",
+                "  bach upgrade repair               Manifest/Versionen neu aufbauen",
             ]
             return True, "\n".join(output)
 
@@ -488,6 +938,10 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                     "file_path": file_path,
                     "latest_version": latest["version"],
                 })
+                continue
+
+            if self._matches_latest_by_metadata(disk_path, latest):
+                up_to_date += 1
                 continue
 
             current_hash = self._hash_file(disk_path)
@@ -526,6 +980,12 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                     "stable": stable_payload,
                     "latest": latest_payload,
                 },
+                "manifest_entries": manifest_entries,
+                "release_entries": release_total,
+                "repair_recommended": repair_recommended,
+                "current_version": current_version,
+                "current_release_registered": bool(release_state["current_release_registered"]),
+                "current_release_version": release_state["current_release_version"],
                 "summary": {
                     "checked_files": len(versions_by_file),
                     "up_to_date": up_to_date,
@@ -564,6 +1024,14 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                     f"  Neueste bekannte:     {latest_release['version']} ({latest_date}) [{latest_status}]"
                 )
             output.append("")
+
+        output.extend([
+            "Metadaten:",
+            f"  Aktuelle Version:      {current_version}",
+            f"  Manifest-Eintraege:    {manifest_entries}",
+            f"  Release-Eintraege:     {release_total}",
+            "",
+        ])
 
         checked_files = len(versions_by_file)
         output.extend([
@@ -623,12 +1091,281 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                 "",
             ])
 
+        if repair_recommended:
+            output.extend([
+                "Hinweis:",
+                "  Release-/Manifest-Metadaten sind noch unvollstaendig.",
+                "  bach upgrade repair --dry-run     Diagnose fuer Repair-Pfad",
+                "  bach upgrade repair               Releasekatalog/Manifest reparieren",
+                "",
+            ])
+
         output.extend([
             "Befehle:",
             "  bach upgrade <file>              Einzeldatei aktualisieren",
             "  bach upgrade core --dry-run      CORE-Dateien pruefen",
             "  bach upgrade docs --dry-run      Doku-Dateien pruefen",
             "  bach upgrade --list <file>       Versionshistorie anzeigen",
+        ])
+
+        return True, "\n".join(output)
+
+    def _repair_metadata(self, args: list, dry_run: bool, json_output: bool = False) -> tuple:
+        """Repariert Distribution-Manifest und aktuelle Versionsdaten."""
+        version = None
+        if "--version" in args:
+            try:
+                version = args[args.index("--version") + 1]
+            except (IndexError, ValueError):
+                version = None
+        version = version or self._detect_current_version()
+
+        conn = self._get_db()
+        try:
+            manifest_path_column = self._manifest_path_column(conn)
+            if not manifest_path_column:
+                message = "distribution_manifest hat keine kompatible Pfad-Spalte."
+                if json_output:
+                    return False, self._json_error(
+                        message,
+                        error_code="missing_manifest_path_column",
+                    )
+                return False, f"[ERROR] {message}"
+
+            exact_rules, dir_rules = self._load_dist_rules(conn)
+            if not exact_rules and not dir_rules:
+                message = "dist_type_defaults ist leer oder unvollstaendig."
+                if json_output:
+                    return False, self._json_error(
+                        message,
+                        error_code="missing_dist_type_defaults",
+                    )
+                return False, f"[ERROR] {message}"
+
+            manifest_columns = set(self._table_columns(conn, "distribution_manifest"))
+            select_sql = (
+                f"SELECT {manifest_path_column}, dist_type"
+                + (", template_hash" if "template_hash" in manifest_columns else "")
+                + " FROM distribution_manifest"
+            )
+            existing_manifest_rows = conn.execute(select_sql).fetchall()
+            existing_manifest = {}
+            for row in existing_manifest_rows:
+                existing_manifest[str(row[0])] = {
+                    "dist_type": int(row[1]) if row[1] is not None else None,
+                    "template_hash": row[2] if len(row) > 2 else None,
+                }
+
+            default_rule_count = len(exact_rules) + len(dir_rules)
+            dist_version_entries_before = conn.execute("SELECT COUNT(*) FROM dist_file_versions").fetchone()[0]
+
+            candidates = []
+            unmatched = 0
+            skipped_user = 0
+            unreadable = 0
+            for relative_path, abs_path in self._iter_distribution_files():
+                dist_type = self._classify_dist_path(relative_path, exact_rules, dir_rules)
+                if dist_type is None:
+                    unmatched += 1
+                    continue
+                if dist_type == 0:
+                    skipped_user += 1
+                    continue
+
+                file_hash = self._hash_file(abs_path)
+                if file_hash is None:
+                    unreadable += 1
+                    continue
+
+                candidates.append({
+                    "relative_path": relative_path,
+                    "dist_type": dist_type,
+                    "file_hash": file_hash,
+                    "template_hash": file_hash[:16] if dist_type == 1 else None,
+                })
+
+            candidate_map = {entry["relative_path"]: entry for entry in candidates}
+            current_rows = conn.execute(
+                "SELECT file_path, file_hash FROM dist_file_versions WHERE version = ?",
+                (version,),
+            ).fetchall()
+            current_version_hashes = {str(row[0]): row[1] for row in current_rows}
+
+            manifest_inserted = 0
+            manifest_updated = 0
+            version_inserted = 0
+            version_conflicts = 0
+            now = datetime.now().isoformat()
+
+            for relative_path, candidate in candidate_map.items():
+                existing = existing_manifest.get(relative_path)
+                needs_insert = existing is None
+                needs_update = (
+                    not needs_insert
+                    and (
+                        existing["dist_type"] != candidate["dist_type"]
+                        or (
+                            candidate["dist_type"] == 1
+                            and "template_hash" in manifest_columns
+                            and existing.get("template_hash") != candidate["template_hash"]
+                        )
+                    )
+                )
+
+                if needs_insert:
+                    manifest_inserted += 1
+                    if not dry_run:
+                        insert_columns = [manifest_path_column, "dist_type"]
+                        insert_values = [relative_path, candidate["dist_type"]]
+                        if "template_hash" in manifest_columns:
+                            insert_columns.append("template_hash")
+                            insert_values.append(candidate["template_hash"])
+                        if "description" in manifest_columns:
+                            insert_columns.append("description")
+                            insert_values.append("Recovered from dist_type_defaults")
+                        if "created_at" in manifest_columns:
+                            insert_columns.append("created_at")
+                            insert_values.append(now)
+                        if "updated_at" in manifest_columns:
+                            insert_columns.append("updated_at")
+                            insert_values.append(now)
+
+                        placeholders = ", ".join("?" for _ in insert_columns)
+                        conn.execute(
+                            f"INSERT INTO distribution_manifest ({', '.join(insert_columns)}) "
+                            f"VALUES ({placeholders})",
+                            insert_values,
+                        )
+                elif needs_update:
+                    manifest_updated += 1
+                    if not dry_run:
+                        updates = ["dist_type = ?"]
+                        update_values = [candidate["dist_type"]]
+                        if "template_hash" in manifest_columns:
+                            updates.append("template_hash = ?")
+                            update_values.append(candidate["template_hash"])
+                        if "updated_at" in manifest_columns:
+                            updates.append("updated_at = ?")
+                            update_values.append(now)
+                        update_values.append(relative_path)
+                        conn.execute(
+                            f"UPDATE distribution_manifest SET {', '.join(updates)} "
+                            f"WHERE {manifest_path_column} = ?",
+                            update_values,
+                        )
+
+                existing_hash = current_version_hashes.get(relative_path)
+                if existing_hash is None:
+                    version_inserted += 1
+                    if not dry_run:
+                        conn.execute(
+                            """
+                            INSERT INTO dist_file_versions (file_path, version, file_hash, dist_type, created_at)
+                            VALUES (?, ?, ?, ?, ?)
+                            """,
+                            (
+                                relative_path,
+                                version,
+                                candidate["file_hash"],
+                                candidate["dist_type"],
+                                now,
+                            ),
+                        )
+                elif existing_hash != candidate["file_hash"]:
+                    version_conflicts += 1
+
+            release_repair = self._recover_release_catalog_entry(conn, version, dry_run)
+
+            if not dry_run:
+                conn.commit()
+
+            manifest_entries_after = conn.execute("SELECT COUNT(*) FROM distribution_manifest").fetchone()[0]
+            dist_version_entries_after = conn.execute("SELECT COUNT(*) FROM dist_file_versions").fetchone()[0]
+            release_entries_after = conn.execute("SELECT COUNT(*) FROM distribution_releases").fetchone()[0]
+        finally:
+            conn.close()
+
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "dry_run": dry_run,
+            "version": version,
+            "summary": {
+                "default_rules": default_rule_count,
+                "candidate_files": len(candidate_map),
+                "manifest_inserted": manifest_inserted,
+                "manifest_updated": manifest_updated,
+                "version_entries_inserted": version_inserted,
+                "version_conflicts": version_conflicts,
+                "user_skipped": skipped_user,
+                "unmatched_files": unmatched,
+                "unreadable_files": unreadable,
+            },
+            "db": {
+                "manifest_entries_before": len(existing_manifest),
+                "manifest_entries_after": manifest_entries_after,
+                "dist_file_versions_before": dist_version_entries_before,
+                "dist_file_versions_after": dist_version_entries_after,
+                "release_entries_before": release_repair["release_entries_before"],
+                "release_entries_after": release_entries_after,
+            },
+            "release": {
+                "inserted": release_repair["release_inserted"],
+                "bootstrapped": release_repair["release_bootstrapped"],
+                "skipped_reason": release_repair["release_skipped_reason"],
+                "release_date": release_repair["release_date"],
+                "status": release_repair["release_status"],
+                "is_stable": release_repair["is_stable"],
+                "current_release_registered_before": release_repair["current_release_registered_before"],
+                "current_release_registered_after": release_repair["current_release_registered_after"],
+            },
+            "release_catalog_populated": release_entries_after > 0,
+        }
+
+        if json_output:
+            return True, self._json_dump(payload)
+
+        output = [
+            "=== UPGRADE-REPAIR ===",
+            "",
+            f"Modus:                   {'DRY-RUN' if dry_run else 'LIVE'}",
+            f"Aktuelle Version:        {version}",
+            f"Default-Regeln:          {default_rule_count}",
+            f"Kandidaten-Dateien:      {len(candidate_map)}",
+            f"Manifest vorher/nachher: {len(existing_manifest)} -> {manifest_entries_after}",
+            f"Versionen vorher/nachher:{dist_version_entries_before} -> {dist_version_entries_after}",
+            f"Release vorher/nachher:  {release_repair['release_entries_before']} -> {release_entries_after}",
+            f"Manifest neu:            {manifest_inserted}",
+            f"Manifest aktualisiert:   {manifest_updated}",
+            f"Versionen neu:           {version_inserted}",
+            f"Versionskonflikte:       {version_conflicts}",
+            f"USER-Dateien ueberspr.:  {skipped_user}",
+            f"Unmatched Dateien:       {unmatched}",
+            f"Nicht lesbar:            {unreadable}",
+            "",
+        ]
+
+        if release_repair["release_inserted"]:
+            stable_label = "stable" if release_repair["is_stable"] else release_repair["release_status"]
+            output.extend([
+                "Release-Recovery:",
+                f"  Aktueller Release-Eintrag fuer {version} {'wuerde angelegt' if dry_run else 'angelegt'} werden.",
+                f"  Datum: {release_repair['release_date']} | Kanal: {stable_label}",
+                "",
+            ])
+        elif release_repair["release_skipped_reason"] == "unknown_current_version":
+            output.extend([
+                "Hinweis:",
+                "  Release-Katalog konnte nicht automatisch ergaenzt werden,",
+                "  weil keine aktuelle Version sicher erkannt wurde. Nutze bei Bedarf:",
+                "  bach upgrade repair --version <tag>",
+                "",
+            ])
+
+        output.extend([
+            "Naechste Schritte:",
+            "  bach upgrade --status             Upgrade-Metadaten pruefen",
+            "  bach upgrade --check              Drift/Updates erneut berechnen",
+            "  bach seal repair                  Kernel-Hash auf neue CORE-Basis ziehen",
         ])
 
         return True, "\n".join(output)

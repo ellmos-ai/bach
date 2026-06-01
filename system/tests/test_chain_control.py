@@ -19,7 +19,11 @@ if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 
 from llmauto.core.state import ChainState  # noqa: E402
-from llmauto.modes.chain import show_status  # noqa: E402
+from llmauto.modes.chain import (  # noqa: E402
+    _apply_operator_controls,
+    _import_scheduler_operator_steer,
+    show_status,
+)
 
 
 class TestChainControlState:
@@ -58,6 +62,35 @@ class TestChainControlState:
         assert state.get_pause_request() is None
         assert state.peek_steer_requests() == []
         assert state.get_status() == "READY"
+
+    def test_scheduler_operator_steer_env_is_imported_into_chain_queue(self, tmp_path, monkeypatch):
+        state = ChainState("demo", tmp_path)
+        monkeypatch.setenv(
+            "BACH_SCHEDULER_OPERATOR_STEER",
+            (
+                '[{"message":"Bitte nur Docs prüfen.","requested_at":"2026-05-27T12:30:00"},'
+                '{"message":"Vor Abschluss Status melden.","requested_at":"2026-05-27T12:31:00"}]'
+            ),
+        )
+
+        imported = _import_scheduler_operator_steer(state, "demo")
+        queued = state.peek_steer_requests()
+
+        assert imported == 2
+        assert "BACH_SCHEDULER_OPERATOR_STEER" not in __import__("os").environ
+        assert [item["message"] for item in queued] == [
+            "Bitte nur Docs prüfen.",
+            "Vor Abschluss Status melden.",
+        ]
+        assert queued[0]["created_at"] == "2026-05-27T12:30:00"
+
+        can_continue, operator_steer, control_reason = _apply_operator_controls("demo", state, {})
+
+        assert can_continue is True
+        assert control_reason == ""
+        assert "Bitte nur Docs prüfen." in operator_steer
+        assert "Vor Abschluss Status melden." in operator_steer
+        assert state.peek_steer_requests() == []
 
 
 class TestChainControlStatus:

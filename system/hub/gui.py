@@ -9,12 +9,16 @@ bach gui status        Server-Status anzeigen
 """
 import sys
 import subprocess
+import time
 from pathlib import Path
 from .base import BaseHandler
 
 
 class GuiHandler(BaseHandler):
     """Handler fuer gui Operationen"""
+
+    BACKGROUND_STARTUP_TIMEOUT_SECONDS = 5.0
+    BACKGROUND_STARTUP_POLL_SECONDS = 0.25
     
     def __init__(self, base_path: Path):
         super().__init__(base_path)
@@ -120,13 +124,7 @@ class GuiHandler(BaseHandler):
         if dry_run:
             return (True, f"[DRY-RUN] Wuerde Server im Hintergrund starten auf Port {port}")
         
-        # Pruefen ob bereits laeuft
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = sock.connect_ex(('127.0.0.1', port))
-        sock.close()
-        
-        if result == 0:
+        if self._is_port_open(port):
             return (True, f"[OK] GUI Server laeuft bereits auf Port {port}")
         
         # Server im Hintergrund starten
@@ -147,21 +145,42 @@ class GuiHandler(BaseHandler):
                     start_new_session=True
                 )
             
-            import time
-            time.sleep(1)  # Kurz warten
-            
-            # Pruefen ob gestartet
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            result = sock.connect_ex(('127.0.0.1', port))
-            sock.close()
-            
-            if result == 0:
+            if self._wait_for_port(
+                port,
+                timeout_seconds=self.BACKGROUND_STARTUP_TIMEOUT_SECONDS,
+                poll_interval=self.BACKGROUND_STARTUP_POLL_SECONDS,
+            ):
                 return (True, f"[OK] GUI Server gestartet (http://127.0.0.1:{port})")
-            else:
-                return (False, f"[WARN] Server gestartet, aber Port {port} antwortet nicht")
+            return (False, f"[WARN] Server gestartet, aber Port {port} antwortet nicht")
                 
         except Exception as e:
             return (False, f"[ERROR] Konnte Server nicht starten: {e}")
+
+    def _is_port_open(self, port: int) -> bool:
+        """Prueft ob ein lokaler TCP-Port bereits Verbindungen annimmt."""
+        import socket
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            return sock.connect_ex(("127.0.0.1", port)) == 0
+        finally:
+            sock.close()
+
+    def _wait_for_port(
+        self,
+        port: int,
+        *,
+        timeout_seconds: float,
+        poll_interval: float,
+    ) -> bool:
+        """Wartet kurz auf asynchron gestartete Serverprozesse."""
+        attempts = max(1, int(timeout_seconds / poll_interval))
+        for attempt in range(attempts):
+            if self._is_port_open(port):
+                return True
+            if attempt < attempts - 1:
+                time.sleep(poll_interval)
+        return False
 
     def _find_pid_on_port(self, port: int) -> int:
         """Findet die PID des Prozesses auf einem Port."""
@@ -174,10 +193,13 @@ class GuiHandler(BaseHandler):
                     encoding='utf-8', errors='replace', timeout=10
                 )
                 for line in result.stdout.splitlines():
-                    if f":{port}" in line and "LISTENING" in line:
-                        parts = line.split()
-                        if parts:
-                            return int(parts[-1])
+                    parts = line.split()
+                    if len(parts) < 5 or parts[0].upper() != "TCP":
+                        continue
+                    if not parts[1].endswith(f":{port}"):
+                        continue
+                    if parts[-1].isdigit():
+                        return int(parts[-1])
             else:
                 result = subprocess.run(
                     ["lsof", "-i", f":{port}", "-t"],
@@ -231,14 +253,8 @@ class GuiHandler(BaseHandler):
 
     def _show_status(self) -> tuple:
         """Zeigt Server-Status."""
-        import socket
-
         port = 8000
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = sock.connect_ex(('127.0.0.1', port))
-        sock.close()
-
-        if result == 0:
+        if self._is_port_open(port):
             pid = self._find_pid_on_port(port)
             pid_info = f" (PID {pid})" if pid else ""
             status = f"[ONLINE] Server laeuft auf Port {port}{pid_info}"

@@ -46,6 +46,7 @@ AGENTEN & EXPERTEN (Fachgebiete):
   abo           Abo-Service (Kündigungen, Verträge)
   bericht       Bericht-Generator (Förderberichte ICF)
   gesundheit    Gesundheits-Assistent
+  mediplaner    MediPlaner-Import/Export für Gesundheitsdaten
   haushalt      Haushalts-Management
   versicherung  Versicherungs-Management
 
@@ -140,11 +141,11 @@ Wenn kein Handler gefunden wird, versucht BACH ein Tool aus tools/:
 
 REGISTRIERTE HANDLER (Stand 2026-03-04):
 ----------------------------------------
-109+ Handler via Auto-Discovery (hub/*.py):
+112+ Handler via Auto-Discovery (hub/*.py):
 abo, agents, ati, backup, beat, bericht, between, calendar, chain, clock,
 connections, connector, consolidation, contact, context, countdown, cv,
 daemon (=scheduler), data, db, dist, doc, docs, email, extensions, fs, gesundheit, gui,
-haushalt, healthcheck, help, hooks, inject, lang, lesson, logs, maintain,
+haushalt, healthcheck, help, hooks, inject, lang, lesson, logs, maintain, mediplaner,
 mem, memory, mount, msg, notify, obsidian, ollama, partner, path, profile,
 profiler, recurring, reflection, routine, scan, session, shutdown, skill,
 skills, smarthome, snapshot, sources, startup, status, steuer, sync, task,

@@ -44,6 +44,7 @@ bach task help
 - `steuer.py` - Steuerverwaltung (beleg/posten/export)
 - `haushalt.py` - Haushalt (fixkosten/routinen/einkauf)
 - `gesundheit.py` - Gesundheit (diagnosen/medikamente/labor)
+- `mediplaner.py` - Austausch zwischen BACH-Gesundheit und MediPlaner
 - `contact.py` - Kontakte (list/search/add)
 - `abo.py` - Abo-Verwaltung
 

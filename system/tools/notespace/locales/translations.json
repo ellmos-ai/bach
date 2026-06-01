@@ -1,0 +1,34 @@
+{
+  "+ Dateien": {
+    "de": "+ Dateien",
+    "en": "+ Files"
+  },
+  "Als Profil speichern": {
+    "de": "Als Profil speichern",
+    "en": "Save as Profile"
+  },
+  "Bereit zum Exportieren": {
+    "de": "Bereit zum Exportieren",
+    "en": "Ready to Export"
+  },
+  "Exportieren": {
+    "de": "Exportieren",
+    "en": "Export"
+  },
+  "Fehler": {
+    "de": "Fehler",
+    "en": "Error"
+  },
+  "LLM-Einstellungen": {
+    "de": "LLM-Einstellungen",
+    "en": "LLM Settings"
+  },
+  "Modelle laden": {
+    "de": "Modelle laden",
+    "en": "Load Models"
+  },
+  "Workflow bearbeiten": {
+    "de": "Workflow bearbeiten",
+    "en": "Edit Workflow"
+  }
+}

@@ -52,6 +52,15 @@ EXPORT-FUNKTIONEN:
 
   Beispiel: bach gesundheit export --entity all --file gesundheitspass.txt
 
+MEDIPLANER-AUSTAUSCH:
+  bach mediplaner export --file mediplaner-export-v1.json
+  bach mediplaner export --client-first Max --client-last Mustermann --birthdate 01.01.1970
+  bach mediplaner import --file mediplaner-export-v1.json
+
+  Hinweis: `bach mediplaner` nutzt dieselbe kanonische BACH-Datenbank wie
+  `bach gesundheit` und dient dem verlustarmen JSON-Austausch mit externen
+  MediPlaner-Workflows.
+
 PROAKTIVE FUNKTIONEN:
   bach gesundheit reminders          Erinnerungen (Medikamente, Vorsorge, Termine)
   bach gesundheit interactions       Wechselwirkungs-Check aktiver Medikamente
@@ -118,3 +127,4 @@ INTEGRATION:
 SIEHE AUCH:
   bach --help abo            (Für Fitness-Abos etc.)
   bach --help contact        (Allgemeine Kontakte)
+  bach --help mediplaner     (Import/Export zu MediPlaner)

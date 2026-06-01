@@ -27,6 +27,7 @@ import signal
 import subprocess
 import json
 import sqlite3
+import time
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
@@ -42,7 +43,8 @@ class SchedulerHandler(BaseHandler):
         self.log_dir = base_path / "data" / "logs"
         self.daemon_script = self.gui_dir / "daemon_service.py"
         self.pid_file = self.data_dir / "daemon.pid"
-        self.user_db = self.data_dir / "bach.db"  # Unified DB seit v1.1.84
+        # Scheduler-CLI und GUI-Service muessen dieselbe kanonische BACH-DB sehen.
+        self.user_db = Path(self._canonical_db)
         self.scheduler_control_dir = self.data_dir / "scheduler_control"
 
         # Session System (System-Service)
@@ -643,8 +645,11 @@ class SchedulerHandler(BaseHandler):
                     start_new_session=True
                 )
 
-            import time
-            time.sleep(1)  # Kurz warten
+            # Windows-/OneDrive-Setups koennen den PID-Moment leicht verzoegern.
+            for _ in range(20):
+                time.sleep(0.25)
+                if self._is_running():
+                    return (True, "[OK] Scheduler im Hintergrund gestartet")
 
             if self._is_running():
                 return (True, "[OK] Scheduler im Hintergrund gestartet")

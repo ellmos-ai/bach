@@ -50,12 +50,25 @@ except ImportError:
 DAEMON_DIR = Path(__file__).parent
 BACH_DIR = DAEMON_DIR.parent
 DATA_DIR = BACH_DIR / "data"
-USER_DB = DATA_DIR / "bach.db"
 LOG_DIR = BACH_DIR / "data" / "logs"
 DAEMON_PID_FILE = DATA_DIR / "daemon.pid"
 CONTROL_DIR = DATA_DIR / "scheduler_control"
 SCHEDULER_PAUSE_FILE = CONTROL_DIR / "scheduler.pause.json"
 SCHEDULER_STEER_FILE = CONTROL_DIR / "scheduler.steer.json"
+
+
+def _resolve_scheduler_db() -> Path:
+    """Nutzt dieselbe kanonische BACH-DB wie CLI und GUI-Server."""
+    try:
+        if str(BACH_DIR) not in sys.path:
+            sys.path.insert(0, str(BACH_DIR))
+        from hub.bach_paths import BACH_DB as _PATHS_DB
+        return Path(_PATHS_DB)
+    except Exception:
+        return DATA_DIR / "bach.db"
+
+
+USER_DB = _resolve_scheduler_db()
 
 # Logging konfigurieren
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -97,8 +110,8 @@ class DaemonService:
     und protokolliert Ergebnisse.
     """
     
-    def __init__(self, db_path: Path = USER_DB):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[Path] = None):
+        self.db_path = Path(db_path) if db_path else _resolve_scheduler_db()
         self.running = False
         self.jobs: Dict[int, DaemonJob] = {}
         self.lock = threading.Lock()

@@ -19,6 +19,7 @@ from hub._services.chat.chat_runtime import (
     BLOCKED_PATTERNS,
     CMD_TIMEOUT,
     SAFE_BASES,
+    TOOLS_SAFE,
     _tool,
     exec_tool,
     is_blocked,
@@ -447,6 +448,11 @@ class TestToolHelper:
         desc = "Dateien und Ordner auflisten"
         result = _tool("list_dir", desc, {})
         assert result["function"]["description"] == desc
+
+    def test_bach_command_lists_mediplaner_handler(self):
+        bach_tool = next(tool for tool in TOOLS_SAFE if tool["function"]["name"] == "bach_command")
+        handler_desc = bach_tool["function"]["parameters"]["properties"]["handler"]["description"]
+        assert "mediplaner" in handler_desc
 
 
 class TestFoerderberichtToolPrivacy:

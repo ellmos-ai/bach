@@ -257,3 +257,6 @@ PLAN.txt
 # === LOKALE USER-LAUNCHER (User-spezifisch) ===
 /prompt_bach.txt
 /run_bach.bat
+
+# === NOTESPACE ON-BOARD (User-Daten: Projekte, Vektor-DB, Config) ===
+/system/data/notespace/

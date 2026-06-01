@@ -42,6 +42,12 @@ bach mem read               Memory lesen
 bach mem context            Kontext anzeigen
 bach mem archive            Session archivieren
 
+GESUNDHEITSDATEN-AUSTAUSCH
+--------------------------
+bach mediplaner export --file mediplaner-export-v1.json
+bach mediplaner import --file mediplaner-export-v1.json
+JSON-Austausch zwischen BACH-Gesundheitsdaten und externen MediPlaner-Workflows.
+
 NACHRICHTEN
 -----------
 bach msg send "..."         Nachricht senden
@@ -153,7 +159,7 @@ Handler (Auto-Discovery in hub/):
   connector, consolidation, contact, context, cv, daemon (=scheduler), data_analysis,
   db, dist, doc, docs, extensions, fs, gesundheit, gui, haushalt, health,
   help, inbox, inject, lang, lesson, logs, maintain, memory, messages,
-  mount, multi_llm_protocol, notify, obsidian, ollama, partner, path,
+  mediplaner, mount, multi_llm_protocol, notify, obsidian, ollama, partner, path,
   profile, profiler, recurring, reflection, routine, scan, session,
   shutdown, skills, smarthome, snapshot, sources, startup, status,
   steuer, sync, task, test, time, tokens, tools, trash, tuev, update,

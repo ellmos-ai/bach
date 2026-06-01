@@ -1,0 +1,32 @@
+# AUFGABEN -- NoteSpace (BACH On-Board)
+# Bidirektionaler Sync-Vermerk + offene Phase-2-Punkte
+
+---
+
+## [SYNC <-> interne Quelle] Quelle und Abgleich
+
+Diese BACH-Version ist vendored aus der eigenständigen internen NoteSpaceLLM-App:
+  -> Quelle: interner NoteSpaceLLM-Quellstand
+  -> Details/Patches: siehe PROVENANCE.md (gleicher Ordner)
+
+REGEL (beide Richtungen):
+  - Änderungen an der internen Quelle    -> hierher nachziehen
+    (src/ kopieren + BACH_NOTESPACE_HOME-Patches in app_config.py / main_window.py
+     erneut anwenden).
+  - Änderungen an dieser BACH-Version   -> bei Bedarf zurück in die interne Quelle.
+
+INSBESONDERE CLI-TRANSFER:
+  Sobald der interne CLI-Modus produktiv ist
+  (notespace --project / --index / --query / --report / --export),
+  in diese BACH-Version übernehmen UND im Handler hub/notespace.py als
+  `bach notespace cli` verdrahten.
+
+---
+
+## [PHASE 2] offen
+
+[ ] Headless CLI-Query: `bach notespace cli "frage"` im Handler implementieren
+    (sobald interne CLI vorhanden bzw. übertragen). Aktuell gibt der Handler
+    dafür einen "noch nicht implementiert"-Hinweis aus.
+[ ] Optional: Kachel/Verweis im BACH Web-Dashboard (:8000), die `bach notespace gui`
+    auf dem lokalen System startet bzw. darauf hinweist.

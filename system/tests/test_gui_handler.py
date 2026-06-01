@@ -123,6 +123,31 @@ class TestStartBackground:
             assert ok
             assert "laeuft bereits" in msg
 
+    def test_waits_for_delayed_port_readiness(self, handler):
+        with patch.object(handler, "_is_port_open", side_effect=[False, False, True]):
+            with patch("subprocess.Popen") as mock_popen:
+                with patch("hub.gui.time.sleep", return_value=None):
+                    ok, msg = handler._start_background(8000, dry_run=False)
+
+        assert ok
+        assert "GUI Server gestartet" in msg
+        mock_popen.assert_called_once()
+
+
+class TestPortPidLookup:
+    def test_find_pid_on_port_windows_localized_netstat(self, handler):
+        localized_netstat = (
+            "  TCP    127.0.0.1:8000         0.0.0.0:0              ABHÖREN         169292\n"
+            "  TCP    127.0.0.1:58397        127.0.0.1:8000         WARTEND         0\n"
+        )
+        mock_result = MagicMock(stdout=localized_netstat)
+
+        with patch("hub.gui.sys.platform", "win32"):
+            with patch("subprocess.run", return_value=mock_result):
+                pid = handler._find_pid_on_port(8000)
+
+        assert pid == 169292
+
 
 class TestShowStatus:
     def test_status_online(self, handler):

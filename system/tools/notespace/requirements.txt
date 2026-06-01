@@ -1,0 +1,50 @@
+# NoteSpaceLLM Dependencies
+# =========================
+
+# Core GUI (required)
+PySide6>=6.5.0
+
+# Document Processing
+PyMuPDF>=1.23.0      # PDF reading
+python-docx>=1.0.0   # Word documents
+openpyxl>=3.1.0      # Excel files
+extract-msg>=0.48.0  # Outlook .msg files
+
+# =========================
+# RAG Components (LangChain + ChromaDB + Ollama)
+# =========================
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+langchain-ollama>=0.2.0      # Ollama LLM Integration
+langchain-chroma>=0.1.0      # ChromaDB Vector Store
+
+chromadb>=0.5.0              # Vector Database
+
+# =========================
+# Optional: OCR for image-based PDFs
+# =========================
+# pytesseract>=0.3.10
+# Pillow>=10.0.0
+
+# =========================
+# Optional: Better PDF export
+# =========================
+# weasyprint>=60.0
+
+# =========================
+# Optional: Token counting for OpenAI
+# =========================
+# tiktoken>=0.5.0
+
+# =========================
+# LLM API clients (choose based on your setup)
+# =========================
+# openai>=1.0.0       # For OpenAI API
+# anthropic>=0.18.0   # For Anthropic API
+
+# =========================
+# Development
+# =========================
+# pytest>=7.0.0
+# black>=23.0.0

@@ -1,7 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
-# Next review: 2026-08-12
+# Last validated: 2026-05-30
+# Next review: 2026-08-30
 
 BACH UPGRADE - SYSTEM UPDATE
 -------------------------------------
@@ -39,20 +38,24 @@ USE
   # Dry-Run (view only, do not execute)
   bach upgrade agents --dry-run
 
+  # Inspect and repair upgrade metadata
+  bach upgrade repair --dry-run
+  bach upgrade repair --version v3.12.4-earth
+
 
 CATEGORIES
 ----------
 
-  core System core (dist_type=2)
-  templates templates and templates (dist_type=1)
-  agents Boss agents and experts
-  skills skills and protocols
-  hub Hub handler
-  tools tools
-  connectors connector system
-  partners partner files
-  docs documentation
-  gui GUI files
+  core         System core (dist_type=2)
+  templates    Templates and resettable defaults (dist_type=1)
+  agents       Boss agents and experts
+  skills       Skills and protocols
+  hub          Hub handlers
+  tools        Tools
+  connectors   Connector system
+  partners     Partner files
+  docs         Documentation
+  gui          GUI files
 
 
 IMPORTANT
@@ -62,7 +65,10 @@ IMPORTANT
 - USER_DATA remains untouched.
 - Backup is recommended before major upgrades.
 - Versions are tracked in `dist_file_versions`.
-- `--json` is supported for `list`, `status`, and `check`.
+- `status/check --json` also return `manifest_entries`, `release_entries`, `repair_recommended`, `current_version`, and `current_release_registered`.
+- `bach upgrade repair` rebuilds missing `distribution_manifest`/`dist_file_versions` rows from the live distribution tree and bootstraps the current release entry when `distribution_releases` is empty.
+- Full historical release lists are not reconstructed automatically; the repair path only restores the current release entry.
+- `--json` is supported for `list`, `status`, `check`, and `repair`.
 
 
 EXAMPLES
@@ -85,6 +91,10 @@ EXAMPLES
 
   # Query upgrade drift as JSON for automation
   bach upgrade check --json
+
+  # Diagnose metadata first, then repair
+  bach upgrade repair --dry-run
+  bach upgrade repair --version v3.12.4-earth
 
 
 VERSIONING

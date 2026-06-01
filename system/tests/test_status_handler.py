@@ -4,6 +4,7 @@
 
 import sqlite3
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,7 @@ def _create_tables(conn):
     conn.execute("""
         CREATE TABLE partner_presence (
             id INTEGER PRIMARY KEY, partner_name TEXT,
-            status TEXT, clocked_in TEXT
+            status TEXT, clocked_in TEXT, last_heartbeat TEXT
         )
     """)
     conn.execute("""
@@ -82,18 +83,29 @@ def populated_env(tmp_path, monkeypatch):
     db_path = data_dir / "bach.db"
     conn = sqlite3.connect(db_path)
     _create_tables(conn)
+    now = datetime.now()
+    fresh = now.isoformat()
+    slightly_older = (now - timedelta(minutes=1)).isoformat()
+    stale = (now - timedelta(minutes=10)).isoformat()
 
     conn.execute(
         "INSERT INTO memory_sessions (session_id, partner_id, ended_at) "
         "VALUES ('sess-1', 'claude', NULL)"
     )
     conn.execute(
-        "INSERT INTO partner_presence (partner_name, status, clocked_in) "
-        "VALUES ('claude', 'online', '2026-01-01 10:00')"
+        "INSERT INTO partner_presence (partner_name, status, clocked_in, last_heartbeat) "
+        "VALUES (?, 'online', ?, ?)",
+        ("claude", fresh, fresh),
     )
     conn.execute(
-        "INSERT INTO partner_presence (partner_name, status, clocked_in) "
-        "VALUES ('gemini', 'online', '2026-01-01 09:00')"
+        "INSERT INTO partner_presence (partner_name, status, clocked_in, last_heartbeat) "
+        "VALUES (?, 'online', ?, ?)",
+        ("gemini", slightly_older, slightly_older),
+    )
+    conn.execute(
+        "INSERT INTO partner_presence (partner_name, status, clocked_in, last_heartbeat) "
+        "VALUES (?, 'online', ?, ?)",
+        ("stale-agent", stale, stale),
     )
     for i in range(5):
         conn.execute("INSERT INTO memory_working (content) VALUES (?)", (f"note {i}",))
@@ -204,6 +216,7 @@ class TestPopulatedDb:
         assert "2 online" in output
         assert "claude" in output
         assert "gemini" in output
+        assert "stale-agent" not in output
 
     def test_memory_counts(self, populated_handler):
         ok, output = populated_handler.handle("show", [])
@@ -228,6 +241,31 @@ class TestPopulatedDb:
     def test_health_ok(self, populated_handler):
         ok, output = populated_handler.handle("show", [])
         assert "Health:   OK" in output
+
+    def test_active_session_partner_is_shown_even_when_presence_is_stale(self, tmp_path, monkeypatch):
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        db_path = data_dir / "bach.db"
+        conn = sqlite3.connect(db_path)
+        _create_tables(conn)
+        stale = (datetime.now() - timedelta(minutes=10)).isoformat()
+        conn.execute(
+            "INSERT INTO memory_sessions (session_id, partner_id, ended_at) "
+            "VALUES ('sess-codex', 'codex', NULL)"
+        )
+        conn.execute(
+            "INSERT INTO partner_presence (partner_name, status, clocked_in, last_heartbeat) "
+            "VALUES (?, 'online', ?, ?)",
+            ("codex", stale, stale),
+        )
+        conn.commit()
+        conn.close()
+        monkeypatch.setattr("hub.bach_paths.BACH_DB", db_path)
+
+        h = StatusHandler(tmp_path)
+        ok, output = h.handle("show", [])
+        assert ok is True
+        assert "1 online (codex)" in output
 
 
 # ═══════════════════════════════════════════════════════════════

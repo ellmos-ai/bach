@@ -1,7 +1,7 @@
 # Portabilität: UNIVERSAL
 # Version: 1.1.0
-# Zuletzt validiert: 2026-05-12
-# Nächste Prüfung: 2026-08-12
+# Zuletzt validiert: 2026-05-30
+# Nächste Prüfung: 2026-08-30
 
 BACH UPGRADE - SYSTEM-AKTUALISIERUNG
 =====================================
@@ -39,6 +39,10 @@ VERWENDUNG
   # Dry-Run (nur anzeigen, nicht ausführen)
   bach upgrade agents --dry-run
 
+  # Upgrade-Metadaten prüfen und reparieren
+  bach upgrade repair --dry-run
+  bach upgrade repair --version v3.12.4-earth
+
 
 KATEGORIEN
 ----------
@@ -62,7 +66,10 @@ WICHTIG
 - USER_DATA bleibt unangetastet.
 - Backup wird vor größeren Upgrades empfohlen.
 - Versionen werden in `dist_file_versions` getrackt.
-- `--json` wird für `list`, `status` und `check` unterstützt.
+- `status/check --json` liefern zusätzlich `manifest_entries`, `release_entries`, `repair_recommended`, `current_version` und `current_release_registered`.
+- `bach upgrade repair` baut fehlende `distribution_manifest`-/`dist_file_versions`-Einträge aus dem aktuellen Distributionsbaum wieder auf und bootstrappt bei leerem `distribution_releases` den aktuellen Release-Eintrag aus lokaler Versionsmetadatenlage.
+- Historische Release-Listen werden nicht vollständig rückwirkend rekonstruiert; automatisch ergänzt wird nur der aktuelle Release-Eintrag.
+- `--json` wird für `list`, `status`, `check` und `repair` unterstützt.
 
 
 BEISPIELE
@@ -85,6 +92,10 @@ BEISPIELE
 
   # Upgrade-Status für Automationen als JSON abfragen
   bach upgrade check --json
+
+  # Reparatur erst simulieren, dann ausführen
+  bach upgrade repair --dry-run
+  bach upgrade repair --version v3.12.4-earth
 
 
 VERSIONIERUNG

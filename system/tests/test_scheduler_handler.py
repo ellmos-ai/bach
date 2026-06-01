@@ -394,8 +394,11 @@ class TestDoctorChecks:
         assert result["status"] == "ok"
         assert "2" in result["message"] or "aktiv" in result["message"]
 
-    def test_check_scheduler_db_missing(self, empty_env):
-        h = empty_env
+    def test_check_scheduler_db_missing(self, empty_env, monkeypatch, tmp_path):
+        import hub.bach_paths as bach_paths
+
+        monkeypatch.setattr(bach_paths, "BACH_DB", tmp_path / "missing.db")
+        h = SchedulerHandler(empty_env.base_path)
         result = h._check_scheduler_db()
         assert result["status"] == "error"
 
@@ -412,6 +415,29 @@ class TestDoctorChecks:
         result = h._check_scheduler_db()
         assert result["status"] == "warn"
         assert "keine Jobs" in result["message"]
+
+    def test_check_scheduler_db_uses_canonical_db_when_local_db_missing(self, tmp_path, monkeypatch):
+        import hub.bach_paths as bach_paths
+
+        base = tmp_path / "system"
+        base.mkdir()
+        (base / "gui").mkdir()
+        data_dir = base / "data"
+        data_dir.mkdir()
+        (data_dir / "logs").mkdir()
+
+        canonical_db = tmp_path / "canonical" / "bach.db"
+        canonical_db.parent.mkdir()
+        _make_scheduler_db(canonical_db)
+
+        monkeypatch.setattr(bach_paths, "BACH_DB", canonical_db)
+
+        h = SchedulerHandler(base)
+        result = h._check_scheduler_db()
+
+        assert h.user_db == canonical_db
+        assert result["status"] == "ok"
+        assert result["details"]["path"] == str(canonical_db)
 
     def test_check_scheduler_db_failed_last_run(self, tmp_path):
         base = tmp_path / "system"
@@ -704,8 +730,11 @@ class TestDBOperations:
         data = json.loads(text)
         assert len(data["jobs"]) == 2
 
-    def test_list_jobs_no_db(self, empty_env):
-        h = empty_env
+    def test_list_jobs_no_db(self, empty_env, monkeypatch, tmp_path):
+        import hub.bach_paths as bach_paths
+
+        monkeypatch.setattr(bach_paths, "BACH_DB", tmp_path / "missing.db")
+        h = SchedulerHandler(empty_env.base_path)
         ok, text = h._list_jobs()
         assert ok is False
         assert "nicht gefunden" in text
@@ -1154,6 +1183,18 @@ class TestHandleDispatch:
             ok, text = h.handle("start", [])
         assert ok is False
         assert "bereits" in text
+
+    def test_handle_start_background_waits_for_running_pid(self, sched_env):
+        h = sched_env["handler"]
+        with (
+            patch("hub.scheduler.sys.platform", "win32"),
+            patch("hub.scheduler.subprocess.Popen"),
+            patch("hub.scheduler.time.sleep", return_value=None),
+            patch.object(h, "_is_running", side_effect=[False, False, False, True]),
+        ):
+            ok, text = h.handle("start", ["--bg"])
+        assert ok is True
+        assert "Hintergrund gestartet" in text
 
     def test_handle_stop_not_running(self, sched_env):
         h = sched_env["handler"]

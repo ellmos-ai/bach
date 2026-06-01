@@ -7,6 +7,7 @@ Portiert aus BACH_Dev/marble_run/marble.py, nutzt core-Module.
 import os
 import sys
 import time
+import json
 import subprocess
 from pathlib import Path
 from datetime import datetime
@@ -315,6 +316,57 @@ def _format_operator_steer(requests):
     return "\n".join(lines)
 
 
+def _load_scheduler_operator_steer_from_env():
+    """Liest globale Scheduler-Steering-Hinweise aus dem Environment ein."""
+    raw = os.environ.get("BACH_SCHEDULER_OPERATOR_STEER")
+    if not raw:
+        return []
+
+    try:
+        payload = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return []
+
+    if isinstance(payload, dict):
+        payload = [payload]
+    if not isinstance(payload, list):
+        return []
+
+    normalized = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        message = str(item.get("message", "")).strip()
+        if not message:
+            continue
+        normalized.append(
+            {
+                "message": message,
+                "created_at": item.get("requested_at") or item.get("created_at"),
+            }
+        )
+    return normalized
+
+
+def _import_scheduler_operator_steer(state, chain_name):
+    """Ueberfuehrt globale Scheduler-Hinweise in die reguläre Chain-Steering-Queue."""
+    if "BACH_SCHEDULER_OPERATOR_STEER" not in os.environ:
+        return 0
+
+    requests = _load_scheduler_operator_steer_from_env()
+    os.environ.pop("BACH_SCHEDULER_OPERATOR_STEER", None)
+    if not requests:
+        return 0
+
+    appended = state.queue_steer_requests(requests)
+    if appended:
+        log(
+            f"SCHEDULER-STEER importiert: {len(appended)} Hinweis(e) fuer den naechsten Checkpoint.",
+            chain_name,
+        )
+    return len(appended)
+
+
 def _apply_operator_controls(chain_name, state, config):
     """Wendet Pause-/Steuerungswuensche an sicheren Checkpoints an."""
     pause_request = state.get_pause_request()
@@ -467,6 +519,7 @@ def run_chain(chain_name, background=False):
     # Startzeit + Status setzen
     state.record_start()
     state.set_status("RUNNING")
+    _import_scheduler_operator_steer(state, chain_name)
 
     # Dynamisches Worker/Reviewer-Briefing generieren (B12)
     generate_active_chain_md(chain_name, config, state, base_dir)
