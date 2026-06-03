@@ -15,7 +15,7 @@ wurde durch ein SQLite-basiertes System ersetzt.
 
 AKTUELLER ERSATZ:
   Handler:  system/hub/messages.py (MessagesHandler)
-  Backend:  system/data/bach.db (messages Tabelle)
+  Backend:  BACH_DB (messages Tabelle)
   CLI:      bach msg <operation>
 
 SIEHE:

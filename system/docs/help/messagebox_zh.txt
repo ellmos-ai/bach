@@ -14,7 +14,7 @@ MESSAGEBOX 系统（已弃用）
 
 当前替换：
   处理程序：system/hub/messages.py (MessagesHandler)
-  后端：system/data/bach.db（消息表）
+  后端：BACH_DB（消息表）
   CLI: bach msg <操作>
 
 SEE:

@@ -85,7 +85,7 @@ DATABASE (capa 1)
 - `tareas`: id, título, descripción, estado, prioridad, asignado_a, delegado_a,
   depende_de, categoría, etiquetas, creado_en, completado_en, actualizado_en, dist_type.
 - `ati_tasks`: Tareas escaneadas con enlace de origen (Archivo/Línea).
-- Ruta de base de datos: system/data/bach.db
+- Ruta de base de datos: BACH_DB
 
 GUI & INTEGRATION (planificada)
 ---------------------------

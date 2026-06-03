@@ -95,7 +95,7 @@ DATENBANK-SCHEMA
 ----------------
 
   system/db/schema.sql   Vollständiges DB-Schema (210+ Tabellen)
-  system/data/bach.db    SQLite-Datenbank
+  BACH_DB                SQLite-Datenbank
 
 CLI-Zugriff:
   python bach.py --db schema       Zeigt DB-Schema

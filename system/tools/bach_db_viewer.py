@@ -28,7 +28,7 @@ BACH DB Viewer - Dedizierter Bach.db Browser
 =============================================
 
 Basiert auf SQLiteViewer, angepasst für BACH:
-- bach.db fest verdrahtet (system/data/bach.db)
+- bach.db standardmäßig über den kanonischen BACH_DB-Pfad geöffnet
 - dist_type-aware: CORE (2) read-only, TEMPLATE (1) + USER (0) editierbar
 - Zeigt dist_type-Klassifizierung in Tabellenansicht
 
@@ -96,7 +96,7 @@ class BachDbViewer(tk.Tk):
             self.open_db(str(self.db_path))
 
     def _find_bach_db(self) -> Optional[Path]:
-        """Sucht bach.db — bevorzugt bach_paths, dann Fallback-Kandidaten."""
+        """Sucht bach.db — bevorzugt BACH_DB, dann robuste Fallback-Kandidaten."""
         try:
             from hub.bach_paths import BACH_DB
             if BACH_DB.exists():
@@ -104,6 +104,7 @@ class BachDbViewer(tk.Tk):
         except ImportError:
             pass
         candidates = [
+            Path.home() / ".bach" / "bach.db",
             Path(__file__).parent.parent / "data" / "bach.db",
             Path.cwd() / "system" / "data" / "bach.db",
             Path.cwd() / "data" / "bach.db",
@@ -308,7 +309,7 @@ class BachDbViewer(tk.Tk):
 
     # ==================== DB OPERATIONS ====================
     def open_db(self, path: str = None):
-        """Öffnet Datenbank (bach.db fest verdrahtet)."""
+        """Öffnet die kanonische BACH-Datenbank oder einen expliziten Pfad."""
         if path is None:
             path = str(self.db_path) if self.db_path else ""
 
@@ -549,7 +550,12 @@ class BachDbViewer(tk.Tk):
 
     def _show_about(self):
         """Über-Dialog."""
-        msg = f"{APP_TITLE}\nVersion {APP_VERSION}\n\nBACH Database Viewer\nFest verdrahtet für bach.db\n\nSQ067 - 2026-02-19"
+        msg = (
+            f"{APP_TITLE}\nVersion {APP_VERSION}\n\n"
+            "BACH Database Viewer\n"
+            "Öffnet standardmäßig den kanonischen BACH_DB-Pfad\n\n"
+            "SQ067 - 2026-02-19"
+        )
         messagebox.showinfo("Über", msg)
 
     def close_db(self):

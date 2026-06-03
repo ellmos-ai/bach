@@ -85,7 +85,7 @@ DATABASE (layer 1)
 - `tasks`: id, title, description, status,priority,signed_to, delegated_to,
   取决于，类别，标签，创建的_at，完成的_at，更新的_at，dist_type。
 - `ati_tasks`：带有源链接（文件/行）的扫描任务。
-- 数据库路径：system/data/bach.db
+- 数据库路径：BACH_DB
 
 GUI 和集成（计划）
 ---------------------------

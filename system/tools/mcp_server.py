@@ -71,14 +71,19 @@ import sys
 import sqlite3
 import logging
 from datetime import datetime
+from pathlib import Path
 
 # BACH system/ Verzeichnis ermitteln
-BACH_SYSTEM = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BACH_DB = os.path.join(BACH_SYSTEM, "data", "bach.db")
+SYSTEM_ROOT = Path(__file__).resolve().parents[1]
+BACH_SYSTEM = str(SYSTEM_ROOT)
 
 # sys.path fuer bach_api und Handler-Imports
 if BACH_SYSTEM not in sys.path:
     sys.path.insert(0, BACH_SYSTEM)
+
+from hub.bach_paths import BACH_DB
+BACH_DB_PATH = Path(BACH_DB)
+BACH_DB_STR = str(BACH_DB_PATH)
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -129,7 +134,7 @@ def get_task_stats() -> str:
     """Task-Statistiken: offen, erledigt, nach Prioritaet."""
     # Eigene Aggregation, da kein Handler eine Stats-Operation hat
     try:
-        conn = sqlite3.connect(BACH_DB)
+        conn = sqlite3.connect(BACH_DB_STR)
         conn.row_factory = sqlite3.Row
         total = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
         done = conn.execute(
@@ -530,7 +535,7 @@ def db_query(query: str) -> str:
         return f"Tabelle(n) nicht erlaubt: {', '.join(sorted(blocked))}"
 
     try:
-        conn = sqlite3.connect(BACH_DB)
+        conn = sqlite3.connect(BACH_DB_STR)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(query).fetchall()
         conn.close()
@@ -561,8 +566,8 @@ def db_query(query: str) -> str:
 def get_version_info() -> str:
     """BACH MCP Server Version und Capabilities."""
     db_size = ""
-    if os.path.exists(BACH_DB):
-        db_size = f"{os.path.getsize(BACH_DB) / (1024*1024):.1f} MB"
+    if BACH_DB_PATH.exists():
+        db_size = f"{BACH_DB_PATH.stat().st_size / (1024*1024):.1f} MB"
 
     return "\n".join([
         f"BACH MCP Server v{__version__}",
@@ -649,7 +654,7 @@ def session_summary(topic: str = "diese Session") -> str:
 if __name__ == "__main__":
     logger.info(f"BACH MCP Server v{__version__} startet")
     logger.info(f"  System: {BACH_SYSTEM}")
-    logger.info(f"  DB: {BACH_DB}")
+    logger.info(f"  DB: {BACH_DB_PATH}")
     logger.info(f"  Backend: bach_api (Handler-basiert)")
     logger.info(f"  Resources: 8 | Tools: 23 | Prompts: 3")
     mcp.run()

@@ -94,7 +94,7 @@
 ----------------
 
   system/db/schema.sql Полная схема БД (более 210 таблиц)
-  system/data/bach.db База данных SQLite
+  BACH_DB База данных SQLite
 
 Доступ через CLI:
   python bach.py --db Schema Показать схему БД

@@ -94,7 +94,7 @@ DOCS フォルダー (docs/)
 ----------------
 
   system/db/schema.sql 完全な DB スキーマ (210 以上のテーブル)
-  system/data/bach.db SQLite データベース
+  BACH_DB SQLite データベース
 
 CLI アクセス:
   python bach.py --db スキーマ DB スキーマを表示

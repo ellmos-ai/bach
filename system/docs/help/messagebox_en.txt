@@ -14,7 +14,7 @@ has been replaced by a SQLite-based system.
 
 CURRENT REPLACEMENT:
   Handler: system/hub/messages.py (MessagesHandler)
-  Backend: system/data/bach.db (messages table)
+  Backend: BACH_DB (messages table)
   CLI: bach msg <operation>
 
 SEE:

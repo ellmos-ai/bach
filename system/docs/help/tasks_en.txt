@@ -85,7 +85,7 @@ DATABASE (Layer 1)
 - `tasks`: id, title, description, status, priority, assigned_to, delegated_to,
   depends_on, category, tags, created_at, completed_at, updated_at, dist_type.
 - `ati_tasks`: Scanned tasks with source link (file/line).
-- DB path: system/data/bach.db
+- DB path: BACH_DB
 
 GUI & INTEGRATION
 -----------------

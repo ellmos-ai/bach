@@ -85,7 +85,7 @@ DATABASE (レイヤー 1)
 - `tasks`: ID、タイトル、説明、ステータス、優先度、割り当て先、委任先、
   depend_on、カテゴリ、タグ、created_at、completed_at、updated_at、dist_type。
 - `ati_tasks`: ソース リンク (ファイル/行) を持つスキャンされたタスク。
-- DB パス: system/data/bach.db
+- DB パス: BACH_DB
 
 GUI と統合 (計画中)
 ---------------------------

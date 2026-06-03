@@ -120,7 +120,7 @@ VARIABLEN (für direkten Import)
         DATA_DIR,       # system/data/
         SKILLS_DIR,     # system/skills/
         TOOLS_DIR,      # system/tools/
-        BACH_DB,        # system/data/bach.db
+        BACH_DB,        # kanonische BACH-Datenbank
         USER_DIR,       # user/
         BERICHTE_DIR,   # user/documents/foerderplaner/Berichte/
     )

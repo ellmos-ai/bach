@@ -14,7 +14,7 @@
 
 ТЕКУЩАЯ ЗАМЕНА:
   Обработчик: system/hub/messages.py (MessagesHandler)
-  Серверная часть: system/data/bach.db (таблица сообщений)
+  Серверная часть: BACH_DB (таблица сообщений)
   CLI: bach msg <операция>
 
 SEE:

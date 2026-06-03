@@ -119,7 +119,7 @@ VARIABLES (for direct import)
         DATA_DIR, # system/data/
         SKILLS_DIR, # system/skills/
         TOOLS_DIR, # system/tools/
-        BACH_DB, # system/data/bach.db
+        BACH_DB, # canonical BACH database
         USER_DIR, #user/
         REPORTS_DIR, # user/documents/foerderplaner/Reports/
     )

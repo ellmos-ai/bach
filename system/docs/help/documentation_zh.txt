@@ -94,7 +94,7 @@ SYSTEM:
 ----------------
 
   system/db/schema.sql 完整的数据库模式（210+表）
-  system/data/bach.db SQLite 数据库
+  BACH_DB SQLite 数据库
 
 CLI 访问：
   python bach.py --db schema 显示数据库模式

@@ -47,7 +47,7 @@ class ProfileService:
         """
         Args:
             profile_path: Pfad zu user/profile.json (PROJECT ROOT, nicht system/)
-            db_path: Pfad zu system/data/bach.db
+            db_path: Pfad zur kanonischen BACH-Datenbank (BACH_DB)
         """
         self.profile_path = Path(profile_path)
         self.db_path = Path(db_path)

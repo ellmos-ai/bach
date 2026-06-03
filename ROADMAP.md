@@ -1,6 +1,6 @@
 ﻿# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-05-30 | **Version:** 4.3.40
+**Stand:** 2026-06-03 | **Version:** 4.3.42
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
@@ -63,23 +63,25 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 
 ### Priorität 1 - Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
 
-Der OpenClaw-Abgleich vom 2026-05-30 bestätigt den nächsten BACH-Fokus
+Der OpenClaw-Abgleich vom 2026-06-01 bestätigt den nächsten BACH-Fokus
 klar in Richtung sichere Erweiterbarkeit, robuste Agenten-Laufzeit und
 saubere Steuer-/Statusoberflächen. Relevant sind nicht die breite
 Messenger-Abdeckung, sondern manifest-first Plugin- und Provider-Metadaten,
 fail-closed Tool-Setups, Scans vor der Installation von
 Skills/MCP-Servern/Plugins, API-Parität für Agentenflächen, Checkpoint-
 Steuerung und low-cardinality Telemetrie. Als Referenzstand gilt dabei:
-GitHub markiert `openclaw 2026.5.27`, veröffentlicht am
-2026-05-28 um 11:41 UTC, als aktuelle Stable-Linie; im offiziellen
-Release-Feed ist `2026.5.28-beta.4`, veröffentlicht am
-2026-05-29 um 22:48 UTC, das neueste sichtbare Prerelease, während die
-GitHub-Containerseite aktuell `2026.5.28-beta.4-slim` hervorhebt.
+GitHub markiert `openclaw 2026.5.28`, veröffentlicht am
+2026-05-30, als aktuelle Stable-Linie; im offiziellen
+Release-Feed ist `2026.5.31-beta.1`, veröffentlicht am
+2026-05-31, das neueste sichtbare Prerelease, während die
+GitHub-Containerseite aktuell `2026.6.1-beta.1-browser` hervorhebt
+und `2026.6.1-beta.1-slim` zu den neuesten getaggten Images zählt.
 Frisch relevant aus Stable und Beta sind stabilere Agent-/Codex-
 Runtime-Recovery samt Session-Lock-Cleanup, strengere Browser-/Channel-/
 Automations-Validierung, heißere Plugin-/Gateway-Caches auf Hot Paths,
 klarere Doctor-/Auth-Recovery, bounded Release-/E2E-Waits, neue
-Workboard-Handoff-Flächen sowie weiter sichtbare
+Workboard-Handoff-Flächen, klarere Behandlung veralteter deaktivierter
+Skill-/Plugin-Snapshots sowie weiter sichtbare
 `cron.maxConcurrentRuns=8`-Signale für Scheduler-Parallelität.
 Aus den
 aktuellen offiziellen
@@ -152,6 +154,12 @@ Neu nachgezogen ist außerdem, dass Scheduler-Doctor/Status/Jobliste und
 der GUI-Daemon dieselbe kanonische BACH-Datenbank verwenden; der
 Live-Check vom 2026-05-24 zeigt damit konsistent
 `~/.bach/bach.db`.
+Neu im Daily-Care-Lauf vom 2026-06-01 ist außerdem, dass weitere
+Restpfade auf die kanonische `BACH_DB`-Oberfläche gehoben wurden:
+`system/tools/mcp_server.py` nutzt jetzt dieselbe Shared-DB wie die
+Handler, der DB-Viewer bevorzugt `BACH_DB` beziehungsweise
+`~/.bach/bach.db`, und die verbleibenden Help-Texte benennen konsistent
+`BACH_DB` statt `system/data/bach.db`.
 Etwas höher gerückt sind zudem deutlichere Recovery- und Startup-Hinweise
 bei CLI-/Config-Fehlern sowie reproduzierbare Release-Validierung. Weiter
 beobachtet, aber noch nicht priorisiert, sind vor allem
@@ -323,6 +331,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 **Headless AI-Sessions** — Tasks AI_001-AI_004 (KOMPLETT)
 **Filesystem-Schutz** — Tasks FS_001-FS_004, Konzept: `../docs/CONCEPT_filesystem_protection.md`
 **DB-Content-Sync** — Task SYNC_004 (in Progress), Konzept: `../docs/CONCEPT_db_content_sync.md`
+**BACH als anbietbarer MCP-Server** — Bundle-Split + ControlCenter-Control-Plane (VISION/OFFEN), Detail-Sektion am Dokumentende
 
 ---
 
@@ -458,6 +467,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 | Distribution-System | `data/schema_distribution.sql` |
 | Architektur-Diagramme | `../docs/ARCHITECTURE_DIAGRAMS.md` |
 | Policy-Entscheidungen | `.dev/POLICY.md` (alle 44 ENTs) |
+| BACH als MCP-Server (Machbarkeit) | ROADMAP-Sektion „BACH als anbietbarer MCP-Server" |
 
 ---
 
@@ -517,6 +527,8 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 | **4.3.34** | 2026-05-23 | **Agentenläufe können sichere Checkpoints jetzt explizit quittieren, und aktive Pauseanforderungen schlagen im Top-Level-Status konsistent als `pause-requested` bzw. `[PAUSE-REQ]` durch: `bach agent checkpoint [name] [Notiz] [--json]` schreibt `operator_checkpoint.json`, aktualisiert `OPERATOR_NOTES.md`, `agent list/status --json` zeigen dafür `last_checkpoint_at`, `last_checkpoint_message`, `latest_control_request_at`, `awaiting_checkpoint_ack` sowie die neue Kontrollaktion `checkpoint`, und laufende pausierte Agenten melden ihren Zustand jetzt nicht mehr nur verschachtelt unter `operator_control`. Hilfe, README, README.de, ROADMAP, CHANGELOG und `NEXT_RELEASE` wurden auf diese OPS-RUN-Vertiefung und den verifizierten OpenClaw-Stand vom 2026-05-23 (Stable `2026.5.20`, sichtbares Release-Prerelease weiter `2026.5.20-beta.2`, Paketlinie `2026.5.22-beta.1-slim`) nachgezogen; gezielte Regressionen (`test_agent_launcher_handler.py` -> `74 passed`) und Live-Smokes für `agent checkpoint`, `pause/resume/steer/status/stop`, `usecase run 12/41 --dry-run`, `scheduler doctor`, `lang report --surface gui` und `upgrade check --json` wurden erneut verifiziert.** |
 | **4.3.35** | 2026-05-23 | **Usecase-Sammeltests sind jetzt produktiv: `bach usecase run-all [workflow] [--dry-run]` bereitet wahlweise alle oder workflowgefilterte Usecases wirklich vor, aktualisiert `last_tested` nur außerhalb von Dry-Runs und bevorzugt echte Markdown-Workflowdateien statt gleichnamiger Verzeichnisse. Hilfe, README, README.de, ROADMAP, CHANGELOG und `NEXT_RELEASE` wurden auf diesen T01-Fortschritt nachgezogen; gezielte Regressionen (`test_tuev_handler.py` + `test_smoke.py` -> `130 passed`) und der Live-Smoke `bach usecase run-all --dry-run` liefen erneut grün.** |
 | **4.3.36** | 2026-05-24 | **Scheduler-DB-Pfade vereinheitlicht: `system/hub/scheduler.py` und `system/gui/daemon_service.py` nutzen jetzt dieselbe kanonische BACH-DB wie CLI und GUI-Server, sodass Doctor/Status/Jobs und der Hintergrunddienst nicht mehr gegen ein veraltetes `system/data/bach.db` laufen. README, README.de, ROADMAP, CHANGELOG und `NEXT_RELEASE` wurden auf den heutigen Live-Check (`--startup quick`, vollständiger `test-agent`-Headless-Lauf, `scheduler doctor/status --json`, `usecase run 12/41`, `usecase run-all --dry-run`, `lang report --surface gui --limit 5 --json`, `upgrade status/check --json`) sowie den verifizierten OpenClaw-Stand vom 2026-05-24 (Stable `2026.5.22`, sichtbares Prerelease `2026.5.22-beta.1`, Paketlinie `2026.5.22-slim` plus `2026.5.23-alpha.1`) nachgezogen; gezielte Regressionen (`test_scheduler_handler.py`/`test_daemon_service.py`) liefen erneut grün.** |
+| **4.3.42** | 2026-06-03 | **Langfristiges Ziel ergänzt: „BACH als anbietbarer MCP-Server" (Bundle-Split + ControlCenter-Control-Plane). Neue Detail-Sektion am Dokumentende, Eintrag unter „Langfristige Ziele (P4)" sowie Konzept-Index-Verweis auf diese ROADMAP-Sektion. Befund: `system/tools/mcp_server.py` v2.2 (8 Resources / 23 Tools / 3 Prompts) ist bereits ein lauffähiger MCP-Server; offen bleiben die Bundle-Aufteilung der ~807 Handler-Operationen, optionaler Streamable-HTTP-Transport/OAuth und Multi-Tenant-Datenisolation (Gesundheit/Steuer → Modell B „self-host" empfohlen). Reine ROADMAP-Ergänzung, kein Code-Change.** |
+| **4.3.41** | 2026-06-01 | **Kanonische DB-Pfade weiter vereinheitlicht: `system/tools/mcp_server.py` nutzt jetzt `hub.bach_paths.BACH_DB`, `system/tools/bach_db_viewer.py` bevorzugt die lokale `~/.bach/bach.db`, der Steuer-Shared-Layer und mehrere Hilfsskripte hören auf, alte OneDrive-/Repo-DB-Pfade vorauszusetzen, und Hilfetexte sprechen konsistent von `BACH_DB` statt `system/data/bach.db`. Der heutige Daily-Care-Lauf verifizierte `python -m py_compile` auf den geänderten Laufzeitdateien, `test_bach_paths.py` = 56 grün, `beleg_vorfilter.py --dry-run`, `agent doctor test-agent --json`, den kompletten `test-agent`-Headless-Lauf, `usecase run 12/41`, `usecase run-all --dry-run`, `upgrade status/check --json` und `lang report --surface gui --limit 5 --json`; der OpenClaw-Referenzstand wurde zugleich auf Stable `2026.5.28`, sichtbares Prerelease `2026.5.31-beta.1` und die aktuelle Containerlinie `2026.6.1-beta.1-browser` plus `2026.6.1-beta.1-slim` nachgezogen.** |
 | **4.3.40** | 2026-05-30 | **Release-Katalog-Recovery im Upgrade-Pfad geschlossen: `bach upgrade repair [--dry-run] [--version]` bootstrappt jetzt bei leerem `distribution_releases` den aktuellen Release-Eintrag aus README-/CHANGELOG-Metadaten, und `bach upgrade check --json` liefert `manifest_entries`, `release_entries`, `repair_recommended`, `current_version` und `current_release_registered` nun konsistent auch im normalen Drift-Pfad. Der heutige Daily-Care-Lauf verifizierte `--startup quick`, `task list`, `agent doctor test-agent --json`, den kompletten `test-agent`-Headless-Lauf, `usecase run-all --dry-run`, `usecase run 12/41/45 --dry-run`, `lang report --surface gui --limit 5 --json`, `upgrade repair/status/check --json` sowie die gezielten Regressionen (`test_upgrade_handler.py` = 38 grün, `test_smoke.py -k "upgrade_status or upgrade_check"` = 2 grün); die Live-Zahlen liegen jetzt bei 4.720 getrackten Dateien, 4.722 Manifest-Einträgen, 1 registrierten Stable-Release und 12 lokalen Änderungen. Zugleich wurde der OpenClaw-Referenzstand auf 2026-05-30 nachgezogen (Stable `2026.5.27`, sichtbares Prerelease `2026.5.28-beta.4`, hervorgehobene Containerlinie `2026.5.28-beta.4-slim`).** |
 | **4.3.39** | 2026-05-28 | **Upgrade-Metadaten self-healen jetzt produktiv: `bach upgrade repair [--dry-run] [--version]` rekonstruiert `distribution_manifest` und `dist_file_versions` aus dem Live-Distributionsbaum, `bach upgrade status/check --json` liefern `manifest_entries`, `release_entries` und `repair_recommended`, und der Daily-Care-Lauf hat die kanonische DB damit von 0 auf 4.687 versionierte Dateien repariert. README, README.de, ROADMAP, CHANGELOG, `NEXT_RELEASE` und `bach help upgrade` wurden zugleich auf den verifizierten OpenClaw-Stand vom 2026-05-28 (Stable `2026.5.26`, sichtbares Prerelease `2026.5.27-beta.1`, hervorgehobene Containerlinie `2026.5.27-beta.1-slim`) sowie die heutigen Regressionen (`test_upgrade_handler.py`, `test_smoke.py -k "upgrade_status or upgrade_check"`) und Live-Smokes (`upgrade repair`, `upgrade status/check --json`, `seal repair/check`, `--startup quick`, kompletter `test-agent`-Headless-Lauf, `usecase run 12/41 --dry-run`) nachgezogen.** |
 | **4.3.38** | 2026-05-27 | **Scheduler-weites Steering greift jetzt auch in llmauto-Ketten wirklich durch: `system/tools/llmauto/core/state.py` und `system/tools/llmauto/modes/chain.py` importieren `BACH_SCHEDULER_OPERATOR_STEER` beim echten Chain-Run in die reguläre llmauto-Queue, erhalten dabei den ursprünglichen Zeitstempel und übergeben die Hinweise am nächsten sicheren Checkpoint an den Modellprompt. README, README.de, ROADMAP, CHANGELOG und `NEXT_RELEASE` wurden zugleich auf den verifizierten OpenClaw-Stand vom 2026-05-27 (Stable `2026.5.22`, sichtbares Prerelease `2026.5.26-beta.2`, Paketlinie `2026.5.26-beta.2-slim` mit `amd64`/`arm64`) sowie die heutigen Regressionen (`test_chain_control.py`, `test_daemon_service.py`, `test_scheduler_handler.py`, gezielte Agent-Launcher-Kontrollsuite) und Live-Smokes (`test-agent`, `scheduler doctor/status --json`, `usecase run 12/41`, `usecase run-all --dry-run`, `lang report --surface gui --limit 5 --json`, `upgrade status/check --json`) nachgezogen.** |
@@ -797,3 +809,57 @@ Sollen bestimmte Hooks als Teil der BACH-Installation mitgeliefert werden?
 - Installer: `hub/setup.py` (`_setup_hooks`, `CLAUDE_HOOKS`, `HOOK_FILES`)
 - Claude Code Hooks-Doku: Settings > hooks
 - BACH Hook-Framework (intern): `core/hooks.py`, `hub/hooks.py`
+
+---
+
+## BACH als anbietbarer MCP-Server: Bundle-Split & Control-Plane (2026-06-03)
+
+> Status: VISION / LANGFRISTIG — OFFEN. Die Analyse ist in dieser ROADMAP-Sektion zusammengefasst.
+
+### Ausgangslage
+
+BACH **ist** bereits ein MCP-Server: `system/tools/mcp_server.py` v2.2.0 (FastMCP/Python, stdio) exponiert 8 Resources, 23 Tools und 3 Prompts über `bach_api.execute(handler, operation, args)`. Die Verwandlung ist damit empirisch belegt — offen ist, wie BACH als vollwertiger, *anbietbarer* MCP-Server skaliert.
+
+### Problem
+
+- **Tool-Bloat:** Die natürliche MCP-Oberfläche umfasst ~807 Handler-Operationen (105 Handler) plus 322 Script-Tools. Alle auf einmal zu exponieren sprengt jeden Host-Kontext (die 23 heutigen Tools = ~3 %).
+- **Single-User-DNA:** Die DB enthält Gesundheit/Steuer/Finanzen — multi-tenant öffentlich anzubieten ist ohne strikte Mandanten-Isolation hochriskant (Art. 9 DSGVO).
+- **Lokale Redundanz:** Für den lokalen Eigenzugriff (Claude ↔ BACH via Bash) ist MCP überflüssig (`wiki/mcp_toolstack.txt`). MCP zahlt sich nur in den dort genannten Ausnahmen aus — **Remote, Multi-Host, große Tool-Menge** — also genau im „anbieten"-Fall.
+
+### Lösung (Zielbild): zwei „on demand"-Ebenen statt Monolith
+
+```
+  Ebene 1 (Host-Config):  ControlCenter  --aktiviert je Aufgabe-->  Capability-Bundle
+                          (Control-Plane)                          (bach-core / -health / -tax / -dev)
+  Ebene 2 (in-Server):    bach-mcp Bundle --Meta-Tool + Pagination-->  Long-Tail der Operationen
+                          (auf core/registry.py)                     (tools/list cursor + listChanged)
+```
+
+1. **Bundle-Split:** `mcp_server.py` in thematische Capability-Server zerlegen (bach-core, bach-health, bach-tax, bach-dev …), generiert aus der Registry (`get_operations()`) statt 23 handverdrahteter Tools.
+2. **Control-Plane (ControlCenter):** `ellmos-controlcenter-mcp` (lokal `.AI/.MCP/ellmos-controlcenter-mcp`, Alpha) als Orchestrator wiederverwenden — entdeckt lokale Server, gruppiert sie in Capability-Bundles (`capability-bundles.json` kennt bereits das Keyword `bach`), empfiehlt/aktiviert das passende Bundle pro Aufgabenkontext und schreibt die `--mcp-config`. Granularität = Server/Bundle (host-config-basiert), kein Per-Call-Loading; Auth/Gateway/Tool-Level-Rechte sind dort noch **nicht** gebaut → für fremde Nutzer (noch) keine Schutzschicht.
+3. **In-Server-Lazy-Loading:** innerhalb eines Bundles den Long-Tail über Meta-Tools (`bach_search_tools` → `bach_run`) + `tools/list`-Pagination + `listChanged` exponieren — aufgesetzt auf BACHs **vorhandene** Auto-Discovery (`core/registry.py`, `core/plugin_api.py`). Das generische Plugin-Muster (vgl. `.AI/.MODULES/plugin_system_example`) ist hier bereits umgesetzt und NICHT erneut einzubauen (Duplikat-Vermeidung).
+
+### Anbieter-Modelle
+
+| Modell | Inhalt | Risiko | Eignung |
+|---|---|---|---|
+| A — Personal (stdio) | bestehenden Server vervollständigen + `bach mcp serve` | niedrig | Quick Win |
+| **B — Open-Source-Paket** | `bach-mcp` (PyPI/uvx), jeder hostet eigene BACH-Instanz (1 Instanz = 1 Nutzer = 1 DB) | niedrig | **empfohlener Anbieter-Pfad** |
+| C — Hosted Multi-Tenant | Streamable HTTP + OAuth 2.1 + echte Mandanten-Isolation | hoch (DSGVO) | nur mit Datenschutzkonzept |
+
+### Plan (abhängigkeitsgetrieben, ohne Zeitangaben)
+
+1. Bestehenden `mcp_server.py` als first-class `bach mcp serve` integrieren, in MCP-Profil eintragen, **eigene Tests** (heute keine für den Selbst-Server).
+2. Registry-getriebene Tool-Generierung + Meta-Tool/Pagination (Tool-Bloat lösen).
+3. Capability-Bundles definieren; ControlCenter als Control-Plane andocken.
+4. `bach-mcp` als PyPI/uvx-Paket veröffentlichen (Modell B); ORG08-Distributions-Playbook auf den Python-Server anwenden.
+5. Nur bei Bedarf: Modell C mit HTTP/Auth/Mandanten-Isolation und vorgeschaltetem Datenschutzkonzept.
+
+### Referenzen
+
+- Machbarkeitsanalyse: diese ROADMAP-Sektion
+- Bestehender Server: `system/tools/mcp_server.py` (v2.2.0)
+- Control-Plane: `ellmos-ai/ellmos-controlcenter-mcp` (lokal `.AI/.MCP/ellmos-controlcenter-mcp`)
+- Plugin-Muster (bereits in BACH): `core/registry.py`, `core/plugin_api.py` (vgl. `.AI/.MODULES/plugin_system_example`)
+- Gegenanalyse „lokal redundant": `wiki/mcp_toolstack.txt`
+- Distributionshinweise: `system/skills/workflows/npm-mcp-publish.md` und diese ROADMAP-Sektion

@@ -14,7 +14,7 @@ ha sido reemplazado por un sistema basado en SQLite.
 
 REEMPLAZO ACTUAL:
   Controlador: system/hub/messages.py (MessagesHandler)
-  Backend: system/data/bach.db (tabla de mensajes)
+  Backend: BACH_DB (tabla de mensajes)
   CLI: mensaje de bach <operación>
 
 VER:

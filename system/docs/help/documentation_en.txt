@@ -94,7 +94,7 @@ DATABASE SCHEMA
 ----------------
 
   system/db/schema.sql Complete DB schema (210+ tables)
-  system/data/bach.db SQLite database
+  BACH_DB SQLite database
 
 CLI access:
   python bach.py --db schema Show DB schema

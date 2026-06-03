@@ -14,7 +14,7 @@ SQLite ベースのシステムに置き換えられました。
 
 現在の置き換え:
   ハンドラー: system/hub/messages.py (MessagesHandler)
-  バックエンド: system/data/bach.db (メッセージ テーブル)
+  バックエンド: BACH_DB (メッセージ テーブル)
   CLI: bach msg <操作>
 
 SEE:

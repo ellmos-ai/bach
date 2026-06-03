@@ -94,7 +94,7 @@ ESQUEMA DE BASE DE DATOS
 ----------------
 
   system/db/schema.sql Esquema de base de datos completo (más de 210 tablas)
-  system/data/bach.db Base de datos SQLite
+  BACH_DB Base de datos SQLite
 
 Acceso CLI:
   python bach.py --db esquema Mostrar esquema de base de datos
