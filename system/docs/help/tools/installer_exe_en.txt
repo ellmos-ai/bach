@@ -127,4 +127,4 @@ SEE ALSO
   start/bach.bat boot menu (current launcher)
   docs/help/install.txt installation instructions
   setup.py Python installer (Pillar 1)
-  ENT-45_INSTALLER_3D_MODELL.md concept document (in .dev/)
+  ROADMAP.md installer roadmap and open release tasks

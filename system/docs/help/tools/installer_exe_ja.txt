@@ -127,4 +127,4 @@ D) cx_Freeze (代替)
   start/bach.bat ブート メニュー (現在のランチャー)
   docs/help/install.txt インストール手順
   setup.py Python インストーラー (柱 1)
-  ENT-45_INSTALLER_3D_MODELL.md コンセプト ドキュメント (.dev/ 内)
+  ROADMAP.md インストーラーのロードマップと未完了のリリースタスク

@@ -127,4 +127,4 @@ VER TAMBIÉN
   menú de inicio start/bach.bat (lanzador actual)
   docs/help/install.txt instrucciones de instalación
   setup.py Instalador de Python (Pilar 1)
-  Documento conceptual ENT-45_INSTALLER_3D_MODELL.md (en .dev/)
+  ROADMAP.md hoja de ruta del instalador y tareas de lanzamiento abiertas

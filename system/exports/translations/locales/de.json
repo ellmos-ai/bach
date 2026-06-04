@@ -1,7 +1,7 @@
 {
   "language": "de",
   "label": "Deutsch",
-  "generated_at": "2026-05-17T18:08:08.808742",
+  "generated_at": "2026-06-03T18:58:09.995730",
   "entries": {
     "agent": {
       "agent_started": "Agent gestartet",
@@ -1518,6 +1518,7 @@
       "denkarium_was_bewegt": "Was bewegt dich gerade?"
     },
     "gui": {
+      "abbrechen": "Abbrechen",
       "active_jobs_status": "Active Jobs: {status[",
       "agenten_uebersicht_seite": "Agenten-Uebersicht Seite.",
       "aktualisiert_ati_task": "Aktualisiert ATI-Task.",
@@ -1557,6 +1558,7 @@
       "daemon_status": "=== DAEMON STATUS ===",
       "daemon_status_aktualisieren": "Daemon-Status aktualisieren.",
       "daemon_status_fuer_prompt_generator_prompt_gen_00": "Daemon-Status fuer Prompt-Generator (PROMPT_GEN_005).",
+      "das_schweizer_taschenmesser_f_r_text": "Das Schweizer Taschenmesser für Text...",
       "datum_2026_01_15_betrag_49_99_beschreibung_b_ro": "DATUM: 2026-01-15\nBETRAG: 49.99\nBESCHREIBUNG: Büromaterial\nKATEGORIE: Werbungskosten\n---\nDATUM: 2026-01-20\nBETRAG: 150.00\nBESCHREIBUNG: Fachliteratur\nKATEGORIE: Fortbildung",
       "denkarium_eintr_ge_abrufen": "Denkarium-Einträge abrufen.",
       "denkarium_eintrag_l_schen": "Denkarium-Eintrag löschen.",
@@ -1666,6 +1668,7 @@
       "memory_fact_loeschen": "Memory Fact loeschen.",
       "memory_uebersicht_mit_allen_kategorien": "Memory-Uebersicht mit allen Kategorien.",
       "messages_rest_api_router": "Messages REST-API Router\n=========================\n\nFastAPI-Router fuer das BACH Message-System.\nWird in headless.py eingebunden.\n\nEndpoints:\n  POST /api/v1/messages/send      Nachricht in Queue einreihen\n  GET  /api/v1/messages/queue     Queue-Status (pending/failed/dead)\n  GET  /api/v1/messages/inbox     Inbox lesen (Paginierung, Filter)\n  POST /api/v1/messages/route     Routing manuell ausloesen\n\nDatum: 2026-02-08",
+      "nderungen_speichern_download": "Änderungen speichern & Download",
       "ok_job_erfolgreich_ausgefuehrt": "[OK] Job erfolgreich ausgefuehrt",
       "parst_beleg_txt_datei_erwartetes": "Parst Beleg-TXT-Datei.\n        \n        Erwartetes Format:\n        DATUM: 2026-01-15\n        BETRAG: 49.99\n        BESCHREIBUNG: Büromaterial\n        KATEGORIE: Werbungskosten\n        ---",
       "parst_posten_txt_datei_erwartete": "Parst Posten-TXT-Datei.\n        \n        Erwartetes Format:\n        TITEL: Arbeitsmittel Computer\n        BETRAG: 899.00\n        LISTE: W\n        STATUS: OFFEN\n        ---",
@@ -1691,6 +1694,7 @@
       "select_partner_name_status_from_part": "SELECT partner_name, status \n            FROM partner_presence \n            WHERE id IN (SELECT MAX(id) FROM partner_presence GROUP BY partner_name)",
       "session_details_abrufen_entweder_via_id_oder_sess": "Session-Details abrufen (entweder via ID oder session_id String).",
       "setzt_onedrive_sync_fort_windows_retur": "Setzt OneDrive-Sync fort (Windows).\n\n        Returns:\n            True wenn erfolgreich oder nicht noetig",
+      "speichern": "Speichern",
       "speichert_daemon_konfiguration": "Speichert Daemon-Konfiguration.",
       "speichert_den_inhalt_der_quelldatei": "Speichert den Inhalt der Quelldatei.",
       "speichert_die_inbox_konfiguration": "Speichert die Inbox-Konfiguration.",
@@ -1709,6 +1713,7 @@
       "synchronisiert_txt_dateien_mit_der_bach_datenbank": "Synchronisiert TXT-Dateien mit der BACH-Datenbank.\n    \n    Unterstützte Sync-Mappings:\n    - user/steuer/*.txt -> steuer_belege/steuer_posten Tabellen\n    - memory/notes.txt -> memory_working Tabelle (optional)",
       "t_v_f_r_einen_workflow_durchf_hren": "TÜV für einen Workflow durchführen.",
       "templates_neu_laden": "Templates neu laden",
+      "tool_bearbeiten": "Tool bearbeiten",
       "tool_details_abrufen": "Tool-Details abrufen.",
       "tools_bersicht_seite": "Tools Übersicht Seite.",
       "total_jobs_status": "Total Jobs:  {status[",

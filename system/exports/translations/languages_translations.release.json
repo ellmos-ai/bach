@@ -90120,6 +90120,26 @@
     "updated_at": "2026-05-17T07:11:17.069268"
   },
   {
+    "key": "abbrechen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Abbrechen",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-03T18:58:08.451721",
+    "updated_at": "2026-06-03T18:58:08.451721"
+  },
+  {
+    "key": "abbrechen",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Cancel",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-03T18:58:08.451721",
+    "updated_at": "2026-06-03T18:58:08.451721"
+  },
+  {
     "key": "active_jobs_status",
     "namespace": "gui",
     "language": "de",
@@ -92458,6 +92478,26 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "das_schweizer_taschenmesser_f_r_text",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Das Schweizer Taschenmesser für Text...",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-03T18:58:08.537094",
+    "updated_at": "2026-06-03T18:58:08.537094"
+  },
+  {
+    "key": "das_schweizer_taschenmesser_f_r_text",
+    "namespace": "gui",
+    "language": "en",
+    "value": "The Swiss army knife for text...",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-03T18:58:08.537094",
+    "updated_at": "2026-06-03T18:58:08.537094"
   },
   {
     "key": "datum_2026_01_15_betrag_49_99_beschreibung_b_ro",
@@ -99000,6 +99040,26 @@
     "updated_at": "2026-05-17T07:11:17.069268"
   },
   {
+    "key": "nderungen_speichern_download",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Änderungen speichern & Download",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-03T18:58:07.381371",
+    "updated_at": "2026-06-03T18:58:07.381371"
+  },
+  {
+    "key": "nderungen_speichern_download",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Save changes & download",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-03T18:58:07.381371",
+    "updated_at": "2026-06-03T18:58:07.381371"
+  },
+  {
     "key": "ok_job_erfolgreich_ausgefuehrt",
     "namespace": "gui",
     "language": "de",
@@ -100500,6 +100560,26 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "speichern",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Speichern",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-03T18:58:08.681706",
+    "updated_at": "2026-06-03T18:58:08.681706"
+  },
+  {
+    "key": "speichern",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Save",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-03T18:58:08.681706",
+    "updated_at": "2026-06-03T18:58:08.681706"
+  },
+  {
     "key": "speichert_daemon_konfiguration",
     "namespace": "gui",
     "language": "de",
@@ -101578,6 +101658,26 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "tool_bearbeiten",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Tool bearbeiten",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-03T18:58:08.477617",
+    "updated_at": "2026-06-03T18:58:08.477617"
+  },
+  {
+    "key": "tool_bearbeiten",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Edit tool",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-03T18:58:08.477617",
+    "updated_at": "2026-06-03T18:58:08.477617"
   },
   {
     "key": "tool_details_abrufen",

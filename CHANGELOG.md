@@ -4,6 +4,17 @@ Alle wichtigen Aenderungen an BACH werden hier dokumentiert.
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
+## [Unreleased]
+
+### Changed
+
+- **GUI-i18n-Exports aktualisiert:** Fünf bislang unindexierte Legacy-Texte aus `system/gui/ki-center.html` wurden dem `gui`-Namespace hinzugefügt; die Release-Artefakte (`languages_translations.release.json`, `languages_seed.release.sql`, `locales/*.json`, `manifest.release.json`) wurden dabei auf 17.419 Übersetzungen neu exportiert.
+- **Öffentliche Planungsreferenzen bereinigt:** Roadmap und Installer-Hilfe verweisen nicht mehr auf private, ignorierte Release-Planungsdateien, sondern auf öffentliche Roadmap-/Changelog-Zusammenfassungen.
+
+### Verified
+
+- **Daily-Care-Smokes erneuert:** `bach agent doctor test-agent --json`, `bach usecase run 12 --dry-run`, `bach usecase run 41 --dry-run`, `bach upgrade check --json` und `bach lang report --surface gui --limit 10 --json` erneut verifiziert; der GUI-i18n-Report liegt jetzt bei 148 offenen eindeutigen Einträgen und 192 offenen Fundstellen.
+
 ## [3.12.4-earth] - 2026-05-17
 
 ### Added
