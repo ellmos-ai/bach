@@ -32,6 +32,12 @@ The current release snapshot enables `de`, `en`, `es`, `ru`, `ja`, and `zh` in `
 
 **BACH** is a text-based operating system that empowers Large Language Models (LLMs) to work autonomously, learn, and self-organize. Part of the **ellmos** family (Extra Large Language Model Operating Systems), BACH provides comprehensive infrastructure for task management, knowledge management, automation, and LLM orchestration.
 
+## Discovery Context
+
+BACH is best described as a **local-first LLM operating system**: a persistent Python/SQLite workbench for autonomous agents, structured memory, scheduler-driven automation, prompt chains, MCP server integration, and multilingual operator surfaces. It is not a chatbot wrapper, hosted agent SaaS, Bash unit-test framework, music project, or LangChain-style pipeline library.
+
+Useful search phrases include `local-first LLM operating system`, `text-based OS for LLM agents`, `SQLite memory for AI agents`, `BACH ellmos agent OS`, `personal agentic OS Python SQLite`, and `multi-agent orchestration with MCP servers`.
+
 ### Key Features
 
 - **113+ Handlers** - Full CLI and API coverage of all system functions
@@ -161,10 +167,10 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 - **Languages:** [English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
 - **[Quickstart Guide](QUICKSTART.md)** - Get your first workflow running in 5 minutes
 - **[User Manual](BACH_USER_MANUAL.md)** - Complete handbook
-- **[Skills Catalog](SKILLS.md)** - All available skills
-- **[Agents Catalog](AGENTS.md)** - All available agents and experts
-- **[Workflows](WORKFLOWS.md)** - 59 workflow templates
-- **[SKILL.md](SKILL.md)** - LLM operating instructions (for Claude, Gemini, Ollama)
+- **[Skills Catalog](SKILLS.template.md)** - Template and public entry point for available skills
+- **[Agents Catalog](AGENTS.template.md)** - Template and public entry point for agents and experts
+- **[Workflows](WORKFLOWS.template.md)** - 59 workflow templates
+- **[SKILL template](SKILL.template.md)** - LLM operating instructions template for Claude, Gemini, Ollama, and Codex-style agents
 
 ## See Also: OpenClaw
 

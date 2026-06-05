@@ -8,6 +8,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Changed
 
+- **Discoverability-Kontext nachgezogen:** README, README.de und `llms.txt` benennen BACH jetzt klarer als local-first LLM-Betriebssystem, grenzen das Repo von Bach-Musik, Bash-Testframeworks und gehosteten Agent-SaaS ab und synchronisieren `llms.txt` auf `v3.12.4-earth`.
 - **GUI-i18n-Exports aktualisiert:** Fünf bislang unindexierte Legacy-Texte aus `system/gui/ki-center.html` wurden dem `gui`-Namespace hinzugefügt; die Release-Artefakte (`languages_translations.release.json`, `languages_seed.release.sql`, `locales/*.json`, `manifest.release.json`) wurden dabei auf 17.419 Übersetzungen neu exportiert.
 - **Öffentliche Planungsreferenzen bereinigt:** Roadmap und Installer-Hilfe verweisen nicht mehr auf private, ignorierte Release-Planungsdateien, sondern auf öffentliche Roadmap-/Changelog-Zusammenfassungen.
 

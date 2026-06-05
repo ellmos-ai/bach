@@ -16,6 +16,12 @@ Der aktuelle Release-Snapshot aktiviert `de`, `en`, `es`, `ru`, `ja` und `zh` in
 
 BACH ist ein textbasiertes Betriebssystem, das Large Language Models (LLMs) befähigt, eigenständig zu arbeiten, zu lernen und sich zu organisieren. Es bietet eine umfassende Infrastruktur für Task-Management, Wissensmanagement, Automatisierung und LLM-Orchestrierung.
 
+## Such- und Abgrenzungskontext
+
+BACH ist am besten als **local-first LLM-Betriebssystem** zu verstehen: eine dauerhafte Python-/SQLite-Arbeitsumgebung für autonome Agenten, strukturiertes Gedächtnis, Scheduler-Automation, Prompt-Ketten, MCP-Server-Integration und mehrsprachige Bedienoberflächen. Es ist kein Chatbot-Wrapper, kein gehostetes Agent-SaaS, kein Bash-Testframework, kein Musikprojekt und keine LangChain-artige Pipeline-Bibliothek.
+
+Sinnvolle Suchphrasen sind `local-first LLM operating system`, `text-based OS for LLM agents`, `SQLite memory for AI agents`, `BACH ellmos agent OS`, `personal agentic OS Python SQLite` und `multi-agent orchestration with MCP servers`.
+
 ### Kernfunktionen
 
 - **113+ Handler** - CLI- und API-Abdeckung für Systemfunktionen
@@ -98,10 +104,10 @@ Stand 2026-06-03: GitHub Releases markiert weiterhin `2026.5.28`, veröffentlich
 - **Sprachen:** [English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
 - **[Schnellstart](QUICKSTART.md)** - Erste Schritte mit BACH
 - **[Benutzerhandbuch](BACH_USER_MANUAL.md)** - Vollständiges Handbuch
-- **[Skills-Katalog](SKILLS.md)** - Alle verfügbaren Skills
-- **[Agenten-Katalog](AGENTS.md)** - Alle verfügbaren Agenten und Experten
-- **[Workflows](WORKFLOWS.md)** - 59 Workflow-Vorlagen
-- **[SKILL.md](SKILL.md)** - LLM-Betriebsanweisungen (für Claude, Gemini, Ollama)
+- **[Skills-Katalog](SKILLS.de.md)** - Öffentlicher Einstieg in verfügbare Skills
+- **[Agenten-Katalog](AGENTS.template.de.md)** - Vorlage und öffentlicher Einstieg für Agenten und Experten
+- **[Workflows](WORKFLOWS.template.de.md)** - 59 Workflow-Vorlagen
+- **[SKILL-Vorlage](SKILL.template.de.md)** - LLM-Betriebsanweisungen für Claude, Gemini, Ollama und Codex-artige Agenten
 
 ## Lizenz
 
