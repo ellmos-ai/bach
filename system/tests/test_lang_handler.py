@@ -1069,6 +1069,20 @@ class TestExtractScriptStrings:
         assert "status-text" not in result
         assert "/api/status" not in result
 
+    def test_extract_script_strings_skips_markup_class_and_id_tokens(self, handler, tmp_path):
+        f = tmp_path / "markup-noise.js"
+        f.write_text(
+            'container.innerHTML = `<div class="header-status"><span class="status-dot" id="status-dot"></span><span id="status-text">Bitte speichern</span></div>`;\n',
+            encoding="utf-8",
+        )
+
+        result = handler._extract_script_strings(f)
+
+        assert "Bitte speichern" in result
+        assert "header-status" not in result
+        assert "status-dot" not in result
+        assert "status-text" not in result
+
 
 # ═══════════════════════════════════════════════════════════════
 # _extract_help_strings

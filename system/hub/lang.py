@@ -838,6 +838,11 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
             )
         ) and re.match(r"^[a-z0-9]+(?:[-_][a-z0-9]+)+$", text_lower):
             return True
+        if re.search(r"""\b(?:class|id)\s*=\s*["']""", line_lower) and re.match(
+            r"^[a-z0-9]+(?:[-_][a-z0-9]+)+$",
+            text_lower,
+        ):
+            return True
         return False
 
     def _extract_script_strings(self, file_path: Path) -> Set[str]:
