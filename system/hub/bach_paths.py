@@ -79,6 +79,7 @@ Features:
 Version: 2.0.0
 Updated: 2026-02-02
 """
+import os
 from pathlib import Path
 import sys
 
@@ -119,11 +120,13 @@ SERVICES_DIR = SKILLS_DIR / "_services"
 
 # Data-Unterverzeichnisse
 LOGS_DIR = DATA_DIR / "logs"
-import platform as _platform
-if _platform.system() == "Windows":
-    BACKUPS_DIR = Path(r"C:\_Local_DEV\BACKUPS\BACH")
-else:
-    BACKUPS_DIR = Path.home() / ".bach" / "backups"
+
+
+def _env_path(name: str, default: Path) -> Path:
+    return Path(os.environ.get(name, str(default))).expanduser()
+
+
+BACKUPS_DIR = _env_path("BACH_BACKUPS_DIR", Path.home() / ".bach" / "backups")
 ARCHIVE_DIR = DATA_DIR / "_archive"
 TRASH_DIR = DATA_DIR / "_trash"
 MESSAGES_DIR = DATA_DIR / "messages"

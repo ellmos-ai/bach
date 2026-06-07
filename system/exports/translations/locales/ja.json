@@ -1,7 +1,7 @@
 {
   "language": "ja",
   "label": "Japanese",
-  "generated_at": "2026-06-03T18:58:10.066012",
+  "generated_at": "2026-06-07T14:22:05.955595",
   "entries": {
     "agent": {
       "agent_started": "エージェントが開始されました",
@@ -2334,7 +2334,7 @@
       "db_path_os_path_join_os_path_dirname_os_path_dir": "db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'bach.db",
       "db_path_path_data_bach_db": "db_path = パス('data/bach.db')",
       "db_path_path_data_user_db": "DB_PATH = パス(\"データ/user.db\")",
-      "db_path_r_c_local_dev_data_store_variant_fusio": "DB_PATH = r\"C:\\_Local_DEV\\DATA_STORE\\variant_fusion.sqlite\"",
+      "db_path_r_c_local_dev_data_store_variant_fusio": "DB_PATH = BACH_VARIANT_DB",
       "db_path_r_c_users_user_onedrive_ki_ai_bach_v1_1": "db_path = r'<BACH_WORKSPACE>'",
       "def_analyze_sessions": "def 分析セッション():",
       "def_check_db_db_name": "def check_db(db_name):",

@@ -400,7 +400,7 @@
 
         <!-- Tabs -->
         <div class="tabs">
-            <div class="tab active" data-tab="overview">Uebersicht</div>
+            <div class="tab active" data-tab="overview">Übersicht</div>
             <div class="tab" data-tab="emails">E-Mails</div>
             <div class="tab" data-tab="subscriptions">Abonnements</div>
             <div class="tab" data-tab="insurances">Versicherungen</div>
@@ -411,7 +411,7 @@
             <div class="tab" data-tab="reports">Reports</div>
         </div>
 
-        <!-- Tab: Uebersicht -->
+        <!-- Tab: Übersicht -->
         <div class="tab-content active" id="tab-overview">
             <div class="stats-grid" id="stats">
                 <div class="stat-card">
@@ -440,7 +440,7 @@
                 <button class="btn btn-primary" onclick="syncEmails()">Synchronisieren</button>
                 <button class="btn btn-secondary" onclick="exportData()">JSON Export</button>
                 <button class="btn btn-secondary" onclick="generateReport('monthly')">Report (Monat)</button>
-                <button class="btn btn-secondary" onclick="showAddAccountModal()">+ Konto hinzufuegen</button>
+                <button class="btn btn-secondary" onclick="showAddAccountModal()">+ Konto hinzufügen</button>
                 <button class="btn btn-secondary" onclick="showSettingsModal()">Einstellungen</button>
             </div>
 
@@ -665,7 +665,7 @@
             <div class="section">
                 <h2>
                     E-Mail Konten
-                    <button class="btn btn-primary btn-sm" onclick="showAddAccountModal()">+ Hinzufuegen</button>
+                    <button class="btn btn-primary btn-sm" onclick="showAddAccountModal()">+ Hinzufügen</button>
                 </h2>
                 <div id="accounts-list">Lade...</div>
             </div>
@@ -715,7 +715,7 @@
                 </div>
 
                 <div class="section">
-                    <h3>Verfuegbare Berichte</h3>
+                    <h3>Verfügbare Berichte</h3>
                     <div id="available-reports-list">
                         <div class="empty-state">Noch keine Berichte generiert.</div>
                     </div>
@@ -732,7 +732,7 @@
                 <div class="form-group">
                     <label>Datumsbereich (Tage in die Vergangenheit)</label>
                     <input type="number" id="setting-date-range" min="7" max="365" value="90">
-                    <div class="hint">Wie weit zurueck sollen E-Mails durchsucht werden? (7-365 Tage)</div>
+                    <div class="hint">Wie weit zurück sollen E-Mails durchsucht werden? (7-365 Tage)</div>
                 </div>
                 <div class="form-group">
                     <label>Max. E-Mails pro Sync</label>
@@ -841,7 +841,7 @@
                     <input type="text" id="fp-reason" placeholder="z.B. Werbung, kein Finanz-Mail">
                 </div>
                 <div class="form-group">
-                    <label><input type="checkbox" id="fp-add-blacklist"> Begriffe zur Blacklist hinzufuegen</label>
+                    <label><input type="checkbox" id="fp-add-blacklist"> Begriffe zur Blacklist hinzufügen</label>
                     <div id="fp-blacklist-options" style="display: none; margin-top: 0.5rem;">
                         <input type="text" id="fp-blacklist-terms" placeholder="Begriffe kommasepariert">
                         <div class="hint">Diese Begriffe werden bei zukuenftigen Mails blockiert</div>
@@ -858,7 +858,7 @@
     <!-- Modal: Konto hinzufuegen -->
     <div class="modal" id="add-account-modal">
         <div class="modal-content">
-            <h3>E-Mail Konto hinzufuegen</h3>
+            <h3>E-Mail Konto hinzufügen</h3>
             <form id="add-account-form" onsubmit="addAccount(event)">
                 <div class="form-group">
                     <label>E-Mail Adresse *</label>

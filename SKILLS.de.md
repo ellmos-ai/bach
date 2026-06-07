@@ -1641,7 +1641,7 @@ DATEV - BUCHHALTUNGS-SCHNITTSTELLE
 
 ### `db_check`
 **Kategorie:** general  
-DB_PATH = r"C:\_Local_DEV\DATA_STORE\variant_fusion.sqlite"
+DB_PATH = BACH_VARIANT_DB
 
 ### `db_merge_migration`
 **Kategorie:** general  
@@ -1929,7 +1929,7 @@ FOERDERBERICHT-SYSTEM - ARCHITEKTUR
 
 ### `forensic_db_scan`
 **Kategorie:** general  
-DB_PATH = r"C:\_Local_DEV\DATA_STORE\variant_fusion.sqlite"
+DB_PATH = BACH_VARIANT_DB
 
 ### `formats`
 **Kategorie:** general  

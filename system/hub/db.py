@@ -25,6 +25,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 from .base import BaseHandler
+from .bach_paths import BACKUPS_DIR
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if sys.stdout:
@@ -415,10 +416,7 @@ class DbHandler(BaseHandler):
     def _backup(self) -> tuple:
         """Quick-Backup der Datenbank."""
         # Backups LOKAL speichern — NICHT in OneDrive
-        if sys.platform == "win32":
-            backup_dir = Path(r"C:\_Local_DEV\BACKUPS\BACH\db_quick")
-        else:
-            backup_dir = Path.home() / ".bach" / "backups" / "db_quick"
+        backup_dir = BACKUPS_DIR / "db_quick"
         backup_dir.mkdir(parents=True, exist_ok=True)
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -318,13 +318,13 @@ function renderDetailView(item, type) {
                               style="flex: 1; width: 100%; padding: 1rem; background: #1e1e1e; color: #d4d4d4; border: 1px solid var(--border); border-radius: 8px; font-family: monospace; font-size: 0.9rem; resize: none; margin-bottom: 1rem;"
                               placeholder="Lade Quellcode..."></textarea>
                     <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
-                        <button class="btn btn-primary" onclick="saveItemSource()">Quellcode Speichern</button>
+                        <button class="btn btn-primary" onclick="saveItemSource()">Quellcode speichern</button>
                     </div>
                 </div>
                 <div id="source-empty" class="empty-state" style="display:none; padding-top: 5rem;">
                     <span class="icon">🔍</span>
                     <h3>Keine Quelldatei gefunden</h3>
-                    <p>Fuer dieses Element (.md/.txt) wurde keine Entsprechung im skills/ Ordner gefunden.</p>
+                    <p>Für dieses Element (.md/.txt) wurde keine Entsprechung im skills/ Ordner gefunden.</p>
                 </div>
             </div>
         </div>

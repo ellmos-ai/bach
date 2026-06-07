@@ -24,8 +24,14 @@ __author__ = "BACH Team"
 
 import sqlite3
 import os
+from pathlib import Path
 
-DB_PATH = r"C:\_Local_DEV\DATA_STORE\variant_fusion.sqlite"
+DB_PATH = Path(
+    os.environ.get(
+        "BACH_VARIANT_DB",
+        str(Path.home() / ".bach" / "data" / "variant_fusion.sqlite"),
+    )
+).expanduser()
 
 def check_db():
     if not os.path.exists(DB_PATH):

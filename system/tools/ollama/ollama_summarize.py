@@ -4,6 +4,7 @@
 
 import requests
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -60,7 +61,12 @@ def load_reports(directory: Path, count: int = 5) -> str:
     return "\n\n".join(combined)
 
 if __name__ == "__main__":
-    archive = Path(r"C:\_Local_DEV\_CHIAH\DATA\memory\archive")
+    archive = Path(
+        os.environ.get(
+            "BACH_REPORT_ARCHIVE",
+            str(Path.home() / ".bach" / "memory" / "archive"),
+        )
+    ).expanduser()
     
     count = int(sys.argv[1]) if len(sys.argv) > 1 else 5
     

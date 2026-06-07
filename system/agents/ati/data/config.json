@@ -12,9 +12,9 @@
   },
   "scan": {
     "folders": [
-      "C:\\Users\\User\\OneDrive\\.TOPICS\\.SOFTWARE"
+      "${BACH_SOFTWARE_ROOT}"
     ],
-    "note": "Seit 2026-02-24: Projekte in Themenordnern unter .TOPICS/.SOFTWARE/",
+    "note": "Setze BACH_SOFTWARE_ROOT lokal auf den Software-Projektordner.",
     "patterns": [
       "- [ ]",
       "- [x]",

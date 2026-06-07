@@ -438,7 +438,7 @@
             <div class="card" style="margin-bottom: 2rem;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                     <h2>Wiederkehrende Aufgaben</h2>
-                    <button class="btn btn-sm" onclick="checkRecurringTasks()" title="Faellige Tasks pruefen">Check</button>
+                    <button class="btn btn-sm" onclick="checkRecurringTasks()" title="Fällige Tasks prüfen">Check</button>
                 </div>
                 <div id="recurring-tasks-container">
                     <p class="loading">Lade...</p>
@@ -482,7 +482,7 @@
         <!-- ═══════════════════════════════════════════════════════ -->
         <div class="tab-content" id="tab-scheduler">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <h2 style="margin: 0;">Scheduler-Uebersicht</h2>
+                <h2 style="margin: 0;">Scheduler-Übersicht</h2>
                 <button class="btn btn-primary" onclick="showAddJobModal()">+ Neuer Job</button>
             </div>
 
@@ -538,7 +538,7 @@
                     </div>
                     <div class="quick-card" onclick="quickCreateJob('health-check', 'interval', '30m', 'python bach.py status')">
                         <h4>Health Check</h4>
-                        <p>Alle 30 Minuten, Status pruefen</p>
+                        <p>Alle 30 Minuten, Status prüfen</p>
                     </div>
                     <div class="quick-card" onclick="quickCreateJob('nightly-scan', 'cron', '0 3 * * *', 'python bach.py scan run --mode quick')">
                         <h4>Nightly Scan</h4>

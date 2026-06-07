@@ -9,12 +9,17 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 ### Changed
 
 - **Discoverability-Kontext nachgezogen:** README, README.de und `llms.txt` benennen BACH jetzt klarer als local-first LLM-Betriebssystem, grenzen das Repo von Bach-Musik, Bash-Testframeworks und gehosteten Agent-SaaS ab und synchronisieren `llms.txt` auf `v3.12.4-earth`.
-- **GUI-i18n-Exports aktualisiert:** Fünf bislang unindexierte Legacy-Texte aus `system/gui/ki-center.html` wurden dem `gui`-Namespace hinzugefügt; die Release-Artefakte (`languages_translations.release.json`, `languages_seed.release.sql`, `locales/*.json`, `manifest.release.json`) wurden dabei auf 17.419 Übersetzungen neu exportiert.
 - **Öffentliche Planungsreferenzen bereinigt:** Roadmap und Installer-Hilfe verweisen nicht mehr auf private, ignorierte Release-Planungsdateien, sondern auf öffentliche Roadmap-/Changelog-Zusammenfassungen.
+- **GUI-i18n-Report geschärft und Oberfläche bereinigt:** `bach lang report` filtert in JS-generiertem Markup jetzt zusätzlich technische `class`-/`id`-Tokens aus, damit der GUI-Drift-Report keine CSS-/DOM-Reste mehr als DE-Copy zählt.
+- **GUI-Texte auf echte Umlaute gehoben:** Sichtbare Oberflächen in `ATI`, `Daemon`, `Financial`, `Denkarium` und dem `Skills Board` verwenden jetzt wieder echte Umlaute statt `ae/oe/ue` oder HTML-Entity-Resten.
+- **GUI-i18n-Exports weiter reduziert:** Neunundzwanzig zusätzliche GUI-DE-Schlüssel wurden im bestehenden `gui`-Namespace ergänzt; die Release-Artefakte (`languages_translations.release.json`, `languages_seed.release.sql`, `locales/*.json`, `manifest.release.json`) stehen dadurch jetzt bei 17.488 exportierten Übersetzungen.
+- **Lokale Pfad-Defaults redigiert:** Backup-Ziele, ATI-Scan-Defaults und lokale Variant-/Report-Datenpfade nutzen jetzt `BACH_BACKUPS_DIR`, `BACH_SOFTWARE_ROOT`, `BACH_VARIANT_DB` oder `BACH_REPORT_ARCHIVE` statt getrackter maschinenspezifischer Windows-Pfade.
+- **OpenClaw-Abgleich aktualisiert:** README, README.de und ROADMAP spiegeln jetzt Stable `2026.6.1` vom 3. Juni 2026, das neueste sichtbare Prerelease `2026.6.5-beta.1` vom 6. Juni 2026 sowie den QA-Befund vom 2026-06-06.
 
 ### Verified
 
-- **Daily-Care-Smokes erneuert:** `bach agent doctor test-agent --json`, `bach usecase run 12 --dry-run`, `bach usecase run 41 --dry-run`, `bach upgrade check --json` und `bach lang report --surface gui --limit 10 --json` erneut verifiziert; der GUI-i18n-Report liegt jetzt bei 148 offenen eindeutigen Einträgen und 192 offenen Fundstellen.
+- **Daily-Care-Smokes erneuert:** `python -m pytest system/tests/test_lang_handler.py -q -k "report_gui_js_ignores_technical_literals_but_keeps_ui_copy or test_extract_script_strings_skips_dom_ids_and_paths or test_extract_script_strings_skips_markup_class_and_id_tokens"` (`3 passed`), `bach agent doctor test-agent --json`, der vollständige `test-agent`-Steuerzyklus (`clear-steer`, `steer`, `start`, `status`, `pause`, `checkpoint`, `resume`, `stop`, `clear-steer`), `bach usecase run 12 --dry-run`, `bach usecase run 41 --dry-run`, `bach usecase run-all --dry-run`, `bach upgrade status/check --json` und `bach lang report --surface gui --limit 20 --json` erneut verifiziert.
+- **GUI-i18n-Befund verbessert:** Der GUI-Report liegt jetzt bei 94 offenen eindeutigen Einträgen und 111 offenen Fundstellen; Usecase 41 bleibt weiter im manuellen Fallback, aber ohne Fehler.
 
 ## [3.12.4-earth] - 2026-05-17
 

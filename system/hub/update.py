@@ -44,6 +44,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Optional, Dict
 from hub.base import BaseHandler
+from hub.bach_paths import BACKUPS_DIR
 from hub.lang import t
 
 
@@ -59,10 +60,7 @@ class UpdateHandler(BaseHandler):
         self.migrations_dir = self.base_path / "data" / "migrations"
         self.hub_dir = self.base_path / "hub"
         # Backups LOKAL — NICHT in OneDrive
-        if sys.platform == "win32":
-            self.backups_dir = Path(r"C:\_Local_DEV\BACKUPS\BACH\updates")
-        else:
-            self.backups_dir = Path.home() / ".bach" / "backups" / "updates"
+        self.backups_dir = BACKUPS_DIR / "updates"
         self.db_path = self._canonical_db
 
     @property

@@ -76,6 +76,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Any
 
+
+def _backup_root() -> Path:
+    return Path(os.environ.get("BACH_BACKUPS_DIR", str(Path.home() / ".bach" / "backups"))).expanduser()
+
 # ============================================================================
 # BACH-SPEZIFISCHE PFAD-KORREKTUREN v2.0.0
 # ============================================================================
@@ -203,7 +207,7 @@ class BachPathHealer:
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             # LOKAL speichern — NICHT im OneDrive/BACH-Verzeichnis!
-            backup_dir = Path(r"C:\_Local_DEV\BACKUPS\BACH\safety")
+            backup_dir = _backup_root() / "safety"
             backup_dir.mkdir(parents=True, exist_ok=True)
 
             self.safety_backup_path = backup_dir / f"system_backup_{timestamp}"

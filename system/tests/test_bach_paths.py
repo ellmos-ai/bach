@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Tests for bach_paths.py (hub/bach_paths.py)."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -92,12 +93,11 @@ class TestBackupsDir:
         assert isinstance(BACKUPS_DIR, Path)
 
     def test_backups_dir_platform_dependent(self):
-        import platform
-        if platform.system() == "Windows":
-            assert "Local_DEV" in str(BACKUPS_DIR) or "BACKUPS" in str(BACKUPS_DIR)
+        if "BACH_BACKUPS_DIR" in os.environ:
+            assert BACKUPS_DIR == Path(os.environ["BACH_BACKUPS_DIR"]).expanduser()
         else:
             assert ".bach" in str(BACKUPS_DIR)
-            assert "backups" in str(BACKUPS_DIR)
+            assert "backups" in str(BACKUPS_DIR).lower()
 
 
 # ═══════════════════════════════════════════════════════════════

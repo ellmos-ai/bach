@@ -90260,6 +90260,36 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "aktive_klienten_auftr_ge",
+    "namespace": "gui",
+    "language": "de",
+    "value": "📂 Aktive Klienten / Aufträge",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:52.301416",
+    "updated_at": "2026-06-06T18:58:52.301416"
+  },
+  {
+    "key": "aktualisiert",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Aktualisiert",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:42.555525",
+    "updated_at": "2026-06-05T19:36:42.555525"
+  },
+  {
+    "key": "aktualisiert",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Updated",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:42.555525",
+    "updated_at": "2026-06-05T19:36:42.555525"
+  },
+  {
     "key": "aktualisiert_ati_task",
     "namespace": "gui",
     "language": "de",
@@ -90980,6 +91010,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "alle_30_minuten_status_pr_fen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Alle 30 Minuten, Status prüfen",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:59:08.223645",
+    "updated_at": "2026-06-06T18:59:08.223645"
+  },
+  {
     "key": "alle_bankkonten_laden",
     "namespace": "gui",
     "language": "de",
@@ -91340,6 +91380,26 @@
     "updated_at": "2026-05-17T07:11:17.069268"
   },
   {
+    "key": "allgemein",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Allgemein",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:22.435345",
+    "updated_at": "2026-06-05T19:36:22.435345"
+  },
+  {
+    "key": "allgemein",
+    "namespace": "gui",
+    "language": "en",
+    "value": "General",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:22.435345",
+    "updated_at": "2026-06-05T19:36:22.435345"
+  },
+  {
     "key": "als_vorlage_speichern",
     "namespace": "gui",
     "language": "de",
@@ -91398,6 +91458,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "als_workflow_speichern",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Als Workflow speichern",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:33.843209",
+    "updated_at": "2026-06-06T18:58:33.843209"
   },
   {
     "key": "args_callback_funktion_event_type_f",
@@ -92000,6 +92070,26 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "bearbeiten",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Bearbeiten",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:33.637028",
+    "updated_at": "2026-06-05T19:35:33.637028"
+  },
+  {
+    "key": "bearbeiten",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Edit",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:33.637028",
+    "updated_at": "2026-06-05T19:35:33.637028"
+  },
+  {
     "key": "berechnet_md5_hash_f_r_change_detection",
     "namespace": "gui",
     "language": "de",
@@ -92058,6 +92148,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "bersicht",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Übersicht",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:57.239616",
+    "updated_at": "2026-06-06T18:58:57.239616"
   },
   {
     "key": "bestimmt_den_bach_relevanten_dateityp",
@@ -92238,6 +92338,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "chain_bearbeiten",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Chain bearbeiten",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:59:12.221795",
+    "updated_at": "2026-06-06T18:59:12.221795"
   },
   {
     "key": "create_table_if_not_exists_ati_tasks",
@@ -92500,6 +92610,56 @@
     "updated_at": "2026-06-03T18:58:08.537094"
   },
   {
+    "key": "data_count_tasks_geladen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "${data.count} Tasks geladen",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:29.064471",
+    "updated_at": "2026-06-05T19:36:29.064471"
+  },
+  {
+    "key": "data_count_tasks_geladen",
+    "namespace": "gui",
+    "language": "en",
+    "value": "${data.count} tasks loaded",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:29.064471",
+    "updated_at": "2026-06-05T19:36:29.064471"
+  },
+  {
+    "key": "datei_upload_f_r_quarant_ne",
+    "namespace": "gui",
+    "language": "de",
+    "value": "📥 Datei-Upload für Quarantäne",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:50.180569",
+    "updated_at": "2026-06-06T18:58:50.180569"
+  },
+  {
+    "key": "dateiname",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Dateiname",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:08.363346",
+    "updated_at": "2026-06-05T19:36:08.363346"
+  },
+  {
+    "key": "dateiname",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Filename",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:08.363346",
+    "updated_at": "2026-06-05T19:36:08.363346"
+  },
+  {
     "key": "datum_2026_01_15_betrag_49_99_beschreibung_b_ro",
     "namespace": "gui",
     "language": "de",
@@ -92740,6 +92900,26 @@
     "updated_at": "2026-05-17T07:11:17.069268"
   },
   {
+    "key": "details",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Details",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:59.512657",
+    "updated_at": "2026-06-05T19:35:59.512657"
+  },
+  {
+    "key": "details",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Details",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:59.512657",
+    "updated_at": "2026-06-05T19:35:59.512657"
+  },
+  {
     "key": "details_zu_einem_tool_abrufen",
     "namespace": "gui",
     "language": "de",
@@ -92798,6 +92978,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "durchsuchen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Durchsuchen ...",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:59:14.225981",
+    "updated_at": "2026-06-06T18:59:14.225981"
   },
   {
     "key": "durchsucht_help_dateien_nach_begriff",
@@ -93158,6 +93348,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "element_nicht_gefunden",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Element nicht gefunden",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:27.659425",
+    "updated_at": "2026-06-06T18:58:27.659425"
   },
   {
     "key": "empfaengt_eine_rechnung_von_n8n_und_importiert_sie",
@@ -94420,6 +94620,136 @@
     "updated_at": "2026-05-17T07:11:17.069268"
   },
   {
+    "key": "f_llige_tasks_pr_fen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Fällige Tasks prüfen",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:59:04.032699",
+    "updated_at": "2026-06-06T18:59:04.032699"
+  },
+  {
+    "key": "f_r_dieses_element_md_txt_wurde_keine_entsprec",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Für dieses Element (.md/.txt) wurde keine Entsprechung im skills/ Ordner gefunden.",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:18.487983",
+    "updated_at": "2026-06-06T18:58:18.487983"
+  },
+  {
+    "key": "f_rderplaner_f_rderung",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Förderplaner — Förderung",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:06.409638",
+    "updated_at": "2026-06-06T18:58:06.409638"
+  },
+  {
+    "key": "f_rderplanung_dokumenten_schw_rzung",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Förderplanung & Dokumenten-Schwärzung",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:39.686915",
+    "updated_at": "2026-06-06T18:58:39.686915"
+  },
+  {
+    "key": "fehler",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Fehler",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:37.966817",
+    "updated_at": "2026-06-05T19:35:37.966817"
+  },
+  {
+    "key": "fehler",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Error",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:37.966817",
+    "updated_at": "2026-06-05T19:35:37.966817"
+  },
+  {
+    "key": "fehler_beim_laden",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Fehler beim Laden",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:19.199997",
+    "updated_at": "2026-06-05T19:36:19.199997"
+  },
+  {
+    "key": "fehler_beim_laden",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Error while loading",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:19.199997",
+    "updated_at": "2026-06-05T19:36:19.199997"
+  },
+  {
+    "key": "fehler_beim_laden_der_quelldatei",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Fehler beim Laden der Quelldatei",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:21.284404",
+    "updated_at": "2026-06-06T18:58:21.284404"
+  },
+  {
+    "key": "fehler_beim_speichern",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Fehler beim Speichern",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:43.480649",
+    "updated_at": "2026-06-05T19:35:43.480649"
+  },
+  {
+    "key": "fehler_beim_speichern",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Error while saving",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:43.480649",
+    "updated_at": "2026-06-05T19:35:43.480649"
+  },
+  {
+    "key": "fehler_beim_starten",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Fehler beim Starten.",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:35.018772",
+    "updated_at": "2026-06-05T19:36:35.018772"
+  },
+  {
+    "key": "fehler_beim_starten",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Error while starting.",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:35.018772",
+    "updated_at": "2026-06-05T19:36:35.018772"
+  },
+  {
     "key": "fehler_beim_starten_des_file_watchers",
     "namespace": "gui",
     "language": "de",
@@ -94598,6 +94928,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "ffnen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Öffnen",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:54.514917",
+    "updated_at": "2026-06-06T18:58:54.514917"
   },
   {
     "key": "file_watcher_broadcast_fehler_e",
@@ -95618,6 +95958,26 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "hinzufuegen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Hinzufügen",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:45:08.362867",
+    "updated_at": "2026-06-05T19:45:08.362867"
+  },
+  {
+    "key": "hinzufuegen",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Add",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:45:08.362867",
+    "updated_at": "2026-06-05T19:45:08.362867"
   },
   {
     "key": "holt_einzelnen_skill_mit_details",
@@ -96940,6 +97300,56 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "keine_daten_geladen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Keine Daten geladen",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:10.205463",
+    "updated_at": "2026-06-06T18:58:10.205463"
+  },
+  {
+    "key": "keine_quelldatei_gefunden",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Keine Quelldatei gefunden",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:16.224013",
+    "updated_at": "2026-06-06T18:58:16.224013"
+  },
+  {
+    "key": "ki_session_erfolgreich_gestartet",
+    "namespace": "gui",
+    "language": "de",
+    "value": "KI Session erfolgreich gestartet",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:31.878695",
+    "updated_at": "2026-06-05T19:36:31.878695"
+  },
+  {
+    "key": "ki_session_erfolgreich_gestartet",
+    "namespace": "gui",
+    "language": "en",
+    "value": "AI session started successfully",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:31.878695",
+    "updated_at": "2026-06-05T19:36:31.878695"
+  },
+  {
+    "key": "klienten_k_rzel_intern",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Klienten-Kürzel (Intern)",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:43.446109",
+    "updated_at": "2026-06-06T18:58:43.446109"
+  },
+  {
     "key": "kontakt_loeschen_soft_delete",
     "namespace": "gui",
     "language": "de",
@@ -96998,6 +97408,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "konto_hinzuf_gen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "+ Konto hinzufügen",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:59:18.228796",
+    "updated_at": "2026-06-06T18:59:18.228796"
   },
   {
     "key": "l_dt_die_aktuelle_inbox_konfiguration",
@@ -97118,6 +97538,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "lade_agenten_konfiguration",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Lade Agenten-Konfiguration...",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:36.732449",
+    "updated_at": "2026-06-06T18:58:36.732449"
   },
   {
     "key": "liefert_aktuellen_daemon_status",
@@ -98860,6 +99290,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "max_mustermann_01_01_2010_musterstra_e_1",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Max Mustermann, 01.01.2010, Musterstraße 1, ...",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:48.084328",
+    "updated_at": "2026-06-06T18:58:48.084328"
+  },
+  {
     "key": "memory_fact_loeschen",
     "namespace": "gui",
     "language": "de",
@@ -99038,6 +99478,26 @@
     "source": "google_auto",
     "created_at": "2026-05-17T07:11:17.069268",
     "updated_at": "2026-05-17T07:11:17.069268"
+  },
+  {
+    "key": "montag_08_00_status_report",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Montag 08:00, Status-Report",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:59:10.219768",
+    "updated_at": "2026-06-06T18:59:10.219768"
+  },
+  {
+    "key": "name_ist_erforderlich",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Name ist erforderlich",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:30.771790",
+    "updated_at": "2026-06-06T18:58:30.771790"
   },
   {
     "key": "nderungen_speichern_download",
@@ -99298,6 +99758,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "pers_nlich_alltag",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Persönlich — Alltag",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:03.212850",
+    "updated_at": "2026-06-06T18:58:03.212850"
   },
   {
     "key": "pid_exists_status",
@@ -99600,6 +100070,26 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "profil_speichern",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Profil speichern",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:03.837649",
+    "updated_at": "2026-06-05T19:36:03.837649"
+  },
+  {
+    "key": "profil_speichern",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Save profile",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:03.837649",
+    "updated_at": "2026-06-05T19:36:03.837649"
+  },
+  {
     "key": "prueft_den_aktuellen_gmail_api_status",
     "namespace": "gui",
     "language": "de",
@@ -99720,6 +100210,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "quellcode_speichern",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Quellcode speichern",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:13.712392",
+    "updated_at": "2026-06-06T18:58:13.712392"
+  },
+  {
     "key": "ruft_status_der_bericht_pipeline_ab",
     "namespace": "gui",
     "language": "de",
@@ -99838,6 +100338,56 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "scanner_fehler",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Scanner-Fehler",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:26.195605",
+    "updated_at": "2026-06-05T19:36:26.195605"
+  },
+  {
+    "key": "scanner_fehler",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Scanner error",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:26.195605",
+    "updated_at": "2026-06-05T19:36:26.195605"
+  },
+  {
+    "key": "scanner_status",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Scanner Status",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:56.172062",
+    "updated_at": "2026-06-05T19:35:56.172062"
+  },
+  {
+    "key": "scanner_status",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Scanner Status",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:56.172062",
+    "updated_at": "2026-06-05T19:35:56.172062"
+  },
+  {
+    "key": "scheduler_bersicht",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Scheduler-Übersicht",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:59:06.172393",
+    "updated_at": "2026-06-06T18:59:06.172393"
   },
   {
     "key": "select_count_as_total",
@@ -101060,6 +101610,26 @@
     "updated_at": "2026-05-17T07:11:17.069268"
   },
   {
+    "key": "status",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Status",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:30.177729",
+    "updated_at": "2026-06-05T19:35:30.177729"
+  },
+  {
+    "key": "status",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Status",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:30.177729",
+    "updated_at": "2026-06-05T19:35:30.177729"
+  },
+  {
     "key": "status_der_financial_mail_service",
     "namespace": "gui",
     "language": "de",
@@ -101178,6 +101748,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "stelle_eine_frage_oder_gib_einen_befehl_buddha_ha",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Stelle eine Frage oder gib einen Befehl. Buddha hat Zugriff auf BACH-Tools und kann Aufgaben ausführen.",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:59:01.056399",
+    "updated_at": "2026-06-06T18:59:01.056399"
   },
   {
     "key": "sucht_die_zugehoerige_md_oder_txt_datei_fuer_ein",
@@ -101540,6 +102120,26 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "system_status",
+    "namespace": "gui",
+    "language": "de",
+    "value": "System-Status",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:52.329087",
+    "updated_at": "2026-06-05T19:35:52.329087"
+  },
+  {
+    "key": "system_status",
+    "namespace": "gui",
+    "language": "en",
+    "value": "System Status",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:35:52.329087",
+    "updated_at": "2026-06-05T19:35:52.329087"
+  },
+  {
     "key": "t_v_f_r_einen_workflow_durchf_hren",
     "namespace": "gui",
     "language": "de",
@@ -101598,6 +102198,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T07:11:17.069268",
     "updated_at": "2026-05-17T07:11:17.069268"
+  },
+  {
+    "key": "task_erstellt",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Task erstellt",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:24.340658",
+    "updated_at": "2026-06-06T18:58:24.340658"
   },
   {
     "key": "templates_neu_laden",
@@ -102100,6 +102710,26 @@
     "updated_at": "2026-05-17T07:11:17.069268"
   },
   {
+    "key": "verbindungsfehler",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Verbindungsfehler",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:38.385636",
+    "updated_at": "2026-06-05T19:36:38.385636"
+  },
+  {
+    "key": "verbindungsfehler",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Connection error",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:38.385636",
+    "updated_at": "2026-06-05T19:36:38.385636"
+  },
+  {
     "key": "verkn_pft_einen_posten_mit_einem_dokument",
     "namespace": "gui",
     "language": "de",
@@ -102340,6 +102970,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "weitere_eintr_ge",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Weitere Einträge",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:59:16.126205",
+    "updated_at": "2026-06-06T18:59:16.126205"
+  },
+  {
     "key": "workflow_inhalt_anzeigen",
     "namespace": "gui",
     "language": "de",
@@ -102398,6 +103038,26 @@
     "source": "google_auto",
     "created_at": "2026-05-17T07:11:17.069268",
     "updated_at": "2026-05-17T07:11:17.069268"
+  },
+  {
+    "key": "workflow_t_v",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Workflow-TÜV",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:45:10.867149",
+    "updated_at": "2026-06-05T19:45:10.867149"
+  },
+  {
+    "key": "workflow_t_v",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Workflow QA",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:45:10.867149",
+    "updated_at": "2026-06-05T19:45:10.867149"
   },
   {
     "key": "workflow_t_v_dashboard",
@@ -102518,6 +103178,36 @@
     "source": "google_auto",
     "created_at": "2026-05-17T07:11:17.069268",
     "updated_at": "2026-05-17T07:11:17.069268"
+  },
+  {
+    "key": "zielordner",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Zielordner",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:12.536202",
+    "updated_at": "2026-06-05T19:36:12.536202"
+  },
+  {
+    "key": "zielordner",
+    "namespace": "gui",
+    "language": "en",
+    "value": "Target folder",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-05T19:36:12.536202",
+    "updated_at": "2026-06-05T19:36:12.536202"
+  },
+  {
+    "key": "zu_schw_rzende_daten_kommagetrennt",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Zu schwärzende Daten (Kommagetrennt)",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-06T18:58:45.870121",
+    "updated_at": "2026-06-06T18:58:45.870121"
   },
   {
     "key": "abo",
@@ -137953,61 +138643,61 @@
     "key": "db_path_r_c_local_dev_data_store_variant_fusio",
     "namespace": "skills",
     "language": "de",
-    "value": "DB_PATH = r\"C:\\_Local_DEV\\DATA_STORE\\variant_fusion.sqlite\"",
+    "value": "DB_PATH = BACH_VARIANT_DB",
     "is_verified": 1,
     "source": "manual",
-    "created_at": "2026-05-17T08:56:39.179250",
-    "updated_at": "2026-05-17T08:56:39.179250"
+    "created_at": "2026-06-07T14:22:04.690530",
+    "updated_at": "2026-06-07T14:22:04.690530"
   },
   {
     "key": "db_path_r_c_local_dev_data_store_variant_fusio",
     "namespace": "skills",
     "language": "en",
-    "value": "DB_PATH = r\"C:\\_Local_DEV\\DATA_STORE\\variant_fusion.sqlite\"",
-    "is_verified": 0,
-    "source": "google_auto",
-    "created_at": "2026-05-17T08:56:39.179250",
-    "updated_at": "2026-05-17T08:56:39.179250"
+    "value": "DB_PATH = BACH_VARIANT_DB",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-07T14:22:04.690530",
+    "updated_at": "2026-06-07T14:22:04.690530"
   },
   {
     "key": "db_path_r_c_local_dev_data_store_variant_fusio",
     "namespace": "skills",
     "language": "es",
-    "value": "DB_PATH = r\"C:\\_Local_DEV\\DATA_STORE\\variant_fusion.sqlite\"",
-    "is_verified": 0,
-    "source": "google_auto",
-    "created_at": "2026-05-17T09:20:57.594245",
-    "updated_at": "2026-05-17T09:20:57.594245"
+    "value": "DB_PATH = BACH_VARIANT_DB",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-07T14:22:04.690530",
+    "updated_at": "2026-06-07T14:22:04.690530"
   },
   {
     "key": "db_path_r_c_local_dev_data_store_variant_fusio",
     "namespace": "skills",
     "language": "ja",
-    "value": "DB_PATH = r\"C:\\_Local_DEV\\DATA_STORE\\variant_fusion.sqlite\"",
-    "is_verified": 0,
-    "source": "google_auto",
-    "created_at": "2026-05-17T09:50:31.586908",
-    "updated_at": "2026-05-17T09:50:31.586908"
+    "value": "DB_PATH = BACH_VARIANT_DB",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-07T14:22:04.690530",
+    "updated_at": "2026-06-07T14:22:04.690530"
   },
   {
     "key": "db_path_r_c_local_dev_data_store_variant_fusio",
     "namespace": "skills",
     "language": "ru",
-    "value": "DB_PATH = r\"C:\\_Local_DEV\\DATA_STORE\\variant_fusion.sqlite\"",
-    "is_verified": 0,
-    "source": "google_auto",
-    "created_at": "2026-05-17T09:38:49.928794",
-    "updated_at": "2026-05-17T09:38:49.928794"
+    "value": "DB_PATH = BACH_VARIANT_DB",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-07T14:22:04.690530",
+    "updated_at": "2026-06-07T14:22:04.690530"
   },
   {
     "key": "db_path_r_c_local_dev_data_store_variant_fusio",
     "namespace": "skills",
     "language": "zh",
-    "value": "DB_PATH = r\"C:\\_Local_DEV\\DATA_STORE\\variant_fusion.sqlite\"",
-    "is_verified": 0,
-    "source": "google_auto",
-    "created_at": "2026-05-17T10:02:23.078896",
-    "updated_at": "2026-05-17T10:02:23.078896"
+    "value": "DB_PATH = BACH_VARIANT_DB",
+    "is_verified": 1,
+    "source": "manual",
+    "created_at": "2026-06-07T14:22:04.690530",
+    "updated_at": "2026-06-07T14:22:04.690530"
   },
   {
     "key": "db_path_r_c_users_user_onedrive_ki_ai_bach_v1_1",
