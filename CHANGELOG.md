@@ -8,6 +8,8 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Changed
 
+- **Discoverability-Metadaten nachgezogen:** README nennt jetzt den kanonischen Suchstring `ellmos-ai/bach`, verlinkt `llms.txt` als maschinenlesbaren Crawler-Kontext, korrigiert die prominente Workflow-Zahl auf 59 und synchronisiert die MCP-npm-Versionen auf `ellmos-codecommander-mcp` 1.3.10 sowie `ellmos-filecommander-mcp` 1.8.0.
+- **Crawler-Frische markiert:** `llms.txt` enthält jetzt `Last-checked: 2026-06-11`.
 - **Discoverability-Kontext nachgezogen:** README, README.de und `llms.txt` benennen BACH jetzt klarer als local-first LLM-Betriebssystem, grenzen das Repo von Bach-Musik, Bash-Testframeworks und gehosteten Agent-SaaS ab und synchronisieren `llms.txt` auf `v3.12.4-earth`.
 - **Öffentliche Planungsreferenzen bereinigt:** Roadmap und Installer-Hilfe verweisen nicht mehr auf private, ignorierte Release-Planungsdateien, sondern auf öffentliche Roadmap-/Changelog-Zusammenfassungen.
 - **GUI-i18n-Report geschärft und Oberfläche bereinigt:** `bach lang report` filtert in JS-generiertem Markup jetzt zusätzlich technische `class`-/`id`-Tokens aus, damit der GUI-Drift-Report keine CSS-/DOM-Reste mehr als DE-Copy zählt.

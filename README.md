@@ -36,14 +36,16 @@ The current release snapshot enables `de`, `en`, `es`, `ru`, `ja`, and `zh` in `
 
 BACH is best described as a **local-first LLM operating system**: a persistent Python/SQLite workbench for autonomous agents, structured memory, scheduler-driven automation, prompt chains, MCP server integration, and multilingual operator surfaces. It is not a chatbot wrapper, hosted agent SaaS, Bash unit-test framework, music project, or LangChain-style pipeline library.
 
-Useful search phrases include `local-first LLM operating system`, `text-based OS for LLM agents`, `SQLite memory for AI agents`, `BACH ellmos agent OS`, `personal agentic OS Python SQLite`, and `multi-agent orchestration with MCP servers`.
+Canonical GitHub repository: `ellmos-ai/bach`. Machine-readable project context for LLM crawlers is available in [`llms.txt`](llms.txt).
+
+Useful search phrases include `ellmos-ai/bach`, `local-first LLM operating system`, `text-based OS for LLM agents`, `SQLite memory for AI agents`, `BACH ellmos agent OS`, `personal agentic OS Python SQLite`, and `multi-agent orchestration with MCP servers`.
 
 ### Key Features
 
 - **113+ Handlers** - Full CLI and API coverage of all system functions
 - **550+ Tools** - Extensive tool library for file processing, analysis, and automation
 - **1870+ Skills** - Reusable workflows and templates
-- **58 Workflow Templates** - Pre-built process workflows
+- **59 Workflow Templates** - Pre-built process workflows
 - **4400+ Tests** - Comprehensive automated coverage across handlers, services, GUI, and MCP servers
 - **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System (6 memory types)
 - **Agent CLI** - `bach agent start/stop/list` for direct agent control
@@ -94,8 +96,8 @@ python system/bach.py setup mcp
 npm install -g ellmos-codecommander-mcp ellmos-filecommander-mcp
 ```
 
-- **[ellmos-codecommander-mcp](https://www.npmjs.com/package/ellmos-codecommander-mcp)** v1.3.8 - Code analysis and refactoring tools (17 tools)
-- **[ellmos-filecommander-mcp](https://www.npmjs.com/package/ellmos-filecommander-mcp)** v1.7.8 - File management and batch operations (44 tools)
+- **[ellmos-codecommander-mcp](https://www.npmjs.com/package/ellmos-codecommander-mcp)** v1.3.10 - Code analysis and refactoring tools (17 tools)
+- **[ellmos-filecommander-mcp](https://www.npmjs.com/package/ellmos-filecommander-mcp)** v1.8.0 - File management and batch operations (44 tools)
 
 ## Quick Start
 
