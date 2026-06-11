@@ -1,9 +1,9 @@
 # Portabilitaet: SYSTEM
-# Grund: Beschreibt C:\_Local_DEV - existiert nur auf diesem System
+# Grund: Beschreibt einen lokalen Workspace außerhalb von Cloud-Sync; konkrete Pfade nicht versionieren
 # Bei Neuinstallation: Datei anpassen oder entfernen
 
-C:\_LOCAL_DEV - LOKALER WORKSPACE & BACKUP
-==========================================
+LOKALER WORKSPACE & BACKUP
+==========================
 
 Stand: 2026-01-24
 
@@ -20,7 +20,7 @@ Verwendung fuer:
 
 STRUKTUR (empfohlen)
 --------------------
-  C:\_Local_DEV\
+  <LOCAL_DEV_ROOT>\
   ├── backup\              # Lokale Backups
   │   ├── bach_db\         # BACH Datenbank-Backups
   │   └── steuer\          # Sensible Steuer-Backups
@@ -62,13 +62,13 @@ BACH-INTEGRATION
 ----------------
   Backup-Ziel:
     python bach.py backup create --to-local
-    (Speichert nach C:\_Local_DEV\backup\bach_db\)
+    (Speichert nach <LOCAL_DEV_ROOT>\backup\bach_db\)
 
   Datenbank bei Problemen:
     1. BACH stoppen
-    2. data\bach.db nach C:\_Local_DEV\databases\ kopieren
+    2. data\bach.db nach <LOCAL_DEV_ROOT>\databases\ kopieren
     3. Dort arbeiten bis OneDrive stabil
-    4. Zurueck synchronisieren wenn fertig
+    4. Zurück synchronisieren wenn fertig
 
 WICHTIG
 -------
@@ -79,7 +79,7 @@ WICHTIG
 
 ABGRENZUNG
 ----------
-  C:\_Local_DEV\          Lokal, kein Sync, temporaer/sensitiv
+  <LOCAL_DEV_ROOT>\       Lokal, kein Sync, temporär/sensitiv
   OneDrive\.AI\         Cloud-Sync, Hauptarbeitsbereich
   G:\                     Google Drive (Partner-Sync)
   NAS (\\nas\)            Langzeit-Archiv, Backup-Ziel

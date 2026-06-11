@@ -44,7 +44,7 @@ Wiki-Dateien koennen unterschiedliche Portabilitaet haben:
 
 Markierung: Am Anfang der Datei:
   # Portabilitaet: SYSTEM
-  # Grund: Enthaelt lokale Pfade (C:\_Local_DEV)
+  # Grund: Enthält lokale Pfadkonzepte; konkrete Maschinenpfade nicht versionieren
 
 DATEIFORMAT
 -----------
@@ -147,10 +147,10 @@ BEISPIEL: SYSTEM-SPEZIFISCHE DATEI
 Datei: wiki/local_dev.txt
 
   # Portabilitaet: SYSTEM
-  # Grund: Beschreibt C:\_Local_DEV - existiert nur auf diesem System
+  # Grund: Beschreibt einen lokalen Workspace außerhalb von Cloud-Sync; konkrete Pfade nicht versionieren
 
-  C:\_LOCAL_DEV - LOKALER WORKSPACE & BACKUP
-  ==========================================
+  LOKALER WORKSPACE & BACKUP
+  ==========================
   ...
 
 DATENFORMATE-RICHTLINIE

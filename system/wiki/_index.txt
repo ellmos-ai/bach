@@ -183,7 +183,7 @@ VERFUEGBARE ARTIKEL
                            - Finanz- und Versicherungs-Wissen
 
 
-  local_dev.txt            C:\_Local_DEV Workspace [SYSTEM]
+  local_dev.txt            Lokaler Workspace [SYSTEM]
                            - Lokaler Backup-Bereich
                            - Sensible Datenbanken
                            - OneDrive-Probleme umgehen
