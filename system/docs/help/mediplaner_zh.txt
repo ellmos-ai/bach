@@ -1,0 +1,45 @@
+# Portability: UNIVERSAL
+# 最后验证: 2026-05-26 (Codex Daily Care Integration)
+# 下次检查: 2026-11-26
+
+MEDIPLANER - BACH 与 MediPlaner 之间的数据交换
+===================================================
+
+描述:
+  `bach mediplaner` 将 BACH 健康数据导出为中性的
+  `mediplaner-export-v1.json` 格式，并将相同的结构导入回
+  规范的 BACH 数据库。
+
+CLI 命令:
+  bach mediplaner export --file mediplaner-export-v1.json
+  bach mediplaner export --client-first Max --client-last Mustermann --birthdate 01.01.1970
+  bach mediplaner import --file mediplaner-export-v1.json
+  bach mediplaner help
+
+导出:
+  - 从 `health_contacts` 读取活跃的医生联系人
+  - 从 `health_diagnoses` 读取诊断/医生分配
+  - 从 `health_medications` 读取药物
+  - 写入 `doctor_contacts`、`medications`、空 `inventory` 和 `settings`
+  - 使用 `schema_version = mediplaner-export-v1`
+
+导入:
+  - 在 `health_contacts` 中创建新的医生联系人
+  - 在 `health_medications` 中创建新的药物
+  - 根据姓名/专业/机构跳过联系人重复项
+  - 根据名称/剂量跳过药物重复项
+  - 支持不提交数据库的 `--dry-run`
+
+格式说明:
+  - `aktiv=1` 导入为状态 `active`，否则为 `paused`
+  - 一天中的时间（`morgens`、`mittags`、`abends`、`nachts`）将被导入到
+    BACH 服药计划中
+  - `bedarf`、`woechentlich` 和 `monatlich` 作为日程安排文本返回
+
+示例:
+  bach mediplaner export --file C:\Daten\mediplaner-export-v1.json
+  bach mediplaner import --file C:\Daten\mediplaner-export-v1.json --dry-run
+
+另请参阅:
+  bach --help gesundheit
+  bach gesundheit export --entity meds

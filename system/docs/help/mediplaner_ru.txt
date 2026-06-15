@@ -1,0 +1,45 @@
+# Portability: UNIVERSAL
+# Последняя проверка: 2026-05-26 (Codex Daily Care Integration)
+# Следующая проверка: 2026-11-26
+
+MEDIPLANER - Обмен данными между BACH и MediPlaner
+==================================================
+
+ОПИСАНИЕ:
+  `bach mediplaner` экспортирует данные о здоровье из BACH в нейтральный
+  формат `mediplaner-export-v1.json` и импортирует ту же структуру обратно
+  в каноническую базу данных BACH.
+
+КОМАНДЫ CLI:
+  bach mediplaner export --file mediplaner-export-v1.json
+  bach mediplaner export --client-first Max --client-last Mustermann --birthdate 01.01.1970
+  bach mediplaner import --file mediplaner-export-v1.json
+  bach mediplaner help
+
+ЭКСПОРТ:
+  - Читает активные контакты врачей из `health_contacts`
+  - Читает диагнозы/связанных врачей из `health_diagnoses`
+  - Читает медикаменты из `health_medications`
+  - Записывает `doctor_contacts`, `medications`, пустые `inventory` и `settings`
+  - Использует `schema_version = mediplaner-export-v1`
+
+ИМПОРТ:
+  - Создает новые контакты врачей в `health_contacts`
+  - Создает новые медикаменты в `health_medications`
+  - Пропускает дубликаты контактов по имени/специальности/учреждению
+  - Пропускает дубликаты медикаментов по названию/дозировке
+  - Поддерживает `--dry-run` без фиксации изменений в базе данных
+
+ПРИМЕЧАНИЯ К ФОРМАТУ:
+  - `aktiv=1` импортируется со статусом `active`, иначе `paused`
+  - Время суток (`morgens`, `mittags`, `abends`, `nachts`) переносится в
+    план приема BACH
+  - `bedarf`, `woechentlich` и `monatlich` возвращаются как тексты расписания
+
+ПРИМЕРЫ:
+  bach mediplaner export --file C:\Daten\mediplaner-export-v1.json
+  bach mediplaner import --file C:\Daten\mediplaner-export-v1.json --dry-run
+
+СМ. ТАКЖЕ:
+  bach --help gesundheit
+  bach gesundheit export --entity meds

@@ -1,0 +1,44 @@
+# Portability: UNIVERSAL
+# 最終確認: 2026-05-26 (Codex Daily Care Integration)
+# 次回確認: 2026-11-26
+
+MEDIPLANER - BACHとMediPlaner間のデータ交換
+===================================================
+
+説明:
+  `bach mediplaner` は、BACHの健康データを中立的な
+  `mediplaner-export-v1.json` フォーマットにエクスポートし、同じ構造を
+  正規のBACHデータベースにインポートして戻します。
+
+CLIコマンド:
+  bach mediplaner export --file mediplaner-export-v1.json
+  bach mediplaner export --client-first Max --client-last Mustermann --birthdate 01.01.1970
+  bach mediplaner import --file mediplaner-export-v1.json
+  bach mediplaner help
+
+エクスポート:
+  - `health_contacts` からアクティブな医師の連絡先を読み込みます
+  - `health_diagnoses` から診断/医師の割り当てを読み込みます
+  - `health_medications` から薬品情報を読み込みます
+  - `doctor_contacts`、`medications`、空の `inventory` および `settings` を書き込みます
+  - `schema_version = mediplaner-export-v1` を使用します
+
+インポート:
+  - `health_contacts` に新しい医師の連絡先を作成します
+  - `health_medications` に新しい薬品情報を作成します
+  - 氏名/専門分野/所属機関に基づいて医師の重複をスキップします
+  - 名称/服用量に基づいて薬品の重複をスキップします
+  - データベースへのコミットなしで `--dry-run` をサポートします
+
+フォーマットに関する注意事項:
+  - `aktiv=1` はステータス `active` としてインポートされ、それ以外は `paused` となります
+  - 時間帯（`morgens`、`mittags`、`abends`、`nachts`）はBACHの服用計画に引き継がれます
+  - `bedarf`、`woechentlich`、および `monatlich` はスケジュールテキストとして戻されます
+
+例:
+  bach mediplaner export --file C:\Daten\mediplaner-export-v1.json
+  bach mediplaner import --file C:\Daten\mediplaner-export-v1.json --dry-run
+
+関連項目:
+  bach --help gesundheit
+  bach gesundheit export --entity meds
