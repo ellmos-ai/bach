@@ -1,4 +1,4 @@
-<img src="assets/banner.svg" width="100%" alt="BACH Banner">
+<img src="assets/banner_v2.png" width="100%" alt="BACH Banner">
 
 # ellmos BACH — Textbasiertes Betriebssystem für LLMs
 
