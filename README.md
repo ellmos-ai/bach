@@ -1,18 +1,14 @@
-<p>
-  <img src="logo_bach_text.jpg" alt="BACH logo" width="400" align="left">
-  <img src="ellmos-logo.jpg" alt="ellmos logo" width="200" align="right">
-</p>
-<br clear="both">
+<img src="assets/banner.svg" width="100%" alt="BACH Banner">
 
-# ellmos BACH - Text-Based Operating System for LLMs
+# ellmos BACH — Text-Based Operating System for LLMs
 
-*The stream that unites everything.*
+> The stream that unites everything.
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-v3.12.4--earth-orange)
-![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)
-![Tests](https://img.shields.io/badge/Tests-4436%20collected-blue)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-v3.12.4--earth-orange)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)](ROADMAP.md)
+[![Tests](https://img.shields.io/badge/Tests-4436%20collected-blue)](system/tests/)
 
 **Version:** v3.12.4-earth
 
@@ -20,7 +16,7 @@
 
 BACH is documented and shipped with translation surfaces for six languages:
 
-[English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
+**🇬🇧 English** | [🇩🇪 Deutsch](README.de.md) | [🇪🇸 Español](README.es.md) | [🇷🇺 Русский](README.ru.md) | [🇯🇵 日本語](README.ja.md) | [🇨🇳 中文](README.zh.md)
 
 The current release snapshot enables `de`, `en`, `es`, `ru`, `ja`, and `zh` in `system/exports/translations/languages_config.release.json` and exports matching locale files in `system/exports/translations/locales/`. For crawlers and direct language entry points, each language also has its own `README.md` under `docs/i18n/<lang>/`.
 
@@ -194,7 +190,9 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 
 ### Competitive Watch
 
-As of 2026-06-06, GitHub Releases shows `2026.6.1`, published on June 3, 2026, as OpenClaw's current stable line, while the newest visible prerelease on the official release feed is `2026.6.5-beta.1`, published on June 6, 2026. The latest stable and June beta signals most relevant to BACH are cleaner recovery after interrupted tool calls, stale session bindings, prompt-cache expiry, or Gateway restarts; stricter timer/retry bounds and doctor/upgrade wait paths; broader SQLite-backed auth, plugin-install, and inbound-queue state; wider Workboard and SecretRef surfaces; and more robust materialization of richer MCP tool-result blocks before they can poison session history. On the BACH side, the 2026-06-06 live care pass taught `bach lang report` to ignore additional JS `class`/`id` noise in generated markup, restored real umlauts across several visible GUI surfaces, indexed 29 additional GUI DE keys into the existing `gui` namespace, and refreshed the release artifacts to 17,488 exported translations. The same pass revalidated `bach agent doctor test-agent --json`, the full `bach agent clear-steer/steer/start/status/pause/checkpoint/resume/stop/clear-steer --json` control cycle, `bach usecase run 12 --dry-run`, `bach usecase run 41 --dry-run`, `bach usecase run-all --dry-run`, `bach upgrade status/check --json`, and `bach lang report --surface gui --limit 20 --json`; the GUI report now sits at 94 missing unique entries and 111 open occurrences, while usecase 41 still falls back to manual mode because no workflow file is linked. Next high-leverage steps remain deeper active-run steering inside long-running scheduler internals, low-cardinality telemetry, installer end-to-end coverage, GUI regression coverage, and prioritized i18n cleanup across GUI, help, skills, and tools.
+As of 2026-06-13, the OpenClaw repository still marks `2026.6.6` as the latest stable release on GitHub, published on June 12, 2026, while the newest visible prerelease on the official release feed is now `2026.6.7-beta.1`, published on June 13, 2026 at 09:42. The most relevant new beta signals for BACH are tighter channel delivery, safer auth/context boundaries, stronger recovery across agent, memory, Codex, cron, and update paths, clearer doctor/update progress reporting, and more trustworthy QA/release evidence.
+
+On the BACH side, the clean GUI i18n state from 2026-06-12 remains intact at 17,593 exported translations with 0 missing GUI entries, and the 2026-06-13 care pass shifted to workflow coverage: a shared `skills/workflows/SOFTWARE.md` now links software usecases 41-49 to a real workflow file instead of manual fallback, while `wiki-author.md` was updated to the current `wiki/` and `hub/_services/wiki/` paths. Verification re-ran `bach usecase run 41 --dry-run`, `bach usecase run-all --dry-run`, and a focused `test_tuev_handler.py` regression (`1 passed`), which moved the dry-run overview from 15 workflow-backed / 35 manual usecases to 24 / 26. Next high-leverage steps remain deeper active-run steering inside long-running scheduler internals, installer end-to-end coverage, GUI regression coverage, and closing the remaining manual workflow gaps such as `reflection_status` and the larger domain buckets.
 
 ## License
 

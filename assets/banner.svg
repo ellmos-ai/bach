@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 340" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#05070f" />
+      <stop offset="100%" stop-color="#0c1020" />
+    </linearGradient>
+
+    <!-- Inner Window Gradient -->
+    <linearGradient id="winGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#080c16" />
+      <stop offset="100%" stop-color="#04060b" />
+    </linearGradient>
+
+    <!-- Glow Filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <!-- River Gradients -->
+    <linearGradient id="riverGrad1" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#0369a1" />
+      <stop offset="50%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0d9488" />
+    </linearGradient>
+
+    <linearGradient id="riverGrad2" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="60%" stop-color="#0d9488" />
+      <stop offset="100%" stop-color="#14b8a6" />
+    </linearGradient>
+
+    <linearGradient id="riverGrad3" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#0ea5e9" />
+      <stop offset="40%" stop-color="#14b8a6" />
+      <stop offset="100%" stop-color="#2dd4bf" />
+    </linearGradient>
+
+    <!-- Ripple Gradients -->
+    <linearGradient id="rippleGrad1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#4ade80" />
+    </linearGradient>
+
+    <linearGradient id="rippleGrad2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2dd4bf" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#60a5fa" stop-opacity="0.2" />
+    </linearGradient>
+
+    <linearGradient id="rippleGrad3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#e0f2fe" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#ccfbf1" stop-opacity="0.1" />
+    </linearGradient>
+
+    <!-- Text Gradients -->
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#cbd5e1" />
+    </linearGradient>
+
+    <linearGradient id="taglineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#2dd4bf" />
+    </linearGradient>
+
+    <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0ea5e9" />
+      <stop offset="100%" stop-color="#080c16" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- Dot Pattern -->
+    <pattern id="dotGrid" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="0.75" fill="#38bdf8" opacity="0.12" />
+    </pattern>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect width="1200" height="340" rx="16" fill="url(#bgGrad)" />
+
+  <!-- Window Container (Safe Zone x:80..1120, y:60..280) -->
+  <rect x="80" y="60" width="1040" height="220" rx="12" fill="url(#winGrad)" stroke="#1e293b" stroke-width="1.5" />
+
+  <!-- Grid Overlay -->
+  <rect x="80" y="60" width="1040" height="220" rx="12" fill="url(#dotGrid)" pointer-events="none" />
+
+  <!-- Faint Tech Details in Background -->
+  <text x="120" y="115" font-family="monospace" font-size="14" fill="#0d9488" opacity="0.12" font-weight="bold">&gt;_</text>
+  <text x="510" y="255" font-family="monospace" font-size="20" fill="#0284c7" opacity="0.1">{ }</text>
+  <text x="280" y="245" font-family="monospace" font-size="16" fill="#14b8a6" opacity="0.08">[ ]</text>
+  <text x="460" y="115" font-family="monospace" font-size="14" fill="#38bdf8" opacity="0.08">stream_id: 0x7b4</text>
+
+  <!-- Left-to-Right Long Wave (Fading under text) -->
+  <path d="M 110,185 C 300,105 500,255 700,175 C 800,130 950,205 1090,155" fill="none" stroke="url(#rippleGrad2)" stroke-width="1.5" opacity="0.25" />
+  <path d="M 120,200 C 310,120 510,270 710,190 C 810,145 960,220 1080,170" fill="none" stroke="url(#rippleGrad3)" stroke-width="1" opacity="0.15" stroke-dasharray="6 6" />
+
+  <!-- River Body Flow -->
+  <!-- Band 1 (Deep base) -->
+  <path d="M 110,190 C 190,110 280,240 370,180 C 420,140 470,150 520,190 L 520,215 C 470,175 420,165 370,205 C 280,265 190,135 110,215 Z" fill="url(#riverGrad1)" opacity="0.35" />
+
+  <!-- Band 2 (Core flow) -->
+  <path d="M 110,175 C 180,125 270,230 360,175 C 410,143 460,147 510,180 L 510,200 C 460,167 410,163 360,195 C 270,250 180,140 110,195 Z" fill="url(#riverGrad2)" opacity="0.5" />
+
+  <!-- Band 3 (Vibrant center) -->
+  <path d="M 120,165 C 180,130 260,210 350,165 C 400,138 450,140 500,170 L 500,182 C 450,152 400,150 350,177 C 260,222 180,138 120,177 Z" fill="url(#riverGrad3)" opacity="0.7" />
+
+  <!-- Ripples & Highlights -->
+  <path d="M 115,180 C 185,115 275,235 365,170 C 415,133 465,142 505,178" fill="none" stroke="url(#rippleGrad1)" stroke-width="2.5" opacity="0.75" />
+  <path d="M 130,170 C 195,135 255,200 345,160 C 395,130 445,150 490,168" fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.6" />
+  <path d="M 110,198 C 190,128 290,258 390,190 C 440,152 490,165 515,195" fill="none" stroke="url(#rippleGrad2)" stroke-width="2" opacity="0.5" stroke-dasharray="120 30 60 30" />
+
+  <!-- Floating Data Particles -->
+  <circle cx="180" cy="140" r="3" fill="#67e8f9" opacity="0.8" filter="url(#glow)" />
+  <circle cx="280" cy="220" r="2.5" fill="#99f6e4" opacity="0.6" />
+  <circle cx="340" cy="170" r="4.5" fill="#38bdf8" opacity="0.9" filter="url(#glow)" />
+  <circle cx="430" cy="155" r="2" fill="#ffffff" opacity="0.8" />
+  <circle cx="480" cy="180" r="3" fill="#2dd4bf" opacity="0.7" />
+
+  <!-- Text and Typography -->
+  <!-- Glowing BACH Shadow -->
+  <text x="630" y="165" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="82" font-weight="900" fill="#0ea5e9" opacity="0.25" filter="url(#glow)" letter-spacing="4">BACH</text>
+  <!-- Foreground BACH Text -->
+  <text x="630" y="165" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="82" font-weight="900" fill="url(#textGrad)" letter-spacing="4">BACH</text>
+
+  <!-- Tagline -->
+  <text x="634" y="208" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="21" font-weight="700" fill="url(#taglineGrad)" letter-spacing="1">Text-Based OS for LLMs</text>
+
+  <!-- Divider line -->
+  <line x1="634" y1="222" x2="980" y2="222" stroke="url(#lineGrad)" stroke-width="1.5" opacity="0.5" />
+
+  <!-- Sub-tagline -->
+  <text x="634" y="244" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="800" fill="#586e88" letter-spacing="2.5">PREDICTABLE • MODULAR • DEVELOPER-FIRST</text>
+
+  <!-- Window Frame Details (Top Bar style) -->
+  <!-- Control Buttons -->
+  <circle cx="105" cy="78" r="5" fill="#ef4444" opacity="0.85" />
+  <circle cx="120" cy="78" r="5" fill="#f59e0b" opacity="0.85" />
+  <circle cx="135" cy="78" r="5" fill="#10b981" opacity="0.85" />
+
+  <!-- Window Title -->
+  <text x="600" y="82" font-family="monospace" font-size="11" font-weight="600" fill="#334155" text-anchor="middle" letter-spacing="1.5">bach-os — bash — 1040×220</text>
+</svg>

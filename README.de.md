@@ -1,14 +1,21 @@
-# BACH - Textbasiertes Betriebssystem für LLMs
+<img src="assets/banner.svg" width="100%" alt="BACH Banner">
+
+# ellmos BACH — Textbasiertes Betriebssystem für LLMs
+
+> Der Strom, der alles verbindet.
+
+[![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://python.org)
+[![Lizenz: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-v3.12.4--earth-orange)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)](ROADMAP.md)
 
 **Version:** v3.12.4-earth
-**Status:** Production-Ready
-**Lizenz:** MIT
 
 ## Sprachen
 
 BACH wird mit Dokumentations- und Übersetzungsoberflächen für sechs Sprachen ausgeliefert:
 
-[English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
+[🇬🇧 English](README.md) | **🇩🇪 Deutsch** | [🇪🇸 Español](README.es.md) | [🇷🇺 Русский](README.ru.md) | [🇯🇵 日本語](README.ja.md) | [🇨🇳 中文](README.zh.md)
 
 Der aktuelle Release-Snapshot aktiviert `de`, `en`, `es`, `ru`, `ja` und `zh` in `system/exports/translations/languages_config.release.json` und exportiert passende Locale-Dateien in `system/exports/translations/locales/`. Für Crawler und direkte Spracheinstiege hat jede Sprache zusätzlich eine eigene `README.md` unter `docs/i18n/<lang>/`.
 
@@ -97,7 +104,9 @@ Chain-Schritte als LLM-Prompts mit `bach://` URL-Auflösung für dynamische Kont
 
 ## OpenClaw-Abgleich
 
-Stand 2026-06-06: GitHub Releases zeigt `2026.6.1`, veröffentlicht am 2026-06-03, als aktuelle Stable-Linie von OpenClaw; das neueste sichtbare Prerelease im offiziellen Release-Feed ist `2026.6.5-beta.1`, veröffentlicht am 2026-06-06. Für BACH sind aus Stable und den frischen Juni-Betas vor allem sauberere Recovery nach unterbrochenen Tool-Calls, veralteten Session-Bindings, Prompt-Cache-Ablauf oder Gateway-Neustarts, strengere Timer-/Retry-Grenzen und Doctor-/Upgrade-Wartepfade, mehr SQLite-gestützte Auth-, Plugin-Install- und Inbound-Queue-Zustände, breitere Workboard-/SecretRef-Flächen sowie eine robustere Materialisierung reicher MCP-Toolresultate relevant. Auf BACH-Seite hat der Live-Check vom 2026-06-06 den GUI-Drift-Report um zusätzliche JS-`class`-/`id`-Rauschfilter erweitert, mehrere sichtbare Oberflächen wieder auf echte Umlaute gehoben und 29 zusätzliche GUI-DE-Schlüssel in den bestehenden `gui`-Namespace aufgenommen; die Release-Artefakte stehen damit jetzt bei 17.488 exportierten Übersetzungen. Derselbe Lauf hat außerdem `bach agent doctor test-agent --json`, den vollständigen `test-agent`-Steuerzyklus (`clear-steer`, `steer`, `start`, `status`, `pause`, `checkpoint`, `resume`, `stop`, `clear-steer`), `bach usecase run 12 --dry-run`, `bach usecase run 41 --dry-run`, `bach usecase run-all --dry-run`, `bach upgrade status/check --json` und `bach lang report --surface gui --limit 20 --json` erneut verifiziert; der GUI-Report liegt jetzt bei 94 offenen eindeutigen Einträgen und 111 offenen Fundstellen, während Usecase 41 weiterhin ohne verknüpfte Workflow-Datei im manuellen Fallback landet. Nächste Schritte bleiben tieferes Active-Run-Steering in langlaufenden Scheduler-Innenschleifen, Low-Cardinality-Telemetrie, Installer-End-to-End- sowie GUI-Regressionsabdeckung und die priorisierte Bereinigung der vom `bach lang report` sichtbaren UI-/Hilfe-/Skill-/Tool-Texte.
+Stand 2026-06-13: Das OpenClaw-Repository markiert weiterhin `2026.6.6`, veröffentlicht am 2026-06-12, als aktuelle Stable-Linie auf GitHub; das neueste sichtbare Prerelease im offiziellen Release-Feed ist jetzt `2026.6.7-beta.1`, veröffentlicht am 2026-06-13 um 09:42 UTC. Für BACH sind daraus vor allem engere Zustellungsketten in Channel-Flows, härtere Auth-/Kontext-Grenzen, robustere Recovery-Pfade für Agent, Memory, Codex, Cron und Update sowie klarere Doctor-/Update-Fortschrittsanzeigen und belastbarere QA-/Release-Evidenz relevant.
+
+Auf BACH-Seite bleibt der saubere GUI-i18n-Stand vom 2026-06-12 mit 17.593 exportierten Übersetzungen und 0 offenen GUI-Einträgen bestehen; der Daily-Care-Lauf vom 2026-06-13 hat den Fokus stattdessen auf Workflow-Abdeckung gelegt. Eine neue gemeinsame Datei `skills/workflows/SOFTWARE.md` hängt die Software-Usecases 41 bis 49 jetzt an eine reale Workflow-Datei statt an den manuellen Fallback, und `wiki-author.md` verweist wieder auf das aktuelle `wiki/`-Layout sowie `hub/_services/wiki/`. Verifiziert wurden dazu `bach usecase run 41 --dry-run`, `bach usecase run-all --dry-run` und eine gezielte `test_tuev_handler.py`-Regression (`1 passed`); der Dry-Run-Überblick steigt damit von 15 workflowgebundenen und 35 manuellen Usecases auf 24 zu 26. Nächste Schritte bleiben tieferes Active-Run-Steering in langlaufenden Scheduler-Innenschleifen, Installer-End-to-End- und GUI-Regressionsabdeckung sowie die verbleibenden manuellen Workflow-Lücken wie `reflection_status` und die größeren Domänenkategorien.
 
 ## Dokumentation
 
