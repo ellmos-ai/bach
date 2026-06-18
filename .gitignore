@@ -11,6 +11,7 @@
 /system/hub/_services/claude_bridge/state.json
 /system/hub/_services/claude_bridge/bridge_memory.md
 /system/hub/_services/claude_bridge/last_start*.txt
+/system/hub/_services/recurring/state.json
 
 # === BACH CHAT RUNTIME (User-spezifisch) ===
 /system/data/system_prompt_buddha.txt
@@ -120,6 +121,7 @@ __pycache__/
 .Python
 .cache/
 *.log
+*.bak-*
 nul
 .DS_Store
 Thumbs.db

@@ -1018,6 +1018,62 @@ class TestReport:
 # ═══════════════════════════════════════════════════════════════
 
 
+    def test_scan_gui_uses_report_filters_for_runtime_copy(self, handler):
+        gui_dir = handler.base_path / "gui"
+        gui_dir.mkdir(parents=True, exist_ok=True)
+        gui_js = gui_dir / "static" / "js"
+        gui_js.mkdir(parents=True, exist_ok=True)
+
+        (gui_js / "noise-filter.js").write_text(
+            "\n".join(
+                [
+                    "const statusText = document.getElementById('status-text');",
+                    "const apiUrl = '/api/status';",
+                    "console.error('[BACH] Dashboard-Fehler:', error);",
+                    "showToast('Bitte speichern', 'error');",
+                    "const fallback = task.category || 'Allgemein';",
+                    "container.innerHTML = '<p class=\"loading\">Fehler beim Laden</p>';",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (gui_dir / "server.py").write_text(
+            "\n".join(
+                [
+                    '"""Konfiguration der automatischen Dokumenten-Sortierung"""',
+                    'SQL = """UPDATE workflow_tuev SET last_tuev_date = ?"""',
+                    'def fail():',
+                    '    return (False, "Fehler beim Starten")',
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        ok, _ = handler.handle("scan", ["--namespace", "gui"], dry_run=False)
+        assert ok is True
+
+        conn = sqlite3.connect(str(handler.db_path))
+        rows = conn.execute(
+            """
+            SELECT value
+            FROM languages_translations
+            WHERE namespace = 'gui' AND language = 'de'
+            ORDER BY value
+            """
+        ).fetchall()
+        conn.close()
+
+        values = {row[0] for row in rows}
+        assert values == {
+            "Allgemein",
+            "Bitte speichern",
+            "Fehler beim Starten",
+            "Fehler beim Laden",
+        }
+
+
 class TestExtractGermanStrings:
     def test_extracts_print(self, handler, tmp_path):
         f = tmp_path / "test.py"

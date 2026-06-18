@@ -34,7 +34,7 @@ Sinnvolle Suchphrasen sind `local-first LLM operating system`, `text-based OS fo
 - **113+ Handler** - CLI- und API-Abdeckung für Systemfunktionen
 - **550+ Tools** - Umfangreiche Tool-Bibliothek für Dateiverarbeitung, Analyse und Automation
 - **1870+ Skills** - Wiederverwendbare Workflows und Templates
-- **59 Workflow-Vorlagen** - Vorgefertigte Prozess-Workflows
+- **71 Workflow-Vorlagen** - Vorgefertigte Prozess-Workflows
 - **Agent Doctor** - `bach agent doctor [name] [--json]` prüft Claude CLI, Laufzeitverzeichnisse, SKILL.md und veraltete PID-Dateien vor dem Start
 - **Agent-Operator-Steuerung** - `bach agent pause/resume/checkpoint/steer/clear-steer [name] [--json]` erlaubt kooperative Pauseanforderungen und Operator-Hinweise vor dem Start oder während des Laufs, ergänzt explizite Checkpoint-Bestätigungen, spiegelt den Zustand in `OPERATOR_NOTES.md`, erhält vorgemerkte Hinweise über den nächsten `bach agent start` hinweg, injiziert sie in die generierte Session-`CLAUDE.md` und zeigt den Vorstart- und Kontrollzustand maschinenlesbar über `queued_for_next_start` plus verschachteltes `operator_control`
 - **Scheduler Doctor** - `bach scheduler doctor [--json]` sowie `bach scheduler session doctor [--json]` prüfen Automations-Skripte, PID-Status, DB-/Config-/Profil-Flächen und schlagen Recovery-Schritte vor
@@ -104,9 +104,9 @@ Chain-Schritte als LLM-Prompts mit `bach://` URL-Auflösung für dynamische Kont
 
 ## OpenClaw-Abgleich
 
-Stand 2026-06-13: Das OpenClaw-Repository markiert weiterhin `2026.6.6`, veröffentlicht am 2026-06-12, als aktuelle Stable-Linie auf GitHub; das neueste sichtbare Prerelease im offiziellen Release-Feed ist jetzt `2026.6.7-beta.1`, veröffentlicht am 2026-06-13 um 09:42 UTC. Für BACH sind daraus vor allem engere Zustellungsketten in Channel-Flows, härtere Auth-/Kontext-Grenzen, robustere Recovery-Pfade für Agent, Memory, Codex, Cron und Update sowie klarere Doctor-/Update-Fortschrittsanzeigen und belastbarere QA-/Release-Evidenz relevant.
+Stand 2026-06-16: Das OpenClaw-Repository markiert `2026.6.8`, veröffentlicht am 2026-06-16 um 16:32, als aktuelle Stable-Linie auf GitHub; das neueste sichtbare Prerelease im offiziellen Release-Feed ist `2026.6.8-beta.2`, veröffentlicht am 2026-06-16 um 01:50 UTC. Für BACH sind daraus vor allem robustere Zustellung über Kanäle, stärkere Recovery-Pfade in Agentenläufen, sichereres Provider-/Modellrouting mit SecretRef-naher Auth-Logik, explizite Opt-in-Defaults für Websuche sowie ruhigere UI-/Session-Recovery relevant. Quellen: [openclaw/openclaw releases](https://github.com/openclaw/openclaw/releases), [openclaw/releases](https://github.com/openclaw/releases).
 
-Auf BACH-Seite bleibt der saubere GUI-i18n-Stand vom 2026-06-12 mit 17.593 exportierten Übersetzungen und 0 offenen GUI-Einträgen bestehen; der Daily-Care-Lauf vom 2026-06-13 hat den Fokus stattdessen auf Workflow-Abdeckung gelegt. Eine neue gemeinsame Datei `skills/workflows/SOFTWARE.md` hängt die Software-Usecases 41 bis 49 jetzt an eine reale Workflow-Datei statt an den manuellen Fallback, und `wiki-author.md` verweist wieder auf das aktuelle `wiki/`-Layout sowie `hub/_services/wiki/`. Verifiziert wurden dazu `bach usecase run 41 --dry-run`, `bach usecase run-all --dry-run` und eine gezielte `test_tuev_handler.py`-Regression (`1 passed`); der Dry-Run-Überblick steigt damit von 15 workflowgebundenen und 35 manuellen Usecases auf 24 zu 26. Nächste Schritte bleiben tieferes Active-Run-Steering in langlaufenden Scheduler-Innenschleifen, Installer-End-to-End- und GUI-Regressionsabdeckung sowie die verbleibenden manuellen Workflow-Lücken wie `reflection_status` und die größeren Domänenkategorien.
+Auf BACH-Seite bleibt der saubere GUI-i18n-Stand vom 2026-06-12 mit 17.593 exportierten Übersetzungen und 0 offenen GUI-Einträgen bestehen; der Daily-Care-Lauf vom 2026-06-17 schließt jetzt die restliche Workflow-Frontdoor für Usecases. Zusätzlich zu `skills/workflows/software.md` gibt es nun eigene Workflow-Dateien für `assistent`, `care-modul`, `datenmodul`, `dokumentenmodul`, `finanzen`, `gesundheit`, `haushalt`, `karriere`, `reflection-status`, `selbstmanagement`, `therapie` und `wissen`. Verifiziert wurden `bach usecase run 50 --dry-run`, eine gezielte `test_tuev_handler.py`-Regression (`2 passed`), der vollständige `test-agent`-Steuerzyklus sowie `bach --startup quick --mode=silent --partner=codex`, das jetzt in rund 58 Sekunden sauber durchläuft. Ein direkter Resolver-Check sieht damit alle 50 Usecases an reale Workflow-Dateien gebunden und 0 verbleibende manuelle Fallbacks. Nächste Schritte bleiben tieferes Active-Run-Steering in langlaufenden Scheduler-Innenschleifen, Installer-End-to-End-, GUI-Regressions- sowie die breiteren T01/T02-Retestspuren.
 
 ## Dokumentation
 
@@ -115,7 +115,7 @@ Auf BACH-Seite bleibt der saubere GUI-i18n-Stand vom 2026-06-12 mit 17.593 expor
 - **[Benutzerhandbuch](BACH_USER_MANUAL.md)** - Vollständiges Handbuch
 - **[Skills-Katalog](SKILLS.de.md)** - Öffentlicher Einstieg in verfügbare Skills
 - **[Agenten-Katalog](AGENTS.template.de.md)** - Vorlage und öffentlicher Einstieg für Agenten und Experten
-- **[Workflows](WORKFLOWS.template.de.md)** - 59 Workflow-Vorlagen
+- **[Workflows](WORKFLOWS.template.de.md)** - 71 Workflow-Vorlagen
 - **[SKILL-Vorlage](SKILL.template.de.md)** - LLM-Betriebsanweisungen für Claude, Gemini, Ollama und Codex-artige Agenten
 
 ## Lizenz

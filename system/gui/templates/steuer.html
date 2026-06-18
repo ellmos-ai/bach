@@ -238,7 +238,7 @@
 
         <!-- Tab Navigation -->
         <div class="tab-nav">
-            <button class="tab-btn active" onclick="showTab('uebersicht')">Uebersicht</button>
+            <button class="tab-btn active" onclick="showTab('uebersicht')">Übersicht</button>
             <button class="tab-btn" onclick="showTab('belege')">🧾 Belege</button>
             <button class="tab-btn" onclick="showTab('kategorien')">📁 Kategorien</button>
             <button class="tab-btn" onclick="showTab('anbieter')">🏪 Anbieter</button>
@@ -266,7 +266,7 @@
 
             <!-- Zusammenfassung -->
             <div class="card" style="margin-top: 1.5rem;">
-                <h2>📊 Jahresuebersicht</h2>
+                <h2>📊 Jahresübersicht</h2>
                 <table class="summary-table" id="summary-table">
                     <thead>
                         <tr>
@@ -290,7 +290,7 @@
                 <h2>Beleg erfassen</h2>
                 <div class="upload-zone" onclick="document.getElementById('beleg-upload').click()">
                     <div class="icon">📄</div>
-                    <p>Beleg hier ablegen oder klicken zum Auswaehlen</p>
+                    <p>Beleg hier ablegen oder klicken zum Auswählen</p>
                     <p style="font-size: 0.85rem; color: var(--text-muted);">PDF, JPG, PNG</p>
                 </div>
                 <input type="file" id="beleg-upload" style="display:none" accept=".pdf,.jpg,.jpeg,.png"
@@ -348,10 +348,10 @@
             <div class="card">
                 <h2>🏪 Verbundene Anbieter</h2>
                 <p style="color: var(--text-muted); margin-bottom: 1rem;">
-                    Automatischer Import von Kontoauszuegen und Rechnungen.
+                    Automatischer Import von Kontoauszügen und Rechnungen.
                 </p>
                 <div class="action-buttons" style="margin-bottom: 1rem;">
-                    <button class="btn btn-primary" onclick="addAnbieter()">+ Anbieter hinzufuegen</button>
+                    <button class="btn btn-primary" onclick="addAnbieter()">+ Anbieter hinzufügen</button>
                     <button class="btn btn-secondary" onclick="syncAnbieter()">🔄 Alle synchronisieren</button>
                 </div>
                 <div class="beleg-list" id="anbieter-list">
@@ -402,7 +402,7 @@
 
             document.querySelectorAll('.tab-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.textContent.toLowerCase().includes(tabName) ||
-                    (tabName === 'uebersicht' && btn.textContent === 'Uebersicht'));
+                    (tabName === 'uebersicht' && (btn.textContent === 'Uebersicht' || btn.textContent === 'Übersicht')));
             });
 
             document.querySelectorAll('.tab-content').forEach(content => {
@@ -509,7 +509,7 @@
         }
 
         function addAnbieter() {
-            alert('Anbieter hinzufuegen ist noch nicht implementiert.\n\nSiehe: bach --help anbieter');
+            alert('Anbieter hinzufügen ist noch nicht implementiert.\n\nSiehe: bach --help anbieter');
         }
 
         function uploadBeleg(input) {

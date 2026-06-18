@@ -25,6 +25,7 @@ import sys
 import os
 import signal
 import subprocess
+import importlib.util
 import json
 import sqlite3
 import time
@@ -340,6 +341,33 @@ class SchedulerHandler(BaseHandler):
             "details": details,
         }
 
+    def _check_scheduler_runtime_dependencies(self) -> dict:
+        """Prueft optionale Runtime-Abhaengigkeiten fuer Windows-/GUI-Komfortfunktionen."""
+        details = {
+            "platform": sys.platform,
+            "module": "psutil",
+            "install_hint": "pip install -r requirements.txt",
+        }
+        if importlib.util.find_spec("psutil") is not None:
+            return {
+                "name": "runtime_dependencies",
+                "status": "ok",
+                "message": "Runtime-Abhaengigkeit psutil ist verfuegbar.",
+                "details": details,
+            }
+
+        if sys.platform == "win32":
+            message = "Python-Modul psutil fehlt; OneDrive-Pause und einzelne GUI-/Systeminfos sind eingeschraenkt."
+        else:
+            message = "Python-Modul psutil fehlt; einzelne GUI-/Systeminfos sind eingeschraenkt."
+
+        return {
+            "name": "runtime_dependencies",
+            "status": "warn",
+            "message": message,
+            "details": details,
+        }
+
     def _scheduler_doctor_payload(self) -> dict:
         """Erstellt einen strukturierten Preflight-Report fuer den GUI-Scheduler."""
         running_pid = self._get_daemon_pid()
@@ -348,6 +376,7 @@ class SchedulerHandler(BaseHandler):
             self._check_runtime_dir("data_dir", self.data_dir, "Scheduler-Datenverzeichnis"),
             self._check_runtime_dir("log_dir", self.log_dir, "Scheduler-Logverzeichnis"),
             self._check_pid_state("runtime_state", self.pid_file, running_pid, "Scheduler-Service"),
+            self._check_scheduler_runtime_dependencies(),
             self._check_scheduler_db(),
         ]
 
@@ -393,11 +422,14 @@ class SchedulerHandler(BaseHandler):
             next_steps.append("Mit `bach scheduler logs 50` die letzte Fehlerspur lesen und betroffene Jobs gezielt neu starten.")
 
         runtime_check = next((check for check in checks if check["name"] == "runtime_state"), None)
+        runtime_dependency_check = next((check for check in checks if check["name"] == "runtime_dependencies"), None)
         if runtime_check and runtime_check["message"].startswith("Scheduler-Service läuft"):
             next_steps.append("Mit `bach scheduler status --json` den Live-Status prüfen oder den Dienst gezielt stoppen.")
         elif summary["can_start"]:
             next_steps.append("Mit `bach scheduler start --bg` einen sicheren Hintergrundstart testen.")
             next_steps.append("Danach `bach scheduler status --json` zur Verifikation ausführen.")
+        if runtime_dependency_check and runtime_dependency_check["status"] == "warn":
+            next_steps.append("Mit `pip install -r requirements.txt` oder `pip install psutil` die fehlende Runtime-Abhaengigkeit nachinstallieren.")
 
         if not next_steps:
             next_steps.append("Keine Aktion nötig. Der Scheduler-Preflight ist bereits grün.")

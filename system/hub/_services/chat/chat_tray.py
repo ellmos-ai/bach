@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import threading
+from pathlib import Path
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if hasattr(sys.stdout, 'reconfigure'):
@@ -52,17 +53,20 @@ DEFAULT_PROMPTS = {
     },
 }
 
+PROMPTBOARD_LIBRARY_ENV = "BACH_PROMPTBOARD_LIBRARY"
+PROMPTBOARD_APP_ENV = "BACH_PROMPTBOARD_APP"
+
 
 class BACHTray:
 
     POLL_INTERVAL = 5
     IDLE_THRESHOLD = 12  # 12 × 5s = 60s ohne Sessions → Idle-Arbeit starten
 
-    def __init__(self, host="127.0.0.1", port=8081):
+    def __init__(self, host="127.0.0.1", port=8081, webchat_port=8080):
         self.host = host
         self.base_url = f"http://{host}:{port}"
         self.gui_url = f"http://{host}:8000"
-        self.webchat_url = f"http://{host}:8081"
+        self.webchat_url = f"http://{host}:{webchat_port}"
         self.ollama_url = f"http://{host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
         self.state = {
@@ -90,6 +94,7 @@ class BACHTray:
         self.idle_task_name = None
         self.idle_processing = False
 
+        self.prompt_source = "defaults"
         self.prompts = self._load_prompts()
 
     # --- API ---
@@ -137,15 +142,150 @@ class BACHTray:
 
     # --- PromptBoard ---
 
+    def _promptboard_project_dir(self):
+        user_profile = os.environ.get("USERPROFILE")
+        if not user_profile:
+            return None
+        project_dir = (
+            Path(user_profile)
+            / "OneDrive"
+            / ".TOPICS"
+            / ".SOFTWARE"
+            / "LLM"
+            / "REL-PUB_PromptBoard"
+        )
+        return project_dir if project_dir.exists() else None
+
+    def _promptboard_library_candidates(self):
+        candidates = []
+        env_path = os.environ.get(PROMPTBOARD_LIBRARY_ENV)
+        if env_path:
+            candidates.append(Path(env_path).expanduser())
+
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            candidates.append(Path(appdata) / "PromptBoard" / "library.json")
+
+        candidates.append(Path.home() / ".promptboard" / "library.json")
+
+        project_dir = self._promptboard_project_dir()
+        if project_dir:
+            candidates.extend([
+                project_dir / "library.json",
+                project_dir / "data" / "library.json",
+            ])
+
+        return candidates
+
+    def _promptboard_app_candidates(self):
+        candidates = []
+        env_path = os.environ.get(PROMPTBOARD_APP_ENV)
+        if env_path:
+            candidates.append(Path(env_path).expanduser())
+
+        project_dir = self._promptboard_project_dir()
+        if project_dir:
+            dist_dir = project_dir / "dist"
+            if dist_dir.exists():
+                candidates.extend(
+                    sorted(
+                        dist_dir.glob("PromptBoard-*-win64.exe"),
+                        key=lambda p: p.stat().st_mtime,
+                        reverse=True,
+                    )
+                )
+            candidates.extend([
+                project_dir / "start.bat",
+                project_dir / "releases" / "PromptBoard.msix",
+            ])
+        return candidates
+
+    def _promptboard_app_path(self):
+        for candidate in self._promptboard_app_candidates():
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _coerce_prompt_mapping(self, payload):
+        if not isinstance(payload, dict):
+            return {}
+
+        # BACH tray native format: {"Kategorie": {"Name": "Prompt"}}
+        native = {}
+        for category, prompts in payload.items():
+            if not isinstance(prompts, dict):
+                continue
+            clean_prompts = {
+                str(name): str(text)
+                for name, text in prompts.items()
+                if str(name).strip() and str(text).strip()
+            }
+            if clean_prompts:
+                native[str(category) or "Prompts"] = clean_prompts
+        if native:
+            return native
+
+        # PromptBoard library.json format: {"items": [{name, content, category, item_type}]}
+        items = payload.get("items")
+        if not isinstance(items, list):
+            return {}
+
+        imported = {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            content = str(item.get("content") or "").strip()
+            if not name or not content:
+                continue
+            category = str(item.get("category") or item.get("item_type") or "PromptBoard").strip()
+            imported.setdefault(category or "PromptBoard", {})[name] = content
+        return imported
+
+    def _read_prompt_file(self, path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return self._coerce_prompt_mapping(json.load(f))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return {}
+
     def _load_prompts(self):
         config_dir = os.path.expanduser("~/.config/bach")
-        prompts_path = os.path.join(config_dir, "prompts.json")
-        try:
-            with open(prompts_path, encoding="utf-8") as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
+        prompts_path = Path(config_dir) / "prompts.json"
+        prompts = self._read_prompt_file(prompts_path)
+        if prompts:
+            self.prompt_source = str(prompts_path)
+            return prompts
+
+        for candidate in self._promptboard_library_candidates():
+            prompts = self._read_prompt_file(candidate)
+            if prompts:
+                self.prompt_source = str(candidate)
+                return prompts
+        self.prompt_source = "defaults"
         return DEFAULT_PROMPTS
+
+    def promptboard_smoke_snapshot(self):
+        app_path = self._promptboard_app_path()
+        library_candidates = []
+        for candidate in self._promptboard_library_candidates():
+            library_candidates.append({
+                "path": str(candidate),
+                "exists": candidate.exists(),
+            })
+
+        prompt_count = sum(len(prompts) for prompts in self.prompts.values())
+        return {
+            "app_path": str(app_path) if app_path else None,
+            "app_found": app_path is not None,
+            "library_candidates": library_candidates,
+            "library_found": any(item["exists"] for item in library_candidates),
+            "menu_has_open_app": app_path is not None,
+            "prompt_source": self.prompt_source,
+            "using_default_prompts": self.prompt_source == "defaults",
+            "prompt_categories": list(self.prompts.keys()),
+            "prompt_count": prompt_count,
+        }
 
     def _copy_to_clipboard(self, text):
         try:
@@ -395,6 +535,10 @@ class BACHTray:
 
         # ── PromptBoard ──
         prompt_items = []
+        app_path = self._promptboard_app_path()
+        if app_path:
+            prompt_items.append(pystray.MenuItem("PromptBoard App öffnen", self._open_promptboard))
+            prompt_items.append(pystray.Menu.SEPARATOR)
         for category, prompts in self.prompts.items():
             cat_items = []
             for name, text in prompts.items():
@@ -515,6 +659,26 @@ class BACHTray:
         import webbrowser
         webbrowser.open(self.webchat_url)
 
+    def _open_promptboard(self, *_):
+        app_path = self._promptboard_app_path()
+        if not app_path:
+            if self.icon:
+                self.icon.notify("PromptBoard-App nicht gefunden", "BACH PromptBoard")
+            return
+        try:
+            if sys.platform == "win32" and app_path.suffix.lower() in {".bat", ".msix"}:
+                os.startfile(str(app_path))
+            else:
+                subprocess.Popen(
+                    [str(app_path)],
+                    cwd=str(app_path.parent),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        except OSError:
+            if self.icon:
+                self.icon.notify("PromptBoard-Start fehlgeschlagen", "BACH PromptBoard")
+
     def _open_telegram(self, *_):
         import webbrowser
         webbrowser.open(self.telegram_url)
@@ -562,9 +726,18 @@ def main():
     parser = argparse.ArgumentParser(description="BACH Unified System Tray")
     parser.add_argument("--host", default="127.0.0.1", help="Control API Host")
     parser.add_argument("--port", type=int, default=8081, help="Control API Port")
+    parser.add_argument("--webchat-port", type=int, default=8080, help="Webchat Port")
+    parser.add_argument(
+        "--smoke-promptboard",
+        action="store_true",
+        help="Print PromptBoard tray detection smoke data and exit",
+    )
     args = parser.parse_args()
 
-    tray = BACHTray(host=args.host, port=args.port)
+    tray = BACHTray(host=args.host, port=args.port, webchat_port=args.webchat_port)
+    if args.smoke_promptboard:
+        print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
+        return
     tray.run()
 
 

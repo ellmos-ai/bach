@@ -2,8 +2,8 @@
 
 **Version:** 2.0.0
 **Erstellt:** 2026-01-24
-**Aktualisiert:** 2026-01-24
-**Service:** skills/_services/wiki/
+**Aktualisiert:** 2026-06-13
+**Service:** hub/_services/wiki/
 **Recurring:** wiki_author (21 Tage)
 
 ---
@@ -83,13 +83,13 @@ Frage dich:
 
 ```bash
 # Wiki-Index lesen
-cat skills/wiki/_index.txt
+cat wiki/_index.txt
 
 # Relevante Artikel suchen
-grep -l "[keyword]" skills/wiki/*.txt
+grep -l "[keyword]" wiki/*.txt
 
 # Unterordner pruefen (falls Agent-spezifisch)
-ls skills/wiki/[agent-domain]/
+ls wiki/[agent-domain]/
 ```
 
 Dokumentiere:
@@ -168,12 +168,12 @@ Kernaussagen:
 
 **Einzelartikel (allgemein):**
 ```
-skills/wiki/[thema].txt
+wiki/[thema].txt
 ```
 
 **Agenten/Experten-Wissensordner (umfangreich):**
 ```
-skills/wiki/[domain]/
+wiki/[domain]/
 ├── _index.txt
 ├── grundlagen.txt
 └── [thema].txt
@@ -186,7 +186,7 @@ Entscheidung:
 
 #### 5.2 Format beachten
 
-Lies: `skills/wiki/wiki_konventionen.txt`
+Lies: `wiki/wiki_konventionen.txt`
 
 Standard-Format mit Validierungsmetadaten:
 ```
@@ -219,13 +219,13 @@ QUELLEN
 
 SIEHE AUCH
 ----------
-skills/wiki/verwandt.txt    Beschreibung
+wiki/verwandt.txt    Beschreibung
 ```
 
 #### 5.3 Index aktualisieren
 
-Bei Einzelartikel: `skills/wiki/_index.txt` aktualisieren
-Bei Unterordner: Sowohl Haupt-Index als auch `skills/wiki/[domain]/_index.txt`
+Bei Einzelartikel: `wiki/_index.txt` aktualisieren
+Bei Unterordner: Sowohl Haupt-Index als auch `wiki/[domain]/_index.txt`
 
 ---
 
@@ -248,7 +248,7 @@ Speichern unter: `logs/wiki_author/REPORT_YYYY-MM-DD_[agent].md`
 1. **Artikel auswaehlen**
    ```bash
    # Artikel mit aeltester Validierung finden
-   grep -l "Zuletzt validiert:" skills/wiki/*.txt | xargs grep "Zuletzt validiert"
+   grep -l "Zuletzt validiert:" wiki/*.txt | xargs grep "Zuletzt validiert"
    ```
 
 2. **Aktualitaet pruefen**
@@ -313,7 +313,7 @@ Erkennt veraltete oder fehlerhafte Informationen.
 1. **Artikel zufaellig auswaehlen**
    ```bash
    # Zufaelliger Artikel
-   ls skills/wiki/*.txt | shuf | head -1
+   ls wiki/*.txt | shuf | head -1
    ```
 
 2. **Fakten extrahieren**
@@ -385,7 +385,7 @@ Erkennt veraltete oder fehlerhafte Informationen.
 [ ] Agent/Experte ausgewaehlt
 [ ] SKILL.md des Agenten gelesen
 [ ] Wissensbedarfe identifiziert
-[ ] skills/wiki/_index.txt geprueft
+[ ] wiki/_index.txt geprueft
 [ ] Unterordner-Bedarf geprueft
 [ ] Luecken dokumentiert
 [ ] Ein Thema gewaehlt
@@ -440,7 +440,7 @@ Bei jedem Recurring-Durchlauf (21 Tage):
 
 ## Siehe auch
 
-- `skills/_services/wiki/SKILL.md` - Service-Beschreibung
-- `skills/wiki/wiki_konventionen.txt` - Format-Regeln
-- `skills/wiki/_index.txt` - Wiki-Verzeichnis
+- `hub/_services/wiki/SKILL.md` - Service-Beschreibung
+- `wiki/wiki_konventionen.txt` - Format-Regeln
+- `wiki/_index.txt` - Wiki-Verzeichnis
 - `skills/workflows/help-forensic.md` - Help-Forensik Workflow

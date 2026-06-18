@@ -625,6 +625,54 @@ class TestWorkflowCandidates:
         assert resolved is None
         assert len(checked) > 0
 
+    def test_resolve_uppercase_category_to_lowercase_workflow_file(self, usecase, tmp_tuev):
+        system_dir, db_path, _ = tmp_tuev
+        workflow_dir = system_dir / "skills" / "workflows"
+        workflow_dir.mkdir(parents=True, exist_ok=True)
+        workflow_file = workflow_dir / "software.md"
+        workflow_file.write_text("# SOFTWARE", encoding="utf-8")
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO usecases (title, workflow_name, test_input, expected_output, created_by) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("Software-Fallback", "SOFTWARE", "{}", "{}", "user"),
+        )
+        conn.commit()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM usecases WHERE workflow_name = 'SOFTWARE'"
+        ).fetchone()
+        resolved, checked = usecase._resolve_workflow_path(row, conn)
+        conn.close()
+
+        assert resolved == workflow_file
+        assert workflow_file in checked
+
+    def test_resolve_snake_case_category_to_kebab_case_workflow_file(self, usecase, tmp_tuev):
+        system_dir, db_path, _ = tmp_tuev
+        workflow_dir = system_dir / "skills" / "workflows"
+        workflow_dir.mkdir(parents=True, exist_ok=True)
+        workflow_file = workflow_dir / "reflection-status.md"
+        workflow_file.write_text("# Reflection Status", encoding="utf-8")
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO usecases (title, workflow_name, test_input, expected_output, created_by) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("Reflection-Fallback", "reflection_status", "{}", "{}", "user"),
+        )
+        conn.commit()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM usecases WHERE workflow_name = 'reflection_status'"
+        ).fetchone()
+        resolved, checked = usecase._resolve_workflow_path(row, conn)
+        conn.close()
+
+        assert resolved == workflow_file
+        assert workflow_file in checked
+
     def test_candidates_generates_variants(self, seeded_usecase, tmp_tuev):
         _, db_path, _ = tmp_tuev
         conn = sqlite3.connect(str(db_path))

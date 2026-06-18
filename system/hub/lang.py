@@ -892,6 +892,12 @@ DATENBANK: bach.db / languages_config, languages_translations, languages_diction
             found_strings[namespace] = set()
             for target in targets:
                 for file_path in self._iter_scan_files(target):
+                    if namespace == "gui":
+                        found_strings[namespace].update(
+                            item["text"]
+                            for item in self._extract_detail_records_for_file(file_path, namespace)
+                        )
+                        continue
                     found_strings[namespace].update(self._extract_strings_for_file(file_path))
         return found_strings
 

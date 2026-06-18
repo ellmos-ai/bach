@@ -90120,6 +90120,16 @@
     "updated_at": "2026-05-17T07:11:17.069268"
   },
   {
+    "key": "10_dateien_bearbeiten_5_000_tokens",
+    "namespace": "gui",
+    "language": "de",
+    "value": "10 Dateien bearbeiten (~5.000 Tokens)",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "abbrechen",
     "namespace": "gui",
     "language": "de",
@@ -90138,6 +90148,16 @@
     "source": "manual",
     "created_at": "2026-06-03T18:58:08.451721",
     "updated_at": "2026-06-03T18:58:08.451721"
+  },
+  {
+    "key": "abgleich_l_uft",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Abgleich läuft...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "active_jobs_status",
@@ -90258,6 +90278,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "aktion_ausw_hlen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Aktion auswählen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.239271",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "aktive_klienten_auftr_ge",
@@ -91010,6 +91040,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "alias_name_im_user_ordner",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Alias (Name im user/ Ordner)",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.241269",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "alle_30_minuten_status_pr_fen",
     "namespace": "gui",
     "language": "de",
@@ -91470,6 +91510,36 @@
     "updated_at": "2026-06-06T18:58:33.843209"
   },
   {
+    "key": "anbieter_hinzuf_gen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "+ Anbieter hinzufügen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:06:59.585994",
+    "updated_at": "2026-06-12 17:06:59"
+  },
+  {
+    "key": "anbieter_hinzufuegen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "+ Anbieter hinzufuegen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.241269",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "anmerkungen_zur_pr_fung",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Anmerkungen zur Prüfung...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:06:59.586996",
+    "updated_at": "2026-06-12 17:06:59"
+  },
+  {
     "key": "args_callback_funktion_event_type_f",
     "namespace": "gui",
     "language": "de",
@@ -91528,6 +91598,36 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "aufgabe_bearbeiten",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Aufgabe bearbeiten",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "aufgaben_an_spezialisierte_agenten_bergeben",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Aufgaben an spezialisierte Agenten übergeben",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:06:59.583995",
+    "updated_at": "2026-06-12 17:06:59"
+  },
+  {
+    "key": "ausf_hrungen_heute",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Ausführungen heute",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.247270",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "bach_daemon_service_v1_0",
@@ -91648,6 +91748,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "bach_datei_management",
+    "namespace": "gui",
+    "language": "de",
+    "value": "BACH - Datei-Management",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "bach_fehler_beim_speichern_von_financial_data_js",
@@ -92090,6 +92200,36 @@
     "updated_at": "2026-06-05T19:35:33.637028"
   },
   {
+    "key": "bearbeitet_nur_claude_zugewiesene_tasks_stoppt_na",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Bearbeitet nur Claude zugewiesene Tasks. Stoppt nach 15 Minuten und erstellt Session-Zusammenfassung.",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.242267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "begriffe_zur_blacklist_hinzuf_gen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Begriffe zur Blacklist hinzufügen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.240267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "beleg_hier_ablegen_oder_klicken_zum_ausw_hlen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Beleg hier ablegen oder klicken zum Auswählen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:06:59.584994",
+    "updated_at": "2026-06-12 17:06:59"
+  },
+  {
     "key": "berechnet_md5_hash_f_r_change_detection",
     "namespace": "gui",
     "language": "de",
@@ -92150,6 +92290,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "berf_llig",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Überfällig",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "bersicht",
     "namespace": "gui",
     "language": "de",
@@ -92158,6 +92308,16 @@
     "source": "manual",
     "created_at": "2026-06-06T18:58:57.239616",
     "updated_at": "2026-06-06T18:58:57.239616"
+  },
+  {
+    "key": "bersprungen_nicht_testbar",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Übersprungen - Nicht testbar",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:06:59.585994",
+    "updated_at": "2026-06-12 17:06:59"
   },
   {
     "key": "bestimmt_den_bach_relevanten_dateityp",
@@ -92218,6 +92378,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "buddha_chat_ffnen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Buddha Chat öffnen →",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "callback_f_r_datei_nderungen_sendet_websocket_br",
@@ -92338,6 +92508,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "camt_053_datei_ausw_hlen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "CAMT.053 Datei auswählen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "chain_bearbeiten",
@@ -92630,6 +92810,56 @@
     "updated_at": "2026-06-05T19:36:29.064471"
   },
   {
+    "key": "datei_lesen_200_tokens",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Datei lesen (~200 Tokens)",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.241269",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "datei_management",
+    "namespace": "gui",
+    "language": "de",
+    "value": "📂 Datei-Management",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "datei_review",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Datei Review",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "datei_review_sortierung",
+    "namespace": "gui",
+    "language": "de",
+    "value": "📄 Datei Review & Sortierung",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "datei_upload",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Datei Upload",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "datei_upload_f_r_quarant_ne",
     "namespace": "gui",
     "language": "de",
@@ -92638,6 +92868,26 @@
     "source": "manual",
     "created_at": "2026-06-06T18:58:50.180569",
     "updated_at": "2026-06-06T18:58:50.180569"
+  },
+  {
+    "key": "dateien",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Dateien",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "dateien_gesamt",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Dateien gesamt",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "dateiname",
@@ -92900,6 +93150,16 @@
     "updated_at": "2026-05-17T07:11:17.069268"
   },
   {
+    "key": "der_ordnername_in_incoming_quarantine",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Der Ordnername in _incoming_quarantine",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.241269",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "details",
     "namespace": "gui",
     "language": "de",
@@ -92980,6 +93240,36 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "details_zur_aufgabe",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Details zur Aufgabe...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "dev_mode_details",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Dev Mode Details...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "diese_belege_sind_hochgeladen_aber_noch_keinem_po",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Diese Belege sind hochgeladen, aber noch keinem Posten zugeordnet.",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "durchsuchen",
     "namespace": "gui",
     "language": "de",
@@ -93048,6 +93338,36 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "e_mail_details",
+    "namespace": "gui",
+    "language": "de",
+    "value": "E-Mail Details",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.247270",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "e_mail_konto_hinzuf_gen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "E-Mail Konto hinzufügen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.240267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "einstellungen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Einstellungen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "einstellungen_laden",
@@ -94320,6 +94640,26 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "erstellt_von",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Erstellt von",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "erweiterte_verwaltung_chains_history_cron_edito",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Erweiterte Verwaltung (Chains, History, Cron-Editor) &rarr;",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "exportiert_db_tabelle_zu_txt_datei",
     "namespace": "gui",
     "language": "de",
@@ -95060,6 +95400,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "filter_dateitypen_kommasepariert",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Filter (Dateitypen, kommasepariert)",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.240267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "fin_001_versicherung_loeschen",
     "namespace": "gui",
     "language": "de",
@@ -95358,6 +95708,36 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "g_ltigkeit_tage",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Gültigkeit (Tage)",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:06:59.585994",
+    "updated_at": "2026-06-12 17:06:59"
+  },
+  {
+    "key": "gesch_tzte_dauer_minuten",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Geschätzte Dauer (Minuten)",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.242267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "gewicht_blutdruck_schlaf_und_weitere_metriken_er",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Gewicht, Blutdruck, Schlaf und weitere Metriken erfassen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.243267",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "gibt_den_aktuellen_session_status_zur_ck",
@@ -95958,6 +96338,26 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "heute_f_llig",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Heute fällig",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.243267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "hinzuf_gen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "+ Hinzufügen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "hinzufuegen",
@@ -96820,6 +97220,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "info_ordner_mapping",
+    "namespace": "gui",
+    "language": "de",
+    "value": "ℹ️ Info: Ordner-Mapping",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "insert_into_ati_tasks_tool_name_task_text_aufwa",
     "namespace": "gui",
     "language": "de",
@@ -97240,6 +97650,36 @@
     "updated_at": "2026-05-17T07:11:17.069268"
   },
   {
+    "key": "j_hrlich",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Jährlich",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.240267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "jahres_bersicht",
+    "namespace": "gui",
+    "language": "de",
+    "value": "📊 Jahresübersicht",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:06:59.584994",
+    "updated_at": "2026-06-12 17:06:59"
+  },
+  {
+    "key": "jahresuebersicht",
+    "namespace": "gui",
+    "language": "de",
+    "value": "📊 Jahresuebersicht",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "kein_template_geladen",
     "namespace": "gui",
     "language": "de",
@@ -97300,6 +97740,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "keine_datei_ausgew_hlt",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Keine Datei ausgewählt",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "keine_daten_geladen",
     "namespace": "gui",
     "language": "de",
@@ -97340,6 +97790,16 @@
     "updated_at": "2026-06-05T19:36:31.878695"
   },
   {
+    "key": "klienten_id_ordnername",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Klienten-ID / Ordnername",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.243267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "klienten_k_rzel_intern",
     "namespace": "gui",
     "language": "de",
@@ -97348,6 +97808,26 @@
     "source": "manual",
     "created_at": "2026-06-06T18:58:43.446109",
     "updated_at": "2026-06-06T18:58:43.446109"
+  },
+  {
+    "key": "konfiguration_der_automatischen_dokumenten_sortier",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Konfiguration der automatischen Dokumenten-Sortierung (inbox_config.json)",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "konfiguration_speichern",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Konfiguration speichern",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "kontakt_loeschen_soft_delete",
@@ -97420,6 +97900,26 @@
     "updated_at": "2026-06-06T18:59:18.228796"
   },
   {
+    "key": "kosten_berwachung_modell_vergleich",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Kostenüberwachung & Modell-Vergleich",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "l_dt",
+    "namespace": "gui",
+    "language": "de",
+    "value": "lädt...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "l_dt_die_aktuelle_inbox_konfiguration",
     "namespace": "gui",
     "language": "de",
@@ -97478,6 +97978,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "l_schen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Löschen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "l_scht_einen_task_in_bach_db",
@@ -97548,6 +98058,16 @@
     "source": "manual",
     "created_at": "2026-06-06T18:58:36.732449",
     "updated_at": "2026-06-06T18:58:36.732449"
+  },
+  {
+    "key": "lade_log_dateien",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Lade Log-Dateien...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.242267",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "liefert_aktuellen_daemon_status",
@@ -99050,6 +99570,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "logs_durchsuchen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Logs durchsuchen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "mail_001_alle_mail_profile_laden",
     "namespace": "gui",
     "language": "de",
@@ -99480,6 +100010,26 @@
     "updated_at": "2026-05-17T07:11:17.069268"
   },
   {
+    "key": "mit_dateisystem_synchronisieren",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Mit Dateisystem synchronisieren",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.242267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "modell_f_r_kalkulation",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Modell für Kalkulation",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "montag_08_00_status_report",
     "namespace": "gui",
     "language": "de",
@@ -99488,6 +100038,26 @@
     "source": "manual",
     "created_at": "2026-06-06T18:59:10.219768",
     "updated_at": "2026-06-06T18:59:10.219768"
+  },
+  {
+    "key": "n_chste_schritte",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Nächste Schritte",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:06:59.586996",
+    "updated_at": "2026-06-12 17:06:59"
+  },
+  {
+    "key": "n_chster_lauf",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Nächster Lauf",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "name_ist_erforderlich",
@@ -99518,6 +100088,76 @@
     "source": "manual",
     "created_at": "2026-06-03T18:58:07.381371",
     "updated_at": "2026-06-03T18:58:07.381371"
+  },
+  {
+    "key": "neue_lesson_hinzuf_gen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Neue Lesson hinzufügen...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:06:59.584994",
+    "updated_at": "2026-06-12 17:06:59"
+  },
+  {
+    "key": "neue_lesson_hinzufuegen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Neue Lesson hinzufuegen...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.247270",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "neuen_eintrag_hinzuf_gen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Neuen Eintrag hinzufügen...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:06:59.584994",
+    "updated_at": "2026-06-12 17:06:59"
+  },
+  {
+    "key": "neuen_eintrag_hinzufuegen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Neuen Eintrag hinzufuegen...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "neuen_ordner_anbinden",
+    "namespace": "gui",
+    "language": "de",
+    "value": "➕ Neuen Ordner anbinden",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "neuer_dateiname",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Neuer Dateiname...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.242267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "notiz_reminder_oder_aufgabe_f_r_mich",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Notiz, Reminder oder Aufgabe für mich...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.242267",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "ok_job_erfolgreich_ausgefuehrt",
@@ -99578,6 +100218,56 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "optionale_details",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Optionale Details",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.240267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "optionen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Optionen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.242267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "ordner",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Ordner",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "ordner_bearbeiten",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Ordner bearbeiten",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "ordner_flattening",
+    "namespace": "gui",
+    "language": "de",
+    "value": "ordner-flattening",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "parst_beleg_txt_datei_erwartetes",
@@ -99768,6 +100458,26 @@
     "source": "manual",
     "created_at": "2026-06-06T18:58:03.212850",
     "updated_at": "2026-06-06T18:58:03.212850"
+  },
+  {
+    "key": "pers_nliche_und_automatisierte_routinen_verwalten",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Persönliche und automatisierte Routinen verwalten",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.247270",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "pers_nlicher_assistent",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Persönlicher Assistent",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.241269",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "pid_exists_status",
@@ -100070,6 +100780,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "priorit_t",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Priorität",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "profil_speichern",
     "namespace": "gui",
     "language": "de",
@@ -100210,6 +100930,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "quarant_ne_anonymisierung",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Quarantäne / Anonymisierung",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "quellcode_speichern",
     "namespace": "gui",
     "language": "de",
@@ -100218,6 +100948,46 @@
     "source": "manual",
     "created_at": "2026-06-06T18:58:13.712392",
     "updated_at": "2026-06-06T18:58:13.712392"
+  },
+  {
+    "key": "raw_api_status",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Raw API Status",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "regel_bearbeiten",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Regel bearbeiten",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.241269",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "regel_hinzuf_gen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "+ Regel hinzufügen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "regel_hinzufuegen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "+ Regel hinzufuegen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "ruft_status_der_bericht_pipeline_ab",
@@ -100378,6 +101148,16 @@
     "source": "manual",
     "created_at": "2026-06-05T19:35:56.172062",
     "updated_at": "2026-06-05T19:35:56.172062"
+  },
+  {
+    "key": "schaltet_loesch_optionen_frei",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Schaltet Loesch-Optionen frei",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "scheduler_bersicht",
@@ -101050,6 +101830,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "session_einstellungen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Session-Einstellungen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.243267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "setzt_onedrive_sync_fort_windows_retur",
     "namespace": "gui",
     "language": "de",
@@ -101368,6 +102158,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "stand_l_dt",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Stand: lädt...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "standard_konfiguration",
@@ -101750,6 +102550,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "status_ordner",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Status & Ordner",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "stelle_eine_frage_oder_gib_einen_befehl_buddha_ha",
     "namespace": "gui",
     "language": "de",
@@ -101758,6 +102568,36 @@
     "source": "manual",
     "created_at": "2026-06-06T18:59:01.056399",
     "updated_at": "2026-06-06T18:59:01.056399"
+  },
+  {
+    "key": "steuerung_ffnen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Steuerung öffnen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "suchen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Suchen...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "suchen_nach_name_organisation",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Suchen nach Name, Organisation...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "sucht_die_zugehoerige_md_oder_txt_datei_fuer_ein",
@@ -102000,6 +102840,16 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "sync_einstellungen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Sync-Einstellungen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "synchronisiert_eine_txt_datei_zur_datenbank",
     "namespace": "gui",
     "language": "de",
@@ -102138,6 +102988,36 @@
     "source": "manual",
     "created_at": "2026-06-05T19:35:52.329087",
     "updated_at": "2026-06-05T19:35:52.329087"
+  },
+  {
+    "key": "t_glich",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Täglich",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.243267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "t_v_best_tigen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "TÜV bestätigen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:06:59.584994",
+    "updated_at": "2026-06-12 17:06:59"
+  },
+  {
+    "key": "t_v_dashboard",
+    "namespace": "gui",
+    "language": "de",
+    "value": "TÜV Dashboard",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "t_v_f_r_einen_workflow_durchf_hren",
@@ -102290,6 +103170,16 @@
     "updated_at": "2026-06-03T18:58:08.477617"
   },
   {
+    "key": "tool_details",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Tool Details",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.241269",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "tool_details_abrufen",
     "namespace": "gui",
     "language": "de",
@@ -102348,6 +103238,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "tool_suchen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Tool suchen...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "tools_bersicht_seite",
@@ -102470,6 +103370,26 @@
     "updated_at": "2026-05-17T06:40:24.434869"
   },
   {
+    "key": "tuv_bestaetigen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "TUV bestaetigen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "uebersicht",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Uebersicht",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.240267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "uebersicht_nach_kategorien",
     "namespace": "gui",
     "language": "de",
@@ -102528,6 +103448,16 @@
     "source": "google_auto",
     "created_at": "2026-05-17T06:40:24.434869",
     "updated_at": "2026-05-17T06:40:24.434869"
+  },
+  {
+    "key": "unverkn_pfte_belege",
+    "namespace": "gui",
+    "language": "de",
+    "value": "🔗 Unverknüpfte Belege",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.242267",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "update_credits_set_name_purpo",
@@ -102730,6 +103660,26 @@
     "updated_at": "2026-06-05T19:36:38.385636"
   },
   {
+    "key": "verf_gbare_berichte",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Verfügbare Berichte",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "verfuegbare_seiten",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Verfuegbare Seiten",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
     "key": "verkn_pft_einen_posten_mit_einem_dokument",
     "namespace": "gui",
     "language": "de",
@@ -102848,6 +103798,66 @@
     "source": "google_auto",
     "created_at": "2026-05-17T07:11:17.069268",
     "updated_at": "2026-05-17T07:11:17.069268"
+  },
+  {
+    "key": "vorschau_wird_geladen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Vorschau wird geladen...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.242267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "w_chentlich",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Wöchentlich",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "w_hle_ein_thema_aus_der_liste",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Wähle ein Thema aus der Liste",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.242267",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "w_hle_eine_aktion",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Wähle eine Aktion",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.246272",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "w_hle_einen_task_aus_der_liste",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Wähle einen Task aus der Liste",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.244275",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "w_hlen_sie_einen_partner_oben_aus_um_zu_beginnen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Wählen Sie einen Partner oben aus, um zu beginnen...",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.245268",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "waehlt_eine_sinnvolle_hauptdatei_aus_einem_verzeic",
@@ -102978,6 +103988,26 @@
     "source": "manual",
     "created_at": "2026-06-06T18:59:16.126205",
     "updated_at": "2026-06-06T18:59:16.126205"
+  },
+  {
+    "key": "wie_weit_zur_ck_sollen_e_mails_durchsucht_werden",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Wie weit zurück sollen E-Mails durchsucht werden? (7-365 Tage)",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.241269",
+    "updated_at": "2026-06-12 17:02:42"
+  },
+  {
+    "key": "wiki_thema_ausw_hlen",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Wiki-Thema auswählen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.247270",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "workflow_inhalt_anzeigen",
@@ -103178,6 +104208,26 @@
     "source": "google_auto",
     "created_at": "2026-05-17T07:11:17.069268",
     "updated_at": "2026-05-17T07:11:17.069268"
+  },
+  {
+    "key": "workflows_auf_vollst_ndigkeit_und_g_ltigkeit_pr_fe",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Workflows auf Vollständigkeit und Gültigkeit prüfen",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:06:59.585994",
+    "updated_at": "2026-06-12 17:06:59"
+  },
+  {
+    "key": "zentrale_steuerung_der_bach_system_integrit_t",
+    "namespace": "gui",
+    "language": "de",
+    "value": "Zentrale Steuerung der BACH System-Integrität.",
+    "is_verified": 0,
+    "source": "auto_detected",
+    "created_at": "2026-06-12T19:02:42.247270",
+    "updated_at": "2026-06-12 17:02:42"
   },
   {
     "key": "zielordner",

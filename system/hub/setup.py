@@ -16,6 +16,7 @@ bach setup full-install      Vollstaendige BACH-Installation in einem Durchlauf
 Teil von PEANUT Release: MCP-Server aus Repo entfernt, stattdessen via npm installieren.
 B37: Optionale MCP-Server (n8n-manager-mcp) separat installierbar.
 """
+import importlib.util
 import json
 import re
 import sqlite3
@@ -332,7 +333,14 @@ class SetupHandler(BaseHandler):
             checks.append("[!!] bach.db fehlt")
             all_ok = False
 
-        # 5. Optionale MCP-Server (nur Info, kein Fehler wenn nicht installiert)
+        # 5. Python-Runtime
+        if importlib.util.find_spec("psutil") is not None:
+            checks.append("[OK] Python-Modul psutil verfuegbar")
+        else:
+            checks.append("[!!] Python-Modul psutil fehlt (Scheduler-/GUI-Runtime unvollstaendig; pip install -r requirements.txt)")
+            all_ok = False
+
+        # 6. Optionale MCP-Server (nur Info, kein Fehler wenn nicht installiert)
         for pkg, info in self.OPTIONAL_MCP_PACKAGES.items():
             installed = self._is_npm_package_installed(pkg)
             if installed:
@@ -340,7 +348,7 @@ class SetupHandler(BaseHandler):
             else:
                 checks.append(f"[--] {pkg} nicht installiert (optional, bach setup n8n)")
 
-        # 6. USER.md
+        # 7. USER.md
         user_md = self.base_path.parent / "USER.md"
         if user_md.exists():
             content = user_md.read_text(encoding="utf-8")

@@ -41,7 +41,7 @@ Useful search phrases include `ellmos-ai/bach`, `local-first LLM operating syste
 - **113+ Handlers** - Full CLI and API coverage of all system functions
 - **550+ Tools** - Extensive tool library for file processing, analysis, and automation
 - **1870+ Skills** - Reusable workflows and templates
-- **59 Workflow Templates** - Pre-built process workflows
+- **71 Workflow Templates** - Pre-built process workflows
 - **4400+ Tests** - Comprehensive automated coverage across handlers, services, GUI, and MCP servers
 - **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System (6 memory types)
 - **Agent CLI** - `bach agent start/stop/list` for direct agent control
@@ -167,7 +167,7 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 - **[User Manual](BACH_USER_MANUAL.md)** - Complete handbook
 - **[Skills Catalog](SKILLS.template.md)** - Template and public entry point for available skills
 - **[Agents Catalog](AGENTS.template.md)** - Template and public entry point for agents and experts
-- **[Workflows](WORKFLOWS.template.md)** - 59 workflow templates
+- **[Workflows](WORKFLOWS.template.md)** - 71 workflow templates
 - **[SKILL template](SKILL.template.md)** - LLM operating instructions template for Claude, Gemini, Ollama, and Codex-style agents
 
 ## See Also: OpenClaw
@@ -177,7 +177,7 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 | | **BACH** | **OpenClaw** |
 |---|---|---|
 | **Focus** | LLM Operating System -- deep autonomy, structured memory, multi-agent orchestration | Personal AI Assistant -- broad messaging gateway, voice, companion apps |
-| **Tools/Skills** | 550+ tools, 1870+ skills, 59 workflows (local, curated) | Community-driven skill/plugin ecosystem; recent releases emphasize manifest-first plugin metadata and install safety |
+| **Tools/Skills** | 550+ tools, 1870+ skills, 71 workflows (local, curated) | Community-driven skill/plugin ecosystem; recent releases emphasize manifest-first plugin metadata and install safety |
 | **Memory** | 6 memory types with decay, conflict detection, consolidation (210+ DB tables) | Session/runtime workspace with bootstrap files such as `AGENTS.md`, `TOOLS.md`, `USER.md`, and related context files |
 | **Agents** | Boss-Expert orchestration (11 boss agents + 22 experts), SharedMemory Bus | Agent runtime with multi-session/channel operation |
 | **Messaging** | Telegram, Email, WhatsApp (Bridge System) | 20+ platforms (WhatsApp, Telegram, Slack, Discord, Signal, Teams, Matrix...) |
@@ -190,9 +190,9 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 
 ### Competitive Watch
 
-As of 2026-06-13, the OpenClaw repository still marks `2026.6.6` as the latest stable release on GitHub, published on June 12, 2026, while the newest visible prerelease on the official release feed is now `2026.6.7-beta.1`, published on June 13, 2026 at 09:42. The most relevant new beta signals for BACH are tighter channel delivery, safer auth/context boundaries, stronger recovery across agent, memory, Codex, cron, and update paths, clearer doctor/update progress reporting, and more trustworthy QA/release evidence.
+As of 2026-06-16, the OpenClaw repository marks `2026.6.8`, published on June 16, 2026 at 16:32, as the latest stable release on GitHub, while the newest visible prerelease on the official release feed is `2026.6.8-beta.2`, published on June 16, 2026 at 01:50. The most relevant new signals for BACH are richer channel delivery, stronger recovery across agent runs, safer provider/model routing with SecretRef-style auth handling, explicit opt-in web-search defaults, and calmer UI/session recovery paths. Sources: [openclaw/openclaw releases](https://github.com/openclaw/openclaw/releases), [openclaw/releases](https://github.com/openclaw/releases).
 
-On the BACH side, the clean GUI i18n state from 2026-06-12 remains intact at 17,593 exported translations with 0 missing GUI entries, and the 2026-06-13 care pass shifted to workflow coverage: a shared `skills/workflows/SOFTWARE.md` now links software usecases 41-49 to a real workflow file instead of manual fallback, while `wiki-author.md` was updated to the current `wiki/` and `hub/_services/wiki/` paths. Verification re-ran `bach usecase run 41 --dry-run`, `bach usecase run-all --dry-run`, and a focused `test_tuev_handler.py` regression (`1 passed`), which moved the dry-run overview from 15 workflow-backed / 35 manual usecases to 24 / 26. Next high-leverage steps remain deeper active-run steering inside long-running scheduler internals, installer end-to-end coverage, GUI regression coverage, and closing the remaining manual workflow gaps such as `reflection_status` and the larger domain buckets.
+On the BACH side, the clean GUI i18n state from 2026-06-12 remains intact at 17,593 exported translations with 0 missing GUI entries, and the 2026-06-17 care pass closes the remaining workflow-frontdoor gap for usecases. Beyond the shared `skills/workflows/software.md`, BACH now ships dedicated workflow files for `assistent`, `care-modul`, `datenmodul`, `dokumentenmodul`, `finanzen`, `gesundheit`, `haushalt`, `karriere`, `reflection-status`, `selbstmanagement`, `therapie`, and `wissen`. Verification re-ran `bach usecase run 50 --dry-run`, a focused `test_tuev_handler.py` resolver slice (`2 passed`), the full `test-agent` control cycle, and `bach --startup quick --mode=silent --partner=codex`, which now completes successfully in about 58 seconds. A direct resolver check now sees all 50 usecases bound to real workflow files and 0 remaining manual fallbacks. Next high-leverage steps remain deeper active-run steering inside long-running scheduler internals, installer end-to-end coverage, GUI regression coverage, and the broader T01/T02 retest lanes.
 
 ## License
 

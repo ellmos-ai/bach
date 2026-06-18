@@ -152,6 +152,10 @@ VERFUEGBARE ARTIKEL
                            - Biopsychosoziales Modell
                            - d-Codes (Aktivitaeten, Partizipation)
                            - Foerderplaner-Integration
+  teacch.txt               TEACCH-Methode (Autismus-Förderung)
+                           - Structured Teaching und visuelle Struktur
+                           - Aufgabenklarheit, Übergänge, Selbstständigkeit
+                           - Förderplaner-Integration
 
   BACH VORGAENGER
   ---------------
@@ -223,7 +227,6 @@ GEPLANTE ARTIKEL
   psd2.txt       EU-Zahlungsdienste-Richtlinie
   skr04.txt      Kontenrahmen SKR04
   mcp.txt        Model Context Protocol
-  teacch.txt     TEACCH-Methode (Autismus-Foerderung)
   pecs.txt       PECS (Picture Exchange Communication)
 
 
@@ -231,7 +234,6 @@ GEPLANTE ARTIKEL
                            - Resource-basierte Architektur
                            - Tool-Validierung & Sicherheit
                            - Integration & Architektur Patterns
-  teacch.txt     TEACCH-Methode (Autismus-Foerderung)
   pecs.txt       PECS (Picture Exchange Communication)
 
 VERWENDUNG

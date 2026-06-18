@@ -57,6 +57,7 @@ SKILLS_DIR = SERVICES_DIR.parent
 BACH_DIR = SKILLS_DIR.parent
 
 CONFIG_FILE = RECURRING_DIR / "config.json"
+STATE_FILE = RECURRING_DIR / "state.json"
 DATA_DIR = BACH_DIR / "data"
 USER_DB = DATA_DIR / "bach.db"
 BACH_DB = DATA_DIR / "bach.db"
@@ -80,6 +81,33 @@ def save_config(config: Dict):
     """Speichert Konfiguration."""
     CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding='utf-8')
+
+
+def load_state() -> Dict:
+    """Laedt lokalen recurring Runtime-State."""
+    if STATE_FILE.exists():
+        try:
+            return json.loads(STATE_FILE.read_text(encoding='utf-8'))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"last_runs": {}}
+
+
+def save_state(state: Dict):
+    """Speichert lokalen recurring Runtime-State."""
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STATE_FILE.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding='utf-8')
+
+
+def _last_run_for(task_id: str, task_config: Dict, state: Dict) -> str | None:
+    last_runs = state.get("last_runs", {})
+    return last_runs.get(task_id) or task_config.get('last_run')
+
+
+def _set_last_run(task_id: str, when: datetime):
+    state = load_state()
+    state.setdefault("last_runs", {})[task_id] = when.isoformat()
+    save_state(state)
 
 # ============ TASK CREATION ============
 
@@ -154,6 +182,7 @@ def check_recurring_tasks() -> List[str]:
     """
     config = load_config()
     recurring = config.get('recurring_tasks', {})
+    state = load_state()
 
     if not recurring:
         return []
@@ -166,7 +195,7 @@ def check_recurring_tasks() -> List[str]:
             continue
 
         # Pruefen ob faellig
-        last_run_str = task_config.get('last_run')
+        last_run_str = _last_run_for(task_id, task_config, state)
         interval_days = task_config.get('interval_days', 7)
 
         if last_run_str:
@@ -199,12 +228,10 @@ def check_recurring_tasks() -> List[str]:
         if result == -1:
             print(f"  [SKIP] Task existiert bereits: {task_text[:40]}")
             # Bestehender offener Task gilt als bereits eingeplanter Lauf.
-            config['recurring_tasks'][task_id]['last_run'] = now.isoformat()
-            save_config(config)
+            _set_last_run(task_id, now)
         elif result > 0:
             # last_run aktualisieren
-            config['recurring_tasks'][task_id]['last_run'] = now.isoformat()
-            save_config(config)
+            _set_last_run(task_id, now)
             created.append(task_text)
             print(f"  [+] Recurring Task erstellt: {task_text[:50]}")
         # result == 0 bedeutet Fehler (bereits geloggt)
@@ -215,12 +242,13 @@ def list_recurring_tasks() -> Dict[str, Dict]:
     """Listet alle konfigurierten recurring Tasks."""
     config = load_config()
     recurring = config.get('recurring_tasks', {})
+    state = load_state()
 
     result = {}
     now = datetime.now()
 
     for task_id, task_config in recurring.items():
-        last_run_str = task_config.get('last_run')
+        last_run_str = _last_run_for(task_id, task_config, state)
         interval_days = task_config.get('interval_days', 7)
 
         if last_run_str:
@@ -280,8 +308,7 @@ def trigger_recurring_task(task_id: str) -> bool:
         )
 
     if result > 0:
-        config['recurring_tasks'][task_id]['last_run'] = datetime.now().isoformat()
-        save_config(config)
+        _set_last_run(task_id, datetime.now())
         print(f"[+] Recurring Task ausgeloest: {task_text[:50]}")
         return True
     elif result == -1:
@@ -304,8 +331,7 @@ def mark_recurring_done(task_id: str) -> bool:
         print(f"[ERROR] Recurring Task nicht gefunden: {task_id}")
         return False
 
-    config['recurring_tasks'][task_id]['last_run'] = datetime.now().isoformat()
-    save_config(config)
+    _set_last_run(task_id, datetime.now())
     print(f"[OK] Recurring Task '{task_id}' als erledigt markiert")
     return True
 
