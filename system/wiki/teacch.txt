@@ -1,0 +1,134 @@
+# Portabilität: UNIVERSAL
+# Zuletzt validiert: 2026-06-13 (Codex/BACH wiki-author)
+# Nächste Prüfung: 2027-06-13
+# Quellen: https://teacch.com/about-us/, https://teacch.com/trainings/, https://dataresearch.ndis.gov.au/research-and-evaluation/early-interventions-and-high-volume-cohorts/evidence-review-early-interventions-children-autism/teacch-interventions, https://www.ncbi.nlm.nih.gov/books/NBK159891/
+
+TEACCH-METHODE
+==============
+
+Stand: 2026-06-13
+
+WAS IST TEACCH?
+---------------
+TEACCH ist ein autismusspezifischer Förderansatz, der auf strukturiertem
+Lernen und einer bewussten Anpassung von Umgebung, Aufgaben und Kommunikation
+aufbaut. Der Name geht historisch auf "Treatment and Education of Autistic and
+related Communication-handicapped Children" zurück. Heute steht TEACCH vor
+allem für das TEACCH Autism Program der University of North Carolina und den
+daraus hervorgegangenen Ansatz des Structured Teaching.
+
+Kernidee: Nicht die Person soll sich zuerst an eine unklare Lernumgebung
+anpassen, sondern die Lernumgebung wird so gestaltet, dass Erwartungen,
+Abläufe und Materialien verständlich, vorhersehbar und möglichst selbstständig
+nutzbar werden.
+
+GRUNDPRINZIPIEN
+---------------
+  - Struktur statt Unklarheit: Räume, Abläufe und Materialien werden so
+    organisiert, dass sie ohne viele mündliche Zusatzhinweise verständlich
+    bleiben.
+  - Visualisierung statt bloß verbaler Steuerung: Pläne, Symbole,
+    Schrittfolgen und Markierungen machen Anforderungen sichtbar.
+  - Individualisierung statt Schema F: Die Unterstützung wird an Stärken,
+    Interessen, sensorische Bedürfnisse und Belastungen angepasst.
+  - Selbstständigkeit als Ziel: TEACCH soll nicht nur Verhalten lenken,
+    sondern unabhängigeres Arbeiten und bessere Orientierung ermöglichen.
+  - Zusammenarbeit mit Bezugspersonen: Schule, Therapie, Familie und weitere
+    Fachpersonen profitieren davon, ähnliche Strukturprinzipien zu nutzen.
+
+DIE VIER KERNELEMENTE DES STRUCTURED TEACHING
+---------------------------------------------
+Nach der NDIS-/Autism-CRC-Übersicht werden in TEACCH besonders vier Bausteine
+betont:
+
+  1. Physische Struktur
+     Der Raum wird so gegliedert, dass Arbeitsplätze, Ruhebereiche, Material
+     und Übergänge klar unterscheidbar sind.
+
+  2. Visuelle Zeitpläne
+     Tages- oder Ablaufpläne machen sichtbar, was als Nächstes passiert und
+     reduzieren Unsicherheit bei Übergängen.
+
+  3. Work Systems
+     Die Aufgabe beantwortet möglichst klar: Was ist zu tun? Wie lange? Woran
+     erkenne ich, dass ich fertig bin? Was kommt danach?
+
+  4. Visuelle Struktur
+     Materialien und Aufgaben werden optisch so aufbereitet, dass Reihenfolge,
+     Fokus und Ziel leichter erkennbar sind.
+
+EINSATZGEBIETE
+--------------
+TEACCH wird vor allem in Schule, Frühförderung, Therapie, Zuhause und teils
+auch in Arbeits- oder Trainingskontexten genutzt. Das offizielle UNC-Programm
+arbeitet ausdrücklich über die gesamte Lebensspanne hinweg.
+
+Typische Einsatzsituationen:
+  - Aufgabenverständnis bei wenig sprachlicher Steuerung
+  - Übergänge zwischen Aktivitäten
+  - Aufbau von Routinen in Selbstversorgung und Alltag
+  - Strukturierung von Lern- und Arbeitsphasen
+  - Visuelle Unterstützung von Kommunikation und Selbstorganisation
+
+STÄRKEN
+-------
+  - schafft Vorhersehbarkeit und senkt Anforderungschaos
+  - nutzt visuelle Orientierung gezielt als Ressource
+  - ist alltagsnah und in Schule, Zuhause und Einrichtung umsetzbar
+  - unterstützt Selbstständigkeit statt dauernder 1:1-Anleitung
+  - lässt sich mit anderen Förder- und Kommunikationsansätzen kombinieren
+
+GRENZEN UND WICHTIGE EINORDNUNG
+-------------------------------
+TEACCH ist kein einzelnes starres Manual und keine Garantie für bestimmte
+Outcomes. Die Qualität hängt stark davon ab, wie gut Ziele, Material,
+Umgebung und Kommunikationsform auf die konkrete Person abgestimmt sind.
+
+Wichtig ist auch die evidenzbezogene Einordnung: Der Ansatz ist international
+verbreitet und professionell etabliert, die Forschungslage wird in
+Übersichtsarbeiten aber eher als begrenzt bis gemischt beschrieben. Die
+Meta-Analyse von 2013 fand überwiegend kleine Effekte in mehreren
+Entwicklungsbereichen, größere Zugewinne eher bei sozialem Verhalten und
+herausforderndem Verhalten, bei insgesamt kleiner Studienbasis. Die
+NDIS-/Autism-CRC-Übersicht von 2024 beschreibt TEACCH als etablierten Ansatz
+des Structured Teaching, zeigt für die systematische Evidenzlage aber nur
+begrenzte bzw. gemischte Befunde für einzelne Outcomes.
+
+ANWENDUNG IN BACH (FÖRDERPLANER)
+--------------------------------
+Für den Experten `foerderplaner` ist TEACCH besonders dann relevant, wenn
+Förderziele stark von Strukturierung, Vorhersehbarkeit, Aufgabenklarheit,
+Übergängen oder visueller Unterstützung abhängen.
+
+Typische BACH-nahe Anwendungsbeispiele:
+  - visuelle Schrittfolgen für Anziehen, Hygiene oder Arbeitsroutinen
+  - klar markierte Arbeitsplätze und Materialboxen
+  - Erst-dann-Pläne, Tagespläne und Übergangshilfen
+  - visuell strukturierte Einzelaufgaben mit klarem Ende
+  - Kombination mit Kommunikationshilfen wie Bildkarten oder PECS
+
+Für Förderberichte ist TEACCH daher weniger als starres Label nützlich,
+sondern als Methodenkategorie mit klar beschreibbaren Strukturmaßnahmen.
+
+QUELLEN
+-------
+  [1] https://teacch.com/about-us/
+      Offizielle Beschreibung des UNC TEACCH Autism Program, Ursprung und
+      organisatorischer Rahmen.
+
+  [2] https://teacch.com/trainings/
+      Offizielle Informationen zu Training, Zertifizierung und aktueller
+      Verwendung des Begriffs TEACCH.
+
+  [3] https://dataresearch.ndis.gov.au/research-and-evaluation/early-interventions-and-high-volume-cohorts/evidence-review-early-interventions-children-autism/teacch-interventions
+      Überblick zu Structured Teaching, Kernelementen und evidenzbezogener
+      Zusammenfassung.
+
+  [4] https://www.ncbi.nlm.nih.gov/books/NBK159891/
+      Abstract der Meta-Analyse zu TEACCH-Interventionsstudien (2013).
+
+SIEHE AUCH
+----------
+  wiki/paedagogik/README.txt              Pädagogische Grundlagen
+  wiki/psychologie/schulpsychologie/README.txt  Schulbezogener Förderkontext
+  system/agents/_experts/foerderplaner/SKILL.md  BACH-Experte Förderplaner
