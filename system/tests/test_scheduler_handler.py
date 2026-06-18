@@ -1288,3 +1288,21 @@ class TestConnectionLeaks:
             except Exception:
                 closed = True
             assert closed, "Connection not closed after _list_jobs"
+
+
+class TestSchedulerDoctorRuntimeDependencies:
+    def test_scheduler_doctor_warns_when_psutil_missing_on_windows(self, sched_env):
+        h = sched_env["handler"]
+        with patch("hub.scheduler.sys.platform", "win32"), \
+             patch("hub.scheduler.importlib.util.find_spec", return_value=None), \
+             patch.object(h, "_get_daemon_pid", return_value=0):
+            payload = h._scheduler_doctor_payload()
+
+        checks = {check["name"]: check for check in payload["checks"]}
+
+        assert checks["runtime_dependencies"]["status"] == "warn"
+        assert "psutil fehlt" in checks["runtime_dependencies"]["message"]
+        assert payload["summary"]["overall_status"] == "warn"
+        assert payload["summary"]["ready"] is True
+        assert payload["summary"]["can_start"] is True
+        assert any("pip install psutil" in step for step in payload["next_steps"])

@@ -840,6 +840,12 @@ HILFE:
 # MAIN
 # ═══════════════════════════════════════════════════════════════
 
+# Guard: ProSync-atexit-Hook nur EINMAL pro Prozess registrieren
+# (verhindert Mehrfach-Registrierung bei wiederholtem main()-Aufruf,
+#  z.B. in Chain-/Bot-Sessions im selben Python-Prozess)
+_exit_sync_registered = False
+
+
 def main():
     """Haupteinstiegspunkt."""
     # Windows-Konsolen-Encoding
@@ -866,16 +872,19 @@ def main():
             if not json_requested:
                 print(f"[ProSync] Start-Fehler: {e}")
 
-        import atexit
-        def _exit_sync():
-            try:
-                from hub.db_sync import DBSyncManager
-                ok, msg = DBSyncManager().sync_on_exit()
-                if not json_requested:
-                    print(f"[ProSync] {msg}")
-            except Exception:
-                pass
-        atexit.register(_exit_sync)
+        global _exit_sync_registered
+        if not _exit_sync_registered:
+            import atexit
+            def _exit_sync():
+                try:
+                    from hub.db_sync import DBSyncManager
+                    ok, msg = DBSyncManager().sync_on_exit()
+                    if not json_requested:
+                        print(f"[ProSync] {msg}")
+                except Exception:
+                    pass
+            atexit.register(_exit_sync)
+            _exit_sync_registered = True
 
     # Keine Argumente oder Help
     if len(sys.argv) < 2 or sys.argv[1] in ['-h', '--help', 'help']:

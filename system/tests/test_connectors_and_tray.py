@@ -3,6 +3,7 @@
 """Tests for BACH Connectors (base, telegram, signal, discord, whatsapp, HA) and Chat Tray."""
 
 import json
+import os
 import socket
 import sys
 import threading
@@ -726,6 +727,115 @@ class TestBACHTray:
         assert tray.state["mode"] == "safe"
         assert tray.state["connected"] is False
         assert tray.state["think"] is True
+
+    def test_loads_promptboard_library_from_env(self, tmp_path):
+        library = tmp_path / "library.json"
+        library.write_text(
+            json.dumps({
+                "items": [{
+                    "id": "p1",
+                    "item_type": "PROMPT",
+                    "name": "Review Prompt",
+                    "content": "Bitte prüfe diesen Text.",
+                    "category": "Review",
+                }]
+            }),
+            encoding="utf-8",
+        )
+
+        with patch.dict('sys.modules', {
+            'pystray': MagicMock(),
+            'PIL': MagicMock(),
+            'PIL.Image': MagicMock(),
+            'PIL.ImageDraw': MagicMock(),
+            'PIL.ImageFont': MagicMock(),
+        }), patch.dict(os.environ, {"BACH_PROMPTBOARD_LIBRARY": str(library)}, clear=False):
+            from hub._services.chat.chat_tray import BACHTray
+            tray = BACHTray(host="testhost", port=9999)
+
+        assert tray.prompts["Review"]["Review Prompt"] == "Bitte prüfe diesen Text."
+        assert tray.prompt_source == str(library)
+
+    def test_loads_promptboard_library_from_home_default(self, tmp_path):
+        data_dir = tmp_path / ".promptboard"
+        data_dir.mkdir()
+        library = data_dir / "library.json"
+        library.write_text(
+            json.dumps({
+                "items": [{
+                    "name": "Home Prompt",
+                    "content": "Aus dem PromptBoard-Standardpfad.",
+                    "category": "Local",
+                }]
+            }),
+            encoding="utf-8",
+        )
+
+        with patch.dict('sys.modules', {
+            'pystray': MagicMock(),
+            'PIL': MagicMock(),
+            'PIL.Image': MagicMock(),
+            'PIL.ImageDraw': MagicMock(),
+            'PIL.ImageFont': MagicMock(),
+        }), patch("hub._services.chat.chat_tray.Path.home", return_value=tmp_path):
+            from hub._services.chat.chat_tray import BACHTray
+            tray = BACHTray(host="testhost", port=9999)
+
+        assert tray.prompts["Local"]["Home Prompt"] == "Aus dem PromptBoard-Standardpfad."
+        assert tray.prompt_source == str(library)
+
+    def test_promptboard_app_path_from_env(self, tmp_path):
+        app_path = tmp_path / "PromptBoard.exe"
+        app_path.write_text("", encoding="utf-8")
+
+        with patch.dict('sys.modules', {
+            'pystray': MagicMock(),
+            'PIL': MagicMock(),
+            'PIL.Image': MagicMock(),
+            'PIL.ImageDraw': MagicMock(),
+            'PIL.ImageFont': MagicMock(),
+        }), patch.dict(os.environ, {"BACH_PROMPTBOARD_APP": str(app_path)}, clear=False):
+            from hub._services.chat.chat_tray import BACHTray
+            tray = BACHTray(host="testhost", port=9999)
+            assert tray._promptboard_app_path() == app_path
+
+    def test_promptboard_smoke_snapshot_reports_app_menu(self, tmp_path):
+        app_path = tmp_path / "PromptBoard.exe"
+        app_path.write_text("", encoding="utf-8")
+        library = tmp_path / "library.json"
+        library.write_text(
+            json.dumps({
+                "items": [{
+                    "name": "Smoke Prompt",
+                    "content": "Bitte teste PromptBoard.",
+                    "category": "Smoke",
+                }]
+            }),
+            encoding="utf-8",
+        )
+
+        with patch.dict('sys.modules', {
+            'pystray': MagicMock(),
+            'PIL': MagicMock(),
+            'PIL.Image': MagicMock(),
+            'PIL.ImageDraw': MagicMock(),
+            'PIL.ImageFont': MagicMock(),
+        }), patch.dict(os.environ, {
+            "BACH_PROMPTBOARD_APP": str(app_path),
+            "BACH_PROMPTBOARD_LIBRARY": str(library),
+        }, clear=False):
+            from hub._services.chat.chat_tray import BACHTray
+            tray = BACHTray(host="testhost", port=9999)
+            snapshot = tray.promptboard_smoke_snapshot()
+
+        assert snapshot["app_path"] == str(app_path)
+        assert snapshot["app_found"] is True
+        assert snapshot["menu_has_open_app"] is True
+        assert snapshot["library_found"] is True
+        assert snapshot["prompt_source"] == str(library)
+        assert snapshot["using_default_prompts"] is False
+        assert snapshot["prompt_categories"] == ["Smoke"]
+        assert snapshot["prompt_count"] == 1
 
     def test_refresh_updates_state(self, tray):
         tray._api = MagicMock(side_effect=[

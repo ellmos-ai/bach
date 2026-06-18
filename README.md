@@ -1,18 +1,14 @@
-<p>
-  <img src="logo_bach_text.jpg" alt="BACH logo" width="400" align="left">
-  <img src="ellmos-logo.jpg" alt="ellmos logo" width="200" align="right">
-</p>
-<br clear="both">
+<img src="assets/banner_v2.png" width="100%" alt="BACH Banner">
 
-# ellmos BACH - Text-Based Operating System for LLMs
+# ellmos BACH — Text-Based Operating System for LLMs
 
-*The stream that unites everything.*
+> The stream that unites everything.
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-v3.12.4--earth-orange)
-![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)
-![Tests](https://img.shields.io/badge/Tests-4436%20collected-blue)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-v3.12.4--earth-orange)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)](ROADMAP.md)
+[![Tests](https://img.shields.io/badge/Tests-4436%20collected-blue)](system/tests/)
 
 **Version:** v3.12.4-earth
 
@@ -20,7 +16,7 @@
 
 BACH is documented and shipped with translation surfaces for six languages:
 
-[English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
+**🇬🇧 English** | [🇩🇪 Deutsch](README.de.md) | [🇪🇸 Español](README.es.md) | [🇷🇺 Русский](README.ru.md) | [🇯🇵 日本語](README.ja.md) | [🇨🇳 中文](README.zh.md)
 
 The current release snapshot enables `de`, `en`, `es`, `ru`, `ja`, and `zh` in `system/exports/translations/languages_config.release.json` and exports matching locale files in `system/exports/translations/locales/`. For crawlers and direct language entry points, each language also has its own `README.md` under `docs/i18n/<lang>/`.
 
@@ -45,7 +41,7 @@ Useful search phrases include `ellmos-ai/bach`, `local-first LLM operating syste
 - **113+ Handlers** - Full CLI and API coverage of all system functions
 - **550+ Tools** - Extensive tool library for file processing, analysis, and automation
 - **1870+ Skills** - Reusable workflows and templates
-- **59 Workflow Templates** - Pre-built process workflows
+- **71 Workflow Templates** - Pre-built process workflows
 - **4400+ Tests** - Comprehensive automated coverage across handlers, services, GUI, and MCP servers
 - **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System (6 memory types)
 - **Agent CLI** - `bach agent start/stop/list` for direct agent control
@@ -171,7 +167,7 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 - **[User Manual](BACH_USER_MANUAL.md)** - Complete handbook
 - **[Skills Catalog](SKILLS.template.md)** - Template and public entry point for available skills
 - **[Agents Catalog](AGENTS.template.md)** - Template and public entry point for agents and experts
-- **[Workflows](WORKFLOWS.template.md)** - 59 workflow templates
+- **[Workflows](WORKFLOWS.template.md)** - 71 workflow templates
 - **[SKILL template](SKILL.template.md)** - LLM operating instructions template for Claude, Gemini, Ollama, and Codex-style agents
 
 ## See Also: OpenClaw
@@ -181,7 +177,7 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 | | **BACH** | **OpenClaw** |
 |---|---|---|
 | **Focus** | LLM Operating System -- deep autonomy, structured memory, multi-agent orchestration | Personal AI Assistant -- broad messaging gateway, voice, companion apps |
-| **Tools/Skills** | 550+ tools, 1870+ skills, 59 workflows (local, curated) | Community-driven skill/plugin ecosystem; recent releases emphasize manifest-first plugin metadata and install safety |
+| **Tools/Skills** | 550+ tools, 1870+ skills, 71 workflows (local, curated) | Community-driven skill/plugin ecosystem; recent releases emphasize manifest-first plugin metadata and install safety |
 | **Memory** | 6 memory types with decay, conflict detection, consolidation (210+ DB tables) | Session/runtime workspace with bootstrap files such as `AGENTS.md`, `TOOLS.md`, `USER.md`, and related context files |
 | **Agents** | Boss-Expert orchestration (11 boss agents + 22 experts), SharedMemory Bus | Agent runtime with multi-session/channel operation |
 | **Messaging** | Telegram, Email, WhatsApp (Bridge System) | 20+ platforms (WhatsApp, Telegram, Slack, Discord, Signal, Teams, Matrix...) |
@@ -194,7 +190,9 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 
 ### Competitive Watch
 
-As of 2026-06-06, GitHub Releases shows `2026.6.1`, published on June 3, 2026, as OpenClaw's current stable line, while the newest visible prerelease on the official release feed is `2026.6.5-beta.1`, published on June 6, 2026. The latest stable and June beta signals most relevant to BACH are cleaner recovery after interrupted tool calls, stale session bindings, prompt-cache expiry, or Gateway restarts; stricter timer/retry bounds and doctor/upgrade wait paths; broader SQLite-backed auth, plugin-install, and inbound-queue state; wider Workboard and SecretRef surfaces; and more robust materialization of richer MCP tool-result blocks before they can poison session history. On the BACH side, the 2026-06-06 live care pass taught `bach lang report` to ignore additional JS `class`/`id` noise in generated markup, restored real umlauts across several visible GUI surfaces, indexed 29 additional GUI DE keys into the existing `gui` namespace, and refreshed the release artifacts to 17,488 exported translations. The same pass revalidated `bach agent doctor test-agent --json`, the full `bach agent clear-steer/steer/start/status/pause/checkpoint/resume/stop/clear-steer --json` control cycle, `bach usecase run 12 --dry-run`, `bach usecase run 41 --dry-run`, `bach usecase run-all --dry-run`, `bach upgrade status/check --json`, and `bach lang report --surface gui --limit 20 --json`; the GUI report now sits at 94 missing unique entries and 111 open occurrences, while usecase 41 still falls back to manual mode because no workflow file is linked. Next high-leverage steps remain deeper active-run steering inside long-running scheduler internals, low-cardinality telemetry, installer end-to-end coverage, GUI regression coverage, and prioritized i18n cleanup across GUI, help, skills, and tools.
+As of 2026-06-16, the OpenClaw repository marks `2026.6.8`, published on June 16, 2026 at 16:32, as the latest stable release on GitHub, while the newest visible prerelease on the official release feed is `2026.6.8-beta.2`, published on June 16, 2026 at 01:50. The most relevant new signals for BACH are richer channel delivery, stronger recovery across agent runs, safer provider/model routing with SecretRef-style auth handling, explicit opt-in web-search defaults, and calmer UI/session recovery paths. Sources: [openclaw/openclaw releases](https://github.com/openclaw/openclaw/releases), [openclaw/releases](https://github.com/openclaw/releases).
+
+On the BACH side, the clean GUI i18n state from 2026-06-12 remains intact at 17,593 exported translations with 0 missing GUI entries, and the 2026-06-17 care pass closes the remaining workflow-frontdoor gap for usecases. Beyond the shared `skills/workflows/software.md`, BACH now ships dedicated workflow files for `assistent`, `care-modul`, `datenmodul`, `dokumentenmodul`, `finanzen`, `gesundheit`, `haushalt`, `karriere`, `reflection-status`, `selbstmanagement`, `therapie`, and `wissen`. Verification re-ran `bach usecase run 50 --dry-run`, a focused `test_tuev_handler.py` resolver slice (`2 passed`), the full `test-agent` control cycle, and `bach --startup quick --mode=silent --partner=codex`, which now completes successfully in about 58 seconds. A direct resolver check now sees all 50 usecases bound to real workflow files and 0 remaining manual fallbacks. Next high-leverage steps remain deeper active-run steering inside long-running scheduler internals, installer end-to-end coverage, GUI regression coverage, and the broader T01/T02 retest lanes.
 
 ## License
 

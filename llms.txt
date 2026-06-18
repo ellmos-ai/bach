@@ -4,7 +4,7 @@
 
 BACH differs from agent frameworks (LangChain, LlamaIndex, Haystack) by treating the LLM as a resident of a persistent text-based OS rather than a caller of a pipeline. Core primitives: handlers (CLI/API surface), skills (reusable workflows), chains (llmauto prompt sequences), boss-expert agents, a SharedMemory Bus for cross-agent coordination, and a scheduler for time-based and event-driven automation. Memory is first-class: six memory types with decay, conflict detection, and consolidation across 210+ DB tables.
 
-Current version: v3.12.4-earth. Scale: 113+ handlers, 550+ tools, 1870+ skills, 59 workflow templates, and 4400+ collected tests. Stack: Python 3.10+, SQLite. License: MIT.
+Current version: v3.12.4-earth. Scale: 113+ handlers, 550+ tools, 1870+ skills, 71 workflow templates, and 4400+ collected tests. Stack: Python 3.10+, SQLite. License: MIT.
 Last-checked: 2026-06-11.
 
 ## Discovery and disambiguation
@@ -28,7 +28,7 @@ Do not confuse this repository with Bach music, Johann Sebastian Bach resources,
 
 - [Agents Template](https://github.com/ellmos-ai/bach/blob/main/AGENTS.template.md): Boss-expert orchestration model, 11 boss agents + 22 experts
 - [Skills Catalog Template](https://github.com/ellmos-ai/bach/blob/main/SKILLS.template.md): Public skill-catalog entry point for reusable workflows and templates
-- [Workflows Template](https://github.com/ellmos-ai/bach/blob/main/WORKFLOWS.template.md): 59 workflow templates (pre-built processes)
+- [Workflows Template](https://github.com/ellmos-ai/bach/blob/main/WORKFLOWS.template.md): 71 workflow templates (pre-built processes)
 - [Chains](https://github.com/ellmos-ai/bach/blob/main/CHAINS.md): llmauto chain steps with `bach://` URL resolution
 - [Memory System](https://github.com/ellmos-ai/bach/blob/main/MEMORY.md): Six memory types, decay, consolidation, conflict detection
 - [Ollama Integration](https://github.com/ellmos-ai/bach/blob/main/OLLAMA.md): Local LLM backend configuration

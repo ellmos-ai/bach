@@ -484,6 +484,7 @@ class TestSetupCheck:
         monkeypatch.setattr(setup_handler_module.shutil, "which", lambda name: "C:\\Program Files\\nodejs\\npm.CMD")
         monkeypatch.setattr(setup_handler_module.subprocess, "run", fake_run)
         monkeypatch.setattr(setup_handler_module.Path, "home", staticmethod(lambda: fake_home))
+        monkeypatch.setattr(setup_handler_module.importlib.util, "find_spec", lambda name: object())
         monkeypatch.setattr(handler, "_is_npm_package_installed", lambda pkg: False)
 
         ok, msg = handler._check()
@@ -493,6 +494,33 @@ class TestSetupCheck:
         assert "[OK] ellmos-filecommander-mcp installiert" in msg
         assert commands
         assert all(cmd[0].lower().endswith("npm.cmd") for cmd in commands)
+
+    def test_check_fails_when_psutil_missing(self, handler, tmp_path, monkeypatch):
+        root = handler.base_path.parent
+        (root / "USER.md").write_text("# User", encoding="utf-8")
+
+        fake_home = tmp_path / "home"
+        secrets_dir = fake_home / ".bach"
+        secrets_dir.mkdir(parents=True)
+        (secrets_dir / "bach_secrets.json").write_text(
+            json.dumps({"secrets": {"demo": "value"}}),
+            encoding="utf-8",
+        )
+
+        def fake_run(cmd, **kwargs):
+            package = cmd[3]
+            return SimpleNamespace(returncode=0, stdout=f"{package}@1.0.0", stderr="")
+
+        monkeypatch.setattr(setup_handler_module.shutil, "which", lambda name: "C:\\Program Files\\nodejs\\npm.CMD")
+        monkeypatch.setattr(setup_handler_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(setup_handler_module.Path, "home", staticmethod(lambda: fake_home))
+        monkeypatch.setattr(setup_handler_module.importlib.util, "find_spec", lambda name: None if name == "psutil" else object())
+        monkeypatch.setattr(handler, "_is_npm_package_installed", lambda pkg: False)
+
+        ok, msg = handler._check()
+
+        assert ok is False
+        assert "psutil fehlt" in msg
 
 
 # ═══════════════════════════════════════════════════════════════

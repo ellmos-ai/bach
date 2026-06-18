@@ -1,11 +1,30 @@
 ﻿# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-06-06 | **Version:** 4.3.45
+**Stand:** 2026-06-17 | **Version:** 4.3.48
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 > Die ROADMAP definiert Vision und Phasen. Konkrete Tasks siehe: `bach task list`
 > Post-Release-Details (SQ-Nummern): ehemals `BACH_Dev/ROADMAP.md` — jetzt hier konsolidiert.
+
+
+<!-- ellmos-sovereign Langzeit-Vision -->
+## Langzeit-Vision: BACH Core + Module (Projekt ellmos Sovereign)
+
+Parallel entsteht in `.OS/sovereign-private` ein **modulares, besser wartbares BACH**, das
+BACHs gute Bestandteile als eigenstaendige Module (`.MODULES`) erntet. BACH bleibt dabei
+unangetastete Quelle der Wahrheit und **entscheidet selbst, wann** es Schritte uebernimmt.
+
+**Langfristige Richtung fuer BACH (Langzeitprojekt, kein Zwang):**
+
+1. Module schrittweise **auf BACH-Niveau** bringen.
+2. Wo ein Modul **gleichwertig oder besser** ist als BACHs eigener Teil: BACHs
+   Eigenimplementierung durch das Modul **ersetzen** (eine Quelle der Wahrheit, kein Feature-Sync).
+3. Was zwingend bleiben muss, damit **BACH BACH bleibt** (Integration/Verdrahtung), wandert in
+   einen schlanken **BACH Core** — das ist dann das eigentliche BACH: Core + eingebundene Module.
+
+Methodik/Analyse: `.OS/sovereign-private/_dev/CLUSTER_ANALYSE_PLAN.md`.
+Vorbild bereits in dieser ROADMAP: *"clutch als Routing-Engine uebernehmen"* (Modul ersetzt Fork).
 
 ---
 
@@ -17,6 +36,25 @@ BACH definiert sich als **Personal Agentic Operating System**. Es entwickelt sic
 - **Selbststaendige Sessions** (Headless AI ohne User-Interaktion)
 - **Aktive Konsolidierung** (Lernen, Vergessen, Zusammenfassen)
 - **Multi-Partner Delegation** (Claude, Gemini, Ollama, lokale Modelle)
+
+---
+
+## Geplant: clutch als Routing-Engine übernehmen (M8) [C 2026-06-14]
+
+BACH betreibt aktuell einen **eigenen Fork** der clutch-Idee (`hub/_services/delegation/` +
+`hub/clutch.py` + `hub/partner.py`). Parallel ist das eigenständige Package **clutch**
+(`.TOPICS/.AI/.MODULES/clutch`, `ellmos-ai/clutch`) zur state-of-the-art Routing-Anwendung
+ausgebaut worden: Engine + Kimi (CLI/API/Ollama, **API live getestet**), zweck-/bildbewusstes
+Routing, Modell-Discovery, CLI, Service-Layer (Sessions/Prompts/Profile/ChatRuntime), Web-UI,
+Toolset-Permissions (default-deny), 230 Tests grün.
+
+**Leitlinie:** clutch ist Vorrang/state-of-the-art, **BACH übernimmt** (eine Quelle der Wahrheit,
+kein Feature-Sync mehr). BACH soll den Umgang mit dem Modul prüfen und seinen Fork ablösen.
+
+- **Task:** `bach task show 1135` (Kategorie integration, P2).
+- **Anleitung + Deckungs-Check (gegatet):** `.TOPICS/.AI/.MODULES/clutch/docs/BACH_MIGRATION.md`
+- **Gatung:** erst Compat-Adapter + Parallelbetrieb + grüne BACH-Tests, dann Fork archivieren
+  (nicht löschen). DB-Tabellen `clutch_fitness`/`clutch_fahrtenbuch`/`partners` bleiben Persistenz.
 
 ---
 
@@ -63,25 +101,22 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 
 ### Priorität 1 - Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
 
-Der OpenClaw-Abgleich vom 2026-06-06 bestätigt den nächsten BACH-Fokus
+Der OpenClaw-Abgleich vom 2026-06-16 bestätigt den nächsten BACH-Fokus
 klar in Richtung sichere Erweiterbarkeit, robuste Agenten-Laufzeit und
 saubere Steuer-/Statusoberflächen. Relevant sind nicht die breite
 Messenger-Abdeckung, sondern manifest-first Plugin- und Provider-Metadaten,
 fail-closed Tool-Setups, Scans vor der Installation von
 Skills/MCP-Servern/Plugins, API-Parität für Agentenflächen, Checkpoint-
 Steuerung und low-cardinality Telemetrie. Als Referenzstand gilt dabei:
-GitHub markiert `openclaw 2026.6.1`, veröffentlicht am
-2026-06-03, als aktuelle Stable-Linie; im offiziellen
-Release-Feed ist `2026.6.5-beta.1`, veröffentlicht am
-2026-06-06, das neueste sichtbare Prerelease.
-Frisch relevant aus Stable und Beta sind robustere Recovery nach
-unterbrochenen Tool-Calls, Session-Bindings, Prompt-Cache-Ablauf oder
-Gateway-Neustarts, strengere Timer-/Retry-Grenzen in Provider-/Plugin-
-Pfaden und Doctor-/Upgrade-Wartepfaden, robustere Materialisierung reicher
-MCP-Toolresultate, Workboard-Handoff-Flächen, mehr SQLite-gestützte
-Auth-/Install-/Inbound-Zustände, klarere Behandlung veralteter deaktivierter
-Skill-/Plugin-Snapshots sowie weiter sichtbare
-`cron.maxConcurrentRuns=8`-Signale für Scheduler-Parallelität.
+GitHub markiert `openclaw 2026.6.8`, veröffentlicht am
+2026-06-16 um 16:32, als aktuelle Stable-Linie; im offiziellen
+Release-Feed ist `2026.6.8-beta.2`, veröffentlicht am
+2026-06-16 um 01:50 UTC, das neueste sichtbare Prerelease.
+Frisch relevant aus Stable und Beta sind reichhaltigere Kanalzustellung,
+robustere Recovery in Agentenläufen, sichereres Provider-/Modellrouting mit
+normalisierten IDs und SecretRef-naher Auth-Logik, explizite Opt-in-Defaults
+für Websuche, ruhigere UI-/Session-Recovery sowie weiter sichtbare bounded
+Status- und Fortschrittsoberflächen.
 Aus den
 aktuellen offiziellen
 Hinweisen erneut bestätigt sind
@@ -122,12 +157,26 @@ Den i18n-Punkt deckt BACH jetzt mit `bach lang report` ab: der Handler scannt
 das aktuelle Layout (`docs/help`, `gui/templates`, `gui/static/js`, `agents/`,
 `skills/workflows`, `tools/`), prüft die Release-Artefakte gegen das Manifest,
 liefert Fundstellen mit Datei/Zeile/Typ und zeigt offene harte DE-Copy je
-Namespace. Seit dem 2026-06-06 filtert der GUI-Report in JS-generiertem
-Markup zusätzlich technische `class`-/`id`-Tokens aus bereits extrahierten
-HTML-Schnipseln. Der aktuelle GUI-Live-Befund vom 2026-06-06 meldet 94 noch
-nicht indexierte eindeutige DE-Einträge bzw. 111 offene Fundstellen; parallel
-wurden 29 zusätzliche GUI-DE-Schlüssel nachgezogen und die Release-Artefakte
-auf 17.488 Übersetzungen aktualisiert.
+Namespace. Seit dem 2026-06-12 nutzt `bach lang scan --namespace gui`
+dieselben gefilterten Hardcoded-Copy-Fundstellen wie `bach lang report`,
+sodass Python-Docstrings, SQL-Schnipsel und ähnliches GUI-Rauschen nicht
+mehr in die Release-Artefakte gelangen. Der aktuelle GUI-Live-Befund vom
+2026-06-12 meldet 166 eindeutige GUI-DE-Strings bei 253 Fundstellen; alle
+253 Fundstellen sind im Manifest und den Locale-Artefakten abgedeckt,
+offene GUI-DE-Einträge gibt es aktuell keine mehr. Parallel wurden
+sichtbare Oberflächen in `persoenlich`, `memory`, `steuer` und
+`workflow_tuev` auf echte Umlaute gehoben und die Release-Artefakte auf
+17.593 Übersetzungen aktualisiert.
+Neu geschlossen ist außerdem die bisherige Restlücke bei der Workflow-
+Frontdoor der Usecases: Zusätzlich zu `system/skills/workflows/software.md`
+decken jetzt auch `assistent.md`, `care-modul.md`, `datenmodul.md`,
+`dokumentenmodul.md`, `finanzen.md`, `gesundheit.md`, `haushalt.md`,
+`karriere.md`, `reflection-status.md`, `selbstmanagement.md`,
+`therapie.md` und `wissen.md` die früher manuellen Domänen ab. Der
+Live-Resolver-Check vom 2026-06-17 zeigt damit 50 workflowgebundene und
+0 manuelle Usecases statt 24 zu 26; für T01 verschiebt sich der Fokus damit
+von fehlenden Workflow-Dateien auf echte Domänen-Retests und
+Integrationsabdeckung.
 Für BACHs eigene T01-Retest-Schiene ist außerdem jetzt wichtig:
 `bach usecase run-all [workflow] [--dry-run]` bereitet Sammeltests
 wirklich vor, kann ohne Workflow-Argument alle 50 Usecases abdecken und
@@ -175,7 +224,7 @@ Backend-Fallback-Semantik zu BACHs Multi-Partner-Architektur passt.
 | SANDBOX-002 | Subprocess-Isolation | TEILWEISE | Capabilities/Allowlist (DONE): fail-closed Shell-Allowlist, DB-Persistenz, policy/allow/deny Ops, 72 Tests. Ressourcenlimit (offen, OS-spezifisch) |
 | API-SURFACE-001 | Agent-/Prompt-API-Parität | DONE | `bach_api` exportiert jetzt die dokumentierten Module `agent`, `agents` und `prompt`; Agenten-Usecase per Regressionstest abgesichert |
 | OPS-TELEM-001 | Low-cardinality Telemetrie | OFFEN | OpenTelemetry-inspiriert, aber lokal/privacy-first: Model-Calls, Tool-Loops, Agentenstarts und Fehler ohne sensible Payloads messen |
-| OPS-I18N-001 | i18n-Drift-Report & Layout-aware Scan | DONE | `bach lang report` prüft Manifest/Locale-Artefakte, liefert Fundstellen mit Datei/Zeile/Typ und scannt das aktuelle Layout inklusive HTML/JS/Markdown auf harte DE-Copy; `bach lang scan` nutzt jetzt dieselben Pfade, aktueller GUI-Live-Befund: 94 offene eindeutige DE-Einträge bei 111 offenen Fundstellen (2026-06-06) |
+| OPS-I18N-001 | i18n-Drift-Report & Layout-aware Scan | DONE | `bach lang report` prüft Manifest/Locale-Artefakte, liefert Fundstellen mit Datei/Zeile/Typ und scannt das aktuelle Layout inklusive HTML/JS/Markdown auf harte DE-Copy; `bach lang scan --namespace gui` nutzt jetzt dieselben gefilterten GUI-Fundstellen wie der Report, aktueller GUI-Live-Befund: 166 eindeutige Strings bei 253 Fundstellen und 0 offenen Einträgen (2026-06-12) |
 | OPS-PATH-001 | Strukturierte Pfadoberfläche | DONE | `bach path` liefert kanonische System-/Workspace-/DB-Pfade, JSON-Ausgaben, Resolve-/Validate-Helfer und DB-Overrides für Operatoren, API und Automationen |
 | OPS-CACHE-001 | Workspace-scoped Runtime-Cache-Invalidierung | DONE | `core.agent_runtime` trennt Registries jetzt pro `base_path`, lädt Agent-Module isoliert und invalidiert gecachte Instanzen automatisch bei Code-/Config-Änderungen |
 | OPS-RECOVERY-001 | Agent-Preflight & Recovery-Hinweise | DONE | `bach agent doctor [name] [--json]` prüft Claude CLI, Laufzeitverzeichnisse, SKILL.md und stale PID-Dateien und liefert konkrete Start-/Recovery-Schritte |
@@ -526,6 +575,9 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 | **4.3.34** | 2026-05-23 | **Agentenläufe können sichere Checkpoints jetzt explizit quittieren, und aktive Pauseanforderungen schlagen im Top-Level-Status konsistent als `pause-requested` bzw. `[PAUSE-REQ]` durch: `bach agent checkpoint [name] [Notiz] [--json]` schreibt `operator_checkpoint.json`, aktualisiert `OPERATOR_NOTES.md`, `agent list/status --json` zeigen dafür `last_checkpoint_at`, `last_checkpoint_message`, `latest_control_request_at`, `awaiting_checkpoint_ack` sowie die neue Kontrollaktion `checkpoint`, und laufende pausierte Agenten melden ihren Zustand jetzt nicht mehr nur verschachtelt unter `operator_control`. Hilfe, README, README.de, ROADMAP, CHANGELOG und `NEXT_RELEASE` wurden auf diese OPS-RUN-Vertiefung und den verifizierten OpenClaw-Stand vom 2026-05-23 (Stable `2026.5.20`, sichtbares Release-Prerelease weiter `2026.5.20-beta.2`, Paketlinie `2026.5.22-beta.1-slim`) nachgezogen; gezielte Regressionen (`test_agent_launcher_handler.py` -> `74 passed`) und Live-Smokes für `agent checkpoint`, `pause/resume/steer/status/stop`, `usecase run 12/41 --dry-run`, `scheduler doctor`, `lang report --surface gui` und `upgrade check --json` wurden erneut verifiziert.** |
 | **4.3.35** | 2026-05-23 | **Usecase-Sammeltests sind jetzt produktiv: `bach usecase run-all [workflow] [--dry-run]` bereitet wahlweise alle oder workflowgefilterte Usecases wirklich vor, aktualisiert `last_tested` nur außerhalb von Dry-Runs und bevorzugt echte Markdown-Workflowdateien statt gleichnamiger Verzeichnisse. Hilfe, README, README.de, ROADMAP, CHANGELOG und `NEXT_RELEASE` wurden auf diesen T01-Fortschritt nachgezogen; gezielte Regressionen (`test_tuev_handler.py` + `test_smoke.py` -> `130 passed`) und der Live-Smoke `bach usecase run-all --dry-run` liefen erneut grün.** |
 | **4.3.36** | 2026-05-24 | **Scheduler-DB-Pfade vereinheitlicht: `system/hub/scheduler.py` und `system/gui/daemon_service.py` nutzen jetzt dieselbe kanonische BACH-DB wie CLI und GUI-Server, sodass Doctor/Status/Jobs und der Hintergrunddienst nicht mehr gegen ein veraltetes `system/data/bach.db` laufen. README, README.de, ROADMAP, CHANGELOG und `NEXT_RELEASE` wurden auf den heutigen Live-Check (`--startup quick`, vollständiger `test-agent`-Headless-Lauf, `scheduler doctor/status --json`, `usecase run 12/41`, `usecase run-all --dry-run`, `lang report --surface gui --limit 5 --json`, `upgrade status/check --json`) sowie den verifizierten OpenClaw-Stand vom 2026-05-24 (Stable `2026.5.22`, sichtbares Prerelease `2026.5.22-beta.1`, Paketlinie `2026.5.22-slim` plus `2026.5.23-alpha.1`) nachgezogen; gezielte Regressionen (`test_scheduler_handler.py`/`test_daemon_service.py`) liefen erneut grün.** |
+| **4.3.48** | 2026-06-17 | **Die T01-Workflow-Frontdoor ist jetzt vollständig: zwölf neue Domänen-Workflow-Dateien (`assistent`, `care-modul`, `datenmodul`, `dokumentenmodul`, `finanzen`, `gesundheit`, `haushalt`, `karriere`, `reflection-status`, `selbstmanagement`, `therapie`, `wissen`) schließen die restlichen manuellen Usecase-Kategorien, sodass ein direkter Resolver-Check nun 50 workflowgebundene und 0 manuelle Usecases sieht. Verifiziert wurden `bach usecase run 50 --dry-run`, die gezielte Resolver-Regression `test_tuev_handler.py -k "resolve_uppercase_category_to_lowercase_workflow_file or resolve_snake_case_category_to_kebab_case_workflow_file"` (`2 passed`), der vollständige `test-agent`-Steuerzyklus sowie `bach --startup quick --mode=silent --partner=codex` mit erfolgreichem Durchlauf in rund 58 Sekunden. Der OpenClaw-Referenzstand wurde zugleich auf Stable `2026.6.8` und sichtbares Prerelease `2026.6.8-beta.2` (beide 2026-06-16) aktualisiert; relevant bleiben daraus vor allem Kanalzustellung, Recovery, Provider-/Auth-Härtung und explizite Websuch-Defaults.** |
+| **4.3.47** | 2026-06-13 | **Die offene SOFTWARE-Usecase-Lücke ist deutlich kleiner: Eine neue gemeinsame Workflow-Datei `system/skills/workflows/software.md` bindet jetzt die Usecases 41 bis 49 an eine reale Markdown-Workflowfläche statt an manuellen Fallback, und `system/skills/workflows/wiki-author.md` verweist wieder auf das aktuelle `wiki/`-Layout und `hub/_services/wiki/`. Verifiziert wurden `bach usecase run 41 --dry-run`, `bach usecase run-all --dry-run` (jetzt 24 workflowgebundene / 26 manuelle Usecases) sowie die gezielte Regression `test_tuev_handler.py -k "resolve_uppercase_category_to_lowercase_workflow_file"` (`1 passed`). Der OpenClaw-Referenzstand wurde zugleich auf Stable `2026.6.6` (2026-06-12) und sichtbares Prerelease `2026.6.7-beta.1` (2026-06-13) aktualisiert; relevant bleiben daraus vor allem härtere Auth-/Kontextgrenzen, robustere Recovery-Pfade und klarere Doctor-/Update-/QA-Signale.** |
+| **4.3.46** | 2026-06-12 | **GUI-Lang-Scan auf Report-Parität gehärtet: `system/hub/lang.py` nutzt für `bach lang scan --namespace gui` jetzt dieselben gefilterten Hardcoded-Copy-Fundstellen wie `bach lang report`, sodass Python-Docstrings, SQL-Schnipsel und ähnliches GUI-Rauschen nicht mehr als DE-Copy in die Release-Artefakte gelangen. Der heutige Lauf bereinigte den versehentlichen Noisy-Scan, seedete anschließend 93 legitime GUI-DE-Schlüssel neu, hob sichtbare Oberflächen in `persoenlich`, `memory`, `steuer` und `workflow_tuev` auf echte Umlaute und aktualisierte die Release-Artefakte auf 17.593 Übersetzungen. `bach lang report --surface gui --limit 20 --json` steht damit bei 166 eindeutigen GUI-DE-Strings, 253 Fundstellen und 0 offenen Einträgen; verifiziert wurden außerdem `test_lang_handler.py -k "report_gui_js_ignores_technical_literals_but_keeps_ui_copy or test_scan_gui_uses_report_filters_for_runtime_copy"` (`2 passed`), `bach agent doctor test-agent --json`, der vollständige `test-agent`-Steuerzyklus, `bach usecase run 12/41 --dry-run`, `bach usecase run-all --dry-run` sowie `bach upgrade status/check --json`. Der OpenClaw-Referenzstand wurde zugleich auf Stable `2026.6.6` (2026-06-12) und sichtbares Prerelease `2026.6.6-beta.2` (2026-06-12) aktualisiert.** |
 | **4.3.45** | 2026-06-06 | **GUI-i18n-Drift und sichtbare Umlaute weiter bereinigt: `system/hub/lang.py` filtert in JS-generiertem Markup jetzt zusätzlich technische `class`-/`id`-Tokens aus, sichtbare Oberflächen in ATI, Daemon, Financial, Denkarium und dem Skills Board verwenden wieder echte Umlaute, und 29 zusätzliche GUI-DE-Schlüssel wurden im `gui`-Namespace ergänzt. Die Release-Artefakte stehen damit bei 17.488 Übersetzungen, und `bach lang report --surface gui --limit 20 --json` zeigt nur noch 94 offene eindeutige GUI-DE-Einträge bei 111 offenen Fundstellen. Der Lauf vom 2026-06-06 verifizierte außerdem `bach agent doctor test-agent --json`, den vollständigen `test-agent`-Steuerzyklus, `bach usecase run 12/41 --dry-run`, `bach usecase run-all --dry-run`, `bach upgrade status/check --json` sowie die gezielten `test_lang_handler.py`-Regressionen (`3 passed`); Usecase 41 bleibt funktional, aber weiter im manuellen Fallback ohne verknüpfte Workflow-Datei. Der OpenClaw-Referenzstand wurde zugleich auf Stable `2026.6.1` (2026-06-03) und sichtbares Prerelease `2026.6.5-beta.1` (2026-06-06) aktualisiert.** |
 | **4.3.44** | 2026-06-05 | **Daily-Care-Stand weiter verdichtet: zwanzig zusätzliche GUI-Schlüssel wurden im `gui`-Namespace ergänzt, die Release-Artefakte auf 17.459 Übersetzungen neu exportiert, und `bach lang report --surface gui --limit 40 --json` zeigt jetzt nur noch 124 offene eindeutige GUI-DE-Einträge bei 143 offenen Fundstellen. Der Lauf vom 2026-06-05 verifizierte außerdem `bach agent doctor test-agent --json`, den vollständigen `test-agent`-Steuerzyklus (`clear-steer` -> `steer` -> `start` -> `status` -> `pause` -> `checkpoint` -> `resume` -> `stop` -> `clear-steer`), `bach usecase run 12/41 --dry-run`, `bach usecase run-all --dry-run` sowie `bach upgrade status/check --json`; Usecase 41 bleibt funktional, aber weiter im manuellen Fallback ohne verknüpfte Workflow-Datei. Der OpenClaw-Referenzstand wurde zugleich auf Stable `2026.6.1`, sichtbares Prerelease `2026.6.2-beta.1` und die aktuelle Browser-/Slim-Betalinie aktualisiert, während stabile Alias-Tags weiter auf `2026.6.1` zeigen.** |
 | **4.3.43** | 2026-06-03 | **GUI-i18n-Index weiter reduziert: fünf noch unindexierte Legacy-Texte aus `system/gui/ki-center.html` wurden dem `gui`-Namespace hinzugefügt, die Release-Artefakte auf 17.419 Übersetzungen neu exportiert, und `bach lang report --surface gui --limit 10 --json` zeigt jetzt nur noch 148 offene eindeutige GUI-DE-Einträge bei 192 offenen Fundstellen statt 153/239. Der heutige Daily-Care-Lauf verifizierte außerdem `bach agent doctor test-agent --json`, `bach usecase run 12 --dry-run`, `bach usecase run 41 --dry-run` und `bach upgrade check --json`; Usecase 41 bleibt dabei funktional, aber weiter im manuellen Fallback ohne verknüpfte Workflow-Datei. Der OpenClaw-Referenzstand wurde zugleich auf Stable `2026.5.28`, sichtbares Prerelease `2026.6.1-beta.3` und die aktuelle Containerlinie `2026.6.1-beta.3-browser` plus `2026.6.1-beta.3-slim` nachgezogen.** |

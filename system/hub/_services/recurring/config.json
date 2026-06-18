@@ -7,7 +7,7 @@
       "priority_score": 80,
       "task_text": "BACH SELF-CHECK: SKILL.md und Lessons pruefen",
       "aufwand": "mittel",
-      "last_run": "2026-05-29T13:08:49.019791"
+      "last_run": "2026-06-12T19:23:23.597389"
     },
     "onboarding_scan": {
       "enabled": true,
@@ -16,7 +16,7 @@
       "priority_score": 60,
       "task_text": "Neue Tools pruefen: bach ati onboard --check",
       "aufwand": "niedrig",
-      "last_run": "2026-05-24T13:09:42.731947"
+      "last_run": "2026-06-12T19:23:24.679786"
     },
     "code_quality": {
       "enabled": true,
@@ -34,7 +34,7 @@
       "priority": "P3",
       "project": "BACH",
       "task_text": "BACH Backup pruefen: bach backup status",
-      "last_run": "2026-05-24T13:09:43.283432"
+      "last_run": "2026-06-12T19:23:26.100747"
     },
     "memory_cleanup": {
       "enabled": true,
@@ -63,7 +63,7 @@
       "project": "BACH",
       "task_text": "ROADMAP.md Review: Erledigte Tasks markieren, Prioritaeten pruefen, veraltete Eintraege archivieren",
       "aufwand": "mittel",
-      "last_run": "2026-05-29T13:08:49.019791"
+      "last_run": "2026-06-12T19:23:27.354428"
     },
     "wiki_author": {
       "enabled": true,
@@ -73,7 +73,7 @@
       "project": "BACH",
       "task_text": "Wiki-Autoren: Einen Agenten/Experten auswaehlen, Wissensluecken identifizieren, Web-Recherche, Wiki-Beitrag erstellen. Workflow: skills/workflows/wiki-author.md",
       "aufwand": "hoch",
-      "last_run": "2026-05-23T13:03:32.744008"
+      "last_run": "2026-06-13T19:29:38.415482"
     },
     "help_forensic": {
       "enabled": true,
@@ -83,7 +83,7 @@
       "project": "BACH",
       "task_text": "Help-Forensik: Eine docs/help/*.txt pruefen, Ist vs Soll vergleichen, bei Abweichung Help oder Roadmap anpassen. Workflow: skills/workflows/help-forensic.md",
       "aufwand": "mittel",
-      "last_run": "2026-05-29T13:08:49.019791"
+      "last_run": "2026-06-12T19:23:28.667122"
     },
     "doc_freshness": {
       "enabled": true,
