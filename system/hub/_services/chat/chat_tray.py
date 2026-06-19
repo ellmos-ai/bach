@@ -162,11 +162,11 @@ class BACHTray:
         if env_path:
             candidates.append(Path(env_path).expanduser())
 
+        candidates.append(Path.home() / ".promptboard" / "library.json")
+
         appdata = os.environ.get("APPDATA")
         if appdata:
             candidates.append(Path(appdata) / "PromptBoard" / "library.json")
-
-        candidates.append(Path.home() / ".promptboard" / "library.json")
 
         project_dir = self._promptboard_project_dir()
         if project_dir:

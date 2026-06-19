@@ -80,6 +80,7 @@ id_ed25519.*
 /system/data/healing_report.json
 /system/data/sync_state.json
 /system/data/sync_state-*.json
+/system/data/directory_truth-*.json
 /system/data/user_config.json
 /system/data/skills_hierarchy.json
 /system/data/skills_hierarchy.backup.json

@@ -771,13 +771,30 @@ class TestBACHTray:
             encoding="utf-8",
         )
 
+        legacy_dir = tmp_path / "AppData" / "Roaming" / "PromptBoard"
+        legacy_dir.mkdir(parents=True)
+        legacy_library = legacy_dir / "library.json"
+        legacy_library.write_text(
+            json.dumps({
+                "items": [{
+                    "name": "Legacy Prompt",
+                    "content": "Aus dem alten AppData-Pfad.",
+                    "category": "Legacy",
+                }]
+            }),
+            encoding="utf-8",
+        )
+
         with patch.dict('sys.modules', {
             'pystray': MagicMock(),
             'PIL': MagicMock(),
             'PIL.Image': MagicMock(),
             'PIL.ImageDraw': MagicMock(),
             'PIL.ImageFont': MagicMock(),
-        }), patch("hub._services.chat.chat_tray.Path.home", return_value=tmp_path):
+        }), patch.dict(os.environ, {
+            "APPDATA": str(tmp_path / "AppData" / "Roaming"),
+            "BACH_PROMPTBOARD_LIBRARY": "",
+        }, clear=False), patch("hub._services.chat.chat_tray.Path.home", return_value=tmp_path):
             from hub._services.chat.chat_tray import BACHTray
             tray = BACHTray(host="testhost", port=9999)
 
