@@ -677,8 +677,9 @@ class SchedulerHandler(BaseHandler):
                     start_new_session=True
                 )
 
-            # Windows-/OneDrive-Setups koennen den PID-Moment leicht verzoegern.
-            for _ in range(20):
+            # Windows-/OneDrive-Setups koennen den PID-Moment deutlich verzoegern.
+            deadline = time.monotonic() + 12.0
+            while time.monotonic() < deadline:
                 time.sleep(0.25)
                 if self._is_running():
                     return (True, "[OK] Scheduler im Hintergrund gestartet")

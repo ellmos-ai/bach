@@ -5,7 +5,7 @@
 BACH differs from agent frameworks (LangChain, LlamaIndex, Haystack) by treating the LLM as a resident of a persistent text-based OS rather than a caller of a pipeline. Core primitives: handlers (CLI/API surface), skills (reusable workflows), chains (llmauto prompt sequences), boss-expert agents, a SharedMemory Bus for cross-agent coordination, and a scheduler for time-based and event-driven automation. Memory is first-class: six memory types with decay, conflict detection, and consolidation across 210+ DB tables.
 
 Current version: v3.12.4-earth. Scale: 113+ handlers, 550+ tools, 1870+ skills, 71 workflow templates, and 4400+ collected tests. Stack: Python 3.10+, SQLite. License: MIT.
-Last-checked: 2026-06-11.
+Last-checked: 2026-06-19.
 
 ## Discovery and disambiguation
 

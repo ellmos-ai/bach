@@ -482,7 +482,7 @@ class PartnerHandler(BaseHandler):
             # clutch-bridge: Fahrtenbuch-Eintrag schreiben
             if HAS_CLUTCH_BRIDGE:
                 try:
-                    fb = get_fahrtenbuch(db_path=self.base_path / "data" / "bach.db")
+                    fb = get_fahrtenbuch(db_path=self.db_path)
                     fb.eintrag(
                         task_text=task_text,
                         provider=selected.get('name', ''),
@@ -512,7 +512,7 @@ class PartnerHandler(BaseHandler):
         """
         import sqlite3
         
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self.db_path
         if not db_path.exists():
             return 1  # Default
         
@@ -572,7 +572,7 @@ class PartnerHandler(BaseHandler):
         import sqlite3
         import json as json_lib
         
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self.db_path
         if not db_path.exists():
             return []
         

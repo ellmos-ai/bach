@@ -7,7 +7,7 @@ import sys
 import textwrap
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -1195,6 +1195,22 @@ class TestHandleDispatch:
             ok, text = h.handle("start", ["--bg"])
         assert ok is True
         assert "Hintergrund gestartet" in text
+
+    def test_handle_start_background_tolerates_slow_windows_pid_file(self, sched_env):
+        h = sched_env["handler"]
+        delayed_probe = MagicMock(side_effect=[False] + ([False] * 24) + [True])
+        monotonic_values = iter([index * 0.25 for index in range(40)])
+        with (
+            patch("hub.scheduler.sys.platform", "win32"),
+            patch("hub.scheduler.subprocess.Popen"),
+            patch("hub.scheduler.time.sleep", return_value=None),
+            patch("hub.scheduler.time.monotonic", side_effect=lambda: next(monotonic_values)),
+            patch.object(h, "_is_running", delayed_probe),
+        ):
+            ok, text = h.handle("start", ["--bg"])
+        assert ok is True
+        assert "Hintergrund gestartet" in text
+        assert delayed_probe.call_count > 20
 
     def test_handle_stop_not_running(self, sched_env):
         h = sched_env["handler"]

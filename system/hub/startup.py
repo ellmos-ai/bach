@@ -350,8 +350,8 @@ class StartupHandler(BaseHandler):
         if workflows_dir.exists():
             workflow_files = {
                 str(path)
-                for pattern in ("*.md", "*.txt")
-                for path in workflows_dir.rglob(pattern)
+                for path in workflows_dir.rglob("*.md")
+                if "_archive" not in path.parts
             }
             counts["workflows"] = len(workflow_files)
 
