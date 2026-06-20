@@ -5,6 +5,7 @@
 import sys
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -12,19 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
-@pytest.fixture
-def base_path(tmp_path):
-    """Create a minimal BACH directory structure."""
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    return tmp_path
-
-
-@pytest.fixture
-def partner_db(base_path):
-    """Create a test DB with partner_recognition table."""
-    db_path = base_path / "data" / "bach.db"
-    conn = sqlite3.connect(str(db_path))
+def _create_partner_recognition_table(conn):
     conn.execute("""
         CREATE TABLE IF NOT EXISTS partner_recognition (
             id INTEGER PRIMARY KEY,
@@ -40,6 +29,22 @@ def partner_db(base_path):
             notes TEXT
         )
     """)
+
+
+@pytest.fixture
+def base_path(tmp_path):
+    """Create a minimal BACH directory structure."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    return tmp_path
+
+
+@pytest.fixture
+def partner_db(base_path):
+    """Create a test DB with partner_recognition table."""
+    db_path = base_path / "data" / "bach.db"
+    conn = sqlite3.connect(str(db_path))
+    _create_partner_recognition_table(conn)
     conn.execute("""
         INSERT INTO partner_recognition (partner_name, partner_type, api_endpoint,
                                           capabilities, cost_tier, token_zone, priority, status, notes)
@@ -78,21 +83,7 @@ class TestLoadPartnersFromDb:
     def test_empty_db(self, base_path):
         db_path = base_path / "data" / "bach.db"
         conn = sqlite3.connect(str(db_path))
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS partner_recognition (
-                id INTEGER PRIMARY KEY,
-                partner_name TEXT,
-                partner_type TEXT,
-                api_endpoint TEXT,
-                capabilities TEXT,
-                cost_tier INTEGER DEFAULT 1,
-                token_zone TEXT DEFAULT 'zone_1',
-                priority INTEGER DEFAULT 50,
-                status TEXT DEFAULT 'active',
-                success_rate REAL DEFAULT 1.0,
-                notes TEXT
-            )
-        """)
+        _create_partner_recognition_table(conn)
         conn.commit()
         conn.close()
 
@@ -141,14 +132,7 @@ class TestLoadPartnersFromDb:
     def test_invalid_capabilities_json(self, base_path):
         db_path = base_path / "data" / "bach.db"
         conn = sqlite3.connect(str(db_path))
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS partner_recognition (
-                id INTEGER PRIMARY KEY, partner_name TEXT, partner_type TEXT,
-                api_endpoint TEXT, capabilities TEXT, cost_tier INTEGER DEFAULT 1,
-                token_zone TEXT DEFAULT 'zone_1', priority INTEGER DEFAULT 50,
-                status TEXT DEFAULT 'active', success_rate REAL DEFAULT 1.0, notes TEXT
-            )
-        """)
+        _create_partner_recognition_table(conn)
         conn.execute("""
             INSERT INTO partner_recognition (partner_name, partner_type, capabilities)
             VALUES ('Broken', 'api', 'not-valid-json')
@@ -164,3 +148,110 @@ class TestLoadPartnersFromDb:
             result = handler._load_partners_from_db()
             broken = result["partners"][0]
             assert broken["capabilities"] == []
+
+
+class TestCanonicalDbUsage:
+    def test_get_current_zone_uses_handler_db_path(self, base_path, tmp_path):
+        db_path = tmp_path / "canonical" / "bach.db"
+        db_path.parent.mkdir(parents=True)
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS monitor_tokens (
+                timestamp TEXT,
+                budget_percent REAL
+            )
+        """)
+        conn.execute("""
+            INSERT INTO monitor_tokens (timestamp, budget_percent)
+            VALUES ('2026-06-19T19:23:00', 85.0)
+        """)
+        conn.commit()
+        conn.close()
+
+        with patch("hub.partner.HAS_COMPLEXITY_SCORER", False), \
+             patch("hub.partner.HAS_CLUTCH_BRIDGE", False):
+            from hub.partner import PartnerHandler
+            handler = PartnerHandler(base_path)
+            handler.db_path = db_path
+
+            assert handler._get_current_zone() == 4
+
+    def test_get_allowed_partners_uses_handler_db_path(self, base_path, tmp_path):
+        db_path = tmp_path / "canonical" / "bach.db"
+        db_path.parent.mkdir(parents=True)
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS delegation_rules (
+                zone TEXT,
+                allowed_partners TEXT,
+                status TEXT
+            )
+        """)
+        conn.execute("""
+            INSERT INTO delegation_rules (zone, allowed_partners, status)
+            VALUES ('zone_2', '[\"gemini\", \"ollama\"]', 'active')
+        """)
+        conn.commit()
+        conn.close()
+
+        with patch("hub.partner.HAS_COMPLEXITY_SCORER", False), \
+             patch("hub.partner.HAS_CLUTCH_BRIDGE", False):
+            from hub.partner import PartnerHandler
+            handler = PartnerHandler(base_path)
+            handler.db_path = db_path
+
+            assert handler._get_allowed_partners_from_db(2) == ["gemini", "ollama"]
+
+    def test_delegate_uses_handler_db_for_fahrtenbuch(self, base_path, tmp_path):
+        db_path = tmp_path / "canonical" / "bach.db"
+        db_path.parent.mkdir(parents=True)
+        conn = sqlite3.connect(str(db_path))
+        _create_partner_recognition_table(conn)
+        conn.execute("""
+            INSERT INTO partner_recognition (partner_name, partner_type, api_endpoint,
+                                              capabilities, cost_tier, token_zone, priority, status, notes)
+            VALUES ('Claude', 'api', 'https://api.anthropic.com', '["coding"]',
+                    3, 'zone_1', 90, 'active', 'Primary AI Partner')
+        """)
+        conn.commit()
+        conn.close()
+
+        strecken_profil = SimpleNamespace(
+            typ="Feldweg",
+            typ_code=1,
+            schwierigkeit=1,
+            etappen=1,
+            empfohlener_gang="D",
+        )
+        gas_stellung = SimpleNamespace(
+            level=10,
+            strategie=SimpleNamespace(value="direkt"),
+            token_multiplikator=0.6,
+            prompt_prefix="",
+            prompt_suffix="",
+        )
+        analyser = MagicMock()
+        analyser.analysiere.return_value = strecken_profil
+        bordcomputer = MagicMock()
+        bordcomputer.is_available.return_value = True
+        bordcomputer.check_overkill.return_value = None
+        fahrtenbuch = MagicMock()
+
+        with patch("hub.partner.HAS_COMPLEXITY_SCORER", False), \
+             patch("hub.partner.HAS_CLUTCH_BRIDGE", True), \
+             patch("hub.partner.get_strecken_analyser", return_value=analyser), \
+             patch("hub.partner.berechne_gas", return_value=gas_stellung), \
+             patch("hub.partner.get_bordcomputer", return_value=bordcomputer), \
+             patch("hub.partner.get_fahrtenbuch", return_value=fahrtenbuch) as mock_get_fahrtenbuch:
+            from hub.partner import PartnerHandler
+            handler = PartnerHandler(base_path)
+            handler.db_path = db_path
+            data = handler._load_partners_from_db()
+
+            with patch.object(handler, "_get_current_zone", return_value=1):
+                ok, text = handler._delegate(data, ["Delegation Smoke"], dry_run=False)
+
+        assert ok is True
+        assert "Delegation in MessageBox gespeichert" in text
+        mock_get_fahrtenbuch.assert_called_once_with(db_path=db_path)
+        fahrtenbuch.eintrag.assert_called_once()

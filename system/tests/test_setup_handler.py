@@ -475,11 +475,15 @@ class TestSetupCheck:
         )
 
         commands = []
+        global_modules = tmp_path / "npm-global"
+        (global_modules / "ellmos-codecommander-mcp").mkdir(parents=True)
+        (global_modules / "ellmos-filecommander-mcp").mkdir(parents=True)
 
         def fake_run(cmd, **kwargs):
             commands.append(cmd)
-            package = cmd[3]
-            return SimpleNamespace(returncode=0, stdout=f"{package}@1.0.0", stderr="")
+            if cmd[1:3] == ["root", "-g"]:
+                return SimpleNamespace(returncode=0, stdout=str(global_modules), stderr="")
+            raise AssertionError(f"Unexpected command: {cmd}")
 
         monkeypatch.setattr(setup_handler_module.shutil, "which", lambda name: "C:\\Program Files\\nodejs\\npm.CMD")
         monkeypatch.setattr(setup_handler_module.subprocess, "run", fake_run)
@@ -494,6 +498,60 @@ class TestSetupCheck:
         assert "[OK] ellmos-filecommander-mcp installiert" in msg
         assert commands
         assert all(cmd[0].lower().endswith("npm.cmd") for cmd in commands)
+        assert commands[0][1:3] == ["root", "-g"]
+
+    def test_check_accepts_local_mcp_workspace_repos(self, handler, tmp_path, monkeypatch):
+        root = handler.base_path.parent
+        (root / "USER.md").write_text("# User", encoding="utf-8")
+
+        fake_home = tmp_path / "home"
+        secrets_dir = fake_home / ".bach"
+        secrets_dir.mkdir(parents=True)
+        (secrets_dir / "bach_secrets.json").write_text(
+            json.dumps({"secrets": {"demo": "value"}}),
+            encoding="utf-8",
+        )
+
+        global_modules = tmp_path / "npm-global"
+        global_modules.mkdir()
+        local_mcp_root = tmp_path / ".MCP"
+        for pkg in (
+            "ellmos-codecommander-mcp",
+            "ellmos-filecommander-mcp",
+            "n8n-manager-mcp",
+        ):
+            pkg_dir = local_mcp_root / pkg
+            (pkg_dir / "dist").mkdir(parents=True)
+            (pkg_dir / "package.json").write_text(
+                json.dumps({"name": pkg}),
+                encoding="utf-8",
+            )
+
+        def fake_run(cmd, **kwargs):
+            if cmd[1:3] == ["root", "-g"]:
+                return SimpleNamespace(returncode=0, stdout=str(global_modules), stderr="")
+            raise AssertionError(f"Unexpected command: {cmd}")
+
+        monkeypatch.setattr(setup_handler_module.shutil, "which", lambda name: "C:\\Program Files\\nodejs\\npm.CMD")
+        monkeypatch.setattr(setup_handler_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(setup_handler_module.Path, "home", staticmethod(lambda: fake_home))
+        monkeypatch.setattr(setup_handler_module.importlib.util, "find_spec", lambda name: object())
+
+        ok, msg = handler._check()
+
+        assert ok
+        assert "[OK] ellmos-codecommander-mcp lokale Arbeitskopie erkannt" in msg
+        assert "[OK] ellmos-filecommander-mcp lokale Arbeitskopie erkannt" in msg
+        assert "[OK] n8n-manager-mcp lokale Arbeitskopie erkannt (optional)" in msg
+
+    def test_local_mcp_roots_accept_env_override(self, handler, tmp_path, monkeypatch):
+        env_root = tmp_path / "external-mcp-workspaces"
+        env_root.mkdir()
+        monkeypatch.setenv("BACH_LOCAL_MCP_ROOTS", str(env_root))
+
+        roots = handler._candidate_local_mcp_roots()
+
+        assert env_root in roots
 
     def test_check_fails_when_psutil_missing(self, handler, tmp_path, monkeypatch):
         root = handler.base_path.parent

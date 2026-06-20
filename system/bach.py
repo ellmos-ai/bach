@@ -48,13 +48,21 @@ DATA_DIR = SYSTEM_ROOT / "data"
 HUB_DIR = SYSTEM_ROOT / "hub"
 SKILLS_DIR = SYSTEM_ROOT / "skills"
 TOOLS_DIR = SYSTEM_ROOT / "tools"
-DB_PATH = DATA_DIR / "bach.db"
+LEGACY_DB_PATH = DATA_DIR / "bach.db"
+DB_PATH = LEGACY_DB_PATH
 LOGS_DIR = DATA_DIR / "logs"
 
 # sys.path Setup fuer Handler-Imports
 for p in [str(SYSTEM_ROOT), str(SKILLS_DIR), str(SKILLS_DIR / "tools")]:
     if p not in sys.path:
         sys.path.insert(0, p)
+
+try:
+    from hub.bach_paths import BACH_DB as CANONICAL_BACH_DB
+except Exception:
+    CANONICAL_BACH_DB = LEGACY_DB_PATH
+
+DB_PATH = CANONICAL_BACH_DB
 
 # ═══════════════════════════════════════════════════════════════
 # AUTO-LOGGER
@@ -641,8 +649,7 @@ def _handle_folders(sub_cmd, args):
         from hub.folders import _handle_folders as handle_folders_command
         # sub_cmd + args zusammenfügen
         full_args = [sub_cmd] + args if sub_cmd else args
-        db_path = DATA_DIR / "bach.db"
-        return handle_folders_command(db_path, full_args)
+        return handle_folders_command(DB_PATH, full_args)
     except Exception as e:
         print(f"[ERROR] Folders: {e}")
         return 1

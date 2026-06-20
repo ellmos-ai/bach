@@ -1,13 +1,13 @@
 # Portabilität: UNIVERSAL
 # Version: 1.0.0
-# Zuletzt validiert: 2026-02-28
-# Nächste Prüfung: 2026-08-28
+# Zuletzt validiert: 2026-06-20
+# Nächste Prüfung: 2026-12-20
 # Ressourcen: [hub/prompt.py, prompt_templates, prompt_boards, prompt_versions]
 
 PROMPT - Prompt-Template-Verwaltung
 =====================================
 
-STAND: 2026-02-28
+STAND: 2026-06-20
 
 Das Prompt-System verwaltet wiederverwendbare Prompt-Templates mit
 Versionierung und Organisationsmöglichkeit via Boards.
@@ -88,12 +88,13 @@ Versionshistorie ist bei `bach prompt get <id>` sichtbar:
     1     2026-01-15T10:30:00        Alter Text...
     2     2026-02-01T14:00:00        Nächste Version...
 
-CONFLICT RESOLUTION (--confidence)
-------------------------------------
-Beim `add` kann Konfidenz angegeben werden (für Shared Memory):
-  bach prompt add <name> <text> --confidence 0.8
+ABGRENZUNG ZU MEMORY / SHARED MEMORY
+-------------------------------------
+`bach prompt` verwaltet Prompt-Templates und Boards. Der Handler kennt keine
+`--confidence`-Option und führt keine Shared-Memory-Konfliktauflösung durch.
 
-Bei Konflikten (gleicher Key, Namespace) gewinnt höhere Konfidenz.
+Konfidenzwerte gehören zu Memory- und Shared-Memory-Befehlen, z.B.:
+  bach --memory fact "key:value" --conf=0.8
 
 DATENBANK
 ---------

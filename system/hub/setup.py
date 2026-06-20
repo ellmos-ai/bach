@@ -18,6 +18,7 @@ B37: Optionale MCP-Server (n8n-manager-mcp) separat installierbar.
 """
 import importlib.util
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -61,6 +62,7 @@ class SetupHandler(BaseHandler):
 
     def __init__(self, base_path: Path):
         super().__init__(base_path)
+        self._npm_global_root_cache: Path | None | bool = False
 
     @property
     def profile_name(self) -> str:
@@ -296,19 +298,19 @@ class SetupHandler(BaseHandler):
             all_ok = False
 
         # 2. MCP-Server
-        for pkg in ["ellmos-codecommander-mcp", "ellmos-filecommander-mcp"]:
-            try:
-                proc = subprocess.run(
-                    [npm_path, "list", "-g", pkg, "--depth=0"],
-                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15
-                )
-                if proc.returncode == 0 and pkg in proc.stdout:
-                    checks.append(f"[OK] {pkg} installiert")
-                else:
-                    checks.append(f"[!!] {pkg} nicht installiert")
-                    all_ok = False
-            except Exception:
+        npm_root = self._get_npm_global_root()
+        for pkg in self.CORE_MCP_PACKAGES:
+            package_path = self._get_npm_package_path(pkg)
+            local_repo_path = self._get_local_mcp_repo_path(pkg)
+            if package_path and package_path.exists():
+                checks.append(f"[OK] {pkg} installiert")
+            elif local_repo_path:
+                checks.append(f"[OK] {pkg} lokale Arbeitskopie erkannt")
+            elif npm_root is None:
                 checks.append(f"[??] {pkg} konnte nicht geprueft werden")
+                all_ok = False
+            else:
+                checks.append(f"[!!] {pkg} nicht installiert")
                 all_ok = False
 
         # 3. Secrets-Datei
@@ -342,9 +344,12 @@ class SetupHandler(BaseHandler):
 
         # 6. Optionale MCP-Server (nur Info, kein Fehler wenn nicht installiert)
         for pkg, info in self.OPTIONAL_MCP_PACKAGES.items():
-            installed = self._is_npm_package_installed(pkg)
-            if installed:
+            package_path = self._get_npm_package_path(pkg)
+            local_repo_path = self._get_local_mcp_repo_path(pkg)
+            if package_path and package_path.exists():
                 checks.append(f"[OK] {pkg} installiert (optional)")
+            elif local_repo_path:
+                checks.append(f"[OK] {pkg} lokale Arbeitskopie erkannt (optional)")
             else:
                 checks.append(f"[--] {pkg} nicht installiert (optional, bach setup n8n)")
 
@@ -1319,17 +1324,8 @@ class SetupHandler(BaseHandler):
 
     def _is_npm_package_installed(self, package: str) -> bool:
         """Prueft ob ein npm-Paket global installiert ist."""
-        npm_path = self._resolve_npm_executable()
-        if not npm_path:
-            return False
-        try:
-            proc = subprocess.run(
-                [npm_path, "list", "-g", package, "--depth=0"],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15
-            )
-            return proc.returncode == 0 and package in proc.stdout
-        except Exception:
-            return False
+        package_path = self._get_npm_package_path(package)
+        return bool(package_path and package_path.exists())
 
     def _resolve_npm_executable(self) -> str | None:
         """Resolve the platform-specific npm executable usable by subprocess."""
@@ -1337,6 +1333,95 @@ class SetupHandler(BaseHandler):
             npm_path = shutil.which(candidate)
             if npm_path:
                 return npm_path
+        return None
+
+    def _get_npm_global_root(self) -> Path | None:
+        """Ermittelt das globale npm node_modules-Verzeichnis einmal pro Handler."""
+        if self._npm_global_root_cache is not False:
+            return self._npm_global_root_cache
+
+        npm_path = self._resolve_npm_executable()
+        if not npm_path:
+            self._npm_global_root_cache = None
+            return None
+
+        try:
+            proc = subprocess.run(
+                [npm_path, "root", "-g"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+            )
+        except Exception:
+            self._npm_global_root_cache = None
+            return None
+
+        if proc.returncode != 0:
+            self._npm_global_root_cache = None
+            return None
+
+        root = proc.stdout.strip()
+        self._npm_global_root_cache = Path(root) if root else None
+        return self._npm_global_root_cache
+
+    def _get_npm_package_path(self, package: str) -> Path | None:
+        """Liefert den erwarteten globalen Installationspfad eines npm-Pakets."""
+        root = self._get_npm_global_root()
+        if root is None:
+            return None
+        return root.joinpath(*package.split("/"))
+
+    def _candidate_local_mcp_roots(self) -> list[Path]:
+        """Sammelt moegliche lokale MCP-Workspace-Wurzeln fuer BACH-Entwicklungsumgebungen."""
+        roots = []
+        seen = set()
+
+        def add_root(path: Path) -> None:
+            key = str(path)
+            if key in seen:
+                return
+            seen.add(key)
+            if path.exists():
+                roots.append(path)
+
+        for raw_root in os.environ.get("BACH_LOCAL_MCP_ROOTS", "").split(os.pathsep):
+            raw_root = raw_root.strip()
+            if raw_root:
+                add_root(Path(raw_root).expanduser())
+
+        try:
+            base = self.base_path.resolve()
+        except OSError:
+            base = self.base_path
+
+        for parent in [base, *base.parents]:
+            add_root(parent / ".MCP")
+
+        return roots
+
+    def _get_local_mcp_repo_path(self, package: str) -> Path | None:
+        """Findet eine lokale MCP-Arbeitskopie mit passender package.json."""
+        for root in self._candidate_local_mcp_roots():
+            candidate = root / package
+            package_json = candidate / "package.json"
+            if not candidate.is_dir() or not package_json.exists():
+                continue
+
+            try:
+                meta = json.loads(package_json.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+
+            if meta.get("name") != package:
+                continue
+
+            if not ((candidate / "dist").exists() or (candidate / "server.json").exists()):
+                continue
+
+            return candidate
+
         return None
 
     def _validate_mcp_install_plan(self, packages: list,

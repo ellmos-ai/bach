@@ -12,6 +12,7 @@ SYSTEM_ROOT = Path(__file__).parent.parent
 if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
+import bach as bach_cli
 from hub import bach_paths
 from hub.bach_paths import (
     BACH_ROOT,
@@ -113,6 +114,9 @@ class TestDbPaths:
         assert isinstance(BACH_DB, Path)
         assert BACH_DB.name == "bach.db"
 
+    def test_cli_runtime_uses_canonical_bach_db(self):
+        assert bach_cli.DB_PATH == BACH_DB
+
     def test_get_db_default(self):
         assert get_db() == BACH_DB
 
@@ -170,6 +174,26 @@ class TestGetPath:
 
     def test_connectors(self):
         assert get_path("connectors") == CONNECTORS_DIR
+
+
+class TestCliHelpers:
+    def test_folders_helper_uses_canonical_bach_db(self, monkeypatch):
+        from hub import folders as folders_module
+
+        captured = {}
+
+        def fake_handle_folders(db_path, args):
+            captured["db_path"] = db_path
+            captured["args"] = args
+            return 0
+
+        monkeypatch.setattr(folders_module, "_handle_folders", fake_handle_folders)
+
+        result = bach_cli._handle_folders("list", ["--json"])
+
+        assert result == 0
+        assert captured["db_path"] == BACH_DB
+        assert captured["args"] == ["list", "--json"]
 
 
 # ═══════════════════════════════════════════════════════════════

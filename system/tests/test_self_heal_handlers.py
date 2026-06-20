@@ -497,7 +497,8 @@ def test_startup_resource_summary_uses_current_layout_and_db_counts(tmp_path):
     base = _init_base(tmp_path)
     (base / "skills" / "workflows").mkdir(parents=True)
     (base / "skills" / "workflows" / "daily-check.md").write_text("# workflow\n", encoding="utf-8")
-    (base / "skills" / "workflows" / "weekly.txt").write_text("workflow\n", encoding="utf-8")
+    (base / "skills" / "workflows" / "_archive").mkdir()
+    (base / "skills" / "workflows" / "_archive" / "weekly.md").write_text("# archived\n", encoding="utf-8")
     (base / "docs" / "help").mkdir(parents=True)
     (base / "docs" / "help" / "agent.txt").write_text("help\n", encoding="utf-8")
     (base / "docs" / "help" / "startup.txt").write_text("help\n", encoding="utf-8")
@@ -522,7 +523,7 @@ def test_startup_resource_summary_uses_current_layout_and_db_counts(tmp_path):
 
     assert counts == {
         "agents": 4,
-        "workflows": 2,
+        "workflows": 1,
         "skills": 4,
         "tools": 2,
         "help": 2,
