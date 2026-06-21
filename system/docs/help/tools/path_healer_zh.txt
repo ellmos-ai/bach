@@ -2,53 +2,53 @@
 # Last validated: 2026-05-17
 # Next review: 2027-05-17
 
-PFADVERWALTUNG IN BACH
-----------------------
+路径管理
+======================
 
-WICHTIG: Pfade werden in BACH AUTOMATISCH verwaltet!
+重要：BACH 中的路径是自动管理的！
 -------------------------------------------------------
-bach_paths.py ist die "Single Source of Truth" fuer alle Pfade.
-Alle Pfade werden dynamisch berechnet — wenn BACH verschoben wird,
-funktioniert alles automatisch. Manuelle Pfad-Reparaturen sind
-im Normalfall NICHT noetig.
+bach_paths.py 是所有路径的“单一事实来源”。
+所有路径都是动态计算的——当 BACH 移动时，
+一切都会自动进行。手动路径修复是
+通常不需要。
 
   from bach_paths import get_path, BACH_ROOT, TOOLS_DIR
-  tools = get_path("tools")      # Immer korrekt, egal wo BACH liegt
+  tools = get_path("tools") # 始终正确，无论 BACH 位于何处
 
-Siehe: bach --help bach_paths     (Vollstaendige Doku)
+请参阅： bach --help bach_paths（完整文档）
 
 
-WANN IST MANUELLE PFAD-AKTUALISIERUNG NOETIG?
+何时需要手动更新路径？
 ----------------------------------------------
-Nur wenn sich Pfade in DOKUMENTATION und KOMMENTAREN befinden
-(nicht in Code der get_path() nutzt). Betrifft:
-  - Help-Dateien (.txt)
-  - Wiki-Artikel (.txt)
-  - Markdown-Doku (.md)
-  - Docstrings in Python-Dateien
+仅当路径位于文档和注释中时
+（不在使用 get_path() 的代码中）。主题：
+  - 帮助文件（.txt）
+  - 维基文章 (.txt)
+  - Markdown 文档 (.md)
+  - Python 文件中的文档字符串
 
-Fuer diesen Zweck gibt es den Doc Path Updater:
+有用于此目的的文档路径更新程序：
 
-  bach --maintain docs-paths             # Dry-Run (nur anzeigen)
-  bach --maintain docs-paths --apply     # Tatsaechlich korrigieren
+  bach --maintain docs-paths             # Dry-Run（仅查看）
+  bach --maintain docs-paths --apply     # 实际上修复它
 
-Tool: system/tools/maintenance/doc_path_updater.py
+工具：system/tools/maintenance/doc_path_updater.py
 
 
-WAS WURDE FRUEHER FALSCH GEMACHT?
+之前做错了什么？
 ----------------------------------
-Der alte "path_healer.py" (RecludOS-Relikt) versuchte ALLE Dateien
-zu heilen, inklusive Python-Code. Das war:
-1. Ueberfluessig (bach_paths.py loest das dynamisch)
-2. Gefaehrlich (nicht-idempotente Regeln korrumpierten 101 Dateien)
-3. Nie korrekt integriert (falscher Dateiname im CLI-Handler)
+旧的“path_healer.py”（RecludOS 遗物）尝试了所有文件
+治愈，包括Python代码。那是：
+1. 多余（bach_paths.py 动态解决了这个问题）
+2. 危险（非幂等规则损坏了101个文件）
+3. 从未正确集成（CLI 处理程序中的文件名错误）
 
-Seit v2.1.0 ist das Tool auf Dokumentations-Updates beschraenkt
-und idempotent (kann beliebig oft ausgefuehrt werden).
+自 v2.1.0 起，该工具仅限于文档更新
+和幂等（可以根据需要经常运行）。
 
 
-SIEHE AUCH
+另请参见
 ----------
-- bach --help bach_paths        Zentrale Pfadverwaltung (EMPFOHLEN)
-- bach --help path              Pfade anzeigen und validieren
-- bach --help dirscan           Directory Truth (Zustandsverwaltung)
+- bach --help bach_paths 中央路径管理（推荐）
+- bach --help path 显示并验证路径
+- bach --help dirscan 目录真相（状态管理）

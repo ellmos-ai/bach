@@ -9,6 +9,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 ### Changed
 
 - **PromptBoard-Storage-Erkennung harmonisiert:** Der BACH-Tray sucht `library.json` jetzt nach `BACH_PROMPTBOARD_LIBRARY` zuerst im aktuellen PromptBoard-Desktop-Standard `~/.promptboard/` und nutzt `%APPDATA%/PromptBoard/` nur noch als Legacy-Fallback.
+- **Quick-/Silent-Startup entschärft:** Der Skill-Health-Monitor wird bei Quick- und Silent-Starts übersprungen, damit Automationen und kurze Smokes nicht durch den breiten Skill-Scan ausgebremst werden; Workstation-spezifische Memory-Mirrors sind zusätzlich ignoriert.
 - **Domänen-Workflows vervollständigt:** Zwölf neue Workflow-Dateien (`assistent`, `care-modul`, `datenmodul`, `dokumentenmodul`, `finanzen`, `gesundheit`, `haushalt`, `karriere`, `reflection-status`, `selbstmanagement`, `therapie`, `wissen`) decken jetzt die bisher manuellen Usecase-Kategorien ab.
 - **Workflow-Katalog auf 71 Vorlagen erhöht:** README und Workflow-Spiegel referenzieren die neue Gesamtzahl nach dem Ausbau der Usecase-Frontdoor.
 - **OpenClaw-Abgleich auf 2026-06-16 gehoben:** README, README.de, ROADMAP und `NEXT_RELEASE` spiegeln jetzt Stable `2026.6.8` sowie das neueste sichtbare Prerelease `2026.6.8-beta.2` mit Fokus auf Kanalzustellung, Recovery, Provider-/Auth-Härtung und explizite Websuch-Defaults.
@@ -31,6 +32,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 ### Verified
 
 - **PromptBoard-Tray-Pfadsmoke verifiziert:** `python -m pytest system\tests\test_connectors_and_tray.py -q` lief mit `72 passed`; `python system\hub\_services\chat\chat_tray.py --smoke-promptboard` findet `~/.promptboard/library.json` nun vor dem AppData-Fallback.
+- **Startup-Skip-Regressionspfad ergänzt:** `system/tests/test_startup_handler.py` deckt ab, dass Quick-/Silent-Starts den Skill-Health-Monitor nicht aufrufen und volle interaktive Starts ihn weiterhin ausführen.
 - **Resolver-Abdeckung für Restkategorien verifiziert:** `python -m pytest system/tests/test_tuev_handler.py -q -k "resolve_uppercase_category_to_lowercase_workflow_file or resolve_snake_case_category_to_kebab_case_workflow_file"` lief mit `2 passed`.
 - **Usecase-Workflow-Abdeckung jetzt vollständig:** Ein direkter Resolver-Check sieht 50 workflowgebundene und 0 manuelle Usecases; `bach usecase run 50 --dry-run` löst `skills\workflows\reflection-status.md` sauber auf.
 - **Startup- und Agenten-Smokes auf 2026-06-17 erneuert:** `bach --startup quick --mode=silent --partner=codex` lief in rund 58 Sekunden erfolgreich durch, und der vollständige `test-agent`-Steuerzyklus (`clear-steer`, `steer`, `start`, `status`, `pause`, `checkpoint`, `resume`, `stop`, `clear-steer`) blieb erneut grün.

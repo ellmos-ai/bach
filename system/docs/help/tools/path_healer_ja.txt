@@ -12,7 +12,7 @@ bach_paths.py はすべてのパスに対する「唯一の信頼できる情報
 すべてが自動的に機能します。手動パス修復は、
 通常は必要ありません。
 
-  from bach_paths import get_path、BACH_ROOT、TOOLS_DIR
+  from bach_paths import get_path, BACH_ROOT, TOOLS_DIR
   tools = get_path("tools") # BACH の場所に関係なく、常に正しい
 
 参照: bach --help bach_paths (完全なドキュメント)

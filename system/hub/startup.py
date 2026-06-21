@@ -699,22 +699,27 @@ class StartupHandler(BaseHandler):
         # ══════════════════════════════════════════════════════════════
         # 0.8 SKILL HEALTH MONITOR - Skill/Agent Validierung
         # ══════════════════════════════════════════════════════════════
-        try:
-            from skill_health_monitor import SkillHealthMonitor
-            monitor = SkillHealthMonitor(self.base_path)
-            is_healthy, report = monitor.check_all()
-            
-            if not is_healthy and monitor.issues:
-                results.append("")
-                results.append("[SKILL HEALTH]")
-                results.append(f" [!] {len(monitor.issues)} Skill-Probleme gefunden")
-                for issue in monitor.issues[:3]:
-                    results.append(f"   - {issue.get('message', '')[:40]}")
-                if len(monitor.issues) > 3:
-                    results.append(f"   ... und {len(monitor.issues) - 3} weitere")
-                results.append(" --> bach maintain skills fuer Details")
-        except Exception as e:
-            pass  # Silent fail - nicht kritisch
+        if quick or startup_mode == "silent":
+            results.append("")
+            results.append("[SKILL HEALTH]")
+            results.append(" [SKIP] Quick-/Silent-Start: Health-Monitor übersprungen")
+        else:
+            try:
+                from skill_health_monitor import SkillHealthMonitor
+                monitor = SkillHealthMonitor(self.base_path)
+                is_healthy, report = monitor.check_all()
+
+                if not is_healthy and monitor.issues:
+                    results.append("")
+                    results.append("[SKILL HEALTH]")
+                    results.append(f" [!] {len(monitor.issues)} Skill-Probleme gefunden")
+                    for issue in monitor.issues[:3]:
+                        results.append(f"   - {issue.get('message', '')[:40]}")
+                    if len(monitor.issues) > 3:
+                        results.append(f"   ... und {len(monitor.issues) - 3} weitere")
+                    results.append(" --> bach maintain skills fuer Details")
+            except Exception as e:
+                pass  # Silent fail - nicht kritisch
         
         # ══════════════════════════════════════════════════════════════
         # 0.9 KERNEL HASH CHECK - Siegelsystem (SQ021, ENT-14)

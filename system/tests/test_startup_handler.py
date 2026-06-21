@@ -154,6 +154,90 @@ class TestHooksScope:
         assert ok is True
 
 
+class TestSkillHealthMonitorStartup:
+    def test_quick_start_skips_skill_health_monitor(self, startup_env):
+        h, _, _ = startup_env
+
+        class RaisingMonitor:
+            issues = []
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def check_all(self):
+                raise AssertionError("SkillHealthMonitor should be skipped")
+
+        fake_module = MagicMock()
+        fake_module.SkillHealthMonitor = RaisingMonitor
+
+        with patch.dict(sys.modules, {"skill_health_monitor": fake_module}):
+            ok, msg = h._run_startup(
+                quick=True,
+                dry_run=True,
+                startup_mode="gui",
+                partner_id="codex",
+            )
+
+        assert ok is True
+        assert "[SKILL HEALTH]" in msg
+        assert "Health-Monitor übersprungen" in msg
+
+    def test_silent_start_skips_skill_health_monitor(self, startup_env):
+        h, _, _ = startup_env
+
+        class RaisingMonitor:
+            issues = []
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def check_all(self):
+                raise AssertionError("SkillHealthMonitor should be skipped")
+
+        fake_module = MagicMock()
+        fake_module.SkillHealthMonitor = RaisingMonitor
+
+        with patch.dict(sys.modules, {"skill_health_monitor": fake_module}):
+            ok, msg = h._run_startup(
+                quick=False,
+                dry_run=True,
+                startup_mode="silent",
+                partner_id="codex",
+            )
+
+        assert ok is True
+        assert "[SKILL HEALTH]" in msg
+        assert "Health-Monitor übersprungen" in msg
+
+    def test_full_interactive_start_runs_skill_health_monitor(self, startup_env):
+        h, _, _ = startup_env
+        called = {"value": False}
+
+        class FakeMonitor:
+            issues = []
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def check_all(self):
+                called["value"] = True
+                return True, {}
+
+        fake_module = MagicMock()
+        fake_module.SkillHealthMonitor = FakeMonitor
+
+        with patch.dict(sys.modules, {"skill_health_monitor": fake_module}):
+            ok, _ = h._run_startup(
+                quick=False,
+                dry_run=True,
+                startup_mode="gui",
+                partner_id="codex",
+            )
+
+        assert ok is True
+        assert called["value"] is True
+
+
 class TestSecretsImport:
     """Bug-Fix: 'from secrets import SecretsHandler' shadowed stdlib."""
 
