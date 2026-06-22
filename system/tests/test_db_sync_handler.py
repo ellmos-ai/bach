@@ -5,6 +5,7 @@
 import sys
 import json
 import sqlite3
+import time
 import pytest
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -339,6 +340,30 @@ class TestSyncEvents:
         assert ok is True
         assert "Keine neueren" in msg
 
+    def test_sync_on_start_defers_failed_backup_until_cooldown_expires(self, sync_env, monkeypatch):
+        m, _, _, transit = sync_env
+        foreign = transit / "bach_OTHER-PC_2026-05-15T10-00-00.bachdb"
+        foreign.write_text("dummy")
+
+        def _boom(_backup_path):
+            raise sqlite3.OperationalError("disk I/O error")
+
+        monkeypatch.setattr(m, "merge_backup", _boom)
+
+        ok, msg = m.sync_on_start()
+        assert ok is False
+        assert "verschoben" in msg
+
+        state = m._load_sync_state()
+        assert foreign.name in state["deferred_backups"]
+        assert m.find_newer_backups() == []
+
+        state["deferred_backups"][foreign.name]["retry_after"] = time.time() - 1
+        m._save_sync_state(state)
+        newer = m.find_newer_backups()
+        assert len(newer) == 1
+        assert newer[0].name == foreign.name
+
     def test_sync_on_exit_creates_backup(self, sync_env):
         m, _, _, transit = sync_env
         ok, msg = m.sync_on_exit()
@@ -471,3 +496,17 @@ class TestSyncState:
         m._sync_state_file.write_text("NOT JSON", encoding='utf-8')
         state = m._load_sync_state()
         assert state == {}
+
+    def test_prune_deferred_backups_removes_expired_entries(self, sync_env):
+        m, _, _, _ = sync_env
+        state = {
+            "deferred_backups": {
+                "expired.bachdb": {"retry_after": time.time() - 5},
+                "active.bachdb": {"retry_after": time.time() + 60},
+            }
+        }
+
+        changed = m._prune_deferred_backups(state)
+        assert changed is True
+        assert "expired.bachdb" not in state["deferred_backups"]
+        assert "active.bachdb" in state["deferred_backups"]

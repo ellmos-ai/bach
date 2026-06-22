@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
 # Version: 2.0.0
-# Zuletzt validiert: 2026-05-10
+# Zuletzt validiert: 2026-06-21
 
 HANDLER-NAME
 ============
@@ -23,6 +23,12 @@ durch shared-columns-Erkennung und named INSERT. Secrets werden aus Backups
 entfernt. Automatische Cleanup-Strategie: Behalte neueste Backups pro Host
 plus alles unter X Tagen (Default: 7 Tage, 10 pro Host).
 
+Fail-soft bei OneDrive-Problemen: Transit-Backups werden vor dem Merge lokal
+gestaged. Falls ein konkreter Pull-Kandidat wegen Cloud-Timeout oder `disk I/O`
+fehlschlägt, merkt ProSync diesen Backup-Namen für etwa 30 Minuten in
+`~/.bach/sync_state.json` vor und überspringt ihn in Startup-Syncs vorübergehend,
+statt jede CLI-Abfrage erneut zu blockieren.
+
 ProSync ist optional. Single-System-Installationen brauchen keinen Sync.
 Konfiguration: bach setup prosync --multi-system / --single-system.
 
@@ -39,6 +45,7 @@ bach db sync
   Konflikt-Check: Wenn andere PCs aktiv sind (Heartbeat < 5min), wird nach Bestätigung gefragt.
   Flags: --auto oder -y für non-interactive Mode.
   Merge-Strategie: Neuere Zeilen (Timestamp) gewinnen (INSERT OR REPLACE).
+  Bei Cloud-Timeouts wird der fehlerhafte Pull-Kandidat zeitweise zurückgestellt.
 
 bach db status
   Zeigt Status anzeigen: Lokale DB, Backup-Ordner, letzte 10 Backups (Host, Zeit, Größe),
