@@ -14,27 +14,25 @@ Partner Handler - Partner-Verwaltung
     --score               Zeige Komplexitäts-Score an
 """
 import json
-import sys
 from pathlib import Path
 from .base import BaseHandler
 
-# Complexity Scorer Import
-sys.path.insert(0, str(Path(__file__).parent / "_services" / "delegation"))
 try:
-    from complexity_scorer import get_scorer
+    from ._services.delegation import (
+        SCORER_SOURCE,
+        berechne_gas,
+        get_bordcomputer,
+        get_fahrtenbuch,
+        get_fahrschule,
+        get_gas_bremse,
+        get_scorer,
+        get_analyser as get_strecken_analyser,
+    )
     HAS_COMPLEXITY_SCORER = True
-except ImportError:
-    HAS_COMPLEXITY_SCORER = False
-
-# clutch-bridge Imports (Tasks [1075]-[1079])
-try:
-    from strecken_analyse import get_analyser as get_strecken_analyser
-    from gas_bremse import get_gas_bremse, berechne_gas
-    from bordcomputer import get_bordcomputer
-    from fahrschule import get_fahrschule
-    from fahrtenbuch import get_fahrtenbuch
     HAS_CLUTCH_BRIDGE = True
 except ImportError:
+    SCORER_SOURCE = "unavailable"
+    HAS_COMPLEXITY_SCORER = False
     HAS_CLUTCH_BRIDGE = False
 
 
@@ -287,10 +285,14 @@ class PartnerHandler(BaseHandler):
         target_partner = None
         forced_zone = None
         gas_level = None
+        show_score = "--score" in args
         results = []
         fallback_local = "--fallback-local" in args or "--fal" in args
 
-        args = [a for a in args if a not in ["--fallback-local", "--fal", "--dry-run"]]
+        args = [
+            a for a in args
+            if a not in ["--fallback-local", "--fal", "--dry-run", "--score"]
+        ]
 
         for arg in args:
             if arg.startswith("--to="):
@@ -310,6 +312,21 @@ class PartnerHandler(BaseHandler):
 
         if not task_text:
             return False, "Kein Task angegeben. Nutzung: bach partner delegate 'Task-Beschreibung' [--to=NAME] [--zone=N] [--gas=N]"
+
+        scorer = None
+        score = None
+        score_breakdown = None
+        recommended_model = None
+        if HAS_COMPLEXITY_SCORER:
+            try:
+                scorer = get_scorer()
+                score, score_breakdown = scorer.score(task_text)
+                recommended_model = scorer.get_recommended_model(score)
+            except Exception:
+                scorer = None
+                score = None
+                score_breakdown = None
+                recommended_model = None
 
         # clutch-bridge: StreckenAnalyse + Gas/Bremse
         strecken_profil = None
@@ -424,6 +441,21 @@ class PartnerHandler(BaseHandler):
         results.append(f"  Partner:  {selected.get('name')}")
         results.append(f"  Typ:      {selected.get('type')}")
         results.append(f"  Kosten:   {selected.get('token_cost')}")
+        if show_score:
+            if score is not None and score_breakdown is not None:
+                results.append(
+                    f"  Score:    {score}/100 (Quelle: {SCORER_SOURCE}, Modell: {recommended_model})"
+                )
+                results.append(
+                    "  Breakdown:"
+                    f" Laenge={score_breakdown.get('length', 0)},"
+                    f" Keywords={score_breakdown.get('keywords', 0)},"
+                    f" Code={score_breakdown.get('code', 0)},"
+                    f" Multi-Step={score_breakdown.get('multi_step', 0)},"
+                    f" Technik={score_breakdown.get('technical', 0)}"
+                )
+            else:
+                results.append("  Score:    nicht verfuegbar")
 
         # clutch-bridge Details
         if strecken_profil:

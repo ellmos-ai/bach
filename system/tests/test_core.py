@@ -380,6 +380,31 @@ class TestApp:
         assert success is True
         assert len(message) > 0
 
+    def test_execute_forwards_dry_run_flag(self):
+        from core.app import App
+
+        called = {}
+
+        class DummyHandler:
+            def handle(self, operation, args, dry_run=False):
+                called["operation"] = operation
+                called["args"] = list(args)
+                called["dry_run"] = dry_run
+                return True, "ok"
+
+        app = App(SYSTEM_ROOT)
+        app.get_handler = lambda _name: DummyHandler()
+
+        success, message = app.execute("dummy", "run", ["target", "--dry-run"])
+
+        assert success is True
+        assert message == "ok"
+        assert called == {
+            "operation": "run",
+            "args": ["target", "--dry-run"],
+            "dry_run": True,
+        }
+
 
 class TestBachCliDispatch:
     def _dummy_app(self, called):

@@ -3,6 +3,7 @@
 
 import json
 import os
+import subprocess
 import sqlite3
 import sys
 from pathlib import Path
@@ -236,6 +237,58 @@ class TestSkillHealthMonitorStartup:
 
         assert ok is True
         assert called["value"] is True
+
+    def test_full_interactive_start_reports_skill_health_subprocess_issues(self, startup_env):
+        h, base, _ = startup_env
+        script = base / "tools" / "maintenance" / "skill_health_monitor.py"
+        script.parent.mkdir(parents=True)
+        script.write_text("# dummy", encoding="utf-8")
+
+        completed = subprocess.CompletedProcess(
+            args=["python"],
+            returncode=1,
+            stdout=json.dumps({
+                "healthy": False,
+                "issues": [{"description": "DB-Pfad hängt"}],
+                "warnings": [],
+            }),
+            stderr="",
+        )
+
+        with patch("hub.startup.subprocess.run", return_value=completed):
+            ok, msg = h._run_startup(
+                quick=False,
+                dry_run=True,
+                startup_mode="gui",
+                partner_id="codex",
+            )
+
+        assert ok is True
+        assert "[SKILL HEALTH]" in msg
+        assert "1 Skill-Probleme gefunden" in msg
+        assert "DB-Pfad hängt" in msg
+
+    def test_full_interactive_start_timeboxes_skill_health_subprocess(self, startup_env):
+        h, base, _ = startup_env
+        h.SKILL_HEALTH_TIMEOUT_SECONDS = 3
+        script = base / "tools" / "maintenance" / "skill_health_monitor.py"
+        script.parent.mkdir(parents=True)
+        script.write_text("# dummy", encoding="utf-8")
+
+        timeout = subprocess.TimeoutExpired(cmd=["python"], timeout=3)
+
+        with patch("hub.startup.subprocess.run", side_effect=timeout):
+            ok, msg = h._run_startup(
+                quick=False,
+                dry_run=True,
+                startup_mode="gui",
+                partner_id="codex",
+            )
+
+        assert ok is True
+        assert "[SKILL HEALTH]" in msg
+        assert "TIMEOUT" in msg
+        assert "3s" in msg
 
 
 class TestSecretsImport:

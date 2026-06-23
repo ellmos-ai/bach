@@ -201,6 +201,10 @@ class App:
         })
 
         try:
+            arg_list = args or []
+            dry_run = "--dry-run" in arg_list or "-n" in arg_list
+            success, message = handler.handle(operation, arg_list, dry_run=dry_run)
+        except TypeError:
             success, message = handler.handle(operation, args or [])
         except Exception as e:
             success, message = False, f"Fehler in {command} {operation}: {e}"

@@ -255,3 +255,44 @@ class TestCanonicalDbUsage:
         assert "Delegation in MessageBox gespeichert" in text
         mock_get_fahrtenbuch.assert_called_once_with(db_path=db_path)
         fahrtenbuch.eintrag.assert_called_once()
+
+    def test_delegate_score_flag_reports_scorer_details(self, base_path, tmp_path):
+        db_path = tmp_path / "canonical" / "bach.db"
+        db_path.parent.mkdir(parents=True)
+        conn = sqlite3.connect(str(db_path))
+        _create_partner_recognition_table(conn)
+        conn.execute("""
+            INSERT INTO partner_recognition (partner_name, partner_type, api_endpoint,
+                                              capabilities, cost_tier, token_zone, priority, status, notes)
+            VALUES ('Claude', 'api', 'https://api.anthropic.com', '["coding"]',
+                    3, 'zone_1', 90, 'active', 'Primary AI Partner')
+        """)
+        conn.commit()
+        conn.close()
+
+        scorer = MagicMock()
+        scorer.score.return_value = (
+            72,
+            {"length": 15, "keywords": 25, "code": 16, "multi_step": 10, "technical": 6},
+        )
+        scorer.get_recommended_model.return_value = "opus"
+
+        with patch("hub.partner.HAS_COMPLEXITY_SCORER", True), \
+             patch("hub.partner.HAS_CLUTCH_BRIDGE", False), \
+             patch("hub.partner.SCORER_SOURCE", "clutch"), \
+             patch("hub.partner.get_scorer", return_value=scorer):
+            from hub.partner import PartnerHandler
+            handler = PartnerHandler(base_path)
+            handler.db_path = db_path
+            data = handler._load_partners_from_db()
+
+            with patch.object(handler, "_get_current_zone", return_value=1):
+                ok, text = handler._delegate(
+                    data,
+                    ["Migration pruefen", "--score"],
+                    dry_run=True,
+                )
+
+        assert ok is True
+        assert "Score:    72/100 (Quelle: clutch, Modell: opus)" in text
+        assert "Breakdown: Laenge=15, Keywords=25, Code=16, Multi-Step=10, Technik=6" in text

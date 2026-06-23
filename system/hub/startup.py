@@ -19,6 +19,8 @@ Partner-Sessions (v1.1.38):
 import sqlite3
 import json
 import hashlib
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from .base import BaseHandler
@@ -26,6 +28,8 @@ from .base import BaseHandler
 
 class StartupHandler(BaseHandler):
     """Handler fuer --startup - DB-basiert"""
+
+    SKILL_HEALTH_TIMEOUT_SECONDS = 12
 
     def __init__(self, base_path: Path):
         super().__init__(base_path)
@@ -431,6 +435,63 @@ class StartupHandler(BaseHandler):
 
         return lines
 
+    def _run_skill_health_monitor_bounded(
+        self,
+        timeout_seconds: int = None,
+    ) -> tuple[bool | None, dict | None, str | None]:
+        """Führt den Skill-Health-Monitor bounded aus.
+
+        In produktiven Installationen läuft der breite Dateisystem-/DB-Check
+        als Subprozess, damit ein OneDrive- oder SQLite-Block den Startup nicht
+        unendlich festhält. Tests ohne Script-Datei können weiter den
+        importierbaren Monitor faken.
+        """
+        timeout_seconds = timeout_seconds or self.SKILL_HEALTH_TIMEOUT_SECONDS
+        script = self.base_path / "tools" / "maintenance" / "skill_health_monitor.py"
+
+        if script.exists():
+            try:
+                proc = subprocess.run(
+                    [sys.executable, str(script), "check", "--json"],
+                    cwd=str(self.base_path),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=timeout_seconds,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                return (
+                    None,
+                    None,
+                    f" [TIMEOUT] Health-Monitor nach {timeout_seconds}s übersprungen",
+                )
+            except Exception as e:
+                return None, None, f" [SKIP] Health-Monitor: {e}"
+
+            stdout = (proc.stdout or "").strip()
+            if not stdout:
+                detail = (proc.stderr or "").strip()[:120]
+                suffix = f": {detail}" if detail else ""
+                return None, None, f" [SKIP] Health-Monitor ohne JSON-Ausgabe{suffix}"
+
+            try:
+                report = json.loads(stdout)
+            except json.JSONDecodeError:
+                return None, None, " [SKIP] Health-Monitor lieferte kein gültiges JSON"
+
+            return bool(report.get("healthy", proc.returncode == 0)), report, None
+
+        try:
+            from skill_health_monitor import SkillHealthMonitor
+
+            monitor = SkillHealthMonitor(self.base_path)
+            is_healthy, report = monitor.check_all()
+            return is_healthy, report, None
+        except Exception as e:
+            return None, None, f" [SKIP] Health-Monitor: {e}"
+
     def _run_startup(self, quick: bool, dry_run: bool, startup_mode: str = "gui", partner_id: str = "user") -> tuple:
         results = []
         now = datetime.now()
@@ -704,22 +765,24 @@ class StartupHandler(BaseHandler):
             results.append("[SKILL HEALTH]")
             results.append(" [SKIP] Quick-/Silent-Start: Health-Monitor übersprungen")
         else:
-            try:
-                from skill_health_monitor import SkillHealthMonitor
-                monitor = SkillHealthMonitor(self.base_path)
-                is_healthy, report = monitor.check_all()
+            is_healthy, report, skip_message = self._run_skill_health_monitor_bounded()
 
-                if not is_healthy and monitor.issues:
+            if skip_message:
+                results.append("")
+                results.append("[SKILL HEALTH]")
+                results.append(skip_message)
+            elif is_healthy is False and report:
+                issues = report.get("issues") or []
+                if issues:
                     results.append("")
                     results.append("[SKILL HEALTH]")
-                    results.append(f" [!] {len(monitor.issues)} Skill-Probleme gefunden")
-                    for issue in monitor.issues[:3]:
-                        results.append(f"   - {issue.get('message', '')[:40]}")
-                    if len(monitor.issues) > 3:
-                        results.append(f"   ... und {len(monitor.issues) - 3} weitere")
+                    results.append(f" [!] {len(issues)} Skill-Probleme gefunden")
+                    for issue in issues[:3]:
+                        message = issue.get("message") or issue.get("description", "")
+                        results.append(f"   - {message[:40]}")
+                    if len(issues) > 3:
+                        results.append(f"   ... und {len(issues) - 3} weitere")
                     results.append(" --> bach maintain skills fuer Details")
-            except Exception as e:
-                pass  # Silent fail - nicht kritisch
         
         # ══════════════════════════════════════════════════════════════
         # 0.9 KERNEL HASH CHECK - Siegelsystem (SQ021, ENT-14)

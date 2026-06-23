@@ -43,6 +43,7 @@ Erstellt: 2026-02-14
 import json
 import os
 import re
+import shutil
 import socket
 import sqlite3
 import sys
@@ -62,6 +63,8 @@ class DBSyncManager:
     - OneDrive dient als Transit-Hub für .bachdb-Dateien
     - Sync bei BACH-Start (pull) und -Exit (push)
     """
+
+    _FAILED_PULL_RETRY_SECONDS = 30 * 60
 
     def __init__(self, db_path: Path = None, transit_dir: Path = None):
         self.base_path = Path(__file__).parent.parent
@@ -103,6 +106,109 @@ class DBSyncManager:
             encoding='utf-8'
         )
 
+    def _prune_deferred_backups(self, state: dict, now_ts: Optional[float] = None) -> bool:
+        """Entfernt abgelaufene oder ungueltige Deferred-Pull-Eintraege."""
+        deferred = state.get("deferred_backups")
+        if deferred is None:
+            return False
+        if not isinstance(deferred, dict):
+            state.pop("deferred_backups", None)
+            return True
+
+        now_ts = time.time() if now_ts is None else now_ts
+        kept = {}
+        changed = False
+
+        for backup_name, info in deferred.items():
+            if not isinstance(info, dict):
+                changed = True
+                continue
+            retry_after = float(info.get("retry_after") or 0)
+            if retry_after > now_ts:
+                kept[backup_name] = info
+            else:
+                changed = True
+
+        if kept:
+            if kept != deferred:
+                state["deferred_backups"] = kept
+                changed = True
+        elif "deferred_backups" in state:
+            state.pop("deferred_backups", None)
+            changed = True
+
+        return changed
+
+    def _is_backup_deferred(
+        self,
+        backup_path: Path,
+        state: Optional[dict] = None,
+        now_ts: Optional[float] = None,
+    ) -> bool:
+        """Prueft ob ein fehlgeschlagener Pull voruebergehend uebersprungen werden soll."""
+        state = self._load_sync_state() if state is None else state
+        deferred = state.get("deferred_backups")
+        if not isinstance(deferred, dict):
+            return False
+
+        info = deferred.get(backup_path.name)
+        if not isinstance(info, dict):
+            return False
+
+        retry_after = float(info.get("retry_after") or 0)
+        now_ts = time.time() if now_ts is None else now_ts
+        return retry_after > now_ts
+
+    def _record_deferred_backup(
+        self,
+        backup_path: Path,
+        error: Exception,
+        retry_after_seconds: int = None,
+    ):
+        """Merkt einen fehlgeschlagenen Pull, damit Startup-Syncs fail-soft bleiben."""
+        retry_after_seconds = retry_after_seconds or self._FAILED_PULL_RETRY_SECONDS
+        now_ts = time.time()
+        state = self._load_sync_state()
+        self._prune_deferred_backups(state, now_ts=now_ts)
+        deferred = state.setdefault("deferred_backups", {})
+        deferred[backup_path.name] = {
+            "host": self._extract_host(backup_path),
+            "backup_mtime": backup_path.stat().st_mtime if backup_path.exists() else None,
+            "failed_at": now_ts,
+            "retry_after": now_ts + retry_after_seconds,
+            "error": str(error),
+        }
+        self._save_sync_state(state)
+
+    def _clear_deferred_backup(self, backup_path: Path, state: Optional[dict] = None) -> bool:
+        """Entfernt einen Deferred-Eintrag nach erfolgreichem Pull."""
+        state = self._load_sync_state() if state is None else state
+        deferred = state.get("deferred_backups")
+        if not isinstance(deferred, dict):
+            return False
+        if backup_path.name not in deferred:
+            return False
+
+        deferred.pop(backup_path.name, None)
+        if not deferred:
+            state.pop("deferred_backups", None)
+        return True
+
+    def _stage_backup_for_merge(self, backup_path: Path) -> Tuple[Path, bool]:
+        """Kopiert Transit-Backups lokal, bevor sqlite sie oeffnet."""
+        try:
+            same_parent = backup_path.parent.resolve() == self.local_bach_dir.resolve()
+        except OSError:
+            same_parent = False
+        if same_parent:
+            return backup_path, False
+
+        stage_dir = self.local_bach_dir / "temp" / "prosync"
+        stage_dir.mkdir(parents=True, exist_ok=True)
+        staged_path = stage_dir / backup_path.name
+        shutil.copy2(backup_path, staged_path)
+        return staged_path, True
+
     @staticmethod
     def _extract_host(backup: Path) -> Optional[str]:
         """Extrahiert Hostname aus Backup-Dateiname (bach_<host>_<timestamp>.bachdb)."""
@@ -129,13 +235,27 @@ class DBSyncManager:
             self._update_heartbeat()
             return True, "ProSync: Keine neueren Backups im Transit"
         latest = newer[0]
-        stats = self.merge_backup(latest)
+        try:
+            stats = self.merge_backup(latest)
+        except Exception as e:
+            self._record_deferred_backup(latest, e)
+            self._update_heartbeat()
+            retry_minutes = max(1, self._FAILED_PULL_RETRY_SECONDS // 60)
+            return False, (
+                f"ProSync Pull verschoben: {latest.name} ({e}); "
+                f"naechster Versuch in ca. {retry_minutes} Min."
+            )
         total = sum(v for v in stats.values() if isinstance(v, int))
 
         remote_host = self._extract_host(latest)
+        state = self._load_sync_state()
+        state_changed = self._prune_deferred_backups(state)
         if remote_host:
-            state = self._load_sync_state()
             state.setdefault("last_pulled", {})[remote_host] = latest.stat().st_mtime
+            state_changed = True
+        if self._clear_deferred_backup(latest, state):
+            state_changed = True
+        if state_changed:
             self._save_sync_state(state)
 
         self._update_heartbeat()
@@ -284,6 +404,8 @@ class DBSyncManager:
             Liste von Backup-Pfaden, sortiert nach Änderungszeit (neueste zuerst)
         """
         state = self._load_sync_state()
+        now_ts = time.time()
+        state_changed = self._prune_deferred_backups(state, now_ts=now_ts)
         last_pulled = state.get("last_pulled", {})
 
         backups = []
@@ -299,7 +421,12 @@ class DBSyncManager:
             last_pull_time = last_pulled.get(remote_host, 0)
 
             if backup_mtime > last_pull_time:
+                if self._is_backup_deferred(backup, state=state, now_ts=now_ts):
+                    continue
                 backups.append(backup)
+
+        if state_changed:
+            self._save_sync_state(state)
 
         return sorted(backups, key=lambda p: p.stat().st_mtime, reverse=True)
 
@@ -325,12 +452,18 @@ class DBSyncManager:
             print(f"[DB SYNC] Initiale DB erstellt aus {backup_path.name}")
             return {"_initial_copy": 1}
 
-        local = sqlite3.connect(str(self.db_path))
-        local.row_factory = sqlite3.Row
-        remote = sqlite3.connect(str(backup_path))
-        remote.row_factory = sqlite3.Row
+        local = None
+        remote = None
+        staged_backup = backup_path
+        cleanup_staged = False
 
         try:
+            staged_backup, cleanup_staged = self._stage_backup_for_merge(backup_path)
+            local = sqlite3.connect(str(self.db_path))
+            local.row_factory = sqlite3.Row
+            remote = sqlite3.connect(str(staged_backup))
+            remote.row_factory = sqlite3.Row
+
             timestamped_tables = self._discover_timestamped_tables(local)
             print(f"[DB SYNC] {len(timestamped_tables)} Tabellen mit Timestamp-Spalten gefunden")
 
@@ -376,8 +509,15 @@ class DBSyncManager:
 
             local.commit()
         finally:
-            local.close()
-            remote.close()
+            if local is not None:
+                local.close()
+            if remote is not None:
+                remote.close()
+            if cleanup_staged:
+                try:
+                    staged_backup.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
         return stats
 

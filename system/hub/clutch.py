@@ -15,14 +15,14 @@ from pathlib import Path
 from typing import List, Tuple
 from .base import BaseHandler
 
-# clutch-bridge Imports
-sys.path.insert(0, str(Path(__file__).parent / "_services" / "delegation"))
 try:
-    from strecken_analyse import get_analyser
-    from gas_bremse import get_gas_bremse
-    from bordcomputer import get_bordcomputer
-    from fahrschule import get_fahrschule
-    from fahrtenbuch import get_fahrtenbuch
+    from ._services.delegation import (
+        get_analyser,
+        get_bordcomputer,
+        get_fahrschule,
+        get_fahrtenbuch,
+        get_gas_bremse,
+    )
     HAS_CLUTCH = True
 except ImportError:
     HAS_CLUTCH = False

@@ -1,6 +1,6 @@
 ﻿# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-06-19 | **Version:** 4.3.50
+**Stand:** 2026-06-23 | **Version:** 4.3.52
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
@@ -205,22 +205,23 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 
 ### Priorität 1 - Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
 
-Der OpenClaw-Abgleich vom 2026-06-19 bestätigt den nächsten BACH-Fokus
+Der OpenClaw-Abgleich vom 2026-06-23 bestätigt den nächsten BACH-Fokus
 klar in Richtung sichere Erweiterbarkeit, robuste Agenten-Laufzeit und
 saubere Steuer-/Statusoberflächen. Relevant sind nicht die breite
 Messenger-Abdeckung, sondern manifest-first Plugin- und Provider-Metadaten,
 fail-closed Tool-Setups, Scans vor der Installation von
 Skills/MCP-Servern/Plugins, API-Parität für Agentenflächen, Checkpoint-
 Steuerung und low-cardinality Telemetrie. Als Referenzstand gilt dabei:
-GitHub markiert `openclaw 2026.6.8`, veröffentlicht am
-2026-06-16 um 16:32 UTC, weiter als aktuelle Stable-Linie; auf der
-GitHub-Releases-Seite ist `2026.6.9-beta.1`, veröffentlicht am
-2026-06-19 um 05:52 UTC, jetzt das neueste sichtbare Prerelease.
-Frisch relevant aus Stable und Beta sind reichhaltigere Telegram-
-Zustellung, robustere Recovery in Agenten- und Session-Läufen, stärkere
-Codex-Integration inklusive automatischer Plugin-Freigaben,
-providerseitige Plugin-Pakete, explizite Opt-in-Defaults für Websuche mit
-Herkunftsspur sowie härtere Secret-/Privacy-Scrubs.
+GitHub markiert `openclaw 2026.6.9` weiter als aktuelle Stable-Linie;
+auf der GitHub-Releases-Seite ist `2026.6.10-beta.2`, veröffentlicht
+am 2026-06-22 um 09:36 UTC, jetzt das neueste sichtbare Prerelease.
+Frisch relevant aus Stable und Beta sind automatische Fast-Mode-Wechsel
+für kurze Turns, robustere Modell-Routen, sicherere Session- und
+Channel-Zustände, erhaltene Trusted Policies bei Hook-Komposition,
+reichhaltigere Telegram-/Slack-/Discord-Zustellung, robustere Recovery
+in Agenten- und Session-Läufen, stärkere Codex-Integration, explizite
+Opt-in-Defaults für Websuche mit Herkunftsspur sowie härtere
+Secret-/Privacy-Scrubs.
 Aus den
 aktuellen offiziellen
 Hinweisen erneut bestätigt sind
@@ -331,6 +332,21 @@ Deadline. Der heutige Retest bestätigte `test_setup_handler.py`,
 Startup-Archivfilter, `bach setup check`, den kompletten
 `test-agent`-Steuerzyklus sowie `task list --filter clutch`,
 `reflection status` und `usecase run 50 --dry-run`.
+Neu im Daily-Care-Lauf vom 2026-06-21 ist zusätzlich, dass
+`system/hub/db_sync.py` ProSync-Transit-Backups aus OneDrive vor dem
+Merge lokal unter `~/.bach/temp/prosync/` staged und problematische
+Kandidaten nach Cloud-Timeouts oder `disk I/O error` für 30 Minuten in
+`~/.bach/sync_state.json` deferiert. Dadurch blockieren fehlerhafte
+Transit-Dateien Read-Only-CLI- und JSON-Befehle nicht mehr bei jedem
+Startup erneut. Verifiziert wurden
+`python -m pytest system/tests/test_db_sync_handler.py -q`
+(`45 passed`), `python -m pytest system/tests/test_prosync_race.py -q`
+(`3 passed`), ein echter `sync_on_start()`-Repro mit OneDrive-Timeout
+sowie die anschließenden Smokes `python bach.py --startup quick
+--mode=silent --partner=codex`, `python bach.py agent doctor test-agent
+--json`, der vollständige `test-agent`-Steuerzyklus,
+`python bach.py usecase run 50 --dry-run`, `python bach.py upgrade check
+--json` und `python bach.py task list --filter clutch`.
 Etwas höher gerückt sind zudem deutlichere Recovery- und Startup-Hinweise
 bei CLI-/Config-Fehlern sowie reproduzierbare Release-Validierung. Weiter
 beobachtet, aber noch nicht priorisiert, sind vor allem
@@ -698,6 +714,8 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 | **4.3.34** | 2026-05-23 | **Agentenläufe können sichere Checkpoints jetzt explizit quittieren, und aktive Pauseanforderungen schlagen im Top-Level-Status konsistent als `pause-requested` bzw. `[PAUSE-REQ]` durch: `bach agent checkpoint [name] [Notiz] [--json]` schreibt `operator_checkpoint.json`, aktualisiert `OPERATOR_NOTES.md`, `agent list/status --json` zeigen dafür `last_checkpoint_at`, `last_checkpoint_message`, `latest_control_request_at`, `awaiting_checkpoint_ack` sowie die neue Kontrollaktion `checkpoint`, und laufende pausierte Agenten melden ihren Zustand jetzt nicht mehr nur verschachtelt unter `operator_control`. Hilfe, README, README.de, ROADMAP, CHANGELOG und `NEXT_RELEASE` wurden auf diese OPS-RUN-Vertiefung und den verifizierten OpenClaw-Stand vom 2026-05-23 (Stable `2026.5.20`, sichtbares Release-Prerelease weiter `2026.5.20-beta.2`, Paketlinie `2026.5.22-beta.1-slim`) nachgezogen; gezielte Regressionen (`test_agent_launcher_handler.py` -> `74 passed`) und Live-Smokes für `agent checkpoint`, `pause/resume/steer/status/stop`, `usecase run 12/41 --dry-run`, `scheduler doctor`, `lang report --surface gui` und `upgrade check --json` wurden erneut verifiziert.** |
 | **4.3.35** | 2026-05-23 | **Usecase-Sammeltests sind jetzt produktiv: `bach usecase run-all [workflow] [--dry-run]` bereitet wahlweise alle oder workflowgefilterte Usecases wirklich vor, aktualisiert `last_tested` nur außerhalb von Dry-Runs und bevorzugt echte Markdown-Workflowdateien statt gleichnamiger Verzeichnisse. Hilfe, README, README.de, ROADMAP, CHANGELOG und `NEXT_RELEASE` wurden auf diesen T01-Fortschritt nachgezogen; gezielte Regressionen (`test_tuev_handler.py` + `test_smoke.py` -> `130 passed`) und der Live-Smoke `bach usecase run-all --dry-run` liefen erneut grün.** |
 | **4.3.36** | 2026-05-24 | **Scheduler-DB-Pfade vereinheitlicht: `system/hub/scheduler.py` und `system/gui/daemon_service.py` nutzen jetzt dieselbe kanonische BACH-DB wie CLI und GUI-Server, sodass Doctor/Status/Jobs und der Hintergrunddienst nicht mehr gegen ein veraltetes `system/data/bach.db` laufen. README, README.de, ROADMAP, CHANGELOG und `NEXT_RELEASE` wurden auf den heutigen Live-Check (`--startup quick`, vollständiger `test-agent`-Headless-Lauf, `scheduler doctor/status --json`, `usecase run 12/41`, `usecase run-all --dry-run`, `lang report --surface gui --limit 5 --json`, `upgrade status/check --json`) sowie den verifizierten OpenClaw-Stand vom 2026-05-24 (Stable `2026.5.22`, sichtbares Prerelease `2026.5.22-beta.1`, Paketlinie `2026.5.22-slim` plus `2026.5.23-alpha.1`) nachgezogen; gezielte Regressionen (`test_scheduler_handler.py`/`test_daemon_service.py`) liefen erneut grün.** |
+| **4.3.52** | 2026-06-23 | **OpenClaw-Referenzstand für den laufenden Release-Service aktualisiert: Stable bleibt `2026.6.9`, während das neueste sichtbare Prerelease jetzt `2026.6.10-beta.2` ist. Für BACH relevant sind zusätzlich automatische Fast-Mode-Wechsel für kurze Turns, robustere Modell-Routen, sicherere Session-/Channel-Zustände und erhaltene Trusted Policies bei Hook-Komposition; die ProSync- und Release-Hygiene-Änderungen aus 4.3.51 bleiben dadurch fachlich unverändert.** |
+| **4.3.51** | 2026-06-21 | **ProSync-Startup fail-soft gehärtet: `system/hub/db_sync.py` staged OneDrive-Transit-Backups jetzt lokal vor dem Merge und deferiert fehlerhafte Kandidaten nach Cloud-Timeouts oder `disk I/O error` für 30 Minuten in `~/.bach/sync_state.json`, damit Read-Only-CLI- und JSON-Befehle nicht mehr bei jedem Startup an derselben Transit-Datei hängen bleiben. Verifiziert wurden `python -m pytest system/tests/test_db_sync_handler.py -q` (`45 passed`), `python -m pytest system/tests/test_prosync_race.py -q` (`3 passed`), ein echter `sync_on_start()`-Repro mit OneDrive-Timeout sowie die anschließenden Smokes `python bach.py --startup quick --mode=silent --partner=codex`, `python bach.py agent doctor test-agent --json`, der vollständige `test-agent`-Steuerzyklus, `python bach.py usecase run 50 --dry-run`, `python bach.py upgrade check --json` und `python bach.py task list --filter clutch`. Der OpenClaw-Referenzstand wurde zugleich auf Stable `2026.6.9` und sichtbares Prerelease `2026.6.10-beta.1` aktualisiert; relevant bleiben vor allem Kanalzustellung, Agent-/Session-Recovery, Codex-Approval-Flows, Provider-Plugin-Pakete, Herkunftsspur für Suche/Skills und härtere Secret-/Privacy-Scrubs.** |
 | **4.3.50** | 2026-06-19 | **Setup-/Scheduler-Health weiter gehärtet: `system/hub/setup.py` prüft globale MCP-Installationen jetzt über `npm root -g` und direkte Paketpfade statt über langsamere `npm list -g`-Aufrufe, und `system/hub/scheduler.py` wartet beim Hintergrundstart mit einer monotonic-basierten 12-Sekunden-Deadline robuster auf langsam erzeugte Windows-/OneDrive-PID-Dateien. Verifiziert wurden `python -m pytest system/tests/test_setup_handler.py system/tests/test_scheduler_handler.py system/tests/test_bach_paths.py -q` (`232 passed`), der isolierte Startup-Archivfilter (`1 passed`), `python bach.py setup check`, `python bach.py agent doctor test-agent --json`, der vollständige `test-agent`-Steuerzyklus, `python bach.py task list --filter clutch`, `python bach.py reflection status`, `python bach.py usecase run 50 --dry-run` sowie ein erfolgreicher `python bach.py scheduler start --bg` mit anschließend sauberem `scheduler stop`. Der OpenClaw-Referenzstand wurde zugleich auf Stable `2026.6.8` und sichtbares Prerelease `2026.6.9-beta.1` aktualisiert; relevant sind vor allem Telegram-Zustellung, Agent-/Session-Recovery, Codex-Integration, Provider-Plugin-Pakete, Herkunftsspur für Suche/Skills und härtere Secret-/Privacy-Scrubs.** |
 | **4.3.49** | 2026-06-18 | **Der Root-CLI-Vorpfad nutzt jetzt dieselbe kanonische BACH-Datenbank wie die Handler: `system/bach.py` löst `DB_PATH` über `hub.bach_paths.BACH_DB` auf, und auch der `folders`-Hilfspfad reicht keine veraltete `system/data/bach.db` mehr weiter. Dadurch laufen Activity-Ticks, EOD-/Idle-Finalisierung und Session-Timestamps wieder gegen denselben Live-Stand wie `task`, `reflection`, `usecase` und `startup`. Verifiziert wurden `python -m pytest system/tests/test_bach_paths.py -q` (`58 passed`) sowie die Live-Smokes `bach task list --filter clutch`, `bach reflection status`, `bach usecase run 50 --dry-run` und `bach --startup quick --mode=silent --partner=codex`. Der OpenClaw-Referenzstand wurde am 2026-06-18 erneut geprüft und bleibt bei Stable `2026.6.8` sowie sichtbarem Prerelease `2026.6.8-beta.2`; relevant bleiben Kanalzustellung, Recovery, normalisierte Provider-/Modellrouten, SecretRef-nahe Auth-Logik und explizite Websuch-Defaults.** |
 | **4.3.48** | 2026-06-17 | **Die T01-Workflow-Frontdoor ist jetzt vollständig: zwölf neue Domänen-Workflow-Dateien (`assistent`, `care-modul`, `datenmodul`, `dokumentenmodul`, `finanzen`, `gesundheit`, `haushalt`, `karriere`, `reflection-status`, `selbstmanagement`, `therapie`, `wissen`) schließen die restlichen manuellen Usecase-Kategorien, sodass ein direkter Resolver-Check nun 50 workflowgebundene und 0 manuelle Usecases sieht. Verifiziert wurden `bach usecase run 50 --dry-run`, die gezielte Resolver-Regression `test_tuev_handler.py -k "resolve_uppercase_category_to_lowercase_workflow_file or resolve_snake_case_category_to_kebab_case_workflow_file"` (`2 passed`), der vollständige `test-agent`-Steuerzyklus sowie `bach --startup quick --mode=silent --partner=codex` mit erfolgreichem Durchlauf in rund 58 Sekunden. Der OpenClaw-Referenzstand wurde zugleich auf Stable `2026.6.8` und sichtbares Prerelease `2026.6.8-beta.2` (beide 2026-06-16) aktualisiert; relevant bleiben daraus vor allem Kanalzustellung, Recovery, Provider-/Auth-Härtung und explizite Websuch-Defaults.** |
