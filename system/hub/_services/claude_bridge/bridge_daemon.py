@@ -71,7 +71,7 @@ Usage:
   python bridge_daemon.py --test "msg"   # Test-Nachricht simulieren
 
 Deployment (Hetzner):
-  ssh -L 8080:localhost:8080 root@46.225.30.98
+  ssh -L 8080:localhost:8080 user@example-host
   systemctl start bach-bridge
   # Siehe DEPLOYMENT.md fuer Details
 

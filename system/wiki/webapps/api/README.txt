@@ -224,11 +224,11 @@ QUERY-BEISPIELE
   }
 
   # Mutation
-  mutation {
+  mutation CreateUser($password: String!) {
     createUser(input: {
       username: "max"
       email: "max@example.com"
-      password: "sicher123"
+      password: $password
     }) {
       id
       username
