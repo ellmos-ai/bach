@@ -41,3 +41,10 @@ Adresse landet im öffentlichen Repo.
 Bei Änderungen an der internen Quelle: `src/` neu kopieren und die zwei oben
 genannten Patch-Stellen erneut anwenden. Daten unter `data/notespace/` bleiben
 unberührt.
+
+## Sync-Historie
+
+- 2026-06-25: `translator.py` nachgezogen; `_is_german()` nutzt german_hints
+  tokenbasiert statt per Teilstring-Matching, damit englische Scan-Texte mit
+  Wörtern wie `important` oder `filtering` keine falschen Übersetzungseinträge
+  erzeugen.

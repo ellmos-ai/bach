@@ -54,6 +54,7 @@ class TranslationSystem:
             "start", "stop", "pause", "fortsetzen", "laden", "aktualisieren",
             "filter", "fehler", "export", "import", "optionen", "anzeigen",
         ]
+        self._german_hint_tokens = {hint.lower() for hint in self.german_hints}
 
         self.translations = {}
         self._load_translations()
@@ -148,7 +149,8 @@ class TranslationSystem:
         if any(ch in text for ch in "\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df"):
             return True
         text_lower = text.lower()
-        return any(hint in text_lower for hint in self.german_hints)
+        tokens = set(re.findall(r"\w+", text_lower, flags=re.UNICODE))
+        return bool(tokens & self._german_hint_tokens)
 
     def get_missing_translations(self) -> List[str]:
         return [k for k, v in self.translations.items() if not v.get("en")]
