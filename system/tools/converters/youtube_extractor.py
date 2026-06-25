@@ -112,8 +112,10 @@ def extract_youtube_id(url: str) -> str:
         vid = vid.split("?")[0]
         return vid if re.fullmatch(r"[A-Za-z0-9_-]{11}", vid) else ""
 
+    host = (parsed.hostname or "").lower()
+
     # youtube.com Varianten
-    if parsed.netloc.endswith("youtube.com") or parsed.netloc.endswith("youtube-nocookie.com"):
+    if host in {"youtube.com", "youtube-nocookie.com"} or host.endswith(".youtube.com") or host.endswith(".youtube-nocookie.com"):
         # watch?v=<id>
         if parsed.path == "/watch":
             q = parse_qs(parsed.query)

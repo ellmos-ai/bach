@@ -158,7 +158,7 @@ class BACHSetup:
             ("S2", "bach.db initialisieren", self._step_s2_db_init, True),
             ("S3", "Migrations ausführen", self._step_s3_migrations, True),
             ("S4", "Pflichtverzeichnisse anlegen", self._step_s4_directories, True),
-            ("S5", "secrets.json Skeleton", self._step_s5_secrets_skeleton, True),
+            ("S5", "Zugangsdaten-Skeleton", self._step_s5_secrets_skeleton, True),
             ("S6", "system_identity in DB", self._step_s6_system_identity, True),
             ("S7", "user_config.json Default", self._step_s7_user_config, True),
             ("S8", "MEMORY.md mit Silo-Index generieren", self._step_s8_memory_md, True),

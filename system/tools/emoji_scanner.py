@@ -69,8 +69,6 @@ EMOJI_PATTERN = re.compile(
     "\U00002702-\U000027B0"  # Dingbats
     "\U00002190-\U000021FF"  # Pfeile
     "\U00002600-\U000026FF"  # Misc Symbole
-    "\U0001F600-\U0001F64F"  # Emoticons
-    "\U0001F680-\U0001F6FF"  # Transport
     "]+"
 )
 

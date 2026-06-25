@@ -621,6 +621,25 @@
     // --- APP LOGIC ---
     let data = { categories: [], items: [] };
     let isEditing = false;
+
+    function escapeHtml(value) {
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+    }
+
+    function safeDomId(value) {
+        return String(value || '').replace(/[^A-Za-z0-9_-]/g, '_') || 'item';
+    }
+
+    function safeHttpUrl(value) {
+        try {
+            const parsed = new URL(String(value || ''), window.location.href);
+            return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '#';
+        } catch {
+            return '#';
+        }
+    }
     let nextId = 1000;
 
     function loadData() {
@@ -656,46 +675,48 @@
         content.innerHTML = '';
 
         data.categories.forEach(cat => {
+            const catId = safeDomId(cat.id);
             // Add Nav Chip
             const chip = document.createElement('div');
             chip.className = 'chip';
             chip.innerText = `${cat.icon} ${cat.name}`;
-            chip.onclick = () => document.getElementById(cat.id).scrollIntoView({behavior: 'smooth', block: 'start'});
+            chip.onclick = () => document.getElementById(catId).scrollIntoView({behavior: 'smooth', block: 'start'});
             nav.appendChild(chip);
 
             // Create Section
             const section = document.createElement('div');
-            section.id = cat.id;
+            section.id = catId;
             section.className = 'category-section';
 
             section.innerHTML = `
                 <div class="category-header">
-                    <span class="cat-icon">${cat.icon}</span>
-                    <span class="cat-name">${cat.name.split(' ').slice(1).join(' ')}</span>
+                    <span class="cat-icon">${escapeHtml(cat.icon)}</span>
+                    <span class="cat-name">${escapeHtml(String(cat.name || '').split(' ').slice(1).join(' '))}</span>
                 </div>
-                <div class="grid" id="grid-${cat.id}"></div>
+                <div class="grid" id="grid-${catId}"></div>
             `;
             content.appendChild(section);
 
             // Populate Grid
-            const grid = section.querySelector(`#grid-${cat.id}`);
+            const grid = section.querySelector(`#grid-${catId}`);
             const items = data.items.filter(i => i.cat === cat.id);
 
             items.forEach(item => {
+                const itemId = Number(item.id) || 0;
                 // Format features list
                 const featureList = item.features
-                    ? item.features.split(',').map(f => `<li>${f.trim()}</li>`).join('')
+                    ? item.features.split(',').map(f => `<li>${escapeHtml(f.trim())}</li>`).join('')
                     : '';
 
                 const card = document.createElement('article');
                 card.className = 'card';
                 card.innerHTML = `
                     <div class="card-header">
-                        <div class="card-title">${item.title}</div>
-                        <div class="card-tag">${item.cat.toUpperCase()}</div>
+                        <div class="card-title">${escapeHtml(item.title)}</div>
+                        <div class="card-tag">${escapeHtml(String(item.cat || '').toUpperCase())}</div>
                     </div>
                     <div class="card-body">
-                        <div class="info-block">${item.desc}</div>
+                        <div class="info-block">${escapeHtml(item.desc)}</div>
 
                         ${featureList ? `
                         <div class="info-block">
@@ -706,21 +727,21 @@
                         <div class="meta-grid">
                             <div class="meta-item">
                                 <div class="meta-head price-tag">💳 Preismodell</div>
-                                ${item.pricing || '-'}
+                                ${escapeHtml(item.pricing || '-')}
                             </div>
                             <div class="meta-item">
                                 <div class="meta-head limit-tag">⚠️ Limits</div>
-                                ${item.limits || '-'}
+                                ${escapeHtml(item.limits || '-')}
                             </div>
                         </div>
                     </div>
                     <div class="card-footer">
-                        <a href="${item.url}" target="_blank" class="btn">Tool Öffnen ↗</a>
+                        <a href="${safeHttpUrl(item.url)}" target="_blank" rel="noopener noreferrer" class="btn">Tool Öffnen ↗</a>
                     </div>
 
                     <div class="edit-overlay">
-                        <button class="mini-btn" style="background:#3b82f6" onclick="editItem(${item.id})">✎</button>
-                        <button class="mini-btn" style="background:#ef4444" onclick="deleteItem(${item.id})">🗑</button>
+                        <button class="mini-btn" style="background:#3b82f6" onclick="editItem(${itemId})">✎</button>
+                        <button class="mini-btn" style="background:#ef4444" onclick="deleteItem(${itemId})">🗑</button>
                     </div>
                 `;
                 grid.appendChild(card);

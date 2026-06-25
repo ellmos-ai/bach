@@ -1281,16 +1281,16 @@
             const days = { '0': 'Sonntag', '1': 'Montag', '2': 'Dienstag', '3': 'Mittwoch', '4': 'Donnerstag', '5': 'Freitag', '6': 'Samstag', '7': 'Sonntag' };
 
             let lines = [];
-            lines.push(`<strong>Minute:</strong> ${min === '*' ? 'Jede' : min}`);
-            lines.push(`<strong>Stunde:</strong> ${hour === '*' ? 'Jede' : hour}`);
-            lines.push(`<strong>Tag (Monat):</strong> ${dom === '*' ? 'Jeder' : dom}`);
-            lines.push(`<strong>Monat:</strong> ${mon === '*' ? 'Jeder' : mon}`);
-            lines.push(`<strong>Wochentag:</strong> ${dow === '*' ? 'Jeder' : (days[dow] || dow)}`);
+            lines.push(`<strong>Minute:</strong> ${min === '*' ? 'Jede' : escapeHtml(min)}`);
+            lines.push(`<strong>Stunde:</strong> ${hour === '*' ? 'Jede' : escapeHtml(hour)}`);
+            lines.push(`<strong>Tag (Monat):</strong> ${dom === '*' ? 'Jeder' : escapeHtml(dom)}`);
+            lines.push(`<strong>Monat:</strong> ${mon === '*' ? 'Jeder' : escapeHtml(mon)}`);
+            lines.push(`<strong>Wochentag:</strong> ${dow === '*' ? 'Jeder' : escapeHtml(days[dow] || dow)}`);
 
             // Human-readable summary
             let summary = describeCron(input, 'cron');
             if (summary) {
-                lines.push(`<br><strong>Zusammenfassung:</strong> ${summary}`);
+                lines.push(`<br><strong>Zusammenfassung:</strong> ${escapeHtml(summary)}`);
             }
 
             result.innerHTML = lines.join('<br>');

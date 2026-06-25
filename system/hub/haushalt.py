@@ -30,12 +30,20 @@ Nutzt: bach.db / household_routines, household_inventory, household_orders,
        assistant_calendar, fin_contracts (Unified DB seit v1.1.84)
 """
 
+import os
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Tuple, Optional
 from hub.base import BaseHandler
 from hub.lang import t
+
+
+def _write_private_text(path: Path, content: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(content)
 
 
 class HaushaltHandler(BaseHandler):
@@ -1022,7 +1030,7 @@ EXPORT:
             if out_file:
                 from pathlib import Path as P
                 out_path = P(out_file)
-                out_path.write_text(content, encoding="utf-8")
+                _write_private_text(out_path, content)
                 return True, f"Tagesplan exportiert: {out_path} ({days_ahead} Tag(e))"
 
             return True, content

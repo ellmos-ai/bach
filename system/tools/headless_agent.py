@@ -102,10 +102,19 @@ def run_headless_query(db_path: Path, prompt: str, partner: str = "claude"):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python c_headless_agent.py \"Prompt\" [--partner NAME]")
+        print("Usage: python c_headless_agent.py \"Prompt\" [--prompt-file PATH] [--partner NAME]")
         sys.exit(1)
-        
-    prompt_text = sys.argv[1]
+
+    if "--prompt-file" in sys.argv:
+        prompt_file = Path(sys.argv[sys.argv.index("--prompt-file") + 1])
+        prompt_text = prompt_file.read_text(encoding="utf-8")
+        try:
+            prompt_file.unlink()
+        except OSError:
+            pass
+    else:
+        prompt_text = sys.argv[1]
+
     target_partner = "claude"
     if "--partner" in sys.argv:
         target_partner = sys.argv[sys.argv.index("--partner") + 1]

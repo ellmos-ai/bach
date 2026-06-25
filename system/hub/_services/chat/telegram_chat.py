@@ -584,8 +584,10 @@ async def _send_voice_reply(update, text: str):
         if not shutil.which("say") or not shutil.which("ffmpeg"):
             return False
 
-        tmp_aiff = tempfile.mktemp(suffix=".aiff")
-        tmp_ogg = tempfile.mktemp(suffix=".ogg")
+        with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as aiff_file:
+            tmp_aiff = aiff_file.name
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as ogg_file:
+            tmp_ogg = ogg_file.name
 
         clean_text = text[:3000].replace('"', "'").replace("`", "'")
 

@@ -82,6 +82,7 @@ Updated: 2026-03-02
 
 import json
 import os
+import re
 import signal
 import sqlite3
 import subprocess
@@ -168,9 +169,17 @@ def _get_route(start_lat: float, start_lon: float, end_lat: float, end_lon: floa
 
 # ============ LOGGING ============
 
+SENSITIVE_LOG_RE = re.compile(
+    r"(?i)\b(api[_-]?key|bot[_-]?token|refresh[_-]?token|token|secret|password)\b\s*[:=]\s*[^,\s;]+"
+)
+
+
+def redact_log_message(msg: str) -> str:
+    return SENSITIVE_LOG_RE.sub(lambda m: f"{m.group(1)}=<redacted>", str(msg))
+
 def log(msg: str, level: str = "INFO"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{timestamp}] [{level}] {msg}"
+    line = f"[{timestamp}] [{level}] {redact_log_message(msg)}"
     print(line)
     try:
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)

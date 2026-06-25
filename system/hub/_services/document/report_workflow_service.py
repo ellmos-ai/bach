@@ -48,6 +48,7 @@ Erstellt: 2026-02-01
 """
 
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -56,6 +57,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import secrets
+
+SAFE_IMPORT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_. -]{0,127}$")
+
+
+def _safe_import_name(path: Path) -> str:
+    name = path.name
+    if name in {"", ".", ".."} or not SAFE_IMPORT_NAME_RE.fullmatch(name):
+        raise ValueError("Ungueltiger Import-Dateiname")
+    return name
 
 # Lokale Imports - mit Fallback für CLI-Ausführung
 try:
@@ -408,13 +418,13 @@ Interpersonelle Interaktionen:
                 continue
 
             if filepath.is_file():
-                dest = data_dir / filepath.name
+                dest = data_dir / _safe_import_name(filepath)
                 shutil.copy2(filepath, dest)
                 session.input_files.append(dest)
                 imported += 1
             elif filepath.is_dir():
                 # Ordner rekursiv kopieren
-                dest = data_dir / filepath.name
+                dest = data_dir / _safe_import_name(filepath)
                 shutil.copytree(filepath, dest, dirs_exist_ok=True)
                 session.input_files.extend(list(dest.rglob("*")))
                 imported += len(list(dest.rglob("*")))
@@ -1295,15 +1305,23 @@ JSON:
         - JSON in Markdown-Codeblock (```json ... ```)
         - JSON nach Text
         """
-        import re
-
         text = llm_response.strip()
 
         # Fall 1: Markdown-Codeblock
-        json_block_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', text)
-        if json_block_match:
+        code_start = text.find("```")
+        if code_start != -1:
+            body_start = text.find("\n", code_start + 3)
+            if body_start == -1:
+                body_start = code_start + 3
+            else:
+                body_start += 1
+            code_end = text.find("```", body_start)
+        else:
+            body_start = -1
+            code_end = -1
+        if body_start != -1 and code_end != -1:
             try:
-                return json.loads(json_block_match.group(1).strip())
+                return json.loads(text[body_start:code_end].strip())
             except json.JSONDecodeError:
                 pass
 
@@ -1315,10 +1333,11 @@ JSON:
                 pass
 
         # Fall 3: JSON irgendwo im Text
-        json_match = re.search(r'\{[\s\S]*\}', text)
-        if json_match:
+        json_start = text.find("{")
+        json_end = text.rfind("}")
+        if json_start != -1 and json_end > json_start:
             try:
-                return json.loads(json_match.group(0))
+                return json.loads(text[json_start:json_end + 1])
             except json.JSONDecodeError:
                 pass
 

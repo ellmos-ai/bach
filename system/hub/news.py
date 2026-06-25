@@ -48,6 +48,7 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple
+from urllib.parse import urlparse
 from hub.base import BaseHandler
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
@@ -152,7 +153,8 @@ class NewsHandler(BaseHandler):
         url_lower = url.lower()
         if any(x in url_lower for x in ['/feed', '/rss', '.xml', '.atom', '/atom']):
             return 'rss'
-        if 'youtube.com' in url_lower or 'youtu.be' in url_lower:
+        host = (urlparse(url).hostname or "").lower()
+        if host == "youtu.be" or host == "youtube.com" or host.endswith(".youtube.com"):
             return 'youtube'
         return 'web'
 

@@ -18,11 +18,19 @@ Nutzt: bach.db / contacts (Unified DB seit v1.1.84)
 Ref: DB_003_KONTAKTDATENBANK_ANALYSE.md
 """
 
+import os
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Tuple, Optional
 from hub.base import BaseHandler
+
+
+def _write_private_text(path: Path, content: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(content)
 
 
 class ContactHandler(BaseHandler):
@@ -511,8 +519,7 @@ class ContactHandler(BaseHandler):
             # In Datei speichern oder ausgeben
             if output_file:
                 try:
-                    with open(output_file, 'w', encoding='utf-8') as f:
-                        f.write(output)
+                    _write_private_text(Path(output_file), output)
                     return True, f"[EXPORT] {len(rows)} Kontakte exportiert nach: {output_file}"
                 except Exception as e:
                     return False, f"[ERROR] Schreiben fehlgeschlagen: {e}"
@@ -547,8 +554,7 @@ class ContactHandler(BaseHandler):
 
             if output_file:
                 try:
-                    with open(output_file, 'w', encoding='utf-8') as f:
-                        f.write(output)
+                    _write_private_text(Path(output_file), output)
                     return True, f"[EXPORT] {len(rows)} Kontakte als vCard exportiert nach: {output_file}"
                 except Exception as e:
                     return False, f"[ERROR] Schreiben fehlgeschlagen: {e}"

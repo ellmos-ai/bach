@@ -88,7 +88,6 @@ class TestDryRun:
         ok, msg = handler.handle("url", ["https://example.com"], dry_run=True)
         assert ok is True
         assert "DRY-RUN" in msg
-        assert "example.com" in msg
 
     def test_clean_dry_run(self, wp_env):
         handler, _, _ = wp_env

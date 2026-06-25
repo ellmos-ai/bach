@@ -178,7 +178,9 @@ async def route_messages(_=Depends(verify_auth)):
     """Routing manuell ausloesen: connector_messages(in) → messages(inbox)."""
     from hub._services.connector.queue_processor import route_incoming
     result = route_incoming()
+    errors = result.get("errors") or []
     return {
         "routed": result["routed"],
-        "errors": result["errors"],
+        "error_count": len(errors),
+        "errors": ["Routingfehler. Details stehen im Server-Log."] if errors else [],
     }

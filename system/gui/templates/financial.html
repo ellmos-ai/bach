@@ -1166,6 +1166,11 @@
     <script src="/static/js/nav.js?v=4"></script>
     <script>
         const API_BASE = '/api/financial';
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value == null ? '' : String(value);
+            return div.innerHTML;
+        }
         let apiError = false;
 
         const esc = escapeHtml;
@@ -2460,11 +2465,11 @@
                 const taxCount = emails.filter(e => e.is_steuer_relevant).length;
 
                 preview.innerHTML = `
-                    <div style="font-weight: bold; margin-bottom: 0.5rem;">Zusammenfassung (${period})</div>
-                    <div>Erfasste Belege: ${count}</div>
-                    <div>Steuer-relevant: ${taxCount}</div>
+                    <div style="font-weight: bold; margin-bottom: 0.5rem;">Zusammenfassung (${escapeHtml(period)})</div>
+                    <div>Erfasste Belege: ${Number(count)}</div>
+                    <div>Steuer-relevant: ${Number(taxCount)}</div>
                     <div style="font-size: 1.1rem; color: var(--accent-color); margin-top: 0.5rem;">
-                        Gesamtsumme: ${total.toFixed(2)} EUR
+                        Gesamtsumme: ${escapeHtml(total.toFixed(2))} EUR
                     </div>
                     <div style="margin-top: 1rem; border-top: 1px solid #444; padding-top: 0.5rem; font-size: 0.75rem;">
                         <i>Dies ist eine vorlaeufige Vorschau basierend auf allen lokalen Daten.</i>
@@ -2489,8 +2494,8 @@
                 list.insertAdjacentHTML('afterbegin', `
                     <div class="card" style="margin-bottom: 0.5rem; padding: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
                         <div>
-                            <strong>Financial_Report_${period}_${new Date().toISOString().split('T')[0]}.${format}</strong>
-                            <div style="font-size: 0.75rem; color: var(--text-muted);">${now}</div>
+                            <strong>Financial_Report_${escapeHtml(period)}_${new Date().toISOString().split('T')[0]}.${escapeHtml(format)}</strong>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(now)}</div>
                         </div>
                         <button class="btn btn-secondary btn-sm" onclick="alert('Download gestartet...')">Download</button>
                     </div>

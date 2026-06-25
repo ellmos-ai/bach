@@ -558,7 +558,7 @@
             }
 
             grid.innerHTML = filtered.map(tool => `
-                <div class="tool-card" onclick="showToolDetail('${tool.name.replace(/'/g, "\\'")}')">
+                <div class="tool-card" onclick="showToolDetail(${escapeHtml(JSON.stringify(tool.name))})">
                     <div class="tool-header">
                         <div>
                             ${tool.prefix ? `<div class="tool-prefix">${tool.prefix}</div>` : ''}

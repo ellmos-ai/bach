@@ -160,7 +160,7 @@ class SecretsHandler:
         # Datei aktualisieren (DB -> Datei)
         self._sync_to_file()
 
-        print(f"✓ Secret '{key}' {action}.")
+        print(f"OK: Eintrag {action}.")
         return True
 
     def delete_secret(self, key):

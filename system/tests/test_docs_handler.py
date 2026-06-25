@@ -498,8 +498,7 @@ class TestMarkdownToPlaintext:
 
     def test_strip_links(self, handler):
         result = handler._markdown_to_plaintext("[click here](https://example.com)")
-        assert "click here" in result
-        assert "https://example.com" in result
+        assert result == "click here (https://example.com)"
         assert "[" not in result
 
     def test_strip_inline_code(self, handler):

@@ -28,6 +28,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8')
 
 import json
+import re
 
 import sqlite3
 
@@ -128,6 +129,131 @@ HIERARCHY_TYPE_TO_KEY = {
 
 DIRECTORY_FILE_CANDIDATES = ("SKILL.md", "README.md", "CONCEPT.md", "ATI.md")
 TEXT_FILE_SUFFIXES = (".md", ".txt", ".py")
+PUBLIC_ERROR_MESSAGE = "Interner Fehler. Details stehen im Server-Log."
+SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_. -]{0,127}$")
+SAFE_TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
+SAFE_CLI_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@ -]{0,127}$")
+SAFE_PARTNER_NAMES = {"claude", "codex", "gemini", "kimi", "ollama"}
+
+
+def public_error_message() -> str:
+    return PUBLIC_ERROR_MESSAGE
+
+
+def safe_path_segment(value: str, *, field_name: str = "Pfadsegment") -> str:
+    segment = str(value or "")
+    if (
+        not segment
+        or segment in {".", ".."}
+        or "/" in segment
+        or "\\" in segment
+        or not SAFE_SEGMENT_RE.fullmatch(segment)
+    ):
+        raise HTTPException(status_code=400, detail=f"Ungueltiges {field_name}")
+    return segment
+
+
+def safe_tool_name(value: str) -> str:
+    name = str(value or "")
+    if not SAFE_TOOL_NAME_RE.fullmatch(name) or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Ungueltiger Tool-Name")
+    return name
+
+
+def safe_partner_name(value: str) -> str:
+    partner = str(value or "claude").lower()
+    if partner not in SAFE_PARTNER_NAMES:
+        raise HTTPException(status_code=400, detail="Ungueltiger KI-Partner")
+    return partner
+
+
+def safe_cli_args(values) -> List[str]:
+    if values is None:
+        return []
+    if not isinstance(values, list):
+        raise HTTPException(status_code=400, detail="Argumente muessen eine Liste sein")
+    args = []
+    for value in values:
+        arg = str(value)
+        if "\x00" in arg or len(arg) > 500:
+            raise HTTPException(status_code=400, detail="Ungueltiges Argument")
+        args.append(arg)
+    return args
+
+
+def safe_cli_value(value, *, field_name: str) -> str:
+    text = str(value or "")
+    if not SAFE_CLI_VALUE_RE.fullmatch(text):
+        raise HTTPException(status_code=400, detail=f"Ungueltiger Wert fuer {field_name}")
+    return text
+
+
+def resolve_under_base(base: Path, value: str, *, allowed_suffixes=None, must_exist: bool = False) -> Path:
+    base_resolved = base.resolve()
+    raw = Path(str(value or ""))
+    if raw.is_absolute():
+        candidate = raw.resolve(strict=False)
+    else:
+        candidate = (base_resolved / raw).resolve(strict=False)
+    try:
+        candidate.relative_to(base_resolved)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="Zugriff verweigert") from exc
+    if allowed_suffixes and candidate.suffix.lower() not in allowed_suffixes:
+        raise HTTPException(status_code=400, detail="Dateityp nicht erlaubt")
+    if must_exist and not candidate.exists():
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    return candidate
+
+
+def resolve_child_file(base: Path, filename: str, *, allowed_suffixes=None, must_exist: bool = False) -> Path:
+    safe_name = safe_path_segment(filename, field_name="Dateiname")
+    return resolve_under_base(base, safe_name, allowed_suffixes=allowed_suffixes, must_exist=must_exist)
+
+
+def resolve_configured_dir(config: dict, key: str, default_dir: Path) -> Path:
+    configured = config.get("settings", {}).get(key)
+    if configured:
+        return resolve_under_base(BACH_DIR, str(configured))
+    return default_dir.resolve(strict=False)
+
+
+def write_private_text_file(path: Path, content: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def resolve_tool_file(name: str) -> Optional[Path]:
+    safe_name = safe_tool_name(name)
+    direct = resolve_child_file(TOOLS_DIR, f"{safe_name}.py", allowed_suffixes={".py"})
+    if direct.exists() and direct.is_file():
+        return direct
+
+    tools_root = TOOLS_DIR.resolve()
+    for candidate in sorted(TOOLS_DIR.rglob("*.py")):
+        resolved = candidate.resolve(strict=False)
+        try:
+            resolved.relative_to(tools_root)
+        except ValueError:
+            continue
+        if resolved.stem == safe_name:
+            return resolved
+    return None
+
+
+def resolve_workflow_file(workflow_name: str) -> Optional[Path]:
+    workflows_dir = SKILLS_DIR / "_workflows"
+    safe_name = safe_path_segment(workflow_name, field_name="Workflow-Name")
+    candidates = [safe_name]
+    if not safe_name.endswith(".md"):
+        candidates.insert(0, f"{safe_name}.md")
+    for candidate_name in candidates:
+        candidate = resolve_under_base(workflows_dir, candidate_name, allowed_suffixes={".md"})
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
 
 
 
@@ -583,8 +709,9 @@ def pick_directory_file(directory: Path, stem_hint: str = "") -> Optional[Path]:
 
     candidates = []
     if stem_hint:
-        stem = Path(stem_hint).stem
-        candidates.extend((f"{stem}.md", f"{stem}.txt", f"{stem}.py"))
+        raw_stem = str(stem_hint).replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        if SAFE_SEGMENT_RE.fullmatch(raw_stem):
+            candidates.extend((f"{raw_stem}.md", f"{raw_stem}.txt", f"{raw_stem}.py"))
     candidates.extend(DIRECTORY_FILE_CANDIDATES)
 
     seen = set()
@@ -611,13 +738,10 @@ def resolve_path_hint(path_hint: str) -> Optional[Path]:
         return None
 
     normalized = path_hint.replace("\\", "/").strip()
-    raw_path = Path(normalized)
-    candidate_paths = []
-
-    if raw_path.is_absolute():
-        candidate_paths.append(raw_path)
-    else:
-        candidate_paths.append(BACH_DIR / raw_path)
+    try:
+        candidate_paths = [resolve_under_base(BACH_DIR, normalized)]
+    except HTTPException:
+        return None
 
     for candidate in candidate_paths:
         if candidate.exists():
@@ -868,7 +992,7 @@ async def lifespan(app: FastAPI):
 
         import asyncio
 
-        
+
 
         if WATCHDOG_AVAILABLE:
 
@@ -1134,7 +1258,7 @@ async def get_status():
     except ImportError:
         system_info = {"error": "psutil not installed"}
     except Exception as e:
-        system_info = {"error": str(e)}
+        system_info = {"error": public_error_message()}
 
     return {
 
@@ -1198,7 +1322,7 @@ async def api_del_task(task_id: int):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -1242,7 +1366,7 @@ async def api_tasks_export():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -1299,7 +1423,7 @@ async def api_get_tasks(status: str = "all", project: str = None, assigned_to: s
         conn.close()
         return {"success": True, "tasks": tasks, "count": len(tasks)}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 @app.post("/api/tasks")
 async def api_post_task(payload: dict = Body(...)):
@@ -1329,7 +1453,7 @@ async def api_post_task(payload: dict = Body(...)):
         conn.close()
         return {"success": True, "id": task_id, "status": "created"}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 @app.get("/api/tasks/{task_id}")
 async def get_task(task_id: int):
@@ -1576,7 +1700,7 @@ async def api_list_agents():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -1612,7 +1736,7 @@ async def api_toggle_agent(agent_id: int):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -1688,7 +1812,7 @@ async def api_bericht_status():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -1712,7 +1836,7 @@ async def api_bericht_clients():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -1738,7 +1862,7 @@ async def api_bericht_export(payload: BerichtExport):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -1768,7 +1892,7 @@ async def api_bericht_generate(payload: BerichtGenerate):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -1844,7 +1968,7 @@ async def api_list_mounts():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -1868,7 +1992,7 @@ async def api_add_mount(payload: MountAdd):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -1892,7 +2016,7 @@ async def api_remove_mount(alias: str):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -1916,7 +2040,7 @@ async def api_restore_mounts():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -2471,7 +2595,7 @@ async def stop_daemon():
 
     except Exception as e:
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 
@@ -2853,7 +2977,7 @@ async def trigger_wartung_job(request: Request, background_tasks: BackgroundTask
 
             except Exception as e:
 
-                results.append({"job": "scanner", "status": "error", "message": str(e)})
+                results.append({"job": "scanner", "status": "error", "message": public_error_message()})
 
 
 
@@ -2875,7 +2999,7 @@ async def trigger_wartung_job(request: Request, background_tasks: BackgroundTask
 
             except Exception as e:
 
-                results.append({"job": "daemon", "status": "error", "message": str(e)})
+                results.append({"job": "daemon", "status": "error", "message": public_error_message()})
 
 
 
@@ -2906,7 +3030,7 @@ async def trigger_wartung_job(request: Request, background_tasks: BackgroundTask
 
             except Exception as e:
 
-                results.append({"job": "memory_cleanup", "status": "error", "message": str(e)})
+                results.append({"job": "memory_cleanup", "status": "error", "message": public_error_message()})
 
 
 
@@ -2936,7 +3060,7 @@ async def trigger_wartung_job(request: Request, background_tasks: BackgroundTask
 
             except Exception as e:
 
-                results.append({"job": "backup", "status": "error", "message": str(e)})
+                results.append({"job": "backup", "status": "error", "message": public_error_message()})
 
 
 
@@ -2944,7 +3068,7 @@ async def trigger_wartung_job(request: Request, background_tasks: BackgroundTask
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -3067,7 +3191,7 @@ async def get_wartung_status():
 
     except Exception as e:
 
-        return {"error": str(e)}
+        return {"error": public_error_message()}
 
 
 
@@ -3163,7 +3287,7 @@ async def get_token_usage():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -3199,7 +3323,7 @@ async def trigger_scanner(background_tasks: BackgroundTasks):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -3368,7 +3492,7 @@ async def get_ati_stats():
         return stats
     except Exception as e:
         if 'conn' in locals(): conn.close()
-        return {"error": str(e), "total_tasks": 0, "open_tasks": 0, "tools_scanned": 0, "sessions_today": 0, "completed_today": 0}
+        return {"error": public_error_message(), "total_tasks": 0, "open_tasks": 0, "tools_scanned": 0, "sessions_today": 0, "completed_today": 0}
 
 
 
@@ -3408,7 +3532,7 @@ async def get_ati_sessions(limit: int = 10):
         return {"sessions": rows_to_list(rows), "count": len(rows)}
     except Exception as e:
         if 'conn' in locals(): conn.close()
-        return {"sessions": [], "error": str(e)}
+        return {"sessions": [], "error": public_error_message()}
 
 
 @app.post("/api/ati/session/start")
@@ -3542,7 +3666,7 @@ bach --memory session
         }
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/ati/session/start-cli")
@@ -3634,7 +3758,7 @@ async def start_ati_session_cli(work_time: int = 15, task_prompt: str = ""):
         }
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 class ATITaskCreate(BaseModel):
@@ -3936,7 +4060,7 @@ async def get_log_content(filename: str, lines: int = 500, source: str = "data")
         last_lines = content_lines[-lines:] if len(content_lines) > lines else content_lines
         return {"filename": filename, "source": source, "lines": len(last_lines), "content": "\n".join(last_lines)}
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": public_error_message()}
 
 
 
@@ -4429,7 +4553,7 @@ async def denkarium_create(request: Request):
 
     except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
 
-        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+        return JSONResponse(status_code=500, content={"ok": False, "error": public_error_message()})
 
     finally:
 
@@ -4455,7 +4579,7 @@ async def denkarium_delete(entry_id: int):
 
     except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
 
-        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+        return JSONResponse(status_code=500, content={"ok": False, "error": public_error_message()})
 
     finally:
 
@@ -4513,7 +4637,7 @@ async def denkarium_promote(entry_id: int, request: Request):
 
     except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
 
-        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+        return JSONResponse(status_code=500, content={"ok": False, "error": public_error_message()})
 
     finally:
 
@@ -4577,7 +4701,7 @@ async def api_get_inbox_config():
 
         except Exception as e:
 
-            return {"success": False, "error": f"Fehler beim Lesen: {e}"}
+            return {"success": False, "error": public_error_message()}
 
     return {"success": False, "error": "Konfigurationsdatei nicht gefunden"}
 
@@ -4591,15 +4715,14 @@ async def api_ai_headless_run(payload: dict = Body(...)):
 
     """Triggert eine Headless AI Session."""
 
-    import subprocess
-
-    import sys
+    from threading import Thread
+    from tools.headless_agent import run_headless_query
 
     
 
-    prompt = payload.get("prompt")
+    prompt = str(payload.get("prompt") or "")
 
-    partner = payload.get("partner", "claude")
+    partner = safe_partner_name(payload.get("partner", "claude"))
 
     
 
@@ -4607,30 +4730,25 @@ async def api_ai_headless_run(payload: dict = Body(...)):
 
         return {"success": False, "error": "Prompt fehlt"}
 
-        
+    if "\x00" in prompt or len(prompt) > 100000:
 
-    headless_tool = TOOLS_DIR / "c_headless_agent.py"
+        raise HTTPException(status_code=400, detail="Ungueltiger Prompt")
 
-    cmd = [sys.executable, str(headless_tool), prompt, "--partner", partner]
-
-    
 
     try:
 
-        # Async-Start (wir warten nicht auf die Antwort vom KI-Modell hier, 
-
-        # da es zu lange dauern könnte (Timeout))
-
-        popen_kwargs = {"cwd": str(BACH_DIR)}
-        if sys.platform == "win32":
-            popen_kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-        subprocess.Popen(cmd, **popen_kwargs)
+        # Async-Start: Der Headless-Worker pollt bis zu zwei Minuten auf die Antwort.
+        Thread(
+            target=run_headless_query,
+            args=(BACH_DB, prompt, partner),
+            daemon=True,
+        ).start()
 
         return {"success": True, "message": "Headless Session gestartet. Antwort erscheint in der Inbox."}
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -4652,7 +4770,7 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
     except Exception as e:
 
-        return {"success": False, "error": f"Fehler beim Speichern: {e}"}
+        return {"success": False, "error": public_error_message()}
 
     """Listet alle Tools (Python + DB) im vom Dashboard erwarteten Format."""
 
@@ -4820,7 +4938,7 @@ async def api_steuer_unlinked_docs(username: str = "user", jahr: int = 2025):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -4864,7 +4982,7 @@ async def api_steuer_link_posten(posten_id: int, payload: dict = Body(...)):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -4876,17 +4994,16 @@ async def api_steuer_match_bank(payload: dict = Body(...)):
 
     """Triggert den Bank-Abgleich."""
 
-    import subprocess
+    camt_file = str(payload.get("camt_file") or "")
 
-    import sys
+    username = safe_cli_value(payload.get("username", "user"), field_name="Benutzername")
 
-    
-
-    camt_file = payload.get("camt_file")
-
-    username = payload.get("username", "user")
-
-    jahr = payload.get("jahr", 2025)
+    try:
+        jahr = int(payload.get("jahr", 2025))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Ungueltiges Jahr")
+    if jahr < 2000 or jahr > 2100:
+        raise HTTPException(status_code=400, detail="Ungueltiges Jahr")
 
     
 
@@ -4896,29 +5013,27 @@ async def api_steuer_match_bank(payload: dict = Body(...)):
 
         
 
-    matcher_tool = TOOLS_DIR / "steuer" / "bank_matcher.py"
+    normalized_camt = camt_file.replace("\\", "/")
+    if "/" in normalized_camt:
+        camt_path = resolve_under_base(BACH_DIR, normalized_camt, allowed_suffixes={".xml"}, must_exist=True)
+    else:
+        camt_name = safe_path_segment(normalized_camt, field_name="CAMT-Dateiname")
+        camt_path = None
+        for base_dir in (
+            BACH_DIR,
+            DATA_DIR,
+            BACH_DIR / "user" / "inbox",
+            BACH_DIR / "user" / "inbox" / "unsortiert",
+        ):
+            candidate = resolve_child_file(base_dir, camt_name, allowed_suffixes={".xml"})
+            if candidate.exists() and candidate.is_file():
+                camt_path = candidate
+                break
+        if camt_path is None:
+            raise HTTPException(status_code=404, detail="CAMT Datei nicht gefunden")
 
-    cmd = [sys.executable, str(matcher_tool), camt_file, "--user", username, "--jahr", str(jahr)]
-
-    
-
-    try:
-
-        process = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=str(BACH_DIR))
-
-        return {
-
-            "success": process.returncode == 0,
-
-            "stdout": process.stdout,
-
-            "stderr": process.stderr
-
-        }
-
-    except Exception as e:
-
-        return {"success": False, "error": str(e)}
+    _ = (camt_path, username, jahr)
+    raise HTTPException(status_code=503, detail="Bank-Matcher ist nicht installiert")
 
 
 
@@ -4932,25 +5047,15 @@ async def api_get_tool_detail(name: str):
 
     import re
 
-    
+    name = safe_tool_name(name)
 
     # 1. In Python-Tools suchen
 
-    tool_file = TOOLS_DIR / f"{name}.py"
-
-    if not tool_file.exists():
-
-        # Rekursive Suche falls in Unterordner
-
-        for f in TOOLS_DIR.rglob(f"{name}.py"):
-
-            tool_file = f
-
-            break
+    tool_file = resolve_tool_file(name)
 
             
 
-    if tool_file.exists():
+    if tool_file and tool_file.exists():
 
         content = tool_file.read_text(encoding='utf-8', errors='ignore')
 
@@ -5018,35 +5123,26 @@ async def api_run_tool(name: str, payload: dict = Body(...)):
 
     
 
-    tool_file = TOOLS_DIR / f"{name}.py"
-
-    if not tool_file.exists():
-
-        for f in TOOLS_DIR.rglob(f"{name}.py"):
-
-            tool_file = f
-
-            break
+    name = safe_tool_name(name)
+    tool_file = resolve_tool_file(name)
 
             
 
-    if not tool_file.exists():
+    if not tool_file or not tool_file.exists():
 
         raise HTTPException(status_code=404, detail="Tool nicht gefunden oder nicht ausführbar")
 
         
 
     args = payload.get("args", [])
-
-    cmd = [sys.executable, str(tool_file)] + args
-
-    
+    if args:
+        raise HTTPException(status_code=400, detail="Tool-Argumente sind ohne Schema nicht erlaubt")
 
     try:
 
         process = subprocess.run(
 
-            cmd,
+            [sys.executable, str(tool_file)],
 
             capture_output=True,
 
@@ -5074,7 +5170,7 @@ async def api_run_tool(name: str, payload: dict = Body(...)):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -5397,7 +5493,7 @@ async def get_skills_item_file(
 
     except Exception as e:
 
-        return {"success": False, "error": f"Fehler beim Lesen: {str(e)}"}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -5407,20 +5503,7 @@ async def update_skills_item_file(request: FileUpdateRequest):
 
     """Speichert den Inhalt der Quelldatei."""
 
-    path = Path(request.path)
-
-    if not path.is_absolute():
-
-        path = BACH_DIR / path
-
-
-
-    # Sicherheits-Check (resolve verhindert Path-Traversal via ..)
-
-    try:
-        path.resolve().relative_to(BACH_DIR.resolve())
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Zugriff verweigert: Pfad ausserhalb des Projekts.")
+    path = resolve_under_base(BACH_DIR, request.path, allowed_suffixes={".md", ".txt", ".py"})
 
         
 
@@ -5440,7 +5523,7 @@ async def update_skills_item_file(request: FileUpdateRequest):
 
     except Exception as e:
 
-        return {"success": False, "error": f"Fehler beim Speichern: {str(e)}"}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -5689,40 +5772,26 @@ async def get_help_file(name: str):
 
     """Liefert Inhalt einer Help-Datei (unterstuetzt auch wiki/ordner/datei)."""
 
-    # .txt Extension hinzufuegen falls nicht vorhanden
+    requested = name.replace("\\", "/").strip()
+    if not requested.endswith(".txt"):
+        requested = f"{requested}.txt"
 
-    if not name.endswith('.txt'):
+    candidates = [(HELP_DIR, requested)]
+    if requested.startswith("wiki/"):
+        candidates.insert(0, (WIKI_DIR, requested[5:]))
 
-        name = name + '.txt'
-
-
-
-    help_file = HELP_DIR / name
+    help_file = None
     base_dir = HELP_DIR
+    for candidate_base, candidate_name in candidates:
+        candidate = resolve_under_base(candidate_base, candidate_name, allowed_suffixes={".txt"})
+        if candidate.exists() and candidate.is_file():
+            help_file = candidate
+            base_dir = candidate_base
+            break
 
-    if not help_file.exists() and name.startswith("wiki/"):
-        help_file = WIKI_DIR / name[5:]
-        base_dir = WIKI_DIR
+    if help_file is None:
 
-    if not help_file.exists():
-        help_file = HELP_DIR / (name.replace('.txt', '') + '.txt')
-        base_dir = HELP_DIR
-
-    if not help_file.exists() and name.startswith("wiki/"):
-        help_file = WIKI_DIR / (name[5:].replace('.txt', '') + '.txt')
-        base_dir = WIKI_DIR
-
-    if not help_file.exists():
-
-        raise HTTPException(status_code=404, detail=f"Help-Datei nicht gefunden: {name}")
-
-    try:
-
-        help_file.resolve().relative_to(base_dir.resolve())
-
-    except ValueError:
-
-        raise HTTPException(status_code=403, detail="Zugriff verweigert")
+        raise HTTPException(status_code=404, detail="Help-Datei nicht gefunden")
 
 
 
@@ -5757,7 +5826,7 @@ async def get_help_file(name: str):
 
     except Exception as e:
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=public_error_message())
 
 
 
@@ -5778,31 +5847,11 @@ async def update_help_file(name: str, data: HelpUpdate):
 
     """Aktualisiert eine Help-Datei (nur im Entwicklermodus)."""
 
-    # .txt Extension hinzufuegen falls nicht vorhanden
+    requested = name.replace("\\", "/").strip()
+    if not requested.endswith(".txt"):
+        requested = f"{requested}.txt"
 
-    if not name.endswith('.txt'):
-
-        name = name + '.txt'
-
-
-
-    help_file = HELP_DIR / name
-
-
-
-    # Sicherheitscheck: nur innerhalb HELP_DIR erlaubt
-
-    try:
-
-        help_file = help_file.resolve()
-
-        if not str(help_file).startswith(str(HELP_DIR.resolve())):
-
-            raise HTTPException(status_code=403, detail="Zugriff verweigert")
-
-    except Exception:
-
-        raise HTTPException(status_code=400, detail="Ungueltiger Pfad")
+    help_file = resolve_under_base(HELP_DIR, requested, allowed_suffixes={".txt"})
 
 
 
@@ -5818,7 +5867,7 @@ async def update_help_file(name: str, data: HelpUpdate):
 
         if help_file.exists():
 
-            backup_file = help_file.with_suffix('.txt.bak')
+            backup_file = resolve_under_base(HELP_DIR, f"{help_file.relative_to(HELP_DIR)}.bak")
 
             backup_file.write_text(help_file.read_text(encoding='utf-8'), encoding='utf-8')
 
@@ -5842,7 +5891,7 @@ async def update_help_file(name: str, data: HelpUpdate):
 
     except Exception as e:
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=public_error_message())
 
 
 
@@ -5862,7 +5911,7 @@ async def create_help_file(name: str = Query(...), data: HelpUpdate = None):
 
     # Sanitize name
 
-    name = name.strip().replace(' ', '_').lower()
+    name = safe_path_segment(name.strip().replace(' ', '_').lower(), field_name="Dateiname")
 
     if not name.endswith('.txt'):
 
@@ -5870,7 +5919,7 @@ async def create_help_file(name: str = Query(...), data: HelpUpdate = None):
 
 
 
-    help_file = HELP_DIR / name
+    help_file = resolve_under_base(HELP_DIR, name, allowed_suffixes={".txt"})
 
 
 
@@ -5900,7 +5949,7 @@ async def create_help_file(name: str = Query(...), data: HelpUpdate = None):
 
     except Exception as e:
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=public_error_message())
 
 
 
@@ -5913,13 +5962,11 @@ async def delete_help_file(name: str):
 
     """Loescht eine Help-Datei (verschiebt sie nach .deleted)."""
 
-    if not name.endswith('.txt'):
+    requested = name.replace("\\", "/").strip()
+    if not requested.endswith(".txt"):
+        requested = f"{requested}.txt"
 
-        name = name + '.txt'
-
-
-
-    help_file = HELP_DIR / name
+    help_file = resolve_under_base(HELP_DIR, requested, allowed_suffixes={".txt"}, must_exist=True)
 
 
 
@@ -5933,7 +5980,7 @@ async def delete_help_file(name: str):
 
         # Nicht wirklich loeschen, nur umbenennen
 
-        deleted_file = help_file.with_suffix('.txt.deleted')
+        deleted_file = resolve_under_base(HELP_DIR, f"{help_file.relative_to(HELP_DIR)}.deleted")
 
         help_file.rename(deleted_file)
 
@@ -5942,7 +5989,7 @@ async def delete_help_file(name: str):
         return {"success": True, "name": name.replace('.txt', '')}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=public_error_message())
 
 
 
@@ -6362,7 +6409,7 @@ async def financial_status():
 
         conn.close()
 
-        return {"error": str(e), "accounts": 0, "total_emails": 0}
+        return {"error": public_error_message(), "accounts": 0, "total_emails": 0}
 
 
 
@@ -6438,7 +6485,7 @@ async def financial_emails(
 
         conn.close()
 
-        return {"emails": [], "count": 0, "error": str(e)}
+        return {"emails": [], "count": 0, "error": public_error_message()}
 
 
 
@@ -6468,7 +6515,7 @@ async def get_financial_email(email_id: int):
 
         conn.close()
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=public_error_message())
 
 
 
@@ -6510,7 +6557,7 @@ async def financial_subscriptions(active_only: bool = True):
 
         conn.close()
 
-        return {"subscriptions": [], "count": 0, "error": str(e)}
+        return {"subscriptions": [], "count": 0, "error": public_error_message()}
 
 
 @app.get("/api/financial/subscriptions-unified")
@@ -6555,7 +6602,7 @@ async def financial_subscriptions_unified():
             "duplicate_count": duplicate_count
         }
     except Exception as e:
-        return {"success": False, "subscriptions": [], "error": str(e)}
+        return {"success": False, "subscriptions": [], "error": public_error_message()}
 
 
 @app.delete("/api/financial/subscriptions/{sub_id}")
@@ -6580,7 +6627,7 @@ async def delete_financial_subscription(sub_id: int):
 
         conn.close()
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=public_error_message())
 
 
 
@@ -6632,7 +6679,7 @@ async def financial_categories():
 
         conn.close()
 
-        return {"categories": [], "error": str(e)}
+        return {"categories": [], "error": public_error_message()}
 
 
 
@@ -6938,7 +6985,7 @@ async def financial_export():
 
             "_exported": datetime.now().isoformat(),
 
-            "error": str(e),
+            "error": public_error_message(),
 
             "summary": {"total": 0, "steuer_count": 0, "total_betrag": 0},
 
@@ -7110,7 +7157,7 @@ async def create_mail_account(account: MailAccountCreate):
 
         conn.close()
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=public_error_message())
 
 
 
@@ -7216,7 +7263,7 @@ async def toggle_mail_account(account_id: int):
 
     except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
 
-        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+        return JSONResponse(status_code=500, content={"success": False, "error": public_error_message()})
 
     finally:
 
@@ -7294,7 +7341,7 @@ async def test_mail_account(account_id: int):
 
         except Exception as e:
 
-            return {"success": False, "message": str(e)}
+            return {"success": False, "message": public_error_message()}
 
 
 
@@ -7332,7 +7379,7 @@ async def test_mail_account(account_id: int):
 
     except Exception as e:
 
-        return {"success": False, "message": f"Verbindungsfehler: {e}"}
+        return {"success": False, "message": public_error_message()}
 
 
 
@@ -7402,7 +7449,7 @@ async def find_gmail_credentials():
 
     except Exception as e:
 
-        return {"found": 0, "credentials": [], "error": str(e)}
+        return {"found": 0, "credentials": [], "error": public_error_message()}
 
 
 
@@ -7578,7 +7625,7 @@ async def setup_gmail_api():
 
                     except Exception as e:
 
-                        return {"success": False, "message": f"Token erstellt aber Fehler beim Laden: {e}"}
+                        return {"success": False, "message": public_error_message()}
 
 
 
@@ -7598,7 +7645,7 @@ async def setup_gmail_api():
 
     except Exception as e:
 
-        return {"success": False, "message": str(e)}
+        return {"success": False, "message": public_error_message()}
 
 
 
@@ -7666,7 +7713,7 @@ async def gmail_api_status():
 
                 except Exception as e:
 
-                    result["token_error"] = str(e)
+                    result["token_error"] = public_error_message()
 
 
 
@@ -7676,7 +7723,7 @@ async def gmail_api_status():
 
     except Exception as e:
 
-        return {"error": str(e)}
+        return {"error": public_error_message()}
 
 
 
@@ -7888,7 +7935,7 @@ async def update_daemon_config(request: Request):
 
     except Exception as e:
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=public_error_message())
 
 
 
@@ -7931,7 +7978,7 @@ async def get_recurring_tasks():
 
     except Exception as e:
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=public_error_message())
 
 
 
@@ -7963,7 +8010,7 @@ async def check_recurring():
 
     except Exception as e:
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=public_error_message())
 
 
 
@@ -7997,7 +8044,7 @@ async def trigger_recurring(task_id: str):
 
     except Exception as e:
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=public_error_message())
 
 
 
@@ -8159,7 +8206,7 @@ async def get_memory_overview():
                 result["last_session"] = dict(last_session)
 
     except Exception as e:
-        result["error"] = str(e)
+        result["error"] = public_error_message()
 
 
 
@@ -8193,7 +8240,7 @@ async def get_working_memory(limit: int = 50):
 
     except Exception as e:
 
-        return {"entries": [], "count": 0, "error": str(e)}
+        return {"entries": [], "count": 0, "error": public_error_message()}
 
 
 
@@ -8241,7 +8288,7 @@ async def get_lessons(limit: int = 50, category: Optional[str] = None):
 
     except Exception as e:
 
-        return {"entries": [], "count": 0, "error": str(e)}
+        return {"entries": [], "count": 0, "error": public_error_message()}
 
 
 
@@ -8271,7 +8318,7 @@ async def get_sessions(limit: int = 20):
 
     except Exception as e:
 
-        return {"sessions": [], "count": 0, "error": str(e)}
+        return {"sessions": [], "count": 0, "error": public_error_message()}
 
 
 
@@ -8313,7 +8360,7 @@ async def add_working_memory(entry: MemoryCreate):
 
     except Exception as e:
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 
@@ -8343,7 +8390,7 @@ async def add_lesson(entry: MemoryCreate):
 
     except Exception as e:
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 
@@ -8373,7 +8420,7 @@ async def get_facts(limit: int = 50):
 
     except Exception as e:
 
-        return {"error": str(e)}
+        return {"error": public_error_message()}
 
 
 
@@ -8413,7 +8460,7 @@ async def add_fact(entry: dict):
 
     except Exception as e:
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 
@@ -8437,7 +8484,7 @@ async def delete_fact(fact_id: int):
 
     except Exception as e:
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 
@@ -8461,7 +8508,7 @@ async def delete_working_memory(entry_id: int):
 
     except Exception as e:
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 
@@ -8483,7 +8530,7 @@ async def delete_lesson(lesson_id: int):
 
     except Exception as e:
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 
@@ -8561,7 +8608,7 @@ async def get_memory_db_stats():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -8635,7 +8682,7 @@ async def memory_maintenance_cleanup():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -8689,7 +8736,7 @@ async def get_session_detail(session_id: str):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -8967,7 +9014,7 @@ async def get_tools(
 
     except Exception as e:
 
-        result["db_error"] = str(e)
+        result["db_error"] = public_error_message()
 
 
 
@@ -9058,7 +9105,7 @@ async def get_prompt_templates():
 
     except Exception as e:
 
-        return {"system": [], "agents": [], "custom": [], "error": str(e)}
+        return {"system": [], "agents": [], "custom": [], "error": public_error_message()}
 
 
 
@@ -9094,7 +9141,7 @@ async def get_prompt_template(template_path: str):
 
     except Exception as e:
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=public_error_message())
 
 
 
@@ -9138,7 +9185,7 @@ async def send_prompt_as_task(req: PromptSendRequest):
 
     except Exception as e:
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 
@@ -9257,7 +9304,7 @@ bach --shutdown "Zusammenfassung der erledigten Arbeit"
 
     except Exception as e:
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 
@@ -9285,7 +9332,7 @@ async def copy_prompt_to_clipboard(req: PromptSendRequest):
 
     except Exception as e:
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 
@@ -9431,7 +9478,7 @@ async def update_prompt_daemon_config(req: DaemonConfigRequest):
 
     except Exception as e:
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 
@@ -9517,7 +9564,7 @@ async def toggle_prompt_daemon():
 
             except Exception as e:
 
-                return {"status": "error", "message": f"Stop fehlgeschlagen: {e}"}
+                return {"status": "error", "message": public_error_message()}
 
         else:
 
@@ -9601,7 +9648,7 @@ async def toggle_prompt_daemon():
 
     except Exception as e:
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 
@@ -9618,10 +9665,11 @@ async def launch_auto_session(request: Request):
         if not re.match(r'^[a-zA-Z0-9_-]+$', session_id):
             return {"status": "error", "message": "Ungueltige Session-ID"}
         start_dir = Path(__file__).parent.parent.parent / "start"
+        session_script = safe_path_segment(session_id, field_name="Session-ID")
 
         env = {**os.environ, "BACH_AUTO": "1"}
         if sys.platform == "win32":
-            script_file = start_dir / f"{session_id}.bat"
+            script_file = resolve_child_file(start_dir, f"{session_script}.bat", allowed_suffixes={".bat"})
             if not script_file.exists():
                 return {"status": "error", "message": f"Batch-Datei nicht gefunden: {script_file.name}"}
             subprocess.Popen(
@@ -9633,7 +9681,7 @@ async def launch_auto_session(request: Request):
                 env=env
             )
         else:
-            script_file = start_dir / f"{session_id}.sh"
+            script_file = resolve_child_file(start_dir, f"{session_script}.sh", allowed_suffixes={".sh"})
             if not script_file.exists():
                 return {"status": "error", "message": f"Script nicht gefunden: {script_file.name}"}
             subprocess.Popen(
@@ -9647,7 +9695,7 @@ async def launch_auto_session(request: Request):
 
         return {"status": "launched", "session_id": session_id, "message": f"Session {session_id} gestartet"}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 class TemplateSaveRequest(BaseModel):
@@ -9704,7 +9752,7 @@ async def save_prompt_template(req: TemplateSaveRequest):
 
     except Exception as e:
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": public_error_message()}
 
 
 
@@ -9824,7 +9872,7 @@ async def get_session_activities():
 
     except Exception as e:
 
-        return {"activities": [], "error": str(e)}
+        return {"activities": [], "error": public_error_message()}
 
 
 
@@ -9898,7 +9946,7 @@ async def generate_session_summary():
 
     except Exception as e:
 
-        return {"summary": f"Fehler bei der Generierung: {str(e)}"}
+        return {"summary": f"Fehler bei der Generierung: {public_error_message()}"}
 
 
 
@@ -9950,7 +9998,7 @@ async def end_session():
 
     except Exception as e:
 
-        return {"success": False, "message": str(e)}
+        return {"success": False, "message": public_error_message()}
 
 
 
@@ -10028,7 +10076,7 @@ async def add_session_memory(request: Request):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -10228,7 +10276,7 @@ async def get_mail_profiles():
 
     except Exception as e:
 
-        return {"error": str(e), "system_profiles": [], "user_profiles": []}
+        return {"error": public_error_message(), "system_profiles": [], "user_profiles": []}
 
 
 
@@ -10302,7 +10350,7 @@ async def create_mail_profile(profile: MailProfileCreate):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -10368,7 +10416,7 @@ async def update_mail_profile(profile_id: str, profile: MailProfileCreate):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -10408,7 +10456,7 @@ async def delete_mail_profile(profile_id: str):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -10428,7 +10476,7 @@ async def get_false_positives():
 
     except Exception as e:
 
-        return {"error": str(e), "message_ids": [], "patterns": {}}
+        return {"error": public_error_message(), "message_ids": [], "patterns": {}}
 
 
 
@@ -10518,7 +10566,7 @@ async def add_false_positive(fp: FalsePositiveCreate):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -10554,7 +10602,7 @@ async def remove_false_positive(message_id: str):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -10744,7 +10792,7 @@ async def test_mail_profile(req: ProfileTestRequest):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -10910,7 +10958,7 @@ async def import_profiles_from_universal_mail():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -10950,7 +10998,7 @@ async def get_contracts():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e), "contracts": []}
+        return {"success": False, "error": public_error_message(), "contracts": []}
 
 
 
@@ -10983,7 +11031,7 @@ async def add_contract(contract: ContractModel):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
     finally:
         if conn:
@@ -11018,7 +11066,7 @@ async def update_contract(contract_id: int, contract: ContractModel):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
     finally:
         if conn:
@@ -11048,7 +11096,7 @@ async def delete_contract(contract_id: int):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -11092,7 +11140,7 @@ async def get_insurances():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e), "insurances": []}
+        return {"success": False, "error": public_error_message(), "insurances": []}
 
 
 
@@ -11208,7 +11256,7 @@ async def get_financial_deadlines():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -11242,7 +11290,7 @@ async def add_insurance(ins: InsuranceModel):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -11274,7 +11322,7 @@ async def update_insurance(ins_id: int, ins: InsuranceModel):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -11300,7 +11348,7 @@ async def delete_insurance(ins_id: int):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -11346,7 +11394,7 @@ async def get_usecases():
             }
         }
     except Exception as e:
-        return {"success": False, "error": str(e), "usecases": []}
+        return {"success": False, "error": public_error_message(), "usecases": []}
 
 
 @app.get("/api/usecases/{usecase_id}")
@@ -11363,7 +11411,7 @@ async def get_usecase(usecase_id: int):
             return {"success": True, "usecase": dict(row)}
         return {"success": False, "error": "Nicht gefunden"}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/usecases")
@@ -11387,7 +11435,7 @@ async def add_usecase(request: Request):
         conn.close()
         return {"success": True, "id": cursor.lastrowid}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.put("/api/usecases/{usecase_id}")
@@ -11414,7 +11462,7 @@ async def update_usecase(usecase_id: int, request: Request):
         conn.close()
         return {"success": True}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.delete("/api/usecases/{usecase_id}")
@@ -11428,7 +11476,7 @@ async def delete_usecase(usecase_id: int):
         conn.close()
         return {"success": True}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/usecases/{usecase_id}/test")
@@ -11466,10 +11514,11 @@ async def test_usecase(usecase_id: int):
         # Check 2: Workflow-Datei existiert?
         if workflow_name:
             score_max += 1
-            wf_path = Path(__file__).parent.parent / "skills" / "_workflows" / f"{workflow_name}.md"
-            if not wf_path.exists():
-                wf_path = Path(__file__).parent.parent / "skills" / "_workflows" / workflow_name
-            if wf_path.exists():
+            try:
+                wf_path = resolve_workflow_file(workflow_name)
+            except HTTPException:
+                wf_path = None
+            if wf_path and wf_path.exists():
                 checks.append(f"[OK] Workflow-Datei gefunden: {wf_path.name}")
                 score_parts += 1
             else:
@@ -11512,7 +11561,7 @@ async def test_usecase(usecase_id: int):
             "output": "\n".join(checks) + f"\n\nScore: {test_score}% ({score_parts}/{score_max})"
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/usecases/test-all")
@@ -11541,10 +11590,11 @@ async def test_all_usecases():
 
             if workflow_name:
                 score_parts += 1
-                wf_path = Path(__file__).parent.parent / "skills" / "_workflows" / f"{workflow_name}.md"
-                if not wf_path.exists():
-                    wf_path = Path(__file__).parent.parent / "skills" / "_workflows" / workflow_name
-                if wf_path.exists():
+                try:
+                    wf_path = resolve_workflow_file(workflow_name)
+                except HTTPException:
+                    wf_path = None
+                if wf_path and wf_path.exists():
                     score_parts += 1
             if test_input and str(test_input).strip():
                 score_parts += 1
@@ -11575,7 +11625,7 @@ async def test_all_usecases():
             "results": results
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/usecases/{usecase_id}/execute")
@@ -11604,7 +11654,7 @@ async def execute_usecase(usecase_id: int, request: Request):
 
         return {"success": True, "output": output}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -11659,7 +11709,7 @@ async def get_contacts(category: str = None):
             }
         }
     except Exception as e:
-        return {"success": False, "error": str(e), "contacts": []}
+        return {"success": False, "error": public_error_message(), "contacts": []}
 
 
 @app.get("/api/contacts/{contact_id}")
@@ -11676,7 +11726,7 @@ async def get_contact(contact_id: int):
             return {"success": True, "contact": dict(row)}
         return {"success": False, "error": "Nicht gefunden"}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/contacts")
@@ -11714,7 +11764,7 @@ async def add_contact(request: Request):
         conn.close()
         return {"success": True, "id": cursor.lastrowid}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.put("/api/contacts/{contact_id}")
@@ -11755,7 +11805,7 @@ async def update_contact(contact_id: int, request: Request):
         conn.close()
         return {"success": True}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.delete("/api/contacts/{contact_id}")
@@ -11769,7 +11819,7 @@ async def delete_contact(contact_id: int):
         conn.close()
         return {"success": True}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.get("/api/contacts/export")
@@ -11815,12 +11865,11 @@ async def export_contacts():
         lines.append("=" * 70)
         lines.append(f"Gesamt: {len(rows)} Kontakte")
 
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines))
+        write_private_text_file(output_file, '\n'.join(lines))
 
         return {"success": True, "file": str(output_file), "count": len(rows)}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -11896,7 +11945,7 @@ async def get_routines(category: str = None, interval: str = None):
             }
         }
     except Exception as e:
-        return {"success": False, "error": str(e), "routines": []}
+        return {"success": False, "error": public_error_message(), "routines": []}
 
 
 @app.get("/api/routines/{routine_id}")
@@ -11913,7 +11962,7 @@ async def get_routine(routine_id: int):
             return {"success": True, "routine": dict(row)}
         return {"success": False, "error": "Nicht gefunden"}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/routines")
@@ -11948,7 +11997,7 @@ async def add_routine(request: Request):
         conn.close()
         return {"success": True, "id": cursor.lastrowid}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.put("/api/routines/{routine_id}")
@@ -11979,7 +12028,7 @@ async def update_routine(routine_id: int, request: Request):
         conn.close()
         return {"success": True}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/routines/{routine_id}/complete")
@@ -12035,7 +12084,7 @@ async def complete_routine(routine_id: int):
         conn.close()
         return {"success": True, "next_due": next_due.isoformat()}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.delete("/api/routines/{routine_id}")
@@ -12049,7 +12098,7 @@ async def delete_routine(routine_id: int):
         conn.close()
         return {"success": True}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.get("/api/routines/export")
@@ -12093,12 +12142,11 @@ async def export_routines():
         lines.append("=" * 70)
         lines.append(f"Gesamt: {len(rows)} aktive Routinen")
 
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines))
+        write_private_text_file(output_file, '\n'.join(lines))
 
         return {"success": True, "file": str(output_file), "count": len(rows)}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -12118,7 +12166,7 @@ async def get_bank_accounts():
         conn.close()
         return {"success": True, "accounts": accounts}
     except Exception as e:
-        return {"success": False, "error": str(e), "accounts": []}
+        return {"success": False, "error": public_error_message(), "accounts": []}
 
 
 @app.post("/api/financial/bank-accounts")
@@ -12143,7 +12191,7 @@ async def add_bank_account(request: Request):
         conn.close()
         return {"success": True, "id": cursor.lastrowid}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.put("/api/financial/bank-accounts/{account_id}")
@@ -12171,7 +12219,7 @@ async def update_bank_account(account_id: int, request: Request):
         conn.close()
         return {"success": True}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.delete("/api/financial/bank-accounts/{account_id}")
@@ -12185,7 +12233,7 @@ async def delete_bank_account(account_id: int):
         conn.close()
         return {"success": True}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -12205,7 +12253,7 @@ async def get_credits():
         conn.close()
         return {"success": True, "credits": credits}
     except Exception as e:
-        return {"success": False, "error": str(e), "credits": []}
+        return {"success": False, "error": public_error_message(), "credits": []}
 
 
 @app.post("/api/financial/credits")
@@ -12236,7 +12284,7 @@ async def add_credit(request: Request):
         conn.close()
         return {"success": True, "id": cursor.lastrowid}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.put("/api/financial/credits/{credit_id}")
@@ -12271,7 +12319,7 @@ async def update_credit(credit_id: int, request: Request):
         conn.close()
         return {"success": True}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.delete("/api/financial/credits/{credit_id}")
@@ -12285,7 +12333,7 @@ async def delete_credit(credit_id: int):
         conn.close()
         return {"success": True}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -12336,7 +12384,10 @@ async def get_inbox_status():
 
                     parts = [p.strip() for p in line.split('|')]
 
-                    folder_path = Path(parts[0])
+                    try:
+                        folder_path = resolve_under_base(BACH_DIR, parts[0])
+                    except HTTPException:
+                        folder_path = None
 
                     folders.append({
 
@@ -12348,9 +12399,9 @@ async def get_inbox_status():
 
                         "target": parts[3] if len(parts) > 3 else "",
 
-                        "exists": folder_path.exists(),
+                        "exists": bool(folder_path and folder_path.exists()),
 
-                        "file_count": len(list(folder_path.iterdir())) if folder_path.exists() else 0
+                        "file_count": len(list(folder_path.iterdir())) if folder_path and folder_path.exists() else 0
 
                     })
 
@@ -12358,7 +12409,7 @@ async def get_inbox_status():
 
         # Unsortierte Dateien zaehlen
 
-        unsorted_dir = Path(config.get('settings', {}).get('unsorted_dir', str(BACH_DIR / 'user' / 'inbox' / 'unsortiert')))
+        unsorted_dir = resolve_configured_dir(config, 'unsorted_dir', BACH_DIR / 'user' / 'inbox' / 'unsortiert')
 
         unsorted_count = len(list(unsorted_dir.glob('*'))) if unsorted_dir.exists() else 0
 
@@ -12380,7 +12431,7 @@ async def get_inbox_status():
 
     except Exception as e:
 
-        return {"error": str(e)}
+        return {"error": public_error_message()}
 
 
 
@@ -12751,7 +12802,7 @@ async def run_inbox_scan():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -12771,7 +12822,7 @@ async def get_unsorted_files():
 
 
 
-    unsorted_dir = Path(config.get('settings', {}).get('unsorted_dir', str(BACH_DIR / 'user' / 'inbox' / 'unsortiert')))
+    unsorted_dir = resolve_configured_dir(config, 'unsorted_dir', BACH_DIR / 'user' / 'inbox' / 'unsortiert')
 
 
 
@@ -12833,25 +12884,13 @@ async def sort_inbox_file(data: dict):
 
 
 
-    unsorted_dir = Path(config.get('settings', {}).get('unsorted_dir', str(BACH_DIR / 'user' / 'inbox' / 'unsortiert')))
+    unsorted_dir = resolve_configured_dir(config, 'unsorted_dir', BACH_DIR / 'user' / 'inbox' / 'unsortiert')
 
-    source_path = unsorted_dir / filename
-
-
-
-    if not source_path.exists():
-
-        raise HTTPException(status_code=404, detail=f"Datei nicht gefunden: {filename}")
+    source_path = resolve_child_file(unsorted_dir, filename, must_exist=True)
 
 
 
-    target_dir = Path(target_folder)
-
-    if not target_dir.is_absolute():
-
-        # Falls relativer Pfad, relativ zum BACH_DIR
-
-        target_dir = BACH_DIR / target_dir
+    target_dir = resolve_under_base(BACH_DIR, target_folder)
 
 
 
@@ -12861,9 +12900,9 @@ async def sort_inbox_file(data: dict):
 
         
 
-        final_name = new_name if new_name else filename
+        final_name = safe_path_segment(new_name, field_name="Zieldateiname") if new_name else source_path.name
 
-        target_path = target_dir / final_name
+        target_path = resolve_child_file(target_dir, final_name)
 
         
 
@@ -12877,7 +12916,7 @@ async def sort_inbox_file(data: dict):
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            target_path = target_dir / f"{stem}_{timestamp}{suffix}"
+            target_path = resolve_child_file(target_dir, f"{stem}_{timestamp}{suffix}")
 
 
 
@@ -12891,7 +12930,7 @@ async def sort_inbox_file(data: dict):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -12909,15 +12948,9 @@ async def get_inbox_preview(filename: str):
 
     
 
-    unsorted_dir = Path(config.get('settings', {}).get('unsorted_dir', str(BACH_DIR / 'user' / 'inbox' / 'unsortiert')))
+    unsorted_dir = resolve_configured_dir(config, 'unsorted_dir', BACH_DIR / 'user' / 'inbox' / 'unsortiert')
 
-    file_path = unsorted_dir / filename
-
-    
-
-    if not file_path.exists():
-
-        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    file_path = resolve_child_file(unsorted_dir, filename, must_exist=True)
 
     
 
@@ -12947,9 +12980,9 @@ async def analyze_inbox_file(filename: str):
 
     
 
-    unsorted_dir = Path(config.get('settings', {}).get('unsorted_dir', str(BACH_DIR / 'user' / 'inbox' / 'unsortiert')))
+    unsorted_dir = resolve_configured_dir(config, 'unsorted_dir', BACH_DIR / 'user' / 'inbox' / 'unsortiert')
 
-    file_path = unsorted_dir / filename
+    file_path = resolve_child_file(unsorted_dir, filename)
 
     
 
@@ -13165,7 +13198,7 @@ async def list_anon_clients():
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -13203,7 +13236,7 @@ async def create_anon_profile(data: dict = Body(...)):
 
     except Exception as e:
 
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 
@@ -13257,7 +13290,7 @@ async def start_report_session():
             "status": session.status
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/report/session/{session_id}/import")
@@ -13277,9 +13310,18 @@ async def import_files_to_session(session_id: str, data: dict = Body(...)):
         files = data.get("files", [])
 
         if folder:
-            count = service.import_from_folder(session, Path(folder))
+            source_folder = resolve_under_base(BACH_DIR, folder, must_exist=True)
+            if not source_folder.is_dir():
+                raise HTTPException(status_code=400, detail="Ordner erwartet")
+            count = service.import_from_folder(session, source_folder)
         elif files:
-            count = service.import_files(session, [Path(f) for f in files])
+            source_files = []
+            for file_name in files:
+                source_file = resolve_under_base(BACH_DIR, file_name, must_exist=True)
+                if not source_file.is_file():
+                    raise HTTPException(status_code=400, detail="Datei erwartet")
+                source_files.append(source_file)
+            count = service.import_files(session, source_files)
         else:
             return {"success": False, "error": "folder oder files angeben"}
 
@@ -13289,7 +13331,7 @@ async def import_files_to_session(session_id: str, data: dict = Body(...)):
             "status": session.status
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/report/session/{session_id}/profile")
@@ -13328,7 +13370,7 @@ async def create_session_profile(session_id: str, data: dict = Body(...)):
             "status": session.status
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/report/session/{session_id}/anonymize")
@@ -13355,7 +13397,7 @@ async def anonymize_session_documents(session_id: str, data: dict = Body(default
             "status": session.status
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/report/session/{session_id}/prompt")
@@ -13393,7 +13435,7 @@ async def generate_session_prompt(session_id: str, data: dict = Body(default={})
             "status": session.status
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/report/session/{session_id}/generate")
@@ -13426,7 +13468,7 @@ async def generate_session_report(session_id: str, data: dict = Body(...)):
             "status": session.status
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/report/session/{session_id}/cleanup")
@@ -13447,7 +13489,7 @@ async def cleanup_session(session_id: str, data: dict = Body(default={})):
 
         return {"success": True, "message": "Session aufgeräumt"}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.get("/api/report/session/{session_id}")
@@ -13461,7 +13503,7 @@ async def get_session_status(session_id: str):
 
         return {"success": True, "session": session.to_dict()}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.get("/api/report/pending")
@@ -13473,7 +13515,7 @@ async def list_pending_reports():
         pending = list_pending_reports()
         return {"success": True, "pending": pending}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -13576,7 +13618,7 @@ async def get_workflow_tuev():
         return {"workflows": workflows, "stats": stats}
 
     except Exception as e:
-        return {"error": str(e), "workflows": [], "stats": {}}
+        return {"error": public_error_message(), "workflows": [], "stats": {}}
 
 
 @app.post("/api/workflow-tuev/{workflow_id}/check")
@@ -13632,7 +13674,7 @@ async def check_workflow_tuev(workflow_id: int, request: Request):
         return {"success": True}
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/workflow-tuev/check-all")
@@ -13663,7 +13705,7 @@ async def check_all_workflows():
         return {"success": True, "checked": checked}
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/workflow-tuev/sync")
@@ -13698,31 +13740,27 @@ async def sync_workflow_tuev():
         return {"success": True, "added": added, "updated": 0}
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": public_error_message()}
 
 
 @app.get("/api/workflow-tuev/content")
 async def get_workflow_content(path: str):
     """Workflow-Inhalt anzeigen."""
     try:
-        base_dir = Path(__file__).parent.parent
         normalized = path.replace("\\", "/").replace("%5C", "/")
-        workflow_path = (base_dir / normalized).resolve()
-
-        try:
-            workflow_path.relative_to(base_dir.resolve())
-        except ValueError:
-            return HTMLResponse(content="<h1>Zugriff verweigert</h1>", status_code=403)
+        workflow_path = resolve_under_base(BACH_DIR, normalized, allowed_suffixes={".md", ".txt"})
 
         if workflow_path.exists():
             content = workflow_path.read_text(encoding='utf-8')
             escaped = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             return HTMLResponse(content=f"<pre style='white-space: pre-wrap; font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4;'>{escaped}</pre>")
         else:
-            return HTMLResponse(content=f"<h1>Workflow nicht gefunden: {normalized}</h1>", status_code=404)
+            return HTMLResponse(content="<h1>Workflow nicht gefunden</h1>", status_code=404)
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return HTMLResponse(content=f"<h1>Fehler: {str(e)}</h1>", status_code=500)
+        return HTMLResponse(content=f"<h1>Fehler: {public_error_message()}</h1>", status_code=500)
 
 
 # ═══════════════════════════════════════════════════════════════

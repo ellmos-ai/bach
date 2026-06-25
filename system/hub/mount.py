@@ -11,6 +11,9 @@ from .base import BaseHandler
 import subprocess
 import os
 import sqlite3
+import re
+
+SAFE_MOUNT_ALIAS_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 class MountHandler(BaseHandler):
     """Handler fuer --mount Befehle"""
@@ -22,6 +25,27 @@ class MountHandler(BaseHandler):
     @property
     def target_file(self) -> Path:
         return self.base_path / "user"
+
+    def _safe_alias(self, value: str) -> str:
+        alias = str(value or "")
+        if not SAFE_MOUNT_ALIAS_RE.fullmatch(alias):
+            raise ValueError("Ungueltiger Mount-Alias")
+        return alias
+
+    def _target_for_alias(self, alias: str) -> Path:
+        target_root = self.target_file.resolve()
+        target = (target_root / self._safe_alias(alias)).resolve(strict=False)
+        target.relative_to(target_root)
+        return target
+
+    def _resolve_mount_source(self, value: str) -> Path:
+        raw = str(value or "")
+        if "\x00" in raw:
+            raise ValueError("Ungueltiger Quellpfad")
+        source = Path(raw).expanduser().resolve(strict=True)
+        if not source.is_dir():
+            raise ValueError("Quellpfad ist kein Ordner")
+        return source
     
     def get_operations(self) -> dict:
         return {
@@ -64,10 +88,14 @@ class MountHandler(BaseHandler):
             
             lines = ["Aktive Mounts:", "="*20]
             for row in rows:
+                try:
+                    alias = self._safe_alias(row['name'])
+                except ValueError:
+                    continue
                 status = "[OK]" if row['is_active'] else "[--]"
-                target_path = self.target_file / row['name']
+                target_path = self._target_for_alias(alias)
                 exists = "[EXISTIERT]" if target_path.exists() else "[FEHLT]"
-                lines.append(f"{status} {row['name']} -> {row['endpoint']} {exists}")
+                lines.append(f"{status} {alias} -> {row['endpoint']} {exists}")
                 
             return True, "\n".join(lines)
         except Exception as e:
@@ -100,9 +128,12 @@ class MountHandler(BaseHandler):
         if len(args) < 2:
             return False, "Verwendung: bach mount add <pfad> <alias>"
 
-        source = Path(args[0]).resolve()
-        alias = args[1]
-        target = self.base_path / "user" / alias
+        try:
+            source = self._resolve_mount_source(args[0])
+            alias = self._safe_alias(args[1])
+            target = self._target_for_alias(alias)
+        except ValueError as exc:
+            return False, str(exc)
 
         if not source.exists():
             return False, f"Quellpfad existiert nicht: {source}"
@@ -131,8 +162,11 @@ class MountHandler(BaseHandler):
         if not args:
             return False, "Verwendung: bach mount remove <alias>"
         
-        alias = args[0]
-        target = self.base_path / "user" / alias
+        try:
+            alias = self._safe_alias(args[0])
+            target = self._target_for_alias(alias)
+        except ValueError as exc:
+            return False, str(exc)
         
         if dry_run:
             return True, f"[DRY-RUN] Wuerde Junction entfernen und aus DB loeschen: {alias}"

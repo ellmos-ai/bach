@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,13 @@ from hub.base import BaseHandler
 
 
 SCHEMA_VERSION = "mediplaner-export-v1"
+
+
+def _write_private_text(path: Path, content: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(content)
 
 
 class MediPlanerHandler(BaseHandler):
@@ -69,9 +77,8 @@ class MediPlanerHandler(BaseHandler):
         text = json.dumps(payload, ensure_ascii=False, indent=2)
         if output_file:
             path = Path(output_file)
-            path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(path.suffix + ".tmp")
-            tmp.write_text(text, encoding="utf-8")
+            _write_private_text(tmp, text)
             tmp.replace(path)
             return True, f"[MEDIPLANER] Export geschrieben: {path}"
         return True, text

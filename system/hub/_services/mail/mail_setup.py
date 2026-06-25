@@ -55,6 +55,13 @@ REQUIRED_SCOPES = [
 ]
 
 
+def write_private_json(path: Path, data: dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
 def check_dependencies():
     """Prueft ob Google-API-Bibliotheken installiert sind."""
     missing = []
@@ -192,7 +199,7 @@ def refresh_token():
             "account": "",
             "expiry": creds.expiry.isoformat() if creds.expiry else "",
         }
-        TOKEN_FILE.write_text(json.dumps(token_out, indent=2), encoding='utf-8')
+        write_private_json(TOKEN_FILE, token_out)
         print(f"[OK] Token gespeichert: {TOKEN_FILE}")
         return True
 
@@ -250,7 +257,7 @@ def start_oauth_flow():
             "token_uri": creds.token_uri or "https://oauth2.googleapis.com/token",
             "scopes": list(creds.scopes) if creds.scopes else REQUIRED_SCOPES,
         }
-        TOKEN_FILE.write_text(json.dumps(token_data, indent=2), encoding='utf-8')
+        write_private_json(TOKEN_FILE, token_data)
         print(f"[OK] Token gespeichert: {TOKEN_FILE}")
         print(f"     client_id: {token_data['client_id'][:30]}...")
         print(f"     refresh_token: {'ja' if token_data['refresh_token'] else 'FEHLT!'}")

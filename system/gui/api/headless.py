@@ -62,6 +62,8 @@ import sys
 import json
 import sqlite3
 import secrets
+import hashlib
+import hmac
 import shutil
 from pathlib import Path
 from datetime import datetime
@@ -109,19 +111,52 @@ app.add_middleware(
 
 # API Key (generiert beim ersten Start oder per --key)
 API_KEY: Optional[str] = None
-KEY_FILE = BACH_ROOT / "data" / ".api_key"
+KEY_FILE = BACH_ROOT / "data" / ".api_key.sha256"
+LEGACY_KEY_FILE = BACH_ROOT / "data" / ".api_key"
+API_KEY_HASH: Optional[str] = None
+
+
+def _hash_key(key: str) -> str:
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+def _write_key_hash(key_hash: str):
+    KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(KEY_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(key_hash)
 
 
 def _load_or_generate_key() -> str:
-    global API_KEY
+    global API_KEY, API_KEY_HASH
     if API_KEY:
+        API_KEY_HASH = API_KEY_HASH or _hash_key(API_KEY)
         return API_KEY
     if KEY_FILE.exists():
-        API_KEY = KEY_FILE.read_text().strip()
-    else:
-        API_KEY = secrets.token_urlsafe(32)
-        KEY_FILE.write_text(API_KEY)
+        API_KEY_HASH = KEY_FILE.read_text(encoding="utf-8").strip()
+        return ""
+    if LEGACY_KEY_FILE.exists():
+        legacy_key = LEGACY_KEY_FILE.read_text(encoding="utf-8").strip()
+        API_KEY_HASH = _hash_key(legacy_key)
+        _write_key_hash(API_KEY_HASH)
+        try:
+            LEGACY_KEY_FILE.unlink()
+        except OSError:
+            pass
+        return ""
+
+    API_KEY = secrets.token_urlsafe(32)
+    API_KEY_HASH = _hash_key(API_KEY)
+    _write_key_hash(API_KEY_HASH)
     return API_KEY
+
+
+def _verify_api_key(candidate: str) -> bool:
+    global API_KEY_HASH
+    _load_or_generate_key()
+    if not candidate or not API_KEY_HASH:
+        return False
+    return hmac.compare_digest(_hash_key(candidate), API_KEY_HASH)
 
 
 def _get_db():
@@ -137,7 +172,7 @@ async def verify_auth(request: Request, api_key: Optional[str] = Query(None)):
         return True
 
     key = request.headers.get("X-BACH-Key") or api_key
-    if not key or key != _load_or_generate_key():
+    if not _verify_api_key(key or ""):
         raise HTTPException(status_code=401, detail="Unauthorized. Provide X-BACH-Key header or api_key parameter.")
     return True
 
@@ -426,6 +461,9 @@ if __name__ == "__main__":
     print(f"  Port: {args.port}")
     print(f"  DB: {BACH_DB}")
     print(f"  Docs: http://localhost:{args.port}/api/docs")
-    print(f"  API-Key: {API_KEY[:8]}... (vollstaendig in {KEY_FILE})")
+    if API_KEY:
+        print(f"  API-Key: {API_KEY[:8]}... (Hash gespeichert in {KEY_FILE})")
+    else:
+        print(f"  API-Key-Hash: {KEY_FILE}")
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
