@@ -449,7 +449,7 @@ Interpersonelle Interaktionen:
             Anzahl importierter Dateien
         """
         if not folder.exists() or not folder.is_dir():
-            session.error_message = f"Ordner nicht gefunden: {folder}"
+            session.error_message = "Ordner nicht gefunden"
             session.status = "error"
             return 0
 
@@ -1393,13 +1393,10 @@ JSON:
                 session.status = "error"
                 return None
 
-        except Exception as e:
-            import traceback
-            tb = traceback.format_exc()
-            session.error_message = f"JSON-Generierung fehlgeschlagen: {e}"
+        except Exception:
+            session.error_message = "JSON-Generierung fehlgeschlagen"
             session.status = "error"
-            print(f"[FEHLER] fill_template Exception: {e}")
-            print(f"[FEHLER] Traceback:\n{tb}")
+            print("[FEHLER] fill_template Exception")
             # Fallback zu Markdown - json_data mitgeben fuer ICF-Tabelle!
             print("[INFO] Fallback zu Markdown-Generator...")
             return self._generate_from_markdown(

@@ -98,8 +98,8 @@ class MountHandler(BaseHandler):
                 lines.append(f"{status} {alias} -> {row['endpoint']} {exists}")
                 
             return True, "\n".join(lines)
-        except Exception as e:
-            return False, f"Fehler beim Lesen der DB: {e}"
+        except Exception:
+            return False, "Fehler beim Lesen der DB"
 
     def _create_link(self, source: Path, target: Path):
         if os.name == "nt":
@@ -136,7 +136,7 @@ class MountHandler(BaseHandler):
             return False, str(exc)
 
         if not source.exists():
-            return False, f"Quellpfad existiert nicht: {source}"
+            return False, "Quellpfad existiert nicht"
 
         if dry_run:
             return True, f"[DRY-RUN] Wuerde Junction erstellen: {target} -> {source} und in DB speichern."
@@ -155,8 +155,8 @@ class MountHandler(BaseHandler):
             conn.close()
 
             return True, f"[OK] Ordner angebunden und gespeichert: {alias} -> {source}"
-        except Exception as e:
-            return False, f"Fehler: {e}"
+        except Exception:
+            return False, "Fehler beim Anlegen der Anbindung"
 
     def _remove_mount(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
         if not args:
@@ -180,8 +180,8 @@ class MountHandler(BaseHandler):
             conn.close()
             
             return True, f"[OK] Anbindung entfernt: {alias}"
-        except Exception as e:
-            return False, f"Fehler beim Entfernen: {e}"
+        except Exception:
+            return False, "Fehler beim Entfernen"
 
     def _restore_mounts(self, dry_run: bool) -> Tuple[bool, str]:
         """Stellt alle Mounts aus der DB wieder her."""
@@ -194,12 +194,16 @@ class MountHandler(BaseHandler):
             errors = []
             
             for row in rows:
-                alias = row['name']
-                source = Path(row['endpoint'])
-                target = self.base_path / "user" / alias
+                try:
+                    alias = self._safe_alias(row["name"])
+                    source = self._resolve_mount_source(row["endpoint"])
+                    target = self._target_for_alias(alias)
+                except ValueError:
+                    errors.append("Ungueltiger Mount-Eintrag")
+                    continue
                 
                 if not source.exists():
-                    errors.append(f"{alias}: Quelle fehlt ({source})")
+                    errors.append(f"{alias}: Quelle fehlt")
                     continue
                 
                 if target.exists():
@@ -213,13 +217,13 @@ class MountHandler(BaseHandler):
                 try:
                     self._create_link(source, target)
                     restored.append(alias)
-                except Exception as ex:
-                    errors.append(f"{alias}: {ex}")
+                except Exception:
+                    errors.append(f"{alias}: Wiederherstellung fehlgeschlagen")
             
             msg = f"Wiederhergestellt: {len(restored)} | Fehler: {len(errors)}"
             if errors:
                 msg += "\n" + "\n".join(errors)
             return True, msg
             
-        except Exception as e:
-            return False, f"Restore-Fehler: {e}"
+        except Exception:
+            return False, "Restore-Fehler"

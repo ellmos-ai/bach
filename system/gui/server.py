@@ -9738,9 +9738,9 @@ async def save_prompt_template(req: TemplateSaveRequest):
 
         # Dateiname normalisieren
 
-        safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in req.name)
+        safe_name = safe_path_segment("".join(c if c.isalnum() or c in "-_" else "_" for c in req.name), field_name="Vorlagenname")
 
-        file_path = custom_dir / f"{safe_name}.txt"
+        file_path = resolve_child_file(custom_dir, f"{safe_name}.txt", allowed_suffixes={".txt"})
 
 
 
