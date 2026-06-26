@@ -500,7 +500,7 @@ Interpersonelle Interaktionen:
 
         # Gender erkennen
         detected_gender = _detect_gender(original_vorname)
-        print(f"[INFO] Gender-Erkennung abgeschlossen: {detected_gender}")
+        print("[INFO] Gender-Erkennung abgeschlossen")
 
         # Tarnname mit passendem Geschlecht generieren
         tarnname = _generate_tarnname(

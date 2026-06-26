@@ -1858,7 +1858,9 @@ async def api_bericht_export(payload: BerichtExport):
 
         success, output = handler._export(args)
 
-        return {"success": success, "message": "Export abgeschlossen" if success else public_error_message()}
+        if not success:
+            raise HTTPException(status_code=500, detail=public_error_message())
+        return {"success": True, "message": "Export abgeschlossen"}
 
     except Exception as e:
 
@@ -1888,7 +1890,9 @@ async def api_bericht_generate(payload: BerichtGenerate):
 
         success, output = handler._generate(args)
 
-        return {"success": success, "message": "Bericht generiert" if success else public_error_message()}
+        if not success:
+            raise HTTPException(status_code=500, detail=public_error_message())
+        return {"success": True, "message": "Bericht generiert"}
 
     except Exception as e:
 
@@ -1956,15 +1960,15 @@ async def api_list_mounts():
 
                         "alias": alias,
 
-                        "path": path,
-
                         "active": active,
 
                         "exists": exists
 
                     })
 
-        return {"success": success, "mounts": mounts}
+        if not success:
+            raise HTTPException(status_code=500, detail=public_error_message())
+        return {"success": True, "mounts": mounts}
 
     except Exception as e:
 
@@ -1988,7 +1992,9 @@ async def api_add_mount(payload: MountAdd):
 
         success, output = handler._add_mount([payload.path, payload.alias], dry_run=False)
 
-        return {"success": success, "message": "Mount angelegt" if success else public_error_message()}
+        if not success:
+            raise HTTPException(status_code=500, detail=public_error_message())
+        return {"success": True, "message": "Mount angelegt"}
 
     except Exception as e:
 
@@ -2012,7 +2018,9 @@ async def api_remove_mount(alias: str):
 
         success, output = handler._remove_mount([alias], dry_run=False)
 
-        return {"success": success, "message": "Mount entfernt" if success else public_error_message()}
+        if not success:
+            raise HTTPException(status_code=500, detail=public_error_message())
+        return {"success": True, "message": "Mount entfernt"}
 
     except Exception as e:
 
@@ -2036,7 +2044,9 @@ async def api_restore_mounts():
 
         success, output = handler._restore_mounts(dry_run=False)
 
-        return {"success": success, "message": "Mounts wiederhergestellt" if success else public_error_message()}
+        if not success:
+            raise HTTPException(status_code=500, detail=public_error_message())
+        return {"success": True, "message": "Mounts wiederhergestellt"}
 
     except Exception as e:
 
@@ -2611,17 +2621,13 @@ async def kill_all_daemons():
 
 
 
-    result = DaemonService.kill_all_daemons()
+    DaemonService.kill_all_daemons()
 
     return {
 
         "status": "ok",
 
-        "killed_count": len(result["killed"]),
-
-        "pid_file_removed": result["pid_file_removed"],
-
-        "errors": result["errors"]
+        "message": "Daemon-Prozesse wurden beendet"
 
     }
 
