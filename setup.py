@@ -167,10 +167,10 @@ class BACHSetup:
         success_count = 0
         for step_id, step_name, step_func, enabled in steps:
             if not enabled:
-                print(f"[{step_id}] {step_name} → ÜBERSPRUNGEN")
+                print(f"[{step_id}] Schritt übersprungen")
                 continue
 
-            print(f"[{step_id}] {step_name}...")
+            print(f"[{step_id}] Schritt wird ausgeführt...")
             try:
                 step_func(extras if step_id == "S1" else None)
                 print(f"     ✓ OK")

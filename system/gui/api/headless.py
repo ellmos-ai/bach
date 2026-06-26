@@ -116,8 +116,32 @@ LEGACY_KEY_FILE = BACH_ROOT / "data" / ".api_key"
 API_KEY_HASH: Optional[str] = None
 
 
-def _hash_key(key: str) -> str:
-    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+def _hash_key(key: str, salt: Optional[str] = None) -> str:
+    rounds = 200000
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        key.encode("utf-8"),
+        bytes.fromhex(salt),
+        rounds,
+    ).hex()
+    return f"pbkdf2_sha256${rounds}${salt}${digest}"
+
+
+def _check_key_hash(candidate: str, stored: str) -> bool:
+    try:
+        algorithm, rounds_text, salt, expected = stored.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            candidate.encode("utf-8"),
+            bytes.fromhex(salt),
+            int(rounds_text),
+        ).hex()
+        return hmac.compare_digest(digest, expected)
+    except (ValueError, TypeError):
+        return False
 
 
 def _write_key_hash(key_hash: str):
@@ -156,7 +180,7 @@ def _verify_api_key(candidate: str) -> bool:
     _load_or_generate_key()
     if not candidate or not API_KEY_HASH:
         return False
-    return hmac.compare_digest(_hash_key(candidate), API_KEY_HASH)
+    return _check_key_hash(candidate, API_KEY_HASH)
 
 
 def _get_db():
@@ -462,7 +486,7 @@ if __name__ == "__main__":
     print(f"  DB: {BACH_DB}")
     print(f"  Docs: http://localhost:{args.port}/api/docs")
     if API_KEY:
-        print(f"  API-Key: {API_KEY[:8]}... (Hash gespeichert in {KEY_FILE})")
+        print(f"  API-Key: neu generiert (Hash gespeichert in {KEY_FILE})")
     else:
         print(f"  API-Key-Hash: {KEY_FILE}")
 

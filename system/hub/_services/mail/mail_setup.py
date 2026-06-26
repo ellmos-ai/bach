@@ -259,9 +259,7 @@ def start_oauth_flow():
         }
         write_private_json(TOKEN_FILE, token_data)
         print(f"[OK] Token gespeichert: {TOKEN_FILE}")
-        print(f"     client_id: {token_data['client_id'][:30]}...")
-        print(f"     refresh_token: {'ja' if token_data['refresh_token'] else 'FEHLT!'}")
-        print(f"     scopes: {[s.split('/')[-1] for s in token_data['scopes']]}")
+        print("     OAuth-Daten wurden privat gespeichert.")
 
         # E-Mail-Adresse ermitteln (nach Token-Speicherung)
         email = "unbekannt"

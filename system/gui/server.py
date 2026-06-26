@@ -1858,7 +1858,7 @@ async def api_bericht_export(payload: BerichtExport):
 
         success, output = handler._export(args)
 
-        return {"success": success, "output": output}
+        return {"success": success, "message": "Export abgeschlossen" if success else public_error_message()}
 
     except Exception as e:
 
@@ -1888,7 +1888,7 @@ async def api_bericht_generate(payload: BerichtGenerate):
 
         success, output = handler._generate(args)
 
-        return {"success": success, "output": output}
+        return {"success": success, "message": "Bericht generiert" if success else public_error_message()}
 
     except Exception as e:
 
@@ -1964,7 +1964,7 @@ async def api_list_mounts():
 
                     })
 
-        return {"success": success, "mounts": mounts, "raw": output}
+        return {"success": success, "mounts": mounts}
 
     except Exception as e:
 
@@ -1988,7 +1988,7 @@ async def api_add_mount(payload: MountAdd):
 
         success, output = handler._add_mount([payload.path, payload.alias], dry_run=False)
 
-        return {"success": success, "output": output}
+        return {"success": success, "message": "Mount angelegt" if success else public_error_message()}
 
     except Exception as e:
 
@@ -2012,7 +2012,7 @@ async def api_remove_mount(alias: str):
 
         success, output = handler._remove_mount([alias], dry_run=False)
 
-        return {"success": success, "output": output}
+        return {"success": success, "message": "Mount entfernt" if success else public_error_message()}
 
     except Exception as e:
 
@@ -2036,7 +2036,7 @@ async def api_restore_mounts():
 
         success, output = handler._restore_mounts(dry_run=False)
 
-        return {"success": success, "output": output}
+        return {"success": success, "message": "Mounts wiederhergestellt" if success else public_error_message()}
 
     except Exception as e:
 
@@ -2618,8 +2618,6 @@ async def kill_all_daemons():
         "status": "ok",
 
         "killed_count": len(result["killed"]),
-
-        "killed_pids": result["killed"],
 
         "pid_file_removed": result["pid_file_removed"],
 
@@ -12792,7 +12790,7 @@ async def run_inbox_scan():
 
             "unsorted": result.unsorted,
 
-            "errors": result.errors
+            "error_count": len(result.errors or [])
 
         }
 
