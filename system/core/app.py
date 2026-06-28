@@ -28,6 +28,7 @@ Kein Startup noetig - sofort einsatzbereit fuer CLI und Library.
 Nutzt hub/bach_paths.py fuer Pfade (Single Source of Truth).
 """
 
+import inspect
 import sys
 from pathlib import Path
 from typing import Optional
@@ -203,9 +204,16 @@ class App:
         try:
             arg_list = args or []
             dry_run = "--dry-run" in arg_list or "-n" in arg_list
-            success, message = handler.handle(operation, arg_list, dry_run=dry_run)
-        except TypeError:
-            success, message = handler.handle(operation, args or [])
+            handle = handler.handle
+            try:
+                accepts_dry_run = "dry_run" in inspect.signature(handle).parameters
+            except (TypeError, ValueError):
+                accepts_dry_run = False
+
+            if accepts_dry_run:
+                success, message = handle(operation, arg_list, dry_run=dry_run)
+            else:
+                success, message = handle(operation, arg_list)
         except Exception as e:
             success, message = False, f"Fehler in {command} {operation}: {e}"
 

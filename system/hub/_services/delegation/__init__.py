@@ -35,8 +35,9 @@ from .complexity_scorer import get_scorer as _get_legacy_scorer
 class _ScorerAdapter:
     """Gleicht clutch.scorer an die bestehende BACH-Signatur an."""
 
-    def __init__(self, scorer: Any):
+    def __init__(self, scorer: Any, source: str):
         self._scorer = scorer
+        self.source = source
 
     def score(self, task_description: str):
         return self._scorer.score(task_description)
@@ -82,12 +83,20 @@ def get_scorer() -> _ScorerAdapter:
 
     if _get_clutch_scorer is not None:
         SCORER_SOURCE = "clutch"
-        _scorer_instance = _ScorerAdapter(_get_clutch_scorer())
+        _scorer_instance = _ScorerAdapter(_get_clutch_scorer(), SCORER_SOURCE)
         return _scorer_instance
 
     SCORER_SOURCE = "legacy"
-    _scorer_instance = _ScorerAdapter(_get_legacy_scorer())
+    _scorer_instance = _ScorerAdapter(_get_legacy_scorer(), SCORER_SOURCE)
     return _scorer_instance
+
+
+def get_scorer_source() -> str:
+    if _scorer_instance is None:
+        get_scorer()
+    if _scorer_instance is None:
+        return SCORER_SOURCE
+    return _scorer_instance.source
 
 
 __all__ = [
@@ -100,4 +109,5 @@ __all__ = [
     "get_fahrtenbuch",
     "get_gas_bremse",
     "get_scorer",
+    "get_scorer_source",
 ]

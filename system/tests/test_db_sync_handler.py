@@ -364,6 +364,24 @@ class TestSyncEvents:
         assert len(newer) == 1
         assert newer[0].name == foreign.name
 
+    def test_sync_on_start_does_not_defer_non_transient_errors(self, sync_env, monkeypatch):
+        m, _, _, transit = sync_env
+        foreign = transit / "bach_OTHER-PC_2026-05-15T10-00-00.bachdb"
+        foreign.write_text("dummy")
+
+        def _boom(_backup_path):
+            raise ValueError("schema mismatch")
+
+        monkeypatch.setattr(m, "merge_backup", _boom)
+
+        ok, msg = m.sync_on_start()
+
+        assert ok is False
+        assert "fehlgeschlagen" in msg
+        assert "schema mismatch" in msg
+        state = m._load_sync_state()
+        assert "deferred_backups" not in state
+
     def test_sync_on_exit_creates_backup(self, sync_env):
         m, _, _, transit = sync_env
         ok, msg = m.sync_on_exit()

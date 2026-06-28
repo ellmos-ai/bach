@@ -1,6 +1,6 @@
 # Portabilität: SYSTEM
-# Zuletzt validiert: 2026-02-08 (Help-Forensik Fix)
-# Nächste Prüfung: 2026-08-08
+# Zuletzt validiert: 2026-06-23
+# Nächste Prüfung: 2027-06-23
 # Ressourcen: [partner_recognition table, partner_presence table, hub/partner.py, tools/mcp_server.py]
 
 BACH PARTNER-SYSTEM (Federated Intelligence)
@@ -31,11 +31,11 @@ KERN-KOMPONENTEN
 
 CLI-BEFEHLE (--partner)
 -----------------------
-  bach partner list              Alle registrierten Partner auflisten
-  bach partner status            Zustand des Netzwerks (Online-Status, Token-Zonen)
-  bach partner info <name>       Details zu spezifischem Partner anzeigen
-  bach partner active            Liste der aktuell aktiven Partner
-  bach partner delegate <task>   Aufgabe an effizientesten Partner übertragen
+  bach --partner list              Alle registrierten Partner auflisten
+  bach --partner status            Zustand des Netzwerks (Online-Status, Token-Zonen)
+  bach --partner info <name>       Details zu spezifischem Partner anzeigen
+  bach --partner active            Liste der aktuell aktiven Partner
+  bach --partner delegate <task>   Aufgabe an effizientesten Partner übertragen
 
 CONNECTOR-BEFEHLE (--connector)
 -------------------------------
@@ -51,6 +51,7 @@ Der delegate-Befehl unterstützt folgende Optionen:
   --partner delegate <task>              Aufgabe automatisch routen
   --partner delegate <task> --to=NAME    An spezifischen Partner delegieren
   --partner delegate <task> --zone=N     Zone erzwingen (1-4)
+  --partner delegate <task> --score      Komplexitäts-Score, Quelle und Modell anzeigen
   --partner delegate <task> --fallback-local
   --partner delegate <task> --fal        Offline-Fallback auf Ollama (Kurzform)
 

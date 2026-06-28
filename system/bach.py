@@ -488,8 +488,28 @@ def _handle_export(sub_cmd, args):
         return 1
 
 
+PARTNER_RUNTIME_COMMANDS = {"list", "status", "info", "active", "delegate"}
+
+
+def _handle_partner_runtime(sub_cmd, args):
+    """Routet Partner-Netzwerkbefehle an den eigentlichen PartnerHandler."""
+    app = _get_app()
+    handler = app.get_handler("partner")
+    if not handler:
+        print("[ERROR] PartnerHandler nicht gefunden")
+        return 1
+
+    dry_run = "--dry-run" in args or "-n" in args
+    success, msg = handler.handle(sub_cmd, args, dry_run=dry_run)
+    print(msg)
+    return 0 if success else 1
+
+
 def _handle_partner(sub_cmd, args):
-    """Partner-Config-Manager (PartnerConfigManager)."""
+    """Partner-Netzwerk + Partner-Config-Manager."""
+    if sub_cmd in PARTNER_RUNTIME_COMMANDS:
+        return _handle_partner_runtime(sub_cmd, args)
+
     sys.path.insert(0, str(HUB_DIR))
     try:
         from partner_config_manager import PartnerConfigManager
@@ -501,14 +521,26 @@ def _handle_partner(sub_cmd, args):
 
     if not sub_cmd or sub_cmd == "help":
         print("Usage: bach partner <cmd> [args]")
-        print("Commands:")
+        print("Netzwerk-Befehle:")
+        print("  list                       Partner-Netzwerk anzeigen")
+        print("  status                     Netzwerk-/Token-Zonen-Status")
+        print("  info <name>                Details zu einem Partner")
+        print("  active                     Nur aktive Partner anzeigen")
+        print("  delegate <task>            Task an Partner delegieren")
+        print("")
+        print("Config-Befehle:")
         print("  detect                     Erkenne installierte Partner")
         print("  register <name>            Trage BACH in Partner-Config ein")
         print("  register --all             Trage BACH in alle erkannten Partner ein")
         print("  unregister <name>          Entferne BACH aus Partner-Config")
-        print("  list                       Liste unterstuetzte Partner")
-        print("  status                     Zeige Status der Partner")
+        print("  config-list                Liste unterstuetzte Partner-Configs")
+        print("  config-status              Zeige Config-Status der Partner")
         return 0
+
+    if sub_cmd == "config-list":
+        sub_cmd = "list"
+    elif sub_cmd == "config-status":
+        sub_cmd = "status"
 
     if sub_cmd == "detect":
         partners = manager.detect_active_partners()

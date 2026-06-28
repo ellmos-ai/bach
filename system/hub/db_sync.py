@@ -180,6 +180,21 @@ class DBSyncManager:
         }
         self._save_sync_state(state)
 
+    def _is_transient_pull_error(self, error: Exception) -> bool:
+        """Erlaubt Fail-soft nur fuer bekannte OneDrive-/SQLite-Transienten."""
+        message = str(error).lower()
+
+        if isinstance(error, sqlite3.OperationalError) and "disk i/o error" in message:
+            return True
+
+        if isinstance(error, OSError):
+            if getattr(error, "winerror", None) == 426:
+                return True
+            if "cloudvorgang" in message or "cloud operation" in message:
+                return True
+
+        return False
+
     def _clear_deferred_backup(self, backup_path: Path, state: Optional[dict] = None) -> bool:
         """Entfernt einen Deferred-Eintrag nach erfolgreichem Pull."""
         state = self._load_sync_state() if state is None else state
@@ -238,13 +253,15 @@ class DBSyncManager:
         try:
             stats = self.merge_backup(latest)
         except Exception as e:
-            self._record_deferred_backup(latest, e)
             self._update_heartbeat()
-            retry_minutes = max(1, self._FAILED_PULL_RETRY_SECONDS // 60)
-            return False, (
-                f"ProSync Pull verschoben: {latest.name} ({e}); "
-                f"naechster Versuch in ca. {retry_minutes} Min."
-            )
+            if self._is_transient_pull_error(e):
+                self._record_deferred_backup(latest, e)
+                retry_minutes = max(1, self._FAILED_PULL_RETRY_SECONDS // 60)
+                return False, (
+                    f"ProSync Pull verschoben: {latest.name} ({e}); "
+                    f"naechster Versuch in ca. {retry_minutes} Min."
+                )
+            return False, f"ProSync Pull fehlgeschlagen: {latest.name} ({e})"
         total = sum(v for v in stats.values() if isinstance(v, int))
 
         remote_host = self._extract_host(latest)

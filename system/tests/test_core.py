@@ -405,6 +405,21 @@ class TestApp:
             "dry_run": True,
         }
 
+    def test_execute_does_not_swallow_internal_type_error(self):
+        from core.app import App
+
+        class DummyHandler:
+            def handle(self, operation, args, dry_run=False):
+                raise TypeError("inner boom")
+
+        app = App(SYSTEM_ROOT)
+        app.get_handler = lambda _name: DummyHandler()
+
+        success, message = app.execute("dummy", "run", ["target", "--dry-run"])
+
+        assert success is False
+        assert "inner boom" in message
+
 
 class TestBachCliDispatch:
     def _dummy_app(self, called):
@@ -465,6 +480,34 @@ class TestBachCliDispatch:
             "dry_run": True,
         }
         assert "[DRY-RUN] ok" in capsys.readouterr().out
+
+    def test_partner_runtime_commands_route_to_partner_handler(self, monkeypatch, capsys):
+        import bach as bach_cli
+
+        called = {}
+
+        class DummyHandler:
+            def handle(self, operation, args, dry_run=False):
+                called["operation"] = operation
+                called["args"] = list(args)
+                called["dry_run"] = dry_run
+                return True, "[DRY-RUN] partner ok" if dry_run else "partner ok"
+
+        class DummyApp:
+            def get_handler(self, name):
+                return DummyHandler() if name == "partner" else None
+
+        monkeypatch.setattr(bach_cli, "_get_app", lambda: DummyApp())
+
+        rc = bach_cli._handle_partner("delegate", ["Smoke", "--dry-run"])
+
+        assert rc == 0
+        assert called == {
+            "operation": "delegate",
+            "args": ["Smoke", "--dry-run"],
+            "dry_run": True,
+        }
+        assert "[DRY-RUN] partner ok" in capsys.readouterr().out
 
 
 if __name__ == "__main__":

@@ -279,8 +279,8 @@ class TestCanonicalDbUsage:
 
         with patch("hub.partner.HAS_COMPLEXITY_SCORER", True), \
              patch("hub.partner.HAS_CLUTCH_BRIDGE", False), \
-             patch("hub.partner.SCORER_SOURCE", "clutch"), \
-             patch("hub.partner.get_scorer", return_value=scorer):
+             patch("hub.partner.get_scorer", return_value=scorer), \
+             patch("hub.partner.get_scorer_source", return_value="clutch"):
             from hub.partner import PartnerHandler
             handler = PartnerHandler(base_path)
             handler.db_path = db_path

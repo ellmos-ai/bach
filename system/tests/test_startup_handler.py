@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from hub.startup import StartupHandler
+from hub.startup import StartupHandler, _StartupTimingList
 
 
 @pytest.fixture
@@ -289,6 +289,48 @@ class TestSkillHealthMonitorStartup:
         assert "[SKILL HEALTH]" in msg
         assert "TIMEOUT" in msg
         assert "3s" in msg
+
+    def test_full_interactive_start_reports_timing_summary(self, startup_env):
+        h, _, _ = startup_env
+
+        ok, msg = h._run_startup(
+            quick=False,
+            dry_run=True,
+            startup_mode="gui",
+            partner_id="codex",
+        )
+
+        assert ok is True
+        assert "[STARTUP TIMING]" in msg
+        assert "Gesamt:" in msg
+
+    def test_quick_start_omits_timing_summary(self, startup_env):
+        h, _, _ = startup_env
+
+        ok, msg = h._run_startup(
+            quick=True,
+            dry_run=True,
+            startup_mode="gui",
+            partner_id="codex",
+        )
+
+        assert ok is True
+        assert "[STARTUP TIMING]" not in msg
+
+
+class TestStartupTimingList:
+    def test_timing_summary_lists_slow_sections(self):
+        with patch("hub.startup.time.perf_counter", side_effect=[0.0, 0.1, 1.4, 1.6, 2.0]):
+            results = _StartupTimingList(enabled=True)
+            results.append("[FIRST]")
+            results.append("[SECOND]")
+            results.append("[THIRD]")
+            lines = results.timing_lines(threshold_seconds=1.0)
+
+        summary = "\n".join(lines)
+        assert "[STARTUP TIMING]" in summary
+        assert "FIRST: 1.30s" in summary
+        assert "SECOND: 0.20s" not in summary
 
 
 class TestSecretsImport:

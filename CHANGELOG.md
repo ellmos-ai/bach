@@ -8,6 +8,9 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Changed
 
+- **Handler-Dispatch reicht `dry_run` jetzt signatursicher weiter:** `system/core/app.py` prüft die `handle(...)`-Signatur vor dem Aufruf, statt interne `TypeError`-Fehler versehentlich als Legacy-Fallback ohne `dry_run` zu verschlucken.
+- **Delegations-Compat-Layer meldet die echte Scorer-Quelle:** `system/hub/_services/delegation/__init__.py` und `system/hub/partner.py` exponieren für `bach --partner delegate --score` jetzt korrekt, ob der externe `clutch`-Scorer oder der Legacy-Fallback aktiv ist.
+- **ProSync-Fail-soft enger begrenzt:** `system/hub/db_sync.py` deferiert Pull-Kandidaten nur noch bei bekannten transienten OneDrive-/SQLite-Fehlern wie Cloud-Timeout oder `disk I/O error`, nicht mehr bei beliebigen Merge-Exceptions.
 - **ProSync-Startup wird fail-soft:** `system/hub/db_sync.py` staged OneDrive-Transit-Backups vor dem Merge lokal und merkt Pull-Kandidaten, die mit Cloud-Timeouts oder `disk I/O` scheitern, für rund 30 Minuten in `sync_state.json` vor. Dadurch blockiert ein einzelnes unlesbares Transit-Backup nicht mehr jede CLI-/`--json`-Abfrage erneut.
 - **PromptBoard-Storage-Erkennung harmonisiert:** Der BACH-Tray sucht `library.json` jetzt nach `BACH_PROMPTBOARD_LIBRARY` zuerst im aktuellen PromptBoard-Desktop-Standard `~/.promptboard/` und nutzt `%APPDATA%/PromptBoard/` nur noch als Legacy-Fallback.
 - **Quick-/Silent-Startup entschärft:** Der Skill-Health-Monitor wird bei Quick- und Silent-Starts übersprungen, damit Automationen und kurze Smokes nicht durch den breiten Skill-Scan ausgebremst werden; Workstation-spezifische Memory-Mirrors sind zusätzlich ignoriert.
@@ -32,6 +35,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Verified
 
+- **Delegations-/Dispatch-Regressionen erweitert:** `python -m pytest system/tests/test_core.py system/tests/test_partner_handler.py system/tests/test_startup_handler.py system/tests/test_db_sync_handler.py -q` lief mit `116 passed`; zusätzlich wurden `python bach.py --partner delegate "Migration pruefen" --score --dry-run`, `python bach.py --startup --mode=text --dry-run` und `python bach.py help partner` gegen den aktuellen Stand verifiziert.
 - **ProSync-Deferral-Regressionspfad verifiziert:** `python -m pytest system/tests/test_db_sync_handler.py -q` lief mit `45 passed`, `python -m pytest system/tests/test_prosync_race.py -q` mit `3 passed`. Zusätzlich wurde am 2026-06-21 ein echter OneDrive-Transitfehler (`[WinError 426] Der Cloudvorgang wurde nicht vor Ablauf der Zeitüberschreitungsperiode abgeschlossen`) reproduziert; danach blieben `python bach.py agent doctor test-agent --json`, `python bach.py --startup quick --mode=silent --partner=codex`, `python bach.py usecase run 50 --dry-run`, `python bach.py upgrade check --json`, `python bach.py task list --filter clutch` sowie ein vollständiger `test-agent`-Steuerzyklus wieder schnell und grün.
 - **PromptBoard-Tray-Pfadsmoke verifiziert:** `python -m pytest system\tests\test_connectors_and_tray.py -q` lief mit `72 passed`; `python system\hub\_services\chat\chat_tray.py --smoke-promptboard` findet `~/.promptboard/library.json` nun vor dem AppData-Fallback.
 - **Startup-Skip-Regressionspfad ergänzt:** `system/tests/test_startup_handler.py` deckt ab, dass Quick-/Silent-Starts den Skill-Health-Monitor nicht aufrufen und volle interaktive Starts ihn weiterhin ausführen.

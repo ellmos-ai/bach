@@ -21,9 +21,69 @@ import json
 import hashlib
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from .base import BaseHandler
+
+
+class _StartupTimingList(list):
+    """List wrapper that records durations between visible startup sections."""
+
+    def __init__(self, enabled: bool = True):
+        super().__init__()
+        self.enabled = enabled
+        self._started_at = time.perf_counter()
+        self._current_label = None
+        self._current_started_at = None
+        self._records = []
+        self._finished = False
+
+    def append(self, item):
+        if self.enabled and not self._finished and self._is_section_heading(item):
+            now = time.perf_counter()
+            if self._current_label is not None:
+                self._records.append((self._current_label, now - self._current_started_at))
+            self._current_label = item.strip()[1:-1]
+            self._current_started_at = now
+        super().append(item)
+
+    @staticmethod
+    def _is_section_heading(item) -> bool:
+        if not isinstance(item, str):
+            return False
+        stripped = item.strip()
+        return len(stripped) > 2 and stripped.startswith("[") and stripped.endswith("]")
+
+    def timing_lines(self, threshold_seconds: float = 1.0, limit: int = 8) -> list[str]:
+        if not self.enabled:
+            return []
+
+        now = time.perf_counter()
+        if not self._finished and self._current_label is not None:
+            self._records.append((self._current_label, now - self._current_started_at))
+        self._finished = True
+
+        total = now - self._started_at
+        slow = [
+            (label, seconds)
+            for label, seconds in self._records
+            if seconds >= threshold_seconds
+        ]
+        slow.sort(key=lambda record: record[1], reverse=True)
+
+        lines = [
+            "",
+            "[STARTUP TIMING]",
+            f" Gesamt: {total:.2f}s | Abschnitte: {len(self._records)}",
+        ]
+        if slow:
+            lines.append(" Langsamste Abschnitte:")
+            for label, seconds in slow[:limit]:
+                lines.append(f"   - {label}: {seconds:.2f}s")
+        else:
+            lines.append(f" Keine Abschnitte über {threshold_seconds:.2f}s")
+        return lines
 
 
 class StartupHandler(BaseHandler):
@@ -493,7 +553,7 @@ class StartupHandler(BaseHandler):
             return None, None, f" [SKIP] Health-Monitor: {e}"
 
     def _run_startup(self, quick: bool, dry_run: bool, startup_mode: str = "gui", partner_id: str = "user") -> tuple:
-        results = []
+        results = _StartupTimingList(enabled=not quick and startup_mode != "silent")
         now = datetime.now()
 
         results.append("=" * 55)
@@ -1361,7 +1421,7 @@ class StartupHandler(BaseHandler):
                     results.append(f"   [{task_id}] {title}... -> {partner.upper()}")
                 if len(suggestions) > 3:
                     results.append(f"   ... +{len(suggestions)-3} weitere")
-                results.append(" --> bach partner delegate \"task\" --to=PARTNER")
+                results.append(" --> bach --partner delegate \"task\" --to=PARTNER")
             else:
                 results.append(" Keine passenden Keywords in offenen Tasks")
         except Exception as e:
@@ -1613,6 +1673,8 @@ class StartupHandler(BaseHandler):
                     conn.close()
                 except Exception:
                     pass
+
+        results.extend(results.timing_lines())
 
         # Footer
         results.append("")

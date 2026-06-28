@@ -1,6 +1,6 @@
 # Portability: SYSTEM
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-06-23
+# Next review: 2027-06-23
 # Resources: [partner_recognition table, partner_presence table, hub/partner.py, tools/mcp_server.py]
 
 BACH PARTNER SYSTEM (Federated Intelligence)
@@ -31,11 +31,11 @@ CORE COMPONENTS
 
 CLI COMMANDS (--partner)
 -----------------------
-  bach partner list              List all registered partners
-  bach partner status            State of the network (online status, token zones)
-  bach partner info <name>       Show details about specific partner
-  bach partner active            List of currently active partners
-  bach partner delegate <task>   Assign task to most efficient partner
+  bach --partner list              List all registered partners
+  bach --partner status            State of the network (online status, token zones)
+  bach --partner info <name>       Show details about specific partner
+  bach --partner active            List of currently active partners
+  bach --partner delegate <task>   Assign task to most efficient partner
 
 CONNECTOR COMMANDS (--connector)
 -------------------------------
@@ -51,6 +51,7 @@ The delegate command supports the following options:
   --partner delegate <task> Automatically route task
   --partner delegate <task> --to=NAME Delegate to specific partner
   --partner delegate <task> --zone=N Force zone (1-4)
+  --partner delegate <task> --score Show complexity score, source, and model
   --partner delegate <task> --fallback-local
   --partner delegate <task> --fal offline fallback to Ollama (short form)
 

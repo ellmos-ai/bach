@@ -19,19 +19,18 @@ from .base import BaseHandler
 
 try:
     from ._services.delegation import (
-        SCORER_SOURCE,
         berechne_gas,
         get_bordcomputer,
         get_fahrtenbuch,
         get_fahrschule,
         get_gas_bremse,
         get_scorer,
+        get_scorer_source,
         get_analyser as get_strecken_analyser,
     )
     HAS_COMPLEXITY_SCORER = True
     HAS_CLUTCH_BRIDGE = True
 except ImportError:
-    SCORER_SOURCE = "unavailable"
     HAS_COMPLEXITY_SCORER = False
     HAS_CLUTCH_BRIDGE = False
 
@@ -311,15 +310,17 @@ class PartnerHandler(BaseHandler):
                 task_text = arg if not task_text else f"{task_text} {arg}"
 
         if not task_text:
-            return False, "Kein Task angegeben. Nutzung: bach partner delegate 'Task-Beschreibung' [--to=NAME] [--zone=N] [--gas=N]"
+            return False, "Kein Task angegeben. Nutzung: bach --partner delegate 'Task-Beschreibung' [--to=NAME] [--zone=N] [--gas=N]"
 
         scorer = None
         score = None
         score_breakdown = None
         recommended_model = None
+        scorer_source = "unavailable"
         if HAS_COMPLEXITY_SCORER:
             try:
                 scorer = get_scorer()
+                scorer_source = get_scorer_source()
                 score, score_breakdown = scorer.score(task_text)
                 recommended_model = scorer.get_recommended_model(score)
             except Exception:
@@ -327,6 +328,7 @@ class PartnerHandler(BaseHandler):
                 score = None
                 score_breakdown = None
                 recommended_model = None
+                scorer_source = "unavailable"
 
         # clutch-bridge: StreckenAnalyse + Gas/Bremse
         strecken_profil = None
@@ -444,7 +446,7 @@ class PartnerHandler(BaseHandler):
         if show_score:
             if score is not None and score_breakdown is not None:
                 results.append(
-                    f"  Score:    {score}/100 (Quelle: {SCORER_SOURCE}, Modell: {recommended_model})"
+                    f"  Score:    {score}/100 (Quelle: {scorer_source}, Modell: {recommended_model})"
                 )
                 results.append(
                     "  Breakdown:"
