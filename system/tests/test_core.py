@@ -422,7 +422,7 @@ class TestApp:
 
 
 class TestBachCliDispatch:
-    def _dummy_app(self, called):
+    def _dummy_app(self, called, handler_name="dummy"):
         class DummyHandler:
             def handle(self, operation, args, dry_run=False):
                 called["operation"] = operation
@@ -438,7 +438,7 @@ class TestBachCliDispatch:
             registry = DummyRegistry()
 
             def get_handler(self, name):
-                return DummyHandler() if name == "dummy" else None
+                return DummyHandler() if name == handler_name else None
 
         return DummyApp()
 
@@ -480,6 +480,63 @@ class TestBachCliDispatch:
             "dry_run": True,
         }
         assert "[DRY-RUN] ok" in capsys.readouterr().out
+
+    def test_startup_profile_preserves_quick_operation(self, monkeypatch, capsys):
+        import bach as bach_cli
+
+        called = {}
+        monkeypatch.setattr(bach_cli, "_get_app", lambda: self._dummy_app(called, "startup"))
+        monkeypatch.setattr(bach_cli, "_run_injectors", lambda *args, **kwargs: None)
+        monkeypatch.setattr(bach_cli, "cmd", lambda *args, **kwargs: None)
+        monkeypatch.setattr(sys, "argv", ["bach.py", "--startup", "quick", "--mode=silent", "--partner=Codex"])
+
+        rc = bach_cli.main()
+
+        assert rc == 0
+        assert called == {
+            "operation": "quick",
+            "args": ["--mode=silent", "--partner=Codex"],
+            "dry_run": False,
+        }
+        assert "ok" in capsys.readouterr().out
+
+    def test_startup_profile_keeps_free_positional_arg_as_handler_arg(self, monkeypatch, capsys):
+        import bach as bach_cli
+
+        called = {}
+        monkeypatch.setattr(bach_cli, "_get_app", lambda: self._dummy_app(called, "startup"))
+        monkeypatch.setattr(bach_cli, "_run_injectors", lambda *args, **kwargs: None)
+        monkeypatch.setattr(bach_cli, "cmd", lambda *args, **kwargs: None)
+        monkeypatch.setattr(sys, "argv", ["bach.py", "--startup", "Codex", "--mode=silent"])
+
+        rc = bach_cli.main()
+
+        assert rc == 0
+        assert called == {
+            "operation": "",
+            "args": ["Codex", "--mode=silent"],
+            "dry_run": False,
+        }
+        assert "ok" in capsys.readouterr().out
+
+    def test_shutdown_profile_preserves_quick_operation(self, monkeypatch, capsys):
+        import bach as bach_cli
+
+        called = {}
+        monkeypatch.setattr(bach_cli, "_get_app", lambda: self._dummy_app(called, "shutdown"))
+        monkeypatch.setattr(bach_cli, "_run_injectors", lambda *args, **kwargs: None)
+        monkeypatch.setattr(bach_cli, "cmd", lambda *args, **kwargs: None)
+        monkeypatch.setattr(sys, "argv", ["bach.py", "--shutdown", "quick", "Pause", "--partner=Codex"])
+
+        rc = bach_cli.main()
+
+        assert rc == 0
+        assert called == {
+            "operation": "quick",
+            "args": ["Pause", "--partner=Codex"],
+            "dry_run": False,
+        }
+        assert "ok" in capsys.readouterr().out
 
     def test_partner_runtime_commands_route_to_partner_handler(self, monkeypatch, capsys):
         import bach as bach_cli

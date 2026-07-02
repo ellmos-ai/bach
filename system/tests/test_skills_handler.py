@@ -132,6 +132,45 @@ class TestShow:
 
 
 # ═══════════════════════════════════════════════════════════════
+# VERSION / LOOKUP
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestVersionLookup:
+    def test_bach_version_uses_root_skill_before_fuzzy_workflow_match(self, skills_env):
+        (skills_env / "SKILL.md").write_text(
+            "---\nname: bach\nversion: 3.9.1\n---\n# BACH\n",
+            encoding="utf-8",
+        )
+        workflow_dir = skills_env / "skills" / "workflows" / "system"
+        workflow_dir.mkdir(parents=True)
+        (workflow_dir / "claude-bach-vernetzung.md").write_text(
+            "---\nname: claude-bach-vernetzung\nversion: 1.0.0\n---\n# Vernetzung\n",
+            encoding="utf-8",
+        )
+
+        h = SkillsHandler(skills_env)
+        ok, output = h.handle("version", ["bach"])
+
+        assert ok is True
+        assert "SKILL.md" in output
+        assert "LOKAL:   v3.9.1" in output
+        assert "claude-bach-vernetzung" not in output
+
+    def test_find_skill_prefers_exact_file_stem_before_substring(self, skills_env):
+        workflow_dir = skills_env / "skills" / "workflows"
+        workflow_dir.mkdir()
+        exact = workflow_dir / "alpha.md"
+        fuzzy = workflow_dir / "x-alpha.md"
+        fuzzy.write_text("# Fuzzy\n", encoding="utf-8")
+        exact.write_text("# Exact\n", encoding="utf-8")
+
+        h = SkillsHandler(skills_env)
+
+        assert h._find_skill("alpha") == exact
+
+
+# ═══════════════════════════════════════════════════════════════
 # SEARCH
 # ═══════════════════════════════════════════════════════════════
 

@@ -179,17 +179,31 @@ class SkillsHandler(BaseHandler):
     def _find_skill(self, name: str) -> Path:
         """Skill-Datei oder Verzeichnis finden."""
         name_lower = name.lower()
+
+        # BACH selbst liegt als Root-SKILL.md ausserhalb von system/skills.
+        # Ohne diesen Sonderfall gewinnt der fuzzy Dateiname
+        # claude-bach-vernetzung.md bei `bach skills version bach`.
+        if name_lower == "bach":
+            for root_skill in (self.base_path.parent / "SKILL.md", self.base_path / "SKILL.md"):
+                if root_skill.exists():
+                    return root_skill
         
-        # 1. Exakte Verzeichnis-Suche in agents/, agents/_experts, _services
+        # 1. Exakte Verzeichnis-Suche in agents/, agents/_experts, _services, skills/
         agents_dir = self.base_path / "agents"
         experts_dir = agents_dir / "_experts"
 
-        for search_dir in [agents_dir, experts_dir, self.skills_dir / '_services']:
+        for search_dir in [agents_dir, experts_dir, self.skills_dir / '_services', self.skills_dir]:
             skill_dir = search_dir / name
             if skill_dir.exists() and skill_dir.is_dir():
                 return skill_dir
         
-        # 2. Datei-Suche (.txt, .md)
+        # 2. Exakte Datei-Suche (.txt, .md) vor fuzzy Substring-Treffern
+        for suffix in ['.txt', '.md']:
+            for skill_file in self.skills_dir.rglob(f"*{suffix}"):
+                if skill_file.stem.lower() == name_lower:
+                    return skill_file
+
+        # 3. Fuzzy Datei-Suche als Kompatibilitaets-Fallback
         for suffix in ['.txt', '.md']:
             for skill_file in self.skills_dir.rglob(f"*{suffix}"):
                 if name_lower in skill_file.stem.lower():

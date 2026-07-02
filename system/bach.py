@@ -885,6 +885,38 @@ HILFE:
 _exit_sync_registered = False
 
 
+_PROFILE_POSITIONAL_OPERATIONS = {
+    "startup": {"run", "quick", "mode"},
+    "shutdown": {"complete", "quick", "emergency"},
+}
+
+
+def _split_profile_args(profile_name: str, remaining: list[str]) -> tuple[str, list[str]]:
+    """Split --profile CLI args while preserving explicit lifecycle operations.
+
+    Historically ``--startup`` and ``--shutdown`` accepted free text or flags
+    without an operation. Keep that compatibility, but allow documented
+    operations such as ``--startup quick`` and ``--shutdown quick`` to reach
+    their handlers as real operations.
+    """
+    operation = ""
+    handler_args = []
+    for arg in remaining:
+        if not arg.startswith("--") and not operation:
+            operation = arg
+        else:
+            handler_args.append(arg)
+
+    allowed_operations = _PROFILE_POSITIONAL_OPERATIONS.get(profile_name)
+    if allowed_operations is not None and operation:
+        normalized = operation.lower()
+        if normalized in allowed_operations:
+            return normalized, handler_args
+        return "", [operation] + handler_args
+
+    return operation, handler_args
+
+
 def main():
     """Haupteinstiegspunkt."""
     # Windows-Konsolen-Encoding
@@ -992,19 +1024,8 @@ def main():
         handler = app.get_handler(profile_name)
         if handler:
             # Operation + Args aufteilen
-            operation = ""
-            handler_args = []
             remaining = sys.argv[2:] if len(sys.argv) > 2 else []
-            for a in remaining:
-                if not a.startswith("--") and not operation:
-                    operation = a
-                else:
-                    handler_args.append(a)
-
-            # startup/shutdown brauchen keine Operation
-            if profile_name in ("startup", "shutdown") and operation:
-                handler_args = [operation] + handler_args
-                operation = ""
+            operation, handler_args = _split_profile_args(profile_name, remaining)
 
             try:
                 cmd(profile_name, [operation] + handler_args)

@@ -106,7 +106,6 @@ id_ed25519.*
 *-Mac Studio.py
 *-LAPTOP-*.py
 *-DESKTOP-*.py
-*-ASUS-GEI*.py
 
 # === ORPHANED CONFIG FLAGS ===
 /system/config/
@@ -161,8 +160,20 @@ Thumbs.db
 /WORKFLOWS.md
 /USECASES.md
 /BACH_HELP_REFERENCE.md
-/*-ASUS-GEI*.md
 /*-WORKSTATION-*.md
+/AGENTS-*.md
+/BACH_HELP_REFERENCE-*.md
+/CHAINS-*.md
+/CHANGELOG-*.md
+/CLAUDE-*.md
+/GEMINI-*.md
+/MEMORY-*.md
+/OLLAMA-*.md
+/PARTNERS-*.md
+/SKILLS-*.md
+/USECASES-*.md
+/USER-*.md
+/WORKFLOWS-*.md
 
 # === SESSION-LOGS (Enthalten private Daten) ===
 logs/daily/
