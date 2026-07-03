@@ -87,12 +87,13 @@ Version history is visible at `bach ​​prompt get <id>`:
     1 2026-01-15T10:30:00 Old text...
     2 2026-02-01T14:00:00 Next version...
 
-CONFLICT RESOLUTION (--confidence)
-------------------------------------
-Confidence can be specified with `add` (for shared memory):
-  bach prompt add <name> <text> --confidence 0.8
+DISTINCTION FROM MEMORY / SHARED MEMORY
+----------------------------------------
+`bach prompt` manages prompt templates and boards. The handler has no
+`--confidence` option and does not perform shared-memory conflict resolution.
 
-In case of conflicts (same key, namespace), higher confidence wins.
+Confidence values belong to memory and shared-memory commands, e.g.:
+  bach --memory fact "key:value" --conf=0.8
 
 DATABASE
 ---------
