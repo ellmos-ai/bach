@@ -157,6 +157,53 @@ class TestVersionLookup:
         assert "LOKAL:   v3.9.1" in output
         assert "claude-bach-vernetzung" not in output
 
+    def test_bach_version_reads_canonical_and_copy_sources_from_registry(self, skills_env):
+        (skills_env / "SKILL.md").write_text(
+            "---\nname: bach\nversion: 3.9.1\n---\n# BACH\n",
+            encoding="utf-8",
+        )
+        codex_copy = skills_env / "mirrors" / "codex" / "bach" / "SKILL.md"
+        codex_copy.parent.mkdir(parents=True)
+        codex_copy.write_text(
+            "---\nname: bach\nversion: 3.8.0\n---\n# BACH Copy\n",
+            encoding="utf-8",
+        )
+        data_dir = skills_env / "data"
+        (data_dir / "skill_sources.json").write_text(
+            json.dumps(
+                {
+                    "version_sources": {
+                        "bach": {
+                            "canonical": [
+                                {
+                                    "source": "repo-root",
+                                    "path": "../SKILL.md",
+                                }
+                            ],
+                            "copies": [
+                                {
+                                    "source": "codex-user-skill",
+                                    "path": "../mirrors/codex/bach/SKILL.md",
+                                }
+                            ],
+                        }
+                    }
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        h = SkillsHandler(skills_env)
+        ok, output = h.handle("version", ["bach"])
+
+        assert ok is True
+        assert "ZENTRAL: v3.9.1 (repo-root)" in output
+        assert "KOPIEN:" in output
+        assert "codex-user-skill: v3.8.0" in output
+        assert "KOPIEN HINTER KANONISCHER QUELLE:" in output
+
     def test_find_skill_prefers_exact_file_stem_before_substring(self, skills_env):
         workflow_dir = skills_env / "skills" / "workflows"
         workflow_dir.mkdir()

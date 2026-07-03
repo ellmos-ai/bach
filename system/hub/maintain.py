@@ -160,16 +160,16 @@ Siehe: bach --help tools/path_healer"""
     
     def _run_duplicate_check(self, args: list) -> tuple:
         """Fuehrt Duplikat-Check aus."""
-        script = self.tools_dir / "duplicate_detector.py"
+        script = self.tools_dir / "file_ops" / "duplicate_detector.py"
         if not script.exists():
             return False, f"Script nicht gefunden: {script}"
-        
+
         return True, """Duplicate Detector
 ==================
 Dieses Tool benoetigt eine Tool-Registry.
 
 Verwendung:
-  from tools.duplicate_detector import DuplicateDetector
+  from tools.file_ops.duplicate_detector import DuplicateDetector
   detector = DuplicateDetector(registry)
   result = detector.check_duplicate("neues-tool", "Beschreibung", ["keywords"])
 
@@ -179,7 +179,7 @@ Features:
 - Usage-Tracking
 - Gap-Analysis
 
-Siehe: tools/duplicate_detector.py"""
+Siehe: tools/file_ops/duplicate_detector.py"""
     
     def _run_generator(self, args: list) -> tuple:
         """Fuehrt Skill/Agent Generator aus."""
@@ -258,7 +258,7 @@ Siehe: tools/exporter.py"""
     
     def _run_pattern_tool(self, args: list, dry_run: bool) -> tuple:
         """Fuehrt Pattern-Tool aus."""
-        script = self.tools_dir / "pattern_tool.py"
+        script = self.tools_dir / "project" / "pattern_tool.py"
         if not script.exists():
             return False, f"Script nicht gefunden: {script}"
         
@@ -303,7 +303,7 @@ Siehe: tools/pattern_tool.py"""
     
     def _run_tool_scanner(self, args: list) -> tuple:
         """Fuehrt Tool-Scanner aus."""
-        script = self.tools_dir / "tool_scanner.py"
+        script = self.tools_dir / "maintenance" / "tool_scanner.py"
         if not script.exists():
             return False, f"Script nicht gefunden: {script}"
         
@@ -324,7 +324,7 @@ Siehe: tools/pattern_tool.py"""
     
     def _run_file_cleaner(self, args: list, dry_run: bool) -> tuple:
         """Fuehrt File-Cleaner aus."""
-        script = self.tools_dir / "file_cleaner.py"
+        script = self.tools_dir / "file_ops" / "file_cleaner.py"
         if not script.exists():
             return False, f"Script nicht gefunden: {script}"
         
@@ -368,7 +368,7 @@ Siehe: tools/file_cleaner.py"""
     
     def _run_json_fixer(self, args: list, dry_run: bool) -> tuple:
         """Fuehrt JSON-Fixer aus."""
-        script = self.tools_dir / "json_fixer.py"
+        script = self.tools_dir / "json" / "json_fixer.py"
         if not script.exists():
             return False, f"Script nicht gefunden: {script}"
         
