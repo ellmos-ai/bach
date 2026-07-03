@@ -530,7 +530,7 @@ bach help consolidation
 |------|------------|----------|---------|
 | **Working** | Short-term | Current session | `bach mem write` |
 | **Episodic** | Diary | Completed sessions | `bach --memory session` |
-| **Semantic** | World knowledge | Facts, wiki, help | `bach --memory fact` |
+| **Semantic** | World knowledge | Facts, wiki, help | `bach --memory fact "key:value"` |
 | **Procedural** | Know-how | Tools, skills, workflows | `bach help tools` |
 | **Associative** | Linking | Consolidation, triggers | `bach consolidate` |
 
