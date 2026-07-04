@@ -68,7 +68,9 @@ class ConnectorConfig:
     connector_type: str     # "signal", "discord", "whatsapp", etc.
     endpoint: str = ""      # URL oder Pfad
     auth_type: str = "none" # "none", "api_key", "oauth", "token"
-    auth_config: Dict[str, str] = field(default_factory=dict)
+    # repr=False: auth_config enthaelt Secrets — darf nie in repr()/Logs landen
+    # (Rueckangleichung aus .MODULES/connectors v1.1.0, 2026-07-04)
+    auth_config: Dict[str, str] = field(default_factory=dict, repr=False)
     options: Dict[str, Any] = field(default_factory=dict)
 
 
