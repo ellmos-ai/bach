@@ -940,6 +940,59 @@ Weitere Informationen: https://github.com/anthropics/skills
 
         return True, "\n".join(results)
 
+    def _load_skill_source_registry(self) -> dict:
+        """Laedt optionale Skill-Quellen fuer Version-/Trust-Checks."""
+        sources_file = self.base_path / "data" / "skill_sources.json"
+        if not sources_file.exists():
+            return {}
+        try:
+            registry = json.loads(sources_file.read_text(encoding='utf-8'))
+            if isinstance(registry, dict):
+                registry["_registry_dir"] = str(sources_file.parent)
+            return registry
+        except (OSError, ValueError):
+            return {}
+
+    def _resolve_source_path(self, raw_path: str | None, registry_dir: str | None = None) -> Path | None:
+        """Loest relative und env-basierte Pfade fuer registrierte Skill-Quellen auf."""
+        if not raw_path:
+            return None
+        expanded = os.path.expandvars(raw_path)
+        source_path = Path(expanded)
+        if not source_path.is_absolute():
+            base_dir = Path(registry_dir) if registry_dir else self.base_path
+            source_path = (base_dir / source_path).resolve()
+        return source_path
+
+    def _get_registered_version(self, source: dict, registry_dir: str | None = None) -> tuple[str | None, Path | None]:
+        """Liest die Version einer registrierten Quelle aus Datei oder Fallback-Metadaten."""
+        source_path = self._resolve_source_path(source.get("path"), registry_dir=registry_dir)
+        skill_file = None
+        if source_path:
+            skill_file = source_path / "SKILL.md" if source_path.is_dir() else source_path
+        if skill_file and skill_file.exists():
+            header = self._extract_yaml_header(skill_file)
+            version = header.get('version')
+            if version:
+                return version, skill_file
+        version = source.get("version")
+        return (str(version) if version else None), skill_file
+
+    def _get_version_sources(self, name: str) -> dict:
+        """Liefert registrierte kanonische Quellen und optionale Kopien fuer einen Skill."""
+        registry = self._load_skill_source_registry()
+        version_sources = registry.get("version_sources", {})
+        skill_entry = version_sources.get(name.lower())
+        if not isinstance(skill_entry, dict):
+            return {"canonical": [], "copies": [], "registry_dir": registry.get("_registry_dir")}
+        canonical = skill_entry.get("canonical", [])
+        copies = skill_entry.get("copies", [])
+        return {
+            "canonical": canonical if isinstance(canonical, list) else [],
+            "copies": copies if isinstance(copies, list) else [],
+            "registry_dir": registry.get("_registry_dir"),
+        }
+
     def _create(self, name: str, skill_type: str = "expert", dry_run: bool = False, fmt: str = None) -> tuple:
         """
         Neuen Skill erstellen (v2.1 Self-Extension).
@@ -1537,26 +1590,60 @@ anthropic_compatible: true
 
         results.append(f"LOKAL:   v{local_version}")
 
-        # 3. Zentrale Version aus skill_sources.json prüfen
+        # 3. Zentrale Version aus skill_sources.json oder Legacy-Listen prüfen
         central_version = None
-        sources_file = self.base_path / "data" / "skill_sources.json"
+        version_sources = self._get_version_sources(name)
+        registry_dir = version_sources.get("registry_dir")
+        for source in version_sources["canonical"]:
+            if not isinstance(source, dict):
+                continue
+            central_version, source_path = self._get_registered_version(source, registry_dir=registry_dir)
+            if central_version:
+                source_label = source.get('source', 'unbekannt')
+                if source_path and source_path.exists():
+                    results.append(f"ZENTRAL: v{central_version} ({source_label})")
+                else:
+                    results.append(f"ZENTRAL: v{central_version} ({source_label}, Metadaten)")
+                break
 
-        if sources_file.exists():
-            try:
-                sources = json.loads(sources_file.read_text(encoding='utf-8'))
-                # In trusted_sources nach dem Skill suchen
-                for source_type in ['goldstandard', 'trusted_sources']:
-                    for source in sources.get(source_type, []):
-                        if name.lower() in source.get('name', '').lower():
-                            central_version = source.get('version')
-                            if central_version:
-                                results.append(f"ZENTRAL: v{central_version} ({source.get('source', 'unbekannt')})")
-                            break
-            except (ValueError, OSError, KeyError):
-                pass
+        if not central_version:
+            sources = self._load_skill_source_registry()
+            for source_type in ['goldstandard', 'trusted_sources']:
+                for source in sources.get(source_type, []):
+                    if not isinstance(source, dict):
+                        continue
+                    if name.lower() in source.get('name', '').lower():
+                        central_version = source.get('version')
+                        if central_version:
+                            results.append(f"ZENTRAL: v{central_version} ({source.get('source', 'unbekannt')})")
+                        break
+                if central_version:
+                    break
 
         if not central_version:
             results.append("ZENTRAL: (nicht registriert)")
+
+        copy_versions = []
+        for source in version_sources["copies"]:
+            if not isinstance(source, dict):
+                continue
+            copy_version, copy_path = self._get_registered_version(source, registry_dir=registry_dir)
+            if not copy_version:
+                continue
+            copy_versions.append({
+                "version": copy_version,
+                "path": copy_path,
+                "source": source.get("source", "unbekannt"),
+            })
+
+        if copy_versions:
+            results.append("KOPIEN:")
+            for copy in copy_versions:
+                copy_path = copy["path"]
+                if copy_path and copy_path.exists():
+                    results.append(f"  {copy['source']}: v{copy['version']} ({copy_path})")
+                else:
+                    results.append(f"  {copy['source']}: v{copy['version']} (Metadaten)")
 
         # 4. Versionen vergleichen
         results.append("")
@@ -1585,6 +1672,28 @@ anthropic_compatible: true
             results.append("Hinweis: Lokale Änderungen sollten ggf. upstream gepusht werden")
         else:
             results.append(f"[OK] Version aktuell: v{local_version}")
+
+        if copy_versions:
+            baseline_tuple = central_tuple if central_version else local_tuple
+            stale_copies = []
+            ahead_copies = []
+            for copy in copy_versions:
+                copy_tuple = parse_version(copy["version"])
+                if copy_tuple < baseline_tuple:
+                    stale_copies.append(copy)
+                elif copy_tuple > baseline_tuple:
+                    ahead_copies.append(copy)
+
+            if stale_copies:
+                results.append("")
+                results.append("KOPIEN HINTER KANONISCHER QUELLE:")
+                for copy in stale_copies:
+                    results.append(f"  - {copy['source']}: v{copy['version']}")
+            if ahead_copies:
+                results.append("")
+                results.append("KOPIEN VOR KANONISCHER QUELLE:")
+                for copy in ahead_copies:
+                    results.append(f"  - {copy['source']}: v{copy['version']}")
 
         # 5. Zusätzliche Metadaten anzeigen
         if skill_file.exists():

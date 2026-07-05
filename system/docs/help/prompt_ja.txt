@@ -87,12 +87,13 @@ CLI コマンド (bach プロンプト)
     1 2026-01-15T10:30:00 古いテキスト...
     2 2026-02-01T14:00:00 次のバージョン...
 
-競合解決 (--confidence)
+MEMORY / SHARED MEMORY との区別
 ------------------------------------
-信頼性は `add` で指定できます (共有メモリの場合):
-  bach prompt add <name> <text> --confidence 0.8
+`bach prompt` はプロンプトテンプレートとボードを管理します。このハンドラーには
+`--confidence` オプションはなく、共有メモリの競合解決も行いません。
 
-競合 (同じキー、名前空間) の場合、信頼性が高い方が優先されます。
+信頼度の値は Memory / Shared Memory コマンドに属します。例:
+  bach --memory fact "key:value" --conf=0.8
 
 DATABASE
 ---------

@@ -87,12 +87,13 @@ El historial de versiones es visible en `bach ​​​​prompt get <id>`:
     1 2026-01-15T10:30:00 Texto antiguo...
     2 2026-02-01T14:00:00 Próxima versión...
 
-RESOLUCIÓN DE CONFLICTOS (--confidence)
+DIFERENCIA CON MEMORY / SHARED MEMORY
 ------------------------------------
-La confianza se puede especificar con `add` (para memoria compartida):
-  bach prompt add <name> <text> --confidence 0.8
+`bach prompt` gestiona plantillas de prompts y boards. El handler no tiene
+opción `--confidence` y no realiza resolución de conflictos de memoria compartida.
 
-En caso de conflictos (misma clave, espacio de nombres), gana una mayor confianza.
+Los valores de confianza pertenecen a los comandos de memoria y memoria compartida, p. ej.:
+  bach --memory fact "key:value" --conf=0.8
 
 DATABASE
 ---------

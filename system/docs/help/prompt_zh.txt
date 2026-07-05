@@ -87,12 +87,13 @@ CLI 命令（巴赫提示符）
     1 2026-01-15T10:30:00 旧文本...
     2 2026-02-01T14:00:00 下一个版本...
 
-冲突解决方案（--confidence）
+与 MEMORY / SHARED MEMORY 的区别
 ------------------------------------
-可以使用“add”指定置信度（对于共享内存）：
-  bach prompt add <name> <text> --confidence 0.8
+`bach prompt` 管理提示词模板和看板。该处理器没有
+`--confidence` 选项，也不执行共享内存冲突解决。
 
-如果发生冲突（相同的密钥、名称空间），则较高的置信度获胜。
+置信度值属于 Memory / Shared Memory 命令，例如：
+  bach --memory fact "key:value" --conf=0.8
 
 数据库
 ---------

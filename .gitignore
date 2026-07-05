@@ -84,6 +84,7 @@ id_ed25519.*
 /system/data/user_config.json
 /system/data/skills_hierarchy.json
 /system/data/skills_hierarchy.backup.json
+/system/tools/data/tool_scan_cache.json
 /system/data/_archive/
 /system/data/_backups/
 /system/data/_trash/
@@ -104,6 +105,7 @@ id_ed25519.*
 
 # === ONEDRIVE CONFLICT COPIES (Nie committen!) ===
 *-Mac Studio.py
+*-Mac Studio.txt
 *-LAPTOP-*.py
 *-DESKTOP-*.py
 

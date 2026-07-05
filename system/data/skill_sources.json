@@ -1,0 +1,27 @@
+{
+  "version_sources": {
+    "bach": {
+      "canonical": [
+        {
+          "source": "repo-root",
+          "path": "../../SKILL.md",
+          "description": "Kanonische BACH-Skilldefinition im Repo-Root"
+        }
+      ],
+      "copies": [
+        {
+          "source": "codex-user-skill",
+          "path": "%USERPROFILE%/.codex/skills/bach/SKILL.md",
+          "optional": true,
+          "description": "Optionale Codex-Nutzerkopie"
+        },
+        {
+          "source": "claude-user-skill",
+          "path": "%USERPROFILE%/.claude/skills/bach/SKILL.md",
+          "optional": true,
+          "description": "Optionale Claude-Nutzerkopie"
+        }
+      ]
+    }
+  }
+}
