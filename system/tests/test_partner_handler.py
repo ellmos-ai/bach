@@ -296,3 +296,70 @@ class TestCanonicalDbUsage:
         assert ok is True
         assert "Score:    72/100 (Quelle: clutch, Modell: opus)" in text
         assert "Breakdown: Laenge=15, Keywords=25, Code=16, Multi-Step=10, Technik=6" in text
+
+    def test_delegate_target_partner_respects_partner_registry_zone_rules(self, base_path, partner_db):
+        with patch("hub.partner.HAS_COMPLEXITY_SCORER", False), \
+             patch("hub.partner.HAS_CLUTCH_BRIDGE", False):
+            from hub.partner import PartnerHandler
+            handler = PartnerHandler(base_path)
+            handler.db_path = partner_db
+            data = handler._load_partners_from_db()
+
+            with patch.object(handler, "_get_current_zone", return_value=3):
+                ok, text = handler._delegate(
+                    data,
+                    ["Routing pruefen", "--to=Claude"],
+                    dry_run=True,
+                )
+
+        assert ok is False
+        assert "Partner 'Claude' nicht in Zone 3 verfuegbar" in text
+
+    def test_delegate_auto_selection_respects_allowed_partners(self, base_path, tmp_path):
+        db_path = tmp_path / "canonical" / "bach.db"
+        db_path.parent.mkdir(parents=True)
+        conn = sqlite3.connect(str(db_path))
+        _create_partner_recognition_table(conn)
+        conn.execute("""
+            INSERT INTO partner_recognition (partner_name, partner_type, api_endpoint,
+                                              capabilities, cost_tier, token_zone, priority, status, notes)
+            VALUES ('Claude', 'api', 'https://api.anthropic.com', '["coding"]',
+                    3, 'zone_1', 90, 'active', 'Primary AI Partner')
+        """)
+        conn.execute("""
+            INSERT INTO partner_recognition (partner_name, partner_type, api_endpoint,
+                                              capabilities, cost_tier, token_zone, priority, status, notes)
+            VALUES ('Ollama', 'local', NULL, '["bulk"]',
+                    0, 'zone_1', 40, 'active', 'Local AI')
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS delegation_rules (
+                zone TEXT,
+                allowed_partners TEXT,
+                status TEXT
+            )
+        """)
+        conn.execute("""
+            INSERT INTO delegation_rules (zone, allowed_partners, status)
+            VALUES ('zone_1', '[\"Claude\"]', 'active')
+        """)
+        conn.commit()
+        conn.close()
+
+        with patch("hub.partner.HAS_COMPLEXITY_SCORER", False), \
+             patch("hub.partner.HAS_CLUTCH_BRIDGE", False):
+            from hub.partner import PartnerHandler
+            handler = PartnerHandler(base_path)
+            handler.db_path = db_path
+            data = handler._load_partners_from_db()
+
+            with patch.object(handler, "_get_current_zone", return_value=1):
+                ok, text = handler._delegate(
+                    data,
+                    ["Coding Aufgabe delegieren"],
+                    dry_run=True,
+                )
+
+        assert ok is True
+        assert "Partner:  Claude" in text
+        assert "Routing:  " in text

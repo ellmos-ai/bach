@@ -20,9 +20,11 @@ from .base import BaseHandler
 try:
     from ._services.delegation import (
         berechne_gas,
+        build_partner_registry,
         get_bordcomputer,
         get_fahrtenbuch,
         get_fahrschule,
+        get_partner_registry_source,
         get_gas_bremse,
         get_scorer,
         get_scorer_source,
@@ -33,6 +35,67 @@ try:
 except ImportError:
     HAS_COMPLEXITY_SCORER = False
     HAS_CLUTCH_BRIDGE = False
+
+    class _FallbackPartnerRegistry:
+        def __init__(self, partners):
+            self._partners = [dict(partner) for partner in partners]
+
+        def get(self, name):
+            name_key = str(name).strip().lower()
+            for partner in self._partners:
+                if partner.get("name", "").strip().lower() == name_key:
+                    return partner
+            return None
+
+        def erlaubt_in_zone(self, partner, zone, allowed_partner_names=None):
+            partner_data = partner if isinstance(partner, dict) else self.get(partner)
+            if partner_data is None or partner_data.get("status") != "active":
+                return False
+            if allowed_partner_names:
+                allowed = {
+                    str(name).strip().lower()
+                    for name in allowed_partner_names
+                    if str(name).strip()
+                }
+                if allowed and partner_data.get("name", "").strip().lower() not in allowed:
+                    return False
+            explicit_zones = partner_data.get("delegation_zones") or []
+            return not explicit_zones or zone in explicit_zones
+
+        def verfuegbare_in_zone(self, zone, allowed_partner_names=None, excluded_names=None):
+            excluded = {
+                str(name).strip().lower()
+                for name in (excluded_names or [])
+                if str(name).strip()
+            }
+            results = []
+            for partner in self._partners:
+                if not self.erlaubt_in_zone(partner, zone, allowed_partner_names=allowed_partner_names):
+                    continue
+                if partner.get("name", "").strip().lower() in excluded:
+                    continue
+                results.append(partner)
+            return results
+
+        def empfehle(self, zone, purpose=None, allowed_partner_names=None, excluded_names=None):
+            candidates = self.verfuegbare_in_zone(
+                zone,
+                allowed_partner_names=allowed_partner_names,
+                excluded_names=excluded_names,
+            )
+            if not candidates:
+                return None
+            return max(
+                candidates,
+                key=lambda partner: float(partner.get("priority", 50) or 50)
+                * float(partner.get("success_rate", 1.0) or 0.0),
+            )
+
+    def build_partner_registry(partners):
+        return _FallbackPartnerRegistry(partners)
+
+    def get_partner_registry_source():
+        return "legacy"
 
 
 class PartnerHandler(BaseHandler):
@@ -343,47 +406,56 @@ class PartnerHandler(BaseHandler):
 
         # Aktuelle Zone ermitteln (vereinfacht: Zone 1 als Default)
         current_zone = forced_zone if forced_zone else self._get_current_zone()
-        
-        # Partner fuer Zone filtern
         partners = data.get("partners", [])
-        available = []
-        
-        for p in partners:
-            if p.get("status") != "active":
-                continue
-            if current_zone in p.get("delegation_zones", []):
-                available.append(p)
+        allowed_partners = self._get_allowed_partners_from_db(current_zone)
+        registry = build_partner_registry(partners)
+        available = registry.verfuegbare_in_zone(
+            current_zone,
+            allowed_partner_names=allowed_partners,
+        )
         
         # Spezifischer Partner gewuenscht?
         selected = None
         if target_partner:
-            # Erst DB-basierte Zone-Pruefung
-            allowed, reason = self._is_partner_allowed_in_zone(target_partner, current_zone)
-            if not allowed:
-                return False, reason
-            
-            for p in available:
-                if p.get("name", "").lower() == target_partner.lower():
-                    selected = p
-                    break
+            selected = registry.get(target_partner)
             if not selected:
-                # Pruefen ob Partner existiert aber nicht in Zone
-                for p in partners:
-                    if p.get("name", "").lower() == target_partner.lower():
-                        return False, f"Partner '{target_partner}' nicht in Zone {current_zone} verfuegbar. Zonen: {p.get('delegation_zones')}"
                 return False, f"Partner nicht gefunden: {target_partner}"
+            if selected.get("status") != "active":
+                return False, f"Partner '{target_partner}' ist nicht aktiv."
+            if not registry.erlaubt_in_zone(
+                selected,
+                current_zone,
+                allowed_partner_names=allowed_partners,
+            ):
+                if self._partner_is_explicitly_blocked(target_partner, allowed_partners):
+                    return False, (
+                        f"Partner '{target_partner}' nicht in Zone {current_zone} erlaubt. "
+                        f"Erlaubt: {', '.join(allowed_partners)}"
+                    )
+                return False, (
+                    f"Partner '{target_partner}' nicht in Zone {current_zone} verfuegbar. "
+                    f"Zonen: {selected.get('delegation_zones')}"
+                )
         else:
-            # Auto-Auswahl: Token-sparsamsten Partner waehlen
-            cost_order = {"none": 0, "low": 1, "medium": 2, "high": 3}
-            available.sort(key=lambda p: cost_order.get(p.get("token_cost", "high"), 3))
+            purpose = self._derive_registry_purpose(task_text, partners)
             if available:
-                # Nicht an sich selbst delegieren (Claude)
-                for p in available:
-                    if p.get("name") != "Claude":
-                        selected = p
-                        break
-                if not selected:
-                    selected = available[0]
+                non_claude_available = [
+                    partner for partner in available
+                    if partner.get("name", "").strip().lower() != "claude"
+                ]
+                excluded_names = ["Claude"] if non_claude_available else None
+                selected = registry.empfehle(
+                    current_zone,
+                    purpose=purpose,
+                    allowed_partner_names=allowed_partners,
+                    excluded_names=excluded_names,
+                )
+                if selected is None and excluded_names:
+                    selected = registry.empfehle(
+                        current_zone,
+                        purpose=purpose,
+                        allowed_partner_names=allowed_partners,
+                    )
         
         if not selected:
             return False, f"Kein Partner fuer Zone {current_zone} verfuegbar."
@@ -443,6 +515,7 @@ class PartnerHandler(BaseHandler):
         results.append(f"  Partner:  {selected.get('name')}")
         results.append(f"  Typ:      {selected.get('type')}")
         results.append(f"  Kosten:   {selected.get('token_cost')}")
+        results.append(f"  Routing:  {get_partner_registry_source()}-partner-registry")
         if show_score:
             if score is not None and score_breakdown is not None:
                 results.append(
@@ -587,6 +660,39 @@ class PartnerHandler(BaseHandler):
         if zone_key in zones:
             return zones[zone_key].get("description", "")
         return "Unbekannte Zone"
+
+    def _derive_registry_purpose(self, task_text: str, partners: list[dict]) -> str | None:
+        """Leitet einen clutch-Zweck aus Task-Text und bekannten Capabilities ab."""
+        text = str(task_text or "").strip().lower()
+        if not text:
+            return None
+
+        capabilities = {
+            str(capability).strip().lower()
+            for partner in partners
+            for capability in partner.get("capabilities", [])
+            if str(capability).strip()
+        }
+
+        for capability in sorted(capabilities):
+            if capability in text:
+                return capability
+
+        aliases = {
+            "coding": {"code", "coding", "python", "bug", "fix", "refactor", "test"},
+            "analysis": {"analyse", "analysis", "audit", "review", "debug"},
+            "research": {"research", "recherche", "quelle", "source", "literatur"},
+            "vision": {"vision", "image", "bild", "screenshot", "ocr"},
+            "entscheidung": {"entscheidung", "freigabe", "approval", "approve"},
+        }
+
+        for capability, keywords in aliases.items():
+            if capability not in capabilities:
+                continue
+            if any(keyword in text for keyword in keywords):
+                return capability
+
+        return None
     
     def _get_type_icon(self, ptype: str) -> str:
         """Icon fuer Partner-Typ."""
@@ -644,6 +750,14 @@ class PartnerHandler(BaseHandler):
             return True, ""
         
         return False, f"Partner '{partner_name}' nicht in Zone {zone} erlaubt. Erlaubt: {', '.join(allowed)}"
+
+    def _partner_is_explicitly_blocked(self, partner_name: str, allowed: list) -> bool:
+        if not allowed:
+            return False
+        allowed_keys = {name.strip().lower() for name in allowed if str(name).strip()}
+        if not allowed_keys:
+            return False
+        return partner_name.strip().lower() not in allowed_keys
 
     def _is_network_available(self, timeout=2) -> bool:
         """Prueft die Internetverbindung (DNS-Check)."""
