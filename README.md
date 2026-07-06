@@ -93,8 +93,8 @@ python system/bach.py setup mcp
 npm install -g ellmos-codecommander-mcp ellmos-filecommander-mcp
 ```
 
-- **[ellmos-codecommander-mcp](https://www.npmjs.com/package/ellmos-codecommander-mcp)** v1.3.10 - Code analysis and refactoring tools (17 tools)
-- **[ellmos-filecommander-mcp](https://www.npmjs.com/package/ellmos-filecommander-mcp)** v1.8.0 - File management and batch operations (44 tools)
+- **[ellmos-codecommander-mcp](https://www.npmjs.com/package/ellmos-codecommander-mcp)** v1.3.14 - Code analysis and refactoring tools (21 tools)
+- **[ellmos-filecommander-mcp](https://www.npmjs.com/package/ellmos-filecommander-mcp)** v1.9.1 - File management and batch operations (46 tools)
 
 ## Quick Start
 

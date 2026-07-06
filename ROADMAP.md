@@ -1100,3 +1100,24 @@ BACH **ist** bereits ein MCP-Server: `system/tools/mcp_server.py` v2.2.0 (FastMC
 - Plugin-Muster (bereits in BACH): `core/registry.py`, `core/plugin_api.py` (vgl. `.AI/.MODULES/plugin_system_example`)
 - Gegenanalyse „lokal redundant": `wiki/mcp_toolstack.txt`
 - Distributionshinweise: `system/skills/workflows/npm-mcp-publish.md` und diese ROADMAP-Sektion
+
+
+---
+
+## Cross-Source-Wissensindex (Notiz 2026-07-06)
+
+Erkenntnis aus dem ctx-/n8n-manager-Strang (Luca King / ctxrs).
+
+- **Befund:** BACH hat **keine echte Volltext-/FTS-Suche** — die Suche im
+  DB-/Command-Layer ist substring-/prefix-/regex-basiert (kein SQLite FTS5,
+  empirisch 2026-07-06 per Grep bestätigt).
+- **Bedarf:** (a) Volltextsuche über das BACH-Gedächtnis; (b) — wichtiger —
+  Anschluss an einen **quellenübergreifenden** Index, der BACH, Gardener,
+  Rinnsal und optional Agent-Transkripte gemeinsam durchsuchbar macht.
+- **Richtung:** NICHT pro System eigenes FTS nachbauen, sondern ein gemeinsames,
+  **pull/passiv** arbeitendes Modul (indexiert, was da ist — Gardener/USMC-Lehre:
+  push-Speicher bleiben leer). Konzept:
+  `.AI/.MODULES/knowledge-index/KONZEPT.md`. BACH wäre dort **Quelle** (Adapter
+  über `bach.db`) und **Nutzer** (Suche via Lib/CLI/MCP).
+- **Referenz/Alternative:** `ctx` (ctxrs, Apache-2.0) als Vorbild; deckt aber nur
+  Coding-Agent-Transkripte ab, nicht die BACH-DB. Eigenbau bevorzugt.

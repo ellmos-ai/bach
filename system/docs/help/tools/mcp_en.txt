@@ -6,8 +6,8 @@ Bundled MCP servers for Claude Code and Claude Desktop.
 AVAILABLE SERVERS
 ------------------
 
-  bach-codecommander code execution and shell commands (17 tools)
-  bach-filecommander file system operations (43 tools)
+  bach-codecommander code execution and shell commands (21 tools)
+  bach-filecommander file system operations (46 tools)
   n8n-manager-mcp n8n workflow management
 
 INSTALLATION

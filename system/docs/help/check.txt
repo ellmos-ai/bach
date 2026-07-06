@@ -25,8 +25,8 @@ PRÜFUNGEN
 ===
 
 1. npm verfügbar              Muss im PATH sein (für MCP-Server-Installation)
-2. ellmos-codecommander-mcp    Global installiertes npm-Paket (17 Tools)
-3. ellmos-filecommander-mcp    Global installiertes npm-Paket (43 Tools)
+2. ellmos-codecommander-mcp    Global installiertes npm-Paket (21 Tools)
+3. ellmos-filecommander-mcp    Global installiertes npm-Paket (46 Tools)
 4. Secrets-Datei               ~/.bach/bach_secrets.json muss existieren und valides JSON sein
 5. bach.db                     Datenbank in data/bach.db muss vorhanden sein
 6. Optionale MCP-Server        Info-Check (kein Fehler wenn nicht installiert)

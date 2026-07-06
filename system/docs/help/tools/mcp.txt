@@ -6,8 +6,8 @@ Gebundelte MCP-Server für Claude Code und Claude Desktop.
 VERFÜGBARE SERVER
 ------------------
 
-  bach-codecommander   Code-Ausführung und Shell-Befehle (17 Tools)
-  bach-filecommander   Dateisystem-Operationen (43 Tools)
+  bach-codecommander   Code-Ausführung und Shell-Befehle (21 Tools)
+  bach-filecommander   Dateisystem-Operationen (46 Tools)
   n8n-manager-mcp      n8n Workflow-Verwaltung
 
 INSTALLATION
