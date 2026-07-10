@@ -462,7 +462,7 @@ set "TIME_TEXT=Arbeite maximal !MAX_MIN! Minuten, dann Session-Summary und Shutd
 if "!MAX_MIN!"=="0" set "TIME_TEXT=Arbeite alle Tasks ab, dann Session-Summary und Shutdown."
 echo.
 pushd "!ROOT_DIR!"
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. !SCOPE_TEXT! !TIME_TEXT!"
+claude --print "Starte mit lesen und ausfuehren von SKILL.md. !SCOPE_TEXT! !TIME_TEXT!" --dangerously-skip-permissions
 popd
 echo.
 echo [FERTIG] Session beendet.
@@ -492,7 +492,7 @@ echo.
 pushd "!ROOT_DIR!"
 :ext_loop_cycle
 echo [%date% %time%] Starte Session (max !LOOP_MIN! Min)...
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Bearbeite offene Tasks (P1 zuerst). Max !LOOP_MIN! Min, dann Summary und Shutdown." --max-turns !LOOP_MAX!
+claude --print "Starte mit lesen und ausfuehren von SKILL.md. Bearbeite offene Tasks (P1 zuerst). Max !LOOP_MIN! Min, dann Summary und Shutdown." --max-turns !LOOP_MAX! --dangerously-skip-permissions
 echo [%date% %time%] Naechste Session in !LOOP_SEC! Sekunden... (Ctrl+C = Stop)
 timeout /t !LOOP_SEC! /nobreak
 goto ext_loop_cycle
@@ -500,7 +500,7 @@ goto ext_loop_cycle
 REM --- Wartung ---
 :ext_maintenance
 pushd "!ROOT_DIR!"
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Wartungsaufgaben: 1) 'bach --recurring check' 2) 'bach backup status' und ggf. 'bach backup create' 3) 'bach --maintain docs' 4) 'bach consolidate run'. Abschliessend Session-Summary und Shutdown."
+claude --print "Starte mit lesen und ausfuehren von SKILL.md. Wartungsaufgaben: 1) 'bach --recurring check' 2) 'bach backup status' und ggf. 'bach backup create' 3) 'bach --maintain docs' 4) 'bach consolidate run'. Abschliessend Session-Summary und Shutdown." --dangerously-skip-permissions
 popd
 pause & goto extended_menu
 
