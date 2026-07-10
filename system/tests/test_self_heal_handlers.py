@@ -507,16 +507,20 @@ def test_startup_resource_summary_uses_current_layout_and_db_counts(tmp_path):
     with sqlite3.connect(db_path) as conn:
         conn.execute("CREATE TABLE bach_agents (id INTEGER PRIMARY KEY, is_active INTEGER DEFAULT 1)")
         conn.execute("CREATE TABLE bach_experts (id INTEGER PRIMARY KEY, is_active INTEGER DEFAULT 1)")
-        conn.execute("CREATE TABLE skills (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE skills (id INTEGER PRIMARY KEY, name TEXT, language TEXT DEFAULT 'de')")
         conn.execute(
-            "CREATE TABLE tools (id INTEGER PRIMARY KEY, is_available INTEGER DEFAULT 1)"
+            "CREATE TABLE tools (id INTEGER PRIMARY KEY, name TEXT, is_available INTEGER DEFAULT 1, language TEXT DEFAULT 'de')"
         )
         conn.executemany("INSERT INTO bach_agents (is_active) VALUES (?)", [(1,), (1,)])
         conn.executemany("INSERT INTO bach_experts (is_active) VALUES (?)", [(1,), (0,), (1,)])
-        conn.executemany("INSERT INTO skills DEFAULT VALUES", [(), (), (), ()])
+        # Sprachvarianten (de/en) desselben Namens duerfen nur einfach zaehlen
         conn.executemany(
-            "INSERT INTO tools (is_available) VALUES (?)",
-            [(1,), (0,), (1,)],
+            "INSERT INTO skills (name, language) VALUES (?, ?)",
+            [("s1", "de"), ("s2", "de"), ("s3", "de"), ("s4", "de"), ("s1", "en"), ("s2", "en")],
+        )
+        conn.executemany(
+            "INSERT INTO tools (name, is_available, language) VALUES (?, ?, ?)",
+            [("t1", 1, "de"), ("t2", 0, "de"), ("t3", 1, "de"), ("t1", 1, "en")],
         )
 
     counts = StartupHandler(base)._count_startup_resources()
