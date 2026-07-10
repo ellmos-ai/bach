@@ -6,6 +6,10 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Morgen-Briefing im Quick-Start repariert:** Redundante Funktions-Imports in `system/hub/startup.py` überschreiben `sqlite3` und `hashlib` nicht mehr als lokale Variablen. Dadurch kann der Morgen-Zweig auch dann auf SQLite zugreifen, wenn der Kernel-Hash-Check im Quick-Modus übersprungen wird; ein zeitfixierter Regressionstest deckt den Pfad ab.
+
 ### Changed
 
 - **MCP-Server-Metadaten und Dokumentation aktualisiert:** `README.md`, `llms.txt` und Hilfedokumente auf CodeCommander `v1.3.14` (21 Tools) sowie FileCommander `v1.9.1` (46 Tools) synchronisiert; `llms.txt` Last-checked auf `2026-07-06` gesetzt.

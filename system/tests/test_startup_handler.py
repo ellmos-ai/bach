@@ -6,6 +6,7 @@ import os
 import subprocess
 import sqlite3
 import sys
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -316,6 +317,29 @@ class TestSkillHealthMonitorStartup:
 
         assert ok is True
         assert "[STARTUP TIMING]" not in msg
+
+
+class TestMorningBriefingStartup:
+    def test_quick_start_keeps_sqlite_module_available(self, startup_env):
+        h, _, _ = startup_env
+
+        class MorningDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 7, 10, 9, 0, tzinfo=tz)
+
+        with patch("hub.startup.datetime", MorningDateTime):
+            ok, msg = h._run_startup(
+                quick=True,
+                dry_run=True,
+                startup_mode="silent",
+                partner_id="codex",
+            )
+
+        assert ok is True
+        assert "[MORGEN-BRIEFING]" in msg
+        assert " --> bach haushalt today | bach task list" in msg
+        assert "cannot access local variable 'sqlite3'" not in msg
 
 
 class TestStartupTimingList:

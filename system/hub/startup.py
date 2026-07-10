@@ -849,9 +849,6 @@ class StartupHandler(BaseHandler):
         # ══════════════════════════════════════════════════════════════
         if not quick:
             try:
-                import hashlib
-                import sqlite3
-
                 conn = sqlite3.connect(str(self.db_path))
                 try:
                     # CORE-Dateien aus distribution_manifest lesen (dist_type=2)
@@ -1221,7 +1218,6 @@ class StartupHandler(BaseHandler):
         conn_user = None
         try:
             # v1.1.84: Alle Daten jetzt in bach.db
-            import sqlite3
             conn_user = self._get_conn()
             conn_user.row_factory = sqlite3.Row
             unread_row = conn_user.execute(
