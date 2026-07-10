@@ -207,10 +207,11 @@ pushd "!SYS_DIR!"
 
 echo  Verfuegbare Agenten:
 echo  -------------------------------------------
-python -c "import os,json; adir=os.path.join('agents'); [print(f'  [{i+1}] {os.path.splitext(f)[0]}') for i,f in enumerate(sorted(f for f in os.listdir(adir) if f.endswith('.json') and not f.startswith('_')))]" 2>nul
+REM Agenten sind Ordner mit SKILL.md (seit v2.6), keine .json-Dateien
+python -c "import os; adir='agents'; names=[d for d in sorted(os.listdir(adir)) if os.path.isdir(os.path.join(adir,d)) and not d.startswith(('_','.')) and os.path.isfile(os.path.join(adir,d,'SKILL.md'))]; [print(f'  [{i+1}] {n}') for i,n in enumerate(names)]" 2>nul
 echo  -------------------------------------------
 echo.
-set /p "agent_choice=  Agent-Nummer (oder Name): "
+set /p "agent_choice=  Agent-Name (wie in der Liste): "
 set /p "agent_task=  Aufgabe: "
 set /p "agent_model=  Modell [S]onnet/[O]pus/[H]aiku (default: S): "
 
@@ -218,9 +219,17 @@ set "MODEL_FLAG=--model sonnet"
 if /i "!agent_model!"=="O" set "MODEL_FLAG=--model opus"
 if /i "!agent_model!"=="H" set "MODEL_FLAG=--model haiku"
 
+if not exist "agents\!agent_choice!\SKILL.md" (
+    echo.
+    echo [FEHLER] Agent "!agent_choice!" nicht gefunden ^(agents\!agent_choice!\SKILL.md fehlt^).
+    popd
+    pause
+    goto agent_start
+)
+
 echo.
-echo  Starte Agent mit Aufgabe...
-claude !MODEL_FLAG! --print "!agent_task!" --dangerously-skip-permissions
+echo  Starte Agent "!agent_choice!" mit Aufgabe...
+claude !MODEL_FLAG! --print "Lies agents/!agent_choice!/SKILL.md und agiere als dieser Agent. Aufgabe: !agent_task!" --dangerously-skip-permissions
 popd
 echo.
 echo [FERTIG] Agent-Session beendet.

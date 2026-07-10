@@ -23,6 +23,7 @@ CLI:
 """
 import os
 import glob
+import sqlite3
 import time
 from pathlib import Path
 from datetime import datetime, timedelta

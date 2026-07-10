@@ -23,6 +23,7 @@ import re
 import sqlite3
 import subprocess
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 from .base import BaseHandler

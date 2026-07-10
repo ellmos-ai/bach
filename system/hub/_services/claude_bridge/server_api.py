@@ -191,7 +191,7 @@ def create_app(config: dict) -> "FastAPI":
             daemon.stop_event.clear()
             return MessageResponse(ok=True, message="Daemon resumed")
         elif req.action == "reload_config":
-            daemon.config = bd.load_config()
+            daemon.config = _get_bridge().load_config()
             return MessageResponse(ok=True, message="Config reloaded")
         else:
             raise HTTPException(status_code=400, detail=f"Unknown action: {req.action}")

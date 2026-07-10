@@ -1009,6 +1009,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         round_num = 0
         session.tool_round = 0
         session.last_tools = []
+        result = {}
         while True:
             if max_rounds > 0 and round_num > max_rounds:
                 session.current_tool = ""
