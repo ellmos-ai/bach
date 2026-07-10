@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-07-10
+# Next review: 2027-07-10
 
 CLUTCH - エージェント運転支援 (クラッチブリッジ)
 ===================================================
@@ -21,6 +21,7 @@ CLUTCH - エージェント運転支援 (クラッチブリッジ)
   bach clutch metriken        ログブックのメトリクスを表示
   bach clutch fitness         自動車学校のフィットネスの概要
   bach clutch health          オンボード コンピューターの健康状態
+  bach clutch migration       clutch 移行のソースとゲート状態を表示
 
 
 要件

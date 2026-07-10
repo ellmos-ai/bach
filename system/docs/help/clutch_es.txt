@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-07-10
+# Next review: 2027-07-10
 
 CLUTCH - Asistencia agente a la conducción (embrague-puente)
 ===================================================
@@ -21,6 +21,7 @@ OPERACIONES
   bach clutch metriken        Mostrar métricas del libro de registro
   bach clutch fitness         Resumen de aptitud física de la escuela de manejo
   bach clutch health          Estado de salud del ordenador a bordo
+  bach clutch migration       Mostrar fuentes y gates de la migración de clutch
 
 
 REQUISITOS

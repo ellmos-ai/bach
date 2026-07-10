@@ -408,12 +408,38 @@ def get_partner_registry_source() -> str:
     return PARTNER_REGISTRY_SOURCE
 
 
+def get_component_sources() -> dict[str, str]:
+    """Report which delegation components already use external clutch."""
+
+    partner_module_ready = (
+        _clutch_partner_module is not None
+        and getattr(_clutch_partner_module, "Partner", None) is not None
+        and getattr(_clutch_partner_module, "PartnerRegistry", None) is not None
+    )
+
+    return {
+        "external_clutch": "available"
+        if _get_clutch_scorer is not None or partner_module_ready
+        else "unavailable",
+        "scorer": get_scorer_source(),
+        "partner_registry": "clutch"
+        if partner_module_ready
+        else get_partner_registry_source(),
+        "streckenanalyse": "legacy",
+        "gas_bremse": "legacy",
+        "bordcomputer": "legacy",
+        "fahrschule": "legacy",
+        "fahrtenbuch": "legacy",
+    }
+
+
 __all__ = [
     "SCORER_SOURCE",
     "PARTNER_REGISTRY_SOURCE",
     "analysiere_task",
     "berechne_gas",
     "build_partner_registry",
+    "get_component_sources",
     "get_analyser",
     "get_bordcomputer",
     "get_fahrschule",

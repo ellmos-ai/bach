@@ -151,6 +151,56 @@ class PartnerRegistry:
     assert registry.empfehle(3, purpose="bulk")["name"] == "Ollama"
 
 
+def test_component_sources_show_external_and_legacy_boundaries(tmp_path, monkeypatch):
+    pkg = tmp_path / "clutch"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "scorer.py").write_text(
+        """
+class ExternalScorer:
+    def score(self, task):
+        return 72, {}
+
+    def gang_level_fuer_score(self, score):
+        return 4
+
+
+def get_scorer():
+    return ExternalScorer()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    (pkg / "partner.py").write_text(
+        """
+class Partner:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class PartnerRegistry:
+    def __init__(self, partner=None):
+        self.partner = list(partner or [])
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("BACH_CLUTCH_PATH", str(tmp_path))
+    monkeypatch.delenv("BACH_DISABLE_EXTERNAL_CLUTCH", raising=False)
+
+    delegation = _reload_delegation()
+
+    assert delegation.get_component_sources() == {
+        "external_clutch": "available",
+        "scorer": "clutch",
+        "partner_registry": "clutch",
+        "streckenanalyse": "legacy",
+        "gas_bremse": "legacy",
+        "bordcomputer": "legacy",
+        "fahrschule": "legacy",
+        "fahrtenbuch": "legacy",
+    }
+
+
 def test_external_clutch_can_be_disabled(monkeypatch):
     monkeypatch.setenv("BACH_DISABLE_EXTERNAL_CLUTCH", "1")
     monkeypatch.delenv("BACH_CLUTCH_PATH", raising=False)

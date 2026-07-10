@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-07-10
+# Next review: 2027-07-10
 
 CLUTCH - 代理驾驶辅助（离合器桥）
 ===================================================
@@ -21,6 +21,7 @@ CLUTCH - 代理驾驶辅助（离合器桥）
   bach clutch metriken        显示日志指标
   bach clutch fitness         驾驶学校健身概述
   bach clutch health          车载计算机健康状态
+  bach clutch migration       显示 clutch 迁移的来源和门控状态
 
 
 要求

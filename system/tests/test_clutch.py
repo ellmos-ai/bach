@@ -30,7 +30,7 @@ class TestProperties:
 
     def test_get_operations_keys(self, clutch_env):
         ops = clutch_env.get_operations()
-        expected = {"status", "analyse", "metriken", "fitness", "health"}
+        expected = {"status", "analyse", "metriken", "fitness", "health", "migration"}
         assert set(ops.keys()) == expected
 
 
@@ -221,3 +221,32 @@ class TestHandleHealth:
 
         assert ok is True
         assert "Bordcomputer: OK" in text
+
+
+# -- Handle: migration -------------------------------------------------
+
+class TestHandleMigration:
+    def test_migration_reports_component_sources_and_gates(self, clutch_env):
+        sources = {
+            "external_clutch": "available",
+            "scorer": "clutch",
+            "partner_registry": "clutch",
+            "streckenanalyse": "legacy",
+            "gas_bremse": "legacy",
+            "bordcomputer": "legacy",
+            "fahrschule": "legacy",
+            "fahrtenbuch": "legacy",
+        }
+
+        with patch("hub.clutch.HAS_CLUTCH", True), \
+             patch("hub.clutch.get_component_sources", return_value=sources):
+            ok, text = clutch_env.handle("migration", [])
+
+        assert ok is True
+        assert "[CLUTCH-MIGRATION]" in text
+        assert "scorer: clutch" in text
+        assert "partner_registry: clutch" in text
+        assert "fahrtenbuch: legacy" in text
+        assert "Compat-Adapter: OK" in text
+        assert "DB-Brücke: PENDING" in text
+        assert "Fork-Archivierung: BLOCKED" in text

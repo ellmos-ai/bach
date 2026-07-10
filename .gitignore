@@ -147,7 +147,6 @@ Thumbs.db
 # Werden beim ersten Start aus Templates generiert / von BACH ueberschrieben
 /MEMORY.md
 /USER.md
-/SKILL.md
 
 # === DB-GENERIERTE DOKUMENTATION (user-spezifisch) ===
 # Diese Dateien werden aus bach.db generiert und enthalten user-spezifische Daten.

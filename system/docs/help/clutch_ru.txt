@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-07-10
+# Next review: 2027-07-10
 
 CLUTCH — Агентская помощь при вождении (мост сцепления)
 ===================================================
@@ -21,6 +21,7 @@ CLUTCH — Агентская помощь при вождении (мост с�
   bach clutch metriken        Показать показатели бортового журнала
   bach clutch fitness         Обзор фитнеса в автошколе
   bach clutch health          Состояние здоровья бортового компьютера
+  bach clutch migration       Показать источники и gate-статус миграции clutch
 
 
 ТРЕБОВАНИЯ

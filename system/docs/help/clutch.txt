@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
 # Version: 1.0.0
-# Zuletzt validiert: 2026-05-10
+# Zuletzt validiert: 2026-07-10
 
 CLUTCH - Agentische Fahrassistenz (clutch-bridge)
 ===================================================
@@ -21,6 +21,7 @@ OPERATIONEN
   bach clutch metriken        Fahrtenbuch-Metriken anzeigen
   bach clutch fitness         Fahrschule Fitness-Übersicht
   bach clutch health          Bordcomputer Health-Status
+  bach clutch migration       Quellen- und Gate-Status der clutch-Migration
 
 
 VORAUSSETZUNGEN

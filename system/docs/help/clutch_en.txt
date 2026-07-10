@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-07-10
+# Next review: 2027-07-10
 
 CLUTCH - Agentic driving assistance (clutch-bridge)
 ===================================================
@@ -21,6 +21,7 @@ OPERATIONS
   bach clutch metriken        Show logbook metrics
   bach clutch fitness         Driving school fitness overview
   bach clutch health          On-board computer health status
+  bach clutch migration       Show clutch migration source and gate status
 
 
 REQUIREMENTS

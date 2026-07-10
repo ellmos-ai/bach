@@ -17,6 +17,7 @@ from .base import BaseHandler
 
 try:
     from ._services.delegation import (
+        get_component_sources,
         get_analyser,
         get_bordcomputer,
         get_fahrschule,
@@ -50,6 +51,7 @@ class ClutchHandler(BaseHandler):
             "metriken": "Fahrtenbuch-Metriken anzeigen",
             "fitness": "Fahrschule Fitness-Übersicht",
             "health": "Bordcomputer Health-Status",
+            "migration": "Migrations- und Quellenstatus der clutch-Anbindung",
         }
 
     def handle(self, operation: str, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
@@ -63,6 +65,7 @@ class ClutchHandler(BaseHandler):
             "metriken": lambda: self._metriken(args),
             "fitness": lambda: self._fitness(),
             "health": lambda: self._health(),
+            "migration": lambda: self._migration(),
         }
 
         if not operation or operation == "status":
@@ -168,3 +171,47 @@ class ClutchHandler(BaseHandler):
         """Zeigt Bordcomputer Health-Status."""
         bc = get_bordcomputer()
         return True, bc.format_status()
+
+    def _migration(self) -> tuple:
+        """Zeigt, welche clutch-Komponenten extern oder legacy laufen."""
+        sources = get_component_sources()
+        ordered_components = [
+            "external_clutch",
+            "scorer",
+            "partner_registry",
+            "streckenanalyse",
+            "gas_bremse",
+            "bordcomputer",
+            "fahrschule",
+            "fahrtenbuch",
+        ]
+
+        compat_ready = (
+            sources.get("scorer") == "clutch"
+            and sources.get("partner_registry") == "clutch"
+        )
+        db_bridge_ready = (
+            sources.get("fahrschule") == "clutch"
+            and sources.get("fahrtenbuch") == "clutch"
+        )
+
+        lines = [
+            "[CLUTCH-MIGRATION] Quellenstatus",
+            "=" * 50,
+            "",
+            "  Komponenten:",
+        ]
+        for name in ordered_components:
+            lines.append(f"    - {name}: {sources.get(name, 'unknown')}")
+
+        lines.extend(
+            [
+                "",
+                "  Gates:",
+                f"    - Compat-Adapter: {'OK' if compat_ready else 'PENDING'}",
+                f"    - DB-Brücke: {'OK' if db_bridge_ready else 'PENDING'}",
+                "    - Fork-Archivierung: BLOCKED bis Parallelbetrieb grün ist",
+            ]
+        )
+
+        return True, "\n".join(lines)
