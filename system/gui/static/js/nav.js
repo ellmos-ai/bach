@@ -8,7 +8,7 @@
     if (t && t !== 'dark') document.documentElement.setAttribute('data-theme', t);
 })();
 
-const BACH_VERSION = "3.12.1";
+const BACH_VERSION = "3.13.0";
 
 if (typeof escapeHtml === 'undefined') {
     window.escapeHtml = function(text) {

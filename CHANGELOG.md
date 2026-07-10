@@ -6,8 +6,20 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+## [3.13.0-bluesky] - 2026-07-11
+
+### Added
+
+- **Prompt-Bibliothek in der Web-GUI:** Neue Seite `/prompt-library` (Nav: Wissen → Prompts) auf BACHs eigenem DB-Prompt-System (`prompt_templates`/`prompt_versions`, identisch zu `bach prompt`): Suche, Kategorien, Editor mit echter Versionierung (Speichern archiviert den Altstand), REST-API `/api/prompt-library` (CRUD + Versionen) sowie idempotenter **Import aus PromptBoard** (`library.json` über dieselbe Kandidaten-Kaskade wie der System-Tray). Der deprecatete `/prompt-generator` leitet dorthin um.
+
 ### Fixed
 
+- **Tool-/Skill-Sprachduplikate entfernt (Task 1149):** tools/skills existieren pro Sprache (`UNIQUE(name, language)`, de+en); Suche, Statistiken, Startup-Zähler und Referenz-Generatoren zeigten alles doppelt („BACH OCR Engine 2x", 579 statt 306 Tools). Queries deduplizieren jetzt sprachbewusst (`COUNT(DISTINCT name)`, `GROUP BY name` mit Sprachpräferenz); `docs`/`help`/`steuer` nutzen die kanonische DB statt des veralteten `data/bach.db`-Spiegels.
+- **Inspektions-Sweep (5 NameError + Launcher):** fehlende Imports in `hub/multi_llm_protocol.py` (sqlite3) und `hub/setup.py` (sys); undefiniertes `result` in `chat_runtime._tool_loop`; undefiniertes `bd` im claude_bridge-`reload_config` (500); fehlender `date`-Import in der GUI-Finanzen-Route. `start/bach.bat`: Agent-Menü listete nicht existente `agents/*.json` und ignorierte die Agentenwahl — listet jetzt echte Agent-Ordner und bindet die gewählte SKILL.md in den Prompt ein.
+- **GUI-Daemon-Status 500 behoben:** `os.kill(pid, 0)` wirft auf Windows bei veralteter PID generischen `OSError` (WinError 87) — wird jetzt abgefangen.
+- **`hub/prompt.py`-Crash behoben:** `sqlite3.Row.get()` existiert nicht (Listenausgabe bei leerem `updated_at`).
+- **`hub/mount.py`-Crash behoben:** `resolve(strict=True)` warf bei fehlender Mount-Quelle eine unbehandelte `FileNotFoundError`.
+- **`tools/inbox_watcher.py`** ist ohne installiertes watchdog wieder importierbar (Fallback-Basisklasse).
 - **Morgen-Briefing im Quick-Start repariert:** Redundante Funktions-Imports in `system/hub/startup.py` überschreiben `sqlite3` und `hashlib` nicht mehr als lokale Variablen. Dadurch kann der Morgen-Zweig auch dann auf SQLite zugreifen, wenn der Kernel-Hash-Check im Quick-Modus übersprungen wird; ein zeitfixierter Regressionstest deckt den Pfad ab.
 
 ### Changed
