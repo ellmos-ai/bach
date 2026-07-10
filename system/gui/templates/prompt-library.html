@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BACH - Prompt-Bibliothek</title>
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
+    <style>
+        .pl-layout {
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            gap: 1.5rem;
+            min-height: calc(100vh - 200px);
+        }
+
+        @media (max-width: 1000px) {
+            .pl-layout { grid-template-columns: 1fr; }
+        }
+
+        .pl-panel {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 200px);
+        }
+
+        .pl-panel-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-card);
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .pl-panel-content { flex: 1; overflow-y: auto; padding: 0.5rem; }
+
+        .pl-search {
+            flex: 1;
+            min-width: 120px;
+            padding: 0.4rem 0.6rem;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+        }
+
+        .pl-item {
+            background: var(--bg-card);
+            border-radius: 6px;
+            padding: 0.6rem 0.75rem;
+            margin-bottom: 0.4rem;
+            border-left: 3px solid var(--accent);
+            cursor: pointer;
+        }
+
+        .pl-item:hover { filter: brightness(1.15); }
+        .pl-item.active { outline: 1px solid var(--accent); }
+        .pl-item-name { font-weight: 600; font-size: 0.9rem; }
+        .pl-item-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem; }
+
+        .pl-badge {
+            font-size: 0.7rem;
+            background: var(--bg-dark);
+            color: var(--text-muted);
+            border-radius: 10px;
+            padding: 0.1rem 0.5rem;
+            margin-left: 0.4rem;
+        }
+
+        .pl-detail-body { padding: 1rem; overflow-y: auto; }
+
+        .pl-textarea {
+            width: 100%;
+            min-height: 260px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            padding: 0.75rem;
+            font-family: monospace;
+            font-size: 0.85rem;
+            resize: vertical;
+        }
+
+        .pl-field { margin-bottom: 0.75rem; }
+        .pl-field label { display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem; }
+        .pl-field input {
+            width: 100%;
+            padding: 0.4rem 0.6rem;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+        }
+
+        .pl-version {
+            background: var(--bg-card);
+            border-radius: 6px;
+            padding: 0.5rem 0.75rem;
+            margin-bottom: 0.4rem;
+            font-size: 0.8rem;
+        }
+
+        .pl-version pre {
+            white-space: pre-wrap;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            max-height: 120px;
+            overflow-y: auto;
+            margin: 0.4rem 0 0;
+        }
+
+        .pl-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem; }
+        .pl-muted { color: var(--text-muted); font-size: 0.85rem; padding: 1rem; }
+        #pl-status { font-size: 0.8rem; color: var(--text-muted); margin-left: auto; }
+    </style>
+</head>
+
+<body>
+    <header class="main-header" id="main-header"></header>
+
+    <main class="main-content">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+            <h1 style="margin: 0;">Prompt-Bibliothek</h1>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button class="btn" onclick="importPromptBoard()" title="Importiert library.json aus PromptBoard (idempotent)">Import aus PromptBoard</button>
+                <button class="btn btn-primary" onclick="startCreate()">Neuer Prompt</button>
+            </div>
+        </div>
+
+        <div class="pl-layout">
+            <div class="pl-panel">
+                <div class="pl-panel-header">
+                    <input class="pl-search" id="pl-search" placeholder="Suche (Name, Text, Tags)..." oninput="debouncedLoad()">
+                    <select id="pl-category" class="pl-search" style="flex: 0 1 140px;" onchange="loadList()">
+                        <option value="">Alle Kategorien</option>
+                    </select>
+                </div>
+                <div class="pl-panel-content" id="pl-list">
+                    <div class="pl-muted">Lade...</div>
+                </div>
+            </div>
+
+            <div class="pl-panel">
+                <div class="pl-panel-header">
+                    <span id="pl-detail-title" style="font-weight: 600;">Kein Prompt gewaehlt</span>
+                    <span id="pl-status"></span>
+                </div>
+                <div class="pl-detail-body" id="pl-detail">
+                    <div class="pl-muted">
+                        Links einen Prompt waehlen, oben neu anlegen oder aus PromptBoard importieren.<br><br>
+                        Datenbasis: BACH-eigene Tabellen <code>prompt_templates</code> / <code>prompt_versions</code>
+                        (identisch zu <code>bach prompt</code> auf der CLI). Jede Textaenderung archiviert den
+                        vorherigen Stand als Version.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let currentId = null;
+        let debounceTimer = null;
+
+        function debouncedLoad() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(loadList, 300);
+        }
+
+        function setStatus(msg, isError) {
+            const el = document.getElementById('pl-status');
+            el.textContent = msg || '';
+            el.style.color = isError ? 'var(--danger, #e05555)' : 'var(--text-muted)';
+            if (msg) setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 5000);
+        }
+
+        async function api(url, opts) {
+            const resp = await fetch(url, opts);
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) throw new Error(data.detail || resp.statusText);
+            return data;
+        }
+
+        async function loadList() {
+            const q = document.getElementById('pl-search').value.trim();
+            const cat = document.getElementById('pl-category').value;
+            const params = new URLSearchParams();
+            if (q) params.set('q', q);
+            if (cat) params.set('category', cat);
+            try {
+                const data = await api('/api/prompt-library?' + params.toString());
+                renderList(data.prompts);
+                renderCategories(data.categories, cat);
+            } catch (e) {
+                document.getElementById('pl-list').innerHTML = '<div class="pl-muted">Fehler: ' + escapeHtml(e.message) + '</div>';
+            }
+        }
+
+        function renderCategories(cats, selected) {
+            const sel = document.getElementById('pl-category');
+            const current = selected || sel.value;
+            sel.innerHTML = '<option value="">Alle Kategorien</option>' +
+                (cats || []).map(c => '<option value="' + escapeHtml(c) + '"' + (c === current ? ' selected' : '') + '>' + escapeHtml(c) + '</option>').join('');
+        }
+
+        function renderList(prompts) {
+            const el = document.getElementById('pl-list');
+            if (!prompts || !prompts.length) {
+                el.innerHTML = '<div class="pl-muted">Keine Prompts in der Bibliothek.<br>Tipp: "Import aus PromptBoard" oder "Neuer Prompt".</div>';
+                return;
+            }
+            el.innerHTML = prompts.map(p =>
+                '<div class="pl-item' + (p.id === currentId ? ' active' : '') + '" onclick="openPrompt(' + p.id + ')">' +
+                '<div class="pl-item-name">' + escapeHtml(p.name) +
+                (p.category ? '<span class="pl-badge">' + escapeHtml(p.category) + '</span>' : '') + '</div>' +
+                '<div class="pl-item-meta">' + escapeHtml(p.purpose || '') + '</div>' +
+                '</div>'
+            ).join('');
+        }
+
+        async function openPrompt(id) {
+            try {
+                const data = await api('/api/prompt-library/' + id);
+                currentId = id;
+                renderDetail(data.prompt, data.versions);
+                loadList();
+            } catch (e) { setStatus(e.message, true); }
+        }
+
+        function renderDetail(p, versions) {
+            document.getElementById('pl-detail-title').textContent = p.name + ' (#' + p.id + ')';
+            const vHtml = (versions && versions.length)
+                ? versions.map(v =>
+                    '<div class="pl-version"><b>v' + v.version_number + '</b> — ' + escapeHtml(v.created_at || '') +
+                    '<pre>' + escapeHtml(v.text) + '</pre></div>').join('')
+                : '<div class="pl-muted">Noch keine archivierten Versionen.</div>';
+            document.getElementById('pl-detail').innerHTML =
+                '<div class="pl-field"><label>Text (Speichern archiviert den alten Stand als Version)</label>' +
+                '<textarea class="pl-textarea" id="pl-text">' + escapeHtml(p.text) + '</textarea></div>' +
+                '<div class="pl-field"><label>Tags (kommagetrennt)</label>' +
+                '<input id="pl-tags" value="' + escapeHtml(p.tags || '') + '"></div>' +
+                '<div class="pl-actions">' +
+                '<button class="btn btn-primary" onclick="saveCurrent()">Speichern (neue Version)</button>' +
+                '<button class="btn" onclick="copyCurrent()">Text kopieren</button>' +
+                '<button class="btn" onclick="deleteCurrent()" style="margin-left:auto;">Loeschen</button>' +
+                '</div>' +
+                '<h3 style="margin-top:1.25rem;">Versionshistorie</h3>' + vHtml;
+        }
+
+        function startCreate() {
+            currentId = null;
+            document.getElementById('pl-detail-title').textContent = 'Neuer Prompt';
+            document.getElementById('pl-detail').innerHTML =
+                '<div class="pl-field"><label>Name (eindeutig)</label><input id="pl-new-name"></div>' +
+                '<div class="pl-field"><label>Kategorie</label><input id="pl-new-category"></div>' +
+                '<div class="pl-field"><label>Purpose (Kurzbeschreibung)</label><input id="pl-new-purpose"></div>' +
+                '<div class="pl-field"><label>Tags (kommagetrennt)</label><input id="pl-new-tags"></div>' +
+                '<div class="pl-field"><label>Text</label><textarea class="pl-textarea" id="pl-new-text"></textarea></div>' +
+                '<div class="pl-actions"><button class="btn btn-primary" onclick="createPrompt()">Anlegen</button></div>';
+        }
+
+        async function createPrompt() {
+            const body = {
+                name: document.getElementById('pl-new-name').value.trim(),
+                category: document.getElementById('pl-new-category').value.trim() || null,
+                purpose: document.getElementById('pl-new-purpose').value.trim() || null,
+                tags: document.getElementById('pl-new-tags').value.trim() || null,
+                text: document.getElementById('pl-new-text').value
+            };
+            try {
+                const data = await api('/api/prompt-library', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                setStatus('Angelegt (#' + data.id + ')');
+                openPrompt(data.id);
+            } catch (e) { setStatus(e.message, true); }
+        }
+
+        async function saveCurrent() {
+            if (!currentId) return;
+            try {
+                const data = await api('/api/prompt-library/' + currentId, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: document.getElementById('pl-text').value,
+                        tags: document.getElementById('pl-tags').value.trim() || null
+                    })
+                });
+                setStatus('Gespeichert — alter Stand als v' + data.archived_version + ' archiviert');
+                openPrompt(currentId);
+            } catch (e) { setStatus(e.message, true); }
+        }
+
+        async function deleteCurrent() {
+            if (!currentId) return;
+            if (!confirm('Prompt inkl. Versionshistorie loeschen?')) return;
+            try {
+                await api('/api/prompt-library/' + currentId, { method: 'DELETE' });
+                currentId = null;
+                document.getElementById('pl-detail-title').textContent = 'Kein Prompt gewaehlt';
+                document.getElementById('pl-detail').innerHTML = '<div class="pl-muted">Geloescht.</div>';
+                loadList();
+            } catch (e) { setStatus(e.message, true); }
+        }
+
+        function copyCurrent() {
+            const text = document.getElementById('pl-text');
+            if (text) navigator.clipboard.writeText(text.value).then(() => setStatus('In Zwischenablage kopiert'));
+        }
+
+        async function importPromptBoard() {
+            try {
+                const data = await api('/api/prompt-library/import-promptboard', { method: 'POST' });
+                setStatus('Import: ' + data.imported + ' neu, ' + data.skipped + ' vorhanden (' + data.source + ')');
+                loadList();
+            } catch (e) { setStatus(e.message, true); }
+        }
+
+        loadList();
+    </script>
+    <script src="/static/js/nav.js?v=4"></script>
+</body>
+
+</html>

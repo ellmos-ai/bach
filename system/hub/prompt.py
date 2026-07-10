@@ -135,7 +135,7 @@ class PromptHandler(BaseHandler):
             for r in rows:
                 purpose = (r["purpose"] or "")[:28]
                 cat = r["category"] or "-"
-                updated = r["updated_at"] or r.get("created_at", "-")
+                updated = r["updated_at"] or "-"
                 lines.append(
                     f"{r['id']:<5} {r['name']:<30} {cat:<15} {purpose:<30} {updated}"
                 )

@@ -9081,7 +9081,222 @@ async def prompt_generator_page():
 
     from fastapi.responses import RedirectResponse
 
-    return RedirectResponse(url="/", status_code=302)
+    return RedirectResponse(url="/prompt-library", status_code=302)
+
+
+# ═══════════════════════════════════════════════════════════════
+
+# PROMPT-BIBLIOTHEK (BACH-eigene DB: prompt_templates/-versions/-boards)
+# Uebergangsloesung bis zur Unified GUI: GUI-Anbindung an hub/prompt.py-
+# Datenmodell + Import aus PromptBoard (library.json).
+
+# ═══════════════════════════════════════════════════════════════
+
+
+class PromptCreateRequest(BaseModel):
+    name: str
+    text: str
+    category: Optional[str] = None
+    tags: Optional[str] = None
+    purpose: Optional[str] = None
+
+
+class PromptUpdateRequest(BaseModel):
+    text: str
+    tags: Optional[str] = None
+
+
+def _promptboard_library_paths():
+    """Kandidaten fuer PromptBoard library.json (gleiche Logik wie chat_tray.py)."""
+    candidates = []
+    env_path = os.environ.get("BACH_PROMPTBOARD_LIBRARY")
+    if env_path:
+        candidates.append(Path(env_path).expanduser())
+    candidates.append(Path.home() / ".promptboard" / "library.json")
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        candidates.append(Path(appdata) / "PromptBoard" / "library.json")
+    user_profile = os.environ.get("USERPROFILE")
+    if user_profile:
+        project_dir = (Path(user_profile) / "OneDrive" / ".TOPICS" / ".SOFTWARE"
+                       / "LLM" / "REL-PUB_PromptBoard")
+        candidates.extend([project_dir / "library.json", project_dir / "data" / "library.json"])
+    return candidates
+
+
+@app.get("/prompt-library", response_class=HTMLResponse)
+async def prompt_library_page():
+    """Prompt-Bibliothek (BACH-DB) als GUI-Seite."""
+    template = TEMPLATES_DIR / "prompt-library.html"
+    if template.exists():
+        return HTMLResponse(content=template.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>Template prompt-library.html fehlt</h1>", status_code=404)
+
+
+@app.get("/api/prompt-library")
+async def list_prompt_library(q: Optional[str] = None, category: Optional[str] = None):
+    """Listet Prompt-Templates aus der BACH-DB (optional Suche/Kategorie)."""
+    conn = get_bach_db()
+    try:
+        sql = ("SELECT id, name, category, purpose, tags, created_at, updated_at "
+               "FROM prompt_templates")
+        clauses, params = [], []
+        if q:
+            clauses.append("(name LIKE ? OR text LIKE ? OR tags LIKE ? OR purpose LIKE ?)")
+            params.extend([f"%{q}%"] * 4)
+        if category:
+            clauses.append("category = ?")
+            params.append(category)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY name"
+        rows = conn.execute(sql, params).fetchall()
+        cats = conn.execute(
+            "SELECT DISTINCT category FROM prompt_templates WHERE category IS NOT NULL ORDER BY category"
+        ).fetchall()
+        return {
+            "prompts": [row_to_dict(r) for r in rows],
+            "categories": [c["category"] for c in cats],
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/api/prompt-library/{prompt_id}")
+async def get_prompt_library_entry(prompt_id: int):
+    """Einzelnes Template inkl. Versionshistorie."""
+    conn = get_bach_db()
+    try:
+        row = conn.execute("SELECT * FROM prompt_templates WHERE id = ?", (prompt_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Prompt nicht gefunden")
+        versions = conn.execute(
+            "SELECT id, version_number, text, tags, created_at FROM prompt_versions "
+            "WHERE prompt_id = ? ORDER BY version_number DESC",
+            (prompt_id,),
+        ).fetchall()
+        return {"prompt": row_to_dict(row), "versions": [row_to_dict(v) for v in versions]}
+    finally:
+        conn.close()
+
+
+@app.post("/api/prompt-library")
+async def create_prompt_library_entry(req: PromptCreateRequest):
+    """Neues Template anlegen."""
+    name = req.name.strip()
+    if not name or not req.text.strip():
+        raise HTTPException(status_code=400, detail="name und text sind Pflicht")
+    now = datetime.now().isoformat()
+    conn = get_bach_db()
+    try:
+        try:
+            cur = conn.execute(
+                "INSERT INTO prompt_templates (name, purpose, text, tags, category, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (name, req.purpose, req.text, req.tags, req.category, now, now),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail=f"Name existiert bereits: {name}")
+        return {"ok": True, "id": cur.lastrowid}
+    finally:
+        conn.close()
+
+
+@app.put("/api/prompt-library/{prompt_id}")
+async def update_prompt_library_entry(prompt_id: int, req: PromptUpdateRequest):
+    """Text aktualisieren — alter Stand wird als Version archiviert (wie hub/prompt.py)."""
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="text ist Pflicht")
+    now = datetime.now().isoformat()
+    conn = get_bach_db()
+    try:
+        row = conn.execute("SELECT * FROM prompt_templates WHERE id = ?", (prompt_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Prompt nicht gefunden")
+        max_v = conn.execute(
+            "SELECT MAX(version_number) FROM prompt_versions WHERE prompt_id = ?", (prompt_id,)
+        ).fetchone()[0] or 0
+        conn.execute(
+            "INSERT INTO prompt_versions (prompt_id, version_number, text, tags, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (prompt_id, max_v + 1, row["text"], row["tags"], now),
+        )
+        conn.execute(
+            "UPDATE prompt_templates SET text = ?, tags = COALESCE(?, tags), updated_at = ? WHERE id = ?",
+            (req.text, req.tags, now, prompt_id),
+        )
+        conn.commit()
+        return {"ok": True, "archived_version": max_v + 1}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/prompt-library/{prompt_id}")
+async def delete_prompt_library_entry(prompt_id: int):
+    """Template inkl. Versionen und Board-Verknuepfungen loeschen."""
+    conn = get_bach_db()
+    try:
+        row = conn.execute("SELECT id FROM prompt_templates WHERE id = ?", (prompt_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Prompt nicht gefunden")
+        conn.execute("DELETE FROM prompt_board_items WHERE prompt_id = ?", (prompt_id,))
+        conn.execute("DELETE FROM prompt_versions WHERE prompt_id = ?", (prompt_id,))
+        conn.execute("DELETE FROM prompt_templates WHERE id = ?", (prompt_id,))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.post("/api/prompt-library/import-promptboard")
+async def import_promptboard_library():
+    """Importiert PromptBoard library.json in die BACH-Prompt-DB (idempotent per Name)."""
+    library_path = next((p for p in _promptboard_library_paths() if p.exists()), None)
+    if library_path is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Keine PromptBoard library.json gefunden (BACH_PROMPTBOARD_LIBRARY, "
+                   "~/.promptboard, %APPDATA%/PromptBoard, REL-PUB_PromptBoard)",
+        )
+    try:
+        payload = json.loads(library_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        raise HTTPException(status_code=422, detail=f"library.json nicht lesbar: {e}")
+
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        raise HTTPException(status_code=422, detail="Unerwartetes Format: 'items'-Liste fehlt")
+
+    now = datetime.now().isoformat()
+    imported, skipped = 0, 0
+    conn = get_bach_db()
+    try:
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            content = str(item.get("content") or "").strip()
+            if not name or not content:
+                continue
+            category = str(item.get("category") or item.get("item_type") or "PromptBoard").strip()
+            tags = item.get("tags")
+            if isinstance(tags, list):
+                tags = ",".join(str(t) for t in tags)
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO prompt_templates "
+                "(name, purpose, text, tags, category, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (name, item.get("description"), content, tags, category, now, now),
+            )
+            if cur.rowcount:
+                imported += 1
+            else:
+                skipped += 1
+        conn.commit()
+        return {"ok": True, "source": str(library_path), "imported": imported, "skipped": skipped}
+    finally:
+        conn.close()
 
 
 
