@@ -42,8 +42,11 @@ class MountHandler(BaseHandler):
         raw = str(value or "")
         if "\x00" in raw:
             raise ValueError("Ungueltiger Quellpfad")
-        source = Path(raw).expanduser().resolve(strict=True)
-        if not source.is_dir():
+        # strict=False: resolve(strict=True) wirft auf Windows FileNotFoundError
+        # (OSError), die Aufrufer fangen aber nur ValueError -> Crash.
+        # Existenz pruefen die Aufrufer selbst (eigene Meldungen).
+        source = Path(raw).expanduser().resolve(strict=False)
+        if source.exists() and not source.is_dir():
             raise ValueError("Quellpfad ist kein Ordner")
         return source
     

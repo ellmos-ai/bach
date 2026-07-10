@@ -135,9 +135,9 @@ class ToolsHandler(BaseHandler):
             
             results.append(f"  {status} {name:<15} {category:<12} {desc}")
         
-        # Statistik
+        # Statistik (COUNT(DISTINCT name): Sprachvarianten nicht doppelt zaehlen)
         stats = conn.execute(
-            "SELECT type, COUNT(*) as cnt FROM tools GROUP BY type"
+            "SELECT type, COUNT(DISTINCT name) as cnt FROM tools GROUP BY type"
         ).fetchall()
         
         results.append(f"\n{'=' * 60}")
@@ -244,7 +244,9 @@ class ToolsHandler(BaseHandler):
         if self.db_path.exists():
             conn = self._get_db_conn()
             row = conn.execute(
-                "SELECT * FROM tools WHERE name LIKE ?", (f"%{name}%",)
+                "SELECT * FROM tools WHERE name LIKE ? "
+                "ORDER BY (language = ?) DESC, (language = 'de') DESC",
+                (f"%{name}%", get_lang())
             ).fetchone()
             conn.close()
             
@@ -375,11 +377,18 @@ class ToolsHandler(BaseHandler):
         # In Datenbank suchen
         if self.db_path.exists():
             conn = self._get_db_conn()
+            # TOWER_OF_BABEL: Tools existieren pro Sprache (UNIQUE(name, language)).
+            # GROUP BY name dedupliziert; MAX(language = ?) bevorzugt die aktive
+            # Sprache und faellt sonst auf 'de' zurueck (Task 1149).
+            lang = get_lang()
             db_results = conn.execute(
-                """SELECT name, type, category, description 
-                   FROM tools 
-                   WHERE name LIKE ? OR description LIKE ? OR capabilities LIKE ?""",
-                (f"%{term}%", f"%{term}%", f"%{term}%")
+                """SELECT name, type, category, description,
+                          MAX(language = ?) AS _lang_pref
+                   FROM tools
+                   WHERE (name LIKE ? OR description LIKE ? OR capabilities LIKE ?)
+                     AND language IN (?, 'de')
+                   GROUP BY name""",
+                (lang, f"%{term}%", f"%{term}%", f"%{term}%", lang)
             ).fetchall()
             conn.close()
             

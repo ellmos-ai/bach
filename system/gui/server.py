@@ -9372,8 +9372,10 @@ async def get_prompt_daemon_status():
 
             daemon_running = True
 
-        except (ProcessLookupError, ValueError, PermissionError):
+        except (OSError, ValueError):
 
+            # OSError deckt auch WinError 87 ab: os.kill(pid, 0) wirft auf
+            # Windows bei nicht existierender PID generischen OSError
             pass
 
 

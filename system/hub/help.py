@@ -179,7 +179,7 @@ class HelpHandler(BaseHandler):
         Returns:
             Tool-Hilfe als formatierter String oder None wenn nicht gefunden.
         """
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self._canonical_db
         if not db_path.exists():
             return None
 
@@ -194,8 +194,9 @@ class HelpHandler(BaseHandler):
                        capabilities, use_for, command, is_available
                 FROM tools
                 WHERE LOWER(name) = LOWER(?)
+                ORDER BY (language = ?) DESC, (language = 'de') DESC
                 LIMIT 1
-            """, (tool_name,))
+            """, (tool_name, get_lang()))
 
             row = cursor.fetchone()
 
@@ -206,8 +207,9 @@ class HelpHandler(BaseHandler):
                            capabilities, use_for, command, is_available
                     FROM tools
                     WHERE LOWER(name) LIKE LOWER(?)
+                    ORDER BY (language = ?) DESC, (language = 'de') DESC
                     LIMIT 1
-                """, (f"%{tool_name}%",))
+                """, (f"%{tool_name}%", get_lang()))
                 row = cursor.fetchone()
 
             conn.close()

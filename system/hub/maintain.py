@@ -282,7 +282,7 @@ Beispiele:
   bach --maintain pattern ./docs --dry-run
   bach --maintain pattern ./docs --execute -m 5
 
-Siehe: tools/pattern_tool.py"""
+Siehe: tools/project/pattern_tool.py"""
         
         cmd_args = list(args)
         if dry_run and "--execute" not in args:
@@ -347,7 +347,7 @@ Beispiele:
   bach --maintain clean ./logs --age 30
   bach --maintain clean ./backups --keep 5 --execute
 
-Siehe: tools/file_cleaner.py"""
+Siehe: tools/file_ops/file_cleaner.py"""
         
         cmd_args = list(args)
         if dry_run and "--execute" not in args:
@@ -395,7 +395,7 @@ Beispiele:
   bach --maintain json ./config.json
   bach --maintain json ./data --execute --backup
 
-Siehe: tools/json_fixer.py"""
+Siehe: tools/json/json_fixer.py"""
         
         cmd_args = list(args)
         if dry_run and "--execute" not in args:
@@ -900,10 +900,10 @@ Tools (13):
   tools/duplicate_detector.py
   tools/skill_generator.py
   tools/exporter.py
-  tools/pattern_tool.py
-  tools/tool_scanner.py
-  tools/file_cleaner.py
-  tools/json_fixer.py
+  tools/project/pattern_tool.py
+  tools/maintenance/tool_scanner.py
+  tools/file_ops/file_cleaner.py
+  tools/json/json_fixer.py
   tools/path_healer.py
   tools/skill_help_gen.py
   tools/skill_export.py"""

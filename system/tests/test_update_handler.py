@@ -379,4 +379,7 @@ class TestCrossOS:
         with patch("sys.platform", "win32"):
             h = UpdateHandler(system_dir)
             h.db_path = db_path
-            assert "Local_DEV" in str(h.backups_dir) or "BACKUPS" in str(h.backups_dir)
+            # Seit bach_paths: zentral unter ~/.bach/backups/updates
+            # (frueher C:\_Local_DEV\BACKUPS), per BACH_BACKUPS_DIR uebersteuerbar
+            assert "backups" in str(h.backups_dir).lower()
+            assert str(h.backups_dir).endswith("updates")

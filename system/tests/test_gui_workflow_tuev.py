@@ -74,11 +74,19 @@ class TestWorkflowTuevAPI:
         assert isinstance(data, dict)
 
     def test_content_valid_file(self, client):
+        # Endpoint erlaubt nur .md/.txt (Suffix-Allowlist in resolve_under_base)
+        response = client.get(
+            "/api/workflow-tuev/content",
+            params={"path": "CHANGELOG.md"}
+        )
+        assert response.status_code in (200, 404)
+
+    def test_content_disallowed_suffix_blocked(self, client):
         response = client.get(
             "/api/workflow-tuev/content",
             params={"path": "hub/__init__.py"}
         )
-        assert response.status_code in (200, 404)
+        assert response.status_code == 400
 
     def test_content_traversal_blocked(self, client):
         response = client.get(

@@ -19,6 +19,11 @@ Referenz: https://github.com/asg017/sqlite-vec
 import sqlite3
 from pathlib import Path
 
+import pytest
+
+# Optionale Dependency (requirements-optional.txt): ohne Installation skippen
+sqlite_vec = pytest.importorskip("sqlite_vec", reason="sqlite-vec nicht installiert (pip install sqlite-vec)")
+
 
 def test_sqlite_vec_import():
     """Test 1: Prüft ob sqlite-vec importierbar ist."""

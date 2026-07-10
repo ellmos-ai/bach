@@ -62,12 +62,13 @@ def fake_help_env(tmp_path, monkeypatch):
         CREATE TABLE tools (
             id INTEGER PRIMARY KEY, name TEXT, type TEXT, category TEXT,
             path TEXT, description TEXT, version TEXT, capabilities TEXT,
-            use_for TEXT, command TEXT, is_available INTEGER DEFAULT 1
+            use_for TEXT, command TEXT, is_available INTEGER DEFAULT 1,
+            language TEXT DEFAULT 'de'
         )
     """)
     conn.execute("""
-        INSERT INTO tools (name, type, category, description, version, is_available, use_for, capabilities, command)
-        VALUES ('path_healer', 'internal', 'system', 'Heilt Pfade', '1.0', 1, 'Pfad-Reparatur,Auto-Heal', 'detect,fix', 'bach heal')
+        INSERT INTO tools (name, type, category, description, version, is_available, use_for, capabilities, command, language)
+        VALUES ('path_healer', 'internal', 'system', 'Heilt Pfade', '1.0', 1, 'Pfad-Reparatur,Auto-Heal', 'detect,fix', 'bach heal', 'de')
     """)
     conn.commit()
     conn.close()
