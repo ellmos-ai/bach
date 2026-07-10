@@ -426,7 +426,7 @@ class StartupHandler(BaseHandler):
         conn = self._get_conn()
         try:
             counts["tools"] = conn.execute(
-                "SELECT COUNT(*) FROM tools WHERE is_available = 1"
+                "SELECT COUNT(DISTINCT name) FROM tools WHERE is_available = 1"
             ).fetchone()[0]
         except sqlite3.Error:
             tools_dir = self.base_path / "tools"
@@ -445,7 +445,7 @@ class StartupHandler(BaseHandler):
         counts["agents"] = agent_count if agent_tables_found else self._count_agent_dirs()
 
         try:
-            counts["skills"] = conn.execute("SELECT COUNT(*) FROM skills").fetchone()[0]
+            counts["skills"] = conn.execute("SELECT COUNT(DISTINCT name) FROM skills").fetchone()[0]
         except sqlite3.Error:
             counts["skills"] = self._count_skill_files()
         finally:

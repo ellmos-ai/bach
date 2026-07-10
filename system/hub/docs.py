@@ -498,15 +498,15 @@ class DocsHandler(BaseHandler):
             doc_lang = lang or get_lang()
 
             # DB-Statistiken sammeln
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = self._canonical_db
             conn = sqlite3.connect(str(db_path))
             cur = conn.cursor()
 
-            # Stats abrufen
+            # Stats abrufen (COUNT(DISTINCT name): Sprachvarianten nicht doppelt)
             stats = {}
-            stats['skills'] = cur.execute("SELECT COUNT(*) FROM skills").fetchone()[0]
+            stats['skills'] = cur.execute("SELECT COUNT(DISTINCT name) FROM skills").fetchone()[0]
             stats['agents'] = cur.execute("SELECT COUNT(*) FROM bach_agents").fetchone()[0]
-            stats['tools'] = cur.execute("SELECT COUNT(*) FROM tools").fetchone()[0]
+            stats['tools'] = cur.execute("SELECT COUNT(DISTINCT name) FROM tools").fetchone()[0]
             stats['lessons'] = cur.execute("SELECT COUNT(*) FROM memory_lessons").fetchone()[0]
             stats['facts'] = cur.execute("SELECT COUNT(*) FROM memory_facts").fetchone()[0]
 
@@ -748,7 +748,7 @@ python bach.py --shutdown
     def _generate_api(self) -> tuple:
         """Generiere API-Referenz aus HandlerRegistry + tools."""
         try:
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = self._canonical_db
             conn = sqlite3.connect(str(db_path))
             cur = conn.cursor()
 
@@ -760,13 +760,16 @@ python bach.py --shutdown
 
             # Alle Tools gruppiert nach Kategorie
             # SQ029 Fix: Spalte heißt "path" nicht "file_path"
+            # TOWER_OF_BABEL: pro Name eine Zeile, aktive Sprache bevorzugt
             cur.execute("""
-                SELECT category, name, description, path
+                SELECT category, name, description, path,
+                       MAX(language = ?) AS _lang_pref
                 FROM tools
                 WHERE is_available = 1
+                GROUP BY name
                 ORDER BY category, name
-            """)
-            tools = cur.fetchall()
+            """, (get_lang(),))
+            tools = [row[:4] for row in cur.fetchall()]
 
             # Gruppiere Tools nach Kategorie
             tools_by_category = {}

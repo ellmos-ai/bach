@@ -127,7 +127,15 @@ class TestToolImports:
 
     @pytest.mark.parametrize("module", list(_tool_modules.__func__()))
     def test_tool_import(self, module):
-        mod = importlib.import_module(f"tools.{module}")
+        try:
+            mod = importlib.import_module(f"tools.{module}")
+        except ModuleNotFoundError as e:
+            # Fehlende Dritt-Dependencies (requirements-optional.txt) sind kein
+            # BACH-Bruch — nur interne Module muessen immer importierbar sein.
+            internal = ("tools", "hub", "core", "connectors", "bach_api")
+            if e.name and e.name.split(".")[0] not in internal:
+                pytest.skip(f"optionale Dependency fehlt: {e.name}")
+            raise
         assert mod is not None
 
 

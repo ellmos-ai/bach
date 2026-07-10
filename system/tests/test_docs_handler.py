@@ -33,7 +33,8 @@ def _create_docs_tables(conn):
             category TEXT,
             description TEXT,
             path TEXT,
-            is_available INTEGER DEFAULT 1
+            is_available INTEGER DEFAULT 1,
+            language TEXT DEFAULT 'de'
         )
     """)
     conn.execute("""

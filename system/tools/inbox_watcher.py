@@ -53,6 +53,11 @@ try:
     WATCHDOG_AVAILABLE = True
 except ImportError:
     WATCHDOG_AVAILABLE = False
+    # Fallback-Basisklasse, damit das Modul ohne watchdog importierbar bleibt
+    # (InboxEventHandler erbt davon; Watch-Modus prueft WATCHDOG_AVAILABLE)
+    FileSystemEventHandler = object
+    FileCreatedEvent = None
+    Observer = None
     print("[WARN] watchdog nicht installiert: pip install watchdog")
 
 # OCR für Textextraktion (INBOX_006)

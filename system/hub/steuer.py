@@ -2355,14 +2355,19 @@ Usage:
         results = ["\nSTEUER-TOOLS", "=" * 60]
         
         # Aus DB laden
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self._canonical_db
         if db_path.exists():
+            from .lang import get_lang
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
+            # TOWER_OF_BABEL: pro Name eine Zeile, aktive Sprache bevorzugt
             rows = conn.execute("""
-                SELECT name, command, description FROM tools 
-                WHERE category = 'steuer' ORDER BY name
-            """).fetchall()
+                SELECT name, command, description,
+                       MAX(language = ?) AS _lang_pref
+                FROM tools
+                WHERE category = 'steuer'
+                GROUP BY name ORDER BY name
+            """, (get_lang(),)).fetchall()
             conn.close()
             
             if rows:

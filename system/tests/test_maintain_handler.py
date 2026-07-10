@@ -28,16 +28,12 @@ def maintain_env(tmp_path):
     tools_dir.mkdir()
     (tools_dir / "maintenance").mkdir()
 
-    # Create dummy scripts for testing
+    # Create dummy scripts for testing (Pfade wie im echten tools/-Layout)
     for script in [
         "doc_update_checker.py",
         "duplicate_detector.py",
         "skill_generator.py",
         "exporter.py",
-        "pattern_tool.py",
-        "tool_scanner.py",
-        "file_cleaner.py",
-        "json_fixer.py",
         "skill_header_gen.py",
     ]:
         (tools_dir / script).write_text("# dummy", encoding="utf-8")
@@ -47,8 +43,17 @@ def maintain_env(tmp_path):
         "registry_watcher.py",
         "skill_health_monitor.py",
         "sync_skills.py",
+        "tool_scanner.py",
     ]:
         (tools_dir / "maintenance" / script).write_text("# dummy", encoding="utf-8")
+
+    for subdir, script in [
+        ("project", "pattern_tool.py"),
+        ("file_ops", "file_cleaner.py"),
+        ("json", "json_fixer.py"),
+    ]:
+        (tools_dir / subdir).mkdir(exist_ok=True)
+        (tools_dir / subdir / script).write_text("# dummy", encoding="utf-8")
 
     return tmp_path
 
@@ -147,25 +152,25 @@ class TestScriptNotFound:
         assert "nicht gefunden" in msg
 
     def test_pattern_missing_script(self, handler):
-        (handler.tools_dir / "pattern_tool.py").unlink()
+        (handler.tools_dir / "project" / "pattern_tool.py").unlink()
         ok, msg = handler.handle("pattern", ["./docs"], dry_run=False)
         assert ok is False
         assert "nicht gefunden" in msg
 
     def test_scan_missing_script(self, handler):
-        (handler.tools_dir / "tool_scanner.py").unlink()
+        (handler.tools_dir / "maintenance" / "tool_scanner.py").unlink()
         ok, msg = handler.handle("scan", [], dry_run=False)
         assert ok is False
         assert "nicht gefunden" in msg
 
     def test_clean_missing_script(self, handler):
-        (handler.tools_dir / "file_cleaner.py").unlink()
+        (handler.tools_dir / "file_ops" / "file_cleaner.py").unlink()
         ok, msg = handler.handle("clean", ["./logs"], dry_run=False)
         assert ok is False
         assert "nicht gefunden" in msg
 
     def test_json_missing_script(self, handler):
-        (handler.tools_dir / "json_fixer.py").unlink()
+        (handler.tools_dir / "json" / "json_fixer.py").unlink()
         ok, msg = handler.handle("json", ["test.json"], dry_run=False)
         assert ok is False
         assert "nicht gefunden" in msg
