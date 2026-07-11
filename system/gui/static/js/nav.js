@@ -52,6 +52,7 @@ const NAV_ITEMS = [
     { href: "/tools", label: "Tools" },
     { label: "System", children: [
         { href: "/daemon", label: "Automation" },
+        { href: "/control/", label: "Unified GUI" },
         { href: "/maintenance", label: "Wartung" },
         { href: "/logs", label: "Logs" },
         { href: "/help", label: "Help" },

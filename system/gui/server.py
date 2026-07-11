@@ -13986,6 +13986,26 @@ async def get_workflow_content(path: str):
 
 # ═══════════════════════════════════════════════════════════════
 
+# UNIFIED GUI (optionales externes Modul ellmos-unified-gui)
+# Operator-Konsole als Sub-App unter /control — Panels erscheinen
+# capability-driven je nach erreichbaren Backends. Fehlt das Paket,
+# laeuft BACH unveraendert (bewusst weiches Optional).
+
+# ═══════════════════════════════════════════════════════════════
+
+try:
+    from unified_gui import mount as _unified_gui_mount
+
+    _unified_gui_mount(app, prefix="/control")
+    print("[GUI] Unified GUI unter /control eingebunden (ellmos-unified-gui)")
+except ImportError:
+    pass
+except Exception as _ug_exc:  # noqa: BLE001 — Mount-Fehler duerfen BACH nie stoppen
+    print(f"[GUI] Unified GUI nicht eingebunden: {_ug_exc}")
+
+
+# ═══════════════════════════════════════════════════════════════
+
 # MAIN
 
 # ═══════════════════════════════════════════════════════════════
