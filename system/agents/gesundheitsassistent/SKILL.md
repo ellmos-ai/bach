@@ -15,7 +15,7 @@ anthropic_compatible: true
 status: active
 
 orchestrates:
-  experts: [gesundheitsverwalter, psycho-berater]
+  experts: [gesundheitsverwalter, psycho-berater, health_import]
   services: []
 
 dependencies:

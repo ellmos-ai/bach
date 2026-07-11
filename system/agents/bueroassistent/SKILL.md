@@ -14,7 +14,7 @@ anthropic_compatible: true
 status: active
 
 orchestrates:
-  experts: [steuer-agent, foerderplaner]
+  experts: [steuer-agent, foerderplaner, report_generator, worksheet_generator]
   services: []
 
 dependencies:

@@ -9,7 +9,7 @@ anthropic_compatible: true
 status: active
 
 orchestrates:
-  experts: [haushaltsmanagement]
+  experts: [haushaltsmanagement, decision-briefing, literaturverwalter, transkriptions-service]
   services: []
 
 dependencies:
