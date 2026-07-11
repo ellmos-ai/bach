@@ -14,7 +14,7 @@ anthropic_compatible: true
 status: active
 
 orchestrates:
-  experts: []
+  experts: [mediaproduction, press, textproduction]
   services: [media, prompt-manager, mail]
 
 dependencies:
