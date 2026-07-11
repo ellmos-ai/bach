@@ -176,8 +176,8 @@
     "value": "Boss 智能体",
     "is_verified": 1,
     "source": "manual",
-    "created_at": "2026-05-17T06:40:24.434869",
-    "updated_at": "2026-06-21 07:29:25"
+    "created_at": "2026-07-11T19:32:01.450783",
+    "updated_at": "2026-07-11T19:32:01.450783"
   },
   {
     "key": "expert_agents",
@@ -8996,8 +8996,8 @@
     "value": "BOSS 智能体",
     "is_verified": 1,
     "source": "manual",
-    "created_at": "2026-05-17T06:40:24.434869",
-    "updated_at": "2026-06-21 07:29:25"
+    "created_at": "2026-07-11T19:32:03.890450",
+    "updated_at": "2026-07-11T19:32:03.890450"
   },
   {
     "key": "bridge_fackel_wrapper_erweit",
@@ -62116,8 +62116,8 @@
     "value": "Scans the filesystem for boss agents and experts.\n\nBoss agents:  agents/*/SKILL.md  (subfolders without leading _)\nExperts:      agents/_experts/*/CONCEPT.md  (only status: ACTIVE)\n\nPaths come from bach_paths.py (Single Source of Truth).\n\nReturns:\n    (boss_agents, experts) - both as dict {key: entry}",
     "is_verified": 1,
     "source": "manual",
-    "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-06-21 07:29:25"
+    "created_at": "2026-07-11T19:32:07.048857",
+    "updated_at": "2026-07-11T19:32:07.048857"
   },
   {
     "key": "scannt_filesystem_nach_boss_agenten_und_experten",
@@ -62126,8 +62126,8 @@
     "value": "Escanea el sistema de archivos en busca de agentes jefe y expertos.\n\nAgentes jefe:  agents/*/SKILL.md  (subcarpetas sin _ inicial)\nExpertos:      agents/_experts/*/CONCEPT.md  (solo estado: ACTIVO)\n\nLas rutas provienen de bach_paths.py (fuente única de verdad).\n\nRetorna:\n    (boss_agents, experts) - ambos como dict {key: entry}",
     "is_verified": 1,
     "source": "manual",
-    "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-06-21 07:29:25"
+    "created_at": "2026-07-11T19:32:07.048857",
+    "updated_at": "2026-07-11T19:32:07.048857"
   },
   {
     "key": "scannt_filesystem_nach_boss_agenten_und_experten",
@@ -62136,8 +62136,8 @@
     "value": "ファイルシステムをスキャンして、ボスエージェントとエキスパートを検索します。\n\nボスエージェント:  agents/*/SKILL.md  (先頭に _ がないサブフォルダー)\nエキスパート:      agents/_experts/*/CONCEPT.md  (ステータス: アクティブのみ)\n\nパスは bach_paths.py (単一の真実の情報源) から取得されます。\n\n戻り値:\n    (boss_agents, experts) - 両方とも dict {key: entry} として",
     "is_verified": 1,
     "source": "manual",
-    "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-06-21 07:29:25"
+    "created_at": "2026-07-11T19:32:07.048857",
+    "updated_at": "2026-07-11T19:32:07.048857"
   },
   {
     "key": "scannt_filesystem_nach_boss_agenten_und_experten",
@@ -62146,8 +62146,8 @@
     "value": "Сканирует файловую систему на наличие босс-агентов и экспертов.\n\nБосс-агенты:  agents/*/SKILL.md  (подпапки без ведущего _)\nЭксперты:      agents/_experts/*/CONCEPT.md  (только статус: АКТИВНЫЙ)\n\nПути берутся из bach_paths.py (Единый источник истины).\n\nВозвращает:\n    (boss_agents, experts) - оба в виде dict {key: entry}",
     "is_verified": 1,
     "source": "manual",
-    "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-06-21 07:29:25"
+    "created_at": "2026-07-11T19:32:07.048857",
+    "updated_at": "2026-07-11T19:32:07.048857"
   },
   {
     "key": "scannt_filesystem_nach_boss_agenten_und_experten",
@@ -62156,8 +62156,8 @@
     "value": "扫描文件系统以查找 Boss 智能体和专家。\n\nBoss 智能体： agents/*/SKILL.md （不带前导 _ 的子文件夹）\n专家：       agents/_experts/*/CONCEPT.md （仅限状态：活跃）\n\n路径来自 bach_paths.py（单一事实来源）。\n\n返回：\n    (boss_agents, experts) - 两者均作为 dict {key: entry}",
     "is_verified": 1,
     "source": "manual",
-    "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-06-21 07:29:25"
+    "created_at": "2026-07-11T19:32:07.048857",
+    "updated_at": "2026-07-11T19:32:07.048857"
   },
   {
     "key": "scannt_registrierte_ordner_fuer_karrieredaten",
@@ -116006,8 +116006,8 @@
     "value": "ESTADO DE COMPROBANTES",
     "is_verified": 1,
     "source": "manual",
-    "created_at": "2026-05-17T06:03:58.337154",
-    "updated_at": "2026-06-21 07:29:25"
+    "created_at": "2026-07-11T19:32:10.151855",
+    "updated_at": "2026-07-11T19:32:10.151855"
   },
   {
     "key": "beleg_status",
@@ -126236,8 +126236,8 @@
     "value": "可用的智能体（skills/_agents/）",
     "is_verified": 1,
     "source": "manual",
-    "created_at": "2026-05-17T06:44:24.774895",
-    "updated_at": "2026-06-21 07:29:25"
+    "created_at": "2026-07-11T19:32:13.331370",
+    "updated_at": "2026-07-11T19:32:13.331370"
   },
   {
     "key": "verfuegbare_artikel",

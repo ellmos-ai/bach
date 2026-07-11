@@ -20,7 +20,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('boss_agents', 'agent', 'es', 'Agentes jefes', 0, 'google_auto', '2026-05-17T05:51:44.194607', '2026-05-17T05:51:44.194607');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('boss_agents', 'agent', 'ja', 'ボスエージェント', 0, 'google_auto', '2026-05-17T06:33:13.916677', '2026-05-17T06:33:13.916677');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('boss_agents', 'agent', 'ru', 'Босс-агенты', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('boss_agents', 'agent', 'zh', 'Boss 智能体', 1, 'manual', '2026-05-17T06:40:24.434869', '2026-06-21 07:29:25');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('boss_agents', 'agent', 'zh', 'Boss 智能体', 1, 'manual', '2026-07-11T19:32:01.450783', '2026-07-11T19:32:01.450783');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('expert_agents', 'agent', 'de', 'Experten-Agenten', 1, 'butternut', '2026-02-28 01:29:30', '2026-02-28 01:29:30');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('expert_agents', 'agent', 'en', 'Expert agents', 1, 'butternut', '2026-02-28 01:29:30', '2026-02-28 01:29:30');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('expert_agents', 'agent', 'es', 'Agentes expertos', 0, 'google_auto', '2026-05-17T05:51:44.194607', '2026-05-17T05:51:44.194607');
@@ -3362,7 +3362,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('boss_agents', 'cli', 'es', 'AGENTES PRINCIPALES', 0, 'manual', '2026-05-17T18:08:07.889776', '2026-05-17T18:08:07.889776');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('boss_agents', 'cli', 'ja', 'ボスエージェント', 0, 'google_auto', '2026-05-17T06:33:13.916677', '2026-05-17T06:33:13.916677');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('boss_agents', 'cli', 'ru', 'БОСС-АГЕНТЫ', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('boss_agents', 'cli', 'zh', 'BOSS 智能体', 1, 'manual', '2026-05-17T06:40:24.434869', '2026-06-21 07:29:25');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('boss_agents', 'cli', 'zh', 'BOSS 智能体', 1, 'manual', '2026-07-11T19:32:03.890450', '2026-07-11T19:32:03.890450');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bridge_fackel_wrapper_erweit', 'cli', 'de', 'Bridge-Fackel-Wrapper
 =====================
 Erweitert bridge_daemon.py mit Fackel-Funktionalität OHNE den Original-Code zu ändern.
@@ -16562,7 +16562,7 @@ Experts:      agents/_experts/*/CONCEPT.md  (only status: ACTIVE)
 Paths come from bach_paths.py (Single Source of Truth).
 
 Returns:
-    (boss_agents, experts) - both as dict {key: entry}', 1, 'manual', '2026-05-17T04:38:01.903621', '2026-06-21 07:29:25');
+    (boss_agents, experts) - both as dict {key: entry}', 1, 'manual', '2026-07-11T19:32:07.048857', '2026-07-11T19:32:07.048857');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_filesystem_nach_boss_agenten_und_experten', 'cli', 'es', 'Escanea el sistema de archivos en busca de agentes jefe y expertos.
 
 Agentes jefe:  agents/*/SKILL.md  (subcarpetas sin _ inicial)
@@ -16571,7 +16571,7 @@ Expertos:      agents/_experts/*/CONCEPT.md  (solo estado: ACTIVO)
 Las rutas provienen de bach_paths.py (fuente única de verdad).
 
 Retorna:
-    (boss_agents, experts) - ambos como dict {key: entry}', 1, 'manual', '2026-05-17T06:51:57.361081', '2026-06-21 07:29:25');
+    (boss_agents, experts) - ambos como dict {key: entry}', 1, 'manual', '2026-07-11T19:32:07.048857', '2026-07-11T19:32:07.048857');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_filesystem_nach_boss_agenten_und_experten', 'cli', 'ja', 'ファイルシステムをスキャンして、ボスエージェントとエキスパートを検索します。
 
 ボスエージェント:  agents/*/SKILL.md  (先頭に _ がないサブフォルダー)
@@ -16580,7 +16580,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 パスは bach_paths.py (単一の真実の情報源) から取得されます。
 
 戻り値:
-    (boss_agents, experts) - 両方とも dict {key: entry} として', 1, 'manual', '2026-05-17T07:04:20.383002', '2026-06-21 07:29:25');
+    (boss_agents, experts) - 両方とも dict {key: entry} として', 1, 'manual', '2026-07-11T19:32:07.048857', '2026-07-11T19:32:07.048857');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_filesystem_nach_boss_agenten_und_experten', 'cli', 'ru', 'Сканирует файловую систему на наличие босс-агентов и экспертов.
 
 Босс-агенты:  agents/*/SKILL.md  (подпапки без ведущего _)
@@ -16589,7 +16589,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 Пути берутся из bach_paths.py (Единый источник истины).
 
 Возвращает:
-    (boss_agents, experts) - оба в виде dict {key: entry}', 1, 'manual', '2026-05-17T07:01:15.980267', '2026-06-21 07:29:25');
+    (boss_agents, experts) - оба в виде dict {key: entry}', 1, 'manual', '2026-07-11T19:32:07.048857', '2026-07-11T19:32:07.048857');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_filesystem_nach_boss_agenten_und_experten', 'cli', 'zh', '扫描文件系统以查找 Boss 智能体和专家。
 
 Boss 智能体： agents/*/SKILL.md （不带前导 _ 的子文件夹）
@@ -16598,7 +16598,7 @@ Boss 智能体： agents/*/SKILL.md （不带前导 _ 的子文件夹）
 路径来自 bach_paths.py（单一事实来源）。
 
 返回：
-    (boss_agents, experts) - 两者均作为 dict {key: entry}', 1, 'manual', '2026-05-17T07:11:17.069268', '2026-06-21 07:29:25');
+    (boss_agents, experts) - 两者均作为 dict {key: entry}', 1, 'manual', '2026-07-11T19:32:07.048857', '2026-07-11T19:32:07.048857');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_registrierte_ordner_fuer_karrieredaten', 'cli', 'de', 'Scannt registrierte Ordner fuer Karrieredaten.', 0, 'auto_detected', '2026-05-17T03:06:06.253517', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_registrierte_ordner_fuer_karrieredaten', 'cli', 'en', 'Scannt registrierte folder for Karrieredaten.', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_registrierte_ordner_fuer_karrieredaten', 'cli', 'es', 'Carpeta de registro escasa para Karrieredaten.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -28006,7 +28006,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bekannte_fehler_bei_llm_diagnostik', 'help', 'zh', 'LLM 诊断中的已知错误', 0, 'google_auto', '2026-05-17T06:40:24.434869', '2026-05-17T06:40:24.434869');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('beleg_status', 'help', 'de', 'BELEG-STATUS', 0, 'auto_detected', '2026-02-02T03:38:18.256048', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('beleg_status', 'help', 'en', 'RECEIPT STATUS', 0, 'waterfall_swarm', '2026-03-06 19:52:15', '2026-03-06 19:52:15');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('beleg_status', 'help', 'es', 'ESTADO DE COMPROBANTES', 1, 'manual', '2026-05-17T06:03:58.337154', '2026-06-21 07:29:25');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('beleg_status', 'help', 'es', 'ESTADO DE COMPROBANTES', 1, 'manual', '2026-07-11T19:32:10.151855', '2026-07-11T19:32:10.151855');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('beleg_status', 'help', 'ja', '受信ステータス', 0, 'google_auto', '2026-05-17T06:33:13.916677', '2026-05-17T06:33:13.916677');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('beleg_status', 'help', 'ru', 'СТАТУС ПОЛУЧЕНИЯ', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('beleg_status', 'help', 'zh', '收货状态', 0, 'google_auto', '2026-05-17T06:40:24.434869', '2026-05-17T06:40:24.434869');
@@ -29731,7 +29731,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_agenten_skills_agents', 'help', 'es', 'AGENTES DISPONIBLES (skills/_agents/)', 0, 'google_auto', '2026-05-17T06:08:46.131662', '2026-05-17T06:08:46.131662');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_agenten_skills_agents', 'help', 'ja', '利用可能なエージェント (skills/_agents/)', 0, 'google_auto', '2026-05-17T06:33:13.916677', '2026-05-17T06:33:13.916677');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_agenten_skills_agents', 'help', 'ru', 'ДОСТУПНЫЕ АГЕНТЫ (skills/_agents/)', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_agenten_skills_agents', 'help', 'zh', '可用的智能体（skills/_agents/）', 1, 'manual', '2026-05-17T06:44:24.774895', '2026-06-21 07:29:25');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_agenten_skills_agents', 'help', 'zh', '可用的智能体（skills/_agents/）', 1, 'manual', '2026-07-11T19:32:13.331370', '2026-07-11T19:32:13.331370');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_artikel', 'help', 'de', 'VERFUEGBARE ARTIKEL', 0, 'auto_detected', '2026-02-02T03:38:18.257614', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_artikel', 'help', 'en', 'AVAILABLE ARTICLES', 0, 'waterfall_swarm', '2026-03-06 19:53:26', '2026-03-06 19:53:26');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_artikel', 'help', 'es', 'ARTÍCULOS DISPONIBLES', 0, 'google_auto', '2026-05-17T06:08:46.131662', '2026-05-17T06:08:46.131662');
