@@ -16,13 +16,18 @@ from __future__ import annotations
 
 import importlib
 import os
+import sqlite3
 import sys
+import time
+import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from .bordcomputer import get_bordcomputer
-from .fahrtenbuch import get_fahrtenbuch
-from .fahrschule import get_fahrschule
+from .fahrtenbuch import FahrtenbuchEintrag as _LegacyFahrtenbuchEintrag
+from .fahrtenbuch import get_fahrtenbuch as _get_legacy_fahrtenbuch
+from .fahrschule import get_fahrschule as _get_legacy_fahrschule
 from .gas_bremse import berechne_gas, get_gas_bremse
 from .strecken_analyse import analysiere_task, get_analyser
 
@@ -46,7 +51,16 @@ def _external_clutch_disabled() -> bool:
 
 def _normalise_clutch_root(raw_path: str | os.PathLike[str]) -> Path | None:
     path = Path(os.path.expandvars(os.path.expanduser(str(raw_path)))).resolve()
-    if (path / "clutch" / "scorer.py").is_file():
+    package_dir = path / "clutch"
+    if not package_dir.is_dir():
+        return None
+    known_modules = (
+        "scorer.py",
+        "partner.py",
+        "fahrtenbuch.py",
+        "fahrschule.py",
+    )
+    if any((package_dir / module).is_file() for module in known_modules):
         return path
     return None
 
@@ -128,6 +142,35 @@ def _load_external_clutch_partner_module():
 
 
 _clutch_partner_module = _load_external_clutch_partner_module()
+
+
+def _load_external_clutch_module(module_name: str):
+    if _external_clutch_disabled():
+        return None
+
+    if os.environ.get(_CLUTCH_PATH_ENV):
+        _ensure_external_clutch_on_path()
+        importlib.invalidate_caches()
+
+    try:
+        return importlib.import_module(module_name)
+    except ImportError:
+        pass
+
+    if _ensure_external_clutch_on_path() is None:
+        return None
+
+    importlib.invalidate_caches()
+    try:
+        return importlib.import_module(module_name)
+    except ImportError:
+        return None
+
+
+_clutch_fahrtenbuch_module = _load_external_clutch_module("clutch.fahrtenbuch")
+_clutch_fahrschule_module = _load_external_clutch_module("clutch.fahrschule")
+_clutch_getriebe_module = _load_external_clutch_module("clutch.getriebe")
+_clutch_kupplung_module = _load_external_clutch_module("clutch.kupplung")
 
 from .complexity_scorer import get_scorer as _get_legacy_scorer
 
@@ -336,6 +379,635 @@ class _PartnerRegistryAdapter:
         return max(candidates, key=rank_key)
 
 
+def _external_fahrtenbuch_ready() -> bool:
+    return (
+        _clutch_fahrtenbuch_module is not None
+        and getattr(_clutch_fahrtenbuch_module, "Fahrtenbuch", None) is not None
+        and getattr(_clutch_fahrtenbuch_module, "FahrtEintrag", None) is not None
+    )
+
+
+def _external_fahrschule_ready() -> bool:
+    return (
+        _external_fahrtenbuch_ready()
+        and _clutch_fahrschule_module is not None
+        and getattr(_clutch_fahrschule_module, "Fahrschule", None) is not None
+        and _clutch_getriebe_module is not None
+        and getattr(_clutch_getriebe_module, "Getriebe", None) is not None
+        and _clutch_kupplung_module is not None
+        and getattr(_clutch_kupplung_module, "Kupplung", None) is not None
+    )
+
+
+def _instance_key(db_path: str | os.PathLike[str] | None) -> str:
+    if db_path is None:
+        return "__memory__"
+    return str(Path(db_path).expanduser().resolve())
+
+
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+class _FahrtenbuchAdapter:
+    """BACH-Signatur auf externe clutch.Fahrtenbuch-API legen."""
+
+    source = "clutch"
+
+    def __init__(self, db_path: Path, external_buch: Any, entry_cls: Any):
+        self.db_path = db_path
+        self._external = external_buch
+        self._entry_cls = entry_cls
+
+    @property
+    def external(self) -> Any:
+        return self._external
+
+    def eintrag(
+        self,
+        task_text: str,
+        provider: str,
+        model: str = "",
+        strecken_typ: str = "",
+        strecken_typ_code: int = 0,
+        schwierigkeit: int = 0,
+        etappen: int = 0,
+        gas_level: int = 50,
+        gas_strategie: str = "ausgewogen",
+        token_budget_faktor: float = 1.0,
+        tokens_input: int = 0,
+        tokens_output: int = 0,
+        latenz_sekunden: float = 0.0,
+        erfolg: bool = True,
+        zone: int = 1,
+        kosten_eur: float = 0.0,
+    ) -> _LegacyFahrtenbuchEintrag:
+        timestamp = time.time()
+        gas_level_int = max(0, min(100, _as_int(gas_level, 50)))
+        total_tokens = max(0, _as_int(tokens_input) + _as_int(tokens_output))
+        strecke = str(strecken_typ or strecken_typ_code or "unbekannt")
+        gang = str(model or provider or "unknown")
+
+        external_entry = self._entry_cls(
+            fahrt_id=f"bach-{int(timestamp * 1000)}-{uuid.uuid4().hex[:8]}",
+            strecken_typ=strecke,
+            gang=gang,
+            provider=str(provider or ""),
+            gas=gas_level_int / 100.0,
+            muster="einzelfahrt",
+            total_tokens=total_tokens,
+            latenz_sekunden=_as_float(latenz_sekunden),
+            erfolg=bool(erfolg),
+            entscheidungs_grund=str(task_text or "")[:200],
+            timestamp=timestamp,
+        )
+        self._external.eintragen(external_entry)
+
+        legacy_entry = _LegacyFahrtenbuchEintrag(
+            timestamp=timestamp,
+            task_text=str(task_text or "")[:200],
+            provider=str(provider or ""),
+            model=gang,
+            strecken_typ=strecke,
+            strecken_typ_code=_as_int(strecken_typ_code),
+            schwierigkeit=_as_int(schwierigkeit),
+            etappen=_as_int(etappen),
+            gas_level=gas_level_int,
+            gas_strategie=str(gas_strategie or "ausgewogen"),
+            token_budget_faktor=_as_float(token_budget_faktor, 1.0),
+            tokens_input=_as_int(tokens_input),
+            tokens_output=_as_int(tokens_output),
+            latenz_sekunden=_as_float(latenz_sekunden),
+            erfolg=bool(erfolg),
+            zone=_as_int(zone, 1),
+            kosten_eur=_as_float(kosten_eur),
+        )
+        self._persist_bach_compat(legacy_entry)
+        return legacy_entry
+
+    def _persist_bach_compat(self, entry: _LegacyFahrtenbuchEintrag) -> None:
+        try:
+            with sqlite3.connect(str(self.db_path)) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS clutch_fahrtenbuch (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp REAL NOT NULL,
+                        task_text TEXT,
+                        provider TEXT,
+                        model TEXT,
+                        strecken_typ TEXT,
+                        strecken_typ_code INTEGER,
+                        schwierigkeit INTEGER,
+                        etappen INTEGER,
+                        gas_level INTEGER,
+                        gas_strategie TEXT,
+                        token_budget_faktor REAL,
+                        tokens_input INTEGER DEFAULT 0,
+                        tokens_output INTEGER DEFAULT 0,
+                        latenz_sekunden REAL DEFAULT 0,
+                        erfolg INTEGER DEFAULT 1,
+                        zone INTEGER DEFAULT 1,
+                        kosten_eur REAL DEFAULT 0
+                    )
+                    """
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_fahrtenbuch_provider "
+                    "ON clutch_fahrtenbuch(provider)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_fahrtenbuch_strecke "
+                    "ON clutch_fahrtenbuch(strecken_typ_code)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_fahrtenbuch_time "
+                    "ON clutch_fahrtenbuch(timestamp)"
+                )
+                conn.execute(
+                    """
+                    INSERT INTO clutch_fahrtenbuch
+                        (timestamp, task_text, provider, model,
+                         strecken_typ, strecken_typ_code, schwierigkeit, etappen,
+                         gas_level, gas_strategie, token_budget_faktor,
+                         tokens_input, tokens_output, latenz_sekunden,
+                         erfolg, zone, kosten_eur)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        entry.timestamp,
+                        entry.task_text,
+                        entry.provider,
+                        entry.model,
+                        entry.strecken_typ,
+                        entry.strecken_typ_code,
+                        entry.schwierigkeit,
+                        entry.etappen,
+                        entry.gas_level,
+                        entry.gas_strategie,
+                        entry.token_budget_faktor,
+                        entry.tokens_input,
+                        entry.tokens_output,
+                        entry.latenz_sekunden,
+                        1 if entry.erfolg else 0,
+                        entry.zone,
+                        entry.kosten_eur,
+                    ),
+                )
+        except sqlite3.Error:
+            pass
+
+    def metriken(self, tage: int = 7) -> dict[str, Any]:
+        metrics = self._metriken_from_bach_compat(tage)
+        if metrics.get("total_delegations", 0) > 0:
+            return metrics
+        external_metrics = self._metriken_from_external(tage)
+        return external_metrics if external_metrics.get("total_delegations", 0) > 0 else metrics
+
+    def _metriken_from_bach_compat(self, tage: int) -> dict[str, Any]:
+        since = time.time() - (tage * 86400)
+        empty = {
+            "zeitraum_tage": tage,
+            "total_delegations": 0,
+            "erfolgsrate": 0.0,
+            "avg_latenz": 0.0,
+            "total_tokens": 0,
+            "total_kosten_eur": 0.0,
+            "provider": [],
+            "streckentypen": [],
+            "gas_verteilung": {},
+        }
+        try:
+            with sqlite3.connect(str(self.db_path)) as conn:
+                if not _table_exists(conn, "clutch_fahrtenbuch"):
+                    return empty
+                row = conn.execute(
+                    """
+                    SELECT COUNT(*), SUM(erfolg), AVG(latenz_sekunden),
+                           SUM(tokens_input + tokens_output), SUM(kosten_eur)
+                    FROM clutch_fahrtenbuch WHERE timestamp > ?
+                    """,
+                    (since,),
+                ).fetchone()
+                total = row[0] or 0
+                successful = row[1] or 0
+                provider_rows = conn.execute(
+                    """
+                    SELECT provider, COUNT(*), SUM(erfolg), AVG(latenz_sekunden)
+                    FROM clutch_fahrtenbuch WHERE timestamp > ?
+                    GROUP BY provider ORDER BY COUNT(*) DESC
+                    """,
+                    (since,),
+                ).fetchall()
+                strecken_rows = conn.execute(
+                    """
+                    SELECT strecken_typ, strecken_typ_code, COUNT(*),
+                           SUM(erfolg), AVG(gas_level)
+                    FROM clutch_fahrtenbuch WHERE timestamp > ?
+                    GROUP BY strecken_typ_code, strecken_typ ORDER BY COUNT(*) DESC
+                    """,
+                    (since,),
+                ).fetchall()
+                gas_rows = conn.execute(
+                    """
+                    SELECT gas_strategie, COUNT(*)
+                    FROM clutch_fahrtenbuch WHERE timestamp > ?
+                    GROUP BY gas_strategie
+                    """,
+                    (since,),
+                ).fetchall()
+        except sqlite3.Error:
+            return empty
+
+        return {
+            "zeitraum_tage": tage,
+            "total_delegations": total,
+            "erfolgsrate": round(successful / max(1, total) * 100, 1),
+            "avg_latenz": round(row[2] or 0, 2),
+            "total_tokens": row[3] or 0,
+            "total_kosten_eur": round(row[4] or 0, 2),
+            "provider": [
+                {
+                    "name": r[0],
+                    "delegations": r[1],
+                    "erfolgsrate": round((r[2] or 0) / max(1, r[1]) * 100, 1),
+                    "avg_latenz": round(r[3] or 0, 2),
+                }
+                for r in provider_rows
+            ],
+            "streckentypen": [
+                {
+                    "typ": r[0],
+                    "code": r[1],
+                    "delegations": r[2],
+                    "erfolgsrate": round((r[3] or 0) / max(1, r[2]) * 100, 1),
+                    "avg_gas": round(r[4] or 0, 0),
+                }
+                for r in strecken_rows
+            ],
+            "gas_verteilung": {r[0]: r[1] for r in gas_rows},
+        }
+
+    def _metriken_from_external(self, tage: int) -> dict[str, Any]:
+        since = time.time() - (tage * 86400)
+        empty = {
+            "zeitraum_tage": tage,
+            "total_delegations": 0,
+            "erfolgsrate": 0.0,
+            "avg_latenz": 0.0,
+            "total_tokens": 0,
+            "total_kosten_eur": 0.0,
+            "provider": [],
+            "streckentypen": [],
+            "gas_verteilung": {},
+        }
+        try:
+            with sqlite3.connect(str(self.db_path)) as conn:
+                if not _table_exists(conn, "fahrten"):
+                    return empty
+                row = conn.execute(
+                    """
+                    SELECT COUNT(*), SUM(erfolg), AVG(latenz_sekunden), SUM(total_tokens)
+                    FROM fahrten WHERE timestamp > ?
+                    """,
+                    (since,),
+                ).fetchone()
+                total = row[0] or 0
+                successful = row[1] or 0
+                provider_rows = conn.execute(
+                    """
+                    SELECT provider, COUNT(*), SUM(erfolg), AVG(latenz_sekunden)
+                    FROM fahrten WHERE timestamp > ?
+                    GROUP BY provider ORDER BY COUNT(*) DESC
+                    """,
+                    (since,),
+                ).fetchall()
+                strecken_rows = conn.execute(
+                    """
+                    SELECT strecken_typ, COUNT(*), SUM(erfolg), AVG(gas)
+                    FROM fahrten WHERE timestamp > ?
+                    GROUP BY strecken_typ ORDER BY COUNT(*) DESC
+                    """,
+                    (since,),
+                ).fetchall()
+        except sqlite3.Error:
+            return empty
+
+        return {
+            "zeitraum_tage": tage,
+            "total_delegations": total,
+            "erfolgsrate": round(successful / max(1, total) * 100, 1),
+            "avg_latenz": round(row[2] or 0, 2),
+            "total_tokens": row[3] or 0,
+            "total_kosten_eur": 0.0,
+            "provider": [
+                {
+                    "name": r[0],
+                    "delegations": r[1],
+                    "erfolgsrate": round((r[2] or 0) / max(1, r[1]) * 100, 1),
+                    "avg_latenz": round(r[3] or 0, 2),
+                }
+                for r in provider_rows
+            ],
+            "streckentypen": [
+                {
+                    "typ": r[0],
+                    "code": 0,
+                    "delegations": r[1],
+                    "erfolgsrate": round((r[2] or 0) / max(1, r[1]) * 100, 1),
+                    "avg_gas": round((r[3] or 0) * 100, 0),
+                }
+                for r in strecken_rows
+            ],
+            "gas_verteilung": {},
+        }
+
+    def format_metriken(self, tage: int = 7) -> str:
+        m = self.metriken(tage)
+        lines = [
+            f"[FAHRTENBUCH] Metriken (letzte {tage} Tage)",
+            "=" * 50,
+            f"  Delegations: {m['total_delegations']}",
+            f"  Erfolgsrate: {m['erfolgsrate']}%",
+        ]
+        if "avg_latenz" in m:
+            lines.append(f"  Ø Latenz: {m['avg_latenz']}s")
+            lines.append(f"  Tokens gesamt: {m.get('total_tokens', 0):,}")
+            lines.append(f"  Kosten: {m.get('total_kosten_eur', 0):.2f} EUR")
+        if m.get("provider"):
+            lines.append("\n  Provider:")
+            for provider in m["provider"]:
+                lines.append(
+                    f"    {provider['name']}: {provider['delegations']}x, "
+                    f"{provider['erfolgsrate']}% Erfolg, "
+                    f"Ø {provider['avg_latenz']}s"
+                )
+        if m.get("streckentypen"):
+            lines.append("\n  Streckentypen:")
+            for strecke in m["streckentypen"]:
+                lines.append(
+                    f"    {strecke['typ']} (Typ {strecke['code']}): "
+                    f"{strecke['delegations']}x, {strecke['erfolgsrate']}% Erfolg, "
+                    f"Ø Gas {strecke['avg_gas']}%"
+                )
+        if m.get("gas_verteilung"):
+            lines.append("\n  Gas-Verteilung:")
+            for strategie, count in m["gas_verteilung"].items():
+                lines.append(f"    {strategie}: {count}x")
+        return "\n".join(lines)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._external, name)
+
+
+class _FahrschuleAdapter:
+    """BACH-Statusoberflaeche auf externe clutch.Fahrschule legen."""
+
+    source = "clutch"
+
+    def __init__(self, db_path: Path, external_fahrschule: Any, fahrtenbuch: _FahrtenbuchAdapter):
+        self.db_path = db_path
+        self._external = external_fahrschule
+        self._fahrtenbuch = fahrtenbuch
+
+    def trainieren(self) -> dict[str, Any]:
+        return self._external.trainieren()
+
+    def status(self) -> dict[str, Any]:
+        rows = self._fitness_rows()
+        if not rows:
+            rows = self._rows_from_fahrten()
+        top = rows[:5]
+        bottom = rows[-5:] if rows else []
+        return {
+            "total_kombinationen": len(rows),
+            "total_delegations": sum(row["delegations"] for row in rows),
+            "epsilon": getattr(self._external, "erkundungsrate", 0.0),
+            "policy_update_interval": getattr(self._external, "min_fahrten", 0),
+            "top_5": top,
+            "bottom_5": bottom,
+        }
+
+    def _fitness_rows(self) -> list[dict[str, Any]]:
+        try:
+            with sqlite3.connect(str(self.db_path)) as conn:
+                if not _table_exists(conn, "clutch_fitness"):
+                    return []
+                rows = conn.execute(
+                    """
+                    SELECT model, strecken_typ, fitness, total_delegations, successful
+                    FROM clutch_fitness
+                    ORDER BY fitness DESC, total_delegations DESC
+                    """
+                ).fetchall()
+        except sqlite3.Error:
+            return []
+        return [
+            {
+                "model": row[0],
+                "strecken_typ": row[1],
+                "fitness": round(row[2] or 0.0, 3),
+                "success_rate": round((row[4] or 0) / max(1, row[3] or 0) * 100, 1),
+                "delegations": row[3] or 0,
+            }
+            for row in rows
+        ]
+
+    def _rows_from_fahrten(self) -> list[dict[str, Any]]:
+        try:
+            with sqlite3.connect(str(self.db_path)) as conn:
+                if not _table_exists(conn, "fahrten"):
+                    return []
+                rows = conn.execute(
+                    """
+                    SELECT gang, strecken_typ, COUNT(*), SUM(erfolg)
+                    FROM fahrten
+                    GROUP BY gang, strecken_typ
+                    ORDER BY COUNT(*) DESC
+                    """
+                ).fetchall()
+        except sqlite3.Error:
+            return []
+        return [
+            {
+                "model": row[0],
+                "strecken_typ": row[1],
+                "fitness": round((row[3] or 0) / max(1, row[2] or 0), 3),
+                "success_rate": round((row[3] or 0) / max(1, row[2] or 0) * 100, 1),
+                "delegations": row[2] or 0,
+            }
+            for row in rows
+        ]
+
+    def empfehle(
+        self,
+        strecken_typ: int,
+        verfuegbare_modelle: list[str],
+        default_model: str = "sonnet",
+    ) -> SimpleNamespace:
+        candidates = [row for row in self.status()["top_5"] if row["model"] in verfuegbare_modelle]
+        if candidates:
+            chosen = candidates[0]
+            return SimpleNamespace(
+                recommended_model=chosen["model"],
+                fitness=chosen["fitness"],
+                is_exploration=False,
+                reason=f"Beste Fitness: {chosen['fitness']:.2f}",
+                alternatives=[
+                    {"model": row["model"], "fitness": row["fitness"]}
+                    for row in candidates[1:]
+                ],
+            )
+        return SimpleNamespace(
+            recommended_model=default_model,
+            fitness=0.5,
+            is_exploration=False,
+            reason="Keine Fitnessdaten",
+            alternatives=[],
+        )
+
+    def record_ergebnis(
+        self,
+        model: str,
+        strecken_typ: int,
+        erfolg: bool,
+        tokens_used: int = 0,
+        latency: float = 0.0,
+    ) -> float:
+        now = time.time()
+        try:
+            with sqlite3.connect(str(self.db_path)) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS clutch_fitness (
+                        model TEXT,
+                        strecken_typ INTEGER,
+                        fitness REAL DEFAULT 0.5,
+                        total_delegations INTEGER DEFAULT 0,
+                        successful INTEGER DEFAULT 0,
+                        avg_tokens REAL DEFAULT 0,
+                        avg_latency REAL DEFAULT 0,
+                        last_updated REAL,
+                        PRIMARY KEY (model, strecken_typ)
+                    )
+                    """
+                )
+                row = conn.execute(
+                    """
+                    SELECT fitness, total_delegations, successful, avg_tokens, avg_latency
+                    FROM clutch_fitness WHERE model = ? AND strecken_typ = ?
+                    """,
+                    (model, strecken_typ),
+                ).fetchone()
+                if row:
+                    fitness, total, successful, avg_tokens, avg_latency = row
+                else:
+                    fitness, total, successful, avg_tokens, avg_latency = 0.5, 0, 0, 0.0, 0.0
+                total += 1
+                successful += 1 if erfolg else 0
+                reward = 1.0 if erfolg else 0.0
+                fitness = fitness * 0.9 + reward * 0.1
+                if tokens_used:
+                    avg_tokens = float(tokens_used) if not avg_tokens else avg_tokens * 0.8 + tokens_used * 0.2
+                if latency:
+                    avg_latency = float(latency) if not avg_latency else avg_latency * 0.8 + latency * 0.2
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO clutch_fitness
+                        (model, strecken_typ, fitness, total_delegations,
+                         successful, avg_tokens, avg_latency, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (model, strecken_typ, fitness, total, successful, avg_tokens, avg_latency, now),
+                )
+                return fitness
+        except sqlite3.Error:
+            return 0.5
+
+    def format_status(self) -> str:
+        status = self.status()
+        lines = [
+            "[FAHRSCHULE] Lern-Loop Status",
+            "=" * 50,
+            f"  Kombinationen: {status['total_kombinationen']}",
+            f"  Delegations: {status['total_delegations']}",
+            f"  Epsilon: {status['epsilon']}",
+        ]
+        if status["top_5"]:
+            lines.append("\n  Top-Kombinationen:")
+            for row in status["top_5"]:
+                lines.append(
+                    f"    {row['model']}×Typ{row['strecken_typ']}: "
+                    f"Fitness {row['fitness']}, "
+                    f"Erfolg {row['success_rate']}% "
+                    f"({row['delegations']} Runs)"
+                )
+        return "\n".join(lines)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._external, name)
+
+
+_fahrtenbuch_instances: dict[str, Any] = {}
+_fahrschule_instances: dict[str, Any] = {}
+
+
+def get_fahrtenbuch(db_path: str | os.PathLike[str] | None = None):
+    if db_path is None or not _external_fahrtenbuch_ready():
+        return _get_legacy_fahrtenbuch(db_path=db_path)
+
+    key = _instance_key(db_path)
+    if key not in _fahrtenbuch_instances:
+        resolved_db = Path(db_path).expanduser().resolve()
+        fahrtenbuch_cls = getattr(_clutch_fahrtenbuch_module, "Fahrtenbuch")
+        entry_cls = getattr(_clutch_fahrtenbuch_module, "FahrtEintrag")
+        _fahrtenbuch_instances[key] = _FahrtenbuchAdapter(
+            resolved_db,
+            fahrtenbuch_cls(db_path=resolved_db),
+            entry_cls,
+        )
+    return _fahrtenbuch_instances[key]
+
+
+def get_fahrschule(db_path: str | os.PathLike[str] | None = None):
+    if db_path is None or not _external_fahrschule_ready():
+        return _get_legacy_fahrschule(db_path=db_path)
+
+    key = _instance_key(db_path)
+    if key not in _fahrschule_instances:
+        resolved_db = Path(db_path).expanduser().resolve()
+        fahrtenbuch = get_fahrtenbuch(db_path=resolved_db)
+        getriebe_cls = getattr(_clutch_getriebe_module, "Getriebe")
+        kupplung_cls = getattr(_clutch_kupplung_module, "Kupplung")
+        fahrschule_cls = getattr(_clutch_fahrschule_module, "Fahrschule")
+        getriebe = getriebe_cls()
+        kupplung = kupplung_cls(getriebe)
+        _fahrschule_instances[key] = _FahrschuleAdapter(
+            resolved_db,
+            fahrschule_cls(fahrtenbuch.external, kupplung),
+            fahrtenbuch,
+        )
+    return _fahrschule_instances[key]
+
+
 def build_partner_registry(partners: list[dict[str, Any]]) -> _PartnerRegistryAdapter:
     """Erzeugt eine BACH-kompatible PartnerRegistry auf Basis von clutch."""
 
@@ -419,7 +1091,10 @@ def get_component_sources() -> dict[str, str]:
 
     return {
         "external_clutch": "available"
-        if _get_clutch_scorer is not None or partner_module_ready
+        if _get_clutch_scorer is not None
+        or partner_module_ready
+        or _external_fahrtenbuch_ready()
+        or _external_fahrschule_ready()
         else "unavailable",
         "scorer": get_scorer_source(),
         "partner_registry": "clutch"
@@ -428,8 +1103,8 @@ def get_component_sources() -> dict[str, str]:
         "streckenanalyse": "legacy",
         "gas_bremse": "legacy",
         "bordcomputer": "legacy",
-        "fahrschule": "legacy",
-        "fahrtenbuch": "legacy",
+        "fahrschule": "clutch" if _external_fahrschule_ready() else "legacy",
+        "fahrtenbuch": "clutch" if _external_fahrtenbuch_ready() else "legacy",
     }
 
 

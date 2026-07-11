@@ -250,3 +250,25 @@ class TestHandleMigration:
         assert "Compat-Adapter: OK" in text
         assert "DB-Brücke: PENDING" in text
         assert "Fork-Archivierung: BLOCKED" in text
+
+    def test_migration_marks_db_bridge_ready_when_data_sources_are_external(self, clutch_env):
+        sources = {
+            "external_clutch": "available",
+            "scorer": "clutch",
+            "partner_registry": "clutch",
+            "streckenanalyse": "legacy",
+            "gas_bremse": "legacy",
+            "bordcomputer": "legacy",
+            "fahrschule": "clutch",
+            "fahrtenbuch": "clutch",
+        }
+
+        with patch("hub.clutch.HAS_CLUTCH", True), \
+             patch("hub.clutch.get_component_sources", return_value=sources):
+            ok, text = clutch_env.handle("migration", [])
+
+        assert ok is True
+        assert "fahrschule: clutch" in text
+        assert "fahrtenbuch: clutch" in text
+        assert "DB-Brücke: OK" in text
+        assert "Fork-Archivierung: BLOCKED" in text

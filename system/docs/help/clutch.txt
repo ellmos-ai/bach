@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
 # Version: 1.0.0
-# Zuletzt validiert: 2026-07-10
+# Zuletzt validiert: 2026-07-11
 
 CLUTCH - Agentische Fahrassistenz (clutch-bridge)
 ===================================================
@@ -9,6 +9,9 @@ BESCHREIBUNG
 ------------
 Clutch ist BACHs Bridge zu clutch-bridge, einem agentischen Fahrassistenz-Modul.
 Es analysiert Fahraufgaben, zeigt Metriken und überwacht den Systemzustand.
+Fahrtenbuch und Fahrschule laufen im Migrationspfad über externe clutch-APIs,
+bleiben aber über die kanonische BACH-Datenbank und die bisherigen BACH-
+Signaturen bedienbar.
 
 Hinweis: Erfordert das clutch-bridge Paket. Ohne dieses Paket sind alle
 Operationen deaktiviert.

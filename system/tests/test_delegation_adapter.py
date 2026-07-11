@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -199,6 +200,161 @@ class PartnerRegistry:
         "fahrschule": "legacy",
         "fahrtenbuch": "legacy",
     }
+
+
+def test_external_clutch_data_bridge_keeps_bach_signature_and_db(tmp_path, monkeypatch):
+    pkg = tmp_path / "clutch"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "fahrtenbuch.py").write_text(
+        """
+import sqlite3
+from dataclasses import dataclass
+
+
+@dataclass
+class FahrtEintrag:
+    fahrt_id: str
+    strecken_typ: str
+    gang: str
+    provider: str
+    gas: float
+    muster: str
+    total_tokens: int = 0
+    thinking_tokens: int = 0
+    tool_calls: int = 0
+    files_read: int = 0
+    files_changed: int = 0
+    latenz_sekunden: float = 0.0
+    erfolg: bool = True
+    wiederholungen: int = 0
+    user_korrekturen: int = 0
+    fehler_anzahl: int = 0
+    ist_erkundung: bool = False
+    entscheidungs_grund: str = ""
+    timestamp: float = 0.0
+
+
+class Fahrtenbuch:
+    def __init__(self, db_path=None):
+        self.db_path = db_path
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS fahrten ("
+                "fahrt_id TEXT PRIMARY KEY, strecken_typ TEXT, gang TEXT, "
+                "provider TEXT, gas REAL, muster TEXT, total_tokens INTEGER, "
+                "latenz_sekunden REAL, erfolg INTEGER, timestamp REAL)"
+            )
+
+    def eintragen(self, eintrag):
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.execute(
+                "INSERT INTO fahrten VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    eintrag.fahrt_id,
+                    eintrag.strecken_typ,
+                    eintrag.gang,
+                    eintrag.provider,
+                    eintrag.gas,
+                    eintrag.muster,
+                    eintrag.total_tokens,
+                    eintrag.latenz_sekunden,
+                    1 if eintrag.erfolg else 0,
+                    eintrag.timestamp,
+                ),
+            )
+
+    def gesamte_fahrten(self):
+        with sqlite3.connect(str(self.db_path)) as conn:
+            return conn.execute("SELECT COUNT(*) FROM fahrten").fetchone()[0]
+""".lstrip(),
+        encoding="utf-8",
+    )
+    (pkg / "fahrschule.py").write_text(
+        """
+class Fahrschule:
+    def __init__(self, buch, kupplung, config_dir=None):
+        self.buch = buch
+        self.kupplung = kupplung
+        self.erkundungsrate = 0.1
+        self.min_fahrten = 200
+
+    def trainieren(self):
+        return {
+            "phase": "sammeln",
+            "gesamte_fahrten": self.buch.gesamte_fahrten(),
+            "updates": [],
+            "erkundungsrate": self.erkundungsrate,
+        }
+""".lstrip(),
+        encoding="utf-8",
+    )
+    (pkg / "getriebe.py").write_text(
+        "class Getriebe:\n    pass\n",
+        encoding="utf-8",
+    )
+    (pkg / "kupplung.py").write_text(
+        """
+class Kupplung:
+    def __init__(self, getriebe, config_dir=None):
+        self.getriebe = getriebe
+
+    def override(self, strecken_typ, config):
+        pass
+
+    def set_erkundungsrate(self, rate):
+        self.erkundungsrate = rate
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("BACH_CLUTCH_PATH", str(tmp_path))
+    monkeypatch.delenv("BACH_DISABLE_EXTERNAL_CLUTCH", raising=False)
+
+    delegation = _reload_delegation()
+    db_path = tmp_path / "bach.db"
+
+    sources = delegation.get_component_sources()
+    assert sources["fahrtenbuch"] == "clutch"
+    assert sources["fahrschule"] == "clutch"
+
+    fahrtenbuch = delegation.get_fahrtenbuch(db_path=db_path)
+    assert fahrtenbuch.source == "clutch"
+    entry = fahrtenbuch.eintrag(
+        task_text="Datenbruecke testen",
+        provider="Claude",
+        model="claude-sonnet",
+        strecken_typ="bundesstrasse",
+        strecken_typ_code=3,
+        schwierigkeit=2,
+        etappen=1,
+        gas_level=60,
+        gas_strategie="ausgewogen",
+        token_budget_faktor=1.2,
+        tokens_input=10,
+        tokens_output=20,
+        latenz_sekunden=1.5,
+        erfolg=True,
+        zone=2,
+    )
+    assert entry.provider == "Claude"
+
+    metrics = fahrtenbuch.metriken(tage=7)
+    assert metrics["total_delegations"] == 1
+    assert metrics["total_tokens"] == 30
+    assert metrics["provider"][0]["name"] == "Claude"
+
+    with sqlite3.connect(str(db_path)) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM fahrten").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM clutch_fahrtenbuch").fetchone()[0] == 1
+
+    fahrschule = delegation.get_fahrschule(db_path=db_path)
+    assert fahrschule.source == "clutch"
+    assert fahrschule.trainieren()["gesamte_fahrten"] == 1
+    status = fahrschule.status()
+    assert status["total_kombinationen"] == 1
+    assert status["top_5"][0]["model"] == "claude-sonnet"
+    assert "claude-sonnet" in fahrschule.format_status()
 
 
 def test_external_clutch_can_be_disabled(monkeypatch):
