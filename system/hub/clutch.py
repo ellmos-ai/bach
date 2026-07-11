@@ -186,9 +186,15 @@ class ClutchHandler(BaseHandler):
             "fahrtenbuch",
         ]
 
-        compat_ready = (
-            sources.get("scorer") == "clutch"
-            and sources.get("partner_registry") == "clutch"
+        compat_ready = all(
+            sources.get(name) == "clutch"
+            for name in (
+                "scorer",
+                "partner_registry",
+                "streckenanalyse",
+                "gas_bremse",
+                "bordcomputer",
+            )
         )
         db_bridge_ready = (
             sources.get("fahrschule") == "clutch"

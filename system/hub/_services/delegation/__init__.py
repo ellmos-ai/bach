@@ -24,12 +24,25 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from .bordcomputer import get_bordcomputer
+from .bordcomputer import (
+    OverkillAlert as _LegacyOverkillAlert,
+    TokenExplosionAlert as _LegacyTokenExplosionAlert,
+    get_bordcomputer as _get_legacy_bordcomputer,
+)
 from .fahrtenbuch import FahrtenbuchEintrag as _LegacyFahrtenbuchEintrag
 from .fahrtenbuch import get_fahrtenbuch as _get_legacy_fahrtenbuch
 from .fahrschule import get_fahrschule as _get_legacy_fahrschule
-from .gas_bremse import berechne_gas, get_gas_bremse
-from .strecken_analyse import analysiere_task, get_analyser
+from .gas_bremse import (
+    GasStellung as _LegacyGasStellung,
+    PromptStrategie as _LegacyPromptStrategie,
+    berechne_gas as _legacy_berechne_gas,
+    get_gas_bremse as _get_legacy_gas_bremse,
+)
+from .strecken_analyse import (
+    StreckenProfil as _LegacyStreckenProfil,
+    analysiere_task as _legacy_analysiere_task,
+    get_analyser as _get_legacy_analyser,
+)
 
 SCORER_SOURCE = "legacy"
 PARTNER_REGISTRY_SOURCE = "legacy"
@@ -75,6 +88,7 @@ def _candidate_clutch_roots() -> list[Path]:
     here = Path(__file__).resolve()
     for parent in here.parents:
         candidates.append(parent / ".MODULES" / "clutch")
+        candidates.append(parent / ".MODULES" / ".ORCHESTRATION" / "clutch")
 
     return candidates
 
@@ -171,6 +185,9 @@ _clutch_fahrtenbuch_module = _load_external_clutch_module("clutch.fahrtenbuch")
 _clutch_fahrschule_module = _load_external_clutch_module("clutch.fahrschule")
 _clutch_getriebe_module = _load_external_clutch_module("clutch.getriebe")
 _clutch_kupplung_module = _load_external_clutch_module("clutch.kupplung")
+_clutch_strecke_module = _load_external_clutch_module("clutch.strecke")
+_clutch_gas_bremse_module = _load_external_clutch_module("clutch.gas_bremse")
+_clutch_bordcomputer_module = _load_external_clutch_module("clutch.bordcomputer")
 
 from .complexity_scorer import get_scorer as _get_legacy_scorer
 
@@ -379,6 +396,55 @@ class _PartnerRegistryAdapter:
         return max(candidates, key=rank_key)
 
 
+_EXTERNAL_STRECKEN_CODES = {
+    "feldweg": 1,
+    "landstrasse": 3,
+    "bundesstrasse": 4,
+    "autobahn": 6,
+    "pruefstrecke": 4,
+    "rallye": 9,
+    "konvoi": 5,
+    "teamfahrt": 6,
+    "langstrecke": 10,
+    "testfahrt": 6,
+    "unbekannt": 4,
+}
+
+_EXTERNAL_STRECKEN_LABELS = {
+    "feldweg": "Feldweg",
+    "landstrasse": "Landstraße",
+    "bundesstrasse": "Bundesstraße",
+    "autobahn": "Autobahn",
+    "pruefstrecke": "Prüfstrecke",
+    "rallye": "Rallye",
+    "konvoi": "Konvoi",
+    "teamfahrt": "Teamfahrt",
+    "langstrecke": "Langstrecke",
+    "testfahrt": "Testfahrt",
+    "unbekannt": "Unbekannt",
+}
+
+_EXTERNAL_TEMPO_LEVELS = {
+    "gemuetlich": 2,
+    "normal": 3,
+    "eilig": 4,
+}
+
+
+def _external_streckenanalyse_ready() -> bool:
+    return (
+        _clutch_strecke_module is not None
+        and getattr(_clutch_strecke_module, "StreckenAnalyse", None) is not None
+    )
+
+
+def _external_gas_bremse_ready() -> bool:
+    return (
+        _clutch_gas_bremse_module is not None
+        and getattr(_clutch_gas_bremse_module, "GasBremse", None) is not None
+    )
+
+
 def _external_fahrtenbuch_ready() -> bool:
     return (
         _clutch_fahrtenbuch_module is not None
@@ -396,6 +462,14 @@ def _external_fahrschule_ready() -> bool:
         and getattr(_clutch_getriebe_module, "Getriebe", None) is not None
         and _clutch_kupplung_module is not None
         and getattr(_clutch_kupplung_module, "Kupplung", None) is not None
+    )
+
+
+def _external_bordcomputer_ready() -> bool:
+    return (
+        _external_fahrtenbuch_ready()
+        and _clutch_bordcomputer_module is not None
+        and getattr(_clutch_bordcomputer_module, "Bordcomputer", None) is not None
     )
 
 
@@ -425,6 +499,267 @@ def _as_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _canonical_bach_db_path() -> Path:
+    try:
+        from hub.bach_paths import BACH_DB
+
+        return Path(BACH_DB).expanduser().resolve()
+    except Exception:
+        return (Path.home() / ".bach" / "bach.db").resolve()
+
+
+class _StreckenAnalyseAdapter:
+    """Legt clutch.strecke auf BACHs StreckenProfil-Schnittstelle ab."""
+
+    source = "clutch"
+
+    def __init__(self, analyser: Any):
+        self._analyser = analyser
+
+    def analysiere(
+        self,
+        task_beschreibung: str,
+        kontext: dict[str, Any] | None = None,
+    ) -> _LegacyStreckenProfil:
+        profil = self._analyser.analysiere(task_beschreibung, kontext=kontext or None)
+        typ_key = getattr(getattr(profil, "typ", None), "value", str(getattr(profil, "typ", "unbekannt")))
+        typ_key = str(typ_key or "unbekannt").strip().lower()
+        label = _EXTERNAL_STRECKEN_LABELS.get(typ_key, typ_key.title() or "Unbekannt")
+        typ_code = _EXTERNAL_STRECKEN_CODES.get(typ_key, 4)
+        tempo_key = getattr(getattr(profil, "tempo", None), "value", str(getattr(profil, "tempo", "normal")))
+        tempo = _EXTERNAL_TEMPO_LEVELS.get(str(tempo_key or "normal").strip().lower(), 3)
+
+        raw_schwierigkeit = _as_float(getattr(profil, "schwierigkeit", 0.5), 0.5)
+        if raw_schwierigkeit > 1.0:
+            raw_schwierigkeit = raw_schwierigkeit / 5.0
+        schwierigkeit = max(1, min(5, int(round(1 + max(0.0, min(1.0, raw_schwierigkeit)) * 4))))
+        etappen = max(1, _as_int(getattr(profil, "etappen", 1), 1))
+
+        if typ_code <= 2 and schwierigkeit <= 2:
+            empfohlener_gang = "haiku"
+            budget_basis = 0.4
+        elif typ_code >= 6 or schwierigkeit >= 4:
+            empfohlener_gang = "opus"
+            budget_basis = 1.6
+        else:
+            empfohlener_gang = "sonnet"
+            budget_basis = 1.0
+
+        token_budget_faktor = round(min(2.5, budget_basis + max(0, etappen - 1) * 0.15), 2)
+        details = {
+            "source": "clutch",
+            "konfidenz": _as_float(getattr(profil, "konfidenz", 0.0), 0.0),
+            "erkannte_keywords": list(getattr(profil, "erkannte_keywords", []) or []),
+            "braucht_spezialisten": bool(getattr(profil, "braucht_spezialisten", False)),
+            "ist_pipeline": bool(getattr(profil, "ist_pipeline", False)),
+        }
+
+        return _LegacyStreckenProfil(
+            typ=label,
+            typ_code=typ_code,
+            tempo=tempo,
+            schwierigkeit=schwierigkeit,
+            etappen=etappen,
+            beschreibung=f"{label} (clutch-kompatibel)",
+            empfohlener_gang=empfohlener_gang,
+            token_budget_faktor=token_budget_faktor,
+            details=details,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._analyser, name)
+
+
+class _GasBremseAdapter:
+    """Legt clutch.gas_bremse auf BACHs Gas/Bremse-Schnittstelle ab."""
+
+    source = "clutch"
+
+    def __init__(self, gas_bremse: Any):
+        self._gas_bremse = gas_bremse
+
+    def berechne(
+        self,
+        gas_level: int | None = None,
+        strecken_schwierigkeit: int | float | None = None,
+        strecken_typ_code: int | None = None,
+    ) -> _LegacyGasStellung:
+        if gas_level is not None:
+            gas = max(0.0, min(1.0, _as_float(gas_level, 50.0) / 100.0))
+        else:
+            raw_schwierigkeit = _as_float(strecken_schwierigkeit, 3.0)
+            if raw_schwierigkeit > 1.0:
+                raw_schwierigkeit = max(0.0, min(1.0, (raw_schwierigkeit - 1.0) / 4.0))
+            gas = 0.2 + max(0.0, min(1.0, raw_schwierigkeit)) * 0.6
+            if strecken_typ_code is not None and strecken_typ_code <= 2:
+                gas = max(0.0, gas - 0.1)
+            elif strecken_typ_code is not None and strecken_typ_code >= 9:
+                gas = min(1.0, gas + 0.1)
+
+        externe_stellung = self._gas_bremse.stellung(gas)
+        strategie_key = str(getattr(externe_stellung, "prompt_strategie", "ausgewogen")).strip().lower()
+        strategie = {
+            "direkt": _LegacyPromptStrategie.DIREKT,
+            "gruendlich": _LegacyPromptStrategie.GRUENDLICH,
+            "gründlich": _LegacyPromptStrategie.GRUENDLICH,
+        }.get(strategie_key, _LegacyPromptStrategie.AUSGEWOGEN)
+
+        prompt_prefix = ""
+        if hasattr(self._gas_bremse, "prompt_prefix"):
+            prompt_prefix = str(self._gas_bremse.prompt_prefix(externe_stellung) or "")
+        prompt_suffix = (
+            "Validiere dein Ergebnis bevor du antwortest."
+            if strategie is _LegacyPromptStrategie.GRUENDLICH
+            else ""
+        )
+
+        return _LegacyGasStellung(
+            level=max(0, min(100, int(round(_as_float(getattr(externe_stellung, "wert", gas), gas) * 100)))),
+            strategie=strategie,
+            token_multiplikator=_as_float(getattr(externe_stellung, "token_multiplikator", 1.0), 1.0),
+            prompt_prefix=prompt_prefix,
+            prompt_suffix=prompt_suffix,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._gas_bremse, name)
+
+
+class _BordcomputerAdapter:
+    """Legt clutch.bordcomputer auf BACHs Bordcomputer-Schnittstelle ab."""
+
+    source = "clutch"
+
+    def __init__(self, external_bordcomputer: Any):
+        self._external = external_bordcomputer
+        self._overkill_alerts: list[_LegacyOverkillAlert] = []
+        self._token_alerts: list[_LegacyTokenExplosionAlert] = []
+
+    def is_available(self, provider: str) -> bool:
+        return bool(self._external.modell_verfuegbar(str(provider or "")))
+
+    def check_overkill(
+        self,
+        task_beschreibung: str,
+        gewaehltes_modell: str,
+        strecken_typ: str = "",
+        strecken_schwierigkeit: int = 0,
+        empfohlener_gang: str = "",
+    ) -> _LegacyOverkillAlert | None:
+        modell_rang = {"haiku": 1, "sonnet": 2, "opus": 3}
+        gewaehlt = modell_rang.get(str(gewaehltes_modell or "").strip().lower(), 0)
+        empfohlen = modell_rang.get(str(empfohlener_gang or "").strip().lower(), 0)
+        if gewaehlt > 0 and empfohlen > 0 and (gewaehlt - empfohlen) >= 2:
+            alert = _LegacyOverkillAlert(
+                timestamp=time.time(),
+                task_beschreibung=task_beschreibung,
+                strecken_typ=strecken_typ,
+                strecken_schwierigkeit=_as_int(strecken_schwierigkeit),
+                gewaehltes_modell=gewaehltes_modell,
+                empfohlenes_modell=empfohlener_gang,
+            )
+            self._overkill_alerts.append(alert)
+            self._overkill_alerts = self._overkill_alerts[-50:]
+            return alert
+        return None
+
+    def check_token_explosion(
+        self,
+        provider: str,
+        tokens_used: int,
+        tokens_expected: int,
+    ) -> _LegacyTokenExplosionAlert | None:
+        if tokens_expected <= 0:
+            return None
+
+        factor = tokens_used / tokens_expected
+        if factor > 3.0:
+            alert = _LegacyTokenExplosionAlert(
+                timestamp=time.time(),
+                provider=provider,
+                tokens_used=tokens_used,
+                tokens_expected=tokens_expected,
+                factor=factor,
+            )
+            self._token_alerts.append(alert)
+            self._token_alerts = self._token_alerts[-50:]
+            return alert
+        return None
+
+    def status(self) -> dict[str, Any]:
+        try:
+            health = self._external.pruefe()
+        except TypeError:
+            health = self._external.pruefe(0.0)
+
+        circuits = {}
+        for modell, circuit in getattr(self._external, "_circuits", {}).items():
+            fehler = _as_int(getattr(circuit, "fehler_zaehler", 0))
+            requests = max(1, fehler)
+            circuits[str(modell)] = {
+                "name": getattr(circuit, "modell", modell),
+                "state": str(getattr(circuit, "zustand", "closed")),
+                "failure_count": fehler,
+                "success_count": 0,
+                "total_requests": requests,
+                "total_failures": fehler,
+                "failure_rate": round(fehler / requests * 100, 1),
+            }
+
+        return {
+            "circuits": circuits,
+            "overkill_alerts": len(self._overkill_alerts),
+            "token_alerts": len(self._token_alerts),
+            "recent_overkill": [alert.to_dict() for alert in self._overkill_alerts[-5:]],
+            "recent_token_alerts": [alert.to_dict() for alert in self._token_alerts[-5:]],
+            "gesund": bool(getattr(health, "gesund", True)),
+            "warnungen": list(getattr(health, "warnungen", []) or []),
+            "gesperrte_modelle": list(getattr(health, "gesperrte_modelle", []) or []),
+            "budget_zone": str(getattr(health, "budget_zone", "green")),
+        }
+
+    def format_status(self) -> str:
+        status = self.status()
+        lines = ["[BORDCOMPUTER] Health-Monitor Status", "=" * 50]
+
+        if not status["circuits"]:
+            lines.append("  Keine Provider registriert.")
+        else:
+            lines.append("")
+            lines.append("  Provider-Status:")
+            for name, info in status["circuits"].items():
+                state_icon = {"closed": "✓", "half_open": "~", "open": "✗"}.get(info["state"], "?")
+                lines.append(
+                    f"    [{state_icon}] {name}: {info['state']} "
+                    f"(Fehler: {info['failure_count']}, Rate: {info['failure_rate']}%)"
+                )
+
+        if status["overkill_alerts"] > 0:
+            lines.append(f"\n  Overkill-Alerts: {status['overkill_alerts']}")
+            for alert in status["recent_overkill"]:
+                lines.append(
+                    f"    ! {alert['strecke']}: {alert['gewaehlt']} statt {alert['empfohlen']}"
+                )
+
+        if status["token_alerts"] > 0:
+            lines.append(f"\n  Token-Explosions: {status['token_alerts']}")
+            for alert in status["recent_token_alerts"]:
+                lines.append(
+                    f"    ! {alert['provider']}: {alert['factor']}x Budget "
+                    f"({alert['tokens_used']}/{alert['tokens_expected']})"
+                )
+
+        if status.get("warnungen"):
+            lines.append("\n  Warnungen:")
+            for warning in status["warnungen"]:
+                lines.append(f"    ! {warning}")
+
+        return "\n".join(lines)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._external, name)
 
 
 class _FahrtenbuchAdapter:
@@ -966,8 +1301,66 @@ class _FahrschuleAdapter:
         return getattr(self._external, name)
 
 
+_analyser_instance: Any | None = None
+_gas_bremse_instance: Any | None = None
+_bordcomputer_instances: dict[str, Any] = {}
 _fahrtenbuch_instances: dict[str, Any] = {}
 _fahrschule_instances: dict[str, Any] = {}
+
+
+def get_analyser():
+    global _analyser_instance
+    if _analyser_instance is not None:
+        return _analyser_instance
+
+    if _external_streckenanalyse_ready():
+        analyser_cls = getattr(_clutch_strecke_module, "StreckenAnalyse")
+        _analyser_instance = _StreckenAnalyseAdapter(analyser_cls())
+        return _analyser_instance
+
+    _analyser_instance = _get_legacy_analyser()
+    return _analyser_instance
+
+
+def analysiere_task(task_beschreibung: str):
+    return get_analyser().analysiere(task_beschreibung)
+
+
+def get_gas_bremse():
+    global _gas_bremse_instance
+    if _gas_bremse_instance is not None:
+        return _gas_bremse_instance
+
+    if _external_gas_bremse_ready():
+        gas_bremse_cls = getattr(_clutch_gas_bremse_module, "GasBremse")
+        _gas_bremse_instance = _GasBremseAdapter(gas_bremse_cls())
+        return _gas_bremse_instance
+
+    _gas_bremse_instance = _get_legacy_gas_bremse()
+    return _gas_bremse_instance
+
+
+def berechne_gas(
+    gas_level: int | None = None,
+    strecken_schwierigkeit: int | float | None = None,
+    strecken_typ_code: int | None = None,
+):
+    return get_gas_bremse().berechne(gas_level, strecken_schwierigkeit, strecken_typ_code)
+
+
+def get_bordcomputer(db_path: str | os.PathLike[str] | None = None):
+    if not _external_bordcomputer_ready():
+        return _get_legacy_bordcomputer()
+
+    resolved_db = _canonical_bach_db_path() if db_path is None else Path(db_path).expanduser().resolve()
+    key = _instance_key(resolved_db)
+    if key not in _bordcomputer_instances:
+        fahrtenbuch = get_fahrtenbuch(db_path=resolved_db)
+        bordcomputer_cls = getattr(_clutch_bordcomputer_module, "Bordcomputer")
+        _bordcomputer_instances[key] = _BordcomputerAdapter(
+            bordcomputer_cls(fahrtenbuch.external),
+        )
+    return _bordcomputer_instances[key]
 
 
 def get_fahrtenbuch(db_path: str | os.PathLike[str] | None = None):
@@ -1093,6 +1486,9 @@ def get_component_sources() -> dict[str, str]:
         "external_clutch": "available"
         if _get_clutch_scorer is not None
         or partner_module_ready
+        or _external_streckenanalyse_ready()
+        or _external_gas_bremse_ready()
+        or _external_bordcomputer_ready()
         or _external_fahrtenbuch_ready()
         or _external_fahrschule_ready()
         else "unavailable",
@@ -1100,9 +1496,9 @@ def get_component_sources() -> dict[str, str]:
         "partner_registry": "clutch"
         if partner_module_ready
         else get_partner_registry_source(),
-        "streckenanalyse": "legacy",
-        "gas_bremse": "legacy",
-        "bordcomputer": "legacy",
+        "streckenanalyse": "clutch" if _external_streckenanalyse_ready() else "legacy",
+        "gas_bremse": "clutch" if _external_gas_bremse_ready() else "legacy",
+        "bordcomputer": "clutch" if _external_bordcomputer_ready() else "legacy",
         "fahrschule": "clutch" if _external_fahrschule_ready() else "legacy",
         "fahrtenbuch": "clutch" if _external_fahrtenbuch_ready() else "legacy",
     }

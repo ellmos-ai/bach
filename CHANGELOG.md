@@ -9,6 +9,8 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 ### Changed
 
 - **clutch-Datenbrücke weiter gespiegelt:** `system/hub/_services/delegation/__init__.py` nutzt für BACHs Fahrtenbuch-/Fahrschule-Oberflächen jetzt externe `clutch.fahrtenbuch`-/`clutch.fahrschule`-APIs, sobald das Modul verfügbar ist. Der Adapter behält die bestehenden BACH-Signaturen und schreibt während des Parallelbetriebs weiter in die kanonische `bach.db` inklusive `clutch_fahrtenbuch`-/`clutch_fitness`-Kompatibilitätsflächen; `bach clutch migration` kann die DB-Brücke dadurch als `OK` ausweisen, ohne den Legacy-Fork zu archivieren.
+- **clutch-Runtime-Compat bis zur Streckenlogik erweitert:** `system/hub/_services/delegation/__init__.py` erkennt externe `clutch`-Checkouts jetzt auch unter `.MODULES/.ORCHESTRATION/clutch` und legt `clutch.strecke`, `clutch.gas_bremse` sowie `clutch.bordcomputer` auf BACHs bestehende Signaturen und den kanonischen `bach.db`-Pfad ab. Damit kann `bach clutch migration` jetzt neben der DB-Brücke auch den Compat-Adapter als `OK` melden, sobald die verbleibenden Runtime-Flächen extern gespiegelt sind; die Fork-Archivierung bleibt weiter bewusst blockiert.
+- **OpenClaw-Abgleich auf 2026-07-11 gehoben:** README, README.de, ROADMAP und `NEXT_RELEASE` spiegeln jetzt Stable `2026.6.11` sowie das neueste sichtbare Prerelease `2026.7.1-beta.5` vom 2026-07-11 10:36 UTC mit den für BACH relevanten Signalen zu conversational onboarding, approval-geführtem Setup, gebündelter ClawRouter-Modell-/Budgetsicht, Crash-Loop-Recovery und den weiter gültigen GPT-5.6-/Attach-/Telegram-/Capability-Fortschritten.
 
 ### Fixed
 

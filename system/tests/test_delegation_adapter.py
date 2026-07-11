@@ -7,6 +7,7 @@ import importlib
 import sqlite3
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -307,6 +308,139 @@ class Kupplung:
 """.lstrip(),
         encoding="utf-8",
     )
+    (pkg / "strecke.py").write_text(
+        """
+from dataclasses import dataclass, field
+from enum import Enum
+
+
+class StreckenTyp(Enum):
+    BUNDESSTRASSE = "bundesstrasse"
+    AUTOBAHN = "autobahn"
+
+
+class Tempo(Enum):
+    NORMAL = "normal"
+    EILIG = "eilig"
+
+
+@dataclass
+class StreckenProfil:
+    typ: StreckenTyp
+    tempo: Tempo
+    schwierigkeit: float
+    etappen: int = 1
+    braucht_spezialisten: bool = False
+    ist_pipeline: bool = False
+    konfidenz: float = 0.0
+    erkannte_keywords: list[str] = field(default_factory=list)
+
+
+class StreckenAnalyse:
+    def analysiere(self, text, kontext=None):
+        if "architektur" in text.lower():
+            return StreckenProfil(
+                typ=StreckenTyp.AUTOBAHN,
+                tempo=Tempo.NORMAL,
+                schwierigkeit=0.9,
+                etappen=3,
+                braucht_spezialisten=True,
+                konfidenz=0.8,
+                erkannte_keywords=["architektur"],
+            )
+        return StreckenProfil(
+            typ=StreckenTyp.BUNDESSTRASSE,
+            tempo=Tempo.EILIG,
+            schwierigkeit=0.6,
+            etappen=2,
+            konfidenz=0.7,
+            erkannte_keywords=["bug"],
+        )
+""".lstrip(),
+        encoding="utf-8",
+    )
+    (pkg / "gas_bremse.py").write_text(
+        """
+from dataclasses import dataclass
+
+
+@dataclass
+class GasStellung:
+    wert: float
+    token_multiplikator: float
+    timeout_multiplikator: float
+    prompt_strategie: str
+    beschreibung: str
+
+
+class GasBremse:
+    def stellung(self, gas):
+        if gas >= 0.7:
+            return GasStellung(gas, 1.8, 1.5, "gruendlich", "Maximal")
+        if gas <= 0.3:
+            return GasStellung(gas, 0.4, 0.5, "direkt", "Kurz")
+        return GasStellung(gas, 1.0, 1.0, "ausgewogen", "Standard")
+
+    def prompt_prefix(self, stellung):
+        return "Clutch prefix" if stellung.prompt_strategie != "ausgewogen" else ""
+""".lstrip(),
+        encoding="utf-8",
+    )
+    (pkg / "bordcomputer.py").write_text(
+        """
+from dataclasses import dataclass, field
+import time
+
+
+@dataclass
+class SystemStatus:
+    gesund: bool = True
+    warnungen: list[str] = field(default_factory=list)
+    gesperrte_modelle: list[str] = field(default_factory=list)
+    budget_zone: str = "green"
+
+
+@dataclass
+class CircuitState:
+    modell: str
+    zustand: str = "closed"
+    fehler_zaehler: int = 0
+    geoeffnet_um: float = 0.0
+
+
+class Bordcomputer:
+    def __init__(self, fahrtenbuch, config_dir=None):
+        self.buch = fahrtenbuch
+        self._circuits = {}
+
+    def pruefe(self, budget_verbraucht_pct=0.0):
+        zone = "red" if budget_verbraucht_pct >= 80 else "green"
+        return SystemStatus(
+            gesund=zone != "red",
+            warnungen=[],
+            gesperrte_modelle=[
+                modell for modell, circuit in self._circuits.items()
+                if circuit.zustand == "open"
+            ],
+            budget_zone=zone,
+        )
+
+    def modell_verfuegbar(self, modell):
+        circuit = self._circuits.get(modell)
+        return circuit is None or circuit.zustand != "open"
+
+    def fahrt_auswerten(self, eintrag):
+        if eintrag.erfolg:
+            return []
+        circuit = self._circuits.setdefault(eintrag.gang, CircuitState(modell=eintrag.gang))
+        circuit.fehler_zaehler += 1
+        if circuit.fehler_zaehler >= 3:
+            circuit.zustand = "open"
+            circuit.geoeffnet_um = time.time()
+        return [f"warn {eintrag.gang}"]
+""".lstrip(),
+        encoding="utf-8",
+    )
 
     monkeypatch.setenv("BACH_CLUTCH_PATH", str(tmp_path))
     monkeypatch.delenv("BACH_DISABLE_EXTERNAL_CLUTCH", raising=False)
@@ -315,8 +449,24 @@ class Kupplung:
     db_path = tmp_path / "bach.db"
 
     sources = delegation.get_component_sources()
+    assert sources["streckenanalyse"] == "clutch"
+    assert sources["gas_bremse"] == "clutch"
+    assert sources["bordcomputer"] == "clutch"
     assert sources["fahrtenbuch"] == "clutch"
     assert sources["fahrschule"] == "clutch"
+
+    profil = delegation.get_analyser().analysiere("Refactore die gesamte Architektur")
+    assert profil.typ == "Autobahn"
+    assert profil.typ_code == 6
+    assert profil.empfohlener_gang == "opus"
+
+    gas = delegation.get_gas_bremse().berechne(
+        strecken_schwierigkeit=profil.schwierigkeit,
+        strecken_typ_code=profil.typ_code,
+    )
+    assert gas.level >= 70
+    assert gas.strategie.value == "gründlich"
+    assert gas.prompt_prefix == "Clutch prefix"
 
     fahrtenbuch = delegation.get_fahrtenbuch(db_path=db_path)
     assert fahrtenbuch.source == "clutch"
@@ -355,6 +505,25 @@ class Kupplung:
     assert status["total_kombinationen"] == 1
     assert status["top_5"][0]["model"] == "claude-sonnet"
     assert "claude-sonnet" in fahrschule.format_status()
+
+    bordcomputer = delegation.get_bordcomputer(db_path=db_path)
+    assert bordcomputer.source == "clutch"
+    assert bordcomputer.check_overkill(
+        task_beschreibung="Architektur prüfen",
+        gewaehltes_modell="opus",
+        strecken_typ=profil.typ,
+        strecken_schwierigkeit=profil.schwierigkeit,
+        empfohlener_gang="haiku",
+    ) is not None
+
+    for _ in range(3):
+        bordcomputer.fahrt_auswerten(
+            SimpleNamespace(gang="claude-sonnet", erfolg=False)
+        )
+    assert bordcomputer.is_available("claude-sonnet") is False
+    bord_status = bordcomputer.status()
+    assert bord_status["circuits"]["claude-sonnet"]["state"] == "open"
+    assert "Overkill-Alerts: 1" in bordcomputer.format_status()
 
 
 def test_external_clutch_can_be_disabled(monkeypatch):
