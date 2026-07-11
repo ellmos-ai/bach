@@ -6,11 +6,11 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-v3.12.4--earth-orange)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-v3.13.0--bluesky-orange)](CHANGELOG.md)
 [![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)](ROADMAP.md)
 [![Tests](https://img.shields.io/badge/Tests-4436%20collected-blue)](system/tests/)
 
-**Version:** v3.12.4-earth
+**Version:** v3.13.0-bluesky
 
 ## Languages
 
@@ -214,7 +214,7 @@ Die vollständige deutsche Dokumentation findest du hier: **[README.de.md](READM
 
 ---
 
-*ellmos BACH v3.12.4-earth - Text-Based Operating System for LLMs*
+*ellmos BACH v3.13.0-bluesky - Text-Based Operating System for LLMs*
 
 ---
 

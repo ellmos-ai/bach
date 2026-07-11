@@ -1,6 +1,7 @@
 #!/bin/bash
 # Quick BACH check on Mac Studio
-cd ~/Library/CloudStorage/OneDrive-Persönlich/.TOPICS/.AI/.OS/BACH 2>/dev/null || cd ~/OneDrive/.TOPICS/.AI/.OS/BACH 2>/dev/null
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/../.."
 echo "PWD: $(pwd)"
 echo "---"
 ls -la system/bach.py system/gui/server.py start/bach.sh 2>&1

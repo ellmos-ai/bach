@@ -10,6 +10,10 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 - **clutch-Datenbrücke weiter gespiegelt:** `system/hub/_services/delegation/__init__.py` nutzt für BACHs Fahrtenbuch-/Fahrschule-Oberflächen jetzt externe `clutch.fahrtenbuch`-/`clutch.fahrschule`-APIs, sobald das Modul verfügbar ist. Der Adapter behält die bestehenden BACH-Signaturen und schreibt während des Parallelbetriebs weiter in die kanonische `bach.db` inklusive `clutch_fahrtenbuch`-/`clutch_fitness`-Kompatibilitätsflächen; `bach clutch migration` kann die DB-Brücke dadurch als `OK` ausweisen, ohne den Legacy-Fork zu archivieren.
 
+### Fixed
+
+- **Root-Release-Metadaten synchronisiert:** `README.md`, `README.de.md` und `llms.txt` zeigen jetzt die veröffentlichte `v3.13.0-bluesky` statt des alten `v3.12.4-earth`-Badges; lokale Mac-/Host-Fixtures in Tests wurden durch repo-relative bzw. generische Werte ersetzt.
+
 ## [3.13.0-bluesky] - 2026-07-11
 
 ### Added

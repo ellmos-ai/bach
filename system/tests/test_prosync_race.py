@@ -96,8 +96,8 @@ def test_own_backups_excluded():
 
 def test_extract_host():
     """Hostname extraction from backup filename."""
-    assert DBSyncManager._extract_host(Path("bach_Mac-Studio_2026-05-10T04-47-52.bachdb")) == "Mac-Studio"
-    assert DBSyncManager._extract_host(Path("bach_ASUS-GEI_2026-05-10T04-45-22.bachdb")) == "ASUS-GEI"
+    assert DBSyncManager._extract_host(Path("bach_mac-workstation_2026-05-10T04-47-52.bachdb")) == "mac-workstation"
+    assert DBSyncManager._extract_host(Path("bach_windows-laptop_2026-05-10T04-45-22.bachdb")) == "windows-laptop"
     assert DBSyncManager._extract_host(Path("random_file.bachdb")) is None
     print("[PASS] test_extract_host")
 

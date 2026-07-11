@@ -6,10 +6,10 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://python.org)
 [![Lizenz: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-v3.12.4--earth-orange)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-v3.13.0--bluesky-orange)](CHANGELOG.md)
 [![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)](ROADMAP.md)
 
-**Version:** v3.12.4-earth
+**Version:** v3.13.0-bluesky
 
 ## Sprachen
 
