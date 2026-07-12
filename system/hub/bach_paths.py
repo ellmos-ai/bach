@@ -164,12 +164,64 @@ EXTENSIONS_DIR = BACH_ROOT / "extensions"
 # DATENBANKEN
 # ============================================================================
 
-# ProSync: Lokale DB bevorzugen, OneDrive-DB als Fallback
+# ProSync: Lokale DB bevorzugen, OneDrive-DB nur noch als LAUTER Notfall-Fallback.
 ONEDRIVE_DB = DATA_DIR / "bach.db"
-if _LOCAL_DB.exists():
-    BACH_DB = _LOCAL_DB
-else:
-    BACH_DB = ONEDRIVE_DB
+
+
+def _has_data(path: Path) -> bool:
+    """True, wenn die Datei existiert UND nicht leer ist.
+
+    Reines .exists() genuegt nicht: sqlite3.connect() legt eine fehlende Datei
+    stillschweigend als 0-KB-Datenbank an. Eine solche Geisterdatei wuerde sonst
+    als gueltige DB akzeptiert — BACH liefe auf einer leeren Datenbank.
+    """
+    try:
+        return path.exists() and path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _resolve_bach_db() -> Path:
+    """Ermittelt den kanonischen Pfad der BACH-Datenbank.
+
+    Reihenfolge:
+      1. ENV `BACH_DB` — die DB kann damit an beliebiger Stelle liegen.
+      2. Lokale DB `~/.bach/bach.db`, sofern sie echte Daten enthaelt.
+      3. OneDrive-DB — nur wenn sie Daten hat, und mit LAUTER Warnung.
+      4. Sonst: die lokale DB (Neuinstallation legt sie dort an, NICHT in der Cloud).
+
+    Eine aktive WAL-SQLite-Datenbank gehoert nicht in einen synchronisierten
+    Cloud-Ordner (.db und -wal werden nicht atomar repliziert). Deshalb ist der
+    lokale Pfad der Normalfall und OneDrive nur noch ein Notausgang, der sich
+    bemerkbar macht.
+    """
+    env = os.environ.get("BACH_DB")
+    if env:
+        return Path(env).expanduser()
+
+    if _has_data(_LOCAL_DB):
+        return _LOCAL_DB
+
+    if _LOCAL_DB.exists():  # existiert, aber 0 Byte -> Geisterdatei
+        print(
+            f"[bach_paths] WARNUNG: {_LOCAL_DB} ist 0 Byte gross (Geisterdatenbank). "
+            f"Sie wurde vermutlich von einem Prozess mit falschem Pfad angelegt.",
+            file=sys.stderr,
+        )
+
+    if _has_data(ONEDRIVE_DB):
+        print(
+            f"[bach_paths] WARNUNG: Lokale DB fehlt - Fallback auf {ONEDRIVE_DB}. "
+            f"Diese liegt in einem Cloud-Ordner (Korruptionsrisiko im WAL-Modus) und "
+            f"ist womoeglich veraltet. Lokale DB wiederherstellen oder BACH_DB setzen.",
+            file=sys.stderr,
+        )
+        return ONEDRIVE_DB
+
+    return _LOCAL_DB  # Neuinstallation: lokal anlegen, nicht in der Cloud
+
+
+BACH_DB = _resolve_bach_db()
 # USER_DB deprecated seit v1.1.84 - alle Daten jetzt in bach.db (Task 772)
 USER_DB = BACH_DB  # Alias fuer Rueckwaertskompatibilitaet
 ARCHIVE_DB = BACH_DB  # Konsolidiert v2.0: Archive-Tabellen jetzt in bach.db (Task 980)
