@@ -625,11 +625,31 @@ Interpersonelle Interaktionen:
                 if term not in wl:
                     mappings["misc"][term] = "[REDACTED]"
 
-        # Automatische Erkennung von Telefon, E-Mail, Adressen
+        # Automatische Erkennung von Telefon, E-Mail, Adressen, Personennamen
         if scan_folder and scan_folder.exists():
             print(f"[INFO] Scanne Ordner nach sensiblen Daten: {scan_folder}")
             anonymizer = DocumentAnonymizer()
-            scanned = anonymizer.scan_folder_for_sensitive_data(str(scan_folder))
+
+            # NUR CORE+STUFE2-Dokumente scannen (dieselbe Auswahl, die auch
+            # tatsaechlich in den LLM-Prompt gebuendelt wird) -- NICHT den
+            # gesamten Ordnerbaum. Generische Referenzmaterialien (Spiele-
+            # sammlungen, Fachbuecher unter Foerderplanung/Material/...) landen
+            # sonst faelschlich in der Personennamen-Erkennung (zitierte Autoren
+            # o.ae. werden als "Drittperson" behandelt), obwohl sie gar nicht
+            # in den Prompt einfliessen.
+            try:
+                subdirs = [d for d in scan_folder.iterdir() if d.is_dir() and not d.name.startswith(".")]
+                scan_base = subdirs[0] if len(subdirs) == 1 else scan_folder
+                collector = DocumentCollector()
+                collector_result = collector.scan_folder(str(scan_base))
+                relevant_files = [
+                    doc.path for doc in collector_result.documents
+                    if doc.category in (DocumentCategory.CORE, DocumentCategory.STUFE2)
+                ]
+                scanned = anonymizer.scan_files_for_sensitive_data(relevant_files)
+            except Exception:
+                # Fallback: ganzer Ordner (alte, breitere Erkennung)
+                scanned = anonymizer.scan_folder_for_sensitive_data(str(scan_folder))
 
             # Telefonnummern (kein Klartextwert im Log)
             for phone in scanned.get("phones", []):
@@ -649,13 +669,21 @@ Interpersonelle Interaktionen:
                     fake_addr = _generate_fake_address()
                     mappings["addresses"][addr] = fake_addr
 
-            # Personennamen aus Tabellenzeilen (Drittpersonen, z.B. andere Kinder
-            # in Gruppenprotokollen) -- werden sonst von KEINER Erkennung erfasst,
-            # da nur explizit uebergebene Namen (Klient/Eltern) gemappt werden.
-            for table_name in scanned.get("table_row_names", []):
-                if table_name in wl or table_name in mappings["names"]:
+            # Personennamen von Drittpersonen (z.B. andere Kinder in Gruppen-
+            # protokollen) -- werden sonst von KEINER Erkennung erfasst, da nur
+            # explizit uebergebene Namen (Klient/Eltern) gemappt werden.
+            # Zwei Quellen kombiniert: eng verankerte Tabellenzeilen-Regel
+            # (schnell, praezise) + spaCy-NER DE+EN (generisch, Hauptmechanismus
+            # fuer unbekannte/fremdsprachige Namen und Schreibvarianten).
+            third_party_names = list(scanned.get("table_row_names", []))
+            for name in scanned.get("ner_person_names", []):
+                if name not in third_party_names:
+                    third_party_names.append(name)
+
+            for third_name in third_party_names:
+                if third_name in wl or third_name in mappings["names"]:
                     continue
-                name_words = table_name.strip().split()
+                name_words = third_name.strip().split()
                 if not name_words:
                     continue
                 fake_third = _generate_tarnname(
@@ -665,8 +693,8 @@ Interpersonelle Interaktionen:
                 self._used_tarnnames.add(fake_third)
                 fake_third_parts = fake_third.split()
 
-                mappings["names"][table_name] = fake_third
-                mappings["names"][table_name.upper()] = fake_third.upper()
+                mappings["names"][third_name] = fake_third
+                mappings["names"][third_name.upper()] = fake_third.upper()
                 # Erstes Wort -> Fake-Vorname, alle weiteren Woerter -> Fake-Nachname
                 # (deckt mehrteilige Namen ab, z.B. "Amara Wanjiru Osei Boateng")
                 fake_third_vorname = fake_third_parts[0]
@@ -682,7 +710,8 @@ Interpersonelle Interaktionen:
 
             print(f"[INFO] Scan abgeschlossen: {len(scanned.get('phones', []))} Tel, "
                   f"{len(scanned.get('emails', []))} Mail, {len(scanned.get('addresses', []))} Adressen, "
-                  f"{len(scanned.get('table_row_names', []))} Tabellennamen")
+                  f"{len(third_party_names)} Drittpersonen-Namen "
+                  f"(davon {len(scanned.get('ner_person_names', []))} via NER)")
 
         # Temporaeres Verzeichnis
         temp_dir = Path(tempfile.mkdtemp(prefix="bach_report_"))
@@ -781,6 +810,14 @@ Interpersonelle Interaktionen:
             # Anonymisieren
             anonymizer.anonymize_file(str(dest_file), anonym_profile)
 
+            # .doc-Dateien werden beim Anonymisieren als .txt neu geschrieben
+            # (python-docx kann das binaere .doc-Format nicht speichern) --
+            # Referenz aktualisieren, bevor der Dateiname anonymisiert wird.
+            if dest_file.suffix.lower() == ".doc" and not dest_file.exists():
+                txt_sibling = dest_file.with_suffix(".txt")
+                if txt_sibling.exists():
+                    dest_file = txt_sibling
+
             # Dateinamen anonymisieren
             self._anonymize_filename(dest_file, session.profile)
 
@@ -848,6 +885,14 @@ Interpersonelle Interaktionen:
                 anonymizer.anonymize_file(str(dest_file), anonym_profile)
             except Exception as e:
                 print(f"[WARN] Konnte {dest_file.name} nicht anonymisieren: {e}")
+
+            # .doc-Dateien werden beim Anonymisieren als .txt neu geschrieben
+            # (python-docx kann das binaere .doc-Format nicht speichern) --
+            # Referenz aktualisieren, bevor der Dateiname anonymisiert wird.
+            if dest_file.suffix.lower() == ".doc" and not dest_file.exists():
+                txt_sibling = dest_file.with_suffix(".txt")
+                if txt_sibling.exists():
+                    dest_file = txt_sibling
 
             # Dateinamen anonymisieren
             self._anonymize_filename(dest_file, session.profile)

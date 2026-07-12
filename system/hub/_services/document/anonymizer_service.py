@@ -91,6 +91,36 @@ try:
 except ImportError:
     EXCEL_AVAILABLE = False
 
+# Personennamen-Erkennung (spaCy NER, DE+EN) -- generische Erkennung von
+# Personennamen im Fliesstext, unabhaengig von Schreibweise/Sprache/Herkunft.
+# Robuster als Regex-Heuristiken, da PERSON von Fachbegriffen/Orten/Institutionen
+# unterschieden wird (im Deutschen wird sonst JEDES Substantiv grossgeschrieben).
+#
+# WICHTIG: spaCy importiert transitiv `cProfile` -> `import profile` (Stdlib).
+# BACH hat ein EIGENES Modul `hub/profile.py` -- landet dessen Ordner (statt
+# nur `system/`) auf sys.path (z.B. durch Test-Sammlung anderer Dateien),
+# verschattet es die Stdlib und `cProfile` bricht mit AttributeError ab
+# (nicht ImportError!). Fix: das ECHTE Stdlib-`profile`-Modul vorab explizit
+# laden und in sys.modules cachen, BEVOR spaCy/cProfile es importieren --
+# das gewinnt garantiert gegen jede sys.path-Reihenfolge.
+try:
+    import sys as _sys
+    if "profile" not in _sys.modules:
+        import importlib.util as _importlib_util
+        import sysconfig as _sysconfig
+        _stdlib_profile_path = os.path.join(_sysconfig.get_path("stdlib"), "profile.py")
+        if os.path.exists(_stdlib_profile_path):
+            _spec = _importlib_util.spec_from_file_location("profile", _stdlib_profile_path)
+            _stdlib_profile_mod = _importlib_util.module_from_spec(_spec)
+            _spec.loader.exec_module(_stdlib_profile_mod)
+            _sys.modules["profile"] = _stdlib_profile_mod
+
+    import spacy
+    SPACY_AVAILABLE = True
+except Exception as _spacy_import_error:
+    SPACY_AVAILABLE = False
+    print(f"[WARN] spaCy nicht verfuegbar ({_spacy_import_error}) -- NER-Namenserkennung deaktiviert")
+
 
 # ═══════════════════════════════════════════════════════════════
 # Datenklassen
@@ -388,6 +418,109 @@ _PRIVATE_EMAIL_DOMAINS = {
 
 
 # ═══════════════════════════════════════════════════════════════
+# Personennamen-Erkennung (spaCy NER, mehrsprachig)
+# ═══════════════════════════════════════════════════════════════
+
+# DE- und EN-Modell kombiniert: Klienten/Familien in diesem Kontext haben oft
+# nicht-deutsche Namen (frankophon, afrikanisch, etc.), die ein rein deutsches
+# NER-Modell seltener zuverlaessig als PERSON erkennt.
+NER_MODELS = ("de_core_news_lg", "en_core_web_lg")
+_NER_PERSON_LABELS = {"PER", "PERSON"}
+_NER_KEEP_COMPONENTS = {"tok2vec", "ner"}
+
+# Sicherheits-Obergrenze: Ein einzelnes klientenbezogenes Dokument (Protokoll,
+# Hilfeplan, Gruppenprotokoll) erwaehnt realistisch nur eine Handvoll Personen.
+# Weit mehr Treffer deuten auf generisches Referenzmaterial (Fachbuch, Spiele-
+# sammlung mit zitierten Autoren) oder fehlerhafte Text-Extraktion hin -- in
+# dem Fall NICHT blind Dutzende/Hunderte Fake-Namen erzeugen (Korruptions-
+# risiko bei ueberlappenden Ersetzungen), sondern das Dokument ueberspringen.
+_NER_MAX_NAMES_PER_CHUNK = 60
+
+_spacy_model_cache: Dict[str, "object"] = {}
+
+
+def _get_spacy_model(model_name: str):
+    """Laedt ein spaCy-Modell einmalig (teuer, ~5s) und cached es pro Prozess.
+
+    Unnoetige Pipeline-Komponenten (Parser/Tagger/Lemmatizer/...) werden beim
+    Laden ausgeschlossen -- nur tok2vec (Wortvektoren) + ner werden fuer die
+    Personennamen-Erkennung gebraucht.
+    """
+    if model_name in _spacy_model_cache:
+        return _spacy_model_cache[model_name]
+    if not SPACY_AVAILABLE:
+        return None
+    try:
+        full_meta = spacy.load(model_name, exclude=[])
+        exclude = [name for name in full_meta.pipe_names if name not in _NER_KEEP_COMPONENTS]
+        nlp = spacy.load(model_name, exclude=exclude) if exclude else full_meta
+    except Exception as e:
+        # Modell nicht installiert (OSError) oder sonstiger Ladefehler --
+        # NER ist optional, darf nie den restlichen Anonymisierungs-Ablauf stoppen.
+        print(f"[WARN] spaCy-Modell '{model_name}' konnte nicht geladen werden: {e}")
+        nlp = None
+    _spacy_model_cache[model_name] = nlp
+    return nlp
+
+
+def detect_person_names_ner(text: str, whitelist: Optional[List[str]] = None) -> List[str]:
+    """
+    Erkennt Personennamen im Text via spaCy-NER (DE+EN kombiniert).
+
+    Im Unterschied zu Regex-Heuristiken kann NER PERSON von Fachbegriffen,
+    Orten und Institutionen unterscheiden -- wichtig im Deutschen, wo JEDES
+    Substantiv grossgeschrieben wird. Erkennt auch unbekannte Namen und
+    Schreibvarianten, die keine manuell gepflegte Liste je abdecken koennte.
+
+    Args:
+        text: Zu scannender Text
+        whitelist: Namen, die trotz Erkennung NICHT zurueckgegeben werden
+                   (z.B. Therapeut/Amtspersonen)
+
+    Returns:
+        Sortierte Liste eindeutiger erkannter Personennamen
+    """
+    if not SPACY_AVAILABLE or not text.strip():
+        return []
+
+    wl_lower = {w.lower() for w in (whitelist or [])}
+    found = set()
+
+    for model_name in NER_MODELS:
+        nlp = _get_spacy_model(model_name)
+        if nlp is None:
+            continue
+        # spaCy-Modelle haben ein Zeichenlimit (Default 1_000_000) -- bei sehr
+        # langen Bundles in Bloecken verarbeiten, um Fehler zu vermeiden.
+        max_len = nlp.max_length
+        for offset in range(0, len(text), max_len):
+            chunk = text[offset:offset + max_len]
+            doc = nlp(chunk)
+            chunk_names = set()
+            for ent in doc.ents:
+                if ent.label_ not in _NER_PERSON_LABELS:
+                    continue
+                name = ent.text.strip()
+                if not name or any(ch.isdigit() for ch in name):
+                    continue
+                if name.lower() in wl_lower:
+                    continue
+                chunk_names.add(name)
+
+            if len(chunk_names) > _NER_MAX_NAMES_PER_CHUNK:
+                print(
+                    f"[WARN] NER ({model_name}): {len(chunk_names)} Personennamen in einem "
+                    f"Textabschnitt gefunden (> {_NER_MAX_NAMES_PER_CHUNK}) -- vermutlich "
+                    f"generisches Referenzmaterial statt Klientendaten, Abschnitt wird "
+                    f"NICHT automatisch anonymisiert (Korruptionsrisiko)."
+                )
+                continue
+            found.update(chunk_names)
+
+    return sorted(found)
+
+
+# ═══════════════════════════════════════════════════════════════
 # Lokaler Schluessel-Speicher (NICHT in OneDrive)
 # ═══════════════════════════════════════════════════════════════
 
@@ -545,6 +678,47 @@ def decrypt_key_file(key_path: str, password: str) -> AnonymProfile:
     )
 
 
+def _extract_legacy_doc_text(filepath: str) -> str:
+    """
+    Extrahiert Text aus altem Word-Binaerformat (.doc) via antiword oder
+    LibreOffice (soffice). Spiegelt dieselbe Fallback-Kette wie
+    document_pipeline.py::_extract_doc(), damit Sensible-Daten-Scan und
+    LLM-Prompt-Buendelung denselben Dokumenteninhalt sehen.
+    """
+    import subprocess
+    import shutil
+
+    if shutil.which("antiword"):
+        try:
+            result = subprocess.run(
+                ["antiword", filepath],
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except Exception:
+            pass
+
+    if shutil.which("soffice"):
+        try:
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = subprocess.run(
+                    ["soffice", "--headless", "--convert-to", "txt:Text",
+                     "--outdir", tmpdir, filepath],
+                    capture_output=True, timeout=60
+                )
+                if result.returncode == 0:
+                    txt_file = Path(tmpdir) / (Path(filepath).stem + ".txt")
+                    if txt_file.exists():
+                        return txt_file.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+    return ""
+
+
 # ═══════════════════════════════════════════════════════════════
 # Anonymisierer
 # ═══════════════════════════════════════════════════════════════
@@ -593,7 +767,8 @@ class DocumentAnonymizer:
             "emails": [],
             "addresses": [],
             "institutions": [],
-            "table_row_names": []
+            "table_row_names": [],
+            "ner_person_names": []
         }
 
         # Telefonnummern finden
@@ -635,6 +810,13 @@ class DocumentAnonymizer:
             if cleaned and cleaned not in found["table_row_names"]:
                 if not any(w.lower() == cleaned.lower() for w in self.global_whitelist.get("names", [])):
                     found["table_row_names"].append(cleaned)
+
+        # Generische Personennamen-Erkennung (spaCy NER, DE+EN) -- Hauptmechanismus
+        # fuer unbekannte Drittpersonen; faengt auch Namen und Schreibvarianten,
+        # die keine Regel/Liste explizit vorgesehen hat.
+        if SPACY_AVAILABLE:
+            ner_names = detect_person_names_ner(text, whitelist=self.global_whitelist.get("names", []))
+            found["ner_person_names"] = ner_names
 
         return found
 
@@ -792,6 +974,14 @@ class DocumentAnonymizer:
                             paragraphs.append(cell.text)
                 text = "\n".join(paragraphs)
 
+            elif suffix == ".doc":
+                # Altes Word-Binaerformat -- python-docx kann das NICHT lesen.
+                # Ohne diesen Zweig bleiben .doc-Dateien (z.B. Aktendeckblatt)
+                # bei der Sensible-Daten-Suche komplett unerkannt (leerer Text),
+                # obwohl ihr Inhalt sehr wohl in den LLM-Prompt gebuendelt wird
+                # (document_pipeline.py nutzt dieselbe Extraktion fuers Bundling).
+                text = _extract_legacy_doc_text(str(path))
+
             elif suffix in (".txt", ".md"):
                 try:
                     text = path.read_text(encoding="utf-8")
@@ -819,7 +1009,15 @@ class DocumentAnonymizer:
 
     def scan_folder_for_sensitive_data(self, folder: str) -> Dict[str, List[str]]:
         """
-        Scannt alle Dateien in einem Ordner nach sensiblen Daten.
+        Scannt ALLE Dateien in einem Ordner (rekursiv) nach sensiblen Daten.
+
+        VORSICHT bei generischen Klienten-Ordnern: Enthaelt der Ordner neben
+        klientenbezogenen Dokumenten auch generische Referenz-/Methodenmaterialien
+        (z.B. Spielesammlungen, Fachbuecher), werden auch DEREN Personennamen
+        (z.B. zitierte Autoren) als "Drittpersonen" erkannt -- das ist meist
+        nicht gewollt. Fuer Klienten-Akten mit CORE/STUFE2/EXTENDED-Struktur
+        `scan_files_for_sensitive_data()` mit einer vorgefilterten Dateiliste
+        bevorzugen (siehe ReportWorkflowService.create_temp_profile).
 
         Args:
             folder: Pfad zum Ordner
@@ -827,17 +1025,36 @@ class DocumentAnonymizer:
         Returns:
             Aggregierte gefundene Daten {"phones": [...], "emails": [...], "addresses": [...]}
         """
+        src = Path(folder)
+        supported = {".docx", ".doc", ".txt", ".md", ".pdf", ".xlsx", ".xls"}
+        filepaths = [f for f in src.rglob("*") if f.is_file() and f.suffix.lower() in supported]
+        return self.scan_files_for_sensitive_data(filepaths)
+
+    def scan_files_for_sensitive_data(self, filepaths: List[Path]) -> Dict[str, List[str]]:
+        """
+        Scannt eine EXPLIZITE Liste von Dateien nach sensiblen Daten (statt
+        blind einen ganzen Ordnerbaum zu durchsuchen). Damit lassen sich z.B.
+        generische Referenzmaterialien gezielt von der Personennamen-Erkennung
+        ausschliessen.
+
+        Args:
+            filepaths: Liste von Dateipfaden
+
+        Returns:
+            Aggregierte gefundene Daten {"phones": [...], "emails": [...], "addresses": [...], ...}
+        """
         combined = {
             "phones": [],
             "emails": [],
             "addresses": [],
-            "table_row_names": []
+            "table_row_names": [],
+            "ner_person_names": []
         }
 
-        src = Path(folder)
-        supported = {".docx", ".txt", ".md", ".pdf", ".xlsx", ".xls"}
+        supported = {".docx", ".doc", ".txt", ".md", ".pdf", ".xlsx", ".xls"}
 
-        for filepath in src.rglob("*"):
+        for filepath in filepaths:
+            filepath = Path(filepath)
             if filepath.is_file() and filepath.suffix.lower() in supported:
                 text = self.extract_text_from_file(str(filepath))
                 found = self.scan_text_for_sensitive_data(text)
@@ -867,6 +1084,8 @@ class DocumentAnonymizer:
             return self._anonymize_pdf(path, profile)
         elif suffix in (".xlsx", ".xls"):
             return self._anonymize_excel(path, profile)
+        elif suffix == ".doc":
+            return self._anonymize_doc(path, profile)
         else:
             return False, 0
 
@@ -1047,6 +1266,45 @@ class DocumentAnonymizer:
                 count += occurrences
 
         path.write_text(text, encoding="utf-8")
+        return True, count
+
+    def _anonymize_doc(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
+        """
+        "Anonymisiert" ein altes Word-Binaerdokument (.doc).
+
+        python-docx kann das binaere .doc-Format NICHT schreiben -- ohne
+        diese Methode wird die Datei nur roh kopiert und bleibt zu 100%
+        im Klartext (empirisch gefunden: Aktendeckblatt.doc landete
+        unveraendert in data_ano/, Name/Diagnose/E-Mail vollstaendig lesbar).
+
+        Workaround: Text extrahieren (antiword/LibreOffice), Ersetzungen
+        anwenden, als GLEICHNAMIGE .txt-Datei speichern und das Original
+        .doc loeschen. document_pipeline.py/DocumentCollector erkennt den
+        Dokumenttyp anhand des Dateinamens (nicht der Endung), daher bleibt
+        die Kategorisierung (z.B. "aktendeckblatt") beim Bundling erhalten.
+        """
+        text = _extract_legacy_doc_text(str(path))
+        if not text:
+            # Extraktion fehlgeschlagen (kein antiword/soffice verfuegbar o.ae.)
+            # -- Datei NICHT unveraendert im "anonymisierten" Ordner belassen.
+            path.unlink(missing_ok=True)
+            return False, 0
+
+        count = 0
+        all_replacements = {}
+        for category in profile.mappings.values():
+            all_replacements.update(category)
+        sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
+
+        for old, new in sorted_replacements:
+            occurrences = text.count(old)
+            if occurrences > 0:
+                text = text.replace(old, new)
+                count += occurrences
+
+        txt_path = path.with_suffix(".txt")
+        txt_path.write_text(text, encoding="utf-8")
+        path.unlink(missing_ok=True)
         return True, count
 
     def _anonymize_excel(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:

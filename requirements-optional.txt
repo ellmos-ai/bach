@@ -41,6 +41,16 @@ python-docx>=1.2.0        # Read/write .docx Word files
 python-pptx>=1.0.2        # Read/write .pptx PowerPoint files
 openpyxl>=3.1.5           # Read/write .xlsx Excel files
 
+# spaCy NER (generische Personennamen-Erkennung, DE+EN) -- OPTIONAL
+# Required ONLY for: anonymizer_service.py detect_person_names_ner()
+# Ohne spaCy faellt die Anonymisierung auf Regex-Heuristiken zurueck
+# (Telefon/E-Mail/Adresse/Tabellenzeilen-Namen), erkennt aber KEINE
+# Personennamen in normalem Fliesstext automatisch.
+# Modelle nach Installation separat laden:
+#   python -m spacy download de_core_news_lg
+#   python -m spacy download en_core_web_lg
+spacy>=3.8.0              # NER-Framework (Personennamen-Erkennung, Anonymizer)
+
 
 # ============================================================
 # [CHAT SERVICE / BUDDHA] Telegram bot, web search, system tray
