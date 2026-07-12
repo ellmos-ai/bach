@@ -680,33 +680,40 @@ Interpersonelle Interaktionen:
                 if name not in third_party_names:
                     third_party_names.append(name)
 
+            # WICHTIG -- zwei Sicherheitsmassnahmen gegen Dokumentenkorruption,
+            # beide empirisch anhand eines echten Falls gefunden:
+            #
+            # 1) KEINE "echt klingenden" Tarnnamen aus dem kleinen Vor-/Nachnamen-
+            #    Pool (_generate_tarnname, ~34 Eintraege, mehrere davon normale
+            #    deutsche Woerter wie "Vogel", "Bauer", "Fischer", "Richter").
+            #    Bei potenziell vielen (>50) NER-erkannten Drittpersonen sind
+            #    Kollisionen (mehrere reale Namen -> derselbe Fake-Name) UND
+            #    Ueberschneidungen mit gewoehnlichem Fliesstext praktisch
+            #    garantiert. Eindeutige Platzhalter ("Person001", "Person002", ...)
+            #    sind hier sicherer als Lesbarkeit -- die Identitaet von
+            #    Drittpersonen ist fuer den Foerderbericht irrelevant.
+            #
+            # 2) KEINE Wort-fuer-Wort-Zerlegung (anders als beim Klienten/den
+            #    Eltern, wo Vorname/Nachname-Grenze bekannt ist): Der Nachname
+            #    einer Drittperson kann zufaellig ein gewoehnliches deutsches
+            #    Wort sein (z.B. "Herr" = Anrede "Mr."). Wuerde nur "Herr" allein
+            #    gemappt, wuerde JEDES Vorkommen im Dokument ersetzt (auch
+            #    "Herr Geiger", der Therapeut). Nur die komplette erkannte
+            #    Namensphrase wird ersetzt -- weniger Abdeckung, aber sicher.
+            #
+            # Beide Probleme traten real auf: 178 Drittpersonen-Namen mit der
+            # alten Logik zerstoerten den gesamten Bericht bis zur Unlesbarkeit.
+            third_party_counter = 0
             for third_name in third_party_names:
                 if third_name in wl or third_name in mappings["names"]:
                     continue
-                name_words = third_name.strip().split()
-                if not name_words:
+                if not third_name.strip():
                     continue
-                fake_third = _generate_tarnname(
-                    self._used_tarnnames,
-                    original_vorname=name_words[0]
-                )
-                self._used_tarnnames.add(fake_third)
-                fake_third_parts = fake_third.split()
+                third_party_counter += 1
+                fake_third = f"Person{third_party_counter:03d}"
 
                 mappings["names"][third_name] = fake_third
                 mappings["names"][third_name.upper()] = fake_third.upper()
-                # Erstes Wort -> Fake-Vorname, alle weiteren Woerter -> Fake-Nachname
-                # (deckt mehrteilige Namen ab, z.B. "Amara Wanjiru Osei Boateng")
-                fake_third_vorname = fake_third_parts[0]
-                fake_third_nachname = fake_third_parts[-1]
-                for word in name_words[:1]:
-                    if word not in mappings["names"]:
-                        mappings["names"][word] = fake_third_vorname
-                        mappings["names"][word.upper()] = fake_third_vorname.upper()
-                for word in name_words[1:]:
-                    if word not in mappings["names"]:
-                        mappings["names"][word] = fake_third_nachname
-                        mappings["names"][word.upper()] = fake_third_nachname.upper()
 
             print(f"[INFO] Scan abgeschlossen: {len(scanned.get('phones', []))} Tel, "
                   f"{len(scanned.get('emails', []))} Mail, {len(scanned.get('addresses', []))} Adressen, "

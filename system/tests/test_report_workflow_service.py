@@ -154,8 +154,11 @@ def test_create_temp_profile_detects_table_row_third_party_names(tmp_path):
         scan_folder=scan_dir,
     )
     mapping = profile.get_all_mappings()
-    for word in ["Timon", "Ackerknecht", "Joris", "Vandenberghe"]:
-        assert word in mapping, f"Drittperson '{word}' wurde nicht erkannt/anonymisiert"
+    # Drittpersonen werden NUR als komplette Phrase gemappt (nicht wortweise) --
+    # ein zufaellig gewoehnliches deutsches Wort als Nachname (z.B. "Herr")
+    # duerfte sonst ueberall im Dokument ersetzt werden.
+    for full_name in ["Timon Ackerknecht", "Joris Vandenberghe"]:
+        assert full_name in mapping, f"Drittperson '{full_name}' wurde nicht erkannt/anonymisiert"
     assert "Teilnehmer" not in mapping, "Tabellen-Header wurde faelschlich als Name erkannt"
 
 
@@ -181,8 +184,8 @@ def test_create_temp_profile_detects_prose_names_via_ner(tmp_path):
         scan_folder=scan_dir,
     )
     mapping = profile.get_all_mappings()
-    for word in ["Priyanka", "Ramachandran", "John", "Fitzgerald", "Whitmore"]:
-        assert word in mapping, f"'{word}' (Fliesstext-Name) wurde nicht via NER erkannt"
+    for full_name in ["Priyanka Ramachandran", "John Fitzgerald Whitmore"]:
+        assert full_name in mapping, f"'{full_name}' (Fliesstext-Name) wurde nicht via NER erkannt"
 
 
 def test_create_temp_profile_ignores_extended_reference_material(tmp_path):
@@ -220,7 +223,7 @@ def test_create_temp_profile_ignores_extended_reference_material(tmp_path):
         scan_folder=client_dir.parent,
     )
     mapping = profile.get_all_mappings()
-    assert "Fatima" in mapping or "El-Sayed" in mapping, "Echte Drittperson im CORE-Dokument nicht erkannt"
+    assert "Fatima El-Sayed" in mapping, "Echte Drittperson im CORE-Dokument nicht erkannt"
     assert "Nachnamesiebzig" not in mapping, "Generisches Referenzmaterial wurde faelschlich gescannt"
 
 
@@ -279,3 +282,40 @@ def test_scan_files_for_sensitive_data_includes_doc_files(tmp_path, monkeypatch)
     anon = DocumentAnonymizer()
     found = anon.scan_files_for_sensitive_data([doc_path])
     assert "vater.beispiel@yahoo.com" in found["emails"], ".doc-Datei wurde beim Scan uebersprungen"
+
+
+def test_many_third_party_mappings_do_not_corrupt_ordinary_text(tmp_path):
+    """Regressionstest fuer einen realen Vorfall: Mit vielen (real: 178)
+    NER-erkannten Drittpersonen-Namen, die auf den kleinen Pool "echt
+    klingender" Tarnnamen gemappt wurden (~34 Eintraege, mehrere davon
+    normale deutsche Woerter wie "Vogel"/"Bauer"/"Fischer"/"Richter"),
+    wurde ein kompletter Foerderbericht bis zur Unlesbarkeit korrumpiert.
+    Mit eindeutigen "PersonNNN"-Platzhaltern (statt Namen aus diesem Pool)
+    darf gewoehnlicher deutscher Fliesstext nicht mehr angetastet werden."""
+    mappings = {"names": {}}
+    for i in range(80):
+        mappings["names"][f"Drittperson{i} Nachname{i}"] = f"Person{i:03d}"
+
+    profile = AnonymProfile(
+        client_id="TEST",
+        tarnname="Tarn Person",
+        fake_geburtsdatum="01.01.2015",
+        mappings=mappings,
+    )
+
+    # Gewoehnlicher deutscher Text ohne jeden Bezug zu den Drittpersonen-Namen
+    original_text = (
+        "Der Vogel sang schoen im Garten. Der Bauer arbeitete auf dem Feld. "
+        "Der Fischer warf sein Netz aus. Herr Richter kam spaeter dazu."
+    )
+    doc_path = tmp_path / "protokoll.txt"
+    doc_path.write_text(original_text, encoding="utf-8")
+
+    anon = DocumentAnonymizer()
+    success, _ = anon.anonymize_file(str(doc_path), profile)
+    result_text = doc_path.read_text(encoding="utf-8")
+
+    assert success is True
+    assert result_text == original_text, (
+        "Gewoehnlicher Text wurde durch Drittpersonen-Mappings veraendert/korrumpiert"
+    )
