@@ -319,3 +319,31 @@ def test_many_third_party_mappings_do_not_corrupt_ordinary_text(tmp_path):
     assert result_text == original_text, (
         "Gewoehnlicher Text wurde durch Drittpersonen-Mappings veraendert/korrumpiert"
     )
+
+
+def test_ner_ignores_generic_role_nouns_like_klient(tmp_path):
+    """Regressionstest: Das englische NER-Modell markierte auf deutschem
+    Fliesstext faelschlich das generische Wort 'Klienten' (keine Person,
+    sondern die Bezeichnung fuer den Klienten selbst) als PERSON -- die
+    Ersetzung erzeugte grammatisch kaputte Fragmente wie 'Person168en',
+    da die deutsche Deklinationsendung an der Ersetzung kleben blieb.
+    Kein Datenschutzleck, aber ein Qualitaets-/Lesbarkeitsproblem."""
+    pytest.importorskip("spacy")
+    scan_dir = tmp_path / "scan_klient"
+    scan_dir.mkdir()
+    (scan_dir / "protokoll.txt").write_text(
+        "Wahrnehmungsbesonderheiten des Klienten\nKommunikation des Klienten",
+        encoding="utf-8",
+    )
+    service = ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+    profile = service.create_temp_profile(
+        session,
+        client_name="Max Mustermann",
+        geburtsdatum="01.01.2015",
+        scan_folder=scan_dir,
+    )
+    mapping = profile.get_all_mappings()
+    assert not any("klient" in k.lower() for k in mapping), (
+        "'Klient(en)' wurde faelschlich als Personenname erkannt/gemappt"
+    )

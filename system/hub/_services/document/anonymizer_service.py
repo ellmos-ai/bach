@@ -436,6 +436,59 @@ _NER_KEEP_COMPONENTS = {"tok2vec", "ner"}
 # risiko bei ueberlappenden Ersetzungen), sondern das Dokument ueberspringen.
 _NER_MAX_NAMES_PER_CHUNK = 60
 
+# Deutsche Fuellwoerter/Praepositionen -- tauchen sie MITTEN in einem erkannten
+# "Namen" auf, ist die Entitaetsgrenze falsch (typisches Symptom bei fehl-
+# uebertragenen NER-Modellen, z.B. englisches Modell auf deutschem Fliesstext).
+_NER_MID_SPAN_STOPWORDS = {
+    "der", "die", "das", "des", "dem", "den", "und", "oder", "im", "am",
+    "zu", "zur", "zum", "auf", "in", "an", "bei", "mit", "von", "vom",
+    "fuer", "für", "ueber", "über", "unter", "durch", "ohne", "gegen", "um",
+    "ist", "sind", "war", "hat", "eine", "einen", "einer",
+}
+
+# Generische Rollenbegriffe (Klient/Patient/Angehoerige) -- werden von NER
+# gelegentlich als PERSON erkannt, sind aber KEINE identifizierenden Namen,
+# sondern gewoehnliche deutsche Substantive. Client-unabhaengig, gilt fuer
+# jeden Foerderbericht.
+_NER_GENERIC_ROLE_NOUNS = {
+    "klient", "klienten", "klientin", "klientinnen",
+    "patient", "patienten", "patientin", "patientinnen",
+    "kind", "kinder", "junge", "jungen", "mädchen",
+    "schüler", "schülerin", "schülerinnen",
+    "mutter", "vater", "eltern", "bruder", "schwester", "geschwister",
+    "therapeut", "therapeutin", "betreuer", "betreuerin",
+    "lehrer", "lehrerin", "mitarbeiter", "mitarbeiterin",
+}
+
+
+def _looks_like_person_name(name: str) -> bool:
+    """
+    Grobe Plausibilitaetsprüfung fuer einen von NER erkannten "Personennamen".
+
+    Faengt falsche Entitaetsgrenzen ab (z.B. wenn ein Modell eine ganze
+    mehrzeilige Phrase oder einen zusammengesetzten Fachbegriff faelschlich
+    als EIN Name erkennt) -- typisches Symptom, wenn das englische Modell
+    auf deutschem Fliesstext angewendet wird.
+    """
+    name = name.strip()
+    if not name or len(name) > 40 or "\n" in name or "\t" in name:
+        return False
+    words = name.split()
+    if not (1 <= len(words) <= 4):
+        return False
+    for word in words:
+        cleaned = word.strip(".,;:!?()[]{}\"'-")
+        if not cleaned:
+            return False
+        if cleaned.lower() in _NER_MID_SPAN_STOPWORDS:
+            return False
+        if not cleaned[0].isupper():
+            return False
+    if len(words) == 1 and words[0].lower() in _NER_GENERIC_ROLE_NOUNS:
+        return False
+    return True
+
+
 _spacy_model_cache: Dict[str, "object"] = {}
 
 
@@ -504,6 +557,8 @@ def detect_person_names_ner(text: str, whitelist: Optional[List[str]] = None) ->
                 if not name or any(ch.isdigit() for ch in name):
                     continue
                 if name.lower() in wl_lower:
+                    continue
+                if not _looks_like_person_name(name):
                     continue
                 chunk_names.add(name)
 
