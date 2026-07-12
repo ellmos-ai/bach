@@ -355,6 +355,28 @@ def _generate_fake_institution(original: str) -> str:
     return f"{prefix}{found_suffix} {stadt}"
 
 
+def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
+    """
+    Ersetzt `old` in `text` NUR an Wortgrenzen (nicht als blinder Teilstring).
+
+    Verhindert kaputte Fragmente wie "Person026sbesonderheiten" statt
+    "Wahrnehmungsbesonderheiten": Ein NER-erkannter Einzelwort-Name kann
+    zufaellig Praefix eines laengeren deutschen Kompositums sein -- an DER
+    Fundstelle greift die Wortgrenzen-Pruefung bei der Erkennung, aber die
+    anschliessende Ersetzung ist global (jedes Vorkommen im Dokument), auch
+    an Stellen, wo derselbe Teilstring OHNE Wortgrenze auftaucht.
+
+    Python-`\\b` behandelt deutsche Umlaute/ß korrekt als Wortzeichen.
+    """
+    if not old:
+        return text, 0
+    pattern = re.compile(r'\b' + re.escape(old) + r'\b')
+    count = len(pattern.findall(text))
+    if count:
+        text = pattern.sub(lambda m: new, text)
+    return text, count
+
+
 # ═══════════════════════════════════════════════════════════════
 # RegEx-Patterns fuer automatische Erkennung
 # ═══════════════════════════════════════════════════════════════
@@ -1252,40 +1274,46 @@ class DocumentAnonymizer:
         # Nach Laenge sortieren (laengste zuerst, verhindert Teilersetzungen)
         sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
 
+        # Wortgrenzen-Patterns vorab kompilieren (verhindert kaputte Fragmente
+        # wie "Person026sbesonderheiten" statt "Wahrnehmungsbesonderheiten",
+        # wenn ein NER-erkannter Einzelwort-Name zufaellig Praefix eines
+        # laengeren deutschen Kompositums ist).
+        compiled_replacements = [
+            (re.compile(r'\b' + re.escape(old) + r'\b'), new)
+            for old, new in sorted_replacements
+        ]
+
         def replace_in_paragraphs(paragraphs):
             nonlocal count
             for paragraph in paragraphs:
                 full_text = "".join(run.text for run in paragraph.runs)
-                
-                # Check ob ueberhaupt was zu tun ist
-                if not any(old in full_text for old, _ in sorted_replacements):
-                    continue
 
-                for old, new in sorted_replacements:
-                    if old in full_text:
-                        # Versuch 1: Einzel-Run Ersetzung
-                        replaced_in_runs = False
-                        for run in paragraph.runs:
-                            if old in run.text:
-                                run.text = run.text.replace(old, new)
-                                count += 1
-                                replaced_in_runs = True
-                        
-                        # Versuch 2: Falls gesplittet (destruktiver Fallback fuer Privacy)
-                        if not replaced_in_runs:
-                            p_text = paragraph.text
-                            new_p_text = p_text.replace(old, new)
-                            if new_p_text != p_text:
-                                # Alle Runs leeren
-                                for run in paragraph.runs:
-                                    run.text = ""
-                                # Text in den ersten Run schreiben
-                                if paragraph.runs:
-                                    paragraph.runs[0].text = new_p_text
-                                else:
-                                    paragraph.add_run(new_p_text)
-                                count += 1
-                                full_text = new_p_text # Update fuer naechste Ersetzung
+                for pattern, new in compiled_replacements:
+                    if not pattern.search(full_text):
+                        continue
+                    # Versuch 1: Einzel-Run Ersetzung
+                    replaced_in_runs = False
+                    for run in paragraph.runs:
+                        if pattern.search(run.text):
+                            run.text = pattern.sub(lambda m: new, run.text)
+                            count += 1
+                            replaced_in_runs = True
+
+                    # Versuch 2: Falls gesplittet (destruktiver Fallback fuer Privacy)
+                    if not replaced_in_runs:
+                        p_text = paragraph.text
+                        new_p_text = pattern.sub(lambda m: new, p_text)
+                        if new_p_text != p_text:
+                            # Alle Runs leeren
+                            for run in paragraph.runs:
+                                run.text = ""
+                            # Text in den ersten Run schreiben
+                            if paragraph.runs:
+                                paragraph.runs[0].text = new_p_text
+                            else:
+                                paragraph.add_run(new_p_text)
+                            count += 1
+                            full_text = new_p_text  # Update fuer naechste Ersetzung
 
         # Paragraphen
         replace_in_paragraphs(doc.paragraphs)
@@ -1323,10 +1351,8 @@ class DocumentAnonymizer:
         sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
 
         for old, new in sorted_replacements:
-            occurrences = text.count(old)
-            if occurrences > 0:
-                text = text.replace(old, new)
-                count += occurrences
+            text, occurrences = _replace_word_boundary(text, old, new)
+            count += occurrences
 
         path.write_text(text, encoding="utf-8")
         return True, count
@@ -1360,10 +1386,8 @@ class DocumentAnonymizer:
         sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
 
         for old, new in sorted_replacements:
-            occurrences = text.count(old)
-            if occurrences > 0:
-                text = text.replace(old, new)
-                count += occurrences
+            text, occurrences = _replace_word_boundary(text, old, new)
+            count += occurrences
 
         txt_path = path.with_suffix(".txt")
         txt_path.write_text(text, encoding="utf-8")
@@ -1401,9 +1425,8 @@ class DocumentAnonymizer:
                         original = cell.value
                         new_value = original
                         for old, new in sorted_replacements:
-                            if old in new_value:
-                                new_value = new_value.replace(old, new)
-                                count += 1
+                            new_value, occurrences = _replace_word_boundary(new_value, old, new)
+                            count += occurrences
                         if new_value != original:
                             cell.value = new_value
 

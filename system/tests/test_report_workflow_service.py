@@ -375,3 +375,36 @@ def test_ner_ignores_prefix_of_compound_german_word(tmp_path):
     assert not any("wahrnehmung" in k.lower() for k in mapping), (
         "'Wahrnehmung' (Wortanfang) wurde faelschlich als Personenname gemappt"
     )
+
+
+def test_anonymize_text_replaces_only_at_word_boundaries(tmp_path):
+    """Regressionstest fuer den konkreten Korruptionsfall: Ein Mapping-Key
+    ("Wahrnehmung") kann an EINER Stelle im Dokument als eigenstaendiges Wort
+    auftauchen (legitime Ersetzung) und an ANDERER Stelle Praefix eines
+    laengeren Kompositums sein ("Wahrnehmungsbesonderheiten"). Blinde
+    Teilstring-Ersetzung zerstoert Letzteres ("Person026sbesonderheiten").
+    Die Ersetzung darf nur an Wortgrenzen greifen."""
+    profile = AnonymProfile(
+        client_id="TEST",
+        tarnname="Tarn Person",
+        fake_geburtsdatum="01.01.2015",
+        mappings={"names": {"Wahrnehmung": "Person026"}},
+    )
+    doc_path = tmp_path / "protokoll.txt"
+    doc_path.write_text(
+        "Wahrnehmungsbesonderheiten des Klienten. Die Wahrnehmung war auffaellig.",
+        encoding="utf-8",
+    )
+
+    anon = DocumentAnonymizer()
+    success, count = anon.anonymize_file(str(doc_path), profile)
+    result_text = doc_path.read_text(encoding="utf-8")
+
+    assert success is True
+    assert count == 1
+    assert "Wahrnehmungsbesonderheiten" in result_text, (
+        "Zusammengesetztes Wort wurde faelschlich fragmentiert"
+    )
+    assert "Die Person026 war auffaellig" in result_text, (
+        "Eigenstaendiges Wort wurde nicht korrekt ersetzt"
+    )
