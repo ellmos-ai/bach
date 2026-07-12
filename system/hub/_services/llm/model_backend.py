@@ -9,7 +9,7 @@ Jeder User kann sein eigenes Backend konfigurieren.
 Verwendung:
     from hub._services.llm.model_backend import OllamaBackend, OpenAIBackend
 
-    backend = OllamaBackend(base_url='http://localhost:11434', default_model='qwen3.5:35b-a3b')
+    backend = OllamaBackend(base_url='http://localhost:11434', default_model='qwen3.6:35b-mlx')
     result = await backend.chat(messages, tools=tools_list, think=True)
     # result = {'content': '...', 'tool_calls': [...] or None}
 """
@@ -55,19 +55,27 @@ class OllamaBackend(ModelBackend):
     """Ollama API Backend für lokale Modelle (Qwen, Llama, Mistral, etc.)."""
 
     def __init__(self, base_url: str = "http://localhost:11434",
-                 default_model: str = "qwen3.5:35b-a3b"):
+                 default_model: str = "qwen3.6:35b-mlx",
+                 keep_alive: str = "5m"):
         self.base_url = base_url.rstrip("/")
         self.default_model = default_model
+        self.keep_alive = keep_alive
         self._models_cache: list[str] = []
         self._models_cache_time: float = 0
 
     async def chat(self, messages, tools=None, think=True, model=None):
         import httpx
+        try:
+            from hub.compute_lock import get_effective_keep_alive
+            effective_ka = get_effective_keep_alive(default=self.keep_alive)
+        except ImportError:
+            effective_ka = self.keep_alive
         payload = {
             "model": model or self.default_model,
             "messages": messages,
             "stream": False,
             "think": think,
+            "keep_alive": effective_ka,
         }
         if tools:
             payload["tools"] = tools
@@ -475,7 +483,7 @@ def create_backend(config: dict) -> ModelBackend:
     if backend_type == "ollama":
         return OllamaBackend(
             base_url=config.get("base_url", "http://localhost:11434"),
-            default_model=config.get("default_model", "qwen3.5:35b-a3b"),
+            default_model=config.get("default_model", "qwen3.6:35b-mlx"),
         )
     elif backend_type in ("openai", "openai_compat", "openai-api"):
         return OpenAIBackend(
