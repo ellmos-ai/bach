@@ -14,7 +14,12 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **ActivityTracker-Mirror-Export rekursionsfrei gemacht:** Auto-Finalize exportiert `AGENTS.md`, `PARTNERS.md`, `USECASES.md`, `CHAINS.md` und `WORKFLOWS.md` jetzt direkt über die Exporter-Klassen statt über `bach.py export ...`-Subprozesse. Dadurch kann ein stale `system_activity`-Idle-Fall bei kurzen CLI-Befehlen wie `python bach.py skills version bach` keine rekursive Export-/Auto-Finalize-Kette mehr starten.
 - **Root-Release-Metadaten synchronisiert:** `README.md`, `README.de.md` und `llms.txt` zeigen jetzt die veröffentlichte `v3.13.0-bluesky` statt des alten `v3.12.4-earth`-Badges; lokale Mac-/Host-Fixtures in Tests wurden durch repo-relative bzw. generische Werte ersetzt.
+
+### Verified
+
+- **ActivityTracker-Regressionspfad verifiziert:** `python -m pytest system\tests\test_activity_tracker.py system\tests\test_core.py -q` lief mit `50 passed`; der Live-Smoke `python bach.py skills version bach` finalisierte eine stale Session und meldete danach `MIRRORS 5/5` sowie `Version aktuell: v3.9.1`, ohne `bach.py export ...`-Kindprozesse zu hinterlassen.
 
 ## [3.13.0-bluesky] - 2026-07-11
 

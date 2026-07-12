@@ -700,35 +700,31 @@ class ActivityTracker:
             True wenn erfolgreich, False bei Fehler
         """
         try:
-            import subprocess
+            import importlib
             import sys
 
-            system_root = bach_root / "system"
-            bach_py = system_root / "bach.py"
+            system_root = bach_root / "system" if (bach_root / "system").exists() else bach_root
+            root_path = system_root.parent if system_root.name == "system" else bach_root
+            tools_dir = system_root / "tools"
+            if str(tools_dir) not in sys.path:
+                sys.path.insert(0, str(tools_dir))
 
-            # Liste der Exports (bach export <type>)
-            exports = ["agents", "partners", "usecases", "chains", "workflows"]
+            exporters = [
+                ("agents_export", "AgentsExporter"),
+                ("partners_export", "PartnersExporter"),
+                ("usecases_export", "UsecasesExporter"),
+                ("chains_export", "ChainsExporter"),
+                ("workflows_export", "WorkflowsExporter"),
+            ]
 
             success_count = 0
-            for export_type in exports:
+            for module_name, class_name in exporters:
                 try:
-                    # Rufe "bach export <type>" auf
-                    result = subprocess.run(
-                        [sys.executable, str(bach_py), "export", export_type],
-                        capture_output=True,
-                        text=True,
-                        timeout=30,
-                        cwd=str(system_root),
-                        encoding="utf-8",
-                        errors="replace",
-                    )
-
-                    if result.returncode == 0:
+                    module = importlib.import_module(module_name)
+                    exporter_cls = getattr(module, class_name)
+                    success, _msg = exporter_cls(root_path).generate()
+                    if success:
                         success_count += 1
-                    else:
-                        # Nicht kritisch - nur warnen
-                        pass  # Graceful Degradation
-
                 except Exception:
                     # Export-Fehler ignorieren
                     pass  # Graceful Degradation

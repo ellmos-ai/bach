@@ -17,6 +17,7 @@ import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 # Füge parent-dir zum Path hinzu
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -275,6 +276,48 @@ def test_idle_threshold_calculation(temp_db):
         # False ist OK (Finalize hat fehlgeschlagen aber nicht gecrasht)
     except Exception:
         pass  # Exception bedeutet Idle wurde erkannt, aber Finalize schlug fehl
+
+
+def test_export_mirrors_uses_exporters_without_cli_subprocess(temp_db, tmp_path, monkeypatch):
+    """Regression: Auto-Finalize darf keine rekursive bach.py-export-Kette starten."""
+    tracker = ActivityTracker(temp_db, idle_threshold_minutes=30)
+    bach_root = tmp_path / "bach"
+    (bach_root / "system" / "tools").mkdir(parents=True)
+
+    calls = []
+
+    class FakeExporter:
+        def __init__(self, root_path):
+            self.root_path = Path(root_path)
+
+        def generate(self):
+            calls.append(self.root_path)
+            return True, "ok"
+
+    module_specs = {
+        "agents_export": "AgentsExporter",
+        "partners_export": "PartnersExporter",
+        "usecases_export": "UsecasesExporter",
+        "chains_export": "ChainsExporter",
+        "workflows_export": "WorkflowsExporter",
+    }
+    for module_name, class_name in module_specs.items():
+        monkeypatch.setitem(
+            sys.modules,
+            module_name,
+            SimpleNamespace(**{class_name: FakeExporter}),
+        )
+
+    import subprocess
+
+    def fail_subprocess(*_args, **_kwargs):
+        raise AssertionError("Mirror export must not shell out to bach.py")
+
+    monkeypatch.setattr(subprocess, "run", fail_subprocess)
+
+    assert tracker._export_mirrors(bach_root) is True
+    assert len(calls) == 5
+    assert all(root == bach_root for root in calls)
 
 
 if __name__ == "__main__":
