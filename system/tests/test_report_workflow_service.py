@@ -408,3 +408,42 @@ def test_anonymize_text_replaces_only_at_word_boundaries(tmp_path):
     assert "Die Person026 war auffaellig" in result_text, (
         "Eigenstaendiges Wort wurde nicht korrekt ersetzt"
     )
+
+
+def test_anonymize_docx_handles_word_split_across_multiple_runs(tmp_path):
+    """Regressionstest fuer einen realen Vorfall: Word speichert ein
+    einzelnes zusammengesetztes Wort haeufig auf MEHRERE interne Text-Runs
+    verteilt (Formatierung, Autokorrektur, Bearbeitungshistorie). Eine
+    Wortgrenzen-Pruefung auf Einzel-Run-Ebene sieht dann faelschlich eine
+    saubere Grenze am Run-Ende, obwohl der naechste Run das Wort nahtlos
+    fortsetzt -- Ergebnis war "Person026sbesonderheiten" statt
+    "Wahrnehmungsbesonderheiten", obwohl die reine Text-Pruefung (ohne Runs)
+    das korrekt verworfen haette."""
+    docx = pytest.importorskip("docx")
+    doc = docx.Document()
+    paragraph = doc.add_paragraph()
+    # Simuliert Words Run-Splitting: "Wahrnehmung" und "sbesonderheiten des
+    # Klienten" landen als ZWEI SEPARATE Runs (z.B. durch Formatierungswechsel).
+    paragraph.add_run("Wahrnehmung")
+    paragraph.add_run("sbesonderheiten des Klienten")
+
+    doc_path = tmp_path / "protokoll.docx"
+    doc.save(str(doc_path))
+
+    profile = AnonymProfile(
+        client_id="TEST",
+        tarnname="Tarn Person",
+        fake_geburtsdatum="01.01.2015",
+        mappings={"names": {"Wahrnehmung": "Person026"}},
+    )
+
+    anon = DocumentAnonymizer()
+    success, _ = anon.anonymize_file(str(doc_path), profile)
+
+    result_doc = docx.Document(str(doc_path))
+    result_text = "\n".join(p.text for p in result_doc.paragraphs)
+
+    assert success is True
+    assert "Wahrnehmungsbesonderheiten" in result_text, (
+        f"Ueber Runs gesplittetes Kompositum wurde fragmentiert: {result_text!r}"
+    )

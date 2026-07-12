@@ -1286,34 +1286,34 @@ class DocumentAnonymizer:
         def replace_in_paragraphs(paragraphs):
             nonlocal count
             for paragraph in paragraphs:
-                full_text = "".join(run.text for run in paragraph.runs)
+                p_text = paragraph.text
+                if not p_text:
+                    continue
 
+                # WICHTIG: Immer auf dem VOLLEN, zusammenhaengenden Absatztext
+                # pruefen/ersetzen -- NIEMALS pro Run isoliert. Word splittet
+                # ein einzelnes Wort haeufig auf mehrere interne Runs auf
+                # (Formatierung, Autokorrektur, Bearbeitungshistorie); eine
+                # Wortgrenzen-Pruefung auf Run-Ebene saehe dann faelschlich
+                # eine saubere Grenze, obwohl der naechste Run das Wort nahtlos
+                # fortsetzt (Fragment-Korruption trotz Wortgrenzen-Regex).
+                # Fuer ein Datenschutz-Tool zaehlt Korrektheit mehr als der
+                # Erhalt von Run-Formatierung.
+                new_p_text = p_text
+                changed = False
                 for pattern, new in compiled_replacements:
-                    if not pattern.search(full_text):
-                        continue
-                    # Versuch 1: Einzel-Run Ersetzung
-                    replaced_in_runs = False
-                    for run in paragraph.runs:
-                        if pattern.search(run.text):
-                            run.text = pattern.sub(lambda m: new, run.text)
-                            count += 1
-                            replaced_in_runs = True
+                    new_p_text, n = pattern.subn(lambda m: new, new_p_text)
+                    if n:
+                        count += n
+                        changed = True
 
-                    # Versuch 2: Falls gesplittet (destruktiver Fallback fuer Privacy)
-                    if not replaced_in_runs:
-                        p_text = paragraph.text
-                        new_p_text = pattern.sub(lambda m: new, p_text)
-                        if new_p_text != p_text:
-                            # Alle Runs leeren
-                            for run in paragraph.runs:
-                                run.text = ""
-                            # Text in den ersten Run schreiben
-                            if paragraph.runs:
-                                paragraph.runs[0].text = new_p_text
-                            else:
-                                paragraph.add_run(new_p_text)
-                            count += 1
-                            full_text = new_p_text  # Update fuer naechste Ersetzung
+                if changed and new_p_text != p_text:
+                    for run in paragraph.runs:
+                        run.text = ""
+                    if paragraph.runs:
+                        paragraph.runs[0].text = new_p_text
+                    else:
+                        paragraph.add_run(new_p_text)
 
         # Paragraphen
         replace_in_paragraphs(doc.paragraphs)
