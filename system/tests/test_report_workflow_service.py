@@ -347,3 +347,31 @@ def test_ner_ignores_generic_role_nouns_like_klient(tmp_path):
     assert not any("klient" in k.lower() for k in mapping), (
         "'Klient(en)' wurde faelschlich als Personenname erkannt/gemappt"
     )
+
+
+def test_ner_ignores_prefix_of_compound_german_word(tmp_path):
+    """Regressionstest: NER erkannte 'Wahrnehmung' als vermeintlichen
+    Personennamen-Anfang von 'Wahrnehmungsbesonderheiten' -- die Ersetzung
+    hinterliess ein kaputtes Fragment ('Person026sbesonderheiten'). Folgt
+    einer erkannten Entitaet direkt (ohne Trennzeichen) ein Kleinbuchstabe,
+    ist sie nur der Anfang eines zusammengesetzten Wortes und darf nicht
+    ersetzt werden."""
+    pytest.importorskip("spacy")
+    scan_dir = tmp_path / "scan_compound"
+    scan_dir.mkdir()
+    (scan_dir / "protokoll.txt").write_text(
+        "Wahrnehmungsbesonderheiten des Kindes wurden dokumentiert.",
+        encoding="utf-8",
+    )
+    service = ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+    profile = service.create_temp_profile(
+        session,
+        client_name="Max Mustermann",
+        geburtsdatum="01.01.2015",
+        scan_folder=scan_dir,
+    )
+    mapping = profile.get_all_mappings()
+    assert not any("wahrnehmung" in k.lower() for k in mapping), (
+        "'Wahrnehmung' (Wortanfang) wurde faelschlich als Personenname gemappt"
+    )

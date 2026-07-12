@@ -560,6 +560,14 @@ def detect_person_names_ner(text: str, whitelist: Optional[List[str]] = None) ->
                     continue
                 if not _looks_like_person_name(name):
                     continue
+                # Wortgrenzen-Check: folgt direkt (ohne Trennzeichen) ein
+                # Kleinbuchstabe, ist die Entitaet nur der ANFANG eines
+                # zusammengesetzten deutschen Wortes (z.B. NER erkennt
+                # "Wahrnehmung" als Namensbeginn von "Wahrnehmungsbesonder-
+                # heiten") -- Ersetzung wuerde ein Wortfragment hinterlassen.
+                next_char = chunk[ent.end_char:ent.end_char + 1]
+                if next_char and next_char.isalpha() and next_char.islower():
+                    continue
                 chunk_names.add(name)
 
             if len(chunk_names) > _NER_MAX_NAMES_PER_CHUNK:
