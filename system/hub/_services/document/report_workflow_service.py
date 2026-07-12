@@ -79,6 +79,7 @@ try:
         _generate_fake_phone,
         _generate_fake_email,
         _generate_fake_address,
+        _replace_word_boundary,
         TARN_VORNAMEN,
         TARN_VORNAMEN_M,
         TARN_VORNAMEN_W,
@@ -112,6 +113,7 @@ except ImportError:
         _generate_fake_phone,
         _generate_fake_email,
         _generate_fake_address,
+        _replace_word_boundary,
         TARN_VORNAMEN,
         TARN_VORNAMEN_M,
         TARN_VORNAMEN_W,
@@ -202,11 +204,22 @@ class TempAnonymProfile:
         return result
 
     def get_reverse_mappings(self) -> Dict[str, str]:
-        """Umgekehrte Map (Tarn -> Original) fuer De-Anonymisierung."""
+        """
+        Umgekehrte Map (Tarn -> Original) fuer De-Anonymisierung.
+
+        WICHTIG: Mehrere Originalwerte koennen auf denselben Tarn-Wert
+        abbilden (z.B. voller mehrteiliger Name UND jedes einzelne Wort ->
+        derselbe Fake-Vorname, siehe create_temp_profile). Bei blindem
+        Ueberschreiben gewinnt zufaellig der ZULETZT eingefuegte (oft ein
+        einzelnes Wort statt des vollstaendigen Namens) -- deshalb wird hier
+        bei Kollision immer der LAENGSTE (vollstaendigste) Originalwert
+        bevorzugt.
+        """
         result = {}
         for category in self.mappings.values():
             for original, tarn in category.items():
-                result[tarn] = original
+                if tarn not in result or len(original) > len(result[tarn]):
+                    result[tarn] = original
         return result
 
     def cleanup(self):
@@ -1508,18 +1521,17 @@ JSON:
 
     def _deanonymize_json(self, data: Dict, profile: TempAnonymProfile) -> Dict:
         """De-anonymisiert alle String-Werte in einem JSON-Dict rekursiv."""
+        # get_reverse_mappings() bevorzugt bei Kollisionen bereits den
+        # laengsten (vollstaendigsten) Originalwert -- eine zusaetzliche,
+        # NAIVE Vorname/Nachname-Zerlegung (frueher hier per .split() ohne
+        # Beruecksichtigung von "Nachname, Vorname"-Kommas) ist nicht mehr
+        # noetig und war Ursache falscher Teil-Rueckuebersetzungen (z.B.
+        # Fake-Vorname reversierte auf ein falsches Namensfragment).
         reverse_mappings = profile.get_reverse_mappings()
 
-        # Sicherstellen dass Tarnname -> Original immer dabei ist
         if profile.tarnname and profile.original_name:
             reverse_mappings[profile.tarnname] = profile.original_name
             reverse_mappings[profile.tarnname.upper()] = profile.original_name.upper()
-            # Auch Einzelteile (Vorname/Nachname)
-            tarn_parts = profile.tarnname.strip().split()
-            orig_parts = profile.original_name.strip().split()
-            if len(tarn_parts) >= 2 and len(orig_parts) >= 2:
-                reverse_mappings[tarn_parts[0]] = orig_parts[0]
-                reverse_mappings[tarn_parts[-1]] = orig_parts[-1]
             # Fake-Geburtsdatum -> echtes (falls vorhanden)
             if profile.fake_geburtsdatum:
                 # Suche das echte Geburtsdatum in den Datum-Mappings
@@ -1532,7 +1544,7 @@ JSON:
             if isinstance(value, str):
                 result = value
                 for tarn, original in sorted_mappings:
-                    result = result.replace(tarn, original)
+                    result, _ = _replace_word_boundary(result, tarn, original)
                 return result
             elif isinstance(value, dict):
                 return {k: deanon_value(v) for k, v in value.items()}
@@ -1616,7 +1628,7 @@ JSON:
 
         result = text
         for tarn, original in sorted_mappings:
-            result = result.replace(tarn, original)
+            result, _ = _replace_word_boundary(result, tarn, original)
 
         return result
 

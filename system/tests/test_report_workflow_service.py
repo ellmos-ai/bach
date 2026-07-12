@@ -12,7 +12,7 @@ SYSTEM_ROOT = Path(__file__).parent.parent
 if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
-from hub._services.document.report_workflow_service import ReportWorkflowService
+from hub._services.document.report_workflow_service import ReportWorkflowService, TempAnonymProfile
 from hub._services.document import anonymizer_service
 from hub._services.document.anonymizer_service import AnonymProfile, DocumentAnonymizer
 
@@ -478,3 +478,62 @@ def test_document_pipeline_extract_bundle_anonymizes_at_word_boundaries():
         f"Zusammengesetztes Wort beim Bundling fragmentiert: {result.core_text!r}"
     )
     assert "Die Person026 war auffaellig" in result.core_text
+
+
+def test_get_reverse_mappings_prefers_longest_original_on_collision(tmp_path):
+    """Regressionstest fuer einen realen Vorfall: Ein mehrteiliger Vorname
+    ("Chris Darrell") wird -- wie bei mehrteiligen Namen ueblich -- als
+    ganze Phrase UND wortweise auf denselben Fake-Vornamen gemappt. Die
+    De-Anonymisierung reversierte den Fake-Vornamen bisher zufaellig auf
+    das ZULETZT eingefuegte (oft ein einzelnes Wort statt der vollen
+    Phrase), z.B. "David" -> "Darrell" statt "Chris Darrell". Bei Kollision
+    muss der laengste (vollstaendigste) Originalwert gewinnen."""
+    profile = TempAnonymProfile(
+        tarnname="David Vogel",
+        fake_geburtsdatum="01.01.2015",
+        original_name="Nguendon Kenhagho, Chris Darrell",
+        mappings={
+            "names": {
+                "Chris Darrell": "David",
+                "Chris": "David",
+                "Darrell": "David",
+                "Nguendon Kenhagho": "Vogel",
+                "Nguendon": "Vogel",
+                "Kenhagho": "Vogel",
+            }
+        },
+    )
+    reverse = profile.get_reverse_mappings()
+    assert reverse["David"] == "Chris Darrell", (
+        f"Fake-Vorname reversiert falsch: {reverse['David']!r} statt 'Chris Darrell'"
+    )
+    assert reverse["Vogel"] == "Nguendon Kenhagho", (
+        f"Fake-Nachname reversiert falsch: {reverse['Vogel']!r} statt 'Nguendon Kenhagho'"
+    )
+
+
+def test_deanonymize_json_restores_full_compound_name(tmp_path):
+    """Ende-zu-Ende-Regressionstest fuer die De-Anonymisierung eines
+    mehrteiligen Klientennamens ueber _deanonymize_json()."""
+    service = ReportWorkflowService(base_path=tmp_path)
+    profile = TempAnonymProfile(
+        tarnname="David Vogel",
+        fake_geburtsdatum="01.01.2015",
+        original_name="Nguendon Kenhagho, Chris Darrell",
+        mappings={
+            "names": {
+                "Chris Darrell": "David",
+                "Chris": "David",
+                "Darrell": "David",
+                "Nguendon Kenhagho": "Vogel",
+                "Nguendon": "Vogel",
+                "Kenhagho": "Vogel",
+            },
+            "dates": {},
+        },
+    )
+    data = {"stammdaten": {"name": "David Vogel"}}
+    result = service._deanonymize_json(data, profile)
+    assert result["stammdaten"]["name"] == "Nguendon Kenhagho, Chris Darrell", (
+        f"Name nicht korrekt zurueckuebersetzt: {result['stammdaten']['name']!r}"
+    )
