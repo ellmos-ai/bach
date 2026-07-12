@@ -32,6 +32,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8')
 import tempfile
 import threading
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -75,6 +76,19 @@ except Exception as e:
 from hub._services.llm.model_backend import create_backend, OllamaBackend
 from hub._services.chat.chat_runtime import ChatRuntime
 
+# Compute Lock (optional — graceful if not available)
+try:
+    from hub.compute_lock import (
+        DEFAULT_CHECK_SCRIPT, DEFAULT_LOCK_PATH,
+        check_compute_active, pause_compute_jobs, resume_compute_jobs,
+        start_resume_monitor, recover_paused_jobs, format_status_message,
+        write_session_flag, update_session_flag, delete_session_flag,
+        set_inferenz_active, get_effective_keep_alive_seconds,
+    )
+    HAS_COMPUTE_LOCK = True
+except ImportError:
+    HAS_COMPUTE_LOCK = False
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
@@ -96,7 +110,7 @@ def load_config() -> dict:
     config.setdefault("backend", {
         "type": "ollama",
         "base_url": "http://localhost:11434",
-        "default_model": "qwen3.5:35b-a3b",
+        "default_model": "qwen3.6:35b-mlx",
     })
 
     if not config["bot_token"]:
@@ -119,6 +133,14 @@ def load_config() -> dict:
     env_url = os.environ.get("OLLAMA_URL")
     if env_url:
         config["backend"]["base_url"] = env_url
+
+    # Compute Lock config (default: disabled for users without memwatchdog)
+    config.setdefault("compute_lock", {
+        "enabled": False,
+        "lock_path": "~/.memwatchdog/compute_active.lock",
+        "check_script": "~/compute/abc_hct/compute_queue/check_compute_active.sh",
+        "pause_method": "sigstop",
+    })
 
     return config
 
@@ -154,6 +176,12 @@ _global_defaults = {
     "model": "",
     "max_tool_rounds": 12,
 }
+
+# Pending actions for compute lock confirmations (keyed by chat_id)
+# Format: {chat_id: {"kind": "compute_pause_for_ollama", "status": dict,
+#                     "text": str, "timestamp": float}}
+_pending_actions: dict = {}
+_PENDING_TTL = 120  # seconds before a pending action expires
 
 _orig_get_session = runtime.get_session
 
@@ -278,7 +306,7 @@ BACKEND_PRESETS = {
     "ollama": {
         "type": "ollama",
         "base_url": os.environ.get("OLLAMA_URL", "http://localhost:11434"),
-        "default_model": os.environ.get("OLLAMA_MODEL", "qwen3.5:35b-a3b"),
+        "default_model": os.environ.get("OLLAMA_MODEL", "qwen3.6:35b-mlx"),
         "method": "api",
         "description": "Lokales Ollama (Qwen, Llama, etc.)",
     },
@@ -353,7 +381,7 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lines.append("Beispiele:")
         lines.append("  /backend claude opus")
         lines.append("  /backend codex o4-mini")
-        lines.append("  /backend ollama qwen3.5:35b-a3b")
+        lines.append("  /backend ollama qwen3.6:35b-mlx")
         await update.message.reply_text("\n".join(lines))
         return
 
@@ -744,6 +772,108 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             os.unlink(tmp_path)
 
 
+# --- Compute Lock Helpers ---
+
+def _compute_lock_enabled() -> bool:
+    """Check if compute lock feature is enabled and available."""
+    return (HAS_COMPUTE_LOCK
+            and CONFIG.get("compute_lock", {}).get("enabled", False)
+            and isinstance(runtime.backend, OllamaBackend))
+
+
+async def _handle_pending_action(chat_id: str, text: str, update: Update) -> bool:
+    """Handle JA/NEIN reply to a pending compute lock question.
+
+    Returns True if the message was consumed (caller should return).
+    """
+    pending = _pending_actions.get(chat_id)
+    if not pending:
+        return False
+
+    # Check TTL
+    if time.time() - pending["timestamp"] > _PENDING_TTL:
+        del _pending_actions[chat_id]
+        return False
+
+    reply = text.strip().upper()
+
+    if reply in ("JA", "J", "YES", "Y"):
+        del _pending_actions[chat_id]
+        status = pending["status"]
+        original_text = pending["text"]
+
+        await update.message.reply_text("Pausiere Compute-Jobs...")
+
+        cl_cfg = CONFIG.get("compute_lock", {})
+        paused = pause_compute_jobs(status)
+
+        if not paused:
+            await update.message.reply_text(
+                "Keine Jobs pausiert (evtl. bereits beendet). Fahre fort..."
+            )
+        else:
+            pid_str = ", ".join(str(p) for p in paused)
+            await update.message.reply_text(
+                f"Pausiert: {pid_str}\n"
+                "Starte Ollama-Anfrage..."
+            )
+
+        # Session flag VOR dem LLM-Call schreiben (Watchdog braucht es für Inferenz-Schutz)
+        model = runtime.get_session(chat_id).model or runtime.backend.get_default_model()
+        if _compute_lock_enabled():
+            write_session_flag(chat_id, model,
+                               effective_keep_alive_seconds=get_effective_keep_alive_seconds())
+
+        # Run the original message through the LLM
+        typing = asyncio.create_task(_keep_typing(update))
+        try:
+            if _compute_lock_enabled():
+                set_inferenz_active(True)
+            answer = await runtime.process(original_text, chat_id)
+            for i in range(0, len(answer), 4000):
+                await update.message.reply_text(answer[i:i + 4000])
+            session = runtime.get_session(chat_id)
+            if session.voice_output:
+                await _send_voice_reply(update, answer)
+        except Exception as e:
+            log.error(f"Chat-Fehler nach Compute-Pause: {e}")
+            await update.message.reply_text(f"Fehler: {e}")
+        finally:
+            if _compute_lock_enabled():
+                set_inferenz_active(False)
+            typing.cancel()
+
+        # Start resume monitor if jobs were paused
+        if paused:
+            ollama_url = getattr(runtime.backend, "base_url", "http://localhost:11434")
+
+            def _on_resume(pids):
+                log.info("Compute jobs resumed: %s", pids)
+
+            start_resume_monitor(
+                model_name=model,
+                paused_pids=paused,
+                callback=_on_resume,
+                ollama_url=ollama_url,
+                idle_wait=90.0,
+            )
+            await update.message.reply_text(
+                f"Resume-Monitor gestartet. Jobs werden automatisch "
+                f"fortgesetzt wenn {model} entladen wird."
+            )
+
+        return True
+
+    elif reply in ("NEIN", "N", "NO"):
+        del _pending_actions[chat_id]
+        await update.message.reply_text("OK, kein Ollama-Load. Nachricht verworfen.")
+        return True
+
+    # Not a JA/NEIN reply — treat as new message, expire the pending action
+    del _pending_actions[chat_id]
+    return False
+
+
 # --- Hauptnachrichten-Handler ---
 
 async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -756,9 +886,39 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     chat_id = str(update.effective_chat.id)
+
+    # Handle pending compute lock confirmation (JA/NEIN)
+    if chat_id in _pending_actions:
+        consumed = await _handle_pending_action(chat_id, text, update)
+        if consumed:
+            return
+
+    # Compute lock check: before Ollama call, check if compute jobs are running
+    if _compute_lock_enabled():
+        cl_cfg = CONFIG.get("compute_lock", {})
+        is_active, status = check_compute_active(
+            lock_path=cl_cfg.get("lock_path", "~/.memwatchdog/compute_active.lock"),
+            check_script=cl_cfg.get("check_script", DEFAULT_CHECK_SCRIPT),
+        )
+        if is_active:
+            msg = format_status_message(status)
+            _pending_actions[chat_id] = {
+                "kind": "compute_pause_for_ollama",
+                "status": status,
+                "text": text,
+                "timestamp": time.time(),
+            }
+            await update.message.reply_text(msg)
+            return
+        model = runtime.get_session(chat_id).model or runtime.backend.get_default_model()
+        write_session_flag(chat_id, model,
+                           effective_keep_alive_seconds=get_effective_keep_alive_seconds())
+
     typing = asyncio.create_task(_keep_typing(update))
 
     try:
+        if _compute_lock_enabled():
+            set_inferenz_active(True)
         answer = await runtime.process(text, chat_id)
         for i in range(0, len(answer), 4000):
             await update.message.reply_text(answer[i:i + 4000])
@@ -769,6 +929,8 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         log.error(f"Chat-Fehler: {e}")
         await update.message.reply_text(f"Fehler: {e}")
     finally:
+        if _compute_lock_enabled():
+            set_inferenz_active(False)
         typing.cancel()
 
 
@@ -1059,6 +1221,12 @@ class ControlHandler(BaseHTTPRequestHandler):
                 if s.last_tools:
                     active_tools = s.last_tools
                     break
+            _SYS_IDS = {"idle-worker", "tray-prompt", "api-delegate", "claude-delegate"}
+            now = time.time()
+            active_user = sum(
+                1 for cid, s in runtime.sessions.items()
+                if cid not in _SYS_IDS and (s.current_tool or now - s.last_active < 120)
+            )
             self._json({
                 "backend": backend_name,
                 "backend_cli": cli_name,
@@ -1068,6 +1236,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 "manages_own_tools": owns_tools,
                 "bach": HAS_BACH,
                 "sessions": len(runtime.sessions),
+                "active_sessions": active_user,
                 "max_tool_rounds": runtime.max_tool_rounds,
                 "current_tool": current_tool,
                 "tool_round": tool_round,
@@ -1223,6 +1392,18 @@ def main():
         print("Kein Bot-Token! Setze TELEGRAM_BOT_TOKEN oder ~/.credentials/telegram_bot_token")
         sys.exit(1)
 
+    # Crash recovery: resume any compute jobs stopped by a previous bot session
+    if HAS_COMPUTE_LOCK and CONFIG.get("compute_lock", {}).get("enabled", False):
+        try:
+            resumed = recover_paused_jobs()
+            if resumed:
+                log.info("Crash recovery: resumed PIDs %s", resumed)
+                print(f"Compute Lock: {len(resumed)} Jobs nach Crash resumed: {resumed}")
+            else:
+                print("Compute Lock: kein Crash-Recovery noetig")
+        except Exception as e:
+            log.warning("Crash recovery failed: %s", e)
+
     start_control_api()
 
     app = Application.builder().token(BOT_TOKEN).build()
@@ -1253,10 +1434,12 @@ def main():
 
     backend_type = CONFIG["backend"].get("type", "ollama")
     model = backend.get_default_model()
+    cl_status = "AN" if _compute_lock_enabled() else "AUS"
     print(
         f"BACH Telegram Chat gestartet "
         f"(BACH: {'JA' if HAS_BACH else 'NEIN'}, "
-        f"Backend: {backend_type}, Modell: {model}, Think: AN)"
+        f"Backend: {backend_type}, Modell: {model}, Think: AN, "
+        f"Compute-Lock: {cl_status})"
     )
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
