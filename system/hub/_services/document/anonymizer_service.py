@@ -49,7 +49,7 @@ import re
 import secrets
 import string
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -1416,6 +1416,8 @@ class DocumentAnonymizer:
         # Nach Laenge sortieren (laengste zuerst, verhindert Teilersetzungen)
         sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
 
+        date_mappings = profile.mappings.get("dates", {})
+
         # Alle Tabellenblätter durchgehen
         for sheet_name in wb.sheetnames:
             sheet = wb[sheet_name]
@@ -1429,6 +1431,28 @@ class DocumentAnonymizer:
                             count += occurrences
                         if new_value != original:
                             cell.value = new_value
+                    elif isinstance(cell.value, (datetime, date)) and date_mappings:
+                        # Excel speichert Datumszellen (z.B. Geburtsdatum in
+                        # Zeitnachweis-Tabellen) oft als natives datetime/date-
+                        # Objekt, NICHT als Text "TT.MM.JJJJ" -- der str()-Zweig
+                        # oben griff hier nie, das echte Datum blieb also in
+                        # jeder Datums-formatierten Zelle unanonymisiert.
+                        cell_date_str = cell.value.strftime("%d.%m.%Y")
+                        fake_str = date_mappings.get(cell_date_str)
+                        if fake_str:
+                            try:
+                                fake_dt = datetime.strptime(fake_str, "%d.%m.%Y")
+                                if isinstance(cell.value, datetime):
+                                    cell.value = fake_dt.replace(
+                                        hour=cell.value.hour,
+                                        minute=cell.value.minute,
+                                        second=cell.value.second,
+                                    )
+                                else:
+                                    cell.value = fake_dt.date()
+                                count += 1
+                            except ValueError:
+                                pass
 
         wb.save(str(path))
         wb.close()
