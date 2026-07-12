@@ -524,8 +524,9 @@ class DocumentPipeline:
         def anonymize_text(text: str) -> str:
             if not sorted_replacements:
                 return text
+            from .anonymizer_service import _replace_word_boundary
             for old, new in sorted_replacements:
-                text = text.replace(old, new)
+                text, _ = _replace_word_boundary(text, old, new)
             return text
 
         # Prioritaets-Gruppen innerhalb der Kategorien
@@ -758,8 +759,9 @@ class DocumentPipeline:
         )
 
         def anonymize_text(text: str) -> str:
+            from .anonymizer_service import _replace_word_boundary
             for old, new in sorted_replacements:
-                text = text.replace(old, new)
+                text, _ = _replace_word_boundary(text, old, new)
             return text
 
         return TextBundle(

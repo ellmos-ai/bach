@@ -447,3 +447,34 @@ def test_anonymize_docx_handles_word_split_across_multiple_runs(tmp_path):
     assert "Wahrnehmungsbesonderheiten" in result_text, (
         f"Ueber Runs gesplittetes Kompositum wurde fragmentiert: {result_text!r}"
     )
+
+
+def test_document_pipeline_extract_bundle_anonymizes_at_word_boundaries():
+    """Regressionstest: document_pipeline.py::extract_bundle() haelt eine
+    EIGENE, komplett separate Anonymisierungs-Ersetzung vor (fuer den Fall,
+    dass das Bundle direkt mit einem AnonymProfile erzeugt wird). Diese nutzte
+    bislang blindes text.replace() -- selbst wenn die Quelldatei bereits
+    korrekt (wortgrenzen-sicher) anonymisiert war, korrumpierte dieser
+    ZWEITE Ersetzungsdurchlauf beim Bundling zusammengesetzte Woerter erneut
+    ("Person026sbesonderheiten" statt "Wahrnehmungsbesonderheiten")."""
+    from hub._services.document.document_pipeline import DocumentPipeline, TextBundle
+
+    profile = AnonymProfile(
+        client_id="TEST",
+        tarnname="Tarn Person",
+        fake_geburtsdatum="01.01.2015",
+        mappings={"names": {"Wahrnehmung": "Person026"}},
+    )
+
+    pipeline = DocumentPipeline()
+    bundle = TextBundle(
+        core_text="Wahrnehmungsbesonderheiten des Klienten. Die Wahrnehmung war auffaellig.",
+        stufe2_text="",
+        extended_text="",
+    )
+    result = pipeline.apply_anonymization(bundle, profile)
+
+    assert "Wahrnehmungsbesonderheiten" in result.core_text, (
+        f"Zusammengesetztes Wort beim Bundling fragmentiert: {result.core_text!r}"
+    )
+    assert "Die Person026 war auffaellig" in result.core_text
