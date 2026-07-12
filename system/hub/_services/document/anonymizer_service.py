@@ -151,7 +151,7 @@ TARN_VORNAMEN_M = [
 
 TARN_VORNAMEN_W = [
     "Lena", "Marie", "Sophie", "Emma", "Hannah", "Mia", "Clara", "Lina",
-    "Lea", "Anna", "Laura", "Sarah", "Julia", "Lisa", "Emily", "Nina"
+    "Lea", "Anna", "Laura", "Sarah", "Julia", "Amara", "Emily", "Nina"
 ]
 
 # Kombinierte Liste fuer Rueckwaertskompatibilitaet
@@ -360,6 +360,20 @@ INSTITUTION_PATTERN = re.compile(
     r'(?:[A-ZÄÖÜ][a-zäöüß]+(?:schule|klinik|heim|werkstatt|zentrum|praxis|kindergarten|kita|hort|internat|wohnheim|wohngruppe|tagesstaette|foerderzentrum))'
     r'(?:\s+[A-ZÄÖÜ][a-zäöüß]+(?:\s+[a-zäöüß]+)?)?',  # Optionaler Ortsname
     re.UNICODE
+)
+
+# Personennamen in Tabellenzeilen (Teilnehmerlisten, Gruppen-Protokolle):
+# Faengt Zeilen wie "Timon Ackerknecht | Teilt seine technische Expertise..."
+# oder "Amara Wanjiru Osei Boateng | Sehr fixiert auf Essen...".
+# Eng verankert (Zeilenanfang + 2-4 grossgeschriebene Woerter + unmittelbar
+# gefolgt von einem Tabellen-Trennzeichen), um Falsch-Positive bei normaler
+# (grossschreibungsreicher) deutscher Fliesstext-Prosa zu vermeiden.
+# Erfasst KEINE explizit uebergebenen Namen (Klient/Eltern) -- das ist die
+# einzige automatische Erkennung fuer unbekannte Drittpersonen (z.B. andere
+# Kinder in Gruppenprotokollen), die sonst nirgends erfasst werden.
+TABLE_ROW_NAME_PATTERN = re.compile(
+    r'^([A-ZÄÖÜ][a-zäöüß]+(?:[\s\-][A-ZÄÖÜ][a-zäöüß]+){1,3})\s*[|\t]',
+    re.MULTILINE
 )
 
 # Private E-Mail-Domains (nicht-berufliche)
@@ -578,7 +592,8 @@ class DocumentAnonymizer:
             "phones": [],
             "emails": [],
             "addresses": [],
-            "institutions": []
+            "institutions": [],
+            "table_row_names": []
         }
 
         # Telefonnummern finden
@@ -612,6 +627,14 @@ class DocumentAnonymizer:
                 # Nicht auf globaler Whitelist?
                 if not any(w.lower() in cleaned.lower() for w in self.global_whitelist.get("organizations", [])):
                     found["institutions"].append(cleaned)
+
+        # Personennamen in Tabellenzeilen (z.B. Teilnehmerlisten in Gruppenprotokollen)
+        table_names = TABLE_ROW_NAME_PATTERN.findall(text)
+        for name in table_names:
+            cleaned = name.strip()
+            if cleaned and cleaned not in found["table_row_names"]:
+                if not any(w.lower() == cleaned.lower() for w in self.global_whitelist.get("names", [])):
+                    found["table_row_names"].append(cleaned)
 
         return found
 
@@ -807,7 +830,8 @@ class DocumentAnonymizer:
         combined = {
             "phones": [],
             "emails": [],
-            "addresses": []
+            "addresses": [],
+            "table_row_names": []
         }
 
         src = Path(folder)

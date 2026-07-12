@@ -469,7 +469,9 @@ Interpersonelle Interaktionen:
         whitelist: Optional[List[str]] = None,
         scan_folder: Optional[Path] = None,
         parent_names: Optional[List[str]] = None,
-        client_address: Optional[str] = None
+        client_address: Optional[str] = None,
+        vorname_hint: Optional[str] = None,
+        nachname_hint: Optional[str] = None,
     ) -> TempAnonymProfile:
         """
         Erstellt ein temporaeres Anonymisierungsprofil.
@@ -483,6 +485,11 @@ Interpersonelle Interaktionen:
             scan_folder: Ordner fuer automatische Erkennung von Tel/Mail/Adressen
             parent_names: Liste der Elternnamen (z.B. ["Maria Mustermann", "Hans Mustermann"])
             client_address: Adresse des Klienten (wird anonymisiert)
+            vorname_hint: Expliziter (ggf. mehrteiliger) Vorname, falls bekannt
+                          (z.B. "Amara Wanjiru"). Ueberschreibt die Vorname/Nachname-
+                          Erkennung aus client_name.
+            nachname_hint: Expliziter (ggf. mehrteiliger) Nachname, falls bekannt
+                          (z.B. "Osei Boateng").
 
         Returns:
             TempAnonymProfile (nicht persistent!)
@@ -534,28 +541,34 @@ Interpersonelle Interaktionen:
             name_variants[real.upper()] = fake.upper()
         mappings["names"].update(name_variants)
 
-        # Vorname und Nachname einzeln
-        if len(real_parts) >= 2 and len(tarn_parts) >= 2:
-            vorname_real = real_parts[0]
-            vorname_fake = tarn_parts[0]
-            nachname_real = real_parts[-1]
-            nachname_fake = tarn_parts[-1]
-            
-            mappings["names"][vorname_real] = vorname_fake
-            mappings["names"][vorname_real.upper()] = vorname_fake.upper()
-            
-            mappings["names"][nachname_real] = nachname_fake
-            mappings["names"][nachname_real.upper()] = nachname_fake.upper()
-
-        # Bei "Nachname, Vorname" Format
-        if ", " in client_name:
-            parts = client_name.split(", ")
+        # Vorname/Nachname-Grenze bestimmen: explizite Hints > "Nachname, Vorname"
+        # Format > Fallback (nur erstes/letztes Wort des flachen Namens).
+        # WICHTIG: Mehrteilige Vor-/Nachnamen (z.B. Vorname "Amara Wanjiru",
+        # Nachname "Osei Boateng") wurden zuvor nur ueber ein einzelnes
+        # Token erfasst -- mittlere Namensteile blieben komplett unanonymisiert.
+        vorname_real = vorname_hint
+        nachname_real = nachname_hint
+        if not (vorname_real and nachname_real) and ", " in client_name:
+            parts = client_name.split(", ", 1)
             if len(parts) == 2:
-                # Nachname schon oben drin, aber hier nochmal explizit falls anders
-                mappings["names"][parts[0]] = tarn_parts[-1]  # Nachname
-                mappings["names"][parts[1]] = tarn_parts[0]   # Vorname
-                mappings["names"][parts[0].upper()] = tarn_parts[-1].upper()
-                mappings["names"][parts[1].upper()] = tarn_parts[0].upper()
+                nachname_real, vorname_real = parts[0].strip(), parts[1].strip()
+        if not (vorname_real and nachname_real) and len(real_parts) >= 2:
+            vorname_real, nachname_real = real_parts[0], real_parts[-1]
+
+        vorname_fake = tarn_parts[0]
+        nachname_fake = tarn_parts[-1]
+
+        if vorname_real and nachname_real:
+            for real_val, fake_val in ((vorname_real, vorname_fake), (nachname_real, nachname_fake)):
+                # Ganzen (ggf. mehrteiligen) Namensteil mappen ...
+                mappings["names"][real_val] = fake_val
+                mappings["names"][real_val.upper()] = fake_val.upper()
+                # ... UND jedes einzelne Wort separat -- faengt Dokumente ab,
+                # die nur einen Teil eines mehrteiligen Namens verwenden
+                # oder die Wortreihenfolge vertauschen.
+                for word in real_val.split():
+                    mappings["names"][word] = fake_val
+                    mappings["names"][word.upper()] = fake_val.upper()
 
         # Geburtsdatum
         mappings["dates"][geburtsdatum] = fake_geb
@@ -577,28 +590,34 @@ Interpersonelle Interaktionen:
                     self._used_tarnnames.add(parent_tarnname)
                     parent_tarn_parts = parent_tarnname.strip().split()
 
-                    # Vollstaendigen Namen
+                    # Vollstaendigen Namen mappen
                     mappings["names"][parent_name] = parent_tarnname
                     mappings["names"][parent_name.upper()] = parent_tarnname.upper()
 
-                    # Auch einzelne Teile (Vorname/Nachname)
+                    # Mehrteilige Vor-/Nachnamen: alle Woerter ausser dem letzten
+                    # gelten als (ggf. mehrteiliger) Vorname, das letzte Wort als
+                    # Nachname -- faengt z.B. "Katarzyna Nowak Zielinska" vollstaendig,
+                    # statt wie zuvor nur "Katarzyna" und "Zielinska" einzeln.
                     if len(parent_parts) >= 2 and len(parent_tarn_parts) >= 2:
-                        # Vorname
-                        if parent_parts[0] not in mappings["names"]:
-                            mappings["names"][parent_parts[0]] = parent_tarn_parts[0]
-                            mappings["names"][parent_parts[0].upper()] = parent_tarn_parts[0].upper()
-                        # Nachname (falls anders als Klient)
+                        vorname_fake_p = parent_tarn_parts[0]
+                        nachname_fake_p = parent_tarn_parts[-1]
+                        for word in parent_parts[:-1]:
+                            if word not in mappings["names"]:
+                                mappings["names"][word] = vorname_fake_p
+                                mappings["names"][word.upper()] = vorname_fake_p.upper()
                         if parent_parts[-1] not in mappings["names"]:
-                            mappings["names"][parent_parts[-1]] = parent_tarn_parts[-1]
-                            mappings["names"][parent_parts[-1].upper()] = parent_tarn_parts[-1].upper()
+                            mappings["names"][parent_parts[-1]] = nachname_fake_p
+                            mappings["names"][parent_parts[-1].upper()] = nachname_fake_p.upper()
 
-                    print(f"[INFO] Elternname: {parent_name} -> {parent_tarnname}")
+                    # Kein Klartext-Elternname im Log (sonst Leck ueber Konsolen-/Task-Output)
+                    print(f"[INFO] Elternname anonymisiert -> {parent_tarnname}")
 
         # Klienten-Adresse explizit anonymisieren
         if client_address and client_address not in wl:
             fake_addr = _generate_fake_address()
             mappings["addresses"][client_address] = fake_addr
-            print(f"[INFO] Klienten-Adresse: {client_address} -> {fake_addr}")
+            # Kein Klartext-Adresse im Log
+            print(f"[INFO] Klienten-Adresse anonymisiert -> {fake_addr}")
 
         # Zusaetzliche Begriffe
         if additional_terms:
@@ -612,29 +631,58 @@ Interpersonelle Interaktionen:
             anonymizer = DocumentAnonymizer()
             scanned = anonymizer.scan_folder_for_sensitive_data(str(scan_folder))
 
-            # Telefonnummern
+            # Telefonnummern (kein Klartextwert im Log)
             for phone in scanned.get("phones", []):
                 if phone not in wl:
                     fake_phone = _generate_fake_phone()
                     mappings["phones"][phone] = fake_phone
-                    print(f"  [SCAN] Telefon: {phone} -> {fake_phone}")
 
-            # E-Mail-Adressen
+            # E-Mail-Adressen (kein Klartextwert im Log)
             for email in scanned.get("emails", []):
                 if email not in wl:
                     fake_email = _generate_fake_email()
                     mappings["emails"][email] = fake_email
-                    print(f"  [SCAN] E-Mail: {email} -> {fake_email}")
 
-            # Straßenadressen
+            # Straßenadressen (kein Klartextwert im Log)
             for addr in scanned.get("addresses", []):
                 if addr not in wl:
                     fake_addr = _generate_fake_address()
                     mappings["addresses"][addr] = fake_addr
-                    print(f"  [SCAN] Adresse: {addr} -> {fake_addr}")
+
+            # Personennamen aus Tabellenzeilen (Drittpersonen, z.B. andere Kinder
+            # in Gruppenprotokollen) -- werden sonst von KEINER Erkennung erfasst,
+            # da nur explizit uebergebene Namen (Klient/Eltern) gemappt werden.
+            for table_name in scanned.get("table_row_names", []):
+                if table_name in wl or table_name in mappings["names"]:
+                    continue
+                name_words = table_name.strip().split()
+                if not name_words:
+                    continue
+                fake_third = _generate_tarnname(
+                    self._used_tarnnames,
+                    original_vorname=name_words[0]
+                )
+                self._used_tarnnames.add(fake_third)
+                fake_third_parts = fake_third.split()
+
+                mappings["names"][table_name] = fake_third
+                mappings["names"][table_name.upper()] = fake_third.upper()
+                # Erstes Wort -> Fake-Vorname, alle weiteren Woerter -> Fake-Nachname
+                # (deckt mehrteilige Namen ab, z.B. "Amara Wanjiru Osei Boateng")
+                fake_third_vorname = fake_third_parts[0]
+                fake_third_nachname = fake_third_parts[-1]
+                for word in name_words[:1]:
+                    if word not in mappings["names"]:
+                        mappings["names"][word] = fake_third_vorname
+                        mappings["names"][word.upper()] = fake_third_vorname.upper()
+                for word in name_words[1:]:
+                    if word not in mappings["names"]:
+                        mappings["names"][word] = fake_third_nachname
+                        mappings["names"][word.upper()] = fake_third_nachname.upper()
 
             print(f"[INFO] Scan abgeschlossen: {len(scanned.get('phones', []))} Tel, "
-                  f"{len(scanned.get('emails', []))} Mail, {len(scanned.get('addresses', []))} Adressen")
+                  f"{len(scanned.get('emails', []))} Mail, {len(scanned.get('addresses', []))} Adressen, "
+                  f"{len(scanned.get('table_row_names', []))} Tabellennamen")
 
         # Temporaeres Verzeichnis
         temp_dir = Path(tempfile.mkdtemp(prefix="bach_report_"))
