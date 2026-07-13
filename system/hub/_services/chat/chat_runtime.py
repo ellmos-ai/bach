@@ -37,7 +37,7 @@ try:
     from hub.bach_paths import BACH_DB as _RUNTIME_DB
     RUNTIME_BACH_DB = str(_RUNTIME_DB)
 except ImportError:
-    RUNTIME_BACH_DB = str(Path(__file__).parent.parent.parent.parent / "data" / "bach.db")
+    RUNTIME_BACH_DB = str(BACH_DB)
 
 
 # --- Sicherheit ---

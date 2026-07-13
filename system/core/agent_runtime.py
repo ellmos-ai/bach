@@ -60,6 +60,16 @@ from typing import Optional, List, Tuple, Dict, Any
 from dataclasses import dataclass, field
 from enum import Enum
 
+# Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
+# veraltete Kopie im OneDrive-Ordner (bzw. auf ein Verzeichnis, das es gar nicht gibt —
+# dort legt sqlite3.connect() still eine leere 0-KB-Datenbank an).
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
+
 # UTF-8 Encoding fix
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if sys.stdout:
@@ -175,7 +185,16 @@ class AgentRegistry:
 
     def __init__(self, base_path: Path):
         self.base_path = base_path.resolve()
-        self.db_path = self.base_path / "data" / "bach.db"
+        # Kanonisch ist die zentrale Registry (BACH_DB). ABER: base_path ist zugleich der
+        # Injektionsmechanismus der Tests — sie reichen ein tmp-Verzeichnis mit eigener DB
+        # herein. Zeigt base_path also NICHT auf den echten system-Root und liegt dort eine
+        # DB, ist sie gemeint. Gleiches Muster wie hub/base.py::_canonical_db.
+        _injected_db = self.base_path / "data" / "bach.db"
+        _system_root = Path(__file__).resolve().parent.parent
+        if _injected_db.exists() and self.base_path != _system_root:
+            self.db_path = _injected_db
+        else:
+            self.db_path = BACH_DB
         self._cache: Dict[str, BaseAgent] = {}
         self._cache_signatures: Dict[str, str] = {}
 

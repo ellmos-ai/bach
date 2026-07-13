@@ -36,6 +36,17 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Tuple
 
+import sys
+# Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
+# veraltete Kopie im OneDrive-Ordner (bzw. auf ein Verzeichnis, das es gar nicht gibt —
+# dort legt sqlite3.connect() still eine leere 0-KB-Datenbank an).
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
+
 # Logger konfigurieren
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -133,7 +144,7 @@ class MailAboSyncService:
 if __name__ == "__main__":
     # Test-Aufruf
     script_dir = Path(__file__).parent.resolve()
-    db_path = script_dir.parent.parent.parent / "data" / "bach.db"
+    db_path = BACH_DB
     
     sync_service = MailAboSyncService(db_path)
     res = sync_service.run_sync(dry_run=True)

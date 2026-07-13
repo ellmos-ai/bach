@@ -93,6 +93,16 @@ from datetime import datetime, date, timedelta
 from pathlib import Path
 from threading import Event, Thread, Lock
 
+# Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
+# veraltete Kopie im OneDrive-Ordner (bzw. auf ein Verzeichnis, das es gar nicht gibt —
+# dort legt sqlite3.connect() still eine leere 0-KB-Datenbank an).
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
+
 try:
     from .fackel import acquire_fackel, heartbeat, release_fackel, get_fackel_holder, check_fackel_mine
 except ImportError:
@@ -119,7 +129,7 @@ LOG_FILE = BACH_DIR / "data" / "logs" / "claude_bridge.log"
 LAST_START_FILE = BRIDGE_DIR / "last_start.txt"
 MIN_RESTART_INTERVAL = 30  # Sekunden zwischen Starts
 
-DB_PATH = BACH_DIR / "data" / "bach.db"
+DB_PATH = BACH_DB
 
 # Maximales Alter von Nachrichten die verarbeitet werden (Sekunden)
 MAX_MESSAGE_AGE = 300  # 5 Minuten

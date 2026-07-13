@@ -43,6 +43,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, List, Any
 
+import sys
+# Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
+# veraltete Kopie im OneDrive-Ordner (bzw. auf ein Verzeichnis, das es gar nicht gibt —
+# dort legt sqlite3.connect() still eine leere 0-KB-Datenbank an).
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
+
 # Pfade
 SERVICE_DIR = Path(__file__).parent
 TEMPLATES_DIR = SERVICE_DIR / "templates"
@@ -256,8 +267,8 @@ class PromptGenerator:
         import sqlite3
         from datetime import datetime
 
-        db_path = BACH_DIR / "data" / "bach.db"
-        user_db_path = BACH_DIR / "data" / "bach.db"
+        db_path = BACH_DB
+        user_db_path = BACH_DB
         skill_file = BACH_DIR / "SKILL.md"
 
         # Tasks laden
@@ -418,7 +429,7 @@ bach --shutdown "Zusammenfassung der erledigten Arbeit"
         import sqlite3
         from datetime import datetime
 
-        db_path = BACH_DIR / "data" / "bach.db"
+        db_path = BACH_DB
         if not db_path.exists():
             return {"status": "error", "message": "Datenbank nicht gefunden"}
 

@@ -45,7 +45,18 @@ ATI_DIR = RECURRING_DIR.parent
 BACH_DIR = ATI_DIR.parent.parent.parent
 
 CONFIG_FILE = ATI_DIR / "data" / "config.json"
-USER_DB = BACH_DIR / "data" / "bach.db"
+
+# Den DB-Pfad zentral erfragen, nicht selbst bauen. BACH_DIR zeigt auf den
+# Repo-Root — BACH/data/bach.db existiert gar nicht, sqlite3.connect() legt dort
+# still eine leere 0-KB-Datenbank an.
+import sys
+
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB as USER_DB
 
 
 def load_config() -> Dict:

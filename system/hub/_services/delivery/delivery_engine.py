@@ -83,7 +83,7 @@ class DeliveryEngine:
             from hub.bach_paths import BACH_DB
             self.db_path = BACH_DB
         except ImportError:
-            self.db_path = base_path / "data" / "bach.db"
+            self.db_path = BACH_DB
 
     def _load_config(self) -> dict:
         """Lädt Delivery-Preferences Config"""

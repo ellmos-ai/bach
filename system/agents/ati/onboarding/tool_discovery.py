@@ -49,8 +49,19 @@ ONBOARDING_DIR = Path(__file__).parent.resolve()
 ATI_DIR = ONBOARDING_DIR.parent
 BACH_DIR = ATI_DIR.parent.parent.parent
 
-BACH_DB = BACH_DIR / "data" / "bach.db"
 KNOWN_TOOLS_FILE = ATI_DIR / "data" / "known_tools.json"
+
+# Den DB-Pfad zentral erfragen, nicht selbst bauen. BACH_DIR zeigt auf den
+# Repo-Root — BACH/data/bach.db existiert gar nicht, sqlite3.connect() legt dort
+# still eine leere 0-KB-Datenbank an.
+import sys
+
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
 
 
 def get_known_tools() -> Set[str]:

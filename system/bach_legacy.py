@@ -86,9 +86,13 @@ LOGS_DIR = DATA_DIR / "logs"
 BACKUPS_DIR = DATA_DIR / "_backups"
 MEMORY_DIR = DATA_DIR / "memory"  # Falls verwendet
 
-# Datenbanken
-DB_PATH = DATA_DIR / "bach.db"
-USER_DB_PATH = DATA_DIR / "bach.db"    # User-DB (migriert v1.1.84)
+# Datenbanken — zentral erfragt (hub/bach_paths.py), nicht selbst gebaut.
+# DATA_DIR/bach.db waere die veraltete Kopie im OneDrive-Ordner.
+if str(SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB as DB_PATH
+
+USER_DB_PATH = DB_PATH    # User-DB (migriert v1.1.84)
 
 # Root-Verzeichnisse
 USER_DIR = BACH_ROOT / "user"

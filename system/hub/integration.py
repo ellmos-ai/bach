@@ -67,7 +67,7 @@ class IntegrationHandler(BaseHandler):
         """Zeige Integration-Status."""
         try:
             # Hole Config aus DB
-            conn = sqlite3.connect(str(self.base_path / "data" / "bach.db"))
+            conn = sqlite3.connect(str(self._canonical_db))
             cur = conn.cursor()
 
             # Prüfe ob integration-Config existiert
@@ -153,7 +153,7 @@ class IntegrationHandler(BaseHandler):
     def _config(self) -> tuple:
         """Zeige/Ändere Integration-Konfiguration."""
         try:
-            conn = sqlite3.connect(str(self.base_path / "data" / "bach.db"))
+            conn = sqlite3.connect(str(self._canonical_db))
             cur = conn.cursor()
 
             cur.execute("""
@@ -190,7 +190,7 @@ class IntegrationHandler(BaseHandler):
             return False, f"Ungültiges Level: {level}\n\nGültig: {', '.join(valid_levels)}"
 
         try:
-            conn = sqlite3.connect(str(self.base_path / "data" / "bach.db"))
+            conn = sqlite3.connect(str(self._canonical_db))
             cur = conn.cursor()
 
             # Key erstellen

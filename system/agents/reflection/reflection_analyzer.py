@@ -234,7 +234,10 @@ def main():
         from hub.bach_paths import BACH_DB
         db_path = str(BACH_DB)
     except ImportError:
-        db_path = str(Path(__file__).parent.parent.parent.parent / "data" / "bach.db")
+        # Notfall-Fallback auf die kanonische lokale DB. Der frueher hier gebaute
+        # repo-relative Pfad zeigte auf BACH/data/bach.db — existiert nicht,
+        # sqlite3.connect() legte dort still eine leere 0-KB-DB an.
+        db_path = str(Path.home() / ".bach" / "bach.db")
     ref = SelfReflection(db_path)
 
     if len(sys.argv) > 1 and sys.argv[1] == "gaps":

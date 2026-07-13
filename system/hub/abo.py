@@ -25,7 +25,7 @@ class AboHandler(BaseHandler):
     def __init__(self, base_path: Path):
         super().__init__(base_path)
         self.data_dir = base_path / "data"
-        self.user_db = self.data_dir / "bach.db"  # Unified DB seit v1.1.84
+        self.user_db = self._canonical_db  # Unified DB seit v1.1.84
         self.patterns_file = base_path / "tools" / "abo" / "abo_patterns.json"
         self.username = "user"  # Default
 

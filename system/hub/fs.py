@@ -64,7 +64,7 @@ class FSHandler(BaseHandler):
 
     @property
     def target_file(self) -> Path:
-        return self.base_path / "data" / "bach.db"
+        return self._canonical_db
 
     def get_operations(self) -> dict:
         return {

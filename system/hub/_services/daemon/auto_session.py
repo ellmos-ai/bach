@@ -56,6 +56,16 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+# Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
+# veraltete Kopie im OneDrive-Ordner (bzw. auf ein Verzeichnis, das es gar nicht gibt —
+# dort legt sqlite3.connect() still eine leere 0-KB-Datenbank an).
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
+
 # ============ PFADE ============
 
 DAEMON_DIR = Path(__file__).parent.resolve()
@@ -65,8 +75,7 @@ BACH_DIR = SKILLS_DIR.parent
 
 PROFILES_DIR = DAEMON_DIR / "profiles"
 LOG_FILE = BACH_DIR / "logs" / "auto_session.log"
-USER_DB = BACH_DIR / "data" / "bach.db"
-BACH_DB = BACH_DIR / "data" / "bach.db"
+USER_DB = BACH_DB
 SKILL_FILE = BACH_DIR / "SKILL.md"
 
 # Wartezeiten

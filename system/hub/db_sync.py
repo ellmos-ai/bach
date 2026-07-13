@@ -74,7 +74,9 @@ class DBSyncManager:
             self.transit_dir = transit_dir or PROSYNC_TRANSIT_DIR
             self.local_bach_dir = LOCAL_BACH_DIR
         except ImportError:
-            self.db_path = db_path or self.base_path / "data" / "bach.db"
+            # Notfall-Fallback auf die kanonische lokale DB. Frueher stand hier
+            # base_path/data/bach.db — die veraltete Kopie im OneDrive-Ordner.
+            self.db_path = db_path or Path.home() / ".bach" / "bach.db"
             self.transit_dir = transit_dir or Path.home() / ".bach" / "transit"
             self.local_bach_dir = Path.home() / ".bach"
         self.hostname = socket.gethostname()
@@ -231,10 +233,23 @@ class DBSyncManager:
         return m.group(1) if m else None
 
     def ensure_local_db(self) -> bool:
-        """Erstellt lokale DB falls nicht vorhanden (Initial-Population von OneDrive)."""
+        """Erstellt lokale DB falls nicht vorhanden (Initial-Population von OneDrive).
+
+        Die Quell-DB wird BEWUSST aus `base_path` abgeleitet und NICHT aus der zentralen
+        Registry (`ONEDRIVE_DB`) geholt: `base_path` ist hier — wie in `hub/base.py` — der
+        Injektionspunkt der Test-Fixtures. Zieht man die Quelle aus der Registry, schaut
+        diese Methode im Test nicht mehr in die tmp-Umgebung, sondern auf die ECHTE
+        OneDrive-DB — und `shutil.copy2` kopiert dann 81 MB Produktivdaten in ein
+        Testverzeichnis. Belegt am 2026-07-13 durch
+        `test_db_sync_handler.py::TestEnsureLocalDB::test_no_source_db`.
+
+        Hinweis: Die Quelle ist inhaltlich ohnehin die falsche — sie ist veraltet, waehrend
+        der Transit-Hub aktuelle Snapshots haelt. Umstellung auf den Transit: BACH-Task 1168.
+        """
         local_db = self.local_bach_dir / "bach.db"
         if local_db.exists():
             return True
+
         onedrive_db = self.base_path / "data" / "bach.db"
         if not onedrive_db.exists():
             return False

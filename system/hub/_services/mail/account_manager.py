@@ -48,6 +48,16 @@ from typing import Optional, Dict, List, Tuple
 from dataclasses import dataclass, asdict
 import logging
 
+# Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
+# veraltete Kopie im OneDrive-Ordner (bzw. auf ein Verzeichnis, das es gar nicht gibt —
+# dort legt sqlite3.connect() still eine leere 0-KB-Datenbank an).
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
+
 # ============ PFADE ============
 
 SERVICE_DIR = Path(__file__).parent.resolve()
@@ -55,7 +65,7 @@ SKILLS_DIR = SERVICE_DIR.parent.parent
 BACH_DIR = SKILLS_DIR.parent
 
 DATA_DIR = BACH_DIR / "data"
-USER_DB = DATA_DIR / "bach.db"
+USER_DB = BACH_DB
 CREDENTIALS_DIR = SERVICE_DIR / "credentials"
 CREDENTIALS_DIR.mkdir(parents=True, exist_ok=True)
 

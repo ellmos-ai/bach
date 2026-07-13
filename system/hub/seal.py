@@ -26,6 +26,14 @@ import sqlite3
 from pathlib import Path
 from typing import List, Tuple
 
+# Doppelter Importweg mit Absicht: bach.py laedt diesen Handler als TOP-LEVEL-Modul
+# (`from seal import SealHandler`, nachdem es hub/ auf den sys.path gelegt hat) — ein rein
+# relativer Import scheitert dort und wuerde als "seal.py nicht gefunden" durchschlagen.
+try:
+    from .bach_paths import BACH_DB          # als Paketmodul: hub.seal
+except ImportError:                          # pragma: no cover
+    from bach_paths import BACH_DB           # als Top-Level-Modul: seal
+
 
 class SealHandler:
     """Handler fuer Kernel-Siegelsystem."""
@@ -37,15 +45,17 @@ class SealHandler:
         """
         self.base_path = Path(base_path)
         self.system_root = self.base_path / "system" if (self.base_path / "system").exists() else self.base_path
-        local_db = self.base_path / "data" / "bach.db"
-        try:
-            from hub.bach_paths import BACH_DB
-        except ImportError:
-            try:
-                from bach_paths import BACH_DB
-            except ImportError:
-                BACH_DB = local_db
-        self.db_path = BACH_DB if Path(BACH_DB).exists() else local_db
+        # Kanonisch ist die zentrale Registry (BACH_DB, Import am Modulkopf) — die frueher
+        # hier stehende Kaskade baute base_path/data/bach.db und traf damit die veraltete
+        # OneDrive-Kopie. ABER: base_path ist zugleich der Injektionsmechanismus der Tests
+        # (tmp-Verzeichnis mit eigener DB). Zeigt base_path nicht auf den echten Root und
+        # liegt dort eine DB, ist sie gemeint. Muster wie hub/base.py::_canonical_db.
+        _injected_db = self.base_path / "data" / "bach.db"
+        _real_root = Path(__file__).resolve().parent.parent
+        if _injected_db.exists() and self.base_path.resolve() != _real_root:
+            self.db_path = _injected_db
+        else:
+            self.db_path = BACH_DB
 
     def _get_conn(self):
         """DB-Verbindung."""

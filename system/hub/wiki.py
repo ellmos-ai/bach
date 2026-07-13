@@ -182,7 +182,7 @@ class WikiHandler(BaseHandler):
 
     def _read_from_db(self, thema):
         """Versucht Wiki-Artikel aus bach_blobs zu lesen."""
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self._canonical_db
         if not db_path.exists():
             return None
         try:
@@ -298,7 +298,7 @@ class WikiHandler(BaseHandler):
             return False, f"Fehler beim Lesen: {e}"
 
     def _get_db_conn(self):
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self._canonical_db
         if not db_path.exists():
             return None
         conn = sqlite3.connect(str(db_path))
@@ -465,7 +465,7 @@ class WikiHandler(BaseHandler):
 
     def _fts_search(self, keyword):
         """FTS5-basierte Suche in bach_blobs."""
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self._canonical_db
         if not db_path.exists():
             return None
 
@@ -554,7 +554,7 @@ class WikiHandler(BaseHandler):
 
     def _sync(self) -> tuple:
         """Spiegelt Help- und Wiki-Dateien in die Datenbank."""
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self._canonical_db
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 

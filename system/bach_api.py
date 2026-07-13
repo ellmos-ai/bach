@@ -149,17 +149,25 @@ class BachAPIError(RuntimeError):
     """Fehler fuer die strukturierte bach_api."""
 
 
+def _resolve_db_path() -> Path:
+    """Fragt den DB-Pfad bei der zentralen Registry ab.
+
+    Der Notfall-Fallback zeigt bewusst auf die kanonische lokale DB und NICHT
+    mehr auf ``_SYSTEM_DIR/data/bach.db``: Letzteres ist die veraltete Kopie im
+    OneDrive-Ordner. Wer sie oeffnet, arbeitet still auf altem Datenstand.
+    """
+    try:
+        from hub.bach_paths import BACH_DB
+        return BACH_DB
+    except ImportError:
+        return Path.home() / ".bach" / "bach.db"
+
+
 class _DBBackedProxy(_HandlerProxy):
     """Hilfsbasis fuer strukturierte Wrapper mit direktem DB-Lesezugriff."""
 
     def _connect(self) -> sqlite3.Connection:
-        try:
-            from hub.bach_paths import BACH_DB
-            db_path = BACH_DB
-        except ImportError:
-            db_path = _SYSTEM_DIR / "data" / "bach.db"
-
-        conn = sqlite3.connect(str(db_path))
+        conn = sqlite3.connect(str(_resolve_db_path()))
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -554,12 +562,7 @@ class _DBProxy:
     def _get(self):
         if self._safe_db is None:
             from core.safe_db import SafeDB
-            try:
-                from hub.bach_paths import BACH_DB
-                db_path = BACH_DB
-            except ImportError:
-                db_path = _SYSTEM_DIR / "data" / "bach.db"
-            self._safe_db = SafeDB(db_path, partner="bach_api")
+            self._safe_db = SafeDB(_resolve_db_path(), partner="bach_api")
         return self._safe_db
 
     def set_partner(self, partner: str):

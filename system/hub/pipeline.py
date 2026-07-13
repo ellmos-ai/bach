@@ -19,6 +19,17 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
 
+import sys
+# Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
+# veraltete Kopie im OneDrive-Ordner (bzw. auf ein Verzeichnis, das es gar nicht gibt —
+# dort legt sqlite3.connect() still eine leere 0-KB-Datenbank an).
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
+
 
 class PipelineHandler:
     """Handler für Pipeline-Management."""
@@ -553,7 +564,7 @@ def _handle_pipeline(argv):
 
     # Pfade ermitteln
     script_dir = Path(__file__).parent.parent  # system/
-    db_path = script_dir / "data" / "bach.db"
+    db_path = BACH_DB
     pipelines_dir = script_dir / "pipelines"
 
     handler = PipelineHandler(str(db_path), str(pipelines_dir))
