@@ -48,8 +48,6 @@ DATA_DIR = SYSTEM_ROOT / "data"
 HUB_DIR = SYSTEM_ROOT / "hub"
 SKILLS_DIR = SYSTEM_ROOT / "skills"
 TOOLS_DIR = SYSTEM_ROOT / "tools"
-LEGACY_DB_PATH = DATA_DIR / "bach.db"
-DB_PATH = LEGACY_DB_PATH
 LOGS_DIR = DATA_DIR / "logs"
 
 # sys.path Setup fuer Handler-Imports
@@ -57,10 +55,13 @@ for p in [str(SYSTEM_ROOT), str(SKILLS_DIR), str(SKILLS_DIR / "tools")]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
+# Den DB-Pfad zentral erfragen, nicht selbst bauen. Der frühere Fallback zeigte
+# auf DATA_DIR/bach.db — das ist die veraltete Kopie im OneDrive-Ordner, nicht die
+# kanonische Datenbank. Griff der Fallback, lief BACH still auf altem Datenstand.
 try:
     from hub.bach_paths import BACH_DB as CANONICAL_BACH_DB
 except Exception:
-    CANONICAL_BACH_DB = LEGACY_DB_PATH
+    CANONICAL_BACH_DB = Path.home() / ".bach" / "bach.db"
 
 DB_PATH = CANONICAL_BACH_DB
 

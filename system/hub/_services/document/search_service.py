@@ -38,7 +38,7 @@ def _get_indexer():
         from hub.bach_paths import BACH_DB
         db_path = BACH_DB
     except ImportError:
-        db_path = Path(__file__).parent.parent.parent.parent / "data" / "bach.db"
+        db_path = BACH_DB
     return DocumentIndexer(db_path)
 
 

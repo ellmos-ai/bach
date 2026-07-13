@@ -58,6 +58,14 @@ if sys.stdout:
 if sys.stderr:
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
+# Den DB-Pfad zentral erfragen (hub/bach_paths.py), nicht selbst bauen.
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
+
 
 class SetupWizard:
     """Interaktiver Setup-Wizard fuer neue Connectors."""
@@ -66,7 +74,9 @@ class SetupWizard:
         self.base_path = base_path or Path(__file__).parent.parent.parent
         self.templates_dir = self.base_path / "connectors" / "templates"
         self.connectors_dir = self.base_path / "connectors"
-        self.db_path = self.base_path / "data" / "bach.db"
+        # Der DB-Pfad wird zentral erfragt und NICHT aus base_path abgeleitet:
+        # base_path/data/bach.db ist die veraltete Kopie im OneDrive-Ordner.
+        self.db_path = BACH_DB
 
     def run(self):
         """Hauptschleife des Wizards."""

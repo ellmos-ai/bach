@@ -367,9 +367,15 @@ if __name__ == "__main__":
                         help="Automatisch bekannte Ordner scannen")
     args = parser.parse_args()
 
-    # Pfad zur DB: agents/_experts/bewerbungsexperte -> system/
-    base_path = Path(__file__).parent.parent.parent.parent
-    db_path = str(base_path / "data" / "bach.db")  # Unified DB seit v1.1.84
+    # Den DB-Pfad zentral erfragen, nicht selbst bauen: base_path/data/bach.db
+    # ist die veraltete Kopie im OneDrive-Ordner, nicht die kanonische Datenbank.
+    _SYSTEM_ROOT = next(
+        p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+    )
+    if str(_SYSTEM_ROOT) not in sys.path:
+        sys.path.insert(0, str(_SYSTEM_ROOT))
+    from hub.bach_paths import BACH_DB
+    db_path = str(BACH_DB)  # Unified DB seit v1.1.84
 
     gen = CVGenerator(db_path)
 
