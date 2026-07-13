@@ -241,8 +241,11 @@ class UserSync:
         Returns:
             UserSync-Instanz
         """
-        db_path = os.path.join(bach_root, 'data', 'bach.db')
-        return cls(bach_root, db_path)
+        # Den DB-Pfad zentral erfragen, nicht aus bach_root zusammenbauen:
+        # bach_root/data/bach.db ist die veraltete Kopie im OneDrive-Ordner.
+        from .bach_paths import BACH_DB
+
+        return cls(bach_root, str(BACH_DB))
 
 
 # ── Convenience-Funktionen fuer bach.py ──────────────────────────────────────

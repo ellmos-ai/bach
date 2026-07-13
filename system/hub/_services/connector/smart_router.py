@@ -49,6 +49,16 @@ from pathlib import Path
 from datetime import datetime
 from typing import Tuple, List, Optional
 
+# Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
+# veraltete Kopie im OneDrive-Ordner (bzw. auf ein Verzeichnis, das es gar nicht gibt —
+# dort legt sqlite3.connect() still eine leere 0-KB-Datenbank an).
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
+
 # UTF-8 Encoding fix
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if sys.stdout:
@@ -113,7 +123,7 @@ def smart_route_messages(base_path: Path,
     Returns:
         (success, message) Tuple
     """
-    db_path = base_path / "data" / "bach.db"
+    db_path = BACH_DB
 
     if not db_path.exists():
         return False, "[ERROR] Datenbank nicht gefunden"
