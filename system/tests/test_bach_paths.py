@@ -126,6 +126,32 @@ class TestDbPaths:
     def test_get_db_bach(self):
         assert get_db("bach") == BACH_DB
 
+    def test_resolve_db_blocks_implicit_onedrive_fallback(self, tmp_path, monkeypatch):
+        local_db = tmp_path / "home" / ".bach" / "bach.db"
+        onedrive_db = tmp_path / "OneDrive" / ".TOPICS" / ".AI" / ".OS" / "BACH" / "system" / "data" / "bach.db"
+        onedrive_db.parent.mkdir(parents=True)
+        onedrive_db.write_bytes(b"not empty")
+
+        monkeypatch.delenv("BACH_DB", raising=False)
+        monkeypatch.delenv("BACH_ALLOW_ONEDRIVE_DB_FALLBACK", raising=False)
+        monkeypatch.setattr(bach_paths, "_LOCAL_DB", local_db)
+        monkeypatch.setattr(bach_paths, "ONEDRIVE_DB", onedrive_db)
+
+        assert bach_paths._resolve_bach_db() == local_db
+
+    def test_resolve_db_allows_explicit_onedrive_fallback(self, tmp_path, monkeypatch):
+        local_db = tmp_path / "home" / ".bach" / "bach.db"
+        onedrive_db = tmp_path / "OneDrive" / ".TOPICS" / ".AI" / ".OS" / "BACH" / "system" / "data" / "bach.db"
+        onedrive_db.parent.mkdir(parents=True)
+        onedrive_db.write_bytes(b"not empty")
+
+        monkeypatch.delenv("BACH_DB", raising=False)
+        monkeypatch.setenv("BACH_ALLOW_ONEDRIVE_DB_FALLBACK", "1")
+        monkeypatch.setattr(bach_paths, "_LOCAL_DB", local_db)
+        monkeypatch.setattr(bach_paths, "ONEDRIVE_DB", onedrive_db)
+
+        assert bach_paths._resolve_bach_db() == onedrive_db
+
 
 # ═══════════════════════════════════════════════════════════════
 # get_path()

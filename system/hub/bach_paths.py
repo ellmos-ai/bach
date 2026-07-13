@@ -181,13 +181,17 @@ def _has_data(path: Path) -> bool:
         return False
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _resolve_bach_db() -> Path:
     """Ermittelt den kanonischen Pfad der BACH-Datenbank.
 
     Reihenfolge:
       1. ENV `BACH_DB` — die DB kann damit an beliebiger Stelle liegen.
       2. Lokale DB `~/.bach/bach.db`, sofern sie echte Daten enthaelt.
-      3. OneDrive-DB — nur wenn sie Daten hat, und mit LAUTER Warnung.
+      3. OneDrive-DB — nur mit explizitem Opt-in, wenn sie Daten hat.
       4. Sonst: die lokale DB (Neuinstallation legt sie dort an, NICHT in der Cloud).
 
     Eine aktive WAL-SQLite-Datenbank gehoert nicht in einen synchronisierten
@@ -210,10 +214,21 @@ def _resolve_bach_db() -> Path:
         )
 
     if _has_data(ONEDRIVE_DB):
+        if not _env_flag("BACH_ALLOW_ONEDRIVE_DB_FALLBACK"):
+            print(
+                f"[bach_paths] WARNUNG: Lokale DB fehlt, aber {ONEDRIVE_DB} existiert. "
+                f"Automatischer OneDrive-Fallback ist blockiert, weil diese DB veraltet "
+                f"oder im WAL-Modus inkonsistent sein kann. Lokale DB wiederherstellen, "
+                f"BACH_DB setzen oder BACH_ALLOW_ONEDRIVE_DB_FALLBACK=1 bewusst aktivieren.",
+                file=sys.stderr,
+            )
+            return _LOCAL_DB
+
         print(
             f"[bach_paths] WARNUNG: Lokale DB fehlt - Fallback auf {ONEDRIVE_DB}. "
             f"Diese liegt in einem Cloud-Ordner (Korruptionsrisiko im WAL-Modus) und "
-            f"ist womoeglich veraltet. Lokale DB wiederherstellen oder BACH_DB setzen.",
+            f"ist womoeglich veraltet. Dieser Notausgang wurde explizit per "
+            f"BACH_ALLOW_ONEDRIVE_DB_FALLBACK aktiviert.",
             file=sys.stderr,
         )
         return ONEDRIVE_DB
