@@ -39,8 +39,19 @@ import sqlite3
 from pathlib import Path
 from typing import Literal, Optional
 
+import sys
+# Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
+# veraltete Kopie im OneDrive-Ordner (bzw. auf ein Verzeichnis, das es gar nicht gibt —
+# dort legt sqlite3.connect() still eine leere 0-KB-Datenbank an).
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
+
 BACH_DIR = Path(__file__).parent.parent.parent
-DB_PATH = BACH_DIR / "data" / "bach.db"
+DB_PATH = BACH_DB
 
 RequestType = Literal["chat", "assistant", "quick_question", "code_analysis", "long_task", "task_crud"]
 

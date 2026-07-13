@@ -192,7 +192,7 @@ class WatcherHandler(BaseHandler):
 
     def _events(self, args: List[str]) -> Tuple[bool, str]:
         """Zeigt letzte klassifizierte Events."""
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self._canonical_db
         try:
             conn = sqlite3.connect(str(db_path))
             conn.row_factory = sqlite3.Row
