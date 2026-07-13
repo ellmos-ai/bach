@@ -104,7 +104,7 @@ try:
     from hub.bach_paths import BACH_DB as _PATHS_DB
     BACH_DB = _PATHS_DB
 except ImportError:
-    BACH_DB = DATA_DIR / "bach.db"
+    BACH_DB = BACH_DB
 
 USER_DB = BACH_DB
 

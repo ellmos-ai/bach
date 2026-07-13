@@ -99,7 +99,7 @@ class BackupHandler(BaseHandler):
                             results.append(f"  + {rel_path}")
             
             # DB sichern
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = self._canonical_db
             if db_path.exists():
                 zf.write(db_path, "data/bach.db")
                 results.append("  + data/bach.db")
