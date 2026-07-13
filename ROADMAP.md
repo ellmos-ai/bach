@@ -1,6 +1,6 @@
 ﻿# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-07-11 | **Version:** 4.3.58
+**Stand:** 2026-07-13 | **Version:** 4.3.59
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
@@ -223,7 +223,7 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 
 ### Priorität 1 - Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
 
-Der OpenClaw-Abgleich vom 2026-07-11 bestätigt den nächsten BACH-Fokus
+Der OpenClaw-Abgleich vom 2026-07-13 bestätigt den nächsten BACH-Fokus
 klar in Richtung sichere Erweiterbarkeit, robuste Agenten-Laufzeit und
 saubere Steuer-/Statusoberflächen. Relevant sind nicht die breite
 Messenger-Abdeckung, sondern manifest-first Plugin- und Provider-Metadaten,
@@ -231,8 +231,8 @@ fail-closed Tool-Setups, Scans vor der Installation von
 Skills/MCP-Servern/Plugins, API-Parität für Agentenflächen, Checkpoint-
 Steuerung und low-cardinality Telemetrie. Als Referenzstand gilt dabei:
 GitHub markiert `openclaw 2026.6.11` als aktuelle Stable-Linie; auf der
-GitHub-Releases-Seite ist `2026.7.1-beta.5`, veröffentlicht am
-2026-07-11 um 10:36 UTC, jetzt das neueste sichtbare Prerelease.
+GitHub-Releases-Seite ist `2026.7.1-beta.6`, veröffentlicht am
+2026-07-13 um 01:38 UTC, jetzt das neueste sichtbare Prerelease.
 Frisch relevant aus Stable und Beta sind zusätzlich GPT-5.6-
 Modellfamilien-Support über Katalog-, Capability- und Runtime-Pfade,
 `openclaw attach` für externe Harness-Anbindung an bestehende Sessions,
@@ -243,9 +243,12 @@ Diagnostik. Neu konkretisiert die aktuelle Beta zusätzlich conversational
 onboarding mit modellgeführten Freigaben, einen gebündelten ClawRouter-
 Provider mit credential-scoped Modell-Discovery samt Usage-/Budget-Sicht,
 robustere Gateway-Crash-Loop-Recovery und stärkere Session-Organisation.
-Für BACH passen davon vor allem approval-geführte Setup-Flows, Provider-/
-Modell-Discovery mit Budgetsicht und recovery-sichere Runtime-/Scheduler-
-Oberflächen. Die zuvor wichtigen Signale bleiben
+Beta 6 vertieft außerdem SecretRef-Grenzen, Token-Redaktion über Log-Chunks,
+begrenzte Provider-/Netzwerkantworten, Startup-Migrationen vor Readiness sowie
+korrekte harte Agent-Wait- und Subagent-Abschlusszustände. Für BACH passen davon
+vor allem approval-geführte Setup-Flows, Provider-/Modell-Discovery mit
+Budgetsicht, privacy-sichere Credential-Grenzen und recovery-sichere Runtime-/
+Scheduler-Oberflächen. Die zuvor wichtigen Signale bleiben
 ebenfalls relevant:
 automatische Fast-Mode-Wechsel für kurze Turns, robustere Modell-Routen,
 sicherere Session- und Channel-Zustände, erhaltene Trusted Policies bei
@@ -702,6 +705,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 
 | Version | Datum | Aenderung |
 |---------|-------|----------|
+| **4.3.59** | 2026-07-13 | **Task 1165 nach unabhängiger Zertifizierung geschlossen: Rund 70 DB-Nutzer folgen jetzt der zentralen `hub.bach_paths`-Registry; die Pfadregressionen stehen bei 61 grünen Tests, Agent-Doctor/Start-Dry-Run und Usecase 50 sind grün. OpenClaw auf Stable `2026.6.11` / Prerelease `2026.7.1-beta.6` abgeglichen; Upgrade-Katalog für `v3.13.0-bluesky` bleibt bis zur Manifest-/Privacy-Bereinigung bewusst unversiegelt.** |
 | 1.0-1.5 | 2026-01 | Phase 1-3 (Autonomie, Funktionalitaet) |
 | 2.0 | 2026-01-24 | Phase 4-11 konsolidiert |
 | 2.1 | 2026-01-25 | Erledigte Phasen zusammengefasst |
