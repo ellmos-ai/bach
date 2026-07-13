@@ -60,6 +60,16 @@ from typing import Optional, List, Tuple, Dict, Any
 from dataclasses import dataclass, field
 from enum import Enum
 
+# Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
+# veraltete Kopie im OneDrive-Ordner (bzw. auf ein Verzeichnis, das es gar nicht gibt —
+# dort legt sqlite3.connect() still eine leere 0-KB-Datenbank an).
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
+
 # UTF-8 Encoding fix
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if sys.stdout:
@@ -175,7 +185,7 @@ class AgentRegistry:
 
     def __init__(self, base_path: Path):
         self.base_path = base_path.resolve()
-        self.db_path = self.base_path / "data" / "bach.db"
+        self.db_path = BACH_DB
         self._cache: Dict[str, BaseAgent] = {}
         self._cache_signatures: Dict[str, str] = {}
 

@@ -48,6 +48,16 @@ from datetime import datetime, date
 from pathlib import Path
 from threading import Event
 
+# Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
+# veraltete Kopie im OneDrive-Ordner (bzw. auf ein Verzeichnis, das es gar nicht gibt —
+# dort legt sqlite3.connect() still eine leere 0-KB-Datenbank an).
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
+
 # ============ PFADE ============
 
 WATCHER_DIR = Path(__file__).parent.resolve()
@@ -58,7 +68,7 @@ BACH_DIR = HUB_DIR.parent
 CONFIG_FILE = WATCHER_DIR / "config.json"
 PID_FILE = WATCHER_DIR / "watcher.pid"
 LOG_FILE = BACH_DIR / "data" / "logs" / "watcher_daemon.log"
-DB_PATH = BACH_DIR / "data" / "bach.db"
+DB_PATH = BACH_DB
 
 # Daemon-Pfade (fuer Claude-Trigger)
 DAEMON_DIR = SERVICES_DIR / "daemon"

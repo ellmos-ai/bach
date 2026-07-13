@@ -623,7 +623,10 @@ def scan_now(db_path: Path = None) -> Dict:
             from hub.bach_paths import BACH_DB
             db_path = BACH_DB
         except ImportError:
-            db_path = Path(__file__).parent.parent.parent.parent.parent / "data" / "bach.db"
+            # Notfall-Fallback auf die kanonische lokale DB. Frueher wurde hier ein
+            # repo-relativer Pfad gebaut, der auf BACH/data/bach.db zeigte — ein
+            # Verzeichnis, das es nicht gibt: sqlite3 legte dort eine leere DB an.
+            db_path = Path.home() / ".bach" / "bach.db"
 
     scanner = TaskScanner(db_path)
     return scanner.scan_all()
@@ -646,7 +649,10 @@ def sync_db_to_aufgaben(db_path: Path = None, task_ids: List[int] = None) -> Dic
             from hub.bach_paths import BACH_DB
             db_path = BACH_DB
         except ImportError:
-            db_path = Path(__file__).parent.parent.parent.parent.parent / "data" / "bach.db"
+            # Notfall-Fallback auf die kanonische lokale DB. Frueher wurde hier ein
+            # repo-relativer Pfad gebaut, der auf BACH/data/bach.db zeigte — ein
+            # Verzeichnis, das es nicht gibt: sqlite3 legte dort eine leere DB an.
+            db_path = Path.home() / ".bach" / "bach.db"
 
     result = {
         'files_updated': 0,
@@ -747,7 +753,10 @@ if __name__ == "__main__":
             from hub.bach_paths import BACH_DB
             db_path = BACH_DB
         except ImportError:
-            db_path = Path(__file__).parent.parent.parent.parent.parent / "data" / "bach.db"
+            # Notfall-Fallback auf die kanonische lokale DB. Frueher wurde hier ein
+            # repo-relativer Pfad gebaut, der auf BACH/data/bach.db zeigte — ein
+            # Verzeichnis, das es nicht gibt: sqlite3 legte dort eine leere DB an.
+            db_path = Path.home() / ".bach" / "bach.db"
 
     print(f"[INFO] DB: {db_path}")
     result = scan_now(db_path)

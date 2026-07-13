@@ -1323,7 +1323,7 @@ anthropic_compatible: true
 
     def _register_in_db(self, name: str, skill_type: str, path: str):
         """Registriert einen Skill in der Datenbank."""
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self._canonical_db
         if not db_path.exists():
             return
 
@@ -1446,7 +1446,7 @@ anthropic_compatible: true
         Returns:
             (success, message)
         """
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self._canonical_db
 
         if not db_path.exists():
             return False, f"Datenbank nicht gefunden: {db_path}"

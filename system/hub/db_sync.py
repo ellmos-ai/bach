@@ -74,7 +74,9 @@ class DBSyncManager:
             self.transit_dir = transit_dir or PROSYNC_TRANSIT_DIR
             self.local_bach_dir = LOCAL_BACH_DIR
         except ImportError:
-            self.db_path = db_path or self.base_path / "data" / "bach.db"
+            # Notfall-Fallback auf die kanonische lokale DB. Frueher stand hier
+            # base_path/data/bach.db — die veraltete Kopie im OneDrive-Ordner.
+            self.db_path = db_path or Path.home() / ".bach" / "bach.db"
             self.transit_dir = transit_dir or Path.home() / ".bach" / "transit"
             self.local_bach_dir = Path.home() / ".bach"
         self.hostname = socket.gethostname()
@@ -231,15 +233,22 @@ class DBSyncManager:
         return m.group(1) if m else None
 
     def ensure_local_db(self) -> bool:
-        """Erstellt lokale DB falls nicht vorhanden (Initial-Population von OneDrive)."""
+        """Erstellt lokale DB falls nicht vorhanden (Initial-Population von OneDrive).
+
+        Der Zugriff auf die OneDrive-DB ist hier ABSICHTLICH: sie ist die Kopierquelle
+        fuer die erstmalige Befuellung der lokalen DB. Der Pfad wird aber auch dafuer
+        zentral erfragt (`ONEDRIVE_DB`) und nicht aus base_path zusammengebaut.
+        """
         local_db = self.local_bach_dir / "bach.db"
         if local_db.exists():
             return True
-        onedrive_db = self.base_path / "data" / "bach.db"
-        if not onedrive_db.exists():
+
+        from .bach_paths import ONEDRIVE_DB
+
+        if not ONEDRIVE_DB.exists():
             return False
         import shutil
-        shutil.copy2(onedrive_db, local_db)
+        shutil.copy2(ONEDRIVE_DB, local_db)
         return True
 
     def sync_on_start(self) -> Tuple[bool, str]:

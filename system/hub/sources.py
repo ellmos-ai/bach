@@ -375,7 +375,7 @@ class SourcesHandler(BaseHandler):
         try:
             from ..handlers.base import BaseHandler
             import sqlite3
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = self._canonical_db
             if db_path.exists():
                 conn = sqlite3.connect(db_path)
                 cursor = conn.execute(

@@ -29,7 +29,7 @@ class MessagesHandler(BaseHandler):
     
     def __init__(self, base_path: Path):
         super().__init__(base_path)
-        self.bach_db = base_path / "data" / "bach.db"
+        self.bach_db = self._canonical_db
     
     @property
     def profile_name(self) -> str:

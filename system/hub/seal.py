@@ -37,15 +37,10 @@ class SealHandler:
         """
         self.base_path = Path(base_path)
         self.system_root = self.base_path / "system" if (self.base_path / "system").exists() else self.base_path
-        local_db = self.base_path / "data" / "bach.db"
-        try:
-            from hub.bach_paths import BACH_DB
-        except ImportError:
-            try:
-                from bach_paths import BACH_DB
-            except ImportError:
-                BACH_DB = local_db
-        self.db_path = BACH_DB if Path(BACH_DB).exists() else local_db
+        # BACH_DB kommt aus der zentralen Registry (Import am Modulkopf). Die frueher
+        # hier stehende Fallback-Kaskade baute base_path/data/bach.db — also die
+        # veraltete Kopie im OneDrive-Ordner.
+        self.db_path = BACH_DB
 
     def _get_conn(self):
         """DB-Verbindung."""
