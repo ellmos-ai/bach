@@ -896,7 +896,7 @@ bach_api.task.add(
         try:
             doc_lang = lang or get_lang()
 
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = self._canonical_db
             conn = sqlite3.connect(str(db_path))
             cur = conn.cursor()
 
@@ -1013,7 +1013,7 @@ bach_api.task.add(
     def _generate_changelog(self) -> tuple:
         """Generiere CHANGELOG.md aus dist_file_versions."""
         try:
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = self._canonical_db
             conn = sqlite3.connect(str(db_path))
             cur = conn.cursor()
 
@@ -1138,7 +1138,7 @@ python bach.py db info dist_file_versions
         try:
             doc_lang = lang or get_lang()
 
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = self._canonical_db
             conn = sqlite3.connect(str(db_path))
             cur = conn.cursor()
 

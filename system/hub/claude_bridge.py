@@ -196,7 +196,7 @@ class ClaudeBridgeHandler(BaseHandler):
             return False, f"Fehler beim Lesen: {e}"
 
     def _workers(self, args: List[str]) -> Tuple[bool, str]:
-        db_path = self.base_path / "data" / "bach.db"
+        db_path = self._canonical_db
         conn = None
         try:
             conn = sqlite3.connect(str(db_path))
@@ -261,7 +261,7 @@ class ClaudeBridgeHandler(BaseHandler):
         user_id = args[0] if args else "default"
         try:
             from hub._services.claude_bridge.security import SecurityChallenge
-            sec = SecurityChallenge(self.base_path / "data" / "bach.db")
+            sec = SecurityChallenge(self._canonical_db)
             result = sec.generate_challenge(user_id)
             if result["ok"]:
                 return True, f"Challenge: {result['challenge']}"
@@ -283,7 +283,7 @@ class ClaudeBridgeHandler(BaseHandler):
         answer = " ".join(answer_parts)
         try:
             from hub._services.claude_bridge.security import SecurityChallenge
-            sec = SecurityChallenge(self.base_path / "data" / "bach.db")
+            sec = SecurityChallenge(self._canonical_db)
             result = sec.verify_challenge(user_id, answer)
             if result["ok"]:
                 return True, result["message"]

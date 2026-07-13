@@ -93,7 +93,7 @@ class MemHandler(BaseHandler):
 
             from memory_working_cleanup import WorkingMemoryCleanup
 
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = self._canonical_db
             cleanup = WorkingMemoryCleanup(db_path)
 
             # Sub-Operation extrahieren
@@ -134,7 +134,7 @@ class MemHandler(BaseHandler):
 
             from memory_decay import MemoryDecay
 
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = self._canonical_db
             decay = MemoryDecay(db_path)
 
             # Parse Argumente
