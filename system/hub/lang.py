@@ -2413,7 +2413,7 @@ def _get_t_db_path() -> Path:
             from hub.bach_paths import BACH_DB
             _t_db_path = BACH_DB
         except ImportError:
-            _t_db_path = Path(__file__).parent.parent / "data" / "bach.db"
+            _t_db_path = BACH_DB
     return _t_db_path
 
 

@@ -77,7 +77,7 @@ try:
     from hub.bach_paths import BACH_DB as _PATHS_DB
     BACH_DB = str(_PATHS_DB)
 except ImportError:
-    BACH_DB = str(BACH_ROOT / "data" / "bach.db")
+    BACH_DB = str(BACH_DB)
 
 try:
     from fastapi import FastAPI, HTTPException, Depends, Request, Query
