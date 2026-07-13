@@ -1223,7 +1223,7 @@ class AgentLauncherHandler(BaseHandler):
         if table not in {"bach_agents", "bach_experts"}:
             return None
 
-        db_path = self.data_dir / "bach.db"
+        db_path = self._canonical_db
         if not db_path.exists():
             return None
 
@@ -1259,7 +1259,7 @@ class AgentLauncherHandler(BaseHandler):
         # Dann ueber DB (display_name, description, persona)
         try:
             from .agents import resolve_agent_name
-            db_path = self.data_dir / "bach.db"
+            db_path = self._canonical_db
             result = resolve_agent_name(db_path, query)
             if result:
                 if result["name"] in agent_names:
@@ -1275,7 +1275,7 @@ class AgentLauncherHandler(BaseHandler):
 
     def _get_persona_info(self, name: str) -> dict:
         """Laedt display_name und persona aus der DB."""
-        db_path = self.data_dir / "bach.db"
+        db_path = self._canonical_db
         if not db_path.exists():
             return {}
         try:
@@ -2599,7 +2599,7 @@ class AgentLauncherHandler(BaseHandler):
 
     def _rename_agent(self, query: str, new_display_name: str, dry_run: bool) -> tuple:
         """Aendert den Display-Namen eines Agenten/Experten."""
-        db_path = self.data_dir / "bach.db"
+        db_path = self._canonical_db
         if not db_path.exists():
             return (False, f"[ERROR] {t('db_not_found', default='Datenbank nicht gefunden')}")
 
