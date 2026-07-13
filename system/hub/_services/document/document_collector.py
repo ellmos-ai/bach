@@ -250,7 +250,7 @@ class DocumentCollector:
         for filepath in sorted(files):
             if not filepath.is_file():
                 continue
-            if filepath.name.startswith("."):
+            if filepath.name.startswith(".") or filepath.name.startswith("~$"):
                 continue
             if filepath.suffix.lower() not in supported:
                 continue

@@ -381,11 +381,12 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
 # RegEx-Patterns fuer automatische Erkennung
 # ═══════════════════════════════════════════════════════════════
 
-# Telefonnummern (deutsch): 07761/123456, +49 7761 123456, 0049-7761-123456, 0761 12345678
+# Telefonnummern (deutsch): 07761/123456, +49 7761 123456, 0049-7761-123456, 0761 12345678,
+# 07627-92 44 123 (Rufnummernblock durch Leerzeichen gruppiert)
 PHONE_PATTERN = re.compile(
     r'(?:'
-    r'(?:\+49|0049)[\s\-/]?\d{2,4}[\s\-/]?\d{4,8}|'  # +49 oder 0049
-    r'0\d{2,4}[\s\-/]?\d{4,8}'                        # 0xxx/xxxxxxx
+    r'(?:\+49|0049)[\s\-/]?\d{2,4}(?:[\s\-/]?\d{2,4}){1,3}|'  # +49 oder 0049
+    r'0\d{2,4}[\s\-/]?\d{2,4}(?:[\s\-/]?\d{2,4}){0,2}'         # 0xxx/xxxxxxx (mit optionalen Gruppen)
     r')',
     re.IGNORECASE
 )
@@ -396,12 +397,17 @@ EMAIL_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Straßenadressen: "Musterstr. 5", "Hauptstraße 123a", "Am Waldweg 7 b"
+# Straßenadressen: "Musterstr. 5", "Hauptstraße 123a", "Am Waldweg 7 b",
+# optional gefolgt von ", PLZ Ort" (z.B. aus Tabellenzellen "Sonnenstr. 4, 79585 Steinen").
+# HINWEIS: Deckt NICHT den Fall zweier direkt aneinandergereihter PLZ/Ort-Angaben
+# in einer Zelle ab (OCR-Artefakt bei zusammengefuehrten Tabellenspalten) --
+# dort bleibt nur die erste Ort-Angabe erfasst, siehe workflow_foerderbericht.md.
 STREET_PATTERN = re.compile(
     r'(?:'
     r'(?:[A-ZÄÖÜ][a-zäöüß]+(?:str\.|straße|weg|gasse|platz|allee|ring|damm|ufer|berg|tal|hof|feld|wiese|grund|rain|steig|pfad))'  # Straßenname
     r'\s*'
     r'\d{1,4}\s?[a-zA-Z]?'  # Hausnummer + opt. Zusatz
+    r'(?:\s*,\s*\d{5}\s+[A-ZÄÖÜ][a-zäöüß]+(?:[\s\-][A-ZÄÖÜ][a-zäöüß]+)?)?'  # optional ", PLZ Ort"
     r')',
     re.IGNORECASE
 )
