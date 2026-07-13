@@ -29,6 +29,17 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
+import sys
+# Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
+# veraltete Kopie im OneDrive-Ordner (bzw. auf ein Verzeichnis, das es gar nicht gibt —
+# dort legt sqlite3.connect() still eine leere 0-KB-Datenbank an).
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB
+
 
 class MultiLLMProtocol:
     """Handler fuer Multi-LLM Koordination."""
@@ -291,7 +302,7 @@ target: {dirpath.name}
         """Aktualisiert current_task in partner_presence DB (v1.1.71 Live-Status)."""
         try:
             import sqlite3
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = BACH_DB
             conn = sqlite3.connect(str(db_path))
             now = datetime.now().isoformat()
             
@@ -607,7 +618,7 @@ class MultiLLMHandler:
         """Holt Live-Status aus partner_presence DB."""
         try:
             import sqlite3
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = BACH_DB
             conn = sqlite3.connect(str(db_path))
             conn.row_factory = sqlite3.Row
             

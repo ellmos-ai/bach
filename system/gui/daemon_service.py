@@ -65,7 +65,7 @@ def _resolve_scheduler_db() -> Path:
         from hub.bach_paths import BACH_DB as _PATHS_DB
         return Path(_PATHS_DB)
     except Exception:
-        return DATA_DIR / "bach.db"
+        return BACH_DB
 
 
 USER_DB = _resolve_scheduler_db()

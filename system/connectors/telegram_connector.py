@@ -146,7 +146,9 @@ class TelegramConnector(BaseConnector):
                 from hub.bach_paths import BACH_DB
                 db_path = BACH_DB
             except ImportError:
-                db_path = Path(__file__).parent.parent / "data" / "bach.db"
+                # Notfall-Fallback auf die kanonische lokale DB. Frueher stand hier
+                # ../data/bach.db — die veraltete Kopie im OneDrive-Ordner.
+                db_path = Path.home() / ".bach" / "bach.db"
             conn = sqlite3.connect(str(db_path))
             try:
                 row = conn.execute("SELECT value FROM secrets WHERE key = ?", (key,)).fetchone()

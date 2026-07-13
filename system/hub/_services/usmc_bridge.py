@@ -12,7 +12,7 @@ Mapping:
     BACH shared_memory_working   <-> USMC usmc_working
 
 Verwendung:
-    bridge = USMCBridge(bach_db_path=Path("data/bach.db"))
+    bridge = USMCBridge()          # DB-Pfade kommen aus der zentralen Registry
     ok, msg = bridge.sync_bidirectional()
 """
 import sqlite3
@@ -47,11 +47,20 @@ class USMCBridge:
 
     def __init__(
         self,
-        bach_db_path: Path,
+        bach_db_path: Optional[Path] = None,
         usmc_db_path: Optional[Path] = None,
     ):
-        self.bach_db = Path(bach_db_path)
-        self.usmc_db = Path(usmc_db_path) if usmc_db_path else Path("usmc_memory.db")
+        # Ohne Angabe kommt der Pfad aus der zentralen Registry — nicht aus dem
+        # aktuellen Arbeitsverzeichnis. Ein relatives Default wie "usmc_memory.db"
+        # ergibt je nach Startort eine ANDERE Datei; existiert sie dort nicht, legt
+        # sqlite3.connect() sie still als leere 0-KB-Datenbank an.
+        from hub.bach_paths import BACH_DB
+
+        self.bach_db = Path(bach_db_path) if bach_db_path else BACH_DB
+        self.usmc_db = (
+            Path(usmc_db_path) if usmc_db_path
+            else self.bach_db.parent / "usmc_memory.db"
+        )
         self._last_sync_file = self.bach_db.parent / "usmc_last_sync.txt"
 
     # ── Sync-Timestamp ──────────────────────────────────────
