@@ -1,7 +1,7 @@
 """
 Embeddings Manager - Ollama Embeddings mit nomic-embed-text
 """
-from typing import List, Optional
+from typing import List, Optional, Sequence
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.embeddings import Embeddings
 import logging
@@ -9,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class EmbeddingsManager:
+class EmbeddingsManager(Embeddings):
     """Verwaltet Embedding-Modelle für die Vektorisierung"""
 
     # Verfügbare Embedding-Modelle
@@ -32,12 +32,14 @@ class EmbeddingsManager:
     }
 
     DEFAULT_MODEL = "nomic-embed-text"
+    DEFAULT_REQUEST_TIMEOUT = 120.0
 
     def __init__(
         self,
         model_name: str = DEFAULT_MODEL,
         base_url: str = "http://localhost:11434",
-        headers: Optional[dict] = None
+        headers: Optional[dict] = None,
+        request_timeout: Optional[float] = DEFAULT_REQUEST_TIMEOUT
     ):
         """
         Initialisiert den Embeddings Manager
@@ -46,10 +48,12 @@ class EmbeddingsManager:
             model_name: Name des Embedding-Modells
             base_url: Ollama Server URL
             headers: Optional HTTP headers (e.g. for Bearer auth)
+            request_timeout: HTTP timeout in seconds for Ollama embedding calls
         """
         self.model_name = model_name
         self.base_url = base_url
         self._headers = headers or {}
+        self.request_timeout = request_timeout
         self._embeddings: Optional[Embeddings] = None
 
     @property
@@ -70,8 +74,13 @@ class EmbeddingsManager:
 
         # langchain-ollama >=0.2.0 akzeptiert 'headers' nicht mehr direkt.
         # Auth-Headers müssen über client_kwargs (httpx) übergeben werden.
+        client_kwargs = {}
         if self._headers:
-            kwargs["client_kwargs"] = {"headers": self._headers}
+            client_kwargs["headers"] = self._headers
+        if self.request_timeout is not None:
+            client_kwargs["timeout"] = self.request_timeout
+        if client_kwargs:
+            kwargs["client_kwargs"] = client_kwargs
 
         try:
             return OllamaEmbeddings(**kwargs)
@@ -84,6 +93,25 @@ class EmbeddingsManager:
                 base_url=self.base_url,
             )
 
+    def _validate_embedding_vector(
+        self,
+        embedding: Sequence[float],
+        *,
+        context: str
+    ) -> List[float]:
+        """Reject empty or malformed embedding vectors before Chroma sees them."""
+        if not isinstance(embedding, Sequence) or isinstance(embedding, (str, bytes)):
+            raise ValueError(f"Ollama Embedding-Antwort für {context} ist kein Vektor")
+
+        vector = list(embedding)
+        if not vector:
+            raise ValueError(f"Ollama Embedding-Antwort für {context} ist leer")
+
+        if not all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in vector):
+            raise ValueError(f"Ollama Embedding-Antwort für {context} enthält Nicht-Zahlen")
+
+        return [float(value) for value in vector]
+
     def embed_query(self, text: str) -> List[float]:
         """
         Erstellt Embedding für eine Suchanfrage
@@ -94,7 +122,8 @@ class EmbeddingsManager:
         Returns:
             Liste von Floats (Embedding-Vektor)
         """
-        return self.embeddings.embed_query(text)
+        embedding = self.embeddings.embed_query(text)
+        return self._validate_embedding_vector(embedding, context="Suchanfrage")
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
@@ -106,7 +135,23 @@ class EmbeddingsManager:
         Returns:
             Liste von Embedding-Vektoren
         """
-        return self.embeddings.embed_documents(texts)
+        if not texts:
+            return []
+
+        embeddings = self.embeddings.embed_documents(texts)
+        if not isinstance(embeddings, Sequence) or isinstance(embeddings, (str, bytes)):
+            raise ValueError("Ollama Embedding-Antwort für Dokumente ist keine Vektorliste")
+
+        vectors = list(embeddings)
+        if len(vectors) != len(texts):
+            raise ValueError(
+                f"Ollama Embedding-Antwort enthält {len(vectors)} Vektoren für {len(texts)} Texte"
+            )
+
+        return [
+            self._validate_embedding_vector(vector, context=f"Dokument {index + 1}")
+            for index, vector in enumerate(vectors)
+        ]
 
     def get_model_info(self) -> dict:
         """Gibt Informationen über das aktuelle Modell zurück"""

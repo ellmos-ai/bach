@@ -133,7 +133,18 @@ class DocumentSplitter:
         else:
             self.separators = self.DEFAULT_SEPARATORS
 
+        self._validate_config(self.chunk_size, self.chunk_overlap)
         self._splitter = self._create_splitter()
+
+    @staticmethod
+    def _validate_config(chunk_size: int, chunk_overlap: int) -> None:
+        """Keep LangChain splitter config explicit and fail early."""
+        if chunk_size <= 0:
+            raise ValueError("chunk_size muss größer als 0 sein")
+        if chunk_overlap < 0:
+            raise ValueError("chunk_overlap darf nicht negativ sein")
+        if chunk_overlap >= chunk_size:
+            raise ValueError("chunk_overlap muss kleiner als chunk_size sein")
 
     def _create_splitter(self) -> RecursiveCharacterTextSplitter:
         """Erstellt den LangChain TextSplitter"""
@@ -283,10 +294,12 @@ class DocumentSplitter:
             chunk_size: Neue Chunk-Größe
             chunk_overlap: Neue Überlappung
         """
-        if chunk_size is not None:
-            self.chunk_size = chunk_size
-        if chunk_overlap is not None:
-            self.chunk_overlap = chunk_overlap
+        new_chunk_size = self.chunk_size if chunk_size is None else chunk_size
+        new_chunk_overlap = self.chunk_overlap if chunk_overlap is None else chunk_overlap
+        self._validate_config(new_chunk_size, new_chunk_overlap)
+
+        self.chunk_size = new_chunk_size
+        self.chunk_overlap = new_chunk_overlap
 
         self._splitter = self._create_splitter()
         logger.info(f"Splitter aktualisiert: size={self.chunk_size}, overlap={self.chunk_overlap}")

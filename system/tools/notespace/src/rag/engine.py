@@ -140,7 +140,7 @@ ANTWORT:"""
         if self._vectorstore is None:
             self._vectorstore = Chroma(
                 collection_name=self.collection_name,
-                embedding_function=self.embeddings_manager.embeddings,
+                embedding_function=self.embeddings_manager,
                 persist_directory=self.persist_directory
             )
         return self._vectorstore

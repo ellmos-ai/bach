@@ -44,6 +44,11 @@ unberührt.
 
 ## Sync-Historie
 
+- 2026-07-14: RAG-/Embedding-Härtung aus `.SOFTWARE` nachgezogen:
+  `EmbeddingsManager` setzt einen expliziten Ollama-HTTP-Timeout via
+  `client_kwargs`, validiert leere/falsch geformte Embedding-Antworten, wird als
+  validierende Chroma-Embedding-Funktion verwendet; `DocumentSplitter` lehnt
+  `chunk_overlap >= chunk_size` früh ab.
 - 2026-06-25: `translator.py` nachgezogen; `_is_german()` nutzt german_hints
   tokenbasiert statt per Teilstring-Matching, damit englische Scan-Texte mit
   Wörtern wie `important` oder `filtering` keine falschen Übersetzungseinträge
