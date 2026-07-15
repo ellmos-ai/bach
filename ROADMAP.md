@@ -221,6 +221,24 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 
 ## Aktuelle Fokus-Bereiche
 
+### TASKPLAN-Cutover: BACH-Task-Schreibpfade anbinden (TASKPLAN #299 / BACH #1175)
+
+**Status: OFFEN — Vorbereitungs- und Integrationsschnitt; kein automatischer Cutover.**
+
+**TASKWRITER-Register | 2026-07-15**
+
+- Gelesene Steuer- und Belegflächen: `AGENTS.md`, `CLAUDE.md`, `README.md`, `ROADMAP.md`, `CHANGELOG.md`, `MEMORY.md`, `system/hub/_services/taskplan_bridge.py`, `system/hub/task.py`, `system/bach_api.py` und `system/tests/test_task_handler.py`.
+- Ist: BACH #1153 / TASKPLAN #298 liefert additiv `status/list/import`; `add/edit/done/reopen` schreiben weiterhin in die Legacy-`tasks`-Tabelle, und die BACH-Read-Surfaces lesen noch nicht kontrolliert aus TASKPLAN. Der bestehende Parallelbetrieb bleibt funktionsfähig.
+- Geändert/persistiert: TASKPLAN-Parent #299 wurde mit `large/central` und dem Ist-/Soll-Kontext fortgeschrieben. Die Umsetzung wurde in fünf abhängige, zentrale Teilaufgaben gegliedert:
+  - #300 Synchronisationsvertrag und Source-of-Truth-Entscheidung (`special/central`)
+  - #301 feature-geflaggter Write-Adapter für `add/edit/done/reopen` (`large/central`), abhängig von #300
+  - #302 kontrollierte TASKPLAN-Read-Surfaces (`large/central`), abhängig von #300 und #301
+  - #303 Parallelbetriebs-, Fehler- und Rückfalltestmatrix (`medium/central`), abhängig von #300–#302
+  - #304 gated Cutover-/Rollback-Entscheidung (`special/central`), abhängig von #300–#303
+- Akzeptanzgrenze: Die Legacy-Tabelle bleibt bis zu einer dokumentierten grünen Testphase unverändert als Fallback. Keine automatische Löschung, Deaktivierung, Veröffentlichung, Freigabe oder Release-Aktion.
+- Offene Nutzer-/Maintainer-Entscheidung: Mirror versus Write-through sowie Source-of-Truth, Konfliktregeln, Fehlerverhalten und Default des Feature-Flags müssen vor #301 verbindlich festgelegt werden. Erst nach grüner Testmatrix darf ein separater Cutover entschieden werden.
+- Prüfstand dieses Schreibauftrags: TASKPLAN-Datenbank-Readback der Parent-/Child-Datensätze ist grün; keine Implementierung der Teilaufgaben wurde vorweggenommen.
+
 ### Priorität 1 - Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
 
 Der OpenClaw-Abgleich vom 2026-07-13 bestätigt den nächsten BACH-Fokus
