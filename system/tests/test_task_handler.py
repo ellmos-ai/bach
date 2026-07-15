@@ -118,6 +118,7 @@ class TestProperties:
         assert "delete" in ops
         assert "priority" in ops
         assert "depends" in ops
+        assert "taskplan" in ops
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -498,6 +499,59 @@ class TestDepends:
         ok, output = seeded_handler.handle("depends", ["999"])
         assert ok is False
         assert "nicht gefunden" in output
+
+
+# ═══════════════════════════════════════════════════════════════
+# TASKPLAN BRIDGE
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestTaskplanBridge:
+    def test_taskplan_status_with_explicit_db(self, seeded_handler, tmp_path):
+        taskplan_db = tmp_path / "taskplan.db"
+        ok, output = seeded_handler.handle("taskplan", ["status", "--db", str(taskplan_db)])
+
+        assert ok is True
+        assert "[TASKPLAN] Bridge-Status" in output
+        assert str(taskplan_db) in output
+
+    def test_taskplan_import_mirrors_task_idempotently(self, seeded_handler, tmp_path):
+        taskplan_db = tmp_path / "taskplan.db"
+
+        ok, output = seeded_handler.handle("taskplan", ["import", "1", "--db", str(taskplan_db)])
+        assert ok is True
+        assert "[OK] BACH 1 -> TASKPLAN" in output
+
+        ok2, output2 = seeded_handler.handle("taskplan", ["import", "1", "--db", str(taskplan_db)])
+        assert ok2 is True
+        assert "[INFO] BACH 1 -> TASKPLAN" in output2
+        assert "bereits vorhanden" in output2
+
+        ok3, _ = seeded_handler.handle("done", ["1"])
+        assert ok3 is True
+        ok4, output4 = seeded_handler.handle("taskplan", ["import", "1", "--db", str(taskplan_db)])
+        assert ok4 is True
+        assert "aktualisiert" in output4
+
+        with sqlite3.connect(taskplan_db) as conn:
+            rows = conn.execute(
+                "SELECT title, priority, status, root_id, tags FROM rinnsal_tasks"
+            ).fetchall()
+
+        assert len(rows) == 1
+        title, priority, status, root_id, tags = rows[0]
+        assert title == "Fix critical bug"
+        assert priority == "critical"
+        assert status == "done"
+        assert root_id == "BACH"
+        assert "bach-task:1" in tags
+
+    def test_taskplan_import_requires_ids(self, seeded_handler, tmp_path):
+        taskplan_db = tmp_path / "taskplan.db"
+        ok, output = seeded_handler.handle("taskplan", ["import", "--db", str(taskplan_db)])
+
+        assert ok is False
+        assert "Usage: bach task taskplan import" in output
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -73,7 +73,7 @@ import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 # system/ Verzeichnis ermitteln
 _SYSTEM_DIR = Path(__file__).parent
@@ -305,6 +305,41 @@ class _TaskProxy(_DBBackedProxy):
             if not row:
                 raise BachAPIError(f"Task {task_id} nicht gefunden")
             return self._row_to_task(conn, row)
+
+    def taskplan_status(self, db_path: str | Path | None = None) -> dict[str, Any]:
+        from hub._services.taskplan_bridge import taskplan_status
+
+        return taskplan_status(db_path)
+
+    def taskplan_import(
+        self,
+        *task_ids: int | str,
+        db_path: str | Path | None = None,
+    ) -> List[dict[str, Any]]:
+        if not task_ids:
+            raise BachAPIError("Mindestens eine BACH Task-ID angeben")
+        ids = [int(task_id) for task_id in task_ids]
+        placeholders = ",".join("?" for _ in ids)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM tasks WHERE id IN ({placeholders}) ORDER BY id",
+                ids,
+            ).fetchall()
+        found_ids = {int(row["id"]) for row in rows}
+        missing_ids = [task_id for task_id in ids if task_id not in found_ids]
+        if missing_ids:
+            raise BachAPIError(
+                "BACH Task(s) nicht gefunden: "
+                + ", ".join(str(task_id) for task_id in missing_ids)
+            )
+
+        from hub._services.taskplan_bridge import mirror_bach_tasks
+
+        return mirror_bach_tasks(
+            rows,
+            db_path=db_path,
+            project_path=_SYSTEM_DIR.parent,
+        )
 
     def _row_to_task(self, conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         task_data = dict(row)

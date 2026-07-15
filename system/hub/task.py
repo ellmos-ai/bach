@@ -59,6 +59,7 @@ class TaskHandler(BaseHandler):
             "priority": t("task_priority_desc", default="Prioritaet aendern"),
             "assign": t("task_assign_desc", default="Task(s) zuweisen (Multi-ID)"),
             "depends": t("task_depends_desc", default="Abhaengigkeit setzen/anzeigen"),
+            "taskplan": "TASKPLAN-Bridge status/list/import",
             "help": t("hilfe", default="Hilfe anzeigen")
         }
     
@@ -96,6 +97,24 @@ class TaskHandler(BaseHandler):
             if arg.startswith("--reason="):
                 return arg[9:]
         return None
+
+    def _get_db_arg(self, args: List[str]) -> tuple[Optional[str], List[str]]:
+        """Extrahiert optionalen --db Pfad aus Argumenten."""
+        db_path = None
+        rest = []
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--db" and i + 1 < len(args):
+                db_path = args[i + 1]
+                i += 2
+            elif arg.startswith("--db="):
+                db_path = arg.split("=", 1)[1]
+                i += 1
+            else:
+                rest.append(arg)
+                i += 1
+        return db_path, rest
     
     def handle(self, operation: str, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
         """Haupteinstiegspunkt"""
@@ -124,6 +143,8 @@ class TaskHandler(BaseHandler):
             return self._assign(args)
         elif operation == "depends":
             return self._depends(args)
+        elif operation == "taskplan":
+            return self._taskplan(args)
         elif operation in ["", "help"]:
             return self._help()
         else:
@@ -775,6 +796,101 @@ class TaskHandler(BaseHandler):
                 lines.append("\n[BEREIT] Alle Abhaengigkeiten erfuellt")
             
             return True, "\n".join(lines)
+
+    def _taskplan(self, args: List[str]) -> Tuple[bool, str]:
+        """TASKPLAN-Bridge: Status anzeigen und BACH-Tasks spiegeln."""
+        db_path, clean_args = self._get_db_arg(args)
+        subcommand = clean_args[0].lower() if clean_args else "status"
+        rest = clean_args[1:] if clean_args else []
+
+        try:
+            from hub._services.taskplan_bridge import (
+                get_taskplan_client,
+                mirror_bach_tasks,
+                taskplan_status,
+            )
+        except Exception as exc:
+            return False, f"[TASKPLAN] Bridge nicht verfuegbar: {exc}"
+
+        if subcommand == "status":
+            status = taskplan_status(db_path)
+            count = status["task_count"]
+            count_text = "unbekannt" if count is None else str(count)
+            lines = [
+                "[TASKPLAN] Bridge-Status",
+                "=" * 50,
+                f"  Engine: {status['engine']}",
+                f"  Externes Modul: {'ja' if status['external_available'] else 'nein, bundled fallback'}",
+                f"  DB: {status['db_path']}",
+                f"  Tasks: {count_text}",
+            ]
+            if status.get("module_file"):
+                lines.append(f"  Modul: {status['module_file']}")
+            return True, "\n".join(lines)
+
+        if subcommand == "list":
+            limit = 10
+            for i, arg in enumerate(rest):
+                if arg == "--limit" and i + 1 < len(rest):
+                    try:
+                        limit = int(rest[i + 1])
+                    except ValueError:
+                        return False, "--limit muss eine Zahl sein"
+                elif arg.startswith("--limit="):
+                    try:
+                        limit = int(arg.split("=", 1)[1])
+                    except ValueError:
+                        return False, "--limit muss eine Zahl sein"
+            client = get_taskplan_client(db_path=db_path)
+            tasks = client.list(include_done=True, limit=limit)
+            if not tasks:
+                return True, "[TASKPLAN] Keine Tasks gefunden"
+            lines = [f"[TASKPLAN] Tasks (limit {limit})"]
+            for task in tasks:
+                lines.append(
+                    f"  [{task['id']}] {task['priority']} {task['status']} {task['title'][:60]}"
+                )
+            return True, "\n".join(lines)
+
+        if subcommand in ("import", "mirror"):
+            ids, _ = self._parse_ids(rest)
+            if not ids:
+                return False, "Usage: bach task taskplan import <id> [id2...] [--db PATH]"
+
+            placeholders = ",".join("?" for _ in ids)
+            with self._get_db() as conn:
+                rows = conn.execute(
+                    f"SELECT * FROM tasks WHERE id IN ({placeholders}) ORDER BY id",
+                    ids,
+                ).fetchall()
+
+            found_ids = {int(row["id"]) for row in rows}
+            missing_ids = [task_id for task_id in ids if task_id not in found_ids]
+            results = mirror_bach_tasks(
+                rows,
+                db_path=db_path,
+                project_path=self.base_path,
+            )
+            lines = ["[TASKPLAN] Import BACH -> taskplan"]
+            for item in results:
+                task = item["task"]
+                if item["action"] == "created":
+                    marker, action = "[OK]", "erstellt"
+                elif item["action"] == "updated":
+                    marker, action = "[OK]", "aktualisiert"
+                else:
+                    marker, action = "[INFO]", "bereits vorhanden"
+                lines.append(
+                    f"  {marker} BACH {item['bach_task_id']} -> TASKPLAN {task['id']} ({action})"
+                )
+            for task_id in missing_ids:
+                lines.append(f"  [WARN] BACH Task {task_id} nicht gefunden")
+            return True, "\n".join(lines)
+
+        return False, (
+            "Unbekannte taskplan-Operation. "
+            "Nutze: bach task taskplan status|list|import"
+        )
     
     def _help(self) -> Tuple[bool, str]:
         """Hilfe anzeigen"""
@@ -797,6 +913,9 @@ Befehle:
   bach task depends <id> --on <id2>  Abhaengigkeit hinzufuegen
   bach task depends <id> --remove <id2>  Abhaengigkeit entfernen
   bach task depends <id> --clear     Alle Abhaengigkeiten loeschen
+  bach task taskplan status          TASKPLAN-Bridge und DB anzeigen
+  bach task taskplan list            TASKPLAN-Tasks anzeigen
+  bach task taskplan import <id...>   BACH-Tasks idempotent spiegeln
   bach task show <id>                Task-Details
   bach task delete <id> [id2...]     Task(s) loeschen
   bach task priority <id> <P1-P4>    Prioritaet aendern
