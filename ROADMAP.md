@@ -1,6 +1,6 @@
 ﻿# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-07-13 | **Version:** 4.3.59
+**Stand:** 2026-07-16 | **Version:** 4.3.60
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
@@ -723,6 +723,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 
 | Version | Datum | Aenderung |
 |---------|-------|----------|
+| **4.3.60** | 2026-07-16 | **Geisterdatenbank-Tasks 1163/1167 nach Task-1165-Readback geschlossen: Die zentrale AST-Regel blockiert neue `bach.db`-Eigenkonstruktionen und die fokussierte Suite steht bei 63 grünen Tests; Agent-Doctor/Start-Dry-Run und Usecase 50 bleiben grün. OpenClaw auf Stable `2026.7.1` / Prerelease `2026.7.2-beta.1` abgeglichen; passende Beobachtungspunkte sind session-lokale MCP-Isolation, task-ledger-basierte Cron-Historie und Remote-Worker-Routing.** |
 | **4.3.59** | 2026-07-13 | **Task 1165 nach unabhängiger Zertifizierung geschlossen: Rund 70 DB-Nutzer folgen jetzt der zentralen `hub.bach_paths`-Registry; die Pfadregressionen stehen bei 61 grünen Tests, Agent-Doctor/Start-Dry-Run und Usecase 50 sind grün. OpenClaw auf Stable `2026.6.11` / Prerelease `2026.7.1-beta.6` abgeglichen; Upgrade-Katalog für `v3.13.0-bluesky` bleibt bis zur Manifest-/Privacy-Bereinigung bewusst unversiegelt.** |
 | 1.0-1.5 | 2026-01 | Phase 1-3 (Autonomie, Funktionalitaet) |
 | 2.0 | 2026-01-24 | Phase 4-11 konsolidiert |
