@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Tests for TaskHandler (hub/task.py)."""
 
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -514,6 +515,20 @@ class TestTaskplanBridge:
         assert ok is True
         assert "[TASKPLAN] Bridge-Status" in output
         assert str(taskplan_db) in output
+        assert "Schreibmodus: legacy_only" in output
+        assert "Auto-Spiegelung: nein" in output
+
+    def test_taskplan_status_json_includes_write_policy(self, seeded_handler, tmp_path):
+        taskplan_db = tmp_path / "taskplan.db"
+        ok, output = seeded_handler.handle("taskplan", ["status", "--json", "--db", str(taskplan_db)])
+
+        assert ok is True
+        data = json.loads(output)
+        assert data["db_path"] == str(taskplan_db)
+        assert data["write_policy"]["effective_mode"] == "legacy_only"
+        assert data["write_policy"]["automatic_write_mirror"] is False
+        assert data["write_policy"]["gated_write_operations"] == ["add", "edit", "done", "reopen"]
+        assert "TASKPLAN #300" in data["write_policy"]["decision_required"]
 
     def test_taskplan_import_mirrors_task_idempotently(self, seeded_handler, tmp_path):
         taskplan_db = tmp_path / "taskplan.db"

@@ -22,6 +22,7 @@ Autor: Claude
 Stand: 2026-01-23
 """
 
+import json
 import sqlite3
 from pathlib import Path
 from datetime import datetime
@@ -799,6 +800,8 @@ class TaskHandler(BaseHandler):
 
     def _taskplan(self, args: List[str]) -> Tuple[bool, str]:
         """TASKPLAN-Bridge: Status anzeigen und BACH-Tasks spiegeln."""
+        json_output = "--json" in args
+        args = [arg for arg in args if arg != "--json"]
         db_path, clean_args = self._get_db_arg(args)
         subcommand = clean_args[0].lower() if clean_args else "status"
         rest = clean_args[1:] if clean_args else []
@@ -814,8 +817,12 @@ class TaskHandler(BaseHandler):
 
         if subcommand == "status":
             status = taskplan_status(db_path)
+            if json_output:
+                return True, json.dumps(status, indent=2, ensure_ascii=False)
+
             count = status["task_count"]
             count_text = "unbekannt" if count is None else str(count)
+            policy = status.get("write_policy", {})
             lines = [
                 "[TASKPLAN] Bridge-Status",
                 "=" * 50,
@@ -826,6 +833,16 @@ class TaskHandler(BaseHandler):
             ]
             if status.get("module_file"):
                 lines.append(f"  Modul: {status['module_file']}")
+            if policy:
+                mirror_text = "ja" if policy.get("automatic_write_mirror") else "nein"
+                lines.extend(
+                    [
+                        f"  Schreibmodus: {policy.get('effective_mode', '-')}",
+                        f"  Auto-Spiegelung: {mirror_text}",
+                        f"  TASKPLAN-Rolle: {policy.get('taskplan_role', '-')}",
+                        f"  Cutover-Gate: {policy.get('decision_required', '-')}",
+                    ]
+                )
             return True, "\n".join(lines)
 
         if subcommand == "list":
@@ -843,6 +860,9 @@ class TaskHandler(BaseHandler):
                         return False, "--limit muss eine Zahl sein"
             client = get_taskplan_client(db_path=db_path)
             tasks = client.list(include_done=True, limit=limit)
+            if json_output:
+                payload = {"limit": limit, "count": len(tasks), "tasks": tasks}
+                return True, json.dumps(payload, indent=2, ensure_ascii=False)
             if not tasks:
                 return True, "[TASKPLAN] Keine Tasks gefunden"
             lines = [f"[TASKPLAN] Tasks (limit {limit})"]
@@ -871,6 +891,13 @@ class TaskHandler(BaseHandler):
                 db_path=db_path,
                 project_path=self.base_path,
             )
+            if json_output:
+                payload = {
+                    "results": results,
+                    "missing_ids": missing_ids,
+                }
+                return True, json.dumps(payload, indent=2, ensure_ascii=False)
+
             lines = ["[TASKPLAN] Import BACH -> taskplan"]
             for item in results:
                 task = item["task"]

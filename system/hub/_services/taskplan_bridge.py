@@ -332,6 +332,31 @@ def resolve_taskplan_db(db_path: str | Path | None = None) -> Path:
     return Path(backend["default_db_path"]()).expanduser()
 
 
+def taskplan_write_policy() -> dict[str, Any]:
+    """Describe the current write contract between BACH tasks and taskplan.
+
+    The bridge is still intentionally additive. This status block gives CLI,
+    API, GUI, and automation callers a stable place to detect that BACH writes
+    are not yet mirrored automatically while the cutover decision is open.
+    """
+    requested_mode = os.environ.get("BACH_TASKPLAN_WRITE_MODE", "").strip().lower()
+    return {
+        "effective_mode": "legacy_only",
+        "requested_mode": requested_mode or None,
+        "feature_flag": "BACH_TASKPLAN_WRITE_MODE",
+        "automatic_write_mirror": False,
+        "legacy_tasks_table": "authoritative",
+        "taskplan_role": "manual_mirror_import_only",
+        "implemented_write_operations": [],
+        "gated_write_operations": ["add", "edit", "done", "reopen"],
+        "decision_required": (
+            "TASKPLAN #300 source-of-truth and conflict rules before "
+            "BACH #1175 write adapter"
+        ),
+        "fallback": "BACH legacy tasks table remains unchanged",
+    }
+
+
 def get_taskplan_client(
     db_path: str | Path | None = None,
     agent_id: str = "bach",
@@ -350,6 +375,7 @@ def taskplan_status(db_path: str | Path | None = None) -> dict[str, Any]:
         "module_file": backend["module_file"],
         "db_path": str(resolved_db),
         "task_count": count,
+        "write_policy": taskplan_write_policy(),
     }
 
 
