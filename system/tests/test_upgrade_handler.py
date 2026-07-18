@@ -469,6 +469,36 @@ class TestRepairMetadata:
         assert conn.execute("SELECT COUNT(*) FROM distribution_releases").fetchone()[0] == 0
         conn.close()
 
+    def test_repair_dry_run_flag_in_args_is_honored(self, handler):
+        bach_root = handler.base_path.parent
+        (bach_root / "README.md").write_text("**Version:** v9.9.9\n", encoding="utf-8")
+        _write_system_file(handler, "hub/demo.py", "print('demo')\n")
+
+        conn = sqlite3.connect(str(handler.db_path))
+        conn.execute(
+            "INSERT INTO dist_type_defaults (path, dist_type, is_file) VALUES (?, ?, ?)",
+            ("system/hub/", 2, 0),
+        )
+        conn.commit()
+        conn.close()
+
+        ok, msg = handler.handle(
+            "repair",
+            ["--version", "v9.9.9", "--dry-run", "--json"],
+        )
+
+        assert ok
+        data = json.loads(msg)
+        assert data["dry_run"] is True
+        assert data["summary"]["candidate_files"] == 1
+        assert data["summary"]["version_entries_inserted"] == 1
+
+        conn = sqlite3.connect(str(handler.db_path))
+        assert conn.execute("SELECT COUNT(*) FROM distribution_manifest").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM dist_file_versions").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM distribution_releases").fetchone()[0] == 0
+        conn.close()
+
     def test_repair_populates_manifest_and_current_version_rows(self, handler):
         bach_root = handler.base_path.parent
         (bach_root / "README.md").write_text("**Version:** v9.9.9\n", encoding="utf-8")

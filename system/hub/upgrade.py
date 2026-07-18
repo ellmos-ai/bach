@@ -1112,6 +1112,7 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
 
     def _repair_metadata(self, args: list, dry_run: bool, json_output: bool = False) -> tuple:
         """Repariert Distribution-Manifest und aktuelle Versionsdaten."""
+        dry_run = dry_run or self._has_flag(args, "--dry-run", "-n")
         version = None
         if "--version" in args:
             try:

@@ -697,7 +697,8 @@ def _handle_upgrade(sub_cmd, args):
         operation = sub_cmd
         if sub_cmd in {"--help", "--status", "--check", "--list"}:
             operation = sub_cmd[2:]
-        success, msg = handler.handle(operation, args)
+        dry_run = "--dry-run" in args or "-n" in args
+        success, msg = handler.handle(operation, args, dry_run=dry_run)
         print(msg)
         return 0 if success else 1
     except Exception as e:
