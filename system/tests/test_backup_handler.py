@@ -234,6 +234,30 @@ class TestWithBackupManager:
         assert "mybackup" in output
 
 
+class TestBackupManager:
+    def test_creates_missing_snapshot_parent(self, tmp_path, monkeypatch):
+        from tools import backup_manager
+
+        db_path = tmp_path / "bach.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT)")
+        conn.commit()
+        conn.close()
+
+        monkeypatch.setattr(backup_manager, "DB_PATH", db_path)
+        monkeypatch.setattr(backup_manager, "BACKUPS_DIR", tmp_path / "backups")
+        monkeypatch.setattr(
+            backup_manager,
+            "SNAPSHOTS_DIR",
+            tmp_path / "missing_dist" / "snapshots",
+        )
+
+        manager = backup_manager.BackupManager()
+
+        assert manager.backups_dir.exists()
+        assert manager.snapshots_dir.exists()
+
+
 # ═══════════════════════════════════════════════════════════════
 # CODE QUALITY
 # ═══════════════════════════════════════════════════════════════

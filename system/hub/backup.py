@@ -36,6 +36,7 @@ class BackupHandler(BaseHandler):
     def get_operations(self) -> dict:
         return {
             "create": t("backup_create_desc", default="Backup erstellen (--to-nas fuer NAS-Kopie)"),
+            "status": t("backup_status_desc", default="Backup-Status anzeigen"),
             "list": t("backup_list_desc", default="Alle Backups auflisten"),
             "info": t("backup_info_desc", default="Backup-Details anzeigen")
         }
@@ -44,7 +45,7 @@ class BackupHandler(BaseHandler):
         if operation == "create":
             to_nas = "--to-nas" in args
             return self._create(to_nas, dry_run)
-        elif operation == "list":
+        elif operation in ("list", "status"):
             show_nas = "--nas" in args
             return self._list(show_nas)
         elif operation == "info" and args:

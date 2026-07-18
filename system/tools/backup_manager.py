@@ -64,8 +64,8 @@ class BackupManager:
     
     def _ensure_dirs(self):
         """Erstellt notwendige Verzeichnisse."""
-        self.backups_dir.mkdir(exist_ok=True)
-        self.snapshots_dir.mkdir(exist_ok=True)
+        self.backups_dir.mkdir(parents=True, exist_ok=True)
+        self.snapshots_dir.mkdir(parents=True, exist_ok=True)
     
     def _get_nas_path(self) -> Optional[Path]:
         """Lädt NAS-Pfad aus Datenbank."""
