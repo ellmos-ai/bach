@@ -1,6 +1,6 @@
 ﻿# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-07-16 | **Version:** 4.3.60
+**Stand:** 2026-07-18 | **Version:** 4.3.61
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
@@ -723,6 +723,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 
 | Version | Datum | Aenderung |
 |---------|-------|----------|
+| **4.3.61** | 2026-07-18 | **Task 1177 geschlossen: `memory session` speichert den Bericht einer offenen Session jetzt ohne `ended_at`; der nachfolgende Shutdown beendet dieselbe Zeile und vermeidet dadurch den reproduzierten `UNIQUE(session_id)`-Konflikt. Verifiziert wurden die fokussierte Memory-/Shutdown-Suite (`92 passed`), `test-agent`-Doctor und Start-Dry-Run sowie Usecase 50. OpenClaw bleibt bei Stable `2026.7.1`; das neue Prerelease `2026.7.2-beta.2` bestätigt MCP-Isolation, Task-Ledger, Remote-Worker und Recovery und ergänzt versionierte externe Supervisor-Handoffs sowie begrenzte Prozess-/Netzwerk-Cleanups.** |
 | **4.3.60** | 2026-07-16 | **Geisterdatenbank-Tasks 1163/1167 nach Task-1165-Readback geschlossen: Die zentrale AST-Regel blockiert neue `bach.db`-Eigenkonstruktionen und die fokussierte Suite steht bei 63 grünen Tests; Agent-Doctor/Start-Dry-Run und Usecase 50 bleiben grün. OpenClaw auf Stable `2026.7.1` / Prerelease `2026.7.2-beta.1` abgeglichen; passende Beobachtungspunkte sind session-lokale MCP-Isolation, task-ledger-basierte Cron-Historie und Remote-Worker-Routing.** |
 | **4.3.59** | 2026-07-13 | **Task 1165 nach unabhängiger Zertifizierung geschlossen: Rund 70 DB-Nutzer folgen jetzt der zentralen `hub.bach_paths`-Registry; die Pfadregressionen stehen bei 61 grünen Tests, Agent-Doctor/Start-Dry-Run und Usecase 50 sind grün. OpenClaw auf Stable `2026.6.11` / Prerelease `2026.7.1-beta.6` abgeglichen; Upgrade-Katalog für `v3.13.0-bluesky` bleibt bis zur Manifest-/Privacy-Bereinigung bewusst unversiegelt.** |
 | 1.0-1.5 | 2026-01 | Phase 1-3 (Autonomie, Funktionalitaet) |

@@ -10,6 +10,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from hub.shutdown import ShutdownHandler
+from hub.memory import MemoryHandler
 
 
 def _create_schema(conn):
@@ -29,7 +30,7 @@ def _create_schema(conn):
         );
         CREATE TABLE IF NOT EXISTS memory_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT,
+            session_id TEXT UNIQUE,
             partner_id TEXT,
             started_at TEXT,
             ended_at TEXT,
@@ -271,6 +272,46 @@ class TestComplete:
         conn.close()
         assert row[0] is not None
         assert "Aufgaben erledigt" in row[1]
+
+    def test_memory_report_then_shutdown_reuses_active_session(self, shutdown_env):
+        h, base, db_path = shutdown_env
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO memory_sessions (session_id, started_at) VALUES (?, ?)",
+            ("ses_memory_then_shutdown", datetime.now().isoformat()),
+        )
+        conn.commit()
+        conn.close()
+
+        memory_handler = MemoryHandler(base)
+        memory_handler.db_path = db_path
+        ok, msg = memory_handler.handle(
+            "session", ["Bericht vor Shutdown"], dry_run=False
+        )
+        assert ok is True
+        assert "aktualisiert" in msg
+
+        conn = sqlite3.connect(str(db_path))
+        prepared = conn.execute(
+            "SELECT ended_at, summary FROM memory_sessions "
+            "WHERE session_id='ses_memory_then_shutdown'"
+        ).fetchone()
+        conn.close()
+        assert prepared == (None, "Bericht vor Shutdown")
+
+        ok, msg = h._complete(None, dry_run=False)
+        assert ok is True
+        assert "UNIQUE" not in msg
+
+        conn = sqlite3.connect(str(db_path))
+        rows = conn.execute(
+            "SELECT ended_at, summary FROM memory_sessions "
+            "WHERE session_id='ses_memory_then_shutdown'"
+        ).fetchall()
+        conn.close()
+        assert len(rows) == 1
+        assert rows[0][0] is not None
+        assert "Bericht vor Shutdown" in rows[0][1]
 
     def test_complete_creates_session_without_active(self, shutdown_env):
         h, _, db_path = shutdown_env

@@ -191,9 +191,9 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 
 ### Competitive Watch
 
-As of July 16, 2026, OpenClaw stable is `2026.7.1` and the newest visible prerelease is `2026.7.2-beta.1`, published on July 15, 2026 at 18:48 UTC. The earlier privacy and recovery signals remain relevant; the new beta adds remote coding-session placement, task-ledger-backed cron history, session-scoped MCP connections, managed-worktree limits, durable channel ingress, and stronger Gateway/session recovery. The best BACH fits are session-scoped MCP isolation, ledger-backed scheduler history, and explicit remote-worker routing; broad mobile/channel parity remains outside BACH's current focus. Source: [openclaw/openclaw releases](https://github.com/openclaw/openclaw/releases/tag/v2026.7.2-beta.1).
+As of July 18, 2026, OpenClaw stable remains `2026.7.1`; the newest visible prerelease is `2026.7.2-beta.2`, published on July 17, 2026 at 08:38 UTC. It confirms the already tracked session-scoped MCP, task-ledger cron, remote-worker, and Gateway/session-recovery signals and adds a versioned external-supervisor restart handoff plus bounded process/network cleanup. These reliability patterns fit BACH; broad mobile/channel parity remains outside BACH's current focus. Source: [openclaw/openclaw releases](https://github.com/openclaw/openclaw/releases/tag/v2026.7.2-beta.2).
 
-On the BACH side, the July 16 care pass closed the stale ghost-database tasks `1163` and `1167` after confirming that the task-`1165` rollout already removed the miscounted `parents[]` runtime paths. The AST regression now passes with `63 passed`, blocks new `bach.db` path reconstruction, and keeps the remaining tools-only debt shrink-only; `test-agent` doctor/start dry-run and usecase `50` also remained green. Next DB-path slices are the transit-source, import-time constant, emergency-fallback, and test-isolation tasks `1168–1171`.
+On the BACH side, the July 18 care pass fixed task `1177`: `memory session` now records a report without prematurely ending the active session, so the following `session.shutdown(...)` closes the same row instead of colliding with `UNIQUE(session_id)`. The focused memory/shutdown suite passes with `92 passed`; `test-agent` doctor/start dry-run and usecase `50` are also green.
 
 ## License
 

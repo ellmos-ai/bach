@@ -815,14 +815,16 @@ class MemoryHandler(BaseHandler):
             """).fetchone()
             
             if open_session:
-                # Offene Session abschliessen
+                # Der Session-Bericht wird vor dem eigentlichen Shutdown
+                # gespeichert. Die Session muss offen bleiben, damit der
+                # Shutdown-Handler sie eindeutig abschliessen kann.
                 conn.execute("""
                     UPDATE memory_sessions 
-                    SET ended_at = ?, summary = ?
+                    SET summary = ?
                     WHERE id = ?
-                """, (now.isoformat(), summary, open_session[0]))
+                """, (summary, open_session[0]))
                 session_id = open_session[1]
-                action = "abgeschlossen"
+                action = "aktualisiert"
             else:
                 # Neue Session mit gleichem Start/End (nachtraeglicher Bericht)
                 conn.execute("""
