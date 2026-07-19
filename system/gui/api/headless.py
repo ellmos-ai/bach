@@ -74,10 +74,11 @@ BACH_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(BACH_ROOT))
 
 try:
-    from hub.bach_paths import BACH_DB as _PATHS_DB
+    from hub.bach_paths import BACH_DB as _PATHS_DB, BACKUPS_DIR
     BACH_DB = str(_PATHS_DB)
 except ImportError:
-    BACH_DB = str(BACH_DB)
+    BACH_DB = str(BACH_ROOT / "data" / "bach.db")
+    BACKUPS_DIR = Path.home() / ".bach" / "backups"
 
 try:
     from fastapi import FastAPI, HTTPException, Depends, Request, Query
@@ -438,8 +439,8 @@ async def list_skills(type: str = "", limit: int = 100, _=Depends(verify_auth)):
 @app.post("/api/v1/backup")
 async def create_backup(_=Depends(verify_auth)):
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_dir = BACH_ROOT / "data" / "backups"
-    backup_dir.mkdir(exist_ok=True)
+    backup_dir = BACKUPS_DIR / "api"
+    backup_dir.mkdir(parents=True, exist_ok=True)
     backup_path = backup_dir / f"bach_api_{now}.db"
     try:
         shutil.copy2(BACH_DB, str(backup_path))

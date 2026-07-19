@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Tests for BackupHandler (hub/backup.py)."""
 
+import asyncio
 import sqlite3
 import sys
 import zipfile
@@ -62,8 +63,16 @@ class TestProperties:
     def test_operations_contain_create(self, handler):
         ops = handler.get_operations()
         assert "create" in ops
+        assert "status" in ops
         assert "list" in ops
         assert "info" in ops
+
+    def test_context_injector_uses_real_user_restore_command(self):
+        from tools.injectors import ContextInjector
+
+        hint = ContextInjector.CONTEXT_TRIGGERS["backup"]
+        assert "backup_manager.py restore backup latest" in hint
+        assert "bach restore backup latest" not in hint
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -235,6 +244,13 @@ class TestWithBackupManager:
 
 
 class TestBackupManager:
+    def test_defaults_use_canonical_local_runtime_paths(self):
+        from hub.bach_paths import BACH_DB, BACKUPS_DIR
+        from tools import backup_manager
+
+        assert backup_manager.DB_PATH == BACH_DB
+        assert backup_manager.BACKUPS_DIR == BACKUPS_DIR / "userdata"
+
     def test_creates_missing_snapshot_parent(self, tmp_path, monkeypatch):
         from tools import backup_manager
 
@@ -256,6 +272,22 @@ class TestBackupManager:
 
         assert manager.backups_dir.exists()
         assert manager.snapshots_dir.exists()
+
+    def test_headless_backup_uses_canonical_local_directory(self, tmp_path, monkeypatch):
+        from gui.api import headless
+
+        db_path = tmp_path / "bach.db"
+        db_path.write_bytes(b"private runtime data")
+        backup_root = tmp_path / "backups"
+
+        monkeypatch.setattr(headless, "BACH_DB", str(db_path))
+        monkeypatch.setattr(headless, "BACKUPS_DIR", backup_root)
+
+        result = asyncio.run(headless.create_backup(None))
+
+        backup_path = Path(result["backup"])
+        assert backup_path.parent == backup_root / "api"
+        assert backup_path.read_bytes() == b"private runtime data"
 
 
 # ═══════════════════════════════════════════════════════════════

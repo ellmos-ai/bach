@@ -1,7 +1,7 @@
 # Portabilität: UNIVERSAL
-# Version: 1.1.1
-# Zuletzt validiert: 2026-05-15 (Wartungsloop: Pfad-Korrektur, Mac-Verifikation)
-# Nächste Prüfung: 2026-11-15
+# Version: 1.2.0
+# Zuletzt validiert: 2026-07-19 (Help-Forensik: Handler, Tool, REST-API, lokale Pfade)
+# Nächste Prüfung: 2027-01-19
 
 BACKUP & RESTORE
 ================
@@ -20,13 +20,14 @@ BEFEHLE
   bach backup create --to-nas         Auch auf NAS kopieren
 
   # Backups anzeigen
+  bach backup status                  Alias für lokale Backup-Liste
   bach backup list                    Lokale Backups
   bach backup list --nas              NAS-Backups
   bach backup info <name>             Backup-Details
 
-  # Wiederherstellen (NUR userdata_*.zip Backups)
-  bach restore backup <name>          Bestimmtes Backup
-  bach restore backup latest          Neuestes Backup
+  # User-Backup wiederherstellen (NUR via backup_manager.py)
+  python system/tools/backup_manager.py restore backup <name>
+  python system/tools/backup_manager.py restore backup latest
 
   # Template zurücksetzen (NUR via backup_manager.py)
   python system/tools/backup_manager.py restore template SKILL.md
@@ -35,8 +36,8 @@ WAS WIRD GESICHERT?
 -------------------
 
   dist_type = 0 (USER_DATA):
-    ├── tasks (alle Tasks, Status, History)
-    ├── memory/ (Sessions, Longterm, Archive)
+    ├── ausgewählte DB-Tabellen (Tasks, Memory, Monitoring)
+    ├── memory/ (dateibasierte Memory-Daten)
     ├── data/logs/ (Session-Logs, konsolidierter Pfad)
     └── user/ (Inbox, Nachrichten, Agenda)
 
@@ -48,16 +49,21 @@ WAS WIRD GESICHERT?
 BACKUP-ROTATION
 ---------------
 
-  Lokal (_backups/):              7 Backups behalten
+  Lokal (BACH_BACKUPS_DIR):        7 User-Backups behalten
   NAS:                30 Backups behalten
-  OneDrive:           Automatisch (Versionsverlauf)
+  OneDrive/Git:       Kein Ziel für private Laufzeit-Backups
 
 SPEICHERORTE
 ------------
 
-  Lokal:   system/_backups/
-  NAS:     \\NAS-HOST\fritz.nas\Extreme_SSD\BACKUP\BACH_Backups
+  Lokal:   ${BACH_BACKUPS_DIR:-~/.bach/backups}/userdata/
+  REST:    ${BACH_BACKUPS_DIR:-~/.bach/backups}/api/
+  NAS:     system_config.backup_nas_path (optional)
   Logs:    system/data/logs/ (konsolidiert)
+
+  Die Live-Datenbank folgt BACH_DB bzw. hub.bach_paths.BACH_DB.
+  BACH_BACKUPS_DIR überschreibt nur den lokalen Backup-Root; der
+  Unterordner userdata/ wird automatisch ergänzt.
 
 TOOLS
 -----
@@ -73,11 +79,14 @@ TOOLS
 API
 ---
 
-  POST /api/v1/backup         Backup erstellen (Headless)
-  GET  /api/v1/backup/list    Backups auflisten
+  POST /api/v1/backup         Authentifizierte lokale DB-Kopie erstellen
 
-VERWANDTE SKILLS
-----------------
+  Kein GET-Listenendpoint. Für Listen bach backup list/status verwenden.
 
-  skills/_service/builder.md  → CREATE, EXPORT, DISTRIBUTE, BACKUP, RESTORE
-  docs/BACKUP_SYSTEM.md       → Ursprüngliches Konzept aus _BATCH
+IMPLEMENTIERUNG
+---------------
+
+  system/hub/backup.py             CLI-/Handler-Fläche
+  system/tools/backup_manager.py   Backup-, Rotation- und Restore-Logik
+  system/hub/bach_paths.py         BACH_DB und BACH_BACKUPS_DIR
+  system/gui/api/headless.py       POST /api/v1/backup

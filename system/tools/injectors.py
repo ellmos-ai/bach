@@ -353,7 +353,7 @@ class ContextInjector:
         "delegation": "Delegation: bach partner delegate 'Task' --to=<partner>",
 
         # === BACKUP & WARTUNG ===
-        "backup": "Backup: bach backup create [--to-nas] | bach backup list | bach restore backup latest",
+        "backup": "Backup: bach backup create [--to-nas] | bach backup list | python system/tools/backup_manager.py restore backup latest",
         "wartung": "Wartung: bach --maintain heal/registry/skills/docs",
 
         # === WORKFLOWS (Metakognition: WANN/WIE koordinieren) ===

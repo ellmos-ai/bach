@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: MIT
 """
 Tool: backup_manager
-Version: 1.0.0
+Version: 1.1.0
 Author: BACH Team
 Created: 2026-02-08
-Updated: 2026-02-08
+Updated: 2026-07-19
 Anthropic-Compatible: True
 
 VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version backup_manager
@@ -14,7 +14,7 @@ VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version backup_man
 backup_manager.py - BACH Backup & Restore System
 
 Verwaltet:
-- User-Backup (dist_type=0) -> system/data/system/data/system/data/system/data/backups/*.zip
+- User-Backup (dist_type=0) -> BACH_BACKUPS_DIR/userdata/*.zip
 - Template-Snapshots (dist_type=1) -> dist/snapshots/*.orig  
 - Distribution-Restore (dist_type=2) -> Aus dist/
 
@@ -40,8 +40,16 @@ from typing import Dict, List, Optional, Tuple
 
 # Pfade
 BACH_DIR = Path(__file__).parent.parent
-DB_PATH = BACH_DIR / "data" / "bach.db"
-BACKUPS_DIR = BACH_DIR / "_backups"
+if str(BACH_DIR) not in sys.path:
+    sys.path.insert(0, str(BACH_DIR))
+
+from hub.bach_paths import BACH_DB as DB_PATH
+from hub.bach_paths import BACKUPS_DIR as CANONICAL_BACKUPS_DIR
+
+# User-Backups enthalten private Laufzeitdaten und bleiben deshalb ausserhalb
+# des OneDrive-/Git-Checkouts. BACH_BACKUPS_DIR kann den lokalen Root explizit
+# ueberschreiben; der Unterordner trennt User-Backups von DB-Quick-Backups.
+BACKUPS_DIR = CANONICAL_BACKUPS_DIR / "userdata"
 SNAPSHOTS_DIR = BACH_DIR / "dist" / "snapshots"
 DISTRIBUTIONS_DIR = BACH_DIR / "dist"
 MEMORY_DIR = BACH_DIR / "memory"
