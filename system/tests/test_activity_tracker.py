@@ -25,6 +25,65 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from tools.activity_tracker import ActivityTracker
 
 
+def test_memory_decay_module_decays_fact_confidence(tmp_path):
+    """Regression for the EOD hook import: tools.memory_decay must exist."""
+    db_path = tmp_path / "bach.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE memory_facts (
+            id INTEGER PRIMARY KEY,
+            category TEXT,
+            key TEXT,
+            value TEXT,
+            confidence REAL,
+            updated_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO memory_facts (category, key, value, confidence) VALUES (?, ?, ?, ?)",
+        ("system", "sample", "value", 1.0),
+    )
+    conn.commit()
+    conn.close()
+
+    from tools.memory_decay import MemoryDecay
+
+    result = MemoryDecay(db_path).apply_decay_to_facts(dry_run=False)
+
+    assert result["decayed_facts"] == 1
+    conn = sqlite3.connect(str(db_path))
+    confidence = conn.execute(
+        "SELECT confidence FROM memory_facts WHERE key = 'sample'"
+    ).fetchone()[0]
+    conn.close()
+    assert confidence == pytest.approx(0.98)
+
+
+def test_memory_decay_dry_run_does_not_change_fact_confidence(tmp_path):
+    db_path = tmp_path / "bach.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "CREATE TABLE memory_facts (id INTEGER PRIMARY KEY, key TEXT, confidence REAL)"
+    )
+    conn.execute("INSERT INTO memory_facts (key, confidence) VALUES (?, ?)", ("sample", 0.9))
+    conn.commit()
+    conn.close()
+
+    from tools.memory_decay import MemoryDecay
+
+    result = MemoryDecay(db_path).apply_decay_to_facts(dry_run=True)
+
+    assert result["decayed_facts"] == 1
+    conn = sqlite3.connect(str(db_path))
+    confidence = conn.execute(
+        "SELECT confidence FROM memory_facts WHERE key = 'sample'"
+    ).fetchone()[0]
+    conn.close()
+    assert confidence == pytest.approx(0.9)
+
+
 @pytest.fixture
 def temp_db():
     """Erstellt temporäre Test-DB mit system_activity Tabelle."""

@@ -10,6 +10,7 @@ Logs Handler - Log-Verwaltung
 """
 from pathlib import Path
 from datetime import datetime
+import os
 from .base import BaseHandler
 
 
@@ -110,12 +111,12 @@ class LogsHandler(BaseHandler):
     
     def _tail(self, lines: int = 50) -> tuple:
         """Letzte n Zeilen des Haupt-Logs."""
-        auto_log = self.logs_dir / "auto_log.txt"
+        auto_log = self._readable_auto_log()
         
-        if not auto_log.exists():
+        if not auto_log:
             return False, "Kein auto_log.txt gefunden."
         
-        results = [f"LOG TAIL (letzte {lines} Zeilen)", "=" * 50]
+        results = [f"LOG TAIL (letzte {lines} Zeilen: {auto_log.name})", "=" * 50]
         
         try:
             content = auto_log.read_text(encoding='utf-8', errors='ignore')
@@ -125,6 +126,32 @@ class LogsHandler(BaseHandler):
             return False, f"Fehler: {e}"
         
         return True, "\n".join(results)
+
+    def _readable_auto_log(self) -> Path | None:
+        """Return the generic auto log or a host-specific fallback if readable."""
+        candidates = [self.logs_dir / "auto_log.txt"]
+        host = os.environ.get("COMPUTERNAME")
+        if host:
+            candidates.append(self.logs_dir / f"auto_log-{host}.txt")
+        candidates.extend(
+            sorted(
+                self.logs_dir.glob("auto_log-*.txt"),
+                key=lambda path: path.stat().st_mtime if path.exists() else 0,
+                reverse=True,
+            )
+        )
+
+        seen = set()
+        for candidate in candidates:
+            if candidate in seen or not candidate.exists():
+                continue
+            seen.add(candidate)
+            try:
+                candidate.read_text(encoding="utf-8", errors="ignore")
+                return candidate
+            except OSError:
+                continue
+        return None
     
     def _clear(self, dry_run: bool) -> tuple:
         """Alte Logs bereinigen (älter als 7 Tage)."""

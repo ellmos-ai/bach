@@ -168,6 +168,30 @@ class TestTail:
         assert ok is True
         assert "letzte 5 Zeilen" in msg
 
+    def test_tail_falls_back_to_host_log_when_generic_is_unreadable(self, logs_env, monkeypatch):
+        base, logs_dir = logs_env
+        generic = logs_dir / "auto_log.txt"
+        host_log = logs_dir / "auto_log-WORKSTATION-LG.txt"
+        generic.write_text("broken", encoding="utf-8")
+        host_log.write_text("host line", encoding="utf-8")
+        monkeypatch.setenv("COMPUTERNAME", "WORKSTATION-LG")
+
+        original_read_text = Path.read_text
+
+        def fake_read_text(path, *args, **kwargs):
+            if path == generic:
+                raise OSError(22, "Invalid argument")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", fake_read_text)
+
+        h = LogsHandler(base)
+        ok, msg = h.handle("tail", ["5"])
+
+        assert ok is True
+        assert "auto_log-WORKSTATION-LG.txt" in msg
+        assert "host line" in msg
+
 
 # ═══════════════════════════════════════════════════════════════
 # TESTS: HANDLE — CLEAR

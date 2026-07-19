@@ -33,6 +33,7 @@ Zweistufiges System:
 Nach 30 Tagen werden Eintraege endgueltig geloescht.
 """
 import sys
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -47,15 +48,37 @@ class AutoLogger:
     
     def __init__(self, base_path: Path):
         self.base_path = Path(base_path)
-        self.log_file = self.base_path / "data" / "logs" / "auto_log.txt"
-        self.extended_file = self.base_path / "data" / "logs" / "auto_log_extended.txt"
+        logs_dir = self.base_path / "data" / "logs"
+        self.log_file = logs_dir / "auto_log.txt"
+        self.extended_file = logs_dir / "auto_log_extended.txt"
         
         # Verzeichnis sicherstellen
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
+        self._fallback_to_host_log_if_needed()
         
         # Cleanup bei Start
         self._cleanup_if_needed()
         self._cleanup_extended()
+
+    def _fallback_to_host_log_if_needed(self):
+        """Use a host-specific log when the generic OneDrive log is unreadable."""
+        if self._is_readable(self.log_file):
+            return
+
+        host = os.environ.get("COMPUTERNAME") or "local"
+        logs_dir = self.log_file.parent
+        self.log_file = logs_dir / f"auto_log-{host}.txt"
+        self.extended_file = logs_dir / f"auto_log_extended-{host}.txt"
+
+    @staticmethod
+    def _is_readable(path: Path) -> bool:
+        if not path.exists():
+            return True
+        try:
+            path.read_text(encoding="utf-8", errors="ignore")
+            return True
+        except OSError:
+            return False
     
     def _cleanup_if_needed(self):
         """Verschiebt alte Eintraege ins Extended-Archiv wenn Log zu gross."""
