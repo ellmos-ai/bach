@@ -210,13 +210,15 @@ class ClutchHandler(BaseHandler):
         for name in ordered_components:
             lines.append(f"    - {name}: {sources.get(name, 'unknown')}")
 
+        fallback_state = "standby" if compat_ready and db_bridge_ready else "active"
         lines.extend(
             [
                 "",
                 "  Gates:",
                 f"    - Compat-Adapter: {'OK' if compat_ready else 'PENDING'}",
                 f"    - DB-Brücke: {'OK' if db_bridge_ready else 'PENDING'}",
-                "    - Fork-Archivierung: BLOCKED bis Parallelbetrieb grün ist",
+                "    - Fork-Archivierung: ARCHIVED "
+                f"(Legacy-Fallback {fallback_state} unter hub/_archive/delegation_legacy)",
             ]
         )
 

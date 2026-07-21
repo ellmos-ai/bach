@@ -47,7 +47,7 @@ from typing import Dict, Optional, Tuple
 
 # clutch-bridge Integration (Task [1078])
 try:
-    from hub._services.delegation.strecken_analyse import (
+    from .strecken_analyse import (
         StreckenAnalyse, StreckenProfil, get_analyser, analysiere_task
     )
     _STRECKEN_AVAILABLE = True

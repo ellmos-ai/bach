@@ -2,14 +2,14 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
-Compat-Layer fuer die schrittweise clutch-Migration.
+Compat-Layer fuer die externe clutch-Anbindung.
 
 Ziel:
 - BACH importiert Delegations-Bausteine ueber genau einen Einstiegspunkt.
 - Der externe clutch-Scorer wird bevorzugt, weil er bereits die
   provider-neutrale Quelle der Wahrheit ist.
-- Die restlichen clutch-bridge-Bausteine bleiben vorerst auf den
-  BACH-internen Modulen, bis ihre DB-/API-Vertraege voll abgeglichen sind.
+- Der ehemalige BACH-Fork liegt nach gruenem Parallelbetrieb nur noch als
+  archivierter Notfall-Fallback unter hub/_archive/delegation_legacy.
 """
 
 from __future__ import annotations
@@ -24,21 +24,21 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from .bordcomputer import (
+from ..._archive.delegation_legacy.bordcomputer import (
     OverkillAlert as _LegacyOverkillAlert,
     TokenExplosionAlert as _LegacyTokenExplosionAlert,
     get_bordcomputer as _get_legacy_bordcomputer,
 )
-from .fahrtenbuch import FahrtenbuchEintrag as _LegacyFahrtenbuchEintrag
-from .fahrtenbuch import get_fahrtenbuch as _get_legacy_fahrtenbuch
-from .fahrschule import get_fahrschule as _get_legacy_fahrschule
-from .gas_bremse import (
+from ..._archive.delegation_legacy.fahrtenbuch import FahrtenbuchEintrag as _LegacyFahrtenbuchEintrag
+from ..._archive.delegation_legacy.fahrtenbuch import get_fahrtenbuch as _get_legacy_fahrtenbuch
+from ..._archive.delegation_legacy.fahrschule import get_fahrschule as _get_legacy_fahrschule
+from ..._archive.delegation_legacy.gas_bremse import (
     GasStellung as _LegacyGasStellung,
     PromptStrategie as _LegacyPromptStrategie,
     berechne_gas as _legacy_berechne_gas,
     get_gas_bremse as _get_legacy_gas_bremse,
 )
-from .strecken_analyse import (
+from ..._archive.delegation_legacy.strecken_analyse import (
     StreckenProfil as _LegacyStreckenProfil,
     analysiere_task as _legacy_analysiere_task,
     get_analyser as _get_legacy_analyser,
@@ -189,7 +189,7 @@ _clutch_strecke_module = _load_external_clutch_module("clutch.strecke")
 _clutch_gas_bremse_module = _load_external_clutch_module("clutch.gas_bremse")
 _clutch_bordcomputer_module = _load_external_clutch_module("clutch.bordcomputer")
 
-from .complexity_scorer import get_scorer as _get_legacy_scorer
+from ..._archive.delegation_legacy.complexity_scorer import get_scorer as _get_legacy_scorer
 
 
 class _ScorerAdapter:

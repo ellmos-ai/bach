@@ -249,7 +249,8 @@ class TestHandleMigration:
         assert "fahrtenbuch: legacy" in text
         assert "Compat-Adapter: PENDING" in text
         assert "DB-Brücke: PENDING" in text
-        assert "Fork-Archivierung: BLOCKED" in text
+        assert "Fork-Archivierung: ARCHIVED" in text
+        assert "Legacy-Fallback active" in text
 
     def test_migration_marks_all_gates_ready_when_runtime_and_db_sources_are_external(self, clutch_env):
         sources = {
@@ -275,4 +276,6 @@ class TestHandleMigration:
         assert "fahrtenbuch: clutch" in text
         assert "Compat-Adapter: OK" in text
         assert "DB-Brücke: OK" in text
-        assert "Fork-Archivierung: BLOCKED" in text
+        assert "Fork-Archivierung: ARCHIVED" in text
+        assert "Legacy-Fallback standby" in text
+        assert "hub/_archive/delegation_legacy" in text
