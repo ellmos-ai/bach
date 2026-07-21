@@ -1,7 +1,7 @@
 # Portabilität: UNIVERSAL
 # Version: 1.1.0
-# Zuletzt validiert: 2026-05-30
-# Nächste Prüfung: 2026-08-30
+# Zuletzt validiert: 2026-07-19
+# Nächste Prüfung: 2026-10-19
 
 BACH UPGRADE - SYSTEM-AKTUALISIERUNG
 =====================================
@@ -41,7 +41,7 @@ VERWENDUNG
 
   # Upgrade-Metadaten prüfen und reparieren
   bach upgrade repair --dry-run
-  bach upgrade repair --version v3.12.4-earth
+  bach upgrade repair --version v3.13.0-bluesky
 
 
 KATEGORIEN
@@ -95,7 +95,7 @@ BEISPIELE
 
   # Reparatur erst simulieren, dann ausführen
   bach upgrade repair --dry-run
-  bach upgrade repair --version v3.12.4-earth
+  bach upgrade repair --version v3.13.0-bluesky
 
 
 VERSIONIERUNG
