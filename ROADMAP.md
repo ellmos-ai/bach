@@ -1,6 +1,6 @@
 ﻿# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-07-18 | **Version:** 4.3.61
+**Stand:** 2026-07-19 | **Version:** 4.3.62
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
@@ -241,31 +241,24 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 
 ### Priorität 1 - Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
 
-Der OpenClaw-Abgleich vom 2026-07-13 bestätigt den nächsten BACH-Fokus
+Der OpenClaw-Abgleich vom 2026-07-19 bestätigt den nächsten BACH-Fokus
 klar in Richtung sichere Erweiterbarkeit, robuste Agenten-Laufzeit und
 saubere Steuer-/Statusoberflächen. Relevant sind nicht die breite
 Messenger-Abdeckung, sondern manifest-first Plugin- und Provider-Metadaten,
 fail-closed Tool-Setups, Scans vor der Installation von
 Skills/MCP-Servern/Plugins, API-Parität für Agentenflächen, Checkpoint-
 Steuerung und low-cardinality Telemetrie. Als Referenzstand gilt dabei:
-GitHub markiert `openclaw 2026.6.11` als aktuelle Stable-Linie; auf der
-GitHub-Releases-Seite ist `2026.7.1-beta.6`, veröffentlicht am
-2026-07-13 um 01:38 UTC, jetzt das neueste sichtbare Prerelease.
-Frisch relevant aus Stable und Beta sind zusätzlich GPT-5.6-
-Modellfamilien-Support über Katalog-, Capability- und Runtime-Pfade,
-`openclaw attach` für externe Harness-Anbindung an bestehende Sessions,
-Telegram-Codex-Pairing samt Mid-Run-Steering und Reply-Recovery,
-exit-getriggerte Cron-Läufe mit sauberem Detach sowie gescopte
-Conversation-Capability-Profile und deutlichere Doctor-/Install-
-Diagnostik. Neu konkretisiert die aktuelle Beta zusätzlich conversational
-onboarding mit modellgeführten Freigaben, einen gebündelten ClawRouter-
-Provider mit credential-scoped Modell-Discovery samt Usage-/Budget-Sicht,
-robustere Gateway-Crash-Loop-Recovery und stärkere Session-Organisation.
-Beta 6 vertieft außerdem SecretRef-Grenzen, Token-Redaktion über Log-Chunks,
-begrenzte Provider-/Netzwerkantworten, Startup-Migrationen vor Readiness sowie
-korrekte harte Agent-Wait- und Subagent-Abschlusszustände. Für BACH passen davon
+GitHub markiert `openclaw 2026.7.1` als aktuelle Stable-Linie; auf der
+GitHub-Releases-Seite ist `2026.7.2-beta.3`, veröffentlicht am
+2026-07-18 um 23:16 UTC, jetzt das neueste sichtbare Prerelease.
+Frisch relevant aus Stable und Beta sind zusätzlich Remote-Coding-Sessions
+auf Gateway-/Node-Hosts, geführtes Control-UI-/Channel-Setup,
+robustere Gateway-/Reply-/Cron-Recovery, sicherere Channel-Bedienung,
+versionierte externe Supervisor-Restart-Handoffs und weiter die
+GPT-5.6-Modellfamilien-Defaults. Für BACH passen davon
 vor allem approval-geführte Setup-Flows, Provider-/Modell-Discovery mit
-Budgetsicht, privacy-sichere Credential-Grenzen und recovery-sichere Runtime-/
+Budgetsicht, privacy-sichere Credential-Grenzen, supervised Restart-Handoffs,
+Terminal-Resume auf dem owning host und recovery-sichere Runtime-/
 Scheduler-Oberflächen. Die zuvor wichtigen Signale bleiben
 ebenfalls relevant:
 automatische Fast-Mode-Wechsel für kurze Turns, robustere Modell-Routen,
@@ -350,9 +343,10 @@ leerem `distribution_releases` auch den aktuellen Release-Eintrag aus
 README-/CHANGELOG-Metadaten. `bach upgrade check --json` liefert
 `manifest_entries`, `release_entries`, `repair_recommended`,
 `current_version` und `current_release_registered` jetzt konsistent auch
-im normalen Drift-Pfad. Der Live-Check vom 2026-05-30 zeigt damit
-4.720 verfolgte Dateien, 4.722 Manifest-Einträge und 1 registrierten
-Stable-Release-Eintrag (`v3.12.4-earth`, 2026-05-17).
+im normalen Drift-Pfad. Der Live-Check vom 2026-07-19 zeigt damit
+4.792 geprüfte Dateien, 4.794 Manifest-Einträge, 2 Release-Einträge
+und `current_release_registered=true` für `v3.13.0-bluesky`; 89
+`missing_files` bleiben als getrennte Altlasten- und Distributionsspur sichtbar.
 Neu nachgezogen ist außerdem, dass Scheduler-Doctor/Status/Jobliste und
 der GUI-Daemon dieselbe kanonische BACH-Datenbank verwenden; der
 Live-Check vom 2026-05-24 zeigt damit konsistent
@@ -723,6 +717,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 
 | Version | Datum | Aenderung |
 |---------|-------|----------|
+| **4.3.62** | 2026-07-19 | **Live-Release-Katalog auf `v3.13.0-bluesky` versiegelt: `bach upgrade repair --version v3.13.0-bluesky --json` hebt den aktiven Release-Katalog auf 2 Einträge und `bach upgrade check --json` meldet jetzt Stable/Latest `v3.13.0-bluesky`, `current_release_registered=true`, `repair_recommended=false` und `local_modifications=0`. Zusätzlich wurden `test-agent`-Doctor/Start-Dry-Run sowie Usecase 50 erneut verifiziert. OpenClaw wurde auf Stable `2026.7.1` und Prerelease `2026.7.2-beta.3` nachgezogen; besonders relevant bleiben owning-host Terminal-Resume, guided Setup, externe Supervisor-Handoffs und Recovery-Härtung.** |
 | **4.3.61** | 2026-07-18 | **Task 1177 geschlossen: `memory session` speichert den Bericht einer offenen Session jetzt ohne `ended_at`; der nachfolgende Shutdown beendet dieselbe Zeile und vermeidet dadurch den reproduzierten `UNIQUE(session_id)`-Konflikt. Verifiziert wurden die fokussierte Memory-/Shutdown-Suite (`92 passed`), `test-agent`-Doctor und Start-Dry-Run sowie Usecase 50. OpenClaw bleibt bei Stable `2026.7.1`; das neue Prerelease `2026.7.2-beta.2` bestätigt MCP-Isolation, Task-Ledger, Remote-Worker und Recovery und ergänzt versionierte externe Supervisor-Handoffs sowie begrenzte Prozess-/Netzwerk-Cleanups.** |
 | **4.3.60** | 2026-07-16 | **Geisterdatenbank-Tasks 1163/1167 nach Task-1165-Readback geschlossen: Die zentrale AST-Regel blockiert neue `bach.db`-Eigenkonstruktionen und die fokussierte Suite steht bei 63 grünen Tests; Agent-Doctor/Start-Dry-Run und Usecase 50 bleiben grün. OpenClaw auf Stable `2026.7.1` / Prerelease `2026.7.2-beta.1` abgeglichen; passende Beobachtungspunkte sind session-lokale MCP-Isolation, task-ledger-basierte Cron-Historie und Remote-Worker-Routing.** |
 | **4.3.59** | 2026-07-13 | **Task 1165 nach unabhängiger Zertifizierung geschlossen: Rund 70 DB-Nutzer folgen jetzt der zentralen `hub.bach_paths`-Registry; die Pfadregressionen stehen bei 61 grünen Tests, Agent-Doctor/Start-Dry-Run und Usecase 50 sind grün. OpenClaw auf Stable `2026.6.11` / Prerelease `2026.7.1-beta.6` abgeglichen; Upgrade-Katalog für `v3.13.0-bluesky` bleibt bis zur Manifest-/Privacy-Bereinigung bewusst unversiegelt.** |
