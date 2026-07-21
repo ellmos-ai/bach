@@ -20,8 +20,7 @@ See BACH working live — dashboard, Codex backend, operator steering — in 2:2
 
 ## Built with OpenAI Codex & GPT-5.6
 
-- **Codex as a first-class agent backend:** BACH ships five interchangeable LLM backends — `codex-cli` is one of them (`system/hub/_services/llm/model_backend.py`). Any running agent can delegate a coding subtask straight to Codex with a single `codex exec` call (`system/hub/_services/chat/chat_runtime.py`) and fold the result back into its own reasoning loop. The OpenAI API backend powers direct tool-calling chat.
-- **Codex-developed, daily:** three local Codex automations (`bach-daily-care-and-dev-check`, `bach-github-release-service`, `bach-start-and-health-checks`) run on GPT-5.6 (reasoning effort *high*) with this repository as their working directory — they health-check the live system, fix real bugs, run the regression suite (4,400+ tests), update the docs, and push the improvements with a privacy check.
+BACH uses Codex both as a first-class runtime backend and as a repository-development partner. For the exact automation schedules, model routes, and auditable session IDs, see the [verified Build Week attribution](#openai-build-week--codex-and-gpt-56) below.
 
 ## Languages
 
@@ -46,6 +45,17 @@ BACH is best described as a **local-first LLM operating system**: a persistent P
 Canonical GitHub repository: `ellmos-ai/bach`. Machine-readable project context for LLM crawlers is available in [`llms.txt`](llms.txt).
 
 Useful search phrases include `ellmos-ai/bach`, `local-first LLM operating system`, `text-based OS for LLM agents`, `SQLite memory for AI agents`, `BACH ellmos agent OS`, `personal agentic OS Python SQLite`, and `multi-agent orchestration with MCP servers`.
+
+## OpenAI Build Week — Codex and GPT-5.6
+
+BACH uses Codex in two distinct roles:
+
+- **Runtime backend:** `codex-cli` is one of five pluggable chat backends, and BACH agents can delegate coding tasks through `codex exec`.
+- **Repository development:** three active Codex automations maintain the project: `bach-daily-care-and-dev-check`, `bach-start-and-health-checks`, and `bach-github-release-service`. Since July 21, 2026, all three have been configured for GPT-5.6 (`gpt-5.6-terra`); the first two run daily, while the release service runs weekly.
+- **Verified model routing:** in Codex Session `019f85c6-4339-7f13-b8e5-bf1823fd8432`, GPT-5.6 Sol with high reasoning audited all 78 automation definitions and routed BACH's development and release jobs to Terra/high and health checks to Terra/medium.
+- **Final submission audit:** GPT-5.6 Sol in Codex Session `019f8674-fe9a-7d91-a80f-7ee799e8ced0` reviewed and certified the pending BACH changes, corrected the competition attribution, and completed the web-scrape hardening and regression tests.
+
+For auditability, the GPT-5.6 automation attribution applies from that configuration change forward; earlier automation runs used earlier Codex models.
 
 ### Key Features
 
@@ -202,9 +212,9 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 
 ### Competitive Watch
 
-As of July 18, 2026, OpenClaw stable remains `2026.7.1`; the newest visible prerelease is `2026.7.2-beta.2`, published on July 17, 2026 at 08:38 UTC. It confirms the already tracked session-scoped MCP, task-ledger cron, remote-worker, and Gateway/session-recovery signals and adds a versioned external-supervisor restart handoff plus bounded process/network cleanup. These reliability patterns fit BACH; broad mobile/channel parity remains outside BACH's current focus. Source: [openclaw/openclaw releases](https://github.com/openclaw/openclaw/releases/tag/v2026.7.2-beta.2).
+As of July 19, 2026, OpenClaw stable remains `2026.7.1`; the newest visible prerelease is `2026.7.2-beta.3`, published on July 18, 2026 at 23:16 UTC. It extends the already tracked MCP-isolation, task-ledger, remote-worker, and recovery signals with remote coding sessions on owning hosts, guided Control UI/channel setup, stronger gateway/session recovery, safer channel operation, and versioned external-supervisor restart handoffs. The best-fit impulses for BACH are supervised restart handoffs, terminal resume on the owning host, guided setup hardening, and recovery-safe channel/session flows; broad mobile/channel parity remains outside BACH's current focus. Source: [openclaw/openclaw releases](https://github.com/openclaw/openclaw/releases/tag/v2026.7.2-beta.3).
 
-On the BACH side, the July 18 care pass fixed task `1177`: `memory session` now records a report without prematurely ending the active session, so the following `session.shutdown(...)` closes the same row instead of colliding with `UNIQUE(session_id)`. The focused memory/shutdown suite passes with `92 passed`; `test-agent` doctor/start dry-run and usecase `50` are also green.
+On the BACH side, the July 19 care pass sealed the live release catalog: `bach upgrade repair --version v3.13.0-bluesky --json` registered the current release, and `bach upgrade check --json` now reports stable/latest `v3.13.0-bluesky`, `release_entries=2`, `current_release_registered=true`, `repair_recommended=false`, and `local_modifications=0`. `test-agent` doctor/start dry-run and usecase `50` also ran successfully.
 
 ## License
 

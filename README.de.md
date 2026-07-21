@@ -35,6 +35,17 @@ BACH ist am besten als **local-first LLM-Betriebssystem** zu verstehen: eine dau
 
 Sinnvolle Suchphrasen sind `local-first LLM operating system`, `text-based OS for LLM agents`, `SQLite memory for AI agents`, `BACH ellmos agent OS`, `personal agentic OS Python SQLite` und `multi-agent orchestration with MCP servers`.
 
+## OpenAI Build Week — Codex und GPT-5.6
+
+BACH nutzt Codex in zwei klar getrennten Rollen:
+
+- **Laufzeit-Backend:** `codex-cli` ist eines von fünf austauschbaren Chat-Backends; BACH-Agenten können Programmieraufgaben über `codex exec` delegieren.
+- **Repository-Entwicklung:** Drei aktive Codex-Automationen pflegen das Projekt: `bach-daily-care-and-dev-check`, `bach-start-and-health-checks` und `bach-github-release-service`. Seit dem 21. Juli 2026 sind alle drei für GPT-5.6 (`gpt-5.6-terra`) konfiguriert; die ersten beiden laufen täglich, der Release-Service wöchentlich.
+- **Verifiziertes Modell-Routing:** In Codex-Session `019f85c6-4339-7f13-b8e5-bf1823fd8432` prüfte GPT-5.6 Sol mit hohem Reasoning alle 78 Automationsdefinitionen und routete BACHs Entwicklungs- und Release-Aufgaben auf Terra/high sowie die Health-Checks auf Terra/medium.
+- **Abschlussprüfung der Einreichung:** GPT-5.6 Sol prüfte und zertifizierte in Codex-Session `019f8674-fe9a-7d91-a80f-7ee799e8ced0` die ausstehenden BACH-Änderungen, korrigierte die Wettbewerbsangaben und schloss die Härtung und Regressionstests des Web-Scrapers ab.
+
+Zur Nachvollziehbarkeit gilt die GPT-5.6-Zuordnung der Automationen erst ab dieser Konfigurationsänderung; frühere Automationsläufe verwendeten frühere Codex-Modelle.
+
 ### Kernfunktionen
 
 - **113+ Handler** - CLI- und API-Abdeckung für Systemfunktionen
@@ -111,9 +122,9 @@ Chain-Schritte als LLM-Prompts mit `bach://` URL-Auflösung für dynamische Kont
 
 ## OpenClaw-Abgleich
 
-Stand 2026-07-18: OpenClaw Stable bleibt `2026.7.1`; das neueste sichtbare Prerelease ist `2026.7.2-beta.2`, veröffentlicht am 2026-07-17 um 08:38 UTC. Es bestätigt die bereits beobachteten Signale zu session-lokaler MCP-Isolation, task-ledger-basierter Cron-Historie, Remote-Workern und Gateway-/Session-Recovery und ergänzt einen versionierten Restart-Handoff für externe Supervisoren sowie begrenzte Prozess-/Netzwerk-Cleanups. Diese Zuverlässigkeitsmuster passen zu BACH; breite Mobile-/Channel-Parität bleibt außerhalb des aktuellen Fokus. Quelle: [openclaw/openclaw releases](https://github.com/openclaw/openclaw/releases/tag/v2026.7.2-beta.2).
+Stand 2026-07-19: OpenClaw Stable bleibt `2026.7.1`; das neueste sichtbare Prerelease ist `2026.7.2-beta.3`, veröffentlicht am 2026-07-18 um 23:16 UTC. Es erweitert die bereits beobachteten Signale zu session-lokaler MCP-Isolation, task-ledger-basierter Cron-Historie, Remote-Workern und Recovery um Remote-Coding-Sessions auf dem owning host, geführtes Control-UI-/Channel-Setup, robustere Gateway-/Session-Recovery, sicherere Channel-Bedienung und versionierte Restart-Handoffs für externe Supervisoren. Für BACH passen davon vor allem supervised Restart-Handoffs, Terminal-Resume auf dem owning host, gehärtete Setup-Flows und recovery-sichere Channel-/Session-Pfade; breite Mobile-/Channel-Parität bleibt weiter außerhalb des aktuellen Fokus. Quelle: [openclaw/openclaw releases](https://github.com/openclaw/openclaw/releases/tag/v2026.7.2-beta.3).
 
-Auf BACH-Seite behebt der Daily-Care-Lauf vom 2026-07-18 Task `1177`: `memory session` speichert den Bericht jetzt, ohne die aktive Session vorzeitig zu beenden. Der anschließende `session.shutdown(...)` schließt dadurch dieselbe Zeile, statt mit `UNIQUE(session_id)` zu kollidieren. Die fokussierte Memory-/Shutdown-Suite steht bei `92 passed`; `test-agent`-Doctor/Start-Dry-Run und Usecase `50` sind ebenfalls grün.
+Auf BACH-Seite hat der Daily-Care-Lauf vom 2026-07-19 den Live-Release-Katalog versiegelt: `bach upgrade repair --version v3.13.0-bluesky --json` registriert den aktuellen Release jetzt real, und `bach upgrade check --json` meldet Stable/Latest `v3.13.0-bluesky`, `release_entries=2`, `current_release_registered=true`, `repair_recommended=false` und `local_modifications=0`. `test-agent`-Doctor/Start-Dry-Run sowie Usecase `50` liefen ebenfalls erfolgreich.
 
 ## Dokumentation
 

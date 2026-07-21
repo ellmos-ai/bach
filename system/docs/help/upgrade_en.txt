@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-30
-# Next review: 2026-08-30
+# Last validated: 2026-07-19
+# Next review: 2026-10-19
 
 BACH UPGRADE - SYSTEM UPDATE
 -------------------------------------
@@ -40,7 +40,7 @@ USE
 
   # Inspect and repair upgrade metadata
   bach upgrade repair --dry-run
-  bach upgrade repair --version v3.12.4-earth
+  bach upgrade repair --version v3.13.0-bluesky
 
 
 CATEGORIES
@@ -94,7 +94,7 @@ EXAMPLES
 
   # Diagnose metadata first, then repair
   bach upgrade repair --dry-run
-  bach upgrade repair --version v3.12.4-earth
+  bach upgrade repair --version v3.13.0-bluesky
 
 
 VERSIONING
