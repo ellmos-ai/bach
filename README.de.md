@@ -11,6 +11,12 @@
 
 **Version:** v3.13.0-bluesky
 
+## 🎬 Demo-Video
+
+BACH live in Aktion — Dashboard, Codex-Backend, Operator-Steuerung — in 2:22:
+
+[![BACH-Demo — local-first LLM-Betriebssystem (2:22)](https://img.youtube.com/vi/Gv5nxF8HssU/maxresdefault.jpg)](https://youtu.be/Gv5nxF8HssU)
+
 ## Sprachen
 
 BACH wird mit Dokumentations- und Übersetzungsoberflächen für sechs Sprachen ausgeliefert:
