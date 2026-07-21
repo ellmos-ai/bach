@@ -18,6 +18,11 @@ See BACH working live — dashboard, Codex backend, operator steering — in 2:2
 
 [![BACH demo — local-first LLM operating system (2:22)](https://img.youtube.com/vi/Gv5nxF8HssU/maxresdefault.jpg)](https://youtu.be/Gv5nxF8HssU)
 
+## Built with OpenAI Codex & GPT-5.6
+
+- **Codex as a first-class agent backend:** BACH ships five interchangeable LLM backends — `codex-cli` is one of them (`system/hub/_services/llm/model_backend.py`). Any running agent can delegate a coding subtask straight to Codex with a single `codex exec` call (`system/hub/_services/chat/chat_runtime.py`) and fold the result back into its own reasoning loop. The OpenAI API backend powers direct tool-calling chat.
+- **Codex-developed, daily:** three local Codex automations (`bach-daily-care-and-dev-check`, `bach-github-release-service`, `bach-start-and-health-checks`) run on GPT-5.6 (reasoning effort *high*) with this repository as their working directory — they health-check the live system, fix real bugs, run the regression suite (4,400+ tests), update the docs, and push the improvements with a privacy check.
+
 ## Languages
 
 BACH is documented and shipped with translation surfaces for six languages:
