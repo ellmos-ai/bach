@@ -59,6 +59,58 @@ from hub.base import BaseHandler
 class UpgradeHandler(BaseHandler):
     """Handler fuer selektive Upgrades und Downgrades."""
 
+    PRIVATE_DIST_PREFIXES = (
+        "user/",
+        "system/user/",
+        "backups/",
+        "logs/",
+        "system/storage/",
+        "system/data/logs/",
+        "system/data/messages/",
+        "system/data/mail_attachments/",
+        "system/dist/",
+        "system/tools/agents/cache/",
+        "system/tools/data/",
+    )
+    PRIVATE_DIST_NAMES = {
+        "MEMORY.md",
+        "USER.md",
+        "CLAUDE.md",
+        "OLLAMA.md",
+        "GEMINI.md",
+        "SKILLS.md",
+        "CHAINS.md",
+        "PARTNERS.md",
+        "AGENTS.md",
+        "WORKFLOWS.md",
+        "USECASES.md",
+        "BACH_HELP_REFERENCE.md",
+    }
+    PRIVATE_DIST_GLOBS = (
+        ".env",
+        ".env.*",
+        "*.pem",
+        "*.p12",
+        "*.pfx",
+        "*.key",
+        "*.token",
+        "*.secret",
+        "credentials*.json",
+        "secrets*.json",
+        "*secret*.json",
+        "id_rsa",
+        "id_rsa.*",
+        "id_ed25519",
+        "id_ed25519.*",
+        "*-ASUS-GEI*",
+        "*-WORKSTATION-LG*",
+        "*-WORKSTATION-*.md",
+        "*-Mac Studio.*",
+        "system/data/config/directory_truth-*.json",
+        "system/hub/_services/claude_bridge/last_start*.txt",
+        "system/tools/mcp/*/package-lock.json",
+    )
+
     def __init__(self, base_path: Path):
         super().__init__(base_path)
         self.db_path = self._canonical_db
@@ -489,6 +541,22 @@ class UpgradeHandler(BaseHandler):
 
         return None
 
+    def _is_private_dist_path(self, relative_path: str) -> bool:
+        """True fuer lokale/User-/Credential-Pfade, die nie Release-Metadaten werden."""
+        normalized = relative_path.replace("\\", "/").lstrip("/")
+        if normalized in self.PRIVATE_DIST_NAMES:
+            return True
+        if any(normalized.startswith(prefix) for prefix in self.PRIVATE_DIST_PREFIXES):
+            return True
+        if normalized.startswith("system/tools/mcp/") and "/dist/" in normalized:
+            return True
+
+        name = Path(normalized).name
+        for pattern in self.PRIVATE_DIST_GLOBS:
+            if Path(normalized).match(pattern) or Path(name).match(pattern):
+                return True
+        return False
+
     def _iter_distribution_files(self):
         """Iteriert ueber relevante Dateien im BACH-Root."""
         bach_root = self._bach_root()
@@ -508,6 +576,8 @@ class UpgradeHandler(BaseHandler):
             for file_name in files:
                 abs_path = Path(root) / file_name
                 rel_path = abs_path.relative_to(bach_root).as_posix()
+                if self._is_private_dist_path(rel_path):
+                    continue
                 yield rel_path, abs_path
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -1157,8 +1227,37 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                     "template_hash": row[2] if len(row) > 2 else None,
                 }
 
-            default_rule_count = len(exact_rules) + len(dir_rules)
+            private_manifest_paths = [
+                path
+                for path, entry in existing_manifest.items()
+                if self._is_private_dist_path(path)
+                or entry["dist_type"] == 0
+                or self._classify_dist_path(path, exact_rules, dir_rules) == 0
+            ]
+            private_version_rows = [
+                (str(row[0]), str(row[1]))
+                for row in conn.execute(
+                    "SELECT file_path, version, dist_type FROM dist_file_versions"
+                ).fetchall()
+                if self._is_private_dist_path(str(row[0]))
+                or (row[2] is not None and int(row[2]) == 0)
+                or self._classify_dist_path(str(row[0]), exact_rules, dir_rules) == 0
+            ]
+
             dist_version_entries_before = conn.execute("SELECT COUNT(*) FROM dist_file_versions").fetchone()[0]
+            if not dry_run:
+                if private_manifest_paths:
+                    conn.executemany(
+                        f"DELETE FROM distribution_manifest WHERE {manifest_path_column} = ?",
+                        [(path,) for path in private_manifest_paths],
+                    )
+                if private_version_rows:
+                    conn.executemany(
+                        "DELETE FROM dist_file_versions WHERE file_path = ? AND version = ?",
+                        private_version_rows,
+                    )
+
+            default_rule_count = len(exact_rules) + len(dir_rules)
 
             candidates = []
             unmatched = 0
@@ -1186,6 +1285,36 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                 })
 
             candidate_map = {entry["relative_path"]: entry for entry in candidates}
+            stale_current_version_rows = [
+                (str(row[0]), str(row[1]))
+                for row in conn.execute(
+                    "SELECT file_path, version FROM dist_file_versions WHERE version = ?",
+                    (version,),
+                ).fetchall()
+                if str(row[0]) not in candidate_map
+            ]
+            if stale_current_version_rows and not dry_run:
+                conn.executemany(
+                    "DELETE FROM dist_file_versions WHERE file_path = ? AND version = ?",
+                    stale_current_version_rows,
+                )
+
+            stale_current_keys = set(stale_current_version_rows)
+            stale_missing_version_rows = [
+                (str(row[0]), str(row[1]))
+                for row in conn.execute(
+                    "SELECT file_path, version FROM dist_file_versions"
+                ).fetchall()
+                if (str(row[0]), str(row[1])) not in stale_current_keys
+                and str(row[0]) not in candidate_map
+                and not self._resolve_disk_path(str(row[0])).exists()
+            ]
+            if stale_missing_version_rows and not dry_run:
+                conn.executemany(
+                    "DELETE FROM dist_file_versions WHERE file_path = ? AND version = ?",
+                    stale_missing_version_rows,
+                )
+
             current_rows = conn.execute(
                 "SELECT file_path, file_hash FROM dist_file_versions WHERE version = ?",
                 (version,),
@@ -1297,6 +1426,10 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                 "manifest_updated": manifest_updated,
                 "version_entries_inserted": version_inserted,
                 "version_conflicts": version_conflicts,
+                "private_manifest_pruned": len(private_manifest_paths),
+                "private_version_rows_pruned": len(private_version_rows),
+                "stale_current_version_rows_pruned": len(stale_current_version_rows),
+                "stale_missing_version_rows_pruned": len(stale_missing_version_rows),
                 "user_skipped": skipped_user,
                 "unmatched_files": unmatched,
                 "unreadable_files": unreadable,
