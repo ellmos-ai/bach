@@ -454,6 +454,23 @@ Inhalt der READMEs:
   - Wichtige Pauschbetraege und Höchstgrenzen
   - Praxis-Hinweise
 
+STANDALONE: STEUER-ASSISTENT (LIGHT)
+-------------------------------------
+Eigenständiges, offline-first Python-Modul für die private Erfassung von
+Arbeitnehmer-Werbungskosten außerhalb der vollen BACH-Steuer-Pipeline.
+Kein Zugriff auf bach.db, keine Netzwerkverbindung, keine steuerliche
+Abziehbarkeitsprüfung. Vendored (lokal, ohne Laufzeit-Kopplung) unter
+system/tools/steuer_assistent/. Quelle: github.com/ellmos-ai/steuer-assistent
+
+  python -m steuer_assistent.cli add --kategorie Arbeitsmittel --betrag 49.90 --datum 2026-03-15
+                                            Beleg erfassen
+  python -m steuer_assistent.cli werbungskosten --jahr 2026
+                                            Werbungskosten summieren
+  python -m steuer_assistent.cli export --jahr 2026
+                                            Private Arbeitsunterlage (ZIP) erzeugen
+
+Details: system/tools/steuer_assistent/README.md
+
 SIEHE AUCH
 ----------
   bach --help tasks                    Allgemeine Aufgaben
