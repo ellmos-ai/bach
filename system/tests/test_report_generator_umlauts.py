@@ -5,11 +5,11 @@
 import sys
 from pathlib import Path
 
-GENERATOR_DIR = Path(__file__).parent.parent / "agents" / "_experts" / "report_generator"
-if str(GENERATOR_DIR) not in sys.path:
-    sys.path.insert(0, str(GENERATOR_DIR))
+SYSTEM_ROOT = Path(__file__).parent.parent
+if str(SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(SYSTEM_ROOT))
 
-from generator import _fix_umlauts_in_values
+from hub._services.document.report_workflow_service import _fix_umlauts_in_values
 
 
 def test_ng_before_ue_is_never_converted_to_umlaut():
