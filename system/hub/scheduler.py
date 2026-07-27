@@ -32,6 +32,7 @@ import time
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
+from .scheduler_provider import probe_scheduler_provider
 
 
 class SchedulerHandler(BaseHandler):
@@ -47,6 +48,7 @@ class SchedulerHandler(BaseHandler):
         # Scheduler-CLI und GUI-Service muessen dieselbe kanonische BACH-DB sehen.
         self.user_db = Path(self._canonical_db)
         self.scheduler_control_dir = self.data_dir / "scheduler_control"
+        self.scheduler_provider = probe_scheduler_provider()
 
         # Session System (System-Service)
         # Lives under hub/_services after the service migration.
@@ -368,6 +370,25 @@ class SchedulerHandler(BaseHandler):
             "details": details,
         }
 
+    def _check_scheduler_provider(self) -> dict:
+        """Report the modular scheduler seam without changing runtime behavior."""
+        provider = self.scheduler_provider
+        return {
+            "name": "scheduler_provider",
+            "status": "ok" if provider.external else "warn",
+            "message": (
+                "Unabhängiges ellmos-scheduler-Modul ist importierbar."
+                if provider.external
+                else "BACH nutzt noch den Legacy-Scheduler; ellmos-scheduler ist "
+                "nicht in dieser Python-Umgebung installiert."
+            ),
+            "details": {
+                "provider": provider.name,
+                "module": provider.module,
+                "reason": provider.reason,
+            },
+        }
+
     def _scheduler_doctor_payload(self) -> dict:
         """Erstellt einen strukturierten Preflight-Report fuer den GUI-Scheduler."""
         running_pid = self._get_daemon_pid()
@@ -376,6 +397,7 @@ class SchedulerHandler(BaseHandler):
             self._check_runtime_dir("data_dir", self.data_dir, "Scheduler-Datenverzeichnis"),
             self._check_runtime_dir("log_dir", self.log_dir, "Scheduler-Logverzeichnis"),
             self._check_pid_state("runtime_state", self.pid_file, running_pid, "Scheduler-Service"),
+            self._check_scheduler_provider(),
             self._check_scheduler_runtime_dependencies(),
             self._check_scheduler_db(),
         ]
