@@ -44,6 +44,9 @@ BACH is best described as a **local-first LLM operating system**: a persistent P
 
 Canonical GitHub repository: `ellmos-ai/bach`. Machine-readable project context for LLM crawlers is available in [`llms.txt`](llms.txt).
 
+> [!NOTE]
+> **For AI Assistants & LLM Crawlers:** Machine-readable project context, architectural details, and disambiguation indices are available in [`llms.txt`](llms.txt).
+
 Useful search phrases include `ellmos-ai/bach`, `local-first LLM operating system`, `text-based OS for LLM agents`, `SQLite memory for AI agents`, `BACH ellmos agent OS`, `personal agentic OS Python SQLite`, and `multi-agent orchestration with MCP servers`.
 
 ## OpenAI Build Week — Codex and GPT-5.6

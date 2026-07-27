@@ -8,6 +8,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Changed
 
+- **Doku- & Discoverability-Wartung (2026-07-27):** Automatische Repository-Sichtbarkeits- und Doku-Pflege (Pfad B). `llms.txt` Last-checked-Datum auf 2026-07-27 aktualisiert, README-Indexing-Hinweis (`> [!NOTE]`) für LLM-Crawler ergänzt, Testsuite-Sanity (140 Testdateien in `system/tests/`) bestätigt.
 - **Doku- & Discoverability-Wartung (2026-07-25):** Systematische Repository-Prüfung durchgeführt. `llms.txt` Last-checked-Datum auf 2026-07-25 aktualisiert. Integrationen, i18n-Sprachparität (6 Sprachen) und Testsuite-Vollständigkeit (144 Testdateien in `system/tests/`) verifiziert.
 - **Build-Week-Abschlussprüfung mit GPT-5.6:** Die README-Dateien und Devpost-Angaben trennen jetzt belegbar zwischen Codex als Laufzeit-Backend, früheren Codex-Beiträgen, den seit 2026-07-21 auf `gpt-5.6-terra` gerouteten BACH-Automationen und dem finalen Audit mit `gpt-5.6-sol`.
 - **Web-Scraper gegen Netzwerk-Umgehungen gehärtet:** HTTP(S)-Abrufe binden jeden Host und Redirect an die vorab geprüfte öffentliche IP, behalten die TLS-Prüfung gegen den ursprünglichen Hostnamen bei, ignorieren Umgebungs-Proxys, begrenzen Redirects und Antwortgrößen und schließen unsichere Screenshot-Navigationen aus. Screenshots rendern nur noch den bereits sicher abgerufenen Inhalt bei blockiertem Browser-Netzwerk und deaktiviertem JavaScript.
