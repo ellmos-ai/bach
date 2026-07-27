@@ -1,6 +1,6 @@
 ﻿# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-07-19 | **Version:** 4.3.62
+**Stand:** 2026-07-22 | **Version:** 4.3.63
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
@@ -85,8 +85,8 @@ C als Evolutionsstrategie. Begründung (empirisch belegt am 2026-07-03):
 3. Gatung bleibt Pflicht: Modul ersetzt Eigenteil erst bei Gleichwertigkeit, nach
    Parallelbetrieb mit grünen Tests; Altteil archivieren, nicht löschen. Core bleibt BACH.
 
-**Reihenfolge:** ① clutch (Task 1150, Migration vorbereitet) → ② tools/testing durch
-ellmos-tests-Adapter ersetzen (dabei „upstream"-Widerspruch im ellmos-tests-SKILL.md auflösen)
+**Reihenfolge:** ① clutch (Task 1150, am 2026-07-22 abgeschlossen) → ② tools/testing durch
+ellmos-tests-Adapter ersetzen (BACH-Task 1181; dabei „upstream"-Widerspruch im ellmos-tests-SKILL.md auflösen)
 → ③ llmauto/notespace/market gemäß ease-Liste (`sovereign-private/ROADMAP.md`, Cluster-Report).
 
 ### Empfohlene Richtung
@@ -161,11 +161,11 @@ BACH definiert sich als **Personal Agentic Operating System**. Es entwickelt sic
 
 ---
 
-## Geplant: clutch als Routing-Engine übernehmen (M8) [C 2026-06-14]
+## Abgeschlossen: clutch als Routing-Engine übernommen (M8) [P 2026-07-22]
 
-BACH betreibt aktuell einen **eigenen Fork** der clutch-Idee (`hub/_services/delegation/` +
-`hub/clutch.py` + `hub/partner.py`). Parallel ist das eigenständige Package **clutch**
-(`.TOPICS/.AI/.MODULES/clutch`, `ellmos-ai/clutch`) zur state-of-the-art Routing-Anwendung
+BACH betrieb ursprünglich einen **eigenen Fork** der clutch-Idee (`hub/_services/delegation/` +
+`hub/clutch.py` + `hub/partner.py`). Das eigenständige Package **clutch**
+(`.TOPICS/.AI/.MODULES/clutch`, `ellmos-ai/clutch`) ist zur state-of-the-art Routing-Anwendung
 ausgebaut worden: Engine + Kimi (CLI/API/Ollama, **API live getestet**), zweck-/bildbewusstes
 Routing, Modell-Discovery, CLI, Service-Layer (Sessions/Prompts/Profile/ChatRuntime), Web-UI,
 Toolset-Permissions (default-deny), 230 Tests grün.
@@ -173,10 +173,19 @@ Toolset-Permissions (default-deny), 230 Tests grün.
 **Leitlinie:** clutch ist Vorrang/state-of-the-art, **BACH übernimmt** (eine Quelle der Wahrheit,
 kein Feature-Sync mehr). BACH soll den Umgang mit dem Modul prüfen und seinen Fork ablösen.
 
-- **Task:** `bach task show 1150` (Kategorie integration, HIGH; alte Referenz 1135 war fremdbelegt/erledigt — korrigiert 2026-07-04).
-- **Anleitung + Deckungs-Check (gegatet):** `.TOPICS/.AI/.MODULES/clutch/docs/BACH_MIGRATION.md`
-- **Gatung:** erst Compat-Adapter + Parallelbetrieb + grüne BACH-Tests, dann Fork archivieren
-  (nicht löschen). DB-Tabellen `clutch_fitness`/`clutch_fahrtenbuch`/`partners` bleiben Persistenz.
+- **Task:** `bach task show 1150` wurde nach Live-Readback am 2026-07-22 geschlossen.
+- **Ergebnis:** Scorer, PartnerRegistry, Streckenanalyse, Gas/Bremse, Bordcomputer,
+  Fahrschule und Fahrtenbuch laufen über das externe `clutch`; die bestehenden
+  DB-Tabellen `clutch_fitness`/`clutch_fahrtenbuch`/`partners` bleiben Persistenz.
+- **Gates:** `bach clutch migration` meldet Compat-Adapter und DB-Brücke `OK` sowie die
+  Fork-Archivierung `ARCHIVED`. Der frühere Fork liegt nur noch als expliziter
+  Notfall-Fallback unter `system/hub/_archive/delegation_legacy/`.
+- **Verifikation:** Die fokussierten Clutch-/Delegations-/Partner-Regressionen liefen am
+  2026-07-22 mit `36 passed`; der Live-Migrationsstatus meldete alle acht Quellen extern.
+- **Nächster Modulschritt:** BACH-Task 1181 prüft die gegatete Rückspiegelung von
+  `ellmos-tests` als Quelle der Wahrheit für `tools/testing`.
+- **Doku-Nachlauf:** BACH-Task 1182 zieht die externe, noch auf „vorbereitet" stehende
+  `clutch/docs/BACH_MIGRATION.md` im kanonischen Modul-Repo auf diesen Ist-Stand nach.
 
 ---
 
