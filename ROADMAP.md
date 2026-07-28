@@ -99,6 +99,63 @@ C als Evolutionsstrategie. Begründung (empirisch belegt am 2026-07-03):
 ellmos-tests-Adapter ersetzen (BACH-Task 1181; dabei „upstream"-Widerspruch im ellmos-tests-SKILL.md auflösen)
 → ③ llmauto/notespace/market gemäß ease-Liste (`sovereign-private/ROADMAP.md`, Cluster-Report).
 
+### BACH 2.0: gegateter Umsetzungstaskplan [U 2026-07-28]
+
+**Status: ausschließlich vorbereitet.** Die produktive Umsetzung beginnt erst,
+wenn der User den exakten Marker **`Wettbewerb beendet`** setzt und BACH-Task
+**#1184** danach mit einer Audit-/Entscheidungsreferenz geschlossen wird. Ein
+Datum, eine Gewinnerbekanntgabe oder das bloße Verstreichen von Zeit ersetzt
+diesen Marker nicht.
+
+Der Judging-Hold bleibt davon unabhängig bindend: Bis der User ihn ausdrücklich
+aufhebt, gibt es keinen Push, keinen Remote-Schreibkontakt, keine Änderung an
+Submission/Devpost/Video und keinen OneDrive-Mirror. Die folgende Kette ist im
+kanonischen BACH-Task-System als Kategorie `bach2` angelegt:
+
+| ID | Atomarer Task | Abhängigkeiten | Abschlussgrenze |
+|---:|---|---|---|
+| **1184** | `BACH20-00` Aktivierungsgate `Wettbewerb beendet` | — | nur mit explizitem Usermarker und Audit-Referenz |
+| **1185** | `BACH20-01` Core-/Modul-Inventar und Datenflusskarte | 1184 | vollständige Klassifikation Core/Modul/Adapter/Daten/Legacy |
+| **1186** | `BACH20-02` versioniertes Systemmanifest | 1185 | Schema, Beispiel und Validatorvertrag; vorhandene Manifestflächen wiederverwenden |
+| **1187** | `BACH20-03` referenzieller Registry-ID-Vertrag | 1185, 1186 | Module-/Skill-/Policy-/Learning-IDs ohne Registry-Kopie |
+| **1188** | `BACH20-04` Kandidatenregister und Scoring | 1185, 1187 | live belegte Eignung oder ehrliches `NO_OP`/`BLOCKED` |
+| **1189** | `BACH20-05` seiteneffektfreier read-only Tagesplaner | 1186–1188 | null Session-/DB-/Log-/Sync-/Backup-/Scheduler-Mutation |
+| **1190** | `BACH20-06` Baseline-/Contract-/Shadow-/Rollback-Gates | 1186–1188 | gleiche Contracts, single-writer Shadow, vollständiger Rollback |
+| **1191** | `BACH20-07` atomarer Adapter-/Datenmigrationsvertrag | 1187, 1190 | idempotent, transaktional, crash- und rollbackfähig |
+| **1192** | `BACH20-08` Source-of-Truth-Umschaltgate | 1189–1191 | höchstens ein produktiver Wechsel pro Kalendertag |
+| **1194** | `BACH20-10` unabhängige Modulupdates | 1186, 1187, 1190, 1192 | Pin/Hash, staged Update, konsistenter Code-/Manifest-/Datenrollback |
+| **1193** | `BACH20-09` Haltefrist-/Nullreferenz-/Removal-Gate | 1192, 1194 | recoverable Archivierung vor Entfernung; Daten/Credentials bleiben |
+| **1195** | `BACH20-11` BACH-2.0-Reifegates | 1193, 1194 | unabhängige Zertifizierung aller in T-20260728-12 definierten Reifekriterien |
+
+#### Tagesvertrag nach Aktivierung
+
+1. Der read-only Planner aktualisiert keine Zustände und liefert genau einen
+   belegten Kandidaten oder `NO_OP`/`BLOCKED`.
+2. Locks, Ownerarbeit, Drift, fehlende Datenverträge oder rote Gates machen
+   einen Kandidaten ungeeignet; es wird kein frischer Ersatz zur
+   Quotenerfüllung gewählt.
+3. Analyse mehrerer Kandidaten ist zulässig. Pro Kalendertag darf aber
+   höchstens **ein** produktiver Source-of-Truth-Wechsel erfolgen.
+4. Baseline, Contracttests, single-writer Shadowbetrieb und Rollback sind
+   Vorbedingungen der atomaren Adapter-/Datenmigration.
+5. Umschaltung, Modulupdate und Entfernung sind drei getrennte Ereignisse.
+   Removal folgt erst nach Haltefrist, erfolgreichem Update-/Rollbackzyklus
+   und repositoryweitem Nullreferenznachweis.
+
+#### Dedupe und bestehende Belege
+
+- **#1150 clutch** bleibt der abgeschlossene Referenzfall; kein neuer
+  Clutch-Migrationstask.
+- **#1181 ellmos-tests** bleibt der bestehende Kandidaten-/Adaptertask und ist
+  an #1184 gebunden. Kein zweiter ellmos-tests-Task; Source-of-Truth-,
+  Haltefrist- und Removal-Gates werden später über #1190–#1194 geprüft.
+- **#1175 TASKPLAN-Cutover** bleibt ein eigener Task-System-Strang. BACH 2.0
+  setzt dessen offene Source-of-Truth-Entscheidung nicht still voraus und
+  baut keinen parallelen Taskstandard.
+- Die Registry-Kopplung referenziert die Ergebnisse von
+  `T-20260728-04` (PolicyRegistry) und `T-20260728-09`
+  (Skill-/Learning-Control-Registry), statt deren Inhalte zu duplizieren.
+
 ### Empfohlene Richtung
 
 Nicht A allein. Nicht B allein. Nicht C allein.
