@@ -28,6 +28,13 @@ TEST PROFILES
   MEMORY_FOCUS Memory focus (~10 min)
   TASK_FOCUS Task focus (~10 min)
 
+INTERPRETING THE QUICK RESULT
+-----------------------------
+The QUICK self-test checks B001 (a complete file inventory) and O001 (an
+isolated task lifecycle through the BACH task API). Its score covers only these
+checks, not the overall quality of the system. Partial scores and their
+reasons are stored in the JSON artifact.
+
 THREE TEST PERSPECTIVES
 ---------------------
   B-tests (observation) External, automated, Python scripts
@@ -57,5 +64,5 @@ EXAMPLES
 IMPLEMENTATION
 ---------------
   Handler: system/hub/test.py
-  Status: Test infrastructure (tools/testing/) NOT available
-  Note: Handler exists, but tools/agent are still missing
+  Status: Test infrastructure under tools/testing/ is available
+  Note: QUICK checks B001 and O001; other profiles extend this scope

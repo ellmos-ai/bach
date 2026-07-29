@@ -87,7 +87,12 @@ def run_tests(system_path: str, profile: str = "STANDARD", output_dir: str = Non
             "b_avg": 0.0,
             "o_avg": 0.0,
             "overall": 0.0
-        }
+        },
+        "score_explanation": (
+            "Die Gesamtbewertung mittelt nur ausgeführte Einzeltests. "
+            "Sie ist keine pauschale Qualitätsaussage über das getestete System; "
+            "Details und Teilbewertungen stehen bei jedem Test."
+        )
     }
     
     b_scores = []
@@ -117,6 +122,8 @@ def run_tests(system_path: str, profile: str = "STANDARD", output_dir: str = Non
                         results["b_tests"][test_id] = {
                             "status": "success",
                             "score": score,
+                            "summary": test_result.get("summary", ""),
+                            "score_explanation": test_result.get("score_explanation", ""),
                             "data": test_result
                         }
                         print(f"OK (Score: {score})")
@@ -150,6 +157,8 @@ def run_tests(system_path: str, profile: str = "STANDARD", output_dir: str = Non
                         results["o_tests"][test_id] = {
                             "status": test_result.get("status", "OK"),
                             "score": score,
+                            "summary": test_result.get("summary", ""),
+                            "score_explanation": test_result.get("score_explanation", ""),
                             "data": test_result
                         }
                         print(f"{test_result.get('status', 'OK')} (Score: {score})")

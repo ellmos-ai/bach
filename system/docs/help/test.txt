@@ -29,6 +29,13 @@ TESTPROFILE
   MEMORY_FOCUS  Memory-Fokus (~10 Min)
   TASK_FOCUS    Task-Fokus (~10 Min)
 
+QUICK-ERGEBNIS EINORDNEN
+-------------------------
+Der QUICK-Selbsttest prüft B001 (vollständiges Datei-Inventar) und O001
+(isolierten Task-Lebenszyklus über die produktive BACH-Task-API). Die Bewertung beschreibt
+nur diese Prüfungen, nicht die allgemeine Qualität des gesamten Systems.
+Teilbewertungen und ihre Gründe stehen im gespeicherten JSON-Artefakt.
+
 DREI TESTPERSPEKTIVEN
 ---------------------
   B-Tests (Beobachtung)   Extern, automatisiert, Python-Scripts
@@ -58,5 +65,5 @@ BEISPIELE
 IMPLEMENTIERUNG
 ---------------
   Handler:      system/hub/test.py
-  Status:       Test-Infrastruktur (tools/testing/) NICHT vorhanden
-  Hinweis:      Handler existiert, aber Tools/Agent fehlen noch
+  Status:       Test-Infrastruktur unter tools/testing/ verfügbar
+  Hinweis:      QUICK prüft B001 und O001; weitere Profile erweitern diesen Umfang
