@@ -989,10 +989,52 @@ a:not(.nav-item):not(.dropdown-item):not([class*="btn"]):hover {
 }
 
 /* ══════════════════════════════════════
+   Theme: Warm
+   ══════════════════════════════════════ */
+
+[data-theme="warm"] {
+    --bg-dark: #f6f0e4;
+    --bg-panel: #fffaf0;
+    --bg-card: #eee2cf;
+    --bg-elevated: #e4d3bb;
+
+    --accent: #a64b2a;
+    --accent-light: #bd6846;
+    --accent-glow: rgba(166, 75, 42, 0.13);
+
+    --text: #35271f;
+    --text-muted: #756253;
+    --text-dim: #a38f7e;
+
+    --border: #dccbb5;
+    --border-hover: #c7b197;
+
+    --success: #4f8a55;
+    --warning: #b27b20;
+    --error: #b5483f;
+}
+
+[data-theme="warm"] .main-header {
+    background: rgba(255, 250, 240, 0.9);
+}
+
+[data-theme="warm"] .nav-item.active,
+[data-theme="warm"] .btn-primary {
+    color: #fff;
+}
+
+[data-theme="warm"] .logo-text {
+    background: linear-gradient(135deg, #50372a 30%, var(--accent) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+}
+
+/* ══════════════════════════════════════
    Theme: Colorful
    ══════════════════════════════════════ */
 
-[data-theme="colorful"] {
+[data-theme="colorful"],
+[data-theme="custom"] {
     --bg-dark: #140e28;
     --bg-panel: #1c1438;
     --bg-card: #251d48;
@@ -1015,45 +1057,53 @@ a:not(.nav-item):not(.dropdown-item):not([class*="btn"]):hover {
     --error: #ff5577;
 }
 
-[data-theme="colorful"] .main-header {
-    background: linear-gradient(135deg, rgba(28, 20, 56, 0.92) 0%, rgba(40, 24, 72, 0.92) 100%);
+[data-theme="colorful"] .main-header,
+[data-theme="custom"] .main-header {
+    background: linear-gradient(135deg, var(--bg-panel), var(--bg-elevated));
 }
 
-[data-theme="colorful"] .nav-item.active {
+[data-theme="colorful"] .nav-item.active,
+[data-theme="custom"] .nav-item.active {
     background: linear-gradient(135deg, var(--accent), var(--accent-blue));
     color: #fff;
 }
 
-[data-theme="colorful"] .btn-primary {
-    background: linear-gradient(135deg, var(--accent), #e05dff);
+[data-theme="colorful"] .btn-primary,
+[data-theme="custom"] .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-blue));
     color: #fff;
 }
 
-[data-theme="colorful"] .btn-primary:hover {
-    box-shadow: 0 4px 20px rgba(255, 107, 138, 0.35);
+[data-theme="colorful"] .btn-primary:hover,
+[data-theme="custom"] .btn-primary:hover {
+    box-shadow: 0 4px 20px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
-[data-theme="colorful"] .logo-text {
-    background: linear-gradient(135deg, #ff6b8a 0%, #7c6cf0 50%, #4aedb0 100%);
+[data-theme="colorful"] .logo-text,
+[data-theme="custom"] .logo-text {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-blue) 50%, var(--success) 100%);
     -webkit-background-clip: text;
     background-clip: text;
 }
 
-[data-theme="colorful"] .stat-value {
+[data-theme="colorful"] .stat-value,
+[data-theme="custom"] .stat-value {
     background: linear-gradient(135deg, var(--accent), var(--accent-blue));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
 }
 
-[data-theme="colorful"] .tab-btn.active {
-    background: linear-gradient(135deg, rgba(255, 107, 138, 0.12), rgba(124, 108, 240, 0.12));
+[data-theme="colorful"] .tab-btn.active,
+[data-theme="custom"] .tab-btn.active {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--accent-blue) 12%, transparent));
     border-bottom-color: var(--accent);
 }
 
-[data-theme="colorful"] .card:hover {
-    border-color: rgba(124, 108, 240, 0.3);
-    box-shadow: 0 0 20px rgba(124, 108, 240, 0.08);
+[data-theme="colorful"] .card:hover,
+[data-theme="custom"] .card:hover {
+    border-color: color-mix(in srgb, var(--accent-blue) 30%, transparent);
+    box-shadow: 0 0 20px color-mix(in srgb, var(--accent-blue) 8%, transparent);
 }
 
 /* ── Theme Switcher ── */

@@ -43,6 +43,7 @@ from contextlib import asynccontextmanager
 # BACH imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
+from hub.theme import ThemeHandler
 
 # Claude Router Import
 sys.path.insert(0, str(Path(__file__).parent / "api"))
@@ -280,6 +281,11 @@ class TaskCreate(BaseModel):
     assigned_to: Optional[str] = "user"
 
     created_by: Optional[str] = "user"
+
+
+class ThemeUpdate(BaseModel):
+    theme: str
+    custom: Optional[dict[str, str]] = None
 
 
 
@@ -4072,6 +4078,32 @@ async def get_log_content(filename: str, lines: int = 500, source: str = "data")
 
 # ═══════════════════════════════════════════════════════════════
 
+# GUI SETTINGS
+
+# ═══════════════════════════════════════════════════════════════
+
+
+@app.get("/api/settings/theme")
+async def get_gui_theme():
+    """Return the user-neutral dashboard theme preference."""
+    try:
+        return {"success": True, **ThemeHandler(BACH_DIR).get_theme()}
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=public_error_message()) from exc
+
+
+@app.put("/api/settings/theme")
+async def update_gui_theme(payload: ThemeUpdate):
+    """Validate and persist the dashboard theme in user_config.json."""
+    try:
+        result = ThemeHandler(BACH_DIR).set_theme(payload.theme, payload.custom)
+        return {"success": True, **result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ═══════════════════════════════════════════════════════════════
+
 # STATIC FILES & TEMPLATES
 
 # ═══════════════════════════════════════════════════════════════
@@ -4257,6 +4289,15 @@ async def chat_page():
     if chat_file.exists():
         return FileResponse(chat_file)
     raise HTTPException(status_code=404, detail="Template chat.html nicht gefunden")
+
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page():
+    """Zentrale GUI-Einstellungen."""
+    settings_file = TEMPLATES_DIR / "settings.html"
+    if settings_file.exists():
+        return FileResponse(settings_file)
+    raise HTTPException(status_code=404, detail="Template settings.html nicht gefunden")
 
 
 
@@ -14050,4 +14091,3 @@ if __name__ == "__main__":
     
 
     run_server(args.host, args.port)
-

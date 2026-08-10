@@ -1,0 +1,15 @@
+BACH GUI-THEMES
+================
+
+Theme anzeigen:
+  bach theme status
+
+Theme setzen:
+  bach theme set dark
+  bach theme set light
+  bach theme set warm
+  bach theme set custom --accent=#ff6b8a --bg_dark=#140e28
+
+Die Auswahl wird in data/user_config.json unter gui.theme gespeichert und
+von CLI, Library-API und Web-GUI gemeinsam genutzt. Custom-Farben akzeptieren
+nur Werte im Format #RRGGBB. Ein Dry-Run schreibt die Konfiguration nicht.

@@ -6,6 +6,10 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+### Added
+
+- **Dashboard-Themes zentral konfigurierbar (Task 1126):** `bach theme status|set`, `bach_api.theme`, `/api/settings/theme` und die neue GUI-Seite `/settings` teilen sich jetzt dieselbe validierte Einstellung in `data/user_config.json`. Dark, Light, Warm und Custom sind dashboardweit verfügbar; Custom-Farben akzeptieren ausschließlich `#RRGGBB`, während der bisherige Browserwert `colorful` kompatibel auf Custom abgebildet wird.
+
 ### Changed
 
 - **Build-Week-Abschlussprüfung mit GPT-5.6:** Die README-Dateien und Devpost-Angaben trennen jetzt belegbar zwischen Codex als Laufzeit-Backend, früheren Codex-Beiträgen, den seit 2026-07-21 auf `gpt-5.6-terra` gerouteten BACH-Automationen und dem finalen Audit mit `gpt-5.6-sol`.
