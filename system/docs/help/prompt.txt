@@ -1,16 +1,17 @@
 # Portabilität: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-06-20
-# Nächste Prüfung: 2026-12-20
-# Ressourcen: [hub/prompt.py, prompt_templates, prompt_boards, prompt_versions]
+# Version: 1.1.0
+# Zuletzt validiert: 2026-08-14
+# Nächste Prüfung: 2027-02-14
+# Ressourcen: [hub/prompt.py, gui/server.py, gui/templates/prompt-library.html, prompt_templates, prompt_boards, prompt_versions]
 
 PROMPT - Prompt-Template-Verwaltung
 =====================================
 
-STAND: 2026-06-20
+STAND: 2026-08-14
 
 Das Prompt-System verwaltet wiederverwendbare Prompt-Templates mit
-Versionierung und Organisationsmöglichkeit via Boards.
+Versionierung und Organisationsmöglichkeit via Boards. CLI, Library-API und
+Web-GUI arbeiten auf denselben Tabellen der kanonischen BACH-Datenbank.
 
 Ref: B42
 
@@ -77,6 +78,55 @@ BEISPIELE
   bach prompt board "Schreiben" --remove-prompt 42        # Prompt entfernen
   bach prompt board "Schreiben" --description "Schreib-Prompts für den Alltag"
 
+LIBRARY-API
+-----------
+
+Der Handler ist auch über `bach_api.prompt` erreichbar. Die Operationen und
+Argumente entsprechen der CLI:
+
+  from bach_api import prompt
+
+  prompt.list()
+  prompt.get(42)
+  prompt.search("code")
+  prompt.add("Code-Review", "Prüfe diesen Code auf Fehler:",
+             "--category", "analyse", "--tags", "dev,review")
+
+WEB-GUI UND REST-API
+--------------------
+
+Die Seite `/prompt-library` (Navigation: Wissen -> Prompts) bietet Suche,
+Kategorie-Filter, Anlegen, Bearbeiten, Löschen und Versionshistorie. Speichern
+archiviert den vorherigen Text wie `bach prompt update`.
+
+REST-Endpunkte:
+
+  GET    /api/prompt-library                     Liste, optional `q`/`category`
+  GET    /api/prompt-library/{id}                Eintrag + Versionshistorie
+  POST   /api/prompt-library                     Eintrag anlegen
+  PUT    /api/prompt-library/{id}                Text/Tags versioniert ändern
+  DELETE /api/prompt-library/{id}                Eintrag inkl. Verknüpfungen löschen
+  POST   /api/prompt-library/import-promptboard  PromptBoard idempotent importieren
+
+Die alte Seite `/prompt-generator` leitet auf `/prompt-library` um. Die noch
+vorhandenen `/api/prompt-generator/*`-Endpunkte gehören zum separaten
+Legacy-Prompt-Generator und nicht zum DB-Handler `bach prompt`.
+
+PROMPTBOARD-IMPORT
+------------------
+
+Die GUI importiert `library.json` per Name idempotent in `prompt_templates`:
+bestehende Namen werden übersprungen. Die Quelle wird in dieser Reihenfolge
+gesucht:
+
+  1. `BACH_PROMPTBOARD_LIBRARY`
+  2. `~/.promptboard/library.json`
+  3. `%APPDATA%/PromptBoard/library.json`
+  4. Legacy-Projektpfade unter `REL-PUB_PromptBoard`
+
+Der System-Tray verwendet dieselbe bevorzugte PromptBoard-Speicherreihenfolge
+und kann PromptBoard als App-Menüeintrag starten.
+
 VERSIONIERUNG
 -------------
 
@@ -114,7 +164,10 @@ DATENBANK
 
 DATEIEN
 -------
-  hub/prompt.py     Handler-Implementation
+  hub/prompt.py                          CLI-/Library-Handler
+  gui/server.py                          GUI-Routen und REST-Endpunkte
+  gui/templates/prompt-library.html      Prompt-Bibliothek im Browser
+  hub/_services/chat/chat_tray.py        PromptBoard-Erkennung im System-Tray
 
 SIEHE AUCH
 ----------
