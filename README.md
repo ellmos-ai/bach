@@ -137,9 +137,18 @@ python bach.py prompt add "My Prompt" --content "..."
 # Check scheduler status
 python bach.py scheduler status
 
+# Preview and refresh the current monthly/year-to-date finance summary
+python bach.py haushalt financial-summary refresh --dry-run
+python bach.py haushalt financial-summary refresh
+
 # Shut down BACH
 python bach.py --shutdown
 ```
+
+The finance summary keeps observed mail-derived expenditure separate from the
+current recurring subscription run rate. Legacy subscription duplicates are
+deduplicated by provider for calculations and dashboard reads; conflicting
+duplicates fail closed instead of being guessed or deleted.
 
 ## Core Components
 

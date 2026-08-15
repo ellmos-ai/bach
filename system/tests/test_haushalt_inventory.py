@@ -411,7 +411,8 @@ class TestHandler:
 
     def test_operations_count(self, handler):
         ops = handler.get_operations()
-        assert len(ops) == 23  # 13 alt + 9 neu + 1 export-routine
+        assert len(ops) == 24
+        assert "financial-summary" in ops
 
     def test_help_contains_pull(self, handler):
         ok, txt = handler.handle("help", [])

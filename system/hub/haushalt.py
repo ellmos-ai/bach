@@ -21,6 +21,7 @@ Operationen:
   supplier          Lieferanten anzeigen
   add-supplier      Lieferant hinzufuegen
   costs             Monatliche Fixkosten-Uebersicht
+  financial-summary Aktuelle Monats-/Jahreszusammenfassung
   kosten-monat      Erwartete irregulare Kosten pro Monat
   add-kosten        Irregulare Kosten hinzufuegen
   help              Hilfe anzeigen
@@ -69,6 +70,7 @@ class HaushaltHandler(BaseHandler):
             "today": "Was steht heute an?",
             "week": "Wochenplan",
             "costs": "Fixkosten-Uebersicht",
+            "financial-summary": "Finanzzusammenfassung anzeigen/aktualisieren",
             "kosten-monat": "Irregulare Kosten pro Monat",
             "add-kosten": "Irregulare Kosten hinzufuegen",
             "kosten-list": "Alle irregularen Kosten",
@@ -106,6 +108,8 @@ class HaushaltHandler(BaseHandler):
             return self._week(args)
         elif op == "costs":
             return self._costs(args)
+        elif op == "financial-summary":
+            return self._financial_summary(args, dry_run)
         elif op == "kosten-monat":
             return self._kosten_monat(args)
         elif op == "add-kosten":
@@ -144,6 +148,71 @@ class HaushaltHandler(BaseHandler):
             return self._help()
         else:
             return False, f"Unbekannte Operation: {operation}\nNutze: bach haushalt help"
+
+    # ------------------------------------------------------------------
+    # FINANCIAL SUMMARY
+    # ------------------------------------------------------------------
+    def _financial_summary(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
+        from hub._services.financial.summary_service import (
+            FinancialSummaryError,
+            FinancialSummaryService,
+        )
+
+        action = (args[0].lower() if args else "show")
+        service = FinancialSummaryService(self.user_db_path)
+        try:
+            if action == "refresh":
+                result = service.refresh(dry_run=dry_run)
+                prefix = "[DRY-RUN]" if dry_run else "[OK]"
+                lines = [
+                    f"{prefix} Finanzzusammenfassung: Monat und Jahr aktualisiert.",
+                    "Beobachtete Ausgaben und Abo-Laufkosten bleiben getrennte Größen.",
+                ]
+                duplicate_rows = result["duplicate_subscription_rows"]
+                if duplicate_rows:
+                    lines.append(
+                        f"[WARN] {duplicate_rows} historische Abo-Duplikate wurden "
+                        "für die Rechnung dedupliziert; die Quelltabelle blieb unverändert."
+                    )
+                skipped = (
+                    result["invalid_dates"]
+                    + result["invalid_mail_amounts"]
+                    + result["invalid_subscription_amounts"]
+                )
+                if skipped:
+                    lines.append(f"[WARN] {skipped} ungültige Quellwerte wurden übersprungen.")
+                return True, "\n".join(lines)
+            if action not in {"show", "list"}:
+                return False, (
+                    "Usage: bach haushalt financial-summary "
+                    "[show|refresh] [--dry-run]"
+                )
+            rows = service.read()
+            if not rows:
+                return True, (
+                    "Keine Finanzzusammenfassung vorhanden.\n"
+                    "Nutze: bach haushalt financial-summary refresh --dry-run"
+                )
+            lines = ["FINANZZUSAMMENFASSUNG"]
+            for row in rows:
+                period = (
+                    f"{row['monat']:02d}/{row['jahr']}"
+                    if row["monat"] is not None
+                    else f"{row['jahr']} (Jahr bis heute)"
+                )
+                lines.extend(
+                    [
+                        f"\n{period}",
+                        f"  Beobachtete Ausgaben: {row['total_ausgaben']:.2f} EUR",
+                        f"  Davon steuerrelevant: {row['total_steuer_relevant']:.2f} EUR",
+                        f"  Abo-Laufkosten: {row['total_abos']:.2f} EUR",
+                        f"  Rechnungen / aktive Abos: "
+                        f"{row['anzahl_rechnungen']} / {row['anzahl_abos']}",
+                    ]
+                )
+            return True, "\n".join(lines)
+        except (FinancialSummaryError, sqlite3.Error) as exc:
+            return False, f"[ERROR] Finanzzusammenfassung fehlgeschlagen: {exc}"
 
     # ------------------------------------------------------------------
     # STATUS - Dashboard
@@ -887,6 +956,8 @@ UEBERSICHT:
 
 FIXKOSTEN:
   bach haushalt costs              Monatliche Fixkosten-Uebersicht
+  bach haushalt financial-summary show
+  bach haushalt financial-summary refresh [--dry-run]
   bach haushalt kosten-monat [m]   Irregulare Kosten pro Monat
   bach haushalt add-kosten "Name" --monat 3 --betrag 100
   bach haushalt kosten-list        Alle irregularen Kosten

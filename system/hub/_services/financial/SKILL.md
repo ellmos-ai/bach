@@ -1,6 +1,6 @@
 ---
 name: financial
-version: 1.1.0
+version: 1.2.0
 type: service
 author: BACH Team
 created: 2026-01-25
@@ -64,6 +64,12 @@ Tabellen in `user.db`:
 | `financial_subscriptions` | Automatisch erkannte Abos |
 | `financial_summary` | Monatliche/Jährliche Zusammenfassungen |
 
+Die Zusammenfassung wird über `bach haushalt financial-summary refresh`
+aktualisiert. `--dry-run` berechnet ausschließlich lesend. Beobachtete
+E-Mail-Ausgaben werden nicht mit der aktuellen Abo-Laufkostenrate addiert.
+Historische Abo-Duplikate werden nach `provider_id` dedupliziert; bei fachlich
+widersprüchlichen Duplikaten bricht die Berechnung sicher ab.
+
 **Views:**
 - `v_financial_inbox` - Unbearbeitete Finanz-E-Mails
 - `v_financial_steuer` - Steuer-relevante Posten
@@ -117,5 +123,6 @@ API: `gui/server.py` (ab Zeile 1780)
 
 | Version | Datum | Änderung |
 |---------|-------|----------|
+| 1.2.0 | 2026-08-15 | Fail-closed Monats-/Jahressummary und Abo-Duplikatschutz |
 | 1.1.0 | 2026-01-25 | SKILL.md von Stub auf Implementierung aktualisiert |
 | 1.0.0 | 2026-01-23 | Initial Stub erstellt |
