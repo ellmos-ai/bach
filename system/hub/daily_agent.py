@@ -36,14 +36,15 @@ bach daily-agent toggle <modul> Modul ein-/ausschalten
 
 Task: 989
 """
-import os
-import sys
 import json
-import subprocess
+import os
 import sqlite3
+import subprocess
+import sys
+from datetime import date, datetime
 from pathlib import Path
-from datetime import datetime, date
 from typing import List, Tuple
+
 from .base import BaseHandler
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
@@ -420,13 +421,15 @@ class DailyAgentHandler(BaseHandler):
         try:
             today_str = date.today().strftime("%Y-%m-%d")
             events = conn.execute("""
-                SELECT title, start_time FROM calendar_events
-                WHERE date(start_time) = ? ORDER BY start_time LIMIT 5
+                SELECT title, start_datetime FROM assistant_calendar
+                WHERE date(start_datetime) = ? ORDER BY start_datetime LIMIT 5
             """, (today_str,)).fetchall()
             if events:
                 parts = [f"\nKALENDER ({len(events)} Termine):"]
                 for e in events:
-                    parts.append(f"  {e['start_time'][:5]} {e['title'][:50]}")
+                    start = e['start_datetime'] or ''
+                    time_text = start[11:16] if len(start) >= 16 else '--:--'
+                    parts.append(f"  {time_text} {e['title'][:50]}")
                 return "\n".join(parts)
         except Exception:
             pass

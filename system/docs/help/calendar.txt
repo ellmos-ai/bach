@@ -1,12 +1,12 @@
 # Portabilität: USER
-# Zuletzt validiert: 2026-05-17
+# Zuletzt validiert: 2026-08-15
 # Nächste Prüfung: 2026-11-17
 # Ressourcen: [assistant_calendar table, hub/calendar_handler.py]
 
 CALENDAR - Termin- und Kalenderverwaltung
 =========================================
 
-STAND: 2026-05-17
+STAND: 2026-08-15
 
 Das Kalender-System (Schicht 3) bündelt zeitkritische Informationen aus 
 verschiedenen Quellen (Termine, Erinnerungen, Routinen).
@@ -23,7 +23,7 @@ CLI-BEFEHLE (bach calendar)
   week          Wochenübersicht (Mo-So) mit Wochentag-Namen.
   month         Alle Einträge des aktuellen Monats.
   list          Alle kommenden Termine (Standard: 30 Tage).
-  add "Titel"   Erstellt einen neuen Termin (assistant_calendar).
+  add "Titel"   Erstellt einen Termin; unterstützt Erinnerung und Wiederholung.
   show <ID>     Zeigt Termin-Details an.
   done <ID>     Markiert einen Termin als erledigt.
   delete <ID>   Löscht einen Termin.
@@ -39,7 +39,7 @@ DATENBANK (Schicht 1)
 ---------------------
 - `assistant_calendar`: Manuelle Termine des Users.
 - `household_routines`: Wiederkehrende Aufgaben (nur Anzeige).
-- `calendar_events`: (Optional) System-Events.
+- `calendar_events`: Read-only-Kompatibilitätsansicht auf `assistant_calendar`.
 
 GUI & INTEGRATION
 -----------------

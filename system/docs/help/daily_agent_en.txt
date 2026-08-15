@@ -60,7 +60,7 @@ message_briefing: counter of unread messages (status='unread')
 news_briefing: Unread news from news_items (top categories + 3 titles)
 session_briefing: Last memory_sessions.summary (shortened to 120 characters)
 weather_briefing: Tried weather_service (coordinates hardcoded to 0.0)
-calendar_briefing: Today's events from calendar_events (5 next events)
+calendar_briefing: Today's events from assistant_calendar (next 5 events)
 
 
 ERROR HANDLING
