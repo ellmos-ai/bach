@@ -137,9 +137,22 @@ python bach.py prompt add "My Prompt" --content "..."
 # Check scheduler status
 python bach.py scheduler status
 
+# Import versioned everyday-data exports (idempotent)
+python bach.py abo import PATH/abotracker-export-v1.json
+python bach.py versicherung import PATH/bach-fin-insurances-v1.json
+
+# Register recurring imports only after a valid export file exists
+python bach.py abo schedule-import PATH/abotracker-export-v1.json --interval 24h
+python bach.py versicherung schedule-import PATH/bach-fin-insurances-v1.json --interval 24h
+
 # Shut down BACH
 python bach.py --shutdown
 ```
+
+The import commands require the exact schemas `abotracker-export-v1` and
+`bach.fin_insurances.v1`. AboTracker billing cycles are not treated as confirmed
+next-payment dates. Scheduled jobs are active, idempotent file imports and are
+created only after the current source file passes validation.
 
 ## Core Components
 

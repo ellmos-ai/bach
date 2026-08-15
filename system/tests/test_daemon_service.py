@@ -30,6 +30,7 @@ Tests fuer DaemonService, DaemonJob, Interval-Parsing, Job-Scheduling.
 
 import json
 import importlib
+import os
 import sys
 import sqlite3
 import tempfile
@@ -628,6 +629,37 @@ class TestScriptPathExecution:
         result = svc.run_job(job_id, triggered_by="test")
         assert result["success"] is True
         assert "C:\\Users\\test\\data\\file.txt" in result["output"]
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows argument parsing")
+    def test_script_path_with_quoted_space_argument(self, tmp_path):
+        """Windows quote syntax must not become part of the script argument."""
+        db_path = _create_test_db(tmp_path)
+        script = tmp_path / "pathecho.py"
+        script.write_text(
+            "import sys\nprint(repr(sys.argv[1]))",
+            encoding="utf-8",
+        )
+
+        win_path = r"C:\Users\test\data with spaces\file.txt"
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO scheduler_jobs (name, job_type, schedule, command, script_path, arguments, is_active) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "quoted-space-job", "interval", "1h", "", str(script),
+                f'"{win_path}"', 1,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        svc = DaemonService(db_path)
+        svc.load_jobs()
+        job_id = list(svc.jobs.keys())[0]
+        result = svc.run_job(job_id, triggered_by="test")
+        assert result["success"] is True
+        assert repr(win_path) in result["output"]
+        assert repr(f'"{win_path}"') not in result["output"]
 
     def test_script_path_no_arguments(self, tmp_path):
         db_path = _create_test_db(tmp_path)
