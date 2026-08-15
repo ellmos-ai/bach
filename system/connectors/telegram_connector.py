@@ -128,33 +128,27 @@ class TelegramConnector(BaseConnector):
     def __init__(self, config: ConnectorConfig):
         super().__init__(config)
         self._bot_token = config.auth_config.get("bot_token", "")
-        # ENT-44: Falls kein direkter Token, _secret_refs -> secrets-Tabelle
+        # Falls kein direkter Token, _secret_refs über den zentralen Keyring-Resolver.
+        secret_refs = config.auth_config.get("_secret_refs", {})
         if not self._bot_token:
-            secret_key = config.auth_config.get("_secret_refs", {}).get("bot_token", "")
+            secret_key = secret_refs.get("bot_token", "")
             if secret_key:
                 self._bot_token = self._load_from_secrets_table(secret_key)
         self._owner_chat_id = str(config.options.get("owner_chat_id", ""))
+        if not self._owner_chat_id:
+            owner_ref = secret_refs.get("owner_chat_id", "")
+            if owner_ref:
+                self._owner_chat_id = self._load_from_secrets_table(owner_ref)
         self._last_update_id = int(config.auth_config.get("last_update_id", 0))
         self._bot_info = None
         self._polling = False
 
     def _load_from_secrets_table(self, key: str) -> str:
-        """Laedt Secret aus der secrets-Tabelle in bach.db (ENT-44)."""
+        """Lädt ein Secret ohne Klartextzugriff auf bach.db."""
         try:
-            import sqlite3
-            try:
-                from hub.bach_paths import BACH_DB
-                db_path = BACH_DB
-            except ImportError:
-                # Notfall-Fallback auf die kanonische lokale DB. Frueher stand hier
-                # ../data/bach.db — die veraltete Kopie im OneDrive-Ordner.
-                db_path = Path.home() / ".bach" / "bach.db"
-            conn = sqlite3.connect(str(db_path))
-            try:
-                row = conn.execute("SELECT value FROM secrets WHERE key = ?", (key,)).fetchone()
-                return row[0] if row and row[0] else ""
-            finally:
-                conn.close()
+            from hub.secrets_handler import get_secret_value
+
+            return get_secret_value(key) or ""
         except Exception:
             return ""
 

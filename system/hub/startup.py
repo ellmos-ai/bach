@@ -667,19 +667,16 @@ class StartupHandler(BaseHandler):
             except Exception as e:
                 pass  # Silent fail - nicht kritisch
 
-        # 0.07 SECRETS SYNC - Datei → DB (Datei-autoritär, SQ076)
+        # 0.07 SECRETS SYNC - Legacy-Klartext → OS-Schlüsselbund
         # ══════════════════════════════════════════════════════════════
         if not dry_run:
             try:
                 from hub.secrets_handler import SecretsHandler
 
                 handler = SecretsHandler()
-                # SYNC: Datei → DB (enforce_authority=True)
-                # Wenn Datei fehlt: alle Secrets aus DB löschen (Datei-Autorität)
-                handler.sync_from_file(enforce_authority=True)
-
-                # Keine Ausgabe bei erfolgreichem SYNC (zu verbose)
-                # Nur Fehler würden via Exception gemeldet
+                # Fehlende Metadaten dürfen niemals Credentials löschen. Im
+                # Startup bleibt auch die reine Statusausgabe vollständig still.
+                handler.sync_from_file(enforce_authority=False, quiet=True)
             except Exception as e:
                 pass  # Silent fail - nicht kritisch (z.B. Datei fehlt)
 
