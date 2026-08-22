@@ -222,8 +222,8 @@ class TestAddMount:
         assert "Verwendung" in msg
 
     def test_source_not_exists(self, mount_env):
-        h, _, _ = mount_env
-        ok, msg = h._add_mount(["/nonexistent/path", "alias"], dry_run=False)
+        h, base, _ = mount_env
+        ok, msg = h._add_mount([str(base / "missing"), "alias"], dry_run=False)
         assert ok is False
         assert "existiert nicht" in msg
 
@@ -262,6 +262,63 @@ class TestAddMount:
             ok, msg = h._add_mount([str(source), "mydata"], dry_run=False)
             assert ok is True
             mock_link.assert_not_called()
+
+
+class TestMountSourceContainment:
+    def test_rejects_existing_directory_outside_allowed_root(self, mount_env, tmp_path):
+        _, base, _ = mount_env
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        h = MountHandler(base, allowed_source_roots=[base])
+
+        with pytest.raises(ValueError, match="außerhalb erlaubter Wurzeln"):
+            h._resolve_mount_source(str(outside))
+
+    def test_accepts_existing_directory_inside_allowed_root(self, mount_env):
+        _, base, _ = mount_env
+        source = base / "extern"
+        source.mkdir()
+        h = MountHandler(base, allowed_source_roots=[base])
+
+        assert h._resolve_mount_source(str(source)) == source.resolve()
+
+    def test_rejects_parent_traversal_outside_allowed_root(self, mount_env, tmp_path):
+        _, base, _ = mount_env
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        traversing = base / "user" / ".." / ".." / outside.name
+        h = MountHandler(base, allowed_source_roots=[base])
+
+        with pytest.raises(ValueError, match="außerhalb erlaubter Wurzeln"):
+            h._resolve_mount_source(str(traversing))
+
+    def test_configured_additional_root_remains_supported(self, mount_env, tmp_path):
+        _, base, _ = mount_env
+        external_root = tmp_path / "nas"
+        source = external_root / "documents"
+        source.mkdir(parents=True)
+        h = MountHandler(base, allowed_source_roots=[base, external_root])
+
+        assert h._resolve_mount_source(str(source)) == source.resolve()
+
+    def test_add_rejects_outside_source_before_link_or_db_write(self, mount_env, tmp_path):
+        _, base, db_path = mount_env
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        h = MountHandler(base, allowed_source_roots=[base])
+
+        with patch.object(h, "_create_link") as mock_link:
+            ok, msg = h._add_mount([str(outside), "blocked"], dry_run=False)
+
+        assert ok is False
+        assert "außerhalb erlaubter Wurzeln" in msg
+        mock_link.assert_not_called()
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT * FROM connections WHERE name='blocked'"
+        ).fetchone()
+        conn.close()
+        assert row is None
 
 
 class TestRemoveMount:
@@ -347,11 +404,12 @@ class TestRestoreMounts:
             mock_link.assert_not_called()
 
     def test_source_missing_adds_error(self, mount_env):
-        h, _, db_path = mount_env
+        h, base, db_path = mount_env
         conn = sqlite3.connect(str(db_path))
         conn.execute(
             "INSERT INTO connections (name, type, category, endpoint, is_active) "
-            "VALUES ('gone', 'mount', 'storage', '/nonexistent', 1)"
+            "VALUES ('gone', 'mount', 'storage', ?, 1)",
+            (str(base / "missing"),),
         )
         conn.commit()
         conn.close()
