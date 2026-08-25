@@ -820,7 +820,21 @@ class DocumentPipeline:
                     parts.append(para.text.strip())
             for table in doc.tables:
                 for row in table.rows:
-                    cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                    # row.cells liefert eine ueber mehrere Rasterspalten verbundene
+                    # Zelle einmal PRO SPALTE (python-docx-Verhalten) -- ohne
+                    # Dedup ueber die Identitaet des zugrunde liegenden <w:tc>-
+                    # Elements wird der Zellinhalt so oft wiederholt, wie er
+                    # Spalten ueberspannt (gemessen: Faktor 17,8x an einer realen
+                    # Formular-DOCX, siehe Ticket T-20260817-825816579).
+                    gesehen: set = set()
+                    cells = []
+                    for c in row.cells:
+                        key = id(c._tc)
+                        if key in gesehen:
+                            continue
+                        gesehen.add(key)
+                        if c.text.strip():
+                            cells.append(c.text.strip())
                     if cells:
                         parts.append(" | ".join(cells))
             return "\n".join(parts)
