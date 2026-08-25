@@ -1,6 +1,16 @@
 ﻿# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-07-19 | **Version:** 4.3.62
+**Stand:** 2026-07-29 | **Version:** 4.3.63
+
+## Aktueller Qualitätsfortschritt (2026-07-29)
+
+- Task 1146 ist lokal auf dem Judging-Hold-Branch umgesetzt: `bach --test self QUICK`
+  bewertet ein erfolgreiches B001-Inventar konsistent und führt für BACH einen
+  isolierten O001-Task-Lebenszyklus über die produktive Task-API und `BACH_DB` aus.
+- Die JSON-Ergebnisse erklären jetzt, dass Scores nur die dokumentierten
+  Einzelprüfungen abbilden. Ein QUICK-Score ist keine pauschale Systemnote.
+- Die Änderung bleibt bis zur Aufhebung des Build-Week-Judging-Holds lokal;
+  kein Remote-Update oder Push ist vorgesehen.
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
