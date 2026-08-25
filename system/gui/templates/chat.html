@@ -284,6 +284,7 @@
     </div>
 
     <script src="/static/js/nav.js?v=4"></script>
+    <script src="/static/js/prompt-chat-draft.js?v=1"></script>
     <script>
     (function() {
         const CHAT_API = 'http://' + CHAT_HOST + ':8081/api';
@@ -333,6 +334,15 @@
         function autoResize() {
             inputEl.style.height = 'auto';
             inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
+        }
+
+        function loadLibraryDraft() {
+            const draft = BachChatDraft.consume();
+            if (draft === null) return;
+
+            inputEl.value = draft;
+            autoResize();
+            inputEl.focus();
         }
 
         async function send() {
@@ -398,6 +408,7 @@
             }
         }
 
+        loadLibraryDraft();
         refreshStatus();
         setInterval(refreshStatus, 30000);
     })();

@@ -149,14 +149,14 @@
 
             <div class="pl-panel">
                 <div class="pl-panel-header">
-                    <span id="pl-detail-title" style="font-weight: 600;">Kein Prompt gewaehlt</span>
+                    <span id="pl-detail-title" style="font-weight: 600;">Kein Prompt gewählt</span>
                     <span id="pl-status"></span>
                 </div>
                 <div class="pl-detail-body" id="pl-detail">
                     <div class="pl-muted">
-                        Links einen Prompt waehlen, oben neu anlegen oder aus PromptBoard importieren.<br><br>
+                        Links einen Prompt wählen, oben neu anlegen oder aus PromptBoard importieren.<br><br>
                         Datenbasis: BACH-eigene Tabellen <code>prompt_templates</code> / <code>prompt_versions</code>
-                        (identisch zu <code>bach prompt</code> auf der CLI). Jede Textaenderung archiviert den
+                        (identisch zu <code>bach prompt</code> auf der CLI). Jede Textänderung archiviert den
                         vorherigen Stand als Version.
                     </div>
                 </div>
@@ -164,6 +164,7 @@
         </div>
     </main>
 
+    <script src="/static/js/prompt-chat-draft.js?v=1"></script>
     <script>
         let currentId = null;
         let debounceTimer = null;
@@ -248,7 +249,8 @@
                 '<div class="pl-actions">' +
                 '<button class="btn btn-primary" onclick="saveCurrent()">Speichern (neue Version)</button>' +
                 '<button class="btn" onclick="copyCurrent()">Text kopieren</button>' +
-                '<button class="btn" onclick="deleteCurrent()" style="margin-left:auto;">Loeschen</button>' +
+                '<button class="btn" onclick="openCurrentInChat()">Im Chat als Entwurf öffnen</button>' +
+                '<button class="btn" onclick="deleteCurrent()" style="margin-left:auto;">Löschen</button>' +
                 '</div>' +
                 '<h3 style="margin-top:1.25rem;">Versionshistorie</h3>' + vHtml;
         }
@@ -302,12 +304,12 @@
 
         async function deleteCurrent() {
             if (!currentId) return;
-            if (!confirm('Prompt inkl. Versionshistorie loeschen?')) return;
+            if (!confirm('Prompt inkl. Versionshistorie löschen?')) return;
             try {
                 await api('/api/prompt-library/' + currentId, { method: 'DELETE' });
                 currentId = null;
-                document.getElementById('pl-detail-title').textContent = 'Kein Prompt gewaehlt';
-                document.getElementById('pl-detail').innerHTML = '<div class="pl-muted">Geloescht.</div>';
+                document.getElementById('pl-detail-title').textContent = 'Kein Prompt gewählt';
+                document.getElementById('pl-detail').innerHTML = '<div class="pl-muted">Gelöscht.</div>';
                 loadList();
             } catch (e) { setStatus(e.message, true); }
         }
@@ -315,6 +317,21 @@
         function copyCurrent() {
             const text = document.getElementById('pl-text');
             if (text) navigator.clipboard.writeText(text.value).then(() => setStatus('In Zwischenablage kopiert'));
+        }
+
+        function openCurrentInChat() {
+            const text = document.getElementById('pl-text');
+            if (!currentId || !text || !text.value.trim()) {
+                setStatus('Bitte zuerst einen nicht leeren Prompt auswählen', true);
+                return;
+            }
+
+            try {
+                BachChatDraft.store(text.value);
+                window.location.assign('/chat');
+            } catch (e) {
+                setStatus('Der Entwurf konnte nicht lokal übergeben werden', true);
+            }
         }
 
         async function importPromptBoard() {
