@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: MIT
 """Tests for DailyAgentHandler (hub/daily_agent.py)."""
 
+import sqlite3
 import sys
+from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -44,6 +46,30 @@ class TestProperties:
         assert "start" in ops
         assert "stop" in ops
         assert "briefing" in ops
+
+
+class TestCalendarBriefing:
+    def test_reads_canonical_assistant_calendar(self, handler):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            """
+            CREATE TABLE assistant_calendar (
+                id INTEGER PRIMARY KEY,
+                title TEXT NOT NULL,
+                start_datetime TEXT
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO assistant_calendar (title, start_datetime) VALUES (?, ?)",
+            ("Jour fixe", f"{datetime.now().astimezone().date().isoformat()} 10:30:00"),
+        )
+
+        text = handler._mod_calendar_briefing(conn)
+
+        assert "KALENDER (1 Termine)" in text
+        assert "10:30 Jour fixe" in text
 
 
 class TestStartPopen:

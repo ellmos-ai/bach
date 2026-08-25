@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-03-04
+# Version: 1.1.0
+# Zuletzt validiert: 2026-08-15
 
 CALENDAR - Termin- und Kalenderverwaltung
 ==========================================
@@ -9,7 +9,8 @@ BESCHREIBUNG
 ------------
 Termin- und Kalenderverwaltung mit Datenbankunterstützung. Zeigt kommende Termine
 aus assistant_calendar kombiniert mit fälligen Haushaltsroutinen (household_routines).
-Unterstützt Termine mit Ort, Typ, Status und optionalen Beschreibungen.
+Unterstützt Termine mit Ort, Typ, Status, optionalen Beschreibungen,
+Erinnerungszeit und iCal-Wiederholungsregel.
 
 OPERATIONEN
 -----------
@@ -31,6 +32,9 @@ ADD-OPTIONEN
   --location <ORT>        Termin-Ort
   --type <TYP>            termin|erinnerung|aufgabe (default: termin)
   --note <TEXT>           Beschreibung
+  --reminder-minutes <N>  Erinnerung in Minuten vor Beginn (Alias: --reminder)
+  --recurrence-rule <R>   iCal-RRULE oder daily|weekly|monthly|yearly
+                          (Alias: --recurrence)
 
 BEISPIELE
 ---------
@@ -39,6 +43,7 @@ BEISPIELE
   bach calendar list 60
   bach calendar add "Zahnarzt" -d 15.02.2026 -t 10:30 --location "Praxis"
   bach calendar add "Treffen" -d 2026-03-10 -t 14:00 --end 15:30 --note "Besprechung"
+  bach calendar add "Jour fixe" -d 18.08.2026 --reminder 30 --recurrence weekly
   bach calendar show 5
   bach calendar done 5
   bach calendar delete 5
@@ -55,8 +60,10 @@ DATENBANK
 ---------
   Datei:      data/bach.db
   Tabellen:   assistant_calendar (id, title, event_type, start_datetime,
-                                   end_datetime, location, description, status)
+                                   end_datetime, location, description, status,
+                                   reminder_minutes, recurrence_rule)
               household_routines (id, name, frequency, category, next_due)
+  Ansicht:    calendar_events (Read-only-Kompatibilität)
 
 DATEIEN
 -------

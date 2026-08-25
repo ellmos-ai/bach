@@ -1,5 +1,5 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
+# Last validated: 2026-08-15
 # Next review: 2027-05-17
 
 CALENDAR - appointment and calendar management
@@ -9,7 +9,8 @@ DESCRIPTION
 ------------
 Appointment and calendar management with database support. Shows upcoming dates
 from assistant_calendar combined with due household routines (household_routines).
-Supports appointments with location, type, status and optional descriptions.
+Supports appointments with location, type, status, optional descriptions,
+reminders, and iCalendar recurrence rules.
 
 OPERATIONS
 -----------
@@ -31,6 +32,9 @@ ADD OPTIONS
   --location <LOCATION> Appointment location
   --type <TYPE> appointment|reminder|task (default: appointment)
   --note <TEXT> Description
+  --reminder-minutes <N> Reminder N minutes before start (alias: --reminder)
+  --recurrence-rule <R> iCalendar RRULE or daily|weekly|monthly|yearly
+                        (alias: --recurrence)
 
 EXAMPLES
 ---------
@@ -39,6 +43,7 @@ EXAMPLES
   bach calendar list 60
   bach calendar add "Zahnarzt" -d 15.02.2026 -t 10:30 --location "Praxis"
   bach calendar add "Treffen" -d 2026-03-10 -t 14:00 --end 15:30 --note "Besprechung"
+  bach calendar add "Weekly sync" -d 18.08.2026 --reminder 30 --recurrence weekly
   bach calendar show 5
   bach calendar done 5
   bach calendar delete 5
@@ -55,8 +60,10 @@ DATABASE
 ---------
   File: data/bach.db
   Tables: assistant_calendar (id, title, event_type, start_datetime,
-                                   end_datetime, location, description, status)
+                                   end_datetime, location, description, status,
+                                   reminder_minutes, recurrence_rule)
               household_routines (id, name, frequency, category, next_due)
+  View: calendar_events (read-only compatibility)
 
 FILES
 -------

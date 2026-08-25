@@ -1,12 +1,12 @@
 # Portability: USER
-# Last validated: 2026-05-17
+# Last validated: 2026-08-15
 # Next review: 2027-05-17
 # Resources: [assistant_calendar table, hub/calendar_handler.py]
 
 CALENDAR - appointment and calendar management
 =========================================
 
-Status: 2026-02-08
+Status: 2026-08-15
 
 The calendar system (layer 3) bundles time-critical information 
 various sources (appointments, reminders, routines).
@@ -23,7 +23,7 @@ CLI COMMANDS (bach calendar)
   week Weekly overview (Mon-Sun) with weekday names.
   month All entries of the current month.
   list All upcoming appointments (default: 30 days).
-  add "Title" Creates a new appointment (assistant_calendar).
+  add "Title" Creates an appointment with optional reminder and recurrence.
   show <ID> Shows appointment details.
   done <ID> Marks an appointment as done.
   delete <ID> Deletes an appointment.
@@ -39,7 +39,7 @@ DATABASE (layer 1)
 ---------------------
 - `assistant_calendar`: Manual appointments of the user.
 - `household_routines`: Recurring tasks (display only).
-- `calendar_events`: (Optional) System events.
+- `calendar_events`: Read-only compatibility view of `assistant_calendar`.
 
 GUI & INTEGRATION
 -----------------
