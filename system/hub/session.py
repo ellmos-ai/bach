@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple, Optional
 from .base import BaseHandler
+from ._services.user_config_store import load_user_config, update_user_config
 
 
 class SessionHandler(BaseHandler):
@@ -61,21 +62,18 @@ class SessionHandler(BaseHandler):
 
     def _load_user_config(self) -> dict:
         """Laedt User-Config."""
-        if self.user_config_path.exists():
-            try:
-                data = json.loads(self.user_config_path.read_text(encoding='utf-8'))
-                if isinstance(data, dict):
-                    return data
-            except (json.JSONDecodeError, OSError):
-                pass
-        return {"session_duration_minutes": 120}
+        return load_user_config(
+            self.user_config_path,
+            {"session_duration_minutes": 120},
+        )
 
     def _save_user_config(self, config: dict):
         """Speichert User-Config."""
-        config["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.user_config_path.write_text(
-            json.dumps(config, indent=2, ensure_ascii=False),
-            encoding='utf-8'
+        patch = dict(config)
+        patch["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return update_user_config(
+            self.user_config_path,
+            lambda current: {**current, **patch},
         )
 
     def _get_current_session(self) -> Optional[dict]:
@@ -320,9 +318,7 @@ class SessionHandler(BaseHandler):
             if arg.startswith("--set-duration="):
                 try:
                     duration_minutes = int(arg.split("=")[1])
-                    config = self._load_user_config()
-                    config["session_duration_minutes"] = duration_minutes
-                    self._save_user_config(config)
+                    self._save_user_config({"session_duration_minutes": duration_minutes})
                     results.append(f"[OK] Sitzungsdauer auf {duration_minutes} Minuten gesetzt")
                 except (ValueError, IndexError, OSError):
                     pass

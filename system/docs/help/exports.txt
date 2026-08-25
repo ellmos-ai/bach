@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
 # Version: 1.0.0
-# Zuletzt validiert: 2026-03-04
+# Zuletzt validiert: 2026-08-10
 
 EXPORTS - DB-zu-Markdown Export-Scripts
 =======================================
@@ -41,6 +41,21 @@ mit Name, Typ, Status und Synergie-Beziehungen.
 
   python tools/agents_export.py
   Ausgabe: data/AGENTS.md
+
+Claude-Code-Agent-Dateien (opt-in):
+
+  python tools/agents_export.py --format agent
+  python tools/agents_export.py --format agent --output .claude/agents --dry-run
+  bach export agents --format agent [--output <ordner>] [--dry-run]
+
+  Standardziel: <BACH-Root>/.claude/agents/*.md
+  Die Dateien enthalten nur von Claude Code unterstützte Frontmatter-Felder;
+  DB-Name, Persona-Quelle und Skill-/Pfadbezug stehen im Markdown-Body.
+  Die DB ist die Identitätsquelle. Inaktive Einträge, fehlende SKILL.md/
+  Skill-Pfade sowie doppelte Namen werden gemeldet und nicht exportiert.
+  Bereits vorhandene Dateien werden gelesen: Byte-identische Dateien bleiben
+  unverändert, fremde oder abweichende Dateien werden niemals überschrieben.
+  `--dry-run` erstellt weder Ordner noch Dateien.
 
 CHAINS_EXPORT
 -------------

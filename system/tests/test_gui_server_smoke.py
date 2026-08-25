@@ -7,6 +7,7 @@ Verifies that the 33+ narrowed exception handlers in Iteration 18
 don't crash real endpoints when the DB has missing/empty tables.
 """
 
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -219,6 +220,33 @@ class TestGUIServerSmoke:
         data = resp.json()
         assert data["status"] == "online"
         assert "stats" in data
+
+    def test_theme_settings_roundtrip(self, client, test_db):
+        initial = client.get("/api/settings/theme")
+        assert initial.status_code == 200
+        assert initial.json()["theme"] == "dark"
+        assert initial.json()["configured"] is False
+
+        updated = client.put(
+            "/api/settings/theme",
+            json={"theme": "custom", "custom": {"accent": "#aabbcc"}},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["custom"]["accent"] == "#aabbcc"
+
+        saved = json.loads(
+            (test_db / "data" / "user_config.json").read_text(encoding="utf-8")
+        )
+        assert saved["gui"]["theme"] == "custom"
+        assert client.get("/api/settings/theme").json()["theme"] == "custom"
+
+    def test_theme_settings_reject_css_injection(self, client):
+        response = client.put(
+            "/api/settings/theme",
+            json={"theme": "custom", "custom": {"accent": "red;url(x)"}},
+        )
+        assert response.status_code == 400
+        assert "#RRGGBB" in response.json()["detail"]
 
     def test_tasks_list(self, client):
         resp = client.get("/api/tasks")

@@ -6,6 +6,11 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+### Added
+
+- **Claude-Code-Agent-Export (Task 1261):** `bach export agents --format agent` und `python tools/agents_export.py --format agent` erzeugen deterministische `.claude/agents/*.md`-Dateien aus aktiven `bach_agents`-/`bach_experts`-Zeilen. Frontmatter bleibt Claude-Code-kompatibel; Persona- und Skill-/Pfadbezug stehen im Body. Dry-Run, Readback, Unicode- und Konflikt-Guards verhindern das Überschreiben fremder Dateien.
+- **Dashboard-Themes zentral konfigurierbar (Task 1126):** `bach theme status|set`, `bach_api.theme`, `/api/settings/theme` und die neue GUI-Seite `/settings` teilen sich jetzt dieselbe validierte Einstellung in `data/user_config.json`. Dark, Light, Warm und Custom sind dashboardweit verfügbar; Custom-Farben akzeptieren ausschließlich `#RRGGBB`, während der bisherige Browserwert `colorful` kompatibel auf Custom abgebildet wird.
+
 ### Changed
 
 - **QUICK-Selbsttest fachlich präzisiert (Task 1146):** B001 bewertet ein

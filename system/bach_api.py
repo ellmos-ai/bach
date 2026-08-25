@@ -64,7 +64,7 @@ Nutzung:
 
 Verfuegbare Module:
     session, task, memory, backup, steuer, lesson, status,
-    agent, agents, prompt, partner, logs, msg, tools, help, update,
+    agent, agents, prompt, partner, logs, msg, tools, help, update, theme,
     injector, db, app
 """
 
@@ -551,6 +551,30 @@ class _SessionProxy:
         return self.shutdown(summary=note, partner=partner, mode="emergency")
 
 
+class _ThemeProxy(_HandlerProxy):
+    """Typed theme API; ``raw`` remains available for CLI-shaped calls."""
+
+    def _handler(self):
+        handler = get_app().get_handler("theme")
+        if handler is None:
+            raise BachAPIError("Theme-Handler ist nicht registriert")
+        return handler
+
+    def status(self) -> dict[str, Any]:
+        """Return the normalized dashboard theme preference."""
+        return self._handler().get_theme()
+
+    def set(
+        self,
+        theme_name: str,
+        custom: dict[str, str] | None = None,
+        *,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Set a theme with an optional structured custom color palette."""
+        return self._handler().set_theme(theme_name, custom, dry_run=dry_run)
+
+
 # --- Convenience-Module ---
 
 # Session-Lifecycle
@@ -573,6 +597,7 @@ tools = _HandlerProxy("tools")
 help = _HandlerProxy("help")
 update = _HandlerProxy("update")
 email = _HandlerProxy("email")
+theme = _ThemeProxy("theme")
 
 # App-Instanz fuer direkten Zugriff
 app = get_app
@@ -833,6 +858,7 @@ __all__ = [
     "help",
     "update",
     "email",
+    "theme",
     "app",
     "db",
     "hooks",

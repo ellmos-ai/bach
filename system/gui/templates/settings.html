@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BACH - Einstellungen</title>
+    <link rel="icon" href="data:,">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t=t==="colorful"?"custom":t;t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=3">
+    <style>
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin: 1.25rem 0;
+        }
+        .theme-card {
+            appearance: none;
+            text-align: left;
+            color: var(--text);
+            background: var(--bg-card);
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem;
+            cursor: pointer;
+            transition: border-color 150ms var(--ease), transform 150ms var(--ease);
+        }
+        .theme-card:hover { transform: translateY(-2px); border-color: var(--border-hover); }
+        .theme-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+        .theme-card strong { display: block; font-size: 1rem; margin-bottom: 0.3rem; }
+        .theme-card span { color: var(--text-muted); font-size: 0.82rem; }
+        .theme-preview {
+            display: flex;
+            gap: 0.25rem;
+            margin-top: 0.75rem;
+        }
+        .theme-preview i { width: 28px; height: 18px; border-radius: 4px; border: 1px solid rgba(127,127,127,.25); }
+        .custom-panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .custom-colors {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 0.75rem;
+            margin-top: 0.75rem;
+        }
+        .color-field { display: flex; align-items: center; gap: 0.6rem; color: var(--text-muted); }
+        .color-field input { width: 48px; height: 34px; border: 1px solid var(--border); border-radius: 6px; padding: 2px; background: var(--bg-card); }
+        .settings-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+        #settings-status { color: var(--text-muted); font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <header class="main-header" id="main-header"></header>
+    <main class="main-content">
+        <h1>GUI-Einstellungen</h1>
+        <p class="text-muted">Das Theme gilt für das gesamte BACH-Dashboard und wird in der lokalen BACH-Nutzerkonfiguration gespeichert.</p>
+
+        <section aria-labelledby="theme-heading">
+            <h2 id="theme-heading">Design</h2>
+            <div class="settings-grid" id="theme-options">
+                <button class="theme-card" type="button" data-theme-option="dark">
+                    <strong>🌙 Dark</strong><span>Kontrastreich und ruhig</span>
+                    <div class="theme-preview"><i style="background:#0b0d14"></i><i style="background:#171a26"></i><i style="background:#c83a4e"></i></div>
+                </button>
+                <button class="theme-card" type="button" data-theme-option="light">
+                    <strong>☀️ Light</strong><span>Hell und sachlich</span>
+                    <div class="theme-preview"><i style="background:#f4f5f7"></i><i style="background:#ffffff"></i><i style="background:#c83a4e"></i></div>
+                </button>
+                <button class="theme-card" type="button" data-theme-option="warm">
+                    <strong>🕯️ Warm</strong><span>Papierfarben und weich</span>
+                    <div class="theme-preview"><i style="background:#f6f0e4"></i><i style="background:#fffaf0"></i><i style="background:#a64b2a"></i></div>
+                </button>
+                <button class="theme-card" type="button" data-theme-option="custom">
+                    <strong>🎨 Custom</strong><span>Eigene Farbpalette</span>
+                    <div class="theme-preview"><i style="background:#140e28"></i><i style="background:#251d48"></i><i style="background:#ff6b8a"></i></div>
+                </button>
+            </div>
+        </section>
+
+        <section class="custom-panel" id="custom-panel" hidden aria-labelledby="custom-heading">
+            <h2 id="custom-heading">Eigene Farben</h2>
+            <p class="text-muted">Änderungen werden sofort als Vorschau gezeigt und erst mit „Speichern“ dauerhaft übernommen.</p>
+            <div class="custom-colors" id="custom-colors"></div>
+        </section>
+
+        <div class="settings-actions">
+            <button type="button" class="btn btn-primary" id="save-theme">Theme speichern</button>
+            <span id="settings-status" role="status" aria-live="polite">Lade Einstellung …</span>
+        </div>
+    </main>
+
+    <script src="/static/js/nav.js?v=5"></script>
+    <script>
+        const COLOR_LABELS = {
+            bg_dark: 'Seitenhintergrund', bg_panel: 'Panel', bg_card: 'Karte',
+            bg_elevated: 'Angehoben', accent: 'Akzent', accent_light: 'Akzent hell',
+            accent_blue: 'Akzent sekundär', text: 'Text', text_muted: 'Text dezent',
+            border: 'Rahmen', success: 'Erfolg', warning: 'Warnung', error: 'Fehler'
+        };
+        let selectedTheme = 'dark';
+        let customPalette = {};
+        let persistedTheme = 'dark';
+        let persistedPalette = {};
+
+        function renderSelection() {
+            document.querySelectorAll('[data-theme-option]').forEach(card => {
+                card.classList.toggle('active', card.dataset.themeOption === selectedTheme);
+                card.setAttribute('aria-pressed', card.dataset.themeOption === selectedTheme ? 'true' : 'false');
+            });
+            document.getElementById('custom-panel').hidden = selectedTheme !== 'custom';
+        }
+
+        function renderCustomColors() {
+            const container = document.getElementById('custom-colors');
+            container.innerHTML = '';
+            Object.entries(COLOR_LABELS).forEach(([key, label]) => {
+                const wrapper = document.createElement('label');
+                wrapper.className = 'color-field';
+                const input = document.createElement('input');
+                input.type = 'color';
+                input.dataset.colorKey = key;
+                input.value = customPalette[key] || '#000000';
+                input.addEventListener('input', () => {
+                    customPalette[key] = input.value;
+                    if (selectedTheme === 'custom') previewTheme('custom', customPalette);
+                });
+                wrapper.append(input, document.createTextNode(label));
+                container.appendChild(wrapper);
+            });
+        }
+
+        async function loadSettings() {
+            const status = document.getElementById('settings-status');
+            try {
+                const response = await fetch('/api/settings/theme');
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.detail || 'Einstellung nicht lesbar');
+                selectedTheme = data.configured
+                    ? normalizeTheme(data.theme)
+                    : normalizeTheme(localStorage.getItem('bach-theme') || data.theme);
+                customPalette = data.configured
+                    ? (data.custom || {})
+                    : { ...(data.custom || {}), ...loadCustomTheme() };
+                persistedTheme = selectedTheme;
+                persistedPalette = { ...customPalette };
+                renderCustomColors();
+                renderSelection();
+                if (data.configured) commitTheme(selectedTheme, customPalette);
+                else previewTheme(selectedTheme, customPalette);
+                status.textContent = data.configured
+                    ? 'Aktuelles Theme: ' + selectedTheme
+                    : 'Browser-Theme erkannt; mit Speichern zentral übernehmen';
+            } catch (error) {
+                status.textContent = 'Nur Browser-Einstellung verfügbar: ' + error.message;
+            }
+        }
+
+        document.querySelectorAll('[data-theme-option]').forEach(card => {
+            card.addEventListener('click', () => {
+                selectedTheme = card.dataset.themeOption;
+                renderSelection();
+                previewTheme(selectedTheme, customPalette);
+            });
+        });
+
+        document.getElementById('save-theme').addEventListener('click', async () => {
+            const status = document.getElementById('settings-status');
+            status.textContent = 'Speichere …';
+            try {
+                const response = await fetch('/api/settings/theme', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ theme: selectedTheme, custom: customPalette })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.detail || 'Speichern fehlgeschlagen');
+                customPalette = data.custom;
+                persistedTheme = normalizeTheme(data.theme);
+                persistedPalette = { ...customPalette };
+                commitTheme(data.theme, customPalette);
+                status.textContent = 'Gespeichert: ' + data.theme;
+            } catch (error) {
+                selectedTheme = persistedTheme;
+                customPalette = { ...persistedPalette };
+                renderCustomColors();
+                renderSelection();
+                previewTheme(selectedTheme, customPalette);
+                status.textContent = 'Nicht gespeichert: ' + error.message;
+            }
+        });
+
+        loadSettings();
+    </script>
+</body>
+</html>

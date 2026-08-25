@@ -352,6 +352,9 @@ def _handle_export(sub_cmd, args):
         print("Usage: bach export <type> [args]")
         print("Types:")
         print("  agents                     Generiere AGENTS.md aus DB")
+        print("  agents --format agent     Claude-Code-Agent-Dateien nach .claude/agents/")
+        print("       [--output DIR]       Zielordner für --format agent")
+        print("       [--dry-run]           Prüfen ohne Dateien zu schreiben")
         print("  partners                   Generiere PARTNERS.md aus DB")
         print("  usecases                   Generiere USECASES.md aus DB")
         print("  chains                     Generiere CHAINS.md aus DB")
@@ -363,7 +366,39 @@ def _handle_export(sub_cmd, args):
         try:
             from agents_export import AgentsExporter
             exporter = AgentsExporter(BACH_ROOT)
-            success, msg = exporter.generate()
+            export_format = None
+            output_dir = None
+            dry_run = False
+            i = 0
+            while i < len(args):
+                value = args[i]
+                if value in ("--format", "-f") and i + 1 < len(args):
+                    export_format = args[i + 1]
+                    i += 2
+                    continue
+                if value.startswith("--format="):
+                    export_format = value.split("=", 1)[1]
+                    i += 1
+                    continue
+                if value in ("--output", "-o") and i + 1 < len(args):
+                    output_dir = args[i + 1]
+                    i += 2
+                    continue
+                if value.startswith("--output="):
+                    output_dir = value.split("=", 1)[1]
+                    i += 1
+                    continue
+                if value in ("--dry-run", "-n"):
+                    dry_run = True
+                    i += 1
+                    continue
+                print(f"[ERROR] Unbekanntes agents-Argument: {value}")
+                return 1
+            success, msg = exporter.generate(
+                format=export_format,
+                output_dir=output_dir,
+                dry_run=dry_run,
+            )
             print(msg)
             return 0 if success else 1
         except Exception as e:
