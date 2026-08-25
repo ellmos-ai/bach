@@ -34,6 +34,7 @@ def daily_env(tmp_path):
 def handler(daily_env):
     h = DailyAgentHandler(daily_env)
     h.pid_file = daily_env / "data" / "daily_agent.pid"
+    h.db_path = daily_env / "data" / "bach.db"
     return h
 
 
@@ -46,6 +47,7 @@ class TestProperties:
         assert "start" in ops
         assert "stop" in ops
         assert "briefing" in ops
+        assert "deliver" in ops
 
 
 class TestCalendarBriefing:
@@ -111,3 +113,128 @@ class TestStartPopen:
             ok, msg = handler.handle("start", [])
         assert ok is False
         assert "nicht gefunden" in msg
+
+
+def _make_briefing_db(path: Path):
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE tasks (id INTEGER, title TEXT, priority TEXT, status TEXT);
+        CREATE TABLE scheduler_jobs (id INTEGER, name TEXT, is_active INTEGER);
+        CREATE TABLE messages (id INTEGER, status TEXT);
+        CREATE TABLE memory_sessions (id INTEGER, summary TEXT);
+        CREATE TABLE household_routines (
+            id INTEGER, name TEXT, next_due TEXT, is_active INTEGER
+        );
+        CREATE TABLE fin_insurances (
+            id INTEGER, anbieter TEXT, sparte TEXT, status TEXT,
+            naechste_kuendigung TEXT
+        );
+        CREATE TABLE abo_subscriptions (id INTEGER, aktiv INTEGER);
+        CREATE TABLE connections (
+            id INTEGER PRIMARY KEY, name TEXT, type TEXT, category TEXT,
+            endpoint TEXT, is_active INTEGER, auth_type TEXT, auth_config TEXT
+        );
+        CREATE TABLE connector_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            connector_name TEXT, direction TEXT, sender TEXT, recipient TEXT,
+            content TEXT, processed INTEGER DEFAULT 0, error TEXT,
+            retry_count INTEGER DEFAULT 0, max_retries INTEGER DEFAULT 5,
+            status TEXT DEFAULT 'pending', updated_at TEXT, created_at TEXT
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+class TestBriefingDelivery:
+    def test_commitments_are_claim_neutral(self, handler):
+        _make_briefing_db(handler.db_path)
+        conn = sqlite3.connect(handler.db_path)
+        conn.executescript(
+            """
+            INSERT INTO household_routines VALUES (1, 'Küche', '2000-01-01 09:00', 1);
+            INSERT INTO fin_insurances VALUES (1, 'HUK', 'Haftpflicht', 'aktiv', date('now', '+5 days'));
+            INSERT INTO abo_subscriptions VALUES (1, 1);
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        ok, text = handler.handle("briefing", [])
+
+        assert ok is True
+        assert "FÄLLIGE ROUTINEN (1)" in text
+        assert "VERSICHERUNGSFRISTEN BIS 90 TAGE (1)" in text
+        assert "ABOS: 1 aktiv; im Kanon sind keine Fälligkeitsdaten gespeichert." in text
+
+    def test_deliver_dry_run_has_no_db_side_effect(self, handler):
+        _make_briefing_db(handler.db_path)
+
+        ok, text = handler.handle("deliver", [], dry_run=True)
+
+        assert ok is True
+        assert "[DRY-RUN]" in text
+        conn = sqlite3.connect(handler.db_path)
+        count = conn.execute("SELECT COUNT(*) FROM connector_messages").fetchone()[0]
+        config_table = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master "
+            "WHERE type = 'table' AND name = 'briefing_config'"
+        ).fetchone()[0]
+        conn.close()
+        assert count == 0
+        assert config_table == 0
+
+    def test_deliver_sends_once_without_dispatching_foreign_queue(self, handler):
+        _make_briefing_db(handler.db_path)
+        conn = sqlite3.connect(handler.db_path)
+        conn.execute(
+            "INSERT INTO connector_messages "
+            "(connector_name, direction, sender, recipient, content) "
+            "VALUES ('telegram_main', 'out', 'foreign', '123', 'fremd')"
+        )
+        conn.commit()
+        conn.close()
+
+        connector = MagicMock()
+        connector.send_message.return_value = True
+        with patch("hub.connector.ConnectorHandler._instantiate", return_value=(connector, "")):
+            ok_first, first = handler.handle("deliver", [])
+            ok_second, second = handler.handle("deliver", [])
+
+        assert ok_first is True
+        assert "gesendet" in first
+        assert ok_second is True
+        assert "[SKIP]" in second
+        connector.send_message.assert_called_once()
+        connector.disconnect.assert_called_once()
+
+        conn = sqlite3.connect(handler.db_path)
+        foreign = conn.execute(
+            "SELECT processed FROM connector_messages WHERE sender = 'foreign'"
+        ).fetchone()[0]
+        own = conn.execute(
+            "SELECT processed, status, max_retries FROM connector_messages "
+            "WHERE sender = 'daily-agent'"
+        ).fetchone()
+        conn.close()
+        assert foreign == 0
+        assert own == (1, "sent", 0)
+
+    def test_deliver_failure_is_recorded_without_retry(self, handler):
+        _make_briefing_db(handler.db_path)
+        connector = MagicMock()
+        connector.send_message.return_value = False
+        with patch("hub.connector.ConnectorHandler._instantiate", return_value=(connector, "")):
+            ok, text = handler.handle("deliver", [])
+
+        assert ok is False
+        assert "kein Retry" in text
+        conn = sqlite3.connect(handler.db_path)
+        row = conn.execute(
+            "SELECT processed, status, error, max_retries FROM connector_messages "
+            "WHERE sender = 'daily-agent'"
+        ).fetchone()
+        conn.close()
+        assert row == (1, "failed", "send_failed", 0)

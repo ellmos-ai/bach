@@ -29,6 +29,7 @@ bach daily-agent start          Agent starten (Claude Code --continue)
 bach daily-agent stop           Agent stoppen + Summary
 bach daily-agent status         Status anzeigen
 bach daily-agent briefing       Morgen-Briefing generieren
+bach daily-agent deliver        Morgen-Briefing einmalig via Telegram zustellen
 bach daily-agent summary        Abend-Zusammenfassung
 bach daily-agent config         Briefing-Module konfigurieren
 bach daily-agent modules        Aktive Module anzeigen
@@ -75,6 +76,7 @@ class DailyAgentHandler(BaseHandler):
         "message_briefing": ("Ungelesene Nachrichten", True),
         "news_briefing": ("News-Ueberblick", True),
         "session_briefing": ("Letzte Session", True),
+        "commitment_briefing": ("Fällige Routinen und Fristen", True),
         "weather_briefing": ("Wetter", False),
         "calendar_briefing": ("Kalender", False),
     }
@@ -85,6 +87,7 @@ class DailyAgentHandler(BaseHandler):
             "stop": "Tagesagent stoppen + Summary in Memory",
             "status": "Status anzeigen",
             "briefing": "Morgen-Briefing generieren",
+            "deliver": "Morgen-Briefing einmalig via telegram_main zustellen",
             "summary": "Abend-Zusammenfassung generieren",
             "config": "Briefing-Module konfigurieren",
             "modules": "Aktive Module anzeigen",
@@ -92,7 +95,7 @@ class DailyAgentHandler(BaseHandler):
         }
 
     def handle(self, operation: str, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
-        if dry_run:
+        if dry_run and operation != "deliver":
             return True, f"[DRY-RUN] daily-agent {operation}"
 
         if operation == "start":
@@ -103,6 +106,8 @@ class DailyAgentHandler(BaseHandler):
             return self._status(args)
         elif operation == "briefing":
             return self._briefing(args)
+        elif operation == "deliver":
+            return self._deliver(args, dry_run=dry_run)
         elif operation == "summary":
             return self._summary(args)
         elif operation == "config":
@@ -281,9 +286,10 @@ class DailyAgentHandler(BaseHandler):
         except Exception:
             pass
 
-    def _get_active_modules(self, conn) -> list:
+    def _get_active_modules(self, conn, ensure_config: bool = True) -> list:
         """Gibt aktive Briefing-Module sortiert nach Prioritaet zurueck."""
-        self._ensure_briefing_config(conn)
+        if ensure_config:
+            self._ensure_briefing_config(conn)
         try:
             rows = conn.execute("""
                 SELECT module_name FROM briefing_config
@@ -295,19 +301,23 @@ class DailyAgentHandler(BaseHandler):
 
     def _briefing(self, args: List[str]) -> Tuple[bool, str]:
         """Generiert ein modulares Morgen-Briefing."""
+        read_only_config = "--read-only-config" in args
         conn = sqlite3.connect(str(self.db_path))
         try:
             conn.row_factory = sqlite3.Row
 
             lines = [f"MORGEN-BRIEFING ({date.today().strftime('%d.%m.%Y')})", "=" * 45]
 
-            active_modules = self._get_active_modules(conn)
+            active_modules = self._get_active_modules(
+                conn, ensure_config=not read_only_config
+            )
 
             module_methods = {
                 "task_briefing": self._mod_task_briefing,
                 "message_briefing": self._mod_message_briefing,
                 "news_briefing": self._mod_news_briefing,
                 "session_briefing": self._mod_session_briefing,
+                "commitment_briefing": self._mod_commitment_briefing,
                 "weather_briefing": self._mod_weather_briefing,
                 "calendar_briefing": self._mod_calendar_briefing,
             }
@@ -325,6 +335,109 @@ class DailyAgentHandler(BaseHandler):
             return True, "\n".join(lines)
         finally:
             conn.close()
+
+    def _deliver(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
+        """Stellt das Morgen-Briefing hoechstens einmal pro Tag via Telegram zu.
+
+        Der Pfad versendet nur diese eine Nachricht direkt ueber den bestehenden
+        ``telegram_main``-Connector. Er fasst die allgemeine Connector-Queue nicht
+        an und legt weder Retry noch Fallback-Kanal an.
+        """
+        unsupported = [arg for arg in args if arg not in ("--telegram",)]
+        if unsupported:
+            return False, f"Unbekannte Option für daily-agent deliver: {unsupported[0]}"
+
+        ok, briefing = self._briefing(["--read-only-config"] if dry_run else [])
+        if not ok:
+            return False, briefing
+
+        today = date.today().isoformat()
+        marker = f"BACH Morgen-Briefing {today}"
+        payload = f"{marker}\n\n{briefing}"
+        if len(payload) > 4000:
+            payload = payload[:3960].rstrip() + "\n\n[Briefing für Telegram gekürzt]"
+
+        if dry_run:
+            return True, f"[DRY-RUN] Würde einmalig via telegram_main senden:\n{payload}"
+
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            existing = conn.execute(
+                """
+                SELECT id, processed, error, status
+                FROM connector_messages
+                WHERE connector_name = 'telegram_main'
+                  AND direction = 'out'
+                  AND sender = 'daily-agent'
+                  AND content LIKE ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (f"{marker}%",),
+            ).fetchone()
+            if existing:
+                state = "gesendet" if existing[3] == "sent" else "bereits versucht"
+                return True, f"[SKIP] Morgen-Briefing für {today} {state} (Nachricht #{existing[0]})."
+
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cursor = conn.execute(
+                """
+                INSERT INTO connector_messages
+                    (connector_name, direction, sender, recipient, content,
+                     processed, error, retry_count, max_retries, status,
+                     updated_at, created_at)
+                VALUES
+                    ('telegram_main', 'out', 'daily-agent', '', ?,
+                     1, NULL, 0, 0, 'attempting', ?, ?)
+                """,
+                (payload, now, now),
+            )
+            message_id = cursor.lastrowid
+            conn.commit()
+        except sqlite3.Error as exc:
+            return False, f"Zustell-Audit konnte nicht angelegt werden: {exc}"
+        finally:
+            conn.close()
+
+        try:
+            from hub.connector import ConnectorHandler
+
+            connector, error = ConnectorHandler(self.base_path)._instantiate("telegram_main")
+            if not connector:
+                sent = False
+                send_error = error or "telegram_main nicht verfügbar"
+            else:
+                try:
+                    sent = bool(connector.send_message("", payload))
+                    send_error = "" if sent else "send_failed"
+                finally:
+                    connector.disconnect()
+        except Exception as exc:
+            sent = False
+            send_error = f"{type(exc).__name__}: {exc}"[:200]
+
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute(
+                """
+                UPDATE connector_messages
+                SET processed = ?, status = ?, error = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (1, "sent" if sent else "failed",
+                 None if sent else send_error, now, message_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        if sent:
+            return True, f"[OK] Morgen-Briefing für {today} via telegram_main gesendet (Nachricht #{message_id})."
+        return False, (
+            f"[FAIL-CLOSED] Morgen-Briefing für {today} nicht gesendet "
+            f"(Nachricht #{message_id}, kein Retry): {send_error}"
+        )
 
     # ------------------------------------------------------------------
     # Briefing-Module (jedes liefert einen Textblock)
@@ -404,6 +517,59 @@ class DailyAgentHandler(BaseHandler):
         except Exception:
             pass
         return ""
+
+    def _mod_commitment_briefing(self, conn) -> str:
+        """Modul: belegte Alltagsfälligkeiten ohne erfundene Termine."""
+        parts = []
+
+        try:
+            routines = conn.execute(
+                """
+                SELECT name, next_due FROM household_routines
+                WHERE is_active = 1
+                  AND next_due IS NOT NULL
+                  AND datetime(next_due) <= datetime('now', 'localtime')
+                ORDER BY datetime(next_due), id LIMIT 10
+                """
+            ).fetchall()
+            parts.append(f"\nFÄLLIGE ROUTINEN ({len(routines)}):")
+            for routine in routines:
+                parts.append(f"  - {routine['name'][:55]} ({routine['next_due']})")
+        except sqlite3.Error:
+            pass
+
+        try:
+            insurances = conn.execute(
+                """
+                SELECT anbieter, sparte, naechste_kuendigung
+                FROM fin_insurances
+                WHERE status = 'aktiv'
+                  AND naechste_kuendigung IS NOT NULL
+                  AND date(naechste_kuendigung) <= date('now', 'localtime', '+90 days')
+                ORDER BY date(naechste_kuendigung), id LIMIT 10
+                """
+            ).fetchall()
+            parts.append(f"\nVERSICHERUNGSFRISTEN BIS 90 TAGE ({len(insurances)}):")
+            for insurance in insurances:
+                parts.append(
+                    f"  - {insurance['anbieter'][:35]} / {insurance['sparte'][:25]} "
+                    f"({insurance['naechste_kuendigung']})"
+                )
+        except sqlite3.Error:
+            pass
+
+        try:
+            active_subscriptions = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM abo_subscriptions WHERE aktiv = 1"
+            ).fetchone()
+            parts.append(
+                f"\nABOS: {active_subscriptions['cnt']} aktiv; "
+                "im Kanon sind keine Fälligkeitsdaten gespeichert."
+            )
+        except sqlite3.Error:
+            pass
+
+        return "\n".join(parts)
 
     def _mod_weather_briefing(self, conn) -> str:
         """Modul: Wetter (optional, benoetigt weather_service)."""

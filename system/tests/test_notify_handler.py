@@ -199,7 +199,10 @@ class TestSetup:
 
     def test_setup_creates_channel(self, notify_env):
         h, _, db_path = notify_env
-        ok, msg = h.handle("setup", ["discord", "https://discord.webhook", "--token=abc123"])
+        ok, msg = h.handle(
+            "setup",
+            ["discord", "https://discord.webhook", "--token-ref=notify_discord_token"],
+        )
         assert ok is True
         assert "konfiguriert" in msg
 
@@ -208,7 +211,21 @@ class TestSetup:
         conn.close()
         assert row[0] == "https://discord.webhook"
         auth = json.loads(row[1])
-        assert auth["token"] == "abc123"
+        assert auth["_secret_refs"]["token"] == "notify_discord_token"
+
+    def test_setup_rejects_secret_in_process_arguments(self, notify_env):
+        h, _, db_path = notify_env
+
+        ok, msg = h.handle("setup", ["telegram", "--token=abc123"])
+
+        assert ok is False
+        assert "Prozessargumente" in msg
+        conn = sqlite3.connect(str(db_path))
+        count = conn.execute(
+            "SELECT COUNT(*) FROM connections WHERE auth_config LIKE '%abc123%'"
+        ).fetchone()[0]
+        conn.close()
+        assert count == 0
 
     def test_setup_upserts_existing(self, notify_env):
         h, _, db_path = notify_env
@@ -224,14 +241,20 @@ class TestSetup:
 
     def test_setup_email_with_token_and_email(self, notify_env):
         h, _, db_path = notify_env
-        ok, msg = h.handle("setup", ["email", "smtp.gmail.com", "--token=pass", "--email=user@test.com"])
+        ok, msg = h.handle(
+            "setup",
+            [
+                "email", "smtp.gmail.com", "--token-ref=notify_email_password",
+                "--email=user@test.com",
+            ],
+        )
         assert ok is True
 
         conn = sqlite3.connect(str(db_path))
         row = conn.execute("SELECT auth_config FROM connections WHERE name='notify_email'").fetchone()
         conn.close()
         auth = json.loads(row[0])
-        assert auth["token"] == "pass"
+        assert auth["_secret_refs"]["token"] == "notify_email_password"
         assert auth["email"] == "user@test.com"
 
 
@@ -394,17 +417,28 @@ class TestSenderTag:
         assert result == "Hello"
 
 
-class TestLoadSecrets:
-    def test_no_secrets_file(self, notify_env):
+class TestSecretRefs:
+    def test_plaintext_fallback_is_ignored(self, notify_env):
         h, _, _ = notify_env
-        result = h._load_secrets()
-        assert result == {}
+        result = h._resolve_secret_refs('{"token":"plaintext","email":"user@test.com"}')
+        assert result == {"email": "user@test.com"}
 
-    def test_loads_secrets_json(self, notify_env):
-        h, base, _ = notify_env
-        secrets = {"telegram": {"bot_token": "123", "chat_id": "456"}}
-        secrets_file = base / "user" / "secrets" / "secrets.json"
-        secrets_file.write_text(json.dumps(secrets), encoding="utf-8")
+    def test_keyring_reference_is_resolved(self, notify_env):
+        h, _, _ = notify_env
+        with patch("hub.secrets_handler.get_secret_value", return_value="from-keyring"):
+            result = h._resolve_secret_refs(
+                '{"_secret_refs":{"token":"notify_email_password"},"email":"user@test.com"}'
+            )
+        assert result == {"token": "from-keyring", "email": "user@test.com"}
 
-        result = h._load_secrets()
-        assert result["telegram"]["bot_token"] == "123"
+    def test_telegram_uses_canonical_connector(self, notify_env):
+        h, _, _ = notify_env
+        connector = MagicMock()
+        connector.send_message.return_value = True
+        with patch(
+            "hub.connector.ConnectorHandler._instantiate",
+            return_value=(connector, ""),
+        ):
+            assert h._send_telegram("Hallo", '{"token":"plaintext"}') is True
+        connector.send_message.assert_called_once_with("", "Hallo")
+        connector.disconnect.assert_called_once()
