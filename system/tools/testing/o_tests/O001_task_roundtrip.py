@@ -73,7 +73,7 @@ def _run_bach_task_roundtrip(root: Path) -> dict:
     total_checks = 0
 
     with tempfile.TemporaryDirectory(prefix="bach-o001-") as temp_dir:
-        db_path = Path(temp_dir) / "bach.db"
+        db_path = Path(temp_dir) / "o001_tasks.sqlite3"
         _create_isolated_task_db(db_path)
         if str(root) not in sys.path:
             sys.path.insert(0, str(root))

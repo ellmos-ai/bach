@@ -684,7 +684,6 @@ def _handle_integration(sub_cmd, args):
 
 def _handle_secrets(sub_cmd, args):
     """Secrets-Management (SQ076)."""
-    sys.path.insert(0, str(HUB_DIR))
     try:
         from hub.secrets_handler import handle_secrets_command
         # sub_cmd + args zusammenf├╝gen

@@ -367,6 +367,18 @@ class TestApp:
         assert app._registry is not None
         assert reg.count > 0
 
+    def test_paths_does_not_prepend_hub_directory(self, monkeypatch):
+        from core.app import App
+
+        hub_dir = str(SYSTEM_ROOT / "hub")
+        monkeypatch.setattr(sys, "path", [entry for entry in sys.path if entry != hub_dir])
+
+        app = App(SYSTEM_ROOT)
+        paths = app.paths
+
+        assert paths.BACH_ROOT
+        assert hub_dir not in sys.path
+
     def test_get_handler(self):
         from core.app import App
         app = App(SYSTEM_ROOT)
