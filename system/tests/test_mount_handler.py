@@ -4,7 +4,7 @@
 import os
 import sqlite3
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -281,6 +281,17 @@ class TestMountSourceContainment:
         h = MountHandler(base, allowed_source_roots=[base])
 
         assert h._resolve_mount_source(str(source)) == source.resolve()
+
+    def test_normalizes_user_path_before_creating_path_object(self, mount_env):
+        _, base, _ = mount_env
+        source = base / "extern"
+        source.mkdir()
+        h = MountHandler(base, allowed_source_roots=[base])
+
+        # Die Sicherheitsgrenze muss den String vollständig normalisieren und
+        # eindämmen, bevor daraus ein Pfad für Dateisystemzugriffe entsteht.
+        with patch("hub.mount.Path.resolve", side_effect=AssertionError("late resolve")):
+            assert h._resolve_mount_source(str(source)) == Path(os.path.realpath(source))
 
     def test_rejects_parent_traversal_outside_allowed_root(self, mount_env, tmp_path):
         _, base, _ = mount_env

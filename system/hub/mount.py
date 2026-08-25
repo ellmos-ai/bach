@@ -39,19 +39,29 @@ class MountHandler(BaseHandler):
 
         self._allowed_source_roots = tuple(
             dict.fromkeys(
-                Path(os.path.abspath(os.path.expandvars(root.expanduser())))
-                .resolve(strict=False)
+                os.path.realpath(
+                    os.path.abspath(
+                        os.path.expandvars(os.path.expanduser(os.fspath(root)))
+                    )
+                )
                 for root in roots
             )
         )
 
-    def _is_allowed_source(self, source: Path) -> bool:
+    def _is_allowed_source(self, source: str) -> bool:
+        comparable_source = os.path.normcase(source)
         for root in self._allowed_source_roots:
-            try:
-                source.relative_to(root)
+            comparable_root = os.path.normcase(root)
+            root_prefix = (
+                comparable_root
+                if comparable_root.endswith(os.sep)
+                else comparable_root + os.sep
+            )
+            if (
+                comparable_source == comparable_root
+                or comparable_source.startswith(root_prefix)
+            ):
                 return True
-            except ValueError:
-                continue
         return False
     
     @property
@@ -79,22 +89,19 @@ class MountHandler(BaseHandler):
         if not raw or "\x00" in raw:
             raise ValueError("Ungueltiger Quellpfad")
 
-        # Erst rein lexikalisch normalisieren und eindämmen. So lösen klar
-        # außerhalb liegende Eingaben noch vor dem ersten Dateisystemzugriff
-        # einen Fehler aus. Danach erneut den realen Pfad prüfen, damit ein
-        # Symlink innerhalb einer erlaubten Wurzel nicht nach außen ausbricht.
-        candidate = Path(os.path.abspath(os.path.expandvars(Path(raw).expanduser())))
-        if not self._is_allowed_source(candidate):
+        # Den String vollständig normalisieren (inklusive Links), danach gegen
+        # vertrauenswürdige Wurzelpräfixe prüfen und erst anschließend ein
+        # Path-Objekt für Dateisystemzugriffe erzeugen. Diese Reihenfolge hält
+        # die Sicherheitsgrenze auch für statische Datenflussanalyse sichtbar.
+        normalized = os.path.realpath(
+            os.path.abspath(os.path.expandvars(os.path.expanduser(raw)))
+        )
+        if not self._is_allowed_source(normalized):
             raise ValueError(
                 "Quellpfad liegt außerhalb erlaubter Wurzeln; zusätzliche Wurzeln "
                 f"über {MOUNT_ALLOWED_ROOTS_ENV} konfigurieren"
             )
-        # strict=False: resolve(strict=True) wirft auf Windows FileNotFoundError
-        # (OSError), die Aufrufer fangen aber nur ValueError -> Crash.
-        # Existenz pruefen die Aufrufer selbst (eigene Meldungen).
-        source = candidate.resolve(strict=False)
-        if not self._is_allowed_source(source):
-            raise ValueError("Quellpfad verlässt über einen Link die erlaubte Wurzel")
+        source = Path(normalized)
         if source.exists() and not source.is_dir():
             raise ValueError("Quellpfad ist kein Ordner")
         return source
