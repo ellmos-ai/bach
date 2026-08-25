@@ -9,7 +9,7 @@ ABO - Abonnement- und Vertragsverwaltung
 BESCHREIBUNG:
   Verwaltet laufende Abonnements und Verträge (Streaming, Software,
   Internet, Mobilfunk etc.). Erkennt Abos automatisch aus Steuer-Posten
-  und berechnet monatliche/jaehrliche Kosten.
+  und berechnet monatliche/jährliche Kosten.
 
 CLI-BEFEHLE:
   bach abo help              Hilfe anzeigen
@@ -17,8 +17,8 @@ CLI-BEFEHLE:
   bach abo scan              Steuer-Posten nach Abos durchsuchen
   bach abo list              Alle erkannten Abos anzeigen
   bach abo list --alle       Inkl. deaktivierte
-  bach abo list --bestaetigt Nur bestaetigte
-  bach abo confirm <id>      Abo-Erkennung bestaetigen
+  bach abo list --bestaetigt Nur bestätigte
+  bach abo confirm <id>      Abo-Erkennung bestätigen
   bach abo dismiss <id>      Fehlererkennung entfernen
   bach abo costs             Kostenaufstellung nach Kategorie
   bach abo export            CSV-Export (data/abo_export.csv)
@@ -51,7 +51,7 @@ WORKFLOW:
   1. bach abo init           (einmalig: Tabellen + Default-Patterns)
   2. bach abo scan           (durchsucht steuer_posten)
   3. bach abo list           (zeigt Ergebnisse)
-  4. bach abo confirm <id>   (bestaetige echte Abos)
+  4. bach abo confirm <id>   (bestätige echte Abos)
   5. bach abo dismiss <id>   (entferne Fehlerkennungen)
   6. bach abo costs          (Kostenüberblick)
   7. bach abo sync-mail      (E-Mail-Abos importieren, optional)
@@ -77,13 +77,13 @@ BEISPIELE:
   # Alle Abos auflisten (inkl. deaktivierte):
   bach abo list --alle
 
-  # Nur bestaetigte Abos:
+  # Nur bestätigte Abos:
   bach abo list --bestaetigt
 
   # Kostenüberblick nach Kategorie:
   bach abo costs
 
-  # Abo bestaetigen:
+  # Abo bestätigen:
   bach abo confirm 8
 
   # Fehlererkennung entfernen:

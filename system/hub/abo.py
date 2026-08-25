@@ -17,6 +17,13 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
+from ._services.alltag_import import (
+    AlltagImportError,
+    import_cli_arguments,
+    load_payload,
+    parse_interval,
+    scheduler_job_upsert,
+)
 
 
 class AboHandler(BaseHandler):
@@ -41,13 +48,15 @@ class AboHandler(BaseHandler):
         return {
             "scan": "Steuer-Posten analysieren, Abos erkennen",
             "list": "Alle erkannten Abos anzeigen",
-            "confirm": "Abo-Erkennung bestaetigen (confirm ID)",
+            "confirm": "Abo-Erkennung bestätigen (confirm ID)",
             "dismiss": "Fehlererkennung entfernen (dismiss ID)",
             "costs": "Monatliche Kostenaufstellung",
-            "export": "Export fuer Haushaltsplanung",
+            "export": "Export für Haushaltsplanung",
             "patterns": "Bekannte Abo-Muster anzeigen",
             "init": "Datenbank-Tabellen initialisieren",
-            "sync-mail": "Abonnements aus E-Mails synchronisieren"
+            "sync-mail": "Abonnements aus E-Mails synchronisieren",
+            "import": "AboTracker-Export importieren",
+            "schedule-import": "Regelmäßigen AboTracker-Import einrichten",
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -71,8 +80,12 @@ class AboHandler(BaseHandler):
             return self._show_patterns()
         elif operation == "sync-mail":
             return self._sync_mail(args, dry_run)
+        elif operation == "import":
+            return self._import_abotracker(args, dry_run)
+        elif operation == "schedule-import":
+            return self._schedule_import(args, dry_run)
         else:
-            return (False, f"Unbekannte Operation: {operation}\nVerfuegbar: {', '.join(self.get_operations().keys())}")
+            return (False, f"Unbekannte Operation: {operation}\nVerfügbar: {', '.join(self.get_operations().keys())}")
 
     def _show_help(self) -> tuple:
         """Zeigt Hilfe an."""
@@ -83,18 +96,191 @@ class AboHandler(BaseHandler):
             "  bach abo init           Datenbank initialisieren",
             "  bach abo scan           Steuer-Posten analysieren",
             "  bach abo list           Erkannte Abos anzeigen",
-            "  bach abo confirm ID     Abo bestaetigen",
+            "  bach abo confirm ID     Abo bestätigen",
             "  bach abo dismiss ID     Fehlererkennung entfernen",
             "  bach abo costs          Kostenaufstellung",
             "  bach abo export         Export als CSV",
             "  bach abo patterns       Bekannte Muster anzeigen",
             "  bach abo sync-mail      Abos aus E-Mails synchronisieren",
+            "  bach abo import DATEI   AboTracker-JSON idempotent importieren",
+            "  bach abo schedule-import DATEI [--interval 24h]",
             "",
             "Optionen:",
             "  --jahr YYYY    Steuerjahr (default: aktuelles Jahr)",
             "  --dry-run      Nur simulieren"
         ]
         return (True, "\n".join(lines))
+
+    def _import_abotracker(self, args: list, dry_run: bool) -> tuple:
+        if not args:
+            return False, "Usage: bach abo import <abotracker-export-v1.json>"
+        path = Path(args[0])
+        try:
+            payload = load_payload(
+                path, "abotracker-export-v1", expected_version=1
+            )
+            rows = self._prepare_abotracker_rows(payload)
+        except AlltagImportError as exc:
+            return False, f"[ERROR] {exc}"
+
+        conn = sqlite3.connect(self.user_db)
+        try:
+            created = 0
+            updated = 0
+            for row in rows:
+                existing = conn.execute(
+                    """
+                    SELECT id FROM abo_subscriptions
+                    WHERE lower(name) = lower(?) AND lower(anbieter) = lower(?)
+                    LIMIT 1
+                    """,
+                    (row["name"], row["anbieter"]),
+                ).fetchone()
+                if existing:
+                    updated += 1
+                    if not dry_run:
+                        conn.execute(
+                            """
+                            UPDATE abo_subscriptions
+                            SET kategorie = COALESCE(?, kategorie),
+                                betrag_monatlich = ?, zahlungsintervall = ?,
+                                kuendigungslink = ?, erkannt_am = ?,
+                                bestaetigt = ?, aktiv = ?, updated_at = ?
+                            WHERE id = ?
+                            """,
+                            (
+                                row["kategorie"], row["betrag_monatlich"],
+                                row["zahlungsintervall"], row["kuendigungslink"],
+                                row["erkannt_am"], row["bestaetigt"], row["aktiv"],
+                                datetime.now().isoformat(), existing[0],
+                            ),
+                        )
+                else:
+                    created += 1
+                    if not dry_run:
+                        conn.execute(
+                            """
+                            INSERT INTO abo_subscriptions
+                                (name, anbieter, kategorie, betrag_monatlich,
+                                 zahlungsintervall, kuendigungslink, erkannt_am,
+                                 bestaetigt, aktiv, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                row["name"], row["anbieter"], row["kategorie"],
+                                row["betrag_monatlich"], row["zahlungsintervall"],
+                                row["kuendigungslink"], row["erkannt_am"],
+                                row["bestaetigt"], row["aktiv"],
+                                datetime.now().isoformat(), datetime.now().isoformat(),
+                            ),
+                        )
+            if not dry_run:
+                conn.commit()
+            prefix = "[DRY-RUN]" if dry_run else "[OK]"
+            return True, (
+                f"{prefix} AboTracker-Import: {created} neu, {updated} aktualisiert; "
+                "keine Fälligkeit aus Zahlungsintervall abgeleitet."
+            )
+        except sqlite3.Error as exc:
+            conn.rollback()
+            return False, f"[ERROR] AboTracker-Import fehlgeschlagen: {exc}"
+        finally:
+            conn.close()
+
+    def _prepare_abotracker_rows(self, payload: dict) -> list[dict]:
+        providers = payload.get("providers")
+        if not isinstance(providers, list):
+            raise AlltagImportError("Feld 'providers' muss eine Liste sein.")
+        rows = []
+        exported_at = str(payload.get("exported_at") or "")[:10] or None
+        for provider in providers:
+            if not isinstance(provider, dict) or not str(provider.get("name") or "").strip():
+                raise AlltagImportError("Jeder Provider benötigt einen Namen.")
+            provider_name = str(provider["name"]).strip()
+            models = provider.get("models")
+            if not isinstance(models, list):
+                raise AlltagImportError(f"Provider {provider_name!r}: 'models' muss eine Liste sein.")
+            for model in models:
+                if not isinstance(model, dict):
+                    raise AlltagImportError(f"Provider {provider_name!r}: Modell ist kein Objekt.")
+                model_name = str(model.get("name") or provider_name).strip()
+                try:
+                    monthly = float(model.get("price_per_month") or 0)
+                    status_level = int(model.get("status_level") or 0)
+                except (TypeError, ValueError) as exc:
+                    raise AlltagImportError(
+                        f"Provider {provider_name!r}, Modell {model_name!r}: ungültige Zahl."
+                    ) from exc
+                if monthly < 0 or status_level not in {0, 1, 2}:
+                    raise AlltagImportError(
+                        f"Provider {provider_name!r}, Modell {model_name!r}: Werte außerhalb des Vertrags."
+                    )
+                active = bool(
+                    model.get("is_currently_paid")
+                    or model.get("override_active")
+                    or status_level > 0
+                )
+                confirmed = bool(
+                    status_level >= 2
+                    or str(model.get("status_label") or "").lower() == "confirmed"
+                )
+                interval = str(model.get("billing_cycle") or "monthly").lower()
+                if interval not in {"monthly", "yearly"}:
+                    raise AlltagImportError(
+                        f"Provider {provider_name!r}, Modell {model_name!r}: unbekannter Abrechnungszyklus."
+                    )
+                rows.append({
+                    "name": model_name,
+                    "anbieter": provider_name,
+                    "kategorie": provider.get("category"),
+                    "betrag_monatlich": round(monthly, 2),
+                    "zahlungsintervall": "monatlich" if interval == "monthly" else "jährlich",
+                    "kuendigungslink": provider.get("cancellation_url"),
+                    "erkannt_am": provider.get("last_payment_date") or exported_at,
+                    "bestaetigt": 1 if confirmed else 0,
+                    "aktiv": 1 if active else 0,
+                })
+        return rows
+
+    def _schedule_import(self, args: list, dry_run: bool) -> tuple:
+        if not args:
+            return False, "Usage: bach abo schedule-import <datei.json> [--interval 24h]"
+        path = Path(args[0])
+        try:
+            load_payload(path, "abotracker-export-v1", expected_version=1)
+            interval = parse_interval(self._arg_value(args, "--interval"))
+            arguments = import_cli_arguments("abo", path)
+        except AlltagImportError as exc:
+            return False, f"[ERROR] {exc}"
+        conn = sqlite3.connect(self.user_db)
+        try:
+            action = scheduler_job_upsert(
+                conn,
+                name="alltag-import-abotracker",
+                profile_name="abo",
+                description="AboTracker-Dateiexport idempotent nach BACH importieren",
+                schedule=interval,
+                script_path=self.base_path / "bach.py",
+                arguments=arguments,
+                dry_run=dry_run,
+            )
+            if not dry_run:
+                conn.commit()
+            prefix = "[DRY-RUN] Würde" if dry_run else "[OK]"
+            return True, f"{prefix} Scheduler-Job {action}: AboTracker alle {interval}."
+        except sqlite3.Error as exc:
+            conn.rollback()
+            return False, f"[ERROR] Scheduler-Job fehlgeschlagen: {exc}"
+        finally:
+            conn.close()
+
+    def _arg_value(self, args: list, flag: str):
+        for index, arg in enumerate(args):
+            if arg == flag and index + 1 < len(args):
+                return args[index + 1]
+            if arg.startswith(flag + "="):
+                return arg[len(flag) + 1:]
+        return None
 
     def _init_db(self, dry_run: bool) -> tuple:
         """Initialisiert Datenbank-Tabellen fuer Aboservice."""

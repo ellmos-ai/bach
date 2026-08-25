@@ -65,7 +65,7 @@ def _resolve_scheduler_db() -> Path:
         from hub.bach_paths import BACH_DB as _PATHS_DB
         return Path(_PATHS_DB)
     except Exception:
-        return BACH_DB
+        return Path.home() / ".bach" / "bach.db"
 
 
 USER_DB = _resolve_scheduler_db()
@@ -305,7 +305,22 @@ class DaemonService:
             if job.script_path:
                 cmd_list = [sys.executable, str(job.script_path)]
                 if job.arguments:
-                    cmd_list.extend(shlex.split(job.arguments, posix=(os.name != 'nt')))
+                    parsed_arguments = shlex.split(
+                        job.arguments, posix=(os.name != 'nt')
+                    )
+                    if os.name == 'nt':
+                        # posix=False preserves surrounding quotes.  They are
+                        # shell syntax, not part of the argument passed to a
+                        # script via subprocess.run(list).
+                        parsed_arguments = [
+                            value[1:-1]
+                            if len(value) >= 2
+                            and value[0] == value[-1]
+                            and value[0] in {'"', "'"}
+                            else value
+                            for value in parsed_arguments
+                        ]
+                    cmd_list.extend(parsed_arguments)
                 process = subprocess.run(
                     cmd_list,
                     capture_output=True,
