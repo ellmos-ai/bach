@@ -1,6 +1,8 @@
 # Portability: UNIVERSAL
 # Last validated: 2026-05-17
 # Next review: 2027-05-17
+# TODO (2026-07-23): add "Standalone: steuer-assistent (light)" section —
+# see steuer.txt (German) for the current source text; pending translation.
 
 税務ヘルプ
 ------------
