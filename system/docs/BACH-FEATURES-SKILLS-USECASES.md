@@ -115,7 +115,7 @@
 - **distribution / dist / backup / backup_manager** — 4-Tier-Modell (KERNEL/CORE/EXTENSION/UserData), Snapshots, NAS-Backups
 - **seal / identity / fs** — SHA256-CORE-Integrität, Siegel-Mechanismus, Filesystem-Selbstheilung
 - **update / upgrade / downgrade / restore / migrate** — Versionierung mit Rollback, evolutionäre Datei-Migration
-- **secrets / secrets_handler** — Fernet-verschlüsselte API-Keys/Tokens
+- **secrets / secrets_handler** — API-Keys/Tokens im OS-Schlüsselbund; SQLite und JSON enthalten nur Metadaten
 - **bach_paths / path / mount / bach_user_mounts** — zentrale Pfad-Registry (Single Source of Truth) + Junctions/Symlinks für NAS/Cloud
 - **db / db_sync / sync** — SQLite-Operationen + Multi-System-Sync (ProSync) über OneDrive-Hub
 - **claude_permissions / permissions / sandbox / emoji** — Permission-Profile, isolierte Code-Ausführung, Emoji-Policy

@@ -14,6 +14,27 @@ if str(SYSTEM) not in sys.path:
     sys.path.insert(0, str(SYSTEM))
 
 
+class MemoryKeyring:
+    """Minimal isolated keyring used by every secret-writing test."""
+
+    priority = 1
+
+    def __init__(self):
+        self.values = {}
+
+    def get_keyring(self):
+        return self
+
+    def get_password(self, service, key):
+        return self.values.get((service, key))
+
+    def set_password(self, service, key, value):
+        self.values[(service, key)] = value
+
+    def delete_password(self, service, key):
+        self.values.pop((service, key), None)
+
+
 @pytest.fixture
 def secrets_env(tmp_path):
     """Erstellt tmp DB mit secrets-Tabelle und Secrets-Datei."""
@@ -55,7 +76,9 @@ def handler(secrets_env):
 
     with patch("hub.secrets_handler.GET_CONNECTION", mock_conn):
         from hub.secrets_handler import SecretsHandler
-        h = SecretsHandler(secrets_file=str(secrets_file))
+        h = SecretsHandler(
+            secrets_file=str(secrets_file), keyring_backend=MemoryKeyring()
+        )
     return h
 
 
@@ -79,6 +102,7 @@ def populated(handler, secrets_env):
     conn.commit()
     conn.close()
     handler.conn = sqlite3.connect(str(db_path))
+    handler.migrate_legacy()
     return handler
 
 
@@ -149,6 +173,7 @@ class TestGetSecret:
             result = populated.get_secret("telegram_token")
         assert result == "123:ABC"
         assert "telegram_token" in captured.getvalue()
+        assert "123:ABC" not in captured.getvalue()
 
     def test_get_nonexistent(self, populated):
         captured = StringIO()
@@ -163,6 +188,17 @@ class TestGetSecret:
         with patch("sys.stdout", captured):
             result = populated.get_secret("db_password")
         assert result == "secret123"
+
+    def test_legacy_plaintext_is_not_returned_to_consumers(self, handler):
+        handler.conn.execute(
+            "INSERT INTO secrets (key, value, created_at, updated_at) "
+            "VALUES ('legacy_only', 'must_not_escape', '', '')"
+        )
+        handler.conn.commit()
+        captured = StringIO()
+        with patch("sys.stdout", captured):
+            assert handler.get_secret("legacy_only") is None
+        assert "must_not_escape" not in captured.getvalue()
 
 
 # ================================================================
@@ -196,7 +232,11 @@ class TestSetSecret:
         assert secrets_file.exists()
         data = json.loads(secrets_file.read_text(encoding="utf-8"))
         assert "sync_test" in data["secrets"]
-        assert data["secrets"]["sync_test"]["value"] == "sync_val"
+        assert data["secrets"]["sync_test"]["value"] == "keyring://ellmos-bach"
+        row = handler.conn.execute(
+            "SELECT value, source FROM secrets WHERE key = 'sync_test'"
+        ).fetchone()
+        assert row == ("keyring://ellmos-bach", "keyring")
 
     def test_set_with_category(self, handler, secrets_env):
         captured = StringIO()
@@ -238,7 +278,7 @@ class TestDeleteSecret:
 # TestSyncFromFile
 # ================================================================
 class TestSyncFromFile:
-    def test_sync_missing_file_enforces_authority(self, handler):
+    def test_sync_missing_file_never_deletes_credentials(self, handler):
         captured = StringIO()
         handler.conn.execute(
             "INSERT INTO secrets (key, value, created_at, updated_at) VALUES ('old', 'val', '', '')"
@@ -248,7 +288,8 @@ class TestSyncFromFile:
             handler.sync_from_file(enforce_authority=True)
         cursor = handler.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM secrets")
-        assert cursor.fetchone()[0] == 0
+        assert cursor.fetchone()[0] == 1
+        assert handler.get_secret("old", report=False) == "val"
 
     def test_sync_missing_file_no_authority(self, handler):
         captured = StringIO()
@@ -280,7 +321,10 @@ class TestSyncFromFile:
         cursor.execute("SELECT COUNT(*) FROM secrets")
         assert cursor.fetchone()[0] == 2
         cursor.execute("SELECT value FROM secrets WHERE key = 'file_key1'")
-        assert cursor.fetchone()[0] == "val1"
+        assert cursor.fetchone()[0] == "keyring://ellmos-bach"
+        assert handler.get_secret("file_key1", report=False) == "val1"
+        scrubbed = json.loads(secrets_file.read_text(encoding="utf-8"))
+        assert scrubbed["secrets"]["file_key1"]["value"] == "keyring://ellmos-bach"
 
     def test_sync_skips_examples(self, handler, secrets_env):
         _, _, secrets_file = secrets_env
@@ -301,7 +345,7 @@ class TestSyncFromFile:
         assert "_example_key" not in keys
         assert "real_key" in keys
 
-    def test_sync_updates_existing(self, populated, secrets_env):
+    def test_sync_conflict_fails_closed(self, populated, secrets_env):
         _, _, secrets_file = secrets_env
         data = {
             "meta": {"version": "1.0"},
@@ -312,10 +356,11 @@ class TestSyncFromFile:
         secrets_file.write_text(json.dumps(data), encoding="utf-8")
         captured = StringIO()
         with patch("sys.stdout", captured):
-            populated.sync_from_file()
+            result = populated.sync_from_file()
+        assert result is False
         cursor = populated.conn.cursor()
         cursor.execute("SELECT value FROM secrets WHERE key = 'telegram_token'")
-        assert cursor.fetchone()[0] == "NEW_TOKEN"
+        assert cursor.fetchone()[0] == "keyring://ellmos-bach"
 
     def test_sync_broken_file(self, handler, secrets_env):
         _, _, secrets_file = secrets_env
@@ -323,7 +368,7 @@ class TestSyncFromFile:
         stderr = StringIO()
         with patch("sys.stderr", stderr):
             handler.sync_from_file()
-        assert "Fehler" in stderr.getvalue()
+        assert "abgebrochen" in stderr.getvalue()
 
 
 # ================================================================
@@ -341,7 +386,9 @@ class TestSyncToFile:
         assert secrets_file.exists()
         data = json.loads(secrets_file.read_text(encoding="utf-8"))
         assert "test_key" in data["secrets"]
-        assert data["meta"]["version"] == "1.0"
+        assert data["meta"]["version"] == "2.0"
+        assert data["meta"]["contains_secret_values"] is False
+        assert data["secrets"]["test_key"]["value"] == "keyring://ellmos-bach"
 
     def test_sync_creates_parent_dir(self, secrets_env):
         _, db_path, _ = secrets_env
@@ -429,7 +476,7 @@ class TestHandleCommand:
              patch("sys.stderr", stderr):
             from hub.secrets_handler import handle_secrets_command
             handle_secrets_command(["set", "onlykey"])
-        assert "fehlen" in stderr.getvalue()
+        assert "Nicht-interaktive Eingabe" in stderr.getvalue()
 
     def test_delete_missing_key(self, secrets_env):
         _, db_path, _ = secrets_env

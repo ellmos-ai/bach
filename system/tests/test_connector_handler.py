@@ -506,13 +506,14 @@ class TestInstantiate:
     def test_instantiate_secret_ref(self, handler):
         handler.handle("add", ["telegram", "tg_secret"])
         conn = sqlite3.connect(str(handler.db_path))
-        conn.execute("INSERT INTO secrets (key, value) VALUES ('tg_tok', 'resolved:TOKEN')")
+        conn.execute("INSERT INTO secrets (key, value) VALUES ('tg_tok', 'keyring://ellmos-bach')")
         conn.execute(
             "UPDATE connections SET auth_config = ? WHERE name = 'tg_secret'",
             (json.dumps({"_secret_refs": {"bot_token": "tg_tok"}, "owner_chat_id": "999"}),))
         conn.commit()
         conn.close()
-        instance, err = handler._instantiate("tg_secret")
+        with patch("hub.secrets_handler.get_secret_value", return_value="resolved:TOKEN"):
+            instance, err = handler._instantiate("tg_secret")
         assert instance is not None
         assert instance._bot_token == "resolved:TOKEN"
 

@@ -310,7 +310,8 @@ class SetupWizard:
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # ENT-44: Secrets aus auth_config in secrets-Tabelle auslagern
+            # Secrets aus auth_config entfernen, bevor irgendeine DB-Zeile
+            # geschrieben wird. Der OS-Schlüsselbund wird zuerst verifiziert.
             auth_data = dict(user_config["auth_config"])
             secret_fields = user_config.get("secret_fields", [])
             secret_refs = {}
@@ -321,16 +322,28 @@ class SetupWizard:
                     secret_key = f"{user_config['instance_name']}_{field_name}"
                     secret_value = auth_data.pop(field_name)
                     extracted_secrets[secret_key] = secret_value
-                    conn.execute(
-                        "INSERT OR REPLACE INTO secrets (key, value, description, category, updated_at)"
-                        " VALUES (?, ?, ?, 'api', ?)",
-                        (secret_key, secret_value,
-                         f"{template.get('connector_display_name', '')} {field_name}", now)
-                    )
                     secret_refs[field_name] = secret_key
 
             if secret_refs:
                 auth_data["_secret_refs"] = secret_refs
+
+            if extracted_secrets:
+                try:
+                    sys.path.insert(0, str(self.base_path))
+                    from hub.secrets_handler import SecretsHandler
+
+                    handler = SecretsHandler()
+                    for secret_key, secret_value in extracted_secrets.items():
+                        handler.set_secret(
+                            secret_key,
+                            secret_value,
+                            f"{template.get('connector_display_name', '')} token",
+                            "api",
+                        )
+                    print("  Token im OS-Schlüsselbund gespeichert.")
+                except Exception as exc:
+                    print(f"  [FEHLER] OS-Schlüsselbund nicht aktualisiert: {exc}")
+                    return False
 
             auth_config_json = json.dumps(auth_data, ensure_ascii=False)
 
@@ -362,22 +375,6 @@ class SetupWizard:
                       template.get("auth_type", "api_key"), auth_config_json, now, now))
 
             conn.commit()
-
-            # ENT-44: Auch in bach_secrets.json schreiben (primaere Quelle)
-            if extracted_secrets:
-                try:
-                    sys.path.insert(0, str(self.base_path))
-                    from hub.secrets_handler import SecretsHandler
-                    sh = SecretsHandler()
-                    for sk, sv in extracted_secrets.items():
-                        sh.set_secret(
-                            sk, sv,
-                            f"{template.get('connector_display_name', '')} token",
-                            "api"
-                        )
-                    print(f"  Token auch in bach_secrets.json gespeichert.")
-                except Exception as _e:
-                    print(f"  [WARN] bach_secrets.json nicht aktualisiert: {_e}")
 
             return True
         except Exception as e:

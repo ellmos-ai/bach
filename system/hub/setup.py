@@ -314,18 +314,40 @@ class SetupHandler(BaseHandler):
                 checks.append(f"[!!] {pkg} nicht installiert")
                 all_ok = False
 
-        # 3. Secrets-Datei
+        # 3. Secrets-Metadatenindex und OS-Schlüsselbund
         secrets_file = Path.home() / ".bach" / "bach_secrets.json"
         if secrets_file.exists():
             try:
                 data = json.loads(secrets_file.read_text(encoding="utf-8"))
-                count = len(data.get("secrets", {}))
-                checks.append(f"[OK] Secrets-Datei vorhanden ({count} Keys)")
+                entries = data.get("secrets", {})
+                contains_plaintext = any(
+                    isinstance(item, dict)
+                    and item.get("value", "keyring://ellmos-bach") != "keyring://ellmos-bach"
+                    for item in entries.values()
+                )
+                if contains_plaintext:
+                    checks.append("[!!] Legacy-Klartext im Secrets-Metadatenindex; 'bach secrets sync' ausführen")
+                    all_ok = False
+                else:
+                    checks.append(f"[OK] Secrets-Metadatenindex vorhanden ({len(entries)} Keys, ohne Werte)")
             except Exception:
-                checks.append("[!!] Secrets-Datei defekt")
+                checks.append("[!!] Secrets-Metadatenindex defekt")
                 all_ok = False
         else:
-            checks.append("[!!] Secrets-Datei fehlt (~/.bach/bach_secrets.json)")
+            checks.append("[!!] Secrets-Metadatenindex fehlt (~/.bach/bach_secrets.json)")
+            all_ok = False
+
+        try:
+            import keyring
+
+            backend = keyring.get_keyring()
+            if getattr(backend, "priority", 0) > 0:
+                checks.append(f"[OK] OS-Schlüsselbund verfügbar ({type(backend).__name__})")
+            else:
+                checks.append("[!!] OS-Schlüsselbund nicht nutzbar")
+                all_ok = False
+        except Exception:
+            checks.append("[!!] OS-Schlüsselbund nicht verfügbar")
             all_ok = False
 
         # 4. bach.db
