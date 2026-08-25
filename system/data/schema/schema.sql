@@ -1079,7 +1079,7 @@ CREATE TABLE IF NOT EXISTS financial_emails (
 
 CREATE TABLE IF NOT EXISTS financial_subscriptions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL UNIQUE,
     provider_name TEXT NOT NULL,
     category TEXT NOT NULL,
 

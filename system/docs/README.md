@@ -130,6 +130,20 @@ Akzeptiert werden ausschließlich die Schemata `abotracker-export-v1` und
 der vorhandenen Exportdatei aktiviert. Aus dem AboTracker-Abrechnungszyklus wird
 keine bestätigte nächste Fälligkeit abgeleitet.
 
+Die aktuelle Monats- und Jahreszusammenfassung lässt sich vorab prüfen und
+anschließend idempotent aktualisieren:
+
+```text
+bach haushalt financial-summary refresh --dry-run
+bach haushalt financial-summary refresh
+bach haushalt financial-summary show
+```
+
+Beobachtete Ausgaben und die aktuelle Abo-Laufkostenrate bleiben getrennte
+Größen. Historische Trigger-Duplikate werden für Rechnung und Dashboard nach
+Provider dedupliziert, aber nicht gelöscht. Fachlich widersprüchliche
+Duplikatgruppen brechen die Aktualisierung sicher ab.
+
 ### Handler (System & Infrastruktur)
 
 | Thema | CLI-Befehl | Beschreibung |

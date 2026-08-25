@@ -6353,7 +6353,13 @@ async def financial_status():
 
         # Abos
 
-        cursor.execute("SELECT COUNT(*) FROM financial_subscriptions WHERE aktiv = 1")
+        cursor.execute("""
+            SELECT COUNT(*) FROM financial_subscriptions
+            WHERE aktiv = 1
+              AND id IN (
+                  SELECT MIN(id) FROM financial_subscriptions GROUP BY provider_id
+              )
+        """)
 
         active_subs = cursor.fetchone()[0]
 
@@ -6379,7 +6385,12 @@ async def financial_status():
 
         cursor.execute("""
 
-            SELECT SUM(betrag_monatlich) FROM financial_subscriptions WHERE aktiv = 1
+            SELECT SUM(COALESCE(betrag_monatlich, betrag_jaehrlich / 12.0, 0))
+            FROM financial_subscriptions
+            WHERE aktiv = 1
+              AND id IN (
+                  SELECT MIN(id) FROM financial_subscriptions GROUP BY provider_id
+              )
 
         """)
 
@@ -6537,11 +6548,15 @@ async def financial_subscriptions(active_only: bool = True):
 
     try:
 
-        query = "SELECT * FROM financial_subscriptions"
+        query = """
+            SELECT * FROM financial_subscriptions
+            WHERE id IN (
+                SELECT MIN(id) FROM financial_subscriptions GROUP BY provider_id
+            )
+        """
 
         if active_only:
-
-            query += " WHERE aktiv = 1"
+            query += " AND aktiv = 1"
 
         query += " ORDER BY betrag_monatlich DESC"
 
@@ -14050,4 +14065,3 @@ if __name__ == "__main__":
     
 
     run_server(args.host, args.port)
-

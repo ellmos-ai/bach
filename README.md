@@ -145,6 +145,10 @@ python bach.py versicherung import PATH/bach-fin-insurances-v1.json
 python bach.py abo schedule-import PATH/abotracker-export-v1.json --interval 24h
 python bach.py versicherung schedule-import PATH/bach-fin-insurances-v1.json --interval 24h
 
+# Preview and refresh the current monthly/year-to-date finance summary
+python bach.py haushalt financial-summary refresh --dry-run
+python bach.py haushalt financial-summary refresh
+
 # Shut down BACH
 python bach.py --shutdown
 ```
@@ -153,6 +157,11 @@ The import commands require the exact schemas `abotracker-export-v1` and
 `bach.fin_insurances.v1`. AboTracker billing cycles are not treated as confirmed
 next-payment dates. Scheduled jobs are active, idempotent file imports and are
 created only after the current source file passes validation.
+
+The finance summary keeps observed mail-derived expenditure separate from the
+current recurring subscription run rate. Legacy subscription duplicates are
+deduplicated by provider for calculations and dashboard reads; conflicting
+duplicates fail closed instead of being guessed or deleted.
 
 ## Core Components
 
