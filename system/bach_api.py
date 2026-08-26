@@ -182,10 +182,12 @@ class _TaskProxy(_DBBackedProxy):
         priority: str = "P3",
         description: str | None = None,
         category: str | None = "general",
+        due_date: str | None = None,
     ) -> dict[str, Any]:
         cli_priority = priority
         cli_description = description
         cli_category = category
+        cli_due_date = due_date
 
         i = 0
         while i < len(args):
@@ -208,6 +210,12 @@ class _TaskProxy(_DBBackedProxy):
             elif arg.startswith("--category="):
                 cli_category = arg.split("=", 1)[1]
                 i += 1
+            elif arg == "--due":
+                cli_due_date = str(args[i + 1]) if i + 1 < len(args) else ""
+                i += 2 if i + 1 < len(args) else 1
+            elif arg.startswith("--due="):
+                cli_due_date = arg.split("=", 1)[1]
+                i += 1
             else:
                 i += 1
 
@@ -216,6 +224,8 @@ class _TaskProxy(_DBBackedProxy):
             raw_args.extend(["--description", cli_description])
         if cli_category:
             raw_args.extend(["--category", cli_category])
+        if cli_due_date is not None:
+            raw_args.extend(["--due", cli_due_date])
 
         success, message = self.raw("add", *raw_args)
         if not success:
@@ -284,18 +294,21 @@ class _TaskProxy(_DBBackedProxy):
             )
 
         where_clause = " AND ".join(conditions) if conditions else "1=1"
-        sql = (
-            "SELECT id, priority, title, status, category, description, assigned_to, "
-            "delegated_to, depends_on, created_at, completed_at, updated_at "
-            "FROM tasks "
-            f"WHERE {where_clause} "
-            "ORDER BY priority, id"
-        )
-        if limit and limit > 0:
-            sql += " LIMIT ?"
-            params.append(limit)
-
         with self._connect() as conn:
+            from hub._services.task_schema import task_has_due_date
+
+            due_projection = "due_date" if task_has_due_date(conn) else "NULL AS due_date"
+            sql = (
+                "SELECT id, priority, title, status, category, description, assigned_to, "
+                "delegated_to, depends_on, created_at, completed_at, updated_at, "
+                f"{due_projection} FROM tasks "
+                f"WHERE {where_clause} "
+                "ORDER BY priority, id"
+            )
+            if limit and limit > 0:
+                sql += " LIMIT ?"
+                params.append(limit)
+
             rows = conn.execute(sql, params).fetchall()
             return [self._row_to_task(conn, row) for row in rows]
 

@@ -89,12 +89,15 @@ CREATE TABLE IF NOT EXISTS tasks (
         is_recurring INTEGER DEFAULT 0,
         recurrence_pattern TEXT,
         next_occurrence TEXT,
+        due_date TEXT,
         executable_command TEXT,
         created_at TEXT,
         started_at TEXT,
         completed_at TEXT,
         updated_at TEXT
     , dist_type INTEGER DEFAULT 0, modified_by TEXT DEFAULT NULL, depends_on TEXT DEFAULT NULL, created_by TEXT DEFAULT 'user', assigned_to TEXT DEFAULT 'user', project TEXT, source TEXT, image_data TEXT);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 
 CREATE TABLE IF NOT EXISTS task_history (
     id INTEGER PRIMARY KEY,

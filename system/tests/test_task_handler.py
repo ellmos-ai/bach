@@ -152,6 +152,33 @@ class TestAdd:
         ok2, out2 = handler.handle("show", ["1"])
         assert "bugfix" in out2
 
+    def test_add_with_due_date_migrates_legacy_table(self, handler, fake_task_env):
+        _, db_path = fake_task_env
+
+        ok, output = handler.handle("add", ["Task", "--due", "2026-09-15"])
+
+        assert ok is True
+        assert "2026-09-15" in output
+        with sqlite3.connect(db_path) as conn:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+            row = conn.execute("SELECT due_date FROM tasks WHERE id = 1").fetchone()
+        assert "due_date" in columns
+        assert row == ("2026-09-15",)
+
+    @pytest.mark.parametrize(
+        "invalid_due",
+        ["15.09.2026", "2026-02-30", "2026-9-5", "tomorrow"],
+    )
+    def test_add_rejects_invalid_due_date(self, handler, fake_task_env, invalid_due):
+        _, db_path = fake_task_env
+
+        ok, output = handler.handle("add", ["Task", f"--due={invalid_due}"])
+
+        assert ok is False
+        assert "YYYY-MM-DD" in output
+        with sqlite3.connect(db_path) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
+
     def test_add_no_args(self, handler):
         ok, output = handler.handle("add", [])
         assert ok is False
@@ -204,6 +231,18 @@ class TestList:
         ok, output = seeded_handler.handle("list", ["all", "--filter=nonexistent_xyz"])
         assert ok is True
         assert "Keine Tasks" in output
+
+    def test_list_shows_due_date(self, seeded_handler, seeded_env):
+        _, db_path = seeded_env
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("ALTER TABLE tasks ADD COLUMN due_date TEXT")
+            conn.execute("UPDATE tasks SET due_date = '2026-09-15' WHERE id = 1")
+
+        ok, output = seeded_handler.handle("list", [])
+
+        assert ok is True
+        assert "Fix critical bug" in output
+        assert "bis 2026-09-15" in output
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -315,6 +354,18 @@ class TestShow:
         assert "P1" in output
         assert "pending" in output
         assert "bugfix" in output
+
+    def test_show_includes_due_date(self, seeded_handler, seeded_env):
+        _, db_path = seeded_env
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("ALTER TABLE tasks ADD COLUMN due_date TEXT")
+            conn.execute("UPDATE tasks SET due_date = '2026-09-15' WHERE id = 1")
+
+        ok, output = seeded_handler.handle("show", ["1"])
+
+        assert ok is True
+        assert "Fällig:" in output
+        assert "2026-09-15" in output
 
     def test_show_not_found(self, seeded_handler):
         ok, output = seeded_handler.handle("show", ["999"])

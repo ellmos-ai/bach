@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-03-04
+# Version: 1.1.0
+# Zuletzt validiert: 2026-08-26
 
 
 TASK-HANDLER
@@ -11,14 +11,16 @@ BESCHREIBUNG
 
 Der Task-Handler verwaltet Aufgaben in der BACH-Datenbank. Unterstützt
 Prioritäten (P1-P4), Multi-ID-Operationen, Abhängigkeiten, Zuweisungen an
-Partner und Status-Management (pending/done/blocked).
+Partner, optionale ISO-Fälligkeitsdaten und Status-Management
+(pending/done/blocked).
 
 
 OPERATIONEN
 ===========
 
 add <titel>              Task hinzufügen
-  Optionen: --priority P1-P4, --description TEXT, --category TEXT
+  Optionen: --priority P1-P4, --description TEXT, --category TEXT,
+            --due YYYY-MM-DD
 
 list [status]            Tasks auflisten
   Status: pending (default), open (legacy), in_progress, done, blocked, all
@@ -56,7 +58,8 @@ BEISPIELE
 =========
 
 Task erstellen:
-  bach task add "API implementieren" --priority P1 --category development
+  bach task add "API implementieren" --priority P1 --category development \
+    --due 2026-09-15
 
 Tasks auflisten:
   bach task list                    # Nur pending
@@ -81,7 +84,8 @@ Abhängigkeiten:
 DATEIEN
 =======
 
-data/bach.db             SQLite-Datenbank (tasks-Tabelle)
+data/bach.db             SQLite-Datenbank (tasks-Tabelle; due_date als
+                         ISO-Datum YYYY-MM-DD oder NULL)
 
 
 SIEHE AUCH
@@ -98,3 +102,4 @@ Multi-ID Support: Mehrere Task-IDs in einer Operation (z.B. done, block, assign)
 Abhängigkeitserkennung: Tasks werden automatisch mit (BLOCKED)-Flag bei
 unvollendeten Abhängigkeiten angezeigt
 Hooks: after_task_create, after_task_done werden bei Operationen emittiert
+Fälligkeit: --due akzeptiert ausschließlich ein gültiges ISO-Datum YYYY-MM-DD

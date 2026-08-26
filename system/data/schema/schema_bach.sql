@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     is_recurring BOOLEAN DEFAULT 0,
     recurrence_pattern TEXT,         -- 'daily', 'weekly', 'monthly', cron-like
     next_occurrence TEXT,
+    due_date TEXT,                    -- ISO-Datum YYYY-MM-DD (Routinika-kompatibel)
     
     -- Ausführung
     executable_command TEXT,         -- Optional: Direkt ausführbarer Befehl
@@ -173,6 +174,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
 CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category);
+CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 
 -- Virtuelle Tabelle für Volltextsuche
 CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(

@@ -1,5 +1,5 @@
 # Portabilität: SYSTEM
-# Zuletzt validiert: 2026-05-17
+# Zuletzt validiert: 2026-08-26
 # Nächste Prüfung: 2026-11-17
 # Ressourcen: [tasks table, ati_tasks table, hub/task.py, bach_api.py]
 
@@ -16,6 +16,7 @@ KERNKONZEPTE
 - MANUELLE TASKS: Via `bach task add` (Tabelle: `tasks`).
 - GESCANNTE TASKS: Aus Code-Kommentaren (Tabelle: `ati_tasks`).
 - MULTI-PARTNER: Zuweisung via `--assigned` an Agenten oder User.
+- FÄLLIGKEIT: Optionales `due_date` als gültiges ISO-Datum `YYYY-MM-DD`.
 - DISTI-TIERS: Tasks sind via `dist_type` (User/Template/Core) getrennt.
 
 ZWEI ZUGRIFFSWEGE (NEU ab v2.0)
@@ -33,7 +34,8 @@ BACH hat ZWEI parallele Zugangswege - beide nutzen dieselben Handler + DB:
 
 CLI-BEFEHLE (bach task)
 -----------------------
-  add <titel>       Erstellt Task (--priority P1-P4, --description, --category)
+  add <titel>       Erstellt Task (--priority P1-P4, --description, --category,
+                    --due YYYY-MM-DD)
   list [status]     Gefilterte Übersicht (pending/open/in_progress/done/blocked/all)
   list --filter     Nach Begriff im Titel filtern
   list --assigned   Tasks für einen bestimmten Partner
@@ -57,7 +59,12 @@ LIBRARY-API BEISPIELE
   from bach_api import task
 
   # Task erstellen
-  task.add("Doku schreiben", "--priority", "P2", "--category", "docs")
+  task.add(
+      "Doku schreiben",
+      priority="P2",
+      category="docs",
+      due_date="2026-09-15",
+  )
 
   # Tasks auflisten
   task.list("pending")
@@ -83,7 +90,8 @@ SCAN-TASKS (hub/ati.py)
 DATENBANK (Schicht 1)
 ---------------------
 - `tasks`: id, title, description, status, priority, assigned_to, delegated_to,
-  depends_on, category, tags, created_at, completed_at, updated_at, dist_type.
+  depends_on, category, tags, due_date, created_at, completed_at, updated_at,
+  dist_type. `due_date` ist `NULL` oder ein ISO-Datum `YYYY-MM-DD`.
 - `ati_tasks`: Gescannte Aufgaben mit Source-Link (File/Line).
 - DB-Pfad: BACH_DB
 
