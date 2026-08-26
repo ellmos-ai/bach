@@ -157,7 +157,7 @@ def test_check_idle_below_threshold(temp_db):
     assert finalized is False, "Sollte nicht finalisieren wenn unter Schwelle"
 
 
-def test_check_idle_above_threshold(temp_db):
+def test_check_idle_above_threshold(temp_db, monkeypatch):
     """Test: check_idle_and_finalize() erkennt Idle korrekt."""
     # Kurze Schwelle (1 Sekunde) für schnellen Test
     tracker = ActivityTracker(temp_db, idle_threshold_minutes=0)  # 0 Min = sofort idle
@@ -169,18 +169,22 @@ def test_check_idle_above_threshold(temp_db):
     conn.commit()
     conn.close()
 
-    # Prüfe Idle (sollte True sein, aber Finalisierung schlägt fehl weil bach_root leer)
-    # Nutze temp_db Parent-Dir als bach_root (vermeidet PermissionError beim Cleanup)
+    # Externe Finalisierungsfolgen bleiben isoliert; geprüft wird der echte
+    # Idle-Zweig samt erfolgreichem Rückgabevertrag.
     bach_root = temp_db.parent
-    # Idle-Check soll Idle erkennen, aber Finalisierung schlägt fehl (kein hub/shutdown.py)
-    # Wir testen nur ob Idle erkannt wird
-    try:
-        finalized = tracker.check_idle_and_finalize(bach_root)
-        # Entweder Exception oder False (weil Finalize fehlschlägt)
-        # Wir akzeptieren beides als "Idle wurde erkannt"
-    except Exception:
-        # Exception ist OK (bedeutet Idle wurde erkannt, aber Finalize schlug fehl)
-        pass
+    shutdown_module = SimpleNamespace(
+        ShutdownHandler=lambda _root: SimpleNamespace(
+            _complete=lambda _note, dry_run=False: (True, "ok")
+        )
+    )
+    monkeypatch.setitem(sys.modules, "hub.shutdown", shutdown_module)
+    monkeypatch.setattr(tracker, "update_directory_truth", lambda _root: None)
+    monkeypatch.setattr(tracker, "_export_mirrors", lambda _root: None)
+    monkeypatch.setattr(tracker, "_write_daily_log", lambda _root: None)
+
+    finalized = tracker.check_idle_and_finalize(bach_root)
+
+    assert finalized is True
 
 
 def test_tick_graceful_degradation_no_table(temp_db):
@@ -298,7 +302,7 @@ def test_session_id_persistence(temp_db):
     assert updated_session == new_session, "session_id sollte überschrieben sein"
 
 
-def test_idle_threshold_calculation(temp_db):
+def test_idle_threshold_calculation(temp_db, monkeypatch):
     """Test: Idle-Threshold wird korrekt auf Basis der last_activity berechnet.
 
     Hinweis: Prueft nur ob Idle korrekt erkannt wird (unter/ueber Schwelle),
@@ -319,7 +323,7 @@ def test_idle_threshold_calculation(temp_db):
     result = tracker_30.check_idle_and_finalize(temp_db.parent)
     assert result is False, "Sollte nicht idle sein bei 5 Min / 30 Min Schwelle"
 
-    # Pruefe: Ueber Schwelle = idle (aber Finalize schlaegt fehl wegen fehlender Struktur)
+    # Prüfe: Über Schwelle = idle; externe Finalisierungsfolgen werden isoliert.
     tracker_1 = ActivityTracker(temp_db, idle_threshold_minutes=120)
 
     # Setze last_activity auf 130 Minuten zurueck (ueber 120 Min Schwelle)
@@ -329,12 +333,19 @@ def test_idle_threshold_calculation(temp_db):
     conn.commit()
     conn.close()
 
-    # Finalize schlaegt fehl (kein echtes BACH-System), aber darf nicht crashen
-    try:
-        result = tracker_1.check_idle_and_finalize(temp_db.parent)
-        # False ist OK (Finalize hat fehlgeschlagen aber nicht gecrasht)
-    except Exception:
-        pass  # Exception bedeutet Idle wurde erkannt, aber Finalize schlug fehl
+    shutdown_module = SimpleNamespace(
+        ShutdownHandler=lambda _root: SimpleNamespace(
+            _complete=lambda _note, dry_run=False: (True, "ok")
+        )
+    )
+    monkeypatch.setitem(sys.modules, "hub.shutdown", shutdown_module)
+    monkeypatch.setattr(tracker_1, "update_directory_truth", lambda _root: None)
+    monkeypatch.setattr(tracker_1, "_export_mirrors", lambda _root: None)
+    monkeypatch.setattr(tracker_1, "_write_daily_log", lambda _root: None)
+
+    result = tracker_1.check_idle_and_finalize(temp_db.parent)
+
+    assert result is True
 
 
 def test_export_mirrors_uses_exporters_without_cli_subprocess(temp_db, tmp_path, monkeypatch):

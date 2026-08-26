@@ -123,6 +123,10 @@ npm install -g ellmos-codecommander-mcp ellmos-filecommander-mcp
 ## Quick Start
 
 ```bash
+# Fast, side-effect-free metadata
+python bach.py --version
+python bach.py --help
+
 # Start BACH
 python bach.py --startup
 
@@ -155,6 +159,13 @@ python bach.py haushalt financial-summary refresh
 # Shut down BACH
 python bach.py --shutdown
 ```
+
+`--version`, `--help`, command-specific help, and global `--dry-run` startup
+paths bypass AutoLogger, ProSync, and activity tracking. Normal commands announce
+the ProSync pull before it starts and enforce a 15-second startup budget. Set
+`BACH_PROSYNC_STARTUP_TIMEOUT_SECONDS` to a value from 1 to 300 when a slower
+transit needs an explicit local budget. If the pull fails or times out, BACH
+continues without registering an exit push for that process.
 
 The import commands require the exact schemas `abotracker-export-v1` and
 `bach.fin_insurances.v1`. AboTracker billing cycles are not treated as confirmed

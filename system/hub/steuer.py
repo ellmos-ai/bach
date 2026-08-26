@@ -2778,7 +2778,6 @@ Dieser Eigenbeleg wurde fuer die Steuererklarung {steuerjahr} erstellt.
 
     def _import_camt(self, args: list, dry_run: bool) -> tuple:
         """Importiert Transaktionen aus einer CAMT.053 Datei."""
-        from agents._experts.steuer.camt_parser import CamtParser
         if not args:
             return False, "Dateipfad fehlt. Nutzung: bach steuer import camt <pfad>"
 
@@ -2787,6 +2786,8 @@ Dieser Eigenbeleg wurde fuer die Steuererklarung {steuerjahr} erstellt.
             return False, f"Datei nicht gefunden: {path}"
 
         try:
+            from tools.steuer.camt_parser import CamtParser
+
             parser = CamtParser(path)
             txs = parser.parse()
             balances = parser.parse_balances() if hasattr(parser, 'parse_balances') else []
@@ -2795,7 +2796,7 @@ Dieser Eigenbeleg wurde fuer die Steuererklarung {steuerjahr} erstellt.
                 bal_info = "; ".join(
                     f"{b['iban']}: {b['balance']:.2f} {b['currency'] or 'EUR'} ({b['date']})"
                     for b in balances) or "keine Salden gefunden"
-                return True, (f"[DRY-RUN] Wuerde {len(txs)} Transaktionen aus {path.name} "
+                return True, (f"[DRY-RUN] Würde {len(txs)} Transaktionen aus {path.name} "
                               f"importieren. Salden: {bal_info}")
 
             res = [f"[OK] {len(txs)} Transaktionen aus {path.name} gelesen:"]

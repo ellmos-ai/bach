@@ -84,6 +84,10 @@ bach setup full-install
 ## Quick Start
 
 ```bash
+# Schnelle, nebenwirkungsfreie Metadaten
+python bach.py --version
+python bach.py --help
+
 # BACH starten
 python bach.py --startup
 
@@ -96,6 +100,14 @@ python bach.py wiki search "Task Management"
 # BACH beenden
 python bach.py --shutdown
 ```
+
+`--version`, `--help`, befehlsspezifische Hilfe und der globale
+`--dry-run`-Startpfad umgehen AutoLogger, ProSync und Activity Tracking.
+Normale Befehle melden den ProSync-Pull sofort und begrenzen ihn beim Start auf
+15 Sekunden. Für einen langsameren Transit kann das lokale Budget über
+`BACH_PROSYNC_STARTUP_TIMEOUT_SECONDS` auf 1 bis 300 Sekunden gesetzt werden.
+Scheitert der Pull oder läuft er in das Zeitlimit, registriert BACH für diesen
+Prozess keinen Exit-Push.
 
 ## Hauptkomponenten
 

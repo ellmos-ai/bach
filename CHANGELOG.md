@@ -39,6 +39,18 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **CAMT.053-Dry-run wieder lauffähig und XML-gehärtet:** Der Steuer-Handler
+  bezieht seinen CAMT-Parser nicht mehr aus dem gitignorierten privaten
+  Expertenbaum, sondern aus `system/tools/steuer`. Der wiederhergestellte
+  MIT-Parser nutzt `defusedxml`, unterstützt verschachtelte Statements und
+  mehrere Transaktionsdetails und weist externe XML-Entities zurück.
+- **CLI-Start ohne stille OneDrive-Hänger:** `bach --version`, allgemeine und
+  befehlsspezifische Hilfe sowie globale Dry-runs umgehen jetzt AutoLogger,
+  ProSync und Activity Tracking. Normale Befehle melden den ProSync-Pull vor
+  Beginn mit Flush, führen ihn in einem hart begrenzten Hilfsprozess aus und
+  registrieren nach Fehler oder Zeitüberschreitung keinen Exit-Push. Activity
+  Tracking beginnt erst nach erfolgreicher Befehlsannahme; unbekannte Befehle
+  schreiben keine Aktivität mehr.
 - **Upgrade-Repair gegen private Release-Katalog-Altlasten gehärtet:** `bach upgrade repair` entfernt jetzt User-, Host-, Credential-, Runtime-, Cache- und generierte `dist`-Pfade aus `distribution_manifest` und `dist_file_versions`; fehlende, nicht mehr im aktuellen Distributionsscan enthaltene Versionszeilen werden beim Repair ebenfalls bereinigt. Dadurch tauchen lokale User-Dokumente, Maschinen-Mirrors, DB-/Cache-Dateien und archivierte Fork-Dateien nicht mehr als Release-`missing_files` auf.
 - **`upgrade repair --dry-run` wirklich trocken gemacht:** Die `upgrade`-CLI-Brücke reicht `--dry-run`/`-n` jetzt an den `UpgradeHandler` weiter; der Repair-Pfad erkennt das Flag zusätzlich selbst, sodass ein JSON-Dry-Run keine Distributions-Metadaten mehr schreibt.
 - **Verwaistes FileCommander-npm-Lockfile entfernt:** Der nicht mehr paketierte `system/tools/mcp/bach-filecommander`-Snapshot enthielt nur noch ein leeres `package-lock.json`; die unnötige npm-Manifest-Surface wurde entfernt und der offene `adm-zip`-Dependabot-Alert dadurch geschlossen.
