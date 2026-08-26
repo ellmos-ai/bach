@@ -293,6 +293,33 @@ class TestHandlerRegistry:
         reg.discover(SYSTEM_ROOT / "hub", aliases=COMMAND_ALIASES)
         assert "mem" in reg.names  # alias fuer memory
 
+    def test_discover_skips_host_conflict_copies(self, tmp_path, monkeypatch, capsys):
+        from core.registry import HandlerRegistry
+
+        for filename in (
+            "normal-handler.py",
+            "upgrade.py",
+            "upgrade-WORKSTATION-LG.py",
+            "upgrade-ASUS-GEI-2.py",
+        ):
+            (tmp_path / filename).write_text("", encoding="utf-8")
+
+        loaded = []
+        reg = HandlerRegistry()
+
+        def fake_load(py_file, hub_dir):
+            loaded.append(py_file.name)
+            return 1
+
+        monkeypatch.setattr(reg, "_load_handlers_from_file", fake_load)
+
+        assert reg.discover(tmp_path) == 2
+        assert loaded == ["normal-handler.py", "upgrade.py"]
+        warnings = capsys.readouterr().out
+        assert "upgrade-WORKSTATION-LG.py" in warnings
+        assert "upgrade-ASUS-GEI-2.py" in warnings
+        assert "upgrade.py" in warnings
+
     def test_suggest(self):
         from core.registry import HandlerRegistry
         reg = HandlerRegistry()
