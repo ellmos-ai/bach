@@ -508,6 +508,12 @@ Interpersonelle Interaktionen:
         # Vorname extrahieren fuer Gender-Erkennung
         real_parts = client_name.strip().split()
         original_vorname = real_parts[0] if real_parts else ""
+        excluded_name_parts = [
+            client_name,
+            vorname_hint or "",
+            nachname_hint or "",
+            *(parent_names or []),
+        ]
 
         # Gender erkennen
         detected_gender = _detect_gender(original_vorname)
@@ -517,7 +523,8 @@ Interpersonelle Interaktionen:
         tarnname = _generate_tarnname(
             self._used_tarnnames,
             gender=detected_gender,
-            original_vorname=original_vorname
+            original_vorname=original_vorname,
+            excluded_name_parts=excluded_name_parts,
         )
         self._used_tarnnames.add(tarnname)
 
@@ -589,7 +596,8 @@ Interpersonelle Interaktionen:
                     parent_tarnname = _generate_tarnname(
                         self._used_tarnnames,
                         gender=parent_gender,
-                        original_vorname=parent_vorname
+                        original_vorname=parent_vorname,
+                        excluded_name_parts=excluded_name_parts,
                     )
                     self._used_tarnnames.add(parent_tarnname)
                     parent_tarn_parts = parent_tarnname.strip().split()
