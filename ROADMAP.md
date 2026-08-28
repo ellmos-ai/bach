@@ -99,6 +99,12 @@ eines Zyklus:
 9. Eine Halteperiode sowie mindestens einen Update-/Rollback-Zyklus belegen, bevor der
    eingezäunte Altbereich archiviert oder entfernt wird.
 
+Codex-Security-Scan-Skills sind für BACH ausdrücklich aus diesem Ablauf entfernt. Die
+Sicherheitsabnahme erfolgt über lokal ausführbare, deterministische Projektgates wie LOCK-,
+Secret-/PII-, Pfad-, Provenienz-, Abhängigkeits-, statische Analyse- und Diff-Prüfungen. Ein
+blockierter externer Sicherheitsdienst darf den BACH-Lauf nicht aufhalten; seine spätere
+Wiederaufnahme benötigt eine neue ausdrückliche Nutzerentscheidung.
+
 ### Wissens- und Policy-Ritual für jeden neuen Abschnitt
 
 Vor jedem OCEAN-Bauabschnitt und jedem BACH-Modul- oder Bundlezyklus:

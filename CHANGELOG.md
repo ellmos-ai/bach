@@ -23,6 +23,10 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Changed
 
+- **Codex-Security-Scan-Skills aus dem BACH-Ablauf entfernt:** Der blockierte externe Scanpfad ist
+  kein Bestandteil der verbindlichen Skill-Kette mehr. BACH behält stattdessen lokal ausführbare,
+  deterministische LOCK-, Secret-/PII-, Pfad-, Provenienz-, Abhängigkeits-, statische Analyse- und
+  Diff-Gates; eine spätere Wiederaufnahme erfordert eine neue ausdrückliche Nutzerentscheidung.
 - **Modularisierungsrichtung präzisiert:** Module und Bundles gelten im Regelfall als bereits
   extrahiert. BACH wird jetzt durch den Einsatz derselben kanonischen Bausteine wie OCEAN und die
   kontrollierte Abkopplung seiner Altbereiche modularer. Neu auftauchende BACH-Unikate durchlaufen
@@ -63,6 +67,15 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **Vor-Umbau-Baseline reproduzierbar stabilisiert:** Der Headless-Fallback nutzt wieder die
+  kanonische Benutzer-Datenbank unter `~/.bach/bach.db`. Ein expliziter `BACH_CLUTCH_PATH` bildet
+  jetzt eine fail-closed Provenienzgrenze: kollidierende oder gemischte gecachte Paketpfade werden
+  vollständig verworfen, fehlende Komponenten nicht mehr unbemerkt aus einem anderen installierten
+  `clutch` ergänzt und stattdessen auf den BACH-Kompatibilitätsadapter zurückgeführt.
+  `bach mem working|decay` lädt Werkzeuge direkt
+  aus den kanonischen Dateien unter `system/tools`, bevor fremde Suchpfade Code ausführen können.
+  Setup-Sprachtests isolieren ihren prozessglobalen Übersetzungszustand; externe MCP-/Upgrade-Smokes
+  erhalten belastbare, weiterhin begrenzte Zeitfenster.
 - **Chat-Backend-Readiness statt Konfigurationsschein:** OpenAI- und Anthropic-Backends prüfen
   authentifiziert und zeitlich begrenzt ihr Modellinventar; Claude- und Codex-CLI bestätigen den
   lokalen Anmeldestatus. Das Backend-Inventar prüft parallel, nutzt einen kurzen Cache und gibt
@@ -71,7 +84,11 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 - **Lokale Control-API fail-closed gehärtet:** Die API bindet standardmäßig nur an Loopback und
   weist nicht authentifizierte Non-Loopback-Binds zurück. Browserzugriffe erhalten CORS nur für
   Loopback-Origins; Cross-Site-, Nicht-JSON- und JSON-Nichtobjekt-POSTs werden vor
-  Zustandsänderungen kontrolliert abgewiesen.
+  Zustandsänderungen kontrolliert abgewiesen. JSON-Antworten deklarieren ihre vollständige Länge;
+  bei regulär gerahmten Requests verwerfen abgewiesene POSTs den angelieferten Body vor dem
+  Schließen. Der reproduzierte Windows-TCP-Reset blieb damit in `20/20` Wiederholungen aus.
+  Eigene Größen- und Zeitgrenzen für unvollständige oder übergroße Bodies bleiben ein Hardening-
+  Nachlauf innerhalb von Task #1207.
   Das Windows-Startmenü enthält keinen persönlichen Standardhost mehr und verlangt `BACH_HOST`
   ausdrücklich.
 - **CAMT.053-Dry-run wieder lauffähig und XML-gehärtet:** Der Steuer-Handler
@@ -94,13 +111,14 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Verified
 
-- **Startspine-/Chat-/Sprachslice verifiziert:** Die zusammengefasste Runtime-, Start-,
-  Help-Invarianz- und Sprachhandler-Suite lief mit `347 passed` und einer bekannten
-  Starlette-Warnung.
-  Die vollständige Systemsuite erreichte `4698 passed, 6 skipped, 9 failed`. Sechs Fehler
-  verschwanden im isolierten Wiederholungslauf und belegen Testreihenfolge-/Sprachzustandslecks;
-  drei vom Slice unberührte Baselinefehler bleiben im DB-Pfad-Register und in einer veralteten
-  clutch-Quellenerwartung offen. Deshalb wird aus diesem Stand kein Release oder Tag abgeleitet.
+- **Vor-Umbau-Baseline vollständig grün:** Die fokussierte Clutch-, Memory-, Partner-, Activity-
+  und DB-Pfad-Regressionssuite lief mit `70 passed`; Chat-Control und Delegation anschließend mit
+  `25 passed`, der zuvor fluktuierende Nicht-JSON-POST zusätzlich in `20/20` Wiederholungen grün.
+  Die abschließende vollständige Systemsuite erreichte `4723 passed, 6 skipped, 9 warnings` in
+  456,09 Sekunden. Die Warnungen beschränken
+  sich auf die bekannte Starlette-Deprecation sowie
+  vorhandene Escape-Sequenzen in Testskripten. Der Befund belegt den Branch; er ersetzt weder
+  Review und Integration noch die gesonderte Freigabe für Release und Tag.
 - **Release-Katalog-Privacy-Repair verifiziert:** `python -m pytest system\tests\test_upgrade_handler.py -q` lief mit `43 passed`; `python system\bach.py upgrade repair --version v3.13.0-bluesky --json` bereinigte die lokale Runtime-DB auf `manifest_entries=3446` und `dist_file_versions=6861`. Das anschließende `upgrade check --json` meldete `repair_recommended=false`, `upgrade_candidates=0`, `missing_files=0`, `unreadable_files=0`; gezielte DB-Scans auf `user/%`, Hostnamen, personenbezogene Pfadfragmente sowie DB-/Cache-/`dist`-Artefakte standen bei 0.
 - **clutch-Abschlusszertifizierung:** `python -m pytest system\tests\test_delegation_adapter.py system\tests\test_clutch.py system\tests\test_partner_handler.py -q` lief mit `36 passed`; `python bach.py clutch migration` meldete alle acht Quellen extern, Compat-Adapter und DB-Brücke `OK` sowie den Legacy-Fork `ARCHIVED` im Standby.
 - **Build-Week-/Web-Scrape-Slice zertifiziert:** Neun fokussierte Web-Scrape-Regressionstests, insgesamt 41 Web-/Plugin-Sicherheitstests, Ruff (unter Beibehaltung der historisch erforderlichen Importpfad-Ausnahme), `py_compile`, Diff-/Credential-Scan und ein realer HTTPS-Header-Smoke liefen erfolgreich.
