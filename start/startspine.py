@@ -536,12 +536,34 @@ def _terminate_identity(pid: int | None, created: float | None, label: str) -> t
         return False, f"{label}: PID {pid} nicht beendet ({exc})"
 
 
+def _wait_for_exit_receipt(name: str, record: dict[str, Any], timeout: float = 2.0) -> bool:
+    """Give the owned supervisor time to persist the child's exit code.
+
+    The child has already ended when this is called. Terminating the
+    supervisor immediately can otherwise win the race against its final
+    receipt write and leave ``exit_code`` permanently null.
+    """
+    if record.get("exit_code") is not None:
+        return True
+    deadline = time.monotonic() + timeout
+    while _supervisor_identity_alive(record) and time.monotonic() < deadline:
+        # Do not read the receipt while the supervisor may be replacing it.
+        # On Windows, opening the destination concurrently can make
+        # os.replace() fail and strand the completed payload in its temp file.
+        time.sleep(0.05)
+    _sync_receipt(name, record)
+    return record.get("exit_code") is not None
+
+
 def _stop_record(name: str, record: dict[str, Any]) -> bool:
     _sync_receipt(name, record)
     ok_child, child_msg = _terminate_identity(record.get("pid"), record.get("create_time"), name)
+    if ok_child:
+        _wait_for_exit_receipt(name, record)
     ok_supervisor, supervisor_msg = _terminate_identity(
         record.get("supervisor_pid"), record.get("supervisor_create_time"), f"{name}-supervisor"
     )
+    _sync_receipt(name, record)
     print(f"[INFO] {child_msg}")
     if record.get("supervisor_pid") != record.get("pid"):
         print(f"[INFO] {supervisor_msg}")

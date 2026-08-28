@@ -69,6 +69,28 @@ def test_supervisor_records_child_exit_code(tmp_path, monkeypatch):
     assert receipt["supervisor_pid"] > 0
 
 
+def test_exit_receipt_wait_does_not_read_while_supervisor_is_writing(monkeypatch):
+    record = {"exit_code": None}
+    supervisor_states = iter((True, True, False))
+    events = []
+
+    def fake_supervisor_alive(_record):
+        events.append("supervisor-check")
+        return next(supervisor_states)
+
+    def fake_sync(_name, target_record):
+        events.append("receipt-read")
+        target_record["exit_code"] = 15
+        return target_record
+
+    monkeypatch.setattr(startspine, "_supervisor_identity_alive", fake_supervisor_alive)
+    monkeypatch.setattr(startspine, "_sync_receipt", fake_sync)
+    monkeypatch.setattr(startspine.time, "sleep", lambda _seconds: None)
+
+    assert startspine._wait_for_exit_receipt("gui", record)
+    assert events == ["supervisor-check", "supervisor-check", "supervisor-check", "receipt-read"]
+
+
 def test_cli_is_independent_of_current_directory(tmp_path):
     runtime = tmp_path / "runtime"
     result = subprocess.run(
@@ -132,6 +154,12 @@ def test_start_readback_and_stop_only_owned_process(tmp_path, monkeypatch):
         assert "do-not-persist" not in spec_files[0].read_text(encoding="utf-8")
     finally:
         assert startspine._stop_record("gui", record)
+        receipt = json.loads(startspine._receipt_path("gui").read_text(encoding="utf-8"))
+        assert record["exit_code"] is not None
+        assert receipt["exit_code"] == record["exit_code"]
+        assert not startspine._child_identity_alive(record)
+        assert not startspine._supervisor_identity_alive(record)
+        assert not list(startspine._receipt_path("gui").parent.glob(".gui.json.*.tmp"))
 
 
 def test_stop_refuses_reused_pid(tmp_path, monkeypatch):
