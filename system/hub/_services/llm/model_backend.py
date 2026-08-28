@@ -22,7 +22,7 @@ import sys
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 class ModelBackend(ABC):
@@ -56,10 +56,30 @@ class OllamaBackend(ModelBackend):
 
     def __init__(self, base_url: str = "http://localhost:11434",
                  default_model: str = "qwen3.6:35b-mlx",
-                 keep_alive: str = "5m"):
+                 keep_alive: str = "5m",
+                 num_ctx: int | None = None,
+                 request_timeout: float | None = None):
         self.base_url = base_url.rstrip("/")
         self.default_model = default_model
         self.keep_alive = keep_alive
+        configured_num_ctx = num_ctx if num_ctx is not None else os.environ.get("OLLAMA_NUM_CTX", "4096")
+        try:
+            self.num_ctx = int(configured_num_ctx)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Ollama num_ctx muss eine ganze Zahl sein") from exc
+        if not 512 <= self.num_ctx <= 262144:
+            raise ValueError("Ollama num_ctx muss zwischen 512 und 262144 liegen")
+        configured_timeout = (
+            request_timeout
+            if request_timeout is not None
+            else os.environ.get("OLLAMA_TIMEOUT_SECONDS", "600")
+        )
+        try:
+            self.request_timeout = float(configured_timeout)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Ollama request_timeout muss eine Zahl sein") from exc
+        if not 1 <= self.request_timeout <= 3600:
+            raise ValueError("Ollama request_timeout muss zwischen 1 und 3600 Sekunden liegen")
         self._models_cache: list[str] = []
         self._models_cache_time: float = 0
 
@@ -76,22 +96,40 @@ class OllamaBackend(ModelBackend):
             "stream": False,
             "think": think,
             "keep_alive": effective_ka,
+            # Einige Modelle veröffentlichen sehr große Trainingskontexte. Ohne
+            # explizite Grenze kann Ollama dafür zig GiB KV-Cache reservieren.
+            "options": {"num_ctx": self.num_ctx},
         }
         if tools:
             payload["tools"] = tools
 
+        timeout = self.request_timeout * (1.5 if think else 1)
         async with httpx.AsyncClient() as client:
-            r = await client.post(
-                f"{self.base_url}/api/chat",
-                json=payload,
-                timeout=180 if think else 120,
-            )
+            try:
+                r = await client.post(
+                    f"{self.base_url}/api/chat",
+                    json=payload,
+                    timeout=timeout,
+                )
+            except httpx.TimeoutException as exc:
+                raise RuntimeError(
+                    f"Ollama-Zeitüberschreitung nach {timeout:g} Sekunden"
+                ) from exc
+            r.raise_for_status()
             resp = r.json()
 
+        if resp.get("error"):
+            raise RuntimeError(f"Ollama-Fehler: {resp['error']}")
         msg = resp.get("message", {})
+        content = msg.get("content", "")
+        if not think and "</think>" in content:
+            content = content.rsplit("</think>", 1)[1].strip()
+        tool_calls = msg.get("tool_calls")
+        if not content and not tool_calls:
+            raise RuntimeError("Ollama lieferte eine leere Antwort")
         return {
-            "content": msg.get("content", ""),
-            "tool_calls": msg.get("tool_calls"),
+            "content": content,
+            "tool_calls": tool_calls,
             "raw_message": msg,
         }
 
@@ -484,6 +522,8 @@ def create_backend(config: dict) -> ModelBackend:
         return OllamaBackend(
             base_url=config.get("base_url", "http://localhost:11434"),
             default_model=config.get("default_model", "qwen3.6:35b-mlx"),
+            num_ctx=config.get("num_ctx"),
+            request_timeout=config.get("timeout_seconds"),
         )
     elif backend_type in ("openai", "openai_compat", "openai-api"):
         return OpenAIBackend(

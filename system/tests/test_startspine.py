@@ -14,6 +14,8 @@ import sys
 from types import SimpleNamespace
 from pathlib import Path
 
+import pytest
+
 STARTSPINE_PATH = Path(__file__).parents[2] / "start" / "startspine.py"
 SPEC = importlib.util.spec_from_file_location("bach_startspine", STARTSPINE_PATH)
 startspine = importlib.util.module_from_spec(SPEC)
@@ -104,7 +106,7 @@ def test_cli_is_independent_of_current_directory(tmp_path):
     payload = json.loads(result.stdout)
     assert result.returncode == 0
     assert payload["root"] == str(STARTSPINE_PATH.parents[1])
-    assert (runtime / "discovery.json").is_file()
+    assert not (runtime / "discovery.json").exists()
 
 
 def test_windows_autostart_uses_absolute_task_command(monkeypatch):
@@ -141,7 +143,7 @@ def test_start_readback_and_stop_only_owned_process(tmp_path, monkeypatch):
         host="127.0.0.1",
         desired_port=port,
         actual_port=port,
-        readiness_timeout=5,
+        readiness_timeout=15,
     )
     record = state["services"]["gui"]
     try:
@@ -219,7 +221,7 @@ def test_readiness_fails_closed_without_port_owner(monkeypatch):
     )
 
 
-def test_chat_health_requires_verified_bach_control(monkeypatch):
+def test_chat_health_requires_identified_bach_control(monkeypatch):
     record = {"host": "127.0.0.1", "actual_port": 8081}
     monkeypatch.setattr(
         startspine,
@@ -229,16 +231,22 @@ def test_chat_health_requires_verified_bach_control(monkeypatch):
             "telegram_verified": False,
         },
     )
-    assert not startspine._service_health("chat", record)
+    assert startspine._service_health("chat", record)
     monkeypatch.setattr(
         startspine,
         "_json_url",
         lambda url: {
-            "service": "bach-chat-control",
+            "service": "foreign-control",
             "telegram_verified": True,
         },
     )
-    assert startspine._service_health("chat", record)
+    assert not startspine._service_health("chat", record)
+
+
+def test_ollama_readiness_requires_models_schema():
+    assert startspine._ollama_payload_ready({"models": []})
+    assert not startspine._ollama_payload_ready({"status": "ok"})
+    assert not startspine._ollama_payload_ready(None)
 
 
 def test_telegram_direct_mode_resolves_system_root():
@@ -264,3 +272,182 @@ def test_dashboard_optional_stats_are_null_safe():
     assert "const setStat = (id, value)" in script
     assert "document.getElementById('stat-scanned').textContent" not in script
     assert "document.getElementById('stat-daemon').textContent" not in script
+
+
+def test_tray_start_is_required_and_uses_local_ollama(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    captured = {}
+
+    def fake_start_service(state, name, **kwargs):
+        captured[name] = kwargs
+        return True
+
+    monkeypatch.setattr(startspine, "_start_service", fake_start_service)
+    monkeypatch.setattr(startspine, "_load_mutable_state", startspine._base_state)
+    monkeypatch.setattr(startspine, "_save_state", lambda state: None)
+    monkeypatch.setattr(
+        startspine,
+        "_discovery",
+        lambda state, gui_port, control_port: {"services": {}, "ollama": {}},
+    )
+    monkeypatch.setattr(startspine, "_print_status", lambda payload: None)
+    args = argparse.Namespace(
+        host="remote-control",
+        gui_port=None,
+        control_port=None,
+        gui=False,
+        chat=False,
+        tray=True,
+        readiness_timeout=1.0,
+        open_browser=False,
+    )
+
+    assert startspine.command_start(args) == 0
+    tray = captured["tray"]
+    assert tray["required"] is True
+    command = tray["command"]
+    assert command[command.index("--ollama-host") + 1] == "127.0.0.1"
+    assert command[command.index("--host") + 1] == "remote-control"
+
+
+def test_remote_status_keeps_ollama_local(monkeypatch, capsys):
+    checked_urls = []
+    checked_ollama = []
+
+    def fake_url_ready(url, timeout=1.0):
+        checked_urls.append(url)
+        return False
+
+    monkeypatch.setattr(startspine, "_url_ready", fake_url_ready)
+    monkeypatch.setattr(
+        startspine,
+        "_ollama_ready",
+        lambda host="127.0.0.1": checked_ollama.append(host) or False,
+    )
+    monkeypatch.setattr(startspine, "_json_url", lambda url: None)
+    args = argparse.Namespace(
+        host="remote-control",
+        gui_port=None,
+        control_port=None,
+        json=True,
+    )
+
+    assert startspine.command_status(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ollama"]["host"] == "127.0.0.1"
+    assert checked_ollama == ["127.0.0.1"]
+    assert "http://remote-control:11434/api/tags" not in checked_urls
+
+
+def test_tray_health_requires_launch_bound_ready_receipt(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    identity = startspine._process_identity(os.getpid())
+    record = {
+        "root": str(startspine.ROOT_DIR),
+        "launch_id": "launch-1",
+        "pid": os.getpid(),
+        "create_time": identity["create_time"],
+    }
+    assert not startspine._service_health("tray", record)
+    startspine._atomic_json(
+        startspine._ready_receipt_path("tray"),
+        {"launch_id": "other", "pid": os.getpid()},
+    )
+    assert not startspine._service_health("tray", record)
+    startspine._atomic_json(
+        startspine._ready_receipt_path("tray"),
+        {"launch_id": "launch-1", "pid": os.getpid()},
+    )
+    assert startspine._service_health("tray", record)
+
+
+def test_short_lived_tray_never_reports_ready(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    state = startspine._base_state()
+    ready = startspine._start_service(
+        state,
+        "tray",
+        command=[sys.executable, "-c", "import time; time.sleep(.75); raise SystemExit(7)"],
+        cwd=tmp_path,
+        env=startspine._child_environment(),
+        required=True,
+        host="127.0.0.1",
+        desired_port=8081,
+        actual_port=8081,
+        readiness_timeout=2.0,
+    )
+    record = state["services"]["tray"]
+    assert ready is False
+    assert record["status"] == "failed"
+    assert isinstance(record["exit_code"], int)
+    assert record["exit_code"] != 0
+    assert not startspine._child_identity_alive(record)
+    assert not startspine._supervisor_identity_alive(record)
+
+
+def test_failed_replacement_stop_blocks_spawn(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    state = startspine._base_state()
+    state["services"]["tray"] = {
+        "host": "old-host",
+        "desired_port": 8081,
+        "actual_port": 8081,
+    }
+    monkeypatch.setattr(startspine, "_sync_receipt", lambda name, record: record)
+    monkeypatch.setattr(startspine, "_record_has_live_identity", lambda record: True)
+    monkeypatch.setattr(startspine, "_stop_record", lambda name, record: False)
+    monkeypatch.setattr(
+        startspine,
+        "_spawn_supervisor",
+        lambda name, spec: pytest.fail("unsafe replacement spawn"),
+    )
+
+    assert not startspine._start_service(
+        state,
+        "tray",
+        command=[sys.executable, "-c", "pass"],
+        cwd=tmp_path,
+        env=startspine._child_environment(),
+        required=True,
+        host="127.0.0.1",
+        desired_port=8081,
+        actual_port=8081,
+    )
+
+
+def test_failed_start_cleans_owned_supervisor(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    state = startspine._base_state()
+    stopped = []
+    monkeypatch.setattr(
+        startspine,
+        "_spawn_supervisor",
+        lambda name, spec: ({
+            "launch_id": "launch-2",
+            "supervisor_pid": 123,
+            "supervisor_create_time": 1.0,
+        }, "launch-2"),
+    )
+    monkeypatch.setattr(startspine, "_wait_for_receipt", lambda *args: {})
+    monkeypatch.setattr(startspine, "_wait_ready", lambda *args: False)
+    monkeypatch.setattr(startspine, "_record_is_owned", lambda record: False)
+    monkeypatch.setattr(startspine, "_supervisor_is_owned", lambda record: True)
+    monkeypatch.setattr(
+        startspine,
+        "_stop_record",
+        lambda name, record: stopped.append(name) or True,
+    )
+
+    assert not startspine._start_service(
+        state,
+        "tray",
+        command=[sys.executable, "-c", "pass"],
+        cwd=tmp_path,
+        env=startspine._child_environment(),
+        required=True,
+        host="127.0.0.1",
+        desired_port=8081,
+        actual_port=8081,
+        readiness_timeout=0.1,
+    )
+    assert stopped == ["tray"]

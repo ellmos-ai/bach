@@ -198,8 +198,16 @@ def _chat_payload_ready(payload: dict[str, Any] | None) -> bool:
     return bool(
         payload
         and payload.get("service") == "bach-chat-control"
-        and payload.get("telegram_verified") is True
+        and isinstance(payload.get("telegram_verified"), bool)
     )
+
+
+def _ollama_payload_ready(payload: dict[str, Any] | None) -> bool:
+    return bool(payload and isinstance(payload.get("models"), list))
+
+
+def _ollama_ready(host: str = "127.0.0.1") -> bool:
+    return _ollama_payload_ready(_json_url(f"http://{host}:11434/api/tags"))
 
 
 def _listener_owner(port: int) -> dict[str, Any] | None:
@@ -268,7 +276,12 @@ def _service_health(name: str, record: dict[str, Any]) -> bool:
         )
         return _chat_payload_ready(payload)
     if name == "tray":
-        return _identity_matches(record.get("pid"), record.get("create_time"))
+        ready = _read_json(_ready_receipt_path("tray"))
+        return bool(
+            _identity_matches(record.get("pid"), record.get("create_time"))
+            and ready.get("launch_id") == record.get("launch_id")
+            and ready.get("pid") == record.get("pid")
+        )
     return False
 
 
@@ -282,6 +295,10 @@ def _service_ready_owned(name: str, record: dict[str, Any]) -> bool:
 
 def _receipt_path(name: str) -> Path:
     return _paths()["receipts"] / f"{name}.json"
+
+
+def _ready_receipt_path(name: str) -> Path:
+    return _paths()["receipts"] / f"{name}.ready.json"
 
 
 def _sync_receipt(name: str, record: dict[str, Any]) -> dict[str, Any]:
@@ -374,7 +391,7 @@ def _wait_ready(name: str, record: dict[str, Any], timeout: float) -> bool:
         if record.get("exit_code") is not None:
             return False
         if _service_ready_owned(name, record):
-            if name != "chat":
+            if name not in {"chat", "tray"}:
                 return True
             stable_since = stable_since or time.monotonic()
             if time.monotonic() - stable_since >= 1.0:
@@ -406,6 +423,7 @@ def _spawn_supervisor(name: str, spec: dict[str, Any]) -> tuple[dict[str, Any], 
     spec_path = paths["specs"] / f"{name}-{launch_id}.json"
     _atomic_json(spec_path, spec)
     _receipt_path(name).unlink(missing_ok=True)
+    _ready_receipt_path(name).unlink(missing_ok=True)
 
     command = [sys.executable, str(Path(__file__).resolve()), "_run-child", "--service", name, "--spec", str(spec_path)]
     kwargs: dict[str, Any] = {
@@ -459,7 +477,10 @@ def _start_service(
         print(f"[OK] {name}: bereits aktiv (PID {existing['pid']})")
         return True
     if existing and _record_has_live_identity(existing):
-        _stop_record(name, existing)
+        if not _stop_record(name, existing):
+            print(f"[FEHLER] {name}: vorhandener eigener Prozess konnte nicht sicher beendet werden")
+            _save_state(state)
+            return False
 
     log_path = _paths()["logs"] / f"{name}.log"
     env_overrides = {
@@ -496,7 +517,7 @@ def _start_service(
     record["status"] = ("online" if name != "tray" else "running") if ready else "failed"
     if not ready:
         _sync_receipt(name, record)
-        if _record_is_owned(record):
+        if _record_is_owned(record) or _supervisor_is_owned(record):
             _stop_record(name, record)
         _sync_receipt(name, record)
         record["status"] = "failed"
@@ -555,9 +576,40 @@ def _wait_for_exit_receipt(name: str, record: dict[str, Any], timeout: float = 2
     return record.get("exit_code") is not None
 
 
+def _terminate_owned_supervisor_children(record: dict[str, Any]) -> tuple[bool, list[str]]:
+    """Stop descendants only when their supervisor identity and BACH root are proven."""
+    if psutil is None or not _supervisor_is_owned(record):
+        return True, []
+    try:
+        supervisor = psutil.Process(int(record["supervisor_pid"]))
+        descendants = supervisor.children(recursive=True)
+    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError, TypeError):
+        return True, []
+    ok = True
+    messages = []
+    for child in reversed(descendants):
+        try:
+            created = child.create_time()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+        child_ok, message = _terminate_identity(
+            child.pid,
+            created,
+            f"supervisor-kind-{child.pid}",
+        )
+        ok = child_ok and ok
+        messages.append(message)
+    return ok, messages
+
+
 def _stop_record(name: str, record: dict[str, Any]) -> bool:
     _sync_receipt(name, record)
+    descendants_ok = True
+    descendant_messages: list[str] = []
+    if not _child_identity_alive(record):
+        descendants_ok, descendant_messages = _terminate_owned_supervisor_children(record)
     ok_child, child_msg = _terminate_identity(record.get("pid"), record.get("create_time"), name)
+    ok_child = descendants_ok and ok_child
     if ok_child:
         _wait_for_exit_receipt(name, record)
     ok_supervisor, supervisor_msg = _terminate_identity(
@@ -565,6 +617,8 @@ def _stop_record(name: str, record: dict[str, Any]) -> bool:
     )
     _sync_receipt(name, record)
     print(f"[INFO] {child_msg}")
+    for message in descendant_messages:
+        print(f"[INFO] {message}")
     if record.get("supervisor_pid") != record.get("pid"):
         print(f"[INFO] {supervisor_msg}")
     record["status"] = "stopped" if ok_child and ok_supervisor else "stop-failed"
@@ -572,7 +626,13 @@ def _stop_record(name: str, record: dict[str, Any]) -> bool:
     return ok_child and ok_supervisor
 
 
-def _discovery(state: dict[str, Any], desired_gui: int, desired_control: int) -> dict[str, Any]:
+def _discovery(
+    state: dict[str, Any],
+    desired_gui: int,
+    desired_control: int,
+    *,
+    persist: bool = True,
+) -> dict[str, Any]:
     services: dict[str, Any] = {}
     for name, record in state.get("services", {}).items():
         _sync_receipt(name, record)
@@ -599,7 +659,7 @@ def _discovery(state: dict[str, Any], desired_gui: int, desired_control: int) ->
             "ownership": ownership,
         }
     host = "127.0.0.1"
-    ollama_ready = _url_ready(f"http://{host}:11434/api/tags")
+    ollama_ready = _ollama_ready(host)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": _now(),
@@ -616,7 +676,8 @@ def _discovery(state: dict[str, Any], desired_gui: int, desired_control: int) ->
             "required": False,
         },
     }
-    _atomic_json(_paths()["discovery"], payload)
+    if persist:
+        _atomic_json(_paths()["discovery"], payload)
     return payload
 
 
@@ -738,14 +799,15 @@ def command_start(args: argparse.Namespace) -> int:
                     "--host", tray_host,
                     "--port", str(tray_control),
                     "--gui-port", str(tray_gui),
+                    "--ollama-host", "127.0.0.1",
                 ],
                 cwd=SYSTEM_DIR,
                 env=_child_environment(),
-                required=False,
+                required=True,
                 host=tray_host,
                 desired_port=tray_control,
                 actual_port=tray_control,
-                readiness_timeout=min(args.readiness_timeout, 5.0),
+                readiness_timeout=args.readiness_timeout,
             ) and ok
 
         _save_state(state)
@@ -789,7 +851,8 @@ def command_status(args: argparse.Namespace) -> int:
     gui_port = _port_value(args.gui_port, "BACH_GUI_PORT", 8000)
     control_port = _port_value(args.control_port, "BACH_CONTROL_PORT", 8081)
     if host not in LOCAL_HOSTS:
-        remote_ollama_ready = _url_ready(f"http://{host}:11434/api/tags")
+        ollama_host = "127.0.0.1"
+        local_ollama_ready = _ollama_ready(ollama_host)
         remote_chat_ready = _chat_payload_ready(
             _json_url(f"http://{host}:{control_port}/api/status")
         )
@@ -808,23 +871,21 @@ def command_status(args: argparse.Namespace) -> int:
                 },
             },
             "ollama": {
-                "host": host,
+                "host": ollama_host,
                 "port": 11434,
-                "ready": remote_ollama_ready,
-                "status": "online" if remote_ollama_ready else "offline",
+                "ready": local_ollama_ready,
+                "status": "online" if local_ollama_ready else "offline",
                 "required": False,
             },
         }
     else:
         state = _load_state()
-        payload = _discovery(state, gui_port, control_port)
-        if _same_root(state.get("root")):
-            _save_state(state)
+        payload = _discovery(state, gui_port, control_port, persist=False)
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         _print_status(payload)
-        print(f"[INFO] Discovery: {_paths()['discovery']}")
+        print(f"[INFO] Runtime-State: {_paths()['state']}")
     required_failed = any(
         item.get("required") and not item.get("ready")
         for item in payload.get("services", {}).values()
@@ -870,6 +931,8 @@ def command_run_child(args: argparse.Namespace) -> int:
     overrides = spec.get("env_overrides")
     if isinstance(overrides, dict):
         env.update({str(k): str(v) for k, v in overrides.items()})
+    env["BACH_STARTSPINE_LAUNCH_ID"] = str(spec.get("launch_id") or "")
+    env["BACH_STARTSPINE_SERVICE"] = str(args.service)
     log_path = Path(spec["log"])
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("ab", buffering=0) as log_handle:

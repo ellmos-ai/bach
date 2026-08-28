@@ -1148,6 +1148,15 @@ def _get_active_session_state():
     )
 
 
+def _control_chat_response(answer) -> tuple[dict, int]:
+    text = str(answer or "").strip()
+    if not text:
+        return {"ok": False, "error": "Chat-Backend lieferte keine Antwort"}, 502
+    if text.startswith("Backend-Fehler:"):
+        return {"ok": False, "error": text}, 502
+    return {"ok": True, "answer": text}, 200
+
+
 class QuietHTTPServer(ThreadingHTTPServer):
     def handle_error(self, request, client_address):
         exc = sys.exc_info()[1]
@@ -1369,7 +1378,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                     )
                 finally:
                     loop.close()
-                self._json({"ok": True, "answer": answer})
+                response, status = _control_chat_response(answer)
+                self._json(response, status)
             except Exception as e:
                 self._json({"error": str(e)}, 500)
             finally:
@@ -1415,13 +1425,28 @@ def verify_telegram_token() -> bool:
     return bool(payload.get("ok") and payload.get("result", {}).get("id"))
 
 
+def serve_control_only(server, reason: str) -> None:
+    """Keep local Chat/Control available when the Telegram connector is offline."""
+    message = f"{reason}; lokaler Chat/Control läuft im Offlinebetrieb weiter."
+    log.warning(message)
+    print(message)
+    try:
+        threading.Event().wait()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 # --- Main ---
 
 def main():
     global TELEGRAM_VERIFIED
-    if not BOT_TOKEN:
-        print("Kein Bot-Token! Setze TELEGRAM_BOT_TOKEN oder ~/.credentials/telegram_bot_token")
-        sys.exit(1)
+    control_server = start_control_api()
+    if control_server is None:
+        print("Chat/Control konnte nicht gestartet werden.")
+        return 1
 
     # Crash recovery: resume any compute jobs stopped by a previous bot session
     if HAS_COMPUTE_LOCK and CONFIG.get("compute_lock", {}).get("enabled", False):
@@ -1435,13 +1460,14 @@ def main():
         except Exception as e:
             log.warning("Crash recovery failed: %s", e)
 
+    if not BOT_TOKEN:
+        serve_control_only(control_server, "Kein Telegram-Bot-Token")
+        return 0
     if not verify_telegram_token():
-        print("Telegram Bot konnte nicht verifiziert werden; Chat/Control bleibt offline.")
-        sys.exit(1)
+        serve_control_only(control_server, "Telegram-Bot konnte nicht verifiziert werden")
+        return 0
     TELEGRAM_VERIFIED = True
     print("Telegram Bot verifiziert")
-
-    start_control_api()
 
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -1478,8 +1504,13 @@ def main():
         f"Backend: {backend_type}, Modell: {model}, Think: AN, "
         f"Compute-Lock: {cl_status})"
     )
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
+    finally:
+        control_server.shutdown()
+        control_server.server_close()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

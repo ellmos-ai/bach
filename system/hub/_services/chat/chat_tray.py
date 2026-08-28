@@ -33,8 +33,8 @@ try:
     import pystray
     from PIL import Image, ImageDraw, ImageFont
 except ImportError:
-    print("Benötigt: pip install pystray Pillow")
-    sys.exit(1)
+    pystray = None
+    Image = ImageDraw = ImageFont = None
 
 DEFAULT_PROMPTS = {
     "Aufgaben": {
@@ -63,14 +63,24 @@ class BACHTray:
     POLL_INTERVAL = 5
     IDLE_THRESHOLD = 12  # 12 × 5s = 60s ohne Sessions → Idle-Arbeit starten
 
-    def __init__(self, host="127.0.0.1", port=8081, webchat_port=8080, gui_port=8000):
+    def __init__(
+        self,
+        host="127.0.0.1",
+        port=8081,
+        webchat_port=8080,
+        gui_port=8000,
+        ollama_host=None,
+    ):
         self.host = host
         self.control_port = port
         self.gui_port = gui_port
+        self.ollama_host = (
+            ollama_host or os.environ.get("BACH_OLLAMA_HOST") or "127.0.0.1"
+        )
         self.base_url = f"http://{host}:{port}"
         self.gui_url = f"http://{host}:{gui_port}"
         self.webchat_url = f"http://{host}:{webchat_port}"
-        self.ollama_url = f"http://{host}:11434"
+        self.ollama_url = f"http://{self.ollama_host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
         self.state = {
             "backend": "?",
@@ -94,6 +104,7 @@ class BACHTray:
             "gui": False,
             "webchat": False,
             "control": False,
+            "telegram": False,
             "ollama": False,
         }
 
@@ -128,6 +139,28 @@ class BACHTray:
         except (urllib.error.URLError, OSError):
             return False
 
+    @staticmethod
+    def _ollama_payload_ready(payload):
+        return isinstance(payload, dict) and isinstance(payload.get("models"), list)
+
+    def _check_ollama(self, timeout=2):
+        try:
+            req = urllib.request.Request(self.ollama_url + "/api/tags", method="GET")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if not 200 <= resp.status < 300:
+                    return False
+                return self._ollama_payload_ready(json.loads(resp.read()))
+        except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError):
+            return False
+
+    @staticmethod
+    def _control_payload_ready(payload):
+        return (
+            isinstance(payload, dict)
+            and payload.get("service") == "bach-chat-control"
+            and isinstance(payload.get("telegram_verified"), bool)
+        )
+
     def _refresh(self):
         with ThreadPoolExecutor(max_workers=4) as pool:
             status_future = pool.submit(
@@ -135,19 +168,19 @@ class BACHTray:
             )
             gui_future = pool.submit(self._check_url, self.gui_url + "/", 1)
             webchat_future = pool.submit(self._check_url, self.webchat_url + "/", 1)
-            ollama_future = pool.submit(
-                self._check_url, self.ollama_url + "/api/tags", 1
-            )
+            ollama_future = pool.submit(self._check_ollama, 1)
             status = status_future.result()
             self.services["gui"] = gui_future.result()
             self.services["webchat"] = webchat_future.result()
             self.services["ollama"] = ollama_future.result()
 
-        if status and "backend" in status:
+        if self._control_payload_ready(status):
             self.state.update(status)
             self.state["connected"] = True
+            self.services["telegram"] = status["telegram_verified"]
         else:
             self.state["connected"] = False
+            self.services["telegram"] = False
 
         if self.state["connected"]:
             bs = self._api("GET", "/api/backends", timeout=2)
@@ -545,6 +578,7 @@ class BACHTray:
             "gui": f"GUI Dashboard (:{self.gui_port})",
             "webchat": "Buddha Chat (:8080)",
             "control": f"Chat/Control (:{self.control_port})",
+            "telegram": "Telegram",
             "ollama": "Ollama (:11434)",
         }
         for key, label in svc_labels.items():
@@ -765,33 +799,167 @@ class BACHTray:
         poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
         poll_thread.start()
 
-        self.icon.run()
+        self.icon.run(self._setup_icon)
+
+    @staticmethod
+    def _setup_icon(icon):
+        icon.visible = True
+        if not _write_ready_receipt():
+            print("Tray-Readiness konnte nicht geschrieben werden.", file=sys.stderr)
+            icon.stop()
 
 
-def main():
+_tray_lock_handle = None
+
+
+def _runtime_dir():
+    override = os.environ.get("BACH_RUNTIME_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    if os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        return base / "BACH" / "runtime"
+    state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    return state_home / "bach" / "runtime"
+
+
+def _instance_lock_path():
+    return _runtime_dir() / "chat_tray.instance.lock"
+
+
+def _ready_receipt_path():
+    return _runtime_dir() / "receipts" / "tray.ready.json"
+
+
+def _write_ready_receipt():
+    launch_id = os.environ.get("BACH_STARTSPINE_LAUNCH_ID")
+    if not launch_id:
+        return True
+    path = _ready_receipt_path()
+    temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    payload = {
+        "launch_id": launch_id,
+        "service": "tray",
+        "pid": os.getpid(),
+        "ready_at": time.time(),
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temp, path)
+        return True
+    except OSError:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+
+
+def _try_instance_lock(lock_path):
+    """Acquire a process-lifetime advisory lock without deleting its inode."""
+    handle = None
+    try:
+        lock_path = Path(lock_path)
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o600)
+        handle = os.fdopen(fd, "r+", encoding="utf-8")
+        if os.fstat(fd).st_size == 0:
+            handle.write(" ")
+            handle.flush()
+        handle.seek(0)
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        handle.seek(0)
+        handle.write(f"{os.getpid()}\n".ljust(32))
+        handle.truncate()
+        handle.flush()
+        return handle
+    except (OSError, IOError):
+        if handle is not None:
+            handle.close()
+        return None
+
+
+def _release_instance_handle(handle):
+    if handle is None:
+        return
+    try:
+        handle.seek(0)
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except (OSError, IOError):
+        pass
+    finally:
+        handle.close()
+
+
+def _check_single_instance():
+    global _tray_lock_handle
+    if _tray_lock_handle is not None:
+        return False
+    _tray_lock_handle = _try_instance_lock(_instance_lock_path())
+    return _tray_lock_handle is not None
+
+
+def _cleanup_instance_lock():
+    global _tray_lock_handle
+    handle = _tray_lock_handle
+    _tray_lock_handle = None
+    _release_instance_handle(handle)
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description="BACH Unified System Tray")
     parser.add_argument("--host", default="127.0.0.1", help="Control API Host")
     parser.add_argument("--port", type=int, default=8081, help="Control API Port")
     parser.add_argument("--gui-port", type=int, default=8000, help="GUI Port")
     parser.add_argument("--webchat-port", type=int, default=8080, help="Webchat Port")
     parser.add_argument(
+        "--ollama-host",
+        default=None,
+        help="Ollama Host (standardmäßig lokal, unabhängig vom Control-Host)",
+    )
+    parser.add_argument(
         "--smoke-promptboard",
         action="store_true",
         help="Print PromptBoard tray detection smoke data and exit",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     tray = BACHTray(
         host=args.host,
         port=args.port,
         webchat_port=args.webchat_port,
         gui_port=args.gui_port,
+        ollama_host=args.ollama_host,
     )
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
-        return
-    tray.run()
+        return 0
+    if pystray is None or Image is None:
+        print("Benötigt: pip install pystray Pillow", file=sys.stderr)
+        return 1
+    if not _check_single_instance():
+        print("BACH System Tray läuft bereits; keine zweite Instanz gestartet.", file=sys.stderr)
+        return 1
+    try:
+        tray.run()
+        return 0
+    finally:
+        _cleanup_instance_lock()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

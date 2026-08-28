@@ -5,6 +5,7 @@
 import json
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -715,12 +716,15 @@ class TestBACHTray:
             'PIL.ImageFont': MagicMock(),
         }):
             from hub._services.chat.chat_tray import BACHTray
-            return BACHTray(host="testhost", port=9999)
+            tray = BACHTray(host="testhost", port=9999)
+            tray._check_ollama = MagicMock(return_value=False)
+            return tray
 
     def test_init_urls(self, tray):
         assert tray.base_url == "http://testhost:9999"
         assert tray.gui_url == "http://testhost:8000"
         assert tray.webchat_url == "http://testhost:8080"
+        assert tray.ollama_url == "http://127.0.0.1:11434"
 
     def test_init_uses_resolved_gui_port(self):
         from hub._services.chat.chat_tray import BACHTray
@@ -729,6 +733,13 @@ class TestBACHTray:
         assert tray.control_port == 9999
         assert tray.gui_port == 8123
         assert tray.gui_url == "http://testhost:8123"
+
+    def test_init_allows_explicit_ollama_host(self):
+        from hub._services.chat.chat_tray import BACHTray
+
+        tray = BACHTray(host="controlhost", ollama_host="modelhost")
+        assert tray.ollama_host == "modelhost"
+        assert tray.ollama_url == "http://modelhost:11434"
 
     def test_initial_state(self, tray):
         assert tray.state["backend"] == "?"
@@ -866,7 +877,8 @@ class TestBACHTray:
     def test_refresh_updates_state(self, tray):
         tray._check_url = MagicMock(return_value=False)
         tray._api = MagicMock(side_effect=[
-            {"backend": "ollama", "model": "qwen", "mode": "full", "connected": True,
+            {"service": "bach-chat-control", "telegram_verified": True,
+             "backend": "ollama", "model": "qwen", "mode": "full", "connected": True,
              "think": False, "bach": True, "sessions": 2, "max_tool_rounds": 10,
              "backend_cli": ""},
             {"ollama": {"status": "ok"}},
@@ -877,6 +889,65 @@ class TestBACHTray:
         assert tray.state["mode"] == "full"
         assert tray.state["connected"] is True
         assert tray.models == ["qwen3.5", "llama3"]
+
+    @pytest.mark.parametrize("status", [
+        {"backend": "ollama"},
+        {"service": "foreign-control", "telegram_verified": True, "backend": "ollama"},
+        {"service": "bach-chat-control", "telegram_verified": "yes", "backend": "ollama"},
+    ])
+    def test_refresh_rejects_unverified_or_foreign_control(self, tray, status):
+        tray._check_url = MagicMock(return_value=False)
+        tray._api = MagicMock(return_value=status)
+
+        tray._refresh()
+
+        assert tray.state["connected"] is False
+        assert tray.services["control"] is False
+        assert tray._api.call_count == 1
+
+    def test_refresh_reports_control_and_telegram_separately(self, tray):
+        tray._api = MagicMock(side_effect=[
+            {
+                "service": "bach-chat-control",
+                "telegram_verified": False,
+                "backend": "ollama",
+                "model": "qwen",
+            },
+            {},
+            {"models": []},
+        ])
+
+        tray._refresh()
+
+        assert tray.services["control"] is True
+        assert tray.services["telegram"] is False
+        assert tray.state["connected"] is True
+
+    def test_refresh_reconnects_after_control_becomes_ready(self, tray):
+        ready = {
+            "service": "bach-chat-control",
+            "telegram_verified": True,
+            "backend": "ollama",
+            "model": "qwen",
+        }
+        tray._check_url = MagicMock(return_value=False)
+        tray._api = MagicMock(side_effect=[None, ready, {}, {"models": ["qwen"]}])
+
+        tray._refresh()
+        assert tray.state["connected"] is False
+        tray._refresh()
+
+        assert tray.state["connected"] is True
+        assert tray.services["control"] is True
+        assert tray.models == ["qwen"]
+
+    def test_ollama_probe_requires_identity_schema(self):
+        from hub._services.chat.chat_tray import BACHTray
+
+        tray = BACHTray(host="remote-control")
+        assert tray.ollama_url == "http://127.0.0.1:11434"
+        assert tray._ollama_payload_ready({"models": []})
+        assert not tray._ollama_payload_ready({"status": "ok"})
 
     def test_refresh_skips_catalog_requests_while_offline(self, tray):
         tray._check_url = MagicMock(return_value=False)
@@ -925,3 +996,93 @@ class TestBACHTray:
         with patch('urllib.request.urlopen', return_value=resp):
             result = tray._api("GET", "/api/status")
             assert result["backend"] == "ollama"
+
+
+class TestBACHTraySingleInstance:
+    def test_lock_rejects_duplicate_and_can_be_reacquired(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_tray
+
+        lock_path = tmp_path / "chat_tray.instance.lock"
+        monkeypatch.setattr(chat_tray, "_instance_lock_path", lambda: lock_path)
+        chat_tray._tray_lock_handle = None
+        assert chat_tray._check_single_instance() is True
+        try:
+            assert chat_tray._try_instance_lock(lock_path) is None
+        finally:
+            chat_tray._cleanup_instance_lock()
+
+        assert lock_path.exists()
+        assert lock_path.read_text(encoding="utf-8").strip() == str(os.getpid())
+        assert chat_tray._check_single_instance() is True
+        chat_tray._cleanup_instance_lock()
+
+    def test_lock_blocks_a_second_process(self, tmp_path):
+        runtime = tmp_path / "runtime"
+        env = os.environ.copy()
+        env["BACH_RUNTIME_DIR"] = str(runtime)
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = str(SYSTEM_ROOT) + (
+            os.pathsep + existing_pythonpath if existing_pythonpath else ""
+        )
+        holder_code = "\n".join([
+            "from hub._services.chat import chat_tray",
+            "if not chat_tray._check_single_instance(): raise SystemExit(2)",
+            "print('LOCKED', flush=True)",
+            "input()",
+            "chat_tray._cleanup_instance_lock()",
+        ])
+        contender_code = "\n".join([
+            "from hub._services.chat import chat_tray",
+            "acquired = chat_tray._check_single_instance()",
+            "if acquired: chat_tray._cleanup_instance_lock()",
+            "raise SystemExit(3 if acquired else 0)",
+        ])
+        holder = subprocess.Popen(
+            [sys.executable, "-c", holder_code],
+            cwd=SYSTEM_ROOT,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            assert holder.stdout.readline().strip() == "LOCKED"
+            contender = subprocess.run(
+                [sys.executable, "-c", contender_code],
+                cwd=SYSTEM_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert contender.returncode == 0, contender.stderr
+            holder.stdin.write("\n")
+            holder.stdin.flush()
+            assert holder.wait(timeout=5) == 0
+
+            after_release = subprocess.run(
+                [sys.executable, "-c", contender_code],
+                cwd=SYSTEM_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert after_release.returncode == 3
+        finally:
+            if holder.poll() is None:
+                holder.terminate()
+                holder.wait(timeout=5)
+
+    def test_ready_receipt_is_launch_bound(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_tray
+
+        monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+        monkeypatch.setenv("BACH_STARTSPINE_LAUNCH_ID", "launch-42")
+        assert chat_tray._write_ready_receipt()
+        payload = json.loads(
+            chat_tray._ready_receipt_path().read_text(encoding="utf-8")
+        )
+        assert payload["launch_id"] == "launch-42"
+        assert payload["pid"] == os.getpid()

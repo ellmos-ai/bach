@@ -29,6 +29,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 import json
 import re
+import httpx
 
 import sqlite3
 
@@ -61,7 +62,7 @@ try:
 
     from fastapi.staticfiles import StaticFiles
 
-    from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, JSONResponse
+    from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, JSONResponse, Response
 
     from fastapi.middleware.cors import CORSMiddleware
 
@@ -135,6 +136,72 @@ SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_. -]{0,127}$")
 SAFE_TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 SAFE_CLI_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@ -]{0,127}$")
 SAFE_PARTNER_NAMES = {"claude", "codex", "gemini", "kimi", "ollama"}
+LOCAL_CHAT_HOSTS = {"", "127.0.0.1", "localhost", "::1"}
+CHAT_CONTROL_PATHS = {
+    "status", "backends", "models", "chat", "backend", "model", "mode",
+    "think", "max_tool_rounds",
+}
+
+
+def _startspine_runtime_dir() -> Path:
+    override = os.environ.get("BACH_RUNTIME_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    if os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        return base / "BACH" / "runtime"
+    state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    return state_home / "bach" / "runtime"
+
+
+def _chat_control_base_url() -> str | None:
+    discovery_path = _startspine_runtime_dir() / "discovery.json"
+    try:
+        discovery = json.loads(discovery_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+        discovery = None
+    if isinstance(discovery, dict):
+        registered_root = discovery.get("root")
+        try:
+            same_root = (
+                registered_root
+                and Path(registered_root).resolve() == BACH_DIR.parent.resolve()
+            )
+        except (OSError, ValueError, TypeError):
+            same_root = False
+        chat = discovery.get("services", {}).get("chat", {})
+        host = str(chat.get("host") or "")
+        try:
+            port = int(chat.get("actual_port"))
+        except (TypeError, ValueError):
+            port = 0
+        if same_root and host in LOCAL_CHAT_HOSTS and 1 <= port <= 65535:
+            return f"http://127.0.0.1:{port}/api"
+        return None
+
+    try:
+        port = int(os.environ.get("BACH_CONTROL_PORT", "8081"))
+    except ValueError:
+        return None
+    if 1 <= port <= 65535:
+        return f"http://127.0.0.1:{port}/api"
+    return None
+
+
+def _chat_control_payload_ready(payload) -> bool:
+    return (
+        isinstance(payload, dict)
+        and payload.get("service") == "bach-chat-control"
+        and isinstance(payload.get("telegram_verified"), bool)
+    )
+
+
+def _chat_proxy_timeout() -> float:
+    try:
+        timeout = float(os.environ.get("BACH_CHAT_PROXY_TIMEOUT_SECONDS", "960"))
+    except ValueError:
+        return 960.0
+    return min(max(timeout, 10.0), 7200.0)
 
 
 def public_error_message() -> str:
@@ -4289,6 +4356,47 @@ async def chat_page():
     if chat_file.exists():
         return FileResponse(chat_file)
     raise HTTPException(status_code=404, detail="Template chat.html nicht gefunden")
+
+
+@app.api_route("/api/chat-control/{control_path:path}", methods=["GET", "POST"])
+async def chat_control_proxy(control_path: str, request: Request):
+    """Bind the GUI chat to Startspine's resolved local Control port."""
+    if control_path not in CHAT_CONTROL_PATHS:
+        raise HTTPException(status_code=404, detail="Unbekannter Chat-Control-Pfad")
+    base_url = _chat_control_base_url()
+    if not base_url:
+        raise HTTPException(status_code=503, detail="Chatdienst nicht registriert")
+    timeout = _chat_proxy_timeout() if control_path == "chat" else 8.0
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            status_response = await client.get(f"{base_url}/status")
+            try:
+                status_payload = status_response.json()
+            except ValueError:
+                status_payload = None
+            if status_response.status_code != 200 or not _chat_control_payload_ready(status_payload):
+                raise HTTPException(status_code=503, detail="Chatdienst-Identität nicht bestätigt")
+            if control_path == "status" and request.method == "GET":
+                upstream = status_response
+            else:
+                headers = {}
+                for name in ("content-type", "x-delegation-depth"):
+                    if request.headers.get(name):
+                        headers[name] = request.headers[name]
+                upstream = await client.request(
+                    request.method,
+                    f"{base_url}/{control_path}",
+                    params=request.query_params,
+                    content=await request.body(),
+                    headers=headers,
+                )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Chatdienst nicht erreichbar") from exc
+    return Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        headers={"content-type": upstream.headers.get("content-type", "application/json")},
+    )
 
 
 @app.get("/settings", response_class=HTMLResponse)
