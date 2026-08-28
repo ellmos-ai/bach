@@ -444,6 +444,7 @@ def test_control_api_rejects_non_json_post(control_module):
         thread.join(timeout=2)
 
     assert response.status_code == 415
+    assert response.headers["Content-Length"] == str(len(response.content))
     assert control_module._global_defaults["mode"] == "safe"
     assert not thread.is_alive()
 

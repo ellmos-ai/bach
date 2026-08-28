@@ -77,7 +77,7 @@ try:
     from hub.bach_paths import BACH_DB as _PATHS_DB, BACKUPS_DIR
     BACH_DB = str(_PATHS_DB)
 except ImportError:
-    BACH_DB = str(BACH_ROOT / "data" / "bach.db")
+    BACH_DB = str(Path.home() / ".bach" / "bach.db")
     BACKUPS_DIR = Path.home() / ".bach" / "backups"
 
 try:

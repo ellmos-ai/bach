@@ -52,7 +52,7 @@ def _find_mcp_binary(name: str) -> str | None:
     return None
 
 
-def _send_init(binary: str, timeout: int = 15) -> dict:
+def _send_init(binary: str, timeout: int = 30) -> dict:
     """Send JSON-RPC initialize to an MCP server and return parsed response."""
     result = subprocess.run(
         [binary],

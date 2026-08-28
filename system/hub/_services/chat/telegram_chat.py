@@ -1371,6 +1371,7 @@ class ControlHandler(BaseHTTPRequestHandler):
         try:
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
             self._cors()
             self.end_headers()
             self.wfile.write(body)
@@ -1397,15 +1398,28 @@ class ControlHandler(BaseHTTPRequestHandler):
                 return {}
         return {}
 
+    def _discard_request_body(self):
+        try:
+            remaining = max(0, int(self.headers.get("Content-Length", 0)))
+        except (TypeError, ValueError):
+            return
+        while remaining:
+            chunk = self.rfile.read(min(remaining, 64 * 1024))
+            if not chunk:
+                return
+            remaining -= len(chunk)
+
     def _allow_json_post(self) -> bool:
         origin = str(self.headers.get("Origin") or "").strip()
         if origin and not _is_loopback_origin(origin):
+            self._discard_request_body()
             self._json({"error": "Fremd-Origin nicht erlaubt"}, 403)
             return False
 
         content_type = str(self.headers.get("Content-Type") or "")
         media_type = content_type.partition(";")[0].strip().lower()
         if media_type != "application/json":
+            self._discard_request_body()
             self._json({"error": "Content-Type application/json erforderlich"}, 415)
             return False
         return True

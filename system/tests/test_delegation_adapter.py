@@ -203,6 +203,208 @@ class PartnerRegistry:
     }
 
 
+def test_explicit_clutch_path_does_not_mix_missing_modules_from_other_sources(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "clutch"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "scorer.py").write_text(
+        """
+class ExternalScorer:
+    def score(self, task):
+        return 72, {}
+
+    def gang_level_fuer_score(self, score):
+        return 4
+
+
+def get_scorer():
+    return ExternalScorer()
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    leaked_modules = {
+        "clutch.partner": SimpleNamespace(
+            Partner=type("LeakedPartner", (), {}),
+            PartnerRegistry=type("LeakedPartnerRegistry", (), {}),
+        ),
+        "clutch.strecke": SimpleNamespace(
+            StreckenAnalyse=type("LeakedStreckenAnalyse", (), {}),
+        ),
+        "clutch.gas_bremse": SimpleNamespace(
+            GasBremse=type("LeakedGasBremse", (), {}),
+        ),
+        "clutch.bordcomputer": SimpleNamespace(
+            Bordcomputer=type("LeakedBordcomputer", (), {}),
+        ),
+        "clutch.fahrtenbuch": SimpleNamespace(
+            Fahrtenbuch=type("LeakedFahrtenbuch", (), {}),
+            FahrtEintrag=type("LeakedFahrtEintrag", (), {}),
+        ),
+        "clutch.fahrschule": SimpleNamespace(
+            Fahrschule=type("LeakedFahrschule", (), {}),
+        ),
+        "clutch.getriebe": SimpleNamespace(
+            Getriebe=type("LeakedGetriebe", (), {}),
+        ),
+        "clutch.kupplung": SimpleNamespace(
+            Kupplung=type("LeakedKupplung", (), {}),
+        ),
+    }
+    real_import_module = importlib.import_module
+
+    def import_module(name, package=None):
+        if name in leaked_modules:
+            return leaked_modules[name]
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", import_module)
+    monkeypatch.setenv("BACH_CLUTCH_PATH", str(tmp_path))
+    monkeypatch.delenv("BACH_DISABLE_EXTERNAL_CLUTCH", raising=False)
+
+    delegation = _reload_delegation()
+
+    assert delegation.get_component_sources() == {
+        "external_clutch": "available",
+        "scorer": "clutch",
+        "partner_registry": "legacy",
+        "streckenanalyse": "legacy",
+        "gas_bremse": "legacy",
+        "bordcomputer": "legacy",
+        "fahrschule": "legacy",
+        "fahrtenbuch": "legacy",
+    }
+
+
+def test_explicit_clutch_path_replaces_preloaded_modules_from_other_sources(
+    tmp_path,
+    monkeypatch,
+):
+    selected_root = tmp_path / "selected"
+    selected_pkg = selected_root / "clutch"
+    selected_pkg.mkdir(parents=True)
+    (selected_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (selected_pkg / "scorer.py").write_text(
+        """
+class SelectedScorer:
+    def score(self, task):
+        return 88, {}
+
+    def gang_level_fuer_score(self, score):
+        return 5
+
+
+def get_scorer():
+    return SelectedScorer()
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    foreign_root = tmp_path / "foreign"
+    foreign_pkg = foreign_root / "clutch"
+    foreign_pkg.mkdir(parents=True)
+    (foreign_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (foreign_pkg / "scorer.py").write_text(
+        """
+class ForeignScorer:
+    def score(self, task):
+        return 13, {}
+
+    def gang_level_fuer_score(self, score):
+        return 1
+
+
+def get_scorer():
+    return ForeignScorer()
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    _clear_clutch_modules()
+    monkeypatch.syspath_prepend(str(foreign_root))
+    cached = importlib.import_module("clutch.scorer")
+    assert Path(cached.__file__).resolve().is_relative_to(foreign_root.resolve())
+
+    monkeypatch.setenv("BACH_CLUTCH_PATH", str(selected_root))
+    monkeypatch.delenv("BACH_DISABLE_EXTERNAL_CLUTCH", raising=False)
+
+    import hub._services.delegation as delegation
+
+    delegation = importlib.reload(delegation)
+
+    assert delegation.get_scorer().score("probe")[0] == 88
+    assert Path(sys.modules["clutch.scorer"].__file__).resolve().is_relative_to(
+        selected_root.resolve()
+    )
+
+
+def test_explicit_clutch_path_replaces_mixed_cached_namespace(
+    tmp_path,
+    monkeypatch,
+):
+    selected_root = tmp_path / "selected"
+    selected_pkg = selected_root / "clutch"
+    selected_pkg.mkdir(parents=True)
+    (selected_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (selected_pkg / "scorer.py").write_text(
+        """
+class SelectedScorer:
+    def score(self, task):
+        return 88, {}
+
+
+def get_scorer():
+    return SelectedScorer()
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    foreign_root = tmp_path / "foreign"
+    foreign_pkg = foreign_root / "clutch"
+    foreign_pkg.mkdir(parents=True)
+    (foreign_pkg / "__init__.py").write_text("", encoding="utf-8")
+    marker = tmp_path / "foreign-scorer-executed.txt"
+    (foreign_pkg / "scorer.py").write_text(
+        f"""
+from pathlib import Path
+
+Path({str(marker)!r}).write_text("executed", encoding="utf-8")
+
+
+class ForeignScorer:
+    def score(self, task):
+        return 13, {{}}
+
+
+def get_scorer():
+    return ForeignScorer()
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    _clear_clutch_modules()
+    monkeypatch.syspath_prepend(str(selected_root))
+    monkeypatch.syspath_prepend(str(foreign_root))
+    cached_package = importlib.import_module("clutch")
+    cached_package.__path__ = [str(foreign_pkg), str(selected_pkg)]
+
+    monkeypatch.setenv("BACH_CLUTCH_PATH", str(selected_root))
+    monkeypatch.delenv("BACH_DISABLE_EXTERNAL_CLUTCH", raising=False)
+
+    import hub._services.delegation as delegation
+
+    delegation = importlib.reload(delegation)
+
+    assert delegation.get_scorer().score("probe")[0] == 88
+    assert not marker.exists()
+    assert Path(sys.modules["clutch.scorer"].__file__).resolve().is_relative_to(
+        selected_root.resolve()
+    )
+
+
 def test_external_clutch_data_bridge_keeps_bach_signature_and_db(tmp_path, monkeypatch):
     pkg = tmp_path / "clutch"
     pkg.mkdir()
