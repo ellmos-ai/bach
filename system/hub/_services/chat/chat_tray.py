@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
@@ -62,10 +63,12 @@ class BACHTray:
     POLL_INTERVAL = 5
     IDLE_THRESHOLD = 12  # 12 × 5s = 60s ohne Sessions → Idle-Arbeit starten
 
-    def __init__(self, host="127.0.0.1", port=8081, webchat_port=8080):
+    def __init__(self, host="127.0.0.1", port=8081, webchat_port=8080, gui_port=8000):
         self.host = host
+        self.control_port = port
+        self.gui_port = gui_port
         self.base_url = f"http://{host}:{port}"
-        self.gui_url = f"http://{host}:8000"
+        self.gui_url = f"http://{host}:{gui_port}"
         self.webchat_url = f"http://{host}:{webchat_port}"
         self.ollama_url = f"http://{host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
@@ -87,7 +90,12 @@ class BACHTray:
         self.icon = None
         self._stop = threading.Event()
 
-        self.services = {"gui": False, "control": False, "ollama": False}
+        self.services = {
+            "gui": False,
+            "webchat": False,
+            "control": False,
+            "ollama": False,
+        }
 
         self.idle_enabled = False
         self.idle_consecutive = 0
@@ -121,24 +129,36 @@ class BACHTray:
             return False
 
     def _refresh(self):
-        status = self._api("GET", "/api/status")
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            status_future = pool.submit(
+                self._api, "GET", "/api/status", None, None, 1
+            )
+            gui_future = pool.submit(self._check_url, self.gui_url + "/", 1)
+            webchat_future = pool.submit(self._check_url, self.webchat_url + "/", 1)
+            ollama_future = pool.submit(
+                self._check_url, self.ollama_url + "/api/tags", 1
+            )
+            status = status_future.result()
+            self.services["gui"] = gui_future.result()
+            self.services["webchat"] = webchat_future.result()
+            self.services["ollama"] = ollama_future.result()
+
         if status and "backend" in status:
             self.state.update(status)
             self.state["connected"] = True
         else:
             self.state["connected"] = False
 
-        bs = self._api("GET", "/api/backends")
-        if bs and not bs.get("error"):
-            self.backends = bs
+        if self.state["connected"]:
+            bs = self._api("GET", "/api/backends", timeout=2)
+            if bs and not bs.get("error"):
+                self.backends = bs
 
-        ms = self._api("GET", "/api/models")
-        if ms and "models" in ms:
-            self.models = ms["models"]
+            ms = self._api("GET", "/api/models", timeout=2)
+            if ms and "models" in ms:
+                self.models = ms["models"]
 
         self.services["control"] = self.state["connected"]
-        self.services["gui"] = self._check_url(self.gui_url + "/")
-        self.services["ollama"] = self._check_url(self.ollama_url + "/api/tags")
 
     # --- PromptBoard ---
 
@@ -522,8 +542,9 @@ class BACHTray:
         # ── Services ──
         svc_items = []
         svc_labels = {
-            "gui": "GUI Dashboard (:8000)",
-            "control": "Control API (:8081)",
+            "gui": f"GUI Dashboard (:{self.gui_port})",
+            "webchat": "Buddha Chat (:8080)",
+            "control": f"Chat/Control (:{self.control_port})",
             "ollama": "Ollama (:11434)",
         }
         for key, label in svc_labels.items():
@@ -549,6 +570,7 @@ class BACHTray:
                 cat_items.append(pystray.MenuItem(
                     f"▶ Senden: {name}",
                     self._make_prompt_send_action(text),
+                    enabled=lambda item: self.state["connected"],
                 ))
             prompt_items.append(pystray.MenuItem(category, pystray.Menu(*cat_items)))
         if prompt_items:
@@ -570,6 +592,7 @@ class BACHTray:
                 "Idle-Modus aktivieren",
                 self._toggle_idle,
                 checked=lambda item: self.idle_enabled,
+                enabled=lambda item: self.state["connected"] and self.services["gui"],
             ),
         ]
         if self.idle_processing:
@@ -585,8 +608,16 @@ class BACHTray:
         items.append(pystray.Menu.SEPARATOR)
 
         # ── Zugangswege ──
-        items.append(pystray.MenuItem("GUI Dashboard", self._open_gui))
-        items.append(pystray.MenuItem("Buddha Chat", self._open_webchat))
+        items.append(pystray.MenuItem(
+            "GUI Dashboard",
+            self._open_gui,
+            enabled=lambda item: self.services["gui"],
+        ))
+        items.append(pystray.MenuItem(
+            "Buddha Chat",
+            self._open_webchat,
+            enabled=lambda item: self.services["webchat"],
+        ))
         items.append(pystray.MenuItem("Telegram", self._open_telegram))
 
         items.append(pystray.Menu.SEPARATOR)
@@ -697,18 +728,33 @@ class BACHTray:
 
     def _poll_loop(self):
         while not self._stop.is_set():
-            old_connected = self.state["connected"]
-            old_mode = self.state["mode"]
+            started = time.monotonic()
+            old_signature = (
+                self.state["connected"],
+                self.state["mode"],
+                self.state["backend"],
+                self.state["model"],
+                self.state["think"],
+                tuple(sorted(self.services.items())),
+            )
             self._refresh()
-            if self.state["connected"] != old_connected or self.state["mode"] != old_mode:
+            new_signature = (
+                self.state["connected"],
+                self.state["mode"],
+                self.state["backend"],
+                self.state["model"],
+                self.state["think"],
+                tuple(sorted(self.services.items())),
+            )
+            if new_signature != old_signature:
                 self._update_icon()
             self._idle_tick()
-            self._stop.wait(self.POLL_INTERVAL)
+            elapsed = time.monotonic() - started
+            self._stop.wait(max(0.1, self.POLL_INTERVAL - elapsed))
 
     # --- Run ---
 
     def run(self):
-        self._refresh()
         self.icon = pystray.Icon(
             "bach-system",
             self._icon_image,
@@ -726,6 +772,7 @@ def main():
     parser = argparse.ArgumentParser(description="BACH Unified System Tray")
     parser.add_argument("--host", default="127.0.0.1", help="Control API Host")
     parser.add_argument("--port", type=int, default=8081, help="Control API Port")
+    parser.add_argument("--gui-port", type=int, default=8000, help="GUI Port")
     parser.add_argument("--webchat-port", type=int, default=8080, help="Webchat Port")
     parser.add_argument(
         "--smoke-promptboard",
@@ -734,7 +781,12 @@ def main():
     )
     args = parser.parse_args()
 
-    tray = BACHTray(host=args.host, port=args.port, webchat_port=args.webchat_port)
+    tray = BACHTray(
+        host=args.host,
+        port=args.port,
+        webchat_port=args.webchat_port,
+        gui_port=args.gui_port,
+    )
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
         return

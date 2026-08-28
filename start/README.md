@@ -1,13 +1,90 @@
-# BACH Startmenü
+# BACH Startmenü und Startspine
 
-## Launcher
+## Einstiegspunkte
 
-**`bach.bat`** — Windows Boot-Menü. Doppelklick zum Starten.
-**`bach.sh`** — macOS/Linux (`bach.sh chat|gui|status|stop`).
+- `bach.bat`: Windows-Bootmenü per Doppelklick.
+- `bach.sh`: macOS/Linux mit `start|chat|gui|status|stop`.
+- `startspine.py`: gemeinsame Prozess-, Port- und Readiness-Steuerung.
 
-## Hauptmenü
+Die Shell-Dateien sind dünne Adapter. Alle Dienststarts und Stopps laufen über
+die pfadunabhängige Startspine.
 
+## Sicherheits- und Betriebsvertrag
+
+Die Startspine:
+
+- beendet niemals einen Prozess nur aufgrund eines Ports oder Namens;
+- ordnet eigene Prozesse über PID und Erstellungszeit zu;
+- stoppt ausschließlich diese registrierten Prozesse;
+- verwendet bei einem fremd belegten Wunschport automatisch den nächsten
+  freien Port und veröffentlicht den tatsächlich verwendeten Port;
+- meldet Erfolg für erforderliche Dienste erst nach Readiness und
+  Port-Ownership-Readback;
+- startet den Tray auch bei fehlender Chat/Control API. Der rote Tray versucht
+  die Verbindung danach alle fünf Sekunden erneut;
+- deaktiviert im Offline-Tray alle Aktionen, die ein nicht erreichbares
+  Backend oder Frontend benötigen;
+- zeigt Chat/Control und lokales Ollama getrennt an. Ollama ist optional und
+  standardmäßig offline zulässig;
+- verhindert konkurrierende Start-/Stop-Operationen mit einer kurzlebigen
+  Startspine-Lease;
+- erfasst Supervisor-PID, Kind-PID, Host, Wunschport, tatsächlichen Port,
+  Readiness und Exit-Code in Runtime-Belegen.
+
+Chat/Control gilt erst als bereit, wenn der gestartete Prozess den Port besitzt,
+sich als BACH Chat Control ausweist und der Telegram-Bot gegenüber Telegram
+verifiziert wurde. Die Startspine verlangt anschließend eine stabile
+Readiness-Phase.
+
+Die Runtime-Dateien sind keine fachliche Datenbank. Sie liegen standardmäßig
+unter `%LOCALAPPDATA%\BACH\runtime` (Windows) oder
+`$XDG_STATE_HOME/bach/runtime` beziehungsweise
+`~/.local/state/bach/runtime` (macOS/Linux):
+
+- `startspine.json`: registrierte eigene Prozesse;
+- `discovery.json`: aktueller Discovery-/Readiness-Readback;
+- `receipts/*.json`: Supervisor- und Exit-Code-Belege;
+- `logs/*.log`: Dienstlogs.
+
+Für isolierte Tests kann `BACH_RUNTIME_DIR` gesetzt werden.
+
+## Ports
+
+| Dienst | Wunschport | Konfiguration | Verhalten bei Fremdbelegung |
+|---|---:|---|---|
+| GUI | 8000 | `BACH_GUI_PORT` oder `--gui-port` | freier Folgeport |
+| Chat/Control | 8081 | `BACH_CONTROL_PORT` oder `--control-port` | freier Folgeport |
+| Ollama | 11434 | Ollama-Konfiguration | optional/offline |
+
+Konsumenten erhalten den aufgelösten Port über `discovery.json`. Der lokal
+gestartete Tray bekommt GUI- und Control-Port direkt von der Startspine.
+
+## Befehle
+
+```text
+python start/startspine.py start                    # GUI + Tray
+python start/startspine.py start --chat --tray      # Chat/Control + Tray
+python start/startspine.py start --gui --tray       # expliziter Default
+python start/startspine.py status
+python start/startspine.py status --json
+python start/startspine.py stop --services chat,tray
+python start/startspine.py stop --services all
+python start/startspine.py autostart-install       # Windows
+python start/startspine.py autostart-remove        # Windows
 ```
+
+Ein Remote-Tray wird ohne lokalen Backend-Start erzeugt:
+
+```text
+python start/startspine.py start --tray --host macstudvonlukas
+```
+
+Wenn der Remote-Server andere Ports veröffentlicht, müssen sie über
+`--gui-port` und `--control-port` mitgegeben werden.
+
+## Windows-Hauptmenü
+
+```text
   --- SCHNELLSTART --------------------------------
   [D]  Default Start (GUI + System Tray)
 
@@ -20,67 +97,32 @@
   --- DIENSTE -------------------------------------
   [B]  Chat Service (Telegram Bot + Tray)
   [W]  Buddha Connect (Server-Modus)
-  [G]  Web-GUI starten (Port 8000)
+  [G]  Web-GUI starten
   [S]  Status anzeigen
   [X]  Chat Service stoppen
-
-  --- ERWEITERT -----------------------------------
-  [E]  Erweiterte Optionen
 ```
 
-### Bewertung der Modi
-
-| Modus | Notwendig | Begründung |
-|-------|-----------|------------|
-| Default Start | Ja | Standard-Workflow: GUI + Tray |
-| Claude Code lokal | Ja | Hauptentwicklungs-Modus |
-| Claude Code remote | Ja | Mobile-Steuerung |
-| Codex Konsole | Ja | Alternative zu Claude |
-| Agent beauftragen | Ja | Direkte Agenten-Delegation |
-| Chat Service | Ja | Telegram Bot + Control API |
-| Server-Modus | Ja | Verbindung zum Mac Studio |
-| Web-GUI | Ja | Dashboard standalone |
-| Status/Stop | Ja | Betriebsübersicht |
-
-## Erweitertes Menü
-
-```
-  [1]  Auto-Session (Zeitlimit + Scope waehlbar)
-  [2]  Endlos-Loop (Intervall waehlbar)
-  [M]  Maintenance (Recurring/Backup/Docs)
-  [A]  Advanced Console (bach.py direkt)
-  [C]  Autostart einrichten
-  [R]  Autostart entfernen
-```
-
-Konsolidiert: Statt 9 separater Claude-Varianten (15/30/60 Min × alle/zugewiesene Tasks + 3 Loops)
-jetzt 2 interaktive Optionen mit wählbarem Zeitlimit und Scope.
-
-## Task-Empfänger: Wer kann Tasks ausführen?
+## Task-Empfänger
 
 | Assignee | Kann ausführen? | Mechanismus |
-|----------|----------------|-------------|
-| `user` (342 Tasks) | Ja — manuell | Benutzer erledigt Tasks selbst |
-| `OLLAMA` | Ja — automatisch | Idle Worker im System Tray (bei Leerlauf) |
-| `BUDDHA` | Ja — automatisch | Idle Worker (Fallback nach OLLAMA) |
-| `bach` (102 Tasks) | Nein — nur Tracking | Kein Ausführungsmechanismus |
-| `claude` / `CLAUDE` (25 Tasks) | Teilweise — via Auto-Session | Nur wenn Claude-Session aktiv |
-| `gemini` / `GEMINI` (28 Tasks) | Nein — nur Tracking | Gemini hat keinen Task-Executor |
-| `persoenlicher-assistent` (1 Task) | Nein — nur Tracking | Agent ohne autonome Ausführung |
+|---|---|---|
+| `user` | Ja, manuell | Benutzer erledigt Tasks selbst |
+| `OLLAMA` | Ja, automatisch | Idle Worker im System Tray |
+| `BUDDHA` | Ja, automatisch | Idle Worker als Fallback |
+| `bach` | Nein, nur Tracking | kein Ausführungsmechanismus |
+| `claude` / `CLAUDE` | Teilweise | nur bei aktiver Claude-Session |
+| `gemini` / `GEMINI` | Nein, nur Tracking | kein Task-Executor |
+| `persönlicher-assistent` | Nein, nur Tracking | Agent ohne autonome Ausführung |
 
-**Empfehlung:** Für automatische Ausführung im Leerlauf: `OLLAMA` oder `BUDDHA` zuweisen.
-Für manuelle Bearbeitung: `user`. Andere Assignees dienen nur der Organisation.
+## Rollback
+
+Die Migration ändert keine fachliche Source of Truth. Ein Code-Rollback erfolgt
+über den zugehörigen Git-Commit. Vor dem Wechsel auf einen älteren Launcher
+müssen die aktuell registrierten Prozesse mit
+`startspine.py stop --services all` beendet werden. Runtime-Belege dürfen
+erst danach archiviert werden.
 
 ## Legacy-Dateien
 
-Einzelne .bat-Dateien in `_archive/`. Werden nicht mehr direkt aufgerufen.
-Referenzierte Hilfsskripte in `_internal/` (z.B. `claude_remote_control.py`).
-
-## Server-Modus
-
-Option `[W]` verbindet zum Mac Studio (oder anderem BACH-Server):
-1. Prüft Control API (:8081)
-2. Startet System Tray mit `--host`
-3. Öffnet GUI Dashboard
-
-Standard-Host: `macstudvonlukas` (Tailscale). Eigener: `SET BACH_HOST=mein-server`
+Dateien unter `start/_archive/` sind nicht aktive Einstiegspunkte. Sie dürfen
+nicht für den produktiven Start verwendet werden.

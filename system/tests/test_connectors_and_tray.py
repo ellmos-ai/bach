@@ -722,11 +722,20 @@ class TestBACHTray:
         assert tray.gui_url == "http://testhost:8000"
         assert tray.webchat_url == "http://testhost:8080"
 
+    def test_init_uses_resolved_gui_port(self):
+        from hub._services.chat.chat_tray import BACHTray
+
+        tray = BACHTray(host="testhost", port=9999, gui_port=8123)
+        assert tray.control_port == 9999
+        assert tray.gui_port == 8123
+        assert tray.gui_url == "http://testhost:8123"
+
     def test_initial_state(self, tray):
         assert tray.state["backend"] == "?"
         assert tray.state["mode"] == "safe"
         assert tray.state["connected"] is False
         assert tray.state["think"] is True
+        assert tray.services["webchat"] is False
 
     def test_loads_promptboard_library_from_env(self, tmp_path):
         library = tmp_path / "library.json"
@@ -855,6 +864,7 @@ class TestBACHTray:
         assert snapshot["prompt_count"] == 1
 
     def test_refresh_updates_state(self, tray):
+        tray._check_url = MagicMock(return_value=False)
         tray._api = MagicMock(side_effect=[
             {"backend": "ollama", "model": "qwen", "mode": "full", "connected": True,
              "think": False, "bach": True, "sessions": 2, "max_tool_rounds": 10,
@@ -867,6 +877,12 @@ class TestBACHTray:
         assert tray.state["mode"] == "full"
         assert tray.state["connected"] is True
         assert tray.models == ["qwen3.5", "llama3"]
+
+    def test_refresh_skips_catalog_requests_while_offline(self, tray):
+        tray._check_url = MagicMock(return_value=False)
+        tray._api = MagicMock(return_value=None)
+        tray._refresh()
+        assert tray._api.call_count == 1
 
     def test_refresh_marks_disconnected_on_failure(self, tray):
         tray.state["connected"] = True

@@ -37,8 +37,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-# BACH system path: resolve from this file's location (hub/_services/chat/)
-_bach_system = str(Path(__file__).resolve().parent.parent.parent)
+# BACH system path: resolve from this file's location (system/hub/_services/chat/)
+# Keep direct script execution working; module mode already receives this path
+# from the Startspine.
+_bach_system = str(Path(__file__).resolve().parents[3])
 if _bach_system not in sys.path:
     sys.path.insert(0, _bach_system)
 
@@ -950,6 +952,7 @@ async def _keep_typing(update):
 # --- Control API (Port 8081) ---
 
 CONTROL_PORT = int(os.environ.get("BACH_CONTROL_PORT", "8081"))
+TELEGRAM_VERIFIED = False
 
 WEB_DASHBOARD = """<!DOCTYPE html>
 <html lang="de">
@@ -1232,6 +1235,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                 if cid not in _SYS_IDS and (s.current_tool or now - s.last_active < 120)
             )
             self._json({
+                "service": "bach-chat-control",
+                "telegram_verified": TELEGRAM_VERIFIED,
                 "backend": backend_name,
                 "backend_cli": cli_name,
                 "model": model,
@@ -1389,9 +1394,31 @@ def start_control_api():
         return None
 
 
+def verify_telegram_token() -> bool:
+    """Verifiziert den Bot ohne Token oder Request-URL in Fehlerlogs offenzulegen."""
+    try:
+        response = httpx.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/getMe",
+            timeout=8.0,
+        )
+    except httpx.HTTPError:
+        log.error("Telegram-Verifikation nicht erreichbar")
+        return False
+    if response.status_code != 200:
+        log.error("Telegram-Verifikation abgelehnt (HTTP %s)", response.status_code)
+        return False
+    try:
+        payload = response.json()
+    except ValueError:
+        log.error("Telegram-Verifikation lieferte kein gültiges JSON")
+        return False
+    return bool(payload.get("ok") and payload.get("result", {}).get("id"))
+
+
 # --- Main ---
 
 def main():
+    global TELEGRAM_VERIFIED
     if not BOT_TOKEN:
         print("Kein Bot-Token! Setze TELEGRAM_BOT_TOKEN oder ~/.credentials/telegram_bot_token")
         sys.exit(1)
@@ -1407,6 +1434,12 @@ def main():
                 print("Compute Lock: kein Crash-Recovery noetig")
         except Exception as e:
             log.warning("Crash recovery failed: %s", e)
+
+    if not verify_telegram_token():
+        print("Telegram Bot konnte nicht verifiziert werden; Chat/Control bleibt offline.")
+        sys.exit(1)
+    TELEGRAM_VERIFIED = True
+    print("Telegram Bot verifiziert")
 
     start_control_api()
 
