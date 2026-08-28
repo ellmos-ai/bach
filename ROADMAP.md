@@ -1,6 +1,6 @@
 ﻿# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-07-29 | **Version:** 4.3.63
+**Stand:** 2026-08-28 | **Version:** 4.3.63
 
 ## Aktueller Qualitätsfortschritt (2026-07-29)
 
@@ -18,8 +18,149 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 > Post-Release-Details (SQ-Nummern): ehemals `BACH_Dev/ROADMAP.md` — jetzt hier konsolidiert.
 
 
-<!-- ellmos-sovereign Langzeit-Vision -->
-## Langzeit-Vision: BACH Core + Module (Projekt ellmos Sovereign)
+## Aktueller Transformationsrahmen: OCEAN als Nachfolgerlinie [U 2026-08-28]
+
+OCEAN ist die Nachfolgerlinie und funktional das neue BACH. Die Hauptentwicklung verlagert sich
+schrittweise auf OCEAN. Das bisherige BACH bleibt während der Konvergenz eine aktive
+Kompatibilitäts-, Referenz- und Rückfalllinie. Es wird Capability für Capability so umgebaut,
+dass es dieselben kanonischen Module und Bundles wie OCEAN konsumiert. Verbesserungen dieser
+Bausteine halten dadurch beide Produktlinien aktuell, ohne Code zwischen ihnen zu kopieren.
+
+Die Extraktion hat im Regelfall bereits stattgefunden. Neue BACH-Unikate dürfen nur noch
+ausnahmsweise extrahiert werden, wenn ihr eigenständiger Wert, ihre Wiederverwendbarkeit,
+Testbarkeit, Wartbarkeit sowie ihre sichere öffentliche oder klar private Abgrenzung belegt sind.
+Reine BACH-Verdrahtung bleibt im schlanken Kompatibilitätskern.
+
+### Zielarchitektur
+
+```mermaid
+flowchart TB
+    C[Kanonische Module und Bundles<br/>eine Quelle je Capability]
+    D[OCEAN Full Dev<br/>vollständige lokale Komposition]
+    P[OCEAN Public<br/>freigegebene Community-Projektion]
+    B[BACH-Konvergenz<br/>gleiche Module plus Legacy-Adapter]
+    T[Gemeinsame Verträge und Verbrauchertests]
+    R[Capability Resolver und dünne Adapter]
+    U[ellmos-unified-gui und CONTROLROOM]
+
+    C --> D
+    C --> B
+    D -->|explizite öffentliche Allowlist| P
+    D --> T
+    B --> T
+    D --> R
+    P --> R
+    B --> R
+    R --> U
+```
+
+OCEAN Full Dev ist die vollständige Entwicklungs- und Testkomposition auf den eigenen Systemen.
+Sie kennt alle katalogisierten Module und Bundles und prüft Installation, Start, Update,
+Verträge, Integration und Rollback. Private Entwicklungsquellen dürfen lokal referenziert,
+aber niemals mit Secrets, Instanzdaten, persönlichen Pfaden oder privaten Rezepten in die
+öffentliche Projektion übernommen werden.
+
+OCEAN Public wird reproduzierbar aus einer expliziten Allowlist freigegebener Bestandteile
+abgeleitet. Eine Änderung der Repository-Sichtbarkeit oder öffentliche Freigabe bleibt eine
+ausdrückliche Nutzerentscheidung. CONTROLROOM ist die Operator- und Kompositionsebene, keine
+zweite GUI und keine neue fachliche Datenautorität.
+
+### Parallele, autoritätsgetrennte Spuren
+
+| Spur | Arbeitsauftrag | Harte Grenze |
+|---|---|---|
+| BACH-Konvergenz | Vorhandenes Modul oder Bundle einsetzen, Altbereich einzäunen, testen und umschalten | genau ein produktiver Schreiber je Capability |
+| OCEAN Full Dev | Vollkomposition, Installer, Inventar, Verträge und Systemtests fertigbauen | gemeinsame Änderungen müssen auch die BACH-Verbrauchermatrix bestehen |
+| OCEAN Public | Privacy- und policy-gegatete Community-Projektion erzeugen | keine Veröffentlichung ohne vollständige Gates und Nutzerfreigabe |
+| Gemeinsame Module | Fehler und Verbesserungen an der kanonischen Quelle beheben | keine stillen Produkt-Forks; Abweichungen nur als begründeter Compatibility-Pin |
+
+Vorbereitung, Build und Tests dürfen konfliktfrei parallel laufen. Produktive Umschaltungen
+derselben Capability und konkurrierende Schreiber dürfen nicht parallel laufen.
+
+### Adaptiver Modul- und Bundlezyklus
+
+Es gibt keine feste fachliche Domänenreihenfolge. Verbindlich ist die Gate-Reihenfolge innerhalb
+eines Zyklus:
+
+1. Wissens- und Policy-Ritual quittieren.
+2. Live-Zustand, Holds, Locks, Autoritäten, Datenflüsse, Abhängigkeiten und Rollbackfähigkeit
+   inventarisieren.
+3. Den Kandidatenpool nach jeder Vorarbeit neu bewerten und genau einen reifen Kandidaten oder
+   ein begründetes unteilbares Bundle auswählen; andernfalls `NO_OP/BLOCKED` melden.
+4. Vor einer Verhaltensänderung den passenden fehlschlagenden Test schreiben und den roten Lauf
+   belegen; danach minimal grün implementieren und bei grüner Suite refaktorieren.
+5. Backup, Shadowbetrieb, Writer-Fencing, Migrations- und Rollbackprobe durchführen.
+6. Gemeinsame Module gegen BACH und OCEAN Full prüfen; produktspezifische Adaptertests getrennt
+   halten.
+7. Betroffene Dokumentations-, Root-, Help-, Architektur-, Versions-, Sprach- und
+   Aufgabenflächen im selben Lauf nachziehen oder `NO_CHANGE` belegen.
+8. Änderungen thematisch committen, pushen, unabhängig prüfen und erst nach Integration auf dem
+   kanonischen Release-Commit mit einem eindeutigen See-, Natur- oder Süßigkeiten-Codenamen taggen.
+9. Eine Halteperiode sowie mindestens einen Update-/Rollback-Zyklus belegen, bevor der
+   eingezäunte Altbereich archiviert oder entfernt wird.
+
+### Wissens- und Policy-Ritual für jeden neuen Abschnitt
+
+Vor jedem OCEAN-Bauabschnitt und jedem BACH-Modul- oder Bundlezyklus:
+
+1. Ab `.AI` die aktuellen Root-Steuerdokumente, Glossar, Muster, Ontologie, Kaskade und das
+   Widerspruchsregister lesen. Ein fehlendes kanonisches Dokument ist `UNAVAILABLE/DRIFT`, nicht
+   leer; eine datierte Fassung ist nur historischer Beleg.
+2. Den Verweisen in die betroffenen Ebenen `.MODULES`, `.BUNDLES`, `.SYSTEMS`, `.STACKS`, `.OS`
+   und das kanonische Repository folgen. Kataloge und Manifeste gewinnen bei technischen
+   Ist-Aussagen vor erzählender Dokumentation.
+3. Gardener mit stabilen IDs, Capability-, Modul-/Bundle- und Produktbegriffen abfragen und
+   Herkunft, Datum und Geltungsgrenze der Treffer protokollieren.
+4. Die lokale Policy-Registry mit Scope und Consumer über `search`, `resolve` und `verify`
+   abfragen; den gewählten Pointer anschließend direkt an seiner kanonischen Quelle lesen.
+5. Sichtbarkeits-, Release-, Lock-, Sprach- und Projektrichtlinien direkt zurücklesen und Quellen
+   als `CURRENT`, `HISTORICAL`, `SUPERSEDED`, `CONTRADICTORY` oder `UNAVAILABLE` klassifizieren.
+   Die jüngste ausdrückliche Nutzerentscheidung gewinnt; technische Ist-Aussagen werden live
+   gemessen.
+
+### Selbststeuerung, Aufgaben und Task-Master-Migration
+
+Der read-only Planner darf ROADMAP, CHANGELOG, aktuelle Aufgaben, Modul-/Bundlekataloge,
+Gardener-/Policy-Befund, Locks, Abhängigkeiten und den letzten Beleg auswerten. Er erzeugt genau
+einen Vorschlag oder `NO_OP/BLOCKED`; ein produktiver Cutover bleibt an alle Gates gebunden.
+
+- BACH #1208 / `BOC-PROGRAM-001`: adaptiven Programmrahmen steuern.
+- BACH #1209 / `OCEAN-FULL-DEV-001`: OCEAN Full Dev vollständig komponieren und testen.
+- BACH #1210 / `OCEAN-PUBLIC-001`: öffentliche Projektion ableiten; hängt von #1209 ab.
+- Die vorhandene BACH20-Gatekette #1185–#1195 bleibt maßgeblich und wird nicht dupliziert. Ihre
+  verwaiste Abhängigkeit auf die fehlende #1184 bleibt fail-closed und wird nicht geraten.
+
+Bis zum gegateten Task-Master-Cutover bleibt die BACH-Tasktabelle autoritativ. Bei der späteren
+Migration werden `bach:<ID>` und die stabile Quell-ID idempotent mit Status, Provenienz und
+Abhängigkeiten in einem Mapping-Ledger erhalten. Es gibt keinen stillen Doppelwriter und keine
+Löschung vor Reconciliation und bewiesenem Rollback.
+
+### Sprach- und Pflegestrategie
+
+Core-Dokumentation bleibt mindestens in Deutsch und Englisch parallel. Wenn eine Aussage eine
+bereits vorhandene BACH-Sprachfamilie berührt, werden EN, DE, ES, RU, JA und ZH im selben
+Integrationslauf inhaltlich und strukturell synchronisiert. Code, IDs, Pfade, Zahlen, Links und
+Beispiele bleiben invariant; deutsche Endnutzungsflächen verwenden echte Umlaute. Laufzeittexte
+werden ausschließlich über den bestehenden i18n-Mechanismus und seine Generatoren geändert.
+
+Nach jedem Lauf werden README-Familien, CHANGELOG, ROADMAP, Architektur-, Start-, Sicherheits-,
+Beitrags-, Versions-, Release-, `llms.txt`- und Help-Flächen sowie CLI-/API-/MCP-/GUI-Hilfe
+geprüft. Nur tatsächlich betroffene Flächen werden geändert; sonst wird ein belegtes `NO_CHANGE`
+festgehalten.
+
+### Reife- und Lebenszyklusgate
+
+BACH wird nicht automatisch eingestellt. Erst belegte OCEAN-Parität, Stabilität im realen
+Betrieb, gemeinsame Modulupdates, ein frischer Fremdhost-Install, Update und Rollback erlauben
+eine ausdrückliche Nutzerentscheidung zwischen aktiver Koentwicklung, LTS/Wartung, Freeze oder
+Archiv. Die Vor-Umbau-Baseline bleibt bis zum vollständigen Abschluss von #1207, unabhängiger
+Reviewfreigabe, Integration, System-/Sicherheitsabnahme und Release-Readback blockiert.
+
+<!-- Historischer Strategiestand; nicht als aktuellen Arbeitsauftrag auswerten. -->
+## Historischer Strategiestand: BACH Core + Module (durch den Rahmen vom 28.08.2026 abgelöst)
+
+> Dieser Abschnitt bewahrt die frühere Herleitung. Bei Widersprüchen gelten der aktuelle
+> Transformationsrahmen und die jüngste ausdrückliche Nutzerentscheidung.
 
 Parallel entsteht in `.OS/sovereign-private` ein **modulares, besser wartbares BACH**, das
 BACHs gute Bestandteile als eigenstaendige Module (`.MODULES`) erntet. BACH bleibt dabei
@@ -95,7 +236,7 @@ C als Evolutionsstrategie. Begründung (empirisch belegt am 2026-07-03):
 3. Gatung bleibt Pflicht: Modul ersetzt Eigenteil erst bei Gleichwertigkeit, nach
    Parallelbetrieb mit grünen Tests; Altteil archivieren, nicht löschen. Core bleibt BACH.
 
-**Reihenfolge:** ① clutch (Task 1150, am 2026-07-22 abgeschlossen) → ② tools/testing durch
+**Historische Reihenfolge (am 28.08.2026 abgelöst):** ① clutch (Task 1150, am 2026-07-22 abgeschlossen) → ② tools/testing durch
 ellmos-tests-Adapter ersetzen (BACH-Task 1181; dabei „upstream"-Widerspruch im ellmos-tests-SKILL.md auflösen)
 → ③ llmauto/notespace/market gemäß ease-Liste (`sovereign-private/ROADMAP.md`, Cluster-Report).
 

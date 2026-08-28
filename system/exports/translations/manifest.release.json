@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-07-21T20:44:22.130359",
+  "generated_at": "2026-08-28T11:20:37.066278",
   "export_kind": "languages_release_snapshot",
   "source_db": "runtime_db",
   "counts": {
     "config_rows": 1,
-    "translations": 18363,
+    "translations": 18369,
     "dictionary_entries": 119,
     "locale_files": 6
   },

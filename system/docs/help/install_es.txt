@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-08-28
+# Next review: 2027-08-28
 
 INSTALACIÓN DE BACH
 =================
@@ -79,15 +79,15 @@ ProSync está sincronizado.
 
 Servidor (sin cabeza)
 -----------------
-BACH se ejecuta en un servidor (por ejemplo, Mac Studio, servidor Linux) y está
-Controlado de forma remota a través de Telegram, GUI web o bandeja del sistema.
+BACH se ejecuta en un host permanente. Los servicios administrados se inician
+exclusivamente mediante Startspine; el acceso remoto requiere una entrada
+autenticada configurada por separado.
 
   bach setup full-install
-  # Luego active los conectores:
-  # - Bot de Telegram: hub/_services/chat/telegram_chat.py
-  # - GUI web: gui/server.py --host 0.0.0.0
-  # - Bandeja del sistema: hub/_services/chat/chat_tray.py --puerto 8081
-  # - CLI Chat: hub/_services/chat/buddha_cli.py
+  python start/startspine.py start --chat --gui
+  python start/startspine.py status --json
+
+La API de control no debe exponerse directamente en 0.0.0.0.
 
 Para servidores multisistema adicionalmente:
   bach setup prosync --multi-system
@@ -102,7 +102,7 @@ bach --help setup          Mostrar opciones de configuración
 
 
 ARCHIVOS
-=======
+--------
 hub/setup.py Controlador de configuración (lógica del instalador)
 data/bach.db Base de datos BACH (creada durante la instalación)
 ../USER.md perfil de usuario (plantilla -> personalizado)

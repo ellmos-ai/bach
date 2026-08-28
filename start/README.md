@@ -32,9 +32,17 @@ Die Startspine:
   Readiness und Exit-Code in Runtime-Belegen.
 
 Chat/Control gilt erst als bereit, wenn der gestartete Prozess den Port besitzt,
-sich als BACH Chat Control ausweist und der Telegram-Bot gegenüber Telegram
-verifiziert wurde. Die Startspine verlangt anschließend eine stabile
-Readiness-Phase.
+sich als BACH Chat Control ausweist und einen booleschen Telegram-Status
+veröffentlicht. `telegram_verified=false` erlaubt den lokalen Control-only-Betrieb,
+ist aber ausdrücklich keine Telegram-Bereitschaft. Die Startspine verlangt
+anschließend eine stabile Readiness-Phase.
+
+Direktstarts von `telegram_chat.py`, `gui/server.py` oder `chat_tray.py` sind keine
+unterstützten Endnutzer-Startpfade, weil sie Prozessbesitz, Portauflösung und
+Runtime-Belege der Startspine umgehen. Die lokale Startspine bindet Control und GUI
+an Loopback. Remotezugriff benötigt eine separat abgesicherte Netzwerkstrecke und
+eine ausdrückliche Authentifizierungsentscheidung; eine ungeschützte Bindung an
+`0.0.0.0` ist nicht freigegeben.
 
 Die Runtime-Dateien sind keine fachliche Datenbank. Sie liegen standardmäßig
 unter `%LOCALAPPDATA%\BACH\runtime` (Windows) oder
@@ -73,10 +81,11 @@ python start/startspine.py autostart-install       # Windows
 python start/startspine.py autostart-remove        # Windows
 ```
 
-Ein Remote-Tray wird ohne lokalen Backend-Start erzeugt:
+Ein Remote-Tray wird nur innerhalb einer separat abgesicherten Netzwerkstrecke und
+ohne lokalen Backend-Start erzeugt:
 
 ```text
-python start/startspine.py start --tray --host macstudvonlukas
+python start/startspine.py start --tray --host bach-server.local
 ```
 
 Wenn der Remote-Server andere Ports veröffentlicht, müssen sie über
