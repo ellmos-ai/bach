@@ -13,6 +13,7 @@ import subprocess
 import sys
 from types import SimpleNamespace
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -125,7 +126,19 @@ def test_windows_autostart_uses_absolute_task_command(monkeypatch):
     assert str(Path(sys.executable)) in action
     assert str(STARTSPINE_PATH) in action
     assert " start --tray" in action
+    assert command[command.index("/rl") + 1] == "limited"
     assert captured[1][:3] == ["schtasks", "/query", "/tn"]
+
+
+def test_process_identity_requires_exact_create_time(monkeypatch):
+    monkeypatch.setattr(
+        startspine,
+        "_process_identity",
+        lambda _pid: {"create_time": 1234.5},
+    )
+
+    assert startspine._identity_matches(7, 1234.5)
+    assert not startspine._identity_matches(7, 1234.0)
 
 
 def test_start_readback_and_stop_only_owned_process(tmp_path, monkeypatch):
@@ -451,3 +464,132 @@ def test_failed_start_cleans_owned_supervisor(tmp_path, monkeypatch):
         readiness_timeout=0.1,
     )
     assert stopped == ["tray"]
+
+
+def test_state_write_failure_after_spawn_rolls_back_supervisor(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    state = startspine._base_state()
+    stopped = []
+    monkeypatch.setattr(
+        startspine,
+        "_spawn_supervisor",
+        lambda name, spec: ({
+            "launch_id": "launch-write-failure",
+            "supervisor_pid": 123,
+            "supervisor_create_time": 1.0,
+        }, "launch-write-failure"),
+    )
+    monkeypatch.setattr(startspine, "_save_state", MagicMock(side_effect=OSError("disk")))
+    monkeypatch.setattr(startspine, "_record_is_owned", lambda record: False)
+    monkeypatch.setattr(startspine, "_supervisor_is_owned", lambda record: True)
+    monkeypatch.setattr(
+        startspine,
+        "_stop_record",
+        lambda name, record: stopped.append(name) or True,
+    )
+
+    assert not startspine._start_service(
+        state,
+        "chat",
+        command=[sys.executable, "-c", "pass"],
+        cwd=tmp_path,
+        env=startspine._child_environment(),
+        required=True,
+        host="127.0.0.1",
+        desired_port=8081,
+        actual_port=8081,
+    )
+    assert stopped == ["chat"]
+    assert state["services"]["chat"]["status"] == "failed"
+
+
+def test_failed_chat_skips_tray_and_rolls_back_new_gui(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    state = startspine._base_state()
+    started = []
+    stopped = []
+
+    def fake_start_service(target_state, name, **_kwargs):
+        started.append(name)
+        target_state["services"][name] = {
+            "launch_id": f"new-{name}",
+            "root": str(startspine.ROOT_DIR),
+        }
+        return name != "chat"
+
+    monkeypatch.setattr(startspine, "_load_mutable_state", lambda: state)
+    monkeypatch.setattr(startspine, "_start_service", fake_start_service)
+    monkeypatch.setattr(startspine, "_resolve_port", lambda _host, port: (port, None))
+    monkeypatch.setattr(startspine, "_save_state", lambda _state: None)
+    monkeypatch.setattr(startspine, "_stop_record", lambda name, record: stopped.append(name) or True)
+    monkeypatch.setattr(
+        startspine,
+        "_discovery",
+        lambda *_args: {"services": {}, "ollama": {}},
+    )
+    monkeypatch.setattr(startspine, "_print_status", lambda _payload: None)
+    args = argparse.Namespace(
+        host="127.0.0.1",
+        gui_port=8100,
+        control_port=8181,
+        gui=True,
+        chat=True,
+        tray=True,
+        readiness_timeout=1.0,
+        open_browser=False,
+    )
+
+    assert startspine.command_start(args) == 1
+    assert started == ["gui", "chat"]
+    assert stopped == ["chat", "gui"]
+    assert state["services"]["gui"]["status"] == "rolled-back"
+
+
+def test_final_transaction_write_failure_rolls_back_started_service(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    state = startspine._base_state()
+    stopped = []
+
+    def fake_start_service(target_state, name, **_kwargs):
+        target_state["services"][name] = {
+            "launch_id": f"new-{name}",
+            "root": str(startspine.ROOT_DIR),
+        }
+        return True
+
+    monkeypatch.setattr(startspine, "_load_mutable_state", lambda: state)
+    monkeypatch.setattr(startspine, "_start_service", fake_start_service)
+    monkeypatch.setattr(startspine, "_resolve_port", lambda _host, port: (port, None))
+    monkeypatch.setattr(
+        startspine,
+        "_save_state",
+        MagicMock(side_effect=OSError("final write failed")),
+    )
+    monkeypatch.setattr(
+        startspine,
+        "_stop_record",
+        lambda name, record: stopped.append(name) or True,
+    )
+    monkeypatch.setattr(
+        startspine,
+        "_discovery",
+        lambda *_args, **_kwargs: {"services": {}, "ollama": {}},
+    )
+    monkeypatch.setattr(startspine, "_print_status", lambda _payload: None)
+    args = argparse.Namespace(
+        host="127.0.0.1",
+        gui_port=8100,
+        control_port=8181,
+        gui=True,
+        chat=False,
+        tray=False,
+        readiness_timeout=1.0,
+        open_browser=False,
+    )
+
+    assert startspine.command_start(args) == 1
+    assert stopped == ["gui"]
+    assert state["services"]["gui"]["status"] == "rolled-back"

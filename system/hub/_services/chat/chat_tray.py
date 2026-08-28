@@ -28,6 +28,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 
 try:
     import pystray
@@ -187,6 +188,20 @@ class BACHTray:
             self.state.get("connected") is True
             and self.state.get("backend_available") is True
         )
+
+    def _chat_ready(self, chat_id):
+        query = urllib.parse.urlencode({"chat_id": chat_id})
+        readiness = self._api("GET", f"/api/readiness?{query}", timeout=10)
+        available = bool(
+            isinstance(readiness, dict)
+            and readiness.get("available") is True
+        )
+        self.state["backend_available"] = available
+        if isinstance(readiness, dict):
+            self.state["backend_status"] = str(
+                readiness.get("status") or "nicht verfügbar"
+            )
+        return available
 
     def _refresh(self):
         with ThreadPoolExecutor(max_workers=4) as pool:
@@ -403,7 +418,7 @@ class BACHTray:
             pass
 
     def _send_prompt(self, prompt):
-        if not self._can_send_chat():
+        if not self._can_send_chat() or not self._chat_ready("tray-prompt"):
             if self.icon:
                 self.icon.notify("Backend nicht verfügbar", "BACH Prompt")
             return
@@ -452,6 +467,8 @@ class BACHTray:
         self._update_icon()
 
         try:
+            if not self._can_send_chat() or not self._chat_ready("idle-worker"):
+                return
             tasks_resp = self._api("GET", "/api/tasks?assigned_to=OLLAMA&status=pending", base=self.gui_url)
             if not tasks_resp or not tasks_resp.get("success") or not tasks_resp.get("tasks"):
                 tasks_resp = self._api("GET", "/api/tasks?assigned_to=BUDDHA&status=pending", base=self.gui_url)
@@ -682,7 +699,7 @@ class BACHTray:
                 "Idle-Modus aktivieren",
                 self._toggle_idle,
                 checked=lambda item: self.idle_enabled,
-                enabled=lambda item: self.state["connected"] and self.services["gui"],
+                enabled=lambda item: self._can_send_chat() and self.services["gui"],
             ),
         ]
         if self.idle_processing:

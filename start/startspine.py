@@ -120,7 +120,7 @@ def _identity_matches(pid: int | None, created: float | None) -> bool:
     identity = _process_identity(pid)
     if identity is None or created is None:
         return False
-    return abs(float(identity["create_time"]) - float(created)) < 1.0
+    return float(identity["create_time"]) == float(created)
 
 
 @contextmanager
@@ -391,8 +391,6 @@ def _wait_ready(name: str, record: dict[str, Any], timeout: float) -> bool:
         if record.get("exit_code") is not None:
             return False
         if _service_ready_owned(name, record):
-            if name not in {"chat", "tray"}:
-                return True
             stable_since = stable_since or time.monotonic()
             if time.monotonic() - stable_since >= 1.0:
                 return True
@@ -508,12 +506,19 @@ def _start_service(
         "started_at": _now(),
     }
     state["services"][name] = record
-    _save_state(state)
-    receipt = _wait_for_receipt(name, launch_id)
-    record.update(receipt)
-    _save_state(state)
-
-    ready = _wait_ready(name, record, readiness_timeout)
+    try:
+        _save_state(state)
+        receipt = _wait_for_receipt(name, launch_id)
+        record.update(receipt)
+        _save_state(state)
+        ready = _wait_ready(name, record, readiness_timeout)
+    except Exception as exc:
+        if _record_is_owned(record) or _supervisor_is_owned(record):
+            _stop_record(name, record)
+        record["status"] = "failed"
+        record["failed_at"] = _now()
+        print(f"[FEHLER] {name}: Start abgebrochen und zurückgerollt ({exc})")
+        return False
     record["status"] = ("online" if name != "tray" else "running") if ready else "failed"
     if not ready:
         _sync_receipt(name, record)
@@ -528,8 +533,37 @@ def _start_service(
     else:
         endpoint = f" {host}:{actual_port}" if actual_port else ""
         print(f"[OK] {name}:{endpoint} (PID {record.get('pid')})")
-    _save_state(state)
+    try:
+        _save_state(state)
+    except Exception as exc:
+        if _record_is_owned(record) or _supervisor_is_owned(record):
+            _stop_record(name, record)
+        record["status"] = "failed"
+        record["failed_at"] = _now()
+        print(f"[FEHLER] {name}: Status-Readback fehlgeschlagen und Start zurückgerollt ({exc})")
+        return False
     return ready or not required
+
+
+def _rollback_started_services(
+    state: dict[str, Any],
+    previous_launches: dict[str, str | None],
+) -> None:
+    """Rolls back only services launched by the current start transaction."""
+    for name in ("tray", "chat", "gui"):
+        record = state.get("services", {}).get(name, {})
+        launch_id = record.get("launch_id")
+        if not launch_id or launch_id == previous_launches.get(name):
+            continue
+        if record.get("status") == "rolled-back":
+            continue
+        stopped = _stop_record(name, record)
+        record["status"] = "rolled-back" if stopped else "rollback-failed"
+        record["rolled_back_at"] = _now()
+        if stopped:
+            print(f"[ROLLBACK] {name}: Starttransaktion zurückgerollt")
+        else:
+            print(f"[FEHLER] {name}: Starttransaktion konnte nicht sicher zurückgerollt werden")
 
 
 def _terminate_identity(pid: int | None, created: float | None, label: str) -> tuple[bool, str]:
@@ -538,7 +572,7 @@ def _terminate_identity(pid: int | None, created: float | None, label: str) -> t
     identity = _process_identity(pid)
     if identity is None:
         return True, f"{label}: bereits beendet"
-    if created is None or abs(float(identity["create_time"]) - float(created)) >= 1.0:
+    if created is None or float(identity["create_time"]) != float(created):
         return False, f"{label}: PID {pid} gehört nicht mehr zum registrierten Prozess; nicht beendet"
     try:
         proc = psutil.Process(int(pid))
@@ -704,6 +738,10 @@ def command_start(args: argparse.Namespace) -> int:
 
     with _operation_lease():
         state = _load_mutable_state()
+        previous_launches = {
+            name: record.get("launch_id")
+            for name, record in state.get("services", {}).items()
+        }
         ok = True
         actual_gui = gui_port
         actual_control = control_port
@@ -742,7 +780,7 @@ def command_start(args: argparse.Namespace) -> int:
             if _record_is_owned(gui_record):
                 actual_gui = int(gui_record.get("actual_port", gui_port))
 
-        if args.chat:
+        if args.chat and ok:
             chat_existing = state["services"].get("chat", {})
             _sync_receipt("chat", chat_existing)
             if (
@@ -774,7 +812,7 @@ def command_start(args: argparse.Namespace) -> int:
                 actual_port=actual_control,
                 readiness_timeout=args.readiness_timeout,
             ) and ok
-        else:
+        elif not args.chat:
             chat_record = state["services"].get("chat", {})
             if _record_is_owned(chat_record):
                 actual_control = int(chat_record.get("actual_port", control_port))
@@ -786,7 +824,10 @@ def command_start(args: argparse.Namespace) -> int:
                         f"der Tray wartet offline auf {actual_control}."
                     )
 
-        if args.tray:
+        elif args.chat:
+            print("[FEHLER] chat: wegen vorherigem Startfehler übersprungen")
+
+        if args.tray and ok:
             tray_host = host if remote else "127.0.0.1"
             tray_control = control_port if remote else actual_control
             tray_gui = gui_port if remote else actual_gui
@@ -810,8 +851,34 @@ def command_start(args: argparse.Namespace) -> int:
                 readiness_timeout=args.readiness_timeout,
             ) and ok
 
-        _save_state(state)
-        discovery = _discovery(state, gui_port, control_port)
+        elif args.tray:
+            print("[FEHLER] tray: wegen vorherigem Startfehler übersprungen")
+
+        try:
+            if not ok:
+                _rollback_started_services(state, previous_launches)
+            _save_state(state)
+            discovery = _discovery(state, gui_port, control_port)
+        except Exception as exc:
+            ok = False
+            _rollback_started_services(state, previous_launches)
+            try:
+                _save_state(state)
+            except Exception:
+                pass
+            try:
+                discovery = _discovery(
+                    state,
+                    gui_port,
+                    control_port,
+                    persist=False,
+                )
+            except Exception:
+                discovery = {
+                    "services": state.get("services", {}),
+                    "ollama": {"ready": False, "status": "unknown"},
+                }
+            print(f"[FEHLER] Starttransaktion zurückgerollt: {exc}")
 
     if args.open_browser and args.gui and ok and os.environ.get("BACH_NO_BROWSER") != "1":
         webbrowser.open(f"http://127.0.0.1:{actual_gui}")
@@ -980,7 +1047,7 @@ def command_autostart_install(_args: argparse.Namespace) -> int:
             "/tn", "BACH Chat Tray",
             "/tr", task_command,
             "/sc", "onlogon",
-            "/rl", "highest",
+            "/rl", "limited",
             "/f",
         ],
         text=True,

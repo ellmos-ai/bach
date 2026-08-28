@@ -358,13 +358,26 @@
 
             sending = true;
             updateComposerAvailability();
-            inputEl.value = '';
-            autoResize();
-
-            addMessage(text, 'user');
-            setTyping(true);
 
             try {
+                const readinessResponse = await fetch(
+                    CHAT_API + '/readiness?chat_id=' + encodeURIComponent(CHAT_ID)
+                );
+                const readiness = await readinessResponse.json();
+                if (!readinessResponse.ok || readiness.available !== true) {
+                    backendAvailable = false;
+                    addMessage(
+                        readiness.status || readiness.error || 'Backend nicht verfügbar',
+                        'error'
+                    );
+                    return;
+                }
+
+                inputEl.value = '';
+                autoResize();
+                addMessage(text, 'user');
+                setTyping(true);
+
                 const resp = await fetch(CHAT_API + '/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -375,6 +388,8 @@
 
                 if (!resp.ok && resp.status === 503) {
                     backendAvailable = false;
+                    inputEl.value = text;
+                    autoResize();
                     updateComposerAvailability();
                 }
 
@@ -385,6 +400,10 @@
                 }
             } catch (e) {
                 setTyping(false);
+                if (!inputEl.value) {
+                    inputEl.value = text;
+                    autoResize();
+                }
                 addMessage('Verbindungsfehler: ' + e.message, 'error');
             } finally {
                 sending = false;
@@ -409,15 +428,12 @@
                 const r = await fetch(CHAT_API + '/status');
                 if (!r.ok) throw new Error('Chatdienst nicht erreichbar');
                 const s = await r.json();
-                const backendsResponse = await fetch(CHAT_API + '/backends');
-                if (!backendsResponse.ok) throw new Error('Backendstatus nicht erreichbar');
-                const backends = await backendsResponse.json();
-                const activeBackend = backends[s.backend_id];
-                backendAvailable = Boolean(
-                    activeBackend
-                    && activeBackend.available === true
-                    && activeBackend.selected === true
+                const readinessResponse = await fetch(
+                    CHAT_API + '/readiness?chat_id=' + encodeURIComponent(CHAT_ID)
                 );
+                if (!readinessResponse.ok) throw new Error('Backendstatus nicht erreichbar');
+                const readiness = await readinessResponse.json();
+                backendAvailable = readiness.available === true;
 
                 const connectionDot = document.getElementById('conn-dot');
                 connectionDot.className = backendAvailable ? 'dot' : 'dot offline';
@@ -426,9 +442,7 @@
                     : 'Backend nicht verfügbar';
 
                 const backendName = s.backend_id || String(s.backend || '').replace('Backend', '');
-                const backendStatus = activeBackend && activeBackend.status
-                    ? activeBackend.status
-                    : 'nicht verfügbar';
+                const backendStatus = readiness.status || 'nicht verfügbar';
                 document.getElementById('s-backend').textContent = backendAvailable
                     ? backendName
                     : backendName + ' (' + backendStatus + ')';

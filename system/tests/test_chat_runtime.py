@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Tests for ChatRuntime security functions (hub/_services/chat/chat_runtime.py)."""
 
+import asyncio
 import subprocess
 import sys
 import types
@@ -20,6 +21,7 @@ from hub._services.chat.chat_runtime import (
     CMD_TIMEOUT,
     SAFE_BASES,
     TOOLS_SAFE,
+    ChatRuntime,
     _tool,
     exec_tool,
     is_blocked,
@@ -27,6 +29,68 @@ from hub._services.chat.chat_runtime import (
     is_safe_write_path,
     run_shell,
 )
+
+
+class _RecordingBackend:
+    manages_own_tools = True
+
+    def __init__(self, default_model):
+        self.default_model = default_model
+        self.calls = []
+
+    def get_default_model(self):
+        return self.default_model
+
+    async def chat(self, messages, **kwargs):
+        self.calls.append((messages, kwargs))
+        return {"content": "Antwort"}
+
+
+def test_process_uses_backend_and_model_snapshot_for_entire_request():
+    current_backend = _RecordingBackend("current:latest")
+    checked_backend = _RecordingBackend("checked:latest")
+    runtime = ChatRuntime(current_backend)
+
+    answer = asyncio.run(runtime.process(
+        "Hallo",
+        "snapshot",
+        backend=checked_backend,
+        model="verified:latest",
+    ))
+
+    assert answer == "Antwort"
+    assert current_backend.calls == []
+    assert len(checked_backend.calls) == 1
+    messages, kwargs = checked_backend.calls[0]
+    assert kwargs["model"] == "verified:latest"
+    assert "Modell=verified:latest" in messages[0]["content"]
+
+
+def test_summarization_uses_the_verified_model_snapshot():
+    current_backend = _RecordingBackend("current:latest")
+    checked_backend = _RecordingBackend("checked:latest")
+    runtime = ChatRuntime(current_backend)
+    runtime.SUMMARIZE_THRESHOLD = 0
+    session = runtime.get_session("summary-snapshot")
+    session.messages = [
+        {"role": "user" if index % 2 == 0 else "assistant", "content": "alt"}
+        for index in range(5)
+    ]
+
+    answer = asyncio.run(runtime.process(
+        "Neu",
+        "summary-snapshot",
+        backend=checked_backend,
+        model="verified:latest",
+    ))
+
+    assert answer == "Antwort"
+    assert current_backend.calls == []
+    assert len(checked_backend.calls) == 2
+    assert [call[1]["model"] for call in checked_backend.calls] == [
+        "verified:latest",
+        "verified:latest",
+    ]
 
 
 # ===================================================================

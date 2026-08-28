@@ -36,7 +36,7 @@ import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 # BACH system path: resolve from this file's location (system/hub/_services/chat/)
 # Keep direct script execution working; module mode already receives this path
@@ -186,6 +186,7 @@ _global_defaults = {
     "model": "",
     "max_tool_rounds": 12,
 }
+_runtime_state_lock = threading.RLock()
 
 # Pending actions for compute lock confirmations (keyed by chat_id)
 # Format: {chat_id: {"kind": "compute_pause_for_ollama", "status": dict,
@@ -196,14 +197,15 @@ _PENDING_TTL = 120  # seconds before a pending action expires
 _orig_get_session = runtime.get_session
 
 def _patched_get_session(chat_id: str):
-    session = _orig_get_session(chat_id)
-    if len(session.messages) == 0:
-        if _global_defaults.get("mode"):
-            session.mode = _global_defaults["mode"]
-        if _global_defaults.get("model"):
-            session.model = _global_defaults["model"]
-        session.think = _global_defaults.get("think", True)
-    return session
+    with _runtime_state_lock:
+        session = _orig_get_session(chat_id)
+        if len(session.messages) == 0:
+            if _global_defaults.get("mode"):
+                session.mode = _global_defaults["mode"]
+            if _global_defaults.get("model"):
+                session.model = _global_defaults["model"]
+            session.think = _global_defaults.get("think", True)
+        return session
 
 runtime.get_session = _patched_get_session
 
@@ -439,9 +441,22 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         config_for_backend = {k: v for k, v in preset.items()
                               if k not in ("method", "description")}
         new_backend = create_backend(config_for_backend)
-        runtime.backend = new_backend
-        session = runtime.get_session(str(update.effective_chat.id))
-        session.model = preset["default_model"]
+        available, availability_status = await asyncio.to_thread(
+            _checked_backend_availability,
+            new_backend,
+            preset["default_model"],
+        )
+        if not available:
+            await update.message.reply_text(
+                f"Backend nicht verfügbar: {availability_status}"
+            )
+            return
+
+        with _runtime_state_lock:
+            runtime.backend = new_backend
+            session = runtime.get_session(str(update.effective_chat.id))
+            session.model = preset["default_model"]
+        _invalidate_backend_inventory_cache()
 
         method_str = "CLI-Session" if preset["method"] == "cli" else "API"
         owns_tools = getattr(new_backend, "manages_own_tools", False)
@@ -1170,13 +1185,19 @@ def _get_active_session_state():
 
 
 def _get_session_model(chat_id: str) -> str:
-    session = runtime.sessions.get(chat_id)
-    session_model = str(getattr(session, "model", "") or "").strip()
-    if session_model:
-        return session_model
+    with _runtime_state_lock:
+        session = runtime.sessions.get(chat_id)
+        session_model = str(getattr(session, "model", "") or "").strip()
+        if session_model:
+            return session_model
 
-    configured_default = str(_global_defaults.get("model") or "").strip()
-    return configured_default or runtime.backend.get_default_model()
+        configured_default = str(_global_defaults.get("model") or "").strip()
+        return configured_default or runtime.backend.get_default_model()
+
+
+def _snapshot_chat_backend(chat_id: str):
+    with _runtime_state_lock:
+        return runtime.backend, _get_session_model(chat_id)
 
 
 def _checked_backend_availability(selected_backend, model: str) -> tuple[bool, str]:
@@ -1416,7 +1437,8 @@ class ControlHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        path = urlparse(self.path).path
+        parsed_url = urlparse(self.path)
+        path = parsed_url.path
 
         if path == "/":
             self._html(WEB_DASHBOARD)
@@ -1464,9 +1486,25 @@ class ControlHandler(BaseHTTPRequestHandler):
         elif path == "/api/backends":
             self._json(_backend_inventory())
 
+        elif path == "/api/readiness":
+            chat_id = parse_qs(parsed_url.query).get("chat_id", ["api-delegate"])[0]
+            selected_backend, model = _snapshot_chat_backend(chat_id)
+            available, availability_status = _checked_backend_availability(
+                selected_backend,
+                model,
+            )
+            self._json({
+                "available": available,
+                "status": availability_status,
+                "backend_id": backend_identifier(selected_backend),
+                "model": model,
+            })
+
         elif path == "/api/models":
             try:
-                models = runtime.backend.list_models()
+                with _runtime_state_lock:
+                    selected_backend = runtime.backend
+                models = selected_backend.list_models()
                 self._json({"models": models})
             except Exception as e:
                 self._json({"error": str(e)}, 500)
@@ -1502,10 +1540,23 @@ class ControlHandler(BaseHTTPRequestHandler):
                 config = {k: v for k, v in preset.items()
                           if k not in ("method", "description")}
                 new_backend = create_backend(config)
-                runtime.backend = new_backend
-                _global_defaults["model"] = preset["default_model"]
-                for s in runtime.sessions.values():
-                    s.model = preset["default_model"]
+                selected_model = preset["default_model"]
+                available, availability_status = _checked_backend_availability(
+                    new_backend,
+                    selected_model,
+                )
+                if not available:
+                    self._json({
+                        "ok": False,
+                        "error": f"Backend nicht verfügbar: {availability_status}",
+                    }, 503)
+                    return
+                with _runtime_state_lock:
+                    runtime.backend = new_backend
+                    _global_defaults["model"] = selected_model
+                    for s in runtime.sessions.values():
+                        s.model = selected_model
+                _invalidate_backend_inventory_cache()
                 self._json({"ok": True, "backend": name, "model": preset["default_model"]})
             except Exception as e:
                 self._json({"error": str(e)}, 500)
@@ -1555,9 +1606,9 @@ class ControlHandler(BaseHTTPRequestHandler):
             if depth >= 2:
                 self._json({"error": "Maximale Delegationstiefe erreicht"}, 429)
                 return
-            model = _get_session_model(chat_id)
+            selected_backend, model = _snapshot_chat_backend(chat_id)
             available, availability_status = _checked_backend_availability(
-                runtime.backend,
+                selected_backend,
                 model,
             )
             if not available:
@@ -1571,7 +1622,12 @@ class ControlHandler(BaseHTTPRequestHandler):
                 loop = asyncio.new_event_loop()
                 try:
                     answer = loop.run_until_complete(
-                        runtime.process(prompt, chat_id)
+                        runtime.process(
+                            prompt,
+                            chat_id,
+                            backend=selected_backend,
+                            model=model,
+                        )
                     )
                 finally:
                     loop.close()

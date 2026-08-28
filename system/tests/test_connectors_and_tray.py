@@ -999,6 +999,26 @@ class TestBACHTray:
             "BACH Prompt",
         )
 
+    def test_idle_worker_does_not_claim_task_without_fresh_readiness(self, tray):
+        tray.state["connected"] = True
+        tray.state["backend_available"] = True
+        tray.icon = MagicMock()
+        tray._api = MagicMock(return_value={
+            "available": False,
+            "status": "nicht erreichbar",
+        })
+
+        tray._process_idle_task()
+
+        tray._api.assert_called_once_with(
+            "GET",
+            "/api/readiness?chat_id=idle-worker",
+            timeout=10,
+        )
+        assert tray.idle_processing is False
+        assert tray.idle_task_name is None
+        assert tray.state["backend_available"] is False
+
     @pytest.mark.parametrize("status", [
         {"backend": "ollama"},
         {"service": "foreign-control", "telegram_verified": True, "backend": "ollama"},
