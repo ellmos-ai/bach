@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import urllib.error
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch, PropertyMock
@@ -940,6 +941,128 @@ class TestBACHTray:
         assert tray.state["connected"] is True
         assert tray.services["control"] is True
         assert tray.models == ["qwen"]
+
+    def test_poll_loop_reconnects_to_real_control_http_server(self):
+        from hub._services.chat.chat_tray import BACHTray
+
+        class ControlHandler(BaseHTTPRequestHandler):
+            responses = {
+                "/api/status": {
+                    "service": "bach-chat-control",
+                    "telegram_verified": False,
+                    "backend": "ollama",
+                    "model": "qwen",
+                    "mode": "safe",
+                    "think": False,
+                },
+                "/api/backends": {"ollama": {"status": "ok"}},
+                "/api/models": {"models": ["qwen"]},
+            }
+
+            def do_GET(self):
+                payload = self.responses.get(self.path)
+                if payload is None:
+                    self.send_error(404)
+                    return
+                body = json.dumps(payload).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, _format, *_args):
+                pass
+
+        class ControlServer(ThreadingHTTPServer):
+            allow_reuse_address = True
+
+        def wait_until(predicate, description, timeout=3):
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if predicate():
+                    return
+                time.sleep(0.02)
+            pytest.fail(f"Timeout while waiting for {description}")
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+
+        tray = BACHTray(host="127.0.0.1", port=port)
+        tray.POLL_INTERVAL = 0.05
+        tray._check_url = MagicMock(return_value=False)
+        tray._check_ollama = MagicMock(return_value=False)
+        tray._idle_tick = MagicMock()
+
+        poll_thread = threading.Thread(target=tray._poll_loop, daemon=True)
+        server = None
+        server_thread = None
+        poll_thread.start()
+        try:
+            wait_until(
+                lambda: tray._idle_tick.call_count >= 1,
+                "initial offline poll",
+            )
+            assert tray.state["connected"] is False
+            assert tray.services["control"] is False
+
+            server = ControlServer(("127.0.0.1", port), ControlHandler)
+            server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+            server_thread.start()
+
+            wait_until(
+                lambda: (
+                    tray.state["connected"] is True
+                    and tray.services["control"] is True
+                    and tray.models == ["qwen"]
+                ),
+                "automatic control reconnect",
+            )
+            assert tray.services["control"] is True
+            assert tray.services["telegram"] is False
+            assert tray.models == ["qwen"]
+
+            server.shutdown()
+            server.server_close()
+            server = None
+            server_thread.join(timeout=2)
+            assert not server_thread.is_alive()
+
+            wait_until(
+                lambda: (
+                    tray.state["connected"] is False
+                    and tray.services["control"] is False
+                ),
+                "automatic disconnect detection",
+            )
+            assert tray.services["control"] is False
+            assert tray.services["telegram"] is False
+
+            server = ControlServer(("127.0.0.1", port), ControlHandler)
+            server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+            server_thread.start()
+
+            wait_until(
+                lambda: (
+                    tray.state["connected"] is True
+                    and tray.services["control"] is True
+                ),
+                "automatic control reconnect after restart",
+            )
+            assert tray.services["telegram"] is False
+        finally:
+            if server is not None:
+                server.shutdown()
+                server.server_close()
+            if server_thread is not None:
+                server_thread.join(timeout=2)
+            tray._stop.set()
+            poll_thread.join(timeout=2)
+
+        assert server_thread is not None
+        assert not server_thread.is_alive()
+        assert not poll_thread.is_alive()
 
     def test_ollama_probe_requires_identity_schema(self):
         from hub._services.chat.chat_tray import BACHTray
