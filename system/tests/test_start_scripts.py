@@ -92,6 +92,15 @@ class TestBatScript:
         assert "taskkill" not in lowered
         assert "wmic process" not in lowered
 
+    def test_remote_host_requires_explicit_configuration(self):
+        assert 'set "BACH_HOST_TARGET=!BACH_HOST!"' in self.text
+        assert "BACH_HOST ist nicht gesetzt" in self.text
+        assert not re.search(
+            r'if\s+"!BACH_HOST_TARGET!"==""\s+set\s+"BACH_HOST_TARGET=',
+            self.text,
+            re.IGNORECASE,
+        )
+
     def test_version_string_present(self):
         assert re.search(r"v\d+\.\d+\.\d+", self.text), (
             "Keine Versionsnummer (vX.Y.Z) in bach.bat gefunden"

@@ -1032,6 +1032,36 @@ class TestBACHTray:
         assert tray.services["telegram"] is False
         assert tray.state["connected"] is True
 
+    def test_refresh_allows_bounded_cli_readiness_window(self, tray):
+        timeouts = {}
+
+        def api(_method, path, _body=None, _base=None, timeout=5):
+            timeouts[path] = timeout
+            if path == "/api/status":
+                return {
+                    "service": "bach-chat-control",
+                    "telegram_verified": False,
+                    "backend_id": "claude",
+                    "model": "sonnet",
+                }
+            if path == "/api/backends":
+                return {
+                    "claude": {
+                        "status": "bereit",
+                        "available": True,
+                        "selected": True,
+                    }
+                }
+            return {"models": ["sonnet"]}
+
+        tray._api = api
+        tray._check_url = MagicMock(return_value=False)
+
+        tray._refresh()
+
+        assert timeouts["/api/backends"] >= 9
+        assert tray.state["backend_available"] is True
+
     def test_refresh_reconnects_after_control_becomes_ready(self, tray):
         ready = {
             "service": "bach-chat-control",

@@ -234,7 +234,11 @@ echo  ============================================
 echo.
 
 set "BACH_HOST_TARGET=!BACH_HOST!"
-if "!BACH_HOST_TARGET!"=="" set "BACH_HOST_TARGET=macstudvonlukas"
+if "!BACH_HOST_TARGET!"=="" (
+    echo [FEHLER] BACH_HOST ist nicht gesetzt. Bitte einen abgesicherten Server-Host konfigurieren.
+    pause
+    goto menu
+)
 set "REMOTE_GUI_PORT=!BACH_GUI_PORT!"
 if "!REMOTE_GUI_PORT!"=="" set "REMOTE_GUI_PORT=8000"
 

@@ -25,6 +25,48 @@ from pathlib import Path
 from typing import Any
 
 
+def _probe_model_api(
+    models_url: str,
+    headers: dict[str, str],
+    model: str | None,
+    timeout: float,
+) -> tuple[bool, str]:
+    """Probe a model-list endpoint without returning credentials or provider text."""
+    import httpx
+
+    try:
+        response = httpx.get(models_url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        payload = response.json()
+    except httpx.HTTPStatusError as exc:
+        status_code = getattr(exc.response, "status_code", 0)
+        if status_code in {401, 403}:
+            return False, "Authentifizierung abgelehnt"
+        return False, "Dienstfehler"
+    except httpx.HTTPError:
+        return False, "nicht erreichbar"
+    except (TypeError, ValueError):
+        return False, "ungültige Antwort"
+
+    raw_models = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(raw_models, list):
+        return False, "ungültige Antwort"
+
+    model_ids = {
+        str(item.get("id") or item.get("name") or item.get("model") or "")
+        for item in raw_models
+        if isinstance(item, dict)
+    }
+    model_ids.discard("")
+    if not model_ids:
+        return False, "keine Modelle"
+
+    selected_model = str(model or "").strip()
+    if selected_model and selected_model not in model_ids:
+        return False, f"Modell fehlt: {selected_model}"
+    return True, "bereit"
+
+
 class ModelBackend(ABC):
     """Abstrakte Basis für LLM-Backends."""
 
@@ -55,7 +97,7 @@ class ModelBackend(ABC):
         model: str | None = None,
         timeout: float = 1.5,
     ) -> tuple[bool, str]:
-        """Return a fail-closed, side-effect-free backend readiness result."""
+        """Return a bounded, side-effect-light, fail-closed readiness result."""
         return False, "nicht prüfbar"
 
 
@@ -265,11 +307,14 @@ class OpenAIBackend(ModelBackend):
         model: str | None = None,
         timeout: float = 1.5,
     ) -> tuple[bool, str]:
-        del model, timeout
-        return (
-            (True, "Key vorhanden")
-            if str(self.api_key or "").strip()
-            else (False, "Key fehlt")
+        api_key = str(self.api_key or "").strip()
+        if not api_key:
+            return False, "Key fehlt"
+        return _probe_model_api(
+            f"{self.base_url}/models",
+            {"Authorization": f"Bearer {api_key}"},
+            model or self.default_model,
+            timeout,
         )
 
     def tool_response_message(self, content: str, tool_call_id: str = "") -> dict:
@@ -361,11 +406,17 @@ class AnthropicBackend(ModelBackend):
         model: str | None = None,
         timeout: float = 1.5,
     ) -> tuple[bool, str]:
-        del model, timeout
-        return (
-            (True, "Key vorhanden")
-            if str(self.api_key or "").strip()
-            else (False, "Key fehlt")
+        api_key = str(self.api_key or "").strip()
+        if not api_key:
+            return False, "Key fehlt"
+        return _probe_model_api(
+            f"{self.base_url}/models",
+            {
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+            },
+            model or self.default_model,
+            timeout,
         )
 
     def tool_response_message(self, content: str, tool_call_id: str = "") -> dict:
@@ -391,6 +442,7 @@ class CLIBackend(ModelBackend):
             "models": ["sonnet", "opus", "haiku",
                        "claude-sonnet-4-6", "claude-opus-4-6"],
             "search_names": ["claude", "claude.exe", "claude.cmd"],
+            "readiness_args": ["auth", "status"],
         },
         "codex": {
             "cmd_template": ["{path}", "--quiet", "--model", "{model}",
@@ -398,6 +450,7 @@ class CLIBackend(ModelBackend):
             "continue_flag": None,
             "models": ["gpt-4o", "o4-mini", "o3"],
             "search_names": ["codex", "codex.exe", "codex.cmd"],
+            "readiness_args": ["login", "status"],
         },
     }
 
@@ -569,12 +622,40 @@ class CLIBackend(ModelBackend):
         model: str | None = None,
         timeout: float = 1.5,
     ) -> tuple[bool, str]:
-        del model, timeout
+        del model
         cli_path = str(self.cli_path or "").strip()
-        present = bool(cli_path) and (
-            Path(cli_path).is_file() or shutil.which(cli_path) is not None
-        )
-        return (True, "vorhanden") if present else (False, "nicht gefunden")
+        resolved_path = cli_path if Path(cli_path).is_file() else shutil.which(cli_path)
+        if not cli_path or not resolved_path:
+            return False, "nicht gefunden"
+
+        readiness_args = self.KNOWN_CLIS.get(self.cli_name, {}).get("readiness_args")
+        if not readiness_args:
+            return False, "Prüfung nicht unterstützt"
+
+        try:
+            probe_timeout = max(0.1, float(timeout))
+        except (TypeError, ValueError):
+            return False, "Prüfung fehlgeschlagen"
+
+        creation_flags = 0x08000000 if sys.platform == "win32" else 0
+        try:
+            result = subprocess.run(
+                [str(resolved_path), *readiness_args],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=probe_timeout,
+                check=False,
+                creationflags=creation_flags,
+            )
+        except subprocess.TimeoutExpired:
+            return False, "Prüfung Zeitüberschreitung"
+        except OSError:
+            return False, "nicht ausführbar"
+
+        if result.returncode != 0:
+            return False, "Anmeldung nicht bestätigt"
+        return True, "bereit"
 
     def reset_session(self):
         self._session_active = False

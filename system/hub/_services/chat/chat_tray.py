@@ -10,7 +10,7 @@ Voraussetzungen:
   pip install pystray Pillow
 
 Start:
-  python chat_tray.py [--port 8081] [--host macstudvonlukas]
+  python chat_tray.py [--port 8081] [--host bach-server.local]
 """
 import argparse
 import json
@@ -214,7 +214,7 @@ class BACHTray:
         self.state["backend_available"] = False
         self.state["backend_status"] = "nicht verfügbar"
         if self.state["connected"]:
-            bs = self._api("GET", "/api/backends", timeout=2)
+            bs = self._api("GET", "/api/backends", timeout=10)
             if isinstance(bs, dict) and bs and not bs.get("error"):
                 self.backends = bs
             else:

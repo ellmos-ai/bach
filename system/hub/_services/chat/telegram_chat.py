@@ -21,6 +21,7 @@ Start:
   python telegram_chat.py
 """
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -76,6 +77,7 @@ except Exception as e:
 
 # Chat Runtime + Backend
 from hub._services.llm.model_backend import (
+    CLIBackend,
     OllamaBackend,
     backend_identifier,
     create_backend,
@@ -1178,65 +1180,163 @@ def _get_session_model(chat_id: str) -> str:
 
 
 def _checked_backend_availability(selected_backend, model: str) -> tuple[bool, str]:
+    timeout = 8.0 if isinstance(selected_backend, CLIBackend) else 1.5
     try:
-        available, status = selected_backend.availability(model=model, timeout=1.5)
+        available, status = selected_backend.availability(model=model, timeout=timeout)
     except Exception:
         return False, "Prüfung fehlgeschlagen"
     return available is True, str(status or "nicht verfügbar")
 
 
+_BACKEND_INVENTORY_TTL_SECONDS = 30.0
+_backend_inventory_lock = threading.Lock()
+_backend_inventory_cache = {
+    "expires_at": 0.0,
+    "signature": None,
+    "value": None,
+}
+
+
+def _invalidate_backend_inventory_cache() -> None:
+    with _backend_inventory_lock:
+        _backend_inventory_cache.update(
+            expires_at=0.0,
+            signature=None,
+            value=None,
+        )
+
+
+def _copy_backend_inventory(value: dict[str, dict]) -> dict[str, dict]:
+    return {name: dict(entry) for name, entry in value.items()}
+
+
+def _probe_backend_inventory_entry(
+    name: str,
+    preset: dict,
+    selected_id: str,
+    selected_model: str,
+) -> tuple[bool, str]:
+    if name == selected_id:
+        return _checked_backend_availability(runtime.backend, selected_model)
+
+    try:
+        candidate_config = {
+            key: value
+            for key, value in preset.items()
+            if key not in ("method", "description")
+        }
+        if preset["method"] == "cli":
+            cli_name = preset["type"].replace("-cli", "")
+            if _check_cli_available(cli_name) != "vorhanden":
+                raise FileNotFoundError(cli_name)
+        elif name in ("claude-api", "openai"):
+            api_key = _load_api_key(name)
+            if not api_key:
+                return False, "Key fehlt"
+            candidate_config["api_key"] = api_key
+
+        candidate = create_backend(candidate_config)
+        return _checked_backend_availability(
+            candidate,
+            preset["default_model"],
+        )
+    except FileNotFoundError:
+        return False, "nicht gefunden"
+    except Exception:
+        return False, "Prüfung fehlgeschlagen"
+
+
 def _backend_inventory() -> dict[str, dict]:
+    from concurrent.futures import ThreadPoolExecutor
+
     selected_id = backend_identifier(runtime.backend)
     selected_model, _, _ = _get_active_session_state()
-    backends = {}
+    signature = (id(runtime.backend), selected_id, selected_model)
+    now = time.monotonic()
 
-    for name, preset in BACKEND_PRESETS.items():
-        if name == selected_id:
-            available, status = _checked_backend_availability(
-                runtime.backend,
-                selected_model,
-            )
-        elif preset["method"] == "cli":
-            cli_name = preset["type"].replace("-cli", "")
-            status = _check_cli_available(cli_name)
-            available = status == "vorhanden"
-        elif name in ("claude-api", "openai"):
-            status = _check_api_key(name)
-            available = status == "Key vorhanden"
-        elif name == "ollama":
-            try:
-                candidate = OllamaBackend(
-                    base_url=preset["base_url"],
-                    default_model=preset["default_model"],
+    with _backend_inventory_lock:
+        cached_value = _backend_inventory_cache["value"]
+        if (
+            cached_value is not None
+            and _backend_inventory_cache["signature"] == signature
+            and now < _backend_inventory_cache["expires_at"]
+        ):
+            return _copy_backend_inventory(cached_value)
+
+        with ThreadPoolExecutor(max_workers=max(1, len(BACKEND_PRESETS))) as pool:
+            futures = {
+                name: pool.submit(
+                    _probe_backend_inventory_entry,
+                    name,
+                    preset,
+                    selected_id,
+                    selected_model,
                 )
-                available, status = _checked_backend_availability(
-                    candidate,
-                    preset["default_model"],
-                )
-            except Exception:
-                available, status = False, "Prüfung fehlgeschlagen"
-        else:
-            available, status = False, "nicht prüfbar"
+                for name, preset in BACKEND_PRESETS.items()
+            }
+            backends = {}
+            for name, preset in BACKEND_PRESETS.items():
+                try:
+                    available, status = futures[name].result()
+                except Exception:
+                    available, status = False, "Prüfung fehlgeschlagen"
+                backends[name] = {
+                    "description": preset["description"],
+                    "method": preset["method"],
+                    "default_model": preset["default_model"],
+                    "status": status,
+                    "available": available,
+                    "selected": name == selected_id,
+                }
 
-        backends[name] = {
-            "description": preset["description"],
-            "method": preset["method"],
-            "default_model": preset["default_model"],
-            "status": status,
-            "available": available,
-            "selected": name == selected_id,
-        }
-
-    return backends
+        _backend_inventory_cache.update(
+            expires_at=time.monotonic() + _BACKEND_INVENTORY_TTL_SECONDS,
+            signature=signature,
+            value=_copy_backend_inventory(backends),
+        )
+        return _copy_backend_inventory(backends)
 
 
 def _control_chat_response(answer) -> tuple[dict, int]:
     text = str(answer or "").strip()
     if not text:
         return {"ok": False, "error": "Chat-Backend lieferte keine Antwort"}, 502
-    if text.startswith("Backend-Fehler:"):
+    if text.startswith(("Backend-Fehler:", "Fehler:")):
         return {"ok": False, "error": text}, 502
     return {"ok": True, "answer": text}, 200
+
+
+def _is_loopback_host(host: str) -> bool:
+    normalized = str(host or "").strip().strip("[]")
+    if normalized.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_loopback_origin(origin: str) -> bool:
+    parsed = urlparse(str(origin or "").strip())
+    return (
+        parsed.scheme in {"http", "https"}
+        and not parsed.username
+        and not parsed.password
+        and not parsed.params
+        and not parsed.query
+        and not parsed.fragment
+        and parsed.path in {"", "/"}
+        and _is_loopback_host(parsed.hostname or "")
+    )
+
+
+def _control_bind_host() -> str:
+    bind_host = os.environ.get("BACH_CONTROL_HOST", "127.0.0.1").strip()
+    if not _is_loopback_host(bind_host):
+        raise ValueError(
+            "Control API darf ohne authentifizierten Ingress nur an Loopback binden"
+        )
+    return bind_host
 
 
 class QuietHTTPServer(ThreadingHTTPServer):
@@ -1258,7 +1358,11 @@ class ControlHandler(BaseHTTPRequestHandler):
             pass
 
     def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = str(self.headers.get("Origin") or "").strip()
+        if not _is_loopback_origin(origin):
+            return
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
@@ -1292,6 +1396,19 @@ class ControlHandler(BaseHTTPRequestHandler):
             except (json.JSONDecodeError, UnicodeDecodeError):
                 return {}
         return {}
+
+    def _allow_json_post(self) -> bool:
+        origin = str(self.headers.get("Origin") or "").strip()
+        if origin and not _is_loopback_origin(origin):
+            self._json({"error": "Fremd-Origin nicht erlaubt"}, 403)
+            return False
+
+        content_type = str(self.headers.get("Content-Type") or "")
+        media_type = content_type.partition(";")[0].strip().lower()
+        if media_type != "application/json":
+            self._json({"error": "Content-Type application/json erforderlich"}, 415)
+            return False
+        return True
 
     def do_OPTIONS(self):
         self.send_response(200)
@@ -1358,8 +1475,13 @@ class ControlHandler(BaseHTTPRequestHandler):
             self._json({"error": "Not found"}, 404)
 
     def do_POST(self):
+        if not self._allow_json_post():
+            return
         path = urlparse(self.path).path
         body = self._read_body()
+        if not isinstance(body, dict):
+            self._json({"error": "JSON-Objekt erforderlich"}, 400)
+            return
 
         if path == "/api/backend":
             name = body.get("name", "")
@@ -1466,15 +1588,16 @@ class ControlHandler(BaseHTTPRequestHandler):
 
 def start_control_api():
     try:
-        bind_host = os.environ.get("BACH_CONTROL_HOST", "0.0.0.0")
+        bind_host = _control_bind_host()
         server = QuietHTTPServer((bind_host, CONTROL_PORT), ControlHandler)
         server.daemon_threads = True
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        log.info(f"Control API auf 127.0.0.1:{CONTROL_PORT}")
-        print(f"Web-Dashboard: http://localhost:{CONTROL_PORT}/")
+        actual_port = int(server.server_port)
+        log.info("Control API auf %s:%s", bind_host, actual_port)
+        print(f"Web-Dashboard: http://localhost:{actual_port}/")
         return server
-    except OSError as e:
+    except (OSError, ValueError) as e:
         log.warning(f"Control API konnte nicht starten: {e}")
         return None
 
