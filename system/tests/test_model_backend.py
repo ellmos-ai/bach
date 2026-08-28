@@ -3,6 +3,7 @@
 """Truthful result handling for local Ollama chat responses."""
 
 import asyncio
+import shutil
 import sys
 from pathlib import Path
 
@@ -13,7 +14,13 @@ SYSTEM_ROOT = Path(__file__).parent.parent
 if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
-from hub._services.llm.model_backend import OllamaBackend  # noqa: E402
+from hub._services.llm.model_backend import (  # noqa: E402
+    AnthropicBackend,
+    CLIBackend,
+    OllamaBackend,
+    OpenAIBackend,
+    backend_identifier,
+)
 
 
 class _FakeResponse:
@@ -141,3 +148,56 @@ def test_ollama_timeout_has_clear_error(monkeypatch):
 
     with pytest.raises(RuntimeError, match="12 Sekunden"):
         asyncio.run(backend.chat([{"role": "user", "content": "Hallo"}], think=False))
+
+
+def test_ollama_availability_requires_reachable_selected_model(monkeypatch):
+    response = _FakeResponse({"models": [{"name": "qwen3:4b"}]})
+    monkeypatch.setattr(httpx, "get", lambda *_args, **_kwargs: response)
+    backend = OllamaBackend(default_model="qwen3:4b")
+
+    assert backend.availability() == (True, "bereit")
+
+    available, status = backend.availability(model="anderes:latest")
+    assert available is False
+    assert status == "Modell fehlt: anderes:latest"
+
+
+def test_ollama_availability_reports_unreachable_without_raising(monkeypatch):
+    request = httpx.Request("GET", "http://127.0.0.1:11434/api/tags")
+
+    def fail(*_args, **_kwargs):
+        raise httpx.ConnectError("offline", request=request)
+
+    monkeypatch.setattr(httpx, "get", fail)
+
+    assert OllamaBackend().availability() == (False, "nicht erreichbar")
+
+
+def test_configured_api_and_cli_availability_is_truthful(monkeypatch, tmp_path):
+    missing_cli = tmp_path / "nicht-installiert.exe"
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+
+    assert CLIBackend(cli_name="codex", cli_path=str(missing_cli)).availability() == (
+        False,
+        "nicht gefunden",
+    )
+    assert OpenAIBackend(api_key="").availability() == (False, "Key fehlt")
+    assert OpenAIBackend(api_key="   ").availability() == (False, "Key fehlt")
+    assert AnthropicBackend(api_key="gesetzt").availability() == (
+        True,
+        "Key vorhanden",
+    )
+
+
+@pytest.mark.parametrize(
+    ("backend", "expected"),
+    [
+        (OllamaBackend(), "ollama"),
+        (CLIBackend(cli_name="claude", cli_path="claude"), "claude"),
+        (CLIBackend(cli_name="codex", cli_path="codex"), "codex"),
+        (OpenAIBackend(api_key="gesetzt"), "openai"),
+        (AnthropicBackend(api_key="gesetzt"), "claude-api"),
+    ],
+)
+def test_backend_identifier_matches_control_api_keys(backend, expected):
+    assert backend_identifier(backend) == expected

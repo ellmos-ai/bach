@@ -84,6 +84,9 @@ class BACHTray:
         self.telegram_url = "https://t.me/bach_assistant_bot"
         self.state = {
             "backend": "?",
+            "backend_id": "",
+            "backend_available": False,
+            "backend_status": "nicht geprüft",
             "backend_cli": "",
             "model": "?",
             "mode": "safe",
@@ -161,6 +164,30 @@ class BACHTray:
             and isinstance(payload.get("telegram_verified"), bool)
         )
 
+    @staticmethod
+    def _backend_id_from_status(payload):
+        explicit = str(payload.get("backend_id") or "").strip().lower()
+        if explicit:
+            return explicit
+
+        backend_name = str(payload.get("backend") or "").strip().lower()
+        cli_name = str(payload.get("backend_cli") or "").strip().lower()
+        if cli_name in {"claude", "codex"}:
+            return cli_name
+        if "ollama" in backend_name:
+            return "ollama"
+        if "anthropic" in backend_name or "claude-api" in backend_name:
+            return "claude-api"
+        if "openai" in backend_name:
+            return "openai"
+        return ""
+
+    def _can_send_chat(self):
+        return (
+            self.state.get("connected") is True
+            and self.state.get("backend_available") is True
+        )
+
     def _refresh(self):
         with ThreadPoolExecutor(max_workers=4) as pool:
             status_future = pool.submit(
@@ -177,19 +204,40 @@ class BACHTray:
         if self._control_payload_ready(status):
             self.state.update(status)
             self.state["connected"] = True
+            self.state["backend_id"] = self._backend_id_from_status(status)
             self.services["telegram"] = status["telegram_verified"]
         else:
             self.state["connected"] = False
+            self.state["backend_id"] = ""
             self.services["telegram"] = False
 
+        self.state["backend_available"] = False
+        self.state["backend_status"] = "nicht verfügbar"
         if self.state["connected"]:
             bs = self._api("GET", "/api/backends", timeout=2)
-            if bs and not bs.get("error"):
+            if isinstance(bs, dict) and bs and not bs.get("error"):
                 self.backends = bs
+            else:
+                self.backends = {}
+
+            selected = self.backends.get(self.state["backend_id"], {})
+            if isinstance(selected, dict):
+                self.state["backend_available"] = (
+                    selected.get("available") is True
+                    and selected.get("selected") is True
+                )
+                self.state["backend_status"] = str(
+                    selected.get("status") or "nicht verfügbar"
+                )
 
             ms = self._api("GET", "/api/models", timeout=2)
-            if ms and "models" in ms:
+            if isinstance(ms, dict) and isinstance(ms.get("models"), list):
                 self.models = ms["models"]
+            else:
+                self.models = []
+        else:
+            self.backends = {}
+            self.models = []
 
         self.services["control"] = self.state["connected"]
 
@@ -355,6 +403,10 @@ class BACHTray:
             pass
 
     def _send_prompt(self, prompt):
+        if not self._can_send_chat():
+            if self.icon:
+                self.icon.notify("Backend nicht verfügbar", "BACH Prompt")
+            return
         result = self._api("POST", "/api/chat", {
             "prompt": prompt,
             "chat_id": "tray-prompt",
@@ -484,6 +536,7 @@ class BACHTray:
             status = f"{self.state['backend']}"
             if self.state["backend_cli"]:
                 status += f" ({self.state['backend_cli']})"
+            status += f" [{self.state.get('backend_status') or 'nicht verfügbar'}]"
             items.append(pystray.MenuItem(f"Backend: {status}", None, enabled=False))
             items.append(pystray.MenuItem(f"Modell: {self.state['model']}", None, enabled=False))
             mode_str = (self.state.get("mode") or "safe").upper()
@@ -501,6 +554,9 @@ class BACHTray:
                     label += f" [{info['status']}]"
                 backend_items.append(pystray.MenuItem(
                     label, self._make_backend_action(name),
+                    enabled=lambda item, name=name: (
+                        self.backends.get(name, {}).get("available") is True
+                    ),
                 ))
             if backend_items:
                 items.append(pystray.MenuItem("Backend", pystray.Menu(*backend_items)))
@@ -604,7 +660,7 @@ class BACHTray:
                 cat_items.append(pystray.MenuItem(
                     f"▶ Senden: {name}",
                     self._make_prompt_send_action(text),
-                    enabled=lambda item: self.state["connected"],
+                    enabled=lambda item: self._can_send_chat(),
                 ))
             prompt_items.append(pystray.MenuItem(category, pystray.Menu(*cat_items)))
         if prompt_items:
@@ -767,6 +823,8 @@ class BACHTray:
                 self.state["connected"],
                 self.state["mode"],
                 self.state["backend"],
+                self.state["backend_available"],
+                self.state["backend_status"],
                 self.state["model"],
                 self.state["think"],
                 tuple(sorted(self.services.items())),
@@ -776,6 +834,8 @@ class BACHTray:
                 self.state["connected"],
                 self.state["mode"],
                 self.state["backend"],
+                self.state["backend_available"],
+                self.state["backend_status"],
                 self.state["model"],
                 self.state["think"],
                 tuple(sorted(self.services.items())),

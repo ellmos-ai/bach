@@ -50,6 +50,14 @@ class ModelBackend(ABC):
         """Erzeugt die korrekte Tool-Response-Nachricht für dieses Backend."""
         return {"role": "tool", "content": str(content)}
 
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        """Return a fail-closed, side-effect-free backend readiness result."""
+        return False, "nicht prüfbar"
+
 
 class OllamaBackend(ModelBackend):
     """Ollama API Backend für lokale Modelle (Qwen, Llama, Mistral, etc.)."""
@@ -145,6 +153,38 @@ class OllamaBackend(ModelBackend):
     def get_default_model(self) -> str:
         return self.default_model
 
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        import httpx
+
+        try:
+            response = httpx.get(f"{self.base_url}/api/tags", timeout=timeout)
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, TypeError, ValueError):
+            return False, "nicht erreichbar"
+
+        raw_models = payload.get("models") if isinstance(payload, dict) else None
+        if not isinstance(raw_models, list):
+            return False, "ungültige Antwort"
+
+        model_names = {
+            str(item.get("name") or item.get("model") or "")
+            for item in raw_models
+            if isinstance(item, dict)
+        }
+        model_names.discard("")
+        if not model_names:
+            return False, "keine Modelle"
+
+        selected_model = str(model or self.default_model or "").strip()
+        if selected_model and selected_model not in model_names:
+            return False, f"Modell fehlt: {selected_model}"
+        return True, "bereit"
+
     def tool_response_message(self, content: str, tool_call_id: str = "") -> dict:
         return {"role": "tool", "content": str(content)}
 
@@ -219,6 +259,18 @@ class OpenAIBackend(ModelBackend):
 
     def get_default_model(self) -> str:
         return self.default_model
+
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        del model, timeout
+        return (
+            (True, "Key vorhanden")
+            if str(self.api_key or "").strip()
+            else (False, "Key fehlt")
+        )
 
     def tool_response_message(self, content: str, tool_call_id: str = "") -> dict:
         msg = {"role": "tool", "content": str(content)}
@@ -303,6 +355,18 @@ class AnthropicBackend(ModelBackend):
 
     def get_default_model(self) -> str:
         return self.default_model
+
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        del model, timeout
+        return (
+            (True, "Key vorhanden")
+            if str(self.api_key or "").strip()
+            else (False, "Key fehlt")
+        )
 
     def tool_response_message(self, content: str, tool_call_id: str = "") -> dict:
         return {"role": "user", "content": [
@@ -500,8 +564,33 @@ class CLIBackend(ModelBackend):
     def get_default_model(self) -> str:
         return self.default_model
 
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        del model, timeout
+        cli_path = str(self.cli_path or "").strip()
+        present = bool(cli_path) and (
+            Path(cli_path).is_file() or shutil.which(cli_path) is not None
+        )
+        return (True, "vorhanden") if present else (False, "nicht gefunden")
+
     def reset_session(self):
         self._session_active = False
+
+
+def backend_identifier(backend: ModelBackend) -> str:
+    """Stable Control-API key for a concrete backend instance."""
+    if isinstance(backend, OllamaBackend):
+        return "ollama"
+    if isinstance(backend, CLIBackend):
+        return backend.cli_name if backend.cli_name in {"claude", "codex"} else ""
+    if isinstance(backend, AnthropicBackend):
+        return "claude-api"
+    if isinstance(backend, OpenAIBackend):
+        return "openai"
+    return ""
 
 
 def create_backend(config: dict) -> ModelBackend:

@@ -744,6 +744,7 @@ class TestBACHTray:
 
     def test_initial_state(self, tray):
         assert tray.state["backend"] == "?"
+        assert tray.state["backend_available"] is False
         assert tray.state["mode"] == "safe"
         assert tray.state["connected"] is False
         assert tray.state["think"] is True
@@ -879,17 +880,124 @@ class TestBACHTray:
         tray._check_url = MagicMock(return_value=False)
         tray._api = MagicMock(side_effect=[
             {"service": "bach-chat-control", "telegram_verified": True,
-             "backend": "ollama", "model": "qwen", "mode": "full", "connected": True,
+             "backend": "ollama", "backend_id": "ollama", "model": "qwen",
+             "mode": "full", "connected": True,
              "think": False, "bach": True, "sessions": 2, "max_tool_rounds": 10,
              "backend_cli": ""},
-            {"ollama": {"status": "ok"}},
+            {"ollama": {"status": "bereit", "available": True, "selected": True}},
             {"models": ["qwen3.5", "llama3"]},
         ])
         tray._refresh()
         assert tray.state["backend"] == "ollama"
         assert tray.state["mode"] == "full"
         assert tray.state["connected"] is True
+        assert tray.state["backend_available"] is True
         assert tray.models == ["qwen3.5", "llama3"]
+
+    def test_refresh_disables_chat_when_selected_backend_is_unavailable(self, tray):
+        tray._check_url = MagicMock(return_value=False)
+        tray._api = MagicMock(side_effect=[
+            {
+                "service": "bach-chat-control",
+                "telegram_verified": False,
+                "backend": "OllamaBackend",
+                "backend_id": "ollama",
+                "model": "qwen3:4b",
+            },
+            {
+                "ollama": {
+                    "status": "nicht erreichbar",
+                    "available": False,
+                    "selected": True,
+                },
+            },
+            {"error": "nicht erreichbar"},
+        ])
+
+        tray._refresh()
+
+        assert tray.state["connected"] is True
+        assert tray.state["backend_available"] is False
+        assert tray.state["backend_status"] == "nicht erreichbar"
+        assert tray._can_send_chat() is False
+        assert tray.models == []
+
+    def test_refresh_disables_chat_when_inventory_backend_is_no_longer_selected(self, tray):
+        tray._check_url = MagicMock(return_value=False)
+        tray._api = MagicMock(side_effect=[
+            {
+                "service": "bach-chat-control",
+                "telegram_verified": False,
+                "backend": "OllamaBackend",
+                "backend_id": "ollama",
+                "model": "qwen3:4b",
+            },
+            {
+                "ollama": {
+                    "status": "bereit",
+                    "available": True,
+                    "selected": False,
+                },
+            },
+            {"models": ["qwen3:4b"]},
+        ])
+
+        tray._refresh()
+
+        assert tray.state["connected"] is True
+        assert tray.state["backend_available"] is False
+        assert tray._can_send_chat() is False
+
+    def test_refresh_reenables_chat_after_backend_recovers(self, tray):
+        status = {
+            "service": "bach-chat-control",
+            "telegram_verified": False,
+            "backend": "OllamaBackend",
+            "backend_id": "ollama",
+            "model": "qwen3:4b",
+        }
+        tray._check_url = MagicMock(return_value=False)
+        tray._api = MagicMock(side_effect=[
+            status,
+            {
+                "ollama": {
+                    "status": "nicht erreichbar",
+                    "available": False,
+                    "selected": True,
+                },
+            },
+            {"error": "nicht erreichbar"},
+            status,
+            {
+                "ollama": {
+                    "status": "bereit",
+                    "available": True,
+                    "selected": True,
+                },
+            },
+            {"models": ["qwen3:4b"]},
+        ])
+
+        tray._refresh()
+        assert tray._can_send_chat() is False
+
+        tray._refresh()
+        assert tray._can_send_chat() is True
+        assert tray.models == ["qwen3:4b"]
+
+    def test_send_prompt_fails_closed_without_available_backend(self, tray):
+        tray.state["connected"] = True
+        tray.state["backend_available"] = False
+        tray.icon = MagicMock()
+        tray._api = MagicMock()
+
+        tray._send_prompt("Nicht absenden")
+
+        tray._api.assert_not_called()
+        tray.icon.notify.assert_called_once_with(
+            "Backend nicht verfügbar",
+            "BACH Prompt",
+        )
 
     @pytest.mark.parametrize("status", [
         {"backend": "ollama"},
@@ -955,7 +1063,13 @@ class TestBACHTray:
                     "mode": "safe",
                     "think": False,
                 },
-                "/api/backends": {"ollama": {"status": "ok"}},
+                "/api/backends": {
+                    "ollama": {
+                        "status": "bereit",
+                        "available": True,
+                        "selected": True,
+                    },
+                },
                 "/api/models": {"models": ["qwen"]},
             }
 
@@ -1021,6 +1135,7 @@ class TestBACHTray:
             )
             assert tray.services["control"] is True
             assert tray.services["telegram"] is False
+            assert tray.state["backend_available"] is True
             assert tray.models == ["qwen"]
 
             server.shutdown()
@@ -1038,6 +1153,7 @@ class TestBACHTray:
             )
             assert tray.services["control"] is False
             assert tray.services["telegram"] is False
+            assert tray.state["backend_available"] is False
 
             server = ControlServer(("127.0.0.1", port), ControlHandler)
             server_thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -1051,6 +1167,7 @@ class TestBACHTray:
                 "automatic control reconnect after restart",
             )
             assert tray.services["telegram"] is False
+            assert tray.state["backend_available"] is True
         finally:
             if server is not None:
                 server.shutdown()
@@ -1083,6 +1200,7 @@ class TestBACHTray:
         tray._api = MagicMock(return_value=None)
         tray._refresh()
         assert tray.state["connected"] is False
+        assert tray.state["backend_available"] is False
 
     def test_set_mode(self, tray):
         tray._api = MagicMock(return_value=None)

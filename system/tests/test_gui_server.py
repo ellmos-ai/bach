@@ -276,3 +276,12 @@ class TestChatControlResolution:
         assert "CHAT_HOST" not in template
         assert "CHAT_HOST" not in nav
         assert "macstudvonlukas" not in nav
+
+    def test_chat_template_fails_closed_until_backend_is_available(self):
+        template = (server.TEMPLATES_DIR / "chat.html").read_text(encoding="utf-8")
+
+        assert 'id="send-btn" title="Backend wird geprüft" disabled' in template
+        assert "let backendAvailable = false;" in template
+        assert "activeBackend.available === true" in template
+        assert "activeBackend.selected === true" in template
+        assert "if (!text || sending || !backendAvailable) return;" in template

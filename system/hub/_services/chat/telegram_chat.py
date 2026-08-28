@@ -75,7 +75,11 @@ except Exception as e:
     print(f"BACH API nicht verfügbar: {e}")
 
 # Chat Runtime + Backend
-from hub._services.llm.model_backend import create_backend, OllamaBackend
+from hub._services.llm.model_backend import (
+    OllamaBackend,
+    backend_identifier,
+    create_backend,
+)
 from hub._services.chat.chat_runtime import ChatRuntime
 
 # Compute Lock (optional — graceful if not available)
@@ -350,17 +354,33 @@ def _check_cli_available(name: str) -> str:
     return ""
 
 
-def _check_api_key(name: str) -> str:
-    key_map = {
-        "claude-api": ("ANTHROPIC_API_KEY", "anthropic_api_key"),
-        "openai": ("OPENAI_API_KEY", "openai_api_key"),
-    }
-    if name not in key_map:
+_API_KEY_SOURCES = {
+    "claude-api": ("ANTHROPIC_API_KEY", "anthropic_api_key"),
+    "openai": ("OPENAI_API_KEY", "openai_api_key"),
+}
+
+
+def _load_api_key(name: str) -> str:
+    source = _API_KEY_SOURCES.get(name)
+    if source is None:
         return ""
-    env_var, file_name = key_map[name]
-    key_file = os.path.expanduser(f"~/.credentials/{file_name}")
-    has_key = bool(os.environ.get(env_var)) or os.path.exists(key_file)
-    return "Key vorhanden" if has_key else "Key fehlt"
+
+    env_var, file_name = source
+    configured = str(os.environ.get(env_var) or "").strip()
+    if configured:
+        return configured
+
+    key_file = Path(os.path.expanduser(f"~/.credentials/{file_name}"))
+    try:
+        return key_file.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return ""
+
+
+def _check_api_key(name: str) -> str:
+    if name not in _API_KEY_SOURCES:
+        return ""
+    return "Key vorhanden" if _load_api_key(name) else "Key fehlt"
 
 
 async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -402,12 +422,9 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         preset["default_model"] = args[1]
 
     if preset["method"] == "api" and name in ("claude-api", "openai"):
-        env_var = "ANTHROPIC_API_KEY" if "claude" in name else "OPENAI_API_KEY"
-        file_name = "anthropic_api_key" if "claude" in name else "openai_api_key"
+        env_var, file_name = _API_KEY_SOURCES[name]
         key_file = os.path.expanduser(f"~/.credentials/{file_name}")
-        api_key = os.environ.get(env_var, "")
-        if not api_key and os.path.exists(key_file):
-            api_key = open(key_file, encoding="utf-8").read().strip()
+        api_key = _load_api_key(name)
         if not api_key:
             await update.message.reply_text(
                 f"Kein API-Key für {name}.\n"
@@ -1082,6 +1099,8 @@ async function refresh() {
       const b = document.createElement('button');
       b.className = 'btn';
       b.textContent = name + (info.status ? ' [' + info.status + ']' : '');
+      b.disabled = info.available !== true;
+      b.title = info.status || 'Backend nicht verfügbar';
       b.onclick = () => setBackend(name);
       c.appendChild(b);
     }
@@ -1146,6 +1165,69 @@ def _get_active_session_state():
         _global_defaults["mode"],
         _global_defaults["think"],
     )
+
+
+def _get_session_model(chat_id: str) -> str:
+    session = runtime.sessions.get(chat_id)
+    session_model = str(getattr(session, "model", "") or "").strip()
+    if session_model:
+        return session_model
+
+    configured_default = str(_global_defaults.get("model") or "").strip()
+    return configured_default or runtime.backend.get_default_model()
+
+
+def _checked_backend_availability(selected_backend, model: str) -> tuple[bool, str]:
+    try:
+        available, status = selected_backend.availability(model=model, timeout=1.5)
+    except Exception:
+        return False, "Prüfung fehlgeschlagen"
+    return available is True, str(status or "nicht verfügbar")
+
+
+def _backend_inventory() -> dict[str, dict]:
+    selected_id = backend_identifier(runtime.backend)
+    selected_model, _, _ = _get_active_session_state()
+    backends = {}
+
+    for name, preset in BACKEND_PRESETS.items():
+        if name == selected_id:
+            available, status = _checked_backend_availability(
+                runtime.backend,
+                selected_model,
+            )
+        elif preset["method"] == "cli":
+            cli_name = preset["type"].replace("-cli", "")
+            status = _check_cli_available(cli_name)
+            available = status == "vorhanden"
+        elif name in ("claude-api", "openai"):
+            status = _check_api_key(name)
+            available = status == "Key vorhanden"
+        elif name == "ollama":
+            try:
+                candidate = OllamaBackend(
+                    base_url=preset["base_url"],
+                    default_model=preset["default_model"],
+                )
+                available, status = _checked_backend_availability(
+                    candidate,
+                    preset["default_model"],
+                )
+            except Exception:
+                available, status = False, "Prüfung fehlgeschlagen"
+        else:
+            available, status = False, "nicht prüfbar"
+
+        backends[name] = {
+            "description": preset["description"],
+            "method": preset["method"],
+            "default_model": preset["default_model"],
+            "status": status,
+            "available": available,
+            "selected": name == selected_id,
+        }
+
+    return backends
 
 
 def _control_chat_response(answer) -> tuple[dict, int]:
@@ -1247,6 +1329,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 "service": "bach-chat-control",
                 "telegram_verified": TELEGRAM_VERIFIED,
                 "backend": backend_name,
+                "backend_id": backend_identifier(runtime.backend),
                 "backend_cli": cli_name,
                 "model": model,
                 "mode": mode,
@@ -1262,21 +1345,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             })
 
         elif path == "/api/backends":
-            backends = {}
-            for name, preset in BACKEND_PRESETS.items():
-                status = ""
-                if preset["method"] == "cli":
-                    cli_name = preset["type"].replace("-cli", "")
-                    status = _check_cli_available(cli_name)
-                elif name in ("claude-api", "openai"):
-                    status = _check_api_key(name)
-                backends[name] = {
-                    "description": preset["description"],
-                    "method": preset["method"],
-                    "default_model": preset["default_model"],
-                    "status": status,
-                }
-            self._json(backends)
+            self._json(_backend_inventory())
 
         elif path == "/api/models":
             try:
@@ -1302,12 +1371,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             if model:
                 preset["default_model"] = model
             if preset["method"] == "api" and name in ("claude-api", "openai"):
-                env_var = "ANTHROPIC_API_KEY" if "claude" in name else "OPENAI_API_KEY"
-                file_name = "anthropic_api_key" if "claude" in name else "openai_api_key"
-                key_file = os.path.expanduser(f"~/.credentials/{file_name}")
-                api_key = os.environ.get(env_var, "")
-                if not api_key and os.path.exists(key_file):
-                    api_key = open(key_file, encoding="utf-8").read().strip()
+                api_key = _load_api_key(name)
                 if not api_key:
                     self._json({"error": f"Kein API-Key für {name}"}, 400)
                     return
@@ -1368,6 +1432,17 @@ class ControlHandler(BaseHTTPRequestHandler):
                 return
             if depth >= 2:
                 self._json({"error": "Maximale Delegationstiefe erreicht"}, 429)
+                return
+            model = _get_session_model(chat_id)
+            available, availability_status = _checked_backend_availability(
+                runtime.backend,
+                model,
+            )
+            if not available:
+                self._json({
+                    "ok": False,
+                    "error": f"Backend nicht verfügbar: {availability_status}",
+                }, 503)
                 return
             os.environ["BACH_DELEGATION_DEPTH"] = str(depth + 1)
             try:
