@@ -879,6 +879,24 @@ class ChatRuntime:
     def clear_session(self, chat_id: str):
         self.sessions.pop(chat_id, None)
 
+    def history(self, chat_id: str) -> list[dict]:
+        """Read-only transcript of a session: the visible user/assistant turns in order.
+
+        Does not create a session (unknown chat_id -> []). Internal entries -- the
+        summarised-context system message, tool traffic -- stay hidden. The GUI
+        restores exactly this list when the chat page is reopened, so leaving the
+        page no longer loses the conversation (plan item 1.1.7 / 1.2.4 within the
+        runtime's lifetime; the session store itself is unchanged).
+        """
+        session = self.sessions.get(chat_id)
+        if session is None:
+            return []
+        return [
+            {"role": m["role"], "content": m.get("content", "")}
+            for m in session.messages
+            if m.get("role") in ("user", "assistant")
+        ]
+
     def build_system_prompt(self, session: ChatSession) -> str:
         capabilities = """
 Du hast Zugriff auf Werkzeuge (Tools), die du bei Bedarf aufrufen kannst.

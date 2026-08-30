@@ -722,6 +722,12 @@ class TestBACHTray:
         assert tray.gui_url == "http://testhost:8000"
         assert tray.webchat_url == "http://testhost:8080"
 
+    def test_buddha_chat_opens_the_gui_chat_page(self, tray):
+        """The :8080 webchat no longer exists; the tray must open the GUI chat (1.1.6)."""
+        with patch("webbrowser.open") as opened:
+            tray._open_webchat()
+        opened.assert_called_once_with("http://testhost:8000/chat")
+
     def test_initial_state(self, tray):
         assert tray.state["backend"] == "?"
         assert tray.state["mode"] == "safe"

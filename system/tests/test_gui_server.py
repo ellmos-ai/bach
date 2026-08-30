@@ -207,6 +207,13 @@ class TestCrossPlatformGuards:
 class TestSmokeEndpoints:
     """Hit actual endpoints — catches import errors, routing bugs, template crashes."""
 
+    def test_chat_page_restores_history_from_runtime(self, client):
+        """Leaving /chat must not lose the conversation: the page loads it back (1.1.7)."""
+        resp = client.get("/chat")
+        assert resp.status_code == 200
+        assert "/history?chat_id=" in resp.text
+        assert "loadHistory()" in resp.text
+
     def test_root_returns_html(self, client):
         resp = client.get("/")
         assert resp.status_code == 200

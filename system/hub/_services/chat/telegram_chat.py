@@ -35,7 +35,7 @@ import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 # BACH system path: resolve from this file's location (hub/_services/chat/)
 _bach_system = str(Path(__file__).resolve().parent.parent.parent)
@@ -1246,6 +1246,11 @@ class ControlHandler(BaseHTTPRequestHandler):
                 "tool_round": tool_round,
                 "last_tools": active_tools,
             })
+
+        elif path == "/api/history":
+            query = parse_qs(urlparse(self.path).query)
+            chat_id = query.get("chat_id", ["gui-web"])[0]
+            self._json({"ok": True, "chat_id": chat_id, "messages": runtime.history(chat_id)})
 
         elif path == "/api/backends":
             backends = {}

@@ -392,6 +392,20 @@
 
         inputEl.addEventListener('input', autoResize);
 
+        async function loadHistory() {
+            // The runtime keeps the gui-web transcript; without this the page
+            // started empty on every visit although the conversation still existed.
+            try {
+                const r = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(CHAT_ID));
+                const data = await r.json();
+                for (const m of (data.messages || [])) {
+                    addMessage(m.content, m.role === 'user' ? 'user' : 'bot');
+                }
+            } catch (e) {
+                // runtime offline: refreshStatus() shows it
+            }
+        }
+
         async function refreshStatus() {
             try {
                 const r = await fetch(CHAT_API + '/status');
@@ -408,7 +422,7 @@
             }
         }
 
-        loadLibraryDraft();
+        loadHistory().then(loadLibraryDraft);
         refreshStatus();
         setInterval(refreshStatus, 30000);
     })();

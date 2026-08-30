@@ -685,7 +685,9 @@ class BACHTray:
 
     def _open_webchat(self, *_):
         import webbrowser
-        webbrowser.open(self.webchat_url)
+        # The standalone webchat on :8080 went with the retired claude_bridge;
+        # the working chat is the GUI page (plan item 1.1.6).
+        webbrowser.open(f"{self.gui_url}/chat")
 
     def _open_promptboard(self, *_):
         app_path = self._promptboard_app_path()

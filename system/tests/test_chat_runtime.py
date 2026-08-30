@@ -505,3 +505,36 @@ class TestFoerderberichtToolPrivacy:
         assert "Anonymisierter Prompt bereit." in result
         assert "prompt.txt" not in result
         assert str(base_path) not in result
+
+
+class TestHistory:
+    """`ChatRuntime.history()` is what the GUI restores on reopen (plan 1.1.7/1.2.4)."""
+
+    @staticmethod
+    def _runtime():
+        from hub._services.chat.chat_runtime import ChatRuntime
+
+        backend = MagicMock()
+        backend.get_default_model.return_value = "test-model"
+        return ChatRuntime(backend)
+
+    def test_returns_visible_turns_in_order_and_hides_internal_entries(self):
+        rt = self._runtime()
+        session = rt.get_session("gui-web")
+        session.messages.extend([
+            {"role": "system", "content": "Bisheriger Kontext: ..."},
+            {"role": "user", "content": "Hallo"},
+            {"role": "assistant", "content": "Hi!"},
+            {"role": "tool", "content": "{}"},
+            {"role": "user", "content": "Noch eine Frage"},
+        ])
+        assert rt.history("gui-web") == [
+            {"role": "user", "content": "Hallo"},
+            {"role": "assistant", "content": "Hi!"},
+            {"role": "user", "content": "Noch eine Frage"},
+        ]
+
+    def test_unknown_session_is_empty_and_not_created(self):
+        rt = self._runtime()
+        assert rt.history("never-seen") == []
+        assert "never-seen" not in rt.sessions
