@@ -741,3 +741,36 @@ class TestShlexPosixMode:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ═══════════════════════════════════════════════════════════════
+# Konstruktion aus Worker-Threads (GUI-BackgroundTasks)
+# ═══════════════════════════════════════════════════════════════
+
+class TestConstructionOutsideMainThread:
+    """`/api/daemon/jobs/{id}/run` baut DaemonService in einem Threadpool-Thread;
+    `signal.signal` darf dort nicht mehr crashen (Mac gui-server.err 2026-08-28)."""
+
+    def test_init_in_worker_thread_does_not_raise(self, tmp_path):
+        result = {}
+
+        def build():
+            try:
+                result["daemon"] = DaemonService(db_path=tmp_path / "d.db")
+            except Exception as exc:  # noqa: BLE001 - genau das war der Bug
+                result["error"] = exc
+
+        t = threading.Thread(target=build)
+        t.start()
+        t.join(10)
+        assert "error" not in result, result.get("error")
+        assert result["daemon"].db_path == tmp_path / "d.db"
+
+    def test_main_thread_still_registers_signal_handlers(self, tmp_path):
+        import signal as _signal
+
+        with patch.object(_signal, "signal") as sig:
+            DaemonService(db_path=tmp_path / "d.db")
+        registered = {call.args[0] for call in sig.call_args_list}
+        assert _signal.SIGTERM in registered
+        assert _signal.SIGINT in registered

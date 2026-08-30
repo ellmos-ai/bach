@@ -118,9 +118,14 @@ class DaemonService:
         self._shutdown_event = threading.Event()
         self._pause_logged = False
         
-        # Signal-Handler registrieren
-        signal.signal(signal.SIGTERM, self._signal_handler)
-        signal.signal(signal.SIGINT, self._signal_handler)
+        # Signal-Handler registrieren -- nur im Main-Thread moeglich. Die GUI baut
+        # DaemonService in FastAPI-BackgroundTasks (run_in_threadpool); dort warf
+        # signal.signal ValueError und jeder 'Job jetzt ausfuehren' starb vor dem
+        # Start (Mac Studio gui-server.err 2026-08-28). Im Worker-Thread reicht das
+        # Shutdown-Event; der Prozess-Handler gehoert dem Main-Thread.
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGTERM, self._signal_handler)
+            signal.signal(signal.SIGINT, self._signal_handler)
     
     def _signal_handler(self, signum, frame):
         """Behandelt Shutdown-Signale."""
