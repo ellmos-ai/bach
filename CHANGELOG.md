@@ -39,6 +39,8 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **`start/bach.bat` beendet auf Port 8000 nur noch den eigenen GUI-Server:** die beiden `netstat`/`taskkill`-Schleifen killten jeden Listener auf :8000, auch fremde Programme (gemessen auf ASUS-GEI: `run_web.py`). Neue Subroutine `:kill_if_bach_gui` prueft die Kommandozeile auf `gui\server.py`; Fremdprozesse werden gemeldet, nicht beendet.
+
 - **CAMT.053-Dry-run wieder lauffähig und XML-gehärtet:** Der Steuer-Handler
   bezieht seinen CAMT-Parser nicht mehr aus dem gitignorierten privaten
   Expertenbaum, sondern aus `system/tools/steuer`. Der wiederhergestellte
