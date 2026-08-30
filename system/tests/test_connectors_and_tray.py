@@ -909,3 +909,40 @@ class TestBACHTray:
         with patch('urllib.request.urlopen', return_value=resp):
             result = tray._api("GET", "/api/status")
             assert result["backend"] == "ollama"
+
+
+class TestTraySingleInstance:
+    """Single-instance contract (FABLE-SOL-PLAN 1.2.3): a second tray must not start."""
+
+    @staticmethod
+    def _mod():
+        with patch.dict('sys.modules', {
+            'pystray': MagicMock(),
+            'PIL': MagicMock(),
+            'PIL.Image': MagicMock(),
+            'PIL.ImageDraw': MagicMock(),
+            'PIL.ImageFont': MagicMock(),
+        }):
+            from hub._services.chat import chat_tray
+            return chat_tray
+
+    def test_second_acquire_fails_until_first_releases(self, tmp_path):
+        mod = self._mod()
+        lock_path = tmp_path / "tray.lock"
+        first = mod.acquire_single_instance_lock(lock_path)
+        assert first is not None
+        assert mod.acquire_single_instance_lock(lock_path) is None
+        first.close()
+        second = mod.acquire_single_instance_lock(lock_path)
+        assert second is not None
+        second.close()
+
+    def test_main_refuses_a_second_tray_without_running_it(self, monkeypatch, capsys):
+        mod = self._mod()
+        monkeypatch.setattr(sys, "argv", ["chat_tray.py"])
+        monkeypatch.setattr(mod, "acquire_single_instance_lock", lambda *a, **k: None)
+        monkeypatch.setattr(mod.BACHTray, "run", lambda self: pytest.fail("run() must not be called"))
+        with pytest.raises(SystemExit) as exc:
+            mod.main()
+        assert exc.value.code == 3
+        assert "läuft bereits" in capsys.readouterr().err

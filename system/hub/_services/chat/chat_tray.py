@@ -17,6 +17,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
@@ -55,6 +56,33 @@ DEFAULT_PROMPTS = {
 
 PROMPTBOARD_LIBRARY_ENV = "BACH_PROMPTBOARD_LIBRARY"
 PROMPTBOARD_APP_ENV = "BACH_PROMPTBOARD_APP"
+TRAY_LOCK_FILE = Path(tempfile.gettempdir()) / "bach_chat_tray.lock"
+
+
+def acquire_single_instance_lock(lock_path: Path = TRAY_LOCK_FILE):
+    """Return an open, exclusively locked handle -- or None if another tray holds it.
+
+    Single-instance contract for the tray: the lock is an OS-held byte-range
+    (Windows, msvcrt) or flock (POSIX) lock on an open handle, so the OS drops it
+    when the holder dies. A crashed tray therefore never leaves a stale lock
+    behind, and no PID guessing is needed. Keep the returned handle alive for
+    the tray's whole lifetime.
+    """
+    handle = open(lock_path, "a+b")
+    try:
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
 
 
 class BACHTray:
@@ -738,6 +766,11 @@ def main():
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
         return
+    lock = acquire_single_instance_lock()
+    if lock is None:
+        print(f"BACH Tray läuft bereits (Single-Instance-Lock: {TRAY_LOCK_FILE}).", file=sys.stderr)
+        sys.exit(3)
+    tray._instance_lock = lock  # keep the OS lock alive for the tray's lifetime
     tray.run()
 
 
