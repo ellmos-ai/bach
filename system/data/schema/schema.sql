@@ -89,12 +89,15 @@ CREATE TABLE IF NOT EXISTS tasks (
         is_recurring INTEGER DEFAULT 0,
         recurrence_pattern TEXT,
         next_occurrence TEXT,
+        due_date TEXT,
         executable_command TEXT,
         created_at TEXT,
         started_at TEXT,
         completed_at TEXT,
         updated_at TEXT
     , dist_type INTEGER DEFAULT 0, modified_by TEXT DEFAULT NULL, depends_on TEXT DEFAULT NULL, created_by TEXT DEFAULT 'user', assigned_to TEXT DEFAULT 'user', project TEXT, source TEXT, image_data TEXT);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 
 CREATE TABLE IF NOT EXISTS task_history (
     id INTEGER PRIMARY KEY,
@@ -1079,7 +1082,7 @@ CREATE TABLE IF NOT EXISTS financial_emails (
 
 CREATE TABLE IF NOT EXISTS financial_subscriptions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL UNIQUE,
     provider_name TEXT NOT NULL,
     category TEXT NOT NULL,
 
@@ -1193,36 +1196,6 @@ CREATE TABLE IF NOT EXISTS household_shopping_items (
 , dist_type INTEGER DEFAULT 0);
 
 -- ── KALENDER & KONTAKTE ─────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS calendar_events (
-    id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    description TEXT,
-    -- Zeit
-    event_date TEXT,            -- YYYY-MM-DD
-    event_time TEXT,            -- HH:MM
-    end_date TEXT,
-    end_time TEXT,
-    all_day INTEGER DEFAULT 0,
-    -- Ort
-    location TEXT,
-    -- Wiederholung
-    is_recurring INTEGER DEFAULT 0,
-    recurrence_pattern TEXT,    -- daily, weekly, monthly, yearly
-    recurrence_end TEXT,
-    -- Erinnerung
-    reminder_minutes INTEGER,
-    -- Kategorisierung
-    category TEXT,              -- privat, arbeit, gesundheit, etc.
-    -- Status
-    status TEXT DEFAULT 'scheduled', -- scheduled, completed, cancelled
-    -- Meta
-    external_id TEXT,           -- ID aus externem Kalender
-    notes TEXT,
-    dist_type INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
-);
 
 CREATE TABLE IF NOT EXISTS contacts (
     id INTEGER PRIMARY KEY,
@@ -1775,6 +1748,32 @@ CREATE TABLE IF NOT EXISTS assistant_calendar (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 , dist_type INTEGER DEFAULT 0);
+
+-- Read-only compatibility for legacy consumers. The canonical storage is
+-- assistant_calendar; migration 037 refuses to discard non-empty legacy data.
+CREATE VIEW IF NOT EXISTS calendar_events AS
+SELECT
+    id,
+    title,
+    description,
+    DATE(start_datetime) AS event_date,
+    TIME(start_datetime) AS event_time,
+    DATE(end_datetime) AS end_date,
+    TIME(end_datetime) AS end_time,
+    0 AS all_day,
+    location,
+    is_recurring,
+    recurrence_rule AS recurrence_pattern,
+    NULL AS recurrence_end,
+    reminder_minutes,
+    event_type AS category,
+    status,
+    external_id,
+    NULL AS notes,
+    dist_type,
+    created_at,
+    updated_at
+FROM assistant_calendar;
 
 CREATE TABLE IF NOT EXISTS assistant_contacts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2525,4 +2524,3 @@ CREATE TABLE watcher_event_log (
         processing_time_ms INTEGER DEFAULT 0,
         created_at TEXT NOT NULL
     );
-

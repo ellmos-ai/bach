@@ -1,5 +1,5 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
+# Last validated: 2026-08-26
 # Next review: 2027-05-17
 
 
@@ -10,15 +10,16 @@ DESCRIPTION
 ------------
 
 The task handler manages tasks in the BACH database. Supported
-Priorities (P1-P4), multi-ID operations, dependencies, assignments
-Partner and status management (pending/done/blocked).
+priorities (P1-P4), multi-ID operations, dependencies, assignments,
+optional ISO due dates, and status management (pending/done/blocked).
 
 
 OPERATIONS
 -----------
 
 add <title> Add task
-  Options: --priority P1-P4, --description TEXT, --category TEXT
+  Options: --priority P1-P4, --description TEXT, --category TEXT,
+           --due YYYY-MM-DD
 
 list [status] List tasks
   Status: pending (default), open (legacy), in_progress, done, blocked, all
@@ -56,7 +57,8 @@ EXAMPLES
 ---------
 
 Create task:
-  bach task add "API implementieren" --priority P1 --category development
+  bach task add "Implement API" --priority P1 --category development \
+    --due 2026-09-15
 
 List tasks:
   bach task list                    # Only pending
@@ -81,7 +83,7 @@ Dependencies:
 FILES
 -------
 
-data/bach.db SQLite database (tasks table)
+data/bach.db SQLite database (tasks table; due_date is YYYY-MM-DD or NULL)
 
 
 SEE ALSO
@@ -98,3 +100,4 @@ Multi-ID support: Multiple task IDs in one operation (e.g. done, block, assign)
 Dependency detection: Tasks are automatically added with (BLOCKED) flag
 unfinished dependencies are displayed
 Hooks: after_task_create, after_task_done are emitted during operations
+Due dates: --due accepts only a valid ISO date in YYYY-MM-DD format

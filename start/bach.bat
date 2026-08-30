@@ -82,7 +82,7 @@ echo.
 echo [1/3] Starte Web-GUI (Port 8000)...
 pushd "!SYS_DIR!"
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000" ^| findstr "LISTENING" 2^>nul') do (
-    taskkill /F /PID %%a >nul 2>&1
+    call :kill_if_bach_gui %%a
 )
 start "BACH Server" /min cmd /k "set PYTHONIOENCODING=utf-8 && python gui\server.py --port 8000"
 popd
@@ -327,8 +327,8 @@ REM ============================================================
 title BACH GUI Server
 pushd "!SYS_DIR!"
 echo  Beende alte Prozesse auf Port 8000...
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000" ^| findstr "LISTENING"') do (
-    taskkill /F /PID %%a >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000" ^| findstr "LISTENING" 2^>nul') do (
+    call :kill_if_bach_gui %%a
 )
 if exist "gui\__pycache__" rd /s /q "gui\__pycache__" >nul 2>&1
 start "BACH Server" cmd /k "set PYTHONIOENCODING=utf-8 && python gui\server.py --port 8000"
@@ -528,6 +528,22 @@ echo  Entferne Windows Autostart-Eintrag...
 schtasks /delete /tn "BACH Chat Tray" /f >nul 2>&1
 echo [OK] Autostart-Eintrag entfernt.
 pause & goto extended_menu
+
+REM --- Port-8000-Guard ---
+REM Beendet PID %1 nur, wenn es unser eigener GUI-Server ist (Kommandozeile enthaelt
+REM gui\server.py). Ein Fremdprozess auf :8000 wird NICHT beendet, sondern gemeldet -
+REM vorher hat der Start jeden Listener blind gekillt (auf ASUS-GEI z.B. run_web.py).
+:kill_if_bach_gui
+set "BACH_PORT_OWNER="
+for /f "tokens=2 delims=," %%c in ('wmic process where "processid=%1" get commandline /format:csv 2^>nul ^| findstr /i "server.py"') do set "BACH_PORT_OWNER=%%c"
+if defined BACH_PORT_OWNER (
+    taskkill /F /PID %1 >nul 2>&1
+    echo       [OK] Alten BACH GUI-Server PID %1 beendet.
+) else (
+    echo       [WARN] Port 8000 gehoert PID %1 - kein BACH gui\server.py, wird NICHT beendet.
+    echo              Der GUI-Start auf Port 8000 wird scheitern. Fremdprozess pruefen oder beenden.
+)
+exit /b
 
 :end
 echo.

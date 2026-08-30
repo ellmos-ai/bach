@@ -1,4 +1,5 @@
 """Tests for VersicherungHandler (hub/versicherung.py)."""
+import json
 import sqlite3
 import sys
 import tempfile
@@ -56,6 +57,23 @@ CREATE TABLE IF NOT EXISTS insurance_types (
     typical_cost_range TEXT,
     dist_type INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE scheduler_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    profile_name TEXT,
+    description TEXT,
+    job_type TEXT NOT NULL,
+    schedule TEXT,
+    command TEXT NOT NULL,
+    script_path TEXT,
+    arguments TEXT,
+    is_active INTEGER DEFAULT 0,
+    timeout_seconds INTEGER DEFAULT 300,
+    retry_on_fail INTEGER DEFAULT 0,
+    created_at TEXT,
+    updated_at TEXT
 );
 """
 
@@ -127,6 +145,80 @@ def populated_db(tmp_db):
     return tmp_db
 
 
+class TestVersicherungsManagerImport:
+    @staticmethod
+    def _payload():
+        return {
+            "schema": "bach.fin_insurances.v1",
+            "fin_insurances": [
+                {
+                    "anbieter": "Allianz",
+                    "tarif_name": "Komfort",
+                    "police_nr": "VM-001",
+                    "sparte": "Haftpflicht",
+                    "status": "aktiv",
+                    "beginn_datum": "2026-01-01",
+                    "ablauf_datum": "2027-01-01",
+                    "kuendigungsfrist_monate": 3,
+                    "verlaengerung_monate": 12,
+                    "naechste_kuendigung": "2026-10-01",
+                    "beitrag": 15.5,
+                    "zahlweise": "monatlich",
+                    "ordner_pfad": None,
+                    "notizen": "Fixture",
+                }
+            ],
+        }
+
+    def test_import_is_idempotent(self, handler, tmp_db, tmp_path):
+        source = tmp_path / "versicherungen.json"
+        source.write_text(json.dumps(self._payload()), encoding="utf-8")
+
+        ok1, msg1 = handler.handle("import", [str(source)])
+        ok2, msg2 = handler.handle("import", [str(source)])
+
+        assert ok1 and ok2
+        assert "1 neu" in msg1
+        assert "1 aktualisiert" in msg2
+        conn = sqlite3.connect(tmp_db)
+        row = conn.execute("SELECT * FROM fin_insurances").fetchone()
+        assert conn.execute("SELECT COUNT(*) FROM fin_insurances").fetchone()[0] == 1
+        assert row[4] == "Haftpflicht"
+        assert row[11] == 15.5
+        conn.close()
+
+    def test_dry_run_does_not_write(self, handler, tmp_db, tmp_path):
+        source = tmp_path / "versicherungen.json"
+        source.write_text(json.dumps(self._payload()), encoding="utf-8")
+
+        ok, msg = handler.handle("import", [str(source)], dry_run=True)
+
+        assert ok and "DRY-RUN" in msg
+        conn = sqlite3.connect(tmp_db)
+        assert conn.execute("SELECT COUNT(*) FROM fin_insurances").fetchone()[0] == 0
+        conn.close()
+
+    def test_schedule_import_upserts_active_job(self, handler, tmp_db, tmp_path):
+        source = tmp_path / "versicherungen.json"
+        source.write_text(json.dumps(self._payload()), encoding="utf-8")
+
+        ok1, _ = handler.handle("schedule-import", [str(source), "--interval", "7d"])
+        ok2, _ = handler.handle("schedule-import", [str(source), "--interval", "24h"])
+
+        assert ok1 and ok2
+        conn = sqlite3.connect(tmp_db)
+        row = conn.execute(
+            "SELECT schedule, arguments, is_active FROM scheduler_jobs "
+            "WHERE name='alltag-import-versicherungen'"
+        ).fetchone()
+        assert row[0] == "24h"
+        assert row[1].startswith('versicherung import "')
+        assert str(source.resolve()) in row[1]
+        assert row[2] == 1
+        assert conn.execute("SELECT COUNT(*) FROM scheduler_jobs").fetchone()[0] == 1
+        conn.close()
+
+
 @pytest.fixture
 def pop_handler(populated_db):
     h = VersicherungHandler(populated_db.parent)
@@ -147,7 +239,10 @@ class TestProperties:
 
     def test_get_operations(self, handler):
         ops = handler.get_operations()
-        expected = {"list", "show", "add", "edit", "delete", "status", "fristen", "check", "claim", "help"}
+        expected = {
+            "list", "show", "add", "edit", "delete", "status", "fristen",
+            "check", "claim", "import", "schedule-import", "help",
+        }
         assert set(ops.keys()) == expected
 
 

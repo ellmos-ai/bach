@@ -92,9 +92,6 @@ class App:
     def paths(self):
         """Zugriff auf bach_paths Modul."""
         if not self._paths_loaded:
-            hub_dir = str(self.base_path / "hub")
-            if hub_dir not in sys.path:
-                sys.path.insert(0, hub_dir)
             self._paths_loaded = True
 
         import hub.bach_paths as bp

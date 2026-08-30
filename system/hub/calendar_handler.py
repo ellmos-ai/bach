@@ -33,7 +33,7 @@ Operationen:
   add "Titel"       Neuen Termin anlegen
   show <id>         Termin-Details
   done <id>         Termin als erledigt markieren
-  delete <id>       Termin loeschen
+  delete <id>       Termin löschen
   help              Hilfe anzeigen
 
 Nutzt: bach.db / assistant_calendar + household_routines (kombiniert)
@@ -41,9 +41,10 @@ Ref: DB_004_TERMINDATENBANK_ANALYSE.md
 """
 
 import sqlite3
-from pathlib import Path
 from datetime import datetime, timedelta
-from typing import List, Tuple, Optional
+from pathlib import Path
+from typing import List, Optional, Tuple
+
 from .base import BaseHandler
 
 
@@ -69,10 +70,10 @@ class CalendarHandler(BaseHandler):
             "week": "Diese Woche",
             "month": "Dieser Monat",
             "today": "Heute",
-            "add": "Termin hinzufuegen",
+            "add": "Termin hinzufügen",
             "show": "Termin-Details",
             "done": "Termin als erledigt",
-            "delete": "Termin loeschen",
+            "delete": "Termin löschen",
             "help": "Hilfe",
         }
 
@@ -104,7 +105,7 @@ class CalendarHandler(BaseHandler):
             return False, f"Unbekannte Operation: {operation}\nNutze: bach calendar help"
 
     # ------------------------------------------------------------------
-    # WEEK - Diese Woche (inkl. faellige Routinen)
+    # WEEK - Diese Woche (inkl. fällige Routinen)
     # ------------------------------------------------------------------
     def _week(self, args: List[str]) -> Tuple[bool, str]:
         now = datetime.now()
@@ -130,7 +131,7 @@ class CalendarHandler(BaseHandler):
         else:
             last = first.replace(month=now.month + 1) - timedelta(seconds=1)
 
-        monat_name = ["Januar", "Februar", "Maerz", "April", "Mai", "Juni",
+        monat_name = ["Januar", "Februar", "März", "April", "Mai", "Juni",
                        "Juli", "August", "September", "Oktober", "November", "Dezember"]
         return self._range_view(first, last, f"{monat_name[now.month - 1]} {now.year}")
 
@@ -161,7 +162,7 @@ class CalendarHandler(BaseHandler):
                 ORDER BY start_datetime ASC
             """, (start_str, end_str)).fetchall()
 
-            # 2. Faellige Routinen
+            # 2. Fällige Routinen
             routines = conn.execute("""
                 SELECT id, name, frequency, category, next_due
                 FROM household_routines
@@ -170,10 +171,10 @@ class CalendarHandler(BaseHandler):
             """, (start_str, end_str)).fetchall()
 
             total = len(events) + len(routines)
-            lines = [ f"[KALENDER] {label} - {total} Eintraege\n" ]
+            lines = [ f"[KALENDER] {label} - {total} Einträge\n" ]
 
             if not events and not routines:
-                lines.append("  Keine Termine oder faelligen Routinen.")
+                lines.append("  Keine Termine oder fälligen Routinen.")
                 return True, "\n".join(lines)
 
             # Nach Tagen gruppieren
@@ -218,7 +219,7 @@ class CalendarHandler(BaseHandler):
 
         now = datetime.now()
         end = now + timedelta(days=days)
-        return self._range_view(now, end, f"Naechste {days} Tage")
+        return self._range_view(now, end, f"Nächste {days} Tage")
 
     # ------------------------------------------------------------------
     # ADD - Termin anlegen
@@ -233,11 +234,18 @@ class CalendarHandler(BaseHandler):
                 "  --end         Ende-Uhrzeit (HH:MM)\n"
                 "  --location    Ort\n"
                 "  --type        Typ (termin|erinnerung|aufgabe)\n"
-                "  --note        Beschreibung"
+                "  --note        Beschreibung\n"
+                "  --reminder-minutes, --reminder  Erinnerung in Minuten vor Beginn\n"
+                "  --recurrence-rule, --recurrence iCal-Regel, z. B. FREQ=WEEKLY\n"
+                "                                   oder daily|weekly|monthly|yearly"
             )
 
         # Titel: erstes Argument das kein Flag und kein Flag-Wert ist
-        known_flags = {"--date", "-d", "--time", "-t", "--end", "--location", "--type", "--note"}
+        known_flags = {
+            "--date", "-d", "--time", "-t", "--end", "--location",
+            "--type", "--note", "--reminder-minutes", "--reminder",
+            "--recurrence-rule", "--recurrence",
+        }
         title = None
         skip_next = False
         for a in args:
@@ -260,6 +268,29 @@ class CalendarHandler(BaseHandler):
         location = self._get_arg(args, "--location")
         event_type = self._get_arg(args, "--type") or "termin"
         note = self._get_arg(args, "--note") or ""
+        reminder_raw = (
+            self._get_arg(args, "--reminder-minutes")
+            or self._get_arg(args, "--reminder")
+        )
+        recurrence_raw = (
+            self._get_arg(args, "--recurrence-rule")
+            or self._get_arg(args, "--recurrence")
+        )
+
+        reminder_minutes = None
+        if reminder_raw is not None:
+            try:
+                reminder_minutes = int(reminder_raw)
+            except ValueError:
+                return False, "Erinnerungszeit muss eine ganze Zahl in Minuten sein."
+            if reminder_minutes < 0:
+                return False, "Erinnerungszeit darf nicht negativ sein."
+
+        try:
+            recurrence_rule = self._normalize_recurrence_rule(recurrence_raw)
+        except ValueError as exc:
+            return False, str(exc)
+        is_recurring = 1 if recurrence_rule else 0
 
         # Datum parsen
         now = datetime.now()
@@ -280,9 +311,12 @@ class CalendarHandler(BaseHandler):
         try:
             cursor = conn.execute("""
                 INSERT INTO assistant_calendar
-                (title, event_type, start_datetime, end_datetime, location, description, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'geplant', ?, ?)
+                (title, event_type, start_datetime, end_datetime, location,
+                 description, status, reminder_minutes, is_recurring,
+                 recurrence_rule, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'geplant', ?, ?, ?, ?, ?)
             """, (title, event_type, start_dt, end_dt, location, note,
+                  reminder_minutes, is_recurring, recurrence_rule,
                   now.isoformat(), now.isoformat()))
             conn.commit()
             eid = cursor.lastrowid
@@ -313,6 +347,13 @@ class CalendarHandler(BaseHandler):
                 f"Ort:         {row['location'] or '---'}",
                 f"Status:      {row['status'] or '---'}",
                 f"Wiederholt:  {'Ja' if row['is_recurring'] else 'Nein'}",
+                f"Regel:       {row['recurrence_rule'] or '---'}",
+                "Erinnerung:  "
+                + (
+                    f"{row['reminder_minutes']} Minuten vorher"
+                    if row["reminder_minutes"] is not None
+                    else "---"
+                ),
             ]
             if row["description"]:
                 lines.append(f"\nBeschreibung:\n{row['description']}")
@@ -361,7 +402,7 @@ class CalendarHandler(BaseHandler):
                 return False, f"Termin {ids[0]} nicht gefunden"
             conn.execute("DELETE FROM assistant_calendar WHERE id = ?", (ids[0],))
             conn.commit()
-            return True, f"[OK] Termin {ids[0]} geloescht ({row['title']})"
+            return True, f"[OK] Termin {ids[0]} gelöscht ({row['title']})"
         finally:
             conn.close()
 
@@ -376,16 +417,18 @@ BEFEHLE:
   bach calendar today                         Heute
   bach calendar week                          Diese Woche (KW)
   bach calendar month                         Dieser Monat
-  bach calendar list                          Naechste 30 Tage
-  bach calendar list 60                       Naechste 60 Tage
+  bach calendar list                          Nächste 30 Tage
+  bach calendar list 60                       Nächste 60 Tage
   bach calendar add "Titel" -d 2026-02-15     Termin anlegen
   bach calendar add "Zahnarzt" -d 15.02.2026 -t 10:30 --location "Praxis Dr. X"
+  bach calendar add "Jour fixe" -d 18.08.2026 --reminder 30 --recurrence weekly
+  bach calendar add "Review" -d 18.08.2026 --recurrence-rule "FREQ=WEEKLY;COUNT=4"
   bach calendar show <id>                     Details
   bach calendar done <id>                     Als erledigt
-  bach calendar delete <id>                   Loeschen
+  bach calendar delete <id>                   Löschen
 
 HINWEIS:
-  Zeigt kombiniert: Kalender-Termine + faellige Haushaltsroutinen
+  Zeigt kombiniert: Kalender-Termine + fällige Haushaltsroutinen
 
 DATENBANK: bach.db / assistant_calendar + household_routines"""
 
@@ -409,3 +452,46 @@ DATENBANK: bach.db / assistant_calendar + household_routines"""
             if a.startswith(flag + "="):
                 return a[len(flag) + 1:]
         return None
+
+    def _normalize_recurrence_rule(self, value: Optional[str]) -> Optional[str]:
+        """Normalisiert Kurzformen und prüft die minimale iCal-RRULE-Struktur."""
+        if value is None:
+            return None
+
+        rule = value.strip()
+        if not rule:
+            raise ValueError("Wiederholungsregel darf nicht leer sein.")
+
+        shorthand = {
+            "daily": "FREQ=DAILY",
+            "weekly": "FREQ=WEEKLY",
+            "monthly": "FREQ=MONTHLY",
+            "yearly": "FREQ=YEARLY",
+            "täglich": "FREQ=DAILY",
+            "wöchentlich": "FREQ=WEEKLY",
+            "monatlich": "FREQ=MONTHLY",
+            "jährlich": "FREQ=YEARLY",
+        }
+        normalized = shorthand.get(rule.lower(), rule.upper())
+        if normalized.startswith("RRULE:"):
+            normalized = normalized[6:]
+
+        parts = normalized.split(";")
+        fields = {}
+        for part in parts:
+            if "=" not in part:
+                raise ValueError(
+                    "Wiederholungsregel muss eine iCal-RRULE sein, z. B. FREQ=WEEKLY."
+                )
+            key, val = part.split("=", 1)
+            if not key or not val:
+                raise ValueError(
+                    "Wiederholungsregel muss eine iCal-RRULE sein, z. B. FREQ=WEEKLY."
+                )
+            fields[key] = val
+
+        if fields.get("FREQ") not in {"DAILY", "WEEKLY", "MONTHLY", "YEARLY"}:
+            raise ValueError(
+                "Wiederholungsregel benötigt FREQ=DAILY, WEEKLY, MONTHLY oder YEARLY."
+            )
+        return normalized

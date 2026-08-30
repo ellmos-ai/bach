@@ -37,6 +37,23 @@ from typing import Optional
 from .base import ParsedArgs, Result, parse_args
 
 
+def _canonical_handler_for_host_conflict(py_file: Path) -> Optional[Path]:
+    """Return the canonical handler for a ``name-HOST.py`` conflict copy."""
+    parts = py_file.stem.split("-")
+    for split_at in range(1, len(parts)):
+        suffix = "-".join(parts[split_at:])
+        if (
+            not any(char.isalpha() for char in suffix)
+            or suffix != suffix.upper()
+            or not all(char.isalnum() or char == "-" for char in suffix)
+        ):
+            continue
+        canonical = py_file.with_name("-".join(parts[:split_at]) + py_file.suffix)
+        if canonical.is_file():
+            return canonical
+    return None
+
+
 class HandlerRegistry:
     """Verwaltet alle verfuegbaren Handler via Auto-Discovery."""
 
@@ -60,6 +77,14 @@ class HandlerRegistry:
 
         for py_file in sorted(hub_dir.glob("*.py")):
             if py_file.name.startswith("_"):
+                continue
+
+            canonical = _canonical_handler_for_host_conflict(py_file)
+            if canonical is not None:
+                print(
+                    f"[WARN] Handler conflict copy {py_file.name} ignored; "
+                    f"using {canonical.name}"
+                )
                 continue
 
             found = self._load_handlers_from_file(py_file, hub_dir)

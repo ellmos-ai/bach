@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     category TEXT,
     project TEXT,
     assignee TEXT,                   -- Agent oder 'user'
-    due_date DATE,
+    due_date TEXT,                    -- ISO-Datum YYYY-MM-DD (Routinika-kompatibel)
     estimated_minutes INTEGER,
     actual_minutes INTEGER,
     tags TEXT,                       -- JSON array
@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
+CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- DAEMON JOBS (erweitert aus DaemonManager)

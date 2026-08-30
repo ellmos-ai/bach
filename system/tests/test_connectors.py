@@ -213,6 +213,30 @@ class TestTelegramConnector:
         c = TelegramConnector(cfg)
         assert c._bot_token == ""
 
+    def test_init_resolves_token_and_owner_from_keyring_refs(self):
+        from connectors.telegram_connector import TelegramConnector
+
+        cfg = ConnectorConfig(
+            name="tg_refs",
+            connector_type="telegram",
+            auth_config={
+                "_secret_refs": {
+                    "bot_token": "token_ref",
+                    "owner_chat_id": "owner_ref",
+                }
+            },
+            options={},
+        )
+        resolved = {"token_ref": "123456:ABCDEF", "owner_ref": "999888"}
+        with patch.object(
+            TelegramConnector,
+            "_load_from_secrets_table",
+            side_effect=lambda key: resolved[key],
+        ):
+            connector = TelegramConnector(cfg)
+        assert connector._bot_token == "123456:ABCDEF"
+        assert connector._owner_chat_id == "999888"
+
     def test_connect_success(self, connector):
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps({

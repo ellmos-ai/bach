@@ -17,6 +17,14 @@ from hub._services.document import anonymizer_service
 from hub._services.document.anonymizer_service import AnonymProfile, DocumentAnonymizer
 
 
+def _prefer_real_name_part(values):
+    """Force the random source toward real-name collisions when possible."""
+    for candidate in ("Amara", "Max", "Bergmann", "Sommer"):
+        if candidate in values:
+            return candidate
+    return values[0]
+
+
 def test_generate_prompt_contains_privacy_guardrails(tmp_path):
     service = ReportWorkflowService(base_path=tmp_path)
     session = service.start_session()
@@ -116,6 +124,54 @@ def test_create_temp_profile_maps_multiword_parent_names(tmp_path):
     mapping = profile.get_all_mappings()
     for word in ["Katarzyna", "Nowak", "Zielinska", "Dimitrios", "Osei", "Boateng"]:
         assert word in mapping, f"'{word}' (Elternname) wurde nicht gemappt"
+
+
+def test_temp_profile_tarnnames_exclude_all_client_and_parent_name_parts(tmp_path, monkeypatch):
+    monkeypatch.setattr(anonymizer_service.secrets, "choice", _prefer_real_name_part)
+    service = ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+
+    profile = service.create_temp_profile(
+        session,
+        client_name="Amara Wanjiru Bergmann",
+        geburtsdatum="02.03.2014",
+        vorname_hint="Amara Wanjiru",
+        nachname_hint="Bergmann",
+        parent_names=["Max Paul Sommer"],
+    )
+
+    real_parts = {"amara", "wanjiru", "bergmann", "max", "paul", "sommer"}
+    generated_names = [
+        profile.tarnname,
+        profile.mappings["names"]["Max Paul Sommer"],
+    ]
+    for generated_name in generated_names:
+        generated_parts = {part.casefold() for part in generated_name.split()}
+        assert generated_parts.isdisjoint(real_parts), (
+            f"Tarnname übernimmt echten Namensbestandteil: {generated_name!r}"
+        )
+
+
+def test_document_anonymizer_tarnnames_exclude_all_primary_and_additional_name_parts(monkeypatch):
+    monkeypatch.setattr(anonymizer_service.secrets, "choice", _prefer_real_name_part)
+    anonymizer = DocumentAnonymizer()
+
+    profile = anonymizer.create_profile(
+        real_name="Amara Wanjiru Bergmann",
+        geburtsdatum="02.03.2014",
+        weitere_namen=["Max Paul Sommer"],
+    )
+
+    real_parts = {"amara", "wanjiru", "bergmann", "max", "paul", "sommer"}
+    generated_names = [
+        profile.tarnname,
+        profile.mappings["names"]["Max Paul Sommer"],
+    ]
+    for generated_name in generated_names:
+        generated_parts = {part.casefold() for part in generated_name.split()}
+        assert generated_parts.isdisjoint(real_parts), (
+            f"Tarnname übernimmt echten Namensbestandteil: {generated_name!r}"
+        )
 
 
 def test_create_temp_profile_does_not_print_plaintext_pii(tmp_path, capsys):

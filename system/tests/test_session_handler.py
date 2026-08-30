@@ -294,9 +294,15 @@ class TestUserConfig:
 
     def test_save_config(self, handler, empty_env):
         base, _ = empty_env
+        config_path = base / "data" / "user_config.json"
+        config_path.write_text(
+            json.dumps({"gui": {"theme": "warm"}}),
+            encoding="utf-8",
+        )
         handler._save_user_config({"session_duration_minutes": 60})
         config = handler._load_user_config()
         assert config["session_duration_minutes"] == 60
+        assert config["gui"]["theme"] == "warm"
         assert "last_updated" in config
 
 

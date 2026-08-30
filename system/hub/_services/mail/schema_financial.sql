@@ -102,7 +102,7 @@ CREATE INDEX IF NOT EXISTS idx_financial_emails_date ON financial_emails(email_d
 
 CREATE TABLE IF NOT EXISTS financial_subscriptions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL UNIQUE,
     provider_name TEXT NOT NULL,
     category TEXT NOT NULL,
 

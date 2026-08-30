@@ -17,6 +17,8 @@ Usage:
 import os
 import sys
 import json
+import re
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -352,6 +354,9 @@ def _handle_export(sub_cmd, args):
         print("Usage: bach export <type> [args]")
         print("Types:")
         print("  agents                     Generiere AGENTS.md aus DB")
+        print("  agents --format agent     Claude-Code-Agent-Dateien nach .claude/agents/")
+        print("       [--output DIR]       Zielordner für --format agent")
+        print("       [--dry-run]           Prüfen ohne Dateien zu schreiben")
         print("  partners                   Generiere PARTNERS.md aus DB")
         print("  usecases                   Generiere USECASES.md aus DB")
         print("  chains                     Generiere CHAINS.md aus DB")
@@ -363,7 +368,39 @@ def _handle_export(sub_cmd, args):
         try:
             from agents_export import AgentsExporter
             exporter = AgentsExporter(BACH_ROOT)
-            success, msg = exporter.generate()
+            export_format = None
+            output_dir = None
+            dry_run = False
+            i = 0
+            while i < len(args):
+                value = args[i]
+                if value in ("--format", "-f") and i + 1 < len(args):
+                    export_format = args[i + 1]
+                    i += 2
+                    continue
+                if value.startswith("--format="):
+                    export_format = value.split("=", 1)[1]
+                    i += 1
+                    continue
+                if value in ("--output", "-o") and i + 1 < len(args):
+                    output_dir = args[i + 1]
+                    i += 2
+                    continue
+                if value.startswith("--output="):
+                    output_dir = value.split("=", 1)[1]
+                    i += 1
+                    continue
+                if value in ("--dry-run", "-n"):
+                    dry_run = True
+                    i += 1
+                    continue
+                print(f"[ERROR] Unbekanntes agents-Argument: {value}")
+                return 1
+            success, msg = exporter.generate(
+                format=export_format,
+                output_dir=output_dir,
+                dry_run=dry_run,
+            )
             print(msg)
             return 0 if success else 1
         except Exception as e:
@@ -649,7 +686,6 @@ def _handle_integration(sub_cmd, args):
 
 def _handle_secrets(sub_cmd, args):
     """Secrets-Management (SQ076)."""
-    sys.path.insert(0, str(HUB_DIR))
     try:
         from hub.secrets_handler import handle_secrets_command
         # sub_cmd + args zusammenf├╝gen
@@ -805,8 +841,8 @@ def _try_run_tool(name: str, args: list) -> Optional[int]:
 
 def print_help():
     """Zeigt Hilfe an."""
-    help_text = """
-BACH v2.0 - Registry-Based CLI
+    help_text = f"""
+BACH {_read_bach_version()} - Registry-Based CLI
 
 USAGE:
   python bach.py <befehl> [operation] [args]
@@ -861,20 +897,18 @@ HILFE:
 """
     print(help_text)
 
-    # Verfuegbare Handler anzeigen
+
+
+def _read_bach_version() -> str:
+    """Liest die Release-Version ohne App-, DB- oder Sync-Initialisierung."""
     try:
-        app = _get_app()
-        names = app.registry.names
-        if names:
-            print(f"Registrierte Handler ({len(names)}):")
-            # In Spalten anzeigen
-            cols = 6
-            for i in range(0, len(names), cols):
-                row = names[i:i + cols]
-                print("  " + "  ".join(f"{n:<14}" for n in row))
-            print()
-    except Exception:
+        content = (BACH_ROOT / "README.md").read_text(encoding="utf-8")
+        match = re.search(r"^\*\*Version:\*\*\s*([^\s]+)", content, re.MULTILINE)
+        if match:
+            return match.group(1).strip()
+    except OSError:
         pass
+    return "unknown"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -885,6 +919,8 @@ HILFE:
 # (verhindert Mehrfach-Registrierung bei wiederholtem main()-Aufruf,
 #  z.B. in Chain-/Bot-Sessions im selben Python-Prozess)
 _exit_sync_registered = False
+_PROSYNC_RESULT_PREFIX = "__BACH_PROSYNC_RESULT__="
+_PROSYNC_STARTUP_TIMEOUT_DEFAULT = 15.0
 
 
 _PROFILE_POSITIONAL_OPERATIONS = {
@@ -919,6 +955,107 @@ def _split_profile_args(profile_name: str, remaining: list[str]) -> tuple[str, l
     return operation, handler_args
 
 
+def _run_bounded_command(
+    command: list[str], timeout_seconds: float
+) -> tuple[Optional[subprocess.CompletedProcess], bool]:
+    """Fuehrt einen Hilfsprozess mit hartem Zeitbudget aus."""
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(SYSTEM_ROOT),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+            check=False,
+        )
+        return completed, False
+    except subprocess.TimeoutExpired:
+        return None, True
+
+
+def _prosync_startup_timeout_seconds() -> float:
+    """Liest das begrenzte ProSync-Startbudget aus der Umgebung."""
+    raw = os.environ.get(
+        "BACH_PROSYNC_STARTUP_TIMEOUT_SECONDS",
+        str(_PROSYNC_STARTUP_TIMEOUT_DEFAULT),
+    )
+    try:
+        timeout = float(raw)
+    except (TypeError, ValueError):
+        return _PROSYNC_STARTUP_TIMEOUT_DEFAULT
+    return min(max(timeout, 1.0), 300.0)
+
+
+def _run_prosync_startup() -> tuple[bool, str]:
+    """Fuehrt den Pull isoliert aus und beendet Cloud-Haenger am Zeitbudget."""
+    timeout_seconds = _prosync_startup_timeout_seconds()
+    worker = (
+        "import json\n"
+        "from hub.db_sync import DBSyncManager\n"
+        "try:\n"
+        "    ok, message = DBSyncManager().sync_on_start()\n"
+        "    payload = {'ok': bool(ok), 'message': str(message)}\n"
+        "except Exception as exc:\n"
+        "    payload = {'ok': False, 'message': f'Start-Fehler: {exc}'}\n"
+        f"print('{_PROSYNC_RESULT_PREFIX}' + json.dumps(payload, ensure_ascii=False))\n"
+    )
+    completed, timed_out = _run_bounded_command(
+        [sys.executable, "-c", worker], timeout_seconds
+    )
+    if timed_out:
+        return False, f"Startzeitbudget von {timeout_seconds:g} s überschritten"
+    if completed is None:
+        return False, "Startprozess lieferte kein Ergebnis"
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or f"Exit {completed.returncode}"
+        return False, f"Startprozess fehlgeschlagen: {detail}"
+
+    result_line = next(
+        (
+            line[len(_PROSYNC_RESULT_PREFIX):]
+            for line in reversed(completed.stdout.splitlines())
+            if line.startswith(_PROSYNC_RESULT_PREFIX)
+        ),
+        None,
+    )
+    if result_line is None:
+        return False, "Startprozess lieferte kein lesbares Ergebnis"
+    try:
+        payload = json.loads(result_line)
+    except json.JSONDecodeError as exc:
+        return False, f"Startprozess lieferte ungueltiges JSON: {exc}"
+    return bool(payload.get("ok")), str(payload.get("message", ""))
+
+
+def _track_activity(arg: str, json_requested: bool, dry_run_requested: bool) -> None:
+    """Schreibt Activity erst nach Annahme eines nicht-beobachtenden Befehls."""
+    if dry_run_requested or json_requested or arg in {"--startup", "--shutdown"}:
+        return
+    try:
+        import sqlite3
+        from tools.activity_tracker import ActivityTracker
+
+        session_id = None
+        try:
+            with sqlite3.connect(str(DB_PATH)) as conn:
+                row = conn.execute(
+                    "SELECT session_id FROM system_activity WHERE id = 1"
+                ).fetchone()
+                if row:
+                    session_id = row[0]
+        except Exception:
+            pass
+
+        tracker = ActivityTracker(DB_PATH, idle_threshold_minutes=30)
+        tracker.tick(session_id=session_id)
+    except Exception:
+        # Graceful Degradation: Activity-Tracking-Fehler blockieren den
+        # bereits angenommenen CLI-Befehl nicht.
+        pass
+
+
 def main():
     """Haupteinstiegspunkt."""
     # Windows-Konsolen-Encoding
@@ -929,24 +1066,57 @@ def main():
         except Exception:
             pass
 
-    json_requested = "--json" in sys.argv[1:]
-    logger = get_logger(BACH_DIR)
+    cli_args = sys.argv[1:]
+    json_requested = "--json" in cli_args
+    dry_run_requested = "--dry-run" in cli_args or "-n" in cli_args
+
+    # Beobachtende Aufrufe muessen vor Logger, ProSync, Registry und Activity
+    # enden, damit selbst ein langsamer OneDrive-Transit die CLI nicht blockiert.
+    if cli_args and cli_args[0] in {"--version", "-V"}:
+        print(f"BACH {_read_bach_version()}")
+        return 0
+
+    # Keine Argumente oder Top-Level-Help. Die allgemeine Hilfe ist bewusst
+    # statisch und startet keine Handler-Discovery.
+    if not cli_args or cli_args[0] in {'-h', '--help', 'help'}:
+        if len(cli_args) > 1:
+            topic = cli_args[1]
+            app = _get_app()
+            handler = app.get_handler("help")
+            if handler:
+                success, message = handler.handle(topic, [])
+                print(message)
+                return 0 if success else 1
+        print_help()
+        return 0
+
+    # Auch command-/profilbezogene Hilfe zweigt vor allen globalen
+    # Startnebenwirkungen ab. Nur der Help-Handler selbst wird geladen.
+    if any(flag in cli_args[1:] for flag in {"--help", "-h"}):
+        topic = cli_args[0]
+        app = _get_app()
+        handler = app.get_handler("help")
+        if handler:
+            success, message = handler.handle(topic, [])
+            print(message)
+            return 0 if success else 1
+        print(f"Hilfe fuer '{topic}' nicht verfuegbar.")
+        return 1
+
+    if not dry_run_requested:
+        get_logger(BACH_DIR)
 
     # ProSync: Pull bei Start, Push bei Exit (nur wenn aktiviert)
     sync_config = DATA_DIR / "config" / "db_sync_enabled"
-    if sync_config.exists():
-        try:
-            from hub.db_sync import DBSyncManager
-            manager = DBSyncManager()
-            ok, msg = manager.sync_on_start()
-            if not json_requested:
-                print(f"[ProSync] {msg}")
-        except Exception as e:
-            if not json_requested:
-                print(f"[ProSync] Start-Fehler: {e}")
+    if sync_config.exists() and not dry_run_requested:
+        if not json_requested:
+            print("[ProSync] Starte Pull ...", flush=True)
+        ok, msg = _run_prosync_startup()
+        if not json_requested:
+            print(f"[ProSync] {msg}", flush=True)
 
         global _exit_sync_registered
-        if not _exit_sync_registered:
+        if ok and not _exit_sync_registered:
             import atexit
             def _exit_sync():
                 try:
@@ -959,63 +1129,9 @@ def main():
             atexit.register(_exit_sync)
             _exit_sync_registered = True
 
-    # Keine Argumente oder Help
-    if len(sys.argv) < 2 or sys.argv[1] in ['-h', '--help', 'help']:
-        if len(sys.argv) > 2:
-            topic = sys.argv[2]
-            app = _get_app()
-            handler = app.get_handler("help")
-            if handler:
-                success, message = handler.handle(topic, [])
-                print(message)
-                return 0
-        print_help()
-        return 0
-
     arg = sys.argv[1]
     sub_cmd = sys.argv[2] if len(sys.argv) > 2 else ""
     args = sys.argv[3:] if len(sys.argv) > 3 else []
-
-    # ── --help Abfangen (CLI --help Parsing-Bug Fix, Runde 24) ──
-    # Wenn --help oder -h als sub_cmd ODER in args vorkommt -> Hilfe anzeigen
-    if sub_cmd in ('--help', '-h') or '--help' in args or '-h' in args:
-        app = _get_app()
-        handler = app.get_handler("help")
-        if handler:
-            success, message = handler.handle(arg, [])
-            print(message)
-            return 0 if success else 1
-        # Fallback wenn kein help-Handler
-        print(f"Hilfe fuer '{arg}' nicht verfuegbar.")
-        return 1
-
-    # ── Activity Tracking (SQ022) ──
-    # EOD-Timer + Idle-Check + Tick bei jedem Befehl (außer --startup/--shutdown)
-    if not (arg == "--startup" or arg == "--shutdown"):
-        try:
-            import sqlite3
-            from tools.activity_tracker import ActivityTracker
-
-            # session_id aus system_activity lesen
-            session_id = None
-            try:
-                conn = sqlite3.connect(str(DB_PATH))
-                cursor = conn.execute("SELECT session_id FROM system_activity WHERE id = 1")
-                row = cursor.fetchone()
-                if row:
-                    session_id = row[0]
-                conn.close()
-            except Exception:
-                pass  # session_id bleibt None
-
-            tracker = ActivityTracker(DB_PATH, idle_threshold_minutes=30)
-            if not json_requested:
-                tracker.check_eod_and_finalize(BACH_ROOT, eod_hour=23)  # EOD-Timer (23:00 Uhr)
-                tracker.check_idle_and_finalize(BACH_ROOT)
-            tracker.tick(session_id=session_id)
-        except Exception as e:
-            # Graceful Degradation: Activity-Tracking-Fehler blockieren nicht den CLI-Befehl
-            pass
 
     # ── Handler-basierte Befehle (--startup, --shutdown, etc.) ──
 
@@ -1025,6 +1141,7 @@ def main():
         app = _get_app()
         handler = app.get_handler(profile_name)
         if handler:
+            _track_activity(arg, json_requested, dry_run_requested)
             # Operation + Args aufteilen
             remaining = sys.argv[2:] if len(sys.argv) > 2 else []
             operation, handler_args = _split_profile_args(profile_name, remaining)
@@ -1066,16 +1183,19 @@ def main():
 
     # 1. Inline-Commands (nicht-Handler)
     if command in INLINE_COMMANDS:
+        _track_activity(arg, json_requested, dry_run_requested)
         return INLINE_COMMANDS[command](sub_cmd, args)
 
     # 2. Skill-Export Spezialfall
     if command == "skill" and sub_cmd == "export":
+        _track_activity(arg, json_requested, dry_run_requested)
         return _handle_skill_export(sub_cmd, args)
 
     # 3. Restore-Befehl (spezielle Logik)
     if command == "restore":
         # a) Backup-Restore (Legacy)
         if sub_cmd == "backup" and args:
+            _track_activity(arg, json_requested, dry_run_requested)
             sys.path.insert(0, str(TOOLS_DIR))
             try:
                 from backup_manager import BackupManager
@@ -1089,6 +1209,7 @@ def main():
 
         # b) File-Restore (SQ020/HQ6)
         if sub_cmd and sub_cmd != "help":
+            _track_activity(arg, json_requested, dry_run_requested)
             sys.path.insert(0, str(HUB_DIR))
             try:
                 from hub.restore import RestoreHandler
@@ -1133,6 +1254,7 @@ def main():
 
     # 3b. Downgrade-Befehl (SQ020: CLI-Alias fuer 'bach upgrade downgrade', Runde 24)
     if command == "downgrade":
+        _track_activity(arg, json_requested, dry_run_requested)
         sys.path.insert(0, str(HUB_DIR))
         try:
             from upgrade import UpgradeHandler
@@ -1162,6 +1284,8 @@ def main():
                 user="user",
                 base_path=SYSTEM_ROOT
             )
+            if success:
+                _track_activity(arg, json_requested, dry_run_requested)
             print(message)
             if not json_requested:
                 _run_injectors(message, f"{command} {sub_cmd}")
@@ -1177,6 +1301,7 @@ def main():
         app = _get_app()
         handler = app.get_handler(command)
         if handler:
+            _track_activity(arg, json_requested, dry_run_requested)
             operation = sub_cmd or ""
             try:
                 cmd(command, [operation] + args)
@@ -1194,6 +1319,7 @@ def main():
     # 5. Tool-Fallback (bach <toolname> [args])
     tool_result = _try_run_tool(command, [sub_cmd] + args if sub_cmd else args)
     if tool_result is not None:
+        _track_activity(arg, json_requested, dry_run_requested)
         return tool_result
 
     # 6. Unbekannter Befehl

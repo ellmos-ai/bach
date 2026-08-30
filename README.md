@@ -44,6 +44,9 @@ BACH is best described as a **local-first LLM operating system**: a persistent P
 
 Canonical GitHub repository: `ellmos-ai/bach`. Machine-readable project context for LLM crawlers is available in [`llms.txt`](llms.txt).
 
+> [!NOTE]
+> **For AI Assistants & LLM Crawlers:** Machine-readable project context, architectural details, and disambiguation indices are available in [`llms.txt`](llms.txt).
+
 Useful search phrases include `ellmos-ai/bach`, `local-first LLM operating system`, `text-based OS for LLM agents`, `SQLite memory for AI agents`, `BACH ellmos agent OS`, `personal agentic OS Python SQLite`, and `multi-agent orchestration with MCP servers`.
 
 ## OpenAI Build Week — Codex and GPT-5.6
@@ -120,6 +123,10 @@ npm install -g ellmos-codecommander-mcp ellmos-filecommander-mcp
 ## Quick Start
 
 ```bash
+# Fast, side-effect-free metadata
+python bach.py --version
+python bach.py --help
+
 # Start BACH
 python bach.py --startup
 
@@ -137,9 +144,38 @@ python bach.py prompt add "My Prompt" --content "..."
 # Check scheduler status
 python bach.py scheduler status
 
+# Import versioned everyday-data exports (idempotent)
+python bach.py abo import PATH/abotracker-export-v1.json
+python bach.py versicherung import PATH/bach-fin-insurances-v1.json
+
+# Register recurring imports only after a valid export file exists
+python bach.py abo schedule-import PATH/abotracker-export-v1.json --interval 24h
+python bach.py versicherung schedule-import PATH/bach-fin-insurances-v1.json --interval 24h
+
+# Preview and refresh the current monthly/year-to-date finance summary
+python bach.py haushalt financial-summary refresh --dry-run
+python bach.py haushalt financial-summary refresh
+
 # Shut down BACH
 python bach.py --shutdown
 ```
+
+`--version`, `--help`, command-specific help, and global `--dry-run` startup
+paths bypass AutoLogger, ProSync, and activity tracking. Normal commands announce
+the ProSync pull before it starts and enforce a 15-second startup budget. Set
+`BACH_PROSYNC_STARTUP_TIMEOUT_SECONDS` to a value from 1 to 300 when a slower
+transit needs an explicit local budget. If the pull fails or times out, BACH
+continues without registering an exit push for that process.
+
+The import commands require the exact schemas `abotracker-export-v1` and
+`bach.fin_insurances.v1`. AboTracker billing cycles are not treated as confirmed
+next-payment dates. Scheduled jobs are active, idempotent file imports and are
+created only after the current source file passes validation.
+
+The finance summary keeps observed mail-derived expenditure separate from the
+current recurring subscription run rate. Legacy subscription duplicates are
+deduplicated by provider for calculations and dashboard reads; conflicting
+duplicates fail closed instead of being guessed or deleted.
 
 ## Core Components
 

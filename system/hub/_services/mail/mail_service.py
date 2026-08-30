@@ -1014,6 +1014,9 @@ class FinancialMailService:
         cursor.execute("""
             SELECT * FROM financial_subscriptions
             WHERE aktiv = 1
+              AND id IN (
+                  SELECT MIN(id) FROM financial_subscriptions GROUP BY provider_id
+              )
         """)
         subscriptions = [dict(row) for row in cursor.fetchall()]
 

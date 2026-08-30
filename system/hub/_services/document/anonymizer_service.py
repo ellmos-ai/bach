@@ -51,7 +51,7 @@ import string
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 # AES-Verschluesselung
 try:
@@ -252,7 +252,12 @@ def _detect_gender(vorname: str) -> str:
     return 'u'
 
 
-def _generate_tarnname(used_names: set = None, gender: str = None, original_vorname: str = None) -> str:
+def _generate_tarnname(
+    used_names: set = None,
+    gender: str = None,
+    original_vorname: str = None,
+    excluded_name_parts: Optional[Iterable[str]] = None,
+) -> str:
     """
     Generiert einen zufaelligen Tarnnamen.
 
@@ -260,6 +265,8 @@ def _generate_tarnname(used_names: set = None, gender: str = None, original_vorn
         used_names: Set bereits verwendeter Namen (Kollisionsvermeidung)
         gender: 'm' fuer maennlich, 'w' fuer weiblich, None fuer auto-detect
         original_vorname: Echter Vorname fuer Gender-Erkennung
+        excluded_name_parts: Echte Namen oder Namensbestandteile, die in keinem
+                             Tarnnamen wiederverwendet werden duerfen
 
     Returns:
         Tarnname im Format "Vorname Nachname"
@@ -279,8 +286,27 @@ def _generate_tarnname(used_names: set = None, gender: str = None, original_vorn
     else:
         vornamen_pool = TARN_VORNAMEN  # Fallback: alle
 
+    excluded_parts = set()
+    for value in excluded_name_parts or ():
+        excluded_parts.update(
+            part.strip(" ,.;:").casefold()
+            for part in value.split()
+            if part.strip(" ,.;:")
+        )
+    if original_vorname:
+        excluded_parts.update(
+            part.strip(" ,.;:").casefold()
+            for part in original_vorname.split()
+            if part.strip(" ,.;:")
+        )
+
+    vornamen_pool = [name for name in vornamen_pool if name.casefold() not in excluded_parts]
+    nachnamen_pool = [name for name in TARN_NACHNAMEN if name.casefold() not in excluded_parts]
+    if not vornamen_pool or not nachnamen_pool:
+        return f"Person_{secrets.token_hex(4)}"
+
     for _ in range(100):
-        name = f"{secrets.choice(vornamen_pool)} {secrets.choice(TARN_NACHNAMEN)}"
+        name = f"{secrets.choice(vornamen_pool)} {secrets.choice(nachnamen_pool)}"
         if name not in used_names:
             return name
     return f"Person_{secrets.token_hex(4)}"
@@ -945,11 +971,13 @@ class DocumentAnonymizer:
         # Vorname extrahieren für Gender-Erkennung
         real_parts = real_name.strip().split()
         original_vorname = real_parts[0] if real_parts else ""
+        excluded_name_parts = [real_name, *(weitere_namen or [])]
 
         # Tarnname mit Geschlechts-Matching generieren
         tarnname = _generate_tarnname(
             used_names=self._used_names,
-            original_vorname=original_vorname
+            original_vorname=original_vorname,
+            excluded_name_parts=excluded_name_parts,
         )
         self._used_names.add(tarnname)
 
@@ -988,7 +1016,10 @@ class DocumentAnonymizer:
                 if is_amtsperson:
                     continue
 
-                fake = _generate_tarnname(self._used_names)
+                fake = _generate_tarnname(
+                    self._used_names,
+                    excluded_name_parts=excluded_name_parts,
+                )
                 self._used_names.add(fake)
                 mappings["names"][name] = fake
 

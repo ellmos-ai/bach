@@ -6,7 +6,7 @@ Handler fuer die Anbindung externer Ordner (SYS_001).
 """
 
 from pathlib import Path
-from typing import List, Tuple
+from typing import Iterable, List, Optional, Tuple
 from .base import BaseHandler
 import subprocess
 import os
@@ -14,9 +14,55 @@ import sqlite3
 import re
 
 SAFE_MOUNT_ALIAS_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+MOUNT_ALLOWED_ROOTS_ENV = "BACH_MOUNT_ALLOWED_ROOTS"
 
 class MountHandler(BaseHandler):
     """Handler fuer --mount Befehle"""
+
+    def __init__(
+        self,
+        base_path_or_app,
+        allowed_source_roots: Optional[Iterable[Path]] = None,
+    ):
+        super().__init__(base_path_or_app)
+        if allowed_source_roots is None:
+            # Secure default: only the BACH tree. External/NAS/cloud roots
+            # must be explicitly trusted by the local operator.
+            roots = [self.base_path]
+            roots.extend(
+                Path(raw_root)
+                for raw_root in os.environ.get(MOUNT_ALLOWED_ROOTS_ENV, "").split(os.pathsep)
+                if raw_root.strip()
+            )
+        else:
+            roots = [Path(root) for root in allowed_source_roots]
+
+        self._allowed_source_roots = tuple(
+            dict.fromkeys(
+                os.path.realpath(
+                    os.path.abspath(
+                        os.path.expandvars(os.path.expanduser(os.fspath(root)))
+                    )
+                )
+                for root in roots
+            )
+        )
+
+    def _is_allowed_source(self, source: str) -> bool:
+        comparable_source = os.path.normcase(source)
+        for root in self._allowed_source_roots:
+            comparable_root = os.path.normcase(root)
+            root_prefix = (
+                comparable_root
+                if comparable_root.endswith(os.sep)
+                else comparable_root + os.sep
+            )
+            if (
+                comparable_source == comparable_root
+                or comparable_source.startswith(root_prefix)
+            ):
+                return True
+        return False
     
     @property
     def profile_name(self) -> str:
@@ -40,12 +86,22 @@ class MountHandler(BaseHandler):
 
     def _resolve_mount_source(self, value: str) -> Path:
         raw = str(value or "")
-        if "\x00" in raw:
+        if not raw or "\x00" in raw:
             raise ValueError("Ungueltiger Quellpfad")
-        # strict=False: resolve(strict=True) wirft auf Windows FileNotFoundError
-        # (OSError), die Aufrufer fangen aber nur ValueError -> Crash.
-        # Existenz pruefen die Aufrufer selbst (eigene Meldungen).
-        source = Path(raw).expanduser().resolve(strict=False)
+
+        # Den String vollständig normalisieren (inklusive Links), danach gegen
+        # vertrauenswürdige Wurzelpräfixe prüfen und erst anschließend ein
+        # Path-Objekt für Dateisystemzugriffe erzeugen. Diese Reihenfolge hält
+        # die Sicherheitsgrenze auch für statische Datenflussanalyse sichtbar.
+        normalized = os.path.realpath(
+            os.path.abspath(os.path.expandvars(os.path.expanduser(raw)))
+        )
+        if not self._is_allowed_source(normalized):
+            raise ValueError(
+                "Quellpfad liegt außerhalb erlaubter Wurzeln; zusätzliche Wurzeln "
+                f"über {MOUNT_ALLOWED_ROOTS_ENV} konfigurieren"
+            )
+        source = Path(normalized)
         if source.exists() and not source.is_dir():
             raise ValueError("Quellpfad ist kein Ordner")
         return source

@@ -116,6 +116,34 @@ docs/
 | newspaper | `bach help newspaper` | Zeitungs-Generator |
 | press | `bach help press` | Pressespiegel |
 
+Versionierte Alltagsdaten lassen sich idempotent importieren:
+
+```text
+bach abo import DATEI
+bach versicherung import DATEI
+bach abo schedule-import DATEI --interval 24h
+bach versicherung schedule-import DATEI --interval 24h
+```
+
+Akzeptiert werden ausschließlich die Schemata `abotracker-export-v1` und
+`bach.fin_insurances.v1`. Ein Scheduler-Job wird erst nach erfolgreicher Prüfung
+der vorhandenen Exportdatei aktiviert. Aus dem AboTracker-Abrechnungszyklus wird
+keine bestätigte nächste Fälligkeit abgeleitet.
+
+Die aktuelle Monats- und Jahreszusammenfassung lässt sich vorab prüfen und
+anschließend idempotent aktualisieren:
+
+```text
+bach haushalt financial-summary refresh --dry-run
+bach haushalt financial-summary refresh
+bach haushalt financial-summary show
+```
+
+Beobachtete Ausgaben und die aktuelle Abo-Laufkostenrate bleiben getrennte
+Größen. Historische Trigger-Duplikate werden für Rechnung und Dashboard nach
+Provider dedupliziert, aber nicht gelöscht. Fachlich widersprüchliche
+Duplikatgruppen brechen die Aktualisierung sicher ab.
+
 ### Handler (System & Infrastruktur)
 
 | Thema | CLI-Befehl | Beschreibung |

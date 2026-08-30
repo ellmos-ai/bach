@@ -25,6 +25,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from .base import BaseHandler
+from ._services.user_config_store import load_user_config, update_user_config
 
 
 class _StartupTimingList(list):
@@ -113,13 +114,7 @@ class StartupHandler(BaseHandler):
 
     def _load_user_config(self) -> dict:
         """Laedt User-Config fuer Startup-Modus."""
-        if self.user_config_path.exists():
-            try:
-                return json.loads(self.user_config_path.read_text(encoding='utf-8'))
-            except (json.JSONDecodeError, OSError):
-                pass
-        # Default-Config
-        return {
+        return load_user_config(self.user_config_path, {
             "startup_mode": "gui",
             "startup_modes": {
                 "gui": {"gui": True, "console": False},
@@ -127,14 +122,15 @@ class StartupHandler(BaseHandler):
                 "dual": {"gui": True, "console": True},
                 "silent": {"gui": False, "console": False}
             }
-        }
+        })
 
     def _save_user_config(self, config: dict):
         """Speichert User-Config."""
-        config["last_updated"] = datetime.now().strftime("%Y-%m-%d")
-        self.user_config_path.write_text(
-            json.dumps(config, indent=2, ensure_ascii=False),
-            encoding='utf-8'
+        patch = dict(config)
+        patch["last_updated"] = datetime.now().strftime("%Y-%m-%d")
+        return update_user_config(
+            self.user_config_path,
+            lambda current: {**current, **patch},
         )
 
     def _get_startup_mode(self, args: list) -> str:
@@ -211,10 +207,8 @@ class StartupHandler(BaseHandler):
             new_mode = args[0].lower()
             valid_modes = ["gui", "text", "dual", "silent"]
             if new_mode in valid_modes:
-                config = self._load_user_config()
-                old_mode = config.get("startup_mode", "gui")
-                config["startup_mode"] = new_mode
-                self._save_user_config(config)
+                old_mode = self._load_user_config().get("startup_mode", "gui")
+                self._save_user_config({"startup_mode": new_mode})
                 return True, f"[OK] Startup-Modus geaendert: {old_mode} -> {new_mode}"
             else:
                 return False, f"[ERROR] Ungueltiger Modus: {new_mode}\nGueltig: {', '.join(valid_modes)}"
@@ -667,19 +661,16 @@ class StartupHandler(BaseHandler):
             except Exception as e:
                 pass  # Silent fail - nicht kritisch
 
-        # 0.07 SECRETS SYNC - Datei → DB (Datei-autoritär, SQ076)
+        # 0.07 SECRETS SYNC - Legacy-Klartext → OS-Schlüsselbund
         # ══════════════════════════════════════════════════════════════
         if not dry_run:
             try:
                 from hub.secrets_handler import SecretsHandler
 
                 handler = SecretsHandler()
-                # SYNC: Datei → DB (enforce_authority=True)
-                # Wenn Datei fehlt: alle Secrets aus DB löschen (Datei-Autorität)
-                handler.sync_from_file(enforce_authority=True)
-
-                # Keine Ausgabe bei erfolgreichem SYNC (zu verbose)
-                # Nur Fehler würden via Exception gemeldet
+                # Fehlende Metadaten dürfen niemals Credentials löschen. Im
+                # Startup bleibt auch die reine Statusausgabe vollständig still.
+                handler.sync_from_file(enforce_authority=False, quiet=True)
             except Exception as e:
                 pass  # Silent fail - nicht kritisch (z.B. Datei fehlt)
 

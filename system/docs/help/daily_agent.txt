@@ -60,7 +60,7 @@ message_briefing:   Zaehler ungelesener Nachrichten (status='unread')
 news_briefing:      Ungelesene News aus news_items (Top-Kategorien + 3 Titel)
 session_briefing:   Letzter memory_sessions.summary (gekuerzt auf 120 Zeichen)
 weather_briefing:   Versucht weather_service (Koordinaten hardcodiert auf 0,0)
-calendar_briefing:  Heutige Termine aus calendar_events (5 nächste Events)
+calendar_briefing:  Heutige Termine aus assistant_calendar (5 nächste Events)
 
 
 FEHLERBEHANDLUNG

@@ -544,6 +544,131 @@ class TestRepairMetadata:
         ]
         assert release_rows == [("v9.9.9", "2026-02-02", "final", 1)]
 
+    def test_repair_prunes_private_release_metadata(self, handler):
+        bach_root = handler.base_path.parent
+        (bach_root / "README.md").write_text("**Version:** v9.9.9\n", encoding="utf-8")
+        _write_system_file(handler, "hub/demo.py", "print('demo')\n")
+        (bach_root / "user" / "documents").mkdir(parents=True)
+        (bach_root / "user" / "documents" / "private.txt").write_text(
+            "private\n",
+            encoding="utf-8",
+        )
+
+        conn = sqlite3.connect(str(handler.db_path))
+        conn.execute(
+            "INSERT INTO dist_type_defaults (path, dist_type, is_file) VALUES (?, ?, ?)",
+            ("system/hub/", 2, 0),
+        )
+        conn.execute(
+            "INSERT INTO dist_type_defaults (path, dist_type, is_file) VALUES (?, ?, ?)",
+            ("user/", 1, 0),
+        )
+        conn.execute(
+            "INSERT INTO distribution_manifest (path, dist_type) VALUES (?, ?)",
+            ("user/documents/private.txt", 1),
+        )
+        conn.execute(
+            """
+            INSERT INTO dist_file_versions (file_path, version, file_hash, dist_type, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            ("user/documents/private.txt", "v9.8.0", "oldhash", 1, "2026-01-01"),
+        )
+        conn.commit()
+        conn.close()
+
+        ok, msg = handler.handle("repair", ["--version", "v9.9.9", "--json"])
+
+        assert ok
+        data = json.loads(msg)
+        assert data["summary"]["private_manifest_pruned"] == 1
+        assert data["summary"]["private_version_rows_pruned"] == 1
+        assert data["summary"]["candidate_files"] == 1
+
+        conn = sqlite3.connect(str(handler.db_path))
+        manifest_paths = {
+            row[0]
+            for row in conn.execute("SELECT path FROM distribution_manifest ORDER BY path").fetchall()
+        }
+        version_paths = {
+            row[0]
+            for row in conn.execute("SELECT file_path FROM dist_file_versions ORDER BY file_path").fetchall()
+        }
+        conn.close()
+
+        assert manifest_paths == {"system/hub/demo.py"}
+        assert version_paths == {"system/hub/demo.py"}
+
+    def test_repair_prunes_stale_current_version_rows(self, handler):
+        bach_root = handler.base_path.parent
+        (bach_root / "README.md").write_text("**Version:** v9.9.9\n", encoding="utf-8")
+        _write_system_file(handler, "hub/demo.py", "print('demo')\n")
+
+        conn = sqlite3.connect(str(handler.db_path))
+        conn.execute(
+            "INSERT INTO dist_type_defaults (path, dist_type, is_file) VALUES (?, ?, ?)",
+            ("system/hub/", 2, 0),
+        )
+        conn.execute(
+            """
+            INSERT INTO dist_file_versions (file_path, version, file_hash, dist_type, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            ("system/hub/deleted.py", "v9.9.9", "oldhash", 2, "2026-01-01"),
+        )
+        conn.commit()
+        conn.close()
+
+        ok, msg = handler.handle("repair", ["--version", "v9.9.9", "--json"])
+
+        assert ok
+        data = json.loads(msg)
+        assert data["summary"]["stale_current_version_rows_pruned"] == 1
+
+        conn = sqlite3.connect(str(handler.db_path))
+        version_paths = {
+            row[0]
+            for row in conn.execute("SELECT file_path FROM dist_file_versions ORDER BY file_path").fetchall()
+        }
+        conn.close()
+
+        assert version_paths == {"system/hub/demo.py"}
+
+    def test_repair_prunes_missing_legacy_version_rows(self, handler):
+        bach_root = handler.base_path.parent
+        (bach_root / "README.md").write_text("**Version:** v9.9.9\n", encoding="utf-8")
+        _write_system_file(handler, "hub/demo.py", "print('demo')\n")
+
+        conn = sqlite3.connect(str(handler.db_path))
+        conn.execute(
+            "INSERT INTO dist_type_defaults (path, dist_type, is_file) VALUES (?, ?, ?)",
+            ("system/hub/", 2, 0),
+        )
+        conn.execute(
+            """
+            INSERT INTO dist_file_versions (file_path, version, file_hash, dist_type, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            ("system/hub/legacy_deleted.py", "v9.8.0", "oldhash", 2, "2026-01-01"),
+        )
+        conn.commit()
+        conn.close()
+
+        ok, msg = handler.handle("repair", ["--version", "v9.9.9", "--json"])
+
+        assert ok
+        data = json.loads(msg)
+        assert data["summary"]["stale_missing_version_rows_pruned"] == 1
+
+        conn = sqlite3.connect(str(handler.db_path))
+        version_paths = {
+            row[0]
+            for row in conn.execute("SELECT file_path FROM dist_file_versions ORDER BY file_path").fetchall()
+        }
+        conn.close()
+
+        assert version_paths == {"system/hub/demo.py"}
+
     def test_repair_bootstraps_release_catalog_only_when_missing(self, handler):
         bach_root = handler.base_path.parent
         (bach_root / "README.md").write_text("**Version:** v9.9.9\n", encoding="utf-8")

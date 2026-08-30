@@ -187,6 +187,56 @@ class TestRouting:
 
 
 # ================================================================
+# CAMT.053 IMPORT
+# ================================================================
+
+class TestCamtImport:
+    def test_dry_run_uses_public_parser_and_reads_one_transaction(
+        self, handler, tmp_path
+    ):
+        camt_path = tmp_path / "statement.xml"
+        camt_path.write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
+  <BkToCstmrStmt><Stmt>
+    <Acct><Id><IBAN>DE001234</IBAN></Id></Acct>
+    <Ntry>
+      <Amt Ccy="EUR">12.34</Amt><CdtDbtInd>CRDT</CdtDbtInd>
+      <BookgDt><Dt>2026-08-26</Dt></BookgDt>
+      <NtryDtls><TxDtls><RltdPties><Dbtr><Nm>Test GmbH</Nm></Dbtr></RltdPties>
+        <RmtInf><Ustrd>Testzahlung</Ustrd></RmtInf>
+      </TxDtls></NtryDtls>
+    </Ntry>
+  </Stmt></BkToCstmrStmt>
+</Document>
+""",
+            encoding="utf-8",
+        )
+
+        ok, msg = handler.handle("import", ["camt", str(camt_path)], dry_run=True)
+
+        assert ok is True
+        assert "[DRY-RUN] Würde 1 Transaktionen" in msg
+        assert "keine Salden gefunden" in msg
+
+    def test_external_entity_is_rejected(self, handler, tmp_path):
+        camt_path = tmp_path / "entity.xml"
+        camt_path.write_text(
+            """<?xml version="1.0"?>
+<!DOCTYPE Document [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
+  <BkToCstmrStmt><Stmt><Acct><Id><IBAN>&xxe;</IBAN></Id></Acct></Stmt></BkToCstmrStmt>
+</Document>
+""",
+            encoding="utf-8",
+        )
+
+        ok, msg = handler.handle("import", ["camt", str(camt_path)], dry_run=True)
+
+        assert ok is False
+        assert "Fehler beim Import" in msg
+
+# ================================================================
 # INIT YEAR
 # ================================================================
 

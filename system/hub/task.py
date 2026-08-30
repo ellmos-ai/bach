@@ -5,7 +5,7 @@
 TaskHandler - Task-Verwaltung fuer BACH
 
 Operationen:
-  add <titel>           Task hinzufuegen
+  add <titel>           Task hinzufügen [--due YYYY-MM-DD]
   list [filter]         Tasks auflisten
   done <id> [id2...]    Task(s) als erledigt markieren
   block <id> [id2...]   Task(s) blockieren
@@ -29,6 +29,7 @@ from datetime import datetime
 from typing import List, Tuple, Optional
 from .base import BaseHandler
 from .lang import t
+from ._services.task_schema import ensure_task_due_date, task_has_due_date
 
 
 class TaskHandler(BaseHandler):
@@ -171,12 +172,16 @@ class TaskHandler(BaseHandler):
     def _add(self, args: List[str]) -> Tuple[bool, str]:
         """Task hinzufuegen"""
         if not args:
-            return False, "Usage: bach task add <titel> [--priority P1-P4] [--description TEXT]"
+            return False, (
+                "Usage: bach task add <titel> [--priority P1-P4] "
+                "[--description TEXT] [--due YYYY-MM-DD]"
+            )
         
         title = self._sanitize_title(args[0])
         priority = "P3"
         description = ""
         category = "general"
+        due_date = None
         
         # Optionen parsen
         i = 1
@@ -190,14 +195,28 @@ class TaskHandler(BaseHandler):
             elif args[i] in ["--category", "-c"] and i + 1 < len(args):
                 category = args[i + 1]
                 i += 2
+            elif args[i] == "--due":
+                if i + 1 >= len(args):
+                    return False, "Fehler: --due erwartet ein Datum im Format YYYY-MM-DD"
+                due_date = self._normalize_due_date(args[i + 1])
+                if due_date is None:
+                    return False, "Ungültiges Fälligkeitsdatum. Erwartet: YYYY-MM-DD"
+                i += 2
+            elif args[i].startswith("--due="):
+                due_date = self._normalize_due_date(args[i].split("=", 1)[1])
+                if due_date is None:
+                    return False, "Ungültiges Fälligkeitsdatum. Erwartet: YYYY-MM-DD"
+                i += 1
             else:
                 i += 1
         
         with self._get_db() as conn:
+            ensure_task_due_date(conn)
             cursor = conn.execute("""
-                INSERT INTO tasks (title, priority, category, description, status, created_at)
-                VALUES (?, ?, ?, ?, 'pending', datetime('now'))
-            """, (title, priority, category, description))
+                INSERT INTO tasks
+                    (title, priority, category, description, status, due_date, created_at)
+                VALUES (?, ?, ?, ?, 'pending', ?, datetime('now'))
+            """, (title, priority, category, description, due_date))
             task_id = cursor.lastrowid
             conn.commit()
 
@@ -206,12 +225,23 @@ class TaskHandler(BaseHandler):
             from core.hooks import hooks
             hooks.emit('after_task_create', {
                 'task_id': task_id, 'title': title,
-                'priority': priority, 'category': category
+                'priority': priority, 'category': category,
+                'due_date': due_date,
             })
         except Exception:
             pass
 
-        return True, f"[OK] Task {task_id} erstellt: {title}"
+        due_text = f" (fällig: {due_date})" if due_date else ""
+        return True, f"[OK] Task {task_id} erstellt: {title}{due_text}"
+
+    @staticmethod
+    def _normalize_due_date(value: str) -> Optional[str]:
+        """Validiert das Routinika-kompatible ISO-Datumsformat."""
+        try:
+            normalized = datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+            return normalized if value == normalized else None
+        except (TypeError, ValueError):
+            return None
     
     def _edit(self, args: List[str]) -> Tuple[bool, str]:
         """Task bearbeiten - Titel, Beschreibung, Kategorie, Zuweisung aendern"""
@@ -349,8 +379,10 @@ class TaskHandler(BaseHandler):
         where_clause = " AND ".join(conditions) if conditions else "1=1"
         
         with self._get_db() as conn:
+            due_select = ", due_date" if task_has_due_date(conn) else ", NULL AS due_date"
             rows = conn.execute(f"""
-                SELECT id, priority, title, status, category, assigned_to, delegated_to, depends_on 
+                SELECT id, priority, title, status, category, assigned_to,
+                       delegated_to, depends_on {due_select}
                 FROM tasks 
                 WHERE {where_clause}
                 ORDER BY priority, id
@@ -392,7 +424,11 @@ class TaskHandler(BaseHandler):
             partner = t['assigned_to'] or t['delegated_to'] or ""
             partner_suffix = f" →{partner}" if partner else ""
             blocked_mark = " (BLOCKED)" if t['is_blocked_by_dep'] else ""
-            lines.append(f"  [{t['id']}] {t['priority']} {t['title'][:50]}{partner_suffix}{blocked_mark}")
+            due_suffix = f" (bis {t['due_date']})" if t['due_date'] else ""
+            lines.append(
+                f"  [{t['id']}] {t['priority']} {t['title'][:50]}"
+                f"{partner_suffix}{due_suffix}{blocked_mark}"
+            )
         
         return True, "\n".join(lines)
     
@@ -588,6 +624,9 @@ class TaskHandler(BaseHandler):
             f"Kategorie:   {row['category'] or '-'}",
             f"Erstellt:    {row['created_at']}",
         ]
+
+        if "due_date" in row.keys() and row["due_date"]:
+            lines.append(f"Fällig:      {row['due_date']}")
         
         if row['completed_at']:
             lines.append(f"Erledigt:    {row['completed_at']}")
@@ -926,7 +965,7 @@ TASK-VERWALTUNG
 ===============
 
 Befehle:
-  bach task add <titel>              Task hinzufuegen
+  bach task add <titel>              Task hinzufügen [--due YYYY-MM-DD]
   bach task list [status]            Tasks auflisten (pending/open/in_progress/done/blocked/all)
   bach task list --filter TERM       Tasks nach Begriff filtern
   bach task list --assigned PARTNER  Tasks nach Partner filtern
@@ -955,11 +994,13 @@ Filter-Optionen (kombinierbar):
 Weitere Optionen:
   --priority, -p P1-P4    Prioritaet beim Erstellen
   --description, -d TEXT  Beschreibung beim Erstellen
+  --due YYYY-MM-DD        Fälligkeitsdatum beim Erstellen (ISO-Datum)
   --note TEXT             Notiz beim Erledigen
   --reason TEXT           Grund beim Blockieren
   --to PARTNER            Partner beim Zuweisen
 
 Beispiele:
+  bach task add "Bericht senden" --due 2026-09-15
   bach task done 319 320 321 --note "Alle Help-Dateien erstellt"
   bach task assign 100 101 --to GEMINI
   bach task depends 306 --on 305   # Task 306 wartet auf 305

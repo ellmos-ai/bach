@@ -76,7 +76,7 @@ class NotifyHandler(BaseHandler):
     def get_operations(self) -> dict:
         return {
             "send": "Benachrichtigung senden: send <channel> <text>",
-            "setup": "Channel konfigurieren: setup <channel> [endpoint] [--token=X]",
+            "setup": "Channel konfigurieren: setup <channel> [endpoint] [--token-ref=KEY]",
             "test": "Test-Benachrichtigung: test <channel>",
             "list": "Konfigurierte Channels anzeigen",
             "status": "Status aller Channels",
@@ -164,18 +164,24 @@ class NotifyHandler(BaseHandler):
 
     def _setup(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
         if not args:
-            return False, f"Verwendung: notify setup <channel> [endpoint] [--token=X]\nChannels: {', '.join(self.CHANNELS)}"
+            return False, f"Verwendung: notify setup <channel> [endpoint] [--token-ref=KEY]\nChannels: {', '.join(self.CHANNELS)}"
 
         channel = args[0].lower()
         if channel not in self.CHANNELS:
             return False, f"Unbekannter Channel: {channel}\nErlaubt: {', '.join(self.CHANNELS)}"
 
         endpoint = ""
-        token = ""
+        token_ref = ""
         email_addr = ""
         for a in args[1:]:
             if a.startswith("--token="):
-                token = a.split("=", 1)[1]
+                return False, (
+                    "Secrets dürfen nicht über Prozessargumente übergeben werden. "
+                    "Nutze 'bach secrets set <key> --stdin' und danach "
+                    "'--token-ref=<key>'."
+                )
+            elif a.startswith("--token-ref="):
+                token_ref = a.split("=", 1)[1].strip()
             elif a.startswith("--email="):
                 email_addr = a.split("=", 1)[1]
             elif not a.startswith("--"):
@@ -183,8 +189,8 @@ class NotifyHandler(BaseHandler):
 
         name = f"notify_{channel}"
         auth_data = {}
-        if token:
-            auth_data["token"] = token
+        if token_ref:
+            auth_data["_secret_refs"] = {"token": token_ref}
         if email_addr:
             auth_data["email"] = email_addr
         auth_config = json.dumps(auth_data, ensure_ascii=False) if auth_data else ""
@@ -204,7 +210,7 @@ class NotifyHandler(BaseHandler):
                     auth_config = CASE WHEN excluded.auth_config != '' THEN excluded.auth_config
                                       ELSE connections.auth_config END,
                     updated_at = excluded.updated_at
-            """, (name, channel, endpoint, "token" if token else "none", auth_config, now, now))
+            """, (name, channel, endpoint, "keyring" if token_ref else "none", auth_config, now, now))
             conn.commit()
             return True, f"[OK] Channel '{channel}' konfiguriert (endpoint: {endpoint or 'default'})"
         finally:
@@ -276,10 +282,10 @@ class NotifyHandler(BaseHandler):
             "",
             "Setup:",
             "  bach notify setup discord https://discord.com/api/webhooks/...",
-            "  bach notify setup telegram --token=BOT_TOKEN",
+            "  bach notify setup telegram  # nutzt den keyring-basierten telegram_main-Connector",
+            "  bach notify setup email smtp.gmail.com --token-ref=notify_email_password --email=user@gmail.com",
             "  bach notify setup slack https://hooks.slack.com/services/T.../B.../...",
             "  bach notify setup webhook https://your-endpoint.com/notify",
-            "  bach notify setup email smtp.gmail.com --token=APP_PASSWORD --email=user@gmail.com",
             "",
             "Senden:",
             "  bach notify send discord \"Backup abgeschlossen!\"",
@@ -297,13 +303,25 @@ class NotifyHandler(BaseHandler):
     # Dispatch (Channel-spezifischer Versand)
     # ------------------------------------------------------------------
 
-    def _load_secrets(self) -> dict:
-        """Laedt Secrets aus user/secrets/secrets.json (dist_type=0)."""
-        secrets_file = self.base_path / "user" / "secrets" / "secrets.json"
-        if secrets_file.exists():
-            with open(secrets_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return {}
+    def _resolve_secret_refs(self, auth_config: str) -> dict:
+        """Löst ausschließlich Keyring-Referenzen aus einer Channel-Konfiguration."""
+        config = json.loads(auth_config) if auth_config else {}
+        if not isinstance(config, dict):
+            return {}
+
+        refs = config.pop("_secret_refs", {})
+        # Alte Klartextfelder dürfen nicht mehr als stiller Fallback wirken.
+        for field in ("token", "password", "bot_token", "chat_id", "owner_chat_id"):
+            config.pop(field, None)
+
+        if isinstance(refs, dict):
+            from hub.secrets_handler import get_secret_value
+
+            for field, secret_key in refs.items():
+                value = get_secret_value(str(secret_key))
+                if value:
+                    config[str(field)] = value
+        return config
 
     def _dispatch(self, channel: str, endpoint: str, auth_config: str, text: str) -> bool:
         """Versucht Nachricht direkt zu senden."""
@@ -348,40 +366,17 @@ class NotifyHandler(BaseHandler):
         return text
 
     def _send_telegram(self, text: str, auth_config: str = "") -> bool:
-        """Sendet Nachricht via Telegram Bot API. Keys aus secrets.json."""
-        import urllib.request
-        import urllib.parse
-
+        """Sendet über den kanonischen, keyring-basierten Telegram-Connector."""
         text = self._tag_text(text, "telegram")
+        from hub.connector import ConnectorHandler
 
-        # Keys: Zuerst aus secrets.json, Fallback auth_config aus DB
-        secrets = self._load_secrets()
-        tg = secrets.get("telegram", {})
-        bot_token = tg.get("bot_token", "")
-        chat_id = tg.get("chat_id", "")
-
-        # Fallback: auth_config aus connections-Tabelle
-        if not bot_token and auth_config:
-            config = json.loads(auth_config) if auth_config else {}
-            bot_token = config.get("token", config.get("bot_token", ""))
-            chat_id = chat_id or config.get("chat_id", "")
-
-        if not bot_token or not chat_id:
+        connector, _ = ConnectorHandler(self.base_path)._instantiate("telegram_main")
+        if not connector:
             return False
-
-        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        data = urllib.parse.urlencode({
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "Markdown"
-        }).encode("utf-8")
-
-        req = urllib.request.Request(url, data=data)
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                return resp.status < 400
-        except Exception:
-            return False
+            return bool(connector.send_message("", text))
+        finally:
+            connector.disconnect()
 
     def _send_webhook(self, url: str, text: str) -> bool:
         import urllib.request
@@ -422,7 +417,7 @@ class NotifyHandler(BaseHandler):
         import smtplib
         from email.mime.text import MIMEText
 
-        config = json.loads(auth_config) if auth_config else {}
+        config = self._resolve_secret_refs(auth_config)
         email_addr = config.get("email", "")
         password = config.get("token", "")
 

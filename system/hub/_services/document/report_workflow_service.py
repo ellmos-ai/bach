@@ -129,21 +129,12 @@ except ImportError:
 
 
 # ═══════════════════════════════════════════════════════════════
-# Universal Import: bach_paths.py (Single Source of Truth)
+# Package import: bach_paths.py (Single Source of Truth)
 # ═══════════════════════════════════════════════════════════════
-# Dieses Pattern funktioniert von ueberall im System
-
-_current = Path(__file__).resolve()
-for _parent in [_current] + list(_current.parents):
-    _hub = _parent / "system" / "hub"
-    if _hub.exists():
-        if str(_hub) not in sys.path:
-            sys.path.insert(0, str(_hub))
-        break
-
-# Jetzt koennen wir bach_paths importieren
+# Der System-Root ist der Paket-Importpfad. Das direkte Voranstellen von
+# system/hub würde Standardbibliotheksmodule wie ``email`` überschatten.
 try:
-    from bach_paths import get_path, BACH_ROOT
+    from hub.bach_paths import get_path, BACH_ROOT
     _USE_BACH_PATHS = True
 except ImportError:
     _USE_BACH_PATHS = False
@@ -517,6 +508,12 @@ Interpersonelle Interaktionen:
         # Vorname extrahieren fuer Gender-Erkennung
         real_parts = client_name.strip().split()
         original_vorname = real_parts[0] if real_parts else ""
+        excluded_name_parts = [
+            client_name,
+            vorname_hint or "",
+            nachname_hint or "",
+            *(parent_names or []),
+        ]
 
         # Gender erkennen
         detected_gender = _detect_gender(original_vorname)
@@ -526,7 +523,8 @@ Interpersonelle Interaktionen:
         tarnname = _generate_tarnname(
             self._used_tarnnames,
             gender=detected_gender,
-            original_vorname=original_vorname
+            original_vorname=original_vorname,
+            excluded_name_parts=excluded_name_parts,
         )
         self._used_tarnnames.add(tarnname)
 
@@ -598,7 +596,8 @@ Interpersonelle Interaktionen:
                     parent_tarnname = _generate_tarnname(
                         self._used_tarnnames,
                         gender=parent_gender,
-                        original_vorname=parent_vorname
+                        original_vorname=parent_vorname,
+                        excluded_name_parts=excluded_name_parts,
                     )
                     self._used_tarnnames.add(parent_tarnname)
                     parent_tarn_parts = parent_tarnname.strip().split()

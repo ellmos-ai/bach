@@ -65,7 +65,7 @@ def _resolve_scheduler_db() -> Path:
         from hub.bach_paths import BACH_DB as _PATHS_DB
         return Path(_PATHS_DB)
     except Exception:
-        return BACH_DB
+        return Path.home() / ".bach" / "bach.db"
 
 
 USER_DB = _resolve_scheduler_db()
@@ -118,9 +118,14 @@ class DaemonService:
         self._shutdown_event = threading.Event()
         self._pause_logged = False
         
-        # Signal-Handler registrieren
-        signal.signal(signal.SIGTERM, self._signal_handler)
-        signal.signal(signal.SIGINT, self._signal_handler)
+        # Signal-Handler registrieren -- nur im Main-Thread moeglich. Die GUI baut
+        # DaemonService in FastAPI-BackgroundTasks (run_in_threadpool); dort warf
+        # signal.signal ValueError und jeder 'Job jetzt ausfuehren' starb vor dem
+        # Start (Mac Studio gui-server.err 2026-08-28). Im Worker-Thread reicht das
+        # Shutdown-Event; der Prozess-Handler gehoert dem Main-Thread.
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGTERM, self._signal_handler)
+            signal.signal(signal.SIGINT, self._signal_handler)
     
     def _signal_handler(self, signum, frame):
         """Behandelt Shutdown-Signale."""
@@ -305,7 +310,22 @@ class DaemonService:
             if job.script_path:
                 cmd_list = [sys.executable, str(job.script_path)]
                 if job.arguments:
-                    cmd_list.extend(shlex.split(job.arguments, posix=(os.name != 'nt')))
+                    parsed_arguments = shlex.split(
+                        job.arguments, posix=(os.name != 'nt')
+                    )
+                    if os.name == 'nt':
+                        # posix=False preserves surrounding quotes.  They are
+                        # shell syntax, not part of the argument passed to a
+                        # script via subprocess.run(list).
+                        parsed_arguments = [
+                            value[1:-1]
+                            if len(value) >= 2
+                            and value[0] == value[-1]
+                            and value[0] in {'"', "'"}
+                            else value
+                            for value in parsed_arguments
+                        ]
+                    cmd_list.extend(parsed_arguments)
                 process = subprocess.run(
                     cmd_list,
                     capture_output=True,

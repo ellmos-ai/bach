@@ -43,6 +43,7 @@ from contextlib import asynccontextmanager
 # BACH imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
+from hub.theme import ThemeHandler
 
 # Claude Router Import
 sys.path.insert(0, str(Path(__file__).parent / "api"))
@@ -280,6 +281,11 @@ class TaskCreate(BaseModel):
     assigned_to: Optional[str] = "user"
 
     created_by: Optional[str] = "user"
+
+
+class ThemeUpdate(BaseModel):
+    theme: str
+    custom: Optional[dict[str, str]] = None
 
 
 
@@ -4072,6 +4078,32 @@ async def get_log_content(filename: str, lines: int = 500, source: str = "data")
 
 # ═══════════════════════════════════════════════════════════════
 
+# GUI SETTINGS
+
+# ═══════════════════════════════════════════════════════════════
+
+
+@app.get("/api/settings/theme")
+async def get_gui_theme():
+    """Return the user-neutral dashboard theme preference."""
+    try:
+        return {"success": True, **ThemeHandler(BACH_DIR).get_theme()}
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=public_error_message()) from exc
+
+
+@app.put("/api/settings/theme")
+async def update_gui_theme(payload: ThemeUpdate):
+    """Validate and persist the dashboard theme in user_config.json."""
+    try:
+        result = ThemeHandler(BACH_DIR).set_theme(payload.theme, payload.custom)
+        return {"success": True, **result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ═══════════════════════════════════════════════════════════════
+
 # STATIC FILES & TEMPLATES
 
 # ═══════════════════════════════════════════════════════════════
@@ -4257,6 +4289,15 @@ async def chat_page():
     if chat_file.exists():
         return FileResponse(chat_file)
     raise HTTPException(status_code=404, detail="Template chat.html nicht gefunden")
+
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page():
+    """Zentrale GUI-Einstellungen."""
+    settings_file = TEMPLATES_DIR / "settings.html"
+    if settings_file.exists():
+        return FileResponse(settings_file)
+    raise HTTPException(status_code=404, detail="Template settings.html nicht gefunden")
 
 
 
@@ -6353,7 +6394,13 @@ async def financial_status():
 
         # Abos
 
-        cursor.execute("SELECT COUNT(*) FROM financial_subscriptions WHERE aktiv = 1")
+        cursor.execute("""
+            SELECT COUNT(*) FROM financial_subscriptions
+            WHERE aktiv = 1
+              AND id IN (
+                  SELECT MIN(id) FROM financial_subscriptions GROUP BY provider_id
+              )
+        """)
 
         active_subs = cursor.fetchone()[0]
 
@@ -6379,7 +6426,12 @@ async def financial_status():
 
         cursor.execute("""
 
-            SELECT SUM(betrag_monatlich) FROM financial_subscriptions WHERE aktiv = 1
+            SELECT SUM(COALESCE(betrag_monatlich, betrag_jaehrlich / 12.0, 0))
+            FROM financial_subscriptions
+            WHERE aktiv = 1
+              AND id IN (
+                  SELECT MIN(id) FROM financial_subscriptions GROUP BY provider_id
+              )
 
         """)
 
@@ -6537,11 +6589,15 @@ async def financial_subscriptions(active_only: bool = True):
 
     try:
 
-        query = "SELECT * FROM financial_subscriptions"
+        query = """
+            SELECT * FROM financial_subscriptions
+            WHERE id IN (
+                SELECT MIN(id) FROM financial_subscriptions GROUP BY provider_id
+            )
+        """
 
         if active_only:
-
-            query += " WHERE aktiv = 1"
+            query += " AND aktiv = 1"
 
         query += " ORDER BY betrag_monatlich DESC"
 
@@ -14050,4 +14106,3 @@ if __name__ == "__main__":
     
 
     run_server(args.host, args.port)
-

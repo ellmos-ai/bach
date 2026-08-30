@@ -1,11 +1,10 @@
 """Tests for CalendarHandler."""
 
 import sqlite3
-import pytest
-from pathlib import Path
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import pytest
 
 CALENDAR_SCHEMA = """
 CREATE TABLE IF NOT EXISTS assistant_calendar (
@@ -167,7 +166,7 @@ class TestCalendarList:
     def test_list_empty(self, handler):
         ok, msg = handler.handle("list", [])
         assert ok
-        assert "0 Eintraege" in msg or "Keine Termine" in msg
+        assert "0 Einträge" in msg or "Keine Termine" in msg
 
     def test_list_with_data(self, populated):
         ok, msg = populated.handle("list", [])
@@ -217,7 +216,7 @@ class TestCalendarWeek:
     def test_week_includes_routines(self, populated):
         ok, msg = populated.handle("week", [])
         assert ok
-        assert "Staubsaugen" in msg or "Eintraege" in msg
+        assert "Staubsaugen" in msg or "Einträge" in msg
 
     def test_week_excludes_inactive_routines(self, populated):
         ok, msg = populated.handle("week", [])
@@ -231,7 +230,7 @@ class TestCalendarMonth:
     def test_month_view(self, populated):
         ok, msg = populated.handle("month", [])
         assert ok
-        month_names = ["Januar", "Februar", "Maerz", "April", "Mai", "Juni",
+        month_names = ["Januar", "Februar", "März", "April", "Mai", "Juni",
                        "Juli", "August", "September", "Oktober", "November", "Dezember"]
         current_month = month_names[datetime.now().month - 1]
         assert current_month in msg
@@ -293,6 +292,35 @@ class TestCalendarAdd:
         assert row["description"] == "Nicht vergessen"
         conn.close()
 
+    def test_add_with_reminder_and_recurrence(self, handler, cal_env):
+        _, db_path = cal_env
+        ok, msg = handler.handle(
+            "add",
+            ["Jour fixe", "--reminder", "30", "--recurrence", "weekly"],
+        )
+        assert ok, msg
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM assistant_calendar WHERE title='Jour fixe'"
+        ).fetchone()
+        assert row["reminder_minutes"] == 30
+        assert row["is_recurring"] == 1
+        assert row["recurrence_rule"] == "FREQ=WEEKLY"
+        conn.close()
+
+    @pytest.mark.parametrize("value", ["-1", "morgen"])
+    def test_add_rejects_invalid_reminder(self, handler, value):
+        ok, msg = handler.handle("add", ["Test", "--reminder", value])
+        assert not ok
+        assert "Erinnerungszeit" in msg
+
+    @pytest.mark.parametrize("value", ["", "weekly-ish", "COUNT=4"])
+    def test_add_rejects_invalid_recurrence(self, handler, value):
+        ok, msg = handler.handle("add", ["Test", f"--recurrence={value}"])
+        assert not ok
+        assert "Wiederholungsregel" in msg
+
     def test_add_default_time(self, handler, cal_env):
         _, db_path = cal_env
         ok, msg = handler.handle("add", ["DefaultTime"])
@@ -339,6 +367,20 @@ class TestCalendarShow:
         ok, msg = populated.handle("show", ["1"])
         assert ok
         assert "Ja" in msg
+
+    def test_show_reminder_and_recurrence_rule(self, populated, cal_env):
+        _, db_path = cal_env
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "UPDATE assistant_calendar SET reminder_minutes=15, "
+            "is_recurring=1, recurrence_rule='FREQ=DAILY' WHERE id=1"
+        )
+        conn.commit()
+        conn.close()
+        ok, msg = populated.handle("show", ["1"])
+        assert ok
+        assert "FREQ=DAILY" in msg
+        assert "15 Minuten vorher" in msg
 
     def test_show_with_description(self, populated, cal_env):
         _, db_path = cal_env
@@ -395,7 +437,7 @@ class TestCalendarDelete:
         _, db_path = cal_env
         ok, msg = populated.handle("delete", ["1"])
         assert ok
-        assert "geloescht" in msg
+        assert "gelöscht" in msg
         assert "Zahnarzt" in msg
         conn = sqlite3.connect(str(db_path))
         row = conn.execute("SELECT * FROM assistant_calendar WHERE id=1").fetchone()

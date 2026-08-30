@@ -35,7 +35,7 @@ import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 # BACH system path: resolve from this file's location (hub/_services/chat/)
 _bach_system = str(Path(__file__).resolve().parent.parent.parent)
@@ -74,7 +74,8 @@ except Exception as e:
 
 # Chat Runtime + Backend
 from hub._services.llm.model_backend import create_backend, OllamaBackend
-from hub._services.chat.chat_runtime import ChatRuntime
+from hub._services.chat.chat_runtime import ChatRuntime, RUNTIME_BACH_DB
+from hub._services.chat.session_store import SQLiteChatSessionStore
 
 # Compute Lock (optional — graceful if not available)
 try:
@@ -170,6 +171,7 @@ runtime = ChatRuntime(
     bach_app=_bach_app if HAS_BACH else None,
     memory_fn=_memory if HAS_BACH else None,
     injector=_injector if HAS_BACH else None,
+    session_store=SQLiteChatSessionStore(RUNTIME_BACH_DB),
 )
 
 _global_defaults = {
@@ -1245,6 +1247,17 @@ class ControlHandler(BaseHTTPRequestHandler):
                 "current_tool": current_tool,
                 "tool_round": tool_round,
                 "last_tools": active_tools,
+                "session_persistence": runtime.persistence_status(),
+            })
+
+        elif path == "/api/history":
+            query = parse_qs(urlparse(self.path).query)
+            chat_id = query.get("chat_id", ["gui-web"])[0]
+            self._json({
+                "ok": True,
+                "chat_id": chat_id,
+                "messages": runtime.history(chat_id),
+                "persistence": runtime.persistence_status(),
             })
 
         elif path == "/api/backends":
@@ -1389,6 +1402,38 @@ def start_control_api():
         return None
 
 
+# --- Message-Worker (Auftragsnachrichten) ---
+
+def _answer_order(text: str, chat_id: str) -> str:
+    """Synchronous bridge for the message worker thread (same pattern as /api/chat)."""
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(runtime.process(text, chat_id))
+    finally:
+        loop.close()
+
+
+def start_message_worker():
+    """Answer GUI/CLI order messages addressed to the local runtime.
+
+    Until now `messages(direction='outbox', recipient='ollama'|'buddha'|'bach')`
+    had no consumer at all (FABLE-SOL-PLAN 1.1.4). Opt out with
+    BACH_MESSAGE_WORKER=0.
+    """
+    if os.environ.get("BACH_MESSAGE_WORKER", "1").strip().lower() in ("0", "false", "no", "off"):
+        log.info("Message-Worker per BACH_MESSAGE_WORKER deaktiviert")
+        return None
+    try:
+        from hub._services.chat.chat_runtime import RUNTIME_BACH_DB
+        from hub._services.chat.message_worker import start_worker
+    except ImportError as e:
+        log.warning(f"Message-Worker nicht verfuegbar: {e}")
+        return None
+    thread = start_worker(RUNTIME_BACH_DB, _answer_order)
+    print("Message-Worker: beantwortet Auftragsnachrichten an ollama/buddha/bach")
+    return thread
+
+
 # --- Main ---
 
 def main():
@@ -1409,6 +1454,7 @@ def main():
             log.warning("Crash recovery failed: %s", e)
 
     start_control_api()
+    start_message_worker()
 
     app = Application.builder().token(BOT_TOKEN).build()
 

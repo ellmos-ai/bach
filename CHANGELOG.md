@@ -6,8 +6,26 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+### Added
+
+- **Persistenter GUI-Chatverlauf (FABLE-SOL 1.2.4):** Der ChatRuntime speichert
+  vollständige Modellkontexte jetzt als eigenen Snapshot-Typ in der bereits
+  kanonischen `bach.db`. Gehashte Chat-IDs, atomare Aktualisierungen und ein
+  expliziter Persistenzstatus halten den Verlauf über Runtime-Neustarts hinweg
+  verfügbar, ohne eine zweite Datenbank oder ein neues Schema einzuführen.
+- **Claude-Code-Agent-Export (Task 1261):** `bach export agents --format agent` und `python tools/agents_export.py --format agent` erzeugen deterministische `.claude/agents/*.md`-Dateien aus aktiven `bach_agents`-/`bach_experts`-Zeilen. Frontmatter bleibt Claude-Code-kompatibel; Persona- und Skill-/Pfadbezug stehen im Body. Dry-Run, Readback, Unicode- und Konflikt-Guards verhindern das Überschreiben fremder Dateien.
+- **Dashboard-Themes zentral konfigurierbar (Task 1126):** `bach theme status|set`, `bach_api.theme`, `/api/settings/theme` und die neue GUI-Seite `/settings` teilen sich jetzt dieselbe validierte Einstellung in `data/user_config.json`. Dark, Light, Warm und Custom sind dashboardweit verfügbar; Custom-Farben akzeptieren ausschließlich `#RRGGBB`, während der bisherige Browserwert `colorful` kompatibel auf Custom abgebildet wird.
+
 ### Changed
 
+- **QUICK-Selbsttest fachlich präzisiert (Task 1146):** B001 bewertet ein
+  erfolgreich erstelltes Inventar konsistent statt es als Score 0 zu führen.
+  O001 verwendet für BACH nun einen vollständigen Task-Lebenszyklus über die
+  produktive Task-API gegen eine temporäre, per `BACH_DB` isolierte Datenbank. Die
+  Ergebnisartefakte erläutern den Geltungsbereich von Gesamt- und Teilwertungen.
+- **clutch-Rückspiegelung abgeschlossen (Task 1150):** BACH bezieht Scorer, PartnerRegistry, Streckenanalyse, Gas/Bremse, Bordcomputer, Fahrschule und Fahrtenbuch jetzt aus dem externen `clutch`; der frühere interne Fork liegt nach grünem Parallelbetrieb nur noch als expliziter Notfall-Fallback unter `system/hub/_archive/delegation_legacy/`. Die Roadmap führt `ellmos-tests` als nächsten gegateten Modulschritt unter Task 1181.
+- **Doku- & Discoverability-Wartung (2026-07-27):** Automatische Repository-Sichtbarkeits- und Doku-Pflege (Pfad B). llms.txt Last-checked-Datum auf 2026-07-27 aktualisiert, README-Indexing-Hinweis (> [!NOTE]) für LLM-Crawler ergänzt, Testsuite-Sanity (140 Testdateien in system/tests/) bestätigt.
+- **Doku- & Discoverability-Wartung (2026-07-25):** Systematische Repository-Prüfung durchgeführt. llms.txt Last-checked-Datum auf 2026-07-25 aktualisiert. Integrationen, i18n-Sprachparität (6 Sprachen) und Testsuite-Vollständigkeit (144 Testdateien in system/tests/) verifiziert.
 - **Build-Week-Abschlussprüfung mit GPT-5.6:** Die README-Dateien und Devpost-Angaben trennen jetzt belegbar zwischen Codex als Laufzeit-Backend, früheren Codex-Beiträgen, den seit 2026-07-21 auf `gpt-5.6-terra` gerouteten BACH-Automationen und dem finalen Audit mit `gpt-5.6-sol`.
 - **Web-Scraper gegen Netzwerk-Umgehungen gehärtet:** HTTP(S)-Abrufe binden jeden Host und Redirect an die vorab geprüfte öffentliche IP, behalten die TLS-Prüfung gegen den ursprünglichen Hostnamen bei, ignorieren Umgebungs-Proxys, begrenzen Redirects und Antwortgrößen und schließen unsichere Screenshot-Navigationen aus. Screenshots rendern nur noch den bereits sicher abgerufenen Inhalt bei blockiertem Browser-Netzwerk und deaktiviertem JavaScript.
 - **Release-Katalog für `v3.13.0-bluesky` live versiegelt:** `bach upgrade repair --version v3.13.0-bluesky --json` hat den aktuellen Stable-Release in den Live-Katalog eingetragen; `bach upgrade check --json` meldet jetzt `stable/latest=v3.13.0-bluesky`, `release_entries=2`, `current_release_registered=true`, `repair_recommended=false` und `local_modifications=0`.
@@ -26,6 +44,21 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **`start/bach.bat` beendet auf Port 8000 nur noch den eigenen GUI-Server:** die beiden `netstat`/`taskkill`-Schleifen killten jeden Listener auf :8000, auch fremde Programme (gemessen auf ASUS-GEI: `run_web.py`). Neue Subroutine `:kill_if_bach_gui` prueft die Kommandozeile auf `gui\server.py`; Fremdprozesse werden gemeldet, nicht beendet.
+
+- **CAMT.053-Dry-run wieder lauffähig und XML-gehärtet:** Der Steuer-Handler
+  bezieht seinen CAMT-Parser nicht mehr aus dem gitignorierten privaten
+  Expertenbaum, sondern aus `system/tools/steuer`. Der wiederhergestellte
+  MIT-Parser nutzt `defusedxml`, unterstützt verschachtelte Statements und
+  mehrere Transaktionsdetails und weist externe XML-Entities zurück.
+- **CLI-Start ohne stille OneDrive-Hänger:** `bach --version`, allgemeine und
+  befehlsspezifische Hilfe sowie globale Dry-runs umgehen jetzt AutoLogger,
+  ProSync und Activity Tracking. Normale Befehle melden den ProSync-Pull vor
+  Beginn mit Flush, führen ihn in einem hart begrenzten Hilfsprozess aus und
+  registrieren nach Fehler oder Zeitüberschreitung keinen Exit-Push. Activity
+  Tracking beginnt erst nach erfolgreicher Befehlsannahme; unbekannte Befehle
+  schreiben keine Aktivität mehr.
+- **Upgrade-Repair gegen private Release-Katalog-Altlasten gehärtet:** `bach upgrade repair` entfernt jetzt User-, Host-, Credential-, Runtime-, Cache- und generierte `dist`-Pfade aus `distribution_manifest` und `dist_file_versions`; fehlende, nicht mehr im aktuellen Distributionsscan enthaltene Versionszeilen werden beim Repair ebenfalls bereinigt. Dadurch tauchen lokale User-Dokumente, Maschinen-Mirrors, DB-/Cache-Dateien und archivierte Fork-Dateien nicht mehr als Release-`missing_files` auf.
 - **`upgrade repair --dry-run` wirklich trocken gemacht:** Die `upgrade`-CLI-Brücke reicht `--dry-run`/`-n` jetzt an den `UpgradeHandler` weiter; der Repair-Pfad erkennt das Flag zusätzlich selbst, sodass ein JSON-Dry-Run keine Distributions-Metadaten mehr schreibt.
 - **Verwaistes FileCommander-npm-Lockfile entfernt:** Der nicht mehr paketierte `system/tools/mcp/bach-filecommander`-Snapshot enthielt nur noch ein leeres `package-lock.json`; die unnötige npm-Manifest-Surface wurde entfernt und der offene `adm-zip`-Dependabot-Alert dadurch geschlossen.
 - **ActivityTracker-Mirror-Export rekursionsfrei gemacht:** Auto-Finalize exportiert `AGENTS.md`, `PARTNERS.md`, `USECASES.md`, `CHAINS.md` und `WORKFLOWS.md` jetzt direkt über die Exporter-Klassen statt über `bach.py export ...`-Subprozesse. Dadurch kann ein stale `system_activity`-Idle-Fall bei kurzen CLI-Befehlen wie `python bach.py skills version bach` keine rekursive Export-/Auto-Finalize-Kette mehr starten.
@@ -33,6 +66,8 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Verified
 
+- **Release-Katalog-Privacy-Repair verifiziert:** `python -m pytest system\tests\test_upgrade_handler.py -q` lief mit `43 passed`; `python system\bach.py upgrade repair --version v3.13.0-bluesky --json` bereinigte die lokale Runtime-DB auf `manifest_entries=3446` und `dist_file_versions=6861`. Das anschließende `upgrade check --json` meldete `repair_recommended=false`, `upgrade_candidates=0`, `missing_files=0`, `unreadable_files=0`; gezielte DB-Scans auf `user/%`, Hostnamen, personenbezogene Pfadfragmente sowie DB-/Cache-/`dist`-Artefakte standen bei 0.
+- **clutch-Abschlusszertifizierung:** `python -m pytest system\tests\test_delegation_adapter.py system\tests\test_clutch.py system\tests\test_partner_handler.py -q` lief mit `36 passed`; `python bach.py clutch migration` meldete alle acht Quellen extern, Compat-Adapter und DB-Brücke `OK` sowie den Legacy-Fork `ARCHIVED` im Standby.
 - **Build-Week-/Web-Scrape-Slice zertifiziert:** Neun fokussierte Web-Scrape-Regressionstests, insgesamt 41 Web-/Plugin-Sicherheitstests, Ruff (unter Beibehaltung der historisch erforderlichen Importpfad-Ausnahme), `py_compile`, Diff-/Credential-Scan und ein realer HTTPS-Header-Smoke liefen erfolgreich.
 - **Upgrade-/Agenten-Smokes auf 2026-07-19 erneuert:** `python bach.py upgrade repair --version v3.13.0-bluesky --dry-run --json`, `python bach.py upgrade repair --version v3.13.0-bluesky --json`, `python bach.py upgrade check --json`, `python bach.py agent doctor test-agent --json`, `python bach.py agent start test-agent --dry-run --json` und `python bach.py usecase run 50 --dry-run` liefen ohne Fehler; der aktuelle Upgrade-Befund steht bei `manifest_entries=4794`, `release_entries=2`, `current_release_registered=true`, `repair_recommended=false` und `local_modifications=0`.
 - **Release-Hygiene verifiziert:** `python -m pytest system\tests\test_upgrade_handler.py -q` lief mit `40 passed`; `python system\bach.py upgrade repair --version v3.13.0-bluesky --dry-run --json` meldete `dry_run=true` und unveränderte DB-Zähler. Gitignore-/Privacy-/Secret-Scans blieben ohne neue Treffer; GitHub Dependabot #26 steht nach Lockfile-Entfernung auf `fixed`.

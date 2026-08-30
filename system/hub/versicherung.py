@@ -42,10 +42,18 @@ Operationen:
 Nutzt: bach.db / fin_insurances, fin_insurance_claims, insurance_types
 """
 
-import sqlite3
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
+import sqlite3
 from typing import List, Tuple, Optional
+
+from ._services.alltag_import import (
+    AlltagImportError,
+    import_cli_arguments,
+    load_payload,
+    parse_interval,
+    scheduler_job_upsert,
+)
 from hub.base import BaseHandler
 
 
@@ -72,11 +80,13 @@ class VersicherungHandler(BaseHandler):
             "show": "Versicherung-Details anzeigen",
             "add": "Neue Versicherung anlegen",
             "edit": "Versicherung bearbeiten",
-            "delete": "Versicherung deaktivieren (Status -> gekuendigt)",
+            "delete": "Versicherung deaktivieren (Status -> gekündigt)",
             "status": "Dashboard mit Statistiken",
-            "fristen": "Kuendigungsfristen anzeigen",
+            "fristen": "Kündigungsfristen anzeigen",
             "check": "Portfolio-Analyse",
-            "claim": "Schadenfaelle verwalten (add/list)",
+            "claim": "Schadenfälle verwalten (add/list)",
+            "import": "VersicherungsManager-Export importieren",
+            "schedule-import": "Regelmäßigen Versicherungsimport einrichten",
             "help": "Hilfe anzeigen",
         }
 
@@ -104,10 +114,171 @@ class VersicherungHandler(BaseHandler):
             return self._check(args)
         elif operation == "claim":
             return self._claim(args)
+        elif operation == "import":
+            return self._import_insurances(args, dry_run)
+        elif operation == "schedule-import":
+            return self._schedule_import(args, dry_run)
         elif operation in ("", "help"):
             return self._help()
         else:
             return False, f"Unbekannte Operation: {operation}\nNutze: bach versicherung help"
+
+    def _import_insurances(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
+        if not args:
+            return False, "Usage: bach versicherung import <bach-fin-insurances-v1.json>"
+        try:
+            payload = load_payload(Path(args[0]), "bach.fin_insurances.v1")
+            rows = self._prepare_insurance_rows(payload)
+        except AlltagImportError as exc:
+            return False, f"[ERROR] {exc}"
+
+        conn = self._get_db()
+        try:
+            created = 0
+            updated = 0
+            for row in rows:
+                if row["police_nr"]:
+                    existing = conn.execute(
+                        "SELECT id FROM fin_insurances WHERE police_nr = ?",
+                        (row["police_nr"],),
+                    ).fetchone()
+                else:
+                    existing = conn.execute(
+                        """
+                        SELECT id FROM fin_insurances
+                        WHERE lower(anbieter) = lower(?)
+                          AND lower(COALESCE(tarif_name, '')) = lower(?)
+                          AND lower(sparte) = lower(?)
+                        LIMIT 1
+                        """,
+                        (row["anbieter"], row["tarif_name"] or "", row["sparte"]),
+                    ).fetchone()
+                if existing:
+                    updated += 1
+                    if not dry_run:
+                        conn.execute(
+                            """
+                            UPDATE fin_insurances
+                            SET anbieter = ?, tarif_name = ?, police_nr = ?,
+                                sparte = ?, status = ?,
+                                beginn_datum = ?, ablauf_datum = ?,
+                                kuendigungsfrist_monate = ?, verlaengerung_monate = ?,
+                                naechste_kuendigung = ?, beitrag = ?, zahlweise = ?,
+                                ordner_pfad = ?, notizen = ?, updated_at = ?
+                            WHERE id = ?
+                            """,
+                            (*row.values(), datetime.now().isoformat(), existing[0]),
+                        )
+                else:
+                    created += 1
+                    if not dry_run:
+                        conn.execute(
+                            """
+                            INSERT INTO fin_insurances
+                                (anbieter, tarif_name, police_nr, sparte, status,
+                                 beginn_datum, ablauf_datum,
+                                 kuendigungsfrist_monate, verlaengerung_monate,
+                                 naechste_kuendigung, beitrag, zahlweise,
+                                 ordner_pfad, notizen, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (*row.values(), datetime.now().isoformat(), datetime.now().isoformat()),
+                        )
+            if not dry_run:
+                conn.commit()
+            prefix = "[DRY-RUN]" if dry_run else "[OK]"
+            return True, f"{prefix} Versicherungsimport: {created} neu, {updated} aktualisiert."
+        except sqlite3.Error as exc:
+            conn.rollback()
+            return False, f"[ERROR] Versicherungsimport fehlgeschlagen: {exc}"
+        finally:
+            conn.close()
+
+    def _prepare_insurance_rows(self, payload: dict) -> List[dict]:
+        items = payload.get("fin_insurances")
+        if not isinstance(items, list):
+            raise AlltagImportError("Feld 'fin_insurances' muss eine Liste sein.")
+        rows = []
+        status_map = {"gekündigt": "gekuendigt"}
+        valid_status = {"aktiv", "gekuendigt", "beitragsfrei", "ruhend"}
+        payment_map = {
+            "monatlich": "monatlich",
+            "quartalsweise": "quartalsweise",
+            "halbjährlich": "halbjaehrlich",
+            "halbjaehrlich": "halbjaehrlich",
+            "jährlich": "jaehrlich",
+            "jaehrlich": "jaehrlich",
+        }
+        for item in items:
+            if not isinstance(item, dict):
+                raise AlltagImportError("Jede Versicherung muss ein JSON-Objekt sein.")
+            anbieter = str(item.get("anbieter") or "").strip()
+            sparte = str(item.get("sparte") or "").strip()
+            if not anbieter or not sparte:
+                raise AlltagImportError("Jede Versicherung benötigt Anbieter und Sparte.")
+            status = status_map.get(str(item.get("status") or "aktiv").lower(), str(item.get("status") or "aktiv").lower())
+            if status not in valid_status:
+                raise AlltagImportError(f"Versicherung {anbieter!r}: unbekannter Status {status!r}.")
+            payment_raw = str(item.get("zahlweise") or "monatlich").lower()
+            if payment_raw not in payment_map:
+                raise AlltagImportError(f"Versicherung {anbieter!r}: unbekannte Zahlweise {payment_raw!r}.")
+            try:
+                contribution = float(item.get("beitrag") or 0)
+                notice = int(item.get("kuendigungsfrist_monate") or 0)
+                extension = int(item.get("verlaengerung_monate") or 0)
+            except (TypeError, ValueError) as exc:
+                raise AlltagImportError(f"Versicherung {anbieter!r}: ungültiger Zahlenwert.") from exc
+            if contribution < 0 or notice < 0 or extension < 0:
+                raise AlltagImportError(f"Versicherung {anbieter!r}: negative Werte sind unzulässig.")
+            rows.append({
+                "anbieter": anbieter,
+                "tarif_name": item.get("tarif_name"),
+                "police_nr": item.get("police_nr"),
+                "sparte": sparte,
+                "status": status,
+                "beginn_datum": item.get("beginn_datum"),
+                "ablauf_datum": item.get("ablauf_datum"),
+                "kuendigungsfrist_monate": notice,
+                "verlaengerung_monate": extension,
+                "naechste_kuendigung": item.get("naechste_kuendigung"),
+                "beitrag": contribution,
+                "zahlweise": payment_map[payment_raw],
+                "ordner_pfad": item.get("ordner_pfad"),
+                "notizen": item.get("notizen"),
+            })
+        return rows
+
+    def _schedule_import(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
+        if not args:
+            return False, "Usage: bach versicherung schedule-import <datei.json> [--interval 24h]"
+        path = Path(args[0])
+        try:
+            load_payload(path, "bach.fin_insurances.v1")
+            interval = parse_interval(self._get_arg(args, "--interval"))
+            arguments = import_cli_arguments("versicherung", path)
+        except AlltagImportError as exc:
+            return False, f"[ERROR] {exc}"
+        conn = self._get_db()
+        try:
+            action = scheduler_job_upsert(
+                conn,
+                name="alltag-import-versicherungen",
+                profile_name="versicherung",
+                description="VersicherungsManager-Dateiexport idempotent nach BACH importieren",
+                schedule=interval,
+                script_path=self.base_path / "bach.py",
+                arguments=arguments,
+                dry_run=dry_run,
+            )
+            if not dry_run:
+                conn.commit()
+            prefix = "[DRY-RUN] Würde" if dry_run else "[OK]"
+            return True, f"{prefix} Scheduler-Job {action}: Versicherungen alle {interval}."
+        except sqlite3.Error as exc:
+            conn.rollback()
+            return False, f"[ERROR] Scheduler-Job fehlgeschlagen: {exc}"
+        finally:
+            conn.close()
 
     # ------------------------------------------------------------------
     # Hilfsmethoden
@@ -1053,28 +1224,30 @@ class VersicherungHandler(BaseHandler):
 
 BEFEHLE:
   bach versicherung list                    Alle aktiven Versicherungen
-  bach versicherung list --all              Inkl. gekuendigte
+  bach versicherung list --all              Inkl. gekündigte
   bach versicherung list --sparte KFZ       Nach Sparte filtern
   bach versicherung list --status aktiv     Nach Status filtern
   bach versicherung show <id>               Details anzeigen
   bach versicherung add --anbieter "Allianz" --sparte "Haftpflicht" --beitrag 5.90
   bach versicherung add --anbieter "HUK" --sparte "KFZ" --beitrag 89.50 --zahlweise monatlich --police "KFZ-123"
-  bach versicherung edit <id> --beitrag 50  Beitrag aendern
+  bach versicherung edit <id> --beitrag 50  Beitrag ändern
   bach versicherung edit <id> --status gekuendigt
-  bach versicherung delete <id>             Status -> gekuendigt
+  bach versicherung delete <id>             Status -> gekündigt
   bach versicherung status                  Dashboard mit Statistiken
-  bach versicherung fristen                 Kuendigungsfristen (90 Tage)
-  bach versicherung fristen --tage 180      Kuendigungsfristen (180 Tage)
+  bach versicherung fristen                 Kündigungsfristen (90 Tage)
+  bach versicherung fristen --tage 180      Kündigungsfristen (180 Tage)
   bach versicherung check                   Portfolio-Analyse
   bach versicherung claim add <id> --datum 01.01.2026 --beschreibung "Wasserschaden"
-  bach versicherung claim list              Alle Schadenfaelle
-  bach versicherung claim list <id>         Schadenfaelle einer Versicherung
+  bach versicherung claim list              Alle Schadenfälle
+  bach versicherung claim list <id>         Schadenfälle einer Versicherung
+  bach versicherung import DATEI            bach.fin_insurances.v1 importieren
+  bach versicherung schedule-import DATEI [--interval 24h]
 
 STATUS-WERTE:
-  aktiv, gekuendigt, beitragsfrei, ruhend
+  aktiv, gekuendigt (gekündigt), beitragsfrei, ruhend
 
 ZAHLWEISEN:
-  monatlich, quartalsweise, halbjaehrlich, jaehrlich
+  monatlich, quartalsweise, halbjaehrlich (halbjährlich), jaehrlich (jährlich)
 
 SPARTEN (Beispiele):
   Haftpflicht, BU, KFZ, Hausrat, PKV, Rechtsschutz, Risiko-LV, Unfall, Zahnzusatz

@@ -547,19 +547,16 @@ class ConnectorHandler(BaseHandler):
             auth_type = row[4] or "api_key"
             auth_data = json.loads(row[5]) if row[5] else {}
 
-            # _secret_refs auflösen: Tokens aus secrets-Tabelle nachladen (ENT-44)
+            # _secret_refs auflösen: Werte kommen ausschließlich aus dem OS-Keyring.
             # Format: {"_secret_refs": {"bot_token": "telegram_main_bot_token"}}
             secret_refs = auth_data.pop("_secret_refs", {})
             if secret_refs:
-                try:
-                    for field_name, secret_key in secret_refs.items():
-                        sec_row = conn.execute(
-                            "SELECT value FROM secrets WHERE key = ?", (secret_key,)
-                        ).fetchone()
-                        if sec_row and sec_row[0]:
-                            auth_data[field_name] = sec_row[0]
-                except Exception:
-                    pass  # secrets-Tabelle nicht vorhanden oder leer
+                from hub.secrets_handler import get_secret_value
+
+                for field_name, secret_key in secret_refs.items():
+                    secret_value = get_secret_value(secret_key, connection=conn)
+                    if secret_value:
+                        auth_data[field_name] = secret_value
 
             from connectors.base import ConnectorConfig
 

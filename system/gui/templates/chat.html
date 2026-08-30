@@ -284,6 +284,7 @@
     </div>
 
     <script src="/static/js/nav.js?v=4"></script>
+    <script src="/static/js/prompt-chat-draft.js?v=1"></script>
     <script>
     (function() {
         const CHAT_API = 'http://' + CHAT_HOST + ':8081/api';
@@ -335,6 +336,15 @@
             inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
         }
 
+        function loadLibraryDraft() {
+            const draft = BachChatDraft.consume();
+            if (draft === null) return;
+
+            inputEl.value = draft;
+            autoResize();
+            inputEl.focus();
+        }
+
         async function send() {
             const text = inputEl.value.trim();
             if (!text || sending) return;
@@ -382,6 +392,20 @@
 
         inputEl.addEventListener('input', autoResize);
 
+        async function loadHistory() {
+            // The runtime keeps the gui-web transcript; without this the page
+            // started empty on every visit although the conversation still existed.
+            try {
+                const r = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(CHAT_ID));
+                const data = await r.json();
+                for (const m of (data.messages || [])) {
+                    addMessage(m.content, m.role === 'user' ? 'user' : 'bot');
+                }
+            } catch (e) {
+                // runtime offline: refreshStatus() shows it
+            }
+        }
+
         async function refreshStatus() {
             try {
                 const r = await fetch(CHAT_API + '/status');
@@ -398,6 +422,7 @@
             }
         }
 
+        loadHistory().then(loadLibraryDraft);
         refreshStatus();
         setInterval(refreshStatus, 30000);
     })();

@@ -291,60 +291,8 @@ WHERE NOT EXISTS (
     SELECT 1 FROM routines WHERE source = 'household_routines' AND source_id = household_routines.id
 );
 
--- Kalender-Events
-CREATE TABLE IF NOT EXISTS calendar_events (
-    id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    description TEXT,
-    -- Zeit
-    event_date TEXT,            -- YYYY-MM-DD
-    event_time TEXT,            -- HH:MM
-    end_date TEXT,
-    end_time TEXT,
-    all_day INTEGER DEFAULT 0,
-    -- Ort
-    location TEXT,
-    -- Wiederholung
-    is_recurring INTEGER DEFAULT 0,
-    recurrence_pattern TEXT,    -- daily, weekly, monthly, yearly
-    recurrence_end TEXT,
-    -- Erinnerung
-    reminder_minutes INTEGER,
-    -- Kategorisierung
-    category TEXT,              -- privat, arbeit, gesundheit, etc.
-    -- Status
-    status TEXT DEFAULT 'scheduled', -- scheduled, completed, cancelled
-    -- Meta
-    external_id TEXT,           -- ID aus externem Kalender
-    notes TEXT,
-    dist_type INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
-);
-
--- Migrate assistant_calendar to calendar_events
-INSERT OR IGNORE INTO calendar_events (title, description, event_date, event_time,
-                                       end_date, end_time, location, is_recurring,
-                                       recurrence_pattern, reminder_minutes, status,
-                                       external_id, source)
-SELECT
-    title,
-    description,
-    DATE(start_datetime) as event_date,
-    TIME(start_datetime) as event_time,
-    DATE(end_datetime) as end_date,
-    TIME(end_datetime) as end_time,
-    location,
-    is_recurring,
-    recurrence_rule as recurrence_pattern,
-    reminder_minutes,
-    status,
-    external_id,
-    'assistant_calendar' as source
-FROM assistant_calendar
-WHERE NOT EXISTS (
-    SELECT 1 FROM calendar_events WHERE external_id = assistant_calendar.external_id
-);
+-- Kalenderdaten liegen kanonisch in assistant_calendar. calendar_events ist
+-- seit Migration 037 nur noch eine Read-only-Kompatibilitätsansicht.
 
 
 -- ============================================================
@@ -386,5 +334,5 @@ CREATE INDEX IF NOT EXISTS idx_contacts_category ON contacts(category);
 CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name);
 CREATE INDEX IF NOT EXISTS idx_routines_next_due ON routines(next_due_at);
 CREATE INDEX IF NOT EXISTS idx_routines_category ON routines(category);
-CREATE INDEX IF NOT EXISTS idx_calendar_date ON calendar_events(event_date);
+CREATE INDEX IF NOT EXISTS idx_assistant_calendar_start ON assistant_calendar(start_datetime);
 CREATE INDEX IF NOT EXISTS idx_bank_accounts_iban ON bank_accounts(iban);

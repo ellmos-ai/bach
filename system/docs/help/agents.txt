@@ -263,6 +263,18 @@ Anthropic-Kompatibilität:
   - Export: bach skills export <name> --format anthropic
   - Neuer Skill: bach skills create <name> --format anthropic
 
+Claude-Code-Agent-Export (Persona-System Phase 2):
+
+  bach export agents --format agent
+  bach export agents --format agent --output <ordner> --dry-run
+
+  Erzeugt deterministische `.claude/agents/<name>.md`-Dateien für aktive
+  DB-Agenten und -Experten. Name und Beschreibung stehen im zulässigen
+  Claude-Code-Frontmatter; Persona und Skill-/Pfadbezug stehen im Body.
+  Die DB ist die Identitätsquelle. Fehlende Skill-Pfade, inaktive Einträge,
+  Namens-/Persona-Datei-Konflikte und vorhandene Fremddateien werden nur
+  gemeldet; vorhandene Dateien werden nicht überschrieben.
+
   Siehe: bach help skill_standards
 
 
