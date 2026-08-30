@@ -952,3 +952,52 @@ class TestTraySingleInstance:
             mod.main()
         assert exc.value.code == 3
         assert "läuft bereits" in capsys.readouterr().err
+
+
+class TestTrayIdleWorker:
+    """Plan 1.1.3: the idle worker is the only OLLAMA/BUDDHA task executor and was unusable
+    on headless hosts (menu-only toggle) and blind to 'open' tasks."""
+
+    @staticmethod
+    def _tray(monkeypatch, env):
+        for k in ("BACH_IDLE_WORKER",):
+            monkeypatch.delenv(k, raising=False)
+        for k, v in env.items():
+            monkeypatch.setenv(k, v)
+        with patch.dict('sys.modules', {
+            'pystray': MagicMock(),
+            'PIL': MagicMock(),
+            'PIL.Image': MagicMock(),
+            'PIL.ImageDraw': MagicMock(),
+            'PIL.ImageFont': MagicMock(),
+        }):
+            from hub._services.chat.chat_tray import BACHTray
+            return BACHTray(host="testhost", port=9999)
+
+    def test_idle_worker_is_off_by_default_and_on_via_env(self, monkeypatch):
+        assert self._tray(monkeypatch, {}).idle_enabled is False
+        assert self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"}).idle_enabled is True
+        assert self._tray(monkeypatch, {"BACH_IDLE_WORKER": "off"}).idle_enabled is False
+
+    def test_idle_worker_picks_open_ollama_task_and_writes_canonical_status(self, monkeypatch):
+        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
+        calls = []
+
+        def fake_api(method, path, data=None, **kw):
+            calls.append((method, path, data))
+            if method == "GET":
+                if path == "/api/tasks?assigned_to=OLLAMA&status=open":
+                    return {"success": True, "tasks": [{"id": 42, "title": "T", "description": "D"}]}
+                return {"success": True, "tasks": []}
+            if method == "POST":
+                return {"ok": True, "answer": "done"}
+            return {"success": True}
+
+        with patch.object(tray, "_api", side_effect=fake_api):
+            tray._process_idle_task()
+
+        gets = [p for m, p, _ in calls if m == "GET"]
+        assert gets[:2] == ["/api/tasks?assigned_to=OLLAMA&status=pending", "/api/tasks?assigned_to=OLLAMA&status=open"]
+        puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
+        assert puts == [("/api/tasks/42", "in_progress"), ("/api/tasks/42", "completed")]
+        assert tray.idle_processing is False

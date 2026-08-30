@@ -11,6 +11,7 @@ Voraussetzungen:
 
 Start:
   python chat_tray.py [--port 8081] [--host macstudvonlukas]
+  BACH_IDLE_WORKER=1  -> Idle-Worker beim Start aktiv (sonst nur per Tray-Menue)
 """
 import argparse
 import json
@@ -117,7 +118,9 @@ class BACHTray:
 
         self.services = {"gui": False, "control": False, "ollama": False}
 
-        self.idle_enabled = False
+        # Headless-Hosts (Mac Studio LaunchAgent) koennen das Tray-Menue nicht bedienen;
+        # ohne diesen Schalter blieb der einzige Task-Executor dort dauerhaft aus.
+        self.idle_enabled = os.environ.get("BACH_IDLE_WORKER", "").strip().lower() in ("1", "true", "yes", "on")
         self.idle_consecutive = 0
         self.idle_task_name = None
         self.idle_processing = False
@@ -375,21 +378,30 @@ class BACHTray:
         self._update_icon()
 
         try:
-            tasks_resp = self._api("GET", "/api/tasks?assigned_to=OLLAMA&status=pending", base=self.gui_url)
-            if not tasks_resp or not tasks_resp.get("success") or not tasks_resp.get("tasks"):
-                tasks_resp = self._api("GET", "/api/tasks?assigned_to=BUDDHA&status=pending", base=self.gui_url)
-
-            if not tasks_resp or not tasks_resp.get("tasks"):
+            # Tasks fuer den Worker tragen in der GUI/DB den Status 'open' ODER 'pending'
+            # (server.py zaehlt beide als offen); nur 'pending' zu fragen liess jeden
+            # 'open'-OLLAMA-Task liegen.
+            task = None
+            for assignee in ("OLLAMA", "BUDDHA"):
+                for status in ("pending", "open"):
+                    tasks_resp = self._api(
+                        "GET", f"/api/tasks?assigned_to={assignee}&status={status}", base=self.gui_url
+                    )
+                    if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
+                        task = tasks_resp["tasks"][0]
+                        break
+                if task:
+                    break
+            if not task:
                 return
 
-            task = tasks_resp["tasks"][0]
             task_id = task.get("id")
             title = task.get("title", "Unbenannt")
             desc = task.get("description", "")
             self.idle_task_name = title
 
             self._api("PUT", f"/api/tasks/{task_id}",
-                       {"status": "in-progress"}, base=self.gui_url)
+                       {"status": "in_progress"}, base=self.gui_url)  # DB-Kanon, nicht 'in-progress'
 
             prompt = (
                 f"Du bearbeitest eine zugewiesene Aufgabe im Idle-Modus. "
