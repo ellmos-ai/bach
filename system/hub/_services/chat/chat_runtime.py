@@ -37,7 +37,7 @@ try:
     from hub.bach_paths import BACH_DB as _RUNTIME_DB
     RUNTIME_BACH_DB = str(_RUNTIME_DB)
 except ImportError:
-    RUNTIME_BACH_DB = str(BACH_DB)
+    RUNTIME_BACH_DB = os.environ.get("BACH_DB", "")
 
 
 # --- Sicherheit ---
@@ -860,23 +860,67 @@ class ChatRuntime:
     MAX_MESSAGES = 40
 
     def __init__(self, backend, system_prompt: str = "",
-                 bach_app=None, memory_fn=None, injector=None):
+                 bach_app=None, memory_fn=None, injector=None,
+                 session_store=None):
         self.backend = backend
         self.base_system = system_prompt
         self.bach_app = bach_app
         self.memory = memory_fn
         self.injector = injector
+        self.session_store = session_store
         self.sessions: dict[str, ChatSession] = {}
         self.max_tool_rounds: int = 12
+        self._persistence_error: str | None = None
+
+    def _load_messages(self, chat_id: str) -> list[dict]:
+        if self.session_store is None:
+            return []
+        try:
+            messages = self.session_store.load(chat_id)
+            self._persistence_error = None
+            return messages
+        except Exception as exc:
+            self._persistence_error = str(exc)
+            log.warning("Chat-Persistenz konnte nicht gelesen werden: %s", exc)
+            return []
+
+    def _persist_session(self, chat_id: str, session: ChatSession) -> None:
+        if self.session_store is None:
+            return
+        try:
+            self.session_store.save(chat_id, session.messages)
+            self._persistence_error = None
+        except Exception as exc:
+            self._persistence_error = str(exc)
+            log.warning("Chat-Persistenz konnte nicht geschrieben werden: %s", exc)
+
+    def persistence_status(self) -> dict:
+        """Non-sensitive health readback for the Control API."""
+        return {
+            "enabled": self.session_store is not None,
+            "ok": self.session_store is not None and self._persistence_error is None,
+            "error": self._persistence_error or "",
+        }
 
     def get_session(self, chat_id: str) -> ChatSession:
         if chat_id not in self.sessions:
             s = ChatSession()
             s.model = self.backend.get_default_model()
+            s.messages = self._load_messages(chat_id)
             self.sessions[chat_id] = s
         return self.sessions[chat_id]
 
     def clear_session(self, chat_id: str):
+        if self.session_store is not None:
+            try:
+                self.session_store.delete(chat_id)
+                self._persistence_error = None
+            except Exception as exc:
+                self._persistence_error = str(exc)
+                log.error("Chat-Persistenz konnte nicht gelöscht werden: %s", exc)
+                raise RuntimeError(
+                    "Persistierter Chatverlauf konnte nicht gelöscht werden"
+                ) from exc
         self.sessions.pop(chat_id, None)
 
     def history(self, chat_id: str) -> list[dict]:
@@ -889,11 +933,10 @@ class ChatRuntime:
         runtime's lifetime; the session store itself is unchanged).
         """
         session = self.sessions.get(chat_id)
-        if session is None:
-            return []
+        messages = session.messages if session is not None else self._load_messages(chat_id)
         return [
             {"role": m["role"], "content": m.get("content", "")}
-            for m in session.messages
+            for m in messages
             if m.get("role") in ("user", "assistant")
         ]
 
@@ -1019,6 +1062,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             tools = TOOLS_FULL if session.mode == "full" else TOOLS_SAFE
             answer = await self._tool_loop(msgs, session, tools)
         session.messages.append({"role": "assistant", "content": answer})
+        self._persist_session(chat_id, session)
         return answer
 
     async def _tool_loop(self, msgs: list, session: ChatSession,

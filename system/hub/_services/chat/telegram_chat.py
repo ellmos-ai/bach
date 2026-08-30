@@ -74,7 +74,8 @@ except Exception as e:
 
 # Chat Runtime + Backend
 from hub._services.llm.model_backend import create_backend, OllamaBackend
-from hub._services.chat.chat_runtime import ChatRuntime
+from hub._services.chat.chat_runtime import ChatRuntime, RUNTIME_BACH_DB
+from hub._services.chat.session_store import SQLiteChatSessionStore
 
 # Compute Lock (optional — graceful if not available)
 try:
@@ -170,6 +171,7 @@ runtime = ChatRuntime(
     bach_app=_bach_app if HAS_BACH else None,
     memory_fn=_memory if HAS_BACH else None,
     injector=_injector if HAS_BACH else None,
+    session_store=SQLiteChatSessionStore(RUNTIME_BACH_DB),
 )
 
 _global_defaults = {
@@ -1245,12 +1247,18 @@ class ControlHandler(BaseHTTPRequestHandler):
                 "current_tool": current_tool,
                 "tool_round": tool_round,
                 "last_tools": active_tools,
+                "session_persistence": runtime.persistence_status(),
             })
 
         elif path == "/api/history":
             query = parse_qs(urlparse(self.path).query)
             chat_id = query.get("chat_id", ["gui-web"])[0]
-            self._json({"ok": True, "chat_id": chat_id, "messages": runtime.history(chat_id)})
+            self._json({
+                "ok": True,
+                "chat_id": chat_id,
+                "messages": runtime.history(chat_id),
+                "persistence": runtime.persistence_status(),
+            })
 
         elif path == "/api/backends":
             backends = {}
