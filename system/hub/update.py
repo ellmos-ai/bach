@@ -57,7 +57,11 @@ class UpdateHandler(BaseHandler):
     def __init__(self, base_path):
         super().__init__(base_path)
         self.version_file = self.base_path / "data" / VERSION_FILE
-        self.migrations_dir = self.base_path / "data" / "migrations"
+        # Kanonischer Migrationsort (T-20260901-620606145): data/schema/migrations.
+        # Die frueheren Pfade data/migrations und db/migrations sind aufgeloest;
+        # Tracking-Kanon ist die Tabelle _migrations in der DB (wie core/db.py),
+        # nicht mehr version.json.
+        self.migrations_dir = self.base_path / "data" / "schema" / "migrations"
         self.hub_dir = self.base_path / "hub"
         # Backups LOKAL — NICHT in OneDrive
         self.backups_dir = BACKUPS_DIR / "updates"
@@ -96,6 +100,8 @@ class UpdateHandler(BaseHandler):
             sub = args[0] if args else "list"
             if sub == "run":
                 return self._run_migrations(dry_run)
+            if sub == "baseline":
+                return self._baseline_migrations(args[1:], dry_run)
             return self._list_migrations()
         else:
             ops = ", ".join(self.get_operations().keys())
@@ -129,10 +135,10 @@ class UpdateHandler(BaseHandler):
             f"  Pruef-Status:     {ver.get('verification_status', '?')}",
             "", "  Migrationen:",
         ]
-        for m in ver.get("migrations_applied", []):
-            lines.append(f"    - {m}")
-        if not ver.get("migrations_applied"):
-            lines.append("    (keine)")
+        applied = sorted(self._applied_migrations())
+        pending = [m for m in self._get_available_migrations() if m not in set(applied)]
+        lines.append(f"    Angewandt: {len(applied)} | Ausstehend: {len(pending)} "
+                     f"(Details: bach update migrations)")
         git_info = self._git_info()
         if git_info:
             lines.extend(["", "  Git:"])
@@ -361,19 +367,96 @@ class UpdateHandler(BaseHandler):
         return len(errors) == 0, count, errors
 
     def _get_available_migrations(self) -> list:
-        """Gibt alle verfuegbaren Migrations-Namen zurueck."""
+        """Gibt alle verfuegbaren Migrations-Dateinamen (inkl. Suffix) zurueck.
+
+        Dateiname mit Suffix, weil manche Migrationen als .py UND .sql
+        existieren (z. B. 009_agent_instances.*) und das DB-Tracking in
+        _migrations dateinamengenau bucht (identisch zu core/db.py).
+        """
         if not self.migrations_dir.exists():
             return []
         migrations = []
         for f in sorted(self.migrations_dir.iterdir()):
             if f.suffix in (".py", ".sql") and not f.name.startswith("_"):
-                migrations.append(f.stem)
+                migrations.append(f.name)
         return migrations
+
+    def _applied_migrations(self) -> set:
+        """Angewandte Migrationen aus der _migrations-Tabelle der DB (Kanon)."""
+        import sqlite3
+        if not self.db_path.exists():
+            return set()
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS _migrations ("
+                "id INTEGER PRIMARY KEY, filename TEXT UNIQUE NOT NULL, "
+                "applied_at TEXT NOT NULL)"
+            )
+            return {r[0] for r in conn.execute("SELECT filename FROM _migrations")}
+        finally:
+            conn.commit()
+            conn.close()
+
+    def _mark_applied(self, filenames: list):
+        """Bucht Migrationen als angewandt (ohne sie auszufuehren)."""
+        import sqlite3
+        from datetime import datetime as _dt
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS _migrations ("
+                "id INTEGER PRIMARY KEY, filename TEXT UNIQUE NOT NULL, "
+                "applied_at TEXT NOT NULL)"
+            )
+            for name in filenames:
+                conn.execute(
+                    "INSERT OR IGNORE INTO _migrations (filename, applied_at) VALUES (?, ?)",
+                    (name, _dt.now().isoformat()),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _baseline_migrations(self, args: list, dry_run: bool = False) -> tuple:
+        """Bucht vorhandene Migrationen als angewandt, OHNE sie auszufuehren.
+
+        Fuer Bestands-DBs, deren Schema den Migrationsinhalt laengst traegt
+        (der Auto-Runner lief monatelang nicht, T-20260901-620606145).
+        Aufruf: `bach update migrations baseline [--through NNN]` — mit
+        --through werden nur nummerierte Migrationen <= NNN sowie alle
+        nicht-nummerierten gebucht; ohne --through alle vorhandenen.
+        """
+        through = None
+        if args:
+            vals = [a for a in args if a != "--through"]
+            if vals:
+                through = vals[0]
+        applied = self._applied_migrations()
+        candidates = []
+        for name in self._get_available_migrations():
+            if name in applied:
+                continue
+            if through is not None:
+                prefix = name.split("_", 1)[0]
+                if prefix.isdigit() and prefix > through:
+                    continue
+            candidates.append(name)
+        if not candidates:
+            return True, "Baseline: nichts zu buchen (alles bereits angewandt)."
+        lines = [f"Baseline{f' (--through {through})' if through else ''}: "
+                 f"{len(candidates)} Migration(en) werden als angewandt gebucht (KEINE Ausfuehrung):"]
+        lines += [f"  - {n}" for n in candidates]
+        if dry_run:
+            lines.append("\n  [DRY-RUN] Nichts gebucht.")
+            return True, "\n".join(lines)
+        self._mark_applied(candidates)
+        lines.append("\n[OK] Baseline gebucht. Ausstehend bleibt, was neuer ist.")
+        return True, "\n".join(lines)
 
     def _list_migrations(self) -> tuple:
         """Listet alle Migrationen mit Status."""
-        ver = self._load_version()
-        applied = set(ver.get("migrations_applied", []))
+        applied = self._applied_migrations()
         available = self._get_available_migrations()
         lines = ["=== MIGRATIONEN ===", ""]
         if not available:
@@ -393,22 +476,16 @@ class UpdateHandler(BaseHandler):
         return True, "\n".join(lines)
 
     def _run_migrations(self, dry_run: bool = False) -> tuple:
-        """Fuehrt ausstehende Migrationen aus."""
-        ver = self._load_version()
-        applied = set(ver.get("migrations_applied", []))
+        """Fuehrt ausstehende Migrationen aus (Tracking: _migrations-Tabelle)."""
+        applied = self._applied_migrations()
         available = self._get_available_migrations()
         pending = [m for m in available if m not in applied]
         if not pending:
             return True, "Keine ausstehenden Migrationen."
         lines = [f"{len(pending)} ausstehende Migration(en):"]
         for mig_name in pending:
-            mig_file = None
-            for suffix in (".py", ".sql"):
-                candidate = self.migrations_dir / f"{mig_name}{suffix}"
-                if candidate.exists():
-                    mig_file = candidate
-                    break
-            if not mig_file:
+            mig_file = self.migrations_dir / mig_name
+            if not mig_file.exists():
                 lines.append(f"  [!!] {mig_name}: Datei nicht gefunden")
                 continue
             if dry_run:
@@ -419,13 +496,12 @@ class UpdateHandler(BaseHandler):
                     self._run_sql_migration(mig_file)
                 elif mig_file.suffix == ".py":
                     self._run_py_migration(mig_file)
-                ver["migrations_applied"].append(mig_name)
-                ver["schema_version"] = ver.get("schema_version", 0) + 1
-                self._save_version(ver)
+                self._mark_applied([mig_name])
                 lines.append(f"  [OK] {mig_name}")
             except Exception as e:
                 lines.append(f"  [!!] {mig_name}: {e}")
-                lines.append("  Migration abgebrochen.")
+                lines.append("  Migration abgebrochen (Reihenfolge!). Bestands-DB? "
+                             "'bach update migrations baseline --through NNN' pruefen.")
                 return False, "\n".join(lines)
         return True, "\n".join(lines)
 

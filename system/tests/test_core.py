@@ -216,6 +216,54 @@ class TestDatabase:
         assert len(applied) == 1
         assert applied[0]["filename"] == "001_add_column.sql"
 
+    def test_is_empty_fresh_then_populated(self):
+        from core.db import Database
+        db = Database(self.db_path, self.schema_dir)
+        assert db.is_empty()
+        db.init_schema()
+        assert not db.is_empty()
+
+    def test_is_empty_ignores_migrations_table(self):
+        from core.db import Database
+        db = Database(self.db_path, self.schema_dir)
+        db.run_migrations()  # legt nur _migrations an
+        assert db.is_empty()
+
+    def test_baseline_migrations_books_without_executing(self):
+        from core.db import Database
+        migrations_dir = self.schema_dir / "migrations"
+        migrations_dir.mkdir()
+        (migrations_dir / "001_would_crash.sql").write_text(
+            "ALTER TABLE test_table ADD COLUMN name TEXT;",  # Spalte existiert schon
+            encoding="utf-8")
+        db = Database(self.db_path, self.schema_dir)
+        db.init_schema()
+        db.baseline_migrations()
+        names = {r["filename"] for r in db.execute("SELECT filename FROM _migrations")}
+        assert names == {"001_would_crash.sql"}
+        applied, error = db.run_migrations()
+        assert applied == [] and error is None  # gebucht -> laeuft nie
+
+    def test_run_migrations_fail_soft_stops_chain(self):
+        from core.db import Database
+        migrations_dir = self.schema_dir / "migrations"
+        migrations_dir.mkdir()
+        (migrations_dir / "001_ok.sql").write_text(
+            "CREATE TABLE IF NOT EXISTS a1 (id INTEGER);", encoding="utf-8")
+        (migrations_dir / "002_broken.sql").write_text(
+            "THIS IS NOT SQL;", encoding="utf-8")
+        (migrations_dir / "003_after.sql").write_text(
+            "CREATE TABLE IF NOT EXISTS a3 (id INTEGER);", encoding="utf-8")
+        db = Database(self.db_path, self.schema_dir)
+        db.init_schema()
+        applied, error = db.run_migrations()
+        # 001 gebucht, 002 gescheitert, 003 NICHT ausgefuehrt (Reihenfolge)
+        assert applied == ["001_ok.sql"]
+        assert error is not None and "002_broken.sql" in error
+        assert not db.table_exists("a3")
+        names = {r["filename"] for r in db.execute("SELECT filename FROM _migrations")}
+        assert names == {"001_ok.sql"}
+
     def test_init_schema_applies_release_language_seed_for_new_db(self):
         from core.db import Database
 

@@ -71,12 +71,22 @@ class App:
         """Lazy-Initialisierte Datenbank."""
         if self._db is None:
             from hub.bach_paths import BACH_DB
-            schema_dir = self.base_path / "db"
+            # Kanonischer Schema-Ort ist data/schema/ (schema.sql + migrations/).
+            # Der fruehere Pfad base_path/db hatte kein schema.sql mehr, wodurch
+            # init_schema UND run_migrations seit Maerz nie liefen (T-20260901-620606145).
+            schema_dir = self.base_path / "data" / "schema"
             self._db = Database(BACH_DB, schema_dir)
-            # Schema anwenden (IF NOT EXISTS - sicher fuer bestehende DB)
             if schema_dir.exists() and (schema_dir / "schema.sql").exists():
-                self._db.init_schema()
-                self._db.run_migrations()
+                # Vollschema nur fuer frische DBs — schema.sql ist nicht
+                # idempotent (CREATE ohne IF NOT EXISTS) und wuerde auf
+                # Bestands-DBs abbrechen. Bestands-DBs bekommen nur Migrationen.
+                if self._db.is_empty():
+                    # Frische DB: schema.sql ist der Endstand — historische
+                    # Migrationen nur buchen ("fake initial"), nie ausfuehren.
+                    self._db.init_schema()
+                    self._db.baseline_migrations()
+                else:
+                    self._db.run_migrations()
         return self._db
 
     @property

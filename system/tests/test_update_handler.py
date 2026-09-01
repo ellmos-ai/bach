@@ -21,7 +21,7 @@ from hub.update import UpdateHandler
 def tmp_system(tmp_path):
     """Erstellt eine minimale BACH-Verzeichnisstruktur."""
     system_dir = tmp_path / "system"
-    for d in ("hub", "core", "data", "skills", "data/migrations"):
+    for d in ("hub", "core", "data", "skills", "data/schema/migrations"):
         (system_dir / d).mkdir(parents=True, exist_ok=True)
     # version.json
     version_data = {
@@ -113,7 +113,9 @@ class TestStatus:
         assert ok
         assert "3.3.0" in msg
         assert "42" in msg
-        assert "001_initial" in msg
+        # Migrationszaehlung kommt jetzt aus der _migrations-Tabelle der DB,
+        # nicht mehr aus version.json (T-20260901-620606145)
+        assert "Angewandt:" in msg
 
     def test_status_via_handle(self, handler):
         ok, msg = handler.handle("status", [])
@@ -201,8 +203,8 @@ class TestMigrations:
         ok, msg = handler._run_migrations()
         assert ok
         assert "003_test" in msg
-        ver = handler._load_version()
-        assert "003_test" in ver["migrations_applied"]
+        # Tracking-Kanon ist die _migrations-Tabelle der DB (dateinamengenau)
+        assert "003_test.sql" in handler._applied_migrations()
 
     def test_run_migrations_dry_run(self, handler):
         mig_dir = handler.migrations_dir
@@ -210,8 +212,7 @@ class TestMigrations:
         ok, msg = handler._run_migrations(dry_run=True)
         assert ok
         assert "DRY-RUN" in msg
-        ver = handler._load_version()
-        assert "004_dry" not in ver["migrations_applied"]
+        assert "004_dry.sql" not in handler._applied_migrations()
 
     def test_run_py_migration(self, handler):
         mig_dir = handler.migrations_dir
@@ -232,6 +233,39 @@ class TestMigrations:
     def test_migrations_via_handle_run(self, handler):
         ok, msg = handler.handle("migrations", ["run"])
         assert ok
+
+    def test_baseline_marks_without_executing(self, handler):
+        mig_dir = handler.migrations_dir
+        # Wuerde beim Ausfuehren krachen — baseline darf sie NIE ausfuehren
+        (mig_dir / "010_would_crash.sql").write_text(
+            "CREATE TABLE tasks (id INTEGER);", encoding="utf-8"
+        )
+        ok, msg = handler.handle("migrations", ["baseline"])
+        assert ok
+        assert "010_would_crash.sql" in handler._applied_migrations()
+        ok, msg = handler._run_migrations()
+        assert ok
+        assert "Keine ausstehenden" in msg
+
+    def test_baseline_through_limits_numbered(self, handler):
+        mig_dir = handler.migrations_dir
+        (mig_dir / "010_old.sql").write_text("SELECT 1;", encoding="utf-8")
+        (mig_dir / "040_new.sql").write_text("SELECT 1;", encoding="utf-8")
+        (mig_dir / "steuer_001_x.sql").write_text("SELECT 1;", encoding="utf-8")
+        ok, msg = handler.handle("migrations", ["baseline", "--through", "034"])
+        assert ok
+        applied = handler._applied_migrations()
+        assert "010_old.sql" in applied          # <= 034 -> gebucht
+        assert "steuer_001_x.sql" in applied     # nicht-nummeriert -> gebucht
+        assert "040_new.sql" not in applied      # > 034 -> bleibt ausstehend
+
+    def test_baseline_dry_run_books_nothing(self, handler):
+        mig_dir = handler.migrations_dir
+        (mig_dir / "011_dry.sql").write_text("SELECT 1;", encoding="utf-8")
+        ok, msg = handler.handle("migrations", ["baseline"], dry_run=True)
+        assert ok
+        assert "DRY-RUN" in msg
+        assert "011_dry.sql" not in handler._applied_migrations()
 
 
 # ──────────────────────────────────────────────
