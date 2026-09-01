@@ -312,8 +312,10 @@ class UpdateHandler(BaseHandler):
             lines.append("  [!!] bach.db fehlt")
             issues.append("bach.db nicht gefunden")
         checks_total += 1
-        ver = self._load_version()
-        applied = set(ver.get("migrations_applied", []))
+        # Tracking-Kanon ist die _migrations-Tabelle (PR-#10-Review Befund 3) —
+        # version.json wird seit der Umstellung nicht mehr befuellt und wuerde
+        # hier fuer immer "alles ausstehend" melden.
+        applied = self._applied_migrations()
         available = self._get_available_migrations()
         pending = [m for m in available if m not in applied]
         if not pending:
@@ -335,6 +337,7 @@ class UpdateHandler(BaseHandler):
             lines.append(f"  [!!] Verzeichnisse fehlen: {md}")
             issues.append(f"Fehlende Verzeichnisse: {md}")
         lines.extend(["", f"  Ergebnis: {checks_ok}/{checks_total} Pruefungen bestanden"])
+        ver = self._load_version()
         ver["last_verified"] = datetime.now().isoformat()
         ver["verification_status"] = "ok" if not issues else f"{len(issues)} issues"
         self._save_version(ver)
@@ -388,6 +391,7 @@ class UpdateHandler(BaseHandler):
             return set()
         conn = sqlite3.connect(str(self.db_path))
         try:
+            conn.execute("PRAGMA busy_timeout=30000")
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS _migrations ("
                 "id INTEGER PRIMARY KEY, filename TEXT UNIQUE NOT NULL, "
@@ -404,6 +408,7 @@ class UpdateHandler(BaseHandler):
         from datetime import datetime as _dt
         conn = sqlite3.connect(str(self.db_path))
         try:
+            conn.execute("PRAGMA busy_timeout=30000")
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS _migrations ("
                 "id INTEGER PRIMARY KEY, filename TEXT UNIQUE NOT NULL, "
@@ -439,7 +444,10 @@ class UpdateHandler(BaseHandler):
                 continue
             if through is not None:
                 prefix = name.split("_", 1)[0]
-                if prefix.isdigit() and prefix > through:
+                # numerisch vergleichen — als String waere '010' > '9' False
+                # (PR-#10-Review Befund 5)
+                if (prefix.isdigit() and through.isdigit()
+                        and int(prefix) > int(through)):
                     continue
             candidates.append(name)
         if not candidates:
@@ -525,14 +533,23 @@ class UpdateHandler(BaseHandler):
             raise RuntimeError(f"Kann {py_file.name} nicht laden")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        if hasattr(module, "run_migration"):
-            module.run_migration()
-        elif hasattr(module, "main"):
-            module.main()
-        else:
-            raise RuntimeError(
-                f"{py_file.name}: Weder run_migration() noch main() gefunden"
-            )
+        # Gemeinsame Entry-Point-Konvention mit core/db.py (PR-#10-Review
+        # Befund 2): run_migration(conn)/run(conn)/migrate(db_path)/
+        # upgrade(db_path)/main(). Vorher rief dieser Pfad run_migration()
+        # OHNE conn auf und kannte migrate/upgrade gar nicht.
+        import sqlite3
+        from core.db import dispatch_py_migration
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            conn.execute("PRAGMA busy_timeout=30000")
+            try:
+                dispatch_py_migration(module, conn, self.db_path)
+            except RuntimeError as e:
+                raise RuntimeError(f"{py_file.name}: Weder run_migration() noch "
+                                   f"ein anderer Entry-Point aufrufbar — {e}")
+            conn.commit()
+        finally:
+            conn.close()
 
     def _create_pre_update_backup(self) -> tuple:
         """Erstellt ein Pre-Update-Backup."""

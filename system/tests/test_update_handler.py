@@ -216,9 +216,27 @@ class TestMigrations:
 
     def test_run_py_migration(self, handler):
         mig_dir = handler.migrations_dir
-        py_content = 'def run_migration():\n    pass\n'
+        py_content = 'def run_migration(conn):\n    pass\n'
         (mig_dir / "005_py_test.py").write_text(py_content, encoding="utf-8")
         handler._run_py_migration(mig_dir / "005_py_test.py")
+
+    def test_run_py_migration_migrate_style(self, handler):
+        # gemeinsame Entry-Point-Konvention mit core/db.py (Befund 2)
+        mig_dir = handler.migrations_dir
+        (mig_dir / "007_mig_style.py").write_text(
+            "import sqlite3\n"
+            "def migrate(db_path):\n"
+            "    conn = sqlite3.connect(str(db_path))\n"
+            "    conn.execute('CREATE TABLE IF NOT EXISTS mig_style_marker (id INTEGER)')\n"
+            "    conn.commit()\n    conn.close()\n",
+            encoding="utf-8"
+        )
+        handler._run_py_migration(mig_dir / "007_mig_style.py")
+        conn = sqlite3.connect(str(handler.db_path))
+        tables = [r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        conn.close()
+        assert "mig_style_marker" in tables
 
     def test_run_py_migration_no_entrypoint(self, handler):
         mig_dir = handler.migrations_dir
@@ -258,6 +276,18 @@ class TestMigrations:
         assert "010_old.sql" in applied          # <= 034 -> gebucht
         assert "steuer_001_x.sql" in applied     # nicht-nummeriert -> gebucht
         assert "040_new.sql" not in applied      # > 034 -> bleibt ausstehend
+
+    def test_baseline_through_compares_numerically(self, handler):
+        # Befund 5: '010' > '9' ist als String False — numerisch muss
+        # --through 9 die 010 draussen lassen
+        mig_dir = handler.migrations_dir
+        (mig_dir / "008_low.sql").write_text("SELECT 1;", encoding="utf-8")
+        (mig_dir / "010_high.sql").write_text("SELECT 1;", encoding="utf-8")
+        ok, msg = handler.handle("migrations", ["baseline", "--through", "9"])
+        assert ok
+        applied = handler._applied_migrations()
+        assert "008_low.sql" in applied
+        assert "010_high.sql" not in applied
 
     def test_baseline_dry_run_books_nothing(self, handler):
         mig_dir = handler.migrations_dir

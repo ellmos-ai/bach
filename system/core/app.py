@@ -86,7 +86,23 @@ class App:
                     self._db.init_schema()
                     self._db.baseline_migrations()
                 else:
-                    self._db.run_migrations()
+                    # Bestands-DB: NIE automatisch einen Alt-Rueckstand scharf
+                    # schalten (Review PR #10 Befund 1; Produktiv-Vorfall
+                    # 2026-09-01). Nur regulaer neue Migrationen laufen selbst.
+                    backlog = self._db.migration_backlog()
+                    if backlog:
+                        print(
+                            f"[WARNUNG] {len(backlog)} nicht gebuchte aeltere "
+                            f"Migration(en) (Bestands-DB ohne Baseline) — es "
+                            f"wird NICHTS automatisch migriert. Rueckstand "
+                            f"pruefen und buchen: bach update migrations "
+                            f"baseline [--through NNN]. Betroffen u. a.: "
+                            + ", ".join(backlog[:5])
+                        )
+                    else:
+                        applied, error = self._db.run_migrations()
+                        if error:
+                            print(f"[WARNUNG] Migrationslauf unvollstaendig: {error}")
         return self._db
 
     @property
