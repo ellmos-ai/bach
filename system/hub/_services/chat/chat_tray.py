@@ -18,7 +18,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import threading
 from pathlib import Path
 
@@ -57,7 +56,7 @@ DEFAULT_PROMPTS = {
 
 PROMPTBOARD_LIBRARY_ENV = "BACH_PROMPTBOARD_LIBRARY"
 PROMPTBOARD_APP_ENV = "BACH_PROMPTBOARD_APP"
-TRAY_LOCK_FILE = Path(tempfile.gettempdir()) / "bach_chat_tray.lock"
+TRAY_LOCK_FILE = Path.home() / ".bach" / "chat_tray.lock"
 
 
 def acquire_single_instance_lock(lock_path: Path = TRAY_LOCK_FILE):
@@ -69,6 +68,7 @@ def acquire_single_instance_lock(lock_path: Path = TRAY_LOCK_FILE):
     behind, and no PID guessing is needed. Keep the returned handle alive for
     the tray's whole lifetime.
     """
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
     handle = open(lock_path, "a+b")
     try:
         handle.seek(0)
