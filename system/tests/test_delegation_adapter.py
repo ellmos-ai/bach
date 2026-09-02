@@ -114,7 +114,6 @@ class PartnerRegistry:
 """.lstrip(),
         encoding="utf-8",
     )
-
     monkeypatch.setenv("BACH_CLUTCH_PATH", str(tmp_path))
     monkeypatch.delenv("BACH_DISABLE_EXTERNAL_CLUTCH", raising=False)
 
@@ -185,6 +184,16 @@ class PartnerRegistry:
 """.lstrip(),
         encoding="utf-8",
     )
+    for module_name in (
+        "fahrtenbuch",
+        "fahrschule",
+        "getriebe",
+        "kupplung",
+        "strecke",
+        "gas_bremse",
+        "bordcomputer",
+    ):
+        (pkg / f"{module_name}.py").write_text("", encoding="utf-8")
 
     monkeypatch.setenv("BACH_CLUTCH_PATH", str(tmp_path))
     monkeypatch.delenv("BACH_DISABLE_EXTERNAL_CLUTCH", raising=False)

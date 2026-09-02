@@ -15,6 +15,18 @@ if str(SYSTEM_ROOT) not in sys.path:
 from hub.mem import MemHandler
 
 
+def _block_module_import(monkeypatch, module_name):
+    """Force one optional tool import to fail regardless of sys.path state."""
+    original_import = __import__
+
+    def guarded_import(name, *args, **kwargs):
+        if name == module_name:
+            raise ImportError(f"blocked test import: {module_name}")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", guarded_import)
+
+
 # ═══════════════════════════════════════════════════════════════
 # FIXTURES
 # ═══════════════════════════════════════════════════════════════
@@ -158,9 +170,8 @@ class TestWorking:
 
     def test_working_import_failure(self, handler, monkeypatch):
         """If the tool cannot be imported, return error gracefully."""
-        # Ensure the module is not available
         monkeypatch.delitem(sys.modules, "memory_working_cleanup", raising=False)
-        # The handler will try to import from tools dir which doesn't have the file
+        _block_module_import(monkeypatch, "memory_working_cleanup")
         ok, output = handler.handle("working", ["status"])
         assert ok is False
         assert "Fehler bei Working Memory Cleanup" in output
@@ -218,6 +229,7 @@ class TestDecay:
     def test_decay_import_failure(self, handler, monkeypatch):
         """If the tool cannot be imported, return error gracefully."""
         monkeypatch.delitem(sys.modules, "memory_decay", raising=False)
+        _block_module_import(monkeypatch, "memory_decay")
         ok, output = handler.handle("decay", [])
         assert ok is False
         assert "Fehler bei Memory Decay" in output

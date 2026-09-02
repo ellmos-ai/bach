@@ -4,7 +4,8 @@ MCP Server Cross-Platform Tests
 ================================
 Tests that ellmos FileCommander and CodeCommander MCP servers
 can be found and initialized on the current platform.
-Skipped automatically if the MCP binaries are not installed.
+Discovery is skipped if the binaries are absent. Process integration requires
+explicit opt-in via BACH_RUN_MCP_INTEGRATION_TESTS=1.
 """
 
 import json
@@ -79,6 +80,13 @@ class TestMCPServerDiscovery:
         assert os.path.exists(found), f"Binary path {found} does not exist"
 
 
+@pytest.mark.skipif(
+    os.environ.get("BACH_RUN_MCP_INTEGRATION_TESTS") != "1",
+    reason=(
+        "MCP process integration requires explicit opt-in via "
+        "BACH_RUN_MCP_INTEGRATION_TESTS=1"
+    ),
+)
 class TestMCPServerInitialize:
     """Test that MCP servers respond to JSON-RPC initialize."""
 
