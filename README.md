@@ -243,7 +243,7 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 - **[User Manual](BACH_USER_MANUAL.md)** - Complete handbook
 - **[Skills Catalog](SKILLS.template.md)** - Template and public entry point for available skills
 - **[Agents Catalog](AGENTS.template.md)** - Template and public entry point for agents and experts
-- **[Workflows](WORKFLOWS.template.md)** - 71 workflow templates
+- **[Workflows](WORKFLOWS.template.md)** - 42 workflow templates ship with this repository
 - **[SKILL template](SKILL.template.md)** - LLM operating instructions template for Claude, Gemini, Ollama, and Codex-style agents
 
 ## See Also: OpenClaw
@@ -253,7 +253,7 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 | | **BACH** | **OpenClaw** |
 |---|---|---|
 | **Focus** | LLM Operating System -- deep autonomy, structured memory, multi-agent orchestration | Personal AI Assistant -- broad messaging gateway, voice, companion apps |
-| **Tools/Skills** | 550+ tools, 1870+ skills, 71 workflows (local, curated) | Community-driven skill/plugin ecosystem; recent releases emphasize manifest-first plugin metadata and install safety |
+| **Tools/Skills** | 550+ tools, 1870+ skills, 42 workflows (local, curated) | Community-driven skill/plugin ecosystem; recent releases emphasize manifest-first plugin metadata and install safety |
 | **Memory** | 6 memory types with decay, conflict detection, consolidation (210+ DB tables) | Session/runtime workspace with bootstrap files such as `AGENTS.md`, `TOOLS.md`, `USER.md`, and related context files |
 | **Agents** | Boss-Expert orchestration (11 boss agents + 22 experts), SharedMemory Bus | Agent runtime with multi-session/channel operation |
 | **Messaging** | Telegram, Email, WhatsApp (Bridge System) | 20+ platforms (WhatsApp, Telegram, Slack, Discord, Signal, Teams, Matrix...) |
