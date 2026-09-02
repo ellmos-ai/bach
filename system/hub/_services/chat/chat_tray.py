@@ -416,7 +416,13 @@ class BACHTray:
                 "chat_id": "idle-worker",
             }, timeout=300)
 
-            if result and result.get("ok"):
+            if result is None:
+                # No response is an unknown delivery outcome, not a confirmed
+                # failure. In particular, urllib's local timeout does not stop
+                # the ThreadingHTTPServer request that may still be running.
+                # Keep the task claimed so the next idle tick cannot duplicate it.
+                print(f"[Idle] Chat-Ergebnis für Task #{task_id} unbekannt; Status bleibt in_progress")
+            elif result.get("ok"):
                 self._api("PUT", f"/api/tasks/{task_id}",
                            {"status": "completed"}, base=self.gui_url)
                 if self.icon:

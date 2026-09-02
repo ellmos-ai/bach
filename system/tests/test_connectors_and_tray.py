@@ -1001,3 +1001,46 @@ class TestTrayIdleWorker:
         puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
         assert puts == [("/api/tasks/42", "in_progress"), ("/api/tasks/42", "completed")]
         assert tray.idle_processing is False
+
+    def test_idle_worker_keeps_task_in_progress_when_chat_outcome_is_unknown(self, monkeypatch):
+        """A local timeout does not prove that the server stopped processing the request."""
+        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
+        calls = []
+
+        def fake_api(method, path, data=None, **kw):
+            calls.append((method, path, data))
+            if method == "GET":
+                if path == "/api/tasks?assigned_to=OLLAMA&status=pending":
+                    return {"success": True, "tasks": [{"id": 42, "title": "T", "description": "D"}]}
+                return {"success": True, "tasks": []}
+            if method == "POST":
+                assert kw["timeout"] == 300
+                return None
+            return {"success": True}
+
+        with patch.object(tray, "_api", side_effect=fake_api):
+            tray._process_idle_task()
+
+        puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
+        assert puts == [("/api/tasks/42", "in_progress")]
+        assert tray.idle_processing is False
+
+    def test_idle_worker_reopens_task_after_confirmed_chat_failure(self, monkeypatch):
+        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
+        calls = []
+
+        def fake_api(method, path, data=None, **kw):
+            calls.append((method, path, data))
+            if method == "GET":
+                if path == "/api/tasks?assigned_to=OLLAMA&status=pending":
+                    return {"success": True, "tasks": [{"id": 42, "title": "T"}]}
+                return {"success": True, "tasks": []}
+            if method == "POST":
+                return {"error": "backend unavailable"}
+            return {"success": True}
+
+        with patch.object(tray, "_api", side_effect=fake_api):
+            tray._process_idle_task()
+
+        puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
+        assert puts == [("/api/tasks/42", "in_progress"), ("/api/tasks/42", "open")]
