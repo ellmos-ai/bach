@@ -35,6 +35,45 @@ from pathlib import Path
 from typing import Optional
 
 
+def dispatch_py_migration(mod, conn, db_path):
+    """Ruft den Entry-Point einer .py-Migration auf — gemeinsame Konvention
+    fuer core/db.py UND hub/update.py (Review BACH PR #10, Befund 2).
+
+    Unterstuetzt: run_migration(conn) | run(conn) | migrate(db_path) |
+    upgrade(db_path) | main(). migrate/upgrade nur bei genau einem
+    Pflichtparameter (z. B. migrate_prompts.py braucht drei — das kann kein
+    generischer Runner bedienen und MUSS laut scheitern statt still gebucht
+    zu werden).
+    """
+    import inspect
+
+    def _single_required_param(fn) -> bool:
+        required = [
+            p for p in inspect.signature(fn).parameters.values()
+            if p.default is inspect.Parameter.empty
+            and p.kind in (inspect.Parameter.POSITIONAL_ONLY,
+                           inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        ]
+        return len(required) == 1
+
+    if hasattr(mod, "run_migration"):
+        mod.run_migration(conn)
+    elif hasattr(mod, "run"):
+        mod.run(conn)
+    elif hasattr(mod, "migrate") and _single_required_param(mod.migrate):
+        mod.migrate(str(db_path))
+    elif hasattr(mod, "upgrade") and _single_required_param(mod.upgrade):
+        mod.upgrade(str(db_path))
+    elif hasattr(mod, "main"):
+        mod.main()
+    else:
+        raise RuntimeError(
+            "Weder run_migration(conn), run(conn), migrate(db_path), "
+            "upgrade(db_path) noch main() generisch aufrufbar — Migration "
+            "wird NICHT als angewandt gebucht."
+        )
+
+
 class Database:
     """SQLite-Datenbank mit Connection Management und Migrationen."""
 
@@ -89,11 +128,26 @@ class Database:
             cursor = conn.execute(sql, params)
             return cursor.lastrowid
 
-    def init_schema(self):
-        """Erstellt fehlende Tabellen aus schema.sql.
+    def is_empty(self) -> bool:
+        """True, wenn die DB noch keine Nutzertabellen hat.
 
-        Alle Tabellen nutzen CREATE TABLE IF NOT EXISTS,
-        daher sicher fuer bestehende Datenbanken.
+        _migrations und sqlite-interne Tabellen zaehlen nicht. Bestands-DBs
+        duerfen init_schema() NICHT erneut bekommen: schema.sql enthaelt
+        CREATE-Statements ohne IF NOT EXISTS und wuerde dort abbrechen.
+        """
+        if not self.db_path.exists() or self.db_path.stat().st_size == 0:
+            return True
+        count = self.execute_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' "
+            "AND name != '_migrations' AND name NOT LIKE 'sqlite_%'"
+        )
+        return not count
+
+    def init_schema(self):
+        """Erstellt die Tabellen aus schema.sql (nur fuer frische DBs gedacht).
+
+        schema.sql enthaelt CREATE-Statements ohne IF NOT EXISTS — auf
+        Bestands-DBs vorher is_empty() pruefen (siehe core/app.py).
         """
         is_new_db = not self.db_path.exists() or self.db_path.stat().st_size == 0
         schema_file = self.schema_dir / "schema.sql"
@@ -121,11 +175,100 @@ class Database:
             conn.executescript(seed_file.read_text(encoding="utf-8"))
             break
 
-    def run_migrations(self):
-        """Fuehrt ausstehende Migrationen aus db/migrations/ aus."""
+    def baseline_migrations(self):
+        """Bucht alle vorhandenen Migrationsdateien als angewandt — ohne Ausfuehrung.
+
+        Fuer frische DBs direkt nach init_schema(): schema.sql traegt bereits den
+        Endstand, die historischen Migrationen duerfen dort nie laufen (ALTER
+        TABLE auf schon vorhandene Spalten wuerde krachen). Entspricht dem
+        ueblichen "fake initial"-Muster.
+        """
         migrations_dir = self.schema_dir / "migrations"
         if not migrations_dir.exists():
             return
+        with self.connect() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS _migrations (
+                    id INTEGER PRIMARY KEY,
+                    filename TEXT UNIQUE NOT NULL,
+                    applied_at TEXT NOT NULL
+                )
+            """)
+            for mig_file in sorted(migrations_dir.glob("*")):
+                if mig_file.suffix not in (".sql", ".py") or mig_file.name.startswith("_"):
+                    continue
+                conn.execute(
+                    "INSERT OR IGNORE INTO _migrations (filename, applied_at) VALUES (?, ?)",
+                    (mig_file.name, datetime.now().isoformat())
+                )
+
+    def migration_backlog(self) -> list:
+        """Ausstehende Migrationen, die AELTER sind als der juengste gebuchte
+        Stand — das Kennzeichen einer Bestands-DB ohne Baseline.
+
+        Eine solche DB darf der App-Start NICHT automatisch scharf migrieren
+        (Review PR #10, Befund 1 — empirisch belegt am Produktiv-DB-Vorfall
+        2026-09-01): der Rueckstand wird kontrolliert per
+        `bach update migrations baseline [--through NNN]` gebucht. Regulaer
+        nachgezogene DBs haben nur Migrationen NEUER als der letzte gebuchte
+        nummerierte Stand als pending — die laufen weiterhin automatisch.
+        """
+        migrations_dir = self.schema_dir / "migrations"
+        if not migrations_dir.exists():
+            return []
+        with self.connect() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS _migrations (
+                    id INTEGER PRIMARY KEY,
+                    filename TEXT UNIQUE NOT NULL,
+                    applied_at TEXT NOT NULL
+                )
+            """)
+            applied = {row[0] for row in
+                       conn.execute("SELECT filename FROM _migrations").fetchall()}
+
+        def _num_prefix(name: str):
+            prefix = name.split("_", 1)[0]
+            return int(prefix) if prefix.isdigit() else None
+
+        applied_nums = [n for n in (_num_prefix(a) for a in applied) if n is not None]
+        max_applied = max(applied_nums) if applied_nums else -1
+
+        backlog = []
+        for mig_file in sorted(migrations_dir.glob("*")):
+            if mig_file.suffix not in (".sql", ".py") or mig_file.name.startswith("_"):
+                continue
+            if mig_file.name in applied:
+                continue
+            num = _num_prefix(mig_file.name)
+            if num is None:
+                # nicht-nummerierte pending zaehlen als Rueckstand, sobald die
+                # DB ueberhaupt schon nummerierte Buchungen hat (Bestands-DB)
+                if max_applied >= 0:
+                    backlog.append(mig_file.name)
+            elif num <= max_applied:
+                backlog.append(mig_file.name)
+            elif max_applied < 0:
+                # nicht-leere DB ganz ohne Buchungen: ALLES ist Rueckstand
+                backlog.append(mig_file.name)
+        return backlog
+
+    def run_migrations(self):
+        """Fuehrt ausstehende Migrationen aus <schema_dir>/migrations/ aus.
+
+        Tracking: Tabelle _migrations (Dateiname inkl. Suffix). Jede Migration
+        laeuft in eigener Verbindung; beim ersten Fehler stoppt die Kette
+        (Reihenfolge!), bereits gebuchte bleiben gebucht, die App darf trotzdem
+        starten (fail-soft mit lauter Warnung — Bestands-DBs holen Rueckstand
+        kontrolliert per `bach update migrations baseline` auf).
+
+        Returns:
+            (applied: list[str], error: str | None)
+        """
+        migrations_dir = self.schema_dir / "migrations"
+        applied_now: list[str] = []
+        if not migrations_dir.exists():
+            return applied_now, None
 
         with self.connect() as conn:
             conn.execute("""
@@ -135,32 +278,44 @@ class Database:
                     applied_at TEXT NOT NULL
                 )
             """)
-
             applied = {row[0] for row in
                        conn.execute("SELECT filename FROM _migrations").fetchall()}
 
-            for mig_file in sorted(migrations_dir.glob("*")):
-                if mig_file.suffix not in (".sql", ".py") or mig_file.name.startswith("_"):
-                    continue
-                if mig_file.name not in applied:
-                    print(f"  Migration: {mig_file.name}")
+        for mig_file in sorted(migrations_dir.glob("*")):
+            if mig_file.suffix not in (".sql", ".py") or mig_file.name.startswith("_"):
+                continue
+            if mig_file.name in applied:
+                continue
+            print(f"  Migration: {mig_file.name}")
+            try:
+                with self.connect() as conn:
                     if mig_file.suffix == ".sql":
+                        # Hinweis (Review PR #10, Befund 4): executescript
+                        # committed implizit pro Script — ein mitten im Script
+                        # scheiterndes Mehr-Statement-SQL hinterlaesst
+                        # Teilzustand und bleibt ungebucht. Bewusste Grenze,
+                        # Ticket im Repo-TODO; die Fehlermeldung nennt die Datei.
                         conn.executescript(mig_file.read_text(encoding="utf-8"))
-                    elif mig_file.suffix == ".py":
+                    else:
                         import importlib.util
                         spec = importlib.util.spec_from_file_location(f"mig_{mig_file.stem}", mig_file)
                         mod = importlib.util.module_from_spec(spec)
                         spec.loader.exec_module(mod)
-                        if hasattr(mod, "run_migration"):
-                            mod.run_migration(conn)
-                        elif hasattr(mod, "run"):
-                            mod.run(conn)
-                        elif hasattr(mod, "main"):
-                            mod.main()
+                        dispatch_py_migration(mod, conn, self.db_path)
                     conn.execute(
                         "INSERT INTO _migrations (filename, applied_at) VALUES (?, ?)",
                         (mig_file.name, datetime.now().isoformat())
                     )
+            except Exception as e:
+                error = (
+                    f"Migration {mig_file.name} fehlgeschlagen: {e} — Kette gestoppt. "
+                    f"Bestands-DB? Rueckstand per 'bach update migrations baseline "
+                    f"[--through NNN]' buchen, dann neu starten."
+                )
+                print(f"  [!!] {error}")
+                return applied_now, error
+            applied_now.append(mig_file.name)
+        return applied_now, None
 
     def table_exists(self, name: str) -> bool:
         """Prueft ob Tabelle existiert."""

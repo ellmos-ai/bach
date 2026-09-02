@@ -216,6 +216,109 @@ class TestDatabase:
         assert len(applied) == 1
         assert applied[0]["filename"] == "001_add_column.sql"
 
+    def test_is_empty_fresh_then_populated(self):
+        from core.db import Database
+        db = Database(self.db_path, self.schema_dir)
+        assert db.is_empty()
+        db.init_schema()
+        assert not db.is_empty()
+
+    def test_is_empty_ignores_migrations_table(self):
+        from core.db import Database
+        db = Database(self.db_path, self.schema_dir)
+        db.run_migrations()  # legt nur _migrations an
+        assert db.is_empty()
+
+    def test_baseline_migrations_books_without_executing(self):
+        from core.db import Database
+        migrations_dir = self.schema_dir / "migrations"
+        migrations_dir.mkdir()
+        (migrations_dir / "001_would_crash.sql").write_text(
+            "ALTER TABLE test_table ADD COLUMN name TEXT;",  # Spalte existiert schon
+            encoding="utf-8")
+        db = Database(self.db_path, self.schema_dir)
+        db.init_schema()
+        db.baseline_migrations()
+        names = {r["filename"] for r in db.execute("SELECT filename FROM _migrations")}
+        assert names == {"001_would_crash.sql"}
+        applied, error = db.run_migrations()
+        assert applied == [] and error is None  # gebucht -> laeuft nie
+
+    def test_py_migration_with_migrate_entrypoint_runs(self):
+        # PR-#10-Review Befund 2: migrate(db_path)-Dateien wurden vorher
+        # still als applied gebucht, ohne je zu laufen
+        from core.db import Database
+        migrations_dir = self.schema_dir / "migrations"
+        migrations_dir.mkdir()
+        (migrations_dir / "002_migrate_style.py").write_text(
+            "import sqlite3\n"
+            "def migrate(db_path):\n"
+            "    conn = sqlite3.connect(db_path)\n"
+            "    conn.execute('CREATE TABLE IF NOT EXISTS migrated_marker (id INTEGER)')\n"
+            "    conn.commit()\n"
+            "    conn.close()\n",
+            encoding="utf-8"
+        )
+        db = Database(self.db_path, self.schema_dir)
+        db.init_schema()
+        applied, error = db.run_migrations()
+        assert error is None
+        assert applied == ["002_migrate_style.py"]
+        assert db.table_exists("migrated_marker")
+
+    def test_py_migration_without_entrypoint_fails_loud(self):
+        from core.db import Database
+        migrations_dir = self.schema_dir / "migrations"
+        migrations_dir.mkdir()
+        (migrations_dir / "002_no_entry.py").write_text("x = 1\n", encoding="utf-8")
+        db = Database(self.db_path, self.schema_dir)
+        db.init_schema()
+        applied, error = db.run_migrations()
+        assert applied == []
+        assert error is not None and "002_no_entry.py" in error
+        names = {r["filename"] for r in db.execute("SELECT filename FROM _migrations")}
+        assert "002_no_entry.py" not in names  # nie still buchen
+
+    def test_migration_backlog_detects_unbaselined_gap(self):
+        from core.db import Database
+        migrations_dir = self.schema_dir / "migrations"
+        migrations_dir.mkdir()
+        (migrations_dir / "001_old.sql").write_text("SELECT 1;", encoding="utf-8")
+        (migrations_dir / "003_mid.sql").write_text("SELECT 1;", encoding="utf-8")
+        (migrations_dir / "005_new.sql").write_text("SELECT 1;", encoding="utf-8")
+        db = Database(self.db_path, self.schema_dir)
+        db.init_schema()
+        # Nichts gebucht, DB nicht leer -> alles ist Rueckstand
+        assert db.migration_backlog() == ["001_old.sql", "003_mid.sql", "005_new.sql"]
+        # 003 gebucht -> 001 ist Rueckstand (Luecke), 005 ist regulaer neu
+        db.execute_write(
+            "INSERT INTO _migrations (filename, applied_at) VALUES ('003_mid.sql', '2026-09-01')")
+        assert db.migration_backlog() == ["001_old.sql"]
+        # 001 auch gebucht -> kein Rueckstand mehr; 005 darf automatisch laufen
+        db.execute_write(
+            "INSERT INTO _migrations (filename, applied_at) VALUES ('001_old.sql', '2026-09-01')")
+        assert db.migration_backlog() == []
+
+    def test_run_migrations_fail_soft_stops_chain(self):
+        from core.db import Database
+        migrations_dir = self.schema_dir / "migrations"
+        migrations_dir.mkdir()
+        (migrations_dir / "001_ok.sql").write_text(
+            "CREATE TABLE IF NOT EXISTS a1 (id INTEGER);", encoding="utf-8")
+        (migrations_dir / "002_broken.sql").write_text(
+            "THIS IS NOT SQL;", encoding="utf-8")
+        (migrations_dir / "003_after.sql").write_text(
+            "CREATE TABLE IF NOT EXISTS a3 (id INTEGER);", encoding="utf-8")
+        db = Database(self.db_path, self.schema_dir)
+        db.init_schema()
+        applied, error = db.run_migrations()
+        # 001 gebucht, 002 gescheitert, 003 NICHT ausgefuehrt (Reihenfolge)
+        assert applied == ["001_ok.sql"]
+        assert error is not None and "002_broken.sql" in error
+        assert not db.table_exists("a3")
+        names = {r["filename"] for r in db.execute("SELECT filename FROM _migrations")}
+        assert names == {"001_ok.sql"}
+
     def test_init_schema_applies_release_language_seed_for_new_db(self):
         from core.db import Database
 
