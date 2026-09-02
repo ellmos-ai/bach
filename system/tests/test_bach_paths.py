@@ -112,7 +112,11 @@ class TestDbPaths:
 
     def test_bach_db_is_path(self):
         assert isinstance(BACH_DB, Path)
-        assert BACH_DB.name == "bach.db"
+        configured_db = os.environ.get("BACH_DB")
+        if configured_db:
+            assert BACH_DB == Path(configured_db).expanduser()
+        else:
+            assert BACH_DB.name == "bach.db"
 
     def test_cli_runtime_uses_canonical_bach_db(self):
         assert bach_cli.DB_PATH == BACH_DB

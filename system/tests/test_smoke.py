@@ -30,6 +30,7 @@ Prueft dass alle kritischen CLI-Befehle weiterhin funktionieren.
 
 import sys
 import os
+import sqlite3
 import subprocess
 import re
 import json
@@ -42,9 +43,99 @@ SMOKE_TEST_AGENT = "test-agent"
 import pytest
 
 
+_SMOKE_DB_PATH = None
+
+
+@pytest.fixture(scope="class")
+def isolated_cli_db(tmp_path_factory):
+    """Create a complete, deterministic database for CLI smoke tests."""
+    global _SMOKE_DB_PATH
+
+    db_dir = tmp_path_factory.mktemp("bach_cli_smoke")
+    db_path = db_dir / "bach.db"
+    schema_path = SYSTEM_ROOT / "data" / "schema" / "schema.sql"
+
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(schema_path.read_text(encoding="utf-8"))
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS _migrations (
+                id INTEGER PRIMARY KEY,
+                filename TEXT UNIQUE NOT NULL,
+                applied_at TEXT NOT NULL
+            )
+            """
+        )
+        migrations_dir = schema_path.parent / "migrations"
+        for migration in sorted(migrations_dir.iterdir()):
+            if migration.suffix in {".sql", ".py"} and not migration.name.startswith("_"):
+                conn.execute(
+                    "INSERT OR IGNORE INTO _migrations (filename, applied_at) VALUES (?, ?)",
+                    (migration.name, "pytest-smoke-fixture"),
+                )
+
+        # These columns are still supplied by migration 032 rather than the
+        # consolidated schema, but the CLI handlers already rely on them.
+        for table in ("bach_agents", "bach_experts", "skills", "wiki_articles", "tools"):
+            columns = {
+                row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            if "language" not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN language TEXT DEFAULT 'de'")
+
+        conn.execute(
+            """
+            CREATE TABLE distribution_releases (
+                version TEXT PRIMARY KEY,
+                release_date TEXT,
+                status TEXT DEFAULT 'released',
+                is_stable INTEGER DEFAULT 1,
+                description TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO memory_facts (category, key, value, confidence, source)
+            VALUES ('system', 'smoke_fixture', 'isolated test data', 1.0, 'pytest')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO partner_recognition
+                (partner_name, partner_type, capabilities, cost_tier, token_zone, priority, status)
+            VALUES ('Claude', 'api', '["coding"]', 3, 'zone_1', 90, 'active')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO tools
+                (name, type, category, description, capabilities, is_available, language)
+            VALUES ('ocr_test_tool', 'cli', 'documents', 'OCR test fixture', '["ocr"]', 1, 'de')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO usecases
+                (title, workflow_name, test_input, expected_output, created_by)
+            VALUES ('System synopse smoke', 'system-synopse', '{}', '{}', 'tests')
+            """
+        )
+
+    previous_path = _SMOKE_DB_PATH
+    _SMOKE_DB_PATH = db_path
+    try:
+        yield db_path
+    finally:
+        _SMOKE_DB_PATH = previous_path
+
+
 def run_bach(*args, timeout=45):
     """Fuehrt bach.py aus und gibt (returncode, stdout, stderr) zurueck."""
     cmd = [sys.executable, str(BACH_PY)] + list(args)
+    env = os.environ.copy()
+    if _SMOKE_DB_PATH is not None:
+        env["BACH_DB"] = str(_SMOKE_DB_PATH)
     result = subprocess.run(
         cmd,
         capture_output=True,
@@ -53,6 +144,7 @@ def run_bach(*args, timeout=45):
         cwd=str(SYSTEM_ROOT),
         encoding="utf-8",
         errors="replace",
+        env=env,
     )
     return result.returncode, result.stdout, result.stderr
 
@@ -62,6 +154,7 @@ def clear_agent_steer(agent_name):
     run_bach("agent", "clear-steer", agent_name, "--json")
 
 
+@pytest.mark.usefixtures("isolated_cli_db")
 class TestCLIBackwardsCompat:
     """Alle kritischen CLI-Befehle muessen weiterhin funktionieren."""
 
