@@ -73,12 +73,11 @@ from typing import Optional
 BACH_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(BACH_ROOT))
 
-try:
-    from hub.bach_paths import BACH_DB as _PATHS_DB, BACKUPS_DIR
-    BACH_DB = str(_PATHS_DB)
-except ImportError:
-    BACH_DB = str(BACH_ROOT / "data" / "bach.db")
-    BACKUPS_DIR = Path.home() / ".bach" / "backups"
+# Zentrale Registry ist Pflicht — ein ImportError-Fallback auf einen selbst
+# gebauten Pfad zeigte still auf die veraltete Repo-/Cloud-Kopie
+# (test_db_path_central, T-20260901-202368596). sys.path steht oben bereits.
+from hub.bach_paths import BACH_DB as _PATHS_DB, BACKUPS_DIR
+BACH_DB = str(_PATHS_DB)
 
 try:
     from fastapi import FastAPI, HTTPException, Depends, Request, Query
