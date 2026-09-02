@@ -103,6 +103,7 @@ their versions (as tested), and their respective licenses.
 | `pystray` | 0.19.5 | LGPL-3.0 | System tray icon |
 | `tkinterdnd2` | 0.4.3 | MIT | Drag & drop (Tk) |
 | `selenium` | 4.38.0 | Apache-2.0 | Browser automation |
+| `ellmos-unified-gui` | optional Git commit `a0d59af` | MIT | Operator console via the `console` install extra |
 
 ### Google Services
 

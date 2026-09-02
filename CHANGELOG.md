@@ -8,6 +8,12 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Added
 
+- **Optionale Unified-GUI-Konsole:** BACH kann `ellmos-unified-gui` über den
+  reproduzierbar gepinnten Installations-Extra `.[console]` und die expliziten
+  Host-Schalter `BACH_GUI_CONSOLE_ENABLED`/`BACH_GUI_CONSOLE_PREFIX` unter
+  `/control` einbinden. Der lazy Mount degradiert ohne Paket oder bei einem
+  Mount-Fehler, ohne eine zweite Authentifizierung oder Unified-GUI-
+  Konfigurationsquelle einzuführen.
 - **Persistenter GUI-Chatverlauf (FABLE-SOL 1.2.4):** Der ChatRuntime speichert
   vollständige Modellkontexte jetzt als eigenen Snapshot-Typ in der bereits
   kanonischen `bach.db`. Gehashte Chat-IDs, atomare Aktualisierungen und ein

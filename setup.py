@@ -44,6 +44,12 @@ _PACKAGING_COMMANDS = {
     "develop",
 }
 
+_CONSOLE_REQUIREMENT = (
+    "ellmos-unified-gui @ "
+    "git+https://github.com/ellmos-ai/unified-gui.git@"
+    "a0d59afe95a227cc73c7494d5f1ccea1cdb6b987"
+)
+
 
 def _read_requirements(requirements_path: Path) -> list[str]:
     """Liest requirements.txt fuer setuptools packaging."""
@@ -82,6 +88,7 @@ def _run_packaging_setup() -> None:
         license="MIT",
         py_modules=["bach", "bach_api"],
         install_requires=_read_requirements(root / "requirements.txt"),
+        extras_require={"console": [_CONSOLE_REQUIREMENT]},
         entry_points={"console_scripts": ["bach=bach:main"]},
     )
 

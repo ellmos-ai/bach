@@ -105,6 +105,24 @@ bach setup preflight
 bach setup full-install
 ```
 
+### Optional operator console
+
+The existing `ellmos-unified-gui` operator console can be mounted into the
+BACH dashboard without a second process or a second Unified GUI configuration:
+
+```bash
+pip install -e ".[console]"
+BACH_GUI_CONSOLE_ENABLED=1 python system/gui/server.py
+```
+
+The mount is disabled by default and uses `/control`. Set
+`BACH_GUI_CONSOLE_PREFIX` to choose another absolute URL path. If the optional
+package is absent or cannot be mounted, the BACH dashboard continues without
+the console. BACH does not introduce a separate login; Unified GUI keeps its
+existing capability-based behavior for a BACH host. Because the BACH dashboard
+does not currently provide an `AUTH_ROLE` host session, keep this mount on the
+default loopback address or behind an existing trusted access boundary.
+
 ## MCP Servers (Claude Code Integration)
 
 BACH provides two MCP servers for integration with Claude Code, Cursor, and other IDEs. Cross-platform tested on Windows, macOS (ARM64), and Linux:

@@ -44,6 +44,8 @@ from contextlib import asynccontextmanager
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
+from gui.config import settings
+from gui.console import mount_console
 
 # Claude Router Import
 sys.path.insert(0, str(Path(__file__).parent / "api"))
@@ -4115,6 +4117,13 @@ async def update_gui_theme(payload: ThemeUpdate):
 if STATIC_DIR.exists():
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+# Operator-Konsole bleibt standardmaessig aus. Bei expliziter Aktivierung
+# verwendet sie ihre bestehende Adapter-Konfiguration; BACH fuehrt weder eine
+# zweite Authentifizierung noch eine zweite Unified-GUI-Konfigurationsquelle ein.
+if settings.console_enabled:
+    mount_console(app, prefix=settings.console_prefix)
 
 
 
@@ -14038,26 +14047,6 @@ async def get_workflow_content(path: str):
         raise
     except Exception as e:
         return HTMLResponse(content=f"<h1>Fehler: {public_error_message()}</h1>", status_code=500)
-
-
-# ═══════════════════════════════════════════════════════════════
-
-# UNIFIED GUI (optionales externes Modul ellmos-unified-gui)
-# Operator-Konsole als Sub-App unter /control — Panels erscheinen
-# capability-driven je nach erreichbaren Backends. Fehlt das Paket,
-# laeuft BACH unveraendert (bewusst weiches Optional).
-
-# ═══════════════════════════════════════════════════════════════
-
-try:
-    from unified_gui import mount as _unified_gui_mount
-
-    _unified_gui_mount(app, prefix="/control")
-    print("[GUI] Unified GUI unter /control eingebunden (ellmos-unified-gui)")
-except ImportError:
-    pass
-except Exception as _ug_exc:  # noqa: BLE001 — Mount-Fehler duerfen BACH nie stoppen
-    print(f"[GUI] Unified GUI nicht eingebunden: {_ug_exc}")
 
 
 # ═══════════════════════════════════════════════════════════════

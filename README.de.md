@@ -81,6 +81,27 @@ bach setup preflight
 bach setup full-install
 ```
 
+### Optionale Operator-Konsole
+
+Die bestehende Operator-Konsole `ellmos-unified-gui` kann ohne zweiten Prozess
+und ohne zweite Unified-GUI-Konfiguration in das BACH-Dashboard eingebunden
+werden:
+
+```bash
+pip install -e ".[console]"
+BACH_GUI_CONSOLE_ENABLED=1 python system/gui/server.py
+```
+
+Der Mount ist standardmäßig deaktiviert und verwendet `/control`. Mit
+`BACH_GUI_CONSOLE_PREFIX` lässt sich ein anderer absoluter URL-Pfad wählen.
+Fehlt das optionale Paket oder schlägt das Einbinden fehl, läuft das
+BACH-Dashboard ohne die Konsole weiter. BACH führt keine eigene zusätzliche
+Anmeldung ein; Unified GUI behält für einen BACH-Host sein bestehendes
+fähigkeitsbasiertes Verhalten. Da das BACH-Dashboard derzeit keine
+`AUTH_ROLE`-Host-Session bereitstellt, sollte dieser Mount nur auf der
+standardmäßigen Loopback-Adresse oder hinter einer bestehenden vertrauenswürdigen
+Zugriffsgrenze laufen.
+
 ## Quick Start
 
 ```bash
