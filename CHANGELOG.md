@@ -50,6 +50,26 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **Privater Absender als DB-Default entfernt (After-Care 2026-09-02):**
+  `system/data/schema/schema.sql` legte `email_drafts.sender_email` mit der privaten
+  Mailadresse des Maintainers als `DEFAULT` an. Die Quelle
+  `system/hub/_services/mail/email_sender.py` war bereits auf `your-email@example.com`
+  bereinigt — nur der Schema-Dump wurde nach der Bereinigung nie neu erzeugt. Auf den
+  Wert der Quelle angeglichen; `schema.sql` bleibt vollständig ausführbar (161 Tabellen).
+  *Präzisierung zur Commit-Nachricht von `be06234`:* Sie nennt `c915557`
+  („kanonischer Migrationspfad `data/schema`") als bereits wirksam — dieser Commit ist
+  zum Zeitpunkt der Korrektur **noch nicht in `main`**, sondern liegt im offenen PR #10.
+  Der bereinigte Default gilt also ab dem Merge dieses PRs auch für den kanonischen
+  Migrationspfad, nicht schon vorher.
+- **Doku-Zahlen und `llms.txt`-Links auf den Repo-Stand gebracht (After-Care 2026-09-02):**
+  Version in `README.es/ja/ru/zh.md` von `v3.12.4-earth` auf `v3.13.0-bluesky` nachgezogen
+  (EN/DE/`llms.txt` waren am 2026-07-19 gehoben worden, die vier Übersetzungen nicht);
+  GitHub-Repo-Beschreibung ebenso. Workflow-Angabe präzisiert: 71 gilt für eine laufende
+  Installation, das Repository liefert 42 (`analysis/`, `dev/`, `integration/`, `system/`
+  sind gitignored). Die `llms.txt`-Verweise auf `CHAINS.md`, `MEMORY.md` und `OLLAMA.md`
+  zeigten auf generierte, gitignorierte Dateien und liefen auf GitHub in 404 — auf die
+  getrackten Templates bzw. `system/docs/help/ollama_en.txt` umgebogen.
+
 - **`start/bach.bat` beendet auf Port 8000 nur noch den eigenen GUI-Server:** die beiden `netstat`/`taskkill`-Schleifen killten jeden Listener auf :8000, auch fremde Programme (gemessen auf ASUS-GEI: `run_web.py`). Neue Subroutine `:kill_if_bach_gui` prueft die Kommandozeile auf `gui\server.py`; Fremdprozesse werden gemeldet, nicht beendet.
 
 - **CAMT.053-Dry-run wieder lauffähig und XML-gehärtet:** Der Steuer-Handler
