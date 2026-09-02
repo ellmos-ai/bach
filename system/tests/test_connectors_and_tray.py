@@ -5,6 +5,7 @@
 import json
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -942,6 +943,59 @@ class TestTraySingleInstance:
         second = mod.acquire_single_instance_lock(lock_path)
         assert second is not None
         second.close()
+
+    def test_default_lock_path_is_stable_across_tmpdirs(self, tmp_path):
+        home = tmp_path / "home"
+        home.mkdir()
+        session_tmpdirs = [tmp_path / "launchd-tmp", tmp_path / "ssh-tmp"]
+        for temp_dir in session_tmpdirs:
+            temp_dir.mkdir()
+
+        script = """
+import sys
+import types
+
+modules = {
+    name: types.ModuleType(name)
+    for name in ("pystray", "PIL", "PIL.Image", "PIL.ImageDraw", "PIL.ImageFont")
+}
+modules["PIL"].__path__ = []
+sys.modules.update(modules)
+from hub._services.chat.chat_tray import TRAY_LOCK_FILE
+print(TRAY_LOCK_FILE)
+"""
+
+        lock_paths = []
+        for temp_dir in session_tmpdirs:
+            env = os.environ.copy()
+            env.update({
+                "HOME": str(home),
+                "USERPROFILE": str(home),
+                "TMPDIR": str(temp_dir),
+                "TEMP": str(temp_dir),
+                "TMP": str(temp_dir),
+            })
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                cwd=SYSTEM_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            lock_paths.append(Path(result.stdout.strip()))
+
+        assert lock_paths == [home / ".bach" / "chat_tray.lock"] * 2
+
+    def test_acquire_creates_lock_parent(self, tmp_path):
+        mod = self._mod()
+        lock_path = tmp_path / "home" / ".bach" / "chat_tray.lock"
+
+        lock = mod.acquire_single_instance_lock(lock_path)
+
+        assert lock is not None
+        assert lock_path.parent.is_dir()
+        lock.close()
 
     def test_main_refuses_a_second_tray_without_running_it(self, monkeypatch, capsys):
         mod = self._mod()
