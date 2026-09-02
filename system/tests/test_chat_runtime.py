@@ -224,7 +224,7 @@ class TestIsSafeWritePath:
         """Paths containing /user/ within BACH system dir should be allowed on Unix."""
         # The /user/ check uses forward slashes — this is a Unix-specific feature.
         # We mock to simulate Unix-like path resolution.
-        fake_bach_dir = "/home/lukas/BACH/system/hub"
+        fake_bach_dir = "/home/agent/BACH/system/hub"
         fake_user_path = fake_bach_dir + "/data/user/notes.txt"
         with patch("hub._services.chat.chat_runtime.Path") as MockPath, \
              patch("hub._services.chat.chat_runtime.BACH_SYSTEM_DIR", fake_bach_dir):

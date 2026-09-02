@@ -2349,7 +2349,7 @@ CREATE TABLE email_drafts (
                 body TEXT NOT NULL,
                 body_html TEXT,
                 account_id INTEGER DEFAULT 3,
-                sender_email TEXT DEFAULT 'lukasgeiger@googlemail.com',
+                sender_email TEXT DEFAULT 'your-email@example.com',
                 status TEXT DEFAULT 'draft'
                     CHECK(status IN ('draft', 'sent', 'cancelled', 'failed')),
                 error_message TEXT,
