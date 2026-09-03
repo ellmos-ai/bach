@@ -443,7 +443,7 @@ async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     n_msgs = len(session.messages)
     chars = sum(len(m.get("content", "")) for m in session.messages)
     mr = runtime.max_tool_rounds
-    mr_label = "Unbegrenzt" if mr == 0 else str(mr)
+    mr_label = "Tools aus" if mr == 0 else str(mr)
     tool_info = ""
     if session.current_tool:
         tool_info = f"\nAktives Tool: {session.current_tool} (Runde {session.tool_round})"
@@ -466,8 +466,8 @@ async def cmd_maxrounds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not args:
         mr = runtime.max_tool_rounds
         await update.message.reply_text(
-            f"Max Tool-Runden: {'Unbegrenzt' if mr == 0 else mr}\n\n"
-            "/maxrounds 0 — Unbegrenzt\n"
+            f"Max Tool-Runden: {'Tools aus' if mr == 0 else mr}\n\n"
+            "/maxrounds 0 — Tools abschalten\n"
             "/maxrounds 5 — Max 5 Runden\n"
             "/maxrounds 10 — Max 10 Runden"
         )
@@ -478,7 +478,7 @@ async def cmd_maxrounds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             val = 0
         runtime.max_tool_rounds = val
         _global_defaults["max_tool_rounds"] = val
-        label = "Unbegrenzt" if val == 0 else str(val)
+        label = "Tools aus" if val == 0 else str(val)
         await update.message.reply_text(f"Max Tool-Runden: {label}")
     except ValueError:
         await update.message.reply_text("Nutzung: /maxrounds <zahl>")
@@ -1022,7 +1022,7 @@ h1{color:#00d4ff;margin-bottom:20px;font-size:1.4em}
 <button class="btn" onclick="setMaxRounds(5)">5</button>
 <button class="btn" onclick="setMaxRounds(10)">10</button>
 <button class="btn" onclick="setMaxRounds(20)">20</button>
-<button class="btn" onclick="setMaxRounds(0)">Unbegrenzt</button>
+<button class="btn" onclick="setMaxRounds(0)">Tools aus</button>
 </div>
 </div>
 
@@ -1061,7 +1061,7 @@ async function refresh() {
   document.getElementById('s-think').textContent = s.think ? 'AN' : 'AUS';
   document.getElementById('s-bach').textContent = s.bach ? 'Ja' : 'Nein';
   document.getElementById('s-sessions').textContent = s.sessions;
-  document.getElementById('s-maxrounds').textContent = s.max_tool_rounds === 0 ? 'Unbegrenzt' : s.max_tool_rounds;
+  document.getElementById('s-maxrounds').textContent = s.max_tool_rounds === 0 ? 'Tools aus' : s.max_tool_rounds;
   const toolEl = document.getElementById('tool-activity');
   if (s.current_tool) {
     toolEl.style.display = '';
@@ -1121,7 +1121,7 @@ async function setModel(model) {
 }
 async function setMaxRounds(rounds) {
   const r = await api('POST', '/max_tool_rounds', {rounds});
-  toast(r.error || 'Max Runden: ' + (rounds === 0 ? 'Unbegrenzt' : rounds));
+  toast(r.error || 'Max Runden: ' + (rounds === 0 ? 'Tools aus' : rounds));
   refresh();
 }
 refresh();
