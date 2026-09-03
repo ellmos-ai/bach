@@ -56,3 +56,7 @@ pikepdf>=10.0.2           # PDF low-level editing (anonymizer, redaction)
 # --- Clipboard & UI Automation ---
 pyperclip>=1.9.0          # Clipboard access (prompt workflow)
 pyautogui>=0.9.54         # GUI automation (prompt session, ATI)
+
+# --- ellmos module cut (D-20260830-002) ---
+# Nachrichten-Fachkern (Welle 1): privates Repo; auf Hosts als Klon + `pip install -e` bereitstellen
+assistant-core @ git+https://github.com/ellmos-ai/assistant-core.git@v0.1.0

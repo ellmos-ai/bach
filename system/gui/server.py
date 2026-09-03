@@ -111,6 +111,15 @@ except ImportError:
 
 USER_DB = BACH_DB
 
+from assistant_core import MessageStore  # Welle 1 (D-20260830-002): Nachrichten-Fachkern, ein Datenkanon
+
+
+def _messages() -> MessageStore:
+    """Store auf der kanonischen User-DB; fehlt sie, fail-closed wie get_user_db()."""
+    if not USER_DB.exists():
+        raise FileNotFoundError(f"User-DB nicht gefunden: {USER_DB}")
+    return MessageStore(USER_DB)
+
 TEMPLATES_DIR = GUI_DIR / "templates"
 
 STATIC_DIR = GUI_DIR / "static"
@@ -1207,10 +1216,8 @@ async def get_status():
 
     # Messages (mit Fallback)
     try:
-        messages_unread = conn_bach.execute(
-            "SELECT COUNT(*) FROM messages WHERE status = 'unread'"
-        ).fetchone()[0]
-    except (sqlite3.OperationalError, sqlite3.DatabaseError):
+        messages_unread = _messages().unread_count()
+    except (sqlite3.OperationalError, sqlite3.DatabaseError, FileNotFoundError):
         messages_unread = 0
 
 
@@ -2075,57 +2082,20 @@ async def api_restore_mounts():
 
 
 @app.get("/api/messages")
-
 async def list_messages(direction: Optional[str] = None, status: Optional[str] = None,
-
                         partner: Optional[str] = None,
-
                         include_archived: bool = True, limit: int = 50):
-
     """Listet Nachrichten.
 
-
-
     Args:
-
         direction: 'inbox' oder 'outbox'
-
         status: 'unread', 'read', 'archived'
-
         include_archived: Auch archivierte anzeigen (default: True)
-
         limit: Max Anzahl
-
     """
-
-    conn = get_user_db()
-    try:
-        query = "SELECT * FROM messages WHERE status != 'deleted'"
-        params = []
-
-        if direction:
-            query += " AND direction = ?"
-            params.append(direction)
-
-        if status:
-            query += " AND status = ?"
-            params.append(status)
-        elif not include_archived:
-            query += " AND status != 'archived'"
-
-        if partner:
-            query += " AND (sender = ? OR recipient = ?)"
-            params.extend([partner, partner])
-
-        query += " ORDER BY created_at DESC LIMIT ?"
-        params.append(limit)
-
-        rows = conn.execute(query, params).fetchall()
-    finally:
-        conn.close()
-
-    return {"messages": rows_to_list(rows), "count": len(rows)}
-
+    rows = _messages().list(direction=direction, status=status, partner=partner,
+                            include_archived=include_archived, limit=limit)
+    return {"messages": rows, "count": len(rows)}
 
 
 @app.post("/api/claude/chat")
@@ -2153,134 +2123,37 @@ async def claude_chat(
 
 
 @app.post("/api/messages")
-
 async def create_message(msg: MessageCreate):
-
     """Erstellt neue Nachricht."""
-
-    conn = get_user_db()
-
-    try:
-
-        cursor = conn.execute("""
-
-            INSERT INTO messages (direction, sender, recipient, subject, body, priority)
-
-            VALUES ('outbox', 'user', ?, ?, ?, ?)
-
-        """, (msg.recipient, msg.subject, msg.body, msg.priority))
-
-        msg_id = cursor.lastrowid
-
-        conn.commit()
-
-    finally:
-
-        conn.close()
-
+    msg_id = _messages().create_order(msg.recipient, msg.body, subject=msg.subject, priority=msg.priority)
     return {"id": msg_id, "status": "created"}
 
 
-
 @app.put("/api/messages/{msg_id}/read")
-
 async def mark_message_read(msg_id: int):
-
     """Markiert Nachricht als gelesen."""
-
-    conn = get_user_db()
-
-    try:
-
-        conn.execute(
-
-            "UPDATE messages SET status = 'read', read_at = ? WHERE id = ?",
-
-            (datetime.now().isoformat(), msg_id)
-
-        )
-
-        conn.commit()
-
-    finally:
-
-        conn.close()
-
+    _messages().mark_read(msg_id)
     return {"status": "read"}
 
 
 @app.post("/api/messages/mark-all-read")
 async def mark_all_messages_read():
     """Markiert alle ungelesenen Nachrichten als gelesen."""
-    conn = get_user_db()
-    try:
-        now = datetime.now().isoformat()
-        cursor = conn.execute(
-            "UPDATE messages SET status = 'read', read_at = ? WHERE status = 'unread'",
-            (now,)
-        )
-        count = cursor.rowcount
-        conn.commit()
-    finally:
-        conn.close()
+    count = _messages().mark_all_read()
     return {"status": "ok", "marked": count}
 
 
-
 @app.put("/api/messages/{msg_id}/archive")
-
 async def archive_message(msg_id: int):
-
     """Archiviert eine Nachricht."""
-
-    conn = get_user_db()
-
-    try:
-
-        conn.execute(
-
-            "UPDATE messages SET status = 'archived' WHERE id = ?",
-
-            (msg_id,)
-
-        )
-
-        conn.commit()
-
-    finally:
-
-        conn.close()
-
+    _messages().archive(msg_id)
     return {"status": "archived"}
 
 
-
-
-
 @app.put("/api/messages/{msg_id}/delete")
-
 async def delete_message(msg_id: int):
-
     """Markiert Nachricht als geloescht (soft delete)."""
-
-    conn = get_user_db()
-
-    try:
-
-        conn.execute(
-
-            "UPDATE messages SET status = 'deleted' WHERE id = ?",
-
-            (msg_id,)
-
-        )
-
-        conn.commit()
-
-    finally:
-
-        conn.close()
-
+    _messages().delete(msg_id)
     return {"status": "deleted"}
 
 
@@ -2299,13 +2172,7 @@ async def get_partners():
                 if name and name not in seen:
                     partners.append({"name": name})
                     seen.add(name)
-        conn = get_user_db()
-        rows = conn.execute(
-            "SELECT DISTINCT sender FROM messages WHERE sender != 'user' AND sender IS NOT NULL ORDER BY sender"
-        ).fetchall()
-        conn.close()
-        for r in rows:
-            name = r[0]
+        for name in _messages().partners():
             if name and name not in seen:
                 partners.append({"name": name})
                 seen.add(name)
