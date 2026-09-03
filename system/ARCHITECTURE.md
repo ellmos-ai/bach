@@ -1094,7 +1094,13 @@ Multi-Backend Telegram-Bot (`@bach_assistant_bot`) mit 5 Backends:
 Ollama (lokal), Claude CLI, Codex CLI, Claude API, OpenAI API.
 
 Komponenten in `hub/_services/chat/`:
-- `chat_runtime.py` — Kern-Logik mit 13 BACH-Tools (Safe/Full-Modi)
+- `chat_runtime.py` — Naht auf die Modul-Runtime `ellmos-chat` (Welle 2 des
+  Modulschnitts, D-20260830-002): Session-Verwaltung, Tool-Use-Loop und
+  Kontext-Komprimierung kommen aus dem Modul; BACH injiziert Tools, Verlauf
+  und System-Prompt
+- `bach_tools.py` — BACHs Tool-Fläche als `ToolProvider` (21 Safe-, 23 Full-Tools,
+  darunter `bach_command` in die 110+ CHIAH-Handler)
+- `session_store.py` — Verlauf als `session_snapshots`/`chat-transcript.v1` in `bach.db`
 - `chat_tray.py` — Cross-Platform System-Tray (pystray)
 - `telegram_chat.py` — Telegram-Bot mit Voice/OCR
 - Control API auf Port 8081 mit Web-Dashboard

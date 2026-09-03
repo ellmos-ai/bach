@@ -60,3 +60,5 @@ pyautogui>=0.9.54         # GUI automation (prompt session, ATI)
 # --- ellmos module cut (D-20260830-002) ---
 # Nachrichten-Fachkern (Welle 1): privates Repo; auf Hosts als Klon + `pip install -e` bereitstellen
 assistant-core @ git+https://github.com/ellmos-ai/assistant-core.git@v0.1.0
+# Chat-Runtime (Welle 2): privates Repo; auf Hosts als Klon + `pip install -e` bereitstellen
+ellmos-chat @ git+https://github.com/ellmos-ai/ellmos-chat.git@v0.2.0
