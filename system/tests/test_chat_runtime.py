@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
-"""Tests for ChatRuntime security functions (hub/_services/chat/chat_runtime.py)."""
+"""Tests for BACH's chat tool surface (hub/_services/chat/bach_tools.py).
+
+Wave 2 of the module cut (D-20260830-002) moved these functions out of
+chat_runtime.py, which is now a thin seam over the ellmos-chat runtime. The
+assertions are unchanged; only the module under test moved.
+"""
 
 import subprocess
 import sys
@@ -15,11 +20,13 @@ if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
 from hub._services.chat.chat_runtime import (
-    BACH_SYSTEM_DIR,
-    BLOCKED_PATTERNS,
     ComputeLocked,
     FailedAnswer,
     SuccessfulAnswer,
+)
+from hub._services.chat.bach_tools import (
+    BACH_SYSTEM_DIR,
+    BLOCKED_PATTERNS,
     CMD_TIMEOUT,
     SAFE_BASES,
     TOOLS_SAFE,
@@ -207,7 +214,7 @@ class TestIsSafeWritePath:
     ])
     def test_safe_mode_blocks_system_paths(self, path, expected_resolve):
         """Unix system paths should be blocked in safe mode."""
-        with patch("hub._services.chat.chat_runtime.Path") as MockPath:
+        with patch("hub._services.chat.bach_tools.Path") as MockPath:
             mock_resolved = MagicMock()
             mock_resolved.__str__ = lambda self: expected_resolve
             MockPath.return_value.resolve.return_value = mock_resolved
@@ -229,8 +236,8 @@ class TestIsSafeWritePath:
         # We mock to simulate Unix-like path resolution.
         fake_bach_dir = "/home/agent/BACH/system/hub"
         fake_user_path = fake_bach_dir + "/data/user/notes.txt"
-        with patch("hub._services.chat.chat_runtime.Path") as MockPath, \
-             patch("hub._services.chat.chat_runtime.BACH_SYSTEM_DIR", fake_bach_dir):
+        with patch("hub._services.chat.bach_tools.Path") as MockPath, \
+             patch("hub._services.chat.bach_tools.BACH_SYSTEM_DIR", fake_bach_dir):
             mock_resolved = MagicMock()
             mock_resolved.__str__ = lambda self: fake_user_path
             MockPath.return_value.resolve.return_value = mock_resolved
@@ -239,7 +246,7 @@ class TestIsSafeWritePath:
 
     def test_safe_mode_allows_tmp(self):
         """Paths outside blocked prefixes should be allowed (e.g. /tmp on Unix)."""
-        with patch("hub._services.chat.chat_runtime.Path") as MockPath:
+        with patch("hub._services.chat.bach_tools.Path") as MockPath:
             mock_resolved = MagicMock()
             mock_resolved.__str__ = lambda self: "/tmp/output.txt"
             MockPath.return_value.resolve.return_value = mock_resolved
@@ -247,7 +254,7 @@ class TestIsSafeWritePath:
         assert result is None
 
     def test_safe_mode_allows_home_dir(self):
-        with patch("hub._services.chat.chat_runtime.Path") as MockPath:
+        with patch("hub._services.chat.bach_tools.Path") as MockPath:
             mock_resolved = MagicMock()
             mock_resolved.__str__ = lambda self: "/home/user/documents/test.txt"
             MockPath.return_value.resolve.return_value = mock_resolved
@@ -290,7 +297,7 @@ class TestIsSafeWritePath:
 class TestRunShell:
     """Test run_shell timeout clamping, subprocess handling, error handling."""
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_successful_command(self, mock_run):
         mock_run.return_value = MagicMock(
             stdout="hello world\n",
@@ -300,7 +307,7 @@ class TestRunShell:
         assert "hello world" in result
         mock_run.assert_called_once()
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_stderr_included(self, mock_run):
         mock_run.return_value = MagicMock(
             stdout="output\n",
@@ -311,7 +318,7 @@ class TestRunShell:
         assert "[stderr]" in result
         assert "warning: something" in result
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_empty_output(self, mock_run):
         mock_run.return_value = MagicMock(
             stdout="",
@@ -320,21 +327,21 @@ class TestRunShell:
         result = run_shell("true")
         assert result == "(keine Ausgabe)"
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_expired(self, mock_run):
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="sleep 999", timeout=30)
         result = run_shell("sleep 999", timeout=30)
         assert "Timeout" in result
         assert "30s" in result
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_generic_exception(self, mock_run):
         mock_run.side_effect = OSError("No such file or directory")
         result = run_shell("nonexistent_cmd")
         assert "Fehler" in result
         assert "No such file or directory" in result
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_clamped_minimum(self, mock_run):
         """Timeout below 5 should be clamped to 5."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="")
@@ -342,7 +349,7 @@ class TestRunShell:
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 5
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_clamped_maximum(self, mock_run):
         """Timeout above 120 should be clamped to 120."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="")
@@ -350,7 +357,7 @@ class TestRunShell:
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 120
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_within_range(self, mock_run):
         """Timeout within 5-120 should be passed as-is."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="")
@@ -358,7 +365,7 @@ class TestRunShell:
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 60
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_output_truncated_at_4000(self, mock_run):
         """Output longer than 4000 chars should be truncated."""
         long_output = "x" * 5000
@@ -366,7 +373,7 @@ class TestRunShell:
         result = run_shell("generate_long_output")
         assert len(result) == 4000
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_default_timeout_is_cmd_timeout(self, mock_run):
         """Default timeout should be CMD_TIMEOUT (30)."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="")

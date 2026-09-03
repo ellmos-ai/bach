@@ -93,3 +93,5 @@ doc-services @ git+https://github.com/ellmos-ai/doc-services.git@cdd2f6a7fffdef7
 # Session-Checkpoint-Fachkern (S5, T-20260920-823767362): neutraler K9-Carrier fuer
 # hub/session_checkpoint_adapter.py; SnapshotHandler bleibt bis zur Verdrahtung unveraendert.
 session-checkpoint @ git+https://github.com/ellmos-ai/session-checkpoint.git@a0b89ad135f723c825f64cba8e8fb4d9f8d529b5
+# Chat-Runtime (Welle 2, D-20260830-002): neutraler Fachkern fuer hub/_services/chat/chat_runtime.py
+ellmos-chat @ git+https://github.com/ellmos-ai/ellmos-chat.git@v0.2.0
