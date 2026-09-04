@@ -32,6 +32,7 @@ os.environ.setdefault("BACH_DB", str(_TEST_DB_DIR / "bach_test.db"))
 os.environ.setdefault("BACH_BACKUPS_DIR", str(_TEST_DB_DIR / "backups"))
 os.environ.setdefault("BACH_SECRETS_FILE", str(_TEST_DB_DIR / "bach_secrets.json"))
 os.environ.setdefault("BACH_PLANS_DIR", str(_TEST_DB_DIR / "plans"))
+os.environ.setdefault("BACH_RESEARCH_DIR", str(_TEST_DB_DIR / "research"))
 
 
 def _snapshot_home_bach():
@@ -61,6 +62,15 @@ def _guard_production_bach_dir():
     ~/.bach/bach_secrets.json, ~/.bach/backups und ~/.bach/plans trotz
     BACH_DB-Isolation. Diese Fixture haelt die Zusage ein: mtime jeder Datei
     unter ~/.bach muss vor und nach der Suite identisch sein.
+
+    ACHTUNG Fehlalarm-Quelle (T-20260902-646684582, Befund D): Der Waechter
+    misst das VERZEICHNIS, nicht den Verursacher. Laeuft nebenher ein
+    residenter BACH-Prozess -- hub/_services/daemon/session_daemon.py oder ein
+    manueller `bach`-Aufruf --, schreibt DER nach ~/.bach, ohne die Env-Vars
+    dieser conftest je zu sehen, und die Suite wird dafuer verantwortlich
+    gemacht. Vor der Fehlersuche in den Tests deshalb erst pruefen, ob ein
+    solcher Prozess laeuft; Kontrollaeufe gegen HOME/USERPROFILE auf einem
+    tmp-Verzeichnis schliessen die Verwechslung ganz aus.
     """
     if os.environ.get("BACH_ALLOW_HOME_WRITES"):
         # Opt-out fuer Laeufe, in denen sich ~/.bach legitim aendert.

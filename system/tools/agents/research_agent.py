@@ -35,7 +35,13 @@ from portable_base import PortableAgent, BACH_ROOT, BACH_AVAILABLE
 SCRIPT_DIR = Path(__file__).parent
 
 # Output: BACH data dir wenn vorhanden, sonst ~/.bach/research/
-if BACH_AVAILABLE and (BACH_ROOT / "system" / "data").exists():
+# BACH_RESEARCH_DIR (Testisolation, T-20260902-646684582): gleiches Env-Var-
+# Muster wie BACH_DB/BACH_PLANS_DIR; ohne es faellt der Pfad je nach
+# BACH_AVAILABLE auf das Repo oder auf das produktive ~/.bach/research.
+_research_env = os.environ.get("BACH_RESEARCH_DIR")
+if _research_env:
+    OUTPUT_DIR = Path(_research_env).expanduser()
+elif BACH_AVAILABLE and (BACH_ROOT / "system" / "data").exists():
     OUTPUT_DIR = BACH_ROOT / "system" / "data" / "research"
 else:
     OUTPUT_DIR = Path.home() / ".bach" / "research"
