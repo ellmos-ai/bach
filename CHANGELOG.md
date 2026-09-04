@@ -24,6 +24,8 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Changed
 
+- **Konten-Fachkern nach `accounts-core` ausgelagert (D-20260903-003 = A, Welle 2):** Die vier `/api/financial/bank-accounts`-Endpunkte in `gui/server.py` und der CAMT-Saldenimport (`hub/steuer.py::_persist_camt_balances`) rufen jetzt `accounts_core.AccountStore` statt eigenes SQL gegen `bank_accounts`. Verhalten bleibt gleich (identische JSON-Form, identische UPSERT-Logik); ein neuer Regressionswaechter (`tests/test_accounts_via_accounts_core.py`) scannt beide Dateien statisch und schlaegt fehl, sobald wieder rohes `SELECT/INSERT/UPDATE/DELETE ... bank_accounts` eingefuegt wird. `accounts-core` ist per `requirements.txt`-Pin auf `v0.1.0` fixiert. `credits` bleibt eine eigene, unveraenderte Domaene.
+
 - **QUICK-Selbsttest fachlich präzisiert (Task 1146):** B001 bewertet ein
   erfolgreich erstelltes Inventar konsistent statt es als Score 0 zu führen.
   O001 verwendet für BACH nun einen vollständigen Task-Lebenszyklus über die

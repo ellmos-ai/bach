@@ -57,6 +57,8 @@ pikepdf>=10.0.2           # PDF low-level editing (anonymizer, redaction)
 pyperclip>=1.9.0          # Clipboard access (prompt workflow)
 pyautogui>=0.9.54         # GUI automation (prompt session, ATI)
 
-# --- ellmos module cut (D-20260830-002) ---
-# Nachrichten-Fachkern (Welle 1): privates Repo; auf Hosts als Klon + `pip install -e` bereitstellen
+# --- ellmos module cuts (Plan D extractions) ---
+# Nachrichten-Fachkern (Welle 1, D-20260830-002): privates Repo; auf Hosts als Klon + `pip install -e` bereitstellen
 assistant-core @ git+https://github.com/ellmos-ai/assistant-core.git@v0.1.0
+# Konten-Fachkern (Welle 2, D-20260903-003 = A): bank_accounts core (gui/server.py, hub/steuer.py CAMT import)
+accounts-core @ git+https://github.com/ellmos-ai/accounts-core.git@v0.1.0

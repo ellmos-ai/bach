@@ -2815,41 +2815,10 @@ Dieser Eigenbeleg wurde fuer die Steuererklarung {steuerjahr} erstellt.
     def _persist_camt_balances(db_path, balances: list) -> list:
         """Schreibt CAMT-Abschlusssalden nach bank_accounts (UPDATE per IBAN, sonst INSERT).
 
-        IBAN wird normalisiert (Leerzeichen raus, Grossschreibung), damit manuell
-        erfasste Konten nicht dupliziert werden. dry_run-Aufrufer rufen das nie auf.
+        Delegiert an accounts_core.AccountStore (D-20260903-003 = A): IBAN-Normalisierung
+        und UPSERT-Logik leben jetzt dort, identisch zur vorherigen BACH-eigenen SQL, damit
+        BACH und andere Konsumenten (OCEAN) dieselbe Implementierung teilen statt je eine
+        eigene, driftende Kopie zu pflegen.
         """
-        import sqlite3
-        if not balances:
-            return ["[WARN] Keine Salden in der Datei - bank_accounts unveraendert."]
-        lines = []
-        con = sqlite3.connect(str(db_path))
-        try:
-            for bal in balances:
-                iban_norm = (bal.get('iban') or '').replace(' ', '').upper()
-                if not iban_norm or iban_norm == 'UNKNOWN':
-                    lines.append("[WARN] Saldo ohne IBAN uebersprungen.")
-                    continue
-                row = con.execute(
-                    "SELECT id FROM bank_accounts WHERE REPLACE(UPPER(COALESCE(iban,'')),' ','')=?",
-                    (iban_norm,)).fetchone()
-                waehrung = bal.get('currency') or 'EUR'
-                if row:
-                    con.execute(
-                        "UPDATE bank_accounts SET balance=?, balance_date=?, "
-                        "updated_at=datetime('now') WHERE id=?",
-                        (bal['balance'], bal.get('date'), row[0]))
-                    lines.append(f"[OK] Konto {iban_norm}: Saldo {bal['balance']:.2f} "
-                                 f"{waehrung} zum {bal.get('date')} aktualisiert.")
-                else:
-                    con.execute(
-                        "INSERT INTO bank_accounts (name, iban, balance, balance_date) "
-                        "VALUES (?,?,?,?)",
-                        (f"CAMT-Import {iban_norm}", iban_norm,
-                         bal['balance'], bal.get('date')))
-                    lines.append(f"[OK] Konto {iban_norm} neu angelegt, Saldo "
-                                 f"{bal['balance']:.2f} {waehrung} zum {bal.get('date')} "
-                                 f"(Name via GUI editierbar).")
-            con.commit()
-        finally:
-            con.close()
-        return lines
+        from accounts_core import AccountStore
+        return AccountStore(db_path).persist_camt_balances(balances)
