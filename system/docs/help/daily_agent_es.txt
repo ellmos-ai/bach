@@ -1,5 +1,5 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
+# Last validated: 2026-09-05
 # Next review: 2027-05-17
 
 AGENTE DIARIO - Agente diario autónomo con sesión persistente
@@ -20,8 +20,11 @@ OPERACIONES
   bach daily-agent stop                 Detener agente + resumen de sesión
   bach daily-agent status               Mostrar PID e información de tiempo de ejecución
   bach daily-agent briefing             Iniciar sesión informativa de la mañana (módulos activos)
+  bach daily-agent briefing --dry-run   Vista previa de solo lectura
   bach daily-agent summary              Generar resumen de la tarde
   bach daily-agent config               Listar módulos de sesión informativa
+  bach daily-agent config routinika_briefing --projection=<ruta-absoluta>
+                                        Guardar la ruta del consumidor Routinika
   bach daily-agent modules              Alias para configuración
   bach daily-agent toggle <modul>       Módulo Activar/desactivar
 
@@ -30,6 +33,8 @@ Módulos de sesión informativa (alternar):
   message_briefing Mensajes no leídos (ON)
   news_briefing Resumen de noticias (AN)
   session_briefing Última sesión (ON)
+  commitment_briefing Rutinas y plazos locales (ON)
+  routinika_briefing Vencimientos federados (OFF)
   Weather_briefing Clima (predeterminado: APAGADO)
   calendar_briefing Citas del calendario (OFF)
 
@@ -40,6 +45,8 @@ EJEMPLOS
   bach daily-agent start --model=opus   Inicia con modelo 'opus'
   bach daily-agent status               Muestra PID y hora de inicio
   bach daily-agent briefing             Genera resumen con módulos activos
+  bach daily-agent briefing --routinika-projection=C:\staging\routinika.sqlite --routinika-receipt --dry-run
+                                        Verifica una proyección cerrada sin escribir
   bach daily-agent toggle news_briefing Deaktiviert News-Modul
   bach daily-agent summary              Muestra tareas completadas hoy
   bach daily-agent stop                 Detiene agente + guarda resumen
@@ -59,6 +66,8 @@ task_briefing: 10 tareas pendientes principales (título abreviado), posiblement
 message_briefing: contador de mensajes no leídos (estado='no leído')
 news_briefing: noticias no leídas de news_items (categorías principales + 3 títulos)
 session_briefing: Últimas sesiones de memoria.summary (acortado a 120 caracteres)
+routinika_briefing: vencimientos opacos de una proyección SQLite Routinika v1
+                    cerrada y permitida exactamente; desactivado por defecto.
 Weather_briefing: Probé Weather_Service (coordenadas codificadas en 0.0)
 calendar_briefing: Eventos de hoy de calendar_events (5 próximos eventos)
 
@@ -68,6 +77,8 @@ MANEJO DE ERRORES
 - El agente se inicia en segundo plano (stdout/stderr suprimido)
 - El archivo PID debe eliminarse manualmente si el proceso falla
 - Los módulos informativos ignoran los errores silenciosos de la base de datos (por ejemplo, si news_items no existe)
+- Una proyección Routinika activa o indicada explícitamente falla de forma
+  cerrada ante errores de contrato, procedencia o cierre.
 - detener guarda el resumen INCLUSO si el agente ya está muerto
 
 
