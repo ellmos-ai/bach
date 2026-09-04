@@ -363,7 +363,9 @@ class PartnerHandler(BaseHandler):
                 try:
                     forced_zone = int(arg.split("=", 1)[1])
                 except ValueError:
-                    return False, f"Ungueltige Zone: {arg}"
+                    return False, f"Ungültige Zone: {arg}"
+                if forced_zone not in {1, 2, 3, 4}:
+                    return False, f"Ungültige Zone: {arg} (erlaubt: 1-4)"
             elif arg.startswith("--gas="):
                 try:
                     gas_level = int(arg.split("=", 1)[1])
@@ -404,8 +406,14 @@ class PartnerHandler(BaseHandler):
                 strecken_typ_code=strecken_profil.typ_code,
             )
 
-        # Aktuelle Zone ermitteln (vereinfacht: Zone 1 als Default)
-        current_zone = forced_zone if forced_zone else self._get_current_zone()
+        # Automatische Delegation bleibt ohne belastbare Telemetrie gesperrt.
+        # Eine explizit gesetzte Zone gilt als bewusster Operator-Override.
+        current_zone = forced_zone if forced_zone is not None else self._get_current_zone()
+        if current_zone is None:
+            return False, (
+                "Token-Telemetrie unbekannt; keine automatische Delegation. "
+                "Nach Prüfung kann eine Zone explizit mit --zone=N gesetzt werden."
+            )
         partners = data.get("partners", [])
         allowed_partners = self._get_allowed_partners_from_db(current_zone)
         registry = build_partner_registry(partners)
@@ -608,50 +616,21 @@ class PartnerHandler(BaseHandler):
 
         return True, "\n".join(results)
     
-    def _get_current_zone(self) -> int:
-        """Ermittelt aktuelle Zone basierend auf Token-Verbrauch aus DB.
-        
-        Liest budget_percent aus monitor_tokens und mappt auf Zone:
-        - Zone 1: 0-30%
-        - Zone 2: 30-60%
-        - Zone 3: 60-80%
-        - Zone 4: 80-100%
-        """
-        import sqlite3
-        
-        db_path = self.db_path
-        if not db_path.exists():
-            return 1  # Default
-        
-        try:
-            conn = sqlite3.connect(str(db_path))
-            cursor = conn.cursor()
-            
-            # Neuesten Token-Eintrag holen
-            cursor.execute("""
-                SELECT budget_percent FROM monitor_tokens 
-                ORDER BY timestamp DESC LIMIT 1
-            """)
-            row = cursor.fetchone()
-            conn.close()
-            
-            if not row or row[0] is None:
-                return 1  # Kein Eintrag = Zone 1
-            
-            budget_pct = float(row[0])
-            
-            # Zone basierend auf delegation_rules Ranges
-            if budget_pct < 30:
-                return 1
-            elif budget_pct < 60:
-                return 2
-            elif budget_pct < 80:
-                return 3
-            else:
-                return 4
-                
-        except Exception:
-            return 1  # Fallback
+    def _get_current_zone(self) -> int | None:
+        """Ermittelt die Delegationszone oder None ohne aktuelle Telemetrie."""
+        from tools.token_monitor import get_current_budget_percent
+
+        budget_percent = get_current_budget_percent(self.db_path)
+        if budget_percent is None:
+            return None
+
+        if budget_percent < 30:
+            return 1
+        if budget_percent < 60:
+            return 2
+        if budget_percent < 80:
+            return 3
+        return 4
     
     def _get_zone_desc(self, data: dict, zone: int) -> str:
         """Zone-Beschreibung holen."""

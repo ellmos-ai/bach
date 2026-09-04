@@ -4,6 +4,7 @@
 
 import sys
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
@@ -163,8 +164,8 @@ class TestCanonicalDbUsage:
         """)
         conn.execute("""
             INSERT INTO monitor_tokens (timestamp, budget_percent)
-            VALUES ('2026-06-19T19:23:00', 85.0)
-        """)
+            VALUES (?, 85.0)
+        """, (datetime.now().isoformat(),))
         conn.commit()
         conn.close()
 
@@ -175,6 +176,56 @@ class TestCanonicalDbUsage:
             handler.db_path = db_path
 
             assert handler._get_current_zone() == 4
+
+    def test_get_current_zone_returns_unknown_without_telemetry(self, base_path, partner_db):
+        with patch("hub.partner.HAS_COMPLEXITY_SCORER", False), \
+             patch("hub.partner.HAS_CLUTCH_BRIDGE", False):
+            from hub.partner import PartnerHandler
+            handler = PartnerHandler(base_path)
+            handler.db_path = partner_db
+
+            assert handler._get_current_zone() is None
+
+    def test_delegate_stops_when_telemetry_is_unknown(self, base_path, partner_db):
+        with patch("hub.partner.HAS_COMPLEXITY_SCORER", False), \
+             patch("hub.partner.HAS_CLUTCH_BRIDGE", False):
+            from hub.partner import PartnerHandler
+            handler = PartnerHandler(base_path)
+            handler.db_path = partner_db
+            data = handler._load_partners_from_db()
+
+            ok, text = handler._delegate(
+                data,
+                ["Coding Aufgabe delegieren"],
+                dry_run=True,
+            )
+
+        assert ok is False
+        assert "Token-Telemetrie unbekannt" in text
+        assert "keine automatische Delegation" in text
+
+    @pytest.mark.parametrize("invalid_zone", ["0", "-1", "5"])
+    def test_delegate_rejects_invalid_zone_override(
+        self,
+        base_path,
+        partner_db,
+        invalid_zone,
+    ):
+        with patch("hub.partner.HAS_COMPLEXITY_SCORER", False), \
+             patch("hub.partner.HAS_CLUTCH_BRIDGE", False):
+            from hub.partner import PartnerHandler
+            handler = PartnerHandler(base_path)
+            handler.db_path = partner_db
+            data = handler._load_partners_from_db()
+
+            ok, text = handler._delegate(
+                data,
+                ["Coding Aufgabe delegieren", f"--zone={invalid_zone}"],
+                dry_run=True,
+            )
+
+        assert ok is False
+        assert "Ungültige Zone" in text
 
     def test_get_allowed_partners_uses_handler_db_path(self, base_path, tmp_path):
         db_path = tmp_path / "canonical" / "bach.db"

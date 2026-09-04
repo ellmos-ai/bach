@@ -50,6 +50,12 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **Token-Zone bleibt ohne aktuelle Telemetrie unbekannt (Task 1209):** Der
+  Monitor liest nun aus der kanonischen `BACH_DB`. Fehlt die Tabelle, ein
+  Messwert oder ist der jüngste Wert standardmäßig älter als eine Stunde,
+  melden Startup und Direktaufruf weder erfundene `0,0 %` noch „Alle Partner verfügbar“.
+  Automatische Delegationen bleiben dann gesperrt; Operator-Overrides werden
+  strikt auf die Zonen 1–4 begrenzt.
 - **Privater Absender als DB-Default entfernt (After-Care 2026-09-02):**
   `system/data/schema/schema.sql` legte `email_drafts.sender_email` mit der privaten
   Mailadresse des Maintainers als `DEFAULT` an. Die Quelle
