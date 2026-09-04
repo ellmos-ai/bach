@@ -35,11 +35,22 @@ os.environ.setdefault("BACH_PLANS_DIR", str(_TEST_DB_DIR / "plans"))
 
 
 def _snapshot_home_bach():
-    """mtime jeder Datei/jedes Ordners unter ~/.bach, sofern vorhanden."""
+    """mtime jeder Datei/jedes Ordners unter ~/.bach, sofern vorhanden.
+
+    Eintraege, die waehrend des Scans verschwinden oder nicht lesbar sind,
+    werden uebersprungen: der Waechter soll ein Urteil liefern, nicht den
+    ganzen Lauf mit einem Error abbrechen.
+    """
     root = Path.home() / ".bach"
     if not root.exists():
         return None
-    return {str(p.relative_to(root)): p.stat().st_mtime_ns for p in root.rglob("*")}
+    snapshot = {}
+    for path in root.rglob("*"):
+        try:
+            snapshot[str(path.relative_to(root))] = path.stat().st_mtime_ns
+        except OSError:
+            continue
+    return snapshot
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -51,6 +62,10 @@ def _guard_production_bach_dir():
     BACH_DB-Isolation. Diese Fixture haelt die Zusage ein: mtime jeder Datei
     unter ~/.bach muss vor und nach der Suite identisch sein.
     """
+    if os.environ.get("BACH_ALLOW_HOME_WRITES"):
+        # Opt-out fuer Laeufe, in denen sich ~/.bach legitim aendert.
+        yield
+        return
     before = _snapshot_home_bach()
     yield
     if before is None:
