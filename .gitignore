@@ -276,3 +276,7 @@ PLAN.txt
 
 # === NOTESPACE ON-BOARD (User-Daten: Projekte, Vektor-DB, Config) ===
 /system/data/notespace/
+
+# Lauf-Artefakte (keine Quellen): Aftercare-Protokolle und Testergebnisse
+/_after-care/
+/system/tools/testing/results/
