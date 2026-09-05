@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """Testweite Isolation der BACH-Datenbank + produktiver ~/.bach-Pfade.
 
-hub.bach_paths loest Pfade zuerst ueber Env-Vars auf (BACH_DB, BACH_BACKUPS_DIR).
+hub.bach_paths loest Pfade zuerst ueber Env-Vars auf (BACH_LOCAL_DIR, BACH_DB,
+BACH_BACKUPS_DIR).
 Ohne diese Isolation laufen Tests, die App/Database/Backup ohne eigenen Pfad
 instanziieren (z. B. TestApp.test_db_lazy), gegen die ECHTE Produktiv-DB
 ~/.bach/bach.db — am 2026-09-01 hat genau das real Migrationen gegen
@@ -28,6 +29,7 @@ from pathlib import Path
 import pytest
 
 _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="bach_test_db_"))
+os.environ.setdefault("BACH_LOCAL_DIR", str(_TEST_DB_DIR))
 os.environ.setdefault("BACH_DB", str(_TEST_DB_DIR / "bach_test.db"))
 os.environ.setdefault("BACH_BACKUPS_DIR", str(_TEST_DB_DIR / "backups"))
 os.environ.setdefault("BACH_SECRETS_FILE", str(_TEST_DB_DIR / "bach_secrets.json"))

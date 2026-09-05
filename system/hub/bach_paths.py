@@ -136,7 +136,7 @@ INSTANCES_DIR = DATA_DIR / "instances"
 # PROSYNC (Lokale DB + OneDrive-Transit)
 # ============================================================================
 
-LOCAL_BACH_DIR = Path.home() / ".bach"
+LOCAL_BACH_DIR = _env_path("BACH_LOCAL_DIR", Path.home() / ".bach")
 _LOCAL_DB = LOCAL_BACH_DIR / "bach.db"
 _ONEDRIVE_CANDIDATES = [
     BACH_ROOT.parent.parent.parent.parent,

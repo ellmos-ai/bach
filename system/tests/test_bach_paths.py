@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: MIT
 """Tests for bach_paths.py (hub/bach_paths.py)."""
 
+import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -108,11 +110,71 @@ class TestBackupsDir:
 
 class TestDbPaths:
     def test_local_bach_dir(self):
-        assert LOCAL_BACH_DIR == Path.home() / ".bach"
+        if "BACH_LOCAL_DIR" in os.environ:
+            assert LOCAL_BACH_DIR == Path(os.environ["BACH_LOCAL_DIR"]).expanduser()
+        else:
+            assert LOCAL_BACH_DIR == Path.home() / ".bach"
 
     def test_bach_db_is_path(self):
         assert isinstance(BACH_DB, Path)
-        assert BACH_DB.name == "bach.db"
+        if "BACH_DB" in os.environ:
+            assert BACH_DB == Path(os.environ["BACH_DB"]).expanduser()
+        else:
+            assert BACH_DB.name == "bach.db"
+
+    def test_local_bach_dir_env_controls_all_direct_derivations(self, tmp_path):
+        isolated = tmp_path / "isolated-bach"
+        fake_home = tmp_path / "home"
+        env = os.environ.copy()
+        env.update({
+            "BACH_LOCAL_DIR": str(isolated),
+            "HOME": str(fake_home),
+            "USERPROFILE": str(fake_home),
+            "PYTHONPATH": str(BP_SYSTEM_ROOT),
+        })
+        code = (
+            "import json; from hub import bach_paths as p; "
+            "print(json.dumps([str(p.LOCAL_BACH_DIR), str(p._LOCAL_DB), "
+            "str(p.PROSYNC_TRANSIT_DIR), str(p.get_path('local_bach'))]))"
+        )
+
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", code],
+            cwd=BP_SYSTEM_ROOT,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert json.loads(result.stdout) == [
+            str(isolated),
+            str(isolated / "bach.db"),
+            str(isolated / "transit"),
+            str(isolated),
+        ]
+
+    def test_local_bach_dir_defaults_to_home_in_fresh_process(self, tmp_path):
+        fake_home = tmp_path / "home"
+        env = os.environ.copy()
+        env.pop("BACH_LOCAL_DIR", None)
+        env.update({
+            "HOME": str(fake_home),
+            "USERPROFILE": str(fake_home),
+            "PYTHONPATH": str(BP_SYSTEM_ROOT),
+        })
+
+        result = subprocess.run(
+            [sys.executable, "-B", "-c",
+             "from hub.bach_paths import LOCAL_BACH_DIR; print(LOCAL_BACH_DIR)"],
+            cwd=BP_SYSTEM_ROOT,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.stdout.strip() == str(fake_home / ".bach")
 
     def test_cli_runtime_uses_canonical_bach_db(self):
         assert bach_cli.DB_PATH == BACH_DB
