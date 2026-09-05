@@ -163,7 +163,7 @@ except Exception:
 if os.path.exists(system_file):
     system_prompt = open(system_file, encoding="utf-8").read().strip()
 else:
-    system_prompt = "Du bist ein persönlicher KI-Assistent auf dem Mac Studio. Antworte auf Deutsch, präzise und klar."
+    system_prompt = "Du bist ein lokaler BACH Chat-Assistent. Antworte auf Deutsch, präzise und klar."
 
 runtime = ChatRuntime(
     backend=backend,
