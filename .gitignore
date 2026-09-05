@@ -42,7 +42,11 @@ id_ed25519.*
 
 # === BACKUPS & LAUFZEIT-DATEN (Nicht committen!) ===
 /backups/*.bachdb
+/backups/*.bachdb-wal
+/backups/*.bachdb-shm
 /backups/*.db
+/backups/*.db-wal
+/backups/*.db-shm
 /backups/heartbeat.json
 /system/_backups/*.zip
 /system/storage/
@@ -78,6 +82,7 @@ id_ed25519.*
 /system/data/config/directory_truth.json
 /system/data/config/directory_truth-*.json
 /system/data/healing_report.json
+/system/data/fs_manifest.json
 /system/data/sync_state.json
 /system/data/sync_state-*.json
 /system/data/directory_truth-*.json
@@ -102,12 +107,14 @@ id_ed25519.*
 /exports/**/*.zip
 /exports/**/_archive/
 /system/tools/analysis_results.json
+/system/tools/testing/results/
 
 # === ONEDRIVE CONFLICT COPIES (Nie committen!) ===
-*-Mac Studio.py
-*-Mac Studio.txt
-*-LAPTOP-*.py
-*-DESKTOP-*.py
+*-WORKSTATION-LG.*
+*-ASUS-GEI.*
+*-Mac Studio.*
+*-LAPTOP-*.*
+*-DESKTOP-*.*
 
 # === ORPHANED CONFIG FLAGS ===
 /system/config/
