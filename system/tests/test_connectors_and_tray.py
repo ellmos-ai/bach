@@ -1189,3 +1189,19 @@ class TestTrayIdleWorker:
 
         assert [c for c in calls if c[0] in ("PUT", "POST")] == []
         assert tray.idle_pending is not None
+
+    def test_expired_pending_stops_waiting_and_frees_the_worker(self, monkeypatch):
+        """Nach PENDING_TTL gilt wieder das Verhalten von vor dem Fix."""
+        tray = self._tray_with_pending(monkeypatch)
+        tray.idle_pending = (42, time.time() - tray.PENDING_TTL - 1)
+        calls = []
+
+        def fake_api(method, path, data=None, **kw):
+            calls.append((method, path, data))
+            return self._history() if path.startswith("/api/history") else {"success": True, "tasks": []}
+
+        with patch.object(tray, "_api", side_effect=fake_api):
+            tray._process_idle_task()
+
+        assert tray.idle_pending is None
+        assert any(p.startswith("/api/tasks?") for m, p, d in calls), "Worker sucht wieder Arbeit"
