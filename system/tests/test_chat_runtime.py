@@ -572,6 +572,25 @@ class _AnsweringBackend:
         return {"content": "Echte Antwort"}
 
 
+class _AbortingBackend:
+    """Backend, das den Abbruch meldet statt zu werfen.
+
+    So verhaelt sich OllamaBackend seit der Stille-Messung: laeuft das Modell
+    in den Idle- oder Gesamtdeckel, kommt ein Ergebnisdict mit ``error`` und
+    der Teilantwort zurueck -- keine Ausnahme, die der Loop fangen koennte.
+    """
+
+    def __init__(self, teil=""):
+        self._teil = teil
+
+    def get_default_model(self):
+        return "test-model"
+
+    async def chat(self, messages, **kwargs):
+        return {"content": self._teil, "tool_calls": None, "raw_message": {},
+                "error": "Ollama antwortet seit 120s nicht"}
+
+
 class TestFailedAnswer:
     def _process(self, backend, manages_own_tools=False):
         import asyncio
@@ -586,7 +605,29 @@ class TestFailedAnswer:
     def test_tool_loop_backend_failure_is_marked(self):
         answer = self._process(_RaisingBackend(RuntimeError("Ollama weg")))
         assert isinstance(answer, FailedAnswer)
-        assert answer == "Backend-Fehler: Ollama weg"
+        # Der Typname steht seit der Zusammenfuehrung mit der Mac-Live-Arbeit
+        # (T-20260906-519723925) immer davor, nicht nur bei leerem str(e) --
+        # dieselbe Absicht wie test_empty_exception_still_names_the_cause,
+        # nur ohne die Luecke bei Ausnahmen, die beides haben.
+        assert answer == "Backend-Fehler: RuntimeError: Ollama weg"
+
+    def test_reported_abort_is_marked_like_a_raised_one(self):
+        """Ein gemeldeter Abbruch ist genauso wenig eine Antwort wie eine Ausnahme.
+
+        Ohne diese Markierung faellt der Idle-Worker in genau das Loch aus
+        T-20260906-743610852 zurueck: Der Ollama-Lauf laeuft in den Deckel,
+        das Backend meldet ``error`` statt zu werfen, und der Task steht
+        trotzdem auf completed.
+        """
+        answer = self._process(_AbortingBackend())
+        assert isinstance(answer, FailedAnswer)
+        assert FailedAnswer.looks_like(answer)
+        assert "seit 120s nicht" in answer
+
+    def test_partial_output_survives_the_abort(self):
+        answer = self._process(_AbortingBackend(teil="Halb fertiger Gedanke"))
+        assert isinstance(answer, FailedAnswer)
+        assert "Halb fertiger Gedanke" in answer
 
     def test_managed_tools_backend_failure_is_marked(self):
         answer = self._process(

@@ -15,6 +15,7 @@ Verwendung:
 """
 import asyncio
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -23,6 +24,10 @@ import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Optional
+from hub._services.limits import limit  # einstellbare Laufzeit-Grenzen
+
+
+log = logging.getLogger(__name__)
 
 
 class ModelBackend(ABC):
@@ -63,36 +68,131 @@ class OllamaBackend(ModelBackend):
         self._models_cache: list[str] = []
         self._models_cache_time: float = 0
 
+    async def _lebt(self, client, model: str) -> bool:
+        """Laeuft Ollama noch, und ist unser Modell geladen?
+
+        Billig genug fuer eine Zwischenfrage: /api/ps laedt kein Modell und
+        braucht keine zweite Instanz - ein zweites Modell zum Pruefen wuerde
+        den Speicher belegen, an dem lange Laeufe ohnehin scheitern.
+        """
+        try:
+            r = await client.get(f"{self.base_url}/api/ps",
+                                 timeout=limit("BACH_LLM_PING_TIMEOUT"))
+            geladen = [m.get("name", "") for m in (r.json() or {}).get("models", [])]
+        except Exception:
+            return False                      # Dienst nicht erreichbar: tot
+        if not geladen:
+            # Kein Modell geladen heisst NICHT tot: Waehrend Ollama unser
+            # Modell erst in den Speicher zieht (18 GB dauern laenger als die
+            # Stille-Schwelle), steht es noch nicht in /api/ps. Ein
+            # antwortender Dienst ist das Lebenszeichen, nicht der Eintrag.
+            log.info("Ollama erreichbar, aber kein Modell geladen - laedt vermutlich")
+            return True
+        if any(g == model or g.startswith(model.split(":")[0]) for g in geladen):
+            return True
+        # Ein FREMDES Modell im Speicher heisst, unseres wurde verdraengt -
+        # dann wartet dieser Aufruf auf etwas, das nicht mehr rechnet.
+        log.warning("Ollama haelt %s statt %s - unser Modell wurde verdraengt",
+                    geladen, model)
+        return False
+
     async def chat(self, messages, tools=None, think=True, model=None):
         import httpx
+
         try:
             from hub.compute_lock import get_effective_keep_alive
             effective_ka = get_effective_keep_alive(default=self.keep_alive)
         except ImportError:
             effective_ka = self.keep_alive
+
+        modell = model or self.default_model
         payload = {
-            "model": model or self.default_model,
+            "model": modell,
             "messages": messages,
-            "stream": False,
+            # Gestreamt wird, um die Stille messen zu koennen - nicht, um
+            # Teilausgaben anzuzeigen. Ohne Stream gibt es nur ein Ereignis,
+            # und dann bleibt als Mass nur die Gesamtdauer.
+            "stream": True,
             "think": think,
             "keep_alive": effective_ka,
         }
         if tools:
             payload["tools"] = tools
 
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                f"{self.base_url}/api/chat",
-                json=payload,
-                timeout=180 if think else 120,
-            )
-            resp = r.json()
+        idle = limit("BACH_LLM_IDLE_TIMEOUT")
+        kulanz = limit("BACH_LLM_IDLE_GRACE")
+        deckel = limit("BACH_LLM_TOTAL_CAP")
 
-        msg = resp.get("message", {})
+        inhalt: list[str] = []
+        tool_calls = None
+        letzte_msg: dict = {}
+        prompt_tokens = None
+        begonnen = time.time()
+        letzte_regung = begonnen
+        nachgefragt = 0
+
+        # httpx' eigener Timeout gilt hier pro Lesevorgang, nicht fuer den
+        # ganzen Aufruf: Er soll nur greifen, wenn die Leitung wirklich
+        # steht - ueber das Ende entscheidet die Stille-Messung darunter.
+        grenzen = httpx.Timeout(connect=30.0, read=float(idle), write=30.0, pool=30.0)
+        async with httpx.AsyncClient(timeout=grenzen) as client:
+            try:
+                async with client.stream("POST", f"{self.base_url}/api/chat",
+                                         json=payload) as r:
+                    async for zeile in r.aiter_lines():
+                        jetzt = time.time()
+                        if zeile.strip():
+                            letzte_regung = jetzt
+                            nachgefragt = 0
+                            try:
+                                stueck = json.loads(zeile)
+                            except ValueError:
+                                continue
+                            msg = stueck.get("message") or {}
+                            if msg:
+                                letzte_msg = msg
+                                if msg.get("content"):
+                                    inhalt.append(msg["content"])
+                                if msg.get("tool_calls"):
+                                    tool_calls = msg["tool_calls"]
+                            if stueck.get("prompt_eval_count") is not None:
+                                prompt_tokens = stueck["prompt_eval_count"]
+                            if stueck.get("done"):
+                                break
+
+                        if deckel > 0 and (jetzt - begonnen) > deckel:
+                            return {"content": "", "tool_calls": None,
+                                    "raw_message": {},
+                                    "error": f"Gesamtdeckel {deckel}s erreicht"}
+
+                        if (jetzt - letzte_regung) > idle:
+                            # Stille heisst nicht tot: erst nachfragen.
+                            if await self._lebt(client, modell) and nachgefragt < kulanz:
+                                nachgefragt += 1
+                                letzte_regung = jetzt
+                                log.info("Ollama still seit %ds, lebt aber - "
+                                         "warte weiter (%d/%d)", idle, nachgefragt, kulanz)
+                                continue
+                            return {"content": "".join(inhalt), "tool_calls": tool_calls,
+                                    "raw_message": letzte_msg,
+                                    "prompt_tokens": prompt_tokens,
+                                    "error": f"Ollama antwortet seit {idle}s nicht "
+                                             f"und meldet unser Modell nicht mehr"}
+            except httpx.HTTPError as e:
+                # Leere Fehlertexte sind hier die Regel (ReadTimeout hat keinen),
+                # deshalb der Typname - sonst steht spaeter nur "Backend-Fehler:".
+                return {"content": "".join(inhalt), "tool_calls": tool_calls,
+                        "raw_message": letzte_msg, "prompt_tokens": prompt_tokens,
+                        "error": f"{type(e).__name__}: {e}".rstrip(": ")}
+
         return {
-            "content": msg.get("content", ""),
-            "tool_calls": msg.get("tool_calls"),
-            "raw_message": msg,
+            "content": "".join(inhalt),
+            "tool_calls": tool_calls,
+            "raw_message": letzte_msg or {"role": "assistant",
+                                          "content": "".join(inhalt)},
+            # Wie voll ist das Kontextfenster? Ollama liefert das mit; ohne
+            # diese Zahl laesst sich eine Uebergabe nicht rechtzeitig ausloesen.
+            "prompt_tokens": prompt_tokens,
         }
 
     def list_models(self) -> list[str]:
@@ -140,7 +240,7 @@ class OpenAIBackend(ModelBackend):
                 f"{self.base_url}/chat/completions",
                 json=payload,
                 headers=headers,
-                timeout=120,
+                timeout=limit("BACH_LLM_TIMEOUT_FAST"),
             )
             resp = r.json()
 
@@ -236,7 +336,7 @@ class AnthropicBackend(ModelBackend):
                 f"{self.base_url}/messages",
                 json=payload,
                 headers=headers,
-                timeout=120,
+                timeout=limit("BACH_LLM_TIMEOUT_FAST"),
             )
             resp = r.json()
 
@@ -303,7 +403,7 @@ class CLIBackend(ModelBackend):
                  default_model: str = "", cwd: str = "",
                  permission_mode: str = "restricted",
                  allowed_tools: str = "Read,Grep,Glob,Bash,WebFetch,WebSearch",
-                 max_turns: int = 30, timeout: int = 0):
+                 max_turns: int = 0, timeout: int = 0):
         self.cli_name = cli_name
         self.cli_path = cli_path or self._find_cli(cli_name)
         preset = self.KNOWN_CLIS.get(cli_name, self.KNOWN_CLIS["claude"])
@@ -313,7 +413,7 @@ class CLIBackend(ModelBackend):
         self.cwd = cwd or str(Path.home())
         self.permission_mode = permission_mode
         self.allowed_tools = allowed_tools
-        self.max_turns = max_turns
+        self.max_turns = max_turns or limit("BACH_CLI_MAX_TURNS")
         self.timeout = timeout
         self._session_active = False
 
@@ -423,7 +523,7 @@ class CLIBackend(ModelBackend):
 
             stdout_data = []
             last_activity = time.time()
-            inactivity_timeout = self.timeout if self.timeout > 0 else 300
+            inactivity_timeout = self.timeout if self.timeout > 0 else limit("BACH_CLI_IDLE_TIMEOUT")
 
             while True:
                 try:
