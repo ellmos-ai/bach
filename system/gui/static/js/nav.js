@@ -60,9 +60,6 @@ if (typeof escapeHtml === 'undefined') {
     };
 }
 
-const CHAT_HOST = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-    ? "macstudvonlukas" : window.location.hostname;
-
 const NAV_ITEMS = [
     { href: "/", label: "Dashboard" },
     { label: "Aufgaben", children: [

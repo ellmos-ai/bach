@@ -21,6 +21,7 @@ Start:
   python telegram_chat.py
 """
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -37,8 +38,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-# BACH system path: resolve from this file's location (hub/_services/chat/)
-_bach_system = str(Path(__file__).resolve().parent.parent.parent)
+# BACH system path: resolve from this file's location (system/hub/_services/chat/)
+# Keep direct script execution working; module mode already receives this path
+# from the Startspine.
+_bach_system = str(Path(__file__).resolve().parents[3])
 if _bach_system not in sys.path:
     sys.path.insert(0, _bach_system)
 
@@ -73,7 +76,12 @@ except Exception as e:
     print(f"BACH API nicht verfügbar: {e}")
 
 # Chat Runtime + Backend
-from hub._services.llm.model_backend import create_backend, OllamaBackend
+from hub._services.llm.model_backend import (
+    CLIBackend,
+    OllamaBackend,
+    backend_identifier,
+    create_backend,
+)
 from hub._services.chat.chat_runtime import ChatRuntime, RUNTIME_BACH_DB
 from hub._services.chat.session_store import SQLiteChatSessionStore
 
@@ -180,6 +188,7 @@ _global_defaults = {
     "model": "",
     "max_tool_rounds": 12,
 }
+_runtime_state_lock = threading.RLock()
 
 # Pending actions for compute lock confirmations (keyed by chat_id)
 # Format: {chat_id: {"kind": "compute_pause_for_ollama", "status": dict,
@@ -190,14 +199,15 @@ _PENDING_TTL = 120  # seconds before a pending action expires
 _orig_get_session = runtime.get_session
 
 def _patched_get_session(chat_id: str):
-    session = _orig_get_session(chat_id)
-    if len(session.messages) == 0:
-        if _global_defaults.get("mode"):
-            session.mode = _global_defaults["mode"]
-        if _global_defaults.get("model"):
-            session.model = _global_defaults["model"]
-        session.think = _global_defaults.get("think", True)
-    return session
+    with _runtime_state_lock:
+        session = _orig_get_session(chat_id)
+        if len(session.messages) == 0:
+            if _global_defaults.get("mode"):
+                session.mode = _global_defaults["mode"]
+            if _global_defaults.get("model"):
+                session.model = _global_defaults["model"]
+            session.think = _global_defaults.get("think", True)
+        return session
 
 runtime.get_session = _patched_get_session
 
@@ -350,17 +360,33 @@ def _check_cli_available(name: str) -> str:
     return ""
 
 
-def _check_api_key(name: str) -> str:
-    key_map = {
-        "claude-api": ("ANTHROPIC_API_KEY", "anthropic_api_key"),
-        "openai": ("OPENAI_API_KEY", "openai_api_key"),
-    }
-    if name not in key_map:
+_API_KEY_SOURCES = {
+    "claude-api": ("ANTHROPIC_API_KEY", "anthropic_api_key"),
+    "openai": ("OPENAI_API_KEY", "openai_api_key"),
+}
+
+
+def _load_api_key(name: str) -> str:
+    source = _API_KEY_SOURCES.get(name)
+    if source is None:
         return ""
-    env_var, file_name = key_map[name]
-    key_file = os.path.expanduser(f"~/.credentials/{file_name}")
-    has_key = bool(os.environ.get(env_var)) or os.path.exists(key_file)
-    return "Key vorhanden" if has_key else "Key fehlt"
+
+    env_var, file_name = source
+    configured = str(os.environ.get(env_var) or "").strip()
+    if configured:
+        return configured
+
+    key_file = Path(os.path.expanduser(f"~/.credentials/{file_name}"))
+    try:
+        return key_file.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return ""
+
+
+def _check_api_key(name: str) -> str:
+    if name not in _API_KEY_SOURCES:
+        return ""
+    return "Key vorhanden" if _load_api_key(name) else "Key fehlt"
 
 
 async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -402,12 +428,9 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         preset["default_model"] = args[1]
 
     if preset["method"] == "api" and name in ("claude-api", "openai"):
-        env_var = "ANTHROPIC_API_KEY" if "claude" in name else "OPENAI_API_KEY"
-        file_name = "anthropic_api_key" if "claude" in name else "openai_api_key"
+        env_var, file_name = _API_KEY_SOURCES[name]
         key_file = os.path.expanduser(f"~/.credentials/{file_name}")
-        api_key = os.environ.get(env_var, "")
-        if not api_key and os.path.exists(key_file):
-            api_key = open(key_file, encoding="utf-8").read().strip()
+        api_key = _load_api_key(name)
         if not api_key:
             await update.message.reply_text(
                 f"Kein API-Key für {name}.\n"
@@ -420,9 +443,22 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         config_for_backend = {k: v for k, v in preset.items()
                               if k not in ("method", "description")}
         new_backend = create_backend(config_for_backend)
-        runtime.backend = new_backend
-        session = runtime.get_session(str(update.effective_chat.id))
-        session.model = preset["default_model"]
+        available, availability_status = await asyncio.to_thread(
+            _checked_backend_availability,
+            new_backend,
+            preset["default_model"],
+        )
+        if not available:
+            await update.message.reply_text(
+                f"Backend nicht verfügbar: {availability_status}"
+            )
+            return
+
+        with _runtime_state_lock:
+            runtime.backend = new_backend
+            session = runtime.get_session(str(update.effective_chat.id))
+            session.model = preset["default_model"]
+        _invalidate_backend_inventory_cache()
 
         method_str = "CLI-Session" if preset["method"] == "cli" else "API"
         owns_tools = getattr(new_backend, "manages_own_tools", False)
@@ -952,6 +988,7 @@ async def _keep_typing(update):
 # --- Control API (Port 8081) ---
 
 CONTROL_PORT = int(os.environ.get("BACH_CONTROL_PORT", "8081"))
+TELEGRAM_VERIFIED = False
 
 WEB_DASHBOARD = """<!DOCTYPE html>
 <html lang="de">
@@ -1081,6 +1118,8 @@ async function refresh() {
       const b = document.createElement('button');
       b.className = 'btn';
       b.textContent = name + (info.status ? ' [' + info.status + ']' : '');
+      b.disabled = info.available !== true;
+      b.title = info.status || 'Backend nicht verfügbar';
       b.onclick = () => setBackend(name);
       c.appendChild(b);
     }
@@ -1147,6 +1186,182 @@ def _get_active_session_state():
     )
 
 
+def _get_session_model(chat_id: str) -> str:
+    with _runtime_state_lock:
+        session = runtime.sessions.get(chat_id)
+        session_model = str(getattr(session, "model", "") or "").strip()
+        if session_model:
+            return session_model
+
+        configured_default = str(_global_defaults.get("model") or "").strip()
+        return configured_default or runtime.backend.get_default_model()
+
+
+def _snapshot_chat_backend(chat_id: str):
+    with _runtime_state_lock:
+        return runtime.backend, _get_session_model(chat_id)
+
+
+def _checked_backend_availability(selected_backend, model: str) -> tuple[bool, str]:
+    timeout = 8.0 if isinstance(selected_backend, CLIBackend) else 1.5
+    try:
+        available, status = selected_backend.availability(model=model, timeout=timeout)
+    except Exception:
+        return False, "Prüfung fehlgeschlagen"
+    return available is True, str(status or "nicht verfügbar")
+
+
+_BACKEND_INVENTORY_TTL_SECONDS = 30.0
+_backend_inventory_lock = threading.Lock()
+_backend_inventory_cache = {
+    "expires_at": 0.0,
+    "signature": None,
+    "value": None,
+}
+
+
+def _invalidate_backend_inventory_cache() -> None:
+    with _backend_inventory_lock:
+        _backend_inventory_cache.update(
+            expires_at=0.0,
+            signature=None,
+            value=None,
+        )
+
+
+def _copy_backend_inventory(value: dict[str, dict]) -> dict[str, dict]:
+    return {name: dict(entry) for name, entry in value.items()}
+
+
+def _probe_backend_inventory_entry(
+    name: str,
+    preset: dict,
+    selected_id: str,
+    selected_model: str,
+) -> tuple[bool, str]:
+    if name == selected_id:
+        return _checked_backend_availability(runtime.backend, selected_model)
+
+    try:
+        candidate_config = {
+            key: value
+            for key, value in preset.items()
+            if key not in ("method", "description")
+        }
+        if preset["method"] == "cli":
+            cli_name = preset["type"].replace("-cli", "")
+            if _check_cli_available(cli_name) != "vorhanden":
+                raise FileNotFoundError(cli_name)
+        elif name in ("claude-api", "openai"):
+            api_key = _load_api_key(name)
+            if not api_key:
+                return False, "Key fehlt"
+            candidate_config["api_key"] = api_key
+
+        candidate = create_backend(candidate_config)
+        return _checked_backend_availability(
+            candidate,
+            preset["default_model"],
+        )
+    except FileNotFoundError:
+        return False, "nicht gefunden"
+    except Exception:
+        return False, "Prüfung fehlgeschlagen"
+
+
+def _backend_inventory() -> dict[str, dict]:
+    from concurrent.futures import ThreadPoolExecutor
+
+    selected_id = backend_identifier(runtime.backend)
+    selected_model, _, _ = _get_active_session_state()
+    signature = (id(runtime.backend), selected_id, selected_model)
+    now = time.monotonic()
+
+    with _backend_inventory_lock:
+        cached_value = _backend_inventory_cache["value"]
+        if (
+            cached_value is not None
+            and _backend_inventory_cache["signature"] == signature
+            and now < _backend_inventory_cache["expires_at"]
+        ):
+            return _copy_backend_inventory(cached_value)
+
+        with ThreadPoolExecutor(max_workers=max(1, len(BACKEND_PRESETS))) as pool:
+            futures = {
+                name: pool.submit(
+                    _probe_backend_inventory_entry,
+                    name,
+                    preset,
+                    selected_id,
+                    selected_model,
+                )
+                for name, preset in BACKEND_PRESETS.items()
+            }
+            backends = {}
+            for name, preset in BACKEND_PRESETS.items():
+                try:
+                    available, status = futures[name].result()
+                except Exception:
+                    available, status = False, "Prüfung fehlgeschlagen"
+                backends[name] = {
+                    "description": preset["description"],
+                    "method": preset["method"],
+                    "default_model": preset["default_model"],
+                    "status": status,
+                    "available": available,
+                    "selected": name == selected_id,
+                }
+
+        _backend_inventory_cache.update(
+            expires_at=time.monotonic() + _BACKEND_INVENTORY_TTL_SECONDS,
+            signature=signature,
+            value=_copy_backend_inventory(backends),
+        )
+        return _copy_backend_inventory(backends)
+
+
+def _control_chat_response(answer) -> tuple[dict, int]:
+    text = str(answer or "").strip()
+    if not text:
+        return {"ok": False, "error": "Chat-Backend lieferte keine Antwort"}, 502
+    if text.startswith(("Backend-Fehler:", "Fehler:")):
+        return {"ok": False, "error": text}, 502
+    return {"ok": True, "answer": text}, 200
+
+
+def _is_loopback_host(host: str) -> bool:
+    normalized = str(host or "").strip().strip("[]")
+    if normalized.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_loopback_origin(origin: str) -> bool:
+    parsed = urlparse(str(origin or "").strip())
+    return (
+        parsed.scheme in {"http", "https"}
+        and not parsed.username
+        and not parsed.password
+        and not parsed.params
+        and not parsed.query
+        and not parsed.fragment
+        and parsed.path in {"", "/"}
+        and _is_loopback_host(parsed.hostname or "")
+    )
+
+
+def _control_bind_host() -> str:
+    bind_host = os.environ.get("BACH_CONTROL_HOST", "127.0.0.1").strip()
+    if not _is_loopback_host(bind_host):
+        raise ValueError(
+            "Control API darf ohne authentifizierten Ingress nur an Loopback binden"
+        )
+    return bind_host
+
+
 class QuietHTTPServer(ThreadingHTTPServer):
     def handle_error(self, request, client_address):
         exc = sys.exc_info()[1]
@@ -1166,7 +1381,11 @@ class ControlHandler(BaseHTTPRequestHandler):
             pass
 
     def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = str(self.headers.get("Origin") or "").strip()
+        if not _is_loopback_origin(origin):
+            return
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
@@ -1175,6 +1394,7 @@ class ControlHandler(BaseHTTPRequestHandler):
         try:
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
             self._cors()
             self.end_headers()
             self.wfile.write(body)
@@ -1201,13 +1421,40 @@ class ControlHandler(BaseHTTPRequestHandler):
                 return {}
         return {}
 
+    def _discard_request_body(self):
+        try:
+            remaining = max(0, int(self.headers.get("Content-Length", 0)))
+        except (TypeError, ValueError):
+            return
+        while remaining:
+            chunk = self.rfile.read(min(remaining, 64 * 1024))
+            if not chunk:
+                return
+            remaining -= len(chunk)
+
+    def _allow_json_post(self) -> bool:
+        origin = str(self.headers.get("Origin") or "").strip()
+        if origin and not _is_loopback_origin(origin):
+            self._discard_request_body()
+            self._json({"error": "Fremd-Origin nicht erlaubt"}, 403)
+            return False
+
+        content_type = str(self.headers.get("Content-Type") or "")
+        media_type = content_type.partition(";")[0].strip().lower()
+        if media_type != "application/json":
+            self._discard_request_body()
+            self._json({"error": "Content-Type application/json erforderlich"}, 415)
+            return False
+        return True
+
     def do_OPTIONS(self):
         self.send_response(200)
         self._cors()
         self.end_headers()
 
     def do_GET(self):
-        path = urlparse(self.path).path
+        parsed_url = urlparse(self.path)
+        path = parsed_url.path
 
         if path == "/":
             self._html(WEB_DASHBOARD)
@@ -1234,7 +1481,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                 if cid not in _SYS_IDS and (s.current_tool or now - s.last_active < 120)
             )
             self._json({
+                "service": "bach-chat-control",
+                "telegram_verified": TELEGRAM_VERIFIED,
                 "backend": backend_name,
+                "backend_id": backend_identifier(runtime.backend),
                 "backend_cli": cli_name,
                 "model": model,
                 "mode": mode,
@@ -1261,25 +1511,27 @@ class ControlHandler(BaseHTTPRequestHandler):
             })
 
         elif path == "/api/backends":
-            backends = {}
-            for name, preset in BACKEND_PRESETS.items():
-                status = ""
-                if preset["method"] == "cli":
-                    cli_name = preset["type"].replace("-cli", "")
-                    status = _check_cli_available(cli_name)
-                elif name in ("claude-api", "openai"):
-                    status = _check_api_key(name)
-                backends[name] = {
-                    "description": preset["description"],
-                    "method": preset["method"],
-                    "default_model": preset["default_model"],
-                    "status": status,
-                }
-            self._json(backends)
+            self._json(_backend_inventory())
+
+        elif path == "/api/readiness":
+            chat_id = parse_qs(parsed_url.query).get("chat_id", ["api-delegate"])[0]
+            selected_backend, model = _snapshot_chat_backend(chat_id)
+            available, availability_status = _checked_backend_availability(
+                selected_backend,
+                model,
+            )
+            self._json({
+                "available": available,
+                "status": availability_status,
+                "backend_id": backend_identifier(selected_backend),
+                "model": model,
+            })
 
         elif path == "/api/models":
             try:
-                models = runtime.backend.list_models()
+                with _runtime_state_lock:
+                    selected_backend = runtime.backend
+                models = selected_backend.list_models()
                 self._json({"models": models})
             except Exception as e:
                 self._json({"error": str(e)}, 500)
@@ -1288,8 +1540,13 @@ class ControlHandler(BaseHTTPRequestHandler):
             self._json({"error": "Not found"}, 404)
 
     def do_POST(self):
+        if not self._allow_json_post():
+            return
         path = urlparse(self.path).path
         body = self._read_body()
+        if not isinstance(body, dict):
+            self._json({"error": "JSON-Objekt erforderlich"}, 400)
+            return
 
         if path == "/api/backend":
             name = body.get("name", "")
@@ -1301,12 +1558,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             if model:
                 preset["default_model"] = model
             if preset["method"] == "api" and name in ("claude-api", "openai"):
-                env_var = "ANTHROPIC_API_KEY" if "claude" in name else "OPENAI_API_KEY"
-                file_name = "anthropic_api_key" if "claude" in name else "openai_api_key"
-                key_file = os.path.expanduser(f"~/.credentials/{file_name}")
-                api_key = os.environ.get(env_var, "")
-                if not api_key and os.path.exists(key_file):
-                    api_key = open(key_file, encoding="utf-8").read().strip()
+                api_key = _load_api_key(name)
                 if not api_key:
                     self._json({"error": f"Kein API-Key für {name}"}, 400)
                     return
@@ -1315,10 +1567,23 @@ class ControlHandler(BaseHTTPRequestHandler):
                 config = {k: v for k, v in preset.items()
                           if k not in ("method", "description")}
                 new_backend = create_backend(config)
-                runtime.backend = new_backend
-                _global_defaults["model"] = preset["default_model"]
-                for s in runtime.sessions.values():
-                    s.model = preset["default_model"]
+                selected_model = preset["default_model"]
+                available, availability_status = _checked_backend_availability(
+                    new_backend,
+                    selected_model,
+                )
+                if not available:
+                    self._json({
+                        "ok": False,
+                        "error": f"Backend nicht verfügbar: {availability_status}",
+                    }, 503)
+                    return
+                with _runtime_state_lock:
+                    runtime.backend = new_backend
+                    _global_defaults["model"] = selected_model
+                    for s in runtime.sessions.values():
+                        s.model = selected_model
+                _invalidate_backend_inventory_cache()
                 self._json({"ok": True, "backend": name, "model": preset["default_model"]})
             except Exception as e:
                 self._json({"error": str(e)}, 500)
@@ -1368,16 +1633,33 @@ class ControlHandler(BaseHTTPRequestHandler):
             if depth >= 2:
                 self._json({"error": "Maximale Delegationstiefe erreicht"}, 429)
                 return
+            selected_backend, model = _snapshot_chat_backend(chat_id)
+            available, availability_status = _checked_backend_availability(
+                selected_backend,
+                model,
+            )
+            if not available:
+                self._json({
+                    "ok": False,
+                    "error": f"Backend nicht verfügbar: {availability_status}",
+                }, 503)
+                return
             os.environ["BACH_DELEGATION_DEPTH"] = str(depth + 1)
             try:
                 loop = asyncio.new_event_loop()
                 try:
                     answer = loop.run_until_complete(
-                        runtime.process(prompt, chat_id)
+                        runtime.process(
+                            prompt,
+                            chat_id,
+                            backend=selected_backend,
+                            model=model,
+                        )
                     )
                 finally:
                     loop.close()
-                self._json({"ok": True, "answer": answer})
+                response, status = _control_chat_response(answer)
+                self._json(response, status)
             except Exception as e:
                 self._json({"error": str(e)}, 500)
             finally:
@@ -1389,15 +1671,16 @@ class ControlHandler(BaseHTTPRequestHandler):
 
 def start_control_api():
     try:
-        bind_host = os.environ.get("BACH_CONTROL_HOST", "0.0.0.0")
+        bind_host = _control_bind_host()
         server = QuietHTTPServer((bind_host, CONTROL_PORT), ControlHandler)
         server.daemon_threads = True
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        log.info(f"Control API auf 127.0.0.1:{CONTROL_PORT}")
-        print(f"Web-Dashboard: http://localhost:{CONTROL_PORT}/")
+        actual_port = int(server.server_port)
+        log.info("Control API auf %s:%s", bind_host, actual_port)
+        print(f"Web-Dashboard: http://localhost:{actual_port}/")
         return server
-    except OSError as e:
+    except (OSError, ValueError) as e:
         log.warning(f"Control API konnte nicht starten: {e}")
         return None
 
@@ -1433,13 +1716,49 @@ def start_message_worker():
     print("Message-Worker: beantwortet Auftragsnachrichten an ollama/buddha/bach")
     return thread
 
+def verify_telegram_token() -> bool:
+    """Verifiziert den Bot ohne Token oder Request-URL in Fehlerlogs offenzulegen."""
+    try:
+        response = httpx.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/getMe",
+            timeout=8.0,
+        )
+    except httpx.HTTPError:
+        log.error("Telegram-Verifikation nicht erreichbar")
+        return False
+    if response.status_code != 200:
+        log.error("Telegram-Verifikation abgelehnt (HTTP %s)", response.status_code)
+        return False
+    try:
+        payload = response.json()
+    except ValueError:
+        log.error("Telegram-Verifikation lieferte kein gültiges JSON")
+        return False
+    return bool(payload.get("ok") and payload.get("result", {}).get("id"))
+
+
+def serve_control_only(server, reason: str) -> None:
+    """Keep local Chat/Control available when the Telegram connector is offline."""
+    message = f"{reason}; lokaler Chat/Control läuft im Offlinebetrieb weiter."
+    log.warning(message)
+    print(message)
+    try:
+        threading.Event().wait()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.shutdown()
+        server.server_close()
+
 
 # --- Main ---
 
 def main():
-    if not BOT_TOKEN:
-        print("Kein Bot-Token! Setze TELEGRAM_BOT_TOKEN oder ~/.credentials/telegram_bot_token")
-        sys.exit(1)
+    global TELEGRAM_VERIFIED
+    control_server = start_control_api()
+    if control_server is None:
+        print("Chat/Control konnte nicht gestartet werden.")
+        return 1
 
     # Crash recovery: resume any compute jobs stopped by a previous bot session
     if HAS_COMPUTE_LOCK and CONFIG.get("compute_lock", {}).get("enabled", False):
@@ -1453,8 +1772,15 @@ def main():
         except Exception as e:
             log.warning("Crash recovery failed: %s", e)
 
-    start_control_api()
     start_message_worker()
+    if not BOT_TOKEN:
+        serve_control_only(control_server, "Kein Telegram-Bot-Token")
+        return 0
+    if not verify_telegram_token():
+        serve_control_only(control_server, "Telegram-Bot konnte nicht verifiziert werden")
+        return 0
+    TELEGRAM_VERIFIED = True
+    print("Telegram Bot verifiziert")
 
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -1491,8 +1817,13 @@ def main():
         f"Backend: {backend_type}, Modell: {model}, Think: AN, "
         f"Compute-Lock: {cl_status})"
     )
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
+    finally:
+        control_server.shutdown()
+        control_server.server_close()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

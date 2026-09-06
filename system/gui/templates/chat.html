@@ -279,7 +279,7 @@
 
         <div class="chat-input-area">
             <textarea id="input" rows="1" placeholder="Nachricht an Buddha…" autofocus></textarea>
-            <button class="send-btn" id="send-btn" title="Senden">&#x27A4;</button>
+            <button class="send-btn" id="send-btn" title="Backend wird geprüft" disabled>&#x27A4;</button>
         </div>
     </div>
 
@@ -287,7 +287,7 @@
     <script src="/static/js/prompt-chat-draft.js?v=1"></script>
     <script>
     (function() {
-        const CHAT_API = 'http://' + CHAT_HOST + ':8081/api';
+        const CHAT_API = '/api/chat-control';
         const CHAT_ID = 'gui-web';
 
         const messagesEl = document.getElementById('messages');
@@ -296,6 +296,13 @@
         const sendBtn = document.getElementById('send-btn');
         const typingEl = document.getElementById('typing');
         let sending = false;
+        let backendAvailable = false;
+
+        function updateComposerAvailability() {
+            sendBtn.disabled = sending || !backendAvailable;
+            sendBtn.title = backendAvailable ? 'Senden' : 'Backend nicht verfügbar';
+            sendBtn.setAttribute('aria-label', sendBtn.title);
+        }
 
         if (typeof marked !== 'undefined') {
             marked.setOptions({
@@ -347,10 +354,10 @@
 
         async function send() {
             const text = inputEl.value.trim();
-            if (!text || sending) return;
+            if (!text || sending || !backendAvailable) return;
 
             sending = true;
-            sendBtn.disabled = true;
+            updateComposerAvailability();
             inputEl.value = '';
             autoResize();
 
@@ -366,17 +373,22 @@
                 const data = await resp.json();
                 setTyping(false);
 
+                if (!resp.ok && resp.status === 503) {
+                    backendAvailable = false;
+                    updateComposerAvailability();
+                }
+
                 if (data.ok && data.answer) {
                     addMessage(data.answer, 'bot');
                 } else {
-                    addMessage(data.error || 'Unbekannter Fehler', 'error');
+                    addMessage(data.error || data.detail || 'Unbekannter Fehler', 'error');
                 }
             } catch (e) {
                 setTyping(false);
                 addMessage('Verbindungsfehler: ' + e.message, 'error');
             } finally {
                 sending = false;
-                sendBtn.disabled = false;
+                updateComposerAvailability();
                 inputEl.focus();
             }
         }
@@ -409,16 +421,41 @@
         async function refreshStatus() {
             try {
                 const r = await fetch(CHAT_API + '/status');
+                if (!r.ok) throw new Error('Chatdienst nicht erreichbar');
                 const s = await r.json();
-                document.getElementById('conn-dot').className = 'dot';
-                document.getElementById('s-backend').textContent = s.backend.replace('Backend', '');
+                const backendsResponse = await fetch(CHAT_API + '/backends');
+                if (!backendsResponse.ok) throw new Error('Backendstatus nicht erreichbar');
+                const backends = await backendsResponse.json();
+                const activeBackend = backends[s.backend_id];
+                backendAvailable = Boolean(
+                    activeBackend
+                    && activeBackend.available === true
+                    && activeBackend.selected === true
+                );
+
+                const connectionDot = document.getElementById('conn-dot');
+                connectionDot.className = backendAvailable ? 'dot' : 'dot offline';
+                connectionDot.title = backendAvailable
+                    ? 'Backend verfügbar'
+                    : 'Backend nicht verfügbar';
+
+                const backendName = s.backend_id || String(s.backend || '').replace('Backend', '');
+                const backendStatus = activeBackend && activeBackend.status
+                    ? activeBackend.status
+                    : 'nicht verfügbar';
+                document.getElementById('s-backend').textContent = backendAvailable
+                    ? backendName
+                    : backendName + ' (' + backendStatus + ')';
                 document.getElementById('s-model').textContent = s.model;
                 document.getElementById('s-mode').textContent = s.mode === 'safe' ? 'Safe' : 'Full';
             } catch (e) {
+                backendAvailable = false;
                 document.getElementById('conn-dot').className = 'dot offline';
                 document.getElementById('s-backend').textContent = 'Offline';
                 document.getElementById('s-model').textContent = '–';
                 document.getElementById('s-mode').textContent = '–';
+            } finally {
+                updateComposerAvailability();
             }
         }
 

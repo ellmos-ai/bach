@@ -153,7 +153,8 @@ class TestCLIBackwardsCompat:
 
     def test_upgrade_check_flag_alias(self):
         """Test bach upgrade --check (dokumentierter Flag-Alias)."""
-        code, out, err = run_bach("upgrade", "--check")
+        # Der Smoke prüft den Alias, nicht die Laufzeit des live DB-/Datei-Scans.
+        code, out, err = run_bach("upgrade", "--check", timeout=90)
         assert code == 0
         assert "UPGRADE-CHECK" in out or "Keine versionierten Dateien" in out
 

@@ -5,10 +5,12 @@
 import json
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
 import urllib.error
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch, PropertyMock
@@ -715,12 +717,30 @@ class TestBACHTray:
             'PIL.ImageFont': MagicMock(),
         }):
             from hub._services.chat.chat_tray import BACHTray
-            return BACHTray(host="testhost", port=9999)
+            tray = BACHTray(host="testhost", port=9999)
+            tray._check_ollama = MagicMock(return_value=False)
+            return tray
 
     def test_init_urls(self, tray):
         assert tray.base_url == "http://testhost:9999"
         assert tray.gui_url == "http://testhost:8000"
         assert tray.webchat_url == "http://testhost:8080"
+        assert tray.ollama_url == "http://127.0.0.1:11434"
+
+    def test_init_uses_resolved_gui_port(self):
+        from hub._services.chat.chat_tray import BACHTray
+
+        tray = BACHTray(host="testhost", port=9999, gui_port=8123)
+        assert tray.control_port == 9999
+        assert tray.gui_port == 8123
+        assert tray.gui_url == "http://testhost:8123"
+
+    def test_init_allows_explicit_ollama_host(self):
+        from hub._services.chat.chat_tray import BACHTray
+
+        tray = BACHTray(host="controlhost", ollama_host="modelhost")
+        assert tray.ollama_host == "modelhost"
+        assert tray.ollama_url == "http://modelhost:11434"
 
     def test_buddha_chat_opens_the_gui_chat_page(self, tray):
         """The :8080 webchat no longer exists; the tray must open the GUI chat (1.1.6)."""
@@ -730,9 +750,11 @@ class TestBACHTray:
 
     def test_initial_state(self, tray):
         assert tray.state["backend"] == "?"
+        assert tray.state["backend_available"] is False
         assert tray.state["mode"] == "safe"
         assert tray.state["connected"] is False
         assert tray.state["think"] is True
+        assert tray.services["webchat"] is False
 
     def test_loads_promptboard_library_from_env(self, tmp_path):
         library = tmp_path / "library.json"
@@ -861,24 +883,380 @@ class TestBACHTray:
         assert snapshot["prompt_count"] == 1
 
     def test_refresh_updates_state(self, tray):
+        tray._check_url = MagicMock(return_value=False)
         tray._api = MagicMock(side_effect=[
-            {"backend": "ollama", "model": "qwen", "mode": "full", "connected": True,
+            {"service": "bach-chat-control", "telegram_verified": True,
+             "backend": "ollama", "backend_id": "ollama", "model": "qwen",
+             "mode": "full", "connected": True,
              "think": False, "bach": True, "sessions": 2, "max_tool_rounds": 10,
              "backend_cli": ""},
-            {"ollama": {"status": "ok"}},
+            {"ollama": {"status": "bereit", "available": True, "selected": True}},
             {"models": ["qwen3.5", "llama3"]},
         ])
         tray._refresh()
         assert tray.state["backend"] == "ollama"
         assert tray.state["mode"] == "full"
         assert tray.state["connected"] is True
+        assert tray.state["backend_available"] is True
         assert tray.models == ["qwen3.5", "llama3"]
+
+    def test_refresh_disables_chat_when_selected_backend_is_unavailable(self, tray):
+        tray._check_url = MagicMock(return_value=False)
+        tray._api = MagicMock(side_effect=[
+            {
+                "service": "bach-chat-control",
+                "telegram_verified": False,
+                "backend": "OllamaBackend",
+                "backend_id": "ollama",
+                "model": "qwen3:4b",
+            },
+            {
+                "ollama": {
+                    "status": "nicht erreichbar",
+                    "available": False,
+                    "selected": True,
+                },
+            },
+            {"error": "nicht erreichbar"},
+        ])
+
+        tray._refresh()
+
+        assert tray.state["connected"] is True
+        assert tray.state["backend_available"] is False
+        assert tray.state["backend_status"] == "nicht erreichbar"
+        assert tray._can_send_chat() is False
+        assert tray.models == []
+
+    def test_refresh_disables_chat_when_inventory_backend_is_no_longer_selected(self, tray):
+        tray._check_url = MagicMock(return_value=False)
+        tray._api = MagicMock(side_effect=[
+            {
+                "service": "bach-chat-control",
+                "telegram_verified": False,
+                "backend": "OllamaBackend",
+                "backend_id": "ollama",
+                "model": "qwen3:4b",
+            },
+            {
+                "ollama": {
+                    "status": "bereit",
+                    "available": True,
+                    "selected": False,
+                },
+            },
+            {"models": ["qwen3:4b"]},
+        ])
+
+        tray._refresh()
+
+        assert tray.state["connected"] is True
+        assert tray.state["backend_available"] is False
+        assert tray._can_send_chat() is False
+
+    def test_refresh_reenables_chat_after_backend_recovers(self, tray):
+        status = {
+            "service": "bach-chat-control",
+            "telegram_verified": False,
+            "backend": "OllamaBackend",
+            "backend_id": "ollama",
+            "model": "qwen3:4b",
+        }
+        tray._check_url = MagicMock(return_value=False)
+        tray._api = MagicMock(side_effect=[
+            status,
+            {
+                "ollama": {
+                    "status": "nicht erreichbar",
+                    "available": False,
+                    "selected": True,
+                },
+            },
+            {"error": "nicht erreichbar"},
+            status,
+            {
+                "ollama": {
+                    "status": "bereit",
+                    "available": True,
+                    "selected": True,
+                },
+            },
+            {"models": ["qwen3:4b"]},
+        ])
+
+        tray._refresh()
+        assert tray._can_send_chat() is False
+
+        tray._refresh()
+        assert tray._can_send_chat() is True
+        assert tray.models == ["qwen3:4b"]
+
+    def test_send_prompt_fails_closed_without_available_backend(self, tray):
+        tray.state["connected"] = True
+        tray.state["backend_available"] = False
+        tray.icon = MagicMock()
+        tray._api = MagicMock()
+
+        tray._send_prompt("Nicht absenden")
+
+        tray._api.assert_not_called()
+        tray.icon.notify.assert_called_once_with(
+            "Backend nicht verfügbar",
+            "BACH Prompt",
+        )
+
+    def test_idle_worker_does_not_claim_task_without_fresh_readiness(self, tray):
+        tray.state["connected"] = True
+        tray.state["backend_available"] = True
+        tray.icon = MagicMock()
+        tray._api = MagicMock(return_value={
+            "available": False,
+            "status": "nicht erreichbar",
+        })
+
+        tray._process_idle_task()
+
+        tray._api.assert_called_once_with(
+            "GET",
+            "/api/readiness?chat_id=idle-worker",
+            timeout=10,
+        )
+        assert tray.idle_processing is False
+        assert tray.idle_task_name is None
+        assert tray.state["backend_available"] is False
+
+    @pytest.mark.parametrize("status", [
+        {"backend": "ollama"},
+        {"service": "foreign-control", "telegram_verified": True, "backend": "ollama"},
+        {"service": "bach-chat-control", "telegram_verified": "yes", "backend": "ollama"},
+    ])
+    def test_refresh_rejects_unverified_or_foreign_control(self, tray, status):
+        tray._check_url = MagicMock(return_value=False)
+        tray._api = MagicMock(return_value=status)
+
+        tray._refresh()
+
+        assert tray.state["connected"] is False
+        assert tray.services["control"] is False
+        assert tray._api.call_count == 1
+
+    def test_refresh_reports_control_and_telegram_separately(self, tray):
+        tray._api = MagicMock(side_effect=[
+            {
+                "service": "bach-chat-control",
+                "telegram_verified": False,
+                "backend": "ollama",
+                "model": "qwen",
+            },
+            {},
+            {"models": []},
+        ])
+
+        tray._refresh()
+
+        assert tray.services["control"] is True
+        assert tray.services["telegram"] is False
+        assert tray.state["connected"] is True
+
+    def test_refresh_allows_bounded_cli_readiness_window(self, tray):
+        timeouts = {}
+
+        def api(_method, path, _body=None, _base=None, timeout=5):
+            timeouts[path] = timeout
+            if path == "/api/status":
+                return {
+                    "service": "bach-chat-control",
+                    "telegram_verified": False,
+                    "backend_id": "claude",
+                    "model": "sonnet",
+                }
+            if path == "/api/backends":
+                return {
+                    "claude": {
+                        "status": "bereit",
+                        "available": True,
+                        "selected": True,
+                    }
+                }
+            return {"models": ["sonnet"]}
+
+        tray._api = api
+        tray._check_url = MagicMock(return_value=False)
+
+        tray._refresh()
+
+        assert timeouts["/api/backends"] >= 9
+        assert tray.state["backend_available"] is True
+
+    def test_refresh_reconnects_after_control_becomes_ready(self, tray):
+        ready = {
+            "service": "bach-chat-control",
+            "telegram_verified": True,
+            "backend": "ollama",
+            "model": "qwen",
+        }
+        tray._check_url = MagicMock(return_value=False)
+        tray._api = MagicMock(side_effect=[None, ready, {}, {"models": ["qwen"]}])
+
+        tray._refresh()
+        assert tray.state["connected"] is False
+        tray._refresh()
+
+        assert tray.state["connected"] is True
+        assert tray.services["control"] is True
+        assert tray.models == ["qwen"]
+
+    def test_poll_loop_reconnects_to_real_control_http_server(self):
+        from hub._services.chat.chat_tray import BACHTray
+
+        class ControlHandler(BaseHTTPRequestHandler):
+            responses = {
+                "/api/status": {
+                    "service": "bach-chat-control",
+                    "telegram_verified": False,
+                    "backend": "ollama",
+                    "model": "qwen",
+                    "mode": "safe",
+                    "think": False,
+                },
+                "/api/backends": {
+                    "ollama": {
+                        "status": "bereit",
+                        "available": True,
+                        "selected": True,
+                    },
+                },
+                "/api/models": {"models": ["qwen"]},
+            }
+
+            def do_GET(self):
+                payload = self.responses.get(self.path)
+                if payload is None:
+                    self.send_error(404)
+                    return
+                body = json.dumps(payload).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, _format, *_args):
+                pass
+
+        class ControlServer(ThreadingHTTPServer):
+            allow_reuse_address = True
+
+        def wait_until(predicate, description, timeout=3):
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if predicate():
+                    return
+                time.sleep(0.02)
+            pytest.fail(f"Timeout while waiting for {description}")
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+
+        tray = BACHTray(host="127.0.0.1", port=port)
+        tray.POLL_INTERVAL = 0.05
+        tray._check_url = MagicMock(return_value=False)
+        tray._check_ollama = MagicMock(return_value=False)
+        tray._idle_tick = MagicMock()
+
+        poll_thread = threading.Thread(target=tray._poll_loop, daemon=True)
+        server = None
+        server_thread = None
+        poll_thread.start()
+        try:
+            wait_until(
+                lambda: tray._idle_tick.call_count >= 1,
+                "initial offline poll",
+            )
+            assert tray.state["connected"] is False
+            assert tray.services["control"] is False
+
+            server = ControlServer(("127.0.0.1", port), ControlHandler)
+            server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+            server_thread.start()
+
+            wait_until(
+                lambda: (
+                    tray.state["connected"] is True
+                    and tray.services["control"] is True
+                    and tray.models == ["qwen"]
+                ),
+                "automatic control reconnect",
+            )
+            assert tray.services["control"] is True
+            assert tray.services["telegram"] is False
+            assert tray.state["backend_available"] is True
+            assert tray.models == ["qwen"]
+
+            server.shutdown()
+            server.server_close()
+            server = None
+            server_thread.join(timeout=2)
+            assert not server_thread.is_alive()
+
+            wait_until(
+                lambda: (
+                    tray.state["connected"] is False
+                    and tray.services["control"] is False
+                ),
+                "automatic disconnect detection",
+            )
+            assert tray.services["control"] is False
+            assert tray.services["telegram"] is False
+            assert tray.state["backend_available"] is False
+
+            server = ControlServer(("127.0.0.1", port), ControlHandler)
+            server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+            server_thread.start()
+
+            wait_until(
+                lambda: (
+                    tray.state["connected"] is True
+                    and tray.services["control"] is True
+                ),
+                "automatic control reconnect after restart",
+            )
+            assert tray.services["telegram"] is False
+            assert tray.state["backend_available"] is True
+        finally:
+            if server is not None:
+                server.shutdown()
+                server.server_close()
+            if server_thread is not None:
+                server_thread.join(timeout=2)
+            tray._stop.set()
+            poll_thread.join(timeout=2)
+
+        assert server_thread is not None
+        assert not server_thread.is_alive()
+        assert not poll_thread.is_alive()
+
+    def test_ollama_probe_requires_identity_schema(self):
+        from hub._services.chat.chat_tray import BACHTray
+
+        tray = BACHTray(host="remote-control")
+        assert tray.ollama_url == "http://127.0.0.1:11434"
+        assert tray._ollama_payload_ready({"models": []})
+        assert not tray._ollama_payload_ready({"status": "ok"})
+
+    def test_refresh_skips_catalog_requests_while_offline(self, tray):
+        tray._check_url = MagicMock(return_value=False)
+        tray._api = MagicMock(return_value=None)
+        tray._refresh()
+        assert tray._api.call_count == 1
 
     def test_refresh_marks_disconnected_on_failure(self, tray):
         tray.state["connected"] = True
         tray._api = MagicMock(return_value=None)
         tray._refresh()
         assert tray.state["connected"] is False
+        assert tray.state["backend_available"] is False
 
     def test_set_mode(self, tray):
         tray._api = MagicMock(return_value=None)
@@ -948,9 +1326,7 @@ class TestTraySingleInstance:
         monkeypatch.setattr(sys, "argv", ["chat_tray.py"])
         monkeypatch.setattr(mod, "acquire_single_instance_lock", lambda *a, **k: None)
         monkeypatch.setattr(mod.BACHTray, "run", lambda self: pytest.fail("run() must not be called"))
-        with pytest.raises(SystemExit) as exc:
-            mod.main()
-        assert exc.value.code == 3
+        assert mod.main() == 3
         assert "läuft bereits" in capsys.readouterr().err
 
 
@@ -981,11 +1357,14 @@ class TestTrayIdleWorker:
 
     def test_idle_worker_picks_open_ollama_task_and_writes_canonical_status(self, monkeypatch):
         tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
+        tray.state.update(connected=True, backend_available=True)
         calls = []
 
         def fake_api(method, path, data=None, **kw):
             calls.append((method, path, data))
             if method == "GET":
+                if path == "/api/readiness?chat_id=idle-worker":
+                    return {"available": True, "status": "bereit"}
                 if path == "/api/tasks?assigned_to=OLLAMA&status=open":
                     return {"success": True, "tasks": [{"id": 42, "title": "T", "description": "D"}]}
                 return {"success": True, "tasks": []}
@@ -997,7 +1376,95 @@ class TestTrayIdleWorker:
             tray._process_idle_task()
 
         gets = [p for m, p, _ in calls if m == "GET"]
-        assert gets[:2] == ["/api/tasks?assigned_to=OLLAMA&status=pending", "/api/tasks?assigned_to=OLLAMA&status=open"]
+        assert gets[:3] == ["/api/readiness?chat_id=idle-worker", "/api/tasks?assigned_to=OLLAMA&status=pending", "/api/tasks?assigned_to=OLLAMA&status=open"]
         puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
         assert puts == [("/api/tasks/42", "in_progress"), ("/api/tasks/42", "completed")]
         assert tray.idle_processing is False
+class TestBACHTraySingleInstance:
+    def test_lock_rejects_duplicate_and_can_be_reacquired(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_tray
+
+        lock_path = tmp_path / "chat_tray.instance.lock"
+        monkeypatch.setattr(chat_tray, "_instance_lock_path", lambda: lock_path)
+        chat_tray._tray_lock_handle = None
+        assert chat_tray._check_single_instance() is True
+        try:
+            assert chat_tray._try_instance_lock(lock_path) is None
+        finally:
+            chat_tray._cleanup_instance_lock()
+
+        assert lock_path.exists()
+        assert lock_path.read_text(encoding="utf-8").strip() == str(os.getpid())
+        assert chat_tray._check_single_instance() is True
+        chat_tray._cleanup_instance_lock()
+
+    def test_lock_blocks_a_second_process(self, tmp_path):
+        runtime = tmp_path / "runtime"
+        env = os.environ.copy()
+        env["BACH_RUNTIME_DIR"] = str(runtime)
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = str(SYSTEM_ROOT) + (
+            os.pathsep + existing_pythonpath if existing_pythonpath else ""
+        )
+        holder_code = "\n".join([
+            "from hub._services.chat import chat_tray",
+            "if not chat_tray._check_single_instance(): raise SystemExit(2)",
+            "print('LOCKED', flush=True)",
+            "input()",
+            "chat_tray._cleanup_instance_lock()",
+        ])
+        contender_code = "\n".join([
+            "from hub._services.chat import chat_tray",
+            "acquired = chat_tray._check_single_instance()",
+            "if acquired: chat_tray._cleanup_instance_lock()",
+            "raise SystemExit(3 if acquired else 0)",
+        ])
+        holder = subprocess.Popen(
+            [sys.executable, "-c", holder_code],
+            cwd=SYSTEM_ROOT,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            assert holder.stdout.readline().strip() == "LOCKED"
+            contender = subprocess.run(
+                [sys.executable, "-c", contender_code],
+                cwd=SYSTEM_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert contender.returncode == 0, contender.stderr
+            holder.stdin.write("\n")
+            holder.stdin.flush()
+            assert holder.wait(timeout=5) == 0
+
+            after_release = subprocess.run(
+                [sys.executable, "-c", contender_code],
+                cwd=SYSTEM_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert after_release.returncode == 3
+        finally:
+            if holder.poll() is None:
+                holder.terminate()
+                holder.wait(timeout=5)
+
+    def test_ready_receipt_is_launch_bound(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_tray
+
+        monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+        monkeypatch.setenv("BACH_STARTSPINE_LAUNCH_ID", "launch-42")
+        assert chat_tray._write_ready_receipt()
+        payload = json.loads(
+            chat_tray._ready_receipt_path().read_text(encoding="utf-8")
+        )
+        assert payload["launch_id"] == "launch-42"
+        assert payload["pid"] == os.getpid()

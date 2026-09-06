@@ -22,7 +22,49 @@ import sys
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+
+
+def _probe_model_api(
+    models_url: str,
+    headers: dict[str, str],
+    model: str | None,
+    timeout: float,
+) -> tuple[bool, str]:
+    """Probe a model-list endpoint without returning credentials or provider text."""
+    import httpx
+
+    try:
+        response = httpx.get(models_url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        payload = response.json()
+    except httpx.HTTPStatusError as exc:
+        status_code = getattr(exc.response, "status_code", 0)
+        if status_code in {401, 403}:
+            return False, "Authentifizierung abgelehnt"
+        return False, "Dienstfehler"
+    except httpx.HTTPError:
+        return False, "nicht erreichbar"
+    except (TypeError, ValueError):
+        return False, "ungültige Antwort"
+
+    raw_models = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(raw_models, list):
+        return False, "ungültige Antwort"
+
+    model_ids = {
+        str(item.get("id") or item.get("name") or item.get("model") or "")
+        for item in raw_models
+        if isinstance(item, dict)
+    }
+    model_ids.discard("")
+    if not model_ids:
+        return False, "keine Modelle"
+
+    selected_model = str(model or "").strip()
+    if selected_model and selected_model not in model_ids:
+        return False, f"Modell fehlt: {selected_model}"
+    return True, "bereit"
 
 
 class ModelBackend(ABC):
@@ -50,16 +92,44 @@ class ModelBackend(ABC):
         """Erzeugt die korrekte Tool-Response-Nachricht für dieses Backend."""
         return {"role": "tool", "content": str(content)}
 
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        """Return a bounded, side-effect-light, fail-closed readiness result."""
+        return False, "nicht prüfbar"
+
 
 class OllamaBackend(ModelBackend):
     """Ollama API Backend für lokale Modelle (Qwen, Llama, Mistral, etc.)."""
 
     def __init__(self, base_url: str = "http://localhost:11434",
                  default_model: str = "qwen3.6:35b-mlx",
-                 keep_alive: str = "5m"):
+                 keep_alive: str = "5m",
+                 num_ctx: int | None = None,
+                 request_timeout: float | None = None):
         self.base_url = base_url.rstrip("/")
         self.default_model = default_model
         self.keep_alive = keep_alive
+        configured_num_ctx = num_ctx if num_ctx is not None else os.environ.get("OLLAMA_NUM_CTX", "4096")
+        try:
+            self.num_ctx = int(configured_num_ctx)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Ollama num_ctx muss eine ganze Zahl sein") from exc
+        if not 512 <= self.num_ctx <= 262144:
+            raise ValueError("Ollama num_ctx muss zwischen 512 und 262144 liegen")
+        configured_timeout = (
+            request_timeout
+            if request_timeout is not None
+            else os.environ.get("OLLAMA_TIMEOUT_SECONDS", "600")
+        )
+        try:
+            self.request_timeout = float(configured_timeout)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Ollama request_timeout muss eine Zahl sein") from exc
+        if not 1 <= self.request_timeout <= 3600:
+            raise ValueError("Ollama request_timeout muss zwischen 1 und 3600 Sekunden liegen")
         self._models_cache: list[str] = []
         self._models_cache_time: float = 0
 
@@ -76,22 +146,40 @@ class OllamaBackend(ModelBackend):
             "stream": False,
             "think": think,
             "keep_alive": effective_ka,
+            # Einige Modelle veröffentlichen sehr große Trainingskontexte. Ohne
+            # explizite Grenze kann Ollama dafür zig GiB KV-Cache reservieren.
+            "options": {"num_ctx": self.num_ctx},
         }
         if tools:
             payload["tools"] = tools
 
+        timeout = self.request_timeout * (1.5 if think else 1)
         async with httpx.AsyncClient() as client:
-            r = await client.post(
-                f"{self.base_url}/api/chat",
-                json=payload,
-                timeout=180 if think else 120,
-            )
+            try:
+                r = await client.post(
+                    f"{self.base_url}/api/chat",
+                    json=payload,
+                    timeout=timeout,
+                )
+            except httpx.TimeoutException as exc:
+                raise RuntimeError(
+                    f"Ollama-Zeitüberschreitung nach {timeout:g} Sekunden"
+                ) from exc
+            r.raise_for_status()
             resp = r.json()
 
+        if resp.get("error"):
+            raise RuntimeError(f"Ollama-Fehler: {resp['error']}")
         msg = resp.get("message", {})
+        content = msg.get("content", "")
+        if not think and "</think>" in content:
+            content = content.rsplit("</think>", 1)[1].strip()
+        tool_calls = msg.get("tool_calls")
+        if not content and not tool_calls:
+            raise RuntimeError("Ollama lieferte eine leere Antwort")
         return {
-            "content": msg.get("content", ""),
-            "tool_calls": msg.get("tool_calls"),
+            "content": content,
+            "tool_calls": tool_calls,
             "raw_message": msg,
         }
 
@@ -106,6 +194,38 @@ class OllamaBackend(ModelBackend):
 
     def get_default_model(self) -> str:
         return self.default_model
+
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        import httpx
+
+        try:
+            response = httpx.get(f"{self.base_url}/api/tags", timeout=timeout)
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, TypeError, ValueError):
+            return False, "nicht erreichbar"
+
+        raw_models = payload.get("models") if isinstance(payload, dict) else None
+        if not isinstance(raw_models, list):
+            return False, "ungültige Antwort"
+
+        model_names = {
+            str(item.get("name") or item.get("model") or "")
+            for item in raw_models
+            if isinstance(item, dict)
+        }
+        model_names.discard("")
+        if not model_names:
+            return False, "keine Modelle"
+
+        selected_model = str(model or self.default_model or "").strip()
+        if selected_model and selected_model not in model_names:
+            return False, f"Modell fehlt: {selected_model}"
+        return True, "bereit"
 
     def tool_response_message(self, content: str, tool_call_id: str = "") -> dict:
         return {"role": "tool", "content": str(content)}
@@ -181,6 +301,21 @@ class OpenAIBackend(ModelBackend):
 
     def get_default_model(self) -> str:
         return self.default_model
+
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        api_key = str(self.api_key or "").strip()
+        if not api_key:
+            return False, "Key fehlt"
+        return _probe_model_api(
+            f"{self.base_url}/models",
+            {"Authorization": f"Bearer {api_key}"},
+            model or self.default_model,
+            timeout,
+        )
 
     def tool_response_message(self, content: str, tool_call_id: str = "") -> dict:
         msg = {"role": "tool", "content": str(content)}
@@ -266,6 +401,24 @@ class AnthropicBackend(ModelBackend):
     def get_default_model(self) -> str:
         return self.default_model
 
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        api_key = str(self.api_key or "").strip()
+        if not api_key:
+            return False, "Key fehlt"
+        return _probe_model_api(
+            f"{self.base_url}/models",
+            {
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+            },
+            model or self.default_model,
+            timeout,
+        )
+
     def tool_response_message(self, content: str, tool_call_id: str = "") -> dict:
         return {"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": tool_call_id, "content": str(content)}
@@ -289,6 +442,7 @@ class CLIBackend(ModelBackend):
             "models": ["sonnet", "opus", "haiku",
                        "claude-sonnet-4-6", "claude-opus-4-6"],
             "search_names": ["claude", "claude.exe", "claude.cmd"],
+            "readiness_args": ["auth", "status"],
         },
         "codex": {
             "cmd_template": ["{path}", "--quiet", "--model", "{model}",
@@ -296,6 +450,7 @@ class CLIBackend(ModelBackend):
             "continue_flag": None,
             "models": ["gpt-4o", "o4-mini", "o3"],
             "search_names": ["codex", "codex.exe", "codex.cmd"],
+            "readiness_args": ["login", "status"],
         },
     }
 
@@ -462,8 +617,61 @@ class CLIBackend(ModelBackend):
     def get_default_model(self) -> str:
         return self.default_model
 
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        del model
+        cli_path = str(self.cli_path or "").strip()
+        resolved_path = cli_path if Path(cli_path).is_file() else shutil.which(cli_path)
+        if not cli_path or not resolved_path:
+            return False, "nicht gefunden"
+
+        readiness_args = self.KNOWN_CLIS.get(self.cli_name, {}).get("readiness_args")
+        if not readiness_args:
+            return False, "Prüfung nicht unterstützt"
+
+        try:
+            probe_timeout = max(0.1, float(timeout))
+        except (TypeError, ValueError):
+            return False, "Prüfung fehlgeschlagen"
+
+        creation_flags = 0x08000000 if sys.platform == "win32" else 0
+        try:
+            result = subprocess.run(
+                [str(resolved_path), *readiness_args],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=probe_timeout,
+                check=False,
+                creationflags=creation_flags,
+            )
+        except subprocess.TimeoutExpired:
+            return False, "Prüfung Zeitüberschreitung"
+        except OSError:
+            return False, "nicht ausführbar"
+
+        if result.returncode != 0:
+            return False, "Anmeldung nicht bestätigt"
+        return True, "bereit"
+
     def reset_session(self):
         self._session_active = False
+
+
+def backend_identifier(backend: ModelBackend) -> str:
+    """Stable Control-API key for a concrete backend instance."""
+    if isinstance(backend, OllamaBackend):
+        return "ollama"
+    if isinstance(backend, CLIBackend):
+        return backend.cli_name if backend.cli_name in {"claude", "codex"} else ""
+    if isinstance(backend, AnthropicBackend):
+        return "claude-api"
+    if isinstance(backend, OpenAIBackend):
+        return "openai"
+    return ""
 
 
 def create_backend(config: dict) -> ModelBackend:
@@ -484,6 +692,8 @@ def create_backend(config: dict) -> ModelBackend:
         return OllamaBackend(
             base_url=config.get("base_url", "http://localhost:11434"),
             default_model=config.get("default_model", "qwen3.6:35b-mlx"),
+            num_ctx=config.get("num_ctx"),
+            request_timeout=config.get("timeout_seconds"),
         )
     elif backend_type in ("openai", "openai_compat", "openai-api"):
         return OpenAIBackend(

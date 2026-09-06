@@ -10,16 +10,16 @@ Voraussetzungen:
   pip install pystray Pillow
 
 Start:
-  python chat_tray.py [--port 8081] [--host macstudvonlukas]
-  BACH_IDLE_WORKER=1  -> Idle-Worker beim Start aktiv (sonst nur per Tray-Menue)
+  python chat_tray.py [--port 8081] [--host bach-server.local]
+  BACH_IDLE_WORKER=1  -> Idle-Worker beim Start aktiv (sonst nur per Tray-Menü)
 """
 import argparse
 import json
 import os
 import subprocess
 import sys
-import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
@@ -29,13 +29,14 @@ if hasattr(sys.stdout, 'reconfigure'):
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 
 try:
     import pystray
     from PIL import Image, ImageDraw, ImageFont
 except ImportError:
-    print("Benötigt: pip install pystray Pillow")
-    sys.exit(1)
+    pystray = None
+    Image = ImageDraw = ImageFont = None
 
 DEFAULT_PROMPTS = {
     "Aufgaben": {
@@ -57,10 +58,7 @@ DEFAULT_PROMPTS = {
 
 PROMPTBOARD_LIBRARY_ENV = "BACH_PROMPTBOARD_LIBRARY"
 PROMPTBOARD_APP_ENV = "BACH_PROMPTBOARD_APP"
-TRAY_LOCK_FILE = Path(tempfile.gettempdir()) / "bach_chat_tray.lock"
-
-
-def acquire_single_instance_lock(lock_path: Path = TRAY_LOCK_FILE):
+def acquire_single_instance_lock(lock_path: Path | None = None):
     """Return an open, exclusively locked handle -- or None if another tray holds it.
 
     Single-instance contract for the tray: the lock is an OS-held byte-range
@@ -69,21 +67,7 @@ def acquire_single_instance_lock(lock_path: Path = TRAY_LOCK_FILE):
     behind, and no PID guessing is needed. Keep the returned handle alive for
     the tray's whole lifetime.
     """
-    handle = open(lock_path, "a+b")
-    try:
-        handle.seek(0)
-        if os.name == "nt":
-            import msvcrt
-
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
-
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        handle.close()
-        return None
-    return handle
+    return _try_instance_lock(lock_path or _instance_lock_path())
 
 
 class BACHTray:
@@ -91,15 +75,30 @@ class BACHTray:
     POLL_INTERVAL = 5
     IDLE_THRESHOLD = 12  # 12 × 5s = 60s ohne Sessions → Idle-Arbeit starten
 
-    def __init__(self, host="127.0.0.1", port=8081, webchat_port=8080):
+    def __init__(
+        self,
+        host="127.0.0.1",
+        port=8081,
+        webchat_port=8080,
+        gui_port=8000,
+        ollama_host=None,
+    ):
         self.host = host
+        self.control_port = port
+        self.gui_port = gui_port
+        self.ollama_host = (
+            ollama_host or os.environ.get("BACH_OLLAMA_HOST") or "127.0.0.1"
+        )
         self.base_url = f"http://{host}:{port}"
-        self.gui_url = f"http://{host}:8000"
+        self.gui_url = f"http://{host}:{gui_port}"
         self.webchat_url = f"http://{host}:{webchat_port}"
-        self.ollama_url = f"http://{host}:11434"
+        self.ollama_url = f"http://{self.ollama_host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
         self.state = {
             "backend": "?",
+            "backend_id": "",
+            "backend_available": False,
+            "backend_status": "nicht geprüft",
             "backend_cli": "",
             "model": "?",
             "mode": "safe",
@@ -116,7 +115,13 @@ class BACHTray:
         self.icon = None
         self._stop = threading.Event()
 
-        self.services = {"gui": False, "control": False, "ollama": False}
+        self.services = {
+            "gui": False,
+            "webchat": False,
+            "control": False,
+            "telegram": False,
+            "ollama": False,
+        }
 
         # Headless-Hosts (Mac Studio LaunchAgent) koennen das Tray-Menue nicht bedienen;
         # ohne diesen Schalter blieb der einzige Task-Executor dort dauerhaft aus.
@@ -151,25 +156,118 @@ class BACHTray:
         except (urllib.error.URLError, OSError):
             return False
 
+    @staticmethod
+    def _ollama_payload_ready(payload):
+        return isinstance(payload, dict) and isinstance(payload.get("models"), list)
+
+    def _check_ollama(self, timeout=2):
+        try:
+            req = urllib.request.Request(self.ollama_url + "/api/tags", method="GET")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if not 200 <= resp.status < 300:
+                    return False
+                return self._ollama_payload_ready(json.loads(resp.read()))
+        except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError):
+            return False
+
+    @staticmethod
+    def _control_payload_ready(payload):
+        return (
+            isinstance(payload, dict)
+            and payload.get("service") == "bach-chat-control"
+            and isinstance(payload.get("telegram_verified"), bool)
+        )
+
+    @staticmethod
+    def _backend_id_from_status(payload):
+        explicit = str(payload.get("backend_id") or "").strip().lower()
+        if explicit:
+            return explicit
+
+        backend_name = str(payload.get("backend") or "").strip().lower()
+        cli_name = str(payload.get("backend_cli") or "").strip().lower()
+        if cli_name in {"claude", "codex"}:
+            return cli_name
+        if "ollama" in backend_name:
+            return "ollama"
+        if "anthropic" in backend_name or "claude-api" in backend_name:
+            return "claude-api"
+        if "openai" in backend_name:
+            return "openai"
+        return ""
+
+    def _can_send_chat(self):
+        return (
+            self.state.get("connected") is True
+            and self.state.get("backend_available") is True
+        )
+
+    def _chat_ready(self, chat_id):
+        query = urllib.parse.urlencode({"chat_id": chat_id})
+        readiness = self._api("GET", f"/api/readiness?{query}", timeout=10)
+        available = bool(
+            isinstance(readiness, dict)
+            and readiness.get("available") is True
+        )
+        self.state["backend_available"] = available
+        if isinstance(readiness, dict):
+            self.state["backend_status"] = str(
+                readiness.get("status") or "nicht verfügbar"
+            )
+        return available
+
     def _refresh(self):
-        status = self._api("GET", "/api/status")
-        if status and "backend" in status:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            status_future = pool.submit(
+                self._api, "GET", "/api/status", None, None, 1
+            )
+            gui_future = pool.submit(self._check_url, self.gui_url + "/", 1)
+            webchat_future = pool.submit(self._check_url, self.webchat_url + "/", 1)
+            ollama_future = pool.submit(self._check_ollama, 1)
+            status = status_future.result()
+            self.services["gui"] = gui_future.result()
+            self.services["webchat"] = webchat_future.result()
+            self.services["ollama"] = ollama_future.result()
+
+        if self._control_payload_ready(status):
             self.state.update(status)
             self.state["connected"] = True
+            self.state["backend_id"] = self._backend_id_from_status(status)
+            self.services["telegram"] = status["telegram_verified"]
         else:
             self.state["connected"] = False
+            self.state["backend_id"] = ""
+            self.services["telegram"] = False
 
-        bs = self._api("GET", "/api/backends")
-        if bs and not bs.get("error"):
-            self.backends = bs
+        self.state["backend_available"] = False
+        self.state["backend_status"] = "nicht verfügbar"
+        if self.state["connected"]:
+            bs = self._api("GET", "/api/backends", timeout=10)
+            if isinstance(bs, dict) and bs and not bs.get("error"):
+                self.backends = bs
+            else:
+                self.backends = {}
 
-        ms = self._api("GET", "/api/models")
-        if ms and "models" in ms:
-            self.models = ms["models"]
+            selected = self.backends.get(self.state["backend_id"], {})
+            if isinstance(selected, dict):
+                self.state["backend_available"] = (
+                    selected.get("available") is True
+                    and selected.get("selected") is True
+                )
+                self.state["backend_status"] = str(
+                    selected.get("status") or "nicht verfügbar"
+                )
+
+            ms = self._api("GET", "/api/models", timeout=2)
+            if isinstance(ms, dict) and isinstance(ms.get("models"), list):
+                self.models = ms["models"]
+            else:
+                self.models = []
+        else:
+            self.backends = {}
+            self.models = []
 
         self.services["control"] = self.state["connected"]
-        self.services["gui"] = self._check_url(self.gui_url + "/")
-        self.services["ollama"] = self._check_url(self.ollama_url + "/api/tags")
 
     # --- PromptBoard ---
 
@@ -333,6 +431,10 @@ class BACHTray:
             pass
 
     def _send_prompt(self, prompt):
+        if not self._can_send_chat() or not self._chat_ready("tray-prompt"):
+            if self.icon:
+                self.icon.notify("Backend nicht verfügbar", "BACH Prompt")
+            return
         result = self._api("POST", "/api/chat", {
             "prompt": prompt,
             "chat_id": "tray-prompt",
@@ -378,6 +480,8 @@ class BACHTray:
         self._update_icon()
 
         try:
+            if not self._can_send_chat() or not self._chat_ready("idle-worker"):
+                return
             # Tasks fuer den Worker tragen in der GUI/DB den Status 'open' ODER 'pending'
             # (server.py zaehlt beide als offen); nur 'pending' zu fragen liess jeden
             # 'open'-OLLAMA-Task liegen.
@@ -471,6 +575,7 @@ class BACHTray:
             status = f"{self.state['backend']}"
             if self.state["backend_cli"]:
                 status += f" ({self.state['backend_cli']})"
+            status += f" [{self.state.get('backend_status') or 'nicht verfügbar'}]"
             items.append(pystray.MenuItem(f"Backend: {status}", None, enabled=False))
             items.append(pystray.MenuItem(f"Modell: {self.state['model']}", None, enabled=False))
             mode_str = (self.state.get("mode") or "safe").upper()
@@ -488,6 +593,9 @@ class BACHTray:
                     label += f" [{info['status']}]"
                 backend_items.append(pystray.MenuItem(
                     label, self._make_backend_action(name),
+                    enabled=lambda item, name=name: (
+                        self.backends.get(name, {}).get("available") is True
+                    ),
                 ))
             if backend_items:
                 items.append(pystray.MenuItem("Backend", pystray.Menu(*backend_items)))
@@ -562,8 +670,10 @@ class BACHTray:
         # ── Services ──
         svc_items = []
         svc_labels = {
-            "gui": "GUI Dashboard (:8000)",
-            "control": "Control API (:8081)",
+            "gui": f"GUI Dashboard (:{self.gui_port})",
+            "webchat": "Buddha Chat (:8080)",
+            "control": f"Chat/Control (:{self.control_port})",
+            "telegram": "Telegram",
             "ollama": "Ollama (:11434)",
         }
         for key, label in svc_labels.items():
@@ -589,6 +699,7 @@ class BACHTray:
                 cat_items.append(pystray.MenuItem(
                     f"▶ Senden: {name}",
                     self._make_prompt_send_action(text),
+                    enabled=lambda item: self._can_send_chat(),
                 ))
             prompt_items.append(pystray.MenuItem(category, pystray.Menu(*cat_items)))
         if prompt_items:
@@ -610,6 +721,7 @@ class BACHTray:
                 "Idle-Modus aktivieren",
                 self._toggle_idle,
                 checked=lambda item: self.idle_enabled,
+                enabled=lambda item: self._can_send_chat() and self.services["gui"],
             ),
         ]
         if self.idle_processing:
@@ -625,8 +737,16 @@ class BACHTray:
         items.append(pystray.Menu.SEPARATOR)
 
         # ── Zugangswege ──
-        items.append(pystray.MenuItem("GUI Dashboard", self._open_gui))
-        items.append(pystray.MenuItem("Buddha Chat", self._open_webchat))
+        items.append(pystray.MenuItem(
+            "GUI Dashboard",
+            self._open_gui,
+            enabled=lambda item: self.services["gui"],
+        ))
+        items.append(pystray.MenuItem(
+            "Buddha Chat",
+            self._open_webchat,
+            enabled=lambda item: self.services["webchat"],
+        ))
         items.append(pystray.MenuItem("Telegram", self._open_telegram))
 
         items.append(pystray.Menu.SEPARATOR)
@@ -739,18 +859,37 @@ class BACHTray:
 
     def _poll_loop(self):
         while not self._stop.is_set():
-            old_connected = self.state["connected"]
-            old_mode = self.state["mode"]
+            started = time.monotonic()
+            old_signature = (
+                self.state["connected"],
+                self.state["mode"],
+                self.state["backend"],
+                self.state["backend_available"],
+                self.state["backend_status"],
+                self.state["model"],
+                self.state["think"],
+                tuple(sorted(self.services.items())),
+            )
             self._refresh()
-            if self.state["connected"] != old_connected or self.state["mode"] != old_mode:
+            new_signature = (
+                self.state["connected"],
+                self.state["mode"],
+                self.state["backend"],
+                self.state["backend_available"],
+                self.state["backend_status"],
+                self.state["model"],
+                self.state["think"],
+                tuple(sorted(self.services.items())),
+            )
+            if new_signature != old_signature:
                 self._update_icon()
             self._idle_tick()
-            self._stop.wait(self.POLL_INTERVAL)
+            elapsed = time.monotonic() - started
+            self._stop.wait(max(0.1, self.POLL_INTERVAL - elapsed))
 
     # --- Run ---
 
     def run(self):
-        self._refresh()
         self.icon = pystray.Icon(
             "bach-system",
             self._icon_image,
@@ -761,32 +900,167 @@ class BACHTray:
         poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
         poll_thread.start()
 
-        self.icon.run()
+        self.icon.run(self._setup_icon)
+
+    @staticmethod
+    def _setup_icon(icon):
+        icon.visible = True
+        if not _write_ready_receipt():
+            print("Tray-Readiness konnte nicht geschrieben werden.", file=sys.stderr)
+            icon.stop()
 
 
-def main():
+_tray_lock_handle = None
+
+
+def _runtime_dir():
+    override = os.environ.get("BACH_RUNTIME_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    if os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        return base / "BACH" / "runtime"
+    state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    return state_home / "bach" / "runtime"
+
+
+def _instance_lock_path():
+    return _runtime_dir() / "chat_tray.instance.lock"
+
+
+def _ready_receipt_path():
+    return _runtime_dir() / "receipts" / "tray.ready.json"
+
+
+def _write_ready_receipt():
+    launch_id = os.environ.get("BACH_STARTSPINE_LAUNCH_ID")
+    if not launch_id:
+        return True
+    path = _ready_receipt_path()
+    temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    payload = {
+        "launch_id": launch_id,
+        "service": "tray",
+        "pid": os.getpid(),
+        "ready_at": time.time(),
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temp, path)
+        return True
+    except OSError:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+
+
+def _try_instance_lock(lock_path):
+    """Acquire a process-lifetime advisory lock without deleting its inode."""
+    handle = None
+    try:
+        lock_path = Path(lock_path)
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o600)
+        handle = os.fdopen(fd, "r+", encoding="utf-8")
+        if os.fstat(fd).st_size == 0:
+            handle.write(" ")
+            handle.flush()
+        handle.seek(0)
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        handle.seek(0)
+        handle.write(f"{os.getpid()}\n".ljust(32))
+        handle.truncate()
+        handle.flush()
+        return handle
+    except (OSError, IOError):
+        if handle is not None:
+            handle.close()
+        return None
+
+
+def _release_instance_handle(handle):
+    if handle is None:
+        return
+    try:
+        handle.seek(0)
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except (OSError, IOError):
+        pass
+    finally:
+        handle.close()
+
+
+def _check_single_instance():
+    global _tray_lock_handle
+    if _tray_lock_handle is not None:
+        return False
+    _tray_lock_handle = acquire_single_instance_lock()
+    return _tray_lock_handle is not None
+
+
+def _cleanup_instance_lock():
+    global _tray_lock_handle
+    handle = _tray_lock_handle
+    _tray_lock_handle = None
+    _release_instance_handle(handle)
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description="BACH Unified System Tray")
     parser.add_argument("--host", default="127.0.0.1", help="Control API Host")
     parser.add_argument("--port", type=int, default=8081, help="Control API Port")
+    parser.add_argument("--gui-port", type=int, default=8000, help="GUI Port")
     parser.add_argument("--webchat-port", type=int, default=8080, help="Webchat Port")
+    parser.add_argument(
+        "--ollama-host",
+        default=None,
+        help="Ollama Host (standardmäßig lokal, unabhängig vom Control-Host)",
+    )
     parser.add_argument(
         "--smoke-promptboard",
         action="store_true",
         help="Print PromptBoard tray detection smoke data and exit",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    tray = BACHTray(host=args.host, port=args.port, webchat_port=args.webchat_port)
+    tray = BACHTray(
+        host=args.host,
+        port=args.port,
+        webchat_port=args.webchat_port,
+        gui_port=args.gui_port,
+        ollama_host=args.ollama_host,
+    )
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
-        return
-    lock = acquire_single_instance_lock()
-    if lock is None:
-        print(f"BACH Tray läuft bereits (Single-Instance-Lock: {TRAY_LOCK_FILE}).", file=sys.stderr)
-        sys.exit(3)
-    tray._instance_lock = lock  # keep the OS lock alive for the tray's lifetime
-    tray.run()
+        return 0
+    if pystray is None or Image is None:
+        print("Benötigt: pip install pystray Pillow", file=sys.stderr)
+        return 1
+    if not _check_single_instance():
+        print("BACH System Tray läuft bereits; keine zweite Instanz gestartet.", file=sys.stderr)
+        return 3
+    try:
+        tray.run()
+        return 0
+    finally:
+        _cleanup_instance_lock()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

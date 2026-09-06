@@ -46,10 +46,14 @@ async function loadStatus() {
     try {
         const data = await API.status();
 
-        document.getElementById('stat-tasks').textContent = data.stats.tasks_open || 0;
-        document.getElementById('stat-scanned').textContent = data.stats.scanned_tasks || 0;
-        document.getElementById('stat-messages').textContent = data.stats.messages_unread || 0;
-        document.getElementById('stat-daemon').textContent = data.stats.scheduler_jobs_active || 0;
+        const setStat = (id, value) => {
+            const element = document.getElementById(id);
+            if (element) element.textContent = value || 0;
+        };
+        setStat('stat-tasks', data.stats.tasks_open);
+        setStat('stat-scanned', data.stats.scanned_tasks);
+        setStat('stat-messages', data.stats.messages_unread);
+        setStat('stat-daemon', data.stats.scheduler_jobs_active);
 
         // Status-Indikator
         const statusDot = document.getElementById('status-dot');

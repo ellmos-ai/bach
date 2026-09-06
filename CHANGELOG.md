@@ -1,6 +1,6 @@
 # BACH Changelog
 
-Alle wichtigen Aenderungen an BACH werden hier dokumentiert.
+Alle wichtigen Änderungen an BACH werden hier dokumentiert.
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
@@ -13,11 +13,39 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
   kanonischen `bach.db`. Gehashte Chat-IDs, atomare Aktualisierungen und ein
   expliziter Persistenzstatus halten den Verlauf über Runtime-Neustarts hinweg
   verfügbar, ohne eine zweite Datenbank oder ein neues Schema einzuführen.
+- **Adaptives BACH–OCEAN-Nachfolgeprogramm:** Die ROADMAP verankert OCEAN als funktionale
+  Nachfolgerlinie, OCEAN Full Dev als vollständige lokale Entwicklungs- und Testkomposition,
+  OCEAN Public als freigabepflichtige Community-Projektion und BACH als konvergierende
+  Kompatibilitäts-, Referenz- und Rückfalllinie. Architekturdiagramm, parallele Spuren,
+  Wissens-/Policy-Ritual, Sprachstrategie, Laufabschlussflächen und Lebenszyklusgate bilden einen
+  selbststeuerbaren Rahmen ohne feste fachliche Modulreihenfolge.
+- **Migrierbare Programmaufgaben angelegt:** BACH #1208 (`BOC-PROGRAM-001`) steuert den
+  Programmrahmen, #1209 (`OCEAN-FULL-DEV-001`) den Ausbau von OCEAN Full Dev und #1210
+  (`OCEAN-PUBLIC-001`) die gegatete öffentliche Projektion. #1210 hängt von #1209 ab; stabile
+  Quell-IDs und `bach:<ID>` werden beim späteren Task-Master-Cutover idempotent erhalten.
 - **Claude-Code-Agent-Export (Task 1261):** `bach export agents --format agent` und `python tools/agents_export.py --format agent` erzeugen deterministische `.claude/agents/*.md`-Dateien aus aktiven `bach_agents`-/`bach_experts`-Zeilen. Frontmatter bleibt Claude-Code-kompatibel; Persona- und Skill-/Pfadbezug stehen im Body. Dry-Run, Readback, Unicode- und Konflikt-Guards verhindern das Überschreiben fremder Dateien.
 - **Dashboard-Themes zentral konfigurierbar (Task 1126):** `bach theme status|set`, `bach_api.theme`, `/api/settings/theme` und die neue GUI-Seite `/settings` teilen sich jetzt dieselbe validierte Einstellung in `data/user_config.json`. Dark, Light, Warm und Custom sind dashboardweit verfügbar; Custom-Farben akzeptieren ausschließlich `#RRGGBB`, während der bisherige Browserwert `colorful` kompatibel auf Custom abgebildet wird.
 
 ### Changed
 
+- **Codex-Security-Scan-Skills aus dem BACH-Ablauf entfernt:** Der blockierte externe Scanpfad ist
+  kein Bestandteil der verbindlichen Skill-Kette mehr. BACH behält stattdessen lokal ausführbare,
+  deterministische LOCK-, Secret-/PII-, Pfad-, Provenienz-, Abhängigkeits-, statische Analyse- und
+  Diff-Gates; eine spätere Wiederaufnahme erfordert eine neue ausdrückliche Nutzerentscheidung.
+- **Modularisierungsrichtung präzisiert:** Module und Bundles gelten im Regelfall als bereits
+  extrahiert. BACH wird jetzt durch den Einsatz derselben kanonischen Bausteine wie OCEAN und die
+  kontrollierte Abkopplung seiner Altbereiche modularer. Neu auftauchende BACH-Unikate durchlaufen
+  ein Wert-, Eigenständigkeits-, Privacy-, Test- und Wartbarkeitsgate und bleiben die Ausnahme.
+- **Start- und Remotehinweise fail-closed ausgerichtet:** QUICKSTART EN/DE führt Serverdienste
+  ausschließlich über die Startspine und empfiehlt keine direkte `0.0.0.0`-Freigabe mehr.
+  `start/README.md` trennt lokale Control-Readiness von Telegram-Verifikation und bindet einen
+  Remote-Tray an eine separat abgesicherte Netzwerkstrecke und Authentifizierungsentscheidung.
+- **Sechssprachige Help-Flächen nachgezogen:** `bach_chat` und `install` sind in DE, EN, ES,
+  JA, RU und ZH auf Startspine, generische Hostbeispiele und die neue Remote-Sicherheitsgrenze
+  synchronisiert. API-Feldnamen, Konfigurationsschlüssel, Pfade und Befehle bleiben dabei über
+  alle Sprachen maschinenlesbar invariant. Der Release-Export wird aus dem bestehenden Snapshot
+  plus genau diesen zwölf Live-DB-Zeilen materialisiert, damit keine unabhängige
+  Sprachdatenbank-Drift einfließt.
 - **QUICK-Selbsttest fachlich präzisiert (Task 1146):** B001 bewertet ein
   erfolgreich erstelltes Inventar konsistent statt es als Score 0 zu führen.
   O001 verwendet für BACH nun einen vollständigen Task-Lebenszyklus über die
@@ -46,6 +74,30 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 - **`start/bach.bat` beendet auf Port 8000 nur noch den eigenen GUI-Server:** die beiden `netstat`/`taskkill`-Schleifen killten jeden Listener auf :8000, auch fremde Programme (gemessen auf ASUS-GEI: `run_web.py`). Neue Subroutine `:kill_if_bach_gui` prueft die Kommandozeile auf `gui\server.py`; Fremdprozesse werden gemeldet, nicht beendet.
 
+- **Vor-Umbau-Baseline reproduzierbar stabilisiert:** Der Headless-Fallback nutzt wieder die
+  kanonische Benutzer-Datenbank unter `~/.bach/bach.db`. Ein expliziter `BACH_CLUTCH_PATH` bildet
+  jetzt eine fail-closed Provenienzgrenze: kollidierende oder gemischte gecachte Paketpfade werden
+  vollständig verworfen, fehlende Komponenten nicht mehr unbemerkt aus einem anderen installierten
+  `clutch` ergänzt und stattdessen auf den BACH-Kompatibilitätsadapter zurückgeführt.
+  `bach mem working|decay` lädt Werkzeuge direkt
+  aus den kanonischen Dateien unter `system/tools`, bevor fremde Suchpfade Code ausführen können.
+  Setup-Sprachtests isolieren ihren prozessglobalen Übersetzungszustand; externe MCP-/Upgrade-Smokes
+  erhalten belastbare, weiterhin begrenzte Zeitfenster.
+- **Chat-Backend-Readiness statt Konfigurationsschein:** OpenAI- und Anthropic-Backends prüfen
+  authentifiziert und zeitlich begrenzt ihr Modellinventar; Claude- und Codex-CLI bestätigen den
+  lokalen Anmeldestatus. Das Backend-Inventar prüft parallel, nutzt einen kurzen Cache und gibt
+  CLI-Starts ausreichend Zeit. Fehlertexte aus CLI-Backends werden nicht länger als erfolgreiche
+  HTTP-Chatantworten ausgegeben.
+- **Lokale Control-API fail-closed gehärtet:** Die API bindet standardmäßig nur an Loopback und
+  weist nicht authentifizierte Non-Loopback-Binds zurück. Browserzugriffe erhalten CORS nur für
+  Loopback-Origins; Cross-Site-, Nicht-JSON- und JSON-Nichtobjekt-POSTs werden vor
+  Zustandsänderungen kontrolliert abgewiesen. JSON-Antworten deklarieren ihre vollständige Länge;
+  bei regulär gerahmten Requests verwerfen abgewiesene POSTs den angelieferten Body vor dem
+  Schließen. Der reproduzierte Windows-TCP-Reset blieb damit in `20/20` Wiederholungen aus.
+  Eigene Größen- und Zeitgrenzen für unvollständige oder übergroße Bodies bleiben ein Hardening-
+  Nachlauf innerhalb von Task #1207.
+  Das Windows-Startmenü enthält keinen persönlichen Standardhost mehr und verlangt `BACH_HOST`
+  ausdrücklich.
 - **CAMT.053-Dry-run wieder lauffähig und XML-gehärtet:** Der Steuer-Handler
   bezieht seinen CAMT-Parser nicht mehr aus dem gitignorierten privaten
   Expertenbaum, sondern aus `system/tools/steuer`. Der wiederhergestellte
@@ -66,6 +118,14 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Verified
 
+- **Vor-Umbau-Baseline vollständig grün:** Die fokussierte Clutch-, Memory-, Partner-, Activity-
+  und DB-Pfad-Regressionssuite lief mit `70 passed`; Chat-Control und Delegation anschließend mit
+  `25 passed`, der zuvor fluktuierende Nicht-JSON-POST zusätzlich in `20/20` Wiederholungen grün.
+  Die abschließende vollständige Systemsuite erreichte `4723 passed, 6 skipped, 9 warnings` in
+  456,09 Sekunden. Die Warnungen beschränken
+  sich auf die bekannte Starlette-Deprecation sowie
+  vorhandene Escape-Sequenzen in Testskripten. Der Befund belegt den Branch; er ersetzt weder
+  Review und Integration noch die gesonderte Freigabe für Release und Tag.
 - **Release-Katalog-Privacy-Repair verifiziert:** `python -m pytest system\tests\test_upgrade_handler.py -q` lief mit `43 passed`; `python system\bach.py upgrade repair --version v3.13.0-bluesky --json` bereinigte die lokale Runtime-DB auf `manifest_entries=3446` und `dist_file_versions=6861`. Das anschließende `upgrade check --json` meldete `repair_recommended=false`, `upgrade_candidates=0`, `missing_files=0`, `unreadable_files=0`; gezielte DB-Scans auf `user/%`, Hostnamen, personenbezogene Pfadfragmente sowie DB-/Cache-/`dist`-Artefakte standen bei 0.
 - **clutch-Abschlusszertifizierung:** `python -m pytest system\tests\test_delegation_adapter.py system\tests\test_clutch.py system\tests\test_partner_handler.py -q` lief mit `36 passed`; `python bach.py clutch migration` meldete alle acht Quellen extern, Compat-Adapter und DB-Brücke `OK` sowie den Legacy-Fork `ARCHIVED` im Standby.
 - **Build-Week-/Web-Scrape-Slice zertifiziert:** Neun fokussierte Web-Scrape-Regressionstests, insgesamt 41 Web-/Plugin-Sicherheitstests, Ruff (unter Beibehaltung der historisch erforderlichen Importpfad-Ausnahme), `py_compile`, Diff-/Credential-Scan und ein realer HTTPS-Header-Smoke liefen erfolgreich.
