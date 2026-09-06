@@ -80,6 +80,23 @@ System-Wartung und Administration.
 - `task_statistics.py` - Task-Statistiken
 - `archive_done_tasks.py` - Task-Archivierung
 
+### translations/ (8 Tools) [ergaenzt 2026-09-06, T-20260906-370804159]
+QA-Skripte fuer `languages_translations`/`languages_dictionary` (Audit, Reparatur,
+Stichproben), aus einer Rescue-Sicherung uebernommen und aus dem Repo-Root hierher
+einsortiert. Erwarten `bach.db` unter `~/.bach/bach.db` (zwei Skripte haben zusaetzlich
+einen veralteten Laptop-Pfad `C:\Users\User\...` als Fallback -- vor Nutzung pruefen).
+Direkt per `sqlite3.connect` statt ueber einen Handler, wie in `analyze_quality.py` &
+Co. schon vor der Uebernahme -- fuer Einmal-Audits hier belassen, nicht als Vorbild
+fuer neue Tools nehmen.
+- `analyze_quality.py` - Uebersicht Uebersetzungsqualitaet je Namespace
+- `audit_translations.py` - Vollstaendigkeits-/Konsistenzaudit ueber alle Sprachen
+- `deep_audit.py` - Detailanalyse Namespace `help_doc`
+- `find_and_repair_glitches.py` - Repariert kaputte Platzhalter (`{ x }` -> `{x}`) **schreibt in bach.db**
+- `fix_common_terms.py` - Korrigiert haeufige Fachbegriffe je Sprache **schreibt in bach.db**
+- `inspect_help_doc.py` - Rohdatenblick auf Namespace `help_doc`
+- `inspect_lang_schema.py` - Schema/Spaltenuebersicht der Sprachtabellen
+- `sample_skills_and_help.py` - Stichprobenaudit Namespaces `skills`/`help`
+
 ### generators/ (4 Tools)
 Code- und Content-Generierung.
 - `skill_generator.py` - Skill-Generierung
