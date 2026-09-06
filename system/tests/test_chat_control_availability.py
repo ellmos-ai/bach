@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Control-API contract for fail-closed chat backend availability."""
 
+import asyncio
 import importlib
 import json
 import shutil
@@ -11,7 +12,7 @@ import threading
 import types
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -120,6 +121,122 @@ def test_control_api_rejects_chat_before_runtime_when_backend_is_unavailable(
     }
     control_module.runtime.process.assert_not_called()
     assert not thread.is_alive()
+
+
+def test_control_api_rejects_unavailable_backend_switch_without_state_change(
+    control_module,
+    monkeypatch,
+):
+    old_backend = OllamaBackend(default_model="old:latest")
+    candidate = OllamaBackend(default_model="new:latest")
+    monkeypatch.setattr(
+        candidate,
+        "availability",
+        lambda **_kwargs: (False, "candidate offline"),
+    )
+    monkeypatch.setattr(control_module, "create_backend", lambda _config: candidate)
+    control_module.runtime.backend = old_backend
+    control_module.runtime.sessions.clear()
+    control_module.runtime.get_session("existing").model = "old:latest"
+
+    server = control_module.QuietHTTPServer(
+        ("127.0.0.1", 0),
+        control_module.ControlHandler,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        response = httpx.post(
+            f"http://127.0.0.1:{server.server_port}/api/backend",
+            json={"name": "ollama", "model": "new:latest"},
+            timeout=3,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert response.status_code == 503
+    assert response.json()["ok"] is False
+    assert control_module.runtime.backend is old_backend
+    assert control_module.runtime.sessions["existing"].model == "old:latest"
+
+
+def test_telegram_backend_switch_rejects_unavailable_candidate(
+    control_module,
+    monkeypatch,
+):
+    old_backend = OllamaBackend(default_model="old:latest")
+    candidate = OllamaBackend(default_model="new:latest")
+    monkeypatch.setattr(
+        candidate,
+        "availability",
+        lambda **_kwargs: (False, "candidate offline"),
+    )
+    monkeypatch.setattr(control_module, "create_backend", lambda _config: candidate)
+    control_module.runtime.backend = old_backend
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        message=SimpleNamespace(reply_text=reply_text),
+        effective_chat=SimpleNamespace(id=42),
+    )
+    context = SimpleNamespace(args=["ollama", "new:latest"])
+
+    asyncio.run(control_module.cmd_backend(update, context))
+
+    assert control_module.runtime.backend is old_backend
+    reply_text.assert_awaited_once_with(
+        "Backend nicht verfügbar: candidate offline"
+    )
+
+
+def test_control_chat_executes_exact_backend_that_passed_readiness(
+    control_module,
+    monkeypatch,
+):
+    checked_backend = OllamaBackend(default_model="checked:latest")
+    replacement_backend = OllamaBackend(default_model="replacement:latest")
+
+    def availability(**_kwargs):
+        control_module.runtime.backend = replacement_backend
+        return True, "bereit"
+
+    monkeypatch.setattr(checked_backend, "availability", availability)
+    control_module.runtime.backend = checked_backend
+    control_module.runtime.sessions.clear()
+    observed = {}
+
+    async def process(prompt, chat_id, *, backend=None, model=""):
+        observed.update(
+            prompt=prompt,
+            chat_id=chat_id,
+            backend=backend,
+            model=model,
+        )
+        return "OK"
+
+    control_module.runtime.process = process
+    server = control_module.QuietHTTPServer(
+        ("127.0.0.1", 0),
+        control_module.ControlHandler,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        response = httpx.post(
+            f"http://127.0.0.1:{server.server_port}/api/chat",
+            json={"prompt": "Snapshot nutzen", "chat_id": "race"},
+            timeout=3,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "answer": "OK"}
+    assert observed["backend"] is checked_backend
+    assert observed["model"] == "checked:latest"
 
 
 def test_control_api_checks_model_for_requested_chat(control_module, monkeypatch):

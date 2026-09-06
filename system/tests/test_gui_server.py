@@ -289,6 +289,7 @@ class TestChatControlResolution:
 
         assert 'id="send-btn" title="Backend wird geprüft" disabled' in template
         assert "let backendAvailable = false;" in template
-        assert "activeBackend.available === true" in template
-        assert "activeBackend.selected === true" in template
+        assert "readiness.available === true" in template
+        assert "/readiness?chat_id=" in template
+        assert "readiness.available !== true" in template
         assert "if (!text || sending || !backendAvailable) return;" in template

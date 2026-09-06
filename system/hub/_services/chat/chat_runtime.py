@@ -940,7 +940,7 @@ class ChatRuntime:
             if m.get("role") in ("user", "assistant")
         ]
 
-    def build_system_prompt(self, session: ChatSession) -> str:
+    def build_system_prompt(self, session: ChatSession, model: str = "") -> str:
         capabilities = """
 Du hast Zugriff auf Werkzeuge (Tools), die du bei Bedarf aufrufen kannst.
 
@@ -1012,7 +1012,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 - maintain(health) zeigt den Gesamtstatus
 """
         s = self.base_system + "\n\n" + capabilities
-        s += f"\n[Modus={session.mode}, Denken={'AN' if session.think else 'AUS'}, Modell={session.model}]"
+        selected_model = model or session.model
+        s += f"\n[Modus={session.mode}, Denken={'AN' if session.think else 'AUS'}, Modell={selected_model}]"
         return s
 
     def _get_bach_context(self, text: str) -> str:
@@ -1033,40 +1034,56 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             pass
         return "\n\n".join(parts)
 
-    async def process(self, text: str, chat_id: str) -> str:
+    async def process(self, text: str, chat_id: str, *, backend=None,
+                      model: str = "") -> str:
         """Verarbeitet eine User-Nachricht und gibt die Antwort zurück."""
         session = self.get_session(chat_id)
+        selected_backend = backend or self.backend
+        selected_model = model or session.model or selected_backend.get_default_model()
         session.last_active = time.time()
         session.messages.append({"role": "user", "content": text})
 
         total = sum(len(m.get("content", "")) for m in session.messages)
         if total > self.SUMMARIZE_THRESHOLD or len(session.messages) > self.MAX_MESSAGES:
-            await self._summarize(session)
+            await self._summarize(
+                session,
+                backend=selected_backend,
+                model=selected_model,
+            )
 
         bach_ctx = self._get_bach_context(text)
 
-        sys_prompt = self.build_system_prompt(session)
+        sys_prompt = self.build_system_prompt(session, model=selected_model)
         if bach_ctx:
             sys_prompt += f"\n\n--- BACH ---\n{bach_ctx}"
 
         msgs = [{"role": "system", "content": sys_prompt}] + session.messages
 
-        if getattr(self.backend, "manages_own_tools", False):
+        if getattr(selected_backend, "manages_own_tools", False):
             try:
-                result = await self.backend.chat(msgs, think=session.think,
-                                                 model=session.model)
+                result = await selected_backend.chat(
+                    msgs, think=session.think, model=selected_model
+                )
                 answer = result.get("content", "(keine Antwort)")
             except Exception as e:
                 answer = f"Backend-Fehler: {e}"
         else:
             tools = TOOLS_FULL if session.mode == "full" else TOOLS_SAFE
-            answer = await self._tool_loop(msgs, session, tools)
+            answer = await self._tool_loop(
+                msgs,
+                session,
+                tools,
+                backend=selected_backend,
+                model=selected_model,
+            )
         session.messages.append({"role": "assistant", "content": answer})
         self._persist_session(chat_id, session)
         return answer
 
     async def _tool_loop(self, msgs: list, session: ChatSession,
-                         tools: list) -> str:
+                         tools: list, *, backend=None, model: str = "") -> str:
+        selected_backend = backend or self.backend
+        selected_model = model or session.model or selected_backend.get_default_model()
         max_rounds = self.max_tool_rounds
         round_num = 0
         session.tool_round = 0
@@ -1077,8 +1094,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 session.current_tool = ""
                 return result.get("content", "") or "(Max Tool-Runden erreicht)"
             try:
-                result = await self.backend.chat(
-                    msgs, tools=tools, think=session.think, model=session.model
+                result = await selected_backend.chat(
+                    msgs, tools=tools, think=session.think, model=selected_model
                 )
             except Exception as e:
                 session.current_tool = ""
@@ -1106,18 +1123,21 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 t_result = exec_tool(
                     t_name, t_args, session.mode,
                     bach_app=self.bach_app,
-                    default_model=session.model,
+                    default_model=selected_model,
                 )
                 tool_call_id = ""
-                if hasattr(self.backend, "_last_tool_call_ids"):
-                    ids = self.backend._last_tool_call_ids
+                if hasattr(selected_backend, "_last_tool_call_ids"):
+                    ids = selected_backend._last_tool_call_ids
                     if i < len(ids):
                         tool_call_id = ids[i]
                 msgs.append(
-                    self.backend.tool_response_message(str(t_result), tool_call_id)
+                    selected_backend.tool_response_message(str(t_result), tool_call_id)
                 )
 
-    async def _summarize(self, session: ChatSession):
+    async def _summarize(self, session: ChatSession, *, backend=None,
+                         model: str = ""):
+        selected_backend = backend or self.backend
+        selected_model = model or session.model or selected_backend.get_default_model()
         if len(session.messages) < 6:
             return
         old = session.messages[:-4]
@@ -1134,7 +1154,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         ]
 
         try:
-            result = await self.backend.chat(prompt, think=False)
+            result = await selected_backend.chat(
+                prompt,
+                think=False,
+                model=selected_model,
+            )
             summary = result.get("content", "")[:500]
 
             if self.memory:
