@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
-# Version: 1.1.1
-# Zuletzt validiert: 2026-05-15 (ThreadingHTTPServer, LaunchAgent-Korrektur)
+# Version: 1.1.2
+# Zuletzt validiert: 2026-08-28 (Startspine- und Remote-Sicherheitsvertrag)
 
 BACH CHAT SERVICE - Multi-Backend Telegram Bot + Control API + System Tray
 ==========================================================================
@@ -29,7 +29,7 @@ Backends:
 Sicherheitsmodi:
   - safe:  Nur lesende Tools (ls, cat, grep, git, docker, etc.)
   - full:  Auch schreibende Tools (execute_command, write_file)
-           Aktivierung: /mode full bestaetigt
+           Aktivierung: /mode full bestätigt
 
 
 TELEGRAM BEFEHLE
@@ -57,7 +57,7 @@ TELEGRAM BEFEHLE
 CONTROL API (Port 8081)
 -----------------------
   GET  /                    Web-Dashboard (HTML)
-  GET  /api/status          Aktueller Status (inkl. Tool-Aktivitaet)
+  GET  /api/status          Aktueller Status (inkl. Tool-Aktivität)
   GET  /api/backends        Verfügbare Backends mit Status
   GET  /api/models          Modelle des aktuellen Backends
   POST /api/backend         Backend wechseln: {"name": "claude", "model": "opus"}
@@ -70,21 +70,25 @@ CONTROL API (Port 8081)
 
 SYSTEM TRAY
 -----------
-  Start:  python chat_tray.py [--host HOST] [--port PORT]
+  Start:  python start/startspine.py start --tray
 
   Funktionen:
-    - Status-Icon: Gruen (safe), Orange (full), Rot (nicht verbunden)
+    - Status-Icon: Grün (safe), Orange (full), Rot (nicht verbunden)
     - Backend-Submenu: Alle Backends mit Verfügbarkeit
-    - Modell-Submenu: Modelle des aktuellen Backends
+    - Modell-Untermenü: Modelle des aktuellen Backends
     - Modus-Toggle: Safe/Full
     - Think-Toggle: AN/AUS
     - Max Tool-Runden: Presets (5/10/20/Unbegrenzt)
-    - Tool-Aktivitaet: Aktuelles Tool + Runde im Tray-Titel
+    - Tool-Aktivität: Aktuelles Tool + Runde im Tray-Titel
     - Web-Dashboard öffnen
     - Cross-platform: macOS, Windows, Linux (via pystray)
 
-  Remote-Tray (von anderem System):
-    python chat_tray.py --host macstudvonlukas --port 8081
+  Remote-Tray (nur über eine separat abgesicherte Netzwerkstrecke):
+    python start/startspine.py start --tray --host bach-server.local
+
+  Sicherheitsgrenze: Remotezugriff benötigt eine ausdrückliche
+  Authentifizierungsentscheidung. Die Control-API darf nicht ungeschützt
+  auf 0.0.0.0 veröffentlicht werden.
 
 
 DATEIEN
@@ -128,7 +132,7 @@ KONFIGURATION
     OLLAMA_MODEL             Standard-Modell überschreiben
     OLLAMA_URL               Ollama-URL überschreiben
     BACH_CONTROL_PORT        Control API Port (default: 8081)
-    BACH_HOST                Default-Host für Tray/GUI (z.B. macstudvonlukas)
+    BACH_HOST                Default-Host für Tray/GUI (z. B. bach-server.local)
     BACH_NO_BROWSER          =1: Browser nicht automatisch öffnen (Remote-GUI)
     ANTHROPIC_API_KEY        Für claude-api Backend
     OPENAI_API_KEY           Für openai Backend

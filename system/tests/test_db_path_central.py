@@ -106,7 +106,6 @@ KNOWN_OFFENDERS = {
     "tools/bach_auto_discovery.py",
     "tools/bach_db_viewer.py",
     "tools/bach_text_viewer.py",
-    "tools/backup_manager.py",
     "tools/chains_export.py",
     "tools/claude_md_sync.py",
     "tools/context_compressor.py",

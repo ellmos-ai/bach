@@ -30,6 +30,14 @@ def handler(tmp_path):
     return MemHandler(tmp_path)
 
 
+def _install_local_tool_mock(handler, monkeypatch, module_name, module):
+    def load_local_tool(requested_module, class_name):
+        assert requested_module == module_name
+        return getattr(module, class_name)
+
+    monkeypatch.setattr(handler, "_load_local_tool", load_local_tool)
+
+
 # ═══════════════════════════════════════════════════════════════
 # PROPERTIES
 # ═══════════════════════════════════════════════════════════════
@@ -116,7 +124,7 @@ class TestWorking:
 
         mock_module = MagicMock()
         mock_module.WorkingMemoryCleanup.return_value = mock_cleanup
-        monkeypatch.setitem(sys.modules, "memory_working_cleanup", mock_module)
+        _install_local_tool_mock(handler, monkeypatch, "memory_working_cleanup", mock_module)
 
         ok, output = handler.handle("working", ["status"])
         assert ok is True
@@ -129,7 +137,7 @@ class TestWorking:
 
         mock_module = MagicMock()
         mock_module.WorkingMemoryCleanup.return_value = mock_cleanup
-        monkeypatch.setitem(sys.modules, "memory_working_cleanup", mock_module)
+        _install_local_tool_mock(handler, monkeypatch, "memory_working_cleanup", mock_module)
 
         ok, output = handler.handle("working", ["cleanup", "--dry-run"])
         assert ok is True
@@ -141,7 +149,7 @@ class TestWorking:
 
         mock_module = MagicMock()
         mock_module.WorkingMemoryCleanup.return_value = mock_cleanup
-        monkeypatch.setitem(sys.modules, "memory_working_cleanup", mock_module)
+        _install_local_tool_mock(handler, monkeypatch, "memory_working_cleanup", mock_module)
 
         ok, output = handler.handle("working", ["set-expires"])
         assert ok is True
@@ -150,20 +158,39 @@ class TestWorking:
     def test_working_unknown_subop(self, handler, monkeypatch):
         mock_module = MagicMock()
         mock_module.WorkingMemoryCleanup.return_value = MagicMock()
-        monkeypatch.setitem(sys.modules, "memory_working_cleanup", mock_module)
+        _install_local_tool_mock(handler, monkeypatch, "memory_working_cleanup", mock_module)
 
         ok, output = handler.handle("working", ["invalid_subop"])
         assert ok is False
         assert "Unbekannte working-Operation" in output
 
-    def test_working_import_failure(self, handler, monkeypatch):
+    def test_working_import_failure(self, handler, monkeypatch, tmp_path):
         """If the tool cannot be imported, return error gracefully."""
+        foreign_tools = tmp_path / "foreign-tools"
+        foreign_tools.mkdir()
+        marker = tmp_path / "foreign-working-executed.txt"
+        (foreign_tools / "memory_working_cleanup.py").write_text(
+            f"""
+from pathlib import Path
+Path({str(marker)!r}).write_text("executed", encoding="utf-8")
+
+class WorkingMemoryCleanup:
+    def __init__(self, db_path):
+        pass
+
+    def analyze(self, dry_run=True):
+        return True, "foreign tool"
+""".lstrip(),
+            encoding="utf-8",
+        )
+        monkeypatch.syspath_prepend(str(foreign_tools))
         # Ensure the module is not available
         monkeypatch.delitem(sys.modules, "memory_working_cleanup", raising=False)
         # The handler will try to import from tools dir which doesn't have the file
         ok, output = handler.handle("working", ["status"])
         assert ok is False
         assert "Fehler bei Working Memory Cleanup" in output
+        assert not marker.exists()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -178,7 +205,7 @@ class TestDecay:
 
         mock_module = MagicMock()
         mock_module.MemoryDecay.return_value = mock_decay
-        monkeypatch.setitem(sys.modules, "memory_decay", mock_module)
+        _install_local_tool_mock(handler, monkeypatch, "memory_decay", mock_module)
 
         ok, output = handler.handle("decay", [])
         assert ok is True
@@ -193,7 +220,7 @@ class TestDecay:
 
         mock_module = MagicMock()
         mock_module.MemoryDecay.return_value = mock_decay
-        monkeypatch.setitem(sys.modules, "memory_decay", mock_module)
+        _install_local_tool_mock(handler, monkeypatch, "memory_decay", mock_module)
 
         ok, output = handler.handle("decay", ["--facts"])
         assert ok is True
@@ -207,7 +234,7 @@ class TestDecay:
 
         mock_module = MagicMock()
         mock_module.MemoryDecay.return_value = mock_decay
-        monkeypatch.setitem(sys.modules, "memory_decay", mock_module)
+        _install_local_tool_mock(handler, monkeypatch, "memory_decay", mock_module)
 
         ok, output = handler.handle("decay", ["--dry-run"])
         assert ok is True
@@ -215,9 +242,28 @@ class TestDecay:
             facts=True, lessons=True, working=True, dry_run=True
         )
 
-    def test_decay_import_failure(self, handler, monkeypatch):
+    def test_decay_import_failure(self, handler, monkeypatch, tmp_path):
         """If the tool cannot be imported, return error gracefully."""
+        foreign_tools = tmp_path / "foreign-tools"
+        foreign_tools.mkdir()
+        marker = tmp_path / "foreign-decay-executed.txt"
+        (foreign_tools / "memory_decay.py").write_text(
+            f"""
+from pathlib import Path
+Path({str(marker)!r}).write_text("executed", encoding="utf-8")
+
+class MemoryDecay:
+    def __init__(self, db_path):
+        pass
+
+    def run_decay(self, **kwargs):
+        return "foreign tool"
+""".lstrip(),
+            encoding="utf-8",
+        )
+        monkeypatch.syspath_prepend(str(foreign_tools))
         monkeypatch.delitem(sys.modules, "memory_decay", raising=False)
         ok, output = handler.handle("decay", [])
         assert ok is False
         assert "Fehler bei Memory Decay" in output
+        assert not marker.exists()

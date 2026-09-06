@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Tests for the BACH GUI server — exception handlers, DB helpers, startup."""
 
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -227,3 +228,68 @@ class TestSmokeEndpoints:
     def test_static_css_or_js(self, client):
         resp = client.get("/static/style.css")
         assert resp.status_code in (200, 404)
+
+
+class TestChatControlResolution:
+    def test_chat_proxy_timeout_is_bounded_and_configurable(self, monkeypatch):
+        monkeypatch.delenv("BACH_CHAT_PROXY_TIMEOUT_SECONDS", raising=False)
+        assert server._chat_proxy_timeout() == 960.0
+
+        monkeypatch.setenv("BACH_CHAT_PROXY_TIMEOUT_SECONDS", "45.5")
+        assert server._chat_proxy_timeout() == 45.5
+
+        monkeypatch.setenv("BACH_CHAT_PROXY_TIMEOUT_SECONDS", "ungültig")
+        assert server._chat_proxy_timeout() == 960.0
+
+        monkeypatch.setenv("BACH_CHAT_PROXY_TIMEOUT_SECONDS", "1")
+        assert server._chat_proxy_timeout() == 10.0
+
+    def test_uses_startspine_actual_control_port(self, tmp_path, monkeypatch):
+        runtime = tmp_path / "runtime"
+        runtime.mkdir()
+        (runtime / "discovery.json").write_text(
+            json.dumps({
+                "root": str(server.BACH_DIR.parent),
+                "services": {
+                    "chat": {"host": "127.0.0.1", "actual_port": 8127},
+                },
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("BACH_RUNTIME_DIR", str(runtime))
+
+        assert server._chat_control_base_url() == "http://127.0.0.1:8127/api"
+
+    def test_rejects_discovery_from_other_checkout(self, tmp_path, monkeypatch):
+        runtime = tmp_path / "runtime"
+        runtime.mkdir()
+        (runtime / "discovery.json").write_text(
+            json.dumps({
+                "root": str(tmp_path / "other-checkout"),
+                "services": {
+                    "chat": {"host": "127.0.0.1", "actual_port": 8127},
+                },
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("BACH_RUNTIME_DIR", str(runtime))
+
+        assert server._chat_control_base_url() is None
+
+    def test_chat_template_has_no_fixed_control_host_or_port(self):
+        template = (server.TEMPLATES_DIR / "chat.html").read_text(encoding="utf-8")
+        nav = (server.STATIC_DIR / "js" / "nav.js").read_text(encoding="utf-8")
+        assert "const CHAT_API = '/api/chat-control'" in template
+        assert "CHAT_HOST" not in template
+        assert "CHAT_HOST" not in nav
+        assert "macstudvonlukas" not in nav
+
+    def test_chat_template_fails_closed_until_backend_is_available(self):
+        template = (server.TEMPLATES_DIR / "chat.html").read_text(encoding="utf-8")
+
+        assert 'id="send-btn" title="Backend wird geprüft" disabled' in template
+        assert "let backendAvailable = false;" in template
+        assert "readiness.available === true" in template
+        assert "/readiness?chat_id=" in template
+        assert "readiness.available !== true" in template
+        assert "if (!text || sending || !backendAvailable) return;" in template

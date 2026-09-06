@@ -1,8 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
+chcp 65001 >nul
 title BACH Boot Menu
 
-REM Absoluten Pfad aufloesen (& im Pfad sicher)
+REM Absoluten Pfad auflösen (& im Pfad sicher)
 pushd "%~dp0..\system"
 set "SYS_DIR=%CD%"
 popd
@@ -10,6 +11,7 @@ pushd "%~dp0.."
 set "ROOT_DIR=%CD%"
 popd
 set "CHAT_DIR=!SYS_DIR!\hub\_services\chat"
+set "STARTSPINE=!ROOT_DIR!\start\startspine.py"
 set PYTHONIOENCODING=utf-8
 
 :menu
@@ -62,7 +64,7 @@ if /i "!choice!"=="X" goto chat_stop
 if /i "!choice!"=="E" goto extended_menu
 if /i "!choice!"=="Q" goto end
 
-echo   Ungueltige Auswahl.
+echo   Ungültige Auswahl.
 timeout /t 2 >nul
 goto menu
 
@@ -79,48 +81,14 @@ echo   Web-GUI + System Tray
 echo  ============================================
 echo.
 
-echo [1/3] Starte Web-GUI (Port 8000)...
-pushd "!SYS_DIR!"
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000" ^| findstr "LISTENING" 2^>nul') do (
-    call :kill_if_bach_gui %%a
-)
-start "BACH Server" /min cmd /k "set PYTHONIOENCODING=utf-8 && python gui\server.py --port 8000"
-popd
-echo       [OK] GUI Server gestartet
-
-echo [2/3] Starte BACH System Tray...
-set "TRAY_HOST=127.0.0.1"
-if not "!BACH_HOST!"=="" set "TRAY_HOST=!BACH_HOST!"
-curl -s --max-time 2 "http://!TRAY_HOST!:8081/api/status" >nul 2>&1
-if !ERRORLEVEL! equ 0 (
-    pushd "!CHAT_DIR!"
-    start "" pythonw chat_tray.py --host "!TRAY_HOST!"
-    popd
-    echo       [OK] System Tray gestartet ^(verbunden mit !TRAY_HOST!:8081^)
+python "!STARTSPINE!" start --gui --tray --open-browser
+if errorlevel 1 (
+    echo.
+    echo [FEHLER] Mindestens ein erforderlicher Dienst ist nicht bereit.
 ) else (
-    echo       [SKIP] System Tray uebersprungen ^(keine Control API auf !TRAY_HOST!:8081^)
-    echo              Starte Chat Service mit [B] oder nutze [W] fuer Server-Modus
+    echo.
+    echo [OK] Erforderliche Dienste sind bereit. Optionale Details stehen im Status.
 )
-
-echo [3/3] Oeffne Web-GUI im Browser...
-if "!BACH_NO_BROWSER!"=="1" (
-    echo       [SKIP] Browser nicht geoeffnet ^(BACH_NO_BROWSER=1^)
-) else (
-    timeout /t 3 /nobreak >nul
-    start "" "http://127.0.0.1:8000"
-    echo       [OK] Browser geoeffnet
-)
-echo.
-echo  ============================================
-echo   BACH laeuft!
-echo  ============================================
-echo   GUI:         http://127.0.0.1:8000
-echo   System Tray: Im Infobereich pruefen
-echo  ============================================
-echo.
-echo   Zum Beenden: Tray-Icon rechtsklick -^> Beenden
-echo   GUI stoppen: Ctrl+C im Server-Fenster
-echo.
 pause
 goto menu
 
@@ -137,7 +105,7 @@ echo   Volle Rechte (skip-permissions)
 echo  ============================================
 echo.
 pushd "!ROOT_DIR!"
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Du hast volle Rechte. Arbeite selbststaendig an offenen Tasks, erstelle neue Features, fixe Bugs und fuehre Wartungsaufgaben durch. Frage bei Unklarheiten den User." --dangerously-skip-permissions
+claude --print "Starte mit Lesen und Ausführen von SKILL.md. Du hast volle Rechte. Arbeite selbstständig an offenen Tasks, erstelle neue Features, fixe Bugs und führe Wartungsaufgaben durch. Frage bei Unklarheiten den User." --dangerously-skip-permissions
 popd
 echo.
 echo [FERTIG] Session beendet.
@@ -160,7 +128,7 @@ pushd "!ROOT_DIR!"
 if exist "%~dp0_internal\claude_remote_control.py" (
     python "%~dp0_internal\claude_remote_control.py"
 ) else (
-    claude --print "Starte mit lesen und ausfuehren von SKILL.md. Du hast volle Rechte. Remote-Session: Arbeite selbststaendig, der User steuert ggf. ueber Mobile. Frage bei Unklarheiten." --dangerously-skip-permissions
+    claude --print "Starte mit Lesen und Ausführen von SKILL.md. Du hast volle Rechte. Remote-Session: Arbeite selbstständig, der User steuert ggf. über Mobile. Frage bei Unklarheiten." --dangerously-skip-permissions
 )
 popd
 echo.
@@ -205,7 +173,7 @@ echo  ============================================
 echo.
 pushd "!SYS_DIR!"
 
-echo  Verfuegbare Agenten:
+echo  Verfügbare Agenten:
 echo  -------------------------------------------
 REM Agenten sind Ordner mit SKILL.md (seit v2.6), keine .json-Dateien
 python -c "import os; adir='agents'; names=[d for d in sorted(os.listdir(adir)) if os.path.isdir(os.path.join(adir,d)) and not d.startswith(('_','.')) and os.path.isfile(os.path.join(adir,d,'SKILL.md'))]; [print(f'  [{i+1}] {n}') for i,n in enumerate(names)]" 2>nul
@@ -245,23 +213,11 @@ cls
 echo.
 echo  ============================================
 echo   BACH CHAT SERVICE - Start
-echo   (Telegram Bot + Control API + System Tray)
+echo   Telegram Bot + Control API + System Tray
 echo  ============================================
 echo.
-pushd "!CHAT_DIR!"
-echo [1/2] Starte Telegram Bot + Control API...
-start "BACH Chat Bot" cmd /k "set PYTHONIOENCODING=utf-8 && python telegram_chat.py"
-timeout /t 3 /nobreak >nul
-echo       [OK] Bot gestartet (Control API auf Port 8081)
-echo.
-echo [2/2] Starte System Tray...
-start "" pythonw chat_tray.py
-echo       [OK] Tray gestartet - Icon pruefen
-popd
-echo.
-echo [OK] Chat Service laeuft
-echo      Dashboard: http://127.0.0.1:8081
-echo      Telegram:  @bach_assistant_bot
+python "!STARTSPINE!" start --chat --tray
+if errorlevel 1 echo [FEHLER] Chat/Control ist nicht bereit. Details stehen im Startspine-Log.
 pause
 goto menu
 
@@ -277,46 +233,24 @@ echo   BUDDHA CONNECT - Server-Modus
 echo  ============================================
 echo.
 
-set "BACH_HOST_TARGET=%BACH_HOST%"
-if "!BACH_HOST_TARGET!"=="" set "BACH_HOST_TARGET=macstudvonlukas"
-
-echo [1/3] Pruefe Verbindung zu !BACH_HOST_TARGET!...
-curl -s --max-time 5 "http://!BACH_HOST_TARGET!:8081/api/status" >nul 2>&1
-if !ERRORLEVEL! neq 0 (
-    echo.
-    echo       [OFFLINE] !BACH_HOST_TARGET! nicht erreichbar.
-    echo       Moegliche Ursachen: Tailscale nicht aktiv, Mac Studio aus
-    echo       SET BACH_HOST=hostname fuer anderen Server
-    echo.
-    set /p "fallback=  Lokal starten stattdessen? [J/N]: "
-    if /i "!fallback!"=="J" goto chat_start
+set "BACH_HOST_TARGET=!BACH_HOST!"
+if "!BACH_HOST_TARGET!"=="" (
+    echo [FEHLER] BACH_HOST ist nicht gesetzt. Bitte einen abgesicherten Server-Host konfigurieren.
+    pause
     goto menu
 )
-echo       [OK] Control API erreichbar
+set "REMOTE_GUI_PORT=!BACH_GUI_PORT!"
+if "!REMOTE_GUI_PORT!"=="" set "REMOTE_GUI_PORT=8000"
 
-echo [2/3] Starte System Tray (verbunden mit !BACH_HOST_TARGET!)...
-pushd "!CHAT_DIR!"
-start "" pythonw chat_tray.py --host "!BACH_HOST_TARGET!" --port 8081
-popd
-echo       [OK] Tray gestartet
-
-echo [3/3] Oeffne Zugangswege...
+echo Starte System Tray für !BACH_HOST_TARGET!; bei Offline-Status verbindet er sich später neu.
+python "!STARTSPINE!" start --tray --host "!BACH_HOST_TARGET!"
+echo.
+python "!STARTSPINE!" status --host "!BACH_HOST_TARGET!"
 if "!BACH_NO_BROWSER!"=="1" (
-    echo       [SKIP] Browser nicht geoeffnet ^(BACH_NO_BROWSER=1^)
+    echo [SKIP] Browser nicht geöffnet ^(BACH_NO_BROWSER=1^)
 ) else (
-    timeout /t 2 /nobreak >nul
-    start "" "http://!BACH_HOST_TARGET!:8000"
-    echo       [OK] GUI Dashboard geoeffnet
+    start "" "http://!BACH_HOST_TARGET!:!REMOTE_GUI_PORT!"
 )
-echo.
-echo  ============================================
-echo   Verbunden mit !BACH_HOST_TARGET!
-echo  ============================================
-echo   GUI:       http://!BACH_HOST_TARGET!:8000
-echo   Dashboard: http://!BACH_HOST_TARGET!:8081
-echo   Telegram:  @bach_assistant_bot
-echo  ============================================
-echo.
 pause
 goto menu
 
@@ -325,22 +259,8 @@ REM  WEB-GUI
 REM ============================================================
 :gui
 title BACH GUI Server
-pushd "!SYS_DIR!"
-echo  Beende alte Prozesse auf Port 8000...
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000" ^| findstr "LISTENING" 2^>nul') do (
-    call :kill_if_bach_gui %%a
-)
-if exist "gui\__pycache__" rd /s /q "gui\__pycache__" >nul 2>&1
-start "BACH Server" cmd /k "set PYTHONIOENCODING=utf-8 && python gui\server.py --port 8000"
-timeout /t 3 >nul
-if "!BACH_NO_BROWSER!"=="1" (
-    echo  [SKIP] Browser nicht geoeffnet ^(BACH_NO_BROWSER=1^)
-    echo  URL: http://127.0.0.1:8000
-) else (
-    start "" "http://127.0.0.1:8000"
-)
-popd
-echo  [OK] GUI gestartet auf http://127.0.0.1:8000
+python "!STARTSPINE!" start --gui --open-browser
+if errorlevel 1 echo [FEHLER] GUI ist nicht bereit. Details stehen im Startspine-Log.
 pause
 goto menu
 
@@ -355,24 +275,9 @@ echo  ============================================
 echo   BACH SYSTEM STATUS
 echo  ============================================
 echo.
-set "STATUS_HOST=127.0.0.1"
-if not "!BACH_HOST!"=="" set "STATUS_HOST=!BACH_HOST!"
-
-echo  Control API (!STATUS_HOST!:8081):
-pushd "!SYS_DIR!"
-python -c "import urllib.request,json; r=urllib.request.urlopen('http://!STATUS_HOST!:8081/api/status'); d=json.loads(r.read()); print(f'    Backend:  {d.get(\"backend\",\"?\")}'); print(f'    Modell:   {d.get(\"model\",\"?\")}'); print(f'    Modus:    {d.get(\"mode\",\"?\")}'); print(f'    Think:    {d.get(\"think\",\"?\")}'); print(f'    Sessions: {d.get(\"sessions\",\"?\")}')" 2>nul || echo    [OFFLINE] Control API nicht erreichbar
-
-echo.
-echo  GUI (Port 8000):
-curl -s --max-time 2 "http://127.0.0.1:8000/" >nul 2>&1
-if !ERRORLEVEL! equ 0 ( echo    [ONLINE] ) else ( echo    [OFFLINE] )
-
-echo.
-echo  Ollama (Port 11434):
-curl -s --max-time 2 "http://localhost:11434/api/tags" >nul 2>&1
-if !ERRORLEVEL! equ 0 ( echo    [ONLINE] ) else ( echo    [OFFLINE] )
-
-popd
+set "STATUS_HOST=!BACH_HOST!"
+if "!STATUS_HOST!"=="" set "STATUS_HOST=127.0.0.1"
+python "!STARTSPINE!" status --host "!STATUS_HOST!"
 echo.
 pause
 goto menu
@@ -385,18 +290,12 @@ title BACH Chat Service Stop
 cls
 echo.
 echo  Stoppe Chat Service...
-for /f "tokens=2 delims=," %%p in ('wmic process where "commandline like '%%telegram_chat%%'" get processid /format:csv 2^>nul ^| findstr /r "[0-9]"') do (
-    taskkill /f /pid %%p >nul 2>&1
-)
-for /f "tokens=2 delims=," %%p in ('wmic process where "commandline like '%%chat_tray%%'" get processid /format:csv 2^>nul ^| findstr /r "[0-9]"') do (
-    taskkill /f /pid %%p >nul 2>&1
-)
-echo [OK] Chat Service gestoppt
+python "!STARTSPINE!" stop --services chat,tray
 pause
 goto menu
 
 REM ============================================================
-REM  ERWEITERTE OPTIONEN (Submenue)
+REM  ERWEITERTE OPTIONEN (Untermenü)
 REM ============================================================
 :extended_menu
 cls
@@ -406,8 +305,8 @@ echo   ERWEITERTE OPTIONEN
 echo  ============================================
 echo.
 echo   --- CLAUDE AUTO-SESSION -----------------------
-echo   [1]  Auto-Session (Zeitlimit + Scope waehlbar)
-echo   [2]  Endlos-Loop (Intervall waehlbar)
+echo   [1]  Auto-Session (Zeitlimit + Scope wählbar)
+echo   [2]  Endlos-Loop (Intervall wählbar)
 echo.
 echo   --- WARTUNG ------------------------------------
 echo   [M]  Maintenance (Recurring/Backup/Docs)
@@ -417,7 +316,7 @@ echo   --- AUTOSTART ----------------------------------
 echo   [C]  Autostart einrichten
 echo   [R]  Autostart entfernen
 echo.
-echo   [Q]  Zurueck zum Hauptmenue
+echo   [Q]  Zurück zum Hauptmenü
 echo  ============================================
 echo.
 
@@ -431,7 +330,7 @@ if /i "!echoice!"=="C" goto ext_autostart
 if /i "!echoice!"=="R" goto ext_autostart_remove
 if /i "!echoice!"=="Q" goto menu
 
-echo   Ungueltige Auswahl.
+echo   Ungültige Auswahl.
 timeout /t 2 >nul
 goto extended_menu
 
@@ -462,7 +361,7 @@ set "TIME_TEXT=Arbeite maximal !MAX_MIN! Minuten, dann Session-Summary und Shutd
 if "!MAX_MIN!"=="0" set "TIME_TEXT=Arbeite alle Tasks ab, dann Session-Summary und Shutdown."
 echo.
 pushd "!ROOT_DIR!"
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. !SCOPE_TEXT! !TIME_TEXT!" --dangerously-skip-permissions
+claude --print "Starte mit Lesen und Ausführen von SKILL.md. !SCOPE_TEXT! !TIME_TEXT!" --dangerously-skip-permissions
 popd
 echo.
 echo [FERTIG] Session beendet.
@@ -487,20 +386,20 @@ if "!lint!"=="1" ( set "LOOP_SEC=900" & set "LOOP_MAX=40" & set "LOOP_MIN=12" )
 if "!lint!"=="2" ( set "LOOP_SEC=1800" & set "LOOP_MAX=80" & set "LOOP_MIN=25" )
 if "!lint!"=="3" ( set "LOOP_SEC=3600" & set "LOOP_MAX=150" & set "LOOP_MIN=50" )
 echo.
-echo  Loop laeuft. Ctrl+C zum Stoppen.
+echo  Loop läuft. Ctrl+C zum Stoppen.
 echo.
 pushd "!ROOT_DIR!"
 :ext_loop_cycle
 echo [%date% %time%] Starte Session (max !LOOP_MIN! Min)...
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Bearbeite offene Tasks (P1 zuerst). Max !LOOP_MIN! Min, dann Summary und Shutdown." --max-turns !LOOP_MAX! --dangerously-skip-permissions
-echo [%date% %time%] Naechste Session in !LOOP_SEC! Sekunden... (Ctrl+C = Stop)
+claude --print "Starte mit Lesen und Ausführen von SKILL.md. Bearbeite offene Tasks (P1 zuerst). Max !LOOP_MIN! Min, dann Summary und Shutdown." --max-turns !LOOP_MAX! --dangerously-skip-permissions
+echo [%date% %time%] Nächste Session in !LOOP_SEC! Sekunden... (Ctrl+C = Stop)
 timeout /t !LOOP_SEC! /nobreak
 goto ext_loop_cycle
 
 REM --- Wartung ---
 :ext_maintenance
 pushd "!ROOT_DIR!"
-claude --print "Starte mit lesen und ausfuehren von SKILL.md. Wartungsaufgaben: 1) 'bach --recurring check' 2) 'bach backup status' und ggf. 'bach backup create' 3) 'bach --maintain docs' 4) 'bach consolidate run'. Abschliessend Session-Summary und Shutdown." --dangerously-skip-permissions
+claude --print "Starte mit Lesen und Ausführen von SKILL.md. Wartungsaufgaben: 1) 'bach --recurring check' 2) 'bach backup status' und ggf. 'bach backup create' 3) 'bach --maintain docs' 4) 'bach consolidate run'. Abschließend Session-Summary und Shutdown." --dangerously-skip-permissions
 popd
 pause & goto extended_menu
 
@@ -519,31 +418,13 @@ goto extended_menu
 REM --- Autostart ---
 :ext_autostart
 echo  Erstelle Windows Autostart-Eintrag...
-schtasks /create /tn "BACH Chat Tray" /tr "cmd /c \"set PYTHONIOENCODING=utf-8 && pythonw !CHAT_DIR!\chat_tray.py --host 127.0.0.1\"" /sc onlogon /rl highest /f >nul 2>&1
-echo [OK] Autostart-Eintrag erstellt: "BACH Chat Tray"
+python "!STARTSPINE!" autostart-install
 pause & goto extended_menu
 
 :ext_autostart_remove
 echo  Entferne Windows Autostart-Eintrag...
-schtasks /delete /tn "BACH Chat Tray" /f >nul 2>&1
-echo [OK] Autostart-Eintrag entfernt.
+python "!STARTSPINE!" autostart-remove
 pause & goto extended_menu
-
-REM --- Port-8000-Guard ---
-REM Beendet PID %1 nur, wenn es unser eigener GUI-Server ist (Kommandozeile enthaelt
-REM gui\server.py). Ein Fremdprozess auf :8000 wird NICHT beendet, sondern gemeldet -
-REM vorher hat der Start jeden Listener blind gekillt (auf ASUS-GEI z.B. run_web.py).
-:kill_if_bach_gui
-set "BACH_PORT_OWNER="
-for /f "tokens=2 delims=," %%c in ('wmic process where "processid=%1" get commandline /format:csv 2^>nul ^| findstr /i "server.py"') do set "BACH_PORT_OWNER=%%c"
-if defined BACH_PORT_OWNER (
-    taskkill /F /PID %1 >nul 2>&1
-    echo       [OK] Alten BACH GUI-Server PID %1 beendet.
-) else (
-    echo       [WARN] Port 8000 gehoert PID %1 - kein BACH gui\server.py, wird NICHT beendet.
-    echo              Der GUI-Start auf Port 8000 wird scheitern. Fremdprozess pruefen oder beenden.
-)
-exit /b
 
 :end
 echo.
