@@ -1113,3 +1113,79 @@ class TestTrayIdleWorker:
 
         puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
         assert puts == [("/api/tasks/42", "in_progress"), ("/api/tasks/42", "open")]
+
+    # --- Nachlese nach dem Client-Timeout (T-20260906-739766716) ---
+
+    def _tray_with_pending(self, monkeypatch, task_id=42):
+        """Erster Lauf laeuft in den Client-Timeout; der Task ist danach vorgemerkt."""
+        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
+
+        def fake_api(method, path, data=None, **kw):
+            if method == "GET" and path.startswith("/api/tasks?"):
+                if "OLLAMA" in path and "status=pending" in path:
+                    return {"success": True,
+                            "tasks": [{"id": task_id, "title": "T", "description": "D"}]}
+                return {"success": True, "tasks": []}
+            return None if method == "POST" else {"success": True}
+
+        with patch.object(tray, "_api", side_effect=fake_api):
+            tray._process_idle_task()
+        assert tray.idle_pending[0] == task_id
+        return tray
+
+    @staticmethod
+    def _history(*answers):
+        messages = [{"role": "user", "content": "Idle-Modus. Task #42: T"}]
+        messages += [{"role": "assistant", "content": c, "ok": ok} for c, ok in answers]
+        return {"ok": True, "messages": messages}
+
+    def test_idle_worker_books_a_late_answer_after_the_client_timeout(self, monkeypatch):
+        """Der Lauf arbeitet nach dem Timeout weiter -- sein Ergebnis darf nicht verloren gehen."""
+        tray = self._tray_with_pending(monkeypatch)
+        calls = []
+
+        def fake_api(method, path, data=None, **kw):
+            calls.append((method, path, data))
+            if path.startswith("/api/history"):
+                return self._history(("Wartungscheck erledigt.", True))
+            return {"success": True, "tasks": []}
+
+        with patch.object(tray, "_api", side_effect=fake_api):
+            tray._process_idle_task()
+
+        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == [("/api/tasks/42", "completed")]
+        assert tray.idle_pending is None
+
+    def test_idle_worker_reopens_a_late_failure_instead_of_completing_it(self, monkeypatch):
+        """Die Bewertung kommt aus /api/history und ist dieselbe wie bei /api/chat."""
+        tray = self._tray_with_pending(monkeypatch)
+        calls = []
+
+        def fake_api(method, path, data=None, **kw):
+            calls.append((method, path, data))
+            if path.startswith("/api/history"):
+                return self._history(("Backend-Fehler: Ollama weg", False))
+            return {"success": True, "tasks": []}
+
+        with patch.object(tray, "_api", side_effect=fake_api):
+            tray._process_idle_task()
+
+        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == [("/api/tasks/42", "open")]
+        assert tray.idle_pending is None
+
+    def test_idle_worker_waits_instead_of_starting_a_second_run(self, monkeypatch):
+        """Zwei Laeufe teilen sich die Session -- ihre Antworten waeren nicht zuzuordnen."""
+        tray = self._tray_with_pending(monkeypatch)
+        calls = []
+
+        def fake_api(method, path, data=None, **kw):
+            calls.append((method, path, data))
+            if path.startswith("/api/history"):
+                return self._history()
+            return {"success": True, "tasks": []}
+
+        with patch.object(tray, "_api", side_effect=fake_api):
+            tray._process_idle_task()
+
+        assert [c for c in calls if c[0] in ("PUT", "POST")] == []
+        assert tray.idle_pending is not None

@@ -90,6 +90,8 @@ class BACHTray:
 
     POLL_INTERVAL = 5
     IDLE_THRESHOLD = 12  # 12 × 5s = 60s ohne Sessions → Idle-Arbeit starten
+    IDLE_CHAT_ID = "idle-worker"
+    PENDING_TTL = 1800   # danach gilt ein Lauf ohne Antwort als verloren
 
     def __init__(self, host="127.0.0.1", port=8081, webchat_port=8080):
         self.host = host
@@ -124,6 +126,7 @@ class BACHTray:
         self.idle_consecutive = 0
         self.idle_task_name = None
         self.idle_processing = False
+        self.idle_pending = None   # (task_id, seit) nach Client-Timeout
 
         self.prompt_source = "defaults"
         self.prompts = self._load_prompts()
@@ -374,6 +377,52 @@ class BACHTray:
         if self.idle_consecutive >= self.IDLE_THRESHOLD:
             threading.Thread(target=self._process_idle_task, daemon=True).start()
 
+    def _settle_pending_task(self) -> bool:
+        """Traegt nach, was nach dem Client-Timeout noch eintraf.
+
+        Der Lauf arbeitet serverseitig weiter und legt seine Antwort im
+        Transkript ab -- nur der Empfaenger hoerte nicht mehr zu, und der Task
+        blieb fuer immer in_progress (T-20260906-739766716). Bewertet wird die
+        Antwort nicht hier, sondern von der Runtime: `/api/history` liefert
+        dasselbe `ok` wie `/api/chat`, damit es eine Definition von Fehlschlag
+        gibt (T-20260906-743610852).
+
+        Rueckgabe: True, wenn der Weg fuer den naechsten Task frei ist.
+        """
+        if not self.idle_pending:
+            return True
+        task_id, seit = self.idle_pending
+        hist = self._api("GET", f"/api/history?chat_id={self.IDLE_CHAT_ID}")
+        messages = (hist or {}).get("messages", [])
+        marker = f"Task #{task_id}:"
+        answer = None
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "user" and marker in messages[i].get("content", ""):
+                answer = next((m for m in messages[i + 1:]
+                               if m.get("role") == "assistant"), None)
+                break
+
+        if answer is None:
+            if time.time() - seit < self.PENDING_TTL:
+                # Keinen zweiten Lauf starten: beide schreiben in dieselbe
+                # Session, die Antworten waeren nicht mehr zuzuordnen -- und
+                # zwei schwere Modell-Laeufe parallel sind genau der Fall, der
+                # den Speicher-Watchdog ausloest.
+                print(f"[Idle] Task #{task_id} laeuft serverseitig weiter; warte")
+                return False
+            # ponytail: Slot verfaellt, danach gilt das Verhalten vor dem Fix
+            # (Task bleibt in_progress). Upgrade: Vormerkung am Task speichern,
+            # dann ueberlebt sie auch einen Tray-Neustart.
+            print(f"[Idle] Task #{task_id} ohne Antwort seit {self.PENDING_TTL}s; Vormerkung verworfen")
+            self.idle_pending = None
+            return True
+
+        status = "completed" if answer.get("ok", True) else "open"
+        self._api("PUT", f"/api/tasks/{task_id}", {"status": status}, base=self.gui_url)
+        print(f"[Idle] Task #{task_id} nach Timeout nachgetragen: {status}")
+        self.idle_pending = None
+        return True
+
     def _process_idle_task(self):
         if self.idle_processing:
             return
@@ -381,6 +430,8 @@ class BACHTray:
         self._update_icon()
 
         try:
+            if not self._settle_pending_task():
+                return
             # Tasks fuer den Worker tragen in der GUI/DB den Status 'open' ODER 'pending'
             # (server.py zaehlt beide als offen); nur 'pending' zu fragen liess jeden
             # 'open'-OLLAMA-Task liegen.
@@ -416,7 +467,7 @@ class BACHTray:
 
             result = self._api("POST", "/api/chat", {
                 "prompt": prompt,
-                "chat_id": "idle-worker",
+                "chat_id": self.IDLE_CHAT_ID,
             }, timeout=300)
 
             if result is None:
@@ -424,7 +475,10 @@ class BACHTray:
                 # failure. In particular, urllib's local timeout does not stop
                 # the ThreadingHTTPServer request that may still be running.
                 # Keep the task claimed so the next idle tick cannot duplicate it.
-                print(f"[Idle] Chat-Ergebnis für Task #{task_id} unbekannt; Status bleibt in_progress")
+                # Das Ergebnis erreicht spaeter das Transkript -- vormerken und
+                # beim naechsten Tick nachtragen (T-20260906-739766716).
+                self.idle_pending = (task_id, time.time())
+                print(f"[Idle] Chat-Ergebnis für Task #{task_id} unbekannt; wird nachgelesen")
             elif result.get("ok"):
                 self._api("PUT", f"/api/tasks/{task_id}",
                            {"status": "completed"}, base=self.gui_url)

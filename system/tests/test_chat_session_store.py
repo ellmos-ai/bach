@@ -53,9 +53,11 @@ def test_transcript_survives_runtime_restart_without_creating_history_session(sn
     assert asyncio.run(first.process("Hallo", "gui-web")) == "Persistierte Antwort"
 
     restarted = ChatRuntime(_Backend(), session_store=SQLiteChatSessionStore(snapshot_db))
+    # "ok" kam mit T-20260906-739766716 dazu -- nach dem Neustart ist der
+    # FailedAnswer-Typ weg, die Bewertung kommt dann aus dem Text.
     assert restarted.history("gui-web") == [
-        {"role": "user", "content": "Hallo"},
-        {"role": "assistant", "content": "Persistierte Antwort"},
+        {"role": "user", "content": "Hallo", "ok": True},
+        {"role": "assistant", "content": "Persistierte Antwort", "ok": True},
     ]
     assert "gui-web" not in restarted.sessions
 
@@ -92,8 +94,8 @@ def test_history_hides_internal_entries_after_restart(snapshot_db):
 
     restarted = ChatRuntime(_Backend(), session_store=store)
     assert restarted.history("gui-web") == [
-        {"role": "user", "content": "Sichtbar"},
-        {"role": "assistant", "content": "Auch sichtbar"},
+        {"role": "user", "content": "Sichtbar", "ok": True},
+        {"role": "assistant", "content": "Auch sichtbar", "ok": True},
     ]
 
 

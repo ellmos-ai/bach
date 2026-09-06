@@ -529,10 +529,13 @@ class TestHistory:
             {"role": "tool", "content": "{}"},
             {"role": "user", "content": "Noch eine Frage"},
         ])
+        # "ok" kam mit T-20260906-739766716 dazu: der Idle-Worker liest sein
+        # Ergebnis nach einem Timeout von hier und braucht dieselbe Bewertung
+        # wie bei /api/chat. Die Chat-Seite liest weiterhin nur role/content.
         assert rt.history("gui-web") == [
-            {"role": "user", "content": "Hallo"},
-            {"role": "assistant", "content": "Hi!"},
-            {"role": "user", "content": "Noch eine Frage"},
+            {"role": "user", "content": "Hallo", "ok": True},
+            {"role": "assistant", "content": "Hi!", "ok": True},
+            {"role": "user", "content": "Noch eine Frage", "ok": True},
         ]
 
     def test_unknown_session_is_empty_and_not_created(self):
@@ -607,6 +610,29 @@ class TestFailedAnswer:
         answer = self._process(_RaisingBackend(RuntimeError("kaputt")))
         assert isinstance(answer, str)
         assert answer.startswith("Backend-Fehler:")
+
+    def test_history_marks_a_reloaded_failure_although_the_type_is_gone(self):
+        """Nach einem Neustart traegt das Transkript nur noch Text.
+
+        Der Idle-Worker liest sein Ergebnis nach dem Client-Timeout von dort
+        (T-20260906-739766716) und muss dieselbe Bewertung bekommen wie ueber
+        /api/chat -- sonst gibt es zwei Definitionen von "Fehlschlag".
+        """
+        from hub._services.chat.chat_runtime import ChatRuntime
+
+        class _Store:
+            def load(self, chat_id):
+                return [{"role": "user", "content": "Task #42: T"},
+                        {"role": "assistant", "content": "Backend-Fehler: Ollama weg"},
+                        {"role": "assistant", "content": "Echte Antwort"}]
+
+        runtime = ChatRuntime(_AnsweringBackend(), session_store=_Store())
+        assert [(m["content"].split(":")[0], m["ok"])
+                for m in runtime.history("idle-worker")] == [
+            ("Task #42", True),
+            ("Backend-Fehler", False),
+            ("Echte Antwort", True),
+        ]
 
 
 def test_control_api_does_not_report_failed_answers_as_ok():
