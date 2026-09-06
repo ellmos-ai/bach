@@ -63,7 +63,14 @@ BACKUP_DIR = BASE_DIR / "_backups"
 DIST_DIR = BASE_DIR / "dist"
 SNAPSHOTS_DIR = DIST_DIR / "snapshots"
 MANIFEST_FILE = DATA_DIR / "fs_manifest.json"
-BACH_DB = DATA_DIR / "bach.db"
+
+# The runtime database lives outside the OneDrive source tree.  Keep a
+# direct-script fallback for this standalone tool, but prefer the central
+# path whenever the BACH package is importable.
+try:
+    from hub.bach_paths import BACH_DB
+except ImportError:  # pragma: no cover - standalone invocation fallback
+    BACH_DB = DATA_DIR / "bach.db"
 
 
 # =============================================================================
@@ -238,6 +245,29 @@ class FSProtection:
         DIST_DIR.mkdir(exist_ok=True)
         SNAPSHOTS_DIR.mkdir(exist_ok=True)
 
+    def _resolve_manifest_path(self, rel_path: str) -> Path:
+        """Resolve mixed legacy manifest paths against the canonical roots.
+
+        Older manifest rows store files below ``system/`` both with and
+        without that prefix, while repository-root files (for example
+        ``README.md``) have no prefix.  Prefer an existing system-relative
+        candidate, then an existing repository-root candidate; for a missing
+        path preserve the same directory convention so a genuine absence is
+        reported accurately.
+        """
+        relative = Path(rel_path)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(f"Ungueltiger Manifestpfad: {rel_path}")
+
+        project_root = self.base_path.parent if self.base_path.name == "system" else self.base_path
+        system_candidate = self.base_path / relative
+        root_candidate = project_root / relative
+        if relative.parts and relative.parts[0] == "system":
+            return root_candidate
+        if system_candidate.exists() or not root_candidate.exists():
+            return system_candidate
+        return root_candidate
+
     def _get_conn(self) -> sqlite3.Connection:
         """Datenbankverbindung."""
         conn = sqlite3.connect(str(self.db_path))
@@ -341,7 +371,11 @@ class FSProtection:
             rel_path = row["path"]
             expected_hash = row["template_hash"]
 
-            file_path = self.base_path / rel_path
+            try:
+                file_path = self._resolve_manifest_path(rel_path)
+            except ValueError:
+                results["missing"].append(rel_path)
+                continue
 
             if not file_path.exists():
                 results["missing"].append(rel_path)
@@ -393,7 +427,7 @@ class FSProtection:
         if not snapshot_path.exists():
             return False, f"[FS] Kein Snapshot fuer: {rel_path}"
 
-        target_path = self.base_path / rel_path
+        target_path = self._resolve_manifest_path(rel_path)
 
         # Backup der aktuellen Version
         if target_path.exists() and not force:
@@ -409,12 +443,19 @@ class FSProtection:
 
     def _heal_all(self, force: bool = False) -> Tuple[bool, str]:
         """Stellt alle fehlenden/beschaedigten Dateien wieder her."""
+        snapshots = list(SNAPSHOTS_DIR.glob("*.orig"))
+        if not snapshots:
+            return False, (
+                "[FS] Heal abgebrochen: Keine gueltigen Snapshots vorhanden. "
+                "Erstelle zuerst bewusst Snapshots mit `bach dist snapshot --all`."
+            )
+
         healed = []
         failed = []
 
-        for snapshot_file in SNAPSHOTS_DIR.glob("*.orig"):
+        for snapshot_file in snapshots:
             rel_path = self._snapshot_name_to_path(snapshot_file.name)
-            target_path = self.base_path / rel_path
+            target_path = self._resolve_manifest_path(rel_path)
 
             if not target_path.exists():
                 success, msg = self._heal_single(rel_path, force)
@@ -445,7 +486,7 @@ class FSProtection:
 
     def _snapshot_single(self, rel_path: str) -> Tuple[bool, str]:
         """Erstellt Snapshot einer einzelnen Datei."""
-        source_path = self.base_path / rel_path
+        source_path = self._resolve_manifest_path(rel_path)
 
         if not source_path.exists():
             return False, f"[FS] Datei nicht gefunden: {rel_path}"
@@ -484,7 +525,7 @@ class FSProtection:
                     skipped += 1
                     continue
 
-                source_path = self.base_path / rel_path
+                source_path = self._resolve_manifest_path(rel_path)
                 if not source_path.exists() or not source_path.is_file():
                     skipped += 1
                     continue
