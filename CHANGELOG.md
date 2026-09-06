@@ -8,6 +8,17 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Added
 
+- **Gemeinsame Startspine (`start/startspine.py`) als einziger Startpfad:** `start`, `status`,
+  `stop` und der Windows-Autostart laufen über eine Spine mit Prozess-Lease, Empfangsbestätigungen
+  je Dienst und einer Discovery-Datei. Der Start ist eine **Transaktion**: Schlägt ein Schritt fehl
+  — Portauflösung, Spawn, Readiness, Statuspersistenz — werden ausschließlich die in genau diesem
+  Lauf gestarteten Dienste zurückgerollt (Vergleich der `launch_id`); wiederverwendete Dienste aus
+  früheren Starts bleiben unberührt. Prozesseigentum wird über PID **und exakte Erstellungszeit**
+  geprüft, damit eine recycelte PID nie einen fremden Prozess trifft. Der Windows-Autostart läuft
+  mit `/rl limited` statt `highest`. `start/bach.bat` und `start/bach.sh` rufen nur noch die Spine
+  auf; der frühere `netstat`/`taskkill`-Helfer `:kill_if_bach_gui` entfällt ersatzlos, weil der
+  Schutz fremder Portinhaber jetzt in der Spine liegt (siehe Fixed-Eintrag unten) und ein zweiter
+  Kill-Pfad die Prozesszuordnung nur wieder aufweichen würde.
 - **Persistenter GUI-Chatverlauf (FABLE-SOL 1.2.4):** Der ChatRuntime speichert
   vollständige Modellkontexte jetzt als eigenen Snapshot-Typ in der bereits
   kanonischen `bach.db`. Gehashte Chat-IDs, atomare Aktualisierungen und ein
@@ -72,7 +83,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
-- **`start/bach.bat` beendet auf Port 8000 nur noch den eigenen GUI-Server:** die beiden `netstat`/`taskkill`-Schleifen killten jeden Listener auf :8000, auch fremde Programme (gemessen auf ASUS-GEI: `run_web.py`). Neue Subroutine `:kill_if_bach_gui` prueft die Kommandozeile auf `gui\server.py`; Fremdprozesse werden gemeldet, nicht beendet.
+- **`start/bach.bat` beendet auf Port 8000 nur noch den eigenen GUI-Server:** die beiden `netstat`/`taskkill`-Schleifen killten jeden Listener auf :8000, auch fremde Programme (gemessen auf ASUS-GEI: `run_web.py`). Neue Subroutine `:kill_if_bach_gui` prueft die Kommandozeile auf `gui\server.py`; Fremdprozesse werden gemeldet, nicht beendet. **Abgelöst im selben Unreleased-Stand:** Die Subroutine ist entfernt, ihre Schutzwirkung liegt jetzt in der Startspine (`_listener_owner`/`_resolve_port` melden fremde Portinhaber und weichen auf einen freien Port aus, statt zu beenden). Der Eintrag bleibt stehen, weil er den Ausgangsfehler dokumentiert.
 
 - **Vor-Umbau-Baseline reproduzierbar stabilisiert:** Der Headless-Fallback nutzt wieder die
   kanonische Benutzer-Datenbank unter `~/.bach/bach.db`. Ein expliziter `BACH_CLUTCH_PATH` bildet
