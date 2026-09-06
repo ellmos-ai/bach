@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import sys
+from hub._services.limits import limit  # einstellbare Laufzeit-Grenzen
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if hasattr(sys.stdout, 'reconfigure'):
@@ -178,7 +179,9 @@ _global_defaults = {
     "mode": "safe",
     "think": True,
     "model": "",
-    "max_tool_rounds": 12,
+    "max_tool_rounds": limit("BACH_MAX_TOOL_ROUNDS"),
+    "auto_continue": limit("BACH_AUTO_CONTINUE"),
+    "goal": "",
 }
 
 # Pending actions for compute lock confirmations (keyed by chat_id)
@@ -436,6 +439,60 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as e:
         await update.message.reply_text(f"Backend-Wechsel fehlgeschlagen: {e}")
+
+
+async def cmd_auto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Loop-Mode: wie oft darf BACH ohne Rueckfrage nachlegen?"""
+    args = ctx.args or []
+    if not args:
+        n = runtime.auto_continue
+        await update.message.reply_text(
+            f"Loop-Mode: {'AUS' if n == 0 else str(n) + ' Nachschuebe'}\n\n"
+            "Ohne Loop-Mode hoert BACH auf, sobald es eine Antwort ohne\n"
+            "Werkzeugaufruf gibt - es fragt dann zurueck statt weiterzuarbeiten.\n\n"
+            "/auto off — aus (Standard)\n"
+            "/auto 10  — bis zu 10-mal selbst nachlegen\n"
+            "/goal ... — Ziel setzen, gegen das am Ende geprueft wird"
+        )
+        return
+    a = args[0].lower()
+    if a in ("off", "aus", "0"):
+        runtime.auto_continue = 0
+        _global_defaults["auto_continue"] = 0
+        await update.message.reply_text("Loop-Mode: AUS")
+        return
+    try:
+        val = max(0, int(a))
+    except ValueError:
+        await update.message.reply_text("Nutzung: /auto <zahl|off>")
+        return
+    runtime.auto_continue = val
+    _global_defaults["auto_continue"] = val
+    ziel = f"\nZiel: {runtime.goal[:80]}" if runtime.goal else "\nKein Ziel gesetzt (/goal ...)"
+    await update.message.reply_text(f"Loop-Mode: {val} Nachschuebe{ziel}")
+
+
+async def cmd_goal(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Ziel, gegen das im Loop-Mode vor dem Fertigmelden geprueft wird."""
+    args = ctx.args or []
+    if not args:
+        g = runtime.goal
+        await update.message.reply_text(
+            (f"Ziel: {g}" if g else "Kein Ziel gesetzt.") +
+            "\n\n/goal <text> — Ziel setzen\n/goal off — Ziel loeschen\n\n"
+            "Im Loop-Mode prueft BACH vor dem Fertigmelden einmal streng\n"
+            "gegen dieses Ziel und baut Fehlendes nach."
+        )
+        return
+    if args[0].lower() in ("off", "aus", "clear"):
+        runtime.goal = ""
+        _global_defaults["goal"] = ""
+        await update.message.reply_text("Ziel geloescht.")
+        return
+    runtime.goal = " ".join(args)
+    _global_defaults["goal"] = runtime.goal
+    hint = "" if runtime.auto_continue else "\n\nHinweis: Loop-Mode ist aus - mit /auto 10 einschalten."
+    await update.message.reply_text(f"Ziel gesetzt:\n{runtime.goal}{hint}")
 
 
 async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -1466,6 +1523,8 @@ def main():
     app.add_handler(CommandHandler("model", cmd_model))
     app.add_handler(CommandHandler("backend", cmd_backend))
     app.add_handler(CommandHandler("maxrounds", cmd_maxrounds))
+    app.add_handler(CommandHandler("auto", cmd_auto))
+    app.add_handler(CommandHandler("goal", cmd_goal))
     app.add_handler(CommandHandler("settings", cmd_settings))
 
     if HAS_BACH:

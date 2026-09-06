@@ -211,6 +211,15 @@ class AgentLauncherHandler(BaseHandler):
         else:
             return self._list_agents()
 
+    def _runner_arg(self, args: list) -> str | None:
+        """Ausdrueckliche Runner-Wahl: `--runner codex`."""
+        for i, a in enumerate(args or []):
+            if a == "--runner" and i + 1 < len(args):
+                return args[i + 1]
+            if a.startswith("--runner="):
+                return a.split("=", 1)[1]
+        return None
+
     def _has_flag(self, args: list, *flags: str) -> bool:
         """Prueft ob ein Flag in den CLI-Argumenten gesetzt wurde."""
         return any(arg in flags for arg in args)
@@ -1566,17 +1575,21 @@ class AgentLauncherHandler(BaseHandler):
                 json_output=json_output,
             )
 
-        # Claude-Prozess starten
-        cmd = ["claude", "--model", model]
-        if max_turns is not None:
-            cmd.extend(["--max-turns", str(max_turns)])
-        if permission_mode == "full":
-            cmd.append("--dangerously-skip-permissions")
-        else:
-            cmd.extend(["--allowedTools", allowed_tools])
+        # Agentenprozess starten - welcher Anbieter, entscheidet der Runner.
+        # Ohne eigene Konfiguration ist das weiterhin Claude Code; ein lokales
+        # Modell laeuft ueber BACHs eigene Chat-Runtime (hub/agent_runners.py).
+        from hub import agent_runners
 
-        if mode == "plan":
-            cmd.extend(["--plan-mode", "plan"])
+        runner_name, cmd = agent_runners.build_command(
+            model,
+            runner=self._runner_arg(args),
+            permission_mode=permission_mode,
+            allowed_tools=allowed_tools,
+            max_turns=max_turns,
+            mode=mode,
+            workdir=str(agent_temp_dir),
+            python=sys.executable,
+        )
 
         try:
             if sys.platform == 'win32':
@@ -1593,7 +1606,7 @@ class AgentLauncherHandler(BaseHandler):
                     f"title {title}",
                     f'cd /d "{agent_temp_dir}"',
                     f"echo === BACH Agent: {agent_label} ({resolved_name}) ===",
-                    f"echo Modell: {model} ^| Modus: {mode}",
+                    f"echo Modell: {model} ^| Modus: {mode} ^| Runner: {runner_name}",
                     f"echo.",
                     f"{' '.join(cmd)}",
                 ]
