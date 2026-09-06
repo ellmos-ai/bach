@@ -52,6 +52,14 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **Headless-API (Port 8001) teilt sich jetzt den `task_history`/`started_at`-Schreibpfad
+  mit dem GUI-Server (T-20260906-240256515, Folgefund zu T-20260906-985973908):**
+  `system/gui/api/headless.py` betreibt einen separaten REST-Server (`/api/v1/tasks`) mit
+  derselben Lücke wie zuvor `system/gui/server.py` -- kein `task_history`-Schreibpfad,
+  `started_at` nie gesetzt. Statt die Logik ein zweites Mal zu kopieren, liegt sie jetzt
+  zentral in `hub/task_audit.py` (`apply_task_field_changes`); beide `update_task`-Handler
+  rufen dieselbe Funktion auf. Die Statuswortschätze bleiben bewusst getrennt (GUI:
+  `completed`, Headless: `done`) -- keiner wird umbenannt, beide zählen als Abschluss.
 - **`task_history`-Audit-Trail und `started_at` werden jetzt geschrieben (T-20260906-985973908):**
   `task_history` (Schema vorhanden, MCP-`db_query`-Whitelist) hatte systemweit 0 Zeilen,
   weil `update_task` (PUT `/api/tasks/{id}`) nie hineinschrieb; `started_at` wurde beim

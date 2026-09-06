@@ -77,6 +77,7 @@ sys.path.insert(0, str(BACH_ROOT))
 # gebauten Pfad zeigte still auf die veraltete Repo-/Cloud-Kopie
 # (test_db_path_central, T-20260901-202368596). sys.path steht oben bereits.
 from hub.bach_paths import BACH_DB as _PATHS_DB, BACKUPS_DIR
+from hub.task_audit import apply_task_field_changes
 BACH_DB = str(_PATHS_DB)
 
 try:
@@ -218,6 +219,10 @@ class TaskUpdate(BaseModel):
     status: Optional[str] = None
     assigned_to: Optional[str] = None
     description: Optional[str] = None
+    # T-20260906-240256515: optionaler Aufrufer-Bezeichner fuer task_history.changed_by,
+    # analog zu TaskUpdate.changed_by im GUI-Server. Externe API-Clients identifizieren
+    # sich damit; ohne Angabe greift der Default "headless-api" (siehe update_task).
+    changed_by: Optional[str] = None
 
 class MemoryWrite(BaseModel):
     content: str
@@ -281,32 +286,36 @@ async def get_task(task_id: int, _=Depends(verify_auth)):
 
 @app.put("/api/v1/tasks/{task_id}")
 async def update_task(task_id: int, update: TaskUpdate, _=Depends(verify_auth)):
+    """Aktualisiert Task in bach.db und protokolliert jede Feldaenderung in task_history.
+
+    T-20260906-240256515: Hatte dieselbe Luecke wie der GUI-Server (T-20260906-985973908,
+    system/gui/server.py) -- kein task_history-Schreibpfad, started_at nie gesetzt. Die
+    Schreiblogik liegt jetzt zentral in hub.task_audit.apply_task_field_changes (von
+    system/gui/server.py gleichermassen genutzt); hier nur noch die Headless-eigene
+    Feldabbildung -- die TaskUpdate-Felder hier entsprechen 1:1 den `tasks`-Spalten,
+    anders als GUI's `project` -> `category`-Alias.
+    """
     conn = _get_db()
     try:
-        fields = []
-        values = []
-        for field, val in update.model_dump(exclude_none=True).items():
-            fields.append(f"{field} = ?")
-            values.append(val)
+        existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if not existing:
+            raise HTTPException(404, "Task nicht gefunden")
+        existing_row = dict(existing)
 
-        if not fields:
+        field_values = update.model_dump(exclude_none=True, exclude={"changed_by"})
+        if not field_values:
             raise HTTPException(400, "Keine Felder zum Aktualisieren")
 
+        # Zeitformat bewusst wie im Rest von headless.py belassen (kein isoformat() wie
+        # im GUI-Server) -- apply_task_field_changes ist formatagnostisch, nur konsistent
+        # innerhalb dieser API sollte es bleiben.
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        fields.append("updated_at = ?")
-        values.append(now)
+        changed_by = update.changed_by or "headless-api"
 
-        if update.status == "done":
-            fields.append("completed_at = ?")
-            values.append(now)
+        if apply_task_field_changes(conn, task_id, existing_row, field_values,
+                                     changed_by=changed_by, now=now):
+            conn.commit()
 
-        values.append(task_id)
-        result = conn.execute(
-            f"UPDATE tasks SET {', '.join(fields)} WHERE id = ?", values)
-        conn.commit()
-
-        if result.rowcount == 0:
-            raise HTTPException(404, "Task nicht gefunden")
         return {"id": task_id, "updated": True}
     finally:
         conn.close()

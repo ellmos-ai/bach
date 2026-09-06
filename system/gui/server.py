@@ -44,6 +44,7 @@ from contextlib import asynccontextmanager
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
+from hub.task_audit import apply_task_field_changes
 from gui.config import settings
 from gui.console import mount_console
 
@@ -1495,6 +1496,11 @@ async def update_task(task_id: int, update: TaskUpdate):
     weit) und `started_at` beim Wechsel auf 'in_progress' nie gesetzt -- die Queue hatte
     keinen Audit-Trail. Beide Luecken werden hier im selben Handler geschlossen, weil GUI
     und Tray-Idle-Worker gleichermassen ueber PUT /api/tasks/{id} gehen.
+
+    T-20260906-240256515: Die eigentliche Schreiblogik (UPDATE + task_history) liegt seit
+    diesem Ticket zentral in hub.task_audit.apply_task_field_changes, weil die separate
+    Headless-API (system/gui/api/headless.py, Port 8001) dieselbe Luecke hatte -- hier nur
+    noch die GUI-eigene Feldabbildung (`project` -> Spalte `category`).
     """
     conn = get_bach_db()
     try:
@@ -1503,73 +1509,32 @@ async def update_task(task_id: int, update: TaskUpdate):
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
         existing_row = row_to_dict(existing)
 
-        updates = []
-        values = []
-        history_entries = []  # (field_changed, old_value, new_value, action)
-        now = datetime.now().isoformat()
+        # field_values: {DB-Spalte: neuer_wert} -- `project` ist ein GUI-Alias fuer
+        # die tatsaechliche Spalte `category`, muss also VOR dem Aufruf aufgeloest werden.
+        field_values = {}
+        if update.title is not None:
+            field_values["title"] = update.title
+        if update.description is not None:
+            field_values["description"] = update.description
+        if update.priority is not None:
+            field_values["priority"] = update.priority
+        if update.status is not None:
+            field_values["status"] = update.status
+        if update.project is not None:
+            field_values["category"] = update.project
+        if update.assigned_to is not None:
+            field_values["assigned_to"] = update.assigned_to
+        if update.created_by is not None:
+            field_values["created_by"] = update.created_by
+        if update.depends_on is not None:
+            field_values["depends_on"] = update.depends_on
+
         # changed_by: vom Aufrufer mitgegeben (z.B. Idle-Worker meldet sich als
         # "idle-worker"), sonst generischer API-Default -- Schema-Default waere 'user',
         # das waere hier irrefuehrend, da die meisten PUTs programmatisch erfolgen.
         changed_by = update.changed_by or "api"
 
-        def _track_change(column, new_value, action="field_change"):
-            old_value = existing_row.get(column)
-            if old_value != new_value:
-                history_entries.append((column, old_value, new_value, action))
-
-        if update.title is not None:
-            updates.append("title = ?")
-            values.append(update.title)
-            _track_change("title", update.title)
-        if update.description is not None:
-            updates.append("description = ?")
-            values.append(update.description)
-            _track_change("description", update.description)
-        if update.priority is not None:
-            updates.append("priority = ?")
-            values.append(update.priority)
-            _track_change("priority", update.priority)
-        if update.status is not None:
-            updates.append("status = ?")
-            values.append(update.status)
-            _track_change("status", update.status, action="status_change")
-            if update.status == "completed":
-                updates.append("completed_at = ?")
-                values.append(now)
-            elif update.status == "in_progress" and not existing_row.get("started_at"):
-                # Nur beim ERSTEN Uebergang setzen -- ein wiederholtes in_progress
-                # (z.B. nach einem 'open'-Rueckfall) darf den Erststart nicht ueberschreiben.
-                updates.append("started_at = ?")
-                values.append(now)
-        if update.project is not None:
-            updates.append("category = ?")
-            values.append(update.project)
-            _track_change("category", update.project)
-        if update.assigned_to is not None:
-            updates.append("assigned_to = ?")
-            values.append(update.assigned_to)
-            _track_change("assigned_to", update.assigned_to)
-        if update.created_by is not None:
-            updates.append("created_by = ?")
-            values.append(update.created_by)
-            _track_change("created_by", update.created_by)
-        if update.depends_on is not None:
-            updates.append("depends_on = ?")
-            values.append(update.depends_on)
-            _track_change("depends_on", update.depends_on)
-
-        if updates:
-            updates.append("updated_at = ?")
-            values.append(now)
-            values.append(task_id)
-            conn.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", values)
-            for field_changed, old_value, new_value, action in history_entries:
-                conn.execute(
-                    """INSERT INTO task_history
-                       (task_id, action, field_changed, old_value, new_value, changed_by, changed_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (task_id, action, field_changed, old_value, new_value, changed_by, now),
-                )
+        if apply_task_field_changes(conn, task_id, existing_row, field_values, changed_by=changed_by):
             conn.commit()
     finally:
         conn.close()
