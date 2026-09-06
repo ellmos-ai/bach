@@ -61,6 +61,17 @@ class FailedAnswer(str):
     def looks_like(cls, text) -> bool:
         return isinstance(text, cls) or str(text).startswith(cls.PREFIX)
 
+    @classmethod
+    def from_exception(cls, exc: BaseException) -> "FailedAnswer":
+        """Gefangene Ausnahme als Fehlschlag-Antwort, mit ihrem Typnamen.
+
+        Der Typ steht immer davor, nicht nur wenn ``str(exc)`` leer ist:
+        ``httpx.ReadTimeout`` und Verwandte haben keinen Text, und auch bei
+        vorhandener Meldung sagt der Typ, ob die Leitung stand, das Modell
+        schwieg oder der Aufruf falsch war.
+        """
+        return cls(f"{cls.PREFIX}{type(exc).__name__}: {exc}".rstrip(": "))
+
 
 try:
     from hub.bach_paths import BACH_DB as _RUNTIME_DB
@@ -1151,7 +1162,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                                                  model=session.model)
                 answer = result.get("content", "(keine Antwort)")
             except Exception as e:
-                answer = FailedAnswer(f"{FailedAnswer.PREFIX}{str(e) or type(e).__name__}")
+                answer = FailedAnswer.from_exception(e)
         else:
             tools = TOOLS_FULL if session.mode == "full" else TOOLS_SAFE
             answer = await self._tool_loop(msgs, session, tools)
@@ -1180,11 +1191,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 )
             except Exception as e:
                 session.current_tool = ""
-                # Typname mit ausgeben: httpx.ReadTimeout & Co. haben leeren
-                # str(), sonst steht hier nur "Backend-Fehler:" ohne Grund.
-                return FailedAnswer(
-                    f"{FailedAnswer.PREFIX}{type(e).__name__}: {e}".rstrip(": ")
-                )
+                return FailedAnswer.from_exception(e)
 
             if result.get("error"):
                 # Ein abgebrochener Lauf ist genauso wenig eine Antwort wie eine
