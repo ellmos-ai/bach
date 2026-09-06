@@ -81,7 +81,11 @@ def _backend(client):
     passieren, und wird danach wieder zurueckgenommen.
     """
     import httpx
-    _backend._orig = httpx.AsyncClient
+    # Nur beim ersten Mal merken: sonst speichert der zweite Aufruf das
+    # Lambda des ersten als "Original" und das Zuruecksetzen zementiert
+    # den Fake, statt ihn zu entfernen.
+    if not hasattr(_backend, "_orig"):
+        _backend._orig = httpx.AsyncClient
     httpx.AsyncClient = lambda *a, **k: client
     return OllamaBackend(default_model="m")
 
@@ -90,6 +94,27 @@ def _zuruecksetzen():
     import httpx
     if hasattr(_backend, "_orig"):
         httpx.AsyncClient = _backend._orig
+
+
+try:
+    import pytest
+
+    @pytest.fixture(autouse=True)
+    def _httpx_wiederherstellen():
+        """Unter pytest laeuft der Selbstlauf-Block unten nicht.
+
+        Ohne diese Fixture bleibt ``httpx.AsyncClient`` fuer den Rest des
+        Prozesses ein Lambda. Jedes spaeter importierte Modul, das den Namen
+        in einer Annotation auswertet, faellt dann um -- gemessen an
+        ``mcp/client/streamable_http.py`` (``httpx.AsyncClient | None``:
+        "unsupported operand type(s) for |: 'function' and 'NoneType'"),
+        was ``test_smoke_imports`` reissen liess, sobald diese Datei davor
+        lief. Ein Test darf den Prozess nicht fuer die naechsten vergiften.
+        """
+        yield
+        _zuruecksetzen()
+except ImportError:      # Selbstlauf ohne pytest: der Block unten raeumt auf
+    pass
 
 
 def test_fragmente_werden_zusammengesetzt():
