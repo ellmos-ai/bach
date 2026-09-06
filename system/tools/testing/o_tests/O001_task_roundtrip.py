@@ -59,8 +59,31 @@ def _create_isolated_task_db(db_path: Path) -> None:
                 delegated_to TEXT,
                 depends_on TEXT,
                 created_at TEXT,
+                started_at TEXT,
                 completed_at TEXT,
                 updated_at TEXT
+            )
+        """)
+        # T-20260906-833218904: hub.task.TaskHandler ruft seit diesem Ticket bei
+        # edit/done/block hub.task_audit.apply_task_field_changes auf, die
+        # unbedingt in task_history schreibt. Ohne diese Tabelle wirft die
+        # Roundtrip-Task-API mitten im `with tempfile.TemporaryDirectory(...)`-
+        # Block eine OperationalError -- das ueberspringt sowohl
+        # `bach_paths.BACH_DB = previous_db` als auch das `gc.collect()` weiter
+        # unten und hinterlaesst eine offene sqlite3-Verbindung, an der Windows'
+        # Tempdir-Cleanup mit PermissionError scheitert (verifiziert: brach
+        # zusaetzlich nachfolgende Tests, weil bach_paths.BACH_DB dauerhaft auf
+        # den geloeschten Temp-Pfad zeigte). Schema wie system/data/schema/schema.sql.
+        conn.execute("""
+            CREATE TABLE task_history (
+                id INTEGER PRIMARY KEY,
+                task_id INTEGER NOT NULL,
+                action TEXT NOT NULL,
+                field_changed TEXT,
+                old_value TEXT,
+                new_value TEXT,
+                changed_by TEXT DEFAULT 'user',
+                changed_at TEXT NOT NULL
             )
         """)
 
@@ -82,79 +105,89 @@ def _run_bach_task_roundtrip(root: Path) -> dict:
 
         previous_db = bach_paths.BACH_DB
         bach_paths.BACH_DB = db_path
-        handler = TaskHandler(root)
+        # T-20260906-833218904: previous_db/gc.collect() muessen auch bei einer
+        # Exception mitten im Roundtrip laufen -- vorher liess eine OperationalError
+        # aus handler.handle() (z.B. eine Schema-Luecke wie die fehlende
+        # task_history-Tabelle oben) beides aus. bach_paths.BACH_DB blieb dann
+        # DAUERHAFT auf den gleich geloeschten Temp-Pfad zeigen (kein pytest-
+        # monkeypatch, reine Modulvariable) und riss nachfolgende, unabhaengige
+        # Tests im selben Prozess mit ("no such table: distribution_manifest" in
+        # test_upgrade_handler.py, weil die weiterhin auf o001_tasks.sqlite3
+        # zeigten). try/finally schliesst diese Lücke strukturell.
+        try:
+            handler = TaskHandler(root)
 
-        def run_api(name: str, operation: str, args: list[str], expected_text: str = ""):
-            nonlocal checks_passed, total_checks
-            total_checks += 1
-            success, output = handler.handle(operation, args)
-            output = str(output).strip()
-            passed = bool(success) and (not expected_text or expected_text in output)
-            result["checks"].append({
-                "name": name,
-                "passed": passed,
-                "details": output[-500:] if output else "Keine Ausgabe",
-            })
-            if passed:
-                checks_passed += 1
-            return passed, output
+            def run_api(name: str, operation: str, args: list[str], expected_text: str = ""):
+                nonlocal checks_passed, total_checks
+                total_checks += 1
+                success, output = handler.handle(operation, args)
+                output = str(output).strip()
+                passed = bool(success) and (not expected_text or expected_text in output)
+                result["checks"].append({
+                    "name": name,
+                    "passed": passed,
+                    "details": output[-500:] if output else "Keine Ausgabe",
+                })
+                if passed:
+                    checks_passed += 1
+                return passed, output
 
-        created, output = run_api(
-            "task_create_via_api",
-            "add",
-            ["O001 isolierter Task", "--priority", "P2", "--category", "qa"],
-            "erstellt",
-        )
-        match = re.search(r"\bTask\s+(\d+)\s+erstellt\b", output)
-        if not created or not match:
-            if result["checks"]:
-                result["checks"][-1]["passed"] = False
-                if created:
+            created, output = run_api(
+                "task_create_via_api",
+                "add",
+                ["O001 isolierter Task", "--priority", "P2", "--category", "qa"],
+                "erstellt",
+            )
+            match = re.search(r"\bTask\s+(\d+)\s+erstellt\b", output)
+            if not created or not match:
+                if result["checks"]:
+                    result["checks"][-1]["passed"] = False
+                    if created:
+                        checks_passed -= 1
+                    result["checks"][-1]["details"] = f"Task-ID nicht lesbar: {output[-500:]}"
+                return _finish_result(result, checks_passed, total_checks, "Task-Erstellung über die BACH-Task-API fehlgeschlagen")
+
+            task_id = match.group(1)
+            run_api("task_read_via_api", "show", [task_id], "O001 isolierter Task")
+            run_api("task_edit_via_api", "edit", [task_id, "--title", "O001 bearbeitet"], "bearbeitet")
+
+            completed, _ = run_api("task_complete_via_api", "done", [task_id], "erledigt")
+            if completed:
+                conn = sqlite3.connect(db_path)
+                try:
+                    status = conn.execute("SELECT status FROM tasks WHERE id = ?", (task_id,)).fetchone()
+                finally:
+                    conn.close()
+                if status != ("done",):
+                    result["checks"][-1]["passed"] = False
                     checks_passed -= 1
-                result["checks"][-1]["details"] = f"Task-ID nicht lesbar: {output[-500:]}"
+
+            deleted, _ = run_api("task_delete_via_api", "delete", [task_id], "geloescht")
+            if deleted:
+                conn = sqlite3.connect(db_path)
+                try:
+                    row = conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+                finally:
+                    conn.close()
+                if row is not None:
+                    result["checks"][-1]["passed"] = False
+                    checks_passed -= 1
+
+            total_checks += 1
+            isolated = handler.db_path == db_path and db_path.exists()
+            result["checks"].append({
+                "name": "canonical_database_isolated",
+                "passed": isolated,
+                "details": "BACH_DB zeigte für alle Task-API-Aufrufe auf eine temporäre Testdatenbank.",
+            })
+            if isolated:
+                checks_passed += 1
+        finally:
             bach_paths.BACH_DB = previous_db
-            return _finish_result(result, checks_passed, total_checks, "Task-Erstellung über die BACH-Task-API fehlgeschlagen")
-
-        task_id = match.group(1)
-        run_api("task_read_via_api", "show", [task_id], "O001 isolierter Task")
-        run_api("task_edit_via_api", "edit", [task_id, "--title", "O001 bearbeitet"], "bearbeitet")
-
-        completed, _ = run_api("task_complete_via_api", "done", [task_id], "erledigt")
-        if completed:
-            conn = sqlite3.connect(db_path)
-            try:
-                status = conn.execute("SELECT status FROM tasks WHERE id = ?", (task_id,)).fetchone()
-            finally:
-                conn.close()
-            if status != ("done",):
-                result["checks"][-1]["passed"] = False
-                checks_passed -= 1
-
-        deleted, _ = run_api("task_delete_via_api", "delete", [task_id], "geloescht")
-        if deleted:
-            conn = sqlite3.connect(db_path)
-            try:
-                row = conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
-            finally:
-                conn.close()
-            if row is not None:
-                result["checks"][-1]["passed"] = False
-                checks_passed -= 1
-
-        total_checks += 1
-        isolated = handler.db_path == db_path and db_path.exists()
-        result["checks"].append({
-            "name": "canonical_database_isolated",
-            "passed": isolated,
-            "details": "BACH_DB zeigte für alle Task-API-Aufrufe auf eine temporäre Testdatenbank.",
-        })
-        if isolated:
-            checks_passed += 1
-        bach_paths.BACH_DB = previous_db
-        # sqlite3's context manager commits but does not close connections. The
-        # handler uses short-lived connections, so collect them before Windows
-        # removes the temporary database directory.
-        gc.collect()
+            # sqlite3's context manager commits but does not close connections. The
+            # handler uses short-lived connections, so collect them before Windows
+            # removes the temporary database directory.
+            gc.collect()
 
     return _finish_result(result, checks_passed, total_checks, f"{checks_passed}/{total_checks} BACH-Task-API- und Datenbankprüfungen bestanden")
 
