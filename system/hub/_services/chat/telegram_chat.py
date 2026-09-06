@@ -74,7 +74,7 @@ except Exception as e:
 
 # Chat Runtime + Backend
 from hub._services.llm.model_backend import create_backend, OllamaBackend
-from hub._services.chat.chat_runtime import ChatRuntime, RUNTIME_BACH_DB
+from hub._services.chat.chat_runtime import ChatRuntime, FailedAnswer, RUNTIME_BACH_DB
 from hub._services.chat.session_store import SQLiteChatSessionStore
 
 # Compute Lock (optional — graceful if not available)
@@ -1377,7 +1377,9 @@ class ControlHandler(BaseHTTPRequestHandler):
                     )
                 finally:
                     loop.close()
-                self._json({"ok": True, "answer": answer})
+                # Ein gefangener Backend-Fehler ist kein Erfolg: der Idle-Worker
+                # verbuchte den Task sonst als completed (T-20260906-743610852).
+                self._json({"ok": not isinstance(answer, FailedAnswer), "answer": answer})
             except Exception as e:
                 self._json({"error": str(e)}, 500)
             finally:

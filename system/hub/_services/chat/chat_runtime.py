@@ -33,6 +33,33 @@ from typing import Any, Callable, Optional
 
 log = logging.getLogger("bach.chat")
 
+
+class FailedAnswer(str):
+    """Antworttext, der aus einer gefangenen Backend-Ausnahme stammt.
+
+    ``process`` faengt Backend-Ausnahmen ab und gibt ihren Text als Antwort
+    zurueck -- fuer Chat und Auftragsnachrichten ist das richtig, der Nutzer
+    soll den Fehler sehen. Automatische Konsumenten konnten einen Fehlschlag
+    danach aber nicht mehr von einer echten Antwort unterscheiden und haben
+    ihn als Erfolg verbucht (T-20260906-743610852).
+
+    Als ``str``-Unterklasse bleibt jeder bestehende Aufrufer unveraendert --
+    persistieren, als Reply ablegen, an Telegram senden -- waehrend Aufrufer,
+    die den Unterschied brauchen, ihn per ``isinstance`` erfragen koennen.
+
+    Ueber einen Neustart oder den Session-Store ueberlebt der Typ nicht -- das
+    Transkript speichert nur ``role``/``content``. ``looks_like`` beantwortet
+    dieselbe Frage dann anhand des Prefixes, damit es genau eine Definition von
+    "Fehlschlag" gibt und nicht je Leser eine eigene (T-20260906-739766716).
+    """
+
+    PREFIX = "Backend-Fehler: "
+
+    @classmethod
+    def looks_like(cls, text) -> bool:
+        return isinstance(text, cls) or str(text).startswith(cls.PREFIX)
+
+
 try:
     from hub.bach_paths import BACH_DB as _RUNTIME_DB
     RUNTIME_BACH_DB = str(_RUNTIME_DB)
@@ -935,7 +962,8 @@ class ChatRuntime:
         session = self.sessions.get(chat_id)
         messages = session.messages if session is not None else self._load_messages(chat_id)
         return [
-            {"role": m["role"], "content": m.get("content", "")}
+            {"role": m["role"], "content": m.get("content", ""),
+             "ok": not FailedAnswer.looks_like(m.get("content", ""))}
             for m in messages
             if m.get("role") in ("user", "assistant")
         ]
@@ -1057,7 +1085,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                                                  model=session.model)
                 answer = result.get("content", "(keine Antwort)")
             except Exception as e:
-                answer = f"Backend-Fehler: {e}"
+                answer = FailedAnswer(f"{FailedAnswer.PREFIX}{str(e) or type(e).__name__}")
         else:
             tools = TOOLS_FULL if session.mode == "full" else TOOLS_SAFE
             answer = await self._tool_loop(msgs, session, tools)
@@ -1082,7 +1110,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 )
             except Exception as e:
                 session.current_tool = ""
-                return f"Backend-Fehler: {e}"
+                return FailedAnswer(f"{FailedAnswer.PREFIX}{str(e) or type(e).__name__}")
 
             tool_calls = result.get("tool_calls")
             if not tool_calls:
