@@ -55,8 +55,11 @@ class FSHandler(BaseHandler):
 
     def __init__(self, base_path: Path):
         super().__init__(base_path)
-        self.fs = FSProtection(base_path)
-        self.classifier = PathClassifier(base_path)
+        # The registry may construct handlers with an App instance.  BaseHandler
+        # normalizes that to ``self.base_path``; FSProtection and PathClassifier
+        # require a Path, not the original constructor argument.
+        self.fs = FSProtection(self.base_path)
+        self.classifier = PathClassifier(self.base_path)
 
     @property
     def profile_name(self) -> str:
