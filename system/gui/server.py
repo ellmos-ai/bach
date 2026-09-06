@@ -112,6 +112,7 @@ except ImportError:
 USER_DB = BACH_DB
 
 from assistant_core import MessageStore  # Welle 1 (D-20260830-002): Nachrichten-Fachkern, ein Datenkanon
+from accounts_core import AccountStore  # Welle 2 (D-20260903-003 = A): bank_accounts domain core
 
 
 def _messages() -> MessageStore:
@@ -12310,13 +12311,7 @@ async def export_routines():
 async def get_bank_accounts():
     """Alle Bankkonten laden."""
     try:
-        conn = get_user_db()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM bank_accounts ORDER BY name")
-        rows = cursor.fetchall()
-        accounts = [dict(row) for row in rows]
-        conn.close()
+        accounts = AccountStore(BACH_DB).list_accounts()
         return {"success": True, "accounts": accounts}
     except Exception as e:
         return {"success": False, "error": public_error_message(), "accounts": []}
@@ -12327,22 +12322,15 @@ async def add_bank_account(request: Request):
     """Neues Bankkonto anlegen."""
     try:
         data = await request.json()
-        conn = get_user_db()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO bank_accounts (name, bank_name, iban, bic, account_type, notes)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (
+        account_id = AccountStore(BACH_DB).create_account(
             data.get('name'),
-            data.get('bank_name'),
-            data.get('iban'),
-            data.get('bic'),
-            data.get('account_type', 'girokonto'),
-            data.get('notes')
-        ))
-        conn.commit()
-        conn.close()
-        return {"success": True, "id": cursor.lastrowid}
+            bank_name=data.get('bank_name'),
+            iban=data.get('iban'),
+            bic=data.get('bic'),
+            account_type=data.get('account_type', 'girokonto'),
+            notes=data.get('notes'),
+        )
+        return {"success": True, "id": account_id}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
@@ -12352,24 +12340,15 @@ async def update_bank_account(account_id: int, request: Request):
     """Bankkonto aktualisieren."""
     try:
         data = await request.json()
-        conn = get_user_db()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE bank_accounts SET
-                name = ?, bank_name = ?, iban = ?, bic = ?,
-                account_type = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (
+        AccountStore(BACH_DB).update_account(
+            account_id,
             data.get('name'),
-            data.get('bank_name'),
-            data.get('iban'),
-            data.get('bic'),
-            data.get('account_type', 'girokonto'),
-            data.get('notes'),
-            account_id
-        ))
-        conn.commit()
-        conn.close()
+            bank_name=data.get('bank_name'),
+            iban=data.get('iban'),
+            bic=data.get('bic'),
+            account_type=data.get('account_type', 'girokonto'),
+            notes=data.get('notes'),
+        )
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
@@ -12379,11 +12358,7 @@ async def update_bank_account(account_id: int, request: Request):
 async def delete_bank_account(account_id: int):
     """Bankkonto loeschen."""
     try:
-        conn = get_user_db()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM bank_accounts WHERE id = ?", (account_id,))
-        conn.commit()
-        conn.close()
+        AccountStore(BACH_DB).delete_account(account_id)
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
