@@ -28,6 +28,25 @@ def isolate_translation_runtime(monkeypatch):
     monkeypatch.setattr(lang_module, "_t_lang_cache", lang_module._t_lang_cache)
 
 
+@pytest.fixture(autouse=True)
+def stub_os_keyring(monkeypatch):
+    """SetupHandler._check() fragt sonst den ECHTEN OS-Schluesselbund ab.
+
+    Auf Windows geht das an den Credential Manager; faellt der Aufruf aus oder
+    liefert er eine Backend-Prioritaet 0, kippt `_check()` auf False und der
+    Test schlaegt scheinbar grundlos fehl (beobachtet: derselbe Lauf 2x/1x/0x
+    rot). Kein Test in dieser Datei prueft die Schluesselbund-Zeile, deshalb
+    wird sie hier hermetisch gestellt.
+    """
+    import keyring
+
+    monkeypatch.setattr(
+        keyring,
+        "get_keyring",
+        lambda: SimpleNamespace(priority=1),
+    )
+
+
 @pytest.fixture
 def handler(tmp_path):
     """SetupHandler with a temporary base_path (system/ inside tmp_path)."""
@@ -503,7 +522,7 @@ class TestSetupCheck:
 
         ok, msg = handler._check()
 
-        assert ok
+        assert ok, msg
         assert "[OK] ellmos-codecommander-mcp installiert" in msg
         assert "[OK] ellmos-filecommander-mcp installiert" in msg
         assert commands
@@ -549,7 +568,7 @@ class TestSetupCheck:
 
         ok, msg = handler._check()
 
-        assert ok
+        assert ok, msg
         assert "[OK] ellmos-codecommander-mcp lokale Arbeitskopie erkannt" in msg
         assert "[OK] ellmos-filecommander-mcp lokale Arbeitskopie erkannt" in msg
         assert "[OK] n8n-manager-mcp lokale Arbeitskopie erkannt (optional)" in msg
