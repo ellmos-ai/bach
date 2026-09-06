@@ -50,6 +50,15 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **`task_history`-Audit-Trail und `started_at` werden jetzt geschrieben (T-20260906-985973908):**
+  `task_history` (Schema vorhanden, MCP-`db_query`-Whitelist) hatte systemweit 0 Zeilen,
+  weil `update_task` (PUT `/api/tasks/{id}`) nie hineinschrieb; `started_at` wurde beim
+  Wechsel auf `in_progress` nie gesetzt. Live-Beleg: drei reale Tasks der Abnahme
+  T-20260906-404584043 mit `started_at NULL` und leerer History trotz mehrerer
+  Statuswechsel. `update_task` protokolliert jetzt jedes geänderte Feld als
+  `task_history`-Zeile (Statuswechsel gesondert markiert) und setzt `started_at` einmalig
+  beim ersten Übergang auf `in_progress`; der Tray-Idle-Worker weist sich dabei explizit
+  als `changed_by="idle-worker"` aus.
 - **Privater Absender als DB-Default entfernt (After-Care 2026-09-02):**
   `system/data/schema/schema.sql` legte `email_drafts.sender_email` mit der privaten
   Mailadresse des Maintainers als `DEFAULT` an. Die Quelle

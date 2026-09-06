@@ -401,7 +401,8 @@ class BACHTray:
             self.idle_task_name = title
 
             self._api("PUT", f"/api/tasks/{task_id}",
-                       {"status": "in_progress"}, base=self.gui_url)  # DB-Kanon, nicht 'in-progress'
+                       {"status": "in_progress", "changed_by": "idle-worker"},
+                       base=self.gui_url)  # DB-Kanon, nicht 'in-progress'
 
             prompt = (
                 f"Du bearbeitest eine zugewiesene Aufgabe im Idle-Modus. "
@@ -424,12 +425,14 @@ class BACHTray:
                 print(f"[Idle] Chat-Ergebnis für Task #{task_id} unbekannt; Status bleibt in_progress")
             elif result.get("ok"):
                 self._api("PUT", f"/api/tasks/{task_id}",
-                           {"status": "completed"}, base=self.gui_url)
+                           {"status": "completed", "changed_by": "idle-worker"},
+                           base=self.gui_url)
                 if self.icon:
                     self.icon.notify(f"Erledigt: {title}", "BACH Idle")
             else:
                 self._api("PUT", f"/api/tasks/{task_id}",
-                           {"status": "open"}, base=self.gui_url)
+                           {"status": "open", "changed_by": "idle-worker"},
+                           base=self.gui_url)
 
         except Exception as e:
             print(f"[Idle] Fehler: {e}")

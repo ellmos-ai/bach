@@ -51,7 +51,22 @@ def test_db(tmp_path):
             depends_on TEXT,
             image_data BLOB,
             created_at TEXT DEFAULT (datetime('now')),
+            started_at TEXT,
+            completed_at TEXT,
             updated_at TEXT DEFAULT (datetime('now'))
+        );
+        -- T-20260906-985973908: task_history existiert real (schema.sql), fehlte hier bisher
+        -- komplett -- jeder Statuswechsel gegen diese Fixture haette sonst mit
+        -- "no such table: task_history" abgebrochen, sobald update_task hineinschreibt.
+        CREATE TABLE IF NOT EXISTS task_history (
+            id INTEGER PRIMARY KEY,
+            task_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            field_changed TEXT,
+            old_value TEXT,
+            new_value TEXT,
+            changed_by TEXT DEFAULT 'user',
+            changed_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS ati_tasks (
             id INTEGER PRIMARY KEY,
@@ -432,6 +447,95 @@ class TestGUIServerWrite:
             "value": "test_value"
         })
         assert resp.status_code == 200
+
+
+# ═══════════════════════════════════════════════════════════════
+# TASK HISTORY / started_at — T-20260906-985973908
+# ═══════════════════════════════════════════════════════════════
+
+
+@pytest.mark.skipif(not FASTAPI_AVAILABLE, reason="FastAPI not installed")
+class TestTaskHistoryAndStartedAt:
+    """Vorher wurde `task_history` nie beschrieben (0 Zeilen systemweit) und `started_at`
+    beim Wechsel auf 'in_progress' nie gesetzt. Diese Tests belegen den Schreibpfad in
+    update_task (system/gui/server.py)."""
+
+    @staticmethod
+    def _history_rows(test_db, task_id):
+        conn = sqlite3.connect(str(test_db / "data" / "bach.db"))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM task_history WHERE task_id = ? ORDER BY id", (task_id,)
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    @staticmethod
+    def _task_row(test_db, task_id):
+        conn = sqlite3.connect(str(test_db / "data" / "bach.db"))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        conn.close()
+        return dict(row)
+
+    def test_in_progress_sets_started_at_once(self, client, test_db):
+        resp = client.put("/api/tasks/1", json={"status": "in_progress"})
+        assert resp.status_code == 200
+        first = self._task_row(test_db, 1)
+        assert first["started_at"] not in (None, "")
+
+        # Zurueckfallen und erneut in_progress darf den Erststart NICHT ueberschreiben.
+        client.put("/api/tasks/1", json={"status": "open"})
+        client.put("/api/tasks/1", json={"status": "in_progress"})
+        second = self._task_row(test_db, 1)
+        assert second["started_at"] == first["started_at"]
+
+    def test_completed_still_sets_completed_at(self, client, test_db):
+        resp = client.put("/api/tasks/1", json={"status": "completed"})
+        assert resp.status_code == 200
+        row = self._task_row(test_db, 1)
+        assert row["completed_at"] not in (None, "")
+
+    def test_status_change_writes_exactly_one_history_row(self, client, test_db):
+        resp = client.put("/api/tasks/1", json={"status": "in_progress"})
+        assert resp.status_code == 200
+
+        rows = self._history_rows(test_db, 1)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["action"] == "status_change"
+        assert row["field_changed"] == "status"
+        assert row["old_value"] == "open"  # Fixture-Default, siehe test_db
+        assert row["new_value"] == "in_progress"
+        assert row["changed_by"] == "api"  # Default ohne mitgegebenen changed_by
+        assert row["changed_at"]
+
+    def test_changed_by_override_from_caller(self, client, test_db):
+        resp = client.put(
+            "/api/tasks/1", json={"status": "in_progress", "changed_by": "idle-worker"}
+        )
+        assert resp.status_code == 200
+        rows = self._history_rows(test_db, 1)
+        assert rows[0]["changed_by"] == "idle-worker"
+
+    def test_no_op_status_writes_no_history_row(self, client, test_db):
+        """Denselben Wert erneut zu setzen ist kein Statuswechsel."""
+        client.put("/api/tasks/1", json={"status": "open"})  # bereits der Fixture-Default
+        rows = self._history_rows(test_db, 1)
+        assert rows == []
+
+    def test_multiple_field_changes_write_multiple_history_rows(self, client, test_db):
+        resp = client.put(
+            "/api/tasks/1", json={"status": "in_progress", "priority": "P1"}
+        )
+        assert resp.status_code == 200
+        rows = self._history_rows(test_db, 1)
+        fields_changed = {r["field_changed"] for r in rows}
+        assert fields_changed == {"status", "priority"}
+        priority_row = next(r for r in rows if r["field_changed"] == "priority")
+        assert priority_row["action"] == "field_change"
+        assert priority_row["old_value"] == "P2"  # Fixture-Default, siehe test_db
+        assert priority_row["new_value"] == "P1"
 
 
 # ═══════════════════════════════════════════════════════════════
