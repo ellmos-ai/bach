@@ -337,13 +337,16 @@ class BACHTray:
             "prompt": prompt,
             "chat_id": "tray-prompt",
         }, timeout=120)
+        answer = (result or {}).get("answer", "")[:120]
+        if not self.icon:
+            return
         if result and result.get("ok"):
-            answer = result.get("answer", "")[:120]
-            if self.icon:
-                self.icon.notify(answer, "BACH Antwort")
+            self.icon.notify(answer, "BACH Antwort")
         else:
-            if self.icon:
-                self.icon.notify("Senden fehlgeschlagen", "BACH Prompt")
+            # Ein gefangener Backend-Fehler liefert seit T-20260906-743610852
+            # ok=False, traegt die Ursache aber im Antworttext. Die anzeigen,
+            # statt sie gegen ein nacktes "fehlgeschlagen" zu tauschen.
+            self.icon.notify(answer or "Senden fehlgeschlagen", "BACH Fehler")
 
     def _make_prompt_copy_action(self, text):
         def action(*_):

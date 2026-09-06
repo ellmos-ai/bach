@@ -896,6 +896,21 @@ class TestBACHTray:
         tray._toggle_think()
         tray._api.assert_any_call("POST", "/api/think", {"think": False})
 
+    def test_prompt_failure_shows_the_backend_reason(self, tray):
+        """ok=False traegt seit T-20260906-743610852 die Ursache im Antworttext."""
+        tray.icon = MagicMock()
+        tray._api = MagicMock(return_value={"ok": False,
+                                            "answer": "Backend-Fehler: Ollama weg"})
+        tray._send_prompt("Was geht?")
+        tray.icon.notify.assert_called_once_with("Backend-Fehler: Ollama weg",
+                                                 "BACH Fehler")
+
+    def test_prompt_without_any_response_still_reports_failure(self, tray):
+        tray.icon = MagicMock()
+        tray._api = MagicMock(return_value=None)
+        tray._send_prompt("Was geht?")
+        tray.icon.notify.assert_called_once_with("Senden fehlgeschlagen", "BACH Fehler")
+
     def test_quit_stops(self, tray):
         tray.icon = MagicMock()
         tray._quit()
