@@ -61,4 +61,4 @@ pyautogui>=0.9.54         # GUI automation (prompt session, ATI)
 # Nachrichten-Fachkern (Welle 1, D-20260830-002): privates Repo; auf Hosts als Klon + `pip install -e` bereitstellen
 assistant-core @ git+https://github.com/ellmos-ai/assistant-core.git@v0.1.0
 # Konten-Fachkern (Welle 2, D-20260903-003 = A): bank_accounts core (gui/server.py, hub/steuer.py CAMT import)
-accounts-core @ git+https://github.com/ellmos-ai/accounts-core.git@v0.1.0
+accounts-core @ git+https://github.com/ellmos-ai/accounts-core.git@v0.1.1
