@@ -1,0 +1,611 @@
+{
+  "system": "system",
+  "system_path": "C:\\Users\\User\\OneDrive\\.TOPICS\\.AI\\.OS\\BACH\\system",
+  "profile": "QUICK",
+  "test_date": "2026-07-28T15:24:41.065195",
+  "b_tests": {
+    "B001": {
+      "status": "success",
+      "score": 0,
+      "data": {
+        "system_path": "C:\\Users\\User\\OneDrive\\.TOPICS\\.AI\\.OS\\BACH\\system",
+        "scan_date": "2026-07-28T15:24:41.315495",
+        "total_files": 3738,
+        "total_dirs": 411,
+        "total_size_bytes": 1326864105,
+        "by_extension": {
+          ".md": {
+            "count": 384,
+            "size": 539826562
+          },
+          ".py": {
+            "count": 882,
+            "size": 12019920
+          },
+          ".bak-20260614-213747": {
+            "count": 1,
+            "size": 40336
+          },
+          ".clock_state": {
+            "count": 2,
+            "size": 178
+          },
+          ".injector_cooldowns": {
+            "count": 2,
+            "size": 364
+          },
+          ".db": {
+            "count": 6,
+            "size": 499130368
+          },
+          ".db-shm": {
+            "count": 5,
+            "size": 163840
+          },
+          ".db-wal": {
+            "count": 5,
+            "size": 0
+          },
+          ".json": {
+            "count": 103,
+            "size": 12133131
+          },
+          ".txt": {
+            "count": 2083,
+            "size": 9118941
+          },
+          ".html": {
+            "count": 34,
+            "size": 943264
+          },
+          ".user": {
+            "count": 10,
+            "size": 857
+          },
+          ".sh": {
+            "count": 4,
+            "size": 24280
+          },
+          ".log": {
+            "count": 21,
+            "size": 1889003
+          },
+          ".zip": {
+            "count": 7,
+            "size": 191543510
+          },
+          ".sql": {
+            "count": 47,
+            "size": 6899532
+          },
+          ".tpl": {
+            "count": 9,
+            "size": 5782
+          },
+          ".pdf": {
+            "count": 10,
+            "size": 47962491
+          },
+          ".docx": {
+            "count": 19,
+            "size": 844114
+          },
+          ".tex": {
+            "count": 2,
+            "size": 2529
+          },
+          ".backup_ae_oe": {
+            "count": 1,
+            "size": 8326
+          },
+          ".yaml": {
+            "count": 3,
+            "size": 12601
+          },
+          "(keine)": {
+            "count": 1,
+            "size": 0
+          },
+          ".bat": {
+            "count": 6,
+            "size": 3518
+          },
+          ".traineddata": {
+            "count": 1,
+            "size": 2070514
+          },
+          ".ico": {
+            "count": 1,
+            "size": 124434
+          },
+          ".css": {
+            "count": 1,
+            "size": 23117
+          },
+          ".js": {
+            "count": 4,
+            "size": 67960
+          },
+          ".xml": {
+            "count": 5,
+            "size": 10670
+          },
+          ".xsd": {
+            "count": 78,
+            "size": 1993286
+          },
+          ".toml": {
+            "count": 1,
+            "size": 677
+          }
+        },
+        "by_category": {
+          "documentation": {
+            "count": 2467,
+            "size": 548945503
+          },
+          "code": {
+            "count": 896,
+            "size": 12115678
+          },
+          "other": {
+            "count": 194,
+            "size": 245737612
+          },
+          "data": {
+            "count": 53,
+            "size": 506029900
+          },
+          "config": {
+            "count": 107,
+            "size": 12146409
+          },
+          "logs": {
+            "count": 21,
+            "size": 1889003
+          }
+        },
+        "special_files": [
+          {
+            "name": "README.md",
+            "path": "agents\\README.md",
+            "size": 4012
+          },
+          {
+            "name": "SKILL.md",
+            "path": "connectors\\SKILL.md",
+            "size": 5681
+          },
+          {
+            "name": "README.md",
+            "path": "core\\README.md",
+            "size": 1286
+          },
+          {
+            "name": "README.md",
+            "path": "docs\\README.md",
+            "size": 15160
+          },
+          {
+            "name": "README.md",
+            "path": "hub\\README.md",
+            "size": 2387
+          },
+          {
+            "name": "README.md",
+            "path": "tools\\README.md",
+            "size": 8362
+          },
+          {
+            "name": "README.md",
+            "path": "_templates\\README.md",
+            "size": 2477
+          },
+          {
+            "name": "SKILL.md",
+            "path": "_templates\\SKILL.md",
+            "size": 1167
+          },
+          {
+            "name": "README.md",
+            "path": "agents\\ati\\README.md",
+            "size": 1697
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\ati\\SKILL.md",
+            "size": 2401
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\bueroassistent\\SKILL.md",
+            "size": 4789
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\entwickler\\SKILL.md",
+            "size": 10556
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\gesundheitsassistent\\SKILL.md",
+            "size": 5226
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\hq5-test-agent\\SKILL.md",
+            "size": 552
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\persoenlicher-assistent\\SKILL.md",
+            "size": 6794
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\production\\SKILL.md",
+            "size": 3986
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\reflection\\SKILL.md",
+            "size": 1386
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\research\\SKILL.md",
+            "size": 3892
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\test-agent\\SKILL.md",
+            "size": 10841
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\versicherungen\\SKILL.md",
+            "size": 2113
+          },
+          {
+            "name": "config.json",
+            "path": "agents\\ati\\data\\config.json",
+            "size": 1940
+          },
+          {
+            "name": "README.md",
+            "path": "agents\\ati\\modules\\README.md",
+            "size": 1277
+          },
+          {
+            "name": "README.md",
+            "path": "agents\\ati\\templates\\rest-api-module\\README.md",
+            "size": 757
+          },
+          {
+            "name": "README.md",
+            "path": "agents\\_experts\\aboservice\\README.md",
+            "size": 1593
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\aboservice\\SKILL.md",
+            "size": 3135
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\bewerbungsexperte\\SKILL.md",
+            "size": 3687
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\data-analysis\\SKILL.md",
+            "size": 2732
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\decision-briefing\\SKILL.md",
+            "size": 3475
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\financial_mail\\SKILL.md",
+            "size": 2900
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\foerderplaner\\SKILL.md",
+            "size": 3086
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\gesundheitsverwalter\\SKILL.md",
+            "size": 2984
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\haushaltsmanagement\\SKILL.md",
+            "size": 3109
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\health_import\\SKILL.md",
+            "size": 2781
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\literaturverwalter\\SKILL.md",
+            "size": 2955
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\mediaproduction\\SKILL.md",
+            "size": 2834
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\mr_tiktak\\SKILL.md",
+            "size": 2700
+          },
+          {
+            "name": "config.json",
+            "path": "agents\\_experts\\press\\config.json",
+            "size": 275
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\press\\SKILL.md",
+            "size": 3035
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\psycho-berater\\SKILL.md",
+            "size": 2974
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\report_generator\\SKILL.md",
+            "size": 3363
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\selbstmanagement\\SKILL.md",
+            "size": 5430
+          },
+          {
+            "name": "README.md",
+            "path": "agents\\_experts\\steuer\\README.md",
+            "size": 7129
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\steuer\\SKILL.md",
+            "size": 5760
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\test-tool-demo\\SKILL.md",
+            "size": 554
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\textproduction\\SKILL.md",
+            "size": 2955
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\transkriptions-service\\SKILL.md",
+            "size": 3455
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\wikiquizzer\\SKILL.md",
+            "size": 3128
+          },
+          {
+            "name": "README.md",
+            "path": "agents\\_experts\\worksheet_generator\\README.md",
+            "size": 881
+          },
+          {
+            "name": "SKILL.md",
+            "path": "agents\\_experts\\worksheet_generator\\SKILL.md",
+            "size": 2842
+          },
+          {
+            "name": "README.md",
+            "path": "connectors\\templates\\README.md",
+            "size": 15437
+          },
+          {
+            "name": "README.md",
+            "path": "hub\\_archive\\delegation_legacy\\README.md",
+            "size": 515
+          },
+          {
+            "name": "config.json",
+            "path": "hub\\_services\\claude_bridge\\config.json",
+            "size": 1615
+          },
+          {
+            "name": "config.json",
+            "path": "hub\\_services\\daemon\\config.json",
+            "size": 365
+          },
+          {
+            "name": "SKILL.md",
+            "path": "hub\\_services\\document\\SKILL.md",
+            "size": 1104
+          },
+          {
+            "name": "SKILL.md",
+            "path": "hub\\_services\\financial\\SKILL.md",
+            "size": 3226
+          },
+          {
+            "name": "SKILL.md",
+            "path": "hub\\_services\\help\\SKILL.md",
+            "size": 4828
+          },
+          {
+            "name": "SKILL.md",
+            "path": "hub\\_services\\household\\SKILL.md",
+            "size": 1597
+          },
+          {
+            "name": "config.json",
+            "path": "hub\\_services\\mail\\config.json",
+            "size": 309
+          },
+          {
+            "name": "SKILL.md",
+            "path": "hub\\_services\\market\\SKILL.md",
+            "size": 1693
+          },
+          {
+            "name": "config.json",
+            "path": "hub\\_services\\newspaper\\config.json",
+            "size": 303
+          },
+          {
+            "name": "config.json",
+            "path": "hub\\_services\\prompt_generator\\config.json",
+            "size": 375
+          },
+          {
+            "name": "README.md",
+            "path": "hub\\_services\\prompt_generator\\README.md",
+            "size": 2328
+          },
+          {
+            "name": "config.json",
+            "path": "hub\\_services\\recurring\\config.json",
+            "size": 3674
+          },
+          {
+            "name": "SKILL.md",
+            "path": "hub\\_services\\routing\\SKILL.md",
+            "size": 1847
+          },
+          {
+            "name": "SKILL.md",
+            "path": "hub\\_services\\scheduling\\SKILL.md",
+            "size": 1771
+          },
+          {
+            "name": "SKILL.md",
+            "path": "hub\\_services\\voice\\SKILL.md",
+            "size": 4281
+          },
+          {
+            "name": "config.json",
+            "path": "hub\\_services\\watcher\\config.json",
+            "size": 1035
+          },
+          {
+            "name": "SKILL.md",
+            "path": "hub\\_services\\weather\\SKILL.md",
+            "size": 1457
+          },
+          {
+            "name": "SKILL.md",
+            "path": "hub\\_services\\wiki\\SKILL.md",
+            "size": 4193
+          },
+          {
+            "name": "README.md",
+            "path": "hub\\_services\\document\\_vendor\\README.md",
+            "size": 1845
+          },
+          {
+            "name": "SKILL.md",
+            "path": "hub\\_services\\document\\_vendor\\anthropic_xlsx\\SKILL.md",
+            "size": 11754
+          },
+          {
+            "name": "SKILL.md",
+            "path": "skills\\steuererklaerung\\SKILL.md",
+            "size": 11185
+          },
+          {
+            "name": "README.md",
+            "path": "skills\\_services\\README.md",
+            "size": 755
+          },
+          {
+            "name": "README.md",
+            "path": "tools\\agents\\README.md",
+            "size": 622
+          },
+          {
+            "name": "config.json",
+            "path": "tools\\llmauto\\config.json",
+            "size": 343
+          },
+          {
+            "name": "README.md",
+            "path": "tools\\maintenance\\README.md",
+            "size": 923
+          },
+          {
+            "name": "README.md",
+            "path": "tools\\ollama\\README.md",
+            "size": 639
+          },
+          {
+            "name": "README.md",
+            "path": "tools\\partner_communication\\README.md",
+            "size": 4863
+          }
+        ],
+        "metrics": {
+          "files_per_dir": 9.09,
+          "avg_file_size": 354966.32,
+          "doc_ratio": 66.0,
+          "code_ratio": 24.0
+        }
+      }
+    }
+  },
+  "o_tests": {
+    "O001": {
+      "status": "PARTIAL",
+      "score": 2.5,
+      "data": {
+        "system_path": "C:\\Users\\User\\OneDrive\\.TOPICS\\.AI\\.OS\\BACH\\system",
+        "test_date": "2026-07-28T15:24:46.528866",
+        "test_id": "O001",
+        "test_name": "Task-Roundtrip",
+        "checks": [
+          {
+            "name": "task_file_exists",
+            "passed": true,
+            "details": "Gefunden: ['agents\\\\_experts\\\\haushaltsmanagement\\\\aufgaben.txt', 'tools\\\\notespace\\\\AUFGABEN.txt', 'docs\\\\help\\\\tasks.txt']"
+          },
+          {
+            "name": "task_structure",
+            "passed": false,
+            "details": "Keine erkennbare Task-Struktur"
+          },
+          {
+            "name": "task_writable",
+            "passed": true,
+            "details": "Schreibzugriff moeglich"
+          },
+          {
+            "name": "task_archive",
+            "passed": false,
+            "details": "Kein Archiv gefunden"
+          }
+        ],
+        "status": "PARTIAL",
+        "score": 2.5,
+        "summary": "2/4 Checks bestanden"
+      }
+    }
+  },
+  "summary": {
+    "b_avg": 0.0,
+    "o_avg": 2.5,
+    "overall": 1.25
+  }
+}
