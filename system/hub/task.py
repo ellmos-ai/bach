@@ -30,6 +30,7 @@ from typing import List, Tuple, Optional
 from .base import BaseHandler
 from .lang import t
 from ._services.task_schema import ensure_task_due_date, task_has_due_date
+from .task_audit import apply_task_field_changes
 
 
 class TaskHandler(BaseHandler):
@@ -283,42 +284,42 @@ class TaskHandler(BaseHandler):
         
         with self._get_db() as conn:
             # Pruefen ob Task existiert
-            row = conn.execute("SELECT id, title FROM tasks WHERE id = ?", (task_id,)).fetchone()
-            if not row:
+            existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            if not existing:
                 return False, f"Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}"
-            
-            # Updates sammeln
-            updates = []
-            params = []
+            existing_row = dict(existing)
+
+            # field_values: {DB-Spalte: neuer_wert} fuer apply_task_field_changes
+            # (T-20260906-833218904 -- schliesst dieselbe task_history-Luecke wie
+            # server.py/headless.py; siehe hub/task_audit.py).
+            field_values = {}
             changes = []
-            
+
             if title is not None:
-                updates.append("title = ?")
-                params.append(title)
+                field_values["title"] = title
                 changes.append(f"Titel -> {title[:40]}...")
-            
+
             if description is not None:
-                updates.append("description = ?")
-                params.append(description)
+                field_values["description"] = description
                 changes.append(f"Beschreibung aktualisiert ({len(description)} Zeichen)")
-            
+
             if category is not None:
-                updates.append("category = ?")
-                params.append(category)
+                field_values["category"] = category
                 changes.append(f"Kategorie -> {category}")
-            
+
             if assigned_to is not None:
-                updates.append("assigned_to = ?")
-                params.append(assigned_to)
+                field_values["assigned_to"] = assigned_to
                 changes.append(f"Zugewiesen -> {assigned_to}")
-            
-            # Update ausfuehren
-            params.append(task_id)
-            conn.execute(f"""
-                UPDATE tasks SET {', '.join(updates)} WHERE id = ?
-            """, params)
+
+            # now ueber SQLite (nicht Python-datetime): task.py nutzt durchgaengig
+            # datetime('now') (UTC) fuer created_at/updated_at -- ein Python-seitiges
+            # datetime.now().isoformat() (lokale Zeit) wuerde dieselbe Zeile inkonsistent
+            # stempeln.
+            now = conn.execute("SELECT datetime('now')").fetchone()[0]
+            apply_task_field_changes(conn, task_id, existing_row, field_values,
+                                      changed_by="cli-task", now=now)
             conn.commit()
-        
+
         return True, f"[OK] Task {task_id} bearbeitet: {', '.join(changes)}"
     
     def _list(self, args: List[str]) -> Tuple[bool, str]:
@@ -445,34 +446,35 @@ class TaskHandler(BaseHandler):
         with self._get_db() as conn:
             for task_id in ids:
                 # Pruefen ob Task existiert
-                row = conn.execute("SELECT title FROM tasks WHERE id = ?", (task_id,)).fetchone()
-                if not row:
+                existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+                if not existing:
                     results.append(f"[WARN] Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}")
                     continue
-                
-                # Task als done markieren
-                conn.execute("""
-                    UPDATE tasks 
-                    SET status = 'done', completed_at = datetime('now')
-                    WHERE id = ?
-                """, (task_id,))
-                
+                existing_row = dict(existing)
+
+                # Task als done markieren -- apply_task_field_changes setzt completed_at
+                # automatisch (T-20260906-833218904: 'done' ist Teil von
+                # hub.task_audit.COMPLETED_STATUSES, gemeinsam mit server.py's 'completed').
+                now = conn.execute("SELECT datetime('now')").fetchone()[0]
+                apply_task_field_changes(conn, task_id, existing_row, {"status": "done"},
+                                          changed_by="cli-task", now=now)
+
                 # Note speichern falls vorhanden
                 if note:
                     conn.execute("""
-                        UPDATE tasks SET description = 
-                            CASE WHEN description IS NULL OR description = '' 
+                        UPDATE tasks SET description =
+                            CASE WHEN description IS NULL OR description = ''
                             THEN ? ELSE description || char(10) || char(10) || ? END
                         WHERE id = ?
                     """, (f"[DONE] {note}", f"[DONE] {note}", task_id))
-                
+
                 results.append(f"[OK] Task {task_id} erledigt!")
 
                 # Hook: after_task_done
                 try:
                     from core.hooks import hooks
                     hooks.emit('after_task_done', {
-                        'task_id': task_id, 'title': row['title']
+                        'task_id': task_id, 'title': existing_row['title']
                     })
                 except Exception:
                     pass
@@ -493,24 +495,24 @@ class TaskHandler(BaseHandler):
         
         with self._get_db() as conn:
             for task_id in ids:
-                row = conn.execute("SELECT title FROM tasks WHERE id = ?", (task_id,)).fetchone()
-                if not row:
+                existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+                if not existing:
                     results.append(f"[WARN] Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}")
                     continue
-                
-                conn.execute("""
-                    UPDATE tasks SET status = 'blocked'
-                    WHERE id = ?
-                """, (task_id,))
-                
+                existing_row = dict(existing)
+
+                now = conn.execute("SELECT datetime('now')").fetchone()[0]
+                apply_task_field_changes(conn, task_id, existing_row, {"status": "blocked"},
+                                          changed_by="cli-task", now=now)
+
                 if reason:
                     conn.execute("""
-                        UPDATE tasks SET description = 
-                            CASE WHEN description IS NULL OR description = '' 
+                        UPDATE tasks SET description =
+                            CASE WHEN description IS NULL OR description = ''
                             THEN ? ELSE description || char(10) || char(10) || ? END
                         WHERE id = ?
                     """, (f"[BLOCKED] {reason}", f"[BLOCKED] {reason}", task_id))
-                
+
                 results.append(f"[OK] Task {task_id} blockiert" + (f" ({reason})" if reason else ""))
             
             conn.commit()

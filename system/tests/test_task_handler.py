@@ -34,8 +34,25 @@ def _create_tasks_table(conn):
             delegated_to TEXT,
             depends_on TEXT,
             created_at TEXT,
+            started_at TEXT,
             completed_at TEXT,
             updated_at TEXT
+        )
+    """)
+    # T-20260906-833218904: task.py ruft jetzt hub.task_audit.apply_task_field_changes
+    # auf (done/block/edit) -- ohne diese Tabelle bricht jeder Statuswechsel gegen
+    # diese Fixture mit "no such table: task_history" ab. Schema wie
+    # system/data/schema/schema.sql.
+    conn.execute("""
+        CREATE TABLE task_history (
+            id INTEGER PRIMARY KEY,
+            task_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            field_changed TEXT,
+            old_value TEXT,
+            new_value TEXT,
+            changed_by TEXT DEFAULT 'user',
+            changed_at TEXT NOT NULL
         )
     """)
     conn.commit()

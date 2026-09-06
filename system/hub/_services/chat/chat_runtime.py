@@ -62,9 +62,11 @@ class FailedAnswer(str):
 
 try:
     from hub.bach_paths import BACH_DB as _RUNTIME_DB
+    from hub.task_audit import apply_task_field_changes
     RUNTIME_BACH_DB = str(_RUNTIME_DB)
 except ImportError:
     RUNTIME_BACH_DB = os.environ.get("BACH_DB", "")
+    apply_task_field_changes = None
 
 
 # --- Sicherheit ---
@@ -454,14 +456,27 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         tid = args.get("task_id")
                         if not tid:
                             return "Keine Task-ID angegeben"
-                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        r = conn.execute(
-                            "UPDATE tasks SET status='done', completed_at=?, updated_at=? WHERE id=?",
-                            (now, now, tid)
-                        )
-                        conn.commit()
-                        if r.rowcount == 0:
+                        existing = conn.execute(
+                            "SELECT * FROM tasks WHERE id=?", (tid,)
+                        ).fetchone()
+                        if not existing:
                             return f"Task #{tid} nicht gefunden"
+                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        if apply_task_field_changes is not None:
+                            # T-20260906-833218904: schliesst dieselbe task_history-Luecke
+                            # wie server.py/headless.py/task.py -- 'done' zaehlt ueber
+                            # hub.task_audit.COMPLETED_STATUSES als Abschluss.
+                            apply_task_field_changes(conn, tid, dict(existing), {"status": "done"},
+                                                      changed_by="chat-runtime", now=now)
+                        else:
+                            # Fallback: identischer sys.path-Vorbehalt wie RUNTIME_BACH_DB
+                            # oben -- Aktion soll auch ohne hub.task_audit funktionieren,
+                            # nur ohne Audit-Trail.
+                            conn.execute(
+                                "UPDATE tasks SET status='done', completed_at=?, updated_at=? WHERE id=?",
+                                (now, now, tid)
+                            )
+                        conn.commit()
                         return f"Task #{tid} erledigt."
 
                     if action == "detail":

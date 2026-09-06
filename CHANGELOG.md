@@ -52,6 +52,16 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **CLI `bach task` (edit/done/block) und Chat-`task_manage` (done) schreiben jetzt
+  ebenfalls `task_history` (T-20260906-833218904, zweiter Folgefund zu
+  T-20260906-985973908):** Reviewer-Fund beim Merge von PR #21 -- `system/hub/task.py`
+  (CLI) und `system/hub/_services/chat/chat_runtime.py` änderten Task-Status per
+  Direkt-SQL, vorbei am neuen Audit-Pfad. Beide rufen jetzt ebenfalls
+  `hub/task_audit.py::apply_task_field_changes` auf. Vokabular-Entscheidung
+  `'done'` (CLI/Chat/Headless) vs. `'completed'` (GUI-Server): **gemappt statt
+  vereinheitlicht** -- `COMPLETED_STATUSES = {"completed", "done"}` behandelt
+  beide als Abschluss, ohne die produktive `tasks.status`-Spalte oder bestehende
+  Statusfilter migrieren zu müssen.
 - **Headless-API (Port 8001) teilt sich jetzt den `task_history`/`started_at`-Schreibpfad
   mit dem GUI-Server (T-20260906-240256515, Folgefund zu T-20260906-985973908):**
   `system/gui/api/headless.py` betreibt einen separaten REST-Server (`/api/v1/tasks`) mit
