@@ -17,6 +17,7 @@ if str(SYSTEM_ROOT) not in sys.path:
 from hub._services.chat.chat_runtime import (
     BACH_SYSTEM_DIR,
     BLOCKED_PATTERNS,
+    FailedAnswer,
     CMD_TIMEOUT,
     SAFE_BASES,
     TOOLS_SAFE,
@@ -538,3 +539,85 @@ class TestHistory:
         rt = self._runtime()
         assert rt.history("never-seen") == []
         assert "never-seen" not in rt.sessions
+
+
+# ===================================================================
+# FailedAnswer — ein gefangener Backend-Fehler darf kein Erfolg sein
+# (T-20260906-743610852; belegt am echten Nutzer-Task #1131, der nur
+#  "Backend-Fehler:" produzierte und trotzdem auf completed stand)
+# ===================================================================
+
+
+class _RaisingBackend:
+    """Backend, das wie ein weggebrochenes Ollama reagiert."""
+
+    def __init__(self, exc):
+        self._exc = exc
+
+    def get_default_model(self):
+        return "test-model"
+
+    async def chat(self, messages, **kwargs):
+        raise self._exc
+
+
+class _AnsweringBackend:
+    def get_default_model(self):
+        return "test-model"
+
+    async def chat(self, messages, **kwargs):
+        return {"content": "Echte Antwort"}
+
+
+class TestFailedAnswer:
+    def _process(self, backend, manages_own_tools=False):
+        import asyncio
+
+        from hub._services.chat.chat_runtime import ChatRuntime
+
+        runtime = ChatRuntime(backend)
+        if manages_own_tools:
+            backend.manages_own_tools = True
+        return asyncio.run(runtime.process("Aufgabe", "idle-worker"))
+
+    def test_tool_loop_backend_failure_is_marked(self):
+        answer = self._process(_RaisingBackend(RuntimeError("Ollama weg")))
+        assert isinstance(answer, FailedAnswer)
+        assert answer == "Backend-Fehler: Ollama weg"
+
+    def test_managed_tools_backend_failure_is_marked(self):
+        answer = self._process(
+            _RaisingBackend(RuntimeError("Ollama weg")), manages_own_tools=True
+        )
+        assert isinstance(answer, FailedAnswer)
+
+    def test_real_answer_is_not_marked(self):
+        answer = self._process(_AnsweringBackend())
+        assert answer == "Echte Antwort"
+        assert not isinstance(answer, FailedAnswer)
+
+    def test_empty_exception_still_names_the_cause(self):
+        """`str(e)` war leer -- die Antwort lautete nackt "Backend-Fehler: "."""
+        answer = self._process(_RaisingBackend(RuntimeError()))
+        assert isinstance(answer, FailedAnswer)
+        assert "RuntimeError" in answer
+
+    def test_failed_answer_is_still_a_plain_string_for_existing_callers(self):
+        """Chat, Telegram und der Auftrags-Worker legen den Text unveraendert ab."""
+        answer = self._process(_RaisingBackend(RuntimeError("kaputt")))
+        assert isinstance(answer, str)
+        assert answer.startswith("Backend-Fehler:")
+
+
+def test_control_api_does_not_report_failed_answers_as_ok():
+    """Der /api/chat-Endpunkt gab jede Antwort als ok=True aus.
+
+    Quelltextpruefung statt Import: telegram_chat.py baut beim Import eine
+    ChatRuntime samt Konfiguration auf und gehoert nicht in diese Suite.
+    Gleiches Vorgehen wie test_start_scripts.py.
+    """
+    src = (Path(BACH_SYSTEM_DIR) / "_services" / "chat" / "telegram_chat.py").read_text(
+        encoding="utf-8"
+    )
+    assert '{"ok": True, "answer": answer}' not in src
+    assert 'not isinstance(answer, FailedAnswer)' in src

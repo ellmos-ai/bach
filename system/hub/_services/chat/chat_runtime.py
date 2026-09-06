@@ -33,6 +33,22 @@ from typing import Any, Callable, Optional
 
 log = logging.getLogger("bach.chat")
 
+
+class FailedAnswer(str):
+    """Antworttext, der aus einer gefangenen Backend-Ausnahme stammt.
+
+    ``process`` faengt Backend-Ausnahmen ab und gibt ihren Text als Antwort
+    zurueck -- fuer Chat und Auftragsnachrichten ist das richtig, der Nutzer
+    soll den Fehler sehen. Automatische Konsumenten konnten einen Fehlschlag
+    danach aber nicht mehr von einer echten Antwort unterscheiden und haben
+    ihn als Erfolg verbucht (T-20260906-743610852).
+
+    Als ``str``-Unterklasse bleibt jeder bestehende Aufrufer unveraendert --
+    persistieren, als Reply ablegen, an Telegram senden -- waehrend Aufrufer,
+    die den Unterschied brauchen, ihn per ``isinstance`` erfragen koennen.
+    """
+
+
 try:
     from hub.bach_paths import BACH_DB as _RUNTIME_DB
     RUNTIME_BACH_DB = str(_RUNTIME_DB)
@@ -1057,7 +1073,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                                                  model=session.model)
                 answer = result.get("content", "(keine Antwort)")
             except Exception as e:
-                answer = f"Backend-Fehler: {e}"
+                answer = FailedAnswer(f"Backend-Fehler: {str(e) or type(e).__name__}")
         else:
             tools = TOOLS_FULL if session.mode == "full" else TOOLS_SAFE
             answer = await self._tool_loop(msgs, session, tools)
@@ -1082,7 +1098,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 )
             except Exception as e:
                 session.current_tool = ""
-                return f"Backend-Fehler: {e}"
+                return FailedAnswer(f"Backend-Fehler: {str(e) or type(e).__name__}")
 
             tool_calls = result.get("tool_calls")
             if not tool_calls:
