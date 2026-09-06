@@ -62,6 +62,14 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
   vereinheitlicht** -- `COMPLETED_STATUSES = {"completed", "done"}` behandelt
   beide als Abschluss, ohne die produktive `tasks.status`-Spalte oder bestehende
   Statusfilter migrieren zu müssen.
+- **O001-Roundtrip-Testinfrastruktur schloss `task_history`-Schema-Lücke und härtet
+  Cleanup gegen Exceptions:** `system/tools/testing/o_tests/O001_task_roundtrip.py`s
+  isolierte Test-DB hatte keine `task_history`-Tabelle -- nach der obigen Änderung warf
+  das eine `OperationalError` mitten im Roundtrip, die (ohne `finally`) sowohl die
+  `bach_paths.BACH_DB`-Rückstellung als auch das Cleanup-`gc.collect()` übersprang und
+  dadurch zwei unabhängige Testdateien mitriss (`test_testing_selftest.py`,
+  `test_upgrade_handler.py::TestCategoryRouting`, 10 Fälle). Tabelle ergänzt,
+  Rückstellung/Cleanup in `finally` verschoben.
 - **Headless-API (Port 8001) teilt sich jetzt den `task_history`/`started_at`-Schreibpfad
   mit dem GUI-Server (T-20260906-240256515, Folgefund zu T-20260906-985973908):**
   `system/gui/api/headless.py` betreibt einen separaten REST-Server (`/api/v1/tasks`) mit
