@@ -30,6 +30,8 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
+from hub._services.limits import limit  # einstellbare Laufzeit-Grenzen
+from hub._services.chat import hooks  # Hook-Punkte fuer memory-/workflowhooker
 
 log = logging.getLogger("bach.chat")
 
@@ -89,7 +91,7 @@ SAFE_BASES = frozenset({
     "bach",
 })
 
-CMD_TIMEOUT = 30
+CMD_TIMEOUT = limit("BACH_CMD_TIMEOUT")
 
 
 def is_blocked(cmd: str) -> bool:
@@ -200,6 +202,9 @@ TOOLS_SAFE = [
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (bei add, Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail)"},
+        "description": {"type": "string", "description": "Bei add: was zu tun ist UND was dafuer zu lesen ist. Ein Paket ohne Umfangsangabe zwingt zum Lesen des ganzen Projekts."},
+        "category": {"type": "string", "description": "Bei add: Projekt-/Themenzuordnung zum Wiederfinden"},
+        "depends_on": {"type": "string", "description": "Bei add: IDs vorausgesetzter Tasks, kommagetrennt"},
     }, ["action"]),
     _tool("maintain", "Systemwartung: fällige Tasks prüfen, Wartungsoperationen ausführen", {
         "action": {"type": "string", "enum": ["check", "run", "health", "services", "sync"],
@@ -445,12 +450,15 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         prio = args.get("priority", "P3")
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         cur = conn.execute(
-                            "INSERT INTO tasks (title, priority, status, created_at, updated_at) "
-                            "VALUES (?, ?, 'pending', ?, ?)",
-                            (title, prio, now, now)
+                            "INSERT INTO tasks (title, description, category, depends_on, "
+                            "priority, status, created_at, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+                            (title, args.get("description", ""), args.get("category", ""),
+                             args.get("depends_on", ""), prio, now, now)
                         )
                         conn.commit()
-                        return f"Task #{cur.lastrowid} erstellt: {title} ({prio})"
+                        zusatz = f" [{args['category']}]" if args.get("category") else ""
+                        return f"Task #{cur.lastrowid} erstellt: {title} ({prio}){zusatz}"
 
                     if action == "done":
                         tid = args.get("task_id")
@@ -656,7 +664,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             try:
                 r = subprocess.run(
                     cmd, capture_output=True, text=True,
-                    encoding='utf-8', errors='replace', timeout=120,
+                    encoding='utf-8', errors='replace', timeout=limit("BACH_DELEGATE_TIMEOUT"),
                     stdin=subprocess.DEVNULL, env=env,
                 )
                 out = (r.stdout or "").strip()
@@ -879,6 +887,40 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
 
 # --- Chat Runtime ---
 
+# --- Loop-Mode (/auto) -----------------------------------------------------
+# Der Tool-Loop endet normalerweise, sobald das Modell eine Antwort ohne
+# Werkzeugaufruf schickt - es fragt dann zurueck statt weiterzubauen. Im
+# Loop-Mode wird stattdessen automatisch nachgeschoben.
+AUTO_NUDGE = (
+    "Weiter. Frage nicht nach und warte nicht auf Bestaetigung - du arbeitest autonom. "
+    "Baue oder erledige den naechsten offenen Punkt direkt. "
+    "Erst wenn die Aufgabe vollstaendig erledigt ist, antworte mit dem Wort FERTIG."
+)
+
+HANDOFF_PROMPT = (
+    "Dein Kontextfenster ist fast voll. Schreibe JETZT eine Uebergabe an dich "
+    "selbst, damit du gleich mit leerem Kontext weiterarbeiten kannst. Du "
+    "verlierst alles, was nicht in dieser Uebergabe steht - der Verlauf, die "
+    "gelesenen Dateien, deine Zwischenergebnisse.\n\n"
+    "Halte dich an dieses Format, kurz und konkret:\n"
+    "AUFTRAG: <worum geht es, in einem Satz>\n"
+    "ERLEDIGT: <was fertig ist, mit Dateinamen>\n"
+    "STAND: <was gerade halb fertig ist>\n"
+    "OFFEN: <was noch zu tun ist, in der Reihenfolge>\n"
+    "GEPRUEFT: <welche Pruefbefehle laufen, mit Ergebnis>\n"
+    "SACKGASSEN: <was du schon erfolglos versucht hast - damit du es nicht wiederholst>\n"
+    "RESUME: <der naechste konkrete Befehl oder Schritt>\n\n"
+    "Keine Erklaerungen, keine Hoeflichkeit, nur die Uebergabe."
+)
+
+GOAL_CHECK = (
+    "Bevor du fertig bist, pruefe streng gegen dieses Ziel:\n{goal}\n\n"
+    "Gehe jeden Punkt einzeln durch und pruefe nach, ob er wirklich umgesetzt ist - "
+    "schau im Code oder im Ergebnis nach, verlasse dich nicht auf deine Erinnerung. "
+    "Fehlt etwas, baue es jetzt. Ist wirklich alles erfuellt, antworte nur mit FERTIG."
+)
+
+
 class ChatSession:
     """State für eine einzelne Chat-Session."""
 
@@ -897,9 +939,9 @@ class ChatSession:
 class ChatRuntime:
     """Backend-unabhängige Chat-Runtime mit Tool-Use-Loop."""
 
-    MAX_CONTEXT_CHARS = 24000
-    SUMMARIZE_THRESHOLD = 16000
-    MAX_MESSAGES = 40
+    MAX_CONTEXT_CHARS = limit("BACH_MAX_CONTEXT_CHARS")
+    SUMMARIZE_THRESHOLD = limit("BACH_SUMMARIZE_THRESHOLD")
+    MAX_MESSAGES = limit("BACH_MAX_MESSAGES")
 
     def __init__(self, backend, system_prompt: str = "",
                  bach_app=None, memory_fn=None, injector=None,
@@ -911,8 +953,17 @@ class ChatRuntime:
         self.injector = injector
         self.session_store = session_store
         self.sessions: dict[str, ChatSession] = {}
-        self.max_tool_rounds: int = 12
+        self.max_tool_rounds: int = limit("BACH_MAX_TOOL_ROUNDS")
         self._persistence_error: str | None = None
+        # Loop-Mode: wie oft darf ohne Nutzerantwort nachgeschoben werden?
+        self.auto_continue: int = limit("BACH_AUTO_CONTINUE")
+        self.goal: str = ""
+        # Kontext-Uebergabe: Fenstergroesse und Schwelle in Prozent
+        self.context_limit: int = limit("BACH_CONTEXT_LIMIT")
+        self.handoff_percent: int = limit("BACH_HANDOFF_PERCENT")
+        self.last_handoff: str = ""
+        # nach wie vielen Werkzeugrunden die Hooks gefragt werden
+        self.hook_every: int = limit("BACH_HOOK_EVERY")
 
     def _load_messages(self, chat_id: str) -> list[dict]:
         if self.session_store is None:
@@ -1112,6 +1163,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                          tools: list) -> str:
         max_rounds = self.max_tool_rounds
         round_num = 0
+        auto_used = 0
+        goal_checked = False
+        handoffs = 0
+        seit_hook = 0
         session.tool_round = 0
         session.last_tools = []
         result = {}
@@ -1125,12 +1180,41 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 )
             except Exception as e:
                 session.current_tool = ""
-                return FailedAnswer(f"{FailedAnswer.PREFIX}{str(e) or type(e).__name__}")
+                # Typname mit ausgeben: httpx.ReadTimeout & Co. haben leeren
+                # str(), sonst steht hier nur "Backend-Fehler:" ohne Grund.
+                return FailedAnswer(
+                    f"{FailedAnswer.PREFIX}{type(e).__name__}: {e}".rstrip(": ")
+                )
+
+            if result.get("error"):
+                # Ein abgebrochener Lauf ist genauso wenig eine Antwort wie eine
+                # gefangene Ausnahme: derselbe Typ, damit der Idle-Worker ihn
+                # nicht als Erfolg verbucht (T-20260906-743610852).
+                session.current_tool = ""
+                teil = result.get("content") or ""
+                return FailedAnswer(
+                    f"{FailedAnswer.PREFIX}{result['error']}"
+                    + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else "")
+                )
+
+            if self._context_voll(result):
+                handoffs += 1
+                log.info("Kontext-Uebergabe [%d] bei %s Token",
+                         handoffs, result.get("prompt_tokens"))
+                msgs = await self._handoff(msgs, session)
+                continue
 
             tool_calls = result.get("tool_calls")
             if not tool_calls:
+                content = result.get("content", "") or "(keine Antwort)"
+                nxt, goal_checked = self._auto_next(content, auto_used, goal_checked)
+                if nxt is not None:
+                    auto_used += 1
+                    log.info(f"Auto-Continue [{auto_used}/{self.auto_continue}]")
+                    msgs.append({"role": "user", "content": nxt})
+                    continue
                 session.current_tool = ""
-                return result.get("content", "(keine Antwort)")
+                return content
 
             raw_msg = result.get("raw_message", {})
             if raw_msg:
@@ -1159,6 +1243,80 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 msgs.append(
                     self.backend.tool_response_message(str(t_result), tool_call_id)
                 )
+
+            # Hook-Punkt: die Hooker bringen eigene Cooldowns mit, deshalb darf
+            # hier oft gefragt werden - sie schweigen selbst, wenn nichts ansteht.
+            seit_hook += 1
+            if seit_hook >= self.hook_every and hooks.enabled("PostToolUse"):
+                seit_hook = 0
+                zusatz = hooks.fire("PostToolUse", getattr(session, "chat_id", "") or "bach-chat",
+                                    prompt=str(session.last_tools))
+                if zusatz:
+                    log.info("Hook PostToolUse: %d Zeichen Kontext", len(zusatz))
+                    msgs.append({"role": "user", "content": zusatz})
+
+    def _context_voll(self, result: dict) -> bool:
+        """Ist das Kontextfenster so voll, dass eine Uebergabe faellig ist?
+
+        Ohne Token-Zahl vom Backend wird nicht geraten - dann bleibt alles
+        beim Alten. Prozent 0 schaltet die Uebergabe ab.
+        """
+        if self.handoff_percent <= 0 or self.context_limit <= 0:
+            return False
+        used = result.get("prompt_tokens")
+        if not isinstance(used, int) or used <= 0:
+            return False
+        return used >= self.context_limit * self.handoff_percent / 100
+
+    async def _handoff(self, msgs: list, session: ChatSession) -> list:
+        """Laesst das Modell sich selbst uebergeben und leert den Kontext.
+
+        Anders als _summarize (Gespraechsprosa aus fremder Sicht) schreibt hier
+        das arbeitende Modell selbst - es kennt seinen Stand. Das Ergebnis wird
+        der Anfang des neuen, leeren Verlaufs.
+        """
+        frage = msgs + [{"role": "user", "content": HANDOFF_PROMPT}]
+        try:
+            res = await self.backend.chat(frage, tools=None, think=False,
+                                          model=session.model)
+            uebergabe = (res.get("content") or "").strip()
+        except Exception as e:
+            log.warning("Uebergabe fehlgeschlagen: %s", e)
+            uebergabe = ""
+
+        if not uebergabe:
+            # Lieber die letzten Schritte behalten als blind alles wegwerfen.
+            return msgs[:1] + msgs[-4:]
+
+        self.last_handoff = uebergabe
+        if self.memory:
+            try:
+                self.memory("write", f"Uebergabe: {uebergabe[:400]}")
+            except Exception:
+                pass
+
+        return [{"role": "user",
+                 "content": "Du setzt eine begonnene Arbeit fort. Das ist dein "
+                            "eigener Uebergabezettel:\n\n" + uebergabe +
+                            "\n\nArbeite ab RESUME weiter. Frage nicht nach."}]
+
+    def _auto_next(self, content: str, used: int, goal_checked: bool):
+        """Naechste Nachricht im Loop-Mode, oder None wenn Schluss ist.
+
+        Gibt (nachricht, goal_checked) zurueck. Ohne /auto (auto_continue=0)
+        immer (None, goal_checked) - dann verhaelt sich der Tool-Loop exakt
+        wie vorher. Der Zustand wird durchgereicht statt am Objekt gehalten:
+        mehrere Chats teilen sich eine Runtime-Instanz.
+        """
+        if self.auto_continue <= 0 or used >= self.auto_continue:
+            return None, goal_checked
+        fertig = "FERTIG" in (content or "").upper()[:200]
+        if fertig:
+            # Einmal streng gegen das Ziel gegenpruefen, dann ist Schluss.
+            if goal_checked or not self.goal:
+                return None, goal_checked
+            return GOAL_CHECK.format(goal=self.goal), True
+        return AUTO_NUDGE, goal_checked
 
     async def _summarize(self, session: ChatSession):
         if len(session.messages) < 6:
