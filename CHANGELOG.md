@@ -52,16 +52,21 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
-- **CLI `bach task` (edit/done/block) und Chat-`task_manage` (done) schreiben jetzt
-  ebenfalls `task_history` (T-20260906-833218904, zweiter Folgefund zu
-  T-20260906-985973908):** Reviewer-Fund beim Merge von PR #21 -- `system/hub/task.py`
-  (CLI) und `system/hub/_services/chat/chat_runtime.py` änderten Task-Status per
-  Direkt-SQL, vorbei am neuen Audit-Pfad. Beide rufen jetzt ebenfalls
-  `hub/task_audit.py::apply_task_field_changes` auf. Vokabular-Entscheidung
+- **CLI `bach task` (edit/done/block/unblock/reopen) und Chat-`task_manage` (done)
+  schreiben jetzt ebenfalls `task_history` (T-20260906-833218904 +
+  T-20260906-382894453, Folgefunde zu T-20260906-985973908):** Reviewer-Fund beim
+  Merge von PR #21 -- `system/hub/task.py` (CLI) und `system/hub/_services/chat/
+  chat_runtime.py` änderten Task-Status per Direkt-SQL, vorbei am neuen Audit-Pfad.
+  Alle fünf Statuspfade in `task.py` sowie `chat_runtime.py`'s `task_manage("done")`
+  rufen jetzt `hub/task_audit.py::apply_task_field_changes` auf. Vokabular-Entscheidung
   `'done'` (CLI/Chat/Headless) vs. `'completed'` (GUI-Server): **gemappt statt
   vereinheitlicht** -- `COMPLETED_STATUSES = {"completed", "done"}` behandelt
   beide als Abschluss, ohne die produktive `tasks.status`-Spalte oder bestehende
-  Statusfilter migrieren zu müssen.
+  Statusfilter migrieren zu müssen. `apply_task_field_changes` bekam dafür zwei
+  Härtungen aus dem PR-#22-Review: eine Spalten-Allowlist (Feldnamen landen per
+  f-string im SQL -- Verteidigung in der Tiefe für künftige Aufrufer) und einen
+  `clear_fields`-Parameter (`_reopen` muss `completed_at` beim Wiederöffnen wieder
+  auf `NULL` setzen können, die Funktion konnte vorher nur Zeitstempel setzen).
 - **O001-Roundtrip-Testinfrastruktur schloss `task_history`-Schema-Lücke und härtet
   Cleanup gegen Exceptions:** `system/tools/testing/o_tests/O001_task_roundtrip.py`s
   isolierte Test-DB hatte keine `task_history`-Tabelle -- nach der obigen Änderung warf

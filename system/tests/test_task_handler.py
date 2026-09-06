@@ -114,6 +114,24 @@ def seeded_handler(seeded_env):
     return TaskHandler(base)
 
 
+def _task_row(db_path, task_id):
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    conn.close()
+    return dict(row)
+
+
+def _history_rows(db_path, task_id):
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT * FROM task_history WHERE task_id = ? ORDER BY id", (task_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 # ═══════════════════════════════════════════════════════════════
 # PROPERTIES
 # ═══════════════════════════════════════════════════════════════
@@ -334,6 +352,16 @@ class TestBlockUnblock:
         ok, output = seeded_handler.handle("unblock", [])
         assert ok is False
 
+    def test_unblock_writes_task_history_row(self, seeded_handler):
+        """T-20260906-382894453: _unblock ging vorher an task_history vorbei."""
+        seeded_handler.handle("unblock", ["4"])
+        rows = _history_rows(seeded_handler.db_path, task_id=4)
+        assert len(rows) == 1
+        assert rows[0]["action"] == "status_change"
+        assert rows[0]["old_value"] == "blocked"
+        assert rows[0]["new_value"] == "pending"
+        assert rows[0]["changed_by"] == "cli-task"
+
 
 # ═══════════════════════════════════════════════════════════════
 # REOPEN
@@ -356,6 +384,28 @@ class TestReopen:
     def test_reopen_no_args(self, seeded_handler):
         ok, output = seeded_handler.handle("reopen", [])
         assert ok is False
+
+    def test_reopen_clears_completed_at(self, seeded_handler):
+        """T-20260906-382894453: apply_task_field_changes konnte vorher nur
+        Zeitstempel SETZEN -- _reopen braucht das Gegenteil (completed_at -> NULL)."""
+        seeded_handler.handle("done", ["1"])
+        assert _task_row(seeded_handler.db_path, 1)["completed_at"] is not None
+
+        seeded_handler.handle("reopen", ["1"])
+        row = _task_row(seeded_handler.db_path, 1)
+        assert row["status"] == "pending"
+        assert row["completed_at"] is None
+
+    def test_reopen_writes_history_for_status_and_cleared_completed_at(self, seeded_handler):
+        seeded_handler.handle("done", ["1"])
+        seeded_handler.handle("reopen", ["1"])
+        rows = _history_rows(seeded_handler.db_path, task_id=1)
+        fields_changed = {r["field_changed"] for r in rows}
+        assert "status" in fields_changed
+        assert "completed_at" in fields_changed
+        completed_row = next(r for r in rows if r["field_changed"] == "completed_at")
+        assert completed_row["action"] == "field_change"
+        assert completed_row["new_value"] is None
 
 
 # ═══════════════════════════════════════════════════════════════

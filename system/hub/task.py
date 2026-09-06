@@ -530,51 +530,57 @@ class TaskHandler(BaseHandler):
         
         with self._get_db() as conn:
             for task_id in ids:
-                row = conn.execute("SELECT title, status FROM tasks WHERE id = ?", (task_id,)).fetchone()
-                if not row:
+                existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+                if not existing:
                     results.append(f"[WARN] Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}")
                     continue
-                
-                if row['status'] != 'blocked':
+                existing_row = dict(existing)
+
+                if existing_row['status'] != 'blocked':
                     results.append(f"[INFO] Task {task_id} war nicht blockiert")
                     continue
-                
-                conn.execute("""
-                    UPDATE tasks SET status = 'pending'
-                    WHERE id = ?
-                """, (task_id,))
-                
+
+                # T-20260906-382894453 (Folge von T-20260906-833218904): auch hier
+                # jetzt ueber die geteilte Funktion, statt roher SQL ohne task_history.
+                now = conn.execute("SELECT datetime('now')").fetchone()[0]
+                apply_task_field_changes(conn, task_id, existing_row, {"status": "pending"},
+                                          changed_by="cli-task", now=now)
+
                 results.append(f"[OK] Task {task_id} entblockt")
-            
+
             conn.commit()
-        
+
         return True, "\n".join(results)
-    
+
     def _reopen(self, args: List[str]) -> Tuple[bool, str]:
         """Task(s) wieder oeffnen (done -> pending) - Multi-ID Support"""
         ids, rest = self._parse_ids(args)
-        
+
         if not ids:
             return False, "Usage: bach task reopen <id> [id2 id3...]"
-        
+
         results = []
-        
+
         with self._get_db() as conn:
             for task_id in ids:
-                row = conn.execute("SELECT title, status FROM tasks WHERE id = ?", (task_id,)).fetchone()
-                if not row:
+                existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+                if not existing:
                     results.append(f"[WARN] Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}")
                     continue
-                
-                conn.execute("""
-                    UPDATE tasks SET status = 'pending', completed_at = NULL
-                    WHERE id = ?
-                """, (task_id,))
-                
+                existing_row = dict(existing)
+
+                # T-20260906-382894453: completed_at soll beim Wiederoeffnen
+                # verschwinden -- clear_fields deckt genau das ab (Erweiterung von
+                # apply_task_field_changes fuer diesen Fall).
+                now = conn.execute("SELECT datetime('now')").fetchone()[0]
+                apply_task_field_changes(conn, task_id, existing_row, {"status": "pending"},
+                                          clear_fields=("completed_at",),
+                                          changed_by="cli-task", now=now)
+
                 results.append(f"[OK] Task {task_id} wieder geoeffnet")
-            
+
             conn.commit()
-        
+
         return True, "\n".join(results)
     
     def _delete(self, args: List[str]) -> Tuple[bool, str]:
