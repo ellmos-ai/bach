@@ -1298,7 +1298,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             now = time.time()
             active_user = sum(
                 1 for cid, s in runtime.sessions.items()
-                if cid not in _SYS_IDS and (s.current_tool or now - s.last_active < 120)
+                if cid not in _SYS_IDS and not cid.startswith("idle-") and (s.current_tool or now - s.last_active < 120)
             )
             self._json({
                 "backend": backend_name,

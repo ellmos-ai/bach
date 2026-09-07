@@ -36,6 +36,7 @@ def db_path(tmp_path, monkeypatch):
             depends_on TEXT,
             priority TEXT DEFAULT 'P3',
             status TEXT DEFAULT 'pending',
+            assigned_to TEXT DEFAULT 'bach',
             created_at TEXT,
             started_at TEXT,
             completed_at TEXT,
@@ -155,3 +156,15 @@ class TestTaskManageDecompose:
         assert rows[0]["title"] == "Teilschritt 1: Analyse"
         assert rows[1]["title"] == "Teilschritt 2: Edit"
         assert rows[1]["depends_on"] == str(rows[0]["id"])
+
+
+class TestTaskManageAdd:
+    def test_add_defaults_assigned_to_bach(self, db_path):
+        result = exec_tool("task_manage", {"action": "add", "title": "Neuer Test", "category": "Test"}, mode="safe")
+        assert "erstellt" in result
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM tasks WHERE title = 'Neuer Test'").fetchone()
+        conn.close()
+        assert row is not None
+        assert row["assigned_to"] == "bach"

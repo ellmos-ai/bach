@@ -477,13 +477,14 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         if not title:
                             return "Kein Titel angegeben"
                         prio = args.get("priority", "P3")
+                        assignee = args.get("assigned_to") or "bach"
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         cur = conn.execute(
                             "INSERT INTO tasks (title, description, category, depends_on, "
-                            "priority, status, created_at, updated_at) "
-                            "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+                            "priority, status, assigned_to, created_at, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
                             (title, args.get("description", ""), args.get("category", ""),
-                             args.get("depends_on", ""), prio, now, now)
+                             args.get("depends_on", ""), prio, assignee, now, now)
                         )
                         conn.commit()
                         zusatz = f" [{args['category']}]" if args.get("category") else ""
@@ -559,6 +560,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             return f"Task #{tid} nicht gefunden"
                         parent_dict = dict(parent)
                         cat = args.get("category") or parent_dict.get("category") or ""
+                        assignee = args.get("assigned_to") or parent_dict.get("assigned_to") or "bach"
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         created_ids = []
                         prev_id = None
@@ -569,11 +571,12 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             st_desc = st.get("description", "")
                             st_prio = st.get("priority", parent_dict.get("priority") or "P3")
                             st_dep = st.get("depends_on") or (str(prev_id) if (args.get("sequential") and prev_id) else "")
+                            st_assignee = st.get("assigned_to") or assignee
                             cur = conn.execute(
                                 "INSERT INTO tasks (title, description, category, depends_on, "
-                                "priority, status, created_at, updated_at) "
-                                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
-                                (st_title, st_desc, cat, st_dep, st_prio, now, now)
+                                "priority, status, assigned_to, created_at, updated_at) "
+                                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
+                                (st_title, st_desc, cat, st_dep, st_prio, st_assignee, now, now)
                             )
                             prev_id = cur.lastrowid
                             created_ids.append(prev_id)
