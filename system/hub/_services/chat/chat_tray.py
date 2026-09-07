@@ -392,33 +392,25 @@ class BACHTray:
         if not self.idle_pending:
             return True
         task_id, seit = self.idle_pending
-        hist = self._api("GET", f"/api/history?chat_id={self.IDLE_CHAT_ID}")
+        task_chat_id = f"idle-task-{task_id}"
+        hist = self._api("GET", f"/api/history?chat_id={task_chat_id}")
         messages = (hist or {}).get("messages", [])
-        marker = f"Task #{task_id}:"
-        answer = None
-        for i in range(len(messages) - 1, -1, -1):
-            if messages[i].get("role") == "user" and marker in messages[i].get("content", ""):
-                answer = next((m for m in messages[i + 1:]
-                               if m.get("role") == "assistant"), None)
-                break
+        answer = next((m for m in messages if m.get("role") == "assistant"), None)
 
         if answer is None:
             if time.time() - seit < self.PENDING_TTL:
-                # Keinen zweiten Lauf starten: beide schreiben in dieselbe
-                # Session, die Antworten waeren nicht mehr zuzuordnen -- und
-                # zwei schwere Modell-Laeufe parallel sind genau der Fall, der
-                # den Speicher-Watchdog ausloest.
                 print(f"[Idle] Task #{task_id} laeuft serverseitig weiter; warte")
                 return False
-            # ponytail: Slot verfaellt, danach gilt das Verhalten vor dem Fix
-            # (Task bleibt in_progress). Upgrade: Vormerkung am Task speichern,
-            # dann ueberlebt sie auch einen Tray-Neustart.
             print(f"[Idle] Task #{task_id} ohne Antwort seit {self.PENDING_TTL}s; Vormerkung verworfen")
             self.idle_pending = None
             return True
 
-        status = "completed" if answer.get("ok", True) else "open"
-        self._api("PUT", f"/api/tasks/{task_id}", {"status": status}, base=self.gui_url)
+        ans_text = answer.get("content", "") if isinstance(answer, dict) else str(answer)
+        if "(Max Tool-Runden erreicht)" in ans_text or not answer.get("ok", True):
+            status = "open"
+        else:
+            status = "completed"
+        self._api("PUT", f"/api/tasks/{task_id}", {"status": status, "changed_by": "idle-worker"}, base=self.gui_url)
         print(f"[Idle] Task #{task_id} nach Timeout nachgetragen: {status}")
         self.idle_pending = None
         return True
@@ -459,33 +451,42 @@ class BACHTray:
                        base=self.gui_url)  # DB-Kanon, nicht 'in-progress'
 
             prompt = (
-                f"Du bearbeitest eine zugewiesene Aufgabe im Idle-Modus. "
+                f"Du bearbeitest eine zugewiesene Aufgabe im vollen Ausführungsmodus (Full-Mode mit Schreibrechten). "
                 f"Task #{task_id}: {title}"
             )
             if desc:
                 prompt += f"\nBeschreibung: {desc}"
-            prompt += "\nBitte erledige die Aufgabe und berichte kurz das Ergebnis."
+            prompt += (
+                "\nAnweisung: Analysiere das Problem und setze die Lösung direkt im Code um (nutze edit_file, write_file oder execute_command). "
+                "Teste deine Änderung wenn möglich. "
+                "Wenn die Aufgabe im Code gelöst wurde, fasse zusammen was geändert wurde. "
+                "Falls du es nicht im Code lösen kannst oder externe Hilfe brauchst, erkläre präzise warum."
+            )
+
+            task_chat_id = f"idle-task-{task_id}"
 
             result = self._api("POST", "/api/chat", {
                 "prompt": prompt,
-                "chat_id": self.IDLE_CHAT_ID,
+                "chat_id": task_chat_id,
+                "mode": "full",
             }, timeout=300)
 
             if result is None:
-                # No response is an unknown delivery outcome, not a confirmed
-                # failure. In particular, urllib's local timeout does not stop
-                # the ThreadingHTTPServer request that may still be running.
-                # Keep the task claimed so the next idle tick cannot duplicate it.
-                # Das Ergebnis erreicht spaeter das Transkript -- vormerken und
-                # beim naechsten Tick nachtragen (T-20260906-739766716).
                 self.idle_pending = (task_id, time.time())
-                print(f"[Idle] Chat-Ergebnis für Task #{task_id} unbekannt; wird nachgelesen")
+                print(f"[Idle] Chat-Ergebnis fuer Task #{task_id} unbekannt; wird nachgelesen")
             elif result.get("ok"):
-                self._api("PUT", f"/api/tasks/{task_id}",
-                           {"status": "completed", "changed_by": "idle-worker"},
-                           base=self.gui_url)
-                if self.icon:
-                    self.icon.notify(f"Erledigt: {title}", "BACH Idle")
+                ans = str(result.get("answer", ""))
+                if "(Max Tool-Runden erreicht)" in ans or "nicht im Code lösen" in ans:
+                    print(f"[Idle] Task #{task_id} unvollstaendig (Rundenlimit/Safe); bleibt open")
+                    self._api("PUT", f"/api/tasks/{task_id}",
+                               {"status": "open", "changed_by": "idle-worker"},
+                               base=self.gui_url)
+                else:
+                    self._api("PUT", f"/api/tasks/{task_id}",
+                               {"status": "completed", "changed_by": "idle-worker"},
+                               base=self.gui_url)
+                    if self.icon:
+                        self.icon.notify(f"Erledigt: {title}", "BACH Idle")
             else:
                 self._api("PUT", f"/api/tasks/{task_id}",
                            {"status": "open", "changed_by": "idle-worker"},

@@ -176,7 +176,7 @@ runtime = ChatRuntime(
 )
 
 _global_defaults = {
-    "mode": "safe",
+    "mode": os.environ.get("BACH_DEFAULT_MODE", "full"),
     "think": True,
     "model": "",
     "max_tool_rounds": limit("BACH_MAX_TOOL_ROUNDS"),
@@ -1425,9 +1425,18 @@ class ControlHandler(BaseHTTPRequestHandler):
             _global_defaults["max_tool_rounds"] = rounds
             self._json({"ok": True, "max_tool_rounds": rounds})
 
+        elif path == "/api/clear":
+            chat_id = body.get("chat_id", "gui-web")
+            runtime.clear_session(chat_id)
+            self._json({"ok": True, "chat_id": chat_id})
+
         elif path == "/api/chat":
             prompt = body.get("prompt", "")
             chat_id = body.get("chat_id", "api-delegate")
+            mode = body.get("mode")
+            if mode in ("safe", "full"):
+                s = runtime.get_session(chat_id)
+                s.mode = mode
             depth = int(self.headers.get("X-Delegation-Depth", "0"))
             if not prompt:
                 self._json({"error": "prompt erforderlich"}, 400)
