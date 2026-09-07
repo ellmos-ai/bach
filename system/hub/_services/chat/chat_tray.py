@@ -443,6 +443,7 @@ class BACHTray:
                     )
                     if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
                         task = tasks_resp["tasks"][0]
+                        task_status = status   # Ausgangsstatus, um ihn notfalls zurueckzugeben
                         break
                 if task:
                     break
@@ -480,6 +481,15 @@ class BACHTray:
                 # beim naechsten Tick nachtragen (T-20260906-739766716).
                 self.idle_pending = (task_id, time.time())
                 print(f"[Idle] Chat-Ergebnis für Task #{task_id} unbekannt; wird nachgelesen")
+            elif result.get("compute_locked"):
+                # Weder erledigt noch fehlgeschlagen: der Task wurde gar nicht
+                # bearbeitet, weil Rechenjobs laufen. Zurueck in den Ausgangs-
+                # status, damit ein spaeterer Tick ihn erneut zieht -- keine
+                # Nachlese-Vormerkung (T-20260907-440775748).
+                self._api("PUT", f"/api/tasks/{task_id}",
+                           {"status": task_status, "changed_by": "idle-worker"},
+                           base=self.gui_url)
+                print(f"[Idle] Compute-Lock aktiv; Task #{task_id} bleibt {task_status}")
             elif result.get("ok"):
                 self._api("PUT", f"/api/tasks/{task_id}",
                            {"status": "completed", "changed_by": "idle-worker"},
