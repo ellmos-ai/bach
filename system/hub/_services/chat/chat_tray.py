@@ -339,7 +339,7 @@ class BACHTray:
         result = self._api("POST", "/api/chat", {
             "prompt": prompt,
             "chat_id": "tray-prompt",
-        }, timeout=120)
+        }, timeout=300)
         answer = (result or {}).get("answer", "")[:120]
         if not self.icon:
             return
@@ -436,7 +436,7 @@ class BACHTray:
             # (server.py zaehlt beide als offen); nur 'pending' zu fragen liess jeden
             # 'open'-OLLAMA-Task liegen.
             task = None
-            for assignee in ("OLLAMA", "BUDDHA"):
+            for assignee in ("OLLAMA", "BUDDHA", "BACH"):
                 for status in ("pending", "open"):
                     tasks_resp = self._api(
                         "GET", f"/api/tasks?assigned_to={assignee}&status={status}", base=self.gui_url

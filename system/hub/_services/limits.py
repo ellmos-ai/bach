@@ -33,7 +33,7 @@ Lesen: python3 -c "from hub._services.limits import report; report()"
 import os
 
 DEFAULTS = {
-    "BACH_LLM_TIMEOUT": 180,
+    "BACH_LLM_TIMEOUT": 300,
     "BACH_LLM_TIMEOUT_FAST": 120,
     "BACH_CLI_MAX_TURNS": 30,
     "BACH_CLI_IDLE_TIMEOUT": 300,
@@ -47,7 +47,7 @@ DEFAULTS = {
     "BACH_CONTEXT_LIMIT": 32768,
     "BACH_HANDOFF_PERCENT": 75,
     "BACH_HOOK_EVERY": 3,
-    "BACH_LLM_IDLE_TIMEOUT": 120,
+    "BACH_LLM_IDLE_TIMEOUT": 300,
     "BACH_LLM_IDLE_GRACE": 10,
     "BACH_LLM_PING_TIMEOUT": 10,
     "BACH_LLM_TOTAL_CAP": 7200,

@@ -1204,6 +1204,16 @@ def _get_active_session_state():
     )
 
 
+# --- Thread-Safe Chat Locks ---
+_chat_locks: dict[str, threading.Lock] = {}
+_chat_locks_guard = threading.Lock()
+
+def _get_chat_lock(chat_id: str) -> threading.Lock:
+    with _chat_locks_guard:
+        if chat_id not in _chat_locks:
+            _chat_locks[chat_id] = threading.Lock()
+        return _chat_locks[chat_id]
+
 class QuietHTTPServer(ThreadingHTTPServer):
     def handle_error(self, request, client_address):
         exc = sys.exc_info()[1]
@@ -1426,6 +1436,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "Maximale Delegationstiefe erreicht"}, 429)
                 return
             os.environ["BACH_DELEGATION_DEPTH"] = str(depth + 1)
+            lock = _get_chat_lock(chat_id)
+            if not lock.acquire(blocking=True, timeout=300):
+                self._json({"error": "Chat ist noch mit einer vorherigen Anfrage beschäftigt"}, 503)
+                return
             try:
                 loop = asyncio.new_event_loop()
                 try:
@@ -1440,6 +1454,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json({"error": str(e)}, 500)
             finally:
+                lock.release()
                 os.environ.pop("BACH_DELEGATION_DEPTH", None)
 
         else:
@@ -1465,11 +1480,17 @@ def start_control_api():
 
 def _answer_order(text: str, chat_id: str) -> str:
     """Synchronous bridge for the message worker thread (same pattern as /api/chat)."""
-    loop = asyncio.new_event_loop()
+    lock = _get_chat_lock(chat_id)
+    if not lock.acquire(blocking=True, timeout=300):
+        return FailedAnswer(f"{FailedAnswer.PREFIX}Chat ist noch mit einer vorherigen Anfrage beschäftigt")
     try:
-        return loop.run_until_complete(runtime.process(text, chat_id))
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(runtime.process(text, chat_id))
+        finally:
+            loop.close()
     finally:
-        loop.close()
+        lock.release()
 
 
 def start_message_worker():
