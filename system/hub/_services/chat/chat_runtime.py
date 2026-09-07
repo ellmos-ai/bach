@@ -947,6 +947,16 @@ class ChatSession:
         self.last_active: float = 0.0
 
 
+class ComputeLocked(RuntimeError):
+    """Ein Modell-Load wurde unterbunden, weil Rechenjobs laufen.
+
+    Ausnahme statt Antworttext: es gibt nichts zu persistieren, keinen Turn im
+    Transkript und keine "Antwort", die ein Worker als Ergebnis verbuchen
+    koennte. Der Auftrags-Worker fasst sie ohnehin richtig auf -- er loggt und
+    versucht es beim naechsten Poll erneut (T-20260907-440775748).
+    """
+
+
 class ChatRuntime:
     """Backend-unabhängige Chat-Runtime mit Tool-Use-Loop."""
 
@@ -963,6 +973,9 @@ class ChatRuntime:
         self.memory = memory_fn
         self.injector = injector
         self.session_store = session_store
+        # Setzt telegram_chat: eine Funktion, die True liefert, solange ein
+        # Compute-Lock steht. None = kein Gate (Tests, andere Konsumenten).
+        self.compute_gate = None
         self.sessions: dict[str, ChatSession] = {}
         self.max_tool_rounds: int = limit("BACH_MAX_TOOL_ROUNDS")
         self._persistence_error: str | None = None
@@ -1140,6 +1153,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
     async def process(self, text: str, chat_id: str) -> str:
         """Verarbeitet eine User-Nachricht und gibt die Antwort zurück."""
+        # Der eine Punkt, an dem jeder Modell-Load vorbeikommt: Telegram,
+        # /api/chat (Idle-Worker) und der Auftrags-Worker rufen alle hier an.
+        # Das Gate deshalb hier statt je Aufrufer (T-20260907-440775748).
+        if self.compute_gate is not None and self.compute_gate():
+            raise ComputeLocked(
+                "Compute-Lock aktiv -- kein Modell-Load, damit laufende "
+                "Rechenjobs nicht in den Swap gedraengt werden."
+            )
         session = self.get_session(chat_id)
         session.last_active = time.time()
         session.messages.append({"role": "user", "content": text})

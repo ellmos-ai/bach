@@ -1190,6 +1190,35 @@ class TestTrayIdleWorker:
         assert [c for c in calls if c[0] in ("PUT", "POST")] == []
         assert tray.idle_pending is not None
 
+    def test_compute_lock_leaves_the_task_in_its_original_status(self, monkeypatch):
+        """Kein Load, kein Ergebnis -- also weder completed noch open.
+
+        Der Task war nie in Arbeit; er geht in den Status zurueck, unter dem er
+        gezogen wurde, und wird NICHT zur Nachlese vorgemerkt
+        (T-20260907-440775748).
+        """
+        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
+        calls = []
+
+        def fake_api(method, path, data=None, **kw):
+            calls.append((method, path, data))
+            if method == "GET" and path.startswith("/api/tasks?"):
+                if "OLLAMA" in path and "status=pending" in path:
+                    return {"success": True,
+                            "tasks": [{"id": 42, "title": "T", "description": "D"}]}
+                return {"success": True, "tasks": []}
+            if method == "POST":
+                return {"ok": False, "compute_locked": True,
+                        "answer": "Compute-Lock aktiv -- kein Modell-Load"}
+            return {"success": True}
+
+        with patch.object(tray, "_api", side_effect=fake_api):
+            tray._process_idle_task()
+
+        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == [
+            ("/api/tasks/42", "in_progress"), ("/api/tasks/42", "pending")]
+        assert tray.idle_pending is None
+
     def test_expired_pending_stops_waiting_and_frees_the_worker(self, monkeypatch):
         """Nach PENDING_TTL gilt wieder das Verhalten von vor dem Fix."""
         tray = self._tray_with_pending(monkeypatch)

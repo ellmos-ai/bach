@@ -75,7 +75,8 @@ except Exception as e:
 
 # Chat Runtime + Backend
 from hub._services.llm.model_backend import create_backend, OllamaBackend
-from hub._services.chat.chat_runtime import ChatRuntime, FailedAnswer, RUNTIME_BACH_DB
+from hub._services.chat.chat_runtime import (ChatRuntime, ComputeLocked, FailedAnswer,
+                                             RUNTIME_BACH_DB)
 from hub._services.chat.session_store import SQLiteChatSessionStore
 
 # Compute Lock (optional — graceful if not available)
@@ -844,6 +845,30 @@ def _compute_lock_enabled() -> bool:
             and isinstance(runtime.backend, OllamaBackend))
 
 
+def _compute_lock_blocks() -> bool:
+    """Laeuft gerade ein Rechenjob, der einen Modell-Load verbieten wuerde?
+
+    Haengt in ``ChatRuntime.process``, damit JEDER Aufrufer davor haltmacht --
+    der Idle-Worker ueber /api/chat lud das 18-GB-Modell bisher trotz aktivem
+    Lock und draengte einen Sage-Job in den Swap (T-20260907-440775748).
+
+    Den vom Nutzer per JA freigegebenen Telegram-Load blockiert das nicht:
+    dort sind die Jobs vorher per SIGSTOP pausiert, und check_compute_active
+    filtert gestoppte PIDs heraus -- der Lock meldet dann "inaktiv".
+    """
+    if not _compute_lock_enabled():
+        return False
+    cl_cfg = CONFIG.get("compute_lock", {})
+    is_active, _status = check_compute_active(
+        lock_path=cl_cfg.get("lock_path", DEFAULT_LOCK_PATH),
+        check_script=cl_cfg.get("check_script", DEFAULT_CHECK_SCRIPT),
+    )
+    return is_active
+
+
+runtime.compute_gate = _compute_lock_blocks
+
+
 async def _handle_pending_action(chat_id: str, text: str, update: Update) -> bool:
     """Handle JA/NEIN reply to a pending compute lock question.
 
@@ -1437,6 +1462,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                 # Ein gefangener Backend-Fehler ist kein Erfolg: der Idle-Worker
                 # verbuchte den Task sonst als completed (T-20260906-743610852).
                 self._json({"ok": not isinstance(answer, FailedAnswer), "answer": answer})
+            except ComputeLocked as e:
+                # Weder Erfolg noch Fehlschlag: der Task wurde nicht bearbeitet.
+                # Der Idle-Worker laesst ihn deshalb stehen (T-20260907-440775748).
+                self._json({"ok": False, "compute_locked": True, "answer": str(e)})
             except Exception as e:
                 self._json({"error": str(e)}, 500)
             finally:
