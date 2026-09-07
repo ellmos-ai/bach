@@ -43,7 +43,7 @@ def _read_mount_prefix(environ: Mapping[str, str], name: str, default: str) -> s
 class Settings:
     """Host-Einstellungen fuer optionale BACH-GUI-Komponenten."""
 
-    console_enabled: bool = False
+    console_enabled: bool = True
     console_prefix: str = "/control"
 
     @classmethod

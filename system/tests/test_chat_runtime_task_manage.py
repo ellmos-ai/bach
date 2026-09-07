@@ -31,6 +31,9 @@ def db_path(tmp_path, monkeypatch):
         CREATE TABLE tasks (
             id INTEGER PRIMARY KEY,
             title TEXT,
+            description TEXT,
+            category TEXT,
+            depends_on TEXT,
             priority TEXT DEFAULT 'P3',
             status TEXT DEFAULT 'pending',
             created_at TEXT,
@@ -115,3 +118,40 @@ class TestTaskManageDone:
         assert row["status"] == "done"
         assert row["completed_at"] not in (None, "")
         assert _history_rows(db_path) == []  # kein Fallback-Audit-Trail, aber kein Crash
+
+
+class TestTaskManageUpdate:
+    def test_update_fields(self, db_path):
+        result = exec_tool(
+            "task_manage",
+            {"action": "update", "task_id": 1, "description": "Neuer Umfang", "priority": "P1"},
+            mode="safe",
+        )
+        assert "aktualisiert" in result
+        row = _task_row(db_path, task_id=1)
+        assert row["priority"] == "P1"
+
+
+class TestTaskManageDecompose:
+    def test_decompose_into_subtasks(self, db_path):
+        subtasks = [
+            {"title": "Teilschritt 1: Analyse", "description": "Lies Datei X"},
+            {"title": "Teilschritt 2: Edit", "description": "Patsche Zeile Y"},
+        ]
+        result = exec_tool(
+            "task_manage",
+            {"action": "decompose", "task_id": 1, "subtasks": subtasks, "sequential": True},
+            mode="safe",
+        )
+        assert "in 2 Teilaufgaben zerlegt" in result
+        parent = _task_row(db_path, task_id=1)
+        assert parent["status"] == "completed"
+
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM tasks WHERE id > 1 ORDER BY id").fetchall()
+        conn.close()
+        assert len(rows) == 2
+        assert rows[0]["title"] == "Teilschritt 1: Analyse"
+        assert rows[1]["title"] == "Teilschritt 2: Edit"
+        assert rows[1]["depends_on"] == str(rows[0]["id"])

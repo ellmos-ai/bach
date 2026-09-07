@@ -406,10 +406,13 @@ class BACHTray:
             return True
 
         ans_text = answer.get("content", "") if isinstance(answer, dict) else str(answer)
-        if "(Max Tool-Runden erreicht)" in ans_text or not answer.get("ok", True):
-            status = "open"
-        else:
+        hat_folgetask = "task #" in ans_text.lower() or "folge-task" in ans_text.lower() or "folgetask" in ans_text.lower() or "teilaufgaben" in ans_text.lower()
+        ist_fertig = "FERTIG" in ans_text.upper() or hat_folgetask
+        ist_unvollstaendig = "(Max Tool-Runden erreicht)" in ans_text or ("nicht im Code lösen" in ans_text and not hat_folgetask)
+        if (ist_fertig or not ist_unvollstaendig) and answer.get("ok", True):
             status = "completed"
+        else:
+            status = "open"
         self._api("PUT", f"/api/tasks/{task_id}", {"status": status, "changed_by": "idle-worker"}, base=self.gui_url)
         print(f"[Idle] Task #{task_id} nach Timeout nachgetragen: {status}")
         self.idle_pending = None
@@ -457,10 +460,13 @@ class BACHTray:
             if desc:
                 prompt += f"\nBeschreibung: {desc}"
             prompt += (
-                "\nAnweisung: Analysiere das Problem und setze die Lösung direkt im Code um (nutze edit_file, write_file oder execute_command). "
-                "Teste deine Änderung wenn möglich. "
-                "Wenn die Aufgabe im Code gelöst wurde, fasse zusammen was geändert wurde. "
-                "Falls du es nicht im Code lösen kannst oder externe Hilfe brauchst, erkläre präzise warum."
+                "\nAnweisung: Du hast ein begrenztes Kontingent an Werkzeugrunden.\n"
+                "1. DIREKTES LÖSEN: Wenn das Problem klar und überschaubar ist: Setze die Lösung direkt im Code um (nutze edit_file, write_file oder execute_command). Teste deine Änderung wenn möglich. Antworte am Ende mit FERTIG.\n"
+                "2. AUFGABEN-ZERLEGUNG / FOLGETASK: Wenn die Aufgabe komplex oder umfangreich ist oder deine Runden knapp werden: "
+                "Schließe deine Code-Analyse ab und zerlege die Aufgabe! "
+                "Nutze `task_manage(action='add', title='Edit: ...', description='Exakte Datei: ..., Zeilen: ..., Was zu tun ist: ...', category='...')` "
+                "(oder `task_manage(action='decompose', ...)`), um konkrete Folge-Tasks mit engem Umfang einzustellen. "
+                "Fasse deine Diagnose zusammen und schließe diesen Analyse-Task mit FERTIG ab."
             )
 
             task_chat_id = f"idle-task-{task_id}"
@@ -476,17 +482,20 @@ class BACHTray:
                 print(f"[Idle] Chat-Ergebnis fuer Task #{task_id} unbekannt; wird nachgelesen")
             elif result.get("ok"):
                 ans = str(result.get("answer", ""))
-                if "(Max Tool-Runden erreicht)" in ans or "nicht im Code lösen" in ans:
-                    print(f"[Idle] Task #{task_id} unvollstaendig (Rundenlimit/Safe); bleibt open")
-                    self._api("PUT", f"/api/tasks/{task_id}",
-                               {"status": "open", "changed_by": "idle-worker"},
-                               base=self.gui_url)
-                else:
+                hat_folgetask = "task #" in ans.lower() or "folge-task" in ans.lower() or "folgetask" in ans.lower() or "teilaufgaben" in ans.lower()
+                ist_fertig = "FERTIG" in ans.upper() or hat_folgetask
+                ist_unvollstaendig = "(Max Tool-Runden erreicht)" in ans or ("nicht im Code lösen" in ans and not hat_folgetask)
+                if ist_fertig or not ist_unvollstaendig:
                     self._api("PUT", f"/api/tasks/{task_id}",
                                {"status": "completed", "changed_by": "idle-worker"},
                                base=self.gui_url)
                     if self.icon:
                         self.icon.notify(f"Erledigt: {title}", "BACH Idle")
+                else:
+                    print(f"[Idle] Task #{task_id} unvollstaendig; bleibt open")
+                    self._api("PUT", f"/api/tasks/{task_id}",
+                               {"status": "open", "changed_by": "idle-worker"},
+                               base=self.gui_url)
             else:
                 self._api("PUT", f"/api/tasks/{task_id}",
                            {"status": "open", "changed_by": "idle-worker"},

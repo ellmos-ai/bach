@@ -208,14 +208,32 @@ TOOLS_SAFE = [
         "query": {"type": "string", "description": "Suchanfrage"},
         "max_results": {"type": "integer", "description": "Maximale Ergebnisse (Standard 5, max 10)"},
     }, ["query"]),
-    _tool("task_manage", "BACH-Tasks verwalten: anlegen, auflisten, Status ändern", {
-        "action": {"type": "string", "enum": ["list", "add", "done", "detail"], "description": "Aktion"},
+    _tool("task_manage", "BACH-Tasks verwalten: anlegen, zerlegen, auflisten, aktualisieren, Status ändern", {
+        "action": {"type": "string", "enum": ["list", "add", "done", "detail", "update", "decompose"],
+                   "description": "Aktion: list (offene Tasks), add (neuer Task), done (erledigen), detail (Details), update (Felder aktualisieren), decompose (in Teilaufgaben zerlegen)"},
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
-        "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (bei add, Standard P3)"},
-        "task_id": {"type": "integer", "description": "Task-ID (bei done/detail)"},
-        "description": {"type": "string", "description": "Bei add: was zu tun ist UND was dafuer zu lesen ist. Ein Paket ohne Umfangsangabe zwingt zum Lesen des ganzen Projekts."},
-        "category": {"type": "string", "description": "Bei add: Projekt-/Themenzuordnung zum Wiederfinden"},
-        "depends_on": {"type": "string", "description": "Bei add: IDs vorausgesetzter Tasks, kommagetrennt"},
+        "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
+        "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
+        "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
+        "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
+        "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
+        "depends_on": {"type": "string", "description": "IDs vorausgesetzter Tasks, kommagetrennt"},
+        "subtasks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "priority": {"type": "string"},
+                    "depends_on": {"type": "string"}
+                },
+                "required": ["title"]
+            },
+            "description": "Liste von Teilaufgaben bei action='decompose'"
+        },
+        "sequential": {"type": "boolean", "description": "Bei decompose: ob Teilaufgaben sequentiell voneinander abhängen sollen"},
+        "close_parent": {"type": "boolean", "description": "Bei decompose: ob der übergeordnete Task als completed markiert wird (Standard true)"}
     }, ["action"]),
     _tool("maintain", "Systemwartung: fällige Tasks prüfen, Wartungsoperationen ausführen", {
         "action": {"type": "string", "enum": ["check", "run", "health", "services", "sync"],
@@ -506,6 +524,73 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         if not row:
                             return f"Task #{tid} nicht gefunden"
                         return "\n".join(f"{k}: {row[k]}" for k in row.keys())
+
+                    if action == "update":
+                        tid = args.get("task_id")
+                        if not tid:
+                            return "Keine Task-ID angegeben"
+                        existing = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
+                        if not existing:
+                            return f"Task #{tid} nicht gefunden"
+                        updates = {}
+                        for fld in ("title", "description", "category", "priority", "status", "depends_on", "assigned_to"):
+                            if fld in args and args[fld] is not None:
+                                updates[fld] = args[fld]
+                        if not updates:
+                            return "Keine Felder zum Aktualisieren angegeben"
+                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        if apply_task_field_changes is not None:
+                            apply_task_field_changes(conn, tid, dict(existing), updates,
+                                                      changed_by="chat-runtime", now=now)
+                        else:
+                            updates["updated_at"] = now
+                            set_str = ", ".join(f"{k}=?" for k in updates.keys())
+                            conn.execute(f"UPDATE tasks SET {set_str} WHERE id=?", list(updates.values()) + [tid])
+                        conn.commit()
+                        return f"Task #{tid} aktualisiert: {', '.join(updates.keys())}"
+
+                    if action == "decompose":
+                        tid = args.get("task_id")
+                        subtasks = args.get("subtasks", [])
+                        if not tid or not subtasks:
+                            return "task_id und subtasks (Liste von Objekten mit title, description) erforderlich"
+                        parent = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
+                        if not parent:
+                            return f"Task #{tid} nicht gefunden"
+                        parent_dict = dict(parent)
+                        cat = args.get("category") or parent_dict.get("category") or ""
+                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        created_ids = []
+                        prev_id = None
+                        for st in subtasks:
+                            st_title = st.get("title", "")
+                            if not st_title:
+                                continue
+                            st_desc = st.get("description", "")
+                            st_prio = st.get("priority", parent_dict.get("priority") or "P3")
+                            st_dep = st.get("depends_on") or (str(prev_id) if (args.get("sequential") and prev_id) else "")
+                            cur = conn.execute(
+                                "INSERT INTO tasks (title, description, category, depends_on, "
+                                "priority, status, created_at, updated_at) "
+                                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+                                (st_title, st_desc, cat, st_dep, st_prio, now, now)
+                            )
+                            prev_id = cur.lastrowid
+                            created_ids.append(prev_id)
+                        if args.get("close_parent", True):
+                            note = f"\n[In {len(created_ids)} Teilaufgaben zerlegt: {created_ids}]"
+                            if apply_task_field_changes is not None:
+                                apply_task_field_changes(conn, tid, parent_dict,
+                                                          {"status": "completed",
+                                                           "description": (parent_dict.get("description") or "") + note},
+                                                          changed_by="chat-runtime", now=now)
+                            else:
+                                conn.execute(
+                                    "UPDATE tasks SET status='completed', description=description || ?, updated_at=? WHERE id=?",
+                                    (note, now, tid)
+                                )
+                        conn.commit()
+                        return f"Task #{tid} in {len(created_ids)} Teilaufgaben zerlegt: IDs {created_ids}"
 
                     return f"Unbekannte Aktion: {action}"
                 finally:
@@ -1110,6 +1195,13 @@ REGELN:
 - Sei präzise, hilfreich, und zeige Tool-Ergebnisse klar an
 - Du KANNST Befehle ausführen — sag nicht, dass du das nicht kannst
 
+TURN-BUDGET & AUFGABEN-ZERLEGUNG:
+- Du hast pro Bearbeitungssitzung ein begrenztes Werkzeug-Rundenbudget.
+- Große oder unklare Aufgaben NICHT endlos durchsuchen!
+- Wenn du nach einigen Schritten die Codestelle lokalisiert hast, aber die Umsetzung umfangreich ist oder Runden knapp werden:
+  Nutze sofort task_manage(action='add', ...) oder task_manage(action='decompose', ...), um die Aufgabe in konkrete Teilaufgaben (z. B. 'Edit: ...' mit Dateipfad und Zeilen) zu zerlegen.
+- Schließe Analyse-Tasks nach erfolgreicher Diagnose ab und überlasse die konkrete Umsetzung dem Folge-Task.
+
 WARTUNGSROLLE:
 Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 - maintain(check) zeigt fällige wiederkehrende Tasks
@@ -1261,6 +1353,42 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 if zusatz:
                     log.info("Hook PostToolUse: %d Zeichen Kontext", len(zusatz))
                     msgs.append({"role": "user", "content": zusatz})
+
+            # Turn-Awareness & Rundenlimit-Verwaltung:
+            if max_rounds > 0 and round_num >= max_rounds:
+                session.current_tool = ""
+                final_prompt = (
+                    f"[SYSTEM-HINWEIS: Werkzeugrunden aufgebraucht ({round_num}/{max_rounds})]\n"
+                    "Die maximale Anzahl an Werkzeugrunden für diese Sitzung ist erreicht. "
+                    "Fasse bitte präzise zusammen:\n"
+                    "1. Was hast du bisher analysiert und herausgefunden (Dateipfade, Zeilennummern, Befunde)?\n"
+                    "2. Was wurde im Code bereits geändert oder behoben?\n"
+                    "3. Falls die Aufgabe noch nicht komplett gelöst ist: Welcher konkrete Folge-Task (z. B. 'Edit: ...') "
+                    "wurde angelegt oder welche Schritte muss der nächste Lauf ausführen?"
+                )
+                msgs.append({"role": "user", "content": final_prompt})
+                try:
+                    final_res = await self.backend.chat(
+                        msgs, tools=None, think=False, model=session.model
+                    )
+                    content = (final_res.get("content") or "").strip()
+                    if content:
+                        return content
+                except Exception as e:
+                    log.warning("Abschluss-Zusammenfassung fehlgeschlagen: %s", e)
+                return result.get("content", "") or "(Max Tool-Runden erreicht)"
+
+            if max_rounds > 0 and round_num >= max_rounds - 2:
+                rest = max_rounds - round_num
+                nudge = (
+                    f"[SYSTEM-HINWEIS: Werkzeugrunde {round_num}/{max_rounds} - Noch {rest} Runde(n) verbleibend!]\n"
+                    "Deine Werkzeugrunden sind fast aufgebraucht! "
+                    "Wenn du die Ursache kennst: Gehe JETZT direkt zur Code-Änderung (edit_file / write_file) über. "
+                    "Wenn du den Code in dieser Session nicht mehr fertigstellen kannst: "
+                    "Rufe sofort `task_manage(action='add', title='Edit: ...', description='Exakte Datei: ..., Zeilen: ..., Was zu tun ist: ...', category='...')` auf, "
+                    "um einen konkreten Editier-Task anzulegen, und schließe diesen Analyse-Task mit deinen Erkenntnissen ab."
+                )
+                msgs.append({"role": "user", "content": nudge})
 
     def _context_voll(self, result: dict) -> bool:
         """Ist das Kontextfenster so voll, dass eine Uebergabe faellig ist?
