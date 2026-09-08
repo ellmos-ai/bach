@@ -83,9 +83,9 @@ const NAV_ITEMS = [
     ]},
     { label: "Kommunikation", children: [
         { href: "/messages", label: "Nachrichten" },
-        { href: "/inbox", label: "Inbox" },
         { href: "/kontakte", label: "Kontakte" },
     ]},
+    { href: "/inbox", label: "Dateien" },
     { label: "Finanzen", children: [
         { href: "/financial", label: "Finanzen" },
         { href: "/tokens", label: "Tokens" },

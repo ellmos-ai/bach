@@ -377,6 +377,41 @@ class BACHTray:
         if self.idle_consecutive >= self.IDLE_THRESHOLD:
             threading.Thread(target=self._process_idle_task, daemon=True).start()
 
+    def _auto_commit_task(self, task_id: int, title: str):
+        """Erzeugt einen sauberen, atomaren lokalen Git-Commit fuer alle durch
+        den Task modifizierten tracked Files.
+        Regel D-20260830-001: Rein lokaler Commit, NIEMALS push!
+        Niemals ungetrackte Runtime-Dateien (system/data/) stagen.
+        """
+        try:
+            repo_dir = "/Users/lukas/services/bach"
+            res = subprocess.run(
+                ["git", "diff", "--name-only"],
+                cwd=repo_dir, capture_output=True, text=True, timeout=10
+            )
+            mod_files = [f.strip() for f in res.stdout.splitlines() if f.strip()]
+            valid_files = [f for f in mod_files if not f.startswith("system/data/") and not f.endswith(".wal") and not f.endswith(".lock")]
+            if not valid_files:
+                return
+
+            subprocess.run(
+                ["git", "add"] + valid_files,
+                cwd=repo_dir, capture_output=True, text=True, timeout=10, check=True
+            )
+
+            clean_title = title.replace('"', '').replace("'", "").strip()[:80]
+            commit_msg = f"bach(buddha): #{task_id} {clean_title}"
+            c_res = subprocess.run(
+                ["git", "commit", "-m", commit_msg],
+                cwd=repo_dir, capture_output=True, text=True, timeout=15
+            )
+            if c_res.returncode == 0:
+                print(f"[Idle] Auto-Commit erfolgreich: {commit_msg} ({len(valid_files)} Dateien)")
+            else:
+                print(f"[Idle] Auto-Commit Hinweis: {c_res.stderr.strip() or c_res.stdout.strip()}")
+        except Exception as e:
+            print(f"[Idle] Auto-Commit Fehler: {e}")
+
     def _settle_pending_task(self) -> bool:
         """Traegt nach, was nach dem Client-Timeout noch eintraf.
 
@@ -390,8 +425,22 @@ class BACHTray:
         Rueckgabe: True, wenn der Weg fuer den naechsten Task frei ist.
         """
         if not self.idle_pending:
-            return True
-        task_id, seit = self.idle_pending
+            # Startup / Crash-Recovery: Noch offene in_progress Tasks pruefen
+            for assignee in ("OLLAMA", "BUDDHA", "BACH"):
+                t_resp = self._api("GET", f"/api/tasks?assigned_to={assignee}&status=in_progress", base=self.gui_url)
+                if t_resp and t_resp.get("success") and t_resp.get("tasks"):
+                    t = t_resp["tasks"][0]
+                    self.idle_pending = (t.get("id"), time.time(), t.get("title", ""))
+                    print(f"[Idle] In-Progress Task #{t.get('id')} uebernommen fuer Settle-Pruefung")
+                    break
+            if not self.idle_pending:
+                return True
+
+        if len(self.idle_pending) >= 3:
+            task_id, seit, title = self.idle_pending[0], self.idle_pending[1], self.idle_pending[2]
+        else:
+            task_id, seit = self.idle_pending[0], self.idle_pending[1]
+            title = f"Task #{task_id}"
         task_chat_id = f"idle-task-{task_id}"
         hist = self._api("GET", f"/api/history?chat_id={task_chat_id}")
         messages = (hist or {}).get("messages", [])
@@ -411,6 +460,7 @@ class BACHTray:
         ist_unvollstaendig = "(Max Tool-Runden erreicht)" in ans_text or ("nicht im Code lösen" in ans_text and not hat_folgetask)
         if (ist_fertig or not ist_unvollstaendig) and answer.get("ok", True):
             status = "completed"
+            self._auto_commit_task(task_id, title)
         else:
             status = "open"
         self._api("PUT", f"/api/tasks/{task_id}", {"status": status, "changed_by": "idle-worker"}, base=self.gui_url)
@@ -463,7 +513,10 @@ class BACHTray:
                 "\nAnweisung: Du hast ein begrenztes Kontingent an Werkzeugrunden. "
                 "Arbeite strikt nach dieser Prioritäten-Reihenfolge:\n\n"
                 "1. DIREKTES LÖSEN (Priorität 1): Wenn das Problem klar und überschaubar ist: Setze die Lösung direkt im Code um "
-                "(nutze edit_file, write_file oder execute_command). Teste deine Änderung wenn möglich. Antworte am Ende mit FERTIG.\n\n"
+                "(nutze edit_file, write_file oder execute_command). Teste deine Änderung wenn möglich. "
+                "Du darfst geänderte Dateien bei Bedarf auch direkt lokal committen "
+                "(z. B. execute_command('git add <datei> && git commit -m \"...\"')). "
+                "WICHTIG: Rein lokaler Commit, NIEMALS `git push` ausführen! Antworte am Ende mit FERTIG.\n\n"
                 "2. AUFGABEN-ZERLEGUNG (Priorität 2): Wenn die Aufgabe komplex ist, aber die Schritte verstanden sind: "
                 "Zerlege die Aufgabe in handhabbare Teilaufgaben! "
                 "Nutze `task_manage(action='add', title='Edit: ...', description='Exakte Datei: ..., Zeilen: ..., Was zu tun ist: ...', category='...')` "
@@ -496,7 +549,7 @@ class BACHTray:
             }, timeout=300)
 
             if result is None:
-                self.idle_pending = (task_id, time.time())
+                self.idle_pending = (task_id, time.time(), title)
                 print(f"[Idle] Chat-Ergebnis fuer Task #{task_id} unbekannt; wird nachgelesen")
             elif result.get("ok"):
                 ans = str(result.get("answer", ""))
@@ -507,6 +560,7 @@ class BACHTray:
                     self._api("PUT", f"/api/tasks/{task_id}",
                                {"status": "completed", "changed_by": "idle-worker"},
                                base=self.gui_url)
+                    self._auto_commit_task(task_id, title)
                     if self.icon:
                         self.icon.notify(f"Erledigt: {title}", "BACH Idle")
                 else:
