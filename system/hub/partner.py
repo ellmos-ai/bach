@@ -606,6 +606,20 @@ class PartnerHandler(BaseHandler):
                 except Exception:
                     pass  # Fahrtenbuch-Fehler sollen Delegation nicht blockieren
 
+        # delegation_log persist (1154-B)
+        try:
+            import sqlite3 as _sqlite3
+            _conn = _sqlite3.connect(str(self.db_path))
+            _cur = _conn.cursor()
+            _cur.execute(
+                "INSERT INTO delegation_log (partner, task_text, result, zone, score, tokens, dry_run, created_at) VALUES (?,?,?,?,?,?,?,datetime('now'))",
+                (selected.get('name',''), task_text, 'dry-run' if dry_run else 'delegated', current_zone,
+                 float(score) if score else None, None, 1 if dry_run else 0))
+            _conn.commit()
+            _conn.close()
+        except Exception:
+            pass   # Persist-Fehler darf Delegation nicht blockieren (gleich wie clutch-bridge)
+
         return True, "\n".join(results)
     
     def _get_current_zone(self) -> int:
