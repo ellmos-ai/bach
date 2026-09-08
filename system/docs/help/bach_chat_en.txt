@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
 # Version: 1.0.0
-# Last validated: 2026-05-08
+# Last validated: 2026-08-28 (Startspine and remote-security contract)
 
 BACH CHAT SERVICE - Multi-Backend Telegram Bot + Control API + System Tray
 ==========================================================================
@@ -21,6 +21,7 @@ Architecture (3 layers):
 
 Backends:
   - ollama:     Local Ollama server with native tool-use
+  - lmstudio:   LM Studio (local via OpenAI-compatible API, port 1234, auto-model detection)
   - claude:     Claude Code CLI (--continue session, own tools)
   - codex:      Codex CLI (GPT models, own tools)
   - claude-api: Anthropic API (requires ANTHROPIC_API_KEY)
@@ -36,7 +37,7 @@ TELEGRAM COMMANDS
 -----------------
   /start                    Welcome message
   /clear                    Reset conversation
-  /backend [name] [model]   Switch backend (ollama|claude|codex|claude-api|openai)
+  /backend [name] [model]   Switch backend (ollama|lmstudio|claude|codex|claude-api|openai)
   /model <name>             Switch model
   /mode [safe|full]         Security mode
   /think                    Think mode ON (thorough)
@@ -49,6 +50,7 @@ TELEGRAM COMMANDS
   /bach <cmd>               Execute BACH command
   /task <text>              Create task
   /tasks                    Open tasks
+  /maxrounds [N]            Set maximum tool rounds (0=unlimited)
   Voice message             Whisper transcription -> Chat
   Photo                     OCR text recognition -> Chat
 
@@ -63,11 +65,13 @@ CONTROL API (Port 8081)
   POST /api/mode            Set mode: {"mode": "safe"}
   POST /api/model           Set model: {"model": "qwen3.5:35b-a3b"}
   POST /api/think           Think mode: {"think": true}
+  POST /api/max_tool_rounds Maximum tool rounds: {"rounds": 10} (0=unlimited)
+  POST /api/chat            Chat message: {"prompt": "...", "chat_id": "..."}
 
 
 SYSTEM TRAY
 -----------
-  Start:  python chat_tray.py [--host HOST] [--port PORT]
+  Start:  python start/startspine.py start --tray
 
   Features:
     - Status icon: Green (safe), Orange (full), Red (disconnected)
@@ -75,11 +79,16 @@ SYSTEM TRAY
     - Model submenu: Models of current backend
     - Mode toggle: Safe/Full
     - Think toggle: ON/OFF
+    - Maximum tool rounds: Presets (5/10/20/Unlimited)
+    - Tool activity: Current tool + round in the tray title
     - Open web dashboard
     - Cross-platform: macOS, Windows, Linux (via pystray)
 
-  Remote tray (from another system):
-    python chat_tray.py --host macstudvonlukas --port 8081
+  Remote tray (only through a separately protected network path):
+    python start/startspine.py start --tray --host bach-server.local
+
+  Security boundary: Remote access requires an explicit authentication
+  decision. Do not expose the Control API directly on 0.0.0.0.
 
 
 FILES
@@ -118,6 +127,8 @@ CONFIGURATION
     OLLAMA_MODEL             Override default model
     OLLAMA_URL               Override Ollama URL
     BACH_CONTROL_PORT        Control API port (default: 8081)
+    BACH_HOST                Default host for tray/GUI (for example, bach-server.local)
+    BACH_NO_BROWSER          =1: Do not open a browser automatically (remote GUI)
     ANTHROPIC_API_KEY        For claude-api backend
     OPENAI_API_KEY           For openai backend
 
