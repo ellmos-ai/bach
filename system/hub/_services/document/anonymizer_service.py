@@ -791,7 +791,8 @@ def decrypt_key_file(key_path: str, password: str) -> AnonymProfile:
         fake_geburtsdatum=data["fake_geburtsdatum"],
         mappings=data.get("mappings", {}),
         created=data.get("created", ""),
-        version=data.get("version", 1)
+        version=data.get("version", 1),
+        whitelist=data.get("whitelist", []),
     )
 
 
@@ -863,7 +864,7 @@ class DocumentAnonymizer:
                 return json.loads(whitelist_file.read_text(encoding="utf-8"))
             except Exception as e:
                 print(f"[WARN] Anonymizer Whitelist konnte nicht geladen werden: {e}")
-        return {"titles": [], "names": [], "organizations": []}
+        return {"titles": [], "names": [], "organizations": [], "office_titles": []}
 
     @property
     def progress(self) -> ProgressInfo:
