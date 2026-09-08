@@ -1,12 +1,10 @@
-import sqlite3
-import os
 import sys
+from db_access import build_parser, connect
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-db_path = os.path.expanduser('~/.bach/bach.db')
-conn = sqlite3.connect(db_path)
-conn.row_factory = sqlite3.Row
+args = build_parser("Zeigt rohe Help-Doc-Uebersetzungen aus BACH an.").parse_args()
+db_path, conn = connect(args.db)
 
 rows = conn.execute("SELECT key, language, value, source FROM languages_translations WHERE namespace = 'help_doc' ORDER BY key, language").fetchall()
 print(f"Total rows in help_doc: {len(rows)}")

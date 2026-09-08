@@ -479,6 +479,17 @@ class TestAdd:
         assert "C:\\Users\\Example" not in row["value"]
         assert "%USERPROFILE%" in row["value"]
 
+    def test_release_seed_sanitizes_git_diff_check_sensitive_lines(self, handler):
+        value = "DATEIEN  \n=======\nPfad  "
+        ok, msg = handler.handle("add", ["marker_heading", "--de", value], dry_run=False)
+        assert ok is True
+
+        seed = (handler.base_path / "exports" / "translations" / "languages_seed.release.sql").read_text(encoding="utf-8")
+        assert "DATEIEN  " not in seed
+        assert "\n=======\n" not in seed
+        assert "\n =======\n" in seed
+        assert all(line == line.rstrip() for line in seed.splitlines())
+
 
 # ═══════════════════════════════════════════════════════════════
 # ADD-LANGUAGE

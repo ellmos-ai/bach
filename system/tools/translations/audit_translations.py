@@ -1,11 +1,9 @@
-import sqlite3
-import os
 import re
 from collections import defaultdict
+from db_access import build_parser, connect
 
-db_path = os.path.expanduser('~/.bach/bach.db')
-conn = sqlite3.connect(db_path)
-conn.row_factory = sqlite3.Row
+args = build_parser("Auditiert fehlende und verdaechtige BACH-Uebersetzungen.").parse_args()
+db_path, conn = connect(args.db)
 
 target_langs = ['de', 'en', 'es', 'ru', 'ja', 'zh']
 
@@ -78,17 +76,17 @@ for (ns, k), lang_dict in key_map.items():
     # Check if German or English is available as base
     base_lang = 'de' if 'de' in lang_dict else ('en' if 'en' in lang_dict else list(lang_dict.keys())[0])
     base_val = lang_dict[base_lang]
-    
+
     if is_technical(base_val):
         continue
-        
+
     for lang in target_langs:
         if lang in lang_dict:
             val = lang_dict[lang]
             # Check 1: Target equals German base in non-German language
             if lang != 'de' and val == lang_dict.get('de') and len(val) > 5 and not is_technical(val):
                 suspicious.append((ns, k, lang, "Identical to German", val[:50]))
-            
+
             # Check 2: Target equals English base in non-English language (and non-German)
             elif lang not in ['en', 'de'] and val == lang_dict.get('en') and len(val) > 5 and not is_technical(val):
                 suspicious.append((ns, k, lang, "Identical to English", val[:50]))
@@ -96,7 +94,7 @@ for (ns, k), lang_dict in key_map.items():
             # Check 3: Check for glitchy automatic translations (e.g. broken html/markdown, weird placeholders like { 0 }, bad characters)
             if '{ ' in val or ' }' in val or '% s' in val or '% d' in val:
                 suspicious.append((ns, k, lang, "Broken placeholder spaces", val[:50]))
-            
+
             if 'http ' in val or 'https ' in val or 'www. ' in val:
                 suspicious.append((ns, k, lang, "Broken URL spaces", val[:50]))
 
@@ -114,4 +112,3 @@ for ns, cnt in sorted(ns_susp.items(), key=lambda x: x[1], reverse=True):
 print("\nSample suspicious entries:")
 for item in suspicious[:15]:
     print(f"  [{item[0]}] key={item[1]} lang={item[2]} issue='{item[3]}' val='{item[4]}'")
-

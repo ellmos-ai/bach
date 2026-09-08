@@ -1,14 +1,12 @@
-import sqlite3
-import os
 import re
 import sys
 from collections import defaultdict
+from db_access import build_parser, connect
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-db_path = os.path.expanduser('~/.bach/bach.db')
-conn = sqlite3.connect(db_path)
-conn.row_factory = sqlite3.Row
+args = build_parser("Fuehrt ein Detailaudit fuer BACH-Help-Uebersetzungen aus.").parse_args()
+db_path, conn = connect(args.db)
 
 print("=== 1. HELP_DOC NAMESPACE ANALYSIS ===")
 rows = conn.execute("SELECT key, language, value FROM languages_translations WHERE namespace = 'help_doc' ORDER BY key, language").fetchall()
@@ -54,23 +52,23 @@ categories = defaultdict(list)
 for (ns, k), lang_dict in key_map.items():
     de_val = lang_dict.get('de')
     en_val = lang_dict.get('en')
-    
+
     for lang, val in lang_dict.items():
         if not val or not isinstance(val, str):
             continue
-        
+
         # Check broken placeholders
         if re.search(r'\{\s+\d+\s+\}', val) or re.search(r'\{\s+[a-zA-Z0-9_]+\s+\}', val):
             categories['broken_placeholder'].append((ns, k, lang, val))
-        
+
         # Check broken formatting / percent spaces
         if '% s' in val or '% d' in val:
             categories['broken_format_specifier'].append((ns, k, lang, val))
-            
+
         # Check broken URLs
         if 'http ' in val or 'https ' in val or 'www. ' in val:
             categories['broken_url'].append((ns, k, lang, val))
-            
+
         # Check identical to base when non-base language and not code/SQL
         if lang not in ['de', 'en']:
             if de_val and val == de_val and not is_code_or_sql(val) and len(val) > 5:

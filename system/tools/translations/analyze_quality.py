@@ -1,14 +1,12 @@
-import sqlite3
-import os
 import sys
 import re
 from collections import defaultdict
+from db_access import build_parser, connect
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-db_path = os.path.expanduser('~/.bach/bach.db')
-conn = sqlite3.connect(db_path)
-conn.row_factory = sqlite3.Row
+args = build_parser("Analysiert die Qualitaet der BACH-Uebersetzungen.").parse_args()
+db_path, conn = connect(args.db)
 
 rows = conn.execute("SELECT key, namespace, language, value, source, is_verified FROM languages_translations").fetchall()
 

@@ -380,7 +380,19 @@ class LangHandler(BaseHandler):
             return str(value)
         if isinstance(value, (list, dict)):
             value = json.dumps(value, ensure_ascii=False)
+        if isinstance(value, str):
+            value = self._sanitize_seed_literal_text(value)
         return "'" + str(value).replace("'", "''") + "'"
+
+    def _sanitize_seed_literal_text(self, value: str) -> str:
+        """Normalisiert Seed-Text so Git-Diff-Checks nicht an Nutztext haengen bleiben."""
+        lines = []
+        for line in value.splitlines():
+            sanitized = line.rstrip()
+            if re.fullmatch(r"(?:<{7,}|={7,}|>{7,})(?: .*)?", sanitized):
+                sanitized = " " + sanitized
+            lines.append(sanitized)
+        return "\n".join(lines)
 
     def _release_export_dir(self) -> Path:
         """Zielordner fuer releasefaehige Sprach-Artefakte."""

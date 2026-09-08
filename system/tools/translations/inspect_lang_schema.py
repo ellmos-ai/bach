@@ -1,9 +1,7 @@
-import sqlite3
-import os
+from db_access import build_parser, connect
 
-db_path = os.path.expanduser('~/.bach/bach.db')
-conn = sqlite3.connect(db_path)
-conn.row_factory = sqlite3.Row
+args = build_parser("Zeigt Schema und Zaehler der BACH-Sprachtabellen.").parse_args()
+db_path, conn = connect(args.db)
 
 # Get schema of languages_translations
 cols = conn.execute("PRAGMA table_info(languages_translations)").fetchall()
