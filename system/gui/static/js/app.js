@@ -289,7 +289,7 @@ const ALL_PAGES = [
     { href: '/skills-board', label: 'Skills Board' },
     { href: '/financial', label: 'Financial' },
     { href: '/memory', label: 'Memory' },
-    { href: '/denkarium', label: 'Denkarium' },
+    { href: '/denkarium', label: 'Denkarium', external: true },
     { href: '/kontakte', label: 'Kontakte' },
     { href: '/routinen', label: 'Routinen' },
     { href: '/tools', label: 'Tools' },

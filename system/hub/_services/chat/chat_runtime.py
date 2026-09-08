@@ -184,6 +184,7 @@ TOOLS_SAFE = [
     _tool("read_file", "Inhalt einer Datei lesen (max 200 Zeilen)", {
         "path": {"type": "string", "description": "Dateipfad"},
         "lines": {"type": "integer", "description": "Max Zeilen (Standard 50)"},
+        "offset": {"type": "integer", "description": "Startzeile (1-basiert, Standard 1)"},
     }, ["path"]),
     _tool("search_text", "In Dateien nach einem Muster suchen (grep)", {
         "pattern": {"type": "string", "description": "Suchmuster (Regex)"},
@@ -349,8 +350,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             p = args.get("path", "")
             if not p:
                 return "Kein Pfad angegeben"
-            n = min(int(args.get("lines", 50)), 200)
-            return run_shell(f"head -n {n} {shlex.quote(p)}")
+            lines = min(int(args.get("lines", 50)), 200)
+            offset = max(1, int(args.get("offset") or args.get("start") or args.get("start_line") or 1))
+            end_line = offset + lines - 1
+            return run_shell(f"sed -n '{offset},{end_line}p' {shlex.quote(p)}")
 
         if name == "search_text":
             pat = args.get("pattern", "")
@@ -1198,12 +1201,12 @@ REGELN:
 - Sei präzise, hilfreich, und zeige Tool-Ergebnisse klar an
 - Du KANNST Befehle ausführen — sag nicht, dass du das nicht kannst
 
-TURN-BUDGET & AUFGABEN-ZERLEGUNG:
-- Du hast pro Bearbeitungssitzung ein begrenztes Werkzeug-Rundenbudget.
-- Große oder unklare Aufgaben NICHT endlos durchsuchen!
-- Wenn du nach einigen Schritten die Codestelle lokalisiert hast, aber die Umsetzung umfangreich ist oder Runden knapp werden:
-  Nutze sofort task_manage(action='add', ...) oder task_manage(action='decompose', ...), um die Aufgabe in konkrete Teilaufgaben (z. B. 'Edit: ...' mit Dateipfad und Zeilen) zu zerlegen.
-- Schließe Analyse-Tasks nach erfolgreicher Diagnose ab und überlasse die konkrete Umsetzung dem Folge-Task.
+TURN-BUDGET, MEHRDEUTIGKEIT & DELEGATION (4-STUFEN-PRIORITÄT):
+- Du hast pro Bearbeitungssitzung ein begrenztes Werkzeug-Rundenbudget. Große oder unklare Aufgaben NICHT endlos durchsuchen!
+- 1. DIREKT LÖSEN: Wenn das Problem klar und überschaubar ist, direkt umsetzen und testen.
+- 2. ZERLEGEN: Wenn umfangreich aber verstanden, mit task_manage(action='add', title='Edit: ...') in konkrete Einzelschritte zerlegen.
+- 3. MEHRDEUTIGKEIT: Bei knappen/mehrdeutigen Aufgaben zuerst Code-Präzedenzfälle suchen und immer die minimal-invasive, risikoärmste Option wählen. Bei anhaltender Unsicherheit nach 3-5 Runden: Rückfrage mit task_manage(category='TO-DECIDE') anlegen.
+- 4. DELEGIEREN & ABLEHNEN (Ultima Ratio): Erst delegieren (via delegate an Claude/Codex), wenn Modellgrenzen oder Werkzeuge nachweislich überschritten sind. Niemals voreilig ablehnen oder Aufgaben abwälzen!
 
 WARTUNGSROLLE:
 Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:

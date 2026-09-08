@@ -77,7 +77,7 @@ const NAV_ITEMS = [
     { label: "Wissen", children: [
         { href: "/memory", label: "Memory" },
         { href: "/prompt-library", label: "Prompts" },
-        { href: "/denkarium", label: "Denkarium" },
+        { href: "/denkarium", label: "Denkarium", external: true },
         { href: "/wiki", label: "Wiki" },
         { href: "/usecases", label: "Use Cases" },
     ]},
