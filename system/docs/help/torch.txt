@@ -1,0 +1,49 @@
+# Portabilitaet: SYSTEM
+# Zuletzt validiert: 2026-09-08
+# Naechste Pruefung: 2027-03-08
+
+TORCH - Zwei Chat-Modi & Ressourcen-Allokation
+==============================================
+
+BESCHREIBUNG
+Das TORCH-Konzept regelt die Zuteilung von Modellspeicher (Fackeln)
+auf Apple Silicon und definiert die zwei grundlegenden Arbeitsmodi
+fuer den Dialog zwischen Nutzer und Buddha.
+
+DIE ZWEI CHAT-MODI
+------------------
+1. Chat-Modus (Standard)
+   - Zweck: Schnelle Fragen, Memos, Denkarium-Notizen, Auslagerung
+     groesserer Themen in die BACH Task-Queue.
+   - Kontext: 8k Token (schnell, leichtgewichtig, minimiert VRAM-Bedarf).
+   - Cooldown: Gibt Fackeln / VRAM nach 10 Minuten Inaktivitaet frei.
+
+2. Interaktiver Working-Modus (Live-Bauen & Pair Programming)
+   - Zweck: Gemeinsames Bauen, interaktive Programmierung, Fehlerbehebung
+     und direkte Projektbegleitung mit Lukas im Chat.
+   - Keine Zwangsauslagerung: Buddha fuehrt Werkzeuge (read_file,
+     edit_file, execute_command, safe_shell) LIVE im Dialog aus.
+   - Keine vorzeitige Delegation: Der Chat ist selbst die ausfuehrende
+     Instanz und bricht nicht voreilig ab.
+   - Kontext: 32k Token (volles Fenster fuer tiefen Code- und Doku-Kontext).
+   - Cooldown: Bis zu 1 Stunde ohne Nachricht und ohne Arbeitssignal.
+     Verhindert Modell-Flattern (das 35s dauernde Nachladen von 17 GiB VRAM).
+   - Arbeitssignal: Laufende Werkzeugaufrufe und Tokenfluss gelten als
+     Aktivitaet (auch wenn der Nutzer gerade liest und nicht tippt).
+
+GRUNDREGELN & PRIORITAETEN
+--------------------------
+1. Nutzer schlaegt alles: Direkte Anweisungen im Chat besitzen
+   hoechste Prioritaet gegenueber allen Hintergrundprozessen.
+2. Sofortige Hintergrund-Ruhe: Sobald eine Chat-Nachricht eingeht,
+   haelt der Idle-Worker nach dem laufenden Schritt an, um die
+   GPU fuer die Nutzerinteraktion freizugeben.
+3. Fackel-Verteilung: Zehn Fackeln pro System (eine Fackel = 2,50 GiB).
+   Chat 8k = 8,4 Fackeln; Working 32k = 11,2 Fackeln (Ueberbuchung im
+   Komfortbereich von Metal).
+
+SIEHE AUCH
+----------
+  docs/TORCH-KONZEPT.md           Vollstaendige architektonische Herleitung
+  bach --help roles               Rollenmodell, Bosse & Experten
+  bach --help daemon              Scheduler und Hintergrund-Wartung

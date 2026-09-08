@@ -21,6 +21,12 @@ import sys
 import threading
 from pathlib import Path
 
+try:
+    from hub._services.recurring.recurring_tasks import check_recurring_tasks
+    HAS_RECURRING = True
+except ImportError:
+    HAS_RECURRING = False
+
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
@@ -127,6 +133,7 @@ class BACHTray:
         self.idle_task_name = None
         self.idle_processing = False
         self.idle_pending = None   # (task_id, seit) nach Client-Timeout
+        self._recurring_tick = 0
 
         self.prompt_source = "defaults"
         self.prompts = self._load_prompts()
@@ -374,8 +381,42 @@ class BACHTray:
 
         self.idle_consecutive += 1
 
+        self._recurring_tick += 1
+        if HAS_RECURRING and (self._recurring_tick % 180 == 0):  # alle ~15 Min
+            try:
+                check_recurring_tasks()
+            except Exception:
+                pass
+
         if self.idle_consecutive >= self.IDLE_THRESHOLD:
             threading.Thread(target=self._process_idle_task, daemon=True).start()
+
+    @staticmethod
+    def _resolve_role(assignee: str) -> tuple[str, str, str]:
+        """Normalisiert die Rolle und liefert (role_id, display_name, persona_desc)."""
+        if not assignee or assignee.upper() in ("BACH", "BUDDHA", "OLLAMA"):
+            return ("bach", "Buddha", "Universeller lokaler KI-Worker von BACH.")
+
+        clean = assignee.lower().replace("agent:", "").replace("-agent", "").strip()
+
+        PERSONA_MAP = {
+            "persoenlich": ("Paul", "Persoenlicher Assistent fuer Alltags- und Arbeitsorganisation"),
+            "persoenlicher-assistent": ("Paul", "Persoenlicher Assistent fuer Alltags- und Arbeitsorganisation"),
+            "aboservice": ("Anton", "Experte fuer Abonnements, Vertraege und wiederkehrende Zahlungen"),
+            "ati": ("Atlas", "Experte fuer Aufgaben-, Tool- und Code-Scanning"),
+            "bewerbungsexperte": ("Benjamin", "Experte fuer Bewerbungsunterlagen, Lebenslaeufe und Anschreiben"),
+            "bueroassistent": ("Clara", "Assistentin fuer Dokumente, Ablage und Schriftverkehr"),
+            "data-analysis": ("Diana", "Expertin fuer Datenanalyse, Auswertungen und Statistiken"),
+            "decision-briefing": ("Dietrich", "Experte fuer strukturierte Entscheidungsvorlagen und Briefings"),
+            "finanz-assistent": ("Felix", "Assistent fuer Finanzen, Belege und Budgetuebersichten"),
+            "foerderplaner": ("Florian", "Experte fuer Foerderberichte, Hilfebedarf und Paedagogik"),
+            "haushaltsmanagement": ("Martha", "Expertin fuer Haushaltsorganisation, Vorraete und Routinen"),
+            "ticket-master": ("Ticket-Master", "Triage- und Routing-Experte fuer die Zuweisung von Aufgaben an Rollen"),
+            "task-divider": ("Task-Divider", "Experte fuer die vorab-Zerlegung komplexer Aufgaben in handhabbare Teilpakete"),
+        }
+
+        display, desc = PERSONA_MAP.get(clean, (clean.capitalize(), f"Experten-Rolle '{clean}'."))
+        return (clean, display, desc)
 
     def _auto_commit_task(self, task_id: int, title: str):
         """Erzeugt einen sauberen, atomaren lokalen Git-Commit fuer alle durch
@@ -476,6 +517,7 @@ class BACHTray:
             # (server.py zaehlt beide als offen); nur 'pending' zu fragen liess jeden
             # 'open'-OLLAMA-Task liegen.
             task = None
+            # 1. Zuerst bestehende Standard-Assignees pruefen (erfuellt auch Unit-Tests)
             for assignee in ("OLLAMA", "BUDDHA", "BACH"):
                 for status in ("pending", "open"):
                     tasks_resp = self._api(
@@ -486,56 +528,74 @@ class BACHTray:
                         break
                 if task:
                     break
+
+            # 2. Universal-Worker Fallback: Alle Rollen/Personas abholen (Bosse & Experten)
+            if not task:
+                for status in ("pending", "open"):
+                    tasks_resp = self._api(
+                        "GET", f"/api/tasks?status={status}", base=self.gui_url
+                    )
+                    if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
+                        for cand in tasks_resp["tasks"]:
+                            cand_assignee = (cand.get("assigned_to") or "").strip()
+                            # menschliche Tasks (user) und fremde Agenten (claude, gemini) ueberspringen
+                            if cand_assignee.lower() not in ("user", "claude", "gemini", ""):
+                                task = cand
+                                break
+                    if task:
+                        break
+
             if not task:
                 return
 
             task_id = task.get("id")
             title = task.get("title", "Unbenannt")
             desc = task.get("description", "")
+            assignee = task.get("assigned_to", "bach")
             self.idle_task_name = title
+
+            role_id, role_display, role_desc = self._resolve_role(assignee)
+            task_chat_id = f"idle-{role_id}-{task_id}"
 
             self._api("PUT", f"/api/tasks/{task_id}",
                        {"status": "in_progress", "changed_by": "idle-worker"},
                        base=self.gui_url)  # DB-Kanon, nicht 'in-progress'
 
             prompt = (
-                f"Du bearbeitest eine zugewiesene Aufgabe im vollen Ausführungsmodus (Full-Mode mit Schreibrechten). "
+                f"Du bearbeitest eine zugewiesene Aufgabe im vollen Ausfuehrungsmodus (Full-Mode mit Schreibrechten).\n\n"
+                f"ROLLE & IDENTITAET: Du agierst in dieser Session in der Rolle: '{role_display}' ({role_id}).\n"
+                f"Fachbereich / Profil: {role_desc}\n"
+                f"Handle und antworte aus der fachlichen Perspektive dieser Rolle!\n\n"
                 f"Task #{task_id}: {title}"
             )
             if desc:
                 prompt += f"\nBeschreibung: {desc}"
             prompt += (
-                "\nAnweisung: Du hast ein begrenztes Kontingent an Werkzeugrunden. "
-                "Arbeite strikt nach dieser Prioritäten-Reihenfolge:\n\n"
-                "1. DIREKTES LÖSEN (Priorität 1): Wenn das Problem klar und überschaubar ist: Setze die Lösung direkt im Code um "
-                "(nutze edit_file, write_file oder execute_command). Teste deine Änderung wenn möglich. "
-                "Du darfst geänderte Dateien bei Bedarf auch direkt lokal committen "
+                "\n\nAnweisung: Du hast ein begrenztes Kontingent an Werkzeugrunden. "
+                "Arbeite strikt nach dieser Prioritaeten-Reihenfolge:\n\n"
+                "1. DIREKTES LOESEN (Prioritaet 1): Wenn das Problem klar und ueberschaubar ist: Setze die Loesung direkt im Code um "
+                "(nutze edit_file, write_file oder execute_command). Teste deine Aenderung wenn moeglich. "
+                "Du darfst geaenderte Dateien bei Bedarf auch direkt lokal committen "
                 "(z. B. execute_command('git add <datei> && git commit -m \"...\"')). "
-                "WICHTIG: Rein lokaler Commit, NIEMALS `git push` ausführen! Antworte am Ende mit FERTIG.\n\n"
-                "2. AUFGABEN-ZERLEGUNG (Priorität 2): Wenn die Aufgabe komplex ist, aber die Schritte verstanden sind: "
-                "Zerlege die Aufgabe in handhabbare Teilaufgaben! "
-                "Nutze `task_manage(action='add', title='Edit: ...', description='Exakte Datei: ..., Zeilen: ..., Was zu tun ist: ...', category='...')` "
-                "(oder `task_manage(action='decompose', ...)`), um konkrete Folge-Tasks mit engem Umfang einzustellen. "
-                "Fasse deine Diagnose zusammen und schließe diesen Analyse-Task mit FERTIG ab.\n\n"
-                "3. MEHRDEUTIGKEIT & UNKLARHEIT (Priorität 3 — Asynchrone Absichtsklärung):\n"
-                "- Wenn die Aufgabe knapp oder ein Begriff mehrdeutig ist (z. B. 'Tab' = Browser-Tab vs. In-Page-Reiter, 'löschen' = Archivieren vs. rm):\n"
-                "  a) Prüfe zuerst existierende Code-Präzedenzfälle (wie lösen andere Menüpunkte oder Komponenten das bereits?).\n"
-                "  b) Minimal-Invasivitäts-Gebot: Wenn zwei Interpretationen denkbar sind, wähle immer die risikoärmere, kleinste Änderung (z. B. Konfig/Attribut setzen statt Template-Umbau).\n"
-                "  c) Wenn du nach 3-5 Runden unsicher bleibst: Verrenne dich NICHT in endlosen Suchschleifen! "
-                "Lege mit `task_manage(action='add', title='Entscheidung: ...', category='TO-DECIDE', "
-                f"description='Task #{task_id} Klärung:\\nOption [A]: ...\\nOption [B]: ...')` eine präzise Auswahlfrage an, "
+                "WICHTIG: Rein lokaler Commit, NIEMALS `git push` ausfuehren! Antworte am Ende mit FERTIG.\n\n"
+                "2. SELBST-ZERLEGUNG (Prioritaet 2): Jede Rolle zerlegt zu grosse Aufgaben eigenstaendig! "
+                "Wenn die Aufgabe komplex ist, aber die Schritte verstanden sind: Zerlege sie in handhabbare Teilaufgaben! "
+                "Nutze `task_manage(action='decompose', subtasks=[...], sequential=True)` oder "
+                "`task_manage(action='add', title='Edit: ...', description='...', category='...')` "
+                "um konkrete Folge-Tasks einzustellen. Fasse deine Diagnose zusammen und schliesse diesen Analyse-Task mit FERTIG ab.\n\n"
+                "3. MEHRDEUTIGKEIT & UNKLARHEIT (Prioritaet 3 — Asynchrone Absichtsklaerung):\n"
+                "- Wenn die Aufgabe knapp oder ein Begriff mehrdeutig ist (z. B. 'Tab' = Browser-Tab vs. In-Page-Reiter, 'loeschen' = Archivieren vs. rm):\n"
+                "  a) Pruefe zuerst existierende Code-Praezedenzfaelle.\n"
+                "  b) Minimal-Invasivitaets-Gebot: Waehle immer die risikoaermere, kleinste Aenderung.\n"
+                "  c) Wenn du unsicher bleibst: Lege mit `task_manage(action='add', title='Entscheidung: ...', category='TO-DECIDE', "
+                f"description='Task #{task_id} Klaerung:\\nOption [A]: ...\\nOption [B]: ...')` eine praezise Auswahlfrage an, "
                 "setze den aktuellen Task auf 'open' und beende mit FERTIG.\n\n"
-                "4. DELEGIEREN & ABLEHNEN (Priorität 4 — Nur als Ultima Ratio!):\n"
-                "- Du darfst Aufgaben NICHT voreilig delegieren oder ablehnen! Optionen 1 bis 3 gehen immer vor.\n"
-                "- DELEGIEREN: Wenn die Aufgabe nach fundierter Voranalyse deine Modellgrenzen technisch übersteigt "
-                "(z. B. tiefgreifende Algorithmen, Multi-Repo-Refactorings, externe System-Dependencies) ODER Werkzeuge erfordert, die du nicht besitzt: "
-                "Nutze `delegate(target='claude', prompt='...', context='...')` oder lege einen Task mit `assigned_to='CLAUDE'` an, "
-                "inklusive deiner bisherigen Diagnose (Dateipfade, Zeilen, Befund).\n"
-                "- ABLEHNEN: Eine Aufgabe als unlösbar/abgelehnt markieren darfst du NUR, wenn sie nachweislich unmöglich, "
-                "bereits obsolet oder technisch unzulässig ist — niemals aus reiner Bequemlichkeit oder Unsicherheit. Begründe die Ablehnung lückenlos."
+                "4. DELEGIEREN AN ANDERE PROVIDER (Prioritaet 4 — Wenn die Aufgabe deine lokalen Grenzen uebersteigt):\n"
+                "- Du agierst als universeller lokaler First-Line Worker. Wenn die Anforderungen dieser Rolle deine lokalen Faehigkeiten "
+                "(qwen3.8:27b-mlx) oder deinen Kontext uebersteigen (z. B. tiefgreifende Algorithmen, Multi-Repo Refactorings oder externe Dependencies): "
+                "DELEGIERE die Aufgabe sauber! Nutze `delegate(target='claude', prompt='...', context='...')` "
+                "oder `delegate(target='codex', ...)` an die verfuegbaren staerkeren Provider. Begruende kurz deine Uebergabe."
             )
-
-            task_chat_id = f"idle-task-{task_id}"
 
             result = self._api("POST", "/api/chat", {
                 "prompt": prompt,
