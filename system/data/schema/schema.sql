@@ -2524,3 +2524,18 @@ CREATE TABLE watcher_event_log (
         processing_time_ms INTEGER DEFAULT 0,
         created_at TEXT NOT NULL
     );
+
+-- Task #1191 (Option A): Einheitliches Delegation-Log
+-- Persistenter Nachweis jeder Delegation an einen Partner (claude/codex/...),
+-- geschrieben aus hub/partner.py PartnerHandler._delegate() im Erfolgs-/Dry-Run-Pfad.
+CREATE TABLE IF NOT EXISTS delegation_log (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    partner   TEXT NOT NULL,                 -- z.B. 'claude', 'codex', 'gemini'
+    task_text TEXT NOT NULL,                 -- Delegierter Task-Text
+    result    TEXT DEFAULT 'delegated',      -- 'delegated' | 'dry-run'
+    zone      INTEGER,                       -- Delegations-Zone (1-4)
+    score     REAL,                          -- Komplexitaets-Score (falls erfasst)
+    tokens    INTEGER,                       -- Token-Aufwand (falls erfasst)
+    dry_run   INTEGER DEFAULT 0,             -- 1 = nur simuliert
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
