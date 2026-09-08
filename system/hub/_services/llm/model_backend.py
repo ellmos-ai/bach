@@ -16,6 +16,7 @@ Verwendung:
 import asyncio
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -432,6 +433,168 @@ class LMStudioBackend(OpenAIBackend):
         )
 
 
+class HermesBackend(OpenAIBackend):
+    """Nous Hermes API Backend für lokale und Cloud-Modelle (OpenRouter, Together, vLLM, Ollama).
+
+    Unterstützt:
+    - Standard OpenAI Function Calling
+    - Automatisches Fallback-Parsing für Hermes <tool_call> XML-Tags im Text-Stream
+    - Automatisches Extrahieren / Trennen von <thought> bzw. <reasoning> Tags
+    - OpenRouter Default-Endpunkt (https://openrouter.ai/api/v1) mit Model nousresearch/hermes-3-llama-3.1-8b
+    """
+
+    HERMES_TOOL_REGEX = re.compile(
+        r"<tool_call>\s*({.*?})\s*</tool_call>", re.DOTALL
+    )
+    HERMES_THOUGHT_REGEX = re.compile(
+        r"<thought>(.*?)</thought>", re.DOTALL | re.IGNORECASE
+    )
+
+    def __init__(
+        self,
+        base_url: str = "https://openrouter.ai/api/v1",
+        api_key: str = "",
+        default_model: str = "nousresearch/hermes-3-llama-3.1-8b",
+        site_url: str = "https://github.com/ellmos-ai/bach",
+        app_name: str = "BACH Agent",
+    ):
+        super().__init__(
+            base_url=base_url or "https://openrouter.ai/api/v1",
+            api_key=api_key
+            or os.environ.get("OPENROUTER_API_KEY", "")
+            or os.environ.get("HERMES_API_KEY", ""),
+            default_model=default_model or "nousresearch/hermes-3-llama-3.1-8b",
+        )
+        self.site_url = site_url
+        self.app_name = app_name
+
+    def _get_headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if "openrouter.ai" in self.base_url:
+            headers["HTTP-Referer"] = self.site_url
+            headers["X-Title"] = self.app_name
+        return headers
+
+    async def chat(self, messages, tools=None, think=True, model=None):
+        import httpx
+
+        headers = self._get_headers()
+        payload: dict[str, Any] = {
+            "model": model or self.default_model,
+            "messages": messages,
+            "stream": False,
+        }
+        if tools:
+            payload["tools"] = tools
+
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=120,
+            )
+            r.raise_for_status()
+            data = r.json()
+
+        choice = data.get("choices", [{}])[0]
+        msg = choice.get("message", {})
+        raw_content = msg.get("content", "") or ""
+
+        tool_calls = []
+        # 1. Native OpenAI-style tool calls
+        if "tool_calls" in msg and msg["tool_calls"]:
+            for tc in msg["tool_calls"]:
+                fn = tc.get("function", {})
+                args = fn.get("arguments", "{}")
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except Exception:
+                        pass
+                tool_calls.append(
+                    {
+                        "id": tc.get("id", ""),
+                        "function": {"name": fn.get("name", ""), "arguments": args},
+                    }
+                )
+
+        # 2. Hermes XML <tool_call> fallback
+        cleaned_content = raw_content
+        if not tool_calls and "<tool_call>" in raw_content:
+            matches = self.HERMES_TOOL_REGEX.findall(raw_content)
+            for idx, raw_json in enumerate(matches):
+                try:
+                    parsed = json.loads(raw_json)
+                    fn_name = parsed.get("name", "")
+                    fn_args = parsed.get("arguments", {})
+                    if fn_name:
+                        tool_calls.append(
+                            {
+                                "id": f"hermes_call_{idx}_{int(time.time())}",
+                                "function": {"name": fn_name, "arguments": fn_args},
+                            }
+                        )
+                except Exception:
+                    pass
+            cleaned_content = self.HERMES_TOOL_REGEX.sub("", cleaned_content).strip()
+
+        # 3. Hermes <thought> Tag Handling
+        thought_content = ""
+        thought_match = self.HERMES_THOUGHT_REGEX.search(cleaned_content)
+        if thought_match:
+            thought_content = thought_match.group(1).strip()
+            if not think:
+                cleaned_content = self.HERMES_THOUGHT_REGEX.sub("", cleaned_content).strip()
+
+        res_msg = dict(msg)
+        if thought_content:
+            res_msg["thought"] = thought_content
+
+        return {
+            "content": cleaned_content,
+            "tool_calls": tool_calls or None,
+            "raw_message": res_msg,
+        }
+
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        import httpx
+
+        if getattr(httpx.get, "__module__", "").startswith("httpx"):
+            import socket
+            from urllib.parse import urlparse
+
+            try:
+                parsed = urlparse(self.base_url)
+                host = parsed.hostname or "127.0.0.1"
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
+                if host in ("localhost", "127.0.0.1", "::1"):
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(min(timeout, 0.2))
+                    try:
+                        sock.connect(("127.0.0.1", port))
+                    except Exception:
+                        return False, "nicht erreichbar"
+                    finally:
+                        sock.close()
+            except Exception:
+                pass
+
+        headers = self._get_headers()
+        return _probe_model_api(
+            f"{self.base_url}/models",
+            headers,
+            model or self.default_model,
+            timeout,
+        )
+
+
 class AnthropicBackend(ModelBackend):
     """Anthropic Claude API Backend."""
 
@@ -773,6 +936,8 @@ def backend_identifier(backend: ModelBackend) -> str:
     """Stable Control-API key for a concrete backend instance."""
     if isinstance(backend, LMStudioBackend):
         return "lmstudio"
+    if isinstance(backend, HermesBackend):
+        return "hermes"
     if isinstance(backend, OllamaBackend):
         return "ollama"
     if isinstance(backend, CLIBackend):
@@ -788,7 +953,7 @@ def create_backend(config: dict) -> ModelBackend:
     """Factory: Backend aus Config-Dict erzeugen.
 
     config = {
-        'type': 'ollama' | 'lmstudio' | 'openai' | 'anthropic' | 'claude-cli' | 'codex-cli',
+        'type': 'ollama' | 'lmstudio' | 'hermes' | 'openai' | 'anthropic' | 'claude-cli' | 'codex-cli',
         'base_url': '...',       # optional (API backends)
         'api_key': '...',        # optional (API backends)
         'cli_path': '...',       # optional (CLI backends)
@@ -810,6 +975,12 @@ def create_backend(config: dict) -> ModelBackend:
             base_url=config.get("base_url", "http://localhost:1234/v1"),
             api_key=config.get("api_key", "lm-studio"),
             default_model=config.get("default_model", "auto"),
+        )
+    elif backend_type in ("hermes", "hermes-agent", "nous-hermes", "openrouter"):
+        return HermesBackend(
+            base_url=config.get("base_url", "https://openrouter.ai/api/v1"),
+            api_key=config.get("api_key", ""),
+            default_model=config.get("default_model", "nousresearch/hermes-3-llama-3.1-8b"),
         )
     elif backend_type in ("openai", "openai_compat", "openai-api"):
         return OpenAIBackend(

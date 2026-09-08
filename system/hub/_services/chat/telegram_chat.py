@@ -329,6 +329,13 @@ BACKEND_PRESETS = {
         "method": "api",
         "description": "LM Studio (lokal, Port 1234)",
     },
+    "hermes": {
+        "type": "hermes",
+        "base_url": os.environ.get("HERMES_URL", "https://openrouter.ai/api/v1"),
+        "default_model": os.environ.get("HERMES_MODEL", "nousresearch/hermes-3-llama-3.1-8b"),
+        "method": "api",
+        "description": "Nous Hermes Agent (OpenRouter / Lokal)",
+    },
     "claude": {
         "type": "claude-cli",
         "default_model": "sonnet",
@@ -418,6 +425,7 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lines.append("  /backend codex o4-mini")
         lines.append("  /backend ollama qwen3.6:35b-mlx")
         lines.append("  /backend lmstudio")
+        lines.append("  /backend hermes")
         await update.message.reply_text("\n".join(lines))
         return
 

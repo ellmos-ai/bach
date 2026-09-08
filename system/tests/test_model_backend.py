@@ -21,6 +21,7 @@ from hub._services.llm.model_backend import (  # noqa: E402
     AnthropicBackend,
     CLIBackend,
     LMStudioBackend,
+    HermesBackend,
     OllamaBackend,
     OpenAIBackend,
     backend_identifier,
@@ -288,6 +289,7 @@ def test_cli_availability_requires_successful_auth_probe(
     ("backend", "expected"),
     [
         (LMStudioBackend(), "lmstudio"),
+        (HermesBackend(), "hermes"),
         (OllamaBackend(), "ollama"),
         (CLIBackend(cli_name="claude", cli_path="claude"), "claude"),
         (CLIBackend(cli_name="codex", cli_path="codex"), "codex"),
@@ -389,3 +391,59 @@ def test_lmstudio_availability(monkeypatch):
     ok, msg = backend.availability()
     assert ok is False
     assert msg == "nicht erreichbar"
+
+
+def test_hermes_factory_and_defaults():
+    backend = create_backend({"type": "hermes", "api_key": "sk-or-test"})
+    assert isinstance(backend, HermesBackend)
+    assert backend.base_url == "https://openrouter.ai/api/v1"
+    assert backend.default_model == "nousresearch/hermes-3-llama-3.1-8b"
+    headers = backend._get_headers()
+    assert headers["Authorization"] == "Bearer sk-or-test"
+    assert headers["HTTP-Referer"] == "https://github.com/ellmos-ai/bach"
+    assert headers["X-Title"] == "BACH Agent"
+
+
+def test_hermes_xml_tool_call_fallback(monkeypatch):
+    raw_xml_reply = (
+        "Ich prüfe den Status:\n"
+        "<tool_call>\n"
+        '{"name": "system_status", "arguments": {}}\n'
+        "</tool_call>\n"
+        "Ergebnis folgt."
+    )
+    fake_client = _FakeClient(
+        _FakeResponse({
+            "choices": [{"message": {"role": "assistant", "content": raw_xml_reply}}]
+        })
+    )
+    monkeypatch.setattr(httpx, "AsyncClient", lambda: fake_client)
+
+    backend = HermesBackend(api_key="test-key")
+    res = asyncio.run(backend.chat([{"role": "user", "content": "status"}]))
+    assert res["tool_calls"] is not None
+    assert len(res["tool_calls"]) == 1
+    assert res["tool_calls"][0]["function"]["name"] == "system_status"
+    assert "<tool_call>" not in res["content"]
+    assert "Ich prüfe den Status:" in res["content"]
+
+
+def test_hermes_thought_handling(monkeypatch):
+    thought_reply = (
+        "<thought>\n"
+        "Plan: Zuerst Information abrufen, dann zusammenfassen.\n"
+        "</thought>\n"
+        "Hier ist das Ergebnis."
+    )
+    fake_client = _FakeClient(
+        _FakeResponse({
+            "choices": [{"message": {"role": "assistant", "content": thought_reply}}]
+        })
+    )
+    monkeypatch.setattr(httpx, "AsyncClient", lambda: fake_client)
+
+    backend = HermesBackend(api_key="test-key")
+    res = asyncio.run(backend.chat([{"role": "user", "content": "frage"}], think=False))
+    assert "<thought>" not in res["content"]
+    assert res["content"] == "Hier ist das Ergebnis."
+    assert "Zuerst Information abrufen" in res["raw_message"]["thought"]

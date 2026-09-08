@@ -74,12 +74,32 @@ class ConnectorConfig:
     options: Dict[str, Any] = field(default_factory=dict)
 
 
+class SecretAdapter(ABC):
+    """Optionales Interface für Secret-Auflösung."""
+
+    @abstractmethod
+    def get_secret(self, key: str) -> str:
+        """Gibt den Secret-Wert für key zurück, oder leeren String."""
+        ...
+
+
 class BaseConnector(ABC):
     """Abstrakte Basisklasse fuer BACH Connectors."""
 
-    def __init__(self, config: ConnectorConfig):
+    def __init__(self, config: ConnectorConfig, secret_adapter: Optional[SecretAdapter] = None):
         self.config = config
+        self._secret_adapter = secret_adapter
         self._status = ConnectorStatus.DISCONNECTED
+
+    def _resolve_secret(self, auth_config: Dict[str, str], key: str) -> str:
+        """Löst einen Secret auf – direkt oder via SecretAdapter."""
+        if key in auth_config and auth_config[key]:
+            return auth_config[key]
+        if self._secret_adapter:
+            refs = auth_config.get("_secret_refs", {})
+            if isinstance(refs, dict) and key in refs:
+                return self._secret_adapter.get_secret(refs[key]) or ""
+        return ""
 
     @property
     def name(self) -> str:
@@ -118,6 +138,16 @@ class BaseConnector(ABC):
     def get_status(self) -> ConnectorStatus:
         """Aktuellen Status abfragen."""
         return self._status
+
+    def _warn_attachments_unsupported(self, attachments: Optional[List[str]]) -> None:
+        """Warnt auf stderr wenn Anhänge nicht unterstützt werden."""
+        if attachments:
+            import sys
+            print(
+                f"[{self.config.connector_type}] WARNUNG: attachments werden "
+                "von diesem Connector nicht unterstützt.",
+                file=sys.stderr,
+            )
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} name={self.name} status={self._status.value}>"
