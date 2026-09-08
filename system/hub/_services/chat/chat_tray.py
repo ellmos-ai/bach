@@ -425,16 +425,7 @@ class BACHTray:
         Rueckgabe: True, wenn der Weg fuer den naechsten Task frei ist.
         """
         if not self.idle_pending:
-            # Startup / Crash-Recovery: Noch offene in_progress Tasks pruefen
-            for assignee in ("OLLAMA", "BUDDHA", "BACH"):
-                t_resp = self._api("GET", f"/api/tasks?assigned_to={assignee}&status=in_progress", base=self.gui_url)
-                if t_resp and t_resp.get("success") and t_resp.get("tasks"):
-                    t = t_resp["tasks"][0]
-                    self.idle_pending = (t.get("id"), time.time(), t.get("title", ""))
-                    print(f"[Idle] In-Progress Task #{t.get('id')} uebernommen fuer Settle-Pruefung")
-                    break
-            if not self.idle_pending:
-                return True
+            return True
 
         if len(self.idle_pending) >= 3:
             task_id, seit, title = self.idle_pending[0], self.idle_pending[1], self.idle_pending[2]
@@ -447,12 +438,13 @@ class BACHTray:
         answer = next((m for m in messages if m.get("role") == "assistant"), None)
 
         if answer is None:
-            if time.time() - seit < self.PENDING_TTL:
-                print(f"[Idle] Task #{task_id} laeuft serverseitig weiter; warte")
-                return False
-            print(f"[Idle] Task #{task_id} ohne Antwort seit {self.PENDING_TTL}s; Vormerkung verworfen")
-            self.idle_pending = None
-            return True
+            if not messages or (time.time() - seit >= self.PENDING_TTL):
+                print(f"[Idle] Task #{task_id} ohne Antwort oder Transkript; auf open zurueckgesetzt")
+                self._api("PUT", f"/api/tasks/{task_id}", {"status": "open", "changed_by": "idle-worker"}, base=self.gui_url)
+                self.idle_pending = None
+                return True
+            print(f"[Idle] Task #{task_id} laeuft serverseitig weiter; warte")
+            return False
 
         ans_text = answer.get("content", "") if isinstance(answer, dict) else str(answer)
         hat_folgetask = "task #" in ans_text.lower() or "folge-task" in ans_text.lower() or "folgetask" in ans_text.lower() or "teilaufgaben" in ans_text.lower()
