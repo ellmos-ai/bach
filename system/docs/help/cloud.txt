@@ -1,0 +1,51 @@
+# Portabilität: SYSTEM
+# Zuletzt validiert: 2026-09-09 (Cloud-Control Switch v1.0)
+# Nächste Prüfung: 2027-03-09
+# Ressourcen: [hub/cloud.py, hub/_services/cloud/cloud_manager.py]
+
+CLOUD - Providerneutrale Cloud-Sync-Steuerung
+==============================================
+Der Cloud-Control-Service verhindert Dateisperren, Sync-Konflikte und
+SQLite-WAL-Kollisionen bei schreibintensiven Operationen, Backups und
+Massen-Wartungsläufen.
+
+UNTERSTÜTZTE PROVIDER
+---------------------
+- Microsoft OneDrive (Windows / macOS / Linux)
+- Google Drive (Windows / macOS)
+- Apple iCloud Drive (macOS bird / CloudDocs, Windows iCloud.exe)
+- Dropbox (Windows / macOS / Linux)
+- Nextcloud / ownCloud (Windows / macOS / Linux)
+
+KERNKONZEPTE
+------------
+1. AUTO-DETECTION: Erkennt beim Start automatisch installierte und laufende Clients.
+2. OPERATIVER SCHUTZ: Cloud-Sync wird nur punktuell während schreibintensiver Jobs
+   pausiert und sofort danach reaktiviert (kein dauerhafter Stopp im Leerlauf).
+3. FAIL-SAFE WATCHDOG: Ein Sicherheits-Timer reaktiviert pausierte Clients
+   garantiert nach Ablauf des Timeouts (Standard: 300s), selbst bei Programmabstürzen.
+4. ARCHITEKTUR & DIAGRAMME: Siehe docs/ARCHITECTURE_CLOUD_CONTROL.md
+
+CLI-BEFEHLE (bach cloud)
+------------------------
+  bach cloud status                     Übersicht aller erkannten Cloud-Dienste
+  bach cloud status --json              Status im JSON-Format
+  bach cloud pause [provider] [-t SEC]  Pausiert Sync mit Sicherheits-Timeout (Standard: 300s)
+  bach cloud resume [provider]          Setzt pausierte Dienste wieder fort
+  bach cloud toggle [provider]          Schaltet zwischen Pause und Resume um
+
+PYTHON CONTEXT-MANAGER
+----------------------
+  from hub._services.cloud import cloud_pause
+
+  with cloud_pause(timeout=180):
+      # Schreibintensive Dateioperationen
+      schreibe_daten()
+  # Cloud-Sync wird automatisch im Hintergrund fortgesetzt
+
+REST-API (Port 8000)
+--------------------
+  GET  /api/cloud/status
+  POST /api/cloud/pause
+  POST /api/cloud/resume
+  POST /api/cloud/toggle

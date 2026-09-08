@@ -2552,6 +2552,42 @@ async def run_daemon_job(job_id: int, background_tasks: BackgroundTasks):
 
 
 
+# ═══════════════════════════════════════════════════════════════
+# API ROUTES - CLOUD SYNC CONTROL (B32)
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/api/cloud/status")
+async def get_cloud_sync_status():
+    """Liefert Status aller erkannten Cloud-Sync-Dienste."""
+    from hub._services.cloud import get_cloud_manager
+    return get_cloud_manager().get_status()
+
+
+@app.post("/api/cloud/pause")
+async def pause_cloud_sync(provider: Optional[str] = None, timeout: int = 300):
+    """Pausiert Cloud-Sync fuer alle oder spezifische Provider."""
+    from hub._services.cloud import get_cloud_manager
+    results = get_cloud_manager().pause(provider, timeout_seconds=timeout)
+    return {"success": True, "results": results, "timeout": timeout}
+
+
+@app.post("/api/cloud/resume")
+async def resume_cloud_sync(provider: Optional[str] = None):
+    """Setzt Cloud-Sync fuer alle oder spezifische Provider fort."""
+    from hub._services.cloud import get_cloud_manager
+    results = get_cloud_manager().resume(provider)
+    return {"success": True, "results": results}
+
+
+@app.post("/api/cloud/toggle")
+async def toggle_cloud_sync(provider: Optional[str] = None):
+    """Schaltet Cloud-Sync um."""
+    from hub._services.cloud import get_cloud_manager
+    results = get_cloud_manager().toggle(provider)
+    status = get_cloud_manager().get_status()
+    return {"success": True, "results": results, "status": status}
+
+
 @app.get("/api/daemon/chains")
 
 async def list_chains():

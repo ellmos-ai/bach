@@ -17,10 +17,11 @@ Grund: Automatische Prozesse können mit aktiven Chat-Sessions
 und dem Prompt Generator kollidieren. Jobs werden nur manuell
 aktiviert wenn benötigt.
 
-Der Daemon pausiert automatisch OneDrive-Sync während des Betriebs
-um Sync-Konflikte zu vermeiden.
+Cloud-Sync-Schutz: Cloud-Sync wird nicht mehr dauerhaft im Leerlauf pausiert,
+sondern bei schreibintensiven Jobs (z.B. Backup, Konsolidierung) punktuell,
+operativ und providerneutral über 'bach cloud' geschützt.
 
-Siehe: docs/CONCEPT_daemon_policy.md
+Siehe: bach --help cloud und docs/ARCHITECTURE_CLOUD_CONTROL.md
 
 CLI-BEFEHLE
 -----------
