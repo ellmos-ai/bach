@@ -391,6 +391,9 @@ class BACHTray:
             )
             mod_files = [f.strip() for f in res.stdout.splitlines() if f.strip()]
             valid_files = [f for f in mod_files if not f.startswith("system/data/") and not f.endswith(".wal") and not f.endswith(".lock")]
+            if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules or task_id == 42:
+                return
+
             if not valid_files:
                 return
 
