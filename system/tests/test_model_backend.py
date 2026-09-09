@@ -127,9 +127,15 @@ def test_ollama_chat_bounds_context_in_request(monkeypatch):
 def test_ollama_context_defaults_to_bounded_environment_value(monkeypatch):
     monkeypatch.delenv("OLLAMA_NUM_CTX", raising=False)
     assert OllamaBackend().num_ctx == 4096
+    assert OllamaBackend().get_context_limit() == 4096
 
     monkeypatch.setenv("OLLAMA_NUM_CTX", "6144")
     assert OllamaBackend().num_ctx == 6144
+    assert OllamaBackend().get_context_limit() == 6144
+
+
+def test_ollama_context_limit_uses_explicit_configuration():
+    assert OllamaBackend(num_ctx=8192).get_context_limit() == 8192
 
 
 def test_ollama_timeout_is_configurable(monkeypatch):

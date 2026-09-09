@@ -147,6 +147,82 @@ def test_process_identity_requires_exact_create_time(monkeypatch):
     assert not startspine._identity_matches(7, 1234.0)
 
 
+def test_stop_refuses_an_unreadable_process_identity(monkeypatch):
+    class DeniedProcess:
+        def __init__(self, pid):
+            raise startspine.psutil.AccessDenied(pid=pid)
+
+    monkeypatch.setattr(startspine.psutil, "Process", DeniedProcess)
+
+    stopped, message = startspine._terminate_identity(424242, 123.0, "probe")
+
+    assert stopped is False
+    assert "nicht lesbar" in message
+
+
+def test_unreadable_active_lease_is_never_replaced(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    lease = startspine._paths()["lease"]
+    lease.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "pid": 424242,
+        "create_time": 123.0,
+        "root": str(startspine.ROOT_DIR),
+    }
+    lease.write_text(json.dumps(payload), encoding="utf-8")
+    real_process = startspine.psutil.Process
+
+    def process(pid):
+        if int(pid) == 424242:
+            raise startspine.psutil.AccessDenied(pid=pid)
+        return real_process(pid)
+
+    monkeypatch.setattr(startspine.psutil, "Process", process)
+
+    with pytest.raises(RuntimeError, match="Prozessidentität.*nicht lesbar"):
+        with startspine._operation_lease(timeout=0):
+            pytest.fail("unlesbare Lease darf nicht übernommen werden")
+
+    assert json.loads(lease.read_text(encoding="utf-8")) == payload
+
+
+def test_supervisor_child_access_denied_is_not_a_success(monkeypatch):
+    record = {
+        "root": str(startspine.ROOT_DIR),
+        "supervisor_pid": 424242,
+        "supervisor_create_time": 123.0,
+    }
+
+    def denied_process(pid):
+        raise startspine.psutil.AccessDenied(pid=pid)
+
+    monkeypatch.setattr(startspine, "_supervisor_is_owned", lambda _record: True)
+    monkeypatch.setattr(startspine.psutil, "Process", denied_process)
+
+    stopped, messages = startspine._terminate_owned_supervisor_children(record)
+
+    assert stopped is False
+    assert any("nicht lesbar" in message for message in messages)
+
+
+def test_terminate_identity_stops_only_its_own_harmless_local_probe():
+    probe = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        identity = startspine._process_identity(probe.pid)
+        assert identity is not None
+        stopped, message = startspine._terminate_identity(
+            probe.pid,
+            identity["create_time"],
+            "eigene-probe",
+        )
+        assert stopped is True
+        assert "beendet" in message
+    finally:
+        if probe.poll() is None:
+            probe.terminate()
+            probe.wait(timeout=5)
+
+
 def test_start_readback_and_stop_only_owned_process(tmp_path, monkeypatch):
     monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
     monkeypatch.setenv("BACH_STARTSPINE_TEST_SECRET", "do-not-persist")

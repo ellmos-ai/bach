@@ -101,6 +101,10 @@ def _save_state(state: dict[str, Any]) -> None:
     _atomic_json(_paths()["state"], state)
 
 
+class ProcessIdentityUnreadable(RuntimeError):
+    """Eine Prozessidentität konnte nicht gelesen werden und bleibt daher aktiv."""
+
+
 def _process_identity(pid: int | None) -> dict[str, Any] | None:
     if not pid or psutil is None:
         return None
@@ -112,7 +116,13 @@ def _process_identity(pid: int | None) -> dict[str, Any] | None:
             "name": proc.name(),
             "cmdline": proc.cmdline(),
         }
-    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError, TypeError):
+    except psutil.NoSuchProcess:
+        return None
+    except psutil.AccessDenied as exc:
+        raise ProcessIdentityUnreadable(
+            f"Prozessidentität von PID {pid} nicht lesbar"
+        ) from exc
+    except (ValueError, TypeError):
         return None
 
 
@@ -569,7 +579,10 @@ def _rollback_started_services(
 def _terminate_identity(pid: int | None, created: float | None, label: str) -> tuple[bool, str]:
     if not pid:
         return True, f"{label}: keine PID"
-    identity = _process_identity(pid)
+    try:
+        identity = _process_identity(pid)
+    except ProcessIdentityUnreadable:
+        return False, f"{label}: PID {pid} Prozessidentität nicht lesbar; nicht beendet"
     if identity is None:
         return True, f"{label}: bereits beendet"
     if created is None or float(identity["create_time"]) != float(created):
@@ -612,19 +625,32 @@ def _wait_for_exit_receipt(name: str, record: dict[str, Any], timeout: float = 2
 
 def _terminate_owned_supervisor_children(record: dict[str, Any]) -> tuple[bool, list[str]]:
     """Stop descendants only when their supervisor identity and BACH root are proven."""
-    if psutil is None or not _supervisor_is_owned(record):
+    if psutil is None:
         return True, []
     try:
+        if not _supervisor_is_owned(record):
+            return True, []
         supervisor = psutil.Process(int(record["supervisor_pid"]))
         descendants = supervisor.children(recursive=True)
-    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError, TypeError):
+    except psutil.NoSuchProcess:
         return True, []
+    except (ProcessIdentityUnreadable, psutil.AccessDenied, ValueError, TypeError):
+        return False, [
+            f"Supervisor {record.get('supervisor_pid', '?')}: Prozessidentität nicht lesbar; "
+            "Kindprozesse nicht beendet"
+        ]
     ok = True
     messages = []
     for child in reversed(descendants):
         try:
             created = child.create_time()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+        except psutil.NoSuchProcess:
+            continue
+        except psutil.AccessDenied:
+            ok = False
+            messages.append(
+                f"supervisor-kind-{child.pid}: Prozessidentität nicht lesbar; nicht beendet"
+            )
             continue
         child_ok, message = _terminate_identity(
             child.pid,
@@ -640,12 +666,26 @@ def _stop_record(name: str, record: dict[str, Any]) -> bool:
     _sync_receipt(name, record)
     descendants_ok = True
     descendant_messages: list[str] = []
-    if not _child_identity_alive(record):
+    try:
+        child_alive = _child_identity_alive(record)
+    except ProcessIdentityUnreadable:
+        child_msg = f"{name}: Prozessidentität nicht lesbar; nicht beendet"
+        print(f"[INFO] {child_msg}")
+        record["status"] = "stop-failed"
+        record["stopped_at"] = _now()
+        return False
+    if not child_alive:
         descendants_ok, descendant_messages = _terminate_owned_supervisor_children(record)
     ok_child, child_msg = _terminate_identity(record.get("pid"), record.get("create_time"), name)
     ok_child = descendants_ok and ok_child
-    if ok_child:
-        _wait_for_exit_receipt(name, record)
+    if not ok_child:
+        print(f"[INFO] {child_msg}")
+        for message in descendant_messages:
+            print(f"[INFO] {message}")
+        record["status"] = "stop-failed"
+        record["stopped_at"] = _now()
+        return False
+    _wait_for_exit_receipt(name, record)
     ok_supervisor, supervisor_msg = _terminate_identity(
         record.get("supervisor_pid"), record.get("supervisor_create_time"), f"{name}-supervisor"
     )

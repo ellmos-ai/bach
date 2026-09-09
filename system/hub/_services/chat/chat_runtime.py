@@ -1027,6 +1027,16 @@ class ChatRuntime:
             self.sessions[chat_id] = s
         return self.sessions[chat_id]
 
+    def _context_limit_for_backend(self, backend) -> int:
+        """Take one validated context limit from the backend selected for a turn."""
+        getter = getattr(backend, "get_context_limit", None)
+        value = getter() if callable(getter) else getattr(backend, "num_ctx", None)
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return self.context_limit
+        return value if value > 0 else self.context_limit
+
     def clear_session(self, chat_id: str):
         if self.session_store is not None:
             try:
@@ -1159,6 +1169,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         # /api/chat (Idle-Worker) und der Auftrags-Worker rufen alle hier an.
         # Das Gate deshalb hier statt je Aufrufer (T-20260907-440775748).
         selected_backend = backend or self.backend
+        context_limit = self._context_limit_for_backend(selected_backend)
         if self.compute_gate is not None and self.compute_gate(selected_backend):
             raise ComputeLocked(
                 "Compute-Lock aktiv -- kein Modell-Load, damit laufende "
@@ -1201,13 +1212,15 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 tools,
                 backend=selected_backend,
                 model=selected_model,
+                context_limit=context_limit,
             )
         session.messages.append({"role": "assistant", "content": answer})
         self._persist_session(chat_id, session)
         return answer
 
     async def _tool_loop(self, msgs: list, session: ChatSession,
-                         tools: list, *, backend=None, model: str = "") -> str:
+                         tools: list, *, backend=None, model: str = "",
+                         context_limit: int | None = None) -> str:
         selected_backend = backend or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
         max_rounds = self.max_tool_rounds
@@ -1242,7 +1255,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else "")
                 )
 
-            if self._context_voll(result):
+            if self._context_voll(result, context_limit=context_limit):
                 handoffs += 1
                 log.info("Kontext-Uebergabe [%d] bei %s Token",
                          handoffs, result.get("prompt_tokens"))
@@ -1302,18 +1315,19 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     log.info("Hook PostToolUse: %d Zeichen Kontext", len(zusatz))
                     msgs.append({"role": "user", "content": zusatz})
 
-    def _context_voll(self, result: dict) -> bool:
+    def _context_voll(self, result: dict, *, context_limit: int | None = None) -> bool:
         """Ist das Kontextfenster so voll, dass eine Uebergabe faellig ist?
 
         Ohne Token-Zahl vom Backend wird nicht geraten - dann bleibt alles
         beim Alten. Prozent 0 schaltet die Uebergabe ab.
         """
-        if self.handoff_percent <= 0 or self.context_limit <= 0:
+        active_limit = self.context_limit if context_limit is None else context_limit
+        if self.handoff_percent <= 0 or active_limit <= 0:
             return False
         used = result.get("prompt_tokens")
         if not isinstance(used, int) or used <= 0:
             return False
-        return used >= self.context_limit * self.handoff_percent / 100
+        return used >= active_limit * self.handoff_percent / 100
 
     async def _handoff(self, msgs: list, session: ChatSession, *, backend=None,
                        model: str = "") -> list:

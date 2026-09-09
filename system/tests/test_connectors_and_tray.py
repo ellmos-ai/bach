@@ -1557,7 +1557,9 @@ class TestTrayIdleWorker:
         with patch.object(tray, "_api", side_effect=fake_api):
             tray._process_idle_task()
 
-        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == [("/api/tasks/42", "completed")]
+        assert [(p, d["status"], d["changed_by"]) for m, p, d in calls if m == "PUT"] == [
+            ("/api/tasks/42", "completed", "idle-worker")
+        ]
         assert tray.idle_pending is None
 
     def test_idle_worker_reopens_a_late_failure_instead_of_completing_it(self, monkeypatch):
@@ -1576,7 +1578,9 @@ class TestTrayIdleWorker:
         with patch.object(tray, "_api", side_effect=fake_api):
             tray._process_idle_task()
 
-        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == [("/api/tasks/42", "open")]
+        assert [(p, d["status"], d["changed_by"]) for m, p, d in calls if m == "PUT"] == [
+            ("/api/tasks/42", "open", "idle-worker")
+        ]
         assert tray.idle_pending is None
 
     def test_idle_worker_waits_instead_of_starting_a_second_run(self, monkeypatch):

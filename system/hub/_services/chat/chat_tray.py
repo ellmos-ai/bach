@@ -532,7 +532,12 @@ class BACHTray:
             return True
 
         status = "completed" if answer.get("ok", True) else "open"
-        self._api("PUT", f"/api/tasks/{task_id}", {"status": status}, base=self.gui_url)
+        self._api(
+            "PUT",
+            f"/api/tasks/{task_id}",
+            {"status": status, "changed_by": "idle-worker"},
+            base=self.gui_url,
+        )
         print(f"[Idle] Task #{task_id} nach Timeout nachgetragen: {status}")
         self.idle_pending = None
         return True

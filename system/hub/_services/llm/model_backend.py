@@ -93,6 +93,10 @@ class ModelBackend(ABC):
     def get_default_model(self) -> str:
         ...
 
+    def get_context_limit(self) -> int | None:
+        """Return the request context cap when this backend exposes one."""
+        return None
+
     def tool_response_message(self, content: str, tool_call_id: str = "") -> dict:
         """Erzeugt die korrekte Tool-Response-Nachricht für dieses Backend."""
         return {"role": "tool", "content": str(content)}
@@ -137,6 +141,10 @@ class OllamaBackend(ModelBackend):
             raise ValueError("Ollama request_timeout muss zwischen 1 und 3600 Sekunden liegen")
         self._models_cache: list[str] = []
         self._models_cache_time: float = 0
+
+    def get_context_limit(self) -> int:
+        """The same request cap that is sent to Ollama as ``num_ctx``."""
+        return self.num_ctx
 
     async def _lebt(self, client, model: str) -> bool:
         """Laeuft Ollama noch, und ist unser Modell geladen?

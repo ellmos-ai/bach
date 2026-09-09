@@ -740,6 +740,79 @@ def test_context_handoff_keeps_selected_backend_and_model():
     assert runtime.last_handoff == "RESUME: Weiterarbeiten"
 
 
+def test_context_handoff_uses_ollama_backend_limit(monkeypatch):
+    from hub._services.llm.model_backend import OllamaBackend
+
+    monkeypatch.delenv("OLLAMA_NUM_CTX", raising=False)
+    runtime = ChatRuntime(OllamaBackend())
+    runtime.handoff_percent = 75
+    context_limit = runtime._context_limit_for_backend(runtime.backend)
+
+    assert context_limit == 4096
+    assert runtime._context_voll({"prompt_tokens": 3071}, context_limit=context_limit) is False
+    assert runtime._context_voll({"prompt_tokens": 3072}, context_limit=context_limit) is True
+
+
+def test_context_handoff_switches_to_the_new_backend_between_turns():
+    class ContextBackend:
+        def __init__(self, num_ctx):
+            self.num_ctx = num_ctx
+            self.calls = 0
+
+        def get_default_model(self):
+            return "test-model"
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            return [
+                {"content": "Zwischenstand", "prompt_tokens": 3072},
+                {"content": "RESUME: Weiterarbeiten"},
+                {"content": "Ergebnis", "prompt_tokens": 1},
+            ][self.calls - 1]
+
+    short = ContextBackend(4096)
+    long = ContextBackend(8192)
+    runtime = ChatRuntime(short)
+    runtime.context_limit = 32768
+    runtime.handoff_percent = 75
+
+    assert asyncio.run(runtime.process("Aufgabe", "kurz")) == "Ergebnis"
+    runtime.backend = long
+    assert asyncio.run(runtime.process("Aufgabe", "lang")) == "Zwischenstand"
+    assert short.calls == 3
+    assert long.calls == 1
+
+
+def test_context_handoff_keeps_the_backend_limit_snapshot_during_a_turn():
+    class SnapshotBackend:
+        num_ctx = 4096
+
+        def __init__(self):
+            self.calls = 0
+            self.runtime = None
+
+        def get_default_model(self):
+            return "test-model"
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                self.runtime.backend = _AnsweringBackend()
+                return {"content": "Zwischenstand", "prompt_tokens": 3072}
+            if self.calls == 2:
+                return {"content": "RESUME: Weiterarbeiten"}
+            return {"content": "Ergebnis", "prompt_tokens": 1}
+
+    backend = SnapshotBackend()
+    runtime = ChatRuntime(backend)
+    backend.runtime = runtime
+    runtime.context_limit = 32768
+    runtime.handoff_percent = 75
+
+    assert asyncio.run(runtime.process("Aufgabe", "snapshot")) == "Ergebnis"
+    assert backend.calls == 3
+
+
 def test_control_api_reports_a_compute_lock_separately():
     """`/api/chat` darf den Lock weder als Erfolg noch als Fehlschlag melden.
 
