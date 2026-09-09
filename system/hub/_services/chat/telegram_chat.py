@@ -1407,7 +1407,7 @@ def _control_chat_response(answer) -> tuple[dict, int]:
     text = str(answer or "").strip()
     if not text:
         return {"ok": False, "error": "Chat-Backend lieferte keine Antwort"}, 502
-    if FailedAnswer.looks_like(answer) or text.startswith("Fehler:"):
+    if FailedAnswer.looks_like(answer) or FailedAnswer.looks_like(text) or text.startswith("Fehler:"):
         return {"ok": False, "answer": text, "error": text}, 502
     return {"ok": True, "answer": text}, 200
 

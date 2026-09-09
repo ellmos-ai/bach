@@ -411,6 +411,7 @@ def test_backend_inventory_reuses_recent_probe_result(control_module, monkeypatc
     [
         "Fehler: CLI exit 1",
         "  Fehler: Anmeldung erforderlich  ",
+        " \tBackend-Fehler: ReadTimeout\n",
     ],
 )
 def test_control_chat_response_treats_cli_error_text_as_http_error(
