@@ -39,11 +39,12 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 # BACH system path: resolve from this file's location (system/hub/_services/chat/)
-# Keep direct script execution working; module mode already receives this path
-# from the Startspine.
-_bach_system = str(Path(__file__).resolve().parents[3])
-if _bach_system not in sys.path:
-    sys.path.insert(0, _bach_system)
+_here = Path(__file__).resolve()
+_system_dir = str(_here.parents[3])
+_root_dir = str(_here.parents[4])
+for _p in (_system_dir, _root_dir):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 try:
     from telegram import Update

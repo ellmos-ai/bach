@@ -20,6 +20,14 @@ import sys
 import threading
 from pathlib import Path
 
+# BACH system path: resolve from this file's location (system/hub/_services/chat/)
+_here = Path(__file__).resolve()
+_system_dir = str(_here.parents[3])
+_root_dir = str(_here.parents[4])
+for _p in (_system_dir, _root_dir):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 try:
     from hub._services.recurring.recurring_tasks import check_recurring_tasks
     HAS_RECURRING = True
