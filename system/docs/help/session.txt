@@ -84,7 +84,9 @@ FUNKTIONSWEISE
 SIEHE AUCH
 ==========
 
+help chat                        Buddha Chat & Session-Protokolle (Web-GUI & Telegram)
+help bach_chat                   Multi-Backend Chat Service & Control API
 hub/startup.py                   Startup-Handler (Session-Initialisierung)
 hub/shutdown.py                  Shutdown-Handler (Session-Beendigung)
 hub/task.py                      Task-Handler (Task-Management)
-data/bach.db                      Datenbankschema
+data/bach.db                     Datenbankschema

@@ -172,12 +172,24 @@ if os.path.exists(system_file):
 else:
     system_prompt = "Du bist ein persönlicher KI-Assistent auf dem Mac Studio. Antworte auf Deutsch, präzise und klar."
 
+from hub._services.chat.session_store import SQLiteChatSessionStore
+
+session_store = None
+try:
+    from hub.bach_paths import BACH_DB
+    if BACH_DB.exists():
+        session_store = SQLiteChatSessionStore(BACH_DB)
+        log.info("Chat-SessionStore an %s gebunden", BACH_DB)
+except Exception as e:
+    log.warning("Chat-SessionStore konnte nicht initialisiert werden: %s", e)
+
 runtime = ChatRuntime(
     backend=backend,
     system_prompt=system_prompt,
     bach_app=_bach_app if HAS_BACH else None,
     memory_fn=_memory if HAS_BACH else None,
     injector=_injector if HAS_BACH else None,
+    session_store=session_store,
 )
 
 _global_defaults = {
@@ -252,8 +264,12 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_clear(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    runtime.clear_session(str(update.effective_chat.id))
-    await update.message.reply_text("Konversation zurückgesetzt.")
+    chat_id = str(update.effective_chat.id)
+    archived_id = runtime.clear_session(chat_id, archive_reason="Telegram /clear")
+    if archived_id:
+        await update.message.reply_text("Konversation archiviert und neue Session gestartet.")
+    else:
+        await update.message.reply_text("Konversation zurückgesetzt.")
 
 
 async def cmd_think(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -1525,6 +1541,38 @@ class ControlHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
+        elif path == "/api/history":
+            chat_id = parse_qs(parsed_url.query).get("chat_id", ["gui-web"])[0]
+            self._json({"ok": True, "chat_id": chat_id, "messages": runtime.history(chat_id)})
+
+        elif path == "/api/sessions":
+            limit = int(parse_qs(parsed_url.query).get("limit", [50])[0])
+            if runtime.session_store:
+                try:
+                    snapshots = runtime.session_store.list_snapshots(limit=limit)
+                    self._json({"ok": True, "sessions": snapshots})
+                except Exception as e:
+                    self._json({"error": str(e)}, 500)
+            else:
+                self._json({"ok": False, "error": "Kein SessionStore konfiguriert"}, 500)
+
+        elif path == "/api/session":
+            try:
+                sid = int(parse_qs(parsed_url.query).get("id", [0])[0])
+            except ValueError:
+                sid = 0
+            if runtime.session_store and sid > 0:
+                try:
+                    snap = runtime.session_store.get_snapshot_by_id(sid)
+                    if snap:
+                        self._json({"ok": True, "session": snap})
+                    else:
+                        self._json({"error": "Snapshot nicht gefunden"}, 404)
+                except Exception as e:
+                    self._json({"error": str(e)}, 500)
+            else:
+                self._json({"error": "Ungültige oder fehlende Snapshot-ID"}, 400)
+
         else:
             self._json({"error": "Not found"}, 404)
 
@@ -1653,6 +1701,26 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": str(e)}, 500)
             finally:
                 os.environ.pop("BACH_DELEGATION_DEPTH", None)
+
+        elif path == "/api/clear":
+            chat_id = body.get("chat_id", "gui-web")
+            archived_id = runtime.clear_session(chat_id, archive_reason="Control-API")
+            self._json({"ok": True, "chat_id": chat_id, "archived_id": archived_id})
+
+        elif path == "/api/fork":
+            chat_id = body.get("chat_id", "gui-web")
+            try:
+                snapshot_id = int(body.get("snapshot_id", 0))
+            except (TypeError, ValueError):
+                snapshot_id = 0
+            if snapshot_id <= 0:
+                self._json({"error": "snapshot_id erforderlich"}, 400)
+                return
+            try:
+                count = runtime.fork_session(chat_id, snapshot_id)
+                self._json({"ok": True, "chat_id": chat_id, "snapshot_id": snapshot_id, "messages_count": count})
+            except Exception as e:
+                self._json({"error": str(e)}, 500)
 
         else:
             self._json({"error": "Not found"}, 404)

@@ -29,6 +29,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 import json
 import re
+import httpx
 
 import sqlite3
 
@@ -44,9 +45,6 @@ from contextlib import asynccontextmanager
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
-from hub.task_audit import apply_task_field_changes
-from gui.config import settings
-from gui.console import mount_console
 
 # Claude Router Import
 sys.path.insert(0, str(Path(__file__).parent / "api"))
@@ -64,7 +62,7 @@ try:
 
     from fastapi.staticfiles import StaticFiles
 
-    from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, JSONResponse
+    from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, JSONResponse, Response
 
     from fastapi.middleware.cors import CORSMiddleware
 
@@ -112,16 +110,6 @@ except ImportError:
 
 USER_DB = BACH_DB
 
-from assistant_core import MessageStore  # Welle 1 (D-20260830-002): Nachrichten-Fachkern, ein Datenkanon
-from accounts_core import AccountStore  # Welle 2 (D-20260903-003 = A): bank_accounts domain core
-
-
-def _messages() -> MessageStore:
-    """Store auf der kanonischen User-DB; fehlt sie, fail-closed wie get_user_db()."""
-    if not USER_DB.exists():
-        raise FileNotFoundError(f"User-DB nicht gefunden: {USER_DB}")
-    return MessageStore(USER_DB)
-
 TEMPLATES_DIR = GUI_DIR / "templates"
 
 STATIC_DIR = GUI_DIR / "static"
@@ -148,6 +136,73 @@ SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_. -]{0,127}$")
 SAFE_TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 SAFE_CLI_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@ -]{0,127}$")
 SAFE_PARTNER_NAMES = {"claude", "codex", "gemini", "kimi", "ollama"}
+LOCAL_CHAT_HOSTS = {"", "127.0.0.1", "localhost", "::1"}
+CHAT_CONTROL_PATHS = {
+    "status", "backends", "models", "chat", "backend", "model", "mode",
+    "think", "max_tool_rounds", "readiness",
+    "clear", "fork", "history", "sessions", "session",
+}
+
+
+def _startspine_runtime_dir() -> Path:
+    override = os.environ.get("BACH_RUNTIME_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    if os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        return base / "BACH" / "runtime"
+    state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    return state_home / "bach" / "runtime"
+
+
+def _chat_control_base_url() -> str | None:
+    discovery_path = _startspine_runtime_dir() / "discovery.json"
+    try:
+        discovery = json.loads(discovery_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+        discovery = None
+    if isinstance(discovery, dict):
+        registered_root = discovery.get("root")
+        try:
+            same_root = (
+                registered_root
+                and Path(registered_root).resolve() == BACH_DIR.parent.resolve()
+            )
+        except (OSError, ValueError, TypeError):
+            same_root = False
+        chat = discovery.get("services", {}).get("chat", {})
+        host = str(chat.get("host") or "")
+        try:
+            port = int(chat.get("actual_port"))
+        except (TypeError, ValueError):
+            port = 0
+        if same_root and host in LOCAL_CHAT_HOSTS and 1 <= port <= 65535:
+            return f"http://127.0.0.1:{port}/api"
+        return None
+
+    try:
+        port = int(os.environ.get("BACH_CONTROL_PORT", "8081"))
+    except ValueError:
+        return None
+    if 1 <= port <= 65535:
+        return f"http://127.0.0.1:{port}/api"
+    return None
+
+
+def _chat_control_payload_ready(payload) -> bool:
+    return (
+        isinstance(payload, dict)
+        and payload.get("service") == "bach-chat-control"
+        and isinstance(payload.get("telegram_verified"), bool)
+    )
+
+
+def _chat_proxy_timeout() -> float:
+    try:
+        timeout = float(os.environ.get("BACH_CHAT_PROXY_TIMEOUT_SECONDS", "960"))
+    except ValueError:
+        return 960.0
+    return min(max(timeout, 10.0), 7200.0)
 
 
 def public_error_message() -> str:
@@ -319,10 +374,6 @@ class TaskUpdate(BaseModel):
     created_by: Optional[str] = None
 
     depends_on: Optional[str] = None
-
-    # T-20260906-985973908: optionaler Aufrufer-Bezeichner fuer task_history.changed_by
-    # (z.B. "idle-worker" vom Tray-Idle-Worker). Fehlt er, greift der Default "api".
-    changed_by: Optional[str] = None
 
 
 
@@ -1222,8 +1273,10 @@ async def get_status():
 
     # Messages (mit Fallback)
     try:
-        messages_unread = _messages().unread_count()
-    except (sqlite3.OperationalError, sqlite3.DatabaseError, FileNotFoundError):
+        messages_unread = conn_bach.execute(
+            "SELECT COUNT(*) FROM messages WHERE status = 'unread'"
+        ).fetchone()[0]
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
         messages_unread = 0
 
 
@@ -1490,51 +1543,49 @@ async def get_task(task_id: int):
 
 @app.put("/api/tasks/{task_id}")
 async def update_task(task_id: int, update: TaskUpdate):
-    """Aktualisiert Task in bach.db und protokolliert jede Feldaenderung in task_history.
-
-    T-20260906-985973908: Vorher wurde `task_history` nie beschrieben (0 Zeilen system-
-    weit) und `started_at` beim Wechsel auf 'in_progress' nie gesetzt -- die Queue hatte
-    keinen Audit-Trail. Beide Luecken werden hier im selben Handler geschlossen, weil GUI
-    und Tray-Idle-Worker gleichermassen ueber PUT /api/tasks/{id} gehen.
-
-    T-20260906-240256515: Die eigentliche Schreiblogik (UPDATE + task_history) liegt seit
-    diesem Ticket zentral in hub.task_audit.apply_task_field_changes, weil die separate
-    Headless-API (system/gui/api/headless.py, Port 8001) dieselbe Luecke hatte -- hier nur
-    noch die GUI-eigene Feldabbildung (`project` -> Spalte `category`).
-    """
+    """Aktualisiert Task in bach.db."""
     conn = get_bach_db()
     try:
-        existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        existing = conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
-        existing_row = row_to_dict(existing)
 
-        # field_values: {DB-Spalte: neuer_wert} -- `project` ist ein GUI-Alias fuer
-        # die tatsaechliche Spalte `category`, muss also VOR dem Aufruf aufgeloest werden.
-        field_values = {}
+        updates = []
+        values = []
+
         if update.title is not None:
-            field_values["title"] = update.title
+            updates.append("title = ?")
+            values.append(update.title)
         if update.description is not None:
-            field_values["description"] = update.description
+            updates.append("description = ?")
+            values.append(update.description)
         if update.priority is not None:
-            field_values["priority"] = update.priority
+            updates.append("priority = ?")
+            values.append(update.priority)
         if update.status is not None:
-            field_values["status"] = update.status
+            updates.append("status = ?")
+            values.append(update.status)
+            if update.status == "completed":
+                updates.append("completed_at = ?")
+                values.append(datetime.now().isoformat())
         if update.project is not None:
-            field_values["category"] = update.project
+            updates.append("category = ?")
+            values.append(update.project)
         if update.assigned_to is not None:
-            field_values["assigned_to"] = update.assigned_to
+            updates.append("assigned_to = ?")
+            values.append(update.assigned_to)
         if update.created_by is not None:
-            field_values["created_by"] = update.created_by
+            updates.append("created_by = ?")
+            values.append(update.created_by)
         if update.depends_on is not None:
-            field_values["depends_on"] = update.depends_on
+            updates.append("depends_on = ?")
+            values.append(update.depends_on)
 
-        # changed_by: vom Aufrufer mitgegeben (z.B. Idle-Worker meldet sich als
-        # "idle-worker"), sonst generischer API-Default -- Schema-Default waere 'user',
-        # das waere hier irrefuehrend, da die meisten PUTs programmatisch erfolgen.
-        changed_by = update.changed_by or "api"
-
-        if apply_task_field_changes(conn, task_id, existing_row, field_values, changed_by=changed_by):
+        if updates:
+            updates.append("updated_at = ?")
+            values.append(datetime.now().isoformat())
+            values.append(task_id)
+            conn.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", values)
             conn.commit()
     finally:
         conn.close()
@@ -2090,20 +2141,57 @@ async def api_restore_mounts():
 
 
 @app.get("/api/messages")
+
 async def list_messages(direction: Optional[str] = None, status: Optional[str] = None,
+
                         partner: Optional[str] = None,
+
                         include_archived: bool = True, limit: int = 50):
+
     """Listet Nachrichten.
 
+
+
     Args:
+
         direction: 'inbox' oder 'outbox'
+
         status: 'unread', 'read', 'archived'
+
         include_archived: Auch archivierte anzeigen (default: True)
+
         limit: Max Anzahl
+
     """
-    rows = _messages().list(direction=direction, status=status, partner=partner,
-                            include_archived=include_archived, limit=limit)
-    return {"messages": rows, "count": len(rows)}
+
+    conn = get_user_db()
+    try:
+        query = "SELECT * FROM messages WHERE status != 'deleted'"
+        params = []
+
+        if direction:
+            query += " AND direction = ?"
+            params.append(direction)
+
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        elif not include_archived:
+            query += " AND status != 'archived'"
+
+        if partner:
+            query += " AND (sender = ? OR recipient = ?)"
+            params.extend([partner, partner])
+
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
+
+    return {"messages": rows_to_list(rows), "count": len(rows)}
+
 
 
 @app.post("/api/claude/chat")
@@ -2131,37 +2219,134 @@ async def claude_chat(
 
 
 @app.post("/api/messages")
+
 async def create_message(msg: MessageCreate):
+
     """Erstellt neue Nachricht."""
-    msg_id = _messages().create_order(msg.recipient, msg.body, subject=msg.subject, priority=msg.priority)
+
+    conn = get_user_db()
+
+    try:
+
+        cursor = conn.execute("""
+
+            INSERT INTO messages (direction, sender, recipient, subject, body, priority)
+
+            VALUES ('outbox', 'user', ?, ?, ?, ?)
+
+        """, (msg.recipient, msg.subject, msg.body, msg.priority))
+
+        msg_id = cursor.lastrowid
+
+        conn.commit()
+
+    finally:
+
+        conn.close()
+
     return {"id": msg_id, "status": "created"}
 
 
+
 @app.put("/api/messages/{msg_id}/read")
+
 async def mark_message_read(msg_id: int):
+
     """Markiert Nachricht als gelesen."""
-    _messages().mark_read(msg_id)
+
+    conn = get_user_db()
+
+    try:
+
+        conn.execute(
+
+            "UPDATE messages SET status = 'read', read_at = ? WHERE id = ?",
+
+            (datetime.now().isoformat(), msg_id)
+
+        )
+
+        conn.commit()
+
+    finally:
+
+        conn.close()
+
     return {"status": "read"}
 
 
 @app.post("/api/messages/mark-all-read")
 async def mark_all_messages_read():
     """Markiert alle ungelesenen Nachrichten als gelesen."""
-    count = _messages().mark_all_read()
+    conn = get_user_db()
+    try:
+        now = datetime.now().isoformat()
+        cursor = conn.execute(
+            "UPDATE messages SET status = 'read', read_at = ? WHERE status = 'unread'",
+            (now,)
+        )
+        count = cursor.rowcount
+        conn.commit()
+    finally:
+        conn.close()
     return {"status": "ok", "marked": count}
 
 
+
 @app.put("/api/messages/{msg_id}/archive")
+
 async def archive_message(msg_id: int):
+
     """Archiviert eine Nachricht."""
-    _messages().archive(msg_id)
+
+    conn = get_user_db()
+
+    try:
+
+        conn.execute(
+
+            "UPDATE messages SET status = 'archived' WHERE id = ?",
+
+            (msg_id,)
+
+        )
+
+        conn.commit()
+
+    finally:
+
+        conn.close()
+
     return {"status": "archived"}
 
 
+
+
+
 @app.put("/api/messages/{msg_id}/delete")
+
 async def delete_message(msg_id: int):
+
     """Markiert Nachricht als geloescht (soft delete)."""
-    _messages().delete(msg_id)
+
+    conn = get_user_db()
+
+    try:
+
+        conn.execute(
+
+            "UPDATE messages SET status = 'deleted' WHERE id = ?",
+
+            (msg_id,)
+
+        )
+
+        conn.commit()
+
+    finally:
+
+        conn.close()
+
     return {"status": "deleted"}
 
 
@@ -2180,7 +2365,13 @@ async def get_partners():
                 if name and name not in seen:
                     partners.append({"name": name})
                     seen.add(name)
-        for name in _messages().partners():
+        conn = get_user_db()
+        rows = conn.execute(
+            "SELECT DISTINCT sender FROM messages WHERE sender != 'user' AND sender IS NOT NULL ORDER BY sender"
+        ).fetchall()
+        conn.close()
+        for r in rows:
+            name = r[0]
             if name and name not in seen:
                 partners.append({"name": name})
                 seen.add(name)
@@ -2550,42 +2741,6 @@ async def run_daemon_job(job_id: int, background_tasks: BackgroundTasks):
 
 # ═══════════════════════════════════════════════════════════════
 
-
-
-# ═══════════════════════════════════════════════════════════════
-# API ROUTES - CLOUD SYNC CONTROL (B32)
-# ═══════════════════════════════════════════════════════════════
-
-@app.get("/api/cloud/status")
-async def get_cloud_sync_status():
-    """Liefert Status aller erkannten Cloud-Sync-Dienste."""
-    from hub._services.cloud import get_cloud_manager
-    return get_cloud_manager().get_status()
-
-
-@app.post("/api/cloud/pause")
-async def pause_cloud_sync(provider: Optional[str] = None, timeout: int = 300):
-    """Pausiert Cloud-Sync fuer alle oder spezifische Provider."""
-    from hub._services.cloud import get_cloud_manager
-    results = get_cloud_manager().pause(provider, timeout_seconds=timeout)
-    return {"success": True, "results": results, "timeout": timeout}
-
-
-@app.post("/api/cloud/resume")
-async def resume_cloud_sync(provider: Optional[str] = None):
-    """Setzt Cloud-Sync fuer alle oder spezifische Provider fort."""
-    from hub._services.cloud import get_cloud_manager
-    results = get_cloud_manager().resume(provider)
-    return {"success": True, "results": results}
-
-
-@app.post("/api/cloud/toggle")
-async def toggle_cloud_sync(provider: Optional[str] = None):
-    """Schaltet Cloud-Sync um."""
-    from hub._services.cloud import get_cloud_manager
-    results = get_cloud_manager().toggle(provider)
-    status = get_cloud_manager().get_status()
-    return {"success": True, "results": results, "status": status}
 
 
 @app.get("/api/daemon/chains")
@@ -4030,13 +4185,6 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-# Operator-Konsole bleibt standardmaessig aus. Bei expliziter Aktivierung
-# verwendet sie ihre bestehende Adapter-Konfiguration; BACH fuehrt weder eine
-# zweite Authentifizierung noch eine zweite Unified-GUI-Konfigurationsquelle ein.
-if settings.console_enabled:
-    mount_console(app, prefix=settings.console_prefix)
-
-
 
 @app.get("/", response_class=HTMLResponse)
 
@@ -4211,6 +4359,47 @@ async def chat_page():
     raise HTTPException(status_code=404, detail="Template chat.html nicht gefunden")
 
 
+@app.api_route("/api/chat-control/{control_path:path}", methods=["GET", "POST"])
+async def chat_control_proxy(control_path: str, request: Request):
+    """Bind the GUI chat to Startspine's resolved local Control port."""
+    if control_path not in CHAT_CONTROL_PATHS:
+        raise HTTPException(status_code=404, detail="Unbekannter Chat-Control-Pfad")
+    base_url = _chat_control_base_url()
+    if not base_url:
+        raise HTTPException(status_code=503, detail="Chatdienst nicht registriert")
+    timeout = _chat_proxy_timeout() if control_path == "chat" else 8.0
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            status_response = await client.get(f"{base_url}/status")
+            try:
+                status_payload = status_response.json()
+            except ValueError:
+                status_payload = None
+            if status_response.status_code != 200 or not _chat_control_payload_ready(status_payload):
+                raise HTTPException(status_code=503, detail="Chatdienst-Identität nicht bestätigt")
+            if control_path == "status" and request.method == "GET":
+                upstream = status_response
+            else:
+                headers = {}
+                for name in ("content-type", "x-delegation-depth"):
+                    if request.headers.get(name):
+                        headers[name] = request.headers[name]
+                upstream = await client.request(
+                    request.method,
+                    f"{base_url}/{control_path}",
+                    params=request.query_params,
+                    content=await request.body(),
+                    headers=headers,
+                )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Chatdienst nicht erreichbar") from exc
+    return Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        headers={"content-type": upstream.headers.get("content-type", "application/json")},
+    )
+
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page():
     """Zentrale GUI-Einstellungen."""
@@ -4259,19 +4448,10 @@ async def ati_agent_page():
 
 
 
-@app.get("/partners", response_class=HTMLResponse)
-
+@app.get("/partners")
 async def partners_page():
-
-    """Partner Dashboard Seite."""
-
-    partners_file = TEMPLATES_DIR / "partners.html"
-
-    if partners_file.exists():
-
-        return FileResponse(partners_file)
-
-    raise HTTPException(status_code=404, detail="Template partners.html nicht gefunden")
+    """Partner Dashboard -> Konsolidiert im Agents Board."""
+    return RedirectResponse("/agents-board")
 
 
 
@@ -4337,24 +4517,21 @@ async def foerderplaner_dashboard_page():
 
 
 
+@app.get("/agents-board", response_class=HTMLResponse)
 @app.get("/skills-board", response_class=HTMLResponse)
-
 async def skills_board_page():
-
-    """Skills Board - Hierarchie-Verwaltung."""
-
-    board_file = TEMPLATES_DIR / "skills-board.html"
-
+    """Agents Board - Hierarchie- und Agenten-Verwaltung."""
+    board_file = TEMPLATES_DIR / "agents-board.html"
+    if not board_file.exists():
+        board_file = TEMPLATES_DIR / "skills-board.html"
     if board_file.exists():
-
         return FileResponse(board_file)
-
-    raise HTTPException(status_code=404, detail="Template skills-board.html nicht gefunden")
+    raise HTTPException(status_code=404, detail="Template agents-board.html / skills-board.html nicht gefunden")
 
 
 @app.get("/skills")
 async def skills_redirect():
-    return RedirectResponse("/skills-board")
+    return RedirectResponse("/agents-board")
 
 @app.get("/finanzen")
 async def finanzen_redirect():
@@ -12354,7 +12531,13 @@ async def export_routines():
 async def get_bank_accounts():
     """Alle Bankkonten laden."""
     try:
-        accounts = AccountStore(BACH_DB).list_accounts()
+        conn = get_user_db()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM bank_accounts ORDER BY name")
+        rows = cursor.fetchall()
+        accounts = [dict(row) for row in rows]
+        conn.close()
         return {"success": True, "accounts": accounts}
     except Exception as e:
         return {"success": False, "error": public_error_message(), "accounts": []}
@@ -12365,15 +12548,22 @@ async def add_bank_account(request: Request):
     """Neues Bankkonto anlegen."""
     try:
         data = await request.json()
-        account_id = AccountStore(BACH_DB).create_account(
+        conn = get_user_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO bank_accounts (name, bank_name, iban, bic, account_type, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
             data.get('name'),
-            bank_name=data.get('bank_name'),
-            iban=data.get('iban'),
-            bic=data.get('bic'),
-            account_type=data.get('account_type', 'girokonto'),
-            notes=data.get('notes'),
-        )
-        return {"success": True, "id": account_id}
+            data.get('bank_name'),
+            data.get('iban'),
+            data.get('bic'),
+            data.get('account_type', 'girokonto'),
+            data.get('notes')
+        ))
+        conn.commit()
+        conn.close()
+        return {"success": True, "id": cursor.lastrowid}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
@@ -12383,15 +12573,24 @@ async def update_bank_account(account_id: int, request: Request):
     """Bankkonto aktualisieren."""
     try:
         data = await request.json()
-        AccountStore(BACH_DB).update_account(
-            account_id,
+        conn = get_user_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE bank_accounts SET
+                name = ?, bank_name = ?, iban = ?, bic = ?,
+                account_type = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (
             data.get('name'),
-            bank_name=data.get('bank_name'),
-            iban=data.get('iban'),
-            bic=data.get('bic'),
-            account_type=data.get('account_type', 'girokonto'),
-            notes=data.get('notes'),
-        )
+            data.get('bank_name'),
+            data.get('iban'),
+            data.get('bic'),
+            data.get('account_type', 'girokonto'),
+            data.get('notes'),
+            account_id
+        ))
+        conn.commit()
+        conn.close()
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
@@ -12401,7 +12600,11 @@ async def update_bank_account(account_id: int, request: Request):
 async def delete_bank_account(account_id: int):
     """Bankkonto loeschen."""
     try:
-        AccountStore(BACH_DB).delete_account(account_id)
+        conn = get_user_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM bank_accounts WHERE id = ?", (account_id,))
+        conn.commit()
+        conn.close()
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
@@ -13932,6 +14135,26 @@ async def get_workflow_content(path: str):
         raise
     except Exception as e:
         return HTMLResponse(content=f"<h1>Fehler: {public_error_message()}</h1>", status_code=500)
+
+
+# ═══════════════════════════════════════════════════════════════
+
+# UNIFIED GUI (optionales externes Modul ellmos-unified-gui)
+# Operator-Konsole als Sub-App unter /control — Panels erscheinen
+# capability-driven je nach erreichbaren Backends. Fehlt das Paket,
+# laeuft BACH unveraendert (bewusst weiches Optional).
+
+# ═══════════════════════════════════════════════════════════════
+
+try:
+    from unified_gui import mount as _unified_gui_mount
+
+    _unified_gui_mount(app, prefix="/control")
+    print("[GUI] Unified GUI unter /control eingebunden (ellmos-unified-gui)")
+except ImportError:
+    pass
+except Exception as _ug_exc:  # noqa: BLE001 — Mount-Fehler duerfen BACH nie stoppen
+    print(f"[GUI] Unified GUI nicht eingebunden: {_ug_exc}")
 
 
 # ═══════════════════════════════════════════════════════════════

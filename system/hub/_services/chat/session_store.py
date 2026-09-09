@@ -106,12 +106,13 @@ class SQLiteChatSessionStore:
             raise ChatSessionStoreError("unsupported chat transcript snapshot version")
         return self._normalise_messages(payload.get("messages", []))
 
-    def save(self, chat_id: str, messages: Iterable[dict]) -> None:
+    def save(self, chat_id: str, messages: Iterable[dict], name: str = "Chat transcript") -> None:
         session_id = self.session_id(chat_id)
         timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
         payload = json.dumps(
             {
                 "version": 1,
+                "chat_id": str(chat_id),
                 "messages": self._normalise_messages(messages),
                 "updated_at": timestamp,
             },
@@ -133,24 +134,135 @@ class SQLiteChatSessionStore:
                     "INSERT INTO session_snapshots "
                     "(session_id, snapshot_type, name, snapshot_data, created_at) "
                     "VALUES (?, ?, ?, ?, ?)",
-                    (session_id, CHAT_SNAPSHOT_TYPE, "Chat transcript", payload, timestamp),
+                    (session_id, CHAT_SNAPSHOT_TYPE, name, payload, timestamp),
                 )
             else:
                 snapshot_id = row["id"]
                 conn.execute(
-                    "DELETE FROM session_snapshots WHERE session_id = ? "
-                    "AND snapshot_type = ? AND id <> ?",
-                    (session_id, CHAT_SNAPSHOT_TYPE, snapshot_id),
-                )
-                conn.execute(
-                    "UPDATE session_snapshots SET snapshot_data = ?, created_at = ? "
+                    "UPDATE session_snapshots SET snapshot_data = ?, created_at = ?, name = ? "
                     "WHERE id = ?",
-                    (payload, timestamp, snapshot_id),
+                    (payload, timestamp, name, snapshot_id),
                 )
             conn.commit()
         except sqlite3.Error as exc:
             conn.rollback()
             raise ChatSessionStoreError(f"cannot persist chat transcript: {exc}") from exc
+        finally:
+            conn.close()
+
+    def archive_current(self, chat_id: str, name_prefix: str = "Archiviert") -> int | None:
+        """Kopiert die aktuelle Session als permanente Archiv-Session und vergibt eine neue Snapshot-ID."""
+        session_id = self.session_id(chat_id)
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT snapshot_data FROM session_snapshots "
+                "WHERE session_id = ? AND snapshot_type = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (session_id, CHAT_SNAPSHOT_TYPE),
+            ).fetchone()
+            if row is None:
+                return None
+            data = row["snapshot_data"]
+            timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            archive_session_id = f"{session_id}:archived:{timestamp}"
+            archive_name = f"{name_prefix} {timestamp}"
+            cur = conn.execute(
+                "INSERT INTO session_snapshots "
+                "(session_id, snapshot_type, name, snapshot_data, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (archive_session_id, CHAT_SNAPSHOT_TYPE, archive_name, data, timestamp),
+            )
+            archived_id = cur.lastrowid
+            conn.commit()
+            return archived_id
+        except sqlite3.Error as exc:
+            conn.rollback()
+            raise ChatSessionStoreError(f"cannot archive chat transcript: {exc}") from exc
+        finally:
+            conn.close()
+
+    def list_snapshots(self, limit: int = 50) -> list[dict]:
+        """Liefert eine sortierte Übersicht aller Chat-Transkripte."""
+        conn = self._connect()
+        try:
+            cur = conn.execute(
+                "SELECT id, session_id, name, created_at, length(snapshot_data) as data_len, "
+                "json_extract(snapshot_data, '$.chat_id') as chat_id "
+                "FROM session_snapshots "
+                "WHERE snapshot_type = ? "
+                "ORDER BY id DESC LIMIT ?",
+                (CHAT_SNAPSHOT_TYPE, limit),
+            )
+            result = []
+            for r in cur.fetchall():
+                result.append({
+                    "id": r["id"],
+                    "session_id": r["session_id"],
+                    "chat_id": r["chat_id"] or "",
+                    "name": r["name"],
+                    "created_at": r["created_at"],
+                    "size_bytes": r["data_len"],
+                })
+            return result
+        except sqlite3.Error as exc:
+            raise ChatSessionStoreError(f"cannot list chat transcripts: {exc}") from exc
+        finally:
+            conn.close()
+
+    def get_snapshot_by_id(self, snapshot_id: int) -> dict | None:
+        """Holt ein konkretes Transkript per Primärschlüssel."""
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT id, session_id, name, snapshot_data, created_at "
+                "FROM session_snapshots "
+                "WHERE id = ? AND snapshot_type = ?",
+                (snapshot_id, CHAT_SNAPSHOT_TYPE),
+            ).fetchone()
+            if not row:
+                return None
+            payload = json.loads(row["snapshot_data"] or "{}")
+            return {
+                "id": row["id"],
+                "session_id": row["session_id"],
+                "chat_id": payload.get("chat_id", ""),
+                "name": row["name"],
+                "created_at": row["created_at"],
+                "messages": payload.get("messages", []),
+                "updated_at": payload.get("updated_at"),
+            }
+        except sqlite3.Error as exc:
+            raise ChatSessionStoreError(f"cannot get chat transcript {snapshot_id}: {exc}") from exc
+        finally:
+            conn.close()
+
+    def get_last_updated(self, chat_id: str) -> float | None:
+        """Liefert den Unix-Timestamp der letzten Änderung der aktiven Session."""
+        session_id = self.session_id(chat_id)
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT snapshot_data, created_at FROM session_snapshots "
+                "WHERE session_id = ? AND snapshot_type = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (session_id, CHAT_SNAPSHOT_TYPE),
+            ).fetchone()
+            if row is None:
+                return None
+            ts_str = row["created_at"]
+            try:
+                payload = json.loads(row["snapshot_data"] or "{}")
+                if payload.get("updated_at"):
+                    ts_str = payload["updated_at"]
+            except Exception:
+                pass
+            if not ts_str:
+                return None
+            return datetime.fromisoformat(ts_str).timestamp()
+        except Exception:
+            return None
         finally:
             conn.close()
 

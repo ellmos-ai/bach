@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BACH - Skills Board</title>
+    <title>BACH - Agents Board</title>
     <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
     <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
@@ -692,6 +692,25 @@
             color: white;
             border-color: var(--primary);
         }
+
+        /* Template Chips for Prompt Generator */
+        .template-chip {
+            padding: 0.25rem 0.65rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            color: var(--text);
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .template-chip:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            transform: translateY(-1px);
+        }
     </style>
 </head>
 
@@ -702,7 +721,7 @@
         <!-- LEFT: Tree View -->
         <div class="tree-panel">
             <div class="tree-header">
-                <h2>Hierarchie</h2>
+                <h2>Agents Board</h2>
                 <input type="text" class="tree-search" placeholder="Suchen..." id="tree-search">
                 <div class="filter-toolbar" id="filter-toolbar">
                     <button class="filter-btn active" data-filter="all">Alle</button>
@@ -722,7 +741,7 @@
         <div class="detail-panel" id="detail-panel">
             <div class="empty-state">
                 <span class="icon">🎯</span>
-                <h2>Skills Board</h2>
+                <h2>Agents Board</h2>
                 <p>Waehle links einen Agenten, Expert, Skill, Service oder Workflow aus.</p>
                 <p style="font-size: 0.85rem; margin-top: 1rem;">
                     Ziehe Elemente per Drag & Drop um sie zuzuordnen.

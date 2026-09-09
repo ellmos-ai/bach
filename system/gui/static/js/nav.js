@@ -60,9 +60,6 @@ if (typeof escapeHtml === 'undefined') {
     };
 }
 
-const CHAT_HOST = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-    ? "macstudvonlukas" : window.location.hostname;
-
 const NAV_ITEMS = [
     { href: "/", label: "Dashboard" },
     { label: "Aufgaben", children: [
@@ -70,22 +67,24 @@ const NAV_ITEMS = [
         { href: "/routinen", label: "Routinen" },
     ]},
     { label: "Agenten", children: [
-        { href: "/agents", label: "Agenten" },
-        { href: "/partners", label: "Partner" },
-        { href: "/skills-board", label: "Skills" },
+        { href: "/agents-board", label: "Agents Board" },
+        { href: "/ati", label: "🛠️ ATI Entwickler" },
+        { href: "/steuer", label: "⚖️ Theodor Steuer" },
+        { href: "/gesundheit", label: "🩺 Gesundheit" },
+        { href: "/persoenlich", label: "🏠 Persönlicher Assistent" },
     ]},
     { label: "Wissen", children: [
         { href: "/memory", label: "Memory" },
         { href: "/prompt-library", label: "Prompts" },
-        { href: "/denkarium", label: "Denkarium", external: true },
+        { href: "/denkarium", label: "Denkarium" },
         { href: "/wiki", label: "Wiki" },
         { href: "/usecases", label: "Use Cases" },
     ]},
     { label: "Kommunikation", children: [
         { href: "/messages", label: "Nachrichten" },
+        { href: "/inbox", label: "Inbox" },
         { href: "/kontakte", label: "Kontakte" },
     ]},
-    { href: "/inbox", label: "Dateien" },
     { label: "Finanzen", children: [
         { href: "/financial", label: "Finanzen" },
         { href: "/tokens", label: "Tokens" },
@@ -94,7 +93,7 @@ const NAV_ITEMS = [
     { label: "System", children: [
         { href: "/settings", label: "Einstellungen" },
         { href: "/daemon", label: "Automation" },
-        { href: "/control/", label: "Unified GUI", external: true },
+        { href: "/control/", label: "Unified GUI" },
         { href: "/maintenance", label: "Wartung" },
         { href: "/logs", label: "Logs" },
         { href: "/help", label: "Help" },
@@ -128,8 +127,7 @@ function initNavigation() {
             const parentActive = hasActiveChild(item) ? ' active' : '';
             const childHtml = item.children.map(child => {
                 const childActive = isActive(child.href) ? ' active' : '';
-                const target = child.external ? ' target="_blank" rel="noopener noreferrer"' : '';
-                return `<a href="${child.href}"${target} class="dropdown-item${childActive}">${child.label}</a>`;
+                return `<a href="${child.href}" class="dropdown-item${childActive}">${child.label}</a>`;
             }).join('');
             return `<div class="nav-dropdown${parentActive}">
                 <button class="nav-item nav-dropdown-toggle${parentActive}">${item.label} <span class="dropdown-arrow">▾</span></button>
@@ -137,7 +135,7 @@ function initNavigation() {
             </div>`;
         }
         const active = isActive(item.href) ? ' active' : '';
-        const target = item.external ? ' target="_blank" rel="noopener noreferrer"' : '';
+        const target = item.external ? ' target="_blank"' : '';
         return `<a href="${item.href}"${target} class="nav-item${active}">${item.label}</a>`;
     }).join('\n            ');
 
@@ -166,25 +164,10 @@ function initNavigation() {
     `;
 
     document.querySelectorAll('.nav-dropdown').forEach(dd => {
-        let closeTimer = null;
-        dd.addEventListener('mouseenter', () => {
-            if (closeTimer) {
-                clearTimeout(closeTimer);
-                closeTimer = null;
-            }
-            dd.classList.add('open');
-        });
-        dd.addEventListener('mouseleave', () => {
-            closeTimer = setTimeout(() => {
-                dd.classList.remove('open');
-            }, 300);
-        });
+        dd.addEventListener('mouseenter', () => dd.classList.add('open'));
+        dd.addEventListener('mouseleave', () => dd.classList.remove('open'));
         dd.querySelector('.nav-dropdown-toggle').addEventListener('click', (e) => {
             e.preventDefault();
-            if (closeTimer) {
-                clearTimeout(closeTimer);
-                closeTimer = null;
-            }
             dd.classList.toggle('open');
         });
     });

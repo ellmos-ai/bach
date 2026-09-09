@@ -1,22 +1,25 @@
 # Portabilität: UNIVERSAL
-# Version: 1.1.2
-# Zuletzt validiert: 2026-08-28 (Startspine- und Remote-Sicherheitsvertrag)
+# Version: 1.2.0
+# Zuletzt validiert: 2026-09-09 (Session-Lifecycle, 24h Auto-Reset, Transkripte & Forking)
 
-BACH CHAT SERVICE - Multi-Backend Telegram Bot + Control API + System Tray
-==========================================================================
+BACH CHAT SERVICE - Multi-Backend Telegram Bot + Control API + Web-GUI + Tray
+=============================================================================
 
 BESCHREIBUNG
 ------------
 BACH Chat Service ist der Nachfolger der Claude Bridge. Er bietet einen
 BACH-integrierten Telegram-Bot mit pluggbaren LLM-Backends, einer
-HTTP Control API und einem cross-platform System Tray.
+HTTP Control API, Web-GUI und einem cross-platform System Tray.
 
-Architektur (3 Schichten):
+Architektur (4 Schichten):
   - model_backend.py:   Pluggbare Backend-Abstraktion (Ollama, Claude CLI,
                          Codex CLI, Claude API, OpenAI API)
+  - session_store.py:   Kanonische Persistenz & Transkripte in bach.db
+                         (Tabelle session_snapshots, Typ chat-transcript.v1)
   - chat_runtime.py:    Backend-unabhängige Chat-Runtime mit Tool-Use-Loop,
-                         Kontextmanagement, Sicherheitsmodi, Zusammenfassung
-  - telegram_chat.py:   Telegram-Bot mit allen Befehlen + Control API
+                         Kontextmanagement, 24h-Auto-Reset, Forking, Zusammenfassung
+  - telegram_chat.py:   Telegram-Bot mit allen Befehlen + Control API (Port 8081)
+  - gui/server.py:      FastAPI Web-Server mit Chat-Proxy & Transkript-Board (:8000/chat)
   - chat_tray.py:       Cross-platform System Tray (macOS/Windows/Linux)
 
 Backends:
@@ -33,11 +36,34 @@ Sicherheitsmodi:
   - full:  Auch schreibende Tools (execute_command, write_file)
            Aktivierung: /mode full bestätigt
 
+SESSION-LIFECYCLE & ARCHIVIERUNG
+---------------------------------
+Jeder Transportkanal besitzt einen eigenen Session-Kontext:
+  - Web-GUI:            chat_id = "gui-web"
+  - Telegram:           chat_id = "<numeric_telegram_chat_id>"
+  - Background-Worker:  chat_id = "idle-worker"
+  - Tray:               chat_id = "tray-prompt"
+
+Lifecycle-Regeln:
+  1. 24h-Inaktivitäts-Reset: War eine Session länger als 24 Stunden inaktiv
+     (TTL 86400s), wird sie beim nächsten Zugriff automatisch archiviert
+     und mit einem leeren Verlauf frisch gestartet.
+  2. Manueller Reset:
+     - Telegram: /clear archiviert die Konversation und leert den Speicher.
+     - Web-GUI:  Button [ ➕ Neuer Chat ] archiviert und setzt die Ansicht zurück.
+  3. Zero-Data-Loss: Kein Chat geht verloren. Vor jedem Reset (ob 24h Timeout,
+     manueller Clear oder vor einem Fork) wird der Zustand in bach.db unter
+     session_snapshots als permanenter Archiv-Snapshot abgelegt.
+  4. Protokolle & Forking:
+     - Im Web-Chat (:8000/chat) öffnet [ 📜 Protokolle ] das Transkript-Board.
+     - Frühere Sessions (Web, Telegram, Worker) können eingesehen und über
+       [ 🔄 Im Web-Chat fortsetzen (Fork) ] in den Web-Chat übernommen werden.
+
 
 TELEGRAM BEFEHLE
 -----------------
   /start                    Willkommensnachricht
-  /clear                    Konversation zurücksetzen
+  /clear                    Konversation archivieren und neue Session starten
   /backend [name] [model]   Backend wechseln (ollama|lmstudio|hermes|claude|codex|claude-api|openai)
   /model <name>             Modell wechseln
   /mode [safe|full]         Sicherheitsmodus
@@ -56,18 +82,23 @@ TELEGRAM BEFEHLE
   Foto                      OCR-Texterkennung -> Chat
 
 
-CONTROL API (Port 8081)
------------------------
+CONTROL API (Port 8081 / Proxied via :8000/api/chat-control)
+------------------------------------------------------------
   GET  /                    Web-Dashboard (HTML)
   GET  /api/status          Aktueller Status (inkl. Tool-Aktivität)
   GET  /api/backends        Verfügbare Backends mit Status
   GET  /api/models          Modelle des aktuellen Backends
+  GET  /api/history         Sichtbarer Verlauf: ?chat_id=gui-web
+  GET  /api/sessions        Transkript-Snapshots: ?limit=50
+  GET  /api/session         Einzelnes Transkript per ID: ?id=123
   POST /api/backend         Backend wechseln: {"name": "claude", "model": "opus"}
   POST /api/mode            Modus setzen: {"mode": "safe"}
   POST /api/model           Modell setzen: {"model": "qwen3.5:35b-a3b"}
   POST /api/think           Denkmodus: {"think": true}
   POST /api/max_tool_rounds Max Tool-Runden: {"rounds": 10} (0=unbegrenzt)
   POST /api/chat            Chat-Nachricht: {"prompt": "...", "chat_id": "..."}
+  POST /api/clear           Session archivieren & leeren: {"chat_id": "gui-web"}
+  POST /api/fork            Snapshot wiederbeleben: {"chat_id": "gui-web", "snapshot_id": 123}
 
 
 SYSTEM TRAY

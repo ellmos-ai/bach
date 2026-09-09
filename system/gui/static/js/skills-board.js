@@ -275,6 +275,14 @@ function renderDetailView(item, type) {
     // Fix für leere Namen
     const displayName = item.name && item.name.trim() ? item.name : item.id;
 
+    // Bossagenten Dashboard Absprung
+    const agentDashboard = isAgent ? getAgentDashboard(item.id) : null;
+    const dashboardBtn = agentDashboard
+        ? `<a href="${agentDashboard.url}" class="btn btn-primary" style="background: var(--accent); display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none;" title="${agentDashboard.label}">
+            <span>${agentDashboard.icon}</span> <span>${agentDashboard.label}</span> ↗
+           </a>`
+        : '';
+
     panel.innerHTML = `
         <div class="detail-header">
             <span class="detail-icon">${typeConfig.icon}</span>
@@ -283,6 +291,7 @@ function renderDetailView(item, type) {
                 <span class="detail-type type-${type}">${typeConfig.label}</span>
             </div>
             <div class="detail-actions">
+                ${dashboardBtn}
                 <button class="btn btn-secondary" onclick="editItem('${item.id}', '${type}')">Bearbeiten</button>
                 ${isAgent ? `<button class="btn btn-primary" onclick="createTaskForAgent('${item.id}')">+ Task erstellen</button>` : ''}
             </div>
@@ -512,11 +521,21 @@ function renderItemUsage(itemId, type) {
 }
 
 function renderTaskForm(agentId) {
+    const agent = (hierarchyData.items.agents || []).find(a => a.id === agentId) || {};
+    const agentName = agent.name || agentId;
+
     return `
         <div class="detail-section">
             <h3>📝 Auftrag an Agent</h3>
             <div class="task-form">
-                <textarea id="task-description" placeholder="Beschreibe den Auftrag fuer diesen Agenten..."></textarea>
+                <div class="prompt-templates" style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; align-items: center;">
+                    <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Vorlagen:</span>
+                    <button type="button" class="template-chip" onclick="usePromptTemplate('task', '${escapeHtml(agentName)}')">📋 Aufgabe</button>
+                    <button type="button" class="template-chip" onclick="usePromptTemplate('question', '${escapeHtml(agentName)}')">❓ Frage</button>
+                    <button type="button" class="template-chip" onclick="usePromptTemplate('analysis', '${escapeHtml(agentName)}')">🔍 Analyse</button>
+                    <button type="button" class="template-chip" onclick="usePromptTemplate('report', '${escapeHtml(agentName)}')">📝 Report</button>
+                </div>
+                <textarea id="task-description" placeholder="Beschreibe den Auftrag fuer diesen Agenten oder nutze eine Vorlage oben..."></textarea>
                 <div class="form-row">
                     <select id="task-priority">
                         <option value="P1">P1 - Kritisch</option>
@@ -524,6 +543,9 @@ function renderTaskForm(agentId) {
                         <option value="P3" selected>P3 - Normal</option>
                         <option value="P4">P4 - Niedrig</option>
                     </select>
+                    <button type="button" class="btn btn-secondary" onclick="copyAgentPrompt()" title="Prompt in die Zwischenablage kopieren">
+                        📋 Kopieren
+                    </button>
                     <button class="btn btn-primary" onclick="submitAgentTask('${agentId}')">
                         Task erstellen
                     </button>
@@ -700,6 +722,72 @@ function createTaskForAgent(agentId) {
     if (textarea) {
         textarea.focus();
         textarea.scrollIntoView({ behavior: 'smooth' });
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BOSS-AGENT DASHBOARDS & PROMPT TEMPLATES
+// ═══════════════════════════════════════════════════════════════
+
+const AGENT_DASHBOARDS = {
+    'ati': { url: '/ati', label: 'ATI Entwickler-Cockpit', icon: '🛠️' },
+    'entwickler': { url: '/ati', label: 'ATI Entwickler-Cockpit', icon: '🛠️' },
+    'developer': { url: '/ati', label: 'ATI Entwickler-Cockpit', icon: '🛠️' },
+    'steuer': { url: '/steuer', label: 'Theodor Steuer-Cockpit', icon: '⚖️' },
+    'theodor': { url: '/steuer', label: 'Theodor Steuer-Cockpit', icon: '⚖️' },
+    'steueragent': { url: '/steuer', label: 'Theodor Steuer-Cockpit', icon: '⚖️' },
+    'gesundheit': { url: '/gesundheit', label: 'Gesundheits-Cockpit', icon: '🩺' },
+    'gesundheitsverwalter': { url: '/gesundheit', label: 'Gesundheits-Cockpit', icon: '🩺' },
+    'persoenlich': { url: '/persoenlich', label: 'Persönlicher Assistent', icon: '🏠' },
+    'persoenlicher-assistent': { url: '/persoenlich', label: 'Persönlicher Assistent', icon: '🏠' },
+    'paul': { url: '/persoenlich', label: 'Persönlicher Assistent', icon: '🏠' },
+    'foerderplaner': { url: '/agents/foerderplaner', label: 'Förderplaner', icon: '📈' }
+};
+
+function getAgentDashboard(agentId) {
+    const idLower = (agentId || '').toLowerCase().replace(/^(agent:)/, '');
+    for (const [k, v] of Object.entries(AGENT_DASHBOARDS)) {
+        if (idLower.includes(k)) return v;
+    }
+    return null;
+}
+
+const PROMPT_TEMPLATES = {
+    task: "[Fuer: {agent}]\n\nAUFGABE:\n\n\nERWARTETES ERGEBNIS:\n- ",
+    question: "[Fuer: {agent}]\n\nFRAGE:\n\n\nKONTEXT:\n- ",
+    analysis: "[Fuer: {agent}]\n\nANALYSE-AUFTRAG:\n\n\nZU UNTERSUCHEN:\n- ",
+    report: "[Fuer: {agent}]\n\nREPORT-ANFRAGE:\n\n\nZEITRAUM:\nFOKUS:\n- "
+};
+
+function usePromptTemplate(key, agentName) {
+    const ta = document.getElementById('task-description');
+    if (!ta) return;
+    const tpl = (PROMPT_TEMPLATES[key] || "").replace('{agent}', agentName || 'Agent');
+    ta.value = tpl;
+    ta.focus();
+    const pos = tpl.indexOf('\n\n') + 2;
+    if (pos > 1) {
+        ta.setSelectionRange(pos, pos);
+    }
+    showToast(`Vorlage '${key}' geladen`, 'info');
+}
+
+function copyAgentPrompt() {
+    const ta = document.getElementById('task-description');
+    if (!ta || !ta.value.trim()) {
+        showToast('Kein Text zum Kopieren vorhanden', 'warning');
+        return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ta.value.trim()).then(() => {
+            showToast('Prompt in Zwischenablage kopiert! 📋', 'success');
+        }).catch(err => {
+            showToast('Kopieren fehlgeschlagen: ' + err.message, 'error');
+        });
+    } else {
+        ta.select();
+        document.execCommand('copy');
+        showToast('Prompt in Zwischenablage kopiert! 📋', 'success');
     }
 }
 

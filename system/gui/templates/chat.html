@@ -8,26 +8,240 @@
     <link rel="stylesheet" href="/static/css/main.css?v=2">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
-        .chat-container {
+        /* ── App Layout ── */
+        .chat-app {
+            display: flex;
+            height: calc(100vh - 56px);
+            width: 100%;
+            overflow: hidden;
+            position: relative;
+            background: var(--bg-dark);
+        }
+
+        /* ── Sidebar ── */
+        .chat-sidebar {
+            width: 280px;
+            flex-shrink: 0;
+            background: var(--bg-panel);
+            border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
-            height: calc(100vh - 60px);
-            max-width: 900px;
-            margin: 0 auto;
+            transition: margin-left 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 30;
+        }
+
+        .chat-sidebar.collapsed {
+            margin-left: -280px;
+        }
+
+        .sidebar-header {
+            padding: 12px 14px 10px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .btn-new-chat-sidebar {
+            flex: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 9px 14px;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+
+        .btn-new-chat-sidebar:hover { opacity: 0.9; }
+        .btn-new-chat-sidebar:active { transform: scale(0.98); }
+
+        .btn-sidebar-toggle {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            border-radius: 8px;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .btn-sidebar-toggle:hover {
+            color: var(--text);
+            background: var(--bg-elevated);
+            border-color: var(--border-hover);
+        }
+
+        .sidebar-search-box {
+            padding: 10px 14px 6px;
+        }
+
+        .sidebar-search-box input {
+            width: 100%;
+            padding: 7px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 0.8rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .sidebar-search-box input:focus {
+            border-color: var(--accent);
+        }
+
+        .sidebar-search-box input::placeholder {
+            color: var(--text-dim);
+        }
+
+        .sidebar-section-title {
+            padding: 10px 16px 4px;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+            font-weight: 700;
+        }
+
+        .sidebar-sessions-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 6px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .sidebar-sessions-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        .sidebar-sessions-list::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        .session-item {
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            transition: background 0.15s, border-color 0.15s;
+        }
+
+        .session-item:hover {
+            background: var(--bg-card);
+        }
+
+        .session-item.active {
+            background: var(--bg-elevated);
+            border-color: var(--accent);
+        }
+
+        .session-item-title {
+            font-size: 0.84rem;
+            font-weight: 500;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .session-item-meta {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .sidebar-footer {
+            padding: 10px 14px;
+            border-top: 1px solid var(--border);
+            background: var(--bg-panel);
+        }
+
+        .btn-footer-protocols {
+            width: 100%;
+            padding: 7px 10px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.76rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+
+        .btn-footer-protocols:hover {
+            color: var(--text);
+            border-color: var(--border-hover);
+        }
+
+        /* ── Main Chat Area ── */
+        .chat-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--bg-dark);
+            position: relative;
+        }
+
+        .chat-top-bar {
+            height: 52px;
             padding: 0 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-panel);
+            flex-shrink: 0;
+            gap: 12px;
+        }
+
+        .chat-top-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .chat-title-text {
+            font-weight: 600;
+            font-size: 0.92rem;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .chat-status {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 10px 16px;
-            margin-top: 12px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            font-size: 0.8rem;
-            color: var(--text-muted);
+            gap: 8px;
             flex-shrink: 0;
         }
 
@@ -35,11 +249,12 @@
             display: inline-flex;
             align-items: center;
             gap: 5px;
-            padding: 3px 10px;
-            background: var(--bg-elevated, var(--bg-panel));
+            padding: 3px 8px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
             border-radius: 6px;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.75rem;
+            font-size: 0.72rem;
             color: var(--text);
         }
 
@@ -55,10 +270,21 @@
             background: var(--error);
         }
 
+        /* ── Chat Messages ── */
+        .chat-content-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            max-width: 900px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
         .chat-messages {
             flex: 1;
             overflow-y: auto;
-            padding: 20px 0;
+            padding: 20px 16px;
             display: flex;
             flex-direction: column;
             gap: 16px;
@@ -67,23 +293,22 @@
         .chat-messages::-webkit-scrollbar {
             width: 4px;
         }
-
         .chat-messages::-webkit-scrollbar-thumb {
             background: var(--border);
             border-radius: 4px;
         }
 
         .msg {
-            max-width: 80%;
+            max-width: 82%;
             padding: 12px 16px;
             border-radius: 14px;
             line-height: 1.55;
             font-size: 0.92rem;
-            animation: msgIn 0.25s ease-out;
+            animation: msgIn 0.22s ease-out;
         }
 
         @keyframes msgIn {
-            from { opacity: 0; transform: translateY(8px); }
+            from { opacity: 0; transform: translateY(6px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
@@ -131,7 +356,7 @@
 
         .msg.error {
             align-self: center;
-            background: rgba(var(--error-rgb, 231, 76, 60), 0.1);
+            background: rgba(239, 83, 80, 0.12);
             border: 1px solid var(--error);
             color: var(--error);
             font-size: 0.85rem;
@@ -146,6 +371,7 @@
             border: 1px solid var(--border);
             border-radius: 14px;
             border-bottom-left-radius: 4px;
+            margin: 0 16px;
         }
 
         .typing-indicator.active { display: flex; gap: 5px; align-items: center; }
@@ -168,10 +394,11 @@
 
         .chat-input-area {
             flex-shrink: 0;
-            padding: 12px 0 16px;
+            padding: 12px 16px 16px;
             display: flex;
             gap: 10px;
             align-items: flex-end;
+            background: var(--bg-dark);
         }
 
         .chat-input-area textarea {
@@ -196,7 +423,7 @@
         }
 
         .chat-input-area textarea::placeholder {
-            color: var(--text-dim, var(--text-muted));
+            color: var(--text-dim);
         }
 
         .send-btn {
@@ -215,7 +442,7 @@
             flex-shrink: 0;
         }
 
-        .send-btn:hover { opacity: 0.85; }
+        .send-btn:hover { opacity: 0.88; }
         .send-btn:active { transform: scale(0.94); }
         .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
@@ -232,7 +459,7 @@
 
         .empty-state .icon {
             font-size: 2.8rem;
-            opacity: 0.5;
+            opacity: 0.6;
         }
 
         .empty-state .title {
@@ -243,52 +470,371 @@
 
         .empty-state .hint {
             font-size: 0.85rem;
-            max-width: 360px;
+            max-width: 380px;
             line-height: 1.5;
+            color: var(--text-muted);
+        }
+
+        /* ── Modal & Protocols ── */
+        .modal-backdrop {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .modal-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            width: 100%;
+            max-width: 960px;
+            height: 82vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-card);
+        }
+
+        .modal-close-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 2px 8px;
+            border-radius: 4px;
+            line-height: 1;
+        }
+        .modal-close-btn:hover { color: var(--text); }
+
+        .modal-body {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .protocols-sidebar {
+            width: 340px;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-card);
+        }
+
+        .protocols-filter-tabs {
+            display: flex;
+            gap: 4px;
+            padding: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 5px 8px;
+            font-size: 0.74rem;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .tab-btn.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+            font-weight: 600;
+        }
+
+        .protocols-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .proto-item {
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: var(--bg-card);
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .proto-item:hover { background: var(--bg-panel); }
+        .proto-item.active { background: var(--bg-panel); border-color: var(--accent); }
+
+        .proto-title {
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .proto-meta {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            margin-top: 4px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .protocol-detail {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--bg-card);
+        }
+
+        .empty-detail {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 0.88rem;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .detail-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .detail-header {
+            padding: 12px 18px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-card);
+        }
+
+        .btn-fork {
+            padding: 6px 14px;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            cursor: pointer;
+            font-weight: 500;
+            transition: opacity 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-fork:hover { opacity: 0.88; }
+
+        .detail-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .proto-msg {
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 0.86rem;
+            line-height: 1.5;
+            max-width: 85%;
+        }
+        .proto-msg.user { align-self: flex-end; background: var(--accent); color: #fff; }
+        .proto-msg.bot { align-self: flex-start; background: var(--bg-panel); border: 1px solid var(--border); color: var(--text); }
+
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 2000;
+            pointer-events: none;
+        }
+
+        .toast {
+            padding: 10px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+            font-size: 0.84rem;
+            color: var(--text);
+            animation: msgIn 0.2s ease-out;
+            pointer-events: auto;
         }
     </style>
 </head>
 <body>
-    <header id="main-header" class="main-header"></header>
+    <header class="main-header" id="main-header"></header>
 
-    <div class="chat-container">
-        <div class="chat-status" id="chat-status">
-            <div class="status-chip">
-                <span class="dot" id="conn-dot"></span>
-                <span id="s-backend">–</span>
+    <div class="chat-app">
+        <!-- Sidebar: Web-Chats -->
+        <aside class="chat-sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <button class="btn-new-chat-sidebar" id="btn-sidebar-new-chat" title="Frischen Chat beginnen">
+                    <span>➕</span> Neuer Chat
+                </button>
+                <button class="btn-sidebar-toggle" id="btn-sidebar-close" title="Seitenleiste einklappen">
+                    ◀
+                </button>
             </div>
-            <div class="status-chip">
-                <span id="s-model">–</span>
-            </div>
-            <div class="status-chip">
-                <span id="s-mode">–</span>
-            </div>
-        </div>
 
-        <div class="chat-messages" id="messages">
-            <div class="empty-state" id="empty-state">
-                <div class="icon">&#x1F9D8;</div>
-                <div class="title">Buddha Chat</div>
-                <div class="hint">Stelle eine Frage oder gib einen Befehl. Buddha hat Zugriff auf BACH-Tools und kann Aufgaben ausführen.</div>
+            <div class="sidebar-search-box">
+                <input type="text" id="sidebar-search-input" placeholder="Web-Chats suchen…" />
             </div>
-        </div>
 
-        <div class="typing-indicator" id="typing">
-            <span></span><span></span><span></span>
-        </div>
+            <div class="sidebar-section-title">Web-Chats</div>
+            <div class="sidebar-sessions-list" id="sidebar-sessions-list">
+                <div style="text-align:center; padding:20px; color:var(--text-dim); font-size:0.78rem;">Lade Chats…</div>
+            </div>
 
-        <div class="chat-input-area">
-            <textarea id="input" rows="1" placeholder="Nachricht an Buddha…" autofocus></textarea>
-            <button class="send-btn" id="send-btn" title="Senden">&#x27A4;</button>
+            <div class="sidebar-footer">
+                <button class="btn-footer-protocols" id="btn-open-all-protocols" title="Telegram- und Worker-Protokolle einsehen">
+                    <span>📜</span> Alle Protokolle (Telegram/Worker)
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Chat -->
+        <main class="chat-main">
+            <div class="chat-top-bar">
+                <div class="chat-top-left">
+                    <button class="btn-sidebar-toggle" id="btn-sidebar-open" title="Seitenleiste öffnen" style="display: none;">
+                        ☰
+                    </button>
+                    <div class="chat-title-text" id="current-chat-title">Neuer Chat</div>
+                </div>
+
+                <div class="chat-status" id="chat-status">
+                    <div class="status-chip">
+                        <span class="dot" id="conn-dot"></span>
+                        <span id="s-backend">–</span>
+                    </div>
+                    <div class="status-chip">
+                        <span id="s-model">–</span>
+                    </div>
+                    <div class="status-chip">
+                        <span id="s-mode">–</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-content-wrap">
+                <div class="chat-messages" id="messages">
+                    <div class="empty-state" id="empty-state">
+                        <div class="icon">&#x1F9D8;</div>
+                        <div class="title">Buddha Chat</div>
+                        <div class="hint">Stelle eine Frage oder gib einen Befehl. Buddha hat Zugriff auf BACH-Tools und kann Aufgaben ausführen.</div>
+                    </div>
+                </div>
+
+                <div class="typing-indicator" id="typing">
+                    <span></span><span></span><span></span>
+                </div>
+
+                <div class="chat-input-area">
+                    <textarea id="input" rows="1" placeholder="Nachricht an Buddha…" autofocus></textarea>
+                    <button class="send-btn" id="send-btn" title="Backend wird geprüft" disabled>&#x27A4;</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Session-Protokolle & Archiv Modal -->
+    <div id="protocols-modal" class="modal-backdrop" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin: 0; font-size: 1.05rem; display: flex; align-items: center; gap: 8px;">
+                        <span>📜</span> Session-Protokolle & Transkripte
+                    </h3>
+                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 3px;">
+                        Historie aller Web-, Telegram- und Worker-Sessions einsehen und im Web-Chat fortsetzen.
+                    </div>
+                </div>
+                <button class="modal-close-btn" id="btn-close-protocols" title="Schließen">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="protocols-sidebar">
+                    <div class="protocols-filter-tabs">
+                        <button class="tab-btn active" data-filter="all">Alle</button>
+                        <button class="tab-btn" data-filter="web">Web</button>
+                        <button class="tab-btn" data-filter="telegram">Telegram</button>
+                        <button class="tab-btn" data-filter="archived">Archiv</button>
+                    </div>
+                    <div class="protocols-list" id="protocols-list">
+                        <div style="text-align:center; padding: 20px; color: var(--text-muted); font-size: 0.8rem;">Lade Protokolle...</div>
+                    </div>
+                </div>
+                <div class="protocol-detail" id="protocol-detail">
+                    <div class="empty-detail" id="empty-detail">
+                        <span>👈 Wähle links eine Session aus, um das Transkript einzusehen.</span>
+                    </div>
+                    <div class="detail-content" id="detail-content" style="display: none;">
+                        <div class="detail-header">
+                            <div>
+                                <h4 id="detail-title" style="margin: 0; font-size: 0.95rem;"></h4>
+                                <div id="detail-meta" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;"></div>
+                            </div>
+                            <button class="btn-fork" id="btn-fork-session" title="Diesen Verlauf in den aktiven Web-Chat übernehmen">
+                                <span>🔄</span> Im Web-Chat fortsetzen (Fork)
+                            </button>
+                        </div>
+                        <div class="detail-messages" id="detail-messages">
+                            <!-- Dynamically loaded messages -->
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
+
+    <div id="toast-container" class="toast-container"></div>
 
     <script src="/static/js/nav.js?v=4"></script>
     <script src="/static/js/prompt-chat-draft.js?v=1"></script>
     <script>
     (function() {
-        const CHAT_API = 'http://' + CHAT_HOST + ':8081/api';
-        const CHAT_ID = 'gui-web';
+        const CHAT_API = '/api/chat-control';
+        let currentChatId = localStorage.getItem('bach_active_web_chat_id') || ('web-' + Date.now());
+
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOpenBtn = document.getElementById('btn-sidebar-open');
+        const sidebarCloseBtn = document.getElementById('btn-sidebar-close');
+        const sidebarNewChatBtn = document.getElementById('btn-sidebar-new-chat');
+        const sidebarSessionsList = document.getElementById('sidebar-sessions-list');
+        const sidebarSearchInput = document.getElementById('sidebar-search-input');
+        const currentChatTitleEl = document.getElementById('current-chat-title');
 
         const messagesEl = document.getElementById('messages');
         const emptyState = document.getElementById('empty-state');
@@ -296,6 +842,34 @@
         const sendBtn = document.getElementById('send-btn');
         const typingEl = document.getElementById('typing');
         let sending = false;
+        let backendAvailable = false;
+        let webSessions = [];
+
+        function escapeHtml(str) {
+            return String(str || '').replace(/[&<>"']/g, function(m) {
+                return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];
+            });
+        }
+
+        function showToast(text, duration = 3200) {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = text;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
+
+        function updateComposerAvailability() {
+            sendBtn.disabled = sending || !backendAvailable;
+            sendBtn.title = backendAvailable ? 'Senden' : 'Backend nicht verfügbar';
+            sendBtn.setAttribute('aria-label', sendBtn.title);
+        }
 
         if (typeof marked !== 'undefined') {
             marked.setOptions({
@@ -336,47 +910,248 @@
             inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
         }
 
-        function loadLibraryDraft() {
-            const draft = BachChatDraft.consume();
-            if (draft === null) return;
+        // ── Sidebar Collapse / Expand ──
+        function setSidebarState(collapsed) {
+            sidebar.classList.toggle('collapsed', collapsed);
+            sidebarOpenBtn.style.display = collapsed ? 'inline-flex' : 'none';
+            localStorage.setItem('bach_chat_sidebar_collapsed', collapsed ? '1' : '0');
+        }
 
-            inputEl.value = draft;
+        sidebarCloseBtn.addEventListener('click', () => setSidebarState(true));
+        sidebarOpenBtn.addEventListener('click', () => setSidebarState(false));
+
+        if (localStorage.getItem('bach_chat_sidebar_collapsed') === '1' || window.innerWidth < 768) {
+            setSidebarState(true);
+        }
+
+        // ── Multi-Session Management ──
+        async function loadWebSessions() {
+            try {
+                const resp = await fetch(CHAT_API + '/sessions?limit=80');
+                const data = await resp.json();
+                if (data.ok && Array.isArray(data.sessions)) {
+                    // Filter specifically for web chats
+                    webSessions = data.sessions.filter(s => {
+                        const name = (s.name || '').toLowerCase();
+                        const sid = (s.session_id || '').toLowerCase();
+                        const cid = (s.chat_id || '').toLowerCase();
+                        return cid.startsWith('web') || cid === 'gui-web' ||
+                               name.startsWith('web') || sid.includes('web');
+                    });
+                    renderSidebarSessions();
+                }
+            } catch (e) {
+                console.warn('Web-Sessions konnten nicht geladen werden:', e);
+            }
+        }
+
+        function renderSidebarSessions(filterQuery = '') {
+            sidebarSessionsList.innerHTML = '';
+            const q = filterQuery.toLowerCase().trim();
+            const filtered = webSessions.filter(s => {
+                if (!q) return true;
+                return (s.name || '').toLowerCase().includes(q);
+            });
+
+            if (filtered.length === 0) {
+                sidebarSessionsList.innerHTML = '<div style="text-align:center; padding:18px; color:var(--text-dim); font-size:0.78rem;">Keine Web-Chats gefunden</div>';
+                return;
+            }
+
+            filtered.forEach(s => {
+                const item = document.createElement('div');
+                const itemChatId = s.chat_id || (s.session_id ? 'snap:' + s.id : '');
+                const isActive = (s.chat_id && s.chat_id === currentChatId) ||
+                                 (currentChatId === 'gui-web' && s.name && s.name.includes('Web Chat'));
+
+                item.className = 'session-item' + (isActive ? ' active' : '');
+                const rawTitle = s.name || `Chat #${s.id}`;
+                const title = rawTitle.replace(/^Web:\s*/i, '');
+                const dt = s.created_at ? s.created_at.replace('T', ' ').slice(0, 16) : '';
+
+                item.innerHTML = `
+                    <div class="session-item-title" title="${escapeHtml(rawTitle)}">
+                        <span>💬</span> <span>${escapeHtml(title)}</span>
+                    </div>
+                    <div class="session-item-meta">${dt}</div>
+                `;
+
+                item.addEventListener('click', () => {
+                    selectWebSession(s);
+                });
+
+                sidebarSessionsList.appendChild(item);
+            });
+        }
+
+        async function selectWebSession(s) {
+            const targetChatId = s.chat_id || ('web-snap-' + s.id);
+            currentChatId = targetChatId;
+            localStorage.setItem('bach_active_web_chat_id', currentChatId);
+
+            const displayTitle = (s.name || 'Chat').replace(/^Web:\s*/i, '');
+            currentChatTitleEl.textContent = displayTitle;
+
+            renderSidebarSessions();
+
+            // Load messages for this session
+            messagesEl.innerHTML = '';
+            setTyping(true);
+
+            try {
+                // First try direct history
+                let loaded = false;
+                if (s.chat_id) {
+                    const hResp = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(s.chat_id));
+                    const hData = await hResp.json();
+                    if (hData.ok && Array.isArray(hData.messages) && hData.messages.length > 0) {
+                        setTyping(false);
+                        if (emptyState) emptyState.style.display = 'none';
+                        hData.messages.forEach(m => addMessage(m.content || '', m.role === 'user' ? 'user' : 'bot'));
+                        loaded = true;
+                    }
+                }
+
+                // If not in RAM, load from snapshot by ID
+                if (!loaded && s.id) {
+                    const snapResp = await fetch(CHAT_API + '/session?id=' + s.id);
+                    const snapData = await snapResp.json();
+                    setTyping(false);
+                    if (snapData.ok && snapData.session && Array.isArray(snapData.session.messages)) {
+                        if (emptyState) emptyState.style.display = 'none';
+                        snapData.session.messages.forEach(m => addMessage(m.content || '', m.role === 'user' ? 'user' : 'bot'));
+                        loaded = true;
+                    }
+                }
+
+                if (!loaded) {
+                    setTyping(false);
+                    if (emptyState) {
+                        emptyState.style.display = 'flex';
+                        messagesEl.appendChild(emptyState);
+                    }
+                }
+            } catch (e) {
+                setTyping(false);
+                addMessage('Fehler beim Laden der Session: ' + e.message, 'error');
+            }
+        }
+
+        function startNewChat() {
+            currentChatId = 'web-' + Date.now();
+            localStorage.setItem('bach_active_web_chat_id', currentChatId);
+            currentChatTitleEl.textContent = 'Neuer Chat';
+
+            messagesEl.innerHTML = '';
+            if (emptyState) {
+                emptyState.style.display = 'flex';
+                messagesEl.appendChild(emptyState);
+            }
+
+            renderSidebarSessions();
+            inputEl.value = '';
             autoResize();
             inputEl.focus();
+            showToast('Frischer Chat gestartet.');
+        }
+
+        sidebarNewChatBtn.addEventListener('click', startNewChat);
+
+        sidebarSearchInput.addEventListener('input', (e) => {
+            renderSidebarSessions(e.target.value);
+        });
+
+        async function loadActiveChat() {
+            if (currentChatId) {
+                // Check if currentChatId exists in webSessions
+                const match = webSessions.find(s => s.chat_id === currentChatId);
+                if (match) {
+                    selectWebSession(match);
+                    return;
+                }
+            }
+            // Otherwise load current history
+            try {
+                const resp = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(currentChatId));
+                const data = await resp.json();
+                if (data.ok && Array.isArray(data.messages) && data.messages.length > 0) {
+                    if (emptyState) emptyState.style.display = 'none';
+                    messagesEl.innerHTML = '';
+                    for (const m of data.messages) {
+                        addMessage(m.content || '', m.role === 'user' ? 'user' : 'bot');
+                    }
+                    currentChatTitleEl.textContent = data.messages[0].content.slice(0, 36) + '…';
+                } else {
+                    currentChatTitleEl.textContent = 'Neuer Chat';
+                }
+            } catch (e) {
+                console.warn('Active chat load error:', e);
+            }
         }
 
         async function send() {
             const text = inputEl.value.trim();
-            if (!text || sending) return;
+            if (!text || sending || !backendAvailable) return;
 
             sending = true;
-            sendBtn.disabled = true;
-            inputEl.value = '';
-            autoResize();
+            updateComposerAvailability();
 
-            addMessage(text, 'user');
-            setTyping(true);
+            if (currentChatTitleEl.textContent === 'Neuer Chat') {
+                const snippet = text.slice(0, 38) + (text.length > 38 ? '…' : '');
+                currentChatTitleEl.textContent = snippet;
+            }
 
             try {
+                const readinessResponse = await fetch(
+                    CHAT_API + '/readiness?chat_id=' + encodeURIComponent(currentChatId)
+                );
+                const readiness = await readinessResponse.json();
+                if (!readinessResponse.ok || readiness.available !== true) {
+                    backendAvailable = false;
+                    addMessage(
+                        readiness.status || readiness.error || 'Backend nicht verfügbar',
+                        'error'
+                    );
+                    return;
+                }
+
+                inputEl.value = '';
+                autoResize();
+                addMessage(text, 'user');
+                setTyping(true);
+
                 const resp = await fetch(CHAT_API + '/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: text, chat_id: CHAT_ID })
+                    body: JSON.stringify({ prompt: text, chat_id: currentChatId })
                 });
                 const data = await resp.json();
                 setTyping(false);
 
+                if (!resp.ok && resp.status === 503) {
+                    backendAvailable = false;
+                    inputEl.value = text;
+                    autoResize();
+                    updateComposerAvailability();
+                }
+
                 if (data.ok && data.answer) {
                     addMessage(data.answer, 'bot');
+                    // Reload sessions in background to update titles and timestamps
+                    loadWebSessions();
                 } else {
-                    addMessage(data.error || 'Unbekannter Fehler', 'error');
+                    addMessage(data.error || data.detail || 'Unbekannter Fehler', 'error');
                 }
             } catch (e) {
                 setTyping(false);
+                if (!inputEl.value) {
+                    inputEl.value = text;
+                    autoResize();
+                }
                 addMessage('Verbindungsfehler: ' + e.message, 'error');
             } finally {
                 sending = false;
-                sendBtn.disabled = false;
+                updateComposerAvailability();
                 inputEl.focus();
             }
         }
@@ -392,37 +1167,211 @@
 
         inputEl.addEventListener('input', autoResize);
 
-        async function loadHistory() {
-            // The runtime keeps the gui-web transcript; without this the page
-            // started empty on every visit although the conversation still existed.
-            try {
-                const r = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(CHAT_ID));
-                const data = await r.json();
-                for (const m of (data.messages || [])) {
-                    addMessage(m.content, m.role === 'user' ? 'user' : 'bot');
-                }
-            } catch (e) {
-                // runtime offline: refreshStatus() shows it
-            }
-        }
-
         async function refreshStatus() {
             try {
                 const r = await fetch(CHAT_API + '/status');
+                if (!r.ok) throw new Error('Chatdienst nicht erreichbar');
                 const s = await r.json();
-                document.getElementById('conn-dot').className = 'dot';
-                document.getElementById('s-backend').textContent = s.backend.replace('Backend', '');
+                const readinessResponse = await fetch(
+                    CHAT_API + '/readiness?chat_id=' + encodeURIComponent(currentChatId)
+                );
+                if (!readinessResponse.ok) throw new Error('Backendstatus nicht erreichbar');
+                const readiness = await readinessResponse.json();
+                backendAvailable = readiness.available === true;
+
+                const connectionDot = document.getElementById('conn-dot');
+                connectionDot.className = backendAvailable ? 'dot' : 'dot offline';
+                connectionDot.title = backendAvailable
+                    ? 'Backend verfügbar'
+                    : 'Backend nicht verfügbar';
+
+                const backendName = s.backend_id || String(s.backend || '').replace('Backend', '');
+                const backendStatus = readiness.status || 'nicht verfügbar';
+                document.getElementById('s-backend').textContent = backendAvailable
+                    ? backendName
+                    : backendName + ' (' + backendStatus + ')';
                 document.getElementById('s-model').textContent = s.model;
                 document.getElementById('s-mode').textContent = s.mode === 'safe' ? 'Safe' : 'Full';
             } catch (e) {
+                backendAvailable = false;
                 document.getElementById('conn-dot').className = 'dot offline';
                 document.getElementById('s-backend').textContent = 'Offline';
                 document.getElementById('s-model').textContent = '–';
                 document.getElementById('s-mode').textContent = '–';
+            } finally {
+                updateComposerAvailability();
             }
         }
 
-        loadHistory().then(loadLibraryDraft);
+        // ── Full Protocols Modal ──
+        const protocolsModal = document.getElementById('protocols-modal');
+        const protocolsListEl = document.getElementById('protocols-list');
+        const emptyDetailEl = document.getElementById('empty-detail');
+        const detailContentEl = document.getElementById('detail-content');
+        const detailTitleEl = document.getElementById('detail-title');
+        const detailMetaEl = document.getElementById('detail-meta');
+        const detailMessagesEl = document.getElementById('detail-messages');
+        const btnForkSession = document.getElementById('btn-fork-session');
+        let currentModalSnapshots = [];
+        let activeModalFilter = 'all';
+        let selectedModalSnapshotId = null;
+
+        function openProtocols() {
+            if (protocolsModal) {
+                protocolsModal.style.display = 'flex';
+                loadProtocolsList();
+            }
+        }
+
+        function closeProtocols() {
+            if (protocolsModal) {
+                protocolsModal.style.display = 'none';
+            }
+        }
+
+        async function loadProtocolsList() {
+            if (!protocolsListEl) return;
+            protocolsListEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted); font-size: 0.8rem;">Lade Protokolle...</div>';
+            try {
+                const resp = await fetch(CHAT_API + '/sessions?limit=60');
+                const data = await resp.json();
+                if (data.ok && Array.isArray(data.sessions)) {
+                    currentModalSnapshots = data.sessions;
+                    renderProtocolsList();
+                } else {
+                    protocolsListEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--error); font-size: 0.8rem;">Keine Protokolle gefunden</div>';
+                }
+            } catch (e) {
+                protocolsListEl.innerHTML = `<div style="text-align:center; padding: 20px; color: var(--error); font-size: 0.8rem;">Fehler: ${e.message}</div>`;
+            }
+        }
+
+        function renderProtocolsList() {
+            if (!protocolsListEl) return;
+            protocolsListEl.innerHTML = '';
+            const filtered = currentModalSnapshots.filter(s => {
+                if (activeModalFilter === 'all') return true;
+                const name = (s.name || '').toLowerCase();
+                const sid = (s.session_id || '').toLowerCase();
+                const cid = (s.chat_id || '').toLowerCase();
+                if (activeModalFilter === 'web') return name.includes('web') || sid.includes('web') || cid.startsWith('web');
+                if (activeModalFilter === 'telegram') return name.includes('telegram') || sid.includes('telegram') || cid.match(/^\d+$/);
+                if (activeModalFilter === 'archived') return name.includes('archiv');
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                protocolsListEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted); font-size: 0.8rem;">Keine Einträge für diesen Filter</div>';
+                return;
+            }
+
+            filtered.forEach(s => {
+                const item = document.createElement('div');
+                item.className = 'proto-item' + (s.id === selectedModalSnapshotId ? ' active' : '');
+                const title = s.name || `Session #${s.id}`;
+                const dt = s.created_at ? s.created_at.replace('T', ' ').slice(0, 19) : '–';
+                const sizeKb = ((s.size_bytes || 0) / 1024).toFixed(1);
+                item.innerHTML = `
+                    <div class="proto-title">${escapeHtml(title)}</div>
+                    <div class="proto-meta">
+                        <span>${dt}</span>
+                        <span>${sizeKb} KB</span>
+                    </div>
+                `;
+                item.addEventListener('click', () => selectModalProtocol(s.id, s));
+                protocolsListEl.appendChild(item);
+            });
+        }
+
+        async function selectModalProtocol(id, summary) {
+            selectedModalSnapshotId = id;
+            renderProtocolsList();
+            emptyDetailEl.style.display = 'none';
+            detailContentEl.style.display = 'flex';
+            detailTitleEl.textContent = summary.name || `Session #${id}`;
+            detailMetaEl.textContent = `ID #${id} • Snapshot: ${summary.created_at || '–'}`;
+            detailMessagesEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">Lade Transkript...</div>';
+
+            try {
+                const resp = await fetch(CHAT_API + '/session?id=' + id);
+                const data = await resp.json();
+                if (data.ok && data.session) {
+                    const messages = data.session.messages || [];
+                    detailMessagesEl.innerHTML = '';
+                    if (messages.length === 0) {
+                        detailMessagesEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">Keine Nachrichten im Transkript</div>';
+                        return;
+                    }
+                    messages.forEach(m => {
+                        const mDiv = document.createElement('div');
+                        mDiv.className = 'proto-msg ' + (m.role === 'user' ? 'user' : 'bot');
+                        if (m.role === 'user') {
+                            mDiv.textContent = m.content || '';
+                        } else {
+                            mDiv.innerHTML = renderMarkdown(m.content || '');
+                        }
+                        detailMessagesEl.appendChild(mDiv);
+                    });
+                    detailMessagesEl.scrollTop = detailMessagesEl.scrollHeight;
+                } else {
+                    detailMessagesEl.innerHTML = `<div style="color:var(--error); padding:20px;">${data.error || 'Fehler beim Laden'}</div>`;
+                }
+            } catch (e) {
+                detailMessagesEl.innerHTML = `<div style="color:var(--error); padding:20px;">Fehler: ${e.message}</div>`;
+            }
+        }
+
+        async function forkSelectedProtocol() {
+            if (!selectedModalSnapshotId) return;
+            if (!confirm('Möchtest du diese Session in deinen aktiven Web-Chat übernehmen? (Deine aktuelle Session wird dabei archiviert)')) {
+                return;
+            }
+            btnForkSession.disabled = true;
+            try {
+                const resp = await fetch(CHAT_API + '/fork', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ chat_id: currentChatId, snapshot_id: selectedModalSnapshotId })
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                    closeProtocols();
+                    await loadWebSessions();
+                    await loadActiveChat();
+                    showToast(`Session #${selectedModalSnapshotId} erfolgreich übernommen (${data.messages_count} Nachrichten).`);
+                } else {
+                    showToast('Fork fehlgeschlagen: ' + (data.error || 'Unbekannt'));
+                }
+            } catch (e) {
+                showToast('Fehler: ' + e.message);
+            } finally {
+                btnForkSession.disabled = false;
+            }
+        }
+
+        document.getElementById('btn-open-all-protocols').addEventListener('click', openProtocols);
+        document.getElementById('btn-close-protocols').addEventListener('click', closeProtocols);
+        if (btnForkSession) btnForkSession.addEventListener('click', forkSelectedProtocol);
+
+        if (protocolsModal) {
+            protocolsModal.addEventListener('click', (e) => {
+                if (e.target === protocolsModal) closeProtocols();
+            });
+        }
+
+        document.querySelectorAll('.protocols-filter-tabs .tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.protocols-filter-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                activeModalFilter = btn.getAttribute('data-filter');
+                renderProtocolsList();
+            });
+        });
+
+        // ── Init ──
+        loadWebSessions().then(() => {
+            loadActiveChat();
+        });
         refreshStatus();
         setInterval(refreshStatus, 30000);
     })();

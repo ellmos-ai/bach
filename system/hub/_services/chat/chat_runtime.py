@@ -1023,6 +1023,26 @@ GOAL_CHECK = (
 )
 
 
+def _session_name(chat_id: str, session: Optional["ChatSession"] = None) -> str:
+    cid = str(chat_id)
+    if cid == "gui-web" or cid.startswith("web"):
+        if session and session.messages:
+            first_user = next((m.get("content", "") for m in session.messages if m.get("role") == "user"), "")
+            if first_user:
+                clean = " ".join(first_user.split())
+                if len(clean) > 42:
+                    clean = clean[:42] + "…"
+                return f"Web: {clean}"
+        return "Web Chat"
+    if cid.isdigit():
+        return f"Telegram ({cid})"
+    if "idle" in cid:
+        return f"Idle Worker ({cid})"
+    if "tray" in cid:
+        return f"Tray ({cid})"
+    return f"Chat ({cid})"
+
+
 class ChatSession:
     """State für eine einzelne Chat-Session."""
 
@@ -1044,6 +1064,7 @@ class ChatRuntime:
     MAX_CONTEXT_CHARS = limit("BACH_MAX_CONTEXT_CHARS")
     SUMMARIZE_THRESHOLD = limit("BACH_SUMMARIZE_THRESHOLD")
     MAX_MESSAGES = limit("BACH_MAX_MESSAGES")
+    SESSION_IDLE_TTL = float(os.environ.get("BACH_CHAT_SESSION_TTL", "86400"))
 
     def __init__(self, backend, system_prompt: str = "",
                  bach_app=None, memory_fn=None, injector=None,
@@ -1083,7 +1104,8 @@ class ChatRuntime:
         if self.session_store is None:
             return
         try:
-            self.session_store.save(chat_id, session.messages)
+            name = _session_name(chat_id, session)
+            self.session_store.save(chat_id, session.messages, name=name)
             self._persistence_error = None
         except Exception as exc:
             self._persistence_error = str(exc)
@@ -1098,14 +1120,54 @@ class ChatRuntime:
         }
 
     def get_session(self, chat_id: str) -> ChatSession:
-        if chat_id not in self.sessions:
-            s = ChatSession()
-            s.model = self.backend.get_default_model()
-            s.messages = self._load_messages(chat_id)
-            self.sessions[chat_id] = s
-        return self.sessions[chat_id]
+        now = time.time()
+        if chat_id in self.sessions:
+            s = self.sessions[chat_id]
+            if s.last_active > 0 and (now - s.last_active) > self.SESSION_IDLE_TTL:
+                log.info("Session %s wegen Inaktivität (>24h) archiviert und zurückgesetzt", chat_id)
+                self.archive_and_reset(chat_id, reason="24h Inaktivität (RAM)")
+                return self.sessions[chat_id]
+            return s
 
-    def clear_session(self, chat_id: str):
+        if self.session_store is not None:
+            last_ts = self.session_store.get_last_updated(chat_id)
+            if last_ts and (now - last_ts) > self.SESSION_IDLE_TTL:
+                log.info("Persistierte Session %s älter als 24h -> Auto-Reset", chat_id)
+                try:
+                    self.session_store.archive_current(chat_id, f"Archiv [24h Auto-Reset] {_session_name(chat_id)}")
+                    self.session_store.delete(chat_id)
+                except Exception as exc:
+                    log.warning("Auto-Reset Archivierung fehlgeschlagen: %s", exc)
+                s = ChatSession()
+                s.model = self.backend.get_default_model()
+                s.last_active = now
+                self.sessions[chat_id] = s
+                return s
+
+        s = ChatSession()
+        s.model = self.backend.get_default_model()
+        s.messages = self._load_messages(chat_id)
+        s.last_active = now if s.messages else 0.0
+        self.sessions[chat_id] = s
+        return s
+
+    def archive_and_reset(self, chat_id: str, reason: str = "Manuell") -> int | None:
+        """Archiviert die aktuelle Session (sofern Nachrichten vorhanden) und leert sie."""
+        archived_id = None
+        session = self.sessions.get(chat_id)
+        has_messages = bool(session and session.messages)
+        if not has_messages and self.session_store is not None:
+            stored = self._load_messages(chat_id)
+            has_messages = bool(stored)
+
+        if has_messages and self.session_store is not None:
+            prefix = f"Archiv [{reason}] {_session_name(chat_id)}"
+            try:
+                archived_id = self.session_store.archive_current(chat_id, prefix)
+            except Exception as exc:
+                log.warning("Konnte Session vor Reset nicht archivieren: %s", exc)
+
+        self.sessions.pop(chat_id, None)
         if self.session_store is not None:
             try:
                 self.session_store.delete(chat_id)
@@ -1113,10 +1175,43 @@ class ChatRuntime:
             except Exception as exc:
                 self._persistence_error = str(exc)
                 log.error("Chat-Persistenz konnte nicht gelöscht werden: %s", exc)
-                raise RuntimeError(
-                    "Persistierter Chatverlauf konnte nicht gelöscht werden"
-                ) from exc
-        self.sessions.pop(chat_id, None)
+
+        new_session = ChatSession()
+        new_session.model = self.backend.get_default_model()
+        new_session.last_active = time.time()
+        self.sessions[chat_id] = new_session
+        return archived_id
+
+    def clear_session(self, chat_id: str, archive_reason: str = "Clear") -> int | None:
+        return self.archive_and_reset(chat_id, reason=archive_reason)
+
+    def fork_session(self, target_chat_id: str, snapshot_id: int) -> int:
+        """Klont den Verlauf aus einem Snapshot in die Ziel-Session."""
+        if not self.session_store:
+            raise RuntimeError("Kein SessionStore verfügbar")
+        snap = self.session_store.get_snapshot_by_id(snapshot_id)
+        if not snap:
+            raise ValueError(f"Snapshot ID {snapshot_id} nicht gefunden")
+        messages = snap.get("messages", [])
+
+        # Aktuelle Ziel-Session vor dem Fork sichern
+        curr = self.sessions.get(target_chat_id)
+        if curr and curr.messages and self.session_store:
+            try:
+                self.session_store.archive_current(
+                    target_chat_id,
+                    f"Archiv [Vor Fork #{snapshot_id}] {_session_name(target_chat_id)}"
+                )
+            except Exception:
+                pass
+
+        s = ChatSession()
+        s.model = self.backend.get_default_model()
+        s.messages = list(messages)
+        s.last_active = time.time()
+        self.sessions[target_chat_id] = s
+        self._persist_session(target_chat_id, s)
+        return len(messages)
 
     def history(self, chat_id: str) -> list[dict]:
         """Read-only transcript of a session: the visible user/assistant turns in order.
@@ -1236,7 +1331,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             pass
         return "\n\n".join(parts)
 
-    async def process(self, text: str, chat_id: str) -> str:
+    async def process(self, text: str, chat_id: str, *, backend=None, model=None, **kwargs) -> str:
         """Verarbeitet eine User-Nachricht und gibt die Antwort zurück."""
         session = self.get_session(chat_id)
         session.last_active = time.time()
