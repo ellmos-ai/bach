@@ -1,7 +1,7 @@
 # Portabilität: UNIVERSAL
 # Version: 1.0.0
-# Zuletzt validiert: 2026-05-17
-# Nächste Prüfung: 2026-11-17
+# Zuletzt validiert: 2026-09-10 (help-forensic: Ist=SUPPORTED_TYPES im Code, slack/imessage/signal/whatsapp realisiert)
+# Nächste Prüfung: 2026-09-24
 
 CONNECTOR - Externe Kommunikationsverbindungen
 ===============================================
@@ -17,10 +17,12 @@ UNTERSTÜTZTE TYPEN
   discord         Discord Bot (REST API)
   homeassistant   Home Assistant (REST API)
   webhook         Eingehende Webhooks (Push-basiert)
-  signal          Signal Messenger (geplant, signal-cli)
-  whatsapp        WhatsApp (geplant, Baileys)
+  signal          Signal Messenger (signal-cli, extern)
+  whatsapp        WhatsApp (Baileys/WhatsApp-Web, extern)
+  slack           Slack Bot (xoxb-Token) + Incoming Webhook (Dual-Modus)
+  imessage        Apple iMessage/SMS (osascript + chat.db, macOS-only, fail-closed)
 
-Runtime-Adapter verfügbar: telegram, discord, homeassistant
+Runtime-Adapter verfügbar: telegram, discord, homeassistant, signal, whatsapp, slack, imessage
 
 CLI-BEFEHLE
 -----------
