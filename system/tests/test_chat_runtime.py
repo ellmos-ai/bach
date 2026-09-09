@@ -17,6 +17,7 @@ if str(SYSTEM_ROOT) not in sys.path:
 from hub._services.chat.chat_runtime import (
     BACH_SYSTEM_DIR,
     BLOCKED_PATTERNS,
+    ComputeLocked,
     FailedAnswer,
     CMD_TIMEOUT,
     SAFE_BASES,
@@ -589,6 +590,64 @@ class _AbortingBackend:
     async def chat(self, messages, **kwargs):
         return {"content": self._teil, "tool_calls": None, "raw_message": {},
                 "error": "Ollama antwortet seit 120s nicht"}
+
+
+class TestComputeGate:
+    """Ein Modell-Load darf laufende Rechenjobs nicht in den Swap draengen.
+
+    Der Gate haengt in process(), weil dort JEDER Aufrufer vorbeikommt --
+    Telegram, /api/chat (Idle-Worker) und der Auftrags-Worker. Vorher fragte
+    nur der Telegram-Pfad (T-20260907-440775748).
+    """
+
+    def _run(self, gate):
+        import asyncio
+
+        from hub._services.chat.chat_runtime import ChatRuntime
+
+        backend = _AnsweringBackend()
+        backend.calls = 0
+        original = backend.chat
+
+        async def zaehlend(messages, **kwargs):
+            backend.calls += 1
+            return await original(messages, **kwargs)
+
+        backend.chat = zaehlend
+        runtime = ChatRuntime(backend)
+        runtime.compute_gate = gate
+        return runtime, backend, asyncio.run
+
+    def test_active_lock_prevents_the_model_load(self):
+        runtime, backend, run = self._run(lambda: True)
+        with pytest.raises(ComputeLocked):
+            run(runtime.process("Aufgabe", "idle-worker"))
+        assert backend.calls == 0, "Backend darf bei aktivem Lock nicht gerufen werden"
+        assert "idle-worker" not in runtime.sessions, "kein Turn, kein Transkript-Eintrag"
+
+    def test_free_lock_behaves_exactly_as_before(self):
+        runtime, backend, run = self._run(lambda: False)
+        assert run(runtime.process("Aufgabe", "idle-worker")) == "Echte Antwort"
+        assert backend.calls == 1
+
+    def test_without_a_gate_nothing_changes(self):
+        """Andere Konsumenten und Tests laufen ohne Gate weiter."""
+        runtime, backend, run = self._run(None)
+        assert run(runtime.process("Aufgabe", "idle-worker")) == "Echte Antwort"
+
+
+def test_control_api_reports_a_compute_lock_separately():
+    """`/api/chat` darf den Lock weder als Erfolg noch als Fehlschlag melden.
+
+    Quelltextpruefung wie beim ok-Guard: telegram_chat.py baut beim Import eine
+    ChatRuntime samt Konfiguration auf und gehoert nicht in diese Suite.
+    """
+    src = (Path(BACH_SYSTEM_DIR) / "_services" / "chat" / "telegram_chat.py").read_text(
+        encoding="utf-8"
+    )
+    assert "except ComputeLocked" in src
+    assert '"compute_locked": True' in src
+    assert "runtime.compute_gate = _compute_lock_blocks" in src
 
 
 class TestFailedAnswer:

@@ -82,7 +82,13 @@ from hub._services.llm.model_backend import (
     backend_identifier,
     create_backend,
 )
-from hub._services.chat.chat_runtime import ChatRuntime
+from hub._services.chat.chat_runtime import (
+    ChatRuntime,
+    ComputeLocked,
+    FailedAnswer,
+    RUNTIME_BACH_DB,
+)
+from hub._services.chat.session_store import SQLiteChatSessionStore
 
 # Compute Lock (optional — graceful if not available)
 try:
@@ -851,6 +857,30 @@ def _compute_lock_enabled() -> bool:
     return (HAS_COMPUTE_LOCK
             and CONFIG.get("compute_lock", {}).get("enabled", False)
             and isinstance(runtime.backend, OllamaBackend))
+
+
+def _compute_lock_blocks() -> bool:
+    """Laeuft gerade ein Rechenjob, der einen Modell-Load verbieten wuerde?
+
+    Haengt in ``ChatRuntime.process``, damit JEDER Aufrufer davor haltmacht --
+    der Idle-Worker ueber /api/chat lud das 18-GB-Modell bisher trotz aktivem
+    Lock und draengte einen Sage-Job in den Swap (T-20260907-440775748).
+
+    Den vom Nutzer per JA freigegebenen Telegram-Load blockiert das nicht:
+    dort sind die Jobs vorher per SIGSTOP pausiert, und check_compute_active
+    filtert gestoppte PIDs heraus -- der Lock meldet dann "inaktiv".
+    """
+    if not _compute_lock_enabled():
+        return False
+    cl_cfg = CONFIG.get("compute_lock", {})
+    is_active, _status = check_compute_active(
+        lock_path=cl_cfg.get("lock_path", DEFAULT_LOCK_PATH),
+        check_script=cl_cfg.get("check_script", DEFAULT_CHECK_SCRIPT),
+    )
+    return is_active
+
+
+runtime.compute_gate = _compute_lock_blocks
 
 
 async def _handle_pending_action(chat_id: str, text: str, update: Update) -> bool:
@@ -1695,8 +1725,13 @@ class ControlHandler(BaseHTTPRequestHandler):
                     )
                 finally:
                     loop.close()
-                response, status = _control_chat_response(answer)
-                self._json(response, status)
+                if not isinstance(answer, FailedAnswer):
+                    response, status = _control_chat_response(answer)
+                    self._json(response, status)
+                else:
+                    self._json({"ok": False, "error": str(answer)}, 502)
+            except ComputeLocked as e:
+                self._json({"ok": False, "compute_locked": True, "answer": str(e)})
             except Exception as e:
                 self._json({"error": str(e)}, 500)
             finally:

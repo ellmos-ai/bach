@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 BACH Unified System Tray
-========================
 
 Cross-platform (macOS/Windows/Linux) System Tray für das BACH OS.
 Steuert: Chat-Backend, Services, Prompts (PromptBoard), Idle Worker.
@@ -525,6 +524,7 @@ class BACHTray:
                     )
                     if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
                         task = tasks_resp["tasks"][0]
+                        task_status = status   # Ausgangsstatus, um ihn notfalls zurueckzugeben
                         break
                 if task:
                     break
@@ -606,6 +606,15 @@ class BACHTray:
             if result is None:
                 self.idle_pending = (task_id, time.time(), title)
                 print(f"[Idle] Chat-Ergebnis fuer Task #{task_id} unbekannt; wird nachgelesen")
+            elif result.get("compute_locked"):
+                # Weder erledigt noch fehlgeschlagen: der Task wurde gar nicht
+                # bearbeitet, weil Rechenjobs laufen. Zurueck in den Ausgangs-
+                # status, damit ein spaeterer Tick ihn erneut zieht -- keine
+                # Nachlese-Vormerkung (T-20260907-440775748).
+                self._api("PUT", f"/api/tasks/{task_id}",
+                           {"status": task_status, "changed_by": "idle-worker"},
+                           base=self.gui_url)
+                print(f"[Idle] Compute-Lock aktiv; Task #{task_id} bleibt {task_status}")
             elif result.get("ok"):
                 ans = str(result.get("answer", ""))
                 hat_folgetask = "task #" in ans.lower() or "folge-task" in ans.lower() or "folgetask" in ans.lower() or "teilaufgaben" in ans.lower()
