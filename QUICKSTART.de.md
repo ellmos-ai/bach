@@ -11,10 +11,10 @@
 git clone https://github.com/ellmos-ai/bach.git
 cd bach
 
-# Pre-Flight-Check ausfuehren
+# Pre-Flight-Check ausführen
 bach setup preflight
 
-# Vollstaendige Installation (MCP-Server, Hooks, Secrets, User-Profil)
+# Vollständige Installation (MCP-Server, Hooks, Secrets, User-Profil)
 bach setup full-install
 ```
 
@@ -52,10 +52,10 @@ bach mem fact "API-Endpoint: https://api.example.com/v2"
 bach mem read facts
 
 # Wiki-Notiz schreiben
-bach wiki write "bash-tricks" "Nuetzliche Bash-Befehle"
+bach wiki write "bash-tricks" "Nützliche Bash-Befehle"
 ```
 
-#### Systemstatus pruefen
+#### Systemstatus prüfen
 
 ```bash
 bach status
@@ -88,14 +88,14 @@ bach --shutdown
 BACH hat **einen Installer**. Die Konfiguration bestimmt den Deployment-Modus:
 
 ### Einzelsystem (Standard)
-Normales Setup, keine Synchronisation noetig.
+Normales Setup, keine Synchronisation nötig.
 
 ```bash
 bach setup full-install
 ```
 
 ### Multi-System (OneDrive-Sync)
-BACH in OneDrive, lokale Datenbank pro System, synchronisiert ueber ProSync.
+BACH in OneDrive, lokale Datenbank pro System, synchronisiert über ProSync.
 
 ```bash
 bach setup full-install
@@ -103,19 +103,21 @@ bach setup prosync --multi-system
 ```
 
 ### Server / Headless
-BACH auf einem 24/7-Server (z.B. Mac Studio), Zugriff ueber Telegram, Web-UI oder Tray.
+BACH auf einem dauerhaft laufenden Host. Verwaltete Dienste werden über die Startspine gestartet,
+damit Prozessbesitz, tatsächliche Ports, Readiness und Stop nachvollziehbar bleiben. Die
+Standardendpunkte sind ausschließlich lokal gebunden. Remotezugriff benötigt einen separat
+konfigurierten authentifizierten Zugang; die Control-API darf nicht direkt auf `0.0.0.0`
+veröffentlicht werden.
 
 ```bash
 bach setup full-install
-# Services starten:
-# Telegram-Bot:  python hub/_services/chat/telegram_chat.py
-# Web-GUI:       python gui/server.py --host 0.0.0.0
-# System Tray:   python hub/_services/chat/chat_tray.py
+python start/startspine.py start --chat --gui
+python start/startspine.py status --json
 ```
 
 ---
 
-## Naechste Schritte
+## Nächste Schritte
 
 1. **Dokumentation erkunden:** `bach help list`
 2. **Agenten kennenlernen:** `bach agent list`
@@ -139,23 +141,23 @@ bach connector list
 
 ---
 
-## Weiterfuehrende Dokumentation
+## Weiterführende Dokumentation
 
-- **[README.md](README.md)** - Vollstaendige Uebersicht
+- **[README.md](README.md)** - Vollständige Übersicht
 - **[Benutzerhandbuch](BACH_USER_MANUAL.md)** - Umfassendes Handbuch
-- **[Skills-Katalog](SKILLS.md)** - Alle verfuegbaren Skills
-- **[Agenten-Katalog](AGENTS.md)** - Alle verfuegbaren Agenten
+- **[Skills-Katalog](SKILLS.md)** - Alle verfügbaren Skills
+- **[Agenten-Katalog](AGENTS.md)** - Alle verfügbaren Agenten
 - **[Installationsanleitung](system/docs/help/install.txt)** - Detaillierte Install-Doku
 
 ---
 
 ## Tipps
 
-1. **Kontextuelles Arbeiten:** BACH merkt sich sessionuebergreifend, woran gearbeitet wird
-2. **Automatisierung:** Workflows fuer wiederkehrende Aufgaben nutzen
+1. **Kontextuelles Arbeiten:** BACH merkt sich sessionübergreifend, woran gearbeitet wird
+2. **Automatisierung:** Workflows für wiederkehrende Aufgaben nutzen
 3. **Integration:** Verbindung mit Claude, Gemini, Ollama oder OpenAI
-4. **Backup:** `bach backup create` fuer manuelle Sicherung (automatisch bei Shutdown)
-5. **Hilfe:** `bach help <thema>` fuer jeden Handler oder jedes Konzept
+4. **Backup:** `bach backup create` für manuelle Sicherung (automatisch bei Shutdown)
+5. **Hilfe:** `bach help <thema>` für jeden Handler oder jedes Konzept
 
 ---
 

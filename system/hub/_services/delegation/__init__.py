@@ -106,13 +106,106 @@ def _ensure_external_clutch_on_path() -> Path | None:
     return None
 
 
+def _module_is_from_root(module: Any, root: Path) -> bool:
+    """Return whether a loaded module belongs to the selected checkout."""
+
+    candidates: list[Any] = []
+    module_file = getattr(module, "__file__", None)
+    if isinstance(module_file, (str, bytes, os.PathLike)):
+        candidates.append(module_file)
+
+    module_paths = getattr(module, "__path__", None)
+    if module_paths is not None:
+        if isinstance(module_paths, (str, bytes, os.PathLike)):
+            candidates.append(module_paths)
+        else:
+            try:
+                candidates.extend(module_paths)
+            except TypeError:
+                return False
+
+    if not candidates:
+        return False
+
+    resolved_root = root.resolve()
+    for candidate in candidates:
+        try:
+            Path(candidate).resolve().relative_to(resolved_root)
+        except (OSError, TypeError, ValueError):
+            return False
+    return True
+
+
+def _activate_explicit_clutch_root(root: Path) -> None:
+    """Make one explicit checkout the coherent ``clutch`` import source."""
+
+    root_str = str(root)
+    while root_str in sys.path:
+        sys.path.remove(root_str)
+    sys.path.insert(0, root_str)
+
+    clutch_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "clutch" or name.startswith("clutch.")
+    }
+    if any(not _module_is_from_root(module, root) for module in clutch_modules.values()):
+        for name in clutch_modules:
+            del sys.modules[name]
+
+    importlib.invalidate_caches()
+
+
+def _load_explicit_clutch_module(module_name: str) -> tuple[bool, Any | None]:
+    """Load a module only from ``BACH_CLUTCH_PATH`` when it is configured.
+
+    The boolean reports whether the environment variable was set.  This keeps
+    an explicit checkout fail-closed: a missing module returns ``None`` and is
+    never filled from another installed or previously cached package.
+    """
+
+    env_value = os.environ.get(_CLUTCH_PATH_ENV)
+    if not env_value:
+        return False, None
+
+    root = next(
+        (
+            normalised
+            for raw_path in env_value.split(os.pathsep)
+            if raw_path.strip()
+            if (normalised := _normalise_clutch_root(raw_path)) is not None
+        ),
+        None,
+    )
+    if root is None:
+        return True, None
+
+    module_path = root.joinpath(*module_name.split("."))
+    if not (
+        module_path.with_suffix(".py").is_file()
+        or (module_path / "__init__.py").is_file()
+    ):
+        return True, None
+
+    _activate_explicit_clutch_root(root)
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError:
+        return True, None
+
+    if not _module_is_from_root(module, root):
+        sys.modules.pop(module_name, None)
+        return True, None
+    return True, module
+
+
 def _load_external_clutch_scorer():
     if _external_clutch_disabled():
         return None
 
-    if os.environ.get(_CLUTCH_PATH_ENV):
-        _ensure_external_clutch_on_path()
-        importlib.invalidate_caches()
+    explicit, module = _load_explicit_clutch_module("clutch.scorer")
+    if explicit:
+        return module.get_scorer if module is not None else None
 
     try:
         return importlib.import_module("clutch.scorer").get_scorer
@@ -136,9 +229,9 @@ def _load_external_clutch_partner_module():
     if _external_clutch_disabled():
         return None
 
-    if os.environ.get(_CLUTCH_PATH_ENV):
-        _ensure_external_clutch_on_path()
-        importlib.invalidate_caches()
+    explicit, module = _load_explicit_clutch_module("clutch.partner")
+    if explicit:
+        return module
 
     try:
         return importlib.import_module("clutch.partner")
@@ -162,9 +255,9 @@ def _load_external_clutch_module(module_name: str):
     if _external_clutch_disabled():
         return None
 
-    if os.environ.get(_CLUTCH_PATH_ENV):
-        _ensure_external_clutch_on_path()
-        importlib.invalidate_caches()
+    explicit, module = _load_explicit_clutch_module(module_name)
+    if explicit:
+        return module
 
     try:
         return importlib.import_module(module_name)
