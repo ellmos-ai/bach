@@ -2778,27 +2778,77 @@ Dieser Eigenbeleg wurde fuer die Steuererklarung {steuerjahr} erstellt.
 
     def _import_camt(self, args: list, dry_run: bool) -> tuple:
         """Importiert Transaktionen aus einer CAMT.053 Datei."""
-        from tools.steuer.camt_parser import CamtParser
+        from agents._experts.steuer.camt_parser import CamtParser
         if not args:
             return False, "Dateipfad fehlt. Nutzung: bach steuer import camt <pfad>"
-        
+
         path = Path(args[0])
         if not path.exists():
             return False, f"Datei nicht gefunden: {path}"
-            
+
         try:
             parser = CamtParser(path)
             txs = parser.parse()
-            
+            balances = parser.parse_balances() if hasattr(parser, 'parse_balances') else []
+
             if dry_run:
-                return True, f"[DRY-RUN] Wuerde {len(txs)} Transaktionen aus {path.name} importieren."
-                
+                bal_info = "; ".join(
+                    f"{b['iban']}: {b['balance']:.2f} {b['currency'] or 'EUR'} ({b['date']})"
+                    for b in balances) or "keine Salden gefunden"
+                return True, (f"[DRY-RUN] Wuerde {len(txs)} Transaktionen aus {path.name} "
+                              f"importieren. Salden: {bal_info}")
+
             res = [f"[OK] {len(txs)} Transaktionen aus {path.name} gelesen:"]
             for tx in txs[:5]:
                 res.append(f"  - {tx['datum']} | {tx['betrag']:>10.2f} | {tx['partner'][:20]}")
             if len(txs) > 5:
                 res.append(f"  ... und {len(txs)-5} weitere.")
-                
+
+            res.extend(self._persist_camt_balances(self.db_path, balances))
+
             return True, "\n".join(res)
         except Exception as e:
             return False, f"Fehler beim Import: {e}"
+
+    @staticmethod
+    def _persist_camt_balances(db_path, balances: list) -> list:
+        """Schreibt CAMT-Abschlusssalden nach bank_accounts (UPDATE per IBAN, sonst INSERT).
+
+        IBAN wird normalisiert (Leerzeichen raus, Grossschreibung), damit manuell
+        erfasste Konten nicht dupliziert werden. dry_run-Aufrufer rufen das nie auf.
+        """
+        import sqlite3
+        if not balances:
+            return ["[WARN] Keine Salden in der Datei - bank_accounts unveraendert."]
+        lines = []
+        con = sqlite3.connect(str(db_path))
+        try:
+            for bal in balances:
+                iban_norm = (bal.get('iban') or '').replace(' ', '').upper()
+                if not iban_norm or iban_norm == 'UNKNOWN':
+                    lines.append("[WARN] Saldo ohne IBAN uebersprungen.")
+                    continue
+                row = con.execute(
+                    "SELECT id FROM bank_accounts WHERE REPLACE(UPPER(COALESCE(iban,'')),' ','')=?",
+                    (iban_norm,)).fetchone()
+                waehrung = bal.get('currency') or 'EUR'
+                if row:
+                    con.execute(
+                        "UPDATE bank_accounts SET balance=?, balance_date=?, "
+                        "updated_at=datetime('now') WHERE id=?",
+                        (bal['balance'], bal.get('date'), row[0]))
+                    lines.append(f"[OK] Konto {iban_norm}: Saldo {bal['balance']:.2f} "
+                                 f"{waehrung} zum {bal.get('date')} aktualisiert.")
+                else:
+                    con.execute(
+                        "INSERT INTO bank_accounts (name, iban, balance, balance_date) "
+                        "VALUES (?,?,?,?)",
+                        (f"CAMT-Import {iban_norm}", iban_norm,
+                         bal['balance'], bal.get('date')))
+                    lines.append(f"[OK] Konto {iban_norm} neu angelegt, Saldo "
+                                 f"{bal['balance']:.2f} {waehrung} zum {bal.get('date')} "
+                                 f"(Name via GUI editierbar).")
+            con.commit()
+        finally:
+            con.close()
+        return lines

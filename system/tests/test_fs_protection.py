@@ -112,3 +112,34 @@ class TestPathClassifierInit:
         p = Path("/custom/path")
         c = PathClassifier(base_path=p)
         assert c.base_path == p
+
+
+def test_manifest_paths_resolve_system_and_repository_roots(tmp_path):
+    """Legacy manifest rows can be relative to either supported root."""
+    from fs_protection import FSProtection
+
+    project_root = tmp_path / "project"
+    system_root = project_root / "system"
+    (system_root / "hub").mkdir(parents=True)
+    (system_root / "hub" / "base.py").write_text("# core", encoding="utf-8")
+    (project_root / "README.md").write_text("# root", encoding="utf-8")
+
+    protection = FSProtection(system_root)
+
+    assert protection._resolve_manifest_path("hub/base.py") == system_root / "hub" / "base.py"
+    assert protection._resolve_manifest_path("README.md") == project_root / "README.md"
+    assert protection._resolve_manifest_path("system/missing.py") == system_root / "missing.py"
+
+
+def test_heal_all_fails_closed_without_snapshots(tmp_path, monkeypatch):
+    """A repair must never claim success when no recovery material exists."""
+    from tools import fs_protection
+
+    snapshots = tmp_path / "snapshots"
+    monkeypatch.setattr(fs_protection, "SNAPSHOTS_DIR", snapshots)
+    protection = fs_protection.FSProtection(tmp_path)
+
+    ok, message = protection.heal()
+
+    assert ok is False
+    assert "Keine gueltigen Snapshots" in message

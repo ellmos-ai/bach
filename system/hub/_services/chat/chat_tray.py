@@ -66,9 +66,7 @@ class BACHTray:
         self.host = host
         self.base_url = f"http://{host}:{port}"
         self.gui_url = f"http://{host}:8000"
-        # "Buddha Chat" öffnet den funktionierenden GUI-Chat (GUI-Server :8000 → /chat).
-        # Früher: gesonderter Webchat auf {webchat_port} (8080) — dort lief nie ein Server → kaputt.
-        self.webchat_url = f"http://{host}:8000/chat"
+        self.webchat_url = f"http://{host}:{webchat_port}"
         self.ollama_url = f"http://{host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
         self.state = {
@@ -724,40 +722,6 @@ class BACHTray:
         self.icon.run()
 
 
-# --- Doppelstartschutz ---
-_SINGLE_INSTANCE_LOCK = None
-
-
-def _acquire_single_instance_lock():
-     """Hält einen exklusiven Datei-Lock bis Prozessende.
-
-    Gibt None zurück, wenn bereits eine BACH-System-Tray-Instanz aktiv ist.
-    """
-    global _SINGLE_INSTANCE_LOCK
-    if _SINGLE_INSTANCE_LOCK is not None:
-        return _SINGLE_INSTANCE_LOCK
-    lock_dir = Path(os.path.expanduser("~/.config/bach"))
-    try:
-        lock_dir.mkdir(parents=True, exist_ok=True)
-        lock_file = lock_dir / "chat_tray.lock"
-        fd = open(lock_file, "a+")   # erstellt bei Bedarf, trunciert nicht
-        if sys.platform == "win32":
-            import msvcrt
-            msvcrt.locking(fd.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        fd.seek(0)
-        fd.truncate()
-        fd.write(str(os.getpid()))
-        fd.flush()
-        _SINGLE_INSTANCE_LOCK = fd
-        return fd
-    except (IOError, OSError):
-         # Lock blockiert -> eine Instanz ist bereits aktiv
-        return None
-
-
 def main():
     parser = argparse.ArgumentParser(description="BACH Unified System Tray")
     parser.add_argument("--host", default="127.0.0.1", help="Control API Host")
@@ -773,11 +737,6 @@ def main():
     tray = BACHTray(host=args.host, port=args.port, webchat_port=args.webchat_port)
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
-        return
-
-      # Doppelstartschutz: nur der eigentliche Tray-Start wird gesperrt (Smoke-Test bleibt frei)
-    if _acquire_single_instance_lock() is None:
-        print("[chat_tray] Eine BACH-System-Tray-Instanz läuft bereits — Doppelstart blockiert.")
         return
     tray.run()
 
