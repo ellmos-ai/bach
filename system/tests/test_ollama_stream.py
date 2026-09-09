@@ -28,6 +28,9 @@ class _FakeStream:
     async def __aexit__(self, *a):
         return False
 
+    def raise_for_status(self):
+        pass
+
     async def aiter_lines(self):
         for z in self._zeilen:
             yield z

@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-08-28
+# Next review: 2027-08-28
 
 SERVICIO DE CHAT BACH: Bot de Telegram multibackend + API de control + Bandeja del sistema
 ==========================================================================
@@ -60,17 +60,17 @@ CONTROL API (Puerto 8081)
   GET /api/status Estado actual (incluida la actividad de la herramienta)
   GET /api/backends Backends disponibles con estado
   GET /api/models Modelos del backend actual
-  POST /api/backend Cambiar backend: {"nombre": "claude", "modelo": "opus"}
+  POST /api/backend Cambiar backend: {"name": "claude", "model": "opus"}
   POST /api/mode Establecer modo: {"mode": "safe"}
   POST /api/model Establecer modelo: {"model": "qwen3.5:35b-a3b"}
   POST /api/think Modo de pensamiento: {"think": true}
-  POST /api/max_tool_rounds Rondas máximas de herramientas: {"rondas": 10} (0=ilimitado)
+  POST /api/max_tool_rounds Rondas máximas de herramientas: {"rounds": 10} (0=ilimitado)
   POST /api/chat mensaje de chat: {"prompt": "...", "chat_id": "..."}
 
 
 BANDEJA DEL SISTEMA
 -----------
-  Inicio: python chat_tray.py [--host HOST] [--port PUERTO]
+  Inicio: python start/startspine.py start --tray
 
   Características:
     - Icono de estado: Verde (seguro), Naranja (lleno), Rojo (no conectado)
@@ -83,8 +83,11 @@ BANDEJA DEL SISTEMA
     - Abrir panel web
     - Multiplataforma: macOS, Windows, Linux (a través de pystray)
 
-  Bandeja remota (de otro sistema):
-    python chat_tray.py --host macstudvonlukas --port 8081
+  Bandeja remota (solo a través de una red protegida por separado):
+    python start/startspine.py start --tray --host bach-server.local
+
+  Límite de seguridad: el acceso remoto requiere una decisión explícita de
+  autenticación. La API de control no debe exponerse directamente en 0.0.0.0.
 
 
 ARCHIVOS
@@ -96,7 +99,7 @@ ARCHIVOS
   Configuración: ~/.config/bach/telegram_chat.json
   Token: ~/.credentials/telegram_bot_token
   ID del propietario: ~/.credentials/telegram_owner_id
-  Mensaje: datos/system_prompt_buddha.txt
+  Mensaje: data/system_prompt_buddha.txt
   Registros: ~/Library/Logs/bach/telegram-bot.log (macOS), data/logs/ (Windows)
 
   Agentes de lanzamiento (macOS):
@@ -115,8 +118,8 @@ CONFIGURACIÓN
     {
       "bot_token": "...",
       "owner_id": "...",
-      "hornear": {
-        "tipo": "ollama",
+      "backend": {
+        "type": "ollama",
         "base_url": "http://localhost:11434",
         "default_model": "qwen3.5:35b-a3b"
       }
@@ -128,7 +131,7 @@ CONFIGURACIÓN
     OLLAMA_MODEL Sobrescribir modelo estándar
     OLLAMA_URL Sobrescribir URL de Ollama
     BACH_CONTROL_PORT Puerto API de control (predeterminado: 8081)
-    BACH_HOST Host predeterminado para bandeja/GUI (por ejemplo, macstudvonlukas)
+    BACH_HOST Host predeterminado para bandeja/GUI (por ejemplo, bach-server.local)
     BACH_NO_BROWSER =1: No abrir el navegador automáticamente (GUI remota)
     ANTHROPIC_API_KEY Para el backend claude-api
     OPENAI_API_KEY Para backend openai

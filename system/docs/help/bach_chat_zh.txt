@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-08-28
+# Next review: 2027-08-28
 
 BACH 聊天服务 - 多后端 Telegram 机器人 + 控制 API + 系统托盘
 ==========================================================================
@@ -70,7 +70,7 @@ CONTROL API（端口 8081）
 
 系统托盘
 -----------
-  开始： python chat_tray.py [--主机 HOST] [--端口 PORT]
+  启动：python start/startspine.py start --tray
 
   特点：
     - 状态图标：绿色（安全）、橙色（已满）、红色（未连接）
@@ -83,8 +83,11 @@ CONTROL API（端口 8081）
     - 打开网络仪表板
     - 跨平台：macOS、Windows、Linux（通过 pystray）
 
-  远程托盘（来自另一个系统）：
-    python chat_tray.py --host macstudvonlukas --port 8081
+  远程托盘（仅通过单独保护的网络链路使用）：
+    python start/startspine.py start --tray --host bach-server.local
+
+  安全边界：远程访问需要明确的身份验证方案。不要在 0.0.0.0 上直接公开
+  Control API。
 
 
 文件
@@ -111,14 +114,14 @@ CONTROL API（端口 8081）
 
 配置
 -------------
-〜/.config/bach/telegram_chat.json：
+~/.config/bach/telegram_chat.json:
     {
       "bot_token": "...",
       "owner_id": "...",
-      “烘焙”：{
-        “类型”：“乌拉马”，
+      "backend": {
+        "type": "ollama",
         "base_url": "http://localhost:11434",
-        “default_model”：“qwen3.5：35b-a3b”
+        "default_model": "qwen3.5:35b-a3b"
       }
     }
 
@@ -128,7 +131,7 @@ CONTROL API（端口 8081）
     OLLAMA_MODEL 覆盖标准模型
     OLLAMA_URL 覆盖 Ollama URL
     BACH_CONTROL_PORT 控制API端口（默认：8081）
-    BACH_HOST 托盘/GUI 的默认主机（例如 macstudvonlukas）
+    BACH_HOST 托盘/GUI 的默认主机（例如 bach-server.local）
     BACH_NO_BROWSER =1: 不自动打开浏览器（远程 GUI）
     ANTHROPIC_API_KEY 用于 claude-api 后端
     OPENAI_API_KEY 用于 openai 后端

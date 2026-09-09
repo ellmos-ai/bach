@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-08-28
+# Next review: 2027-08-28
 
 СЛУЖБА ЧАТА BACH — многопользовательский бот Telegram + API управления + системный трей
 ==========================================================================
@@ -63,14 +63,14 @@ CONTROL API (порт 8081)
   POST /api/backend Переключить серверную часть: {"name": "claude", "model": "opus"}
   POST /api/mode Установить режим: {"mode": "safe"}
   POST /api/model Установить модель: {"model": "qwen3.5:35b-a3b"}
-  POST /api/think Режим мышления: {"думаю": true}
-  POST /api/max_tool_rounds Максимальное количество раундов инструмента: {"раунды": 10} (0 = неограниченно)
+  POST /api/think Режим мышления: {"think": true}
+  POST /api/max_tool_rounds Максимальное количество раундов инструмента: {"rounds": 10} (0 = неограниченно)
   POST /api/chat сообщение чата: {"prompt": "...", "chat_id": "..."}
 
 
 СИСТЕМНЫЙ ЛОТОК
 -----------
-  Начало: pythonchat_tray.py [--host HOST] [--port PORT]
+  Запуск: python start/startspine.py start --tray
 
   Особенности:
     - Значок состояния: зеленый (безопасен), оранжевый (заполнен), красный (не подключен)
@@ -83,8 +83,11 @@ CONTROL API (порт 8081)
     - Открыть веб-панель
     - Кроссплатформенность: macOS, Windows, Linux (через pystray)
 
-  Удаленный лоток (из другой системы):
-    pythonchat_tray.py --host macstudvonlukas --port 8081
+  Удалённый трей (только через отдельно защищённую сеть):
+    python start/startspine.py start --tray --host bach-server.local
+
+  Граница безопасности: удалённый доступ требует отдельного решения по
+  аутентификации. Нельзя напрямую публиковать Control API на 0.0.0.0.
 
 
 ФАЙЛЫ
@@ -115,8 +118,8 @@ CONTROL API (порт 8081)
     {
       "bot_token": "...",
       "owner_id": "...",
-      "выпечка": {
-        "тип": "оллама",
+      "backend": {
+        "type": "ollama",
         "base_url": "http://localhost:11434",
         "default_model": "qwen3.5:35b-a3b"
       }
@@ -128,7 +131,7 @@ CONTROL API (порт 8081)
     OLLAMA_MODEL Перезаписать стандартную модель
     OLLAMA_URL Перезаписать URL-адрес Олламы
     BACH_CONTROL_PORT Порт API управления (по умолчанию: 8081)
-    BACH_HOST Хост по умолчанию для лотка/графического интерфейса (например, macstudvonlukas)
+    BACH_HOST Хост по умолчанию для трея/GUI (например, bach-server.local)
     BACH_NO_BROWSER =1: Не открывать браузер автоматически (удаленный графический интерфейс).
     ANTHROPIC_API_KEY для бэкэнда claude-api
     OPENAI_API_KEY Для серверной части openai
