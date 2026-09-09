@@ -67,7 +67,10 @@ def test_analyze_stats_classifies_entries(tmp_path):
     assert stats["archive"] == 1
 
 
-def test_main_analyze_prints_stats(monkeypatch, capsys):
+def test_main_analyze_prints_stats(monkeypatch, capsys, tmp_path):
+    db_path = tmp_path / "working.db"
+    db_path.touch()
+    monkeypatch.setenv("BACH_DB", str(db_path))
     monkeypatch.setattr(
         cleanup_module.WorkingMemoryCleanup,
         "analyze_stats",

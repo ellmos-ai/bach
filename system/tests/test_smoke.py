@@ -74,15 +74,6 @@ def isolated_cli_db(tmp_path_factory):
                     (migration.name, "pytest-smoke-fixture"),
                 )
 
-        # These columns are still supplied by migration 032 rather than the
-        # consolidated schema, but the CLI handlers already rely on them.
-        for table in ("bach_agents", "bach_experts", "skills", "wiki_articles", "tools"):
-            columns = {
-                row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
-            }
-            if "language" not in columns:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN language TEXT DEFAULT 'de'")
-
         conn.execute(
             """
             CREATE TABLE distribution_releases (

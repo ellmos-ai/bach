@@ -508,7 +508,7 @@ CREATE TABLE IF NOT EXISTS bach_agents (
             version TEXT DEFAULT '1.0.0',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        , dashboard TEXT);
+        , dashboard TEXT, language TEXT DEFAULT 'de');
 
 CREATE TABLE IF NOT EXISTS bach_experts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -528,7 +528,7 @@ CREATE TABLE IF NOT EXISTS bach_experts (
             version TEXT DEFAULT '1.0.0',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        , dashboard TEXT);
+        , dashboard TEXT, language TEXT DEFAULT 'de');
 
 CREATE TABLE IF NOT EXISTS agent_expert_mapping (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -563,7 +563,7 @@ CREATE TABLE IF NOT EXISTS skills (
         trigger_phrases TEXT,
         created_at TEXT,
         updated_at TEXT
-    , dist_type INTEGER DEFAULT 2, template_content TEXT, content TEXT, content_hash TEXT, operator_class TEXT);
+    , dist_type INTEGER DEFAULT 2, template_content TEXT, content TEXT, content_hash TEXT, operator_class TEXT, language TEXT DEFAULT 'de');
 
 CREATE TABLE IF NOT EXISTS tools (
         id INTEGER PRIMARY KEY,
@@ -584,7 +584,7 @@ CREATE TABLE IF NOT EXISTS tools (
         speed TEXT,
         created_at TEXT,
         updated_at TEXT
-    , dist_type INTEGER DEFAULT 2, template_content TEXT, content TEXT, content_hash TEXT);
+    , dist_type INTEGER DEFAULT 2, template_content TEXT, content TEXT, content_hash TEXT, language TEXT DEFAULT 'de');
 
 CREATE TABLE IF NOT EXISTS tool_registry (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1505,7 +1505,8 @@ CREATE TABLE IF NOT EXISTS wiki_articles (
                     content TEXT,
                     category TEXT,
                     last_modified TIMESTAMP,
-                    tags TEXT
+                    tags TEXT,
+                    language TEXT DEFAULT 'de'
                 );
 
 CREATE TABLE IF NOT EXISTS document_index (
