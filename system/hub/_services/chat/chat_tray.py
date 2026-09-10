@@ -34,6 +34,16 @@ try:
 except ImportError:
     HAS_RECURRING = False
 
+if sys.stdout is None:
+    try:
+        _tray_log_dir = Path.home() / ".bach"
+        _tray_log_dir.mkdir(parents=True, exist_ok=True)
+        _tray_log_file = open(_tray_log_dir / "chat_tray.log", "a", encoding="utf-8", buffering=1)
+        sys.stdout = _tray_log_file
+        sys.stderr = _tray_log_file
+    except Exception:
+        pass
+
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')

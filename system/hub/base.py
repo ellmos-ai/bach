@@ -30,10 +30,14 @@ class BaseHandler(ABC):
             self.base_path = Path(base_path_or_app) if not isinstance(base_path_or_app, Path) else base_path_or_app
 
         local_db = self.base_path / "data" / "bach.db"
+        if not local_db.exists():
+            candidate = self.base_path / "system" / "data" / "bach.db"
+            if candidate.exists():
+                local_db = candidate
         system_root = Path(__file__).resolve().parent.parent
         try:
             from .bach_paths import BACH_DB
-            if local_db.exists() and self.base_path.resolve() != system_root:
+            if local_db.exists() and self.base_path.resolve() not in (system_root, system_root.parent):
                 self._canonical_db = local_db
             else:
                 self._canonical_db = BACH_DB

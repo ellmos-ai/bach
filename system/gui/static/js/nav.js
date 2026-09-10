@@ -76,15 +76,15 @@ const NAV_ITEMS = [
     { label: "Wissen", children: [
         { href: "/memory", label: "Memory" },
         { href: "/prompt-library", label: "Prompts" },
-        { href: "/denkarium", label: "Denkarium" },
+        { href: "/denkarium", label: "Denkarium", external: true },
         { href: "/wiki", label: "Wiki" },
         { href: "/usecases", label: "Use Cases" },
     ]},
     { label: "Kommunikation", children: [
         { href: "/messages", label: "Nachrichten" },
-        { href: "/inbox", label: "Inbox" },
         { href: "/kontakte", label: "Kontakte" },
     ]},
+    { href: "/inbox", label: "Dateien" },
     { label: "Finanzen", children: [
         { href: "/financial", label: "Finanzen" },
         { href: "/tokens", label: "Tokens" },
@@ -93,7 +93,7 @@ const NAV_ITEMS = [
     { label: "System", children: [
         { href: "/settings", label: "Einstellungen" },
         { href: "/daemon", label: "Automation" },
-        { href: "/control/", label: "Unified GUI" },
+        { href: "/control/", label: "Unified GUI", external: true },
         { href: "/maintenance", label: "Wartung" },
         { href: "/logs", label: "Logs" },
         { href: "/help", label: "Help" },
@@ -127,7 +127,8 @@ function initNavigation() {
             const parentActive = hasActiveChild(item) ? ' active' : '';
             const childHtml = item.children.map(child => {
                 const childActive = isActive(child.href) ? ' active' : '';
-                return `<a href="${child.href}" class="dropdown-item${childActive}">${child.label}</a>`;
+                const target = child.external ? ' target="_blank" rel="noopener noreferrer"' : '';
+                return `<a href="${child.href}"${target} class="dropdown-item${childActive}">${child.label}</a>`;
             }).join('');
             return `<div class="nav-dropdown${parentActive}">
                 <button class="nav-item nav-dropdown-toggle${parentActive}">${item.label} <span class="dropdown-arrow">▾</span></button>
@@ -135,7 +136,7 @@ function initNavigation() {
             </div>`;
         }
         const active = isActive(item.href) ? ' active' : '';
-        const target = item.external ? ' target="_blank"' : '';
+        const target = item.external ? ' target="_blank" rel="noopener noreferrer"' : '';
         return `<a href="${item.href}"${target} class="nav-item${active}">${item.label}</a>`;
     }).join('\n            ');
 

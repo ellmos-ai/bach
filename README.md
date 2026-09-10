@@ -266,9 +266,9 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 
 ### Competitive Watch
 
-As of July 19, 2026, OpenClaw stable remains `2026.7.1`; the newest visible prerelease is `2026.7.2-beta.3`, published on July 18, 2026 at 23:16 UTC. It extends the already tracked MCP-isolation, task-ledger, remote-worker, and recovery signals with remote coding sessions on owning hosts, guided Control UI/channel setup, stronger gateway/session recovery, safer channel operation, and versioned external-supervisor restart handoffs. The best-fit impulses for BACH are supervised restart handoffs, terminal resume on the owning host, guided setup hardening, and recovery-safe channel/session flows; broad mobile/channel parity remains outside BACH's current focus. Source: [openclaw/openclaw releases](https://github.com/openclaw/openclaw/releases/tag/v2026.7.2-beta.3).
+As of September 10, 2026, OpenClaw stable remains `2026.7.1` (with prerelease tracks through `2026.7.2-beta.3`). Relevant architectural impulses for BACH continue to be owning-host terminal-resume, supervised restart handoffs, guided setup hardening, session-local MCP isolation, and recovery-safe channel/session flows; broad mobile/messaging gateway parity remains outside BACH's core design.
 
-On the BACH side, the July 19 care pass sealed the live release catalog: `bach upgrade repair --version v3.13.0-bluesky --json` registered the current release, and `bach upgrade check --json` now reports stable/latest `v3.13.0-bluesky`, `release_entries=2`, `current_release_registered=true`, `repair_recommended=false`, and `local_modifications=0`. `test-agent` doctor/start dry-run and usecase `50` also ran successfully.
+On the BACH side, the September 10 care and development pass stabilized the test suite (123 passed across self-heal, memory cleanup, registry watcher, and smoke tests), hardened `BaseHandler` canonical DB resolution for repo-root/isolated test layouts, added fail-safe database handling to `RestoreHandler` and `WikiHandler`, and verified agent doctor diagnostics (`ati`, `entwickler`), dry-run starts, documentation freshness (2,102 documents checked, 0 outdated >60d), and memory decay operations.
 
 ## License
 

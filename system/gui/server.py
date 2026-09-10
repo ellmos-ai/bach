@@ -45,6 +45,9 @@ from contextlib import asynccontextmanager
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
+from hub.task_audit import apply_task_field_changes
+from gui.config import settings
+from gui.console import mount_console
 
 # Claude Router Import
 sys.path.insert(0, str(Path(__file__).parent / "api"))
@@ -109,6 +112,16 @@ except ImportError:
     BACH_DB = BACH_DB
 
 USER_DB = BACH_DB
+
+from assistant_core import MessageStore  # Welle 1 (D-20260830-002): Nachrichten-Fachkern, ein Datenkanon
+from accounts_core import AccountStore  # Welle 2 (D-20260903-003 = A): bank_accounts domain core
+
+
+def _messages() -> MessageStore:
+    """Store auf der kanonischen User-DB; fehlt sie, fail-closed wie get_user_db()."""
+    if not USER_DB.exists():
+        raise FileNotFoundError(f"User-DB nicht gefunden: {USER_DB}")
+    return MessageStore(USER_DB)
 
 TEMPLATES_DIR = GUI_DIR / "templates"
 
@@ -374,6 +387,7 @@ class TaskUpdate(BaseModel):
     created_by: Optional[str] = None
 
     depends_on: Optional[str] = None
+    changed_by: Optional[str] = None
 
 
 
@@ -1273,10 +1287,8 @@ async def get_status():
 
     # Messages (mit Fallback)
     try:
-        messages_unread = conn_bach.execute(
-            "SELECT COUNT(*) FROM messages WHERE status = 'unread'"
-        ).fetchone()[0]
-    except (sqlite3.OperationalError, sqlite3.DatabaseError):
+        messages_unread = _messages().unread_count()
+    except (sqlite3.OperationalError, sqlite3.DatabaseError, FileNotFoundError):
         messages_unread = 0
 
 
@@ -1543,55 +1555,56 @@ async def get_task(task_id: int):
 
 @app.put("/api/tasks/{task_id}")
 async def update_task(task_id: int, update: TaskUpdate):
-    """Aktualisiert Task in bach.db."""
+    """Aktualisiert Task in bach.db und protokolliert jede Feldaenderung in task_history.
+
+    T-20260906-985973908: Vorher wurde `task_history` nie beschrieben (0 Zeilen system-
+    weit) und `started_at` beim Wechsel auf 'in_progress' nie gesetzt -- die Queue hatte
+    keinen Audit-Trail. Beide Luecken werden hier im selben Handler geschlossen, weil GUI
+    und Tray-Idle-Worker gleichermassen ueber PUT /api/tasks/{id} gehen.
+
+    T-20260906-240256515: Die eigentliche Schreiblogik (UPDATE + task_history) liegt seit
+    diesem Ticket zentral in hub.task_audit.apply_task_field_changes, weil die separate
+    Headless-API (system/gui/api/headless.py, Port 8001) dieselbe Luecke hatte -- hier nur
+    noch die GUI-eigene Feldabbildung (`project` -> Spalte `category`).
+    """
     conn = get_bach_db()
     try:
-        existing = conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
+        existing_row = row_to_dict(existing)
 
-        updates = []
-        values = []
-
+        # field_values: {DB-Spalte: neuer_wert} -- `project` ist ein GUI-Alias fuer
+        # die tatsaechliche Spalte `category`, muss also VOR dem Aufruf aufgeloest werden.
+        field_values = {}
         if update.title is not None:
-            updates.append("title = ?")
-            values.append(update.title)
+            field_values["title"] = update.title
         if update.description is not None:
-            updates.append("description = ?")
-            values.append(update.description)
+            field_values["description"] = update.description
         if update.priority is not None:
-            updates.append("priority = ?")
-            values.append(update.priority)
+            field_values["priority"] = update.priority
         if update.status is not None:
-            updates.append("status = ?")
-            values.append(update.status)
-            if update.status == "completed":
-                updates.append("completed_at = ?")
-                values.append(datetime.now().isoformat())
+            field_values["status"] = update.status
         if update.project is not None:
-            updates.append("category = ?")
-            values.append(update.project)
+            field_values["category"] = update.project
         if update.assigned_to is not None:
-            updates.append("assigned_to = ?")
-            values.append(update.assigned_to)
+            field_values["assigned_to"] = update.assigned_to
         if update.created_by is not None:
-            updates.append("created_by = ?")
-            values.append(update.created_by)
+            field_values["created_by"] = update.created_by
         if update.depends_on is not None:
-            updates.append("depends_on = ?")
-            values.append(update.depends_on)
+            field_values["depends_on"] = update.depends_on
 
-        if updates:
-            updates.append("updated_at = ?")
-            values.append(datetime.now().isoformat())
-            values.append(task_id)
-            conn.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", values)
+        # changed_by: vom Aufrufer mitgegeben (z.B. Idle-Worker meldet sich als
+        # "idle-worker"), sonst generischer API-Default -- Schema-Default waere 'user',
+        # das waere hier irrefuehrend, da die meisten PUTs programmatisch erfolgen.
+        changed_by = update.changed_by or "api"
+
+        if apply_task_field_changes(conn, task_id, existing_row, field_values, changed_by=changed_by):
             conn.commit()
     finally:
         conn.close()
 
     return {"status": "updated"}
-
 # ═══════════════════════════════════════════════════════════════
 # API ROUTES - ASSIGNEES (Agenten, Experten, Partner)
 # ═══════════════════════════════════════════════════════════════
@@ -2141,212 +2154,54 @@ async def api_restore_mounts():
 
 
 @app.get("/api/messages")
-
 async def list_messages(direction: Optional[str] = None, status: Optional[str] = None,
-
                         partner: Optional[str] = None,
-
                         include_archived: bool = True, limit: int = 50):
-
     """Listet Nachrichten.
 
-
-
     Args:
-
         direction: 'inbox' oder 'outbox'
-
         status: 'unread', 'read', 'archived'
-
         include_archived: Auch archivierte anzeigen (default: True)
-
         limit: Max Anzahl
-
     """
-
-    conn = get_user_db()
-    try:
-        query = "SELECT * FROM messages WHERE status != 'deleted'"
-        params = []
-
-        if direction:
-            query += " AND direction = ?"
-            params.append(direction)
-
-        if status:
-            query += " AND status = ?"
-            params.append(status)
-        elif not include_archived:
-            query += " AND status != 'archived'"
-
-        if partner:
-            query += " AND (sender = ? OR recipient = ?)"
-            params.extend([partner, partner])
-
-        query += " ORDER BY created_at DESC LIMIT ?"
-        params.append(limit)
-
-        rows = conn.execute(query, params).fetchall()
-    finally:
-        conn.close()
-
-    return {"messages": rows_to_list(rows), "count": len(rows)}
-
-
-
-@app.post("/api/claude/chat")
-async def claude_chat(
-    request_type: str = Body(...),
-    prompt: str = Body(...),
-    user_id: str = Body(default="user")
-):
-    """
-    Sendet Anfrage an Claude (Bridge oder GUI-Session).
-
-    Body:
-        request_type: "chat" | "assistant" | "quick_question" | "code_analysis" | "long_task"
-        prompt: User-Eingabe
-        user_id: User-ID (default: lukas)
-    """
-    if not CLAUDE_ROUTER_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Claude Router nicht verfügbar")
-
-    try:
-        result = route_request(request_type, prompt, user_id)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Router-Fehler: {type(e).__name__}")
+    rows = _messages().list(direction=direction, status=status, partner=partner,
+                            include_archived=include_archived, limit=limit)
+    return {"messages": rows, "count": len(rows)}
 
 
 @app.post("/api/messages")
-
 async def create_message(msg: MessageCreate):
-
     """Erstellt neue Nachricht."""
-
-    conn = get_user_db()
-
-    try:
-
-        cursor = conn.execute("""
-
-            INSERT INTO messages (direction, sender, recipient, subject, body, priority)
-
-            VALUES ('outbox', 'user', ?, ?, ?, ?)
-
-        """, (msg.recipient, msg.subject, msg.body, msg.priority))
-
-        msg_id = cursor.lastrowid
-
-        conn.commit()
-
-    finally:
-
-        conn.close()
-
+    msg_id = _messages().create_order(msg.recipient, msg.body, subject=msg.subject, priority=msg.priority)
     return {"id": msg_id, "status": "created"}
 
 
-
 @app.put("/api/messages/{msg_id}/read")
-
 async def mark_message_read(msg_id: int):
-
     """Markiert Nachricht als gelesen."""
-
-    conn = get_user_db()
-
-    try:
-
-        conn.execute(
-
-            "UPDATE messages SET status = 'read', read_at = ? WHERE id = ?",
-
-            (datetime.now().isoformat(), msg_id)
-
-        )
-
-        conn.commit()
-
-    finally:
-
-        conn.close()
-
+    _messages().mark_read(msg_id)
     return {"status": "read"}
 
 
 @app.post("/api/messages/mark-all-read")
 async def mark_all_messages_read():
     """Markiert alle ungelesenen Nachrichten als gelesen."""
-    conn = get_user_db()
-    try:
-        now = datetime.now().isoformat()
-        cursor = conn.execute(
-            "UPDATE messages SET status = 'read', read_at = ? WHERE status = 'unread'",
-            (now,)
-        )
-        count = cursor.rowcount
-        conn.commit()
-    finally:
-        conn.close()
+    count = _messages().mark_all_read()
     return {"status": "ok", "marked": count}
 
 
-
 @app.put("/api/messages/{msg_id}/archive")
-
 async def archive_message(msg_id: int):
-
     """Archiviert eine Nachricht."""
-
-    conn = get_user_db()
-
-    try:
-
-        conn.execute(
-
-            "UPDATE messages SET status = 'archived' WHERE id = ?",
-
-            (msg_id,)
-
-        )
-
-        conn.commit()
-
-    finally:
-
-        conn.close()
-
+    _messages().archive(msg_id)
     return {"status": "archived"}
 
 
-
-
-
 @app.put("/api/messages/{msg_id}/delete")
-
 async def delete_message(msg_id: int):
-
     """Markiert Nachricht als geloescht (soft delete)."""
-
-    conn = get_user_db()
-
-    try:
-
-        conn.execute(
-
-            "UPDATE messages SET status = 'deleted' WHERE id = ?",
-
-            (msg_id,)
-
-        )
-
-        conn.commit()
-
-    finally:
-
-        conn.close()
-
+    _messages().delete(msg_id)
     return {"status": "deleted"}
 
 
@@ -2365,21 +2220,13 @@ async def get_partners():
                 if name and name not in seen:
                     partners.append({"name": name})
                     seen.add(name)
-        conn = get_user_db()
-        rows = conn.execute(
-            "SELECT DISTINCT sender FROM messages WHERE sender != 'user' AND sender IS NOT NULL ORDER BY sender"
-        ).fetchall()
-        conn.close()
-        for r in rows:
-            name = r[0]
+        for name in _messages().partners():
             if name and name not in seen:
                 partners.append({"name": name})
                 seen.add(name)
     except Exception:
         pass
     return {"partners": partners}
-
-
 # ═══════════════════════════════════════════════════════════════
 
 # API ROUTES - DAEMON
@@ -4183,6 +4030,13 @@ async def update_gui_theme(payload: ThemeUpdate):
 if STATIC_DIR.exists():
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+# Operator-Konsole bleibt standardmaessig aus. Bei expliziter Aktivierung
+# verwendet sie ihre bestehende Adapter-Konfiguration; BACH fuehrt weder eine
+# zweite Authentifizierung noch eine zweite Unified-GUI-Konfigurationsquelle ein.
+if settings.console_enabled:
+    mount_console(app, prefix=settings.console_prefix)
 
 
 
@@ -12531,13 +12385,7 @@ async def export_routines():
 async def get_bank_accounts():
     """Alle Bankkonten laden."""
     try:
-        conn = get_user_db()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM bank_accounts ORDER BY name")
-        rows = cursor.fetchall()
-        accounts = [dict(row) for row in rows]
-        conn.close()
+        accounts = AccountStore(BACH_DB).list_accounts()
         return {"success": True, "accounts": accounts}
     except Exception as e:
         return {"success": False, "error": public_error_message(), "accounts": []}
@@ -12548,22 +12396,15 @@ async def add_bank_account(request: Request):
     """Neues Bankkonto anlegen."""
     try:
         data = await request.json()
-        conn = get_user_db()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO bank_accounts (name, bank_name, iban, bic, account_type, notes)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (
+        account_id = AccountStore(BACH_DB).create_account(
             data.get('name'),
-            data.get('bank_name'),
-            data.get('iban'),
-            data.get('bic'),
-            data.get('account_type', 'girokonto'),
-            data.get('notes')
-        ))
-        conn.commit()
-        conn.close()
-        return {"success": True, "id": cursor.lastrowid}
+            bank_name=data.get('bank_name'),
+            iban=data.get('iban'),
+            bic=data.get('bic'),
+            account_type=data.get('account_type', 'girokonto'),
+            notes=data.get('notes'),
+        )
+        return {"success": True, "id": account_id}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
@@ -12573,24 +12414,15 @@ async def update_bank_account(account_id: int, request: Request):
     """Bankkonto aktualisieren."""
     try:
         data = await request.json()
-        conn = get_user_db()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE bank_accounts SET
-                name = ?, bank_name = ?, iban = ?, bic = ?,
-                account_type = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (
+        AccountStore(BACH_DB).update_account(
+            account_id,
             data.get('name'),
-            data.get('bank_name'),
-            data.get('iban'),
-            data.get('bic'),
-            data.get('account_type', 'girokonto'),
-            data.get('notes'),
-            account_id
-        ))
-        conn.commit()
-        conn.close()
+            bank_name=data.get('bank_name'),
+            iban=data.get('iban'),
+            bic=data.get('bic'),
+            account_type=data.get('account_type', 'girokonto'),
+            notes=data.get('notes'),
+        )
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
@@ -12600,11 +12432,7 @@ async def update_bank_account(account_id: int, request: Request):
 async def delete_bank_account(account_id: int):
     """Bankkonto loeschen."""
     try:
-        conn = get_user_db()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM bank_accounts WHERE id = ?", (account_id,))
-        conn.commit()
-        conn.close()
+        AccountStore(BACH_DB).delete_account(account_id)
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": public_error_message()}

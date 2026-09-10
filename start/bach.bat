@@ -342,9 +342,9 @@ if "!CONTROL_ONLINE!"=="1" (
     python -c "import psutil, os; [p.kill() for p in psutil.process_iter(['name','cmdline']) if p.info.get('name') and 'python' in p.info['name'].lower() and any('chat_tray.py' in str(a) for a in (p.info.get('cmdline') or []))]" >nul 2>&1
     timeout /t 1 /nobreak >nul
     pushd "!CHAT_DIR!"
-    start "BUDDHA Connect" cmd /k "set PYTHONIOENCODING=utf-8 && python chat_tray.py --host !BACH_HOST_TARGET! --port 8081"
+    start "" pythonw chat_tray.py --host !BACH_HOST_TARGET! --port 8081
     popd
-    echo       [OK] BUDDHA Connect Konsole gestartet ^(!BACH_HOST_TARGET!:8081^)
+    echo       [OK] BUDDHA Connect Tray gestartet ^(!BACH_HOST_TARGET!:8081^)
     echo            Tray-Icon im Infobereich aktiv
 ) else (
     echo       [SKIP] Remote-Tray uebersprungen ^(Control API nicht remote verfuegbar^)

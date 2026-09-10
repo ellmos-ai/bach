@@ -1,4 +1,4 @@
-﻿# BACH ROADMAP - Strategische Vision
+# BACH ROADMAP - Strategische Vision
 
 **Stand:** 2026-07-29 | **Version:** 4.3.63
 
@@ -736,6 +736,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 
 | Version | Datum | Aenderung |
 |---------|-------|----------|
+| **4.3.63** | 2026-09-10 | **Daily Care & Dev Check: Test-Suite stabilisiert (123 passed in `test_self_heal_handlers.py`, `test_memory_working_cleanup.py`, `test_registry_watcher.py`, `test_smoke.py`), `BaseHandler` _canonical_db für Repo-Root/Tests gehärtet, `RestoreHandler` & `WikiHandler` gegen fehlende Manifest-/Artikel-Tabellen resilient gemacht. Agent-Doctor (`ati`, `entwickler`), Dry-Run-Start und Registry-Check verifiziert. Doku-Report erstellt (2102 Dokumente geprüft, 0 veraltet >60d); Memory-Analyse (146 Working-Einträge) und Decay-Smokes grün. Tasks 1199, 1201, 1202, 1212 abgeschlossen.** |
 | **4.3.62** | 2026-07-19 | **Live-Release-Katalog auf `v3.13.0-bluesky` versiegelt: `bach upgrade repair --version v3.13.0-bluesky --json` hebt den aktiven Release-Katalog auf 2 Einträge und `bach upgrade check --json` meldet jetzt Stable/Latest `v3.13.0-bluesky`, `current_release_registered=true`, `repair_recommended=false` und `local_modifications=0`. Zusätzlich wurden `test-agent`-Doctor/Start-Dry-Run sowie Usecase 50 erneut verifiziert. OpenClaw wurde auf Stable `2026.7.1` und Prerelease `2026.7.2-beta.3` nachgezogen; besonders relevant bleiben owning-host Terminal-Resume, guided Setup, externe Supervisor-Handoffs und Recovery-Härtung.** |
 | **4.3.61** | 2026-07-18 | **Task 1177 geschlossen: `memory session` speichert den Bericht einer offenen Session jetzt ohne `ended_at`; der nachfolgende Shutdown beendet dieselbe Zeile und vermeidet dadurch den reproduzierten `UNIQUE(session_id)`-Konflikt. Verifiziert wurden die fokussierte Memory-/Shutdown-Suite (`92 passed`), `test-agent`-Doctor und Start-Dry-Run sowie Usecase 50. OpenClaw bleibt bei Stable `2026.7.1`; das neue Prerelease `2026.7.2-beta.2` bestätigt MCP-Isolation, Task-Ledger, Remote-Worker und Recovery und ergänzt versionierte externe Supervisor-Handoffs sowie begrenzte Prozess-/Netzwerk-Cleanups.** |
 | **4.3.60** | 2026-07-16 | **Geisterdatenbank-Tasks 1163/1167 nach Task-1165-Readback geschlossen: Die zentrale AST-Regel blockiert neue `bach.db`-Eigenkonstruktionen und die fokussierte Suite steht bei 63 grünen Tests; Agent-Doctor/Start-Dry-Run und Usecase 50 bleiben grün. OpenClaw auf Stable `2026.7.1` / Prerelease `2026.7.2-beta.1` abgeglichen; passende Beobachtungspunkte sind session-lokale MCP-Isolation, task-ledger-basierte Cron-Historie und Remote-Worker-Routing.** |

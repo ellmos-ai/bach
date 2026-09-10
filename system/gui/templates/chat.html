@@ -1369,8 +1369,12 @@
         });
 
         // ── Init ──
+        function loadHistory() {
+            return loadActiveChat();
+        }
+        window.loadHistory = loadHistory;
         loadWebSessions().then(() => {
-            loadActiveChat();
+            loadHistory();
         });
         refreshStatus();
         setInterval(refreshStatus, 30000);

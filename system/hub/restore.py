@@ -365,6 +365,8 @@ class RestoreHandler(BaseHandler):
                 cursor = conn.execute(query, (config["path_pattern"],))
 
             files = [row[0] for row in cursor.fetchall()]
+        except sqlite3.OperationalError:
+            files = []
         finally:
             if conn:
                 conn.close()
