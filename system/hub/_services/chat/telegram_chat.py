@@ -1416,7 +1416,8 @@ def _is_loopback_origin(origin: str) -> bool:
 
 def _control_bind_host() -> str:
     bind_host = os.environ.get("BACH_CONTROL_HOST", "127.0.0.1").strip()
-    if not _is_loopback_host(bind_host):
+    allow_remote = os.environ.get("BACH_CONTROL_ALLOW_REMOTE", "").strip().lower() in ("1", "true", "yes", "on")
+    if not allow_remote and not _is_loopback_host(bind_host):
         raise ValueError(
             "Control API darf ohne authentifizierten Ingress nur an Loopback binden"
         )

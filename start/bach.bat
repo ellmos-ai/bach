@@ -281,8 +281,40 @@ set "BACH_HOST_TARGET=%BACH_HOST%"
 if "!BACH_HOST_TARGET!"=="" set "BACH_HOST_TARGET=macstudvonlukas"
 
 echo [1/3] Pruefe Verbindung zu !BACH_HOST_TARGET!...
-curl -s --max-time 5 "http://!BACH_HOST_TARGET!:8081/api/status" >nul 2>&1
-if !ERRORLEVEL! neq 0 (
+set "HOST_ONLINE=0"
+set "CONTROL_ONLINE=0"
+set "GUI_ONLINE=0"
+
+curl -s --max-time 3 "http://!BACH_HOST_TARGET!:8000/api/status" >nul 2>&1
+if !ERRORLEVEL! equ 0 (
+    set "HOST_ONLINE=1"
+    set "GUI_ONLINE=1"
+)
+
+curl -s --max-time 3 "http://!BACH_HOST_TARGET!:8081/api/status" >nul 2>&1
+if !ERRORLEVEL! equ 0 (
+    set "HOST_ONLINE=1"
+    set "CONTROL_ONLINE=1"
+)
+
+REM Fallback zu bekannter Tailscale-IP wenn Hostname nicht erreichbar war
+if "!HOST_ONLINE!"=="0" if "!BACH_HOST_TARGET!"=="macstudvonlukas" (
+    echo       [INFO] Probiere Tailscale-IP 100.119.69.90...
+    curl -s --max-time 3 "http://100.119.69.90:8000/api/status" >nul 2>&1
+    if !ERRORLEVEL! equ 0 (
+        set "BACH_HOST_TARGET=100.119.69.90"
+        set "HOST_ONLINE=1"
+        set "GUI_ONLINE=1"
+    )
+    curl -s --max-time 3 "http://100.119.69.90:8081/api/status" >nul 2>&1
+    if !ERRORLEVEL! equ 0 (
+        set "BACH_HOST_TARGET=100.119.69.90"
+        set "HOST_ONLINE=1"
+        set "CONTROL_ONLINE=1"
+    )
+)
+
+if "!HOST_ONLINE!"=="0" (
     echo.
     echo       [OFFLINE] !BACH_HOST_TARGET! nicht erreichbar.
     echo       Moegliche Ursachen: Tailscale nicht aktiv, Mac Studio aus
@@ -292,13 +324,25 @@ if !ERRORLEVEL! neq 0 (
     if /i "!fallback!"=="J" goto chat_start
     goto menu
 )
-echo       [OK] Control API erreichbar
 
-echo [2/3] Starte System Tray (verbunden mit !BACH_HOST_TARGET!)...
-pushd "!CHAT_DIR!"
-start "" pythonw chat_tray.py --host "!BACH_HOST_TARGET!" --port 8081
-popd
-echo       [OK] Tray gestartet
+if "!CONTROL_ONLINE!"=="1" (
+    echo       [OK] Control API (:8081) erreichbar
+) else (
+    echo       [INFO] Control API (:8081) auf Server offline/loopback-only
+)
+if "!GUI_ONLINE!"=="1" (
+    echo       [OK] Web-GUI (:8000) erreichbar
+)
+
+echo [2/3] Starte System Tray...
+if "!CONTROL_ONLINE!"=="1" (
+    pushd "!CHAT_DIR!"
+    start "" pythonw chat_tray.py --host "!BACH_HOST_TARGET!" --port 8081
+    popd
+    echo       [OK] Tray gestartet ^(verbunden mit !BACH_HOST_TARGET!:8081^)
+) else (
+    echo       [SKIP] Remote-Tray uebersprungen ^(Control API nicht remote verfuegbar^)
+)
 
 echo [3/3] Oeffne Zugangswege...
 if "!BACH_NO_BROWSER!"=="1" (
@@ -313,7 +357,9 @@ echo  ============================================
 echo   Verbunden mit !BACH_HOST_TARGET!
 echo  ============================================
 echo   GUI:       http://!BACH_HOST_TARGET!:8000
-echo   Dashboard: http://!BACH_HOST_TARGET!:8081
+if "!CONTROL_ONLINE!"=="1" (
+    echo   Dashboard: http://!BACH_HOST_TARGET!:8081
+)
 echo   Telegram:  @bach_assistant_bot
 echo  ============================================
 echo.
