@@ -5,7 +5,10 @@
 Validates the prompt-generator page and API endpoints respond correctly.
 """
 
+import json
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -69,9 +72,35 @@ class TestPromptGeneratorAPI:
         response = client.post("/api/prompt-generator/send/copy", json={})
         assert response.status_code in (200, 422)
 
-    def test_daemon_toggle(self, client):
+    def test_daemon_toggle(self, client, monkeypatch, tmp_path):
+        from gui import server
+
+        daemon_dir = tmp_path / "hub" / "_services" / "daemon"
+        daemon_dir.mkdir(parents=True)
+        daemon_script = daemon_dir / "session_daemon.py"
+        daemon_script.write_text("# isolated test daemon\n", encoding="utf-8")
+        config_file = daemon_dir / "config.json"
+        config_file.write_text(
+            json.dumps({"jobs": [{"profile": "ati", "last_run": "old"}]}),
+            encoding="utf-8",
+        )
+
+        launched = []
+
+        def fake_popen(args, **kwargs):
+            launched.append((args, kwargs))
+            return object()
+
+        monkeypatch.setattr(server, "BACH_DIR", tmp_path)
+        monkeypatch.setattr(subprocess, "Popen", fake_popen)
+        monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
         response = client.post("/api/prompt-generator/daemon/toggle", json={})
+
         assert response.status_code in (200, 422)
+        assert len(launched) == 1
+        assert launched[0][0] == [sys.executable, str(daemon_script)]
+        assert json.loads(config_file.read_text(encoding="utf-8"))["jobs"][0]["last_run"] is None
 
     def test_templates_save_requires_body(self, client):
         response = client.post("/api/prompt-generator/templates/save", json={})
