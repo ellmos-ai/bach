@@ -49,7 +49,7 @@ def offene_tasks(db: str, project: str) -> list[dict]:
         rows = con.execute(
             "SELECT id, title, description, depends_on, status, priority "
             "FROM tasks WHERE (project = ? OR category = ?) "
-            "AND status NOT IN ('done','cancelled') "
+            "AND status NOT IN ('done','cancelled','completed') "
             "ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 "
             "WHEN 'P3' THEN 3 ELSE 4 END, id",
             (project, project),
