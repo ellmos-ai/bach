@@ -117,7 +117,6 @@ KNOWN_OFFENDERS = {
     "tools/folder_diff_scanner.py",
     "tools/fs_protection.py",
     "tools/headless_agent.py",
-    "tools/help_docs_generator.py",
     "tools/injectors.py",
     "tools/json/json_registry_cleaner.py",
     "tools/lesson_trigger_generator.py",

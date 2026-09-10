@@ -1,6 +1,6 @@
 {
   "id": 1,
-  "default_language": "en",
+  "default_language": "de",
   "fallback_language": "en",
   "enabled_languages": [
     "de",
@@ -12,5 +12,5 @@
   ],
   "auto_translate": 0,
   "preserve_formatting": 1,
-  "updated_at": "2026-05-17T05:32:01.663415"
+  "updated_at": "2026-07-27T19:33:18.673336"
 }

@@ -67,6 +67,31 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
   f-string im SQL -- Verteidigung in der Tiefe für künftige Aufrufer) und einen
   `clear_fields`-Parameter (`_reopen` muss `completed_at` beim Wiederöffnen wieder
   auf `NULL` setzen können, die Funktion konnte vorher nur Zeitstempel setzen).
+- **Rescue-Nacharbeit (T-20260906-370804159, aus T-20260906-519428014): fs_protection-
+  Bündel nachgezogen, Übersetzungs-Exporte reproduziert, QA-Skripte einsortiert.**
+  `system/tools/fs_protection.py` bevorzugt jetzt `hub.bach_paths.BACH_DB` statt eines
+  fest verdrahteten `DATA_DIR/bach.db` (Standalone-Fallback bleibt), eine neue
+  `_resolve_manifest_path()` löst gemischte Legacy-Manifestpfade (mit/ohne
+  `system/`-Präfix) korrekt auf, und `_heal_all()` bricht fail-closed ab, statt bei
+  fehlenden Snapshots still nichts zu tun. `hub/fs.py` reicht `self.base_path` (von
+  `BaseHandler` normalisiert) statt des rohen Konstruktor-Arguments durch. Main hatte
+  diese Dateien seit `84df2cd` (2026-07-22) nicht bewegt -- konfliktfreie Übernahme.
+  `system/tools/help_docs_generator.py` erhielt denselben Pfad-Fix (dadurch aus
+  `test_db_path_central.py::KNOWN_OFFENDERS` entfernt). `fs_manifest.json` bewusst
+  NICHT übernommen (Laufzeit-Cache eines fremden Hosts, wird von
+  `FSProtection.check_integrity()` automatisch neu angelegt) -- stattdessen zur
+  `.gitignore` hinzugefügt. Acht Übersetzungs-QA-Skripte aus dem Repo-Root nach
+  `system/tools/translations/` einsortiert (byte-identisch, README ergänzt).
+  Übersetzungs-Exporte (`system/exports/translations/*`) per
+  `tools/release_language.py` gegen die reale `bach.db` neu erzeugt statt aus dem
+  Rescue-Branch übernommen: 18.369 -> 18.402 Übersetzungen (+33, alle
+  Namespace `help_doc`, 0 verloren), `default_language` en -> de (Live-DB-Stand).
+  Ausdrücklich ausgeklammert: `hub/steuer.py`s CAMT-Import (Rescue-Version nutzt einen
+  inzwischen verworfenen Importpfad, `9ff3df2`/`e9096c9`/`4af39b3` haben die
+  CAMT-Persistenz längst über `accounts-core` neu gebaut; zusätzlich blockiert das
+  offene USER-Gate T-20260902-162225801 jede CAMT-Annahme ohne echte Datei),
+  `headless.py` und die Rescue-Fassung von `test_db_path_central.py` (main dort
+  bereits weitergelaufen).
 - **O001-Roundtrip-Testinfrastruktur schloss `task_history`-Schema-Lücke und härtet
   Cleanup gegen Exceptions:** `system/tools/testing/o_tests/O001_task_roundtrip.py`s
   isolierte Test-DB hatte keine `task_history`-Tabelle -- nach der obigen Änderung warf
