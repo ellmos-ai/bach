@@ -329,17 +329,17 @@ if "!HOST_ONLINE!"=="0" (
 )
 
 if "!CONTROL_ONLINE!"=="1" (
-    echo       [OK] Control API (:8081) erreichbar
+    echo       [OK] Control API ^(:8081^) erreichbar
 ) else (
-    echo       [INFO] Control API (:8081) auf Server offline/loopback-only
+    echo       [INFO] Control API ^(:8081^) auf Server offline/loopback-only
 )
 if "!GUI_ONLINE!"=="1" (
-    echo       [OK] Web-GUI (:8000) erreichbar
+    echo       [OK] Web-GUI ^(:8000^) erreichbar
 )
 
 echo [2/3] Starte System Tray...
 if "!CONTROL_ONLINE!"=="1" (
-    python -c "import sys; exec('try:\n import psutil, os\n for p in psutil.process_iter([\'pid\',\'name\',\'cmdline\']):\n  if p.info.get(\'name\') and \'python\' in p.info[\'name\'].lower() and p.info[\'pid\'] != os.getpid() and any(\'chat_tray.py\' in str(a) for a in (p.info.get(\'cmdline\') or [])):\n   p.kill()\nexcept Exception:\n pass')" >nul 2>&1
+    python -c "import psutil, os; [p.kill() for p in psutil.process_iter(['name','cmdline']) if p.info.get('name') and 'python' in p.info['name'].lower() and any('chat_tray.py' in str(a) for a in (p.info.get('cmdline') or []))]" >nul 2>&1
     timeout /t 1 /nobreak >nul
     pushd "!CHAT_DIR!"
     start "BUDDHA Connect" cmd /k "set PYTHONIOENCODING=utf-8 && python chat_tray.py --host !BACH_HOST_TARGET! --port 8081"

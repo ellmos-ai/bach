@@ -106,7 +106,7 @@ class OllamaBackend(ModelBackend):
     """Ollama API Backend für lokale Modelle (Qwen, Llama, Mistral, etc.)."""
 
     def __init__(self, base_url: str = "http://localhost:11434",
-                 default_model: str = "qwen3.6:35b-mlx",
+                 default_model: str = "qwen3.8:27b-mlx",
                  keep_alive: str = "5m",
                  num_ctx: int | None = None,
                  request_timeout: float | None = None):
@@ -966,7 +966,7 @@ def create_backend(config: dict) -> ModelBackend:
     if backend_type == "ollama":
         return OllamaBackend(
             base_url=config.get("base_url", "http://localhost:11434"),
-            default_model=config.get("default_model", "qwen3.6:35b-mlx"),
+            default_model=config.get("default_model", "qwen3.8:27b-mlx"),
             num_ctx=config.get("num_ctx"),
             request_timeout=config.get("timeout_seconds"),
         )

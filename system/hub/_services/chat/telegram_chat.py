@@ -127,7 +127,7 @@ def load_config() -> dict:
     config.setdefault("backend", {
         "type": "ollama",
         "base_url": "http://localhost:11434",
-        "default_model": "qwen3.6:35b-mlx",
+        "default_model": "qwen3.8:27b-mlx",
     })
 
     if not config["bot_token"]:
@@ -341,7 +341,7 @@ BACKEND_PRESETS = {
     "ollama": {
         "type": "ollama",
         "base_url": os.environ.get("OLLAMA_URL", "http://localhost:11434"),
-        "default_model": os.environ.get("OLLAMA_MODEL", "qwen3.6:35b-mlx"),
+        "default_model": os.environ.get("OLLAMA_MODEL", "qwen3.8:27b-mlx"),
         "method": "api",
         "description": "Lokales Ollama (Qwen, Llama, etc.)",
     },
@@ -446,7 +446,7 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lines.append("Beispiele:")
         lines.append("  /backend claude opus")
         lines.append("  /backend codex o4-mini")
-        lines.append("  /backend ollama qwen3.6:35b-mlx")
+        lines.append("  /backend ollama qwen3.8:27b-mlx")
         lines.append("  /backend lmstudio")
         lines.append("  /backend hermes")
         await update.message.reply_text("\n".join(lines))
@@ -1657,6 +1657,10 @@ class ControlHandler(BaseHTTPRequestHandler):
             preset = BACKEND_PRESETS[name].copy()
             if model:
                 preset["default_model"] = model
+            elif name == "ollama":
+                current_m = _global_defaults.get("model") or getattr(runtime.backend, "default_model", None)
+                if current_m:
+                    preset["default_model"] = current_m
             if preset["method"] == "api" and name in ("claude-api", "openai"):
                 api_key = _load_api_key(name)
                 if not api_key:

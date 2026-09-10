@@ -695,11 +695,6 @@ class BACHTray:
 
         # ── Status ──
         if self.state["connected"]:
-            status = f"{self.state['backend']}"
-            if self.state["backend_cli"]:
-                status += f" ({self.state['backend_cli']})"
-            items.append(pystray.MenuItem(f"Backend: {status}", None, enabled=False))
-            items.append(pystray.MenuItem(f"Modell: {self.state['model']}", None, enabled=False))
             mode_str = (self.state.get("mode") or "safe").upper()
             think_str = "AN" if self.state.get("think") else "AUS"
             items.append(pystray.MenuItem(
@@ -708,18 +703,27 @@ class BACHTray:
             items.append(pystray.Menu.SEPARATOR)
 
             # Backend
+            current_backend_id = str(self.state.get("backend_id") or "").lower()
+            current_backend_name = str(self.state.get("backend") or "").lower()
+            active_backend_display = self.state.get("backend", "?")
+            if self.state.get("backend_cli"):
+                active_backend_display += f" ({self.state['backend_cli']})"
+
             backend_items = []
             for name, info in self.backends.items():
-                label = name
-                if info.get("status"):
+                label = name.capitalize() if name in ("ollama", "hermes", "claude", "codex", "openai") else name
+                if info.get("status") and info["status"] != "bereit":
                     label += f" [{info['status']}]"
+                is_selected = (name.lower() == current_backend_id) or (name.lower() in current_backend_name)
                 backend_items.append(pystray.MenuItem(
                     label, self._make_backend_action(name),
+                    checked=lambda item, sel=is_selected: sel,
                 ))
             if backend_items:
-                items.append(pystray.MenuItem("Backend", pystray.Menu(*backend_items)))
+                items.append(pystray.MenuItem(f"Backend: {active_backend_display}", pystray.Menu(*backend_items)))
 
             # Model
+            active_model = self.state.get("model", "?")
             if self.models:
                 model_items = []
                 for m in self.models[:15]:
@@ -727,7 +731,7 @@ class BACHTray:
                         m, self._make_model_action(m),
                         checked=lambda item, m=m: m == self.state["model"],
                     ))
-                items.append(pystray.MenuItem("Modell", pystray.Menu(*model_items)))
+                items.append(pystray.MenuItem(f"Modell: {active_model}", pystray.Menu(*model_items)))
 
             items.append(pystray.Menu.SEPARATOR)
 
@@ -869,7 +873,10 @@ class BACHTray:
 
     def _make_backend_action(self, name):
         def action(*_):
-            result = self._api("POST", "/api/backend", {"name": name})
+            payload = {"name": name}
+            if self.state.get("model") and self.models and self.state["model"] in self.models:
+                payload["model"] = self.state["model"]
+            result = self._api("POST", "/api/backend", payload)
             if result is None:
                 self._notify_error(f"Backend → {name}")
             self._refresh()
