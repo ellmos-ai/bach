@@ -1,7 +1,7 @@
 # Portabilität: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-05-17
-# Nächste Prüfung: 2026-11-17
+# Version: 1.0.1
+# Zuletzt validiert: 2026-09-10
+# Nächste Prüfung: 2027-03-10
 
 ANTIGRAVITY - SCHNELLREFERENZ
 =============================
@@ -43,8 +43,8 @@ WICHTIGE PFADE
 
 BACH-INTEGRATION
 ----------------
-  Start:    start/start_gemini.bat (Interaktiv)
-  Script:   python tools/partner_communication/gemini_start.py
+  Start:    system/partners/gemini/start_gemini.bat (oder start/bach.bat)
+  Script:   python system/tools/partner_communication/gemini_start.py
   Inbox:    system/partners/gemini/inbox/
   Outbox:   system/partners/gemini/outbox/
 
