@@ -878,6 +878,14 @@ class TestBACHTray:
     def test_refresh_marks_disconnected_on_failure(self, tray):
         tray.state["connected"] = True
         tray._api = MagicMock(return_value=None)
+        # First failure: debounced, still connected
+        tray._refresh()
+        assert tray.state["connected"] is True
+        assert tray._failed_status_count == 1
+        # Second failure: still connected
+        tray._refresh()
+        assert tray.state["connected"] is True
+        # Third failure: threshold reached, marked disconnected
         tray._refresh()
         assert tray.state["connected"] is False
 
@@ -1217,6 +1225,31 @@ class TestTrayIdleWorker:
 
         assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == [
             ("/api/tasks/42", "in_progress"), ("/api/tasks/42", "pending")]
+        assert tray.idle_pending is None
+
+    def test_compute_lock_leaves_fallback_task_in_original_status(self, monkeypatch):
+        """Fallback tasks (expert roles) must also retain task_status on compute lock."""
+        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
+        calls = []
+
+        def fake_api(method, path, data=None, **kw):
+            calls.append((method, path, data))
+            if method == "GET" and path.startswith("/api/tasks?"):
+                # Standard assignees return empty
+                if any(f"assigned_to={a}" in path for a in ("OLLAMA", "BUDDHA", "BACH")):
+                    return {"success": True, "tasks": []}
+                if "status=open" in path:
+                    return {"success": True, "tasks": [{"id": 99, "title": "Expert Work", "assigned_to": "foerderplaner"}]}
+                return {"success": True, "tasks": []}
+            if method == "POST":
+                return {"ok": False, "compute_locked": True, "answer": "Compute-Lock aktiv"}
+            return {"success": True}
+
+        with patch.object(tray, "_api", side_effect=fake_api):
+            tray._process_idle_task()
+
+        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == [
+            ("/api/tasks/99", "in_progress"), ("/api/tasks/99", "open")]
         assert tray.idle_pending is None
 
     def test_expired_pending_stops_waiting_and_frees_the_worker(self, monkeypatch):

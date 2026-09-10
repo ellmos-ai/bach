@@ -322,6 +322,9 @@ if "!HOST_ONLINE!"=="0" (
     echo.
     set /p "fallback=  Lokal starten stattdessen? [J/N]: "
     if /i "!fallback!"=="J" goto chat_start
+    echo.
+    echo   Zurueck zum Hauptmenue...
+    timeout /t 2 >nul
     goto menu
 )
 
@@ -336,10 +339,13 @@ if "!GUI_ONLINE!"=="1" (
 
 echo [2/3] Starte System Tray...
 if "!CONTROL_ONLINE!"=="1" (
+    powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*chat_tray.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>&1
+    timeout /t 1 /nobreak >nul
     pushd "!CHAT_DIR!"
-    start "" pythonw chat_tray.py --host "!BACH_HOST_TARGET!" --port 8081
+    start "BUDDHA Connect" cmd /k "set PYTHONIOENCODING=utf-8 && python chat_tray.py --host !BACH_HOST_TARGET! --port 8081"
     popd
-    echo       [OK] Tray gestartet ^(verbunden mit !BACH_HOST_TARGET!:8081^)
+    echo       [OK] BUDDHA Connect Konsole gestartet ^(!BACH_HOST_TARGET!:8081^)
+    echo            Tray-Icon im Infobereich aktiv
 ) else (
     echo       [SKIP] Remote-Tray uebersprungen ^(Control API nicht remote verfuegbar^)
 )
@@ -363,7 +369,9 @@ if "!CONTROL_ONLINE!"=="1" (
 echo   Telegram:  @bach_assistant_bot
 echo  ============================================
 echo.
-pause
+echo   [Hinweis] Konsole "BUDDHA Connect" bleibt fuer Logs/Fehler geoeffnet.
+echo   Druecke eine Taste, um zum BACH-Hauptmenue zurueckzukehren...
+pause >nul
 goto menu
 
 REM ============================================================

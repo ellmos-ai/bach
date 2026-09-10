@@ -142,12 +142,14 @@ class BACHTray:
         self.idle_pending = None   # (task_id, seit) nach Client-Timeout
         self._recurring_tick = 0
 
+        self.max_status_failures = 3
+        self._failed_status_count = 0
         self.prompt_source = "defaults"
         self.prompts = self._load_prompts()
 
     # --- API ---
 
-    def _api(self, method, path, body=None, base=None, timeout=5):
+    def _api(self, method, path, body=None, base=None, timeout=8):
         url = (base or self.base_url) + path
         data = json.dumps(body).encode() if body else None
         req = urllib.request.Request(
@@ -169,12 +171,15 @@ class BACHTray:
             return False
 
     def _refresh(self):
-        status = self._api("GET", "/api/status")
+        status = self._api("GET", "/api/status", timeout=8)
         if status and "backend" in status:
+            self._failed_status_count = 0
             self.state.update(status)
             self.state["connected"] = True
         else:
-            self.state["connected"] = False
+            self._failed_status_count += 1
+            if self._failed_status_count >= self.max_status_failures:
+                self.state["connected"] = False
 
         bs = self._api("GET", "/api/backends")
         if bs and not bs.get("error"):
@@ -524,6 +529,7 @@ class BACHTray:
             # (server.py zaehlt beide als offen); nur 'pending' zu fragen liess jeden
             # 'open'-OLLAMA-Task liegen.
             task = None
+            task_status = "open"
             # 1. Zuerst bestehende Standard-Assignees pruefen (erfuellt auch Unit-Tests)
             for assignee in ("OLLAMA", "BUDDHA", "BACH"):
                 for status in ("pending", "open"):
@@ -549,6 +555,7 @@ class BACHTray:
                             # menschliche Tasks (user) und fremde Agenten (claude, gemini) ueberspringen
                             if cand_assignee.lower() not in ("user", "claude", "gemini", ""):
                                 task = cand
+                                task_status = status
                                 break
                     if task:
                         break
@@ -906,6 +913,8 @@ class BACHTray:
         self.idle_enabled = not self.idle_enabled
         if not self.idle_enabled:
             self.idle_consecutive = 0
+        else:
+            self._refresh()
         self._update_icon()
         status = "aktiviert" if self.idle_enabled else "deaktiviert"
         if self.icon:

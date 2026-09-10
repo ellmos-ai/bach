@@ -1236,14 +1236,22 @@ document.addEventListener('visibilitychange', () => {
 
 
 def _get_active_session_state():
-    if runtime.sessions:
-        sid = next(iter(runtime.sessions))
-        s = runtime.sessions[sid]
-        return s.model, s.mode, s.think
+    try:
+        sessions_copy = list(runtime.sessions.values())
+        if sessions_copy:
+            s = sessions_copy[0]
+            return s.model, s.mode, s.think
+    except Exception:
+        pass
+    backend_model = ""
+    try:
+        backend_model = runtime.backend.get_default_model()
+    except Exception:
+        pass
     return (
-        _global_defaults["model"] or runtime.backend.get_default_model(),
-        _global_defaults["mode"],
-        _global_defaults["think"],
+        _global_defaults.get("model") or backend_model or "?",
+        _global_defaults.get("mode", "safe"),
+        _global_defaults.get("think", True),
     )
 
 
@@ -1508,44 +1516,67 @@ class ControlHandler(BaseHTTPRequestHandler):
             self._html(WEB_DASHBOARD)
 
         elif path == "/api/status":
-            model, mode, think = _get_active_session_state()
-            backend_name = type(runtime.backend).__name__
-            cli_name = getattr(runtime.backend, "cli_name", "")
-            owns_tools = getattr(runtime.backend, "manages_own_tools", False)
-            active_tools = []
-            current_tool = ""
-            tool_round = 0
-            for s in runtime.sessions.values():
-                if s.current_tool:
-                    current_tool = s.current_tool
-                    tool_round = s.tool_round
-                if s.last_tools:
-                    active_tools = s.last_tools
-                    break
-            _SYS_IDS = {"idle-worker", "tray-prompt", "api-delegate", "claude-delegate"}
-            now = time.time()
-            active_user = sum(
-                1 for cid, s in runtime.sessions.items()
-                if cid not in _SYS_IDS and (s.current_tool or now - s.last_active < 120)
-            )
-            self._json({
-                "service": "bach-chat-control",
-                "telegram_verified": TELEGRAM_VERIFIED,
-                "backend": backend_name,
-                "backend_id": backend_identifier(runtime.backend),
-                "backend_cli": cli_name,
-                "model": model,
-                "mode": mode,
-                "think": think,
-                "manages_own_tools": owns_tools,
-                "bach": HAS_BACH,
-                "sessions": len(runtime.sessions),
-                "active_sessions": active_user,
-                "max_tool_rounds": runtime.max_tool_rounds,
-                "current_tool": current_tool,
-                "tool_round": tool_round,
-                "last_tools": active_tools,
-            })
+            try:
+                model, mode, think = _get_active_session_state()
+                backend_name = type(runtime.backend).__name__
+                cli_name = getattr(runtime.backend, "cli_name", "")
+                owns_tools = getattr(runtime.backend, "manages_own_tools", False)
+                active_tools = []
+                current_tool = ""
+                tool_round = 0
+                sessions_snapshot = list(runtime.sessions.values())
+                for s in sessions_snapshot:
+                    if s.current_tool:
+                        current_tool = s.current_tool
+                        tool_round = s.tool_round
+                    if s.last_tools:
+                        active_tools = s.last_tools
+                        break
+                _SYS_IDS = {"idle-worker", "tray-prompt", "api-delegate", "claude-delegate"}
+                now = time.time()
+                items_snapshot = list(runtime.sessions.items())
+                active_user = sum(
+                    1 for cid, s in items_snapshot
+                    if cid not in _SYS_IDS and (s.current_tool or now - s.last_active < 120)
+                )
+                self._json({
+                    "service": "bach-chat-control",
+                    "telegram_verified": TELEGRAM_VERIFIED,
+                    "backend": backend_name,
+                    "backend_id": backend_identifier(runtime.backend),
+                    "backend_cli": cli_name,
+                    "model": model,
+                    "mode": mode,
+                    "think": think,
+                    "manages_own_tools": owns_tools,
+                    "bach": HAS_BACH,
+                    "sessions": len(sessions_snapshot),
+                    "active_sessions": active_user,
+                    "max_tool_rounds": runtime.max_tool_rounds,
+                    "current_tool": current_tool,
+                    "tool_round": tool_round,
+                    "last_tools": active_tools,
+                })
+            except Exception as e:
+                logger.warning(f"/api/status Snapshot-Fehler abgefangen: {e}")
+                self._json({
+                    "service": "bach-chat-control",
+                    "telegram_verified": TELEGRAM_VERIFIED,
+                    "backend": type(runtime.backend).__name__,
+                    "backend_id": backend_identifier(runtime.backend),
+                    "backend_cli": getattr(runtime.backend, "cli_name", ""),
+                    "model": _global_defaults.get("model") or getattr(runtime.backend, "get_default_model", lambda: "?")(),
+                    "mode": _global_defaults.get("mode", "safe"),
+                    "think": _global_defaults.get("think", True),
+                    "manages_own_tools": getattr(runtime.backend, "manages_own_tools", False),
+                    "bach": HAS_BACH,
+                    "sessions": len(list(runtime.sessions.keys())),
+                    "active_sessions": 0,
+                    "max_tool_rounds": runtime.max_tool_rounds,
+                    "current_tool": "",
+                    "tool_round": 0,
+                    "last_tools": [],
+                })
 
         elif path == "/api/backends":
             self._json(_backend_inventory())
@@ -1650,7 +1681,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 with _runtime_state_lock:
                     runtime.backend = new_backend
                     _global_defaults["model"] = selected_model
-                    for s in runtime.sessions.values():
+                    for s in list(runtime.sessions.values()):
                         s.model = selected_model
                 _invalidate_backend_inventory_cache()
                 self._json({"ok": True, "backend": name, "model": preset["default_model"]})
@@ -1663,7 +1694,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "safe oder full"}, 400)
                 return
             _global_defaults["mode"] = mode
-            for s in runtime.sessions.values():
+            for s in list(runtime.sessions.values()):
                 s.mode = mode
             self._json({"ok": True, "mode": mode})
 
@@ -1673,14 +1704,14 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "model erforderlich"}, 400)
                 return
             _global_defaults["model"] = model
-            for s in runtime.sessions.values():
+            for s in list(runtime.sessions.values()):
                 s.model = model
             self._json({"ok": True, "model": model})
 
         elif path == "/api/think":
             think = body.get("think", True)
             _global_defaults["think"] = bool(think)
-            for s in runtime.sessions.values():
+            for s in list(runtime.sessions.values()):
                 s.think = bool(think)
             self._json({"ok": True, "think": bool(think)})
 
