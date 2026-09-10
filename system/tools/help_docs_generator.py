@@ -33,8 +33,10 @@ SYSTEM_ROOT = Path(__file__).resolve().parents[1]
 if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
+from hub.bach_paths import BACH_DB
+
 HELP_DIR = SYSTEM_ROOT / "docs" / "help"
-DB_PATH = SYSTEM_ROOT / "data" / "bach.db"
+DB_PATH = BACH_DB
 NAMESPACE = "help_doc"
 
 
@@ -96,7 +98,7 @@ def ingest(lang: str = None, dry_run: bool = False, db_path: Path = None) -> dic
     now = datetime.now().isoformat()
 
     for txt_file in sorted(HELP_DIR.rglob("*.txt")):
-        if txt_file.name.startswith("_"):
+        if txt_file.name.startswith("_") or "-Mac Studio" in txt_file.name:
             continue
 
         rel = txt_file.relative_to(HELP_DIR)
