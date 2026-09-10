@@ -164,10 +164,25 @@ function initNavigation() {
     `;
 
     document.querySelectorAll('.nav-dropdown').forEach(dd => {
-        dd.addEventListener('mouseenter', () => dd.classList.add('open'));
-        dd.addEventListener('mouseleave', () => dd.classList.remove('open'));
+        let closeTimer = null;
+        dd.addEventListener('mouseenter', () => {
+            if (closeTimer) {
+                clearTimeout(closeTimer);
+                closeTimer = null;
+            }
+            dd.classList.add('open');
+        });
+        dd.addEventListener('mouseleave', () => {
+            closeTimer = setTimeout(() => {
+                dd.classList.remove('open');
+            }, 250);
+        });
         dd.querySelector('.nav-dropdown-toggle').addEventListener('click', (e) => {
             e.preventDefault();
+            if (closeTimer) {
+                clearTimeout(closeTimer);
+                closeTimer = null;
+            }
             dd.classList.toggle('open');
         });
     });
