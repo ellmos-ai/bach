@@ -1362,13 +1362,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         session.last_active = time.time()
         session.messages.append({"role": "user", "content": text})
 
+        active_backend = getattr(session, "backend", None) or self.backend
+        active_limit = self.get_model_context_limit(session.model, active_backend)
+        summarize_thresh = self.SUMMARIZE_THRESHOLD if active_limit <= 32768 else self.SUMMARIZE_THRESHOLD * 4
+        max_msgs = self.MAX_MESSAGES if active_limit <= 32768 else self.MAX_MESSAGES * 2
+
         total = sum(len(m.get("content", "")) for m in session.messages)
-        if total > self.SUMMARIZE_THRESHOLD or len(session.messages) > self.MAX_MESSAGES:
+        if total > summarize_thresh or len(session.messages) > max_msgs:
             await self._summarize(session)
 
         bach_ctx = self._get_bach_context(text)
 
-        active_backend = getattr(session, "backend", None) or self.backend
         sys_prompt = getattr(session, "custom_system_prompt", "") or self.build_system_prompt(session)
         if bach_ctx and not getattr(session, "custom_system_prompt", ""):
             sys_prompt += f"\n\n--- BACH ---\n{bach_ctx}"
@@ -1424,7 +1428,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else "")
                 )
 
-            if self._context_voll(result):
+            if self._context_voll(result, session):
                 handoffs += 1
                 log.info("Kontext-Uebergabe [%d] bei %s Token",
                          handoffs, result.get("prompt_tokens"))
@@ -1518,18 +1522,48 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 )
                 msgs.append({"role": "user", "content": nudge})
 
-    def _context_voll(self, result: dict) -> bool:
+    def get_model_context_limit(self, model: str | None = None, backend: Any = None) -> int:
+        """Dynamische Bestimmung des Kontextlimits je nach Modell und Backend."""
+        m = (model or "").lower()
+        # Cloud / Ultra-High Context Models
+        if ":cloud" in m or "kimi" in m or "glm" in m:
+            return 131072
+        if "claude" in m or "sonnet" in m or "opus" in m:
+            return 200000
+        if "gpt-4" in m or "o3" in m or "o4" in m or "codex" in m:
+            return 128000
+        if "hermes" in m:
+            return 131072
+
+        # Backend-Typen pruefen
+        b_name = type(backend).__name__.lower() if backend else ""
+        if "anthropic" in b_name:
+            return 200000
+        if "openai" in b_name or "hermes" in b_name:
+            return 128000
+
+        # Lokales Modell -> Default aus self.context_limit (meist 32768)
+        return self.context_limit
+
+    def _context_voll(self, result: dict, session: ChatSession | None = None) -> bool:
         """Ist das Kontextfenster so voll, dass eine Uebergabe faellig ist?
 
         Ohne Token-Zahl vom Backend wird nicht geraten - dann bleibt alles
         beim Alten. Prozent 0 schaltet die Uebergabe ab.
         """
-        if self.handoff_percent <= 0 or self.context_limit <= 0:
+        if self.handoff_percent <= 0:
+            return False
+        active_limit = self.context_limit
+        if session is not None:
+            active_limit = self.get_model_context_limit(
+                session.model, getattr(session, "backend", None) or self.backend
+            )
+        if active_limit <= 0:
             return False
         used = result.get("prompt_tokens")
         if not isinstance(used, int) or used <= 0:
             return False
-        return used >= self.context_limit * self.handoff_percent / 100
+        return used >= active_limit * self.handoff_percent / 100
 
     async def _handoff(self, msgs: list, session: ChatSession) -> list:
         """Laesst das Modell sich selbst uebergeben und leert den Kontext.

@@ -93,14 +93,20 @@ from hub._services.chat.chat_runtime import (
 from hub._services.chat.session_store import SQLiteChatSessionStore
 from hub._services.chat.slots_config import (
     DEFAULT_CORE_SLOTS,
+    DEFAULT_ROLE_PROMPTS,
+    DEFAULT_SYSTEM_PROMPT,
     add_worker,
+    compose_worker_prompt,
     get_activity_history,
+    get_prompt_templates,
     get_slot,
     list_workers,
     load_slots_config,
     record_activity,
     remove_worker,
+    reset_prompt_template,
     save_slots_config,
+    update_prompt_template,
     update_slot,
 )
 
@@ -1569,6 +1575,13 @@ tr:hover td{background:#24334d}
   </div>
 </header>
 
+<div style="display:flex;gap:10px;margin-bottom:20px;border-bottom:1px solid #334155;padding-bottom:12px">
+  <button id="nav-btn-dash" class="btn btn-sm" style="background:#38bdf8;color:#0f172a;font-weight:700" onclick="showTab('dash')">📊 Aktivitäten &amp; Worker</button>
+  <button id="nav-btn-prompts" class="btn btn-sm btn-outline" onclick="showTab('prompts')">📜 System- &amp; Rollenprompts</button>
+</div>
+
+<div id="tab-dash">
+
 <div class="section-title">
   <span>1. Modell-Slots &amp; Konfiguration</span>
 </div>
@@ -1630,7 +1643,10 @@ tr:hover td{background:#24334d}
       <label>Aktuelle Aktivität</label>
       <div class="activity-box" id="chat-activity">Bereit für Interaktionen</div>
     </div>
-    <button class="btn" onclick="saveCoreSlot('buddha_chat')">💾 Speichern</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn" style="flex:1" onclick="saveCoreSlot('buddha_chat')">💾 Speichern</button>
+      <button class="btn btn-secondary btn-sm" onclick="openHistoryModal('gui-web')">📜 Verlauf</button>
+    </div>
   </div>
 
   <!-- Slot 2: Buddha Always-On -->
@@ -1686,7 +1702,10 @@ tr:hover td{background:#24334d}
       <label>Aktuelle Aktivität</label>
       <div class="activity-box" id="always-activity">Wartet auf Idle-Schwelle</div>
     </div>
-    <button class="btn" onclick="saveCoreSlot('buddha_always_on')">💾 Speichern</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn" style="flex:1" onclick="saveCoreSlot('buddha_always_on')">💾 Speichern</button>
+      <button class="btn btn-secondary btn-sm" onclick="openHistoryModal('idle-worker')">📜 Verlauf</button>
+    </div>
   </div>
 
   <!-- Slot 3: Buddha Connector -->
@@ -1736,7 +1755,10 @@ tr:hover td{background:#24334d}
       <label>Aktuelle Aktivität</label>
       <div class="activity-box" id="conn-activity">Bereit</div>
     </div>
-    <button class="btn" onclick="saveCoreSlot('buddha_connector')">💾 Speichern</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn" style="flex:1" onclick="saveCoreSlot('buddha_connector')">💾 Speichern</button>
+      <button class="btn btn-secondary btn-sm" onclick="openHistoryModal('telegram')">📜 Verlauf</button>
+    </div>
   </div>
 </div>
 
@@ -1769,10 +1791,76 @@ tr:hover td{background:#24334d}
     </tbody>
   </table>
 </div>
+</div> <!-- end of tab-dash -->
+
+<!-- Tab 2: System- & Rollenprompts -->
+<div id="tab-prompts" style="display:none">
+  <div class="section-title">
+    <span>📜 System-Default-Prompt &amp; Rollen-Vorlagen anpassen</span>
+    <button class="btn btn-secondary btn-sm" onclick="loadPromptTemplates()">↺ Neu laden</button>
+  </div>
+  <p style="color:#94a3b8;font-size:0.88rem;margin-bottom:16px">
+    Hier können der allgemeine Buddha-Systemprompt sowie alle Rollenprompts eingesehen und angepasst werden.
+    Der unveränderliche Werkstandard bleibt im System gesichert und kann jederzeit für jeden Prompt wiederhergestellt werden.
+  </p>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:20px;margin-bottom:24px">
+    <!-- Card A: System-Default-Prompt -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title"><span>🛡️</span> System-Default-Prompt</div>
+          <div class="card-desc">Basis-Instruktion für Buddha (Werkzeuge, Regeln, Deutsch-Gebot)</div>
+        </div>
+        <span class="badge badge-ready" id="badge-prompt-sys">Werkstandard</span>
+      </div>
+      <div class="form-group" style="margin-top:10px">
+        <textarea id="prompt-sys-text" rows="12" style="width:100%;font-family:monospace;font-size:0.82rem"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary btn-sm" onclick="resetPrompt('system_default')">↺ Auf Werkstandard zurücksetzen</button>
+        <button class="btn btn-success btn-sm" onclick="savePrompt('system_default')">💾 Systemprompt speichern</button>
+      </div>
+    </div>
+
+    <!-- Card B: Rollen-Prompts -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title"><span>🎭</span> Rollen- &amp; Experten-Prompts</div>
+          <div class="card-desc">Spezifische Verhaltensregeln je Rolle / Experte</div>
+        </div>
+        <span class="badge badge-ready" id="badge-prompt-role">Werkstandard</span>
+      </div>
+      <div class="form-group" style="margin-top:10px">
+        <label>Rolle / Experte auswählen</label>
+        <select id="role-select" onchange="onRolePromptSelect(this.value)">
+          <option value="hintergrund_worker">Hintergrundworker (Task-Abarbeitung &amp; FERTIG-Signal)</option>
+          <option value="task_worker">Task-Worker (Gezielte Auftragserledigung)</option>
+          <option value="boss_routing">Bossagent &amp; Koordinator (Dekomposition &amp; Delegation)</option>
+          <option value="entwickler">Entwickler (Python, Architektur, TDD, Git)</option>
+          <option value="bueroassistent">Büroassistent (Organisation &amp; Dokumente)</option>
+          <option value="gesundheitsassistent">Gesundheitsassistent (Medizin &amp; Berichte)</option>
+          <option value="steuer">Steuer-Experte (Belege, Rechnungen, Werbungskosten)</option>
+          <option value="foerderplaner">Förderplaner (ICF, Pädagogik &amp; Berichte)</option>
+          <option value="recherche">Recherche-Experte (Wissenschaftliche Synthese)</option>
+          <option value="psycho-berater">Psycho-Berater (Therapeutische Reflexion)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <textarea id="prompt-role-text" rows="9" style="width:100%;font-family:monospace;font-size:0.82rem"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary btn-sm" onclick="resetCurrentRolePrompt()">↺ Auf Werkstandard zurücksetzen</button>
+        <button class="btn btn-success btn-sm" onclick="saveCurrentRolePrompt()">💾 Rollenprompt speichern</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Modal: Neuer Worker anlegen -->
 <div class="modal-bg" id="new-worker-modal">
-  <div class="modal">
+  <div class="modal" style="max-width:560px">
     <div class="modal-header">
       <div class="modal-title">+ Neuen Hintergrundworker starten</div>
       <button class="btn btn-outline btn-sm" onclick="closeNewWorkerModal()">✕</button>
@@ -1783,27 +1871,70 @@ tr:hover td{background:#24334d}
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label>Rolle / Persona</label>
-        <select id="nw-role">
-          <option value="bach">Buddha / General (Universell)</option>
-          <option value="paul">Paul (Persönlicher Assistent)</option>
-          <option value="atlas">Atlas (Code &amp; Aufgaben Scanner)</option>
-          <option value="clara">Clara (Büro &amp; Schriftverkehr)</option>
-          <option value="florian">Florian (Förderberichte &amp; Pädagogik)</option>
-          <option value="diana">Diana (Datenanalyse &amp; Statistik)</option>
-          <option value="dietrich">Dietrich (Entscheidungsvorlagen)</option>
-          <option value="ticket-master">Ticket-Master (Triage &amp; Routing)</option>
-          <option value="task-divider">Task-Divider (Teilaufgaben)</option>
+        <label>Modus / Untermodus</label>
+        <select id="nw-sub-mode" onchange="onSubModeChange(this.value)">
+          <option value="task_worker">3.2 Taskworker (Gezielter Einzelauftrag)</option>
+          <option value="hintergrund_worker">3.1 Weiterer Hintergrundworker (wie Always-On)</option>
+          <option value="boss_routing">3.3 Bossrouting (Koordination &amp; Unteragenten)</option>
+          <option value="expert_role">3.4 Spezifische Expertenrolle</option>
         </select>
       </div>
       <div class="form-group">
-        <label>Typ</label>
+        <label>Ausführungstyp</label>
         <select id="nw-type">
           <option value="persistent">Dauerhaft (bis manuell gelöscht)</option>
           <option value="once">Einmalig (beendet nach Task)</option>
         </select>
       </div>
     </div>
+
+    <!-- Dynamic Fields for Bossrouting -->
+    <div id="nw-boss-fields" style="display:none;background:#0f172a;padding:10px 12px;border-radius:8px;border:1px dashed #38bdf8;margin-bottom:6px">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Max. beteiligte Experten</label>
+          <input type="number" id="nw-max-experts" value="3" min="1" max="10">
+        </div>
+        <div class="form-group">
+          <label>Modellallokation je Experte (optional)</label>
+          <input type="text" id="nw-expert-models" placeholder='{"entwickler":"kimi-k3:cloud"}'>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dynamic Fields for Expert Role -->
+    <div id="nw-expert-fields" style="display:none;background:#0f172a;padding:10px 12px;border-radius:8px;border:1px dashed #38bdf8;margin-bottom:6px">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Fachrolle / Experte</label>
+          <select id="nw-role-id">
+            <option value="entwickler">Entwickler (Senior Python / TDD)</option>
+            <option value="bueroassistent">Büroassistent (Organisation &amp; Dokumente)</option>
+            <option value="gesundheitsassistent">Gesundheitsassistent (Medizin &amp; Berichte)</option>
+            <option value="steuer">Steuer-Agent (Belege &amp; Werbungskosten)</option>
+            <option value="foerderplaner">Förderplaner (Pädagogik &amp; Berichte)</option>
+            <option value="recherche">Recherche-Experte (Wissenschaft)</option>
+            <option value="psycho-berater">Psycho-Berater (Reflexion)</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;margin-top:22px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.84rem;cursor:pointer;color:#38bdf8">
+            <input type="checkbox" id="nw-multi-role"> Alle Rollen spielen (Multi-Role Pool)
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- System Prompt Checkbox -->
+    <div style="background:#0f172a;padding:10px 12px;border-radius:8px;border:1px solid #334155;margin-bottom:6px">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600;color:#38bdf8;cursor:pointer">
+        <input type="checkbox" id="nw-include-system-prompt" checked> System-Default-Prompt einbinden (Standard aktiv)
+      </label>
+      <div style="font-size:0.78rem;color:#94a3b8;margin-top:3px;margin-left:24px">
+        Vererbt automatische BACH-Grundregeln, Werkzeuge, Pfade und das Deutsch-Gebot.
+      </div>
+    </div>
+
     <div class="form-row">
       <div class="form-group">
         <label>Backend</label>
@@ -1824,7 +1955,7 @@ tr:hover td{background:#24334d}
     <div class="form-row">
       <div class="form-group">
         <label>Max Turns</label>
-        <input type="number" id="nw-turns" value="20" min="1" max="100">
+        <input type="number" id="nw-turns" value="25" min="1" max="100">
       </div>
       <div class="form-group">
         <label>Modus</label>
@@ -1851,12 +1982,28 @@ tr:hover td{background:#24334d}
       </div>
     </div>
     <div class="form-group">
-      <label>Eigener System-Prompt / Vorab-Instruktion (optional)</label>
-      <textarea id="nw-prompt" rows="3" placeholder="Spezifische Verhaltensregeln oder Anweisungen für diesen Worker..."></textarea>
+      <label>Aufgaben- / Nutzereingabe-Prompt (optional / zielspezifisch)</label>
+      <textarea id="nw-task-prompt" rows="3" placeholder="Konkrete Aufgabenstellung oder Verhaltensanweisung für diesen Worker..."></textarea>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
       <button class="btn btn-secondary" onclick="closeNewWorkerModal()">Abbrechen</button>
       <button class="btn btn-success" onclick="createWorker()">Worker erstellen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Chat- & Tool-Verlauf einsehen -->
+<div class="modal-bg" id="history-modal">
+  <div class="modal" style="max-width:760px;width:95%">
+    <div class="modal-header">
+      <div class="modal-title" id="history-modal-title">📜 Session-Verlauf</div>
+      <button class="btn btn-outline btn-sm" onclick="closeHistoryModal()">✕</button>
+    </div>
+    <div id="history-modal-body" style="max-height:65vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px">
+      <!-- Chat bubbles injected here -->
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px">
+      <button class="btn btn-secondary" onclick="closeHistoryModal()">Schließen</button>
     </div>
   </div>
 </div>
@@ -1965,7 +2112,17 @@ function renderWorkers(workers) {
     else if (st === 'expired' || st === 'completed') badgeClass = 'badge-expired';
 
     const expires = w.expires_at ? new Date(w.expires_at).toLocaleString() : 'Kein Ablauf';
-    const taskBadge = w.task_id ? `<span style="color:#38bdf8">Task #${w.task_id}</span>` : `<span style="color:#94a3b8">General</span>`;
+    const taskBadge = w.task_id ? `<span style="color:#38bdf8">Task #${w.task_id}</span>` : `<span style="color:#94a3b8">${escapeHtml(w.category || 'General')}</span>`;
+    
+    // Sub-mode formatting
+    let subModeLabel = '3.2 Taskworker';
+    if (w.sub_mode === 'hintergrund_worker') subModeLabel = '3.1 Hintergrundworker';
+    else if (w.sub_mode === 'boss_routing') subModeLabel = `3.3 Bossrouting (${w.max_experts || 3} Exp.)`;
+    else if (w.sub_mode === 'expert_role') subModeLabel = w.multi_role ? '3.4 Multi-Role Pool' : `3.4 Experte: ${escapeHtml(w.role_id || w.role)}`;
+
+    const sysPromptBadge = w.include_system_prompt !== false 
+      ? '<span style="color:#10b981;font-size:0.75rem;font-weight:600">✓ SysPrompt</span>' 
+      : '<span style="color:#f59e0b;font-size:0.75rem;font-weight:600">✗ Kein SysPrompt</span>';
 
     html += `
       <div class="worker-card" id="wcard-${w.id}">
@@ -1974,7 +2131,7 @@ function renderWorkers(workers) {
           <span class="badge ${badgeClass}">${escapeHtml(st)}</span>
         </div>
         <div class="worker-meta">
-          <div><strong>Rolle:</strong> ${escapeHtml(w.role || 'General')} · ${taskBadge}</div>
+          <div><strong>Modus:</strong> <span style="color:#38bdf8">${subModeLabel}</span> · ${taskBadge} · ${sysPromptBadge}</div>
           <div><strong>Modell:</strong> ${escapeHtml(w.model || '?')} (${escapeHtml(w.backend || 'ollama')})</div>
           <div><strong>Turns:</strong> ${w.max_tool_rounds || 20} · <strong>Modus:</strong> ${w.mode || 'full'}</div>
           <div><strong>Ablauf:</strong> ${expires}</div>
@@ -1982,6 +2139,7 @@ function renderWorkers(workers) {
         <div class="activity-box" style="min-height:30px">${escapeHtml(w.current_activity || 'Bereit')}</div>
         <div class="worker-actions">
           <button class="btn btn-sm btn-success" onclick="runWorker('${w.id}')">▶ Start</button>
+          <button class="btn btn-sm btn-secondary" onclick="openHistoryModal('${w.id}')">📜 Verlauf</button>
           <button class="btn btn-sm btn-secondary" onclick="toggleWorker('${w.id}', '${st}')">${st === 'paused' ? '▶ Aktiv' : '⏸ Pause'}</button>
           <button class="btn btn-sm btn-danger" onclick="deleteWorker('${w.id}')">🗑 Löschen</button>
         </div>
@@ -2074,29 +2232,152 @@ async function toggleFackel() {
   }
 }
 
+function showTab(tab) {
+  const dash = document.getElementById('tab-dash');
+  const prompts = document.getElementById('tab-prompts');
+  const btnDash = document.getElementById('nav-btn-dash');
+  const btnPrompts = document.getElementById('nav-btn-prompts');
+  if (tab === 'prompts') {
+    dash.style.display = 'none';
+    prompts.style.display = 'block';
+    btnPrompts.style.background = '#38bdf8';
+    btnPrompts.style.color = '#0f172a';
+    btnPrompts.style.fontWeight = '700';
+    btnDash.style.background = 'transparent';
+    btnDash.style.color = '#38bdf8';
+    btnDash.style.fontWeight = 'normal';
+    loadPromptTemplates();
+  } else {
+    prompts.style.display = 'none';
+    dash.style.display = 'block';
+    btnDash.style.background = '#38bdf8';
+    btnDash.style.color = '#0f172a';
+    btnDash.style.fontWeight = '700';
+    btnPrompts.style.background = 'transparent';
+    btnPrompts.style.color = '#38bdf8';
+    btnPrompts.style.fontWeight = 'normal';
+    refreshAll();
+  }
+}
+
+let _promptTemplates = null;
+
+async function loadPromptTemplates() {
+  const res = await api('GET', '/prompts');
+  if (!res || !res.ok || !res.templates) return;
+  _promptTemplates = res.templates;
+
+  const sys = _promptTemplates.system_default || {};
+  document.getElementById('prompt-sys-text').value = sys.text || '';
+  const badgeSys = document.getElementById('badge-prompt-sys');
+  badgeSys.textContent = sys.is_custom ? 'Angepasst' : 'Werkstandard';
+  badgeSys.className = 'badge ' + (sys.is_custom ? 'badge-running' : 'badge-ready');
+
+  const roleSelect = document.getElementById('role-select').value;
+  onRolePromptSelect(roleSelect);
+}
+
+function onRolePromptSelect(roleId) {
+  if (!_promptTemplates || !_promptTemplates.roles) return;
+  const role = _promptTemplates.roles[roleId] || {};
+  document.getElementById('prompt-role-text').value = role.text || '';
+  const badgeRole = document.getElementById('badge-prompt-role');
+  badgeRole.textContent = role.is_custom ? 'Angepasst' : 'Werkstandard';
+  badgeRole.className = 'badge ' + (role.is_custom ? 'badge-running' : 'badge-ready');
+}
+
+async function savePrompt(key) {
+  let text = '';
+  if (key === 'system_default') {
+    text = document.getElementById('prompt-sys-text').value;
+  } else if (key.startsWith('role_')) {
+    text = document.getElementById('prompt-role-text').value;
+  }
+  const res = await api('POST', '/prompts', { key, text });
+  if (res && res.ok) {
+    toast(`Prompt '${key}' erfolgreich gespeichert!`);
+    loadPromptTemplates();
+  } else {
+    toast(`Fehler beim Speichern: ${res.error || 'Unbekannt'}`);
+  }
+}
+
+async function resetPrompt(key) {
+  if (!confirm(`Prompt '${key}' wirklich auf den unveränderlichen Werkstandard zurücksetzen?`)) return;
+  const res = await api('POST', '/prompts/reset', { key });
+  if (res && res.ok) {
+    toast(`Prompt '${key}' auf Werkstandard zurückgesetzt.`);
+    loadPromptTemplates();
+  } else {
+    toast(`Fehler beim Zurücksetzen: ${res.error || 'Unbekannt'}`);
+  }
+}
+
+function saveCurrentRolePrompt() {
+  const roleId = document.getElementById('role-select').value;
+  savePrompt('role_' + roleId);
+}
+
+function resetCurrentRolePrompt() {
+  const roleId = document.getElementById('role-select').value;
+  resetPrompt('role_' + roleId);
+}
+
 function openNewWorkerModal() {
   document.getElementById('new-worker-modal').style.display = 'flex';
+  onSubModeChange(document.getElementById('nw-sub-mode').value);
 }
 
 function closeNewWorkerModal() {
   document.getElementById('new-worker-modal').style.display = 'none';
 }
 
+function onSubModeChange(subMode) {
+  const bossFields = document.getElementById('nw-boss-fields');
+  const expertFields = document.getElementById('nw-expert-fields');
+  bossFields.style.display = subMode === 'boss_routing' ? 'block' : 'none';
+  expertFields.style.display = subMode === 'expert_role' ? 'block' : 'none';
+}
+
 async function createWorker() {
   const name = document.getElementById('nw-name').value.trim();
-  const role = document.getElementById('nw-role').value;
+  const subMode = document.getElementById('nw-sub-mode').value;
   const workerType = document.getElementById('nw-type').value;
   const backend = document.getElementById('nw-backend').value;
   const model = document.getElementById('nw-model').value.trim() || 'qwen3.8:27b-mlx';
-  const turns = parseInt(document.getElementById('nw-turns').value) || 20;
+  const turns = parseInt(document.getElementById('nw-turns').value) || 25;
   const mode = document.getElementById('nw-mode').value;
   const taskId = document.getElementById('nw-task-id').value.trim() ? parseInt(document.getElementById('nw-task-id').value) : null;
   const ttl = document.getElementById('nw-ttl').value ? parseInt(document.getElementById('nw-ttl').value) : null;
-  const prompt = document.getElementById('nw-prompt').value.trim();
+  const taskPrompt = document.getElementById('nw-task-prompt').value.trim();
+  const includeSys = document.getElementById('nw-include-system-prompt').checked;
+
+  let roleId = '';
+  let multiRole = false;
+  if (subMode === 'expert_role') {
+    roleId = document.getElementById('nw-role-id').value;
+    multiRole = document.getElementById('nw-multi-role').checked;
+  }
+
+  let maxExperts = 3;
+  let expertModels = {};
+  if (subMode === 'boss_routing') {
+    maxExperts = parseInt(document.getElementById('nw-max-experts').value) || 3;
+    const emStr = document.getElementById('nw-expert-models').value.trim();
+    if (emStr) {
+      try { expertModels = JSON.parse(emStr); } catch (e) { expertModels = { default: emStr }; }
+    }
+  }
 
   const payload = {
-    name: name || `Worker-${role}`,
-    role,
+    name: name || `Worker-${subMode}`,
+    sub_mode: subMode,
+    role_id: roleId,
+    multi_role: multiRole,
+    max_experts: maxExperts,
+    expert_models: expertModels,
+    include_system_prompt: includeSys,
+    task_prompt: taskPrompt,
     type: workerType,
     backend,
     model,
@@ -2104,7 +2385,6 @@ async function createWorker() {
     mode,
     task_id: taskId,
     ttl_seconds: ttl,
-    system_prompt: prompt,
   };
 
   const res = await api('POST', '/workers', payload);
@@ -2113,11 +2393,75 @@ async function createWorker() {
     closeNewWorkerModal();
     document.getElementById('nw-name').value = '';
     document.getElementById('nw-task-id').value = '';
-    document.getElementById('nw-prompt').value = '';
+    document.getElementById('nw-task-prompt').value = '';
     refreshSlots();
   } else {
     toast(`Fehler: ${res.error || 'Worker konnte nicht erstellt werden'}`);
   }
+}
+
+async function openHistoryModal(chatId) {
+  document.getElementById('history-modal-title').textContent = `📜 Session-Verlauf: ${chatId}`;
+  const body = document.getElementById('history-modal-body');
+  body.innerHTML = '<div style="color:#94a3b8;padding:20px;text-align:center">Lade Chat- und Werkzeugverlauf...</div>';
+  document.getElementById('history-modal').style.display = 'flex';
+
+  const res = await api('GET', `/chat/history?chat_id=${encodeURIComponent(chatId)}`);
+  if (!res || !res.ok || !res.messages || res.messages.length === 0) {
+    body.innerHTML = '<div style="color:#64748b;padding:24px;text-align:center">Noch keine Nachrichten oder Werkzeugläufe für diese Session vorhanden.</div>';
+    return;
+  }
+
+  let html = '';
+  for (const msg of res.messages) {
+    const role = msg.role || 'unknown';
+    const content = msg.content || '';
+    const toolCalls = msg.tool_calls || [];
+    let roleBadge = 'badge-idle';
+    let roleLabel = role.toUpperCase();
+    let bubbleStyle = 'background:#1e293b;border:1px solid #334155;';
+
+    if (role === 'user') {
+      roleBadge = 'badge-ready';
+      roleLabel = 'USER / AUFTRAG';
+      bubbleStyle = 'background:#0f172a;border:1px solid #38bdf8;';
+    } else if (role === 'assistant') {
+      roleBadge = 'badge-running';
+      roleLabel = 'ASSISTANT';
+      bubbleStyle = 'background:#1e293b;border:1px solid #10b981;';
+    } else if (role === 'system') {
+      roleBadge = 'badge-paused';
+      roleLabel = 'SYSTEM';
+      bubbleStyle = 'background:#1e1e2e;border:1px dashed #64748b;';
+    } else if (role === 'tool') {
+      roleBadge = 'badge-paused';
+      roleLabel = 'TOOL RESULT';
+      bubbleStyle = 'background:#182234;border:1px solid #f59e0b;';
+    }
+
+    html += `
+      <div style="padding:10px 14px;border-radius:8px;${bubbleStyle}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span class="badge ${roleBadge}">${roleLabel}</span>
+        </div>
+        <div style="white-space:pre-wrap;word-break:break-word;font-size:0.86rem;color:#e2e8f0">${escapeHtml(content)}</div>
+    `;
+    if (toolCalls && toolCalls.length > 0) {
+      html += `<div style="margin-top:8px;padding:6px 10px;background:#0f172a;border-radius:4px;font-size:0.8rem;color:#f59e0b">`;
+      for (const tc of toolCalls) {
+        const fn = tc.function || {};
+        html += `<div>⚙️ <strong>${escapeHtml(fn.name || 'Tool')}</strong>(${escapeHtml(JSON.stringify(fn.arguments || {}))})</div>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+  body.innerHTML = html;
+  body.scrollTop = body.scrollHeight;
+}
+
+function closeHistoryModal() {
+  document.getElementById('history-modal').style.display = 'none';
 }
 
 async function runWorker(workerId) {
@@ -2627,6 +2971,35 @@ class ControlHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
+        elif path == "/api/prompts":
+            try:
+                self._json({
+                    "ok": True,
+                    "templates": get_prompt_templates(),
+                })
+            except Exception as e:
+                self._json({"error": str(e)}, 500)
+
+        elif path == "/api/chat/history":
+            chat_id = parse_qs(parsed_url.query).get("chat_id", [""])[0]
+            if not chat_id:
+                self._json({"error": "chat_id erforderlich"}, 400)
+            else:
+                try:
+                    msgs = []
+                    session = runtime.sessions.get(chat_id)
+                    if session and session.messages:
+                        msgs = session.messages
+                    elif runtime.session_store:
+                        msgs = runtime._load_messages(chat_id)
+                    self._json({
+                        "ok": True,
+                        "chat_id": chat_id,
+                        "messages": msgs,
+                    })
+                except Exception as e:
+                    self._json({"error": str(e)}, 500)
+
         else:
             self._json({"error": "Not found"}, 404)
 
@@ -2887,6 +3260,28 @@ class ControlHandler(BaseHTTPRequestHandler):
             dt = body.get("details", {})
             record_activity(source, act, st, dt)
             self._json({"ok": True})
+
+        elif path == "/api/prompts":
+            key = str(body.get("key", "")).strip()
+            text = body.get("text", "")
+            if not key or text is None:
+                self._json({"error": "key und text erforderlich"}, 400)
+                return
+            try:
+                update_prompt_template(key, text)
+                record_activity("system", f"Prompt-Vorlage {key} aktualisiert", "ok")
+                self._json({"ok": True, "key": key})
+            except Exception as e:
+                self._json({"error": str(e)}, 500)
+
+        elif path == "/api/prompts/reset":
+            key = body.get("key")
+            try:
+                reset_prompt_template(key)
+                record_activity("system", f"Prompt-Vorlage(n) zurückgesetzt: {key or 'alle'}", "ok")
+                self._json({"ok": True, "key": key})
+            except Exception as e:
+                self._json({"error": str(e)}, 500)
 
         else:
             self._json({"error": "Not found"}, 404)
