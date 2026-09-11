@@ -445,7 +445,60 @@ class SetupHandler(BaseHandler):
             if not ok:
                 all_ok = False
 
+        # --- System- & Topologie-Audit (MODULRUECKTRANSFER Stufe 5) ---
+        # Native Audits (Ports, Zombies, Locks) laufen UNABHAENGIG vom
+        # externen system-explorer-Modul; der Topologie-Scan ist ein
+        # opt-in-Nachweis darueber hinaus (Rollback: BACH_USE_EXTERNAL_EXPLORER=0).
+        audit_ok, audit_lines = self._system_topology_audit()
+        out.extend(audit_lines)
+        if not audit_ok:
+            all_ok = False
+
         return all_ok, "\n".join(out)
+
+    def _system_topology_audit(self):
+        """System- & Topologie-Audit fuer den Preflight (fail-soft).
+
+        Liefert (audit_ok, output_zeilen). Kritisch ist nur ein durch einen
+        FREMDEN Prozess belegter BACH-Port; Zombies und verwaiste Locks
+        sind Warnungen mit Bereinigungshinweis.
+        """
+        out = []
+        audit_ok = True
+        try:
+            from .system_audit import (
+                audit_ports,
+                audit_zombies,
+                audit_locks,
+                render_audit_lines,
+            )
+            port_findings = audit_ports()
+            zombie_findings = audit_zombies()
+            lock_findings = audit_locks()
+        except Exception as exc:  # Audit darf die Installation nie blockieren
+            return True, [f"  [WARN] System-Audit nicht verfuegbar: {exc}"]
+
+        out.append("  System- & Topologie-Audit:")
+        for status, line in render_audit_lines(
+            port_findings, zombie_findings, lock_findings
+        ):
+            out.append(f"  [{status}] {line}")
+            if status == "FAIL":
+                audit_ok = False
+
+        # Topologie-Scan via externem system-explorer (opt-in, fail-soft)
+        try:
+            from .explorer_provider import (
+                render_topology_evidence_lines,
+                topology_evidence,
+            )
+            evidence = topology_evidence(self.base_path)
+            out.extend(render_topology_evidence_lines(evidence))
+        except Exception as exc:
+            out.append(
+                f"  [WARN] Topologie-Scan: explorer_provider error: {exc}"
+            )
+        return audit_ok, out
 
     # =========================================================================
     # Claude Code Hooks Setup
