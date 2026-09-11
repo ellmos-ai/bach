@@ -99,10 +99,12 @@ def check_compute_active(
 
 
 def _filter_stopped_jobs(status: dict) -> Tuple[bool, dict]:
-    """Filter out PIDs that are already stopped (state T).
+    """Filter out PIDs that are already stopped (state T), gone, or unmanageable.
 
     The watchdog may keep stopped PIDs in the lock file. We only care
     about running ones to avoid asking the user to pause already-paused jobs.
+    Processes we have no permission to signal (e.g. system daemons) or that
+    are already dead are also filtered out.
     """
     jobs = status.get("active_compute_jobs", [])
     if not jobs:
@@ -114,6 +116,13 @@ def _filter_stopped_jobs(status: dict) -> Tuple[bool, dict]:
         if not pid:
             running.append(job)
             continue
+        # If process cannot be signaled by current user or is gone, skip
+        try:
+            os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError) as e:
+            log.debug("Skipping PID %d (%s): cannot signal (%s)", pid, job.get("name", "?"), e)
+            continue
+
         # Check live state if lock file reports a state
         if _pid_is_stopped(pid):
             log.debug("Skipping PID %d (already stopped)", pid)
@@ -338,7 +347,10 @@ def start_resume_monitor(
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             loaded = [m.get("name", "") for m in data.get("models", [])]
-            return model_name in loaded
+            for m in loaded:
+                if m == model_name or m.startswith(f"{model_name}:") or model_name.startswith(f"{m}:"):
+                    return True
+            return False
         except Exception:
             return False
 

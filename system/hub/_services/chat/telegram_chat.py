@@ -929,15 +929,17 @@ async def _handle_pending_action(chat_id: str, text: str, update: Update) -> boo
 
         # Run the original message through the LLM
         typing = asyncio.create_task(_keep_typing(update))
+        success = False
         try:
             if _compute_lock_enabled():
                 set_inferenz_active(True)
-            answer = await runtime.process(original_text, chat_id)
+            answer = await runtime.process(original_text, chat_id, skip_compute_gate=True)
             for i in range(0, len(answer), 4000):
                 await update.message.reply_text(answer[i:i + 4000])
             session = runtime.get_session(chat_id)
             if session.voice_output:
                 await _send_voice_reply(update, answer)
+            success = True
         except Exception as e:
             log.error(f"Chat-Fehler nach Compute-Pause: {e}")
             await update.message.reply_text(f"Fehler: {e}")
@@ -948,22 +950,30 @@ async def _handle_pending_action(chat_id: str, text: str, update: Update) -> boo
 
         # Start resume monitor if jobs were paused
         if paused:
-            ollama_url = getattr(runtime.backend, "base_url", "http://localhost:11434")
+            if not success:
+                log.info("Chat inference failed after pause, resuming compute jobs immediately: %s", paused)
+                delete_session_flag()
+                resume_compute_jobs(paused)
+                await update.message.reply_text(
+                    "Anfrage fehlgeschlagen. Pausierte Compute-Jobs wurden wieder fortgesetzt."
+                )
+            else:
+                ollama_url = getattr(runtime.backend, "base_url", "http://localhost:11434")
 
-            def _on_resume(pids):
-                log.info("Compute jobs resumed: %s", pids)
+                def _on_resume(pids):
+                    log.info("Compute jobs resumed: %s", pids)
 
-            start_resume_monitor(
-                model_name=model,
-                paused_pids=paused,
-                callback=_on_resume,
-                ollama_url=ollama_url,
-                idle_wait=90.0,
-            )
-            await update.message.reply_text(
-                f"Resume-Monitor gestartet. Jobs werden automatisch "
-                f"fortgesetzt wenn {model} entladen wird."
-            )
+                start_resume_monitor(
+                    model_name=model,
+                    paused_pids=paused,
+                    callback=_on_resume,
+                    ollama_url=ollama_url,
+                    idle_wait=90.0,
+                )
+                await update.message.reply_text(
+                    f"Resume-Monitor gestartet. Jobs werden automatisch "
+                    f"fortgesetzt wenn {model} entladen wird."
+                )
 
         return True
 

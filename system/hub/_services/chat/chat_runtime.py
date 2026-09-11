@@ -1344,12 +1344,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             pass
         return "\n\n".join(parts)
 
-    async def process(self, text: str, chat_id: str, *, backend=None, model=None, **kwargs) -> str:
+    async def process(self, text: str, chat_id: str, *, backend=None, model=None, skip_compute_gate: bool = False, **kwargs) -> str:
         """Verarbeitet eine User-Nachricht und gibt die Antwort zurück."""
         # Der eine Punkt, an dem jeder Modell-Load vorbeikommt: Telegram,
         # /api/chat (Idle-Worker) und der Auftrags-Worker rufen alle hier an.
         # Das Gate deshalb hier statt je Aufrufer (T-20260907-440775748).
-        if self.compute_gate is not None and self.compute_gate():
+        if not skip_compute_gate and self.compute_gate is not None and self.compute_gate():
             raise ComputeLocked(
                 "Compute-Lock aktiv -- kein Modell-Load, damit laufende "
                 "Rechenjobs nicht in den Swap gedraengt werden."

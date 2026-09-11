@@ -635,6 +635,12 @@ class TestComputeGate:
         runtime, backend, run = self._run(None)
         assert run(runtime.process("Aufgabe", "idle-worker")) == "Echte Antwort"
 
+    def test_skip_compute_gate_allows_model_load(self):
+        """User-authorisierte Telegram-Nachrichten umgehen das Compute-Gate."""
+        runtime, backend, run = self._run(lambda: True)
+        assert run(runtime.process("Aufgabe", "user-chat", skip_compute_gate=True)) == "Echte Antwort"
+        assert backend.calls == 1
+
 
 def test_control_api_reports_a_compute_lock_separately():
     """`/api/chat` darf den Lock weder als Erfolg noch als Fehlschlag melden.
@@ -648,6 +654,39 @@ def test_control_api_reports_a_compute_lock_separately():
     assert "except ComputeLocked" in src
     assert '"compute_locked": True' in src
     assert "runtime.compute_gate = _compute_lock_blocks" in src
+    assert "skip_compute_gate=True" in src
+
+
+def test_filter_stopped_jobs_ignores_unmanageable_and_dead_pids(monkeypatch):
+    """Prozesse ohne Signalberechtigung (Root/System) oder tote PIDs duerfen den Chat nicht blockieren."""
+    from hub.compute_lock import _filter_stopped_jobs
+
+    def mock_kill(pid, sig):
+        if pid == 52591:
+            raise PermissionError("[Errno 1] Operation not permitted")
+        if pid == 99999:
+            raise ProcessLookupError("[Errno 3] No such process")
+        return None
+
+    monkeypatch.setattr("os.kill", mock_kill)
+    monkeypatch.setattr("hub.compute_lock._pid_is_stopped", lambda pid: False)
+
+    status = {
+        "active_compute_jobs": [
+            {"name": "root_sysextd", "pid": 52591},
+            {"name": "dead_job", "pid": 99999},
+        ]
+    }
+    is_active, filtered = _filter_stopped_jobs(status)
+    assert not is_active
+    assert filtered == {}
+
+    # Wenn zusaetzlich ein echter, steuerbarer Job laeuft
+    status["active_compute_jobs"].append({"name": "real_job", "pid": 44252})
+    is_active, filtered = _filter_stopped_jobs(status)
+    assert is_active
+    assert len(filtered["active_compute_jobs"]) == 1
+    assert filtered["active_compute_jobs"][0]["pid"] == 44252
 
 
 class TestFailedAnswer:
