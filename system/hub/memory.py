@@ -601,6 +601,12 @@ class MemoryHandler(BaseHandler):
             "",
         ]
 
+    def _table_columns(self, conn: sqlite3.Connection, table_name: str) -> set[str]:
+        try:
+            return {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+        except sqlite3.Error:
+            return set()
+
     def _provenance(self, args: list) -> tuple:
         """Zeigt heuristische Provenance-Infos fuer Memory-Eintraege."""
         scope, limit = self._parse_provenance_args(args)
@@ -618,178 +624,218 @@ class MemoryHandler(BaseHandler):
             sections = 0
 
             if scope in {"all", "working"}:
-                rows = conn.execute(
-                    """
-                    SELECT id, type, content, created_at, updated_at,
-                           created_by_session_id, updated_by_session_id
-                    FROM memory_working
-                    WHERE is_active = 1
-                    ORDER BY updated_at DESC, created_at DESC
-                    LIMIT ?
-                    """,
-                    (limit,),
-                ).fetchall()
-                if rows:
-                    results.extend(["", "[WORKING]"])
-                    for row in rows:
-                        people_scope, scope_reason = classify_people_scope(
-                            text=row["content"],
-                            source="working_memory",
-                        )
-                        privacy, privacy_hint = classify_privacy(
-                            text=row["content"],
-                            source="working_memory",
-                            people_scope=people_scope,
-                        )
-                        results.extend(
-                            self._format_memory_provenance_entry(
-                                label=f"#{row['id']} ({row['type']})",
-                                evidence=self._memory_evidence("working", row),
+                cols = self._table_columns(conn, "memory_working")
+                if cols:
+                    author_col = (
+                        "created_by_session_id"
+                        if "created_by_session_id" in cols
+                        else "NULL AS created_by_session_id"
+                    )
+                    editor_col = (
+                        "updated_by_session_id"
+                        if "updated_by_session_id" in cols
+                        else "NULL AS updated_by_session_id"
+                    )
+                    where_clause = "WHERE is_active = 1" if "is_active" in cols else ""
+                    rows = conn.execute(
+                        f"""
+                        SELECT id, type, content, created_at, updated_at,
+                               {author_col}, {editor_col}
+                        FROM memory_working
+                        {where_clause}
+                        ORDER BY updated_at DESC, created_at DESC
+                        LIMIT ?
+                        """,
+                        (limit,),
+                    ).fetchall()
+                    if rows:
+                        results.extend(["", "[WORKING]"])
+                        for row in rows:
+                            people_scope, scope_reason = classify_people_scope(
+                                text=row["content"],
                                 source="working_memory",
-                                preview=row["content"],
-                                timestamp=row["updated_at"] or row["created_at"],
-                                people_scope=people_scope,
-                                privacy=privacy,
-                                scope_reason=scope_reason,
-                                privacy_hint=privacy_hint,
-                                author_session=row["created_by_session_id"],
-                                editor_session=row["updated_by_session_id"],
                             )
-                        )
-                    sections += 1
+                            privacy, privacy_hint = classify_privacy(
+                                text=row["content"],
+                                source="working_memory",
+                                people_scope=people_scope,
+                            )
+                            results.extend(
+                                self._format_memory_provenance_entry(
+                                    label=f"#{row['id']} ({row['type']})",
+                                    evidence=self._memory_evidence("working", row),
+                                    source="working_memory",
+                                    preview=row["content"],
+                                    timestamp=row["updated_at"] or row["created_at"],
+                                    people_scope=people_scope,
+                                    privacy=privacy,
+                                    scope_reason=scope_reason,
+                                    privacy_hint=privacy_hint,
+                                    author_session=row["created_by_session_id"],
+                                    editor_session=row["updated_by_session_id"],
+                                )
+                            )
+                        sections += 1
 
             if scope in {"all", "facts"}:
-                rows = conn.execute(
-                    """
-                    SELECT id, category, key, value, confidence, source, created_at, updated_at,
-                           created_by_session_id, updated_by_session_id
-                    FROM memory_facts
-                    ORDER BY updated_at DESC, created_at DESC
-                    LIMIT ?
-                    """,
-                    (limit,),
-                ).fetchall()
-                if rows:
-                    results.extend(["", "[FACTS]"])
-                    for row in rows:
-                        people_scope, scope_reason = classify_people_scope(
-                            text=row["value"],
-                            category=row["category"],
-                            source=row["source"] or "",
-                        )
-                        privacy, privacy_hint = classify_privacy(
-                            text=row["value"],
-                            category=row["category"],
-                            source=row["source"] or "",
-                            people_scope=people_scope,
-                        )
-                        conf = row["confidence"]
-                        conf_text = "" if conf is None else f" | Konfidenz: {conf:.1f}"
-                        results.extend(
-                            self._format_memory_provenance_entry(
-                                label=f"#{row['id']} [{row['category']}] {row['key']}{conf_text}",
-                                evidence=self._memory_evidence("facts", row),
-                                source=row["source"] or "unknown",
-                                preview=row["value"],
-                                timestamp=row["updated_at"] or row["created_at"],
-                                people_scope=people_scope,
-                                privacy=privacy,
-                                scope_reason=scope_reason,
-                                privacy_hint=privacy_hint,
-                                author_session=row["created_by_session_id"],
-                                editor_session=row["updated_by_session_id"],
+                cols = self._table_columns(conn, "memory_facts")
+                if cols:
+                    author_col = (
+                        "created_by_session_id"
+                        if "created_by_session_id" in cols
+                        else "NULL AS created_by_session_id"
+                    )
+                    editor_col = (
+                        "updated_by_session_id"
+                        if "updated_by_session_id" in cols
+                        else "NULL AS updated_by_session_id"
+                    )
+                    rows = conn.execute(
+                        f"""
+                        SELECT id, category, key, value, confidence, source, created_at, updated_at,
+                               {author_col}, {editor_col}
+                        FROM memory_facts
+                        ORDER BY updated_at DESC, created_at DESC
+                        LIMIT ?
+                        """,
+                        (limit,),
+                    ).fetchall()
+                    if rows:
+                        results.extend(["", "[FACTS]"])
+                        for row in rows:
+                            people_scope, scope_reason = classify_people_scope(
+                                text=row["value"],
+                                category=row["category"],
+                                source=row["source"] or "",
                             )
-                        )
-                    sections += 1
+                            privacy, privacy_hint = classify_privacy(
+                                text=row["value"],
+                                category=row["category"],
+                                source=row["source"] or "",
+                                people_scope=people_scope,
+                            )
+                            conf = row["confidence"]
+                            conf_text = "" if conf is None else f" | Konfidenz: {conf:.1f}"
+                            results.extend(
+                                self._format_memory_provenance_entry(
+                                    label=f"#{row['id']} [{row['category']}] {row['key']}{conf_text}",
+                                    evidence=self._memory_evidence("facts", row),
+                                    source=row["source"] or "unknown",
+                                    preview=row["value"],
+                                    timestamp=row["updated_at"] or row["created_at"],
+                                    people_scope=people_scope,
+                                    privacy=privacy,
+                                    scope_reason=scope_reason,
+                                    privacy_hint=privacy_hint,
+                                    author_session=row["created_by_session_id"],
+                                    editor_session=row["updated_by_session_id"],
+                                )
+                            )
+                        sections += 1
 
             if scope in {"all", "lessons"}:
-                rows = conn.execute(
-                    """
-                    SELECT id, category, severity, title, problem, solution, related_tools, related_files,
-                           created_at, created_by_session_id, updated_by_session_id
-                    FROM memory_lessons
-                    WHERE is_active = 1
-                    ORDER BY created_at DESC
-                    LIMIT ?
-                    """,
-                    (limit,),
-                ).fetchall()
-                if rows:
-                    results.extend(["", "[LESSONS]"])
-                    for row in rows:
-                        source = row["related_files"] or row["related_tools"] or "lesson_db"
-                        preview = row["solution"] or row["problem"] or row["title"]
-                        people_scope, scope_reason = classify_people_scope(
-                            text=" ".join(filter(None, [row["title"], row["problem"], row["solution"]])),
-                            category=row["category"],
-                            source=source,
-                        )
-                        privacy, privacy_hint = classify_privacy(
-                            text=preview,
-                            category=row["category"],
-                            source=source,
-                            people_scope=people_scope,
-                        )
-                        results.extend(
-                            self._format_memory_provenance_entry(
-                                label=f"#{row['id']} [{row['severity']}] {row['title']}",
-                                evidence=self._memory_evidence("lessons", row),
+                cols = self._table_columns(conn, "memory_lessons")
+                if cols:
+                    author_col = (
+                        "created_by_session_id"
+                        if "created_by_session_id" in cols
+                        else "NULL AS created_by_session_id"
+                    )
+                    editor_col = (
+                        "updated_by_session_id"
+                        if "updated_by_session_id" in cols
+                        else "NULL AS updated_by_session_id"
+                    )
+                    where_clause = "WHERE is_active = 1" if "is_active" in cols else ""
+                    rows = conn.execute(
+                        f"""
+                        SELECT id, category, severity, title, problem, solution, related_tools, related_files,
+                               created_at, {author_col}, {editor_col}
+                        FROM memory_lessons
+                        {where_clause}
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                        """,
+                        (limit,),
+                    ).fetchall()
+                    if rows:
+                        results.extend(["", "[LESSONS]"])
+                        for row in rows:
+                            source = row["related_files"] or row["related_tools"] or "lesson_db"
+                            preview = row["solution"] or row["problem"] or row["title"]
+                            people_scope, scope_reason = classify_people_scope(
+                                text=" ".join(filter(None, [row["title"], row["problem"], row["solution"]])),
+                                category=row["category"],
                                 source=source,
-                                preview=preview,
-                                timestamp=row["created_at"],
-                                people_scope=people_scope,
-                                privacy=privacy,
-                                scope_reason=scope_reason,
-                                privacy_hint=privacy_hint,
-                                author_session=row["created_by_session_id"],
-                                editor_session=row["updated_by_session_id"],
                             )
-                        )
-                    sections += 1
+                            privacy, privacy_hint = classify_privacy(
+                                text=preview,
+                                category=row["category"],
+                                source=source,
+                                people_scope=people_scope,
+                            )
+                            results.extend(
+                                self._format_memory_provenance_entry(
+                                    label=f"#{row['id']} [{row['severity']}] {row['title']}",
+                                    evidence=self._memory_evidence("lessons", row),
+                                    source=source,
+                                    preview=preview,
+                                    timestamp=row["created_at"],
+                                    people_scope=people_scope,
+                                    privacy=privacy,
+                                    scope_reason=scope_reason,
+                                    privacy_hint=privacy_hint,
+                                    author_session=row["created_by_session_id"],
+                                    editor_session=row["updated_by_session_id"],
+                                )
+                            )
+                        sections += 1
 
             if scope in {"all", "sessions"}:
-                rows = conn.execute(
-                    """
-                    SELECT id, session_id, summary, started_at, ended_at, partner_id, tasks_created, tasks_completed
-                    FROM memory_sessions
-                    ORDER BY id DESC
-                    LIMIT ?
-                    """,
-                    (limit,),
-                ).fetchall()
-                if rows:
-                    results.extend(["", "[SESSIONS]"])
-                    for row in rows:
-                        preview = row["summary"] or row["session_id"]
-                        people_scope, scope_reason = classify_people_scope(
-                            text=preview,
-                            source=row["session_id"],
-                            partner_id=row["partner_id"] or "",
-                        )
-                        privacy, privacy_hint = classify_privacy(
-                            text=preview,
-                            source=row["session_id"],
-                            partner_id=row["partner_id"] or "",
-                            people_scope=people_scope,
-                        )
-                        ended = row["ended_at"] or "aktiv"
-                        results.extend(
-                            self._format_memory_provenance_entry(
-                                label=(
-                                    f"#{row['id']} {row['session_id']} "
-                                    f"(+{row['tasks_created'] or 0} / -{row['tasks_completed'] or 0}, Ende: {format_timestamp(ended)})"
-                                ),
-                                evidence=self._memory_evidence("sessions", row),
-                                source=row["partner_id"] or "unknown",
-                                preview=preview,
-                                timestamp=row["started_at"],
-                                people_scope=people_scope,
-                                privacy=privacy,
-                                scope_reason=scope_reason,
-                                privacy_hint=privacy_hint,
+                cols = self._table_columns(conn, "memory_sessions")
+                if cols:
+                    rows = conn.execute(
+                        """
+                        SELECT id, session_id, summary, started_at, ended_at, partner_id, tasks_created, tasks_completed
+                        FROM memory_sessions
+                        ORDER BY id DESC
+                        LIMIT ?
+                        """,
+                        (limit,),
+                    ).fetchall()
+                    if rows:
+                        results.extend(["", "[SESSIONS]"])
+                        for row in rows:
+                            preview = row["summary"] or row["session_id"]
+                            people_scope, scope_reason = classify_people_scope(
+                                text=preview,
+                                source=row["session_id"],
+                                partner_id=row["partner_id"] or "",
                             )
-                        )
-                    sections += 1
+                            privacy, privacy_hint = classify_privacy(
+                                text=preview,
+                                source=row["session_id"],
+                                partner_id=row["partner_id"] or "",
+                                people_scope=people_scope,
+                            )
+                            ended = row["ended_at"] or "aktiv"
+                            results.extend(
+                                self._format_memory_provenance_entry(
+                                    label=(
+                                        f"#{row['id']} {row['session_id']} "
+                                        f"(+{row['tasks_created'] or 0} / -{row['tasks_completed'] or 0}, Ende: {format_timestamp(ended)})"
+                                    ),
+                                    evidence=self._memory_evidence("sessions", row),
+                                    source=row["partner_id"] or "unknown",
+                                    preview=preview,
+                                    timestamp=row["started_at"],
+                                    people_scope=people_scope,
+                                    privacy=privacy,
+                                    scope_reason=scope_reason,
+                                    privacy_hint=privacy_hint,
+                                )
+                            )
+                        sections += 1
 
             if sections == 0:
                 return True, "Keine passenden Memory-Einträge für Provenance."

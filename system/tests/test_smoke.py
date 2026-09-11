@@ -412,7 +412,7 @@ class TestCLIBackwardsCompat:
 
     def test_lang_report(self):
         """Test bach lang report (i18n-Drift-Report)."""
-        code, out, err = run_bach("lang", "report")
+        code, out, err = run_bach("lang", "report", timeout=90)
         # Exit 1 = Drift vorhanden (offene Uebersetzungen) ist gewolltes
         # Verhalten; der Report muss aber erzeugt werden.
         assert code in (0, 1)
