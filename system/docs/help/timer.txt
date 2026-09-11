@@ -1,7 +1,8 @@
 # Portabilität: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-02-08
-# Nächste Prüfung: 2026-08-08
+# Version: 1.1.0
+# Zuletzt validiert: 2026-09-09
+# Nächste Prüfung: 2026-10-07
+# Prüfung 2026-09-09: Befehle/Persistenz/Handler exakt; Ausgabe-Format korrigiert
 
 TIMER - Stoppuhr
 ================
@@ -21,7 +22,8 @@ CLI-BEFEHLE
 AUSGABE-FORMAT
 --------------
 
-  [TIMER] Recherche: 05:23 | Session: 45:12
+  [TIMER] Session 45:12 | Recherche 05:23   <- Injection (get_display; Name OHNE Doppelpunkt)
+   list-Zeile zeigt zuerst Ueberschrift "[TIMER] Aktive Timer:" + "   Name: MM:SS"
 
 Bei jeder CLI-Ausgabe werden aktive Timer angezeigt.
 
@@ -43,20 +45,21 @@ BEISPIELE
 
   # Session-Timer starten
   bach timer start "Session"
-  -> Timer 'Session' gestartet
+  -> [TIMER] 'Session' gestartet
 
   # Zusätzlichen Timer für Teilaufgabe
   bach timer start "Bugfix"
-  -> Timer 'Bugfix' gestartet
+  -> [TIMER] 'Bugfix' gestartet
 
   # Status prüfen
   bach timer list
-  -> Session: 45:12
-  -> Bugfix:  05:23
+  -> [TIMER] Aktive Timer:
+   -> [TIMER] Session: 45:12
+  -> [TIMER] Bugfix: 05:23
 
   # Bugfix-Timer stoppen
   bach timer stop "Bugfix"
-  -> Timer 'Bugfix' gestoppt: 05:23
+  -> [TIMER] 'Bugfix' gestoppt: 05:23
 
 USECASES
 --------

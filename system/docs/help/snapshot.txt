@@ -1,12 +1,12 @@
 # Portabilität: SYSTEM
-# Zuletzt validiert: 2026-02-08
-# Nächste Prüfung: 2026-05-08
+# Zuletzt validiert: 2026-09-09
+# Nächste Prüfung: 2026-10-07
 # Ressourcen: [session_snapshots table, hub/snapshot.py]
 
 BACH SNAPSHOT SYSTEM
 ====================
 
-STAND: 2026-02-08
+STAND: 2026-09-09
 
 Session-Snapshots sichern den exakten "State of Mind" einer KI-Session. 
 Dies ermöglicht das Laden eines Kontexts in eine neue Instanz oder 
@@ -16,8 +16,14 @@ BEFEHLE
 -------
   bach --snapshot create [name]  Aktuellen Status sichern.
   bach --snapshot list           Verfügbare Snapshots (auto & manuell).
-  bach --snapshot load [ID]      Stellt Working Memory & Tasks wieder her.
+  bach --snapshot load [ID]      Snapshot anzeigen (Details ausgeben).
   bach --snapshot delete <ID>    Entfernt alte Snapshots.
+
+HINWEIS (Stand 2026-09-09):
+  'load' zeigt aktuell NUR die gespeicherten Details (Session, offene Tasks,
+  letzte Notizen) an. Die tatsächliche RESTORE-Funktion (Wiedereinschreiben
+  von Working Memory & Tasks in das Live-System) ist NOCH NICHT implementiert.
+  Offener Task: snapshot load = echter Restore (siehe BACH-Tasks, Kategorie SNAPSHOT).
 
 KONZEPT: DER STATE-TREE
 -----------------------
@@ -35,25 +41,36 @@ UNTERSCHIED ZU ANDEREN SYSTEMEN
 
 AUTOMATIK
 ---------
-Snapshots können automatisch oder manuell erstellt werden. Der snapshot_type
-unterscheidet zwischen 'manual' (via --snapshot create) und 'auto' (potentiell
-via --shutdown). Die Implementierung unterstützt beide Typen.
+Snapshots können automatisch oder manuell erstellt werden.
+
+MANUELL: `bach --snapshot create [name]` → snapshot_type='manual'.
+AUTO:    hub/shutdown.py erstellt bei >= 3 erkannten Aenderungen ein Auto-Snapshot
+         (Name: auto_YYYYMMDD_HHMMSS).
+
+ACHTUNG (Stand 2026-09-09): Auto-Snapshots werden aktuell ebenfalls mit
+snapshot_type='manual' gespeichert (nur der Name enthaelt 'auto_...'). Eine
+eigene 'auto'-Wertung in der DB-Spalte snapshot_type existiert noch nicht.
 
 DATENBANK
 ---------
-Tabelle: `session_snapshots` (system/db/schema.sql, Zeile 226-239)
-Felder:
+Tabelle: `session_snapshots` (data/schema/schema.sql, ab Zeile 243)
+Felder (SOLL-Schema):
   - id, session_id, snapshot_type, name
   - snapshot_data (JSON: enthält open_tasks, recent_memory, created_at)
   - working_memory, open_tasks, active_files (separate JSON-Felder, optional)
   - token_usage, context_hash, notes
   - created_at (Timestamp)
 
+IST-ZUSTAND (2026-09-09): Handler hub/snapshot.py _create schreibt NUR
+session_id, snapshot_type, name, snapshot_data, created_at. Die Spalten
+working_memory, open_tasks, active_files, token_usage, context_hash, notes
+existieren im Schema, werden aber NICHT befuellt.
+
 BEISPIELE
 ---------
   bach --snapshot create "Vor Grossumbau"  # Manuelles Backup
   bach --snapshot list                     # Status prüfen
-  bach --snapshot load 42                  # ID 42 wiederherstellen
+  bach --snapshot load 42                  # ID 42 anzeigen (echter Restore folgt)
   bach --snapshot delete 42                # Snapshot 42 löschen
 
 SIEHE AUCH
