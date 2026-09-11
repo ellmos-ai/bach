@@ -40,7 +40,16 @@ except ImportError:
         return sqlite3.connect(str(BACH_DB))
 
 
-DEFAULT_SECRETS_FILE = Path.home() / ".bach" / "bach_secrets.json"
+# BACH_SECRETS_FILE (Testisolation, T-20260902-646684582): sonst schreiben
+# Tests, die GET_CONNECTION isolieren aber keinen eigenen system_config-Eintrag
+# 'secrets_file_path' anlegen, in die produktive ~/.bach/bach_secrets.json.
+# Backward-kompatible Konstante fuer bestehende Importe/Tests. get_secrets_file_path()
+# liest die Env-Var selbst zur Aufrufzeit (siehe dort) statt diese Konstante zu
+# verwenden, damit ein spaeter (z. B. per Fixture) gesetzter Wert nicht an einem
+# beim Modul-Import eingefrorenen Stand vorbeilaeuft.
+DEFAULT_SECRETS_FILE = Path(
+    os.environ.get("BACH_SECRETS_FILE", str(Path.home() / ".bach" / "bach_secrets.json"))
+).expanduser()
 KEYRING_SERVICE = "ellmos-bach"
 KEYRING_MARKER = "keyring://ellmos-bach"
 
@@ -68,7 +77,22 @@ def _backend_or_raise(backend=None):
 
 
 def get_secrets_file_path():
-    """Return the configured metadata-index path."""
+    """Return the configured metadata-index path.
+
+    Precedence: BACH_SECRETS_FILE env override > system_config DB row > default.
+    The env var is read here at call time (not via the frozen DEFAULT_SECRETS_FILE
+    constant) and wins over a persisted DB row. Root cause of T-20260902-646684582
+    Befund A: this function used to check the DB row FIRST, so a host whose DB
+    already carried a 'secrets_file_path' row (production config, set via
+    'bach settings set secrets_file_path=...') silently overrode the env-var
+    isolation tests rely on - the BACH_SECRETS_FILE fix never took effect there.
+    An override that a stored DB value can defeat isn't an override; the same
+    "env beats stored default" rule already applies to BACH_DB/BACH_BACKUPS_DIR/
+    BACH_PLANS_DIR, so this makes secrets_file_path consistent with its siblings.
+    """
+    env_override = os.environ.get("BACH_SECRETS_FILE")
+    if env_override:
+        return Path(env_override).expanduser()
     try:
         conn = GET_CONNECTION()
         try:
@@ -81,7 +105,7 @@ def get_secrets_file_path():
             return Path(row[0]).expanduser()
     except (sqlite3.Error, OSError):
         pass
-    return DEFAULT_SECRETS_FILE
+    return Path.home() / ".bach" / "bach_secrets.json"
 
 
 def get_secret_value(key: str, connection=None, keyring_backend=None):

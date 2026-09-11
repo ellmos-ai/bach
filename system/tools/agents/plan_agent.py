@@ -15,6 +15,7 @@ Usage:
 """
 
 import json
+import os
 import sys
 import uuid
 from datetime import datetime
@@ -32,7 +33,12 @@ from portable_base import BACH_AVAILABLE, BACH_ROOT, PortableAgent
 SCRIPT_DIR = Path(__file__).parent
 
 # Storage directory
-if BACH_AVAILABLE and (BACH_ROOT / "system" / "data").exists():
+# BACH_PLANS_DIR (Testisolation, T-20260902-646684582): faellt sonst je nach
+# BACH_AVAILABLE auf das Repo oder auf das produktive ~/.bach/plans zurueck.
+_plans_env = os.environ.get("BACH_PLANS_DIR")
+if _plans_env:
+    PLANS_DIR = Path(_plans_env).expanduser()
+elif BACH_AVAILABLE and (BACH_ROOT / "system" / "data").exists():
     PLANS_DIR = BACH_ROOT / "system" / "data" / "plans"
 else:
     PLANS_DIR = Path.home() / ".bach" / "plans"

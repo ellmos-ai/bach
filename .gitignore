@@ -287,3 +287,4 @@ PLAN.txt
 # === PFLEGELAEUFE (Pipeline-Material, kein Repo-Inhalt) ===
 /_after-care/
 /LOCK*.txt
+/system/tools/testing/results/
