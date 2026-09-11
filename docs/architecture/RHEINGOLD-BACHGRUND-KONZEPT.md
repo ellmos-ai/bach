@@ -107,9 +107,27 @@ Im Modus `worker` mit festgelegtem Lead unterscheidet das System deterministisch
 
 ---
 
-## 6. Spätere Konsum-Schnittstelle zu Muschelgrund (Ocean)
+## 6. Dual-Database-Architektur: Bachgrund (bach.db) vs. Muschelgrund (usmc.db)
 
-BACH wird nicht mit redundanter Muschelgrund-Logik überfrachtet:
-* In `open-ocean` / `usmc` wird **Muschelgrund** als modulares Server-Gedächtnis (USMC Modus A) standardisiert.
-* Sobald Muschelgrund fertiggestellt ist, konsumiert BACH dieses Modul für seine Wissens- und Faktenebene (`memory_facts`, `memory_lessons`) als saubere Abhängigkeit.
-* Bis dahin fungiert die Server-`bach.db` auf dem Mac Studio als pragmatischer, stabiler **Server-Bachgrund**.
+### A. Warum Muschelgrund bach.db nicht ersetzen kann
+* `bach.db` umfasst über **216 Tabellen** und bildet den gesamten operativen Laufzeit-Zustand des BACH LLM-OS ab: Tasks, Task-History, Daemon-Jobs, Watcher, Chains, Tool-Registry, GUI-Templates, Chat, Buchhaltung/Accounts und System-Governance.
+* **Muschelgrund** (USMC Modus A / Ocean) ist demgegenüber der spezialisierte, schlanke Speicher für das kuratierte LLM-Gedächtnis (`usmc_facts`, `usmc_lessons`, `usmc_working`, `usmc_sessions`).
+* Eine vollständige Ablösung von `bach.db` durch Muschelgrund ist weder möglich noch sinnvoll, da Muschelgrund keine OS-Laufzeitstrukturen verwalten soll.
+
+### B. Die Entflechtung: Zwei getrennte Datenbanken mit klarer Verantwortlichkeit
+Statt Monolith oder Abschaffung gilt die modulare **Dual-Database-Architektur**:
+
+1. **`bach.db` (Bachgrund):**
+   - Bleibt die operative System- und Steuerungs-Datenbank für BACH.
+   - Beherbergt Tasks, Queues, Workflows, Tools, Daemon, Chat und Audits.
+   - Unterliegt der Rheingold-Lead-Autorität (Mac Studio :8000).
+
+2. **`usmc.db` (Muschelgrund / USMC):**
+   - Wird als **zweite, dedizierte Datenbank** parallel eingeführt (`usmc_memory.db` bzw. `usmc.db`).
+   - Beherbergt persistent Fakten, Lektionen, Notizen und Session-Kontexte.
+   - Dient als organisationsweites Multi-Agenten-Gedächtnis (für BACH, Rinnsal, Codex, Claude, Gemini und Ocean).
+
+3. **Stufenweise Stilllegung redundanter Memory-Tabellen in bach.db:**
+   - Die historischen Tabellen `memory_facts`, `memory_lessons`, `memory_sessions`, `memory_working` und `shared_memory_*` in `bach.db` werden entflochten und schrittweise abgestellt.
+   - BACHs `MemoryHandler` (`system/hub/memory.py`) wird zu einem leichtgewichtigen Client/Adapter, der direkt auf `usmc.db` (bzw. das Python-Paket `usmc`) zugreift.
+   - **Ergebnis:** Saubere Trennung von operativer Prozesssteuerung (Bachgrund) und semantischem Langzeitwissen (Muschelgrund) ohne Datenredundanz.
