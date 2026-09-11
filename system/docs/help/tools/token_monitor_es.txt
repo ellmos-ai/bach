@@ -1,7 +1,7 @@
 Herramienta BACH: token_monitor
 --------------------------------------------------
 Generado: 2026-01-23 10:36
-Actualizado: 2026-02-05 (Ayuda-Forense)
+Actualizado: 2026-09-04 (Tarea 1209)
 Fuente: tools/token_monitor.py
 
 DESCRIPCIÓN
@@ -16,7 +16,11 @@ Definición de zona (de DELEG_002):
 - Zona 3: 85-95% - Solo socios locales (Ollama)
 - Zona 4: 95-100% - Delegación de Emergencia
 
-Versión: 1.0.0
+Sin una medición, o si la telemetría tiene por defecto más de una hora, la zona
+permanece desconocida. La llamada directa termina con el código 5 y la delegación
+automática de socios permanece bloqueada.
+
+Versión: 1.1.0
 Creado: 2026-01-23
 Tarea: DELEG_001
 

@@ -319,6 +319,35 @@ class TestSkillHealthMonitorStartup:
         assert "[STARTUP TIMING]" not in msg
 
 
+class TestTokenMonitorStartup:
+    def test_unknown_telemetry_is_shown_without_second_emergency_read(self, startup_env):
+        h, _, _ = startup_env
+        details = {
+            "budget_percent": None,
+            "telemetry_status": "unknown",
+            "partners_allowed": ["human"],
+        }
+
+        with patch(
+            "tools.token_monitor.get_token_zone",
+            return_value=(None, "Token-Telemetrie unbekannt", details),
+        ), patch(
+            "tools.token_monitor.check_emergency_shutdown"
+        ) as emergency_check:
+            ok, msg = h._run_startup(
+                quick=True,
+                dry_run=True,
+                startup_mode="silent",
+                partner_id="codex",
+            )
+
+        assert ok is True
+        assert "Token-Zone unbekannt" in msg
+        assert "Budget: unbekannt" in msg
+        assert "0.0%" not in msg
+        emergency_check.assert_not_called()
+
+
 class TestMorningBriefingStartup:
     def test_quick_start_keeps_sqlite_module_available(self, startup_env):
         h, _, _ = startup_env
