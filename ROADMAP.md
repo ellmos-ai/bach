@@ -1,6 +1,25 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-07-29 | **Version:** 4.3.63
+**Stand:** 2026-09-11 | **Version:** 4.3.63 | **Review:** 2026-09-11 (Task #1126)
+
+## Review 2026-09-11 (Task #1126)
+
+Automatisierte Roadmap-Review. Befund:
+
+- **Erledigte Tasks:** Prio 1–3 sind bereits als „Alle erledigt (2026-03-02)" markiert und
+  in die „Abgeschlossenen Blöcke" verschoben — konsistent, keine Änderung nötig.
+  Priorität 4 (Visionen/Experimente) ist vollständig DONE (SQ016–SQ056, ENT-25).
+- **Offene Items:** TASKPLAN-Cutover (#1175 / TASKPLAN #299) und „Priorität 1 – Security/
+  Plugin-Härtung/Self-Heal" sind korrekt als OFFEN/aktiver Fokus ausgewiesen. Keine offene
+  Roadmap-Position konnte als bereits abgeschlossen verifiziert werden (offene BACH-Tasks
+  1071, 1062, 1061, 1118, 1044 stehen alle noch `pending`).
+- **Prioritäten:** Kohärent. P1–3 erledigt, P4 nach Release, aktiver Fokus = Security-Prio-1.
+- **Archivierung:** Die abgeschlossenen Blöcke sind bereits auf mehrere Abschnitte verteilt
+  („Weitere abgeschlossene Blöcke", „Abgeschlossene Phasen", „Abgeschlossene Meilensteine").
+  Es existiert noch **kein** zentraler `## ARCHIV`-Abschnitt. Konsolidierung in einen
+  einzigen Archiv-Abschnitt + Auslagerung der ältesten Daten-Notizen ist als
+  Decision-Task #1126 (Klärung) zur Nutzerentscheidung vorgelegt — nicht automatisch ausgeführt
+  (zu risikobehaftet für 1168 Zeilen ohne Nutzerfreigabe).
 
 ## Aktueller Qualitätsfortschritt (2026-07-29)
 
