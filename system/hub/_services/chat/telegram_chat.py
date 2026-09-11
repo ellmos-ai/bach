@@ -21,6 +21,7 @@ Start:
   python telegram_chat.py
 """
 import asyncio
+from datetime import datetime, timezone
 import ipaddress
 import json
 import logging
@@ -2056,8 +2057,8 @@ tr:hover td{background:#24334d}
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label>Max Turns</label>
-        <input type="number" id="nw-turns" value="25" min="1" max="100">
+        <label>Max Turns (pro Rundenblock)</label>
+        <input type="number" id="nw-turns" value="50" min="1" max="250">
       </div>
       <div class="form-group">
         <label>Modus</label>
@@ -3463,29 +3464,92 @@ class ControlHandler(BaseHTTPRequestHandler):
                     target_backend, model = _snapshot_chat_backend(worker_id)
                     
                     if custom_prompt:
-                        task_prompt = custom_prompt
+                        initial_prompt = custom_prompt
                     elif w.get("task_id"):
-                        task_prompt = f"Führe Task #{w.get('task_id')} aus und schließe ihn ab."
+                        initial_prompt = f"Führe Task #{w.get('task_id')} aus und schließe ihn ab."
                     elif w.get("sub_mode") == "hintergrund_worker":
-                        task_prompt = "Prüfe offene Tasks in BACH und bearbeite die wichtigste offene Aufgabe autonom."
+                        initial_prompt = "Prüfe offene Tasks in BACH und bearbeite die wichtigste offene Aufgabe autonom."
                     elif w.get("sub_mode") == "boss_routing":
-                        task_prompt = "Analysiere die anstehenden Aufgaben in BACH, koordiniere die Experten und weise Teilaufgaben zu."
+                        initial_prompt = "Analysiere die anstehenden Aufgaben in BACH, koordiniere die Experten und weise Teilaufgaben zu."
                     elif w.get("sub_mode") == "expert_role":
                         role = w.get("role_id") or "Experte"
-                        task_prompt = f"Arbeite als {role} die offenen Aufgaben deines Fachgebiets in BACH ab."
+                        initial_prompt = f"Arbeite als {role} die offenen Aufgaben deines Fachgebiets in BACH ab."
                     else:
-                        task_prompt = w.get("task_prompt") or "Prüfe offene Aufgaben und beginne mit der Bearbeitung."
+                        initial_prompt = w.get("task_prompt") or "Prüfe offene Aufgaben und beginne mit der Bearbeitung."
 
-                    loop = asyncio.new_event_loop()
-                    try:
-                        ans = loop.run_until_complete(
-                            runtime.process(task_prompt, worker_id, backend=target_backend, model=model)
-                        )
-                        next_status = "completed" if w.get("type") == "once" else "idle"
-                        update_slot(worker_id, {"status": next_status, "current_activity": "Abgeschlossen"})
-                        record_activity(worker_id, f"Fertig: {str(ans)[:60]}", "ok")
-                    finally:
-                        loop.close()
+                    prompt_to_run = initial_prompt
+                    run_count = 0
+
+                    while True:
+                        run_count += 1
+
+                        # Worker-State prüfen: wurde er pausiert oder gelöscht?
+                        current_slot = get_slot(worker_id)
+                        if not current_slot or current_slot.get("status") == "paused":
+                            log.info(f"Worker {worker_id} pausiert oder beendet.")
+                            break
+
+                        # TTL prüfen
+                        exp_str = current_slot.get("expires_at")
+                        if exp_str:
+                            try:
+                                exp_dt = datetime.fromisoformat(exp_str)
+                                if exp_dt.tzinfo is None:
+                                    exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                                if datetime.now(timezone.utc) >= exp_dt:
+                                    log.info(f"Worker {worker_id} TTL abgelaufen.")
+                                    update_slot(worker_id, {"status": "expired", "current_activity": "Ablaufzeit erreicht (Beendet)"})
+                                    record_activity(worker_id, "Worker TTL abgelaufen", "ok")
+                                    return
+                            except Exception:
+                                pass
+
+                        loop = asyncio.new_event_loop()
+                        ans = ""
+                        try:
+                            ans = loop.run_until_complete(
+                                runtime.process(prompt_to_run, worker_id, backend=target_backend, model=model)
+                            )
+                        finally:
+                            loop.close()
+
+                        ans_str = str(ans)
+                        record_activity(worker_id, f"Block {run_count}: {ans_str[:55]}", "ok")
+
+                        # Wenn Einzellauf ("once") und keine TTL gesetzt ist, direkt abschließen
+                        if current_slot.get("type") == "once" and not exp_str:
+                            update_slot(worker_id, {"status": "completed", "current_activity": "Abgeschlossen"})
+                            break
+
+                        # Wenn keine TTL gesetzt ist (unbegrenzt) und Task abgeschlossen wurde:
+                        if not exp_str:
+                            update_slot(worker_id, {"status": "idle", "current_activity": "Fertig: " + ans_str[:40]})
+                            break
+
+                        # TTL ist aktiv (noch in der Zukunft):
+                        # Prüfen ob Max-Tool-Runden erreicht wurden -> Handoff
+                        is_max_turns = "(Max Tool-Runden erreicht)" in ans_str
+                        if is_max_turns:
+                            update_slot(worker_id, {
+                                "status": "running",
+                                "current_activity": f"Rundenübergabe (Block {run_count + 1} startet)..."
+                            })
+                            prompt_to_run = (
+                                "Fortsetzung nach Rundenübergabe: Du hast dein bisheriges Tool-Budget erreicht. "
+                                "Führe die angefangene Aufgabe nun nahtlos fort und schließe sie ab."
+                            )
+                            time.sleep(2)
+                        else:
+                            # Task abgeschlossen, aber TTL läuft noch -> Warte kurz und ziehe nächsten Task
+                            update_slot(worker_id, {
+                                "status": "running",
+                                "current_activity": f"Aufgabe fertig. Suche nächste Aufgabe (Lauf {run_count + 1})..."
+                            })
+                            time.sleep(12)
+                            prompt_to_run = "Prüfe offene Tasks in BACH und bearbeite die nächste wichtige offene Aufgabe autonom."
+
+                    next_status = "completed" if current_slot.get("type") == "once" else "idle"
+                    update_slot(worker_id, {"status": next_status, "current_activity": "Abgeschlossen"})
                 except Exception as exc:
                     log.error(f"Worker {worker_id} Fehler: {exc}")
                     update_slot(worker_id, {"status": "error", "current_activity": f"Fehler: {exc}"})

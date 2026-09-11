@@ -597,6 +597,15 @@
         // ── Deine Routinen ──
 
         document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const tab = urlParams.get('tab');
+            if (tab === 'bach') {
+                const buttons = document.querySelectorAll('.tab-nav button');
+                if (buttons.length > 1) {
+                    buttons[1].click();
+                    return;
+                }
+            }
             loadRoutines();
         });
 

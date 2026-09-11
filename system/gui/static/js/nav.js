@@ -64,43 +64,45 @@ const NAV_ITEMS = [
     { href: "/", label: "Dashboard" },
     { label: "Aufgaben", children: [
         { href: "/tasks-board", label: "Tasks" },
-        { href: "/routinen", label: "Routinen" },
+        { href: "/routinen?tab=bach", label: "BACH-Routinen" },
+    ]},
+    { label: "Persönlicher Assistent", children: [
+        { href: "/chat", label: "Buddha Chat" },
+        { href: "/prompt-library", label: "Deine Prompts" },
+        { href: "/routinen?tab=personal", label: "Deine Routinen" },
+        { href: "/kontakte", label: "Kontakte" },
+        { href: "/denkarium", label: "Denkarium", external: true },
+        { href: "/wiki", label: "Wiki" },
     ]},
     { label: "Agenten", children: [
+        { href: "/chat", label: "Chats" },
         { href: "/agents-board", label: "Agents Board" },
-        { href: "#", portRel: 8081, path: "/activity", label: "🤖 Worker-Status", external: true },
+        { href: "/reports", label: "📑 Berichte" },
+        { href: "/memory", label: "Memory" },
+        { href: "/tokens", label: "Tokens" },
+    ]},
+    { label: "Models", children: [
+        { href: "#", portRel: 8081, path: "/activity", label: "Einstellungen", external: true },
+        { href: "/tools", label: "Tools" },
+    ]},
+    { label: "Meine Domänen", children: [
+        { href: "/financial", label: "Finanzen" },
         { href: "/ati", label: "🛠️ ATI Entwickler" },
         { href: "/steuer", label: "⚖️ Theodor Steuer" },
         { href: "/gesundheit", label: "🩺 Gesundheit" },
         { href: "/persoenlich", label: "🏠 Persönlicher Assistent" },
     ]},
-    { label: "Wissen", children: [
-        { href: "/memory", label: "Memory" },
-        { href: "/prompt-library", label: "Prompts" },
-        { href: "/denkarium", label: "Denkarium", external: true },
-        { href: "/wiki", label: "Wiki" },
-        { href: "/usecases", label: "Use Cases" },
-    ]},
-    { label: "Kommunikation", children: [
-        { href: "/reports", label: "📑 Berichte" },
-        { href: "/kontakte", label: "Kontakte" },
-    ]},
     { href: "/inbox", label: "Dateien" },
-    { label: "Finanzen", children: [
-        { href: "/financial", label: "Finanzen" },
-        { href: "/tokens", label: "Tokens" },
-    ]},
-    { href: "/tools", label: "Tools" },
     { label: "System", children: [
         { href: "/settings", label: "Einstellungen" },
         { href: "#", portRel: 8081, path: "/activity", label: "📊 Worker & Aktivität", external: true },
+        { href: "/usecases", label: "Use Cases" },
         { href: "/daemon", label: "Automation" },
         { href: "/control/", label: "Unified GUI", external: true },
         { href: "/maintenance", label: "Wartung" },
         { href: "/logs", label: "Logs" },
         { href: "/help", label: "Help" },
     ]},
-    { href: "/chat", label: "Buddha Chat" },
 ];
 
 function initNavigation() {
@@ -116,6 +118,11 @@ function initNavigation() {
     const currentPath = window.location.pathname;
 
     function isActive(href) {
+        if (!href || href === '#') return false;
+        const currentUrl = window.location.pathname + window.location.search;
+        if (href.includes('?')) {
+            return currentUrl === href || currentUrl.startsWith(href + '&');
+        }
         return currentPath === href || currentPath === href + '/' ||
             (href !== '/' && currentPath.startsWith(href)) ||
             (href === '/reports' && currentPath.startsWith('/messages'));
