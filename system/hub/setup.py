@@ -40,6 +40,10 @@ class SetupHandler(BaseHandler):
     ]
 
     CORE_MCP_SERVER_CONFIGS = {
+        "bach": {
+            "command": "bach",
+            "args": ["mcp", "serve"]
+        },
         "bach-codecommander": {
             "command": "npx",
             "args": ["ellmos-codecommander-mcp"]
@@ -235,6 +239,7 @@ class SetupHandler(BaseHandler):
                 return True, (
                     "  Claude Code Config nicht gefunden.\n"
                     "  Manuell konfigurieren mit:\n"
+                    "    claude mcp add --scope user bach -- bach mcp serve\n"
                     "    claude mcp add --scope user bach-codecommander -- npx ellmos-codecommander-mcp\n"
                     "    claude mcp add --scope user bach-filecommander -- npx ellmos-filecommander-mcp"
                 )
@@ -1471,6 +1476,8 @@ class SetupHandler(BaseHandler):
 
             command = config.get("command")
             args = config.get("args", [])
+            if server_name == "bach" and command == "bach" and args == ["mcp", "serve"]:
+                continue
             if command != "npx":
                 errors.append(f"MCP-Config {server_name}: command muss 'npx' sein")
             if not isinstance(args, list) or len(args) != 1:

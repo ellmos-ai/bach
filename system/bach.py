@@ -1069,6 +1069,8 @@ def main():
     cli_args = sys.argv[1:]
     json_requested = "--json" in cli_args
     dry_run_requested = "--dry-run" in cli_args or "-n" in cli_args
+    mcp_stdio_requested = sys.argv[1:3] == ["mcp", "serve"]
+    quiet_protocol_mode = json_requested or mcp_stdio_requested
 
     # Beobachtende Aufrufe muessen vor Logger, ProSync, Registry und Activity
     # enden, damit selbst ein langsamer OneDrive-Transit die CLI nicht blockiert.
@@ -1109,10 +1111,10 @@ def main():
     # ProSync: Pull bei Start, Push bei Exit (nur wenn aktiviert)
     sync_config = DATA_DIR / "config" / "db_sync_enabled"
     if sync_config.exists() and not dry_run_requested:
-        if not json_requested:
+        if not quiet_protocol_mode:
             print("[ProSync] Starte Pull ...", flush=True)
         ok, msg = _run_prosync_startup()
-        if not json_requested:
+        if not quiet_protocol_mode:
             print(f"[ProSync] {msg}", flush=True)
 
         global _exit_sync_registered
@@ -1122,7 +1124,7 @@ def main():
                 try:
                     from hub.db_sync import DBSyncManager
                     ok, msg = DBSyncManager().sync_on_exit()
-                    if not json_requested:
+                    if not quiet_protocol_mode:
                         print(f"[ProSync] {msg}")
                 except Exception:
                     pass
@@ -1307,8 +1309,9 @@ def main():
                 cmd(command, [operation] + args)
                 dry_run = "--dry-run" in args or "-n" in args
                 success, message = handler.handle(operation, args, dry_run)
-                print(message)
-                if not json_requested:
+                if message:
+                    print(message)
+                if message and not quiet_protocol_mode:
                     _run_injectors(message, f"{command} {operation}")
                 return 0 if success else 1
             except Exception as e:

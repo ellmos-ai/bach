@@ -36,8 +36,8 @@ Prompts (3):
   session_summary         - Session-Zusammenfassung erstellen
 
 Installation:
-  pip install mcp
-  python tools/mcp_server.py
+  pip install -r requirements-optional.txt
+  bach mcp serve
 
 Claude Code Config (~/.claude/claude_code_config.json):
   {
@@ -85,12 +85,7 @@ from hub.bach_paths import BACH_DB
 BACH_DB_PATH = Path(BACH_DB)
 BACH_DB_STR = str(BACH_DB_PATH)
 
-try:
-    from mcp.server.fastmcp import FastMCP
-except ImportError:
-    print("MCP SDK nicht installiert. Bitte: pip install mcp")
-    print("Danach: python tools/mcp_server.py")
-    sys.exit(1)
+from mcp.server.fastmcp import FastMCP
 
 from bach_api import get_app
 
@@ -651,10 +646,21 @@ def session_summary(topic: str = "diese Session") -> str:
 # Server starten
 # ------------------------------------------------------------------
 
-if __name__ == "__main__":
+def serve(transport: str = "stdio") -> None:
+    """Start the BACH MCP server using the requested FastMCP transport."""
     logger.info(f"BACH MCP Server v{__version__} startet")
     logger.info(f"  System: {BACH_SYSTEM}")
     logger.info(f"  DB: {BACH_DB_PATH}")
     logger.info(f"  Backend: bach_api (Handler-basiert)")
     logger.info(f"  Resources: 8 | Tools: 23 | Prompts: 3")
-    mcp.run()
+    mcp.run(transport=transport)
+
+
+def main() -> int:
+    """Standalone compatibility entry point."""
+    serve()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

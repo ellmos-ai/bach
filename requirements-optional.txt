@@ -68,7 +68,7 @@ anthropic>=0.79.0         # Claude API (Anthropic) - primary LLM partner
 ollama>=0.6.1             # Ollama local LLM client
 # google-generativeai     # Gemini API (planned - not yet integrated)
 # openai                  # OpenAI API (future)
-# mcp                     # MCP SDK (tools/mcp_server.py - planned)
+mcp>=1.0                  # Built-in BACH MCP server (bach mcp serve)
 
 
 # ============================================================
