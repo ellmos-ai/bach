@@ -6,6 +6,51 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+### Added
+
+- **ellmos-Scheduler Provider-Seam verdrahtet (TRANSFER-03 / Task 1219):**
+  `system/hub/scheduler_provider.py` ist jetzt vollstaendig mit dem installierten
+  `ellmos-scheduler` (v0.3.3, Pin 296b6f5 in requirements.txt) verdrahtet: Rollback-Schalter
+  `BACH_USE_EXTERNAL_SCHEDULER=0` (Plan-Regel 4.1) in Probe/Doctor, Adapter-Factory
+  `create_external_scheduler_adapter` mit fail-closed Vertragspruefung. Neue CLI-Gruppe
+  `bach scheduler external status|jobs|verify [--apply]`: read-only Verify der Legacy-Jobs
+  (Quelle via SQLite mode=ro), idempotente Praemigration mit Provenienz `bach:<id>` in den
+  isolierten State-Store `system/data/scheduler_external/state.db`. Der Legacy-Job-Store
+  bleibt unberuehrt als Fail-Closed-Fallback. Nachweise (mac-studio): Daemon-Lauf mit
+  Lease-Claim und Run-Receipts, Produktiv-Verify 4 Jobs/0 ready/4 skipped mit dokumentierten
+  Gruenden (Bare-Commands ohne PATH-Executable; Shell-Semantik wird bewusst nicht emuliert),
+  Rollback-Gate live verifiziert. Regressionstests:
+  `tests/test_scheduler_provider_wiring.py` (28 Tests inkl. AST-Waechter und Tick-Ausfuehrung).
+
+### Fixed
+
+- **CAMT-Saldenimport scharfgeschaltet (TRANSFER-04 / Task 1220, accounts-core Welle 3):**
+  Die delegierte Saldenpersistenz (Welle 2, `AccountStore.persist_camt_balances`) war tot,
+  weil ihr Produzent fehlte: Der D-013-Fix `CamtParser.parse_balances()` (9ff3df2) existierte
+  nur in der gitignorierten Betriebsinstallation; im oeffentlichen Baum degradierte
+  `_import_camt` via `hasattr`-Fallback lautlos zu „keine Salden". Zusaetzlich fehlte die in
+  requirements.txt deklarierte Abhaengigkeit `defusedxml` im BACH-Venv (Importfehler).
+  Behoben: `parse_balances()` im oeffentlichen `tools/steuer/camt_parser.py` implementiert
+  (Contract exakt wie accounts-core dokumentiert; nur CLBD — OPBD bewusst nicht; DBIT
+  negiert; DtTm → Datumsteil; ohne IBAN → `UNKNOWN`-Sentinel mit Warnung beim Konsumenten),
+  `hub/steuer.py` ruft direkt auf (hasattr-Fallback entfernt), `defusedxml>=0.7.1` ins Venv
+  installiert. End-to-End verifiziert: UPDATE-Pfad (IBAN-normalisiert, Kontoname bleibt),
+  INSERT-Pfad (`CAMT-Import ****3000`), Dry-Run zeigt Salden und schreibt nichts; beide
+  Produktiv-DBs haben 0 Konten (keine Datenbetroffenheit). Regressionswaechter ausgebaut:
+  `tests/test_accounts_via_accounts_core.py` 9 → 23 Tests inkl. tote-Kette-Waechter
+  (`parse_balances` muss existieren, steuer.py ruft direkt, camt_parser.py bleibt reiner
+  XML-Produzent ohne sqlite/bank_accounts und in GUARDED_FILES aufgenommen).
+
+- **ellmos-tests-Adapter scharfgeschaltet (TRANSFER-02 / Task 1218):** `system/hub/test.py`
+  war wegen ungueltiger String-Konkatenation (3 Stellen) nicht importierbar — der Adapter war
+  implementiert, aber tot. Nach dem Fix laeuft `bach --test` bevorzugt ueber das externe
+  `ellmos-tests` (Geschwister-Checkout oder `ELLMOS_TESTS_PATH`), `ELLMOS_PROFILES` entspricht
+  jetzt dem Contract von `run_external.py` (QUICK/STANDARD/FULL), `--dry-run` simuliert in
+  allen Pfaden (self/run/compare) ohne Ausfuehrung und `--native`/`--legacy` rollt
+  unterbrechungsfrei auf den legacy `test_runner.py` zurueck. Regressionstests:
+  `tests/test_test_handler_adapter.py` (15 Tests). Nachweise: QUICK via Adapter (B001 5.0)
+  und Legacy-Rollback (5.0/5.0) vom 2026-09-12.
+
 ## [v3.14.0] - 2026-09-11
 
 ### Added
