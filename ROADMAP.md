@@ -21,6 +21,32 @@ Automatisierte Roadmap-Review. Befund:
   Decision-Task #1126 (Klärung) zur Nutzerentscheidung vorgelegt — nicht automatisch ausgeführt
   (zu risikobehaftet für 1168 Zeilen ohne Nutzerfreigabe).
 
+### Entscheidung 2026-09-11 (Task #1215): ROADMAP-ARCHIV-Konsolidierung
+
+**Entscheidung: Option A' — Status quo des Inhalts + optionaler, reiner Navigations-Index
+(additiv, kein Inhalt umziehen).** Begründung nach Analyse der 1187 Zeilen:
+
+- Der wortwörtliche Option-[A]-Vorschlag (kompletten „Changelog"-Block + alte SQ-Tabelle
+  auslagern) ist **fehlerhaft**: Der „Changelog (komprimiert)"-Block (ab Zeile 754) trägt
+  die **aktuellsten** Einträge oben (4.3.63, 2026-09-10) — ein kompletter Auslager-Block
+  würde aktuelle Daten bestatten.
+- Die unteren Datums-Notizen (Persona-System 03-12, Safe DB 03-12, Claude Hooks 03-12,
+  MCP-Server 06-03, Cross-Source 07-06) sind **gemischt offen/geschlossen**: z.B. MCP-Server
+  ist „VISION/LANGFRISTIG — OFFEN", Persona-System Phase 2 „OFFEN" — diese dürfen NICHT als
+  veraltet archiviert werden.
+- Die bestehenden verteilten „Abgeschlossen"-Sektionen („Weitere abgeschlossene Blöcke",
+  „Abgeschlossene Phasen", „Abgeschlossene Meilensteine") erfüllen bereits die Archiv-Rolle
+  und sind konsistent (P1–3 „Alle erledigt 2026-03-02").
+
+**Konsequenz:** Kein zentraler, inhaltlich vollstädkiger `## ARCHIV`-Abschnitt durch
+Block-Umzug (zu risikobehaftet, bestattet aktuelle Daten). Stattdessen:
+- **Inhalt bleibt wie jetzt** (Status quo = Option B für den Inhalt).
+- **Optional** (separat genehmigbar, additiv): ein kurzer `## ARCHIV (veraltet)`-Index-Anker
+  oben, der nur auf die bestehenden verteilten Abschnitte verweist (Reinleitung + Anker),
+  OHNE Inhalte zu verschieben — 0 Bewegungsrisiko, rein navigationsunterstützend.
+- Dieser optionale Index-Task ist als Folgeaufgabe angelegt und wird **nicht** automatisch
+  ausgeführt (wartet auf Nutzerfreigabe).
+
 ## Aktueller Qualitätsfortschritt (2026-07-29)
 
 - Task 1146 ist lokal auf dem Judging-Hold-Branch umgesetzt: `bach --test self QUICK`
