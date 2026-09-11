@@ -87,19 +87,19 @@
             transform: translateY(-2px);
         }
 
-        .task-card.priority-P1 {
+        .task-card.priority-P1, .task-card.priority-1, .task-card.priority-HIGH, .task-card.priority-HOCH {
             border-left: 5px solid var(--error);
         }
 
-        .task-card.priority-P2 {
+        .task-card.priority-P2, .task-card.priority-2, .task-card.priority-MEDIUM, .task-card.priority-MITTEL {
             border-left: 5px solid var(--warning);
         }
 
-        .task-card.priority-P3 {
+        .task-card.priority-P3, .task-card.priority-3, .task-card.priority-LOW, .task-card.priority-NIEDRIG, .task-card.priority-low {
             border-left: 5px solid var(--success);
         }
 
-        .task-card.priority-P4 {
+        .task-card.priority-P4, .task-card.priority-4 {
             border-left: 5px solid var(--text-muted);
         }
 
@@ -250,6 +250,7 @@
                 <option value="user">User</option>
                 <option value="claude">Claude</option>
                 <option value="gemini">Gemini</option>
+                <option value="bach">BACH System</option>
             </select>
             <select id="filter-category" onchange="loadTasks()">
                 <option value="">Alle Kategorien</option>
@@ -257,6 +258,17 @@
                 <option value="maintenance">Wartung</option>
                 <option value="feature">Feature</option>
                 <option value="bug">Bug</option>
+                <option value="docs">Dokumentation</option>
+                <option value="gui">GUI</option>
+                <option value="architecture">Architektur</option>
+                <option value="core">Core</option>
+            </select>
+            <select id="filter-priority" onchange="loadTasks()">
+                <option value="">Alle Prioritäten</option>
+                <option value="P1">P1 - Kritisch / Hoch</option>
+                <option value="P2">P2 - Wichtig / Mittel</option>
+                <option value="P3">P3 - Normal / Niedrig</option>
+                <option value="P4">P4 - Minimal</option>
             </select>
             <button class="btn btn-primary" style="margin-left: auto;" onclick="createTask()">+ Neuer Task</button>
         </div>
@@ -399,17 +411,45 @@
             } catch (e) { console.error('Error loading assignees:', e); }
         }
 
+        async function loadFilterOptions() {
+            try {
+                const data = await api.get('/api/tasks/meta');
+                if (data && data.success) {
+                    if (data.categories && data.categories.length > 0) {
+                        const catSelect = document.getElementById('filter-category');
+                        const currentCat = catSelect.value;
+                        const defaultCats = ['general', 'maintenance', 'feature', 'bug', 'docs', 'gui', 'architecture', 'core'];
+                        const allCats = Array.from(new Set([...defaultCats, ...data.categories.map(c => c.toLowerCase())])).sort();
+                        catSelect.innerHTML = '<option value="">Alle Kategorien</option>' +
+                            allCats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c.charAt(0).toUpperCase() + c.slice(1))}</option>`).join('');
+                        catSelect.value = currentCat;
+                    }
+                    if (data.assignees && data.assignees.length > 0) {
+                        const assignSelect = document.getElementById('filter-assigned');
+                        const currentAssigned = assignSelect.value;
+                        const defaultAssignees = ['user', 'claude', 'gemini', 'bach'];
+                        const allAssignees = Array.from(new Set([...defaultAssignees, ...data.assignees.map(a => a.toLowerCase())])).sort();
+                        assignSelect.innerHTML = '<option value="">Alle Zuweisungen</option>' +
+                            allAssignees.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a.charAt(0).toUpperCase() + a.slice(1))}</option>`).join('');
+                        assignSelect.value = currentAssigned;
+                    }
+                }
+            } catch (e) { console.error('Error loading filter options:', e); }
+        }
+
         async function loadTasks() {
             const assigned = document.getElementById('filter-assigned').value;
             const category = document.getElementById('filter-category').value;
+            const priority = document.getElementById('filter-priority')?.value || '';
 
             tasksData = [];
 
             // Helper to fetch
             const fetch = async (status) => {
                 let url = `/api/tasks?status=${status}`;
-                if (assigned) url += `&assigned_to=${assigned}`;
-                if (category) url += `&project=${category}`;
+                if (assigned) url += `&assigned_to=${encodeURIComponent(assigned)}`;
+                if (category) url += `&category=${encodeURIComponent(category)}`;
+                if (priority) url += `&priority=${encodeURIComponent(priority)}`;
                 const res = await api.get(url);
                 return res.tasks || [];
             };
@@ -420,7 +460,7 @@
             const blocked = await fetch('blocked');
 
             // Mark blocked
-            blocked.forEach(t => { t.is_blocked_status = true; t.priority = 'BLOCKED ' + t.priority; });
+            blocked.forEach(t => { t.is_blocked_status = true; t.priority = 'BLOCKED ' + (t.priority || ''); });
 
             const allPending = [...blocked, ...pending, ...openTasks];
             tasksData.push(...allPending);
@@ -440,23 +480,33 @@
             document.getElementById('count-done').textContent = done.length;
         }
 
+        function normalizePriorityClass(p) {
+            if (!p) return 'P3';
+            const up = String(p).toUpperCase();
+            if (up.includes('1') || up.includes('HIGH') || up.includes('HOCH')) return 'P1';
+            if (up.includes('2') || up.includes('MEDIUM') || up.includes('MITTEL')) return 'P2';
+            if (up.includes('3') || up.includes('LOW') || up.includes('NIEDRIG')) return 'P3';
+            if (up.includes('4')) return 'P4';
+            return 'P3';
+        }
+
         function renderList(state, tasks) {
             const container = document.getElementById(`list-${state}`);
             container.innerHTML = tasks.map(task => `
-                <div class="task-card priority-${task.priority}" 
+                <div class="task-card priority-${normalizePriorityClass(task.priority)}" 
                      draggable="true" 
                      ondragstart="handleDragStart(event, ${task.id})"
                      ondragend="handleDragEnd(event)"
                      onclick="editTask(${task.id})">
                     <div class="task-header">
                         <span>#${task.id}</span>
-                        <span>${task.priority}</span>
+                        <span>${escapeHtml(task.priority || 'P3')}</span>
                     </div>
                     <span class="task-title">${escapeHtml(task.title)}</span>
                     <div class="task-meta">
                         ${(task.is_blocked_by_dep || task.is_blocked_status) ? '<span class="badge-blocked">BLOCKED</span>' : ''}
                         ${task.has_image ? '<span class="badge-tag" title="Hat Screenshot">&#128247;</span>' : ''}
-                        <span class="badge-tag">${escapeHtml(task.category)}</span>
+                        <span class="badge-tag">${escapeHtml(task.category || 'general')}</span>
                         <span class="badge-tag">${escapeHtml(task.assigned_to) || 'unassigned'}</span>
                     </div>
                 </div>
@@ -610,6 +660,7 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             loadAssignees();
+            loadFilterOptions();
             loadTasks();
         });
     </script>

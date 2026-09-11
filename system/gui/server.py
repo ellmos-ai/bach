@@ -1459,8 +1459,36 @@ async def api_tasks_export():
 
 # --- Old duplicate GET single + PUT mit TaskUpdate entfernt (Bug #902) ---
 
+@app.get("/api/tasks/meta")
+async def api_tasks_meta():
+    """Liefert Metadaten für Task-Filter (Kategorien, Prioritäten, Zuweisungen)."""
+    try:
+        conn = get_bach_db()
+        cat_rows = conn.execute("SELECT DISTINCT category FROM tasks WHERE category IS NOT NULL AND TRIM(category) != '' ORDER BY category ASC").fetchall()
+        prio_rows = conn.execute("SELECT DISTINCT priority FROM tasks WHERE priority IS NOT NULL AND TRIM(priority) != '' ORDER BY priority ASC").fetchall()
+        assignee_rows = conn.execute("SELECT DISTINCT assigned_to FROM tasks WHERE assigned_to IS NOT NULL AND TRIM(assigned_to) != '' ORDER BY assigned_to ASC").fetchall()
+        conn.close()
+        categories = sorted(list(set(r[0].strip() for r in cat_rows if r[0] and r[0].strip())))
+        priorities = sorted(list(set(r[0].strip() for r in prio_rows if r[0] and r[0].strip())))
+        assignees = sorted(list(set(r[0].strip() for r in assignee_rows if r[0] and r[0].strip())))
+        return {
+            "success": True,
+            "categories": categories,
+            "priorities": priorities,
+            "assignees": assignees,
+        }
+    except Exception as e:
+        return {"success": False, "error": public_error_message()}
+
 @app.get("/api/tasks")
-async def api_get_tasks(status: str = "all", project: str = None, assigned_to: str = None, limit: int = 100):
+async def api_get_tasks(
+    status: str = "all",
+    project: str = None,
+    category: str = None,
+    assigned_to: str = None,
+    priority: str = None,
+    limit: int = 100
+):
     """Liefert Tasks mit erweitertem Filter und Blockierungs-Check."""
     try:
         conn = get_bach_db()
@@ -1473,12 +1501,26 @@ async def api_get_tasks(status: str = "all", project: str = None, assigned_to: s
             query = "SELECT * FROM tasks WHERE 1=1"
             params = []
         
-        if project:
-            query += " AND category = ?"
-            params.append(project)
+        target_cat = category or project
+        if target_cat:
+            query += " AND UPPER(category) = UPPER(?)"
+            params.append(target_cat)
         if assigned_to:
             query += " AND UPPER(assigned_to) = UPPER(?)"
             params.append(assigned_to)
+        if priority:
+            prio_clean = priority.strip().upper()
+            if prio_clean in ("P1", "1", "HIGH", "HOCH", "KRITISCH"):
+                query += " AND (UPPER(priority) IN ('P1', '1', 'HIGH', 'HOCH', 'KRITISCH'))"
+            elif prio_clean in ("P2", "2", "MEDIUM", "MITTEL", "WICHTIG"):
+                query += " AND (UPPER(priority) IN ('P2', '2', 'MEDIUM', 'MITTEL', 'WICHTIG'))"
+            elif prio_clean in ("P3", "3", "LOW", "NIEDRIG", "NORMAL"):
+                query += " AND (UPPER(priority) IN ('P3', '3', 'LOW', 'NIEDRIG', 'NORMAL'))"
+            elif prio_clean in ("P4", "4", "MINIMAL"):
+                query += " AND (UPPER(priority) IN ('P4', '4', 'MINIMAL'))"
+            else:
+                query += " AND UPPER(priority) = UPPER(?)"
+                params.append(priority)
             
         query += " ORDER BY priority ASC, created_at DESC LIMIT ?"
         params.append(limit)

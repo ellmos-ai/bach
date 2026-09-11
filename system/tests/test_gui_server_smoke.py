@@ -53,6 +53,8 @@ def test_db(tmp_path):
             created_at TEXT DEFAULT (datetime('now')),
             started_at TEXT,
             completed_at TEXT,
+            due_date TEXT,
+            source TEXT,
             updated_at TEXT DEFAULT (datetime('now'))
         );
         -- T-20260906-985973908: task_history existiert real (schema.sql), fehlte hier bisher
