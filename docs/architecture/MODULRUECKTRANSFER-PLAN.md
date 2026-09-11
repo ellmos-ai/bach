@@ -3,7 +3,7 @@
 > **Dokument-ID:** `MODULRUECKTRANSFER-PLAN-2026-09-11`  
 > **Status:** Genehmigt & Aktiv (`Wettbewerb beendet`, Task 1184 abgeschlossen)  
 > **Geltungsbereich:** `C:/_Local_DEV/repos/bach` (Plan D), Partnersysteme via `.SYNC`  
-> **Kanonische Tasks:** `bach task list all --filter "TRANSFER"` (Tasks 1215–1222)
+> **Kanonische Tasks:** `bach task list all --filter "TRANSFER"` (Tasks 1217–1224)
 
 ---
 
@@ -36,36 +36,36 @@ Gemäß den Grundsätzen aus der BACH-Roadmap und den Nutzerentscheidungen (`D-2
 
 ## 3. Stufenplan & Task-Kette
 
-### Stufe 1: Inventar & Schnittstellenmatrix (Task 1215) — *AKTUELL*
+### Stufe 1: Inventar & Schnittstellenmatrix (Task 1217) — *ABGESCHLOSSEN*
 - Bestandsaufnahme der 8 Module, Abhängigkeitsanalyse, Pin-Prüfung in `requirements.txt`.
 - Masterplan unter `docs/architecture/MODULRUECKTRANSFER-PLAN.md`.
 
-### Stufe 2: `ellmos-tests` Adapter scharfschalten (Task 1216 & Task 1181)
+### Stufe 2: `ellmos-tests` Adapter scharfschalten (Task 1218 & Task 1181)
 - Scharfschaltung des Adapters in `system/hub/test.py`.
 - Verifikation gegen bestehende 140+ Testdateien in `system/tests/`.
 - Sicherstellung von `--dry-run` und unterbrechungsfreiem Fallback auf native Pytest-Ausführung.
 
-### Stufe 3: `ellmos-scheduler` Provider-Seam verdrahten (Task 1217)
+### Stufe 3: `ellmos-scheduler` Provider-Seam verdrahten (Task 1219)
 - Verdrahtung von `system/hub/scheduler_provider.py` mit installiertem `ellmos-scheduler`.
 - Testen des Daemon-Laufs unter Windows und macOS (Mac Studio).
 - Erhalt des lokalen SQLite-Job-Stores als Fail-Closed-Fallback.
 
-### Stufe 4: `accounts-core` Welle 3 abschließen (Task 1218)
+### Stufe 4: `accounts-core` Welle 3 abschließen (Task 1220)
 - Entflechtung der verbleibenden Ausgaben-, Fixkosten- und Saldenlogik in `hub/steuer.py`.
 - Ausbau des Regressionswächters `tests/test_accounts_via_accounts_core.py`.
 
-### Stufe 5: `system-explorer` Topology- & Health-Checks (Task 1219)
+### Stufe 5: `system-explorer` Topology- & Health-Checks (Task 1221)
 - Anbindung an `bach setup preflight` und `bach upgrade check`.
 - Unabhängiges Scannen von Port 8000, 8081 und Zombie-Prozessen.
 
-### Stufe 6: `memoryhooker` & `workflowhooker` Verdrahtung (Task 1220)
+### Stufe 6: `memoryhooker` & `workflowhooker` Verdrahtung (Task 1222)
 - Dynamisches Einhängen von Hookern in `ChatRuntime.process` und `HookManager.emit`.
 - Audit-Trail für jede Kontextinjektion.
 
-### Stufe 7: `sqlite-transit-sync` Replikation (Task 1221)
+### Stufe 7: `sqlite-transit-sync` Replikation (Task 1223)
 - Kopplung von ProSync an `sqlite-transit-sync` für sauberen 3-Wege-Zustand (`WORKSTATION-LG`, `ASUS-GEI`, `mac-studio`).
 
-### Stufe 8: Single-Source-of-Truth Zertifizierung (Task 1222)
+### Stufe 8: Single-Source-of-Truth Zertifizierung (Task 1224)
 - Reife-Zertifizierung aller 8 Module, Nullreferenznachweis auf Altschrott, Verschiebung des Altcodes nach `system/hub/_archive/`.
 
 ---
