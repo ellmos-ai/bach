@@ -122,7 +122,9 @@ CREATE TABLE IF NOT EXISTS memory_working (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP,
-    is_active INTEGER DEFAULT 1
+    is_active INTEGER DEFAULT 1,
+    created_by_session_id TEXT REFERENCES memory_sessions(session_id),
+    updated_by_session_id TEXT REFERENCES memory_sessions(session_id)
 );
 
 CREATE TABLE IF NOT EXISTS memory_facts (
@@ -135,6 +137,8 @@ CREATE TABLE IF NOT EXISTS memory_facts (
     source TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by_session_id TEXT REFERENCES memory_sessions(session_id),
+    updated_by_session_id TEXT REFERENCES memory_sessions(session_id),
     UNIQUE(category, key)
 );
 
@@ -154,7 +158,9 @@ CREATE TABLE IF NOT EXISTS memory_lessons (
         last_shown TEXT,
         created_at TEXT,
         updated_at TEXT
-    , dist_type INTEGER DEFAULT 1);
+    , dist_type INTEGER DEFAULT 1,
+        created_by_session_id TEXT REFERENCES memory_sessions(session_id),
+        updated_by_session_id TEXT REFERENCES memory_sessions(session_id));
 
 CREATE TABLE IF NOT EXISTS memory_sessions (
         id INTEGER PRIMARY KEY,
@@ -168,6 +174,104 @@ CREATE TABLE IF NOT EXISTS memory_sessions (
         delegation_count INTEGER DEFAULT 0,
         continuation_context TEXT
     , dist_type INTEGER DEFAULT 0, is_compressed INTEGER DEFAULT 0, partner_id TEXT DEFAULT 'user');
+
+-- Memory provenance is intentionally additive.  Old entries remain unknown;
+-- new inserts and updates inherit the currently active BACH session below.
+CREATE TRIGGER IF NOT EXISTS trg_memory_working_session_provenance_insert
+AFTER INSERT ON memory_working
+WHEN NEW.created_by_session_id IS NULL
+BEGIN
+    UPDATE memory_working
+    SET created_by_session_id = (
+            SELECT session_id FROM memory_sessions
+            WHERE ended_at IS NULL
+            ORDER BY started_at DESC, id DESC LIMIT 1
+        ),
+        updated_by_session_id = (
+            SELECT session_id FROM memory_sessions
+            WHERE ended_at IS NULL
+            ORDER BY started_at DESC, id DESC LIMIT 1
+        )
+    WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_memory_facts_session_provenance_insert
+AFTER INSERT ON memory_facts
+WHEN NEW.created_by_session_id IS NULL
+BEGIN
+    UPDATE memory_facts
+    SET created_by_session_id = (
+            SELECT session_id FROM memory_sessions
+            WHERE ended_at IS NULL
+            ORDER BY started_at DESC, id DESC LIMIT 1
+        ),
+        updated_by_session_id = (
+            SELECT session_id FROM memory_sessions
+            WHERE ended_at IS NULL
+            ORDER BY started_at DESC, id DESC LIMIT 1
+        )
+    WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_memory_lessons_session_provenance_insert
+AFTER INSERT ON memory_lessons
+WHEN NEW.created_by_session_id IS NULL
+BEGIN
+    UPDATE memory_lessons
+    SET created_by_session_id = (
+            SELECT session_id FROM memory_sessions
+            WHERE ended_at IS NULL
+            ORDER BY started_at DESC, id DESC LIMIT 1
+        ),
+        updated_by_session_id = (
+            SELECT session_id FROM memory_sessions
+            WHERE ended_at IS NULL
+            ORDER BY started_at DESC, id DESC LIMIT 1
+        )
+    WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_memory_working_session_provenance_update
+AFTER UPDATE ON memory_working
+WHEN NEW.updated_by_session_id IS OLD.updated_by_session_id
+BEGIN
+    UPDATE memory_working
+    SET updated_by_session_id = (
+        SELECT session_id FROM memory_sessions
+        WHERE ended_at IS NULL
+        ORDER BY started_at DESC, id DESC LIMIT 1
+    )
+    WHERE id = NEW.id
+      AND EXISTS (SELECT 1 FROM memory_sessions WHERE ended_at IS NULL);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_memory_facts_session_provenance_update
+AFTER UPDATE ON memory_facts
+WHEN NEW.updated_by_session_id IS OLD.updated_by_session_id
+BEGIN
+    UPDATE memory_facts
+    SET updated_by_session_id = (
+        SELECT session_id FROM memory_sessions
+        WHERE ended_at IS NULL
+        ORDER BY started_at DESC, id DESC LIMIT 1
+    )
+    WHERE id = NEW.id
+      AND EXISTS (SELECT 1 FROM memory_sessions WHERE ended_at IS NULL);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_memory_lessons_session_provenance_update
+AFTER UPDATE ON memory_lessons
+WHEN NEW.updated_by_session_id IS OLD.updated_by_session_id
+BEGIN
+    UPDATE memory_lessons
+    SET updated_by_session_id = (
+        SELECT session_id FROM memory_sessions
+        WHERE ended_at IS NULL
+        ORDER BY started_at DESC, id DESC LIMIT 1
+    )
+    WHERE id = NEW.id
+      AND EXISTS (SELECT 1 FROM memory_sessions WHERE ended_at IS NULL);
+END;
 
 CREATE TABLE IF NOT EXISTS memory_consolidation (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2130,8 +2234,11 @@ CREATE INDEX IF NOT EXISTS idx_hierarchy_items_status ON hierarchy_items(status)
 CREATE INDEX IF NOT EXISTS idx_hierarchy_items_type ON hierarchy_items(type);
 CREATE INDEX IF NOT EXISTS idx_memory_facts_category ON memory_facts(category);
 CREATE INDEX IF NOT EXISTS idx_memory_facts_key ON memory_facts(key);
+CREATE INDEX IF NOT EXISTS idx_memory_facts_created_by_session ON memory_facts(created_by_session_id);
 CREATE INDEX IF NOT EXISTS idx_memory_working_active ON memory_working(is_active);
 CREATE INDEX IF NOT EXISTS idx_memory_working_type ON memory_working(type);
+CREATE INDEX IF NOT EXISTS idx_memory_working_created_by_session ON memory_working(created_by_session_id);
+CREATE INDEX IF NOT EXISTS idx_memory_lessons_created_by_session ON memory_lessons(created_by_session_id);
 CREATE INDEX IF NOT EXISTS idx_presence_partner ON partner_presence(partner_name);
 CREATE INDEX IF NOT EXISTS idx_presence_status ON partner_presence(status);
 CREATE INDEX IF NOT EXISTS idx_snapshots_session ON session_snapshots(session_id);
@@ -2525,7 +2632,6 @@ CREATE TABLE watcher_event_log (
         processing_time_ms INTEGER DEFAULT 0,
         created_at TEXT NOT NULL
     );
-
 -- Task #1191 (Option A): Einheitliches Delegation-Log
 -- Persistenter Nachweis jeder Delegation an einen Partner (claude/codex/...),
 -- geschrieben aus hub/partner.py PartnerHandler._delegate() im Erfolgs-/Dry-Run-Pfad.

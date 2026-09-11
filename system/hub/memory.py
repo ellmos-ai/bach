@@ -586,10 +586,14 @@ class MemoryHandler(BaseHandler):
         privacy: str,
         scope_reason: str,
         privacy_hint: str,
+        author_session: str | None = None,
+        editor_session: str | None = None,
     ) -> list[str]:
         return [
             f"  {label}",
             f"    Evidenz: {evidence} | Quelle: {source or '-'}",
+            f"    Autor-Session: {author_session or 'unbekannt (Legacy/ohne aktive Session)'}"
+            f" | Letzte Bearbeitung: {editor_session or 'unbekannt'}",
             f"    Personenbezug: {people_scope} | Privacy: {privacy}",
             f"    Zeit: {format_timestamp(timestamp)}",
             f"    Inhalt: {truncate_text(preview)}",
@@ -616,7 +620,8 @@ class MemoryHandler(BaseHandler):
             if scope in {"all", "working"}:
                 rows = conn.execute(
                     """
-                    SELECT id, type, content, created_at, updated_at
+                    SELECT id, type, content, created_at, updated_at,
+                           created_by_session_id, updated_by_session_id
                     FROM memory_working
                     WHERE is_active = 1
                     ORDER BY updated_at DESC, created_at DESC
@@ -647,6 +652,8 @@ class MemoryHandler(BaseHandler):
                                 privacy=privacy,
                                 scope_reason=scope_reason,
                                 privacy_hint=privacy_hint,
+                                author_session=row["created_by_session_id"],
+                                editor_session=row["updated_by_session_id"],
                             )
                         )
                     sections += 1
@@ -654,7 +661,8 @@ class MemoryHandler(BaseHandler):
             if scope in {"all", "facts"}:
                 rows = conn.execute(
                     """
-                    SELECT id, category, key, value, confidence, source, created_at, updated_at
+                    SELECT id, category, key, value, confidence, source, created_at, updated_at,
+                           created_by_session_id, updated_by_session_id
                     FROM memory_facts
                     ORDER BY updated_at DESC, created_at DESC
                     LIMIT ?
@@ -688,6 +696,8 @@ class MemoryHandler(BaseHandler):
                                 privacy=privacy,
                                 scope_reason=scope_reason,
                                 privacy_hint=privacy_hint,
+                                author_session=row["created_by_session_id"],
+                                editor_session=row["updated_by_session_id"],
                             )
                         )
                     sections += 1
@@ -695,7 +705,8 @@ class MemoryHandler(BaseHandler):
             if scope in {"all", "lessons"}:
                 rows = conn.execute(
                     """
-                    SELECT id, category, severity, title, problem, solution, related_tools, related_files, created_at
+                    SELECT id, category, severity, title, problem, solution, related_tools, related_files,
+                           created_at, created_by_session_id, updated_by_session_id
                     FROM memory_lessons
                     WHERE is_active = 1
                     ORDER BY created_at DESC
@@ -730,6 +741,8 @@ class MemoryHandler(BaseHandler):
                                 privacy=privacy,
                                 scope_reason=scope_reason,
                                 privacy_hint=privacy_hint,
+                                author_session=row["created_by_session_id"],
+                                editor_session=row["updated_by_session_id"],
                             )
                         )
                     sections += 1

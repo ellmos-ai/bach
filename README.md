@@ -68,7 +68,7 @@ For auditability, the GPT-5.6 automation attribution applies from that configura
 - **Skill Source Registry** - `bach skills version bach` resolves the canonical repo-root skill via `system/data/skill_sources.json` and can compare optional Codex/Claude user copies without fuzzy filename drift
 - **71 Workflow Templates** - Pre-built process workflows
 - **4400+ Tests** - Comprehensive automated coverage across handlers, services, GUI, and MCP servers
-- **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System (6 memory types)
+- **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System (6 memory types), with additive per-entry BACH-session provenance for new records; legacy authors remain explicitly unknown
 - **Agent CLI** - `bach agent start/stop/list` for direct agent control
 - **Agent Doctor** - `bach agent doctor [name] [--json]` validates Claude CLI availability, runtime dirs, skill files, and stale PID state before a launch
 - **Agent Operator Controls** - `bach agent pause/resume/checkpoint/steer/clear-steer [name] [--json]` lets operators stage cooperative pause requests and guidance before or during a run, record explicit safe-checkpoint acknowledgements, mirror that state into `OPERATOR_NOTES.md`, preserve queued hints across the next `bach agent start`, inject them into the generated session `CLAUDE.md`, and expose nested `operator_control` snapshots plus `queued_for_next_start` for automation-safe polling
