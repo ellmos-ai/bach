@@ -30,8 +30,9 @@ from .base import BaseHandler
 # Verfuegbare Profile
 PROFILES = ["QUICK", "STANDARD", "FULL", "OBSERVATION", "OUTPUT", "MEMORY_FOCUS", "TASK_FOCUS"]
 
-# ellmos-tests Profile, die 1:1 uebernommen werden koennen
-ELLMOS_PROFILES = {"QUICK", "STANDARD", "FULL", "OBSERVATION", "OUTPUT"}
+# Von ellmos-tests unterstuetzte Profile (run_external.py: QUICK/STANDARD/FULL).
+# OBSERVATION/OUTPUT/MEMORY_FOCUS/TASK_FOCUS bleiben legacy-only (--native).
+ELLMOS_PROFILES = {"QUICK", "STANDARD", "FULL"}
 
 
 class TestHandler(BaseHandler):
@@ -43,6 +44,7 @@ class TestHandler(BaseHandler):
         self.results_dir = self.testing_dir / "results"
         self._force_native = False
         self._ellmos_path: Path | None = None
+        self._dry_run = False
 
     @property
     def profile_name(self) -> str:
@@ -71,6 +73,7 @@ class TestHandler(BaseHandler):
         self._force_native = "--native" in args or "--legacy" in args
         args = [a for a in args if a not in ("--native", "--legacy")]
         self._ellmos_path = self._find_ellmos_tests()
+        self._dry_run = bool(dry_run)
 
         if op == "self":
             return self._run_self_test(args)
@@ -146,6 +149,21 @@ class TestHandler(BaseHandler):
         """Pfad zum legacy BACH test_runner."""
         return self.testing_dir / "test_runner.py"
 
+    def _dry_run_report(self, cmd: list, profile: str) -> tuple:
+        """Zeigt an, was ausgefuehrt wuerde, ohne Tests zu starten (--dry-run)."""
+        adapter = (
+            f"ellmos-tests Adapter ({self._ellmos_path})"
+            if self._use_ellmos_tests()
+            else "legacy test_runner.py (Fallback)"
+        )
+        lines = [
+            "DRY-RUN: Es wurde nichts ausgefuehrt.",
+            f"Adapter: {adapter}",
+            f"Profil:  {profile}",
+            f"Befehl:  {' '.join(str(c) for c in cmd)}",
+        ]
+        return True, "\n".join(lines)
+
     def _run_self_test(self, args: list) -> tuple:
         """Fuehrt Selbsttest auf BACH aus."""
         profile = args[0].upper() if args else "QUICK"
@@ -154,13 +172,27 @@ class TestHandler(BaseHandler):
 
         if self._use_ellmos_tests():
             if profile not in ELLMOS_PROFILES:
-                return False, f"Profil '{profile}' wird von ellmos-tests nicht unterstuetzt.\n"
-                              f"Nutze eines von: {', '.join(sorted(ELLMOS_PROFILES))}"
+                return False, (
+                    f"Profil '{profile}' wird von ellmos-tests nicht unterstuetzt.\n"
+                    f"Nutze eines von: {', '.join(sorted(ELLMOS_PROFILES))} "
+                    f"oder legacy-only Profile mit --native"
+                )
+            if self._dry_run:
+                return self._dry_run_report(
+                    [sys.executable, str(self._ellmos_runner()), str(self.base_path), "--profile", profile],
+                    profile,
+                )
             return self._run_external_runner(str(self.base_path), profile)
 
         runner = self._legacy_runner()
         if not runner.exists():
             return False, f"Test-Runner nicht gefunden: {runner}"
+
+        if self._dry_run:
+            return self._dry_run_report(
+                [sys.executable, str(runner), str(self.base_path), "-p", profile],
+                profile,
+            )
 
         try:
             result = subprocess.run(
@@ -191,11 +223,24 @@ class TestHandler(BaseHandler):
 
         if self._use_ellmos_tests():
             if profile not in ELLMOS_PROFILES:
-                return False, f"Profil '{profile}' wird von ellmos-tests nicht unterstuetzt.\n"
-                              f"Nutze eines von: {', '.join(sorted(ELLMOS_PROFILES))}"
+                return False, (
+                    f"Profil '{profile}' wird von ellmos-tests nicht unterstuetzt.\n"
+                    f"Nutze eines von: {', '.join(sorted(ELLMOS_PROFILES))} "
+                    f"oder legacy-only Profile mit --native"
+                )
+            if self._dry_run:
+                return self._dry_run_report(
+                    [sys.executable, str(self._ellmos_runner()), system_path, "--profile", profile],
+                    profile,
+                )
             return self._run_external_runner(system_path, profile)
 
         runner = self._legacy_runner()
+        if self._dry_run:
+            return self._dry_run_report(
+                [sys.executable, str(runner), system_path, "-p", profile],
+                profile,
+            )
         try:
             result = subprocess.run(
                 [sys.executable, str(runner), system_path, "-p", profile],
@@ -223,10 +268,19 @@ class TestHandler(BaseHandler):
 
         if self._use_ellmos_tests():
             if profile not in ELLMOS_PROFILES:
-                return False, f"Profil '{profile}' wird von ellmos-tests nicht unterstuetzt.\n"
-                              f"Nutze eines von: {', '.join(sorted(ELLMOS_PROFILES))}"
+                return False, (
+                    f"Profil '{profile}' wird von ellmos-tests nicht unterstuetzt.\n"
+                    f"Nutze eines von: {', '.join(sorted(ELLMOS_PROFILES))} "
+                    f"oder legacy-only Profile mit --native"
+                )
             # ellmos-tests unterstuetzt kein direktes Compare; wir fuehren beide
             # Systeme nacheinander aus und geben die beiden Ergebnisse aus.
+            if self._dry_run:
+                cmd1 = [sys.executable, str(self._ellmos_runner()), str(self.base_path), "--profile", profile]
+                cmd2 = [sys.executable, str(self._ellmos_runner()), other_path, "--profile", profile]
+                ok, out1 = self._dry_run_report(cmd1, profile)
+                _, out2 = self._dry_run_report(cmd2, profile)
+                return ok, out1 + "\n" + out2
             ok1, out1 = self._run_external_runner(str(self.base_path), profile)
             ok2, out2 = self._run_external_runner(other_path, profile)
             header = (
@@ -239,6 +293,11 @@ class TestHandler(BaseHandler):
             return ok1 and ok2, header + "\n--- BACH ---\n" + out1 + "\n--- ANDERES ---\n" + out2
 
         runner = self._legacy_runner()
+        if self._dry_run:
+            return self._dry_run_report(
+                [sys.executable, str(runner), str(self.base_path), "--compare", other_path, "-p", profile],
+                profile,
+            )
         try:
             result = subprocess.run(
                 [sys.executable, str(runner), str(self.base_path), "--compare", other_path, "-p", profile],
@@ -296,6 +355,8 @@ class TestHandler(BaseHandler):
         lines.append("")
         if self._use_ellmos_tests():
             lines.append(f"Adapter: ellmos-tests ({self._ellmos_path})")
+            lines.append(f"Ellmos-Profile: {', '.join(sorted(ELLMOS_PROFILES))} "
+                         f"(legacy-only Profile mit --native nutzbar)")
         else:
             lines.append("Adapter: legacy test_runner.py (Fallback)")
         lines.append("Nutzung: bach --test self <PROFIL>")
