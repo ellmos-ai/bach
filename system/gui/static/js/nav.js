@@ -68,6 +68,7 @@ const NAV_ITEMS = [
     ]},
     { label: "Agenten", children: [
         { href: "/agents-board", label: "Agents Board" },
+        { href: "#", portRel: 8081, path: "/activity", label: "🤖 Worker-Status", external: true },
         { href: "/ati", label: "🛠️ ATI Entwickler" },
         { href: "/steuer", label: "⚖️ Theodor Steuer" },
         { href: "/gesundheit", label: "🩺 Gesundheit" },
@@ -92,6 +93,7 @@ const NAV_ITEMS = [
     { href: "/tools", label: "Tools" },
     { label: "System", children: [
         { href: "/settings", label: "Einstellungen" },
+        { href: "#", portRel: 8081, path: "/activity", label: "📊 Worker & Aktivität", external: true },
         { href: "/daemon", label: "Automation" },
         { href: "/control/", label: "Unified GUI", external: true },
         { href: "/maintenance", label: "Wartung" },
@@ -128,7 +130,12 @@ function initNavigation() {
             const childHtml = item.children.map(child => {
                 const childActive = isActive(child.href) ? ' active' : '';
                 const target = child.external ? ' target="_blank" rel="noopener noreferrer"' : '';
-                return `<a href="${child.href}"${target} class="dropdown-item${childActive}">${child.label}</a>`;
+                let href = child.href;
+                if (child.portRel) {
+                    const host = window.location.hostname || 'localhost';
+                    href = `http://${host}:${child.portRel}${child.path || ''}`;
+                }
+                return `<a href="${href}"${target} class="dropdown-item${childActive}">${child.label}</a>`;
             }).join('');
             return `<div class="nav-dropdown${parentActive}">
                 <button class="nav-item nav-dropdown-toggle${parentActive}">${item.label} <span class="dropdown-arrow">▾</span></button>
@@ -137,7 +144,12 @@ function initNavigation() {
         }
         const active = isActive(item.href) ? ' active' : '';
         const target = item.external ? ' target="_blank" rel="noopener noreferrer"' : '';
-        return `<a href="${item.href}"${target} class="nav-item${active}">${item.label}</a>`;
+        let itemHref = item.href;
+        if (item.portRel) {
+            const host = window.location.hostname || 'localhost';
+            itemHref = `http://${host}:${item.portRel}${item.path || ''}`;
+        }
+        return `<a href="${itemHref}"${target} class="nav-item${active}">${item.label}</a>`;
     }).join('\n            ');
 
     const currentTheme = normalizeTheme(localStorage.getItem(THEME_KEY) || 'dark');

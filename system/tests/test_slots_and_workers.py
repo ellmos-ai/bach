@@ -444,3 +444,26 @@ class TestControlHandlerEndpoints:
             res = mock_json.call_args[0][0]
             assert res.get("ok") is True
 
+    def test_allowed_origins_and_tailscale(self):
+        from hub._services.chat.telegram_chat import _is_allowed_origin
+
+        # Localhost & loopback
+        assert _is_allowed_origin("http://localhost:8081") is True
+        assert _is_allowed_origin("http://127.0.0.1:8081") is True
+
+        # Tailscale CGNAT IP (100.64.0.0/10)
+        assert _is_allowed_origin("http://100.119.69.90:8081") is True
+        assert _is_allowed_origin("http://100.108.34.112:8000") is True
+
+        # Private LAN
+        assert _is_allowed_origin("http://192.168.1.100:8081") is True
+        assert _is_allowed_origin("http://10.0.0.5:8081") is True
+
+        # Same-origin host match
+        assert _is_allowed_origin("http://custom-box:8081", req_host="custom-box:8081") is True
+
+        # Untrusted external origin
+        assert _is_allowed_origin("http://evil.com") is False
+        assert _is_allowed_origin("https://attacker.org:8081") is False
+
+

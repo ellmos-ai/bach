@@ -373,6 +373,13 @@ BACKEND_PRESETS = {
         "method": "api",
         "description": "Lokales Ollama (Qwen, Llama, etc.)",
     },
+    "ollama-cloud": {
+        "type": "ollama",
+        "base_url": os.environ.get("OLLAMA_URL", "http://localhost:11434"),
+        "default_model": os.environ.get("OLLAMA_CLOUD_MODEL", "kimi-k3:cloud"),
+        "method": "api",
+        "description": "Ollama Cloud Proxies (:cloud Modelle wie Kimi, GLM)",
+    },
     "lmstudio": {
         "type": "lmstudio",
         "base_url": os.environ.get("LM_STUDIO_URL", "http://localhost:1234/v1"),
@@ -1600,7 +1607,8 @@ tr:hover td{background:#24334d}
       <div class="form-group">
         <label>Backend</label>
         <select id="chat-backend" onchange="onBackendChange('chat')">
-          <option value="ollama">Ollama (lokal)</option>
+          <option value="ollama">💻 Ollama (lokal)</option>
+          <option value="ollama-cloud">☁️ Ollama (Cloud :cloud)</option>
           <option value="hermes">Hermes (API)</option>
           <option value="claude">Claude CLI</option>
           <option value="claude-api">Claude API</option>
@@ -1610,9 +1618,31 @@ tr:hover td{background:#24334d}
         </select>
       </div>
       <div class="form-group">
-        <label>Modell</label>
-        <input type="text" id="chat-model" placeholder="qwen3.8:27b-mlx">
+        <label>Modell-Vorauswahl</label>
+        <select id="chat-model-preset" onchange="applyModelPreset('chat', this.value)">
+          <option value="">-- Schnell-Auswahl --</option>
+          <optgroup label="☁️ Ollama Cloud (:cloud)">
+            <option value="kimi-k3:cloud">kimi-k3:cloud (131k)</option>
+            <option value="kimi-k2.7-code:cloud">kimi-k2.7-code:cloud</option>
+            <option value="glm-5.3:cloud">glm-5.3:cloud</option>
+          </optgroup>
+          <optgroup label="💻 Ollama Lokal (MLX)">
+            <option value="qwen3.8:27b-mlx">qwen3.8:27b-mlx</option>
+            <option value="gemma4:26b-mlx">gemma4:26b-mlx</option>
+            <option value="qwen3.5:4b">qwen3.5:4b</option>
+          </optgroup>
+          <optgroup label="🌐 CLI / API">
+            <option value="claude-3-7-sonnet">Claude 3.7 Sonnet</option>
+            <option value="sonnet">Claude CLI (sonnet)</option>
+            <option value="gpt-4o">GPT-4o</option>
+            <option value="o4-mini">o4-mini</option>
+          </optgroup>
+        </select>
       </div>
+    </div>
+    <div class="form-group">
+      <label>Modell</label>
+      <input type="text" id="chat-model" list="model-presets-list" placeholder="qwen3.8:27b-mlx">
     </div>
     <div class="form-row">
       <div class="form-group">
@@ -1665,7 +1695,8 @@ tr:hover td{background:#24334d}
       <div class="form-group">
         <label>Backend</label>
         <select id="always-backend" onchange="onBackendChange('always')">
-          <option value="ollama">Ollama (lokal / :cloud)</option>
+          <option value="ollama">💻 Ollama (lokal)</option>
+          <option value="ollama-cloud">☁️ Ollama (Cloud :cloud)</option>
           <option value="hermes">Hermes (API)</option>
           <option value="claude">Claude CLI</option>
           <option value="claude-api">Claude API</option>
@@ -1674,9 +1705,31 @@ tr:hover td{background:#24334d}
         </select>
       </div>
       <div class="form-group">
-        <label>Modell</label>
-        <input type="text" id="always-model" placeholder="qwen3.8:27b-mlx">
+        <label>Modell-Vorauswahl</label>
+        <select id="always-model-preset" onchange="applyModelPreset('always', this.value)">
+          <option value="">-- Schnell-Auswahl --</option>
+          <optgroup label="☁️ Ollama Cloud (:cloud)">
+            <option value="kimi-k3:cloud">kimi-k3:cloud (131k)</option>
+            <option value="kimi-k2.7-code:cloud">kimi-k2.7-code:cloud</option>
+            <option value="glm-5.3:cloud">glm-5.3:cloud</option>
+          </optgroup>
+          <optgroup label="💻 Ollama Lokal (MLX)">
+            <option value="qwen3.8:27b-mlx">qwen3.8:27b-mlx</option>
+            <option value="gemma4:26b-mlx">gemma4:26b-mlx</option>
+            <option value="qwen3.5:4b">qwen3.5:4b</option>
+          </optgroup>
+          <optgroup label="🌐 CLI / API">
+            <option value="claude-3-7-sonnet">Claude 3.7 Sonnet</option>
+            <option value="sonnet">Claude CLI (sonnet)</option>
+            <option value="gpt-4o">GPT-4o</option>
+            <option value="o4-mini">o4-mini</option>
+          </optgroup>
+        </select>
       </div>
+    </div>
+    <div class="form-group">
+      <label>Modell</label>
+      <input type="text" id="always-model" list="model-presets-list" placeholder="qwen3.8:27b-mlx">
     </div>
     <div class="form-row">
       <div class="form-group">
@@ -1721,7 +1774,8 @@ tr:hover td{background:#24334d}
       <div class="form-group">
         <label>Backend</label>
         <select id="conn-backend" onchange="onBackendChange('conn')">
-          <option value="ollama">Ollama (lokal)</option>
+          <option value="ollama">💻 Ollama (lokal)</option>
+          <option value="ollama-cloud">☁️ Ollama (Cloud :cloud)</option>
           <option value="hermes">Hermes (API)</option>
           <option value="claude">Claude CLI</option>
           <option value="claude-api">Claude API</option>
@@ -1730,9 +1784,31 @@ tr:hover td{background:#24334d}
         </select>
       </div>
       <div class="form-group">
-        <label>Modell</label>
-        <input type="text" id="conn-model" placeholder="qwen3.8:27b-mlx">
+        <label>Modell-Vorauswahl</label>
+        <select id="conn-model-preset" onchange="applyModelPreset('conn', this.value)">
+          <option value="">-- Schnell-Auswahl --</option>
+          <optgroup label="☁️ Ollama Cloud (:cloud)">
+            <option value="kimi-k3:cloud">kimi-k3:cloud (131k)</option>
+            <option value="kimi-k2.7-code:cloud">kimi-k2.7-code:cloud</option>
+            <option value="glm-5.3:cloud">glm-5.3:cloud</option>
+          </optgroup>
+          <optgroup label="💻 Ollama Lokal (MLX)">
+            <option value="qwen3.8:27b-mlx">qwen3.8:27b-mlx</option>
+            <option value="gemma4:26b-mlx">gemma4:26b-mlx</option>
+            <option value="qwen3.5:4b">qwen3.5:4b</option>
+          </optgroup>
+          <optgroup label="🌐 CLI / API">
+            <option value="claude-3-7-sonnet">Claude 3.7 Sonnet</option>
+            <option value="sonnet">Claude CLI (sonnet)</option>
+            <option value="gpt-4o">GPT-4o</option>
+            <option value="o4-mini">o4-mini</option>
+          </optgroup>
+        </select>
       </div>
+    </div>
+    <div class="form-group">
+      <label>Modell</label>
+      <input type="text" id="conn-model" list="model-presets-list" placeholder="qwen3.8:27b-mlx">
     </div>
     <div class="form-row">
       <div class="form-group">
@@ -1869,23 +1945,21 @@ tr:hover td{background:#24334d}
       <label>Worker-Name</label>
       <input type="text" id="nw-name" placeholder="z.B. Recherche-Worker, Atlas-Refactoring">
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Modus / Untermodus</label>
-        <select id="nw-sub-mode" onchange="onSubModeChange(this.value)">
-          <option value="task_worker">3.2 Taskworker (Gezielter Einzelauftrag)</option>
-          <option value="hintergrund_worker">3.1 Weiterer Hintergrundworker (wie Always-On)</option>
-          <option value="boss_routing">3.3 Bossrouting (Koordination &amp; Unteragenten)</option>
-          <option value="expert_role">3.4 Spezifische Expertenrolle</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Ausführungstyp</label>
-        <select id="nw-type">
-          <option value="persistent">Dauerhaft (bis manuell gelöscht)</option>
-          <option value="once">Einmalig (beendet nach Task)</option>
-        </select>
-      </div>
+    <div class="form-group">
+      <label>Modus / Untermodus</label>
+      <select id="nw-sub-mode" onchange="onSubModeChange(this.value)">
+        <option value="task_worker">3.2 Taskworker (Gezielter Einzelauftrag)</option>
+        <option value="hintergrund_worker">3.1 Weiterer Hintergrundworker (wie Always-On)</option>
+        <option value="boss_routing">3.3 Bossrouting (Koordination &amp; Unteragenten)</option>
+        <option value="expert_role">3.4 Spezifische Expertenrolle</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Ausführungstyp</label>
+      <select id="nw-type">
+        <option value="persistent">Dauerhaft (bis manuell gelöscht)</option>
+        <option value="once">Einmalig (beendet nach Task)</option>
+      </select>
     </div>
 
     <!-- Dynamic Fields for Bossrouting -->
@@ -1938,8 +2012,9 @@ tr:hover td{background:#24334d}
     <div class="form-row">
       <div class="form-group">
         <label>Backend</label>
-        <select id="nw-backend">
-          <option value="ollama">Ollama (lokal / :cloud)</option>
+        <select id="nw-backend" onchange="onBackendChange('nw')">
+          <option value="ollama">💻 Ollama (lokal)</option>
+          <option value="ollama-cloud">☁️ Ollama (Cloud :cloud)</option>
           <option value="hermes">Hermes (API)</option>
           <option value="claude">Claude CLI</option>
           <option value="claude-api">Claude API</option>
@@ -1948,8 +2023,35 @@ tr:hover td{background:#24334d}
         </select>
       </div>
       <div class="form-group">
-        <label>Modell</label>
-        <input type="text" id="nw-model" placeholder="qwen3.8:27b-mlx">
+        <label>Modell-Vorauswahl</label>
+        <select id="nw-model-preset" onchange="applyModelPreset('nw', this.value)">
+          <option value="">-- Schnell-Auswahl --</option>
+          <optgroup label="☁️ Ollama Cloud (:cloud)">
+            <option value="kimi-k3:cloud">kimi-k3:cloud (131k)</option>
+            <option value="kimi-k2.7-code:cloud">kimi-k2.7-code:cloud</option>
+            <option value="glm-5.3:cloud">glm-5.3:cloud</option>
+          </optgroup>
+          <optgroup label="💻 Ollama Lokal (MLX)">
+            <option value="qwen3.8:27b-mlx">qwen3.8:27b-mlx</option>
+            <option value="gemma4:26b-mlx">gemma4:26b-mlx</option>
+            <option value="qwen3.5:4b">qwen3.5:4b</option>
+            <option value="gemma4:e2b">gemma4:e2b</option>
+            <option value="deepseek-ocr:latest">deepseek-ocr:latest</option>
+          </optgroup>
+          <optgroup label="🌐 CLI / API">
+            <option value="claude-3-7-sonnet">Claude 3.7 Sonnet</option>
+            <option value="sonnet">Claude CLI (sonnet)</option>
+            <option value="gpt-4o">GPT-4o</option>
+            <option value="o4-mini">o4-mini</option>
+          </optgroup>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Modellbezeichnung (exakt)</label>
+      <input type="text" id="nw-model" list="model-presets-list" placeholder="z. B. kimi-k3:cloud oder qwen3.8:27b-mlx">
+      <div style="font-size:0.75rem;color:#94a3b8;margin-top:3px">
+        💡 <strong>Ollama Cloud:</strong> Modellname muss wie im CLI mit <code>:cloud</code> enden (z. B. <code>kimi-k3:cloud</code>). Lokale Modelle laufen direkt auf deiner Hardware.
       </div>
     </div>
     <div class="form-row">
@@ -2008,6 +2110,22 @@ tr:hover td{background:#24334d}
   </div>
 </div>
 
+<datalist id="model-presets-list">
+  <option value="kimi-k3:cloud">☁️ Ollama Cloud (Moonshot Kimi K3, 131k)</option>
+  <option value="kimi-k2.7-code:cloud">☁️ Ollama Cloud (Kimi Code Spezialist)</option>
+  <option value="glm-5.3:cloud">☁️ Ollama Cloud (Zhipu GLM 5.3, 131k)</option>
+  <option value="qwen3.8:27b-mlx">💻 Ollama Lokal (Qwen 27B MLX)</option>
+  <option value="gemma4:26b-mlx">💻 Ollama Lokal (Google Gemma 26B)</option>
+  <option value="qwen3.5:4b">💻 Ollama Lokal (Qwen 4B)</option>
+  <option value="gemma4:e2b">💻 Ollama Lokal (Google Gemma 2B)</option>
+  <option value="deepseek-ocr:latest">💻 Ollama Lokal (OCR)</option>
+  <option value="claude-3-7-sonnet">🌐 Claude 3.7 Sonnet (Anthropic)</option>
+  <option value="sonnet">🌐 Claude CLI (sonnet)</option>
+  <option value="gpt-4o">🌐 OpenAI API (gpt-4o)</option>
+  <option value="o4-mini">🌐 Codex CLI (o4-mini)</option>
+  <option value="nousresearch/hermes-3-llama-3.1-8b">🌐 Hermes 3</option>
+</datalist>
+
 <div id="toast"></div>
 
 <script>
@@ -2058,7 +2176,9 @@ async function refreshSlots() {
   // Chat Slot
   if (slots.buddha_chat && !_isEditing) {
     const s = slots.buddha_chat;
-    document.getElementById('chat-backend').value = s.backend || 'ollama';
+    let b = s.backend || 'ollama';
+    if (b === 'ollama' && s.model && s.model.includes(':cloud')) b = 'ollama-cloud';
+    document.getElementById('chat-backend').value = b;
     document.getElementById('chat-model').value = s.model || '';
     document.getElementById('chat-turns').value = s.max_tool_rounds != null ? s.max_tool_rounds : 12;
     document.getElementById('chat-mode').value = s.mode || 'safe';
@@ -2070,7 +2190,9 @@ async function refreshSlots() {
   // Always-On Slot
   if (slots.buddha_always_on && !_isEditing) {
     const s = slots.buddha_always_on;
-    document.getElementById('always-backend').value = s.backend || 'ollama';
+    let b = s.backend || 'ollama';
+    if (b === 'ollama' && s.model && s.model.includes(':cloud')) b = 'ollama-cloud';
+    document.getElementById('always-backend').value = b;
     document.getElementById('always-model').value = s.model || '';
     document.getElementById('always-turns').value = s.max_tool_rounds != null ? s.max_tool_rounds : 25;
     document.getElementById('always-mode').value = s.mode || 'full';
@@ -2085,7 +2207,9 @@ async function refreshSlots() {
   // Connector Slot
   if (slots.buddha_connector && !_isEditing) {
     const s = slots.buddha_connector;
-    document.getElementById('conn-backend').value = s.backend || 'ollama';
+    let b = s.backend || 'ollama';
+    if (b === 'ollama' && s.model && s.model.includes(':cloud')) b = 'ollama-cloud';
+    document.getElementById('conn-backend').value = b;
     document.getElementById('conn-model').value = s.model || '';
     document.getElementById('conn-turns').value = s.max_tool_rounds != null ? s.max_tool_rounds : 10;
     document.getElementById('conn-activity').textContent = s.current_activity || 'Bereit';
@@ -2495,21 +2619,70 @@ async function deleteWorker(workerId) {
   }
 }
 
+function applyModelPreset(prefix, modelValue) {
+  if (!modelValue) return;
+  const mInput = document.getElementById(`${prefix}-model`);
+  const bSelect = document.getElementById(`${prefix}-backend`);
+  if (mInput) mInput.value = modelValue;
+  if (!bSelect) return;
+
+  const m = modelValue.toLowerCase();
+  if (m.includes(':cloud')) {
+    bSelect.value = 'ollama-cloud';
+  } else if (m.includes('mlx') || m.includes('qwen') || m.includes('gemma') || m.includes('ocr') || m.includes('llama-guard')) {
+    bSelect.value = 'ollama';
+  } else if (m.includes('claude') || m.includes('sonnet') || m.includes('opus')) {
+    bSelect.value = (bSelect.querySelector('option[value="claude-api"]') ? 'claude-api' : 'claude');
+  } else if (m.includes('gpt') || m.includes('o3') || m.includes('o4')) {
+    bSelect.value = (m.includes('o4-mini') && bSelect.querySelector('option[value="codex"]') ? 'codex' : 'openai');
+  } else if (m.includes('hermes')) {
+    bSelect.value = 'hermes';
+  }
+}
+
 function onBackendChange(prefix) {
   const bSelect = document.getElementById(`${prefix}-backend`);
   const mInput = document.getElementById(`${prefix}-model`);
+  if (!bSelect || !mInput) return;
   const val = bSelect.value;
-  if (val === 'claude' || val === 'claude-api') {
-    if (!mInput.value || mInput.value.includes('qwen')) mInput.value = 'sonnet';
-  } else if (val === 'codex') {
-    if (!mInput.value || mInput.value.includes('qwen')) mInput.value = 'o4-mini';
-  } else if (val === 'openai') {
-    if (!mInput.value || mInput.value.includes('qwen')) mInput.value = 'gpt-4o';
-  } else if (val === 'hermes') {
-    if (!mInput.value || mInput.value.includes('qwen')) mInput.value = 'nousresearch/hermes-3-llama-3.1-8b';
+  if (val === 'ollama-cloud') {
+    if (!mInput.value || !mInput.value.includes(':cloud')) mInput.value = 'kimi-k3:cloud';
   } else if (val === 'ollama') {
-    if (!mInput.value || mInput.value.includes('sonnet') || mInput.value.includes('gpt')) mInput.value = 'qwen3.8:27b-mlx';
+    if (!mInput.value || mInput.value.includes(':cloud') || mInput.value.includes('sonnet') || mInput.value.includes('gpt')) {
+      mInput.value = 'qwen3.8:27b-mlx';
+    }
+  } else if (val === 'claude' || val === 'claude-api') {
+    if (!mInput.value || mInput.value.includes('qwen') || mInput.value.includes(':cloud')) {
+      mInput.value = val === 'claude-api' ? 'claude-3-7-sonnet' : 'sonnet';
+    }
+  } else if (val === 'codex') {
+    if (!mInput.value || mInput.value.includes('qwen') || mInput.value.includes(':cloud')) mInput.value = 'o4-mini';
+  } else if (val === 'openai') {
+    if (!mInput.value || mInput.value.includes('qwen') || mInput.value.includes(':cloud')) mInput.value = 'gpt-4o';
+  } else if (val === 'hermes') {
+    if (!mInput.value || mInput.value.includes('qwen') || mInput.value.includes(':cloud')) {
+      mInput.value = 'nousresearch/hermes-3-llama-3.1-8b';
+    }
   }
+}
+
+async function loadModelsIntoPresets() {
+  const data = await api('GET', '/models');
+  if (!data || !data.models || !Array.isArray(data.models)) return;
+  const dl = document.getElementById('model-presets-list');
+  if (!dl) return;
+  let opts = '';
+  for (const m of data.models) {
+    const isCloud = m.includes(':cloud');
+    const label = isCloud ? '☁️ Ollama Cloud' : '💻 Ollama Lokal';
+    opts += `<option value="${escapeHtml(m)}">${label} (${escapeHtml(m)})</option>`;
+  }
+  opts += '<option value="claude-3-7-sonnet">🌐 Claude 3.7 Sonnet (Anthropic)</option>';
+  opts += '<option value="sonnet">🌐 Claude CLI (sonnet)</option>';
+  opts += '<option value="gpt-4o">🌐 OpenAI API (gpt-4o)</option>';
+  opts += '<option value="o4-mini">🌐 Codex CLI (o4-mini)</option>';
+  opts += '<option value="nousresearch/hermes-3-llama-3.1-8b">🌐 Hermes 3</option>';
+  dl.innerHTML = opts;
 }
 
 function escapeHtml(str) {
@@ -2523,6 +2696,7 @@ document.addEventListener('focusin', (e) => {
 document.addEventListener('focusout', () => { _isEditing = false; });
 
 refreshAll();
+loadModelsIntoPresets();
 setInterval(refreshAll, 3000);
 </script>
 </body>
@@ -2697,6 +2871,24 @@ def _control_chat_response(answer) -> tuple[dict, int]:
     return {"ok": True, "answer": text}, 200
 
 
+def _is_trusted_host(host: str) -> bool:
+    normalized = str(host or "").strip().strip("[]").lower()
+    if normalized in ("localhost", "127.0.0.1", "::1", "macstudvonlukas", "workstation-lg", "asus-gei"):
+        return True
+    if normalized.endswith(".local") or normalized.endswith(".internal"):
+        return True
+    try:
+        ip = ipaddress.ip_address(normalized)
+        if ip.is_loopback or ip.is_private:
+            return True
+        # Tailscale Carrier Grade NAT range 100.64.0.0/10
+        if ip in ipaddress.ip_network("100.64.0.0/10"):
+            return True
+    except ValueError:
+        pass
+    return False
+
+
 def _is_loopback_host(host: str) -> bool:
     normalized = str(host or "").strip().strip("[]")
     if normalized.lower() == "localhost":
@@ -2707,18 +2899,25 @@ def _is_loopback_host(host: str) -> bool:
         return False
 
 
-def _is_loopback_origin(origin: str) -> bool:
+def _is_allowed_origin(origin: str, req_host: str = "") -> bool:
+    if not origin:
+        return True
     parsed = urlparse(str(origin or "").strip())
-    return (
-        parsed.scheme in {"http", "https"}
-        and not parsed.username
-        and not parsed.password
-        and not parsed.params
-        and not parsed.query
-        and not parsed.fragment
-        and parsed.path in {"", "/"}
-        and _is_loopback_host(parsed.hostname or "")
-    )
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    if parsed.username or parsed.password:
+        return False
+    # Same-Origin match against request Host header
+    if req_host:
+        norm_req_host = req_host.split(":")[0].strip().lower()
+        if parsed.hostname and parsed.hostname.lower() == norm_req_host:
+            return True
+    return _is_trusted_host(parsed.hostname or "")
+
+
+def _is_loopback_origin(origin: str) -> bool:
+    """Kompatibilitäts-Wrapper."""
+    return _is_allowed_origin(origin)
 
 
 def _control_bind_host() -> str:
@@ -2751,7 +2950,8 @@ class ControlHandler(BaseHTTPRequestHandler):
 
     def _cors(self):
         origin = str(self.headers.get("Origin") or "").strip()
-        if not _is_loopback_origin(origin):
+        host = str(self.headers.get("Host") or "").strip()
+        if not _is_allowed_origin(origin, host):
             return
         self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Vary", "Origin")
@@ -2791,7 +2991,8 @@ class ControlHandler(BaseHTTPRequestHandler):
 
     def _allow_json_post(self) -> bool:
         origin = str(self.headers.get("Origin") or "").strip()
-        if origin and not _is_loopback_origin(origin):
+        host = str(self.headers.get("Host") or "").strip()
+        if origin and not _is_allowed_origin(origin, host):
             self._json({"error": "Fremd-Origin nicht erlaubt"}, 403)
             return False
 

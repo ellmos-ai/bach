@@ -722,6 +722,9 @@
                 <button class="btn-footer-protocols" id="btn-open-all-protocols" title="Telegram- und Worker-Protokolle einsehen">
                     <span>📜</span> Alle Protokolle (Telegram/Worker)
                 </button>
+                <a id="btn-open-activity-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-footer-protocols" style="text-decoration:none; margin-top:6px; display:inline-flex; align-items:center; justify-content:center; gap:6px;" title="Aktivitätsanzeige & Worker-Dashboard (Port 8081) öffnen">
+                    <span>⚙️</span> Worker-Dashboard (8081) ↗
+                </a>
             </div>
         </aside>
 
@@ -1369,6 +1372,12 @@
         });
 
         // ── Init ──
+        const btnActivityLink = document.getElementById('btn-open-activity-link');
+        if (btnActivityLink) {
+            const h = window.location.hostname || 'localhost';
+            btnActivityLink.href = `http://${h}:8081/activity`;
+        }
+
         function loadHistory() {
             return loadActiveChat();
         }

@@ -92,10 +92,28 @@
             <button type="button" class="btn btn-primary" id="save-theme">Theme speichern</button>
             <span id="settings-status" role="status" aria-live="polite">Lade Einstellung …</span>
         </div>
+
+        <section class="custom-panel" style="margin-top: 2.5rem;">
+            <h2>🤖 KI-Backend & Worker-Steuerung</h2>
+            <p class="text-muted">Live-Dashboard für Buddha-Slots, dynamische Hintergrundworker, CLI-Agenten, Tool-Runden und System-Aktivität.</p>
+            <div style="margin-top: 1rem; display: flex; gap: 1rem; flex-wrap: wrap; align-items: center;">
+                <a id="link-activity" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="text-decoration:none; display:inline-flex; align-items:center; gap:0.5rem; padding: 0.6rem 1.2rem; font-weight:600;">
+                    <span>📊 Aktivitätsanzeige & Worker-Dashboard (Port 8081) ↗</span>
+                </a>
+                <span class="text-muted" style="font-size:0.85rem;" id="link-activity-sub">Läuft auf Port 8081</span>
+            </div>
+        </section>
     </main>
 
     <script src="/static/js/nav.js?v=5"></script>
     <script>
+        const host = window.location.hostname || 'localhost';
+        const activityLink = document.getElementById('link-activity');
+        if (activityLink) {
+            activityLink.href = `http://${host}:8081/activity`;
+            const sub = document.getElementById('link-activity-sub');
+            if (sub) sub.textContent = `http://${host}:8081/activity`;
+        }
         const COLOR_LABELS = {
             bg_dark: 'Seitenhintergrund', bg_panel: 'Panel', bg_card: 'Karte',
             bg_elevated: 'Angehoben', accent: 'Akzent', accent_light: 'Akzent hell',
