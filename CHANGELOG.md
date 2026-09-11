@@ -67,6 +67,17 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
   `tests/test_test_handler_adapter.py` (15 Tests). Nachweise: QUICK via Adapter (B001 5.0)
   und Legacy-Rollback (5.0/5.0) vom 2026-09-12.
 
+### Docs
+
+- **Help-Forensik scheduler.txt (Task 1226):** Die in TRANSFER-03 (Task 1219) eingefuehrte
+  CLI-Gruppe `bach scheduler external status|jobs|verify [--apply]` war in der deutschen
+  Help nicht dokumentiert → neuer Abschnitt „Externer Scheduler" inkl. Rollback
+  `BACH_USE_EXTERNAL_SCHEDULER=0`, Fail-Closed-Verhalten, isoliertem State-Store
+  (data/scheduler_external/) und Verify-Skip-Regel fuer Bare-Commands. Toter Verweis
+  `docs/CONCEPT_daemon_policy.md` entfernt (Datei existiert nirgends im Repo, nirgends
+  referenziert). Stand/Validierung aktualisiert auf 2026-09-12. Forensik-Bericht:
+  logs/help_forensic/REPORT_2026-09-12_scheduler.md
+
 ## [v3.14.0] - 2026-09-11
 
 ### Added
