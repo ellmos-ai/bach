@@ -125,9 +125,12 @@ default loopback address or behind an existing trusted access boundary.
 
 ## MCP Servers (Claude Code Integration)
 
-BACH provides two MCP servers for integration with Claude Code, Cursor, and other IDEs. Cross-platform tested on Windows, macOS (ARM64), and Linux:
+BACH provides a built-in Python MCP server plus two companion servers for integration with Claude Code, Cursor, and other IDEs:
 
 ```bash
+# Start the built-in BACH server (stdio)
+bach mcp serve
+
 # Install and configure MCP servers (recommended)
 python system/bach.py setup mcp
 
@@ -135,6 +138,7 @@ python system/bach.py setup mcp
 npm install -g ellmos-codecommander-mcp ellmos-filecommander-mcp
 ```
 
+- **BACH MCP Server** - BACH resources, tools, and prompts via the handler API (`bach mcp serve`)
 - **[ellmos-codecommander-mcp](https://www.npmjs.com/package/ellmos-codecommander-mcp)** v1.3.14 - Code analysis and refactoring tools (21 tools)
 - **[ellmos-filecommander-mcp](https://www.npmjs.com/package/ellmos-filecommander-mcp)** v1.9.1 - File management and batch operations (46 tools)
 
