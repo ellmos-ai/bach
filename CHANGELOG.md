@@ -8,6 +8,22 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Added
 
+- **system-explorer Topologie- & System-Audit verdrahtet (TRANSFER-05 / Task 1221):**
+  Native Preflight-Audits in `system/hub/system_audit.py` (unabhaengig vom externen Modul):
+  Ports 8000 (GUI-Server) und 8081 (BACH_CONTROL_PORT) mit connect-Test und
+  Besitzer-Identifikation (psutil mit lsof-Fallback fuer macOS ohne Root), Zombie-Prozesse
+  (defunct + BACH-Marker) und Lock-/PID-Dateien (live/stale/foreign/unparseable; int- und
+  JSON-PIDs). Provider-Seam `system/hub/explorer_provider.py` nach scheduler_provider-Muster:
+  Rollback `BACH_USE_EXTERNAL_EXPLORER=0`, Scan-Budget `BACH_EXPLORER_SCAN_BUDGET` (Default
+  10s), fail-closed Vertragspruefung, begrenzter Topologie-Scan in temporaeren Store mit
+  Cleanup. Verdrahtet in `bach setup preflight` (opt-in Topologie-Sektion, fail-soft) und
+  `bach upgrade --check` (JSON-Feld `topology`, Text-Sektion, Drift gegen
+  `data/explorer_state/last_topology.json`). Nachweise (mac-studio): Preflight klassifiziert
+  die Live-Ports korrekt, Topologie-Scan 251 Dateien/9 Registries, Rollback-Matrix gruen,
+  Drift-Monitoring funktionsfaehig (280→281 erkannt, danach 0). Regressionstests:
+  `tests/test_explorer_provider_wiring.py` (31 Tests, deterministisch: Lock-Klassifikation
+  via _pid_bach_states-Stub, Upgrade-JSON-Pfad gegen isoliertes dist-Schema statt Skip).
+
 - **ellmos-Scheduler Provider-Seam verdrahtet (TRANSFER-03 / Task 1219):**
   `system/hub/scheduler_provider.py` ist jetzt vollstaendig mit dem installierten
   `ellmos-scheduler` (v0.3.3, Pin 296b6f5 in requirements.txt) verdrahtet: Rollback-Schalter

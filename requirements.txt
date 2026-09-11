@@ -62,3 +62,9 @@ pyautogui>=0.9.54         # GUI automation (prompt session, ATI)
 assistant-core @ git+https://github.com/ellmos-ai/assistant-core.git@444a1fffd56236078988d088f6237f706c3e15a9
 # Konten-Fachkern (Welle 2, D-20260903-003 = A): bank_accounts core (gui/server.py, hub/steuer.py CAMT import)
 accounts-core @ git+https://github.com/ellmos-ai/accounts-core.git@v0.1.1
+# Scheduler-Fachkern (TRANSFER-03, MODULRUECKTRANSFER Stufe 3): Provider-Seam hub/scheduler_provider.py;
+# Rollback via BACH_USE_EXTERNAL_SCHEDULER=0; Legacy-Job-Store bleibt Fail-Closed-Fallback
+ellmos-scheduler @ git+https://github.com/ellmos-ai/ellmos-scheduler.git@296b6f5
+# Topologie- & Health-Checks (TRANSFER-05, MODULRUECKTRANSFER Stufe 5): Provider-Seam hub/explorer_provider.py;
+# native Port-/Zombie-/Lock-Audits in hub/system_audit.py bleiben unabhaengig; Rollback via BACH_USE_EXTERNAL_EXPLORER=0
+system-explorer @ git+https://github.com/ellmos-ai/system-explorer.git@bd250b1a5e081ea95df2cfdbc21a676d1db40712

@@ -112,9 +112,33 @@ Gemäß den Grundsätzen aus der BACH-Roadmap und den Nutzerentscheidungen (`D-2
   in GUARDED_FILES aufgenommen). 114 Tests grün im betroffenen Umfeld
   (accounts/steuer/financial_summary).
 
-### Stufe 5: `system-explorer` Topology- & Health-Checks (Task 1221)
+### Stufe 5: `system-explorer` Topology- & Health-Checks (Task 1221) — *ABGESCHLOSSEN (2026-09-12)*
 - Anbindung an `bach setup preflight` und `bach upgrade check`.
 - Unabhängiges Scannen von Port 8000, 8081 und Zombie-Prozessen.
+- **Umsetzung:** Native Audits in `system/hub/system_audit.py` (UNABHÄNGIG vom
+  Modul): Port-8000/8081-Prüfung mit Prozess-Zuordnung (psutil, macOS-lsof-
+  Fallback ohne Root), Zombie-Scan (defunct, BACH-Zombies markiert),
+  Lock-/PID-Audit im DATA_DIR (live/stale/foreign/unklar). Externer
+  Topologie-Scan über Provider-Seam `system/hub/explorer_provider.py`
+  (find_spec-Probe, fail-closed Contract-Factory, Rollback
+  `BACH_USE_EXTERNAL_EXPLORER=0`, Budget `BACH_EXPLORER_SCAN_BUDGET`):
+  begrenzter Scan (10s Default, include md/json/toml/yaml, data/logs/
+  explorer_state exkludiert) in Temp-Store, Knotenzählung je Typ.
+- **Nachweise (mac-studio):** Preflight zeigt Port 8000/8081 korrekt als
+  „belegt durch BACH" (GUI-Server PID + Control-Port PID via lsof-Fallback,
+  da psutil.net_connections auf macOS AccessDenied wirft) und
+  Topologie-Evidenz „280→251 Dateien, 12→9 registries, 0.6s";
+  `upgrade --check` (Text + `--json`) hängt Topologie-Audit an und erkennt
+  Drift gegen `data/explorer_state/last_topology.json` (Persistenz nur im
+  Upgrade-Check als Drift-Monitor; Nachweis: 280→281 durch das eigene
+  State-File, danach exkludiert → 0 Drift). Rollback-Matrix
+  (0/false/no/off) → „Topologie-Scan: deaktiviert"; native Audits laufen
+  weiter. Wächter: `system/tests/test_explorer_provider_wiring.py`
+  (Probe/Rollback, Port frei/belegt, Zombie-Fakes, Lock-Zustände,
+  Factory fail-closed, Fixture-Scan, Drift 3-Phasen, Preflight/Upgrade-
+  Verdrahtung, AST-Guards: setup/upgrade importieren den Seam,
+  system_audit bleibt modulunabhängig, kein Direktimport im hub). Pin:
+  `system-explorer@bd250b1` in requirements.txt.
 
 ### Stufe 6: `memoryhooker` & `workflowhooker` Verdrahtung (Task 1222)
 - Dynamisches Einhängen von Hookern in `ChatRuntime.process` und `HookManager.emit`.
