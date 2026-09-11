@@ -8,6 +8,13 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Added
 
+- **Routinika-Fälligkeiten im Daily-Agent-Briefing:** Das standardmäßig
+  deaktivierte Modul `routinika_briefing` konsumiert geschlossene
+  `org.ellmos.routinika.reminder-projection`-v1-Projektionen strikt read-only.
+  Exakte Tabellen-/Spalten-Allowlist, Provenienz, UTC-Fenster, Tombstones und
+  Hash-Readback schlagen geschlossen fehl; `--dry-run` kann eine synthetische
+  Projektion samt nicht personenbezogenen Receipt-Metadaten prüfen, ohne BACH-
+  oder Projektionszustand zu verändern.
 - **Optionale Unified-GUI-Konsole:** BACH kann `ellmos-unified-gui` über den
   reproduzierbar gepinnten Installations-Extra `.[console]` und die expliziten
   Host-Schalter `BACH_GUI_CONSOLE_ENABLED`/`BACH_GUI_CONSOLE_PREFIX` unter

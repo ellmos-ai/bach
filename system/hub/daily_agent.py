@@ -47,6 +47,12 @@ from pathlib import Path
 from typing import List, Tuple
 
 from .base import BaseHandler
+from ._services.routinika_projection import (
+    DEFAULT_MINIMUM_OFFLINE_SECONDS,
+    RoutinikaProjectionError,
+    format_routinika_briefing,
+    read_routinika_projection,
+)
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if sys.stdout:
@@ -77,6 +83,7 @@ class DailyAgentHandler(BaseHandler):
         "news_briefing": ("News-Ueberblick", True),
         "session_briefing": ("Letzte Session", True),
         "commitment_briefing": ("Fällige Routinen und Fristen", True),
+        "routinika_briefing": ("Routinika-Fälligkeiten (read-only Projektion)", False),
         "weather_briefing": ("Wetter", False),
         "calendar_briefing": ("Kalender", False),
     }
@@ -95,7 +102,7 @@ class DailyAgentHandler(BaseHandler):
         }
 
     def handle(self, operation: str, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
-        if dry_run and operation != "deliver":
+        if dry_run and operation not in {"briefing", "deliver"}:
             return True, f"[DRY-RUN] daily-agent {operation}"
 
         if operation == "start":
@@ -105,7 +112,7 @@ class DailyAgentHandler(BaseHandler):
         elif operation == "status":
             return self._status(args)
         elif operation == "briefing":
-            return self._briefing(args)
+            return self._briefing(args, dry_run=dry_run)
         elif operation == "deliver":
             return self._deliver(args, dry_run=dry_run)
         elif operation == "summary":
@@ -299,18 +306,45 @@ class DailyAgentHandler(BaseHandler):
         except Exception:
             return ["task_briefing", "message_briefing", "session_briefing"]
 
-    def _briefing(self, args: List[str]) -> Tuple[bool, str]:
+    def _briefing(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
         """Generiert ein modulares Morgen-Briefing."""
-        read_only_config = "--read-only-config" in args
-        conn = sqlite3.connect(str(self.db_path))
+        clean_args = [arg for arg in args if arg not in {"--dry-run", "-n"}]
+        read_only_config = dry_run or "--read-only-config" in clean_args
+        include_routinika_receipt = "--routinika-receipt" in clean_args
+        projection_options = [
+            arg.split("=", 1)[1]
+            for arg in clean_args
+            if arg.startswith("--routinika-projection=")
+        ]
+        if len(projection_options) > 1 or any(not value for value in projection_options):
+            return False, "--routinika-projection muss genau einen nicht leeren Pfad enthalten."
+        supported = {"--read-only-config", "--routinika-receipt"}
+        unsupported = [
+            arg
+            for arg in clean_args
+            if arg not in supported and not arg.startswith("--routinika-projection=")
+        ]
+        if unsupported:
+            return False, f"Unbekannte Option für daily-agent briefing: {unsupported[0]}"
+        projection_override = projection_options[0] if projection_options else None
+
+        if read_only_config:
+            db_uri = f"file:{self.db_path.resolve().as_posix()}?mode=ro"
+            conn = sqlite3.connect(db_uri, uri=True)
+        else:
+            conn = sqlite3.connect(str(self.db_path))
         try:
             conn.row_factory = sqlite3.Row
 
             lines = [f"MORGEN-BRIEFING ({date.today().strftime('%d.%m.%Y')})", "=" * 45]
+            if dry_run:
+                lines.insert(0, "[DRY-RUN] Read-only Briefing-Vorschau")
 
             active_modules = self._get_active_modules(
                 conn, ensure_config=not read_only_config
             )
+            if projection_override and "routinika_briefing" not in active_modules:
+                active_modules.append("routinika_briefing")
 
             module_methods = {
                 "task_briefing": self._mod_task_briefing,
@@ -318,6 +352,11 @@ class DailyAgentHandler(BaseHandler):
                 "news_briefing": self._mod_news_briefing,
                 "session_briefing": self._mod_session_briefing,
                 "commitment_briefing": self._mod_commitment_briefing,
+                "routinika_briefing": lambda current_conn: self._mod_routinika_briefing(
+                    current_conn,
+                    projection_override=projection_override,
+                    include_receipt=include_routinika_receipt,
+                ),
                 "weather_briefing": self._mod_weather_briefing,
                 "calendar_briefing": self._mod_calendar_briefing,
             }
@@ -331,6 +370,8 @@ class DailyAgentHandler(BaseHandler):
                             lines.append(block)
                     except Exception as e:
                         lines.append(f"\n[{mod_name}] Fehler: {e}")
+                        if mod_name == "routinika_briefing":
+                            return False, "\n".join(lines)
 
             return True, "\n".join(lines)
         finally:
@@ -571,6 +612,54 @@ class DailyAgentHandler(BaseHandler):
 
         return "\n".join(parts)
 
+    def _mod_routinika_briefing(
+        self,
+        conn,
+        *,
+        projection_override: str | None = None,
+        include_receipt: bool = False,
+    ) -> str:
+        """Modul: strikt read-only geprüfte Routinika-Fälligkeiten."""
+        settings = self._briefing_module_settings(conn, "routinika_briefing")
+        projection_path = projection_override or settings.get("projection_path")
+        if not isinstance(projection_path, str) or not projection_path.strip():
+            raise RoutinikaProjectionError(
+                "Kein Projektionspfad konfiguriert. Nutze daily-agent config "
+                "routinika_briefing --projection=<absoluter-pfad>."
+            )
+        offline_seconds = settings.get(
+            "minimum_offline_seconds", DEFAULT_MINIMUM_OFFLINE_SECONDS
+        )
+        projection = read_routinika_projection(
+            projection_path, minimum_offline_seconds=offline_seconds
+        )
+        return format_routinika_briefing(
+            projection, include_receipt=include_receipt
+        )
+
+    @staticmethod
+    def _briefing_module_settings(conn, module_name: str) -> dict:
+        try:
+            row = conn.execute(
+                "SELECT settings_json FROM briefing_config WHERE module_name = ?",
+                (module_name,),
+            ).fetchone()
+        except sqlite3.Error:
+            return {}
+        if not row or not row[0]:
+            return {}
+        try:
+            settings = json.loads(row[0])
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise RoutinikaProjectionError(
+                f"Ungültige settings_json für {module_name}."
+            ) from exc
+        if not isinstance(settings, dict):
+            raise RoutinikaProjectionError(
+                f"settings_json für {module_name} muss ein Objekt sein."
+            )
+        return settings
+
     def _mod_weather_briefing(self, conn) -> str:
         """Modul: Wetter (optional, benoetigt weather_service)."""
         try:
@@ -644,7 +733,79 @@ class DailyAgentHandler(BaseHandler):
 
     def _config(self, args: List[str]) -> Tuple[bool, str]:
         """Zeigt Briefing-Konfiguration."""
+        if args:
+            return self._configure_module(args)
         return self._modules(args)
+
+    def _configure_module(self, args: List[str]) -> Tuple[bool, str]:
+        """Speichert eng begrenzte Einstellungen eines Briefing-Moduls."""
+        module_name = args[0]
+        if module_name != "routinika_briefing":
+            return False, "Konfigurierbar ist derzeit nur: routinika_briefing"
+        options = args[1:]
+        if "--clear" in options:
+            if len(options) != 1:
+                return False, "--clear darf nicht mit weiteren Optionen kombiniert werden."
+            settings = {}
+        else:
+            projection_values = [
+                arg.split("=", 1)[1]
+                for arg in options
+                if arg.startswith("--projection=")
+            ]
+            offline_values = [
+                arg.split("=", 1)[1]
+                for arg in options
+                if arg.startswith("--minimum-offline-seconds=")
+            ]
+            unknown = [
+                arg
+                for arg in options
+                if not arg.startswith("--projection=")
+                and not arg.startswith("--minimum-offline-seconds=")
+            ]
+            if unknown:
+                return False, f"Unbekannte Konfigurationsoption: {unknown[0]}"
+            if len(projection_values) != 1 or not projection_values[0]:
+                return False, "Genau ein --projection=<absoluter-pfad> ist erforderlich."
+            if len(offline_values) > 1:
+                return False, "--minimum-offline-seconds darf nur einmal vorkommen."
+            projection = Path(projection_values[0]).expanduser()
+            if not projection.is_absolute():
+                return False, "Der Projektionspfad muss absolut sein."
+            try:
+                offline_seconds = int(offline_values[0]) if offline_values else DEFAULT_MINIMUM_OFFLINE_SECONDS
+            except ValueError:
+                return False, "--minimum-offline-seconds muss eine Ganzzahl sein."
+            if offline_seconds < 0:
+                return False, "--minimum-offline-seconds darf nicht negativ sein."
+            settings = {
+                "minimum_offline_seconds": offline_seconds,
+                "projection_path": str(projection.resolve()),
+            }
+
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            conn.row_factory = sqlite3.Row
+            self._ensure_briefing_config(conn)
+            row = conn.execute(
+                "SELECT is_active FROM briefing_config WHERE module_name = ?",
+                (module_name,),
+            ).fetchone()
+            conn.execute(
+                "UPDATE briefing_config SET settings_json = ? WHERE module_name = ?",
+                (json.dumps(settings, ensure_ascii=False, sort_keys=True), module_name),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        active = bool(row["is_active"]) if row else False
+        state = "aktiv" if active else "deaktiviert"
+        return True, (
+            f"[OK] Consumer-Einstellungen für '{module_name}' gespeichert; "
+            f"Modul bleibt {state}."
+        )
 
     def _modules(self, args: List[str]) -> Tuple[bool, str]:
         """Zeigt aktive und inaktive Briefing-Module."""

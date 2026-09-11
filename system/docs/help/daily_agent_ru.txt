@@ -1,5 +1,5 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
+# Last validated: 2026-09-05
 # Next review: 2027-05-17
 
 ЕЖЕДНЕВНЫЙ АГЕНТ — автономный ежедневный агент с постоянным сеансом 
@@ -20,8 +20,11 @@
   bach daily-agent stop                 Остановить агент + сводку сеанса
   bach daily-agent status               Показать PID и информацию о времени выполнения
   bach daily-agent briefing             Утренний брифинг (активные модули)
+  bach daily-agent briefing --dry-run   Предпросмотр только для чтения
   bach daily-agent summary              Создать вечерний обзор
   bach daily-agent config               Список модулей брифинга
+  bach daily-agent config routinika_briefing --projection=<абсолютный-путь>
+                                        Сохранить путь потребителя Routinika
   bach daily-agent modules              Псевдоним для конфигурации
   bach daily-agent toggle <modul>       Модуль Включение/выключение
 
@@ -30,6 +33,8 @@
   message_briefing Непрочитанные сообщения (ВКЛ)
   news_briefing Обзор новостей (AN)
   session_briefing Последняя сессия (ВКЛ)
+  commitment_briefing Локальные процедуры и сроки (ВКЛ)
+  routinika_briefing Федеративные сроки (ВЫКЛ)
   Weather_briefing Погода (по умолчанию: ВЫКЛ.)
   Calendar_briefing Календарные встречи (ВЫКЛ)
 
@@ -40,6 +45,8 @@
   bach daily-agent start --model=opus   Начинает с модели «opus»
   bach daily-agent status               Показывает PID и время начала
   bach daily-agent briefing             Создает брифинг с активными модулями
+  bach daily-agent briefing --routinika-projection=C:\staging\routinika.sqlite --routinika-receipt --dry-run
+                                        Проверяет закрытую проекцию без записи
   bach daily-agent toggle news_briefing Deaktiviert News-Modul
   bach daily-agent summary              Показывает задачи, выполненные сегодня
   bach daily-agent stop                 Останавливает агент + сохраняет сводку
@@ -59,6 +66,8 @@ task_briefing: 10 наиболее ожидающих задач (названи
 message_briefing: счетчик непрочитанных сообщений (status='unread')
 news_briefing: непрочитанные новости из news_items (верхние категории + 3 заголовка)
 session_briefing: Последняя память_сессий.summary (сокращена до 120 символов)
+routinika_briefing: непрозрачные сроки из строго разрешенной закрытой SQLite-
+                    проекции Routinika v1; по умолчанию выключен.
 Weather_briefing: попробовал Weather_service (координаты жестко запрограммированы на 0,0)
 Calendar_briefing: Сегодняшние события из Calendar_events (5 следующих событий)
 
@@ -68,6 +77,8 @@ Calendar_briefing: Сегодняшние события из Calendar_events (5
 - Агент запускается в фоновом режиме (stdout/stderr подавлен)
 - Файл PID необходимо удалить вручную в случае сбоя процесса.
 - Модули брифинга игнорируют тихие ошибки БД (например, если news_items не существует)
+- Активная или явно указанная проекция Routinika закрыто отказывает при ошибке
+  контракта, происхождения или состояния закрытия.
 - остановить сохранение сводки, ДАЖЕ если агент уже мертв
 
 

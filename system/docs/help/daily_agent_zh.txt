@@ -1,5 +1,5 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
+# Last validated: 2026-09-05
 # Next review: 2027-05-17
 
 DAILY AGENT - 具有持久会话的自治日常代理
@@ -20,8 +20,11 @@ DAILY AGENT - 具有持久会话的自治日常代理
   bach daily-agent stop                 停止代理 + 会话摘要
   bach daily-agent status               显示 PID 和运行时信息
   bach daily-agent briefing             上午简报（活动模块）
+  bach daily-agent briefing --dry-run   只读简报预览
   bach daily-agent summary              生成晚间摘要
   bach daily-agent config               列出简报模块
+  bach daily-agent config routinika_briefing --projection=<绝对路径>
+                                        保存 Routinika 消费者路径
   bach daily-agent modules              配置别名
   bach daily-agent toggle <modul>       模块开关
 
@@ -30,6 +33,8 @@ DAILY AGENT - 具有持久会话的自治日常代理
   message_briefing 未读消息（开启）
   news_briefing 新闻概述 (AN)
   session_briefing 上次会议（开启）
+  commitment_briefing 本地例程和期限（开启）
+  routinika_briefing 联邦到期提醒（关闭）
   Weather_briefing 天气（默认值：关闭）
   calendar_briefing 日历约会（关闭）
 
@@ -40,6 +45,8 @@ DAILY AGENT - 具有持久会话的自治日常代理
   bach daily-agent start --model=opus   以模型“opus”启动
   bach daily-agent status               显示 PID 和开始时间
   bach daily-agent briefing             使用活动模块生成简报
+  bach daily-agent briefing --routinika-projection=C:\staging\routinika.sqlite --routinika-receipt --dry-run
+                                        验证关闭的投影且不写入
   bach daily-agent toggle news_briefing Deaktiviert News-Modul
   bach daily-agent summary              显示今天完成的任务
   bach daily-agent stop                 停止代理 + 保存摘要
@@ -59,6 +66,8 @@ task_briefing：前 10 个待处理任务（标题缩短），可能是重复性
 message_briefing：未读消息计数器（status='unread'）
 news_briefing：来自 news_items 的未读新闻（顶级类别 + 3 个标题）
 session_briefing：最后的内存_sessions.summary（缩短为120个字符）
+routinika_briefing：来自严格允许且已关闭的 Routinika v1 SQLite 投影的
+                    不透明到期项；默认关闭。
 Weather_briefing：尝试了weather_service（坐标硬编码为0.0）
 calendar_briefing：来自 calendar_events 的今天事件（接下来的 5 个事件）
 
@@ -68,6 +77,7 @@ calendar_briefing：来自 calendar_events 的今天事件（接下来的 5 个�
 - 代理在后台启动（stdout/stderr 被抑制）
 - 如果进程崩溃，必须手动删除PID文件
 - 简报模块忽略静默数据库错误（例如，如果 news_items 不存在）
+- 活动或显式指定的 Routinika 投影遇到契约、来源或关闭状态错误时会失败关闭。
 - 即使代理已经死亡，停止也会保存摘要
 
 
