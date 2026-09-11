@@ -6,6 +6,8 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+## [v3.14.0] - 2026-09-11
+
 ### Added
 
 - **Routinika-Fälligkeiten im Daily-Agent-Briefing:** Das standardmäßig
