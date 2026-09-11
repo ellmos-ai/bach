@@ -139,6 +139,8 @@ class BACHTray:
         }
         self.backends = {}
         self.models = []
+        self.slots = {}
+        self.dynamic_workers = []
         self.icon = None
         self._stop = threading.Event()
 
@@ -199,6 +201,13 @@ class BACHTray:
         ms = self._api("GET", "/api/models")
         if ms and "models" in ms:
             self.models = ms["models"]
+
+        slots_resp = self._api("GET", "/api/slots")
+        if slots_resp and slots_resp.get("ok"):
+            self.slots = slots_resp.get("slots", {})
+            self.dynamic_workers = slots_resp.get("dynamic_workers", [])
+            if "fackel_preference" in slots_resp:
+                self.state["fackel_preference"] = slots_resp["fackel_preference"]
 
         self.services["control"] = self.state["connected"]
         self.services["gui"] = self._check_url(self.gui_url + "/")
@@ -401,7 +410,8 @@ class BACHTray:
     # --- Idle Worker ---
 
     def _idle_tick(self):
-        if not self.idle_enabled or self.idle_processing:
+        always_on = self.slots.get("buddha_always_on", {})
+        if not self.idle_enabled or not always_on.get("enabled", True) or self.idle_processing:
             return
 
         active = self.state.get("active_sessions", self.state.get("sessions", 0))
@@ -720,73 +730,151 @@ class BACHTray:
             ))
             items.append(pystray.Menu.SEPARATOR)
 
-            # Backend
-            current_backend_id = str(self.state.get("backend_id") or "").lower()
-            current_backend_name = str(self.state.get("backend") or "").lower()
-            active_backend_display = self.state.get("backend", "?")
-            if self.state.get("backend_cli"):
-                active_backend_display += f" ({self.state['backend_cli']})"
+            chat_slot = self.slots.get("buddha_chat", {})
+            always_slot = self.slots.get("buddha_always_on", {})
+            conn_slot = self.slots.get("buddha_connector", {})
 
-            backend_items = []
-            for name, info in self.backends.items():
-                label = name.capitalize() if name in ("ollama", "hermes", "claude", "codex", "openai") else name
-                if info.get("status") and info["status"] != "bereit":
-                    label += f" [{info['status']}]"
-                is_selected = (name.lower() == current_backend_id) or (name.lower() in current_backend_name)
-                backend_items.append(pystray.MenuItem(
-                    label, self._make_backend_action(name),
-                    checked=lambda item, sel=is_selected: sel,
-                ))
-            if backend_items:
-                items.append(pystray.MenuItem(f"Backend: {active_backend_display}", pystray.Menu(*backend_items)))
+            chat_model = chat_slot.get("model") or self.state.get("model", "?")
+            chat_backend = chat_slot.get("backend") or "ollama"
+            chat_rounds = chat_slot.get("max_tool_rounds", 12)
+            chat_mode = chat_slot.get("mode", "safe")
+            chat_think = chat_slot.get("think", True)
 
-            # Model
-            active_model = self.state.get("model", "?")
+            always_model = always_slot.get("model") or "qwen3.8:27b-mlx"
+            always_backend = always_slot.get("backend") or "ollama"
+            always_rounds = always_slot.get("max_tool_rounds", 25)
+            always_mode = always_slot.get("mode", "full")
+            always_enabled = always_slot.get("enabled", True) and self.idle_enabled
+            always_status_str = "Aktiv" if always_enabled else "Pausiert"
+
+            conn_model = conn_slot.get("model") or "qwen3.8:27b-mlx"
+            conn_backend = conn_slot.get("backend") or "ollama"
+            conn_rounds = conn_slot.get("max_tool_rounds", 10)
+
+            # Slot 1: Buddha Chat
+            chat_subitems = []
             if self.models:
-                model_items = []
-                for m in self.models[:15]:
-                    model_items.append(pystray.MenuItem(
-                        m, self._make_model_action(m),
-                        checked=lambda item, m=m: m == self.state["model"],
-                    ))
-                items.append(pystray.MenuItem(f"Modell: {active_model}", pystray.Menu(*model_items)))
+                chat_model_items = [
+                    pystray.MenuItem(m, self._make_slot_model_action("buddha_chat", m),
+                                     checked=lambda item, m=m, s=chat_model: m == s)
+                    for m in self.models[:15]
+                ]
+                chat_subitems.append(pystray.MenuItem(f"Modell: {chat_model}", pystray.Menu(*chat_model_items)))
 
-            items.append(pystray.Menu.SEPARATOR)
+            chat_backend_items = [
+                pystray.MenuItem(name.capitalize(), self._make_slot_backend_action("buddha_chat", name),
+                                 checked=lambda item, n=name, b=chat_backend: n.lower() == b.lower())
+                for name in self.backends.keys()
+            ]
+            if chat_backend_items:
+                chat_subitems.append(pystray.MenuItem(f"Backend: {chat_backend}", pystray.Menu(*chat_backend_items)))
 
-            # Mode
-            items.append(pystray.MenuItem(
-                "Safe-Modus",
-                lambda *_: self._set_mode("safe"),
-                checked=lambda item: self.state["mode"] == "safe",
-            ))
-            items.append(pystray.MenuItem(
-                "Full-Modus",
-                lambda *_: self._set_mode("full"),
-                checked=lambda item: self.state["mode"] == "full",
-            ))
-            items.append(pystray.Menu.SEPARATOR)
+            chat_round_items = [
+                pystray.MenuItem("Unbegrenzt" if v == 0 else f"{v} Turns",
+                                 self._make_slot_rounds_action("buddha_chat", v),
+                                 checked=lambda item, v=v, cr=chat_rounds: cr == v)
+                for v in [5, 10, 12, 15, 20, 0]
+            ]
+            chat_subitems.append(pystray.MenuItem(f"Max Turns: {'Unbegrenzt' if chat_rounds == 0 else chat_rounds}", pystray.Menu(*chat_round_items)))
+            chat_subitems.append(pystray.MenuItem("Safe-Modus", self._make_slot_mode_action("buddha_chat", "safe"),
+                                                  checked=lambda item, cm=chat_mode: cm == "safe"))
+            chat_subitems.append(pystray.MenuItem("Full-Modus", self._make_slot_mode_action("buddha_chat", "full"),
+                                                  checked=lambda item, cm=chat_mode: cm == "full"))
+            chat_subitems.append(pystray.MenuItem("Denkmodus", lambda *_: self._toggle_slot_think("buddha_chat"),
+                                                  checked=lambda item, ct=chat_think: ct))
+            items.append(pystray.MenuItem(f"💬 Buddha Chat: {chat_model}", pystray.Menu(*chat_subitems)))
 
-            # Think
-            items.append(pystray.MenuItem(
-                "Denkmodus",
-                self._toggle_think,
-                checked=lambda item: self.state["think"],
+            # Slot 2: Buddha Always-On (Hintergrundworker)
+            always_subitems = []
+            always_subitems.append(pystray.MenuItem(
+                "Always-On aktivieren",
+                lambda *_: self._toggle_slot_enabled("buddha_always_on"),
+                checked=lambda item, en=always_enabled: en
             ))
-            items.append(pystray.Menu.SEPARATOR)
+            if self.models:
+                always_model_items = [
+                    pystray.MenuItem(m, self._make_slot_model_action("buddha_always_on", m),
+                                     checked=lambda item, m=m, s=always_model: m == s)
+                    for m in self.models[:15]
+                ]
+                always_subitems.append(pystray.MenuItem(f"Modell: {always_model}", pystray.Menu(*always_model_items)))
 
-            # Max Tool-Runden
-            mr = self.state.get("max_tool_rounds", 0)
-            mr_label = "Unbegrenzt" if mr == 0 else str(mr)
-            round_items = []
-            for val in [5, 10, 20, 0]:
-                lbl = "Unbegrenzt" if val == 0 else str(val)
-                round_items.append(pystray.MenuItem(
-                    lbl, self._make_rounds_action(val),
-                    checked=lambda item, v=val: self.state.get("max_tool_rounds", 0) == v,
-                ))
-            items.append(pystray.MenuItem(
-                f"Max Tool-Runden ({mr_label})", pystray.Menu(*round_items),
-            ))
+            always_backend_items = [
+                pystray.MenuItem(name.capitalize(), self._make_slot_backend_action("buddha_always_on", name),
+                                 checked=lambda item, n=name, b=always_backend: n.lower() == b.lower())
+                for name in self.backends.keys()
+            ]
+            if always_backend_items:
+                always_subitems.append(pystray.MenuItem(f"Backend: {always_backend}", pystray.Menu(*always_backend_items)))
+
+            always_round_items = [
+                pystray.MenuItem("Unbegrenzt" if v == 0 else f"{v} Turns",
+                                 self._make_slot_rounds_action("buddha_always_on", v),
+                                 checked=lambda item, v=v, ar=always_rounds: ar == v)
+                for v in [10, 20, 25, 30, 50, 0]
+            ]
+            always_subitems.append(pystray.MenuItem(f"Max Turns: {'Unbegrenzt' if always_rounds == 0 else always_rounds}", pystray.Menu(*always_round_items)))
+            always_subitems.append(pystray.MenuItem("Full-Modus (Schreibrechte)", self._make_slot_mode_action("buddha_always_on", "full"),
+                                                    checked=lambda item, am=always_mode: am == "full"))
+            always_subitems.append(pystray.MenuItem("Safe-Modus", self._make_slot_mode_action("buddha_always_on", "safe"),
+                                                    checked=lambda item, am=always_mode: am == "safe"))
+            act_text = self.idle_task_name or always_slot.get("current_activity") or "Wartet auf Leerlauf"
+            always_subitems.append(pystray.MenuItem(f"Aktivität: {act_text[:35]}", None, enabled=False))
+            items.append(pystray.MenuItem(f"⚡ Buddha Always-On [{always_status_str}]: {always_model}", pystray.Menu(*always_subitems)))
+
+            # Slot 3: Buddha Connector (Messaging)
+            conn_subitems = []
+            if self.models:
+                conn_model_items = [
+                    pystray.MenuItem(m, self._make_slot_model_action("buddha_connector", m),
+                                     checked=lambda item, m=m, s=conn_model: m == s)
+                    for m in self.models[:15]
+                ]
+                conn_subitems.append(pystray.MenuItem(f"Modell: {conn_model}", pystray.Menu(*conn_model_items)))
+
+            conn_backend_items = [
+                pystray.MenuItem(name.capitalize(), self._make_slot_backend_action("buddha_connector", name),
+                                 checked=lambda item, n=name, b=conn_backend: n.lower() == b.lower())
+                for name in self.backends.keys()
+            ]
+            if conn_backend_items:
+                conn_subitems.append(pystray.MenuItem(f"Backend: {conn_backend}", pystray.Menu(*conn_backend_items)))
+
+            conn_round_items = [
+                pystray.MenuItem(f"{v} Turns", self._make_slot_rounds_action("buddha_connector", v),
+                                 checked=lambda item, v=v, cr=conn_rounds: cr == v)
+                for v in [5, 10, 15, 20]
+            ]
+            conn_subitems.append(pystray.MenuItem(f"Max Turns: {conn_rounds}", pystray.Menu(*conn_round_items)))
+            conn_subitems.append(pystray.MenuItem("Telegram öffnen", self._open_telegram))
+            items.append(pystray.MenuItem(f"📱 Buddha Connector: {conn_model}", pystray.Menu(*conn_subitems)))
+
+            # Dynamic Workers Submenu
+            workers_subitems = []
+            for w in self.dynamic_workers:
+                wid = w.get("id", "worker")
+                wname = w.get("name", wid)
+                wstatus = w.get("status", "idle")
+                wmodel = w.get("model", "?")
+                wturns = w.get("max_tool_rounds", 20)
+                wact = w.get("current_activity", "Bereit")
+                wrole = w.get("role", "General")
+
+                w_actions = [
+                    pystray.MenuItem(f"Rolle: {wrole} | {wturns} Turns", None, enabled=False),
+                    pystray.MenuItem(f"Aktivität: {wact[:35]}", None, enabled=False),
+                    pystray.MenuItem("▶ Starten", self._run_worker_action(wid)),
+                    pystray.MenuItem("▶ Fortsetzen" if wstatus == "paused" else "⏸ Pausieren",
+                                     self._toggle_worker_action(wid, wstatus)),
+                    pystray.MenuItem("🗑 Worker löschen", self._delete_worker_action(wid)),
+                ]
+                workers_subitems.append(pystray.MenuItem(f"{wname} [{wstatus}] ({wmodel})", pystray.Menu(*w_actions)))
+
+            if workers_subitems:
+                workers_subitems.append(pystray.Menu.SEPARATOR)
+            workers_subitems.append(pystray.MenuItem("+ Neuer Worker... (Web GUI)", self._open_activity))
+            items.append(pystray.MenuItem(f"🛠 Dynamische Worker ({len(self.dynamic_workers)})", pystray.Menu(*workers_subitems)))
+
             items.append(pystray.Menu.SEPARATOR)
 
             # Fackel (Ressourcen-Priorität)
@@ -805,6 +893,9 @@ class BACHTray:
                 ),
             ]
             items.append(pystray.MenuItem(fackel_label, pystray.Menu(*fackel_items)))
+
+            # Aktivitätsanzeige
+            items.append(pystray.MenuItem("📊 Aktivitätsanzeige öffnen...", self._open_activity))
 
             # Tool-Aktivität
             ct = self.state.get("current_tool", "")
@@ -894,6 +985,7 @@ class BACHTray:
         # ── Zugangswege ──
         items.append(pystray.MenuItem("GUI Dashboard", self._open_gui))
         items.append(pystray.MenuItem("Buddha Chat", self._open_webchat))
+        items.append(pystray.MenuItem("Aktivitätsanzeige", self._open_activity))
         items.append(pystray.MenuItem("Telegram", self._open_telegram))
 
         items.append(pystray.Menu.SEPARATOR)
@@ -980,6 +1072,93 @@ class BACHTray:
         status = "aktiviert" if self.idle_enabled else "deaktiviert"
         if self.icon:
             self.icon.notify(f"Idle-Modus {status}", "BACH")
+
+    def _open_activity(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.base_url}/activity")
+
+    def _make_slot_model_action(self, slot_id, model):
+        def action(*_):
+            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"model": model}})
+            if res is None or res.get("error"):
+                self._notify_error(f"{slot_id} Modell → {model}")
+            self._refresh()
+            self._update_icon()
+        return action
+
+    def _make_slot_backend_action(self, slot_id, backend_name):
+        def action(*_):
+            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"backend": backend_name}})
+            if res is None or res.get("error"):
+                self._notify_error(f"{slot_id} Backend → {backend_name}")
+            self._refresh()
+            self._update_icon()
+        return action
+
+    def _make_slot_rounds_action(self, slot_id, rounds):
+        def action(*_):
+            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"max_tool_rounds": rounds}})
+            if res is None or res.get("error"):
+                self._notify_error(f"{slot_id} Turns → {rounds}")
+            self._refresh()
+            self._update_icon()
+        return action
+
+    def _make_slot_mode_action(self, slot_id, mode):
+        def action(*_):
+            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"mode": mode}})
+            if res is None or res.get("error"):
+                self._notify_error(f"{slot_id} Modus → {mode}")
+            self._refresh()
+            self._update_icon()
+        return action
+
+    def _toggle_slot_think(self, slot_id):
+        slot = self.slots.get(slot_id, {})
+        new_think = not slot.get("think", True)
+        res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"think": new_think}})
+        if res is None or res.get("error"):
+            self._notify_error(f"{slot_id} Think-Toggle")
+        self._refresh()
+        self._update_icon()
+
+    def _toggle_slot_enabled(self, slot_id):
+        slot = self.slots.get(slot_id, {})
+        new_enabled = not slot.get("enabled", True)
+        res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"enabled": new_enabled}})
+        if res is None or res.get("error"):
+            self._notify_error(f"{slot_id} Status-Toggle")
+        self._refresh()
+        self._update_icon()
+
+    def _run_worker_action(self, worker_id):
+        def action(*_):
+            res = self._api("POST", "/api/workers/run", {"id": worker_id})
+            if res is None or res.get("error"):
+                self._notify_error(f"Worker {worker_id} Start")
+            elif self.icon:
+                self.icon.notify(f"Worker {worker_id} gestartet", "BACH Worker")
+            self._refresh()
+        return action
+
+    def _toggle_worker_action(self, worker_id, current_status):
+        def action(*_):
+            new_status = "idle" if current_status == "paused" else "paused"
+            res = self._api("POST", "/api/workers/toggle", {"id": worker_id, "status": new_status})
+            if res is None or res.get("error"):
+                self._notify_error(f"Worker {worker_id} Toggle")
+            self._refresh()
+        return action
+
+    def _delete_worker_action(self, worker_id):
+        def action(*_):
+            res = self._api("POST", "/api/workers/delete", {"id": worker_id})
+            if res is None or res.get("error"):
+                self._notify_error(f"Worker {worker_id} Löschen")
+            elif self.icon:
+                self.icon.notify(f"Worker {worker_id} gelöscht", "BACH Worker")
+            self._refresh()
+        return action
 
     def _open_gui(self, *_):
         import webbrowser

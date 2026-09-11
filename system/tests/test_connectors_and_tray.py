@@ -868,12 +868,14 @@ class TestBACHTray:
              "backend_cli": ""},
             {"ollama": {"status": "ok"}},
             {"models": ["qwen3.5", "llama3"]},
+            {"ok": True, "slots": {"buddha_chat": {"model": "qwen3.5"}}, "dynamic_workers": []},
         ])
         tray._refresh()
         assert tray.state["backend"] == "ollama"
         assert tray.state["mode"] == "full"
         assert tray.state["connected"] is True
         assert tray.models == ["qwen3.5", "llama3"]
+        assert "buddha_chat" in tray.slots
 
     def test_refresh_marks_disconnected_on_failure(self, tray):
         tray.state["connected"] = True

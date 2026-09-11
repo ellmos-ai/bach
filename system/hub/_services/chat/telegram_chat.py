@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import sys
+from typing import Any, Dict, List, Optional
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if hasattr(sys.stdout, 'reconfigure'):
@@ -90,6 +91,18 @@ from hub._services.chat.chat_runtime import (
     RUNTIME_BACH_DB,
 )
 from hub._services.chat.session_store import SQLiteChatSessionStore
+from hub._services.chat.slots_config import (
+    DEFAULT_CORE_SLOTS,
+    add_worker,
+    get_activity_history,
+    get_slot,
+    list_workers,
+    load_slots_config,
+    record_activity,
+    remove_worker,
+    save_slots_config,
+    update_slot,
+)
 
 # Compute Lock (optional — graceful if not available)
 try:
@@ -229,6 +242,10 @@ def _patched_get_session(chat_id: str):
             if _global_defaults.get("model"):
                 session.model = _global_defaults["model"]
             session.think = _global_defaults.get("think", True)
+            try:
+                _apply_slot_to_session(chat_id, session)
+            except Exception as e:
+                log.debug("Konnte Slot nicht auf Session anwenden: %s", e)
         return session
 
 runtime.get_session = _patched_get_session
@@ -427,6 +444,107 @@ def _check_api_key(name: str) -> str:
     if name not in _API_KEY_SOURCES:
         return ""
     return "Key vorhanden" if _load_api_key(name) else "Key fehlt"
+
+
+_backends_pool: dict[str, Any] = {"ollama": backend}
+_backends_pool_lock = threading.Lock()
+
+
+def _get_or_create_backend(backend_type: str, model: str = "") -> Any:
+    backend_key = (backend_type or "ollama").lower().strip()
+    cache_key = f"{backend_key}:{model}" if model else backend_key
+
+    with _backends_pool_lock:
+        if cache_key in _backends_pool:
+            return _backends_pool[cache_key]
+        if backend_key in _backends_pool and not model:
+            return _backends_pool[backend_key]
+
+        if backend_key in BACKEND_PRESETS:
+            preset = BACKEND_PRESETS[backend_key].copy()
+            if model:
+                preset["default_model"] = model
+            if preset["method"] == "api" and backend_key in ("claude-api", "openai"):
+                api_key = _load_api_key(backend_key)
+                if api_key:
+                    preset["api_key"] = api_key
+            config = {k: v for k, v in preset.items() if k not in ("method", "description")}
+        else:
+            config = {"type": backend_key}
+            if model:
+                config["default_model"] = model
+
+        try:
+            b = create_backend(config)
+            _backends_pool[cache_key] = b
+            return b
+        except Exception as e:
+            log.warning("Konnte Backend %s nicht erstellen (%s); Fallback auf runtime.backend", cache_key, e)
+            return runtime.backend
+
+
+def _resolve_slot_for_chat(chat_id: str) -> dict:
+    try:
+        cfg = load_slots_config()
+    except Exception:
+        cfg = {}
+    slots = cfg.get("slots", {})
+    str_id = str(chat_id)
+
+    # 1. Check dynamic workers first
+    for w in cfg.get("dynamic_workers", []):
+        if w.get("id") == str_id or w.get("name") == str_id:
+            return w
+    if str_id.startswith("worker-"):
+        try:
+            for w in list_workers():
+                if w.get("id") == str_id:
+                    return w
+        except Exception:
+            pass
+        return slots.get("buddha_always_on", DEFAULT_CORE_SLOTS["buddha_always_on"])
+
+    # 2. Always-On / Idle Worker
+    if str_id in ("idle-worker", "worker-always-on") or str_id.startswith("idle"):
+        return slots.get("buddha_always_on", DEFAULT_CORE_SLOTS["buddha_always_on"])
+
+    # 3. Messaging Connectors (Telegram, WhatsApp, Signal)
+    if str_id.isdigit() or any(str_id.startswith(p) for p in ("tg:", "telegram", "wa:", "whatsapp", "signal:")):
+        conn_slot = slots.get("buddha_connector", DEFAULT_CORE_SLOTS["buddha_connector"])
+        if (str_id.isdigit() or str_id.startswith("tg:") or str_id == "telegram") and "providers" in conn_slot:
+            tg_cfg = conn_slot.get("providers", {}).get("telegram")
+            if tg_cfg:
+                combined = dict(conn_slot)
+                combined.update(tg_cfg)
+                return combined
+        return conn_slot
+
+    # 4. Default to Buddha Chat (Interactive)
+    return slots.get("buddha_chat", DEFAULT_CORE_SLOTS["buddha_chat"])
+
+
+def _apply_slot_to_session(chat_id: str, session: Any) -> tuple[Any, str]:
+    slot = _resolve_slot_for_chat(chat_id)
+    slot_backend_type = slot.get("backend") or "ollama"
+    slot_model = slot.get("model") or ""
+
+    target_backend = _get_or_create_backend(slot_backend_type, slot_model)
+    session.backend = target_backend
+    if slot_model:
+        session.model = slot_model
+    elif not getattr(session, "model", ""):
+        session.model = getattr(target_backend, "default_model", "")
+
+    if "mode" in slot:
+        session.mode = slot["mode"]
+    if "think" in slot:
+        session.think = bool(slot["think"])
+    if "max_tool_rounds" in slot:
+        session.max_tool_rounds = int(slot["max_tool_rounds"])
+    if slot.get("system_prompt"):
+        session.custom_system_prompt = slot["system_prompt"]
+
+    return target_backend, session.model
 
 
 async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -1183,7 +1301,10 @@ h1{color:#00d4ff;margin-bottom:20px;font-size:1.4em}
 </style>
 </head>
 <body>
-<h1>BACH Chat Control</h1>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+  <h1>BACH Chat Control</h1>
+  <a href="/activity" style="display:inline-block;padding:8px 14px;background:#0f3460;color:#00d4ff;border:1px solid #00d4ff;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600">📊 Zur Aktivitätsanzeige &amp; Worker Dashboard &rarr;</a>
+</div>
 
 <div class="card" id="status-card">
 <h2><span class="dot green" id="conn-dot"></span>Status</h2>
@@ -1360,6 +1481,710 @@ document.addEventListener('visibilitychange', () => {
 </html>"""
 
 
+WEB_ACTIVITY_DASHBOARD = """<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BACH Aktivitätsanzeige & Worker Dashboard</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#101726;color:#e2e8f0;padding:20px;line-height:1.5}
+a{color:#38bdf8;text-decoration:none}
+a:hover{text-decoration:underline}
+header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #1e293b}
+h1{color:#38bdf8;font-size:1.5rem;font-weight:700;display:flex;align-items:center;gap:10px}
+.subtitle{color:#94a3b8;font-size:0.85rem;margin-top:2px}
+.header-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fackel-btn{background:#1e293b;color:#f1f5f9;border:1px solid #38bdf8;padding:6px 14px;border-radius:20px;cursor:pointer;font-size:0.85rem;font-weight:600;display:flex;align-items:center;gap:6px;transition:all .2s}
+.fackel-btn:hover{background:#38bdf8;color:#0f172a}
+.fackel-btn.ollama{border-color:#10b981;color:#10b981}
+.fackel-btn.ollama:hover{background:#10b981;color:#0f172a}
+.fackel-btn.compute{border-color:#f59e0b;color:#f59e0b}
+.fackel-btn.compute:hover{background:#f59e0b;color:#0f172a}
+.live-pill{display:inline-flex;align-items:center;gap:6px;font-size:0.75rem;padding:4px 10px;background:#1e293b;border-radius:12px;color:#94a3b8;border:1px solid #334155}
+.pulse-dot{width:8px;height:8px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.section-title{color:#f8fafc;font-size:1.15rem;font-weight:600;margin:24px 0 12px;display:flex;align-items:center;justify-content:space-between}
+.grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.card{background:#1e293b;border-radius:12px;padding:18px;border:1px solid #334155;display:flex;flex-direction:column;gap:12px;position:relative}
+.card-header{display:flex;justify-content:space-between;align-items:flex-start}
+.card-title{font-size:1.05rem;font-weight:700;color:#38bdf8;display:flex;align-items:center;gap:8px}
+.card-desc{font-size:0.8rem;color:#94a3b8;margin-top:2px}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:600;text-transform:uppercase}
+.badge-ready{background:#065f46;color:#34d399}
+.badge-idle{background:#1e3a8a;color:#93c5fd}
+.badge-running{background:#854d0e;color:#fde047;animation:pulse 1.5s infinite}
+.badge-paused{background:#475569;color:#cbd5e1}
+.badge-error{background:#991b1b;color:#fca5a5}
+.badge-expired{background:#374151;color:#9ca3af}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group label{font-size:0.75rem;color:#94a3b8;font-weight:600;text-transform:uppercase}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+input,select,textarea{background:#0f172a;color:#f8fafc;border:1px solid #475569;border-radius:6px;padding:8px 10px;font-size:0.88rem;outline:none;transition:border-color .2s}
+input:focus,select:focus,textarea:focus{border-color:#38bdf8}
+.activity-box{background:#0f172a;border-radius:8px;padding:8px 10px;font-size:0.8rem;color:#cbd5e1;border:1px solid #334155;min-height:36px;display:flex;align-items:center}
+.btn{background:#0284c7;color:#fff;border:none;border-radius:6px;padding:8px 14px;cursor:pointer;font-size:0.85rem;font-weight:600;transition:all .2s;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn:hover{background:#38bdf8;color:#0f172a}
+.btn-sm{padding:4px 8px;font-size:0.75rem;border-radius:4px}
+.btn-secondary{background:#334155;color:#e2e8f0}
+.btn-secondary:hover{background:#475569;color:#fff}
+.btn-danger{background:#dc2626;color:#fff}
+.btn-danger:hover{background:#ef4444}
+.btn-success{background:#16a34a;color:#fff}
+.btn-success:hover{background:#22c55e}
+.btn-outline{background:transparent;border:1px solid #475569;color:#94a3b8}
+.btn-outline:hover{background:#334155;color:#fff;border-color:#64748b}
+.workers-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.worker-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.worker-top{display:flex;justify-content:space-between;align-items:center}
+.worker-name{font-weight:700;color:#f1f5f9;font-size:0.95rem}
+.worker-meta{font-size:0.78rem;color:#94a3b8;display:flex;flex-direction:column;gap:2px}
+.worker-actions{display:flex;gap:6px;margin-top:auto}
+.table-wrap{background:#1e293b;border-radius:12px;border:1px solid #334155;overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:0.85rem;text-align:left}
+th{background:#0f172a;color:#94a3b8;font-weight:600;padding:10px 14px;border-bottom:1px solid #334155}
+td{padding:10px 14px;border-bottom:1px solid #1e293b;color:#cbd5e1}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#24334d}
+.modal-bg{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:100}
+.modal{background:#1e293b;border:1px solid #38bdf8;border-radius:12px;padding:24px;width:95%;max-width:520px;max-height:90vh;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
+.modal-header{display:flex;justify-content:space-between;align-items:center}
+.modal-title{font-size:1.2rem;font-weight:700;color:#38bdf8}
+#toast{position:fixed;bottom:20px;right:20px;background:#38bdf8;color:#0f172a;padding:10px 18px;border-radius:8px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.3);display:none;z-index:110}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1><span>🤖</span> BACH Aktivitätsanzeige &amp; Worker Dashboard</h1>
+    <div class="subtitle">Modell-Zuweisung je Slot · Hintergrundworker · Parallele Ausführung · Live-Aktivitäten</div>
+  </div>
+  <div class="header-actions">
+    <button id="btn-fackel" class="fackel-btn compute" onclick="toggleFackel()">Fackel: Lädt...</button>
+    <div class="live-pill"><span class="pulse-dot"></span> Live (3s)</div>
+    <a href="/" class="btn btn-outline btn-sm">Chat-Control</a>
+    <a href="http://127.0.0.1:8000/" target="_blank" class="btn btn-outline btn-sm">GUI :8000</a>
+  </div>
+</header>
+
+<div class="section-title">
+  <span>1. Modell-Slots &amp; Konfiguration</span>
+</div>
+
+<div class="grid-3">
+  <!-- Slot 1: Buddha Chat -->
+  <div class="card" id="card-buddha_chat">
+    <div class="card-header">
+      <div>
+        <div class="card-title"><span>💬</span> Buddha Chat</div>
+        <div class="card-desc">Interaktiver Chat (WebChat, GUI &amp; Tray)</div>
+      </div>
+      <span class="badge badge-ready" id="badge-buddha_chat">Ready</span>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Backend</label>
+        <select id="chat-backend" onchange="onBackendChange('chat')">
+          <option value="ollama">Ollama (lokal)</option>
+          <option value="hermes">Hermes (API)</option>
+          <option value="claude">Claude CLI</option>
+          <option value="claude-api">Claude API</option>
+          <option value="codex">Codex CLI</option>
+          <option value="openai">OpenAI API</option>
+          <option value="lmstudio">LM Studio</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Modell</label>
+        <input type="text" id="chat-model" placeholder="qwen3.8:27b-mlx">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Max Turns</label>
+        <select id="chat-turns">
+          <option value="5">5 Runden</option>
+          <option value="10">10 Runden</option>
+          <option value="12">12 Runden</option>
+          <option value="15">15 Runden</option>
+          <option value="20">20 Runden</option>
+          <option value="0">Unbegrenzt</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Modus &amp; Denken</label>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+          <select id="chat-mode" style="flex:1">
+            <option value="safe">Safe (Lesen)</option>
+            <option value="full">Full (Schreiben)</option>
+          </select>
+          <label style="display:flex;align-items:center;gap:4px;font-size:0.8rem;cursor:pointer">
+            <input type="checkbox" id="chat-think"> Think
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Aktuelle Aktivität</label>
+      <div class="activity-box" id="chat-activity">Bereit für Interaktionen</div>
+    </div>
+    <button class="btn" onclick="saveCoreSlot('buddha_chat')">💾 Speichern</button>
+  </div>
+
+  <!-- Slot 2: Buddha Always-On -->
+  <div class="card" id="card-buddha_always_on">
+    <div class="card-header">
+      <div>
+        <div class="card-title"><span>⚡</span> Buddha Always-On</div>
+        <div class="card-desc">Hintergrundworker für offene Tasks</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span class="badge badge-ready" id="badge-buddha_always_on">Aktiv</span>
+        <button class="btn btn-sm btn-secondary" id="btn-toggle-always-on" onclick="toggleAlwaysOn()">Toggle</button>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Backend</label>
+        <select id="always-backend" onchange="onBackendChange('always')">
+          <option value="ollama">Ollama (lokal / :cloud)</option>
+          <option value="hermes">Hermes (API)</option>
+          <option value="claude">Claude CLI</option>
+          <option value="claude-api">Claude API</option>
+          <option value="codex">Codex CLI</option>
+          <option value="openai">OpenAI API</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Modell</label>
+        <input type="text" id="always-model" placeholder="qwen3.8:27b-mlx">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Max Turns</label>
+        <select id="always-turns">
+          <option value="10">10 Runden</option>
+          <option value="20">20 Runden</option>
+          <option value="25">25 Runden</option>
+          <option value="30">30 Runden</option>
+          <option value="50">50 Runden</option>
+          <option value="0">Unbegrenzt</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Modus</label>
+        <select id="always-mode">
+          <option value="full">Full (Schreibrechte / Auto-Commit)</option>
+          <option value="safe">Safe (Nur Analyse)</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Aktuelle Aktivität</label>
+      <div class="activity-box" id="always-activity">Wartet auf Idle-Schwelle</div>
+    </div>
+    <button class="btn" onclick="saveCoreSlot('buddha_always_on')">💾 Speichern</button>
+  </div>
+
+  <!-- Slot 3: Buddha Connector -->
+  <div class="card" id="card-buddha_connector">
+    <div class="card-header">
+      <div>
+        <div class="card-title"><span>📱</span> Buddha Connector</div>
+        <div class="card-desc">Messaging (Telegram, WhatsApp, Signal)</div>
+      </div>
+      <span class="badge badge-ready" id="badge-buddha_connector">Ready</span>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Backend</label>
+        <select id="conn-backend" onchange="onBackendChange('conn')">
+          <option value="ollama">Ollama (lokal)</option>
+          <option value="hermes">Hermes (API)</option>
+          <option value="claude">Claude CLI</option>
+          <option value="claude-api">Claude API</option>
+          <option value="codex">Codex CLI</option>
+          <option value="openai">OpenAI API</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Modell</label>
+        <input type="text" id="conn-model" placeholder="qwen3.8:27b-mlx">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Max Turns</label>
+        <select id="conn-turns">
+          <option value="5">5 Runden</option>
+          <option value="10">10 Runden</option>
+          <option value="15">15 Runden</option>
+          <option value="20">20 Runden</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Provider</label>
+        <div style="font-size:0.75rem;color:#94a3b8;margin-top:6px;line-height:1.4">
+          <span id="p-tg-status">Telegram: Verifiziert</span> · WhatsApp: Bereit
+        </div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Aktuelle Aktivität</label>
+      <div class="activity-box" id="conn-activity">Bereit</div>
+    </div>
+    <button class="btn" onclick="saveCoreSlot('buddha_connector')">💾 Speichern</button>
+  </div>
+</div>
+
+<div class="section-title">
+  <span>2. Dynamische &amp; Temporäre Hintergrundworker</span>
+  <button class="btn btn-success btn-sm" onclick="openNewWorkerModal()">+ Neuer Worker anlegen</button>
+</div>
+
+<div class="workers-grid" id="workers-container">
+  <!-- Dynamic workers injected here -->
+</div>
+
+<div class="section-title">
+  <span>3. Echtzeit-Aktivitätsanzeige &amp; Verlauf (Timeline)</span>
+  <button class="btn btn-secondary btn-sm" onclick="refreshActivity()">Neu laden</button>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:110px">Zeit</th>
+        <th style="width:160px">Akteur / Slot</th>
+        <th>Aktivität (Tool, Runde, Aufgabe)</th>
+        <th style="width:100px">Status</th>
+      </tr>
+    </thead>
+    <tbody id="activity-tbody">
+      <tr><td colspan="4" style="text-align:center;color:#64748b">Lade Aktivitäten...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Modal: Neuer Worker anlegen -->
+<div class="modal-bg" id="new-worker-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">+ Neuen Hintergrundworker starten</div>
+      <button class="btn btn-outline btn-sm" onclick="closeNewWorkerModal()">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Worker-Name</label>
+      <input type="text" id="nw-name" placeholder="z.B. Recherche-Worker, Atlas-Refactoring">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Rolle / Persona</label>
+        <select id="nw-role">
+          <option value="bach">Buddha / General (Universell)</option>
+          <option value="paul">Paul (Persönlicher Assistent)</option>
+          <option value="atlas">Atlas (Code &amp; Aufgaben Scanner)</option>
+          <option value="clara">Clara (Büro &amp; Schriftverkehr)</option>
+          <option value="florian">Florian (Förderberichte &amp; Pädagogik)</option>
+          <option value="diana">Diana (Datenanalyse &amp; Statistik)</option>
+          <option value="dietrich">Dietrich (Entscheidungsvorlagen)</option>
+          <option value="ticket-master">Ticket-Master (Triage &amp; Routing)</option>
+          <option value="task-divider">Task-Divider (Teilaufgaben)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Typ</label>
+        <select id="nw-type">
+          <option value="persistent">Dauerhaft (bis manuell gelöscht)</option>
+          <option value="once">Einmalig (beendet nach Task)</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Backend</label>
+        <select id="nw-backend">
+          <option value="ollama">Ollama (lokal / :cloud)</option>
+          <option value="hermes">Hermes (API)</option>
+          <option value="claude">Claude CLI</option>
+          <option value="claude-api">Claude API</option>
+          <option value="codex">Codex CLI</option>
+          <option value="openai">OpenAI API</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Modell</label>
+        <input type="text" id="nw-model" placeholder="qwen3.8:27b-mlx">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Max Turns</label>
+        <input type="number" id="nw-turns" value="20" min="1" max="100">
+      </div>
+      <div class="form-group">
+        <label>Modus</label>
+        <select id="nw-mode">
+          <option value="full">Full (Schreibrechte)</option>
+          <option value="safe">Safe (Nur Lesen)</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Task-ID (optional)</label>
+        <input type="number" id="nw-task-id" placeholder="z.B. 104">
+      </div>
+      <div class="form-group">
+        <label>Ablaufzeit / TTL</label>
+        <select id="nw-ttl">
+          <option value="">Kein Ablaufdatum</option>
+          <option value="3600">1 Stunde</option>
+          <option value="14400">4 Stunden</option>
+          <option value="86400">24 Stunden</option>
+          <option value="604800">7 Tage</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Eigener System-Prompt / Vorab-Instruktion (optional)</label>
+      <textarea id="nw-prompt" rows="3" placeholder="Spezifische Verhaltensregeln oder Anweisungen für diesen Worker..."></textarea>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
+      <button class="btn btn-secondary" onclick="closeNewWorkerModal()">Abbrechen</button>
+      <button class="btn btn-success" onclick="createWorker()">Worker erstellen</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = location.origin + '/api';
+let _isEditing = false;
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 2800);
+}
+
+async function api(method, path, body = null) {
+  try {
+    const opts = { method, headers: {} };
+    if (body) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body);
+    }
+    const res = await fetch(API + path, opts);
+    return await res.json();
+  } catch (err) {
+    return { error: String(err) };
+  }
+}
+
+async function refreshAll() {
+  await Promise.all([refreshSlots(), refreshActivity()]);
+}
+
+async function refreshSlots() {
+  const data = await api('GET', '/slots');
+  if (!data || !data.ok) return;
+
+  // Fackel Button
+  const pref = (data.fackel_preference || 'compute').toLowerCase();
+  const fackelBtn = document.getElementById('btn-fackel');
+  if (pref === 'ollama') {
+    fackelBtn.className = 'fackel-btn ollama';
+    fackelBtn.textContent = '🔥 Fackel: Ollama (Priorität)';
+  } else {
+    fackelBtn.className = 'fackel-btn compute';
+    fackelBtn.textContent = '⚙️ Fackel: Rechenjobs (Compute)';
+  }
+
+  const slots = data.slots || {};
+  // Chat Slot
+  if (slots.buddha_chat && !_isEditing) {
+    const s = slots.buddha_chat;
+    document.getElementById('chat-backend').value = s.backend || 'ollama';
+    document.getElementById('chat-model').value = s.model || '';
+    document.getElementById('chat-turns').value = s.max_tool_rounds != null ? s.max_tool_rounds : 12;
+    document.getElementById('chat-mode').value = s.mode || 'safe';
+    document.getElementById('chat-think').checked = !!s.think;
+    document.getElementById('chat-activity').textContent = s.current_activity || 'Bereit';
+    document.getElementById('badge-buddha_chat').textContent = (s.status || 'ready').toUpperCase();
+  }
+
+  // Always-On Slot
+  if (slots.buddha_always_on && !_isEditing) {
+    const s = slots.buddha_always_on;
+    document.getElementById('always-backend').value = s.backend || 'ollama';
+    document.getElementById('always-model').value = s.model || '';
+    document.getElementById('always-turns').value = s.max_tool_rounds != null ? s.max_tool_rounds : 25;
+    document.getElementById('always-mode').value = s.mode || 'full';
+    document.getElementById('always-activity').textContent = s.current_activity || (s.enabled ? 'Wartet auf Idle-Schwelle' : 'Pausiert');
+    const enabled = s.enabled !== false;
+    const badge = document.getElementById('badge-buddha_always_on');
+    badge.textContent = enabled ? 'AKTIV' : 'PAUSIERT';
+    badge.className = 'badge ' + (enabled ? 'badge-ready' : 'badge-paused');
+    document.getElementById('btn-toggle-always-on').textContent = enabled ? 'Pausieren' : 'Aktivieren';
+  }
+
+  // Connector Slot
+  if (slots.buddha_connector && !_isEditing) {
+    const s = slots.buddha_connector;
+    document.getElementById('conn-backend').value = s.backend || 'ollama';
+    document.getElementById('conn-model').value = s.model || '';
+    document.getElementById('conn-turns').value = s.max_tool_rounds != null ? s.max_tool_rounds : 10;
+    document.getElementById('conn-activity').textContent = s.current_activity || 'Bereit';
+  }
+
+  // Dynamic Workers
+  renderWorkers(data.dynamic_workers || []);
+}
+
+function renderWorkers(workers) {
+  const container = document.getElementById('workers-container');
+  if (!workers || workers.length === 0) {
+    container.innerHTML = '<div style="color:#64748b;font-size:0.88rem;grid-column:1/-1;padding:12px;background:#1e293b;border-radius:8px;border:1px dashed #334155">Keine dynamischen Hintergrundworker aktiv. Klicke auf "+ Neuer Worker anlegen", um Aufgaben oder Rollen autonom ausführen zu lassen.</div>';
+    return;
+  }
+
+  let html = '';
+  for (const w of workers) {
+    const st = w.status || 'idle';
+    let badgeClass = 'badge-idle';
+    if (st === 'running') badgeClass = 'badge-running';
+    else if (st === 'paused') badgeClass = 'badge-paused';
+    else if (st === 'error') badgeClass = 'badge-error';
+    else if (st === 'expired' || st === 'completed') badgeClass = 'badge-expired';
+
+    const expires = w.expires_at ? new Date(w.expires_at).toLocaleString() : 'Kein Ablauf';
+    const taskBadge = w.task_id ? `<span style="color:#38bdf8">Task #${w.task_id}</span>` : `<span style="color:#94a3b8">General</span>`;
+
+    html += `
+      <div class="worker-card" id="wcard-${w.id}">
+        <div class="worker-top">
+          <div class="worker-name">${escapeHtml(w.name || w.id)}</div>
+          <span class="badge ${badgeClass}">${escapeHtml(st)}</span>
+        </div>
+        <div class="worker-meta">
+          <div><strong>Rolle:</strong> ${escapeHtml(w.role || 'General')} · ${taskBadge}</div>
+          <div><strong>Modell:</strong> ${escapeHtml(w.model || '?')} (${escapeHtml(w.backend || 'ollama')})</div>
+          <div><strong>Turns:</strong> ${w.max_tool_rounds || 20} · <strong>Modus:</strong> ${w.mode || 'full'}</div>
+          <div><strong>Ablauf:</strong> ${expires}</div>
+        </div>
+        <div class="activity-box" style="min-height:30px">${escapeHtml(w.current_activity || 'Bereit')}</div>
+        <div class="worker-actions">
+          <button class="btn btn-sm btn-success" onclick="runWorker('${w.id}')">▶ Start</button>
+          <button class="btn btn-sm btn-secondary" onclick="toggleWorker('${w.id}', '${st}')">${st === 'paused' ? '▶ Aktiv' : '⏸ Pause'}</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteWorker('${w.id}')">🗑 Löschen</button>
+        </div>
+      </div>
+    `;
+  }
+  container.innerHTML = html;
+}
+
+async function refreshActivity() {
+  const data = await api('GET', '/activity?limit=30');
+  const tbody = document.getElementById('activity-tbody');
+  const history = (data && data.history) ? data.history : [];
+  if (history.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b">Noch keine Aktivitäten protokolliert</td></tr>';
+    return;
+  }
+
+  let rows = '';
+  for (const item of history) {
+    const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '-';
+    const st = item.status || 'ok';
+
+    rows += `
+      <tr>
+        <td style="color:#94a3b8;font-size:0.8rem">${timeStr}</td>
+        <td><strong>${escapeHtml(item.source || '-')}</strong></td>
+        <td>${escapeHtml(item.activity || '-')}</td>
+        <td><span class="badge badge-${st === 'running' ? 'running' : (st === 'error' ? 'error' : 'ready')}">${escapeHtml(st)}</span></td>
+      </tr>
+    `;
+  }
+  tbody.innerHTML = rows;
+}
+
+async function saveCoreSlot(slotId) {
+  let updates = {};
+  if (slotId === 'buddha_chat') {
+    updates = {
+      backend: document.getElementById('chat-backend').value,
+      model: document.getElementById('chat-model').value.trim(),
+      max_tool_rounds: parseInt(document.getElementById('chat-turns').value) || 0,
+      mode: document.getElementById('chat-mode').value,
+      think: document.getElementById('chat-think').checked,
+    };
+  } else if (slotId === 'buddha_always_on') {
+    updates = {
+      backend: document.getElementById('always-backend').value,
+      model: document.getElementById('always-model').value.trim(),
+      max_tool_rounds: parseInt(document.getElementById('always-turns').value) || 0,
+      mode: document.getElementById('always-mode').value,
+    };
+  } else if (slotId === 'buddha_connector') {
+    updates = {
+      backend: document.getElementById('conn-backend').value,
+      model: document.getElementById('conn-model').value.trim(),
+      max_tool_rounds: parseInt(document.getElementById('conn-turns').value) || 0,
+    };
+  }
+  const res = await api('POST', '/slots', { slot_id: slotId, updates });
+  if (res && res.ok) {
+    toast(`Slot ${slotId} gespeichert!`);
+    refreshSlots();
+  } else {
+    toast(`Fehler beim Speichern: ${res.error || 'Unbekannt'}`);
+  }
+}
+
+async function toggleAlwaysOn() {
+  const currentBadge = document.getElementById('badge-buddha_always_on').textContent;
+  const newEnabled = currentBadge !== 'AKTIV';
+  const res = await api('POST', '/slots', {
+    slot_id: 'buddha_always_on',
+    updates: { enabled: newEnabled }
+  });
+  if (res && res.ok) {
+    toast(newEnabled ? 'Buddha Always-On aktiviert' : 'Buddha Always-On pausiert');
+    refreshSlots();
+  }
+}
+
+async function toggleFackel() {
+  const btn = document.getElementById('btn-fackel');
+  const isOllama = btn.classList.contains('ollama');
+  const newPref = isOllama ? 'compute' : 'ollama';
+  const res = await api('POST', '/fackel', { preference: newPref });
+  if (res && res.ok) {
+    toast(newPref === 'ollama' ? 'Fackel an Ollama (Chat & Worker bevorzugt)' : 'Fackel an Rechenjobs (Compute bevorzugt)');
+    refreshSlots();
+  }
+}
+
+function openNewWorkerModal() {
+  document.getElementById('new-worker-modal').style.display = 'flex';
+}
+
+function closeNewWorkerModal() {
+  document.getElementById('new-worker-modal').style.display = 'none';
+}
+
+async function createWorker() {
+  const name = document.getElementById('nw-name').value.trim();
+  const role = document.getElementById('nw-role').value;
+  const workerType = document.getElementById('nw-type').value;
+  const backend = document.getElementById('nw-backend').value;
+  const model = document.getElementById('nw-model').value.trim() || 'qwen3.8:27b-mlx';
+  const turns = parseInt(document.getElementById('nw-turns').value) || 20;
+  const mode = document.getElementById('nw-mode').value;
+  const taskId = document.getElementById('nw-task-id').value.trim() ? parseInt(document.getElementById('nw-task-id').value) : null;
+  const ttl = document.getElementById('nw-ttl').value ? parseInt(document.getElementById('nw-ttl').value) : null;
+  const prompt = document.getElementById('nw-prompt').value.trim();
+
+  const payload = {
+    name: name || `Worker-${role}`,
+    role,
+    type: workerType,
+    backend,
+    model,
+    max_tool_rounds: turns,
+    mode,
+    task_id: taskId,
+    ttl_seconds: ttl,
+    system_prompt: prompt,
+  };
+
+  const res = await api('POST', '/workers', payload);
+  if (res && res.ok) {
+    toast(`Worker '${res.worker.name}' gestartet!`);
+    closeNewWorkerModal();
+    document.getElementById('nw-name').value = '';
+    document.getElementById('nw-task-id').value = '';
+    document.getElementById('nw-prompt').value = '';
+    refreshSlots();
+  } else {
+    toast(`Fehler: ${res.error || 'Worker konnte nicht erstellt werden'}`);
+  }
+}
+
+async function runWorker(workerId) {
+  toast(`Starte Worker ${workerId}...`);
+  const res = await api('POST', '/workers/run', { id: workerId });
+  if (res && res.ok) {
+    toast(`Worker ${workerId} läuft!`);
+    refreshAll();
+  } else {
+    toast(`Fehler: ${res.error || 'Konnte nicht starten'}`);
+  }
+}
+
+async function toggleWorker(workerId, currentStatus) {
+  const newStatus = currentStatus === 'paused' ? 'idle' : 'paused';
+  const res = await api('POST', '/workers/toggle', { id: workerId, status: newStatus });
+  if (res && res.ok) {
+    toast(`Worker ${workerId}: ${newStatus}`);
+    refreshSlots();
+  }
+}
+
+async function deleteWorker(workerId) {
+  if (!confirm(`Worker ${workerId} wirklich löschen?`)) return;
+  const res = await api('POST', '/workers/delete', { id: workerId });
+  if (res && res.ok) {
+    toast(`Worker ${workerId} gelöscht.`);
+    refreshSlots();
+  } else {
+    toast(`Fehler: ${res.error || 'Löschen fehlgeschlagen'}`);
+  }
+}
+
+function onBackendChange(prefix) {
+  const bSelect = document.getElementById(`${prefix}-backend`);
+  const mInput = document.getElementById(`${prefix}-model`);
+  const val = bSelect.value;
+  if (val === 'claude' || val === 'claude-api') {
+    if (!mInput.value || mInput.value.includes('qwen')) mInput.value = 'sonnet';
+  } else if (val === 'codex') {
+    if (!mInput.value || mInput.value.includes('qwen')) mInput.value = 'o4-mini';
+  } else if (val === 'openai') {
+    if (!mInput.value || mInput.value.includes('qwen')) mInput.value = 'gpt-4o';
+  } else if (val === 'hermes') {
+    if (!mInput.value || mInput.value.includes('qwen')) mInput.value = 'nousresearch/hermes-3-llama-3.1-8b';
+  } else if (val === 'ollama') {
+    if (!mInput.value || mInput.value.includes('sonnet') || mInput.value.includes('gpt')) mInput.value = 'qwen3.8:27b-mlx';
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+document.addEventListener('focusin', (e) => {
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) _isEditing = true;
+});
+document.addEventListener('focusout', () => { _isEditing = false; });
+
+refreshAll();
+setInterval(refreshAll, 3000);
+</script>
+</body>
+</html>"""
+
+
 def _get_active_session_state():
     try:
         sessions_copy = list(runtime.sessions.values())
@@ -1393,7 +2218,12 @@ def _get_session_model(chat_id: str) -> str:
 
 def _snapshot_chat_backend(chat_id: str):
     with _runtime_state_lock:
-        return runtime.backend, _get_session_model(chat_id)
+        session = runtime.get_session(chat_id)
+        try:
+            target_backend, model = _apply_slot_to_session(chat_id, session)
+            return target_backend, model
+        except Exception:
+            return runtime.backend, _get_session_model(chat_id)
 
 
 def _checked_backend_availability(selected_backend, model: str) -> tuple[bool, str]:
@@ -1581,7 +2411,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             return
         self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Vary", "Origin")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def _json(self, data, status=200):
@@ -1763,6 +2593,40 @@ class ControlHandler(BaseHTTPRequestHandler):
             else:
                 self._json({"error": "Ungültige oder fehlende Snapshot-ID"}, 400)
 
+        elif path == "/activity":
+            self._html(WEB_ACTIVITY_DASHBOARD)
+
+        elif path == "/api/slots":
+            try:
+                cfg = load_slots_config()
+                self._json({
+                    "ok": True,
+                    "slots": cfg.get("slots", {}),
+                    "dynamic_workers": list_workers(include_expired=True),
+                    "fackel_preference": get_fackel_preference(),
+                })
+            except Exception as e:
+                self._json({"error": str(e)}, 500)
+
+        elif path == "/api/workers":
+            try:
+                self._json({
+                    "ok": True,
+                    "workers": list_workers(include_expired=True),
+                })
+            except Exception as e:
+                self._json({"error": str(e)}, 500)
+
+        elif path == "/api/activity":
+            try:
+                limit = int(parse_qs(parsed_url.query).get("limit", [50])[0])
+                self._json({
+                    "ok": True,
+                    "history": get_activity_history(limit=limit),
+                })
+            except Exception as e:
+                self._json({"error": str(e)}, 500)
+
         else:
             self._json({"error": "Not found"}, 404)
 
@@ -1933,8 +2797,117 @@ class ControlHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
+        elif path == "/api/slots":
+            slot_id = body.get("slot_id") or body.get("id")
+            updates = body.get("updates") or {}
+            if not slot_id or not isinstance(updates, dict):
+                self._json({"error": "slot_id und updates dict erforderlich"}, 400)
+                return
+            try:
+                updated = update_slot(slot_id, updates)
+                record_activity(slot_id, f"Slot {slot_id} aktualisiert", "ok")
+                self._json({"ok": True, "slot": updated})
+            except KeyError as e:
+                self._json({"error": str(e)}, 404)
+            except Exception as e:
+                self._json({"error": str(e)}, 500)
+
+        elif path == "/api/workers":
+            try:
+                worker = add_worker(body)
+                record_activity("system", f"Neuer Worker erstellt: {worker.get('name', worker.get('id'))}", "ok")
+                self._json({"ok": True, "worker": worker})
+            except Exception as e:
+                self._json({"error": str(e)}, 500)
+
+        elif path in ("/api/workers/delete", "/api/worker/delete"):
+            worker_id = body.get("id") or body.get("worker_id")
+            if not worker_id:
+                self._json({"error": "id erforderlich"}, 400)
+                return
+            ok = remove_worker(worker_id)
+            if ok:
+                record_activity("system", f"Worker gelöscht: {worker_id}", "ok")
+                self._json({"ok": True, "id": worker_id})
+            else:
+                self._json({"error": f"Worker {worker_id} nicht gefunden"}, 404)
+
+        elif path == "/api/workers/toggle":
+            worker_id = body.get("id") or body.get("worker_id")
+            new_status = body.get("status")
+            if not worker_id:
+                self._json({"error": "id erforderlich"}, 400)
+                return
+            try:
+                w = get_slot(worker_id)
+                if not w:
+                    self._json({"error": "Worker nicht gefunden"}, 404)
+                    return
+                if not new_status:
+                    new_status = "paused" if w.get("status") != "paused" else "idle"
+                updated = update_slot(worker_id, {"status": new_status})
+                record_activity(worker_id, f"Worker Status: {new_status}", "ok")
+                self._json({"ok": True, "worker": updated})
+            except Exception as e:
+                self._json({"error": str(e)}, 500)
+
+        elif path == "/api/workers/run":
+            worker_id = body.get("id") or body.get("worker_id")
+            custom_prompt = body.get("prompt")
+            w = get_slot(worker_id)
+            if not w:
+                self._json({"error": f"Worker {worker_id} nicht gefunden"}, 404)
+                return
+            def _run_worker_job():
+                try:
+                    update_slot(worker_id, {"status": "running", "current_activity": "Arbeite an Aufgabe..."})
+                    record_activity(worker_id, f"Worker gestartet: {w.get('name')}", "running")
+                    target_backend, model = _snapshot_chat_backend(worker_id)
+                    task_prompt = custom_prompt or w.get("system_prompt") or f"Führe Task #{w.get('task_id', '')} aus"
+                    loop = asyncio.new_event_loop()
+                    try:
+                        ans = loop.run_until_complete(
+                            runtime.process(task_prompt, worker_id, backend=target_backend, model=model)
+                        )
+                        next_status = "completed" if w.get("type") == "once" else "idle"
+                        update_slot(worker_id, {"status": next_status, "current_activity": "Abgeschlossen"})
+                        record_activity(worker_id, f"Fertig: {str(ans)[:60]}", "ok")
+                    finally:
+                        loop.close()
+                except Exception as exc:
+                    update_slot(worker_id, {"status": "error", "current_activity": f"Fehler: {exc}"})
+                    record_activity(worker_id, f"Fehler: {exc}", "error")
+            threading.Thread(target=_run_worker_job, daemon=True).start()
+            self._json({"ok": True, "message": f"Worker {worker_id} gestartet"})
+
+        elif path == "/api/activity":
+            source = body.get("source", "system")
+            act = body.get("activity", "")
+            st = body.get("status", "ok")
+            dt = body.get("details", {})
+            record_activity(source, act, st, dt)
+            self._json({"ok": True})
+
         else:
             self._json({"error": "Not found"}, 404)
+
+    def do_DELETE(self):
+        parsed_url = urlparse(self.path)
+        path = parsed_url.path
+        if path == "/api/workers":
+            params = parse_qs(parsed_url.query)
+            worker_id = params.get("id", [""])[0]
+            if not worker_id:
+                self._json({"error": "id erforderlich"}, 400)
+                return
+            ok = remove_worker(worker_id)
+            if ok:
+                record_activity("system", f"Worker gelöscht: {worker_id}", "ok")
+                self._json({"ok": True, "id": worker_id})
+            else:
+                self._json({"error": f"Worker {worker_id} nicht gefunden"}, 404)
+        else:
+            self._json({"error": "Method not allowed"}, 405)
 
 
 def start_control_api():

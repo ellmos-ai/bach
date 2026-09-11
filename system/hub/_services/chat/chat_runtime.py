@@ -1056,6 +1056,10 @@ class ChatSession:
         self.last_tools: list[str] = []
         self.voice_output: bool = False
         self.last_active: float = 0.0
+        self.backend: Any = None
+        self.max_tool_rounds: Optional[int] = None
+        self.custom_system_prompt: str = ""
+
 
 
 class ComputeLocked(RuntimeError):
@@ -1364,16 +1368,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
         bach_ctx = self._get_bach_context(text)
 
-        sys_prompt = self.build_system_prompt(session)
-        if bach_ctx:
+        active_backend = getattr(session, "backend", None) or self.backend
+        sys_prompt = getattr(session, "custom_system_prompt", "") or self.build_system_prompt(session)
+        if bach_ctx and not getattr(session, "custom_system_prompt", ""):
             sys_prompt += f"\n\n--- BACH ---\n{bach_ctx}"
 
         msgs = [{"role": "system", "content": sys_prompt}] + session.messages
 
-        if getattr(self.backend, "manages_own_tools", False):
+        if getattr(active_backend, "manages_own_tools", False):
             try:
-                result = await self.backend.chat(msgs, think=session.think,
-                                                 model=session.model)
+                result = await active_backend.chat(msgs, think=session.think,
+                                                   model=session.model)
                 answer = result.get("content", "(keine Antwort)")
             except Exception as e:
                 answer = FailedAnswer.from_exception(e)
@@ -1386,7 +1391,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
     async def _tool_loop(self, msgs: list, session: ChatSession,
                          tools: list) -> str:
-        max_rounds = self.max_tool_rounds
+        active_backend = getattr(session, "backend", None) or self.backend
+        max_rounds = session.max_tool_rounds if getattr(session, "max_tool_rounds", None) is not None else self.max_tool_rounds
         round_num = 0
         auto_used = 0
         goal_checked = False
@@ -1400,7 +1406,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 session.current_tool = ""
                 return result.get("content", "") or "(Max Tool-Runden erreicht)"
             try:
-                result = await self.backend.chat(
+                result = await active_backend.chat(
                     msgs, tools=tools, think=session.think, model=session.model
                 )
             except Exception as e:
@@ -1457,12 +1463,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     default_model=session.model,
                 )
                 tool_call_id = ""
-                if hasattr(self.backend, "_last_tool_call_ids"):
-                    ids = self.backend._last_tool_call_ids
+                if hasattr(active_backend, "_last_tool_call_ids"):
+                    ids = active_backend._last_tool_call_ids
                     if i < len(ids):
                         tool_call_id = ids[i]
                 msgs.append(
-                    self.backend.tool_response_message(str(t_result), tool_call_id)
+                    active_backend.tool_response_message(str(t_result), tool_call_id)
                 )
 
             # Hook-Punkt: die Hooker bringen eigene Cooldowns mit, deshalb darf
@@ -1490,7 +1496,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 )
                 msgs.append({"role": "user", "content": final_prompt})
                 try:
-                    final_res = await self.backend.chat(
+                    final_res = await active_backend.chat(
                         msgs, tools=None, think=False, model=session.model
                     )
                     content = (final_res.get("content") or "").strip()
@@ -1592,7 +1598,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         ]
 
         try:
-            result = await self.backend.chat(prompt, think=False)
+            active_backend = getattr(session, "backend", None) or self.backend
+            result = await active_backend.chat(prompt, think=False, model=session.model)
             summary = result.get("content", "")[:500]
 
             if self.memory:
