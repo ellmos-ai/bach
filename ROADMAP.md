@@ -2,6 +2,23 @@
 
 **Stand:** 2026-09-11 | **Version:** 4.3.63 | **Review:** 2026-09-11 (Task #1126)
 
+## ARCHIV (veraltet) — Navigations-Index
+
+> **Reiner Index-Anker, rein additiv (0 Bewegungsrisiko).** Verschiebt NIX — verweist
+> nur auf die bestehenden, verteilten „Abgeschlossen"-Blöcke. Inhalte bleiben an ihren
+> bisherigen Stellen. Aktuelle/Offene Visionen (z. B. MCP-Server 2026-06-03, Persona-System
+> Phase 2) und der aktuellste Changelog-Eintrag (4.3.63, 2026-09-10) sind **nicht** als
+> veraltet gekennzeichnet und bleiben aktiv.
+>
+> Status-Quelle: Task #1215 (Option A') / Folgeaufgabe #1216.
+
+| Block (veraltet / abgeschlossen) | Abschnitt (bleibt in-place) |
+|---|---|
+| Weitere abgeschlossene Blöcke | [→ ## Weitere abgeschlossene Bloecke (ehemals Prio 1-3)](#weitere-abgeschlossene-bloecke-ehemals-prio-1-3) |
+| Abgeschlossene Phasen | [→ ## Abgeschlossene Phasen (BACH-internes Entwicklungsprotokoll)](#abgeschlossene-phasen-bach-internes-entwicklungsprotokoll) |
+| Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
+| Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.63 bleibt aktiv)* |
+
 ## Review 2026-09-11 (Task #1126)
 
 Automatisierte Roadmap-Review. Befund:
