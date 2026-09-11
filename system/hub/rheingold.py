@@ -21,15 +21,20 @@ import json
 import os
 import socket
 import sqlite3
+import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 
+LEAD_CONFIG_FILE = Path.home() / ".bach" / "lead.json"
+
 DEFAULT_RHEINGOLD_HOSTS = [
-    "http://macstudvonlukas:8000",
     "http://100.119.69.90:8000",
+    "http://macstudvonlukas:8000",
+    "http://macstudvonlukas.local:8000",
 ]
 
 LEAD_HOSTNAMES = {
@@ -41,32 +46,91 @@ LEAD_HOSTNAMES = {
 
 def is_rheingold_lead() -> bool:
     """Prüft, ob dieser Prozess direkt auf dem Rheingold-Lead-Host läuft."""
-    if os.environ.get("BACH_IS_RHEINGOLD_LEAD") == "1":
+    if os.environ.get("BACH_IS_RHEINGOLD_LEAD") == "1" or os.environ.get("BACH_MODE") == "lead":
         return True
     hostname = socket.gethostname().lower()
     return hostname in LEAD_HOSTNAMES or hostname.startswith("macstud")
 
 
+def get_lead_config() -> dict:
+    """Ermittelt die konfigurierte Lead-Rolle und Server-URL.
+
+    Modi:
+    - 'lead': Dieser Host ist selbst Rheingold-Lead (Mac Studio).
+    - 'worker': Host ist Client und nutzt einen festgelegten Rheingold-Lead.
+    - 'isolated': Host arbeitet autark/isoliert ohne externe Synchronisation.
+    """
+    if (
+        "pytest" in sys.modules
+        or os.environ.get("PYTEST_CURRENT_TEST")
+        or os.environ.get("BACH_MODE") == "isolated"
+        or os.environ.get("BACH_RHEINGOLD_DISABLED") == "1"
+    ):
+        if os.environ.get("BACH_TEST_RHEINGOLD") != "1":
+            return {"mode": "isolated", "lead_url": None}
+
+    if is_rheingold_lead():
+        return {"mode": "lead", "lead_url": None}
+
+    env_url = os.environ.get("BACH_LEAD_URL") or os.environ.get("BACH_RHEINGOLD_URL")
+    if env_url:
+        return {"mode": "worker", "lead_url": env_url.rstrip("/")}
+
+    if LEAD_CONFIG_FILE.is_file():
+        try:
+            data = json.loads(LEAD_CONFIG_FILE.read_text(encoding="utf-8"))
+            mode = data.get("mode", "worker")
+            if mode == "isolated":
+                return {"mode": "isolated", "lead_url": None}
+            lead_url = data.get("lead_url")
+            if lead_url:
+                return {"mode": "worker", "lead_url": lead_url.rstrip("/")}
+        except Exception:
+            pass
+
+    # Grundsatz: Ohne explizit festgelegten Lead arbeitet BACH isoliert
+    return {"mode": "isolated", "lead_url": None}
+
+
+def set_lead_url(url: str, mode: str = "worker") -> Path:
+    """Speichert den festgelegten Rheingold-Lead in ~/.bach/lead.json."""
+    LEAD_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "mode": mode,
+        "lead_url": url.rstrip("/"),
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    LEAD_CONFIG_FILE.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return LEAD_CONFIG_FILE
+
+
+def clear_lead_config() -> bool:
+    """Entfernt die Lead-Konfiguration und schaltet die Instanz auf 'isolated'."""
+    if LEAD_CONFIG_FILE.is_file():
+        try:
+            LEAD_CONFIG_FILE.unlink()
+            return True
+        except Exception:
+            pass
+    return False
+
+
 def get_rheingold_url(timeout: float = 1.2) -> Optional[str]:
     """Ermittelt eine erreichbare Rheingold-Server-URL.
 
-    Gibt None zurück, wenn offline, Lead-Host selbst oder per ENV deaktiviert.
+    Gibt None zurück, wenn offline, im Modus 'isolated' oder wenn Lead-Host selbst.
     """
-    if os.environ.get("BACH_RHEINGOLD_DISABLED") == "1":
+    cfg = get_lead_config()
+    if cfg["mode"] != "worker" or not cfg["lead_url"]:
         return None
 
-    # Wenn wir auf dem Lead selbst sind, arbeiten wir direkt lokal
-    if is_rheingold_lead():
-        return None
-
-    candidates: List[str] = []
-    env_url = os.environ.get("BACH_RHEINGOLD_URL")
-    if env_url:
-        candidates.append(env_url.rstrip("/"))
-    candidates.extend(DEFAULT_RHEINGOLD_HOSTS)
+    candidates: List[str] = [cfg["lead_url"]]
+    for fallback in DEFAULT_RHEINGOLD_HOSTS:
+        if fallback not in candidates:
+            candidates.append(fallback)
 
     for url in candidates:
-        endpoint = f"{url}/api/tasks"
+        endpoint = f"{url}/api/tasks?limit=1"
         try:
             req = urllib.request.Request(
                 endpoint,
@@ -175,3 +239,71 @@ def sync_drafts_to_rheingold(
         conn.commit()
 
     return promoted
+
+
+def pull_tasks_from_rheingold(
+    conn: sqlite3.Connection,
+    base_url: str,
+    timeout: float = 8.0,
+) -> Tuple[int, int]:
+    """Spiegelt alle Tasks vom Rheingold-Lead in den lokalen Bachgrund.
+
+    Returns:
+        (inserted_count, updated_count)
+    """
+    endpoint = f"{base_url.rstrip('/')}/api/tasks?limit=10000"
+    req = urllib.request.Request(
+        endpoint,
+        headers={"User-Agent": "BACH-RheingoldClient/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        body = json.loads(resp.read().decode("utf-8"))
+
+    server_tasks = body.get("tasks", [])
+    if not server_tasks:
+        return 0, 0
+
+    cols = [
+        "id", "title", "description", "category", "priority", "tags", "status",
+        "estimated_minutes", "actual_minutes", "delegated_to", "delegation_status",
+        "source_file", "source_line", "is_recurring", "recurrence_pattern",
+        "next_occurrence", "due_date", "executable_command", "created_at",
+        "started_at", "completed_at", "updated_at", "dist_type", "modified_by",
+        "depends_on", "created_by", "assigned_to", "project", "source",
+    ]
+
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(tasks)")
+    available_cols = {row[1] for row in cursor.fetchall()}
+    cols = [c for c in cols if c in available_cols]
+
+    local_rows = cursor.execute("SELECT * FROM tasks").fetchall()
+    local_map = {row["id"]: dict(row) for row in local_rows}
+
+    inserted = 0
+    updated = 0
+
+    for st in server_tasks:
+        tid = st.get("id")
+        if tid is None or tid < 0:
+            continue
+
+        if tid not in local_map:
+            col_names = ", ".join(cols)
+            placeholders = ", ".join(["?"] * len(cols))
+            values = [st.get(c) for c in cols]
+            cursor.execute(f"INSERT INTO tasks ({col_names}) VALUES ({placeholders})", values)
+            inserted += 1
+        else:
+            lt = local_map[tid]
+            differ = any(lt.get(c) != st.get(c) for c in cols if c != "id")
+            if differ:
+                set_clause = ", ".join([f"{c} = ?" for c in cols if c != "id"])
+                values = [st.get(c) for c in cols if c != "id"] + [tid]
+                cursor.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", values)
+                updated += 1
+
+    if inserted or updated:
+        conn.commit()
+
+    return inserted, updated

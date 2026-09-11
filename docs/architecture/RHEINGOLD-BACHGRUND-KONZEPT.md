@@ -1,6 +1,6 @@
 # ARCHITEKTURKONZEPT: RHEINGOLD & BACHGRUND
 
-**Status:** AKZEPTIERT / IN IMPLEMENTIERUNG  
+**Status:** IMPLEMENTIERT & VERIFIZIERT  
 **Datum:** 2026-09-11  
 **Geltungsbereich:** BACH LLM-OS (Multi-Host: Mac Studio, Workstation, Laptop)  
 **Autor:** BACH Architecture Working Group / Antigravity
@@ -14,7 +14,7 @@ Im `ellmos`-Ökosystem folgt die Systemevolution einer durchgehenden Wassermetap
 * **Bach:** Der mächtige persönliche Arbeitsstrom mit 113+ Handlern, Boss-Agenten und GUI.
 * **Ocean:** Das offene, freie Community-Vollsystem auf hoher See.
 
-Analog zu **Trithon** und **Muschelgrund** in *Ocean* benötigt auch *BACH* eine saubere Trennung zwischen flüchtiger, latenzkritischer Aufgabensteuerung und ruhender Datenpersistenz:
+Analog zu **Trithon** und **Muschelgrund** in *Ocean* trennt *BACH* saubere Ebenen zwischen latenzkritischer Aufgabensteuerung und ruhender Datenpersistenz:
 
 | Ebene | Ocean-Pendant | BACH-Komponente | Aufgabe |
 |---|---|---|---|
@@ -35,14 +35,35 @@ Bisher löste `system/hub/bach_paths.py` den Pfad `BACH_DB` auf jedem Rechner st
 
 ---
 
-## 3. Die Lösung: Rheingold-Routing & Hash-to-TaskID Staging
+## 3. Betriebsmodi: Isolierter Standard vs. Multi-Host-Federation mit Lead-Pflicht
 
-Das System unterscheidet deterministisch zwischen zwei Zuständen:
+### A. Isolierter Modus (Default / Standalone)
+* Ohne explizit festgelegten Lead arbeitet jede BACH-Instanz **völlig autark und isoliert**.
+* Tasks erhalten normale lokale Integer-IDs in der lokalen `bach.db`.
+* Es erfolgen **keine** Netzwerkanfragen, keine Latenzen, keine Abhängigkeiten von externen Systemen.
+* Automatisierte Tests (`pytest`) laufen immer im isolierten Modus (Testverschmutzungsschutz).
+
+### B. Multi-Host-Federation (Kollaboration über Systemgrenzen)
+* **Grundsatz:** Sollen mehrere BACH-Instanzen auf verschiedenen Rechnern (Mac Studio, Workstation, Laptop) gemeinsam arbeiten, **MUSS ein Lead festgelegt werden**.
+* Der festgelegte Lead (Rheingold-Lead auf Mac Studio: `http://100.119.69.90:8000` bzw. `http://macstudvonlukas:8000`) ist die **alleinige Autorität für offizielle Integer-Task-IDs**.
+* **Konfiguration:**
+  - CLI:
+    - `bach task lead` -> Zeigt Modus (`ISOLATED`, `LEAD`, `WORKER`), Lead-URL und Erreichbarkeit.
+    - `bach task lead set <url>` -> Speichert den Lead in `~/.bach/lead.json`.
+    - `bach task lead clear` -> Schaltet zurück auf isolierten Standalone-Modus.
+  - Environment: `BACH_LEAD_URL`, `BACH_MODE=isolated|lead|worker`.
+  - Host-Erkennung: Auf dem Mac Studio schaltet `is_rheingold_lead()` automatisch auf `mode=lead`.
+
+---
+
+## 4. Rheingold-Routing & Hash-to-TaskID Staging
+
+Im Modus `worker` mit festgelegtem Lead unterscheidet das System deterministisch zwischen zwei Zuständen:
 
 ```
 [Lokaler Client: Workstation / Laptop]
        │
-       ├─── 1. Rheingold-Server online? ─────────────────────────────┐
+       ├─── 1. Rheingold-Lead online? ───────────────────────────────┐
        │                                                             ▼
      NEIN                                                           JA
        │                                                             │
@@ -50,11 +71,11 @@ Das System unterscheidet deterministisch zwischen zwei Zuständen:
 [Lokaler Bachgrund (Staging)]                                [Rheingold (Server-Bachgrund)]
 • Generiert deterministischen HASH                           • Vergibt sofort offizielle
   (z.B. draft:wks:9a3f21)                                      Integer-Task-ID (#1225)
-• KEINE Integer-ID lokal!                                    • Speichert direkt in Server-DB
+• KEINE Integer-ID lokal! (temporär -1, -2)                  • Speichert direkt in Server-DB
 • Echte Offline-Fähigkeit                                    • Sofort sichtbar auf Web-Dashboard
        │                                                             │
        │                                                             ▼
-       └─── 2. Bei Reconnect / Auto-Flush ──────────────────► [Web-Dashboard :8000]
+       └─── 2. Bei Reconnect / Sync ────────────────────────► [Web-Dashboard :8000]
             • Client sendet Hash & Task-Payload
             • Rheingold prüft Idempotenz (Hash existiert?)
             • Rheingold weist offizielle ID #1225 zu
@@ -62,34 +83,31 @@ Das System unterscheidet deterministisch zwischen zwei Zuständen:
 ```
 
 ### A. Online-Modus (Rheingold erreichbar)
-1. `bach task add ...` prüft via kurzem HTTP/Socket-Check (Timeout 1.5s), ob Rheingold (`http://macstudvonlukas:8000` bzw. Tailscale `100.119.69.90:8000`) online ist.
-2. **Wenn erreichbar:** Der Payload wird via `POST /api/tasks` an den Server übertragen.
-3. Rheingold weist atomar die nächste aufsteigende Task-ID (z. B. `1225`) zu und persistiert im Server-Bachgrund.
-4. Der Client spiegelt den Task lokal mit derselben ID in seinen Cache und gibt die Erfolgsmeldung aus:
-   `[OK] Task #1225 via Rheingold (Server) erstellt: <Titel>`
-5. Der Task ist **in Millisekunden auf dem Tasks-Board sichtbar**.
+1. `bach task add ...` sendet den Payload via `POST /api/tasks` an den Rheingold-Lead.
+2. Rheingold weist atomar die nächste offizielle Task-ID zu und speichert sie im Server-Bachgrund.
+3. Der Client spiegelt den Task lokal mit derselben ID in seinen Cache.
+4. Der Task ist **in Millisekunden auf dem Tasks-Board sichtbar**.
 
 ### B. Offline-Modus (Rheingold offline / kein Netz)
-1. Wenn Rheingold nicht antwortet, schaltet die CLI auf **lokales Staging**:
-2. **Strikte Invariante:** Der Client vergibt **NIEMALS** eine eigene Integer-Task-ID.
-3. Stattdessen generiert er einen eindeutigen Staging-Hash:
-   `draft_hash = draft:<host_short>:<sha256_short>`
-4. Der Task wird im lokalen Bachgrund mit einem temporären negativen ID-Offset (z. B. negative RowID) und `source = draft_hash` gespeichert.
-5. Der Nutzer kann lokal sofort mit dem Task arbeiten (`bach task list`, `bach task show draft:...`).
-
-### C. Promotion & Idempotenter Abgleich (Sync)
-1. Sobald Rheingold wieder erreichbar ist (automatisch beim nächsten `bach task`-Aufruf oder explizit via `bach task sync`):
-2. Der Client listet alle offenen Entwürfe (`WHERE source LIKE 'draft:%'`).
-3. Rheingold prüft bei jedem Entwurf, ob `source` bereits vergeben ist:
-   - **Bereits vorhanden:** Rheingold liefert die bestehende ID zurück (Idempotenz).
-   - **Neu:** Rheingold vergibt die offizielle Integer-ID (z. B. `1226`).
-4. Der lokale Bachgrund aktualisiert den Datensatz:
-   `UPDATE tasks SET id = ?, source = ? WHERE source = ?`
-5. **Ergebnis:** 100 % kollisionsfrei, deterministisch, kein Datenverlust.
+1. Kann der Client den Lead nicht erreichen, schaltet die CLI auf **lokales Staging**:
+2. **Strikte Invariante:** Der Client vergibt **NIEMALS** eine eigene positive Integer-Task-ID.
+3. Stattdessen generiert er einen eindeutigen Staging-Hash (`draft:<host_short>:<sha256_short>`) und speichert den Task mit temporärer negativer ID (`-1, -2, ...`).
+4. `bach task list` stellt den Task transparent dar: `[DRAFT -1] P3 Mein Task (lokaler Entwurf)`.
 
 ---
 
-## 4. Spätere Konsum-Schnittstelle zu Muschelgrund (Ocean)
+## 5. Bidirektionale Synchronisation (Push & Pull Mirroring)
+
+1. **Vollständiger Sync (`bach task sync`):**
+   - Befördert alle lokalen Offline-Entwürfe (`source LIKE 'draft:%'`) idempotent an Rheingold.
+   - Zieht anschließend den gesamten Server-Zustand ab (`pull_tasks_from_rheingold`), um Statusänderungen, neue Tasks und Audit-Historien lokal spiegelbildlich zu aktualisieren.
+2. **Reines Abrufen (`bach task pull`):**
+   - Spiegelt alle Tasks vom Rheingold-Lead (`GET /api/tasks?limit=10000`) in den lokalen Bachgrund (`INSERT OR REPLACE` / Feldabgleich).
+   - Sorgt für exakte 0-Differenzen-Parität zwischen allen beteiligten Rechnern.
+
+---
+
+## 6. Spätere Konsum-Schnittstelle zu Muschelgrund (Ocean)
 
 BACH wird nicht mit redundanter Muschelgrund-Logik überfrachtet:
 * In `open-ocean` / `usmc` wird **Muschelgrund** als modulares Server-Gedächtnis (USMC Modus A) standardisiert.

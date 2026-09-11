@@ -141,3 +141,93 @@ def test_sync_drafts_promotes_to_official_id(tmp_path):
     assert old_row is None
 
     conn.close()
+
+
+def test_lead_config_isolated_by_default(monkeypatch):
+    from hub.rheingold import get_lead_config
+    monkeypatch.setattr("socket.gethostname", lambda: "WORKSTATION-LG")
+    cfg = get_lead_config()
+    assert cfg["mode"] == "isolated"
+    assert cfg["lead_url"] is None
+
+
+def test_set_and_clear_lead_config(tmp_path, monkeypatch):
+    from hub.rheingold import get_lead_config, set_lead_url, clear_lead_config
+    cfg_file = tmp_path / "lead.json"
+    monkeypatch.setattr("hub.rheingold.LEAD_CONFIG_FILE", cfg_file)
+    monkeypatch.setenv("BACH_TEST_RHEINGOLD", "1")
+
+    p = set_lead_url("http://custom-lead:8000")
+    assert p.is_file()
+    cfg = get_lead_config()
+    assert cfg["mode"] == "worker"
+    assert cfg["lead_url"] == "http://custom-lead:8000"
+
+    cleared = clear_lead_config()
+    assert cleared is True
+    assert not cfg_file.exists()
+    cfg_after = get_lead_config()
+    assert cfg_after["mode"] == "isolated"
+
+
+def test_pull_tasks_mirrors_to_local_bachgrund(tmp_path):
+    from hub.rheingold import pull_tasks_from_rheingold
+    db_path = tmp_path / "bach.db"
+    conn = sqlite3.connect(str(db_path))
+    _create_test_tasks_table(conn)
+
+    mock_server_data = {
+        "success": True,
+        "tasks": [
+            {"id": 101, "title": "Task 101", "status": "pending", "priority": "P2"},
+            {"id": 102, "title": "Task 102", "status": "done", "priority": "P1"},
+        ]
+    }
+
+    class MockResponse:
+        status = 200
+        def read(self):
+            import json
+            return json.dumps(mock_server_data).encode("utf-8")
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+
+    with patch("urllib.request.urlopen", return_value=MockResponse()):
+        inserted, updated = pull_tasks_from_rheingold(conn, "http://fake-rheingold:8000")
+
+    assert inserted == 2
+    assert updated == 0
+
+    rows = conn.execute("SELECT id, title, status FROM tasks ORDER BY id ASC").fetchall()
+    assert len(rows) == 2
+    assert rows[0][0] == 101
+    assert rows[1][0] == 102
+    assert rows[1][2] == "done"
+    conn.close()
+
+
+def test_task_lead_command(tmp_path, monkeypatch):
+    cfg_file = tmp_path / "lead.json"
+    monkeypatch.setattr("hub.rheingold.LEAD_CONFIG_FILE", cfg_file)
+    monkeypatch.setenv("BACH_TEST_RHEINGOLD", "1")
+
+    handler = TaskHandler(tmp_path)
+    handler.db_path = tmp_path / "bach.db"
+
+    # Show isolated
+    ok, msg = handler.handle("lead", ["show"])
+    assert ok is True
+    assert "ISOLATED" in msg
+
+    # Set lead
+    ok_set, set_msg = handler.handle("lead", ["set", "http://test-server:8000"])
+    assert ok_set is True
+    assert "http://test-server:8000" in set_msg
+
+    # Clear lead
+    ok_clr, clr_msg = handler.handle("lead", ["clear"])
+    assert ok_clr is True
+    assert "isolierten Standalone-Modus" in clr_msg
+

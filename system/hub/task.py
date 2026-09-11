@@ -36,9 +36,14 @@ from .task_audit import apply_task_field_changes
 from .rheingold import (
     is_rheingold_lead,
     get_rheingold_url,
+    get_lead_config,
+    set_lead_url,
+    clear_lead_config,
     post_task_to_rheingold,
     generate_draft_hash,
     sync_drafts_to_rheingold,
+    pull_tasks_from_rheingold,
+    LEAD_CONFIG_FILE,
 )
 
 
@@ -71,7 +76,9 @@ class TaskHandler(BaseHandler):
             "priority": t("task_priority_desc", default="Prioritaet aendern"),
             "assign": t("task_assign_desc", default="Task(s) zuweisen (Multi-ID)"),
             "depends": t("task_depends_desc", default="Abhaengigkeit setzen/anzeigen"),
-            "sync": "Offene Offline-Entwürfe (Drafts) an Rheingold-Server übertragen",
+            "sync": "Offene Offline-Entwürfe (Drafts) und Server-Zustand mit Rheingold synchronisieren",
+            "pull": "Tasks vom Rheingold-Lead in den lokalen Bachgrund spiegeln",
+            "lead": "Rheingold Lead-Konfiguration für Multi-Host-Federation verwalten (show|set|clear)",
             "taskplan": "TASKPLAN-Bridge status/list/import",
             "help": t("hilfe", default="Hilfe anzeigen")
         }
@@ -160,6 +167,10 @@ class TaskHandler(BaseHandler):
             return self._taskplan(args)
         elif operation == "sync":
             return self._sync(args)
+        elif operation == "pull":
+            return self._pull(args)
+        elif operation == "lead":
+            return self._lead(args)
         elif operation in ["", "help"]:
             return self._help()
         else:
@@ -228,10 +239,12 @@ class TaskHandler(BaseHandler):
                 i += 1
 
         is_isolated_test = (self.db_path != self._canonical_db) or (os.environ.get("BACH_RHEINGOLD_DISABLED") == "1")
+        lead_cfg = get_lead_config()
 
-        if force_local or (not is_isolated_test and not is_rheingold_lead()):
+        # Multi-Host Federation aktiv nur wenn als Worker mit festgelegtem Lead konfiguriert (oder --remote)
+        if not is_isolated_test and not force_local and (lead_cfg["mode"] == "worker" or force_remote):
             try:
-                if not force_local and not is_rheingold_lead():
+                if not force_local:
                     rheingold_url = get_rheingold_url(timeout=1.2)
                     if rheingold_url:
                         payload = {
@@ -261,7 +274,7 @@ class TaskHandler(BaseHandler):
                     elif force_remote:
                         return False, "Rheingold-Server nicht erreichbar (--remote erfordert Verbindung)."
 
-                # Fallback offline (oder --offline/--local erzwungen): Staging mit Hash, niemals Integer-ID
+                # Fallback offline (oder erzwungen): Staging mit Hash, niemals Integer-ID
                 draft_hash = generate_draft_hash(title, category)
                 with self._get_db() as conn:
                     ensure_task_due_date(conn)
@@ -283,6 +296,26 @@ class TaskHandler(BaseHandler):
             except Exception as e:
                 if force_remote:
                     return False, f"Rheingold-Fehler: {e}"
+        elif "--offline" in args:
+            # Expliziter Offline-Entwurf auch im isolierten Modus
+            draft_hash = generate_draft_hash(title, category)
+            with self._get_db() as conn:
+                ensure_task_due_date(conn)
+                min_id = conn.execute("SELECT MIN(id) FROM tasks WHERE id < 0").fetchone()[0]
+                draft_id = (min_id - 1) if (min_id is not None and min_id < 0) else -1
+                conn.execute("""
+                    INSERT INTO tasks
+                        (id, title, priority, category, description, status, due_date, created_at, source)
+                    VALUES (?, ?, ?, ?, ?, 'pending', ?, datetime('now'), ?)
+                """, (draft_id, title, priority, category, description, due_date, draft_hash))
+                conn.commit()
+
+            due_text = f" (fällig: {due_date})" if due_date else ""
+            return True, (
+                f"[OFFLINE] Task als Entwurf {draft_hash} (ID {draft_id}) im lokalen Bachgrund gespeichert:\n"
+                f"  {title}{due_text}\n"
+                f"  (Wird bei erreichbarem Rheingold-Server automatisch synchronisiert via 'bach task sync')"
+            )
 
         with self._get_db() as conn:
             ensure_task_due_date(conn)
@@ -513,21 +546,76 @@ class TaskHandler(BaseHandler):
         return True, "\n".join(lines)
 
     def _sync(self, args: List[str]) -> Tuple[bool, str]:
-        """Offene lokale Entwürfe (Drafts) an Rheingold-Server übertragen."""
+        """Offene lokale Entwürfe an Rheingold übertragen und Server-Zustand spiegeln."""
+        lead_cfg = get_lead_config()
+        if lead_cfg["mode"] == "isolated":
+            return False, "BACH läuft im isolierten Modus (kein Lead konfiguriert). Nutze 'bach task lead set <url>' zur Anbindung."
+        if lead_cfg["mode"] == "lead":
+            return True, "[INFO] Dieser Host ist selbst der Rheingold-Lead. Kein Upstream-Sync erforderlich."
+
         url = get_rheingold_url(timeout=2.0)
         if not url:
-            return False, "Rheingold-Server nicht erreichbar oder dieser Host ist selbst Lead. Sync abgebrochen."
+            return False, f"Rheingold-Lead ({lead_cfg.get('lead_url', 'unbekannt')}) ist offline oder nicht erreichbar."
 
         with self._get_db() as conn:
             promoted = sync_drafts_to_rheingold(conn, url)
+            inserted, updated = pull_tasks_from_rheingold(conn, url)
 
-        if not promoted:
-            return True, f"[OK] Keine offenen Entwürfe. Lokaler Bachgrund ist synchron mit Rheingold ({url})."
+        lines = [f"[OK] Synchronisation mit Rheingold ({url}) abgeschlossen:"]
+        if promoted:
+            lines.append(f"  • {len(promoted)} Entwürfe befördert:")
+            for p in promoted:
+                lines.append(f"    - {p['draft_hash']} -> Task #{p['new_id']}: {p['title']}")
+        else:
+            lines.append("  • 0 offene lokale Entwürfe.")
 
-        lines = [f"[OK] {len(promoted)} Entwürfe erfolgreich an Rheingold ({url}) übertragen:"]
-        for p in promoted:
-            lines.append(f"  • {p['draft_hash']} (alt: {p['old_id']}) -> Task #{p['new_id']}: {p['title']}")
+        lines.append(f"  • Server-Bachgrund gespiegelt: {inserted} neu importiert, {updated} aktualisiert.")
         return True, "\n".join(lines)
+
+    def _pull(self, args: List[str]) -> Tuple[bool, str]:
+        """Tasks vom Rheingold-Lead in den lokalen Bachgrund spiegeln."""
+        lead_cfg = get_lead_config()
+        if lead_cfg["mode"] == "isolated":
+            return False, "BACH läuft im isolierten Modus (kein Lead konfiguriert). Nutze 'bach task lead set <url>'."
+        if lead_cfg["mode"] == "lead":
+            return True, "[INFO] Dieser Host ist selbst der Rheingold-Lead."
+
+        url = get_rheingold_url(timeout=2.0)
+        if not url:
+            return False, f"Rheingold-Lead ({lead_cfg.get('lead_url', 'unbekannt')}) ist nicht erreichbar."
+
+        with self._get_db() as conn:
+            inserted, updated = pull_tasks_from_rheingold(conn, url)
+
+        return True, f"[OK] Lokaler Bachgrund gespiegelt von Rheingold ({url}): {inserted} neu importiert, {updated} aktualisiert."
+
+    def _lead(self, args: List[str]) -> Tuple[bool, str]:
+        """Rheingold Lead-Konfiguration anzeigen oder festlegen (show|set|clear)."""
+        if not args or args[0] in ("show", "status"):
+            cfg = get_lead_config()
+            mode = cfg["mode"]
+            url = cfg.get("lead_url")
+            reachability = ""
+            if mode == "worker" and url:
+                active = get_rheingold_url(timeout=1.0)
+                reachability = f" [Online: {active}]" if active else " [Offline / Nicht erreichbar]"
+            return True, (
+                f"Rheingold Federation Status:\n"
+                f"  Modus:       {mode.upper()}\n"
+                f"  Lead-URL:    {url or 'keine (isoliert)'}{reachability}\n"
+                f"  Config-Pfad: {LEAD_CONFIG_FILE}"
+            )
+
+        sub = args[0].lower()
+        if sub == "set" and len(args) > 1:
+            url = args[1]
+            p = set_lead_url(url)
+            return True, f"[OK] Rheingold-Lead auf {url} gesetzt.\nGespeichert in: {p}"
+        elif sub in ("clear", "unset", "isolated"):
+            clear_lead_config()
+            return True, "[OK] Lead-Konfiguration gelöscht. BACH operiert nun im isolierten Standalone-Modus."
+        else:
+            return False, "Usage: bach task lead [show | set <url> | clear]"
     
     def _done(self, args: List[str]) -> Tuple[bool, str]:
         """Task(s) als erledigt markieren - Multi-ID Support"""
@@ -1089,6 +1177,9 @@ Befehle:
   bach task show <id>                Task-Details
   bach task delete <id> [id2...]     Task(s) loeschen
   bach task priority <id> <P1-P4>    Prioritaet aendern
+  bach task sync                     Drafts übertragen und Server-Zustand spiegeln
+  bach task pull                     Tasks vom Rheingold-Lead lokal spiegeln
+  bach task lead [show|set <u|clear] Rheingold Lead-Federation verwalten
 
 Filter-Optionen (kombinierbar):
   --filter TERM           Nach Begriff im Titel
