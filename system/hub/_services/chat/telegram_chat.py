@@ -2248,8 +2248,14 @@ function renderWorkers(workers) {
       ? '<span style="color:#10b981;font-size:0.75rem;font-weight:600">✓ SysPrompt</span>' 
       : '<span style="color:#f59e0b;font-size:0.75rem;font-weight:600">✗ Kein SysPrompt</span>';
 
+    const isRunning = (st === 'running');
+    const cardBorder = isRunning ? 'border:1px solid #38bdf8;box-shadow:0 0 12px rgba(56,189,248,0.25);' : '';
+    const runBtn = isRunning 
+      ? `<button class="btn btn-sm" style="background:#854d0e;color:#fef08a;cursor:not-allowed;font-weight:600" disabled>⏳ Läuft...</button>`
+      : `<button class="btn btn-sm btn-success" id="btn-run-${w.id}" onclick="runWorker('${w.id}')">▶ Start</button>`;
+
     html += `
-      <div class="worker-card" id="wcard-${w.id}">
+      <div class="worker-card" id="wcard-${w.id}" style="${cardBorder}">
         <div class="worker-top">
           <div class="worker-name">${escapeHtml(w.name || w.id)}</div>
           <span class="badge ${badgeClass}">${escapeHtml(st)}</span>
@@ -2262,7 +2268,7 @@ function renderWorkers(workers) {
         </div>
         <div class="activity-box" style="min-height:30px">${escapeHtml(w.current_activity || 'Bereit')}</div>
         <div class="worker-actions">
-          <button class="btn btn-sm btn-success" onclick="runWorker('${w.id}')">▶ Start</button>
+          ${runBtn}
           <button class="btn btn-sm btn-secondary" onclick="openHistoryModal('${w.id}')">📜 Verlauf</button>
           <button class="btn btn-sm btn-secondary" onclick="toggleWorker('${w.id}', '${st}')">${st === 'paused' ? '▶ Aktiv' : '⏸ Pause'}</button>
           <button class="btn btn-sm btn-danger" onclick="deleteWorker('${w.id}')">🗑 Löschen</button>
@@ -2589,6 +2595,23 @@ function closeHistoryModal() {
 }
 
 async function runWorker(workerId) {
+  const btn = document.getElementById(`btn-run-${workerId}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Starte...';
+    btn.style.background = '#854d0e';
+    btn.style.color = '#fef08a';
+  }
+  const card = document.getElementById(`wcard-${workerId}`);
+  if (card) {
+    const actBox = card.querySelector('.activity-box');
+    if (actBox) actBox.textContent = 'Starte Worker...';
+    const badge = card.querySelector('.badge');
+    if (badge) {
+      badge.className = 'badge badge-running';
+      badge.textContent = 'running';
+    }
+  }
   toast(`Starte Worker ${workerId}...`);
   const res = await api('POST', '/workers/run', { id: workerId });
   if (res && res.ok) {
@@ -2596,6 +2619,7 @@ async function runWorker(workerId) {
     refreshAll();
   } else {
     toast(`Fehler: ${res.error || 'Konnte nicht starten'}`);
+    refreshAll();
   }
 }
 
@@ -3434,10 +3458,24 @@ class ControlHandler(BaseHTTPRequestHandler):
                 return
             def _run_worker_job():
                 try:
-                    update_slot(worker_id, {"status": "running", "current_activity": "Arbeite an Aufgabe..."})
+                    update_slot(worker_id, {"status": "running", "current_activity": "Starte Routine..."})
                     record_activity(worker_id, f"Worker gestartet: {w.get('name')}", "running")
                     target_backend, model = _snapshot_chat_backend(worker_id)
-                    task_prompt = custom_prompt or w.get("system_prompt") or f"Führe Task #{w.get('task_id', '')} aus"
+                    
+                    if custom_prompt:
+                        task_prompt = custom_prompt
+                    elif w.get("task_id"):
+                        task_prompt = f"Führe Task #{w.get('task_id')} aus und schließe ihn ab."
+                    elif w.get("sub_mode") == "hintergrund_worker":
+                        task_prompt = "Prüfe offene Tasks in BACH und bearbeite die wichtigste offene Aufgabe autonom."
+                    elif w.get("sub_mode") == "boss_routing":
+                        task_prompt = "Analysiere die anstehenden Aufgaben in BACH, koordiniere die Experten und weise Teilaufgaben zu."
+                    elif w.get("sub_mode") == "expert_role":
+                        role = w.get("role_id") or "Experte"
+                        task_prompt = f"Arbeite als {role} die offenen Aufgaben deines Fachgebiets in BACH ab."
+                    else:
+                        task_prompt = w.get("task_prompt") or "Prüfe offene Aufgaben und beginne mit der Bearbeitung."
+
                     loop = asyncio.new_event_loop()
                     try:
                         ans = loop.run_until_complete(
@@ -3449,6 +3487,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                     finally:
                         loop.close()
                 except Exception as exc:
+                    log.error(f"Worker {worker_id} Fehler: {exc}")
                     update_slot(worker_id, {"status": "error", "current_activity": f"Fehler: {exc}"})
                     record_activity(worker_id, f"Fehler: {exc}", "error")
             threading.Thread(target=_run_worker_job, daemon=True).start()

@@ -1059,6 +1059,7 @@ class ChatSession:
         self.backend: Any = None
         self.max_tool_rounds: Optional[int] = None
         self.custom_system_prompt: str = ""
+        self.chat_id: str = ""
 
 
 
@@ -1140,10 +1141,13 @@ class ChatRuntime:
         now = time.time()
         if chat_id in self.sessions:
             s = self.sessions[chat_id]
+            s.chat_id = chat_id
             if s.last_active > 0 and (now - s.last_active) > self.SESSION_IDLE_TTL:
                 log.info("Session %s wegen Inaktivität (>24h) archiviert und zurückgesetzt", chat_id)
                 self.archive_and_reset(chat_id, reason="24h Inaktivität (RAM)")
-                return self.sessions[chat_id]
+                s_new = self.sessions[chat_id]
+                s_new.chat_id = chat_id
+                return s_new
             return s
 
         if self.session_store is not None:
@@ -1156,12 +1160,14 @@ class ChatRuntime:
                 except Exception as exc:
                     log.warning("Auto-Reset Archivierung fehlgeschlagen: %s", exc)
                 s = ChatSession()
+                s.chat_id = chat_id
                 s.model = self.backend.get_default_model()
                 s.last_active = now
                 self.sessions[chat_id] = s
                 return s
 
         s = ChatSession()
+        s.chat_id = chat_id
         s.model = self.backend.get_default_model()
         s.messages = self._load_messages(chat_id)
         s.last_active = now if s.messages else 0.0
@@ -1461,6 +1467,13 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 if t_name and t_name not in session.last_tools:
                     session.last_tools = (session.last_tools + [t_name])[-5:]
                 log.info(f"Tool [{round_num}]: {t_name}({json.dumps(t_args, ensure_ascii=False)[:200]})")
+                cid = getattr(session, "chat_id", "")
+                if cid:
+                    try:
+                        from hub._services.chat.slots_config import update_slot
+                        update_slot(cid, {"current_activity": f"Tool [{round_num}]: {t_name}"})
+                    except Exception:
+                        pass
                 t_result = exec_tool(
                     t_name, t_args, session.mode,
                     bach_app=self.bach_app,

@@ -860,10 +860,16 @@ class BACHTray:
                 wact = w.get("current_activity", "Bereit")
                 wrole = w.get("role", "General")
 
+                start_item = (
+                    pystray.MenuItem("⏳ Läuft...", None, enabled=False)
+                    if wstatus == "running"
+                    else pystray.MenuItem("▶ Starten", self._run_worker_action(wid))
+                )
+
                 w_actions = [
                     pystray.MenuItem(f"Rolle: {wrole} | {wturns} Turns", None, enabled=False),
                     pystray.MenuItem(f"Aktivität: {wact[:35]}", None, enabled=False),
-                    pystray.MenuItem("▶ Starten", self._run_worker_action(wid)),
+                    start_item,
                     pystray.MenuItem("▶ Fortsetzen" if wstatus == "paused" else "⏸ Pausieren",
                                      self._toggle_worker_action(wid, wstatus)),
                     pystray.MenuItem("🗑 Worker löschen", self._delete_worker_action(wid)),
@@ -1139,6 +1145,7 @@ class BACHTray:
             elif self.icon:
                 self.icon.notify(f"Worker {worker_id} gestartet", "BACH Worker")
             self._refresh()
+            self._update_icon()
         return action
 
     def _toggle_worker_action(self, worker_id, current_status):
@@ -1148,6 +1155,7 @@ class BACHTray:
             if res is None or res.get("error"):
                 self._notify_error(f"Worker {worker_id} Toggle")
             self._refresh()
+            self._update_icon()
         return action
 
     def _delete_worker_action(self, worker_id):
@@ -1158,6 +1166,7 @@ class BACHTray:
             elif self.icon:
                 self.icon.notify(f"Worker {worker_id} gelöscht", "BACH Worker")
             self._refresh()
+            self._update_icon()
         return action
 
     def _open_gui(self, *_):
@@ -1204,15 +1213,39 @@ class BACHTray:
             self.icon.icon = self._icon_image
             self.icon.menu = self._build_menu()
 
+    def _menu_signature(self):
+        worker_sig = tuple(
+            (w.get("id"), w.get("status"), w.get("model"), w.get("current_activity"), w.get("max_tool_rounds"))
+            for w in getattr(self, "dynamic_workers", [])
+        )
+        slot_sig = tuple(
+            (k, v.get("model"), v.get("backend"), v.get("max_tool_rounds"), v.get("mode"), v.get("enabled"), v.get("current_activity"))
+            for k, v in sorted(getattr(self, "slots", {}).items())
+        )
+        return (
+            self.state.get("connected"),
+            self.state.get("mode"),
+            self.state.get("think"),
+            self.state.get("fackel_preference"),
+            self.state.get("current_backend"),
+            self.state.get("current_model"),
+            len(getattr(self, "models", [])),
+            getattr(self, "idle_task_name", None),
+            getattr(self, "active_tool", None),
+            worker_sig,
+            slot_sig,
+        )
+
     # --- Polling ---
 
     def _poll_loop(self):
+        old_sig = self._menu_signature()
         while not self._stop.is_set():
-            old_connected = self.state["connected"]
-            old_mode = self.state["mode"]
             self._refresh()
-            if self.state["connected"] != old_connected or self.state["mode"] != old_mode:
+            new_sig = self._menu_signature()
+            if new_sig != old_sig:
                 self._update_icon()
+                old_sig = new_sig
             self._idle_tick()
             self._stop.wait(self.POLL_INTERVAL)
 
