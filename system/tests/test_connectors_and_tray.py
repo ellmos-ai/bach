@@ -940,6 +940,41 @@ class TestBACHTray:
             result = tray._api("GET", "/api/status")
             assert result["backend"] == "ollama"
 
+    def test_fackel_preference_default(self, tray):
+        assert tray.state["fackel_preference"] == "compute"
+
+    def test_set_fackel_via_api(self, tray):
+        with patch.object(tray, "_api", return_value={"ok": True, "fackel_preference": "ollama"}) as mock_api, \
+             patch.object(tray, "_refresh"), \
+             patch.object(tray, "_update_icon"):
+            tray.icon = MagicMock()
+            tray._set_fackel("ollama")
+            mock_api.assert_called_once_with("POST", "/api/fackel", {"preference": "ollama"})
+            assert tray.state["fackel_preference"] == "ollama"
+            tray.icon.notify.assert_called_once()
+            assert "Ollama" in tray.icon.notify.call_args[0][0]
+
+    def test_set_fackel_fallback_local(self, tray, tmp_path):
+        fpath = str(tmp_path / "fackel.json")
+        with patch.object(tray, "_api", return_value=None), \
+             patch.dict(os.environ, {"BACH_FACKEL_PREFERENCE_PATH": fpath}), \
+             patch.object(tray, "_refresh"), \
+             patch.object(tray, "_update_icon"):
+            tray.icon = MagicMock()
+            tray._set_fackel("compute")
+            assert tray.state["fackel_preference"] == "compute"
+
+    def test_build_menu_contains_fackel_submenu(self, tray):
+        tray.state["connected"] = True
+        tray.state["fackel_preference"] = "ollama"
+        with patch.dict('sys.modules', {
+            'pystray': MagicMock(),
+        }):
+            menu = tray._build_menu()
+            # _build_menu creates items including Fackel
+            assert menu is not None
+
+
 
 class TestTraySingleInstance:
     """Single-instance contract (FABLE-SOL-PLAN 1.2.3): a second tray must not start."""

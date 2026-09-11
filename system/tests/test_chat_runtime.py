@@ -786,3 +786,42 @@ def test_control_api_does_not_report_failed_answers_as_ok():
     )
     assert '{"ok": True, "answer": answer}' not in src
     assert 'not isinstance(answer, FailedAnswer)' in src
+
+
+class TestFackelPreference:
+    def test_default_fackel_is_compute(self, tmp_path):
+        from hub.compute_lock import get_fackel_preference
+        nonexistent = str(tmp_path / "nonexistent_fackel.json")
+        assert get_fackel_preference(nonexistent) == "compute"
+
+    def test_set_and_get_fackel_preference(self, tmp_path):
+        from hub.compute_lock import get_fackel_preference, set_fackel_preference
+        fpath = str(tmp_path / "fackel.json")
+        
+        # Set to ollama
+        pref = set_fackel_preference("ollama", path=fpath)
+        assert pref == "ollama"
+        assert get_fackel_preference(fpath) == "ollama"
+
+        # Set to compute
+        pref = set_fackel_preference("COMPUTE", path=fpath)
+        assert pref == "compute"
+        assert get_fackel_preference(fpath) == "compute"
+
+    def test_set_fackel_invalid_raises(self, tmp_path):
+        import pytest
+        from hub.compute_lock import set_fackel_preference
+        fpath = str(tmp_path / "fackel.json")
+        with pytest.raises(ValueError):
+            set_fackel_preference("invalid_preference", path=fpath)
+
+    def test_telegram_chat_fackel_integration(self):
+        """Verify telegram_chat contains fackel endpoint, command, and dashboard controls."""
+        src = (Path(BACH_SYSTEM_DIR) / "_services" / "chat" / "telegram_chat.py").read_text(
+            encoding="utf-8"
+        )
+        assert 'elif path == "/api/fackel":' in src
+        assert '"fackel_preference": get_fackel_preference()' in src
+        assert 'app.add_handler(CommandHandler("fackel", cmd_fackel))' in src
+        assert 'setFackel' in src
+

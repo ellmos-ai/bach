@@ -133,6 +133,7 @@ class BACHTray:
             "sessions": 0,
             "connected": False,
             "max_tool_rounds": 12,
+            "fackel_preference": "compute",
             "current_tool": "",
             "last_tools": [],
         }
@@ -202,6 +203,13 @@ class BACHTray:
         self.services["control"] = self.state["connected"]
         self.services["gui"] = self._check_url(self.gui_url + "/")
         self.services["ollama"] = self._check_url(self.ollama_url + "/api/tags")
+
+        if not self.state.get("connected") or "fackel_preference" not in self.state:
+            try:
+                from hub.compute_lock import get_fackel_preference
+                self.state["fackel_preference"] = get_fackel_preference()
+            except Exception:
+                self.state.setdefault("fackel_preference", "compute")
 
     # --- PromptBoard ---
 
@@ -779,6 +787,24 @@ class BACHTray:
             items.append(pystray.MenuItem(
                 f"Max Tool-Runden ({mr_label})", pystray.Menu(*round_items),
             ))
+            items.append(pystray.Menu.SEPARATOR)
+
+            # Fackel (Ressourcen-Priorität)
+            current_fackel = self.state.get("fackel_preference", "compute")
+            fackel_label = "Fackel: Ollama" if current_fackel == "ollama" else "Fackel: Rechenjobs"
+            fackel_items = [
+                pystray.MenuItem(
+                    "Ollama / Chat & Worker bevorzugen",
+                    lambda *_: self._set_fackel("ollama"),
+                    checked=lambda item: self.state.get("fackel_preference", "compute") == "ollama",
+                ),
+                pystray.MenuItem(
+                    "Rechenjobs bevorzugen (Compute)",
+                    lambda *_: self._set_fackel("compute"),
+                    checked=lambda item: self.state.get("fackel_preference", "compute") == "compute",
+                ),
+            ]
+            items.append(pystray.MenuItem(fackel_label, pystray.Menu(*fackel_items)))
 
             # Tool-Aktivität
             ct = self.state.get("current_tool", "")
@@ -925,6 +951,24 @@ class BACHTray:
             self._refresh()
             self._update_icon()
         return action
+
+    def _set_fackel(self, pref, *_):
+        result = self._api("POST", "/api/fackel", {"preference": pref})
+        if result is None:
+            try:
+                from hub.compute_lock import set_fackel_preference
+                set_fackel_preference(pref)
+                self.state["fackel_preference"] = pref
+            except Exception:
+                self._notify_error(f"Fackel → {pref}")
+                return
+        else:
+            self.state["fackel_preference"] = pref
+        self._refresh()
+        self._update_icon()
+        if self.icon:
+            label = "Ollama (Chat & Worker)" if pref == "ollama" else "Rechenjobs (Compute)"
+            self.icon.notify(f"Fackel: {label} bevorzugt", "BACH")
 
     def _toggle_idle(self, *_):
         self.idle_enabled = not self.idle_enabled

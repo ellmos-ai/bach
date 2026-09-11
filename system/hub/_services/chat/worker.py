@@ -128,6 +128,21 @@ def main(argv: list[str] | None = None) -> int:
     from hub._services import fackel
     from hub._services.chat import telegram_chat as tc
 
+    try:
+        from hub.compute_lock import (
+            check_compute_active,
+            get_fackel_preference,
+            pause_compute_jobs,
+            resume_compute_jobs,
+        )
+        HAS_COMPUTE_LOCK = True
+    except ImportError:
+        HAS_COMPUTE_LOCK = False
+        def get_fackel_preference(): return "compute"
+        def check_compute_active(): return False, {}
+        def pause_compute_jobs(s): return []
+        def resume_compute_jobs(p): pass
+
     runtime = tc.runtime
     runtime.max_tool_rounds = 0
     runtime.auto_continue = 8
@@ -152,10 +167,15 @@ def main(argv: list[str] | None = None) -> int:
             _log(workdir, "keine bereiten Tasks - Ende")
             return 0
 
+        compute_active, compute_status = (check_compute_active() if HAS_COMPUTE_LOCK else (False, {}))
+        fackel_pref = get_fackel_preference() if HAS_COMPUTE_LOCK else "compute"
+
         if still is None:
             _log(workdir, "Chat-Aktivitaet nicht messbar - halte zurueck")
         elif still < args.ruhe:
             _log(workdir, f"Chat war vor {round(still)}s aktiv (Schwelle {args.ruhe}s) - warte")
+        elif compute_active and fackel_pref == "compute":
+            _log(workdir, "Rechenjobs aktiv und Fackel steht auf 'compute' - warte")
         elif not fackel.passt(fuer_modell=modell):
             # Still heisst nicht frei: Haelt ein FREMDES Modell den Speicher,
             # wuerde unser Modell in einen vollen Speicher geladen. Das eigene
@@ -187,10 +207,18 @@ def main(argv: list[str] | None = None) -> int:
                 "nicht die Arbeit. Antworte am Ende mit FERTIG."
             )
 
+            paused_jobs = []
+            if compute_active and fackel_pref == "ollama":
+                paused_jobs = pause_compute_jobs(compute_status)
+                if paused_jobs:
+                    _log(workdir, f"Fackel steht auf 'ollama' - pausiere Rechenjobs ({paused_jobs}) fuer Inferenz")
+
             t0 = time.time()
             try:
-                antwort = asyncio.run(runtime.process("\n\n".join(auftrag), chat_id))
+                antwort = asyncio.run(runtime.process("\n\n".join(auftrag), chat_id, skip_compute_gate=True))
             except KeyboardInterrupt:
+                if paused_jobs:
+                    resume_compute_jobs(paused_jobs)
                 state_schreiben(bach_cli, args.category,
                                 f"Task #{t['id']} unterbrochen nach "
                                 f"{round(time.time()-t0)}s. Gebautes liegt in {workdir}.")
@@ -199,6 +227,10 @@ def main(argv: list[str] | None = None) -> int:
             except Exception as e:
                 _log(workdir, f"    FEHLER: {e!r}")
                 antwort = ""
+            finally:
+                if paused_jobs:
+                    resume_compute_jobs(paused_jobs)
+                    _log(workdir, f"Rechenjobs ({paused_jobs}) fortgesetzt")
 
             dauer = round(time.time() - t0)
             fertig = "FERTIG" in (antwort or "").upper()[:300]

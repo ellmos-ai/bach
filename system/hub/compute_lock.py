@@ -38,6 +38,13 @@ _CHECK_SCRIPT_CANDIDATES = [
     "~/.memwatchdog/check_compute_active.sh",
 ]
 PAUSED_PIDS_FILE = "~/.memwatchdog/bot_paused_pids.json"
+FACKEL_PREFERENCE_FILE = os.environ.get(
+    "BACH_FACKEL_PREFERENCE_PATH", "~/.memwatchdog/fackel_preference.json"
+)
+FACKEL_COMPUTE = "compute"
+FACKEL_OLLAMA = "ollama"
+VALID_FACKEL_PREFERENCES = (FACKEL_COMPUTE, FACKEL_OLLAMA)
+
 
 
 def _expand(path: str) -> Path:
@@ -419,3 +426,50 @@ def format_status_message(status: dict) -> str:
     lines.append("Soll ich die Jobs pausieren (SIGSTOP) fuer den Ollama-Load?")
     lines.append("Antwort: JA oder NEIN")
     return "\n".join(lines)
+
+
+def get_fackel_preference(path: str = FACKEL_PREFERENCE_FILE) -> str:
+    """Return the current Fackel (resource priority) preference.
+
+    Returns:
+        'ollama' or 'compute' (default: 'compute').
+    """
+    f = _expand(path)
+    if f.is_file():
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            pref = str(data.get("preference", "")).lower().strip()
+            if pref in VALID_FACKEL_PREFERENCES:
+                return pref
+        except Exception as e:
+            log.warning("Could not read fackel preference file %s: %s", f, e)
+    return FACKEL_COMPUTE
+
+
+def set_fackel_preference(pref: str, path: str = FACKEL_PREFERENCE_FILE) -> str:
+    """Set the Fackel resource preference ('compute' or 'ollama') and persist it.
+
+    Returns:
+        The normalized preference string.
+    """
+    pref_norm = str(pref).lower().strip()
+    if pref_norm not in VALID_FACKEL_PREFERENCES:
+        raise ValueError(
+            f"Invalid fackel preference: {pref!r}. Must be one of {VALID_FACKEL_PREFERENCES}"
+        )
+    f = _expand(path)
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "preference": pref_norm,
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        tmp = f.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        tmp.replace(f)
+        log.info("Fackel preference updated to %s (file: %s)", pref_norm, f)
+        return pref_norm
+    except Exception as e:
+        log.error("Failed to persist fackel preference to %s: %s", f, e)
+        raise
+

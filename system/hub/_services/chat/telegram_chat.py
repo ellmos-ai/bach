@@ -99,12 +99,17 @@ try:
         start_resume_monitor, recover_paused_jobs, format_status_message,
         write_session_flag, update_session_flag, delete_session_flag,
         set_inferenz_active, get_effective_keep_alive_seconds,
+        get_fackel_preference, set_fackel_preference,
     )
     HAS_COMPUTE_LOCK = True
 except ImportError:
     HAS_COMPUTE_LOCK = False
     DEFAULT_LOCK_PATH = "~/.memwatchdog/compute_active.lock"
     DEFAULT_CHECK_SCRIPT = ""
+    def get_fackel_preference():
+        return "compute"
+    def set_fackel_preference(pref):
+        return pref
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -528,6 +533,7 @@ async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"Denken: {'AN' if session.think else 'AUS'}\n"
         f"Modell: {session.model}\n"
         f"Max Tool-Runden: {mr_label}\n"
+        f"Fackel: {get_fackel_preference().capitalize()}\n"
         f"BACH: {'Ja' if HAS_BACH else 'Nein'}\n"
         f"Kontext: {n_msgs} Nachrichten, ~{chars:,} Zeichen"
         + tool_info
@@ -661,6 +667,7 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         parts.append(f"Backend: {e}")
     parts.append(f"Modus: {session.mode} | Denken: {'AN' if session.think else 'AUS'}")
+    parts.append(f"Fackel: {get_fackel_preference().capitalize()}")
     if HAS_BACH:
         try:
             ok, out = _bach_app.execute("status", "", [])
@@ -668,6 +675,33 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except Exception:
             parts.append("BACH: Fehler")
     await update.message.reply_text("\n\n".join(parts)[:4000])
+
+
+async def cmd_fackel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _owner_check(update):
+        await update.message.reply_text("Zugriff nur für den Owner.")
+        return
+    args = ctx.args or []
+    current_pref = get_fackel_preference()
+    if not args:
+        status_text = "Ollama (Chat & Worker bevorzugt)" if current_pref == "ollama" else "Rechenjobs bevorzugt (Compute)"
+        await update.message.reply_text(
+            f"Fackel-Priorität: {status_text}\n\n"
+            f"Umschalten:\n"
+            f"/fackel ollama — Chat & Worker bevorzugen\n"
+            f"/fackel compute — Rechenjobs bevorzugen (Standard)"
+        )
+        return
+    pref = args[0].lower().strip()
+    if pref in ("ollama", "chat", "worker"):
+        set_fackel_preference("ollama")
+        await update.message.reply_text("Fackel umgestellt: Ollama (Chat & Worker) bevorzugt.")
+    elif pref in ("compute", "rechenjobs", "jobs"):
+        set_fackel_preference("compute")
+        await update.message.reply_text("Fackel umgestellt: Rechenjobs bevorzugt (Compute).")
+    else:
+        await update.message.reply_text("Nutze: /fackel ollama oder /fackel compute")
+
 
 
 async def cmd_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -873,6 +907,8 @@ def _compute_lock_blocks() -> bool:
     """
     if not _compute_lock_enabled():
         return False
+    if get_fackel_preference() == "ollama":
+        return False
     cl_cfg = CONFIG.get("compute_lock", {})
     is_active, _status = check_compute_active(
         lock_path=cl_cfg.get("lock_path", DEFAULT_LOCK_PATH),
@@ -1014,15 +1050,73 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             check_script=cl_cfg.get("check_script", DEFAULT_CHECK_SCRIPT),
         )
         if is_active:
-            msg = format_status_message(status)
-            _pending_actions[chat_id] = {
-                "kind": "compute_pause_for_ollama",
-                "status": status,
-                "text": text,
-                "timestamp": time.time(),
-            }
-            await update.message.reply_text(msg)
-            return
+            pref = get_fackel_preference()
+            if pref == "ollama":
+                cl_cfg = CONFIG.get("compute_lock", {})
+                paused = pause_compute_jobs(status)
+                if paused:
+                    pid_str = ", ".join(str(p) for p in paused)
+                    await update.message.reply_text(
+                        f"Fackel steht auf Ollama: Pausiere Compute-Jobs automatisch ({pid_str})...\n"
+                        f"Starte Ollama-Anfrage..."
+                    )
+                model = runtime.get_session(chat_id).model or runtime.backend.get_default_model()
+                write_session_flag(chat_id, model,
+                                   effective_keep_alive_seconds=get_effective_keep_alive_seconds())
+                typing = asyncio.create_task(_keep_typing(update))
+                success = False
+                try:
+                    set_inferenz_active(True)
+                    answer = await runtime.process(text, chat_id, skip_compute_gate=True)
+                    for i in range(0, len(answer), 4000):
+                        await update.message.reply_text(answer[i:i + 4000])
+                    session = runtime.get_session(chat_id)
+                    if session.voice_output:
+                        await _send_voice_reply(update, answer)
+                    success = True
+                except Exception as e:
+                    log.error(f"Chat-Fehler mit Ollama-Fackel: {e}")
+                    await update.message.reply_text(f"Fehler: {e}")
+                finally:
+                    set_inferenz_active(False)
+                    typing.cancel()
+
+                if paused:
+                    if not success:
+                        log.info("Chat inference failed after auto-pause, resuming compute jobs: %s", paused)
+                        delete_session_flag()
+                        resume_compute_jobs(paused)
+                        await update.message.reply_text(
+                            "Anfrage fehlgeschlagen. Pausierte Compute-Jobs wurden wieder fortgesetzt."
+                        )
+                    else:
+                        ollama_url = getattr(runtime.backend, "base_url", "http://localhost:11434")
+
+                        def _on_resume(pids):
+                            log.info("Compute jobs resumed: %s", pids)
+
+                        start_resume_monitor(
+                            model_name=model,
+                            paused_pids=paused,
+                            callback=_on_resume,
+                            ollama_url=ollama_url,
+                            idle_wait=90.0,
+                        )
+                        await update.message.reply_text(
+                            f"Resume-Monitor gestartet. Jobs werden automatisch "
+                            f"fortgesetzt wenn {model} entladen wird."
+                        )
+                return
+            else:
+                msg = format_status_message(status)
+                _pending_actions[chat_id] = {
+                    "kind": "compute_pause_for_ollama",
+                    "status": status,
+                    "text": text,
+                    "timestamp": time.time(),
+                }
+                await update.message.reply_text(msg)
+                return
         model = runtime.get_session(chat_id).model or runtime.backend.get_default_model()
         write_session_flag(chat_id, model,
                            effective_keep_alive_seconds=get_effective_keep_alive_seconds())
@@ -1100,12 +1194,21 @@ h1{color:#00d4ff;margin-bottom:20px;font-size:1.4em}
 <div class="status-row"><span class="label">BACH</span><span class="value" id="s-bach">-</span></div>
 <div class="status-row"><span class="label">Sessions</span><span class="value" id="s-sessions">-</span></div>
 <div class="status-row"><span class="label">Max Tool-Runden</span><span class="value" id="s-maxrounds">-</span></div>
+<div class="status-row"><span class="label">Fackel</span><span class="value" id="s-fackel">-</span></div>
 <div class="status-row" id="tool-activity" style="display:none"><span class="label">Aktives Tool</span><span class="value" id="s-tool"><span class="dot yellow"></span>-</span></div>
 </div>
 
 <div class="card">
 <h2>Backend</h2>
 <div class="btn-group" id="backend-btns"></div>
+</div>
+
+<div class="card">
+<h2>Fackel (Ressourcen-Priorität)</h2>
+<div class="btn-group">
+<button class="btn" id="fackel-btn-compute" onclick="setFackel('compute')">Rechenjobs (Compute)</button>
+<button class="btn" id="fackel-btn-ollama" onclick="setFackel('ollama')">Ollama (Chat &amp; Worker)</button>
+</div>
 </div>
 
 <div class="card">
@@ -1170,6 +1273,13 @@ async function refresh() {
   document.getElementById('s-bach').textContent = s.bach ? 'Ja' : 'Nein';
   document.getElementById('s-sessions').textContent = s.sessions;
   document.getElementById('s-maxrounds').textContent = s.max_tool_rounds === 0 ? 'Unbegrenzt' : s.max_tool_rounds;
+  const fackelVal = s.fackel_preference === 'ollama' ? 'Ollama (Inferenz)' : 'Rechenjobs (Compute)';
+  const fackelEl = document.getElementById('s-fackel');
+  if (fackelEl) fackelEl.textContent = fackelVal;
+  const fComputeBtn = document.getElementById('fackel-btn-compute');
+  const fOllamaBtn = document.getElementById('fackel-btn-ollama');
+  if (fComputeBtn) fComputeBtn.className = 'btn' + (s.fackel_preference === 'compute' ? ' active' : '');
+  if (fOllamaBtn) fOllamaBtn.className = 'btn' + (s.fackel_preference === 'ollama' ? ' active' : '');
   const toolEl = document.getElementById('tool-activity');
   if (s.current_tool) {
     toolEl.style.display = '';
@@ -1232,6 +1342,11 @@ async function setModel(model) {
 async function setMaxRounds(rounds) {
   const r = await api('POST', '/max_tool_rounds', {rounds});
   toast(r.error || 'Max Runden: ' + (rounds === 0 ? 'Unbegrenzt' : rounds));
+  refresh();
+}
+async function setFackel(pref) {
+  const r = await api('POST', '/fackel', {preference: pref});
+  toast(r.error || 'Fackel: ' + (pref === 'ollama' ? 'Ollama' : 'Rechenjobs'));
   refresh();
 }
 refresh();
@@ -1563,6 +1678,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "sessions": len(sessions_snapshot),
                     "active_sessions": active_user,
                     "max_tool_rounds": runtime.max_tool_rounds,
+                    "fackel_preference": get_fackel_preference(),
                     "current_tool": current_tool,
                     "tool_round": tool_round,
                     "last_tools": active_tools,
@@ -1583,6 +1699,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "sessions": len(list(runtime.sessions.keys())),
                     "active_sessions": 0,
                     "max_tool_rounds": runtime.max_tool_rounds,
+                    "fackel_preference": get_fackel_preference(),
                     "current_tool": "",
                     "tool_round": 0,
                     "last_tools": [],
@@ -1736,6 +1853,18 @@ class ControlHandler(BaseHTTPRequestHandler):
             runtime.max_tool_rounds = rounds
             _global_defaults["max_tool_rounds"] = rounds
             self._json({"ok": True, "max_tool_rounds": rounds})
+
+        elif path == "/api/fackel":
+            pref = str(body.get("preference", "")).lower().strip()
+            if pref not in ("compute", "ollama"):
+                self._json({"error": "preference muss 'compute' oder 'ollama' sein"}, 400)
+                return
+            try:
+                set_fackel_preference(pref)
+            except Exception as e:
+                self._json({"error": f"Konnte Fackel nicht setzen: {e}"}, 500)
+                return
+            self._json({"ok": True, "fackel_preference": pref})
 
         elif path == "/api/chat":
             prompt = body.get("prompt", "")
@@ -1900,6 +2029,7 @@ def main():
     app.add_handler(CommandHandler("backend", cmd_backend))
     app.add_handler(CommandHandler("maxrounds", cmd_maxrounds))
     app.add_handler(CommandHandler("settings", cmd_settings))
+    app.add_handler(CommandHandler("fackel", cmd_fackel))
 
     if HAS_BACH:
         app.add_handler(CommandHandler("remember", cmd_remember))
