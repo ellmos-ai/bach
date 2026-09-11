@@ -16,6 +16,8 @@ Usage:
 
 import os
 import sys
+import email
+import email.parser
 import json
 import re
 import subprocess
@@ -758,7 +760,6 @@ def _handle_cookbook(sub_cmd, args):
 
 def _handle_task(sub_cmd, args):
     """Task-Verwaltung (add, list, done, block, etc.)."""
-    sys.path.insert(0, str(HUB_DIR))
     try:
         from hub.task import TaskHandler
         handler = TaskHandler(SYSTEM_ROOT)

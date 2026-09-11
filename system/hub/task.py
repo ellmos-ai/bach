@@ -23,6 +23,8 @@ Stand: 2026-01-23
 """
 
 import json
+import os
+import socket
 import sqlite3
 from pathlib import Path
 from datetime import datetime
@@ -31,6 +33,13 @@ from .base import BaseHandler
 from .lang import t
 from ._services.task_schema import ensure_task_due_date, task_has_due_date
 from .task_audit import apply_task_field_changes
+from .rheingold import (
+    is_rheingold_lead,
+    get_rheingold_url,
+    post_task_to_rheingold,
+    generate_draft_hash,
+    sync_drafts_to_rheingold,
+)
 
 
 class TaskHandler(BaseHandler):
@@ -62,6 +71,7 @@ class TaskHandler(BaseHandler):
             "priority": t("task_priority_desc", default="Prioritaet aendern"),
             "assign": t("task_assign_desc", default="Task(s) zuweisen (Multi-ID)"),
             "depends": t("task_depends_desc", default="Abhaengigkeit setzen/anzeigen"),
+            "sync": "Offene Offline-Entwürfe (Drafts) an Rheingold-Server übertragen",
             "taskplan": "TASKPLAN-Bridge status/list/import",
             "help": t("hilfe", default="Hilfe anzeigen")
         }
@@ -148,6 +158,8 @@ class TaskHandler(BaseHandler):
             return self._depends(args)
         elif operation == "taskplan":
             return self._taskplan(args)
+        elif operation == "sync":
+            return self._sync(args)
         elif operation in ["", "help"]:
             return self._help()
         else:
@@ -172,13 +184,17 @@ class TaskHandler(BaseHandler):
     
     def _add(self, args: List[str]) -> Tuple[bool, str]:
         """Task hinzufuegen"""
-        if not args:
+        clean_args = [a for a in args if a not in ("--local", "--offline", "--remote")]
+        force_remote = "--remote" in args
+        force_local = "--local" in args or "--offline" in args
+
+        if not clean_args:
             return False, (
                 "Usage: bach task add <titel> [--priority P1-P4] "
-                "[--description TEXT] [--due YYYY-MM-DD]"
+                "[--description TEXT] [--due YYYY-MM-DD] [--local|--remote]"
             )
         
-        title = self._sanitize_title(args[0])
+        title = self._sanitize_title(clean_args[0])
         priority = "P3"
         description = ""
         category = "general"
@@ -186,31 +202,88 @@ class TaskHandler(BaseHandler):
         
         # Optionen parsen
         i = 1
-        while i < len(args):
-            if args[i] in ["--priority", "-p"] and i + 1 < len(args):
-                priority = args[i + 1].upper()
+        while i < len(clean_args):
+            if clean_args[i] in ["--priority", "-p"] and i + 1 < len(clean_args):
+                priority = clean_args[i + 1].upper()
                 i += 2
-            elif args[i] in ["--description", "-d"] and i + 1 < len(args):
-                description = args[i + 1]
+            elif clean_args[i] in ["--description", "-d"] and i + 1 < len(clean_args):
+                description = clean_args[i + 1]
                 i += 2
-            elif args[i] in ["--category", "-c"] and i + 1 < len(args):
-                category = args[i + 1]
+            elif clean_args[i] in ["--category", "-c"] and i + 1 < len(clean_args):
+                category = clean_args[i + 1]
                 i += 2
-            elif args[i] == "--due":
-                if i + 1 >= len(args):
+            elif clean_args[i] == "--due":
+                if i + 1 >= len(clean_args):
                     return False, "Fehler: --due erwartet ein Datum im Format YYYY-MM-DD"
-                due_date = self._normalize_due_date(args[i + 1])
+                due_date = self._normalize_due_date(clean_args[i + 1])
                 if due_date is None:
                     return False, "Ungültiges Fälligkeitsdatum. Erwartet: YYYY-MM-DD"
                 i += 2
-            elif args[i].startswith("--due="):
-                due_date = self._normalize_due_date(args[i].split("=", 1)[1])
+            elif clean_args[i].startswith("--due="):
+                due_date = self._normalize_due_date(clean_args[i].split("=", 1)[1])
                 if due_date is None:
                     return False, "Ungültiges Fälligkeitsdatum. Erwartet: YYYY-MM-DD"
                 i += 1
             else:
                 i += 1
-        
+
+        is_isolated_test = (self.db_path != self._canonical_db) or (os.environ.get("BACH_RHEINGOLD_DISABLED") == "1")
+
+        if force_local or (not is_isolated_test and not is_rheingold_lead()):
+            try:
+                if not force_local and not is_rheingold_lead():
+                    rheingold_url = get_rheingold_url(timeout=1.2)
+                    if rheingold_url:
+                        payload = {
+                            "title": title,
+                            "priority": priority,
+                            "category": category,
+                            "description": description,
+                            "due_date": due_date,
+                            "created_by": socket.gethostname().split(".")[0].lower(),
+                        }
+                        ok, res = post_task_to_rheingold(rheingold_url, payload)
+                        if ok and "id" in res:
+                            task_id = res["id"]
+                            with self._get_db() as conn:
+                                ensure_task_due_date(conn)
+                                conn.execute("""
+                                    INSERT OR REPLACE INTO tasks
+                                        (id, title, priority, category, description, status, due_date, created_at, source)
+                                    VALUES (?, ?, ?, ?, ?, 'pending', ?, datetime('now'), ?)
+                                """, (task_id, title, priority, category, description, due_date, f"rheingold:{rheingold_url}"))
+                                conn.commit()
+
+                            due_text = f" (fällig: {due_date})" if due_date else ""
+                            return True, f"[OK] Task #{task_id} via Rheingold-Lead ({rheingold_url}) erstellt: {title}{due_text}"
+                        elif force_remote:
+                            return False, f"Fehler bei Rheingold-Übertragung: {res.get('error', 'Server-Fehler')}"
+                    elif force_remote:
+                        return False, "Rheingold-Server nicht erreichbar (--remote erfordert Verbindung)."
+
+                # Fallback offline (oder --offline/--local erzwungen): Staging mit Hash, niemals Integer-ID
+                draft_hash = generate_draft_hash(title, category)
+                with self._get_db() as conn:
+                    ensure_task_due_date(conn)
+                    min_id = conn.execute("SELECT MIN(id) FROM tasks WHERE id < 0").fetchone()[0]
+                    draft_id = (min_id - 1) if (min_id is not None and min_id < 0) else -1
+                    conn.execute("""
+                        INSERT INTO tasks
+                            (id, title, priority, category, description, status, due_date, created_at, source)
+                        VALUES (?, ?, ?, ?, ?, 'pending', ?, datetime('now'), ?)
+                    """, (draft_id, title, priority, category, description, due_date, draft_hash))
+                    conn.commit()
+
+                due_text = f" (fällig: {due_date})" if due_date else ""
+                return True, (
+                    f"[OFFLINE] Task als Entwurf {draft_hash} (ID {draft_id}) im lokalen Bachgrund gespeichert:\n"
+                    f"  {title}{due_text}\n"
+                    f"  (Wird bei erreichbarem Rheingold-Server automatisch synchronisiert via 'bach task sync')"
+                )
+            except Exception as e:
+                if force_remote:
+                    return False, f"Rheingold-Fehler: {e}"
+
         with self._get_db() as conn:
             ensure_task_due_date(conn)
             cursor = conn.execute("""
@@ -426,11 +499,34 @@ class TaskHandler(BaseHandler):
             partner_suffix = f" →{partner}" if partner else ""
             blocked_mark = " (BLOCKED)" if t['is_blocked_by_dep'] else ""
             due_suffix = f" (bis {t['due_date']})" if t['due_date'] else ""
-            lines.append(
-                f"  [{t['id']}] {t['priority']} {t['title'][:50]}"
-                f"{partner_suffix}{due_suffix}{blocked_mark}"
-            )
+            if t['id'] < 0:
+                lines.append(
+                    f"  [DRAFT {t['id']}] {t['priority']} {t['title'][:50]} (lokaler Entwurf)"
+                    f"{partner_suffix}{due_suffix}{blocked_mark}"
+                )
+            else:
+                lines.append(
+                    f"  [{t['id']}] {t['priority']} {t['title'][:50]}"
+                    f"{partner_suffix}{due_suffix}{blocked_mark}"
+                )
         
+        return True, "\n".join(lines)
+
+    def _sync(self, args: List[str]) -> Tuple[bool, str]:
+        """Offene lokale Entwürfe (Drafts) an Rheingold-Server übertragen."""
+        url = get_rheingold_url(timeout=2.0)
+        if not url:
+            return False, "Rheingold-Server nicht erreichbar oder dieser Host ist selbst Lead. Sync abgebrochen."
+
+        with self._get_db() as conn:
+            promoted = sync_drafts_to_rheingold(conn, url)
+
+        if not promoted:
+            return True, f"[OK] Keine offenen Entwürfe. Lokaler Bachgrund ist synchron mit Rheingold ({url})."
+
+        lines = [f"[OK] {len(promoted)} Entwürfe erfolgreich an Rheingold ({url}) übertragen:"]
+        for p in promoted:
+            lines.append(f"  • {p['draft_hash']} (alt: {p['old_id']}) -> Task #{p['new_id']}: {p['title']}")
         return True, "\n".join(lines)
     
     def _done(self, args: List[str]) -> Tuple[bool, str]:

@@ -1513,14 +1513,20 @@ async def api_get_tasks(status: str = "all", project: str = None, assigned_to: s
 
 @app.post("/api/tasks")
 async def api_post_task(payload: dict = Body(...)):
-    """Erstellt neuen Task in bach.db via JSON Payload."""
+    """Erstellt neuen Task in bach.db via JSON Payload (idempotent via source/draft_hash)."""
     try:
         conn = get_bach_db()
+        draft_source = payload.get("source") or payload.get("draft_hash")
+        if draft_source:
+            existing = conn.execute("SELECT id FROM tasks WHERE source = ?", (draft_source,)).fetchone()
+            if existing:
+                conn.close()
+                return {"success": True, "id": existing[0], "status": "already_present"}
+
         now = datetime.now().isoformat()
-        
         cursor = conn.execute("""
-            INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             payload.get("title"),
             payload.get("description", ""),
@@ -1531,7 +1537,9 @@ async def api_post_task(payload: dict = Body(...)):
             payload.get("created_by", "user"),
             payload.get("assigned_to", "user"),
             payload.get("depends_on"),
-            payload.get("image")
+            payload.get("image"),
+            payload.get("due_date"),
+            draft_source
         ))
 
         task_id = cursor.lastrowid
@@ -1605,6 +1613,21 @@ async def update_task(task_id: int, update: TaskUpdate):
         conn.close()
 
     return {"status": "updated"}
+
+@app.delete("/api/tasks/{task_id}")
+async def delete_task(task_id: int):
+    """Löscht einen Task aus bach.db."""
+    conn = get_bach_db()
+    try:
+        existing = conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Task nicht gefunden")
+        conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "deleted", "id": task_id}
+
 # ═══════════════════════════════════════════════════════════════
 # API ROUTES - ASSIGNEES (Agenten, Experten, Partner)
 # ═══════════════════════════════════════════════════════════════
