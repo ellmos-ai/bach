@@ -1540,7 +1540,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         """
         frage = msgs + [{"role": "user", "content": HANDOFF_PROMPT}]
         try:
-            res = await self.backend.chat(frage, tools=None, think=False,
+            active_backend = getattr(session, "backend", None) or self.backend
+            res = await active_backend.chat(frage, tools=None, think=False,
                                           model=session.model)
             uebergabe = (res.get("content") or "").strip()
         except Exception as e:
