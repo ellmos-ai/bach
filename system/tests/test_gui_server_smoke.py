@@ -294,6 +294,22 @@ class TestGUIServerSmoke:
         data = resp.json()
         assert isinstance(data, (list, dict))
 
+    def test_reports_and_messages_page(self, client, test_db):
+        tpl = test_db / "gui" / "templates" / "messages.html"
+        real_tpl = Path(__file__).parent.parent / "gui" / "templates" / "messages.html"
+        if real_tpl.exists():
+            tpl.write_text(real_tpl.read_text(encoding="utf-8"), encoding="utf-8")
+        else:
+            tpl.write_text("<!DOCTYPE html><html><title>BACH - Berichte & Abschlussberichte</title></html>", encoding="utf-8")
+
+        resp_m = client.get("/messages")
+        assert resp_m.status_code == 200
+        assert "Berichte & Abschlussberichte" in resp_m.text
+
+        resp_r = client.get("/reports")
+        assert resp_r.status_code == 200
+        assert "Berichte & Abschlussberichte" in resp_r.text
+
     def test_partners_list(self, client):
         resp = client.get("/api/partners")
         assert resp.status_code == 200

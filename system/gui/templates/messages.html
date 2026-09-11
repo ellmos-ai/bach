@@ -3,22 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BACH - Messages</title>
+    <title>BACH - Berichte & Abschlussberichte</title>
     <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
     <link rel="stylesheet" href="/static/css/main.css?v=2">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
-        /* Dreigeteiltes Layout: Messageboxen | Nachrichten-Liste | Nachrichten-Ansicht */
+        /* ── Dreigeteiltes Layout ── */
         .messages-layout {
             display: grid;
-            grid-template-columns: 200px 320px 1fr;
+            grid-template-columns: 220px 340px 1fr;
             gap: 1rem;
-            height: calc(100vh - 140px);
+            height: calc(100vh - 120px);
             overflow: hidden;
         }
 
         @media (max-width: 1200px) {
             .messages-layout {
-                grid-template-columns: 180px 280px 1fr;
+                grid-template-columns: 200px 300px 1fr;
             }
         }
 
@@ -35,7 +36,7 @@
             }
         }
 
-        /* Panel Styles */
+        /* ── Panels ── */
         .panel {
             background: var(--bg-panel);
             border-radius: 8px;
@@ -61,7 +62,7 @@
             overflow-y: auto;
         }
 
-        /* Panel 1: Messageboxen */
+        /* ── Panel 1: Kategorien & Filter ── */
         .folder-list {
             list-style: none;
             padding: 0;
@@ -76,6 +77,7 @@
             align-items: center;
             transition: background 0.2s;
             border-left: 3px solid transparent;
+            font-size: 0.88rem;
         }
 
         .folder-item:hover {
@@ -85,6 +87,7 @@
         .folder-item.active {
             background: var(--bg-card);
             border-left-color: var(--accent);
+            font-weight: 600;
         }
 
         .folder-icon {
@@ -102,9 +105,61 @@
         .folder-count.unread {
             background: var(--accent);
             color: white;
+            font-weight: 700;
         }
 
-        /* Panel 2: Nachrichten-Liste */
+        /* ── Panel 2: Berichts-Liste & Suche ── */
+        .search-box {
+            padding: 0.6rem 0.8rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-dark);
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 0.45rem 0.7rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 0.82rem;
+            outline: none;
+            box-sizing: border-box;
+        }
+        .search-input:focus {
+            border-color: var(--accent);
+        }
+
+        .quick-actions {
+            padding: 0.4rem 0.8rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 0.4rem;
+            background: var(--bg-card);
+        }
+
+        .quick-btn {
+            flex: 1;
+            padding: 0.35rem;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-muted);
+            font-size: 0.74rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .quick-btn:hover {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
         .message-item {
             padding: 0.75rem 1rem;
             border-bottom: 1px solid var(--border);
@@ -122,32 +177,65 @@
         }
 
         .message-item.unread {
-            background: rgba(233, 69, 96, 0.1);
+            background: rgba(233, 69, 96, 0.08);
         }
 
-        .message-item.unread .message-sender {
+        .message-item.unread .message-subject {
             font-weight: 700;
         }
 
-        .message-sender {
-            font-size: 0.85rem;
-            color: var(--text);
+        .message-sender-row {
             display: flex;
             justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.2rem;
+        }
+
+        .message-sender {
+            font-size: 0.82rem;
+            color: var(--text);
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
         }
 
         .message-time {
             font-size: 0.7rem;
             color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
         }
 
         .message-subject {
-            font-size: 0.8rem;
-            margin: 0.25rem 0;
+            font-size: 0.85rem;
+            margin: 0.2rem 0;
             color: var(--text);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+
+        .message-tags {
+            display: flex;
+            gap: 4px;
+            margin-top: 4px;
+            flex-wrap: wrap;
+        }
+
+        .tag-pill {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 0.68rem;
+            background: var(--bg-elevated, #242938);
+            border: 1px solid var(--border);
+            color: var(--accent-light, #7dd3fc);
+        }
+
+        .tag-pill.task-tag {
+            background: rgba(56, 189, 248, 0.15);
+            border-color: rgba(56, 189, 248, 0.4);
+            color: #38bdf8;
+            font-weight: 600;
         }
 
         .message-preview {
@@ -156,9 +244,10 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            margin-top: 3px;
         }
 
-        /* Panel 3: Nachrichten-Ansicht */
+        /* ── Panel 3: Berichts-Detail & Export ── */
         .detail-empty {
             display: flex;
             flex-direction: column;
@@ -166,6 +255,8 @@
             justify-content: center;
             height: 100%;
             color: var(--text-muted);
+            padding: 2rem;
+            text-align: center;
         }
 
         .detail-empty-icon {
@@ -174,182 +265,228 @@
         }
 
         .detail-header {
-            padding: 1rem;
+            padding: 1.25rem 1.5rem 1rem;
             border-bottom: 1px solid var(--border);
             background: var(--bg-card);
         }
 
-        .detail-subject {
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin: 0 0 0.5rem 0;
+        .detail-top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
         }
 
-        .detail-meta {
+        .detail-subject {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin: 0;
+            color: var(--text);
+            line-height: 1.35;
+        }
+
+        .detail-meta-grid {
             font-size: 0.8rem;
             color: var(--text-muted);
             display: grid;
-            grid-template-columns: auto 1fr;
-            gap: 0.25rem 0.75rem;
-        }
-
-        .detail-meta-label {
-            font-weight: 500;
-            color: var(--text);
-        }
-
-        .detail-body {
-            padding: 1rem;
-            white-space: pre-wrap;
-            line-height: 1.6;
-            font-size: 0.9rem;
-            flex: 1;
-            overflow-y: auto;
-        }
-
-        .detail-actions {
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.4rem 1rem;
+            background: var(--bg-panel);
             padding: 0.75rem 1rem;
-            border-top: 1px solid var(--border);
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            margin-top: 0.75rem;
+        }
+
+        .meta-item {
             display: flex;
             gap: 0.5rem;
-            background: var(--bg-card);
         }
 
-        /* Compose Modal */
-        .compose-modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.6);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
+        .meta-label {
+            font-weight: 600;
+            color: var(--text);
+            min-width: 65px;
         }
 
-        .compose-modal.active {
-            display: flex;
-        }
-
-        .compose-content {
-            background: var(--bg-panel);
-            padding: 1.5rem;
-            border-radius: 12px;
-            width: 90%;
-            max-width: 550px;
-            border: 1px solid var(--border);
-        }
-
-        .compose-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-
-        .compose-header h2 {
-            margin: 0;
-            font-size: 1.1rem;
-        }
-
-        .compose-close {
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            cursor: pointer;
+        .meta-val {
             color: var(--text-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
-        .form-group {
-            margin-bottom: 1rem;
+        /* Export Toolbar */
+        .export-toolbar {
+            padding: 0.6rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 0.5rem;
+            background: var(--bg-dark);
+            align-items: center;
+            flex-wrap: wrap;
         }
 
-        .form-group label {
-            display: block;
-            margin-bottom: 0.4rem;
-            font-size: 0.85rem;
-            font-weight: 500;
-        }
-
-        .form-group input,
-        .form-group textarea,
-        .form-group select {
-            width: 100%;
-            padding: 0.6rem;
+        .btn-export {
+            padding: 0.4rem 0.8rem;
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 6px;
             color: var(--text);
-            font-size: 0.9rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
         }
 
-        .form-group input:focus,
-        .form-group textarea:focus {
-            outline: none;
+        .btn-export:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--bg-elevated);
+        }
+
+        .btn-export.primary {
+            background: var(--accent);
+            color: #fff;
             border-color: var(--accent);
         }
-
-        .form-group textarea {
-            min-height: 120px;
-            resize: vertical;
+        .btn-export.primary:hover {
+            opacity: 0.9;
         }
 
-        .form-actions {
-            display: flex;
-            gap: 0.75rem;
-            justify-content: flex-end;
+        .btn-task-link {
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid #38bdf8;
+            color: #38bdf8;
+        }
+        .btn-task-link:hover {
+            background: #38bdf8;
+            color: #0f172a;
         }
 
-        /* Mobile Navigation */
-        .mobile-back {
-            display: none;
-            padding: 0.5rem;
-            background: none;
+        /* Detail Body & Markdown */
+        .detail-body-container {
+            padding: 1.5rem;
+            flex: 1;
+            overflow-y: auto;
+            background: var(--bg-panel);
+        }
+
+        .report-markdown {
+            line-height: 1.65;
+            font-size: 0.92rem;
+            color: var(--text);
+        }
+
+        .report-markdown h1, .report-markdown h2, .report-markdown h3 {
+            color: var(--text);
+            margin: 1.2rem 0 0.6rem;
+            padding-bottom: 0.3rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .report-markdown h1 { font-size: 1.35rem; }
+        .report-markdown h2 { font-size: 1.15rem; }
+        .report-markdown h3 { font-size: 1rem; }
+
+        .report-markdown p { margin: 0 0 0.8rem 0; }
+        .report-markdown ul, .report-markdown ol { margin: 0.6rem 0 0.8rem 1.5rem; }
+        .report-markdown li { margin-bottom: 0.3rem; }
+        
+        .report-markdown code {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+        }
+
+        .report-markdown pre {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+
+        .report-markdown pre code {
+            background: transparent;
             border: none;
-            color: var(--accent);
-            cursor: pointer;
-            font-size: 0.85rem;
+            padding: 0;
         }
 
-        @media (max-width: 900px) {
-            .mobile-back {
-                display: inline-block;
-            }
-        }
-
-        /* Empty State */
-        .empty-state {
-            padding: 2rem;
-            text-align: center;
+        .report-markdown blockquote {
+            border-left: 4px solid var(--accent);
+            margin: 0.8rem 0;
+            padding: 0.5rem 1rem;
+            background: rgba(var(--accent-rgb, 200, 58, 78), 0.05);
             color: var(--text-muted);
         }
 
-        /* Quick Action Buttons */
-        .quick-actions {
-            padding: 0.5rem;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            gap: 0.5rem;
+        .report-markdown table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
         }
-
-        .quick-btn {
-            flex: 1;
-            padding: 0.4rem;
-            background: var(--bg-card);
+        .report-markdown th, .report-markdown td {
             border: 1px solid var(--border);
-            border-radius: 4px;
-            color: var(--text);
-            font-size: 0.75rem;
-            cursor: pointer;
-            transition: all 0.2s;
+            padding: 0.5rem 0.75rem;
+            text-align: left;
+        }
+        .report-markdown th {
+            background: var(--bg-card);
         }
 
-        .quick-btn:hover {
+        /* Toast notification */
+        #toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
             background: var(--accent);
-            color: white;
-            border-color: var(--accent);
+            color: #fff;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+            display: none;
+            z-index: 2000;
+            animation: fadeIn 0.2s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Print styles */
+        @media print {
+            body { background: #fff !important; color: #000 !important; }
+            .main-header, .panel-folders, .panel-messages, .export-toolbar, .mobile-back, #toast {
+                display: none !important;
+            }
+            .messages-layout {
+                display: block !important;
+                height: auto !important;
+            }
+            .panel-detail {
+                border: none !important;
+                background: transparent !important;
+            }
+            .detail-header {
+                border-bottom: 2px solid #000 !important;
+                background: transparent !important;
+            }
+            .detail-body-container {
+                background: transparent !important;
+                padding: 0 !important;
+            }
+            .report-markdown code {
+                border: 1px solid #ccc !important;
+            }
         }
     </style>
 </head>
@@ -358,34 +495,42 @@
 
     <main class="main-content">
         <div class="messages-layout">
-            <!-- Panel 1: Messageboxen -->
+            <!-- Panel 1: Filter & Kategorien -->
             <div class="panel panel-folders">
                 <div class="panel-header">
-                    Postfaecher
-                    <button class="quick-btn" onclick="showCompose()" title="Neue Nachricht">+</button>
+                    <span>📑 Berichts-Kategorien</span>
+                    <button class="quick-btn" onclick="showCompose()" title="Neuen Bericht erfassen">+</button>
                 </div>
                 <div class="panel-content">
                     <ul class="folder-list">
-                        <li class="folder-item active" data-filter="inbox" onclick="selectFolder('inbox')">
-                            <span><span class="folder-icon">📥</span>Inbox</span>
-                            <span class="folder-count" id="inbox-count">0</span>
+                        <li class="folder-item active" data-filter="all" onclick="selectFolder('all')">
+                            <span><span class="folder-icon">📑</span>Alle Berichte</span>
+                            <span class="folder-count" id="all-count">0</span>
                         </li>
-                        <li class="folder-item" data-filter="outbox" onclick="selectFolder('outbox')">
-                            <span><span class="folder-icon">📤</span>Gesendet</span>
-                            <span class="folder-count" id="outbox-count">0</span>
+                        <li class="folder-item" data-filter="tasks" onclick="selectFolder('tasks')">
+                            <span><span class="folder-icon">📋</span>Task-Abschlüsse</span>
+                            <span class="folder-count" id="tasks-count">0</span>
+                        </li>
+                        <li class="folder-item" data-filter="worker" onclick="selectFolder('worker')">
+                            <span><span class="folder-icon">🤖</span>Worker- &amp; Runs</span>
+                            <span class="folder-count" id="worker-count">0</span>
+                        </li>
+                        <li class="folder-item" data-filter="agents" onclick="selectFolder('agents')">
+                            <span><span class="folder-icon">🛠️</span>Agenten</span>
+                            <span class="folder-count" id="agents-count">0</span>
+                        </li>
+                        <li class="folder-item" data-filter="connector" onclick="selectFolder('connector')">
+                            <span><span class="folder-icon">💬</span>Connectors &amp; System</span>
+                            <span class="folder-count" id="connector-count">0</span>
                         </li>
                         <li class="folder-item" data-filter="archived" onclick="selectFolder('archived')">
-                            <span><span class="folder-icon">📁</span>Archiv</span>
+                            <span><span class="folder-icon">📦</span>Archiv</span>
                             <span class="folder-count" id="archived-count">0</span>
-                        </li>
-                        <li class="folder-item" data-filter="all" onclick="selectFolder('all')">
-                            <span><span class="folder-icon">📋</span>Alle</span>
-                            <span class="folder-count" id="all-count">0</span>
                         </li>
                     </ul>
 
                     <div style="padding: 0.75rem; border-top: 1px solid var(--border);">
-                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">Partner</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem; font-weight: 600;">AKTEURE &amp; PARTNER</div>
                         <ul class="folder-list" id="partner-list">
                             <!-- Dynamisch befuellt -->
                         </ul>
@@ -393,88 +538,91 @@
                 </div>
             </div>
 
-            <!-- Panel 2: Nachrichten-Liste -->
+            <!-- Panel 2: Berichts-Liste -->
             <div class="panel panel-messages">
                 <div class="panel-header">
                     <span>
                         <button class="mobile-back" onclick="showFolders()">←</button>
-                        <span id="current-folder-name">Inbox</span>
+                        <span id="current-folder-name">Alle Berichte</span>
                     </span>
-                    <span id="message-count" style="font-size: 0.75rem; color: var(--text-muted);">0 Nachrichten</span>
+                    <span id="message-count" style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">0 Berichte</span>
                 </div>
+                
+                <div class="search-box">
+                    <input type="text" class="search-input" id="search-input" placeholder="🔍 Berichte, Tasks, Stichworte durchsuchen…" oninput="filterMessagesList()" />
+                </div>
+
                 <div class="quick-actions">
-                    <button class="quick-btn" onclick="refreshMessages()">Aktualisieren</button>
-                    <button class="quick-btn" onclick="markAllRead()">Alle gelesen</button>
+                    <button class="quick-btn" onclick="refreshMessages()"><span>🔄</span> Aktualisieren</button>
+                    <button class="quick-btn" onclick="markAllRead()"><span>✓</span> Alle gelesen</button>
                 </div>
+
                 <div class="panel-content" id="messages-list">
-                    <div class="empty-state">Lade Nachrichten...</div>
+                    <div class="detail-empty">Lade Berichte…</div>
                 </div>
             </div>
 
-            <!-- Panel 3: Nachrichten-Ansicht -->
+            <!-- Panel 3: Berichts-Ansicht & Export -->
             <div class="panel panel-detail">
                 <div id="detail-container">
                     <div class="detail-empty">
-                        <div class="detail-empty-icon">📬</div>
-                        <p>Waehle eine Nachricht aus</p>
+                        <div class="detail-empty-icon">📑</div>
+                        <p style="font-size:1.05rem; font-weight:600;">Wähle einen Bericht oder ein Session-Protokoll aus</p>
+                        <p style="font-size:0.82rem; color:var(--text-muted); margin-top:0.4rem;">Exportfunktionen für Markdown (.md), PDF-Druck und Zwischenablage stehen bereit.</p>
                     </div>
                 </div>
             </div>
         </div>
     </main>
 
-    <!-- Compose Modal -->
-    <div class="compose-modal" id="compose-modal">
-        <div class="compose-content">
-            <div class="compose-header">
-                <h2>Neue Nachricht</h2>
-                <button class="compose-close" onclick="hideCompose()">&times;</button>
+    <!-- Modal fuer manuellen Bericht / Notiz -->
+    <div class="compose-modal" id="compose-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.65); z-index:1500; align-items:center; justify-content:center;">
+        <div style="background:var(--bg-panel); padding:1.5rem; border-radius:10px; width:90%; max-width:560px; border:1px solid var(--border); box-shadow:0 12px 30px rgba(0,0,0,0.5);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                <h3 style="margin:0;">Neuen Bericht verfassen</h3>
+                <button onclick="hideCompose()" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer;">&times;</button>
             </div>
-            <form onsubmit="sendMessage(event)">
-                <div class="form-group">
-                    <label>Empfaenger</label>
-                    <select name="recipient" id="recipient-select">
-                        <option value="">-- Waehlen --</option>
-                        <option value="system">System</option>
+            <form onsubmit="saveNewReport(event)">
+                <div style="margin-bottom:0.75rem;">
+                    <label style="display:block; font-size:0.8rem; margin-bottom:0.3rem;">Kategorie / Empfänger</label>
+                    <select id="comp-recipient" style="width:100%; padding:0.5rem; background:var(--bg-card); border:1px solid var(--border); color:var(--text); border-radius:6px;">
+                        <option value="system">System / Global</option>
                         <option value="user">User</option>
-                        <option value="gemini">Gemini</option>
-                        <option value="claude">Claude</option>
+                        <option value="ati">🛠️ ATI Entwickler</option>
+                        <option value="theodor">⚖️ Theodor Steuer</option>
+                        <option value="worker">🤖 Hintergrundworker</option>
                     </select>
                 </div>
-                <div class="form-group">
-                    <label>Betreff</label>
-                    <input type="text" name="subject" placeholder="Betreff...">
+                <div style="margin-bottom:0.75rem;">
+                    <label style="display:block; font-size:0.8rem; margin-bottom:0.3rem;">Titel / Betreff (z. B. Task #1201 Abschlussbericht)</label>
+                    <input type="text" id="comp-subject" required placeholder="Titel des Berichts…" style="width:100%; padding:0.5rem; background:var(--bg-card); border:1px solid var(--border); color:var(--text); border-radius:6px; box-sizing:border-box;">
                 </div>
-                <div class="form-group">
-                    <label>Nachricht</label>
-                    <textarea name="body" required placeholder="Nachrichtentext..."></textarea>
+                <div style="margin-bottom:1rem;">
+                    <label style="display:block; font-size:0.8rem; margin-bottom:0.3rem;">Berichtstext (Markdown unterstützt)</label>
+                    <textarea id="comp-body" required placeholder="# Bericht..." style="width:100%; height:160px; padding:0.5rem; background:var(--bg-card); border:1px solid var(--border); color:var(--text); border-radius:6px; box-sizing:border-box; font-family:'JetBrains Mono', monospace; font-size:0.85rem;"></textarea>
                 </div>
-                <div class="form-group">
-                    <label>Prioritaet</label>
-                    <select name="priority">
-                        <option value="normal">Normal</option>
-                        <option value="high">Hoch</option>
-                        <option value="low">Niedrig</option>
-                    </select>
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="hideCompose()">Abbrechen</button>
-                    <button type="submit" class="btn btn-primary">Senden</button>
+                <div style="display:flex; justify-content:flex-end; gap:0.5rem;">
+                    <button type="button" class="btn-export" onclick="hideCompose()">Abbrechen</button>
+                    <button type="submit" class="btn-export primary">Bericht speichern</button>
                 </div>
             </form>
         </div>
     </div>
 
+    <!-- Toast Popup -->
+    <div id="toast">Meldung</div>
+
     <script src="/static/js/api.js"></script>
-    <script src="/static/js/nav.js?v=4"></script>
+    <script src="/static/js/nav.js?v=6"></script>
     <script>
         // State
-        let currentFolder = 'inbox';
+        let currentFolder = 'all';
         let currentPartner = null;
         let selectedMessageId = null;
-        let messages = [];
+        let allMessages = [];
+        let displayedMessages = [];
 
-        // API Helper (Fallback falls api.js nicht geladen)
+        // API Helper Fallback
         const api = window.API || {
             get: async (url) => {
                 const res = await fetch(url);
@@ -506,88 +654,161 @@
             }
         };
 
-        // Folder Selection
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            if (!t) return;
+            t.textContent = msg;
+            t.style.display = 'block';
+            setTimeout(() => { t.style.display = 'none'; }, 2800);
+        }
+
+        // Folder / Filter Selection
         function selectFolder(folder) {
             currentFolder = folder;
-            selectedMessageId = null;
+            currentPartner = null;
+            document.querySelectorAll('#partner-list .folder-item').forEach(el => el.classList.remove('active'));
 
-            // UI Update
-            document.querySelectorAll('.folder-item').forEach(el => {
+            document.querySelectorAll('.folder-list .folder-item').forEach(el => {
                 el.classList.toggle('active', el.dataset.filter === folder);
             });
 
-            // Folder Name
             const names = {
-                inbox: 'Inbox',
-                outbox: 'Gesendet',
-                archived: 'Archiv',
-                all: 'Alle Nachrichten'
+                all: 'Alle Berichte',
+                tasks: 'Task-Abschlussberichte',
+                worker: 'Worker- & Run-Reports',
+                agents: 'Agenten-Berichte',
+                connector: 'Connectors & System',
+                archived: 'Archivierte Berichte'
             };
             document.getElementById('current-folder-name').textContent = names[folder] || folder;
 
-            // Clear detail
-            showEmptyDetail();
-
-            // Load messages
-            loadMessages();
-
-            // Mobile: Show messages panel
+            filterMessagesList();
             document.querySelector('.panel-messages').classList.add('active');
         }
 
-        // Load Messages
+        // Load Messages from API
         async function loadMessages() {
             const list = document.getElementById('messages-list');
-            list.innerHTML = '<div class="empty-state">Lade...</div>';
+            list.innerHTML = '<div class="detail-empty">Lade Berichte…</div>';
 
             try {
-                let params = 'limit=500';
-                if (currentFolder === 'inbox') params += '&direction=inbox';
-                else if (currentFolder === 'outbox') params += '&direction=outbox';
-                else if (currentFolder === 'archived') params += '&status=archived';
-                if (currentPartner) params += `&partner=${encodeURIComponent(currentPartner)}`;
+                const data = await api.get('/api/messages?limit=500&include_archived=true');
+                allMessages = data.messages || [];
 
-                const data = await api.get(`/api/messages?${params}`);
-                messages = data.messages || [];
-
-                document.getElementById('message-count').textContent = `${messages.length} Nachrichten`;
-
-                if (messages.length === 0) {
-                    list.innerHTML = '<div class="empty-state">Keine Nachrichten</div>';
-                    return;
-                }
-
-                list.innerHTML = messages.map(msg => `
-                    <div class="message-item ${msg.status === 'unread' ? 'unread' : ''} ${msg.id === selectedMessageId ? 'active' : ''}"
-                         data-id="${msg.id}" onclick="selectMessage(${msg.id})">
-                        <div class="message-sender">
-                            <span>${escapeHtml(currentFolder === 'outbox' ? msg.recipient : msg.sender)}</span>
-                            <span class="message-time">${formatTime(msg.created_at)}</span>
-                        </div>
-                        <div class="message-subject">${escapeHtml(msg.subject || '(Kein Betreff)')}</div>
-                        <div class="message-preview">${escapeHtml(msg.body?.substring(0, 80) || '')}</div>
-                    </div>
-                `).join('');
-
+                updateCounts();
+                filterMessagesList();
             } catch (e) {
-                console.error('Load messages failed:', e);
-                list.innerHTML = '<div class="empty-state">Fehler beim Laden</div>';
+                console.error('Laden fehlgeschlagen:', e);
+                list.innerHTML = '<div class="detail-empty">Fehler beim Laden der Berichte.</div>';
             }
         }
 
-        // Select Message
+        function extractTaskId(str) {
+            if (!str) return null;
+            const match = str.match(/Task\s*#?(\d+)/i);
+            return match ? match[1] : null;
+        }
+
+        function classifyMessage(msg) {
+            const s = (msg.sender || '').toLowerCase();
+            const subj = (msg.subject || '').toLowerCase();
+            const b = (msg.body || '').toLowerCase();
+
+            const isArchived = msg.status === 'archived';
+            const hasTask = extractTaskId(msg.subject) || extractTaskId(msg.body);
+            const isWorker = s.includes('worker') || s.includes('daemon') || subj.includes('worker') || subj.includes('session');
+            const isAgent = s.includes('ati') || s.includes('steuer') || s.includes('claude') || s.includes('gemini') || s.includes('codex');
+            const isConnector = s.includes('telegram') || s.includes('discord') || s.includes('system') || subj.includes('connector');
+
+            return { isArchived, hasTask, isWorker, isAgent, isConnector };
+        }
+
+        function filterMessagesList() {
+            const query = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
+
+            displayedMessages = allMessages.filter(msg => {
+                const c = classifyMessage(msg);
+
+                // Filter by folder
+                if (currentFolder === 'archived') {
+                    if (!c.isArchived) return false;
+                } else {
+                    if (c.isArchived) return false; // In normal folders hide archived
+                    if (currentFolder === 'tasks' && !c.hasTask) return false;
+                    if (currentFolder === 'worker' && !c.isWorker) return false;
+                    if (currentFolder === 'agents' && !c.isAgent) return false;
+                    if (currentFolder === 'connector' && !c.isConnector) return false;
+                }
+
+                // Filter by partner
+                if (currentPartner) {
+                    const sender = (msg.sender || '').toLowerCase();
+                    if (!sender.includes(currentPartner.toLowerCase())) return false;
+                }
+
+                // Search query
+                if (query) {
+                    const subj = (msg.subject || '').toLowerCase();
+                    const body = (msg.body || '').toLowerCase();
+                    const snd = (msg.sender || '').toLowerCase();
+                    if (!subj.includes(query) && !body.includes(query) && !snd.includes(query)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+
+            renderMessagesList();
+        }
+
+        function renderMessagesList() {
+            const list = document.getElementById('messages-list');
+            document.getElementById('message-count').textContent = `${displayedMessages.length} Berichte`;
+
+            if (displayedMessages.length === 0) {
+                list.innerHTML = '<div class="detail-empty">Keine passenden Berichte vorhanden</div>';
+                return;
+            }
+
+            list.innerHTML = displayedMessages.map(msg => {
+                const taskId = extractTaskId(msg.subject) || extractTaskId(msg.body);
+                const isUnread = msg.status === 'unread';
+                const isActive = msg.id === selectedMessageId;
+
+                let icon = '📑';
+                if (taskId) icon = '📋';
+                else if (msg.sender?.includes('worker')) icon = '🤖';
+                else if (msg.sender?.includes('telegram')) icon = '💬';
+
+                return `
+                    <div class="message-item ${isUnread ? 'unread' : ''} ${isActive ? 'active' : ''}"
+                         data-id="${msg.id}" onclick="selectMessage(${msg.id})">
+                        <div class="message-sender-row">
+                            <span class="message-sender">${icon} <strong>${escapeHtml(msg.sender || 'System')}</strong></span>
+                            <span class="message-time">${formatTime(msg.created_at)}</span>
+                        </div>
+                        <div class="message-subject">${escapeHtml(msg.subject || '(Ohne Betreff)')}</div>
+                        <div class="message-preview">${escapeHtml(msg.body?.substring(0, 95) || '')}</div>
+                        <div class="message-tags">
+                            ${taskId ? `<span class="tag-pill task-tag">Task #${taskId}</span>` : ''}
+                            ${msg.status === 'read' ? '<span class="tag-pill">Gelesen</span>' : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
         async function selectMessage(id) {
             selectedMessageId = id;
 
-            // UI Update
             document.querySelectorAll('.message-item').forEach(el => {
                 el.classList.toggle('active', parseInt(el.dataset.id) === id);
             });
 
-            const msg = messages.find(m => m.id === id);
+            const msg = allMessages.find(m => m.id === id);
             if (!msg) return;
 
-            // Mark as read
             if (msg.status === 'unread') {
                 try {
                     await api.put(`/api/messages/${id}/read`);
@@ -599,96 +820,178 @@
                 }
             }
 
-            // Show detail
             showMessageDetail(msg);
-
-            // Mobile: Show detail panel
             document.querySelector('.panel-detail').classList.add('active');
         }
 
-        // Show Message Detail
+        function renderMarkdown(content) {
+            if (!content) return '';
+            if (window.marked && typeof window.marked.parse === 'function') {
+                return window.marked.parse(content);
+            }
+            return escapeHtml(content).replace(/\n/g, '<br>');
+        }
+
         function showMessageDetail(msg) {
             const container = document.getElementById('detail-container');
+            const taskId = extractTaskId(msg.subject) || extractTaskId(msg.body);
+            const isArchived = msg.status === 'archived';
+
             container.innerHTML = `
                 <div class="detail-header">
-                    <button class="mobile-back" onclick="showMessages()">← Zurueck</button>
-                    <h3 class="detail-subject">${escapeHtml(msg.subject || '(Kein Betreff)')}</h3>
-                    <div class="detail-meta">
-                        <span class="detail-meta-label">Von:</span>
-                        <span>${escapeHtml(msg.sender)}</span>
-                        <span class="detail-meta-label">An:</span>
-                        <span>${escapeHtml(msg.recipient)}</span>
-                        <span class="detail-meta-label">Datum:</span>
-                        <span>${formatDate(msg.created_at)}</span>
-                        <span class="detail-meta-label">Status:</span>
-                        <span>${escapeHtml(msg.status)}</span>
+                    <div class="detail-top-row">
+                        <div>
+                            <button class="mobile-back" onclick="showMessages()">← Zurück zur Liste</button>
+                            <h2 class="detail-subject">${escapeHtml(msg.subject || '(Ohne Betreff)')}</h2>
+                        </div>
+                        <div style="display:flex; gap:6px; flex-shrink:0;">
+                            ${taskId ? `<a href="/tasks-board" target="_blank" class="btn-export btn-task-link" title="Zum Tasks Board">📋 Task #${taskId}</a>` : ''}
+                        </div>
+                    </div>
+
+                    <div class="detail-meta-grid">
+                        <div class="meta-item"><span class="meta-label">Von:</span> <span class="meta-val">${escapeHtml(msg.sender || 'System')}</span></div>
+                        <div class="meta-item"><span class="meta-label">An:</span> <span class="meta-val">${escapeHtml(msg.recipient || 'User')}</span></div>
+                        <div class="meta-item"><span class="meta-label">Datum:</span> <span class="meta-val">${formatDate(msg.created_at)}</span></div>
+                        <div class="meta-item"><span class="meta-label">Status:</span> <span class="meta-val">${escapeHtml(msg.status || 'read')}</span></div>
                     </div>
                 </div>
-                <div class="detail-body">${escapeHtml(msg.body || '')}</div>
-                <div class="detail-actions">
-                    <button class="btn btn-secondary" onclick="replyMessage(${msg.id})">Antworten</button>
-                    <button class="btn btn-secondary" onclick="archiveMessage(${msg.id})">Archivieren</button>
-                    <button class="btn btn-secondary" onclick="deleteMessage(${msg.id})">Loeschen</button>
+
+                <div class="export-toolbar">
+                    <button class="btn-export primary" onclick="exportMarkdown(${msg.id})" title="Bericht als .md Datei herunterladen">
+                        <span>📥</span> Markdown (.md)
+                    </button>
+                    <button class="btn-export" onclick="copyMarkdown(${msg.id})" title="In Zwischenablage kopieren">
+                        <span>📋</span> Kopieren
+                    </button>
+                    <button class="btn-export" onclick="printReport()" title="Drucken oder als PDF speichern">
+                        <span>📄</span> PDF / Drucken
+                    </button>
+                    <button class="btn-export" onclick="exportJson(${msg.id})" title="Als JSON exportieren">
+                        <span>💾</span> JSON
+                    </button>
+                    <div style="margin-left:auto; display:flex; gap:6px;">
+                        <button class="btn-export" onclick="${isArchived ? `unarchiveMessage(${msg.id})` : `archiveMessage(${msg.id})`}">
+                            <span>📦</span> ${isArchived ? 'Wiederherstellen' : 'Archivieren'}
+                        </button>
+                        <button class="btn-export" style="color:var(--error); border-color:var(--error);" onclick="deleteMessage(${msg.id})">
+                            <span>🗑️</span> Löschen
+                        </button>
+                    </div>
+                </div>
+
+                <div class="detail-body-container">
+                    <div class="report-markdown" id="report-rendered-body">
+                        ${renderMarkdown(msg.body || '')}
+                    </div>
                 </div>
             `;
         }
 
-        function showEmptyDetail() {
-            document.getElementById('detail-container').innerHTML = `
-                <div class="detail-empty">
-                    <div class="detail-empty-icon">📬</div>
-                    <p>Waehle eine Nachricht aus</p>
-                </div>
-            `;
+        // ── Export Functions ──
+        function exportMarkdown(id) {
+            const msg = allMessages.find(m => m.id === id);
+            if (!msg) return;
+
+            const frontmatter = [
+                '---',
+                `title: "${(msg.subject || 'Bericht').replace(/"/g, '\\"')}"`,
+                `sender: "${msg.sender || 'system'}"`,
+                `recipient: "${msg.recipient || 'user'}"`,
+                `date: "${msg.created_at || new Date().toISOString()}"`,
+                `status: "${msg.status || 'read'}"`,
+                '---',
+                '',
+                msg.body || ''
+            ].join('\n');
+
+            const blob = new Blob([frontmatter], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const safeTitle = (msg.subject || 'bericht').toLowerCase().replace(/[^a-z0-9_-]/g, '_').substring(0, 40);
+            a.href = url;
+            a.download = `report_${msg.id}_${safeTitle}.md`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('✓ Markdown-Bericht heruntergeladen');
         }
 
-        // Counts
-        async function updateCounts() {
+        async function copyMarkdown(id) {
+            const msg = allMessages.find(m => m.id === id);
+            if (!msg) return;
+
+            const text = msg.body || '';
             try {
-                const [inbox, outbox, all] = await Promise.all([
-                    api.get('/api/messages?direction=inbox&limit=1'),
-                    api.get('/api/messages?direction=outbox&limit=1'),
-                    api.get('/api/messages?limit=1')
-                ]);
-
-                document.getElementById('inbox-count').textContent = inbox.count || 0;
-                document.getElementById('outbox-count').textContent = outbox.count || 0;
-                document.getElementById('all-count').textContent = all.count || 0;
-
-                // Unread count
-                const unread = await api.get('/api/messages?status=unread&limit=1');
-                const unreadCount = unread.count || 0;
-
-                const inboxCountEl = document.getElementById('inbox-count');
-                if (unreadCount > 0) {
-                    inboxCountEl.classList.add('unread');
-                    inboxCountEl.textContent = unreadCount;
-                } else {
-                    inboxCountEl.classList.remove('unread');
-                }
-
-            } catch (e) {
-                console.error('Update counts failed:', e);
+                await navigator.clipboard.writeText(text);
+                showToast('✓ Bericht in Zwischenablage kopiert');
+            } catch (err) {
+                console.error('Kopieren fehlgeschlagen:', err);
+                showToast('Fehler beim Kopieren in Zwischenablage');
             }
         }
 
-        // Load Partners
+        function printReport() {
+            window.print();
+        }
+
+        function exportJson(id) {
+            const msg = allMessages.find(m => m.id === id);
+            if (!msg) return;
+
+            const blob = new Blob([JSON.stringify(msg, null, 2)], { type: 'application/json;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `report_${msg.id}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('✓ JSON exportiert');
+        }
+
+        // ── Counts & Filters ──
+        function updateCounts() {
+            let all = 0, tasks = 0, worker = 0, agents = 0, connector = 0, archived = 0;
+
+            allMessages.forEach(msg => {
+                const c = classifyMessage(msg);
+                if (c.isArchived) {
+                    archived++;
+                } else {
+                    all++;
+                    if (c.hasTask) tasks++;
+                    if (c.isWorker) worker++;
+                    if (c.isAgent) agents++;
+                    if (c.isConnector) connector++;
+                }
+            });
+
+            document.getElementById('all-count').textContent = all;
+            document.getElementById('tasks-count').textContent = tasks;
+            document.getElementById('worker-count').textContent = worker;
+            document.getElementById('agents-count').textContent = agents;
+            document.getElementById('connector-count').textContent = connector;
+            document.getElementById('archived-count').textContent = archived;
+        }
+
         async function loadPartners() {
             try {
                 const data = await api.get('/api/partners');
                 const list = document.getElementById('partner-list');
-
                 if (data.partners && data.partners.length > 0) {
-                    list.innerHTML = data.partners.slice(0, 5).map(p => `
+                    list.innerHTML = data.partners.map(p => `
                         <li class="folder-item" onclick="filterByPartner(event, ${escapeHtml(JSON.stringify(p.name))})">
                             <span><span class="folder-icon">👤</span>${escapeHtml(p.name)}</span>
                         </li>
                     `).join('');
                 } else {
-                    list.innerHTML = '<li style="padding: 0.5rem; color: var(--text-muted); font-size: 0.75rem;">Keine Partner</li>';
+                    list.innerHTML = '<li style="padding:0.4rem 0.8rem; color:var(--text-muted); font-size:0.75rem;">Keine Partner</li>';
                 }
             } catch (e) {
-                console.error('Load partners failed:', e);
+                console.error('Partner laden fehlgeschlagen:', e);
             }
         }
 
@@ -698,101 +1001,114 @@
             if (currentPartner) {
                 e?.target?.closest('.folder-item')?.classList.add('active');
             }
-            loadMessages();
-        }
-
-        // Actions
-        function showCompose() {
-            document.getElementById('compose-modal').classList.add('active');
-        }
-
-        function hideCompose() {
-            document.getElementById('compose-modal').classList.remove('active');
-        }
-
-        async function sendMessage(e) {
-            e.preventDefault();
-            const form = e.target;
-
-            const data = {
-                recipient: form.recipient.value,
-                subject: form.subject.value || null,
-                body: form.body.value,
-                priority: form.priority.value
-            };
-
-            if (!data.recipient) {
-                alert('Bitte Empfaenger waehlen');
-                return;
-            }
-
-            try {
-                await api.post('/api/messages', data);
-                hideCompose();
-                form.reset();
-                selectFolder('outbox');
-            } catch (e) {
-                alert('Senden fehlgeschlagen: ' + e.message);
-            }
+            filterMessagesList();
         }
 
         function refreshMessages() {
             loadMessages();
-            updateCounts();
+            showToast('Berichte aktualisiert');
         }
 
         async function markAllRead() {
             try {
                 await api.post('/api/messages/mark-all-read');
-                loadMessages();
+                allMessages.forEach(m => m.status = 'read');
+                filterMessagesList();
                 updateCounts();
+                showToast('✓ Alle als gelesen markiert');
             } catch (e) {
                 console.error('Mark all read failed:', e);
             }
         }
 
-        function replyMessage(id) {
-            const msg = messages.find(m => m.id === id);
-            if (!msg) return;
-
-            showCompose();
-            document.getElementById('recipient-select').value = msg.sender;
-            document.querySelector('input[name="subject"]').value = `Re: ${msg.subject || ''}`;
-        }
-
         async function archiveMessage(id) {
             try {
                 await api.put(`/api/messages/${id}/archive`);
-                loadMessages();
+                const m = allMessages.find(x => x.id === id);
+                if (m) m.status = 'archived';
                 updateCounts();
-                showEmptyDetail();
+                filterMessagesList();
+                showMessageDetail(m);
+                showToast('Bericht archiviert');
             } catch (e) {
                 console.error('Archive failed:', e);
             }
         }
 
+        async function unarchiveMessage(id) {
+            try {
+                await api.put(`/api/messages/${id}/read`);
+                const m = allMessages.find(x => x.id === id);
+                if (m) m.status = 'read';
+                updateCounts();
+                filterMessagesList();
+                showMessageDetail(m);
+                showToast('Bericht wiederhergestellt');
+            } catch (e) {
+                console.error('Unarchive failed:', e);
+            }
+        }
+
         async function deleteMessage(id) {
-            if (!confirm('Nachricht wirklich loeschen?')) return;
+            if (!confirm('Diesen Bericht wirklich löschen?')) return;
             try {
                 await api.put(`/api/messages/${id}/delete`);
-                loadMessages();
+                allMessages = allMessages.filter(x => x.id !== id);
                 updateCounts();
-                showEmptyDetail();
+                filterMessagesList();
+                document.getElementById('detail-container').innerHTML = `
+                    <div class="detail-empty">
+                        <div class="detail-empty-icon">🗑️</div>
+                        <p>Bericht gelöscht</p>
+                    </div>
+                `;
+                showToast('Bericht gelöscht');
             } catch (e) {
                 console.error('Delete failed:', e);
             }
         }
 
-        // Mobile Navigation
+        // ── Compose / New Report Modal ──
+        function showCompose() {
+            document.getElementById('compose-modal').style.display = 'flex';
+        }
+
+        function hideCompose() {
+            document.getElementById('compose-modal').style.display = 'none';
+        }
+
+        async function saveNewReport(e) {
+            e.preventDefault();
+            const recipient = document.getElementById('comp-recipient').value;
+            const subject = document.getElementById('comp-subject').value;
+            const body = document.getElementById('comp-body').value;
+
+            try {
+                const res = await api.post('/api/messages', {
+                    recipient: recipient,
+                    subject: subject,
+                    body: body,
+                    priority: 'normal'
+                });
+                hideCompose();
+                document.getElementById('comp-subject').value = '';
+                document.getElementById('comp-body').value = '';
+                await loadMessages();
+                if (res.id) selectMessage(res.id);
+                showToast('✓ Bericht erfolgreich gespeichert');
+            } catch (err) {
+                alert('Speichern fehlgeschlagen: ' + err.message);
+            }
+        }
+
+        // Mobile Nav Helpers
         function showFolders() {
             document.querySelector('.panel-messages').classList.remove('active');
         }
-
         function showMessages() {
             document.querySelector('.panel-detail').classList.remove('active');
         }
 
-        // Helpers
         function escapeHtml(str) {
             if (!str) return '';
             return str.replace(/[&<>"']/g, m => ({
@@ -804,9 +1120,7 @@
             if (!dateStr) return '';
             const d = new Date(dateStr);
             const now = new Date();
-            const isToday = d.toDateString() === now.toDateString();
-
-            if (isToday) {
+            if (d.toDateString() === now.toDateString()) {
                 return d.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
             }
             return d.toLocaleDateString('de-DE', {day: '2-digit', month: '2-digit'});
@@ -818,15 +1132,10 @@
             return d.toLocaleDateString('de-DE') + ' ' + d.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
         }
 
-        // Initialize
+        // Init
         document.addEventListener('DOMContentLoaded', () => {
             loadMessages();
-            updateCounts();
             loadPartners();
-
-            // Status dot
-            const dot = document.getElementById('status-dot');
-            if (dot) dot.classList.add('online');
         });
     </script>
 </body>

@@ -82,7 +82,7 @@ const NAV_ITEMS = [
         { href: "/usecases", label: "Use Cases" },
     ]},
     { label: "Kommunikation", children: [
-        { href: "/messages", label: "Nachrichten" },
+        { href: "/reports", label: "📑 Berichte" },
         { href: "/kontakte", label: "Kontakte" },
     ]},
     { href: "/inbox", label: "Dateien" },
@@ -117,7 +117,8 @@ function initNavigation() {
 
     function isActive(href) {
         return currentPath === href || currentPath === href + '/' ||
-            (href !== '/' && currentPath.startsWith(href));
+            (href !== '/' && currentPath.startsWith(href)) ||
+            (href === '/reports' && currentPath.startsWith('/messages'));
     }
 
     function hasActiveChild(item) {

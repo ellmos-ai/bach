@@ -4195,17 +4195,20 @@ async def tasks_page():
 
 
 @app.get("/messages", response_class=HTMLResponse)
-
 async def messages_page():
-
     """Messages Seite."""
-
     messages_file = TEMPLATES_DIR / "messages.html"
-
     if messages_file.exists():
-
         return FileResponse(messages_file)
+    raise HTTPException(status_code=404, detail="Template messages.html nicht gefunden")
 
+
+@app.get("/reports", response_class=HTMLResponse)
+async def reports_page():
+    """Berichte & Abschlussberichte Seite (Alias fuer messages.html)."""
+    messages_file = TEMPLATES_DIR / "messages.html"
+    if messages_file.exists():
+        return FileResponse(messages_file)
     raise HTTPException(status_code=404, detail="Template messages.html nicht gefunden")
 
 
