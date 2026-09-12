@@ -29,6 +29,7 @@ if str(SYSTEM_ROOT) not in sys.path:
 from hub.web_scrape import (  # noqa: E402
     ENGINE_BUNDLED,
     ENGINE_CANONICAL,
+    ENGINE_DEFAULT,
     ENGINE_ENV,
     CanonicalEngineUnavailable,
     CanonicalResponse,
@@ -45,13 +46,26 @@ def handler(tmp_path):
 
 # --- engine resolution ---------------------------------------------------------------
 
-def test_default_is_the_legacy_path():
-    """Without configuration nothing changes for existing installations."""
+def test_default_is_still_the_legacy_path():
+    """The equivalence measurement did NOT justify switching the default.
+
+    Success-case output matches across all four operations, but the protective limits
+    do not: this handler follows up to MAX_REDIRECTS=5, the module up to 10, and the
+    module does not expose that as a parameter. Making canonical the default would
+    quietly relax a security limit, so it stays an opt-in. Pinned here so a future
+    change has to face this reason.
+    """
+    assert ENGINE_DEFAULT == ENGINE_BUNDLED
     assert resolve_engine({}) == ENGINE_BUNDLED
 
 
-def test_empty_value_is_the_legacy_path():
-    assert resolve_engine({ENGINE_ENV: "  "}) == ENGINE_BUNDLED
+def test_empty_value_falls_back_to_the_default():
+    assert resolve_engine({ENGINE_ENV: "  "}) == ENGINE_DEFAULT
+
+
+def test_legacy_path_stays_explicitly_selectable():
+    """The BACH-internal path is a full fallback, not a retired branch."""
+    assert resolve_engine({ENGINE_ENV: ENGINE_BUNDLED}) == ENGINE_BUNDLED
 
 
 def test_canonical_is_selectable_case_insensitively():
@@ -123,38 +137,67 @@ def test_unknown_engine_value_fails_the_call_too(handler, monkeypatch):
 
 # --- the adapter ---------------------------------------------------------------------
 
-def test_canonical_response_maps_the_status_field():
-    """The only naming difference between the two sides.
+def test_canonical_response_maps_the_modules_get_dict():
+    """The module returns a **dict**, not a response object.
 
-    The module calls it `status`, this handler reads `status_code`; everything else
-    already matches. If that ever diverges further, this test is where it shows.
+    This is recorded from a real call. An earlier version of the adapter assumed
+    attributes and passed its tests against a MagicMock -- a mock takes any shape,
+    including one that does not exist. Against a real page it raised AttributeError.
+    Hence a recorded payload here instead of a mock.
     """
-    module_response = MagicMock()
-    module_response.url = "https://example.org/x"
-    module_response.status = 200
-    module_response.headers = {"content-type": "text/html"}
-    module_response.text = "<html></html>"
+    payload = {
+        "operation": "get",
+        "url": "https://example.org/x",
+        "status": 200,
+        "content_type": "text/plain; charset=utf-8",
+        "length": 13,
+        "truncated": False,
+        "body": "<html></html>",
+    }
 
-    adapted = CanonicalResponse(module_response)
+    adapted = CanonicalResponse(payload)
 
     assert adapted.status_code == 200
     assert adapted.url == "https://example.org/x"
-    assert adapted.headers == {"content-type": "text/html"}
     assert adapted.text == "<html></html>"
+    assert adapted.headers == {"content-type": "text/plain; charset=utf-8"}
+
+
+def test_canonical_response_maps_the_modules_headers_dict():
+    """`get` carries only the content type, so `headers` uses its own operation."""
+    payload = {
+        "operation": "headers",
+        "url": "https://example.org/x",
+        "status": 200,
+        "headers": {"Connection": "keep-alive", "Content-Type": "text/plain"},
+    }
+
+    adapted = CanonicalResponse(payload)
+
+    assert adapted.status_code == 200
+    assert adapted.headers == {"Connection": "keep-alive", "Content-Type": "text/plain"}
+    assert adapted.text == ""
+
+
+def test_canonical_response_rejects_a_non_dict():
+    """Guards the assumption that broke the first adapter."""
+    with pytest.raises(TypeError) as excinfo:
+        CanonicalResponse(MagicMock())
+    assert "dict" in str(excinfo.value)
 
 
 def test_canonical_path_feeds_the_existing_operations(handler, monkeypatch):
     """With the module present, the untouched operations work on the adapted response."""
     monkeypatch.setenv(ENGINE_ENV, ENGINE_CANONICAL)
 
-    module_response = MagicMock()
-    module_response.url = "https://example.org/"
-    module_response.status = 200
-    module_response.headers = {"content-type": "text/html"}
-    module_response.text = '<a href="/a">A</a><a href="/b">B</a>'
-
     scraper = MagicMock()
-    scraper.get.return_value = module_response
+    scraper.get.return_value = {
+        "operation": "get",
+        "url": "https://example.org/",
+        "status": 200,
+        "content_type": "text/html",
+        "body": '<a href="/a">A</a><a href="/b">B</a>',
+    }
     fake_module = MagicMock()
     fake_module.WebScraper.return_value = scraper
     monkeypatch.setitem(sys.modules, "web_scraper", fake_module)
@@ -166,9 +209,9 @@ def test_canonical_path_feeds_the_existing_operations(handler, monkeypatch):
     scraper.get.assert_called_once_with("https://example.org/")
 
 
-def test_legacy_path_is_used_when_nothing_is_configured(handler, monkeypatch):
-    """Existing installations keep the old behaviour until equivalence is proven."""
-    monkeypatch.delenv(ENGINE_ENV, raising=False)
+def test_legacy_path_is_used_when_explicitly_selected(handler, monkeypatch):
+    """Choosing the fallback really reaches the BACH-internal implementation."""
+    monkeypatch.setenv(ENGINE_ENV, ENGINE_BUNDLED)
     sentinel = object()
     monkeypatch.setattr(handler, "_request_bundled", lambda url: (sentinel, ""))
 
@@ -176,3 +219,81 @@ def test_legacy_path_is_used_when_nothing_is_configured(handler, monkeypatch):
 
     assert response is sentinel
     assert error == ""
+
+
+# --- equivalence between the two engines ---------------------------------------------
+
+RECORDED_GET = {
+    "operation": "get",
+    "url": "https://raw.githubusercontent.com/ellmos-ai/web-scraper/main/README.md",
+    "status": 200,
+    "content_type": "text/plain; charset=utf-8",
+    "length": 6467,
+    "truncated": False,
+    "body": "# web-scraper\n\n[English](README.md) | [Deutsch](README_de.md)\n",
+}
+
+
+def test_recorded_canonical_payload_produces_the_expected_output(handler, monkeypatch):
+    """Offline half of the equivalence proof, recorded from a real call.
+
+    Keeps the mapping honest without needing the network on every run: the payload is
+    what the module actually returned, and the assertions are what the untouched BACH
+    operation makes of it.
+    """
+    monkeypatch.setenv(ENGINE_ENV, ENGINE_CANONICAL)
+    scraper = MagicMock()
+    scraper.get.return_value = RECORDED_GET
+    module = MagicMock()
+    module.WebScraper.return_value = scraper
+    monkeypatch.setitem(sys.modules, "web_scraper", module)
+
+    ok, body = handler.handle("get", [RECORDED_GET["url"]])
+
+    assert ok is True
+    assert f"Status: {RECORDED_GET['status']}" in body
+    assert RECORDED_GET["content_type"] in body
+    assert "# web-scraper" in body
+
+
+def _network_available() -> bool:
+    import socket
+    try:
+        socket.create_connection(("raw.githubusercontent.com", 443), timeout=5).close()
+    except OSError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(not _network_available(), reason="no network")
+def test_both_engines_agree_against_a_real_page(handler, monkeypatch):
+    """The measurement behind the default switch, repeatable.
+
+    One small idempotent GET per engine against our own raw README. Compared after
+    normalising the two things that legitimately differ between two fetches: the byte
+    count and the volatile response headers.
+    """
+    import re
+
+    url = RECORDED_GET["url"]
+
+    def fetch(engine: str, operation: str) -> str:
+        monkeypatch.setenv(ENGINE_ENV, engine)
+        ok, body = handler.handle(operation, [url])
+        assert ok, f"{engine}/{operation} failed: {body}"
+        return body
+
+    def normalise(text: str) -> str:
+        text = re.sub(r"Größe: \d+ Zeichen", "Größe: <n> Zeichen", text)
+        text = re.sub(
+            r"(?im)^\s*(date|age|x-[a-z-]+|via|expires|last-modified|etag|cache-control|"
+            r"content-length|accept-ranges|vary|server|strict-transport-security|"
+            r"cross-origin-[a-z-]+|source-age|content-security-policy)\s*:.*$",
+            "", text,
+        )
+        return re.sub(r"\n{2,}", "\n", text).strip()
+
+    for operation in ("get", "links", "forms", "headers"):
+        bundled = normalise(fetch(ENGINE_BUNDLED, operation))
+        canonical = normalise(fetch(ENGINE_CANONICAL, operation))
+        assert bundled == canonical, f"engines disagree on {operation}"

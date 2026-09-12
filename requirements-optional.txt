@@ -151,3 +151,13 @@ pywin32>=311              # Windows COM interface (pdf_schwaerzer_pro)
 # Install for development work only, not needed in production
 # ============================================================
 pytest>=9.0.2             # Test runner (system/tests/, BACH_Dev/tests/)
+
+# ============================================================
+# [WEB SCRAPE] Canonical provider for `bach web-scrape`
+# Needed only with BACH_WEB_SCRAPE_ENGINE=canonical; the default stays the
+# BACH-internal path. Measured under T-20260818-903104603: both engines return the
+# same output for get/links/forms/headers, but the module follows up to 10 redirects
+# against MAX_REDIRECTS=5 here and does not expose that as a parameter, so canonical
+# remains an opt-in rather than the default.
+# ============================================================
+web-scraper>=0.1.1        # standalone scraper extracted from this handler
