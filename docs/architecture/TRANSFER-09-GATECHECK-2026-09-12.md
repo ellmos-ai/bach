@@ -114,3 +114,28 @@ Handoff-Artefakte (Runbook + Abschnitt „(2)") kopierfertig und konsistent best
 Gate-Matrix-Zeile 2 `Windows-Gegenprobe` = ⬜ offen → bleibt ⬜ (kein fälschliches ✅, kein Windows-Pass simuliert).
 **BLOCKED auf Operator:** echter Windows-Lauf auf `WORKSTATION-LG` ist von BACH/mac-studio nicht ausführbar
 (keine Erreichbarkeit, Delegation bringt nichts — gleiche Umgebung). #1243 verbleibt OPEN bis grüner Windows-Lauf.
+
+---
+## Re-Verifizierung Gate 2 (3) — Matrix-Endkontrolle Task #1251 — 2026-09-12 13:3X — BACH qwen3.8:27b-mlx
+Aufgabe #1251 „nach B": ZERTIFIKAT §1 Spalte „Windows-Gegenprobe" (Stufen 2/3/5/7) auf grün,
+Gate 2 auf MET, dann #1243 schließbar. **Regel: „Erst bei Parität gilt Gätung vor Ablösung".**
+Ergebnis der Endkontrolle: **Prämisse NICHT erfüllt → KEIN Green-Flip, KEIN Gate-MET, #1243 bleibt OPEN.**
+
+- **Prämissenprüfung (nicht erfüllt):**
+    - Echte `WORKSTATION-LG`-Evidenz **nicht vorliegen**: Evidenz-Vorlage in Task #1253/#1250
+      unbesetzt (`WORKSTATION-LG HEAD: ______`, `pytest: ______ passed`, Zeitstempel leer).
+    - `WORKSTATION-LG` erneut nicht erreichbar: `~/.ssh/config` = nur `colima`;
+      `known_hosts` ohne `WORKSTATION-LG`-Eintrag; keine Connector-/Sync-Pipe (Host = `mac-studio`).
+    - Zertifikat-Matrix `MODULRUECKTRANSFER-ZERTIFIKAT-2026-09-12 §1` Spalte „Windows-Gegenprobe"
+      Stufen 2/3/5/7 = **⬜/❌ offen** (unverändert).
+    - Gate-Matrix Zeile 2 `Windows-Gegenprobe` = **❌ UNMET** (unverändert).
+- **macOS-Paritätsvoraussetzung (nötig, nicht hinreichend):** 110 passed (2+28+23+31+26)
+  bestätigt; plattformagnostisch. Dies ist die *Voraussetzung*, nicht der Ersatz für den Windows-Lauf.
+- **Entscheidung:** Gate 2 **bleibt UNMET**. Zertifikat-Spalte **bleibt ⬜**. #1243 **bleibt OPEN**
+  („Erst bei Parität gilt Gätung vor Ablösung"). **Keine Fälschung** — kein simulierter Windows-Pass,
+  kein vorzeitiger Green-Flip. Fälschung würde den Gate-Pin/Integrität brechen (wie bei Gate 1).
+- **Nächster Schritt (Operator auf WORKSTATION-LG, vgl. #1250/#1253):** PowerShell-Lauf der 5 Dateien
+  (Erwartung 110 passed) + `git rev-parse --short HEAD` → Evidenz in Vorlage eintragen →
+  ZERTIFIKAT §1 `Windows-Gegenprobe` ⬜→✅ (Stufen 2/3/5/7) → Gate-Matrix Zeile 2 UNMET→MET →
+  dann #1243 (und erst danach #1235) schließbar.
+- **Status Task #1251:** open (Prämisse nicht erfüllt, Endkontrolle durchgeführt — Gate korrekt OFFEN).
