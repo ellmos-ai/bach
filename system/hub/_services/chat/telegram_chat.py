@@ -103,6 +103,7 @@ from hub._services.chat.slots_config import (
     get_slot,
     list_workers,
     load_slots_config,
+    reconcile_workers,
     record_activity,
     remove_worker,
     reset_prompt_template,
@@ -135,6 +136,21 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 log = logging.getLogger("bach.telegram_chat")
+
+_ACTIVE_WORKER_THREADS: Dict[str, threading.Thread] = {}
+
+def _active_worker_ids() -> set[str]:
+    """Return set of currently running worker IDs, pruning dead threads."""
+    dead = []
+    active = set()
+    for wid, th in list(_ACTIVE_WORKER_THREADS.items()):
+        if th.is_alive():
+            active.add(wid)
+        else:
+            dead.append(wid)
+    for wid in dead:
+        _ACTIVE_WORKER_THREADS.pop(wid, None)
+    return active
 
 
 # --- Konfiguration ---
@@ -1983,6 +1999,8 @@ tr:hover td{background:#24334d}
         <div class="form-group">
           <label>Fachrolle / Experte</label>
           <select id="nw-role-id">
+            <option value="task-divider">Task-Divider (Aufgabenzerlegung in Teil-Tasks)</option>
+            <option value="ticket-master">Ticket-Master (Triage &amp; Zuweisung)</option>
             <option value="entwickler">Entwickler (Senior Python / TDD)</option>
             <option value="bueroassistent">Büroassistent (Organisation &amp; Dokumente)</option>
             <option value="gesundheitsassistent">Gesundheitsassistent (Medizin &amp; Berichte)</option>
@@ -2252,7 +2270,7 @@ function renderWorkers(workers) {
     const isRunning = (st === 'running');
     const cardBorder = isRunning ? 'border:1px solid #38bdf8;box-shadow:0 0 12px rgba(56,189,248,0.25);' : '';
     const runBtn = isRunning 
-      ? `<button class="btn btn-sm" style="background:#854d0e;color:#fef08a;cursor:not-allowed;font-weight:600" disabled>⏳ Läuft...</button>`
+      ? `<button class="btn btn-sm" style="background:#854d0e;color:#fef08a;cursor:not-allowed;font-weight:600" disabled>⏳ Läuft...</button><button class="btn btn-sm btn-danger" onclick="stopWorker('${w.id}')" title="Worker anhalten / Status zurücksetzen">⏹ Stop</button>`
       : `<button class="btn btn-sm btn-success" id="btn-run-${w.id}" onclick="runWorker('${w.id}')">▶ Start</button>`;
 
     html += `
@@ -2630,6 +2648,16 @@ async function toggleWorker(workerId, currentStatus) {
   if (res && res.ok) {
     toast(`Worker ${workerId}: ${newStatus}`);
     refreshSlots();
+  }
+}
+
+async function stopWorker(workerId) {
+  const res = await api('POST', '/workers/stop', { id: workerId });
+  if (res && res.ok) {
+    toast(`Worker ${workerId} gestoppt.`);
+    refreshAll();
+  } else {
+    toast(`Fehler: ${res.error || 'Konnte nicht stoppen'}`);
   }
 }
 
@@ -3172,7 +3200,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({
                     "ok": True,
                     "slots": cfg.get("slots", {}),
-                    "dynamic_workers": list_workers(include_expired=True),
+                    "dynamic_workers": list_workers(include_expired=True, active_worker_ids=_active_worker_ids()),
                     "fackel_preference": get_fackel_preference(),
                 })
             except Exception as e:
@@ -3182,7 +3210,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             try:
                 self._json({
                     "ok": True,
-                    "workers": list_workers(include_expired=True),
+                    "workers": list_workers(include_expired=True, active_worker_ids=_active_worker_ids()),
                 })
             except Exception as e:
                 self._json({"error": str(e)}, 500)
@@ -3444,8 +3472,25 @@ class ControlHandler(BaseHTTPRequestHandler):
                     return
                 if not new_status:
                     new_status = "paused" if w.get("status") != "paused" else "idle"
+                if new_status in ("paused", "idle"):
+                    _ACTIVE_WORKER_THREADS.pop(worker_id, None)
                 updated = update_slot(worker_id, {"status": new_status})
                 record_activity(worker_id, f"Worker Status: {new_status}", "ok")
+                self._json({"ok": True, "worker": updated})
+            except Exception as e:
+                self._json({"error": str(e)}, 500)
+
+        elif path == "/api/workers/stop":
+            worker_id = body.get("id") or body.get("worker_id")
+            if not worker_id:
+                self._json({"error": "id erforderlich"}, 400)
+                return
+            try:
+                _ACTIVE_WORKER_THREADS.pop(worker_id, None)
+                w = get_slot(worker_id)
+                next_st = "completed" if (w and w.get("type") == "once") else "idle"
+                updated = update_slot(worker_id, {"status": next_st, "current_activity": "Manuell gestoppt"})
+                record_activity(worker_id, f"Worker gestoppt: {worker_id}", "ok")
                 self._json({"ok": True, "worker": updated})
             except Exception as e:
                 self._json({"error": str(e)}, 500)
@@ -3458,6 +3503,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": f"Worker {worker_id} nicht gefunden"}, 404)
                 return
             def _run_worker_job():
+                _ACTIVE_WORKER_THREADS[worker_id] = threading.current_thread()
                 try:
                     update_slot(worker_id, {"status": "running", "current_activity": "Starte Routine..."})
                     record_activity(worker_id, f"Worker gestartet: {w.get('name')}", "running")
@@ -3473,7 +3519,12 @@ class ControlHandler(BaseHTTPRequestHandler):
                         initial_prompt = "Analysiere die anstehenden Aufgaben in BACH, koordiniere die Experten und weise Teilaufgaben zu."
                     elif w.get("sub_mode") == "expert_role":
                         role = w.get("role_id") or "Experte"
-                        initial_prompt = f"Arbeite als {role} die offenen Aufgaben deines Fachgebiets in BACH ab."
+                        if role == "task-divider":
+                            initial_prompt = "Analysiere komplexe offene Aufgaben im Backlog und zerlege sie in strukturierte Teilaufgaben via task_manage action='decompose'."
+                        elif role == "ticket-master":
+                            initial_prompt = "Sichte unzugewiesene oder heimatlose Tickets und ordne sie den passenden Fachrollen zu via task_manage action='assign'."
+                        else:
+                            initial_prompt = f"Arbeite als {role} die offenen Aufgaben deines Fachgebiets in BACH ab."
                     else:
                         initial_prompt = w.get("task_prompt") or "Prüfe offene Aufgaben und beginne mit der Bearbeitung."
 
@@ -3485,7 +3536,7 @@ class ControlHandler(BaseHTTPRequestHandler):
 
                         # Worker-State prüfen: wurde er pausiert oder gelöscht?
                         current_slot = get_slot(worker_id)
-                        if not current_slot or current_slot.get("status") == "paused":
+                        if not current_slot or current_slot.get("status") in ("paused", "idle"):
                             log.info(f"Worker {worker_id} pausiert oder beendet.")
                             break
 
@@ -3554,7 +3605,12 @@ class ControlHandler(BaseHTTPRequestHandler):
                     log.error(f"Worker {worker_id} Fehler: {exc}")
                     update_slot(worker_id, {"status": "error", "current_activity": f"Fehler: {exc}"})
                     record_activity(worker_id, f"Fehler: {exc}", "error")
-            threading.Thread(target=_run_worker_job, daemon=True).start()
+                finally:
+                    _ACTIVE_WORKER_THREADS.pop(worker_id, None)
+
+            th = threading.Thread(target=_run_worker_job, daemon=True, name=f"worker-{worker_id}")
+            _ACTIVE_WORKER_THREADS[worker_id] = th
+            th.start()
             self._json({"ok": True, "message": f"Worker {worker_id} gestartet"})
 
         elif path == "/api/activity":
@@ -3611,6 +3667,12 @@ class ControlHandler(BaseHTTPRequestHandler):
 
 def start_control_api():
     try:
+        # Reconcile any frozen running worker states from previous process runs
+        try:
+            reconcile_workers(active_worker_ids=_active_worker_ids())
+        except Exception as e:
+            log.warning("Konnte Worker beim Start nicht abgleichen: %s", e)
+
         bind_host = _control_bind_host()
         server = QuietHTTPServer((bind_host, CONTROL_PORT), ControlHandler)
         server.daemon_threads = True

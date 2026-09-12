@@ -97,8 +97,11 @@ DEFAULT_ROLE_PROMPTS: Dict[str, str] = {
     "hintergrund_worker": (
         "Du agierst als autonomer Hintergrundworker für das BACH-System.\n"
         "Deine Hauptaufgabe ist es, zugewiesene oder offene Aufgaben fokussiert abzuarbeiten.\n"
-        "Lies nur Dateien, die für die Aufgabe zwingend nötig sind. Führe Änderungen direkt auf der Platte aus,\n"
-        "teste deine Änderungen sorgfältig und schließe die Arbeit mit einer präzisen Zusammenfassung und dem Wort FERTIG ab."
+        "Arbeite nach dem 4-Stufen-Protokoll: 1. Direkt lösen bei klaren, überschaubaren Aufgaben.\n"
+        "2. Wenn eine Anforderung komplex oder vielschichtig ist: Zerlege sie eigenständig in 3-5 handhabbare Teilaufgaben\n"
+        "(nutze `task_manage(action='decompose', subtasks=[...], sequential=True)` oder lege konkrete Sub-Tasks an).\n"
+        "3. Bei Mehrdeutigkeit präzise Auswahlfrage als TO-DECIDE Task einstellen. 4. Bei Modellgrenzen an Claude/Codex übergeben.\n"
+        "Lies nur Dateien, die zwingend nötig sind, führe Änderungen präzise aus, teste sorgfältig und schließe mit FERTIG ab."
     ),
     "task_worker": (
         "Du agierst als spezialisierter Task-Worker für einen gezielten Nutzerauftrag.\n"
@@ -111,6 +114,18 @@ DEFAULT_ROLE_PROMPTS: Dict[str, str] = {
         "Wenn eine Anforderung komplex oder vielschichtig ist, zerlege sie in logische Teilaufgaben (task_manage action='decompose')\n"
         "und weise sie den passenden Experten zu. Führe selbst keine riskanten Massenänderungen aus, sondern koordiniere,\n"
         "überwache den Fortschritt und stelle die Gesamterfüllung des Ziels sicher."
+    ),
+    "task-divider": (
+        "Du agierst als Task-Divider und Dekompositions-Experte im BACH-System.\n"
+        "Deine Kernaufgabe ist die methodische Analyse komplexer, umfangreicher Großaufgaben im Backlog.\n"
+        "Sobald eine Aufgabe mehr als 2-3 Teilschritte oder Fachbereiche betrifft: Zerlege sie vorab in handhabbare,\n"
+        "atomare Teilpakete (nutze `task_manage(action='decompose', subtasks=[...], sequential=True)` oder erstelle Teil-Tasks).\n"
+        "Formuliere präzise Akzeptanzkriterien für jeden Teilschritt und weise sie passenden Rollen zu."
+    ),
+    "ticket-master": (
+        "Du agierst als Ticket-Master und Triage-Experte für offene Aufgaben im BACH-System.\n"
+        "Deine Aufgabe ist es, heimatlose, unzugewiesene oder unsortierte Tickets zu sichten, Prioritäten zu bewerten,\n"
+        "Kategorien zu schärfen und die Aufgaben der jeweils passenden Persona/Fachrolle zuzuweisen (task_manage action='assign')."
     ),
     "entwickler": (
         "Du agierst als Senior Software-Entwickler für BACH und angebundene Repositories.\n"
@@ -246,24 +261,53 @@ def update_slot(slot_id: str, updates: Dict[str, Any], path: str | None = None) 
     raise KeyError(f"Slot or worker {slot_id!r} not found")
 
 
-def list_workers(path: str | None = None, include_expired: bool = False) -> List[Dict[str, Any]]:
-    """Return all dynamic workers, automatically updating expiration states."""
+def reconcile_workers(
+    active_worker_ids: Optional[set[str]] = None,
+    path: str | None = None
+) -> List[Dict[str, Any]]:
+    """Reconcile dynamic worker states against active thread IDs and TTLs.
+
+    Any worker marked as 'running' whose ID is not in active_worker_ids
+    (when provided) is considered orphaned/frozen and reset to 'idle' or 'completed'.
+    """
     cfg = load_slots_config(path)
     now_iso = datetime.now(timezone.utc).isoformat()
     workers = cfg.get("dynamic_workers", [])
     dirty = False
 
-    result = []
     for w in workers:
+        # 1. TTL expiration
         expires_at = w.get("expires_at")
         if expires_at and expires_at < now_iso and w.get("status") not in ("expired", "completed"):
             w["status"] = "expired"
+            w["current_activity"] = "Ablaufzeit erreicht (Beendet)"
             dirty = True
-        if include_expired or w.get("status") != "expired":
-            result.append(w)
+
+        # 2. Frozen/orphaned running status
+        if active_worker_ids is not None and w.get("status") == "running":
+            wid = w.get("id")
+            if wid not in active_worker_ids:
+                next_st = "completed" if w.get("type") == "once" else "idle"
+                w["status"] = next_st
+                w["current_activity"] = "Bereit (wiederhergestellt)"
+                dirty = True
 
     if dirty:
         save_slots_config(cfg, path)
+    return workers
+
+
+def list_workers(
+    path: str | None = None,
+    include_expired: bool = False,
+    active_worker_ids: Optional[set[str]] = None,
+) -> List[Dict[str, Any]]:
+    """Return all dynamic workers, automatically updating expiration and running states."""
+    workers = reconcile_workers(active_worker_ids=active_worker_ids, path=path)
+    result = []
+    for w in workers:
+        if include_expired or w.get("status") != "expired":
+            result.append(w)
     return result
 
 

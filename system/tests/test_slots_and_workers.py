@@ -466,4 +466,68 @@ class TestControlHandlerEndpoints:
         assert _is_allowed_origin("http://evil.com") is False
         assert _is_allowed_origin("https://attacker.org:8081") is False
 
+    def test_reconcile_workers_heals_frozen_running_status(self, tmp_path):
+        from hub._services.chat.slots_config import add_worker, update_slot, reconcile_workers, load_slots_config
+        cfg_file = tmp_path / "test_slots.json"
+
+        w = add_worker({
+            "name": "Frozen-Worker",
+            "type": "persistent",
+            "status": "idle",
+        }, path=str(cfg_file))
+        wid = w["id"]
+
+        # Simulate stuck running status
+        update_slot(wid, {"status": "running", "current_activity": "Arbeitet seit Stunden..."}, path=str(cfg_file))
+        cfg_before = load_slots_config(str(cfg_file))
+        assert cfg_before["dynamic_workers"][0]["status"] == "running"
+
+        # Reconcile with empty active_worker_ids (no thread alive)
+        reconciled = reconcile_workers(active_worker_ids=set(), path=str(cfg_file))
+        target = next(item for item in reconciled if item["id"] == wid)
+        assert target["status"] == "idle"
+        assert "Bereit (wiederhergestellt)" in target["current_activity"]
+
+    def test_compose_task_divider_prompt(self, tmp_path):
+        from hub._services.chat.slots_config import compose_worker_prompt
+        cfg_file = tmp_path / "test_slots.json"
+
+        p = compose_worker_prompt({
+            "sub_mode": "expert_role",
+            "role_id": "task-divider",
+            "include_system_prompt": True,
+            "task_prompt": "Zerlege Großaufgabe #42",
+        }, path=str(cfg_file))
+        assert "ROLLE: EXPERTE (TASK-DIVIDER)" in p
+        assert "decompose" in p or "Zerlegung" in p or "Teilpakete" in p
+        assert "Zerlege Großaufgabe #42" in p
+
+    def test_api_workers_stop_endpoint(self, tmp_path):
+        from hub._services.chat.telegram_chat import ControlHandler
+        from hub._services.chat.slots_config import add_worker, update_slot, get_slot
+        cfg_file = tmp_path / "test_slots.json"
+
+        w = add_worker({"name": "Stop-Target", "type": "persistent"}, path=str(cfg_file))
+        wid = w["id"]
+        update_slot(wid, {"status": "running"}, path=str(cfg_file))
+
+        handler = object.__new__(ControlHandler)
+        handler.headers = {"Origin": "http://127.0.0.1:8000", "Content-Type": "application/json", "Content-Length": "30"}
+        handler.wfile = MagicMock()
+        handler.send_response = MagicMock()
+        handler.send_header = MagicMock()
+        handler.end_headers = MagicMock()
+        handler.path = "/api/workers/stop"
+
+        with patch("hub._services.chat.telegram_chat.get_slot", return_value={"id": wid, "type": "persistent"}), \
+             patch("hub._services.chat.telegram_chat.update_slot", return_value={"id": wid, "status": "idle"}) as mock_upd, \
+             patch.object(handler, "_read_body", return_value={"id": wid}), \
+             patch.object(handler, "_json") as mock_json:
+            handler.do_POST()
+            mock_upd.assert_called_once_with(wid, {"status": "idle", "current_activity": "Manuell gestoppt"})
+            mock_json.assert_called_once()
+            res = mock_json.call_args[0][0]
+            assert res.get("ok") is True
+
+
 

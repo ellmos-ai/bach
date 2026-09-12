@@ -443,6 +443,17 @@ def get_fackel_preference(path: str = FACKEL_PREFERENCE_FILE) -> str:
                 return pref
         except Exception as e:
             log.warning("Could not read fackel preference file %s: %s", f, e)
+
+    # Secondary persistent fallback: slots_config.json
+    try:
+        from hub._services.chat.slots_config import load_slots_config
+        cfg = load_slots_config()
+        pref = str(cfg.get("fackel_preference", "")).lower().strip()
+        if pref in VALID_FACKEL_PREFERENCES:
+            return pref
+    except Exception:
+        pass
+
     return FACKEL_COMPUTE
 
 
@@ -458,6 +469,7 @@ def set_fackel_preference(pref: str, path: str = FACKEL_PREFERENCE_FILE) -> str:
             f"Invalid fackel preference: {pref!r}. Must be one of {VALID_FACKEL_PREFERENCES}"
         )
     f = _expand(path)
+    file_saved = False
     try:
         f.parent.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -468,8 +480,20 @@ def set_fackel_preference(pref: str, path: str = FACKEL_PREFERENCE_FILE) -> str:
         tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         tmp.replace(f)
         log.info("Fackel preference updated to %s (file: %s)", pref_norm, f)
-        return pref_norm
+        file_saved = True
     except Exception as e:
         log.error("Failed to persist fackel preference to %s: %s", f, e)
-        raise
+
+    # Dual persistence: also save to slots_config.json
+    try:
+        from hub._services.chat.slots_config import load_slots_config, save_slots_config
+        cfg = load_slots_config()
+        cfg["fackel_preference"] = pref_norm
+        save_slots_config(cfg)
+    except Exception as e:
+        log.warning("Could not persist fackel preference to slots_config: %s", e)
+        if not file_saved:
+            raise
+
+    return pref_norm
 

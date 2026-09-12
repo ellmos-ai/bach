@@ -1088,9 +1088,10 @@ class TestTrayIdleWorker:
             from hub._services.chat.chat_tray import BACHTray
             return BACHTray(host="testhost", port=9999)
 
-    def test_idle_worker_is_off_by_default_and_on_via_env(self, monkeypatch):
-        assert self._tray(monkeypatch, {}).idle_enabled is False
+    def test_idle_worker_is_on_by_default_and_off_via_env(self, monkeypatch):
+        assert self._tray(monkeypatch, {}).idle_enabled is True
         assert self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"}).idle_enabled is True
+        assert self._tray(monkeypatch, {"BACH_IDLE_WORKER": "0"}).idle_enabled is False
         assert self._tray(monkeypatch, {"BACH_IDLE_WORKER": "off"}).idle_enabled is False
 
     def test_idle_worker_picks_open_ollama_task_and_writes_canonical_status(self, monkeypatch):
