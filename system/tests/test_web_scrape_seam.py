@@ -46,17 +46,44 @@ def handler(tmp_path):
 
 # --- engine resolution ---------------------------------------------------------------
 
-def test_default_is_still_the_legacy_path():
-    """The equivalence measurement did NOT justify switching the default.
+def test_default_is_the_canonical_module():
+    """The default moved only after the last limit could be aligned.
 
-    Success-case output matches across all four operations, but the protective limits
-    do not: this handler follows up to MAX_REDIRECTS=5, the module up to 10, and the
-    module does not expose that as a parameter. Making canonical the default would
-    quietly relax a security limit, so it stays an opt-in. Pinned here so a future
-    change has to face this reason.
+    Equivalence in the success case was not enough: the module used to follow up to
+    10 redirects against MAX_REDIRECTS = 5 here, with no way to pass the caller's
+    limit. That gap was closed in the module (web-scraper PR #2) rather than by
+    relaxing this side, and only then did the default move.
     """
-    assert ENGINE_DEFAULT == ENGINE_BUNDLED
-    assert resolve_engine({}) == ENGINE_BUNDLED
+    assert ENGINE_DEFAULT == ENGINE_CANONICAL
+    assert resolve_engine({}) == ENGINE_CANONICAL
+
+
+def test_all_limits_of_this_handler_are_passed_to_the_module(handler, monkeypatch):
+    """The reason the default may be canonical at all.
+
+    If any of the three stopped being forwarded, this handler's declared boundaries
+    would silently become the module's defaults.
+    """
+    monkeypatch.setenv(ENGINE_ENV, ENGINE_CANONICAL)
+    seen = {}
+
+    class _Scraper:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+        def get(self, url):
+            return {"operation": "get", "url": url, "status": 200,
+                    "content_type": "text/plain", "body": ""}
+
+    module = MagicMock()
+    module.WebScraper = _Scraper
+    monkeypatch.setitem(sys.modules, "web_scraper", module)
+
+    handler.handle("get", ["https://example.org/"])
+
+    assert seen["timeout"] == handler.REQUEST_TIMEOUT
+    assert seen["max_bytes"] == handler.MAX_RESPONSE_BYTES
+    assert seen["max_redirects"] == handler.MAX_REDIRECTS
 
 
 def test_empty_value_falls_back_to_the_default():

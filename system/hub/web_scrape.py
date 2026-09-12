@@ -45,9 +45,10 @@ from .base import BaseHandler
 
 # --- Provider-Seam: Altpfad oder kanonisches Modul ---------------------------------
 # Dieser Handler ist die BACH-eigene Fassung dessen, was das Modul `web-scraper`
-# eigenstaendig kann. Im Erfolgsfall ist die Gleichheit gegen eine echte Seite belegt,
-# in den Schutzgrenzen aber NICHT -- deshalb bleibt der BACH-eigene Pfad der Default
-# und das kanonische Modul ein Opt-in. Begruendung bei ENGINE_DEFAULT weiter unten.
+# eigenstaendig kann. Gleichheit ist gegen eine echte Seite belegt, und seit
+# web-scraper 0.1.1+ laesst sich auch die letzte abweichende Schutzgrenze angleichen
+# (`max_redirects`). Deshalb konsumiert BACH jetzt standardmaessig das kanonische
+# Modul; der BACH-eigene Pfad bleibt vollwertig waehlbar. Details bei ENGINE_DEFAULT.
 # Vertrag wie in ellmos-homebase-mcp/MODE-CONTRACT.md:
 #
 #     mode = canonical + Ziel nicht erreichbar  =>  klarer Fehler.
@@ -62,15 +63,18 @@ ENGINE_BUNDLED = "bundled"
 ENGINE_CANONICAL = "canonical"
 ENGINES = (ENGINE_BUNDLED, ENGINE_CANONICAL)
 
-# Default bleibt der BACH-eigene Pfad. Die Aequivalenzmessung (T-20260818-903104603,
-# Einheit 4b) hat im ERFOLGSFALL Gleichheit gezeigt -- get, links, forms und headers
-# liefern ueber beide Engines dieselbe normalisierte Ausgabe gegen eine echte Seite --,
-# aber die SCHUTZGRENZEN unterscheiden sich: Dieser Handler folgt bis zu
-# MAX_REDIRECTS=5, das Modul bis zu 10, und `max_redirects` ist dort nicht
-# parametrierbar. Byte-Limit und Timeout werden unten exakt angeglichen; solange die
-# Redirect-Grenze abweicht, waere ein Default-Wechsel eine stillschweigende
-# Lockerung einer Sicherheitsgrenze -- deshalb bleibt canonical ein Opt-in.
-ENGINE_DEFAULT = ENGINE_BUNDLED
+# Default ist das kanonische Modul. Der Weg dorthin ging ueber zwei Messungen:
+# Einheit 4b zeigte Gleichheit im ERFOLGSFALL (get, links, forms, headers liefern
+# ueber beide Engines dieselbe normalisierte Ausgabe gegen eine echte Seite), aber
+# eine Abweichung in den SCHUTZGRENZEN -- dieser Handler folgt bis zu
+# MAX_REDIRECTS=5, das Modul folgte fest 10. Ein Default-Wechsel waere damals eine
+# stillschweigende Lockerung einer Sicherheitsgrenze gewesen, und sieben Tests in
+# TestWebScrapeSecurity haben das auch prompt gezeigt. Statt die Tests anzupassen
+# wurde die Ursache behoben: web-scraper nimmt `max_redirects` seit 0.1.1+ als
+# Parameter entgegen (PR #2), die Grenze gehoert damit dem Aufrufer. Unten werden
+# alle drei Grenzen -- Timeout, Byte-Limit, Redirects -- explizit mitgegeben; die
+# Sicherheitstests laufen unveraendert gruen.
+ENGINE_DEFAULT = ENGINE_CANONICAL
 
 
 class EngineConfigError(RuntimeError):
@@ -228,13 +232,13 @@ class WebScrapeHandler(BaseHandler):
                 f"(pip install -e <klon>) oder {ENGINE_ENV}={ENGINE_BUNDLED} setzen."
             ) from exc
 
-        # Die Grenzen dieses Handlers werden mitgegeben, damit beide Engines dieselben
-        # Schranken haben. `max_redirects` fehlt dem Modul als Parameter (fest 10 gegen
-        # MAX_REDIRECTS=5 hier) -- diese eine Abweichung bleibt und ist der Grund, warum
-        # der Altpfad Default bleibt.
+        # Alle Schranken dieses Handlers werden mitgegeben, damit beide Engines
+        # dieselben Grenzen haben -- insbesondere die Redirect-Grenze, die frueher
+        # nicht uebergebbar war und deshalb den Default-Wechsel blockiert hat.
         scraper = WebScraper(
             timeout=self.REQUEST_TIMEOUT,
             max_bytes=self.MAX_RESPONSE_BYTES,
+            max_redirects=self.MAX_REDIRECTS,
         )
         # Das Modul bietet je Operation eine eigene Methode; `get` liefert bewusst nur
         # den Content-Type, deshalb holt die headers-Operation ihre Daten direkt dort.
