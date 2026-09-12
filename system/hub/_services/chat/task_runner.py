@@ -93,7 +93,7 @@ def markiere_erledigt(bach_cli: str, task_id: int) -> bool:
         return False
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="BACH-Tasks paketweise abarbeiten")
     ap.add_argument("--project", required=True)
     ap.add_argument("--workdir", required=True)
@@ -104,7 +104,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--auto-continue", type=int, default=8)
     ap.add_argument("--kontext", default="",
                     help="Datei, deren Inhalt jedem Task vorangestellt wird")
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
 
     workdir = Path(args.workdir).expanduser().resolve()
     workdir.mkdir(parents=True, exist_ok=True)
