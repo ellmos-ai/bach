@@ -106,3 +106,11 @@ Ergebnis: **Paritätsvoraussetzung grün, echter Windows-Host-Run weiterhin UNME
   - Zeitstempel Windows-Lauf: `______`
   - Matrix-Zeile 2 + ZERTIFIKAT §1 Spalte „Windows-Gegenprobe": `⬜ offen` → `✅ grün`
   - Danach: Task #1243 darf geschlossen werden.
+
+### Re-Verifizierung Gate 2 (3) — 2026-09-12 ~13:00 — BACH qwen3.8:27b-mlx (Task #1253)
+HEAD vorgerückt auf `5e64e07` (branch `main`). Paritätsvoraussetzung **lebensbestätigt**:
+  venv `/Users/lukas/.venvs/bach` (python3.12), 5 Dateien Stufen 2/3/5/7 → **110 passed in 2.59 s**.
+Handoff-Artefakte (Runbook + Abschnitt „(2)") kopierfertig und konsistent bestätigt.
+Gate-Matrix-Zeile 2 `Windows-Gegenprobe` = ⬜ offen → bleibt ⬜ (kein fälschliches ✅, kein Windows-Pass simuliert).
+**BLOCKED auf Operator:** echter Windows-Lauf auf `WORKSTATION-LG` ist von BACH/mac-studio nicht ausführbar
+(keine Erreichbarkeit, Delegation bringt nichts — gleiche Umgebung). #1243 verbleibt OPEN bis grüner Windows-Lauf.
