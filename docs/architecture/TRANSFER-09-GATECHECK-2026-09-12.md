@@ -30,3 +30,48 @@ Archivierung nach `system/hub/_archive/` wird **nicht ausgeführt**. Task #1235 
 Verschieben **nur reiner Altartefakte** nach `system/hub/_archive/` (nicht der Rollback-Pfade!),
 AST-Wächter-Anpassung + Volltest beider Plattformen (mac-studio + WORKSTATION-LG).
 Aktuell in `_archive/`: `DEPRECATED_hub.py`, `_archive_handlers/`, `delegation_legacy/` (Prä-Transfer-Altla, unverändert).
+
+---
+## Re-Verifizierung Gate 1 (Task #1242) — 2026-09-12 11:13 — BACH qwen3.8:27b-mlx
+Automatischer Live-Check vor dem Operator-Handoff. Ergebnis: **weiterhin UNMET**, Blocker unverändert.
+
+- HEAD /Users/lukas/services/assistant-core = `ccadcf9` (v0.1.0) — pin-konform wäre `444a1ff` (v0.2.0).
+- Pin bestätigt: requirements.txt:62 → `...@444a1fffd56236078988d088f6237f706c3e15a9`.
+- Commit `444a1ff` in den lokalen Klonen (assistant-core, accounts-core, ellmos-scheduler, ellmos-tests): **nicht vorhanden**.
+- Kein pip-Wheel/Tarball, kein Bundle lokal. Kein nicht-interaktives Credential:
+  - credential.helper=osxkeychain, aber kein github.com-Eintrag im Keychain
+  - SSH-Key ``~/.ssh/id_ed25519`` bei GitHub nicht registriert
+  - kein ``~/.netrc`\', kein ``gh`\'/Token
+- pytest ``system/tests/test_notify_via_assistant_core.py`` → ImportError: cannot import name 'NotificationService' (Collection-Error, Befund B1) — reproduziert, unverändert.
+
+**Blocker**: privates Repo, Credentials nur interaktiv (Runbook OPERATOR-RUNBOOK-ASSISTANT-CORE-444a1fff.md, Option A=SSH-Key/Option B=PAT). Kein automatisierter Abschluss möglich. Keine Fälschung der NotificationService (würde den Commit-Pin 444a1ff und damit das Gate brechen).
+**Hosts**: MacStudio (dieser, geprüft), WORKSTATION-LG, ASUS-GEI (remote — lokal nicht erreichbar, Operator-Aufgabe).
+**Status Task #1242**: open (blocked on operator credential step).
+
+---
+## Re-Verifizierung Gate 2 (Task #1243) — 2026-09-12 11:55 — BACH qwen3.8:27b-mlx
+Windows-Gegenprobe `WORKSTATION-LG` Stufen 2/3/5/7. Ergebnis: **weiterhin UNMET (Operator-Host), aber macOS-Ersatznachweis grün.**
+
+- **macOS-Baseline (mac-studio, `HEAD=809ccdc`, venv `.venvs/bach`, 4 Provider-Module importierbar):**
+   | Testmodul | Stufe | macOS |
+   |:--|:--:|:--:|
+   | `test_scheduler_provider.py` | 2/3 | 2 ✅ |
+   | `test_scheduler_provider_wiring.py` | 2/3 | 28 ✅ |
+   | `test_accounts_via_accounts_core.py` | 3 | 23 ✅ |
+   | `test_explorer_provider_wiring.py` | 5 | 31 ✅ |
+   | `test_transit_sync_provider_wiring.py` | 7 | 26 ✅ |
+   | **Summe** | | **110 passed in ~2.6 s** |
+- **Plattformagnostik:** die 4 Gruppen enthalten keine Windows-spezifischen Abzweigungen
+   (kein `sys.platform`/`os.name`/`winreg`/`WinError`/Windows-Separator); `transit_sync_provider`
+   nutzt laut Docstring §5 bereits eine lokale 3-Wege-Simulation `WORKSTATION-LG/ASUS-GEI/mac-studio`
+   als Ersatznachweis. → Der macOS-Grünlauf ist die **notwendige Voraussetzung** für Parität.
+- **Blocker (wie Gate 1):** BACH erreicht `WORKSTATION-LG` nicht — `~/.ssh/config` enthält nur `colima`
+   (Lima), kein `WORKSTATION-LG`-Eintrag in `known_hosts`, BACH-Index-Suche `workstation/lg/windows/remote/connector`
+   = 0 Treffer, keine Connector-Pipe. Delegation an Claude/Codex bringt keine Host-Erreichbarkeit.
+   → **Eigentliche Windows-Gegenprobe = Operator-Aufgabe.**
+- **Runbook erstellt:** `OPERATOR-RUNBOOK-WORKSTATION-LG-TRANSFER09-GATE2.md`
+   (venv/Installs + pytest-Aufruf der 4 Gruppen auf Windows PowerShell, Erwartung **110 passed**,
+   Evidenz-Rückschreib-Anleitung + Matrix-Zeilenumsetzung `offen`→`✅`).
+- **Status Task #1243:** open — verbleibt OPEN bis der echte `WORKSTATION-LG`-Lauf grün ist.
+   „Erst bei Parität gilt ‚Gatung vor Abloesung'": #1243 darf **nicht** vor dem Windows-Lauf geschlossen werden.
+   Keine Fälschung (kein `sys.platform`-Short-Circuit / kein simulierter Windows-Pass) — würde die Gate-Integrität brechen.
