@@ -62,3 +62,7 @@ pyautogui>=0.9.54         # GUI automation (prompt session, ATI)
 assistant-core @ git+https://github.com/ellmos-ai/assistant-core.git@444a1fffd56236078988d088f6237f706c3e15a9
 # Konten-Fachkern (Welle 2, D-20260903-003 = A): bank_accounts core (gui/server.py, hub/steuer.py CAMT import)
 accounts-core @ git+https://github.com/ellmos-ai/accounts-core.git@v0.1.1
+# Web-Scrape-Kern (Einheit 4c, T-20260818-903104603): canonical ist seit PR #38 der Default,
+# daher Kern- statt Optional-Abhaengigkeit. SHA-Pin statt Paketname -- der Name `web-scraper`
+# ist auf PyPI fremd belegt (Vahid Vaezian 1.0, 2018); kein Tag im Repo, 3078116 = max_redirects.
+web-scraper @ git+https://github.com/ellmos-ai/web-scraper.git@3078116fa4d3d9a94f6e012645b4af5d7fe9de3e
