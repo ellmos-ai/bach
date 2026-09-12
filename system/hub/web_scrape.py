@@ -43,6 +43,65 @@ from urllib.parse import urljoin, urlparse
 from typing import List, Tuple
 from .base import BaseHandler
 
+# --- Provider-Seam: Altpfad oder kanonisches Modul ---------------------------------
+# Dieser Handler ist die BACH-eigene Fassung dessen, was das Modul `web-scraper`
+# eigenstaendig kann. Solange die Funktionsgleichheit nicht belegt ist, bleibt der
+# Altpfad der Default; wer das kanonische Modul konsumieren will, waehlt es
+# ausdruecklich. Vertrag wie in ellmos-homebase-mcp/MODE-CONTRACT.md:
+#
+#     mode = canonical + Ziel nicht erreichbar  =>  klarer Fehler.
+#     NIEMALS stiller Wechsel zurueck auf den Altpfad.
+#
+# Begruendung dort und hier dieselbe: Ein stiller Rueckfall meldet Erfolg, obwohl eine
+# andere Implementierung geantwortet hat. Ein leiser Erfolg aus der falschen Quelle ist
+# schaedlicher als ein lauter Fehlschlag -- man merkt jahrelang nicht, dass die
+# Umstellung nie gegriffen hat.
+ENGINE_ENV = "BACH_WEB_SCRAPE_ENGINE"
+ENGINE_BUNDLED = "bundled"
+ENGINE_CANONICAL = "canonical"
+ENGINES = (ENGINE_BUNDLED, ENGINE_CANONICAL)
+
+
+class EngineConfigError(RuntimeError):
+    """Der konfigurierte Engine-Wert ist unbekannt."""
+
+
+class CanonicalEngineUnavailable(RuntimeError):
+    """`canonical` gewaehlt, aber das kanonische Modul ist nicht erreichbar."""
+
+
+def resolve_engine(environ=None) -> str:
+    """Gewaehlte Engine, fail-closed bei einem unbekannten Wert.
+
+    Ein Tippfehler darf nicht stillschweigend als Altpfad durchgehen -- sonst sieht ein
+    beabsichtigtes `canonical` genauso aus wie gar keine Konfiguration.
+    """
+    source = os.environ if environ is None else environ
+    value = (source.get(ENGINE_ENV) or "").strip().lower() or ENGINE_BUNDLED
+    if value not in ENGINES:
+        raise EngineConfigError(
+            f"{ENGINE_ENV}={value!r} ist unbekannt. Erlaubt: "
+            + ", ".join(ENGINES)
+            + f". Ohne gesetzte Variable gilt {ENGINE_BUNDLED!r}."
+        )
+    return value
+
+
+class CanonicalResponse:
+    """Bildet `web_scraper.Response` auf die Flaeche ab, die dieser Handler nutzt.
+
+    Nur eine Namensabweichung zwischen beiden Seiten: das Modul nennt den HTTP-Status
+    `status`, dieser Handler liest `status_code`. Text, URL und Header heissen gleich.
+    """
+
+    __slots__ = ("url", "status_code", "headers", "text")
+
+    def __init__(self, response) -> None:
+        self.url = response.url
+        self.status_code = response.status
+        self.headers = response.headers
+        self.text = response.text
+
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if sys.stdout:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -83,21 +142,60 @@ class WebScrapeHandler(BaseHandler):
         if dry_run:
             return True, f"[DRY-RUN] {operation} {' '.join(args)}"
 
-        if operation == "get":
-            return self._get(args[0])
-        elif operation == "links":
-            return self._links(args[0])
-        elif operation == "forms":
-            return self._forms(args[0])
-        elif operation == "screenshot":
-            return self._screenshot(args[0])
-        elif operation == "headers":
-            return self._headers(args[0])
+        # Engine-Vertrag auf Aufrufebene, nicht beim Import: der Handler laedt immer,
+        # damit `bach web-scrape` seine Operationen listen kann; erst der konkrete
+        # Aufruf scheitert laut, wenn `canonical` gewaehlt, aber unerreichbar ist.
+        try:
+            resolve_engine()
+        except EngineConfigError as exc:
+            return False, str(exc)
+
+        try:
+            if operation == "get":
+                return self._get(args[0])
+            elif operation == "links":
+                return self._links(args[0])
+            elif operation == "forms":
+                return self._forms(args[0])
+            elif operation == "screenshot":
+                return self._screenshot(args[0])
+            elif operation == "headers":
+                return self._headers(args[0])
+        except CanonicalEngineUnavailable as exc:
+            return False, str(exc)
         else:
             ops = "\n".join(f"  {k}: {v}" for k, v in self.get_operations().items())
             return False, f"Nutzung:\n{ops}"
 
     def _request(self, url: str):
+        """HTTP GET -- ueber den Altpfad oder das kanonische Modul, je nach Engine."""
+        if resolve_engine() == ENGINE_CANONICAL:
+            return self._request_canonical(url)
+        return self._request_bundled(url)
+
+    def _request_canonical(self, url: str):
+        """Fetch ueber das kanonische Modul `web-scraper`.
+
+        Faellt bewusst NICHT auf den Altpfad zurueck: Die Ausnahme geht nach oben und
+        wird in `handle()` zu einer klaren Fehlermeldung.
+        """
+        try:
+            from web_scraper import WebScraper
+        except ImportError as exc:
+            raise CanonicalEngineUnavailable(
+                f"{ENGINE_ENV}={ENGINE_CANONICAL} verlangt das Modul 'web-scraper', "
+                f"das aber nicht importierbar ist ({exc}). Es findet KEIN Rueckfall auf "
+                f"den BACH-eigenen Pfad statt. Entweder das Modul bereitstellen "
+                f"(pip install -e <klon>) oder {ENGINE_ENV}={ENGINE_BUNDLED} setzen."
+            ) from exc
+
+        try:
+            response = WebScraper().get(url)
+        except Exception as exc:  # noqa: BLE001 - Modulfehler wird als Fehlertext gemeldet
+            return None, f"web-scraper: {exc}"
+        return CanonicalResponse(response), ""
+
+    def _request_bundled(self, url: str):
         """HTTP GET mit gepinntem DNS-Ziel und geprüften Redirects."""
         try:
             import requests
