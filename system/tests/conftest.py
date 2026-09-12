@@ -85,9 +85,9 @@ _OWN_HOME_WRITES = set()
 
 #: Audit-Events, die eine Datei anlegen/veraendern (open wird gesondert geprueft).
 _WRITE_EVENTS = frozenset({
-    "os.mkdir", "os.rename", "os.remove", "os.replace", "os.truncate",
-    "os.link", "os.symlink", "shutil.copyfile", "shutil.copymode",
-    "shutil.copystat", "shutil.move",
+    "os.mkdir", "os.rmdir", "os.rename", "os.remove", "os.replace",
+    "os.truncate", "os.link", "os.symlink", "shutil.copyfile",
+    "shutil.copymode", "shutil.copystat", "shutil.move",
 })
 
 #: Woran ein residenter BACH-Dienst in der Prozessliste erkennbar ist.
