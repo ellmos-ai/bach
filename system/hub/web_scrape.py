@@ -45,9 +45,9 @@ from .base import BaseHandler
 
 # --- Provider-Seam: Altpfad oder kanonisches Modul ---------------------------------
 # Dieser Handler ist die BACH-eigene Fassung dessen, was das Modul `web-scraper`
-# eigenstaendig kann. Die Funktionsgleichheit ist inzwischen gegen eine echte Seite
-# belegt, deshalb konsumiert BACH standardmaessig das kanonische Modul; der
-# BACH-eigene Pfad bleibt als ausdruecklich waehlbarer Fallback erhalten.
+# eigenstaendig kann. Im Erfolgsfall ist die Gleichheit gegen eine echte Seite belegt,
+# in den Schutzgrenzen aber NICHT -- deshalb bleibt der BACH-eigene Pfad der Default
+# und das kanonische Modul ein Opt-in. Begruendung bei ENGINE_DEFAULT weiter unten.
 # Vertrag wie in ellmos-homebase-mcp/MODE-CONTRACT.md:
 #
 #     mode = canonical + Ziel nicht erreichbar  =>  klarer Fehler.
