@@ -159,20 +159,25 @@ def test_canonical_path_returns_the_modules_text(pdf, monkeypatch):
     monkeypatch.setenv(DOC_ENGINE_ENV, DOC_ENGINE_CANONICAL)
     seen = {}
 
-    def _extrahieren(path):
+    def _extrahieren(path, produces=None, **_kwargs):
         seen["path"] = path
+        seen["produces"] = produces
         return _RecordedErgebnis(path)
 
     _install_fake_module(monkeypatch, _extrahieren)
 
     assert PDFProcessor.extract_text(str(pdf)) == RECORDED_TEXT
     assert seen["path"] == str(pdf)
+    assert seen["produces"] == "text", (
+        "der Seam muss Fliesstext verlangen -- Markdown verliert bei LaTeX-PDFs "
+        "die Wortabstaende (Einheit 5b)"
+    )
 
 
 def test_canonical_result_without_text_field_fails_closed(pdf, monkeypatch):
     """Guards the assumption that broke the web-scrape adapter in unit 4b."""
     monkeypatch.setenv(DOC_ENGINE_ENV, DOC_ENGINE_CANONICAL)
-    _install_fake_module(monkeypatch, lambda path: object())
+    _install_fake_module(monkeypatch, lambda path, produces=None, **_kw: object())
 
     with pytest.raises(CanonicalDocEngineUnavailable) as excinfo:
         PDFProcessor.extract_text(str(pdf))
