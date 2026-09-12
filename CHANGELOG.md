@@ -77,6 +77,13 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
   `docs/CONCEPT_daemon_policy.md` entfernt (Datei existiert nirgends im Repo, nirgends
   referenziert). Stand/Validierung aktualisiert auf 2026-09-12. Forensik-Bericht:
   logs/help_forensic/REPORT_2026-09-12_scheduler.md
+- **Roadmap-Review 2026-09-12 (Task 1225):** Review-Abschnitt in ROADMAP.md erneuert:
+  MODULRUECKTRANSFER-Stufen 1–5 (Tasks 1217–1221) als erledigt nachgetragen inkl. neuer
+  Fokus-Sektion für die offenen Stufen 6–8 (Tasks 1222–1224); obsolete Task-Referenzen
+  (#1175, #1181, #1184–#1195) additiv korrigiert, deren IDs in der Task-DB zwischenzeitlich
+  mit GUI- bzw. Test-Tasks neu belegt wurden; Steuer-Banking-Phase 5 auf „Saldenimport
+  komplett" aktualisiert; zwei überflüssige Merge-Konflikt-Marker-Zeilen im
+  v3.14.0-Changed-Block entfernt; Stand/Review-Header auf 2026-09-12 (Task #1225) gesetzt.
 
 ## [v3.14.0] - 2026-09-11
 
@@ -105,8 +112,6 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Changed
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 - **Self-Heal- und Test-Suite-Härtung (2026-09-10):** `system/hub/base.py` erkennt jetzt auch das Unterordner-Layout `self.base_path / "system" / "data" / "bach.db"`, wenn `base_path` die Repo-Wurzel ist (etwa in isolierten Temp-Verzeichnissen), und schließt das Produktions-Root aus. `RestoreHandler.restore_by_category` und `WikiHandler._fetch_article_metadata` fangen fehlende Tabellen (`distribution_manifest`, `wiki_articles`) per `sqlite3.OperationalError` fail-safe ab und fallen transparent auf leere Manifeste bzw. Datei-Lookup zurück. Die Testsuite (`test_memory_working_cleanup.py`, `test_registry_watcher.py`, `test_self_heal_handlers.py`, `test_smoke.py`) besteht wieder vollständig mit 123/123 grünen Tests.
 - **Notify-Fachkern nach `assistant-core` ausgelagert (Welle 3):** Queue-Orchestrierung
   und die neutralen Webhook-, Discord-, Slack- und E-Mail-Sender liegen jetzt im
