@@ -27,9 +27,9 @@ HTTP コントロール API とクロスプラットフォーム システム �
   - openai: OpenAI API (OPENAI_API_KEY が必要)
 
 セキュリティ モード:
-  - 安全: 読み取り専用ツール (ls、cat、grep、git、docker など)
-  - full: 書き込みツール (execute_command、write_file) も使用
-           アクティベーション: /mode full が確認されました
+  - safe: シェルなしのファイル操作 (読み取り、編集、移動、作成)
+  - full: 加えてシェルと自由な書き込み (execute_command、write_file)
+           有効化: /mode full bestätigt
 
 
 テレグラム コマンド

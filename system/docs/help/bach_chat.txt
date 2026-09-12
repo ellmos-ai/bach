@@ -32,8 +32,8 @@ Backends:
   - openai:     OpenAI API (benötigt OPENAI_API_KEY)
 
 Sicherheitsmodi:
-  - safe:  Nur lesende Tools (ls, cat, grep, git, docker, etc.)
-  - full:  Auch schreibende Tools (execute_command, write_file)
+  - safe:  Dateiarbeit ohne Shell (lesen, bearbeiten, verschieben, anlegen)
+  - full:  Zusätzlich Shell und freies Schreiben (execute_command, write_file)
            Aktivierung: /mode full bestätigt
 
 SESSION-LIFECYCLE & ARCHIVIERUNG

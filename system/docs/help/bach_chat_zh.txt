@@ -27,9 +27,9 @@ HTTP Control API 和跨平台系统托盘。
   - openai：OpenAI API（需要 OPENAI_API_KEY）
 
 安全模式：
-  - 安全：只读工具（ls、cat、grep、git、docker 等）
-  - full：还有写入工具（execute_command、write_file）
-           激活：/模式完全确认
+  - safe：无 shell 的文件操作（读取、编辑、移动、创建）
+  - full：额外提供 shell 和自由写入（execute_command、write_file）
+           激活：/mode full bestätigt
 
 
 电报命令
