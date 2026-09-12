@@ -598,6 +598,17 @@ class BACHTray:
             if not task:
                 return
 
+             # Terminal-Wächter (T-20260912-1240loop): ein Task, der bereits
+             # completed_at trägt, ist erledigt und wird NIE wieder aufgezogen.
+             # Ein 'open'-Reset loescht completed_at nicht -> der Wächter bricht
+             # den Resurrektions-Loop open<->in_progress, der bei operator-
+             # geblockten TO-DECIDE-Tasks (Antwort liefert nicht sauber
+             # "FERTIG"+ok) den Task endlos neu zieht. Legitime Neuaufziehen via
+             # 'reopen' loeschen completed_at (clear_fields) und sind damit unbeherr.
+            if task.get("completed_at"):
+                print(f"[Idle] Task #{task.get('id')} traegt completed_at; terminal, uebersprungen")
+                return
+
             task_id = task.get("id")
             title = task.get("title", "Unbenannt")
             desc = task.get("description", "")
