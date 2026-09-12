@@ -27,9 +27,9 @@ Backends:
   - openai: API OpenAI (requiere OPENAI_API_KEY)
 
 Modos de seguridad:
-  - seguro: herramientas de solo lectura (ls, cat, grep, git, docker, etc.)
-  - completo: también herramientas de escritura (execute_command, write_file)
-           Activación: /modo full confirmado
+  - safe:  trabajo con archivos sin shell (leer, editar, mover, crear)
+  - full:  además shell y escritura libre (execute_command, write_file)
+           Activación: /mode full bestätigt
 
 
 COMANDOS DE TELEGRAMA

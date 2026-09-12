@@ -29,9 +29,9 @@ Backends:
   - openai:     OpenAI API (requires OPENAI_API_KEY)
 
 Security modes:
-  - safe:  Read-only tools (ls, cat, grep, git, docker, etc.)
-  - full:  Also write tools (execute_command, write_file)
-           Activation: /mode full confirmed
+  - safe:  File work without a shell (read, edit, move, create)
+  - full:  Additionally shell and unrestricted writing (execute_command, write_file)
+           Activation: /mode full bestätigt
 
 
 TELEGRAM COMMANDS
