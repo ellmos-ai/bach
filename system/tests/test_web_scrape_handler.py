@@ -139,7 +139,18 @@ class FakeRequests:
 
 
 @pytest.fixture
-def ws_env(tmp_path):
+def ws_env(tmp_path, monkeypatch):
+    """Handler auf dem BACH-eigenen Pfad.
+
+    Diese Tests faelschen das -Modul und pruefen damit genau die
+    requests-basierte Implementierung dieses Handlers -- also den bundled-Pfad. Seit
+    der Default auf das kanonische Modul zeigt (T-20260818-903104603), muss er hier
+    ausdruecklich gewaehlt werden; sonst liefe die Pruefung am Pruefgegenstand vorbei.
+    Keine der Grenzen unten aendert sich dadurch. Dass der canonical-Pfad dieselben
+    Grenzen bekommt, prueft test_web_scrape_seam.py (Durchreichung) zusammen mit den
+    Tests des Moduls selbst (Wirkung).
+    """
+    monkeypatch.setenv("BACH_WEB_SCRAPE_ENGINE", "bundled")
     base = tmp_path / "bach" / "system"
     data = base / "data"
     scrape = data / "cache" / "scrape"
