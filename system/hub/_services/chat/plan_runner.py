@@ -30,8 +30,9 @@ from pathlib import Path
 PLAN_PROMPT = """Du planst, du baust noch nicht.
 
 Zerlege den folgenden Auftrag in einzelne Arbeitspakete und lege jedes per
-task_manage(action="add") an. Baue in diesem Durchgang NICHTS - kein
-write_file, kein execute_command ausser zum Nachsehen.
+task_manage(action="add") an. Baue in diesem Durchgang NICHTS. Zum Nachsehen
+hast du read_file, search_text und list_directory; write_file und
+execute_command bekommst du im Planmodus gar nicht erst angeboten.
 
 REGELN FUER DEN SCHNITT:
 - {min_tasks} bis {max_tasks} Pakete. Weniger heisst zu grob, mehr heisst zerfasert.
@@ -82,7 +83,7 @@ def tasks_der_kategorie(db: str, category: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="Auftrag in BACH-Tasks zerlegen")
     ap.add_argument("--auftrag", default="", help="Auftragstext direkt")
     ap.add_argument("--auftrag-datei", default="", help="Datei mit dem Auftragstext")
@@ -90,11 +91,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--workdir", default="", help="Arbeitsverzeichnis (fuer das Log)")
     ap.add_argument("--model", default="")
     ap.add_argument("--db", default="")
+    ap.add_argument("--mode", default="safe", choices=["safe", "full"],
+                    help="Werkzeugumfang; Planen braucht 'safe' (Standard)")
     ap.add_argument("--min-tasks", type=int, default=3)
     ap.add_argument("--max-tasks", type=int, default=8)
     ap.add_argument("--kontext", type=int, default=0,
                     help="Kontextfenster in Token; 0 = aus den Limits lesen")
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
 
     bach = Path(__file__).resolve().parents[3]
     sys.path.insert(0, str(bach))
@@ -129,12 +136,18 @@ def main(argv: list[str] | None = None) -> int:
     runtime.auto_continue = 4          # Planen braucht wenige Runden, nicht viele
     runtime.goal = ""
 
-    # Planen heisst anlegen, nicht bauen - aber task_manage ist ein Werkzeug,
-    # also reicht der safe-Modus nicht. Die Grenze setzt der Prompt.
-    tc._global_defaults["mode"] = "full"
+    # Planen heisst anlegen, nicht bauen. Hier stand vorher der Satz
+    # "task_manage ist ein Werkzeug, also reicht der safe-Modus nicht" und
+    # darunter mode="full" -- das war nachgemessen falsch: task_manage steht in
+    # TOOLS_SAFE (chat_runtime.py), und TOOLS_FULL fuegt genau zwei Werkzeuge
+    # hinzu: execute_command und write_file. Beide braucht ein Planer nicht;
+    # der Planprompt verbietet sie sogar ausdruecklich. Seither setzt die
+    # Grenze der Modus und nicht mehr nur der Prompt (T-20260906-446028036).
+    # --mode full bleibt fuer den Ausnahmefall erreichbar.
+    tc._global_defaults["mode"] = args.mode
     chat_id = f"plan-{args.category}"
     session = runtime.get_session(chat_id)
-    session.mode = "full"
+    session.mode = args.mode
     session.think = True
     if args.model:
         session.model = args.model

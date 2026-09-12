@@ -98,7 +98,7 @@ def state_schreiben(bach_cli: str, category: str, text: str) -> bool:
         return False
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="Tasks abarbeiten, wenn der Chat ruht")
     ap.add_argument("--category", required=True)
     ap.add_argument("--workdir", required=True)
@@ -110,7 +110,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--takt", type=int, default=60, help="Sekunden zwischen zwei Pruefungen")
     ap.add_argument("--max-tasks", type=int, default=0, help="0 = bis nichts mehr offen ist")
     ap.add_argument("--einmal", action="store_true", help="nur eine Runde, dann beenden")
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
 
     workdir = Path(args.workdir).expanduser().resolve()
     workdir.mkdir(parents=True, exist_ok=True)
