@@ -29,8 +29,79 @@ Nutzt pypdf fuer Basis-Operationen und Anthropic PDF Skills
 aus _vendor/anthropic_pdf/ fuer erweiterte Funktionen.
 """
 
+import os
 import sys
 from pathlib import Path
+
+# --- Provider-Seam: Altpfad oder kanonisches Modul ---------------------------------
+# `extract_text` ist der Engpass, durch den PDF-Text in BACH gelangt. Das extrahierte
+# Modul `doc-services` kann dasselbe -- und mehr Formate. Wer es konsumieren will,
+# waehlt es ausdruecklich; der Default bleibt der BACH-eigene Weg, solange die
+# Funktionsgleichheit nicht belegt ist.
+#
+# Vertrag (ellmos-homebase-mcp/MODE-CONTRACT.md):
+#     canonical + Ziel nicht erreichbar  =>  klarer Fehler.
+#     NIEMALS stiller Rueckfall auf den Altpfad.
+#
+# Warum das hier besonders zaehlt: Die beiden Wege benutzen VERSCHIEDENE Backends --
+# dieser Handler liest mit pypdf, das Modul ueber markitdown (`produces: markdown`).
+# Bei einer einfachen Probe stimmt der Text ueberein, aber das Modul warnt selbst,
+# dass LaTeX-PDFs auf seinem Weg Wortabstaende verlieren. Ein stiller Rueckfall --
+# oder ein unbelegter Default-Wechsel -- wuerde solche Unterschiede unsichtbar machen.
+DOC_ENGINE_ENV = "BACH_DOC_EXTRACT_ENGINE"
+DOC_ENGINE_BUNDLED = "bundled"
+DOC_ENGINE_CANONICAL = "canonical"
+DOC_ENGINES = (DOC_ENGINE_BUNDLED, DOC_ENGINE_CANONICAL)
+DOC_ENGINE_DEFAULT = DOC_ENGINE_BUNDLED
+
+
+class DocEngineConfigError(RuntimeError):
+    """Der konfigurierte Engine-Wert ist unbekannt."""
+
+
+class CanonicalDocEngineUnavailable(RuntimeError):
+    """`canonical` gewaehlt, aber das kanonische Modul ist nicht erreichbar."""
+
+
+def resolve_doc_engine(environ=None) -> str:
+    """Gewaehlte Engine, fail-closed bei einem unbekannten Wert.
+
+    Ein Tippfehler darf nicht als Altpfad durchgehen: sonst sieht ein beabsichtigtes
+    `canonical` genauso aus wie gar keine Konfiguration.
+    """
+    source = os.environ if environ is None else environ
+    value = (source.get(DOC_ENGINE_ENV) or "").strip().lower() or DOC_ENGINE_DEFAULT
+    if value not in DOC_ENGINES:
+        raise DocEngineConfigError(
+            f"{DOC_ENGINE_ENV}={value!r} ist unbekannt. Erlaubt: "
+            + ", ".join(DOC_ENGINES)
+            + f". Ohne gesetzte Variable gilt {DOC_ENGINE_DEFAULT!r}."
+        )
+    return value
+
+
+def _extract_text_canonical(file_path: str) -> str:
+    """Textextraktion ueber das kanonische Modul `doc-services`.
+
+    Faellt bewusst NICHT auf pypdf zurueck -- die Ausnahme geht nach oben.
+    """
+    try:
+        from doc_services import extrahieren
+    except ImportError as exc:
+        raise CanonicalDocEngineUnavailable(
+            f"{DOC_ENGINE_ENV}={DOC_ENGINE_CANONICAL} verlangt das Modul 'doc-services', "
+            f"das aber nicht importierbar ist ({exc}). Es findet KEIN Rueckfall auf den "
+            f"BACH-eigenen Pfad statt. Entweder das Modul bereitstellen "
+            f"(pip install -e <klon>) oder {DOC_ENGINE_ENV}={DOC_ENGINE_BUNDLED} setzen."
+        ) from exc
+
+    ergebnis = extrahieren(file_path)
+    text = getattr(ergebnis, "text", None)
+    if text is None:
+        raise CanonicalDocEngineUnavailable(
+            "doc-services lieferte ein Ergebnis ohne Feld 'text' -- API-Vertrag geaendert?"
+        )
+    return text
 
 
 class PDFProcessor:
@@ -38,6 +109,18 @@ class PDFProcessor:
 
     @staticmethod
     def extract_text(file_path: str) -> str:
+        """Extrahiert Text -- ueber den Altpfad oder das kanonische Modul.
+
+        Die Engine-Wahl passiert beim AUFRUF, nicht beim Import: Dieses Modul laedt
+        immer, auch wenn `doc-services` fehlt; erst der konkrete Aufruf scheitert
+        laut, wenn `canonical` gewaehlt, aber unerreichbar ist.
+        """
+        if resolve_doc_engine() == DOC_ENGINE_CANONICAL:
+            return _extract_text_canonical(file_path)
+        return PDFProcessor._extract_text_bundled(file_path)
+
+    @staticmethod
+    def _extract_text_bundled(file_path: str) -> str:
         """Extrahiert Text aus einer PDF-Datei via pypdf."""
         from pypdf import PdfReader
         reader = PdfReader(file_path)
