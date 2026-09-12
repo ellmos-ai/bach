@@ -19,6 +19,7 @@ Agenten, der seinerseits delegieren koennte. Ohne Deckel ist das eine Kette
 ohne Ende; der Deckel existierte, war aber durch nichts gesichert.
 """
 
+import os
 import types
 from pathlib import Path
 
@@ -153,6 +154,40 @@ def test_planer_laesst_sich_bewusst_auf_full_stellen():
 def test_die_bauenden_runner_starten_bewusst_mit_full(modul, argv):
     """Kein Versehen, sondern Zweck: worker und task_runner sollen bauen."""
     assert modul._parser().parse_args(argv).mode == "full"
+
+
+# --------------------------------------------------------------------------
+# Startbarkeit: laeuft der __main__-Block ueberhaupt noch?
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("modul", [
+    "hub._services.chat.worker",
+    "hub._services.chat.task_runner",
+    "hub._services.chat.plan_runner",
+])
+def test_jeder_runner_laesst_sich_starten(modul):
+    """`--help` laeuft durch den kompletten Modulpfad bis main().
+
+    Gerade beim Auslagern des Parsers nach `_parser()` kann `main` versehentlich
+    im Parser haengenbleiben. Ein Import-Test merkt davon nichts, weil der
+    `if __name__ == "__main__"`-Block beim Importieren nie laeuft -- er stirbt
+    erst beim echten Start, mit NameError. `--help` kostet eine Sekunde und
+    faengt genau das.
+    """
+    import subprocess
+    import sys as _sys
+
+    repo = Path(__file__).resolve().parents[2]
+    umgebung = dict(os.environ, PYTHONPATH=str(repo / "system"), PYTHONIOENCODING="utf-8")
+
+    lauf = subprocess.run(
+        [_sys.executable, "-m", modul, "--help"],
+        cwd=str(repo / "system"), env=umgebung,
+        capture_output=True, text=True, timeout=120,
+    )
+
+    assert lauf.returncode == 0, f"{modul} startet nicht:\n{lauf.stdout}\n{lauf.stderr}"
+    assert "--mode" in lauf.stdout, lauf.stdout
 
 
 # --------------------------------------------------------------------------
