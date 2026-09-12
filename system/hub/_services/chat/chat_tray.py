@@ -146,9 +146,8 @@ class BACHTray:
 
         self.services = {"gui": False, "control": False, "ollama": False}
 
-        # Headless-Hosts (Mac Studio LaunchAgent) koennen das Tray-Menue nicht bedienen;
-        # ohne diesen Schalter blieb der einzige Task-Executor dort dauerhaft aus.
-        self.idle_enabled = os.environ.get("BACH_IDLE_WORKER", "").strip().lower() in ("1", "true", "yes", "on")
+        # Idle-Worker ist per Default aktiv (deaktivierbar via BACH_IDLE_WORKER=0)
+        self.idle_enabled = os.environ.get("BACH_IDLE_WORKER", "1").strip().lower() not in ("0", "false", "no", "off")
         self.idle_consecutive = 0
         self.idle_task_name = None
         self.idle_processing = False
@@ -213,12 +212,20 @@ class BACHTray:
         self.services["gui"] = self._check_url(self.gui_url + "/")
         self.services["ollama"] = self._check_url(self.ollama_url + "/api/tags")
 
-        if not self.state.get("connected") or "fackel_preference" not in self.state:
+        if "fackel_preference" not in self.state or not self.state.get("fackel_preference"):
             try:
                 from hub.compute_lock import get_fackel_preference
                 self.state["fackel_preference"] = get_fackel_preference()
             except Exception:
                 self.state.setdefault("fackel_preference", "compute")
+        elif not self.state.get("connected"):
+            try:
+                from hub.compute_lock import get_fackel_preference
+                pref = get_fackel_preference()
+                if pref in ("ollama", "compute"):
+                    self.state["fackel_preference"] = pref
+            except Exception:
+                pass
 
     # --- PromptBoard ---
 
