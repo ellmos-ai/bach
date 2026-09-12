@@ -34,12 +34,12 @@ HTTP コントロール API とクロスプラットフォーム システム �
 
 テレグラム コマンド
 -----------------
-  /ウェルカムメッセージの開始
-  /リセット会話をクリア
+  /start ウェルカムメッセージ
+  /clear 会話をアーカイブして新しいセッションを開始
   /backend [名前] [モデル] バックエンドの切り替え (ollama|claude|codex|claude-api|openai)
   /model <名前> モデルを変更します
   /mode [safe|full] セーフティモード
-  /think思考モードON(スルー)
+  /think 思考モードON (じっくり)
   /nothink 思考モード OFF (高速)
   /settings すべての設定を表示
   /status システムステータス
