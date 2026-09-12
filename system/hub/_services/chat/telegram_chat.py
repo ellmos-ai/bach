@@ -300,8 +300,8 @@ WELCOME = (
        "  /tasks — Offene Aufgaben\n"
        "  /status — System-Status\n\n"
        if HAS_BACH else "")
-    + "Sicherheit: Safe-Modus (Standard) = nur lesen\n"
-    "  /mode full bestätigt = auch schreiben/ausführen"
+    + "Sicherheit: Safe-Modus (Standard) = Dateiarbeit ohne Shell\n"
+    "  /mode full bestätigt = zusätzlich Shell und freies Schreiben"
 )
 
 
@@ -340,8 +340,8 @@ async def cmd_mode(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not args:
         await update.message.reply_text(
             f"Modus: {session.mode}\n\n"
-            "/mode safe — Nur lesen\n"
-            "/mode full bestätigt — Alles"
+            "/mode safe — Lesen und Dateien bearbeiten, keine Shell\n"
+            "/mode full bestätigt — zusätzlich Shell und freies Schreiben"
         )
         return
     m = args[0].lower()

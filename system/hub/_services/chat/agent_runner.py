@@ -94,7 +94,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # Muss global gesetzt werden: der Session-Patch setzt eine leere Session
     # sonst mitten in process() auf "safe" zurueck - dann fehlen write_file
-    # und execute_command, und der Agent kann nur lesen.
+    # und execute_command, und der Agent kann nur noch das, was safe erlaubt
+    # (lesen sowie Dateien bearbeiten/verschieben, aber keine Shell).
     tc._global_defaults["mode"] = args.mode
 
     chat_id = f"agent-{workdir.name}"
