@@ -34,8 +34,8 @@ HTTP Control API 和跨平台系统托盘。
 
 电报命令
 -----------------
-  /开始欢迎消息
-  /清除重置对话
+  /start 欢迎消息
+  /clear 归档对话并开始新会话
   /backend [名称] [型号] 切换后端 (ollama|claude|codex|claude-api|openai)
   /model <名称> 更改模型
   /mode [safe|full] 安全模式
