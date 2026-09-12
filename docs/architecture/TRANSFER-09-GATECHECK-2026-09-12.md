@@ -75,3 +75,34 @@ Windows-Gegenprobe `WORKSTATION-LG` Stufen 2/3/5/7. Ergebnis: **weiterhin UNMET 
 - **Status Task #1243:** open — verbleibt OPEN bis der echte `WORKSTATION-LG`-Lauf grün ist.
    „Erst bei Parität gilt ‚Gatung vor Abloesung'": #1243 darf **nicht** vor dem Windows-Lauf geschlossen werden.
    Keine Fälschung (kein `sys.platform`-Short-Circuit / kein simulierter Windows-Pass) — würde die Gate-Integrität brechen.
+
+---
+## Re-Verifizierung Gate 2 (2) — 2026-09-12 12:2X — BACH qwen3.8:27b-mlx (Task #1250)
+Erneuter lokaler Live-Check auf `mac-studio`, **HEAD `f8554ca`** (branch `main`, seit Runbook neu).
+Ergebnis: **Paritätsvoraussetzung grün, echter Windows-Host-Run weiterhin UNMET.**
+
+- macOS-Ersatznachweis (5 Dateien, Stufen 2/3/5/7): **110 passed in 2.57s**
+  (`test_scheduler_provider.py` 2, `…_wiring.py` 28, `test_accounts_via_accounts_core.py` 23,
+   `test_explorer_provider_wiring.py` 31, `test_transit_sync_provider_wiring.py` 26 = 110).
+- Erreichbarkeit `WORKSTATION-LG` erneut verifiziert: nicht vorhanden
+  (`~/.ssh/config` = nur `colima`; `known_hosts` = 4 Einträge, kein `WORKSTATION-LG`;
+   BACH-Index `workstation/WORKSTATION-LG` = 0 Treffer; Host = `mac-studio`).
+- **Gate-Matrix-Zeile 2 `Windows-Gegenprobe` = ⬜ offen → bleibt ⬜ (kein fälschliches ✅).**
+  Kein `sys.platform`-Short-Circuit, kein simulierter Windows-Pass (Gate-Integrität).
+- **Operator-Handoff (kopierfertig, auf `WORKSTATION-LG` PowerShell):**
+  ```powershell
+  cd %USERPROFILE%\services\bach
+  .\.venvs\bach\Scripts\python.exe -m pytest `
+    system\tests\test_scheduler_provider.py `
+    system\tests\test_scheduler_provider_wiring.py `
+    system\tests\test_accounts_via_accounts_core.py `
+    system\tests\test_explorer_provider_wiring.py `
+    system\tests\test_transit_sync_provider_wiring.py -q
+  git rev-parse --short HEAD
+  ```
+- **Evidenz-Vorlage (Operator füllt aus → in Matrix Zeile 2 + ZERTIFIKAT §1 eintragen):**
+  - `WORKSTATION-LG` HEAD: `______` (muss `f8554ca` bzw. pin-konform sein)
+  - pytest-Ergebnis: `______ passed` (Erwartung **110 passed**)
+  - Zeitstempel Windows-Lauf: `______`
+  - Matrix-Zeile 2 + ZERTIFIKAT §1 Spalte „Windows-Gegenprobe": `⬜ offen` → `✅ grün`
+  - Danach: Task #1243 darf geschlossen werden.
