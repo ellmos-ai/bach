@@ -254,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
                     resume_compute_jobs(paused_jobs)
                 try:
                     subprocess.run(
-                        [sys.executable, bach_cli, "task", "release", str(t["id"])],
+                        [sys.executable, bach_cli, "task", "release", str(t["id"]), "--by", f"worker:{args.category}"],
                         capture_output=True, text=True, timeout=30,
                     )
                 except Exception as re:
@@ -269,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
                 antwort = ""
                 try:
                     subprocess.run(
-                        [sys.executable, bach_cli, "task", "release", str(t["id"])],
+                        [sys.executable, bach_cli, "task", "release", str(t["id"]), "--by", f"worker:{args.category}"],
                         capture_output=True, text=True, timeout=30,
                     )
                 except Exception as re:
@@ -294,7 +294,7 @@ def main(argv: list[str] | None = None) -> int:
                                 f"Letzte Antwort: {(antwort or '')[:200]}")
                 try:
                     subprocess.run(
-                        [sys.executable, bach_cli, "task", "release", str(t["id"])],
+                        [sys.executable, bach_cli, "task", "release", str(t["id"]), "--by", f"worker:{args.category}"],
                         capture_output=True, text=True, timeout=30,
                     )
                 except Exception as re:

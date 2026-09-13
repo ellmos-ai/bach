@@ -210,11 +210,11 @@ def claim_task_atomic(
     return True
 
 
-def release_claim(conn: sqlite3.Connection, task_id: int) -> bool:
+def release_claim(conn: sqlite3.Connection, task_id: int, claimed_by: str) -> bool:
     """Gibt einen Claim vorzeitig frei (Abbruch/Fehler) -- Task faellt auf
     'open' zurueck und ist sofort wieder claimbar. True nur bei echter
-    Aenderung (WHERE status='in_progress' verhindert, einen laengst
-    abgeschlossenen Task versehentlich wieder zu oeffnen)."""
+    Aenderung (WHERE status='in_progress' AND claimed_by=? verhindert, einen laengst
+    abgeschlossenen oder an einen neuen Owner uebergegangenen Task versehentlich freizugeben)."""
     ensure_task_claim_columns(conn)
     now = datetime.now().isoformat()
 
@@ -232,18 +232,18 @@ def release_claim(conn: sqlite3.Connection, task_id: int) -> bool:
     cursor = conn.execute(
         """UPDATE tasks
            SET status = 'open', claimed_by = NULL, claimed_at = NULL, updated_at = ?
-           WHERE id = ? AND status = 'in_progress'""",
-        (now, task_id),
+           WHERE id = ? AND status = 'in_progress' AND claimed_by = ?""",
+        (now, task_id, claimed_by),
     )
     if cursor.rowcount != 1:
         return False
 
-    old_claimed_by = existing_row.get("claimed_by")
+    old_claimed_by = existing_row.get("claimed_by") or claimed_by
     conn.execute(
         """INSERT INTO task_history
            (task_id, action, field_changed, old_value, new_value, changed_by, changed_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (task_id, "status_change", "status", "in_progress", "open", old_claimed_by or "system", now),
+        (task_id, "status_change", "status", "in_progress", "open", claimed_by, now),
     )
 
     return True

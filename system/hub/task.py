@@ -86,7 +86,7 @@ class TaskHandler(BaseHandler):
             "pull": "Tasks vom Rheingold-Lead in den lokalen Bachgrund spiegeln",
             "lead": "Rheingold Lead-Konfiguration für Multi-Host-Federation verwalten (show|set|clear)",
             "claim": "Task exklusiv beanspruchen (bach task claim <id> --by <name> [--lease SECONDS])",
-            "release": "Task-Claim freigeben (bach task release <id>)",
+            "release": "Task-Claim freigeben (bach task release <id> --by <name>)",
             "taskplan": "TASKPLAN-Bridge status/list/import",
             "help": t("hilfe", default="Hilfe anzeigen")
         }
@@ -731,16 +731,33 @@ class TaskHandler(BaseHandler):
         """Task-Claim freigeben"""
         ids, rest = self._parse_ids(args)
         if not ids:
-            return False, "Usage: bach task release <id>"
+            return False, "Usage: bach task release <id> --by <name>"
 
         task_id = ids[0]
+        by = None
+        i = 0
+        while i < len(rest):
+            arg = rest[i]
+            if arg == "--by" and i + 1 < len(rest):
+                by = rest[i + 1]
+                i += 2
+            elif arg.startswith("--by="):
+                by = arg.split("=", 1)[1]
+                i += 1
+            else:
+                i += 1
+
+        if not by or not by.strip():
+            return False, "Usage-Fehler: --by <name> ist erforderlich. Nutze: bach task release <id> --by <name>"
+
+        by = by.strip()
         with self._get_db() as conn:
-            ok = release_claim(conn, task_id)
+            ok = release_claim(conn, task_id, by)
             if ok:
                 conn.commit()
-                return True, f"[OK] Task {task_id} Claim freigegeben"
+                return True, f"[OK] Task {task_id} Claim von {by} freigegeben"
             else:
-                return False, f"[WARN] Task {task_id} nicht in_progress oder nicht gefunden"
+                return False, f"[WARN] Task {task_id} nicht in_progress, nicht von {by} beansprucht oder nicht gefunden"
 
     def _block(self, args: List[str]) -> Tuple[bool, str]:
         """Task(s) blockieren - Multi-ID Support"""
@@ -1253,7 +1270,7 @@ Befehle:
   bach task delete <id> [id2...]     Task(s) loeschen
   bach task priority <id> <P1-P4>    Prioritaet aendern
   bach task claim <id> --by <name>   Task exklusiv beanspruchen [--lease SECONDS]
-  bach task release <id>             Task-Claim vorzeitig freigeben
+  bach task release <id> --by <name> Task-Claim vorzeitig freigeben
   bach task sync                     Drafts übertragen und Server-Zustand spiegeln
   bach task pull                     Tasks vom Rheingold-Lead lokal spiegeln
   bach task lead [show|set <u|clear] Rheingold Lead-Federation verwalten

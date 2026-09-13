@@ -197,7 +197,7 @@ class TestAtomicClaimCore:
         task_id = cursor.lastrowid
         conn.commit()
 
-        ok = release_claim(conn, task_id)
+        ok = release_claim(conn, task_id, "worker-busy")
         conn.commit()
         assert ok is True
 
@@ -219,11 +219,38 @@ class TestAtomicClaimCore:
         task_id = cursor.lastrowid
         conn.commit()
 
-        ok = release_claim(conn, task_id)
+        ok = release_claim(conn, task_id, "worker-busy")
         assert ok is False
 
         row = conn.execute("SELECT status FROM tasks WHERE id = ?", (task_id,)).fetchone()
         assert row[0] == "done"
+        conn.close()
+
+    def test_stale_release_rejected_for_wrong_owner(self, task_db):
+        """Befund 2: Stale Release von Worker A darf einen von Worker B neu geclaimten Task nicht freigeben."""
+        conn = sqlite3.connect(str(task_db))
+        cursor = conn.execute(
+            """INSERT INTO tasks (title, status, claimed_by, claimed_at)
+               VALUES ('Contested Task', 'in_progress', 'worker-B', datetime('now'))"""
+        )
+        task_id = cursor.lastrowid
+        conn.commit()
+
+        # Worker A versucht verspaetet freizugeben -> abgelehnt!
+        ok = release_claim(conn, task_id, "worker-A")
+        assert ok is False
+
+        # Task bleibt in_progress bei Worker B
+        row = conn.execute("SELECT status, claimed_by FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        assert row[0] == "in_progress"
+        assert row[1] == "worker-B"
+
+        # Worker B darf freigeben
+        ok_b = release_claim(conn, task_id, "worker-B")
+        assert ok_b is True
+        row_b = conn.execute("SELECT status, claimed_by FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        assert row_b[0] == "open"
+        assert row_b[1] is None
         conn.close()
 
 
@@ -258,12 +285,22 @@ class TestTaskCLIClaim:
         assert ok3 is False
         assert "Usage-Fehler" in msg3 or "Usage" in msg3
 
-        # 4. Release gibt Task frei
-        ok_rel, msg_rel = handler.handle("release", [str(task_id)])
+        # 4. Release ohne --by ist Usage-Fehler
+        ok_rel_err, msg_rel_err = handler.handle("release", [str(task_id)])
+        assert ok_rel_err is False
+        assert "Usage-Fehler" in msg_rel_err or "Usage" in msg_rel_err
+
+        # 5. Release mit falschem --by scheitert
+        ok_rel_wrong, msg_rel_wrong = handler.handle("release", [str(task_id), "--by", "worker:wrong"])
+        assert ok_rel_wrong is False
+        assert "[WARN]" in msg_rel_wrong
+
+        # 6. Release mit korrektem --by gibt Task frei
+        ok_rel, msg_rel = handler.handle("release", [str(task_id), "--by", "worker:test"])
         assert ok_rel is True
         assert "[OK]" in msg_rel
 
-        # 5. Danach kann worker:other claimen
+        # 7. Danach kann worker:other claimen
         ok4, msg4 = handler.handle("claim", [str(task_id), "--by", "worker:other"])
         assert ok4 is True
         assert "[OK]" in msg4
