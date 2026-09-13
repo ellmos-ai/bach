@@ -355,9 +355,30 @@ vervollständigen. (3) Backend-Katalog vereinheitlichen, Adapterverträge getren
 (4) Seams ehrlich machen (stiller clutch-Fallback, Scheduler-Seam, Zugangsschutz der Control
 API). (5) Rolle bekommt Vertragsfelder. (6) Zuteilung verdrahten. (7) Cockpit.
 
+**Verbund und gemeinsames Herz mit OCEAN** (Nutzererweiterung vom selben Tag, Kapitel 9 und 10
+des Konzepts): Das Cockpit ist ein Knoten, nicht das System. Gemessen: `PingPong` ist der
+Transport, der nachweislich läuft; „Routing v2" existiert nirgends außer im Auftragswortlaut;
+clutch kann per `CLUTCH_REMOTE_OLLAMA` einen fremden Ollama-Endpunkt ansprechen, kennt aber
+weder das Systemregister noch Hostnamen. OCEAN hat für dieses Thema **nichts**, was BACH doppeln
+würde — keine Modellverwaltung, kein Rollenmodell, keinen Tray, kein Cockpit, keinen Scheduler.
+Das gemeinsame Herz ist deshalb keine Zusammenführung, sondern eine **Herauslösung aus BACH,
+die OCEAN mitbenutzt** — dasselbe Muster wie bei `assistant-core` (`D-20260903-001`). Es gehört
+**nicht** in den ControlRoom: der will ausdrücklich „kein Modul-Neubau, Backend = die Module".
+Fackel wandert mit heraus; Muschelgrund und Trithon sind Anschlusspunkte, aber Entwurf
+(`T-20260908-362639245` steht auf `USER/freigabe`) und werden nicht vorausgesetzt. Rücktransfer
+aus FolderHome, SentinelFleet und NemoFold nach dem Präzedenzfall `T-20260913-744071825`:
+Verfahren zurückholen, keine Fachlogik, Herkunft vermerken — zwei der drei stehen unter Sperre
+und dürfen nur gelesen werden. Zusatzschritte: (8) Herz herauslösen, (9) OCEAN als zweiter
+Konsument mit schlankem Anzeige-Tray, den BACH umbrandet.
+
+**Richtigstellung:** Die Seite „BACH Aktivitätsanzeige & Worker Dashboard" liegt entgegen einer
+Ticketnotiz **in `origin/main`** (`telegram_chat.py:1519` Titel, `:1591` Überschrift, Fackel,
+Always-On, Neuer Worker und Verlauf sämtlich vorhanden). Das Konzept baut darauf auf.
+
 **Offene Nutzerentscheidungen** (vorgelegt als decision-shot `BH-2026-09-13-A` im Ticket
-`T-20260913-896336887`): Ort des Rollen-Registers, Zuteilungsstrategie, Format des
-Backend-Registers, Ort des Cockpits. Schritte 4 bis 6 bleiben bis dahin gesperrt.
+`T-20260913-896336887`): Ort des Rollen-Registers, Zuteilungsstrategie, Form des
+Backend-Katalogs, Zeitpunkt des Cockpits, Name und Ort des Herzens, GUI-Richtung. Die Schritte
+5 bis 9 bleiben bis dahin gesperrt.
 
 ---
 

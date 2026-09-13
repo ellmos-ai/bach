@@ -11,6 +11,12 @@ Dieses Dokument beantwortet Phase 1: Was ist heute da, was fehlt, und wie sähe 
 die „wer spielt wann welche Rolle" beantwortbar macht. **Es wird nichts umgebaut.** Der
 Umbau folgt in Folgetickets, die am Programmkopf in `ROADMAP.md` andocken.
 
+Der Nutzer hat den Umfang am selben Tag zweimal erweitert: Das Cockpit sei „ein Knoten", der
+**mit den anderen Systemen verbunden** werden müsse (Kapitel 9), und das Herz solle **für BACH
+und OCEAN gemeinsam** entwickelt werden — Arbeitsname `ocean-heart` beziehungsweise
+`agents-heart`, samt Tray, Rücktransfer aus drei Schwestersystemen sowie den Konzepten Fackel,
+Muschelgrund und Trithon (Kapitel 10). Beide Erweiterungen sind eingearbeitet.
+
 ---
 
 ## Inhalt
@@ -23,6 +29,8 @@ Umbau folgt in Folgetickets, die am Programmkopf in `ROADMAP.md` andocken.
 6. [Zweitmeinung](#6-zweitmeinung)
 7. [Offene Entscheidungen](#7-offene-entscheidungen)
 8. [Reihenfolge und Folgetickets](#8-reihenfolge-und-folgetickets)
+9. [Der Systemverbund: ein Herz über mehrere Rechner](#9-der-systemverbund-ein-herz-über-mehrere-rechner)
+10. [ocean-heart: das gemeinsame Herz von BACH und OCEAN](#10-ocean-heart-das-gemeinsame-herz-von-bach-und-ocean)
 
 ---
 
@@ -478,7 +486,7 @@ Zweitmeinung entschieden: Es fällt aus dem Bauumfang heraus (Abschnitt 4.5).
 
 ## 7. Offene Entscheidungen
 
-Vier Festlegungen sind echte Architekturentscheidungen und werden dem Nutzer als
+Sechs Festlegungen sind echte Architekturentscheidungen und werden dem Nutzer als
 `decision-shot` vorgelegt, nicht hier einseitig getroffen:
 
 1. **Wo lebt das Rollen-Register** — Datenbank oder Konfigurationsdatei?
@@ -486,8 +494,13 @@ Vier Festlegungen sind echte Architekturentscheidungen und werden dem Nutzer als
    oder entscheidet BACH allein?
 3. **Welche Form hat der Backend-Katalog** — ein gehobenes Python-Modul oder eine Datendatei?
 4. **Wann kommt das Cockpit** — jetzt mitbauen oder erst, wenn es etwas anzuzeigen gibt?
+5. **Wie heißt das Herz und wo gehört es hin** — `agents-heart`, `ocean-heart` oder
+   `ocean-control`, und ist es ein Modul neben dem ControlRoom oder ein Teil davon?
+6. **Welche GUI-Richtung gilt** — bleibt es bei der laufenden Extraktion neutraler Module
+   (`D-20260830-002`), oder wird eine eigene OCEAN-Ansicht nachgebaut?
 
 Die Vorlage steht im Ticket `T-20260913-896336887` unter der Kennung `BH-2026-09-13-A`.
+Zu 5 und 6 liegen belegte Empfehlungen in den Abschnitten 10.2 und 10.5.
 
 ---
 
@@ -517,6 +530,264 @@ Die Begründung des ersten Entwurfs bleibt trotzdem gültig und gilt nun für Sc
 Fackel-Analyse hat gezeigt, wohin es führt, wenn man Mechanik baut, bevor man sie beobachten
 kann — die naheliegendste Frage des Nutzers war mit den vorhandenen Daten grundsätzlich nicht
 beantwortbar.
+
+**Zwei weitere Schritte kommen aus Kapitel 10 hinzu** (Herz herauslösen, OCEAN als zweiter
+Konsument), beide nach Schritt 4. Sie ändern an dieser Reihenfolge nichts, legen den Schritten
+1 bis 4 aber eine Auflage auf: Was dort gebaut wird, muss BACH verlassen können. Siehe
+Abschnitt 10.7.
+
+---
+
+## 9. Der Systemverbund: ein Herz über mehrere Rechner
+
+> **Nutzerhinweis (live, Wortlaut, 13.09.2026):** „sehr gut und das muss halt dann noch
+> verbunden werden mit den anderen systemen"
+
+Das Cockpit auf dem Mac ist **ein Knoten**, nicht das System. Ein Modell-Backend, das nur eine
+Maschine kennt, beantwortet die Frage „wer spielt wann welche Rolle" nur für diese Maschine.
+Dieses Kapitel misst, was an Verbund heute wirklich existiert — und was nur Begriff ist.
+
+### 9.1 Vorab-Korrektur: Das Cockpit liegt bereits in `origin/main`
+
+Eine Ticketnotiz hielt fest, die Seite „BACH Aktivitätsanzeige & Worker Dashboard" liege im
+Mac-Stand und **nicht** in `origin/main`. **Das ist nachgemessen falsch.** Sie liegt dort:
+
+| Merkmal | Fundstelle in `origin/main` |
+|---|---|
+| Seitentitel, wörtlich wie beschrieben | `telegram_chat.py:1519` — `<title>BACH Aktivitätsanzeige & Worker Dashboard</title>` |
+| Überschrift | `telegram_chat.py:1591` |
+| Fackel | 20 Vorkommen im Modul |
+| Always-On-Schalter | 6 Vorkommen |
+| „Neuer Worker" | 4 Vorkommen |
+| Verlauf | 8 Vorkommen |
+| Verlinkung aus dem Chat-Dashboard | `telegram_chat.py:1336` |
+
+Der Unterschied zwischen Mac und `origin/main` mag in Einzelheiten bestehen, aber die
+Grundlage ist gemeinsamer Stand. **Das Konzept baut darauf auf und ersetzt es nicht.**
+
+### 9.2 Was an Verbund gebaut ist — und was nur ein Wort ist
+
+| Baustein | Zustand | Beleg |
+|---|---|---|
+| **Systemregister** | vorhanden, aber **dünn** | `.SYNC/_inventory/systems-registry.json`, 631 Byte: vier Hosts mit `hostname`, `role`, `slot`, teils `active`. **Keine Hardware-, keine Erreichbarkeitsfelder** — die stehen nur in Prosa in `CLAUDE.md` und im Systemmanifest |
+| **PingPong** | **real gebaut**, läuft | Skill `pingpong` v1.1.0, Laufzeitskript `scripts/pingpong_runtime.py` mit eigenen Tests, Modi ListenSync/WriteSync, Anbieteradapter für Codex und Claude Code; Betriebsspuren als datierte Übernahme- und Kadenz-Deltas in `.SYNC/` |
+| **„Routing v2"** | **existiert nicht** | Volltextsuche über `.SYNC` (1454 Ordner) und `_control-center` (151 Ordner) sowie über clutch- und BACH-Register: **null Treffer außer dem Ticketwortlaut selbst**. Entweder Arbeitstitel oder Versehen — es ist kein Artefakt, auf das man bauen könnte |
+| **clutch hostübergreifend** | **halb** | `clutch/motorblock.py:296-303` (`_ziel_url`) löst den Endpunkt eines Gangs auf, sonst liefe ein Remote-Gang gegen `localhost`; `clutch/discovery.py:68-84` liest die Umgebungsvariable `CLUTCH_REMOTE_OLLAMA` als zusätzliche Basis-URLs |
+| **clutch als zentraler Resolver** | **nein** | clutch kennt weder `systems-registry.json` noch die Hostnamen; einzige Fundstelle ist die Modul-Metadatendatei, nicht der Code. Pro Host läuft eine eigene Instanz |
+| **agent-launcher** | eigenständiges Modul, real | Repo `ellmos-ai/agent-launcher`, Klon `C:/_Local_DEV/repos/agent-launcher`; `agent_launcher/providers.py:25` — `PROVIDERS = ("claude", "codex", "agy", "kimi")`, `UNVERIFIED_PROVIDERS = {"kimi"}` |
+| **Fackeln je Host** | vorgesehen, gemessen | Die Zahl zehn ist überall gleich, die Größe einer Fackel folgt der Maschine — genau die Eigenschaft, die den Verbund trägt (`system/docs/TORCH-KONZEPT.md`) |
+
+**Die wichtigste Einzelfeststellung dieses Kapitels:** *Routing v2* gibt es nicht. Wer ein
+Konzept auf einen Begriff stützt, den kein Artefakt trägt, baut auf Sand. Gebraucht wird ein
+Transport — und **PingPong ist der, der nachweislich läuft.**
+
+### 9.3 Wie der Verbund aussieht
+
+Die Begriffe aus Kapitel 4 tragen über Rechnergrenzen, wenn man einen einzigen hinzufügt:
+
+> **Der Ort ist Teil des Agentenprofils, nicht der Rolle.**
+
+Eine Rolle wie „Rechercheur" ist hostunabhängig. Das Agentenprofil `qwen3.8:27b-mlx auf ollama
+am Mac` ist es nicht — es trägt den Host, und damit trägt es auch dessen Fackeln, dessen
+Compute-Lock und dessen Erreichbarkeit. Daraus folgt die Verbundlogik fast von selbst:
+
+1. **Das Rollenregister ist gemeinsam.** Ein Vertrag gilt auf allen Rechnern gleich. Wäre er es
+   nicht, hieße dieselbe Rolle auf zwei Maschinen Verschiedenes.
+2. **Die Kandidatenmenge ist hostabhängig.** Jeder Host prüft seine eigenen Fackeln, seinen
+   eigenen Vorrangschalter, seine eigenen Rechenjobs. Was auf dem Mac nicht passt, kann auf der
+   Workstation passen.
+3. **Die Zuteilung bleibt lokal, die Kandidaten werden entfernt.** Kein zentraler Verteiler, der
+   von außen über fremde Maschinen verfügt — das wäre eine Buchhaltung über Zustände, die er
+   nicht misst, und damit derselbe Fehler, den das Fackel-Dokument verbietet. Stattdessen fragt
+   der zuteilende Host die anderen: *was hättest du frei?* Die Antwort ist eine Messung.
+4. **Das Besetzungsprotokoll trägt den Host.** Ohne `host` im Eintrag ist „wer spielte um 10:34"
+   auf einem Mehrrechnersystem nicht beantwortbar.
+5. **Der Transport ist PingPong**, bis etwas Besseres nachweislich existiert. Es ist gebaut,
+   getestet, hat Anbieteradapter und hinterlässt Betriebsspuren.
+
+**Die Lücke, die zuerst zu schließen ist:** Das Systemregister trägt vier Felder. Für eine
+Besetzungsentscheidung über Rechner hinweg braucht es mindestens Erreichbarkeit (wie spreche
+ich diesen Host an), verfügbare Backends und die gemessene Fackellage. Diese Felder gehören
+**nicht** von Hand gepflegt, sondern gemeldet — sonst entsteht genau die Buchhaltung, die
+auseinanderläuft.
+
+---
+
+## 10. ocean-heart: das gemeinsame Herz von BACH und OCEAN
+
+> **Nutzerauftrag (live, Wortlaut, maßgeblich, 13.09.2026):** „ja zumindest sollte es für beide
+> zusammen entwickelt werden weiter also das ocean-heart oder so könnten wir es nennen oder
+> ocean-control oder würde es in ocean zum ControlRoom gehören? Entwickle aus dem bereits
+> bestehenden Bachelementen wie dem tray und einstellungs/activity board sowie routinen und
+> wartungsbereichen aus bach ein gemeinsames Konzept für ocean-heart bzw. agents-heart. In
+> diesem Zuge auch FolderHome NemoFold und SentinelFleet Rücktransfer mit einplanen. Außerdem
+> Fackelkonzept übernehmen und Muschelgrund und Trithon Konzept einplanen. Ocean soll auch
+> einen Tray bekommen wie Bach […] Bei der GUI könnte als Idee unified gui der Unterbau werden
+> […] Aber wir hatten bzgl. GUI schon viele Entscheidungen […] deshalb nur diese neue Idee
+> verwenden wenn sie besser ist als bisherige Ideen Umsetzungen und Entscheidungsrichtungen."
+
+### 10.1 Warum ein gemeinsames Herz überhaupt möglich ist
+
+Gemessen an OCEAN (`C:/_Local_DEV/repos/open-ocean`, 150 grüne Tests, kein Releaseschema,
+`PRIVATE.txt`-Sperre aktiv):
+
+| Fähigkeit | BACH | OCEAN |
+|---|---|---|
+| Modell-/Backend-Verwaltung | fünf Listen, aber gebaut | **keine** (null Treffer für Ollama, Modell-Register) |
+| Rollen-/Agentenmodell | 27 Rollen in der DB, ohne Modell | **keins** |
+| Tray | gebaut (`chat_tray.py`) | **keiner** |
+| Activity-Cockpit | gebaut (`:8081/activity`) | **keins** |
+| Scheduler | Legacy gebaut, Seam vorbereitet | **keiner** — konsumiert `ellmos-scheduler` als externen Anbieter |
+| GUI | gebaut (`:8000`) | **keine** — bindet `unified-gui.host` ein |
+| Bundle-/Rezeptwesen | — | **gebaut** (Resolve, Verify, Fetch/Place, Activate) |
+
+**Das Bild ist eindeutig und macht die Frage leicht:** OCEAN hat für dieses Thema nichts, was
+BACH doppeln würde. BACH hat alles, was OCEAN fehlt. Es geht also nicht um eine Zusammenführung
+zweier Implementierungen, sondern um **eine Herauslösung aus BACH, die OCEAN mitbenutzen kann.**
+Das ist genau das Muster, das der Nutzer für die GUI bereits entschieden hat (siehe 10.5).
+
+### 10.2 Name und Ort — die Frage, die der Nutzer stellt
+
+Der Nutzer fragt: `ocean-heart`, `ocean-control`, oder gehört es in OCEANs ControlRoom?
+
+**Gemessen zum ControlRoom** (`.TOPICS/.AI/.MODULES/.CONTROL/controlroom/`, kein Repo, nur
+Entwurfsdokumente): Er definiert sich selbst als Governance- und Kompositionsebene mit dem
+ausdrücklichen Satz **„Kein Modul-Neubau. Backend = die Module, Frontend = unified-gui."**
+Entscheidung `D-20260817-002` hält fest: Oberfläche über dem bestehenden `_control-center`,
+**kein Nachfolger**; `D-20260817-006`: keine neue Datenhaltung. Die Umsetzungsschritte M2 bis
+M4 sind gesperrt.
+
+Ein Herz aus Backend-Katalog, Rollenregister, Zuteilung und Besetzungsprotokoll ist eine
+**Laufzeitfunktion mit eigener Datenhaltung**. Es ist damit genau das, was der ControlRoom
+ausdrücklich nicht sein will. **Es gehört nicht in den ControlRoom, sondern ist eines der
+Module, die der ControlRoom später referenziert.** Das ist keine Ablehnung der Idee des
+Nutzers, sondern ihre Auflösung: Der ControlRoom zeigt es an, er ist es nicht.
+
+Zum Namen: `ocean-control` kollidiert begrifflich mit `_control-center` und ControlRoom — drei
+Dinge mit „Control" im Namen, die Verschiedenes sind, ist eine Verwechslung mit Ansage.
+`agents-heart` beschreibt, was es tut (es besetzt Rollen mit Agenten), und bindet es nicht an
+ein Produkt — was richtig ist, weil BACH, OCEAN und die Hackathon-Systeme es alle benutzen
+sollen. **Empfehlung: `agents-heart`.** Die Entscheidung liegt beim Nutzer (`BH-2026-09-13-A`,
+E5).
+
+### 10.3 Was aus BACH herausgelöst wird
+
+Der Nutzer nennt vier Bausteine. Gemessen an ihrem heutigen Zustand:
+
+| Baustein aus BACH | Heute | Im Herz |
+|---|---|---|
+| **Tray** (`chat_tray.py`) | 1278+ Zeilen, hält Single-Instance-Lock, pollt alle 5 s, löst Rollen auf, führt Aufgaben aus, schaltet die Fackel | **Zu viel für einen Tray.** Er ist heute Anzeige *und* Taktgeber *und* Ausführer. Herausgelöst wird der Tray als **Anzeige und Bedienung**; das Zuteilen wandert in die Zuteilungsgrenze aus Schritt 1 |
+| **Activity-Board** (`:8081/activity`) | gebaut, gut, siehe 9.1 | wird die Oberfläche des Herzens — unverändert übernommen, nicht neu gebaut |
+| **Routinen** (`hub/routine.py`) | **gated**: `domain_writer_gate` sperrt die Domäne `routine`, Kanon ist Routinika | **nicht** mitnehmen. BACH besitzt diese Domäne nicht mehr; sie ins Herz zu ziehen hieße, eine abgegebene Zuständigkeit zurückzuholen |
+| **Wartung** (`hub/maintain.py`, `tuev.py`, `health.py`) | gebaut | als **Prüfbereich** des Herzens: Sind die Backends erreichbar, stimmen die Register, laufen Waisen? Das ist dieselbe Frage wie „wer spielt gerade", nur mit anderem Blickwinkel |
+
+**Der OCEAN-Tray.** Der Nutzer will ihn ähnlich, zunächst nahezu gleich, und BACH soll ihn
+später gebrandet übernehmen („Bach B"). Das funktioniert nur, wenn der Tray **nicht** zweimal
+gebaut wird. Die Reihenfolge ergibt sich aus dem Befund: Weil BACHs Tray heute drei Aufgaben
+vermengt, wäre eine Kopie eine Kopie des Problems. Richtig ist: erst die Zuteilung aus dem Tray
+herauslösen (Schritt 1 des Programms), dann bleibt ein schlanker Anzeige-Tray übrig — **und
+genau der ist der, den OCEAN bekommt und BACH umbrandet.**
+
+### 10.4 Fackel, Muschelgrund, Trithon
+
+**Fackel** wird übernommen, und zwar unverändert: Die Zahl zehn gilt überall gleich, die Größe
+einer Fackel folgt der Maschine. Das ist bereits die verbundfähige Form — ein Konzept, das auf
+einem größeren Rechner dieselbe Sprache spricht. Übernehmen heißt hier: `_services/fackel.py`
+wandert mit dem Herz heraus, statt in BACH zu bleiben.
+
+**Muschelgrund** und **Trithon** stammen aus dem Architekturentwurf
+`.SYNC/ARCHITEKTURENTWURF_OCEAN_LEAD_HOST_TRITHON.md` (08.09.2026). **Beide sind Entwurf, nicht
+abgenommen**: Das zugehörige Ticket `T-20260908-362639245` steht auf `USER/freigabe`, und ein
+Nachtrag verlangt Autoritätsmatrix, Split-Brain-Negativtests und einen Feld-für-Feld-Abgleich,
+bevor irgendetwas gebaut wird. Dieses Konzept plant sie deshalb **als Anschlusspunkte ein, ohne
+sie vorauszusetzen**:
+
+- **Trithon** ist die Zweiweg-Engine des Ticket-Ökosystems, dazu ein Lead-Trithon als
+  Millisekunden-Atomreferenz für die Salt-Mechanik gegen Wettläufe beim Cloud-Abgleich.
+  **Das ist dieselbe Frage wie der fehlende atomare Claim aus Befund 1** — nur eine Ebene
+  höher. Wer den Claim baut, sollte die Salt-Mechanik kennen, damit nicht zwei verschiedene
+  Antworten auf dasselbe Problem entstehen. **Anschlusspunkt, kein Vorgriff.**
+- **Muschelgrund** ist Modus A des Gedächtnisses: eine kanonische Datenbank auf einem
+  Leitrechner, gegen die alle Knoten abgleichen; Modus B wäre dezentral mit
+  `sqlite-transit-sync`. Für das Herz ist das die Frage, **wo das Rollenregister lebt, wenn es
+  mehrere Rechner gibt** — dieselbe Entscheidung E1, nur im Verbund. Sie wird nicht hier
+  vorweggenommen.
+
+Der Entwurf hält beide ausdrücklich getrennt („Aufgaben sind nicht Wissen"). Das Herz fügt eine
+dritte Achse hinzu — **Besetzung ist weder Aufgabe noch Wissen** — und darf mit keiner der
+beiden verschmolzen werden.
+
+### 10.5 Die GUI-Frage: ist die neue Idee besser?
+
+Der Nutzer bittet ausdrücklich darum, seine neue Idee nur zu verwenden, wenn sie besser ist als
+die bestehenden Entscheidungen. Also gemessen.
+
+**Bestehende Entscheidungen:**
+
+- `D-20260830-002` (30.08.2026): Der Nutzer verwarf die drei vorgelegten Optionen und wählte
+  eine eigene: *„mein favorit wäre das die Bach-Version ein neutrales Modul wird das dann sowohl
+  bach als auch unified gui importieren, sodass es keinen drift gibt"*.
+- `D-20260903-001`: bereits umgesetzt — PR #15 gemergt, `assistant-core v0.1.0` herausgelöst,
+  der GUI-Server darauf umgestellt. Das Muster läuft also schon.
+- `D-20260817-007`: Die ControlRoom-Konsole wird eine Web-Oberfläche mit eigenem Port.
+
+**Die neue Idee** lautet: unified-gui als Unterbau, darauf eine OCEAN-GUI, die BACHs Oberfläche
+mit OCEAN-Modulen im Rücken nachbaut; BACH könnte später auf diese Ansicht umschalten.
+
+**Urteil: die neue Idee ist nicht besser, sondern derselbe Gedanke mit einem Risiko mehr.**
+Beide wollen, dass BACH und OCEAN dieselbe Oberfläche benutzen. Der Unterschied liegt im Wort
+*nachbauen*: Eine nachgebaute Oberfläche ist eine zweite Oberfläche, und zwei Oberflächen
+driften — genau das, was der Nutzer am 30.08. ausschließen wollte („sodass es keinen drift
+gibt"). Die bereits laufende Extraktion erreicht dasselbe Ziel ohne diesen Schritt.
+
+**Was aus der neuen Idee aber zu übernehmen ist:** der Gedanke, dass OCEAN eine eigene Ansicht
+bekommt. Nur eben als **Ansicht auf dieselben Module**, nicht als Nachbau. Dann ist „BACH
+schaltet auf ocean-view um" kein Umbau, sondern eine Einstellung — und `D-20260830-002` bleibt
+unangetastet.
+
+### 10.6 Rücktransfer aus den drei Schwestersystemen
+
+Der Nutzer nennt FolderHome, NemoFold und SentinelFleet. Gemessen, mit einem wichtigen
+Vorbehalt: **zwei der drei stehen unter Sperre.**
+
+| System | Zustand | Was zurückkommt |
+|---|---|---|
+| **FolderHome** | aktiver Team-Lock (`LOCK.team.ASUS-GEI.txt`, Endabnahme), nur lesend | **Das Modellschema.** `contracts/strands_agent.py:130-150` und `application/local_app.py:717-720` unterscheiden bereits `local_ollama_host` von `remote_ollama_host` und verlangen außerhalb der Loopback-Adresse eine ausdrückliche Zustimmung. Das ist exakt die Verbundfrage aus Kapitel 9 — dort gelöst, hier offen |
+| **SentinelFleet** | `LOCK.user.agentic-judging-no-push.txt`, **weiterhin aktiv**, nur lesend | **Die Aufsichtsebene.** Es hat eine Flottensteuerung mit `TaskMaster State`, `Swarm Conductor` und Dashboard gebaut. Wichtig: Sein Modellrouter ist laut eigenem Docstring nur *„based on clutch"*, kein Import — die eigene Skill-Datei sagt ausdrücklich, ein Routing-Algorithmus existiere dort nicht. Zurückzuholen sind also **Muster**, nicht Code |
+| **NemoFold** | kein lokaler Klon, eigenes Repo; Entscheidung `D-20260909-001` offen: *„gebündelter Vertragslücken-Audit in vorhandenen Komponenten, kein Neubau von drei Modulen"* | **Das Belegprinzip:** exakte Fundstellen, umkehrbare Aktionen, begrenztes Schlussfolgern hinter einem lokalen Datenschutz-Gatter. Für das Besetzungsprotokoll ist „exakte Fundstelle" genau die richtige Messlatte |
+
+**Wie Rücktransfer hier funktioniert, ist bereits präzedenzhaft geklärt.** Ticket
+`T-20260913-744071825`: Ein Verfahren aus FolderHome — eine hashgebundene Einmal-Freigabe —
+wurde **unter aktivem Lock gelesen, nicht kopiert**, als Muster in den Freigabe-Ablauf des
+ticket-master übertragen und mit einem Herkunftsvermerk im Code versehen; das
+Beitrags-spezifische wurde ausdrücklich verworfen. **Das ist die Form: Verfahren zurückholen,
+keine Fachlogik, Herkunft vermerken, Sperren achten.**
+
+### 10.7 Was sich dadurch am Programm ändert
+
+Nichts an der Reihenfolge aus Kapitel 8, und das ist der Punkt. Die Schritte 1 bis 4 —
+Zuteilungsgrenze, Protokoll, Backend-Katalog, ehrliche Seams — sind genau die, die ein
+herauslösbares Herz ergeben. Sie werden nur mit einer zusätzlichen Auflage versehen:
+
+> **Was in den Schritten 1 bis 4 gebaut wird, wird so gebaut, dass es BACH verlassen kann.**
+> Keine Importe aus `hub/` in die neuen Bausteine, keine Annahme, dass es genau eine Datenbank
+> gibt, kein fest verdrahteter Hostname.
+
+Das kostet in diesen Schritten fast nichts und erspart später eine zweite Extraktion. Es ist
+dieselbe Auflage, unter der `assistant-core` bereits herausgelöst wurde.
+
+Zusätzlich kommen zwei Schritte hinzu, beide **nach** Schritt 4:
+
+| # | Schritt | Abhängig von |
+|---|---|---|
+| 8 | **Herz herauslösen** als eigenes Modul (Rollenregister, Backend-Katalog, Zuteilung, Besetzungsprotokoll, Fackel), BACH wird sein erster Konsument | Schritte 1–4, Entscheidung E1 und E5 |
+| 9 | **OCEAN wird zweiter Konsument**, bekommt den schlanken Anzeige-Tray; BACH brandet denselben Tray um | Schritt 8; OCEANs Publikationssperre beachten |
+
+Der Rücktransfer aus den drei Schwestersystemen ist kein eigener Schritt, sondern eine
+**Lesepflicht vor** den Schritten 1 und 8: Wer die Zuteilungsgrenze baut, liest vorher
+FolderHomes Modellschema; wer das Herz herauslöst, liest vorher SentinelFleets Aufsichtsebene.
+Beide Systeme stehen unter Sperre — lesen ist erlaubt, übernehmen nur als Muster mit
+Herkunftsvermerk.
 
 ---
 
