@@ -1,158 +1,142 @@
-# Auftrag 1 — BACH GUI Nav-Umbau + Denkarium-Klarstellung (T-20260913-660268706)
+# Auftrag — Stored-XSS-Fix in agents-board.js (T-20260913-304635102)
 
-Du arbeitest im Worktree `C:/_Local_DEV/wt/bach-660268706-a` (Branch
-`fix/T-20260913-660268706-nav-denkarium`, Basis `origin/main`). Committe deine
-Änderungen auf DIESEM Branch. **NICHT pushen** — das übernimmt der Driver.
+Du arbeitest im Worktree `C:/_Local_DEV/wt/bach-304635102-xss` (Branch
+`fix/T-20260913-304635102-xss-agents-board`, Basis `origin/main`, aktuell
+`e3db932`). Committe auf DIESEM Branch. **NICHT pushen.**
 
-## Kontext (damit du nicht neu recherchieren musst)
+Dies ist ein **Sicherheitsfix** — Gründlichkeit geht hier vor Kürze. Kein
+Corner-Cutting bei Escaping/Sanitizing.
 
-- Zentrale Navigation für die BACH-GUI (Port 8000) liegt NICHT pro Template,
-  sondern zentral in `system/gui/static/js/nav.js`, Array `NAV_ITEMS`
-  (ca. Zeile 63-104). Jedes Template lädt dieses eine Skript.
-- Aktueller Stand des Arrays (Auszug, damit du die Ist-Struktur kennst):
-  ```js
-  const NAV_ITEMS = [
-      { href: "/", label: "Dashboard" },
-      { label: "Aufgaben", children: [
-          { href: "/tasks-board", label: "Tasks" },
-          { href: "/routinen?tab=bach", label: "BACH-Routinen" },
-      ]},
-      { label: "Persönlicher Assistent", children: [
-          { href: "/chat", label: "Buddha Chat" },
-          { href: "/prompt-library", label: "Deine Prompts" },
-          { href: "/routinen?tab=personal", label: "Deine Routinen" },
-          { href: "/kontakte", label: "Kontakte" },
-          { href: "/denkarium", label: "Denkarium", external: true },
-          { href: "/wiki", label: "Wiki" },
-      ]},
-      { label: "Agenten", children: [
-          { href: "/chat", label: "Chats" },
-          { href: "/agents-board", label: "Agents Board" },
-          { href: "/reports", label: "📑 Berichte" },
-          { href: "/memory", label: "Memory" },
-          { href: "/tokens", label: "Tokens" },
-      ]},
-      { label: "Models", children: [
-          { href: "#", portRel: 8081, path: "/activity", label: "Einstellungen", external: true },
-          { href: "/tools", label: "Tools" },
-      ]},
-      { label: "Meine Domänen", children: [
-          { href: "/financial", label: "Finanzen" },
-          { href: "/ati", label: "🛠️ ATI Entwickler" },
-          { href: "/steuer", label: "⚖️ Theodor Steuer" },
-          { href: "/gesundheit", label: "🩺 Gesundheit" },
-          { href: "/persoenlich", label: "🏠 Persönlicher Assistent" },
-      ]},
-      { href: "/inbox", label: "Dateien" },
-      { label: "System", children: [
-          { href: "/settings", label: "Einstellungen" },
-          { href: "#", portRel: 8081, path: "/activity", label: "📊 Worker & Aktivität", external: true },
-          { href: "/usecases", label: "Use Cases" },
-          { href: "/daemon", label: "Automation" },
-          { href: "/control/", label: "Unified GUI", external: true },
-          { href: "/maintenance", label: "Wartung" },
-          { href: "/logs", label: "Logs" },
-          { href: "/help", label: "Help" },
-      ]},
-  ];
-  ```
-- `portRel` + `path` ist ein bestehender Mechanismus: die Nav baut daraus
-  `http://<host>:<portRel><path>` (Zeilen ~142-158 in `initNavigation`). Damit
-  wird bereits heute nach `:8081/activity` verlinkt — nichts Neues bauen, nur
-  Einträge verschieben/umbenennen.
-- `/persoenlich` (Route in `system/gui/server.py`) rendert
-  `system/gui/templates/persoenlich.html` und leitet von dort per
-  `RedirectResponse` auf `/agents/persoenlich` weiter (bzw. umgekehrt, prüfe
-  im Code welche der beiden Routen die "echte" ist — beide existieren, nutze
-  den bestehenden `href`-Wert `/persoenlich` unverändert, nur Label/Position
-  ändern).
-- **GESPERRT, NICHT ANFASSEN** (aktives `LOCK.oceanbach.txt`, anderer Agent
-  arbeitet dort parallel): `system/hub/routine.py`, die
-  Routinen-Endpunkte-Abschnitte in `system/gui/server.py`, und der komplette
-  Ordner `system/tests/` (auch keine neuen Dateien dort anlegen). Wenn du in
-  `server.py` etwas suchst: nur lesen/grep, nicht die Routinen-Routen ändern.
-- Baseline-Testlauf vorher/nachher gleich halten: **19 failed / ~5000 passed**
-  in der Gesamtsuite (`pytest system/tests` aus dem Repo-Root). Diese Zahl ist
-  der bekannte Ist-Zustand, keine Regression durch dich einführen. Da du
-  `system/tests/` nicht ändern darfst, ist das ein reiner Lesevergleich.
+## Befund (aus automatisiertem Security-Review, [HIGH])
 
-## Die vier Teilaufgaben
+Datei: `system/gui/static/js/agents-board.js`. `container.innerHTML =` bzw.
+`panel.innerHTML =` interpoliert Nutzer-/Agentendaten (`item.name`,
+`displayName`, `item.description`, `section.type`, IDs) ungeschützt in
+Markup UND baut `onclick="selectItem('${item.id}', ...)"` als JS-String
+zusammen. Betroffene Funktionen (gefunden per `grep -n "^function"`):
+- `renderTreeItem` (Zeile ~116)
+- `renderNestedAssignments` (Zeile ~199)
+- `renderDetailView` (Zeile ~269)
+- `renderAgentAssignments` (Zeile ~460)
+- `renderItemUsage` (Zeile ~496)
+- `renderTaskForm` (Zeile ~523)
+- `renderExpertSkillsSelector` (Zeile ~904)
+- `renderFlowNodes` (Zeile ~1003)
 
-### 1) Nav-Umbau (`system/gui/static/js/nav.js`)
+Es gibt bereits `function escapeHtml(text)` (Zeile ~1121, textContent-basiert:
+escaped `&`, `<`, `>`). Sie wird an einigen Stellen schon benutzt (z. B.
+Zeile 533-536, 876, 880, 914, 1014), an den oben genannten Funktionen aber
+NICHT konsequent.
 
-Ziel-Struktur für `NAV_ITEMS` (nur diese vier Gruppen ändern sich, alle
-anderen Einträge/Gruppen unverändert lassen):
+**Wichtige Einschränkung von `escapeHtml()`:** Sie ist textContent-basiert
+und escaped **keine Anführungszeichen** (`"`/`'`). Das reicht für Text
+ZWISCHEN Tags (z. B. `<span>${escapeHtml(x)}</span>`), aber NICHT für Werte
+INNERHALB eines HTML-Attributs (`data-name="${x}"`) oder innerhalb eines
+`onclick="...('${x}')"`-JS-Strings — dort kann ein `"` oder `'` im Wert die
+Anführungszeichen-Grenze durchbrechen. Deshalb reicht "escapeHtml drauf" bei
+Attributen/onclick NICHT allein.
 
-a) **"Persönlicher Assistent"**-Dropdown bekommt einen neuen, ERSTEN
-   Kind-Eintrag: `{ href: "/persoenlich", label: "Dashboard" }` (kein
-   `external: true` — das ist eine interne BACH-Route, kein Fremdlink).
+## Fix (in dieser Reihenfolge)
 
-b) **"Meine Domänen"**-Dropdown: den Eintrag
-   `{ href: "/persoenlich", label: "🏠 Persönlicher Assistent" }` ENTFERNEN
-   (er lebt jetzt nur noch unter "Persönlicher Assistent" → "Dashboard",
-   siehe a). Die übrigen Domänen-Einträge (Finanzen, ATI, Steuer, Gesundheit)
-   bleiben unverändert stehen.
+1. **Text-Interpolation (zwischen Tags):** Jede der o.g. 8 Funktionen
+   durchgehen und JEDE interpolierte Variable, die aus Daten stammt
+   (`item.name`, `displayName`, `item.description`, `section.type`/`.label`,
+   `agent.name`, Namen/Beschreibungen aus verschachtelten Objekten in
+   `renderNestedAssignments`/`renderAgentAssignments`/`renderItemUsage`/
+   `renderFlowNodes`/`renderExpertSkillsSelector`), die als Text zwischen
+   Tags landet, mit `escapeHtml(...)` umschließen — auch wenn es an anderer
+   Stelle in derselben Funktion schon mal gemacht wurde, aber woanders in der
+   Funktion fehlt. Feste, aus dem Code selbst stammende Strings (z. B.
+   `typeConfig.icon`, `typeConfig.label` aus der lokalen `HIERARCHY_TYPES`-
+   Konstante) brauchst du NICHT escapen — die kommen nicht von außen.
+2. **Attribut-Interpolation:** Jede Stelle, an der eine Datenvariable in ein
+   HTML-Attribut geschrieben wird (z. B. `data-name="${item.name}"`,
+   `title="${x}"`, `value="${item.name}"` im Edit-Formular), zusätzlich zu
+   `escapeHtml` auch Anführungszeichen absichern. Baue dafür EINE neue
+   Hilfsfunktion `escapeAttr(text)` direkt neben `escapeHtml` (gleicher
+   Stil), die zusätzlich `"` → `&quot;` und `'` → `&#x27;` ersetzt (auf dem
+   Ergebnis von `escapeHtml` aufbauend), und benutze sie überall dort, wo der
+   Wert in ein `"`-Attribut geschrieben wird.
+3. **`onclick="...('${x}')"`-Strings entfernen (die 27 Vorkommen in den 8
+   Funktionen, `grep -n "onclick=" system/gui/static/js/agents-board.js`):**
+   Ersetze sie durch `data-`-Attribute (per `escapeAttr`) + EINEN delegierten
+   `click`-Listener statt vieler Inline-Handler. Konkret:
+   - Wo bereits `data-id`/`data-type` existieren (z. B. `renderTreeItem`s
+     äußeres `.tree-item`-Div), das vorhandene `onclick="selectItem(...)"`
+     entfernen — der Klick wird stattdessen über einen delegierten Listener
+     auf einem stabilen Elternelement behandelt (z. B. dem Tree-Container;
+     finde ihn über die Stelle, die `renderTreeItem`s Ergebnis einfügt, oder
+     lege den Listener direkt nach der ersten Datenladung im
+     `DOMContentLoaded`-Handler an, Zeile ~31). Im Listener:
+     `event.target.closest('.tree-item')`, daraus `dataset.id`/`dataset.type`
+     lesen, dann `selectItem(id, type)` aufrufen (Funktion bleibt
+     unverändert). Für den `expand-btn` (`toggleAgentChildren`) genauso: ein
+     `data-agent-id`-Attribut statt `onclick`, delegierter Listener auf
+     `.expand-btn` prüft `event.target.closest('.expand-btn')` und ruft
+     `event.stopPropagation()` + `toggleAgentChildren(id)` auf.
+   - Für Buttons in `renderDetailView`/`renderTaskForm`/
+     `renderExpertSkillsSelector`/`renderFlowNodes` (z. B.
+     `onclick="editItem('${item.id}', '${type}')"`,
+     `onclick="createTaskForAgent('${item.id}')"`,
+     `onclick="switchTab('info')"` — bei LETZTEREM ist der Parameter ein
+     fester String, kein Datenwert, DER darf als Ausnahme so bleiben, wenn
+     dir das Umbauen an dieser einen Stelle unverhältnismäßig erscheint;
+     wichtig ist ausschließlich, dass KEIN aus `item`/`agent`/Daten
+     stammender Wert mehr in einem `onclick`-String landet): dasselbe Muster
+     — `data-action="edit-item"` (o.ä.) + `data-id`/`data-type` per
+     `escapeAttr`, ein delegierter Listener auf dem jeweiligen Container
+     (z. B. `panel` in `renderDetailView`, direkt nach dem
+     `panel.innerHTML = ...`-Aufruf per `panel.addEventListener('click', ...)`
+     — das Panel wird bei jedem Render neu befüllt, ein Listener pro
+     Render-Aufruf ist hier unproblematisch, da `panel.innerHTML` das alte
+     Markup UND dessen Listener ohnehin ersetzt).
+   - Halte das Muster pro Funktion konsistent, aber du musst nicht alle 8
+     Funktionen identisch verdrahten — Hauptsache: am Ende steht in KEINER
+     der 8 Funktionen mehr ein `onclick="...('${<Datenwert>}'...)"` mit
+     interpoliertem Datenwert.
+4. **Smoke-Test:** Lege (falls noch nicht vorhanden) in
+   `system/tests/test_gui_templates_regression.py` einen Test an, der
+   `system/gui/static/js/agents-board.js` einliest und per Regex/String-Suche
+   sicherstellt, dass in den 8 genannten Funktionen KEIN
+   `onclick="[^"]*\$\{` mehr vorkommt (d. h. kein Template-Literal-Ausdruck
+   mehr innerhalb eines onclick-Attributs). Das ist ein reiner
+   Static-Analysis-Test (kein Browser/JS-Runtime nötig) — Python `re` auf den
+   Dateiinhalt reicht. Wenn diese Datei nicht existiert oder kein passendes
+   Testmuster hat, prüfe zuerst `system/tests/` (nur lesen, NICHT
+   umstrukturieren) und lege den Test dort ein, wo thematisch am ehesten
+   passend (z. B. neue Datei `system/tests/test_agents_board_xss.py`, falls
+   `test_gui_templates_regression.py` nicht passt).
+5. **Funktion 1:1 erhalten:** Die sichtbare Funktionalität (Klick auf einen
+   Tree-Eintrag wählt ihn aus, Expand/Collapse, Bearbeiten-Button,
+   Task-erstellen-Button, Tab-Wechsel, Prompt-Templates, Flow-Nodes) darf
+   sich NICHT ändern — nur der Übertragungsweg (onclick-String vs.
+   Listener). Wenn du unsicher bist, ob ein Refactor eine Funktion bricht,
+   bevorzuge die konservativere Variante (Listener zusätzlich zum
+   bestehenden Code, statt große Teile umzuschreiben).
+6. **NICHT anfassen:** `system/gui/templates/agents-board.html`, alle
+   anderen `.js`-Dateien, `system/hub/routine.py`, Routinen-Endpunkte in
+   `system/gui/server.py` (keine aktiven Locks mehr, aber außerhalb des
+   Scopes).
 
-c) **"Models"**-Dropdown als eigene Top-Level-Gruppe AUFLÖSEN. Seine beiden
-   Kinder wandern als neue Einträge in die **"Agenten"**-Gruppe:
-   - `{ href: "#", portRel: 8081, path: "/activity", label: "Models", external: true }`
-     (der bisherige Eintrag hieß "Einstellungen" — er heißt jetzt "Models"
-     und ist ein direkter Link, KEIN weiteres Untermenü)
-   - `{ href: "/tools", label: "Tools" }`
-   Füge beide ans Ende der `children`-Liste von "Agenten" an (nach "Tokens").
+## Verifikation
 
-d) Ergebnis: `NAV_ITEMS` hat danach KEINE Top-Level-Gruppe mehr namens
-   "Models". Die Gruppe "System" mit ihrem eigenen
-   `{ ..., path: "/activity", label: "📊 Worker & Aktivität", ... }`-Eintrag
-   bleibt UNVERÄNDERT (das ist ein bewusst zweiter Zugang zur selben Seite,
-   nicht Teil dieses Auftrags).
+- `node -c system/gui/static/js/agents-board.js` → muss Exit 0 sein.
+- Dein neuer/erweiterter Test unter `system/tests/` → `pytest <datei> -q`,
+  Ergebnis berichten.
+- Manuelle Kontrolle: `grep -n "onclick=" system/gui/static/js/agents-board.js`
+  danach — zähle, wie viele der verbliebenen `onclick=`-Vorkommen (falls
+  welche übrig sind, z. B. `switchTab('info')` mit festem String) noch einen
+  interpolierten `${...}`-Datenwert enthalten. Ziel: 0.
 
-Nach der Änderung: `node -c system/gui/static/js/nav.js` (Syntax-Check, node
-ist auf diesem System installiert) muss ohne Fehler durchlaufen.
+## Selbstauskunft
 
-### 2) Denkarium — Klarstellung "Notizbuch des Users, kein Agenten-Board"
+Nenne am Ende deines Berichts EXAKT dein Modell.
 
-Befund: `system/hub/denkarium.py` (Klasse `DenkariumHandler`, CLI-Befehle
-`bach denkarium write/read/search/brainstorm/promote`) hat aktuell KEINE
-Beschriftung, die klarstellt, dass dieses Feature dem MENSCHLICHEN Nutzer
-gehört. Agenten lesen die CLI-Hilfe und interpretieren es fälschlich als
-eigenes Board/Scratchpad.
+## Bericht
 
-Aufgaben:
-- In `system/hub/denkarium.py`: Docstring am Dateikopf (aktuell
-  "Denkarium Handler - Logbuch + Gedanken-Sammler") um EINEN klarstellenden
-  Satz ergänzen, z. B. sinngemäß: "Dies ist das persönliche Notizbuch des
-  Users — NICHT als Board/Scratchpad für Agenten nutzen. Agenten nutzen
-  stattdessen `bach memory` (Fakten/Lektionen) und Session-Berichte." Halte
-  dich an bestehenden Stil/Sprache der Datei (Deutsch, knapp).
-- Durchsuche `BACH_USER_MANUAL.md`, `BACH_USER_MANUAL.en.md`,
-  `system/docs/BACH-FEATURES-SKILLS-USECASES.md` und `system/docs/README.md`
-  nach "Denkarium" (`grep -rn -i denkarium <datei>`) und ergänze an JEDER
-  Fundstelle, die das Feature Agenten als Werkzeug beschreibt (nicht dort, wo
-  es bereits klar als User-Feature dasteht), denselben Klarstellungssatz oder
-  einen sprachlich passenden Verweis auf `bach memory`/Session-Berichte als
-  Agenten-Alternative. Deutsche Datei deutsch ergänzen, englische Datei (.en)
-  auf Englisch.
-- In `system/gui/templates/denkarium.html`: der Seiten-Untertitel steht in
-  Zeile ~404 (`<p class="page-subtitle">Gedanken &middot; Logbuch &middot;
-  Ideen</p>`). Lass ihn wie er ist (er ist bereits eindeutig an den
-  menschlichen Nutzer gerichtet, das Bedienoberfläche-Design ist bewusst
-  Notizbuch-artig) — hier ist NICHTS zu ändern, das ist nur zur Info, damit
-  du nicht versehentlich das Layout anfasst.
-- **NICHT ändern:** `system/tests/test_denkarium_handler.py` — liegt im
-  gesperrten `system/tests/`.
-
-### 3) Selbstauskunft
-
-Nenne am Ende deines Berichts EXAKT dein Modell (z. B. per Selbstauskunft
-"Ich bin Modell X").
-
-### 4) Bericht
-
-Schreibe deinen Bericht nach `_codex/BERICHT-1.md`: was geändert wurde (Datei
-+ kurze Beschreibung), Ergebnis von `node -c system/gui/static/js/nav.js`,
-Ergebnis von `git status`/`git diff --stat`, und dein exaktes Modell (Punkt 3).
-Committe am Ende alle Änderungen auf dem aktuellen Branch mit einer
-aussagekräftigen Commit-Message (Conventional Commits, z. B.
-`refactor(gui): Nav-Umbau Models/Domänen + Denkarium-Klarstellung
-(T-20260913-660268706)`). NICHT pushen.
+Schreibe nach `_codex/BERICHT-1.md`: geänderte Funktionen, Vorher/Nachher an
+2-3 Beispielen (ein `innerHTML`-Text-Fall, ein Attribut-Fall, ein
+onclick→Listener-Fall), Testergebnis, `git diff --stat`, dein Modell.
+Committe alles auf dem aktuellen Branch (Conventional Commits, z. B.
+`fix(security): Stored-XSS in agents-board.js schliessen
+(T-20260913-304635102)`). NICHT pushen.

@@ -30,11 +30,101 @@ let teamFlow = [];
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('[Skills Board] Initialisiert');
+    setupTreeDelegation();
+    setupDetailDelegation();
     await loadHierarchyData();
     renderTree();
     setupSearch();
     setupFilters();
 });
+
+function setupTreeDelegation() {
+    const treeContainer = document.getElementById('tree-content');
+    if (!treeContainer || treeContainer._delegationAttached) return;
+    treeContainer._delegationAttached = true;
+
+    treeContainer.addEventListener('click', (event) => {
+        const expandBtn = event.target.closest('.expand-btn');
+        if (expandBtn && expandBtn.dataset.agentId) {
+            event.stopPropagation();
+            toggleAgentChildren(expandBtn.dataset.agentId);
+            return;
+        }
+
+        const treeItem = event.target.closest('.tree-item');
+        if (treeItem && treeItem.dataset.id && treeItem.dataset.type) {
+            event.stopPropagation();
+            selectItem(treeItem.dataset.id, treeItem.dataset.type);
+            return;
+        }
+    });
+}
+
+function setupDetailDelegation() {
+    const panel = document.getElementById('detail-panel');
+    if (!panel || panel._delegationAttached) return;
+    panel._delegationAttached = true;
+
+    panel.addEventListener('click', (event) => {
+        // Remove flow node
+        const removeNode = event.target.closest('[data-action="remove-flow-node"]');
+        if (removeNode && removeNode.dataset.index !== undefined) {
+            event.stopPropagation();
+            removeFromFlow(parseInt(removeNode.dataset.index, 10));
+            return;
+        }
+
+        // Remove assignment
+        const removeBtn = event.target.closest('[data-action="remove-assignment"]');
+        if (removeBtn && removeBtn.dataset.agentId && removeBtn.dataset.sectionKey && removeBtn.dataset.itemId) {
+            event.stopPropagation();
+            removeAssignment(removeBtn.dataset.agentId, removeBtn.dataset.sectionKey, removeBtn.dataset.itemId);
+            return;
+        }
+
+        // Edit item
+        const editBtn = event.target.closest('[data-action="edit-item"]');
+        if (editBtn && editBtn.dataset.id && editBtn.dataset.type) {
+            editItem(editBtn.dataset.id, editBtn.dataset.type);
+            return;
+        }
+
+        // Create task
+        const taskBtn = event.target.closest('[data-action="create-task"]');
+        if (taskBtn && taskBtn.dataset.id) {
+            createTaskForAgent(taskBtn.dataset.id);
+            return;
+        }
+
+        // Select item (e.g. from renderItemUsage)
+        const selectBtn = event.target.closest('[data-action="select-item"]');
+        if (selectBtn && selectBtn.dataset.id && selectBtn.dataset.type) {
+            selectItem(selectBtn.dataset.id, selectBtn.dataset.type);
+            return;
+        }
+
+        // Prompt templates
+        const templateBtn = event.target.closest('[data-action="use-template"]');
+        if (templateBtn && templateBtn.dataset.template) {
+            usePromptTemplate(templateBtn.dataset.template, templateBtn.dataset.agentName);
+            return;
+        }
+
+        // Submit agent task
+        const submitBtn = event.target.closest('[data-action="submit-agent-task"]');
+        if (submitBtn && submitBtn.dataset.agentId) {
+            submitAgentTask(submitBtn.dataset.agentId);
+            return;
+        }
+
+        // Save team flow
+        const saveFlowBtn = event.target.closest('[data-action="save-team-flow"]');
+        if (saveFlowBtn && saveFlowBtn.dataset.agentId) {
+            saveTeamFlow(saveFlowBtn.dataset.agentId);
+            return;
+        }
+    });
+}
 
 async function loadHierarchyData() {
     try {
@@ -111,6 +201,7 @@ function renderTree() {
 
     // Setup Drag & Drop
     setupDragAndDrop();
+    setupTreeDelegation();
 }
 
 function renderTreeItem(item, type) {
@@ -127,14 +218,13 @@ function renderTreeItem(item, type) {
         (assignments.workflows && assignments.workflows.length > 0)
     );
 
+    const expandedAgents = JSON.parse(localStorage.getItem('skills-expanded-agents') || '[]');
+    const isExpanded = expandedAgents.includes(item.id);
+
     let nestedHtml = '';
     if (hasAssignments) {
-        // Lade gespeicherten expanded-State für diesen Agent
-        const expandedAgents = JSON.parse(localStorage.getItem('skills-expanded-agents') || '[]');
-        const isExpanded = expandedAgents.includes(item.id);
-
         nestedHtml = `
-            <div class="tree-children ${isExpanded ? '' : 'hidden'}" id="agent-children-${item.id}">
+            <div class="tree-children ${isExpanded ? '' : 'hidden'}" id="agent-children-${escapeAttr(item.id)}">
                 ${renderNestedAssignments(assignments)}
             </div>
         `;
@@ -142,19 +232,18 @@ function renderTreeItem(item, type) {
 
     // Expand-Button nur für Agenten mit Zuweisungen
     const expandBtn = hasAssignments
-        ? `<span class="expand-btn" onclick="toggleAgentChildren('${item.id}'); event.stopPropagation();">▶</span>`
+        ? `<span class="expand-btn" data-agent-id="${escapeAttr(item.id)}">${isExpanded ? '▼' : '▶'}</span>`
         : '<span class="expand-btn" style="visibility: hidden;">▶</span>';
 
     return `
         <div class="tree-item ${isAgent ? 'is-agent has-children' : ''}"
-             data-id="${item.id}"
-             data-type="${type}"
-             data-name="${item.name}"
-             draggable="${!isAgent}"
-             onclick="selectItem('${item.id}', '${type}')">
+             data-id="${escapeAttr(item.id)}"
+             data-type="${escapeAttr(type)}"
+             data-name="${escapeAttr(item.name || '')}"
+             draggable="${!isAgent}">
             ${isAgent ? expandBtn : ''}
             <span class="item-icon">${typeConfig.icon}</span>
-            <span class="item-name">${displayName}</span>
+            <span class="item-name">${escapeHtml(displayName)}</span>
             ${hasAssignments ? `<span class="item-badge">${countAssignments(assignments)}</span>` : ''}
         </div>
         ${nestedHtml}
@@ -177,7 +266,8 @@ function toggleAgentChildren(agentId) {
     children.classList.toggle('hidden');
 
     // Update expand button
-    const agentItem = document.querySelector(`.tree-item[data-id="${agentId}"][data-type="agent"]`);
+    const agentItem = Array.from(document.querySelectorAll('.tree-item[data-type="agent"]'))
+        .find(el => el.dataset.id === agentId);
     if (agentItem) {
         const expandBtn = agentItem.querySelector('.expand-btn');
         if (expandBtn) {
@@ -210,12 +300,11 @@ function renderNestedAssignments(assignments) {
             if (item) {
                 html += `
                     <div class="tree-item tree-item-nested"
-                         data-id="${id}"
-                         data-type="${type}"
-                         data-name="${item.name}"
-                         onclick="selectItem('${id}', '${type}'); event.stopPropagation();">
+                         data-id="${escapeAttr(id)}"
+                         data-type="${escapeAttr(type)}"
+                         data-name="${escapeAttr(item.name || '')}">
                         <span class="item-icon" style="opacity: 0.7">${typeConfig.icon}</span>
-                        <span class="item-name">${item.name}</span>
+                        <span class="item-name">${escapeHtml(item.name)}</span>
                     </div>
                 `;
             }
@@ -252,7 +341,8 @@ function toggleSection(header) {
 function selectItem(id, type) {
     // Update selection state
     document.querySelectorAll('.tree-item.selected').forEach(el => el.classList.remove('selected'));
-    const itemEl = document.querySelector(`.tree-item[data-id="${id}"][data-type="${type}"]`);
+    const itemEl = Array.from(document.querySelectorAll('.tree-item'))
+        .find(el => el.dataset.id === id && el.dataset.type === type);
     if (itemEl) itemEl.classList.add('selected');
 
     // Find item data
@@ -278,8 +368,8 @@ function renderDetailView(item, type) {
     // Bossagenten Dashboard Absprung
     const agentDashboard = isAgent ? getAgentDashboard(item.id) : null;
     const dashboardBtn = agentDashboard
-        ? `<a href="${agentDashboard.url}" class="btn btn-primary" style="background: var(--accent); display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none;" title="${agentDashboard.label}">
-            <span>${agentDashboard.icon}</span> <span>${agentDashboard.label}</span> ↗
+        ? `<a href="${escapeAttr(agentDashboard.url)}" class="btn btn-primary" style="background: var(--accent); display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none;" title="${escapeAttr(agentDashboard.label)}">
+            <span>${agentDashboard.icon}</span> <span>${escapeHtml(agentDashboard.label)}</span> ↗
            </a>`
         : '';
 
@@ -287,13 +377,13 @@ function renderDetailView(item, type) {
         <div class="detail-header">
             <span class="detail-icon">${typeConfig.icon}</span>
             <div class="detail-title">
-                <h1>${displayName}</h1>
-                <span class="detail-type type-${type}">${typeConfig.label}</span>
+                <h1>${escapeHtml(displayName)}</h1>
+                <span class="detail-type type-${escapeAttr(type)}">${typeConfig.label}</span>
             </div>
             <div class="detail-actions">
                 ${dashboardBtn}
-                <button class="btn btn-secondary" onclick="editItem('${item.id}', '${type}')">Bearbeiten</button>
-                ${isAgent ? `<button class="btn btn-primary" onclick="createTaskForAgent('${item.id}')">+ Task erstellen</button>` : ''}
+                <button class="btn btn-secondary" data-action="edit-item" data-id="${escapeAttr(item.id)}" data-type="${escapeAttr(type)}">Bearbeiten</button>
+                ${isAgent ? `<button class="btn btn-primary" data-action="create-task" data-id="${escapeAttr(item.id)}">+ Task erstellen</button>` : ''}
             </div>
         </div>
         
@@ -307,7 +397,7 @@ function renderDetailView(item, type) {
             <div id="info-pane" class="tab-pane active" style="padding: 1.5rem; overflow-y: auto; flex: 1;">
                 <div class="detail-section">
                     <h3>Beschreibung</h3>
-                    <p class="detail-description">${item.description || 'Keine Beschreibung vorhanden.'}</p>
+                    <p class="detail-description">${escapeHtml(item.description || 'Keine Beschreibung vorhanden.')}</p>
                 </div>
 
                 ${isAgent ? renderAgentAssignments(item.id, assignments) : renderItemUsage(item.id, type)}
@@ -346,12 +436,15 @@ function renderDetailView(item, type) {
     if (isAgent) {
         setupDropZones(item.id);
     }
+
+    setupDetailDelegation();
 }
 
 function switchTab(tabId) {
     // Buttons
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    const activeBtn = document.querySelector(`.tab-btn[onclick="switchTab('${tabId}')"]`);
+    const activeBtn = Array.from(document.querySelectorAll('.tab-btn'))
+        .find(btn => btn.getAttribute('onclick') === `switchTab('${tabId}')`);
     if (activeBtn) activeBtn.classList.add('active');
 
     // Panes
@@ -475,17 +568,21 @@ function renderAgentAssignments(agentId, assignments) {
         return `
             <div class="detail-section">
                 <h3>${typeConfig.icon} ${section.label}</h3>
-                <div class="assigned-grid" data-drop-zone="${section.type}" data-agent="${agentId}">
+                <div class="assigned-grid" data-drop-zone="${escapeAttr(section.type)}" data-agent="${escapeAttr(agentId)}">
                     ${assignedItems.map(item => `
-                        <div class="assigned-item bg-${section.type}"
-                             data-id="${item.id}"
-                             data-type="${section.type}">
-                            ${item.name}
-                            <span class="remove-btn" onclick="removeAssignment('${agentId}', '${section.key}', '${item.id}'); event.stopPropagation();">✕</span>
+                        <div class="assigned-item bg-${escapeAttr(section.type)}"
+                             data-id="${escapeAttr(item.id)}"
+                             data-type="${escapeAttr(section.type)}">
+                            ${escapeHtml(item.name)}
+                            <span class="remove-btn"
+                                  data-action="remove-assignment"
+                                  data-agent-id="${escapeAttr(agentId)}"
+                                  data-section-key="${escapeAttr(section.key)}"
+                                  data-item-id="${escapeAttr(item.id)}">✕</span>
                         </div>
                     `).join('') || '<span style="color: var(--text-muted); font-size: 0.9rem;">Keine zugewiesen</span>'}
                 </div>
-                <div class="drop-zone" data-drop-zone="${section.type}" data-agent="${agentId}">
+                <div class="drop-zone" data-drop-zone="${escapeAttr(section.type)}" data-agent="${escapeAttr(agentId)}">
                     ${typeConfig.icon} ${typeConfig.label} hierher ziehen
                 </div>
             </div>
@@ -511,8 +608,10 @@ function renderItemUsage(itemId, type) {
             <div class="assigned-grid">
                 ${usedBy.map(agent => `
                     <div class="assigned-item bg-agent"
-                         onclick="selectItem('${agent.id}', 'agent')">
-                        🤖 ${agent.name}
+                         data-action="select-item"
+                         data-id="${escapeAttr(agent.id)}"
+                         data-type="agent">
+                        🤖 ${escapeHtml(agent.name)}
                     </div>
                 `).join('') || '<span style="color: var(--text-muted); font-size: 0.9rem;">Noch keinem Agenten zugewiesen</span>'}
             </div>
@@ -530,10 +629,10 @@ function renderTaskForm(agentId) {
             <div class="task-form">
                 <div class="prompt-templates" style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; align-items: center;">
                     <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Vorlagen:</span>
-                    <button type="button" class="template-chip" onclick="usePromptTemplate('task', '${escapeHtml(agentName)}')">📋 Aufgabe</button>
-                    <button type="button" class="template-chip" onclick="usePromptTemplate('question', '${escapeHtml(agentName)}')">❓ Frage</button>
-                    <button type="button" class="template-chip" onclick="usePromptTemplate('analysis', '${escapeHtml(agentName)}')">🔍 Analyse</button>
-                    <button type="button" class="template-chip" onclick="usePromptTemplate('report', '${escapeHtml(agentName)}')">📝 Report</button>
+                    <button type="button" class="template-chip" data-action="use-template" data-template="task" data-agent-name="${escapeAttr(agentName)}">📋 Aufgabe</button>
+                    <button type="button" class="template-chip" data-action="use-template" data-template="question" data-agent-name="${escapeAttr(agentName)}">❓ Frage</button>
+                    <button type="button" class="template-chip" data-action="use-template" data-template="analysis" data-agent-name="${escapeAttr(agentName)}">🔍 Analyse</button>
+                    <button type="button" class="template-chip" data-action="use-template" data-template="report" data-agent-name="${escapeAttr(agentName)}">📝 Report</button>
                 </div>
                 <textarea id="task-description" placeholder="Beschreibe den Auftrag fuer diesen Agenten oder nutze eine Vorlage oben..."></textarea>
                 <div class="form-row">
@@ -546,7 +645,7 @@ function renderTaskForm(agentId) {
                     <button type="button" class="btn btn-secondary" onclick="copyAgentPrompt()" title="Prompt in die Zwischenablage kopieren">
                         📋 Kopieren
                     </button>
-                    <button class="btn btn-primary" onclick="submitAgentTask('${agentId}')">
+                    <button type="button" class="btn btn-primary" data-action="submit-agent-task" data-agent-id="${escapeAttr(agentId)}">
                         Task erstellen
                     </button>
                 </div>
@@ -868,12 +967,12 @@ function editItem(id, type) {
         <div class="modal-content">
             <div class="modal-header">
                 <h2>${typeConfig.icon} ${typeConfig.label} bearbeiten</h2>
-                <button class="modal-close" onclick="closeEditModal()">&times;</button>
+                <button class="modal-close" data-action="close-modal">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
                     <label>Name</label>
-                    <input type="text" id="edit-name" value="${escapeHtml(item.name)}" />
+                    <input type="text" id="edit-name" value="${escapeAttr(item.name || '')}" />
                 </div>
                 <div class="form-group">
                     <label>Beschreibung</label>
@@ -889,15 +988,29 @@ function editItem(id, type) {
                 ` : ''}
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeEditModal()">Abbrechen</button>
-                <button class="btn btn-primary" onclick="saveItemEdit('${id}', '${type}')">Speichern</button>
+                <button class="btn btn-secondary" data-action="close-modal">Abbrechen</button>
+                <button class="btn btn-primary" data-action="save-item-edit" data-id="${escapeAttr(id)}" data-type="${escapeAttr(type)}">Speichern</button>
             </div>
         </div>
     `;
 
     document.body.appendChild(modal);
     modal.addEventListener('click', (e) => {
-        if (e.target === modal) closeEditModal();
+        if (e.target === modal || e.target.closest('[data-action="close-modal"]')) {
+            closeEditModal();
+            return;
+        }
+        const saveBtn = e.target.closest('[data-action="save-item-edit"]');
+        if (saveBtn && saveBtn.dataset.id && saveBtn.dataset.type) {
+            saveItemEdit(saveBtn.dataset.id, saveBtn.dataset.type);
+            return;
+        }
+    });
+    modal.addEventListener('change', (e) => {
+        const target = e.target;
+        if (target && target.dataset.action === 'toggle-expert-skill') {
+            toggleExpertSkill(target.dataset.expertId, target.dataset.skillId, target.checked);
+        }
     });
 }
 
@@ -909,8 +1022,10 @@ function renderExpertSkillsSelector(expertId) {
         const isAssigned = expertSkills.includes(skill.id);
         return `
             <label style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
-                <input type="checkbox" value="${skill.id}" ${isAssigned ? 'checked' : ''}
-                       onchange="toggleExpertSkill('${expertId}', '${skill.id}', this.checked)" />
+                <input type="checkbox" value="${escapeAttr(skill.id)}" ${isAssigned ? 'checked' : ''}
+                       data-action="toggle-expert-skill"
+                       data-expert-id="${escapeAttr(expertId)}"
+                       data-skill-id="${escapeAttr(skill.id)}" />
                 <span>${escapeHtml(skill.name)}</span>
             </label>
         `;
@@ -992,7 +1107,7 @@ function renderTeamFlowPanel(agentId) {
                     ${renderFlowNodes()}
                 </div>
                 <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                    <button class="btn btn-primary" onclick="saveTeamFlow('${agentId}')">Als Workflow speichern</button>
+                    <button class="btn btn-primary" data-action="save-team-flow" data-agent-id="${escapeAttr(agentId)}">Als Workflow speichern</button>
                     <button class="btn btn-secondary" onclick="executeTeamFlow()">Ausfuehren</button>
                 </div>
             </div>
@@ -1009,10 +1124,10 @@ function renderFlowNodes() {
         const typeConfig = HIERARCHY_TYPES[node.type];
         const arrow = idx < teamFlow.length - 1 ? '<span class="flow-arrow">→</span>' : '';
         return `
-            <div class="flow-node bg-${node.type}" data-index="${idx}">
+            <div class="flow-node bg-${escapeAttr(node.type)}" data-index="${idx}">
                 <span class="node-icon">${typeConfig.icon}</span>
                 <span>${escapeHtml(node.name)}</span>
-                <span class="remove-flow-node" onclick="removeFromFlow(${idx})">✕</span>
+                <span class="remove-flow-node" data-action="remove-flow-node" data-index="${idx}">✕</span>
             </div>
             ${arrow}
         `;
@@ -1119,10 +1234,17 @@ function executeTeamFlow() {
 // ═══════════════════════════════════════════════════════════════
 
 function escapeHtml(text) {
-    if (!text) return '';
+    if (text === null || text === undefined) return '';
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = String(text);
     return div.innerHTML;
+}
+
+function escapeAttr(text) {
+    if (text === null || text === undefined) return '';
+    return escapeHtml(text)
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
 }
 
 function showToast(message, type = 'success') {
@@ -1158,6 +1280,8 @@ window.switchTab = switchTab;
 window.loadItemSource = loadItemSource;
 window.saveItemSource = saveItemSource;
 window.copySourcePath = copySourcePath;
+window.escapeHtml = escapeHtml;
+window.escapeAttr = escapeAttr;
 
 function toggleFullscreen() {
     document.querySelector('.skills-board').classList.toggle('fullscreen-mode');
