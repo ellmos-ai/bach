@@ -144,6 +144,7 @@ sondern ein Korrektheitsproblem, und es wiegt schwerer als die doppelten Registe
 |---|---|---|---|
 | Fackel-Rechnung | `hub/_services/fackel.py`, Konzept `system/docs/TORCH-KONZEPT.md` | aktiv, 16 Tests | Grundsatz „gemessen, nicht gebucht" — bewusst kein Register, wer wie viele hält |
 | Fackel-Kapazität | `fackel.py::kapazitaet_bytes` Z. 154, Quellenreihenfolge Env → sysctl → Metal → `/api/ps` | aktiv | — |
+| Fackel bei unmessbarer Kapazität | `fackel.py::frei` Z. 186-204, Rückgabe `float(FACKELN)` | **fail-open** | meldet volle zehn Fackeln, wenn nichts gemessen werden konnte. Lokal ein weicher Vorfilter; im Verbund bietet ein Host damit Kapazität an, die er nicht kennt |
 | Vorrangschalter | `hub/compute_lock.py::get/set_fackel_preference` Z. 431-498 | aktiv | **schreibt keinen Log-Eintrag** — dadurch ist rückwirkend nicht feststellbar, wer umgeschaltet hat (belegt in `T-20260913-253157668`) |
 | Doppelte Persistenz | `~/.memwatchdog/fackel_preference.json` **und** `data/slots_config.json` Z. 487-494 | aktiv | zwei Schreibziele für einen Wert |
 | Wirkung | `telegram_chat.py::_compute_lock_blocks` Z. 1045-1065 | aktiv | bei `ollama` wird das Gate komplett übersprungen (Z. 1058) |
@@ -873,10 +874,15 @@ genau der ist der, den OCEAN bekommt und BACH umbrandet.**
 
 ### 10.4 Fackel, Muschelgrund, Trithon
 
-**Fackel** wird übernommen, und zwar unverändert: Die Zahl zehn gilt überall gleich, die Größe
-einer Fackel folgt der Maschine. Das ist bereits die verbundfähige Form — ein Konzept, das auf
-einem größeren Rechner dieselbe Sprache spricht. Übernehmen heißt hier: `_services/fackel.py`
-wandert mit dem Herz heraus, statt in BACH zu bleiben.
+**Das Fackel-Konzept** wird übernommen: Die Zahl zehn gilt überall gleich, die Größe einer
+Fackel folgt der Maschine. Das ist die verbundfähige Form — ein Maß, das auf einem größeren
+Rechner dieselbe Sprache spricht.
+
+**Die Fackel-Implementierung wird es nicht unverändert.** Hier ist zwischen Konzept und Code zu
+trennen, sonst entsteht ein Widerspruch zu Abschnitt 10.8: `_services/fackel.py` hängt an
+`hub._services.limits`, ist auf Ollama und Apple-Silicon-Proben zugeschnitten und meldet bei
+nicht messbarer Kapazität volle zehn Fackeln. Sie wandert als hostlokale **Ressourcenprobe**
+hinter einer neutralen Schnittstelle heraus, und `unbekannt` muss dabei fail-closed werden.
 
 **Muschelgrund** und **Trithon** stammen aus dem Architekturentwurf
 `.SYNC/ARCHITEKTURENTWURF_OCEAN_LEAD_HOST_TRITHON.md` (08.09.2026). **Beide sind Entwurf, nicht
