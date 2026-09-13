@@ -342,6 +342,98 @@ BACH definiert sich als **Personal Agentic Operating System**. Es entwickelt sic
 
 ---
 
+## PROGRAMM: Modell-Backend = das Herz von BACH [U 2026-09-13]
+
+> **Nutzer, 13.09.2026 (Originalwortlaut, maßgeblich):** „wichtigste Neuerung in Bach ist
+> aktuell Modell backend und dessen verwaltung. Das wird das neue Herz von Bach. Sprich bach
+> wird lebendig, wer spielt wann welche der Rollen und Agenten usw."
+
+**Programmkopf. Hier docken alle Folgetickets zum Thema an.** Laufende Arbeiten sind damit
+Teile *eines* Programms, nicht Einzelfälle: GUI-Menü „Models" unter „Agenten" und `/activity`
+im GUI-Design (`T-20260913-660268706`), Fackel als Ressourcenseite (`T-20260913-253157668`,
+`T-20260913-415211921`), `DEFAULT_TASK_ASSIGNEE = "OLLAMA"` als Zuweisungsseite (PR #46),
+Buddha-Delegation und Telegram, der OLLAMA-Worker, `hub/scheduler.py` und clutch als
+vorhandener Router.
+
+**Phase 1 abgeschlossen (13.09.2026):** Bestandsaufnahme und Architekturkonzept liegen als
+[`docs/MODELL-BACKEND-KONZEPT_2026-09-13.md`](docs/MODELL-BACKEND-KONZEPT_2026-09-13.md) vor —
+gemessen gegen `origin/main` `1bb8fa4`, Mac-Live-Stand nur lesend. Kein Umbau.
+Architektur-Zweitmeinung von Codex `gpt-5.6-sol` (Stufe `high`) eingeholt und eingearbeitet;
+Auftrag und Antwort unter `_codex/`.
+
+**Leitbegriffe des Programms** (nach Einarbeitung der Zweitmeinung — „Agent" allein ist
+mehrdeutig, weil `agent_instances` den Begriff bereits belegt):
+
+- **Rolle** = Vertrag (Fähigkeiten, Rechte, Werkzeuggrenzen, Budgetrahmen; versioniert) ·
+  **Agentenprofil** = ausführbare Kombination aus Backend, Modellklasse und Host ·
+  **Besetzung** = zeitlich begrenzte Bindung von Rolle, Profil, Auftrag und Platz ·
+  **Lauf** = die Ausführung, mit dem *tatsächlich* verwendeten Modell ·
+  **Platz** = Ausführungskontext (`buddha_chat`, `buddha_always_on`, `buddha_connector`).
+  Bevorzugtes Modell und Backend gehören **nicht** an die Rolle, sondern an die Zuteilung;
+  der Fackelbedarf gehört an den Lauf.
+- **Zuteilung:** BACH bildet aus Rechten, Host, Compute-Lock, Fackeln und Budgetgrenzen die
+  zulässige Kandidatenmenge, clutch wählt **darin**. Die Gates wirken vor der Auswahl, nicht
+  als Veto danach — sonst lernt clutchs Lernschleife BACHs Vetos statt Modellqualität. Ein
+  Gate-Ausschluss ist kein Modellergebnis.
+- **Beobachtbarkeit:** append-only Ereignisstrom **und** abfragbare Besetzungstabelle, nicht
+  beides in einem. „Akteur" ist zweigeteilt: Auslöser und ausführende Instanz.
+- **Fackeln und Budget** bleiben zwei Achsen: momentane physische Zulässigkeit gegen
+  kumulativen Verbrauch. Kein gemeinsames Konto, kein Register „hält N Fackeln".
+
+**Gemessene Kernlücken (Belege im Konzeptdokument), nach Gefährlichkeit:**
+
+1. **Kein atomarer Claim.** `worker.py` nimmt `offen[0]` und startet ohne Anspruch;
+   `chat_tray.py` liest erst und markiert danach. Zwei Taktgeber können dieselbe Aufgabe mit
+   Schreibrechten ausführen.
+2. **Rechte werden am Executor nicht erzwungen.** `safe`/`full` setzen Slot, API und Prompt;
+   kein zentraler Prüfpunkt. Ein Rechtefeld an der Rolle wäre ohne ihn bloße Dokumentation.
+3. **Fünf unabgeglichene Modell-/Backend-Listen**; die Whitelist in
+   `hub/agent_launcher.py:1395` schneidet alles außer Claude ab, und
+   `_services/llm/model_backend.py` trägt zusätzlich das Startverhalten je CLI.
+4. Rollen (`bach_agents`/`bach_experts`) tragen kein Modell-, Backend-, Rechte- oder
+   Budgetfeld — die Frage des Nutzers ist heute nicht als Datum vorhanden.
+5. Mehr als zwei Rollenwelten: DB ohne Modell, `slots_config.json` mit Modell als Prompt-Text,
+   dazu `DEFAULT_ROLE_PROMPTS`, `PERSONA_MAP`, `AGENT_DELEGATIONS`, `agent_instances`,
+   Persona-Frontmatter.
+6. Das Aktivitätsprotokoll kennt keinen Akteur — deshalb war schon beim Fackel-Schalter nicht
+   feststellbar, wer umgeschaltet hatte.
+7. Die Control API prüft Herkunft, aber keine Berechtigung; über sie lassen sich Slots ändern,
+   Vollmodus-Worker starten und die Fackel umschalten.
+
+**Reihenfolge (Phase 2 ff.):** (1) **Zuteilungsgrenze für genau einen Pfad** — reicht die
+Modellwahl unverändert durch, beansprucht aber atomar, prüft das Rollenrecht und protokolliert
+Start und Ende. Strangler-Seam, löst zugleich die Doppelausführung. (2) Protokoll
+vervollständigen. (3) Backend-Katalog vereinheitlichen, Adapterverträge getrennt halten.
+(4) Seams ehrlich machen (stiller clutch-Fallback, Scheduler-Seam, Zugangsschutz der Control
+API). (5) Rolle bekommt Vertragsfelder. (6) Zuteilung verdrahten. (7) Cockpit.
+
+**Verbund und gemeinsames Herz mit OCEAN** (Nutzererweiterung vom selben Tag, Kapitel 9 und 10
+des Konzepts): Das Cockpit ist ein Knoten, nicht das System. Gemessen: `PingPong` ist der
+Transport, der nachweislich läuft; „Routing v2" ist der Ticket-Routing-Vertrag des ticket-master, kein Modell- oder Nachrichtentransport;
+clutch kann per `CLUTCH_REMOTE_OLLAMA` einen fremden Ollama-Endpunkt ansprechen, kennt aber
+weder das Systemregister noch Hostnamen. OCEAN hat für dieses Thema **nichts**, was BACH doppeln
+würde — keine Modellverwaltung, kein Rollenmodell, keinen Tray, kein Cockpit, keinen Scheduler.
+Das gemeinsame Herz ist deshalb keine Zusammenführung, sondern eine **Herauslösung aus BACH,
+die OCEAN mitbenutzt** — dasselbe Muster wie bei `assistant-core` (`D-20260903-001`). Es gehört
+**nicht** in den ControlRoom: der will ausdrücklich „kein Modul-Neubau, Backend = die Module".
+Fackel wandert mit heraus; Muschelgrund und Trithon sind Anschlusspunkte, aber Entwurf
+(`T-20260908-362639245` steht auf `USER/freigabe`) und werden nicht vorausgesetzt. Rücktransfer
+aus FolderHome, SentinelFleet und NemoFold nach dem Präzedenzfall `T-20260913-744071825`:
+Verfahren zurückholen, keine Fachlogik, Herkunft vermerken — zwei der drei stehen unter Sperre
+und dürfen nur gelesen werden. Zusatzschritte: (8) Herz herauslösen, (9) OCEAN als zweiter
+Konsument mit schlankem Anzeige-Tray, den BACH umbrandet.
+
+**Richtigstellung:** Die Seite „BACH Aktivitätsanzeige & Worker Dashboard" liegt entgegen einer
+Ticketnotiz **in `origin/main`** (`telegram_chat.py:1519` Titel, `:1591` Überschrift, Fackel,
+Always-On, Neuer Worker und Verlauf sämtlich vorhanden). Das Konzept baut darauf auf.
+
+**Offene Nutzerentscheidungen** (vorgelegt als decision-shot `BH-2026-09-13-A` im Ticket
+`T-20260913-896336887`): Ort des Rollen-Registers, Zuteilungsstrategie, Form des
+Backend-Katalogs, Zeitpunkt des Cockpits, Name und Ort des Herzens, GUI-Richtung. Die Schritte
+5 bis 9 bleiben bis dahin gesperrt.
+
+---
+
 ## Abgeschlossen: clutch als Routing-Engine übernommen (M8) [P 2026-07-22]
 
 BACH betrieb ursprünglich einen **eigenen Fork** der clutch-Idee (`hub/_services/delegation/` +

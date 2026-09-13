@@ -290,3 +290,6 @@ PLAN.txt
 /_after-care/
 /LOCK*.txt
 /system/tools/testing/results/
+
+# Codex-Zweitmeinung: Roh-Logs bleiben lokal, Fragen/Antwort werden committet
+_codex/*.log
