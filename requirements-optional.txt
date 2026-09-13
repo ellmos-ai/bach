@@ -25,7 +25,8 @@
 PyMuPDF>=1.26.4           # PDF render/redact/OCR-render (AGPL -- optional!)
 
 # extract_msg (GPL) -- OPTIONAL
-# Required ONLY for: .msg Outlook file parsing (report_generator/generator.py)
+# Required ONLY for: .msg Outlook file parsing (report_generator/generator.py,
+#                    anonymizer_service.py -- E-Mail-Anonymisierung, Task #802)
 # SQ072/ENT-32: Moved from core requirements due to GPL license incompatibility with MIT.
 # Install if you need to process Outlook .msg files:
 #   pip install extract_msg
