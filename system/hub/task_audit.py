@@ -53,6 +53,29 @@ ALLOWED_COLUMNS = frozenset({
 CLEARABLE_COLUMNS = frozenset({"started_at", "completed_at", "claimed_by", "claimed_at"})
 
 
+def _iso_now(dt: Optional[datetime | str] = None) -> str:
+    """Erzeugt oder normalisiert einen ISO-Zeitstempel MIT Mikrosekunden (%Y-%m-%dT%H:%M:%S.%f).
+
+    Erzwingt einheitliche String-Laenge (26 Zeichen) fuer konsistente lexikografische
+    Zeitvergleiche in SQLite (verhindert '...:00' vs '...:00.123456'-Fehlvergleiche).
+    """
+    if dt is None:
+        target = datetime.now()
+    elif isinstance(dt, datetime):
+        target = dt
+    else:
+        raw = str(dt).strip()
+        if raw.endswith("Z") or raw.endswith("z"):
+            raw = raw[:-1] + "+00:00"
+        if " " in raw and "T" not in raw:
+            raw = raw.replace(" ", "T")
+        target = datetime.fromisoformat(raw)
+
+    if target.tzinfo is not None:
+        target = target.astimezone().replace(tzinfo=None)
+
+    return target.strftime("%Y-%m-%dT%H:%M:%S.%f")
+
 
 def apply_task_field_changes(
     conn: sqlite3.Connection,
@@ -86,8 +109,7 @@ def apply_task_field_changes(
     field_values UND leere clear_fields sind ein No-Op und geben False
     zurueck, ohne die DB anzufassen).
     """
-    if now is None:
-        now = datetime.now().isoformat()
+    now = _iso_now(now)
 
     updates = []
     values = []
@@ -163,10 +185,8 @@ def claim_task_atomic(
     ist. `conn` muss eine SCHREIBENDE Verbindung sein (kein `mode=ro`).
     """
     ensure_task_claim_columns(conn)
-    if now is None:
-        now = datetime.now().isoformat()
-
-    lease_cutoff = (datetime.fromisoformat(now) - timedelta(seconds=lease_seconds)).isoformat()
+    now = _iso_now(now)
+    lease_cutoff = (datetime.fromisoformat(now) - timedelta(seconds=lease_seconds)).strftime("%Y-%m-%dT%H:%M:%S.%f")
 
     # Vorher SELECT * FROM tasks WHERE id = ? NUR um existing_row fuer
     # die History-Zeile UND fuer die started_at-Einmaligkeit zu haben.
@@ -216,7 +236,7 @@ def release_claim(conn: sqlite3.Connection, task_id: int, claimed_by: str) -> bo
     Aenderung (WHERE status='in_progress' AND claimed_by=? verhindert, einen laengst
     abgeschlossenen oder an einen neuen Owner uebergegangenen Task versehentlich freizugeben)."""
     ensure_task_claim_columns(conn)
-    now = datetime.now().isoformat()
+    now = _iso_now()
 
     cur = conn.cursor()
     cur.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))

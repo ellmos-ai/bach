@@ -253,6 +253,43 @@ class TestAtomicClaimCore:
         assert row_b[1] is None
         conn.close()
 
+    def test_claim_zero_microsecond_consistency_and_lease_cutoff(self, task_db):
+        """Befund 1+3: Konsistente Zeitvergleiche auch bei Mikrosekunden = 0 vs > 0."""
+        conn = sqlite3.connect(str(task_db))
+        cursor = conn.execute("INSERT INTO tasks (title, status) VALUES ('Microsecond Task', 'open')")
+        task_id = cursor.lastrowid
+        conn.commit()
+
+        # 1. Claim mit Zeitstempel ohne Mikrosekunden (.000000)
+        t_base = "2026-09-13T20:50:00"
+        ok1 = claim_task_atomic(conn, task_id, "worker-1", now=t_base, lease_seconds=1800)
+        conn.commit()
+        assert ok1 is True
+
+        # In DB muss der Zeitstempel auf volle Mikrosekunden normalisiert sein (.000000)
+        row1 = conn.execute("SELECT claimed_at FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        assert row1[0] == "2026-09-13T20:50:00.000000"
+
+        # 2. Zweiter Claim-Versuch wenige Millisekunden spaeter in derselben Sekunde:
+        # Muss False liefern (Claim ist noch frisch, NICHT abgelaufen)
+        t_shortly_after = "2026-09-13T20:50:00.005000"
+        ok2 = claim_task_atomic(conn, task_id, "worker-2", now=t_shortly_after, lease_seconds=1800)
+        assert ok2 is False
+
+        # 3. Kuenstlich in die Vergangenheit gesetzter claimed_at (1801s her -> abgelaufen)
+        t_expired = "2026-09-13T20:19:59.000000"
+        conn.execute("UPDATE tasks SET claimed_at = ? WHERE id = ?", (t_expired, task_id))
+        conn.commit()
+
+        # Jetzt muss ein neuer Claim mit now=t_base erfolgreich sein (True)
+        ok3 = claim_task_atomic(conn, task_id, "worker-3", now=t_base, lease_seconds=1800)
+        conn.commit()
+        assert ok3 is True
+        row3 = conn.execute("SELECT claimed_by, claimed_at FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        assert row3[0] == "worker-3"
+        assert row3[1] == "2026-09-13T20:50:00.000000"
+        conn.close()
+
 
 class TestTaskCLIClaim:
     """CLI-Tests fuer `bach task claim` und `bach task release`."""
