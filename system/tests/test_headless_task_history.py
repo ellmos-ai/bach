@@ -119,6 +119,15 @@ class TestHeadlessTaskUpdateExistingBehavior:
         resp = client.put("/api/v1/tasks/1", json={})
         assert resp.status_code == 400
 
+    def test_new_task_goes_to_the_idle_worker_by_default(self, client, task_row):
+        """D-20260906-002 = B (T-20260906-791722356): auch die Headless-API defaultet
+        auf den Idle-Worker statt auf NULL -- ein leeres assigned_to laesst den Task
+        sonst unbearbeitet liegen (Universal-Fallback ueberspringt '')."""
+        from gui.api import headless
+
+        created = client.post("/api/v1/tasks", json={"title": "Ohne Zuweisung"}).json()
+        assert task_row(created["id"])["assigned_to"] == headless.DEFAULT_TASK_ASSIGNEE
+
     def test_400_when_only_changed_by_given(self, client):
         """changed_by ist Metadaten fuer task_history, keine tasks-Spalte -- zaehlt
         nicht als 'Feld zum Aktualisieren'."""
