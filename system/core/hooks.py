@@ -114,6 +114,15 @@ class HookRegistry:
 
     def __init__(self):
         self._listeners: dict[str, list] = {}
+        # Generischer Interceptor-Slot (MODULRUECKTRANSFER Stufe 6):
+        # hub-seitige Provider (workflowhooker) haengen hier Callables an,
+        # die in emit() laufen. Core importiert dabei nie hub -- das
+        # Callable wird von aussen injiziert (Import-Richtung bleibt
+        # hub -> core, AST-Waechter-Regel der Stufen 2-5).
+        self._interceptors: list[dict] = []
+        #: Meldungen des letzten emit()-Aufrufs, die von Interceptors kamen
+        #: (Listener-Rueckgaben bewusst NICHT -- die bleiben still, Stufe 6).
+        self.last_interceptor_results: list[str] = []
         self._log: list[dict] = []  # Letzte N Events fuer Debugging
         self._log_max = 50
         self._messaging: Optional['InstanceMessaging'] = None
@@ -163,6 +172,36 @@ class HookRegistry:
                 if e['name'] != name
             ]
 
+    def register_interceptor(self, interceptor: Callable,
+                             name: str = None, priority: int = 90) -> bool:
+        """Registriert einen Event-Interceptor fuer emit() (Stufe 6).
+
+        Interceptors laufen in emit() VOR den Listenern und sind fuer
+        dynamisch injizierte Hooker gedacht (z.B. externer workflowhooker).
+        Ein Interceptor ist ein Callable(event, context) und liefert
+        None, einen str oder eine Liste von str.
+
+        Args:
+            interceptor: Callable(event: str, context: dict)
+            name: Eindeutiger Name (Guard gegen Doppelregistrierung)
+            priority: Niedrigere Werte frueher (default 90: nach schnellen
+                      System-Listenern, vor langen)
+
+        Returns:
+            True bei Registrierung, False bei vorhandenem Namen (idempotent).
+        """
+        name = name or getattr(interceptor, '__name__', str(interceptor))
+        if any(e['name'] == name for e in self._interceptors):
+            return False
+        self._interceptors.append({
+            'priority': priority,
+            'interceptor': interceptor,
+            'name': name,
+            'registered_at': datetime.now().isoformat(),
+        })
+        self._interceptors.sort(key=lambda x: x['priority'])
+        return True
+
     def emit(self, event: str, context: dict = None,
              broadcast: bool = False) -> list:
         """Feuert ein Event und ruft alle registrierten Handler auf.
@@ -183,6 +222,34 @@ class HookRegistry:
 
         results = []
         listeners = self._listeners.get(event, [])
+
+        # Interceptor-Slot (Stufe 6): dynamisch injizierte Hooker laufen
+        # vor den Listenern; jeder Fehler wird geschluckt (fail-soft), ein
+        # kaputter Hooker darf keinen Befehlsfluss blockieren.
+        # Interceptor-Meldungen werden zusaetzlich separat gemerkt, damit
+        # Aufrufer sie sichtbar machen koennen, ohne Listener-Rueckgaben
+        # (die historisch still sind) mit anzuzeigen.
+        interceptor_results = []
+        for entry in self._interceptors:
+            try:
+                result = entry['interceptor'](event, ctx)
+                if result is None:
+                    continue
+                if isinstance(result, str):
+                    results.append(result)
+                    interceptor_results.append(result)
+                elif isinstance(result, (list, tuple)):
+                    for r in result:
+                        if r is None:
+                            continue
+                        results.append(str(r))
+                        interceptor_results.append(str(r))
+                else:
+                    results.append(str(result))
+                    interceptor_results.append(str(result))
+            except Exception as e:
+                results.append(f"[HOOK-ERROR] interceptor/{entry['name']}: {e}")
+        self.last_interceptor_results = interceptor_results
 
         for entry in listeners:
             try:

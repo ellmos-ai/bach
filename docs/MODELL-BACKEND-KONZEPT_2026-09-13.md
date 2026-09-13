@@ -379,8 +379,12 @@ nicht beantwortet, taugt es nicht.
 
 ### 4.5 Das Cockpit — bewusst außerhalb des Bauumfangs
 
-`:8081/activity` ist heute die Oberfläche des Modell-Backends. Sie wird parallel (Ticket
-`T-20260913-660268706`) ins GUI-Design überführt und unter „Agenten" eingehängt.
+`:8081/activity` ist die Oberfläche des Modell-Backends. Der Menüumbau aus Ticket
+`T-20260913-660268706` ist **inzwischen gemergt** (PR #51, Commit `823823b`) und beim
+Zusammenführen dieses Branches übernommen worden: `gui/static/js/nav.js` führt den Eintrag
+„Models" jetzt unter „Agenten" und zeigt auf `portRel: 8081, path: "/activity"`. Das Cockpit
+ist damit aus der GUI erreichbar, ohne dass diese es nachbaut — genau die Form, die Abschnitt
+10.5 auch für OCEAN empfiehlt.
 
 **Dieses Programm baut am Cockpit nichts.** Die Zweitmeinung hat angemerkt, das Cockpit sei
 ein nachgelagerter Abnehmer und schaffe keine korrekte Zuteilung — das trifft zu, und es ist

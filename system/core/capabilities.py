@@ -503,9 +503,11 @@ class CapabilityManager:
             return [f"Lesefehler: {e}"]
 
         # Code-Injection Checks
+        # Negative Lookbehind verhindert False-Positives bei Methodenaufrufen
+        # wie QApplication.exec() oder QDialog.exec().
         dangerous_patterns = [
-            (r'\beval\s*\(', 'eval() Aufruf gefunden'),
-            (r'\bexec\s*\(', 'exec() Aufruf gefunden'),
+            (r'(?<!\.)\beval\s*\(', 'eval() Aufruf gefunden'),
+            (r'(?<!\.)\bexec\s*\(', 'exec() Aufruf gefunden'),
             (r'\bFunction\s*\(', 'Dynamischer JavaScript Function() Aufruf gefunden'),
             (r'child_process\.(exec|execSync)\s*\(', 'Node child_process exec-Aufruf gefunden'),
             (r'subprocess.*shell\s*=\s*True', 'subprocess mit shell=True'),
@@ -529,6 +531,157 @@ class CapabilityManager:
             findings.append("[NETWORK] urllib-Nutzung erkannt")
 
         return findings
+
+    @staticmethod
+    def _mask_content(content: str, mask_comments: bool = True,
+                      mask_strings: bool = True) -> str:
+        """Maskiert Kommentare und String-Inhalte fuer statische Scans.
+
+        Reduziert False-Positives, wenn gefaehrliche Schluesselwoerter nur
+        in Docstrings, Kommentaren oder Beispiel-Prompts vorkommen.
+        """
+        import re as _re
+        out = []
+        i = 0
+        n = len(content)
+        while i < n:
+            ch = content[i]
+            # Einzeiliger Kommentar
+            if mask_comments and ch == '#' and (i == 0 or content[i - 1] != '\\'):
+                end = content.find('\n', i)
+                if end == -1:
+                    out.append(' ' * (n - i))
+                    break
+                out.append(' ' * (end - i))
+                i = end
+                continue
+            # Docstring / String
+            if mask_strings and ch in ('"', "'"):
+                quote = ch
+                if i + 2 < n and content[i:i + 3] == quote * 3:
+                    quote = quote * 3
+                    end = content.find(quote, i + 3)
+                    if end == -1:
+                        out.append(' ' * (n - i))
+                        break
+                    out.append(' ' * (end - i + 3))
+                    i = end + 3
+                    continue
+                end = content.find(quote, i + 1)
+                escape = i + 1
+                while end != -1:
+                    backslashes = 0
+                    j = end - 1
+                    while j >= escape and content[j] == '\\':
+                        backslashes += 1
+                        j -= 1
+                    if backslashes % 2 == 0:
+                        break
+                    end = content.find(quote, end + 1)
+                if end == -1:
+                    out.append(' ' * (n - i))
+                    break
+                out.append(' ' * (end - i + 1))
+                i = end + 1
+                continue
+            out.append(ch)
+            i += 1
+        return ''.join(out)
+
+    def scan_security_detailed(
+        self,
+        code_path: str,
+        ignore_comments: bool = True,
+        ignore_strings: bool = True,
+    ) -> list[tuple[str, str]]:
+        """Detaillierter Security-Scan mit Kategorie pro Finding.
+
+        Args:
+            code_path: Pfad zur Python-Datei
+            ignore_comments: True -> ignoriert Kommentare
+            ignore_strings: True -> ignoriert String-Inhalte
+
+        Returns:
+            Liste von (severity, message) Tupeln.
+            severity: critical, warning, info
+        """
+        findings: list[tuple[str, str]] = []
+        path = Path(code_path)
+        if not path.exists():
+            return [("critical", f"Datei nicht gefunden: {code_path}")]
+
+        try:
+            raw = path.read_text(encoding='utf-8')
+        except Exception as e:
+            return [("critical", f"Lesefehler: {e}")]
+
+        content = self._mask_content(raw, ignore_comments, ignore_strings)
+
+        # Kritische Code-Injection-Muster (nur im maskierten Code)
+        # Negative Lookbehind verhindert False-Positives bei Methodenaufrufen
+        # wie QApplication.exec() oder QDialog.exec().
+        critical_patterns = [
+            (r'(?<!\.)\beval\s*\(', 'eval() Aufruf gefunden'),
+            (r'(?<!\.)\bexec\s*\(', 'exec() Aufruf gefunden'),
+            (r'\bFunction\s*\(', 'Dynamischer JavaScript Function() Aufruf gefunden'),
+            (r'child_process\.(exec|execSync)\s*\(', 'Node child_process exec-Aufruf gefunden'),
+            (r'\bos\.system\s*\(', 'os.system() Aufruf gefunden'),
+            (r'\b__import__\s*\(', 'Dynamischer Import via __import__()'),
+        ]
+
+        for pattern, message in critical_patterns:
+            if re.search(pattern, content):
+                findings.append(("critical", f"[CODE_INJECTION] {message}"))
+
+        # shell=True ist kontextabhaengig: in Sandbox-Handlern erlaubt,
+        # sonst als warning einstufen.
+        if re.search(r'subprocess\..*shell\s*=\s*True', content):
+            if 'sandbox' not in path.name.lower() and 'isolated' not in path.name.lower():
+                findings.append(("warning", "[SHELL] subprocess mit shell=True ausserhalb Sandbox"))
+
+        # Prompt-Injection Checks (fuer .md/.txt Dateien)
+        if path.suffix in ('.md', '.txt'):
+            if re.search(r'[A-Za-z0-9+/]{40,}={0,2}', raw):
+                findings.append(("warning", "[PROMPT_INJECTION] Moeglicherweise Base64-kodierter String"))
+
+        # Netzwerk-Zugriff
+        if re.search(r'requests\.(get|post|put|delete)\s*\(', content):
+            findings.append(("info", "[NETWORK] HTTP-Requests an externe URLs"))
+        if re.search(r'\burllib', content):
+            findings.append(("info", "[NETWORK] urllib-Nutzung erkannt"))
+
+        return findings
+
+    def scan_tree_detailed(
+        self,
+        root_path: str | Path,
+        suffixes: tuple[str, ...] = (
+            '.py', '.js', '.ts', '.mjs', '.cjs',
+            '.sh', '.ps1', '.md', '.txt', '.json', '.yaml', '.yml',
+        ),
+        ignore_comments: bool = True,
+        ignore_strings: bool = True,
+        exclude_dirs: tuple[str, ...] = ("__pycache__", "_archive", ".git", "node_modules"),
+    ) -> dict[str, list[tuple[str, str]]]:
+        """Rekursiver detaillierter Security-Scan."""
+        root = Path(root_path)
+        if not root.exists():
+            return {str(root): [("critical", f"Pfad nicht gefunden: {root}")]}
+
+        report: dict[str, list[tuple[str, str]]] = {}
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            if any(part in exclude_dirs for part in path.parts):
+                continue
+            if suffixes and path.suffix.lower() not in suffixes:
+                continue
+            findings = self.scan_security_detailed(
+                str(path), ignore_comments, ignore_strings
+            )
+            if findings:
+                report[str(path)] = findings
+        return report
 
     def scan_tree(self, root_path: str | Path,
                   suffixes: tuple[str, ...] = (

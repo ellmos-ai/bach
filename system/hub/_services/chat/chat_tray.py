@@ -540,6 +540,17 @@ class BACHTray:
         hat_folgetask = "task #" in ans_text.lower() or "folge-task" in ans_text.lower() or "folgetask" in ans_text.lower() or "teilaufgaben" in ans_text.lower()
         ist_fertig = "FERTIG" in ans_text.upper() or hat_folgetask
         ist_unvollstaendig = "(Max Tool-Runden erreicht)" in ans_text or ("nicht im Code lösen" in ans_text and not hat_folgetask)
+          # Terminal-Wächter (T-20260912-1240loop / 7x #1241 / gesteckte
+          # #1246,#1247,#1252): ein Task, der bereits completed_at traegt, ist
+          # erledigt -> niemals auf 'open' zuruecksetzen. Der open-Reset loeschte
+          # completed_at nicht, der naechste idle-Zyklus zog den terminalen Task
+          # erneut -> Resurrektions-Loop bei operator-geblockten TO-DECIDE-Tasks,
+          # deren Antwort nie sauber FERTIG+ok wird (300s-Client-Timeout).
+        task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
+        if task_now and task_now.get("completed_at"):
+            print(f"[Idle] Task #{task_id} traegt completed_at; bleibt terminal, kein open-Reset")
+            self.idle_pending = None
+            return True
         if (ist_fertig or not ist_unvollstaendig) and answer.get("ok", True):
             status = "completed"
             self._auto_commit_task(task_id, title)
@@ -587,7 +598,7 @@ class BACHTray:
                         for cand in tasks_resp["tasks"]:
                             cand_assignee = (cand.get("assigned_to") or "").strip()
                             # menschliche Tasks (user) und fremde Agenten (claude, gemini) ueberspringen
-                            if cand_assignee.lower() not in ("user", "claude", "gemini", ""):
+                            if cand_assignee.lower() not in ("user", "claude", "gemini", "operator", "blocked", ""):
                                 task = cand
                                 task_status = status
                                 break
@@ -595,6 +606,21 @@ class BACHTray:
                         break
 
             if not task:
+                return
+
+             # Terminal-Wächter (T-20260912-1240loop): ein Task, der bereits
+             # completed_at trägt, ist erledigt und wird NIE wieder aufgezogen.
+             # Ein 'open'-Reset loescht completed_at nicht -> der Wächter bricht
+             # den Resurrektions-Loop open<->in_progress, der bei operator-
+             # geblockten TO-DECIDE-Tasks (Antwort liefert nicht sauber
+             # "FERTIG"+ok) den Task endlos neu zieht. Legitime Neuaufziehen via
+             # 'reopen' loeschen completed_at (clear_fields) und sind damit unbeherr.
+            if task.get("completed_at"):
+                tid = task.get("id")
+                print(f"[Idle] Task #{tid} traegt completed_at; terminal -> auf 'done' gesetzt, verlaesst open-Pool")
+                 # aktiv aus dem open-Pool entfernen (nur return liesse ihn in
+                 # 'open' hängen und er würde im naechsten Zyklus erneut gezogen)
+                self._api("PUT", f"/api/tasks/{tid}", {"status": "done", "changed_by": "idle-worker"}, base=self.gui_url)
                 return
 
             task_id = task.get("id")

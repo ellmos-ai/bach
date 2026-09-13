@@ -54,6 +54,10 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Tuple, Optional, Dict
 from hub.base import BaseHandler
+from hub.explorer_provider import (
+    render_topology_evidence_lines,
+    topology_evidence,
+)
 
 
 class UpgradeHandler(BaseHandler):
@@ -911,6 +915,12 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
         finally:
             conn.close()
 
+        # Topologie-Evidenz via externem system-explorer (MODULRUECKTRANSFER
+        # Stufe 5): begrenzter Scan des Installationsbestands + Drift gegen
+        # den letzten gespeicherten Stand. Fail-soft, nie fatal; Rollback
+        # ueber BACH_USE_EXTERNAL_EXPLORER=0.
+        topology_payload = self._topology_evidence_payload()
+
         repair_recommended = (
             release_total == 0
             or (manifest_entries > 0 and manifest_entries < 10)
@@ -963,6 +973,7 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                     "local_modifications": [],
                     "missing_files": [],
                     "unreadable_files": [],
+                    "topology": topology_payload,
                     "no_tracked_versions": True,
                     "hint": "bach upgrade repair --dry-run",
                 }
@@ -975,6 +986,9 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                 f"Manifest-Eintraege: {manifest_entries}",
                 f"Release-Eintraege:  {release_total}",
                 f"Aktuelle Version:   {current_version}",
+                "",
+                "Topologie-Audit (MODULRUECKTRANSFER Stufe 5):",
+                *render_topology_evidence_lines(topology_payload),
                 "",
                 "Befehle:",
                 "  bach upgrade --status             Upgrade-Status anzeigen",
@@ -1069,6 +1083,7 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
                 "missing_files": missing_files,
                 "unreadable_files": unreadable_files,
                 "no_tracked_versions": False,
+                "topology": topology_payload,
             }
             return True, self._json_dump(payload)
 
@@ -1171,6 +1186,11 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
             ])
 
         output.extend([
+            "Topologie-Audit (MODULRUECKTRANSFER Stufe 5):",
+            *render_topology_evidence_lines(topology_payload),
+        ])
+
+        output.extend([
             "Befehle:",
             "  bach upgrade <file>              Einzeldatei aktualisieren",
             "  bach upgrade core --dry-run      CORE-Dateien pruefen",
@@ -1179,6 +1199,19 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
         ])
 
         return True, "\n".join(output)
+
+    def _topology_evidence_payload(self) -> dict:
+        """Topologie-Evidenz fuer den Upgrade-Check (Stufe 5, fail-soft).
+
+        Der Upgrade-Check ist der Drift-Monitor: Der Scan wird mit dem
+        zuletzt gespeicherten Stand verglichen und als neue Referenz im
+        Datenverzeichnis gespeichert (explorer_state/last_topology.json).
+        Rollback: BACH_USE_EXTERNAL_EXPLORER=0 (kein Scan, nur Hinweis).
+        """
+        try:
+            return topology_evidence(self.base_path, persist_state=True)
+        except Exception as exc:
+            return {"enabled": False, "reason": f"explorer_provider error: {exc}"}
 
     def _repair_metadata(self, args: list, dry_run: bool, json_output: bool = False) -> tuple:
         """Repariert Distribution-Manifest und aktuelle Versionsdaten."""

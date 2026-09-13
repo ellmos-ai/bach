@@ -16,7 +16,7 @@ BEFEHLE
 -------
   bach --snapshot create [name]  Aktuellen Status sichern.
   bach --snapshot list           Verfügbare Snapshots (auto & manuell).
-  bach --snapshot load [ID]      Snapshot anzeigen (Details ausgeben).
+  bach --snapshot load [ID]      ECHTER Restore: Working Memory & Tasks in das Live-System einfuehren.
   bach --snapshot delete <ID>    Entfernt alte Snapshots.
 
 HINWEIS (Stand 2026-09-09):

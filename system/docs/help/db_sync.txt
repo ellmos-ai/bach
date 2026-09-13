@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
-# Version: 2.0.0
-# Zuletzt validiert: 2026-06-21
+# Version: 2.1.0
+# Zuletzt validiert: 2026-09-12
 
 HANDLER-NAME
 ============
@@ -11,7 +11,19 @@ BESCHREIBUNG
 ============
 ProSync synchronisiert BACH-Datenbanken zwischen mehreren Systemen.
 
-Architektur:
+Engine-Seam (MODULRUECKTRANSFER Stufe 7, 2026-09-12):
+- Ist das Modul `sqlite-transit-sync` installiert (requirements.txt-Pin),
+  laufen Start/Exit/Sync ueber verifizierte Delta-Snapshots
+  (Namespace `bach`, deterministische Reihenfolge, State-Gate gegen Replay,
+  Merge-State in ~/.bach/transit_sync_state/state.json).
+- Rollback: BACH_USE_EXTERNAL_TRANSITSYNC=0 (auch false/no/off) erzwingt
+  sofort den internen Legacy-Pfad, selbst wenn das Modul importierbar ist.
+- Vertragsbruch des installierten Moduls: Legacy bleibt aktiv, der Fehler
+  wird in `bach db sync --status` sichtbar (fail-closed).
+- Merge-Semantik paritaetisch: Timestamp-LWW (updated_at/modified_at/
+  created_at), `secrets` exkludiert, keine Deletions-Propagation.
+
+Legacy-Architektur:
 - Jedes System hat eine lokale DB (~/.bach/bach.db)
 - OneDrive dient als Transit-Hub (.SYNC/bach_db_transit/)
 - Sync bei BACH-Start (pull) und -Exit (push)

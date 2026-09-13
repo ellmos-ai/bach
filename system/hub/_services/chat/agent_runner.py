@@ -82,6 +82,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         from hub._services.chat import telegram_chat as tc
+        from hub._services.chat.operator_control import OperatorControl
     except Exception as e:  # pragma: no cover - Umgebungsfehler
         _log(workdir, f"FEHLER beim Laden der Chat-Runtime: {e!r}")
         return 3
@@ -104,6 +105,10 @@ def main(argv: list[str] | None = None) -> int:
     session.think = True
     if args.model:
         session.model = args.model
+    # OPS-RUN-001: Operator-Steuerdateien liegen im Arbeitsverzeichnis
+    # (der Launcher schreibt nach data/temp/agent_<name>/) -> an der
+    # Modell-Grenze konsumieren.
+    session.operator_control = OperatorControl(workdir)
 
     _log(workdir, f"Agent startet: Modell={session.model or '(Default)'} "
                   f"Modus={session.mode} auto_continue={runtime.auto_continue} "

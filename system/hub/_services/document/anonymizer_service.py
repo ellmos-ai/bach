@@ -39,7 +39,7 @@ Nutzt bestehende DokuZentrum-Komponenten:
 Abhaengigkeiten:
   pip install python-docx cryptography openpyxl
 
-Version: 1.2.0 (Excel-Support + Dateinamen-Anonymisierung)
+Version: 1.3.0 (Excel-Support + Dateinamen-Anonymisierung + E-Mail-Support .eml/.msg)
 Erstellt: 2026-01-27
 """
 
@@ -90,6 +90,21 @@ try:
     EXCEL_AVAILABLE = True
 except ImportError:
     EXCEL_AVAILABLE = False
+
+# E-Mail-Dateien: .eml (RFC 822, reines Stdlib-`email`-Modul, immer verfuegbar)
+from email import policy as _email_policy
+from email.parser import BytesParser as _BytesParser
+
+# Outlook-.msg (binaeres OLE-Format) -- optionale Abhaengigkeit extract-msg
+# (GPLv3, nur lokal als Runtime-Dep genutzt, keine Code-Weitergabe). Ohne die
+# Bibliothek wird .msg fail-closed behandelt (s. _anonymize_msg / Task #802):
+# Extraktion liefert "" => die Kopie wird aus dem Output-Ordner entfernt,
+# statt unanonymisiert liegenzubleiben (gleiche Philosophie wie .doc).
+try:
+    import extract_msg
+    MSG_AVAILABLE = True
+except ImportError:
+    MSG_AVAILABLE = False
 
 # Personennamen-Erkennung (spaCy NER, DE+EN) -- generische Erkennung von
 # Personennamen im Fliesstext, unabhaengig von Schreibweise/Sprache/Herkunft.
@@ -838,6 +853,130 @@ def _extract_legacy_doc_text(filepath: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
+# E-Mail-Extraktion (.eml via Stdlib email, .msg via extract-msg)
+# ═══════════════════════════════════════════════════════════════
+
+# Header, deren Werte personenbezogene Daten tragen koennen (fuer .eml)
+_EML_SENSITIVE_HEADERS = (
+    "from", "to", "cc", "bcc", "reply-to", "sender", "subject",
+    "resent-from", "resent-to", "resent-cc", "return-path",
+)
+# Header, deren Vorhandensein eine "echte" E-Mail belegt (Fail-closed-Kriterium:
+# unlesbarer Muelleingang duerfe nicht als "erfolgreich anonymisiert" durchgehen)
+_EML_VALIDITY_HEADERS = (
+    "from", "to", "cc", "bcc", "subject", "date", "message-id",
+    "received", "reply-to", "return-path", "delivered-to", "sender",
+)
+
+
+def _extract_eml_text(filepath: str) -> str:
+    """
+    Extrahiert Kopfzeilen + Textkoerper aus einer .eml-Datei.
+
+    Nutzung fuer die sensible-Daten-Suche (extract_text_from_file);
+    liefert "" bei nicht lesbarer Datei (Aufrufer behandeln fail-closed).
+    """
+    try:
+        msg = _BytesParser(policy=_email_policy.default).parsebytes(Path(filepath).read_bytes())
+    except Exception:
+        return ""
+
+    lines = []
+    for header in ("From", "To", "Cc", "Bcc", "Reply-To", "Subject", "Date"):
+        value = msg.get(header)
+        if value:
+            lines.append(f"{header}: {value}")
+
+    for part in msg.walk():
+        fn = part.get_filename()
+        if fn:
+            lines.append(f"Anlage: {fn}")
+            continue
+        if part.get_content_maintype() == "text":
+            try:
+                payload = part.get_content()
+            except Exception:
+                continue
+            if isinstance(payload, str):
+                lines.append(payload)
+
+    return "\n".join(lines)
+
+
+def _extract_msg_text(filepath: str) -> str:
+    """
+    Extrahiert Kopfzeilen + Textkoerper aus einer Outlook-.msg-Datei.
+
+    Benoetigt die optionale Bibliothek extract-msg (MSG_AVAILABLE);
+    liefert "" wenn sie fehlt oder die Datei nicht gelesen werden kann
+    -- die Aufrufer behandeln das fail-closed (kein unanonymisiertes
+    Original im Output-Ordner belassen, gleiche Philosophie wie .doc).
+    """
+    if not MSG_AVAILABLE:
+        return ""
+
+    try:
+        m = extract_msg.openMsg(filepath)
+    except Exception:
+        return ""
+
+    lines = []
+    try:
+        for label, value in (
+            ("From", m.sender), ("To", m.to), ("Cc", m.cc),
+            ("Subject", m.subject), ("Date", m.date),
+        ):
+            if value:
+                lines.append(f"{label}: {value}")
+        body = getattr(m, "body", None)
+        if body:
+            lines.append(str(body))
+        for att in getattr(m, "attachments", None) or []:
+            fn = getattr(att, "longFilename", None) or getattr(att, "shortFilename", None)
+            if fn:
+                lines.append(f"Anlage: {fn}")
+    finally:
+        try:
+            m.close()
+        except Exception:
+            pass
+
+    return "\n".join(lines)
+
+
+def _apply_replacements(text: str, sorted_replacements: List[Tuple[str, str]]) -> Tuple[str, int]:
+    """Wendet laengstens-zuerst sortierte Ersetzungen an Wortgrenzen an."""
+    count = 0
+    for old, new in sorted_replacements:
+        text, occurrences = _replace_word_boundary(text, old, new)
+        count += occurrences
+    return text, count
+
+
+def _replace_in_filename(name: str, sorted_replacements: List[Tuple[str, str]]) -> Tuple[str, int]:
+    """
+    Ersetzt Mapping-Begriffe in einem Datei-/Anlagennamen (Teilstring-Ersetzung).
+
+    Neben der Original-Schreibweise werden Unterstrich- und Zusammenschreib-
+    Varianten geprueft ("Max Mustermann" -> "Max_Mustermann" / "MaxMustermann"),
+    weil Dateinamen Leerzeichen haeufig ersetzen -- Wortgrenzen-Regex (\b)
+    greift dort NICHT, da "_" ein Wortzeichen ist und somit keine Wortgrenze
+    vor "Max" in "Bericht_Max_Mustermann.pdf" existiert.
+    """
+    count = 0
+    for old, new in sorted_replacements:
+        for old_v, new_v in (
+            (old, new),
+            (old.replace(" ", "_"), new.replace(" ", "_")),
+            (old.replace(" ", ""), new.replace(" ", "")),
+        ):
+            if old_v and old_v in name:
+                count += name.count(old_v)
+                name = name.replace(old_v, new_v)
+    return name, count
+
+
+# ═══════════════════════════════════════════════════════════════
 # Anonymisierer
 # ═══════════════════════════════════════════════════════════════
 
@@ -1125,6 +1264,14 @@ class DocumentAnonymizer:
                             if cell.value:
                                 text += str(cell.value) + " "
                 wb.close()
+
+            elif suffix == ".eml":
+                # RFC-822-E-Mail (Stdlib email-Modul, immer verfuegbar)
+                text = _extract_eml_text(str(path))
+
+            elif suffix == ".msg":
+                # Outlook-Binaerformat (optionale extract-msg-Bibliothek)
+                text = _extract_msg_text(str(path))
         except Exception as e:
             print(f"[WARN] Text-Extraktion fehlgeschlagen fuer {path.name}: {e}")
 
@@ -1149,7 +1296,7 @@ class DocumentAnonymizer:
             Aggregierte gefundene Daten {"phones": [...], "emails": [...], "addresses": [...]}
         """
         src = Path(folder)
-        supported = {".docx", ".doc", ".txt", ".md", ".pdf", ".xlsx", ".xls"}
+        supported = {".docx", ".doc", ".txt", ".md", ".pdf", ".xlsx", ".xls", ".eml", ".msg"}
         filepaths = [f for f in src.rglob("*") if f.is_file() and f.suffix.lower() in supported]
         return self.scan_files_for_sensitive_data(filepaths)
 
@@ -1174,7 +1321,7 @@ class DocumentAnonymizer:
             "ner_person_names": []
         }
 
-        supported = {".docx", ".doc", ".txt", ".md", ".pdf", ".xlsx", ".xls"}
+        supported = {".docx", ".doc", ".txt", ".md", ".pdf", ".xlsx", ".xls", ".eml", ".msg"}
 
         for filepath in filepaths:
             filepath = Path(filepath)
@@ -1209,6 +1356,10 @@ class DocumentAnonymizer:
             return self._anonymize_excel(path, profile)
         elif suffix == ".doc":
             return self._anonymize_doc(path, profile)
+        elif suffix == ".eml":
+            return self._anonymize_eml(path, profile)
+        elif suffix == ".msg":
+            return self._anonymize_msg(path, profile)
         else:
             return False, 0
 
@@ -1432,6 +1583,132 @@ class DocumentAnonymizer:
         path.unlink(missing_ok=True)
         return True, count
 
+    @staticmethod
+    def _sorted_replacements(profile: AnonymProfile) -> List[Tuple[str, str]]:
+        """
+        Sammelt alle Mapping-Paare des Profils und sortiert sie
+        laengestens-zuerst (verhindert Teilersetzungen, z.B. Nachname
+        innerhalb "Vorname Nachname").
+        """
+        all_replacements = {}
+        for category in profile.mappings.values():
+            all_replacements.update(category)
+        return sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
+
+    def _anonymize_eml(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
+        """
+        Anonymisiert eine EML-Datei strukturerhaltend (Task #802).
+
+        Kopfzeilen (From/To/Cc/Bcc/Subject/...), Textkoerper (text/plain,
+        text/html) und Anlage-DATEINAMEN werden an Wortgrenzen ersetzt;
+        Multipart-Struktur und Anlagen-Inhalte (z.B. base64-Binaerdaten)
+        bleiben unveraendert, damit die E-Mail in Mail-Programmen lesbar
+        bleibt. Die De-Anonymisierung laeuft ueber deanonymize_file mit
+        invertierten Mappings ueber denselben Codepfad.
+
+        Fail-closed: Ungueltiger Eingang wird aus dem Output-Ordner entfernt
+        statt unanonymisiert liegenzubleiben (Philosophie wie _anonymize_doc).
+        """
+        try:
+            msg = _BytesParser(policy=_email_policy.default).parsebytes(path.read_bytes())
+        except Exception:
+            path.unlink(missing_ok=True)
+            return False, 0
+
+        # parsebytes erzeugt auch fuer Muelleingang ein (fast) leeres
+        # Message-Objekt -- ohne echtes Mail-Merkmal nicht als "erfolgreich
+        # anonymisiert" durchwinken.
+        if not any(msg.get(h) for h in _EML_VALIDITY_HEADERS) and not msg.is_multipart():
+            path.unlink(missing_ok=True)
+            return False, 0
+
+        sorted_replacements = self._sorted_replacements(profile)
+        count = 0
+
+        # 1) Kopfzeilen-Werte (personenbezogene Header) ersetzen.
+        #    Mehrfachvorkommen gleicher Header in Reihenfolge wieder anhaengen
+        #    (replace_header behandelte nur das erste Vorkommen).
+        for name in list(msg.keys()):
+            if name.lower() not in _EML_SENSITIVE_HEADERS:
+                continue
+            values = msg.get_all(name)
+            if not values:
+                continue
+            try:
+                del msg[name]  # entfernt ALLE Vorkommen dieses Headers
+            except Exception:
+                continue
+            for value in values:
+                new_value, n = _apply_replacements(str(value), sorted_replacements)
+                count += n
+                msg[name] = new_value  # Message.__setitem__ haengt an
+
+        # 2) Textkoerper + Anlage-DATEINAMEN (Anlagen-Inhalte bleiben unberuehrt)
+        for part in msg.walk():
+            fn = part.get_filename()
+            if fn:
+                # Dateinamen-Ersetzung inkl. Unterstrich-/Zusammenschreib-Varianten
+                # (s. _replace_in_filename): "Bericht_Max_Mustermann.pdf" enthaelt
+                # das Mapping "Max Mustermann" nur als "Max_Mustermann".
+                new_fn, n = _replace_in_filename(fn, sorted_replacements)
+                if n:
+                    part.set_param("filename", new_fn, header="content-disposition")
+                    if part.get_param("name", header="content-type"):
+                        part.set_param("name", new_fn, header="content-type")
+                    count += n
+                continue
+            if part.get_content_maintype() == "text":
+                try:
+                    payload = part.get_content()
+                except Exception:
+                    continue
+                if not isinstance(payload, str):
+                    continue
+                new_payload, n = _apply_replacements(payload, sorted_replacements)
+                if n:
+                    try:
+                        part.set_content(new_payload, subtype=part.get_content_subtype())
+                    except Exception:
+                        continue
+                    count += n
+
+        try:
+            path.write_bytes(msg.as_bytes(policy=_email_policy.default))
+        except Exception as e:
+            print(f"[WARN] EML-Serialisierung fehlgeschlagen fuer {path.name}: {e}")
+            path.unlink(missing_ok=True)
+            return False, 0
+
+        return True, count
+
+    def _anonymize_msg(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
+        """
+        Anonymisiert eine Outlook-.msg-Datei (Task #802).
+
+        Das binaere OLE-Format ist ohne die optionale extract-msg-Bibliothek
+        nicht lesbar. Wie beim .doc-Binaerformat wird deshalb der Text
+        (Kopfzeilen + Body + Anlagenamen) extrahiert, anonymisiert und als
+        GLEICHNAMIGE .txt-Datei gespeichert; das binaere Original wird aus dem
+        Output-Ordner entfernt (document_pipeline.py kategorisiert nach
+        Dateiname, nicht nach Endung).
+
+        Fail-closed: Fehlt extract-msg (MSG_AVAILABLE False) oder scheitert
+        das Lesen, wird die Kopie geloescht -- unanonymisierte .msg duerfen
+        nicht im "anonymisierten" Klienten-Ordner landen.
+        """
+        text = _extract_msg_text(str(path))
+        if not text:
+            path.unlink(missing_ok=True)
+            return False, 0
+
+        sorted_replacements = self._sorted_replacements(profile)
+        text, count = _apply_replacements(text, sorted_replacements)
+
+        txt_path = path.with_suffix(".txt")
+        txt_path.write_text(text, encoding="utf-8")
+        path.unlink(missing_ok=True)
+        return True, count
+
     def _anonymize_excel(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
         """
         Anonymisiert eine Excel-Datei (.xlsx, .xls).
@@ -1512,12 +1789,10 @@ class DocumentAnonymizer:
 
         sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
 
-        new_filename = filename
-        changed = False
-        for old, new in sorted_replacements:
-            if old in new_filename:
-                new_filename = new_filename.replace(old, new)
-                changed = True
+        # _replace_in_filename deckt auch Unterstrich-/Zusammenschreib-Varianten
+        # des Namens ab ("Mail_Max_Mustermann.eml" statt "Mail Max Mustermann.eml")
+        new_filename, _ = _replace_in_filename(filename, sorted_replacements)
+        changed = new_filename != filename
 
         if changed:
             new_path = filepath.parent / f"{new_filename}{suffix}"
@@ -1672,7 +1947,10 @@ class DocumentDeanonymizer:
         import shutil
 
         # Dateien kopieren und de-anonymisieren
-        deanon_suffixes = {".docx", ".txt", ".md"}
+        # .eml wurde strukturerhaltend anonymisiert -> Rueckweg ueber denselben
+        # Codepfad; .msg wurde als .txt exportiert (kein .msg im anonymisierten
+        # Ordner, daher hier keine .msg-Abdeckung noetig)
+        deanon_suffixes = {".docx", ".txt", ".md", ".eml"}
         copy_only_suffixes = {".pdf"}
         all_suffixes = deanon_suffixes | copy_only_suffixes
 
