@@ -113,6 +113,23 @@ except ImportError:
 
 USER_DB = BACH_DB
 
+from assistant_core import MessageStore  # Welle 1 (D-20260830-002): Nachrichten-Fachkern, ein Datenkanon
+from accounts_core import AccountStore  # Welle 2 (D-20260903-003 = A): bank_accounts domain core
+
+
+def _messages() -> MessageStore:
+    """Store auf der kanonischen User-DB; fehlt sie, fail-closed wie get_user_db()."""
+    if not USER_DB.exists():
+        raise FileNotFoundError(f"User-DB nicht gefunden: {USER_DB}")
+    return MessageStore(USER_DB)
+
+
+def _account_store() -> AccountStore:
+    """AccountStore auf der kanonischen DB; fail-closed analog _messages() (Fix #1280, Regression c59b0da)."""
+    if not BACH_DB.exists():
+        raise FileNotFoundError(f"BACH-DB nicht gefunden: {BACH_DB}")
+    return AccountStore(BACH_DB)
+
 TEMPLATES_DIR = GUI_DIR / "templates"
 
 STATIC_DIR = GUI_DIR / "static"
@@ -12464,7 +12481,7 @@ async def export_routines():
 async def get_bank_accounts():
     """Alle Bankkonten laden."""
     try:
-        accounts = AccountStore(BACH_DB).list_accounts()
+        accounts = _account_store().list_accounts()
         return {"success": True, "accounts": accounts}
     except Exception as e:
         return {"success": False, "error": public_error_message(), "accounts": []}
@@ -12475,7 +12492,7 @@ async def add_bank_account(request: Request):
     """Neues Bankkonto anlegen."""
     try:
         data = await request.json()
-        account_id = AccountStore(BACH_DB).create_account(
+        account_id = _account_store().create_account(
             data.get('name'),
             bank_name=data.get('bank_name'),
             iban=data.get('iban'),
@@ -12493,7 +12510,7 @@ async def update_bank_account(account_id: int, request: Request):
     """Bankkonto aktualisieren."""
     try:
         data = await request.json()
-        AccountStore(BACH_DB).update_account(
+        _account_store().update_account(
             account_id,
             data.get('name'),
             bank_name=data.get('bank_name'),
@@ -12511,7 +12528,7 @@ async def update_bank_account(account_id: int, request: Request):
 async def delete_bank_account(account_id: int):
     """Bankkonto loeschen."""
     try:
-        AccountStore(BACH_DB).delete_account(account_id)
+        _account_store().delete_account(account_id)
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
