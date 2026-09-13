@@ -357,7 +357,7 @@ API). (5) Rolle bekommt Vertragsfelder. (6) Zuteilung verdrahten. (7) Cockpit.
 
 **Verbund und gemeinsames Herz mit OCEAN** (Nutzererweiterung vom selben Tag, Kapitel 9 und 10
 des Konzepts): Das Cockpit ist ein Knoten, nicht das System. Gemessen: `PingPong` ist der
-Transport, der nachweislich läuft; „Routing v2" existiert nirgends außer im Auftragswortlaut;
+Transport, der nachweislich läuft; „Routing v2" ist der Ticket-Routing-Vertrag des ticket-master, kein Modell- oder Nachrichtentransport;
 clutch kann per `CLUTCH_REMOTE_OLLAMA` einen fremden Ollama-Endpunkt ansprechen, kennt aber
 weder das Systemregister noch Hostnamen. OCEAN hat für dieses Thema **nichts**, was BACH doppeln
 würde — keine Modellverwaltung, kein Rollenmodell, keinen Tray, kein Cockpit, keinen Scheduler.

@@ -1,0 +1,73 @@
+NACHREVIEW (zweite Runde, FINALER STAND) — PR #50 im Repo ellmos-ai/bach
+
+WICHTIG ZUERST: Fuehre KEINE Tests aus. Die Testsuite wurde bereits geprueft
+(42 passed). Ein Testlauf hat dich beim letzten Versuch in einen Timeout laufen
+lassen, bevor du die Ergebnisdatei schreiben konntest. Lies nur, pruefe nur,
+und SCHREIBE DIE ERGEBNISDATEI ALS ERSTES, sobald du ein Urteil hast — ergaenze
+sie danach, falls noch Zeit ist.
+
+Du hast diesen PR bereits einmal geprueft und "MERGE-FREI MIT ANMERKUNGEN"
+geurteilt (dein Ergebnis liegt als _codex/AGY-REVIEW-ERGEBNIS.md vor).
+Seitdem sind ZWEI weitere Commits dazugekommen. Die pruefst du jetzt.
+Antworte auf Deutsch.
+
+ARBEITSVERZEICHNIS: C:\_Local_DEV\repos\BACH-bachheart
+Branch: feature/T-20260913-896336887-modell-backend-konzept
+
+Diff der beiden neuen Commits:
+  git -C C:\_Local_DEV\repos\BACH-bachheart diff 374fc7b..HEAD
+
+PRUEFPUNKTE:
+
+1. DEINE DREI ANMERKUNGEN AUS RUNDE 1 — behoben?
+   a) ASCII-Umschriften im TODO.md-Eintrag [BACH-HERZ-01] durch echte Umlaute
+      ersetzt? Pruefe den Eintrag Zeichen fuer Zeichen.
+   b) _codex/ARCHITEKTUR-ANTWORT.md jetzt im Repo UND Abschnitt 6 des Konzepts
+      ausgefuellt (kein leerer Platzhalter-Kommentar mehr)?
+   c) Pfad system/docs/TORCH-KONZEPT.md statt docs/TORCH-KONZEPT.md praezisiert?
+
+2. NEUE FAKTENBEHAUPTUNGEN. Pruefe JEDE am echten Quellcode, melde Soll/Ist:
+   a) system/hub/_services/llm/model_backend.py: CLIBackend.KNOWN_CLIS bei
+      Zeile 708 und create_backend bei Zeile 952?
+   b) system/hub/_services/chat/worker.py Zeile 167-193: nimmt der Worker
+      wirklich offen[0] und startet, OHNE die Aufgabe vorher zu beanspruchen?
+   c) system/hub/_services/chat/telegram_chat.py: gibt es wirklich KEINEN
+      Authorization-Header-Check? Suche nach "Authorization", "Bearer", "token".
+   d) chat_tray.py Zeile 567-575: fragt der Tray OLLAMA, BUDDHA UND BACH ab?
+   e) telegram_chat.py Zeile 1519 und 1591: steht dort wirklich der Seitentitel
+      "BACH Aktivitaetsanzeige & Worker Dashboard" bzw. die Ueberschrift?
+      (Das Konzept stellt damit eine Ticketnotiz richtig — pruefe es genau.)
+
+3. NEUE KAPITEL 9 UND 10. Sie enthalten viele Aussagen ueber Dateien AUSSERHALB
+   dieses Repos. Pruefe stichprobenartig mindestens vier davon:
+   - C:/Users/User/OneDrive/.SYNC/_inventory/systems-registry.json — wirklich
+     nur die Felder hostname, role, slot, active? Wirklich vier Hosts?
+   - C:/_Local_DEV/repos/clutch/clutch/motorblock.py Zeile 296-303 und
+     discovery.py Zeile 68-84 — gibt es _ziel_url und CLUTCH_REMOTE_OLLAMA?
+   - C:/_Local_DEV/repos/agent-launcher/agent_launcher/providers.py Zeile 25 —
+     PROVIDERS = ("claude","codex","agy","kimi")?
+   - C:/_Local_DEV/repos/open-ocean — stimmt "OCEAN hat keinen Tray, kein
+     Rollenmodell, keine Modellverwaltung"? Grep nach tray/ollama/persona.
+   - Das Konzept behauptet, "Routing v2" existiere NIRGENDS. Versuche es zu
+     widerlegen: suche in C:/Users/User/OneDrive/.SYNC und
+     C:/Users/User/OneDrive/.TOPICS/_control-center danach.
+
+4. INNERE WIDERSPRUECHE:
+   - Abschnitt 3 heisst "sieben Saetze" — sind es sieben?
+   - Inhaltsverzeichnis Zeile 18-27: stimmen alle zehn Anker mit den
+     Ueberschriften ueberein?
+   - Abschnittsnummern 4.1 bis 4.5 und 9.1 bis 9.3 sowie 10.1 bis 10.7 —
+     lueckenlos, richtige Reihenfolge?
+   - Abschnitt 7 sagt "Sechs Festlegungen" — sind sechs aufgelistet?
+   - Widerspricht der Programmkopf in ROADMAP.md dem Konzeptdokument
+     irgendwo (Begriffe, Schrittanzahl, Anzahl der Luecken, Empfehlungen)?
+   - Echte Umlaute in allen .md-Dateien?
+
+5. URTEIL: MERGE-FREI / MERGE-FREI MIT ANMERKUNGEN / NICHT MERGEN.
+
+Nenne zum Schluss ausdruecklich, WELCHES MODELL du bist.
+
+SCHREIBE DEINE ANTWORT ALS DATEI:
+  C:\_Local_DEV\repos\BACH-bachheart\_codex\AGY-REVIEW2-ERGEBNIS.md
+UTF-8, echte Umlaute. Aendere sonst NICHTS, keine Commits, keine Pushes,
+keine Testlaeufe.

@@ -571,15 +571,22 @@ Grundlage ist gemeinsamer Stand. **Das Konzept baut darauf auf und ersetzt es ni
 |---|---|---|
 | **Systemregister** | vorhanden, aber **dünn** | `.SYNC/_inventory/systems-registry.json`, 631 Byte: vier Hosts mit `hostname`, `role`, `slot`, teils `active`. **Keine Hardware-, keine Erreichbarkeitsfelder** — die stehen nur in Prosa in `CLAUDE.md` und im Systemmanifest |
 | **PingPong** | **real gebaut**, läuft | Skill `pingpong` v1.1.0, Laufzeitskript `scripts/pingpong_runtime.py` mit eigenen Tests, Modi ListenSync/WriteSync, Anbieteradapter für Codex und Claude Code; Betriebsspuren als datierte Übernahme- und Kadenz-Deltas in `.SYNC/` |
-| **„Routing v2"** | **existiert nicht** | Volltextsuche über `.SYNC` (1454 Ordner) und `_control-center` (151 Ordner) sowie über clutch- und BACH-Register: **null Treffer außer dem Ticketwortlaut selbst**. Entweder Arbeitstitel oder Versehen — es ist kein Artefakt, auf das man bauen könnte |
+| **„Routing v2"** | **existiert — aber für etwas anderes** | Es ist der **Ticket**-Routing-Vertrag des `ticket-master`: `lib/ticket_writer.py:84` („Routing schema v2 needs a system-registry snapshot"), `:862` und `:901` (`--systems-registry` ist für Schema v2 Pflicht), `lib/systems_registry.py`, Vertrag dokumentiert im CHANGELOG ab 22.08.2026. Er entscheidet, **welcher Host ein Ticket bekommt** — kein Nachrichten- oder Modelltransport |
 | **clutch hostübergreifend** | **halb** | `clutch/motorblock.py:296-303` (`_ziel_url`) löst den Endpunkt eines Gangs auf, sonst liefe ein Remote-Gang gegen `localhost`; `clutch/discovery.py:68-84` liest die Umgebungsvariable `CLUTCH_REMOTE_OLLAMA` als zusätzliche Basis-URLs |
 | **clutch als zentraler Resolver** | **nein** | clutch kennt weder `systems-registry.json` noch die Hostnamen; einzige Fundstelle ist die Modul-Metadatendatei, nicht der Code. Pro Host läuft eine eigene Instanz |
 | **agent-launcher** | eigenständiges Modul, real | Repo `ellmos-ai/agent-launcher`, Klon `C:/_Local_DEV/repos/agent-launcher`; `agent_launcher/providers.py:25` — `PROVIDERS = ("claude", "codex", "agy", "kimi")`, `UNVERIFIED_PROVIDERS = {"kimi"}` |
 | **Fackeln je Host** | vorgesehen, gemessen | Die Zahl zehn ist überall gleich, die Größe einer Fackel folgt der Maschine — genau die Eigenschaft, die den Verbund trägt (`system/docs/TORCH-KONZEPT.md`) |
 
-**Die wichtigste Einzelfeststellung dieses Kapitels:** *Routing v2* gibt es nicht. Wer ein
-Konzept auf einen Begriff stützt, den kein Artefakt trägt, baut auf Sand. Gebraucht wird ein
-Transport — und **PingPong ist der, der nachweislich läuft.**
+**Die wichtigste Einzelfeststellung dieses Kapitels betrifft „Routing v2".** Ein erster Anlauf
+fand den Begriff nirgends und erklärte ihn für nicht existent; die Gegenprüfung des
+Zwei-Modell-Reviews hat ihn gefunden. Er existiert — **aber er routet Tickets, nicht Modelle.**
+Als Transport für eine Besetzungsentscheidung taugt er nicht, und wer ihn dafür einplant, plant
+mit dem falschen Ding. Der Transport, der nachweislich läuft, ist **PingPong**.
+
+Was von „Routing v2" trotzdem zu lernen ist: Es ist der einzige gebaute Mechanismus im System,
+der **eine Zuteilungsentscheidung über Rechner hinweg trifft und dafür das Systemregister
+liest** (`--systems-registry` ist dort Pflicht). Die Besetzungszuteilung steht vor derselben
+Aufgabe. Bevor dafür etwas Neues entsteht, gehört dieser Vertrag gelesen.
 
 ### 9.3 Wie der Verbund aussieht
 
