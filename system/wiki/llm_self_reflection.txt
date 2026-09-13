@@ -1,0 +1,104 @@
+# Portabilitaet: UNIVERSAL
+# Zuletzt validiert: 2026-09-12 (Claude/BACH wiki-author)
+# Naechste Pruefung: 2027-09-12
+# Quellen: [arXiv:2210.03629], [arXiv:2303.11366], [arXiv:2303.17651], [arXiv:2305.11738]
+
+SELF-REFLECTION IN LLM-AGENTEN
+==============================
+
+Stand: 2026-09-12
+
+WAS IST SELF-REFLECTION?
+------------------------
+Self-Reflection bezeichnet Verfahren, mit denen LLM-basierte Agenten ihre
+eigenen Ausgaben bewerten und iterativ verbessern - ohne Gewichts-Updates
+oder Fine-Tuning. Statt klassischem Reinforcement Learning wird sprachliches
+Feedback ("verbal feedback") erzeugt, gespeichert und in Folgeversuchen
+als Kontext genutzt. Der Agent lernt dadurch aus Trial-and-Error innerhalb
+und ueber Sessions hinweg.
+
+DETAILS
+-------
+
+Die vier Kern-Frameworks (chronologisch):
+
+1) ReAct (Yao et al., Okt 2022)
+   - Verzahnt Reasoning-Traces und Aktionen (Thought-Action-Observation)
+   - Reasoning-Spuren helfen, Plaene zu induzieren, zu verfolgen und
+     Ausnahmen zu behandeln; Aktionen holen externe Informationen
+   - Basis-Paradigma agentischer Systeme; Reflexion baut darauf auf
+
+2) Reflexion (Shinn et al., Maerz 2023, Princeton/Northeastern)
+   - "Verbal Reinforcement Learning": Agent reflektiert verbal ueber
+     Feedback-Signale und speichert reflektierenden Text in einem
+     episodischen Memory-Buffer (Kurzzeitgedaechtnis ueber Trials)
+   - Flexibel: skalare oder freie Text-Feedbacks, externe oder intern
+     simulierte Quellen
+   - Rollen: Actor (LLM), Evaluator (Heuristik/LLM/Unit-Tests),
+     Self-Reflection-Model (LLM), Episodic Memory
+   - Ergebnisse: 91% pass@1 auf HumanEval (vs. 80% GPT-4 Baseline),
+     deutliche Gewinne bei AlfWorld (Decision-Making) und HotPotQA
+     (Reasoning)
+   - Grenzen: abhaengig von Evaluationsqualitaet, kein Garant fuer
+     Faktizitaet, Long-Context-Kosten, Risiko lokaler Optima
+
+3) Self-Refine (Madaan et al., Maerz 2023, CMU u.a.)
+   - Ein einziges LLM ist Generator, Feedback-Geber und Refiner
+     (Generate -> Feedback -> Refine -> wiederhole bis Stopp-Kriterium)
+   - Kein Training, keine Supervision, kein RL noetig
+   - ~20% durchschnittliche Verbesserung ueber 7 Tasks
+     (Dialog, Code-Optimierung, Mathe-Reasoning u.a.)
+   - Praktisch: Stopp nach N Iterationen oder bei konvergiertem Feedback
+
+4) CRITIC (Gou et al., Mai 2023, Microsoft Research)
+   - "Tool-Interactive Critiquing": LLM validiert Ausgaben mit EXTERNEN
+     Tools (Suchmaschinen, Code-Interpreter, Faktenpruefer) und revidiert
+     dann - Analogie zum menschlichen Cross-Checken
+   - Adressiert die Kernschwaeche reiner Selbstkritik: LLMs koennen
+     eigene Halluzinationen schwer ohne externes Signal erkennen
+   - Konsistente Verbesserungen bei QA, Mathe und Code-Erzeugung
+
+Einordnung der Verfahren:
+- Internes Feedback: Self-Refine (rein sprachlich, gleiche Instanz)
+- Umwelt-/Task-Feedback: Reflexion (skalar, Erfolg/Misserfolg, Unit-Tests)
+- Externes Tool-Feedback: CRITIC (Suchmaschine, Interpreter, APIs)
+- Gemeinsame Basis: ReAct (Reasoning+Acting-Schleife)
+
+Erfolgsbedingungen:
+- Zuverlaessiges Feedback-Signal (schlechtes Signal = schlechte Reflexion)
+- Konkretes, handhabbares Feedback statt vager Kritik
+- Episodisches Gedaechtnis: Reflexionen muessen abrufbar persistiert werden
+- Iterations-Budget und Abbruchkriterien (Kosten-/Latenzkontrolle)
+
+BACH-INTEGRATION
+----------------
+- agents/reflection/ implementiert genau dieses Muster: reflection_analyzer
+  wertet Session-/Error-Logs aus (Evaluator), erzeugt Gap-Analyse und
+  Verbesserungsvorschlaege (Self-Reflection-Model) und loggt Metriken
+  (episodisches Memory) - Befehle: bach reflection status/gaps/review/log
+- BACH Memory-System entspricht dem Reflexion Episodic Memory Buffer:
+  Lessons Learned und Reflections werden persistent abgelegt und in
+  Folge-Sessions als Kontext geladen (verbal reinforcement ueber Zeit)
+- Denkarium/Task-Decompose sind Umgebungs-Feedback fuer Agenten-Runs
+- Praxistransfer: Beim Delegieren an Claude/Codex liefert exit-code und
+  diff das Evaluator-Signal; Self-Refine-Muster = iteratives Prompt-Refining
+  mit eigener Kritikrunde vor Abgabe
+- Workflow-Referenz: skills/workflows/wiki-author.md (MODUS A)
+
+QUELLEN
+-------
+[1] https://arxiv.org/abs/2210.03629 - ReAct: Synergizing Reasoning and
+    Acting in Language Models (Yao et al., 2022)
+[2] https://arxiv.org/abs/2303.11366 - Reflexion: Language Agents with
+    Verbal Reinforcement Learning (Shinn et al., 2023; NeurIPS 2023)
+[3] https://arxiv.org/abs/2303.17651 - Self-Refine: Iterative Refinement
+    with Self-Feedback (Madaan et al., 2023; NeurIPS 2023)
+[4] https://arxiv.org/abs/2305.11738 - CRITIC: Large Language Models Can
+    Self-Correct with Tool-Interactive Critiquing (Gou et al., 2023; ICLR 2024)
+
+SIEHE AUCH
+----------
+wiki/denken/metakognition.txt    Psychologische Grundlage (Mensch)
+wiki/denken/denkfehler.txt       Kognitive Verzerrungen (Evaluations-Fallen)
+wiki/selbstheilung.txt           Self-Healing - verwandtes BACH-Muster
+wiki/agentic_workflows.txt       Agentische Workflows allgemein

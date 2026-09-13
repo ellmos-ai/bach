@@ -1,6 +1,6 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-09-11 | **Version:** 4.3.63 | **Review:** 2026-09-11 (Task #1126)
+**Stand:** 2026-09-12 | **Version:** 4.3.63 | **Review:** 2026-09-12 (Task #1225)
 
 ## ARCHIV (veraltet) — Navigations-Index
 
@@ -64,6 +64,43 @@ Block-Umzug (zu risikobehaftet, bestattet aktuelle Daten). Stattdessen:
 - Dieser optionale Index-Task ist als Folgeaufgabe angelegt und wird **nicht** automatisch
   ausgeführt (wartet auf Nutzerfreigabe).
 
+## Review 2026-09-12 (Task #1225)
+
+Automatisierter Roadmap-Review (P2, wiederkehrend). Befund:
+
+- **Erledigte Module-Rueckspiegelung nachgetragen:** Die Strategieentscheidung „B + C —
+  Rueckspiegelung der Module" hat ihren ersten realisierten Meilenstein: MODULRUECKTRANSFER-
+  Stufen 1–5 sind abgeschlossen (Inventar & Schnittstellenmatrix, ellmos-tests, ellmos-scheduler,
+  accounts-core CAMT-Saldenimport, system-explorer; BACH-Tasks 1217–1221, 2026-09-11/12, jeweils
+  mit Rollback-Schaltern, Regressionstests und Live-Nachweisen). Nachgetragen: Fokus-Sektion
+  „MODULRUECKTRANSFER" (unten), Statuszeile in der Langzeit-Vision, Steuer-Banking-Phase 5
+  („Saldenimport komplett"). Stufen 6–8 bleiben offen (BACH-Tasks 1222–1224).
+- **Obsolete Task-Referenzen korrigiert (ID-Wiederverwendung):** Die BACH-2.0-Kette
+  #1184–#1195, #1181 (ellmos-tests-Kandidat) und #1175 (TASKPLAN-Cutover) sind in der
+  heutigen Task-DB nicht mehr aufloesbar — die IDs wurden am 2026-09-08 mit abgeschlossenen
+  GUI-Tasks bzw. Wegwerf-Test-Tasks neu belegt. Additiv korrigiert: BACH-2.0-Sektion,
+  clutch-M8-Sektion, TASKPLAN-Cutover-Ueberschrift. Gates und Tagesvertrag bleiben als
+  Regelwerk gueltig; die laufende Rueckspiegelung nutzt den MODULRUECKTRANSFER-PLAN
+  (docs/architecture/MODULRUECKTRANSFER-PLAN.md) als Gate-Quelle.
+- **Prioritaeten:** Kohaerent. P1–3 erledigt; P4 nach Release. Aktiver Fokus:
+  MODULRUECKTRANSFER Stufen 6–8, TASKPLAN-Cutover (TASKPLAN #299/#300–#302) und
+  Security-Prio-1 (OPS-TELEM-001 offen; SANDBOX-002-Ressourcenlimit = BACH-Task 1071;
+  OPS-RUN-001 = BACH-Task 1118 — beide unverändert pending; 1062 GUI-Regressionstest,
+  1061 Installer-E2E, 1044 Wiki-Autor ebenfalls offen). Keine weitere offene
+  Roadmap-Position konnte als bereits abgeschlossen verifiziert werden.
+- **Offene Visionen unangetastet (Option A' von #1215 respektiert, rein additiv):**
+  MCP-Server-Bundle-Split (06-03), Persona-System Phase 2 inkl. Boss-Agent-Rolle,
+  Cross-Source-Wissensindex (07-06), Safe-DB Hook-Prompt und Skill-/Plugin-Reset-Hook-
+  Verdrahtung — alle korrekt als OFFEN ausgewiesen; keine Block-Umzuege ins ARCHIV.
+- **Task-DB-Aufraeumung:** Zehn identische Wegwerf-Test-Tasks #1166–#1175 („ich teste ob du
+  antwortest…") geschlossen — die erfragte Antwort ist erbracht (Identitaet: Buddha,
+  integrierter KI-Assistent des BACH-Systems); die Tasks verstopften die Fokus-Liste und
+  kollidierten mit der obsoleten #1175-Cutover-Referenz.
+- **CHANGELOG-Pflege:** Zwei ueberfluessige Merge-Konflikt-Marker-Zeilen im
+  v3.14.0-Changed-Block entfernt (Junk ohne Konfliktpartner; Inhalt war bereits konsolidiert).
+
+---
+
 ## Aktueller Qualitätsfortschritt (2026-07-29)
 
 - Task 1146 ist lokal auf dem Judging-Hold-Branch umgesetzt: `bach --test self QUICK`
@@ -97,6 +134,12 @@ unangetastete Quelle der Wahrheit und **entscheidet selbst, wann** es Schritte u
 
 Methodik/Analyse: `.OS/sovereign-private/_dev/CLUSTER_ANALYSE_PLAN.md`.
 Vorbild bereits in dieser ROADMAP: *"clutch als Routing-Engine uebernehmen"* (Modul ersetzt Fork).
+
+**Status 2026-09-12:** Die Rueckspiegelung laeuft aktiv — Umsetzung ueber den
+MODULRUECKTRANSFER-PLAN (`docs/architecture/MODULRUECKTRANSFER-PLAN.md`):
+Stufen 1–5 ABGESCHLOSSEN (ellmos-tests, ellmos-scheduler, accounts-core CAMT-Salden,
+system-explorer; BACH-Tasks 1217–1221), Stufen 6–8 offen (BACH-Tasks 1222–1224).
+Details: Fokus-Sektion „MODULRUECKTRANSFER" weiter unten.
 
 ---
 
@@ -171,8 +214,17 @@ diesen Marker nicht.
 
 Der Judging-Hold bleibt davon unabhängig bindend: Bis der User ihn ausdrücklich
 aufhebt, gibt es keinen Push, keinen Remote-Schreibkontakt, keine Änderung an
-Submission/Devpost/Video und keinen OneDrive-Mirror. Die folgende Kette ist im
-kanonischen BACH-Task-System als Kategorie `bach2` angelegt:
+Submission/Devpost/Video und keinen OneDrive-Mirror. Die folgende Kette war im
+kanonischen BACH-Task-System als Kategorie `bach2` angelegt.
+
+> **Stand 2026-09-12 (Review #1225):** Die Task-Kette #1184–#1195 existiert nicht
+> mehr in der Task-DB — die IDs wurden am 2026-09-08 mit abgeschlossenen GUI-Tasks
+> neu belegt (#1181 = Layout-Shift, #1184 = Präsenzstatus). Die Rueckspiegelung
+> laeuft seit September 2026 stattdessen ueber den MODULRUECKTRANSFER-PLAN
+> (`docs/architecture/MODULRUECKTRANSFER-PLAN.md`, BACH-Tasks 1217–1224) mit dort
+> definierten Gates; Stufen 1–5 sind abgeschlossen. Gates und Tagesvertrag dieser
+> Sektion bleiben als Regelwerk gueltig; bei Marker `Wettbewerb beendet` waere die
+> Kette unter neuen IDs neu anzulegen.
 
 | ID | Atomarer Task | Abhängigkeiten | Abschlussgrenze |
 |---:|---|---|---|
@@ -311,10 +363,14 @@ kein Feature-Sync mehr). BACH soll den Umgang mit dem Modul prüfen und seinen F
   Notfall-Fallback unter `system/hub/_archive/delegation_legacy/`.
 - **Verifikation:** Die fokussierten Clutch-/Delegations-/Partner-Regressionen liefen am
   2026-07-22 mit `36 passed`; der Live-Migrationsstatus meldete alle acht Quellen extern.
-- **Nächster Modulschritt:** BACH-Task 1181 prüft die gegatete Rückspiegelung von
-  `ellmos-tests` als Quelle der Wahrheit für `tools/testing`.
-- **Doku-Nachlauf:** BACH-Task 1182 zieht die externe, noch auf „vorbereitet" stehende
-  `clutch/docs/BACH_MIGRATION.md` im kanonischen Modul-Repo auf diesen Ist-Stand nach.
+- **Nächster Modulschritt (Stand 2026-09-12: ERLEDIGT):** Die Rückspiegelung von
+  `ellmos-tests` als Quelle der Wahrheit für `tools/testing` ist über den
+  MODULRUECKTRANSFER-Plan Stufe 2 scharfgeschaltet (BACH-Task 1218; Rollback
+  `BACH_TEST_ADAPTER=native`, Regressionstests + Live-Nachweis). Die frühere
+  Task-Referenz #1181 ist obsolet (ID inzwischen mit einem GUI-Task belegt).
+- **Doku-Nachlauf (offen, Task-Referenz #1182 obsolet):** Die externe, noch auf „vorbereitet" stehende
+  `clutch/docs/BACH_MIGRATION.md` ist im kanonischen Modul-Repo weiterhin auf diesen
+  Ist-Stand nachzuziehen (neue Task-ID erforderlich).
 
 ---
 
@@ -359,9 +415,13 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 
 ## Aktuelle Fokus-Bereiche
 
-### TASKPLAN-Cutover: BACH-Task-Schreibpfade anbinden (TASKPLAN #299 / BACH #1175)
+### TASKPLAN-Cutover: BACH-Task-Schreibpfade anbinden (TASKPLAN #299 / #300–#302)
 
 **Status: OFFEN — Vorbereitungs- und Integrationsschnitt; kein automatischer Cutover.**
+
+*(Review 2026-09-12: Die frühere BACH-Task-Referenz #1175 ist obsolet — die ID ist in
+der Task-DB inzwischen ein Wegwerf-Test-Task; der Strang lebt allein in
+TASKPLAN #299/#300–#302.)*
 
 **TASKWRITER-Register | 2026-07-15**
 
@@ -376,6 +436,28 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 - Akzeptanzgrenze: Die Legacy-Tabelle bleibt bis zu einer dokumentierten grünen Testphase unverändert als Fallback. Keine automatische Löschung, Deaktivierung, Veröffentlichung, Freigabe oder Release-Aktion.
 - Offene Nutzer-/Maintainer-Entscheidung: Mirror versus Write-through sowie Source-of-Truth, Konfliktregeln, Fehlerverhalten und Default des Feature-Flags müssen vor #301 verbindlich festgelegt werden. Erst nach grüner Testmatrix darf ein separater Cutover entschieden werden.
 - Prüfstand dieses Schreibauftrags: TASKPLAN-Datenbank-Readback der Parent-/Child-Datensätze ist grün; keine Implementierung der Teilaufgaben wurde vorweggenommen.
+
+### MODULRUECKTRANSFER: Rueckspiegelung der Module (Stufe 8 offen)
+
+**Status: Stufen 1–7 ABGESCHLOSSEN (2026-09-11/12).** Umsetzung nach
+`docs/architecture/MODULRUECKTRANSFER-PLAN.md` (Gates: Rollback-Umgebungsschalter,
+Fail-Closed-Contract, Parallelbetrieb, Single-Source-of-Truth):
+
+| Stufe | Modul/Inhalt | BACH-Task | Status |
+|---|---|---|---|
+| 1 | Inventar & Schnittstellenmatrix | 1217 | ABGESCHLOSSEN |
+| 2 | ellmos-tests (Adapter für tools/testing) | 1218 | ABGESCHLOSSEN |
+| 3 | ellmos-scheduler (Provider-Seam) | 1219 | ABGESCHLOSSEN |
+| 4 | accounts-core Welle 3 (CAMT-Saldenimport) | 1220 | ABGESCHLOSSEN |
+| 5 | system-explorer (Topologie-Audit) | 1221 | ABGESCHLOSSEN |
+| 6 | memoryhooker/workflowhooker (Lifecycle-Hooks) | 1222 | ABGESCHLOSSEN |
+| 7 | sqlite-transit-sync (Replikations-Seam Multi-Host) | 1223 | ABGESCHLOSSEN |
+| 8 | SSOT-Zertifizierung + Fork-Archivierung | 1224 | OFFEN |
+
+Betriebs-Nachläufe: argv-Konvertierung der 4 Scheduler-Produktivjobs vor
+`scheduler external verify --apply`; Windows-Gegenproben (Plan-Regel 4.3);
+echter 3-Host-Transitlauf fuer Stufe 7 (Seam + lokale 3-Wege-Simulation
+bereits nachgewiesen, s. Plan Abschnitt Stufe 7).
 
 ### Priorität 1 - Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
 
@@ -685,8 +767,20 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 - `core/capabilities.py` - CapabilityManager mit 11 definierten Capabilities
 - Trust-Level Enforcement: goldstandard/trusted/untrusted/blacklist
 
-**Phase 4: Sandbox - Stufe 2+3 (OFFEN)**
-- Stufe 2: Subprocess-Isolation (timeout, memory-limit) — nicht begonnen
+**Phase 4: Sandbox - Stufe 2 (KOMPLETT, 2026-09-12, Task #1071)**
+- `core/sandbox.py` - SandboxLimits + run_isolated: Timeout mit
+  Prozessgruppen-Kill, Memory-Limit zweischichtig (RLIMIT_AS im Kind +
+  RSS-Watchdog im Elternprozess via psutil/`ps`-Fallback, weil macOS
+  RLIMIT_AS nicht durchsetzt), RLIMITs fuer CPU/FSIZE/NPROC vorbereitet,
+  Core-Dumps deaktiviert, Windows-Degradation auf Timeout-only
+- `hub/sandbox.py` - alle Operationen (run/eval/test/shell) auf
+  run_isolated umgestellt, neue Operation `limit [mb]`, Policy-Anzeige
+  erweitert (Memory-Limit + Resource-Bounds)
+- Nebenbefund gefixt: `_extract_base_command` Windows-Pfad-Parsing
+  (shlex frass Backslashes; Test war auf POSIX pre-existing rot)
+- Tests: `tests/test_core_sandbox.py` (21 Tests), 97/97 gruen
+
+**Phase 4: Sandbox - Stufe 3 (OFFEN)**
 - Stufe 3: Container-Isolation (Docker/chroot) — nicht begonnen
 - Rollback bei fehlerhaften Erweiterungen
 
@@ -699,7 +793,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 | 2 | Workflow-TUeV v1.1.83 | tuev status/check, usecase list/run | KOMPLETT |
 | 3 | Memory-Konsolidierung | CONSOL_001-007, Code komplett, Tasks in DB | In Progress |
 | 4 | GUI-Erweiterungen Phase 4 | 32 Templates, 16k+ LOC, Scheduler+Chain-Tabs | KOMPLETT |
-| 5 | Steuer-Banking Integration | CAMT.053 Parser existiert, Matching offen | PARTIAL |
+| 5 | Steuer-Banking Integration | CAMT.053-Parser + CLBD-Saldenimport komplett (2026-09-12, MODULRUECKTRANSFER Stufe 4/Task 1220); Buchungs-Matching offen | PARTIAL |
 | 6 | Data-Import-Framework | CSV/JSON Import, Schema-Erkennung | KOMPLETT |
 | 7 | CLI-Handler Erweiterungen | contact, gesundheit, haushalt, steuer | KOMPLETT |
 | 8 | Connector & Message-System v2.1 | Queue, Retry, Circuit Breaker, 3 Adapter | KOMPLETT |

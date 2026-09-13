@@ -11,8 +11,30 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from dataclasses import dataclass
+from typing import Optional
 
-from assistant_core import ChannelConfig, NotificationRecord
+try:
+    from assistant_core import ChannelConfig, NotificationRecord
+except ImportError:  # pragma: no cover - assistant-core Wave 1 hat notify noch nicht
+    @dataclass
+    class ChannelConfig:
+        name: str
+        channel: str
+        endpoint: str
+        auth_config: str
+        is_active: bool
+        last_used: Optional[str]
+        success_count: int
+
+    @dataclass
+    class NotificationRecord:
+        id: int
+        connector_name: str
+        recipient: str
+        content: str
+        processed: bool
+        created_at: str
 
 
 class BachNotifyStorage:

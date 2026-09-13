@@ -38,6 +38,15 @@ CREATE TABLE IF NOT EXISTS secrets (
 """
 
 
+@pytest.fixture(autouse=True)
+def _force_legacy_prosync(monkeypatch):
+    """Dieses Testmodul prueft die LEGACY-ProSync-Mechanik (.bachdb, Merge,
+    Heartbeat). Der Stufe-7-Seam (sqlite-transit-sync) wird hier ueber den
+    dokumentierten Rollback-Schalter abgeschaltet; seine Verdrahtung liegt in
+    test_transit_sync_provider_wiring.py."""
+    monkeypatch.setenv("BACH_USE_EXTERNAL_TRANSITSYNC", "0")
+
+
 @pytest.fixture
 def sync_env(tmp_path):
     db_dir = tmp_path / ".bach"

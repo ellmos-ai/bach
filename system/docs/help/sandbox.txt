@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-03-04
+# Version: 1.1.0
+# Zuletzt validiert: 2026-09-12
 
 SANDBOX HANDLER
 ===============
@@ -11,6 +11,18 @@ Isolierte Code-Ausführung für Python-Skripte, Code-Evaluationen, Unit-Tests un
 Shell-Befehle. Ersetzt E2B MCP. Alle Operationen laufen mit 30 Sekunden Timeout und
 PYTHONIOENCODING=utf-8. Ausgaben werden auf max. 3000 Zeichen (stdout) bzw. 1000 Zeichen
 (stderr) begrenzt.
+
+Sandbox Stufe 2 (Task 1071, core/sandbox.py): Resource-Bounds für alle Subprozesse.
+  - Memory-Limit (Default 512MB, via `bach sandbox limit` konfigurierbar):
+    POSIX setzt RLIMIT_AS im Kindprozess (wirkt unter Linux; macOS ignoriert
+    VM-Limits weitgehend, dort trägt die zweite Schicht die Durchsetzung).
+  - Memory-Watchdog: Eltern-Thread misst RSS des Prozessbäums (psutil, Fallback
+    ps-Aufruf) und killt die Prozessgruppe bei Überschreitung.
+  - Timeout mit Prozessgruppen-Kill (SIGTERM, Grace, SIGKILL): keine
+    verwaisten Enkelprozesse. Core-Dumps sind deaktiviert (RLIMIT_CORE=0).
+  - Windows: nur Timeout (stdlib kann keine Memory-Limits).
+  Weitere Bounds vorbereitet: cpu_sec (RLIMIT_CPU), max_file_mb (RLIMIT_FSIZE),
+  max_processes (RLIMIT_NPROC) — siehe SandboxLimits in core/sandbox.py.
 
 
 OPERATIONEN
@@ -74,6 +86,20 @@ Parameter:
 cwd wird auf temporaeres leeres Verzeichnis gesetzt (Cleanup nach Ausführung).
 
 
+LIMIT
+-----
+Zeigt oder setzt das Memory-Limit (Sandbox Stufe 2).
+
+Syntax: bach sandbox limit [mb]
+
+Parameter:
+  [mb]        - Optional: neues Limit in Megabyte (Minimum 64). Mit 0/keinem
+                Argument wird nur der aktuelle Wert angezeigt.
+
+Persistiert in system_config (Key sandbox.memory_limit_mb). Gilt für run,
+eval, test und shell. Überschreitung bricht mit MEMORY-LIMIT-Meldung ab.
+
+
 BEISPIELE
 =========
 
@@ -92,13 +118,15 @@ bach sandbox shell "pip list | grep requests"
 
 DATEIEN
 =======
-hub/sandbox.py          - Handler-Implementation
+hub/sandbox.py          - Handler-Implementation (Policy, CLI)
+core/sandbox.py         - Stufe 2: SandboxLimits, run_isolated, Watchdog
 docs/help/sandbox.txt   - Diese Datei
 
 
 SIEHE AUCH
 ==========
 hub/base.py             - BaseHandler (Basisklasse)
+core/capabilities.py    - Stufe 1: Capability-System (Trust-Level)
 tools/                  - Zielverzeichnis für Skripte
 TIMEOUT                 - 30 Sekunden Standard, 60 Sekunden für Test
 PYTHONIOENCODING        - utf-8 (Windows-kompatibel)

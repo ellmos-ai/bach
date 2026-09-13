@@ -6,6 +6,166 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+### Added
+
+- **TRANSFER-08: Reife-Zertifizierung & Nullreferenznachweis (Task #1224, MODULRUECKTRANSFER
+  Stufe 8):** Abschlusspruefung aller 8 Modulruecktransfers. Ergebnis:
+  7/8 Module pin-konform (Checkouts arbeitssauber), 225 Waechter-Tests gruen auf
+  mac-studio. Nullreferenznachweis bestanden: kein toter Modul-Altcode
+  (`hub/prosync.py` existiert nicht, ProSync-Strings = aktives Legacy-Verfahren;
+  `hub/daemon.py` = dokumentierter Dauer-Kompat-Wrapper). Feststellung:
+  Archivierung der Fallback-Pfade derzeit kontraindiziert (Haltefrist §1.3 nicht
+  abgelaufen, Pfade sind Rollback-Ziele der Env-Schalter §4.1,
+  Windows-Gegenproben §4.3 offen) → Folgetask TRANSFER-09 (#1235) mit Gates.
+  **Befund B1:** assistant-core-Checkout auf mac-studio nicht pin-konform
+  (v0.1.0 statt 444a1fff/v0.2.0; fetch braucht interaktive Credentials) →
+  Fix-Task #1236. Zertifikat: `docs/architecture/MODULRUECKTRANSFER-ZERTIFIKAT-2026-09-12.md`.
+
+- **TRANSFER-07: sqlite-transit-sync Replikations-Seam (Task #1223, MODULRUECKTRANSFER
+  Stufe 7):** Neuer Provider-Seam `system/hub/transit_sync_provider.py` nach
+  Explorer-Muster (find_spec-Probe, fail-closed Contract gegen
+  SyncConfig/TransitSync/MergeReport/Snapshot, Rollback
+  `BACH_USE_EXTERNAL_TRANSITSYNC=0`). `ExternalTransitSyncEngine` mappt den
+  ProSync-Lebenszyklus auf verifizierte Delta-Snapshots (push/pull/pending/
+  sync/cleanup, Namespace `bach`, Merge-State ausserhalb des Transits).
+  `DBSyncManager.sync_on_start/sync_on_exit/sync` routen lazy ueber die
+  Engine, wenn das Modul installiert ist; Vertragsbruch wird in
+  `get_status()` sichtbar statt still zu degradieren. Nachweise: LWW-
+  Konfliktloesung, Secrets-Ausschluss, State-Gate (kein Replay) und lokale
+  3-Wege-Simulation (WORKSTATION-LG/ASUS-GEI/mac-studio) mit konfliktfreier
+  Konvergenz. 26 neue Tests in `tests/test_transit_sync_provider_wiring.py`
+  (inkl. AST-Waechter); Legacy-ProSync-Tests pinnen den Rollback-Schalter
+  per autouse-Fixture. Pin `sqlite-transit-sync@40e9926` in
+  requirements.txt. Offener Betriebs-Nachlauf: echter 3-Host-Lauf inkl.
+  Windows-Gegenprobe (Plan-Regel 4.3).
+- **Sandbox Stufe 2: Subprocess-Isolation (Task #1071, ROADMAP Phase 4):**
+  Neues Core-Modul `system/core/sandbox.py` mit `SandboxLimits` und
+  `run_isolated()`. Zweischichtige Durchsetzung des Memory-Limits, weil macOS
+  RLIMIT_AS fuer VM-Allokationen nicht durchsetzt: (1) rlimits im Kindprozess
+  via preexec (RLIMIT_AS/CPU/FSIZE/NPROC, RLIMIT_CORE=0; wirkt unter Linux),
+  (2) Memory-Watchdog im Elternprozess, der den RSS des Prozessbaums misst
+  (psutil, POSIX-Fallback per `ps`-Aufruf) und die Prozessgruppe killt.
+  Timeout killt jetzt die komplette Prozessgruppe (SIGTERM, Grace, SIGKILL)
+  statt nur dem Direktkind — keine verwaisten Enkelprozesse mehr.
+  Windows degradiert sauber auf Timeout-only. `hub/sandbox.py` nutzt
+  `run_isolated` fuer run/eval/test/shell; neue Operation
+  `bach sandbox limit [mb]` (persistiert in system_config), `policy` zeigt
+  Memory-Limit und Resource-Bounds-Status. Limits auch laden/speichern via
+  `load_limits_from_db` (Keys sandbox.timeout_sec / sandbox.memory_limit_mb).
+  21 neue Tests in `tests/test_core_sandbox.py`; der fruehere
+  subprocess.run-Mock-Test wurde durch einen echten Verhaltenstest ersetzt.
+  Help-Docs `docs/help/sandbox.txt` v1.1.0.
+
+### Fixed
+
+- **`_extract_base_command` Windows-Pfad-Parsing (Task #1071, Nebenbefund):**
+  shlex im POSIX-Modus frass Backslashes (`C:\Windows\System32\cmd.exe` →
+  `c:windowssystem32cmd`); Windows-Pfade werden jetzt vor shlex erkannt.
+  Der zugehoerige Test war auf POSIX-Hosts pre-existing rot.
+
+### Added
+
+- **memoryhooker & workflowhooker in-process verdrahtet (TRANSFER-06 / Task 1222):**
+  Stufe 6 des Modulruecktransfers. `system/hub/memory_hook_provider.py` haengt
+  memoryhooker an `ChatRuntime.process` (Session-Start-Hinweis einmalig je chat_id,
+  `evaluate_prompt` im Modus remember+search mit Session-Cap/Cooldown, fail-soft);
+  `BachMemoryBackend` implementiert das MemoryBackend-Protocol read-only (`mode=ro`)
+  gegen BACH_DB und liefert damit die „documented read-only API" fuer den reservierten
+  `bach`-Backend-Slot des Moduls (Termmatch x Curation-Ranking, normalisiert auf (0,1]).
+  Audit-Trail: jede Kontextinjektion als JSONL in `~/.bach/memoryhooker_audit.jsonl`.
+  Rollback: `BACH_USE_EXTERNAL_MEMORYHOOKS=0`. `core/hooks.py` erhaelt einen generischen
+  Interceptor-Slot (`register_interceptor`, laeuft in `emit()` vor den Listenern,
+  Meldungen zusaetzlich in `last_interceptor_results`); `system/hub/
+  workflow_hook_provider.py` installiert den `ExternalWorkflowInterceptor` idempotent
+  beim hub-Paketimport (Checks via `cli._run_active_checks` des Moduls — Budget,
+  Cooldown und Idle-Selbstabschaltung bleiben dort; State persistiert; Events:
+  after_command/after_task_done, before_command optional zuschaltbar). Meldungen
+  (z. B. Abschluss-Gate bei uncommitteten Aenderungen) werden in `core/app.py`
+  (after_command) und
+  `hub/task.py` (after_task_done) an die Ausgabe angehaengt; Listener-Rueckgaben
+  bleiben still. Rollback: `BACH_USE_EXTERNAL_WORKFLOWHOOKS=0` (live). Der
+  Injektor-Pfad (`_get_bach_context`) und der Subprozess-Transport
+  (`hub/_services/chat/hooks.py`, chat_hooks.json) bleiben unberuehrt. Pins:
+  `memoryhooker@94611c2`, `workflowhooker@6d2b190`. Waechter:
+  `tests/test_hook_provider_wiring.py` (51 Tests).
+
+- **system-explorer Topologie- & System-Audit verdrahtet (TRANSFER-05 / Task 1221):**
+  Native Preflight-Audits in `system/hub/system_audit.py` (unabhaengig vom externen Modul):
+  Ports 8000 (GUI-Server) und 8081 (BACH_CONTROL_PORT) mit connect-Test und
+  Besitzer-Identifikation (psutil mit lsof-Fallback fuer macOS ohne Root), Zombie-Prozesse
+  (defunct + BACH-Marker) und Lock-/PID-Dateien (live/stale/foreign/unparseable; int- und
+  JSON-PIDs). Provider-Seam `system/hub/explorer_provider.py` nach scheduler_provider-Muster:
+  Rollback `BACH_USE_EXTERNAL_EXPLORER=0`, Scan-Budget `BACH_EXPLORER_SCAN_BUDGET` (Default
+  10s), fail-closed Vertragspruefung, begrenzter Topologie-Scan in temporaeren Store mit
+  Cleanup. Verdrahtet in `bach setup preflight` (opt-in Topologie-Sektion, fail-soft) und
+  `bach upgrade --check` (JSON-Feld `topology`, Text-Sektion, Drift gegen
+  `data/explorer_state/last_topology.json`). Nachweise (mac-studio): Preflight klassifiziert
+  die Live-Ports korrekt, Topologie-Scan 251 Dateien/9 Registries, Rollback-Matrix gruen,
+  Drift-Monitoring funktionsfaehig (280→281 erkannt, danach 0). Regressionstests:
+  `tests/test_explorer_provider_wiring.py` (31 Tests, deterministisch: Lock-Klassifikation
+  via _pid_bach_states-Stub, Upgrade-JSON-Pfad gegen isoliertes dist-Schema statt Skip).
+
+- **ellmos-Scheduler Provider-Seam verdrahtet (TRANSFER-03 / Task 1219):**
+  `system/hub/scheduler_provider.py` ist jetzt vollstaendig mit dem installierten
+  `ellmos-scheduler` (v0.3.3, Pin 296b6f5 in requirements.txt) verdrahtet: Rollback-Schalter
+  `BACH_USE_EXTERNAL_SCHEDULER=0` (Plan-Regel 4.1) in Probe/Doctor, Adapter-Factory
+  `create_external_scheduler_adapter` mit fail-closed Vertragspruefung. Neue CLI-Gruppe
+  `bach scheduler external status|jobs|verify [--apply]`: read-only Verify der Legacy-Jobs
+  (Quelle via SQLite mode=ro), idempotente Praemigration mit Provenienz `bach:<id>` in den
+  isolierten State-Store `system/data/scheduler_external/state.db`. Der Legacy-Job-Store
+  bleibt unberuehrt als Fail-Closed-Fallback. Nachweise (mac-studio): Daemon-Lauf mit
+  Lease-Claim und Run-Receipts, Produktiv-Verify 4 Jobs/0 ready/4 skipped mit dokumentierten
+  Gruenden (Bare-Commands ohne PATH-Executable; Shell-Semantik wird bewusst nicht emuliert),
+  Rollback-Gate live verifiziert. Regressionstests:
+  `tests/test_scheduler_provider_wiring.py` (28 Tests inkl. AST-Waechter und Tick-Ausfuehrung).
+
+### Fixed
+
+- **CAMT-Saldenimport scharfgeschaltet (TRANSFER-04 / Task 1220, accounts-core Welle 3):**
+  Die delegierte Saldenpersistenz (Welle 2, `AccountStore.persist_camt_balances`) war tot,
+  weil ihr Produzent fehlte: Der D-013-Fix `CamtParser.parse_balances()` (9ff3df2) existierte
+  nur in der gitignorierten Betriebsinstallation; im oeffentlichen Baum degradierte
+  `_import_camt` via `hasattr`-Fallback lautlos zu „keine Salden". Zusaetzlich fehlte die in
+  requirements.txt deklarierte Abhaengigkeit `defusedxml` im BACH-Venv (Importfehler).
+  Behoben: `parse_balances()` im oeffentlichen `tools/steuer/camt_parser.py` implementiert
+  (Contract exakt wie accounts-core dokumentiert; nur CLBD — OPBD bewusst nicht; DBIT
+  negiert; DtTm → Datumsteil; ohne IBAN → `UNKNOWN`-Sentinel mit Warnung beim Konsumenten),
+  `hub/steuer.py` ruft direkt auf (hasattr-Fallback entfernt), `defusedxml>=0.7.1` ins Venv
+  installiert. End-to-End verifiziert: UPDATE-Pfad (IBAN-normalisiert, Kontoname bleibt),
+  INSERT-Pfad (`CAMT-Import ****3000`), Dry-Run zeigt Salden und schreibt nichts; beide
+  Produktiv-DBs haben 0 Konten (keine Datenbetroffenheit). Regressionswaechter ausgebaut:
+  `tests/test_accounts_via_accounts_core.py` 9 → 23 Tests inkl. tote-Kette-Waechter
+  (`parse_balances` muss existieren, steuer.py ruft direkt, camt_parser.py bleibt reiner
+  XML-Produzent ohne sqlite/bank_accounts und in GUARDED_FILES aufgenommen).
+
+- **ellmos-tests-Adapter scharfgeschaltet (TRANSFER-02 / Task 1218):** `system/hub/test.py`
+  war wegen ungueltiger String-Konkatenation (3 Stellen) nicht importierbar — der Adapter war
+  implementiert, aber tot. Nach dem Fix laeuft `bach --test` bevorzugt ueber das externe
+  `ellmos-tests` (Geschwister-Checkout oder `ELLMOS_TESTS_PATH`), `ELLMOS_PROFILES` entspricht
+  jetzt dem Contract von `run_external.py` (QUICK/STANDARD/FULL), `--dry-run` simuliert in
+  allen Pfaden (self/run/compare) ohne Ausfuehrung und `--native`/`--legacy` rollt
+  unterbrechungsfrei auf den legacy `test_runner.py` zurueck. Regressionstests:
+  `tests/test_test_handler_adapter.py` (15 Tests). Nachweise: QUICK via Adapter (B001 5.0)
+  und Legacy-Rollback (5.0/5.0) vom 2026-09-12.
+
+### Docs
+
+- **Help-Forensik scheduler.txt (Task 1226):** Die in TRANSFER-03 (Task 1219) eingefuehrte
+  CLI-Gruppe `bach scheduler external status|jobs|verify [--apply]` war in der deutschen
+  Help nicht dokumentiert → neuer Abschnitt „Externer Scheduler" inkl. Rollback
+  `BACH_USE_EXTERNAL_SCHEDULER=0`, Fail-Closed-Verhalten, isoliertem State-Store
+  (data/scheduler_external/) und Verify-Skip-Regel fuer Bare-Commands. Toter Verweis
+  `docs/CONCEPT_daemon_policy.md` entfernt (Datei existiert nirgends im Repo, nirgends
+  referenziert). Stand/Validierung aktualisiert auf 2026-09-12. Forensik-Bericht:
+  logs/help_forensic/REPORT_2026-09-12_scheduler.md
+- **Roadmap-Review 2026-09-12 (Task 1225):** Review-Abschnitt in ROADMAP.md erneuert:
+  MODULRUECKTRANSFER-Stufen 1–5 (Tasks 1217–1221) als erledigt nachgetragen inkl. neuer
+  Fokus-Sektion für die offenen Stufen 6–8 (Tasks 1222–1224); obsolete Task-Referenzen
+  (#1175, #1181, #1184–#1195) additiv korrigiert, deren IDs in der Task-DB zwischenzeitlich
+  mit GUI- bzw. Test-Tasks neu belegt wurden; Steuer-Banking-Phase 5 auf „Saldenimport
+  komplett" aktualisiert; zwei überflüssige Merge-Konflikt-Marker-Zeilen im
+  v3.14.0-Changed-Block entfernt; Stand/Review-Header auf 2026-09-12 (Task #1225) gesetzt.
+
 ## [v3.14.0] - 2026-09-11
 
 ### Added
@@ -33,8 +193,6 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Changed
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 - **Self-Heal- und Test-Suite-Härtung (2026-09-10):** `system/hub/base.py` erkennt jetzt auch das Unterordner-Layout `self.base_path / "system" / "data" / "bach.db"`, wenn `base_path` die Repo-Wurzel ist (etwa in isolierten Temp-Verzeichnissen), und schließt das Produktions-Root aus. `RestoreHandler.restore_by_category` und `WikiHandler._fetch_article_metadata` fangen fehlende Tabellen (`distribution_manifest`, `wiki_articles`) per `sqlite3.OperationalError` fail-safe ab und fallen transparent auf leere Manifeste bzw. Datei-Lookup zurück. Die Testsuite (`test_memory_working_cleanup.py`, `test_registry_watcher.py`, `test_self_heal_handlers.py`, `test_smoke.py`) besteht wieder vollständig mit 123/123 grünen Tests.
 - **Notify-Fachkern nach `assistant-core` ausgelagert (Welle 3):** Queue-Orchestrierung
   und die neutralen Webhook-, Discord-, Slack- und E-Mail-Sender liegen jetzt im

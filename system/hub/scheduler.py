@@ -32,7 +32,11 @@ import time
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
-from .scheduler_provider import probe_scheduler_provider
+from .scheduler_provider import (
+    ROLLBACK_ENV_VAR,
+    create_external_scheduler_adapter,
+    probe_scheduler_provider,
+)
 
 
 class SchedulerHandler(BaseHandler):
@@ -79,7 +83,8 @@ class SchedulerHandler(BaseHandler):
             "jobs": "Aktive Jobs auflisten",
             "run": "Job manuell ausfuehren (bach scheduler run ID)",
             "logs": "Letzte Logs anzeigen",
-            "session": "Session-System verwalten (bach scheduler session ...)"
+            "session": "Session-System verwalten (bach scheduler session ...)",
+            "external": "Externer ellmos-Scheduler: status|jobs|verify [--apply] (Rollback: BACH_USE_EXTERNAL_SCHEDULER=0)"
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -88,6 +93,10 @@ class SchedulerHandler(BaseHandler):
         # Session System (System-Service)
         if operation == "session":
             return self._handle_session(args, dry_run)
+
+        # External scheduler module seam (TRANSFER-03, MODULRUECKTRANSFER Stufe 3)
+        if operation == "external":
+            return self._handle_external(args, dry_run)
 
         # Original GUI Jobs System
         if operation == "start":
@@ -373,19 +382,31 @@ class SchedulerHandler(BaseHandler):
     def _check_scheduler_provider(self) -> dict:
         """Report the modular scheduler seam without changing runtime behavior."""
         provider = self.scheduler_provider
+        if provider.external:
+            message = (
+                "Unabhängiges ellmos-scheduler-Modul ist importierbar "
+                "(Verdrahtung via `bach scheduler external ...`; Rollback: "
+                f"{ROLLBACK_ENV_VAR}=0)."
+            )
+        elif "rollback" in provider.reason:
+            message = (
+                "BACH nutzt den Legacy-Scheduler; externer Provider durch "
+                f"{ROLLBACK_ENV_VAR}=0 bewusst abgeschaltet (Rollback aktiv)."
+            )
+        else:
+            message = (
+                "BACH nutzt noch den Legacy-Scheduler; ellmos-scheduler ist "
+                "nicht in dieser Python-Umgebung installiert."
+            )
         return {
             "name": "scheduler_provider",
             "status": "ok" if provider.external else "warn",
-            "message": (
-                "Unabhängiges ellmos-scheduler-Modul ist importierbar."
-                if provider.external
-                else "BACH nutzt noch den Legacy-Scheduler; ellmos-scheduler ist "
-                "nicht in dieser Python-Umgebung installiert."
-            ),
+            "message": message,
             "details": {
                 "provider": provider.name,
                 "module": provider.module,
                 "reason": provider.reason,
+                "rollback_env_var": ROLLBACK_ENV_VAR,
             },
         }
 
@@ -1055,6 +1076,218 @@ class SchedulerHandler(BaseHandler):
 
         except Exception as e:
             return (False, f"[ERROR] Log-Fehler: {e}")
+
+    # ============================================================
+    # External scheduler module seam
+    # (TRANSFER-03, MODULRUECKTRANSFER-PLAN Stufe 3)
+    #
+    # Verdrahtet den Provider-Seam mit dem installierten ellmos-scheduler.
+    # Fail-Closed: Legacy-Job-Store bleibt unberuehrt; der externe Scheduler
+    # fuehrt einen isolierten State-Store (kein Legacy-DB-Schreibzugriff).
+    # Rollback: BACH_USE_EXTERNAL_SCHEDULER=0 (MODULRUECKTRANSFER-PLAN 4.1).
+    # ============================================================
+
+    def _external_state_db(self) -> Path:
+        """Isolierter State-Store des externenSchedulers (nie die Legacy-DB)."""
+        env_path = os.environ.get("BACH_EXTERNAL_SCHEDULER_DB")
+        if env_path:
+            return Path(env_path).expanduser().resolve()
+        return self.data_dir / "scheduler_external" / "state.db"
+
+    def _external_provider_gate(self) -> tuple | None:
+        """Fail-Closed-Gate fuer explizite external-Befehle (kein stiller Fallback)."""
+        provider = probe_scheduler_provider()
+        if provider.external:
+            return None
+        if "rollback" in provider.reason:
+            hint = (
+                f"Rollback aktiv ({ROLLBACK_ENV_VAR}=0). Zum Aktivieren "
+                "die Umgebungsvariable entfernen oder auf 1 setzen."
+            )
+        else:
+            hint = (
+                "ellmos-scheduler ist in dieser Python-Umgebung nicht installiert "
+                "(Klon + pip install -e, vgl. requirements.txt)."
+            )
+        return False, f"[ERROR] Externer Scheduler nicht verfuegbar: {provider.reason}\n{hint}"
+
+    def _external_help(self) -> str:
+        return "\n".join([
+            "=== EXTERNAL SCHEDULER (ellmos-scheduler) ===",
+            "",
+            "Verwendung:",
+            "  bach scheduler external status     Status des externen State-Stores",
+            "  bach scheduler external jobs       Jobs im externen Store auflisten",
+            "  bach scheduler external verify     Legacy-Jobs read-only praemigrieren (Dry-Run)",
+            "  bach scheduler external verify --apply  Legacy-Jobs idempotent uebernehmen",
+            "",
+            "Optionen:",
+            "  --json   Maschinenlesbare Ausgabe",
+            "",
+            f"State-Store: {self._external_state_db()}",
+            f"Rollback: {ROLLBACK_ENV_VAR}=0 erzwingt den internen Scheduler",
+        ])
+
+    def _local_timezone_name(self) -> str:
+        """Lokale IANA-Zone; der Legacy-Daemon rechnet in Ortszeit (Due-Semantik)."""
+        tzinfo = datetime.now().astimezone().tzinfo
+        key = getattr(tzinfo, "key", None)
+        return key if isinstance(key, str) else "UTC"
+
+    def _handle_external(self, args: list, dry_run: bool = False) -> tuple:
+        json_output = self._has_flag(args, "--json")
+        flags = {"--json", "--apply", "--dry-run", "-n"}
+        positional = [a for a in args if a not in flags]
+        sub = positional[0].lower() if positional else "status"
+
+        if sub in ("help", "-h"):
+            return True, self._external_help()
+
+        gate = self._external_provider_gate()
+        if gate is not None:
+            return gate
+
+        state_db = self._external_state_db()
+        try:
+            adapter = create_external_scheduler_adapter(state_db)
+        except Exception as exc:
+            return False, f"[ERROR] Externer Scheduler konnte nicht geladen werden: {exc}"
+
+        if sub == "status":
+            return self._external_status(adapter, state_db, json_output)
+        if sub == "jobs":
+            return self._external_jobs(adapter, json_output)
+        if sub == "verify":
+            apply_import = "--apply" in args
+            return self._external_verify(
+                adapter,
+                state_db,
+                apply_import=apply_import,
+                json_output=json_output,
+                dry_run=dry_run,
+            )
+        return False, f"Unbekanntes external-Subkommando: {sub}\n\n{self._external_help()}"
+
+    def _external_status(self, adapter, state_db: Path, json_output: bool) -> tuple:
+        try:
+            payload = adapter.status()
+        except Exception as exc:
+            return False, f"[ERROR] externer Status konnte nicht gelesen werden: {exc}"
+        if json_output:
+            payload["state_db"] = str(state_db)
+            payload["source_db"] = str(self.user_db)
+            return True, self._json_dump(payload)
+        runs = payload.get("runs", {})
+        jobs = payload.get("jobs", {})
+        lines = [
+            "=== EXTERNAL SCHEDULER STATUS (ellmos-scheduler) ===",
+            f"State-DB:  {state_db}",
+            f"Quelle:    {self.user_db} (read-only)",
+            "",
+            f"Jobs:      {jobs.get('total', 0)} total, {jobs.get('enabled', 0)} aktiv",
+            f"Runs:      {runs.get('total', 0)} total, {runs.get('succeeded', 0)} erfolgreich, {runs.get('failed', 0)} fehlgeschlagen",
+            f"Letzter Tick: {payload.get('last_tick_at') or '-'}",
+            "",
+            "Hinweis: Der Legacy-Scheduler-Store bleibt als Fail-Closed-Fallback",
+            "unberuehrt erhalten (MODULRUECKTRANSFER-PLAN Stufe 3).",
+        ]
+        return True, "\n".join(lines)
+
+    def _external_jobs(self, adapter, json_output: bool) -> tuple:
+        try:
+            jobs = adapter.jobs()
+        except Exception as exc:
+            return False, f"[ERROR] externe Jobs konnten nicht gelesen werden: {exc}"
+        if json_output:
+            return True, self._json_dump({"provider": "ellmos-scheduler", "jobs": jobs})
+        if not jobs:
+            return True, (
+                "Keine Jobs im externen State-Store.\n"
+                "Uebernahme pruefen: bach scheduler external verify"
+            )
+        lines = [
+            "=== EXTERNAL SCHEDULER JOBS (ellmos-scheduler) ===",
+            f"{'ID':<6} {'Typ':<10} {'Status':<10} {'Naechster Lauf':<26} Name",
+        ]
+        for job in jobs:
+            lines.append(
+                f"{str(job.get('id')):<6} "
+                f"{str(job.get('job_type') or '-'):<10} "
+                f"{str(job.get('status') or '-'):<10} "
+                f"{str(job.get('next_run') or '-'):<26} "
+                f"{job.get('name') or '-'}"
+            )
+        return True, "\n".join(lines)
+
+    def _external_verify(
+        self,
+        adapter,
+        state_db: Path,
+        *,
+        apply_import: bool,
+        json_output: bool,
+        dry_run: bool,
+    ) -> tuple:
+        """Praemigration der Legacy-Jobs in den externen Store.
+
+        Read-Only im Default (Quelle wird mit mode=ro geoeffnet, dry-run).
+        Mit --apply werden unterstuetzte Jobs idempotent uebernommen; bereits
+        vorhandene Ziel-Jobs werden nie ueberschrieben. Chains/Event/Manual-
+        Jobs werden mit explizitem Grund uebersprungen (Verifikations-Nachweis).
+        """
+        effective_dry_run = (not apply_import) or dry_run
+        try:
+            report = adapter.import_legacy(
+                self.user_db,
+                timezone_name=self._local_timezone_name(),
+                bach_root=self.base_path.parent,
+                dry_run=effective_dry_run,
+            )
+        except FileNotFoundError:
+            return False, f"[ERROR] Legacy-DB nicht gefunden: {self.user_db}"
+        except ValueError as exc:
+            return False, f"[ERROR] Import abgelehnt: {exc}"
+        except Exception as exc:
+            return False, f"[ERROR] Verify fehlgeschlagen: {exc}"
+
+        payload = report.to_dict()
+        payload["source_db"] = str(self.user_db)
+        payload["state_db"] = str(state_db)
+        payload["mode"] = "dry-run" if effective_dry_run else "apply"
+        if json_output:
+            return True, self._json_dump(payload)
+
+        skipped = [item for item in payload["items"] if item["action"] == "skipped"]
+        ready = [item for item in payload["items"] if item["action"] in ("ready", "imported")]
+        lines = [
+            "=== EXTERNAL SCHEDULER VERIFY (ellmos-scheduler) ===",
+            f"Quelle:   {self.user_db} (read-only)",
+            f"Ziel:     {state_db}",
+            f"Modus:    {'DRY-RUN (kein Schreibzugriff auf Ziel)' if effective_dry_run else 'APPLY (idempotent, ueberschreibt nie)'}",
+            "",
+            f"Legacy-Jobs: {report.total}",
+            f"  uebernehmen{' (dry-run: bereit)' if effective_dry_run else ''}: {len(ready)}",
+            f"  uebersprungen (expliziter Grund): {report.skipped}",
+            "",
+        ]
+        if ready:
+            lines.append("Jobs zur Uebernahme:")
+            for item in ready:
+                lines.append(f"  [OK]   #{item['source_job_id']} -> {item['target_job_id']}")
+            lines.append("")
+        if skipped:
+            lines.append("Uebersprungene Jobs (Grund dokumentiert):")
+            for item in skipped:
+                lines.append(f"  [SKIP] #{item['source_job_id']}: {item['reason']}")
+            lines.append("")
+        if effective_dry_run:
+            lines.append("Naechster Schritt: bach scheduler external verify --apply")
+        else:
+            lines.append(
+                "Uebernahme abgeschlossen. 14-Tage-Parallelbetrieb (Plan-Gate 4) "
+                "vor jeder Umschaltung beobachten; BACH nutzt weiter den Legacy-Store."
+            )
+        return True, "\n".join(lines)
 
     def _strip_scheduler_control_flags(self, args: list) -> list[str]:
         """Entfernt Steuer-Flags und liefert den eigentlichen Text-/Grund-Teil."""

@@ -8,7 +8,10 @@ import re
 import sqlite3
 from pathlib import Path
 
-from assistant_core import NotificationService
+try:
+    from assistant_core import NotificationService
+except ImportError:  # assistant-core Wave 1 hat notify noch nicht
+    from hub._notify_service import NotificationService
 from hub import notify as notify_module
 from hub.notify import NotifyHandler
 from hub.notify_storage import BachNotifyStorage

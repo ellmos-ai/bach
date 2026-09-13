@@ -1104,6 +1104,9 @@ class ChatSession:
         self.max_tool_rounds: Optional[int] = None
         self.custom_system_prompt: str = ""
         self.chat_id: str = ""
+        # OPS-RUN-001: Operator-Steuerung (steer/pause/resume/checkpoint) an
+        # Modell-/Tool-Grenzen. None = inaktiv (z.B. Telegram-Chat).
+        self.operator_control: Any = None
 
 
 
@@ -1398,6 +1401,25 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             pass
         return "\n\n".join(parts)
 
+    def _get_memory_hook_context(self, text: str, chat_id: str) -> str:
+        """Memoryhooker-Kontext (Stufe 6) -- fail-soft, liefert nie einen Abbruch.
+
+        Der Seam haengt in process() VOR dem Prompt-Aufbau: session_start_message
+        (einmalig) + evaluate_prompt (Modus remember+search, Session-Cap,
+        Cooldown) gegen BachMemoryBackend (read-only gegen die BACH-DB).
+        Rollback: BACH_USE_EXTERNAL_MEMORYHOOKS=0. Fehlt das Modul oder
+        klemmt der Hook, ist das Ergebnis "" -- der Chat laeuft weiter.
+        """
+        try:
+            from hub.memory_hook_provider import get_shared_memory_hook
+            db_path = getattr(getattr(self, "memory", None), "db_path", None)
+            hook = get_shared_memory_hook(db_path=db_path)
+            if hook is None:
+                return ""
+            return hook.hook_context(text, chat_id) or ""
+        except Exception:
+            return ""
+
     async def process(self, text: str, chat_id: str, *, backend=None, model=None, skip_compute_gate: bool = False, **kwargs) -> str:
         """Verarbeitet eine User-Nachricht und gibt die Antwort zurück."""
         # Der eine Punkt, an dem jeder Modell-Load vorbeikommt: Telegram,
@@ -1422,10 +1444,16 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             await self._summarize(session)
 
         bach_ctx = self._get_bach_context(text)
+        # memoryhooker-Seam (MODULRUECKTRANSFER Stufe 6): dynamisch injizierter
+        # Memory-Kontext mit Session-Cap/Cooldown und Audit-Trail. Fail-soft,
+        # Rollback via BACH_USE_EXTERNAL_MEMORYHOOKS=0.
+        hook_ctx = self._get_memory_hook_context(text, chat_id)
 
         sys_prompt = getattr(session, "custom_system_prompt", "") or self.build_system_prompt(session)
         if bach_ctx and not getattr(session, "custom_system_prompt", ""):
             sys_prompt += f"\n\n--- BACH ---\n{bach_ctx}"
+        if hook_ctx and not getattr(session, "custom_system_prompt", ""):
+            sys_prompt += f"\n\n--- MEMORY-HOOK ---\n{hook_ctx}"
 
         msgs = [{"role": "system", "content": sys_prompt}] + session.messages
 
@@ -1459,6 +1487,34 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             if max_rounds > 0 and round_num > max_rounds:
                 session.current_tool = ""
                 return result.get("content", "") or "(Max Tool-Runden erreicht)"
+
+            # OPS-RUN-001: Operator-Steuerung an der Modell-Grenze konsumieren.
+            # Nur aktiv, wenn die Session ein Control-Verzeichnis traegt
+            # (Agent-Laeufe); Telegram-Chat etc. bleiben unveraendert.
+            ctrl = getattr(session, "operator_control", None)
+            if ctrl is not None:
+                try:
+                    pause_info = await ctrl.wait_if_paused()
+                    if pause_info.get("timed_out"):
+                        msgs.append({"role": "user", "content":
+                            "[SYSTEM-HINWEIS: Eine Operator-Pause wurde nicht "
+                            "aufgehoben; der Lauf wurde nach Ablauf der "
+                            "Wartegrenze fortgesetzt.]"})
+                    for note in ctrl.drain_notes():
+                        log.info("Operator-Hinweis injiziert (Runde %d)", round_num)
+                        msgs.append({"role": "user", "content":
+                            f"[OPERATOR-HINWEIS vom {note.get('requested_at', '?')}]\n"
+                            f"{note.get('message', '')}"})
+                    cpt = ctrl.consume_new_checkpoint()
+                    if cpt:
+                        log.info("Operator-Checkpoint bestaetigt (Runde %d)", round_num)
+                        msgs.append({"role": "user", "content":
+                            f"[OPERATOR-CHECKPOINT vom {cpt.get('acknowledged_at', '?')}]\n"
+                            f"{cpt.get('message', 'Sicherer Checkpoint erreicht.')}"})
+                except Exception as e:
+                    # Steuerung darf den Lauf nie gefährden.
+                    log.warning("Operator-Steuerung fehlgeschlagen (ignoriert): %s", e)
+
             try:
                 result = await active_backend.chat(
                     msgs, tools=tools, think=session.think, model=session.model

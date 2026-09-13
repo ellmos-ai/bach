@@ -660,6 +660,9 @@ class TaskHandler(BaseHandler):
                     hooks.emit('after_task_done', {
                         'task_id': task_id, 'title': existing_row['title']
                     })
+                    # Interceptor-Meldungen sichtbar machen (Stufe 6)
+                    for hr in (getattr(hooks, 'last_interceptor_results', None) or []):
+                        results.append(str(hr))
                 except Exception:
                     pass
 

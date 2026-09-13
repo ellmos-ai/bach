@@ -2790,7 +2790,10 @@ Dieser Eigenbeleg wurde fuer die Steuererklarung {steuerjahr} erstellt.
 
             parser = CamtParser(path)
             txs = parser.parse()
-            balances = parser.parse_balances() if hasattr(parser, 'parse_balances') else []
+            # Welle 3 (Task 1220): parse_balances() existiert jetzt im oeffentlichen
+            # Baum (D-013). Der hasattr-Fallback verschleierte die tote Kette --
+            # ohne die Methode waere der Saldenimport still ausgefallen.
+            balances = parser.parse_balances()
 
             if dry_run:
                 bal_info = "; ".join(
