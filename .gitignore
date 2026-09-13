@@ -289,3 +289,6 @@ PLAN.txt
 /_after-care/
 /LOCK*.txt
 /system/tools/testing/results/
+
+# Testergebnisse (werden erzeugt, nicht versioniert)
+system/tools/testing/results/
