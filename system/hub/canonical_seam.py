@@ -132,7 +132,11 @@ def _points_elsewhere(seam):
     Nur ein Gegenbeweis: keine Distribution oder keine URLs heisst NICHT "fremd".
     """
     urls = _declared_urls(seam.distribution)
-    return bool(urls) and not any(seam.repo_url in url for url in urls)
+    # Gross-/Kleinschreibung ignorieren: Hosts sind case-insensitive, und eine
+    # Distribution darf `https://GitHub.com/ellmos-ai/...` schreiben, ohne deshalb
+    # als fremd zu gelten (Hinweis aus dem Zweitmodell-Review zu PR #43).
+    erwartet = seam.repo_url.lower()
+    return bool(urls) and not any(erwartet in url.lower() for url in urls)
 
 
 def _foreign_package_hint(seam):

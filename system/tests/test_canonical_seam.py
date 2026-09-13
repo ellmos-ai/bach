@@ -168,6 +168,17 @@ def test_a_distribution_without_urls_is_not_treated_as_foreign(monkeypatch):
     assert require_canonical(make_seam()) is sys.modules["stub_canonical_module"].WebScraper
 
 
+def test_url_case_does_not_decide_identity(monkeypatch):
+    """Hosts are case-insensitive; a capitalised URL is not a foreign package."""
+    install(monkeypatch, "stub_canonical_module", good_module())
+    monkeypatch.setattr(
+        canonical_seam, "_declared_urls",
+        lambda _name: ("https://GitHub.com/ellmos-AI/Web-Scraper",),
+    )
+
+    assert require_canonical(make_seam(repo_url="github.com/ellmos-ai/web-scraper"))
+
+
 def test_our_own_urls_are_accepted(monkeypatch):
     install(monkeypatch, "stub_canonical_module", good_module())
     monkeypatch.setattr(
