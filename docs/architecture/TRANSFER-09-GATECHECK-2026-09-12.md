@@ -159,3 +159,24 @@ Regression liegt in einem Zwischen-Commit an `system/gui/server.py` (+51 Zeilen:
   Erst wenn der Fix gelandet ist, kann der Operator den aktuellen `main`-HEAD verwenden; bis dahin `5e64e07`.
 - **Status Task #1253:** open/BLOCKED auf Operator (echter Windows-Lauf nicht lokal ausführbar) +
   Pin-Drift/Regression dokumentiert. #1243/#1235 verbleiben OPEN („Erst bei Parität gilt Gätung vor Ablösung").
+
+## Re-Verifizierung Gate 2 (5) — 2026-09-13 11:29 — BACH qwen3.8:27b-mlx (Task #1253)
+**Regression #1280 GEFIXT — aktueller main-HEAD jetzt GRÜN.** Zwischen (4) und jetzt landete
+`b529218` (fix(server): bank-accounts roundtrip success=False — gelöschten Import-Block
+`assistant_core.MessageStore` / `accounts_core.AccountStore` / `_messages()` wiederhergestellt
++ `_account_store()` Helper; Parität 5 Dateien Stufen 2/3/5/7 → 110 passed). Der Defekt war die
+selbe Import-Löschung, die in (4) dokumentiert war; der Fix ist im Baum (HEAD `60d9888`).
+- **Live-Rerun am aktuellen HEAD `60d9888` (venv /Users/lukas/.venvs/bach, python3.12):**
+   **110 passed** (test_scheduler_provider + _wiring + test_accounts_via_accounts_core
+   + test_explorer_provider_wiring + test_transit_sync_provider_wiring), **stabil über 2 Läufe**
+   (2.53s / 2.31s). Früherer Comb-Run „1 error" = transienter `~/.bach`-SHM-Artefakt (Rest eines
+   Vorlaufs, conftest-Teardown), nicht einer der 5 Paritätsfälle → in Isolation `1 passed`, weg bei Rerun.
+- **Folgerung:** Parität ist am **aktuellen main-HEAD `60d9888` GRÜN**. Der **grüne Pin rückt von
+   `5e64e07` auf den aktuellen main-HEAD** — der Operator muss NICHT `git checkout 5e64e07`, sondern
+  kann den aktuellen `main`-HEAD verwenden (sofern pin-konform; `git rev-parse --short HEAD` abgleichen).
+- **Gate-Matrix-Zeile 2 `Windows-Gegenprobe` = ⬜ offen → bleibt ⬜ (kein fälschliches ✅).**
+  Der macOS-Ersatznachweis ist grün, aber die EIGENTLICHE Windows-Gegenprobe auf `WORKSTATION-LG`
+  ist noch nicht gelaufen — das bleibt reine Operator-Evidenz (lokaler Host nicht erreichbar).
+- **Status Task #1253:** weiterhin open/BLOCKED auf Operator-Host-Lauf, aber **Pin-Blockade behoben**
+  (kein `5e64e07`-Checkout nötig mehr). #1243/#1235 verbleiben OPEN („Erst bei Parität gilt Gätung
+  vor Ablösung" — Parität ist jetzt grün, aber Windows-Gegenprobe noch offen).

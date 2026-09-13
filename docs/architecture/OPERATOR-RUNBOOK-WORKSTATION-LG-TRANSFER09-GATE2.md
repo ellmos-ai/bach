@@ -34,14 +34,16 @@ eigentliche Windows-Gegenprobe.
 | `test_transit_sync_provider_wiring.py` | 7 | 26 ✅ |
 | **Summe** | | **110 Tests grün in ~2.6 s** |
 
-Repo-Basis (grüner Paritäts-Pin): `git rev-parse --short HEAD` = `5e64e07` (branch `main`), venv `/Users/lukas/.venvs/bach`
+Repo-Basis (grüner Paritäts-Pin): `git rev-parse --short HEAD` = **aktueller main-HEAD `60d9888`** (branch `main`), venv `/Users/lukas/.venvs/bach`
 (editable Installs aus `~/services/*`), `ellmos_scheduler`/`accounts_core`/`sqlite_transit_sync`/
 `system_explorer` importierbar.
 > ⚠️ REGRESSION 2026-09-12 ~14:2X (Task #1253): Der Repo-HEAD ist auf `c59b0da` vorgerückt; dort
 > ist die Parität **ROT** (`109 passed, 1 failed, 1 error` — `test_accounts_via_accounts_core`
 > `test_create_list_update_delete_roundtrip` liefert `success: False`, Regression in
-> `system/gui/server.py`). Der Operator muss den **grünen Pin `5e64e07`** auschecken
-> (`git checkout 5e64e07`), NICHT `c59b0da`. Siehe Gate-Check „Re-Verifizierung Gate 2 (4)".
+> **Stand 2026-09-13 11:29 (Gate-Check Re-Verifizierung (5)):** Regression #1280 GEFIXT (Commit
+> `b529218`), aktueller main-HEAD `60d9888` = 110 passed (stabil). Der Operator kann den
+> **aktuellen main-HEAD** verwenden (pin-konform abgleichen), NICHT `git checkout 5e64e07` mehr.
+> Die EIGENTLICHE Windows-Gegenprobe auf `WORKSTATION-LG` bleibt Operator-Evidenz.
 
 ---
 
