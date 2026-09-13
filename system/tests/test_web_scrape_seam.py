@@ -17,6 +17,7 @@ a sentinel rather than by making a request.
 """
 
 import sys
+import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -75,6 +76,9 @@ def test_all_limits_of_this_handler_are_passed_to_the_module(handler, monkeypatc
             return {"operation": "get", "url": url, "status": 200,
                     "content_type": "text/plain", "body": ""}
 
+        def headers(self, url):  # part of the surface the seam checks for
+            return {"operation": "headers", "url": url, "status": 200, "headers": {}}
+
     module = MagicMock()
     module.WebScraper = _Scraper
     monkeypatch.setitem(sys.modules, "web_scraper", module)
@@ -131,6 +135,33 @@ def test_canonical_without_the_module_raises_and_does_not_touch_the_legacy_path(
     message = str(excinfo.value)
     assert "web-scraper" in message
     assert ENGINE_ENV in message, "the message must name the switch that caused this"
+
+
+def test_an_installed_foreign_web_scraper_fails_closed_with_a_remedy(handler, monkeypatch):
+    """The runtime half of the dependency-confusion fix (T-20260913-312928799).
+
+    Pinning the git source in requirements.txt protects resolution, not runtime. A
+    machine that installed the foreign PyPI package before 611c1a1 still imports it.
+    Shape taken from the real package: three functions, no `WebScraper`.
+    """
+    monkeypatch.setenv(ENGINE_ENV, ENGINE_CANONICAL)
+
+    def _legacy_must_not_run(*_args, **_kwargs):  # pragma: no cover - must not be called
+        raise AssertionError("the legacy path ran although canonical was selected")
+
+    monkeypatch.setattr(handler, "_request_bundled", _legacy_must_not_run)
+
+    foreign = types.ModuleType("web_scraper")
+    foreign.get_links_directly = lambda *a, **k: None
+    foreign.get_links_using_Google_search = lambda *a, **k: None
+    foreign.find_links_by_extension = lambda *a, **k: None
+    monkeypatch.setitem(sys.modules, "web_scraper", foreign)
+
+    ok, message = handler.handle("get", ["https://example.invalid/"])
+
+    assert ok is False
+    assert "pip uninstall -y web-scraper" in message, "the user must be told what to do"
+    assert ENGINE_BUNDLED in message, "and how to keep working meanwhile"
 
 
 def test_handle_turns_the_unavailable_engine_into_a_clear_failure(handler, monkeypatch):

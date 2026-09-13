@@ -42,6 +42,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from typing import List, Tuple
 from .base import BaseHandler
+from .canonical_seam import CanonicalSeam, require_canonical
 
 # --- Provider-Seam: Altpfad oder kanonisches Modul ---------------------------------
 # Dieser Handler ist die BACH-eigene Fassung dessen, was das Modul `web-scraper`
@@ -100,6 +101,34 @@ def resolve_engine(environ=None) -> str:
             + f". Ohne gesetzte Variable gilt {ENGINE_DEFAULT!r}."
         )
     return value
+
+
+# Die Flaeche, die dieser Seam vom kanonischen Modul verlangt. Sie wird vor jedem
+# Zugriff geprueft, nicht nur importiert: der Name `web_scraper` ist auf PyPI von
+# einem fremden Paket belegt (Vahid Vaezian 1.0, 2018), und wer das vor 611c1a1 einmal
+# installiert hat, traegt es weiter in seiner Umgebung. Begruendung: canonical_seam.py.
+# `max_redirects` steht hier nicht zufaellig -- ohne diesen Parameter faellt die
+# Redirect-Grenze dieses Handlers still auf die des Moduls zurueck, und genau das war
+# der Grund, warum der Default-Wechsel bis zu web-scraper PR #2 blockiert war.
+CANONICAL_SEAM = CanonicalSeam(
+    module="web_scraper",
+    attribute="WebScraper",
+    distribution="web-scraper",
+    repo_url="github.com/ellmos-ai/web-scraper",
+    params=("timeout", "max_bytes", "max_redirects"),
+    # Nur `get` und `headers` -- das sind die beiden Operationen, die dieser Seam
+    # tatsaechlich aufruft. Das Modul kann mehr (links, forms, screenshot, extract),
+    # aber diese Flaeche geht nicht durch `_request()`: der Handler parst Links und
+    # Formulare selbst aus dem geholten Body. Eine Pruefung soll den Vertrag abbilden,
+    # auf den man sich verlaesst, nicht den vollen Funktionsumfang des Moduls --
+    # sonst scheitert sie an legitimen Teil-Implementierungen (auch an den eigenen
+    # Test-Doubles) und verliert genau dadurch ihre Glaubwuerdigkeit.
+    operations=("get", "headers"),
+    env_var=ENGINE_ENV,
+    canonical_value=ENGINE_CANONICAL,
+    bundled_value=ENGINE_BUNDLED,
+    error=CanonicalEngineUnavailable,
+)
 
 
 class CanonicalResponse:
@@ -221,16 +250,11 @@ class WebScrapeHandler(BaseHandler):
 
         Faellt bewusst NICHT auf den Altpfad zurueck: Die Ausnahme geht nach oben und
         wird in `handle()` zu einer klaren Fehlermeldung.
+
+        Geprueft wird nicht nur, OB sich etwas namens `web_scraper` importieren laesst,
+        sondern ob es unseres ist -- siehe CANONICAL_SEAM.
         """
-        try:
-            from web_scraper import WebScraper
-        except ImportError as exc:
-            raise CanonicalEngineUnavailable(
-                f"{ENGINE_ENV}={ENGINE_CANONICAL} verlangt das Modul 'web-scraper', "
-                f"das aber nicht importierbar ist ({exc}). Es findet KEIN Rueckfall auf "
-                f"den BACH-eigenen Pfad statt. Entweder das Modul bereitstellen "
-                f"(pip install -e <klon>) oder {ENGINE_ENV}={ENGINE_BUNDLED} setzen."
-            ) from exc
+        WebScraper = require_canonical(CANONICAL_SEAM)
 
         # Alle Schranken dieses Handlers werden mitgegeben, damit beide Engines
         # dieselben Grenzen haben -- insbesondere die Redirect-Grenze, die frueher
