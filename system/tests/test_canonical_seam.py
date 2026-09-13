@@ -203,6 +203,58 @@ def test_an_unimportable_module_keeps_the_old_wording(monkeypatch):
     assert "bundled" in message
 
 
+def test_a_module_that_does_not_exist_at_all_still_produces_the_intended_error():
+    """The most ordinary case: nothing is installed under that name.
+
+    A different import path than the test above: that one puts `None` into sys.modules
+    to force an ImportError, while here the finder itself raises ModuleNotFoundError --
+    the state a fresh machine is actually in.
+    """
+    seam = make_seam(module="kein_modul_dieses_namens_existiert_hier")
+
+    with pytest.raises(Unavailable) as excinfo:
+        require_canonical(seam)
+
+    message = str(excinfo.value)
+    assert "ModuleNotFoundError" in message, "name the real cause, not a generic one"
+    assert "BACH_WEB_SCRAPE_ENGINE" in message
+    assert "bundled" in message, "and the way back to a working state"
+
+
+def test_a_module_that_raises_while_importing_still_produces_the_intended_error(
+    tmp_path, monkeypatch
+):
+    """Guards the shape a type checker flagged in review (reportPossiblyUnbound).
+
+    An earlier draft bound `module` inside the same `try` that read the attribute from
+    it, and caught `ImportError` and `AttributeError` side by side. A module whose
+    top-level code raises AttributeError makes `import_module` itself raise
+    AttributeError -- the second handler then reads `module`, which was never bound, and
+    the caller gets `UnboundLocalError` instead of the fail-closed message this whole
+    guard exists for.
+
+    Note what does NOT reproduce it: a missing module. `ModuleNotFoundError` is an
+    `ImportError`, so the first handler takes it and never touches `module`. Only an
+    import that fails with something *other* than ImportError reaches the bad path --
+    which is why this test builds a module that does exactly that, on disk, rather than
+    asserting the claim from a comment.
+    """
+    modul = tmp_path / "kanonisches_modul_mit_fehler_im_kopf.py"
+    modul.write_text("raise AttributeError('Fehler im Modulkopf')\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    sys.modules.pop("kanonisches_modul_mit_fehler_im_kopf", None)
+
+    seam = make_seam(module="kanonisches_modul_mit_fehler_im_kopf")
+
+    with pytest.raises(Unavailable) as excinfo:          # NOT UnboundLocalError
+        require_canonical(seam)
+
+    message = str(excinfo.value)
+    assert "AttributeError" in message, "say what actually went wrong"
+    assert "Fehler im Modulkopf" in message
+    assert "bundled" in message
+
+
 # --- the real module, if it is installed ----------------------------------------------
 
 def test_the_real_web_scraper_passes_the_guard():
