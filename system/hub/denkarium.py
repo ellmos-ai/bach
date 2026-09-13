@@ -2,6 +2,9 @@
 """
 Denkarium Handler - Logbuch + Gedanken-Sammler
 ===============================================
+Dies ist das persönliche Notizbuch des Users — NICHT als Board/Scratchpad für
+Agenten nutzen. Agenten nutzen stattdessen `bach memory` (Fakten/Lektionen) und
+Session-Berichte.
 
 bach denkarium write "Text"         Gedanken notieren
 bach denkarium write "Text" --type logbuch  Logbuch-Eintrag (Sternzeit)

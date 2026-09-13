@@ -67,6 +67,7 @@ const NAV_ITEMS = [
         { href: "/routinen?tab=bach", label: "BACH-Routinen" },
     ]},
     { label: "Persönlicher Assistent", children: [
+        { href: "/persoenlich", label: "Dashboard" },
         { href: "/chat", label: "Buddha Chat" },
         { href: "/prompt-library", label: "Deine Prompts" },
         { href: "/routinen?tab=personal", label: "Deine Routinen" },
@@ -80,9 +81,7 @@ const NAV_ITEMS = [
         { href: "/reports", label: "📑 Berichte" },
         { href: "/memory", label: "Memory" },
         { href: "/tokens", label: "Tokens" },
-    ]},
-    { label: "Models", children: [
-        { href: "#", portRel: 8081, path: "/activity", label: "Einstellungen", external: true },
+        { href: "#", portRel: 8081, path: "/activity", label: "Models", external: true },
         { href: "/tools", label: "Tools" },
     ]},
     { label: "Meine Domänen", children: [
@@ -90,7 +89,6 @@ const NAV_ITEMS = [
         { href: "/ati", label: "🛠️ ATI Entwickler" },
         { href: "/steuer", label: "⚖️ Theodor Steuer" },
         { href: "/gesundheit", label: "🩺 Gesundheit" },
-        { href: "/persoenlich", label: "🏠 Persönlicher Assistent" },
     ]},
     { href: "/inbox", label: "Dateien" },
     { label: "System", children: [
