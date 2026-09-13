@@ -139,3 +139,23 @@ Ergebnis der Endkontrolle: **Prämisse NICHT erfüllt → KEIN Green-Flip, KEIN 
   ZERTIFIKAT §1 `Windows-Gegenprobe` ⬜→✅ (Stufen 2/3/5/7) → Gate-Matrix Zeile 2 UNMET→MET →
   dann #1243 (und erst danach #1235) schließbar.
 - **Status Task #1251:** open (Prämisse nicht erfüllt, Endkontrolle durchgeführt — Gate korrekt OFFEN).
+
+---
+## Re-Verifizierung Gate 2 (4) — 2026-09-12 ~14:2X — BACH qwen3.8:27b-mlx (Task #1253)
+**Neuer Befund: HEAD-Drift bricht Parität.** HEAD ist von `5e64e07` auf `c59b0da` (branch `main`)
+vorgerückt. Die 5 Paritätsdateien sind `5e64e07..c59b0da` **byte-identisch** (diff leer), aber die
+Regression liegt in einem Zwischen-Commit an `system/gui/server.py` (+51 Zeilen: Import-Umstrukturierung
++ Task-Status-Filter). Live-Rerun am aktuellen HEAD `c59b0da`:
+  `1 failed, 109 passed, 1 error` — `test_accounts_via_accounts_core.py::...::test_create_list_update_delete_roundtrip`
+  liefert `success: False` (Exception in `add_bank_account`/`_account_store().create_account`);
+  `test_transit_sync_provider_wiring.py::test_guard_requirements_pin` = isoliert `1 passed`
+  (nur Reihenfolge-/State-Kontaminierung im Comb-Run, kein echter Defekt → flaky).
+- **Folgerung:** Die Parität ist am aktuellen `c59b0da` **NICHT** mehr grün. Der **grüne Pin = `5e64e07`**
+  (110 passed, live 13:00 bestätigt, (3)). Die Evidenz-Vorlage „muss `f8554ca` bzw. pin-konform sein"
+  liest damit: **Operator muss `git checkout 5e64e07` auf `WORKSTATION-LG`**, nicht den drifteten `c59b0da`.
+- **Gate-Matrix-Zeile 2 `Windows-Gegenprobe` = ⬜ offen → bleibt ⬜ (kein fälschliches ✅, kein Green-Flip).**
+  Ein Windows-Lauf an `c59b0da` wäre rot → Gate trotzdem UNMET; an `5e64e07` grün → Voraussetzung, nicht Ersatz.
+- **Regression-Task** `server.py bank-accounts roundtrip success=False @c59b0da` angelegt (siehe Folgetask).
+  Erst wenn der Fix gelandet ist, kann der Operator den aktuellen `main`-HEAD verwenden; bis dahin `5e64e07`.
+- **Status Task #1253:** open/BLOCKED auf Operator (echter Windows-Lauf nicht lokal ausführbar) +
+  Pin-Drift/Regression dokumentiert. #1243/#1235 verbleiben OPEN („Erst bei Parität gilt Gätung vor Ablösung").
