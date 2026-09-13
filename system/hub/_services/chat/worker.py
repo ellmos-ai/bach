@@ -195,7 +195,30 @@ def main(argv: list[str] | None = None) -> int:
                               f"({f['belegt_gib']} GiB) - {f['frei_fackeln']} von 10 "
                               f"Fackeln frei, warte")
         else:
-            t = offen[0]
+            gewaehlter_task = None
+            for cand in offen:
+                cid = cand["id"]
+                try:
+                    r = subprocess.run(
+                        [sys.executable, bach_cli, "task", "claim", str(cid), "--by", f"worker:{args.category}"],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    if r.returncode == 0:
+                        gewaehlter_task = cand
+                        break
+                    else:
+                        _log(workdir, f"Task #{cid} bereits beansprucht, ueberspringe")
+                except Exception as ce:
+                    _log(workdir, f"Task #{cid} Claim-Fehler: {ce}, ueberspringe")
+
+            if not gewaehlter_task:
+                _log(workdir, "alle Kandidaten bereits beansprucht - warte")
+                if args.einmal:
+                    return 0
+                time.sleep(max(5, args.takt))
+                continue
+
+            t = gewaehlter_task
             _log(workdir, f"Chat still seit {round(still/60)} min - nehme "
                           f"#{t['id']} {t['title'][:52]}")
 
@@ -229,6 +252,13 @@ def main(argv: list[str] | None = None) -> int:
             except KeyboardInterrupt:
                 if paused_jobs:
                     resume_compute_jobs(paused_jobs)
+                try:
+                    subprocess.run(
+                        [sys.executable, bach_cli, "task", "release", str(t["id"])],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                except Exception as re:
+                    _log(workdir, f"Task #{t['id']} Release-Fehler bei Abbruch: {re}")
                 state_schreiben(bach_cli, args.category,
                                 f"Task #{t['id']} unterbrochen nach "
                                 f"{round(time.time()-t0)}s. Gebautes liegt in {workdir}.")
@@ -237,6 +267,13 @@ def main(argv: list[str] | None = None) -> int:
             except Exception as e:
                 _log(workdir, f"    FEHLER: {e!r}")
                 antwort = ""
+                try:
+                    subprocess.run(
+                        [sys.executable, bach_cli, "task", "release", str(t["id"])],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                except Exception as re:
+                    _log(workdir, f"Task #{t['id']} Release-Fehler nach Fehler: {re}")
             finally:
                 if paused_jobs:
                     resume_compute_jobs(paused_jobs)
@@ -255,6 +292,13 @@ def main(argv: list[str] | None = None) -> int:
                 state_schreiben(bach_cli, args.category,
                                 f"Task #{t['id']} nach {dauer}s nicht fertig. "
                                 f"Letzte Antwort: {(antwort or '')[:200]}")
+                try:
+                    subprocess.run(
+                        [sys.executable, bach_cli, "task", "release", str(t["id"])],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                except Exception as re:
+                    _log(workdir, f"Task #{t['id']} Release-Fehler: {re}")
 
             if args.max_tasks and erledigt_gesamt >= args.max_tasks:
                 _log(workdir, f"{erledigt_gesamt} Pakete erledigt - Ende")

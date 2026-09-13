@@ -19,8 +19,13 @@ der eine der APIs brechen wuerde.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Iterable, Mapping, Optional
+
+try:
+    from hub._services.task_schema import ensure_task_claim_columns
+except ImportError:
+    from ._services.task_schema import ensure_task_claim_columns
 
 # Status, bei denen completed_at gesetzt wird. GUI-Server nutzt 'completed',
 # CLI/Headless/Chat nutzen 'done' -- beide bleiben gueltig, keiner wird umbenannt.
@@ -45,7 +50,8 @@ ALLOWED_COLUMNS = frozenset({
 # Status-Uebergangslogik oben), aber ueber clear_fields explizit auf NULL
 # zurueckgesetzt werden duerfen -- fuer T-20260906-382894453 (_reopen: 'done'
 # -> 'pending' soll completed_at wieder loeschen).
-CLEARABLE_COLUMNS = frozenset({"started_at", "completed_at"})
+CLEARABLE_COLUMNS = frozenset({"started_at", "completed_at", "claimed_by", "claimed_at"})
+
 
 
 def apply_task_field_changes(
@@ -139,3 +145,106 @@ def apply_task_field_changes(
         )
 
     return True
+
+
+def claim_task_atomic(
+    conn: sqlite3.Connection,
+    task_id: int,
+    claimed_by: str,
+    *,
+    now: Optional[str] = None,
+    lease_seconds: int = 1800,
+) -> bool:
+    """Beansprucht einen Task exklusiv. True nur, wenn DIESER Aufruf gewonnen hat.
+
+    Bedingtes UPDATE mit rowcount-Pruefung -- das ist der eigentliche Fix:
+    kein Read-Then-Write, sondern ein einziges atomares Statement, das nur
+    dann etwas aendert, wenn der Task noch offen ODER sein Lease abgelaufen
+    ist. `conn` muss eine SCHREIBENDE Verbindung sein (kein `mode=ro`).
+    """
+    ensure_task_claim_columns(conn)
+    if now is None:
+        now = datetime.now().isoformat()
+
+    lease_cutoff = (datetime.fromisoformat(now) - timedelta(seconds=lease_seconds)).isoformat()
+
+    # Vorher SELECT * FROM tasks WHERE id = ? NUR um existing_row fuer
+    # die History-Zeile UND fuer die started_at-Einmaligkeit zu haben.
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+    row = cur.fetchone()
+    existing_row: dict[str, Any] = {}
+    if row is not None:
+        if isinstance(row, sqlite3.Row) or isinstance(row, dict):
+            existing_row = dict(row)
+        else:
+            cols = [desc[0] for desc in cur.description]
+            existing_row = dict(zip(cols, row))
+
+    cursor = conn.execute(
+        """UPDATE tasks
+           SET status = 'in_progress', claimed_by = ?, claimed_at = ?, updated_at = ?
+           WHERE id = ?
+             AND status NOT IN ('done', 'completed', 'cancelled', 'blocked')
+             AND (status != 'in_progress' OR claimed_by IS NULL OR claimed_at IS NULL OR claimed_at < ?)""",
+        (claimed_by, now, now, task_id, lease_cutoff),
+    )
+    if cursor.rowcount != 1:
+        return False
+
+    # started_at einmalig setzen (falls noch NULL)
+    if not existing_row.get("started_at"):
+        conn.execute(
+            "UPDATE tasks SET started_at = ? WHERE id = ? AND started_at IS NULL",
+            (now, task_id),
+        )
+
+    old_status = existing_row.get("status")
+    conn.execute(
+        """INSERT INTO task_history
+           (task_id, action, field_changed, old_value, new_value, changed_by, changed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (task_id, "status_change", "status", old_status, "in_progress", claimed_by, now),
+    )
+
+    return True
+
+
+def release_claim(conn: sqlite3.Connection, task_id: int) -> bool:
+    """Gibt einen Claim vorzeitig frei (Abbruch/Fehler) -- Task faellt auf
+    'open' zurueck und ist sofort wieder claimbar. True nur bei echter
+    Aenderung (WHERE status='in_progress' verhindert, einen laengst
+    abgeschlossenen Task versehentlich wieder zu oeffnen)."""
+    ensure_task_claim_columns(conn)
+    now = datetime.now().isoformat()
+
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+    row = cur.fetchone()
+    existing_row: dict[str, Any] = {}
+    if row is not None:
+        if isinstance(row, sqlite3.Row) or isinstance(row, dict):
+            existing_row = dict(row)
+        else:
+            cols = [desc[0] for desc in cur.description]
+            existing_row = dict(zip(cols, row))
+
+    cursor = conn.execute(
+        """UPDATE tasks
+           SET status = 'open', claimed_by = NULL, claimed_at = NULL, updated_at = ?
+           WHERE id = ? AND status = 'in_progress'""",
+        (now, task_id),
+    )
+    if cursor.rowcount != 1:
+        return False
+
+    old_claimed_by = existing_row.get("claimed_by")
+    conn.execute(
+        """INSERT INTO task_history
+           (task_id, action, field_changed, old_value, new_value, changed_by, changed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (task_id, "status_change", "status", "in_progress", "open", old_claimed_by or "system", now),
+    )
+
+    return True
+

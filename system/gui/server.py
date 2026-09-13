@@ -45,7 +45,7 @@ from contextlib import asynccontextmanager
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
-from hub.task_audit import apply_task_field_changes
+from hub.task_audit import apply_task_field_changes, claim_task_atomic
 from gui.config import settings
 from gui.console import mount_console
 
@@ -1674,6 +1674,27 @@ async def update_task(task_id: int, update: TaskUpdate):
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
         existing_row = row_to_dict(existing)
 
+        # changed_by: vom Aufrufer mitgegeben (z.B. Idle-Worker meldet sich als
+        # "idle-worker"), sonst generischer API-Default -- Schema-Default waere 'user',
+        # das waere hier irrefuehrend, da die meisten PUTs programmatisch erfolgen.
+        changed_by = update.changed_by or "api"
+
+        # T-20260913-709822598: Atomarer Claim bei Neu-Uebergang auf 'in_progress'
+        # bzw. Claim-Versuch gegen fremd beanspruchten Task
+        is_new_claim = (
+            update.status == "in_progress"
+            and not (
+                existing_row.get("status") == "in_progress"
+                and existing_row.get("claimed_by") == changed_by
+            )
+        )
+
+        did_update = False
+        if is_new_claim:
+            if not claim_task_atomic(conn, task_id, changed_by):
+                return {"status": "claim_failed", "success": False}
+            did_update = True
+
         # field_values: {DB-Spalte: neuer_wert} -- `project` ist ein GUI-Alias fuer
         # die tatsaechliche Spalte `category`, muss also VOR dem Aufruf aufgeloest werden.
         field_values = {}
@@ -1683,7 +1704,7 @@ async def update_task(task_id: int, update: TaskUpdate):
             field_values["description"] = update.description
         if update.priority is not None:
             field_values["priority"] = update.priority
-        if update.status is not None:
+        if update.status is not None and not is_new_claim:
             field_values["status"] = update.status
         if update.project is not None:
             field_values["category"] = update.project
@@ -1694,12 +1715,10 @@ async def update_task(task_id: int, update: TaskUpdate):
         if update.depends_on is not None:
             field_values["depends_on"] = update.depends_on
 
-        # changed_by: vom Aufrufer mitgegeben (z.B. Idle-Worker meldet sich als
-        # "idle-worker"), sonst generischer API-Default -- Schema-Default waere 'user',
-        # das waere hier irrefuehrend, da die meisten PUTs programmatisch erfolgen.
-        changed_by = update.changed_by or "api"
-
         if apply_task_field_changes(conn, task_id, existing_row, field_values, changed_by=changed_by):
+            did_update = True
+
+        if did_update:
             conn.commit()
     finally:
         conn.close()
