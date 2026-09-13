@@ -425,12 +425,47 @@ Konsument mit schlankem Anzeige-Tray, den BACH umbrandet.
 
 **Richtigstellung:** Die Seite „BACH Aktivitätsanzeige & Worker Dashboard" liegt entgegen einer
 Ticketnotiz **in `origin/main`** (`telegram_chat.py:1519` Titel, `:1591` Überschrift, Fackel,
-Always-On, Neuer Worker und Verlauf sämtlich vorhanden). Das Konzept baut darauf auf.
+Always-On, Neuer Worker und Verlauf sämtlich vorhanden). Der Mac-Stand ist seit PR #52
+(`e3db932`) vollständig eingemergt: `mac/certify-2026-09-13` ist null Commits vor `main`, und
+der Diff im gesamten Chat-Modul ist leer. Das Konzept baut darauf auf.
+
+**Zwei Nachmessungen korrigieren die Lückenanalyse** (Abschnitt 9.4): Das Systemregister ist
+nicht zu dünn — seine Quelle `.SYNC/_inventory/systems/<slot>.json` trägt je Host rund 14 KB
+mit Tailscale-Adresse, SSH-Schlüssel und offenen Ports; die schmale Registry ist eine bewusste
+Ableitung (`systems_registry.py`, „DERIVED, never authored"), die genau diese Felder wegfiltert.
+Und ein hostübergreifendes Besetzungsprotokoll existiert bereits:
+`ticket-master/lib/routing_contract.py::_RECEIPT_FIELDS` (Z. 988-991) verlangt `executed_by`,
+`actual_provider` und `actual_model` — das tatsächlich verwendete Modell, nicht das gewünschte —
+und kennt `claimed` als Ledger-Zustand, während BACHs Worker ohne Anspruch startet. Es ist also
+kein Format zu erfinden, sondern eines zu übernehmen.
+
+**Wo das Herz lebt** ist die schwerere Frage hinter der Namensfrage. OCEANs Erhaltungsregel
+(„extraction changes the bed, never the water"; „BACH stays supplied by consuming the same
+modules as OCEAN", `open-ocean/README.md:69` und `:76`) spricht gegen ein BACH-internes
+Bauteil. Die Extraktions-Roadmap führt im zuerst gezogenen Cluster 9 kein Modell-Backend-Paket;
+LLM-Orchestrierung ist ausdrücklich Cluster 5. Empfehlung nach der zweiten Zweitmeinung:
+**ein eng geschnittenes eigenes Modul (C\*)** — es besitzt nur Besetzung, Anspruch, Zulassung
+und Protokoll. Modellkatalog, Bewertung, Budget und Lernschleife bleiben bei clutch; die
+Ausführung beim agent-launcher; Hosts und Ressourcen beim Inventar plus lokalen Proben; Board
+und Tray sind Klienten. **Der Backend-Katalog gehört ausdrücklich nicht hinein.** Die breite
+Fassung wäre selbst der Monolith, den dieses Programm beklagt.
+
+**Extraktionsreihenfolge, korrigiert:** Vor allen Bausteinen steht ein versionierter
+Dispatch-Vertrag („contract before code" ist OCEANs eigene Regel). Dann Fackel als hostlokale
+Ressourcenprobe — sie ist entgegen der ersten Fassung **nicht** unverändert extraktionsreif:
+Sie importiert `hub._services.limits` und meldet bei nicht messbarer Kapazität **volle zehn
+Fackeln** (fail-open), was im Verbund fremden Zuteilern Kapazität vortäuscht. Danach
+Ereignisprojektion und beglaubigte Befehlsschnittstelle, dann das Board als deren Klient — es
+liest nämlich nicht nur, es schaltet die Fackel und verwaltet Worker per POST. Der Tray
+zuletzt, nach Entflechtung von Takt, Zuteilung und Ausführung (Abschnitt 10.8).
 
 **Offene Nutzerentscheidungen** (vorgelegt als decision-shot `BH-2026-09-13-A` im Ticket
-`T-20260913-896336887`): Ort des Rollen-Registers, Zuteilungsstrategie, Form des
-Backend-Katalogs, Zeitpunkt des Cockpits, Name und Ort des Herzens, GUI-Richtung. Die Schritte
-5 bis 9 bleiben bis dahin gesperrt.
+`T-20260913-896336887`): **Ort des Herzens**, Ort des Rollen-Registers, Form des
+Backend-Katalogs und **Name des Herzens** — vier Fragen. Ein Zwischenstand legte acht vor;
+die Zweitmeinung hat vier davon als Scheinfragen zurückgewiesen, weil sie im Konzept bereits
+mit Begründung beantwortet sind — Zuteilungsstrategie, Zeitpunkt des Cockpits, GUI-Richtung und
+die Quelle für Hosts und Modelle stehen jetzt als Feststellung in Abschnitt 7.1, nicht als
+Wahl. Die Schritte 5 bis 9 bleiben bis zur Antwort gesperrt.
 
 ---
 
