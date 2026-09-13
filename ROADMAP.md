@@ -460,8 +460,8 @@ liest nämlich nicht nur, es schaltet die Fackel und verwaltet Worker per POST. 
 zuletzt, nach Entflechtung von Takt, Zuteilung und Ausführung (Abschnitt 10.8).
 
 **Offene Nutzerentscheidungen** (vorgelegt als decision-shot `BH-2026-09-13-A` im Ticket
-`T-20260913-896336887`): Ort des Rollen-Registers, Zuteilungsstrategie, Form des
-Backend-Katalogs sowie **Ort und Name des Herzens**. Ein Zwischenstand legte acht Fragen vor;
+`T-20260913-896336887`): **Ort des Herzens**, Ort des Rollen-Registers, Form des
+Backend-Katalogs und **Name des Herzens** — vier Fragen. Ein Zwischenstand legte acht vor;
 die Zweitmeinung hat vier davon als Scheinfragen zurückgewiesen, weil sie im Konzept bereits
 mit Begründung beantwortet sind — Zuteilungsstrategie, Zeitpunkt des Cockpits, GUI-Richtung und
 die Quelle für Hosts und Modelle stehen jetzt als Feststellung in Abschnitt 7.1, nicht als

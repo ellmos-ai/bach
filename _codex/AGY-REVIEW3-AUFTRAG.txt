@@ -1,0 +1,41 @@
+REVIEW (kurz gehalten) — vier Faktenpruefungen, dann Urteil.
+
+REGELN: Keine Tests. KEIN `git diff`, KEIN `git log` (das hat dich zweimal in einen
+5-Minuten-Timeout laufen lassen). Nur Dateien lesen und grep. Schreibe die Ergebnisdatei
+NACH der ersten Pruefung und ergaenze sie nach jeder weiteren.
+
+ERGEBNISDATEI: C:\_Local_DEV\repos\BACH-heart2\_codex\AGY-REVIEW3-ERGEBNIS.md
+(UTF-8, echte Umlaute, ueberschreiben)
+
+Ein Konzeptdokument stellt vier eigene fruehere Aussagen richtig. Pruefe genau diese vier
+am echten Code und melde je Soll und Ist:
+
+P1: C:\_Local_DEV\repos\clutch\clutch\fahrer.py und getriebe.py existieren; und
+    C:\_Local_DEV\repos\clutch\clutch\prompt_library.py Zeile 20 enthaelt die Typen
+    "rolle" und "agent".
+
+P2: C:\_Local_DEV\repos\ellmos-core\src\ellmos_core\config.py, Funktion
+    _validate_local_endpoint (ab ca. Zeile 117). Was erlaubt sie, was verbietet sie?
+    Behauptet wird: erlaubt Loopback, private, link-lokale UND Tailscale 100.64.0.0/10.
+
+P3: C:\Users\User\OneDrive\.SYNC\_inventory\systems\ -- vier Dateien, Groessen zwischen
+    14 KB und 143 KB, mac-studio.json ist die kleinste, und der Block "network" steht
+    NICHT in allen vier. Pruefe Groessen und je Datei das Vorhandensein von "network".
+
+P4: C:\_Local_DEV\repos\BACH-heart2\system\hub\_services\fackel.py, Funktion frei().
+    Behauptet wird: gibt bei nicht messbarer Kapazitaet float(FACKELN) zurueck, also
+    volle zehn Fackeln (fail-open).
+
+P5: Datei C:\_Local_DEV\repos\BACH-heart2\docs\MODELL-BACKEND-KONZEPT_2026-09-13.md:
+    - Abschnitt 7 sagt "Vier Festlegungen" -- sind vier nummeriert aufgelistet?
+    - Abschnitt 7.1 fuehrt vier nicht mehr vorgelegte Fragen -- sind es vier?
+    - Kapitel 1 bis 10 lueckenlos, Unterabschnitte 9.1-9.4 und 10.1-10.8 lueckenlos?
+    - Stehen ueberall echte Umlaute (keine ae/oe/ue-Ersatzformen)?
+
+P6: WIDERSPRUCHSSUCHE in derselben Datei. Sagt sie irgendwo noch, die Fackel sei
+    "unveraendert" uebernehmbar oder extraktionsreif, waehrend sie an anderer Stelle
+    fail-open und nicht extraktionsreif heisst? Suche nach "Fackel" und lies die
+    Treffer in Abschnitt 2.5, 10.4 und 10.8.
+
+P7: URTEIL: MERGE-FREI / MERGE-FREI MIT ANMERKUNGEN / NICHT MERGEN.
+    Und: welches Modell bist du (genaue Bezeichnung und Stufe)?

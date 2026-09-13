@@ -450,11 +450,22 @@ read-only im selben Worktree. Auftrag und Antwort je Runde liegen als
 die vollständige Einarbeitungstabelle steht in `_codex/ZWEITMEINUNG-EINARBEITUNG.md`.
 
 **Alle Einwände beider Runden wurden übernommen**, jeweils erst nachdem die zugrunde liegenden
-Gegenbehauptungen am Quellcode nachgemessen waren. Sie haben dieses Dokument an neun Stellen
-geändert, darunter vier Korrekturen an eigenen Fehlmessungen: die Begriffe (vier statt zwei),
-die Reihenfolge von Gate und Auswahl, die Trennung von Ereignis und Zustand, die fünfte
-Modell-Liste, OCEANs Lokalitätsschranke, die Heterogenität des Inventars, das Fail-open der
-Fackel, die Schreibfähigkeit des Boards und die Verengung des Herzens auf C\*.
+Gegenbehauptungen am Quellcode nachgemessen waren.
+
+**Vier davon widerlegten eigene Aussagen dieses Dokuments** — sie sind in der
+Einarbeitungsdatei einzeln als solche markiert:
+
+| Eigene Aussage | Was die Messung ergab |
+|---|---|
+| `BACKEND_PRESETS` sei die einzige Modell-Wahrheit | `model_backend.py` trägt zusätzlich das Startverhalten je CLI — eine fünfte Liste |
+| clutch wisse nichts über Rollen und Rechte | `fahrer.py`, `getriebe.py`, Prompt-Typen `rolle` und `agent` — zu stark formuliert |
+| Das Inventar trage je Host rund 14 KB | 14 bis 143 KB, und der `network`-Block steht nur in einer der vier Dateien |
+| OCEANs Lokalitätsschranke stehe dem Verbund entgegen | sie erlaubt Tailscale — kein Hindernis |
+
+Die übrigen Einwände änderten die Architektur, ohne eine Messung zu widerlegen: vier Begriffe
+statt zwei, Gate vor Auswahl, Ereignis getrennt vom Zustand, Fackeln und Budget als zwei
+Achsen, die Schreibfähigkeit des Boards, das Fail-open der Fackel, der fehlende
+Dispatch-Vertrag und die Verengung des Herzens auf C\*.
 
 **Attributionsbeleg Runde 1.** Rollout `rollout-2026-09-13T12-04-37-01a09a39-…jsonl`, Feld
 `"model":"gpt-5.6-sol"`, 42 ausgeführte Befehle. `codex_run_proof.py --contains
