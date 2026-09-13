@@ -121,3 +121,107 @@ class TestMediplanerImportIsGated:
 
         assert ok is True
         assert self._rows(db_path, "health_contacts") == 1
+
+
+def _routine_db(tmp_path):
+    """Minimale DB mit der Tabelle, die der CLI-Pfad anfasst."""
+    path = tmp_path / "user.db"
+    conn = sqlite3.connect(str(path))
+    conn.executescript(
+        """
+        CREATE TABLE household_routines (
+            id INTEGER PRIMARY KEY, name TEXT, frequency TEXT, schedule TEXT,
+            category TEXT, duration_minutes INTEGER, last_done TEXT, next_due TEXT,
+            is_active INTEGER DEFAULT 1, notes TEXT, created_at TEXT, updated_at TEXT
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+    return path
+
+
+class TestRoutineWritersAreGated:
+    """Einheit 2 des C2-Rests: Routinika ist der Kanon fuer Routinen."""
+
+    @pytest.fixture
+    def handler(self, tmp_path, monkeypatch):
+        from hub import routine
+
+        db_path = _routine_db(tmp_path)
+        handler = routine.RoutineHandler(tmp_path)
+        monkeypatch.setattr(
+            handler, "_get_db", lambda: sqlite3.connect(str(db_path)), raising=False
+        )
+        return handler, db_path
+
+    def _rows(self, db_path):
+        conn = sqlite3.connect(str(db_path))
+        try:
+            return conn.execute("SELECT COUNT(*) FROM household_routines").fetchone()[0]
+        finally:
+            conn.close()
+
+    def test_add_is_refused_and_writes_nothing(self, handler, monkeypatch):
+        instance, db_path = handler
+        monkeypatch.delenv(LEGACY_WRITE_ENV, raising=False)
+
+        ok, message = instance._add(["Muell rausbringen", "--frequency", "woechentlich"])
+
+        assert ok is False
+        assert LEGACY_WRITE_ENV in message
+        assert "Routinika" in message
+        assert self._rows(db_path) == 0
+
+    def test_done_is_refused(self, handler, monkeypatch):
+        instance, _db_path = handler
+        monkeypatch.delenv(LEGACY_WRITE_ENV, raising=False)
+
+        ok, message = instance._done(["1"])
+
+        assert ok is False
+        assert LEGACY_WRITE_ENV in message
+
+    def test_migration_run_still_adds(self, handler, monkeypatch):
+        """Der Altbestands-Import bleibt erreichbar -- gegatet ist nicht geloescht."""
+        instance, db_path = handler
+        monkeypatch.setenv(LEGACY_WRITE_ENV, "1")
+
+        ok, _message = instance._add(["Muell rausbringen", "--frequency", "woechentlich"])
+
+        assert ok is True
+        assert self._rows(db_path) == 1
+
+
+class TestGuiRoutineEndpointsAreGated:
+    """Die GUI schreibt in `routines`, die CLI in `household_routines` -- beide Wege
+    gehoeren derselben Domaene und muessen beide zu sein."""
+
+    def test_the_refusal_becomes_http_423(self, monkeypatch):
+        import gui.server as srv
+
+        monkeypatch.delenv(LEGACY_WRITE_ENV, raising=False)
+        with pytest.raises(srv.HTTPException) as caught:
+            srv._refuse_if_foreign_domain("routine", "GUI POST /api/routines")
+
+        # 423 Locked, nicht 409: kein Versionskonflikt, sondern eine fremde Domaene.
+        assert caught.value.status_code == 423
+        assert LEGACY_WRITE_ENV in caught.value.detail
+
+    def test_migration_run_passes_through(self, monkeypatch):
+        import gui.server as srv
+
+        monkeypatch.setenv(LEGACY_WRITE_ENV, "1")
+        srv._refuse_if_foreign_domain("routine", "GUI POST /api/routines")  # darf nicht werfen
+
+    def test_every_writing_routine_endpoint_carries_the_guard(self):
+        """Ein neuer Schreibpfad ohne Guard soll hier auffallen, nicht im Betrieb."""
+        import inspect
+
+        import gui.server as srv
+
+        for name in ("add_routine", "update_routine", "complete_routine", "delete_routine"):
+            source = inspect.getsource(getattr(srv, name))
+            assert "_refuse_if_foreign_domain" in source, (
+                f"{name} schreibt Routinen ohne Domaenen-Gate"
+            )
