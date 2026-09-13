@@ -27,15 +27,15 @@ HTTP Control API 和跨平台系统托盘。
   - openai：OpenAI API（需要 OPENAI_API_KEY）
 
 安全模式：
-  - 安全：只读工具（ls、cat、grep、git、docker 等）
-  - full：还有写入工具（execute_command、write_file）
-           激活：/模式完全确认
+  - safe：无 shell 的文件操作（读取、编辑、移动、创建）
+  - full：额外提供 shell 和自由写入（execute_command、write_file）
+           激活：/mode full bestätigt
 
 
 电报命令
 -----------------
-  /开始欢迎消息
-  /清除重置对话
+  /start 欢迎消息
+  /clear 归档对话并开始新会话
   /backend [名称] [型号] 切换后端 (ollama|claude|codex|claude-api|openai)
   /model <名称> 更改模型
   /mode [safe|full] 安全模式

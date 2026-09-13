@@ -721,7 +721,8 @@ class TestBACHTray:
     def test_init_urls(self, tray):
         assert tray.base_url == "http://testhost:9999"
         assert tray.gui_url == "http://testhost:8000"
-        assert tray.webchat_url == "http://testhost:8080"
+        # Das :8080-Relikt des stillgelegten claude_bridge darf nicht zurückkehren.
+        assert not hasattr(tray, "webchat_url")
 
     def test_buddha_chat_opens_the_gui_chat_page(self, tray):
         """The :8080 webchat no longer exists; the tray must open the GUI chat (1.1.6)."""

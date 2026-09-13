@@ -288,6 +288,35 @@ class TestGUIServerSmoke:
         data = resp.json()
         assert data.get("success") is True or "id" in data
 
+    def test_new_task_goes_to_the_idle_worker_by_default(self, client):
+        """D-20260906-002 = B: ohne Angabe uebernimmt der Idle-Worker, nicht 'user'.
+
+        Der Tray-Worker pickt assigned_to in (OLLAMA, BUDDHA, BACH) und ueberspringt
+        'user' ausdruecklich -- ein Default 'user' hiesse, dass nie etwas automatisch
+        laeuft (Befund aus T-20260906-791722356).
+        """
+        import gui.server as srv
+
+        created = client.post("/api/tasks", json={"title": "Ohne Zuweisung"}).json()
+        task = client.get(f"/api/tasks/{created['id']}").json()
+        assert task["assigned_to"] == srv.DEFAULT_TASK_ASSIGNEE
+        assert srv.DEFAULT_TASK_ASSIGNEE.lower() != "user"
+
+    def test_explicit_user_assignment_survives(self, client):
+        """Der zweite Teil des Entscheids: persoenliche Aufgaben bleiben beim Nutzer."""
+        created = client.post(
+            "/api/tasks", json={"title": "Zahnarzt anrufen", "assigned_to": "user"}
+        ).json()
+        task = client.get(f"/api/tasks/{created['id']}").json()
+        assert task["assigned_to"] == "user"
+
+    def test_both_task_apis_share_one_default(self):
+        """GUI- und Headless-Server fuehren den Wert getrennt -- er muss gleich bleiben."""
+        import gui.server as srv
+        from gui.api import headless
+
+        assert srv.DEFAULT_TASK_ASSIGNEE == headless.DEFAULT_TASK_ASSIGNEE
+
     def test_messages_list(self, client):
         resp = client.get("/api/messages")
         assert resp.status_code == 200

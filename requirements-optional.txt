@@ -153,3 +153,12 @@ pywin32>=311              # Windows COM interface (pdf_schwaerzer_pro)
 # Install for development work only, not needed in production
 # ============================================================
 pytest>=9.0.2             # Test runner (system/tests/, BACH_Dev/tests/)
+
+# ============================================================
+# [WEB SCRAPE] moved to requirements.txt -- NOT optional any more.
+# The canonical engine is the default since PR #38, so `web-scraper` is a core
+# dependency, pinned to its git source under "ellmos module cuts".
+# Do NOT re-add it here by package name: `web-scraper` on PyPI is a foreign
+# package (Vahid Vaezian 1.0, 2018-08-10) that wins any `>=0.1.1` resolution
+# -- dependency confusion, T-20260913-920596893.
+# ============================================================

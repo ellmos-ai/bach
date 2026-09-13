@@ -42,6 +42,133 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from typing import List, Tuple
 from .base import BaseHandler
+from .canonical_seam import CanonicalSeam, require_canonical
+
+# --- Provider-Seam: Altpfad oder kanonisches Modul ---------------------------------
+# Dieser Handler ist die BACH-eigene Fassung dessen, was das Modul `web-scraper`
+# eigenstaendig kann. Gleichheit ist gegen eine echte Seite belegt, und seit
+# web-scraper 0.1.1+ laesst sich auch die letzte abweichende Schutzgrenze angleichen
+# (`max_redirects`). Deshalb konsumiert BACH jetzt standardmaessig das kanonische
+# Modul; der BACH-eigene Pfad bleibt vollwertig waehlbar. Details bei ENGINE_DEFAULT.
+# Vertrag wie in ellmos-homebase-mcp/MODE-CONTRACT.md:
+#
+#     mode = canonical + Ziel nicht erreichbar  =>  klarer Fehler.
+#     NIEMALS stiller Wechsel zurueck auf den Altpfad.
+#
+# Begruendung dort und hier dieselbe: Ein stiller Rueckfall meldet Erfolg, obwohl eine
+# andere Implementierung geantwortet hat. Ein leiser Erfolg aus der falschen Quelle ist
+# schaedlicher als ein lauter Fehlschlag -- man merkt jahrelang nicht, dass die
+# Umstellung nie gegriffen hat.
+ENGINE_ENV = "BACH_WEB_SCRAPE_ENGINE"
+ENGINE_BUNDLED = "bundled"
+ENGINE_CANONICAL = "canonical"
+ENGINES = (ENGINE_BUNDLED, ENGINE_CANONICAL)
+
+# Default ist das kanonische Modul. Der Weg dorthin ging ueber zwei Messungen:
+# Einheit 4b zeigte Gleichheit im ERFOLGSFALL (get, links, forms, headers liefern
+# ueber beide Engines dieselbe normalisierte Ausgabe gegen eine echte Seite), aber
+# eine Abweichung in den SCHUTZGRENZEN -- dieser Handler folgt bis zu
+# MAX_REDIRECTS=5, das Modul folgte fest 10. Ein Default-Wechsel waere damals eine
+# stillschweigende Lockerung einer Sicherheitsgrenze gewesen, und sieben Tests in
+# TestWebScrapeSecurity haben das auch prompt gezeigt. Statt die Tests anzupassen
+# wurde die Ursache behoben: web-scraper nimmt `max_redirects` seit 0.1.1+ als
+# Parameter entgegen (PR #2), die Grenze gehoert damit dem Aufrufer. Unten werden
+# alle drei Grenzen -- Timeout, Byte-Limit, Redirects -- explizit mitgegeben; die
+# Sicherheitstests laufen unveraendert gruen.
+ENGINE_DEFAULT = ENGINE_CANONICAL
+
+
+class EngineConfigError(RuntimeError):
+    """Der konfigurierte Engine-Wert ist unbekannt."""
+
+
+class CanonicalEngineUnavailable(RuntimeError):
+    """`canonical` gewaehlt, aber das kanonische Modul ist nicht erreichbar."""
+
+
+def resolve_engine(environ=None) -> str:
+    """Gewaehlte Engine, fail-closed bei einem unbekannten Wert.
+
+    Ein Tippfehler darf nicht stillschweigend als Altpfad durchgehen -- sonst sieht ein
+    beabsichtigtes `canonical` genauso aus wie gar keine Konfiguration.
+    """
+    source = os.environ if environ is None else environ
+    value = (source.get(ENGINE_ENV) or "").strip().lower() or ENGINE_DEFAULT
+    if value not in ENGINES:
+        raise EngineConfigError(
+            f"{ENGINE_ENV}={value!r} ist unbekannt. Erlaubt: "
+            + ", ".join(ENGINES)
+            + f". Ohne gesetzte Variable gilt {ENGINE_DEFAULT!r}."
+        )
+    return value
+
+
+# Die Flaeche, die dieser Seam vom kanonischen Modul verlangt. Sie wird vor jedem
+# Zugriff geprueft, nicht nur importiert: der Name `web_scraper` ist auf PyPI von
+# einem fremden Paket belegt (Vahid Vaezian 1.0, 2018), und wer das vor 611c1a1 einmal
+# installiert hat, traegt es weiter in seiner Umgebung. Begruendung: canonical_seam.py.
+# `max_redirects` steht hier nicht zufaellig -- ohne diesen Parameter faellt die
+# Redirect-Grenze dieses Handlers still auf die des Moduls zurueck, und genau das war
+# der Grund, warum der Default-Wechsel bis zu web-scraper PR #2 blockiert war.
+CANONICAL_SEAM = CanonicalSeam(
+    module="web_scraper",
+    attribute="WebScraper",
+    distribution="web-scraper",
+    repo_url="github.com/ellmos-ai/web-scraper",
+    params=("timeout", "max_bytes", "max_redirects"),
+    # Nur `get` und `headers` -- das sind die beiden Operationen, die dieser Seam
+    # tatsaechlich aufruft. Das Modul kann mehr (links, forms, screenshot, extract),
+    # aber diese Flaeche geht nicht durch `_request()`: der Handler parst Links und
+    # Formulare selbst aus dem geholten Body. Eine Pruefung soll den Vertrag abbilden,
+    # auf den man sich verlaesst, nicht den vollen Funktionsumfang des Moduls --
+    # sonst scheitert sie an legitimen Teil-Implementierungen (auch an den eigenen
+    # Test-Doubles) und verliert genau dadurch ihre Glaubwuerdigkeit.
+    operations=("get", "headers"),
+    env_var=ENGINE_ENV,
+    canonical_value=ENGINE_CANONICAL,
+    bundled_value=ENGINE_BUNDLED,
+    error=CanonicalEngineUnavailable,
+)
+
+
+class CanonicalResponse:
+    """Bildet die Rueckgabe von `WebScraper.get()` auf die Flaeche dieses Handlers ab.
+
+    Das Modul liefert ein **dict**, kein Response-Objekt, und benennt die Felder anders:
+
+        Modul (get)          dieser Handler
+        -------------------  -----------------
+        url                  url
+        status               status_code
+        body                 text
+        content_type         headers["content-type"]
+        length, truncated    (nicht genutzt)
+
+    `get()` liefert **keine vollstaendigen Header** -- nur den Content-Type. Fuer echte
+    Header hat das Modul eine eigene Operation (`WebScraper.headers()`). Solange dieser
+    Seam alles ueber `_request()` fuehrt, ist die `headers`-Operation im
+    canonical-Modus deshalb NICHT gleichwertig; das ist eine benannte Abweichung und
+    der Grund, warum der Altpfad weiterhin Default bleibt.
+    """
+
+    __slots__ = ("url", "status_code", "headers", "text")
+
+    def __init__(self, payload: dict) -> None:
+        if not isinstance(payload, dict):
+            raise TypeError(
+                "web-scraper lieferte "
+                f"{type(payload).__name__} statt dict -- API-Vertrag geaendert?"
+            )
+        self.url = payload.get("url", "")
+        self.status_code = payload.get("status")
+        self.text = payload.get("body", "")
+        if "headers" in payload:
+            # aus der headers-Operation: vollstaendige Header, gleiche Namen wie im Altpfad
+            self.headers = payload["headers"]
+        else:
+            # aus der get-Operation: nur der Content-Type ist enthalten
+            content_type = payload.get("content_type")
+            self.headers = {"content-type": content_type} if content_type else {}
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if sys.stdout:
@@ -83,21 +210,70 @@ class WebScrapeHandler(BaseHandler):
         if dry_run:
             return True, f"[DRY-RUN] {operation} {' '.join(args)}"
 
-        if operation == "get":
-            return self._get(args[0])
-        elif operation == "links":
-            return self._links(args[0])
-        elif operation == "forms":
-            return self._forms(args[0])
-        elif operation == "screenshot":
-            return self._screenshot(args[0])
-        elif operation == "headers":
-            return self._headers(args[0])
+        # Engine-Vertrag auf Aufrufebene, nicht beim Import: der Handler laedt immer,
+        # damit `bach web-scrape` seine Operationen listen kann; erst der konkrete
+        # Aufruf scheitert laut, wenn `canonical` gewaehlt, aber unerreichbar ist.
+        try:
+            resolve_engine()
+        except EngineConfigError as exc:
+            return False, str(exc)
+
+        try:
+            if operation == "get":
+                return self._get(args[0])
+            elif operation == "links":
+                return self._links(args[0])
+            elif operation == "forms":
+                return self._forms(args[0])
+            elif operation == "screenshot":
+                return self._screenshot(args[0])
+            elif operation == "headers":
+                return self._headers(args[0])
+        except CanonicalEngineUnavailable as exc:
+            return False, str(exc)
         else:
             ops = "\n".join(f"  {k}: {v}" for k, v in self.get_operations().items())
             return False, f"Nutzung:\n{ops}"
 
-    def _request(self, url: str):
+    def _request(self, url: str, operation: str = "get"):
+        """HTTP GET -- ueber den Altpfad oder das kanonische Modul, je nach Engine.
+
+        `operation` waehlt im canonical-Modus die passende Moduloperation. Der Altpfad
+        holt ohnehin immer die vollstaendige Antwort und ignoriert den Parameter.
+        """
+        if resolve_engine() == ENGINE_CANONICAL:
+            return self._request_canonical(url, operation)
+        return self._request_bundled(url)
+
+    def _request_canonical(self, url: str, operation: str = "get"):
+        """Fetch ueber das kanonische Modul `web-scraper`.
+
+        Faellt bewusst NICHT auf den Altpfad zurueck: Die Ausnahme geht nach oben und
+        wird in `handle()` zu einer klaren Fehlermeldung.
+
+        Geprueft wird nicht nur, OB sich etwas namens `web_scraper` importieren laesst,
+        sondern ob es unseres ist -- siehe CANONICAL_SEAM.
+        """
+        WebScraper = require_canonical(CANONICAL_SEAM)
+
+        # Alle Schranken dieses Handlers werden mitgegeben, damit beide Engines
+        # dieselben Grenzen haben -- insbesondere die Redirect-Grenze, die frueher
+        # nicht uebergebbar war und deshalb den Default-Wechsel blockiert hat.
+        scraper = WebScraper(
+            timeout=self.REQUEST_TIMEOUT,
+            max_bytes=self.MAX_RESPONSE_BYTES,
+            max_redirects=self.MAX_REDIRECTS,
+        )
+        # Das Modul bietet je Operation eine eigene Methode; `get` liefert bewusst nur
+        # den Content-Type, deshalb holt die headers-Operation ihre Daten direkt dort.
+        fetch = scraper.headers if operation == "headers" else scraper.get
+        try:
+            payload = fetch(url)
+        except Exception as exc:  # noqa: BLE001 - Modulfehler wird als Fehlertext gemeldet
+            return None, f"web-scraper: {exc}"
+        return CanonicalResponse(payload), ""
+
+    def _request_bundled(self, url: str):
         """HTTP GET mit gepinntem DNS-Ziel und geprüften Redirects."""
         try:
             import requests
@@ -400,7 +576,7 @@ class WebScrapeHandler(BaseHandler):
 
     def _headers(self, url: str) -> Tuple[bool, str]:
         """Response-Headers anzeigen."""
-        resp, err = self._request(url)
+        resp, err = self._request(url, operation="headers")
         if not resp:
             return False, f"Fehler: {err}"
 

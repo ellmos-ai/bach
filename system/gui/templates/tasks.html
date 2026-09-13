@@ -385,7 +385,7 @@
                     <div class="form-group">
                         <label>Zuweisen an</label>
                         <select name="assigned_to" id="new-assigned-to">
-                            <option value="bach">BACH System</option>
+                            <option value="OLLAMA">Ollama (Idle Worker)</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -441,7 +441,7 @@
 
         function populateAssigneeDropdowns() {
             const defaults = {
-                'new-assigned-to': 'bach',
+                'new-assigned-to': 'OLLAMA',
                 'new-created-by': 'user'
             };
             const selects = ['new-assigned-to', 'new-created-by'];
@@ -755,7 +755,7 @@
                 priority: form.priority.value,
                 project: form.category.value || null,
                 description: form.description.value || null,
-                assigned_to: form.assigned_to.value || 'bach',
+                assigned_to: form.assigned_to.value || 'OLLAMA',
                 created_by: form.created_by.value || 'user'
             };
             

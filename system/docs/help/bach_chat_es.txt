@@ -27,28 +27,28 @@ Backends:
   - openai: API OpenAI (requiere OPENAI_API_KEY)
 
 Modos de seguridad:
-  - seguro: herramientas de solo lectura (ls, cat, grep, git, docker, etc.)
-  - completo: también herramientas de escritura (execute_command, write_file)
-           Activación: /modo full confirmado
+  - safe:  trabajo con archivos sin shell (leer, editar, mover, crear)
+  - full:  además shell y escritura libre (execute_command, write_file)
+           Activación: /mode full bestätigt
 
 
 COMANDOS DE TELEGRAMA
 -----------------
-  /iniciar mensaje de bienvenida
-  /borrar conversación de reinicio
+  /start Mensaje de bienvenida
+  /clear Archivar la conversación e iniciar una sesión nueva
   /backend [nombre] [modelo] Cambiar backend (ollama|claude|codex|claude-api|openai)
   /model <nombre> Cambiar modelo
-  /modo [seguro|completo] Modo de seguridad
+  /mode [safe|full] Modo de seguridad
   /think modo de pensamiento activado (completo)
-  /modo de pensamiento sin pensar APAGADO (rápido)
+  /nothink Modo de pensamiento desactivado (rápido)
   /settings Mostrar todas las configuraciones
   /status Estado del sistema
-  /recordar <texto> Memoria BACH: Recordar
+  /remember <texto> Memoria BACH: recordar
   /recall <buscar> Memoria BACH: Buscar
-  /hechos Memoria BACH: Hechos
+  /facts Memoria BACH: hechos
   /bach <cmd> Ejecutar comando BACH
-  /tarea <texto> Crear tarea
-  /tareas Abrir tareas
+  /task <texto> Crear tarea
+  /tasks Tareas abiertas
   /maxrounds [N] Establecer rondas máximas de herramientas (0=ilimitado)
   Transcripción de mensajes de voz Whisper -> Chat
   Reconocimiento de texto OCR de fotos -> Chat

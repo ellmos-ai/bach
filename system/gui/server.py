@@ -49,6 +49,28 @@ from hub.task_audit import apply_task_field_changes
 from gui.config import settings
 from gui.console import mount_console
 
+# Nutzerentscheid D-20260906-002 (2026-09-11) = B: Neue Tasks gehen per Default an den
+# Idle-Worker; persoenliche Aufgaben weist der Nutzer bewusst "user" zu (Auswahlfeld in
+# tasks.html / tasks_board.html, Liste aus /api/assignees). Der Tray-Idle-Worker pickt
+# OLLAMA|BUDDHA|BACH und ueberspringt "user" ausdruecklich (chat_tray._process_idle_task).
+# gui/api/headless.py fuehrt denselben Wert; test_default_task_assignee.py haelt beide gleich.
+DEFAULT_TASK_ASSIGNEE = "OLLAMA"
+
+
+def _refuse_if_foreign_domain(domain: str, operation: str) -> None:
+    """Uebersetzt das Domaenen-Gate in einen HTTP-Status (T-20260822-624075478, Punkt 3).
+
+    423 Locked statt 409 Conflict: Es geht nicht um einen Versionskonflikt, sondern um
+    eine Domaene, die einem anderen Kanon gehoert und hier read-only konsumiert wird.
+    Der Grundtext des Gates nennt Kanon, Projektionsvertrag und den Migrationsweg, also
+    geht er unveraendert an den Aufrufer.
+    """
+    from hub.domain_writer_gate import blocked_reason
+
+    reason = blocked_reason(domain, operation)
+    if reason:
+        raise HTTPException(status_code=423, detail=reason)
+
 # Claude Router Import
 sys.path.insert(0, str(Path(__file__).parent / "api"))
 try:
@@ -366,7 +388,7 @@ class TaskCreate(BaseModel):
 
     assignee: Optional[str] = None
 
-    assigned_to: Optional[str] = "user"
+    assigned_to: Optional[str] = DEFAULT_TASK_ASSIGNEE
 
     created_by: Optional[str] = "user"
 
@@ -1605,7 +1627,7 @@ async def api_post_task(payload: dict = Body(...)):
             payload.get("status", "pending"),
             now,
             payload.get("created_by", "user"),
-            payload.get("assigned_to", "user"),
+            payload.get("assigned_to") or DEFAULT_TASK_ASSIGNEE,
             payload.get("depends_on"),
             payload.get("image"),
             payload.get("due_date"),
@@ -12292,6 +12314,7 @@ async def get_routine(routine_id: int):
 @app.post("/api/routines")
 async def add_routine(request: Request):
     """Neue Routine anlegen."""
+    _refuse_if_foreign_domain("routine", "GUI POST /api/routines")
     try:
         from datetime import date, timedelta
         data = await request.json()
@@ -12327,6 +12350,7 @@ async def add_routine(request: Request):
 @app.put("/api/routines/{routine_id}")
 async def update_routine(routine_id: int, request: Request):
     """Routine aktualisieren."""
+    _refuse_if_foreign_domain("routine", "GUI PUT /api/routines/{id}")
     try:
         data = await request.json()
         conn = get_user_db()
@@ -12358,6 +12382,7 @@ async def update_routine(routine_id: int, request: Request):
 @app.post("/api/routines/{routine_id}/complete")
 async def complete_routine(routine_id: int):
     """Routine als erledigt markieren und naechstes Datum berechnen."""
+    _refuse_if_foreign_domain("routine", "GUI POST /api/routines/{id}/complete")
     try:
         from datetime import date, timedelta
         conn = get_user_db()
@@ -12414,6 +12439,7 @@ async def complete_routine(routine_id: int):
 @app.delete("/api/routines/{routine_id}")
 async def delete_routine(routine_id: int):
     """Routine loeschen."""
+    _refuse_if_foreign_domain("routine", "GUI DELETE /api/routines/{id}")
     try:
         conn = get_user_db()
         cursor = conn.cursor()

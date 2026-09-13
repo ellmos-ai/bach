@@ -206,11 +206,16 @@ async def verify_auth(request: Request, api_key: Optional[str] = Query(None)):
 # Models
 # ------------------------------------------------------------------
 
+# Nutzerentscheid D-20260906-002 (2026-09-11) = B -- gleicher Wert wie
+# gui/server.py::DEFAULT_TASK_ASSIGNEE; test_default_task_assignee.py haelt beide gleich.
+DEFAULT_TASK_ASSIGNEE = "OLLAMA"
+
+
 class TaskCreate(BaseModel):
     title: str
     priority: str = "P3"
     category: str = "general"
-    assigned_to: str = ""
+    assigned_to: str = DEFAULT_TASK_ASSIGNEE
     description: str = ""
 
 class TaskUpdate(BaseModel):
@@ -265,7 +270,7 @@ async def create_task(task: TaskCreate, _=Depends(verify_auth)):
             INSERT INTO tasks (title, priority, category, status, assigned_to, description, created_at, updated_at)
             VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
         """, (task.title, task.priority, task.category,
-              task.assigned_to or None, task.description, now, now))
+              task.assigned_to or DEFAULT_TASK_ASSIGNEE, task.description, now, now))
         conn.commit()
         return {"id": cur.lastrowid, "title": task.title, "status": "pending"}
     finally:

@@ -128,7 +128,16 @@ BACH_SYSTEM_DIR = str(Path(__file__).resolve().parents[2])
 
 
 def is_safe_write_path(path_str: str, mode: str) -> Optional[str]:
-    """Return error message if path is blocked for writes in safe mode, else None."""
+    """Return error message if the path is blocked for writes, else None.
+
+    Hier laufen alle schreibenden Werkzeuge ausser write_file zusammen --
+    edit_file, move_file, copy_file, recycle, create_directory. Deshalb steht
+    das Plan-Gate hier und nicht in fuenf Aufrufstellen: Im Planmodus wird
+    nicht geschrieben, auch dann nicht, wenn ein Modell ein Werkzeug aufruft,
+    das ihm gar nicht angeboten wurde (T-20260912-605163733).
+    """
+    if mode == "plan":
+        return "Planmodus: es wird geplant, nicht geschrieben"
     if mode != "safe":
         return None
     p = str(Path(path_str).resolve())
@@ -297,6 +306,41 @@ TOOLS_FULL = TOOLS_SAFE + [
         "content": {"type": "string", "description": "Dateiinhalt"},
     }, ["path", "content"]),
 ]
+
+#: Aus TOOLS_SAFE fuer den Planmodus ausgenommen.
+#:
+#: `safe` heisst "ohne beliebige Shell", nicht "ohne Schreiben" -- /mode full
+#: kuendigt dem Nutzer ausdruecklich "Shell-Befehle und Dateischreiben" an,
+#: also ist safe der Modus, in dem man mit Dateien arbeitet, ohne die Shell zu
+#: oeffnen. Fuer den interaktiven Chat ist das richtig. Ein Planlauf braucht
+#: davon nichts: Er liest, und sein einziges Ergebnis sind Tasks.
+_NICHT_IM_PLAN = frozenset({
+    # veraendern das Dateisystem
+    "edit_file", "move_file", "copy_file", "recycle", "create_directory",
+    # veraendern BACH-Zustand jenseits der Tasks
+    "bach_command", "maintain", "foerderbericht",
+    # startet einen fremden Agenten, der diese Grenze nicht kennt
+    "delegate",
+})
+
+#: Werkzeuge eines Planlaufs: lesen, nachschlagen, Pakete anlegen.
+#: Abgeleitet statt aufgezaehlt -- so bleibt TOOLS_PLAN automatisch eine
+#: Teilmenge von TOOLS_SAFE, auch wenn dort etwas hinzukommt.
+TOOLS_PLAN = [t for t in TOOLS_SAFE
+              if t["function"]["name"] not in _NICHT_IM_PLAN]
+
+
+def tools_for_mode(mode: str) -> list:
+    """Werkzeugliste zum Sitzungsmodus.
+
+    Ein unbekannter Modus faellt bewusst auf `safe` zurueck und nicht auf
+    `full`: Ein Tippfehler darf nie mehr Rechte geben als angefordert.
+    """
+    if mode == "full":
+        return TOOLS_FULL
+    if mode == "plan":
+        return TOOLS_PLAN
+    return TOOLS_SAFE
 
 
 # --- Delegation ---
@@ -1421,7 +1465,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             except Exception as e:
                 answer = FailedAnswer.from_exception(e)
         else:
-            tools = TOOLS_FULL if session.mode == "full" else TOOLS_SAFE
+            tools = tools_for_mode(session.mode)
             answer = await self._tool_loop(msgs, session, tools)
         session.messages.append({"role": "assistant", "content": answer})
         self._persist_session(chat_id, session)
