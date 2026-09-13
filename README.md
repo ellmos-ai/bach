@@ -270,9 +270,9 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 
 ### Competitive Watch
 
-As of September 10, 2026, OpenClaw stable remains `2026.7.1` (with prerelease tracks through `2026.7.2-beta.3`). Relevant architectural impulses for BACH continue to be owning-host terminal-resume, supervised restart handoffs, guided setup hardening, session-local MCP isolation, and recovery-safe channel/session flows; broad mobile/messaging gateway parity remains outside BACH's core design.
+As of September 13, 2026, OpenClaw stable remains `2026.7.1` (with prerelease tracks through `2026.7.2-beta.3`). Relevant architectural impulses for BACH continue to be owning-host terminal-resume, supervised restart handoffs, guided setup hardening, session-local MCP isolation, and recovery-safe channel/session flows; broad mobile/messaging gateway parity remains outside BACH's core design.
 
-On the BACH side, the September 10 care and development pass stabilized the test suite (123 passed across self-heal, memory cleanup, registry watcher, and smoke tests), hardened `BaseHandler` canonical DB resolution for repo-root/isolated test layouts, added fail-safe database handling to `RestoreHandler` and `WikiHandler`, and verified agent doctor diagnostics (`ati`, `entwickler`), dry-run starts, documentation freshness (2,102 documents checked, 0 outdated >60d), and memory decay operations.
+On the BACH side, the September 13 care and development pass confirmed 100% green test execution: 123 core regression tests passed cleanly (self-heal, memory cleanup, registry watcher, smoke tests) with strict `~/.bach` directory isolation, and 174 Modulrücktransfer regression tests passed across Windows (`WORKSTATION-LG`) covering `ellmos-tests` adapter (#1218), `ellmos-scheduler` (#1219), `accounts-core` (#1220), `system-explorer` (#1221), `memoryhooker`/`workflowhooker` (#1222), and `sqlite-transit-sync` (#1223). Agent doctor diagnostics (`ati`, `entwickler`), startup dry-runs, 50/50 usecase dry-runs, documentation freshness (2,102 documents checked, 0 outdated >60d), and memory decay operations were also fully verified.
 
 ## License
 
