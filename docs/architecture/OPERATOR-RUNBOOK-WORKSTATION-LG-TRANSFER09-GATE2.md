@@ -44,6 +44,12 @@ Repo-Basis (grüner Paritäts-Pin): `git rev-parse --short HEAD` = **aktueller m
 > `b529218`), aktueller main-HEAD `60d9888` = 110 passed (stabil). Der Operator kann den
 > **aktuellen main-HEAD** verwenden (pin-konform abgleichen), NICHT `git checkout 5e64e07` mehr.
 > Die EIGENTLICHE Windows-Gegenprobe auf `WORKSTATION-LG` bleibt Operator-Evidenz.
+> **Drift-robuster Hinweis (Re-Run mac-studio, BACH qwen3.8:27b-mlx):** Der Paritätsnachweis
+> (110 passed, ~2.6–3.7 s) gilt NICHT nur für `60d9888`, sondern fortlaufend für den
+> **aktuellen main-HEAD** — die Commits seit `60d9888` sind **docs-only** (keine Code-/Teständerung),
+> daher bleibt die 5-Datei-Parität grün. Der Operator führt die Gegenprobe am **jeweiligen aktuellen
+> main-HEAD** aus und trägt genau diesen `git rev-parse --short HEAD`-Wert in die Evidenz ein
+> (kein festes Checkout, kein `5e64e07`/`60d9888`-Pin nötig). Erwartung: **110 passed**.
 
 ---
 
