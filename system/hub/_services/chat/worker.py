@@ -122,7 +122,8 @@ def main(argv: list[str] | None = None) -> int:
     bach = Path(__file__).resolve().parents[3]
     sys.path.insert(0, str(bach))
     os.chdir(bach)
-    db = args.db or str(bach / "data" / "bach.db")
+    from hub.bach_paths import BACH_DB
+    db = args.db or str(BACH_DB)
     bach_cli = str(bach / "bach.py")
 
     os.environ.setdefault("BACH_DELEGATION_DEPTH", "2")
