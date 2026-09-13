@@ -632,9 +632,12 @@ class BACHTray:
             role_id, role_display, role_desc = self._resolve_role(assignee)
             task_chat_id = f"idle-{role_id}-{task_id}"
 
-            self._api("PUT", f"/api/tasks/{task_id}",
-                       {"status": "in_progress", "changed_by": "idle-worker"},
-                       base=self.gui_url)  # DB-Kanon, nicht 'in-progress'
+            claim_resp = self._api("PUT", f"/api/tasks/{task_id}",
+                                   {"status": "in_progress", "changed_by": "idle-worker"},
+                                   base=self.gui_url)
+            if not claim_resp or claim_resp.get("status") == "claim_failed":
+                print(f"[Idle] Task #{task_id} bereits von anderem Taktgeber beansprucht -- ueberspringe.")
+                return
 
             prompt = (
                 f"Du bearbeitest eine zugewiesene Aufgabe im vollen Ausfuehrungsmodus (Full-Mode mit Schreibrechten).\n\n"
