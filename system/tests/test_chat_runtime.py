@@ -794,8 +794,16 @@ class TestFackelPreference:
         nonexistent = str(tmp_path / "nonexistent_fackel.json")
         assert get_fackel_preference(nonexistent) == "compute"
 
-    def test_set_and_get_fackel_preference(self, tmp_path):
+    def test_set_and_get_fackel_preference(self, tmp_path, monkeypatch):
         from hub.compute_lock import get_fackel_preference, set_fackel_preference
+        import hub.compute_lock as cl
+        monkeypatch.setattr(cl, "_record_fackel_activity", lambda *a, **k: None)
+        try:
+            import hub._services.chat.slots_config as sc
+            monkeypatch.setattr(sc, "load_slots_config", lambda *a, **k: {})
+            monkeypatch.setattr(sc, "save_slots_config", lambda *a, **k: None)
+        except Exception:
+            pass
         fpath = str(tmp_path / "fackel.json")
         
         # Set to ollama
@@ -814,6 +822,130 @@ class TestFackelPreference:
         fpath = str(tmp_path / "fackel.json")
         with pytest.raises(ValueError):
             set_fackel_preference("invalid_preference", path=fpath)
+
+    def test_set_fackel_records_activity_with_old_and_new(self, tmp_path, monkeypatch):
+        import hub.compute_lock as cl
+        from hub.compute_lock import set_fackel_preference
+        import hub._services.chat.slots_config as sc
+
+        # Neutralize slots_config disk write & read
+        monkeypatch.setattr(sc, "load_slots_config", lambda *a, **k: {})
+        monkeypatch.setattr(sc, "save_slots_config", lambda *a, **k: None)
+
+        activity_calls = []
+
+        def fake_record_activity(source, activity, status="ok", details=None, path=None):
+            activity_calls.append({
+                "source": source,
+                "activity": activity,
+                "status": status,
+                "details": details or {},
+            })
+
+        monkeypatch.setattr(sc, "record_activity", fake_record_activity)
+
+        fpath = str(tmp_path / "fackel.json")
+        # First transition: default (compute) -> ollama
+        set_fackel_preference("ollama", path=fpath, quelle="cli")
+        assert len(activity_calls) == 1
+        assert activity_calls[0]["source"] == "fackel"
+        assert activity_calls[0]["details"]["alt"] == "compute"
+        assert activity_calls[0]["details"]["neu"] == "ollama"
+        assert activity_calls[0]["details"]["quelle"] == "cli"
+
+        # Second transition: ollama -> compute via 'api'
+        set_fackel_preference("compute", path=fpath, quelle="api")
+        assert len(activity_calls) == 2
+        second = activity_calls[1]
+        assert second["source"] == "fackel"
+        assert second["details"]["alt"] == "ollama"
+        assert second["details"]["neu"] == "compute"
+        assert second["details"]["quelle"] == "api"
+        assert second["details"]["datei"] == fpath
+
+    def test_legacy_fackel_file_is_migrated(self, tmp_path, monkeypatch):
+        import json
+        import hub.compute_lock as cl
+        from hub.compute_lock import get_fackel_preference
+
+        legacy_path = tmp_path / "legacy_fackel.json"
+        legacy_path.write_text(json.dumps({"preference": "ollama"}), encoding="utf-8")
+        new_path = tmp_path / "system_data" / "fackel_preference.json"
+
+        monkeypatch.setattr(cl, "FACKEL_PREFERENCE_LEGACY_FILE", str(legacy_path))
+        monkeypatch.setattr(cl, "FACKEL_PREFERENCE_FILE", str(new_path))
+        monkeypatch.setattr(cl, "_FACKEL_PATH_FROM_ENV", False)
+
+        # Run get_fackel_preference() with default path
+        result = get_fackel_preference()
+        assert result == "ollama"
+
+        # Verify new file was written with migrated value
+        assert new_path.is_file()
+        migrated_data = json.loads(new_path.read_text(encoding="utf-8"))
+        assert migrated_data["preference"] == "ollama"
+
+        # Altdatei remains intact (not deleted)
+        assert legacy_path.is_file()
+
+    def test_custom_path_does_not_fall_back_to_legacy(self, tmp_path, monkeypatch):
+        import json
+        import hub.compute_lock as cl
+        from hub.compute_lock import get_fackel_preference
+
+        legacy_path = tmp_path / "legacy_fackel.json"
+        legacy_path.write_text(json.dumps({"preference": "ollama"}), encoding="utf-8")
+        monkeypatch.setattr(cl, "FACKEL_PREFERENCE_LEGACY_FILE", str(legacy_path))
+
+        # slots_config neutralisieren
+        try:
+            import hub._services.chat.slots_config as sc
+            monkeypatch.setattr(sc, "load_slots_config", lambda *a, **k: {})
+        except Exception:
+            pass
+
+        # Mit explizit uebergebenem, leerem / nichtexistentem Pfad
+        custom_empty = str(tmp_path / "empty_fackel.json")
+        assert get_fackel_preference(custom_empty) == "compute"
+        assert get_fackel_preference("") == "compute"
+        # Migration must not occur
+        assert not (tmp_path / "system_data" / "fackel_preference.json").exists()
+
+    def test_env_path_does_not_fall_back_to_legacy(self, tmp_path, monkeypatch):
+        """When BACH_FACKEL_PREFERENCE_PATH is configured, legacy fallback is blocked.
+
+        An empty or nonexistent file at the env-specified path returns 'compute'
+        and must NOT trigger a fallback to or migration from ~/.memwatchdog/fackel_preference.json.
+        """
+        import json
+        import hub.compute_lock as cl
+        from hub.compute_lock import get_fackel_preference
+
+        legacy_path = tmp_path / "legacy_fackel.json"
+        legacy_path.write_text(json.dumps({"preference": "ollama"}), encoding="utf-8")
+        env_pref_path = tmp_path / "env_data" / "fackel_preference.json"
+
+        monkeypatch.setattr(cl, "FACKEL_PREFERENCE_LEGACY_FILE", str(legacy_path))
+        monkeypatch.setattr(cl, "FACKEL_PREFERENCE_FILE", str(env_pref_path))
+        monkeypatch.setattr(cl, "_FACKEL_PATH_FROM_ENV", True)
+        monkeypatch.setattr(cl, "_record_fackel_activity", lambda *a, **k: None)
+
+        # slots_config neutralisieren
+        try:
+            import hub._services.chat.slots_config as sc
+            monkeypatch.setattr(sc, "load_slots_config", lambda *a, **k: {})
+            monkeypatch.setattr(sc, "save_slots_config", lambda *a, **k: None)
+        except Exception:
+            pass
+
+        # Call get_fackel_preference() with default argument (uses FACKEL_PREFERENCE_FILE)
+        result = get_fackel_preference()
+        assert result == "compute"
+
+        # Altdatei must NOT be migrated to the env path
+        assert not env_pref_path.exists()
+        # Altdatei remains intact
+        assert legacy_path.is_file()
 
     def test_telegram_chat_fackel_integration(self):
         """Verify telegram_chat contains fackel endpoint, command, and dashboard controls."""

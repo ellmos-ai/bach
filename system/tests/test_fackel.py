@@ -104,13 +104,26 @@ def test_sysctl_vor_metal():
     assert fackel.kapazitaet_bytes() == 16 * 1024**3
 
 
-def test_nicht_messbar_blockiert_nicht():
-    """Kein Ollama, kein Metal: Die harte Grenze zieht Ollama selbst -
-    wir wuerden sonst auf einem gesunden System jede Arbeit verhindern."""
+def test_nicht_messbar_sperrt_fail_closed():
+    """Kein Ollama, kein Metal, keine gesetzte Grenze: Kapazitaet nicht
+    messbar fuehrt zu fail-closed (frei == 0.0, passt == False, messbar == False)."""
     _stelle([], metal=0)
     assert fackel.fackel_bytes() == 0
+    assert fackel.frei() == 0.0
+    assert fackel.passt(99 * 2**30) is False
+    assert fackel.passt(0) is False
+    s = fackel.stand()
+    assert s["messbar"] is False
+    assert s["quelle"] == "unbekannt"
+
+
+def test_messbar_positivfall_bleibt_freigebig():
+    """Messbar: vorhandene Kapazitaet wird positiv gemessen und nicht gesperrt."""
+    _stelle([])
+    assert fackel.stand()["messbar"] is True
     assert fackel.frei() == 10.0
-    assert fackel.passt(99 * 2**30) is True
+    assert fackel.passt(0) is True
+    assert fackel.passt(1000) is True
 
 
 def test_zwei_kleine_modelle_nebeneinander():
@@ -157,10 +170,16 @@ def test_unbekanntes_modell_blockiert_nicht():
 def test_stand_meldet_quelle():
     _stelle([])
     assert fackel.stand()["quelle"] == "metal"
+    assert fackel.stand()["messbar"] is True
     _stelle([_modell("fremd:7b", 8_000_000_000)], metal=0)
     assert fackel.stand()["quelle"] == "geladen"
+    assert fackel.stand()["messbar"] is True
     _stelle([], kap_env=20_000)
     assert fackel.stand()["quelle"] == "gesetzt"
+    assert fackel.stand()["messbar"] is True
+    _stelle([], metal=0)
+    assert fackel.stand()["quelle"] == "unbekannt"
+    assert fackel.stand()["messbar"] is False
 
 
 if __name__ == "__main__":

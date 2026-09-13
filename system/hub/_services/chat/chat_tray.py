@@ -1087,7 +1087,7 @@ class BACHTray:
         if result is None:
             try:
                 from hub.compute_lock import set_fackel_preference
-                set_fackel_preference(pref)
+                set_fackel_preference(pref, quelle="tray")
                 self.state["fackel_preference"] = pref
             except Exception:
                 self._notify_error(f"Fackel → {pref}")

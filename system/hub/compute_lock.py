@@ -11,6 +11,8 @@ Lock-file: ~/.memwatchdog/compute_active.lock (JSON with PIDs, RSS, command)
 Check-script (optional): a script that exits 0 = free, 1 = active (JSON on stdout).
   Override via env BACH_COMPUTE_CHECK_SCRIPT or the bot config (compute_lock.check_script).
   Without it the lock file alone is used.
+Fackel-preference: system/data/fackel_preference.json
+  Override via env BACH_FACKEL_PREFERENCE_PATH. Legacy: ~/.memwatchdog/fackel_preference.json.
 
 Usage:
     from hub.compute_lock import check_compute_active, pause_compute_jobs
@@ -38,8 +40,11 @@ _CHECK_SCRIPT_CANDIDATES = [
     "~/.memwatchdog/check_compute_active.sh",
 ]
 PAUSED_PIDS_FILE = "~/.memwatchdog/bot_paused_pids.json"
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+FACKEL_PREFERENCE_LEGACY_FILE = "~/.memwatchdog/fackel_preference.json"
+_FACKEL_PATH_FROM_ENV = "BACH_FACKEL_PREFERENCE_PATH" in os.environ
 FACKEL_PREFERENCE_FILE = os.environ.get(
-    "BACH_FACKEL_PREFERENCE_PATH", "~/.memwatchdog/fackel_preference.json"
+    "BACH_FACKEL_PREFERENCE_PATH", str(_DATA_DIR / "fackel_preference.json")
 )
 FACKEL_COMPUTE = "compute"
 FACKEL_OLLAMA = "ollama"
@@ -428,12 +433,54 @@ def format_status_message(status: dict) -> str:
     return "\n".join(lines)
 
 
-def get_fackel_preference(path: str = FACKEL_PREFERENCE_FILE) -> str:
+def _record_fackel_activity(
+    alt: str,
+    neu: str,
+    quelle: str,
+    datei: str,
+) -> None:
+    """Record a Fackel preference change in the chat activity log.
+
+    Isolated into a helper so test suites can monkeypatch/neutralize it cleanly.
+    """
+    try:
+        from hub._services.chat.slots_config import record_activity
+        record_activity(
+            source="fackel",
+            activity=f"Fackel-Vorrang {alt} -> {neu} (Quelle: {quelle})",
+            status="ok",
+            details={
+                "alt": alt,
+                "neu": neu,
+                "quelle": quelle,
+                "datei": str(datei),
+            },
+        )
+    except Exception as e:
+        log.warning("Could not record fackel activity: %s", e)
+
+
+def get_fackel_preference(path: Optional[str] = None) -> str:
     """Return the current Fackel (resource priority) preference.
+
+    Order of resolution:
+        1. path (primary file, defaults to FACKEL_PREFERENCE_FILE)
+        2. FACKEL_PREFERENCE_LEGACY_FILE (only if path is the derived default path,
+           not when set via BACH_FACKEL_PREFERENCE_PATH) with one-time migration
+           to the primary file path.
+        3. slots_config.json
+        4. FACKEL_COMPUTE ('compute')
 
     Returns:
         'ollama' or 'compute' (default: 'compute').
     """
+    is_default = False
+    if path is None:
+        path = FACKEL_PREFERENCE_FILE
+        is_default = True
+    elif path == FACKEL_PREFERENCE_FILE:
+        is_default = True
+
     f = _expand(path)
     if f.is_file():
         try:
@@ -444,7 +491,45 @@ def get_fackel_preference(path: str = FACKEL_PREFERENCE_FILE) -> str:
         except Exception as e:
             log.warning("Could not read fackel preference file %s: %s", f, e)
 
-    # Secondary persistent fallback: slots_config.json
+    # Secondary fallback with migration: legacy file, but ONLY if path is the
+    # derived default, not explicitly configured via BACH_FACKEL_PREFERENCE_PATH.
+    # Ein gesetzter Env-Pfad ist eine bewusste Ansage des Betreibers; still daran
+    # vorbei die Altdatei zu lesen wuerde sie unterlaufen.
+    if is_default and not _FACKEL_PATH_FROM_ENV:
+        legacy = _expand(FACKEL_PREFERENCE_LEGACY_FILE)
+        if legacy.is_file():
+            try:
+                data = json.loads(legacy.read_text(encoding="utf-8"))
+                legacy_pref = str(data.get("preference", "")).lower().strip()
+                if legacy_pref in VALID_FACKEL_PREFERENCES:
+                    # One-time migration to new location (atomic write)
+                    try:
+                        f.parent.mkdir(parents=True, exist_ok=True)
+                        payload = {
+                            "preference": legacy_pref,
+                            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        }
+                        tmp = f.with_suffix(".tmp")
+                        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                        tmp.replace(f)
+                        log.info(
+                            "Migrated fackel preference from legacy %s to %s (value: %s)",
+                            legacy,
+                            f,
+                            legacy_pref,
+                        )
+                    except Exception as e:
+                        log.warning(
+                            "Could not migrate fackel preference from %s to %s: %s",
+                            legacy,
+                            f,
+                            e,
+                        )
+                    return legacy_pref
+            except Exception as e:
+                log.warning("Could not read legacy fackel preference file %s: %s", legacy, e)
+
+    # Tertiary persistent fallback: slots_config.json
     try:
         from hub._services.chat.slots_config import load_slots_config
         cfg = load_slots_config()
@@ -457,8 +542,19 @@ def get_fackel_preference(path: str = FACKEL_PREFERENCE_FILE) -> str:
     return FACKEL_COMPUTE
 
 
-def set_fackel_preference(pref: str, path: str = FACKEL_PREFERENCE_FILE) -> str:
+def set_fackel_preference(
+    pref: str,
+    path: Optional[str] = None,
+    quelle: str = "unbekannt",
+) -> str:
     """Set the Fackel resource preference ('compute' or 'ollama') and persist it.
+
+    Args:
+        pref: Target preference ('compute' or 'ollama').
+        path: Path to the preference file (defaults to FACKEL_PREFERENCE_FILE).
+        quelle: Source triggering the update ('telegram', 'api', 'tray', 'cli',
+            'test', etc.). Without quelle, it was previously impossible to trace
+            which caller triggered a preference switch.
 
     Returns:
         The normalized preference string.
@@ -468,6 +564,14 @@ def set_fackel_preference(pref: str, path: str = FACKEL_PREFERENCE_FILE) -> str:
         raise ValueError(
             f"Invalid fackel preference: {pref!r}. Must be one of {VALID_FACKEL_PREFERENCES}"
         )
+    if path is None:
+        path = FACKEL_PREFERENCE_FILE
+
+    try:
+        alt = get_fackel_preference(path)
+    except Exception:
+        alt = "unbekannt"
+
     f = _expand(path)
     file_saved = False
     try:
@@ -479,7 +583,13 @@ def set_fackel_preference(pref: str, path: str = FACKEL_PREFERENCE_FILE) -> str:
         tmp = f.with_suffix(".tmp")
         tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         tmp.replace(f)
-        log.info("Fackel preference updated to %s (file: %s)", pref_norm, f)
+        log.info(
+            "Fackel preference %s -> %s (Quelle: %s, Datei: %s)",
+            alt,
+            pref_norm,
+            quelle,
+            f,
+        )
         file_saved = True
     except Exception as e:
         log.error("Failed to persist fackel preference to %s: %s", f, e)
@@ -494,6 +604,9 @@ def set_fackel_preference(pref: str, path: str = FACKEL_PREFERENCE_FILE) -> str:
         log.warning("Could not persist fackel preference to slots_config: %s", e)
         if not file_saved:
             raise
+
+    # Activity log persistence: record for /activity GUI timeline
+    _record_fackel_activity(alt, pref_norm, quelle, str(f))
 
     return pref_norm
 
