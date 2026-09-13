@@ -33,6 +33,8 @@ import os
 import sys
 from pathlib import Path
 
+from hub.canonical_seam import CanonicalSeam, require_canonical
+
 # --- Provider-Seam: Altpfad oder kanonisches Modul ---------------------------------
 # `extract_text` ist der Engpass, durch den PDF-Text in BACH gelangt. Das extrahierte
 # Modul `doc-services` kann dasselbe -- und mehr Formate. Wer es konsumieren will,
@@ -81,6 +83,27 @@ class CanonicalDocEngineUnavailable(RuntimeError):
     """`canonical` gewaehlt, aber das kanonische Modul ist nicht erreichbar."""
 
 
+# Dieselbe Schranke wie im web-scrape-Seam, dieselbe Hilfsfunktion: ein Modulname ist
+# kein Beweis, dass das importierte Modul unseres ist. Hier ist der Anlass milder als
+# dort -- `doc-services` ist auf PyPI frei und der Default steht auf `bundled` --, aber
+# der Fall, gegen den es schuetzt, ist derselbe: ein Stand ohne `produces` liefert sonst
+# Markdown statt Fliesstext, und das ist genau der Unterschied, der die Aequivalenz
+# kaputtmacht (8.698 statt 14.856 Woerter, siehe Messung oben). Lieber ein benannter
+# Fehler als ein stiller Qualitaetsverlust.
+DOC_CANONICAL_SEAM = CanonicalSeam(
+    module="doc_services",
+    attribute="extrahieren",
+    distribution="doc-services",
+    repo_url="github.com/ellmos-ai/doc-services",
+    params=("produces",),
+    operations=(),
+    env_var=DOC_ENGINE_ENV,
+    canonical_value=DOC_ENGINE_CANONICAL,
+    bundled_value=DOC_ENGINE_BUNDLED,
+    error=CanonicalDocEngineUnavailable,
+)
+
+
 def resolve_doc_engine(environ=None) -> str:
     """Gewaehlte Engine, fail-closed bei einem unbekannten Wert.
 
@@ -103,15 +126,7 @@ def _extract_text_canonical(file_path: str) -> str:
 
     Faellt bewusst NICHT auf pypdf zurueck -- die Ausnahme geht nach oben.
     """
-    try:
-        from doc_services import extrahieren
-    except ImportError as exc:
-        raise CanonicalDocEngineUnavailable(
-            f"{DOC_ENGINE_ENV}={DOC_ENGINE_CANONICAL} verlangt das Modul 'doc-services', "
-            f"das aber nicht importierbar ist ({exc}). Es findet KEIN Rueckfall auf den "
-            f"BACH-eigenen Pfad statt. Entweder das Modul bereitstellen "
-            f"(pip install -e <klon>) oder {DOC_ENGINE_ENV}={DOC_ENGINE_BUNDLED} setzen."
-        ) from exc
+    extrahieren = require_canonical(DOC_CANONICAL_SEAM)
 
     # Wir verlangen ausdruecklich FLIESSTEXT, nicht Markdown. Das ist kein
     # Formatgeschmack: Die Abnehmer dieses Textes (Schwaerzung, Klassifikation,
