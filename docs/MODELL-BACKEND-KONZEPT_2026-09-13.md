@@ -17,7 +17,7 @@ Umbau folgt in Folgetickets, die am Programmkopf in `ROADMAP.md` andocken.
 
 1. [Messgrundlage](#1-messgrundlage)
 2. [Bestandsaufnahme](#2-bestandsaufnahme)
-3. [Der Befund in fünf Sätzen](#3-der-befund-in-fünf-sätzen)
+3. [Der Befund in sieben Sätzen](#3-der-befund-in-sieben-sätzen)
 4. [Architekturskizze: lebendiges BACH](#4-architekturskizze-lebendiges-bach)
 5. [Einordnung der vorhandenen Bausteine](#5-einordnung-der-vorhandenen-bausteine)
 6. [Zweitmeinung](#6-zweitmeinung)
@@ -54,6 +54,8 @@ gekennzeichnet.
 | Nutzer-Runner | `agent_runners.py::runners()` Z. 79-85, liest `~/.config/bach/agent_runners.json` | aktiv | dritter Konfigurationsort neben Presets und BUILTIN |
 | Modell-Whitelist | `hub/agent_launcher.py:1395` | **aktiv und sperrend** | lässt nur `sonnet\|opus\|haiku` durch — die Runner `codex`, `agy`, `local` sind dadurch über den regulären Weg unerreichbar |
 | Empfehlungs-Modelliste | `hub/_services/delegation/__init__.py::_ScorerAdapter.get_recommended_model` | **doppelt**, dritte Modelliste | kennt nur `haiku\|sonnet\|opus` |
+| CLI-Register | `hub/_services/llm/model_backend.py::CLIBackend.KNOWN_CLIS` Z. 708 | **doppelt**, fünfte Liste | trägt Start-, Bereitschafts- und Sessionargumente je CLI — Verhalten, das `BACKEND_PRESETS` gar nicht kennt |
+| Backend-Fabrik | `hub/_services/llm/model_backend.py::create_backend` Z. 952 | aktiv | baut aus einer Konfiguration das tatsächliche Backend-Objekt — die eigentliche technische Wahrheit hinter den Presets |
 | Ollama-Handler (CLI) | `hub/ollama.py::OllamaHandler` Z. 30, Config `data/ollama_config.json` | aktiv | zweiter, unabhängiger Weg zu lokalen Modellen neben `BUILTIN["local"]` |
 | clutch-Anbindung | `hub/_services/delegation/__init__.py::_load_external_clutch_scorer` Z. 108-129 | **aktiv und extern bedient** | Fallback auf den Fork `hub/_archive/delegation_legacy/` ist **still** — ein Ausfall sähe aus wie normale Funktion |
 | clutch-CLI-Fassade | `hub/clutch.py::ClutchHandler` Z. 32-225 | aktiv | reine Statusanzeige, kein Routing-Aufruf aus dem Ausführungspfad |
@@ -110,17 +112,29 @@ dynamischer Worker namens `glm` lief auf `ollama-cloud`/`glm-5.3:cloud` und war 
 | Manuelle Zuweisung | `hub/task.py::TaskHandler._assign` Z. 866-895 | aktiv | Freitext, keine Validierung gegen das Rollen-Register |
 | **Der einzige Leser** | `chat_tray.py::_process_idle_task` Z. 553-694 | aktiv | die gesamte Kette „Task ist OLLAMA zugewiesen" hängt an einem System-Tray-Prozess auf dem Desktop |
 | Ausführungsaufruf | `chat_tray.py` Z. 638-642, `POST :8081/api/chat` mit `mode: "full"` | aktiv | — |
+| **Kein atomarer Claim** | `chat_tray.py` Z. 567-575 (lesen, dann `in_progress` setzen) gegen `worker.py` Z. 167-193 (`offen[0]` nehmen und starten) | **aktiv und riskant** | zwei Taktgeber können dieselbe Aufgabe gleichzeitig mit Schreibrechten ausführen |
 
 Die Kette ist geschlossen, aber schmal: Ein Task entsteht mit `assigned_to = "OLLAMA"`, und
 **ausschließlich** der Tray-Prozess pollt alle fünf Sekunden die GUI, findet ihn, setzt ihn auf
 `in_progress` und schickt einen generierten Prompt an die Control API. Weder `scheduler.py` noch
 `bach_api.py` kennen diesen Sentinel.
 
+**Der Tray ist dabei breiter zuständig, als der Sentinel vermuten lässt** (`chat_tray.py`
+Z. 567-575): Er fragt nacheinander `OLLAMA`, `BUDDHA` und `BACH` ab und greift danach auf
+nahezu alle nicht-menschlichen Zuweisungen zurück. `"OLLAMA"` ist damit nicht sein Auftrag,
+sondern nur sein erster Versuch.
+
+**Das gefährlichere Fehlen ist der Claim.** Der Tray liest eine Aufgabe und setzt sie *danach*
+auf `in_progress`; `worker.py` nimmt schlicht `offen[0]` und startet, ohne vorher überhaupt zu
+beanspruchen. Zwischen Lesen und Markieren liegt ein Fenster, in dem ein zweiter Taktgeber
+dieselbe Aufgabe aufgreift — mit Schreibrechten. Das ist kein Schönheitsfehler der Zuteilung,
+sondern ein Korrektheitsproblem, und es wiegt schwerer als die doppelten Register.
+
 ### 2.5 Slots, Fackeln, Ressourcen
 
 | Komponente | Datei::Symbol | Zustand | Lücke |
 |---|---|---|---|
-| Fackel-Rechnung | `hub/_services/fackel.py`, Konzept `docs/TORCH-KONZEPT.md` | aktiv, 16 Tests | Grundsatz „gemessen, nicht gebucht" — bewusst kein Register, wer wie viele hält |
+| Fackel-Rechnung | `hub/_services/fackel.py`, Konzept `system/docs/TORCH-KONZEPT.md` | aktiv, 16 Tests | Grundsatz „gemessen, nicht gebucht" — bewusst kein Register, wer wie viele hält |
 | Fackel-Kapazität | `fackel.py::kapazitaet_bytes` Z. 154, Quellenreihenfolge Env → sysctl → Metal → `/api/ps` | aktiv | — |
 | Vorrangschalter | `hub/compute_lock.py::get/set_fackel_preference` Z. 431-498 | aktiv | **schreibt keinen Log-Eintrag** — dadurch ist rückwirkend nicht feststellbar, wer umgeschaltet hat (belegt in `T-20260913-253157668`) |
 | Doppelte Persistenz | `~/.memwatchdog/fackel_preference.json` **und** `data/slots_config.json` Z. 487-494 | aktiv | zwei Schreibziele für einen Wert |
@@ -166,6 +180,8 @@ stillschweigende Ausnahme.
 | Vollsperre in Schleifen | `agent_runner.py:80`, `task_runner.py:122`, `plan_runner.py:127`, `worker.py:128` | aktiv | — |
 | Schwelle | hart codiert an beiden Prüfstellen | aktiv | `_services/limits.py:29` dokumentiert sie, liest sie aber nicht aus |
 | Domänen-Gate | `hub/domain_writer_gate.py` Z. 68-113, GUI-Übersetzung `gui/server.py:68-70` (HTTP 423) | aktiv, **echt fail-closed** | — |
+| Rechte am Executor | — | **fehlt** | `mode` (`safe`/`full`) wird vom Slot, von der API und vom Prompt gesetzt; kein zentraler Werkzeug- oder Prozessstarter prüft ein Rollenrecht |
+| Zugangsschutz Control API | `telegram_chat.py::_is_allowed_origin` Z. 2955, Prüfung Z. 3007/3048 | **aktiv, aber kein Authentifizierungsnachweis** | geprüft werden Herkunft und Inhaltstyp; kein `Authorization`-Header im ganzen Modul. Über diese Schnittstelle lassen sich Slots ändern, Worker im Vollmodus starten und die Fackel umschalten |
 
 `domain_writer_gate.py` ist das einzige Gatter im System, das den fail-closed-Vertrag
 tatsächlich einhält: unbekannte Domäne wirft `ValueError` statt still zu erlauben. Es ist damit
@@ -190,100 +206,154 @@ die Vorlage, an der sich die übrigen Seams messen lassen müssen.
 
 ---
 
-## 3. Der Befund in fünf Sätzen
+## 3. Der Befund in sieben Sätzen
 
-1. **Ein Backend-Register existiert bereits und ist gut** — es liegt nur im Telegram-Modul,
-   und drei weitere Modell-Listen stehen unabgeglichen daneben, von denen eine als harte
-   Whitelist alles außer Claude abschneidet.
-2. **Rollen tragen kein Modell.** Die Frage des Nutzers, wer wann welche Rolle spielt, ist
+1. **Kein atomarer Claim.** Zwei Taktgeber können dieselbe Aufgabe gleichzeitig mit
+   Schreibrechten ausführen, weil zwischen Lesen und Beanspruchen ein Fenster liegt und
+   `worker.py` gar nicht erst beansprucht. Das ist der gefährlichste Befund.
+2. **Rechte werden nirgends erzwungen.** `safe` und `full` setzen Slot, API und Prompt; kein
+   zentraler Starter prüft ein Rollenrecht. Ein Rechtefeld an der Rolle wäre ohne diesen
+   Prüfpunkt bloße Dokumentation.
+3. **Fünf unabgeglichene Modell- und Backend-Listen.** Ein gutes Register existiert bereits,
+   liegt aber im Telegram-Modul; eine harte Whitelist schneidet alles außer Claude ab, und
+   `model_backend.py` trägt zusätzlich das Startverhalten je CLI, das keines der Register kennt.
+4. **Rollen tragen kein Modell.** Die Frage des Nutzers, wer wann welche Rolle spielt, ist
    heute nicht falsch beantwortet, sondern gar nicht als Datum vorhanden.
-3. **Es gibt zwei Rollenwelten**: die kanonische in der Datenbank ohne Modell, und die
-   wirksame in einer JSON-Datei mit Modell, die aber nur Prompt-Text erzeugt.
-4. **Drei Taktgeber teilen unabhängig voneinander zu**, und der schmalste von ihnen — ein
-   System-Tray-Prozess — ist der einzige, der die Standard-Zuweisung überhaupt liest.
-5. **Das Protokoll kennt den Akteur nicht.** Deshalb war schon bei der Fackel nicht
+5. **Es gibt mehr als zwei Rollenwelten**: die Datenbank ohne Modell, `slots_config.json` mit
+   Modell als Prompt-Text, dazu `DEFAULT_ROLE_PROMPTS`, `PERSONA_MAP` im Tray,
+   `AGENT_DELEGATIONS` im Launcher, die Tabelle `agent_instances` und das Persona-Frontmatter.
+6. **Das Protokoll kennt den Akteur nicht.** Deshalb war schon bei der Fackel nicht
    feststellbar, wer umgeschaltet hatte; dieselbe Blindheit gilt für jede Besetzung.
+7. **Die Control API prüft Herkunft, nicht Berechtigung.** Über sie lassen sich Slots ändern,
+   Worker im Vollmodus starten und die Fackel umschalten.
 
 Die vier Ressourcen- und Schutzmechanismen dagegen — Fackel-Rechnung, Compute-Lock,
 Delegationstiefe, Domänen-Gate — sind gebaut, getestet und wirken. **Was fehlt, ist nicht die
-Mechanik, sondern die Zuteilungsentscheidung darüber und ihre Protokollierung.**
+Mechanik, sondern eine verbindliche Stelle, an der zugeteilt, beansprucht, geprüft und
+protokolliert wird.**
 
 ---
 
 ## 4. Architekturskizze: lebendiges BACH
 
-### 4.1 Die Grundunterscheidung
+### 4.1 Die Grundunterscheidung: vier Begriffe
 
-**Rolle ist ein Vertrag. Agent ist eine Besetzung.**
+Ein erster Entwurf dieses Konzepts kannte nur zwei Begriffe, Rolle und Agent. Die
+Zweitmeinung hat das zurückgewiesen, und zwar zu Recht: „Agent" ist in BACH bereits belegt —
+`core/agent_runtime.py::AgentRegistry` führt eine Tabelle `agent_instances` mit genau diesem
+Wort für etwas anderes. Wer den Begriff umdeutet, baut eine Mehrdeutigkeit ein, die jeder
+Leser danach erneut auflösen muss. Es braucht vier Begriffe:
 
-Eine *Rolle* sagt, was getan werden darf und soll: Fähigkeiten, Werkzeugkreis, Rechte,
-Budgetrahmen, Fackelbedarf. Sie ist dauerhaft, wird gepflegt und geändert sich selten.
-`steuer-agent`, `research-agent`, „Hintergrundworker" sind Rollen.
+| Begriff | Was er festhält | Lebensdauer |
+|---|---|---|
+| **Rolle** | Vertrag: Fähigkeiten, Rechte, Werkzeuggrenzen, Budgetrahmen. Versioniert. | dauerhaft |
+| **Agentenprofil** | ausführbare Kombination aus Backend-Adapter, Modellklasse, Host-Anforderung, technischen Fähigkeiten | dauerhaft |
+| **Besetzung** | zeitlich begrenzte Bindung von Rolle, Agentenprofil, Auftrag und Platz | Minuten bis Stunden |
+| **Lauf** | die konkrete Ausführung einer Besetzung, mit eigener Kennung und dem *tatsächlich* verwendeten Modell | ein Vorgang |
 
-Ein *Agent* ist die Besetzung dieses Vertrags zur Laufzeit: ein konkretes Modell auf einem
-konkreten Backend, an einem konkreten Ort (lokal, Mac, Cloud), mit einem konkreten Budget und
-einer konkreten Fackelzuteilung. `qwen3.8:27b-mlx` auf `ollama` am Mac ist ein Agent.
+Der **Platz** kommt als fünfter, aber bereits vorhandener Begriff hinzu: ein vorgehaltener
+Ausführungskontext mit Chat-Identität. `buddha_chat`, `buddha_always_on` und
+`buddha_connector` sind Plätze, keine Rollen — `buddha_connector` ist genau genommen ein
+Eingangskanal. Ein Platz kann nacheinander verschieden besetzt werden; eine Rolle kann
+gleichzeitig auf mehreren Plätzen besetzt sein.
 
-Dieselbe Rolle ist durch verschiedene Agenten besetzbar, und derselbe Agent kann nacheinander
-verschiedene Rollen spielen. **Genau diese Trennung fehlt heute**, und genau ihr Fehlen macht
-die Frage „wer spielt wann welche Rolle" unbeantwortbar: Was heute Modell trägt (der Slot),
-trägt keine Rolle; was Rolle trägt (die DB-Zeile), trägt kein Modell.
+Die Unterscheidung zwischen Besetzung und Lauf ist kein Formalismus: Das gewünschte Modell und
+das tatsächlich verwendete können auseinanderfallen, etwa wenn ein Gate greift oder ein
+Backend ausfällt. Genau diese Differenz ist es, die man später wissen will.
 
-Der Slot ist dabei weder das eine noch das andere, sondern ein **Platz**: ein dauerhaft
-vorgehaltener Ausführungskontext mit einer Chat-Identität (`buddha_chat` ist der interaktive
-Platz, `buddha_always_on` der Hintergrundplatz, `buddha_connector` der Nachrichtenplatz). Plätze
-gibt es wenige und stabile; Rollen viele; Besetzungen wechseln. Diese Dreiteilung ist im Code
-bereits angelegt — `sub_mode`, `role_id` und `model` stehen im selben Worker-Datensatz — aber
-nicht als Begriffe getrennt.
+**Was an die Rolle gehört und was nicht.** Rechte und Budgetgrenzen sind Vertragsbestandteil.
+Bevorzugtes Backend und bevorzugtes Modell sind es **nicht** — sie sind weiche
+Besetzungspolitik und gehören an die Zuteilung, nicht an den Vertrag. Der Fackelbedarf gehört
+überhaupt nicht an die Rolle: Er hängt von Modell, Kontextfenster und Host ab und ist damit
+eine Eigenschaft des Laufs, keine der Rolle.
 
 ### 4.2 Die Zuteilung: wer spielt wann
 
-Eine Besetzung entsteht aus fünf Eingaben, in dieser Reihenfolge:
+Eine Besetzung entsteht in sechs Schritten:
 
 1. **Auslöser** — woher kommt die Arbeit: Scheduler-Job, zugewiesener Task, eingehende
    Nachricht, interaktive Anfrage, Leerlauf.
-2. **Rolle** — welcher Vertrag passt. Heute hartkodiert in fünf Fällen; künftig aus dem
-   Rollen-Register, mit dem wiederbelebten oder ersetzten Router.
-3. **Vorschlag** — welches Modell dieser Aufgabe angemessen ist. Das ist die Frage, die clutch
-   bereits beantwortet, samt Kosten und Lernschleife.
-4. **Gates** — was BACH allein weiß und was den Vorschlag überstimmen darf: reichen die
-   Fackeln, steht der Vorrangschalter auf `compute`, ist ein Compute-Lock aktiv, ist die
-   Delegationstiefe erschöpft, erlaubt der Rechtevertrag der Rolle das Werkzeug, ist die
-   Domäne fremd.
-5. **Besetzung** — das Ergebnis: Rolle, Modell, Backend, Platz, Budget. Und dieses Ergebnis
-   wird protokolliert.
+2. **Claim** — die Aufgabe wird atomar beansprucht, bevor irgendetwas anderes geschieht. Ohne
+   diesen Schritt ist alles Weitere wertlos, weil zwei Taktgeber dieselbe Arbeit tun können.
+3. **Rolle** — welcher Vertrag passt, und erlaubt er das, was hier verlangt wird.
+4. **Kandidatenmenge** — BACH bildet aus Rechten, Host, Compute-Lock, Fackeln,
+   Delegationstiefe und harten Budgetgrenzen die Menge der überhaupt zulässigen Agentenprofile.
+5. **Auswahl** — clutch bewertet und exploriert **innerhalb dieser Menge** und wählt aus.
+6. **Start** — BACH prüft unmittelbar davor noch einmal die flüchtigen Ressourcen, startet und
+   protokolliert.
 
-Der entscheidende Schnitt liegt zwischen 3 und 4: **clutch schlägt vor, BACH entscheidet.**
-Der Vorschlag ist eine Empfehlung über Modelle; die Entscheidung ist eine über Ressourcen
-dieser Maschine. Nur BACH kennt die Fackeln, den laufenden 33-Stunden-Rechenjob und den
-Vorrangschalter. Ein reiner Modellrouter kann diese Entscheidung nicht treffen, und BACH soll
-umgekehrt die Modellbewertung nicht noch einmal selbst bauen.
+**Der entscheidende Punkt ist die Reihenfolge von 4 und 5.** Der naheliegende Entwurf lautet
+„clutch schlägt vor, BACH legt ein Veto ein" — und genau der ist falsch. Ein nachträgliches
+Veto erzeugt das Zwei-Hirn-Problem: clutch wählt frei, BACH lehnt ab, clutch lernt aus der
+Ablehnung und hält das Modell für schlecht, obwohl nur die Maschine voll war. Wirken die Gates
+dagegen **vorher**, sieht clutch nur zulässige Kandidaten und trifft innerhalb dieser Menge
+eine Entscheidung, die auch umgesetzt wird.
 
-Damit die Lernschleife von clutch dabei nicht gegen die Gates lernt, gilt: **Ein von einem
-Gate abgelehnter Vorschlag wird nicht als schlechtes Modellergebnis zurückgemeldet.** Er ist
-kein Fehlurteil über das Modell, sondern eine Aussage über die Maschine. Nur tatsächlich
-ausgeführte Besetzungen fließen in die Bewertung zurück.
+Daraus folgt die Rückmeldungsregel: **Ein Gate-Ausschluss ist kein Modellergebnis.** In die
+Lernschleife fließt nur, was tatsächlich lief. Und die Ergebnisarten müssen unterschieden
+werden — ein Infrastrukturfehler, eine Richtlinien-Ablehnung und ein fachlicher Misserfolg
+sind drei verschiedene Dinge; wer sie zusammenwirft, lernt Rauschen.
 
-### 4.3 Beobachtbarkeit: das Protokoll als Wahrheit über Besetzungen
+Die Verantwortungsgrenze verläuft damit entlang des Wissens: **clutch weiß über Modelle
+Bescheid, BACH über diese Maschine.** Nur BACH kennt die Fackeln, den laufenden
+33-Stunden-Rechenjob und den Vorrangschalter; nur clutch kennt Modellpreise, Eignung und
+Verlauf.
+
+### 4.3 Fackeln und Budget sind zwei Achsen, kein gemeinsames Konto
+
+Das Fackel-Dokument sagt „gemessen, nicht gebucht", clutch dagegen bucht — Tankuhr,
+Budgetzonen, Verbrauchsgrenzen. Das ist kein Widerspruch, solange man nicht versucht, beides
+in eine Zahl zu ziehen:
+
+- **Fackeln** regeln die *momentane physische Zulässigkeit* auf einem Host: Passt dieses
+  Modell jetzt in den Speicher?
+- **Budget** regelt den *kumulativen Verbrauch* an Geld, Tokens oder Kontingent: Ist diese
+  Ausführung im Rahmen?
+
+Eine Besetzung muss beide Bedingungen erfüllen. Sie dürfen aber kein gemeinsames Guthaben
+bilden, und es darf kein Register „Agentenprofil X hält fünf Fackeln" entstehen — das wäre
+genau die Buchhaltung, die auseinanderläuft, sobald ein Prozess ohne Abmeldung stirbt.
+
+Zulässig sind drei Dinge: eine **Bedarfsschätzung** aus Modell, Kontext und Host, die
+**unmittelbar gemessene Belegung** samt Messquelle, und eine **kurzlebige Startsperre**, die
+verhindert, dass zwischen Prüfung und Start ein zweiter Ladevorgang dazwischenkommt. Die
+Startsperre behauptet keinen Besitz; nach dem Start bleibt die Messung maßgeblich.
+
+### 4.4 Beobachtbarkeit: Ereignisstrom und Zustand getrennt
 
 Heute schreibt `record_activity` einen Freitext mit einer Quell-ID. Für „wer spielte um 10:34
-welche Rolle" reicht das nicht. Eine Protokollzeile muss mindestens tragen:
+welche Rolle" reicht das nicht.
+
+**Das Protokoll kann nicht zugleich Ereignisstrom und Zustand sein.** Ein erster Entwurf
+dieses Konzepts wollte es zur „einzigen Wahrheit" machen; die Zweitmeinung hat widersprochen,
+und der Widerspruch überzeugt. Gebraucht werden zwei Dinge:
+
+- ein **append-only Ereignisstrom** für Entscheidungen und Lebenszyklusänderungen,
+- eine **abfragbare Besetzungstabelle** für den aktuellen Zustand — entweder eigenständig oder
+  als deterministische Projektion aus dem Strom.
+
+Heute liegen beide zusammen in `slots_config.json`, gedeckelt auf hundert Einträge, gemeinsam
+mit der Konfiguration. Ein Ringpuffer in der Konfigurationsdatei kann keine Frage über gestern
+beantworten.
+
+Eine Besetzung muss mindestens tragen:
 
 | Feld | Zweck |
 |---|---|
-| `timestamp` | wann |
-| `platz` | wo (`buddha_chat`, `worker-xxxx`) |
-| `rolle` | welcher Vertrag |
-| `modell` + `backend` | wer gespielt hat |
-| `ausloeser` | warum (Scheduler-Job, Task-ID, Nachricht, Leerlauf, Nutzerklick) |
-| `entscheidung` | angenommener Vorschlag, oder abgelehnt durch welches Gate |
-| `ergebnis` | ok, Fehler, abgebrochen |
+| `assignment_id` | die Besetzung selbst |
+| `started_at`, `ended_at` | oder zwei korrelierte Ereignisse |
+| `role_id` + Rollenrevision | welcher Vertrag, in welcher Fassung |
+| `agent_instance_id` | die ausführende Instanz |
+| `backend_id`, `model_id`, `host` | **tatsächlich** verwendet, nicht gewünscht |
+| `slot_id`, `session_id`, `task_id` | Platz, Sitzung, Auftrag |
+| `initiated_by` | der Auslöser: Mensch oder Technik |
+| Status, Ergebnis, Umschaltgrund | was daraus wurde |
 
-**Zwei Dinge, die heute vermischt sind, gehören getrennt:** der *Ereignisstrom* (was geschah,
-append-only, historisch auswertbar) und der *Zustand* (was ist gerade, abfragbar). Heute liegen
-beide zusammen in `slots_config.json`, gedeckelt auf hundert Einträge, gemeinsam mit der
-Konfiguration. Ein Ringpuffer in der Konfigurationsdatei kann keine Frage über gestern
-beantworten.
+**„Akteur" ist dabei zwei Dinge, nicht eines:** der *Auslöser* (wer hat es angestoßen) und die
+*ausführende Instanz* (wer hat es getan). Beim Fackel-Schalter war genau der Auslöser die
+offene Frage — dort werden alter und neuer Wert, der Auslöser und ein Mess-Schnappschuss
+protokolliert. Ein Feld `haelt_fackeln` wäre dagegen mit „gemessen, nicht gebucht"
+unvereinbar und darf nicht entstehen.
 
 **Diese Trennung steht nicht im Widerspruch zum Fackel-Grundsatz „gemessen, nicht gebucht".**
 Der Grundsatz betrifft den *Zustand*: Wer wie viele Fackeln hält, wird erfragt und nicht in
@@ -299,16 +369,19 @@ grundsätzlich nicht ermittelbar — weder rückwirkend aus Logs noch prospektiv
 Das ist keine Verbesserung nebenbei, sondern der Prüfstein: Wenn das neue Protokoll diese Frage
 nicht beantwortet, taugt es nicht.
 
-### 4.4 Das Cockpit
+### 4.5 Das Cockpit — bewusst außerhalb des Bauumfangs
 
-`:8081/activity` ist heute die Oberfläche des Modell-Backends und bleibt der Ort. Sie wird
-parallel (Ticket `T-20260913-660268706`) ins GUI-Design überführt und unter „Agenten"
-eingehängt. Dieses Konzept baut daran nichts, sondern behandelt `/activity` als den Cockpit-Ort
-und übernimmt dessen Ergebnis.
+`:8081/activity` ist heute die Oberfläche des Modell-Backends. Sie wird parallel (Ticket
+`T-20260913-660268706`) ins GUI-Design überführt und unter „Agenten" eingehängt.
 
-Das Cockpit zeigt drei Dinge, die heute nur teilweise vorhanden sind: die **Plätze** mit ihrer
-aktuellen Besetzung (vorhanden), die **Ressourcenlage** — freie Fackeln, Vorrangschalter,
-laufende Compute-Jobs (teilweise vorhanden) und den **Besetzungsverlauf** (fehlt).
+**Dieses Programm baut am Cockpit nichts.** Die Zweitmeinung hat angemerkt, das Cockpit sei
+ein nachgelagerter Abnehmer und schaffe keine korrekte Zuteilung — das trifft zu, und es ist
+der Grund, warum es hier aus dem Bauumfang herausfällt statt als fünfte Festlegung
+mitgeschleppt zu werden. Es erscheint erst wieder, wenn es etwas anzuzeigen gibt.
+
+Anzuzeigen wären dann drei Dinge: die **Plätze** mit ihrer aktuellen Besetzung (heute
+vorhanden), die **Ressourcenlage** aus freien Fackeln, Vorrangschalter und laufenden
+Rechenjobs (teilweise vorhanden) und der **Besetzungsverlauf** (fehlt).
 
 ---
 
@@ -327,7 +400,17 @@ Grundsatz P-009: vorhandene Standards vor Eigenbau. Die Zuordnung:
 | **domain_writer_gate** | **Vorlage** für den fail-closed-Vertrag | — |
 | **BACH-eigen bleibt** | Rollen-Register, Plätze, Gates, Besetzungsprotokoll, Cockpit | — |
 
-Drei Dinge folgen daraus unmittelbar:
+**Ein Katalog, aber zwei Adapterverträge.** Ein erster Entwurf wollte `BACKEND_PRESETS` zur
+alleinigen Wahrheit erheben. Das greift zu kurz: `hub/_services/llm/model_backend.py` trägt in
+`CLIBackend.KNOWN_CLIS` (Z. 708) die Start-, Bereitschafts- und Sessionargumente je
+Kommandozeilenwerkzeug, und `create_backend` (Z. 952) baut daraus das tatsächliche Objekt —
+Verhalten, das die Presets gar nicht kennen. Ein flaches Register würde verdecken, dass ein
+Chat-Backend über eine Programmierschnittstelle und ein Prozess-Runner über eine Kommandozeile
+grundverschiedene Start-, Werkzeug- und Sitzungssemantik haben. Richtig ist daher: **ein
+gemeinsamer Katalog, welche Backends es gibt — und getrennte Adapterverträge, wie man sie
+startet.**
+
+Vier Dinge folgen daraus unmittelbar:
 
 - **Der stille clutch-Fallback muss laut werden.** clutch wird derzeit gemessen extern
   bedient, aber allein weil das Paket installiert ist — die im Code gesuchten Pfade greifen auf
@@ -340,16 +423,56 @@ Drei Dinge folgen daraus unmittelbar:
 - **Der tote Router wird entschieden, nicht behalten.** `agent_router.py` wird an die
   Zuteilung angeschlossen oder gelöscht. Eine Leiche, die vorgibt verdrahtet zu sein, kostet
   bei jedem Lesen erneut Zeit.
+- **Der Legacy-Fork darf kein zweiter Lernkern bleiben.** Als ausdrücklich eingeschalteter
+  Notfallmodus ist er vertretbar; als stiller Ersatz ist er ein zweites, unbemerktes
+  Routing- und Lernsystem neben dem eigentlichen.
 
 ---
 
 ## 6. Zweitmeinung
 
-Eine unabhängige Architektur-Zweitmeinung wurde eingeholt. Fragen und Antwort liegen als
-`_codex/ARCHITEKTUR-FRAGEN.md` und `_codex/ARCHITEKTUR-ANTWORT.md` im Repo; die Einarbeitung ist
-im Abschnitt unten dokumentiert.
+Eine unabhängige Architektur-Zweitmeinung wurde eingeholt: **Codex, Modell `gpt-5.6-sol`,
+Reasoning-Stufe `high`**, read-only im selben Worktree. Auftrag und Antwort liegen als
+`_codex/ARCHITEKTUR-FRAGEN.md` und `_codex/ARCHITEKTUR-ANTWORT.md` im Repo.
 
-<!-- ZWEITMEINUNG-EINARBEITUNG -->
+**Attributionsbeleg.** Rollout `rollout-2026-09-13T12-04-37-01a09a39-…jsonl`, Feld
+`"model":"gpt-5.6-sol"`, 42 ausgeführte Befehle. `codex_run_proof.py --contains
+"import agent_router|scheduler_provider"` meldet `BELEGT` — Codex hat die Behauptungen dieses
+Dokuments selbst am Quellcode nachgemessen, statt sie zu übernehmen. Für Textinhalte ist das
+Skript nicht zuständig: Es durchsucht ausgeführte Befehle, nicht Antworttexte, und meldet für
+einen Satz aus der Antwort folgerichtig `KEIN BELEG`. Der Textbeleg ist das Rollout selbst.
+
+Die Zweitmeinung hat den Entwurf an fünf Stellen korrigiert. **Alle fünf wurden übernommen**,
+nachdem die zugrunde liegenden Gegenbehauptungen am Quellcode nachgemessen wurden:
+
+| Einwand | Übernommen als | Nachgemessen |
+|---|---|---|
+| „Agent = Besetzung" kollidiert mit `agent_instances`; es braucht vier Begriffe | Abschnitt 4.1 (Rolle, Agentenprofil, Besetzung, Lauf; Platz als fünfter) | `core/agent_runtime.py::AgentRegistry` führt tatsächlich eine Tabelle dieses Namens |
+| Gates gehören **vor** die Auswahl, nicht als Veto danach | Abschnitt 4.2, Schritte 4 und 5 | — (Argument, keine Tatsachenbehauptung) |
+| Fackeln und Budget dürfen kein gemeinsames Konto bilden; es braucht eine kurzlebige Startsperre | neuer Abschnitt 4.3 | — |
+| Das Protokoll kann nicht zugleich Strom und Zustand sein | Abschnitt 4.4, mit Feldliste | — |
+| `BACKEND_PRESETS` ist **nicht** die alleinige Wahrheit — `model_backend.py` trägt das Startverhalten | Abschnitt 2.1 (zwei neue Zeilen) und Abschnitt 5 | `CLIBackend.KNOWN_CLIS` Z. 708, `create_backend` Z. 952 — **bestätigt, war im Entwurf übersehen** |
+
+Zusätzlich hat die Zweitmeinung **drei Lücken gefunden, die der Entwurf nicht kannte**. Alle
+drei wurden nachgemessen und bestätigt:
+
+1. **Kein atomarer Claim** (`chat_tray.py` Z. 567-575 gegen `worker.py` Z. 167-193). Bestätigt:
+   `worker.py` nimmt `offen[0]` und startet, ohne zu beanspruchen. Das ist gefährlicher als
+   alle Registerdoppelungen zusammen und steht jetzt an erster Stelle des Befunds.
+2. **Rechte werden am Executor nicht erzwungen.** Bestätigt: kein zentraler Prüfpunkt. Ein
+   Rechtefeld an der Rolle wäre ohne ihn bloße Dokumentation — das ändert die Reihenfolge.
+3. **Die Control API kennt keinen Authentifizierungsnachweis.** Bestätigt: `_is_allowed_origin`
+   (Z. 2955) prüft Herkunft, kein `Authorization`-Header im Modul. Über diese Schnittstelle
+   lassen sich Slots ändern, Vollmodus-Worker starten und die Fackel umschalten.
+
+**Eine Korrektur betraf den Ist-Befund selbst:** Der Entwurf stellte den Tray so dar, als läse
+er nur `assigned_to = "OLLAMA"`. Tatsächlich fragt er `OLLAMA`, `BUDDHA` und `BACH` ab und
+greift danach auf nahezu alle nicht-menschlichen Zuweisungen zurück. Abschnitt 2.4 ist
+entsprechend richtiggestellt.
+
+**Nicht übernommen wurde nichts.** Der einzige Punkt, an dem die Zweitmeinung und dieses
+Dokument auseinanderliefen — ob das Cockpit eine der Festlegungen bleibt — ist zugunsten der
+Zweitmeinung entschieden: Es fällt aus dem Bauumfang heraus (Abschnitt 4.5).
 
 ---
 
@@ -359,9 +482,10 @@ Vier Festlegungen sind echte Architekturentscheidungen und werden dem Nutzer als
 `decision-shot` vorgelegt, nicht hier einseitig getroffen:
 
 1. **Wo lebt das Rollen-Register** — Datenbank oder Konfigurationsdatei?
-2. **Wie wird zugeteilt** — clutch schlägt vor und BACH gated, oder BACH entscheidet allein?
-3. **Welches Format hat das Backend-Register** — ein gehobenes Python-Dict oder eine Datei?
-4. **Wo liegt das Cockpit** — bleibt es auf Port 8081 oder zieht es in die GUI auf 8000?
+2. **Wie wird zugeteilt** — bildet BACH die zulässige Kandidatenmenge und clutch wählt darin,
+   oder entscheidet BACH allein?
+3. **Welche Form hat der Backend-Katalog** — ein gehobenes Python-Modul oder eine Datendatei?
+4. **Wann kommt das Cockpit** — jetzt mitbauen oder erst, wenn es etwas anzuzeigen gibt?
 
 Die Vorlage steht im Ticket `T-20260913-896336887` unter der Kennung `BH-2026-09-13-A`.
 
@@ -374,18 +498,25 @@ Schritt ist für sich nützlich, auch wenn der nächste nie kommt.
 
 | # | Schritt | Warum hier |
 |---|---|---|
-| 1 | **Protokoll erweitern**: Akteursfelder ergänzen, Fackel-Umschaltung einbeziehen, Ereignis von Zustand trennen | Ändert kein Verhalten, macht aber alles Folgende messbar. Ohne diesen Schritt lässt sich keine Verbesserung belegen. |
-| 2 | **Backend-Register vereinheitlichen**: `BACKEND_PRESETS` herausheben, Whitelist und `BUILTIN` darauf zurückführen | Hebt die Sperre auf, die heute alles außer Claude abschneidet — sichtbarer Gewinn, kleiner Eingriff |
-| 3 | **Seams ehrlich machen**: clutch-Fallback laut, Scheduler-Seam entscheiden | Beseitigt zwei Stellen, an denen Ausfall wie Funktion aussieht |
-| 4 | **Rolle bekommt Besetzungsfelder** (nach Entscheidung 1) | Braucht die Entscheidung des Nutzers |
-| 5 | **Zuteilung verdrahten** (nach Entscheidung 2), toten Router entscheiden | Braucht 2 und 4 |
-| 6 | **Cockpit** (nach Entscheidung 4, Ergebnis von `T-20260913-660268706` abwarten) | Zeigt, was die Schritte davor erzeugt haben |
+| 1 | **Eine Zuteilungsgrenze für genau einen Pfad** (Vorschlag: der Hintergrundplatz). Sie reicht die bisherige Modellwahl unverändert durch, beansprucht die Aufgabe aber atomar, prüft das Rollenrecht, erzeugt eine `assignment_id` und protokolliert Start und Ende. | Beseitigt die Doppelausführung, schafft den Protokollschreiber und legt einen Seam, an dem alles Weitere andockt — ohne das Routing anzufassen |
+| 2 | **Protokoll vervollständigen**: Ereignis von Zustand trennen, Fackel-Umschaltung einbeziehen | Braucht 1 als Schreiber; danach ist jede Verbesserung belegbar |
+| 3 | **Backend-Katalog vereinheitlichen**, Whitelist und `BUILTIN` darauf zurückführen, Adapterverträge getrennt halten | Hebt die Sperre auf, die heute alles außer Claude abschneidet |
+| 4 | **Seams ehrlich machen**: clutch-Fallback laut, Scheduler-Seam entscheiden, Zugangsschutz der Control API | Beseitigt Stellen, an denen Ausfall wie Funktion aussieht |
+| 5 | **Rolle bekommt Vertragsfelder** — Rechte und Budget (nach Entscheidung 1) | Erst sinnvoll, wenn Schritt 1 einen Prüfpunkt geschaffen hat |
+| 6 | **Zuteilung verdrahten** (nach Entscheidung 2), toten Router entscheiden | Braucht 3 und 5 |
+| 7 | **Cockpit** (nach Entscheidung 4, Ergebnis von `T-20260913-660268706` übernehmen) | Zeigt, was die Schritte davor erzeugt haben |
 
-**Anfangen mit Schritt 1.** Nicht weil er der größte Gewinn wäre, sondern weil er der einzige
-ist, der ohne Nutzerentscheidung auskommt, nichts kaputtmachen kann und jeden weiteren Schritt
-überprüfbar macht. Die Fackel-Analyse hat gezeigt, wohin es führt, wenn man Mechanik baut,
-bevor man sie beobachten kann: Die naheliegendste Frage des Nutzers war mit den vorhandenen
-Daten grundsätzlich nicht beantwortbar.
+**Anfangen mit Schritt 1.** Ein erster Entwurf wollte mit dem Protokoll beginnen, weil es
+ohne Nutzerentscheidung auskommt und nichts brechen kann. Die Zweitmeinung hat auf etwas
+Besseres hingewiesen: Eine Zuteilungsgrenze für einen einzigen Pfad kostet kaum mehr, löst
+aber zusätzlich das Korrektheitsproblem der Doppelausführung — und sie bringt den
+Protokollschreiber gleich mit. Sie ist ein Strangler-Seam: Das bestehende Routing bleibt
+zunächst unangetastet und wandert später Pfad für Pfad dahinter.
+
+Die Begründung des ersten Entwurfs bleibt trotzdem gültig und gilt nun für Schritt 2: Die
+Fackel-Analyse hat gezeigt, wohin es führt, wenn man Mechanik baut, bevor man sie beobachten
+kann — die naheliegendste Frage des Nutzers war mit den vorhandenen Daten grundsätzlich nicht
+beantwortbar.
 
 ---
 

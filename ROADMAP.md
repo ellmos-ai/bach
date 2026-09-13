@@ -306,35 +306,54 @@ vorhandener Router.
 **Phase 1 abgeschlossen (13.09.2026):** Bestandsaufnahme und Architekturkonzept liegen als
 [`docs/MODELL-BACKEND-KONZEPT_2026-09-13.md`](docs/MODELL-BACKEND-KONZEPT_2026-09-13.md) vor —
 gemessen gegen `origin/main` `1bb8fa4`, Mac-Live-Stand nur lesend. Kein Umbau.
+Architektur-Zweitmeinung von Codex `gpt-5.6-sol` (Stufe `high`) eingeholt und eingearbeitet;
+Auftrag und Antwort unter `_codex/`.
 
-**Leitbegriffe des Programms:**
+**Leitbegriffe des Programms** (nach Einarbeitung der Zweitmeinung — „Agent" allein ist
+mehrdeutig, weil `agent_instances` den Begriff bereits belegt):
 
-- **Rolle = Vertrag** (Fähigkeiten, Rechte, Budgetrahmen, Fackelbedarf) —
-  **Agent = Besetzung** (Modell + Backend + Ort + Budget) — **Platz = Ausführungskontext**
-  (`buddha_chat`, `buddha_always_on`, `buddha_connector`, dynamische Worker).
-- **Zuteilung:** clutch schlägt das Modell vor, BACH entscheidet über die Ressourcen dieser
-  Maschine (Fackeln, Vorrangschalter, Compute-Lock, Delegationstiefe, Rechte).
-- **Beobachtbarkeit:** Jede Besetzung und jede Umschaltung schreibt eine Protokollzeile mit
-  Akteur. Cockpit ist `:8081/activity`, überführt ins GUI-Design.
+- **Rolle** = Vertrag (Fähigkeiten, Rechte, Werkzeuggrenzen, Budgetrahmen; versioniert) ·
+  **Agentenprofil** = ausführbare Kombination aus Backend, Modellklasse und Host ·
+  **Besetzung** = zeitlich begrenzte Bindung von Rolle, Profil, Auftrag und Platz ·
+  **Lauf** = die Ausführung, mit dem *tatsächlich* verwendeten Modell ·
+  **Platz** = Ausführungskontext (`buddha_chat`, `buddha_always_on`, `buddha_connector`).
+  Bevorzugtes Modell und Backend gehören **nicht** an die Rolle, sondern an die Zuteilung;
+  der Fackelbedarf gehört an den Lauf.
+- **Zuteilung:** BACH bildet aus Rechten, Host, Compute-Lock, Fackeln und Budgetgrenzen die
+  zulässige Kandidatenmenge, clutch wählt **darin**. Die Gates wirken vor der Auswahl, nicht
+  als Veto danach — sonst lernt clutchs Lernschleife BACHs Vetos statt Modellqualität. Ein
+  Gate-Ausschluss ist kein Modellergebnis.
+- **Beobachtbarkeit:** append-only Ereignisstrom **und** abfragbare Besetzungstabelle, nicht
+  beides in einem. „Akteur" ist zweigeteilt: Auslöser und ausführende Instanz.
+- **Fackeln und Budget** bleiben zwei Achsen: momentane physische Zulässigkeit gegen
+  kumulativen Verbrauch. Kein gemeinsames Konto, kein Register „hält N Fackeln".
 
-**Fünf gemessene Kernlücken (Belege im Konzeptdokument):**
+**Gemessene Kernlücken (Belege im Konzeptdokument), nach Gefährlichkeit:**
 
-1. Vier unabgeglichene Modell-/Backend-Listen; eine harte Whitelist in
-   `hub/agent_launcher.py:1395` schneidet alles außer Claude ab.
-2. Rollen (`bach_agents`/`bach_experts`) tragen kein Modell-, Backend-, Rechte- oder
+1. **Kein atomarer Claim.** `worker.py` nimmt `offen[0]` und startet ohne Anspruch;
+   `chat_tray.py` liest erst und markiert danach. Zwei Taktgeber können dieselbe Aufgabe mit
+   Schreibrechten ausführen.
+2. **Rechte werden am Executor nicht erzwungen.** `safe`/`full` setzen Slot, API und Prompt;
+   kein zentraler Prüfpunkt. Ein Rechtefeld an der Rolle wäre ohne ihn bloße Dokumentation.
+3. **Fünf unabgeglichene Modell-/Backend-Listen**; die Whitelist in
+   `hub/agent_launcher.py:1395` schneidet alles außer Claude ab, und
+   `_services/llm/model_backend.py` trägt zusätzlich das Startverhalten je CLI.
+4. Rollen (`bach_agents`/`bach_experts`) tragen kein Modell-, Backend-, Rechte- oder
    Budgetfeld — die Frage des Nutzers ist heute nicht als Datum vorhanden.
-3. Zwei Rollenwelten: kanonisch in der DB ohne Modell, wirksam in `data/slots_config.json`
-   mit Modell, aber nur als Prompt-Text.
-4. Drei unabhängige Taktgeber (`hub/scheduler.py`, `chat_tray.py::_poll_loop`,
-   `_services/chat/worker.py`); der schmalste ist der einzige, der die Standard-Zuweisung liest.
-5. Das Aktivitätsprotokoll kennt keinen Akteur — deshalb war schon beim Fackel-Schalter nicht
+5. Mehr als zwei Rollenwelten: DB ohne Modell, `slots_config.json` mit Modell als Prompt-Text,
+   dazu `DEFAULT_ROLE_PROMPTS`, `PERSONA_MAP`, `AGENT_DELEGATIONS`, `agent_instances`,
+   Persona-Frontmatter.
+6. Das Aktivitätsprotokoll kennt keinen Akteur — deshalb war schon beim Fackel-Schalter nicht
    feststellbar, wer umgeschaltet hatte.
+7. Die Control API prüft Herkunft, aber keine Berechtigung; über sie lassen sich Slots ändern,
+   Vollmodus-Worker starten und die Fackel umschalten.
 
-**Reihenfolge (Phase 2 ff.):** (1) Protokoll um Akteursfelder erweitern und Ereignis von
-Zustand trennen — der einzige Schritt ohne Nutzerentscheidung, der nichts brechen kann und
-alles Weitere messbar macht. (2) Backend-Register vereinheitlichen. (3) Seams ehrlich machen
-(stiller clutch-Fallback, Scheduler-Seam). (4) Rolle bekommt Besetzungsfelder. (5) Zuteilung
-verdrahten. (6) Cockpit.
+**Reihenfolge (Phase 2 ff.):** (1) **Zuteilungsgrenze für genau einen Pfad** — reicht die
+Modellwahl unverändert durch, beansprucht aber atomar, prüft das Rollenrecht und protokolliert
+Start und Ende. Strangler-Seam, löst zugleich die Doppelausführung. (2) Protokoll
+vervollständigen. (3) Backend-Katalog vereinheitlichen, Adapterverträge getrennt halten.
+(4) Seams ehrlich machen (stiller clutch-Fallback, Scheduler-Seam, Zugangsschutz der Control
+API). (5) Rolle bekommt Vertragsfelder. (6) Zuteilung verdrahten. (7) Cockpit.
 
 **Offene Nutzerentscheidungen** (vorgelegt als decision-shot `BH-2026-09-13-A` im Ticket
 `T-20260913-896336887`): Ort des Rollen-Registers, Zuteilungsstrategie, Format des
