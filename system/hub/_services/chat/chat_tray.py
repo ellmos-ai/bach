@@ -116,11 +116,10 @@ class BACHTray:
     IDLE_CHAT_ID = "idle-worker"
     PENDING_TTL = 1800   # danach gilt ein Lauf ohne Antwort als verloren
 
-    def __init__(self, host="127.0.0.1", port=8081, webchat_port=8080):
+    def __init__(self, host="127.0.0.1", port=8081):
         self.host = host
         self.base_url = f"http://{host}:{port}"
         self.gui_url = f"http://{host}:8000"
-        self.webchat_url = f"http://{host}:{webchat_port}"
         self.ollama_url = f"http://{host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
         self.state = {
@@ -1277,7 +1276,6 @@ def main():
     parser = argparse.ArgumentParser(description="BACH Unified System Tray")
     parser.add_argument("--host", default="127.0.0.1", help="Control API Host")
     parser.add_argument("--port", type=int, default=8081, help="Control API Port")
-    parser.add_argument("--webchat-port", type=int, default=8080, help="Webchat Port")
     parser.add_argument(
         "--smoke-promptboard",
         action="store_true",
@@ -1285,7 +1283,7 @@ def main():
     )
     args = parser.parse_args()
 
-    tray = BACHTray(host=args.host, port=args.port, webchat_port=args.webchat_port)
+    tray = BACHTray(host=args.host, port=args.port)
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
         return
