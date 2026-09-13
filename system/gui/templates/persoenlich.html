@@ -200,19 +200,26 @@
     <script src="/static/js/nav.js?v=4"></script>
     <script>
         async function loadDashboardStats() {
-            // Offene Aufgaben laden
+            // Offene Aufgaben laden (via API.status() analog zu app.js)
             try {
-                const tasksData = await (window.API && API.tasks ? API.tasks.list('open') : fetch('/api/tasks?status=open').then(r => r.json()));
-                const count = tasksData.count ?? (tasksData.tasks ? tasksData.tasks.length : 0);
+                const statusData = await (window.API && API.status ? API.status() : fetch('/api/status').then(r => r.json()));
+                if (!statusData || !statusData.stats || typeof statusData.stats.tasks_open === 'undefined') {
+                    throw new Error('Ungueltige Status-Antwort');
+                }
                 const el = document.getElementById('stat-tasks');
-                if (el) el.textContent = count;
+                if (el) el.textContent = statusData.stats.tasks_open;
             } catch (err) {
                 console.error('[Dashboard] Fehler beim Laden der Aufgaben:', err);
+                const el = document.getElementById('stat-tasks');
+                if (el) el.textContent = '–';
             }
 
             // Aktive Routinen laden
             try {
                 const routinesData = await (window.API && API.get ? API.get('/api/routines') : fetch('/api/routines').then(r => r.json()));
+                if (!routinesData || (!routinesData.stats && !routinesData.routines)) {
+                    throw new Error('Ungueltige Routinen-Antwort');
+                }
                 const activeCount = (routinesData.stats && typeof routinesData.stats.active === 'number')
                     ? routinesData.stats.active
                     : (routinesData.routines ? routinesData.routines.filter(r => r.is_active).length : 0);
@@ -220,6 +227,8 @@
                 if (el) el.textContent = activeCount;
             } catch (err) {
                 console.error('[Dashboard] Fehler beim Laden der Routinen:', err);
+                const el = document.getElementById('stat-routines');
+                if (el) el.textContent = '–';
             }
         }
 

@@ -39,7 +39,7 @@
 | Kennzahl | Status | Quelle / Endpunkt | Details |
 |---|---|---|---|
 | **Termine heute** | Platzhalter (`-`) | - | Kein Kalender-Backend im Server vorhanden (`grep -rn "api/calendar" system/gui/server.py` ohne Treffer). Außerhalb des Ticket-Scopes; Platzhalter bleibt sauber stehen. |
-| **Offene Aufgaben** | **Echt** | `/api/tasks?status=open` (`API.tasks.list('open')`) | Holt die Anzahl der offenen Aufgaben (`count` bzw. `tasks.length`). |
+| **Offene Aufgaben** | **Echt** | `/api/status` (`API.status()` -> `stats.tasks_open`) | Holt serverseitig aggregierte offene Aufgaben (`pending`, `open`, `in_progress`), analog zu `app.js`. |
 | **Verlinkte Agenten** | **Echt (statisch)** | Statisch `3` | Entspricht exakt den 3 verlinkten Agenten (Finanzberater, Gesundheitsassistent, Förderplaner). Keine API erforderlich. |
 | **Aktive Routinen** | **Echt** | `/api/routines` (`API.get('/api/routines')`) | Holt die aktiven Routinen aus `stats.active` (bzw. Filter auf `is_active`). |
 
@@ -73,10 +73,10 @@ Ausgeführt mit `pytest system/tests/test_gui_server_smoke.py -q`:
 
 ```text
  _codex/AUFTRAG-p3.md                       | 118 ++++++++++++++++
- _codex/BERICHT-p3.md                       |  85 ++++++++++++
+ _codex/BERICHT-p3.md                       |  86 ++++++++++++
  system/gui/templates/persoenlich.html      | 210 +++++++++++++++--------------
  system/tests/test_persoenlich_dashboard.py | 103 ++++++++++++++
- 4 files changed, 413 insertions(+), 103 deletions(-)
+ 4 files changed, 414 insertions(+), 103 deletions(-)
 ```
 
 ---
@@ -84,3 +84,22 @@ Ausgeführt mit `pytest system/tests/test_gui_server_smoke.py -q`:
 ## 5. Selbstauskunft (Modell)
 
 Gemini 3.8 Flash (High)
+
+---
+
+## 6. Nachtrag: Korrekturen nach Codex-Review (`_codex/REVIEW-p3.md`)
+
+Nach Befund des Codex-Reviews wurden zwei Nachbesserungen an `system/gui/templates/persoenlich.html` vorgenommen:
+
+1. **Echte Zählung offener Aufgaben via `API.status()`:**
+   - **Befund:** Die Abfrage `/api/tasks?status=open` mappt in der Server-Alias-Tabelle nur auf `['pending', 'open']` und unterschlägt damit `in_progress` sowie `blocked`.
+   - **Lösung:** `loadDashboardStats()` folgt nun exakt dem etablierten Muster aus `system/gui/static/js/app.js` (Zeilen 46–52): Es ruft `API.status()` (`/api/status`) auf und übernimmt `data.stats.tasks_open`, das serverseitig bereits alle offenen Aufgaben (`status IN ('pending', 'open', 'in_progress')`) erfasst.
+
+2. **Fehlerunterscheidung bei Kennzahlen (`–` statt `0`):**
+   - **Befund:** Im Fehlerfall oder bei nicht erreichbarem Backend war ein Ladefehler nicht von einem echten Nullwert unterscheidbar.
+   - **Lösung:** In den `catch`-Blöcken für Aufgaben (`#stat-tasks`) und Routinen (`#stat-routines`) wird die Kachel nun explizit auf `–` (Gedankenstrich) gesetzt.
+
+3. **Verifikation nach Korrektur:**
+   - `pytest system/tests/test_persoenlich_dashboard.py -q --basetemp=.pytest-tmp-p3` erfolgreich:
+     `2 passed, 1 warning in 4.29s`
+
