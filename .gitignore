@@ -293,3 +293,6 @@ PLAN.txt
 
 # Codex-Zweitmeinung: Roh-Logs bleiben lokal, Fragen/Antwort werden committet
 _codex/*.log
+
+# Codex-Zweitmeinung: Roh-Logs bleiben lokal
+_codex/*.log

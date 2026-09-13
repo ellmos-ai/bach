@@ -443,68 +443,53 @@ Vier Dinge folgen daraus unmittelbar:
 
 ## 6. Zweitmeinung
 
-Eine unabhängige Architektur-Zweitmeinung wurde eingeholt: **Codex, Modell `gpt-5.6-sol`,
-Reasoning-Stufe `high`**, read-only im selben Worktree. Auftrag und Antwort liegen als
-`_codex/ARCHITEKTUR-FRAGEN.md` und `_codex/ARCHITEKTUR-ANTWORT.md` im Repo.
+Zwei Runden unabhängiger Architektur-Zweitmeinung durch **Codex `gpt-5.6-sol`, Stufe `high`**,
+read-only im selben Worktree. Auftrag und Antwort je Runde liegen als
+`_codex/ARCHITEKTUR-FRAGEN.md` / `-ANTWORT.md` und `-FRAGEN-2.md` / `-ANTWORT-2.md` im Repo;
+die vollständige Einarbeitungstabelle steht in `_codex/ZWEITMEINUNG-EINARBEITUNG.md`.
 
-**Attributionsbeleg.** Rollout `rollout-2026-09-13T12-04-37-01a09a39-…jsonl`, Feld
+**Alle Einwände beider Runden wurden übernommen**, jeweils erst nachdem die zugrunde liegenden
+Gegenbehauptungen am Quellcode nachgemessen waren. Sie haben dieses Dokument an neun Stellen
+geändert, darunter vier Korrekturen an eigenen Fehlmessungen: die Begriffe (vier statt zwei),
+die Reihenfolge von Gate und Auswahl, die Trennung von Ereignis und Zustand, die fünfte
+Modell-Liste, OCEANs Lokalitätsschranke, die Heterogenität des Inventars, das Fail-open der
+Fackel, die Schreibfähigkeit des Boards und die Verengung des Herzens auf C\*.
+
+**Attributionsbeleg Runde 1.** Rollout `rollout-2026-09-13T12-04-37-01a09a39-…jsonl`, Feld
 `"model":"gpt-5.6-sol"`, 42 ausgeführte Befehle. `codex_run_proof.py --contains
-"import agent_router|scheduler_provider"` meldet `BELEGT` — Codex hat die Behauptungen dieses
-Dokuments selbst am Quellcode nachgemessen, statt sie zu übernehmen. Für Textinhalte ist das
-Skript nicht zuständig: Es durchsucht ausgeführte Befehle, nicht Antworttexte, und meldet für
-einen Satz aus der Antwort folgerichtig `KEIN BELEG`. Der Textbeleg ist das Rollout selbst.
-
-Die Zweitmeinung hat den Entwurf an fünf Stellen korrigiert. **Alle fünf wurden übernommen**,
-nachdem die zugrunde liegenden Gegenbehauptungen am Quellcode nachgemessen wurden:
-
-| Einwand | Übernommen als | Nachgemessen |
-|---|---|---|
-| „Agent = Besetzung" kollidiert mit `agent_instances`; es braucht vier Begriffe | Abschnitt 4.1 (Rolle, Agentenprofil, Besetzung, Lauf; Platz als fünfter) | `core/agent_runtime.py::AgentRegistry` führt tatsächlich eine Tabelle dieses Namens |
-| Gates gehören **vor** die Auswahl, nicht als Veto danach | Abschnitt 4.2, Schritte 4 und 5 | — (Argument, keine Tatsachenbehauptung) |
-| Fackeln und Budget dürfen kein gemeinsames Konto bilden; es braucht eine kurzlebige Startsperre | neuer Abschnitt 4.3 | — |
-| Das Protokoll kann nicht zugleich Strom und Zustand sein | Abschnitt 4.4, mit Feldliste | — |
-| `BACKEND_PRESETS` ist **nicht** die alleinige Wahrheit — `model_backend.py` trägt das Startverhalten | Abschnitt 2.1 (zwei neue Zeilen) und Abschnitt 5 | `CLIBackend.KNOWN_CLIS` Z. 708, `create_backend` Z. 952 — **bestätigt, war im Entwurf übersehen** |
-
-Zusätzlich hat die Zweitmeinung **drei Lücken gefunden, die der Entwurf nicht kannte**. Alle
-drei wurden nachgemessen und bestätigt:
-
-1. **Kein atomarer Claim** (`chat_tray.py` Z. 567-575 gegen `worker.py` Z. 167-193). Bestätigt:
-   `worker.py` nimmt `offen[0]` und startet, ohne zu beanspruchen. Das ist gefährlicher als
-   alle Registerdoppelungen zusammen und steht jetzt an erster Stelle des Befunds.
-2. **Rechte werden am Executor nicht erzwungen.** Bestätigt: kein zentraler Prüfpunkt. Ein
-   Rechtefeld an der Rolle wäre ohne ihn bloße Dokumentation — das ändert die Reihenfolge.
-3. **Die Control API kennt keinen Authentifizierungsnachweis.** Bestätigt: `_is_allowed_origin`
-   (Z. 2955) prüft Herkunft, kein `Authorization`-Header im Modul. Über diese Schnittstelle
-   lassen sich Slots ändern, Vollmodus-Worker starten und die Fackel umschalten.
-
-**Eine Korrektur betraf den Ist-Befund selbst:** Der Entwurf stellte den Tray so dar, als läse
-er nur `assigned_to = "OLLAMA"`. Tatsächlich fragt er `OLLAMA`, `BUDDHA` und `BACH` ab und
-greift danach auf nahezu alle nicht-menschlichen Zuweisungen zurück. Abschnitt 2.4 ist
-entsprechend richtiggestellt.
-
-**Nicht übernommen wurde nichts.** Der einzige Punkt, an dem die Zweitmeinung und dieses
-Dokument auseinanderliefen — ob das Cockpit eine der Festlegungen bleibt — ist zugunsten der
-Zweitmeinung entschieden: Es fällt aus dem Bauumfang heraus (Abschnitt 4.5).
+"import agent_router|scheduler_provider"` meldet `BELEGT`. Für Textinhalte ist das Skript nicht
+zuständig — es durchsucht ausgeführte Befehle, nicht Antworttexte.
 
 ---
 
 ## 7. Offene Entscheidungen
 
-Sechs Festlegungen sind echte Architekturentscheidungen und werden dem Nutzer als
-`decision-shot` vorgelegt, nicht hier einseitig getroffen:
+**Vier** Festlegungen sind echte Architekturentscheidungen und werden dem Nutzer als
+`decision-shot` vorgelegt:
 
-1. **Wo lebt das Rollen-Register** — Datenbank oder Konfigurationsdatei?
-2. **Wie wird zugeteilt** — bildet BACH die zulässige Kandidatenmenge und clutch wählt darin,
-   oder entscheidet BACH allein?
+1. **Wo lebt das Herz** — BACH-intern, als Erweiterung von clutch, oder als enges eigenes
+   Modul, das BACH und OCEAN beide konsumieren? Empfehlung C\*, Abschnitt 10.2.
+2. **Wo lebt das Rollen-Register** — Datenbank oder Konfigurationsdatei? Abschnitt 4.1.
 3. **Welche Form hat der Backend-Katalog** — ein gehobenes Python-Modul oder eine Datendatei?
-4. **Wann kommt das Cockpit** — jetzt mitbauen oder erst, wenn es etwas anzuzeigen gibt?
-5. **Wie heißt das Herz und wo gehört es hin** — `agents-heart`, `ocean-heart` oder
-   `ocean-control`, und ist es ein Modul neben dem ControlRoom oder ein Teil davon?
-6. **Welche GUI-Richtung gilt** — bleibt es bei der laufenden Extraktion neutraler Module
-   (`D-20260830-002`), oder wird eine eigene OCEAN-Ansicht nachgebaut?
+   Abschnitt 5.
+4. **Wie heißt das Herz** — `agents-heart`, `ocean-heart` oder `ocean-control`, und steht es
+   neben dem ControlRoom oder darin? Abschnitt 10.2.1.
+
+### 7.1 Vier Fragen, die keine Entscheidung mehr sind
+
+Ein Zwischenstand dieses Dokuments legte acht Fragen vor. Die Zweitmeinung hat vier davon als
+Scheinfragen zurückgewiesen, und der Einwand trägt: Eine Frage, die im selben Dokument mit
+Begründung beantwortet wird, dem Nutzer aber trotzdem als offen vorgelegt wird, ist keine
+Beteiligung, sondern eine Rückdelegation. Sie stehen hier als **Feststellung**, nicht als Wahl:
+
+| Frage | Warum sie entschieden ist |
+|---|---|
+| Wie wird zugeteilt? | Abschnitt 4.2: Gates bilden die Kandidatenmenge, clutch wählt darin. Ein nachträgliches Veto vergiftet die Lernschleife — das ist ein technisches Argument, keine Vorliebe |
+| Wann kommt das Cockpit? | Abschnitt 4.5: erst, wenn es etwas anzuzeigen gibt. Es ist ein Abnehmer, kein Erzeuger |
+| Welche GUI-Richtung gilt? | `D-20260830-002` hat sie entschieden, `D-20260903-001` setzt sie bereits um. Der Nutzer hat gefragt, ob seine neue Idee besser ist — die Antwort in Abschnitt 10.5 ist nein, mit Begründung. Eine bestehende Entscheidung erneut zur Wahl zu stellen, wäre eine stille Umkehr |
+| Woher kommen Hosts und Modelle? | Falsches Entweder-oder. Alle drei werden gebraucht: das Inventar findet Hosts, die Probe am Ziel klärt die aktuelle Zulässigkeit, clutch bewertet Modelle. Abschnitt 9.4 nennt das Kriterium, das sie trennt |
 
 Die Vorlage steht im Ticket `T-20260913-896336887` unter der Kennung `BH-2026-09-13-A`.
-Zu 5 und 6 liegen belegte Empfehlungen in den Abschnitten 10.2 und 10.5.
 
 ---
 
@@ -573,7 +558,9 @@ Grundlage ist gemeinsamer Stand. **Das Konzept baut darauf auf und ersetzt es ni
 
 | Baustein | Zustand | Beleg |
 |---|---|---|
-| **Systemregister** | vorhanden, aber **dünn** | `.SYNC/_inventory/systems-registry.json`, 631 Byte: vier Hosts mit `hostname`, `role`, `slot`, teils `active`. **Keine Hardware-, keine Erreichbarkeitsfelder** — die stehen nur in Prosa in `CLAUDE.md` und im Systemmanifest |
+| **Systemregister — die Ableitung** | dünn, **absichtlich** | `.SYNC/_inventory/systems-registry.json`, 631 Byte: vier Hosts mit `hostname`, `role`, `slot`, teils `active` |
+| **Systemregister — die Quelle** | **reich**, und das war im ersten Anlauf übersehen | `.SYNC/_inventory/systems/<slot>.json`, je Host rund 14 KB: `system` mit Chip, Kernen, RAM, GPU, Speicher; `network` mit LAN-Adresse, **Tailscale-Adresse, SSH-Schlüssel, offenen Ports**; dazu `software`, `mcps`, `skills`, `agents` (14 Einträge), `venvs`, `services_dir` |
+| **Ableitungsregel** | aktiv, fail-closed gegen Handpflege | `ticket-master/lib/systems_registry.py::build_snapshot` Z. 69-120, Docstring Z. 11-16: „DERIVED, never authored". Es extrahiert bewusst nur `hostname`, `slot`, `role` und `active` (Z. 101-107) |
 | **PingPong** | **real gebaut**, läuft | Skill `pingpong` v1.1.0, Laufzeitskript `scripts/pingpong_runtime.py` mit eigenen Tests, Modi ListenSync/WriteSync, Anbieteradapter für Codex und Claude Code; Betriebsspuren als datierte Übernahme- und Kadenz-Deltas in `.SYNC/` |
 | **„Routing v2"** | **existiert — aber für etwas anderes** | Es ist der **Ticket**-Routing-Vertrag des `ticket-master`: `lib/ticket_writer.py:84` („Routing schema v2 needs a system-registry snapshot"), `:862` und `:901` (`--systems-registry` ist für Schema v2 Pflicht), `lib/systems_registry.py`, Vertrag dokumentiert im CHANGELOG ab 22.08.2026. Er entscheidet, **welcher Host ein Ticket bekommt** — kein Nachrichten- oder Modelltransport |
 | **clutch hostübergreifend** | **halb** | `clutch/motorblock.py:296-303` (`_ziel_url`) löst den Endpunkt eines Gangs auf, sonst liefe ein Remote-Gang gegen `localhost`; `clutch/discovery.py:68-84` liest die Umgebungsvariable `CLUTCH_REMOTE_OLLAMA` als zusätzliche Basis-URLs |
@@ -616,11 +603,98 @@ Compute-Lock und dessen Erreichbarkeit. Daraus folgt die Verbundlogik fast von s
 5. **Der Transport ist PingPong**, bis etwas Besseres nachweislich existiert. Es ist gebaut,
    getestet, hat Anbieteradapter und hinterlässt Betriebsspuren.
 
-**Die Lücke, die zuerst zu schließen ist:** Das Systemregister trägt vier Felder. Für eine
-Besetzungsentscheidung über Rechner hinweg braucht es mindestens Erreichbarkeit (wie spreche
-ich diesen Host an), verfügbare Backends und die gemessene Fackellage. Diese Felder gehören
-**nicht** von Hand gepflegt, sondern gemeldet — sonst entsteht genau die Buchhaltung, die
-auseinanderläuft.
+### 9.4 Zwei Funde, die die Lückenanalyse korrigieren
+
+**Erstens: Das Systemregister ist nicht zu dünn — seine Quelle ist reicher, aber uneinheitlich.**
+Ein erster Anlauf sah nur `systems-registry.json` mit vier Feldern und schloss auf eine Lücke.
+Unter `.SYNC/_inventory/systems/<slot>.json` liegt tatsächlich mehr: `mac-studio.json` trägt
+Chip, Kerne, RAM, GPU, **Tailscale-Adresse, SSH-Schlüssel und offene Ports**. Die schmale
+Registry ist eine bewusste Ableitung daraus (`build_snapshot`, „DERIVED, never authored").
+
+**Ein zweiter Anlauf verallgemeinerte das zu früh.** Nachgemessen über alle vier Dateien:
+
+| Datei | Größe |
+|---|---|
+| `mac-studio.json` | 14 KB |
+| `surface.json` | 44 KB |
+| `laptop.json` | 81 KB |
+| `workstation.json` | 143 KB |
+
+Die Datei, aus der die Feldliste stammt, ist also die **kleinste**, und der `network`-Block mit
+der Erreichbarkeit steht nicht überall. `surface.json` ist zudem vom Mai. Wer aus einer Stichprobe
+auf den Bestand schließt, misst die Stichprobe.
+
+Damit verschiebt sich die Lücke ein drittes Mal, und erst jetzt stimmt sie: Es fehlt nicht das
+Datum und nicht der Filter, sondern **ein Schema**. Die Quelle braucht Versionierung, Herkunft,
+Messzeitpunkt und einen Zustand `unknown`, bevor eine Ableitung mehr durchreichen darf. Ohne das
+reicht sie Felder durch, die auf einem Host stimmen und auf dem nächsten fehlen.
+
+**Und ein Eintrag im Inventar ist kein Beleg für Erreichbarkeit.** Die Dateien tragen
+`_gepflegt_von` und `_gepflegt_hinweis`, sind also handgepflegt. Eine Adresse dort heißt
+*dort nachsehen*, nicht *dort läuft der Dienst*.
+
+**Das Kriterium, das die Grenze zieht** (aus der Zweitmeinung übernommen, weil es schärfer ist
+als „statisch gegen flüchtig"):
+
+> Handgepflegte Daten dürfen **Absicht, Identität und mögliche Topologie** beschreiben. Alles,
+> dessen aktueller Wahrheitswert über **Zulässigkeit, Sicherheit oder Erfolg eines konkreten
+> Starts** entscheidet, wird am Zielsystem frisch gemessen.
+
+Die Probe dazu: Könnte eine veraltete Angabe einen unzulässigen Start, einen Datenabfluss,
+verdrängte Ressourcen, Doppelarbeit oder eine falsche Quittung verursachen? Dann darf sie nicht
+alleinige Grundlage der Zulassung sein. Gelesen werden dürfen Host- und Platzidentität,
+Vertrauenszone, Hardwareklasse als Vorauswahl, Adresse und Schlüsselpfad **als Probenziel**,
+sowie erlaubte Anbieter. Gemessen werden müssen Erreichbarkeit, Anmeldung, tatsächlich
+startbare Modelle, freie Fackeln, Compute-Lock, laufende Jobs und am Ende der tatsächlich
+verwendete Anbieter samt Modell.
+
+Ein menschliches Verbot bleibt davon unberührt: Eine Freigabe oder Sperre ist Richtlinie und
+wird durch keine Messung überstimmt.
+
+**Zweitens: Ein Besetzungsprotokoll über Rechner hinweg existiert bereits.** Der
+Ticket-Routing-Vertrag führt je Zielsystem ein Ledger, und jede Zeile trägt eine Quittung mit
+Pflichtfeldern (`routing_contract.py::_RECEIPT_FIELDS` Z. 988-991):
+
+```
+signature · status · executed_by · actual_provider · actual_model · occurred_at · evidence
+```
+
+**`executed_by`, `actual_provider` und `actual_model` sind genau die Frage „wer hat gespielt" —
+und zwar das tatsächliche Modell, nicht das gewünschte.** `record_receipt` (Z. 1041-1053)
+verweigert unvollständige Quittungen und nimmt sie nur unter passendem Anspruch an; die
+Ledger-Zustände sind `pending`, `claimed`, `done`, `blocked`.
+
+Das ändert die Aufgabe: Es ist **kein neues Protokollvokabular zu erfinden**. Aber — und hier
+hat die Zweitmeinung einen Kurzschluss korrigiert — **den Vertrag zu übernehmen heißt nicht,
+ihn zu benutzen.**
+
+Es sind zwei zusammenhängende, aber verschiedene Zustandsmaschinen:
+
+1. **Transport:** Welcher Host hat das Ticket angenommen? Dateibasiert, seltene Übergaben,
+   Anspruch durch Umbenennen der Vertragsdatei.
+2. **Besetzung:** Welche Rolle wurde auf welchem Platz mit welchem Agentenprofil tatsächlich
+   gestartet und beendet? Häufig, lokal, für Chats, Plätze, Scheduler-Läufe und Worker.
+
+`claimed` im Transportvertrag **ersetzt den lokalen Claim nicht**: Ein Host kann ein Ticket
+korrekt übernommen haben, während die Ausführung dort noch gar nicht zugelassen, noch nicht
+gestartet oder bereits abgebrochen ist. Eine dateibasierte Umbenennung ist außerdem die falsche
+Granularität für einen Fünf-Sekunden-Takt.
+
+Daraus folgt konkret:
+
+- Bei einem Ticket aus dem Routing-Vertrag **benutzt** BACH den vorhandenen Vertrag und
+  beansprucht **vor** der lokalen Ausführung.
+- Die lokale Aufgabe braucht **zusätzlich** einen atomaren Vergleichen-und-Setzen-Anspruch in
+  ihrem eigenen Aufgabenspeicher.
+- `assignment_id`, `run_id` und `ticket_id` verbinden beide Ebenen.
+- Am Ende eines Laufs entsteht **eine** versionierte Ausführungsquittung, aus der der
+  Ticket-Adapter die vorhandenen Felder befüllt.
+- `executed_by` muss dabei präzisiert werden: Im Transportvertrag meint es den Runner; die
+  Besetzung braucht zusätzlich Agenteninstanz, Rolle, Rollenrevision, Platz und Host.
+
+Sauberste Form wäre ein kleines **gemeinsames Anspruchs- und Quittungspaket**, das der
+ticket-master und das Herz beide konsumieren — statt einer Abhängigkeit des Herzens von
+Ticketdateien.
 
 ---
 
@@ -652,12 +726,110 @@ Gemessen an OCEAN (`C:/_Local_DEV/repos/open-ocean`, 150 grüne Tests, kein Rele
 | GUI | gebaut (`:8000`) | **keine** — bindet `unified-gui.host` ein |
 | Bundle-/Rezeptwesen | — | **gebaut** (Resolve, Verify, Fetch/Place, Activate) |
 
+**Was OCEAN stattdessen hat, und warum es nicht dasselbe ist** (nachgemessen):
+
+| Fundstelle | Was sie tut | Warum sie kein Modell-Backend ist |
+|---|---|---|
+| `tools/ocean_lifecycle.py::select_runtime_provider` Z. 123-140 | wählt **eine** aufgelöste Komponente, die `runtime.host` bereitstellt | generisch, aber es gibt nur einen Anbieter: `_ellmos_core_runtime_spec` Z. 348-357 wirft bei allem außer `ellmos-core` |
+| `validate_model_locality`, definiert in `ellmos-core/src/ellmos_core/config.py:98-114` | erzwingt private statt öffentlicher Inferenz; `_validate_local_endpoint` Z. 117-141 erlaubt Loopback, private und link-lokale Adressen **sowie den Tailscale-Bereich `100.64.0.0/10`** | eine Schranke, keine Auswahl — aber **kein Hindernis für den Verbund**, siehe unten |
+| Rollen | nur `admin` und `user` (`ocean.py:169`, `ocean_lifecycle.py:968`, `runtime_user.py:14`) | Zugriffsstufen, keine Aufgabenverträge |
+| `tools/host_adapters.py` Z. 55-65 | anbieterneutrale Abstraktion für den Aktivierungsschritt | genau **ein** Adapter registriert: `ClaudeCodeHostAdapter` (Z. 78-162); Codex, agy und Kimi nennt der Docstring als später |
+
+`validate_model_locality` verdient besondere Beachtung: Sie ist die einzige Stelle im
+Ökosystem, an der **Modellwahl und Ort bereits verknüpft** sind.
+
+**Ein Entwurf dieses Kapitels las sie als Widerspruch zum Verbund. Das war falsch.** Sie
+verlangt nicht „Modell auf demselben Rechner", sondern private statt öffentlicher Inferenz:
+`_validate_local_endpoint` lässt neben Loopback auch private, link-lokale und ausdrücklich
+Tailscale-Adressen zu (`ellmos-core/src/ellmos_core/config.py:139-141`). **Ein Ollama auf dem
+Mac Studio über Tailscale besteht die vorhandene Prüfung bereits.** Verboten bleiben öffentliche
+Ziele und, wo nur lokale Modelle erlaubt sind, Cloud-Anbieter.
+
+Für das Herz reicht die Prüfung trotzdem nicht: Eine private Adresse belegt weder Vertrauen
+noch Echtheit, und auch über Tailscale verlässt der Prompt den Ursprungsrechner. Der Ort gehört
+deshalb dreistufig modelliert — `derselbe Host`, `vertrauter Verbund`, `außerhalb` — und die
+Schranke wird nicht entfernt, sondern zum **harten Vorfilter der Kandidatenmenge** erweitert.
+
+**Das bevorzugte Muster ist nicht der Fernaufruf, sondern der Auftrag:** Das Herz schickt eine
+beglaubigte, korrelierte Ausführungsanforderung an den Zielhost; dieser misst seine Fackeln und
+Ansprüche **selbst**, ruft sein Ollama über Loopback auf und quittiert das tatsächlich
+verwendete Modell samt der eigenen Messung. So bleibt „gemessen, nicht gebucht" erhalten, weil
+jeder Host das misst, was nur er wissen kann. Ein direkter Fernaufruf bleibt möglich, aber nur
+als ausdrücklich erlaubter Verbundpfad mit Verschlüsselung, Dienstanmeldung und Datenfreigabe.
+
 **Das Bild ist eindeutig und macht die Frage leicht:** OCEAN hat für dieses Thema nichts, was
 BACH doppeln würde. BACH hat alles, was OCEAN fehlt. Es geht also nicht um eine Zusammenführung
 zweier Implementierungen, sondern um **eine Herauslösung aus BACH, die OCEAN mitbenutzen kann.**
 Das ist genau das Muster, das der Nutzer für die GUI bereits entschieden hat (siehe 10.5).
 
-### 10.2 Name und Ort — die Frage, die der Nutzer stellt
+### 10.2 Wo lebt das Herz — die eigentliche Frage
+
+Der Nutzer fragt nach dem Namen. Dahinter liegt die schwerere Frage, und sie entscheidet mehr:
+**Wird das Herz ein BACH-internes Bauteil, eine Erweiterung von clutch, oder ein eigenes
+Modul, das BACH und OCEAN beide konsumieren?**
+
+Zwei gemessene Sätze aus OCEANs eigener README geben die Richtung vor:
+
+> „The governing rule is a conservation law: **extraction changes the bed, never the water.**"
+> (`open-ocean/README.md:69`)
+
+> „**BACH stays supplied by consuming the same modules as OCEAN**; any later move to LTS,
+> freeze, or archive remains an explicit product decision, never an automatic consequence of
+> this plan." (`open-ocean/README.md:76`)
+
+Die zweite ist eine Erhaltungsregel für BACH: Es bleibt versorgt, **indem** es dieselben Module
+konsumiert. Ein BACH-internes Herz verstößt dagegen — es wäre Wasser, das im alten Bett bleibt,
+während alles andere umzieht.
+
+| Option | Dafür | Dagegen |
+|---|---|---|
+| **A — BACH-intern** | kürzester Weg, alles liegt schon dort | verstößt gegen die Erhaltungsregel; OCEAN müsste es später doch extrahieren, und dann unter Last |
+| **B — clutch erweitern** | clutch ist bereits der Modellrouter, provider-neutral, mit Budget und Lernschleife | es fehlen ihm die kanonischen Rollenverträge, Plätze und hostübergreifenden Ansprüche; es wüchse um eine fremde Achse |
+| **C — eigenes Modul**, das BACH und OCEAN konsumieren | folgt der Erhaltungsregel; BACH wird erster Konsument, OCEAN zweiter; clutch bleibt Router und wird konsumiert statt erweitert | **in der breiten Fassung selbst ein Monolith** — siehe die Einschränkung unten |
+
+**Eine Korrektur an der eigenen Darstellung von clutch.** Der erste Entwurf schrieb, clutch
+wisse nichts über Rollen und Rechte. Nachgemessen ist das zu stark: clutch hat `fahrer.py` als
+Orchestrator, `getriebe.py` als anbieterneutrales Modellregister, Team-, Schwarm- und
+Kettenmuster, Profile und in `prompt_library.py:20` die Typen `rolle` und `agent`; die
+Standard-Verweigerung bei Werkzeugsätzen ist eine Rechtevorstufe. Was clutch **fehlt**, sind
+kanonische Rollenverträge, Plätze und hostübergreifende Ansprüche — nicht der Begriff Rolle.
+Option B bleibt trotzdem die schlechtere: Diese drei Achsen sind nicht die eines Routers.
+
+**Und eine Korrektur an Option C.** So wie sie oben steht — Rollenregister, Backend-Katalog,
+Zuteilung, Protokoll, Fackel, Wartung, Board und Tray in einem Modul — wäre sie genau der
+Monolith, den dieses Dokument anderswo beklagt, und tatsächlich ein drittes Register. Die
+Roadmap gibt dafür auch keine Deckung: Sie sagt ausdrücklich, dass Cluster keine
+vorentschiedenen Paketnamen sind und ein eigenes Repository nur bei einer klaren Schnittstellen-
+und Zustandsgrenze gerechtfertigt ist.
+
+**Die tragfähige Fassung ist eng (C\*):**
+
+| Gehört ins Herz | Bleibt draußen, als Anschluss |
+|---|---|
+| Zustandsmaschine für Besetzung und Lauf | Modellkatalog, Bewertung, Budget, Lernschleife → **clutch** |
+| atomarer Anspruch und Zulassung | Ausführung → **agent-launcher** und die Backend-Adapter |
+| Besetzungsprotokoll | Hosts und Ressourcen → **Inventar plus lokale Proben** |
+| genau **ein** kanonischer Rollenspeicher | Anzeige und Bedienung → **Board und Tray als Klienten** |
+
+Der **Backend-Katalog gehört ausdrücklich nicht** ins Herz — er bleibt dort, wo er hingehört,
+und wird konsumiert. Ein Modul ist nicht automatisch ein Register; zum Register wird es erst,
+wenn es fremde Wahrheiten kopiert.
+
+**Die Extraktions-Roadmap von OCEAN stützt C und widerspricht einer Einordnung als
+Kernaufgabe:** `architecture/BACH-EXTRACTION-ROADMAP.md` behandelt **Cluster 9** als System-,
+Daten- und Betriebskern (Registry, `dbsync`, `snapshot`, Lifecycle) und priorisiert ihn zuerst.
+Ein Modell-Backend-Paket steht dort **nicht** — gemessen per Volltextsuche über den Cluster.
+LLM- und Mehr-Agenten-Orchestrierung ist ausdrücklich **Cluster 5** (Z. 198). Das Herz gehört
+damit nicht in den zuerst gezogenen Kern, sondern in einen eigenen, späteren Cluster. Die
+Roadmap kennt dafür auch den Ausnahmeweg: „A valuable BACH-only component may still be
+extracted, but that is an exception with its own gate."
+
+**Empfehlung: C\* — ein enges eigenes Modul**, das nur Besetzung, Anspruch, Zulassung und
+Protokoll besitzt; BACH wird erster Konsument, clutch bleibt Router und wird konsumiert. Das
+Mac-Worker-Dashboard auf `:8081` ist die **BACH-seitige Referenzimplementierung**, die später
+extrahiert wird — nicht der künftige Ort des Herzens.
+
+### 10.2.1 Und wie heißt es?
 
 Der Nutzer fragt: `ocean-heart`, `ocean-control`, oder gehört es in OCEANs ControlRoom?
 
@@ -745,6 +917,16 @@ die bestehenden Entscheidungen. Also gemessen.
 **Die neue Idee** lautet: unified-gui als Unterbau, darauf eine OCEAN-GUI, die BACHs Oberfläche
 mit OCEAN-Modulen im Rücken nachbaut; BACH könnte später auf diese Ansicht umschalten.
 
+**Die bestehenden Richtungen gegen die neue Idee:**
+
+| Frage | Bestehende Entscheidung | Neue Idee | Besser? |
+|---|---|---|---|
+| Wer hält die Fachfunktionen? | neutrales Modul, von beiden importiert (`D-20260830-002`, Option D des Nutzers) | OCEAN-Module im Rücken einer nachgebauten Oberfläche | **nein** — dasselbe Ziel, aber die Module werden nicht geteilt, sondern gespiegelt |
+| Wie viele Oberflächen? | eine, von beiden konsumiert | zwei, eine davon Nachbau | **nein** — zwei Oberflächen driften |
+| Ist es schon im Gang? | ja: `assistant-core v0.1.0` extrahiert, GUI-Server umgestellt (`D-20260903-001`, PR #15) | nein, wäre ein Neuanfang | **nein** |
+| Bekommt OCEAN eine eigene Ansicht? | nicht ausgeschlossen, aber nicht adressiert | ja, ausdrücklich | **ja** — das ist der Teil, der fehlt |
+| Konsole des ControlRoom | Web-Oberfläche mit eigenem Port (`D-20260817-007`) | nicht berührt | unverändert |
+
 **Urteil: die neue Idee ist nicht besser, sondern derselbe Gedanke mit einem Risiko mehr.**
 Beide wollen, dass BACH und OCEAN dieselbe Oberfläche benutzen. Der Unterschied liegt im Wort
 *nachbauen*: Eine nachgebaute Oberfläche ist eine zweite Oberfläche, und zwei Oberflächen
@@ -764,7 +946,7 @@ Vorbehalt: **zwei der drei stehen unter Sperre.**
 | System | Zustand | Was zurückkommt |
 |---|---|---|
 | **FolderHome** | aktiver Team-Lock (`LOCK.team.ASUS-GEI.txt`, Endabnahme), nur lesend | **Das Modellschema.** `contracts/strands_agent.py:130-150` und `application/local_app.py:717-720` unterscheiden bereits `local_ollama_host` von `remote_ollama_host` und verlangen außerhalb der Loopback-Adresse eine ausdrückliche Zustimmung. Das ist exakt die Verbundfrage aus Kapitel 9 — dort gelöst, hier offen |
-| **SentinelFleet** | `LOCK.user.agentic-judging-no-push.txt`, **weiterhin aktiv**, nur lesend | **Die Aufsichtsebene.** Es hat eine Flottensteuerung mit `TaskMaster State`, `Swarm Conductor` und Dashboard gebaut. Wichtig: Sein Modellrouter ist laut eigenem Docstring nur *„based on clutch"*, kein Import — die eigene Skill-Datei sagt ausdrücklich, ein Routing-Algorithmus existiere dort nicht. Zurückzuholen sind also **Muster**, nicht Code |
+| **SentinelFleet** | `LOCK.user.agentic-judging-no-push.txt`, **weiterhin aktiv**, nur lesend. **Kein Enddatum:** `LOCK_FALLS_NOT_BEFORE 2026-09-01` (Z. 10) ist eine Untergrenze, keine Zusage; die Bedingung ist die belegte Gewinnerbekanntgabe (Z. 13-18), fail-closed, vorzeitige Entfernung nur durch den Nutzer (Z. 21). Wer ein Ablaufdatum nennt, misst falsch | **Die Aufsichtsebene.** Es hat eine Flottensteuerung mit `TaskMaster State`, `Swarm Conductor` und Dashboard gebaut. Wichtig: Sein Modellrouter ist laut eigenem Docstring nur *„based on clutch"*, kein Import — die eigene Skill-Datei sagt ausdrücklich, ein Routing-Algorithmus existiere dort nicht. Zurückzuholen sind also **Muster**, nicht Code |
 | **NemoFold** | kein lokaler Klon, eigenes Repo; Entscheidung `D-20260909-001` offen: *„gebündelter Vertragslücken-Audit in vorhandenen Komponenten, kein Neubau von drei Modulen"* | **Das Belegprinzip:** exakte Fundstellen, umkehrbare Aktionen, begrenztes Schlussfolgern hinter einem lokalen Datenschutz-Gatter. Für das Besetzungsprotokoll ist „exakte Fundstelle" genau die richtige Messlatte |
 
 **Wie Rücktransfer hier funktioniert, ist bereits präzedenzhaft geklärt.** Ticket
@@ -799,6 +981,49 @@ Der Rücktransfer aus den drei Schwestersystemen ist kein eigener Schritt, sonde
 FolderHomes Modellschema; wer das Herz herauslöst, liest vorher SentinelFleets Aufsichtsebene.
 Beide Systeme stehen unter Sperre — lesen ist erlaubt, übernehmen nur als Muster mit
 Herkunftsvermerk.
+
+### 10.8 Extraktionspfade: Tray, Board, Fackel
+
+OCEANs Erhaltungsregel gibt die Form vor: *extraction changes the bed, never the water* —
+Umbau darf die Funktion nicht verändern, und funktionale Parität ist dort ausdrücklich die
+Messlatte für eine Freigabe, keine Zierde. Für die drei Bausteine heißt das je etwas anderes:
+
+| Baustein | Heutiger Zustand | Was vor der Extraktion passieren muss | Was danach umzieht |
+|---|---|---|---|
+| **Tray** (`chat_tray.py`) | Anzeige **und** Taktgeber **und** Ausführer in einem Prozess; hält den Einzelinstanz-Lock, pollt im Fünf-Sekunden-Takt, löst Rollen auf, führt aus, schaltet die Fackel | **Schritt 1 des Programms.** Solange das Zuteilen im Tray steckt, extrahiert man den Taktgeber mit — und OCEAN bekäme eine Kopie des Doppelausführungsproblems | der schlanke Anzeige- und Bedienteil; BACH brandet denselben um |
+| **Board** (`:8081/activity`) | gebaut, vollständig, seit PR #52 in `main`; die GUI verlinkt es seit PR #51 unter „Agenten" | **es liest nicht nur.** Es schaltet die Fackel und legt Worker an, startet, stoppt und löscht sie per POST. Vor der Extraktion braucht es einen beglaubigten Befehlsvertrag und eine Berechtigungsprüfung | die Seite als **Klient** einer Abfrage- und Befehlsschnittstelle |
+| **Fackel** (`_services/fackel.py`) | 16 Tests, misst statt zu buchen, Zahl zehn überall gleich, Größe folgt der Maschine | **mehr als gedacht.** Sie importiert `hub._services.limits` (Z. 33), hängt an `BACH_FACKEL_KAPAZITAET_MB`, ist auf Ollama und Apple-Silicon-Proben zugeschnitten — und meldet bei nicht messbarer Kapazität **volle zehn Fackeln** (`frei()`, Rückgabe `float(FACKELN)`) | als hostlokale **Ressourcenprobe** hinter einer neutralen Schnittstelle |
+
+**Die Fackel ist entgegen dem ersten Entwurf nicht unverändert extraktionsreif.** Ihr
+Verhalten bei unmessbarer Kapazität ist *fail-open*: Sie meldet alles frei. Lokal ist das als
+weicher Vorfilter erklärbar — im Verbund ist es gefährlich, denn dann bietet ein Host einem
+fremden Zuteiler Kapazität an, die er nicht gemessen hat. **Für den Verbund muss `unbekannt`
+zu *nicht zulässig* führen, nicht zu *alles frei*.**
+
+**Und vor allen dreien fehlt etwas.** Die Reihenfolge Fackel, Board, Tray stimmt relativ, aber
+sie setzt einen Vertrag voraus, den es noch nicht gibt: Kennungen und Zustandsmaschine für
+Besetzung und Lauf, atomarer Anspruch und Zulassung, Rechteprüfung am Ausführenden, die
+Anschlüsse für Rollen, clutch, Hostprobe, Ausführung und Ereignissenke, die Orts- und
+Sicherheitsgrenze, **genau ein Eigentümer des Zustands**, dazu Paritäts- und Fehlertests. Das
+ist OCEANs eigene Regel „contract before code".
+
+Die belastbare Reihenfolge lautet damit:
+
+1. **Vertrag** plus ein produktiver BACH-Pfad mit atomarem Anspruch (= Schritt 1 des Programms)
+2. **Fackel** als hostlokale Ressourcenprobe hinter neutraler Schnittstelle, `unbekannt`
+   fail-closed
+3. **Ereignisprojektion** und beglaubigte Abfrage- und Befehlsschnittstelle
+4. **Board** als Klient dieser Schnittstelle
+5. **Tray**, nachdem Takt, Zuteilung und Ausführung daraus entfernt sind
+
+Wer in umgekehrter Reihenfolge anfängt, extrahiert das Problem statt der Funktion.
+
+**Der Ausnahmeweg ist vorgesehen und muss benannt werden.** OCEANs Roadmap sagt: Ein wertvoller
+BACH-eigener Baustein darf extrahiert werden, „but that is an exception with its own gate."
+Das Herz ist ein solcher Fall — es steht nicht im zuerst gezogenen Cluster 9, sondern gehört
+zu Cluster 5. Die Extraktion braucht also ein eigenes Tor, keine stille Mitnahme.
+
+---
 
 ---
 
