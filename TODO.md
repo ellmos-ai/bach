@@ -2,6 +2,20 @@
 
 ## Offene Aufgaben
 
+### [BACH-HERZ-01] Besetzungsprotokoll: Akteursfelder ergaenzen, Ereignis von Zustand trennen
+- **Ziel:** Jede Modell-/Rollen-Besetzung und jede Umschaltung schreibt eine Protokollzeile, die den Akteur benennt. Heute traegt `record_activity` nur `source`, `activity` (Freitext) und `status` — kein Modell, kein Backend, keine Rolle, keinen Ausloeser. Deshalb war beim Fackel-Schalter nicht feststellbar, wer umgeschaltet hatte.
+- **Quelle:** `[Quelle: docs/MODELL-BACKEND-KONZEPT_2026-09-13.md, Abschnitt 4.3 + 8]` `[Programmkopf: ROADMAP.md "PROGRAMM: Modell-Backend = das Herz von BACH"]` `[Ticket: T-20260913-896336887]`
+- **Akzeptanzkriterien (DoD):**
+  - Protokollzeile traegt mindestens `timestamp`, `platz`, `rolle`, `modell`, `backend`, `ausloeser`, `entscheidung`, `ergebnis`.
+  - `hub/compute_lock.py::set_fackel_preference` schreibt einen Protokolleintrag mit Akteur (heute: kein einziger Aufruf von `record_activity`).
+  - Ereignisstrom (append-only, historisch auswertbar) liegt getrennt vom Zustand; der 100-Eintraege-Ringpuffer in `data/slots_config.json` ist nicht mehr die einzige Historie.
+  - Bestehende `/api/activity`-Leser brechen nicht (Rueckwaertskompatibilitaet der Felder).
+- **Pruefweg:** `python -m pytest system/tests/test_slots_and_workers.py -v`; anschliessend Fackel einmal umschalten und pruefen, dass der Akteur im Protokoll steht.
+- **Aufwand:** medium
+- **Reichweite:** local
+- **Prioritaet:** high
+- **Hinweis:** Erster Schritt des Programms und der einzige, der ohne Nutzerentscheidung auskommt. Schritte 4 bis 6 (Rollenfelder, Zuteilung, Cockpit) bleiben bis zur Entscheidung `BH-2026-09-13-A` gesperrt.
+
 ### [BACH-HOOK-01] Hook-Prompt anpassen: Empfehlung für `bach_api.db` statt hartem Block
 - **Ziel:** Den Hook-Prompt / DB-Guard-Prompt so anpassen, dass Agenten aktiv `bach_api.db` empfohlen wird, anstatt nur blockiert zu werden.
 - **Quelle:** `[Quelle: ROADMAP.md:1017]` `[Ableitung: Soll/Ist-Lücke]`

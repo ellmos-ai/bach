@@ -290,6 +290,58 @@ BACH definiert sich als **Personal Agentic Operating System**. Es entwickelt sic
 
 ---
 
+## PROGRAMM: Modell-Backend = das Herz von BACH [U 2026-09-13]
+
+> **Nutzer, 13.09.2026 (Originalwortlaut, maßgeblich):** „wichtigste Neuerung in Bach ist
+> aktuell Modell backend und dessen verwaltung. Das wird das neue Herz von Bach. Sprich bach
+> wird lebendig, wer spielt wann welche der Rollen und Agenten usw."
+
+**Programmkopf. Hier docken alle Folgetickets zum Thema an.** Laufende Arbeiten sind damit
+Teile *eines* Programms, nicht Einzelfälle: GUI-Menü „Models" unter „Agenten" und `/activity`
+im GUI-Design (`T-20260913-660268706`), Fackel als Ressourcenseite (`T-20260913-253157668`,
+`T-20260913-415211921`), `DEFAULT_TASK_ASSIGNEE = "OLLAMA"` als Zuweisungsseite (PR #46),
+Buddha-Delegation und Telegram, der OLLAMA-Worker, `hub/scheduler.py` und clutch als
+vorhandener Router.
+
+**Phase 1 abgeschlossen (13.09.2026):** Bestandsaufnahme und Architekturkonzept liegen als
+[`docs/MODELL-BACKEND-KONZEPT_2026-09-13.md`](docs/MODELL-BACKEND-KONZEPT_2026-09-13.md) vor —
+gemessen gegen `origin/main` `1bb8fa4`, Mac-Live-Stand nur lesend. Kein Umbau.
+
+**Leitbegriffe des Programms:**
+
+- **Rolle = Vertrag** (Fähigkeiten, Rechte, Budgetrahmen, Fackelbedarf) —
+  **Agent = Besetzung** (Modell + Backend + Ort + Budget) — **Platz = Ausführungskontext**
+  (`buddha_chat`, `buddha_always_on`, `buddha_connector`, dynamische Worker).
+- **Zuteilung:** clutch schlägt das Modell vor, BACH entscheidet über die Ressourcen dieser
+  Maschine (Fackeln, Vorrangschalter, Compute-Lock, Delegationstiefe, Rechte).
+- **Beobachtbarkeit:** Jede Besetzung und jede Umschaltung schreibt eine Protokollzeile mit
+  Akteur. Cockpit ist `:8081/activity`, überführt ins GUI-Design.
+
+**Fünf gemessene Kernlücken (Belege im Konzeptdokument):**
+
+1. Vier unabgeglichene Modell-/Backend-Listen; eine harte Whitelist in
+   `hub/agent_launcher.py:1395` schneidet alles außer Claude ab.
+2. Rollen (`bach_agents`/`bach_experts`) tragen kein Modell-, Backend-, Rechte- oder
+   Budgetfeld — die Frage des Nutzers ist heute nicht als Datum vorhanden.
+3. Zwei Rollenwelten: kanonisch in der DB ohne Modell, wirksam in `data/slots_config.json`
+   mit Modell, aber nur als Prompt-Text.
+4. Drei unabhängige Taktgeber (`hub/scheduler.py`, `chat_tray.py::_poll_loop`,
+   `_services/chat/worker.py`); der schmalste ist der einzige, der die Standard-Zuweisung liest.
+5. Das Aktivitätsprotokoll kennt keinen Akteur — deshalb war schon beim Fackel-Schalter nicht
+   feststellbar, wer umgeschaltet hatte.
+
+**Reihenfolge (Phase 2 ff.):** (1) Protokoll um Akteursfelder erweitern und Ereignis von
+Zustand trennen — der einzige Schritt ohne Nutzerentscheidung, der nichts brechen kann und
+alles Weitere messbar macht. (2) Backend-Register vereinheitlichen. (3) Seams ehrlich machen
+(stiller clutch-Fallback, Scheduler-Seam). (4) Rolle bekommt Besetzungsfelder. (5) Zuteilung
+verdrahten. (6) Cockpit.
+
+**Offene Nutzerentscheidungen** (vorgelegt als decision-shot `BH-2026-09-13-A` im Ticket
+`T-20260913-896336887`): Ort des Rollen-Registers, Zuteilungsstrategie, Format des
+Backend-Registers, Ort des Cockpits. Schritte 4 bis 6 bleiben bis dahin gesperrt.
+
+---
+
 ## Abgeschlossen: clutch als Routing-Engine übernommen (M8) [P 2026-07-22]
 
 BACH betrieb ursprünglich einen **eigenen Fork** der clutch-Idee (`hub/_services/delegation/` +
