@@ -42,6 +42,7 @@ _CHECK_SCRIPT_CANDIDATES = [
 PAUSED_PIDS_FILE = "~/.memwatchdog/bot_paused_pids.json"
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 FACKEL_PREFERENCE_LEGACY_FILE = "~/.memwatchdog/fackel_preference.json"
+_FACKEL_PATH_FROM_ENV = "BACH_FACKEL_PREFERENCE_PATH" in os.environ
 FACKEL_PREFERENCE_FILE = os.environ.get(
     "BACH_FACKEL_PREFERENCE_PATH", str(_DATA_DIR / "fackel_preference.json")
 )
@@ -464,8 +465,9 @@ def get_fackel_preference(path: Optional[str] = None) -> str:
 
     Order of resolution:
         1. path (primary file, defaults to FACKEL_PREFERENCE_FILE)
-        2. FACKEL_PREFERENCE_LEGACY_FILE (only if path is the default path)
-           with one-time migration to the primary file path.
+        2. FACKEL_PREFERENCE_LEGACY_FILE (only if path is the derived default path,
+           not when set via BACH_FACKEL_PREFERENCE_PATH) with one-time migration
+           to the primary file path.
         3. slots_config.json
         4. FACKEL_COMPUTE ('compute')
 
@@ -489,8 +491,11 @@ def get_fackel_preference(path: Optional[str] = None) -> str:
         except Exception as e:
             log.warning("Could not read fackel preference file %s: %s", f, e)
 
-    # Secondary fallback with migration: legacy file, but ONLY if path is default
-    if is_default:
+    # Secondary fallback with migration: legacy file, but ONLY if path is the
+    # derived default, not explicitly configured via BACH_FACKEL_PREFERENCE_PATH.
+    # Ein gesetzter Env-Pfad ist eine bewusste Ansage des Betreibers; still daran
+    # vorbei die Altdatei zu lesen wuerde sie unterlaufen.
+    if is_default and not _FACKEL_PATH_FROM_ENV:
         legacy = _expand(FACKEL_PREFERENCE_LEGACY_FILE)
         if legacy.is_file():
             try:

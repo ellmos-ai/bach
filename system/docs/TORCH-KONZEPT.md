@@ -196,8 +196,12 @@ Drei Entwurfsentscheidungen, die im Betrieb tragen müssen:
 - Das **eigene** Modell zählt nicht als Belegung. Ist es schon geladen,
   kostet seine Benutzung nichts — sonst sperrt sich der Worker an seiner
   eigenen Arbeit aus.
-- **Nicht messbar heißt frei**, nicht blockiert: Die harte Grenze zieht
-  Ollama selbst, der Verteiler entscheidet nur, wer fragen darf.
+- **Nicht messbare Kapazität sperrt (fail-closed)**, nicht frei: Eine Meldung
+  „zehn Fackeln frei“ ohne jede Messung im Verbund täuscht einem fremden Zuteiler
+  Kapazität vor, die nie gemessen wurde — eine Falschauskunft ist schlimmer
+  als eine Sperre. Ausweg bei fehlenden Treibern oder Headless-Systemen ist das
+  Setzen der Umgebungsvariablen `BACH_FACKEL_KAPAZITAET_MB`. (Die Umkehr von
+  fail-open auf fail-closed stammt aus T-20260913-415211921.)
 - **Der Bedarf wird nachgeschlagen, nicht auf null gesetzt.** Ein Gate mit
   Bedarf 0 fragt nur, ob das Fremde *allein schon* die Kapazität übersteigt
   — und das trifft fast nie zu. Fährt der Chat das 35B (20,40 GiB von

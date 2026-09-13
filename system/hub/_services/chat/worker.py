@@ -184,10 +184,16 @@ def main(argv: list[str] | None = None) -> int:
             # Still heisst nicht frei: Haelt ein FREMDES Modell den Speicher,
             # wuerde unser Modell in einen vollen Speicher geladen. Das eigene
             # Modell zaehlt nicht mit - ist es schon da, kostet es nichts mehr.
+            # Bei nicht messbarer Kapazitaet greift fail-closed; der Worker wartet
+            # ebenso, meldet aber die fehlende Messung statt einer Scheinbelegung.
             f = fackel.stand(modell)
-            _log(workdir, f"Speicher belegt von {', '.join(f['modelle']) or '?'} "
-                          f"({f['belegt_gib']} GiB) - {f['frei_fackeln']} von 10 "
-                          f"Fackeln frei, warte")
+            if not f.get("messbar"):
+                _log(workdir, "Fackel-Kapazitaet nicht messbar (gesperrt / fail-closed; "
+                              "BACH_FACKEL_KAPAZITAET_MB setzen) - warte")
+            else:
+                _log(workdir, f"Speicher belegt von {', '.join(f['modelle']) or '?'} "
+                              f"({f['belegt_gib']} GiB) - {f['frei_fackeln']} von 10 "
+                              f"Fackeln frei, warte")
         else:
             t = offen[0]
             _log(workdir, f"Chat still seit {round(still/60)} min - nehme "
