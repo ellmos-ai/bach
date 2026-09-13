@@ -1,8 +1,0 @@
-# Minimal Startprompt
-# System-Vorlage: Basis fuer alle Sessions
-# Nicht editierbar - dient als Reset-Vorlage
-
-Lies SKILL.md im Arbeitsverzeichnis.
-Fuehre `python bach.py --startup --partner=claude` aus um die Session zu starten.
-Fuehre `python bach.py` aus um verfuegbare Befehle zu sehen.
-Beginne mit der Arbeit.

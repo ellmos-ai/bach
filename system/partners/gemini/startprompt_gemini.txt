@@ -1,9 +1,0 @@
-# Individueller User-Prompt
-# =========================
-# Diese Datei wird mit --individual geladen.
-# Hier kannst du eigene Anweisungen fuer Gemini definieren.
-#
-# Beispiel:
-# Analysiere das Projekt XY und erstelle einen ausfuehrlichen Bericht.
-#
-# Leer lassen = Standard-Prompt aus prompts/default.txt wird verwendet.
