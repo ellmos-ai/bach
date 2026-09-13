@@ -68,7 +68,8 @@ anthropic>=0.79.0         # Claude API (Anthropic) - primary LLM partner
 ollama>=0.6.1             # Ollama local LLM client
 # google-generativeai     # Gemini API (planned - not yet integrated)
 # openai                  # OpenAI API (future)
-mcp>=1.0                  # Built-in BACH MCP server (bach mcp serve)
+mcp>=1.0,<2.0             # Built-in BACH MCP server (bach mcp serve)
+pytest-asyncio>=0.23.0    # Async MCP server tests
 
 
 # ============================================================

@@ -14,17 +14,31 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
 
-from assistant_core import (
-    CHANNELS,
-    NotificationService,
-    resolve_secret_refs,
-    send_discord_webhook,
-    send_email,
-    send_slack,
-    send_telegram,
-    send_webhook,
-    tag_text,
-)
+try:
+    from assistant_core import (
+        CHANNELS,
+        NotificationService,
+        resolve_secret_refs,
+        send_discord_webhook,
+        send_email,
+        send_slack,
+        send_telegram,
+        send_webhook,
+        tag_text,
+    )
+except ImportError:  # pragma: no cover - assistant-core Wave 1 hat notify noch nicht
+    from hub._notify_dispatcher import (
+        CHANNELS,
+        resolve_secret_refs,
+        send_discord_webhook,
+        send_email,
+        send_slack,
+        send_telegram,
+        send_webhook,
+        tag_text,
+    )
+    from hub._notify_service import NotificationService
+
 from hub.base import BaseHandler
 from hub.notify_storage import BachNotifyStorage
 

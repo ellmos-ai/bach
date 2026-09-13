@@ -29,8 +29,12 @@ bach sandbox run <datei>        Python-Datei in Sandbox ausfuehren
 bach sandbox eval "<code>"      Python-Ausdruck evaluieren
 bach sandbox test <datei>       pytest auf Datei ausfuehren
 bach sandbox shell "<cmd>"      Shell-Befehl mit Timeout
+bach sandbox limit [mb]         Memory-Limit anzeigen/setzen
 
-Task: 995
+Stufe 1+2: Policy (Allowlist/Blocklist, Timeouts) + Resource-Bounds
+(Memory-Limit via RLIMIT_AS, Prozessgruppen-Kill) ueber core.sandbox.
+
+Task: 995, 1071
 """
 import json
 import os
@@ -55,6 +59,7 @@ class SandboxHandler(BaseHandler):
     # this sandbox provides resource bounds, not containment.
 
     TIMEOUT = 30  # Sekunden
+    DEFAULT_MEMORY_LIMIT_MB = 512  # Sandbox Stufe 2: RLIMIT_AS
 
     DEFAULT_ALLOWED_COMMANDS: FrozenSet[str] = frozenset({
         "echo", "cat", "head", "tail", "wc", "sort", "uniq", "diff",
@@ -73,6 +78,7 @@ class SandboxHandler(BaseHandler):
     def __init__(self, base_path_or_app):
         super().__init__(base_path_or_app)
         self._allowed_commands: FrozenSet[str] = self._load_allowed_commands()
+        self._memory_limit_mb = self._load_memory_limit()
 
     @property
     def profile_name(self) -> str:
@@ -91,6 +97,7 @@ class SandboxHandler(BaseHandler):
             "policy": "Sandbox-Policy anzeigen (erlaubte Befehle)",
             "allow": "Befehl zur Allowlist hinzufuegen: allow <cmd>",
             "deny": "Befehl von der Allowlist entfernen: deny <cmd>",
+            "limit": "Memory-Limit anzeigen/setzen: limit [mb]",
         }
 
     def handle(self, operation: str, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
@@ -111,6 +118,8 @@ class SandboxHandler(BaseHandler):
             return self._allow_command(args[0])
         elif operation == "deny" and args:
             return self._deny_command(args[0])
+        elif operation == "limit":
+            return self._limit(args)
         else:
             ops = "\n".join(f"  {k}: {v}" for k, v in self.get_operations().items())
             return False, f"Nutzung:\n{ops}"
@@ -125,19 +134,18 @@ class SandboxHandler(BaseHandler):
             return False, f"Datei nicht gefunden: {fpath}"
 
         try:
-            result = subprocess.run(
+            result = self._isolated(
                 [sys.executable, str(fpath)] + extra_args,
-                capture_output=True,
-                text=True,
-                encoding='utf-8', errors='replace',
                 timeout=self.TIMEOUT,
                 cwd=str(fpath.parent),
                 env={**os.environ, 'PYTHONIOENCODING': 'utf-8'},
             )
+            if result.timed_out:
+                return False, f"TIMEOUT ({self.TIMEOUT}s) bei {fpath.name}"
             output = self._format_result(result, f"run {fpath.name}")
+            if result.memory_exceeded:
+                return False, f"MEMORY-LIMIT ({self._memory_limit_mb}MB) bei {fpath.name}\n{output}"
             return result.returncode == 0, output
-        except subprocess.TimeoutExpired:
-            return False, f"TIMEOUT ({self.TIMEOUT}s) bei {fpath.name}"
         except Exception as e:
             return False, f"Fehler: {e}"
 
@@ -156,18 +164,17 @@ class SandboxHandler(BaseHandler):
             tmp_path = f.name
 
         try:
-            result = subprocess.run(
+            result = self._isolated(
                 [sys.executable, tmp_path],
-                capture_output=True,
-                text=True,
-                encoding='utf-8', errors='replace',
                 timeout=self.TIMEOUT,
                 cwd=tempfile.gettempdir(),
             )
+            if result.timed_out:
+                return False, f"TIMEOUT ({self.TIMEOUT}s)"
             output = self._format_result(result, f"eval")
+            if result.memory_exceeded:
+                return False, f"MEMORY-LIMIT ({self._memory_limit_mb}MB)\n{output}"
             return result.returncode == 0, output
-        except subprocess.TimeoutExpired:
-            return False, f"TIMEOUT ({self.TIMEOUT}s)"
         except Exception as e:
             return False, f"Fehler: {e}"
         finally:
@@ -185,19 +192,16 @@ class SandboxHandler(BaseHandler):
             return False, f"Datei nicht gefunden: {fpath}"
 
         try:
-            result = subprocess.run(
+            result = self._isolated(
                 [sys.executable, "-m", "pytest", str(fpath), "-v", "--tb=short"],
-                capture_output=True,
-                text=True,
-                encoding='utf-8', errors='replace',
                 timeout=self.TIMEOUT * 2,
                 cwd=str(self.base_path),
                 env={**os.environ, 'PYTHONIOENCODING': 'utf-8'},
             )
+            if result.timed_out:
+                return False, f"TIMEOUT ({self.TIMEOUT * 2}s) bei Tests"
             output = self._format_result(result, f"test {fpath.name}")
             return result.returncode == 0, output
-        except subprocess.TimeoutExpired:
-            return False, f"TIMEOUT ({self.TIMEOUT * 2}s) bei Tests"
         except Exception as e:
             return False, f"Fehler: {e}"
 
@@ -209,21 +213,90 @@ class SandboxHandler(BaseHandler):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             try:
-                result = subprocess.run(
+                result = self._isolated(
                     cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    encoding='utf-8', errors='replace',
                     timeout=self.TIMEOUT,
                     cwd=tmpdir,
+                    shell=True,
                 )
+                if result.timed_out:
+                    return False, f"TIMEOUT ({self.TIMEOUT}s)"
                 output = self._format_result(result, f"shell")
+                if result.memory_exceeded:
+                    return False, f"MEMORY-LIMIT ({self._memory_limit_mb}MB)\n{output}"
                 return result.returncode == 0, output
-            except subprocess.TimeoutExpired:
-                return False, f"TIMEOUT ({self.TIMEOUT}s)"
             except Exception as e:
                 return False, f"Fehler: {e}"
+
+    # ------------------------------------------------------------------
+    # Resource-Bounds (Sandbox Stufe 2, Task 1071)
+    # ------------------------------------------------------------------
+
+    def _isolated(self, cmd, timeout: int, cwd=None, env=None, shell: bool = False):
+        """Fuehrt Befehl ueber core.sandbox.run_isolated aus
+        (Timeout + Memory-Limit + Prozessgruppen-Kill)."""
+        from core.sandbox import SandboxLimits, run_isolated
+        limits = SandboxLimits(timeout_sec=timeout, memory_mb=self._memory_limit_mb)
+        return run_isolated(cmd, limits=limits, cwd=cwd, env=env, shell=shell)
+
+    def _load_memory_limit(self):
+        """Laedt Memory-Limit (MB) aus system_config, Default 512MB."""
+        db = getattr(self, "_canonical_db", None)
+        if not db or not Path(db).exists():
+            return self.DEFAULT_MEMORY_LIMIT_MB
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db))
+            cur = conn.execute(
+                "SELECT value FROM system_config WHERE key = 'sandbox.memory_limit_mb'"
+            )
+            row = cur.fetchone()
+            conn.close()
+            if row and row[0] is not None:
+                val = int(str(row[0]).strip())
+                if val > 0:
+                    return val
+        except Exception:
+            pass
+        return self.DEFAULT_MEMORY_LIMIT_MB
+
+    def _save_memory_limit(self, mb: int) -> bool:
+        db = getattr(self, "_canonical_db", None)
+        if not db or not Path(db).exists():
+            return False
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db))
+            conn.execute(
+                "INSERT OR REPLACE INTO system_config (key, value, category) "
+                "VALUES ('sandbox.memory_limit_mb', ?, 'sandbox')",
+                (str(int(mb)),)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
+            return False
+
+    def _limit(self, args: List[str]) -> Tuple[bool, str]:
+        """Memory-Limit anzeigen oder setzen."""
+        if not args:
+            return True, (
+                f"Memory-Limit: {self._memory_limit_mb}MB "
+                f"(Default: {self.DEFAULT_MEMORY_LIMIT_MB}MB)\n"
+                f"Setzen: bach sandbox limit <mb>"
+            )
+        try:
+            mb = int(args[0])
+            if mb < 64:
+                return False, "Limit zu klein (Minimum: 64MB)"
+        except ValueError:
+            return False, f"Ungueltiger Wert: {args[0]} (Zahl in MB erwartet)"
+        if self._save_memory_limit(mb):
+            self._memory_limit_mb = mb
+            return True, f"Memory-Limit auf {mb}MB gesetzt (persistiert)"
+        self._memory_limit_mb = mb
+        return True, f"Memory-Limit auf {mb}MB gesetzt (nur Session, DB nicht verfuegbar)"
 
     # ------------------------------------------------------------------
     # Capability System (SANDBOX-002)
@@ -271,6 +344,12 @@ class SandboxHandler(BaseHandler):
         cmd_stripped = cmd.strip()
         if not cmd_stripped:
             return ""
+        # Windows-Pfade: Backslash ist Pfadtrenner, kein Escape —
+        # vor shlex behandeln (shlex posix frisst Backslashes)
+        first_raw = cmd_stripped.split()[0]
+        if "\\" in first_raw:
+            base = first_raw.strip('"').strip("'")
+            return Path(base.rsplit("\\", 1)[-1]).stem.lower()
         try:
             tokens = shlex.split(cmd_stripped, posix=(os.name != "nt"))
             if tokens:
@@ -301,10 +380,19 @@ class SandboxHandler(BaseHandler):
         return True, ""
 
     def _policy(self) -> Tuple[bool, str]:
+        from core.sandbox import HAS_RLIMIT, IS_POSIX
+        if HAS_RLIMIT:
+            bounds = f"aktiv (RLIMIT_AS, Prozessgruppen-Kill, {self._memory_limit_mb}MB)"
+        elif IS_POSIX:
+            bounds = "eingeschraenkt (resource-Modul fehlt)"
+        else:
+            bounds = "eingeschraenkt (Windows: nur Timeout, kein Memory-Limit)"
         lines = [
             "Sandbox Policy (SANDBOX-002)",
             "=" * 40,
             f"  Timeout: {self.TIMEOUT}s (shell), {self.TIMEOUT * 2}s (test)",
+            f"  Memory-Limit: {self._memory_limit_mb}MB",
+            f"  Resource-Bounds (Stufe 2): {bounds}",
             f"  Shell-Modus: fail-closed (nur erlaubte Befehle)",
             "",
             f"  Erlaubte Befehle ({len(self._allowed_commands)}):",

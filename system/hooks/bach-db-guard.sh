@@ -7,6 +7,20 @@
 #
 # Daten kommen via STDIN als JSON: { "tool_input": { "command": "..." } }
 # Exit 0 = ALLOW, Exit 2 + stderr = BLOCK
+#
+# RICHTIGE ALTERNATIVEN (statt direkten SQLite-Zugriffs):
+#   - Python Library-API:  from bach_api import task, memory; task.add(...)
+#   - BACH CLI:            bach task add "..." / bach mem write "..."
+#   - Handler-API:         app().execute("handler", "operation", ["args"])
+# Diese Wege garantieren Konsistenz, Hooks, Logging und ProSync-Synchronisation.
+
+# --- Hilfsfunktion: Einheitliche Block-Meldung mit Handlungsanweisung ---
+_block_msg() {
+    echo "BLOCK - Direkter schreibender Zugriff auf bach.db ohne BACH-API." >&2
+    echo "  Stattdessen verwende: from bach_api import task, memory, steuer, backup" >&2
+    echo "  Oder per CLI:         bach task|mem|steuer|backup <operation>" >&2
+    echo "  Oder per Handler:     app().execute(\"handler\", \"operation\", [\"args\"])" >&2
+}
 
 # --- Befehl aus STDIN extrahieren ---
 INPUT=$(cat)
@@ -24,7 +38,7 @@ WRITE_OPS="(INSERT|UPDATE|DELETE|DROP|ALTER)"
 
 # sqlite3 CLI mit schreibenden Operationen
 if echo "$CMD" | grep -qi 'sqlite3.*bach\.db' && echo "$CMD" | grep -qiE "$WRITE_OPS"; then
-    echo "BLOCK - Direkter schreibender sqlite3-Zugriff auf bach.db. Nutze bach_api oder BACH CLI." >&2
+    _block_msg
     exit 2
 fi
 
@@ -34,7 +48,7 @@ if echo "$CMD" | grep -qi 'sqlite3' && echo "$CMD" | grep -qi 'bach\.db' && echo
     if echo "$CMD" | grep -qiE 'bach_api|from core\.|from hub\.'; then
         exit 0
     fi
-    echo "BLOCK - Direkter schreibender Zugriff auf bach.db ohne BACH-API. Nutze bach_api oder BACH CLI." >&2
+    _block_msg
     exit 2
 fi
 

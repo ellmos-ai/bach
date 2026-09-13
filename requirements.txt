@@ -68,3 +68,12 @@ ellmos-scheduler @ git+https://github.com/ellmos-ai/ellmos-scheduler.git@296b6f5
 # Topologie- & Health-Checks (TRANSFER-05, MODULRUECKTRANSFER Stufe 5): Provider-Seam hub/explorer_provider.py;
 # native Port-/Zombie-/Lock-Audits in hub/system_audit.py bleiben unabhaengig; Rollback via BACH_USE_EXTERNAL_EXPLORER=0
 system-explorer @ git+https://github.com/ellmos-ai/system-explorer.git@bd250b1a5e081ea95df2cfdbc21a676d1db40712
+# Memory-Lifecycle-Hooks (TRANSFER-06, MODULRUECKTRANSFER Stufe 6): Provider-Seam hub/memory_hook_provider.py;
+# BachMemoryBackend liefert die read-only-API fuer memoryhookers reservierten bach-Backend-Slot; Rollback via BACH_USE_EXTERNAL_MEMORYHOOKS=0
+memoryhooker @ git+https://github.com/ellmos-ai/memoryhooker.git@94611c25df831c6af73d8010c42115fcb93ee4bb
+# Workflow-Lifecycle-Checks (TRANSFER-06, MODULRUECKTRANSFER Stufe 6): Interceptor-Slot in core/hooks.py,
+# Provider-Seam hub/workflow_hook_provider.py, Installation ueber hub/__init__.py; Rollback via BACH_USE_EXTERNAL_WORKFLOWHOOKS=0
+workflowhooker @ git+https://github.com/ellmos-ai/WORKFLOWHOOKER.git@6d2b190847c35450293774141e9c034eaf991b66
+# Multi-Host Delta-Replikation (TRANSFER-07, MODULRUECKTRANSFER Stufe 7): Provider-Seam
+# hub/transit_sync_provider.py, Verdrahtung in hub/db_sync.py; Rollback via BACH_USE_EXTERNAL_TRANSITSYNC=0
+sqlite-transit-sync @ git+https://github.com/ellmos-ai/sqlite-transit-sync.git@40e99262a558e1bfafcd09907f16bd9e7e0ec69d

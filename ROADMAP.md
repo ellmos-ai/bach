@@ -437,9 +437,9 @@ TASKPLAN #299/#300–#302.)*
 - Offene Nutzer-/Maintainer-Entscheidung: Mirror versus Write-through sowie Source-of-Truth, Konfliktregeln, Fehlerverhalten und Default des Feature-Flags müssen vor #301 verbindlich festgelegt werden. Erst nach grüner Testmatrix darf ein separater Cutover entschieden werden.
 - Prüfstand dieses Schreibauftrags: TASKPLAN-Datenbank-Readback der Parent-/Child-Datensätze ist grün; keine Implementierung der Teilaufgaben wurde vorweggenommen.
 
-### MODULRUECKTRANSFER: Rueckspiegelung der Module (Stufen 6–8 offen)
+### MODULRUECKTRANSFER: Rueckspiegelung der Module (Stufe 8 offen)
 
-**Status: Stufen 1–5 ABGESCHLOSSEN (2026-09-11/12).** Umsetzung nach
+**Status: Stufen 1–7 ABGESCHLOSSEN (2026-09-11/12).** Umsetzung nach
 `docs/architecture/MODULRUECKTRANSFER-PLAN.md` (Gates: Rollback-Umgebungsschalter,
 Fail-Closed-Contract, Parallelbetrieb, Single-Source-of-Truth):
 
@@ -450,12 +450,14 @@ Fail-Closed-Contract, Parallelbetrieb, Single-Source-of-Truth):
 | 3 | ellmos-scheduler (Provider-Seam) | 1219 | ABGESCHLOSSEN |
 | 4 | accounts-core Welle 3 (CAMT-Saldenimport) | 1220 | ABGESCHLOSSEN |
 | 5 | system-explorer (Topologie-Audit) | 1221 | ABGESCHLOSSEN |
-| 6 | memoryhooker/workflowhooker (Lifecycle-Hooks) | 1222 | OFFEN |
-| 7 | sqlite-transit-sync (Replikations-Seam Multi-Host) | 1223 | OFFEN |
+| 6 | memoryhooker/workflowhooker (Lifecycle-Hooks) | 1222 | ABGESCHLOSSEN |
+| 7 | sqlite-transit-sync (Replikations-Seam Multi-Host) | 1223 | ABGESCHLOSSEN |
 | 8 | SSOT-Zertifizierung + Fork-Archivierung | 1224 | OFFEN |
 
 Betriebs-Nachläufe: argv-Konvertierung der 4 Scheduler-Produktivjobs vor
-`scheduler external verify --apply`; Windows-Gegenproben (Plan-Regel 4.3).
+`scheduler external verify --apply`; Windows-Gegenproben (Plan-Regel 4.3);
+echter 3-Host-Transitlauf fuer Stufe 7 (Seam + lokale 3-Wege-Simulation
+bereits nachgewiesen, s. Plan Abschnitt Stufe 7).
 
 ### Priorität 1 - Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
 
@@ -765,8 +767,20 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 - `core/capabilities.py` - CapabilityManager mit 11 definierten Capabilities
 - Trust-Level Enforcement: goldstandard/trusted/untrusted/blacklist
 
-**Phase 4: Sandbox - Stufe 2+3 (OFFEN)**
-- Stufe 2: Subprocess-Isolation (timeout, memory-limit) — nicht begonnen
+**Phase 4: Sandbox - Stufe 2 (KOMPLETT, 2026-09-12, Task #1071)**
+- `core/sandbox.py` - SandboxLimits + run_isolated: Timeout mit
+  Prozessgruppen-Kill, Memory-Limit zweischichtig (RLIMIT_AS im Kind +
+  RSS-Watchdog im Elternprozess via psutil/`ps`-Fallback, weil macOS
+  RLIMIT_AS nicht durchsetzt), RLIMITs fuer CPU/FSIZE/NPROC vorbereitet,
+  Core-Dumps deaktiviert, Windows-Degradation auf Timeout-only
+- `hub/sandbox.py` - alle Operationen (run/eval/test/shell) auf
+  run_isolated umgestellt, neue Operation `limit [mb]`, Policy-Anzeige
+  erweitert (Memory-Limit + Resource-Bounds)
+- Nebenbefund gefixt: `_extract_base_command` Windows-Pfad-Parsing
+  (shlex frass Backslashes; Test war auf POSIX pre-existing rot)
+- Tests: `tests/test_core_sandbox.py` (21 Tests), 97/97 gruen
+
+**Phase 4: Sandbox - Stufe 3 (OFFEN)**
 - Stufe 3: Container-Isolation (Docker/chroot) — nicht begonnen
 - Rollback bei fehlerhaften Erweiterungen
 

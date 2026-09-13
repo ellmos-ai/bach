@@ -38,14 +38,24 @@ if sys.stderr:
 SCRIPT_DIR = Path(__file__).parent
 
 # Auto-Detect: Root-Installation (BACH Release v3.1.6) oder Legacy (Vanilla, bach.py in system/)
-if (SCRIPT_DIR / "system").exists():
+# Heuristik: echte system/ Unterverzeichnisse muessen hub/ und core/ enthalten,
+# damit z.B. system/system/docs nicht fälschlicherweise als Root-Installation erkannt wird.
+if SCRIPT_DIR.name == "system" and (SCRIPT_DIR / "hub").exists() and (SCRIPT_DIR / "core").exists():
+    # Legacy (Vanilla): bach.py liegt direkt in system/
+    SYSTEM_ROOT = SCRIPT_DIR
+    BACH_ROOT = SYSTEM_ROOT.parent
+elif (SCRIPT_DIR / "system" / "hub").exists() and (SCRIPT_DIR / "system" / "core").exists():
     # Root-Installation (BACH Release v3.1.6): bach.py liegt im BACH-Root
     BACH_ROOT = SCRIPT_DIR
     SYSTEM_ROOT = SCRIPT_DIR / "system"
 else:
-    # Legacy (Vanilla): bach.py liegt in system/
-    SYSTEM_ROOT = SCRIPT_DIR
-    BACH_ROOT = SYSTEM_ROOT.parent
+    # Fallback auf altes Verhalten
+    if (SCRIPT_DIR / "system").exists():
+        BACH_ROOT = SCRIPT_DIR
+        SYSTEM_ROOT = SCRIPT_DIR / "system"
+    else:
+        SYSTEM_ROOT = SCRIPT_DIR
+        BACH_ROOT = SYSTEM_ROOT.parent
 
 BACH_DIR = SYSTEM_ROOT  # Rueckwaertskompatibilitaet
 DATA_DIR = SYSTEM_ROOT / "data"

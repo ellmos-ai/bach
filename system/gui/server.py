@@ -113,16 +113,6 @@ except ImportError:
 
 USER_DB = BACH_DB
 
-from assistant_core import MessageStore  # Welle 1 (D-20260830-002): Nachrichten-Fachkern, ein Datenkanon
-from accounts_core import AccountStore  # Welle 2 (D-20260903-003 = A): bank_accounts domain core
-
-
-def _messages() -> MessageStore:
-    """Store auf der kanonischen User-DB; fehlt sie, fail-closed wie get_user_db()."""
-    if not USER_DB.exists():
-        raise FileNotFoundError(f"User-DB nicht gefunden: {USER_DB}")
-    return MessageStore(USER_DB)
-
 TEMPLATES_DIR = GUI_DIR / "templates"
 
 STATIC_DIR = GUI_DIR / "static"
@@ -1493,14 +1483,35 @@ async def api_get_tasks(
     try:
         conn = get_bach_db()
 
-        # Support "all" to return all statuses (fix for task disappearing bug)
+        # Status-Filter: unterstützt kommaseparierte Werte und Aliase
+        # (z.B. "in_progress,progress" oder "done,completed,closed")
+        query = "SELECT * FROM tasks WHERE 1=1"
+        params = []
         if status and status.lower() != "all":
-            query = "SELECT * FROM tasks WHERE status = ?"
-            params = [status]
-        else:
-            query = "SELECT * FROM tasks WHERE 1=1"
-            params = []
-        
+            STATUS_ALIASES = {
+                "in_progress": ["in_progress", "progress"],
+                "pending": ["pending", "open"],
+                "done": ["done", "completed", "closed"],
+                "blocked": ["blocked"],
+                "cancelled": ["cancelled", "canceled"],
+                "duplicate": ["duplicate"],
+            }
+            requested = [s.strip().lower() for s in status.split(",") if s.strip()]
+            normalized = set()
+            for s in requested:
+                matched = False
+                for canonical, aliases in STATUS_ALIASES.items():
+                    if s in aliases:
+                        normalized.update(aliases)
+                        matched = True
+                        break
+                if not matched:
+                    normalized.add(s)
+            if normalized:
+                placeholders = ",".join(["?"] * len(normalized))
+                query += f" AND (LOWER(status) IN ({placeholders}))"
+                params.extend(sorted(normalized))
+
         target_cat = category or project
         if target_cat:
             query += " AND UPPER(category) = UPPER(?)"
@@ -1511,7 +1522,7 @@ async def api_get_tasks(
         if priority:
             prio_clean = priority.strip().upper()
             if prio_clean in ("P1", "1", "HIGH", "HOCH", "KRITISCH"):
-                query += " AND (UPPER(priority) IN ('P1', '1', 'HIGH', 'HOCH', 'KRITISCH'))"
+                query += " AND (UPPER(priority) IN ('P1', '1', 'HIGH', 'HOCH', 'KRITISCH') OR priority IS NULL)"
             elif prio_clean in ("P2", "2", "MEDIUM", "MITTEL", "WICHTIG"):
                 query += " AND (UPPER(priority) IN ('P2', '2', 'MEDIUM', 'MITTEL', 'WICHTIG'))"
             elif prio_clean in ("P3", "3", "LOW", "NIEDRIG", "NORMAL"):
@@ -1521,8 +1532,8 @@ async def api_get_tasks(
             else:
                 query += " AND UPPER(priority) = UPPER(?)"
                 params.append(priority)
-            
-        query += " ORDER BY priority ASC, created_at DESC LIMIT ?"
+
+        query += " ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 WHEN 'P4' THEN 4 ELSE 5 END ASC, created_at DESC LIMIT ?"
         params.append(limit)
         
         rows = conn.execute(query, params).fetchall()

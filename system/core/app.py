@@ -246,4 +246,11 @@ class App:
             'success': success, 'args': args or []
         })
 
+        # Interceptor-Meldungen sichtbar machen (MODULRUECKTRANSFER Stufe 6):
+        # z.B. workflowhooker-Abschluss-Gate. Listener-Rueckgaben bleiben
+        # weiterhin still, nur dynamisch injizierte Hooker werden angehaengt.
+        hook_results = getattr(self.hooks, 'last_interceptor_results', None) or []
+        for hr in hook_results:
+            message = f"{message}\n{hr}"
+
         return (success, message)

@@ -424,6 +424,23 @@
                             allCats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c.charAt(0).toUpperCase() + c.slice(1))}</option>`).join('');
                         catSelect.value = currentCat;
                     }
+                    if (data.priorities && data.priorities.length > 0) {
+                        const prioSelect = document.getElementById('filter-priority');
+                        const currentPrio = prioSelect.value;
+                        const defaultPrios = [
+                            { value: 'P1', label: 'P1 - Kritisch / Hoch' },
+                            { value: 'P2', label: 'P2 - Wichtig / Mittel' },
+                            { value: 'P3', label: 'P3 - Normal / Niedrig' },
+                            { value: 'P4', label: 'P4 - Minimal' }
+                        ];
+                        const dynamicPrios = data.priorities
+                            .filter(p => p && !defaultPrios.some(d => d.value.toUpperCase() === String(p).toUpperCase()))
+                            .map(p => ({ value: escapeHtml(p), label: escapeHtml(p) }));
+                        const allPrios = [...defaultPrios, ...dynamicPrios];
+                        prioSelect.innerHTML = '<option value="">Alle Prioritäten</option>' +
+                            allPrios.map(p => `<option value="${p.value}">${p.label}</option>`).join('');
+                        prioSelect.value = currentPrio;
+                    }
                     if (data.assignees && data.assignees.length > 0) {
                         const assignSelect = document.getElementById('filter-assigned');
                         const currentAssigned = assignSelect.value;
@@ -454,27 +471,23 @@
                 return res.tasks || [];
             };
 
-            // 1. Pending, Open & Blocked
-            const pending = await fetch('pending');
-            const openTasks = await fetch('open');
-            const blocked = await fetch('blocked');
-
-            // Mark blocked
-            blocked.forEach(t => { t.is_blocked_status = true; t.priority = 'BLOCKED ' + (t.priority || ''); });
-
-            const allPending = [...blocked, ...pending, ...openTasks];
+            // 1. Pending, Open & Blocked (Backend löst Aliase auf)
+            const pendingGroup = await fetch('pending,open,blocked');
+            const blocked = pendingGroup.filter(t => String(t.status || '').toLowerCase() === 'blocked');
+            blocked.forEach(t => { t.is_blocked_status = true; });
+            const allPending = pendingGroup; // blocked bleibt hier sichtbar mit Badge
             tasksData.push(...allPending);
             renderList('pending', allPending);
             document.getElementById('count-pending').textContent = allPending.length;
 
-            // 2. In Progress
-            const inProgress = await fetch('in_progress');
+            // 2. In Progress (inkl. Alias "progress")
+            const inProgress = await fetch('in_progress,progress');
             tasksData.push(...inProgress);
             renderList('in_progress', inProgress);
             document.getElementById('count-in_progress').textContent = inProgress.length;
 
-            // 3. Done
-            const done = await fetch('done');
+            // 3. Done (inkl. Aliase completed/closed)
+            const done = await fetch('done,completed,closed');
             tasksData.push(...done);
             renderList('done', done);
             document.getElementById('count-done').textContent = done.length;
