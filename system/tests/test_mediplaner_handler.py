@@ -92,7 +92,11 @@ def test_export_payload_contains_contacts_and_meds(mediplaner_env):
     assert payload["medications"][0]["bedarf"] == 1
 
 
-def test_import_payload_merges_contacts_and_meds(mediplaner_env, tmp_path):
+def test_import_payload_merges_contacts_and_meds(mediplaner_env, tmp_path, monkeypatch):
+    """Merge-Semantik des Imports -- seit T-20260822-624075478 nur noch im
+    ausdruecklichen Altbestandslauf erreichbar (MediPlaner ist der Kanon; das Gate
+    selbst deckt test_domain_writer_gate.py ab)."""
+    monkeypatch.setenv("BACH_LEGACY_DOMAIN_WRITES", "1")
     handler, db = mediplaner_env
     payload = {
         "schema_version": SCHEMA_VERSION,
