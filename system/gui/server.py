@@ -49,6 +49,13 @@ from hub.task_audit import apply_task_field_changes
 from gui.config import settings
 from gui.console import mount_console
 
+# Nutzerentscheid D-20260906-002 (2026-09-11) = B: Neue Tasks gehen per Default an den
+# Idle-Worker; persoenliche Aufgaben weist der Nutzer bewusst "user" zu (Auswahlfeld in
+# tasks.html / tasks_board.html, Liste aus /api/assignees). Der Tray-Idle-Worker pickt
+# OLLAMA|BUDDHA|BACH und ueberspringt "user" ausdruecklich (chat_tray._process_idle_task).
+# gui/api/headless.py fuehrt denselben Wert; test_default_task_assignee.py haelt beide gleich.
+DEFAULT_TASK_ASSIGNEE = "OLLAMA"
+
 # Claude Router Import
 sys.path.insert(0, str(Path(__file__).parent / "api"))
 try:
@@ -359,7 +366,7 @@ class TaskCreate(BaseModel):
 
     assignee: Optional[str] = None
 
-    assigned_to: Optional[str] = "user"
+    assigned_to: Optional[str] = DEFAULT_TASK_ASSIGNEE
 
     created_by: Optional[str] = "user"
 
@@ -1577,7 +1584,7 @@ async def api_post_task(payload: dict = Body(...)):
             payload.get("status", "pending"),
             now,
             payload.get("created_by", "user"),
-            payload.get("assigned_to", "user"),
+            payload.get("assigned_to") or DEFAULT_TASK_ASSIGNEE,
             payload.get("depends_on"),
             payload.get("image"),
             payload.get("due_date"),
