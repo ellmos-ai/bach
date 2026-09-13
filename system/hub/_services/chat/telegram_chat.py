@@ -1310,30 +1310,211 @@ WEB_DASHBOARD = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BACH Chat Control</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#1a1a2e;color:#e0e0e0;padding:20px}
-h1{color:#00d4ff;margin-bottom:20px;font-size:1.4em}
-.card{background:#16213e;border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #0f3460}
-.card h2{color:#00d4ff;font-size:1em;margin-bottom:12px}
-.status-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #0f3460}
-.status-row:last-child{border:none}
-.label{color:#888}
-.value{color:#00d4ff;font-weight:600}
-.btn-group{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-.btn{background:#0f3460;color:#e0e0e0;border:1px solid #00d4ff;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:.9em;transition:all .2s}
-.btn:hover{background:#00d4ff;color:#1a1a2e}
-.btn.active{background:#00d4ff;color:#1a1a2e;font-weight:700}
-.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
-.dot.green{background:#00ff88}
-.dot.red{background:#ff4444}
-.dot.yellow{background:#ffcc00}
-#toast{position:fixed;bottom:20px;right:20px;background:#00d4ff;color:#1a1a2e;padding:12px 20px;border-radius:8px;display:none;font-weight:600;z-index:99}
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg-dark: #0b0d14;
+  --bg-panel: #111420;
+  --bg-card: #171b28;
+  --bg-elevated: #1c2033;
+  --accent: #d4485a;
+  --accent-light: #e06b7e;
+  --accent-blue: #5b8def;
+  --accent-glow: rgba(212, 72, 90, 0.12);
+  --text: #e2ded8;
+  --text-muted: #6e7386;
+  --text-dim: #454a5c;
+  --border: #1e2236;
+  --border-hover: #2a3048;
+  --success: #4ade80;
+  --warning: #f5c542;
+  --error: #ef5350;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration: 200ms;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-dark);
+  color: var(--text);
+  padding: 20px;
+  line-height: 1.5;
+}
+
+h1 {
+  color: var(--text);
+  margin-bottom: 20px;
+  font-size: 1.4em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--text) 40%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+a {
+  color: var(--accent-light);
+  text-decoration: none;
+  transition: all var(--duration) var(--ease);
+}
+
+a:hover {
+  background: var(--bg-elevated) !important;
+  border-color: var(--border-hover) !important;
+  color: var(--text) !important;
+}
+
+.card {
+  background: var(--bg-panel);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  transition: border-color var(--duration) var(--ease),
+              box-shadow var(--duration) var(--ease);
+}
+
+.card:hover {
+  border-color: var(--border-hover);
+}
+
+.card h2 {
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.status-row:last-child {
+  border: none;
+}
+
+.label {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.value {
+  color: var(--accent-light);
+  font-weight: 600;
+  font-size: 0.85em;
+}
+
+.btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn {
+  font-family: inherit;
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 0.85em;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  line-height: 1.4;
+  transition: all var(--duration) var(--ease);
+}
+
+.btn:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn.active {
+  background: var(--accent);
+  color: var(--bg-dark);
+  border-color: var(--accent);
+  font-weight: 700;
+  box-shadow: 0 2px 12px var(--accent-glow);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.dot.green {
+  background: var(--success);
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.4);
+}
+
+.dot.red {
+  background: var(--error);
+  box-shadow: 0 0 8px rgba(239, 83, 80, 0.4);
+}
+
+.dot.yellow {
+  background: var(--warning);
+  box-shadow: 0 0 8px rgba(245, 197, 66, 0.4);
+}
+
+#toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: var(--accent);
+  color: var(--bg-dark);
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
+  display: none;
+  font-weight: 600;
+  font-size: 0.85em;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 99;
+}
 </style>
 </head>
 <body>
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
   <h1>BACH Chat Control</h1>
-  <a href="/activity" style="display:inline-block;padding:8px 14px;background:#0f3460;color:#00d4ff;border:1px solid #00d4ff;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600">📊 Zur Aktivitätsanzeige &amp; Worker Dashboard &rarr;</a>
+  <a href="/activity" style="display:inline-block;padding:8px 14px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);text-decoration:none;font-size:0.85em;font-weight:600">📊 Zur Aktivitätsanzeige &amp; Worker Dashboard &rarr;</a>
 </div>
 
 <div class="card" id="status-card">
