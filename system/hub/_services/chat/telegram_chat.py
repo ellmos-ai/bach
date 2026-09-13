@@ -127,9 +127,9 @@ except ImportError:
     HAS_COMPUTE_LOCK = False
     DEFAULT_LOCK_PATH = "~/.memwatchdog/compute_active.lock"
     DEFAULT_CHECK_SCRIPT = ""
-    def get_fackel_preference():
+    def get_fackel_preference(path=None):
         return "compute"
-    def set_fackel_preference(pref):
+    def set_fackel_preference(pref, path=None, quelle="unbekannt"):
         return pref
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -842,10 +842,10 @@ async def cmd_fackel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     pref = args[0].lower().strip()
     if pref in ("ollama", "chat", "worker"):
-        set_fackel_preference("ollama")
+        set_fackel_preference("ollama", quelle="telegram")
         await update.message.reply_text("Fackel umgestellt: Ollama (Chat & Worker) bevorzugt.")
     elif pref in ("compute", "rechenjobs", "jobs"):
-        set_fackel_preference("compute")
+        set_fackel_preference("compute", quelle="telegram")
         await update.message.reply_text("Fackel umgestellt: Rechenjobs bevorzugt (Compute).")
     else:
         await update.message.reply_text("Nutze: /fackel ollama oder /fackel compute")
@@ -3532,7 +3532,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "preference muss 'compute' oder 'ollama' sein"}, 400)
                 return
             try:
-                set_fackel_preference(pref)
+                set_fackel_preference(pref, quelle="api")
             except Exception as e:
                 self._json({"error": f"Konnte Fackel nicht setzen: {e}"}, 500)
                 return

@@ -26,11 +26,14 @@ alles bekommt, ist das Ergebnis der Rechnung, nicht ihre Form.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import urllib.request
 
 from hub._services.limits import limit
+
+log = logging.getLogger("bach.fackel")
 
 #: Zehn, ueberall. Siehe Modul-Docstring.
 FACKELN = 10
@@ -187,13 +190,20 @@ def frei(fuer_modell: str = "") -> float:
     """Freie Fackeln.
 
     Mit ``fuer_modell`` aus Sicht dieses Bewerbers - sein eigenes, bereits
-    geladenes Modell belegt ihn nicht. Nicht messbar (kein Ollama, kein
-    Metal) ergibt volle Freiheit statt Blockade: Die harte Grenze zieht
-    Ollama selbst, wir entscheiden nur, wer fragen darf.
+    geladenes Modell belegt ihn nicht.
+
+    Nicht messbare Kapazitaet (kein Ollama, kein Metal) fuehrt zu fail-closed
+    (0.0 freie Fackeln statt voller Freiheit): Im Verbund taeuscht ein
+    unmessbares System sonst fremden Zuteilern freie Kapazitaet vor, obwohl
+    gar nichts gemessen wurde. Abhilfe: BACH_FACKEL_KAPAZITAET_MB setzen.
     """
     f = fackel_bytes()
     if not f:
-        return float(FACKELN)
+        log.warning(
+            "Fackel-Kapazitaet nicht messbar (gesperrt / fail-closed); "
+            "Ausweg: Umgebungsvariable BACH_FACKEL_KAPAZITAET_MB setzen"
+        )
+        return 0.0
     # Nach oben gedeckelt, weil die Fackelgroesse abgerundet wird und sonst
     # "10,1 von 10 frei" herauskaeme. Nach unten NICHT: Ein negativer Wert
     # heisst ueberbucht, und das kommt vor - Ollama laedt auch ueber Metals
@@ -214,9 +224,13 @@ def passt(bedarf_bytes: int | None = None, fuer_modell: str = "") -> bool:
     durch, das allein 16,93 GiB Gewichte braucht. Ollama wuerfe dann das
     Chat-Modell hinaus -
     genau der Fall, den das Gate verhindern soll.
+
+    Nicht messbare Kapazitaet fuehrt zu fail-closed (False): Im Verbund darf
+    einem fremden Zuteiler keine freie Kapazitaet vorgetaeuscht werden, wenn
+    nichts gemessen werden konnte.
     """
     if not fackel_bytes():
-        return True
+        return False
     if bedarf_bytes is None:
         bedarf_bytes = modell_bytes(fuer_modell)
     return bedarf_bytes <= kapazitaet_bytes() - fremd_belegt_bytes(fuer_modell)
@@ -225,10 +239,17 @@ def passt(bedarf_bytes: int | None = None, fuer_modell: str = "") -> bool:
 def stand(fuer_modell: str = "") -> dict:
     """Alles auf einmal - fuer Meldungen und den Selbsttest."""
     kap, bel, f = kapazitaet_bytes(), belegt_bytes(), fackel_bytes()
-    if limit("BACH_FACKEL_KAPAZITAET_MB") or _sysctl_bytes("iogpu.wired_limit_mb"):
+    messbar = f > 0
+    if not messbar:
+        quelle = "unbekannt"
+    elif limit("BACH_FACKEL_KAPAZITAET_MB") or _sysctl_bytes("iogpu.wired_limit_mb"):
         quelle = "gesetzt"
+    elif _metal_bytes():
+        quelle = "metal"
+    elif bel:
+        quelle = "geladen"
     else:
-        quelle = "metal" if _metal_bytes() else "geladen"
+        quelle = "unbekannt"
     return {
         "kapazitaet_gib": round(kap / _GIB, 2),
         "fackel_gib": round(f / _GIB, 2),
@@ -237,11 +258,15 @@ def stand(fuer_modell: str = "") -> dict:
         "frei_fackeln": round(frei(fuer_modell), 1),
         "modelle": [m.get("name", "?") for m in _ps_models()],
         "quelle": quelle,
+        "messbar": messbar,
     }
 
 
 def main() -> int:
     s = stand()
+    if not s["messbar"]:
+        print("Kapazitaet nicht messbar (gesperrt / fail-closed; BACH_FACKEL_KAPAZITAET_MB setzen).")
+        return 1
     print(f"Kapazitaet   {s['kapazitaet_gib']} GiB  (Quelle: {s['quelle']})")
     print(f"1 Fackel     {s['fackel_gib']} GiB")
     print(f"belegt       {s['belegt_gib']} GiB = {s['belegt_fackeln']} Fackeln")
