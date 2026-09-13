@@ -240,6 +240,38 @@
             background: var(--bg-card);
             color: var(--text);
         }
+
+        /* TABLE STYLES FOR MOUNTS */
+        .table-container {
+            overflow-x: auto;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            margin-bottom: 1.5rem;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .data-table th {
+            background: var(--bg-card);
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .data-table tr:hover td {
+            background: var(--bg-card);
+        }
     </style>
 </head>
 
@@ -257,6 +289,7 @@
         <div class="tabs-header">
             <button class="tab-btn active" onclick="showTab(event, 'inbox')">Eingang / Scanner</button>
             <button class="tab-btn" onclick="showTab(event, 'quarantine')">Quarantäne / Anonymisierung</button>
+            <button class="tab-btn" id="tab-btn-connections" onclick="showTab(event, 'connections')">🔗 Verbindungen</button>
         </div>
 
         <!-- TAB: INBOX / SCANNER -->
@@ -376,6 +409,44 @@
                             <b>Ziel:</b> <code>user/buero/foerderplanung/klienten/</code>
                         </p>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: CONNECTIONS / MOUNTS -->
+        <div id="tab-connections" class="tab-content">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+                    <h2 style="margin: 0;">🔗 Externe Verbindungen (Mounts)</h2>
+                    <button class="btn btn-secondary" onclick="restoreMounts()">🔄 Alle wiederherstellen</button>
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Alias</th>
+                                <th>Pfad</th>
+                                <th>Status</th>
+                                <th>Aktion</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mounts-list-body"></tbody>
+                    </table>
+                </div>
+
+                <div class="card" style="margin-bottom: 0; background: var(--bg-card);">
+                    <h2>➕ Neuen Ordner anbinden</h2>
+                    <div class="grid-2" style="margin-bottom: 1rem;">
+                        <div class="form-group">
+                            <label>Alias (Name im user/ Ordner)</label>
+                            <input type="text" id="mount-alias" placeholder="z.B. google_drive">
+                        </div>
+                        <div class="form-group">
+                            <label>Absoluter Zielpfad</label>
+                            <input type="text" id="mount-path" placeholder="C:\Users\...\Desktop">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" style="width: 100%;" onclick="addMount()">Verbinden</button>
                 </div>
             </div>
         </div>
@@ -503,6 +574,7 @@
             e.target.classList.add('active');
 
             if (tabId === 'quarantine') loadQuarantine();
+            if (tabId === 'connections') loadMounts();
         }
 
         // INBOX SCANNER LOGIC (from original)
@@ -848,6 +920,81 @@
                 } else alert('Fehler: ' + res.error);
             } catch (err) { alert(err.message); }
         });
+
+        // MOUNT LOGIC (Verbindungen)
+        async function loadMounts() {
+            try {
+                const res = await fetch('/api/mounts');
+                const data = await res.json();
+                const tbody = document.getElementById('mounts-list-body');
+                if (!tbody) return;
+
+                if (data.mounts && data.mounts.length > 0) {
+                    tbody.innerHTML = data.mounts.map(m => `
+                        <tr>
+                            <td><b>${escapeHtml(m.alias)}</b></td>
+                            <td style="font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(m.path)}</td>
+                            <td>
+                                <span class="status-badge ${m.active && m.exists ? 'active' : ''}">
+                                    ${m.active && m.exists ? 'Aktiv' : (m.exists ? 'Verbunden (System)' : 'Fehlt')}
+                                </span>
+                            </td>
+                            <td>
+                                <button onclick="removeMount(${escapeHtml(JSON.stringify(m.alias))})" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;">Löschen</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 2rem; color: var(--text-muted);">Keine Verbindungen definiert.</td></tr>';
+                }
+            } catch (e) {
+                console.error('Mount API Fehler:', e);
+                const tbody = document.getElementById('mounts-list-body');
+                if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 1rem; color: var(--error);">API Fehler</td></tr>';
+            }
+        }
+
+        async function addMount() {
+            const path = document.getElementById('mount-path').value.trim();
+            const alias = document.getElementById('mount-alias').value.trim();
+            if (!path || !alias) { alert('Bitte Pfad und Alias angeben.'); return; }
+
+            try {
+                const res = await fetch('/api/mounts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path, alias })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Erfolgreich angebunden!');
+                    document.getElementById('mount-path').value = '';
+                    document.getElementById('mount-alias').value = '';
+                    loadMounts();
+                } else {
+                    alert('Fehler: ' + data.output);
+                }
+            } catch (e) { alert('API Fehler'); }
+        }
+
+        async function removeMount(alias) {
+            if (!confirm(`Möchten Sie die Verbindung '${alias}' wirklich entfernen?`)) return;
+            try {
+                const res = await fetch(`/api/mounts/${alias}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) loadMounts();
+                else alert('Fehler: ' + data.output);
+            } catch (e) { alert('API Fehler'); }
+        }
+
+        async function restoreMounts() {
+            try {
+                const res = await fetch('/api/mounts/restore', { method: 'POST' });
+                const data = await res.json();
+                alert(data.output);
+                loadMounts();
+            } catch (e) { alert('API Fehler'); }
+        }
 
         // HELPERS
         function escapeHtml(text) {
