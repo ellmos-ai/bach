@@ -32,11 +32,18 @@ def _make_message_db(path: Path) -> None:
         )
 
 
-def test_gui_server_does_not_import_optional_cores():
-    """gui/server.py must not hard-depend on missing editable packages."""
+def test_gui_server_consumes_core_modules():
+    """Welle 1/2-Architektur (D-20260830-002, D-20260903-003=A): gui/server.py
+    konsumiert assistant-core (MessageStore) und accounts-core (AccountStore)
+    als editable installs (venv: __editable__.*.pth vorhanden).
+
+    c59b0da hatte die Imports entfernt und dadurch Regression #1280 ausgelöst
+    (bank-accounts roundtrip success=False, NameError im except-Zweig).
+    b529218 stellte den Zustand des grünen Pins 5e64e07 wieder her.
+    """
     src = (SYSTEM_ROOT / "gui" / "server.py").read_text(encoding="utf-8")
-    assert "from assistant_core import" not in src
-    assert "from accounts_core import" not in src
+    assert "from assistant_core import MessageStore" in src
+    assert "from accounts_core import AccountStore" in src
 
 
 def test_message_worker_seam_exports_required_api():
