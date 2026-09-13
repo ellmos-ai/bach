@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
-Static Analysis Regressionstest: Stored-XSS-Schutz in agents-board.js (T-20260913-304635102)
+Static Analysis Regressionstest: Stored-XSS-Schutz in skills-board.js (T-20260913-304635102)
 ==========================================================================================
 
 Stellt sicher, dass:
-  1. In den 8 GUI-Render-Funktionen von agents-board.js kein Template-Literal mehr
+  1. In den 8 GUI-Render-Funktionen von skills-board.js kein Template-Literal mehr
      innerhalb von onclick-/on*-Attributen interpoliert wird (onclick="...${...}...").
-  2. In der gesamten agents-board.js-Datei kein onclick="[^"]*\\$\\{ vorkommt.
+  2. In der gesamten skills-board.js-Datei kein onclick="[^"]*\\$\\{ vorkommt.
   3. Die Hilfsfunktion escapeAttr(text) implementiert und exportiert ist.
   4. Datenvariablen (wie displayName, item.name, item.description) mittels
      escapeHtml bzw. escapeAttr geschützt werden.
+  5. Die tote Duplikat-Datei agents-board.js geloescht bleibt.
 """
 
 from pathlib import Path
@@ -18,6 +19,7 @@ import re
 import pytest
 
 SYSTEM_ROOT = Path(__file__).parent.parent
+SKILLS_BOARD_JS = SYSTEM_ROOT / "gui" / "static" / "js" / "skills-board.js"
 AGENTS_BOARD_JS = SYSTEM_ROOT / "gui" / "static" / "js" / "agents-board.js"
 
 TARGET_FUNCTIONS = [
@@ -34,15 +36,15 @@ TARGET_FUNCTIONS = [
 
 @pytest.fixture
 def js_content() -> str:
-    assert AGENTS_BOARD_JS.exists(), f"Datei {AGENTS_BOARD_JS} nicht gefunden"
-    return AGENTS_BOARD_JS.read_text(encoding="utf-8")
+    assert SKILLS_BOARD_JS.exists(), f"Datei {SKILLS_BOARD_JS} nicht gefunden"
+    return SKILLS_BOARD_JS.read_text(encoding="utf-8")
 
 
 def extract_function_body(content: str, func_name: str) -> str:
     """Extrahiert den Funktionskoerper einer JS-Funktion anhand geschweifter Klammern."""
     pattern = rf"function\s+{func_name}\s*\([^)]*\)\s*\{{"
     match = re.search(pattern, content)
-    assert match is not None, f"Funktion {func_name} nicht in agents-board.js gefunden"
+    assert match is not None, f"Funktion {func_name} nicht in skills-board.js gefunden"
 
     start_pos = match.end() - 1
     depth = 0
@@ -61,9 +63,14 @@ def extract_function_body(content: str, func_name: str) -> str:
     return content[start_pos:end_pos]
 
 
-def test_agents_board_file_exists():
-    """agents-board.js muss existieren."""
-    assert AGENTS_BOARD_JS.is_file()
+def test_skills_board_file_exists():
+    """skills-board.js muss existieren."""
+    assert SKILLS_BOARD_JS.is_file()
+
+
+def test_agents_board_duplicate_removed():
+    """Die tote Duplikat-Datei agents-board.js darf nicht mehr existieren."""
+    assert not AGENTS_BOARD_JS.exists()
 
 
 def test_escape_attr_function_defined(js_content: str):
@@ -104,7 +111,7 @@ def test_no_interpolated_onclick_in_entire_file(js_content: str):
     """Auch dateiweit darf kein onclick=\"[^\"]*\\${ vorkommen."""
     matches = re.findall(r'onclick="[^"]*\$\{', js_content)
     assert not matches, (
-        f"In agents-board.js wurden dateiweit interpolierte onclick-Attribute gefunden: {matches}"
+        f"In skills-board.js wurden dateiweit interpolierte onclick-Attribute gefunden: {matches}"
     )
 
 
@@ -190,12 +197,11 @@ def test_data_escaping_in_render_flow_nodes(js_content: str):
 
 
 def test_node_check_passes():
-    """node -c system/gui/static/js/agents-board.js muss ohne Fehler (Exit 0) durchlaufen."""
+    """node -c system/gui/static/js/skills-board.js muss ohne Fehler (Exit 0) durchlaufen."""
     import subprocess
     result = subprocess.run(
-        ["node", "-c", str(AGENTS_BOARD_JS)],
+        ["node", "-c", str(SKILLS_BOARD_JS)],
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, f"Node Syntaxfehler:\n{result.stderr}"
-

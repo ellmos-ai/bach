@@ -166,3 +166,41 @@ Untracked files:
 ## 6. Selbstauskunft Modell
 
 Ich bin Modell **Gemini 3.8 Flash (High)**.
+
+---
+
+## 7. Korrektur aus Security-Review (Kanonische Datei `skills-board.js` & Löschung der Duplikat-Datei `agents-board.js`)
+
+### 7.1 Befund aus dem Review (`_codex/REVIEW-xss.md`)
+Im Security-Review wurde festgestellt:
+- `system/gui/static/js/agents-board.js` wurde von keinem einzigen Template eingebunden (tote Datei).
+- Sowohl [`system/gui/templates/agents-board.html`](file:///C:/_Local_DEV/wt/bach-304635102-xss/system/gui/templates/agents-board.html) als auch [`system/gui/templates/skills-board.html`](file:///C:/_Local_DEV/wt/bach-304635102-xss/system/gui/templates/skills-board.html) binden stattdessen [`system/gui/static/js/skills-board.js`](file:///C:/_Local_DEV/wt/bach-304635102-xss/system/gui/static/js/skills-board.js) ein.
+- Vor dem Fix waren beide Dateien byte-identisch. Da der Fix zunächst nur in `agents-board.js` vorgenommen wurde, blieb die Live-Lücke in `skills-board.js` zunächst bestehen.
+
+### 7.2 Durchgeführte Nachkorrekturen
+1. **Übertragung des Fixes auf `skills-board.js`:**
+   - Der vollständige, gehärtete Stand aus `agents-board.js` (inkl. `escapeAttr`, `escapeHtml`, data-Attributen und delegierten Event-Listenern) wurde 1:1 nach [`system/gui/static/js/skills-board.js`](file:///C:/_Local_DEV/wt/bach-304635102-xss/system/gui/static/js/skills-board.js) übertragen.
+2. **Löschung der toten Duplikat-Datei:**
+   - `system/gui/static/js/agents-board.js` wurde per `git rm` vollständig gelöscht. Damit existiert nur noch eine kanonische Board-Skriptdatei (Root-Cause-Beseitigung der Code-Duplikation).
+3. **Anpassung der Tests:**
+   - Der Regressionstest wurde nach [`system/tests/test_skills_board_xss.py`](file:///C:/_Local_DEV/wt/bach-304635102-xss/system/tests/test_skills_board_xss.py) umbenannt.
+   - Alle Tests prüfen nun direkt `skills-board.js`.
+   - Zusätzlich wurde ein Testfall ergänzt, der sicherstellt, dass die veraltete Duplikat-Datei `agents-board.js` nicht wieder angelegt wird.
+
+### 7.3 Verifikation der Nachkorrektur
+- **Node Syntax-Check:**
+  ```powershell
+  node -c system/gui/static/js/skills-board.js
+  ```
+  Ergebnis: **Exit 0** (fehlerfrei).
+- **Pytest Suite:**
+  ```powershell
+  pytest system/tests/test_skills_board_xss.py -q
+  ```
+  Ergebnis: **32 passed in 10.03s** (Exit 0).
+- **Repo-weiter Grep auf `agents-board.js`:**
+  ```powershell
+  git grep -n "agents-board.js"
+  ```
+  Ergebnis: Keine Produktionsdatei (Templates, Server, Router) referenziert mehr `agents-board.js`. Die einzigen Fundstellen liegen in Dokumentationsberichten (`_codex/`) und der Existenzausschluss-Prüfung im Test.
+
