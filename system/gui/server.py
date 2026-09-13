@@ -12321,8 +12321,8 @@ async def add_routine(request: Request):
 
 @app.put("/api/routines/{routine_id}")
 async def update_routine(routine_id: int, request: Request):
-    _refuse_if_foreign_domain("routine", "GUI PUT /api/routines/{id}")
     """Routine aktualisieren."""
+    _refuse_if_foreign_domain("routine", "GUI PUT /api/routines/{id}")
     try:
         data = await request.json()
         conn = get_user_db()
@@ -12410,8 +12410,8 @@ async def complete_routine(routine_id: int):
 
 @app.delete("/api/routines/{routine_id}")
 async def delete_routine(routine_id: int):
-    _refuse_if_foreign_domain("routine", "GUI DELETE /api/routines/{id}")
     """Routine loeschen."""
+    _refuse_if_foreign_domain("routine", "GUI DELETE /api/routines/{id}")
     try:
         conn = get_user_db()
         cursor = conn.cursor()
