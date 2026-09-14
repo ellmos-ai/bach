@@ -85,7 +85,55 @@ from hub.bach_paths import BACH_DB
 BACH_DB_PATH = Path(BACH_DB)
 BACH_DB_STR = str(BACH_DB_PATH)
 
-from mcp.server.fastmcp import FastMCP
+# Externes mcp-Paket (FastMCP) importieren.
+#
+# Regressionsschutz gegen sys.path-Shadowing (Task #1284): In der Vollsuite
+# kann ein frueherer Test (z. B. tests/test_portable_agents.py) system/hub auf
+# sys.path legen. Dann loest ein Top-Level "import mcp" auf
+# system/hub/mcp.py statt auf das echte mcp-Paket auf -- der Sub-Import
+# "mcp.server.fastmcp" scheitert mit
+# "attempted relative import with no known parent package". Wir machen den
+# Import shadow-proof, indem wir (a) einen schattierenden sys.modules['mcp']
+# (ein Modul ohne __path__, also kein echtes Package) entfernen und (b)
+# hub-Verzeichnisse, die ein eigenes mcp.py enthalten, nur fuer die Dauer
+# dieses Imports aus sys.path ausblenden.
+def _import_fastmcp():
+    import importlib
+
+    _hub_entries = [
+        p for p in list(sys.path)
+        if p.rstrip("/\\").endswith("hub")
+        and os.path.exists(os.path.join(p, "mcp.py"))
+    ]
+
+    _existing = sys.modules.get("mcp")
+    _shadowed = (
+        _existing is not None
+        and (
+            not hasattr(_existing, "__path__")
+            or "hub" in (_existing.__file__ or "").replace("\\", "/")
+        )
+    )
+
+    if _shadowed:
+        # Komplette mcp*-Kette entfernen, sonst scheitert die
+        # Parent/Submodule-Versoehnung beim frischen Import.
+        for _k in list(sys.modules):
+            if _k == "mcp" or _k.startswith("mcp."):
+                del sys.modules[_k]
+
+    for _p in _hub_entries:
+        sys.path.remove(_p)
+    try:
+        importlib.import_module("mcp.server.fastmcp")
+        from mcp.server.fastmcp import FastMCP as _FastMCP
+    finally:
+        for _p in _hub_entries:
+            if _p not in sys.path:
+                sys.path.insert(0, _p)
+    return _FastMCP
+
+FastMCP = _import_fastmcp()
 
 from bach_api import get_app
 
