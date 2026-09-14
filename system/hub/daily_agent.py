@@ -47,6 +47,12 @@ from pathlib import Path
 from typing import List, Tuple
 
 from .base import BaseHandler
+from ._services.mediplaner_projection import (
+    DEFAULT_MINIMUM_OFFLINE_SECONDS as MEDIPLANER_DEFAULT_MINIMUM_OFFLINE_SECONDS,
+    MediplanerProjectionError,
+    format_mediplaner_briefing,
+    read_mediplaner_projection,
+)
 from ._services.routinika_projection import (
     DEFAULT_MINIMUM_OFFLINE_SECONDS,
     RoutinikaProjectionError,
@@ -83,6 +89,7 @@ class DailyAgentHandler(BaseHandler):
         "news_briefing": ("News-Ueberblick", True),
         "session_briefing": ("Letzte Session", True),
         "commitment_briefing": ("Fällige Routinen und Fristen", True),
+        "mediplaner_briefing": ("MediPlaner-Fälligkeiten (read-only Projektion)", False),
         "routinika_briefing": ("Routinika-Fälligkeiten (read-only Projektion)", False),
         "weather_briefing": ("Wetter", False),
         "calendar_briefing": ("Kalender", False),
@@ -307,26 +314,63 @@ class DailyAgentHandler(BaseHandler):
             return ["task_briefing", "message_briefing", "session_briefing"]
 
     def _briefing(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
+        """Build a briefing and commit all consumer checkpoints only on success."""
+        ok, text, checkpoint_updates = self._build_briefing(args, dry_run=dry_run)
+        if not ok:
+            return False, text
+        if checkpoint_updates:
+            try:
+                self._persist_projection_checkpoints(checkpoint_updates)
+            except (sqlite3.Error, ValueError, RuntimeError) as exc:
+                return False, f"{text}\n\n[projection_checkpoint] Fehler: {exc}"
+        return True, text
+
+    def _build_briefing(
+        self, args: List[str], dry_run: bool = False
+    ) -> tuple[bool, str, list[tuple[str, dict, object]]]:
         """Generiert ein modulares Morgen-Briefing."""
         clean_args = [arg for arg in args if arg not in {"--dry-run", "-n"}]
         read_only_config = dry_run or "--read-only-config" in clean_args
+        include_mediplaner_receipt = "--mediplaner-receipt" in clean_args
         include_routinika_receipt = "--routinika-receipt" in clean_args
-        projection_options = [
+        mediplaner_projection_options = [
+            arg.split("=", 1)[1]
+            for arg in clean_args
+            if arg.startswith("--mediplaner-projection=")
+        ]
+        if len(mediplaner_projection_options) > 1 or any(
+            not value for value in mediplaner_projection_options
+        ):
+            return False, "--mediplaner-projection muss genau einen nicht leeren Pfad enthalten.", []
+        routinika_projection_options = [
             arg.split("=", 1)[1]
             for arg in clean_args
             if arg.startswith("--routinika-projection=")
         ]
-        if len(projection_options) > 1 or any(not value for value in projection_options):
-            return False, "--routinika-projection muss genau einen nicht leeren Pfad enthalten."
-        supported = {"--read-only-config", "--routinika-receipt"}
+        if len(routinika_projection_options) > 1 or any(
+            not value for value in routinika_projection_options
+        ):
+            return False, "--routinika-projection muss genau einen nicht leeren Pfad enthalten.", []
+        supported = {
+            "--read-only-config",
+            "--mediplaner-receipt",
+            "--routinika-receipt",
+        }
         unsupported = [
             arg
             for arg in clean_args
-            if arg not in supported and not arg.startswith("--routinika-projection=")
+            if arg not in supported
+            and not arg.startswith("--mediplaner-projection=")
+            and not arg.startswith("--routinika-projection=")
         ]
         if unsupported:
-            return False, f"Unbekannte Option für daily-agent briefing: {unsupported[0]}"
-        projection_override = projection_options[0] if projection_options else None
+            return False, f"Unbekannte Option für daily-agent briefing: {unsupported[0]}", []
+        mediplaner_projection_override = (
+            mediplaner_projection_options[0] if mediplaner_projection_options else None
+        )
+        routinika_projection_override = (
+            routinika_projection_options[0] if routinika_projection_options else None
+        )
 
         if read_only_config:
             db_uri = f"file:{self.db_path.resolve().as_posix()}?mode=ro"
@@ -335,6 +379,7 @@ class DailyAgentHandler(BaseHandler):
             conn = sqlite3.connect(str(self.db_path))
         try:
             conn.row_factory = sqlite3.Row
+            checkpoint_updates: list[tuple[str, dict, object]] = []
 
             lines = [f"MORGEN-BRIEFING ({date.today().strftime('%d.%m.%Y')})", "=" * 45]
             if dry_run:
@@ -343,7 +388,9 @@ class DailyAgentHandler(BaseHandler):
             active_modules = self._get_active_modules(
                 conn, ensure_config=not read_only_config
             )
-            if projection_override and "routinika_briefing" not in active_modules:
+            if mediplaner_projection_override and "mediplaner_briefing" not in active_modules:
+                active_modules.append("mediplaner_briefing")
+            if routinika_projection_override and "routinika_briefing" not in active_modules:
                 active_modules.append("routinika_briefing")
 
             module_methods = {
@@ -352,10 +399,17 @@ class DailyAgentHandler(BaseHandler):
                 "news_briefing": self._mod_news_briefing,
                 "session_briefing": self._mod_session_briefing,
                 "commitment_briefing": self._mod_commitment_briefing,
+                "mediplaner_briefing": lambda current_conn: self._mod_mediplaner_briefing(
+                    current_conn,
+                    projection_override=mediplaner_projection_override,
+                    include_receipt=include_mediplaner_receipt,
+                    checkpoint_updates=(checkpoint_updates if not read_only_config else None),
+                ),
                 "routinika_briefing": lambda current_conn: self._mod_routinika_briefing(
                     current_conn,
-                    projection_override=projection_override,
+                    projection_override=routinika_projection_override,
                     include_receipt=include_routinika_receipt,
+                    checkpoint_updates=(checkpoint_updates if not read_only_config else None),
                 ),
                 "weather_briefing": self._mod_weather_briefing,
                 "calendar_briefing": self._mod_calendar_briefing,
@@ -370,10 +424,10 @@ class DailyAgentHandler(BaseHandler):
                             lines.append(block)
                     except Exception as e:
                         lines.append(f"\n[{mod_name}] Fehler: {e}")
-                        if mod_name == "routinika_briefing":
-                            return False, "\n".join(lines)
+                        if mod_name in {"mediplaner_briefing", "routinika_briefing"}:
+                            return False, "\n".join(lines), []
 
-            return True, "\n".join(lines)
+            return True, "\n".join(lines), checkpoint_updates
         finally:
             conn.close()
 
@@ -388,12 +442,38 @@ class DailyAgentHandler(BaseHandler):
         if unsupported:
             return False, f"Unbekannte Option für daily-agent deliver: {unsupported[0]}"
 
-        ok, briefing = self._briefing(["--read-only-config"] if dry_run else [])
+        today = date.today().isoformat()
+        marker = f"BACH Morgen-Briefing {today}"
+        if not dry_run:
+            conn = sqlite3.connect(str(self.db_path))
+            try:
+                try:
+                    existing = conn.execute(
+                        """
+                        SELECT id, processed, error, status
+                        FROM connector_messages
+                        WHERE connector_name = 'telegram_main'
+                          AND direction = 'out'
+                          AND sender = 'daily-agent'
+                          AND content LIKE ?
+                        ORDER BY id DESC LIMIT 1
+                        """,
+                        (f"{marker}%",),
+                    ).fetchone()
+                except sqlite3.Error as exc:
+                    return False, f"Connector-Queue nicht lesbar: {exc}"
+            finally:
+                conn.close()
+            if existing:
+                state = "gesendet" if existing[3] == "sent" else "bereits versucht"
+                return True, f"[SKIP] Morgen-Briefing für {today} {state} (Nachricht #{existing[0]})."
+
+        ok, briefing, checkpoint_updates = self._build_briefing(
+            ["--read-only-config"] if dry_run else [], dry_run=dry_run
+        )
         if not ok:
             return False, briefing
 
-        today = date.today().isoformat()
-        marker = f"BACH Morgen-Briefing {today}"
         payload = f"{marker}\n\n{briefing}"
         if len(payload) > 4000:
             payload = payload[:3960].rstrip() + "\n\n[Briefing für Telegram gekürzt]"
@@ -458,9 +538,11 @@ class DailyAgentHandler(BaseHandler):
             send_error = f"{type(exc).__name__}: {exc}"[:200]
 
         conn = sqlite3.connect(str(self.db_path))
+        checkpoint_error = ""
         try:
+            conn.execute("BEGIN IMMEDIATE")
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            conn.execute(
+            status_update = conn.execute(
                 """
                 UPDATE connector_messages
                 SET processed = ?, status = ?, error = ?, updated_at = ?
@@ -469,10 +551,26 @@ class DailyAgentHandler(BaseHandler):
                 (1, "sent" if sent else "failed",
                  None if sent else send_error, now, message_id),
             )
+            if status_update.rowcount != 1:
+                raise RuntimeError(
+                    "Zustell-Auditdatensatz wurde parallel verändert oder entfernt."
+                )
+            if sent and checkpoint_updates:
+                self._persist_projection_checkpoints(
+                    checkpoint_updates, connection=conn, manage_transaction=False
+                )
             conn.commit()
+        except (sqlite3.Error, ValueError, RuntimeError) as exc:
+            conn.rollback()
+            checkpoint_error = str(exc)
         finally:
             conn.close()
 
+        if checkpoint_error:
+            return False, (
+                f"[FAIL-CLOSED] Zustellstatus/Consumer-Checkpoint konnte nach dem "
+                f"Sendeversuch nicht atomar gespeichert werden: {checkpoint_error}"
+            )
         if sent:
             return True, f"[OK] Morgen-Briefing für {today} via telegram_main gesendet (Nachricht #{message_id})."
         return False, (
@@ -612,12 +710,53 @@ class DailyAgentHandler(BaseHandler):
 
         return "\n".join(parts)
 
+    def _mod_mediplaner_briefing(
+        self,
+        conn,
+        *,
+        projection_override: str | None = None,
+        include_receipt: bool = False,
+        checkpoint_updates: list[tuple[str, dict, object]] | None = None,
+    ) -> str:
+        """Modul: strikt read-only geprüfte MediPlaner-Fälligkeiten."""
+        settings = self._briefing_module_settings(conn, "mediplaner_briefing")
+        projection_path = projection_override or settings.get("projection_path")
+        if not isinstance(projection_path, str) or not projection_path.strip():
+            raise MediplanerProjectionError(
+                "Kein Projektionspfad konfiguriert. Nutze daily-agent config "
+                "mediplaner_briefing --projection=<absoluter-pfad>."
+            )
+        offline_seconds = settings.get(
+            "minimum_offline_seconds", MEDIPLANER_DEFAULT_MINIMUM_OFFLINE_SECONDS
+        )
+        previous_checkpoint = settings.get("last_checkpoint")
+        projection = read_mediplaner_projection(
+            projection_path,
+            minimum_offline_seconds=offline_seconds,
+            previous_checkpoint=previous_checkpoint,
+        )
+        expected_publisher = settings.get("publisher_instance")
+        if (
+            expected_publisher is not None
+            and projection.publisher_instance != expected_publisher
+        ):
+            raise MediplanerProjectionError(
+                "Publisher-Instanz weicht vom gebundenen Consumer-Checkpoint ab."
+            )
+        block = format_mediplaner_briefing(
+            projection, include_receipt=include_receipt
+        )
+        if checkpoint_updates is not None:
+            checkpoint_updates.append(("mediplaner_briefing", settings, projection))
+        return block
+
     def _mod_routinika_briefing(
         self,
         conn,
         *,
         projection_override: str | None = None,
         include_receipt: bool = False,
+        checkpoint_updates: list[tuple[str, dict, object]] | None = None,
     ) -> str:
         """Modul: strikt read-only geprüfte Routinika-Fälligkeiten."""
         settings = self._briefing_module_settings(conn, "routinika_briefing")
@@ -630,12 +769,79 @@ class DailyAgentHandler(BaseHandler):
         offline_seconds = settings.get(
             "minimum_offline_seconds", DEFAULT_MINIMUM_OFFLINE_SECONDS
         )
+        previous_checkpoint = settings.get("last_checkpoint")
         projection = read_routinika_projection(
-            projection_path, minimum_offline_seconds=offline_seconds
+            projection_path,
+            minimum_offline_seconds=offline_seconds,
+            previous_checkpoint=previous_checkpoint,
         )
-        return format_routinika_briefing(
+        expected_publisher = settings.get("publisher_instance")
+        if (
+            expected_publisher is not None
+            and projection.publisher_instance != expected_publisher
+        ):
+            raise RoutinikaProjectionError(
+                "Publisher-Instanz weicht vom gebundenen Consumer-Checkpoint ab."
+            )
+        block = format_routinika_briefing(
             projection, include_receipt=include_receipt
         )
+        if checkpoint_updates is not None:
+            checkpoint_updates.append(("routinika_briefing", settings, projection))
+        return block
+
+    def _persist_projection_checkpoints(
+        self,
+        updates: list[tuple[str, dict, object]],
+        *,
+        connection: sqlite3.Connection | None = None,
+        manage_transaction: bool = True,
+    ) -> None:
+        """Atomically advance BACH-owned consumer state after complete success."""
+        conn = connection or sqlite3.connect(str(self.db_path))
+        try:
+            if manage_transaction:
+                conn.execute("BEGIN IMMEDIATE")
+            for module_name, prior_settings, projection in updates:
+                row = conn.execute(
+                    "SELECT settings_json FROM briefing_config WHERE module_name = ?",
+                    (module_name,),
+                ).fetchone()
+                if row is None:
+                    raise RuntimeError(f"Briefing-Modul fehlt: {module_name}")
+                current_settings = json.loads(row[0] or "{}")
+                if not isinstance(current_settings, dict):
+                    raise ValueError(f"settings_json für {module_name} muss ein Objekt sein.")
+                if current_settings != prior_settings:
+                    raise RuntimeError(
+                        f"Consumer-Konfiguration wurde parallel verändert: {module_name}"
+                    )
+                next_settings = dict(current_settings)
+                next_settings.update(
+                    {
+                        "last_checkpoint": projection.source_checkpoint,
+                        "last_projection_sha256": projection.database_sha256,
+                        "publisher_instance": projection.publisher_instance,
+                    }
+                )
+                updated = conn.execute(
+                    "UPDATE briefing_config SET settings_json = ? WHERE module_name = ?",
+                    (
+                        json.dumps(next_settings, ensure_ascii=False, sort_keys=True),
+                        module_name,
+                    ),
+                )
+                if updated.rowcount != 1:
+                    raise RuntimeError(f"Briefing-Modul fehlt: {module_name}")
+            if manage_transaction:
+                conn.commit()
+        except Exception:
+            if manage_transaction:
+                conn.rollback()
+            raise
+        finally:
+            if connection is None:
+                conn.close()
 
     @staticmethod
     def _briefing_module_settings(conn, module_name: str) -> dict:
@@ -740,8 +946,12 @@ class DailyAgentHandler(BaseHandler):
     def _configure_module(self, args: List[str]) -> Tuple[bool, str]:
         """Speichert eng begrenzte Einstellungen eines Briefing-Moduls."""
         module_name = args[0]
-        if module_name != "routinika_briefing":
-            return False, "Konfigurierbar ist derzeit nur: routinika_briefing"
+        configurable = {"mediplaner_briefing", "routinika_briefing"}
+        if module_name not in configurable:
+            return False, (
+                "Konfigurierbar sind derzeit: mediplaner_briefing, "
+                "routinika_briefing"
+            )
         options = args[1:]
         if "--clear" in options:
             if len(options) != 1:
@@ -774,7 +984,16 @@ class DailyAgentHandler(BaseHandler):
             if not projection.is_absolute():
                 return False, "Der Projektionspfad muss absolut sein."
             try:
-                offline_seconds = int(offline_values[0]) if offline_values else DEFAULT_MINIMUM_OFFLINE_SECONDS
+                default_offline_seconds = (
+                    MEDIPLANER_DEFAULT_MINIMUM_OFFLINE_SECONDS
+                    if module_name == "mediplaner_briefing"
+                    else DEFAULT_MINIMUM_OFFLINE_SECONDS
+                )
+                offline_seconds = (
+                    int(offline_values[0])
+                    if offline_values
+                    else default_offline_seconds
+                )
             except ValueError:
                 return False, "--minimum-offline-seconds muss eine Ganzzahl sein."
             if offline_seconds < 0:

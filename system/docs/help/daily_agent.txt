@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
 # Version: 1.0.0
-# Zuletzt validiert: 2026-09-05
+# Zuletzt validiert: 2026-09-14
 
 DAILY AGENT - Autonomer Tagesagent mit persistenter Session
 ============================================================
@@ -23,6 +23,8 @@ OPERATIONEN
   bach daily-agent briefing --dry-run   Read-only Briefing-Vorschau
   bach daily-agent summary              Abend-Zusammenfassung generieren
   bach daily-agent config               Briefing-Module listen
+  bach daily-agent config mediplaner_briefing --projection=<absoluter-pfad>
+                                        MediPlaner-Consumerpfad speichern
   bach daily-agent config routinika_briefing --projection=<absoluter-pfad>
                                         Routinika-Consumerpfad speichern
   bach daily-agent modules              Alias für config
@@ -34,6 +36,7 @@ Briefing-Module (toggle):
   news_briefing                         News-Überblick (AN)
   session_briefing                      Letzte Session (AN)
   commitment_briefing                   Lokale Routinen und Fristen (AN)
+  mediplaner_briefing                    Medikamenten-Fälligkeiten und Bestandswarnungen (AUS)
   routinika_briefing                    Föderierte Fälligkeiten (AUS)
   weather_briefing                      Wetter (Standard: AUS)
   calendar_briefing                     Kalender-Termine (AUS)
@@ -45,6 +48,8 @@ BEISPIELE
   bach daily-agent start --model=opus   Startet mit Modell 'opus'
   bach daily-agent status               Zeigt PID und Start-Zeit
   bach daily-agent briefing             Generiert Briefing mit aktiven Modulen
+  bach daily-agent briefing --mediplaner-projection=C:\staging\mediplaner.sqlite --mediplaner-receipt --dry-run
+                                        Prüft eine geschlossene Projektion ohne Schreibzugriff
   bach daily-agent briefing --routinika-projection=C:\staging\routinika.sqlite --routinika-receipt --dry-run
                                         Prüft eine geschlossene Projektion ohne Schreibzugriff
   bach daily-agent toggle news_briefing Deaktiviert News-Modul
@@ -66,8 +71,15 @@ task_briefing:      Top 10 pending Tasks (Titel gekuerzt), ggf. recurring Jobs
 message_briefing:   Zaehler ungelesener Nachrichten (status='unread')
 news_briefing:      Ungelesene News aus news_items (Top-Kategorien + 3 Titel)
 session_briefing:   Letzter memory_sessions.summary (gekuerzt auf 120 Zeichen)
+mediplaner_briefing: Exakt erlaubte, opake Medikamenten-Fälligkeiten und
+                    Bestandswarnungen aus einer geschlossenen MediPlaner-v1-
+                    SQLite-Projektion; standardmäßig deaktiviert. Reale Läufe
+                    speichern den Consumer-Checkpoint in der BACH-Konfiguration;
+                    Dry-runs schreiben nichts.
 routinika_briefing: Exakt erlaubte, opake Fälligkeiten aus einer geschlossenen
                     Routinika-v1-SQLite-Projektion; standardmäßig deaktiviert.
+                    Reale Läufe speichern den Consumer-Checkpoint; Dry-runs
+                    schreiben nichts.
 weather_briefing:   Versucht weather_service (Koordinaten hardcodiert auf 0,0)
 calendar_briefing:  Heutige Termine aus assistant_calendar (5 nächste Events)
 
@@ -77,7 +89,7 @@ FEHLERBEHANDLUNG
 - Agent wird im Hintergrund gestartet (stdout/stderr unterdrückt)
 - PID-File muss manuell gelöscht werden, falls Prozess crashed
 - Briefing-Module ignorieren stille DB-Fehler (z.B. wenn news_items nicht existiert)
-- Eine aktive/ausdrücklich angegebene Routinika-Projektion schlägt bei
+- Eine aktive/ausdrücklich angegebene MediPlaner- oder Routinika-Projektion schlägt bei
   Vertrags-, Provenienz- oder Geschlossenheitsfehlern geschlossen fehl.
 - stop speichert Summary AUCH wenn Agent bereits tot ist
 

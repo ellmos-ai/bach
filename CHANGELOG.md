@@ -8,6 +8,16 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Added
 
+- **Read-only MediPlaner-Consumer (T-20260822-624075478):** Der Daily Agent kann
+  die ratifizierte `org.ellmos.mediplaner.reminder-projection@1.0.0` optional
+  als deaktiviertes Briefing-Modul lesen. Der Consumer prüft eine exakte
+  Tabellen-/Spalten-Allowlist, Vertrag, Provenienz, Checkpoint, UTC-Zeiten,
+  Tombstone-Aufbewahrung und Dateigeschlossenheit; er zeigt ausschließlich
+  opake Fälligkeits- und Warnreferenzen. Der Lesepfad verändert die Projektion
+  nie und Dry-runs bleiben auch in BACH read-only; nur ein erfolgreicher realer
+  Briefing-Lauf schreibt seinen Consumer-Checkpoint in die BACH-Konfiguration.
+  Produktionssync, Scheduler und Ocean-Cutover bleiben gesonderte Gates.
+
 - **TRANSFER-08: Reife-Zertifizierung & Nullreferenznachweis (Task #1224, MODULRUECKTRANSFER
   Stufe 8):** Abschlusspruefung aller 8 Modulruecktransfers. Ergebnis:
   7/8 Module pin-konform (Checkouts arbeitssauber), 225 Waechter-Tests gruen auf
