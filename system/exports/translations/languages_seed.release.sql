@@ -31338,109 +31338,122 @@ VER TAMBIÉN
   ayuda conector sistema conector
   ayuda comunicación llm métodos de comunicación LLM', 0, 'filesystem-import-20260823', '2026-08-23 07:28:21', '2026-08-23 07:28:21');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_chat', 'help_doc', 'ja', '# Portability: UNIVERSAL
-# Version: 1.0.0
-# Last validated: 2026-05-08
+# Last validated: 2026-08-28
+# Next review: 2027-08-28
 
 BACH CHAT SERVICE - Multi-Backend Telegram Bot + Control API + System Tray
  ==========================================================================
 
-DESCRIPTION
------------
-BACH Chat Service is the successor to the Claude Bridge. It provides a
-BACH-integrated Telegram bot with pluggable LLM backends, an HTTP Control
-API, and a cross-platform system tray.
+説明
+------------
+BACH チャット サービスは、Claude Bridge の後継です。彼は 1 つを提案します
+プラグ可能な LLM バックエンドを備えた BACH 統合 Telegram ボット、1 つ
+HTTP コントロール API とクロスプラットフォーム システム トレイ。
 
-Architecture (3 layers):
-  - model_backend.py:   Pluggable backend abstraction (Ollama, Claude CLI,
-                         Codex CLI, Claude API, OpenAI API)
-  - chat_runtime.py:    Backend-agnostic chat runtime with tool-use loop,
-                         context management, security modes, summarization
-  - telegram_chat.py:   Telegram bot with all commands + Control API
-  - chat_tray.py:       Cross-platform system tray (macOS/Windows/Linux)
+アーキテクチャ (3 層):
+  - model_backend.py: プラグ可能なバックエンド抽象化 (Ollama、Claude CLI、
+                         Codex CLI、Claude API、OpenAI API)
+  - chat_runtime.py: ツール使用ループを備えたバックエンドに依存しないチャット ランタイム、
+                         コンテキスト管理、セキュリティモード、概要
+  - telegram_chat.py: すべてのコマンド + 制御 API を備えたテレグラム ボット
+  - chat_tray.py: クロスプラットフォーム システム トレイ (macOS/Windows/Linux)
 
-Backends:
-  - ollama:     Local Ollama server with native tool-use
-  - claude:     Claude Code CLI (--continue session, own tools)
-  - codex:      Codex CLI (GPT models, own tools)
-  - claude-api: Anthropic API (requires ANTHROPIC_API_KEY)
-  - openai:     OpenAI API (requires OPENAI_API_KEY)
+バックエンド:
+  - ollama: ネイティブ ツールを使用するローカル Ollama サーバー
+  - クロード: クロード コード CLI (--セッションを継続、独自のツール)
+  - codex: Codex CLI (GPT モデル、独自のツール)
+  - claude-api: Anthropic API (ANTHROPIC_API_KEY が必要)
+  - openai: OpenAI API (OPENAI_API_KEY が必要)
 
-Security modes:
-  - safe:  Read-only tools (ls, cat, grep, git, docker, etc.)
-  - full:  Also write tools (execute_command, write_file)
-           Activation: /mode full confirmed
+セキュリティ モード:
+  - 安全: 読み取り専用ツール (ls、cat、grep、git、docker など)
+  - full: 書き込みツール (execute_command、write_file) も使用
+           アクティベーション: /mode full が確認されました
 
 
-TELEGRAM COMMANDS
+テレグラム コマンド
 -----------------
-  /start                    Welcome message
-  /clear                    Reset conversation
-  /backend [name] [model]   Switch backend (ollama|claude|codex|claude-api|openai)
-  /model <name>             Switch model
-  /mode [safe|full]         Security mode
-  /think                    Think mode ON (thorough)
-  /nothink                  Think mode OFF (fast)
-  /settings                 Show all settings
-  /status                   System status
-  /remember <text>          BACH Memory: Remember
-  /recall <search>          BACH Memory: Search
-  /facts                    BACH Memory: Facts
-  /bach <cmd>               Execute BACH command
-  /task <text>              Create task
-  /tasks                    Open tasks
-  Voice message             Whisper transcription -> Chat
-  Photo                     OCR text recognition -> Chat
+  /ウェルカムメッセージの開始
+  /リセット会話をクリア
+  /backend [名前] [モデル] バックエンドの切り替え (ollama|claude|codex|claude-api|openai)
+  /model <名前> モデルを変更します
+  /mode [safe|full] セーフティモード
+  /think思考モードON(スルー)
+  /nothink 思考モード OFF (高速)
+  /settings すべての設定を表示
+  /status システムステータス
+  /remember <テキスト> バッハメモリー: 覚えておいてください
+  /recall <検索> BACH メモリ: 検索
+  /facts BACH メモリ: 事実
+  /bach <cmd> BACH コマンドを実行します。
+  /task <テキスト> タスクの作成
+  /tasks タスクを開く
+  /maxrounds [N] 工具の最大ラウンド数を設定します (0=無制限)
+  音声メッセージのささやき文字起こし -> チャット
+  写真 OCR テキスト認識 -> チャット
 
 
-CONTROL API (Port 8081)
+CONTROL API (ポート 8081)
 -----------------------
-  GET  /                    Web dashboard (HTML)
-  GET  /api/status          Current status (backend, model, mode, think)
-  GET  /api/backends        Available backends with status
-  GET  /api/models          Models of current backend
-  POST /api/backend         Switch backend: {"name": "claude", "model": "opus"}
-  POST /api/mode            Set mode: {"mode": "safe"}
-  POST /api/model           Set model: {"model": "qwen3.5:35b-a3b"}
-  POST /api/think           Think mode: {"think": true}
+  GET / Web ダッシュボード (HTML)
+  GET /api/status 現在のステータス (ツールのアクティビティを含む)
+  GET /api/backends 利用可能なバックエンドとステータス
+  GET /api/models 現在のバックエンドのモデル
+  POST /api/backend バックエンドの切り替え: {"name": "claude", "model": "opus"}
+  POST /api/mode モードを設定します: {"mode": "safe"}
+  POST /api/model モデルを設定: {"model": "qwen3.5:35b-a3b"}
+  POST /api/think 思考モード: {"think": true}
+  POST /api/max_tool_rounds 最大ツールラウンド: {"rounds": 10} (0=無制限)
+  POST /api/chat チャット メッセージ: {"prompt": "...", "chat_id": "..."}
 
 
-SYSTEM TRAY
+システム トレイ
 -----------
-  Start:  python chat_tray.py [--host HOST] [--port PORT]
+  開始: python start/startspine.py start --tray
 
-  Features:
-    - Status icon: Green (safe), Orange (full), Red (disconnected)
-    - Backend submenu: All backends with availability
-    - Model submenu: Models of current backend
-    - Mode toggle: Safe/Full
-    - Think toggle: ON/OFF
-    - Open web dashboard
-    - Cross-platform: macOS, Windows, Linux (via pystray)
+  特徴:
+    - ステータスアイコン：緑（安全）、オレンジ（フル）、赤（未接続）
+    - バックエンド サブメニュー: 可用性のあるすべてのバックエンド
+    - モデルサブメニュー: 現在のバックエンドのモデル
+    - モード切り替え: セーフ/フル
+    - 思考切り替え: オン/オフ
+    - 最大ツールラウンド: プリセット (5/10/20/無制限)
+    - ツールアクティビティ: 現在のツール + トレイタイトルのラウンド
+    - Web ダッシュボードを開く
+    - クロスプラットフォーム: macOS、Windows、Linux (pystray 経由)
 
-  Remote tray (from another system):
-    python chat_tray.py --host macstudvonlukas --port 8081
+  リモートトレイ（別途保護されたネットワーク経路でのみ使用）:
+    python start/startspine.py start --tray --host bach-server.local
+
+  セキュリティ境界: リモートアクセスには明示的な認証方針が必要です。
+  Control API を 0.0.0.0 で直接公開しないでください。
 
 
-FILES
------
-  Bot:        hub/_services/chat/telegram_chat.py
-  Runtime:    hub/_services/chat/chat_runtime.py
-  Backends:   hub/_services/llm/model_backend.py
-  Tray:       hub/_services/chat/chat_tray.py
-  Config:     ~/.config/bach/telegram_chat.json
-  Token:      ~/.credentials/telegram_bot_token
-  Owner-ID:   ~/.credentials/telegram_owner_id
-  Prompt:     data/system_prompt_buddha.txt
-  Logs:       ~/Library/Logs/bach/telegram-bot.log (macOS), data/logs/ (Windows)
+ファイル
+-------
+  ボット: hub/_services/chat/telegram_chat.py
+  ランタイム: hub/_services/chat/chat_runtime.py
+  バックエンド: hub/_services/llm/model_backend.py
+  トレイ: hub/_services/chat/chat_tray.py
+  構成: ~/.config/bach/telegram_chat.json
+  トークン: ~/.credentials/telegram_bot_token
+  所有者 ID: ~/.credentials/telegram_owner_id
+  プロンプト: data/system_prompt_buddha.txt
+  ログ: ~/Library/Logs/bach/telegram-bot.log (macOS)、data/logs/ (Windows)
 
   LaunchAgents (macOS):
-    com.bach.telegram-bot     Telegram bot
-    com.bach.chat-tray        System tray
+    com.bach.telegram-bot 電報ボット
+    com.bach.chat-tray システム トレイ
+    com.bach.gui-server GUI ダッシュボード (:8000)
+
+  Crontab (macOS):
+    */5 * * * * sync_mirror.sh OneDrive ミラー同期
+    0 */6 * * *rotate_logs.sh ログのローテーション
 
 
-CONFIGURATION
+設定
 -------------
-  ~/.config/bach/telegram_chat.json:
+~/.config/bach/telegram_chat.json:
     {
       "bot_token": "...",
       "owner_id": "...",
@@ -31451,141 +31464,140 @@ CONFIGURATION
       }
     }
 
-  Environment variables:
-    TELEGRAM_BOT_TOKEN       Bot token (alternative to file)
-    TELEGRAM_OWNER_ID        Owner chat ID
-    OLLAMA_MODEL             Override default model
-    OLLAMA_URL               Override Ollama URL
-    BACH_CONTROL_PORT        Control API port (default: 8081)
-    ANTHROPIC_API_KEY        For claude-api backend
-    OPENAI_API_KEY           For openai backend
+  環境変数:
+    TELEGRAM_BOT_TOKEN ボットトークン (ファイルの代替)
+    TELEGRAM_OWNER_ID オーナーのチャットID
+    OLLAMA_MODEL 標準モデルを上書きする
+    OLLAMA_URL オラマ URL を上書きする
+    BACH_CONTROL_PORT 制御 API ポート (デフォルト: 8081)
+    BACH_HOST トレイ/GUI のデフォルトホスト (例: bach-server.local)
+    BACH_NO_BROWSER =1: ブラウザを自動的に開きません (リモート GUI)
+    ANTHROPIC_API_KEY claude-api バックエンドの場合
+    OPENAI_API_KEY openai バックエンドの場合
 
 
-MIGRATION FROM CLAUDE BRIDGE
------------------------------
-  BACH Chat Service functionally replaces the Claude Bridge:
-  - bridge_daemon.py -> telegram_chat.py (Telegram bot)
-  - bridge_tray.py   -> chat_tray.py (system tray)
-  - config.json      -> ~/.config/bach/telegram_chat.json
-
-  Advantages over Claude Bridge:
-  - 5 backends instead of only Claude CLI
-  - BACH integration (memory, tasks, injectors)
-  - Control API + web dashboard
-  - Voice (Whisper) + OCR (Tesseract)
-  - Cross-platform tray
-  - Clean 3-layer architecture
-
-
-SEE ALSO
+注意事項
 --------
   help claude_bridge        Old Claude Bridge (Legacy)
   help connector            Connector system
   help llm-kommunikation    LLM communication methods', 0, 'google_auto', '2026-05-17T06:33:13.916677', '2026-05-17T06:33:13.916677');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_chat', 'help_doc', 'ru', '# Portability: UNIVERSAL
-# Version: 1.0.0
-# Last validated: 2026-05-08
+# Last validated: 2026-08-28
+# Next review: 2027-08-28
 
 BACH CHAT SERVICE - Multi-Backend Telegram Bot + Control API + System Tray
  ==========================================================================
 
-DESCRIPTION
------------
-BACH Chat Service is the successor to the Claude Bridge. It provides a
-BACH-integrated Telegram bot with pluggable LLM backends, an HTTP Control
-API, and a cross-platform system tray.
+ОПИСАНИЕ
+------------
+Служба чата BACH является преемником Claude Bridge. Он предлагает один
+Интегрированный с BACH бот Telegram с подключаемыми серверными модулями LLM, один
+API управления HTTP и кроссплатформенный системный трей.
 
-Architecture (3 layers):
-  - model_backend.py:   Pluggable backend abstraction (Ollama, Claude CLI,
+Архитектура (3 уровня):
+  - model_backend.py: Подключаемая абстракция серверной части (Ollama, Claude CLI,
                          Codex CLI, Claude API, OpenAI API)
-  - chat_runtime.py:    Backend-agnostic chat runtime with tool-use loop,
-                         context management, security modes, summarization
-  - telegram_chat.py:   Telegram bot with all commands + Control API
-  - chat_tray.py:       Cross-platform system tray (macOS/Windows/Linux)
+  -chat_runtime.py: независимая от серверной части среда выполнения чата с циклом использования инструментов,
+                         Управление контекстом, режимы безопасности, сводка
+  - telegram_chat.py: бот Telegram со всеми командами + API управления
+  -chat_tray.py: кроссплатформенный системный трей (macOS/Windows/Linux)
 
-Backends:
-  - ollama:     Local Ollama server with native tool-use
-  - claude:     Claude Code CLI (--continue session, own tools)
-  - codex:      Codex CLI (GPT models, own tools)
-  - claude-api: Anthropic API (requires ANTHROPIC_API_KEY)
-  - openai:     OpenAI API (requires OPENAI_API_KEY)
+Бэкэнды:
+  - ollama: локальный сервер Ollama с использованием встроенных инструментов.
+  - claude: Claude Code CLI (--продолжить сеанс, собственные инструменты)
+  - кодекс: Codex CLI (модели GPT, собственные инструменты)
+  - claude-api: Антропный API (требуется ANTHROPIC_API_KEY)
+  - openai: OpenAI API (требуется OPENAI_API_KEY)
 
-Security modes:
-  - safe:  Read-only tools (ls, cat, grep, git, docker, etc.)
-  - full:  Also write tools (execute_command, write_file)
-           Activation: /mode full confirmed
+Режимы безопасности:
+  - безопасно: инструменты только для чтения (ls, cat, grep, git, docker и т. д.)
+  - полный: также инструменты записи (execute_command, write_file)
+           Активация: /mode полное подтверждение
 
 
-TELEGRAM COMMANDS
+ТЕЛЕГРАММНЫЕ КОМАНДЫ
 -----------------
-  /start                    Welcome message
-  /clear                    Reset conversation
-  /backend [name] [model]   Switch backend (ollama|claude|codex|claude-api|openai)
-  /model <name>             Switch model
-  /mode [safe|full]         Security mode
-  /think                    Think mode ON (thorough)
-  /nothink                  Think mode OFF (fast)
-  /settings                 Show all settings
-  /status                   System status
-  /remember <text>          BACH Memory: Remember
-  /recall <search>          BACH Memory: Search
-  /facts                    BACH Memory: Facts
-  /bach <cmd>               Execute BACH command
-  /task <text>              Create task
-  /tasks                    Open tasks
-  Voice message             Whisper transcription -> Chat
-  Photo                     OCR text recognition -> Chat
+  /начать приветственное сообщение
+  /очистить сброс разговора
+  /backend [имя] [модель] Переключение бэкэнда (ollama|claude|codex|claude-api|openai)
+  /model <имя> Изменить модель
+  /mode [safe|full] Безопасный режим
+  /think режим мышления включен (тщательно)
+  /nothink режим мышления ВЫКЛ (быстро)
+  /settings Показать все настройки
+  /status Статус системы
+  /remember <текст> Память БАХА: Помните
+  /recall <поиск> Память БАХа: Поиск
+  /facts Память БАХА: Факты
+  /bach <cmd> Выполнить команду BACH
+  /task <текст> Создать задачу
+  /tasks Открытие задач
+  /maxrounds [N] Установить максимальное количество ходов инструмента (0=неограниченно)
+  Голосовое сообщение Шепот транскрипция -> Чат
+  Распознавание текста OCR на фотографиях -> Чат
 
 
-CONTROL API (Port 8081)
+CONTROL API (порт 8081)
 -----------------------
-  GET  /                    Web dashboard (HTML)
-  GET  /api/status          Current status (backend, model, mode, think)
-  GET  /api/backends        Available backends with status
-  GET  /api/models          Models of current backend
-  POST /api/backend         Switch backend: {"name": "claude", "model": "opus"}
-  POST /api/mode            Set mode: {"mode": "safe"}
-  POST /api/model           Set model: {"model": "qwen3.5:35b-a3b"}
-  POST /api/think           Think mode: {"think": true}
+  GET/Веб-панель (HTML)
+  GET /api/status Текущий статус (включая активность инструмента)
+  GET /api/backends Доступные серверные части со статусом
+  GET /api/models Модели текущего бэкэнда
+  POST /api/backend Переключить серверную часть: {"name": "claude", "model": "opus"}
+  POST /api/mode Установить режим: {"mode": "safe"}
+  POST /api/model Установить модель: {"model": "qwen3.5:35b-a3b"}
+  POST /api/think Режим мышления: {"think": true}
+  POST /api/max_tool_rounds Максимальное количество раундов инструмента: {"rounds": 10} (0 = неограниченно)
+  POST /api/chat сообщение чата: {"prompt": "...", "chat_id": "..."}
 
 
-SYSTEM TRAY
+СИСТЕМНЫЙ ЛОТОК
 -----------
-  Start:  python chat_tray.py [--host HOST] [--port PORT]
+  Запуск: python start/startspine.py start --tray
 
-  Features:
-    - Status icon: Green (safe), Orange (full), Red (disconnected)
-    - Backend submenu: All backends with availability
-    - Model submenu: Models of current backend
-    - Mode toggle: Safe/Full
-    - Think toggle: ON/OFF
-    - Open web dashboard
-    - Cross-platform: macOS, Windows, Linux (via pystray)
+  Особенности:
+    - Значок состояния: зеленый (безопасен), оранжевый (заполнен), красный (не подключен)
+    - Подменю серверной части: все доступные серверные части.
+    - Подменю модели: модели текущего бэкэнда.
+    - Переключение режима: Безопасный/Полный
+    - Think Toggle: ВКЛ/ВЫКЛ
+    - Максимальное количество раундов инструмента: пресеты (5/10/20/неограниченно)
+    - Активность инструмента: текущий инструмент + скругление в названии лотка.
+    - Открыть веб-панель
+    - Кроссплатформенность: macOS, Windows, Linux (через pystray)
 
-  Remote tray (from another system):
-    python chat_tray.py --host macstudvonlukas --port 8081
+  Удалённый трей (только через отдельно защищённую сеть):
+    python start/startspine.py start --tray --host bach-server.local
 
-
-FILES
------
-  Bot:        hub/_services/chat/telegram_chat.py
-  Runtime:    hub/_services/chat/chat_runtime.py
-  Backends:   hub/_services/llm/model_backend.py
-  Tray:       hub/_services/chat/chat_tray.py
-  Config:     ~/.config/bach/telegram_chat.json
-  Token:      ~/.credentials/telegram_bot_token
-  Owner-ID:   ~/.credentials/telegram_owner_id
-  Prompt:     data/system_prompt_buddha.txt
-  Logs:       ~/Library/Logs/bach/telegram-bot.log (macOS), data/logs/ (Windows)
-
-  LaunchAgents (macOS):
-    com.bach.telegram-bot     Telegram bot
-    com.bach.chat-tray        System tray
+  Граница безопасности: удалённый доступ требует отдельного решения по
+  аутентификации. Нельзя напрямую публиковать Control API на 0.0.0.0.
 
 
-CONFIGURATION
+ФАЙЛЫ
+-------
+  Бот:hub/_services/chat/telegram_chat.py
+  Время выполнения:hub/_services/chat/chat_runtime.py
+  Бэкэнды:hub/_services/llm/model_backend.py
+  Лоток:hub/_services/chat/chat_tray.py
+  Конфигурация: ~/.config/bach/telegram_chat.json
+  Токен: ~/.credentials/telegram_bot_token
+  Идентификатор владельца: ~/.credentials/telegram_owner_id
+  Подсказка: data/system_prompt_buddha.txt
+  Журналы: ~/Library/Logs/bach/telegram-bot.log (macOS), data/logs/ (Windows)
+
+  Агенты запуска (macOS):
+    com.bach.telegram-bot Telegram-бот
+    com.bach.chat-tray системный трей
+    com.bach.gui-server Панель управления графическим интерфейсом (:8000)
+
+  Кронтаб (macOS):
+    */5 * * * * sync_mirror.sh Зеркальная синхронизация OneDrive
+    0 */6 * * * Rotate_logs.sh Ротация журналов
+
+
+КОНФИГУРАЦИЯ
 -------------
-  ~/.config/bach/telegram_chat.json:
+~/.config/bach/telegram_chat.json:
     {
       "bot_token": "...",
       "owner_id": "...",
@@ -31596,141 +31608,140 @@ CONFIGURATION
       }
     }
 
-  Environment variables:
-    TELEGRAM_BOT_TOKEN       Bot token (alternative to file)
-    TELEGRAM_OWNER_ID        Owner chat ID
-    OLLAMA_MODEL             Override default model
-    OLLAMA_URL               Override Ollama URL
-    BACH_CONTROL_PORT        Control API port (default: 8081)
-    ANTHROPIC_API_KEY        For claude-api backend
-    OPENAI_API_KEY           For openai backend
+  Переменные среды:
+    TELEGRAM_BOT_TOKEN Токен бота (альтернатива файловому)
+    TELEGRAM_OWNER_ID Идентификатор чата владельца
+    OLLAMA_MODEL Перезаписать стандартную модель
+    OLLAMA_URL Перезаписать URL-адрес Олламы
+    BACH_CONTROL_PORT Порт API управления (по умолчанию: 8081)
+    BACH_HOST Хост по умолчанию для трея/GUI (например, bach-server.local)
+    BACH_NO_BROWSER =1: Не открывать браузер автоматически (удаленный графический интерфейс).
+    ANTHROPIC_API_KEY для бэкэнда claude-api
+    OPENAI_API_KEY Для серверной части openai
 
 
-MIGRATION FROM CLAUDE BRIDGE
------------------------------
-  BACH Chat Service functionally replaces the Claude Bridge:
-  - bridge_daemon.py -> telegram_chat.py (Telegram bot)
-  - bridge_tray.py   -> chat_tray.py (system tray)
-  - config.json      -> ~/.config/bach/telegram_chat.json
-
-  Advantages over Claude Bridge:
-  - 5 backends instead of only Claude CLI
-  - BACH integration (memory, tasks, injectors)
-  - Control API + web dashboard
-  - Voice (Whisper) + OCR (Tesseract)
-  - Cross-platform tray
-  - Clean 3-layer architecture
-
-
-SEE ALSO
+ПРИМЕЧАНИЯ
 --------
   help claude_bridge        Old Claude Bridge (Legacy)
   help connector            Connector system
   help llm-kommunikation    LLM communication methods', 0, 'google_auto', '2026-05-17T06:44:22.678922', '2026-05-17T06:44:22.678922');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_chat', 'help_doc', 'zh', '# Portability: UNIVERSAL
-# Version: 1.0.0
-# Last validated: 2026-05-08
+# Last validated: 2026-08-28
+# Next review: 2027-08-28
 
 BACH CHAT SERVICE - Multi-Backend Telegram Bot + Control API + System Tray
  ==========================================================================
 
-DESCRIPTION
------------
-BACH Chat Service is the successor to the Claude Bridge. It provides a
-BACH-integrated Telegram bot with pluggable LLM backends, an HTTP Control
-API, and a cross-platform system tray.
+描述
+------------
+BACH 聊天服务是 Claude Bridge 的继承者。他提供了一个
+BACH 集成的 Telegram 机器人，具有可插入的 LLM 后端，一个
+HTTP Control API 和跨平台系统托盘。
 
-Architecture (3 layers):
-  - model_backend.py:   Pluggable backend abstraction (Ollama, Claude CLI,
-                         Codex CLI, Claude API, OpenAI API)
-  - chat_runtime.py:    Backend-agnostic chat runtime with tool-use loop,
-                         context management, security modes, summarization
-  - telegram_chat.py:   Telegram bot with all commands + Control API
-  - chat_tray.py:       Cross-platform system tray (macOS/Windows/Linux)
+架构（3 层）：
+  - model_backend.py：可插入后端抽象（Ollama、Claude CLI、
+                         Codex CLI、Claude API、OpenAI API）
+  - chat_runtime.py：具有工具使用循环的独立于后端的聊天运行时，
+                         上下文管理、安全模式、总结
+  - telegram_chat.py：带有所有命令的 Telegram 机器人 + 控制 API
+  - chat_tray.py：跨平台系统托盘（macOS/Windows/Linux）
 
-Backends:
-  - ollama:     Local Ollama server with native tool-use
-  - claude:     Claude Code CLI (--continue session, own tools)
-  - codex:      Codex CLI (GPT models, own tools)
-  - claude-api: Anthropic API (requires ANTHROPIC_API_KEY)
-  - openai:     OpenAI API (requires OPENAI_API_KEY)
+后端：
+  - ollama：使用本机工具的本地 Ollama 服务器
+  - claude：Claude Code CLI（--继续会话，自己的工具）
+  - codex：Codex CLI（GPT 模型，自己的工具）
+  - claude-api：人类 API（需要 ANTHROPIC_API_KEY）
+  - openai：OpenAI API（需要 OPENAI_API_KEY）
 
-Security modes:
-  - safe:  Read-only tools (ls, cat, grep, git, docker, etc.)
-  - full:  Also write tools (execute_command, write_file)
-           Activation: /mode full confirmed
+安全模式：
+  - 安全：只读工具（ls、cat、grep、git、docker 等）
+  - full：还有写入工具（execute_command、write_file）
+           激活：/模式完全确认
 
 
-TELEGRAM COMMANDS
+电报命令
 -----------------
-  /start                    Welcome message
-  /clear                    Reset conversation
-  /backend [name] [model]   Switch backend (ollama|claude|codex|claude-api|openai)
-  /model <name>             Switch model
-  /mode [safe|full]         Security mode
-  /think                    Think mode ON (thorough)
-  /nothink                  Think mode OFF (fast)
-  /settings                 Show all settings
-  /status                   System status
-  /remember <text>          BACH Memory: Remember
-  /recall <search>          BACH Memory: Search
-  /facts                    BACH Memory: Facts
-  /bach <cmd>               Execute BACH command
-  /task <text>              Create task
-  /tasks                    Open tasks
-  Voice message             Whisper transcription -> Chat
-  Photo                     OCR text recognition -> Chat
+  /开始欢迎消息
+  /清除重置对话
+  /backend [名称] [型号] 切换后端 (ollama|claude|codex|claude-api|openai)
+  /model <名称> 更改模型
+  /mode [safe|full] 安全模式
+  /think 思维模式开启（彻底）
+  /nothink 思维模式关闭（快速）
+  /settings 显示所有设置
+  /status 系统状态
+  /remember <文本> 巴赫记忆：记住
+  /recall <搜索> 巴赫记忆：搜索
+  /facts 巴赫记忆：事实
+  /bach <cmd> 执行 BACH 命令
+  /task <文本> 创建任务
+  /tasks 打开任务
+  /maxrounds [N] 设置最大工具轮数（0=无限制）
+  语音消息耳语转录 -> 聊天
+  照片 OCR 文字识别 -> 聊天
 
 
-CONTROL API (Port 8081)
+CONTROL API（端口 8081）
 -----------------------
-  GET  /                    Web dashboard (HTML)
-  GET  /api/status          Current status (backend, model, mode, think)
-  GET  /api/backends        Available backends with status
-  GET  /api/models          Models of current backend
-  POST /api/backend         Switch backend: {"name": "claude", "model": "opus"}
-  POST /api/mode            Set mode: {"mode": "safe"}
-  POST /api/model           Set model: {"model": "qwen3.5:35b-a3b"}
-  POST /api/think           Think mode: {"think": true}
+  获取/网络仪表板 (HTML)
+  GET /api/status 当前状态（包括工具活动）
+  GET /api/backends 可用后端及其状态
+  GET /api/models 当前后端的模型
+  POST /api/backend 切换后端: {"name": "claude", "model": "opus"}
+  POST /api/mode 设置模式：{"mode": "safe"}
+  POST /api/model 设置模型：{"model": "qwen3.5:35b-a3b"}
+  POST /api/think 思考模式：{"think": true}
+  POST /api/max_tool_rounds 最大工具轮次：{"rounds": 10} (0=无限制)
+  POST /api/chat 聊天消息: {"prompt": "...", "chat_id": "..."}
 
 
-SYSTEM TRAY
+系统托盘
 -----------
-  Start:  python chat_tray.py [--host HOST] [--port PORT]
+  启动：python start/startspine.py start --tray
 
-  Features:
-    - Status icon: Green (safe), Orange (full), Red (disconnected)
-    - Backend submenu: All backends with availability
-    - Model submenu: Models of current backend
-    - Mode toggle: Safe/Full
-    - Think toggle: ON/OFF
-    - Open web dashboard
-    - Cross-platform: macOS, Windows, Linux (via pystray)
+  特点：
+    - 状态图标：绿色（安全）、橙色（已满）、红色（未连接）
+    - 后端子菜单：所有可用的后端
+    - 模型子菜单：当前后端的模型
+    - 模式切换：安全/完整
+    - 思考切换：开/关
+    - 最大工具轮数：预设（5/10/20/无限制）
+    - 工具活动：当前工具+托盘标题中的圆形
+    - 打开网络仪表板
+    - 跨平台：macOS、Windows、Linux（通过 pystray）
 
-  Remote tray (from another system):
-    python chat_tray.py --host macstudvonlukas --port 8081
+  远程托盘（仅通过单独保护的网络链路使用）：
+    python start/startspine.py start --tray --host bach-server.local
 
-
-FILES
------
-  Bot:        hub/_services/chat/telegram_chat.py
-  Runtime:    hub/_services/chat/chat_runtime.py
-  Backends:   hub/_services/llm/model_backend.py
-  Tray:       hub/_services/chat/chat_tray.py
-  Config:     ~/.config/bach/telegram_chat.json
-  Token:      ~/.credentials/telegram_bot_token
-  Owner-ID:   ~/.credentials/telegram_owner_id
-  Prompt:     data/system_prompt_buddha.txt
-  Logs:       ~/Library/Logs/bach/telegram-bot.log (macOS), data/logs/ (Windows)
-
-  LaunchAgents (macOS):
-    com.bach.telegram-bot     Telegram bot
-    com.bach.chat-tray        System tray
+  安全边界：远程访问需要明确的身份验证方案。不要在 0.0.0.0 上直接公开
+  Control API。
 
 
-CONFIGURATION
+文件
+-------
+  机器人：hub/_services/chat/telegram_chat.py
+  运行时：hub/_services/chat/chat_runtime.py
+  后端：hub/_services/llm/model_backend.py
+  托盘：hub/_services/chat/chat_tray.py
+  配置：~/.config/bach/telegram_chat.json
+  令牌：~/.credentials/telegram_bot_token
+  所有者 ID：~/.credentials/telegram_owner_id
+  提示：data/system_prompt_buddha.txt
+  日志：~/Library/Logs/bach/telegram-bot.log (macOS)、data/logs/ (Windows)
+
+  启动代理 (macOS)：
+    com.bach.telegram-bot 电报机器人
+    com.bach.chat-tray 系统托盘
+    com.bach.gui-server GUI 仪表板 (:8000)
+
+  crontab (macOS):
+    */5 * * * *sync_mirror.sh OneDrive镜像同步
+    0 */6 * * *rotate_logs.sh 日志轮转
+
+
+配置
 -------------
-  ~/.config/bach/telegram_chat.json:
+~/.config/bach/telegram_chat.json:
     {
       "bot_token": "...",
       "owner_id": "...",
@@ -31741,33 +31752,19 @@ CONFIGURATION
       }
     }
 
-  Environment variables:
-    TELEGRAM_BOT_TOKEN       Bot token (alternative to file)
-    TELEGRAM_OWNER_ID        Owner chat ID
-    OLLAMA_MODEL             Override default model
-    OLLAMA_URL               Override Ollama URL
-    BACH_CONTROL_PORT        Control API port (default: 8081)
-    ANTHROPIC_API_KEY        For claude-api backend
-    OPENAI_API_KEY           For openai backend
+  环境变量：
+    TELEGRAM_BOT_TOKEN 机器人令牌（文件的替代品）
+    TELEGRAM_OWNER_ID 所有者的聊天 ID
+    OLLAMA_MODEL 覆盖标准模型
+    OLLAMA_URL 覆盖 Ollama URL
+    BACH_CONTROL_PORT 控制API端口（默认：8081）
+    BACH_HOST 托盘/GUI 的默认主机（例如 bach-server.local）
+    BACH_NO_BROWSER =1: 不自动打开浏览器（远程 GUI）
+    ANTHROPIC_API_KEY 用于 claude-api 后端
+    OPENAI_API_KEY 用于 openai 后端
 
 
-MIGRATION FROM CLAUDE BRIDGE
------------------------------
-  BACH Chat Service functionally replaces the Claude Bridge:
-  - bridge_daemon.py -> telegram_chat.py (Telegram bot)
-  - bridge_tray.py   -> chat_tray.py (system tray)
-  - config.json      -> ~/.config/bach/telegram_chat.json
-
-  Advantages over Claude Bridge:
-  - 5 backends instead of only Claude CLI
-  - BACH integration (memory, tasks, injectors)
-  - Control API + web dashboard
-  - Voice (Whisper) + OCR (Tesseract)
-  - Cross-platform tray
-  - Clean 3-layer architecture
-
-
-SEE ALSO
+注释
 --------
   help claude_bridge        Old Claude Bridge (Legacy)
   help connector            Connector system
@@ -34305,6 +34302,10 @@ Multi-System (OneDrive Sync)
 Server (Headless)
   Runs as background service (Mac Studio, Linux server).
   bach setup full-install --config server.json
+  python start/startspine.py start --chat --gui
+  python start/startspine.py status --json
+  Remote access requires a separately configured authenticated ingress.
+  Do not expose the Control API directly on 0.0.0.0.
 
 
 AFTER INSTALLATION
@@ -34635,7 +34636,7 @@ BACH 首次安装指南。 BACH 是个人代理操作系统
  =============
 -Python >= 3.10
 - npm（用于 MCP 服务器）
--> 100 MB 可用存储空间
+-> 100 MB 可用内存
 - 可选：OneDrive（用于多系统同步）
 - 可选：Tailscale（用于远程访问服务器）
 
@@ -34644,36 +34645,34 @@ BACH 首次安装指南。 BACH 是个人代理操作系统
  =========
 # 1. 克隆存储库
 git 克隆 https://github.com/ellmos-ai/bach.git
-巴赫
+cd bach
 
-# 2. 检查先决条件
-巴赫设置飞行前
+# 2. 检查要求
+bach setup preflight
 
-# 3. 完整安装（可选语言）
-bach 设置完全安装 [--lang en]
+# 3. 完成安装
+bach setup full-install
 
-# 4. 开始第一个会话
-巴赫——启动
+# 4. 启动第一个会话
+bach --startup
 
 
 完整安装步骤
  =================
 “bach setup full-install”会自动运行以下步骤：
 
-1. 飞行前检查Python、npm、存储、写入权限
-2. ProSync 配置单系统或多系统（默认：单系统）
+1.飞行前检查Python、npm、内存、写入权限
+2. 配置 ProSync 单系统或多系统（默认：单系统）
 3. MCP 服务器 ellmos-codecommander-mcp、ellmos-filecommander-mcp
 4.Claude代码在~/.claude/中Hook DB保护和其他钩子
-5. Secrets初始化 ~/.bach/bach_secrets.json
-6. 用户配置文件个性化USER.md并与DB同步
-7. 语言（可选）设置界面语言和交换文档
+5.初始化Secret ~/.bach/bach_secrets.json
+6.个性化用户配置文件USER.md并与DB同步
+7.语言（可选）设置系统语言和切换文档
 8. 帮助文档（可选）生成所选语言的帮助文件（EN 后备）
-9. 验证 所有组件的最终检查
+9. 所有组件的验证最终检查
 
-可选标志：
-  --lang <code> 设置系统语言 (de/en/es/ru/ja/zh)
-  --with-n8n 安装 n8n 管理器 MCP
-  --config <json> 批量配置文件
+可选：--with-n8n 用于 n8n-Manager-MCP，--lang <code> 用于语言选择 (de/en/es/ru/ja/zh)，
+--config <json> 用于批量配置。
 
 
 使用场景
@@ -34682,16 +34681,35 @@ bach 设置完全安装 [--lang en]
 确定部署场景。
 
 单系统（默认）
-  一台机器，一次安装。
-  bach设置完全安装
+-----------------------
+BACH 在一台计算机上运行，无需同步。
 
-多系统（OneDrive 同步）
-  多台计算机通过 OneDrive 共享一个安装。
-  巴赫设置完整安装 --config multi-system.json
+  bach setup full-install
+  # ProSync 保持停用状态（默认）
+
+带有 OneDrive 的多系统
+-------------------------
+BACH 位于 OneDrive 中并在多台计算机上使用。
+每个系统都有一个本地数据库（~/.bach/bach.db），通过
+ProSync 已同步。
+
+  bach setup full-install
+  bach setup prosync --multi-system
+  # 同步：bach 数据库同步（手动）或在启动/退出时自动
 
 服务器（无头）
-  作为后台服务运行（Mac Studio、Linux 服务器）。
-  巴赫设置完整安装--config server.json
+-----------------
+BACH 在持续运行的主机上工作。托管服务仅通过 Startspine 启动；远程访问需要
+单独配置并经过身份验证的入口。
+
+  bach setup full-install
+  python start/startspine.py start --chat --gui
+  python start/startspine.py status --json
+
+不要在 0.0.0.0 上直接公开 Control API。
+
+对于多系统服务器另外：
+  bach setup prosync --multi-system
 
 
 安装后
@@ -34702,7 +34720,7 @@ bach 设置完全安装 [--lang en]
   start/bach.bat Windows 启动菜单（GUI、托盘、聊天）
 
 
-另请参阅
+文件
 --------
   docs/help/setup_en.txt 设置处理程序详细信息
   docs/help/architecture_cn.txt 系统架构

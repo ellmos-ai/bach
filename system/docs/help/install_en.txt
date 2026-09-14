@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-08-28
+# Next review: 2027-08-28
 
 BACH INSTALLATION
 =================
@@ -73,6 +73,10 @@ Multi-System (OneDrive Sync)
 Server (Headless)
   Runs as background service (Mac Studio, Linux server).
   bach setup full-install --config server.json
+  python start/startspine.py start --chat --gui
+  python start/startspine.py status --json
+  Remote access requires a separately configured authenticated ingress.
+  Do not expose the Control API directly on 0.0.0.0.
 
 
 AFTER INSTALLATION

@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-08-28
+# Next review: 2027-08-28
 
 BACH のインストール
 =================
@@ -79,15 +79,14 @@ ProSync は同期されています。
 
 サーバー (ヘッドレス)
 -----------------
-BACH はサーバー (Mac Studio、Linux サーバーなど) 上で実行され、
-Telegram、Web GUI、またはシステム トレイ経由でリモート制御。
+BACH は常時稼働ホストで動作します。管理対象サービスは Startspine 経由でのみ
+起動し、リモートアクセスには別途構成した認証済み入口が必要です。
 
   bach setup full-install
-  # 次に、コネクタをアクティブにします。
-  # - テレグラムボット: Hub/_services/chat/telegram_chat.py
-  # - Web GUI: gui/server.py --host 0.0.0.0
-  # - システム トレイ: Hub/_services/chat/chat_tray.py --port 8081
-  # - CLI チャット: Hub/_services/chat/buddha_cli.py
+  python start/startspine.py start --chat --gui
+  python start/startspine.py status --json
+
+Control API を 0.0.0.0 で直接公開しないでください。
 
 マルチシステム サーバーの場合:
   bach setup prosync --multi-system
@@ -102,7 +101,7 @@ bach --help setup          セットアップ オプションを表示
 
 
 ファイル
-=======
+--------
 hub/setup.py セットアップ ハンドラー (インストーラー ロジック)
 data/bach.db BACH データベース (インストール時に作成)
 ../USER.md ユーザー プロファイル (テンプレート -> 個人用)

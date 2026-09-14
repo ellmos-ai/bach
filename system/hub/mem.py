@@ -17,6 +17,8 @@ bach mem decay --dry-run        Vorschau ohne DB-Änderungen
 Teil von SQ043: Working Memory Cleanup + Memory Decay (Runde 30C)
 Referenz: BACH_Dev/docs/MEMORY_WORKING_CLEANUP_KONZEPT.md
 """
+import importlib.util
+import sys
 from pathlib import Path
 from .base import BaseHandler
 from .memory import MemoryHandler
@@ -82,16 +84,43 @@ class MemHandler(BaseHandler):
                 "context, session, sessions, working, decay"
             )
 
+    def _load_local_tool(self, module_name: str, class_name: str):
+        """Import a memory tool only from this BACH instance's tools dir."""
+
+        tools_dir = (self.base_path / "tools").resolve()
+        if not module_name.isidentifier():
+            raise ImportError(f"Ungültiger lokaler Modulname: {module_name}")
+
+        module_path = (tools_dir / f"{module_name}.py").resolve()
+        if module_path.parent != tools_dir or not module_path.is_file():
+            raise ImportError(f"{module_name} fehlt in {tools_dir}")
+
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"{module_name} kann nicht sicher geladen werden")
+
+        module = importlib.util.module_from_spec(spec)
+        previous = sys.modules.get(module_name)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+            tool_class = getattr(module, class_name)
+        except BaseException:
+            if previous is None:
+                sys.modules.pop(module_name, None)
+            else:
+                sys.modules[module_name] = previous
+            raise
+
+        return tool_class
+
     def _working(self, args: list, dry_run: bool) -> tuple:
         """Working Memory Cleanup (SQ043)."""
         try:
-            # Importiere das Tool
-            import sys
-            tools_dir = str(self.base_path / "tools")
-            if tools_dir not in sys.path:
-                sys.path.insert(0, tools_dir)
-
-            from memory_working_cleanup import WorkingMemoryCleanup
+            WorkingMemoryCleanup = self._load_local_tool(
+                "memory_working_cleanup",
+                "WorkingMemoryCleanup",
+            )
 
             db_path = self._canonical_db
             cleanup = WorkingMemoryCleanup(db_path)
@@ -126,13 +155,10 @@ class MemHandler(BaseHandler):
     def _decay(self, args: list, dry_run: bool) -> tuple:
         """Memory Decay (SQ043 Runde 30C)."""
         try:
-            # Importiere das Tool
-            import sys
-            tools_dir = str(self.base_path / "tools")
-            if tools_dir not in sys.path:
-                sys.path.insert(0, tools_dir)
-
-            from memory_decay import MemoryDecay
+            MemoryDecay = self._load_local_tool(
+                "memory_decay",
+                "MemoryDecay",
+            )
 
             db_path = self._canonical_db
             decay = MemoryDecay(db_path)

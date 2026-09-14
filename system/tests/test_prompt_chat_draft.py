@@ -41,6 +41,17 @@ def test_draft_helper_is_one_time_and_rejects_oversized_payloads():
     assert "payload.text.length > MAX_DRAFT_LENGTH" in source
 
 
+def test_chat_rechecks_readiness_before_consuming_editor_text():
+    source = (TEMPLATES / "chat.html").read_text(encoding="utf-8")
+    start = source.index("async function send()")
+    end = source.index("sendBtn.addEventListener", start)
+    send = source[start:end]
+
+    assert send.index("/readiness?chat_id=") < send.index("inputEl.value = ''")
+    assert "readiness.available !== true" in send
+    assert "inputEl.value = text" in send
+
+
 def test_both_pages_load_the_shared_draft_helper():
     include = '<script src="/static/js/prompt-chat-draft.js?v=1"></script>'
 

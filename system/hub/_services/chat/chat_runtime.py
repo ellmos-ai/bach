@@ -1221,6 +1221,16 @@ class ChatRuntime:
         self.sessions[chat_id] = s
         return s
 
+    def _context_limit_for_backend(self, backend, model: str = "") -> int:
+        """Freeze the effective context limit for the backend selected for a turn."""
+        getter = getattr(backend, "get_context_limit", None)
+        value = getter() if callable(getter) else getattr(backend, "num_ctx", None)
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return self.get_model_context_limit(model, backend)
+        return value if value > 0 else self.get_model_context_limit(model, backend)
+
     def archive_and_reset(self, chat_id: str, reason: str = "Manuell") -> int | None:
         """Archiviert die aktuelle Session (sofern Nachrichten vorhanden) und leert sie."""
         archived_id = None
@@ -1425,23 +1435,38 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         # Der eine Punkt, an dem jeder Modell-Load vorbeikommt: Telegram,
         # /api/chat (Idle-Worker) und der Auftrags-Worker rufen alle hier an.
         # Das Gate deshalb hier statt je Aufrufer (T-20260907-440775748).
-        if not skip_compute_gate and self.compute_gate is not None and self.compute_gate():
+        known_session = self.sessions.get(chat_id)
+        selected_backend = (
+            backend
+            or getattr(known_session, "backend", None)
+            or self.backend
+        )
+        if (
+            not skip_compute_gate
+            and self.compute_gate is not None
+            and self.compute_gate(selected_backend)
+        ):
             raise ComputeLocked(
                 "Compute-Lock aktiv -- kein Modell-Load, damit laufende "
                 "Rechenjobs nicht in den Swap gedraengt werden."
             )
         session = self.get_session(chat_id)
+        selected_model = model or session.model or selected_backend.get_default_model()
+        context_limit = self._context_limit_for_backend(selected_backend, selected_model)
         session.last_active = time.time()
         session.messages.append({"role": "user", "content": text})
 
-        active_backend = getattr(session, "backend", None) or self.backend
-        active_limit = self.get_model_context_limit(session.model, active_backend)
+        active_limit = context_limit
         summarize_thresh = self.SUMMARIZE_THRESHOLD if active_limit <= 32768 else self.SUMMARIZE_THRESHOLD * 4
         max_msgs = self.MAX_MESSAGES if active_limit <= 32768 else self.MAX_MESSAGES * 2
 
         total = sum(len(m.get("content", "")) for m in session.messages)
         if total > summarize_thresh or len(session.messages) > max_msgs:
-            await self._summarize(session)
+            await self._summarize(
+                session,
+                backend=selected_backend,
+                model=selected_model,
+            )
 
         bach_ctx = self._get_bach_context(text)
         # memoryhooker-Seam (MODULRUECKTRANSFER Stufe 6): dynamisch injizierter
@@ -1457,23 +1482,33 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
         msgs = [{"role": "system", "content": sys_prompt}] + session.messages
 
-        if getattr(active_backend, "manages_own_tools", False):
+        if getattr(selected_backend, "manages_own_tools", False):
             try:
-                result = await active_backend.chat(msgs, think=session.think,
-                                                   model=session.model)
+                result = await selected_backend.chat(
+                    msgs, think=session.think, model=selected_model
+                )
                 answer = result.get("content", "(keine Antwort)")
             except Exception as e:
                 answer = FailedAnswer.from_exception(e)
         else:
             tools = tools_for_mode(session.mode)
-            answer = await self._tool_loop(msgs, session, tools)
+            answer = await self._tool_loop(
+                msgs,
+                session,
+                tools,
+                backend=selected_backend,
+                model=selected_model,
+                context_limit=context_limit,
+            )
         session.messages.append({"role": "assistant", "content": answer})
         self._persist_session(chat_id, session)
         return answer
 
     async def _tool_loop(self, msgs: list, session: ChatSession,
-                         tools: list) -> str:
-        active_backend = getattr(session, "backend", None) or self.backend
+                         tools: list, *, backend=None, model: str = "",
+                         context_limit: int | None = None) -> str:
+        selected_backend = backend or getattr(session, "backend", None) or self.backend
+        selected_model = model or session.model or selected_backend.get_default_model()
         max_rounds = session.max_tool_rounds if getattr(session, "max_tool_rounds", None) is not None else self.max_tool_rounds
         round_num = 0
         auto_used = 0
@@ -1516,8 +1551,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     log.warning("Operator-Steuerung fehlgeschlagen (ignoriert): %s", e)
 
             try:
-                result = await active_backend.chat(
-                    msgs, tools=tools, think=session.think, model=session.model
+                result = await selected_backend.chat(
+                    msgs, tools=tools, think=session.think, model=selected_model
                 )
             except Exception as e:
                 session.current_tool = ""
@@ -1534,11 +1569,18 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else "")
                 )
 
-            if self._context_voll(result, session):
+            if self._context_voll(
+                result, session, context_limit=context_limit
+            ):
                 handoffs += 1
                 log.info("Kontext-Uebergabe [%d] bei %s Token",
                          handoffs, result.get("prompt_tokens"))
-                msgs = await self._handoff(msgs, session)
+                msgs = await self._handoff(
+                    msgs,
+                    session,
+                    backend=selected_backend,
+                    model=selected_model,
+                )
                 continue
 
             tool_calls = result.get("tool_calls")
@@ -1577,15 +1619,15 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 t_result = exec_tool(
                     t_name, t_args, session.mode,
                     bach_app=self.bach_app,
-                    default_model=session.model,
+                    default_model=selected_model,
                 )
                 tool_call_id = ""
-                if hasattr(active_backend, "_last_tool_call_ids"):
-                    ids = active_backend._last_tool_call_ids
+                if hasattr(selected_backend, "_last_tool_call_ids"):
+                    ids = selected_backend._last_tool_call_ids
                     if i < len(ids):
                         tool_call_id = ids[i]
                 msgs.append(
-                    active_backend.tool_response_message(str(t_result), tool_call_id)
+                    selected_backend.tool_response_message(str(t_result), tool_call_id)
                 )
 
             # Hook-Punkt: die Hooker bringen eigene Cooldowns mit, deshalb darf
@@ -1613,8 +1655,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 )
                 msgs.append({"role": "user", "content": final_prompt})
                 try:
-                    final_res = await active_backend.chat(
-                        msgs, tools=None, think=False, model=session.model
+                    final_res = await selected_backend.chat(
+                        msgs, tools=None, think=False, model=selected_model
                     )
                     content = (final_res.get("content") or "").strip()
                     if content:
@@ -1658,7 +1700,13 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         # Lokales Modell -> Default aus self.context_limit (meist 32768)
         return self.context_limit
 
-    def _context_voll(self, result: dict, session: ChatSession | None = None) -> bool:
+    def _context_voll(
+        self,
+        result: dict,
+        session: ChatSession | None = None,
+        *,
+        context_limit: int | None = None,
+    ) -> bool:
         """Ist das Kontextfenster so voll, dass eine Uebergabe faellig ist?
 
         Ohne Token-Zahl vom Backend wird nicht geraten - dann bleibt alles
@@ -1666,8 +1714,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         """
         if self.handoff_percent <= 0:
             return False
-        active_limit = self.context_limit
-        if session is not None:
+        active_limit = context_limit if context_limit is not None else self.context_limit
+        if context_limit is None and session is not None:
             active_limit = self.get_model_context_limit(
                 session.model, getattr(session, "backend", None) or self.backend
             )
@@ -1678,7 +1726,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             return False
         return used >= active_limit * self.handoff_percent / 100
 
-    async def _handoff(self, msgs: list, session: ChatSession) -> list:
+    async def _handoff(self, msgs: list, session: ChatSession, *, backend=None,
+                       model: str = "") -> list:
         """Laesst das Modell sich selbst uebergeben und leert den Kontext.
 
         Anders als _summarize (Gespraechsprosa aus fremder Sicht) schreibt hier
@@ -1686,10 +1735,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         der Anfang des neuen, leeren Verlaufs.
         """
         frage = msgs + [{"role": "user", "content": HANDOFF_PROMPT}]
+        selected_backend = backend or getattr(session, "backend", None) or self.backend
+        selected_model = model or session.model or selected_backend.get_default_model()
         try:
-            active_backend = getattr(session, "backend", None) or self.backend
-            res = await active_backend.chat(frage, tools=None, think=False,
-                                          model=session.model)
+            res = await selected_backend.chat(
+                frage, tools=None, think=False, model=selected_model
+            )
             uebergabe = (res.get("content") or "").strip()
         except Exception as e:
             log.warning("Uebergabe fehlgeschlagen: %s", e)
@@ -1729,7 +1780,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             return GOAL_CHECK.format(goal=self.goal), True
         return AUTO_NUDGE, goal_checked
 
-    async def _summarize(self, session: ChatSession):
+    async def _summarize(self, session: ChatSession, *, backend=None,
+                         model: str = ""):
+        selected_backend = backend or getattr(session, "backend", None) or self.backend
+        selected_model = model or session.model or selected_backend.get_default_model()
         if len(session.messages) < 6:
             return
         old = session.messages[:-4]
@@ -1746,8 +1800,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         ]
 
         try:
-            active_backend = getattr(session, "backend", None) or self.backend
-            result = await active_backend.chat(prompt, think=False, model=session.model)
+            result = await selected_backend.chat(
+                prompt, think=False, model=selected_model
+            )
             summary = result.get("content", "")[:500]
 
             if self.memory:

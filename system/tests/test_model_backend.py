@@ -3,6 +3,7 @@
 """Truthful result handling for local Ollama chat responses."""
 
 import asyncio
+import json
 import shutil
 import subprocess
 import sys
@@ -40,6 +41,15 @@ class _FakeResponse:
             response = httpx.Response(self.status_code, request=request)
             raise httpx.HTTPStatusError("Ollama HTTP error", request=request, response=response)
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+    async def aiter_lines(self):
+        yield json.dumps({**self.payload, "done": True})
+
     def json(self):
         return self.payload
 
@@ -55,6 +65,11 @@ class _FakeClient:
     async def __aexit__(self, *_args):
         return False
 
+    def stream(self, *_args, **kwargs):
+        if self.requests is not None:
+            self.requests.append(kwargs)
+        return self.response
+
     async def post(self, *_args, **kwargs):
         if self.requests is not None:
             self.requests.append(kwargs)
@@ -63,7 +78,7 @@ class _FakeClient:
 
 def _run_chat(monkeypatch, payload, status_code=200):
     response = _FakeResponse(payload, status_code)
-    monkeypatch.setattr(httpx, "AsyncClient", lambda: _FakeClient(response))
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: _FakeClient(response))
     backend = OllamaBackend(default_model="qwen3:4b")
     return asyncio.run(backend.chat([{"role": "user", "content": "Hallo"}]))
 
@@ -75,7 +90,7 @@ def test_ollama_chat_returns_nonempty_content(monkeypatch):
 
 def test_ollama_chat_hides_disabled_thinking(monkeypatch):
     response = _FakeResponse({"message": {"content": "interner Text\n</think>\n\nOK"}})
-    monkeypatch.setattr(httpx, "AsyncClient", lambda: _FakeClient(response))
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: _FakeClient(response))
     backend = OllamaBackend(default_model="qwen3:4b")
 
     result = asyncio.run(
@@ -100,28 +115,35 @@ def test_ollama_chat_propagates_api_error(monkeypatch):
 
 
 def test_ollama_chat_propagates_http_error(monkeypatch):
-    with pytest.raises(httpx.HTTPStatusError):
-        _run_chat(monkeypatch, {"error": "not found"}, status_code=404)
+    result = _run_chat(monkeypatch, {"error": "not found"}, status_code=404)
+    assert "HTTPStatusError" in result["error"]
+    assert not result["content"]
 
 
 def test_ollama_chat_bounds_context_in_request(monkeypatch):
     requests = []
     response = _FakeResponse({"message": {"content": "Antwort"}})
-    monkeypatch.setattr(httpx, "AsyncClient", lambda: _FakeClient(response, requests))
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: _FakeClient(response, requests))
 
     backend = OllamaBackend(default_model="qwen3:4b", num_ctx=8192)
     asyncio.run(backend.chat([{"role": "user", "content": "Hallo"}]))
 
     assert requests[0]["json"]["options"] == {"num_ctx": 8192}
-    assert requests[0]["timeout"] == 900
+    assert requests[0]["json"]["stream"] is True
 
 
 def test_ollama_context_defaults_to_bounded_environment_value(monkeypatch):
     monkeypatch.delenv("OLLAMA_NUM_CTX", raising=False)
     assert OllamaBackend().num_ctx == 4096
+    assert OllamaBackend().get_context_limit() == 4096
 
     monkeypatch.setenv("OLLAMA_NUM_CTX", "6144")
     assert OllamaBackend().num_ctx == 6144
+    assert OllamaBackend().get_context_limit() == 6144
+
+
+def test_ollama_context_limit_uses_explicit_configuration():
+    assert OllamaBackend(num_ctx=8192).get_context_limit() == 8192
 
 
 def test_ollama_timeout_is_configurable(monkeypatch):
@@ -146,14 +168,15 @@ def test_ollama_timeout_rejects_invalid_values(timeout):
 
 def test_ollama_timeout_has_clear_error(monkeypatch):
     class _TimeoutClient(_FakeClient):
-        async def post(self, *_args, **_kwargs):
+        def stream(self, *_args, **_kwargs):
             raise httpx.ReadTimeout("timed out")
 
-    monkeypatch.setattr(httpx, "AsyncClient", lambda: _TimeoutClient(None))
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: _TimeoutClient(None))
     backend = OllamaBackend(request_timeout=12)
 
-    with pytest.raises(RuntimeError, match="12 Sekunden"):
-        asyncio.run(backend.chat([{"role": "user", "content": "Hallo"}], think=False))
+    result = asyncio.run(backend.chat([{"role": "user", "content": "Hallo"}], think=False))
+    assert "ReadTimeout" in result["error"]
+    assert not result["content"]
 
 
 def test_ollama_availability_requires_reachable_selected_model(monkeypatch):

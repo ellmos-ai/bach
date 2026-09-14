@@ -103,14 +103,15 @@ bach setup prosync --multi-system
 ```
 
 ### Server / Headless
-BACH on a 24/7 server (e.g., Mac Studio), accessed via Telegram, Web UI, or Tray.
+BACH on a persistent host. Start managed services through the Startspine so that process
+ownership, actual ports, readiness, and shutdown remain traceable. The default endpoints are
+loopback-only. Remote access requires a separately configured authenticated ingress; do not
+expose the Control API directly on `0.0.0.0`.
 
 ```bash
 bach setup full-install
-# Start services:
-# Telegram Bot:  python hub/_services/chat/telegram_chat.py
-# Web GUI:       python gui/server.py --host 0.0.0.0
-# System Tray:   python hub/_services/chat/chat_tray.py
+python start/startspine.py start --chat --gui
+python start/startspine.py status --json
 ```
 
 ---

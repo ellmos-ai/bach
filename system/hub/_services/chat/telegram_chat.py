@@ -265,10 +265,14 @@ def _patched_get_session(chat_id: str):
             if _global_defaults.get("model"):
                 session.model = _global_defaults["model"]
             session.think = _global_defaults.get("think", True)
-            try:
-                _apply_slot_to_session(chat_id, session)
-            except Exception as e:
-                log.debug("Konnte Slot nicht auf Session anwenden: %s", e)
+            normalized = str(chat_id or "")
+            if normalized.isdigit() or normalized.startswith((
+                "idle", "worker-", "tg:", "telegram", "wa:", "whatsapp", "signal:"
+            )):
+                try:
+                    _apply_slot_to_session(chat_id, session)
+                except Exception as e:
+                    log.debug("Konnte Slot nicht auf Session anwenden: %s", e)
         return session
 
 runtime.get_session = _patched_get_session
@@ -450,6 +454,7 @@ def _check_cli_available(name: str) -> str:
 _API_KEY_SOURCES = {
     "claude-api": ("ANTHROPIC_API_KEY", "anthropic_api_key"),
     "openai": ("OPENAI_API_KEY", "openai_api_key"),
+    "hermes": ("OPENROUTER_API_KEY", "openrouter_api_key"),
 }
 
 
@@ -1035,14 +1040,14 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # --- Compute Lock Helpers ---
 
-def _compute_lock_enabled() -> bool:
+def _compute_lock_enabled(selected_backend=None) -> bool:
     """Check if compute lock feature is enabled and available."""
     return (HAS_COMPUTE_LOCK
             and CONFIG.get("compute_lock", {}).get("enabled", False)
-            and isinstance(runtime.backend, OllamaBackend))
+            and isinstance(selected_backend or runtime.backend, OllamaBackend))
 
 
-def _compute_lock_blocks() -> bool:
+def _compute_lock_blocks(selected_backend=None) -> bool:
     """Laeuft gerade ein Rechenjob, der einen Modell-Load verbieten wuerde?
 
     Haengt in ``ChatRuntime.process``, damit JEDER Aufrufer davor haltmacht --
@@ -1053,7 +1058,7 @@ def _compute_lock_blocks() -> bool:
     dort sind die Jobs vorher per SIGSTOP pausiert, und check_compute_active
     filtert gestoppte PIDs heraus -- der Lock meldet dann "inaktiv".
     """
-    if not _compute_lock_enabled():
+    if not _compute_lock_enabled(selected_backend):
         return False
     if get_fackel_preference() == "ollama":
         return False
@@ -2971,6 +2976,15 @@ def _get_session_model(chat_id: str) -> str:
 def _snapshot_chat_backend(chat_id: str):
     with _runtime_state_lock:
         session = runtime.get_session(chat_id)
+        normalized = str(chat_id or "")
+        uses_dedicated_slot = (
+            normalized.isdigit()
+            or normalized.startswith((
+                "idle", "worker-", "tg:", "telegram", "wa:", "whatsapp", "signal:"
+            ))
+        )
+        if not uses_dedicated_slot:
+            return runtime.backend, _get_session_model(chat_id)
         try:
             target_backend, model = _apply_slot_to_session(chat_id, session)
             return target_backend, model
@@ -3028,7 +3042,7 @@ def _probe_backend_inventory_entry(
             cli_name = preset["type"].replace("-cli", "")
             if _check_cli_available(cli_name) != "vorhanden":
                 raise FileNotFoundError(cli_name)
-        elif name in ("claude-api", "openai"):
+        elif name in ("claude-api", "openai", "hermes"):
             api_key = _load_api_key(name)
             if not api_key:
                 return False, "Key fehlt"
@@ -3046,7 +3060,7 @@ def _probe_backend_inventory_entry(
 
 
 def _backend_inventory() -> dict[str, dict]:
-    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor, wait
 
     selected_id = backend_identifier(runtime.backend)
     selected_model, _, _ = _get_active_session_state()
@@ -3062,7 +3076,8 @@ def _backend_inventory() -> dict[str, dict]:
         ):
             return _copy_backend_inventory(cached_value)
 
-        with ThreadPoolExecutor(max_workers=max(1, len(BACKEND_PRESETS))) as pool:
+        pool = ThreadPoolExecutor(max_workers=max(1, len(BACKEND_PRESETS)))
+        try:
             futures = {
                 name: pool.submit(
                     _probe_backend_inventory_entry,
@@ -3073,12 +3088,16 @@ def _backend_inventory() -> dict[str, dict]:
                 )
                 for name, preset in BACKEND_PRESETS.items()
             }
+            done, _pending = wait(futures.values(), timeout=2.0)
             backends = {}
             for name, preset in BACKEND_PRESETS.items():
-                try:
-                    available, status = futures[name].result()
-                except Exception:
-                    available, status = False, "Prüfung fehlgeschlagen"
+                if futures[name] not in done:
+                    available, status = False, "Prüfung dauert zu lange"
+                else:
+                    try:
+                        available, status = futures[name].result()
+                    except Exception:
+                        available, status = False, "Prüfung fehlgeschlagen"
                 backends[name] = {
                     "description": preset["description"],
                     "method": preset["method"],
@@ -3087,6 +3106,8 @@ def _backend_inventory() -> dict[str, dict]:
                     "available": available,
                     "selected": name == selected_id,
                 }
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
 
         _backend_inventory_cache.update(
             expires_at=time.monotonic() + _BACKEND_INVENTORY_TTL_SECONDS,
@@ -3101,7 +3122,7 @@ def _control_chat_response(answer) -> tuple[dict, int]:
     if not text:
         return {"ok": False, "error": "Chat-Backend lieferte keine Antwort"}, 502
     if text.startswith(("Backend-Fehler:", "Fehler:")):
-        return {"ok": False, "error": text}, 502
+        return {"ok": False, "answer": text, "error": text}, 502
     return {"ok": True, "answer": text}, 200
 
 
@@ -3197,6 +3218,7 @@ class ControlHandler(BaseHTTPRequestHandler):
         try:
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
             self._cors()
             self.end_headers()
             self.wfile.write(body)
@@ -3460,7 +3482,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 current_m = _global_defaults.get("model") or getattr(runtime.backend, "default_model", None)
                 if current_m:
                     preset["default_model"] = current_m
-            if preset["method"] == "api" and name in ("claude-api", "openai"):
+            if preset["method"] == "api" and name in ("claude-api", "openai", "hermes"):
                 api_key = _load_api_key(name)
                 if not api_key:
                     self._json({"error": f"Kein API-Key für {name}"}, 400)
@@ -3577,7 +3599,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                     response, status = _control_chat_response(answer)
                     self._json(response, status)
                 else:
-                    self._json({"ok": False, "error": str(answer)}, 502)
+                    text = str(answer)
+                    self._json({"ok": False, "answer": text, "error": text}, 502)
             except ComputeLocked as e:
                 self._json({"ok": False, "compute_locked": True, "answer": str(e)})
             except Exception as e:

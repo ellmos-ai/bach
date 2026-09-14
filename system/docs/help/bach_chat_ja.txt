@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-08-28
+# Next review: 2027-08-28
 
 BACH チャット サービス - マルチ バックエンド テレグラム ボット + コントロール API + システム トレイ
 ==========================================================================
@@ -64,13 +64,13 @@ CONTROL API (ポート 8081)
   POST /api/mode モードを設定します: {"mode": "safe"}
   POST /api/model モデルを設定: {"model": "qwen3.5:35b-a3b"}
   POST /api/think 思考モード: {"think": true}
-  POST /api/max_tool_rounds 最大ツールラウンド: {"ラウンド": 10} (0=無制限)
+  POST /api/max_tool_rounds 最大ツールラウンド: {"rounds": 10} (0=無制限)
   POST /api/chat チャット メッセージ: {"prompt": "...", "chat_id": "..."}
 
 
 システム トレイ
 -----------
-  開始: python chat_tray.py [--host HOST] [--port PORT]
+  開始: python start/startspine.py start --tray
 
   特徴:
     - ステータスアイコン：緑（安全）、オレンジ（フル）、赤（未接続）
@@ -83,16 +83,19 @@ CONTROL API (ポート 8081)
     - Web ダッシュボードを開く
     - クロスプラットフォーム: macOS、Windows、Linux (pystray 経由)
 
-  リモート トレイ (別のシステムから):
-    python chat_tray.py --host macstudvonlukas --port 8081
+  リモートトレイ（別途保護されたネットワーク経路でのみ使用）:
+    python start/startspine.py start --tray --host bach-server.local
+
+  セキュリティ境界: リモートアクセスには明示的な認証方針が必要です。
+  Control API を 0.0.0.0 で直接公開しないでください。
 
 
 ファイル
 -------
-  ボット: Hub/_services/chat/telegram_chat.py
-  ランタイム: Hub/_services/chat/chat_runtime.py
-  バックエンド: Hub/_services/llm/model_backend.py
-  トレイ: Hub/_services/chat/chat_tray.py
+  ボット: hub/_services/chat/telegram_chat.py
+  ランタイム: hub/_services/chat/chat_runtime.py
+  バックエンド: hub/_services/llm/model_backend.py
+  トレイ: hub/_services/chat/chat_tray.py
   構成: ~/.config/bach/telegram_chat.json
   トークン: ~/.credentials/telegram_bot_token
   所有者 ID: ~/.credentials/telegram_owner_id
@@ -115,8 +118,8 @@ CONTROL API (ポート 8081)
     {
       "bot_token": "...",
       "owner_id": "...",
-      「ベーキング」: {
-        "タイプ": "オラマ",
+      "backend": {
+        "type": "ollama",
         "base_url": "http://localhost:11434",
         "default_model": "qwen3.5:35b-a3b"
       }
@@ -128,7 +131,7 @@ CONTROL API (ポート 8081)
     OLLAMA_MODEL 標準モデルを上書きする
     OLLAMA_URL オラマ URL を上書きする
     BACH_CONTROL_PORT 制御 API ポート (デフォルト: 8081)
-    BACH_HOST トレイ/GUI のデフォルトのホスト (例: macstudvonlukas)
+    BACH_HOST トレイ/GUI のデフォルトホスト (例: bach-server.local)
     BACH_NO_BROWSER =1: ブラウザを自動的に開きません (リモート GUI)
     ANTHROPIC_API_KEY claude-api バックエンドの場合
     OPENAI_API_KEY openai バックエンドの場合

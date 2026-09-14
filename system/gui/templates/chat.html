@@ -1092,6 +1092,15 @@
             }
         }
 
+        function loadLibraryDraft() {
+            const draft = BachChatDraft.consume();
+            if (draft === null) return;
+
+            inputEl.value = draft;
+            autoResize();
+            inputEl.focus();
+        }
+
         async function send() {
             const text = inputEl.value.trim();
             if (!text || sending || !backendAvailable) return;
@@ -1383,7 +1392,7 @@
         }
         window.loadHistory = loadHistory;
         loadWebSessions().then(() => {
-            loadHistory();
+            loadHistory().then(loadLibraryDraft);
         });
         refreshStatus();
         setInterval(refreshStatus, 30000);
