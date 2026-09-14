@@ -225,22 +225,33 @@ class OllamaBackend(ModelBackend):
                         except StopAsyncIteration:
                             break
                         except httpx.ReadTimeout as exc:
-                            now = time.time()
-                            if total_cap > 0 and (now - started) > total_cap:
-                                return aborted(f"Gesamtdeckel {total_cap}s erreicht")
-                            if probes < grace and await self._lebt(client, selected_model):
+                            timeout_error = (
+                                f"{type(exc).__name__}: {exc}".rstrip(": ")
+                            )
+                            # Ein echter HTTPX-Iterator ist nach ReadTimeout
+                            # beendet. Ihn mit ``continue`` erneut zu lesen
+                            # liefert nur EOF und verliert die Timeout-Ursache.
+                            # Das verbleibende Grace-Budget wird deshalb hier
+                            # begrenzt ueber /api/ps ausgewertet; fortsetzen
+                            # laesst sich der abgebrochene Response-Stream nicht.
+                            while probes < grace:
+                                now = time.time()
+                                if total_cap > 0 and (now - started) > total_cap:
+                                    return aborted(
+                                        f"{timeout_error}; Gesamtdeckel "
+                                        f"{total_cap}s erreicht"
+                                    )
+                                if not await self._lebt(client, selected_model):
+                                    break
                                 probes += 1
                                 last_activity = now
                                 log.info(
-                                    "Ollama-Stream ReadTimeout, Modell lebt - "
-                                    "warte weiter (%d/%d)",
+                                    "Ollama-Stream ReadTimeout, Modell lebt "
+                                    "(%d/%d Grace-Pruefungen)",
                                     probes,
                                     grace,
                                 )
-                                continue
-                            return aborted(
-                                f"{type(exc).__name__}: {exc}".rstrip(": ")
-                            )
+                            return aborted(timeout_error)
 
                         now = time.time()
                         if line.strip():

@@ -162,7 +162,7 @@ def test_tool_calls_aus_mehreren_chunks_bleiben_geordnet_erhalten():
     assert r["tool_calls"] == [first, second]
 
 
-def test_read_timeout_prueft_liveness_bis_zur_begrenzten_grace(monkeypatch):
+def test_read_timeout_prueft_liveness_bis_zur_begrenzten_grace():
     import httpx
 
     class TimeoutStream(_FakeStream):
@@ -187,18 +187,54 @@ def test_read_timeout_prueft_liveness_bis_zur_begrenzten_grace(monkeypatch):
             return TimeoutStream()
 
     original_limit = backend_module.limit
-    monkeypatch.setattr(
-        backend_module,
-        "limit",
-        lambda name: 2 if name == "BACH_LLM_IDLE_GRACE" else original_limit(name),
+    backend_module.limit = (
+        lambda name: 2 if name == "BACH_LLM_IDLE_GRACE" else original_limit(name)
     )
     client = TimeoutClient([], ps_models=[{"name": "m"}])
-
-    r = asyncio.run(_backend(client).chat([{"role": "user", "content": "x"}]))
+    try:
+        r = asyncio.run(_backend(client).chat([{"role": "user", "content": "x"}]))
+    finally:
+        backend_module.limit = original_limit
 
     assert client.ps_aufrufe == 2
     assert r["content"] == "partial"
     assert "ReadTimeout" in r["error"]
+
+
+def test_real_httpx_timeout_verbraucht_grace_und_behaelt_ursache():
+    """HTTPX beendet den Byte-Stream nach ReadTimeout dauerhaft."""
+    import httpx
+
+    class TimeoutBytes(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield (_zeile("partial", done=False) + "\n").encode("utf-8")
+            raise httpx.ReadTimeout("transport stalled")
+
+    ps_aufrufe = 0
+
+    async def handler(request):
+        nonlocal ps_aufrufe
+        if request.url.path == "/api/chat":
+            return httpx.Response(200, stream=TimeoutBytes())
+        if request.url.path == "/api/ps":
+            ps_aufrufe += 1
+            return httpx.Response(200, json={"models": [{"name": "m"}]})
+        return httpx.Response(404)
+
+    original_limit = backend_module.limit
+    backend_module.limit = (
+        lambda name: 2 if name == "BACH_LLM_IDLE_GRACE" else original_limit(name)
+    )
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        r = asyncio.run(_backend(client).chat([{"role": "user", "content": "x"}]))
+    finally:
+        backend_module.limit = original_limit
+
+    assert ps_aufrufe == 2
+    assert r["content"] == "partial"
+    assert "ReadTimeout" in r["error"]
+    assert "transport stalled" in r["error"]
 
 
 def test_leere_zeilen_zaehlen_nicht_als_regung():
