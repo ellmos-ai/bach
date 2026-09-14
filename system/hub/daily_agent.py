@@ -314,6 +314,20 @@ class DailyAgentHandler(BaseHandler):
             return ["task_briefing", "message_briefing", "session_briefing"]
 
     def _briefing(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
+        """Build a briefing and commit all consumer checkpoints only on success."""
+        ok, text, checkpoint_updates = self._build_briefing(args, dry_run=dry_run)
+        if not ok:
+            return False, text
+        if checkpoint_updates:
+            try:
+                self._persist_projection_checkpoints(checkpoint_updates)
+            except (sqlite3.Error, ValueError, RuntimeError) as exc:
+                return False, f"{text}\n\n[projection_checkpoint] Fehler: {exc}"
+        return True, text
+
+    def _build_briefing(
+        self, args: List[str], dry_run: bool = False
+    ) -> tuple[bool, str, list[tuple[str, dict, object]]]:
         """Generiert ein modulares Morgen-Briefing."""
         clean_args = [arg for arg in args if arg not in {"--dry-run", "-n"}]
         read_only_config = dry_run or "--read-only-config" in clean_args
@@ -327,7 +341,7 @@ class DailyAgentHandler(BaseHandler):
         if len(mediplaner_projection_options) > 1 or any(
             not value for value in mediplaner_projection_options
         ):
-            return False, "--mediplaner-projection muss genau einen nicht leeren Pfad enthalten."
+            return False, "--mediplaner-projection muss genau einen nicht leeren Pfad enthalten.", []
         routinika_projection_options = [
             arg.split("=", 1)[1]
             for arg in clean_args
@@ -336,7 +350,7 @@ class DailyAgentHandler(BaseHandler):
         if len(routinika_projection_options) > 1 or any(
             not value for value in routinika_projection_options
         ):
-            return False, "--routinika-projection muss genau einen nicht leeren Pfad enthalten."
+            return False, "--routinika-projection muss genau einen nicht leeren Pfad enthalten.", []
         supported = {
             "--read-only-config",
             "--mediplaner-receipt",
@@ -350,7 +364,7 @@ class DailyAgentHandler(BaseHandler):
             and not arg.startswith("--routinika-projection=")
         ]
         if unsupported:
-            return False, f"Unbekannte Option für daily-agent briefing: {unsupported[0]}"
+            return False, f"Unbekannte Option für daily-agent briefing: {unsupported[0]}", []
         mediplaner_projection_override = (
             mediplaner_projection_options[0] if mediplaner_projection_options else None
         )
@@ -365,6 +379,7 @@ class DailyAgentHandler(BaseHandler):
             conn = sqlite3.connect(str(self.db_path))
         try:
             conn.row_factory = sqlite3.Row
+            checkpoint_updates: list[tuple[str, dict, object]] = []
 
             lines = [f"MORGEN-BRIEFING ({date.today().strftime('%d.%m.%Y')})", "=" * 45]
             if dry_run:
@@ -388,13 +403,13 @@ class DailyAgentHandler(BaseHandler):
                     current_conn,
                     projection_override=mediplaner_projection_override,
                     include_receipt=include_mediplaner_receipt,
-                    persist_checkpoint=not read_only_config,
+                    checkpoint_updates=(checkpoint_updates if not read_only_config else None),
                 ),
                 "routinika_briefing": lambda current_conn: self._mod_routinika_briefing(
                     current_conn,
                     projection_override=routinika_projection_override,
                     include_receipt=include_routinika_receipt,
-                    persist_checkpoint=not read_only_config,
+                    checkpoint_updates=(checkpoint_updates if not read_only_config else None),
                 ),
                 "weather_briefing": self._mod_weather_briefing,
                 "calendar_briefing": self._mod_calendar_briefing,
@@ -410,9 +425,9 @@ class DailyAgentHandler(BaseHandler):
                     except Exception as e:
                         lines.append(f"\n[{mod_name}] Fehler: {e}")
                         if mod_name in {"mediplaner_briefing", "routinika_briefing"}:
-                            return False, "\n".join(lines)
+                            return False, "\n".join(lines), []
 
-            return True, "\n".join(lines)
+            return True, "\n".join(lines), checkpoint_updates
         finally:
             conn.close()
 
@@ -427,12 +442,35 @@ class DailyAgentHandler(BaseHandler):
         if unsupported:
             return False, f"Unbekannte Option für daily-agent deliver: {unsupported[0]}"
 
-        ok, briefing = self._briefing(["--read-only-config"] if dry_run else [])
+        today = date.today().isoformat()
+        marker = f"BACH Morgen-Briefing {today}"
+        if not dry_run:
+            conn = sqlite3.connect(str(self.db_path))
+            try:
+                existing = conn.execute(
+                    """
+                    SELECT id, processed, error, status
+                    FROM connector_messages
+                    WHERE connector_name = 'telegram_main'
+                      AND direction = 'out'
+                      AND sender = 'daily-agent'
+                      AND content LIKE ?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (f"{marker}%",),
+                ).fetchone()
+            finally:
+                conn.close()
+            if existing:
+                state = "gesendet" if existing[3] == "sent" else "bereits versucht"
+                return True, f"[SKIP] Morgen-Briefing für {today} {state} (Nachricht #{existing[0]})."
+
+        ok, briefing, checkpoint_updates = self._build_briefing(
+            ["--read-only-config"] if dry_run else [], dry_run=dry_run
+        )
         if not ok:
             return False, briefing
 
-        today = date.today().isoformat()
-        marker = f"BACH Morgen-Briefing {today}"
         payload = f"{marker}\n\n{briefing}"
         if len(payload) > 4000:
             payload = payload[:3960].rstrip() + "\n\n[Briefing für Telegram gekürzt]"
@@ -497,7 +535,9 @@ class DailyAgentHandler(BaseHandler):
             send_error = f"{type(exc).__name__}: {exc}"[:200]
 
         conn = sqlite3.connect(str(self.db_path))
+        checkpoint_error = ""
         try:
+            conn.execute("BEGIN IMMEDIATE")
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             conn.execute(
                 """
@@ -508,10 +548,22 @@ class DailyAgentHandler(BaseHandler):
                 (1, "sent" if sent else "failed",
                  None if sent else send_error, now, message_id),
             )
+            if sent and checkpoint_updates:
+                self._persist_projection_checkpoints(
+                    checkpoint_updates, connection=conn, manage_transaction=False
+                )
             conn.commit()
+        except (sqlite3.Error, ValueError, RuntimeError) as exc:
+            conn.rollback()
+            checkpoint_error = str(exc)
         finally:
             conn.close()
 
+        if checkpoint_error:
+            return False, (
+                f"[FAIL-CLOSED] Zustellstatus/Consumer-Checkpoint konnte nach dem "
+                f"Sendeversuch nicht atomar gespeichert werden: {checkpoint_error}"
+            )
         if sent:
             return True, f"[OK] Morgen-Briefing für {today} via telegram_main gesendet (Nachricht #{message_id})."
         return False, (
@@ -657,7 +709,7 @@ class DailyAgentHandler(BaseHandler):
         *,
         projection_override: str | None = None,
         include_receipt: bool = False,
-        persist_checkpoint: bool = False,
+        checkpoint_updates: list[tuple[str, dict, object]] | None = None,
     ) -> str:
         """Modul: strikt read-only geprüfte MediPlaner-Fälligkeiten."""
         settings = self._briefing_module_settings(conn, "mediplaner_briefing")
@@ -687,10 +739,8 @@ class DailyAgentHandler(BaseHandler):
         block = format_mediplaner_briefing(
             projection, include_receipt=include_receipt
         )
-        if persist_checkpoint:
-            self._persist_projection_checkpoint(
-                conn, "mediplaner_briefing", settings, projection
-            )
+        if checkpoint_updates is not None:
+            checkpoint_updates.append(("mediplaner_briefing", settings, projection))
         return block
 
     def _mod_routinika_briefing(
@@ -699,7 +749,7 @@ class DailyAgentHandler(BaseHandler):
         *,
         projection_override: str | None = None,
         include_receipt: bool = False,
-        persist_checkpoint: bool = False,
+        checkpoint_updates: list[tuple[str, dict, object]] | None = None,
     ) -> str:
         """Modul: strikt read-only geprüfte Routinika-Fälligkeiten."""
         settings = self._briefing_module_settings(conn, "routinika_briefing")
@@ -729,28 +779,61 @@ class DailyAgentHandler(BaseHandler):
         block = format_routinika_briefing(
             projection, include_receipt=include_receipt
         )
-        if persist_checkpoint:
-            self._persist_projection_checkpoint(
-                conn, "routinika_briefing", settings, projection
-            )
+        if checkpoint_updates is not None:
+            checkpoint_updates.append(("routinika_briefing", settings, projection))
         return block
 
-    @staticmethod
-    def _persist_projection_checkpoint(conn, module_name: str, settings: dict, projection) -> None:
-        """Advance only BACH-owned consumer state after a successful read/format cycle."""
-        next_settings = dict(settings)
-        next_settings.update(
-            {
-                "last_checkpoint": projection.source_checkpoint,
-                "last_projection_sha256": projection.database_sha256,
-                "publisher_instance": projection.publisher_instance,
-            }
-        )
-        conn.execute(
-            "UPDATE briefing_config SET settings_json = ? WHERE module_name = ?",
-            (json.dumps(next_settings, ensure_ascii=False, sort_keys=True), module_name),
-        )
-        conn.commit()
+    def _persist_projection_checkpoints(
+        self,
+        updates: list[tuple[str, dict, object]],
+        *,
+        connection: sqlite3.Connection | None = None,
+        manage_transaction: bool = True,
+    ) -> None:
+        """Atomically advance BACH-owned consumer state after complete success."""
+        conn = connection or sqlite3.connect(str(self.db_path))
+        try:
+            if manage_transaction:
+                conn.execute("BEGIN IMMEDIATE")
+            for module_name, prior_settings, projection in updates:
+                row = conn.execute(
+                    "SELECT settings_json FROM briefing_config WHERE module_name = ?",
+                    (module_name,),
+                ).fetchone()
+                if row is None:
+                    raise RuntimeError(f"Briefing-Modul fehlt: {module_name}")
+                current_settings = json.loads(row[0] or "{}")
+                if not isinstance(current_settings, dict):
+                    raise ValueError(f"settings_json für {module_name} muss ein Objekt sein.")
+                for key in ("last_checkpoint", "publisher_instance"):
+                    if current_settings.get(key) != prior_settings.get(key):
+                        raise RuntimeError(
+                            f"Consumer-Checkpoint wurde parallel verändert: {module_name}"
+                        )
+                next_settings = dict(current_settings)
+                next_settings.update(
+                    {
+                        "last_checkpoint": projection.source_checkpoint,
+                        "last_projection_sha256": projection.database_sha256,
+                        "publisher_instance": projection.publisher_instance,
+                    }
+                )
+                conn.execute(
+                    "UPDATE briefing_config SET settings_json = ? WHERE module_name = ?",
+                    (
+                        json.dumps(next_settings, ensure_ascii=False, sort_keys=True),
+                        module_name,
+                    ),
+                )
+            if manage_transaction:
+                conn.commit()
+        except Exception:
+            if manage_transaction:
+                conn.rollback()
+            raise
+        finally:
+            if connection is None:
+                conn.close()
 
     @staticmethod
     def _briefing_module_settings(conn, module_name: str) -> dict:

@@ -9,6 +9,7 @@ import hashlib
 import sqlite3
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -283,6 +284,36 @@ def _handler_with_briefing_db(tmp_path: Path) -> DailyAgentHandler:
     return handler
 
 
+def _configure_delivery_database(handler: DailyAgentHandler, projection: Path) -> None:
+    conn = sqlite3.connect(handler.db_path)
+    conn.execute(
+        "UPDATE briefing_config SET is_active = 1, settings_json = ? "
+        "WHERE module_name = 'mediplaner_briefing'",
+        (__import__("json").dumps({"projection_path": str(projection)}),),
+    )
+    conn.execute(
+        """
+        CREATE TABLE connector_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            connector_name TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            sender TEXT NOT NULL,
+            recipient TEXT NOT NULL,
+            content TEXT NOT NULL,
+            processed INTEGER NOT NULL,
+            error TEXT,
+            retry_count INTEGER NOT NULL,
+            max_retries INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
 def test_daily_agent_can_preview_mediplaner_projection(tmp_path):
     handler = _handler_with_briefing_db(tmp_path)
     projection = tmp_path / "mediplaner.sqlite"
@@ -372,6 +403,87 @@ def test_daily_agent_persists_checkpoint_and_rejects_replay(tmp_path):
     )
     assert ok is False
     assert "Publisher-Instanz weicht" in text
+
+
+def test_later_projection_failure_does_not_consume_mediplaner_checkpoint(tmp_path):
+    handler = _handler_with_briefing_db(tmp_path)
+    projection = tmp_path / "mediplaner.sqlite"
+    _create_projection(projection)
+
+    ok, text = handler.handle(
+        "briefing",
+        [
+            f"--mediplaner-projection={projection}",
+            f"--routinika-projection={tmp_path / 'missing-routinika.sqlite'}",
+        ],
+        dry_run=False,
+    )
+
+    assert ok is False
+    assert "routinika_briefing" in text
+    conn = sqlite3.connect(handler.db_path)
+    settings = conn.execute(
+        "SELECT settings_json FROM briefing_config WHERE module_name = 'mediplaner_briefing'"
+    ).fetchone()[0]
+    conn.close()
+    assert "last_checkpoint" not in __import__("json").loads(settings)
+
+
+def test_failed_delivery_does_not_consume_projection(tmp_path):
+    handler = _handler_with_briefing_db(tmp_path)
+    projection = tmp_path / "mediplaner.sqlite"
+    _create_projection(projection)
+    _configure_delivery_database(handler, projection)
+    connector = MagicMock()
+    connector.send_message.return_value = False
+
+    with patch(
+        "hub.connector.ConnectorHandler._instantiate",
+        return_value=(connector, ""),
+    ):
+        ok, text = handler.handle("deliver", ["--telegram"], dry_run=False)
+
+    assert ok is False
+    assert "nicht gesendet" in text
+    conn = sqlite3.connect(handler.db_path)
+    settings = conn.execute(
+        "SELECT settings_json FROM briefing_config WHERE module_name = 'mediplaner_briefing'"
+    ).fetchone()[0]
+    conn.close()
+    assert "last_checkpoint" not in __import__("json").loads(settings)
+
+
+def test_successful_delivery_persists_then_duplicate_skips_before_replay(tmp_path):
+    handler = _handler_with_briefing_db(tmp_path)
+    projection = tmp_path / "mediplaner.sqlite"
+    _create_projection(projection)
+    _configure_delivery_database(handler, projection)
+    connector = MagicMock()
+    connector.send_message.return_value = True
+
+    with patch(
+        "hub.connector.ConnectorHandler._instantiate",
+        return_value=(connector, ""),
+    ):
+        first_ok, _ = handler.handle("deliver", ["--telegram"], dry_run=False)
+
+    with patch("hub.connector.ConnectorHandler._instantiate") as instantiate:
+        second_ok, second_text = handler.handle(
+            "deliver", ["--telegram"], dry_run=False
+        )
+
+    assert first_ok is True and second_ok is True
+    assert "[SKIP]" in second_text
+    instantiate.assert_not_called()
+    conn = sqlite3.connect(handler.db_path)
+    settings = __import__("json").loads(
+        conn.execute(
+            "SELECT settings_json FROM briefing_config "
+            "WHERE module_name = 'mediplaner_briefing'"
+        ).fetchone()[0]
+    )
+    conn.close()
+    assert settings["last_checkpoint"] == 41
 
 
 def test_daily_agent_stores_only_inactive_consumer_settings(tmp_path):
