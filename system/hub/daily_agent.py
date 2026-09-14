@@ -47,6 +47,12 @@ from pathlib import Path
 from typing import List, Tuple
 
 from .base import BaseHandler
+from ._services.mediplaner_projection import (
+    DEFAULT_MINIMUM_OFFLINE_SECONDS as MEDIPLANER_DEFAULT_MINIMUM_OFFLINE_SECONDS,
+    MediplanerProjectionError,
+    format_mediplaner_briefing,
+    read_mediplaner_projection,
+)
 from ._services.routinika_projection import (
     DEFAULT_MINIMUM_OFFLINE_SECONDS,
     RoutinikaProjectionError,
@@ -83,6 +89,7 @@ class DailyAgentHandler(BaseHandler):
         "news_briefing": ("News-Ueberblick", True),
         "session_briefing": ("Letzte Session", True),
         "commitment_briefing": ("Fällige Routinen und Fristen", True),
+        "mediplaner_briefing": ("MediPlaner-Fälligkeiten (read-only Projektion)", False),
         "routinika_briefing": ("Routinika-Fälligkeiten (read-only Projektion)", False),
         "weather_briefing": ("Wetter", False),
         "calendar_briefing": ("Kalender", False),
@@ -310,23 +317,46 @@ class DailyAgentHandler(BaseHandler):
         """Generiert ein modulares Morgen-Briefing."""
         clean_args = [arg for arg in args if arg not in {"--dry-run", "-n"}]
         read_only_config = dry_run or "--read-only-config" in clean_args
+        include_mediplaner_receipt = "--mediplaner-receipt" in clean_args
         include_routinika_receipt = "--routinika-receipt" in clean_args
-        projection_options = [
+        mediplaner_projection_options = [
+            arg.split("=", 1)[1]
+            for arg in clean_args
+            if arg.startswith("--mediplaner-projection=")
+        ]
+        if len(mediplaner_projection_options) > 1 or any(
+            not value for value in mediplaner_projection_options
+        ):
+            return False, "--mediplaner-projection muss genau einen nicht leeren Pfad enthalten."
+        routinika_projection_options = [
             arg.split("=", 1)[1]
             for arg in clean_args
             if arg.startswith("--routinika-projection=")
         ]
-        if len(projection_options) > 1 or any(not value for value in projection_options):
+        if len(routinika_projection_options) > 1 or any(
+            not value for value in routinika_projection_options
+        ):
             return False, "--routinika-projection muss genau einen nicht leeren Pfad enthalten."
-        supported = {"--read-only-config", "--routinika-receipt"}
+        supported = {
+            "--read-only-config",
+            "--mediplaner-receipt",
+            "--routinika-receipt",
+        }
         unsupported = [
             arg
             for arg in clean_args
-            if arg not in supported and not arg.startswith("--routinika-projection=")
+            if arg not in supported
+            and not arg.startswith("--mediplaner-projection=")
+            and not arg.startswith("--routinika-projection=")
         ]
         if unsupported:
             return False, f"Unbekannte Option für daily-agent briefing: {unsupported[0]}"
-        projection_override = projection_options[0] if projection_options else None
+        mediplaner_projection_override = (
+            mediplaner_projection_options[0] if mediplaner_projection_options else None
+        )
+        routinika_projection_override = (
+            routinika_projection_options[0] if routinika_projection_options else None
+        )
 
         if read_only_config:
             db_uri = f"file:{self.db_path.resolve().as_posix()}?mode=ro"
@@ -343,7 +373,9 @@ class DailyAgentHandler(BaseHandler):
             active_modules = self._get_active_modules(
                 conn, ensure_config=not read_only_config
             )
-            if projection_override and "routinika_briefing" not in active_modules:
+            if mediplaner_projection_override and "mediplaner_briefing" not in active_modules:
+                active_modules.append("mediplaner_briefing")
+            if routinika_projection_override and "routinika_briefing" not in active_modules:
                 active_modules.append("routinika_briefing")
 
             module_methods = {
@@ -352,9 +384,14 @@ class DailyAgentHandler(BaseHandler):
                 "news_briefing": self._mod_news_briefing,
                 "session_briefing": self._mod_session_briefing,
                 "commitment_briefing": self._mod_commitment_briefing,
+                "mediplaner_briefing": lambda current_conn: self._mod_mediplaner_briefing(
+                    current_conn,
+                    projection_override=mediplaner_projection_override,
+                    include_receipt=include_mediplaner_receipt,
+                ),
                 "routinika_briefing": lambda current_conn: self._mod_routinika_briefing(
                     current_conn,
-                    projection_override=projection_override,
+                    projection_override=routinika_projection_override,
                     include_receipt=include_routinika_receipt,
                 ),
                 "weather_briefing": self._mod_weather_briefing,
@@ -370,7 +407,7 @@ class DailyAgentHandler(BaseHandler):
                             lines.append(block)
                     except Exception as e:
                         lines.append(f"\n[{mod_name}] Fehler: {e}")
-                        if mod_name == "routinika_briefing":
+                        if mod_name in {"mediplaner_briefing", "routinika_briefing"}:
                             return False, "\n".join(lines)
 
             return True, "\n".join(lines)
@@ -612,6 +649,31 @@ class DailyAgentHandler(BaseHandler):
 
         return "\n".join(parts)
 
+    def _mod_mediplaner_briefing(
+        self,
+        conn,
+        *,
+        projection_override: str | None = None,
+        include_receipt: bool = False,
+    ) -> str:
+        """Modul: strikt read-only geprüfte MediPlaner-Fälligkeiten."""
+        settings = self._briefing_module_settings(conn, "mediplaner_briefing")
+        projection_path = projection_override or settings.get("projection_path")
+        if not isinstance(projection_path, str) or not projection_path.strip():
+            raise MediplanerProjectionError(
+                "Kein Projektionspfad konfiguriert. Nutze daily-agent config "
+                "mediplaner_briefing --projection=<absoluter-pfad>."
+            )
+        offline_seconds = settings.get(
+            "minimum_offline_seconds", MEDIPLANER_DEFAULT_MINIMUM_OFFLINE_SECONDS
+        )
+        projection = read_mediplaner_projection(
+            projection_path, minimum_offline_seconds=offline_seconds
+        )
+        return format_mediplaner_briefing(
+            projection, include_receipt=include_receipt
+        )
+
     def _mod_routinika_briefing(
         self,
         conn,
@@ -740,8 +802,12 @@ class DailyAgentHandler(BaseHandler):
     def _configure_module(self, args: List[str]) -> Tuple[bool, str]:
         """Speichert eng begrenzte Einstellungen eines Briefing-Moduls."""
         module_name = args[0]
-        if module_name != "routinika_briefing":
-            return False, "Konfigurierbar ist derzeit nur: routinika_briefing"
+        configurable = {"mediplaner_briefing", "routinika_briefing"}
+        if module_name not in configurable:
+            return False, (
+                "Konfigurierbar sind derzeit: mediplaner_briefing, "
+                "routinika_briefing"
+            )
         options = args[1:]
         if "--clear" in options:
             if len(options) != 1:
@@ -774,7 +840,16 @@ class DailyAgentHandler(BaseHandler):
             if not projection.is_absolute():
                 return False, "Der Projektionspfad muss absolut sein."
             try:
-                offline_seconds = int(offline_values[0]) if offline_values else DEFAULT_MINIMUM_OFFLINE_SECONDS
+                default_offline_seconds = (
+                    MEDIPLANER_DEFAULT_MINIMUM_OFFLINE_SECONDS
+                    if module_name == "mediplaner_briefing"
+                    else DEFAULT_MINIMUM_OFFLINE_SECONDS
+                )
+                offline_seconds = (
+                    int(offline_values[0])
+                    if offline_values
+                    else default_offline_seconds
+                )
             except ValueError:
                 return False, "--minimum-offline-seconds muss eine Ganzzahl sein."
             if offline_seconds < 0:
