@@ -45,6 +45,18 @@ Experten sind spezialisierte Sub-Agenten unter Boss-Agenten.
 
 ---
 
+## Mess- und Arbeitsgrundlage für Änderungen
+
+Für jede Messung und jede Bearbeitung wird ein frischer Worktree von `origin/<default>` angelegt:
+
+```bash
+git worktree add <path> -b <branch> origin/<default>
+```
+
+Im Arbeitsbaum des Hauptklons wird weder gemessen noch gebaut. Der Hauptklon kann einen alten Feature-Branch ausgecheckt haben und dadurch einen veralteten Stand zeigen. Der Lock bleibt im Hauptklon (auflösbar über `git rev-parse --git-common-dir`), die Arbeit findet im frischen Worktree statt.
+
+---
+
 <!--
   HINWEIS: Diese Datei ist ein Template.
   BACH generiert die vollstaendige Liste automatisch.

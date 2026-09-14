@@ -45,6 +45,18 @@ Experts are specialized sub-agents under boss agents.
 
 ---
 
+## Measurement and change-work baseline
+
+For every measurement and change, create a fresh worktree from `origin/<default>`:
+
+```bash
+git worktree add <path> -b <branch> origin/<default>
+```
+
+Do not measure or build in the main clone's working tree. The main clone may have an old feature branch checked out and therefore show a stale state. Keep the lock in the main clone (resolvable with `git rev-parse --git-common-dir`); perform the work in the fresh worktree.
+
+---
+
 <!--
   NOTE: This file is a template.
   BACH generates the complete list automatically.

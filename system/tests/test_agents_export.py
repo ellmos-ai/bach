@@ -141,6 +141,8 @@ def test_legacy_export_remains_the_default_format(tmp_path: Path) -> None:
     assert content.startswith("# BACH Agents & Experts\n")
     assert "## Boss-Agenten (Orchestrierer)" in content
     assert "## Experten (Spezialisierte Ausführer)" in content
+    assert "## Mess- und Arbeitsgrundlage für Änderungen" in content
+    assert "git worktree add <path> -b <branch> origin/<default>" in content
 
 
 def test_local_fixture_db_is_used_when_it_contains_agent_tables(tmp_path: Path) -> None:
