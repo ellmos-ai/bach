@@ -2181,6 +2181,8 @@ async def api_list_mounts():
 
                         "alias": alias,
 
+                        "path": path,
+
                         "active": active,
 
                         "exists": exists
