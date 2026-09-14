@@ -1,13 +1,13 @@
 # Portabilität: SYSTEM
-# Version: 1.0.0
-# Zuletzt validiert: 2026-05-18
-# Nächste Prüfung: 2026-11-15
-# Ressourcen: [hub/scheduler.py, gui/daemon_service.py, scheduler_jobs, scheduler_runs]
+# Version: 1.1.0
+# Zuletzt validiert: 2026-09-12
+# Nächste Prüfung: 2027-03-12
+# Ressourcen: [hub/scheduler.py, hub/scheduler_provider.py, gui/daemon_service.py, scheduler_jobs, scheduler_runs, scheduler_external]
 
 SCHEDULER - Hintergrund-Jobs und Scheduler-Service
 ====================================================
 
-STAND: 2026-02-28
+STAND: 2026-09-12
 
 Hinweis: `bach scheduler ...` ist der neue Name für den Scheduler.
 Der alte Befehl `bach daemon ...` ist weiterhin als Alias verfügbar.
@@ -22,8 +22,6 @@ aktiviert wenn benötigt.
 
 Der Scheduler pausiert automatisch OneDrive-Sync während des Betriebs
 um Sync-Konflikte zu vermeiden.
-
-Siehe: docs/CONCEPT_daemon_policy.md
 
 CLI-BEFEHLE (bach scheduler)
 -----------------------------
@@ -46,6 +44,7 @@ CLI-BEFEHLE (bach scheduler)
   run <ID>          Einzelnen Job manuell ausführen
   logs [N]          Letzte Log-Einträge anzeigen (Standard: 20)
   jobs --json       Scheduler-Jobs mit berechnetem Status als JSON
+  external ...      Externer ellmos-Scheduler (siehe unten)
 
 SESSION-SYSTEM
 --------------
@@ -79,6 +78,28 @@ SESSION-SYSTEM
     bach scheduler session steer --profile ati "Bitte heute nur Health-Checks und Docs anfassen."
     bach scheduler session steer --profile ati "Bitte zuerst Dry-Run prüfen." --json
     bach scheduler session status --json
+
+EXTERNER SCHEDULER (ellmos-scheduler)
+-------------------------------------
+  Provider-Seam (MODULRUECKTRANSFER Stufe 3): `hub/scheduler_provider.py`
+  verdrahtet BACH mit dem externen Modul `ellmos-scheduler`. Der Legacy-
+  Scheduler bleibt unberührt als Fail-Closed-Fallback.
+
+  external status              Adapter/Provider-Status anzeigen
+  external status --json       Status als JSON
+  external jobs                 Jobs im externen State-Store auflisten
+  external verify              Legacy-Jobs read-only prämigrieren (Dry-Run)
+  external verify --apply      Legacy-Jobs idempotent übernehmen
+  external verify --json       Antwort als JSON
+
+  - Externer State-Store liegt isoliert unter data/scheduler_external/
+    (Provenienz `bach:<ID>`); der Legacy-Job-Store wird nie verändert.
+  - Jobs mit Bare-Command-Namen ohne PATH-Executable werden beim Verify
+    übersprungen und mit Grund dokumentiert (argv-Konvertierung vor --apply).
+  - Rollback: BACH_USE_EXTERNAL_SCHEDULER=0 deaktiviert die Verdrahtung;
+    `bach scheduler doctor` meldet Provider-Zustand und Rollback-Hinweis.
+  - Fail-Closed: externe Befehle ohne installiertes Modul erzeugen einen
+    klaren Fehler statt still auf den Legacy-Store zu fallen.
 
 JOB-TYPEN
 ---------
@@ -148,7 +169,6 @@ sind aequivalent:
 SIEHE AUCH
 ----------
   bach --help daemon           Ältere Dokumentation (Alias)
-  docs/CONCEPT_daemon_policy.md    Scheduler-Richtlinien
   bach --help connector        Connector-System (Queue, Retry)
   bach --help maintain         Wartungs-Tools
   bach --help backup           Backup-System

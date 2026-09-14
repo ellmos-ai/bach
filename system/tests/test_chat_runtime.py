@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: MIT
 """Tests for ChatRuntime security functions (hub/_services/chat/chat_runtime.py)."""
 
-import asyncio
 import subprocess
 import sys
 import types
@@ -23,7 +22,6 @@ from hub._services.chat.chat_runtime import (
     CMD_TIMEOUT,
     SAFE_BASES,
     TOOLS_SAFE,
-    ChatRuntime,
     _tool,
     exec_tool,
     is_blocked,
@@ -31,68 +29,6 @@ from hub._services.chat.chat_runtime import (
     is_safe_write_path,
     run_shell,
 )
-
-
-class _RecordingBackend:
-    manages_own_tools = True
-
-    def __init__(self, default_model):
-        self.default_model = default_model
-        self.calls = []
-
-    def get_default_model(self):
-        return self.default_model
-
-    async def chat(self, messages, **kwargs):
-        self.calls.append((messages, kwargs))
-        return {"content": "Antwort"}
-
-
-def test_process_uses_backend_and_model_snapshot_for_entire_request():
-    current_backend = _RecordingBackend("current:latest")
-    checked_backend = _RecordingBackend("checked:latest")
-    runtime = ChatRuntime(current_backend)
-
-    answer = asyncio.run(runtime.process(
-        "Hallo",
-        "snapshot",
-        backend=checked_backend,
-        model="verified:latest",
-    ))
-
-    assert answer == "Antwort"
-    assert current_backend.calls == []
-    assert len(checked_backend.calls) == 1
-    messages, kwargs = checked_backend.calls[0]
-    assert kwargs["model"] == "verified:latest"
-    assert "Modell=verified:latest" in messages[0]["content"]
-
-
-def test_summarization_uses_the_verified_model_snapshot():
-    current_backend = _RecordingBackend("current:latest")
-    checked_backend = _RecordingBackend("checked:latest")
-    runtime = ChatRuntime(current_backend)
-    runtime.SUMMARIZE_THRESHOLD = 0
-    session = runtime.get_session("summary-snapshot")
-    session.messages = [
-        {"role": "user" if index % 2 == 0 else "assistant", "content": "alt"}
-        for index in range(5)
-    ]
-
-    answer = asyncio.run(runtime.process(
-        "Neu",
-        "summary-snapshot",
-        backend=checked_backend,
-        model="verified:latest",
-    ))
-
-    assert answer == "Antwort"
-    assert current_backend.calls == []
-    assert len(checked_backend.calls) == 2
-    assert [call[1]["model"] for call in checked_backend.calls] == [
-        "verified:latest",
-        "verified:latest",
-    ]
 
 
 # ===================================================================
@@ -683,14 +619,14 @@ class TestComputeGate:
         return runtime, backend, asyncio.run
 
     def test_active_lock_prevents_the_model_load(self):
-        runtime, backend, run = self._run(lambda selected_backend: True)
+        runtime, backend, run = self._run(lambda _backend: True)
         with pytest.raises(ComputeLocked):
             run(runtime.process("Aufgabe", "idle-worker"))
         assert backend.calls == 0, "Backend darf bei aktivem Lock nicht gerufen werden"
         assert "idle-worker" not in runtime.sessions, "kein Turn, kein Transkript-Eintrag"
 
     def test_free_lock_behaves_exactly_as_before(self):
-        runtime, backend, run = self._run(lambda selected_backend: False)
+        runtime, backend, run = self._run(lambda _backend: False)
         assert run(runtime.process("Aufgabe", "idle-worker")) == "Echte Antwort"
         assert backend.calls == 1
 
@@ -699,118 +635,11 @@ class TestComputeGate:
         runtime, backend, run = self._run(None)
         assert run(runtime.process("Aufgabe", "idle-worker")) == "Echte Antwort"
 
-
-def test_gate_checks_snapshot_after_default_backend_changes():
-    import asyncio
-    from hub._services.chat.chat_runtime import ChatRuntime
-    selected = _AnsweringBackend()
-    seen = []
-    runtime = ChatRuntime(_RaisingBackend(RuntimeError("Falsches Backend")))
-    runtime.compute_gate = lambda backend: seen.append(backend) or backend is selected
-    with pytest.raises(ComputeLocked):
-        asyncio.run(runtime.process("Aufgabe", "idle-worker", backend=selected, model="selected"))
-    assert seen == [selected]
-    assert "idle-worker" not in runtime.sessions
-
-
-def test_context_handoff_keeps_selected_backend_and_model():
-    import asyncio
-    from hub._services.chat.chat_runtime import ChatRuntime
-
-    class Selected(_AnsweringBackend):
-        def __init__(self):
-            self.calls = []
-
-        async def chat(self, messages, **kwargs):
-            self.calls.append(kwargs)
-            return [
-                {"content": "Zwischenstand", "prompt_tokens": 90},
-                {"content": "RESUME: Weiterarbeiten"},
-                {"content": "Ergebnis", "prompt_tokens": 1},
-            ][len(self.calls) - 1]
-
-    selected = Selected()
-    runtime = ChatRuntime(_RaisingBackend(RuntimeError("Falsches Backend")))
-    runtime.context_limit = 100
-    runtime.handoff_percent = 75
-    answer = asyncio.run(runtime.process("Aufgabe", "gui-web", backend=selected, model="selected-model"))
-    assert answer == "Ergebnis"
-    assert len(selected.calls) == 3
-    assert all(call["model"] == "selected-model" for call in selected.calls)
-    assert runtime.last_handoff == "RESUME: Weiterarbeiten"
-
-
-def test_context_handoff_uses_ollama_backend_limit(monkeypatch):
-    from hub._services.llm.model_backend import OllamaBackend
-
-    monkeypatch.delenv("OLLAMA_NUM_CTX", raising=False)
-    runtime = ChatRuntime(OllamaBackend())
-    runtime.handoff_percent = 75
-    context_limit = runtime._context_limit_for_backend(runtime.backend)
-
-    assert context_limit == 4096
-    assert runtime._context_voll({"prompt_tokens": 3071}, context_limit=context_limit) is False
-    assert runtime._context_voll({"prompt_tokens": 3072}, context_limit=context_limit) is True
-
-
-def test_context_handoff_switches_to_the_new_backend_between_turns():
-    class ContextBackend:
-        def __init__(self, num_ctx):
-            self.num_ctx = num_ctx
-            self.calls = 0
-
-        def get_default_model(self):
-            return "test-model"
-
-        async def chat(self, messages, **kwargs):
-            self.calls += 1
-            return [
-                {"content": "Zwischenstand", "prompt_tokens": 3072},
-                {"content": "RESUME: Weiterarbeiten"},
-                {"content": "Ergebnis", "prompt_tokens": 1},
-            ][self.calls - 1]
-
-    short = ContextBackend(4096)
-    long = ContextBackend(8192)
-    runtime = ChatRuntime(short)
-    runtime.context_limit = 32768
-    runtime.handoff_percent = 75
-
-    assert asyncio.run(runtime.process("Aufgabe", "kurz")) == "Ergebnis"
-    runtime.backend = long
-    assert asyncio.run(runtime.process("Aufgabe", "lang")) == "Zwischenstand"
-    assert short.calls == 3
-    assert long.calls == 1
-
-
-def test_context_handoff_keeps_the_backend_limit_snapshot_during_a_turn():
-    class SnapshotBackend:
-        num_ctx = 4096
-
-        def __init__(self):
-            self.calls = 0
-            self.runtime = None
-
-        def get_default_model(self):
-            return "test-model"
-
-        async def chat(self, messages, **kwargs):
-            self.calls += 1
-            if self.calls == 1:
-                self.runtime.backend = _AnsweringBackend()
-                return {"content": "Zwischenstand", "prompt_tokens": 3072}
-            if self.calls == 2:
-                return {"content": "RESUME: Weiterarbeiten"}
-            return {"content": "Ergebnis", "prompt_tokens": 1}
-
-    backend = SnapshotBackend()
-    runtime = ChatRuntime(backend)
-    backend.runtime = runtime
-    runtime.context_limit = 32768
-    runtime.handoff_percent = 75
-
-    assert asyncio.run(runtime.process("Aufgabe", "snapshot")) == "Ergebnis"
-    assert backend.calls == 3
+    def test_skip_compute_gate_allows_model_load(self):
+        """User-authorisierte Telegram-Nachrichten umgehen das Compute-Gate."""
+        runtime, backend, run = self._run(lambda _backend: True)
+        assert run(runtime.process("Aufgabe", "user-chat", skip_compute_gate=True)) == "Echte Antwort"
+        assert backend.calls == 1
 
 
 def test_control_api_reports_a_compute_lock_separately():
@@ -825,6 +654,39 @@ def test_control_api_reports_a_compute_lock_separately():
     assert "except ComputeLocked" in src
     assert '"compute_locked": True' in src
     assert "runtime.compute_gate = _compute_lock_blocks" in src
+    assert "skip_compute_gate=True" in src
+
+
+def test_filter_stopped_jobs_ignores_unmanageable_and_dead_pids(monkeypatch):
+    """Prozesse ohne Signalberechtigung (Root/System) oder tote PIDs duerfen den Chat nicht blockieren."""
+    from hub.compute_lock import _filter_stopped_jobs
+
+    def mock_kill(pid, sig):
+        if pid == 52591:
+            raise PermissionError("[Errno 1] Operation not permitted")
+        if pid == 99999:
+            raise ProcessLookupError("[Errno 3] No such process")
+        return None
+
+    monkeypatch.setattr("os.kill", mock_kill)
+    monkeypatch.setattr("hub.compute_lock._pid_is_stopped", lambda pid: False)
+
+    status = {
+        "active_compute_jobs": [
+            {"name": "root_sysextd", "pid": 52591},
+            {"name": "dead_job", "pid": 99999},
+        ]
+    }
+    is_active, filtered = _filter_stopped_jobs(status)
+    assert not is_active
+    assert filtered == {}
+
+    # Wenn zusaetzlich ein echter, steuerbarer Job laeuft
+    status["active_compute_jobs"].append({"name": "real_job", "pid": 44252})
+    is_active, filtered = _filter_stopped_jobs(status)
+    assert is_active
+    assert len(filtered["active_compute_jobs"]) == 1
+    assert filtered["active_compute_jobs"][0]["pid"] == 44252
 
 
 class TestFailedAnswer:
@@ -923,4 +785,274 @@ def test_control_api_does_not_report_failed_answers_as_ok():
         encoding="utf-8"
     )
     assert '{"ok": True, "answer": answer}' not in src
-    assert 'FailedAnswer.looks_like(answer)' in src
+    assert 'not isinstance(answer, FailedAnswer)' in src
+
+
+def test_context_handoff_uses_ollama_backend_limit(monkeypatch):
+    from hub._services.chat.chat_runtime import ChatRuntime
+    from hub._services.llm.model_backend import OllamaBackend
+
+    monkeypatch.delenv("OLLAMA_NUM_CTX", raising=False)
+    runtime = ChatRuntime(OllamaBackend())
+    runtime.handoff_percent = 75
+    context_limit = runtime._context_limit_for_backend(runtime.backend)
+
+    assert context_limit == 4096
+    assert runtime._context_voll(
+        {"prompt_tokens": 3071}, context_limit=context_limit
+    ) is False
+    assert runtime._context_voll(
+        {"prompt_tokens": 3072}, context_limit=context_limit
+    ) is True
+
+
+def test_context_handoff_switches_backend_limits_between_turns():
+    import asyncio
+
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    class ContextBackend:
+        manages_own_tools = False
+
+        def __init__(self, limit):
+            self.limit = limit
+            self.calls = 0
+
+        def get_default_model(self):
+            return "test-model"
+
+        def get_context_limit(self):
+            return self.limit
+
+        def tool_response_message(self, content, tool_call_id=""):
+            return {"role": "tool", "content": content}
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            return [
+                {"content": "Zwischenstand", "prompt_tokens": 3072},
+                {"content": "RESUME: Weiterarbeiten"},
+                {"content": "Ergebnis", "prompt_tokens": 1},
+            ][self.calls - 1]
+
+    short = ContextBackend(4096)
+    long = ContextBackend(8192)
+    runtime = ChatRuntime(short)
+    runtime.context_limit = 32768
+    runtime.handoff_percent = 75
+
+    assert asyncio.run(runtime.process("Aufgabe", "kurz")) == "Ergebnis"
+    runtime.backend = long
+    assert asyncio.run(runtime.process("Aufgabe", "lang")) == "Zwischenstand"
+    assert short.calls == 3
+    assert long.calls == 1
+
+
+def test_context_handoff_keeps_backend_limit_snapshot_during_turn():
+    import asyncio
+
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    class SnapshotBackend:
+        manages_own_tools = False
+
+        def __init__(self):
+            self.calls = 0
+            self.runtime = None
+
+        def get_default_model(self):
+            return "test-model"
+
+        def get_context_limit(self):
+            return 4096
+
+        def tool_response_message(self, content, tool_call_id=""):
+            return {"role": "tool", "content": content}
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                self.runtime.backend = _AnsweringBackend()
+                return {"content": "Zwischenstand", "prompt_tokens": 3072}
+            if self.calls == 2:
+                return {"content": "RESUME: Weiterarbeiten"}
+            return {"content": "Ergebnis", "prompt_tokens": 1}
+
+    backend = SnapshotBackend()
+    runtime = ChatRuntime(backend)
+    backend.runtime = runtime
+    runtime.context_limit = 32768
+    runtime.handoff_percent = 75
+
+    assert asyncio.run(runtime.process("Aufgabe", "snapshot")) == "Ergebnis"
+    assert backend.calls == 3
+
+
+class TestFackelPreference:
+    def test_default_fackel_is_compute(self, tmp_path):
+        from hub.compute_lock import get_fackel_preference
+        nonexistent = str(tmp_path / "nonexistent_fackel.json")
+        assert get_fackel_preference(nonexistent) == "compute"
+
+    def test_set_and_get_fackel_preference(self, tmp_path, monkeypatch):
+        from hub.compute_lock import get_fackel_preference, set_fackel_preference
+        import hub.compute_lock as cl
+        monkeypatch.setattr(cl, "_record_fackel_activity", lambda *a, **k: None)
+        try:
+            import hub._services.chat.slots_config as sc
+            monkeypatch.setattr(sc, "load_slots_config", lambda *a, **k: {})
+            monkeypatch.setattr(sc, "save_slots_config", lambda *a, **k: None)
+        except Exception:
+            pass
+        fpath = str(tmp_path / "fackel.json")
+        
+        # Set to ollama
+        pref = set_fackel_preference("ollama", path=fpath)
+        assert pref == "ollama"
+        assert get_fackel_preference(fpath) == "ollama"
+
+        # Set to compute
+        pref = set_fackel_preference("COMPUTE", path=fpath)
+        assert pref == "compute"
+        assert get_fackel_preference(fpath) == "compute"
+
+    def test_set_fackel_invalid_raises(self, tmp_path):
+        import pytest
+        from hub.compute_lock import set_fackel_preference
+        fpath = str(tmp_path / "fackel.json")
+        with pytest.raises(ValueError):
+            set_fackel_preference("invalid_preference", path=fpath)
+
+    def test_set_fackel_records_activity_with_old_and_new(self, tmp_path, monkeypatch):
+        import hub.compute_lock as cl
+        from hub.compute_lock import set_fackel_preference
+        import hub._services.chat.slots_config as sc
+
+        # Neutralize slots_config disk write & read
+        monkeypatch.setattr(sc, "load_slots_config", lambda *a, **k: {})
+        monkeypatch.setattr(sc, "save_slots_config", lambda *a, **k: None)
+
+        activity_calls = []
+
+        def fake_record_activity(source, activity, status="ok", details=None, path=None):
+            activity_calls.append({
+                "source": source,
+                "activity": activity,
+                "status": status,
+                "details": details or {},
+            })
+
+        monkeypatch.setattr(sc, "record_activity", fake_record_activity)
+
+        fpath = str(tmp_path / "fackel.json")
+        # First transition: default (compute) -> ollama
+        set_fackel_preference("ollama", path=fpath, quelle="cli")
+        assert len(activity_calls) == 1
+        assert activity_calls[0]["source"] == "fackel"
+        assert activity_calls[0]["details"]["alt"] == "compute"
+        assert activity_calls[0]["details"]["neu"] == "ollama"
+        assert activity_calls[0]["details"]["quelle"] == "cli"
+
+        # Second transition: ollama -> compute via 'api'
+        set_fackel_preference("compute", path=fpath, quelle="api")
+        assert len(activity_calls) == 2
+        second = activity_calls[1]
+        assert second["source"] == "fackel"
+        assert second["details"]["alt"] == "ollama"
+        assert second["details"]["neu"] == "compute"
+        assert second["details"]["quelle"] == "api"
+        assert second["details"]["datei"] == fpath
+
+    def test_legacy_fackel_file_is_migrated(self, tmp_path, monkeypatch):
+        import json
+        import hub.compute_lock as cl
+        from hub.compute_lock import get_fackel_preference
+
+        legacy_path = tmp_path / "legacy_fackel.json"
+        legacy_path.write_text(json.dumps({"preference": "ollama"}), encoding="utf-8")
+        new_path = tmp_path / "system_data" / "fackel_preference.json"
+
+        monkeypatch.setattr(cl, "FACKEL_PREFERENCE_LEGACY_FILE", str(legacy_path))
+        monkeypatch.setattr(cl, "FACKEL_PREFERENCE_FILE", str(new_path))
+        monkeypatch.setattr(cl, "_FACKEL_PATH_FROM_ENV", False)
+
+        # Run get_fackel_preference() with default path
+        result = get_fackel_preference()
+        assert result == "ollama"
+
+        # Verify new file was written with migrated value
+        assert new_path.is_file()
+        migrated_data = json.loads(new_path.read_text(encoding="utf-8"))
+        assert migrated_data["preference"] == "ollama"
+
+        # Altdatei remains intact (not deleted)
+        assert legacy_path.is_file()
+
+    def test_custom_path_does_not_fall_back_to_legacy(self, tmp_path, monkeypatch):
+        import json
+        import hub.compute_lock as cl
+        from hub.compute_lock import get_fackel_preference
+
+        legacy_path = tmp_path / "legacy_fackel.json"
+        legacy_path.write_text(json.dumps({"preference": "ollama"}), encoding="utf-8")
+        monkeypatch.setattr(cl, "FACKEL_PREFERENCE_LEGACY_FILE", str(legacy_path))
+
+        # slots_config neutralisieren
+        try:
+            import hub._services.chat.slots_config as sc
+            monkeypatch.setattr(sc, "load_slots_config", lambda *a, **k: {})
+        except Exception:
+            pass
+
+        # Mit explizit uebergebenem, leerem / nichtexistentem Pfad
+        custom_empty = str(tmp_path / "empty_fackel.json")
+        assert get_fackel_preference(custom_empty) == "compute"
+        assert get_fackel_preference("") == "compute"
+        # Migration must not occur
+        assert not (tmp_path / "system_data" / "fackel_preference.json").exists()
+
+    def test_env_path_does_not_fall_back_to_legacy(self, tmp_path, monkeypatch):
+        """When BACH_FACKEL_PREFERENCE_PATH is configured, legacy fallback is blocked.
+
+        An empty or nonexistent file at the env-specified path returns 'compute'
+        and must NOT trigger a fallback to or migration from ~/.memwatchdog/fackel_preference.json.
+        """
+        import json
+        import hub.compute_lock as cl
+        from hub.compute_lock import get_fackel_preference
+
+        legacy_path = tmp_path / "legacy_fackel.json"
+        legacy_path.write_text(json.dumps({"preference": "ollama"}), encoding="utf-8")
+        env_pref_path = tmp_path / "env_data" / "fackel_preference.json"
+
+        monkeypatch.setattr(cl, "FACKEL_PREFERENCE_LEGACY_FILE", str(legacy_path))
+        monkeypatch.setattr(cl, "FACKEL_PREFERENCE_FILE", str(env_pref_path))
+        monkeypatch.setattr(cl, "_FACKEL_PATH_FROM_ENV", True)
+        monkeypatch.setattr(cl, "_record_fackel_activity", lambda *a, **k: None)
+
+        # slots_config neutralisieren
+        try:
+            import hub._services.chat.slots_config as sc
+            monkeypatch.setattr(sc, "load_slots_config", lambda *a, **k: {})
+            monkeypatch.setattr(sc, "save_slots_config", lambda *a, **k: None)
+        except Exception:
+            pass
+
+        # Call get_fackel_preference() with default argument (uses FACKEL_PREFERENCE_FILE)
+        result = get_fackel_preference()
+        assert result == "compute"
+
+        # Altdatei must NOT be migrated to the env path
+        assert not env_pref_path.exists()
+        # Altdatei remains intact
+        assert legacy_path.is_file()
+
+    def test_telegram_chat_fackel_integration(self):
+        """Verify telegram_chat contains fackel endpoint, command, and dashboard controls."""
+        src = (Path(BACH_SYSTEM_DIR) / "_services" / "chat" / "telegram_chat.py").read_text(
+            encoding="utf-8"
+        )
+        assert 'elif path == "/api/fackel":' in src
+        assert '"fackel_preference": get_fackel_preference()' in src
+        assert 'app.add_handler(CommandHandler("fackel", cmd_fackel))' in src
+        assert 'setFackel' in src

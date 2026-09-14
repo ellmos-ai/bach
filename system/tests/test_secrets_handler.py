@@ -507,7 +507,12 @@ class TestGetSecretsFilePath:
             path = get_secrets_file_path()
             assert path == DEFAULT_SECRETS_FILE
 
-    def test_override_from_config(self, secrets_env):
+    def test_override_from_config(self, secrets_env, monkeypatch):
+        # BACH_SECRETS_FILE (Testisolation, T-20260902-646684582 Befund A) muss
+        # fuer diesen Test aus dem Weg, sonst gewinnt die suiteweite Env-Var
+        # jetzt zu Recht ueber die DB-Zeile (siehe get_secrets_file_path()) und
+        # der hier zu pruefende DB-Override-Pfad wuerde nie erreicht.
+        monkeypatch.delenv("BACH_SECRETS_FILE", raising=False)
         _, db_path, _ = secrets_env
         conn = sqlite3.connect(str(db_path))
         custom_path = str(secrets_env[0] / "custom.json")
@@ -522,6 +527,32 @@ class TestGetSecretsFilePath:
             from hub.secrets_handler import get_secrets_file_path
             path = get_secrets_file_path()
             assert str(path) == custom_path
+
+    def test_env_override_beats_db_row(self, secrets_env, monkeypatch, tmp_path):
+        """Regressionstest T-20260902-646684582 Befund A.
+
+        Vorher gewann die DB-Zeile IMMER, auch gegen eine gesetzte
+        BACH_SECRETS_FILE - deshalb blieb die Testisolation auf Hosts mit
+        einer vorhandenen 'secrets_file_path'-Zeile wirkungslos und ein
+        Testlauf schrieb in die produktive ~/.bach/bach_secrets.json.
+        """
+        _, db_path, _ = secrets_env
+        conn = sqlite3.connect(str(db_path))
+        db_path_value = str(secrets_env[0] / "from_db.json")
+        conn.execute("INSERT INTO system_config (key, value) VALUES ('secrets_file_path', ?)", (db_path_value,))
+        conn.commit()
+        conn.close()
+
+        env_path = tmp_path / "from_env.json"
+        monkeypatch.setenv("BACH_SECRETS_FILE", str(env_path))
+
+        def mock_conn():
+            return sqlite3.connect(str(db_path))
+
+        with patch("hub.secrets_handler.GET_CONNECTION", mock_conn):
+            from hub.secrets_handler import get_secrets_file_path
+            path = get_secrets_file_path()
+            assert path == env_path
 
 
 # ================================================================

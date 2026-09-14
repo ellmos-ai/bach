@@ -45,9 +45,31 @@ from contextlib import asynccontextmanager
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
-from hub.task_audit import apply_task_field_changes
+from hub.task_audit import apply_task_field_changes, claim_task_atomic
 from gui.config import settings
 from gui.console import mount_console
+
+# Nutzerentscheid D-20260906-002 (2026-09-11) = B: Neue Tasks gehen per Default an den
+# Idle-Worker; persoenliche Aufgaben weist der Nutzer bewusst "user" zu (Auswahlfeld in
+# tasks.html / tasks_board.html, Liste aus /api/assignees). Der Tray-Idle-Worker pickt
+# OLLAMA|BUDDHA|BACH und ueberspringt "user" ausdruecklich (chat_tray._process_idle_task).
+# gui/api/headless.py fuehrt denselben Wert; test_default_task_assignee.py haelt beide gleich.
+DEFAULT_TASK_ASSIGNEE = "OLLAMA"
+
+
+def _refuse_if_foreign_domain(domain: str, operation: str) -> None:
+    """Uebersetzt das Domaenen-Gate in einen HTTP-Status (T-20260822-624075478, Punkt 3).
+
+    423 Locked statt 409 Conflict: Es geht nicht um einen Versionskonflikt, sondern um
+    eine Domaene, die einem anderen Kanon gehoert und hier read-only konsumiert wird.
+    Der Grundtext des Gates nennt Kanon, Projektionsvertrag und den Migrationsweg, also
+    geht er unveraendert an den Aufrufer.
+    """
+    from hub.domain_writer_gate import blocked_reason
+
+    reason = blocked_reason(domain, operation)
+    if reason:
+        raise HTTPException(status_code=423, detail=reason)
 
 # Claude Router Import
 sys.path.insert(0, str(Path(__file__).parent / "api"))
@@ -123,6 +145,13 @@ def _messages() -> MessageStore:
         raise FileNotFoundError(f"User-DB nicht gefunden: {USER_DB}")
     return MessageStore(USER_DB)
 
+
+def _account_store() -> AccountStore:
+    """AccountStore auf der kanonischen DB; fail-closed analog _messages() (Fix #1280, Regression c59b0da)."""
+    if not BACH_DB.exists():
+        raise FileNotFoundError(f"BACH-DB nicht gefunden: {BACH_DB}")
+    return AccountStore(BACH_DB)
+
 TEMPLATES_DIR = GUI_DIR / "templates"
 
 STATIC_DIR = GUI_DIR / "static"
@@ -152,7 +181,8 @@ SAFE_PARTNER_NAMES = {"claude", "codex", "gemini", "kimi", "ollama"}
 LOCAL_CHAT_HOSTS = {"", "127.0.0.1", "localhost", "::1"}
 CHAT_CONTROL_PATHS = {
     "status", "backends", "models", "chat", "backend", "model", "mode",
-    "think", "max_tool_rounds", "history", "readiness",
+    "think", "max_tool_rounds", "readiness",
+    "clear", "fork", "history", "sessions", "session",
 }
 
 
@@ -358,7 +388,7 @@ class TaskCreate(BaseModel):
 
     assignee: Optional[str] = None
 
-    assigned_to: Optional[str] = "user"
+    assigned_to: Optional[str] = DEFAULT_TASK_ASSIGNEE
 
     created_by: Optional[str] = "user"
 
@@ -386,9 +416,6 @@ class TaskUpdate(BaseModel):
     created_by: Optional[str] = None
 
     depends_on: Optional[str] = None
-
-    # T-20260906-985973908: optionaler Aufrufer-Bezeichner fuer task_history.changed_by
-    # (z.B. "idle-worker" vom Tray-Idle-Worker). Fehlt er, greift der Default "api".
     changed_by: Optional[str] = None
 
 
@@ -1461,28 +1488,91 @@ async def api_tasks_export():
 
 # --- Old duplicate GET single + PUT mit TaskUpdate entfernt (Bug #902) ---
 
+@app.get("/api/tasks/meta")
+async def api_tasks_meta():
+    """Liefert Metadaten für Task-Filter (Kategorien, Prioritäten, Zuweisungen)."""
+    try:
+        conn = get_bach_db()
+        cat_rows = conn.execute("SELECT DISTINCT category FROM tasks WHERE category IS NOT NULL AND TRIM(category) != '' ORDER BY category ASC").fetchall()
+        prio_rows = conn.execute("SELECT DISTINCT priority FROM tasks WHERE priority IS NOT NULL AND TRIM(priority) != '' ORDER BY priority ASC").fetchall()
+        assignee_rows = conn.execute("SELECT DISTINCT assigned_to FROM tasks WHERE assigned_to IS NOT NULL AND TRIM(assigned_to) != '' ORDER BY assigned_to ASC").fetchall()
+        conn.close()
+        categories = sorted(list(set(r[0].strip() for r in cat_rows if r[0] and r[0].strip())))
+        priorities = sorted(list(set(r[0].strip() for r in prio_rows if r[0] and r[0].strip())))
+        assignees = sorted(list(set(r[0].strip() for r in assignee_rows if r[0] and r[0].strip())))
+        return {
+            "success": True,
+            "categories": categories,
+            "priorities": priorities,
+            "assignees": assignees,
+        }
+    except Exception as e:
+        return {"success": False, "error": public_error_message()}
+
 @app.get("/api/tasks")
-async def api_get_tasks(status: str = "all", project: str = None, assigned_to: str = None, limit: int = 100):
+async def api_get_tasks(
+    status: str = "all",
+    project: str = None,
+    category: str = None,
+    assigned_to: str = None,
+    priority: str = None,
+    limit: int = 100
+):
     """Liefert Tasks mit erweitertem Filter und Blockierungs-Check."""
     try:
         conn = get_bach_db()
 
-        # Support "all" to return all statuses (fix for task disappearing bug)
+        # Status-Filter: unterstützt kommaseparierte Werte und Aliase
+        # (z.B. "in_progress,progress" oder "done,completed,closed")
+        query = "SELECT * FROM tasks WHERE 1=1"
+        params = []
         if status and status.lower() != "all":
-            query = "SELECT * FROM tasks WHERE status = ?"
-            params = [status]
-        else:
-            query = "SELECT * FROM tasks WHERE 1=1"
-            params = []
-        
-        if project:
-            query += " AND category = ?"
-            params.append(project)
+            STATUS_ALIASES = {
+                "in_progress": ["in_progress", "progress"],
+                "pending": ["pending", "open"],
+                "done": ["done", "completed", "closed"],
+                "blocked": ["blocked"],
+                "cancelled": ["cancelled", "canceled"],
+                "duplicate": ["duplicate"],
+            }
+            requested = [s.strip().lower() for s in status.split(",") if s.strip()]
+            normalized = set()
+            for s in requested:
+                matched = False
+                for canonical, aliases in STATUS_ALIASES.items():
+                    if s in aliases:
+                        normalized.update(aliases)
+                        matched = True
+                        break
+                if not matched:
+                    normalized.add(s)
+            if normalized:
+                placeholders = ",".join(["?"] * len(normalized))
+                query += f" AND (LOWER(status) IN ({placeholders}))"
+                params.extend(sorted(normalized))
+
+        target_cat = category or project
+        if target_cat:
+            query += " AND UPPER(category) = UPPER(?)"
+            params.append(target_cat)
         if assigned_to:
             query += " AND UPPER(assigned_to) = UPPER(?)"
             params.append(assigned_to)
-            
-        query += " ORDER BY priority ASC, created_at DESC LIMIT ?"
+        if priority:
+            prio_clean = priority.strip().upper()
+            if prio_clean in ("P1", "1", "HIGH", "HOCH", "KRITISCH"):
+                query += " AND (UPPER(priority) IN ('P1', '1', 'HIGH', 'HOCH', 'KRITISCH') OR priority IS NULL)"
+            elif prio_clean in ("P2", "2", "MEDIUM", "MITTEL", "WICHTIG"):
+                query += " AND (UPPER(priority) IN ('P2', '2', 'MEDIUM', 'MITTEL', 'WICHTIG'))"
+            elif prio_clean in ("P3", "3", "LOW", "NIEDRIG", "NORMAL"):
+                query += " AND (UPPER(priority) IN ('P3', '3', 'LOW', 'NIEDRIG', 'NORMAL'))"
+            elif prio_clean in ("P4", "4", "MINIMAL"):
+                query += " AND (UPPER(priority) IN ('P4', '4', 'MINIMAL'))"
+            else:
+                query += " AND UPPER(priority) = UPPER(?)"
+                params.append(priority)
+
+        query += " ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 WHEN 'P4' THEN 4 ELSE 5 END ASC, created_at DESC LIMIT ?"
         params.append(limit)
         
         rows = conn.execute(query, params).fetchall()
@@ -1515,14 +1605,20 @@ async def api_get_tasks(status: str = "all", project: str = None, assigned_to: s
 
 @app.post("/api/tasks")
 async def api_post_task(payload: dict = Body(...)):
-    """Erstellt neuen Task in bach.db via JSON Payload."""
+    """Erstellt neuen Task in bach.db via JSON Payload (idempotent via source/draft_hash)."""
     try:
         conn = get_bach_db()
+        draft_source = payload.get("source") or payload.get("draft_hash")
+        if draft_source:
+            existing = conn.execute("SELECT id FROM tasks WHERE source = ?", (draft_source,)).fetchone()
+            if existing:
+                conn.close()
+                return {"success": True, "id": existing[0], "status": "already_present"}
+
         now = datetime.now().isoformat()
-        
         cursor = conn.execute("""
-            INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             payload.get("title"),
             payload.get("description", ""),
@@ -1531,9 +1627,11 @@ async def api_post_task(payload: dict = Body(...)):
             payload.get("status", "pending"),
             now,
             payload.get("created_by", "user"),
-            payload.get("assigned_to", "user"),
+            payload.get("assigned_to") or DEFAULT_TASK_ASSIGNEE,
             payload.get("depends_on"),
-            payload.get("image")
+            payload.get("image"),
+            payload.get("due_date"),
+            draft_source
         ))
 
         task_id = cursor.lastrowid
@@ -1576,6 +1674,27 @@ async def update_task(task_id: int, update: TaskUpdate):
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
         existing_row = row_to_dict(existing)
 
+        # changed_by: vom Aufrufer mitgegeben (z.B. Idle-Worker meldet sich als
+        # "idle-worker"), sonst generischer API-Default -- Schema-Default waere 'user',
+        # das waere hier irrefuehrend, da die meisten PUTs programmatisch erfolgen.
+        changed_by = update.changed_by or "api"
+
+        # T-20260913-709822598: Atomarer Claim bei Neu-Uebergang auf 'in_progress'
+        # bzw. Claim-Versuch gegen fremd beanspruchten Task
+        is_new_claim = (
+            update.status == "in_progress"
+            and not (
+                existing_row.get("status") == "in_progress"
+                and existing_row.get("claimed_by") == changed_by
+            )
+        )
+
+        did_update = False
+        if is_new_claim:
+            if not claim_task_atomic(conn, task_id, changed_by):
+                return {"status": "claim_failed", "success": False}
+            did_update = True
+
         # field_values: {DB-Spalte: neuer_wert} -- `project` ist ein GUI-Alias fuer
         # die tatsaechliche Spalte `category`, muss also VOR dem Aufruf aufgeloest werden.
         field_values = {}
@@ -1585,7 +1704,7 @@ async def update_task(task_id: int, update: TaskUpdate):
             field_values["description"] = update.description
         if update.priority is not None:
             field_values["priority"] = update.priority
-        if update.status is not None:
+        if update.status is not None and not is_new_claim:
             field_values["status"] = update.status
         if update.project is not None:
             field_values["category"] = update.project
@@ -1596,17 +1715,29 @@ async def update_task(task_id: int, update: TaskUpdate):
         if update.depends_on is not None:
             field_values["depends_on"] = update.depends_on
 
-        # changed_by: vom Aufrufer mitgegeben (z.B. Idle-Worker meldet sich als
-        # "idle-worker"), sonst generischer API-Default -- Schema-Default waere 'user',
-        # das waere hier irrefuehrend, da die meisten PUTs programmatisch erfolgen.
-        changed_by = update.changed_by or "api"
-
         if apply_task_field_changes(conn, task_id, existing_row, field_values, changed_by=changed_by):
+            did_update = True
+
+        if did_update:
             conn.commit()
     finally:
         conn.close()
 
     return {"status": "updated"}
+
+@app.delete("/api/tasks/{task_id}")
+async def delete_task(task_id: int):
+    """Löscht einen Task aus bach.db."""
+    conn = get_bach_db()
+    try:
+        existing = conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Task nicht gefunden")
+        conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "deleted", "id": task_id}
 
 # ═══════════════════════════════════════════════════════════════
 # API ROUTES - ASSIGNEES (Agenten, Experten, Partner)
@@ -2173,30 +2304,6 @@ async def list_messages(direction: Optional[str] = None, status: Optional[str] =
     return {"messages": rows, "count": len(rows)}
 
 
-@app.post("/api/claude/chat")
-async def claude_chat(
-    request_type: str = Body(...),
-    prompt: str = Body(...),
-    user_id: str = Body(default="user")
-):
-    """
-    Sendet Anfrage an Claude (Bridge oder GUI-Session).
-
-    Body:
-        request_type: "chat" | "assistant" | "quick_question" | "code_analysis" | "long_task"
-        prompt: User-Eingabe
-        user_id: User-ID (default: lukas)
-    """
-    if not CLAUDE_ROUTER_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Claude Router nicht verfügbar")
-
-    try:
-        result = route_request(request_type, prompt, user_id)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Router-Fehler: {type(e).__name__}")
-
-
 @app.post("/api/messages")
 async def create_message(msg: MessageCreate):
     """Erstellt neue Nachricht."""
@@ -2254,8 +2361,6 @@ async def get_partners():
     except Exception:
         pass
     return {"partners": partners}
-
-
 # ═══════════════════════════════════════════════════════════════
 
 # API ROUTES - DAEMON
@@ -4159,17 +4264,20 @@ async def tasks_page():
 
 
 @app.get("/messages", response_class=HTMLResponse)
-
 async def messages_page():
-
     """Messages Seite."""
-
     messages_file = TEMPLATES_DIR / "messages.html"
-
     if messages_file.exists():
-
         return FileResponse(messages_file)
+    raise HTTPException(status_code=404, detail="Template messages.html nicht gefunden")
 
+
+@app.get("/reports", response_class=HTMLResponse)
+async def reports_page():
+    """Berichte & Abschlussberichte Seite (Alias fuer messages.html)."""
+    messages_file = TEMPLATES_DIR / "messages.html"
+    if messages_file.exists():
+        return FileResponse(messages_file)
     raise HTTPException(status_code=404, detail="Template messages.html nicht gefunden")
 
 
@@ -4331,19 +4439,10 @@ async def ati_agent_page():
 
 
 
-@app.get("/partners", response_class=HTMLResponse)
-
+@app.get("/partners")
 async def partners_page():
-
-    """Partner Dashboard Seite."""
-
-    partners_file = TEMPLATES_DIR / "partners.html"
-
-    if partners_file.exists():
-
-        return FileResponse(partners_file)
-
-    raise HTTPException(status_code=404, detail="Template partners.html nicht gefunden")
+    """Partner Dashboard -> Konsolidiert im Agents Board."""
+    return RedirectResponse("/agents-board")
 
 
 
@@ -4409,24 +4508,21 @@ async def foerderplaner_dashboard_page():
 
 
 
+@app.get("/agents-board", response_class=HTMLResponse)
 @app.get("/skills-board", response_class=HTMLResponse)
-
 async def skills_board_page():
-
-    """Skills Board - Hierarchie-Verwaltung."""
-
-    board_file = TEMPLATES_DIR / "skills-board.html"
-
+    """Agents Board - Hierarchie- und Agenten-Verwaltung."""
+    board_file = TEMPLATES_DIR / "agents-board.html"
+    if not board_file.exists():
+        board_file = TEMPLATES_DIR / "skills-board.html"
     if board_file.exists():
-
         return FileResponse(board_file)
-
-    raise HTTPException(status_code=404, detail="Template skills-board.html nicht gefunden")
+    raise HTTPException(status_code=404, detail="Template agents-board.html / skills-board.html nicht gefunden")
 
 
 @app.get("/skills")
 async def skills_redirect():
-    return RedirectResponse("/skills-board")
+    return RedirectResponse("/agents-board")
 
 @app.get("/finanzen")
 async def finanzen_redirect():
@@ -12237,6 +12333,7 @@ async def get_routine(routine_id: int):
 @app.post("/api/routines")
 async def add_routine(request: Request):
     """Neue Routine anlegen."""
+    _refuse_if_foreign_domain("routine", "GUI POST /api/routines")
     try:
         from datetime import date, timedelta
         data = await request.json()
@@ -12272,6 +12369,7 @@ async def add_routine(request: Request):
 @app.put("/api/routines/{routine_id}")
 async def update_routine(routine_id: int, request: Request):
     """Routine aktualisieren."""
+    _refuse_if_foreign_domain("routine", "GUI PUT /api/routines/{id}")
     try:
         data = await request.json()
         conn = get_user_db()
@@ -12303,6 +12401,7 @@ async def update_routine(routine_id: int, request: Request):
 @app.post("/api/routines/{routine_id}/complete")
 async def complete_routine(routine_id: int):
     """Routine als erledigt markieren und naechstes Datum berechnen."""
+    _refuse_if_foreign_domain("routine", "GUI POST /api/routines/{id}/complete")
     try:
         from datetime import date, timedelta
         conn = get_user_db()
@@ -12359,6 +12458,7 @@ async def complete_routine(routine_id: int):
 @app.delete("/api/routines/{routine_id}")
 async def delete_routine(routine_id: int):
     """Routine loeschen."""
+    _refuse_if_foreign_domain("routine", "GUI DELETE /api/routines/{id}")
     try:
         conn = get_user_db()
         cursor = conn.cursor()
@@ -12426,7 +12526,7 @@ async def export_routines():
 async def get_bank_accounts():
     """Alle Bankkonten laden."""
     try:
-        accounts = AccountStore(BACH_DB).list_accounts()
+        accounts = _account_store().list_accounts()
         return {"success": True, "accounts": accounts}
     except Exception as e:
         return {"success": False, "error": public_error_message(), "accounts": []}
@@ -12437,7 +12537,7 @@ async def add_bank_account(request: Request):
     """Neues Bankkonto anlegen."""
     try:
         data = await request.json()
-        account_id = AccountStore(BACH_DB).create_account(
+        account_id = _account_store().create_account(
             data.get('name'),
             bank_name=data.get('bank_name'),
             iban=data.get('iban'),
@@ -12455,7 +12555,7 @@ async def update_bank_account(account_id: int, request: Request):
     """Bankkonto aktualisieren."""
     try:
         data = await request.json()
-        AccountStore(BACH_DB).update_account(
+        _account_store().update_account(
             account_id,
             data.get('name'),
             bank_name=data.get('bank_name'),
@@ -12473,7 +12573,7 @@ async def update_bank_account(account_id: int, request: Request):
 async def delete_bank_account(account_id: int):
     """Bankkonto loeschen."""
     try:
-        AccountStore(BACH_DB).delete_account(account_id)
+        _account_store().delete_account(account_id)
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
@@ -14004,6 +14104,26 @@ async def get_workflow_content(path: str):
         raise
     except Exception as e:
         return HTMLResponse(content=f"<h1>Fehler: {public_error_message()}</h1>", status_code=500)
+
+
+# ═══════════════════════════════════════════════════════════════
+
+# UNIFIED GUI (optionales externes Modul ellmos-unified-gui)
+# Operator-Konsole als Sub-App unter /control — Panels erscheinen
+# capability-driven je nach erreichbaren Backends. Fehlt das Paket,
+# laeuft BACH unveraendert (bewusst weiches Optional).
+
+# ═══════════════════════════════════════════════════════════════
+
+try:
+    from unified_gui import mount as _unified_gui_mount
+
+    _unified_gui_mount(app, prefix="/control")
+    print("[GUI] Unified GUI unter /control eingebunden (ellmos-unified-gui)")
+except ImportError:
+    pass
+except Exception as _ug_exc:  # noqa: BLE001 — Mount-Fehler duerfen BACH nie stoppen
+    print(f"[GUI] Unified GUI nicht eingebunden: {_ug_exc}")
 
 
 # ═══════════════════════════════════════════════════════════════

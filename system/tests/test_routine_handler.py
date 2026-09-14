@@ -155,6 +155,19 @@ class TestDue:
 
 # ========== DONE ==========
 
+@pytest.fixture
+def legacy_domain_writes(monkeypatch):
+    """Routinika ist seit T-20260822-624075478 der Kanon fuer Routinen; `routine add`
+    und `routine done` sind im Normalbetrieb gesperrt (hub/domain_writer_gate.py).
+
+    Die Tests unten pruefen das Schreibverhalten selbst -- Intervallrechnung,
+    Mehrfach-Abschluss, Argumentfehler -- und das gilt unveraendert, nur eben im
+    ausdruecklichen Altbestandslauf. Das Gate selbst deckt test_domain_writer_gate.py ab.
+    """
+    monkeypatch.setenv("BACH_LEGACY_DOMAIN_WRITES", "1")
+
+
+@pytest.mark.usefixtures("legacy_domain_writes")
 class TestDone:
 
     def test_done_no_id(self, handler):
@@ -223,6 +236,7 @@ class TestDone:
 
 # ========== ADD ==========
 
+@pytest.mark.usefixtures("legacy_domain_writes")
 class TestAdd:
 
     def test_add_no_args(self, handler):

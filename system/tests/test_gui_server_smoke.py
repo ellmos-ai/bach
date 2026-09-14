@@ -53,6 +53,8 @@ def test_db(tmp_path):
             created_at TEXT DEFAULT (datetime('now')),
             started_at TEXT,
             completed_at TEXT,
+            due_date TEXT,
+            source TEXT,
             updated_at TEXT DEFAULT (datetime('now'))
         );
         -- T-20260906-985973908: task_history existiert real (schema.sql), fehlte hier bisher
@@ -286,11 +288,56 @@ class TestGUIServerSmoke:
         data = resp.json()
         assert data.get("success") is True or "id" in data
 
+    def test_new_task_goes_to_the_idle_worker_by_default(self, client):
+        """D-20260906-002 = B: ohne Angabe uebernimmt der Idle-Worker, nicht 'user'.
+
+        Der Tray-Worker pickt assigned_to in (OLLAMA, BUDDHA, BACH) und ueberspringt
+        'user' ausdruecklich -- ein Default 'user' hiesse, dass nie etwas automatisch
+        laeuft (Befund aus T-20260906-791722356).
+        """
+        import gui.server as srv
+
+        created = client.post("/api/tasks", json={"title": "Ohne Zuweisung"}).json()
+        task = client.get(f"/api/tasks/{created['id']}").json()
+        assert task["assigned_to"] == srv.DEFAULT_TASK_ASSIGNEE
+        assert srv.DEFAULT_TASK_ASSIGNEE.lower() != "user"
+
+    def test_explicit_user_assignment_survives(self, client):
+        """Der zweite Teil des Entscheids: persoenliche Aufgaben bleiben beim Nutzer."""
+        created = client.post(
+            "/api/tasks", json={"title": "Zahnarzt anrufen", "assigned_to": "user"}
+        ).json()
+        task = client.get(f"/api/tasks/{created['id']}").json()
+        assert task["assigned_to"] == "user"
+
+    def test_both_task_apis_share_one_default(self):
+        """GUI- und Headless-Server fuehren den Wert getrennt -- er muss gleich bleiben."""
+        import gui.server as srv
+        from gui.api import headless
+
+        assert srv.DEFAULT_TASK_ASSIGNEE == headless.DEFAULT_TASK_ASSIGNEE
+
     def test_messages_list(self, client):
         resp = client.get("/api/messages")
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, (list, dict))
+
+    def test_reports_and_messages_page(self, client, test_db):
+        tpl = test_db / "gui" / "templates" / "messages.html"
+        real_tpl = Path(__file__).parent.parent / "gui" / "templates" / "messages.html"
+        if real_tpl.exists():
+            tpl.write_text(real_tpl.read_text(encoding="utf-8"), encoding="utf-8")
+        else:
+            tpl.write_text("<!DOCTYPE html><html><title>BACH - Berichte & Abschlussberichte</title></html>", encoding="utf-8")
+
+        resp_m = client.get("/messages")
+        assert resp_m.status_code == 200
+        assert "Berichte & Abschlussberichte" in resp_m.text
+
+        resp_r = client.get("/reports")
+        assert resp_r.status_code == 200
+        assert "Berichte & Abschlussberichte" in resp_r.text
 
     def test_partners_list(self, client):
         resp = client.get("/api/partners")

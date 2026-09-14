@@ -352,7 +352,8 @@ def test_telegram_direct_mode_resolves_system_root():
         / "chat"
         / "telegram_chat.py"
     ).read_text(encoding="utf-8")
-    assert "Path(__file__).resolve().parents[3]" in text
+    assert "_here = Path(__file__).resolve()" in text
+    assert "_system_dir = str(_here.parents[3])" in text
     assert 'command=[sys.executable, "-m", "hub._services.chat.telegram_chat"]' in STARTSPINE_PATH.read_text(encoding="utf-8")
 
 
@@ -364,7 +365,8 @@ def test_dashboard_optional_stats_are_null_safe():
         / "js"
         / "app.js"
     ).read_text(encoding="utf-8")
-    assert "const setStat = (id, value)" in script
+    assert "if (elScanned) elScanned.textContent" in script
+    assert "if (elDaemon) elDaemon.textContent" in script
     assert "document.getElementById('stat-scanned').textContent" not in script
     assert "document.getElementById('stat-daemon').textContent" not in script
 

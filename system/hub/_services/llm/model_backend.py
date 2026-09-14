@@ -17,14 +17,15 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional
-from hub._services.limits import limit  # einstellbare Laufzeit-Grenzen
+from typing import Any
+from hub._services.limits import limit
 
 
 log = logging.getLogger(__name__)
@@ -93,10 +94,6 @@ class ModelBackend(ABC):
     def get_default_model(self) -> str:
         ...
 
-    def get_context_limit(self) -> int | None:
-        """Return the request context cap when this backend exposes one."""
-        return None
-
     def tool_response_message(self, content: str, tool_call_id: str = "") -> dict:
         """Erzeugt die korrekte Tool-Response-Nachricht für dieses Backend."""
         return {"role": "tool", "content": str(content)}
@@ -114,7 +111,7 @@ class OllamaBackend(ModelBackend):
     """Ollama API Backend für lokale Modelle (Qwen, Llama, Mistral, etc.)."""
 
     def __init__(self, base_url: str = "http://localhost:11434",
-                 default_model: str = "qwen3.6:35b-mlx",
+                 default_model: str = "qwen3.8:27b-mlx",
                  keep_alive: str = "5m",
                  num_ctx: int | None = None,
                  request_timeout: float | None = None):
@@ -143,35 +140,25 @@ class OllamaBackend(ModelBackend):
         self._models_cache_time: float = 0
 
     def get_context_limit(self) -> int:
-        """The same request cap that is sent to Ollama as ``num_ctx``."""
+        """Return the same context cap that is sent to Ollama as ``num_ctx``."""
         return self.num_ctx
 
     async def _lebt(self, client, model: str) -> bool:
-        """Laeuft Ollama noch, und ist unser Modell geladen?
-
-        Billig genug fuer eine Zwischenfrage: /api/ps laedt kein Modell und
-        braucht keine zweite Instanz - ein zweites Modell zum Pruefen wuerde
-        den Speicher belegen, an dem lange Laeufe ohnehin scheitern.
-        """
+        """Prüfe billig, ob Ollama und das ausgewählte Modell noch leben."""
         try:
-            r = await client.get(f"{self.base_url}/api/ps",
-                                 timeout=limit("BACH_LLM_PING_TIMEOUT"))
+            r = await client.get(
+                f"{self.base_url}/api/ps",
+                timeout=limit("BACH_LLM_PING_TIMEOUT"),
+            )
             geladen = [m.get("name", "") for m in (r.json() or {}).get("models", [])]
         except Exception:
-            return False                      # Dienst nicht erreichbar: tot
+            return False
         if not geladen:
-            # Kein Modell geladen heisst NICHT tot: Waehrend Ollama unser
-            # Modell erst in den Speicher zieht (18 GB dauern laenger als die
-            # Stille-Schwelle), steht es noch nicht in /api/ps. Ein
-            # antwortender Dienst ist das Lebenszeichen, nicht der Eintrag.
-            log.info("Ollama erreichbar, aber kein Modell geladen - laedt vermutlich")
+            log.info("Ollama erreichbar, aber kein Modell geladen - lädt vermutlich")
             return True
         if any(g == model or g.startswith(model.split(":")[0]) for g in geladen):
             return True
-        # Ein FREMDES Modell im Speicher heisst, unseres wurde verdraengt -
-        # dann wartet dieser Aufruf auf etwas, das nicht mehr rechnet.
-        log.warning("Ollama haelt %s statt %s - unser Modell wurde verdraengt",
-                    geladen, model)
+        log.warning("Ollama hält %s statt %s - unser Modell wurde verdrängt", geladen, model)
         return False
 
     async def chat(self, messages, tools=None, think=True, model=None):
@@ -183,13 +170,10 @@ class OllamaBackend(ModelBackend):
         except ImportError:
             effective_ka = self.keep_alive
 
-        modell = model or self.default_model
+        selected_model = model or self.default_model
         payload = {
-            "model": modell,
+            "model": selected_model,
             "messages": messages,
-            # Gestreamt wird, um die Stille messen zu koennen - nicht, um
-            # Teilausgaben anzuzeigen. Ohne Stream gibt es nur ein Ereignis,
-            # und dann bleibt als Mass nur die Gesamtdauer.
             "stream": True,
             "think": think,
             "keep_alive": effective_ka,
@@ -201,83 +185,84 @@ class OllamaBackend(ModelBackend):
             payload["tools"] = tools
 
         idle = limit("BACH_LLM_IDLE_TIMEOUT")
-        kulanz = limit("BACH_LLM_IDLE_GRACE")
-        deckel = limit("BACH_LLM_TOTAL_CAP")
-
-        inhalt: list[str] = []
+        grace = limit("BACH_LLM_IDLE_GRACE")
+        total_cap = limit("BACH_LLM_TOTAL_CAP")
+        content_parts: list[str] = []
         tool_calls = None
-        letzte_msg: dict = {}
+        last_message: dict = {}
         prompt_tokens = None
-        begonnen = time.time()
-        letzte_regung = begonnen
-        nachgefragt = 0
+        started = time.time()
+        last_activity = started
+        probes = 0
 
-        # httpx' eigener Timeout gilt hier pro Lesevorgang, nicht fuer den
-        # ganzen Aufruf: Er soll nur greifen, wenn die Leitung wirklich
-        # steht - ueber das Ende entscheidet die Stille-Messung darunter.
-        # Streaming behält die BACH-Stillegrenze; der ältere Ollama-Schalter
-        # kann sie zusätzlich begrenzen, ohne den Stream abzuschalten.
         read_timeout = min(float(idle), self.request_timeout * (1.5 if think else 1))
-        grenzen = httpx.Timeout(connect=30.0, read=read_timeout, write=30.0, pool=30.0)
-        async with httpx.AsyncClient(timeout=grenzen) as client:
+        timeouts = httpx.Timeout(connect=30.0, read=read_timeout, write=30.0, pool=30.0)
+        async with httpx.AsyncClient(timeout=timeouts) as client:
             try:
-                async with client.stream("POST", f"{self.base_url}/api/chat",
-                                         json=payload) as r:
-                    r.raise_for_status()
-                    async for zeile in r.aiter_lines():
-                        jetzt = time.time()
-                        if zeile.strip():
-                            letzte_regung = jetzt
-                            nachgefragt = 0
+                async with client.stream(
+                    "POST", f"{self.base_url}/api/chat", json=payload
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        now = time.time()
+                        if line.strip():
+                            last_activity = now
+                            probes = 0
                             try:
-                                stueck = json.loads(zeile)
+                                chunk = json.loads(line)
                             except ValueError:
                                 continue
-                            if stueck.get("error"):
-                                raise RuntimeError(f"Ollama-Fehler: {stueck['error']}")
-                            msg = stueck.get("message") or {}
-                            if msg:
-                                letzte_msg = msg
-                                if msg.get("content"):
-                                    inhalt.append(msg["content"])
-                                if msg.get("tool_calls"):
-                                    tool_calls = msg["tool_calls"]
-                            if stueck.get("prompt_eval_count") is not None:
-                                prompt_tokens = stueck["prompt_eval_count"]
-                            if stueck.get("done"):
+                            if chunk.get("error"):
+                                raise RuntimeError(f"Ollama-Fehler: {chunk['error']}")
+                            message = chunk.get("message") or {}
+                            if message:
+                                last_message = message
+                                if message.get("content"):
+                                    content_parts.append(message["content"])
+                                if message.get("tool_calls"):
+                                    tool_calls = message["tool_calls"]
+                            if chunk.get("prompt_eval_count") is not None:
+                                prompt_tokens = chunk["prompt_eval_count"]
+                            if chunk.get("done"):
                                 break
 
-                        if deckel > 0 and (jetzt - begonnen) > deckel:
-                            return {"content": "", "tool_calls": None,
-                                    "raw_message": {},
-                                    "error": f"Gesamtdeckel {deckel}s erreicht"}
-
-                        if (jetzt - letzte_regung) > idle:
-                            # Stille heisst nicht tot: erst nachfragen.
-                            if await self._lebt(client, modell) and nachgefragt < kulanz:
-                                nachgefragt += 1
-                                letzte_regung = jetzt
-                                log.info("Ollama still seit %ds, lebt aber - "
-                                         "warte weiter (%d/%d)", idle, nachgefragt, kulanz)
+                        if total_cap > 0 and (now - started) > total_cap:
+                            return {
+                                "content": "",
+                                "tool_calls": None,
+                                "raw_message": {},
+                                "error": f"Gesamtdeckel {total_cap}s erreicht",
+                            }
+                        if (now - last_activity) > idle:
+                            if await self._lebt(client, selected_model) and probes < grace:
+                                probes += 1
+                                last_activity = now
                                 continue
-                            return {"content": "".join(inhalt), "tool_calls": tool_calls,
-                                    "raw_message": letzte_msg,
-                                    "prompt_tokens": prompt_tokens,
-                                    "error": f"Ollama antwortet seit {idle}s nicht "
-                                             f"und meldet unser Modell nicht mehr"}
-            except httpx.HTTPError as e:
-                # Leere Fehlertexte sind hier die Regel (ReadTimeout hat keinen),
-                # deshalb der Typname - sonst steht spaeter nur "Backend-Fehler:".
-                return {"content": "".join(inhalt), "tool_calls": tool_calls,
-                        "raw_message": letzte_msg, "prompt_tokens": prompt_tokens,
-                        "error": f"{type(e).__name__}: {e}".rstrip(": ")}
+                            return {
+                                "content": "".join(content_parts),
+                                "tool_calls": tool_calls,
+                                "raw_message": last_message,
+                                "prompt_tokens": prompt_tokens,
+                                "error": (
+                                    f"Ollama antwortet seit {idle}s nicht und meldet "
+                                    "unser Modell nicht mehr"
+                                ),
+                            }
+            except httpx.HTTPError as exc:
+                return {
+                    "content": "".join(content_parts),
+                    "tool_calls": tool_calls,
+                    "raw_message": last_message,
+                    "prompt_tokens": prompt_tokens,
+                    "error": f"{type(exc).__name__}: {exc}".rstrip(": "),
+                }
 
-        content = "".join(inhalt)
+        content = "".join(content_parts)
         if not think and "</think>" in content:
             content = content.rsplit("</think>", 1)[1].strip()
         if not content and not tool_calls:
             raise RuntimeError("Ollama lieferte eine leere Antwort")
-        raw_message = dict(letzte_msg or {"role": "assistant"})
+        raw_message = dict(last_message or {"role": "assistant"})
         raw_message["content"] = content
         if tool_calls:
             raw_message["tool_calls"] = tool_calls
@@ -285,8 +270,6 @@ class OllamaBackend(ModelBackend):
             "content": content,
             "tool_calls": tool_calls,
             "raw_message": raw_message,
-            # Wie voll ist das Kontextfenster? Ollama liefert das mit; ohne
-            # diese Zahl laesst sich eine Uebergabe nicht rechtzeitig ausloesen.
             "prompt_tokens": prompt_tokens,
         }
 
@@ -367,7 +350,7 @@ class OpenAIBackend(ModelBackend):
                 f"{self.base_url}/chat/completions",
                 json=payload,
                 headers=headers,
-                timeout=limit("BACH_LLM_TIMEOUT_FAST"),
+                timeout=120,
             )
             resp = r.json()
 
@@ -431,6 +414,276 @@ class OpenAIBackend(ModelBackend):
         return msg
 
 
+class LMStudioBackend(OpenAIBackend):
+    """LM Studio Backend für lokale Modelle via OpenAI-kompatibles API (Port 1234).
+
+    Standardmäßig erreichbar unter http://localhost:1234/v1.
+    Unterstützt automatische Modell-Erkennung geladener Modelle über /v1/models.
+    """
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:1234/v1",
+        api_key: str = "lm-studio",
+        default_model: str = "auto",
+    ):
+        super().__init__(
+            base_url=base_url,
+            api_key=api_key or "lm-studio",
+            default_model=default_model,
+        )
+        self._models_cache: list[str] = []
+        self._models_cache_time: float = 0
+
+    def list_models(self) -> list[str]:
+        if self._models_cache and (time.time() - self._models_cache_time) < 30:
+            return self._models_cache
+        import httpx
+
+        headers: dict[str, str] = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        try:
+            r = httpx.get(f"{self.base_url}/models", headers=headers, timeout=5)
+            r.raise_for_status()
+            data = r.json().get("data", [])
+            models = [
+                str(m.get("id") or m.get("model") or m.get("name") or "")
+                for m in data
+                if isinstance(m, dict)
+            ]
+            self._models_cache = [m for m in models if m]
+            self._models_cache_time = time.time()
+        except Exception:
+            return self._models_cache or []
+        return self._models_cache
+
+    def get_default_model(self) -> str:
+        if self.default_model and self.default_model.lower() not in ("auto", "default"):
+            return self.default_model
+        models = self.list_models()
+        if models:
+            return models[0]
+        return self.default_model or "auto"
+
+    async def chat(self, messages, tools=None, think=True, model=None):
+        target_model = model
+        if not target_model:
+            target_model = self.get_default_model()
+            if target_model.lower() in ("auto", "default", ""):
+                target_model = "local-model"
+        return await super().chat(
+            messages=messages, tools=tools, think=think, model=target_model
+        )
+
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        import httpx
+
+        # Fast non-blocking socket probe on local address when unmocked
+        # to prevent Windows WSAConnect 2s+ delays when server is offline
+        if getattr(httpx.get, "__module__", "").startswith("httpx"):
+            import socket
+            from urllib.parse import urlparse
+
+            try:
+                parsed = urlparse(self.base_url)
+                host = parsed.hostname or "127.0.0.1"
+                port = parsed.port or 1234
+                if host in ("localhost", "127.0.0.1", "::1"):
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(min(timeout, 0.2))
+                    try:
+                        sock.connect(("127.0.0.1", port))
+                    except Exception:
+                        return False, "nicht erreichbar"
+                    finally:
+                        sock.close()
+            except Exception:
+                pass
+
+        headers: dict[str, str] = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        target_model = model or self.default_model
+        probe_model = (
+            None
+            if (not target_model or target_model.lower() in ("auto", "default"))
+            else target_model
+        )
+        return _probe_model_api(
+            f"{self.base_url}/models",
+            headers,
+            probe_model,
+            timeout,
+        )
+
+
+class HermesBackend(OpenAIBackend):
+    """Nous Hermes API Backend für lokale und Cloud-Modelle (OpenRouter, Together, vLLM, Ollama).
+
+    Unterstützt:
+    - Standard OpenAI Function Calling
+    - Automatisches Fallback-Parsing für Hermes <tool_call> XML-Tags im Text-Stream
+    - Automatisches Extrahieren / Trennen von <thought> bzw. <reasoning> Tags
+    - OpenRouter Default-Endpunkt (https://openrouter.ai/api/v1) mit Model nousresearch/hermes-3-llama-3.1-8b
+    """
+
+    HERMES_TOOL_REGEX = re.compile(
+        r"<tool_call>\s*({.*?})\s*</tool_call>", re.DOTALL
+    )
+    HERMES_THOUGHT_REGEX = re.compile(
+        r"<thought>(.*?)</thought>", re.DOTALL | re.IGNORECASE
+    )
+
+    def __init__(
+        self,
+        base_url: str = "https://openrouter.ai/api/v1",
+        api_key: str = "",
+        default_model: str = "nousresearch/hermes-3-llama-3.1-8b",
+        site_url: str = "https://github.com/ellmos-ai/bach",
+        app_name: str = "BACH Agent",
+    ):
+        super().__init__(
+            base_url=base_url or "https://openrouter.ai/api/v1",
+            api_key=api_key
+            or os.environ.get("OPENROUTER_API_KEY", "")
+            or os.environ.get("HERMES_API_KEY", ""),
+            default_model=default_model or "nousresearch/hermes-3-llama-3.1-8b",
+        )
+        self.site_url = site_url
+        self.app_name = app_name
+
+    def _get_headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if "openrouter.ai" in self.base_url:
+            headers["HTTP-Referer"] = self.site_url
+            headers["X-Title"] = self.app_name
+        return headers
+
+    async def chat(self, messages, tools=None, think=True, model=None):
+        import httpx
+
+        headers = self._get_headers()
+        payload: dict[str, Any] = {
+            "model": model or self.default_model,
+            "messages": messages,
+            "stream": False,
+        }
+        if tools:
+            payload["tools"] = tools
+
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=120,
+            )
+            r.raise_for_status()
+            data = r.json()
+
+        choice = data.get("choices", [{}])[0]
+        msg = choice.get("message", {})
+        raw_content = msg.get("content", "") or ""
+
+        tool_calls = []
+        # 1. Native OpenAI-style tool calls
+        if "tool_calls" in msg and msg["tool_calls"]:
+            for tc in msg["tool_calls"]:
+                fn = tc.get("function", {})
+                args = fn.get("arguments", "{}")
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except Exception:
+                        pass
+                tool_calls.append(
+                    {
+                        "id": tc.get("id", ""),
+                        "function": {"name": fn.get("name", ""), "arguments": args},
+                    }
+                )
+
+        # 2. Hermes XML <tool_call> fallback
+        cleaned_content = raw_content
+        if not tool_calls and "<tool_call>" in raw_content:
+            matches = self.HERMES_TOOL_REGEX.findall(raw_content)
+            for idx, raw_json in enumerate(matches):
+                try:
+                    parsed = json.loads(raw_json)
+                    fn_name = parsed.get("name", "")
+                    fn_args = parsed.get("arguments", {})
+                    if fn_name:
+                        tool_calls.append(
+                            {
+                                "id": f"hermes_call_{idx}_{int(time.time())}",
+                                "function": {"name": fn_name, "arguments": fn_args},
+                            }
+                        )
+                except Exception:
+                    pass
+            cleaned_content = self.HERMES_TOOL_REGEX.sub("", cleaned_content).strip()
+
+        # 3. Hermes <thought> Tag Handling
+        thought_content = ""
+        thought_match = self.HERMES_THOUGHT_REGEX.search(cleaned_content)
+        if thought_match:
+            thought_content = thought_match.group(1).strip()
+            if not think:
+                cleaned_content = self.HERMES_THOUGHT_REGEX.sub("", cleaned_content).strip()
+
+        res_msg = dict(msg)
+        if thought_content:
+            res_msg["thought"] = thought_content
+
+        return {
+            "content": cleaned_content,
+            "tool_calls": tool_calls or None,
+            "raw_message": res_msg,
+        }
+
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        import httpx
+
+        if getattr(httpx.get, "__module__", "").startswith("httpx"):
+            import socket
+            from urllib.parse import urlparse
+
+            try:
+                parsed = urlparse(self.base_url)
+                host = parsed.hostname or "127.0.0.1"
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
+                if host in ("localhost", "127.0.0.1", "::1"):
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(min(timeout, 0.2))
+                    try:
+                        sock.connect(("127.0.0.1", port))
+                    except Exception:
+                        return False, "nicht erreichbar"
+                    finally:
+                        sock.close()
+            except Exception:
+                pass
+
+        headers = self._get_headers()
+        return _probe_model_api(
+            f"{self.base_url}/models",
+            headers,
+            model or self.default_model,
+            timeout,
+        )
+
+
 class AnthropicBackend(ModelBackend):
     """Anthropic Claude API Backend."""
 
@@ -478,7 +731,7 @@ class AnthropicBackend(ModelBackend):
                 f"{self.base_url}/messages",
                 json=payload,
                 headers=headers,
-                timeout=limit("BACH_LLM_TIMEOUT_FAST"),
+                timeout=120,
             )
             resp = r.json()
 
@@ -565,7 +818,7 @@ class CLIBackend(ModelBackend):
                  default_model: str = "", cwd: str = "",
                  permission_mode: str = "restricted",
                  allowed_tools: str = "Read,Grep,Glob,Bash,WebFetch,WebSearch",
-                 max_turns: int = 0, timeout: int = 0):
+                 max_turns: int = 30, timeout: int = 0):
         self.cli_name = cli_name
         self.cli_path = cli_path or self._find_cli(cli_name)
         preset = self.KNOWN_CLIS.get(cli_name, self.KNOWN_CLIS["claude"])
@@ -575,7 +828,7 @@ class CLIBackend(ModelBackend):
         self.cwd = cwd or str(Path.home())
         self.permission_mode = permission_mode
         self.allowed_tools = allowed_tools
-        self.max_turns = max_turns or limit("BACH_CLI_MAX_TURNS")
+        self.max_turns = max_turns
         self.timeout = timeout
         self._session_active = False
 
@@ -685,7 +938,7 @@ class CLIBackend(ModelBackend):
 
             stdout_data = []
             last_activity = time.time()
-            inactivity_timeout = self.timeout if self.timeout > 0 else limit("BACH_CLI_IDLE_TIMEOUT")
+            inactivity_timeout = self.timeout if self.timeout > 0 else 300
 
             while True:
                 try:
@@ -770,6 +1023,10 @@ class CLIBackend(ModelBackend):
 
 def backend_identifier(backend: ModelBackend) -> str:
     """Stable Control-API key for a concrete backend instance."""
+    if isinstance(backend, LMStudioBackend):
+        return "lmstudio"
+    if isinstance(backend, HermesBackend):
+        return "hermes"
     if isinstance(backend, OllamaBackend):
         return "ollama"
     if isinstance(backend, CLIBackend):
@@ -785,7 +1042,7 @@ def create_backend(config: dict) -> ModelBackend:
     """Factory: Backend aus Config-Dict erzeugen.
 
     config = {
-        'type': 'ollama' | 'openai' | 'anthropic' | 'claude-cli' | 'codex-cli',
+        'type': 'ollama' | 'lmstudio' | 'hermes' | 'openai' | 'anthropic' | 'claude-cli' | 'codex-cli',
         'base_url': '...',       # optional (API backends)
         'api_key': '...',        # optional (API backends)
         'cli_path': '...',       # optional (CLI backends)
@@ -798,9 +1055,21 @@ def create_backend(config: dict) -> ModelBackend:
     if backend_type == "ollama":
         return OllamaBackend(
             base_url=config.get("base_url", "http://localhost:11434"),
-            default_model=config.get("default_model", "qwen3.6:35b-mlx"),
+            default_model=config.get("default_model", "qwen3.8:27b-mlx"),
             num_ctx=config.get("num_ctx"),
             request_timeout=config.get("timeout_seconds"),
+        )
+    elif backend_type in ("lmstudio", "lm-studio", "lm_studio"):
+        return LMStudioBackend(
+            base_url=config.get("base_url", "http://localhost:1234/v1"),
+            api_key=config.get("api_key", "lm-studio"),
+            default_model=config.get("default_model", "auto"),
+        )
+    elif backend_type in ("hermes", "hermes-agent", "nous-hermes", "openrouter"):
+        return HermesBackend(
+            base_url=config.get("base_url", "https://openrouter.ai/api/v1"),
+            api_key=config.get("api_key", ""),
+            default_model=config.get("default_model", "nousresearch/hermes-3-llama-3.1-8b"),
         )
     elif backend_type in ("openai", "openai_compat", "openai-api"):
         return OpenAIBackend(

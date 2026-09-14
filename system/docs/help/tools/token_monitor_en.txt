@@ -1,7 +1,7 @@
 BACH Tool: token_monitor
 --------------------------------------------------
 Generated: 2026-01-23 10:36
-Updated: 2026-02-05 (Help-Forensics)
+Updated: 2026-09-04 (Task 1209)
 Source: tools/token_monitor.py
 
 DESCRIPTION
@@ -16,7 +16,11 @@ Zone definition (from DELEG_002):
 - Zone 3: 85-95% - Local partners only (Ollama)
 - Zone 4: 95-100% - Emergency Delegation
 
-Version: 1.0.0
+Without a measurement, or when telemetry is more than one hour old by default,
+the zone remains unknown. The direct CLI then exits with code 5 and automatic partner
+delegation remains blocked.
+
+Version: 1.1.0
 Created: 2026-01-23
 Task: DELEG_001
 

@@ -63,7 +63,7 @@ if sys.stderr:
 
 class ConnectorHandler(BaseHandler):
 
-    SUPPORTED_TYPES = ("telegram", "signal", "discord", "whatsapp", "webhook", "homeassistant")
+    SUPPORTED_TYPES = ("telegram", "signal", "discord", "whatsapp", "webhook", "homeassistant", "slack", "imessage")
 
     def __init__(self, base_path_or_app):
         super().__init__(base_path_or_app)
@@ -584,8 +584,14 @@ class ConnectorHandler(BaseHandler):
             elif conn_type == "homeassistant":
                 from connectors.homeassistant_connector import HomeAssistantConnector
                 return HomeAssistantConnector(config), ""
+            elif conn_type == "slack":
+                from connectors.slack_connector import SlackConnector
+                return SlackConnector(config), ""
+            elif conn_type == "imessage":
+                from connectors.imessage_connector import iMessageConnector
+                return iMessageConnector(config), ""
             else:
-                return None, f"Kein Runtime-Adapter fuer Typ '{conn_type}'. Verfuegbar: telegram, discord, signal, whatsapp, homeassistant"
+                return None, f"Kein Runtime-Adapter fuer Typ '{conn_type}'. Verfuegbar: {', '.join(self.SUPPORTED_TYPES)}"
         finally:
             conn.close()
 

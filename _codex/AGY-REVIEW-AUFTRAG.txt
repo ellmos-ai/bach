@@ -1,0 +1,58 @@
+REVIEW-AUFTRAG (Zwei-Modell-Review, PR #50 im Repo ellmos-ai/bach)
+
+Du bist das zweite Modell in einem Zwei-Modell-Review. Der Autor war Claude Opus 5.
+Du pruefst, ob dieser Pull Request gemergt werden darf. Antworte auf Deutsch.
+
+ARBEITSVERZEICHNIS: C:\_Local_DEV\repos\BACH-bachheart
+Das ist ein Git-Worktree des Repos ellmos-ai/bach auf dem Branch
+feature/T-20260913-896336887-modell-backend-konzept, Basis origin/main.
+
+WAS GEAENDERT WURDE (nur Dokumentation, kein Code, kein Verhalten):
+  - docs/MODELL-BACKEND-KONZEPT_2026-09-13.md   (neu)
+  - ROADMAP.md                                   (neuer Abschnitt "PROGRAMM: Modell-Backend = das Herz von BACH")
+  - TODO.md                                      (neuer Eintrag BACH-HERZ-01)
+  - _codex/ARCHITEKTUR-FRAGEN.md                 (neu)
+  - .gitignore                                   (eine Zeile: _codex/*.log)
+
+Den vollstaendigen Diff bekommst du mit:
+  git -C C:\_Local_DEV\repos\BACH-bachheart diff origin/main...HEAD
+
+DEINE PRUEFPUNKTE (in dieser Reihenfolge, je mit Belegzeile):
+
+1. FAKTENTREUE. Das Konzeptdokument behauptet an vielen Stellen "Datei::Symbol Zeile N".
+   Pruefe STICHPROBENARTIG mindestens acht dieser Belege am echten Quellcode im
+   Arbeitsverzeichnis nach. Nenne jede Abweichung mit Soll und Ist. Besonders pruefen:
+     - system/hub/agent_launcher.py Zeile 1395 (Modell-Whitelist sonnet|opus|haiku?)
+     - system/hub/_services/chat/telegram_chat.py Zeile 385 (BACKEND_PRESETS, acht Eintraege?)
+     - system/hub/agent_router.py (hat route() wirklich KEINEN Importeur? pruefe mit grep)
+     - system/core/launcher.py Zeile 88-94 (AGENT_DELEGATIONS, fuenf Faelle?)
+     - system/hub/_services/chat/slots_config.py Zeile 524-558 (record_activity, welche Felder?)
+     - system/hub/compute_lock.py Zeile 431-498 (ruft set_fackel_preference record_activity auf?)
+     - system/hub/scheduler_provider.py (ist load_external_scheduler() wirklich ohne Aufrufer?)
+     - system/gui/server.py Zeile 57 (DEFAULT_TASK_ASSIGNEE = "OLLAMA"?)
+
+2. WIDERSPRUECHE. Widerspricht das neue Dokument einer bestehenden Aussage im Repo?
+   Vergleiche besonders mit dem ROADMAP-Abschnitt "Abgeschlossen: clutch als Routing-Engine
+   uebernommen (M8)". Das Dokument behauptet, clutch werde extern bedient, aber ueber die
+   Paketinstallation statt ueber die im Code gesuchten .MODULES-Pfade. Ist das konsistent
+   dargestellt oder klingt es wie ein Widerspruch?
+
+3. SPRACHE UND FORM. Echte Umlaute in .md-Dateien (Pflicht)? Tabellen syntaktisch heil?
+   Interne Links im Dokument und in ROADMAP.md korrekt (zeigt der ROADMAP-Link auf die
+   wirklich existierende Datei)? Passt der TODO-Eintrag zum Format der uebrigen Eintraege
+   in TODO.md?
+
+4. RISIKO. Kann dieser PR irgendetwas kaputtmachen? Pruefe insbesondere, ob die
+   .gitignore-Zeile versehentlich mehr ausschliesst als beabsichtigt.
+
+5. URTEIL. Eines von: MERGE-FREI / MERGE-FREI MIT ANMERKUNGEN / NICHT MERGEN.
+   Bei "NICHT MERGEN" musst du einen konkreten, belegten Mangel nennen.
+
+WICHTIG ZUM SCHLUSS:
+Nenne ausdruecklich, WELCHES MODELL du bist (genaue Bezeichnung und Stufe). Das wird als
+Beleg fuer den Zwei-Modell-Review dokumentiert. Rate nicht - gib an, was du ueber dich
+selbst weisst.
+
+SCHREIBE DEINE ANTWORT ALS DATEI:
+  C:\_Local_DEV\repos\BACH-bachheart\_codex\AGY-REVIEW-ERGEBNIS.md
+UTF-8, echte Umlaute. Aendere sonst NICHTS im Repo, mach keine Commits, keine Pushes.

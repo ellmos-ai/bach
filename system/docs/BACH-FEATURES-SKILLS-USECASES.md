@@ -97,7 +97,7 @@
 | **cv** | Lebenslauf-Generierung aus DB |
 | **literatur** | 5 Zitationsstile, BibTeX-Export |
 | **smarthome / clutch** | FritzBox (TR-064) + agentische Fahrassistenz (Fahrtenbuch, Bordcomputer-Health) |
-| **press / rhetorik / denkarium / denkstrategien** | Pressemitteilungen (LaTeX→PDF), Rhetorik-/Denk-Operatoren, Logbuch |
+| **press / rhetorik / denkarium / denkstrategien** | Pressemitteilungen (LaTeX→PDF), Rhetorik-/Denk-Operatoren, Logbuch (persönliches Notizbuch des Users — nicht für Agenten; Agenten nutzen bach memory) |
 
 ## 8. Externe Anbindungen & Kommunikation
 

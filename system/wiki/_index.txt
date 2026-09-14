@@ -86,6 +86,11 @@ VERFUEGBARE ARTIKEL
                            - Prozess zur Wiki-Pflege
                            - Modi: Erstellen, Aktualisieren, Validieren
 
+  llm_self_reflection.txt  Self-Reflection in LLM-Agenten
+                           - Reflexion, Self-Refine, CRITIC, ReAct
+                           - Verbal Reinforcement Learning
+                           - Episodisches Memory, Erfolgsbedingungen
+
   biomimetisches_lernen.txt Biomimetisches Lernen (Pathak/MIT)
                            - Bedingungen für Fehlerlernen (ACh/TAN)
                            - Beta-Band-Synchronität & Fehlersignale

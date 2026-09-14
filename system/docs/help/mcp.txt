@@ -1,0 +1,39 @@
+BACH MCP SERVER
+===============
+
+BESCHREIBUNG
+------------
+
+Der eingebaute BACH MCP Server stellt BACH-Ressourcen, -Tools und -Prompts über
+das Model Context Protocol bereit. Er nutzt stdio und die bestehende Handler-API.
+
+USAGE
+-----
+
+  bach mcp serve
+      Startet den Server über den MCP-stdio-Transport.
+
+  bach mcp serve --dry-run
+      Prüft das CLI-Routing, ohne den Server zu starten.
+
+  bach --help mcp
+      Zeigt dieses Hilfethema.
+
+ABHÄNGIGKEIT
+------------
+
+  pip install -r requirements-optional.txt
+
+MCP PROFILE
+-----------
+
+  {
+    "mcpServers": {
+      "bach": {
+        "command": "bach",
+        "args": ["mcp", "serve"]
+      }
+    }
+  }
+
+Der Profileintrag wird auch durch `bach setup mcp` installiert.

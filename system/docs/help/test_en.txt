@@ -1,6 +1,6 @@
 # Portability: SYSTEM
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-09-12
+# Next review: 2026-12-12
 
 TEST - BACH test and QA system
 --------------------------------

@@ -16,7 +16,7 @@ COMMANDS
 -------
   bach --snapshot create [name]  Save current status.
   bach --snapshot list           Available snapshots (auto & manual).
-  bach --snapshot load [ID]      Restores working memory & tasks.
+  bach --snapshot load [ID]      SHOWS snapshot state (tasks/memory). NOTE: display-only, does NOT restore.
   bach --snapshot delete <ID>    Removes old snapshots.
 
 CONCEPT: THE STATE TREE
@@ -36,8 +36,9 @@ DIFFERENCE FROM OTHER SYSTEMS
 AUTOMATIC
 ---------
 Snapshots can be created automatically or manually. The snapshot_type
-differentiates between 'manual' (via --snapshot create) and 'auto' (potentially
-via --shutdown). The implementation supports both types.
+differentiates between 'manual' (via --snapshot create) and 'auto' (via --shutdown).
+NOTE: auto-snapshots are currently created with snapshot_type='manual'
+(name like 'auto_YYYYMMDD_HHMM'). The 'auto' type is reserved for future use.
 
 DATABASE
 ---------

@@ -21,22 +21,24 @@ Architecture (3 layers):
 
 Backends:
   - ollama:     Local Ollama server with native tool-use
+  - lmstudio:   LM Studio (local via OpenAI-compatible API, port 1234, auto-model detection)
+  - hermes:     Nous Hermes Agent (OpenRouter / local via OpenAI-compatible API)
   - claude:     Claude Code CLI (--continue session, own tools)
   - codex:      Codex CLI (GPT models, own tools)
   - claude-api: Anthropic API (requires ANTHROPIC_API_KEY)
   - openai:     OpenAI API (requires OPENAI_API_KEY)
 
 Security modes:
-  - safe:  Read-only tools (ls, cat, grep, git, docker, etc.)
-  - full:  Also write tools (execute_command, write_file)
-           Activation: /mode full confirmed
+  - safe:  File work without a shell (read, edit, move, create)
+  - full:  Additionally shell and unrestricted writing (execute_command, write_file)
+           Activation: /mode full bestätigt
 
 
 TELEGRAM COMMANDS
 -----------------
   /start                    Welcome message
   /clear                    Reset conversation
-  /backend [name] [model]   Switch backend (ollama|claude|codex|claude-api|openai)
+  /backend [name] [model]   Switch backend (ollama|lmstudio|hermes|claude|codex|claude-api|openai)
   /model <name>             Switch model
   /mode [safe|full]         Security mode
   /think                    Think mode ON (thorough)

@@ -244,6 +244,73 @@ class TestDatabase:
         applied, error = db.run_migrations()
         assert applied == [] and error is None  # gebucht -> laeuft nie
 
+    def test_repository_schema_matches_migration_032_end_state(self, tmp_path):
+        """Fresh DBs baseline migrations only after receiving their end state."""
+        from core.db import Database
+
+        schema_dir = SYSTEM_ROOT / "data" / "schema"
+        db = Database(tmp_path / "fresh.db", schema_dir)
+        db.init_schema()
+        db.baseline_migrations()
+
+        booked = {
+            row["filename"] for row in db.execute(
+                "SELECT filename FROM _migrations WHERE filename = '032_tower_of_babel.sql'"
+            )
+        }
+        assert booked == {"032_tower_of_babel.sql"}
+        language_tables = (
+            "bach_agents", "bach_experts", "skills", "wiki_articles", "tools"
+        )
+        for table in language_tables:
+            with db.connect() as conn:
+                columns = {
+                    row["name"]
+                    for row in conn.execute(f"PRAGMA table_info({table})")
+                }
+            assert "language" in columns, table
+
+    def test_migration_032_upgrades_legacy_language_tables(self, tmp_path):
+        """Legacy DBs receive the same columns through the real migration runner."""
+        from core.db import Database
+
+        schema_dir = tmp_path / "schema"
+        migrations_dir = schema_dir / "migrations"
+        migrations_dir.mkdir(parents=True)
+        (schema_dir / "schema.sql").write_text(
+            "\n".join(
+                f"CREATE TABLE {table} (id INTEGER PRIMARY KEY);"
+                for table in (
+                    "bach_agents", "bach_experts", "skills", "wiki_articles", "tools"
+                )
+            ),
+            encoding="utf-8",
+        )
+        migration_name = "032_tower_of_babel.sql"
+        (migrations_dir / migration_name).write_text(
+            (SYSTEM_ROOT / "data" / "schema" / "migrations" / migration_name).read_text(
+                encoding="utf-8"
+            ),
+            encoding="utf-8",
+        )
+
+        db = Database(tmp_path / "legacy.db", schema_dir)
+        db.init_schema()
+        applied, error = db.run_migrations()
+
+        assert error is None
+        assert applied == [migration_name]
+        language_tables = (
+            "bach_agents", "bach_experts", "skills", "wiki_articles", "tools"
+        )
+        for table in language_tables:
+            with db.connect() as conn:
+                columns = {
+                    row["name"]
+                    for row in conn.execute(f"PRAGMA table_info({table})")
+                }
+            assert "language" in columns, table
+
     def test_py_migration_with_migrate_entrypoint_runs(self):
         # PR-#10-Review Befund 2: migrate(db_path)-Dateien wurden vorher
         # still als applied gebucht, ohne je zu laufen

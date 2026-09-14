@@ -242,16 +242,96 @@ if "!BACH_HOST_TARGET!"=="" (
 set "REMOTE_GUI_PORT=!BACH_GUI_PORT!"
 if "!REMOTE_GUI_PORT!"=="" set "REMOTE_GUI_PORT=8000"
 
-echo Starte System Tray für !BACH_HOST_TARGET!; bei Offline-Status verbindet er sich später neu.
-python "!STARTSPINE!" start --tray --host "!BACH_HOST_TARGET!"
-echo.
-python "!STARTSPINE!" status --host "!BACH_HOST_TARGET!"
+echo [1/3] Pruefe Verbindung zu !BACH_HOST_TARGET!...
+set "HOST_ONLINE=0"
+set "CONTROL_ONLINE=0"
+set "GUI_ONLINE=0"
+
+curl -s --max-time 3 "http://!BACH_HOST_TARGET!:8000/api/status" >nul 2>&1
+if !ERRORLEVEL! equ 0 (
+    set "HOST_ONLINE=1"
+    set "GUI_ONLINE=1"
+)
+
+curl -s --max-time 3 "http://!BACH_HOST_TARGET!:8081/api/status" >nul 2>&1
+if !ERRORLEVEL! equ 0 (
+    set "HOST_ONLINE=1"
+    set "CONTROL_ONLINE=1"
+)
+
+REM Fallback zu bekannter Tailscale-IP wenn Hostname nicht erreichbar war
+if "!HOST_ONLINE!"=="0" if "!BACH_HOST_TARGET!"=="macstudvonlukas" (
+    echo       [INFO] Probiere Tailscale-IP 100.119.69.90...
+    curl -s --max-time 3 "http://100.119.69.90:8000/api/status" >nul 2>&1
+    if !ERRORLEVEL! equ 0 (
+        set "BACH_HOST_TARGET=100.119.69.90"
+        set "HOST_ONLINE=1"
+        set "GUI_ONLINE=1"
+    )
+    curl -s --max-time 3 "http://100.119.69.90:8081/api/status" >nul 2>&1
+    if !ERRORLEVEL! equ 0 (
+        set "BACH_HOST_TARGET=100.119.69.90"
+        set "HOST_ONLINE=1"
+        set "CONTROL_ONLINE=1"
+    )
+)
+
+if "!HOST_ONLINE!"=="0" (
+    echo.
+    echo       [OFFLINE] !BACH_HOST_TARGET! nicht erreichbar.
+    echo       Moegliche Ursachen: Tailscale nicht aktiv, Mac Studio aus
+    echo       SET BACH_HOST=hostname fuer anderen Server
+    echo.
+    set /p "fallback=  Lokal starten stattdessen? [J/N]: "
+    if /i "!fallback!"=="J" goto chat_start
+    echo.
+    echo   Zurueck zum Hauptmenue...
+    timeout /t 2 >nul
+    goto menu
+)
+
+if "!CONTROL_ONLINE!"=="1" (
+    echo       [OK] Control API ^(:8081^) erreichbar
+) else (
+    echo       [INFO] Control API ^(:8081^) auf Server offline/loopback-only
+)
+if "!GUI_ONLINE!"=="1" (
+    echo       [OK] Web-GUI ^(:8000^) erreichbar
+)
+
+echo [2/3] Starte System Tray...
+if "!CONTROL_ONLINE!"=="1" (
+    python -c "import psutil, os; [p.kill() for p in psutil.process_iter(['name','cmdline']) if p.info.get('name') and 'python' in p.info['name'].lower() and any('chat_tray.py' in str(a) for a in (p.info.get('cmdline') or []))]" >nul 2>&1
+    timeout /t 1 /nobreak >nul
+    pushd "!CHAT_DIR!"
+    start "" pythonw chat_tray.py --host !BACH_HOST_TARGET! --port 8081
+    popd
+    echo       [OK] BUDDHA Connect Tray gestartet ^(!BACH_HOST_TARGET!:8081^)
+    echo            Tray-Icon im Infobereich aktiv
+) else (
+    echo       [SKIP] Remote-Tray uebersprungen ^(Control API nicht remote verfuegbar^)
+)
+
+echo [3/3] Oeffne Zugangswege...
 if "!BACH_NO_BROWSER!"=="1" (
     echo [SKIP] Browser nicht geöffnet ^(BACH_NO_BROWSER=1^)
 ) else (
     start "" "http://!BACH_HOST_TARGET!:!REMOTE_GUI_PORT!"
 )
-pause
+echo.
+echo  ============================================
+echo   Verbunden mit !BACH_HOST_TARGET!
+echo  ============================================
+echo   GUI:       http://!BACH_HOST_TARGET!:8000
+if "!CONTROL_ONLINE!"=="1" (
+    echo   Dashboard: http://!BACH_HOST_TARGET!:8081
+)
+echo   Telegram:  @bach_assistant_bot
+echo  ============================================
+echo.
+echo   [Hinweis] Konsole "BUDDHA Connect" bleibt fuer Logs/Fehler geoeffnet.
+echo   Druecke eine Taste, um zum BACH-Hauptmenue zurueckzukehren...
+pause >nul
 goto menu
 
 REM ============================================================

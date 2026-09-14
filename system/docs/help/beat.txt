@@ -1,7 +1,7 @@
 # Portabilität: UNIVERSAL
 # Version: 1.0.0
-# Zuletzt validiert: 2026-05-17
-# Nächste Prüfung: 2026-08-17
+# Zuletzt validiert: 2026-09-10
+# Nächste Prüfung: 2026-09-24
 
 BEAT - Unified Zeit-Anzeige
 ===========================
@@ -29,19 +29,19 @@ KOMPONENTEN
 
   1. CLOCK - Uhrzeit
      Zeigt aktuelle Uhrzeit
-     -> bach clock on|off|interval
+     -> bach clock on|off|status|interval
 
   2. TIMER - Stoppuhr
      Zeigt laufende Timer
-     -> bach timer start|stop|list
+     -> bach timer start|stop|list|clear
 
   3. COUNTDOWN - Countdown
      Zeigt aktive Countdowns
-     -> bach countdown start|stop|list
+     -> bach countdown start|stop|pause|resume|list [--after "cmd"]
 
   4. BETWEEN - Zwischen-Checks
      Zeigt aktives Profil
-     -> bach between on|off|use
+     -> bach between on|off|status|use|profile
 
 BEISPIELE
 ---------

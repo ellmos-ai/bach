@@ -115,7 +115,7 @@ def test_version_bypasses_all_global_start_side_effects(
     rc = bach_cli.main()
 
     assert rc == 0
-    assert capsys.readouterr().out.strip() == "BACH v3.13.0-bluesky"
+    assert capsys.readouterr().out.strip() == f"BACH {bach_cli._read_bach_version()}"
     assert list(observer_boundary.iterdir()) == []
     assert app_calls == []
 
@@ -132,7 +132,7 @@ def test_top_level_help_bypasses_all_global_start_side_effects(
 
     assert rc == 0
     output = capsys.readouterr().out
-    assert "BACH v3.13.0-bluesky" in output
+    assert f"BACH {bach_cli._read_bach_version()}" in output
     assert "USAGE:" in output
     assert list(observer_boundary.iterdir()) == []
     assert app_calls == []

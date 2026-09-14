@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: MIT
 """Tests for DailyAgentHandler (hub/daily_agent.py)."""
 
+import hashlib
+import json
 import sqlite3
 import sys
 from datetime import datetime
@@ -15,6 +17,10 @@ if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
 from hub.daily_agent import DailyAgentHandler
+from hub._services.routinika_projection import (
+    RoutinikaProjectionError,
+    read_routinika_projection,
+)
 
 
 @pytest.fixture
@@ -148,6 +154,76 @@ def _make_briefing_db(path: Path):
     conn.close()
 
 
+def _create_routinika_projection(
+    path: Path,
+    *,
+    rows: list[tuple] | None = None,
+    tombstones: list[tuple] | None = None,
+) -> None:
+    """Materialize the ratified C1 schema with synthetic, opaque records."""
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE projection_metadata (
+            contract_id TEXT NOT NULL PRIMARY KEY,
+            contract_version TEXT NOT NULL,
+            publisher_component TEXT NOT NULL,
+            publisher_instance TEXT NOT NULL,
+            generated_at TEXT NOT NULL,
+            source_checkpoint INTEGER NOT NULL
+        );
+        CREATE TABLE routine_due (
+            record_ref TEXT NOT NULL PRIMARY KEY,
+            due_at TEXT NOT NULL,
+            window_end_at TEXT NOT NULL,
+            state TEXT NOT NULL,
+            record_version INTEGER NOT NULL,
+            source_checkpoint INTEGER NOT NULL,
+            publisher_instance TEXT NOT NULL
+        );
+        CREATE TABLE projection_tombstones (
+            record_type TEXT NOT NULL,
+            record_ref TEXT NOT NULL,
+            deleted_at TEXT NOT NULL,
+            retain_until TEXT NOT NULL,
+            record_version INTEGER NOT NULL,
+            source_checkpoint INTEGER NOT NULL,
+            publisher_instance TEXT NOT NULL,
+            PRIMARY KEY (record_type, record_ref)
+        );
+        """
+    )
+    conn.execute(
+        "INSERT INTO projection_metadata VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            "org.ellmos.routinika.reminder-projection",
+            "1.0.0",
+            "routinika-projection-adapter",
+            "routinika-primary",
+            "2026-08-22T07:00:00Z",
+            6,
+        ),
+    )
+    for row in rows or [
+        (
+            "cccccccccccccccccccccccccccccccc",
+            "2026-08-22T07:30:00Z",
+            "2026-08-22T08:00:00Z",
+            "due",
+            1,
+            6,
+            "routinika-primary",
+        )
+    ]:
+        conn.execute("INSERT INTO routine_due VALUES (?, ?, ?, ?, ?, ?, ?)", row)
+    for row in tombstones or []:
+        conn.execute(
+            "INSERT INTO projection_tombstones VALUES (?, ?, ?, ?, ?, ?, ?)", row
+        )
+    conn.commit()
+    conn.close()
+
+
 class TestBriefingDelivery:
     def test_commitments_are_claim_neutral(self, handler):
         _make_briefing_db(handler.db_path)
@@ -238,3 +314,121 @@ class TestBriefingDelivery:
         ).fetchone()
         conn.close()
         assert row == (1, "failed", "send_failed", 0)
+
+
+class TestRoutinikaProjectionBriefing:
+    def test_dry_run_is_read_only_and_emits_non_personal_receipt(self, handler, tmp_path):
+        _make_briefing_db(handler.db_path)
+        projection = tmp_path / "routinika-projection.sqlite"
+        _create_routinika_projection(projection)
+        before = hashlib.sha256(projection.read_bytes()).hexdigest()
+
+        ok, text = handler.handle(
+            "briefing",
+            [
+                f"--routinika-projection={projection}",
+                "--routinika-receipt",
+                "--dry-run",
+            ],
+            dry_run=True,
+        )
+
+        assert ok is True
+        assert "[DRY-RUN] Read-only" in text
+        assert "ROUTINIKA-FÄLLIGKEITEN (1)" in text
+        assert "Routine cccccccccccc…" in text
+        assert "contract=org.ellmos.routinika.reminder-projection@1.0.0" in text
+        assert "publisher=routinika-primary" in text
+        assert "checkpoint=6" in text
+        assert "read_only=true" in text
+        assert hashlib.sha256(projection.read_bytes()).hexdigest() == before
+
+        conn = sqlite3.connect(handler.db_path)
+        config_table = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master "
+            "WHERE type = 'table' AND name = 'briefing_config'"
+        ).fetchone()[0]
+        conn.close()
+        assert config_table == 0
+
+    def test_terminal_rows_are_not_briefed(self, handler, tmp_path):
+        _make_briefing_db(handler.db_path)
+        projection = tmp_path / "routinika-projection.sqlite"
+        _create_routinika_projection(
+            projection,
+            rows=[
+                (
+                    "cccccccccccccccccccccccccccccccc",
+                    "2026-08-22T07:30:00Z",
+                    "2026-08-22T08:00:00Z",
+                    "due",
+                    1,
+                    6,
+                    "routinika-primary",
+                ),
+                (
+                    "dddddddddddddddddddddddddddddddd",
+                    "2026-08-22T08:30:00Z",
+                    "2026-08-22T09:00:00Z",
+                    "completed",
+                    1,
+                    6,
+                    "routinika-primary",
+                ),
+            ],
+        )
+
+        ok, text = handler.handle(
+            "briefing", [f"--routinika-projection={projection}", "--dry-run"], dry_run=True
+        )
+
+        assert ok is True
+        assert "ROUTINIKA-FÄLLIGKEITEN (1)" in text
+        assert "cccccccccccc" in text
+        assert "dddddddddddd" not in text
+
+    def test_exact_allowlist_rejects_privacy_expansion(self, tmp_path):
+        projection = tmp_path / "routinika-projection.sqlite"
+        _create_routinika_projection(projection)
+        conn = sqlite3.connect(projection)
+        conn.execute("ALTER TABLE routine_due ADD COLUMN routine_title TEXT")
+        conn.commit()
+        conn.close()
+
+        with pytest.raises(RoutinikaProjectionError, match="Spalten-Allowlist"):
+            read_routinika_projection(projection)
+
+    def test_unclosed_sidecar_fails_closed(self, tmp_path):
+        projection = tmp_path / "routinika-projection.sqlite"
+        _create_routinika_projection(projection)
+        Path(f"{projection}-wal").write_bytes(b"synthetic")
+
+        with pytest.raises(RoutinikaProjectionError, match="nicht geschlossen"):
+            read_routinika_projection(projection)
+
+    def test_config_persists_only_consumer_settings_and_stays_inactive(self, handler, tmp_path):
+        _make_briefing_db(handler.db_path)
+        projection = tmp_path / "future-routinika-projection.sqlite"
+
+        ok, text = handler.handle(
+            "config",
+            [
+                "routinika_briefing",
+                f"--projection={projection}",
+                "--minimum-offline-seconds=2592000",
+            ],
+        )
+
+        assert ok is True
+        assert "bleibt deaktiviert" in text
+        conn = sqlite3.connect(handler.db_path)
+        row = conn.execute(
+            "SELECT is_active, settings_json FROM briefing_config "
+            "WHERE module_name = 'routinika_briefing'"
+        ).fetchone()
+        conn.close()
+        assert row[0] == 0
+        assert json.loads(row[1]) == {
+            "minimum_offline_seconds": 2592000,
+            "projection_path": str(projection.resolve()),
+        }

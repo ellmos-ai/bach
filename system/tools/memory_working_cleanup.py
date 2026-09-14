@@ -16,6 +16,7 @@ Teil von SQ043: Memory-DB & Partner-Vernetzung
 Referenz: BACH_Dev/docs/MEMORY_WORKING_CLEANUP_KONZEPT.md
 """
 
+import os
 from pathlib import Path
 import sqlite3
 
@@ -228,7 +229,9 @@ def main() -> None:
     import sys
 
     bach_root = Path(__file__).parent.parent
-    db_path = bach_root / "data" / "bach.db"
+    db_path = Path(
+        os.environ.get("BACH_DB", str(bach_root / "data" / "bach.db"))
+    ).expanduser()
 
     if not db_path.exists():
         print(f"[ERROR] DB nicht gefunden: {db_path}")

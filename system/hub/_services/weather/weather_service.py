@@ -142,8 +142,81 @@ def get_weather(lat: float, lon: float, lang: str = "de") -> Optional[dict]:
     if last_err:
         return last_err
 
+    return _fetch_json(url, lang)
+
+
+def _parse_daily_day(day: dict) -> dict:
+    """
+    Wandelt einen wttr.in "weather"-Tag in ein normiertes Dict um.
+
+    Parameters:
+        day – Ein Eintrag aus data["weather"][i]
+
+    Returns:
+        dict mit: date, day_name, min_c, max_c, midday_c, midday_hour,
+                  icon, weather_code, description, sunrise, sunset,
+                  max_chance_of_rain_pct, hourly (Liste)
+        oder None bei fehlenden Daten.
+    """
+    if not day:
+        return None
     try:
-        cc = data["current_condition"][0]
+        date = day.get("date", "?")
+        # maxChanceOfRain wird meist im "hourly"-Array geliefert
+        hourly_raw = day.get("hourly", [])
+        hourly = []
+        max_chance = 0
+        midday_hour = "12"
+        midday = None
+        for h in hourly_raw:
+            hour = h.get("hour", "0")
+            try:
+                h_int = int(hour)
+            except (ValueError, TypeError):
+                h_int = 0
+            chance = int(h.get("chanceofrain", 0) or 0)
+            if chance > max_chance:
+                max_chance = chance
+            if h_int == 12:
+                midday = h
+            entry = {
+                "hour": hour,
+                "temp_c": int(h.get("tempC", 0)),
+                "feels_like_c": int(h.get("FeelsLikeC", 0)),
+                "weather_code": h.get("weatherCode", "113"),
+                "icon": WTTR_CODE_ICONS.get(str(h.get("weatherCode", "113")), "🌡️"),
+                "chanceofrain_pct": chance,
+                "humidity_pct": int(h.get("humidity", 0)),
+            }
+            hourly.append(entry)
+        if midday is None and hourly:
+            midday = hourly[len(hourly) // 2]
+
+        weather_code = midday.get("weather_code", "113") if midday else "113"
+        desc = midday.get("description", "?") if midday else "?"
+        icon = midday.get("icon", "🌡️") if midday else "🌡️"
+
+        return {
+            "date": date,
+            "day_name": day.get("weekdayName", [{}])[0].get("value", "") if isinstance(day.get("weekdayName"), list) else day.get("weekdayName", ""),
+            "min_c": int(day.get("mintempC", 0)),
+            "max_c": int(day.get("maxtempC", 0)),
+            "midday_c": int(midday.get("temp_c", 0)) if midday else int(day.get("maxtempC", 0)),
+            "midday_hour": midday_hour,
+            "icon": icon,
+            "weather_code": weather_code,
+            "description": desc,
+            "sunrise": day.get("astronomy", [{}])[0].get("sunrise", "?") if isinstance(day.get("astronomy"), list) else "?",
+            "sunset": day.get("astronomy", [{}])[0].get("sunset", "?") if isinstance(day.get("astronomy"), list) else "?",
+            "max_chance_of_rain_pct": max_chance,
+            "hourly": hourly,
+        }
+    except (KeyError, IndexError, ValueError, TypeError) as e:
+        return {"error": f"Parse-Fehler (daily): {e}"}
+
+
+def get_weather(lat: float, lon: float, lang: str = "de",
+                include_forecast: bool = False) -> Optional[dict]:
         area = data.get("nearest_area", [{}])[0]
 
         area_name = area.get("areaName", [{}])[0].get("value", "?")
@@ -180,6 +253,146 @@ def get_weather(lat: float, lon: float, lang: str = "de") -> Optional[dict]:
         }
     except (KeyError, IndexError, ValueError) as e:
         return {"error": f"Parse-Fehler: {e}", "raw": str(data)[:200]}
+
+
+def _build_day_summary(day: dict, index: int) -> dict:
+    """
+    Baut aus einem Eintrag des wttr.in 'weather'-Arrays eine Tages-Zusammenfassung.
+
+    wttr.in liefert 3 Tage (0=today, 1=morgen, 2=uebermorgen).
+    Fuer Icon/Beschreibung wird der Mittags-Eintrag (Index 4, ~12:00) genutzt.
+
+    Returns:
+        dict mit: day_index, tag_label, date, maxtemp_c, mintemp_c,
+                  icon, description, description_de, weather_code, sunrise, sunset
+        oder None bei Fehler.
+    """
+    try:
+        hourlies = day.get("hourly", [])
+        # Mittagswert (Index 4 = 12:00) als repraesentativen Wert des Tages
+        mid = hourlies[4] if len(hourlies) > 4 else (hourlies[0] if hourlies else {})
+        weather_code = mid.get("weatherCode", "113")
+        desc_en = mid.get("weatherDesc", [{}])[0].get("value", "?")
+        desc_de = desc_en
+        for lang_entry in mid.get("lang_de", []):
+            if lang_entry.get("value"):
+                desc_de = lang_entry["value"]
+                break
+
+        labels = ["Heute", "Morgen", "Uebermorgen"]
+        return {
+            "day_index": index,
+            "tag_label": labels[index] if index < len(labels) else f"Tag {index + 1}",
+            "date": day.get("date", "?"),
+            "maxtemp_c": int(day.get("maxtempC", 0)),
+            "mintemp_c": int(day.get("mintempC", 0)),
+            "icon": WTTR_CODE_ICONS.get(str(weather_code), "🌡️"),
+            "description": desc_en,
+            "description_de": desc_de,
+            "weather_code": weather_code,
+            "sunrise": day.get("astronomy", [{}])[0].get("sunrise", "?") if day.get("astronomy") else "?",
+            "sunset": day.get("astronomy", [{}])[0].get("sunset", "?") if day.get("astronomy") else "?",
+        }
+    except (KeyError, IndexError, ValueError, TypeError) as e:
+        return {"error": f"Tages-Parse-Fehler: {e}"}
+
+
+def get_forecast(lat: float, lon: float, lang: str = "de") -> list:
+    """
+    Ruft die Mehr-Tage-Vorhersage (3 Tage: heute, morgen, uebermorgen) ab.
+
+    wttr.in liefert im j1-Format standardmaessig 3 Tage. Dies dient als
+    Basis fuer "Wochen-Uebersicht" (kurze Vorhersage) sowie den
+    Einzel-Zugriffen get_tomorrow_weather / get_day_after_tomorrow_weather.
+
+    Returns:
+        Liste von 3 Tages-Dicts (siehe _build_day_summary) oder
+        ein Fehler-Dict als einziges Element bei Netz/Parse-Fehler.
+    """
+    url = f"https://wttr.in/{lat:.4f},{lon:.4f}?format=j1&lang={lang}"
+
+    last_err = None
+    for attempt in range(2):   # max 2 Versuche (SSL-Kaltstart)
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "BACH-Weather-Service/1.0 (github.com/ellmos-ai/bach)"},
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            last_err = None
+            break
+        except urllib.error.URLError as e:
+            last_err = f"Netzwerkfehler: {e}"
+        except Exception as e:
+            last_err = f"Fehler: {e}"
+    if last_err:
+        return [{"error": last_err}]
+
+    days = data.get("weather", [])
+    if not days:
+        return [{"error": "Keine Vorhersagedaten in Antwort"}]
+
+    return [_build_day_summary(day, i) for i, day in enumerate(days)]
+
+
+def get_tomorrow_weather(lat: float, lon: float, lang: str = "de") -> Optional[dict]:
+    """Gibt die Vorhersage fuer morgen (Tag 1) als dict zurueck, None bei Fehler."""
+    fc = get_forecast(lat, lon, lang)
+    if not fc or "error" in fc[0]:
+        return fc[0] if fc else None
+    # fc[1] = morgen, sofern vorhanden
+    return fc[1] if len(fc) > 1 else {"error": "Kein Morgen-Tag in Antwort"}
+
+
+def get_day_after_tomorrow_weather(lat: float, lon: float, lang: str = "de") -> Optional[dict]:
+    """Gibt die Vorhersage fuer uebermorgen (Tag 2) als dict zurueck, None bei Fehler."""
+    fc = get_forecast(lat, lon, lang)
+    if not fc or "error" in fc[0]:
+        return fc[0] if fc else None
+    return fc[2] if len(fc) > 2 else {"error": "Kein Uebermorgen-Tag in Antwort"}
+
+
+def get_week_weather(lat: float, lon: float, lang: str = "de") -> list:
+    """
+    Gibt die Wochen-Vorhersage (aktuell 3 Tage durch wttr.in) als Liste zurueck.
+
+    Hinweis: wttr.in liefert im kostenlosen j1-Format 3 Tage. Fuer eine echte
+    7-Tage-Vorhersage waere eine bezahlte API (OpenWeather) benoetigt.
+    """
+    return get_forecast(lat, lon, lang)
+
+
+def get_forecast_text(lat: float, lon: float, label: str = "Wochenaussicht") -> str:
+    """
+    Gibt eine lesbare Mehr-Tage-Vorhersage als String zurueck (fuer Prompts).
+
+    Beispiel:
+        🌤️ Wochenaussicht fuer Hamburg, Germany:
+        Heute   2026-02-18: ☀️ +5°/+1°C Klar
+        Morgen  2026-02-19: ⛅ +4°/+2°C Teilweise bewoelkt
+        Uebermorgen 2026-02-20: 🌧️ +3°/0°C Regen
+     """
+    fc = get_forecast(lat, lon)
+    if not fc or "error" in fc[0]:
+        err = fc[0].get("error", "unbekannt") if fc else "Timeout"
+        return f"[Vorhersage: nicht verfuegbar – {err}]"
+
+    # Naechsten Ortsnamen aus dem aktuellen Wetter nachschlagen (nur falls noetig)
+    w = get_weather(lat, lon)
+    loc = w.get("location_name") if w and "error" not in w else None
+    loc = loc if loc and loc != "?" else f"{lat:.4f}°N, {lon:.4f}°E"
+
+    lines = [f"{fc[0].get('icon', '🌡️')} {label} fuer {loc}:"]
+    for day in fc:
+        if "error" in day:
+            continue
+        temp = f"{day['maxtemp_c']:+d}°/{day['mintemp_c']:+d}°C"
+        desc = day.get("description_de") or day.get("description", "?")
+        lines.append(
+            f"{day['tag_label']:<12} {day['date']}: {day['icon']} {temp} {desc}"
+        )
+    return "\n".join(lines)
 
 
 def get_weather_text(lat: float, lon: float) -> str:

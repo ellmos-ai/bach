@@ -133,6 +133,8 @@ class TestConnectorHandlerInit:
         assert "telegram" in handler.SUPPORTED_TYPES
         assert "discord" in handler.SUPPORTED_TYPES
         assert "homeassistant" in handler.SUPPORTED_TYPES
+        assert "slack" in handler.SUPPORTED_TYPES
+        assert "imessage" in handler.SUPPORTED_TYPES
 
     def test_get_operations_returns_dict(self, handler):
         ops = handler.get_operations()

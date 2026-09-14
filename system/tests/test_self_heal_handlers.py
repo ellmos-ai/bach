@@ -1239,16 +1239,20 @@ def test_restore_by_category_returns_info_when_manifest_is_empty(tmp_path):
             """
         )
 
-    success, message = RestoreHandler(bach_root).restore_by_category("docs", dry_run=True)
+    success, message = RestoreHandler(system_root).restore_by_category("docs", dry_run=True)
 
     assert success is True
     assert "Keine Dateien gefunden" in message
 
 
 def test_wiki_provenance_shows_article_metadata(tmp_path):
+    from core.db import Database
     from hub.wiki import WikiHandler
 
     base = _init_base(tmp_path)
+    db = Database(base / "data" / "bach.db", SYSTEM_ROOT / "data" / "schema")
+    db.init_schema()
+    db.baseline_migrations()
     wiki_dir = base / "wiki"
     wiki_dir.mkdir()
     (wiki_dir / "steuer.txt").write_text(

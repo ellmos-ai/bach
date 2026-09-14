@@ -2,7 +2,7 @@
 
 [English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
 
-**バージョン:** v3.13.0-bluesky  
+**バージョン:** v3.14.0  
 **ステータス:** Production-Ready  
 **ライセンス:** MIT
 

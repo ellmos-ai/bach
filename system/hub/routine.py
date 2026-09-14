@@ -21,6 +21,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Tuple, Optional
 from hub.base import BaseHandler
+from hub.domain_writer_gate import blocked_reason
 
 
 class RoutineHandler(BaseHandler):
@@ -177,6 +178,10 @@ class RoutineHandler(BaseHandler):
     # DONE - Routine(n) als erledigt markieren (Multi-ID)
     # ------------------------------------------------------------------
     def _done(self, args: List[str]) -> Tuple[bool, str]:
+        # Abschluesse sind Domaenenzustand, nicht BACHs Zustellstatus (T-20260822-624075478).
+        reason = blocked_reason("routine", "routine done")
+        if reason:
+            return False, reason
         ids, rest = self._parse_ids(args)
         if not ids:
             return False, "Usage: bach routine done <id> [id2 id3...]\n\nMarkiert Routinen als erledigt und berechnet naechstes Faelligkeitsdatum."
@@ -242,6 +247,10 @@ class RoutineHandler(BaseHandler):
     # ADD - Neue Routine anlegen
     # ------------------------------------------------------------------
     def _add(self, args: List[str]) -> Tuple[bool, str]:
+        # Punkt 3 des C2-Rests (T-20260822-624075478): household_routines gehoert Routinika.
+        reason = blocked_reason("routine", "routine add")
+        if reason:
+            return False, reason
         if not args:
             return False, (
                 "Usage: bach routine add \"Name\" [Optionen]\n\n"

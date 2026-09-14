@@ -1,6 +1,105 @@
-﻿# BACH ROADMAP - Strategische Vision
+# BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-08-28 | **Version:** 4.3.63
+**Stand:** 2026-09-12 | **Version:** 4.3.63 | **Review:** 2026-09-12 (Task #1225)
+
+## ARCHIV (veraltet) — Navigations-Index
+
+> **Reiner Index-Anker, rein additiv (0 Bewegungsrisiko).** Verschiebt NIX — verweist
+> nur auf die bestehenden, verteilten „Abgeschlossen"-Blöcke. Inhalte bleiben an ihren
+> bisherigen Stellen. Aktuelle/Offene Visionen (z. B. MCP-Server 2026-06-03, Persona-System
+> Phase 2) und der aktuellste Changelog-Eintrag (4.3.63, 2026-09-10) sind **nicht** als
+> veraltet gekennzeichnet und bleiben aktiv.
+>
+> Status-Quelle: Task #1215 (Option A') / Folgeaufgabe #1216.
+
+| Block (veraltet / abgeschlossen) | Abschnitt (bleibt in-place) |
+|---|---|
+| Weitere abgeschlossene Blöcke | [→ ## Weitere abgeschlossene Bloecke (ehemals Prio 1-3)](#weitere-abgeschlossene-bloecke-ehemals-prio-1-3) |
+| Abgeschlossene Phasen | [→ ## Abgeschlossene Phasen (BACH-internes Entwicklungsprotokoll)](#abgeschlossene-phasen-bach-internes-entwicklungsprotokoll) |
+| Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
+| Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.63 bleibt aktiv)* |
+
+## Review 2026-09-11 (Task #1126)
+
+Automatisierte Roadmap-Review. Befund:
+
+- **Erledigte Tasks:** Prio 1–3 sind bereits als „Alle erledigt (2026-03-02)" markiert und
+  in die „Abgeschlossenen Blöcke" verschoben — konsistent, keine Änderung nötig.
+  Priorität 4 (Visionen/Experimente) ist vollständig DONE (SQ016–SQ056, ENT-25).
+- **Offene Items:** TASKPLAN-Cutover (#1175 / TASKPLAN #299) und „Priorität 1 – Security/
+  Plugin-Härtung/Self-Heal" sind korrekt als OFFEN/aktiver Fokus ausgewiesen. Keine offene
+  Roadmap-Position konnte als bereits abgeschlossen verifiziert werden (offene BACH-Tasks
+  1071, 1062, 1061, 1118, 1044 stehen alle noch `pending`).
+- **Prioritäten:** Kohärent. P1–3 erledigt, P4 nach Release, aktiver Fokus = Security-Prio-1.
+- **Archivierung:** Die abgeschlossenen Blöcke sind bereits auf mehrere Abschnitte verteilt
+  („Weitere abgeschlossene Blöcke", „Abgeschlossene Phasen", „Abgeschlossene Meilensteine").
+  Es existiert noch **kein** zentraler `## ARCHIV`-Abschnitt. Konsolidierung in einen
+  einzigen Archiv-Abschnitt + Auslagerung der ältesten Daten-Notizen ist als
+  Decision-Task #1126 (Klärung) zur Nutzerentscheidung vorgelegt — nicht automatisch ausgeführt
+  (zu risikobehaftet für 1168 Zeilen ohne Nutzerfreigabe).
+
+### Entscheidung 2026-09-11 (Task #1215): ROADMAP-ARCHIV-Konsolidierung
+
+**Entscheidung: Option A' — Status quo des Inhalts + optionaler, reiner Navigations-Index
+(additiv, kein Inhalt umziehen).** Begründung nach Analyse der 1187 Zeilen:
+
+- Der wortwörtliche Option-[A]-Vorschlag (kompletten „Changelog"-Block + alte SQ-Tabelle
+  auslagern) ist **fehlerhaft**: Der „Changelog (komprimiert)"-Block (ab Zeile 754) trägt
+  die **aktuellsten** Einträge oben (4.3.63, 2026-09-10) — ein kompletter Auslager-Block
+  würde aktuelle Daten bestatten.
+- Die unteren Datums-Notizen (Persona-System 03-12, Safe DB 03-12, Claude Hooks 03-12,
+  MCP-Server 06-03, Cross-Source 07-06) sind **gemischt offen/geschlossen**: z.B. MCP-Server
+  ist „VISION/LANGFRISTIG — OFFEN", Persona-System Phase 2 „OFFEN" — diese dürfen NICHT als
+  veraltet archiviert werden.
+- Die bestehenden verteilten „Abgeschlossen"-Sektionen („Weitere abgeschlossene Blöcke",
+  „Abgeschlossene Phasen", „Abgeschlossene Meilensteine") erfüllen bereits die Archiv-Rolle
+  und sind konsistent (P1–3 „Alle erledigt 2026-03-02").
+
+**Konsequenz:** Kein zentraler, inhaltlich vollstädkiger `## ARCHIV`-Abschnitt durch
+Block-Umzug (zu risikobehaftet, bestattet aktuelle Daten). Stattdessen:
+- **Inhalt bleibt wie jetzt** (Status quo = Option B für den Inhalt).
+- **Optional** (separat genehmigbar, additiv): ein kurzer `## ARCHIV (veraltet)`-Index-Anker
+  oben, der nur auf die bestehenden verteilten Abschnitte verweist (Reinleitung + Anker),
+  OHNE Inhalte zu verschieben — 0 Bewegungsrisiko, rein navigationsunterstützend.
+- Dieser optionale Index-Task ist als Folgeaufgabe angelegt und wird **nicht** automatisch
+  ausgeführt (wartet auf Nutzerfreigabe).
+
+## Review 2026-09-12 (Task #1225)
+
+Automatisierter Roadmap-Review (P2, wiederkehrend). Befund:
+
+- **Erledigte Module-Rueckspiegelung nachgetragen:** Die Strategieentscheidung „B + C —
+  Rueckspiegelung der Module" hat ihren ersten realisierten Meilenstein: MODULRUECKTRANSFER-
+  Stufen 1–5 sind abgeschlossen (Inventar & Schnittstellenmatrix, ellmos-tests, ellmos-scheduler,
+  accounts-core CAMT-Saldenimport, system-explorer; BACH-Tasks 1217–1221, 2026-09-11/12, jeweils
+  mit Rollback-Schaltern, Regressionstests und Live-Nachweisen). Nachgetragen: Fokus-Sektion
+  „MODULRUECKTRANSFER" (unten), Statuszeile in der Langzeit-Vision, Steuer-Banking-Phase 5
+  („Saldenimport komplett"). Stufen 6–8 bleiben offen (BACH-Tasks 1222–1224).
+- **Obsolete Task-Referenzen korrigiert (ID-Wiederverwendung):** Die BACH-2.0-Kette
+  #1184–#1195, #1181 (ellmos-tests-Kandidat) und #1175 (TASKPLAN-Cutover) sind in der
+  heutigen Task-DB nicht mehr aufloesbar — die IDs wurden am 2026-09-08 mit abgeschlossenen
+  GUI-Tasks bzw. Wegwerf-Test-Tasks neu belegt. Additiv korrigiert: BACH-2.0-Sektion,
+  clutch-M8-Sektion, TASKPLAN-Cutover-Ueberschrift. Gates und Tagesvertrag bleiben als
+  Regelwerk gueltig; die laufende Rueckspiegelung nutzt den MODULRUECKTRANSFER-PLAN
+  (docs/architecture/MODULRUECKTRANSFER-PLAN.md) als Gate-Quelle.
+- **Prioritaeten:** Kohaerent. P1–3 erledigt; P4 nach Release. Aktiver Fokus:
+  MODULRUECKTRANSFER Stufen 6–8, TASKPLAN-Cutover (TASKPLAN #299/#300–#302) und
+  Security-Prio-1 (OPS-TELEM-001 offen; SANDBOX-002-Ressourcenlimit = BACH-Task 1071;
+  OPS-RUN-001 = BACH-Task 1118 — beide unverändert pending; 1062 GUI-Regressionstest,
+  1061 Installer-E2E, 1044 Wiki-Autor ebenfalls offen). Keine weitere offene
+  Roadmap-Position konnte als bereits abgeschlossen verifiziert werden.
+- **Offene Visionen unangetastet (Option A' von #1215 respektiert, rein additiv):**
+  MCP-Server-Bundle-Split (06-03), Persona-System Phase 2 inkl. Boss-Agent-Rolle,
+  Cross-Source-Wissensindex (07-06), Safe-DB Hook-Prompt und Skill-/Plugin-Reset-Hook-
+  Verdrahtung — alle korrekt als OFFEN ausgewiesen; keine Block-Umzuege ins ARCHIV.
+- **Task-DB-Aufraeumung:** Zehn identische Wegwerf-Test-Tasks #1166–#1175 („ich teste ob du
+  antwortest…") geschlossen — die erfragte Antwort ist erbracht (Identitaet: Buddha,
+  integrierter KI-Assistent des BACH-Systems); die Tasks verstopften die Fokus-Liste und
+  kollidierten mit der obsoleten #1175-Cutover-Referenz.
+- **CHANGELOG-Pflege:** Zwei ueberfluessige Merge-Konflikt-Marker-Zeilen im
+  v3.14.0-Changed-Block entfernt (Junk ohne Konfliktpartner; Inhalt war bereits konsolidiert).
+
+---
 
 ## Aktueller Qualitätsfortschritt (2026-07-29)
 
@@ -183,6 +282,12 @@ unangetastete Quelle der Wahrheit und **entscheidet selbst, wann** es Schritte u
 Methodik/Analyse: `.OS/sovereign-private/_dev/CLUSTER_ANALYSE_PLAN.md`.
 Vorbild bereits in dieser ROADMAP: *"clutch als Routing-Engine uebernehmen"* (Modul ersetzt Fork).
 
+**Status 2026-09-12:** Die Rueckspiegelung laeuft aktiv — Umsetzung ueber den
+MODULRUECKTRANSFER-PLAN (`docs/architecture/MODULRUECKTRANSFER-PLAN.md`):
+Stufen 1–5 ABGESCHLOSSEN (ellmos-tests, ellmos-scheduler, accounts-core CAMT-Salden,
+system-explorer; BACH-Tasks 1217–1221), Stufen 6–8 offen (BACH-Tasks 1222–1224).
+Details: Fokus-Sektion „MODULRUECKTRANSFER" weiter unten.
+
 ---
 
 ## Strategiemodell: Core, Membran, Endozytose, MasterBach [P 2026-06-19]
@@ -245,6 +350,72 @@ C als Evolutionsstrategie. Begründung (empirisch belegt am 2026-07-03):
 **Historische Reihenfolge (am 28.08.2026 abgelöst):** ① clutch (Task 1150, am 2026-07-22 abgeschlossen) → ② tools/testing durch
 ellmos-tests-Adapter ersetzen (BACH-Task 1181; dabei „upstream"-Widerspruch im ellmos-tests-SKILL.md auflösen)
 → ③ llmauto/notespace/market gemäß ease-Liste (`sovereign-private/ROADMAP.md`, Cluster-Report).
+
+### BACH 2.0: gegateter Umsetzungstaskplan [U 2026-07-28]
+
+**Status: ausschließlich vorbereitet.** Die produktive Umsetzung beginnt erst,
+wenn der User den exakten Marker **`Wettbewerb beendet`** setzt und BACH-Task
+**#1184** danach mit einer Audit-/Entscheidungsreferenz geschlossen wird. Ein
+Datum, eine Gewinnerbekanntgabe oder das bloße Verstreichen von Zeit ersetzt
+diesen Marker nicht.
+
+Der Judging-Hold bleibt davon unabhängig bindend: Bis der User ihn ausdrücklich
+aufhebt, gibt es keinen Push, keinen Remote-Schreibkontakt, keine Änderung an
+Submission/Devpost/Video und keinen OneDrive-Mirror. Die folgende Kette war im
+kanonischen BACH-Task-System als Kategorie `bach2` angelegt.
+
+> **Stand 2026-09-12 (Review #1225):** Die Task-Kette #1184–#1195 existiert nicht
+> mehr in der Task-DB — die IDs wurden am 2026-09-08 mit abgeschlossenen GUI-Tasks
+> neu belegt (#1181 = Layout-Shift, #1184 = Präsenzstatus). Die Rueckspiegelung
+> laeuft seit September 2026 stattdessen ueber den MODULRUECKTRANSFER-PLAN
+> (`docs/architecture/MODULRUECKTRANSFER-PLAN.md`, BACH-Tasks 1217–1224) mit dort
+> definierten Gates; Stufen 1–5 sind abgeschlossen. Gates und Tagesvertrag dieser
+> Sektion bleiben als Regelwerk gueltig; bei Marker `Wettbewerb beendet` waere die
+> Kette unter neuen IDs neu anzulegen.
+
+| ID | Atomarer Task | Abhängigkeiten | Abschlussgrenze |
+|---:|---|---|---|
+| **1184** | `BACH20-00` Aktivierungsgate `Wettbewerb beendet` | — | nur mit explizitem Usermarker und Audit-Referenz |
+| **1185** | `BACH20-01` Core-/Modul-Inventar und Datenflusskarte | 1184 | vollständige Klassifikation Core/Modul/Adapter/Daten/Legacy |
+| **1186** | `BACH20-02` versioniertes Systemmanifest | 1185 | Schema, Beispiel und Validatorvertrag; vorhandene Manifestflächen wiederverwenden |
+| **1187** | `BACH20-03` referenzieller Registry-ID-Vertrag | 1185, 1186 | Module-/Skill-/Policy-/Learning-IDs ohne Registry-Kopie |
+| **1188** | `BACH20-04` Kandidatenregister und Scoring | 1185, 1187 | live belegte Eignung oder ehrliches `NO_OP`/`BLOCKED` |
+| **1189** | `BACH20-05` seiteneffektfreier read-only Tagesplaner | 1186–1188 | null Session-/DB-/Log-/Sync-/Backup-/Scheduler-Mutation |
+| **1190** | `BACH20-06` Baseline-/Contract-/Shadow-/Rollback-Gates | 1186–1188 | gleiche Contracts, single-writer Shadow, vollständiger Rollback |
+| **1191** | `BACH20-07` atomarer Adapter-/Datenmigrationsvertrag | 1187, 1190 | idempotent, transaktional, crash- und rollbackfähig |
+| **1192** | `BACH20-08` Source-of-Truth-Umschaltgate | 1189–1191 | höchstens ein produktiver Wechsel pro Kalendertag |
+| **1194** | `BACH20-10` unabhängige Modulupdates | 1186, 1187, 1190, 1192 | Pin/Hash, staged Update, konsistenter Code-/Manifest-/Datenrollback |
+| **1193** | `BACH20-09` Haltefrist-/Nullreferenz-/Removal-Gate | 1192, 1194 | recoverable Archivierung vor Entfernung; Daten/Credentials bleiben |
+| **1195** | `BACH20-11` BACH-2.0-Reifegates | 1193, 1194 | unabhängige Zertifizierung aller in T-20260728-12 definierten Reifekriterien |
+
+#### Tagesvertrag nach Aktivierung
+
+1. Der read-only Planner aktualisiert keine Zustände und liefert genau einen
+   belegten Kandidaten oder `NO_OP`/`BLOCKED`.
+2. Locks, Ownerarbeit, Drift, fehlende Datenverträge oder rote Gates machen
+   einen Kandidaten ungeeignet; es wird kein frischer Ersatz zur
+   Quotenerfüllung gewählt.
+3. Analyse mehrerer Kandidaten ist zulässig. Pro Kalendertag darf aber
+   höchstens **ein** produktiver Source-of-Truth-Wechsel erfolgen.
+4. Baseline, Contracttests, single-writer Shadowbetrieb und Rollback sind
+   Vorbedingungen der atomaren Adapter-/Datenmigration.
+5. Umschaltung, Modulupdate und Entfernung sind drei getrennte Ereignisse.
+   Removal folgt erst nach Haltefrist, erfolgreichem Update-/Rollbackzyklus
+   und repositoryweitem Nullreferenznachweis.
+
+#### Dedupe und bestehende Belege
+
+- **#1150 clutch** bleibt der abgeschlossene Referenzfall; kein neuer
+  Clutch-Migrationstask.
+- **#1181 ellmos-tests** bleibt der bestehende Kandidaten-/Adaptertask und ist
+  an #1184 gebunden. Kein zweiter ellmos-tests-Task; Source-of-Truth-,
+  Haltefrist- und Removal-Gates werden später über #1190–#1194 geprüft.
+- **#1175 TASKPLAN-Cutover** bleibt ein eigener Task-System-Strang. BACH 2.0
+  setzt dessen offene Source-of-Truth-Entscheidung nicht still voraus und
+  baut keinen parallelen Taskstandard.
+- Die Registry-Kopplung referenziert die Ergebnisse von
+  `T-20260728-04` (PolicyRegistry) und `T-20260728-09`
+  (Skill-/Learning-Control-Registry), statt deren Inhalte zu duplizieren.
 
 ### Empfohlene Richtung
 
@@ -318,6 +489,133 @@ BACH definiert sich als **Personal Agentic Operating System**. Es entwickelt sic
 
 ---
 
+## PROGRAMM: Modell-Backend = das Herz von BACH [U 2026-09-13]
+
+> **Nutzer, 13.09.2026 (Originalwortlaut, maßgeblich):** „wichtigste Neuerung in Bach ist
+> aktuell Modell backend und dessen verwaltung. Das wird das neue Herz von Bach. Sprich bach
+> wird lebendig, wer spielt wann welche der Rollen und Agenten usw."
+
+**Programmkopf. Hier docken alle Folgetickets zum Thema an.** Laufende Arbeiten sind damit
+Teile *eines* Programms, nicht Einzelfälle: GUI-Menü „Models" unter „Agenten" und `/activity`
+im GUI-Design (`T-20260913-660268706`), Fackel als Ressourcenseite (`T-20260913-253157668`,
+`T-20260913-415211921`), `DEFAULT_TASK_ASSIGNEE = "OLLAMA"` als Zuweisungsseite (PR #46),
+Buddha-Delegation und Telegram, der OLLAMA-Worker, `hub/scheduler.py` und clutch als
+vorhandener Router.
+
+**Phase 1 abgeschlossen (13.09.2026):** Bestandsaufnahme und Architekturkonzept liegen als
+[`docs/MODELL-BACKEND-KONZEPT_2026-09-13.md`](docs/MODELL-BACKEND-KONZEPT_2026-09-13.md) vor —
+gemessen gegen `origin/main` `1bb8fa4`, Mac-Live-Stand nur lesend. Kein Umbau.
+Architektur-Zweitmeinung von Codex `gpt-5.6-sol` (Stufe `high`) eingeholt und eingearbeitet;
+Auftrag und Antwort unter `_codex/`.
+
+**Leitbegriffe des Programms** (nach Einarbeitung der Zweitmeinung — „Agent" allein ist
+mehrdeutig, weil `agent_instances` den Begriff bereits belegt):
+
+- **Rolle** = Vertrag (Fähigkeiten, Rechte, Werkzeuggrenzen, Budgetrahmen; versioniert) ·
+  **Agentenprofil** = ausführbare Kombination aus Backend, Modellklasse und Host ·
+  **Besetzung** = zeitlich begrenzte Bindung von Rolle, Profil, Auftrag und Platz ·
+  **Lauf** = die Ausführung, mit dem *tatsächlich* verwendeten Modell ·
+  **Platz** = Ausführungskontext (`buddha_chat`, `buddha_always_on`, `buddha_connector`).
+  Bevorzugtes Modell und Backend gehören **nicht** an die Rolle, sondern an die Zuteilung;
+  der Fackelbedarf gehört an den Lauf.
+- **Zuteilung:** BACH bildet aus Rechten, Host, Compute-Lock, Fackeln und Budgetgrenzen die
+  zulässige Kandidatenmenge, clutch wählt **darin**. Die Gates wirken vor der Auswahl, nicht
+  als Veto danach — sonst lernt clutchs Lernschleife BACHs Vetos statt Modellqualität. Ein
+  Gate-Ausschluss ist kein Modellergebnis.
+- **Beobachtbarkeit:** append-only Ereignisstrom **und** abfragbare Besetzungstabelle, nicht
+  beides in einem. „Akteur" ist zweigeteilt: Auslöser und ausführende Instanz.
+- **Fackeln und Budget** bleiben zwei Achsen: momentane physische Zulässigkeit gegen
+  kumulativen Verbrauch. Kein gemeinsames Konto, kein Register „hält N Fackeln".
+
+**Gemessene Kernlücken (Belege im Konzeptdokument), nach Gefährlichkeit:**
+
+1. **Kein atomarer Claim.** `worker.py` nimmt `offen[0]` und startet ohne Anspruch;
+   `chat_tray.py` liest erst und markiert danach. Zwei Taktgeber können dieselbe Aufgabe mit
+   Schreibrechten ausführen.
+2. **Rechte werden am Executor nicht erzwungen.** `safe`/`full` setzen Slot, API und Prompt;
+   kein zentraler Prüfpunkt. Ein Rechtefeld an der Rolle wäre ohne ihn bloße Dokumentation.
+3. **Fünf unabgeglichene Modell-/Backend-Listen**; die Whitelist in
+   `hub/agent_launcher.py:1395` schneidet alles außer Claude ab, und
+   `_services/llm/model_backend.py` trägt zusätzlich das Startverhalten je CLI.
+4. Rollen (`bach_agents`/`bach_experts`) tragen kein Modell-, Backend-, Rechte- oder
+   Budgetfeld — die Frage des Nutzers ist heute nicht als Datum vorhanden.
+5. Mehr als zwei Rollenwelten: DB ohne Modell, `slots_config.json` mit Modell als Prompt-Text,
+   dazu `DEFAULT_ROLE_PROMPTS`, `PERSONA_MAP`, `AGENT_DELEGATIONS`, `agent_instances`,
+   Persona-Frontmatter.
+6. Das Aktivitätsprotokoll kennt keinen Akteur — deshalb war schon beim Fackel-Schalter nicht
+   feststellbar, wer umgeschaltet hatte.
+7. Die Control API prüft Herkunft, aber keine Berechtigung; über sie lassen sich Slots ändern,
+   Vollmodus-Worker starten und die Fackel umschalten.
+
+**Reihenfolge (Phase 2 ff.):** (1) **Zuteilungsgrenze für genau einen Pfad** — reicht die
+Modellwahl unverändert durch, beansprucht aber atomar, prüft das Rollenrecht und protokolliert
+Start und Ende. Strangler-Seam, löst zugleich die Doppelausführung. (2) Protokoll
+vervollständigen. (3) Backend-Katalog vereinheitlichen, Adapterverträge getrennt halten.
+(4) Seams ehrlich machen (stiller clutch-Fallback, Scheduler-Seam, Zugangsschutz der Control
+API). (5) Rolle bekommt Vertragsfelder. (6) Zuteilung verdrahten. (7) Cockpit.
+
+**Verbund und gemeinsames Herz mit OCEAN** (Nutzererweiterung vom selben Tag, Kapitel 9 und 10
+des Konzepts): Das Cockpit ist ein Knoten, nicht das System. Gemessen: `PingPong` ist der
+Transport, der nachweislich läuft; „Routing v2" ist der Ticket-Routing-Vertrag des ticket-master, kein Modell- oder Nachrichtentransport;
+clutch kann per `CLUTCH_REMOTE_OLLAMA` einen fremden Ollama-Endpunkt ansprechen, kennt aber
+weder das Systemregister noch Hostnamen. OCEAN hat für dieses Thema **nichts**, was BACH doppeln
+würde — keine Modellverwaltung, kein Rollenmodell, keinen Tray, kein Cockpit, keinen Scheduler.
+Das gemeinsame Herz ist deshalb keine Zusammenführung, sondern eine **Herauslösung aus BACH,
+die OCEAN mitbenutzt** — dasselbe Muster wie bei `assistant-core` (`D-20260903-001`). Es gehört
+**nicht** in den ControlRoom: der will ausdrücklich „kein Modul-Neubau, Backend = die Module".
+Fackel wandert mit heraus; Muschelgrund und Trithon sind Anschlusspunkte, aber Entwurf
+(`T-20260908-362639245` steht auf `USER/freigabe`) und werden nicht vorausgesetzt. Rücktransfer
+aus FolderHome, SentinelFleet und NemoFold nach dem Präzedenzfall `T-20260913-744071825`:
+Verfahren zurückholen, keine Fachlogik, Herkunft vermerken — zwei der drei stehen unter Sperre
+und dürfen nur gelesen werden. Zusatzschritte: (8) Herz herauslösen, (9) OCEAN als zweiter
+Konsument mit schlankem Anzeige-Tray, den BACH umbrandet.
+
+**Richtigstellung:** Die Seite „BACH Aktivitätsanzeige & Worker Dashboard" liegt entgegen einer
+Ticketnotiz **in `origin/main`** (`telegram_chat.py:1519` Titel, `:1591` Überschrift, Fackel,
+Always-On, Neuer Worker und Verlauf sämtlich vorhanden). Der Mac-Stand ist seit PR #52
+(`e3db932`) vollständig eingemergt: `mac/certify-2026-09-13` ist null Commits vor `main`, und
+der Diff im gesamten Chat-Modul ist leer. Das Konzept baut darauf auf.
+
+**Zwei Nachmessungen korrigieren die Lückenanalyse** (Abschnitt 9.4): Das Systemregister ist
+nicht zu dünn — seine Quelle `.SYNC/_inventory/systems/<slot>.json` trägt je Host rund 14 KB
+mit Tailscale-Adresse, SSH-Schlüssel und offenen Ports; die schmale Registry ist eine bewusste
+Ableitung (`systems_registry.py`, „DERIVED, never authored"), die genau diese Felder wegfiltert.
+Und ein hostübergreifendes Besetzungsprotokoll existiert bereits:
+`ticket-master/lib/routing_contract.py::_RECEIPT_FIELDS` (Z. 988-991) verlangt `executed_by`,
+`actual_provider` und `actual_model` — das tatsächlich verwendete Modell, nicht das gewünschte —
+und kennt `claimed` als Ledger-Zustand, während BACHs Worker ohne Anspruch startet. Es ist also
+kein Format zu erfinden, sondern eines zu übernehmen.
+
+**Wo das Herz lebt** ist die schwerere Frage hinter der Namensfrage. OCEANs Erhaltungsregel
+(„extraction changes the bed, never the water"; „BACH stays supplied by consuming the same
+modules as OCEAN", `open-ocean/README.md:69` und `:76`) spricht gegen ein BACH-internes
+Bauteil. Die Extraktions-Roadmap führt im zuerst gezogenen Cluster 9 kein Modell-Backend-Paket;
+LLM-Orchestrierung ist ausdrücklich Cluster 5. Empfehlung nach der zweiten Zweitmeinung:
+**ein eng geschnittenes eigenes Modul (C\*)** — es besitzt nur Besetzung, Anspruch, Zulassung
+und Protokoll. Modellkatalog, Bewertung, Budget und Lernschleife bleiben bei clutch; die
+Ausführung beim agent-launcher; Hosts und Ressourcen beim Inventar plus lokalen Proben; Board
+und Tray sind Klienten. **Der Backend-Katalog gehört ausdrücklich nicht hinein.** Die breite
+Fassung wäre selbst der Monolith, den dieses Programm beklagt.
+
+**Extraktionsreihenfolge, korrigiert:** Vor allen Bausteinen steht ein versionierter
+Dispatch-Vertrag („contract before code" ist OCEANs eigene Regel). Dann Fackel als hostlokale
+Ressourcenprobe — sie ist entgegen der ersten Fassung **nicht** unverändert extraktionsreif:
+Sie importiert `hub._services.limits` und meldet bei nicht messbarer Kapazität **volle zehn
+Fackeln** (fail-open), was im Verbund fremden Zuteilern Kapazität vortäuscht. Danach
+Ereignisprojektion und beglaubigte Befehlsschnittstelle, dann das Board als deren Klient — es
+liest nämlich nicht nur, es schaltet die Fackel und verwaltet Worker per POST. Der Tray
+zuletzt, nach Entflechtung von Takt, Zuteilung und Ausführung (Abschnitt 10.8).
+
+**Offene Nutzerentscheidungen** (vorgelegt als decision-shot `BH-2026-09-13-A` im Ticket
+`T-20260913-896336887`): **Ort des Herzens**, Ort des Rollen-Registers, Form des
+Backend-Katalogs und **Name des Herzens** — vier Fragen. Ein Zwischenstand legte acht vor;
+die Zweitmeinung hat vier davon als Scheinfragen zurückgewiesen, weil sie im Konzept bereits
+mit Begründung beantwortet sind — Zuteilungsstrategie, Zeitpunkt des Cockpits, GUI-Richtung und
+die Quelle für Hosts und Modelle stehen jetzt als Feststellung in Abschnitt 7.1, nicht als
+Wahl. Die Schritte 5 bis 9 bleiben bis zur Antwort gesperrt.
+
+---
+
 ## Abgeschlossen: clutch als Routing-Engine übernommen (M8) [P 2026-07-22]
 
 BACH betrieb ursprünglich einen **eigenen Fork** der clutch-Idee (`hub/_services/delegation/` +
@@ -339,10 +637,14 @@ kein Feature-Sync mehr). BACH soll den Umgang mit dem Modul prüfen und seinen F
   Notfall-Fallback unter `system/hub/_archive/delegation_legacy/`.
 - **Verifikation:** Die fokussierten Clutch-/Delegations-/Partner-Regressionen liefen am
   2026-07-22 mit `36 passed`; der Live-Migrationsstatus meldete alle acht Quellen extern.
-- **Nächster Modulschritt:** BACH-Task 1181 prüft die gegatete Rückspiegelung von
-  `ellmos-tests` als Quelle der Wahrheit für `tools/testing`.
-- **Doku-Nachlauf:** BACH-Task 1182 zieht die externe, noch auf „vorbereitet" stehende
-  `clutch/docs/BACH_MIGRATION.md` im kanonischen Modul-Repo auf diesen Ist-Stand nach.
+- **Nächster Modulschritt (Stand 2026-09-12: ERLEDIGT):** Die Rückspiegelung von
+  `ellmos-tests` als Quelle der Wahrheit für `tools/testing` ist über den
+  MODULRUECKTRANSFER-Plan Stufe 2 scharfgeschaltet (BACH-Task 1218; Rollback
+  `BACH_TEST_ADAPTER=native`, Regressionstests + Live-Nachweis). Die frühere
+  Task-Referenz #1181 ist obsolet (ID inzwischen mit einem GUI-Task belegt).
+- **Doku-Nachlauf (offen, Task-Referenz #1182 obsolet):** Die externe, noch auf „vorbereitet" stehende
+  `clutch/docs/BACH_MIGRATION.md` ist im kanonischen Modul-Repo weiterhin auf diesen
+  Ist-Stand nachzuziehen (neue Task-ID erforderlich).
 
 ---
 
@@ -387,9 +689,13 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 
 ## Aktuelle Fokus-Bereiche
 
-### TASKPLAN-Cutover: BACH-Task-Schreibpfade anbinden (TASKPLAN #299 / BACH #1175)
+### TASKPLAN-Cutover: BACH-Task-Schreibpfade anbinden (TASKPLAN #299 / #300–#302)
 
 **Status: OFFEN — Vorbereitungs- und Integrationsschnitt; kein automatischer Cutover.**
+
+*(Review 2026-09-12: Die frühere BACH-Task-Referenz #1175 ist obsolet — die ID ist in
+der Task-DB inzwischen ein Wegwerf-Test-Task; der Strang lebt allein in
+TASKPLAN #299/#300–#302.)*
 
 **TASKWRITER-Register | 2026-07-15**
 
@@ -404,6 +710,28 @@ Repo ist PUBLIC auf GitHub mit 14 Topics, Tags `v3.1.6`, `v3.3.0-peanut` und `v3
 - Akzeptanzgrenze: Die Legacy-Tabelle bleibt bis zu einer dokumentierten grünen Testphase unverändert als Fallback. Keine automatische Löschung, Deaktivierung, Veröffentlichung, Freigabe oder Release-Aktion.
 - Offene Nutzer-/Maintainer-Entscheidung: Mirror versus Write-through sowie Source-of-Truth, Konfliktregeln, Fehlerverhalten und Default des Feature-Flags müssen vor #301 verbindlich festgelegt werden. Erst nach grüner Testmatrix darf ein separater Cutover entschieden werden.
 - Prüfstand dieses Schreibauftrags: TASKPLAN-Datenbank-Readback der Parent-/Child-Datensätze ist grün; keine Implementierung der Teilaufgaben wurde vorweggenommen.
+
+### MODULRUECKTRANSFER: Rueckspiegelung der Module (Stufe 8 offen)
+
+**Status: Stufen 1–7 ABGESCHLOSSEN (2026-09-11/12).** Umsetzung nach
+`docs/architecture/MODULRUECKTRANSFER-PLAN.md` (Gates: Rollback-Umgebungsschalter,
+Fail-Closed-Contract, Parallelbetrieb, Single-Source-of-Truth):
+
+| Stufe | Modul/Inhalt | BACH-Task | Status |
+|---|---|---|---|
+| 1 | Inventar & Schnittstellenmatrix | 1217 | ABGESCHLOSSEN |
+| 2 | ellmos-tests (Adapter für tools/testing) | 1218 | ABGESCHLOSSEN |
+| 3 | ellmos-scheduler (Provider-Seam) | 1219 | ABGESCHLOSSEN |
+| 4 | accounts-core Welle 3 (CAMT-Saldenimport) | 1220 | ABGESCHLOSSEN |
+| 5 | system-explorer (Topologie-Audit) | 1221 | ABGESCHLOSSEN |
+| 6 | memoryhooker/workflowhooker (Lifecycle-Hooks) | 1222 | ABGESCHLOSSEN |
+| 7 | sqlite-transit-sync (Replikations-Seam Multi-Host) | 1223 | ABGESCHLOSSEN |
+| 8 | SSOT-Zertifizierung + Fork-Archivierung | 1224 | OFFEN |
+
+Betriebs-Nachläufe: argv-Konvertierung der 4 Scheduler-Produktivjobs vor
+`scheduler external verify --apply`; Windows-Gegenproben (Plan-Regel 4.3);
+echter 3-Host-Transitlauf fuer Stufe 7 (Seam + lokale 3-Wege-Simulation
+bereits nachgewiesen, s. Plan Abschnitt Stufe 7).
 
 ### Priorität 1 - Security, Plugin-Härtung, Self-Heal (ab 2026-04-30)
 
@@ -713,8 +1041,20 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 - `core/capabilities.py` - CapabilityManager mit 11 definierten Capabilities
 - Trust-Level Enforcement: goldstandard/trusted/untrusted/blacklist
 
-**Phase 4: Sandbox - Stufe 2+3 (OFFEN)**
-- Stufe 2: Subprocess-Isolation (timeout, memory-limit) — nicht begonnen
+**Phase 4: Sandbox - Stufe 2 (KOMPLETT, 2026-09-12, Task #1071)**
+- `core/sandbox.py` - SandboxLimits + run_isolated: Timeout mit
+  Prozessgruppen-Kill, Memory-Limit zweischichtig (RLIMIT_AS im Kind +
+  RSS-Watchdog im Elternprozess via psutil/`ps`-Fallback, weil macOS
+  RLIMIT_AS nicht durchsetzt), RLIMITs fuer CPU/FSIZE/NPROC vorbereitet,
+  Core-Dumps deaktiviert, Windows-Degradation auf Timeout-only
+- `hub/sandbox.py` - alle Operationen (run/eval/test/shell) auf
+  run_isolated umgestellt, neue Operation `limit [mb]`, Policy-Anzeige
+  erweitert (Memory-Limit + Resource-Bounds)
+- Nebenbefund gefixt: `_extract_base_command` Windows-Pfad-Parsing
+  (shlex frass Backslashes; Test war auf POSIX pre-existing rot)
+- Tests: `tests/test_core_sandbox.py` (21 Tests), 97/97 gruen
+
+**Phase 4: Sandbox - Stufe 3 (OFFEN)**
 - Stufe 3: Container-Isolation (Docker/chroot) — nicht begonnen
 - Rollback bei fehlerhaften Erweiterungen
 
@@ -727,7 +1067,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 | 2 | Workflow-TUeV v1.1.83 | tuev status/check, usecase list/run | KOMPLETT |
 | 3 | Memory-Konsolidierung | CONSOL_001-007, Code komplett, Tasks in DB | In Progress |
 | 4 | GUI-Erweiterungen Phase 4 | 32 Templates, 16k+ LOC, Scheduler+Chain-Tabs | KOMPLETT |
-| 5 | Steuer-Banking Integration | CAMT.053 Parser existiert, Matching offen | PARTIAL |
+| 5 | Steuer-Banking Integration | CAMT.053-Parser + CLBD-Saldenimport komplett (2026-09-12, MODULRUECKTRANSFER Stufe 4/Task 1220); Buchungs-Matching offen | PARTIAL |
 | 6 | Data-Import-Framework | CSV/JSON Import, Schema-Erkennung | KOMPLETT |
 | 7 | CLI-Handler Erweiterungen | contact, gesundheit, haushalt, steuer | KOMPLETT |
 | 8 | Connector & Message-System v2.1 | Queue, Retry, Circuit Breaker, 3 Adapter | KOMPLETT |
@@ -883,6 +1223,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 
 | Version | Datum | Aenderung |
 |---------|-------|----------|
+| **4.3.63** | 2026-09-10 | **Daily Care & Dev Check: Test-Suite stabilisiert (123 passed in `test_self_heal_handlers.py`, `test_memory_working_cleanup.py`, `test_registry_watcher.py`, `test_smoke.py`), `BaseHandler` _canonical_db für Repo-Root/Tests gehärtet, `RestoreHandler` & `WikiHandler` gegen fehlende Manifest-/Artikel-Tabellen resilient gemacht. Agent-Doctor (`ati`, `entwickler`), Dry-Run-Start und Registry-Check verifiziert. Doku-Report erstellt (2102 Dokumente geprüft, 0 veraltet >60d); Memory-Analyse (146 Working-Einträge) und Decay-Smokes grün. Tasks 1199, 1201, 1202, 1212 abgeschlossen.** |
 | **4.3.62** | 2026-07-19 | **Live-Release-Katalog auf `v3.13.0-bluesky` versiegelt: `bach upgrade repair --version v3.13.0-bluesky --json` hebt den aktiven Release-Katalog auf 2 Einträge und `bach upgrade check --json` meldet jetzt Stable/Latest `v3.13.0-bluesky`, `current_release_registered=true`, `repair_recommended=false` und `local_modifications=0`. Zusätzlich wurden `test-agent`-Doctor/Start-Dry-Run sowie Usecase 50 erneut verifiziert. OpenClaw wurde auf Stable `2026.7.1` und Prerelease `2026.7.2-beta.3` nachgezogen; besonders relevant bleiben owning-host Terminal-Resume, guided Setup, externe Supervisor-Handoffs und Recovery-Härtung.** |
 | **4.3.61** | 2026-07-18 | **Task 1177 geschlossen: `memory session` speichert den Bericht einer offenen Session jetzt ohne `ended_at`; der nachfolgende Shutdown beendet dieselbe Zeile und vermeidet dadurch den reproduzierten `UNIQUE(session_id)`-Konflikt. Verifiziert wurden die fokussierte Memory-/Shutdown-Suite (`92 passed`), `test-agent`-Doctor und Start-Dry-Run sowie Usecase 50. OpenClaw bleibt bei Stable `2026.7.1`; das neue Prerelease `2026.7.2-beta.2` bestätigt MCP-Isolation, Task-Ledger, Remote-Worker und Recovery und ergänzt versionierte externe Supervisor-Handoffs sowie begrenzte Prozess-/Netzwerk-Cleanups.** |
 | **4.3.60** | 2026-07-16 | **Geisterdatenbank-Tasks 1163/1167 nach Task-1165-Readback geschlossen: Die zentrale AST-Regel blockiert neue `bach.db`-Eigenkonstruktionen und die fokussierte Suite steht bei 63 grünen Tests; Agent-Doctor/Start-Dry-Run und Usecase 50 bleiben grün. OpenClaw auf Stable `2026.7.1` / Prerelease `2026.7.2-beta.1` abgeglichen; passende Beobachtungspunkte sind session-lokale MCP-Isolation, task-ledger-basierte Cron-Historie und Remote-Worker-Routing.** |

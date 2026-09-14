@@ -307,11 +307,25 @@ class DaemonService:
                     steer_requests=steer_requests,
                 )
 
+            # Cloud-Sync-Schutz: Punktuell fuer schreibintensive Wartungsjobs aktivieren
+            job_str = f"{job.name} {cmd or ''} {job.script_path or ''}".lower()
+            needs_cloud_guard = any(kw in job_str for kw in ['backup', 'consolidate', 'archive', 'db_backup'])
+            cloud_mgr = None
+            if needs_cloud_guard:
+                try:
+                    from hub._services.cloud import get_cloud_manager
+                    cloud_mgr = get_cloud_manager()
+                    cloud_mgr.pause(timeout_seconds=job.timeout_seconds + 30)
+                    logger.info(f"[CloudControl] Cloud-Pause operativ fuer Job '{job.name}' aktiviert")
+                except Exception as ce:
+                    logger.warning(f"[CloudControl] Pause-Hinweis: {ce}")
+                    cloud_mgr = None
+
             if job.script_path:
                 cmd_list = [sys.executable, str(job.script_path)]
                 if job.arguments:
                     parsed_arguments = shlex.split(
-                        job.arguments, posix=(os.name != 'nt')
+                        job.arguments, posix=False
                     )
                     if os.name == 'nt':
                         # posix=False preserves surrounding quotes.  They are
@@ -365,6 +379,15 @@ class DaemonService:
             result["error"] = str(e)
             logger.error(f"Job '{job.name}' Fehler: {e}")
         
+        finally:
+            if 'cloud_mgr' in locals() and cloud_mgr:
+                try:
+                    cloud_mgr.resume()
+                    logger.info(f"[CloudControl] Cloud-Sync nach Job '{job.name}' reaktiviert")
+                    time.sleep(2)  # Kurzes Sync-Fenster
+                except Exception as ce:
+                    logger.warning(f"[CloudControl] Resume-Hinweis: {ce}")
+
         # Dauer berechnen
         end_time = datetime.now()
         result["duration_seconds"] = (end_time - start_time).total_seconds()
@@ -561,10 +584,8 @@ class DaemonService:
 
         logger.info("BACH Daemon Service gestartet")
 
-        # OneDrive pausieren wenn gewuenscht
-        onedrive_paused = False
-        if pause_onedrive:
-            onedrive_paused = self.pause_onedrive()
+        # Hinweis: Cloud-Sync wird nicht mehr dauerhaft im Leerlauf pausiert,
+        # sondern punktuell und operativ waehrend einzelner Schreib-Jobs.
 
         self.load_jobs()
 
@@ -589,10 +610,6 @@ class DaemonService:
                                 logger.error(f"[RECURRING] Fehler: {e}")
 
         finally:
-            # OneDrive fortsetzen
-            if onedrive_paused:
-                self.resume_onedrive()
-
             # PID-File entfernen
             if DAEMON_PID_FILE.exists():
                 DAEMON_PID_FILE.unlink()
@@ -682,64 +699,25 @@ class DaemonService:
 
     @staticmethod
     def pause_onedrive() -> bool:
-        """
-        Pausiert OneDrive-Sync (Windows).
-        Verhindert Sync-Konflikte waehrend Daemon-Operationen.
-
-        Returns:
-            True wenn erfolgreich oder nicht noetig
-        """
-        if sys.platform != 'win32':
-            return True  # Nicht Windows, nicht noetig
-
+        """Rueckwaertskompatibler Wrapper fuer CloudManager."""
         try:
-            # OneDrive-Prozess finden und pausieren
-            import psutil
-
-            for proc in psutil.process_iter(['pid', 'name']):
-                if proc.info['name'] and 'onedrive' in proc.info['name'].lower():
-                    proc.suspend()
-                    logger.info(f"OneDrive pausiert (PID: {proc.pid})")
-                    return True
-
-            logger.info("OneDrive nicht gefunden - kein Pausieren noetig")
-            return True
-
-        except ImportError:
-            logger.warning("psutil nicht installiert - OneDrive-Pause nicht moeglich")
-            return False
+            from hub._services.cloud import get_cloud_manager
+            res = get_cloud_manager().pause("onedrive")
+            return res.get("onedrive", True)
         except Exception as e:
-            logger.error(f"OneDrive pausieren fehlgeschlagen: {e}")
-            return False
+            logger.warning(f"pause_onedrive Wrapper-Fehler: {e}")
+            return True
 
     @staticmethod
     def resume_onedrive() -> bool:
-        """
-        Setzt OneDrive-Sync fort (Windows).
-
-        Returns:
-            True wenn erfolgreich oder nicht noetig
-        """
-        if sys.platform != 'win32':
-            return True
-
+        """Rueckwaertskompatibler Wrapper fuer CloudManager."""
         try:
-            import psutil
-
-            for proc in psutil.process_iter(['pid', 'name', 'status']):
-                if proc.info['name'] and 'onedrive' in proc.info['name'].lower():
-                    if proc.status() == psutil.STATUS_STOPPED:
-                        proc.resume()
-                        logger.info(f"OneDrive fortgesetzt (PID: {proc.pid})")
-                    return True
-
-            return True
-
-        except ImportError:
-            return False
+            from hub._services.cloud import get_cloud_manager
+            res = get_cloud_manager().resume("onedrive")
+            return res.get("onedrive", True)
         except Exception as e:
-            logger.error(f"OneDrive fortsetzen fehlgeschlagen: {e}")
-            return False
+            logger.warning(f"resume_onedrive Wrapper-Fehler: {e}")
+            return True
 
     def get_status(self) -> dict:
         """Liefert aktuellen Daemon-Status."""

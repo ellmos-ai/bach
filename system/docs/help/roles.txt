@@ -1,0 +1,77 @@
+# Portabilitaet: SYSTEM
+# Zuletzt validiert: 2026-09-08
+# Naechste Pruefung: 2027-03-08
+
+AGENTEN-ROLLEN, BOSSE & MULTI-PROVIDER DELEGATION
+=================================================
+
+BESCHREIBUNG
+BACH nutzt ein rollenbasiertes Experten- und Boss-Agentenmodell.
+Buddha (lokales Ollama-Modell qwen3.8:27b-mlx) fungiert als
+universeller First-Line Worker (Tier-1), der alle Rollen autonom
+im Leerlauf uebernehmen kann.
+
+BUDDHA ALS UNIVERSELLER WORKER
+------------------------------
+- Der Idle Worker holt im Hintergrund Aufgaben fuer alle Bosse
+  und Experten aus der Task-Queue ab.
+- Session-Isolation: Jede Aufgabe startet in einer isolierten
+  Session (idle-<rolle>-<task_id>), ohne Kontext-Kontamination.
+- Persona-Praegung: Das Modell schlaepft in die Persona der jeweiligen
+  Rolle (Identitaet, Tonfall, Aufgabenprofil aus system/agents/personas/).
+
+UEBERSICHT DER ROLLEN & PERSONAS
+--------------------------------
+Bosse:
+  persoenlich (Paul)       Alltags- und Arbeitsorganisation, Termine, Memos
+  bueroassistent (Clara)   Dokumentenverwaltung, Ablage, Schriftverkehr
+  gesundheit (Helena)      Gesundheitsdossiers, Laborwerte, Vitaldaten
+  finanzen (Felix)         Budget, Belege, Kontenuebersichten
+  ati (Atlas)              Task-, Tool- und Code-Scanner
+
+Experten:
+  aboservice (Anton)       Abonnements, Vertraege, wiederkehrende Kosten
+  bewerbung (Benjamin)     Lebenslaeufe, Anschreiben, Bewerbungsunterlagen
+  data-analysis (Diana)    Datenanalyse, Statistiken, Auswertungen
+  decision (Dietrich)      Entscheidungsvorlagen, strukturierte Briefings
+  foerderplaner (Florian)  Foerderberichte, ICF-Bedarfe, Paedagogik
+  haushalt (Martha)        Haushaltsroutinen, Vorraete, Organisation
+  steuer (Theodor)         Steuererklaerung, Belegzuordnung
+  transkript (Tristan)     Transkription von Audio/Meetings
+  wiki (Wilhelm)           Wiki-Wissensbeitraege und Recherche
+
+ZUSATZ-ROLLEN
+-------------
+  ticket-master            Triage heimatloser / unzugewiesener Tickets;
+                           ordnet sie automatisch der passenden Persona zu.
+  task-divider             Proaktiver Zerlegungs-Experte; sucht komplexe
+                           Großaufgaben im Backlog und teilt sie vorab auf.
+
+DAS 4-STUFEN-ESKALATIONSPROTOKOLL (Fuer JEDE Rolle!)
+---------------------------------------------------
+Jede Rolle arbeitet verbindlich nach folgenden vier Prioritaeten:
+
+  Stufe 1 - Direktes Loesen:
+    Ueberschaubare Aufgaben sofort im Code/System umsetzen, testen
+    und lokal committen.
+
+  Stufe 2 - Selbst-Dekomposition:
+    Ist die Aufgabe komplex, zerlegt die Rolle den Task eigenstaendig
+    in 3-5 atomare Sub-Tasks (task_manage action='decompose').
+
+  Stufe 3 - Mehrdeutigkeit:
+    Minimal-Invasivitaets-Gebot. Bei offener Wahlfrage: Praezise
+    Option [A] / [B] Auswahl als TO-DECIDE Task anlegen.
+
+  Stufe 4 - Delegation an Tier-2 Provider:
+    Uebersteigt die Aufgabe die lokalen Modellgrenzen (tiefgreifende
+    Algorithmen, Multi-Repo Refactorings):
+    Saubere Uebergabe an Claude Code oder Codex via:
+      delegate(target='claude', prompt='...', context='...')
+      delegate(target='codex', prompt='...', context='...')
+
+SIEHE AUCH
+----------
+  bach --help torch               Interaktiver Working- vs. Chat-Modus
+  bach --help daemon              Scheduler und Hintergrund-Jobs
+  hub/agent_router.py             Semantisches Rollen-Routing

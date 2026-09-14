@@ -32,6 +32,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Tuple, Optional
 from hub.base import BaseHandler
+from hub.domain_writer_gate import blocked_reason
 from hub.lang import t
 
 
@@ -737,6 +738,13 @@ class GesundheitHandler(BaseHandler):
         side_effects = self._get_arg(args, "--side-effects")
 
         start_date = self._parse_date(start_str) if start_str else datetime.now().strftime("%Y-%m-%d")
+
+        # Punkt 3 des C2-Rests (T-20260822-624075478): health_medications gehoert
+        # MediPlaner. Erst hier gepruft, damit Usage-/Argumentfehler weiterhin ihre
+        # eigene, hilfreichere Meldung bekommen.
+        reason = blocked_reason("medication", "gesundheit add-med")
+        if reason:
+            return False, reason
 
         conn = self._get_db()
         try:

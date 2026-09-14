@@ -26,3 +26,6 @@ __all__ = list(getattr(_MODULE, "__all__", []))
 
 for _name in __all__:
     globals()[_name] = getattr(_MODULE, _name)
+
+# Module-level internal attributes needed for testing and lifecycle inspection
+_app = getattr(_MODULE, "_app", None)

@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: MIT
 """
 Tool: token_monitor
-Version: 1.0.0
+Version: 1.1.0
 Author: BACH Team
 Created: 2026-02-04
-Updated: 2026-02-04
+Updated: 2026-09-04
 Anthropic-Compatible: True
 
 VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version token_monitor
@@ -18,17 +18,28 @@ Usage:
     python token_monitor.py [args]
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "BACH Team"
 
+import os
 import sqlite3
+import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Tuple, Optional, Dict
 
-# BACH-Pfade
-BACH_ROOT = Path(__file__).parent.parent
-DB_PATH = BACH_ROOT / "data" / "bach.db"
+
+DEFAULT_MAX_AGE_SECONDS = 3600
+
+def get_db_path() -> Path:
+    """Liefert den zur Laufzeit konfigurierten kanonischen BACH-DB-Pfad."""
+    system_root = Path(__file__).resolve().parent.parent
+    if str(system_root) not in sys.path:
+        sys.path.insert(0, str(system_root))
+
+    from hub import bach_paths
+
+    return Path(bach_paths.BACH_DB)
 
 # Zonen-Grenzen (Prozent)
 ZONE_THRESHOLDS = {
@@ -47,25 +58,28 @@ ZONE_DESCRIPTIONS = {
 }
 
 
-def get_db_connection() -> sqlite3.Connection:
+def get_db_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Erstellt DB-Verbindung."""
-    return sqlite3.connect(str(DB_PATH))
+    return sqlite3.connect(str(db_path or get_db_path()))
 
 
-def get_current_budget_percent() -> Optional[float]:
+def get_current_budget_percent(
+    db_path: Optional[Path] = None,
+    max_age_seconds: Optional[int] = None,
+) -> Optional[float]:
     """
     Holt aktuellen Token-Verbrauch in Prozent aus der DB.
     
     Returns:
-        float: Budget-Prozent (0-100) oder None wenn keine Daten
+        float: Budget-Prozent (0-100) oder None bei fehlenden/veralteten Daten
     """
     try:
-        conn = get_db_connection()
+        conn = get_db_connection(db_path)
         cur = conn.cursor()
         
         # Neuesten Eintrag holen
         cur.execute("""
-            SELECT budget_percent 
+            SELECT budget_percent, timestamp
             FROM monitor_tokens 
             ORDER BY timestamp DESC 
             LIMIT 1
@@ -74,7 +88,22 @@ def get_current_budget_percent() -> Optional[float]:
         row = cur.fetchone()
         conn.close()
         
-        if row and row[0] is not None:
+        if row and row[0] is not None and row[1]:
+            observed_at = datetime.fromisoformat(str(row[1]).replace("Z", "+00:00"))
+            now = datetime.now(observed_at.tzinfo) if observed_at.tzinfo else datetime.now()
+            age_seconds = (now - observed_at).total_seconds()
+            if max_age_seconds is None:
+                try:
+                    max_age_seconds = int(os.environ.get(
+                        "BACH_TOKEN_TELEMETRY_MAX_AGE_SECONDS",
+                        DEFAULT_MAX_AGE_SECONDS,
+                    ))
+                except ValueError:
+                    max_age_seconds = DEFAULT_MAX_AGE_SECONDS
+
+            if age_seconds < 0 or age_seconds > max(1, max_age_seconds):
+                print("[WARN] Token-Telemetrie fehlt oder ist veraltet")
+                return None
             return float(row[0])
         return None
         
@@ -83,7 +112,7 @@ def get_current_budget_percent() -> Optional[float]:
         return None
 
 
-def get_token_zone(budget_percent: Optional[float] = None) -> Tuple[int, str, Dict]:
+def get_token_zone(budget_percent: Optional[float] = None) -> Tuple[Optional[int], str, Dict]:
     """
     Ermittelt die aktuelle Token-Zone fuer Delegation-Entscheidungen.
     
@@ -93,7 +122,7 @@ def get_token_zone(budget_percent: Optional[float] = None) -> Tuple[int, str, Di
     
     Returns:
         Tuple mit:
-        - zone (int): Zone 1-4
+        - zone (int | None): Zone 1-4 oder None bei unbekannter Telemetrie
         - description (str): Zonen-Beschreibung
         - details (dict): Zusaetzliche Infos
             - budget_percent: Aktueller Verbrauch
@@ -103,16 +132,22 @@ def get_token_zone(budget_percent: Optional[float] = None) -> Tuple[int, str, Di
     
     Beispiel:
         zone, desc, details = get_token_zone()
-        print(f"Zone {zone}: {desc}")
-        print(f"Budget: {details['budget_percent']:.1f}%")
+        print(format_zone_status(zone, desc, details))
     """
     # Budget ermitteln
     if budget_percent is None:
         budget_percent = get_current_budget_percent()
     
-    # Default wenn keine Daten: Zone 1 (konservativ)
+    # Ohne Messwert keine automatische Modell- oder Partnerfreigabe.
     if budget_percent is None:
-        budget_percent = 0.0
+        return None, "Token-Telemetrie unbekannt", {
+            "budget_percent": None,
+            "telemetry_status": "unknown",
+            "threshold_min": None,
+            "threshold_max": None,
+            "partners_allowed": ["human"],
+            "timestamp": datetime.now().isoformat(),
+        }
     
     # Zone bestimmen
     zone = 1
@@ -136,6 +171,7 @@ def get_token_zone(budget_percent: Optional[float] = None) -> Tuple[int, str, Di
     
     details = {
         "budget_percent": budget_percent,
+        "telemetry_status": "known",
         "threshold_min": threshold_min,
         "threshold_max": threshold_max,
         "partners_allowed": partners_by_zone.get(zone, ["human"]),
@@ -233,7 +269,7 @@ def check_emergency_shutdown(budget_percent: Optional[float] = None) -> Tuple[bo
         budget_percent = get_current_budget_percent()
     
     if budget_percent is None:
-        return False, "[OK] Keine Token-Daten - kein Shutdown noetig"
+        return False, "[?] Token-Telemetrie unbekannt - Shutdownstatus nicht automatisch bewertbar"
     
     if budget_percent >= 95:
         return True, f"""
@@ -253,15 +289,22 @@ def check_emergency_shutdown(budget_percent: Optional[float] = None) -> Tuple[bo
     return False, f"[OK] Token-Budget bei {budget_percent:.1f}%"
 
 
-def format_zone_status(zone: int, description: str, details: Dict) -> str:
+def format_zone_status(zone: Optional[int], description: str, details: Dict) -> str:
     """
     Formatiert Zone-Status fuer CLI-Ausgabe.
     
     Returns:
         str: Formatierter Status-String
     """
-    budget = details.get('budget_percent', 0)
+    budget = details.get('budget_percent')
     partners = ", ".join(details.get('partners_allowed', []))
+
+    if budget is None or details.get("telemetry_status") == "unknown":
+        return "\n".join([
+            f"[?] Token-Zone unbekannt: {description}",
+            "   Budget: unbekannt",
+            f"   Partner: {partners} (keine automatische Freigabe)",
+        ])
     
     # Zone-Marker (ASCII-kompatibel fuer Windows)
     zone_marker = {1: "[OK]", 2: "[WARN]", 3: "[CRIT]", 4: "[STOP]"}
@@ -280,13 +323,11 @@ def format_zone_status(zone: int, description: str, details: Dict) -> str:
 
 def main():
     """CLI-Einstiegspunkt fuer direkten Aufruf."""
-    import sys
-    
     zone, desc, details = get_token_zone()
     print(format_zone_status(zone, desc, details))
     
-    # Exit-Code = Zone (fuer Scripting)
-    sys.exit(zone)
+    # Exit-Code = Zone; 5 kennzeichnet fehlende Telemetrie.
+    sys.exit(zone if zone is not None else 5)
 
 
 if __name__ == "__main__":

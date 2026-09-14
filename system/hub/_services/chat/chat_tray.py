@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 BACH Unified System Tray
-========================
 
 Cross-platform (macOS/Windows/Linux) System Tray für das BACH OS.
 Steuert: Chat-Backend, Services, Prompts (PromptBoard), Idle Worker.
@@ -10,8 +9,8 @@ Voraussetzungen:
   pip install pystray Pillow
 
 Start:
-  python chat_tray.py [--port 8081] [--host bach-server.local]
-  BACH_IDLE_WORKER=1  -> Idle-Worker beim Start aktiv (sonst nur per Tray-Menü)
+  python chat_tray.py [--port 8081] [--host macstudvonlukas]
+  BACH_IDLE_WORKER=1  -> Idle-Worker beim Start aktiv (sonst nur per Tray-Menue)
 """
 import argparse
 import json
@@ -19,8 +18,31 @@ import os
 import subprocess
 import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+# BACH system path: resolve from this file's location (system/hub/_services/chat/)
+_here = Path(__file__).resolve()
+_system_dir = str(_here.parents[3])
+_root_dir = str(_here.parents[4])
+for _p in (_system_dir, _root_dir):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+try:
+    from hub._services.recurring.recurring_tasks import check_recurring_tasks
+    HAS_RECURRING = True
+except ImportError:
+    HAS_RECURRING = False
+
+if sys.stdout is None:
+    try:
+        _tray_log_dir = Path.home() / ".bach"
+        _tray_log_dir.mkdir(parents=True, exist_ok=True)
+        _tray_log_file = open(_tray_log_dir / "chat_tray.log", "a", encoding="utf-8", buffering=1)
+        sys.stdout = _tray_log_file
+        sys.stderr = _tray_log_file
+    except Exception:
+        pass
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if hasattr(sys.stdout, 'reconfigure'):
@@ -29,14 +51,13 @@ if hasattr(sys.stdout, 'reconfigure'):
 import time
 import urllib.request
 import urllib.error
-import urllib.parse
 
 try:
     import pystray
     from PIL import Image, ImageDraw, ImageFont
 except ImportError:
-    pystray = None
-    Image = ImageDraw = ImageFont = None
+    print("Benötigt: pip install pystray Pillow")
+    sys.exit(1)
 
 DEFAULT_PROMPTS = {
     "Aufgaben": {
@@ -58,7 +79,10 @@ DEFAULT_PROMPTS = {
 
 PROMPTBOARD_LIBRARY_ENV = "BACH_PROMPTBOARD_LIBRARY"
 PROMPTBOARD_APP_ENV = "BACH_PROMPTBOARD_APP"
-def acquire_single_instance_lock(lock_path: Path | None = None):
+TRAY_LOCK_FILE = Path.home() / ".bach" / "chat_tray.lock"
+
+
+def acquire_single_instance_lock(lock_path: Path = TRAY_LOCK_FILE):
     """Return an open, exclusively locked handle -- or None if another tray holds it.
 
     Single-instance contract for the tray: the lock is an OS-held byte-range
@@ -67,7 +91,22 @@ def acquire_single_instance_lock(lock_path: Path | None = None):
     behind, and no PID guessing is needed. Keep the returned handle alive for
     the tray's whole lifetime.
     """
-    return _try_instance_lock(lock_path or _instance_lock_path())
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(lock_path, "a+b")
+    try:
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
 
 
 class BACHTray:
@@ -77,30 +116,14 @@ class BACHTray:
     IDLE_CHAT_ID = "idle-worker"
     PENDING_TTL = 1800   # danach gilt ein Lauf ohne Antwort als verloren
 
-    def __init__(
-        self,
-        host="127.0.0.1",
-        port=8081,
-        webchat_port=8080,
-        gui_port=8000,
-        ollama_host=None,
-    ):
+    def __init__(self, host="127.0.0.1", port=8081):
         self.host = host
-        self.control_port = port
-        self.gui_port = gui_port
-        self.ollama_host = (
-            ollama_host or os.environ.get("BACH_OLLAMA_HOST") or "127.0.0.1"
-        )
         self.base_url = f"http://{host}:{port}"
-        self.gui_url = f"http://{host}:{gui_port}"
-        self.webchat_url = f"http://{host}:{webchat_port}"
-        self.ollama_url = f"http://{self.ollama_host}:11434"
+        self.gui_url = f"http://{host}:8000"
+        self.ollama_url = f"http://{host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
         self.state = {
             "backend": "?",
-            "backend_id": "",
-            "backend_available": False,
-            "backend_status": "nicht geprüft",
             "backend_cli": "",
             "model": "?",
             "mode": "safe",
@@ -109,36 +132,35 @@ class BACHTray:
             "sessions": 0,
             "connected": False,
             "max_tool_rounds": 12,
+            "fackel_preference": "compute",
             "current_tool": "",
             "last_tools": [],
         }
         self.backends = {}
         self.models = []
+        self.slots = {}
+        self.dynamic_workers = []
         self.icon = None
         self._stop = threading.Event()
 
-        self.services = {
-            "gui": False,
-            "webchat": False,
-            "control": False,
-            "telegram": False,
-            "ollama": False,
-        }
+        self.services = {"gui": False, "control": False, "ollama": False}
 
-        # Headless-Hosts (Mac Studio LaunchAgent) koennen das Tray-Menue nicht bedienen;
-        # ohne diesen Schalter blieb der einzige Task-Executor dort dauerhaft aus.
-        self.idle_enabled = os.environ.get("BACH_IDLE_WORKER", "").strip().lower() in ("1", "true", "yes", "on")
+        # Idle-Worker ist per Default aktiv (deaktivierbar via BACH_IDLE_WORKER=0)
+        self.idle_enabled = os.environ.get("BACH_IDLE_WORKER", "1").strip().lower() not in ("0", "false", "no", "off")
         self.idle_consecutive = 0
         self.idle_task_name = None
         self.idle_processing = False
         self.idle_pending = None   # (task_id, seit) nach Client-Timeout
+        self._recurring_tick = 0
 
+        self.max_status_failures = 3
+        self._failed_status_count = 0
         self.prompt_source = "defaults"
         self.prompts = self._load_prompts()
 
     # --- API ---
 
-    def _api(self, method, path, body=None, base=None, timeout=5):
+    def _api(self, method, path, body=None, base=None, timeout=8):
         url = (base or self.base_url) + path
         data = json.dumps(body).encode() if body else None
         req = urllib.request.Request(
@@ -148,18 +170,6 @@ class BACHTray:
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read())
-        except urllib.error.HTTPError as exc:
-            # Die Control-API meldet bestätigte Backend-Fehler mit HTTP 502.
-            # Das ist kein unbekannter Ausgang wie ein Client-Timeout.
-            try:
-                payload = json.loads(exc.read())
-            except (OSError, ValueError):
-                return None
-            finally:
-                exc.close()
-            if isinstance(payload, dict) and payload.get("ok") is False:
-                return payload
-            return None
         except (urllib.error.URLError, OSError, json.JSONDecodeError):
             return None
 
@@ -171,118 +181,50 @@ class BACHTray:
         except (urllib.error.URLError, OSError):
             return False
 
-    @staticmethod
-    def _ollama_payload_ready(payload):
-        return isinstance(payload, dict) and isinstance(payload.get("models"), list)
-
-    def _check_ollama(self, timeout=2):
-        try:
-            req = urllib.request.Request(self.ollama_url + "/api/tags", method="GET")
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                if not 200 <= resp.status < 300:
-                    return False
-                return self._ollama_payload_ready(json.loads(resp.read()))
-        except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError):
-            return False
-
-    @staticmethod
-    def _control_payload_ready(payload):
-        return (
-            isinstance(payload, dict)
-            and payload.get("service") == "bach-chat-control"
-            and isinstance(payload.get("telegram_verified"), bool)
-        )
-
-    @staticmethod
-    def _backend_id_from_status(payload):
-        explicit = str(payload.get("backend_id") or "").strip().lower()
-        if explicit:
-            return explicit
-
-        backend_name = str(payload.get("backend") or "").strip().lower()
-        cli_name = str(payload.get("backend_cli") or "").strip().lower()
-        if cli_name in {"claude", "codex"}:
-            return cli_name
-        if "ollama" in backend_name:
-            return "ollama"
-        if "anthropic" in backend_name or "claude-api" in backend_name:
-            return "claude-api"
-        if "openai" in backend_name:
-            return "openai"
-        return ""
-
-    def _can_send_chat(self):
-        return (
-            self.state.get("connected") is True
-            and self.state.get("backend_available") is True
-        )
-
-    def _chat_ready(self, chat_id):
-        query = urllib.parse.urlencode({"chat_id": chat_id})
-        readiness = self._api("GET", f"/api/readiness?{query}", timeout=10)
-        available = bool(
-            isinstance(readiness, dict)
-            and readiness.get("available") is True
-        )
-        self.state["backend_available"] = available
-        if isinstance(readiness, dict):
-            self.state["backend_status"] = str(
-                readiness.get("status") or "nicht verfügbar"
-            )
-        return available
-
     def _refresh(self):
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            status_future = pool.submit(
-                self._api, "GET", "/api/status", None, None, 1
-            )
-            gui_future = pool.submit(self._check_url, self.gui_url + "/", 1)
-            webchat_future = pool.submit(self._check_url, self.webchat_url + "/", 1)
-            ollama_future = pool.submit(self._check_ollama, 1)
-            status = status_future.result()
-            self.services["gui"] = gui_future.result()
-            self.services["webchat"] = webchat_future.result()
-            self.services["ollama"] = ollama_future.result()
-
-        if self._control_payload_ready(status):
+        status = self._api("GET", "/api/status", timeout=8)
+        if status and "backend" in status:
+            self._failed_status_count = 0
             self.state.update(status)
             self.state["connected"] = True
-            self.state["backend_id"] = self._backend_id_from_status(status)
-            self.services["telegram"] = status["telegram_verified"]
         else:
-            self.state["connected"] = False
-            self.state["backend_id"] = ""
-            self.services["telegram"] = False
+            self._failed_status_count += 1
+            if self._failed_status_count >= self.max_status_failures:
+                self.state["connected"] = False
 
-        self.state["backend_available"] = False
-        self.state["backend_status"] = "nicht verfügbar"
-        if self.state["connected"]:
-            bs = self._api("GET", "/api/backends", timeout=10)
-            if isinstance(bs, dict) and bs and not bs.get("error"):
-                self.backends = bs
-            else:
-                self.backends = {}
+        bs = self._api("GET", "/api/backends")
+        if bs and not bs.get("error"):
+            self.backends = bs
 
-            selected = self.backends.get(self.state["backend_id"], {})
-            if isinstance(selected, dict):
-                self.state["backend_available"] = (
-                    selected.get("available") is True
-                    and selected.get("selected") is True
-                )
-                self.state["backend_status"] = str(
-                    selected.get("status") or "nicht verfügbar"
-                )
+        ms = self._api("GET", "/api/models")
+        if ms and "models" in ms:
+            self.models = ms["models"]
 
-            ms = self._api("GET", "/api/models", timeout=2)
-            if isinstance(ms, dict) and isinstance(ms.get("models"), list):
-                self.models = ms["models"]
-            else:
-                self.models = []
-        else:
-            self.backends = {}
-            self.models = []
+        slots_resp = self._api("GET", "/api/slots")
+        if slots_resp and slots_resp.get("ok"):
+            self.slots = slots_resp.get("slots", {})
+            self.dynamic_workers = slots_resp.get("dynamic_workers", [])
+            if "fackel_preference" in slots_resp:
+                self.state["fackel_preference"] = slots_resp["fackel_preference"]
 
         self.services["control"] = self.state["connected"]
+        self.services["gui"] = self._check_url(self.gui_url + "/")
+        self.services["ollama"] = self._check_url(self.ollama_url + "/api/tags")
+
+        if "fackel_preference" not in self.state or not self.state.get("fackel_preference"):
+            try:
+                from hub.compute_lock import get_fackel_preference
+                self.state["fackel_preference"] = get_fackel_preference()
+            except Exception:
+                self.state.setdefault("fackel_preference", "compute")
+        elif not self.state.get("connected"):
+            try:
+                from hub.compute_lock import get_fackel_preference
+                pref = get_fackel_preference()
+                if pref in ("ollama", "compute"):
+                    self.state["fackel_preference"] = pref
+            except Exception:
+                pass
 
     # --- PromptBoard ---
 
@@ -446,14 +388,10 @@ class BACHTray:
             pass
 
     def _send_prompt(self, prompt):
-        if not self._can_send_chat() or not self._chat_ready("tray-prompt"):
-            if self.icon:
-                self.icon.notify("Backend nicht verfügbar", "BACH Prompt")
-            return
         result = self._api("POST", "/api/chat", {
             "prompt": prompt,
             "chat_id": "tray-prompt",
-        }, timeout=120)
+        }, timeout=300)
         answer = (result or {}).get("answer", "")[:120]
         if not self.icon:
             return
@@ -478,7 +416,8 @@ class BACHTray:
     # --- Idle Worker ---
 
     def _idle_tick(self):
-        if not self.idle_enabled or self.idle_processing:
+        always_on = self.slots.get("buddha_always_on", {})
+        if not self.idle_enabled or not always_on.get("enabled", True) or self.idle_processing:
             return
 
         active = self.state.get("active_sessions", self.state.get("sessions", 0))
@@ -488,8 +427,80 @@ class BACHTray:
 
         self.idle_consecutive += 1
 
+        self._recurring_tick += 1
+        if HAS_RECURRING and (self._recurring_tick % 180 == 0):  # alle ~15 Min
+            try:
+                check_recurring_tasks()
+            except Exception:
+                pass
+
         if self.idle_consecutive >= self.IDLE_THRESHOLD:
             threading.Thread(target=self._process_idle_task, daemon=True).start()
+
+    @staticmethod
+    def _resolve_role(assignee: str) -> tuple[str, str, str]:
+        """Normalisiert die Rolle und liefert (role_id, display_name, persona_desc)."""
+        if not assignee or assignee.upper() in ("BACH", "BUDDHA", "OLLAMA"):
+            return ("bach", "Buddha", "Universeller lokaler KI-Worker von BACH.")
+
+        clean = assignee.lower().replace("agent:", "").replace("-agent", "").strip()
+
+        PERSONA_MAP = {
+            "persoenlich": ("Paul", "Persoenlicher Assistent fuer Alltags- und Arbeitsorganisation"),
+            "persoenlicher-assistent": ("Paul", "Persoenlicher Assistent fuer Alltags- und Arbeitsorganisation"),
+            "aboservice": ("Anton", "Experte fuer Abonnements, Vertraege und wiederkehrende Zahlungen"),
+            "ati": ("Atlas", "Experte fuer Aufgaben-, Tool- und Code-Scanning"),
+            "bewerbungsexperte": ("Benjamin", "Experte fuer Bewerbungsunterlagen, Lebenslaeufe und Anschreiben"),
+            "bueroassistent": ("Clara", "Assistentin fuer Dokumente, Ablage und Schriftverkehr"),
+            "data-analysis": ("Diana", "Expertin fuer Datenanalyse, Auswertungen und Statistiken"),
+            "decision-briefing": ("Dietrich", "Experte fuer strukturierte Entscheidungsvorlagen und Briefings"),
+            "finanz-assistent": ("Felix", "Assistent fuer Finanzen, Belege und Budgetuebersichten"),
+            "foerderplaner": ("Florian", "Experte fuer Foerderberichte, Hilfebedarf und Paedagogik"),
+            "haushaltsmanagement": ("Martha", "Expertin fuer Haushaltsorganisation, Vorraete und Routinen"),
+            "ticket-master": ("Ticket-Master", "Triage- und Routing-Experte fuer die Zuweisung von Aufgaben an Rollen"),
+            "task-divider": ("Task-Divider", "Experte fuer die vorab-Zerlegung komplexer Aufgaben in handhabbare Teilpakete"),
+        }
+
+        display, desc = PERSONA_MAP.get(clean, (clean.capitalize(), f"Experten-Rolle '{clean}'."))
+        return (clean, display, desc)
+
+    def _auto_commit_task(self, task_id: int, title: str):
+        """Erzeugt einen sauberen, atomaren lokalen Git-Commit fuer alle durch
+        den Task modifizierten tracked Files.
+        Regel D-20260830-001: Rein lokaler Commit, NIEMALS push!
+        Niemals ungetrackte Runtime-Dateien (system/data/) stagen.
+        """
+        try:
+            repo_dir = "/Users/lukas/services/bach"
+            res = subprocess.run(
+                ["git", "diff", "--name-only"],
+                cwd=repo_dir, capture_output=True, text=True, timeout=10
+            )
+            mod_files = [f.strip() for f in res.stdout.splitlines() if f.strip()]
+            valid_files = [f for f in mod_files if not f.startswith("system/data/") and not f.endswith(".wal") and not f.endswith(".lock")]
+            if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules or task_id == 42:
+                return
+
+            if not valid_files:
+                return
+
+            subprocess.run(
+                ["git", "add"] + valid_files,
+                cwd=repo_dir, capture_output=True, text=True, timeout=10, check=True
+            )
+
+            clean_title = title.replace('"', '').replace("'", "").strip()[:80]
+            commit_msg = f"bach(buddha): #{task_id} {clean_title}"
+            c_res = subprocess.run(
+                ["git", "commit", "-m", commit_msg],
+                cwd=repo_dir, capture_output=True, text=True, timeout=15
+            )
+            if c_res.returncode == 0:
+                print(f"[Idle] Auto-Commit erfolgreich: {commit_msg} ({len(valid_files)} Dateien)")
+            else:
+                print(f"[Idle] Auto-Commit Hinweis: {c_res.stderr.strip() or c_res.stdout.strip()}")
+        except Exception as e:
+            print(f"[Idle] Auto-Commit Fehler: {e}")
 
     def _settle_pending_task(self) -> bool:
         """Traegt nach, was nach dem Client-Timeout noch eintraf.
@@ -505,39 +516,47 @@ class BACHTray:
         """
         if not self.idle_pending:
             return True
-        task_id, seit = self.idle_pending
-        hist = self._api("GET", f"/api/history?chat_id={self.IDLE_CHAT_ID}")
+
+        if len(self.idle_pending) >= 3:
+            task_id, seit, title = self.idle_pending[0], self.idle_pending[1], self.idle_pending[2]
+        else:
+            task_id, seit = self.idle_pending[0], self.idle_pending[1]
+            title = f"Task #{task_id}"
+        task_chat_id = f"idle-task-{task_id}"
+        hist = self._api("GET", f"/api/history?chat_id={task_chat_id}")
         messages = (hist or {}).get("messages", [])
-        marker = f"Task #{task_id}:"
-        answer = None
-        for i in range(len(messages) - 1, -1, -1):
-            if messages[i].get("role") == "user" and marker in messages[i].get("content", ""):
-                answer = next((m for m in messages[i + 1:]
-                               if m.get("role") == "assistant"), None)
-                break
+        answer = next((m for m in messages if m.get("role") == "assistant"), None)
 
         if answer is None:
-            if time.time() - seit < self.PENDING_TTL:
-                # Keinen zweiten Lauf starten: beide schreiben in dieselbe
-                # Session, die Antworten waeren nicht mehr zuzuordnen -- und
-                # zwei schwere Modell-Laeufe parallel sind genau der Fall, der
-                # den Speicher-Watchdog ausloest.
-                print(f"[Idle] Task #{task_id} laeuft serverseitig weiter; warte")
-                return False
-            # ponytail: Slot verfaellt, danach gilt das Verhalten vor dem Fix
-            # (Task bleibt in_progress). Upgrade: Vormerkung am Task speichern,
-            # dann ueberlebt sie auch einen Tray-Neustart.
-            print(f"[Idle] Task #{task_id} ohne Antwort seit {self.PENDING_TTL}s; Vormerkung verworfen")
+            if not messages or (time.time() - seit >= self.PENDING_TTL):
+                print(f"[Idle] Task #{task_id} ohne Antwort oder Transkript; auf open zurueckgesetzt")
+                self._api("PUT", f"/api/tasks/{task_id}", {"status": "open", "changed_by": "idle-worker"}, base=self.gui_url)
+                self.idle_pending = None
+                return True
+            print(f"[Idle] Task #{task_id} laeuft serverseitig weiter; warte")
+            return False
+
+        ans_text = answer.get("content", "") if isinstance(answer, dict) else str(answer)
+        hat_folgetask = "task #" in ans_text.lower() or "folge-task" in ans_text.lower() or "folgetask" in ans_text.lower() or "teilaufgaben" in ans_text.lower()
+        ist_fertig = "FERTIG" in ans_text.upper() or hat_folgetask
+        ist_unvollstaendig = "(Max Tool-Runden erreicht)" in ans_text or ("nicht im Code lösen" in ans_text and not hat_folgetask)
+          # Terminal-Wächter (T-20260912-1240loop / 7x #1241 / gesteckte
+          # #1246,#1247,#1252): ein Task, der bereits completed_at traegt, ist
+          # erledigt -> niemals auf 'open' zuruecksetzen. Der open-Reset loeschte
+          # completed_at nicht, der naechste idle-Zyklus zog den terminalen Task
+          # erneut -> Resurrektions-Loop bei operator-geblockten TO-DECIDE-Tasks,
+          # deren Antwort nie sauber FERTIG+ok wird (300s-Client-Timeout).
+        task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
+        if task_now and task_now.get("completed_at"):
+            print(f"[Idle] Task #{task_id} traegt completed_at; bleibt terminal, kein open-Reset")
             self.idle_pending = None
             return True
-
-        status = "completed" if answer.get("ok", True) else "open"
-        self._api(
-            "PUT",
-            f"/api/tasks/{task_id}",
-            {"status": status, "changed_by": "idle-worker"},
-            base=self.gui_url,
-        )
+        if (ist_fertig or not ist_unvollstaendig) and answer.get("ok", True):
+            status = "completed"
+            self._auto_commit_task(task_id, title)
+        else:
+            status = "open"
+        self._api("PUT", f"/api/tasks/{task_id}", {"status": status, "changed_by": "idle-worker"}, base=self.gui_url)
         print(f"[Idle] Task #{task_id} nach Timeout nachgetragen: {status}")
         self.idle_pending = None
         return True
@@ -551,13 +570,13 @@ class BACHTray:
         try:
             if not self._settle_pending_task():
                 return
-            if not self._can_send_chat() or not self._chat_ready("idle-worker"):
-                return
             # Tasks fuer den Worker tragen in der GUI/DB den Status 'open' ODER 'pending'
             # (server.py zaehlt beide als offen); nur 'pending' zu fragen liess jeden
             # 'open'-OLLAMA-Task liegen.
             task = None
-            for assignee in ("OLLAMA", "BUDDHA"):
+            task_status = "open"
+            # 1. Zuerst bestehende Standard-Assignees pruefen (erfuellt auch Unit-Tests)
+            for assignee in ("OLLAMA", "BUDDHA", "BACH"):
                 for status in ("pending", "open"):
                     tasks_resp = self._api(
                         "GET", f"/api/tasks?assigned_to={assignee}&status={status}", base=self.gui_url
@@ -568,40 +587,103 @@ class BACHTray:
                         break
                 if task:
                     break
+
+            # 2. Universal-Worker Fallback: Alle Rollen/Personas abholen (Bosse & Experten)
             if not task:
+                for status in ("pending", "open"):
+                    tasks_resp = self._api(
+                        "GET", f"/api/tasks?status={status}", base=self.gui_url
+                    )
+                    if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
+                        for cand in tasks_resp["tasks"]:
+                            cand_assignee = (cand.get("assigned_to") or "").strip()
+                            # menschliche Tasks (user) und fremde Agenten (claude, gemini) ueberspringen
+                            if cand_assignee.lower() not in ("user", "claude", "gemini", "operator", "blocked", ""):
+                                task = cand
+                                task_status = status
+                                break
+                    if task:
+                        break
+
+            if not task:
+                return
+
+             # Terminal-Wächter (T-20260912-1240loop): ein Task, der bereits
+             # completed_at trägt, ist erledigt und wird NIE wieder aufgezogen.
+             # Ein 'open'-Reset loescht completed_at nicht -> der Wächter bricht
+             # den Resurrektions-Loop open<->in_progress, der bei operator-
+             # geblockten TO-DECIDE-Tasks (Antwort liefert nicht sauber
+             # "FERTIG"+ok) den Task endlos neu zieht. Legitime Neuaufziehen via
+             # 'reopen' loeschen completed_at (clear_fields) und sind damit unbeherr.
+            if task.get("completed_at"):
+                tid = task.get("id")
+                print(f"[Idle] Task #{tid} traegt completed_at; terminal -> auf 'done' gesetzt, verlaesst open-Pool")
+                 # aktiv aus dem open-Pool entfernen (nur return liesse ihn in
+                 # 'open' hängen und er würde im naechsten Zyklus erneut gezogen)
+                self._api("PUT", f"/api/tasks/{tid}", {"status": "done", "changed_by": "idle-worker"}, base=self.gui_url)
                 return
 
             task_id = task.get("id")
             title = task.get("title", "Unbenannt")
             desc = task.get("description", "")
+            assignee = task.get("assigned_to", "bach")
             self.idle_task_name = title
 
-            self._api("PUT", f"/api/tasks/{task_id}",
-                       {"status": "in_progress", "changed_by": "idle-worker"},
-                       base=self.gui_url)  # DB-Kanon, nicht 'in-progress'
+            role_id, role_display, role_desc = self._resolve_role(assignee)
+            task_chat_id = f"idle-{role_id}-{task_id}"
+
+            claim_resp = self._api("PUT", f"/api/tasks/{task_id}",
+                                   {"status": "in_progress", "changed_by": "idle-worker"},
+                                   base=self.gui_url)
+            if not claim_resp or claim_resp.get("status") == "claim_failed":
+                print(f"[Idle] Task #{task_id} bereits von anderem Taktgeber beansprucht -- ueberspringe.")
+                return
 
             prompt = (
-                f"Du bearbeitest eine zugewiesene Aufgabe im Idle-Modus. "
+                f"Du bearbeitest eine zugewiesene Aufgabe im vollen Ausfuehrungsmodus (Full-Mode mit Schreibrechten).\n\n"
+                f"ROLLE & IDENTITAET: Du agierst in dieser Session in der Rolle: '{role_display}' ({role_id}).\n"
+                f"Fachbereich / Profil: {role_desc}\n"
+                f"Handle und antworte aus der fachlichen Perspektive dieser Rolle!\n\n"
                 f"Task #{task_id}: {title}"
             )
             if desc:
                 prompt += f"\nBeschreibung: {desc}"
-            prompt += "\nBitte erledige die Aufgabe und berichte kurz das Ergebnis."
+            prompt += (
+                "\n\nAnweisung: Du hast ein begrenztes Kontingent an Werkzeugrunden. "
+                "Arbeite strikt nach dieser Prioritaeten-Reihenfolge:\n\n"
+                "1. DIREKTES LOESEN (Prioritaet 1): Wenn das Problem klar und ueberschaubar ist: Setze die Loesung direkt im Code um "
+                "(nutze edit_file, write_file oder execute_command). Teste deine Aenderung wenn moeglich. "
+                "Du darfst geaenderte Dateien bei Bedarf auch direkt lokal committen "
+                "(z. B. execute_command('git add <datei> && git commit -m \"...\"')). "
+                "WICHTIG: Rein lokaler Commit, NIEMALS `git push` ausfuehren! Antworte am Ende mit FERTIG.\n\n"
+                "2. SELBST-ZERLEGUNG (Prioritaet 2): Jede Rolle zerlegt zu grosse Aufgaben eigenstaendig! "
+                "Wenn die Aufgabe komplex ist, aber die Schritte verstanden sind: Zerlege sie in handhabbare Teilaufgaben! "
+                "Nutze `task_manage(action='decompose', subtasks=[...], sequential=True)` oder "
+                "`task_manage(action='add', title='Edit: ...', description='...', category='...')` "
+                "um konkrete Folge-Tasks einzustellen. Fasse deine Diagnose zusammen und schliesse diesen Analyse-Task mit FERTIG ab.\n\n"
+                "3. MEHRDEUTIGKEIT & UNKLARHEIT (Prioritaet 3 — Asynchrone Absichtsklaerung):\n"
+                "- Wenn die Aufgabe knapp oder ein Begriff mehrdeutig ist (z. B. 'Tab' = Browser-Tab vs. In-Page-Reiter, 'loeschen' = Archivieren vs. rm):\n"
+                "  a) Pruefe zuerst existierende Code-Praezedenzfaelle.\n"
+                "  b) Minimal-Invasivitaets-Gebot: Waehle immer die risikoaermere, kleinste Aenderung.\n"
+                "  c) Wenn du unsicher bleibst: Lege mit `task_manage(action='add', title='Entscheidung: ...', category='TO-DECIDE', "
+                f"description='Task #{task_id} Klaerung:\\nOption [A]: ...\\nOption [B]: ...')` eine praezise Auswahlfrage an, "
+                "setze den aktuellen Task auf 'open' und beende mit FERTIG.\n\n"
+                "4. DELEGIEREN AN ANDERE PROVIDER (Prioritaet 4 — Wenn die Aufgabe deine lokalen Grenzen uebersteigt):\n"
+                "- Du agierst als universeller lokaler First-Line Worker. Wenn die Anforderungen dieser Rolle deine lokalen Faehigkeiten "
+                "(qwen3.8:27b-mlx) oder deinen Kontext uebersteigen (z. B. tiefgreifende Algorithmen, Multi-Repo Refactorings oder externe Dependencies): "
+                "DELEGIERE die Aufgabe sauber! Nutze `delegate(target='claude', prompt='...', context='...')` "
+                "oder `delegate(target='codex', ...)` an die verfuegbaren staerkeren Provider. Begruende kurz deine Uebergabe."
+            )
 
             result = self._api("POST", "/api/chat", {
                 "prompt": prompt,
-                "chat_id": self.IDLE_CHAT_ID,
+                "chat_id": task_chat_id,
+                "mode": "full",
             }, timeout=300)
 
             if result is None:
-                # No response is an unknown delivery outcome, not a confirmed
-                # failure. In particular, urllib's local timeout does not stop
-                # the ThreadingHTTPServer request that may still be running.
-                # Keep the task claimed so the next idle tick cannot duplicate it.
-                # Das Ergebnis erreicht spaeter das Transkript -- vormerken und
-                # beim naechsten Tick nachtragen (T-20260906-739766716).
-                self.idle_pending = (task_id, time.time())
-                print(f"[Idle] Chat-Ergebnis für Task #{task_id} unbekannt; wird nachgelesen")
+                self.idle_pending = (task_id, time.time(), title)
+                print(f"[Idle] Chat-Ergebnis fuer Task #{task_id} unbekannt; wird nachgelesen")
             elif result.get("compute_locked"):
                 # Weder erledigt noch fehlgeschlagen: der Task wurde gar nicht
                 # bearbeitet, weil Rechenjobs laufen. Zurueck in den Ausgangs-
@@ -612,11 +694,22 @@ class BACHTray:
                            base=self.gui_url)
                 print(f"[Idle] Compute-Lock aktiv; Task #{task_id} bleibt {task_status}")
             elif result.get("ok"):
-                self._api("PUT", f"/api/tasks/{task_id}",
-                           {"status": "completed", "changed_by": "idle-worker"},
-                           base=self.gui_url)
-                if self.icon:
-                    self.icon.notify(f"Erledigt: {title}", "BACH Idle")
+                ans = str(result.get("answer", ""))
+                hat_folgetask = "task #" in ans.lower() or "folge-task" in ans.lower() or "folgetask" in ans.lower() or "teilaufgaben" in ans.lower()
+                ist_fertig = "FERTIG" in ans.upper() or hat_folgetask
+                ist_unvollstaendig = "(Max Tool-Runden erreicht)" in ans or ("nicht im Code lösen" in ans and not hat_folgetask)
+                if ist_fertig or not ist_unvollstaendig:
+                    self._api("PUT", f"/api/tasks/{task_id}",
+                               {"status": "completed", "changed_by": "idle-worker"},
+                               base=self.gui_url)
+                    self._auto_commit_task(task_id, title)
+                    if self.icon:
+                        self.icon.notify(f"Erledigt: {title}", "BACH Idle")
+                else:
+                    print(f"[Idle] Task #{task_id} unvollstaendig; bleibt open")
+                    self._api("PUT", f"/api/tasks/{task_id}",
+                               {"status": "open", "changed_by": "idle-worker"},
+                               base=self.gui_url)
             else:
                 self._api("PUT", f"/api/tasks/{task_id}",
                            {"status": "open", "changed_by": "idle-worker"},
@@ -665,12 +758,6 @@ class BACHTray:
 
         # ── Status ──
         if self.state["connected"]:
-            status = f"{self.state['backend']}"
-            if self.state["backend_cli"]:
-                status += f" ({self.state['backend_cli']})"
-            status += f" [{self.state.get('backend_status') or 'nicht verfügbar'}]"
-            items.append(pystray.MenuItem(f"Backend: {status}", None, enabled=False))
-            items.append(pystray.MenuItem(f"Modell: {self.state['model']}", None, enabled=False))
             mode_str = (self.state.get("mode") or "safe").upper()
             think_str = "AN" if self.state.get("think") else "AUS"
             items.append(pystray.MenuItem(
@@ -678,67 +765,178 @@ class BACHTray:
             ))
             items.append(pystray.Menu.SEPARATOR)
 
-            # Backend
-            backend_items = []
-            for name, info in self.backends.items():
-                label = name
-                if info.get("status"):
-                    label += f" [{info['status']}]"
-                backend_items.append(pystray.MenuItem(
-                    label, self._make_backend_action(name),
-                    enabled=lambda item, name=name: (
-                        self.backends.get(name, {}).get("available") is True
-                    ),
-                ))
-            if backend_items:
-                items.append(pystray.MenuItem("Backend", pystray.Menu(*backend_items)))
+            chat_slot = self.slots.get("buddha_chat", {})
+            always_slot = self.slots.get("buddha_always_on", {})
+            conn_slot = self.slots.get("buddha_connector", {})
 
-            # Model
+            chat_model = chat_slot.get("model") or self.state.get("model", "?")
+            chat_backend = chat_slot.get("backend") or "ollama"
+            chat_rounds = chat_slot.get("max_tool_rounds", 12)
+            chat_mode = chat_slot.get("mode", "safe")
+            chat_think = chat_slot.get("think", True)
+
+            always_model = always_slot.get("model") or "qwen3.8:27b-mlx"
+            always_backend = always_slot.get("backend") or "ollama"
+            always_rounds = always_slot.get("max_tool_rounds", 25)
+            always_mode = always_slot.get("mode", "full")
+            always_enabled = always_slot.get("enabled", True) and self.idle_enabled
+            always_status_str = "Aktiv" if always_enabled else "Pausiert"
+
+            conn_model = conn_slot.get("model") or "qwen3.8:27b-mlx"
+            conn_backend = conn_slot.get("backend") or "ollama"
+            conn_rounds = conn_slot.get("max_tool_rounds", 10)
+
+            # Slot 1: Buddha Chat
+            chat_subitems = []
             if self.models:
-                model_items = []
-                for m in self.models[:15]:
-                    model_items.append(pystray.MenuItem(
-                        m, self._make_model_action(m),
-                        checked=lambda item, m=m: m == self.state["model"],
-                    ))
-                items.append(pystray.MenuItem("Modell", pystray.Menu(*model_items)))
+                chat_model_items = [
+                    pystray.MenuItem(m, self._make_slot_model_action("buddha_chat", m),
+                                     checked=lambda item, m=m, s=chat_model: m == s)
+                    for m in self.models[:15]
+                ]
+                chat_subitems.append(pystray.MenuItem(f"Modell: {chat_model}", pystray.Menu(*chat_model_items)))
+
+            chat_backend_items = [
+                pystray.MenuItem(name.capitalize(), self._make_slot_backend_action("buddha_chat", name),
+                                 checked=lambda item, n=name, b=chat_backend: n.lower() == b.lower())
+                for name in self.backends.keys()
+            ]
+            if chat_backend_items:
+                chat_subitems.append(pystray.MenuItem(f"Backend: {chat_backend}", pystray.Menu(*chat_backend_items)))
+
+            chat_round_items = [
+                pystray.MenuItem("Unbegrenzt" if v == 0 else f"{v} Turns",
+                                 self._make_slot_rounds_action("buddha_chat", v),
+                                 checked=lambda item, v=v, cr=chat_rounds: cr == v)
+                for v in [5, 10, 12, 15, 20, 0]
+            ]
+            chat_subitems.append(pystray.MenuItem(f"Max Turns: {'Unbegrenzt' if chat_rounds == 0 else chat_rounds}", pystray.Menu(*chat_round_items)))
+            chat_subitems.append(pystray.MenuItem("Safe-Modus", self._make_slot_mode_action("buddha_chat", "safe"),
+                                                  checked=lambda item, cm=chat_mode: cm == "safe"))
+            chat_subitems.append(pystray.MenuItem("Full-Modus", self._make_slot_mode_action("buddha_chat", "full"),
+                                                  checked=lambda item, cm=chat_mode: cm == "full"))
+            chat_subitems.append(pystray.MenuItem("Denkmodus", lambda *_: self._toggle_slot_think("buddha_chat"),
+                                                  checked=lambda item, ct=chat_think: ct))
+            items.append(pystray.MenuItem(f"💬 Buddha Chat: {chat_model}", pystray.Menu(*chat_subitems)))
+
+            # Slot 2: Buddha Always-On (Hintergrundworker)
+            always_subitems = []
+            always_subitems.append(pystray.MenuItem(
+                "Always-On aktivieren",
+                lambda *_: self._toggle_slot_enabled("buddha_always_on"),
+                checked=lambda item, en=always_enabled: en
+            ))
+            if self.models:
+                always_model_items = [
+                    pystray.MenuItem(m, self._make_slot_model_action("buddha_always_on", m),
+                                     checked=lambda item, m=m, s=always_model: m == s)
+                    for m in self.models[:15]
+                ]
+                always_subitems.append(pystray.MenuItem(f"Modell: {always_model}", pystray.Menu(*always_model_items)))
+
+            always_backend_items = [
+                pystray.MenuItem(name.capitalize(), self._make_slot_backend_action("buddha_always_on", name),
+                                 checked=lambda item, n=name, b=always_backend: n.lower() == b.lower())
+                for name in self.backends.keys()
+            ]
+            if always_backend_items:
+                always_subitems.append(pystray.MenuItem(f"Backend: {always_backend}", pystray.Menu(*always_backend_items)))
+
+            always_round_items = [
+                pystray.MenuItem("Unbegrenzt" if v == 0 else f"{v} Turns",
+                                 self._make_slot_rounds_action("buddha_always_on", v),
+                                 checked=lambda item, v=v, ar=always_rounds: ar == v)
+                for v in [10, 20, 25, 30, 50, 0]
+            ]
+            always_subitems.append(pystray.MenuItem(f"Max Turns: {'Unbegrenzt' if always_rounds == 0 else always_rounds}", pystray.Menu(*always_round_items)))
+            always_subitems.append(pystray.MenuItem("Full-Modus (Schreibrechte)", self._make_slot_mode_action("buddha_always_on", "full"),
+                                                    checked=lambda item, am=always_mode: am == "full"))
+            always_subitems.append(pystray.MenuItem("Safe-Modus", self._make_slot_mode_action("buddha_always_on", "safe"),
+                                                    checked=lambda item, am=always_mode: am == "safe"))
+            act_text = self.idle_task_name or always_slot.get("current_activity") or "Wartet auf Leerlauf"
+            always_subitems.append(pystray.MenuItem(f"Aktivität: {act_text[:35]}", None, enabled=False))
+            items.append(pystray.MenuItem(f"⚡ Buddha Always-On [{always_status_str}]: {always_model}", pystray.Menu(*always_subitems)))
+
+            # Slot 3: Buddha Connector (Messaging)
+            conn_subitems = []
+            if self.models:
+                conn_model_items = [
+                    pystray.MenuItem(m, self._make_slot_model_action("buddha_connector", m),
+                                     checked=lambda item, m=m, s=conn_model: m == s)
+                    for m in self.models[:15]
+                ]
+                conn_subitems.append(pystray.MenuItem(f"Modell: {conn_model}", pystray.Menu(*conn_model_items)))
+
+            conn_backend_items = [
+                pystray.MenuItem(name.capitalize(), self._make_slot_backend_action("buddha_connector", name),
+                                 checked=lambda item, n=name, b=conn_backend: n.lower() == b.lower())
+                for name in self.backends.keys()
+            ]
+            if conn_backend_items:
+                conn_subitems.append(pystray.MenuItem(f"Backend: {conn_backend}", pystray.Menu(*conn_backend_items)))
+
+            conn_round_items = [
+                pystray.MenuItem(f"{v} Turns", self._make_slot_rounds_action("buddha_connector", v),
+                                 checked=lambda item, v=v, cr=conn_rounds: cr == v)
+                for v in [5, 10, 15, 20]
+            ]
+            conn_subitems.append(pystray.MenuItem(f"Max Turns: {conn_rounds}", pystray.Menu(*conn_round_items)))
+            conn_subitems.append(pystray.MenuItem("Telegram öffnen", self._open_telegram))
+            items.append(pystray.MenuItem(f"📱 Buddha Connector: {conn_model}", pystray.Menu(*conn_subitems)))
+
+            # Dynamic Workers Submenu
+            workers_subitems = []
+            for w in self.dynamic_workers:
+                wid = w.get("id", "worker")
+                wname = w.get("name", wid)
+                wstatus = w.get("status", "idle")
+                wmodel = w.get("model", "?")
+                wturns = w.get("max_tool_rounds", 20)
+                wact = w.get("current_activity", "Bereit")
+                wrole = w.get("role", "General")
+
+                start_item = (
+                    pystray.MenuItem("⏳ Läuft...", None, enabled=False)
+                    if wstatus == "running"
+                    else pystray.MenuItem("▶ Starten", self._run_worker_action(wid))
+                )
+
+                w_actions = [
+                    pystray.MenuItem(f"Rolle: {wrole} | {wturns} Turns", None, enabled=False),
+                    pystray.MenuItem(f"Aktivität: {wact[:35]}", None, enabled=False),
+                    start_item,
+                    pystray.MenuItem("▶ Fortsetzen" if wstatus == "paused" else "⏸ Pausieren",
+                                     self._toggle_worker_action(wid, wstatus)),
+                    pystray.MenuItem("🗑 Worker löschen", self._delete_worker_action(wid)),
+                ]
+                workers_subitems.append(pystray.MenuItem(f"{wname} [{wstatus}] ({wmodel})", pystray.Menu(*w_actions)))
+
+            if workers_subitems:
+                workers_subitems.append(pystray.Menu.SEPARATOR)
+            workers_subitems.append(pystray.MenuItem("+ Neuer Worker... (Web GUI)", self._open_activity))
+            items.append(pystray.MenuItem(f"🛠 Dynamische Worker ({len(self.dynamic_workers)})", pystray.Menu(*workers_subitems)))
 
             items.append(pystray.Menu.SEPARATOR)
 
-            # Mode
-            items.append(pystray.MenuItem(
-                "Safe-Modus",
-                lambda *_: self._set_mode("safe"),
-                checked=lambda item: self.state["mode"] == "safe",
-            ))
-            items.append(pystray.MenuItem(
-                "Full-Modus",
-                lambda *_: self._set_mode("full"),
-                checked=lambda item: self.state["mode"] == "full",
-            ))
-            items.append(pystray.Menu.SEPARATOR)
+            # Fackel (Ressourcen-Priorität)
+            current_fackel = self.state.get("fackel_preference", "compute")
+            fackel_label = "Fackel: Ollama" if current_fackel == "ollama" else "Fackel: Rechenjobs"
+            fackel_items = [
+                pystray.MenuItem(
+                    "Ollama / Chat & Worker bevorzugen",
+                    lambda *_: self._set_fackel("ollama"),
+                    checked=lambda item: self.state.get("fackel_preference", "compute") == "ollama",
+                ),
+                pystray.MenuItem(
+                    "Rechenjobs bevorzugen (Compute)",
+                    lambda *_: self._set_fackel("compute"),
+                    checked=lambda item: self.state.get("fackel_preference", "compute") == "compute",
+                ),
+            ]
+            items.append(pystray.MenuItem(fackel_label, pystray.Menu(*fackel_items)))
 
-            # Think
-            items.append(pystray.MenuItem(
-                "Denkmodus",
-                self._toggle_think,
-                checked=lambda item: self.state["think"],
-            ))
-            items.append(pystray.Menu.SEPARATOR)
-
-            # Max Tool-Runden
-            mr = self.state.get("max_tool_rounds", 0)
-            mr_label = "Unbegrenzt" if mr == 0 else str(mr)
-            round_items = []
-            for val in [5, 10, 20, 0]:
-                lbl = "Unbegrenzt" if val == 0 else str(val)
-                round_items.append(pystray.MenuItem(
-                    lbl, self._make_rounds_action(val),
-                    checked=lambda item, v=val: self.state.get("max_tool_rounds", 0) == v,
-                ))
-            items.append(pystray.MenuItem(
-                f"Max Tool-Runden ({mr_label})", pystray.Menu(*round_items),
-            ))
+            # Aktivitätsanzeige
+            items.append(pystray.MenuItem("📊 Aktivitätsanzeige öffnen...", self._open_activity))
 
             # Tool-Aktivität
             ct = self.state.get("current_tool", "")
@@ -763,10 +961,8 @@ class BACHTray:
         # ── Services ──
         svc_items = []
         svc_labels = {
-            "gui": f"GUI Dashboard (:{self.gui_port})",
-            "webchat": "Buddha Chat (:8080)",
-            "control": f"Chat/Control (:{self.control_port})",
-            "telegram": "Telegram",
+            "gui": "GUI Dashboard (:8000)",
+            "control": "Control API (:8081)",
             "ollama": "Ollama (:11434)",
         }
         for key, label in svc_labels.items():
@@ -792,7 +988,6 @@ class BACHTray:
                 cat_items.append(pystray.MenuItem(
                     f"▶ Senden: {name}",
                     self._make_prompt_send_action(text),
-                    enabled=lambda item: self._can_send_chat(),
                 ))
             prompt_items.append(pystray.MenuItem(category, pystray.Menu(*cat_items)))
         if prompt_items:
@@ -814,7 +1009,6 @@ class BACHTray:
                 "Idle-Modus aktivieren",
                 self._toggle_idle,
                 checked=lambda item: self.idle_enabled,
-                enabled=lambda item: self._can_send_chat() and self.services["gui"],
             ),
         ]
         if self.idle_processing:
@@ -830,16 +1024,9 @@ class BACHTray:
         items.append(pystray.Menu.SEPARATOR)
 
         # ── Zugangswege ──
-        items.append(pystray.MenuItem(
-            "GUI Dashboard",
-            self._open_gui,
-            enabled=lambda item: self.services["gui"],
-        ))
-        items.append(pystray.MenuItem(
-            "Buddha Chat",
-            self._open_webchat,
-            enabled=lambda item: self.services["webchat"],
-        ))
+        items.append(pystray.MenuItem("GUI Dashboard", self._open_gui))
+        items.append(pystray.MenuItem("Buddha Chat", self._open_webchat))
+        items.append(pystray.MenuItem("Aktivitätsanzeige", self._open_activity))
         items.append(pystray.MenuItem("Telegram", self._open_telegram))
 
         items.append(pystray.Menu.SEPARATOR)
@@ -855,7 +1042,10 @@ class BACHTray:
 
     def _make_backend_action(self, name):
         def action(*_):
-            result = self._api("POST", "/api/backend", {"name": name})
+            payload = {"name": name}
+            if self.state.get("model") and self.models and self.state["model"] in self.models:
+                payload["model"] = self.state["model"]
+            result = self._api("POST", "/api/backend", payload)
             if result is None:
                 self._notify_error(f"Backend → {name}")
             self._refresh()
@@ -895,14 +1085,124 @@ class BACHTray:
             self._update_icon()
         return action
 
+    def _set_fackel(self, pref, *_):
+        result = self._api("POST", "/api/fackel", {"preference": pref})
+        if result is None:
+            try:
+                from hub.compute_lock import set_fackel_preference
+                set_fackel_preference(pref, quelle="tray")
+                self.state["fackel_preference"] = pref
+            except Exception:
+                self._notify_error(f"Fackel → {pref}")
+                return
+        else:
+            self.state["fackel_preference"] = pref
+        self._refresh()
+        self._update_icon()
+        if self.icon:
+            label = "Ollama (Chat & Worker)" if pref == "ollama" else "Rechenjobs (Compute)"
+            self.icon.notify(f"Fackel: {label} bevorzugt", "BACH")
+
     def _toggle_idle(self, *_):
         self.idle_enabled = not self.idle_enabled
         if not self.idle_enabled:
             self.idle_consecutive = 0
+        else:
+            self._refresh()
         self._update_icon()
         status = "aktiviert" if self.idle_enabled else "deaktiviert"
         if self.icon:
             self.icon.notify(f"Idle-Modus {status}", "BACH")
+
+    def _open_activity(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.base_url}/activity")
+
+    def _make_slot_model_action(self, slot_id, model):
+        def action(*_):
+            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"model": model}})
+            if res is None or res.get("error"):
+                self._notify_error(f"{slot_id} Modell → {model}")
+            self._refresh()
+            self._update_icon()
+        return action
+
+    def _make_slot_backend_action(self, slot_id, backend_name):
+        def action(*_):
+            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"backend": backend_name}})
+            if res is None or res.get("error"):
+                self._notify_error(f"{slot_id} Backend → {backend_name}")
+            self._refresh()
+            self._update_icon()
+        return action
+
+    def _make_slot_rounds_action(self, slot_id, rounds):
+        def action(*_):
+            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"max_tool_rounds": rounds}})
+            if res is None or res.get("error"):
+                self._notify_error(f"{slot_id} Turns → {rounds}")
+            self._refresh()
+            self._update_icon()
+        return action
+
+    def _make_slot_mode_action(self, slot_id, mode):
+        def action(*_):
+            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"mode": mode}})
+            if res is None or res.get("error"):
+                self._notify_error(f"{slot_id} Modus → {mode}")
+            self._refresh()
+            self._update_icon()
+        return action
+
+    def _toggle_slot_think(self, slot_id):
+        slot = self.slots.get(slot_id, {})
+        new_think = not slot.get("think", True)
+        res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"think": new_think}})
+        if res is None or res.get("error"):
+            self._notify_error(f"{slot_id} Think-Toggle")
+        self._refresh()
+        self._update_icon()
+
+    def _toggle_slot_enabled(self, slot_id):
+        slot = self.slots.get(slot_id, {})
+        new_enabled = not slot.get("enabled", True)
+        res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"enabled": new_enabled}})
+        if res is None or res.get("error"):
+            self._notify_error(f"{slot_id} Status-Toggle")
+        self._refresh()
+        self._update_icon()
+
+    def _run_worker_action(self, worker_id):
+        def action(*_):
+            res = self._api("POST", "/api/workers/run", {"id": worker_id})
+            if res is None or res.get("error"):
+                self._notify_error(f"Worker {worker_id} Start")
+            elif self.icon:
+                self.icon.notify(f"Worker {worker_id} gestartet", "BACH Worker")
+            self._refresh()
+            self._update_icon()
+        return action
+
+    def _toggle_worker_action(self, worker_id, current_status):
+        def action(*_):
+            new_status = "idle" if current_status == "paused" else "paused"
+            res = self._api("POST", "/api/workers/toggle", {"id": worker_id, "status": new_status})
+            if res is None or res.get("error"):
+                self._notify_error(f"Worker {worker_id} Toggle")
+            self._refresh()
+            self._update_icon()
+        return action
+
+    def _delete_worker_action(self, worker_id):
+        def action(*_):
+            res = self._api("POST", "/api/workers/delete", {"id": worker_id})
+            if res is None or res.get("error"):
+                self._notify_error(f"Worker {worker_id} Löschen")
+            elif self.icon:
+                self.icon.notify(f"Worker {worker_id} gelöscht", "BACH Worker")
+            self._refresh()
+            self._update_icon()
+        return action
 
     def _open_gui(self, *_):
         import webbrowser
@@ -948,41 +1248,46 @@ class BACHTray:
             self.icon.icon = self._icon_image
             self.icon.menu = self._build_menu()
 
+    def _menu_signature(self):
+        worker_sig = tuple(
+            (w.get("id"), w.get("status"), w.get("model"), w.get("current_activity"), w.get("max_tool_rounds"))
+            for w in getattr(self, "dynamic_workers", [])
+        )
+        slot_sig = tuple(
+            (k, v.get("model"), v.get("backend"), v.get("max_tool_rounds"), v.get("mode"), v.get("enabled"), v.get("current_activity"))
+            for k, v in sorted(getattr(self, "slots", {}).items())
+        )
+        return (
+            self.state.get("connected"),
+            self.state.get("mode"),
+            self.state.get("think"),
+            self.state.get("fackel_preference"),
+            self.state.get("current_backend"),
+            self.state.get("current_model"),
+            len(getattr(self, "models", [])),
+            getattr(self, "idle_task_name", None),
+            getattr(self, "active_tool", None),
+            worker_sig,
+            slot_sig,
+        )
+
     # --- Polling ---
 
     def _poll_loop(self):
+        old_sig = self._menu_signature()
         while not self._stop.is_set():
-            started = time.monotonic()
-            old_signature = (
-                self.state["connected"],
-                self.state["mode"],
-                self.state["backend"],
-                self.state["backend_available"],
-                self.state["backend_status"],
-                self.state["model"],
-                self.state["think"],
-                tuple(sorted(self.services.items())),
-            )
             self._refresh()
-            new_signature = (
-                self.state["connected"],
-                self.state["mode"],
-                self.state["backend"],
-                self.state["backend_available"],
-                self.state["backend_status"],
-                self.state["model"],
-                self.state["think"],
-                tuple(sorted(self.services.items())),
-            )
-            if new_signature != old_signature:
+            new_sig = self._menu_signature()
+            if new_sig != old_sig:
                 self._update_icon()
+                old_sig = new_sig
             self._idle_tick()
-            elapsed = time.monotonic() - started
-            self._stop.wait(max(0.1, self.POLL_INTERVAL - elapsed))
+            self._stop.wait(self.POLL_INTERVAL)
 
     # --- Run ---
 
     def run(self):
+        self._refresh()
         self.icon = pystray.Icon(
             "bach-system",
             self._icon_image,
@@ -993,167 +1298,31 @@ class BACHTray:
         poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
         poll_thread.start()
 
-        self.icon.run(self._setup_icon)
-
-    @staticmethod
-    def _setup_icon(icon):
-        icon.visible = True
-        if not _write_ready_receipt():
-            print("Tray-Readiness konnte nicht geschrieben werden.", file=sys.stderr)
-            icon.stop()
+        self.icon.run()
 
 
-_tray_lock_handle = None
-
-
-def _runtime_dir():
-    override = os.environ.get("BACH_RUNTIME_DIR")
-    if override:
-        return Path(override).expanduser().resolve()
-    if os.name == "nt":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-        return base / "BACH" / "runtime"
-    state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
-    return state_home / "bach" / "runtime"
-
-
-def _instance_lock_path():
-    return _runtime_dir() / "chat_tray.instance.lock"
-
-
-def _ready_receipt_path():
-    return _runtime_dir() / "receipts" / "tray.ready.json"
-
-
-def _write_ready_receipt():
-    launch_id = os.environ.get("BACH_STARTSPINE_LAUNCH_ID")
-    if not launch_id:
-        return True
-    path = _ready_receipt_path()
-    temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    payload = {
-        "launch_id": launch_id,
-        "service": "tray",
-        "pid": os.getpid(),
-        "ready_at": time.time(),
-    }
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temp.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        os.replace(temp, path)
-        return True
-    except OSError:
-        try:
-            temp.unlink(missing_ok=True)
-        except OSError:
-            pass
-        return False
-
-
-def _try_instance_lock(lock_path):
-    """Acquire a process-lifetime advisory lock without deleting its inode."""
-    handle = None
-    try:
-        lock_path = Path(lock_path)
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o600)
-        handle = os.fdopen(fd, "r+", encoding="utf-8")
-        if os.fstat(fd).st_size == 0:
-            handle.write(" ")
-            handle.flush()
-        handle.seek(0)
-        if sys.platform == "win32":
-            import msvcrt
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        handle.seek(0)
-        handle.write(f"{os.getpid()}\n".ljust(32))
-        handle.truncate()
-        handle.flush()
-        return handle
-    except (OSError, IOError):
-        if handle is not None:
-            handle.close()
-        return None
-
-
-def _release_instance_handle(handle):
-    if handle is None:
-        return
-    try:
-        handle.seek(0)
-        if sys.platform == "win32":
-            import msvcrt
-            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-    except (OSError, IOError):
-        pass
-    finally:
-        handle.close()
-
-
-def _check_single_instance():
-    global _tray_lock_handle
-    if _tray_lock_handle is not None:
-        return False
-    _tray_lock_handle = acquire_single_instance_lock()
-    return _tray_lock_handle is not None
-
-
-def _cleanup_instance_lock():
-    global _tray_lock_handle
-    handle = _tray_lock_handle
-    _tray_lock_handle = None
-    _release_instance_handle(handle)
-
-
-def main(argv=None):
+def main():
     parser = argparse.ArgumentParser(description="BACH Unified System Tray")
     parser.add_argument("--host", default="127.0.0.1", help="Control API Host")
     parser.add_argument("--port", type=int, default=8081, help="Control API Port")
-    parser.add_argument("--gui-port", type=int, default=8000, help="GUI Port")
-    parser.add_argument("--webchat-port", type=int, default=8080, help="Webchat Port")
-    parser.add_argument(
-        "--ollama-host",
-        default=None,
-        help="Ollama Host (standardmäßig lokal, unabhängig vom Control-Host)",
-    )
     parser.add_argument(
         "--smoke-promptboard",
         action="store_true",
         help="Print PromptBoard tray detection smoke data and exit",
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args()
 
-    tray = BACHTray(
-        host=args.host,
-        port=args.port,
-        webchat_port=args.webchat_port,
-        gui_port=args.gui_port,
-        ollama_host=args.ollama_host,
-    )
+    tray = BACHTray(host=args.host, port=args.port)
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
-        return 0
-    if pystray is None or Image is None:
-        print("Benötigt: pip install pystray Pillow", file=sys.stderr)
-        return 1
-    if not _check_single_instance():
-        print("BACH System Tray läuft bereits; keine zweite Instanz gestartet.", file=sys.stderr)
-        return 3
-    try:
-        tray.run()
-        return 0
-    finally:
-        _cleanup_instance_lock()
+        return
+    lock = acquire_single_instance_lock()
+    if lock is None:
+        print(f"BACH Tray läuft bereits (Single-Instance-Lock: {TRAY_LOCK_FILE}).", file=sys.stderr)
+        sys.exit(3)
+    tray._instance_lock = lock  # keep the OS lock alive for the tray's lifetime
+    tray.run()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

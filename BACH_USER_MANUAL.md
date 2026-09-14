@@ -289,7 +289,7 @@ BACH verfuegt ueber 97 Handler:
 - **bach data_analysis** -- BACH Data Analysis Handler
 - **bach db** -- DB Handler - Datenbank-Operationen (ersetzt Supabase MCP)
 - **bach db_sync** -- Copyright (c) 2026 BACH Contributors
-- **bach denkarium** -- Denkarium Handler - Logbuch + Gedanken-Sammler
+- **bach denkarium** -- Denkarium Handler - Logbuch + Gedanken-Sammler (persönliches Notizbuch des Users — NICHT als Board/Scratchpad für Agenten nutzen; Agenten nutzen stattdessen bach memory und Session-Berichte)
 - **bach dist** -- BACH Distribution Handler
 - **bach doc** -- Copyright (c) 2026 BACH Contributors
 - **bach docs** -- Docs Handler - Hauptdokumentation (Markdown + Legacy)

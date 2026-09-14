@@ -1617,10 +1617,15 @@ class StartupHandler(BaseHandler):
             zone, desc, details = get_token_zone()
             results.append(format_zone_status(zone, desc, details))
             
-            # TOKEN_001: Emergency Check bei 95%+
-            should_stop, emergency_msg = check_emergency_shutdown(details.get('budget_percent'))
-            if should_stop:
-                results.append(emergency_msg)
+            # TOKEN_001: Nur gemessene Werte als Emergency-Signal bewerten.
+            # Bei unbekannter Telemetrie hat get_token_zone() bereits fail-closed
+            # ausgegeben und darf hier nicht durch einen zweiten DB-Leseversuch
+            # oder eine scheinbare Freigabe verwässert werden.
+            budget_percent = details.get('budget_percent')
+            if budget_percent is not None:
+                should_stop, emergency_msg = check_emergency_shutdown(budget_percent)
+                if should_stop:
+                    results.append(emergency_msg)
         except Exception as e:
             results.append(f" [SKIP] Token-Monitor nicht verfuegbar: {e}")
         

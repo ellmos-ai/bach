@@ -340,8 +340,9 @@ class CountdownModule:
         if seconds < 0:
             return "ABGELAUFEN"
 
-        hours = seconds / 3600
-        minutes = (seconds % 3600) / 60
+        seconds = int(seconds)
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
         secs = seconds % 60
 
         if hours > 0:

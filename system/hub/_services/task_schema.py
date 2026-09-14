@@ -28,3 +28,32 @@ def ensure_task_due_date(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)"
     )
+
+
+def task_has_claim_columns(conn: sqlite3.Connection) -> bool:
+    """Return whether the current ``tasks`` table exposes ``claimed_by`` and ``claimed_at``."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    return "claimed_by" in cols and "claimed_at" in cols
+
+
+def ensure_task_claim_columns(conn: sqlite3.Connection) -> None:
+    """Add the atomic claim columns and lookup index to an existing task table."""
+    table = conn.execute(
+        "SELECT type FROM sqlite_master WHERE name = 'tasks'"
+    ).fetchone()
+    if not table or table[0] != "table":
+        raise RuntimeError("Task-Migration abgebrochen: tasks-Tabelle fehlt.")
+
+    for col in ("claimed_by TEXT", "claimed_at TEXT"):
+        name = col.split()[0]
+        if not any(row[1] == name for row in conn.execute("PRAGMA table_info(tasks)")):
+            try:
+                conn.execute(f"ALTER TABLE tasks ADD COLUMN {col}")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_claimed_at ON tasks(claimed_at)"
+    )
+

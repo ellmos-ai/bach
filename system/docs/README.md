@@ -78,7 +78,7 @@ docs/
 | consolidation | `bach help consolidation` | Memory-Konsolidierung |
 | sources | `bach help sources` | Quellenmanagement |
 | shared_memory | `bach help shared_memory` | Geteiltes Memory |
-| denkarium | `bach help denkarium` | Reflexions-Tagebuch |
+| denkarium | `bach help denkarium` | Reflexions-Tagebuch (persönliches Notizbuch des Users — NICHT für Agenten; Agenten nutzen bach memory) |
 
 ### Agenten & Multi-LLM
 

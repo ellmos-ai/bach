@@ -32,7 +32,8 @@ async function loadDashboard() {
         await Promise.all([
             loadStatus(),
             loadRecentTasks(),
-            loadSystemInfo()
+            loadSystemInfo(),
+            loadActiveAgents()
         ]);
 
         updateLastRefresh();
@@ -42,18 +43,42 @@ async function loadDashboard() {
     }
 }
 
+async function loadActiveAgents() {
+    const elActive = document.getElementById('stat-agents-active');
+    const elTotal = document.getElementById('stat-agents-total');
+    if (!elActive && !elTotal) return;
+
+    try {
+        const res = await fetch('/api/agents');
+        const data = await res.json();
+        if (data.success && Array.isArray(data.agents)) {
+            const active = data.agents.filter(a => a.is_active).length;
+            if (elActive) elActive.textContent = active;
+            if (elTotal) elTotal.textContent = data.agents.length;
+        } else {
+            const count = typeof data.count === 'number' ? data.count : 0;
+            if (elActive) elActive.textContent = count;
+            if (elTotal) elTotal.textContent = count;
+        }
+    } catch (error) {
+        console.error('[BACH] Agenten-Status Fehler:', error);
+        if (elActive) elActive.textContent = '-';
+        if (elTotal) elTotal.textContent = '-';
+    }
+}
+
 async function loadStatus() {
     try {
         const data = await API.status();
 
-        const setStat = (id, value) => {
-            const element = document.getElementById(id);
-            if (element) element.textContent = value || 0;
-        };
-        setStat('stat-tasks', data.stats.tasks_open);
-        setStat('stat-scanned', data.stats.scanned_tasks);
-        setStat('stat-messages', data.stats.messages_unread);
-        setStat('stat-daemon', data.stats.scheduler_jobs_active);
+        const elTasks = document.getElementById('stat-tasks');
+        if (elTasks) elTasks.textContent = data.stats.tasks_open || 0;
+        const elScanned = document.getElementById('stat-scanned');
+        if (elScanned) elScanned.textContent = data.stats.scanned_tasks || 0;
+        const elMessages = document.getElementById('stat-messages');
+        if (elMessages) elMessages.textContent = data.stats.messages_unread || 0;
+        const elDaemon = document.getElementById('stat-daemon');
+        if (elDaemon) elDaemon.textContent = data.stats.scheduler_jobs_active || 0;
 
         // Status-Indikator
         const statusDot = document.getElementById('status-dot');
@@ -293,7 +318,7 @@ const ALL_PAGES = [
     { href: '/skills-board', label: 'Skills Board' },
     { href: '/financial', label: 'Financial' },
     { href: '/memory', label: 'Memory' },
-    { href: '/denkarium', label: 'Denkarium' },
+    { href: '/denkarium', label: 'Denkarium', external: true },
     { href: '/kontakte', label: 'Kontakte' },
     { href: '/routinen', label: 'Routinen' },
     { href: '/tools', label: 'Tools' },

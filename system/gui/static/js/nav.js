@@ -64,39 +64,43 @@ const NAV_ITEMS = [
     { href: "/", label: "Dashboard" },
     { label: "Aufgaben", children: [
         { href: "/tasks-board", label: "Tasks" },
-        { href: "/routinen", label: "Routinen" },
+        { href: "/routinen?tab=bach", label: "BACH-Routinen" },
+    ]},
+    { label: "Persönlicher Assistent", children: [
+        { href: "/persoenlich", label: "Dashboard" },
+        { href: "/chat", label: "Buddha Chat" },
+        { href: "/prompt-library", label: "Deine Prompts" },
+        { href: "/routinen?tab=personal", label: "Deine Routinen" },
+        { href: "/kontakte", label: "Kontakte" },
+        { href: "/denkarium", label: "Denkarium", external: true },
+        { href: "/wiki", label: "Wiki" },
     ]},
     { label: "Agenten", children: [
-        { href: "/agents", label: "Agenten" },
-        { href: "/partners", label: "Partner" },
-        { href: "/skills-board", label: "Skills" },
-    ]},
-    { label: "Wissen", children: [
+        { href: "/chat", label: "Chats" },
+        { href: "/agents-board", label: "Agents Board" },
+        { href: "/reports", label: "📑 Berichte" },
         { href: "/memory", label: "Memory" },
-        { href: "/prompt-library", label: "Prompts" },
-        { href: "/denkarium", label: "Denkarium" },
-        { href: "/wiki", label: "Wiki" },
-        { href: "/usecases", label: "Use Cases" },
-    ]},
-    { label: "Kommunikation", children: [
-        { href: "/messages", label: "Nachrichten" },
-        { href: "/inbox", label: "Inbox" },
-        { href: "/kontakte", label: "Kontakte" },
-    ]},
-    { label: "Finanzen", children: [
-        { href: "/financial", label: "Finanzen" },
         { href: "/tokens", label: "Tokens" },
+        { href: "#", portRel: 8081, path: "/activity", label: "Models", external: true },
+        { href: "/tools", label: "Tools" },
     ]},
-    { href: "/tools", label: "Tools" },
+    { label: "Meine Domänen", children: [
+        { href: "/financial", label: "Finanzen" },
+        { href: "/ati", label: "🛠️ ATI Entwickler" },
+        { href: "/steuer", label: "⚖️ Theodor Steuer" },
+        { href: "/gesundheit", label: "🩺 Gesundheit" },
+    ]},
+    { href: "/inbox", label: "Dateien" },
     { label: "System", children: [
         { href: "/settings", label: "Einstellungen" },
+        { href: "#", portRel: 8081, path: "/activity", label: "📊 Worker & Aktivität", external: true },
+        { href: "/usecases", label: "Use Cases" },
         { href: "/daemon", label: "Automation" },
-        { href: "/control/", label: "Unified GUI" },
+        { href: "/control/", label: "Unified GUI", external: true },
         { href: "/maintenance", label: "Wartung" },
         { href: "/logs", label: "Logs" },
         { href: "/help", label: "Help" },
     ]},
-    { href: "/chat", label: "Buddha Chat" },
 ];
 
 function initNavigation() {
@@ -112,8 +116,14 @@ function initNavigation() {
     const currentPath = window.location.pathname;
 
     function isActive(href) {
+        if (!href || href === '#') return false;
+        const currentUrl = window.location.pathname + window.location.search;
+        if (href.includes('?')) {
+            return currentUrl === href || currentUrl.startsWith(href + '&');
+        }
         return currentPath === href || currentPath === href + '/' ||
-            (href !== '/' && currentPath.startsWith(href));
+            (href !== '/' && currentPath.startsWith(href)) ||
+            (href === '/reports' && currentPath.startsWith('/messages'));
     }
 
     function hasActiveChild(item) {
@@ -125,7 +135,13 @@ function initNavigation() {
             const parentActive = hasActiveChild(item) ? ' active' : '';
             const childHtml = item.children.map(child => {
                 const childActive = isActive(child.href) ? ' active' : '';
-                return `<a href="${child.href}" class="dropdown-item${childActive}">${child.label}</a>`;
+                const target = child.external ? ' target="_blank" rel="noopener noreferrer"' : '';
+                let href = child.href;
+                if (child.portRel) {
+                    const host = window.location.hostname || 'localhost';
+                    href = `http://${host}:${child.portRel}${child.path || ''}`;
+                }
+                return `<a href="${href}"${target} class="dropdown-item${childActive}">${child.label}</a>`;
             }).join('');
             return `<div class="nav-dropdown${parentActive}">
                 <button class="nav-item nav-dropdown-toggle${parentActive}">${item.label} <span class="dropdown-arrow">▾</span></button>
@@ -133,8 +149,13 @@ function initNavigation() {
             </div>`;
         }
         const active = isActive(item.href) ? ' active' : '';
-        const target = item.external ? ' target="_blank"' : '';
-        return `<a href="${item.href}"${target} class="nav-item${active}">${item.label}</a>`;
+        const target = item.external ? ' target="_blank" rel="noopener noreferrer"' : '';
+        let itemHref = item.href;
+        if (item.portRel) {
+            const host = window.location.hostname || 'localhost';
+            itemHref = `http://${host}:${item.portRel}${item.path || ''}`;
+        }
+        return `<a href="${itemHref}"${target} class="nav-item${active}">${item.label}</a>`;
     }).join('\n            ');
 
     const currentTheme = normalizeTheme(localStorage.getItem(THEME_KEY) || 'dark');
@@ -162,10 +183,25 @@ function initNavigation() {
     `;
 
     document.querySelectorAll('.nav-dropdown').forEach(dd => {
-        dd.addEventListener('mouseenter', () => dd.classList.add('open'));
-        dd.addEventListener('mouseleave', () => dd.classList.remove('open'));
+        let closeTimer = null;
+        dd.addEventListener('mouseenter', () => {
+            if (closeTimer) {
+                clearTimeout(closeTimer);
+                closeTimer = null;
+            }
+            dd.classList.add('open');
+        });
+        dd.addEventListener('mouseleave', () => {
+            closeTimer = setTimeout(() => {
+                dd.classList.remove('open');
+            }, 250);
+        });
         dd.querySelector('.nav-dropdown-toggle').addEventListener('click', (e) => {
             e.preventDefault();
+            if (closeTimer) {
+                clearTimeout(closeTimer);
+                closeTimer = null;
+            }
             dd.classList.toggle('open');
         });
     });

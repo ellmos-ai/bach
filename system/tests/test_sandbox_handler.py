@@ -247,11 +247,13 @@ class TestShell:
         assert "Leerer Befehl" in msg
 
     def test_shell_timeout(self, handler, monkeypatch):
+        # Verhaltenstest (echter Prozess) — Stufe 2: core.sandbox.run_isolated
+        # ersetzt das fruehere Mocking von hub.sandbox.subprocess.run
         monkeypatch.setattr(handler, "TIMEOUT", 1)
-        with patch("hub.sandbox.subprocess.run", side_effect=subprocess.TimeoutExpired("cmd", 1)):
-            ok, msg = handler._shell("echo slow")
-            assert ok is False
-            assert "TIMEOUT" in msg
+        # 'sleep' ist nicht in der Allowlist -> python3 (erlaubt) als Sleeper
+        ok, msg = handler._shell('python3 -c "import time; time.sleep(10)"')
+        assert ok is False
+        assert "TIMEOUT" in msg
 
 
 class TestExtractBaseCommand:

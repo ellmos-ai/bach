@@ -128,7 +128,16 @@ BACH_SYSTEM_DIR = str(Path(__file__).resolve().parents[2])
 
 
 def is_safe_write_path(path_str: str, mode: str) -> Optional[str]:
-    """Return error message if path is blocked for writes in safe mode, else None."""
+    """Return error message if the path is blocked for writes, else None.
+
+    Hier laufen alle schreibenden Werkzeuge ausser write_file zusammen --
+    edit_file, move_file, copy_file, recycle, create_directory. Deshalb steht
+    das Plan-Gate hier und nicht in fuenf Aufrufstellen: Im Planmodus wird
+    nicht geschrieben, auch dann nicht, wenn ein Modell ein Werkzeug aufruft,
+    das ihm gar nicht angeboten wurde (T-20260912-605163733).
+    """
+    if mode == "plan":
+        return "Planmodus: es wird geplant, nicht geschrieben"
     if mode != "safe":
         return None
     p = str(Path(path_str).resolve())
@@ -184,6 +193,7 @@ TOOLS_SAFE = [
     _tool("read_file", "Inhalt einer Datei lesen (max 200 Zeilen)", {
         "path": {"type": "string", "description": "Dateipfad"},
         "lines": {"type": "integer", "description": "Max Zeilen (Standard 50)"},
+        "offset": {"type": "integer", "description": "Startzeile (1-basiert, Standard 1)"},
     }, ["path"]),
     _tool("search_text", "In Dateien nach einem Muster suchen (grep)", {
         "pattern": {"type": "string", "description": "Suchmuster (Regex)"},
@@ -208,14 +218,32 @@ TOOLS_SAFE = [
         "query": {"type": "string", "description": "Suchanfrage"},
         "max_results": {"type": "integer", "description": "Maximale Ergebnisse (Standard 5, max 10)"},
     }, ["query"]),
-    _tool("task_manage", "BACH-Tasks verwalten: anlegen, auflisten, Status ändern", {
-        "action": {"type": "string", "enum": ["list", "add", "done", "detail"], "description": "Aktion"},
+    _tool("task_manage", "BACH-Tasks verwalten: anlegen, zerlegen, auflisten, aktualisieren, Status ändern", {
+        "action": {"type": "string", "enum": ["list", "add", "done", "detail", "update", "decompose"],
+                   "description": "Aktion: list (offene Tasks), add (neuer Task), done (erledigen), detail (Details), update (Felder aktualisieren), decompose (in Teilaufgaben zerlegen)"},
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
-        "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (bei add, Standard P3)"},
-        "task_id": {"type": "integer", "description": "Task-ID (bei done/detail)"},
-        "description": {"type": "string", "description": "Bei add: was zu tun ist UND was dafuer zu lesen ist. Ein Paket ohne Umfangsangabe zwingt zum Lesen des ganzen Projekts."},
-        "category": {"type": "string", "description": "Bei add: Projekt-/Themenzuordnung zum Wiederfinden"},
-        "depends_on": {"type": "string", "description": "Bei add: IDs vorausgesetzter Tasks, kommagetrennt"},
+        "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
+        "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
+        "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
+        "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
+        "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
+        "depends_on": {"type": "string", "description": "IDs vorausgesetzter Tasks, kommagetrennt"},
+        "subtasks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "priority": {"type": "string"},
+                    "depends_on": {"type": "string"}
+                },
+                "required": ["title"]
+            },
+            "description": "Liste von Teilaufgaben bei action='decompose'"
+        },
+        "sequential": {"type": "boolean", "description": "Bei decompose: ob Teilaufgaben sequentiell voneinander abhängen sollen"},
+        "close_parent": {"type": "boolean", "description": "Bei decompose: ob der übergeordnete Task als completed markiert wird (Standard true)"}
     }, ["action"]),
     _tool("maintain", "Systemwartung: fällige Tasks prüfen, Wartungsoperationen ausführen", {
         "action": {"type": "string", "enum": ["check", "run", "health", "services", "sync"],
@@ -279,6 +307,41 @@ TOOLS_FULL = TOOLS_SAFE + [
     }, ["path", "content"]),
 ]
 
+#: Aus TOOLS_SAFE fuer den Planmodus ausgenommen.
+#:
+#: `safe` heisst "ohne beliebige Shell", nicht "ohne Schreiben" -- /mode full
+#: kuendigt dem Nutzer ausdruecklich "Shell-Befehle und Dateischreiben" an,
+#: also ist safe der Modus, in dem man mit Dateien arbeitet, ohne die Shell zu
+#: oeffnen. Fuer den interaktiven Chat ist das richtig. Ein Planlauf braucht
+#: davon nichts: Er liest, und sein einziges Ergebnis sind Tasks.
+_NICHT_IM_PLAN = frozenset({
+    # veraendern das Dateisystem
+    "edit_file", "move_file", "copy_file", "recycle", "create_directory",
+    # veraendern BACH-Zustand jenseits der Tasks
+    "bach_command", "maintain", "foerderbericht",
+    # startet einen fremden Agenten, der diese Grenze nicht kennt
+    "delegate",
+})
+
+#: Werkzeuge eines Planlaufs: lesen, nachschlagen, Pakete anlegen.
+#: Abgeleitet statt aufgezaehlt -- so bleibt TOOLS_PLAN automatisch eine
+#: Teilmenge von TOOLS_SAFE, auch wenn dort etwas hinzukommt.
+TOOLS_PLAN = [t for t in TOOLS_SAFE
+              if t["function"]["name"] not in _NICHT_IM_PLAN]
+
+
+def tools_for_mode(mode: str) -> list:
+    """Werkzeugliste zum Sitzungsmodus.
+
+    Ein unbekannter Modus faellt bewusst auf `safe` zurueck und nicht auf
+    `full`: Ein Tippfehler darf nie mehr Rechte geben als angefordert.
+    """
+    if mode == "full":
+        return TOOLS_FULL
+    if mode == "plan":
+        return TOOLS_PLAN
+    return TOOLS_SAFE
+
 
 # --- Delegation ---
 
@@ -331,8 +394,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             p = args.get("path", "")
             if not p:
                 return "Kein Pfad angegeben"
-            n = min(int(args.get("lines", 50)), 200)
-            return run_shell(f"head -n {n} {shlex.quote(p)}")
+            lines = min(int(args.get("lines", 50)), 200)
+            offset = max(1, int(args.get("offset") or args.get("start") or args.get("start_line") or 1))
+            end_line = offset + lines - 1
+            return run_shell(f"sed -n '{offset},{end_line}p' {shlex.quote(p)}")
 
         if name == "search_text":
             pat = args.get("pattern", "")
@@ -459,13 +524,14 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         if not title:
                             return "Kein Titel angegeben"
                         prio = args.get("priority", "P3")
+                        assignee = args.get("assigned_to") or "bach"
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         cur = conn.execute(
                             "INSERT INTO tasks (title, description, category, depends_on, "
-                            "priority, status, created_at, updated_at) "
-                            "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+                            "priority, status, assigned_to, created_at, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
                             (title, args.get("description", ""), args.get("category", ""),
-                             args.get("depends_on", ""), prio, now, now)
+                             args.get("depends_on", ""), prio, assignee, now, now)
                         )
                         conn.commit()
                         zusatz = f" [{args['category']}]" if args.get("category") else ""
@@ -506,6 +572,75 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         if not row:
                             return f"Task #{tid} nicht gefunden"
                         return "\n".join(f"{k}: {row[k]}" for k in row.keys())
+
+                    if action == "update":
+                        tid = args.get("task_id")
+                        if not tid:
+                            return "Keine Task-ID angegeben"
+                        existing = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
+                        if not existing:
+                            return f"Task #{tid} nicht gefunden"
+                        updates = {}
+                        for fld in ("title", "description", "category", "priority", "status", "depends_on", "assigned_to"):
+                            if fld in args and args[fld] is not None:
+                                updates[fld] = args[fld]
+                        if not updates:
+                            return "Keine Felder zum Aktualisieren angegeben"
+                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        if apply_task_field_changes is not None:
+                            apply_task_field_changes(conn, tid, dict(existing), updates,
+                                                      changed_by="chat-runtime", now=now)
+                        else:
+                            updates["updated_at"] = now
+                            set_str = ", ".join(f"{k}=?" for k in updates.keys())
+                            conn.execute(f"UPDATE tasks SET {set_str} WHERE id=?", list(updates.values()) + [tid])
+                        conn.commit()
+                        return f"Task #{tid} aktualisiert: {', '.join(updates.keys())}"
+
+                    if action == "decompose":
+                        tid = args.get("task_id")
+                        subtasks = args.get("subtasks", [])
+                        if not tid or not subtasks:
+                            return "task_id und subtasks (Liste von Objekten mit title, description) erforderlich"
+                        parent = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
+                        if not parent:
+                            return f"Task #{tid} nicht gefunden"
+                        parent_dict = dict(parent)
+                        cat = args.get("category") or parent_dict.get("category") or ""
+                        assignee = args.get("assigned_to") or parent_dict.get("assigned_to") or "bach"
+                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        created_ids = []
+                        prev_id = None
+                        for st in subtasks:
+                            st_title = st.get("title", "")
+                            if not st_title:
+                                continue
+                            st_desc = st.get("description", "")
+                            st_prio = st.get("priority", parent_dict.get("priority") or "P3")
+                            st_dep = st.get("depends_on") or (str(prev_id) if (args.get("sequential") and prev_id) else "")
+                            st_assignee = st.get("assigned_to") or assignee
+                            cur = conn.execute(
+                                "INSERT INTO tasks (title, description, category, depends_on, "
+                                "priority, status, assigned_to, created_at, updated_at) "
+                                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
+                                (st_title, st_desc, cat, st_dep, st_prio, st_assignee, now, now)
+                            )
+                            prev_id = cur.lastrowid
+                            created_ids.append(prev_id)
+                        if args.get("close_parent", True):
+                            note = f"\n[In {len(created_ids)} Teilaufgaben zerlegt: {created_ids}]"
+                            if apply_task_field_changes is not None:
+                                apply_task_field_changes(conn, tid, parent_dict,
+                                                          {"status": "completed",
+                                                           "description": (parent_dict.get("description") or "") + note},
+                                                          changed_by="chat-runtime", now=now)
+                            else:
+                                conn.execute(
+                                    "UPDATE tasks SET status='completed', description=description || ?, updated_at=? WHERE id=?",
+                                    (note, now, tid)
+                                )
+                        conn.commit()
+                        return f"Task #{tid} in {len(created_ids)} Teilaufgaben zerlegt: IDs {created_ids}"
 
                     return f"Unbekannte Aktion: {action}"
                 finally:
@@ -932,6 +1067,26 @@ GOAL_CHECK = (
 )
 
 
+def _session_name(chat_id: str, session: Optional["ChatSession"] = None) -> str:
+    cid = str(chat_id)
+    if cid == "gui-web" or cid.startswith("web"):
+        if session and session.messages:
+            first_user = next((m.get("content", "") for m in session.messages if m.get("role") == "user"), "")
+            if first_user:
+                clean = " ".join(first_user.split())
+                if len(clean) > 42:
+                    clean = clean[:42] + "…"
+                return f"Web: {clean}"
+        return "Web Chat"
+    if cid.isdigit():
+        return f"Telegram ({cid})"
+    if "idle" in cid:
+        return f"Idle Worker ({cid})"
+    if "tray" in cid:
+        return f"Tray ({cid})"
+    return f"Chat ({cid})"
+
+
 class ChatSession:
     """State für eine einzelne Chat-Session."""
 
@@ -945,6 +1100,14 @@ class ChatSession:
         self.last_tools: list[str] = []
         self.voice_output: bool = False
         self.last_active: float = 0.0
+        self.backend: Any = None
+        self.max_tool_rounds: Optional[int] = None
+        self.custom_system_prompt: str = ""
+        self.chat_id: str = ""
+        # OPS-RUN-001: Operator-Steuerung (steer/pause/resume/checkpoint) an
+        # Modell-/Tool-Grenzen. None = inaktiv (z.B. Telegram-Chat).
+        self.operator_control: Any = None
+
 
 
 class ComputeLocked(RuntimeError):
@@ -963,6 +1126,7 @@ class ChatRuntime:
     MAX_CONTEXT_CHARS = limit("BACH_MAX_CONTEXT_CHARS")
     SUMMARIZE_THRESHOLD = limit("BACH_SUMMARIZE_THRESHOLD")
     MAX_MESSAGES = limit("BACH_MAX_MESSAGES")
+    SESSION_IDLE_TTL = float(os.environ.get("BACH_CHAT_SESSION_TTL", "86400"))
 
     def __init__(self, backend, system_prompt: str = "",
                  bach_app=None, memory_fn=None, injector=None,
@@ -973,7 +1137,7 @@ class ChatRuntime:
         self.memory = memory_fn
         self.injector = injector
         self.session_store = session_store
-        # Setzt telegram_chat: eine Funktion des gewählten Backends, die True liefert, solange ein
+        # Setzt telegram_chat: eine Funktion, die True liefert, solange ein
         # Compute-Lock steht. None = kein Gate (Tests, andere Konsumenten).
         self.compute_gate = None
         self.sessions: dict[str, ChatSession] = {}
@@ -1005,7 +1169,8 @@ class ChatRuntime:
         if self.session_store is None:
             return
         try:
-            self.session_store.save(chat_id, session.messages)
+            name = _session_name(chat_id, session)
+            self.session_store.save(chat_id, session.messages, name=name)
             self._persistence_error = None
         except Exception as exc:
             self._persistence_error = str(exc)
@@ -1020,24 +1185,69 @@ class ChatRuntime:
         }
 
     def get_session(self, chat_id: str) -> ChatSession:
-        if chat_id not in self.sessions:
-            s = ChatSession()
-            s.model = self.backend.get_default_model()
-            s.messages = self._load_messages(chat_id)
-            self.sessions[chat_id] = s
-        return self.sessions[chat_id]
+        now = time.time()
+        if chat_id in self.sessions:
+            s = self.sessions[chat_id]
+            s.chat_id = chat_id
+            if s.last_active > 0 and (now - s.last_active) > self.SESSION_IDLE_TTL:
+                log.info("Session %s wegen Inaktivität (>24h) archiviert und zurückgesetzt", chat_id)
+                self.archive_and_reset(chat_id, reason="24h Inaktivität (RAM)")
+                s_new = self.sessions[chat_id]
+                s_new.chat_id = chat_id
+                return s_new
+            return s
 
-    def _context_limit_for_backend(self, backend) -> int:
-        """Take one validated context limit from the backend selected for a turn."""
+        if self.session_store is not None:
+            last_ts = self.session_store.get_last_updated(chat_id)
+            if last_ts and (now - last_ts) > self.SESSION_IDLE_TTL:
+                log.info("Persistierte Session %s älter als 24h -> Auto-Reset", chat_id)
+                try:
+                    self.session_store.archive_current(chat_id, f"Archiv [24h Auto-Reset] {_session_name(chat_id)}")
+                    self.session_store.delete(chat_id)
+                except Exception as exc:
+                    log.warning("Auto-Reset Archivierung fehlgeschlagen: %s", exc)
+                s = ChatSession()
+                s.chat_id = chat_id
+                s.model = self.backend.get_default_model()
+                s.last_active = now
+                self.sessions[chat_id] = s
+                return s
+
+        s = ChatSession()
+        s.chat_id = chat_id
+        s.model = self.backend.get_default_model()
+        s.messages = self._load_messages(chat_id)
+        s.last_active = now if s.messages else 0.0
+        self.sessions[chat_id] = s
+        return s
+
+    def _context_limit_for_backend(self, backend, model: str = "") -> int:
+        """Freeze the effective context limit for the backend selected for a turn."""
         getter = getattr(backend, "get_context_limit", None)
         value = getter() if callable(getter) else getattr(backend, "num_ctx", None)
         try:
             value = int(value)
         except (TypeError, ValueError):
-            return self.context_limit
-        return value if value > 0 else self.context_limit
+            return self.get_model_context_limit(model, backend)
+        return value if value > 0 else self.get_model_context_limit(model, backend)
 
-    def clear_session(self, chat_id: str):
+    def archive_and_reset(self, chat_id: str, reason: str = "Manuell") -> int | None:
+        """Archiviert die aktuelle Session (sofern Nachrichten vorhanden) und leert sie."""
+        archived_id = None
+        session = self.sessions.get(chat_id)
+        has_messages = bool(session and session.messages)
+        if not has_messages and self.session_store is not None:
+            stored = self._load_messages(chat_id)
+            has_messages = bool(stored)
+
+        if has_messages and self.session_store is not None:
+            prefix = f"Archiv [{reason}] {_session_name(chat_id)}"
+            try:
+                archived_id = self.session_store.archive_current(chat_id, prefix)
+            except Exception as exc:
+                log.warning("Konnte Session vor Reset nicht archivieren: %s", exc)
+
+        self.sessions.pop(chat_id, None)
         if self.session_store is not None:
             try:
                 self.session_store.delete(chat_id)
@@ -1045,10 +1255,43 @@ class ChatRuntime:
             except Exception as exc:
                 self._persistence_error = str(exc)
                 log.error("Chat-Persistenz konnte nicht gelöscht werden: %s", exc)
-                raise RuntimeError(
-                    "Persistierter Chatverlauf konnte nicht gelöscht werden"
-                ) from exc
-        self.sessions.pop(chat_id, None)
+
+        new_session = ChatSession()
+        new_session.model = self.backend.get_default_model()
+        new_session.last_active = time.time()
+        self.sessions[chat_id] = new_session
+        return archived_id
+
+    def clear_session(self, chat_id: str, archive_reason: str = "Clear") -> int | None:
+        return self.archive_and_reset(chat_id, reason=archive_reason)
+
+    def fork_session(self, target_chat_id: str, snapshot_id: int) -> int:
+        """Klont den Verlauf aus einem Snapshot in die Ziel-Session."""
+        if not self.session_store:
+            raise RuntimeError("Kein SessionStore verfügbar")
+        snap = self.session_store.get_snapshot_by_id(snapshot_id)
+        if not snap:
+            raise ValueError(f"Snapshot ID {snapshot_id} nicht gefunden")
+        messages = snap.get("messages", [])
+
+        # Aktuelle Ziel-Session vor dem Fork sichern
+        curr = self.sessions.get(target_chat_id)
+        if curr and curr.messages and self.session_store:
+            try:
+                self.session_store.archive_current(
+                    target_chat_id,
+                    f"Archiv [Vor Fork #{snapshot_id}] {_session_name(target_chat_id)}"
+                )
+            except Exception:
+                pass
+
+        s = ChatSession()
+        s.model = self.backend.get_default_model()
+        s.messages = list(messages)
+        s.last_active = time.time()
+        self.sessions[target_chat_id] = s
+        self._persist_session(target_chat_id, s)
+        return len(messages)
 
     def history(self, chat_id: str) -> list[dict]:
         """Read-only transcript of a session: the visible user/assistant turns in order.
@@ -1068,7 +1311,7 @@ class ChatRuntime:
             if m.get("role") in ("user", "assistant")
         ]
 
-    def build_system_prompt(self, session: ChatSession, model: str = "") -> str:
+    def build_system_prompt(self, session: ChatSession) -> str:
         capabilities = """
 Du hast Zugriff auf Werkzeuge (Tools), die du bei Bedarf aufrufen kannst.
 
@@ -1133,6 +1376,13 @@ REGELN:
 - Sei präzise, hilfreich, und zeige Tool-Ergebnisse klar an
 - Du KANNST Befehle ausführen — sag nicht, dass du das nicht kannst
 
+TURN-BUDGET, MEHRDEUTIGKEIT & DELEGATION (4-STUFEN-PRIORITÄT):
+- Du hast pro Bearbeitungssitzung ein begrenztes Werkzeug-Rundenbudget. Große oder unklare Aufgaben NICHT endlos durchsuchen!
+- 1. DIREKT LÖSEN: Wenn das Problem klar und überschaubar ist, direkt umsetzen und testen.
+- 2. ZERLEGEN: Wenn umfangreich aber verstanden, mit task_manage(action='add', title='Edit: ...') in konkrete Einzelschritte zerlegen.
+- 3. MEHRDEUTIGKEIT: Bei knappen/mehrdeutigen Aufgaben zuerst Code-Präzedenzfälle suchen und immer die minimal-invasive, risikoärmste Option wählen. Bei anhaltender Unsicherheit nach 3-5 Runden: Rückfrage mit task_manage(category='TO-DECIDE') anlegen.
+- 4. DELEGIEREN & ABLEHNEN (Ultima Ratio): Erst delegieren (via delegate an Claude/Codex), wenn Modellgrenzen oder Werkzeuge nachweislich überschritten sind. Niemals voreilig ablehnen oder Aufgaben abwälzen!
+
 WARTUNGSROLLE:
 Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 - maintain(check) zeigt fällige wiederkehrende Tasks
@@ -1140,8 +1390,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 - maintain(health) zeigt den Gesamtstatus
 """
         s = self.base_system + "\n\n" + capabilities
-        selected_model = model or session.model
-        s += f"\n[Modus={session.mode}, Denken={'AN' if session.think else 'AUS'}, Modell={selected_model}]"
+        s += f"\n[Modus={session.mode}, Denken={'AN' if session.think else 'AUS'}, Modell={session.model}]"
         return s
 
     def _get_bach_context(self, text: str) -> str:
@@ -1162,26 +1411,57 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             pass
         return "\n\n".join(parts)
 
-    async def process(self, text: str, chat_id: str, *, backend=None,
-                      model: str = "") -> str:
+    def _get_memory_hook_context(self, text: str, chat_id: str) -> str:
+        """Memoryhooker-Kontext (Stufe 6) -- fail-soft, liefert nie einen Abbruch.
+
+        Der Seam haengt in process() VOR dem Prompt-Aufbau: session_start_message
+        (einmalig) + evaluate_prompt (Modus remember+search, Session-Cap,
+        Cooldown) gegen BachMemoryBackend (read-only gegen die BACH-DB).
+        Rollback: BACH_USE_EXTERNAL_MEMORYHOOKS=0. Fehlt das Modul oder
+        klemmt der Hook, ist das Ergebnis "" -- der Chat laeuft weiter.
+        """
+        try:
+            from hub.memory_hook_provider import get_shared_memory_hook
+            db_path = getattr(getattr(self, "memory", None), "db_path", None)
+            hook = get_shared_memory_hook(db_path=db_path)
+            if hook is None:
+                return ""
+            return hook.hook_context(text, chat_id) or ""
+        except Exception:
+            return ""
+
+    async def process(self, text: str, chat_id: str, *, backend=None, model=None, skip_compute_gate: bool = False, **kwargs) -> str:
         """Verarbeitet eine User-Nachricht und gibt die Antwort zurück."""
         # Der eine Punkt, an dem jeder Modell-Load vorbeikommt: Telegram,
         # /api/chat (Idle-Worker) und der Auftrags-Worker rufen alle hier an.
         # Das Gate deshalb hier statt je Aufrufer (T-20260907-440775748).
-        selected_backend = backend or self.backend
-        context_limit = self._context_limit_for_backend(selected_backend)
-        if self.compute_gate is not None and self.compute_gate(selected_backend):
+        known_session = self.sessions.get(chat_id)
+        selected_backend = (
+            backend
+            or getattr(known_session, "backend", None)
+            or self.backend
+        )
+        if (
+            not skip_compute_gate
+            and self.compute_gate is not None
+            and self.compute_gate(selected_backend)
+        ):
             raise ComputeLocked(
                 "Compute-Lock aktiv -- kein Modell-Load, damit laufende "
                 "Rechenjobs nicht in den Swap gedraengt werden."
             )
         session = self.get_session(chat_id)
         selected_model = model or session.model or selected_backend.get_default_model()
+        context_limit = self._context_limit_for_backend(selected_backend, selected_model)
         session.last_active = time.time()
         session.messages.append({"role": "user", "content": text})
 
+        active_limit = context_limit
+        summarize_thresh = self.SUMMARIZE_THRESHOLD if active_limit <= 32768 else self.SUMMARIZE_THRESHOLD * 4
+        max_msgs = self.MAX_MESSAGES if active_limit <= 32768 else self.MAX_MESSAGES * 2
+
         total = sum(len(m.get("content", "")) for m in session.messages)
-        if total > self.SUMMARIZE_THRESHOLD or len(session.messages) > self.MAX_MESSAGES:
+        if total > summarize_thresh or len(session.messages) > max_msgs:
             await self._summarize(
                 session,
                 backend=selected_backend,
@@ -1189,10 +1469,16 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             )
 
         bach_ctx = self._get_bach_context(text)
+        # memoryhooker-Seam (MODULRUECKTRANSFER Stufe 6): dynamisch injizierter
+        # Memory-Kontext mit Session-Cap/Cooldown und Audit-Trail. Fail-soft,
+        # Rollback via BACH_USE_EXTERNAL_MEMORYHOOKS=0.
+        hook_ctx = self._get_memory_hook_context(text, chat_id)
 
-        sys_prompt = self.build_system_prompt(session, model=selected_model)
-        if bach_ctx:
+        sys_prompt = getattr(session, "custom_system_prompt", "") or self.build_system_prompt(session)
+        if bach_ctx and not getattr(session, "custom_system_prompt", ""):
             sys_prompt += f"\n\n--- BACH ---\n{bach_ctx}"
+        if hook_ctx and not getattr(session, "custom_system_prompt", ""):
+            sys_prompt += f"\n\n--- MEMORY-HOOK ---\n{hook_ctx}"
 
         msgs = [{"role": "system", "content": sys_prompt}] + session.messages
 
@@ -1205,7 +1491,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             except Exception as e:
                 answer = FailedAnswer.from_exception(e)
         else:
-            tools = TOOLS_FULL if session.mode == "full" else TOOLS_SAFE
+            tools = tools_for_mode(session.mode)
             answer = await self._tool_loop(
                 msgs,
                 session,
@@ -1221,9 +1507,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
     async def _tool_loop(self, msgs: list, session: ChatSession,
                          tools: list, *, backend=None, model: str = "",
                          context_limit: int | None = None) -> str:
-        selected_backend = backend or self.backend
+        selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
-        max_rounds = self.max_tool_rounds
+        max_rounds = session.max_tool_rounds if getattr(session, "max_tool_rounds", None) is not None else self.max_tool_rounds
         round_num = 0
         auto_used = 0
         goal_checked = False
@@ -1236,6 +1522,34 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             if max_rounds > 0 and round_num > max_rounds:
                 session.current_tool = ""
                 return result.get("content", "") or "(Max Tool-Runden erreicht)"
+
+            # OPS-RUN-001: Operator-Steuerung an der Modell-Grenze konsumieren.
+            # Nur aktiv, wenn die Session ein Control-Verzeichnis traegt
+            # (Agent-Laeufe); Telegram-Chat etc. bleiben unveraendert.
+            ctrl = getattr(session, "operator_control", None)
+            if ctrl is not None:
+                try:
+                    pause_info = await ctrl.wait_if_paused()
+                    if pause_info.get("timed_out"):
+                        msgs.append({"role": "user", "content":
+                            "[SYSTEM-HINWEIS: Eine Operator-Pause wurde nicht "
+                            "aufgehoben; der Lauf wurde nach Ablauf der "
+                            "Wartegrenze fortgesetzt.]"})
+                    for note in ctrl.drain_notes():
+                        log.info("Operator-Hinweis injiziert (Runde %d)", round_num)
+                        msgs.append({"role": "user", "content":
+                            f"[OPERATOR-HINWEIS vom {note.get('requested_at', '?')}]\n"
+                            f"{note.get('message', '')}"})
+                    cpt = ctrl.consume_new_checkpoint()
+                    if cpt:
+                        log.info("Operator-Checkpoint bestaetigt (Runde %d)", round_num)
+                        msgs.append({"role": "user", "content":
+                            f"[OPERATOR-CHECKPOINT vom {cpt.get('acknowledged_at', '?')}]\n"
+                            f"{cpt.get('message', 'Sicherer Checkpoint erreicht.')}"})
+                except Exception as e:
+                    # Steuerung darf den Lauf nie gefährden.
+                    log.warning("Operator-Steuerung fehlgeschlagen (ignoriert): %s", e)
+
             try:
                 result = await selected_backend.chat(
                     msgs, tools=tools, think=session.think, model=selected_model
@@ -1255,12 +1569,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else "")
                 )
 
-            if self._context_voll(result, context_limit=context_limit):
+            if self._context_voll(
+                result, session, context_limit=context_limit
+            ):
                 handoffs += 1
                 log.info("Kontext-Uebergabe [%d] bei %s Token",
                          handoffs, result.get("prompt_tokens"))
                 msgs = await self._handoff(
-                    msgs, session, backend=selected_backend, model=selected_model
+                    msgs,
+                    session,
+                    backend=selected_backend,
+                    model=selected_model,
                 )
                 continue
 
@@ -1290,6 +1609,13 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 if t_name and t_name not in session.last_tools:
                     session.last_tools = (session.last_tools + [t_name])[-5:]
                 log.info(f"Tool [{round_num}]: {t_name}({json.dumps(t_args, ensure_ascii=False)[:200]})")
+                cid = getattr(session, "chat_id", "")
+                if cid:
+                    try:
+                        from hub._services.chat.slots_config import update_slot
+                        update_slot(cid, {"current_activity": f"Tool [{round_num}]: {t_name}"})
+                    except Exception:
+                        pass
                 t_result = exec_tool(
                     t_name, t_args, session.mode,
                     bach_app=self.bach_app,
@@ -1315,14 +1641,85 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     log.info("Hook PostToolUse: %d Zeichen Kontext", len(zusatz))
                     msgs.append({"role": "user", "content": zusatz})
 
-    def _context_voll(self, result: dict, *, context_limit: int | None = None) -> bool:
+            # Turn-Awareness & Rundenlimit-Verwaltung:
+            if max_rounds > 0 and round_num >= max_rounds:
+                session.current_tool = ""
+                final_prompt = (
+                    f"[SYSTEM-HINWEIS: Werkzeugrunden aufgebraucht ({round_num}/{max_rounds})]\n"
+                    "Die maximale Anzahl an Werkzeugrunden für diese Sitzung ist erreicht. "
+                    "Fasse bitte präzise zusammen:\n"
+                    "1. Was hast du bisher analysiert und herausgefunden (Dateipfade, Zeilennummern, Befunde)?\n"
+                    "2. Was wurde im Code bereits geändert oder behoben?\n"
+                    "3. Falls die Aufgabe noch nicht komplett gelöst ist: Welcher konkrete Folge-Task (z. B. 'Edit: ...') "
+                    "wurde angelegt oder welche Schritte muss der nächste Lauf ausführen?"
+                )
+                msgs.append({"role": "user", "content": final_prompt})
+                try:
+                    final_res = await selected_backend.chat(
+                        msgs, tools=None, think=False, model=selected_model
+                    )
+                    content = (final_res.get("content") or "").strip()
+                    if content:
+                        return content
+                except Exception as e:
+                    log.warning("Abschluss-Zusammenfassung fehlgeschlagen: %s", e)
+                return result.get("content", "") or "(Max Tool-Runden erreicht)"
+
+            if max_rounds > 0 and round_num >= max_rounds - 2:
+                rest = max_rounds - round_num
+                nudge = (
+                    f"[SYSTEM-HINWEIS: Werkzeugrunde {round_num}/{max_rounds} - Noch {rest} Runde(n) verbleibend!]\n"
+                    "Deine Werkzeugrunden sind fast aufgebraucht! "
+                    "Wenn du die Ursache kennst: Gehe JETZT direkt zur Code-Änderung (edit_file / write_file) über. "
+                    "Wenn du den Code in dieser Session nicht mehr fertigstellen kannst: "
+                    "Rufe sofort `task_manage(action='add', title='Edit: ...', description='Exakte Datei: ..., Zeilen: ..., Was zu tun ist: ...', category='...')` auf, "
+                    "um einen konkreten Editier-Task anzulegen, und schließe diesen Analyse-Task mit deinen Erkenntnissen ab."
+                )
+                msgs.append({"role": "user", "content": nudge})
+
+    def get_model_context_limit(self, model: str | None = None, backend: Any = None) -> int:
+        """Dynamische Bestimmung des Kontextlimits je nach Modell und Backend."""
+        m = (model or "").lower()
+        # Cloud / Ultra-High Context Models
+        if ":cloud" in m or "kimi" in m or "glm" in m:
+            return 131072
+        if "claude" in m or "sonnet" in m or "opus" in m:
+            return 200000
+        if "gpt-4" in m or "o3" in m or "o4" in m or "codex" in m:
+            return 128000
+        if "hermes" in m:
+            return 131072
+
+        # Backend-Typen pruefen
+        b_name = type(backend).__name__.lower() if backend else ""
+        if "anthropic" in b_name:
+            return 200000
+        if "openai" in b_name or "hermes" in b_name:
+            return 128000
+
+        # Lokales Modell -> Default aus self.context_limit (meist 32768)
+        return self.context_limit
+
+    def _context_voll(
+        self,
+        result: dict,
+        session: ChatSession | None = None,
+        *,
+        context_limit: int | None = None,
+    ) -> bool:
         """Ist das Kontextfenster so voll, dass eine Uebergabe faellig ist?
 
         Ohne Token-Zahl vom Backend wird nicht geraten - dann bleibt alles
         beim Alten. Prozent 0 schaltet die Uebergabe ab.
         """
-        active_limit = self.context_limit if context_limit is None else context_limit
-        if self.handoff_percent <= 0 or active_limit <= 0:
+        if self.handoff_percent <= 0:
+            return False
+        active_limit = context_limit if context_limit is not None else self.context_limit
+        if context_limit is None and session is not None:
+            active_limit = self.get_model_context_limit(
+                session.model, getattr(session, "backend", None) or self.backend
+            )
+        if active_limit <= 0:
             return False
         used = result.get("prompt_tokens")
         if not isinstance(used, int) or used <= 0:
@@ -1338,11 +1735,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         der Anfang des neuen, leeren Verlaufs.
         """
         frage = msgs + [{"role": "user", "content": HANDOFF_PROMPT}]
-        selected_backend = backend or self.backend
+        selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
         try:
-            res = await selected_backend.chat(frage, tools=None, think=False,
-                                              model=selected_model)
+            res = await selected_backend.chat(
+                frage, tools=None, think=False, model=selected_model
+            )
             uebergabe = (res.get("content") or "").strip()
         except Exception as e:
             log.warning("Uebergabe fehlgeschlagen: %s", e)
@@ -1384,7 +1782,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
     async def _summarize(self, session: ChatSession, *, backend=None,
                          model: str = ""):
-        selected_backend = backend or self.backend
+        selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
         if len(session.messages) < 6:
             return
@@ -1403,9 +1801,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
         try:
             result = await selected_backend.chat(
-                prompt,
-                think=False,
-                model=selected_model,
+                prompt, think=False, model=selected_model
             )
             summary = result.get("content", "")[:500]
 

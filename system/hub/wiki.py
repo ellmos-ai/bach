@@ -337,6 +337,8 @@ class WikiHandler(BaseHandler):
                     ).fetchone()
                 if row:
                     return dict(row)
+            except sqlite3.OperationalError:
+                pass
             finally:
                 conn.close()
 

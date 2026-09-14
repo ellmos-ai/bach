@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, List, Tuple
 
 from hub.base import BaseHandler
+from hub.domain_writer_gate import blocked_reason
 
 
 SCHEMA_VERSION = "mediplaner-export-v1"
@@ -152,6 +153,14 @@ class MediPlanerHandler(BaseHandler):
         }
 
     def _import(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
+        # Punkt 3 des C2-Rests (T-20260822-624075478): MediPlaner ist der Kanon fuer
+        # Medikamente und Arztkontakte; BACH liest sie ueber die Projektion. Der Import
+        # bleibt als Altbestandsuebernahme erhalten, aber nur ausdruecklich gegatet.
+        # Ein --dry-run schreibt nichts und darf deshalb durch.
+        if not dry_run:
+            reason = blocked_reason("medication", "mediplaner import")
+            if reason:
+                return False, reason
         input_file = self._get_arg(args, "--file") or self._get_arg(args, "-i") or self._first_path_arg(args)
         if not input_file:
             return False, "Usage: bach mediplaner import --file mediplaner-export-v1.json"

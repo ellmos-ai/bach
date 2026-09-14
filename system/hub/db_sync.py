@@ -85,6 +85,36 @@ class DBSyncManager:
         self.transit_dir.mkdir(parents=True, exist_ok=True)
         self.local_bach_dir.mkdir(parents=True, exist_ok=True)
 
+        # Stufe-7-Seam (sqlite-transit-sync): lazy, fail-closed.
+        # None = legacy ProSync-Pfad; Fehler werden in _external_error sichtbar.
+        self._external_engine = None
+        self._external_probed = False
+        self._external_error = None
+
+    def _get_external_engine(self):
+        """Lazy TransitSync-Engine (MODULRUECKTRANSFER Stufe 7).
+
+        Liefert None, wenn der Rollback-Schalter (BACH_USE_EXTERNAL_TRANSITSYNC=0)
+        oder ein fehlendes Modul den legacy ProSync-Pfad erzwingt. Ein
+        Vertragsbruch des installierten Moduls degradiert NICHT still: der
+        Fehler wird protokolliert (siehe get_status) und der bewaehrte
+        Legacy-Pfad bleibt aktiv (fail-closed, kein Datenverlust).
+        """
+        if not self._external_probed:
+            self._external_probed = True
+            try:
+                from .transit_sync_provider import create_external_engine_if_active
+                self._external_engine = create_external_engine_if_active(
+                    db_path=self.db_path,
+                    transit_dir=self.transit_dir,
+                    local_bach_dir=self.local_bach_dir,
+                    node_id=self.hostname,
+                )
+            except Exception as e:  # Vertragsbruch/Importfehler: sichtbar machen
+                self._external_engine = None
+                self._external_error = str(e)
+        return self._external_engine
+
     @property
     def backup_dir(self) -> Path:
         """Rückwärtskompatibilität: backup_dir zeigt auf transit_dir."""
@@ -259,6 +289,21 @@ class DBSyncManager:
 
     def sync_on_start(self) -> Tuple[bool, str]:
         """Pull: Beim Start neuere Backups aus Transit mergen."""
+        engine = self._get_external_engine()
+        if engine is not None:
+            try:
+                self.ensure_local_db()
+                changed, names = engine.pull()
+            except Exception as e:
+                self._update_heartbeat()
+                return False, f"TransitSync Pull fehlgeschlagen ({e})"
+            self._update_heartbeat()
+            if not names:
+                return True, "TransitSync: Keine ausstehenden Snapshots im Transit"
+            return True, (
+                f"TransitSync Pull: {changed} Zeilen aus {len(names)} "
+                f"Snapshot(s) gemergt"
+            )
         self.ensure_local_db()
         newer = self.find_newer_backups()
         if not newer:
@@ -295,6 +340,13 @@ class DBSyncManager:
 
     def sync_on_exit(self) -> Tuple[bool, str]:
         """Push: Beim Exit Backup in Transit-Ordner erstellen."""
+        engine = self._get_external_engine()
+        if engine is not None:
+            try:
+                snapshot_name = engine.push()
+            except Exception as e:
+                return False, f"TransitSync Push fehlgeschlagen ({e})"
+            return True, f"TransitSync Push: {snapshot_name}"
         backup_path = self.create_backup_if_needed()
         if backup_path:
             return True, f"ProSync Push: {backup_path.name}"
@@ -562,6 +614,16 @@ class DBSyncManager:
         Returns:
             (success, message)
         """
+        # 0. Externe Engine (Stufe 7): verifizierte Snapshots, konfliktfreies
+        #    Delta-Merge - der interaktive Heartbeat-Prompt entfaellt, da kein
+        #    Ganz-DB-Ueberschreiben mehr stattfindet.
+        engine = self._get_external_engine()
+        if engine is not None:
+            try:
+                return engine.sync()
+            except Exception as e:
+                return False, f"TransitSync fehlgeschlagen ({e})"
+
         # 1. Konflikt-Check
         conflicts = self.check_conflicts()
         if conflicts and not auto_confirm:
@@ -710,6 +772,23 @@ class DBSyncManager:
         )
 
         lines = ["[DB SYNC] Status:", ""]
+        engine = self._get_external_engine()
+        if engine is not None:
+            try:
+                pending = engine.pending()
+                lines.append(
+                    f"Engine: sqlite-transit-sync (extern, Node {engine.node_id}), "
+                    f"{len(pending)} Snapshot(s) ausstehend"
+                )
+            except Exception as e:
+                lines.append(f"Engine: sqlite-transit-sync Fehler ({e})")
+        elif self._external_error:
+            lines.append(
+                f"Engine: bach-legacy ProSync (externer Seam deaktiviert: "
+                f"{self._external_error})"
+            )
+        else:
+            lines.append("Engine: bach-legacy ProSync")
         lines.append(f"Lokale DB: {self.db_path}")
         lines.append(f"Backup-Ordner: {self.backup_dir}")
         lines.append("")

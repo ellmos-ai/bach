@@ -1,5 +1,5 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
+# Last validated: 2026-09-05
 # Next review: 2027-05-17
 
 DAILY AGENT - 永続セッションを持つ自律型デイリー エージェント
@@ -20,8 +20,11 @@ DAILY AGENT - 永続セッションを持つ自律型デイリー エージェ�
   bach daily-agent stop                 エージェント + セッションの概要を停止
   bach daily-agent status               PID およびランタイム情報を表示
   bach daily-agent briefing             朝のブリーフィング (アクティブなモジュール)
+  bach daily-agent briefing --dry-run   読み取り専用プレビュー
   bach daily-agent summary              夜のサマリーを生成
   bach daily-agent config               ブリーフィング モジュールの一覧表示
+  bach daily-agent config routinika_briefing --projection=<絶対パス>
+                                        Routinika コンシューマーパスを保存
   bach daily-agent modules              構成のエイリアス
   bach daily-agent toggle <modul>       モジュールのオン/オフの切り替え
 
@@ -30,6 +33,8 @@ DAILY AGENT - 永続セッションを持つ自律型デイリー エージェ�
   message_briefing 未読メッセージ (ON)
   news_briefing ニュース概要 (AN)
   session_briefing 最後のセッション (ON)
+  commitment_briefing ローカルのルーチンと期限 (ON)
+  routinika_briefing フェデレーションされた期限 (OFF)
   Weather_briefing 天気 (デフォルト: OFF)
   Calendar_briefing カレンダーの予定 (オフ)
 
@@ -40,6 +45,8 @@ DAILY AGENT - 永続セッションを持つ自律型デイリー エージェ�
   bach daily-agent start --model=opus   モデル 'opus' で開始
   bach daily-agent status               PID と開始時刻を表示
   bach daily-agent briefing             アクティブなモジュールでブリーフィングを生成
+  bach daily-agent briefing --routinika-projection=C:\staging\routinika.sqlite --routinika-receipt --dry-run
+                                        閉じたプロジェクションを変更せず検証
   bach daily-agent toggle news_briefing Deaktiviert News-Modul
   bach daily-agent summary              今日完了したタスクを表示
   bach daily-agent stop                 エージェントを停止 + 概要を保存
@@ -59,6 +66,8 @@ task_briefing: 上位 10 個の保留中のタスク (タイトルは短縮さ�
 message_briefing: 未読メッセージのカウンター (status='unread')
 news_briefing: news_items の未読ニュース (上位カテゴリー + 3 タイトル)
 session_briefing: 前回のmemory_sessions.summary (120文字に短縮)
+routinika_briefing: 厳密に許可された閉じた Routinika v1 SQLite
+                    プロジェクションの不透明な期限。既定では無効。
 Weather_briefing: Weather_service を試しました (座標は 0.0 にハードコードされています)
 Calendar_briefing: Calendar_events からの今日のイベント (次の 5 つのイベント)
 
@@ -68,6 +77,8 @@ Calendar_briefing: Calendar_events からの今日のイベント (次の 5 つ�
 - エージェントはバックグラウンドで起動されています (stdout/stderr は抑制されています)
 - プロセスがクラッシュした場合は、PID ファイルを手動で削除する必要があります
 - ブリーフィング モジュールはサイレント DB エラーを無視します (例: news_items が存在しない場合)
+- 有効または明示指定された Routinika プロジェクションは、契約、来歴、
+  またはクローズ状態のエラー時にフェイルクローズします。
 - エージェントがすでに死亡している場合でも、停止すると概要が保存されます
 
 

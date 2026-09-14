@@ -19,16 +19,6 @@ from hub.setup import SetupHandler
 
 
 @pytest.fixture(autouse=True)
-def isolate_translation_runtime(monkeypatch):
-    """Keep setup language tests from leaking process-global translation state."""
-
-    import hub.lang as lang_module
-
-    monkeypatch.setattr(lang_module, "_t_cache", dict(lang_module._t_cache))
-    monkeypatch.setattr(lang_module, "_t_lang_cache", lang_module._t_lang_cache)
-
-
-@pytest.fixture(autouse=True)
 def stub_os_keyring(monkeypatch):
     """SetupHandler._check() fragt sonst den ECHTEN OS-Schluesselbund ab.
 

@@ -6,11 +6,11 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-v3.13.0--bluesky-orange)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-v3.14.0-orange)](CHANGELOG.md)
 [![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)](ROADMAP.md)
 [![Tests](https://img.shields.io/badge/Tests-4436%20collected-blue)](system/tests/)
 
-**Version:** v3.13.0-bluesky
+**Version:** v3.14.0
 
 ## 🎬 Demo video
 
@@ -68,7 +68,7 @@ For auditability, the GPT-5.6 automation attribution applies from that configura
 - **Skill Source Registry** - `bach skills version bach` resolves the canonical repo-root skill via `system/data/skill_sources.json` and can compare optional Codex/Claude user copies without fuzzy filename drift
 - **71 Workflow Templates** - Pre-built process workflows
 - **4400+ Tests** - Comprehensive automated coverage across handlers, services, GUI, and MCP servers
-- **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System (6 memory types)
+- **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System (6 memory types), with additive per-entry BACH-session provenance for new records; legacy authors remain explicitly unknown
 - **Agent CLI** - `bach agent start/stop/list` for direct agent control
 - **Agent Doctor** - `bach agent doctor [name] [--json]` validates Claude CLI availability, runtime dirs, skill files, and stale PID state before a launch
 - **Agent Operator Controls** - `bach agent pause/resume/checkpoint/steer/clear-steer [name] [--json]` lets operators stage cooperative pause requests and guidance before or during a run, record explicit safe-checkpoint acknowledgements, mirror that state into `OPERATOR_NOTES.md`, preserve queued hints across the next `bach agent start`, inject them into the generated session `CLAUDE.md`, and expose nested `operator_control` snapshots plus `queued_for_next_start` for automation-safe polling
@@ -125,9 +125,12 @@ default loopback address or behind an existing trusted access boundary.
 
 ## MCP Servers (Claude Code Integration)
 
-BACH provides two MCP servers for integration with Claude Code, Cursor, and other IDEs. Cross-platform tested on Windows, macOS (ARM64), and Linux:
+BACH provides a built-in Python MCP server plus two companion servers for integration with Claude Code, Cursor, and other IDEs:
 
 ```bash
+# Start the built-in BACH server (stdio)
+bach mcp serve
+
 # Install and configure MCP servers (recommended)
 python system/bach.py setup mcp
 
@@ -135,6 +138,7 @@ python system/bach.py setup mcp
 npm install -g ellmos-codecommander-mcp ellmos-filecommander-mcp
 ```
 
+- **BACH MCP Server** - BACH resources, tools, and prompts via the handler API (`bach mcp serve`)
 - **[ellmos-codecommander-mcp](https://www.npmjs.com/package/ellmos-codecommander-mcp)** v1.3.14 - Code analysis and refactoring tools (21 tools)
 - **[ellmos-filecommander-mcp](https://www.npmjs.com/package/ellmos-filecommander-mcp)** v1.9.1 - File management and batch operations (46 tools)
 
@@ -266,9 +270,9 @@ How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a pop
 
 ### Competitive Watch
 
-As of July 19, 2026, OpenClaw stable remains `2026.7.1`; the newest visible prerelease is `2026.7.2-beta.3`, published on July 18, 2026 at 23:16 UTC. It extends the already tracked MCP-isolation, task-ledger, remote-worker, and recovery signals with remote coding sessions on owning hosts, guided Control UI/channel setup, stronger gateway/session recovery, safer channel operation, and versioned external-supervisor restart handoffs. The best-fit impulses for BACH are supervised restart handoffs, terminal resume on the owning host, guided setup hardening, and recovery-safe channel/session flows; broad mobile/channel parity remains outside BACH's current focus. Source: [openclaw/openclaw releases](https://github.com/openclaw/openclaw/releases/tag/v2026.7.2-beta.3).
+As of September 13, 2026, OpenClaw stable remains `2026.7.1` (with prerelease tracks through `2026.7.2-beta.3`). Relevant architectural impulses for BACH continue to be owning-host terminal-resume, supervised restart handoffs, guided setup hardening, session-local MCP isolation, and recovery-safe channel/session flows; broad mobile/messaging gateway parity remains outside BACH's core design.
 
-On the BACH side, the July 19 care pass sealed the live release catalog: `bach upgrade repair --version v3.13.0-bluesky --json` registered the current release, and `bach upgrade check --json` now reports stable/latest `v3.13.0-bluesky`, `release_entries=2`, `current_release_registered=true`, `repair_recommended=false`, and `local_modifications=0`. `test-agent` doctor/start dry-run and usecase `50` also ran successfully.
+On the BACH side, the September 13 care and development pass confirmed 100% green test execution: 123 core regression tests passed cleanly (self-heal, memory cleanup, registry watcher, smoke tests) with strict `~/.bach` directory isolation, and 174 Modulrücktransfer regression tests passed across Windows (`WORKSTATION-LG`) covering `ellmos-tests` adapter (#1218), `ellmos-scheduler` (#1219), `accounts-core` (#1220), `system-explorer` (#1221), `memoryhooker`/`workflowhooker` (#1222), and `sqlite-transit-sync` (#1223). Agent doctor diagnostics (`ati`, `entwickler`), startup dry-runs, 50/50 usecase dry-runs, documentation freshness (2,102 documents checked, 0 outdated >60d), and memory decay operations were also fully verified.
 
 ## License
 
@@ -289,7 +293,7 @@ Die vollständige deutsche Dokumentation findest du hier: **[README.de.md](READM
 
 ---
 
-*ellmos BACH v3.13.0-bluesky - Text-Based Operating System for LLMs*
+*ellmos BACH v3.14.0 - Text-Based Operating System for LLMs*
 
 ---
 

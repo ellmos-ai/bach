@@ -16,6 +16,8 @@
 # === BACH CHAT RUNTIME (User-spezifisch) ===
 /system/data/system_prompt_buddha.txt
 /system/data/ollama_config.json
+/system/data/slots_config.json
+/system/data/fackel_preference.json
 /system/partners/partner_config.json
 
 # === GENERISCHE CREDENTIAL-DATEIEN (NIEMALS COMMITTEN!) ===
@@ -42,7 +44,11 @@ id_ed25519.*
 
 # === BACKUPS & LAUFZEIT-DATEN (Nicht committen!) ===
 /backups/*.bachdb
+/backups/*.bachdb-wal
+/backups/*.bachdb-shm
 /backups/*.db
+/backups/*.db-wal
+/backups/*.db-shm
 /backups/heartbeat.json
 /system/_backups/*.zip
 /system/storage/
@@ -61,6 +67,7 @@ id_ed25519.*
 /system/data/*.clock_state
 /system/data/*.injector_cooldowns
 /system/data/build_db_log.json
+/system/data/scheduler_external/
 /system/data/config/db_sync_enabled
 /bach.db
 /system/data/bach.db
@@ -78,6 +85,7 @@ id_ed25519.*
 /system/data/config/directory_truth.json
 /system/data/config/directory_truth-*.json
 /system/data/healing_report.json
+/system/data/fs_manifest.json
 /system/data/sync_state.json
 /system/data/sync_state-*.json
 /system/data/directory_truth-*.json
@@ -96,18 +104,21 @@ id_ed25519.*
 /system/data/mail_attachments/
 /system/data/migrations/
 /system/data/temp/
+/system/data/explorer_state/
 /system/data/trash/
 
 # === EXPORTS & GENERATED ARTIFACTS ===
 /exports/**/*.zip
 /exports/**/_archive/
 /system/tools/analysis_results.json
+/system/tools/testing/results/
 
 # === ONEDRIVE CONFLICT COPIES (Nie committen!) ===
-*-Mac Studio.py
-*-Mac Studio.txt
-*-LAPTOP-*.py
-*-DESKTOP-*.py
+*-WORKSTATION-LG.*
+*-ASUS-GEI.*
+*-Mac Studio.*
+*-LAPTOP-*.*
+*-DESKTOP-*.*
 
 # === ORPHANED CONFIG FLAGS ===
 /system/config/
@@ -280,3 +291,10 @@ PLAN.txt
 # === PFLEGELAEUFE (Pipeline-Material, kein Repo-Inhalt) ===
 /_after-care/
 /LOCK*.txt
+/system/tools/testing/results/
+
+# Codex-Zweitmeinung: Roh-Logs bleiben lokal, Fragen/Antwort werden committet
+_codex/*.log
+
+# Codex-Zweitmeinung: Roh-Logs bleiben lokal
+_codex/*.log

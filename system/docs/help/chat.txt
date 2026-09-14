@@ -1,0 +1,71 @@
+# Portabilität: UNIVERSAL
+# Version: 1.0.0
+# Zuletzt validiert: 2026-09-09
+
+BUDDHA CHAT & SESSION-PROTOKOLLE
+================================
+
+BESCHREIBUNG
+-----------
+Buddha Chat ist die interaktive Assistenz-Schnittstelle von BACH, erreichbar
+über die Web-GUI (http://localhost:8000/chat) sowie als Telegram-Bot.
+Buddha beantwortet Fragen, plant Arbeiten, führt BACH-Tools aus und
+verwaltet seinen Kontext über kanonische Snapshots in bach.db.
+
+ZUGANGSWEGE
+-----------
+1. Web-Chat:     http://localhost:8000/chat
+                 Nutzt die feste Session-ID "gui-web". Nachrichten bleiben
+                 auch beim Neuladen der Seite erhalten (automatische Wiederherstellung).
+2. Telegram-Bot: @BachBuddhaBot (bzw. konfigurierter Token)
+                 Jeder Telegram-Chat besitzt eine eigene numerische Chat-ID.
+3. System-Tray:  Statusleiste mit Modell-/Modus-Auswahl und Schnellzugriff.
+
+SESSION-LIFECYCLE & AUTOMATISCHER RESET
+---------------------------------------
+Um zu verhindern, dass alte, längst erledigte Themen dauerhaft im Denk-Kontext
+verbleiben, unterliegt jede Chat-Session folgendem Lebenszyklus:
+1. 24-Stunden-Inaktivitäts-Reset (TTLc:
+- Wenn ein Chat länger als 24 Stunden nicht genutzt wurde (last_active > 86400s),
+  wird er beim nächsten Nachrichtenempfang automatisch archiviert und auf einen
+  leeren Zustand zurückgesetzt.
+- Der Benutzer startet am nächsten Tag automatisch mit einem frischen Kopf.
+
+2. Manueller Reset:
+- Telegram:  Befehl /clear
+- Web-GUIp  Button [ ➕ Neuer Chat ] in der Statusleiste
+- Beide Wege archivieren den bisherigen Verlauf vor dem Leeren vollständig.
+
+3. Zero-Data-Loss Garantie:
+- Kein Nachrichtenverlauf wird unwiederbringlich gelöscht.
+- Alle Sitzungen werden als permanentes Transkript (Typ: chat-transcript.v1)
+  in der Tabelle session_snapshots der zentralen bach.db gespeichert.
+
+PROTOKOLLE & FORKING (WIEDERBELEBUNG)
+-------------------------------------
+Under der Web-GUI (http://localhost:8000/chat) befindet sich der Button [ 📉 Protokolle ]:
+1. Archiv-Übersicht:
+- Zeigt chronologisch alle aufgezeichneten Sessions aus Web, Telegram und Worker.
+- Filterbaz nach "Alle", "Web", "Telegram" und "Archiv".
+
+2. Transkript-Inspektion:
+- Klick auf einen Eintrag öffnet das vollständige Transkript inklusive aller
+  User- und Assistant-Nachrichten mit Zeitstempeln und Formatierung.
+
+3. Im Web-Chat fortsetzen (Fork):
+- ßber den Button [ 🔑 Im Web-Chat fortsetzen (Fork) ] kann jede historische
+  Sitzung (egal ob aus Telegram oder einer früheren Web-Session) in den aktuellen
+  Web-Chat geladen und direkt weiterdiskutiert werden.
+- Die bestehende Web-Session wird dabei zuvor automatisch gesichert.
+
+SICHERHEITSMODI
+---------------
+  - safe:  Nur lesende Afragen (ls, cat, grep, git status, etc.).
+  - full:  Auch schreibende Werkzeuge (Dateien erstellen, Kommandos ausführen).
+           In Telegram: /mode full bestätigt
+           In Web-GUI:  Über Control-Dashboard / API
+
+SIEHE AUCH
+----------
+  help bach_chat           Vollständige technische Spezifikation des Chat-Service
+  help session             Arbeitssitzungen für Entwickler (bach session)

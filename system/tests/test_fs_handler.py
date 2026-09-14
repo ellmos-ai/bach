@@ -59,6 +59,23 @@ def handler(tmp_path, monkeypatch, mock_fs_protection, mock_classifier):
     return h
 
 
+def test_app_style_initialization_passes_normalized_path(tmp_path, monkeypatch):
+    """The registry supplies an App; FS dependencies must receive its Path."""
+    received = []
+
+    class FakeApp:
+        base_path = tmp_path
+        db = object()
+
+    monkeypatch.setattr("hub.fs.FSProtection", lambda path: received.append(path) or MagicMock())
+    monkeypatch.setattr("hub.fs.PathClassifier", lambda path: MagicMock())
+
+    from hub.fs import FSHandler
+    FSHandler(FakeApp())
+
+    assert received == [tmp_path]
+
+
 # ═══════════════════════════════════════════════════════════════
 # TESTS: PROPERTIES
 # ═══════════════════════════════════════════════════════════════

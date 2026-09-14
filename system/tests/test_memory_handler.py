@@ -28,7 +28,9 @@ def _create_memory_tables(conn):
             content TEXT NOT NULL,
             is_active INTEGER DEFAULT 1,
             created_at TEXT,
-            updated_at TEXT
+            updated_at TEXT,
+            created_by_session_id TEXT,
+            updated_by_session_id TEXT
         )
     """)
     conn.execute("""
@@ -41,6 +43,8 @@ def _create_memory_tables(conn):
             source TEXT DEFAULT 'cli',
             created_at TEXT,
             updated_at TEXT,
+            created_by_session_id TEXT,
+            updated_by_session_id TEXT,
             UNIQUE(category, key)
         )
     """)
@@ -51,7 +55,9 @@ def _create_memory_tables(conn):
             solution TEXT DEFAULT '',
             severity TEXT DEFAULT 'medium',
             is_active INTEGER DEFAULT 1,
-            created_at TEXT
+            created_at TEXT,
+            created_by_session_id TEXT,
+            updated_by_session_id TEXT
         )
     """)
     conn.execute("""

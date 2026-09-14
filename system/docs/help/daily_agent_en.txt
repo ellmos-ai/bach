@@ -1,5 +1,5 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
+# Last validated: 2026-09-05
 # Next review: 2027-05-17
 
 DAILY AGENT - Autonomous daily agent with persistent session
@@ -20,8 +20,11 @@ OPERATIONS
   bach daily-agent stop                 Stop agent + session summary
   bach daily-agent status               Show PID and runtime info
   bach daily-agent briefing             Morning briefing (active modules)
+  bach daily-agent briefing --dry-run   Read-only briefing preview
   bach daily-agent summary              Generate evening summary
   bach daily-agent config               List briefing modules
+  bach daily-agent config routinika_briefing --projection=<absolute-path>
+                                        Store the Routinika consumer path
   bach daily-agent modules              Alias for config
   bach daily-agent toggle <modul>       Module Switch on/off
 
@@ -30,6 +33,8 @@ Briefing modules (toggle):
   message_briefing Unread messages (ON)
   news_briefing News overview (AN)
   session_briefing Last session (ON)
+  commitment_briefing Local routines and deadlines (ON)
+  routinika_briefing Federated due reminders (OFF)
   weather_briefing Weather (default: OFF)
   calendar_briefing Calendar appointments (OFF)
 
@@ -40,6 +45,8 @@ EXAMPLES
   bach daily-agent start --model=opus   Starts with model 'opus'
   bach daily-agent status               Shows PID and start time
   bach daily-agent briefing             Generates briefing with active modules
+  bach daily-agent briefing --routinika-projection=C:\staging\routinika.sqlite --routinika-receipt --dry-run
+                                        Verifies one closed projection without writes
   bach daily-agent toggle news_briefing Deaktiviert News-Modul
   bach daily-agent summary              Shows tasks completed today
   bach daily-agent stop                 Stops agent + saves summary
@@ -59,6 +66,8 @@ task_briefing: Top 10 pending tasks (title shortened), possibly recurring jobs
 message_briefing: counter of unread messages (status='unread')
 news_briefing: Unread news from news_items (top categories + 3 titles)
 session_briefing: Last memory_sessions.summary (shortened to 120 characters)
+routinika_briefing: Exact allowlisted opaque due records from a closed
+                    Routinika v1 SQLite projection; disabled by default.
 weather_briefing: Tried weather_service (coordinates hardcoded to 0.0)
 calendar_briefing: Today's events from assistant_calendar (next 5 events)
 
@@ -68,6 +77,8 @@ ERROR HANDLING
 - Agent is started in the background (stdout/stderr suppressed)
 - PID file must be deleted manually if process crashes
 - Briefing modules ignore silent DB errors (e.g. if news_items does not exist)
+- An active or explicitly selected Routinika projection fails closed on
+  contract, provenance, or closure errors.
 - stop saves summary EVEN if agent is already dead
 
 
