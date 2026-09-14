@@ -90,6 +90,10 @@ SYSTEM TRAY
 
   Security boundary: Remote access requires an explicit authentication
   decision. Do not expose the Control API directly on 0.0.0.0.
+  Mutating Control API requests additionally require
+  Authorization: Bearer <token>. The token comes from
+  BACH_CONTROL_API_TOKEN or the OS keyring entry
+  bach_control_api_token.
 
 
 FILES
@@ -128,6 +132,7 @@ CONFIGURATION
     OLLAMA_MODEL             Override default model
     OLLAMA_URL               Override Ollama URL
     BACH_CONTROL_PORT        Control API port (default: 8081)
+    BACH_CONTROL_API_TOKEN   Bearer token for mutating Control API requests
     BACH_HOST                Default host for tray/GUI (for example, bach-server.local)
     BACH_NO_BROWSER          =1: Do not open a browser automatically (remote GUI)
     ANTHROPIC_API_KEY        For claude-api backend

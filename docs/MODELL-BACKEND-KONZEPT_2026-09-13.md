@@ -189,8 +189,8 @@ stillschweigende Ausnahme.
 | Vollsperre in Schleifen | `agent_runner.py:80`, `task_runner.py:122`, `plan_runner.py:127`, `worker.py:128` | aktiv | — |
 | Schwelle | hart codiert an beiden Prüfstellen | aktiv | `_services/limits.py:29` dokumentiert sie, liest sie aber nicht aus |
 | Domänen-Gate | `hub/domain_writer_gate.py` Z. 68-113, GUI-Übersetzung `gui/server.py:68-70` (HTTP 423) | aktiv, **echt fail-closed** | — |
-| Rechte am Executor | — | **fehlt** | `mode` (`safe`/`full`) wird vom Slot, von der API und vom Prompt gesetzt; kein zentraler Werkzeug- oder Prozessstarter prüft ein Rollenrecht |
-| Zugangsschutz Control API | `telegram_chat.py::_is_allowed_origin` Z. 2955, Prüfung Z. 3007/3048 | **aktiv, aber kein Authentifizierungsnachweis** | geprüft werden Herkunft und Inhaltstyp; kein `Authorization`-Header im ganzen Modul. Über diese Schnittstelle lassen sich Slots ändern, Worker im Vollmodus starten und die Fackel umschalten |
+| Rechte am Executor | — | **Vertrag festgelegt, technische Prüfung fehlt** | `mode` (`safe`/`full`) wird vom Slot, von der API und vom Prompt gesetzt; kein zentraler Werkzeug- oder Prozessstarter prüft ein Rollenrecht |
+| Zugangsschutz Control API | `telegram_chat.py::ControlHandler` `_allow_control_request` | **Token-Schutz aktiv** | schreibende POST-/DELETE-Anfragen verlangen `Authorization: Bearer ...`; der Token authentisiert den Control-Aufrufer, ersetzt aber keine Rollenrechte am Executor |
 
 `domain_writer_gate.py` ist das einzige Gatter im System, das den fail-closed-Vertrag
 tatsächlich einhält: unbekannte Domäne wirft `ValueError` statt still zu erlauben. Es ist damit
@@ -275,6 +275,15 @@ Bevorzugtes Backend und bevorzugtes Modell sind es **nicht** — sie sind weiche
 Besetzungspolitik und gehören an die Zuteilung, nicht an den Vertrag. Der Fackelbedarf gehört
 überhaupt nicht an die Rolle: Er hängt von Modell, Kontextfenster und Host ab und ist damit
 eine Eigenschaft des Laufs, keine der Rolle.
+
+**Verbindlicher Vertragspunkt für Programm `896336887`:** Eine Rolle ist nicht nur ein
+Prompt, sondern ein versionierter Vertrag mit expliziten Rechten und Werkzeuggrenzen. Vor
+jeder Werkzeug- oder Prozessaktion muss der zuständige Executor die wirksame Besetzung gegen
+diesen Vertrag prüfen und bei fehlendem, unbekanntem oder nicht ausreichendem Recht
+fail-closed ablehnen. Die Control-API-Authentisierung beweist nur, dass ein zugelassener
+Control-Aufrufer den HTTP-Befehl übermittelt hat; sie verleiht selbst kein Rollenrecht und
+darf die spätere Executor-Prüfung nicht ersetzen. Dieses Ticket dokumentiert und schließt
+den HTTP-Eingang, implementiert aber noch nicht den Executor-Umbau.
 
 ### 4.2 Die Zuteilung: wer spielt wann
 

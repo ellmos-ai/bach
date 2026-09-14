@@ -829,6 +829,19 @@
     <script>
     (function() {
         const CHAT_API = '/api/chat-control';
+        function controlHeaders(method, jsonBody = false) {
+            const headers = jsonBody ? { 'Content-Type': 'application/json' } : {};
+            if (method !== 'GET' && method !== 'HEAD') {
+                let token = sessionStorage.getItem('bach-control-api-token') || '';
+                if (!token) {
+                    token = window.prompt('Control-API-Token für schreibende Aktionen:') || '';
+                    if (token) sessionStorage.setItem('bach-control-api-token', token.trim());
+                }
+                token = token.trim();
+                if (token) headers['Authorization'] = 'Bearer ' + token;
+            }
+            return headers;
+        }
         let currentChatId = localStorage.getItem('bach_active_web_chat_id') || ('web-' + Date.now());
 
         const sidebar = document.getElementById('sidebar');
@@ -1134,7 +1147,7 @@
 
                 const resp = await fetch(CHAT_API + '/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: controlHeaders('POST', true),
                     body: JSON.stringify({ prompt: text, chat_id: currentChatId })
                 });
                 const data = await resp.json();
@@ -1342,7 +1355,7 @@
             try {
                 const resp = await fetch(CHAT_API + '/fork', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: controlHeaders('POST', true),
                     body: JSON.stringify({ chat_id: currentChatId, snapshot_id: selectedModalSnapshotId })
                 });
                 const data = await resp.json();

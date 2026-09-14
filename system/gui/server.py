@@ -4361,7 +4361,13 @@ async def chat_control_proxy(control_path: str, request: Request):
     timeout = _chat_proxy_timeout() if control_path == "chat" else 8.0
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            status_response = await client.get(f"{base_url}/status")
+            upstream_headers = {}
+            if request.headers.get("authorization"):
+                upstream_headers["authorization"] = request.headers["authorization"]
+            status_response = await client.get(
+                f"{base_url}/status",
+                headers=upstream_headers,
+            )
             try:
                 status_payload = status_response.json()
             except ValueError:
@@ -4371,7 +4377,7 @@ async def chat_control_proxy(control_path: str, request: Request):
             if control_path == "status" and request.method == "GET":
                 upstream = status_response
             else:
-                headers = {}
+                headers = dict(upstream_headers)
                 for name in ("content-type", "x-delegation-depth"):
                     if request.headers.get(name):
                         headers[name] = request.headers[name]
