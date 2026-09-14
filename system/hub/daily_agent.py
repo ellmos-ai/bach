@@ -542,7 +542,7 @@ class DailyAgentHandler(BaseHandler):
         try:
             conn.execute("BEGIN IMMEDIATE")
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            conn.execute(
+            status_update = conn.execute(
                 """
                 UPDATE connector_messages
                 SET processed = ?, status = ?, error = ?, updated_at = ?
@@ -551,6 +551,10 @@ class DailyAgentHandler(BaseHandler):
                 (1, "sent" if sent else "failed",
                  None if sent else send_error, now, message_id),
             )
+            if status_update.rowcount != 1:
+                raise RuntimeError(
+                    "Zustell-Auditdatensatz wurde parallel verändert oder entfernt."
+                )
             if sent and checkpoint_updates:
                 self._persist_projection_checkpoints(
                     checkpoint_updates, connection=conn, manage_transaction=False
@@ -808,11 +812,10 @@ class DailyAgentHandler(BaseHandler):
                 current_settings = json.loads(row[0] or "{}")
                 if not isinstance(current_settings, dict):
                     raise ValueError(f"settings_json für {module_name} muss ein Objekt sein.")
-                for key in ("last_checkpoint", "publisher_instance"):
-                    if current_settings.get(key) != prior_settings.get(key):
-                        raise RuntimeError(
-                            f"Consumer-Checkpoint wurde parallel verändert: {module_name}"
-                        )
+                if current_settings != prior_settings:
+                    raise RuntimeError(
+                        f"Consumer-Konfiguration wurde parallel verändert: {module_name}"
+                    )
                 next_settings = dict(current_settings)
                 next_settings.update(
                     {
@@ -821,13 +824,15 @@ class DailyAgentHandler(BaseHandler):
                         "publisher_instance": projection.publisher_instance,
                     }
                 )
-                conn.execute(
+                updated = conn.execute(
                     "UPDATE briefing_config SET settings_json = ? WHERE module_name = ?",
                     (
                         json.dumps(next_settings, ensure_ascii=False, sort_keys=True),
                         module_name,
                     ),
                 )
+                if updated.rowcount != 1:
+                    raise RuntimeError(f"Briefing-Modul fehlt: {module_name}")
             if manage_transaction:
                 conn.commit()
         except Exception:

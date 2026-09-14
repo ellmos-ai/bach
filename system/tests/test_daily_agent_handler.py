@@ -8,6 +8,7 @@ import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -323,6 +324,24 @@ class TestBriefingDelivery:
         conn.close()
         assert row == (1, "failed", "send_failed", 0)
 
+    def test_deliver_fails_closed_when_audit_row_is_removed_during_send(self, handler):
+        _make_briefing_db(handler.db_path)
+        connector = MagicMock()
+
+        def remove_audit_row(_recipient, _payload):
+            conn = sqlite3.connect(handler.db_path)
+            conn.execute("DELETE FROM connector_messages WHERE sender = 'daily-agent'")
+            conn.commit()
+            conn.close()
+            return True
+
+        connector.send_message.side_effect = remove_audit_row
+        with patch("hub.connector.ConnectorHandler._instantiate", return_value=(connector, "")):
+            ok, text = handler.handle("deliver", [])
+
+        assert ok is False
+        assert "Zustell-Auditdatensatz" in text
+
 
 class TestRoutinikaProjectionBriefing:
     def test_dry_run_is_read_only_and_emits_non_personal_receipt(self, handler, tmp_path):
@@ -467,3 +486,41 @@ class TestRoutinikaProjectionBriefing:
         )
         assert ok is False
         assert "nicht neuer als der Consumer-Checkpoint" in text
+
+    def test_checkpoint_rejects_parallel_projection_path_change(self, handler):
+        prior = {
+            "projection_path": "C:/synthetic/one.sqlite",
+            "last_checkpoint": 5,
+            "publisher_instance": "routinika-primary",
+        }
+        current = dict(prior, projection_path="C:/synthetic/two.sqlite")
+        conn = sqlite3.connect(handler.db_path)
+        conn.execute(
+            "CREATE TABLE briefing_config (module_name TEXT PRIMARY KEY, settings_json TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO briefing_config VALUES (?, ?)",
+            ("routinika_briefing", json.dumps(current)),
+        )
+        conn.commit()
+        conn.close()
+        projection = SimpleNamespace(
+            source_checkpoint=6,
+            database_sha256="a" * 64,
+            publisher_instance="routinika-primary",
+        )
+
+        with pytest.raises(RuntimeError, match="parallel verändert"):
+            handler._persist_projection_checkpoints(
+                [("routinika_briefing", prior, projection)]
+            )
+
+        conn = sqlite3.connect(handler.db_path)
+        stored = json.loads(
+            conn.execute(
+                "SELECT settings_json FROM briefing_config WHERE module_name = ?",
+                ("routinika_briefing",),
+            ).fetchone()[0]
+        )
+        conn.close()
+        assert stored == current
