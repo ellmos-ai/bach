@@ -177,6 +177,69 @@ def test_tombstone_retention_and_active_collision_are_checked(tmp_path):
     with pytest.raises(MediplanerProjectionError, match="Tombstone kollidiert"):
         read_mediplaner_projection(path)
 
+    conn = sqlite3.connect(path)
+    conn.execute("DELETE FROM projection_tombstones")
+    conn.execute(
+        "INSERT INTO projection_tombstones VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            "inventory_warning", "e" * 32, "2026-08-22T08:00:00Z",
+            "2026-08-23T08:00:00Z", 1, 41, "mediplaner-primary",
+        ),
+    )
+    conn.commit()
+    conn.close()
+    with pytest.raises(MediplanerProjectionError, match="Offline-Intervall"):
+        read_mediplaner_projection(path)
+
+
+@pytest.mark.parametrize(
+    ("table", "column", "value", "message"),
+    [
+        ("medication_due", "publisher_instance", "other-publisher", "Publisher-Provenienz"),
+        ("medication_due", "source_checkpoint", 40, "Quell-Checkpoint"),
+        ("inventory_warning", "publisher_instance", "other-publisher", "Publisher-Provenienz"),
+        ("inventory_warning", "source_checkpoint", 40, "Quell-Checkpoint"),
+    ],
+)
+def test_record_provenance_must_match_metadata(tmp_path, table, column, value, message):
+    path = tmp_path / "mediplaner.sqlite"
+    _create_projection(path)
+    conn = sqlite3.connect(path)
+    conn.execute(f'UPDATE "{table}" SET "{column}" = ?', (value,))
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(MediplanerProjectionError, match=message):
+        read_mediplaner_projection(path)
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "message"),
+    [
+        ("publisher_instance", "other-publisher", "Publisher-Provenienz"),
+        ("source_checkpoint", 40, "Quell-Checkpoint"),
+    ],
+)
+def test_tombstone_provenance_must_match_metadata(tmp_path, column, value, message):
+    path = tmp_path / "mediplaner.sqlite"
+    _create_projection(path)
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "INSERT INTO projection_tombstones VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            "inventory_warning", "e" * 32, "2026-08-22T08:00:00Z",
+            "2026-10-22T08:00:00Z", 1, 41, "mediplaner-primary",
+        ),
+    )
+    conn.execute(
+        f'UPDATE projection_tombstones SET "{column}" = ?', (value,)
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(MediplanerProjectionError, match=message):
+        read_mediplaner_projection(path)
+
 
 def test_checkpoint_must_advance(tmp_path):
     path = tmp_path / "mediplaner.sqlite"
@@ -239,6 +302,76 @@ def test_daily_agent_can_preview_mediplaner_projection(tmp_path):
     assert "MEDIPLANER-FÄLLIGKEITEN (1)" in text
     assert "BESTANDSWARNUNGEN (1)" in text
     assert "publisher=mediplaner-primary" in text
+    conn = sqlite3.connect(handler.db_path)
+    settings = conn.execute(
+        "SELECT settings_json FROM briefing_config WHERE module_name = 'mediplaner_briefing'"
+    ).fetchone()[0]
+    conn.close()
+    assert settings == "{}"
+
+
+def test_daily_agent_persists_checkpoint_and_rejects_replay(tmp_path):
+    handler = _handler_with_briefing_db(tmp_path)
+    projection = tmp_path / "mediplaner.sqlite"
+    _create_projection(projection)
+
+    ok, _ = handler.handle(
+        "briefing", [f"--mediplaner-projection={projection}"], dry_run=False
+    )
+    assert ok is True
+
+    conn = sqlite3.connect(handler.db_path)
+    settings = __import__("json").loads(
+        conn.execute(
+            "SELECT settings_json FROM briefing_config "
+            "WHERE module_name = 'mediplaner_briefing'"
+        ).fetchone()[0]
+    )
+    conn.close()
+    assert settings["last_checkpoint"] == 41
+    assert settings["publisher_instance"] == "mediplaner-primary"
+    assert len(settings["last_projection_sha256"]) == 64
+
+    ok, text = handler.handle(
+        "briefing", [f"--mediplaner-projection={projection}"], dry_run=False
+    )
+    assert ok is False
+    assert "nicht neuer als der Consumer-Checkpoint" in text
+
+    conn = sqlite3.connect(projection)
+    conn.execute(
+        "UPDATE projection_metadata SET source_checkpoint = 43, "
+        "generated_at = '2026-08-22T10:00:00Z'"
+    )
+    conn.execute("UPDATE medication_due SET source_checkpoint = 43")
+    conn.execute("UPDATE inventory_warning SET source_checkpoint = 43")
+    conn.commit()
+    conn.close()
+    ok, _ = handler.handle(
+        "briefing", [f"--mediplaner-projection={projection}"], dry_run=False
+    )
+    assert ok is True
+
+    conn = sqlite3.connect(projection)
+    conn.execute(
+        "UPDATE projection_metadata SET source_checkpoint = 44, "
+        "publisher_instance = 'replacement-publisher'"
+    )
+    conn.execute(
+        "UPDATE medication_due SET source_checkpoint = 44, "
+        "publisher_instance = 'replacement-publisher'"
+    )
+    conn.execute(
+        "UPDATE inventory_warning SET source_checkpoint = 44, "
+        "publisher_instance = 'replacement-publisher'"
+    )
+    conn.commit()
+    conn.close()
+    ok, text = handler.handle(
+        "briefing", [f"--mediplaner-projection={projection}"], dry_run=False
+    )
+    assert ok is False
+    assert "Publisher-Instanz weicht" in text
 
 
 def test_daily_agent_stores_only_inactive_consumer_settings(tmp_path):

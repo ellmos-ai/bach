@@ -432,3 +432,30 @@ class TestRoutinikaProjectionBriefing:
             "minimum_offline_seconds": 2592000,
             "projection_path": str(projection.resolve()),
         }
+
+    def test_real_briefing_persists_checkpoint_and_rejects_replay(self, handler, tmp_path):
+        _make_briefing_db(handler.db_path)
+        projection = tmp_path / "routinika-projection.sqlite"
+        _create_routinika_projection(projection)
+
+        ok, _ = handler.handle(
+            "briefing", [f"--routinika-projection={projection}"], dry_run=False
+        )
+        assert ok is True
+
+        conn = sqlite3.connect(handler.db_path)
+        settings = json.loads(
+            conn.execute(
+                "SELECT settings_json FROM briefing_config "
+                "WHERE module_name = 'routinika_briefing'"
+            ).fetchone()[0]
+        )
+        conn.close()
+        assert settings["last_checkpoint"] == 6
+        assert settings["publisher_instance"] == "routinika-primary"
+
+        ok, text = handler.handle(
+            "briefing", [f"--routinika-projection={projection}"], dry_run=False
+        )
+        assert ok is False
+        assert "nicht neuer als der Consumer-Checkpoint" in text

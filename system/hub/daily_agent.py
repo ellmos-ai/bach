@@ -388,11 +388,13 @@ class DailyAgentHandler(BaseHandler):
                     current_conn,
                     projection_override=mediplaner_projection_override,
                     include_receipt=include_mediplaner_receipt,
+                    persist_checkpoint=not read_only_config,
                 ),
                 "routinika_briefing": lambda current_conn: self._mod_routinika_briefing(
                     current_conn,
                     projection_override=routinika_projection_override,
                     include_receipt=include_routinika_receipt,
+                    persist_checkpoint=not read_only_config,
                 ),
                 "weather_briefing": self._mod_weather_briefing,
                 "calendar_briefing": self._mod_calendar_briefing,
@@ -655,6 +657,7 @@ class DailyAgentHandler(BaseHandler):
         *,
         projection_override: str | None = None,
         include_receipt: bool = False,
+        persist_checkpoint: bool = False,
     ) -> str:
         """Modul: strikt read-only geprüfte MediPlaner-Fälligkeiten."""
         settings = self._briefing_module_settings(conn, "mediplaner_briefing")
@@ -667,12 +670,28 @@ class DailyAgentHandler(BaseHandler):
         offline_seconds = settings.get(
             "minimum_offline_seconds", MEDIPLANER_DEFAULT_MINIMUM_OFFLINE_SECONDS
         )
+        previous_checkpoint = settings.get("last_checkpoint")
         projection = read_mediplaner_projection(
-            projection_path, minimum_offline_seconds=offline_seconds
+            projection_path,
+            minimum_offline_seconds=offline_seconds,
+            previous_checkpoint=previous_checkpoint,
         )
-        return format_mediplaner_briefing(
+        expected_publisher = settings.get("publisher_instance")
+        if (
+            expected_publisher is not None
+            and projection.publisher_instance != expected_publisher
+        ):
+            raise MediplanerProjectionError(
+                "Publisher-Instanz weicht vom gebundenen Consumer-Checkpoint ab."
+            )
+        block = format_mediplaner_briefing(
             projection, include_receipt=include_receipt
         )
+        if persist_checkpoint:
+            self._persist_projection_checkpoint(
+                conn, "mediplaner_briefing", settings, projection
+            )
+        return block
 
     def _mod_routinika_briefing(
         self,
@@ -680,6 +699,7 @@ class DailyAgentHandler(BaseHandler):
         *,
         projection_override: str | None = None,
         include_receipt: bool = False,
+        persist_checkpoint: bool = False,
     ) -> str:
         """Modul: strikt read-only geprüfte Routinika-Fälligkeiten."""
         settings = self._briefing_module_settings(conn, "routinika_briefing")
@@ -692,12 +712,45 @@ class DailyAgentHandler(BaseHandler):
         offline_seconds = settings.get(
             "minimum_offline_seconds", DEFAULT_MINIMUM_OFFLINE_SECONDS
         )
+        previous_checkpoint = settings.get("last_checkpoint")
         projection = read_routinika_projection(
-            projection_path, minimum_offline_seconds=offline_seconds
+            projection_path,
+            minimum_offline_seconds=offline_seconds,
+            previous_checkpoint=previous_checkpoint,
         )
-        return format_routinika_briefing(
+        expected_publisher = settings.get("publisher_instance")
+        if (
+            expected_publisher is not None
+            and projection.publisher_instance != expected_publisher
+        ):
+            raise RoutinikaProjectionError(
+                "Publisher-Instanz weicht vom gebundenen Consumer-Checkpoint ab."
+            )
+        block = format_routinika_briefing(
             projection, include_receipt=include_receipt
         )
+        if persist_checkpoint:
+            self._persist_projection_checkpoint(
+                conn, "routinika_briefing", settings, projection
+            )
+        return block
+
+    @staticmethod
+    def _persist_projection_checkpoint(conn, module_name: str, settings: dict, projection) -> None:
+        """Advance only BACH-owned consumer state after a successful read/format cycle."""
+        next_settings = dict(settings)
+        next_settings.update(
+            {
+                "last_checkpoint": projection.source_checkpoint,
+                "last_projection_sha256": projection.database_sha256,
+                "publisher_instance": projection.publisher_instance,
+            }
+        )
+        conn.execute(
+            "UPDATE briefing_config SET settings_json = ? WHERE module_name = ?",
+            (json.dumps(next_settings, ensure_ascii=False, sort_keys=True), module_name),
+        )
+        conn.commit()
 
     @staticmethod
     def _briefing_module_settings(conn, module_name: str) -> dict:

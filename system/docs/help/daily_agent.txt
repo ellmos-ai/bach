@@ -73,9 +73,13 @@ news_briefing:      Ungelesene News aus news_items (Top-Kategorien + 3 Titel)
 session_briefing:   Letzter memory_sessions.summary (gekuerzt auf 120 Zeichen)
 mediplaner_briefing: Exakt erlaubte, opake Medikamenten-Fälligkeiten und
                     Bestandswarnungen aus einer geschlossenen MediPlaner-v1-
-                    SQLite-Projektion; standardmäßig deaktiviert.
+                    SQLite-Projektion; standardmäßig deaktiviert. Reale Läufe
+                    speichern den Consumer-Checkpoint in der BACH-Konfiguration;
+                    Dry-runs schreiben nichts.
 routinika_briefing: Exakt erlaubte, opake Fälligkeiten aus einer geschlossenen
                     Routinika-v1-SQLite-Projektion; standardmäßig deaktiviert.
+                    Reale Läufe speichern den Consumer-Checkpoint; Dry-runs
+                    schreiben nichts.
 weather_briefing:   Versucht weather_service (Koordinaten hardcodiert auf 0,0)
 calendar_briefing:  Heutige Termine aus assistant_calendar (5 nächste Events)
 
