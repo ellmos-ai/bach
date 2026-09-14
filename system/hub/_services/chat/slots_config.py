@@ -631,6 +631,18 @@ def record_activity(
         "status": status,
         "details": details or {},
     }
+    # Assignment-Ereignisse bleiben zusätzlich auf der bestehenden flachen
+    # Aktivitätsform sichtbar. Alte /api/activity-Leser ignorieren die neuen
+    # Felder; neue Leser müssen nicht in details hineinwechseln.
+    assignment_details = entry["details"] if isinstance(entry["details"], dict) else {}
+    for key in (
+        "assignment_id", "event", "role_id", "role_revision",
+        "agent_instance_id", "backend_id", "model_id", "slot_id",
+        "task_id", "session_id", "initiated_by", "started_at", "ended_at",
+        "result", "reason",
+    ):
+        if key in assignment_details:
+            entry[key] = assignment_details[key]
     history.insert(0, entry)
     # Keep latest 100 entries
     if len(history) > 100:
