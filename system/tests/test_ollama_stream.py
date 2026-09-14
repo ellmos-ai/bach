@@ -13,6 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from hub._services.llm import model_backend as backend_module  # noqa: E402
 from hub._services.llm.model_backend import OllamaBackend  # noqa: E402
 
 
@@ -136,6 +137,68 @@ def test_werkzeugaufruf_ueberlebt_den_stream():
     client = _FakeClient([_zeile(""), _zeile("", done=True, tool_calls=tc)])
     r = asyncio.run(_backend(client).chat([{"role": "user", "content": "x"}]))
     assert r["tool_calls"] == tc
+
+
+def test_eof_ohne_abschlussmarker_ist_abbruch_mit_teilantwort():
+    client = _FakeClient([_zeile("unfinished", done=False)])
+
+    r = asyncio.run(_backend(client).chat([{"role": "user", "content": "x"}]))
+
+    assert r["content"] == "unfinished"
+    assert "error" in r
+    assert "Abschlussmarker" in r["error"]
+
+
+def test_tool_calls_aus_mehreren_chunks_bleiben_geordnet_erhalten():
+    first = {"function": {"name": "first", "arguments": {"n": 1}}}
+    second = {"function": {"name": "second", "arguments": {"n": 2}}}
+    client = _FakeClient([
+        _zeile(tool_calls=[first]),
+        _zeile(done=True, tool_calls=[second]),
+    ])
+
+    r = asyncio.run(_backend(client).chat([{"role": "user", "content": "x"}]))
+
+    assert r["tool_calls"] == [first, second]
+
+
+def test_read_timeout_prueft_liveness_bis_zur_begrenzten_grace(monkeypatch):
+    import httpx
+
+    class TimeoutStream(_FakeStream):
+        def __init__(self):
+            super().__init__([])
+            self.calls = 0
+
+        def aiter_lines(self):
+            return self
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            self.calls += 1
+            if self.calls == 1:
+                return _zeile("partial", done=False)
+            raise httpx.ReadTimeout("still waiting")
+
+    class TimeoutClient(_FakeClient):
+        def stream(self, *args, **kwargs):
+            return TimeoutStream()
+
+    original_limit = backend_module.limit
+    monkeypatch.setattr(
+        backend_module,
+        "limit",
+        lambda name: 2 if name == "BACH_LLM_IDLE_GRACE" else original_limit(name),
+    )
+    client = TimeoutClient([], ps_models=[{"name": "m"}])
+
+    r = asyncio.run(_backend(client).chat([{"role": "user", "content": "x"}]))
+
+    assert client.ps_aufrufe == 2
+    assert r["content"] == "partial"
+    assert "ReadTimeout" in r["error"]
 
 
 def test_leere_zeilen_zaehlen_nicht_als_regung():

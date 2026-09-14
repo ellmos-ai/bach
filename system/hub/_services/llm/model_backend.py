@@ -188,12 +188,27 @@ class OllamaBackend(ModelBackend):
         grace = limit("BACH_LLM_IDLE_GRACE")
         total_cap = limit("BACH_LLM_TOTAL_CAP")
         content_parts: list[str] = []
-        tool_calls = None
+        tool_calls: list = []
         last_message: dict = {}
         prompt_tokens = None
         started = time.time()
         last_activity = started
         probes = 0
+        completed = False
+
+        def aborted(error: str) -> dict:
+            content = "".join(content_parts)
+            raw_message = dict(last_message or {"role": "assistant"})
+            raw_message["content"] = content
+            if tool_calls:
+                raw_message["tool_calls"] = list(tool_calls)
+            return {
+                "content": content,
+                "tool_calls": list(tool_calls) or None,
+                "raw_message": raw_message,
+                "prompt_tokens": prompt_tokens,
+                "error": error,
+            }
 
         read_timeout = min(float(idle), self.request_timeout * (1.5 if think else 1))
         timeouts = httpx.Timeout(connect=30.0, read=read_timeout, write=30.0, pool=30.0)
@@ -203,7 +218,30 @@ class OllamaBackend(ModelBackend):
                     "POST", f"{self.base_url}/api/chat", json=payload
                 ) as response:
                     response.raise_for_status()
-                    async for line in response.aiter_lines():
+                    lines = response.aiter_lines().__aiter__()
+                    while True:
+                        try:
+                            line = await lines.__anext__()
+                        except StopAsyncIteration:
+                            break
+                        except httpx.ReadTimeout as exc:
+                            now = time.time()
+                            if total_cap > 0 and (now - started) > total_cap:
+                                return aborted(f"Gesamtdeckel {total_cap}s erreicht")
+                            if probes < grace and await self._lebt(client, selected_model):
+                                probes += 1
+                                last_activity = now
+                                log.info(
+                                    "Ollama-Stream ReadTimeout, Modell lebt - "
+                                    "warte weiter (%d/%d)",
+                                    probes,
+                                    grace,
+                                )
+                                continue
+                            return aborted(
+                                f"{type(exc).__name__}: {exc}".rstrip(": ")
+                            )
+
                         now = time.time()
                         if line.strip():
                             last_activity = now
@@ -220,42 +258,29 @@ class OllamaBackend(ModelBackend):
                                 if message.get("content"):
                                     content_parts.append(message["content"])
                                 if message.get("tool_calls"):
-                                    tool_calls = message["tool_calls"]
+                                    tool_calls.extend(message["tool_calls"])
                             if chunk.get("prompt_eval_count") is not None:
                                 prompt_tokens = chunk["prompt_eval_count"]
                             if chunk.get("done"):
+                                completed = True
                                 break
 
                         if total_cap > 0 and (now - started) > total_cap:
-                            return {
-                                "content": "",
-                                "tool_calls": None,
-                                "raw_message": {},
-                                "error": f"Gesamtdeckel {total_cap}s erreicht",
-                            }
+                            return aborted(f"Gesamtdeckel {total_cap}s erreicht")
                         if (now - last_activity) > idle:
-                            if await self._lebt(client, selected_model) and probes < grace:
+                            if probes < grace and await self._lebt(client, selected_model):
                                 probes += 1
                                 last_activity = now
                                 continue
-                            return {
-                                "content": "".join(content_parts),
-                                "tool_calls": tool_calls,
-                                "raw_message": last_message,
-                                "prompt_tokens": prompt_tokens,
-                                "error": (
-                                    f"Ollama antwortet seit {idle}s nicht und meldet "
-                                    "unser Modell nicht mehr"
-                                ),
-                            }
+                            return aborted(
+                                f"Ollama antwortet seit {idle}s nicht und meldet "
+                                "unser Modell nicht mehr"
+                            )
             except httpx.HTTPError as exc:
-                return {
-                    "content": "".join(content_parts),
-                    "tool_calls": tool_calls,
-                    "raw_message": last_message,
-                    "prompt_tokens": prompt_tokens,
-                    "error": f"{type(exc).__name__}: {exc}".rstrip(": "),
-                }
+                return aborted(f"{type(exc).__name__}: {exc}".rstrip(": "))
+
+        if not completed:
+            return aborted("Ollama-Stream endete ohne Abschlussmarker (done=true)")
 
         content = "".join(content_parts)
         if not think and "</think>" in content:
@@ -268,7 +293,7 @@ class OllamaBackend(ModelBackend):
             raw_message["tool_calls"] = tool_calls
         return {
             "content": content,
-            "tool_calls": tool_calls,
+            "tool_calls": tool_calls or None,
             "raw_message": raw_message,
             "prompt_tokens": prompt_tokens,
         }
