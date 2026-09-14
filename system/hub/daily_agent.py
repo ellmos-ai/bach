@@ -447,18 +447,21 @@ class DailyAgentHandler(BaseHandler):
         if not dry_run:
             conn = sqlite3.connect(str(self.db_path))
             try:
-                existing = conn.execute(
-                    """
-                    SELECT id, processed, error, status
-                    FROM connector_messages
-                    WHERE connector_name = 'telegram_main'
-                      AND direction = 'out'
-                      AND sender = 'daily-agent'
-                      AND content LIKE ?
-                    ORDER BY id DESC LIMIT 1
-                    """,
-                    (f"{marker}%",),
-                ).fetchone()
+                try:
+                    existing = conn.execute(
+                        """
+                        SELECT id, processed, error, status
+                        FROM connector_messages
+                        WHERE connector_name = 'telegram_main'
+                          AND direction = 'out'
+                          AND sender = 'daily-agent'
+                          AND content LIKE ?
+                        ORDER BY id DESC LIMIT 1
+                        """,
+                        (f"{marker}%",),
+                    ).fetchone()
+                except sqlite3.Error as exc:
+                    return False, f"Connector-Queue nicht lesbar: {exc}"
             finally:
                 conn.close()
             if existing:

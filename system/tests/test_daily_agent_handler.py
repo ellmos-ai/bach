@@ -262,6 +262,14 @@ class TestBriefingDelivery:
         assert count == 0
         assert config_table == 0
 
+    def test_deliver_fails_closed_when_connector_queue_is_missing(self, handler):
+        sqlite3.connect(handler.db_path).close()
+
+        ok, text = handler.handle("deliver", [])
+
+        assert ok is False
+        assert "Connector-Queue nicht lesbar" in text
+
     def test_deliver_sends_once_without_dispatching_foreign_queue(self, handler):
         _make_briefing_db(handler.db_path)
         conn = sqlite3.connect(handler.db_path)
