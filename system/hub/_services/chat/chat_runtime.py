@@ -1174,6 +1174,20 @@ class ChatRuntime:
             session.allow_tools = False
             return FailedAnswer.from_exception(exc)
 
+    @classmethod
+    def _worker_backend_gate(cls, session: ChatSession, backend: Any) -> FailedAnswer | None:
+        capability_error = cls._refresh_worker_tools(session)
+        if capability_error is not None:
+            return capability_error
+        if session.allow_tools is False and getattr(backend, "manages_own_tools", False):
+            # Self-managed backends can dispatch tools outside BACH's tool
+            # loop, so a worker downgrade must stop every backend boundary.
+            return FailedAnswer(
+                f"{FailedAnswer.PREFIX}Backend mit eigenen Tools ist für "
+                "einen tool-freien Lauf nicht verifizierbar"
+            )
+        return None
+
     def _load_messages(self, chat_id: str) -> list[dict]:
         if self.session_store is None:
             return []
@@ -1473,7 +1487,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             )
         session = self.get_session(chat_id)
         selected_model = model or session.model or selected_backend.get_default_model()
-        capability_error = self._refresh_worker_tools(session)
+        capability_error = self._worker_backend_gate(session, selected_backend)
         if capability_error is not None:
             session.messages.extend([
                 {"role": "user", "content": text},
@@ -1481,19 +1495,6 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             ])
             self._persist_session(chat_id, session)
             return capability_error
-        if session.allow_tools is False and getattr(selected_backend, "manages_own_tools", False):
-            # A CLI/self-managed backend may execute tools outside BACH's
-            # dispatcher. Refuse it before any model or summarizer call.
-            answer = FailedAnswer(
-                f"{FailedAnswer.PREFIX}Backend mit eigenen Tools ist für "
-                "einen tool-freien Lauf nicht verifizierbar"
-            )
-            session.messages.extend([
-                {"role": "user", "content": text},
-                {"role": "assistant", "content": answer},
-            ])
-            self._persist_session(chat_id, session)
-            return answer
         context_limit = self._context_limit_for_backend(selected_backend, selected_model)
         session.last_active = time.time()
         session.messages.append({"role": "user", "content": text})
@@ -1504,6 +1505,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
         total = sum(len(m.get("content", "")) for m in session.messages)
         if total > summarize_thresh or len(session.messages) > max_msgs:
+            capability_error = self._worker_backend_gate(session, selected_backend)
+            if capability_error is not None:
+                session.messages.append({"role": "assistant", "content": capability_error})
+                self._persist_session(chat_id, session)
+                return capability_error
             await self._summarize(
                 session,
                 backend=selected_backend,
@@ -1527,6 +1533,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         msgs = [{"role": "system", "content": sys_prompt}] + session.messages
 
         if getattr(selected_backend, "manages_own_tools", False):
+            capability_error = self._worker_backend_gate(session, selected_backend)
+            if capability_error is not None:
+                session.messages.append({"role": "assistant", "content": capability_error})
+                self._persist_session(chat_id, session)
+                return capability_error
             try:
                 result = await selected_backend.chat(
                     msgs, think=session.think, model=selected_model
@@ -1685,6 +1696,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         update_slot(cid, {"current_activity": f"Tool [{round_num}]: {t_name}"})
                     except Exception:
                         pass
+                # Updating activity may race with (or itself trigger) a
+                # downgrade. Re-read immediately before dispatcher entry.
+                capability_error = self._refresh_worker_tools(session)
+                if capability_error is not None:
+                    session.current_tool = ""
+                    return capability_error
+                if session.allow_tools is False:
+                    session.current_tool = ""
+                    return FailedAnswer(
+                        f"{FailedAnswer.PREFIX}Tool-Aufruf im tool-freien Lauf blockiert"
+                    )
                 t_result = exec_tool(
                     t_name, t_args, session.mode,
                     bach_app=self.bach_app,

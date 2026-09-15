@@ -2992,6 +2992,16 @@ def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None):
     with _runtime_state_lock:
         session = runtime.get_session(chat_id)
         normalized = str(chat_id or "")
+        if worker_slot is None:
+            try:
+                discovered_slot = get_slot(normalized)
+            except Exception:
+                # We cannot prove this ID is not a restricted worker when
+                # slot storage is unreadable. Never fall back with tools.
+                session.allow_tools = False
+                raise
+            if isinstance(discovered_slot, dict) and discovered_slot.get("id") == normalized:
+                worker_slot = discovered_slot
         if worker_slot is not None and (
             not isinstance(worker_slot, dict) or worker_slot.get("id") != normalized
         ):

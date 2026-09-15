@@ -126,6 +126,26 @@ class TestSlotsConfigCRUD:
 
 
 class TestTelegramSlotMapping:
+    def test_chat_snapshot_discovers_arbitrary_no_tools_worker(self, monkeypatch):
+        control = importlib.import_module("hub._services.chat.telegram_chat")
+
+        session = ChatSession()
+        session.chat_id = "alpha"
+        worker = {"id": "alpha", "backend": "ollama-cloud",
+                  "model": "kimi-k3:cloud", "allow_tools": False,
+                  "max_tool_rounds": 0}
+        backend = object()
+        monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
+        monkeypatch.setattr(control, "get_slot", lambda _id: worker)
+        monkeypatch.setattr(control, "_get_or_create_backend", lambda *_args: backend)
+
+        selected, model = control._snapshot_chat_backend("alpha")
+
+        assert selected is backend
+        assert model == "kimi-k3:cloud"
+        assert session.allow_tools is False
+        assert session.worker_slot_reader()["allow_tools"] is False
+
     def test_mismatched_worker_slot_fails_before_fallback(self, monkeypatch):
         control = importlib.import_module("hub._services.chat.telegram_chat")
 
@@ -443,6 +463,39 @@ class TestDynamicContextScaling:
 
 
 class TestControlHandlerEndpoints:
+    def test_chat_api_cannot_bypass_arbitrary_no_tools_worker(self, monkeypatch):
+        control = importlib.import_module("hub._services.chat.telegram_chat")
+
+        worker = {"id": "alpha", "backend": "ollama-cloud",
+                  "model": "kimi-k3:cloud", "allow_tools": False,
+                  "max_tool_rounds": 0}
+        session = ChatSession()
+        session.chat_id = "alpha"
+        observed = []
+        monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
+        monkeypatch.setattr(control, "get_slot", lambda _id: worker)
+        monkeypatch.setattr(control, "_get_or_create_backend", lambda *_args: object())
+        monkeypatch.setattr(control, "_checked_backend_availability",
+                            lambda *_args: (True, "available"))
+
+        async def fake_process(*_args, **_kwargs):
+            observed.append(session.allow_tools)
+            return "CLOUD_OK"
+
+        monkeypatch.setattr(control.runtime, "process", fake_process)
+        handler = control.ControlHandler.__new__(control.ControlHandler)
+        handler.path = "/api/chat"
+        handler.headers = {"X-Delegation-Depth": "0"}
+        monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
+        monkeypatch.setattr(handler, "_read_body", lambda: {
+            "chat_id": "alpha", "prompt": "Nur CLOUD_OK",
+        })
+        monkeypatch.setattr(handler, "_json", lambda *_args, **_kwargs: None)
+
+        handler.do_POST()
+
+        assert observed == [False]
+
     def test_worker_run_rejects_core_slot_without_worker_id(self, monkeypatch):
         control = importlib.import_module("hub._services.chat.telegram_chat")
 

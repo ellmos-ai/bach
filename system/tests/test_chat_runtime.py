@@ -1036,6 +1036,81 @@ def test_live_worker_capability_downgrade_blocks_inflight_tool(monkeypatch):
     assert "tool-freien Lauf blockiert" in answer
 
 
+def test_self_managed_worker_downgrade_blocks_summarizer(monkeypatch):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    backend = _NoToolsProbeBackend(owns_tools=True)
+    runtime = ChatRuntime(backend)
+    runtime.SUMMARIZE_THRESHOLD = 0
+    session = runtime.get_session("alpha")
+    reads = []
+
+    def read_slot():
+        reads.append(True)
+        return {"id": "alpha", "allow_tools": len(reads) == 1}
+
+    session.worker_slot_reader = read_slot
+
+    async def forbidden_summary(*_args, **_kwargs):
+        pytest.fail("Downgraded self-managed summarizer called")
+
+    monkeypatch.setattr(runtime, "_summarize", forbidden_summary)
+
+    answer = asyncio.run(runtime.process("Probe", "alpha"))
+
+    assert isinstance(answer, FailedAnswer)
+    assert len(reads) >= 2
+    assert backend.calls == []
+
+
+def test_self_managed_worker_downgrade_after_summary_blocks_chat(monkeypatch):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    slot = {"id": "alpha", "allow_tools": True}
+    backend = _NoToolsProbeBackend(owns_tools=True)
+    runtime = ChatRuntime(backend)
+    runtime.SUMMARIZE_THRESHOLD = 0
+    session = runtime.get_session("alpha")
+    session.worker_slot_reader = lambda: slot
+
+    async def downgrade_summary(*_args, **_kwargs):
+        slot["allow_tools"] = False
+
+    monkeypatch.setattr(runtime, "_summarize", downgrade_summary)
+
+    answer = asyncio.run(runtime.process("Probe", "alpha"))
+
+    assert isinstance(answer, FailedAnswer)
+    assert backend.calls == []
+
+
+def test_worker_downgrade_during_activity_update_blocks_dispatch(monkeypatch):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    slot = {"id": "alpha", "allow_tools": True}
+    backend = _NoToolsProbeBackend(tool_call=True)
+    runtime = ChatRuntime(backend)
+    session = runtime.get_session("alpha")
+    session.worker_slot_reader = lambda: slot
+    monkeypatch.setattr(
+        "hub._services.chat.slots_config.update_slot",
+        lambda *_args, **_kwargs: slot.update({"allow_tools": False}),
+    )
+    monkeypatch.setattr(
+        "hub._services.chat.chat_runtime.exec_tool",
+        lambda *_args, **_kwargs: pytest.fail("Downgraded tool executed"),
+    )
+
+    answer = asyncio.run(runtime.process("Probe", "alpha"))
+
+    assert isinstance(answer, FailedAnswer)
+    assert session.allow_tools is False
+    assert "tool-freien Lauf blockiert" in answer
+
+
 def test_control_api_does_not_report_failed_answers_as_ok():
     """Der /api/chat-Endpunkt gab jede Antwort als ok=True aus.
 
