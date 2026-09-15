@@ -1638,7 +1638,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 result = await selected_backend.chat(
                     msgs, think=session.think, model=selected_model
                 )
-                answer = result.get("content", "(keine Antwort)")
+                if result.get("error"):
+                    teil = result.get("content") or ""
+                    answer = FailedAnswer(
+                        f"{FailedAnswer.PREFIX}{result['error']}"
+                        + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else "")
+                    )
+                else:
+                    answer = result.get("content", "(keine Antwort)")
             except Exception as e:
                 answer = FailedAnswer.from_exception(e)
         else:
