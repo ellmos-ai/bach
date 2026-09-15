@@ -733,6 +733,20 @@ class TestFailedAnswer:
         )
         assert isinstance(answer, FailedAnswer)
 
+    def test_managed_tools_reported_abort_is_not_a_success(self):
+        """A tool-managing backend can report an abort without raising."""
+        import asyncio
+        from hub._services.chat.chat_runtime import ChatRuntime
+
+        backend = _AbortingBackend(teil="Teil vor Abbruch")
+        backend.manages_own_tools = True
+        runtime = ChatRuntime(backend)
+        answer = asyncio.run(runtime.process("Aufgabe", "idle-worker"))
+
+        assert isinstance(answer, FailedAnswer)
+        assert "Teil vor Abbruch" in answer
+        assert runtime.history("idle-worker")[-1]["ok"] is False
+
     def test_real_answer_is_not_marked(self):
         answer = self._process(_AnsweringBackend())
         assert answer == "Echte Antwort"
@@ -899,6 +913,216 @@ def test_tool_thinking_is_protocol_only_not_visible_history(monkeypatch):
     assert any(m.get("thinking") == "INTERNE_ÜBERLEGUNG"
                for m in backend.calls[1])
     assert "INTERNE_ÜBERLEGUNG" not in str(runtime.history("worker-thinking-test"))
+
+
+class _NoToolsProbeBackend:
+    def __init__(self, tool_call=False, owns_tools=False):
+        self.tool_call = tool_call
+        self.manages_own_tools = owns_tools
+        self.calls = []
+
+    def get_default_model(self):
+        return "kimi-k3:cloud"
+
+    async def chat(self, messages, tools=None, think=True, model=None):
+        self.calls.append({"messages": messages, "tools": tools})
+        if self.tool_call:
+            return {"content": "", "tool_calls": [{"function": {
+                "name": "edit_file", "arguments": {"path": "forbidden"},
+            }}], "raw_message": {"role": "assistant", "content": ""}}
+        return {"content": "CLOUD_OK", "tool_calls": None}
+
+    def tool_response_message(self, content, tool_call_id=""):
+        return {"role": "tool", "content": content}
+
+
+@pytest.mark.parametrize("mode", ["safe", "plan", "full"])
+def test_no_tools_gate_offers_no_tools_in_every_mode(monkeypatch, mode):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    monkeypatch.setattr("hub._services.chat.chat_runtime.exec_tool",
+                        lambda *_args, **_kwargs: pytest.fail("No tool may execute"))
+    backend = _NoToolsProbeBackend()
+    runtime = ChatRuntime(backend)
+    session = runtime.get_session("worker-no-tools")
+    session.allow_tools = False
+    session.mode = mode
+    session.max_tool_rounds = 0  # still unlimited, not the no-tools gate
+
+    answer = asyncio.run(runtime.process("CLOUD_OK", "worker-no-tools"))
+
+    assert answer == "CLOUD_OK"
+    assert backend.calls[0]["tools"] == []
+    assert "Keine Werkzeuge verfügbar" in backend.calls[0]["messages"][0]["content"]
+
+
+def test_no_tools_gate_blocks_unadvertised_tool_call_before_dispatch(monkeypatch):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    monkeypatch.setattr("hub._services.chat.chat_runtime.exec_tool",
+                        lambda *_args, **_kwargs: pytest.fail("No tool may execute"))
+    backend = _NoToolsProbeBackend(tool_call=True)
+    runtime = ChatRuntime(backend)
+    runtime.get_session("worker-unadvertised-tool").allow_tools = False
+
+    answer = asyncio.run(runtime.process("Probe", "worker-unadvertised-tool"))
+
+    assert backend.calls[0]["tools"] == []
+    assert isinstance(answer, FailedAnswer)
+    assert "Tool-Aufruf im tool-freien Lauf blockiert" in answer
+    assert runtime.history("worker-unadvertised-tool")[-1]["ok"] is False
+
+
+def test_no_tools_gate_refuses_self_managed_backend_before_model_call():
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    backend = _NoToolsProbeBackend(owns_tools=True)
+    runtime = ChatRuntime(backend)
+    runtime.get_session("worker-managed-tools").allow_tools = False
+
+    answer = asyncio.run(runtime.process("Probe", "worker-managed-tools"))
+
+    assert isinstance(answer, FailedAnswer)
+    assert "nicht verifizierbar" in answer
+    assert backend.calls == []
+
+
+def test_legacy_zero_rounds_remains_unlimited_when_tools_allowed(monkeypatch):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    class _OneToolBackend(_NoToolsProbeBackend):
+        async def chat(self, messages, tools=None, think=True, model=None):
+            self.calls.append({"messages": messages, "tools": tools})
+            if len(self.calls) == 1:
+                return {"content": "", "tool_calls": [{"function": {
+                    "name": "get_datetime", "arguments": {},
+                }}], "raw_message": {"role": "assistant", "content": ""}}
+            return {"content": "CLOUD_OK", "tool_calls": None}
+
+    executed = []
+    monkeypatch.setattr("hub._services.chat.chat_runtime.exec_tool",
+                        lambda name, *_args, **_kwargs: executed.append(name) or "Testwert")
+    backend = _OneToolBackend()
+    runtime = ChatRuntime(backend)
+    session = runtime.get_session("legacy-zero-rounds")
+    session.max_tool_rounds = 0
+    session.allow_tools = True
+    runtime.hook_every = 999
+
+    answer = asyncio.run(runtime.process("Probe", "legacy-zero-rounds"))
+
+    assert answer == "CLOUD_OK"
+    assert executed == ["get_datetime"]
+    assert backend.calls[0]["tools"]
+
+
+def test_live_worker_capability_downgrade_blocks_inflight_tool(monkeypatch):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    slot = {"id": "alpha", "allow_tools": True}
+
+    class _DowngradingBackend(_NoToolsProbeBackend):
+        async def chat(self, messages, tools=None, think=True, model=None):
+            self.calls.append({"tools": tools})
+            slot["allow_tools"] = False
+            return {"content": "", "tool_calls": [{"function": {
+                "name": "edit_file", "arguments": {"path": "forbidden"},
+            }}], "raw_message": {"role": "assistant", "content": ""}}
+
+    monkeypatch.setattr("hub._services.chat.chat_runtime.exec_tool",
+                        lambda *_args, **_kwargs: pytest.fail("Downgraded tool executed"))
+    backend = _DowngradingBackend()
+    runtime = ChatRuntime(backend)
+    session = runtime.get_session("alpha")
+    session.worker_slot_reader = lambda: slot
+    session.allow_tools = True
+
+    answer = asyncio.run(runtime.process("Probe", "alpha"))
+
+    assert backend.calls[0]["tools"]
+    assert isinstance(answer, FailedAnswer)
+    assert session.allow_tools is False
+    assert "tool-freien Lauf blockiert" in answer
+
+
+def test_self_managed_worker_downgrade_blocks_summarizer(monkeypatch):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    backend = _NoToolsProbeBackend(owns_tools=True)
+    runtime = ChatRuntime(backend)
+    runtime.SUMMARIZE_THRESHOLD = 0
+    session = runtime.get_session("alpha")
+    reads = []
+
+    def read_slot():
+        reads.append(True)
+        return {"id": "alpha", "allow_tools": len(reads) == 1}
+
+    session.worker_slot_reader = read_slot
+
+    async def forbidden_summary(*_args, **_kwargs):
+        pytest.fail("Downgraded self-managed summarizer called")
+
+    monkeypatch.setattr(runtime, "_summarize", forbidden_summary)
+
+    answer = asyncio.run(runtime.process("Probe", "alpha"))
+
+    assert isinstance(answer, FailedAnswer)
+    assert len(reads) >= 2
+    assert backend.calls == []
+
+
+def test_self_managed_worker_downgrade_after_summary_blocks_chat(monkeypatch):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    slot = {"id": "alpha", "allow_tools": True}
+    backend = _NoToolsProbeBackend(owns_tools=True)
+    runtime = ChatRuntime(backend)
+    runtime.SUMMARIZE_THRESHOLD = 0
+    session = runtime.get_session("alpha")
+    session.worker_slot_reader = lambda: slot
+
+    async def downgrade_summary(*_args, **_kwargs):
+        slot["allow_tools"] = False
+
+    monkeypatch.setattr(runtime, "_summarize", downgrade_summary)
+
+    answer = asyncio.run(runtime.process("Probe", "alpha"))
+
+    assert isinstance(answer, FailedAnswer)
+    assert backend.calls == []
+
+
+def test_worker_downgrade_during_activity_update_blocks_dispatch(monkeypatch):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    slot = {"id": "alpha", "allow_tools": True}
+    backend = _NoToolsProbeBackend(tool_call=True)
+    runtime = ChatRuntime(backend)
+    session = runtime.get_session("alpha")
+    session.worker_slot_reader = lambda: slot
+    monkeypatch.setattr(
+        "hub._services.chat.slots_config.update_slot",
+        lambda *_args, **_kwargs: slot.update({"allow_tools": False}),
+    )
+    monkeypatch.setattr(
+        "hub._services.chat.chat_runtime.exec_tool",
+        lambda *_args, **_kwargs: pytest.fail("Downgraded tool executed"),
+    )
+
+    answer = asyncio.run(runtime.process("Probe", "alpha"))
+
+    assert isinstance(answer, FailedAnswer)
+    assert session.allow_tools is False
+    assert "tool-freien Lauf blockiert" in answer
 
 
 def test_control_api_does_not_report_failed_answers_as_ok():
