@@ -16,6 +16,7 @@ Verwendung:
     runtime = ChatRuntime(backend, system_prompt="Du bist ein Assistent.")
     answer = await runtime.process("Hallo!", chat_id="user123")
 """
+import asyncio
 import json
 import logging
 import os
@@ -24,6 +25,7 @@ import shlex
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -1120,6 +1122,13 @@ class ComputeLocked(RuntimeError):
     """
 
 
+class _ChatTurnGate:
+    def __init__(self):
+        self.condition = threading.Condition()
+        self.active_turns = 0
+        self.clearing = False
+
+
 class ChatRuntime:
     """Backend-unabhängige Chat-Runtime mit Tool-Use-Loop."""
 
@@ -1127,6 +1136,7 @@ class ChatRuntime:
     SUMMARIZE_THRESHOLD = limit("BACH_SUMMARIZE_THRESHOLD")
     MAX_MESSAGES = limit("BACH_MAX_MESSAGES")
     SESSION_IDLE_TTL = float(os.environ.get("BACH_CHAT_SESSION_TTL", "86400"))
+    CLEAR_WAIT_TIMEOUT = 5.0
 
     def __init__(self, backend, system_prompt: str = "",
                  bach_app=None, memory_fn=None, injector=None,
@@ -1141,6 +1151,8 @@ class ChatRuntime:
         # Compute-Lock steht. None = kein Gate (Tests, andere Konsumenten).
         self.compute_gate = None
         self.sessions: dict[str, ChatSession] = {}
+        self._chat_turn_gates: dict[str, _ChatTurnGate] = {}
+        self._chat_turn_gates_lock = threading.Lock()
         self.max_tool_rounds: int = limit("BACH_MAX_TOOL_ROUNDS")
         self._persistence_error: str | None = None
         # Loop-Mode: wie oft darf ohne Nutzerantwort nachgeschoben werden?
@@ -1231,8 +1243,11 @@ class ChatRuntime:
             return self.get_model_context_limit(model, backend)
         return value if value > 0 else self.get_model_context_limit(model, backend)
 
-    def archive_and_reset(self, chat_id: str, reason: str = "Manuell") -> int | None:
-        """Archiviert die aktuelle Session (sofern Nachrichten vorhanden) und leert sie."""
+    def archive_and_reset(
+        self, chat_id: str, reason: str = "Manuell", *,
+        keep_empty_session: bool = True, strict_persistence: bool = False,
+    ) -> int | None:
+        """Archive and reset; explicit clears can require durable success."""
         archived_id = None
         session = self.sessions.get(chat_id)
         has_messages = bool(session and session.messages)
@@ -1240,14 +1255,33 @@ class ChatRuntime:
             stored = self._load_messages(chat_id)
             has_messages = bool(stored)
 
+        if strict_persistence and self.session_store is not None:
+            prefix = f"Archiv [{reason}] {_session_name(chat_id)}"
+            try:
+                archived_id = self.session_store.archive_and_delete(
+                    chat_id, session.messages if session else None, prefix
+                )
+                self._persistence_error = None
+            except Exception as exc:
+                self._persistence_error = str(exc)
+                log.error("Chat-Persistenz konnte nicht gelöscht werden: %s", exc)
+                raise RuntimeError("Chat-Persistenz konnte nicht gelöscht werden") from exc
+            self.sessions.pop(chat_id, None)
+            return archived_id
+
         if has_messages and self.session_store is not None:
             prefix = f"Archiv [{reason}] {_session_name(chat_id)}"
             try:
                 archived_id = self.session_store.archive_current(chat_id, prefix)
             except Exception as exc:
+                self._persistence_error = str(exc)
                 log.warning("Konnte Session vor Reset nicht archivieren: %s", exc)
+                if strict_persistence:
+                    raise RuntimeError(
+                        "Chat-Persistenz konnte nicht gelöscht werden: "
+                        "Archivierung fehlgeschlagen"
+                    ) from exc
 
-        self.sessions.pop(chat_id, None)
         if self.session_store is not None:
             try:
                 self.session_store.delete(chat_id)
@@ -1255,15 +1289,64 @@ class ChatRuntime:
             except Exception as exc:
                 self._persistence_error = str(exc)
                 log.error("Chat-Persistenz konnte nicht gelöscht werden: %s", exc)
+                if strict_persistence:
+                    raise RuntimeError("Chat-Persistenz konnte nicht gelöscht werden") from exc
 
-        new_session = ChatSession()
-        new_session.model = self.backend.get_default_model()
-        new_session.last_active = time.time()
-        self.sessions[chat_id] = new_session
+        self.sessions.pop(chat_id, None)
+        if keep_empty_session:
+            new_session = ChatSession()
+            new_session.model = self.backend.get_default_model()
+            new_session.last_active = time.time()
+            self.sessions[chat_id] = new_session
         return archived_id
 
     def clear_session(self, chat_id: str, archive_reason: str = "Clear") -> int | None:
-        return self.archive_and_reset(chat_id, reason=archive_reason)
+        gate = self._chat_turn_gate(chat_id)
+        deadline = time.monotonic() + self.CLEAR_WAIT_TIMEOUT
+        with gate.condition:
+            while gate.clearing:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError("Chat-Clear wartet zu lange auf einen anderen Clear")
+                gate.condition.wait(remaining)
+            gate.clearing = True
+        try:
+            with gate.condition:
+                while gate.active_turns:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise RuntimeError("Chat-Clear blockiert: laufender Chat-Turn")
+                    gate.condition.wait(remaining)
+            return self.archive_and_reset(
+                chat_id, reason=archive_reason,
+                keep_empty_session=False, strict_persistence=True,
+            )
+        finally:
+            with gate.condition:
+                gate.clearing = False
+                gate.condition.notify_all()
+
+    def _chat_turn_gate(self, chat_id: str) -> _ChatTurnGate:
+        key = str(chat_id)
+        with self._chat_turn_gates_lock:
+            return self._chat_turn_gates.setdefault(key, _ChatTurnGate())
+
+    @staticmethod
+    async def _enter_chat_turn(gate: _ChatTurnGate) -> None:
+        while True:
+            with gate.condition:
+                if not gate.clearing:
+                    gate.active_turns += 1
+                    return
+            # Polling avoids a background lock-acquisition thread surviving
+            # cancellation of this coroutine and leaking active_turns.
+            await asyncio.sleep(0.025)
+
+    @staticmethod
+    def _leave_chat_turn(gate: _ChatTurnGate) -> None:
+        with gate.condition:
+            gate.active_turns -= 1
+            gate.condition.notify_all()
 
     def fork_session(self, target_chat_id: str, snapshot_id: int) -> int:
         """Klont den Verlauf aus einem Snapshot in die Ziel-Session."""
@@ -1430,7 +1513,20 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         except Exception:
             return ""
 
-    async def process(self, text: str, chat_id: str, *, backend=None, model=None, skip_compute_gate: bool = False, **kwargs) -> str:
+    async def process(self, text: str, chat_id: str, *, backend=None, model=None,
+                      skip_compute_gate: bool = False, **kwargs) -> str:
+        gate = self._chat_turn_gate(chat_id)
+        await self._enter_chat_turn(gate)
+        try:
+            return await self._process_turn(
+                text, chat_id, backend=backend, model=model,
+                skip_compute_gate=skip_compute_gate, **kwargs,
+            )
+        finally:
+            self._leave_chat_turn(gate)
+
+    async def _process_turn(self, text: str, chat_id: str, *, backend=None, model=None,
+                            skip_compute_gate: bool = False, **kwargs) -> str:
         """Verarbeitet eine User-Nachricht und gibt die Antwort zurück."""
         # Der eine Punkt, an dem jeder Modell-Load vorbeikommt: Telegram,
         # /api/chat (Idle-Worker) und der Auftrags-Worker rufen alle hier an.
