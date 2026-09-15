@@ -559,6 +559,16 @@ class BACHTray:
 
         if answer is None:
             if not messages or (time.time() - seit >= self.PENDING_TTL):
+                # Terminal-Waechter fuer PATH A (Client-Timeout ohne Antwort): auch hier
+                # darf ein geparkter Task (blocked / future due_date) NICHT auf 'open'
+                # zurueckgesetzt werden -- sonst Resurrektions-Loop (T-20260912-1240loop
+                # / #1235 4x-Claim / #1293 Option A). Gleicher Guard wie Antwort-Pfad L580
+                # und Scan-Pfad L648. Gleicher _is_terminal_parked-Helfer (8/8 getestet).
+                task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
+                if _is_terminal_parked(task_now):
+                    print(f"[Idle] Task #{task_id} terminal (blocked/due_date); kein open-Reset (PATH A)")
+                    self.idle_pending = None
+                    return True
                 print(f"[Idle] Task #{task_id} ohne Antwort oder Transkript; auf open zurueckgesetzt")
                 self._api("PUT", f"/api/tasks/{task_id}", {"status": "open", "changed_by": "idle-worker"}, base=self.gui_url)
                 self.idle_pending = None
