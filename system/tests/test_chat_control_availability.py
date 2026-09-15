@@ -56,6 +56,17 @@ def control_module(monkeypatch, tmp_path):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(shutil, "which", lambda _name: None)
+    token = "test-control-token"
+    monkeypatch.setenv("BACH_CONTROL_API_TOKEN", token)
+    original_post = httpx.post
+
+    def _authorized_post(*args, **kwargs):
+        headers = dict(kwargs.pop("headers", None) or {})
+        if "Authorization" not in headers:
+            headers["Authorization"] = f"Bearer {token}"
+        return original_post(*args, headers=headers, **kwargs)
+
+    monkeypatch.setattr(httpx, "post", _authorized_post)
 
     module = importlib.import_module(module_name)
     try:
@@ -458,6 +469,73 @@ def test_control_chat_response_treats_cli_error_text_as_http_error(
 
     assert status == 502
     assert payload == {"ok": False, "answer": answer.strip(), "error": answer.strip()}
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Normale CLI-Ausgabe",
+        "  Normale CLI-Ausgabe  ",
+        pytest.param(
+            "Backend-Fehler: legitime CLI-Ausgabe",
+            id="plain-historical-prefix-remains-error",
+        ),
+    ],
+)
+def test_control_chat_response_preserves_plain_text_contract(control_module, answer):
+    payload, status = control_module._control_chat_response(answer)
+
+    if answer.strip().startswith("Backend-Fehler:"):
+        assert status == 502
+        assert payload == {"ok": False, "answer": answer.strip(), "error": answer.strip()}
+    else:
+        assert status == 200
+        assert payload == {"ok": True, "answer": answer.strip()}
+
+
+def test_control_chat_response_honours_explicit_successful_answer_status(control_module):
+    answer = control_module.SuccessfulAnswer("Backend-Fehler: legitime CLI-Ausgabe")
+
+    payload, status = control_module._control_chat_response(answer)
+
+    assert status == 200
+    assert payload == {"ok": True, "answer": str(answer)}
+
+
+def test_control_http_successful_answer_with_historical_backend_prefix_is_200(
+    control_module,
+    monkeypatch,
+):
+    backend = OllamaBackend(default_model="test")
+    monkeypatch.setattr(backend, "availability", lambda **kwargs: (True, "bereit"))
+    control_module.runtime.backend = backend
+    control_module.runtime.sessions.clear()
+    process = AsyncMock(
+        return_value=control_module.SuccessfulAnswer(
+            "Backend-Fehler: legitime CLI-Ausgabe"
+        )
+    )
+    monkeypatch.setattr(control_module.runtime, "process", process)
+    server = control_module.QuietHTTPServer(("127.0.0.1", 0), control_module.ControlHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        response = httpx.post(
+            f"http://127.0.0.1:{server.server_port}/api/chat",
+            json={"prompt": "Aufgabe", "chat_id": "successful-prefix"},
+            timeout=3,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "answer": "Backend-Fehler: legitime CLI-Ausgabe",
+    }
+    assert process.call_args.kwargs["backend"] is backend
 
 
 @pytest.mark.parametrize("outcome", ["failure", "locked"])
