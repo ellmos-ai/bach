@@ -13,7 +13,6 @@ Optionen:
   --model sonnet|opus|haiku   Modell (default: sonnet)
 """
 import sys
-import os
 import subprocess
 import json
 import sqlite3
