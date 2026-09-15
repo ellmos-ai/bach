@@ -3769,6 +3769,19 @@ class ControlHandler(BaseHTTPRequestHandler):
                             loop.close()
 
                         ans_str = str(ans)
+                        # FailedAnswer is a str subclass and may also be
+                        # restored as plain text after persistence. Neither
+                        # form may complete a once-worker or be logged as ok.
+                        if FailedAnswer.looks_like(ans):
+                            update_slot(worker_id, {
+                                "status": "error",
+                                "current_activity": ans_str[:120],
+                            })
+                            record_activity(
+                                worker_id, f"Block {run_count}: {ans_str[:55]}",
+                                "error",
+                            )
+                            return
                         record_activity(worker_id, f"Block {run_count}: {ans_str[:55]}", "ok")
 
                         # Wenn Einzellauf ("once") und keine TTL gesetzt ist, direkt abschließen

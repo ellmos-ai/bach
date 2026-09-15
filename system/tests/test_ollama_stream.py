@@ -68,8 +68,10 @@ class _FakeClient:
         return R(self._ps_models)
 
 
-def _zeile(content="", done=False, tool_calls=None, prompt_tokens=None):
+def _zeile(content="", done=False, tool_calls=None, prompt_tokens=None, thinking=None):
     d = {"message": {"role": "assistant", "content": content}, "done": done}
+    if thinking is not None:
+        d["message"]["thinking"] = thinking
     if tool_calls:
         d["message"]["tool_calls"] = tool_calls
     if prompt_tokens is not None:
@@ -160,6 +162,27 @@ def test_tool_calls_aus_mehreren_chunks_bleiben_geordnet_erhalten():
     r = asyncio.run(_backend(client).chat([{"role": "user", "content": "x"}]))
 
     assert r["tool_calls"] == [first, second]
+
+
+def test_glm_cloud_tool_thinking_from_earlier_chunks_is_preserved():
+    tc = [{"function": {"name": "get_datetime", "arguments": {}}}]
+    client = _FakeClient([
+        _zeile(thinking="ERSTER_ÜBERLEGUNGSTEIL"),
+        _zeile(thinking="ZWEITER_TEIL"),
+        _zeile(done=True, tool_calls=tc, thinking=""),
+    ])
+
+    r = asyncio.run(_backend(client).chat(
+        [{"role": "user", "content": "CLOUD_OK"}],
+        model="glm-5.3:cloud", think=True,
+    ))
+
+    assert r["tool_calls"] == tc
+    assert r["content"] == ""
+    assert r["raw_message"]["thinking"] == (
+        "ERSTER_ÜBERLEGUNGSTEILZWEITER_TEIL"
+    )
+    assert r["raw_message"]["content"] == ""
 
 
 def test_read_timeout_prueft_liveness_bis_zur_begrenzten_grace():

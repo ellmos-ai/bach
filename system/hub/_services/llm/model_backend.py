@@ -197,6 +197,7 @@ class OllamaBackend(ModelBackend):
         grace = limit("BACH_LLM_IDLE_GRACE")
         total_cap = limit("BACH_LLM_TOTAL_CAP")
         content_parts: list[str] = []
+        thinking_parts: list[str] = []
         tool_calls: list = []
         last_message: dict = {}
         prompt_tokens = None
@@ -209,6 +210,8 @@ class OllamaBackend(ModelBackend):
             content = "".join(content_parts)
             raw_message = dict(last_message or {"role": "assistant"})
             raw_message["content"] = content
+            if thinking_parts:
+                raw_message["thinking"] = "".join(thinking_parts)
             if tool_calls:
                 raw_message["tool_calls"] = list(tool_calls)
             return {
@@ -277,6 +280,8 @@ class OllamaBackend(ModelBackend):
                                 last_message = message
                                 if message.get("content"):
                                     content_parts.append(message["content"])
+                                if isinstance(message.get("thinking"), str) and message["thinking"]:
+                                    thinking_parts.append(message["thinking"])
                                 if message.get("tool_calls"):
                                     tool_calls.extend(message["tool_calls"])
                             if chunk.get("prompt_eval_count") is not None:
@@ -309,6 +314,8 @@ class OllamaBackend(ModelBackend):
             raise RuntimeError("Ollama lieferte eine leere Antwort")
         raw_message = dict(last_message or {"role": "assistant"})
         raw_message["content"] = content
+        if thinking_parts:
+            raw_message["thinking"] = "".join(thinking_parts)
         if tool_calls:
             raw_message["tool_calls"] = tool_calls
         return {
