@@ -19,6 +19,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
+
+from .projection_transport_auth import (
+    ProjectionTransportAuthError,
+    authenticated_projection_snapshot,
+)
 
 
 CONTRACT_ID = "org.ellmos.routinika.reminder-projection"
@@ -93,12 +99,55 @@ class RoutinikaProjection:
 
 
 def read_routinika_projection(
+    *,
+    manifest_path: str | Path,
+    transport_auth: dict[str, Any],
+    minimum_offline_seconds: int = DEFAULT_MINIMUM_OFFLINE_SECONDS,
+    previous_checkpoint: int | None = None,
+    secret_resolver: Any | None = None,
+) -> RoutinikaProjection:
+    """Authenticate transit bytes and read only their private immutable snapshot."""
+    try:
+        with authenticated_projection_snapshot(
+            manifest_path,
+            transport_auth,
+            expected_namespace="routinika-reminder-v1",
+            secret_resolver=secret_resolver,
+        ) as authenticated:
+            return _read_routinika_projection_database(
+                authenticated.path,
+                minimum_offline_seconds=minimum_offline_seconds,
+                previous_checkpoint=previous_checkpoint,
+                database_name=authenticated.source_name,
+                expected_sha256=authenticated.sha256,
+            )
+    except ProjectionTransportAuthError as exc:
+        raise RoutinikaProjectionError(str(exc)) from exc
+
+
+def read_legacy_unauthenticated_routinika_projection(
     database: str | Path,
     *,
     minimum_offline_seconds: int = DEFAULT_MINIMUM_OFFLINE_SECONDS,
     previous_checkpoint: int | None = None,
 ) -> RoutinikaProjection:
-    """Verify and read one closed projection without mutating either database."""
+    """Explicit test/migration-only verifier; never used by the BACH consumer."""
+    return _read_routinika_projection_database(
+        database,
+        minimum_offline_seconds=minimum_offline_seconds,
+        previous_checkpoint=previous_checkpoint,
+    )
+
+
+def _read_routinika_projection_database(
+    database: str | Path,
+    *,
+    minimum_offline_seconds: int,
+    previous_checkpoint: int | None,
+    database_name: str | None = None,
+    expected_sha256: str | None = None,
+) -> RoutinikaProjection:
+    """Verify already-bound bytes; callers choose authenticated or explicit legacy."""
     if type(minimum_offline_seconds) is not int or minimum_offline_seconds < 0:
         raise RoutinikaProjectionError(
             "minimum_offline_seconds muss eine nicht negative Ganzzahl sein."
@@ -112,10 +161,15 @@ def read_routinika_projection(
 
     path = _closed_regular_database(Path(database))
     before_hash = _sha256(path)
+    if expected_sha256 is not None and before_hash != expected_sha256:
+        raise RoutinikaProjectionError(
+            "Privater Snapshot stimmt nicht mit dem authentifizierten Hash überein."
+        )
     connection: sqlite3.Connection | None = None
     try:
+        encoded_path = quote(path.resolve().as_posix(), safe="/:")
         connection = sqlite3.connect(
-            f"file:{path.as_posix()}?mode=ro&immutable=1", uri=True
+            f"file:{encoded_path}?mode=ro&immutable=1", uri=True
         )
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA query_only = ON")
@@ -164,7 +218,7 @@ def read_routinika_projection(
         publisher_instance=publisher,
         generated_at=generated_at,
         source_checkpoint=checkpoint,
-        database_name=path.name,
+        database_name=database_name or path.name,
         database_sha256=after_hash,
         row_counts={
             "projection_metadata": len(metadata_rows),

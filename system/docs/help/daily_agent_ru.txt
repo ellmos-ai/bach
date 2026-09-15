@@ -23,8 +23,8 @@
   bach daily-agent briefing --dry-run   Предпросмотр только для чтения
   bach daily-agent summary              Создать вечерний обзор
   bach daily-agent config               Список модулей брифинга
-  bach daily-agent config routinika_briefing --projection=<абсолютный-путь>
-                                        Сохранить путь потребителя Routinika
+  bach daily-agent config routinika_briefing --manifest=<абсолютный-путь> --auth-refs-file=<абсолютный-путь>
+                                        Сохранить аутентифицированный транзитный путь
   bach daily-agent modules              Псевдоним для конфигурации
   bach daily-agent toggle <modul>       Модуль Включение/выключение
 
@@ -45,8 +45,8 @@
   bach daily-agent start --model=opus   Начинает с модели «opus»
   bach daily-agent status               Показывает PID и время начала
   bach daily-agent briefing             Создает брифинг с активными модулями
-  bach daily-agent briefing --routinika-projection=C:\staging\routinika.sqlite --routinika-receipt --dry-run
-                                        Проверяет закрытую проекцию без записи
+  bach daily-agent briefing --routinika-manifest=C:\transit\routinika.sqlite-snapshot.json --routinika-receipt --dry-run
+                                        Читает только приватный снимок, связанный с хэшем
   bach daily-agent toggle news_briefing Deaktiviert News-Modul
   bach daily-agent summary              Показывает задачи, выполненные сегодня
   bach daily-agent stop                 Останавливает агент + сохраняет сводку
