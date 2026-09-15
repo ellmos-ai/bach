@@ -321,9 +321,15 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_clear(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
-    archived_id = runtime.clear_session(chat_id, archive_reason="Telegram /clear")
+    try:
+        archived_id = runtime.clear_session(chat_id, archive_reason="Telegram /clear")
+    except RuntimeError:
+        await update.message.reply_text(
+            "Konversation konnte nicht gelöscht werden. Der bisherige Verlauf bleibt erhalten."
+        )
+        return
     if archived_id:
-        await update.message.reply_text("Konversation archiviert und neue Session gestartet.")
+        await update.message.reply_text("Konversation archiviert. Eine neue Session ist bereit.")
     else:
         await update.message.reply_text("Konversation zurückgesetzt.")
 
@@ -3610,7 +3616,11 @@ class ControlHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/clear":
             chat_id = body.get("chat_id", "gui-web")
-            archived_id = runtime.clear_session(chat_id, archive_reason="Control-API")
+            try:
+                archived_id = runtime.clear_session(chat_id, archive_reason="Control-API")
+            except RuntimeError as exc:
+                self._json({"ok": False, "chat_id": chat_id, "error": str(exc)}, 503)
+                return
             self._json({"ok": True, "chat_id": chat_id, "archived_id": archived_id})
 
         elif path == "/api/fork":

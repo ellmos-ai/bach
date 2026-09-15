@@ -148,41 +148,138 @@ def test_failed_persistent_clear_does_not_claim_success(tmp_path):
     assert "gui-web" in runtime.sessions
 
 
-def test_clear_archive_failure_keeps_live_and_durable_transcript(snapshot_db, monkeypatch):
+def test_clear_archive_failure_rolls_back_live_and_durable_transcript(snapshot_db):
     store = SQLiteChatSessionStore(snapshot_db)
     runtime = ChatRuntime(_Backend(), session_store=store)
     asyncio.run(runtime.process("Bleibt", "gui-web"))
     original = store.load("gui-web")
 
-    def fail_archive(*_args, **_kwargs):
-        raise RuntimeError("Archivspeicher nicht verfügbar")
-
-    monkeypatch.setattr(store, "archive_current", fail_archive)
-    monkeypatch.setattr(store, "delete",
-                        lambda *_args: pytest.fail("Delete after failed archive"))
-
-    with pytest.raises(RuntimeError, match="Archivierung fehlgeschlagen"):
-        runtime.clear_session("gui-web")
-
-    assert runtime.sessions["gui-web"].messages == original
-    assert store.load("gui-web") == original
-    assert runtime.persistence_status()["ok"] is False
-
-
-def test_clear_delete_failure_keeps_live_and_durable_transcript(snapshot_db, monkeypatch):
-    store = SQLiteChatSessionStore(snapshot_db)
-    runtime = ChatRuntime(_Backend(), session_store=store)
-    asyncio.run(runtime.process("Bleibt", "gui-web"))
-    original = store.load("gui-web")
-    monkeypatch.setattr(store, "delete",
-                        lambda *_args: (_ for _ in ()).throw(RuntimeError("Disk busy")))
+    with sqlite3.connect(snapshot_db) as conn:
+        conn.execute(
+            "CREATE TRIGGER block_archive BEFORE INSERT ON session_snapshots "
+            "WHEN instr(NEW.session_id, ':archived:') > 0 "
+            "BEGIN SELECT RAISE(ABORT, 'archive blocked'); END"
+        )
 
     with pytest.raises(RuntimeError, match="konnte nicht gelöscht werden"):
         runtime.clear_session("gui-web")
 
     assert runtime.sessions["gui-web"].messages == original
     assert store.load("gui-web") == original
+    assert len(store.list_snapshots()) == 1
     assert runtime.persistence_status()["ok"] is False
+
+
+def test_clear_delete_failure_rolls_back_archives_and_live_transcript(snapshot_db):
+    store = SQLiteChatSessionStore(snapshot_db)
+    runtime = ChatRuntime(_Backend(), session_store=store)
+    asyncio.run(runtime.process("Bleibt", "gui-web"))
+    original = store.load("gui-web")
+    with sqlite3.connect(snapshot_db) as conn:
+        conn.execute(
+            "CREATE TRIGGER block_live_delete BEFORE DELETE ON session_snapshots "
+            "WHEN instr(OLD.session_id, ':archived:') = 0 "
+            "BEGIN SELECT RAISE(ABORT, 'delete blocked'); END"
+        )
+
+    with pytest.raises(RuntimeError, match="konnte nicht gelöscht werden"):
+        runtime.clear_session("gui-web")
+
+    assert runtime.sessions["gui-web"].messages == original
+    assert store.load("gui-web") == original
+    assert len(store.list_snapshots()) == 1
+    assert runtime.persistence_status()["ok"] is False
+
+
+def test_clear_archives_newer_ram_after_failed_save(snapshot_db, monkeypatch):
+    store = SQLiteChatSessionStore(snapshot_db)
+    runtime = ChatRuntime(_Backend(), session_store=store)
+    asyncio.run(runtime.process("DB-Stand", "gui-web"))
+    durable = store.load("gui-web")
+    session = runtime.sessions["gui-web"]
+    session.messages.extend([
+        {"role": "user", "content": "Nur im RAM"},
+        {"role": "assistant", "content": "RAM-Antwort"},
+    ])
+    current = list(session.messages)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(store, "save",
+                          lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("save failed")))
+        runtime._persist_session("gui-web", session)
+    assert store.load("gui-web") == durable
+
+    runtime.clear_session("gui-web")
+
+    assert "gui-web" not in runtime.sessions
+    assert store.load("gui-web") == []
+    archived = [store.get_snapshot_by_id(s["id"]) for s in store.list_snapshots()]
+    assert len(archived) == 2
+    assert any(s["messages"] == durable for s in archived)
+    assert any(s["messages"] == current for s in archived)
+
+
+def test_clear_archives_ram_even_when_durable_snapshot_is_missing(snapshot_db):
+    store = SQLiteChatSessionStore(snapshot_db)
+    runtime = ChatRuntime(_Backend(), session_store=store)
+    session = runtime.get_session("gui-web")
+    session.messages.append({"role": "user", "content": "Nur RAM"})
+    assert store.load("gui-web") == []
+
+    archived_id = runtime.clear_session("gui-web")
+
+    assert archived_id is not None
+    assert "gui-web" not in runtime.sessions
+    assert store.load("gui-web") == []
+    assert store.get_snapshot_by_id(archived_id)["messages"] == [
+        {"role": "user", "content": "Nur RAM"},
+    ]
+
+
+def test_clear_rejects_corrupt_durable_snapshot_without_deleting_ram(snapshot_db):
+    store = SQLiteChatSessionStore(snapshot_db)
+    runtime = ChatRuntime(_Backend(), session_store=store)
+    asyncio.run(runtime.process("Bleibt", "gui-web"))
+    with sqlite3.connect(snapshot_db) as conn:
+        conn.execute(
+            "UPDATE session_snapshots SET snapshot_data = ? WHERE session_id = ?",
+            ("{kaputt", store.session_id("gui-web")),
+        )
+
+    with pytest.raises(RuntimeError, match="konnte nicht gelöscht werden"):
+        runtime.clear_session("gui-web")
+
+    assert "gui-web" in runtime.sessions
+    with sqlite3.connect(snapshot_db) as conn:
+        raw = conn.execute(
+            "SELECT snapshot_data FROM session_snapshots WHERE session_id = ?",
+            (store.session_id("gui-web"),),
+        ).fetchone()[0]
+    assert raw == "{kaputt"
+
+
+def test_clear_rejects_duplicate_live_snapshots_without_deleting_ram(snapshot_db):
+    store = SQLiteChatSessionStore(snapshot_db)
+    runtime = ChatRuntime(_Backend(), session_store=store)
+    asyncio.run(runtime.process("Bleibt", "gui-web"))
+    with sqlite3.connect(snapshot_db) as conn:
+        conn.execute(
+            "INSERT INTO session_snapshots (session_id, snapshot_type, snapshot_data) "
+            "SELECT session_id, snapshot_type, snapshot_data FROM session_snapshots "
+            "WHERE session_id = ?",
+            (store.session_id("gui-web"),),
+        )
+
+    with pytest.raises(RuntimeError, match="konnte nicht gelöscht werden"):
+        runtime.clear_session("gui-web")
+
+    assert "gui-web" in runtime.sessions
+    with sqlite3.connect(snapshot_db) as conn:
+        live_count = conn.execute(
+            "SELECT count(*) FROM session_snapshots WHERE session_id = ?",
+            (store.session_id("gui-web"),),
+        ).fetchone()[0]
+    assert live_count == 2
 
 
 def test_clear_without_store_drops_cache_and_idle_reset_keeps_blank_session(snapshot_db):

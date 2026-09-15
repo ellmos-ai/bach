@@ -1243,6 +1243,20 @@ class ChatRuntime:
             stored = self._load_messages(chat_id)
             has_messages = bool(stored)
 
+        if strict_persistence and self.session_store is not None:
+            prefix = f"Archiv [{reason}] {_session_name(chat_id)}"
+            try:
+                archived_id = self.session_store.archive_and_delete(
+                    chat_id, session.messages if session else None, prefix
+                )
+                self._persistence_error = None
+            except Exception as exc:
+                self._persistence_error = str(exc)
+                log.error("Chat-Persistenz konnte nicht gelöscht werden: %s", exc)
+                raise RuntimeError("Chat-Persistenz konnte nicht gelöscht werden") from exc
+            self.sessions.pop(chat_id, None)
+            return archived_id
+
         if has_messages and self.session_store is not None:
             prefix = f"Archiv [{reason}] {_session_name(chat_id)}"
             try:

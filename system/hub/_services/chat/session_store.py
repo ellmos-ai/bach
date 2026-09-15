@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -180,6 +181,74 @@ class SQLiteChatSessionStore:
         except sqlite3.Error as exc:
             conn.rollback()
             raise ChatSessionStoreError(f"cannot archive chat transcript: {exc}") from exc
+        finally:
+            conn.close()
+
+    def archive_and_delete(
+        self, chat_id: str, ram_messages: Iterable[dict] | None = None,
+        name_prefix: str = "Archiviert",
+    ) -> int | None:
+        """Atomically preserve DB and differing RAM transcripts before clear."""
+        session_id = self.session_id(chat_id)
+        ram = self._normalise_messages(list(ram_messages or []))
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            rows = conn.execute(
+                "SELECT snapshot_data FROM session_snapshots "
+                "WHERE session_id = ? AND snapshot_type = ? "
+                "ORDER BY id DESC",
+                (session_id, CHAT_SNAPSHOT_TYPE),
+            ).fetchall()
+            if len(rows) > 1:
+                raise ChatSessionStoreError("cannot clear duplicate live chat snapshots")
+            row = rows[0] if rows else None
+            durable = []
+            if row is not None:
+                try:
+                    payload = json.loads(row["snapshot_data"] or "")
+                except (TypeError, json.JSONDecodeError) as exc:
+                    raise ChatSessionStoreError("cannot archive invalid chat snapshot") from exc
+                if not isinstance(payload, dict) or payload.get("version") != 1:
+                    raise ChatSessionStoreError("cannot archive unsupported chat snapshot")
+                durable = self._normalise_messages(payload.get("messages", []))
+
+            archived_ids = []
+
+            def archive(kind: str, data: str) -> None:
+                archive_id = f"{session_id}:archived:{timestamp}:{uuid.uuid4().hex[:8]}"
+                cur = conn.execute(
+                    "INSERT INTO session_snapshots "
+                    "(session_id, snapshot_type, name, snapshot_data, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (archive_id, CHAT_SNAPSHOT_TYPE,
+                     f"{name_prefix} [{kind}] {timestamp}", data, timestamp),
+                )
+                archived_ids.append(cur.lastrowid)
+
+            if row is not None:
+                archive("DB", row["snapshot_data"])
+            if ram and ram != durable:
+                ram_data = json.dumps(
+                    {"version": 1, "chat_id": str(chat_id),
+                     "messages": ram, "updated_at": timestamp},
+                    ensure_ascii=False, separators=(",", ":"),
+                )
+                archive("RAM", ram_data)
+
+            conn.execute(
+                "DELETE FROM session_snapshots "
+                "WHERE session_id = ? AND snapshot_type = ?",
+                (session_id, CHAT_SNAPSHOT_TYPE),
+            )
+            conn.commit()
+            return archived_ids[-1] if archived_ids else None
+        except (sqlite3.Error, ChatSessionStoreError, ValueError, TypeError) as exc:
+            conn.rollback()
+            if isinstance(exc, ChatSessionStoreError):
+                raise
+            raise ChatSessionStoreError(f"cannot clear chat transcript: {exc}") from exc
         finally:
             conn.close()
 
