@@ -725,6 +725,13 @@ class AgentLauncherHandler(BaseHandler):
 
     def _is_agent_running(self, name: str) -> int:
         """Prueft ob Agent laeuft. Gibt PID oder 0 zurueck."""
+        from .agent_process_provider import create_agent_registry
+
+        external = create_agent_registry(self.pid_dir)
+        if external is not None:
+            # Existing BACH <name>.pid files are read in place. No migration,
+            # new store or automatic agent start is required for this seam.
+            return external.is_running(name)
         pid_file = self.pid_dir / f"{name}.pid"
         if not pid_file.exists():
             return 0

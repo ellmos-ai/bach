@@ -21,6 +21,27 @@ Gemäß den Grundsätzen aus der BACH-Roadmap und den Nutzerentscheidungen (`D-2
 
 ## 2. Schnittstellenmatrix der 8 Modulkandidaten
 
+### OC-B: agent-launcher als Engpass-Muster (2026-09-15)
+
+`agent-launcher` ist ein zusätzlicher Kandidat außerhalb der acht bereits
+abgearbeiteten TRANSFER-Module. Die unabhängige v0.2.0-Bibliothek besitzt eine
+Prozess-Registry und Provider-/Operator-Control-Primitiven. Der OC-B-Durchgang
+setzt **nur** einen opt-in Registry-Seam in BACHs `hub/agent_launcher.py`: mit
+`BACH_USE_EXTERNAL_AGENT_REGISTRY=1` liest der Handler die unveränderten
+`data/agent_pids/<name>.pid` über `AgentProcessRegistry`; ohne Opt-in oder mit
+`=0` verwendet er sofort den bisherigen BACH-Reader. Es wird weder ein Modell
+noch ein Agent gestartet, kein PID-Store umgezogen und kein Legacy-Pfad abgetrennt.
+Ein unvollständiger Modulvertrag scheitert laut; ein fehlendes Modul löst keine
+Installation aus. Der Modul-PR `ellmos-ai/agent-launcher#2` verschiebt den
+privaten `claude-bridge`-Import auf den Claude-CLI-Discovery-Pfad, sodass
+Registry/andere Provider ohne diese Bridge importiert werden können; er ändert
+**nicht** die Paket-Abhängigkeit oder die Freigabeentscheidung. Eine
+Produktiv-Aktivierung braucht einen überprüften Modul-Pin, Hostinstallation,
+echten Lifecycle-Smoke, unabhängiges Review und einen vollständigen Vergleich
+von Start/Status/Steer/Checkpoint/Stop samt PID-Wiederverwendung. Bis dahin
+bleibt der neue Seam per Default aus; `agent-launcher` ersetzt BACHs
+Agent-Handler nicht und Ocean-Parität ist hierdurch nicht bewiesen.
+
 | Nr | Modul / Repo | BACH-Zielbereich | Schnittstelle / Adapter | Status / Vorarbeit |
 |:---|:---|:---|:---|:---|
 | **1** | `ellmos-tests` | `system/hub/test.py`<br>`tools/testing/` | `TestAdapter` / `RunnerSeam`<br>CLI: `bach test` | Vorbereitet in Task 1181 (`2bf77f9`). Rollback & Testsuite-Isolation intakt. |
