@@ -1143,6 +1143,136 @@ def test_context_handoff_uses_ollama_backend_limit(monkeypatch):
     ) is True
 
 
+def test_glm_cloud_handoff_uses_thinking_to_preserve_resume():
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+
+    class _GateBackend:
+        def __init__(self):
+            self.calls = []
+
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs["think"] is False:
+                raise RuntimeError("GLM think=false refused")
+            return {"content": "RESUME: wichtige Schritte behalten"}
+
+    backend = _GateBackend()
+    runtime = ChatRuntime(backend)
+    old = [{"role": "system", "content": "Auftrag"}] + [
+        {"role": "user", "content": f"step-{i}"} for i in range(8)
+    ]
+    result = asyncio.run(runtime._handoff(old, ChatSession()))
+    assert len(result) == 1
+    assert "RESUME: wichtige Schritte behalten" in result[0]["content"]
+    assert backend.calls[0]["think"] is True
+
+
+def test_glm_cloud_summarize_preserves_older_context():
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+
+    class _GateBackend:
+        def __init__(self):
+            self.calls = []
+
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs["think"] is False:
+                raise RuntimeError("GLM think=false refused")
+            return {"content": "step-0 bis step-3"}
+
+    backend = _GateBackend()
+    runtime = ChatRuntime(backend)
+    session = ChatSession()
+    session.messages = [
+        {"role": "user", "content": f"step-{i}"} for i in range(8)
+    ]
+    asyncio.run(runtime._summarize(session))
+    assert session.messages[0]["content"] == "Bisheriger Kontext: step-0 bis step-3"
+    assert session.messages[-1]["content"] == "step-7"
+    assert backend.calls[0]["think"] is True
+
+
+@pytest.mark.parametrize("failure", ["exception", "partial_error"])
+def test_glm_cloud_summarize_failure_does_not_silently_drop_history(failure):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+
+    class _FailingBackend:
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        async def chat(self, messages, **kwargs):
+            if failure == "exception":
+                raise RuntimeError("summary unavailable")
+            return {"content": "partial summary", "error": "stream aborted"}
+
+    runtime = ChatRuntime(_FailingBackend())
+    session = ChatSession()
+    session.think = False
+    session.messages = [
+        {"role": "user", "content": f"step-{i}"} for i in range(8)
+    ]
+    before = list(session.messages)
+    asyncio.run(runtime._summarize(session))
+    assert session.messages == before
+
+
+@pytest.mark.parametrize("failure", ["exception", "empty", "partial_error"])
+def test_failed_full_context_handoff_stops_before_repeated_cloud_call(failure):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+
+    class _FailingHandoffBackend:
+        manages_own_tools = False
+
+        def __init__(self):
+            self.calls = 0
+
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        def get_context_limit(self):
+            return 100
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return {"content": "", "prompt_tokens": 90}
+            if self.calls == 2:
+                if failure == "exception":
+                    raise RuntimeError("handoff backend unavailable")
+                if failure == "partial_error":
+                    return {"content": "RESUME: incomplete", "error": "stream aborted"}
+                return {"content": ""}
+            raise AssertionError("repeated cloud call after failed handoff")
+
+    backend = _FailingHandoffBackend()
+    runtime = ChatRuntime(backend)
+    runtime.handoff_percent = 75
+    session = ChatSession()
+    session.model = "glm-5.3:cloud"
+    answer = asyncio.run(runtime._tool_loop(
+        [{"role": "system", "content": "Auftrag"}], session, tools=[],
+        context_limit=100,
+    ))
+    assert isinstance(answer, FailedAnswer)
+    expected = {
+        "exception": "handoff backend unavailable",
+        "empty": "ist leer",
+        "partial_error": "stream aborted",
+    }[failure]
+    assert expected in answer
+    assert backend.calls == 2
+
+
 def test_context_handoff_switches_backend_limits_between_turns():
     import asyncio
 

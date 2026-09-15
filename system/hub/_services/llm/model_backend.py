@@ -172,13 +172,13 @@ class OllamaBackend(ModelBackend):
 
         selected_model = model or self.default_model
         # Mac Studio live probe (2026-09-15): GLM 5.3 Cloud puts untagged
-        # reasoning in message.content with think=false. With think=true it
-        # separates message.thinking from the answer. Do not silently change
-        # the caller's thinking setting or try to strip arbitrary prose.
-        if selected_model == "glm-5.3:cloud" and think is False:
+        # reasoning in message.content with think=false. Only literal True
+        # was verified to separate message.thinking from the answer. Do not
+        # silently change the caller's setting or pass unverified values.
+        if selected_model == "glm-5.3:cloud" and think is not True:
             raise RuntimeError(
-                "GLM 5.3 Cloud benötigt think=true: think=false kann "
-                "Überlegungstext in der Antwort ausgeben"
+                "GLM 5.3 Cloud benötigt think=true (bool); andere think-Werte "
+                "können Überlegungstext in der Antwort ausgeben"
             )
         payload = {
             "model": selected_model,

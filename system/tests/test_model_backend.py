@@ -118,6 +118,24 @@ def test_glm_cloud_rejects_disabled_thinking_before_http(monkeypatch, use_overri
         )
 
 
+@pytest.mark.parametrize("invalid_think", [0, 1, None, "invalid", "high"])
+def test_glm_cloud_rejects_unverified_thinking_values_before_http(
+    monkeypatch, invalid_think
+):
+    def fail_client(**_kwargs):
+        pytest.fail("Unverified GLM think value must not reach Ollama")
+
+    monkeypatch.setattr(httpx, "AsyncClient", fail_client)
+    backend = OllamaBackend(default_model="glm-5.3:cloud")
+
+    with pytest.raises(RuntimeError, match="think=true"):
+        asyncio.run(
+            backend.chat(
+                [{"role": "user", "content": "CLOUD_OK"}], think=invalid_think
+            )
+        )
+
+
 def test_glm_cloud_thinking_enabled_keeps_separate_answer(monkeypatch):
     requests = []
     response = _FakeResponse({"message": {
