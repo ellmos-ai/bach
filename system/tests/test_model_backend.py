@@ -7,6 +7,8 @@ import json
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -76,6 +78,111 @@ class _FakeClient:
         return self.response
 
 
+class _CliPipe:
+    def __init__(self, data=b"", write_error=None):
+        self.data = data
+        self.write_error = write_error
+        self._read = False
+
+    def write(self, data):
+        if self.write_error is not None:
+            raise self.write_error
+        return len(data)
+
+    def close(self):
+        pass
+
+    def read(self, _size=-1):
+        if self._read:
+            return b""
+        self._read = True
+        return self.data
+
+
+class _BlockingCliPipe(_CliPipe):
+    def __init__(self, data=b""):
+        super().__init__(data)
+        self.started = threading.Event()
+        self.released = threading.Event()
+
+    def read(self, _size=-1):
+        if self.data and not self._read:
+            self._read = True
+            return self.data
+        self.started.set()
+        self.released.wait(2)
+        return b""
+
+
+class _CloseUnblocksCliPipe(_BlockingCliPipe):
+    def __init__(self):
+        super().__init__()
+        self.close_started = threading.Event()
+
+    def close(self):
+        self.close_started.set()
+        self.released.set()
+
+
+class _BlockingCloseCliPipe(_CliPipe):
+    def __init__(self, data=b""):
+        super().__init__(data)
+        self.close_started = threading.Event()
+        self.release_close = threading.Event()
+
+    def close(self):
+        self.close_started.set()
+        self.release_close.wait(2)
+
+
+class _CliProcess:
+    def __init__(
+        self,
+        *,
+        returncode=0,
+        stdout=b"",
+        stderr=b"",
+        stdin_error=None,
+        wait_error=None,
+    ):
+        self.stdin = _CliPipe(write_error=stdin_error)
+        self.stdout = _CliPipe(stdout)
+        self.stderr = _CliPipe(stderr)
+        self.returncode = returncode
+        self.wait_error = wait_error
+        self.killed = False
+        self.wait_calls = []
+
+    def poll(self):
+        return None
+
+    def wait(self, timeout=None):
+        self.wait_calls.append(timeout)
+        if self.wait_error is not None:
+            raise self.wait_error
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+
+
+class _BlockingCliProcess(_CliProcess):
+    def __init__(self, stdout=b""):
+        super().__init__()
+        self.stdout = _BlockingCliPipe(stdout)
+
+    def kill(self):
+        super().kill()
+        self.stdout.released.set()
+
+
+class _ExitedWithOpenStdoutProcess(_CliProcess):
+    def __init__(self):
+        super().__init__(returncode=0)
+        self.stdout = _CloseUnblocksCliPipe()
+
+    def poll(self):
+        return self.returncode
 def _run_chat(monkeypatch, payload, status_code=200):
     response = _FakeResponse(payload, status_code)
     monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: _FakeClient(response))
@@ -289,6 +396,154 @@ def test_configured_api_and_cli_availability_is_truthful(monkeypatch, tmp_path):
     assert OpenAIBackend(api_key="   ").availability() == (False, "Key fehlt")
 
 
+def _run_cli_subprocess(monkeypatch, process, *, timeout=0):
+    backend = CLIBackend(
+        cli_name="claude", cli_path="claude", cwd=".", timeout=timeout
+    )
+    monkeypatch.setattr(
+        "hub._services.llm.model_backend.subprocess.Popen",
+        lambda *_args, **_kwargs: process,
+    )
+    return backend._run_subprocess(["claude"], "Aufgabe", {}, 0)
+
+
+def _assert_cli_threads_are_clean():
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline:
+        active = [
+            thread.name
+            for thread in threading.enumerate()
+            if thread.name.startswith("bach-cli-") and thread.is_alive()
+        ]
+        if not active:
+            return
+        time.sleep(0.01)
+    assert not active
+
+
+def test_cli_backend_nonzero_exit_is_structured_failure(monkeypatch):
+    result = _run_cli_subprocess(
+        monkeypatch,
+        _CliProcess(returncode=1, stdout=b"Teilantwort", stderr=b"fatal"),
+    )
+
+    assert result == {
+        "content": "Teilantwort",
+        "error": "CLI exit 1. fatal",
+    }
+
+
+def test_cli_backend_broken_pipe_is_structured_failure(monkeypatch):
+    process = _CliProcess(
+        stderr=b"closed by CLI",
+        stdin_error=BrokenPipeError(),
+    )
+
+    result = _run_cli_subprocess(monkeypatch, process)
+
+    assert result == {
+        "content": "",
+        "error": "Broken pipe. closed by CLI",
+    }
+    assert process.killed is True
+    assert process.wait_calls
+
+
+def test_cli_backend_timeout_is_structured_failure_and_keeps_partial_output(monkeypatch):
+    process = _CliProcess(
+        stdout=b"Teil vor Timeout",
+        stderr=b"still running",
+        wait_error=subprocess.TimeoutExpired("claude", 10),
+    )
+
+    result = _run_cli_subprocess(monkeypatch, process)
+
+    assert result == {
+        "content": "Teil vor Timeout",
+        "error": "Timeout. still running",
+    }
+    assert process.killed is True
+    assert process.wait_calls
+
+
+def test_cli_backend_silent_process_is_bounded_and_keeps_partial_output(monkeypatch):
+    process = _BlockingCliProcess(stdout=b"Teil vor Stille")
+    started = time.monotonic()
+
+    result = _run_cli_subprocess(monkeypatch, process, timeout=0.05)
+
+    elapsed = time.monotonic() - started
+    assert result == {
+        "content": "Teil vor Stille",
+        "error": "Inaktivitäts-Timeout",
+    }
+    assert process.stdout.started.is_set()
+    assert process.killed is True
+    assert process.wait_calls
+    assert elapsed < 1.0
+    _assert_cli_threads_are_clean()
+
+
+def test_cli_backend_exited_process_with_open_stdout_handle_hits_drain_deadline(
+    monkeypatch,
+):
+    process = _ExitedWithOpenStdoutProcess()
+    started = time.monotonic()
+
+    result = _run_cli_subprocess(monkeypatch, process)
+
+    elapsed = time.monotonic() - started
+    assert result == {"content": "", "error": "Leere Antwort"}
+    assert process.stdout.close_started.wait(0.5)
+    assert elapsed < 1.4
+    _assert_cli_threads_are_clean()
+
+
+def test_cli_backend_blocking_pipe_close_cannot_hold_cleanup(monkeypatch):
+    process = _CliProcess(stdout=b"Normale CLI-Antwort")
+    process.stdout = _BlockingCloseCliPipe(b"Normale CLI-Antwort")
+    started = time.monotonic()
+
+    try:
+        result = _run_cli_subprocess(monkeypatch, process)
+        elapsed = time.monotonic() - started
+        assert result == "Normale CLI-Antwort"
+        assert process.stdout.close_started.wait(0.5)
+        assert elapsed < 0.5
+    finally:
+        process.stdout.release_close.set()
+    _assert_cli_threads_are_clean()
+
+
+def test_cli_backend_empty_zero_exit_is_structured_failure(monkeypatch):
+    result = _run_cli_subprocess(monkeypatch, _CliProcess(returncode=0))
+
+    assert result == {"content": "", "error": "Leere Antwort"}
+    _assert_cli_threads_are_clean()
+
+
+def test_cli_backend_normal_response_remains_plain_text(monkeypatch):
+    result = _run_cli_subprocess(
+        monkeypatch,
+        _CliProcess(stdout=b"Normale CLI-Antwort"),
+    )
+
+    assert result == "Normale CLI-Antwort"
+    _assert_cli_threads_are_clean()
+
+
+def test_cli_backend_chat_exposes_structured_failure(monkeypatch):
+    backend = CLIBackend(cli_name="claude", cli_path="claude", cwd=".")
+
+    async def fake_run(_prompt, model=None):
+        return {"content": "Teil", "error": "CLI exit 1"}
+
+    monkeypatch.setattr(backend, "_run_cli", fake_run)
+    result = asyncio.run(backend.chat([{"role": "user", "content": "Aufgabe"}]))
+
+    assert result["content"] == "Teil"
+    assert result["error"] == "CLI exit 1"
+    assert result["raw_message"] == {"content": "Teil", "error": "CLI exit 1"}
 @pytest.mark.parametrize(
     "backend",
     [
