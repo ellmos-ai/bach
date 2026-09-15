@@ -576,6 +576,10 @@ def _apply_slot_to_session(chat_id: str, session: Any) -> tuple[Any, str]:
         session.think = bool(slot["think"])
     if "max_tool_rounds" in slot:
         session.max_tool_rounds = int(slot["max_tool_rounds"])
+    if "allow_tools" in slot:
+        # Only an explicit JSON true grants tools; malformed stored values
+        # must not silently widen a worker's capability.
+        session.allow_tools = slot["allow_tools"] is True
     if slot.get("system_prompt"):
         session.custom_system_prompt = slot["system_prompt"]
 
@@ -2268,8 +2272,16 @@ tr:hover td{background:#24334d}
         <label>Modus</label>
         <select id="nw-mode">
           <option value="full">Full (Schreibrechte)</option>
-          <option value="safe">Safe (Nur Lesen)</option>
+          <option value="safe">Safe (begrenzte Schreibtools, keine freie Shell)</option>
         </select>
+      </div>
+    </div>
+    <div class="form-group" style="background:#0f172a;padding:10px 12px;border-radius:8px;border:1px solid #334155">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="nw-allow-tools" checked> Werkzeuge erlauben
+      </label>
+      <div style="font-size:0.78rem;color:#94a3b8;margin-top:3px;margin-left:24px">
+        Deaktivieren = tool-freier Worker. „Max Turns 0“ bedeutet unbegrenzt, nicht tool-frei.
       </div>
     </div>
     <div class="form-row">
@@ -2452,6 +2464,8 @@ function renderWorkers(workers) {
     const sysPromptBadge = w.include_system_prompt !== false 
       ? '<span style="color:#10b981;font-size:0.75rem;font-weight:600">✓ SysPrompt</span>' 
       : '<span style="color:#f59e0b;font-size:0.75rem;font-weight:600">✗ Kein SysPrompt</span>';
+    const turnsLabel = w.max_tool_rounds === 0 ? 'Unbegrenzt' : (w.max_tool_rounds ?? 20);
+    const toolsLabel = w.allow_tools === false ? 'Tool-frei' : 'Werkzeuge erlaubt';
 
     const isRunning = (st === 'running');
     const cardBorder = isRunning ? 'border:1px solid #38bdf8;box-shadow:0 0 12px rgba(56,189,248,0.25);' : '';
@@ -2468,7 +2482,7 @@ function renderWorkers(workers) {
         <div class="worker-meta">
           <div><strong>Modus:</strong> <span style="color:#38bdf8">${subModeLabel}</span> · ${taskBadge} · ${sysPromptBadge}</div>
           <div><strong>Modell:</strong> ${escapeHtml(w.model || '?')} (${escapeHtml(w.backend || 'ollama')})</div>
-          <div><strong>Turns:</strong> ${w.max_tool_rounds || 20} · <strong>Modus:</strong> ${w.mode || 'full'}</div>
+          <div><strong>Turns:</strong> ${turnsLabel} · <strong>Modus:</strong> ${w.mode || 'full'} · <strong>Tools:</strong> ${toolsLabel}</div>
           <div><strong>Ablauf:</strong> ${expires}</div>
         </div>
         <div class="activity-box" style="min-height:30px">${escapeHtml(w.current_activity || 'Bereit')}</div>
@@ -2686,6 +2700,7 @@ async function createWorker() {
   const ttl = document.getElementById('nw-ttl').value ? parseInt(document.getElementById('nw-ttl').value) : null;
   const taskPrompt = document.getElementById('nw-task-prompt').value.trim();
   const includeSys = document.getElementById('nw-include-system-prompt').checked;
+  const allowTools = document.getElementById('nw-allow-tools').checked;
 
   let roleId = '';
   let multiRole = false;
@@ -2717,6 +2732,7 @@ async function createWorker() {
     backend,
     model,
     max_tool_rounds: turns,
+    allow_tools: allowTools,
     mode,
     task_id: taskId,
     ttl_seconds: ttl,
@@ -2724,7 +2740,7 @@ async function createWorker() {
 
   const res = await api('POST', '/workers', payload);
   if (res && res.ok) {
-    toast(`Worker '${res.worker.name}' gestartet!`);
+    toast(`Worker '${res.worker.name}' angelegt!`);
     closeNewWorkerModal();
     document.getElementById('nw-name').value = '';
     document.getElementById('nw-task-id').value = '';
@@ -3648,6 +3664,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                 worker = add_worker(body)
                 record_activity("system", f"Neuer Worker erstellt: {worker.get('name', worker.get('id'))}", "ok")
                 self._json({"ok": True, "worker": worker})
+            except ValueError as e:
+                self._json({"error": str(e)}, 400)
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 

@@ -125,6 +125,34 @@ class TestSlotsConfigCRUD:
 
 
 class TestTelegramSlotMapping:
+    def test_dynamic_worker_no_tools_flag_survives_config_and_slot(self, tmp_path):
+        cfg_file = tmp_path / "no-tools-slots.json"
+        worker = add_worker({
+            "id": "worker-no-tools-test",
+            "backend": "ollama-cloud",
+            "model": "kimi-k3:cloud",
+            "mode": "safe",
+            "max_tool_rounds": 0,
+            "allow_tools": False,
+            "include_system_prompt": False,
+            "task_prompt": "Nur CLOUD_OK antworten",
+        }, path=str(cfg_file))
+        assert worker["allow_tools"] is False
+        assert worker["max_tool_rounds"] == 0
+
+        cfg = load_slots_config(str(cfg_file))
+        with patch("hub._services.chat.telegram_chat.load_slots_config", return_value=cfg):
+            session = ChatSession()
+            _apply_slot_to_session("worker-no-tools-test", session)
+        assert session.allow_tools is False
+        assert session.max_tool_rounds == 0
+        assert session.model == "kimi-k3:cloud"
+
+    def test_worker_no_tools_flag_rejects_non_boolean(self, tmp_path):
+        cfg_file = tmp_path / "no-tools-invalid.json"
+        with pytest.raises(ValueError, match="JSON-Boolean"):
+            add_worker({"allow_tools": "false"}, path=str(cfg_file))
+
     def test_resolve_slot_for_various_chat_ids(self, tmp_path):
         cfg_file = tmp_path / "test_slots.json"
         with patch("hub._services.chat.telegram_chat.load_slots_config") as mock_load:
@@ -357,6 +385,47 @@ class TestDynamicContextScaling:
 
 
 class TestControlHandlerEndpoints:
+    @pytest.mark.parametrize("flag, expected_code", [(False, 200), ("false", 400)])
+    def test_worker_create_api_validates_no_tools_boolean(
+        self, tmp_path, monkeypatch, flag, expected_code,
+    ):
+        import hub._services.chat.telegram_chat as control
+        from hub._services.chat.slots_config import add_worker as add_to_temp
+
+        cfg_file = tmp_path / "api-no-tools-slots.json"
+        monkeypatch.setattr(control, "add_worker",
+                            lambda body: add_to_temp(body, path=str(cfg_file)))
+        monkeypatch.setattr(control, "record_activity",
+                            lambda *_args, **_kwargs: None)
+        handler = ControlHandler.__new__(ControlHandler)
+        handler.path = "/api/workers"
+        monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
+        monkeypatch.setattr(handler, "_read_body", lambda: {
+            "id": "worker-api-no-tools", "allow_tools": flag,
+            "backend": "ollama-cloud", "model": "kimi-k3:cloud",
+            "type": "once", "task_prompt": "Nur CLOUD_OK",
+        })
+        responses = []
+        monkeypatch.setattr(handler, "_json",
+                            lambda body, code=200: responses.append((body, code)))
+
+        handler.do_POST()
+
+        assert responses[-1][1] == expected_code
+        if expected_code == 200:
+            assert responses[-1][0]["worker"]["allow_tools"] is False
+        else:
+            assert "JSON-Boolean" in responses[-1][0]["error"]
+
+    def test_worker_gui_exposes_truthful_no_tools_control(self):
+        from hub._services.chat import telegram_chat
+
+        source = Path(telegram_chat.__file__).read_text(encoding="utf-8")
+        assert 'id="nw-allow-tools" checked' in source
+        assert "allow_tools: allowTools" in source
+        assert "Max Turns 0“ bedeutet unbegrenzt" in source
+        assert "Safe (begrenzte Schreibtools, keine freie Shell)" in source
+
     @pytest.mark.parametrize("answer_kind", ["ok", "failed-type", "failed-text"])
     def test_once_worker_marks_failed_answer_as_error(self, monkeypatch, answer_kind):
         import hub._services.chat.telegram_chat as control
@@ -579,5 +648,3 @@ class TestControlHandlerEndpoints:
             mock_json.assert_called_once()
             res = mock_json.call_args[0][0]
             assert res.get("ok") is True
-
-

@@ -443,6 +443,9 @@ def add_worker(worker_data: Dict[str, Any], path: str | None = None) -> Dict[str
     mode = worker_data.get("mode", "full")
     think = bool(worker_data.get("think", True))
     max_tool_rounds = int(worker_data.get("max_tool_rounds", 20))
+    allow_tools = worker_data.get("allow_tools", True)
+    if not isinstance(allow_tools, bool):
+        raise ValueError("allow_tools muss ein JSON-Boolean sein")
     task_id = worker_data.get("task_id")
     category = worker_data.get("category", "")
     worker_type = worker_data.get("type", "once" if task_id else "persistent")
@@ -483,6 +486,7 @@ def add_worker(worker_data: Dict[str, Any], path: str | None = None) -> Dict[str
         "mode": mode,
         "think": think,
         "max_tool_rounds": max_tool_rounds,
+        "allow_tools": allow_tools,
         "system_prompt": composed_prompt,
         "custom_system_prompt": custom_system_prompt,
         "task_prompt": task_prompt,

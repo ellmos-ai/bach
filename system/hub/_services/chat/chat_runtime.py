@@ -1102,6 +1102,9 @@ class ChatSession:
         self.last_active: float = 0.0
         self.backend: Any = None
         self.max_tool_rounds: Optional[int] = None
+        # Explicit capability gate; max_tool_rounds=0 retains its legacy
+        # meaning of unlimited rounds and does not disable tools.
+        self.allow_tools: bool = True
         self.custom_system_prompt: str = ""
         self.chat_id: str = ""
         # OPS-RUN-001: Operator-Steuerung (steer/pause/resume/checkpoint) an
@@ -1452,6 +1455,19 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             )
         session = self.get_session(chat_id)
         selected_model = model or session.model or selected_backend.get_default_model()
+        if session.allow_tools is False and getattr(selected_backend, "manages_own_tools", False):
+            # A CLI/self-managed backend may execute tools outside BACH's
+            # dispatcher. Refuse it before any model or summarizer call.
+            answer = FailedAnswer(
+                f"{FailedAnswer.PREFIX}Backend mit eigenen Tools ist für "
+                "einen tool-freien Lauf nicht verifizierbar"
+            )
+            session.messages.extend([
+                {"role": "user", "content": text},
+                {"role": "assistant", "content": answer},
+            ])
+            self._persist_session(chat_id, session)
+            return answer
         context_limit = self._context_limit_for_backend(selected_backend, selected_model)
         session.last_active = time.time()
         session.messages.append({"role": "user", "content": text})
@@ -1479,6 +1495,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             sys_prompt += f"\n\n--- BACH ---\n{bach_ctx}"
         if hook_ctx and not getattr(session, "custom_system_prompt", ""):
             sys_prompt += f"\n\n--- MEMORY-HOOK ---\n{hook_ctx}"
+        if session.allow_tools is False:
+            sys_prompt += "\n\n[CAPABILITY-GATE: Keine Werkzeuge verfügbar. Antworte ohne Tool-Aufrufe.]"
 
         msgs = [{"role": "system", "content": sys_prompt}] + session.messages
 
@@ -1491,7 +1509,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             except Exception as e:
                 answer = FailedAnswer.from_exception(e)
         else:
-            tools = tools_for_mode(session.mode)
+            tools = tools_for_mode(session.mode) if session.allow_tools is True else []
             answer = await self._tool_loop(
                 msgs,
                 session,
@@ -1594,6 +1612,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     continue
                 session.current_tool = ""
                 return content
+
+            if session.allow_tools is False:
+                session.current_tool = ""
+                return FailedAnswer(
+                    f"{FailedAnswer.PREFIX}Tool-Aufruf im tool-freien Lauf blockiert"
+                )
 
             raw_msg = result.get("raw_message", {})
             if raw_msg:
