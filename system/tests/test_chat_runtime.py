@@ -1346,6 +1346,48 @@ def test_non_glm_transient_handoff_failure_keeps_tail_fallback():
     assert backend.calls == 3
 
 
+def test_separated_successful_context_handoffs_do_not_exhaust_retry_cap():
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession, HANDOFF_PROMPT
+
+    class _GrowingContextBackend:
+        manages_own_tools = False
+
+        def __init__(self):
+            self.calls = 0
+            self.regular_calls = 0
+
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        def get_context_limit(self):
+            return 100
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            if messages[-1].get("content") == HANDOFF_PROMPT:
+                return {"content": "RESUME: context reduced"}
+            self.regular_calls += 1
+            if self.regular_calls in (1, 3, 5):
+                return {"content": "", "prompt_tokens": 90}
+            if self.regular_calls == 6:
+                return {"content": "FERTIG", "prompt_tokens": 10}
+            return {"content": "continue", "prompt_tokens": 10}
+
+    backend = _GrowingContextBackend()
+    runtime = ChatRuntime(backend)
+    runtime.handoff_percent = 75
+    runtime.auto_continue = 3
+    session = ChatSession()
+    session.model = "glm-5.3:cloud"
+    answer = asyncio.run(runtime._tool_loop(
+        [{"role": "system", "content": "Auftrag"}], session, tools=[],
+        context_limit=100,
+    ))
+    assert answer == "FERTIG"
+    assert backend.calls == 9
+
+
 def test_context_handoff_switches_backend_limits_between_turns():
     import asyncio
 
