@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from urllib.parse import unquote
 
 import pytest
 
@@ -425,6 +426,60 @@ class TestRoutinikaProjectionBriefing:
 
         assert projection.source_checkpoint == 6
         assert projection.publisher_instance == "routinika-primary"
+
+    def test_authenticated_private_snapshot_quotes_hash_and_percent_uri_path(
+        self, tmp_path
+    ):
+        projection_path = tmp_path / "signed-routinika.sqlite"
+        _create_routinika_projection(projection_path)
+        snapshot, auth_config, resolver = _authenticated_routinika_projection(
+            projection_path, tmp_path
+        )
+        truncated_paths: list[Path] = []
+        private_counter = 0
+
+        def special_private_dir(*_args, **_kwargs):
+            nonlocal private_counter
+            private_counter += 1
+            private_dir = tmp_path / f"bach-private-{private_counter}%25#fragment"
+            private_dir.mkdir()
+            raw_truncated = Path(str(private_dir).split("#", 1)[0])
+            truncated_paths.extend([raw_truncated, Path(unquote(str(raw_truncated)))])
+            return str(private_dir)
+
+        with patch(
+            "hub._services.projection_transport_auth.tempfile.mkdtemp",
+            side_effect=special_private_dir,
+        ):
+            signed = read_routinika_projection(
+                manifest_path=snapshot.manifest_path,
+                transport_auth=auth_config,
+                secret_resolver=resolver,
+                previous_checkpoint=5,
+            )
+            with pytest.raises(RoutinikaProjectionError, match="nicht neuer"):
+                read_routinika_projection(
+                    manifest_path=snapshot.manifest_path,
+                    transport_auth=auth_config,
+                    secret_resolver=resolver,
+                    previous_checkpoint=6,
+                )
+
+            snapshot.path.write_bytes(b"tampered")
+            with pytest.raises(
+                RoutinikaProjectionError, match="Transportauthentifizierung"
+            ):
+                read_routinika_projection(
+                    manifest_path=snapshot.manifest_path,
+                    transport_auth=auth_config,
+                    secret_resolver=resolver,
+                    previous_checkpoint=5,
+                )
+
+        assert [record.record_ref for record in signed.due_records] == ["c" * 32]
+        assert signed.source_checkpoint == 6
+        assert private_counter == 2
+        assert all(not path.exists() for path in truncated_paths)
 
     def test_normal_consumer_rejects_direct_unauthenticated_database(self, tmp_path):
         projection = tmp_path / "routinika-projection.sqlite"

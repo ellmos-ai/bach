@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from .projection_transport_auth import (
     ProjectionTransportAuthError,
@@ -166,8 +167,9 @@ def _read_routinika_projection_database(
         )
     connection: sqlite3.Connection | None = None
     try:
+        encoded_path = quote(path.resolve().as_posix(), safe="/:")
         connection = sqlite3.connect(
-            f"file:{path.as_posix()}?mode=ro&immutable=1", uri=True
+            f"file:{encoded_path}?mode=ro&immutable=1", uri=True
         )
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA query_only = ON")
