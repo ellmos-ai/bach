@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -23,6 +24,7 @@ from hub._services.chat.slots_config import (
     add_worker,
     get_activity_history,
     get_slot,
+    get_worker_slot,
     list_workers,
     load_slots_config,
     record_activity,
@@ -41,6 +43,109 @@ from hub._services.chat.telegram_chat import (
 
 
 class TestSlotsConfigCRUD:
+    def test_worker_ids_cannot_shadow_core_or_existing_worker(self, tmp_path):
+        cfg_file = tmp_path / "id-uniqueness.json"
+        load_slots_config(str(cfg_file))
+
+        with pytest.raises(ValueError, match="bereits belegt"):
+            add_worker({"id": "buddha_chat", "allow_tools": False}, path=str(cfg_file))
+
+        first = add_worker({"id": "alpha", "allow_tools": False}, path=str(cfg_file))
+        with pytest.raises(ValueError, match="bereits belegt"):
+            add_worker({"id": "alpha", "allow_tools": True}, path=str(cfg_file))
+
+        assert get_worker_slot("alpha", path=str(cfg_file)) == first
+        assert len(load_slots_config(str(cfg_file))["dynamic_workers"]) == 1
+
+    def test_worker_id_cannot_be_mutated_into_collision(self, tmp_path):
+        cfg_file = tmp_path / "id-mutation.json"
+        add_worker({"id": "alpha", "allow_tools": False}, path=str(cfg_file))
+
+        with pytest.raises(ValueError, match="ID darf nicht geändert"):
+            update_slot("alpha", {"id": "buddha_chat"}, path=str(cfg_file))
+        with pytest.raises(ValueError, match="JSON-Boolean"):
+            update_slot("alpha", {"allow_tools": "true"}, path=str(cfg_file))
+
+        assert get_worker_slot("alpha", path=str(cfg_file))["allow_tools"] is False
+
+    def test_legacy_ambiguous_worker_ids_fail_closed(self, tmp_path):
+        cfg_file = tmp_path / "legacy-collision.json"
+        cfg = load_slots_config(str(cfg_file))
+        cfg["dynamic_workers"] = [
+            {"id": "alpha", "allow_tools": True},
+            {"id": "alpha", "allow_tools": False},
+        ]
+        save_slots_config(cfg, str(cfg_file))
+
+        with pytest.raises(ValueError, match="nicht eindeutig"):
+            get_worker_slot("alpha", path=str(cfg_file))
+        with pytest.raises(ValueError, match="nicht eindeutig"):
+            update_slot("alpha", {"current_activity": "läuft"}, path=str(cfg_file))
+
+        cfg["dynamic_workers"] = [{"id": "buddha_chat", "allow_tools": False}]
+        save_slots_config(cfg, str(cfg_file))
+        with pytest.raises(ValueError, match="nicht eindeutig"):
+            get_worker_slot("buddha_chat", path=str(cfg_file))
+
+    def test_unreadable_worker_registry_does_not_fall_back_to_defaults(self, tmp_path):
+        cfg_file = tmp_path / "unreadable-workers.json"
+        cfg_file.write_text("{kaputt", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="nicht lesbar"):
+            get_worker_slot("alpha", path=str(cfg_file))
+        with pytest.raises(ValueError, match="nicht lesbar"):
+            add_worker({"id": "alpha", "allow_tools": False}, path=str(cfg_file))
+        assert cfg_file.read_text(encoding="utf-8") == "{kaputt"
+
+    def test_activity_write_cannot_overwrite_completed_revocation(self, tmp_path, monkeypatch):
+        import hub._services.chat.slots_config as slots
+
+        cfg_file = tmp_path / "revocation-race.json"
+        add_worker({"id": "alpha", "allow_tools": True}, path=str(cfg_file))
+        entered = threading.Event()
+        release = threading.Event()
+        revoked = threading.Event()
+        failures = []
+        original_save = slots.save_slots_config
+
+        def paused_save(cfg, path=None):
+            worker = cfg["dynamic_workers"][0]
+            if worker.get("current_activity") == "race-activity" and worker["allow_tools"] is True:
+                entered.set()
+                if not release.wait(2):
+                    raise TimeoutError("activity write did not resume")
+            return original_save(cfg, path)
+
+        monkeypatch.setattr(slots, "save_slots_config", paused_save)
+
+        def activity():
+            try:
+                slots.update_slot("alpha", {"current_activity": "race-activity"}, path=str(cfg_file))
+            except Exception as exc:
+                failures.append(exc)
+
+        def revoke():
+            try:
+                slots.update_slot("alpha", {"allow_tools": False}, path=str(cfg_file))
+                revoked.set()
+            except Exception as exc:
+                failures.append(exc)
+
+        activity_thread = threading.Thread(target=activity)
+        revoke_thread = threading.Thread(target=revoke)
+        activity_thread.start()
+        assert entered.wait(2)
+        revoke_thread.start()
+        assert not revoked.wait(0.1)
+        release.set()
+        activity_thread.join(timeout=3)
+        revoke_thread.join(timeout=3)
+
+        assert not activity_thread.is_alive() and not revoke_thread.is_alive()
+        assert failures == []
+        assert revoked.is_set()
+        assert get_worker_slot("alpha", path=str(cfg_file))["allow_tools"] is False
+
     def test_default_slots_loaded(self, tmp_path):
         cfg_file = tmp_path / "test_slots.json"
         cfg = load_slots_config(str(cfg_file))
@@ -136,7 +241,7 @@ class TestTelegramSlotMapping:
                   "max_tool_rounds": 0}
         backend = object()
         monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
-        monkeypatch.setattr(control, "get_slot", lambda _id: worker)
+        monkeypatch.setattr(control, "get_worker_slot", lambda _id: worker)
         monkeypatch.setattr(control, "_get_or_create_backend", lambda *_args: backend)
 
         selected, model = control._snapshot_chat_backend("alpha")
@@ -170,7 +275,7 @@ class TestTelegramSlotMapping:
                 "max_tool_rounds": 0}
         backend = object()
         monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
-        monkeypatch.setattr(control, "get_slot", lambda _id: slot)
+        monkeypatch.setattr(control, "get_worker_slot", lambda _id: slot)
         monkeypatch.setattr(control, "_get_or_create_backend",
                             lambda *_args: backend)
 
@@ -195,7 +300,7 @@ class TestTelegramSlotMapping:
                 "model": "kimi-k3:cloud", "allow_tools": False,
                 "max_tool_rounds": "kaputt"}
         monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
-        monkeypatch.setattr(control, "get_slot", lambda _id: slot)
+        monkeypatch.setattr(control, "get_worker_slot", lambda _id: slot)
         monkeypatch.setattr(control, "_get_or_create_backend",
                             lambda *_args: object())
 
@@ -463,6 +568,33 @@ class TestDynamicContextScaling:
 
 
 class TestControlHandlerEndpoints:
+    @pytest.mark.parametrize("route", ["/api/chat", "/api/workers/run"])
+    def test_api_rejects_legacy_core_worker_collision(self, tmp_path, monkeypatch, route):
+        control = importlib.import_module("hub._services.chat.telegram_chat")
+
+        cfg_file = tmp_path / "legacy-api-collision.json"
+        cfg = load_slots_config(str(cfg_file))
+        cfg["dynamic_workers"] = [{"id": "buddha_chat", "allow_tools": False}]
+        save_slots_config(cfg, str(cfg_file))
+        monkeypatch.setattr(control, "get_worker_slot",
+                            lambda worker_id: get_worker_slot(worker_id, path=str(cfg_file)))
+        monkeypatch.setattr(control.runtime, "get_session", lambda _id: ChatSession())
+        monkeypatch.setattr(control.runtime, "process",
+                            lambda *_args, **_kwargs: pytest.fail("Model called for ambiguous worker"))
+        handler = control.ControlHandler.__new__(control.ControlHandler)
+        handler.path = route
+        handler.headers = {"X-Delegation-Depth": "0"}
+        monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
+        monkeypatch.setattr(handler, "_read_body", lambda: {
+            "id": "buddha_chat", "chat_id": "buddha_chat", "prompt": "Probe",
+        })
+        replies = []
+        monkeypatch.setattr(handler, "_json", lambda body, code=200: replies.append((body, code)))
+
+        handler.do_POST()
+
+        assert replies[0][1] == 503
+
     def test_chat_api_cannot_bypass_arbitrary_no_tools_worker(self, monkeypatch):
         control = importlib.import_module("hub._services.chat.telegram_chat")
 
@@ -473,7 +605,7 @@ class TestControlHandlerEndpoints:
         session.chat_id = "alpha"
         observed = []
         monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
-        monkeypatch.setattr(control, "get_slot", lambda _id: worker)
+        monkeypatch.setattr(control, "get_worker_slot", lambda _id: worker)
         monkeypatch.setattr(control, "_get_or_create_backend", lambda *_args: object())
         monkeypatch.setattr(control, "_checked_backend_availability",
                             lambda *_args: (True, "available"))
@@ -496,10 +628,14 @@ class TestControlHandlerEndpoints:
 
         assert observed == [False]
 
-    def test_worker_run_rejects_core_slot_without_worker_id(self, monkeypatch):
+    def test_worker_run_rejects_real_core_slot_id(self, monkeypatch, tmp_path):
         control = importlib.import_module("hub._services.chat.telegram_chat")
 
-        monkeypatch.setattr(control, "get_slot", lambda _id: {"backend": "ollama"})
+        cfg_file = tmp_path / "core-slot-worker-api.json"
+        load_slots_config(str(cfg_file))
+        assert get_slot("buddha_chat", path=str(cfg_file))["id"] == "buddha_chat"
+        monkeypatch.setattr(control, "get_worker_slot",
+                            lambda worker_id: get_worker_slot(worker_id, path=str(cfg_file)))
         handler = control.ControlHandler.__new__(control.ControlHandler)
         handler.path = "/api/workers/run"
         monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
@@ -529,7 +665,7 @@ class TestControlHandlerEndpoints:
         session.messages = [{"role": "user", "content": "persistierter Verlauf"}]
         updates = []
         process_calls = []
-        monkeypatch.setattr(control, "get_slot", lambda _id: worker)
+        monkeypatch.setattr(control, "get_worker_slot", lambda _id: worker)
         monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
         monkeypatch.setattr(control, "_get_or_create_backend",
                             lambda *_args: object())
@@ -618,7 +754,7 @@ class TestControlHandlerEndpoints:
                   "type": "once", "expires_at": None, "task_prompt": "Probe"}
         updates = []
         activities = []
-        monkeypatch.setattr(control, "get_slot", lambda _id: worker)
+        monkeypatch.setattr(control, "get_worker_slot", lambda _id: worker)
         monkeypatch.setattr(control, "update_slot",
                             lambda _id, change: updates.append(change) or worker)
         monkeypatch.setattr(control, "record_activity",
@@ -822,7 +958,7 @@ class TestControlHandlerEndpoints:
         handler.end_headers = MagicMock()
         handler.path = "/api/workers/stop"
 
-        with patch("hub._services.chat.telegram_chat.get_slot", return_value={"id": wid, "type": "persistent"}), \
+        with patch("hub._services.chat.telegram_chat.get_worker_slot", return_value={"id": wid, "type": "persistent"}), \
              patch("hub._services.chat.telegram_chat.update_slot", return_value={"id": wid, "status": "idle"}) as mock_upd, \
              patch.object(handler, "_read_body", return_value={"id": wid}), \
              patch.object(handler, "_json") as mock_json:

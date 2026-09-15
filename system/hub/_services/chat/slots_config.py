@@ -16,12 +16,15 @@ from __future__ import annotations
 import json
 import logging
 import os
+import inspect
 import threading
 import time
 import uuid
+from functools import wraps
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from hub._services.user_config_store import _exclusive_lock
 
 log = logging.getLogger("bach.slots_config")
 
@@ -31,7 +34,7 @@ DEFAULT_SLOTS_FILE = os.environ.get(
     str(_DEFAULT_DATA_DIR / "slots_config.json")
 )
 
-_config_lock = threading.Lock()
+_config_lock = threading.RLock()
 
 DEFAULT_CORE_SLOTS: Dict[str, Dict[str, Any]] = {
     "buddha_chat": {
@@ -163,7 +166,22 @@ def _resolve_path(path: str | None = None) -> Path:
     return Path(os.path.expanduser(target)).resolve()
 
 
-def load_slots_config(path: str | None = None) -> Dict[str, Any]:
+def _serialized_mutation(func):
+    """Hold one OS lock across the complete read-modify-write cycle."""
+    signature = inspect.signature(func)
+
+    @wraps(func)
+    def guarded(*args, **kwargs):
+        bound = signature.bind_partial(*args, **kwargs)
+        target = _resolve_path(bound.arguments.get("path"))
+        with _exclusive_lock(target):
+            with _config_lock:
+                return func(*args, **kwargs)
+
+    return guarded
+
+
+def load_slots_config(path: str | None = None, *, strict: bool = False) -> Dict[str, Any]:
     """Load the slots and dynamic workers configuration safely."""
     f = _resolve_path(path)
     with _config_lock:
@@ -179,23 +197,33 @@ def load_slots_config(path: str | None = None) -> Dict[str, Any]:
                 f.parent.mkdir(parents=True, exist_ok=True)
                 f.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
             except OSError as e:
+                if strict:
+                    raise ValueError(f"Slots-Konfiguration ist nicht lesbar: {e}") from e
                 log.warning("Could not create default slots_config at %s: %s", f, e)
             return cfg
 
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError("Slots-Konfiguration muss ein JSON-Objekt enthalten")
             slots = data.get("slots", {})
+            if strict and not isinstance(slots, dict):
+                raise ValueError("Slots-Konfiguration enthält keine gültigen Core-Slots")
             # Ensure all default core slots exist
             for k, default_val in DEFAULT_CORE_SLOTS.items():
                 if k not in slots:
                     slots[k] = dict(default_val)
             data["slots"] = slots
+            if strict and not isinstance(data.get("dynamic_workers"), list):
+                raise ValueError("Slots-Konfiguration enthält keine gültige Worker-Liste")
             if "dynamic_workers" not in data or not isinstance(data["dynamic_workers"], list):
                 data["dynamic_workers"] = []
             if "activity_history" not in data or not isinstance(data["activity_history"], list):
                 data["activity_history"] = []
             return data
-        except (json.JSONDecodeError, OSError) as e:
+        except (json.JSONDecodeError, OSError, ValueError, TypeError) as e:
+            if strict:
+                raise ValueError(f"Slots-Konfiguration ist nicht lesbar: {e}") from e
             log.warning("Could not read slots config from %s: %s. Falling back to defaults.", f, e)
             return {
                 "version": 1,
@@ -235,10 +263,30 @@ def get_slot(slot_id: str, path: str | None = None) -> Dict[str, Any]:
     return {}
 
 
+def get_worker_slot(worker_id: str, path: str | None = None) -> Dict[str, Any]:
+    """Return only a unique dynamic worker; ambiguity fails closed."""
+    cfg = load_slots_config(path, strict=True)
+    matches = [w for w in cfg.get("dynamic_workers", []) if w.get("id") == worker_id]
+    if len(matches) > 1 or (matches and (
+        worker_id in cfg.get("slots", {}) or worker_id in DEFAULT_CORE_SLOTS
+    )):
+        raise ValueError(f"Worker-ID {worker_id!r} ist nicht eindeutig")
+    return matches[0] if matches else {}
+
+
+@_serialized_mutation
 def update_slot(slot_id: str, updates: Dict[str, Any], path: str | None = None) -> Dict[str, Any]:
     """Update properties of a core slot or dynamic worker."""
-    cfg = load_slots_config(path)
+    if "id" in updates and updates["id"] != slot_id:
+        raise ValueError("Slot-/Worker-ID darf nicht geändert werden")
+    if "allow_tools" in updates and not isinstance(updates["allow_tools"], bool):
+        raise ValueError("allow_tools muss ein JSON-Boolean sein")
+    cfg = load_slots_config(path, strict=True)
     slots = cfg.setdefault("slots", {})
+    workers = cfg.setdefault("dynamic_workers", [])
+    matches = [w for w in workers if w.get("id") == slot_id]
+    if len(matches) > 1 or (matches and slot_id in slots):
+        raise ValueError(f"Worker-ID {slot_id!r} ist nicht eindeutig")
 
     if slot_id in slots:
         slot = slots[slot_id]
@@ -251,16 +299,16 @@ def update_slot(slot_id: str, updates: Dict[str, Any], path: str | None = None) 
         return slot
 
     # Check if it's a dynamic worker
-    workers = cfg.setdefault("dynamic_workers", [])
-    for w in workers:
-        if w.get("id") == slot_id:
-            w.update(updates)
-            save_slots_config(cfg, path)
-            return w
+    if matches:
+        worker = matches[0]
+        worker.update(updates)
+        save_slots_config(cfg, path)
+        return worker
 
     raise KeyError(f"Slot or worker {slot_id!r} not found")
 
 
+@_serialized_mutation
 def reconcile_workers(
     active_worker_ids: Optional[set[str]] = None,
     path: str | None = None
@@ -270,7 +318,7 @@ def reconcile_workers(
     Any worker marked as 'running' whose ID is not in active_worker_ids
     (when provided) is considered orphaned/frozen and reset to 'idle' or 'completed'.
     """
-    cfg = load_slots_config(path)
+    cfg = load_slots_config(path, strict=True)
     now_iso = datetime.now(timezone.utc).isoformat()
     workers = cfg.get("dynamic_workers", [])
     dirty = False
@@ -338,9 +386,10 @@ def get_prompt_templates(path: str | None = None) -> Dict[str, Any]:
     }
 
 
+@_serialized_mutation
 def update_prompt_template(key: str, text: str, path: str | None = None) -> bool:
     """Save a customized prompt template."""
-    cfg = load_slots_config(path)
+    cfg = load_slots_config(path, strict=True)
     prompts = cfg.setdefault("prompts", {})
     prompts[key] = text
     save_slots_config(cfg, path)
@@ -348,9 +397,10 @@ def update_prompt_template(key: str, text: str, path: str | None = None) -> bool
     return True
 
 
+@_serialized_mutation
 def reset_prompt_template(key: str | None = None, path: str | None = None) -> bool:
     """Reset a customized prompt template (or all) back to factory default."""
-    cfg = load_slots_config(path)
+    cfg = load_slots_config(path, strict=True)
     prompts = cfg.setdefault("prompts", {})
     if key:
         if key in prompts:
@@ -364,6 +414,15 @@ def reset_prompt_template(key: str | None = None, path: str | None = None) -> bo
         save_slots_config(cfg, path)
         log.info("Reset all prompt templates to factory defaults")
         return True
+
+
+@_serialized_mutation
+def update_fackel_preference(preference: str, path: str | None = None) -> str:
+    """Persist the compute preference without a stale whole-file write."""
+    cfg = load_slots_config(path, strict=True)
+    cfg["fackel_preference"] = preference
+    save_slots_config(cfg, path)
+    return preference
 
 
 def compose_worker_prompt(worker_dict: Dict[str, Any], path: str | None = None) -> str:
@@ -430,12 +489,23 @@ def compose_worker_prompt(worker_dict: Dict[str, Any], path: str | None = None) 
     return "\n\n".join(parts)
 
 
+@_serialized_mutation
 def add_worker(worker_data: Dict[str, Any], path: str | None = None) -> Dict[str, Any]:
     """Create a new dynamic background worker."""
-    cfg = load_slots_config(path)
+    cfg = load_slots_config(path, strict=True)
     workers = cfg.setdefault("dynamic_workers", [])
 
-    worker_id = worker_data.get("id") or f"worker-{uuid.uuid4().hex[:8]}"
+    supplied_id = worker_data.get("id")
+    if supplied_id is not None and (
+        not isinstance(supplied_id, str)
+        or not supplied_id.strip()
+        or supplied_id.strip() != supplied_id
+    ):
+        raise ValueError("Worker-ID muss ein nichtleerer String ohne Rand-Leerraum sein")
+    worker_id = supplied_id or f"worker-{uuid.uuid4().hex[:8]}"
+    if (worker_id in cfg.get("slots", {}) or worker_id in DEFAULT_CORE_SLOTS
+            or any(w.get("id") == worker_id for w in workers)):
+        raise ValueError(f"Worker-ID {worker_id!r} ist bereits belegt")
     name = worker_data.get("name") or f"Worker {worker_id[-4:]}"
     role = worker_data.get("role", "general")
     backend = worker_data.get("backend", "ollama")
@@ -512,10 +582,16 @@ def add_worker(worker_data: Dict[str, Any], path: str | None = None) -> Dict[str
     return worker
 
 
+@_serialized_mutation
 def remove_worker(worker_id: str, path: str | None = None) -> bool:
     """Delete a dynamic worker by ID."""
-    cfg = load_slots_config(path)
+    cfg = load_slots_config(path, strict=True)
     workers = cfg.get("dynamic_workers", [])
+    matches = [w for w in workers if w.get("id") == worker_id]
+    if len(matches) > 1 or (matches and (
+        worker_id in cfg.get("slots", {}) or worker_id in DEFAULT_CORE_SLOTS
+    )):
+        raise ValueError(f"Worker-ID {worker_id!r} ist nicht eindeutig")
     new_workers = [w for w in workers if w.get("id") != worker_id]
     if len(new_workers) == len(workers):
         return False
@@ -525,6 +601,7 @@ def remove_worker(worker_id: str, path: str | None = None) -> bool:
     return True
 
 
+@_serialized_mutation
 def record_activity(
     source: str,
     activity: str,
@@ -533,7 +610,7 @@ def record_activity(
     path: str | None = None
 ) -> None:
     """Record an action in the live activity history timeline."""
-    cfg = load_slots_config(path)
+    cfg = load_slots_config(path, strict=True)
     history = cfg.setdefault("activity_history", [])
 
     entry = {

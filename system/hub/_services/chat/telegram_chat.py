@@ -100,7 +100,7 @@ from hub._services.chat.slots_config import (
     compose_worker_prompt,
     get_activity_history,
     get_prompt_templates,
-    get_slot,
+    get_worker_slot,
     list_workers,
     load_slots_config,
     reconcile_workers,
@@ -2994,7 +2994,7 @@ def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None):
         normalized = str(chat_id or "")
         if worker_slot is None:
             try:
-                discovered_slot = get_slot(normalized)
+                discovered_slot = get_worker_slot(normalized)
             except Exception:
                 # We cannot prove this ID is not a restricted worker when
                 # slot storage is unreadable. Never fall back with tools.
@@ -3013,7 +3013,7 @@ def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None):
         if is_dynamic_worker:
             # API worker IDs are caller-supplied and need not start with
             # "worker-". Bind the live slot before any backend/model call.
-            session.worker_slot_reader = lambda: get_slot(normalized)
+            session.worker_slot_reader = lambda: get_worker_slot(normalized)
             session.allow_tools = worker_slot.get("allow_tools", True) is True
         uses_dedicated_slot = (
             is_dynamic_worker
@@ -3385,7 +3385,11 @@ class ControlHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/readiness":
             chat_id = parse_qs(parsed_url.query).get("chat_id", ["api-delegate"])[0]
-            selected_backend, model = _snapshot_chat_backend(chat_id)
+            try:
+                selected_backend, model = _snapshot_chat_backend(chat_id)
+            except Exception as exc:
+                self._json({"ok": False, "error": f"Slot-Konfiguration nicht verifizierbar: {exc}"}, 503)
+                return
             available, availability_status = _checked_backend_availability(
                 selected_backend,
                 model,
@@ -3614,7 +3618,11 @@ class ControlHandler(BaseHTTPRequestHandler):
             if depth >= 2:
                 self._json({"error": "Maximale Delegationstiefe erreicht"}, 429)
                 return
-            selected_backend, model = _snapshot_chat_backend(chat_id)
+            try:
+                selected_backend, model = _snapshot_chat_backend(chat_id)
+            except Exception as exc:
+                self._json({"ok": False, "error": f"Slot-Konfiguration nicht verifizierbar: {exc}"}, 503)
+                return
             available, availability_status = _checked_backend_availability(
                 selected_backend,
                 model,
@@ -3716,7 +3724,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "id erforderlich"}, 400)
                 return
             try:
-                w = get_slot(worker_id)
+                w = get_worker_slot(worker_id)
                 if not w:
                     self._json({"error": "Worker nicht gefunden"}, 404)
                     return
@@ -3737,7 +3745,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 return
             try:
                 _ACTIVE_WORKER_THREADS.pop(worker_id, None)
-                w = get_slot(worker_id)
+                w = get_worker_slot(worker_id)
                 next_st = "completed" if (w and w.get("type") == "once") else "idle"
                 updated = update_slot(worker_id, {"status": next_st, "current_activity": "Manuell gestoppt"})
                 record_activity(worker_id, f"Worker gestoppt: {worker_id}", "ok")
@@ -3748,7 +3756,11 @@ class ControlHandler(BaseHTTPRequestHandler):
         elif path == "/api/workers/run":
             worker_id = body.get("id") or body.get("worker_id")
             custom_prompt = body.get("prompt")
-            w = get_slot(worker_id)
+            try:
+                w = get_worker_slot(worker_id)
+            except Exception as exc:
+                self._json({"error": f"Worker-Slot nicht verifizierbar: {exc}"}, 503)
+                return
             if not w or w.get("id") != worker_id:
                 self._json({"error": f"Worker {worker_id} nicht gefunden"}, 404)
                 return
@@ -3783,7 +3795,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                         run_count += 1
 
                         # Worker-State prüfen: wurde er pausiert oder gelöscht?
-                        current_slot = get_slot(worker_id)
+                        current_slot = get_worker_slot(worker_id)
                         if not current_slot or current_slot.get("status") in ("paused", "idle"):
                             log.info(f"Worker {worker_id} pausiert oder beendet.")
                             break
