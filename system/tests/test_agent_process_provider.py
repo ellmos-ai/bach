@@ -37,7 +37,7 @@ def test_external_registry_reads_same_pid_directory_without_spawning(
         def __init__(self, directory):
             calls.append(directory)
 
-        def is_running(self, name):
+        def probe_running(self, name):
             calls.append(name)
             return 4242
 
@@ -53,6 +53,24 @@ def test_external_registry_reads_same_pid_directory_without_spawning(
     assert handler._is_agent_running("test-boss") == 4242
     assert calls == [handler.pid_dir, "test-boss"]
     assert len(list(tmp_path.rglob("*.pid"))) == 1
+
+
+def test_external_registry_cannot_substitute_another_pid(handler, monkeypatch):
+    class Registry:
+        def __init__(self, directory):
+            self.directory = directory
+
+        def probe_running(self, name):
+            return 9999
+
+    monkeypatch.setenv(provider.ROLLBACK_ENV_VAR, "1")
+    pid_file = handler.pid_dir / "test-boss.pid"
+    pid_file.write_text(json.dumps({"pid": 4242, "process_create_time": 10.0}), encoding="utf-8")
+    monkeypatch.setattr(provider.psutil, "Process", lambda pid: _OwnedProcess())
+    monkeypatch.setattr(provider.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(provider.importlib, "import_module", lambda name: types.SimpleNamespace(AgentProcessRegistry=Registry))
+    assert handler._is_agent_running("test-boss") == 0
+    assert pid_file.exists()
 
 
 @pytest.mark.parametrize("value", ["0", "false", "NO", "off"])

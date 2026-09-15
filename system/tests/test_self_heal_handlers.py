@@ -359,6 +359,7 @@ def test_agent_start_json_dry_run_is_machine_readable(tmp_path):
 
 def test_agent_start_json_success_payload(tmp_path, monkeypatch):
     from hub.agent_launcher import AgentLauncherHandler
+    from hub import agent_process_provider as provider
 
     base = _init_base(tmp_path)
     agent_dir = base / "agents" / "demo"
@@ -370,6 +371,7 @@ def test_agent_start_json_success_payload(tmp_path, monkeypatch):
 
     monkeypatch.setattr("hub.agent_launcher.sys.platform", "linux")
     monkeypatch.setattr("hub.agent_launcher.subprocess.Popen", lambda *args, **kwargs: FakeProc())
+    monkeypatch.setattr(provider, "capture_process_create_time", lambda pid: 10.0)
 
     success, message = AgentLauncherHandler(base).handle("start", ["demo", "--json"])
 
@@ -382,6 +384,31 @@ def test_agent_start_json_success_payload(tmp_path, monkeypatch):
     assert payload["agent"]["pid"] == 4242
     assert payload["agent"]["available_actions"] == ["stop", "steer", "checkpoint"]
     assert (base / "data" / "agent_pids" / "demo.pid").exists()
+
+
+def test_agent_start_reports_unverified_if_birth_time_capture_fails(tmp_path, monkeypatch):
+    from hub.agent_launcher import AgentLauncherHandler
+    from hub import agent_process_provider as provider
+
+    base = _init_base(tmp_path)
+    agent_dir = base / "agents" / "demo"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
+
+    class FakeProc:
+        pid = 4242
+
+    monkeypatch.setattr("hub.agent_launcher.sys.platform", "linux")
+    monkeypatch.setattr("hub.agent_launcher.subprocess.Popen", lambda *args, **kwargs: FakeProc())
+    monkeypatch.setattr(provider, "capture_process_create_time", lambda pid: None)
+    success, message = AgentLauncherHandler(base).handle("start", ["demo", "--json"])
+    payload = json.loads(message)
+    assert not success and not payload["ok"]
+    assert payload["agent"]["status"] == "unverified"
+    assert payload["agent"]["running"] is False
+    assert "stop" not in payload["agent"]["available_actions"]
+    pid_file = base / "data" / "agent_pids" / "demo.pid"
+    assert json.loads(pid_file.read_text(encoding="utf-8"))["process_create_time"] is None
 
 
 def test_agent_stop_json_success_payload(tmp_path, monkeypatch):
@@ -419,6 +446,10 @@ def test_agent_stop_json_success_payload(tmp_path, monkeypatch):
 
         def is_running(self):
             return True
+
+        def children(self, recursive=False):
+            assert recursive
+            return []
 
         def terminate(self):
             terminated.append(True)
@@ -602,6 +633,7 @@ def test_path_handler_resolve_supports_repo_root_json(tmp_path):
 
 def test_agent_start_uses_long_lived_windows_console_pid(tmp_path, monkeypatch):
     from hub.agent_launcher import AgentLauncherHandler
+    from hub import agent_process_provider as provider
 
     base = _init_base(tmp_path)
     agent_dir = base / "agents" / "demo"
@@ -621,6 +653,7 @@ def test_agent_start_uses_long_lived_windows_console_pid(tmp_path, monkeypatch):
 
     monkeypatch.setattr("hub.agent_launcher.sys.platform", "win32")
     monkeypatch.setattr("hub.agent_launcher.subprocess.Popen", fake_popen)
+    monkeypatch.setattr(provider, "capture_process_create_time", lambda pid: 10.0)
     monkeypatch.setattr("hub.agent_launcher.subprocess.CREATE_NEW_CONSOLE", subprocess.CREATE_NEW_CONSOLE)
 
     success, message = AgentLauncherHandler(base).handle("start", ["demo"])

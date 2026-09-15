@@ -618,7 +618,9 @@ class TestSteer:
         assert not handler._agent_operator_notes_path("test-boss", temp_dir=temp_dir, markdown=True).exists()
 
     @patch("subprocess.Popen")
-    def test_start_preserves_prelaunch_operator_notes(self, mock_popen, handler):
+    def test_start_preserves_prelaunch_operator_notes(self, mock_popen, handler, monkeypatch):
+        from hub import agent_process_provider as provider
+        monkeypatch.setattr(provider, "capture_process_create_time", lambda pid: 10.0)
         temp_dir = str(handler.temp_dir / "agent_test-boss")
         handler._write_operator_notes(
             "test-boss",

@@ -317,7 +317,7 @@ class AgentLauncherHandler(BaseHandler):
             notes=note_entries,
             temp_dir=temp_dir,
         )
-        if status in {"unverified", "mismatch", "unavailable"}:
+        if status in {"unverified", "mismatch", "unavailable", "invalid"}:
             # Neither start nor stop is safe without a verified PID identity.
             payload["available_actions"] = [
                 action for action in payload["available_actions"]
@@ -743,9 +743,10 @@ class AgentLauncherHandler(BaseHandler):
 
         external = create_agent_registry(self.pid_dir)
         if external is not None:
-            # Existing BACH <name>.pid files are read in place. No migration,
-            # new store or automatic agent start is required for this seam.
-            return external.is_running(name)
+            # Registry probe must not delete the BACH PID evidence and may not
+            # substitute an unrelated PID for the identity-bound BACH record.
+            external_pid = external.probe_running(name)
+            return pid_data["pid"] if external_pid == pid_data["pid"] else 0
         return pid_data["pid"]
 
     def _load_pid_data(self, name: str) -> dict:
@@ -754,7 +755,8 @@ class AgentLauncherHandler(BaseHandler):
         if not pid_file.exists():
             return {}
         try:
-            return json.loads(pid_file.read_text(encoding='utf-8'))
+            data = json.loads(pid_file.read_text(encoding='utf-8'))
+            return data if isinstance(data, dict) else {}
         except (OSError, json.JSONDecodeError, ValueError):
             return {}
 
@@ -1399,6 +1401,18 @@ class AgentLauncherHandler(BaseHandler):
                     json_output=json_output,
                 )
 
+        from .agent_process_provider import psutil as process_inspector
+
+        if process_inspector is None and not dry_run:
+            return self._action_response(
+                "start",
+                name,
+                resolved_name,
+                False,
+                "[ERROR] Start verweigert: psutil für Prozessidentität nicht verfügbar",
+                json_output=json_output,
+            )
+
         mode = self._parse_flag(args, "--mode", "default")
         model = self._parse_flag(args, "--model", "sonnet")
 
@@ -1674,6 +1688,32 @@ class AgentLauncherHandler(BaseHandler):
             pid_data["process_create_time"] = capture_process_create_time(proc.pid)
             pid_file.write_text(json.dumps(pid_data, indent=2), encoding='utf-8')
 
+            if pid_data["process_create_time"] is None:
+                payload = self._build_agent_payload(
+                    resolved_name,
+                    display_name,
+                    agent["type"],
+                    running=False,
+                    status="unverified",
+                    pid=proc.pid,
+                    model=model,
+                    mode=mode,
+                    started_at=pid_data["started"],
+                    temp_dir=str(agent_temp_dir),
+                    window_title=pid_data.get("window_title"),
+                    pid_file=str(pid_file),
+                    available_actions=[],
+                )
+                return self._action_response(
+                    "start",
+                    name,
+                    resolved_name,
+                    False,
+                    f"[ERROR] Agent-Prozess gestartet (PID {proc.pid}), aber Identität nicht lesbar; PID-Datei zur Nachzertifizierung erhalten",
+                    json_output=json_output,
+                    agent=payload,
+                )
+
             agent_label = display_name or resolved_name
             message = (
                 f"[OK] Agent '{agent_label}' ({resolved_name}) gestartet\n"
@@ -1777,26 +1817,26 @@ class AgentLauncherHandler(BaseHandler):
 
         try:
             data = json.loads(pid_file.read_text(encoding='utf-8'))
+            if not isinstance(data, dict):
+                raise ValueError("PID-File muss ein JSON-Objekt sein")
             pid = data.get("pid", 0)
         except (json.JSONDecodeError, ValueError):
-            pid_file.unlink(missing_ok=True)
             return self._action_response(
                 "stop",
                 name,
                 resolved_name,
                 False,
-                f"[ERROR] PID-File fuer '{name}' ist ungueltig (entfernt)",
+                f"[ERROR] PID-File fuer '{name}' ist ungueltig (zur Nachzertifizierung erhalten)",
                 json_output=json_output,
             )
 
         if not pid:
-            pid_file.unlink(missing_ok=True)
             return self._action_response(
                 "stop",
                 name,
                 resolved_name,
                 False,
-                f"[ERROR] Keine PID fuer Agent '{name}' (PID-File entfernt)",
+                f"[ERROR] Keine PID fuer Agent '{name}' (PID-File erhalten)",
                 json_output=json_output,
             )
 
@@ -2495,7 +2535,6 @@ class AgentLauncherHandler(BaseHandler):
 
     def _show_status(self) -> tuple:
         """Zeigt alle laufenden Agents."""
-        self.pid_dir.mkdir(parents=True, exist_ok=True)
 
         pid_files = list(self.pid_dir.glob("*.pid"))
 
@@ -2537,16 +2576,13 @@ class AgentLauncherHandler(BaseHandler):
                     )
                 if running:
                     active += 1
-                elif identity_state == "gone":
-                    # Totes PID-File aufraeumen
-                    pf.unlink(missing_ok=True)
+                # Status bleibt lesend; auch tote Belege gehen zur Nachzertifizierung.
 
                 note_count = len(self._read_operator_notes(name, temp_dir=data.get("temp_dir")))
                 output.append(f"{name:25} {pid:>7}  {model:8} {mode:8} {started:20} {status:10} {note_count:>5}")
 
-            except (json.JSONDecodeError, ValueError):
+            except (json.JSONDecodeError, ValueError, AttributeError, TypeError):
                 output.append(f"{pf.stem:25} {'?':>7}  {'?':8} {'?':8} {'?':20} [INVALID]")
-                pf.unlink(missing_ok=True)
 
         output.extend([
             "",
@@ -2557,7 +2593,6 @@ class AgentLauncherHandler(BaseHandler):
 
     def _show_status_json(self) -> tuple:
         """Zeigt laufende Agents als maschinenlesbaren JSON-Status."""
-        self.pid_dir.mkdir(parents=True, exist_ok=True)
         pid_files = list(self.pid_dir.glob("*.pid"))
 
         agents = []
@@ -2575,8 +2610,7 @@ class AgentLauncherHandler(BaseHandler):
                 started_at = data.get("started")
                 if running:
                     active += 1
-                elif identity_state == "gone":
-                    pf.unlink(missing_ok=True)
+                # JSON-Status bleibt lesend; auch tote Belege bleiben erhalten.
 
                 temp_dir = data.get("temp_dir")
                 notes = self._read_operator_notes(name, temp_dir=temp_dir)
@@ -2608,7 +2642,7 @@ class AgentLauncherHandler(BaseHandler):
                         max_turns=data.get("max_turns"),
                     )
                 )
-            except (json.JSONDecodeError, ValueError):
+            except (json.JSONDecodeError, ValueError, AttributeError, TypeError):
                 agents.append(
                     self._build_agent_payload(
                         pf.stem,
@@ -2623,10 +2657,9 @@ class AgentLauncherHandler(BaseHandler):
                         temp_dir=None,
                         window_title=None,
                         pid_file=str(pf),
-                        available_actions=["start"],
+                        available_actions=[],
                     )
                 )
-                pf.unlink(missing_ok=True)
 
         payload = {
             "generated_at": datetime.now().isoformat(),

@@ -93,9 +93,20 @@ def test_verified_unix_stop_uses_identity_bound_terminate(handler, monkeypatch):
     parent = _FakeProcess()
     monkeypatch.setattr(provider.psutil, "Process", lambda pid: parent)
     monkeypatch.setattr("hub.agent_launcher.sys.platform", "linux")
-    monkeypatch.setattr("hub.agent_launcher.os.kill", lambda *a: pytest.fail("bare PID kill forbidden"))
     ok, _ = handler._stop_agent("test-boss", dry_run=False)
     assert ok
+    assert parent.terminated == 1
+
+
+def test_verified_unix_stop_kills_bound_descendants_before_parent(handler, monkeypatch):
+    _pid_file(handler)
+    child = _FakeProcess()
+    parent = _FakeProcess(children=[child])
+    monkeypatch.setattr(provider.psutil, "Process", lambda pid: parent)
+    monkeypatch.setattr("hub.agent_launcher.sys.platform", "linux")
+    ok, _ = handler._stop_agent("test-boss", dry_run=False)
+    assert ok
+    assert child.killed == 1
     assert parent.terminated == 1
 
 
@@ -159,3 +170,20 @@ def test_termination_failure_preserves_record_for_recertification(handler, monke
     ok, response = handler.handle("stop", ["test-boss"], dry_run=False)
     assert not ok and "protected" in response
     assert pid_file.exists()
+
+
+@pytest.mark.parametrize("content", ["not json", "{}", "[]"])
+def test_invalid_pid_evidence_survives_status_and_stop_dry_run(handler, content):
+    pid_file = handler.pid_dir / "test-boss.pid"
+    pid_file.write_text(content, encoding="utf-8")
+    for args in ([], ["--json"]):
+        ok, response = handler.handle("status", args)
+        assert ok
+        assert pid_file.read_text(encoding="utf-8") == content
+        if args:
+            agent = json.loads(response)["agents"][0]
+            assert agent["status"] in {"invalid", "unverified"}
+            assert "start" not in agent["available_actions"]
+    ok, _response = handler.handle("stop", ["test-boss"], dry_run=True)
+    assert not ok
+    assert pid_file.read_text(encoding="utf-8") == content

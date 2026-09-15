@@ -37,7 +37,10 @@ def create_agent_registry(pid_dir: str | Path):
     registry = getattr(module, "AgentProcessRegistry", None)
     if registry is None:
         raise AttributeError("agent-launcher must export AgentProcessRegistry")
-    return registry(Path(pid_dir))
+    instance = registry(Path(pid_dir))
+    if not callable(getattr(instance, "probe_running", None)):
+        raise AttributeError("agent-launcher AgentProcessRegistry must export probe_running")
+    return instance
 
 
 class AgentProcessIdentityError(RuntimeError):
@@ -93,13 +96,14 @@ def verified_process(record: dict):
 
 def terminate_verified_process(process, *, windows: bool) -> None:
     """Use psutil's PID-reuse-checked process methods, never taskkill /PID."""
+    # children() also checks the parent's identity before enumerating. Stop
+    # known descendants on every platform before removing the parent record.
+    for child in reversed(process.children(recursive=True)):
+        try:
+            child.kill()
+        except psutil.NoSuchProcess:
+            continue
     if windows:
-        # children() also checks the parent's identity before enumerating.
-        for child in reversed(process.children(recursive=True)):
-            try:
-                child.kill()
-            except psutil.NoSuchProcess:
-                continue
         process.kill()
     else:
         process.terminate()
