@@ -733,6 +733,20 @@ class TestFailedAnswer:
         )
         assert isinstance(answer, FailedAnswer)
 
+    def test_managed_tools_reported_abort_is_not_a_success(self):
+        """A tool-managing backend can report an abort without raising."""
+        import asyncio
+        from hub._services.chat.chat_runtime import ChatRuntime
+
+        backend = _AbortingBackend(teil="Teil vor Abbruch")
+        backend.manages_own_tools = True
+        runtime = ChatRuntime(backend)
+        answer = asyncio.run(runtime.process("Aufgabe", "idle-worker"))
+
+        assert isinstance(answer, FailedAnswer)
+        assert "Teil vor Abbruch" in answer
+        assert runtime.history("idle-worker")[-1]["ok"] is False
+
     def test_real_answer_is_not_marked(self):
         answer = self._process(_AnsweringBackend())
         assert answer == "Echte Antwort"
