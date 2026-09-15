@@ -82,6 +82,36 @@ PROMPTBOARD_APP_ENV = "BACH_PROMPTBOARD_APP"
 TRAY_LOCK_FILE = Path.home() / ".bach" / "chat_tray.lock"
 
 
+def _is_terminal_parked(task) -> bool:
+    """Fuer den idle-worker terminal (nicht neu aufziehbar), wenn der Task
+    erledigt (completed_at), geparkt (status='blocked') oder an eine zukuenftige
+    due_date gebunden ist. Ohne jeden dieser Marker greift der alte
+    completed_at-Einzelzweig unveraendert (Rueckwaerts-kompatibel).
+
+    T-20260912-1240loop / #1235 4x-Claim / #1293 Option A: der Terminal-Waechter
+    pruefte nur completed_at, sodass geparkte Gate-Tasks (kein completed_at, da
+    NICHT fertig) nach 300s-Client-Timeout auf 'open' zurueckgesetzt und erneut
+    claimt wurden (Resurrektions-Loop).
+    """
+    if not isinstance(task, dict):
+        return False
+    if task.get("completed_at"):
+        return True
+    if task.get("status") == "blocked":
+        return True
+    due = task.get("due_date")
+    if due:
+        try:
+            from datetime import datetime as _dt
+            d = _dt.fromisoformat(str(due).replace("Z", ""))
+            if d.tzinfo is not None:
+                d = d.replace(tzinfo=None)
+            return d > _dt.now()
+        except Exception:
+            return False
+    return False
+
+
 def acquire_single_instance_lock(lock_path: Path = TRAY_LOCK_FILE):
     """Return an open, exclusively locked handle -- or None if another tray holds it.
 
@@ -547,8 +577,8 @@ class BACHTray:
           # erneut -> Resurrektions-Loop bei operator-geblockten TO-DECIDE-Tasks,
           # deren Antwort nie sauber FERTIG+ok wird (300s-Client-Timeout).
         task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
-        if task_now and task_now.get("completed_at"):
-            print(f"[Idle] Task #{task_id} traegt completed_at; bleibt terminal, kein open-Reset")
+        if _is_terminal_parked(task_now):
+            print(f"[Idle] Task #{task_id} terminal (completed_at/blocked/due_date); kein open-Reset")
             self.idle_pending = None
             return True
         if (ist_fertig or not ist_unvollstaendig) and answer.get("ok", True):
@@ -615,6 +645,12 @@ class BACHTray:
              # geblockten TO-DECIDE-Tasks (Antwort liefert nicht sauber
              # "FERTIG"+ok) den Task endlos neu zieht. Legitime Neuaufziehen via
              # 'reopen' loeschen completed_at (clear_fields) und sind damit unbeherr.
+            if _is_terminal_parked(task) and not task.get("completed_at"):
+                  # geparkt (blocked / future due_date), aber NICHT erledigt ->
+                  # unbehandelt verlassen (nicht 'done' setzen, nicht claimen)
+                  # -- Fix #1235 4x-Claim / #1293 Option A
+                print(f"[Idle] Task #{task.get('id')} geparkt; idle-worker verlaesst unbehandelt")
+                return
             if task.get("completed_at"):
                 tid = task.get("id")
                 print(f"[Idle] Task #{tid} traegt completed_at; terminal -> auf 'done' gesetzt, verlaesst open-Pool")
