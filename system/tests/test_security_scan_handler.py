@@ -14,18 +14,14 @@ import pytest
 # Stelle sicher, dass hub/ und core/ importierbar sind
 BACH_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACH_ROOT))
-sys.path.insert(0, str(BACH_ROOT / "system"))
 
 from hub.security import SecurityHandler
 from core.capabilities import capability_manager
 
 
-BASE_SYSTEM = BACH_ROOT / "system"
-
-
 @pytest.fixture
 def handler(tmp_path: Path) -> SecurityHandler:
-    return SecurityHandler(BASE_SYSTEM)
+    return SecurityHandler(tmp_path)
 
 
 def test_security_handler_operations(handler: SecurityHandler) -> None:

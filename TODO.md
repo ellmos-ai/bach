@@ -2,6 +2,16 @@
 
 ## Offene Aufgaben
 
+### ✅ [BACH-TEST-01] Testisolation für Runtime-Dateien und Prozesssteuerung
+- **Ziel:** Pytest-Läufe dürfen weder Runtime-Zustand in den Checkout schreiben noch reale Cloud- oder Systemprozesse beenden.
+- **Quelle:** `[Ticket: T-20260915-107799375]` `[Vorfall: OneDrive.exe /shutdown aus test_daemon_service.py]`
+- **Akzeptanzkriterien (DoD):** Runtime-Pfade liegen in einem temporären Sitzungsordner; Schreibversuche in geschützte Checkout-Pfade und reale Prozessbeendigungen werden zentral blockiert; CLI-Kindprozesse erben dieselbe Isolation.
+- **Prüfweg:** siehe `system/tests/README.md`; fokussierte Tätergruppe und anschließend vollständige Suite ausführen, danach Checkout-Artefakte und OneDrive-Prozess prüfen.
+- **Aufwand:** medium
+- **Reichweite:** local
+- **Priorität:** high
+- **Erledigt:** 2026-09-15 – Pfad-Seams, Audit-/Subprozess-Guard und Regressionstests ergänzt; konkrete Alt-Schreiber isoliert.
+
 ### [BACH-HERZ-01] Zuteilungsgrenze für einen Pfad: atomarer Claim, Rechteprüfung, Besetzungsprotokoll
 - **Ziel:** Eine zentrale Stelle, durch die genau ein produktiver Pfad läuft (Vorschlag: der Hintergrundplatz `buddha_always_on`). Sie reicht die bisherige Modellwahl **unverändert** durch, beansprucht die Aufgabe aber atomar, prüft das Rollenrecht, erzeugt eine `assignment_id` und protokolliert Start und Ende. Heute nimmt `worker.py` schlicht `offen[0]` und startet ohne Anspruch, während `chat_tray.py` erst liest und danach auf `in_progress` setzt — zwei Taktgeber können dieselbe Aufgabe mit Schreibrechten ausführen.
 - **Quelle:** `[Quelle: docs/MODELL-BACKEND-KONZEPT_2026-09-13.md, Abschnitte 4.2 und 8]` `[Programmkopf: ROADMAP.md "PROGRAMM: Modell-Backend = das Herz von BACH"]` `[Ticket: T-20260913-896336887]` `[Zweitmeinung: _codex/ARCHITEKTUR-ANTWORT.md, F6 und F7]`

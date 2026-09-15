@@ -18,11 +18,13 @@ Deshalb hier zusaetzlich BACH_BACKUPS_DIR/BACH_SECRETS_FILE/BACH_PLANS_DIR
 setzen — dieselbe Env-Var-Isolation, nur fuer die drei weiteren Pfade.
 
 Auf Modulebene (nicht als Fixture), damit die Env-Vars gesetzt sind, BEVOR
-Testmodule die betroffenen Module importieren. Bereits extern gesetzte Werte
-(z. B. CI) werden respektiert (setdefault).
+Testmodule die betroffenen Module importieren. Die Suite erzwingt ihre privaten
+Pfade; geerbte Shell- oder CI-Werte duerfen nie auf Produktivdaten zeigen.
 """
 
 import os
+import re
+import subprocess
 import sys
 import tempfile
 import warnings
@@ -31,12 +33,133 @@ from pathlib import Path
 import pytest
 
 _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="bach_test_db_"))
-os.environ.setdefault("BACH_LOCAL_DIR", str(_TEST_DB_DIR))
-os.environ.setdefault("BACH_DB", str(_TEST_DB_DIR / "bach_test.db"))
-os.environ.setdefault("BACH_BACKUPS_DIR", str(_TEST_DB_DIR / "backups"))
-os.environ.setdefault("BACH_SECRETS_FILE", str(_TEST_DB_DIR / "bach_secrets.json"))
-os.environ.setdefault("BACH_PLANS_DIR", str(_TEST_DB_DIR / "plans"))
-os.environ.setdefault("BACH_RESEARCH_DIR", str(_TEST_DB_DIR / "research"))
+_TEST_PROCESS_GUARD_DIR = Path(__file__).resolve().parent / "_test_process_guard"
+os.environ["BACH_LOCAL_DIR"] = str(_TEST_DB_DIR)
+os.environ["BACH_DB"] = str(_TEST_DB_DIR / "bach_test.db")
+os.environ["BACH_BACKUPS_DIR"] = str(_TEST_DB_DIR / "backups")
+os.environ["BACH_SECRETS_FILE"] = str(_TEST_DB_DIR / "bach_secrets.json")
+os.environ["BACH_PLANS_DIR"] = str(_TEST_DB_DIR / "plans")
+os.environ["BACH_RESEARCH_DIR"] = str(_TEST_DB_DIR / "research")
+# Sicherheitsgrenzen werden von der Suite erzwungen. Geerbte Shell-/CI-Werte
+# dürfen Testisolation und Host-Prozessschutz nicht abschalten.
+os.environ["BACH_RUNTIME_DIR"] = str(_TEST_DB_DIR / "runtime")
+os.environ["BACH_TEST_MODE"] = "1"
+os.environ["PYTHONPATH"] = os.pathsep.join(
+    part
+    for part in (
+        str(_TEST_PROCESS_GUARD_DIR),
+        os.environ.get("PYTHONPATH", ""),
+    )
+    if part
+)
+os.environ["BACH_FACKEL_PREFERENCE_PATH"] = str(
+    _TEST_DB_DIR / "fackel_preference.json"
+)
+os.environ["BACH_SLOTS_CONFIG_PATH"] = str(_TEST_DB_DIR / "slots_config.json")
+
+_SOURCE_SYSTEM_ROOT = Path(__file__).resolve().parent.parent
+_PROTECTED_SOURCE_RUNTIME_ROOTS = (
+    _SOURCE_SYSTEM_ROOT / "data",
+    _SOURCE_SYSTEM_ROOT / "system" / "data",
+    _SOURCE_SYSTEM_ROOT / "tools" / "llmauto" / "logs",
+)
+_SOURCE_RUNTIME_WRITE_ATTEMPTS = set()
+
+
+def _source_runtime_path(path_like):
+    """Return a protected source-runtime path, if *path_like* resolves there."""
+    try:
+        candidate = Path(path_like).resolve(strict=False)
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return None
+    for root in _PROTECTED_SOURCE_RUNTIME_ROOTS:
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            continue
+        return candidate
+    return None
+
+
+def _audit_source_runtime_writes(event, args):
+    """Fail closed when tests try to write runtime state into the checkout."""
+    if event == "open":
+        if not _opens_for_write(
+            args[1] if len(args) > 1 else None,
+            args[2] if len(args) > 2 else None,
+        ):
+            return
+        targets = args[:1]
+    elif event in _WRITE_EVENTS:
+        targets = args[:2] if event in {"os.rename", "os.replace", "shutil.move"} else args[:1]
+    else:
+        return
+    for target in targets:
+        protected = _source_runtime_path(target)
+        if protected is not None:
+            message = f"source runtime write blocked: {event}: {protected}"
+            _SOURCE_RUNTIME_WRITE_ATTEMPTS.add(message)
+            raise RuntimeError(message)
+
+
+def _destructive_process_reason(command):
+    """Describe process-control commands that must never run from tests."""
+    if isinstance(command, (str, bytes)):
+        rendered = os.fsdecode(command)
+        executable = rendered
+    elif isinstance(command, (list, tuple)):
+        rendered = " ".join(
+            os.fsdecode(part)
+            for part in command
+            if isinstance(part, (str, bytes, os.PathLike))
+        )
+        executable = os.fsdecode(command[0]) if command else ""
+    else:
+        return None
+    lowered = rendered.casefold()
+    executable_lower = executable.casefold()
+    executable_name = Path(executable_lower).name
+    unguarded_python = re.compile(
+        r"(?:^|[;&|]\s*)(?:\"[^\"]*python(?:\d+(?:\.\d+)*)?\.exe\"|"
+        r"[^\s\"]*python(?:\d+(?:\.\d+)*)?(?:\.exe)?)\s+"
+        r"[^\r\n;&|]*?-[a-z]*[eis][a-z]*(?:\s|$)",
+        re.IGNORECASE,
+    )
+    if unguarded_python.search(rendered):
+        return "Python child without inherited safety guard"
+    if executable_name.startswith("python") and isinstance(command, (list, tuple)):
+        if any(str(part) in {"-E", "-I", "-S"} for part in command[1:]):
+            return "Python child without inherited safety guard"
+    if "onedrive" in executable_lower and "/shutdown" in lowered:
+        return "OneDrive shutdown"
+    if any(token in executable_lower for token in (
+        "taskkill", "stop-process", "kill-process", "pkill", "killall",
+    )):
+        return "process termination"
+    if "osascript" in executable_lower and "quit" in lowered:
+        return "application termination"
+    if executable_name in {
+        "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe",
+        "sh", "bash", "zsh",
+    } and any(token in lowered for token in (
+        "taskkill", "stop-process", "kill-process", "pkill", "killall",
+        "onedrive.exe /shutdown", "onedrive.exe\" /shutdown", " kill ",
+    )):
+        return "shell-mediated process termination"
+    return None
+
+
+def _protected_subprocess_env(env=None):
+    """Force the test safety contract into every spawned child process."""
+    protected = dict(os.environ if env is None else env)
+    existing = protected.get("PYTHONPATH", "")
+    paths = [part for part in existing.split(os.pathsep) if part]
+    guard_path = str(_TEST_PROCESS_GUARD_DIR)
+    paths = [part for part in paths if Path(part) != _TEST_PROCESS_GUARD_DIR]
+    protected["PYTHONPATH"] = os.pathsep.join([guard_path, *paths])
+    protected["BACH_TEST_MODE"] = "1"
+    protected["BACH_RUNTIME_DIR"] = os.environ["BACH_RUNTIME_DIR"]
+    return protected
 
 
 def _snapshot_home_bach():
@@ -95,6 +218,9 @@ _BACH_SERVICE_HINTS = (
     "chat_tray.py", "session_daemon.py", "bridge_daemon.py",
     "daemon_service.py", "bach.py",
 )
+
+# Source-runtime writes must be blocked independently of resident BACH services.
+sys.addaudithook(_audit_source_runtime_writes)
 
 
 def _note_write_if_under(path, root, sink):
@@ -262,6 +388,16 @@ def _guard_production_bach_dir():
     assert not fail, meldung
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _guard_source_runtime_dirs():
+    """Make swallowed source-runtime write errors fail the complete test run."""
+    yield
+    assert not _SOURCE_RUNTIME_WRITE_ATTEMPTS, (
+        "Tests attempted writes below checkout runtime directories: "
+        f"{sorted(_SOURCE_RUNTIME_WRITE_ATTEMPTS)}"
+    )
+
+
 @pytest.fixture(autouse=True)
 def _reset_lang_cache():
     """Reihenfolge-Leckage ueber hub.lang beheben (T-20260902-646684582, Befund B).
@@ -277,3 +413,75 @@ def _reset_lang_cache():
     clear_t_cache()
     yield
     clear_t_cache()
+
+
+@pytest.fixture(autouse=True)
+def _guard_real_process_control(monkeypatch):
+    """Do not let unit/integration tests terminate real host processes."""
+    real_run = subprocess.run
+    real_popen = subprocess.Popen
+    real_os_kill = os.kill
+
+    def guarded_run(args, *popenargs, **kwargs):
+        reason = _destructive_process_reason(args)
+        if reason:
+            raise RuntimeError(f"real {reason} blocked in test: {args!r}")
+        kwargs["env"] = _protected_subprocess_env(kwargs.get("env"))
+        return real_run(args, *popenargs, **kwargs)
+
+    class GuardedPopen(real_popen):
+        def __init__(self, args, *popenargs, **kwargs):
+            reason = _destructive_process_reason(args)
+            if reason:
+                raise RuntimeError(f"real {reason} blocked in test: {args!r}")
+            kwargs["env"] = _protected_subprocess_env(kwargs.get("env"))
+            super().__init__(args, *popenargs, **kwargs)
+
+    def is_own_test_process(pid):
+        if pid == os.getpid():
+            return True
+        try:
+            import psutil
+
+            process = psutil.Process(pid)
+            while process is not None:
+                if process.ppid() == os.getpid():
+                    return True
+                process = process.parent()
+        except Exception:
+            return False
+        return False
+
+    def guarded_os_kill(pid, sig):
+        if sig != 0 and not is_own_test_process(pid):
+            raise RuntimeError(f"real foreign process termination blocked in test: PID {pid}")
+        return real_os_kill(pid, sig)
+
+    monkeypatch.setattr(subprocess, "run", guarded_run)
+    monkeypatch.setattr(subprocess, "Popen", GuardedPopen)
+    monkeypatch.setattr(os, "kill", guarded_os_kill)
+
+    try:
+        import psutil
+    except ImportError:
+        return
+
+    real_terminate = psutil.Process.terminate
+    real_kill = psutil.Process.kill
+
+    def guarded_terminate(process):
+        if not is_own_test_process(process.pid):
+            raise RuntimeError(
+                f"real foreign process termination blocked in test: PID {process.pid}"
+            )
+        return real_terminate(process)
+
+    def guarded_kill(process):
+        if not is_own_test_process(process.pid):
+            raise RuntimeError(
+                f"real foreign process kill blocked in test: PID {process.pid}"
+            )
+        return real_kill(process)
+
+    monkeypatch.setattr(psutil.Process, "terminate", guarded_terminate)
+    monkeypatch.setattr(psutil.Process, "kill", guarded_kill)

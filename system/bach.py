@@ -58,6 +58,9 @@ else:
         BACH_ROOT = SYSTEM_ROOT.parent
 
 BACH_DIR = SYSTEM_ROOT  # Rueckwaertskompatibilitaet
+RUNTIME_ROOT = Path(
+    os.environ.get("BACH_RUNTIME_DIR", SYSTEM_ROOT)
+).expanduser().resolve(strict=False)
 DATA_DIR = SYSTEM_ROOT / "data"
 HUB_DIR = SYSTEM_ROOT / "hub"
 SKILLS_DIR = SYSTEM_ROOT / "skills"
@@ -122,7 +125,7 @@ def _get_injector():
         try:
             sys.path.insert(0, str(TOOLS_DIR))
             from injectors import InjectorSystem
-            _injector_system = InjectorSystem(SYSTEM_ROOT)
+            _injector_system = InjectorSystem(RUNTIME_ROOT)
         except Exception:
             pass
     return _injector_system
@@ -1116,8 +1119,10 @@ def main():
         print(f"Hilfe fuer '{topic}' nicht verfuegbar.")
         return 1
 
-    if not dry_run_requested:
-        get_logger(BACH_DIR)
+    # Auch Dry-Runs rufen spaeter den globalen ``cmd``-Shortcut auf. Ohne
+    # explizite Initialisierung faellt dessen Singleton auf den Checkout-Pfad
+    # zurueck, obwohl BACH_RUNTIME_DIR gesetzt ist.
+    get_logger(RUNTIME_ROOT)
 
     # ProSync: Pull bei Start, Push bei Exit (nur wenn aktiviert)
     sync_config = DATA_DIR / "config" / "db_sync_enabled"
