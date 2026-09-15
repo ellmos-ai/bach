@@ -8,7 +8,7 @@ Der WordTemplateService fuellt Word-Vorlagen mit Daten aus einer
 JSON-Struktur. Er ist ein allgemeiner BACH-Service, der vom
 Foerderbericht-System genutzt wird.
 
-Datei: skills/_services/document/word_template_service.py
+Datei: hub/_services/document/word_template_service.py
 
 
 PLATZHALTER-SYSTEM
@@ -192,5 +192,5 @@ SIEHE AUCH
 
   wiki/foerderbericht_system.txt      Systemarchitektur
   wiki/word_automation.txt            Word-Automatisierung allgemein
-  skills/_services/document/               Service-Dateien
+  hub/_services/document/               Service-Dateien
   skills/_templates/                       Word-Vorlagen

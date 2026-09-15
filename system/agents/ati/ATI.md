@@ -329,7 +329,7 @@ Phase 1: Grundstruktur (2h) ✓ ERLEDIGT
 ---------------------------
 [x] agents/ati/ Ordner erstellen
 [x] ATI.md (dieses Dokument) finalisieren
-[x] hub/handlers/ati.py Handler erstellen
+[x] hub/ati.py Handler erstellen
 [x] data/ati/ Datenstruktur anlegen
 
 Phase 2: Onboarding-System (2h)
