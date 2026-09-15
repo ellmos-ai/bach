@@ -3,7 +3,9 @@
 Pytest lädt `conftest.py` vor den Testmodulen. Dort werden Datenbank, Backups,
 Secrets, Pläne, Fackel-, Slot- und allgemeine Runtime-Pfade in einen privaten
 Sitzungsordner umgeleitet. `BACH_TEST_MODE=1` wird an Kindprozesse vererbt und
-verbietet reale OneDrive-Prozesssteuerung.
+verbietet reale OneDrive-Prozesssteuerung. Beim Sessionstart wird die
+Slot-Konfiguration dort auch auf Disk initialisiert; ein Temp-Pfad allein
+genügt für strikte Control-API-Endpunkte nicht.
 
 Zusätzlich blockiert ein Audit-Wächter Schreibzugriffe unter den echten
 Checkout-Pfaden `system/data`, `system/system/data` und
@@ -40,3 +42,14 @@ python -m pytest -q -p no:cacheprovider system/tests
 Nach dem Lauf sind der unveränderte OneDrive-Prozess und ein sauberer
 `git status --short` bezüglich Runtime-Artefakten Teil des Nachweises. Ein
 grüner Testlauf allein genügt nicht.
+
+## Grenze: Vorimport vor pytest
+
+Nur den kanonischen Einstieg vom Repo-Root verwenden: `python -m pytest`.
+Ein `python -c`-Harness, das BACH-Module vor pytest und `conftest.py` importiert,
+kann Pfade auf produktives `~/.bach` festschreiben, bevor die Test-Umgebung
+greift. In einem solchen nichtkanonischen Lauf meldete der Teardown Änderungen
+an `bach.db-wal`, `bach.db-shm` und `memoryhooker_audit.jsonl`. Die Meldung
+belegt Änderungen während des Laufs, aber nicht allein den exakten Schreiber.
+Die produktiven Dateien wurden nicht zurückgesetzt oder gelöscht. Der Guard
+gilt erst nach seinem Laden; ein Vorimport liegt außerhalb dieses Vertrags.

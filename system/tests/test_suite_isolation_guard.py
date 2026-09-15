@@ -1,10 +1,21 @@
 """Regression tests for the suite-wide isolation guard."""
 
+import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 from system.tests import conftest
+
+
+def test_session_bootstraps_slots_config_on_private_disk():
+    slots_path = Path(os.environ["BACH_SLOTS_CONFIG_PATH"]).resolve()
+    assert slots_path == (conftest._TEST_DB_DIR / "slots_config.json").resolve()
+    assert conftest._source_runtime_path(slots_path) is None
+    assert slots_path.is_file()
+    config = json.loads(slots_path.read_text(encoding="utf-8"))
+    assert "buddha_chat" in config["slots"]
 
 
 def test_source_runtime_path_detects_runtime_data():

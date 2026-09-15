@@ -57,6 +57,19 @@ os.environ["BACH_FACKEL_PREFERENCE_PATH"] = str(
 )
 os.environ["BACH_SLOTS_CONFIG_PATH"] = str(_TEST_DB_DIR / "slots_config.json")
 
+
+@pytest.fixture(scope="session", autouse=True)
+def _bootstrap_private_slots_config():
+    """Materialize the private slots config before strict Control API tests."""
+    from hub._services.chat import slots_config
+
+    path = os.environ["BACH_SLOTS_CONFIG_PATH"]
+    initialize = getattr(slots_config, "initialize_slots_config", None)
+    if initialize is not None:
+        initialize(path)
+    else:
+        slots_config.load_slots_config(path)
+
 _SOURCE_SYSTEM_ROOT = Path(__file__).resolve().parent.parent
 _PROTECTED_SOURCE_RUNTIME_ROOTS = (
     _SOURCE_SYSTEM_ROOT / "data",
