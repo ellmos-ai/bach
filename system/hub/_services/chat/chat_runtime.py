@@ -51,17 +51,63 @@ class FailedAnswer(str):
     persistieren, als Reply ablegen, an Telegram senden -- waehrend Aufrufer,
     die den Unterschied brauchen, ihn per ``isinstance`` erfragen koennen.
 
-    Ueber einen Neustart oder den Session-Store ueberlebt der Typ nicht -- das
-    Transkript speichert nur ``role``/``content``. ``looks_like`` beantwortet
-    dieselbe Frage dann anhand des Prefixes, damit es genau eine Definition von
-    "Fehlschlag" gibt und nicht je Leser eine eigene (T-20260906-739766716).
+    Der sichtbare Text bleibt fuer bestehende Aufrufer unveraendert. Der
+    Session-Store legt daneben ``answer_status=failed`` ab; dadurch bleibt der
+    Status auch nach einem Neustart erhalten, ohne den Text zu duplizieren.
+    ``looks_like`` akzeptiert einen expliziten Status; sein statusloser
+    Legacy-Zweig bleibt fuer alte textbasierte Konsumenten erhalten. Die
+    Nachrichtenbewertung verwendet dagegen ``answer_status`` zuerst. Alte
+    Snapshots ohne Status koennen dort nur ueber ``legacy_looks_like`` bewertet
+    werden.
     """
 
     PREFIX = "Backend-Fehler: "
+    STATUS_KEY = "answer_status"
+    STATUS_SUCCESS = "success"
+    STATUS_FAILED = "failed"
 
     @classmethod
-    def looks_like(cls, text) -> bool:
-        return isinstance(text, cls) or str(text).startswith(cls.PREFIX)
+    def looks_like(cls, text, *, status: str | None = None) -> bool:
+        """Return whether ``text`` is a typed failure in the live runtime.
+
+        New callers should pass the explicit status. The statusless path keeps
+        the old text probe alive for T-306 and other external consumers, but a
+        ``SuccessfulAnswer`` is an explicit in-memory success and wins over
+        that legacy prefix probe.
+        """
+        if status == cls.STATUS_FAILED:
+            return True
+        if status == cls.STATUS_SUCCESS:
+            return False
+        if getattr(text, "answer_status", None) == cls.STATUS_SUCCESS:
+            return False
+        return isinstance(text, cls) or cls.legacy_looks_like(text)
+
+    @classmethod
+    def legacy_looks_like(cls, text) -> bool:
+        """Recognise the pre-status transcript format, conservatively.
+
+        This is intentionally separate from :meth:`looks_like`: the old
+        ``role``/``content``-only format has no provenance bit, so its exact
+        prefix is the only evidence available. New messages always carry an
+        explicit status and never take this ambiguous path.
+        """
+        return isinstance(text, str) and text.startswith(cls.PREFIX)
+
+    @classmethod
+    def message_is_failed(cls, message: dict) -> bool:
+        """Classify one transcript entry without guessing over new metadata."""
+        if message.get("role") != "assistant":
+            return False
+        content = message.get("content", "")
+        if isinstance(content, cls):
+            return True
+        status = message.get(cls.STATUS_KEY)
+        if status == cls.STATUS_FAILED:
+            return True
+        if status == cls.STATUS_SUCCESS:
+            return False
+        return cls.legacy_looks_like(content)
 
     @classmethod
     def from_exception(cls, exc: BaseException) -> "FailedAnswer":
@@ -75,8 +121,58 @@ class FailedAnswer(str):
         return cls(f"{cls.PREFIX}{type(exc).__name__}: {exc}".rstrip(": "))
 
 
+class SuccessfulAnswer(str):
+    """A successful text answer that happens to use the legacy error prefix.
+
+    BACH's older order-worker seams are text-only and call ``startswith`` on
+    the callback result. This narrow ``str`` subtype keeps the visible answer
+    unchanged while making that legacy probe agree with the explicit success
+    status. It is only created for colliding successful text; ordinary answers
+    remain ordinary strings.
+    """
+
+    answer_status = FailedAnswer.STATUS_SUCCESS
+
+    @staticmethod
+    def _contains_legacy_failure_prefix(prefix) -> bool:
+        prefixes = prefix if isinstance(prefix, tuple) else (prefix,)
+        return any(
+            candidate in (FailedAnswer.PREFIX, FailedAnswer.PREFIX.rstrip())
+            for candidate in prefixes
+            if isinstance(candidate, str)
+        )
+
+    def startswith(self, prefix, *args) -> bool:
+        if self._contains_legacy_failure_prefix(prefix):
+            other_prefixes = tuple(
+                candidate
+                for candidate in (prefix if isinstance(prefix, tuple) else (prefix,))
+                if candidate not in (FailedAnswer.PREFIX, FailedAnswer.PREFIX.rstrip())
+            )
+            if not other_prefixes:
+                return False
+            prefix = other_prefixes[0] if len(other_prefixes) == 1 else other_prefixes
+        return super().startswith(prefix, *args)
+
+
+def _classify_successful_answer(answer: Any) -> str:
+    """Attach an explicit success type only where old text probes collide."""
+    if isinstance(answer, (FailedAnswer, SuccessfulAnswer)):
+        return answer
+    if isinstance(answer, str) and answer.strip().startswith(FailedAnswer.PREFIX):
+        return SuccessfulAnswer(answer)
+    return answer
+
+
 def _managed_backend_answer(result: Any) -> str:
     """Validate a backend-owned-tools result before it enters chat history."""
+    # Older/current CLI seams can wrap the structured provider result in the
+    # outer ``content`` field.  Unwrap that additive shape here so the status
+    # contract does not depend on the provider adapter version.
+    if isinstance(result, dict) and isinstance(result.get("content"), dict):
+        nested = result["content"]
+        if "error" in nested or "content" in nested:
+            result = nested
     if not isinstance(result, dict):
         return FailedAnswer(f"{FailedAnswer.PREFIX}Backend-Antwort ist ungültig")
 
@@ -1229,18 +1325,91 @@ class ChatRuntime:
         try:
             messages = self.session_store.load(chat_id)
             self._persistence_error = None
-            return messages
+            return self._restore_message_status(messages)
         except Exception as exc:
             self._persistence_error = str(exc)
             log.warning("Chat-Persistenz konnte nicht gelesen werden: %s", exc)
             return []
+
+    @staticmethod
+    def _restore_message_status(messages: list[dict]) -> list[dict]:
+        """Restore typed answers while keeping transcript JSON additive.
+
+        ``answer_status`` was added without changing the snapshot version. A
+        missing key therefore means a legacy snapshot and keeps its old
+        prefix-based, fail-closed fallback. Explicit success is authoritative
+        for a new answer, including a legitimate text that starts with the old
+        marker.
+        """
+        restored: list[dict] = []
+        for message in messages:
+            if not isinstance(message, dict):
+                restored.append(message)
+                continue
+            item = dict(message)
+            if item.get("role") == "assistant":
+                content = item.get("content", "")
+                status = item.get(FailedAnswer.STATUS_KEY)
+                if isinstance(content, FailedAnswer):
+                    item[FailedAnswer.STATUS_KEY] = FailedAnswer.STATUS_FAILED
+                elif status == FailedAnswer.STATUS_FAILED and isinstance(content, str):
+                    item["content"] = FailedAnswer(content)
+                elif status == FailedAnswer.STATUS_SUCCESS:
+                    if isinstance(content, str) and content.strip().startswith(FailedAnswer.PREFIX):
+                        item["content"] = SuccessfulAnswer(content)
+                elif FailedAnswer.legacy_looks_like(content):
+                    # Pre-status entries have no way to prove intent. Keep the
+                    # old failure detection so a real historical backend error
+                    # cannot become a successful result after a restart.
+                    item["content"] = FailedAnswer(content)
+                    item[FailedAnswer.STATUS_KEY] = FailedAnswer.STATUS_FAILED
+            restored.append(item)
+        return restored
+
+    @staticmethod
+    def _messages_for_backend(messages: list[dict]) -> list[dict]:
+        """Remove runtime-only status metadata before a provider call."""
+        return [
+            {key: value for key, value in message.items()
+             if key != FailedAnswer.STATUS_KEY}
+            for message in messages
+        ]
+
+    @staticmethod
+    def _messages_for_store(messages: list[dict]) -> list[dict]:
+        """Persist explicit answer status without changing visible content."""
+        stored: list[dict] = []
+        for message in messages:
+            item = dict(message)
+            if item.get("role") == "assistant":
+                content = item.get("content", "")
+                status = item.get(FailedAnswer.STATUS_KEY)
+                if isinstance(content, FailedAnswer) or status == FailedAnswer.STATUS_FAILED:
+                    status = FailedAnswer.STATUS_FAILED
+                elif status == FailedAnswer.STATUS_SUCCESS:
+                    status = FailedAnswer.STATUS_SUCCESS
+                elif getattr(content, "answer_status", None) == FailedAnswer.STATUS_SUCCESS:
+                    status = FailedAnswer.STATUS_SUCCESS
+                else:
+                    status = (
+                        FailedAnswer.STATUS_FAILED
+                        if FailedAnswer.legacy_looks_like(content)
+                        else FailedAnswer.STATUS_SUCCESS
+                    )
+                item[FailedAnswer.STATUS_KEY] = status
+            stored.append(item)
+        return stored
 
     def _persist_session(self, chat_id: str, session: ChatSession) -> None:
         if self.session_store is None:
             return
         try:
             name = _session_name(chat_id, session)
-            self.session_store.save(chat_id, session.messages, name=name)
+            self.session_store.save(
+                chat_id,
+                self._messages_for_store(session.messages),
+                name=name,
+            )
             self._persistence_error = None
         except Exception as exc:
             self._persistence_error = str(exc)
@@ -1413,7 +1582,7 @@ class ChatRuntime:
         snap = self.session_store.get_snapshot_by_id(snapshot_id)
         if not snap:
             raise ValueError(f"Snapshot ID {snapshot_id} nicht gefunden")
-        messages = snap.get("messages", [])
+        messages = self._restore_message_status(snap.get("messages", []))
 
         # Aktuelle Ziel-Session vor dem Fork sichern
         curr = self.sessions.get(target_chat_id)
@@ -1447,7 +1616,7 @@ class ChatRuntime:
         messages = session.messages if session is not None else self._load_messages(chat_id)
         return [
             {"role": m["role"], "content": m.get("content", ""),
-             "ok": not FailedAnswer.looks_like(m.get("content", ""))}
+             "ok": not FailedAnswer.message_is_failed(m)}
             for m in messages
             if m.get("role") in ("user", "assistant")
         ]
@@ -1649,7 +1818,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         if session.allow_tools is False:
             sys_prompt += "\n\n[CAPABILITY-GATE: Keine Werkzeuge verfügbar. Antworte ohne Tool-Aufrufe.]"
 
-        msgs = [{"role": "system", "content": sys_prompt}] + session.messages
+        msgs = [{"role": "system", "content": sys_prompt}] + self._messages_for_backend(
+            session.messages
+        )
 
         if getattr(selected_backend, "manages_own_tools", False):
             capability_error = self._worker_backend_gate(session, selected_backend)
@@ -1674,7 +1845,16 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 model=selected_model,
                 context_limit=context_limit,
             )
-        session.messages.append({"role": "assistant", "content": answer})
+        answer = _classify_successful_answer(answer)
+        session.messages.append({
+            "role": "assistant",
+            "content": answer,
+            FailedAnswer.STATUS_KEY: (
+                FailedAnswer.STATUS_FAILED
+                if isinstance(answer, FailedAnswer)
+                else FailedAnswer.STATUS_SUCCESS
+            ),
+        })
         self._persist_session(chat_id, session)
         return answer
 

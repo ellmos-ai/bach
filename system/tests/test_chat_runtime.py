@@ -19,6 +19,7 @@ from hub._services.chat.chat_runtime import (
     BLOCKED_PATTERNS,
     ComputeLocked,
     FailedAnswer,
+    SuccessfulAnswer,
     CMD_TIMEOUT,
     SAFE_BASES,
     TOOLS_SAFE,
@@ -573,6 +574,34 @@ class _AnsweringBackend:
         return {"content": "Echte Antwort"}
 
 
+class _PrefixAnsweringBackend:
+    """A legitimate provider answer using the historical failure prefix."""
+
+    def __init__(self, content="Backend-Fehler: CLI-Ausgabe, nicht als Fehler gemeint"):
+        self.content = content
+        self.calls = []
+
+    def get_default_model(self):
+        return "test-model"
+
+    async def chat(self, messages, **kwargs):
+        self.calls.append(messages)
+        return {"content": self.content}
+
+
+class _ManagedResultBackend:
+    manages_own_tools = True
+
+    def __init__(self, result):
+        self.result = result
+
+    def get_default_model(self):
+        return "test-model"
+
+    async def chat(self, messages, **kwargs):
+        return self.result
+
+
 class _AbortingBackend:
     """Backend, das den Abbruch meldet statt zu werfen.
 
@@ -777,6 +806,45 @@ class TestFailedAnswer:
         assert isinstance(answer, str)
         assert answer.startswith("Backend-Fehler:")
 
+    def test_successful_legacy_prefix_overrides_the_legacy_text_probe(self):
+        """Explicit success protects a legitimate text-only answer."""
+        text = "Backend-Fehler: legitimer CLI-Output"
+        assert FailedAnswer.looks_like(text)
+        assert FailedAnswer.legacy_looks_like(text)
+        assert not FailedAnswer.looks_like(
+            text, status=FailedAnswer.STATUS_SUCCESS
+        )
+        assert not FailedAnswer.looks_like(SuccessfulAnswer(text))
+
+    def test_legitimate_prefix_answer_stays_successful_in_memory(self):
+        import asyncio
+
+        backend = _PrefixAnsweringBackend()
+        from hub._services.chat.chat_runtime import ChatRuntime
+
+        runtime = ChatRuntime(backend)
+        answer = asyncio.run(runtime.process("Zeige CLI-Ausgabe", "prefix-success"))
+
+        assert isinstance(answer, SuccessfulAnswer)
+        assert str(answer) == backend.content
+        assert not FailedAnswer.looks_like(answer)
+        assert runtime.history("prefix-success")[-1] == {
+            "role": "assistant",
+            "content": backend.content,
+            "ok": True,
+        }
+
+    def test_answer_status_is_not_sent_back_to_the_provider(self):
+        import asyncio
+
+        backend = _PrefixAnsweringBackend()
+        from hub._services.chat.chat_runtime import ChatRuntime
+
+        runtime = ChatRuntime(backend)
+        asyncio.run(runtime.process("eins", "status-context"))
+        asyncio.run(runtime.process("zwei", "status-context"))
+
+        assert all("answer_status" not in message for message in backend.calls[-1])
     @pytest.mark.parametrize(
         ("result", "expected_failure"),
         [
@@ -825,7 +893,27 @@ class TestFailedAnswer:
                 for m in runtime.history("idle-worker")] == [
             ("Task #42", True),
             ("Backend-Fehler", False),
-            ("Echte Antwort", True),
+                ("Echte Antwort", True),
+        ]
+
+    def test_explicit_success_status_wins_over_the_legacy_prefix(self):
+        from hub._services.chat.chat_runtime import ChatRuntime
+
+        class _Store:
+            def load(self, chat_id):
+                return [
+                    {"role": "user", "content": "Backend-Fehler: Nutzertext"},
+                    {
+                        "role": "assistant",
+                        "content": "Backend-Fehler: CLI-Ausgabe",
+                        "answer_status": "success",
+                    },
+                ]
+
+        runtime = ChatRuntime(_AnsweringBackend(), session_store=_Store())
+        assert runtime.history("prefix-after-restart") == [
+            {"role": "user", "content": "Backend-Fehler: Nutzertext", "ok": True},
+            {"role": "assistant", "content": "Backend-Fehler: CLI-Ausgabe", "ok": True},
         ]
 
 

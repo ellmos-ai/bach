@@ -16,12 +16,16 @@ SYSTEM_ROOT = Path(__file__).parent.parent
 if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
-from hub._services.chat.chat_runtime import ChatRuntime  # noqa: E402
+from hub._services.chat.chat_runtime import (  # noqa: E402
+    ChatRuntime,
+    FailedAnswer,
+)
 from hub._services.chat.session_store import (  # noqa: E402
     CHAT_SESSION_PREFIX,
     CHAT_SNAPSHOT_TYPE,
     SQLiteChatSessionStore,
 )
+from hub._services.llm.model_backend import CLIBackend  # noqa: E402
 
 
 class _Backend:
@@ -30,6 +34,14 @@ class _Backend:
 
     async def chat(self, messages, **kwargs):
         return {"content": "Persistierte Antwort"}
+
+
+class _PrefixBackend:
+    def get_default_model(self):
+        return "test-model"
+
+    async def chat(self, messages, **kwargs):
+        return {"content": "Backend-Fehler: legitimer CLI-Output"}
 
 
 @pytest.fixture
@@ -65,6 +77,107 @@ def test_transcript_survives_runtime_restart_without_creating_history_session(sn
 
     restored = restarted.get_session("gui-web")
     assert restored.messages[-1]["content"] == "Persistierte Antwort"
+
+
+def test_cli_failure_persists_as_non_success_history_entry(snapshot_db, monkeypatch):
+    backend = CLIBackend(cli_name="claude", cli_path="claude", cwd=".")
+
+    async def fake_run(_prompt, model=None):
+        return {"content": "Teil vor Abbruch", "error": "CLI exit 1"}
+
+    monkeypatch.setattr(backend, "_run_cli", fake_run)
+    store = SQLiteChatSessionStore(snapshot_db)
+    first = ChatRuntime(backend, session_store=store)
+
+    answer = asyncio.run(first.process("Starte CLI", "cli-failure"))
+
+    assert isinstance(answer, FailedAnswer)
+    assert answer == "Backend-Fehler: CLI exit 1\n[Teilantwort vor dem Abbruch]\nTeil vor Abbruch"
+    assert first.history("cli-failure")[-1] == {
+        "role": "assistant",
+        "content": answer,
+        "ok": False,
+    }
+
+    with sqlite3.connect(snapshot_db) as conn:
+        payload = json.loads(conn.execute(
+            "SELECT snapshot_data FROM session_snapshots WHERE session_id = ?",
+            (store.session_id("cli-failure"),),
+        ).fetchone()[0])
+    assert payload["messages"][-1] == {
+        "role": "assistant",
+        "content": str(answer),
+        "answer_status": "failed",
+    }
+
+    restarted = ChatRuntime(
+        _Backend(), session_store=SQLiteChatSessionStore(snapshot_db)
+    )
+    assert restarted.history("cli-failure") == [
+        {"role": "user", "content": "Starte CLI", "ok": True},
+        {"role": "assistant", "content": str(answer), "ok": False},
+    ]
+
+
+def test_legitimate_legacy_prefix_survives_restart_as_success(snapshot_db):
+    store = SQLiteChatSessionStore(snapshot_db)
+    first = ChatRuntime(_PrefixBackend(), session_store=store)
+
+    answer = asyncio.run(first.process("Liefere CLI-Text", "cli-prefix-success"))
+
+    assert str(answer) == "Backend-Fehler: legitimer CLI-Output"
+    assert first.history("cli-prefix-success")[-1] == {
+        "role": "assistant",
+        "content": str(answer),
+        "ok": True,
+    }
+    with sqlite3.connect(snapshot_db) as conn:
+        payload = json.loads(conn.execute(
+            "SELECT snapshot_data FROM session_snapshots WHERE session_id = ?",
+            (store.session_id("cli-prefix-success"),),
+        ).fetchone()[0])
+    assert payload["messages"][-1] == {
+        "role": "assistant",
+        "content": str(answer),
+        "answer_status": "success",
+    }
+
+    restarted = ChatRuntime(
+        _Backend(), session_store=SQLiteChatSessionStore(snapshot_db)
+    )
+    assert restarted.history("cli-prefix-success") == [
+        {"role": "user", "content": "Liefere CLI-Text", "ok": True},
+        {"role": "assistant", "content": str(answer), "ok": True},
+    ]
+
+
+def test_legacy_failure_prefix_remains_fail_closed_after_restart(snapshot_db):
+    store = SQLiteChatSessionStore(snapshot_db)
+    with sqlite3.connect(snapshot_db) as conn:
+        conn.execute(
+            "INSERT INTO session_snapshots "
+            "(session_id, snapshot_type, snapshot_data) VALUES (?, ?, ?)",
+            (
+                store.session_id("legacy-failure"),
+                CHAT_SNAPSHOT_TYPE,
+                json.dumps({
+                    "version": 1,
+                    "chat_id": "legacy-failure",
+                    "messages": [
+                        {"role": "user", "content": "Alte Aufgabe"},
+                        {"role": "assistant", "content": "Backend-Fehler: Ollama weg"},
+                    ],
+                }),
+            ),
+        )
+
+    restarted = ChatRuntime(
+        _Backend(), session_store=SQLiteChatSessionStore(snapshot_db)
+    )
+    assert restarted.history("legacy-failure") == [
+        {"role": "user", "content": "Alte Aufgabe", "ok": True},
+        {"role": "assistant", "content": "Backend-Fehler: Ollama weg", "ok": False},
+    ]
 
 
 def test_chat_identifier_is_hashed_and_one_snapshot_is_updated(snapshot_db):

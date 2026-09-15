@@ -15,6 +15,15 @@ if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
 from hub._services.chat.message_worker import file_reply, pending_orders, run_once  # noqa: E402
+from hub._services.chat._messages_compat import (  # noqa: E402
+    file_reply as compat_file_reply,
+    pending_orders as compat_pending_orders,
+    run_once as compat_run_once,
+)
+from hub._services.chat.chat_runtime import (  # noqa: E402
+    FailedAnswer,
+    SuccessfulAnswer,
+)
 
 SCHEMA = """
 CREATE TABLE messages (
@@ -98,3 +107,41 @@ def test_failed_processing_keeps_the_order_pending(db):
     conn = sqlite3.connect(db)
     assert [o["id"] for o in pending_orders(conn)] == [order_id]
     conn.close()
+
+
+@pytest.mark.parametrize("error_text", [
+    "Backend-Fehler: ReadTimeout",
+    "Backend-Fehler: CLI exit 1",
+])
+def test_compat_failed_answer_keeps_the_order_pending(db, error_text):
+    order_id = _order(db, "bach", "noch einmal versuchen")
+
+    def process(_text, _chat_id):
+        return FailedAnswer(error_text)
+
+    assert compat_run_once(db, process) == 0
+    conn = sqlite3.connect(db)
+    assert [o["id"] for o in compat_pending_orders(conn)] == [order_id]
+    order = compat_pending_orders(conn)[0]
+    assert compat_file_reply(conn, order, process("", "")) == 0
+    assert conn.execute(
+        "SELECT COUNT(*) FROM messages WHERE parent_id = ?", (order_id,)
+    ).fetchone()[0] == 0
+    conn.close()
+
+
+def test_compat_successful_legacy_prefix_is_filed(db):
+    """The text-only worker honours an explicit successful collision status."""
+    order_id = _order(db, "bach", "CLI-Ausgabe abholen")
+
+    def process(_text, _chat_id):
+        return SuccessfulAnswer("Backend-Fehler: legitime CLI-Ausgabe")
+
+    assert compat_run_once(db, process) == 1
+    conn = sqlite3.connect(db)
+    row = conn.execute(
+        "SELECT direction, body, parent_id FROM messages WHERE parent_id = ?",
+        (order_id,),
+    ).fetchone()
+    conn.close()
+    assert row == ("inbox", "Backend-Fehler: legitime CLI-Ausgabe", order_id)
