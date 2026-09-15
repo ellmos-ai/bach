@@ -20,6 +20,7 @@ import sqlite3
 import shutil
 import re
 import secrets
+import os
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
@@ -1663,6 +1664,8 @@ class AgentLauncherHandler(BaseHandler):
 
         try:
             release_token = secrets.token_hex(16)
+            gate_file = agent_temp_dir / f".spawn-gate-{release_token}"
+            gate_pending = agent_temp_dir / f".spawn-gate-{release_token}.pending"
             if sys.platform == 'win32':
                 # Windows: eigenes Konsolenfenster direkt ueber cmd.exe starten.
                 # So bleibt die getrackte PID ueber die gesamte Agenten-Session
@@ -1679,8 +1682,16 @@ class AgentLauncherHandler(BaseHandler):
                     f"echo === BACH Agent: {agent_label} ({resolved_name}) ===",
                     f"echo Modell: {model} ^| Modus: {mode} ^| Runner: {runner_name}",
                     f"echo.",
+                    'set "BACH_GATE_ATTEMPTS=0"',
+                    ':BACH_SPAWN_WAIT',
+                    f'if exist "{gate_file}" goto BACH_SPAWN_CHECK',
+                    'set /a BACH_GATE_ATTEMPTS+=1',
+                    'if %BACH_GATE_ATTEMPTS% GEQ 10 exit /b 86',
+                    'timeout /t 1 /nobreak',
+                    'goto BACH_SPAWN_WAIT',
+                    ':BACH_SPAWN_CHECK',
                     'set "BACH_SPAWN_GATE="',
-                    'set /p BACH_SPAWN_GATE=',
+                    f'set /p BACH_SPAWN_GATE=<"{gate_file}"',
                     f'if not "%BACH_SPAWN_GATE%"=="{release_token}" exit /b 86',
                     f"{' '.join(cmd)}",
                 ]
@@ -1697,16 +1708,14 @@ class AgentLauncherHandler(BaseHandler):
                     ["cmd", "/c", str(start_bat)],
                     cwd=str(agent_temp_dir),
                     creationflags=creation_flags,
-                    stdin=subprocess.PIPE,
                 )
             else:
                 proc = subprocess.Popen(
-                    [sys.executable, str(Path(__file__).with_name("agent_spawn_gate.py")), release_token, *cmd],
+                    [sys.executable, str(Path(__file__).with_name("agent_spawn_gate.py")), release_token, str(gate_file), *cmd],
                     cwd=str(agent_temp_dir),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
-                    stdin=subprocess.PIPE,
                 )
 
             # PID speichern
@@ -1736,19 +1745,19 @@ class AgentLauncherHandler(BaseHandler):
                 pid_file.write_text(json.dumps(pid_data, indent=2), encoding='utf-8')
             except Exception:
                 # Beleg nicht gespeichert: den noch providerlosen Starter nie freigeben.
-                proc.stdin.close()
                 try:
+                    proc.terminate()
                     proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
+                except (subprocess.TimeoutExpired, OSError):
                     pass
                 raise
 
             if pid_data["process_create_time"] is None:
-                proc.stdin.close()
                 try:
+                    proc.terminate()
                     proc.wait(timeout=5)
                     starter_exited = True
-                except subprocess.TimeoutExpired:
+                except (subprocess.TimeoutExpired, OSError):
                     starter_exited = False
                 payload = self._build_agent_payload(
                     resolved_name,
@@ -1776,11 +1785,11 @@ class AgentLauncherHandler(BaseHandler):
                 )
 
             try:
-                proc.stdin.write((release_token + "\n").encode("ascii"))
-                proc.stdin.flush()
-                proc.stdin.close()
-            except (BrokenPipeError, OSError) as exc:
-                # Ein partieller Pipe-Write könnte den Runner bereits erreicht haben.
+                gate_pending.write_text(release_token, encoding="ascii")
+                os.replace(gate_pending, gate_file)
+            except OSError as exc:
+                # Ein Fehler nach der atomaren Marker-Ersetzung könnte den
+                # Runner bereits freigegeben haben: Beleg konservativ erhalten.
                 # Deshalb weder "nicht gestartet" noch "running" behaupten.
                 pid_data["spawn_gate"] = "release_unconfirmed"
                 pid_file.write_text(json.dumps(pid_data, indent=2), encoding='utf-8')

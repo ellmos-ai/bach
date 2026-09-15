@@ -372,6 +372,9 @@ def test_agent_start_json_success_payload(tmp_path, monkeypatch):
         pid = 4242
         stdin = io.BytesIO()
 
+        def terminate(self):
+            pass
+
         def wait(self, timeout=None):
             return 86
 
@@ -405,6 +408,9 @@ def test_agent_start_reports_unverified_if_birth_time_capture_fails(tmp_path, mo
     class FakeProc:
         pid = 4242
         stdin = io.BytesIO()
+
+        def terminate(self):
+            pass
 
         def wait(self, timeout=None):
             return 86
@@ -452,7 +458,7 @@ def test_agent_birth_failure_does_not_start_windows_provider(tmp_path, monkeypat
     assert record["process_create_time"] is None
 
 
-def test_agent_gate_write_failure_is_unverified_not_running(tmp_path, monkeypatch):
+def test_agent_gate_release_failure_is_unverified_not_running(tmp_path, monkeypatch):
     from hub.agent_launcher import AgentLauncherHandler
     from hub import agent_process_provider as provider
 
@@ -461,20 +467,13 @@ def test_agent_gate_write_failure_is_unverified_not_running(tmp_path, monkeypatc
     agent_dir.mkdir(parents=True)
     (agent_dir / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
 
-    class BrokenInput:
-        def write(self, data):
-            raise BrokenPipeError("gate closed")
-
-        def close(self):
-            pass
-
     class FakeProc:
         pid = 4242
-        stdin = BrokenInput()
 
     monkeypatch.setattr("hub.agent_launcher.sys.platform", "linux")
     monkeypatch.setattr("hub.agent_launcher.subprocess.Popen", lambda *args, **kwargs: FakeProc())
     monkeypatch.setattr(provider, "capture_process_create_time", lambda pid: 10.0)
+    monkeypatch.setattr("hub.agent_launcher.os.replace", lambda *args: (_ for _ in ()).throw(OSError("gate rename failed")))
 
     success, message = AgentLauncherHandler(base).handle("start", ["demo", "--json"])
     payload = json.loads(message)

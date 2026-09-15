@@ -1,19 +1,31 @@
-"""Providerloser Unix-Starter: Runner erst nach einer einmaligen Freigabe ausführen."""
+"""Providerloser Unix-Starter mit erhaltenem Konsolen-Standardeingang."""
 
 import os
 import sys
+import time
+from pathlib import Path
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 2:
+    if len(argv) < 3:
         return 86
-    token, *command = argv
-    # Ein EOF/Fehler vor der Freigabe darf den Runner niemals starten.
-    try:
-        answer = sys.stdin.buffer.readline(128)
-    except OSError:
-        return 86
-    if answer != (token + "\n").encode("ascii"):
+    token, gate_path, *command = argv
+    # Eindeutiger Marker statt stdin-PIPE: der spätere Runner behält seine
+    # ursprüngliche interaktive Eingabe. Ohne Freigabe läuft nur dieser Starter.
+    deadline = time.monotonic() + 10
+    marker = Path(gate_path)
+    while time.monotonic() < deadline:
+        try:
+            answer = marker.read_text(encoding="ascii")
+        except FileNotFoundError:
+            time.sleep(0.05)
+            continue
+        except OSError:
+            return 86
+        if answer != token:
+            return 86
+        break
+    else:
         return 86
     os.execvp(command[0], command)
     return 87  # pragma: no cover - execvp ersetzt den Prozess
