@@ -17,8 +17,9 @@
 - **Priorität:** high
 
 ### [BACH-HERZ-01] Zuteilungsgrenze für einen Pfad: atomarer Claim, Rechteprüfung, Besetzungsprotokoll
-- **Ziel:** Eine zentrale Stelle, durch die genau ein produktiver Pfad läuft (Vorschlag: der Hintergrundplatz `buddha_always_on`). Sie reicht die bisherige Modellwahl **unverändert** durch, beansprucht die Aufgabe aber atomar, prüft das Rollenrecht, erzeugt eine `assignment_id` und protokolliert Start und Ende. Heute nimmt `worker.py` schlicht `offen[0]` und startet ohne Anspruch, während `chat_tray.py` erst liest und danach auf `in_progress` setzt — zwei Taktgeber können dieselbe Aufgabe mit Schreibrechten ausführen.
-- **Quelle:** `[Quelle: docs/MODELL-BACKEND-KONZEPT_2026-09-13.md, Abschnitte 4.2 und 8]` `[Programmkopf: ROADMAP.md "PROGRAMM: Modell-Backend = das Herz von BACH"]` `[Ticket: T-20260913-896336887]` `[Zweitmeinung: _codex/ARCHITEKTUR-ANTWORT.md, F6 und F7]`
+- **Ziel:** Eine zentrale Stelle, durch die genau ein produktiver Pfad läuft (Vorschlag: der Hintergrundplatz `buddha_always_on`). Sie reicht die bisherige Modellwahl **unverändert** durch, beansprucht die Aufgabe atomar, prüft das Rollenrecht, erzeugt eine `assignment_id` und protokolliert Start und Ende.
+- **Quelle:** `[Quelle: docs/MODELL-BACKEND-KONZEPT_2026-09-13.md, Abschnitte 4.2 und 8]` `[Programmkopf: ROADMAP.md "PROGRAMM: Modell-Backend = das Herz von BACH"]` `[Ticket: T-20260913-896336887]` `[Claim-Ticket: T-20260913-709822598, PR #59]` `[Zweitmeinung: _codex/ARCHITEKTUR-ANTWORT.md, F6 und F7]`
+- **Nachzertifizierter Teilstand:** PR #59/2cfda653 ist gemergt; `worker.py` nutzt `bach task claim` vor dem Start, `chat_tray.py` nutzt den claim-aware API-Pfad. Im isolierten Audit bestanden 14 Tests einschließlich zweier konkurrierender Claimants. Dies belegt den Code-Seam, nicht einen produktiven Doppelstarter-Receipt; Rollenrecht, `assignment_id`, Besetzungsprotokoll und Host-Abnahme fehlen weiter.
 - **Akzeptanzkriterien (DoD):**
   - Der Claim ist atomar: ein Test mit zwei gleichzeitigen Beanspruchern derselben Aufgabe führt zu genau einer Ausführung.
   - `system/hub/_services/chat/worker.py` beansprucht vor dem Start, statt `offen[0]` ungeprüft zu nehmen.
@@ -29,7 +30,7 @@
 - **Aufwand:** medium
 - **Reichweite:** local
 - **Priorität:** high
-- **Hinweis:** Erster Schritt des Programms. Die Schritte 5 bis 7 (Vertragsfelder an der Rolle, Zuteilung verdrahten, Cockpit) bleiben bis zur Nutzerentscheidung `BH-2026-09-13-A` gesperrt.
+- **Hinweis:** Der erste Claim-Seam ist umgesetzt. Die Schritte 5 bis 7 (Vertragsfelder an der Rolle, Zuteilung verdrahten, Cockpit) bleiben an die dokumentierte Nutzerentscheidung `BH-2026-09-13-A` und deren konkrete Freigabegrenzen gebunden.
 
 ### ✅ [BACH-HOOK-01] Hook-Prompt anpassen: Empfehlung für `bach_api.db` statt hartem Block
 - **Ziel:** Den Hook-Prompt / DB-Guard-Prompt so anpassen, dass Agenten aktiv `bach_api.db` empfohlen wird, anstatt nur blockiert zu werden.
