@@ -27,8 +27,10 @@ Gemäß den Grundsätzen aus der BACH-Roadmap und den Nutzerentscheidungen (`D-2
 abgearbeiteten TRANSFER-Module. Die unabhängige v0.2.0-Bibliothek besitzt eine
 Prozess-Registry und Provider-/Operator-Control-Primitiven. Der OC-B-Durchgang
 setzt **nur** einen opt-in Registry-Seam in BACHs `hub/agent_launcher.py`: mit
-`BACH_USE_EXTERNAL_AGENT_REGISTRY=1` liest der Handler die unveränderten
-`data/agent_pids/<name>.pid` über `AgentProcessRegistry`; ohne Opt-in oder mit
+`BACH_USE_EXTERNAL_AGENT_REGISTRY=1` prüft der Handler die vorhandenen
+`data/agent_pids/<name>.pid` über `AgentProcessRegistry`. Deren `is_running()`
+kann stale, korrupte oder identitätsabweichende PID-Dateien entfernen; die
+Abfrage ist also **nicht** strikt read-only. Ohne Opt-in oder mit
 `=0` verwendet er sofort den bisherigen BACH-Reader. Es wird weder ein Modell
 noch ein Agent gestartet, kein PID-Store umgezogen und kein Legacy-Pfad abgetrennt.
 Ein unvollständiger Modulvertrag scheitert laut; ein fehlendes Modul löst keine
@@ -36,7 +38,11 @@ Installation aus. Der Modul-PR `ellmos-ai/agent-launcher#2` verschiebt den
 privaten `claude-bridge`-Import auf den Claude-CLI-Discovery-Pfad, sodass
 Registry/andere Provider ohne diese Bridge importiert werden können; er ändert
 **nicht** die Paket-Abhängigkeit oder die Freigabeentscheidung. Eine
-Produktiv-Aktivierung braucht einen überprüften Modul-Pin, Hostinstallation,
+Produktiv-Aktivierung braucht außerdem einen sicheren BACH-Stop-Pfad: Der
+heutige Stop liest die PID direkt und kann bei PID-Wiederverwendung einen
+fremden Prozess beenden; die externe Liveness-Identitätsprüfung wird dabei
+noch nicht genutzt, und von BACH erzeugte PID-Dateien enthalten derzeit
+keinen `process_identity`-Anker. Produktiv-Aktivierung braucht einen überprüften Modul-Pin, Hostinstallation,
 echten Lifecycle-Smoke, unabhängiges Review und einen vollständigen Vergleich
 von Start/Status/Steer/Checkpoint/Stop samt PID-Wiederverwendung. Bis dahin
 bleibt der neue Seam per Default aus; `agent-launcher` ersetzt BACHs

@@ -2,6 +2,15 @@
 
 ## Offene Aufgaben
 
+### [BACH-AGENT-PID-01] Agent-Stop gegen PID-Wiederverwendung absichern (OC-B-Gate)
+- **Ziel:** `agent stop` darf niemals einen fremden Prozess nur wegen einer wiederverwendeten PID beenden. Die PID-Identität muss beim Start gespeichert und vor Status/Stop konsistent geprüft werden; Altdateien ohne verifizierbare Identität brauchen einen fail-closed oder explizit geprüften Migrationspfad.
+- **Quelle:** `[OC-B: T-20260818-903104603; unabhängiger Review von BACH PR #65 am 2026-09-15]` — `system/hub/agent_launcher.py::_stop_agent` liest die PID direkt, während `AgentProcessRegistry.is_running` Identitätsabweichungen erkennt und PID-Dateien entfernen kann. BACHs heutige Startdateien enthalten keinen `process_identity`-Anker.
+- **Akzeptanzkriterien (DoD):** Wiederverwendete PID und Identitätsabweichung stoppen keinen Prozess; Status-, JSON- und Stop-Zugänge stimmen überein; Stop-Dry-run meldet denselben Guard; Alt-PID-Verhalten ist ausdrücklich geregelt; Tests prüfen Windows- und Unix-Pfade ohne echten Agentenstart. Erst danach Opt-in-Seam auf einem Host aktivieren und Lifecycle/Parity nachweisen.
+- **Prüfweg:** gezielte Agent-Handler-/Provider-Tests, echter Modul-Pin/Host-Smoke und unabhängiger Review; kein lokales Ollama.
+- **Aufwand:** medium
+- **Reichweite:** local
+- **Priorität:** high
+
 ### [BACH-HERZ-01] Zuteilungsgrenze für einen Pfad: atomarer Claim, Rechteprüfung, Besetzungsprotokoll
 - **Ziel:** Eine zentrale Stelle, durch die genau ein produktiver Pfad läuft (Vorschlag: der Hintergrundplatz `buddha_always_on`). Sie reicht die bisherige Modellwahl **unverändert** durch, beansprucht die Aufgabe aber atomar, prüft das Rollenrecht, erzeugt eine `assignment_id` und protokolliert Start und Ende. Heute nimmt `worker.py` schlicht `offen[0]` und startet ohne Anspruch, während `chat_tray.py` erst liest und danach auf `in_progress` setzt — zwei Taktgeber können dieselbe Aufgabe mit Schreibrechten ausführen.
 - **Quelle:** `[Quelle: docs/MODELL-BACKEND-KONZEPT_2026-09-13.md, Abschnitte 4.2 und 8]` `[Programmkopf: ROADMAP.md "PROGRAMM: Modell-Backend = das Herz von BACH"]` `[Ticket: T-20260913-896336887]` `[Zweitmeinung: _codex/ARCHITEKTUR-ANTWORT.md, F6 und F7]`
