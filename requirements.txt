@@ -31,6 +31,7 @@ markdown>=3.10            # Markdown -> HTML conversion (docs)
 # --- File System & Monitoring ---
 watchdog>=6.0.0           # File system event monitoring (scanner, watcher)
 psutil>=7.0.0             # System/process info (GUI daemon, scheduler)
+filelock>=3.16.0          # Native per-agent start/stop claim
 GitPython>=3.1.46         # Git operations (dev pipeline, ATI)
 
 # --- Terminal & CLI ---

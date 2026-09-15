@@ -21,6 +21,47 @@ Gemäß den Grundsätzen aus der BACH-Roadmap und den Nutzerentscheidungen (`D-2
 
 ## 2. Schnittstellenmatrix der 8 Modulkandidaten
 
+### OC-B: agent-launcher als Engpass-Muster (2026-09-15)
+
+`agent-launcher` ist ein zusätzlicher Kandidat außerhalb der acht bereits
+abgearbeiteten TRANSFER-Module. Die unabhängige v0.2.0-Bibliothek besitzt eine
+Prozess-Registry und Provider-/Operator-Control-Primitiven. Der OC-B-Durchgang
+setzt **nur** einen opt-in Registry-Seam in BACHs `hub/agent_launcher.py`: mit
+`BACH_USE_EXTERNAL_AGENT_REGISTRY=1` prüft der Handler die vorhandenen
+`data/agent_pids/<name>.pid` über `AgentProcessRegistry.probe_running()`.
+Die Probe ist read-only; ihr Ergebnis wird nur akzeptiert, wenn die PID mit
+dem zuvor von BACH verifizierten Datensatz übereinstimmt. Die ältere
+`is_running()`-Methode des Moduls kann stale, korrupte oder identitätsabweichende
+PID-Dateien entfernen und wird hier nicht verwendet. Ohne Opt-in oder mit
+`=0` verwendet er BACHs eigenen, identitätsprüfenden psutil-Reader. Es wird weder ein Modell
+noch ein Agent gestartet, kein PID-Store umgezogen und kein Legacy-Pfad abgetrennt.
+Ein unvollständiger Modulvertrag scheitert laut; ein fehlendes Modul löst keine
+Installation aus. Der Modul-PR `ellmos-ai/agent-launcher#2` verschiebt den
+privaten `claude-bridge`-Import auf den Claude-CLI-Discovery-Pfad, sodass
+Registry/andere Provider ohne diese Bridge importiert werden können; er ändert
+**nicht** die Paket-Abhängigkeit oder die Freigabeentscheidung.
+Der Sicherheitsnachtrag `BACH-AGENT-PID-01` speichert beim Start zusätzlich
+`process_create_time` und prüft PID plus Erzeugungszeit vor Status und Stop.
+Altdateien ohne diesen Anker sowie Abweichungen bleiben erhalten, werden als
+`unverified`/`mismatch` ausgewiesen und dürfen weder Start noch Stop auslösen.
+Kann die Identität nicht gelesen werden, scheitert Stop geschlossen; ein
+fehlgeschlagener Stop löscht die PID-Datei nicht. Dies ist bisher nur durch
+isolierte Tests belegt, nicht durch einen echten Agent-Lifecycle. Status und
+Stop-Dry-run löschen auch ungültige oder tote PID-Belege nicht. Auf Unix
+werden bekannte Kindprozesse wie auf Windows vor dem Elternprozess beendet;
+ein dynamisch neu entstehendes Kind ist dadurch noch nicht atomar ausgeschlossen.
+Wenn der Start die Erzeugungszeit nicht erfassen kann, meldet er keinen
+steuerbaren Erfolg, sondern einen `unverified`-Beleg zur Nachzertifizierung.
+BACHs Handler-Start und -Stop halten zusätzlich einen nativen Claim pro
+technischem Agentennamen; Status und Stop binden PID-Belege an den Dateinamen.
+Dies schließt den direkten Doppelstart über diese Handler-Zugänge, nicht aber
+fremde Registry-Mutationen oder einen fehlenden OS-Handle-Signal-Fence aus.
+Produktiv-Aktivierung braucht weiterhin einen überprüften Modul-Pin, Hostinstallation,
+echten Lifecycle-Smoke, unabhängiges Review und einen vollständigen Vergleich
+von Start/Status/Steer/Checkpoint/Stop samt PID-Wiederverwendung. Bis dahin
+bleibt der neue Seam per Default aus; `agent-launcher` ersetzt BACHs
+Agent-Handler nicht und Ocean-Parität ist hierdurch nicht bewiesen.
+
 | Nr | Modul / Repo | BACH-Zielbereich | Schnittstelle / Adapter | Status / Vorarbeit |
 |:---|:---|:---|:---|:---|
 | **1** | `ellmos-tests` | `system/hub/test.py`<br>`tools/testing/` | `TestAdapter` / `RunnerSeam`<br>CLI: `bach test` | Vorbereitet in Task 1181 (`2bf77f9`). Rollback & Testsuite-Isolation intakt. |

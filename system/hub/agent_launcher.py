@@ -13,17 +13,19 @@ Optionen:
   --model sonnet|opus|haiku   Modell (default: sonnet)
 """
 import sys
-import os
-import signal
+import hashlib
 import subprocess
 import json
 import sqlite3
 import shutil
 import re
+import secrets
+import os
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
 from .lang import t
+from filelock import FileLock, Timeout
 
 try:
     import yaml
@@ -86,6 +88,28 @@ class AgentLauncherHandler(BaseHandler):
             "rename": t("agent_rename_desc", default="Display-Name aendern (bach agent rename <name> <neuer-name>)")
         }
 
+    def _claimed_action(self, action: str, requested: str, technical: str, json_output: bool, callback):
+        """Serialize named start/stop across handler invocations on this host."""
+        digest = hashlib.sha256(technical.encode("utf-8")).hexdigest()
+        claim_path = self.pid_dir / f".agent-claim-{digest}.lock"
+        try:
+            self.pid_dir.mkdir(parents=True, exist_ok=True)
+            claim = FileLock(str(claim_path))
+            claim.acquire(timeout=0)
+        except (Timeout, OSError) as exc:
+            return self._action_response(
+                action,
+                requested,
+                technical,
+                False,
+                f"[ERROR] Agent Claim nicht verfügbar: {exc}",
+                json_output=json_output,
+            )
+        try:
+            return callback()
+        finally:
+            claim.release()
+
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
         json_output = self._has_flag(args, "--json")
         filtered_args = [arg for arg in args if arg != "--json"]
@@ -106,7 +130,11 @@ class AgentLauncherHandler(BaseHandler):
                     json_output=json_output,
                 )
             name = filtered_args[0]
-            return self._start_agent(name, filtered_args[1:], dry_run, json_output=json_output)
+            technical = self._resolve_to_technical_name(name)
+            return self._claimed_action(
+                "start", name, technical, json_output,
+                lambda: self._start_agent(name, filtered_args[1:], dry_run, json_output=json_output),
+            )
         elif operation == "stop":
             if not filtered_args:
                 message = f"[ERROR] {t('agent_name_required', default='Agent-Name erforderlich')}: bach agent stop <name>"
@@ -118,7 +146,12 @@ class AgentLauncherHandler(BaseHandler):
                     message,
                     json_output=json_output,
                 )
-            return self._stop_agent(filtered_args[0], dry_run, json_output=json_output)
+            name = filtered_args[0]
+            technical = self._resolve_to_technical_name(name)
+            return self._claimed_action(
+                "stop", name, technical, json_output,
+                lambda: self._stop_agent(name, dry_run, json_output=json_output),
+            )
         elif operation == "status":
             if json_output:
                 return self._show_status_json()
@@ -319,6 +352,17 @@ class AgentLauncherHandler(BaseHandler):
             notes=note_entries,
             temp_dir=temp_dir,
         )
+        if status in {"unverified", "mismatch", "unavailable", "invalid"}:
+            # Neither start nor stop is safe without a verified PID identity.
+            payload["available_actions"] = [
+                action for action in payload["available_actions"]
+                if action not in {"start", "stop"}
+            ]
+            payload["operator_control"]["available_actions"] = [
+                action for action in payload["operator_control"]["available_actions"]
+                if action not in {"start", "stop"}
+            ]
+            payload["queued_for_next_start"] = False
         if dry_run:
             payload["dry_run"] = True
         return payload
@@ -725,32 +769,20 @@ class AgentLauncherHandler(BaseHandler):
 
     def _is_agent_running(self, name: str) -> int:
         """Prueft ob Agent laeuft. Gibt PID oder 0 zurueck."""
-        pid_file = self.pid_dir / f"{name}.pid"
-        if not pid_file.exists():
+        from .agent_process_provider import create_agent_registry, inspect_process_identity
+
+        pid_data = self._load_pid_data(name)
+        state, _process = inspect_process_identity(pid_data)
+        if state != "owned":
             return 0
-        try:
-            data = json.loads(pid_file.read_text(encoding='utf-8'))
-            pid = data.get("pid", 0)
-            if not pid:
-                return 0
-            if sys.platform == 'win32':
-                result = subprocess.run(
-                    ['tasklist', '/FI', f'PID eq {pid}'],
-                    capture_output=True, text=True, encoding='utf-8', errors='replace'
-                )
-                if str(pid) in result.stdout:
-                    return pid
-                # Prozess nicht mehr da, PID-File aufraeumen
-                pid_file.unlink(missing_ok=True)
-                return 0
-            else:
-                os.kill(pid, 0)
-                return pid
-        except (json.JSONDecodeError, ValueError, ProcessLookupError, PermissionError):
-            return 0
-        except OSError:
-            pid_file.unlink(missing_ok=True)
-            return 0
+
+        external = create_agent_registry(self.pid_dir)
+        if external is not None:
+            # Registry probe must not delete the BACH PID evidence and may not
+            # substitute an unrelated PID for the identity-bound BACH record.
+            external_pid = external.probe_running(name)
+            return pid_data["pid"] if external_pid == pid_data["pid"] else 0
+        return pid_data["pid"]
 
     def _load_pid_data(self, name: str) -> dict:
         """Liest optionale Laufzeit-Metadaten aus der PID-Datei."""
@@ -758,7 +790,10 @@ class AgentLauncherHandler(BaseHandler):
         if not pid_file.exists():
             return {}
         try:
-            return json.loads(pid_file.read_text(encoding='utf-8'))
+            data = json.loads(pid_file.read_text(encoding='utf-8'))
+            if not isinstance(data, dict) or data.get("name", name) != name:
+                return {}
+            return data
         except (OSError, json.JSONDecodeError, ValueError):
             return {}
 
@@ -766,6 +801,9 @@ class AgentLauncherHandler(BaseHandler):
         """Erzeugt maschinenlesbare Metadaten fuer `agent list --json`."""
         persona_info = self._get_persona_info(agent["name"])
         pid_data = self._load_pid_data(agent["name"])
+        from .agent_process_provider import inspect_process_identity
+
+        identity_state, _process = inspect_process_identity(pid_data)
         running_pid = self._is_agent_running(agent["name"])
         started_at = pid_data.get("started")
         running = bool(running_pid)
@@ -776,7 +814,7 @@ class AgentLauncherHandler(BaseHandler):
             persona_info.get("display_name") or None,
             agent["type"],
             running=running,
-            status=self._agent_payload_status(
+            status=identity_state if pid_data and identity_state in {"unverified", "mismatch", "unavailable"} else self._agent_payload_status(
                 agent["name"],
                 running=running,
                 note_count=len(notes),
@@ -816,9 +854,15 @@ class AgentLauncherHandler(BaseHandler):
 
         for ag in agents:
             pid = self._is_agent_running(ag["name"])
+            from .agent_process_provider import inspect_process_identity
+
+            pid_data = self._load_pid_data(ag["name"])
+            identity_state, _process = inspect_process_identity(pid_data)
             notes = self._read_operator_notes(ag["name"])
             if pid:
                 status = f"[RUNNING:{pid}]"
+            elif pid_data and identity_state in {"unverified", "mismatch", "unavailable"}:
+                status = f"[{identity_state.upper()}]"
             elif notes:
                 status = f"[QUEUED:{len(notes)}]"
             else:
@@ -1379,6 +1423,33 @@ class AgentLauncherHandler(BaseHandler):
                 agent=payload,
             )
 
+        from .agent_process_provider import inspect_process_identity
+
+        existing_pid_file = self.pid_dir / f"{resolved_name}.pid"
+        if existing_pid_file.exists():
+            identity_state, _process = inspect_process_identity(self._load_pid_data(resolved_name))
+            if identity_state != "gone":
+                return self._action_response(
+                    "start",
+                    name,
+                    resolved_name,
+                    False,
+                    f"[ERROR] Start verweigert: PID-Datei hat Status {identity_state}; erst sicher nachzertifizieren",
+                    json_output=json_output,
+                )
+
+        from .agent_process_provider import psutil as process_inspector
+
+        if process_inspector is None and not dry_run:
+            return self._action_response(
+                "start",
+                name,
+                resolved_name,
+                False,
+                "[ERROR] Start verweigert: psutil für Prozessidentität nicht verfügbar",
+                json_output=json_output,
+            )
+
         mode = self._parse_flag(args, "--mode", "default")
         model = self._parse_flag(args, "--model", "sonnet")
 
@@ -1592,6 +1663,9 @@ class AgentLauncherHandler(BaseHandler):
         )
 
         try:
+            release_token = secrets.token_hex(16)
+            gate_file = agent_temp_dir / f".spawn-gate-{release_token}"
+            gate_pending = agent_temp_dir / f".spawn-gate-{release_token}.pending"
             if sys.platform == 'win32':
                 # Windows: eigenes Konsolenfenster direkt ueber cmd.exe starten.
                 # So bleibt die getrackte PID ueber die gesamte Agenten-Session
@@ -1608,6 +1682,17 @@ class AgentLauncherHandler(BaseHandler):
                     f"echo === BACH Agent: {agent_label} ({resolved_name}) ===",
                     f"echo Modell: {model} ^| Modus: {mode} ^| Runner: {runner_name}",
                     f"echo.",
+                    'set "BACH_GATE_ATTEMPTS=0"',
+                    ':BACH_SPAWN_WAIT',
+                    f'if exist "{gate_file}" goto BACH_SPAWN_CHECK',
+                    'set /a BACH_GATE_ATTEMPTS+=1',
+                    'if %BACH_GATE_ATTEMPTS% GEQ 10 exit /b 86',
+                    'timeout /t 1 /nobreak',
+                    'goto BACH_SPAWN_WAIT',
+                    ':BACH_SPAWN_CHECK',
+                    'set "BACH_SPAWN_GATE="',
+                    f'set /p BACH_SPAWN_GATE=<"{gate_file}"',
+                    f'if not "%BACH_SPAWN_GATE%"=="{release_token}" exit /b 86',
                     f"{' '.join(cmd)}",
                 ]
                 if not headless:
@@ -1622,20 +1707,21 @@ class AgentLauncherHandler(BaseHandler):
                 proc = subprocess.Popen(
                     ["cmd", "/c", str(start_bat)],
                     cwd=str(agent_temp_dir),
-                    creationflags=creation_flags
+                    creationflags=creation_flags,
                 )
             else:
                 proc = subprocess.Popen(
-                    cmd,
+                    [sys.executable, str(Path(__file__).with_name("agent_spawn_gate.py")), release_token, str(gate_file), *cmd],
                     cwd=str(agent_temp_dir),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    start_new_session=True
+                    start_new_session=True,
                 )
 
             # PID speichern
             pid_data = {
                 "pid": proc.pid,
+                "process_create_time": None,
                 "name": resolved_name,
                 "display_name": display_name,
                 "type": agent["type"],
@@ -1648,7 +1734,79 @@ class AgentLauncherHandler(BaseHandler):
                 "allowed_tools": None if permission_mode == "full" else allowed_tools,
                 "max_turns": max_turns,
             }
-            pid_file.write_text(json.dumps(pid_data, indent=2), encoding='utf-8')
+            from .agent_process_provider import capture_process_create_time
+
+            try:
+                pid_data["process_create_time"] = capture_process_create_time(proc.pid)
+            except Exception:
+                # Auch ein Provider-Fehler bei der Abfrage ist kein Freigabegrund.
+                pid_data["process_create_time"] = None
+            try:
+                pid_file.write_text(json.dumps(pid_data, indent=2), encoding='utf-8')
+            except Exception:
+                # Beleg nicht gespeichert: den noch providerlosen Starter nie freigeben.
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
+                raise
+
+            if pid_data["process_create_time"] is None:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                    starter_exited = True
+                except (subprocess.TimeoutExpired, OSError):
+                    starter_exited = False
+                payload = self._build_agent_payload(
+                    resolved_name,
+                    display_name,
+                    agent["type"],
+                    running=False,
+                    status="unverified",
+                    pid=proc.pid,
+                    model=model,
+                    mode=mode,
+                    started_at=pid_data["started"],
+                    temp_dir=str(agent_temp_dir),
+                    window_title=pid_data.get("window_title"),
+                    pid_file=str(pid_file),
+                    available_actions=[],
+                )
+                return self._action_response(
+                    "start",
+                    name,
+                    resolved_name,
+                    False,
+                    f"[ERROR] Agent-Starter (PID {proc.pid}) ohne Provider-Freigabe; Identität nicht lesbar, Starter-Ende {'bestätigt' if starter_exited else 'nicht bestätigt'}, PID-Datei zur Nachzertifizierung erhalten",
+                    json_output=json_output,
+                    agent=payload,
+                )
+
+            try:
+                gate_pending.write_text(release_token, encoding="ascii")
+                os.replace(gate_pending, gate_file)
+            except OSError as exc:
+                # Ein Fehler nach der atomaren Marker-Ersetzung könnte den
+                # Runner bereits freigegeben haben: Beleg konservativ erhalten.
+                # Deshalb weder "nicht gestartet" noch "running" behaupten.
+                pid_data["spawn_gate"] = "release_unconfirmed"
+                pid_file.write_text(json.dumps(pid_data, indent=2), encoding='utf-8')
+                payload = self._build_agent_payload(
+                    resolved_name, display_name, agent["type"],
+                    running=False, status="unverified", pid=proc.pid,
+                    model=model, mode=mode, started_at=pid_data["started"],
+                    temp_dir=str(agent_temp_dir),
+                    window_title=pid_data.get("window_title"),
+                    pid_file=str(pid_file), available_actions=[],
+                )
+                return self._action_response(
+                    "start", name, resolved_name, False,
+                    f"[ERROR] Agent-Starter (PID {proc.pid}) Freigabe unbestätigt: {exc}; PID-Datei zur Nachzertifizierung erhalten",
+                    json_output=json_output,
+                    agent=payload,
+                )
 
             agent_label = display_name or resolved_name
             message = (
@@ -1753,26 +1911,47 @@ class AgentLauncherHandler(BaseHandler):
 
         try:
             data = json.loads(pid_file.read_text(encoding='utf-8'))
+            if not isinstance(data, dict):
+                raise ValueError("PID-File muss ein JSON-Objekt sein")
+            if data.get("name", resolved_name) != resolved_name:
+                raise ValueError("PID-File gehört zu einem anderen Agenten")
             pid = data.get("pid", 0)
-        except (json.JSONDecodeError, ValueError):
-            pid_file.unlink(missing_ok=True)
+        except (json.JSONDecodeError, ValueError) as exc:
+            detail = str(exc) if "anderen Agenten" in str(exc) else "PID-File ist ungültig"
             return self._action_response(
                 "stop",
                 name,
                 resolved_name,
                 False,
-                f"[ERROR] PID-File fuer '{name}' ist ungueltig (entfernt)",
+                f"[ERROR] Stop verweigert für '{name}': {detail} (zur Nachzertifizierung erhalten)",
                 json_output=json_output,
             )
 
         if not pid:
-            pid_file.unlink(missing_ok=True)
             return self._action_response(
                 "stop",
                 name,
                 resolved_name,
                 False,
-                f"[ERROR] Keine PID fuer Agent '{name}' (PID-File entfernt)",
+                f"[ERROR] Keine PID fuer Agent '{name}' (PID-File erhalten)",
+                json_output=json_output,
+            )
+
+        from .agent_process_provider import (
+            AgentProcessIdentityError,
+            terminate_verified_process,
+            verified_process,
+        )
+
+        try:
+            owned_process = verified_process(data)
+        except AgentProcessIdentityError as exc:
+            return self._action_response(
+                "stop",
+                name,
+                resolved_name,
+                False,
+                f"[ERROR] Stop verweigert: {exc}",
                 json_output=json_output,
             )
 
@@ -1814,13 +1993,7 @@ class AgentLauncherHandler(BaseHandler):
             )
 
         try:
-            if sys.platform == 'win32':
-                subprocess.run(
-                    ['taskkill', '/PID', str(pid), '/T', '/F'],
-                    capture_output=True
-                )
-            else:
-                os.kill(pid, signal.SIGTERM)
+            terminate_verified_process(owned_process, windows=sys.platform == 'win32')
 
             # PID-File entfernen
             pid_file.unlink(missing_ok=True)
@@ -1837,7 +2010,6 @@ class AgentLauncherHandler(BaseHandler):
             )
 
         except Exception as e:
-            pid_file.unlink(missing_ok=True)
             return self._action_response(
                 "stop",
                 name,
@@ -2460,7 +2632,6 @@ class AgentLauncherHandler(BaseHandler):
 
     def _show_status(self) -> tuple:
         """Zeigt alle laufenden Agents."""
-        self.pid_dir.mkdir(parents=True, exist_ok=True)
 
         pid_files = list(self.pid_dir.glob("*.pid"))
 
@@ -2475,9 +2646,13 @@ class AgentLauncherHandler(BaseHandler):
         ]
 
         active = 0
+        from .agent_process_provider import inspect_process_identity
+
         for pf in sorted(pid_files):
             try:
                 data = json.loads(pf.read_text(encoding='utf-8'))
+                if not isinstance(data, dict) or data.get("name", pf.stem) != pf.stem:
+                    raise ValueError("PID-Dateiname und Agentenname stimmen nicht überein")
                 name = data.get("name", pf.stem)
                 pid = data.get("pid", 0)
                 model = data.get("model", "?")
@@ -2486,39 +2661,27 @@ class AgentLauncherHandler(BaseHandler):
                 if started and started != "?":
                     started = started[:19]  # ISO ohne Microseconds
 
-                # Pruefen ob Prozess noch laeuft
-                running = False
-                if pid:
-                    if sys.platform == 'win32':
-                        result = subprocess.run(
-                            ['tasklist', '/FI', f'PID eq {pid}'],
-                            capture_output=True, text=True, encoding='utf-8', errors='replace'
-                        )
-                        running = str(pid) in (result.stdout or '')
-                    else:
-                        try:
-                            os.kill(pid, 0)
-                            running = True
-                        except OSError:
-                            running = False
+                identity_state, _process = inspect_process_identity(data)
+                running = bool(self._is_agent_running(name)) if identity_state == "owned" else False
 
                 pause_requested = bool(self._read_pause_request(name, temp_dir=data.get("temp_dir")))
                 if running and pause_requested:
                     status = "[PAUSE-REQ]"
                 else:
-                    status = "[RUNNING]" if running else "[DEAD]"
+                    status = "[RUNNING]" if running else (
+                        f"[{identity_state.upper()}]"
+                        if identity_state in {"unverified", "mismatch", "unavailable"}
+                        else "[DEAD]"
+                    )
                 if running:
                     active += 1
-                else:
-                    # Totes PID-File aufraeumen
-                    pf.unlink(missing_ok=True)
+                # Status bleibt lesend; auch tote Belege gehen zur Nachzertifizierung.
 
                 note_count = len(self._read_operator_notes(name, temp_dir=data.get("temp_dir")))
                 output.append(f"{name:25} {pid:>7}  {model:8} {mode:8} {started:20} {status:10} {note_count:>5}")
 
-            except (json.JSONDecodeError, ValueError):
+            except (json.JSONDecodeError, ValueError, AttributeError, TypeError):
                 output.append(f"{pf.stem:25} {'?':>7}  {'?':8} {'?':8} {'?':20} [INVALID]")
-                pf.unlink(missing_ok=True)
 
         output.extend([
             "",
@@ -2529,24 +2692,26 @@ class AgentLauncherHandler(BaseHandler):
 
     def _show_status_json(self) -> tuple:
         """Zeigt laufende Agents als maschinenlesbaren JSON-Status."""
-        self.pid_dir.mkdir(parents=True, exist_ok=True)
         pid_files = list(self.pid_dir.glob("*.pid"))
 
         agents = []
         active = 0
+        from .agent_process_provider import inspect_process_identity
 
         for pf in sorted(pid_files):
             try:
                 data = json.loads(pf.read_text(encoding='utf-8'))
+                if not isinstance(data, dict) or data.get("name", pf.stem) != pf.stem:
+                    raise ValueError("PID-Dateiname und Agentenname stimmen nicht überein")
                 name = data.get("name", pf.stem)
+                identity_state, _process = inspect_process_identity(data)
                 running_pid = self._is_agent_running(name)
                 running = bool(running_pid)
                 display_name = data.get("display_name") or self._get_persona_info(name).get("display_name") or None
                 started_at = data.get("started")
                 if running:
                     active += 1
-                else:
-                    pf.unlink(missing_ok=True)
+                # JSON-Status bleibt lesend; auch tote Belege bleiben erhalten.
 
                 temp_dir = data.get("temp_dir")
                 notes = self._read_operator_notes(name, temp_dir=temp_dir)
@@ -2557,7 +2722,7 @@ class AgentLauncherHandler(BaseHandler):
                         display_name,
                         data.get("type"),
                         running=running,
-                        status=self._agent_payload_status(
+                        status=identity_state if identity_state in {"unverified", "mismatch", "unavailable"} else self._agent_payload_status(
                             name,
                             running=running,
                             note_count=len(notes),
@@ -2578,7 +2743,7 @@ class AgentLauncherHandler(BaseHandler):
                         max_turns=data.get("max_turns"),
                     )
                 )
-            except (json.JSONDecodeError, ValueError):
+            except (json.JSONDecodeError, ValueError, AttributeError, TypeError):
                 agents.append(
                     self._build_agent_payload(
                         pf.stem,
@@ -2593,10 +2758,9 @@ class AgentLauncherHandler(BaseHandler):
                         temp_dir=None,
                         window_title=None,
                         pid_file=str(pf),
-                        available_actions=["start"],
+                        available_actions=[],
                     )
                 )
-                pf.unlink(missing_ok=True)
 
         payload = {
             "generated_at": datetime.now().isoformat(),
