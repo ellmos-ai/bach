@@ -1063,6 +1063,79 @@ def test_failed_full_context_handoff_stops_before_repeated_cloud_call(failure):
     assert backend.calls == 2
 
 
+def test_successful_but_still_full_context_handoffs_are_bounded():
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession, HANDOFF_PROMPT
+
+    class _OversizedHandoffBackend:
+        manages_own_tools = False
+
+        def __init__(self):
+            self.calls = 0
+
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        def get_context_limit(self):
+            return 100
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls > 6:
+                raise AssertionError("unbounded handoff calls")
+            if messages[-1].get("content") == HANDOFF_PROMPT:
+                return {"content": "RESUME: valid but still oversized"}
+            return {"content": "", "prompt_tokens": 90}
+
+    backend = _OversizedHandoffBackend()
+    runtime = ChatRuntime(backend)
+    runtime.handoff_percent = 75
+    session = ChatSession()
+    session.model = "glm-5.3:cloud"
+    answer = asyncio.run(runtime._tool_loop(
+        [{"role": "system", "content": "Auftrag"}], session, tools=[],
+        context_limit=100,
+    ))
+    assert isinstance(answer, FailedAnswer)
+    assert "Kontext-Übergabe" in answer
+    assert backend.calls <= 5
+
+
+def test_non_glm_transient_handoff_failure_keeps_tail_fallback():
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+
+    class _TransientHandoffBackend:
+        manages_own_tools = False
+
+        def __init__(self):
+            self.calls = 0
+
+        def get_default_model(self):
+            return "qwen3:4b"
+
+        def get_context_limit(self):
+            return 100
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return {"content": "", "prompt_tokens": 90}
+            if self.calls == 2:
+                raise TimeoutError("transient handoff timeout")
+            return {"content": "recovered", "prompt_tokens": 10}
+
+    backend = _TransientHandoffBackend()
+    runtime = ChatRuntime(backend)
+    runtime.handoff_percent = 75
+    answer = asyncio.run(runtime._tool_loop(
+        [{"role": "system", "content": "Auftrag"}], ChatSession(), tools=[],
+        context_limit=100,
+    ))
+    assert answer == "recovered"
+    assert backend.calls == 3
+
+
 def test_context_handoff_switches_backend_limits_between_turns():
     import asyncio
 

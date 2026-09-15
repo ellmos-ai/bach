@@ -1572,6 +1572,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             if self._context_voll(
                 result, session, context_limit=context_limit
             ):
+                if handoffs >= 2:
+                    session.current_tool = ""
+                    return FailedAnswer.from_exception(RuntimeError(
+                        "Kontext-Übergabe bleibt nach zwei Versuchen zu groß"
+                    ))
                 handoffs += 1
                 log.info("Kontext-Uebergabe [%d] bei %s Token",
                          handoffs, result.get("prompt_tokens"))
@@ -1581,7 +1586,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         session,
                         backend=selected_backend,
                         model=selected_model,
-                        strict=True,
+                        strict=selected_model == "glm-5.3:cloud",
                     )
                 except Exception as e:
                     session.current_tool = ""
