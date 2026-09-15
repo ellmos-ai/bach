@@ -13,6 +13,7 @@ Optionen:
   --model sonnet|opus|haiku   Modell (default: sonnet)
 """
 import sys
+import hashlib
 import subprocess
 import json
 import sqlite3
@@ -22,6 +23,7 @@ from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
 from .lang import t
+from filelock import FileLock, Timeout
 
 try:
     import yaml
@@ -84,6 +86,28 @@ class AgentLauncherHandler(BaseHandler):
             "rename": t("agent_rename_desc", default="Display-Name aendern (bach agent rename <name> <neuer-name>)")
         }
 
+    def _claimed_action(self, action: str, requested: str, technical: str, json_output: bool, callback):
+        """Serialize named start/stop across handler invocations on this host."""
+        digest = hashlib.sha256(technical.encode("utf-8")).hexdigest()
+        claim_path = self.pid_dir / f".agent-claim-{digest}.lock"
+        try:
+            self.pid_dir.mkdir(parents=True, exist_ok=True)
+            claim = FileLock(str(claim_path))
+            claim.acquire(timeout=0)
+        except (Timeout, OSError) as exc:
+            return self._action_response(
+                action,
+                requested,
+                technical,
+                False,
+                f"[ERROR] Agent Claim nicht verfügbar: {exc}",
+                json_output=json_output,
+            )
+        try:
+            return callback()
+        finally:
+            claim.release()
+
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
         json_output = self._has_flag(args, "--json")
         filtered_args = [arg for arg in args if arg != "--json"]
@@ -104,7 +128,11 @@ class AgentLauncherHandler(BaseHandler):
                     json_output=json_output,
                 )
             name = filtered_args[0]
-            return self._start_agent(name, filtered_args[1:], dry_run, json_output=json_output)
+            technical = self._resolve_to_technical_name(name)
+            return self._claimed_action(
+                "start", name, technical, json_output,
+                lambda: self._start_agent(name, filtered_args[1:], dry_run, json_output=json_output),
+            )
         elif operation == "stop":
             if not filtered_args:
                 message = f"[ERROR] {t('agent_name_required', default='Agent-Name erforderlich')}: bach agent stop <name>"
@@ -116,7 +144,12 @@ class AgentLauncherHandler(BaseHandler):
                     message,
                     json_output=json_output,
                 )
-            return self._stop_agent(filtered_args[0], dry_run, json_output=json_output)
+            name = filtered_args[0]
+            technical = self._resolve_to_technical_name(name)
+            return self._claimed_action(
+                "stop", name, technical, json_output,
+                lambda: self._stop_agent(name, dry_run, json_output=json_output),
+            )
         elif operation == "status":
             if json_output:
                 return self._show_status_json()
@@ -756,7 +789,9 @@ class AgentLauncherHandler(BaseHandler):
             return {}
         try:
             data = json.loads(pid_file.read_text(encoding='utf-8'))
-            return data if isinstance(data, dict) else {}
+            if not isinstance(data, dict) or data.get("name", name) != name:
+                return {}
+            return data
         except (OSError, json.JSONDecodeError, ValueError):
             return {}
 
@@ -1819,14 +1854,17 @@ class AgentLauncherHandler(BaseHandler):
             data = json.loads(pid_file.read_text(encoding='utf-8'))
             if not isinstance(data, dict):
                 raise ValueError("PID-File muss ein JSON-Objekt sein")
+            if data.get("name", resolved_name) != resolved_name:
+                raise ValueError("PID-File gehört zu einem anderen Agenten")
             pid = data.get("pid", 0)
-        except (json.JSONDecodeError, ValueError):
+        except (json.JSONDecodeError, ValueError) as exc:
+            detail = str(exc) if "anderen Agenten" in str(exc) else "PID-File ist ungültig"
             return self._action_response(
                 "stop",
                 name,
                 resolved_name,
                 False,
-                f"[ERROR] PID-File fuer '{name}' ist ungueltig (zur Nachzertifizierung erhalten)",
+                f"[ERROR] Stop verweigert für '{name}': {detail} (zur Nachzertifizierung erhalten)",
                 json_output=json_output,
             )
 
@@ -2554,6 +2592,8 @@ class AgentLauncherHandler(BaseHandler):
         for pf in sorted(pid_files):
             try:
                 data = json.loads(pf.read_text(encoding='utf-8'))
+                if not isinstance(data, dict) or data.get("name", pf.stem) != pf.stem:
+                    raise ValueError("PID-Dateiname und Agentenname stimmen nicht überein")
                 name = data.get("name", pf.stem)
                 pid = data.get("pid", 0)
                 model = data.get("model", "?")
@@ -2602,6 +2642,8 @@ class AgentLauncherHandler(BaseHandler):
         for pf in sorted(pid_files):
             try:
                 data = json.loads(pf.read_text(encoding='utf-8'))
+                if not isinstance(data, dict) or data.get("name", pf.stem) != pf.stem:
+                    raise ValueError("PID-Dateiname und Agentenname stimmen nicht überein")
                 name = data.get("name", pf.stem)
                 identity_state, _process = inspect_process_identity(data)
                 running_pid = self._is_agent_running(name)

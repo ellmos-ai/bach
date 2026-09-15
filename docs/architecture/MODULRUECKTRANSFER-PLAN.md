@@ -39,7 +39,7 @@ Ein unvollständiger Modulvertrag scheitert laut; ein fehlendes Modul löst kein
 Installation aus. Der Modul-PR `ellmos-ai/agent-launcher#2` verschiebt den
 privaten `claude-bridge`-Import auf den Claude-CLI-Discovery-Pfad, sodass
 Registry/andere Provider ohne diese Bridge importiert werden können; er ändert
-**nicht** die Paket-Abhängigkeit oder die Freigabeentscheidung. Eine
+**nicht** die Paket-Abhängigkeit oder die Freigabeentscheidung.
 Der Sicherheitsnachtrag `BACH-AGENT-PID-01` speichert beim Start zusätzlich
 `process_create_time` und prüft PID plus Erzeugungszeit vor Status und Stop.
 Altdateien ohne diesen Anker sowie Abweichungen bleiben erhalten, werden als
@@ -52,6 +52,10 @@ werden bekannte Kindprozesse wie auf Windows vor dem Elternprozess beendet;
 ein dynamisch neu entstehendes Kind ist dadurch noch nicht atomar ausgeschlossen.
 Wenn der Start die Erzeugungszeit nicht erfassen kann, meldet er keinen
 steuerbaren Erfolg, sondern einen `unverified`-Beleg zur Nachzertifizierung.
+BACHs Handler-Start und -Stop halten zusätzlich einen nativen Claim pro
+technischem Agentennamen; Status und Stop binden PID-Belege an den Dateinamen.
+Dies schließt den direkten Doppelstart über diese Handler-Zugänge, nicht aber
+fremde Registry-Mutationen oder einen fehlenden OS-Handle-Signal-Fence aus.
 Produktiv-Aktivierung braucht weiterhin einen überprüften Modul-Pin, Hostinstallation,
 echten Lifecycle-Smoke, unabhängiges Review und einen vollständigen Vergleich
 von Start/Status/Steer/Checkpoint/Stop samt PID-Wiederverwendung. Bis dahin

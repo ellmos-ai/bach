@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 
 import pytest
+from filelock import FileLock
 
 from hub.agent_launcher import AgentLauncherHandler
 from hub import agent_process_provider as provider
@@ -187,3 +189,41 @@ def test_invalid_pid_evidence_survives_status_and_stop_dry_run(handler, content)
     ok, _response = handler.handle("stop", ["test-boss"], dry_run=True)
     assert not ok
     assert pid_file.read_text(encoding="utf-8") == content
+
+
+def test_start_dry_run_refuses_when_named_lifecycle_claim_is_held(handler):
+    skill_dir = handler.agents_dir / "test-boss"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: test-boss\n---\n", encoding="utf-8")
+    digest = hashlib.sha256(b"test-boss").hexdigest()
+    claim_path = handler.pid_dir / f".agent-claim-{digest}.lock"
+    with FileLock(str(claim_path)):
+        ok, response = handler.handle("start", ["test-boss"], dry_run=True)
+    assert not ok
+    assert "Claim" in response
+
+
+def test_json_status_does_not_bind_a_file_to_another_agent_name(handler, monkeypatch):
+    a_file = handler.pid_dir / "a.pid"
+    b_file = handler.pid_dir / "b.pid"
+    a_file.write_text(json.dumps({"pid": 4242, "name": "b", "process_create_time": 10.0}), encoding="utf-8")
+    b_file.write_text(json.dumps({"pid": 4242, "name": "b", "process_create_time": 10.0}), encoding="utf-8")
+    monkeypatch.setattr(provider.psutil, "Process", lambda pid: _FakeProcess())
+    ok, response = handler.handle("status", ["--json"])
+    assert ok
+    agents = json.loads(response)["agents"]
+    a_entry = next(agent for agent in agents if agent["pid_file"] == str(a_file))
+    assert a_entry["running"] is False
+    assert a_entry["status"] == "invalid"
+    assert a_file.exists()
+
+
+def test_stop_refuses_pid_record_named_for_another_agent(handler, monkeypatch):
+    a_file = handler.pid_dir / "a.pid"
+    a_file.write_text(json.dumps({"pid": 4242, "name": "b", "process_create_time": 10.0}), encoding="utf-8")
+    candidate = _FakeProcess()
+    monkeypatch.setattr(provider.psutil, "Process", lambda pid: candidate)
+    ok, response = handler.handle("stop", ["a"])
+    assert not ok and "anderen Agenten" in response
+    assert candidate.killed == candidate.terminated == 0
+    assert a_file.exists()
