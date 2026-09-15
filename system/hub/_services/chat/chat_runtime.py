@@ -1593,10 +1593,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     return FailedAnswer.from_exception(e)
                 continue
 
-            # A subsequent non-full result proves the prior handoff relieved
-            # pressure. Count only consecutive full-context retries, not all
-            # legitimate handoffs across a long-running worker/tool loop.
-            handoffs = 0
+            # Only a measured positive token count below the threshold proves
+            # relief. Missing/invalid counts must not bypass the retry cap.
+            if type(result.get("prompt_tokens")) is int and result["prompt_tokens"] > 0:
+                handoffs = 0
             tool_calls = result.get("tool_calls")
             if not tool_calls:
                 content = result.get("content", "") or "(keine Antwort)"
