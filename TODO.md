@@ -7,6 +7,7 @@
 - **Quelle:** `[OC-B: T-20260818-903104603; unabhängiger Review von BACH PR #65 am 2026-09-15]` — `system/hub/agent_launcher.py::_stop_agent` liest die PID direkt, während `AgentProcessRegistry.is_running` Identitätsabweichungen erkennt und PID-Dateien entfernen kann. BACHs heutige Startdateien enthalten keinen `process_identity`-Anker.
 - **Akzeptanzkriterien (DoD):** Wiederverwendete PID und Identitätsabweichung stoppen keinen Prozess; Status-, JSON- und Stop-Zugänge stimmen überein; Stop-Dry-run meldet denselben Guard; Alt-PID-Verhalten ist ausdrücklich geregelt; Tests prüfen Windows- und Unix-Pfade ohne echten Agentenstart. Erst danach Opt-in-Seam auf einem Host aktivieren und Lifecycle/Parity nachweisen.
 - **Prüfweg:** gezielte Agent-Handler-/Provider-Tests, echter Modul-Pin/Host-Smoke und unabhängiger Review; kein lokales Ollama.
+- **Stand 2026-09-15:** BACH-seitiger PID-/Erzeugungszeit-Guard und fail-closed Altdatei-Verhalten im isolierten OC-B-Arbeitszweig umgesetzt; 137 gezielte Tests bestanden. Noch offen: unabhängiger Review des Sicherheitsnachtrags, PR-Readback und echter Host-Lifecycle-/Ocean-Paritätsnachweis. Kein Aktivierungs- oder Release-Claim.
 - **Aufwand:** medium
 - **Reichweite:** local
 - **Priorität:** high

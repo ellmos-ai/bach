@@ -12,6 +12,11 @@ import importlib.util
 import os
 from pathlib import Path
 
+try:
+    import psutil
+except ImportError:  # pragma: no cover - optional at source level; stop fails closed
+    psutil = None
+
 
 ROLLBACK_ENV_VAR = "BACH_USE_EXTERNAL_AGENT_REGISTRY"
 _ON_VALUES = {"1", "true", "yes", "on"}
@@ -33,3 +38,68 @@ def create_agent_registry(pid_dir: str | Path):
     if registry is None:
         raise AttributeError("agent-launcher must export AgentProcessRegistry")
     return registry(Path(pid_dir))
+
+
+class AgentProcessIdentityError(RuntimeError):
+    """A PID file cannot prove ownership of the current OS process."""
+
+
+def capture_process_create_time(pid: int) -> float | None:
+    """Capture the OS process birth time immediately after spawning."""
+    if psutil is None:
+        return None
+    try:
+        return psutil.Process(int(pid)).create_time()
+    except (psutil.Error, TypeError, ValueError, OSError):
+        return None
+
+
+def inspect_process_identity(record: dict):
+    """Return (owned|unverified|mismatch|gone|unavailable, bound process)."""
+    pid = record.get("pid")
+    created = record.get("process_create_time")
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return "unverified", None
+    if not isinstance(created, (int, float)) or isinstance(created, bool):
+        return "unverified", None
+    if psutil is None:
+        return "unavailable", None
+    try:
+        process = psutil.Process(pid)
+        if process.create_time() != float(created):
+            return "mismatch", None
+        if not process.is_running():
+            return "gone", None
+        return "owned", process
+    except psutil.NoSuchProcess:
+        return "gone", None
+    except (psutil.Error, OSError, ValueError):
+        return "unavailable", None
+
+
+def verified_process(record: dict):
+    """Return an identity-bound Process, never a bare reusable PID."""
+    state, process = inspect_process_identity(record)
+    if state != "owned":
+        reasons = {
+            "unverified": "Agent-Prozessidentität fehlt (Alt-PID-Datei)",
+            "mismatch": "Agent-Prozessidentität stimmt nicht überein",
+            "gone": "Agent-Prozess existiert nicht mehr",
+            "unavailable": "Agent-Prozessidentität nicht lesbar",
+        }
+        raise AgentProcessIdentityError(reasons[state])
+    return process
+
+
+def terminate_verified_process(process, *, windows: bool) -> None:
+    """Use psutil's PID-reuse-checked process methods, never taskkill /PID."""
+    if windows:
+        # children() also checks the parent's identity before enumerating.
+        for child in reversed(process.children(recursive=True)):
+            try:
+                child.kill()
+            except psutil.NoSuchProcess:
+                continue
+        process.kill()
+    else:
+        process.terminate()

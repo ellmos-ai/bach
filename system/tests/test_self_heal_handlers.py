@@ -386,6 +386,7 @@ def test_agent_start_json_success_payload(tmp_path, monkeypatch):
 
 def test_agent_stop_json_success_payload(tmp_path, monkeypatch):
     from hub.agent_launcher import AgentLauncherHandler
+    from hub import agent_process_provider as provider
 
     base = _init_base(tmp_path)
     pid_dir = base / "data" / "agent_pids"
@@ -393,9 +394,10 @@ def test_agent_stop_json_success_payload(tmp_path, monkeypatch):
     pid_file = pid_dir / "demo.pid"
     pid_file.write_text(
         json.dumps(
-            {
-                "pid": 4242,
-                "name": "demo",
+                {
+                    "pid": 4242,
+                    "process_create_time": 10.0,
+                    "name": "demo",
                 "display_name": "Demo",
                 "type": "boss",
                 "model": "sonnet",
@@ -409,14 +411,20 @@ def test_agent_stop_json_success_payload(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    killed = {}
+    terminated = []
 
-    def fake_kill(pid, sig):
-        killed["pid"] = pid
-        killed["sig"] = sig
+    class OwnedProcess:
+        def create_time(self):
+            return 10.0
+
+        def is_running(self):
+            return True
+
+        def terminate(self):
+            terminated.append(True)
 
     monkeypatch.setattr("hub.agent_launcher.sys.platform", "linux")
-    monkeypatch.setattr("hub.agent_launcher.os.kill", fake_kill)
+    monkeypatch.setattr(provider.psutil, "Process", lambda pid: OwnedProcess())
 
     success, message = AgentLauncherHandler(base).handle("stop", ["demo", "--json"])
 
@@ -429,7 +437,7 @@ def test_agent_stop_json_success_payload(tmp_path, monkeypatch):
     assert payload["agent"]["status"] == "stopped"
     assert payload["agent"]["pid"] == 4242
     assert payload["agent"]["available_actions"] == ["start", "steer"]
-    assert killed["pid"] == 4242
+    assert terminated == [True]
     assert not pid_file.exists()
 
 

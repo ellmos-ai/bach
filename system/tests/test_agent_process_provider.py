@@ -12,6 +12,14 @@ from hub.agent_launcher import AgentLauncherHandler
 from hub import agent_process_provider as provider
 
 
+class _OwnedProcess:
+    def create_time(self):
+        return 10.0
+
+    def is_running(self):
+        return True
+
+
 @pytest.fixture
 def handler(tmp_path):
     root = tmp_path / "system"
@@ -34,17 +42,21 @@ def test_external_registry_reads_same_pid_directory_without_spawning(
             return 4242
 
     monkeypatch.setenv(provider.ROLLBACK_ENV_VAR, "1")
+    (handler.pid_dir / "test-boss.pid").write_text(
+        json.dumps({"pid": 4242, "process_create_time": 10.0}), encoding="utf-8"
+    )
+    monkeypatch.setattr(provider.psutil, "Process", lambda pid: _OwnedProcess())
     monkeypatch.setattr(provider.importlib.util, "find_spec", lambda name: object())
     monkeypatch.setattr(
         provider.importlib, "import_module", lambda name: types.SimpleNamespace(AgentProcessRegistry=Registry)
     )
     assert handler._is_agent_running("test-boss") == 4242
     assert calls == [handler.pid_dir, "test-boss"]
-    assert not list(tmp_path.rglob("*.pid"))
+    assert len(list(tmp_path.rglob("*.pid"))) == 1
 
 
 @pytest.mark.parametrize("value", ["0", "false", "NO", "off"])
-def test_rollback_uses_legacy_pid_reader(handler, monkeypatch, value):
+def test_rollback_uses_bach_owned_pid_reader(handler, monkeypatch, value):
     monkeypatch.setenv(provider.ROLLBACK_ENV_VAR, value)
 
     def no_import(_name):
@@ -52,7 +64,8 @@ def test_rollback_uses_legacy_pid_reader(handler, monkeypatch, value):
 
     monkeypatch.setattr(provider.importlib, "import_module", no_import)
     pid_file = handler.pid_dir / "test-boss.pid"
-    pid_file.write_text(json.dumps({"pid": 4242}), encoding="utf-8")
+    pid_file.write_text(json.dumps({"pid": 4242, "process_create_time": 10.0}), encoding="utf-8")
+    monkeypatch.setattr(provider.psutil, "Process", lambda pid: _OwnedProcess())
     monkeypatch.setattr(agent_module.sys, "platform", "win32")
     monkeypatch.setattr(
         agent_module.subprocess,
@@ -77,6 +90,10 @@ def test_default_is_legacy_even_when_external_module_is_installed(handler, monke
 
 def test_broken_external_contract_fails_closed(handler, monkeypatch):
     monkeypatch.setenv(provider.ROLLBACK_ENV_VAR, "1")
+    (handler.pid_dir / "test-boss.pid").write_text(
+        json.dumps({"pid": 4242, "process_create_time": 10.0}), encoding="utf-8"
+    )
+    monkeypatch.setattr(provider.psutil, "Process", lambda pid: _OwnedProcess())
     monkeypatch.setattr(provider.importlib.util, "find_spec", lambda name: object())
     monkeypatch.setattr(provider.importlib, "import_module", lambda name: types.SimpleNamespace())
     with pytest.raises(AttributeError, match="AgentProcessRegistry"):

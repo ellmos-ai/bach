@@ -31,18 +31,21 @@ setzt **nur** einen opt-in Registry-Seam in BACHs `hub/agent_launcher.py`: mit
 `data/agent_pids/<name>.pid` über `AgentProcessRegistry`. Deren `is_running()`
 kann stale, korrupte oder identitätsabweichende PID-Dateien entfernen; die
 Abfrage ist also **nicht** strikt read-only. Ohne Opt-in oder mit
-`=0` verwendet er sofort den bisherigen BACH-Reader. Es wird weder ein Modell
+`=0` verwendet er BACHs eigenen, identitätsprüfenden psutil-Reader. Es wird weder ein Modell
 noch ein Agent gestartet, kein PID-Store umgezogen und kein Legacy-Pfad abgetrennt.
 Ein unvollständiger Modulvertrag scheitert laut; ein fehlendes Modul löst keine
 Installation aus. Der Modul-PR `ellmos-ai/agent-launcher#2` verschiebt den
 privaten `claude-bridge`-Import auf den Claude-CLI-Discovery-Pfad, sodass
 Registry/andere Provider ohne diese Bridge importiert werden können; er ändert
 **nicht** die Paket-Abhängigkeit oder die Freigabeentscheidung. Eine
-Produktiv-Aktivierung braucht außerdem einen sicheren BACH-Stop-Pfad: Der
-heutige Stop liest die PID direkt und kann bei PID-Wiederverwendung einen
-fremden Prozess beenden; die externe Liveness-Identitätsprüfung wird dabei
-noch nicht genutzt, und von BACH erzeugte PID-Dateien enthalten derzeit
-keinen `process_identity`-Anker. Produktiv-Aktivierung braucht einen überprüften Modul-Pin, Hostinstallation,
+Der Sicherheitsnachtrag `BACH-AGENT-PID-01` speichert beim Start zusätzlich
+`process_create_time` und prüft PID plus Erzeugungszeit vor Status und Stop.
+Altdateien ohne diesen Anker sowie Abweichungen bleiben erhalten, werden als
+`unverified`/`mismatch` ausgewiesen und dürfen weder Start noch Stop auslösen.
+Kann die Identität nicht gelesen werden, scheitert Stop geschlossen; ein
+fehlgeschlagener Stop löscht die PID-Datei nicht. Dies ist bisher nur durch
+isolierte Tests belegt, nicht durch einen echten Agent-Lifecycle.
+Produktiv-Aktivierung braucht weiterhin einen überprüften Modul-Pin, Hostinstallation,
 echten Lifecycle-Smoke, unabhängiges Review und einen vollständigen Vergleich
 von Start/Status/Steer/Checkpoint/Stop samt PID-Wiederverwendung. Bis dahin
 bleibt der neue Seam per Default aus; `agent-launcher` ersetzt BACHs
