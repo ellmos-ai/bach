@@ -75,6 +75,29 @@ class FailedAnswer(str):
         return cls(f"{cls.PREFIX}{type(exc).__name__}: {exc}".rstrip(": "))
 
 
+def _managed_backend_answer(result: Any) -> str:
+    """Validate a backend-owned-tools result before it enters chat history."""
+    if not isinstance(result, dict):
+        return FailedAnswer(f"{FailedAnswer.PREFIX}Backend-Antwort ist ungültig")
+
+    if result.get("error"):
+        partial = result.get("content")
+        partial_text = partial if isinstance(partial, str) else ""
+        return FailedAnswer(
+            f"{FailedAnswer.PREFIX}{result['error']}"
+            + (
+                f"\n[Teilantwort vor dem Abbruch]\n{partial_text}"
+                if partial_text
+                else ""
+            )
+        )
+
+    content = result.get("content")
+    if not isinstance(content, str) or not content.strip():
+        return FailedAnswer(f"{FailedAnswer.PREFIX}Backend-Antwort ist leer oder ungültig")
+    return content
+
+
 try:
     from hub.bach_paths import BACH_DB as _RUNTIME_DB
     from hub.task_audit import apply_task_field_changes
@@ -1638,14 +1661,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 result = await selected_backend.chat(
                     msgs, think=session.think, model=selected_model
                 )
-                if result.get("error"):
-                    teil = result.get("content") or ""
-                    answer = FailedAnswer(
-                        f"{FailedAnswer.PREFIX}{result['error']}"
-                        + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else "")
-                    )
-                else:
-                    answer = result.get("content", "(keine Antwort)")
+                answer = _managed_backend_answer(result)
             except Exception as e:
                 answer = FailedAnswer.from_exception(e)
         else:
