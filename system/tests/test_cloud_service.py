@@ -55,6 +55,16 @@ class TestCloudAdapters:
         assert "installed" in info
         assert "running" in info
 
+    def test_onedrive_process_control_is_blocked_in_test_mode(self, monkeypatch):
+        adapter = OneDriveAdapter()
+        monkeypatch.setattr(adapter, "is_running", lambda: True)
+        monkeypatch.setenv("BACH_TEST_MODE", "1")
+
+        with pytest.raises(RuntimeError, match="disabled in BACH test mode"):
+            adapter.pause()
+        with pytest.raises(RuntimeError, match="disabled in BACH test mode"):
+            adapter.resume()
+
     def test_icloud_adapter_info(self):
         adapter = ICloudAdapter()
         info = adapter.get_info()

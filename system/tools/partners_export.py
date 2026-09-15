@@ -18,7 +18,7 @@ import sqlite3
 class PartnersExporter:
     """Generiert PARTNERS.md aus DB."""
 
-    def __init__(self, bach_root: Path):
+    def __init__(self, bach_root: Path, *, db_path: Path | None = None):
         self.bach_root = Path(bach_root)
 
         # Auto-Detect: Root vs. system/ Installation
@@ -28,7 +28,12 @@ class PartnersExporter:
             self.system_root = self.bach_root
             self.bach_root = self.system_root.parent
 
-        self.db_path = self.system_root / "data" / "bach.db"
+        if db_path is not None:
+            self.db_path = Path(db_path)
+        else:
+            from hub.bach_paths import BACH_DB
+
+            self.db_path = Path(BACH_DB)
         self.output_path = self.bach_root / "PARTNERS.md"
 
     def generate(self) -> tuple[bool, str]:
