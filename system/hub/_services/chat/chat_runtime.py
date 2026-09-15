@@ -1575,12 +1575,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 handoffs += 1
                 log.info("Kontext-Uebergabe [%d] bei %s Token",
                          handoffs, result.get("prompt_tokens"))
-                msgs = await self._handoff(
-                    msgs,
-                    session,
-                    backend=selected_backend,
-                    model=selected_model,
-                )
+                try:
+                    msgs = await self._handoff(
+                        msgs,
+                        session,
+                        backend=selected_backend,
+                        model=selected_model,
+                        strict=True,
+                    )
+                except Exception as e:
+                    session.current_tool = ""
+                    return FailedAnswer.from_exception(e)
                 continue
 
             tool_calls = result.get("tool_calls")
@@ -1741,7 +1746,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         return used >= active_limit * self.handoff_percent / 100
 
     async def _handoff(self, msgs: list, session: ChatSession, *, backend=None,
-                       model: str = "") -> list:
+                       model: str = "", strict: bool = False) -> list:
         """Laesst das Modell sich selbst uebergeben und leert den Kontext.
 
         Anders als _summarize (Gespraechsprosa aus fremder Sicht) schreibt hier
@@ -1751,16 +1756,26 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         frage = msgs + [{"role": "user", "content": HANDOFF_PROMPT}]
         selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
+        handoff_error = None
         try:
             res = await selected_backend.chat(
-                frage, tools=None, think=False, model=selected_model
+                frage, tools=None,
+                think=session.think if selected_model == "glm-5.3:cloud" else False,
+                model=selected_model,
             )
+            if res.get("error"):
+                raise RuntimeError(str(res["error"]))
             uebergabe = (res.get("content") or "").strip()
         except Exception as e:
             log.warning("Uebergabe fehlgeschlagen: %s", e)
+            handoff_error = e
             uebergabe = ""
 
         if not uebergabe:
+            if strict:
+                if handoff_error is not None:
+                    raise RuntimeError(f"Kontext-Übergabe fehlgeschlagen: {handoff_error}") from handoff_error
+                raise RuntimeError("Kontext-Übergabe ist leer")
             # Lieber die letzten Schritte behalten als blind alles wegwerfen.
             return msgs[:1] + msgs[-4:]
 
@@ -1815,8 +1830,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
         try:
             result = await selected_backend.chat(
-                prompt, think=False, model=selected_model
+                prompt,
+                think=session.think if selected_model == "glm-5.3:cloud" else False,
+                model=selected_model,
             )
+            if result.get("error"):
+                raise RuntimeError(str(result["error"]))
             summary = result.get("content", "")[:500]
 
             if self.memory:
@@ -1829,4 +1848,5 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 {"role": "system", "content": f"Bisheriger Kontext: {summary}"}
             ] + recent
         except Exception:
-            session.messages = recent
+            if selected_model != "glm-5.3:cloud":
+                session.messages = recent
