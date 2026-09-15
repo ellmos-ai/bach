@@ -18,7 +18,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
   Austausch zwischen Prüfung und SQLite-Read schlägt fehl. Auth-, Transport-,
   Replay- und Commitfehler schreiben keinen Consumer-Checkpoint. Abhängigkeit:
   reproduzierbarer Pin auf den gemergten `sqlite-transit-sync`-Commit
-  `3cda8cf3555950b3299fd3074c9a79766840e43d`. Module und Scheduler bleiben
+  `d1509e5f25bbd35e6658d2889b9bfb9f1ff9b573`. Module und Scheduler bleiben
   standardmäßig deaktiviert; Live-Daten und Cutover sind nicht freigegeben.
 
 - **Read-only MediPlaner-Consumer (T-20260822-624075478):** Der Daily Agent kann

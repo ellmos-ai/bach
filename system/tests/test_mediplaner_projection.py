@@ -9,6 +9,7 @@ import hashlib
 import json
 import sqlite3
 import sys
+import traceback
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -24,6 +25,10 @@ from hub._services.mediplaner_projection import (
     read_legacy_unauthenticated_mediplaner_projection,
     read_mediplaner_projection,
 )  # noqa: E402
+from hub._services.projection_transport_auth import (  # noqa: E402
+    ProjectionTransportAuthError,
+    authenticated_projection_snapshot,
+)
 from hub.daily_agent import DailyAgentHandler  # noqa: E402
 
 from sqlite_transit_sync import (  # noqa: E402
@@ -40,6 +45,60 @@ class _MappingResolver:
 
     def resolve_secret(self, _reference):
         return self.value
+
+
+def _assert_secret_free_exception_chain(exc: BaseException, sentinel: str) -> None:
+    rendered = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    assert sentinel not in str(exc)
+    assert sentinel not in rendered
+    pending = [exc]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        assert sentinel not in str(current)
+        assert sentinel not in repr(current)
+        pending.extend(
+            linked
+            for linked in (current.__cause__, current.__context__)
+            if linked is not None
+        )
+
+
+def test_consumer_resolver_failure_never_exposes_secret_in_exception_chain(tmp_path):
+    sentinel = "BACH-CONSUMER-SECRET-SENTINEL-e921"
+    auth_config = {
+        "active_key_id": "test-v1",
+        "keys": [
+            {
+                "key_id": "test-v1",
+                "service": "synthetic-projection-tests",
+                "account": "mediplaner-v1",
+                "sender": "mediplaner-primary",
+            }
+        ],
+        "trusted_senders": ["mediplaner-primary"],
+        "trust_source": "synthetic-keyring",
+    }
+
+    class FailingResolver:
+        def resolve_secret(self, _reference):
+            raise RuntimeError(sentinel)
+
+    with patch(
+        "sqlite_transit_sync.OSKeyringSecretResolver", return_value=FailingResolver()
+    ):
+        with pytest.raises(ProjectionTransportAuthError) as caught:
+            with authenticated_projection_snapshot(
+                tmp_path / "not-reached.sqlite-snapshot.json",
+                auth_config,
+                expected_namespace="mediplaner-reminder-v1",
+            ):
+                pytest.fail("Keyring-Fehler darf keinen Snapshot liefern")
+
+    _assert_secret_free_exception_chain(caught.value, sentinel)
 
 
 def _authenticated_projection(path: Path, tmp_path: Path):

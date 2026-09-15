@@ -92,10 +92,10 @@ def authenticated_projection_snapshot(
         )
     except ProjectionTransportAuthError:
         raise
-    except Exception as exc:
+    except Exception:
         raise ProjectionTransportAuthError(
-            f"Projektions-Transportauthentifizierung fehlgeschlagen: {exc}"
-        ) from exc
+            "Projektions-Transportauthentifizierung fehlgeschlagen."
+        ) from None
     if verified.namespace != expected_namespace:
         raise ProjectionTransportAuthError(
             "Authentifizierter Snapshot gehört zum falschen Projektions-Namespace."
