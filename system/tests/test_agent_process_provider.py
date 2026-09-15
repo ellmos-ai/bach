@@ -116,3 +116,22 @@ def test_broken_external_contract_fails_closed(handler, monkeypatch):
     monkeypatch.setattr(provider.importlib, "import_module", lambda name: types.SimpleNamespace())
     with pytest.raises(AttributeError, match="AgentProcessRegistry"):
         handler._is_agent_running("test-boss")
+
+
+def test_older_registry_without_read_only_probe_fails_loudly(handler, monkeypatch):
+    class OldRegistry:
+        def __init__(self, directory):
+            self.directory = directory
+
+        def is_running(self, name):
+            pytest.fail("mutating old reader must not run")
+
+    monkeypatch.setenv(provider.ROLLBACK_ENV_VAR, "1")
+    pid_file = handler.pid_dir / "test-boss.pid"
+    pid_file.write_text(json.dumps({"pid": 4242, "process_create_time": 10.0}), encoding="utf-8")
+    monkeypatch.setattr(provider.psutil, "Process", lambda pid: _OwnedProcess())
+    monkeypatch.setattr(provider.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(provider.importlib, "import_module", lambda name: types.SimpleNamespace(AgentProcessRegistry=OldRegistry))
+    with pytest.raises(AttributeError, match="probe_running"):
+        handler._is_agent_running("test-boss")
+    assert pid_file.exists()
