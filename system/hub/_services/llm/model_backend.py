@@ -171,6 +171,15 @@ class OllamaBackend(ModelBackend):
             effective_ka = self.keep_alive
 
         selected_model = model or self.default_model
+        # Mac Studio live probe (2026-09-15): GLM 5.3 Cloud puts untagged
+        # reasoning in message.content with think=false. Only literal True
+        # was verified to separate message.thinking from the answer. Do not
+        # silently change the caller's setting or pass unverified values.
+        if selected_model == "glm-5.3:cloud" and think is not True:
+            raise RuntimeError(
+                "GLM 5.3 Cloud benötigt think=true (bool); andere think-Werte "
+                "können Überlegungstext in der Antwort ausgeben"
+            )
         payload = {
             "model": selected_model,
             "messages": messages,
@@ -188,6 +197,7 @@ class OllamaBackend(ModelBackend):
         grace = limit("BACH_LLM_IDLE_GRACE")
         total_cap = limit("BACH_LLM_TOTAL_CAP")
         content_parts: list[str] = []
+        thinking_parts: list[str] = []
         tool_calls: list = []
         last_message: dict = {}
         prompt_tokens = None
@@ -200,6 +210,8 @@ class OllamaBackend(ModelBackend):
             content = "".join(content_parts)
             raw_message = dict(last_message or {"role": "assistant"})
             raw_message["content"] = content
+            if thinking_parts:
+                raw_message["thinking"] = "".join(thinking_parts)
             if tool_calls:
                 raw_message["tool_calls"] = list(tool_calls)
             return {
@@ -268,6 +280,8 @@ class OllamaBackend(ModelBackend):
                                 last_message = message
                                 if message.get("content"):
                                     content_parts.append(message["content"])
+                                if isinstance(message.get("thinking"), str) and message["thinking"]:
+                                    thinking_parts.append(message["thinking"])
                                 if message.get("tool_calls"):
                                     tool_calls.extend(message["tool_calls"])
                             if chunk.get("prompt_eval_count") is not None:
@@ -300,6 +314,8 @@ class OllamaBackend(ModelBackend):
             raise RuntimeError("Ollama lieferte eine leere Antwort")
         raw_message = dict(last_message or {"role": "assistant"})
         raw_message["content"] = content
+        if thinking_parts:
+            raw_message["thinking"] = "".join(thinking_parts)
         if tool_calls:
             raw_message["tool_calls"] = tool_calls
         return {

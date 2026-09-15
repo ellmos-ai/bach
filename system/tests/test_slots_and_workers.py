@@ -357,6 +357,57 @@ class TestDynamicContextScaling:
 
 
 class TestControlHandlerEndpoints:
+    @pytest.mark.parametrize("answer_kind", ["ok", "failed-type", "failed-text"])
+    def test_once_worker_marks_failed_answer_as_error(self, monkeypatch, answer_kind):
+        import hub._services.chat.telegram_chat as control
+
+        worker_id = "worker-test-failed-answer"
+        worker = {"id": worker_id, "name": "Probe", "status": "running",
+                  "type": "once", "expires_at": None, "task_prompt": "Probe"}
+        updates = []
+        activities = []
+        monkeypatch.setattr(control, "get_slot", lambda _id: worker)
+        monkeypatch.setattr(control, "update_slot",
+                            lambda _id, change: updates.append(change) or worker)
+        monkeypatch.setattr(control, "record_activity",
+                            lambda _id, message, status: activities.append(status))
+        monkeypatch.setattr(control, "_snapshot_chat_backend",
+                            lambda _id: (object(), "glm-5.3:cloud"))
+
+        async def fake_process(*_args, **_kwargs):
+            if answer_kind == "ok":
+                return "CLOUD_OK"
+            text = "Backend-Fehler: GLM think=false gesperrt"
+            return (control.FailedAnswer(text) if answer_kind == "failed-type"
+                    else text)
+
+        monkeypatch.setattr(control.runtime, "process", fake_process)
+
+        class _SynchronousThread:
+            def __init__(self, target, **_kwargs):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        monkeypatch.setattr(control.threading, "Thread", _SynchronousThread)
+        handler = ControlHandler.__new__(ControlHandler)
+        handler.path = "/api/workers/run"
+        monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
+        monkeypatch.setattr(handler, "_read_body", lambda: {"id": worker_id})
+        monkeypatch.setattr(handler, "_json", lambda *_args, **_kwargs: None)
+
+        handler.do_POST()
+
+        statuses = [change["status"] for change in updates if "status" in change]
+        if answer_kind == "ok":
+            assert statuses[-1] == "completed"
+            assert activities[-1] == "ok"
+        else:
+            assert statuses[-1] == "error"
+            assert "completed" not in statuses
+            assert activities[-1] == "error"
+
     def test_get_slots_and_activity(self):
         handler = ControlHandler.__new__(ControlHandler)
         handler.headers = {}
@@ -528,6 +579,5 @@ class TestControlHandlerEndpoints:
             mock_json.assert_called_once()
             res = mock_json.call_args[0][0]
             assert res.get("ok") is True
-
 
 
