@@ -558,8 +558,8 @@ def _resolve_slot_for_chat(chat_id: str) -> dict:
     return slots.get("buddha_chat", DEFAULT_CORE_SLOTS["buddha_chat"])
 
 
-def _apply_slot_to_session(chat_id: str, session: Any) -> tuple[Any, str]:
-    slot = _resolve_slot_for_chat(chat_id)
+def _apply_slot_to_session(chat_id: str, session: Any, *, slot: dict | None = None) -> tuple[Any, str]:
+    slot = slot if slot is not None else _resolve_slot_for_chat(chat_id)
     slot_backend_type = slot.get("backend") or "ollama"
     slot_model = slot.get("model") or ""
 
@@ -574,12 +574,11 @@ def _apply_slot_to_session(chat_id: str, session: Any) -> tuple[Any, str]:
         session.mode = slot["mode"]
     if "think" in slot:
         session.think = bool(slot["think"])
+    if "allow_tools" in slot:
+        # Apply the capability before parsing any other numeric settings.
+        session.allow_tools = slot["allow_tools"] is True
     if "max_tool_rounds" in slot:
         session.max_tool_rounds = int(slot["max_tool_rounds"])
-    if "allow_tools" in slot:
-        # Only an explicit JSON true grants tools; malformed stored values
-        # must not silently widen a worker's capability.
-        session.allow_tools = slot["allow_tools"] is True
     if slot.get("system_prompt"):
         session.custom_system_prompt = slot["system_prompt"]
 
@@ -2989,12 +2988,26 @@ def _get_session_model(chat_id: str) -> str:
         return configured_default or runtime.backend.get_default_model()
 
 
-def _snapshot_chat_backend(chat_id: str):
+def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None):
     with _runtime_state_lock:
         session = runtime.get_session(chat_id)
         normalized = str(chat_id or "")
+        if worker_slot is not None and (
+            not isinstance(worker_slot, dict) or worker_slot.get("id") != normalized
+        ):
+            session.allow_tools = False
+            raise ValueError("Worker-Slot fehlt oder stimmt nicht überein")
+        is_dynamic_worker = (
+            isinstance(worker_slot, dict) and worker_slot.get("id") == normalized
+        )
+        if is_dynamic_worker:
+            # API worker IDs are caller-supplied and need not start with
+            # "worker-". Bind the live slot before any backend/model call.
+            session.worker_slot_reader = lambda: get_slot(normalized)
+            session.allow_tools = worker_slot.get("allow_tools", True) is True
         uses_dedicated_slot = (
-            normalized.isdigit()
+            is_dynamic_worker
+            or normalized.isdigit()
             or normalized.startswith((
                 "idle", "worker-", "tg:", "telegram", "wa:", "whatsapp", "signal:"
             ))
@@ -3002,9 +3015,14 @@ def _snapshot_chat_backend(chat_id: str):
         if not uses_dedicated_slot:
             return runtime.backend, _get_session_model(chat_id)
         try:
-            target_backend, model = _apply_slot_to_session(chat_id, session)
+            target_backend, model = _apply_slot_to_session(
+                chat_id, session, slot=worker_slot if is_dynamic_worker else None
+            )
             return target_backend, model
         except Exception:
+            if is_dynamic_worker:
+                session.allow_tools = False
+                raise
             return runtime.backend, _get_session_model(chat_id)
 
 
@@ -3721,7 +3739,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             worker_id = body.get("id") or body.get("worker_id")
             custom_prompt = body.get("prompt")
             w = get_slot(worker_id)
-            if not w:
+            if not w or w.get("id") != worker_id:
                 self._json({"error": f"Worker {worker_id} nicht gefunden"}, 404)
                 return
             def _run_worker_job():
@@ -3729,8 +3747,6 @@ class ControlHandler(BaseHTTPRequestHandler):
                 try:
                     update_slot(worker_id, {"status": "running", "current_activity": "Starte Routine..."})
                     record_activity(worker_id, f"Worker gestartet: {w.get('name')}", "running")
-                    target_backend, model = _snapshot_chat_backend(worker_id)
-                    
                     if custom_prompt:
                         initial_prompt = custom_prompt
                     elif w.get("task_id"):
@@ -3776,6 +3792,12 @@ class ControlHandler(BaseHTTPRequestHandler):
                                     return
                             except Exception:
                                 pass
+
+                        # Re-snapshot each block: persistent workers must not
+                        # retain an old capability after a slot downgrade.
+                        target_backend, model = _snapshot_chat_backend(
+                            worker_id, worker_slot=current_slot
+                        )
 
                         loop = asyncio.new_event_loop()
                         ans = ""

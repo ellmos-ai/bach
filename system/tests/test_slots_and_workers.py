@@ -125,6 +125,63 @@ class TestSlotsConfigCRUD:
 
 
 class TestTelegramSlotMapping:
+    def test_mismatched_worker_slot_fails_before_fallback(self, monkeypatch):
+        import hub._services.chat.telegram_chat as control
+
+        session = ChatSession()
+        session.chat_id = "alpha"
+        monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
+
+        with pytest.raises(ValueError, match="Worker-Slot"):
+            control._snapshot_chat_backend(
+                "alpha", worker_slot={"id": "buddha_chat", "allow_tools": False}
+            )
+        assert session.allow_tools is False
+
+    def test_arbitrary_worker_id_and_reused_session_refresh_capability(self, monkeypatch):
+        import hub._services.chat.telegram_chat as control
+
+        session = ChatSession()
+        session.chat_id = "alpha"
+        session.messages = [{"role": "user", "content": "voriger Lauf"}]
+        slot = {"id": "alpha", "backend": "ollama-cloud",
+                "model": "kimi-k3:cloud", "allow_tools": True,
+                "max_tool_rounds": 0}
+        backend = object()
+        monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
+        monkeypatch.setattr(control, "get_slot", lambda _id: slot)
+        monkeypatch.setattr(control, "_get_or_create_backend",
+                            lambda *_args: backend)
+
+        selected, model = control._snapshot_chat_backend("alpha", worker_slot=slot)
+        assert selected is backend
+        assert model == "kimi-k3:cloud"
+        assert session.allow_tools is True
+
+        slot["allow_tools"] = False
+        selected, model = control._snapshot_chat_backend("alpha", worker_slot=slot)
+        assert selected is backend
+        assert model == "kimi-k3:cloud"
+        assert session.allow_tools is False
+        assert session.worker_slot_reader()["allow_tools"] is False
+
+    def test_malformed_worker_rounds_cannot_skip_no_tools_gate(self, monkeypatch):
+        import hub._services.chat.telegram_chat as control
+
+        session = ChatSession()
+        session.chat_id = "alpha"
+        slot = {"id": "alpha", "backend": "ollama-cloud",
+                "model": "kimi-k3:cloud", "allow_tools": False,
+                "max_tool_rounds": "kaputt"}
+        monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
+        monkeypatch.setattr(control, "get_slot", lambda _id: slot)
+        monkeypatch.setattr(control, "_get_or_create_backend",
+                            lambda *_args: object())
+
+        with pytest.raises(ValueError, match="kaputt"):
+            control._snapshot_chat_backend("alpha", worker_slot=slot)
+        assert session.allow_tools is False
+
     def test_dynamic_worker_no_tools_flag_survives_config_and_slot(self, tmp_path):
         cfg_file = tmp_path / "no-tools-slots.json"
         worker = add_worker({
@@ -385,6 +442,78 @@ class TestDynamicContextScaling:
 
 
 class TestControlHandlerEndpoints:
+    def test_worker_run_rejects_core_slot_without_worker_id(self, monkeypatch):
+        import hub._services.chat.telegram_chat as control
+
+        monkeypatch.setattr(control, "get_slot", lambda _id: {"backend": "ollama"})
+        handler = ControlHandler.__new__(ControlHandler)
+        handler.path = "/api/workers/run"
+        monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
+        monkeypatch.setattr(handler, "_read_body", lambda: {"id": "buddha_chat"})
+        replies = []
+        monkeypatch.setattr(handler, "_json", lambda data, code=200: replies.append((data, code)))
+
+        handler.do_POST()
+
+        assert replies[0][1] == 404
+
+    @pytest.mark.parametrize("rounds, expected_status", [
+        (0, "completed"), ("ungültig", "error"),
+    ])
+    def test_api_worker_custom_id_binds_no_tools_fail_closed(
+        self, monkeypatch, rounds, expected_status,
+    ):
+        import hub._services.chat.telegram_chat as control
+
+        worker = {"id": "alpha", "name": "Alpha", "status": "running",
+                  "type": "once", "expires_at": None,
+                  "backend": "ollama-cloud", "model": "kimi-k3:cloud",
+                  "allow_tools": False, "max_tool_rounds": rounds,
+                  "task_prompt": "Nur CLOUD_OK"}
+        session = ChatSession()
+        session.chat_id = "alpha"
+        session.messages = [{"role": "user", "content": "persistierter Verlauf"}]
+        updates = []
+        process_calls = []
+        monkeypatch.setattr(control, "get_slot", lambda _id: worker)
+        monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
+        monkeypatch.setattr(control, "_get_or_create_backend",
+                            lambda *_args: object())
+        monkeypatch.setattr(control, "update_slot",
+                            lambda _id, change: updates.append(change) or worker)
+        monkeypatch.setattr(control, "record_activity",
+                            lambda *_args, **_kwargs: None)
+
+        async def fake_process(*_args, **_kwargs):
+            process_calls.append(session.allow_tools)
+            return "CLOUD_OK"
+
+        monkeypatch.setattr(control.runtime, "process", fake_process)
+
+        class _SynchronousThread:
+            def __init__(self, target, **_kwargs):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        monkeypatch.setattr(control.threading, "Thread", _SynchronousThread)
+        handler = ControlHandler.__new__(ControlHandler)
+        handler.path = "/api/workers/run"
+        monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
+        monkeypatch.setattr(handler, "_read_body", lambda: {"id": "alpha"})
+        monkeypatch.setattr(handler, "_json", lambda *_args, **_kwargs: None)
+
+        handler.do_POST()
+
+        statuses = [change["status"] for change in updates if "status" in change]
+        assert statuses[-1] == expected_status
+        assert session.allow_tools is False
+        if expected_status == "completed":
+            assert process_calls == [False]
+        else:
+            assert process_calls == []
+
     @pytest.mark.parametrize("flag, expected_code", [(False, 200), ("false", 400)])
     def test_worker_create_api_validates_no_tools_boolean(
         self, tmp_path, monkeypatch, flag, expected_code,
@@ -441,7 +570,7 @@ class TestControlHandlerEndpoints:
         monkeypatch.setattr(control, "record_activity",
                             lambda _id, message, status: activities.append(status))
         monkeypatch.setattr(control, "_snapshot_chat_backend",
-                            lambda _id: (object(), "glm-5.3:cloud"))
+                            lambda _id, **_kwargs: (object(), "glm-5.3:cloud"))
 
         async def fake_process(*_args, **_kwargs):
             if answer_kind == "ok":

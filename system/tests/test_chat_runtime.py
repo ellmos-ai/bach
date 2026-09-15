@@ -1006,6 +1006,36 @@ def test_legacy_zero_rounds_remains_unlimited_when_tools_allowed(monkeypatch):
     assert backend.calls[0]["tools"]
 
 
+def test_live_worker_capability_downgrade_blocks_inflight_tool(monkeypatch):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    slot = {"id": "alpha", "allow_tools": True}
+
+    class _DowngradingBackend(_NoToolsProbeBackend):
+        async def chat(self, messages, tools=None, think=True, model=None):
+            self.calls.append({"tools": tools})
+            slot["allow_tools"] = False
+            return {"content": "", "tool_calls": [{"function": {
+                "name": "edit_file", "arguments": {"path": "forbidden"},
+            }}], "raw_message": {"role": "assistant", "content": ""}}
+
+    monkeypatch.setattr("hub._services.chat.chat_runtime.exec_tool",
+                        lambda *_args, **_kwargs: pytest.fail("Downgraded tool executed"))
+    backend = _DowngradingBackend()
+    runtime = ChatRuntime(backend)
+    session = runtime.get_session("alpha")
+    session.worker_slot_reader = lambda: slot
+    session.allow_tools = True
+
+    answer = asyncio.run(runtime.process("Probe", "alpha"))
+
+    assert backend.calls[0]["tools"]
+    assert isinstance(answer, FailedAnswer)
+    assert session.allow_tools is False
+    assert "tool-freien Lauf blockiert" in answer
+
+
 def test_control_api_does_not_report_failed_answers_as_ok():
     """Der /api/chat-Endpunkt gab jede Antwort als ok=True aus.
 

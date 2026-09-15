@@ -1105,6 +1105,9 @@ class ChatSession:
         # Explicit capability gate; max_tool_rounds=0 retains its legacy
         # meaning of unlimited rounds and does not disable tools.
         self.allow_tools: bool = True
+        # Dynamic workers can refresh a live capability downgrade at each
+        # model/dispatch boundary without affecting ordinary chat sessions.
+        self.worker_slot_reader: Any = None
         self.custom_system_prompt: str = ""
         self.chat_id: str = ""
         # OPS-RUN-001: Operator-Steuerung (steer/pause/resume/checkpoint) an
@@ -1155,6 +1158,21 @@ class ChatRuntime:
         self.last_handoff: str = ""
         # nach wie vielen Werkzeugrunden die Hooks gefragt werden
         self.hook_every: int = limit("BACH_HOOK_EVERY")
+
+    @staticmethod
+    def _refresh_worker_tools(session: ChatSession) -> FailedAnswer | None:
+        reader = session.worker_slot_reader
+        if reader is None:
+            return None
+        try:
+            slot = reader()
+            if not isinstance(slot, dict) or slot.get("id") != session.chat_id:
+                raise RuntimeError("Worker-Slot fehlt oder stimmt nicht überein")
+            session.allow_tools = slot.get("allow_tools", True) is True
+            return None
+        except Exception as exc:
+            session.allow_tools = False
+            return FailedAnswer.from_exception(exc)
 
     def _load_messages(self, chat_id: str) -> list[dict]:
         if self.session_store is None:
@@ -1455,6 +1473,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             )
         session = self.get_session(chat_id)
         selected_model = model or session.model or selected_backend.get_default_model()
+        capability_error = self._refresh_worker_tools(session)
+        if capability_error is not None:
+            session.messages.extend([
+                {"role": "user", "content": text},
+                {"role": "assistant", "content": capability_error},
+            ])
+            self._persist_session(chat_id, session)
+            return capability_error
         if session.allow_tools is False and getattr(selected_backend, "manages_own_tools", False):
             # A CLI/self-managed backend may execute tools outside BACH's
             # dispatcher. Refuse it before any model or summarizer call.
@@ -1536,7 +1562,13 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         session.tool_round = 0
         session.last_tools = []
         result = {}
+        offered_tools = tools
         while True:
+            capability_error = self._refresh_worker_tools(session)
+            if capability_error is not None:
+                session.current_tool = ""
+                return capability_error
+            tools = offered_tools if session.allow_tools is True else []
             if max_rounds > 0 and round_num > max_rounds:
                 session.current_tool = ""
                 return result.get("content", "") or "(Max Tool-Runden erreicht)"
@@ -1613,6 +1645,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 session.current_tool = ""
                 return content
 
+            capability_error = self._refresh_worker_tools(session)
+            if capability_error is not None:
+                session.current_tool = ""
+                return capability_error
             if session.allow_tools is False:
                 session.current_tool = ""
                 return FailedAnswer(
@@ -1626,6 +1662,15 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             round_num += 1
             session.tool_round = round_num
             for i, tc in enumerate(tool_calls):
+                capability_error = self._refresh_worker_tools(session)
+                if capability_error is not None:
+                    session.current_tool = ""
+                    return capability_error
+                if session.allow_tools is False:
+                    session.current_tool = ""
+                    return FailedAnswer(
+                        f"{FailedAnswer.PREFIX}Tool-Aufruf im tool-freien Lauf blockiert"
+                    )
                 fn = tc.get("function", {})
                 t_name = fn.get("name", "")
                 t_args = fn.get("arguments", {})
