@@ -545,7 +545,16 @@ class DocumentPipeline:
                 continue
 
             text = self._extract_text_from_file(doc.path)
-            if not text or text.startswith("[FEHLER"):
+            # Fehler-/Platzhalter-Texte ausschliessen (nicht ins LLM-Bundle leaken):
+            # [FEHLER ...], [PDF-Extraktion fehlgeschlagen ...], [.doc-Extraktion
+            # fehlgeschlagen ...], [Nicht unterstuetztes Format ...]
+            if (
+                not text
+                or text.startswith(
+                    ("[FEHLER", "[PDF-Extraktion", "[.doc-Extraktion",
+                     "[Nicht unterstuetztes Format")
+                )
+            ):
                 continue
 
             text = anonymize_text(text)
@@ -560,7 +569,9 @@ class DocumentPipeline:
 
             if doc.category == DocumentCategory.CORE:
                 # Innerhalb CORE nach Typ-Prioritaet aufteilen
-                if doc.doc_type in ("protokoll", "aktendeckblatt", "hilfeplan"):
+                # root_dokument: Root-Dateien sind laut DOC_TYPE_PRIORITY das
+                # Hauptprotokoll (Verlaufsprotokoll) -> Prio1 "Doku" wie .docx-Protokolle
+                if doc.doc_type in ("protokoll", "aktendeckblatt", "hilfeplan", "root_dokument"):
                     high_prio_parts.append(content)
                 elif doc.doc_type == "arztbericht" and doc.date_hint and doc.date_hint < ten_years_ago:
                     low_prio_parts.append(content)
