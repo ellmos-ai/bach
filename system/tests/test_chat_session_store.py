@@ -6,6 +6,7 @@ import asyncio
 import json
 import sqlite3
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -280,6 +281,64 @@ def test_clear_rejects_duplicate_live_snapshots_without_deleting_ram(snapshot_db
             (store.session_id("gui-web"),),
         ).fetchone()[0]
     assert live_count == 2
+
+
+@pytest.mark.parametrize("save_fails", [False, True])
+def test_clear_waits_for_running_turn_and_archives_its_answer(
+    snapshot_db, monkeypatch, save_fails,
+):
+    started = threading.Event()
+    release = threading.Event()
+    clear_done = threading.Event()
+
+    class _WaitingBackend(_Backend):
+        async def chat(self, messages, **kwargs):
+            started.set()
+            await asyncio.to_thread(release.wait, 2)
+            return {"content": "Antwort nach Modellwartezeit", "tool_calls": None}
+
+    store = SQLiteChatSessionStore(snapshot_db)
+    runtime = ChatRuntime(_WaitingBackend(), session_store=store)
+    if save_fails:
+        monkeypatch.setattr(store, "save",
+                            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("save failed")))
+    answers = []
+    errors = []
+
+    def run_turn():
+        try:
+            answers.append(asyncio.run(runtime.process("Frage", "gui-web")))
+        except Exception as exc:
+            errors.append(exc)
+
+    def run_clear():
+        try:
+            runtime.clear_session("gui-web")
+            clear_done.set()
+        except Exception as exc:
+            errors.append(exc)
+
+    turn_thread = threading.Thread(target=run_turn)
+    clear_thread = threading.Thread(target=run_clear)
+    turn_thread.start()
+    assert started.wait(2)
+    clear_thread.start()
+    try:
+        assert not clear_done.wait(0.1)
+    finally:
+        release.set()
+    turn_thread.join(timeout=3)
+    clear_thread.join(timeout=3)
+
+    assert not turn_thread.is_alive() and not clear_thread.is_alive()
+    assert errors == []
+    assert answers == ["Antwort nach Modellwartezeit"]
+    assert clear_done.is_set()
+    assert "gui-web" not in runtime.sessions
+    assert store.load("gui-web") == []
+    archived = [store.get_snapshot_by_id(s["id"]) for s in store.list_snapshots()]
+    assert len(archived) == 1
+    assert archived[0]["messages"][-1]["content"] == "Antwort nach Modellwartezeit"
 
 
 def test_clear_without_store_drops_cache_and_idle_reset_keeps_blank_session(snapshot_db):

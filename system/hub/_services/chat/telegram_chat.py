@@ -322,7 +322,9 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_clear(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     try:
-        archived_id = runtime.clear_session(chat_id, archive_reason="Telegram /clear")
+        archived_id = await asyncio.to_thread(
+            runtime.clear_session, chat_id, archive_reason="Telegram /clear"
+        )
     except RuntimeError:
         await update.message.reply_text(
             "Konversation konnte nicht gelöscht werden. Der bisherige Verlauf bleibt erhalten."

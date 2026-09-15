@@ -16,6 +16,7 @@ Verwendung:
     runtime = ChatRuntime(backend, system_prompt="Du bist ein Assistent.")
     answer = await runtime.process("Hallo!", chat_id="user123")
 """
+import asyncio
 import json
 import logging
 import os
@@ -24,6 +25,7 @@ import shlex
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -1120,6 +1122,13 @@ class ComputeLocked(RuntimeError):
     """
 
 
+class _ChatTurnGate:
+    def __init__(self):
+        self.condition = threading.Condition()
+        self.active_turns = 0
+        self.clearing = False
+
+
 class ChatRuntime:
     """Backend-unabhängige Chat-Runtime mit Tool-Use-Loop."""
 
@@ -1141,6 +1150,8 @@ class ChatRuntime:
         # Compute-Lock steht. None = kein Gate (Tests, andere Konsumenten).
         self.compute_gate = None
         self.sessions: dict[str, ChatSession] = {}
+        self._chat_turn_gates: dict[str, _ChatTurnGate] = {}
+        self._chat_turn_gates_lock = threading.Lock()
         self.max_tool_rounds: int = limit("BACH_MAX_TOOL_ROUNDS")
         self._persistence_error: str | None = None
         # Loop-Mode: wie oft darf ohne Nutzerantwort nachgeschoben werden?
@@ -1289,10 +1300,44 @@ class ChatRuntime:
         return archived_id
 
     def clear_session(self, chat_id: str, archive_reason: str = "Clear") -> int | None:
-        return self.archive_and_reset(
-            chat_id, reason=archive_reason,
-            keep_empty_session=False, strict_persistence=True,
-        )
+        gate = self._chat_turn_gate(chat_id)
+        with gate.condition:
+            while gate.clearing:
+                gate.condition.wait()
+            gate.clearing = True
+            while gate.active_turns:
+                gate.condition.wait()
+        try:
+            return self.archive_and_reset(
+                chat_id, reason=archive_reason,
+                keep_empty_session=False, strict_persistence=True,
+            )
+        finally:
+            with gate.condition:
+                gate.clearing = False
+                gate.condition.notify_all()
+
+    def _chat_turn_gate(self, chat_id: str) -> _ChatTurnGate:
+        key = str(chat_id)
+        with self._chat_turn_gates_lock:
+            return self._chat_turn_gates.setdefault(key, _ChatTurnGate())
+
+    @staticmethod
+    async def _enter_chat_turn(gate: _ChatTurnGate) -> None:
+        while True:
+            with gate.condition:
+                if not gate.clearing:
+                    gate.active_turns += 1
+                    return
+            # Polling avoids a background lock-acquisition thread surviving
+            # cancellation of this coroutine and leaking active_turns.
+            await asyncio.sleep(0.025)
+
+    @staticmethod
+    def _leave_chat_turn(gate: _ChatTurnGate) -> None:
+        with gate.condition:
+            gate.active_turns -= 1
+            gate.condition.notify_all()
 
     def fork_session(self, target_chat_id: str, snapshot_id: int) -> int:
         """Klont den Verlauf aus einem Snapshot in die Ziel-Session."""
@@ -1459,7 +1504,20 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         except Exception:
             return ""
 
-    async def process(self, text: str, chat_id: str, *, backend=None, model=None, skip_compute_gate: bool = False, **kwargs) -> str:
+    async def process(self, text: str, chat_id: str, *, backend=None, model=None,
+                      skip_compute_gate: bool = False, **kwargs) -> str:
+        gate = self._chat_turn_gate(chat_id)
+        await self._enter_chat_turn(gate)
+        try:
+            return await self._process_turn(
+                text, chat_id, backend=backend, model=model,
+                skip_compute_gate=skip_compute_gate, **kwargs,
+            )
+        finally:
+            self._leave_chat_turn(gate)
+
+    async def _process_turn(self, text: str, chat_id: str, *, backend=None, model=None,
+                            skip_compute_gate: bool = False, **kwargs) -> str:
         """Verarbeitet eine User-Nachricht und gibt die Antwort zurück."""
         # Der eine Punkt, an dem jeder Modell-Load vorbeikommt: Telegram,
         # /api/chat (Idle-Worker) und der Auftrags-Worker rufen alle hier an.
