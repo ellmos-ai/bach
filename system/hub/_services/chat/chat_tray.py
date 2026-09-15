@@ -99,6 +99,11 @@ def _is_terminal_parked(task) -> bool:
         return True
     if task.get("status") == "blocked":
         return True
+    # 5. Pfad (T-20260915-1235loop): due_date kann beim Claim-Zyklus auf None
+    # gesetzt werden (reopen/clear_fields). claimed_by ist der robuste Marker
+    # fuer "in Bearbeitung" — auch wenn due_date verloren geht.
+    if task.get("claimed_by") and task.get("status") in ("in_progress", "blocked"):
+        return True
     due = task.get("due_date")
     if due:
         try:

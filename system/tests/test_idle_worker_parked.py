@@ -72,6 +72,21 @@ def test_bad_due_date_not_terminal():
     assert f({"status": "open", "due_date": "not-a-date"}) is False, "ungueltiges due_date -> fail-safe nicht terminal"
 
 
+def test_claimed_by_blocked_terminal():
+    f = _load_func()
+    assert f({"status": "blocked", "claimed_by": "idle-worker"}) is True, "claimed_by+blocked muess terminal sein"
+
+
+def test_claimed_by_in_progress_terminal():
+    f = _load_func()
+    assert f({"status": "in_progress", "claimed_by": "idle-worker"}) is True, "claimed_by+in_progress muess terminal sein"
+
+
+def test_open_with_claimed_by_not_terminal():
+    f = _load_func()
+    assert f({"status": "open", "claimed_by": "idle-worker"}) is False, "open+claimed_by darf nicht terminal sein (Scan-Pfad filtert open)"
+
+
 if __name__ == "__main__":
     for _name, _fn in sorted(globals().items()):
         if _name.startswith("test_") and callable(_fn):
