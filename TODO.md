@@ -2,6 +2,20 @@
 
 ## Offene Aufgaben
 
+### [BACH-CHAT-ERR-01] Gemeldete Backend-Abbrüche in allen Chat-Pfaden als Fehler verbuchen
+- **Ziel:** Auch Backends mit `manages_own_tools=True` dürfen ein Ergebnisdict mit `error` nicht als erfolgreiche Teilantwort oder History `ok=true` melden.
+- **Quelle:** `[Ticket: T-20260915-960653188]` `[PR: #67 und #69]` `[USMC-Lesson: 99]`
+- **Status:** Providerlose Regression am #67-Alt-Head rot; `FailedAnswer`-Fix 9db1133 und Integration 15b10e8 gepusht, 202 fokussierte Tests grün. Neue Heads und echter Host-/HTTP-Pfad sind noch nicht abgenommen.
+- **Akzeptanzkriterien (DoD):** Unabhängiger Re-Review der neuen Heads; Antwort und persistierte History bleiben bei gemeldetem Abbruch fehlgeschlagen, Teilinhalt nur Abbruchkontext; zulässiger Mac-/HTTP-Receipt ohne Produktiv-Opt-in; danach Main-Merge.
+- **Priorität:** high
+
+### [BACH-TEST-BOOT-01] Private Slot-Konfiguration vor strikten API-Integrationstests initialisieren
+- **Ziel:** Der sichere pytest-Pfad aus Testisolations-PR #63 muss die private `slots_config.json` vor Control-API-Tests auch auf Disk bootstrappen. BACH-Module dürfen nicht vor conftest/Env-Isolation importiert werden.
+- **Quelle:** `[Ticket: T-20260915-107799375]` `[PR: #63]` `[USMC-Lesson: 98]`
+- **Nachweis:** Synthetischer Audit-Checkout #69 + #63: ohne Bootstrap 304 bestanden und 8 strikte API-Tests rot; ausschließlich im Audit-Worktree ergänzter Temp-Bootstrap ergab 312 bestandene Tests und grünen Home-/Checkout-Wächter. Keine Änderung am gesperrten #63-Worktree.
+- **Akzeptanzkriterien (DoD):** Lock-Eigner ergänzt Temp-Bootstrap, Regression und README im #63-Branch; kanonischer Repo-Root-Testpfad ist grün und schreibt weder in `~/.bach` noch in Checkout-Runtime; PR-Review, Merge und erneuter Integrationslauf folgen.
+- **Priorität:** high
+
 ### [BACH-HERZ-01] Zuteilungsgrenze für einen Pfad: atomarer Claim, Rechteprüfung, Besetzungsprotokoll
 - **Ziel:** Eine zentrale Stelle, durch die genau ein produktiver Pfad läuft (Vorschlag: der Hintergrundplatz `buddha_always_on`). Sie reicht die bisherige Modellwahl **unverändert** durch, beansprucht die Aufgabe aber atomar, prüft das Rollenrecht, erzeugt eine `assignment_id` und protokolliert Start und Ende. Heute nimmt `worker.py` schlicht `offen[0]` und startet ohne Anspruch, während `chat_tray.py` erst liest und danach auf `in_progress` setzt — zwei Taktgeber können dieselbe Aufgabe mit Schreibrechten ausführen.
 - **Quelle:** `[Quelle: docs/MODELL-BACKEND-KONZEPT_2026-09-13.md, Abschnitte 4.2 und 8]` `[Programmkopf: ROADMAP.md "PROGRAMM: Modell-Backend = das Herz von BACH"]` `[Ticket: T-20260913-896336887]` `[Zweitmeinung: _codex/ARCHITEKTUR-ANTWORT.md, F6 und F7]`
