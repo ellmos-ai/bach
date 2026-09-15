@@ -259,13 +259,35 @@ _orig_get_session = runtime.get_session
 def _patched_get_session(chat_id: str):
     with _runtime_state_lock:
         session = _orig_get_session(chat_id)
+        normalized = str(chat_id or "")
+        try:
+            worker_slot = get_worker_slot(normalized)
+        except Exception:
+            # An unreadable/ambiguous registry must not turn a restricted
+            # Telegram chat ID into an ordinary tool-capable session.
+            session.allow_tools = False
+            session.worker_slot_reader = lambda: get_worker_slot(normalized)
+            return session
+        if worker_slot:
+            session.allow_tools = worker_slot.get("allow_tools", True) is True
+            session.worker_slot_reader = lambda: get_worker_slot(normalized)
+            try:
+                _apply_slot_to_session(chat_id, session, slot=worker_slot)
+            except Exception as exc:
+                session.allow_tools = False
+                session.worker_slot_reader = lambda _error=exc: (_ for _ in ()).throw(_error)
+            return session
+        if session.worker_slot_reader is not None:
+            # A formerly bound worker disappeared. Keep its live reader so
+            # ChatRuntime reports an error instead of reopening tools.
+            session.allow_tools = False
+            return session
         if len(session.messages) == 0:
             if _global_defaults.get("mode"):
                 session.mode = _global_defaults["mode"]
             if _global_defaults.get("model"):
                 session.model = _global_defaults["model"]
             session.think = _global_defaults.get("think", True)
-            normalized = str(chat_id or "")
             if normalized.isdigit() or normalized.startswith((
                 "idle", "worker-", "tg:", "telegram", "wa:", "whatsapp", "signal:"
             )):

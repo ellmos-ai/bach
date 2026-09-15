@@ -6,6 +6,7 @@ multi-backend slot assignment, and activity dashboard.
 import importlib
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -33,7 +34,7 @@ from hub._services.chat.slots_config import (
     save_slots_config,
     update_slot,
 )
-from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+from hub._services.chat.chat_runtime import ChatRuntime, ChatSession, FailedAnswer
 from hub._services.chat.telegram_chat import (
     _apply_slot_to_session,
     _get_or_create_backend,
@@ -140,6 +141,26 @@ class TestSlotsConfigCRUD:
         assert done.is_set()
         assert result[0]["dynamic_workers"][0]["allow_tools"] is False
         assert get_worker_slot("alpha", path=str(cfg_file))["allow_tools"] is False
+
+    def test_explicit_cli_bootstrap_and_corrupt_config_refusal(self, tmp_path):
+        cfg_file = tmp_path / "cli-slots.json"
+        env = os.environ.copy()
+        env["BACH_SLOTS_CONFIG_PATH"] = str(cfg_file)
+        command = [sys.executable, str(SYSTEM_ROOT / "bach.py"), "--init-slots"]
+
+        initialized = subprocess.run(
+            command, env=env, capture_output=True, text=True, timeout=15,
+        )
+        assert initialized.returncode == 0, initialized.stderr
+        assert cfg_file.exists()
+        assert get_worker_slot("buddha_chat", path=str(cfg_file)) == {}
+
+        cfg_file.write_text("{kaputt", encoding="utf-8")
+        refused = subprocess.run(
+            command, env=env, capture_output=True, text=True, timeout=15,
+        )
+        assert refused.returncode == 1
+        assert cfg_file.read_text(encoding="utf-8") == "{kaputt"
 
     def test_activity_write_cannot_overwrite_completed_revocation(self, tmp_path, monkeypatch):
         import hub._services.chat.slots_config as slots
@@ -276,6 +297,48 @@ class TestSlotsConfigCRUD:
 
 
 class TestTelegramSlotMapping:
+    def test_numeric_telegram_session_rebinds_live_worker_with_history(self, monkeypatch):
+        control = importlib.import_module("hub._services.chat.telegram_chat")
+
+        session = ChatSession()
+        session.chat_id = "12345"
+        session.messages = [{"role": "user", "content": "älterer Verlauf"}]
+        session.allow_tools = True
+        worker = {"id": "12345", "backend": "ollama-cloud",
+                  "model": "kimi-k3:cloud", "allow_tools": False,
+                  "max_tool_rounds": 0}
+        backend = object()
+        monkeypatch.setattr(control, "_orig_get_session", lambda _id: session)
+        monkeypatch.setattr(control, "get_worker_slot", lambda _id: worker)
+        monkeypatch.setattr(control, "_get_or_create_backend", lambda *_args: backend)
+
+        bound = control.runtime.get_session("12345")
+        assert bound is session
+        assert session.allow_tools is False
+        assert session.worker_slot_reader()["allow_tools"] is False
+        assert session.backend is backend
+
+        worker["allow_tools"] = True
+        assert control.runtime.get_session("12345").allow_tools is True
+        worker["allow_tools"] = False
+        assert control.runtime.get_session("12345").allow_tools is False
+
+    def test_numeric_worker_registry_error_never_reopens_tools(self, monkeypatch):
+        control = importlib.import_module("hub._services.chat.telegram_chat")
+
+        session = ChatSession()
+        session.chat_id = "12345"
+        session.messages = [{"role": "user", "content": "älterer Verlauf"}]
+        session.allow_tools = True
+        monkeypatch.setattr(control, "_orig_get_session", lambda _id: session)
+        monkeypatch.setattr(control, "get_worker_slot",
+                            lambda _id: (_ for _ in ()).throw(ValueError("Registry fehlt")))
+
+        control.runtime.get_session("12345")
+
+        assert session.allow_tools is False
+        assert isinstance(ChatRuntime._refresh_worker_tools(session), FailedAnswer)
+
     def test_chat_snapshot_discovers_arbitrary_no_tools_worker(self, monkeypatch):
         control = importlib.import_module("hub._services.chat.telegram_chat")
 
