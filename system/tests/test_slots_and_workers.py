@@ -25,6 +25,7 @@ from hub._services.chat.slots_config import (
     get_activity_history,
     get_slot,
     get_worker_slot,
+    initialize_slots_config,
     list_workers,
     load_slots_config,
     record_activity,
@@ -45,7 +46,7 @@ from hub._services.chat.telegram_chat import (
 class TestSlotsConfigCRUD:
     def test_worker_ids_cannot_shadow_core_or_existing_worker(self, tmp_path):
         cfg_file = tmp_path / "id-uniqueness.json"
-        load_slots_config(str(cfg_file))
+        initialize_slots_config(str(cfg_file))
 
         with pytest.raises(ValueError, match="bereits belegt"):
             add_worker({"id": "buddha_chat", "allow_tools": False}, path=str(cfg_file))
@@ -59,6 +60,7 @@ class TestSlotsConfigCRUD:
 
     def test_worker_id_cannot_be_mutated_into_collision(self, tmp_path):
         cfg_file = tmp_path / "id-mutation.json"
+        initialize_slots_config(str(cfg_file))
         add_worker({"id": "alpha", "allow_tools": False}, path=str(cfg_file))
 
         with pytest.raises(ValueError, match="ID darf nicht geändert"):
@@ -97,10 +99,53 @@ class TestSlotsConfigCRUD:
             add_worker({"id": "alpha", "allow_tools": False}, path=str(cfg_file))
         assert cfg_file.read_text(encoding="utf-8") == "{kaputt"
 
+    def test_missing_worker_registry_is_not_implicitly_recreated(self, tmp_path):
+        cfg_file = tmp_path / "missing-workers.json"
+        fallback = load_slots_config(str(cfg_file))
+        assert "buddha_chat" in fallback["slots"]
+        assert not cfg_file.exists()
+
+        with pytest.raises(ValueError, match="fehlt"):
+            get_worker_slot("alpha", path=str(cfg_file))
+        with pytest.raises(ValueError, match="fehlt"):
+            add_worker({"id": "alpha", "allow_tools": False}, path=str(cfg_file))
+
+        assert not cfg_file.exists()
+
+    def test_bootstrap_rechecks_under_os_lock_before_writing_defaults(self, tmp_path):
+        from hub._services.user_config_store import _exclusive_lock
+
+        cfg_file = tmp_path / "bootstrap-race.json"
+        done = threading.Event()
+        result = []
+
+        def bootstrap():
+            result.append(initialize_slots_config(str(cfg_file)))
+            done.set()
+
+        with _exclusive_lock(cfg_file):
+            worker_thread = threading.Thread(target=bootstrap)
+            worker_thread.start()
+            assert not done.wait(0.1)
+            cfg = {
+                "version": 1,
+                "slots": {k: dict(v) for k, v in DEFAULT_CORE_SLOTS.items()},
+                "dynamic_workers": [{"id": "alpha", "allow_tools": False}],
+                "activity_history": [],
+            }
+            save_slots_config(cfg, str(cfg_file))
+
+        worker_thread.join(timeout=3)
+        assert not worker_thread.is_alive()
+        assert done.is_set()
+        assert result[0]["dynamic_workers"][0]["allow_tools"] is False
+        assert get_worker_slot("alpha", path=str(cfg_file))["allow_tools"] is False
+
     def test_activity_write_cannot_overwrite_completed_revocation(self, tmp_path, monkeypatch):
         import hub._services.chat.slots_config as slots
 
         cfg_file = tmp_path / "revocation-race.json"
+        initialize_slots_config(str(cfg_file))
         add_worker({"id": "alpha", "allow_tools": True}, path=str(cfg_file))
         entered = threading.Event()
         release = threading.Event()
@@ -158,7 +203,7 @@ class TestSlotsConfigCRUD:
 
     def test_update_core_slot(self, tmp_path):
         cfg_file = tmp_path / "test_slots.json"
-        load_slots_config(str(cfg_file))
+        initialize_slots_config(str(cfg_file))
 
         updated = update_slot("buddha_always_on", {"model": "kimi-k3:cloud", "max_tool_rounds": 30}, path=str(cfg_file))
         assert updated["model"] == "kimi-k3:cloud"
@@ -171,7 +216,7 @@ class TestSlotsConfigCRUD:
 
     def test_add_and_remove_worker(self, tmp_path):
         cfg_file = tmp_path / "test_slots.json"
-        load_slots_config(str(cfg_file))
+        initialize_slots_config(str(cfg_file))
 
         worker = add_worker({
             "name": "Atlas Scanner",
@@ -198,7 +243,7 @@ class TestSlotsConfigCRUD:
 
     def test_worker_expiration(self, tmp_path):
         cfg_file = tmp_path / "test_slots.json"
-        load_slots_config(str(cfg_file))
+        initialize_slots_config(str(cfg_file))
 
         # Add worker with 0.1s TTL
         worker = add_worker({
@@ -216,7 +261,7 @@ class TestSlotsConfigCRUD:
 
     def test_activity_recording(self, tmp_path):
         cfg_file = tmp_path / "test_slots.json"
-        load_slots_config(str(cfg_file))
+        initialize_slots_config(str(cfg_file))
 
         record_activity("buddha_chat", "Anfrage bearbeitet", status="ok", path=str(cfg_file))
         record_activity("buddha_always_on", "Task #99 ausgeführt", status="running", path=str(cfg_file))
@@ -310,6 +355,7 @@ class TestTelegramSlotMapping:
 
     def test_dynamic_worker_no_tools_flag_survives_config_and_slot(self, tmp_path):
         cfg_file = tmp_path / "no-tools-slots.json"
+        initialize_slots_config(str(cfg_file))
         worker = add_worker({
             "id": "worker-no-tools-test",
             "backend": "ollama-cloud",
@@ -333,6 +379,7 @@ class TestTelegramSlotMapping:
 
     def test_worker_no_tools_flag_rejects_non_boolean(self, tmp_path):
         cfg_file = tmp_path / "no-tools-invalid.json"
+        initialize_slots_config(str(cfg_file))
         with pytest.raises(ValueError, match="JSON-Boolean"):
             add_worker({"allow_tools": "false"}, path=str(cfg_file))
 
@@ -370,7 +417,7 @@ class TestTelegramSlotMapping:
 
     def test_dynamic_worker_slot_resolution(self, tmp_path):
         cfg_file = tmp_path / "test_slots.json"
-        load_slots_config(str(cfg_file))
+        initialize_slots_config(str(cfg_file))
         worker = add_worker({
             "id": "worker-special-1",
             "name": "Special Worker",
@@ -433,6 +480,7 @@ class TestPromptTemplates:
             update_prompt_template,
         )
         cfg_file = tmp_path / "test_slots.json"
+        initialize_slots_config(str(cfg_file))
 
         # Update system default
         custom_sys = "Du bist ein custom Buddha-System."
@@ -569,6 +617,33 @@ class TestDynamicContextScaling:
 
 class TestControlHandlerEndpoints:
     @pytest.mark.parametrize("route", ["/api/chat", "/api/workers/run"])
+    def test_api_rejects_missing_worker_registry(self, tmp_path, monkeypatch, route):
+        control = importlib.import_module("hub._services.chat.telegram_chat")
+
+        cfg_file = tmp_path / "lost-slots-config.json"
+        load_slots_config(str(cfg_file))  # a harmless UI read cannot recreate it
+        assert not cfg_file.exists()
+        monkeypatch.setattr(control, "get_worker_slot",
+                            lambda worker_id: get_worker_slot(worker_id, path=str(cfg_file)))
+        monkeypatch.setattr(control.runtime, "get_session", lambda _id: ChatSession())
+        monkeypatch.setattr(control.runtime, "process",
+                            lambda *_args, **_kwargs: pytest.fail("Model called without registry"))
+        handler = control.ControlHandler.__new__(control.ControlHandler)
+        handler.path = route
+        handler.headers = {"X-Delegation-Depth": "0"}
+        monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
+        monkeypatch.setattr(handler, "_read_body", lambda: {
+            "id": "alpha", "chat_id": "alpha", "prompt": "Probe",
+        })
+        replies = []
+        monkeypatch.setattr(handler, "_json", lambda body, code=200: replies.append((body, code)))
+
+        handler.do_POST()
+
+        assert replies[0][1] == 503
+        assert not cfg_file.exists()
+
+    @pytest.mark.parametrize("route", ["/api/chat", "/api/workers/run"])
     def test_api_rejects_legacy_core_worker_collision(self, tmp_path, monkeypatch, route):
         control = importlib.import_module("hub._services.chat.telegram_chat")
 
@@ -632,7 +707,7 @@ class TestControlHandlerEndpoints:
         control = importlib.import_module("hub._services.chat.telegram_chat")
 
         cfg_file = tmp_path / "core-slot-worker-api.json"
-        load_slots_config(str(cfg_file))
+        initialize_slots_config(str(cfg_file))
         assert get_slot("buddha_chat", path=str(cfg_file))["id"] == "buddha_chat"
         monkeypatch.setattr(control, "get_worker_slot",
                             lambda worker_id: get_worker_slot(worker_id, path=str(cfg_file)))
@@ -712,6 +787,7 @@ class TestControlHandlerEndpoints:
         from hub._services.chat.slots_config import add_worker as add_to_temp
 
         cfg_file = tmp_path / "api-no-tools-slots.json"
+        initialize_slots_config(str(cfg_file))
         monkeypatch.setattr(control, "add_worker",
                             lambda body: add_to_temp(body, path=str(cfg_file)))
         monkeypatch.setattr(control, "record_activity",
@@ -908,6 +984,7 @@ class TestControlHandlerEndpoints:
     def test_reconcile_workers_heals_frozen_running_status(self, tmp_path):
         from hub._services.chat.slots_config import add_worker, update_slot, reconcile_workers, load_slots_config
         cfg_file = tmp_path / "test_slots.json"
+        initialize_slots_config(str(cfg_file))
 
         w = add_worker({
             "name": "Frozen-Worker",
@@ -945,6 +1022,7 @@ class TestControlHandlerEndpoints:
         from hub._services.chat.telegram_chat import ControlHandler
         from hub._services.chat.slots_config import add_worker, update_slot, get_slot
         cfg_file = tmp_path / "test_slots.json"
+        initialize_slots_config(str(cfg_file))
 
         w = add_worker({"name": "Stop-Target", "type": "persistent"}, path=str(cfg_file))
         wid = w["id"]

@@ -166,6 +166,34 @@ def _resolve_path(path: str | None = None) -> Path:
     return Path(os.path.expanduser(target)).resolve()
 
 
+def _fresh_slots_config() -> Dict[str, Any]:
+    return {
+        "version": 1,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "slots": {k: dict(v) for k, v in DEFAULT_CORE_SLOTS.items()},
+        "dynamic_workers": [],
+        "activity_history": [],
+    }
+
+
+def initialize_slots_config(path: str | None = None) -> Dict[str, Any]:
+    """Explicit bootstrap; never overwrite a config another writer created."""
+    f = _resolve_path(path)
+    with _exclusive_lock(f):
+        with _config_lock:
+            if f.is_file():
+                return load_slots_config(path, strict=True)
+            cfg = _fresh_slots_config()
+            f.parent.mkdir(parents=True, exist_ok=True)
+            tmp = f.with_name(f"{f.name}.init-{uuid.uuid4().hex}.tmp")
+            try:
+                tmp.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+                tmp.replace(f)
+            finally:
+                tmp.unlink(missing_ok=True)
+            return cfg
+
+
 def _serialized_mutation(func):
     """Hold one OS lock across the complete read-modify-write cycle."""
     signature = inspect.signature(func)
@@ -184,24 +212,12 @@ def _serialized_mutation(func):
 def load_slots_config(path: str | None = None, *, strict: bool = False) -> Dict[str, Any]:
     """Load the slots and dynamic workers configuration safely."""
     f = _resolve_path(path)
+    if not f.is_file():
+        if strict:
+            raise ValueError(f"Slots-Konfiguration fehlt: {f}")
+        log.warning("Slots-Konfiguration fehlt: %s. Defaults nur im Speicher.", f)
+        return _fresh_slots_config()
     with _config_lock:
-        if not f.is_file():
-            cfg = {
-                "version": 1,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "slots": {k: dict(v) for k, v in DEFAULT_CORE_SLOTS.items()},
-                "dynamic_workers": [],
-                "activity_history": [],
-            }
-            try:
-                f.parent.mkdir(parents=True, exist_ok=True)
-                f.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
-            except OSError as e:
-                if strict:
-                    raise ValueError(f"Slots-Konfiguration ist nicht lesbar: {e}") from e
-                log.warning("Could not create default slots_config at %s: %s", f, e)
-            return cfg
-
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
@@ -225,13 +241,7 @@ def load_slots_config(path: str | None = None, *, strict: bool = False) -> Dict[
             if strict:
                 raise ValueError(f"Slots-Konfiguration ist nicht lesbar: {e}") from e
             log.warning("Could not read slots config from %s: %s. Falling back to defaults.", f, e)
-            return {
-                "version": 1,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "slots": {k: dict(v) for k, v in DEFAULT_CORE_SLOTS.items()},
-                "dynamic_workers": [],
-                "activity_history": [],
-            }
+            return _fresh_slots_config()
 
 
 def save_slots_config(config: Dict[str, Any], path: str | None = None) -> None:
