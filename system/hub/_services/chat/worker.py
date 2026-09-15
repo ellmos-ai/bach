@@ -227,7 +227,8 @@ def main(argv: list[str] | None = None) -> int:
                           f"#{t['id']} {t['title'][:52]}")
 
             chat_id = f"worker-{args.category}-{t['id']}"
-            session = runtime.get_session(chat_id)
+            with tc.legacy_worker_binding(chat_id):
+                session = runtime.get_session(chat_id)
             session.mode = args.mode
             session.think = True
             if modell:
@@ -297,7 +298,10 @@ def main(argv: list[str] | None = None) -> int:
             interrupted = False
             process_error: Exception | None = None
             try:
-                antwort = asyncio.run(runtime.process("\n\n".join(auftrag), chat_id, skip_compute_gate=True))
+                with tc.legacy_worker_binding(chat_id):
+                    antwort = asyncio.run(
+                        runtime.process("\n\n".join(auftrag), chat_id, skip_compute_gate=True)
+                    )
             except KeyboardInterrupt:
                 interrupted = True
                 _log(workdir, "unterbrochen")

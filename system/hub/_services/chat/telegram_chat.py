@@ -21,6 +21,8 @@ Start:
   python telegram_chat.py
 """
 import asyncio
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import ipaddress
@@ -105,6 +107,7 @@ from hub._services.chat.slots_config import (
     add_worker,
     get_activity_history,
     get_prompt_templates,
+    get_slot,
     get_worker_slot,
     list_workers,
     load_slots_config,
@@ -506,6 +509,43 @@ _global_defaults = {
 }
 _runtime_state_lock = threading.RLock()
 
+
+class WorkerBindingError(LookupError):
+    """Raised when a worker dispatch cannot be bound to a registered ID."""
+
+
+_LEGACY_WORKER_BINDING: ContextVar[Optional[str]] = ContextVar(
+    "legacy_worker_binding",
+    default=None,
+)
+
+
+@contextmanager
+def legacy_worker_binding(chat_id: str):
+    """Explicitly authorize the standalone ``worker.py`` session contract.
+
+    ``worker.py`` creates IDs in the ``worker-<category>-<task-id>`` form and
+    wraps each ``get_session``/``process`` call with this context. API and
+    Control dispatches never enter it, so unknown worker IDs stay fail-closed.
+    """
+    normalized = str(chat_id or "")
+    if not normalized.startswith("worker-") or normalized == "worker-":
+        raise ValueError("Legacy-Worker-Bindung erwartet eine worker-* ID")
+    token = _LEGACY_WORKER_BINDING.set(normalized)
+    try:
+        yield
+    finally:
+        _LEGACY_WORKER_BINDING.reset(token)
+
+
+def _legacy_worker_binding_active(chat_id: str) -> bool:
+    return _LEGACY_WORKER_BINDING.get() == str(chat_id or "")
+
+
+def _is_strict_worker_id(chat_id: str) -> bool:
+    normalized = str(chat_id or "")
+    return normalized.startswith("worker-") and normalized != "worker-always-on"
+
 # Pending actions for compute lock confirmations (keyed by chat_id)
 # Format: {chat_id: {"kind": "compute_pause_for_ollama", "status": dict,
 #                     "text": str, "timestamp": float}}
@@ -552,6 +592,8 @@ def _patched_get_session(chat_id: str):
                 try:
                     _apply_slot_to_session(chat_id, session)
                 except Exception as e:
+                    if _is_strict_worker_id(normalized) and not _legacy_worker_binding_active(normalized):
+                        raise
                     log.debug("Konnte Slot nicht auf Session anwenden: %s", e)
         return session
 
@@ -814,22 +856,23 @@ def _resolve_slot_for_chat(chat_id: str) -> dict:
     slots = cfg.get("slots", {})
     str_id = str(chat_id)
 
-    # 1. Check dynamic workers first
+    # 1. Check dynamic workers by canonical ID only. Display names are not
+    # routing keys: duplicate names must remain unambiguous.
     for w in cfg.get("dynamic_workers", []):
         if w.get("id") == str_id:
             return w
-    if str_id.startswith("worker-"):
-        try:
-            for w in list_workers():
-                if w.get("id") == str_id:
-                    return w
-        except Exception:
-            pass
-        return slots.get("buddha_always_on", DEFAULT_CORE_SLOTS["buddha_always_on"])
 
     # 2. Always-On / Idle Worker
     if str_id in ("idle-worker", "worker-always-on") or str_id.startswith("idle"):
         return slots.get("buddha_always_on", DEFAULT_CORE_SLOTS["buddha_always_on"])
+
+    # Unknown worker IDs must never inherit the always-on slot in API/Control
+    # dispatch. The only permitted fallback is the explicit worker.py
+    # context above, bound to this exact ID.
+    if str_id.startswith("worker-"):
+        if _legacy_worker_binding_active(str_id):
+            return slots.get("buddha_always_on", DEFAULT_CORE_SLOTS["buddha_always_on"])
+        raise WorkerBindingError(f"Worker-ID nicht registriert: {str_id}")
 
     # 3. Messaging Connectors (Telegram, WhatsApp, Signal)
     if str_id.isdigit() or any(str_id.startswith(p) for p in ("tg:", "telegram", "wa:", "whatsapp", "signal:")):
@@ -844,6 +887,20 @@ def _resolve_slot_for_chat(chat_id: str) -> dict:
 
     # 4. Default to Buddha Chat (Interactive)
     return slots.get("buddha_chat", DEFAULT_CORE_SLOTS["buddha_chat"])
+
+
+def _registered_worker_slot(worker_id: str) -> Optional[dict]:
+    """Return a dynamic worker bound by exact ID, never a core slot/name."""
+    normalized = str(worker_id or "")
+    if not normalized or normalized in DEFAULT_CORE_SLOTS:
+        return None
+    try:
+        worker = get_worker_slot(normalized)
+    except Exception:
+        return None
+    if not isinstance(worker, dict) or worker.get("id") != normalized:
+        return None
+    return worker
 
 
 def _apply_slot_to_session(chat_id: str, session: Any, *, slot: dict | None = None) -> tuple[Any, str]:
@@ -3301,8 +3358,17 @@ def _get_session_model(chat_id: str) -> str:
 
 def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None):
     with _runtime_state_lock:
-        session = runtime.get_session(chat_id)
         normalized = str(chat_id or "")
+        registered_worker = _registered_worker_slot(normalized)
+        if (
+            _is_strict_worker_id(normalized)
+            and registered_worker is None
+            and not _legacy_worker_binding_active(normalized)
+        ):
+            _resolve_slot_for_chat(normalized)
+        session = runtime.get_session(chat_id)
+        if worker_slot is None and registered_worker is not None:
+            worker_slot = registered_worker
         if worker_slot is None:
             try:
                 discovered_slot = get_worker_slot(normalized)
@@ -3328,6 +3394,7 @@ def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None):
             session.allow_tools = worker_slot.get("allow_tools", True) is True
         uses_dedicated_slot = (
             is_dynamic_worker
+            or registered_worker is not None
             or normalized.isdigit()
             or normalized.startswith((
                 "idle", "worker-", "tg:", "telegram", "wa:", "whatsapp", "signal:"
@@ -3343,6 +3410,11 @@ def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None):
         except Exception:
             if is_dynamic_worker:
                 session.allow_tools = False
+            if (
+                is_dynamic_worker
+                or registered_worker is not None
+                or _is_strict_worker_id(normalized)
+            ) and not _legacy_worker_binding_active(normalized):
                 raise
             return runtime.backend, _get_session_model(chat_id)
 
@@ -3714,6 +3786,9 @@ class ControlHandler(BaseHTTPRequestHandler):
             chat_id = parse_qs(parsed_url.query).get("chat_id", ["api-delegate"])[0]
             try:
                 selected_backend, model = _snapshot_chat_backend(chat_id)
+            except WorkerBindingError as exc:
+                self._json({"ok": False, "error": str(exc)}, 503)
+                return
             except Exception as exc:
                 self._json({"ok": False, "error": f"Slot-Konfiguration nicht verifizierbar: {exc}"}, 503)
                 return
@@ -3947,6 +4022,9 @@ class ControlHandler(BaseHTTPRequestHandler):
                 return
             try:
                 selected_backend, model = _snapshot_chat_backend(chat_id)
+            except WorkerBindingError as exc:
+                self._json({"ok": False, "error": str(exc)}, 503)
+                return
             except Exception as exc:
                 self._json({"ok": False, "error": f"Slot-Konfiguration nicht verifizierbar: {exc}"}, 503)
                 return
