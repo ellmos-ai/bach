@@ -6,6 +6,7 @@ import asyncio
 import json
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -145,3 +146,60 @@ def test_failed_persistent_clear_does_not_claim_success(tmp_path):
     with pytest.raises(RuntimeError, match="konnte nicht gelöscht werden"):
         runtime.clear_session("gui-web")
     assert "gui-web" in runtime.sessions
+
+
+def test_clear_archive_failure_keeps_live_and_durable_transcript(snapshot_db, monkeypatch):
+    store = SQLiteChatSessionStore(snapshot_db)
+    runtime = ChatRuntime(_Backend(), session_store=store)
+    asyncio.run(runtime.process("Bleibt", "gui-web"))
+    original = store.load("gui-web")
+
+    def fail_archive(*_args, **_kwargs):
+        raise RuntimeError("Archivspeicher nicht verfügbar")
+
+    monkeypatch.setattr(store, "archive_current", fail_archive)
+    monkeypatch.setattr(store, "delete",
+                        lambda *_args: pytest.fail("Delete after failed archive"))
+
+    with pytest.raises(RuntimeError, match="Archivierung fehlgeschlagen"):
+        runtime.clear_session("gui-web")
+
+    assert runtime.sessions["gui-web"].messages == original
+    assert store.load("gui-web") == original
+    assert runtime.persistence_status()["ok"] is False
+
+
+def test_clear_delete_failure_keeps_live_and_durable_transcript(snapshot_db, monkeypatch):
+    store = SQLiteChatSessionStore(snapshot_db)
+    runtime = ChatRuntime(_Backend(), session_store=store)
+    asyncio.run(runtime.process("Bleibt", "gui-web"))
+    original = store.load("gui-web")
+    monkeypatch.setattr(store, "delete",
+                        lambda *_args: (_ for _ in ()).throw(RuntimeError("Disk busy")))
+
+    with pytest.raises(RuntimeError, match="konnte nicht gelöscht werden"):
+        runtime.clear_session("gui-web")
+
+    assert runtime.sessions["gui-web"].messages == original
+    assert store.load("gui-web") == original
+    assert runtime.persistence_status()["ok"] is False
+
+
+def test_clear_without_store_drops_cache_and_idle_reset_keeps_blank_session(snapshot_db):
+    ephemeral = ChatRuntime(_Backend())
+    asyncio.run(ephemeral.process("Weg", "gui-web"))
+    ephemeral.clear_session("gui-web")
+    assert "gui-web" not in ephemeral.sessions
+
+    store = SQLiteChatSessionStore(snapshot_db)
+    runtime = ChatRuntime(_Backend(), session_store=store)
+    asyncio.run(runtime.process("Alt", "gui-web"))
+    old = runtime.sessions["gui-web"]
+    old.last_active = time.time() - 10
+    runtime.SESSION_IDLE_TTL = 1
+
+    refreshed = runtime.get_session("gui-web")
+
+    assert refreshed is not old
+    assert runtime.sessions["gui-web"] is refreshed
+    assert refreshed.messages == []

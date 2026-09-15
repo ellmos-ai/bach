@@ -1231,8 +1231,11 @@ class ChatRuntime:
             return self.get_model_context_limit(model, backend)
         return value if value > 0 else self.get_model_context_limit(model, backend)
 
-    def archive_and_reset(self, chat_id: str, reason: str = "Manuell") -> int | None:
-        """Archiviert die aktuelle Session (sofern Nachrichten vorhanden) und leert sie."""
+    def archive_and_reset(
+        self, chat_id: str, reason: str = "Manuell", *,
+        keep_empty_session: bool = True, strict_persistence: bool = False,
+    ) -> int | None:
+        """Archive and reset; explicit clears can require durable success."""
         archived_id = None
         session = self.sessions.get(chat_id)
         has_messages = bool(session and session.messages)
@@ -1245,9 +1248,14 @@ class ChatRuntime:
             try:
                 archived_id = self.session_store.archive_current(chat_id, prefix)
             except Exception as exc:
+                self._persistence_error = str(exc)
                 log.warning("Konnte Session vor Reset nicht archivieren: %s", exc)
+                if strict_persistence:
+                    raise RuntimeError(
+                        "Chat-Persistenz konnte nicht gelöscht werden: "
+                        "Archivierung fehlgeschlagen"
+                    ) from exc
 
-        self.sessions.pop(chat_id, None)
         if self.session_store is not None:
             try:
                 self.session_store.delete(chat_id)
@@ -1255,15 +1263,22 @@ class ChatRuntime:
             except Exception as exc:
                 self._persistence_error = str(exc)
                 log.error("Chat-Persistenz konnte nicht gelöscht werden: %s", exc)
+                if strict_persistence:
+                    raise RuntimeError("Chat-Persistenz konnte nicht gelöscht werden") from exc
 
-        new_session = ChatSession()
-        new_session.model = self.backend.get_default_model()
-        new_session.last_active = time.time()
-        self.sessions[chat_id] = new_session
+        self.sessions.pop(chat_id, None)
+        if keep_empty_session:
+            new_session = ChatSession()
+            new_session.model = self.backend.get_default_model()
+            new_session.last_active = time.time()
+            self.sessions[chat_id] = new_session
         return archived_id
 
     def clear_session(self, chat_id: str, archive_reason: str = "Clear") -> int | None:
-        return self.archive_and_reset(chat_id, reason=archive_reason)
+        return self.archive_and_reset(
+            chat_id, reason=archive_reason,
+            keep_empty_session=False, strict_persistence=True,
+        )
 
     def fork_session(self, target_chat_id: str, snapshot_id: int) -> int:
         """Klont den Verlauf aus einem Snapshot in die Ziel-Session."""
