@@ -3,6 +3,7 @@
 multi-backend slot assignment, and activity dashboard.
 """
 
+import importlib
 import json
 import os
 import sys
@@ -126,7 +127,7 @@ class TestSlotsConfigCRUD:
 
 class TestTelegramSlotMapping:
     def test_mismatched_worker_slot_fails_before_fallback(self, monkeypatch):
-        import hub._services.chat.telegram_chat as control
+        control = importlib.import_module("hub._services.chat.telegram_chat")
 
         session = ChatSession()
         session.chat_id = "alpha"
@@ -139,7 +140,7 @@ class TestTelegramSlotMapping:
         assert session.allow_tools is False
 
     def test_arbitrary_worker_id_and_reused_session_refresh_capability(self, monkeypatch):
-        import hub._services.chat.telegram_chat as control
+        control = importlib.import_module("hub._services.chat.telegram_chat")
 
         session = ChatSession()
         session.chat_id = "alpha"
@@ -166,7 +167,7 @@ class TestTelegramSlotMapping:
         assert session.worker_slot_reader()["allow_tools"] is False
 
     def test_malformed_worker_rounds_cannot_skip_no_tools_gate(self, monkeypatch):
-        import hub._services.chat.telegram_chat as control
+        control = importlib.import_module("hub._services.chat.telegram_chat")
 
         session = ChatSession()
         session.chat_id = "alpha"
@@ -443,10 +444,10 @@ class TestDynamicContextScaling:
 
 class TestControlHandlerEndpoints:
     def test_worker_run_rejects_core_slot_without_worker_id(self, monkeypatch):
-        import hub._services.chat.telegram_chat as control
+        control = importlib.import_module("hub._services.chat.telegram_chat")
 
         monkeypatch.setattr(control, "get_slot", lambda _id: {"backend": "ollama"})
-        handler = ControlHandler.__new__(ControlHandler)
+        handler = control.ControlHandler.__new__(control.ControlHandler)
         handler.path = "/api/workers/run"
         monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
         monkeypatch.setattr(handler, "_read_body", lambda: {"id": "buddha_chat"})
@@ -463,7 +464,7 @@ class TestControlHandlerEndpoints:
     def test_api_worker_custom_id_binds_no_tools_fail_closed(
         self, monkeypatch, rounds, expected_status,
     ):
-        import hub._services.chat.telegram_chat as control
+        control = importlib.import_module("hub._services.chat.telegram_chat")
 
         worker = {"id": "alpha", "name": "Alpha", "status": "running",
                   "type": "once", "expires_at": None,
@@ -498,7 +499,7 @@ class TestControlHandlerEndpoints:
                 self.target()
 
         monkeypatch.setattr(control.threading, "Thread", _SynchronousThread)
-        handler = ControlHandler.__new__(ControlHandler)
+        handler = control.ControlHandler.__new__(control.ControlHandler)
         handler.path = "/api/workers/run"
         monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
         monkeypatch.setattr(handler, "_read_body", lambda: {"id": "alpha"})
@@ -518,7 +519,7 @@ class TestControlHandlerEndpoints:
     def test_worker_create_api_validates_no_tools_boolean(
         self, tmp_path, monkeypatch, flag, expected_code,
     ):
-        import hub._services.chat.telegram_chat as control
+        control = importlib.import_module("hub._services.chat.telegram_chat")
         from hub._services.chat.slots_config import add_worker as add_to_temp
 
         cfg_file = tmp_path / "api-no-tools-slots.json"
@@ -526,7 +527,7 @@ class TestControlHandlerEndpoints:
                             lambda body: add_to_temp(body, path=str(cfg_file)))
         monkeypatch.setattr(control, "record_activity",
                             lambda *_args, **_kwargs: None)
-        handler = ControlHandler.__new__(ControlHandler)
+        handler = control.ControlHandler.__new__(control.ControlHandler)
         handler.path = "/api/workers"
         monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
         monkeypatch.setattr(handler, "_read_body", lambda: {
@@ -557,7 +558,7 @@ class TestControlHandlerEndpoints:
 
     @pytest.mark.parametrize("answer_kind", ["ok", "failed-type", "failed-text"])
     def test_once_worker_marks_failed_answer_as_error(self, monkeypatch, answer_kind):
-        import hub._services.chat.telegram_chat as control
+        control = importlib.import_module("hub._services.chat.telegram_chat")
 
         worker_id = "worker-test-failed-answer"
         worker = {"id": worker_id, "name": "Probe", "status": "running",
@@ -589,7 +590,7 @@ class TestControlHandlerEndpoints:
                 self.target()
 
         monkeypatch.setattr(control.threading, "Thread", _SynchronousThread)
-        handler = ControlHandler.__new__(ControlHandler)
+        handler = control.ControlHandler.__new__(control.ControlHandler)
         handler.path = "/api/workers/run"
         monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
         monkeypatch.setattr(handler, "_read_body", lambda: {"id": worker_id})
