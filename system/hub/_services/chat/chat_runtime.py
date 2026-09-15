@@ -1655,15 +1655,29 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 )
                 msgs.append({"role": "user", "content": final_prompt})
                 try:
-                    final_res = await selected_backend.chat(
-                        msgs, tools=None, think=False, model=selected_model
+                    # GLM Cloud requires think=true to keep reasoning in the
+                    # separate thinking field. The final summary is still a
+                    # model call and must obey the same output contract.
+                    final_think = (
+                        session.think if selected_model == "glm-5.3:cloud"
+                        else False
                     )
+                    final_res = await selected_backend.chat(
+                        msgs, tools=None, think=final_think, model=selected_model
+                    )
+                    if final_res.get("error"):
+                        return FailedAnswer(
+                            f"{FailedAnswer.PREFIX}{final_res['error']}"
+                        )
                     content = (final_res.get("content") or "").strip()
                     if content:
                         return content
+                    return FailedAnswer(
+                        f"{FailedAnswer.PREFIX}Abschluss-Zusammenfassung ist leer"
+                    )
                 except Exception as e:
                     log.warning("Abschluss-Zusammenfassung fehlgeschlagen: %s", e)
-                return result.get("content", "") or "(Max Tool-Runden erreicht)"
+                    return FailedAnswer.from_exception(e)
 
             if max_rounds > 0 and round_num >= max_rounds - 2:
                 rest = max_rounds - round_num

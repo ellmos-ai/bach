@@ -774,6 +774,133 @@ class TestFailedAnswer:
         ]
 
 
+class _ToolThenSummaryBackend:
+    def __init__(self, summary):
+        self.summary = summary
+        self.calls = []
+
+    async def chat(self, messages, tools=None, think=True, model=None):
+        self.calls.append({"tools": tools, "think": think, "model": model})
+        if len(self.calls) == 1:
+            return {
+                "content": "Zwischenstand, keine Abschlussantwort",
+                "tool_calls": [{"function": {
+                    "name": "get_datetime", "arguments": {},
+                }}],
+                "raw_message": {"role": "assistant", "content": "Zwischenstand"},
+            }
+        if isinstance(self.summary, Exception):
+            raise self.summary
+        return self.summary
+
+    def tool_response_message(self, content, tool_call_id=""):
+        return {"role": "tool", "content": content}
+
+
+def _run_tool_limit_summary(monkeypatch, summary, model="glm-5.3:cloud"):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+
+    monkeypatch.setattr(
+        "hub._services.chat.chat_runtime.exec_tool",
+        lambda *_args, **_kwargs: "nur-lesender Testwert",
+    )
+    backend = _ToolThenSummaryBackend(summary)
+    runtime = ChatRuntime(backend)
+    runtime.hook_every = 999
+    session = ChatSession()
+    session.model = model
+    session.think = True
+    session.max_tool_rounds = 1
+    answer = asyncio.run(runtime._tool_loop(
+        [{"role": "user", "content": "Prüfung"}], session,
+        tools=[{"type": "function", "function": {"name": "get_datetime"}}],
+    ))
+    return answer, backend.calls
+
+
+def test_glm_cloud_tool_limit_summary_honors_thinking(monkeypatch):
+    answer, calls = _run_tool_limit_summary(
+        monkeypatch, {"content": "Echte Zusammenfassung"}
+    )
+    assert answer == "Echte Zusammenfassung"
+    assert calls[1] == {"tools": None, "think": True, "model": "glm-5.3:cloud"}
+
+
+def test_tool_limit_summary_exception_is_not_stale_success(monkeypatch):
+    answer, calls = _run_tool_limit_summary(
+        monkeypatch, RuntimeError("Abschlussmodell nicht verfügbar")
+    )
+    assert calls[1]["think"] is True
+    assert isinstance(answer, FailedAnswer)
+    assert "Abschlussmodell nicht verfügbar" in answer
+    assert "Zwischenstand" not in answer
+
+
+def test_tool_limit_reported_abort_is_not_stale_success(monkeypatch):
+    answer, calls = _run_tool_limit_summary(
+        monkeypatch, {"content": "Teilantwort", "error": "Stream abgebrochen"},
+        model="qwen3:4b",
+    )
+    assert calls[1]["think"] is False
+    assert isinstance(answer, FailedAnswer)
+    assert "Stream abgebrochen" in answer
+
+
+def test_tool_limit_empty_summary_is_not_stale_success(monkeypatch):
+    answer, _calls = _run_tool_limit_summary(monkeypatch, {"content": ""})
+    assert isinstance(answer, FailedAnswer)
+    assert "Abschluss-Zusammenfassung ist leer" in answer
+
+
+def test_tool_thinking_is_protocol_only_not_visible_history(monkeypatch):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    class _ThinkingToolBackend:
+        def __init__(self):
+            self.calls = []
+
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        async def chat(self, messages, tools=None, think=True, model=None):
+            self.calls.append(list(messages))
+            if len(self.calls) == 1:
+                return {
+                    "content": "",
+                    "tool_calls": [{"function": {
+                        "name": "get_datetime", "arguments": {},
+                    }}],
+                    "raw_message": {
+                        "role": "assistant", "content": "",
+                        "thinking": "INTERNE_ÜBERLEGUNG",
+                        "tool_calls": [{"function": {
+                            "name": "get_datetime", "arguments": {},
+                        }}],
+                    },
+                }
+            return {"content": "CLOUD_OK", "tool_calls": None}
+
+        def tool_response_message(self, content, tool_call_id=""):
+            return {"role": "tool", "content": content}
+
+    monkeypatch.setattr(
+        "hub._services.chat.chat_runtime.exec_tool",
+        lambda *_args, **_kwargs: "nur-lesender Testwert",
+    )
+    backend = _ThinkingToolBackend()
+    runtime = ChatRuntime(backend)
+    runtime.hook_every = 999
+    runtime.auto_continue = 0
+    answer = asyncio.run(runtime.process("Probe", "worker-thinking-test"))
+
+    assert answer == "CLOUD_OK"
+    assert any(m.get("thinking") == "INTERNE_ÜBERLEGUNG"
+               for m in backend.calls[1])
+    assert "INTERNE_ÜBERLEGUNG" not in str(runtime.history("worker-thinking-test"))
+
+
 def test_control_api_does_not_report_failed_answers_as_ok():
     """Der /api/chat-Endpunkt gab jede Antwort als ok=True aus.
 
