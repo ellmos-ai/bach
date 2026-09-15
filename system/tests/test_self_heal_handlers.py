@@ -3,10 +3,12 @@
 """Regression tests for small BACH self-heal handler fixes."""
 
 import json
+import io
 import importlib.util
 import sqlite3
 import subprocess
 import sys
+import pytest
 from pathlib import Path
 
 
@@ -368,6 +370,10 @@ def test_agent_start_json_success_payload(tmp_path, monkeypatch):
 
     class FakeProc:
         pid = 4242
+        stdin = io.BytesIO()
+
+        def wait(self, timeout=None):
+            return 86
 
     monkeypatch.setattr("hub.agent_launcher.sys.platform", "linux")
     monkeypatch.setattr("hub.agent_launcher.subprocess.Popen", lambda *args, **kwargs: FakeProc())
@@ -386,7 +392,8 @@ def test_agent_start_json_success_payload(tmp_path, monkeypatch):
     assert (base / "data" / "agent_pids" / "demo.pid").exists()
 
 
-def test_agent_start_reports_unverified_if_birth_time_capture_fails(tmp_path, monkeypatch):
+@pytest.mark.parametrize("capture_raises", [False, True])
+def test_agent_start_reports_unverified_if_birth_time_capture_fails(tmp_path, monkeypatch, capture_raises):
     from hub.agent_launcher import AgentLauncherHandler
     from hub import agent_process_provider as provider
 
@@ -397,10 +404,19 @@ def test_agent_start_reports_unverified_if_birth_time_capture_fails(tmp_path, mo
 
     class FakeProc:
         pid = 4242
+        stdin = io.BytesIO()
+
+        def wait(self, timeout=None):
+            return 86
 
     monkeypatch.setattr("hub.agent_launcher.sys.platform", "linux")
     monkeypatch.setattr("hub.agent_launcher.subprocess.Popen", lambda *args, **kwargs: FakeProc())
-    monkeypatch.setattr(provider, "capture_process_create_time", lambda pid: None)
+    def capture(pid):
+        if capture_raises:
+            raise OSError("birth lookup failed")
+        return None
+
+    monkeypatch.setattr(provider, "capture_process_create_time", capture)
     success, message = AgentLauncherHandler(base).handle("start", ["demo", "--json"])
     payload = json.loads(message)
     assert not success and not payload["ok"]
@@ -409,6 +425,64 @@ def test_agent_start_reports_unverified_if_birth_time_capture_fails(tmp_path, mo
     assert "stop" not in payload["agent"]["available_actions"]
     pid_file = base / "data" / "agent_pids" / "demo.pid"
     assert json.loads(pid_file.read_text(encoding="utf-8"))["process_create_time"] is None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows headless handler gate smoke")
+def test_agent_birth_failure_does_not_start_windows_provider(tmp_path, monkeypatch):
+    from hub.agent_launcher import AgentLauncherHandler
+    from hub import agent_process_provider as provider, agent_runners
+
+    base = _init_base(tmp_path)
+    agent_dir = base / "agents" / "demo"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
+    marker = tmp_path / "provider-started"
+    monkeypatch.setattr(
+        agent_runners, "build_command",
+        lambda *args, **kwargs: ("harmless-test", ["echo", "ready", ">", f'"{marker}"']),
+    )
+    monkeypatch.setattr(provider, "capture_process_create_time", lambda pid: None)
+
+    success, message = AgentLauncherHandler(base).handle("start", ["demo", "--headless", "--json"])
+
+    assert not success
+    assert json.loads(message)["agent"]["status"] == "unverified"
+    assert not marker.exists()
+    record = json.loads((base / "data" / "agent_pids" / "demo.pid").read_text(encoding="utf-8"))
+    assert record["process_create_time"] is None
+
+
+def test_agent_gate_write_failure_is_unverified_not_running(tmp_path, monkeypatch):
+    from hub.agent_launcher import AgentLauncherHandler
+    from hub import agent_process_provider as provider
+
+    base = _init_base(tmp_path)
+    agent_dir = base / "agents" / "demo"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
+
+    class BrokenInput:
+        def write(self, data):
+            raise BrokenPipeError("gate closed")
+
+        def close(self):
+            pass
+
+    class FakeProc:
+        pid = 4242
+        stdin = BrokenInput()
+
+    monkeypatch.setattr("hub.agent_launcher.sys.platform", "linux")
+    monkeypatch.setattr("hub.agent_launcher.subprocess.Popen", lambda *args, **kwargs: FakeProc())
+    monkeypatch.setattr(provider, "capture_process_create_time", lambda pid: 10.0)
+
+    success, message = AgentLauncherHandler(base).handle("start", ["demo", "--json"])
+    payload = json.loads(message)
+    assert not success and not payload["ok"]
+    assert payload["agent"]["status"] == "unverified"
+    assert payload["agent"]["running"] is False
+    record = json.loads((base / "data" / "agent_pids" / "demo.pid").read_text(encoding="utf-8"))
+    assert record["spawn_gate"] == "release_unconfirmed"
 
 
 def test_agent_stop_json_success_payload(tmp_path, monkeypatch):
@@ -642,6 +716,10 @@ def test_agent_start_uses_long_lived_windows_console_pid(tmp_path, monkeypatch):
 
     class FakeProc:
         pid = 4321
+        stdin = io.BytesIO()
+
+        def wait(self, timeout=None):
+            return 86
 
     calls = {}
 

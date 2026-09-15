@@ -19,6 +19,7 @@ import json
 import sqlite3
 import shutil
 import re
+import secrets
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
@@ -1661,6 +1662,7 @@ class AgentLauncherHandler(BaseHandler):
         )
 
         try:
+            release_token = secrets.token_hex(16)
             if sys.platform == 'win32':
                 # Windows: eigenes Konsolenfenster direkt ueber cmd.exe starten.
                 # So bleibt die getrackte PID ueber die gesamte Agenten-Session
@@ -1677,6 +1679,9 @@ class AgentLauncherHandler(BaseHandler):
                     f"echo === BACH Agent: {agent_label} ({resolved_name}) ===",
                     f"echo Modell: {model} ^| Modus: {mode} ^| Runner: {runner_name}",
                     f"echo.",
+                    'set "BACH_SPAWN_GATE="',
+                    'set /p BACH_SPAWN_GATE=',
+                    f'if not "%BACH_SPAWN_GATE%"=="{release_token}" exit /b 86',
                     f"{' '.join(cmd)}",
                 ]
                 if not headless:
@@ -1691,15 +1696,17 @@ class AgentLauncherHandler(BaseHandler):
                 proc = subprocess.Popen(
                     ["cmd", "/c", str(start_bat)],
                     cwd=str(agent_temp_dir),
-                    creationflags=creation_flags
+                    creationflags=creation_flags,
+                    stdin=subprocess.PIPE,
                 )
             else:
                 proc = subprocess.Popen(
-                    cmd,
+                    [sys.executable, str(Path(__file__).with_name("agent_spawn_gate.py")), release_token, *cmd],
                     cwd=str(agent_temp_dir),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    start_new_session=True
+                    start_new_session=True,
+                    stdin=subprocess.PIPE,
                 )
 
             # PID speichern
@@ -1720,10 +1727,29 @@ class AgentLauncherHandler(BaseHandler):
             }
             from .agent_process_provider import capture_process_create_time
 
-            pid_data["process_create_time"] = capture_process_create_time(proc.pid)
-            pid_file.write_text(json.dumps(pid_data, indent=2), encoding='utf-8')
+            try:
+                pid_data["process_create_time"] = capture_process_create_time(proc.pid)
+            except Exception:
+                # Auch ein Provider-Fehler bei der Abfrage ist kein Freigabegrund.
+                pid_data["process_create_time"] = None
+            try:
+                pid_file.write_text(json.dumps(pid_data, indent=2), encoding='utf-8')
+            except Exception:
+                # Beleg nicht gespeichert: den noch providerlosen Starter nie freigeben.
+                proc.stdin.close()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+                raise
 
             if pid_data["process_create_time"] is None:
+                proc.stdin.close()
+                try:
+                    proc.wait(timeout=5)
+                    starter_exited = True
+                except subprocess.TimeoutExpired:
+                    starter_exited = False
                 payload = self._build_agent_payload(
                     resolved_name,
                     display_name,
@@ -1744,7 +1770,31 @@ class AgentLauncherHandler(BaseHandler):
                     name,
                     resolved_name,
                     False,
-                    f"[ERROR] Agent-Prozess gestartet (PID {proc.pid}), aber Identität nicht lesbar; PID-Datei zur Nachzertifizierung erhalten",
+                    f"[ERROR] Agent-Starter (PID {proc.pid}) ohne Provider-Freigabe; Identität nicht lesbar, Starter-Ende {'bestätigt' if starter_exited else 'nicht bestätigt'}, PID-Datei zur Nachzertifizierung erhalten",
+                    json_output=json_output,
+                    agent=payload,
+                )
+
+            try:
+                proc.stdin.write((release_token + "\n").encode("ascii"))
+                proc.stdin.flush()
+                proc.stdin.close()
+            except (BrokenPipeError, OSError) as exc:
+                # Ein partieller Pipe-Write könnte den Runner bereits erreicht haben.
+                # Deshalb weder "nicht gestartet" noch "running" behaupten.
+                pid_data["spawn_gate"] = "release_unconfirmed"
+                pid_file.write_text(json.dumps(pid_data, indent=2), encoding='utf-8')
+                payload = self._build_agent_payload(
+                    resolved_name, display_name, agent["type"],
+                    running=False, status="unverified", pid=proc.pid,
+                    model=model, mode=mode, started_at=pid_data["started"],
+                    temp_dir=str(agent_temp_dir),
+                    window_title=pid_data.get("window_title"),
+                    pid_file=str(pid_file), available_actions=[],
+                )
+                return self._action_response(
+                    "start", name, resolved_name, False,
+                    f"[ERROR] Agent-Starter (PID {proc.pid}) Freigabe unbestätigt: {exc}; PID-Datei zur Nachzertifizierung erhalten",
                     json_output=json_output,
                     agent=payload,
                 )

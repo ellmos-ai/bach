@@ -25,3 +25,7 @@ Stand: 2026-09-15. Entwurf für `BACH-AGENT-PID-01` und den eigenständigen `age
 | BACH ↔ eigenständiges Modul ↔ Ocean | Gleicher Start-/Stop-Vertrag; echter Host-Smoke und Paritätsprüfung vor Merge/Release. |
 
 Die Umsetzung muss den gegenwärtigen direkten Provider-Spawn ersetzen, nicht nur den Zeitraum zwischen `Popen` und Birth-Abfrage verkürzen. Lokale Ollama-Modelle sind kein Prüfmittel für dieses Gate.
+
+## Teilumsetzung im OC-B-Arbeitszweig
+
+Windows-Headless und Unix starten jetzt zunächst providerlos und warten auf ein einmaliges Pipe-Token. Der Handler schreibt den PID-Anker vor dem Token und schließt bei Birth-Fehler die Pipe; ein unbestätigter Freigabe-Write wird ausdrücklich `unverified` gemeldet. Der Windows-Headless-Pfad wurde mit einem harmlosen Batch und einem echten Handler-Spawn ohne Agent-CLI geprüft. Das beweist **nicht** die interaktive Windows-Konsole, Unix-Hosts, einen Freigabe-Ack, einen gehaltenen Stop-Bezug oder dynamische Prozessbaum-Kontrolle. Die Invarianten 2–3 und die Host-/Paritätsprüfungen bleiben offen.
