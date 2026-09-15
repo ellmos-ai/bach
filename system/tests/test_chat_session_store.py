@@ -341,6 +341,42 @@ def test_clear_waits_for_running_turn_and_archives_its_answer(
     assert archived[0]["messages"][-1]["content"] == "Antwort nach Modellwartezeit"
 
 
+def test_self_clear_times_out_without_losing_history_or_leaking_gate(snapshot_db):
+    errors = []
+    runtime = None
+
+    class _SelfClearBackend(_Backend):
+        async def chat(self, messages, **kwargs):
+            try:
+                await asyncio.to_thread(runtime.clear_session, "gui-web")
+            except RuntimeError as exc:
+                errors.append(str(exc))
+            return {"content": "Antwort bleibt erhalten", "tool_calls": None}
+
+    store = SQLiteChatSessionStore(snapshot_db)
+    runtime = ChatRuntime(_SelfClearBackend(), session_store=store)
+    runtime.CLEAR_WAIT_TIMEOUT = 0.05
+
+    assert asyncio.run(runtime.process("Frage", "gui-web")) == "Antwort bleibt erhalten"
+    assert errors == ["Chat-Clear blockiert: laufender Chat-Turn"]
+    assert "gui-web" in runtime.sessions
+    assert store.load("gui-web")[-1]["content"] == "Antwort bleibt erhalten"
+    assert len(store.list_snapshots()) == 1  # bestehender Live-Snapshot
+    with sqlite3.connect(snapshot_db) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM session_snapshots WHERE snapshot_type != ?",
+            (CHAT_SNAPSHOT_TYPE,),
+        ).fetchone()[0] == 0
+    gate = runtime._chat_turn_gate("gui-web")
+    assert gate.active_turns == 0 and not gate.clearing
+
+    runtime.clear_session("gui-web")
+    assert "gui-web" not in runtime.sessions
+    assert store.load("gui-web") == []
+    archived = [store.get_snapshot_by_id(s["id"]) for s in store.list_snapshots()]
+    assert archived[0]["messages"][-1]["content"] == "Antwort bleibt erhalten"
+
+
 def test_clear_without_store_drops_cache_and_idle_reset_keeps_blank_session(snapshot_db):
     ephemeral = ChatRuntime(_Backend())
     asyncio.run(ephemeral.process("Weg", "gui-web"))

@@ -1136,6 +1136,7 @@ class ChatRuntime:
     SUMMARIZE_THRESHOLD = limit("BACH_SUMMARIZE_THRESHOLD")
     MAX_MESSAGES = limit("BACH_MAX_MESSAGES")
     SESSION_IDLE_TTL = float(os.environ.get("BACH_CHAT_SESSION_TTL", "86400"))
+    CLEAR_WAIT_TIMEOUT = 5.0
 
     def __init__(self, backend, system_prompt: str = "",
                  bach_app=None, memory_fn=None, injector=None,
@@ -1301,13 +1302,21 @@ class ChatRuntime:
 
     def clear_session(self, chat_id: str, archive_reason: str = "Clear") -> int | None:
         gate = self._chat_turn_gate(chat_id)
+        deadline = time.monotonic() + self.CLEAR_WAIT_TIMEOUT
         with gate.condition:
             while gate.clearing:
-                gate.condition.wait()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError("Chat-Clear wartet zu lange auf einen anderen Clear")
+                gate.condition.wait(remaining)
             gate.clearing = True
-            while gate.active_turns:
-                gate.condition.wait()
         try:
+            with gate.condition:
+                while gate.active_turns:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise RuntimeError("Chat-Clear blockiert: laufender Chat-Turn")
+                    gate.condition.wait(remaining)
             return self.archive_and_reset(
                 chat_id, reason=archive_reason,
                 keep_empty_session=False, strict_persistence=True,
