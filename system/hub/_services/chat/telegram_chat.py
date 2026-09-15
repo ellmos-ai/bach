@@ -100,7 +100,7 @@ from hub._services.chat.slots_config import (
     compose_worker_prompt,
     get_activity_history,
     get_prompt_templates,
-    get_slot,
+    get_worker_slot,
     list_workers,
     load_slots_config,
     reconcile_workers,
@@ -259,13 +259,35 @@ _orig_get_session = runtime.get_session
 def _patched_get_session(chat_id: str):
     with _runtime_state_lock:
         session = _orig_get_session(chat_id)
+        normalized = str(chat_id or "")
+        try:
+            worker_slot = get_worker_slot(normalized)
+        except Exception:
+            # An unreadable/ambiguous registry must not turn a restricted
+            # Telegram chat ID into an ordinary tool-capable session.
+            session.allow_tools = False
+            session.worker_slot_reader = lambda: get_worker_slot(normalized)
+            return session
+        if worker_slot:
+            session.allow_tools = worker_slot.get("allow_tools", True) is True
+            session.worker_slot_reader = lambda: get_worker_slot(normalized)
+            try:
+                _apply_slot_to_session(chat_id, session, slot=worker_slot)
+            except Exception as exc:
+                session.allow_tools = False
+                session.worker_slot_reader = lambda _error=exc: (_ for _ in ()).throw(_error)
+            return session
+        if session.worker_slot_reader is not None:
+            # A formerly bound worker disappeared. Keep its live reader so
+            # ChatRuntime reports an error instead of reopening tools.
+            session.allow_tools = False
+            return session
         if len(session.messages) == 0:
             if _global_defaults.get("mode"):
                 session.mode = _global_defaults["mode"]
             if _global_defaults.get("model"):
                 session.model = _global_defaults["model"]
             session.think = _global_defaults.get("think", True)
-            normalized = str(chat_id or "")
             if normalized.isdigit() or normalized.startswith((
                 "idle", "worker-", "tg:", "telegram", "wa:", "whatsapp", "signal:"
             )):
@@ -321,9 +343,17 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_clear(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
-    archived_id = runtime.clear_session(chat_id, archive_reason="Telegram /clear")
+    try:
+        archived_id = await asyncio.to_thread(
+            runtime.clear_session, chat_id, archive_reason="Telegram /clear"
+        )
+    except RuntimeError:
+        await update.message.reply_text(
+            "Konversation konnte nicht gelöscht werden. Der bisherige Verlauf bleibt erhalten."
+        )
+        return
     if archived_id:
-        await update.message.reply_text("Konversation archiviert und neue Session gestartet.")
+        await update.message.reply_text("Konversation archiviert. Eine neue Session ist bereit.")
     else:
         await update.message.reply_text("Konversation zurückgesetzt.")
 
@@ -528,7 +558,7 @@ def _resolve_slot_for_chat(chat_id: str) -> dict:
 
     # 1. Check dynamic workers first
     for w in cfg.get("dynamic_workers", []):
-        if w.get("id") == str_id or w.get("name") == str_id:
+        if w.get("id") == str_id:
             return w
     if str_id.startswith("worker-"):
         try:
@@ -558,8 +588,8 @@ def _resolve_slot_for_chat(chat_id: str) -> dict:
     return slots.get("buddha_chat", DEFAULT_CORE_SLOTS["buddha_chat"])
 
 
-def _apply_slot_to_session(chat_id: str, session: Any) -> tuple[Any, str]:
-    slot = _resolve_slot_for_chat(chat_id)
+def _apply_slot_to_session(chat_id: str, session: Any, *, slot: dict | None = None) -> tuple[Any, str]:
+    slot = slot if slot is not None else _resolve_slot_for_chat(chat_id)
     slot_backend_type = slot.get("backend") or "ollama"
     slot_model = slot.get("model") or ""
 
@@ -574,6 +604,9 @@ def _apply_slot_to_session(chat_id: str, session: Any) -> tuple[Any, str]:
         session.mode = slot["mode"]
     if "think" in slot:
         session.think = bool(slot["think"])
+    if "allow_tools" in slot:
+        # Apply the capability before parsing any other numeric settings.
+        session.allow_tools = slot["allow_tools"] is True
     if "max_tool_rounds" in slot:
         session.max_tool_rounds = int(slot["max_tool_rounds"])
     if slot.get("system_prompt"):
@@ -2268,8 +2301,16 @@ tr:hover td{background:#24334d}
         <label>Modus</label>
         <select id="nw-mode">
           <option value="full">Full (Schreibrechte)</option>
-          <option value="safe">Safe (Nur Lesen)</option>
+          <option value="safe">Safe (begrenzte Schreibtools, keine freie Shell)</option>
         </select>
+      </div>
+    </div>
+    <div class="form-group" style="background:#0f172a;padding:10px 12px;border-radius:8px;border:1px solid #334155">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="nw-allow-tools" checked> Werkzeuge erlauben
+      </label>
+      <div style="font-size:0.78rem;color:#94a3b8;margin-top:3px;margin-left:24px">
+        Deaktivieren = tool-freier Worker. „Max Turns 0“ bedeutet unbegrenzt, nicht tool-frei.
       </div>
     </div>
     <div class="form-row">
@@ -2452,6 +2493,8 @@ function renderWorkers(workers) {
     const sysPromptBadge = w.include_system_prompt !== false 
       ? '<span style="color:#10b981;font-size:0.75rem;font-weight:600">✓ SysPrompt</span>' 
       : '<span style="color:#f59e0b;font-size:0.75rem;font-weight:600">✗ Kein SysPrompt</span>';
+    const turnsLabel = w.max_tool_rounds === 0 ? 'Unbegrenzt' : (w.max_tool_rounds ?? 20);
+    const toolsLabel = w.allow_tools === false ? 'Tool-frei' : 'Werkzeuge erlaubt';
 
     const isRunning = (st === 'running');
     const cardBorder = isRunning ? 'border:1px solid #38bdf8;box-shadow:0 0 12px rgba(56,189,248,0.25);' : '';
@@ -2468,7 +2511,7 @@ function renderWorkers(workers) {
         <div class="worker-meta">
           <div><strong>Modus:</strong> <span style="color:#38bdf8">${subModeLabel}</span> · ${taskBadge} · ${sysPromptBadge}</div>
           <div><strong>Modell:</strong> ${escapeHtml(w.model || '?')} (${escapeHtml(w.backend || 'ollama')})</div>
-          <div><strong>Turns:</strong> ${w.max_tool_rounds || 20} · <strong>Modus:</strong> ${w.mode || 'full'}</div>
+          <div><strong>Turns:</strong> ${turnsLabel} · <strong>Modus:</strong> ${w.mode || 'full'} · <strong>Tools:</strong> ${toolsLabel}</div>
           <div><strong>Ablauf:</strong> ${expires}</div>
         </div>
         <div class="activity-box" style="min-height:30px">${escapeHtml(w.current_activity || 'Bereit')}</div>
@@ -2686,6 +2729,7 @@ async function createWorker() {
   const ttl = document.getElementById('nw-ttl').value ? parseInt(document.getElementById('nw-ttl').value) : null;
   const taskPrompt = document.getElementById('nw-task-prompt').value.trim();
   const includeSys = document.getElementById('nw-include-system-prompt').checked;
+  const allowTools = document.getElementById('nw-allow-tools').checked;
 
   let roleId = '';
   let multiRole = false;
@@ -2717,6 +2761,7 @@ async function createWorker() {
     backend,
     model,
     max_tool_rounds: turns,
+    allow_tools: allowTools,
     mode,
     task_id: taskId,
     ttl_seconds: ttl,
@@ -2724,7 +2769,7 @@ async function createWorker() {
 
   const res = await api('POST', '/workers', payload);
   if (res && res.ok) {
-    toast(`Worker '${res.worker.name}' gestartet!`);
+    toast(`Worker '${res.worker.name}' angelegt!`);
     closeNewWorkerModal();
     document.getElementById('nw-name').value = '';
     document.getElementById('nw-task-id').value = '';
@@ -2973,12 +3018,36 @@ def _get_session_model(chat_id: str) -> str:
         return configured_default or runtime.backend.get_default_model()
 
 
-def _snapshot_chat_backend(chat_id: str):
+def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None):
     with _runtime_state_lock:
         session = runtime.get_session(chat_id)
         normalized = str(chat_id or "")
+        if worker_slot is None:
+            try:
+                discovered_slot = get_worker_slot(normalized)
+            except Exception:
+                # We cannot prove this ID is not a restricted worker when
+                # slot storage is unreadable. Never fall back with tools.
+                session.allow_tools = False
+                raise
+            if isinstance(discovered_slot, dict) and discovered_slot.get("id") == normalized:
+                worker_slot = discovered_slot
+        if worker_slot is not None and (
+            not isinstance(worker_slot, dict) or worker_slot.get("id") != normalized
+        ):
+            session.allow_tools = False
+            raise ValueError("Worker-Slot fehlt oder stimmt nicht überein")
+        is_dynamic_worker = (
+            isinstance(worker_slot, dict) and worker_slot.get("id") == normalized
+        )
+        if is_dynamic_worker:
+            # API worker IDs are caller-supplied and need not start with
+            # "worker-". Bind the live slot before any backend/model call.
+            session.worker_slot_reader = lambda: get_worker_slot(normalized)
+            session.allow_tools = worker_slot.get("allow_tools", True) is True
         uses_dedicated_slot = (
-            normalized.isdigit()
+            is_dynamic_worker
+            or normalized.isdigit()
             or normalized.startswith((
                 "idle", "worker-", "tg:", "telegram", "wa:", "whatsapp", "signal:"
             ))
@@ -2986,9 +3055,14 @@ def _snapshot_chat_backend(chat_id: str):
         if not uses_dedicated_slot:
             return runtime.backend, _get_session_model(chat_id)
         try:
-            target_backend, model = _apply_slot_to_session(chat_id, session)
+            target_backend, model = _apply_slot_to_session(
+                chat_id, session, slot=worker_slot if is_dynamic_worker else None
+            )
             return target_backend, model
         except Exception:
+            if is_dynamic_worker:
+                session.allow_tools = False
+                raise
             return runtime.backend, _get_session_model(chat_id)
 
 
@@ -3341,7 +3415,11 @@ class ControlHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/readiness":
             chat_id = parse_qs(parsed_url.query).get("chat_id", ["api-delegate"])[0]
-            selected_backend, model = _snapshot_chat_backend(chat_id)
+            try:
+                selected_backend, model = _snapshot_chat_backend(chat_id)
+            except Exception as exc:
+                self._json({"ok": False, "error": f"Slot-Konfiguration nicht verifizierbar: {exc}"}, 503)
+                return
             available, availability_status = _checked_backend_availability(
                 selected_backend,
                 model,
@@ -3570,7 +3648,11 @@ class ControlHandler(BaseHTTPRequestHandler):
             if depth >= 2:
                 self._json({"error": "Maximale Delegationstiefe erreicht"}, 429)
                 return
-            selected_backend, model = _snapshot_chat_backend(chat_id)
+            try:
+                selected_backend, model = _snapshot_chat_backend(chat_id)
+            except Exception as exc:
+                self._json({"ok": False, "error": f"Slot-Konfiguration nicht verifizierbar: {exc}"}, 503)
+                return
             available, availability_status = _checked_backend_availability(
                 selected_backend,
                 model,
@@ -3610,7 +3692,11 @@ class ControlHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/clear":
             chat_id = body.get("chat_id", "gui-web")
-            archived_id = runtime.clear_session(chat_id, archive_reason="Control-API")
+            try:
+                archived_id = runtime.clear_session(chat_id, archive_reason="Control-API")
+            except RuntimeError as exc:
+                self._json({"ok": False, "chat_id": chat_id, "error": str(exc)}, 503)
+                return
             self._json({"ok": True, "chat_id": chat_id, "archived_id": archived_id})
 
         elif path == "/api/fork":
@@ -3648,6 +3734,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                 worker = add_worker(body)
                 record_activity("system", f"Neuer Worker erstellt: {worker.get('name', worker.get('id'))}", "ok")
                 self._json({"ok": True, "worker": worker})
+            except ValueError as e:
+                self._json({"error": str(e)}, 400)
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
@@ -3670,7 +3758,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "id erforderlich"}, 400)
                 return
             try:
-                w = get_slot(worker_id)
+                w = get_worker_slot(worker_id)
                 if not w:
                     self._json({"error": "Worker nicht gefunden"}, 404)
                     return
@@ -3691,7 +3779,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 return
             try:
                 _ACTIVE_WORKER_THREADS.pop(worker_id, None)
-                w = get_slot(worker_id)
+                w = get_worker_slot(worker_id)
                 next_st = "completed" if (w and w.get("type") == "once") else "idle"
                 updated = update_slot(worker_id, {"status": next_st, "current_activity": "Manuell gestoppt"})
                 record_activity(worker_id, f"Worker gestoppt: {worker_id}", "ok")
@@ -3702,8 +3790,12 @@ class ControlHandler(BaseHTTPRequestHandler):
         elif path == "/api/workers/run":
             worker_id = body.get("id") or body.get("worker_id")
             custom_prompt = body.get("prompt")
-            w = get_slot(worker_id)
-            if not w:
+            try:
+                w = get_worker_slot(worker_id)
+            except Exception as exc:
+                self._json({"error": f"Worker-Slot nicht verifizierbar: {exc}"}, 503)
+                return
+            if not w or w.get("id") != worker_id:
                 self._json({"error": f"Worker {worker_id} nicht gefunden"}, 404)
                 return
             def _run_worker_job():
@@ -3711,8 +3803,6 @@ class ControlHandler(BaseHTTPRequestHandler):
                 try:
                     update_slot(worker_id, {"status": "running", "current_activity": "Starte Routine..."})
                     record_activity(worker_id, f"Worker gestartet: {w.get('name')}", "running")
-                    target_backend, model = _snapshot_chat_backend(worker_id)
-                    
                     if custom_prompt:
                         initial_prompt = custom_prompt
                     elif w.get("task_id"):
@@ -3739,7 +3829,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                         run_count += 1
 
                         # Worker-State prüfen: wurde er pausiert oder gelöscht?
-                        current_slot = get_slot(worker_id)
+                        current_slot = get_worker_slot(worker_id)
                         if not current_slot or current_slot.get("status") in ("paused", "idle"):
                             log.info(f"Worker {worker_id} pausiert oder beendet.")
                             break
@@ -3759,6 +3849,12 @@ class ControlHandler(BaseHTTPRequestHandler):
                             except Exception:
                                 pass
 
+                        # Re-snapshot each block: persistent workers must not
+                        # retain an old capability after a slot downgrade.
+                        target_backend, model = _snapshot_chat_backend(
+                            worker_id, worker_slot=current_slot
+                        )
+
                         loop = asyncio.new_event_loop()
                         ans = ""
                         try:
@@ -3769,6 +3865,19 @@ class ControlHandler(BaseHTTPRequestHandler):
                             loop.close()
 
                         ans_str = str(ans)
+                        # FailedAnswer is a str subclass and may also be
+                        # restored as plain text after persistence. Neither
+                        # form may complete a once-worker or be logged as ok.
+                        if FailedAnswer.looks_like(ans):
+                            update_slot(worker_id, {
+                                "status": "error",
+                                "current_activity": ans_str[:120],
+                            })
+                            record_activity(
+                                worker_id, f"Block {run_count}: {ans_str[:55]}",
+                                "error",
+                            )
+                            return
                         record_activity(worker_id, f"Block {run_count}: {ans_str[:55]}", "ok")
 
                         # Wenn Einzellauf ("once") und keine TTL gesetzt ist, direkt abschließen

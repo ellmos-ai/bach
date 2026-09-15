@@ -16,6 +16,7 @@ Verwendung:
     runtime = ChatRuntime(backend, system_prompt="Du bist ein Assistent.")
     answer = await runtime.process("Hallo!", chat_id="user123")
 """
+import asyncio
 import json
 import logging
 import os
@@ -24,6 +25,7 @@ import shlex
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -1102,6 +1104,12 @@ class ChatSession:
         self.last_active: float = 0.0
         self.backend: Any = None
         self.max_tool_rounds: Optional[int] = None
+        # Explicit capability gate; max_tool_rounds=0 retains its legacy
+        # meaning of unlimited rounds and does not disable tools.
+        self.allow_tools: bool = True
+        # Dynamic workers can refresh a live capability downgrade at each
+        # model/dispatch boundary without affecting ordinary chat sessions.
+        self.worker_slot_reader: Any = None
         self.custom_system_prompt: str = ""
         self.chat_id: str = ""
         # OPS-RUN-001: Operator-Steuerung (steer/pause/resume/checkpoint) an
@@ -1120,6 +1128,13 @@ class ComputeLocked(RuntimeError):
     """
 
 
+class _ChatTurnGate:
+    def __init__(self):
+        self.condition = threading.Condition()
+        self.active_turns = 0
+        self.clearing = False
+
+
 class ChatRuntime:
     """Backend-unabhängige Chat-Runtime mit Tool-Use-Loop."""
 
@@ -1127,6 +1142,7 @@ class ChatRuntime:
     SUMMARIZE_THRESHOLD = limit("BACH_SUMMARIZE_THRESHOLD")
     MAX_MESSAGES = limit("BACH_MAX_MESSAGES")
     SESSION_IDLE_TTL = float(os.environ.get("BACH_CHAT_SESSION_TTL", "86400"))
+    CLEAR_WAIT_TIMEOUT = 5.0
 
     def __init__(self, backend, system_prompt: str = "",
                  bach_app=None, memory_fn=None, injector=None,
@@ -1141,6 +1157,8 @@ class ChatRuntime:
         # Compute-Lock steht. None = kein Gate (Tests, andere Konsumenten).
         self.compute_gate = None
         self.sessions: dict[str, ChatSession] = {}
+        self._chat_turn_gates: dict[str, _ChatTurnGate] = {}
+        self._chat_turn_gates_lock = threading.Lock()
         self.max_tool_rounds: int = limit("BACH_MAX_TOOL_ROUNDS")
         self._persistence_error: str | None = None
         # Loop-Mode: wie oft darf ohne Nutzerantwort nachgeschoben werden?
@@ -1152,6 +1170,35 @@ class ChatRuntime:
         self.last_handoff: str = ""
         # nach wie vielen Werkzeugrunden die Hooks gefragt werden
         self.hook_every: int = limit("BACH_HOOK_EVERY")
+
+    @staticmethod
+    def _refresh_worker_tools(session: ChatSession) -> FailedAnswer | None:
+        reader = session.worker_slot_reader
+        if reader is None:
+            return None
+        try:
+            slot = reader()
+            if not isinstance(slot, dict) or slot.get("id") != session.chat_id:
+                raise RuntimeError("Worker-Slot fehlt oder stimmt nicht überein")
+            session.allow_tools = slot.get("allow_tools", True) is True
+            return None
+        except Exception as exc:
+            session.allow_tools = False
+            return FailedAnswer.from_exception(exc)
+
+    @classmethod
+    def _worker_backend_gate(cls, session: ChatSession, backend: Any) -> FailedAnswer | None:
+        capability_error = cls._refresh_worker_tools(session)
+        if capability_error is not None:
+            return capability_error
+        if session.allow_tools is False and getattr(backend, "manages_own_tools", False):
+            # Self-managed backends can dispatch tools outside BACH's tool
+            # loop, so a worker downgrade must stop every backend boundary.
+            return FailedAnswer(
+                f"{FailedAnswer.PREFIX}Backend mit eigenen Tools ist für "
+                "einen tool-freien Lauf nicht verifizierbar"
+            )
+        return None
 
     def _load_messages(self, chat_id: str) -> list[dict]:
         if self.session_store is None:
@@ -1231,8 +1278,11 @@ class ChatRuntime:
             return self.get_model_context_limit(model, backend)
         return value if value > 0 else self.get_model_context_limit(model, backend)
 
-    def archive_and_reset(self, chat_id: str, reason: str = "Manuell") -> int | None:
-        """Archiviert die aktuelle Session (sofern Nachrichten vorhanden) und leert sie."""
+    def archive_and_reset(
+        self, chat_id: str, reason: str = "Manuell", *,
+        keep_empty_session: bool = True, strict_persistence: bool = False,
+    ) -> int | None:
+        """Archive and reset; explicit clears can require durable success."""
         archived_id = None
         session = self.sessions.get(chat_id)
         has_messages = bool(session and session.messages)
@@ -1240,14 +1290,33 @@ class ChatRuntime:
             stored = self._load_messages(chat_id)
             has_messages = bool(stored)
 
+        if strict_persistence and self.session_store is not None:
+            prefix = f"Archiv [{reason}] {_session_name(chat_id)}"
+            try:
+                archived_id = self.session_store.archive_and_delete(
+                    chat_id, session.messages if session else None, prefix
+                )
+                self._persistence_error = None
+            except Exception as exc:
+                self._persistence_error = str(exc)
+                log.error("Chat-Persistenz konnte nicht gelöscht werden: %s", exc)
+                raise RuntimeError("Chat-Persistenz konnte nicht gelöscht werden") from exc
+            self.sessions.pop(chat_id, None)
+            return archived_id
+
         if has_messages and self.session_store is not None:
             prefix = f"Archiv [{reason}] {_session_name(chat_id)}"
             try:
                 archived_id = self.session_store.archive_current(chat_id, prefix)
             except Exception as exc:
+                self._persistence_error = str(exc)
                 log.warning("Konnte Session vor Reset nicht archivieren: %s", exc)
+                if strict_persistence:
+                    raise RuntimeError(
+                        "Chat-Persistenz konnte nicht gelöscht werden: "
+                        "Archivierung fehlgeschlagen"
+                    ) from exc
 
-        self.sessions.pop(chat_id, None)
         if self.session_store is not None:
             try:
                 self.session_store.delete(chat_id)
@@ -1255,15 +1324,64 @@ class ChatRuntime:
             except Exception as exc:
                 self._persistence_error = str(exc)
                 log.error("Chat-Persistenz konnte nicht gelöscht werden: %s", exc)
+                if strict_persistence:
+                    raise RuntimeError("Chat-Persistenz konnte nicht gelöscht werden") from exc
 
-        new_session = ChatSession()
-        new_session.model = self.backend.get_default_model()
-        new_session.last_active = time.time()
-        self.sessions[chat_id] = new_session
+        self.sessions.pop(chat_id, None)
+        if keep_empty_session:
+            new_session = ChatSession()
+            new_session.model = self.backend.get_default_model()
+            new_session.last_active = time.time()
+            self.sessions[chat_id] = new_session
         return archived_id
 
     def clear_session(self, chat_id: str, archive_reason: str = "Clear") -> int | None:
-        return self.archive_and_reset(chat_id, reason=archive_reason)
+        gate = self._chat_turn_gate(chat_id)
+        deadline = time.monotonic() + self.CLEAR_WAIT_TIMEOUT
+        with gate.condition:
+            while gate.clearing:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError("Chat-Clear wartet zu lange auf einen anderen Clear")
+                gate.condition.wait(remaining)
+            gate.clearing = True
+        try:
+            with gate.condition:
+                while gate.active_turns:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise RuntimeError("Chat-Clear blockiert: laufender Chat-Turn")
+                    gate.condition.wait(remaining)
+            return self.archive_and_reset(
+                chat_id, reason=archive_reason,
+                keep_empty_session=False, strict_persistence=True,
+            )
+        finally:
+            with gate.condition:
+                gate.clearing = False
+                gate.condition.notify_all()
+
+    def _chat_turn_gate(self, chat_id: str) -> _ChatTurnGate:
+        key = str(chat_id)
+        with self._chat_turn_gates_lock:
+            return self._chat_turn_gates.setdefault(key, _ChatTurnGate())
+
+    @staticmethod
+    async def _enter_chat_turn(gate: _ChatTurnGate) -> None:
+        while True:
+            with gate.condition:
+                if not gate.clearing:
+                    gate.active_turns += 1
+                    return
+            # Polling avoids a background lock-acquisition thread surviving
+            # cancellation of this coroutine and leaking active_turns.
+            await asyncio.sleep(0.025)
+
+    @staticmethod
+    def _leave_chat_turn(gate: _ChatTurnGate) -> None:
+        with gate.condition:
+            gate.active_turns -= 1
+            gate.condition.notify_all()
 
     def fork_session(self, target_chat_id: str, snapshot_id: int) -> int:
         """Klont den Verlauf aus einem Snapshot in die Ziel-Session."""
@@ -1430,7 +1548,20 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         except Exception:
             return ""
 
-    async def process(self, text: str, chat_id: str, *, backend=None, model=None, skip_compute_gate: bool = False, **kwargs) -> str:
+    async def process(self, text: str, chat_id: str, *, backend=None, model=None,
+                      skip_compute_gate: bool = False, **kwargs) -> str:
+        gate = self._chat_turn_gate(chat_id)
+        await self._enter_chat_turn(gate)
+        try:
+            return await self._process_turn(
+                text, chat_id, backend=backend, model=model,
+                skip_compute_gate=skip_compute_gate, **kwargs,
+            )
+        finally:
+            self._leave_chat_turn(gate)
+
+    async def _process_turn(self, text: str, chat_id: str, *, backend=None, model=None,
+                            skip_compute_gate: bool = False, **kwargs) -> str:
         """Verarbeitet eine User-Nachricht und gibt die Antwort zurück."""
         # Der eine Punkt, an dem jeder Modell-Load vorbeikommt: Telegram,
         # /api/chat (Idle-Worker) und der Auftrags-Worker rufen alle hier an.
@@ -1452,6 +1583,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             )
         session = self.get_session(chat_id)
         selected_model = model or session.model or selected_backend.get_default_model()
+        capability_error = self._worker_backend_gate(session, selected_backend)
+        if capability_error is not None:
+            session.messages.extend([
+                {"role": "user", "content": text},
+                {"role": "assistant", "content": capability_error},
+            ])
+            self._persist_session(chat_id, session)
+            return capability_error
         context_limit = self._context_limit_for_backend(selected_backend, selected_model)
         session.last_active = time.time()
         session.messages.append({"role": "user", "content": text})
@@ -1462,6 +1601,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
         total = sum(len(m.get("content", "")) for m in session.messages)
         if total > summarize_thresh or len(session.messages) > max_msgs:
+            capability_error = self._worker_backend_gate(session, selected_backend)
+            if capability_error is not None:
+                session.messages.append({"role": "assistant", "content": capability_error})
+                self._persist_session(chat_id, session)
+                return capability_error
             await self._summarize(
                 session,
                 backend=selected_backend,
@@ -1479,19 +1623,33 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             sys_prompt += f"\n\n--- BACH ---\n{bach_ctx}"
         if hook_ctx and not getattr(session, "custom_system_prompt", ""):
             sys_prompt += f"\n\n--- MEMORY-HOOK ---\n{hook_ctx}"
+        if session.allow_tools is False:
+            sys_prompt += "\n\n[CAPABILITY-GATE: Keine Werkzeuge verfügbar. Antworte ohne Tool-Aufrufe.]"
 
         msgs = [{"role": "system", "content": sys_prompt}] + session.messages
 
         if getattr(selected_backend, "manages_own_tools", False):
+            capability_error = self._worker_backend_gate(session, selected_backend)
+            if capability_error is not None:
+                session.messages.append({"role": "assistant", "content": capability_error})
+                self._persist_session(chat_id, session)
+                return capability_error
             try:
                 result = await selected_backend.chat(
                     msgs, think=session.think, model=selected_model
                 )
-                answer = result.get("content", "(keine Antwort)")
+                if result.get("error"):
+                    teil = result.get("content") or ""
+                    answer = FailedAnswer(
+                        f"{FailedAnswer.PREFIX}{result['error']}"
+                        + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else "")
+                    )
+                else:
+                    answer = result.get("content", "(keine Antwort)")
             except Exception as e:
                 answer = FailedAnswer.from_exception(e)
         else:
-            tools = tools_for_mode(session.mode)
+            tools = tools_for_mode(session.mode) if session.allow_tools is True else []
             answer = await self._tool_loop(
                 msgs,
                 session,
@@ -1518,7 +1676,13 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         session.tool_round = 0
         session.last_tools = []
         result = {}
+        offered_tools = tools
         while True:
+            capability_error = self._refresh_worker_tools(session)
+            if capability_error is not None:
+                session.current_tool = ""
+                return capability_error
+            tools = offered_tools if session.allow_tools is True else []
             if max_rounds > 0 and round_num > max_rounds:
                 session.current_tool = ""
                 return result.get("content", "") or "(Max Tool-Runden erreicht)"
@@ -1572,17 +1736,31 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             if self._context_voll(
                 result, session, context_limit=context_limit
             ):
+                if handoffs >= 2:
+                    session.current_tool = ""
+                    return FailedAnswer.from_exception(RuntimeError(
+                        "Kontext-Übergabe bleibt nach zwei Versuchen zu groß"
+                    ))
                 handoffs += 1
                 log.info("Kontext-Uebergabe [%d] bei %s Token",
                          handoffs, result.get("prompt_tokens"))
-                msgs = await self._handoff(
-                    msgs,
-                    session,
-                    backend=selected_backend,
-                    model=selected_model,
-                )
+                try:
+                    msgs = await self._handoff(
+                        msgs,
+                        session,
+                        backend=selected_backend,
+                        model=selected_model,
+                        strict=selected_model == "glm-5.3:cloud",
+                    )
+                except Exception as e:
+                    session.current_tool = ""
+                    return FailedAnswer.from_exception(e)
                 continue
 
+            # Only a measured positive token count below the threshold proves
+            # relief. Missing/invalid counts must not bypass the retry cap.
+            if type(result.get("prompt_tokens")) is int and result["prompt_tokens"] > 0:
+                handoffs = 0
             tool_calls = result.get("tool_calls")
             if not tool_calls:
                 content = result.get("content", "") or "(keine Antwort)"
@@ -1595,6 +1773,16 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 session.current_tool = ""
                 return content
 
+            capability_error = self._refresh_worker_tools(session)
+            if capability_error is not None:
+                session.current_tool = ""
+                return capability_error
+            if session.allow_tools is False:
+                session.current_tool = ""
+                return FailedAnswer(
+                    f"{FailedAnswer.PREFIX}Tool-Aufruf im tool-freien Lauf blockiert"
+                )
+
             raw_msg = result.get("raw_message", {})
             if raw_msg:
                 msgs.append(raw_msg)
@@ -1602,6 +1790,15 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             round_num += 1
             session.tool_round = round_num
             for i, tc in enumerate(tool_calls):
+                capability_error = self._refresh_worker_tools(session)
+                if capability_error is not None:
+                    session.current_tool = ""
+                    return capability_error
+                if session.allow_tools is False:
+                    session.current_tool = ""
+                    return FailedAnswer(
+                        f"{FailedAnswer.PREFIX}Tool-Aufruf im tool-freien Lauf blockiert"
+                    )
                 fn = tc.get("function", {})
                 t_name = fn.get("name", "")
                 t_args = fn.get("arguments", {})
@@ -1616,6 +1813,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         update_slot(cid, {"current_activity": f"Tool [{round_num}]: {t_name}"})
                     except Exception:
                         pass
+                # Updating activity may race with (or itself trigger) a
+                # downgrade. Re-read immediately before dispatcher entry.
+                capability_error = self._refresh_worker_tools(session)
+                if capability_error is not None:
+                    session.current_tool = ""
+                    return capability_error
+                if session.allow_tools is False:
+                    session.current_tool = ""
+                    return FailedAnswer(
+                        f"{FailedAnswer.PREFIX}Tool-Aufruf im tool-freien Lauf blockiert"
+                    )
                 t_result = exec_tool(
                     t_name, t_args, session.mode,
                     bach_app=self.bach_app,
@@ -1655,15 +1863,29 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 )
                 msgs.append({"role": "user", "content": final_prompt})
                 try:
-                    final_res = await selected_backend.chat(
-                        msgs, tools=None, think=False, model=selected_model
+                    # GLM Cloud requires think=true to keep reasoning in the
+                    # separate thinking field. The final summary is still a
+                    # model call and must obey the same output contract.
+                    final_think = (
+                        session.think if selected_model == "glm-5.3:cloud"
+                        else False
                     )
+                    final_res = await selected_backend.chat(
+                        msgs, tools=None, think=final_think, model=selected_model
+                    )
+                    if final_res.get("error"):
+                        return FailedAnswer(
+                            f"{FailedAnswer.PREFIX}{final_res['error']}"
+                        )
                     content = (final_res.get("content") or "").strip()
                     if content:
                         return content
+                    return FailedAnswer(
+                        f"{FailedAnswer.PREFIX}Abschluss-Zusammenfassung ist leer"
+                    )
                 except Exception as e:
                     log.warning("Abschluss-Zusammenfassung fehlgeschlagen: %s", e)
-                return result.get("content", "") or "(Max Tool-Runden erreicht)"
+                    return FailedAnswer.from_exception(e)
 
             if max_rounds > 0 and round_num >= max_rounds - 2:
                 rest = max_rounds - round_num
@@ -1727,7 +1949,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         return used >= active_limit * self.handoff_percent / 100
 
     async def _handoff(self, msgs: list, session: ChatSession, *, backend=None,
-                       model: str = "") -> list:
+                       model: str = "", strict: bool = False) -> list:
         """Laesst das Modell sich selbst uebergeben und leert den Kontext.
 
         Anders als _summarize (Gespraechsprosa aus fremder Sicht) schreibt hier
@@ -1737,16 +1959,26 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         frage = msgs + [{"role": "user", "content": HANDOFF_PROMPT}]
         selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
+        handoff_error = None
         try:
             res = await selected_backend.chat(
-                frage, tools=None, think=False, model=selected_model
+                frage, tools=None,
+                think=session.think if selected_model == "glm-5.3:cloud" else False,
+                model=selected_model,
             )
+            if res.get("error"):
+                raise RuntimeError(str(res["error"]))
             uebergabe = (res.get("content") or "").strip()
         except Exception as e:
             log.warning("Uebergabe fehlgeschlagen: %s", e)
+            handoff_error = e
             uebergabe = ""
 
         if not uebergabe:
+            if strict:
+                if handoff_error is not None:
+                    raise RuntimeError(f"Kontext-Übergabe fehlgeschlagen: {handoff_error}") from handoff_error
+                raise RuntimeError("Kontext-Übergabe ist leer")
             # Lieber die letzten Schritte behalten als blind alles wegwerfen.
             return msgs[:1] + msgs[-4:]
 
@@ -1801,8 +2033,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
         try:
             result = await selected_backend.chat(
-                prompt, think=False, model=selected_model
+                prompt,
+                think=session.think if selected_model == "glm-5.3:cloud" else False,
+                model=selected_model,
             )
+            if result.get("error"):
+                raise RuntimeError(str(result["error"]))
             summary = result.get("content", "")[:500]
 
             if self.memory:
@@ -1815,4 +2051,5 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 {"role": "system", "content": f"Bisheriger Kontext: {summary}"}
             ] + recent
         except Exception:
-            session.messages = recent
+            if selected_model != "glm-5.3:cloud":
+                session.messages = recent
