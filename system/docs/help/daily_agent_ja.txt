@@ -23,8 +23,8 @@ DAILY AGENT - 永続セッションを持つ自律型デイリー エージェ�
   bach daily-agent briefing --dry-run   読み取り専用プレビュー
   bach daily-agent summary              夜のサマリーを生成
   bach daily-agent config               ブリーフィング モジュールの一覧表示
-  bach daily-agent config routinika_briefing --projection=<絶対パス>
-                                        Routinika コンシューマーパスを保存
+  bach daily-agent config routinika_briefing --manifest=<絶対パス> --auth-refs-file=<絶対パス>
+                                        認証済みトランジットパスを保存
   bach daily-agent modules              構成のエイリアス
   bach daily-agent toggle <modul>       モジュールのオン/オフの切り替え
 
@@ -45,8 +45,8 @@ DAILY AGENT - 永続セッションを持つ自律型デイリー エージェ�
   bach daily-agent start --model=opus   モデル 'opus' で開始
   bach daily-agent status               PID と開始時刻を表示
   bach daily-agent briefing             アクティブなモジュールでブリーフィングを生成
-  bach daily-agent briefing --routinika-projection=C:\staging\routinika.sqlite --routinika-receipt --dry-run
-                                        閉じたプロジェクションを変更せず検証
+  bach daily-agent briefing --routinika-manifest=C:\transit\routinika.sqlite-snapshot.json --routinika-receipt --dry-run
+                                        ハッシュに結合されたプライベートスナップショットのみを読み取る
   bach daily-agent toggle news_briefing Deaktiviert News-Modul
   bach daily-agent summary              今日完了したタスクを表示
   bach daily-agent stop                 エージェントを停止 + 概要を保存

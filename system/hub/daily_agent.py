@@ -59,6 +59,10 @@ from ._services.routinika_projection import (
     format_routinika_briefing,
     read_routinika_projection,
 )
+from ._services.projection_transport_auth import (
+    ProjectionTransportAuthError,
+    validate_transport_auth_config,
+)
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if sys.stdout:
@@ -333,24 +337,24 @@ class DailyAgentHandler(BaseHandler):
         read_only_config = dry_run or "--read-only-config" in clean_args
         include_mediplaner_receipt = "--mediplaner-receipt" in clean_args
         include_routinika_receipt = "--routinika-receipt" in clean_args
-        mediplaner_projection_options = [
+        mediplaner_manifest_options = [
             arg.split("=", 1)[1]
             for arg in clean_args
-            if arg.startswith("--mediplaner-projection=")
+            if arg.startswith("--mediplaner-manifest=")
         ]
-        if len(mediplaner_projection_options) > 1 or any(
-            not value for value in mediplaner_projection_options
-        ):
-            return False, "--mediplaner-projection muss genau einen nicht leeren Pfad enthalten.", []
-        routinika_projection_options = [
+        routinika_manifest_options = [
             arg.split("=", 1)[1]
             for arg in clean_args
-            if arg.startswith("--routinika-projection=")
+            if arg.startswith("--routinika-manifest=")
         ]
-        if len(routinika_projection_options) > 1 or any(
-            not value for value in routinika_projection_options
+        if len(mediplaner_manifest_options) > 1 or any(
+            not value for value in mediplaner_manifest_options
         ):
-            return False, "--routinika-projection muss genau einen nicht leeren Pfad enthalten.", []
+            return False, "--mediplaner-manifest muss genau einen nicht leeren Pfad enthalten.", []
+        if len(routinika_manifest_options) > 1 or any(
+            not value for value in routinika_manifest_options
+        ):
+            return False, "--routinika-manifest muss genau einen nicht leeren Pfad enthalten.", []
         supported = {
             "--read-only-config",
             "--mediplaner-receipt",
@@ -360,16 +364,16 @@ class DailyAgentHandler(BaseHandler):
             arg
             for arg in clean_args
             if arg not in supported
-            and not arg.startswith("--mediplaner-projection=")
-            and not arg.startswith("--routinika-projection=")
+            and not arg.startswith("--mediplaner-manifest=")
+            and not arg.startswith("--routinika-manifest=")
         ]
         if unsupported:
             return False, f"Unbekannte Option für daily-agent briefing: {unsupported[0]}", []
-        mediplaner_projection_override = (
-            mediplaner_projection_options[0] if mediplaner_projection_options else None
+        mediplaner_manifest_override = (
+            mediplaner_manifest_options[0] if mediplaner_manifest_options else None
         )
-        routinika_projection_override = (
-            routinika_projection_options[0] if routinika_projection_options else None
+        routinika_manifest_override = (
+            routinika_manifest_options[0] if routinika_manifest_options else None
         )
 
         if read_only_config:
@@ -388,9 +392,13 @@ class DailyAgentHandler(BaseHandler):
             active_modules = self._get_active_modules(
                 conn, ensure_config=not read_only_config
             )
-            if mediplaner_projection_override and "mediplaner_briefing" not in active_modules:
+            if (
+                mediplaner_manifest_override
+            ) and "mediplaner_briefing" not in active_modules:
                 active_modules.append("mediplaner_briefing")
-            if routinika_projection_override and "routinika_briefing" not in active_modules:
+            if (
+                routinika_manifest_override
+            ) and "routinika_briefing" not in active_modules:
                 active_modules.append("routinika_briefing")
 
             module_methods = {
@@ -401,13 +409,13 @@ class DailyAgentHandler(BaseHandler):
                 "commitment_briefing": self._mod_commitment_briefing,
                 "mediplaner_briefing": lambda current_conn: self._mod_mediplaner_briefing(
                     current_conn,
-                    projection_override=mediplaner_projection_override,
+                    manifest_override=mediplaner_manifest_override,
                     include_receipt=include_mediplaner_receipt,
                     checkpoint_updates=(checkpoint_updates if not read_only_config else None),
                 ),
                 "routinika_briefing": lambda current_conn: self._mod_routinika_briefing(
                     current_conn,
-                    projection_override=routinika_projection_override,
+                    manifest_override=routinika_manifest_override,
                     include_receipt=include_routinika_receipt,
                     checkpoint_updates=(checkpoint_updates if not read_only_config else None),
                 ),
@@ -714,24 +722,24 @@ class DailyAgentHandler(BaseHandler):
         self,
         conn,
         *,
-        projection_override: str | None = None,
+        manifest_override: str | None = None,
         include_receipt: bool = False,
         checkpoint_updates: list[tuple[str, dict, object]] | None = None,
     ) -> str:
         """Modul: strikt read-only geprüfte MediPlaner-Fälligkeiten."""
         settings = self._briefing_module_settings(conn, "mediplaner_briefing")
-        projection_path = projection_override or settings.get("projection_path")
-        if not isinstance(projection_path, str) or not projection_path.strip():
+        manifest_path = manifest_override or settings.get("manifest_path")
+        if not isinstance(manifest_path, str) or not manifest_path.strip():
             raise MediplanerProjectionError(
-                "Kein Projektionspfad konfiguriert. Nutze daily-agent config "
-                "mediplaner_briefing --projection=<absoluter-pfad>."
+                "Kein authentifiziertes Projektionsmanifest konfiguriert."
             )
         offline_seconds = settings.get(
             "minimum_offline_seconds", MEDIPLANER_DEFAULT_MINIMUM_OFFLINE_SECONDS
         )
         previous_checkpoint = settings.get("last_checkpoint")
         projection = read_mediplaner_projection(
-            projection_path,
+            manifest_path=manifest_path,
+            transport_auth=settings.get("transport_auth"),
             minimum_offline_seconds=offline_seconds,
             previous_checkpoint=previous_checkpoint,
         )
@@ -754,24 +762,24 @@ class DailyAgentHandler(BaseHandler):
         self,
         conn,
         *,
-        projection_override: str | None = None,
+        manifest_override: str | None = None,
         include_receipt: bool = False,
         checkpoint_updates: list[tuple[str, dict, object]] | None = None,
     ) -> str:
         """Modul: strikt read-only geprüfte Routinika-Fälligkeiten."""
         settings = self._briefing_module_settings(conn, "routinika_briefing")
-        projection_path = projection_override or settings.get("projection_path")
-        if not isinstance(projection_path, str) or not projection_path.strip():
+        manifest_path = manifest_override or settings.get("manifest_path")
+        if not isinstance(manifest_path, str) or not manifest_path.strip():
             raise RoutinikaProjectionError(
-                "Kein Projektionspfad konfiguriert. Nutze daily-agent config "
-                "routinika_briefing --projection=<absoluter-pfad>."
+                "Kein authentifiziertes Projektionsmanifest konfiguriert."
             )
         offline_seconds = settings.get(
             "minimum_offline_seconds", DEFAULT_MINIMUM_OFFLINE_SECONDS
         )
         previous_checkpoint = settings.get("last_checkpoint")
         projection = read_routinika_projection(
-            projection_path,
+            manifest_path=manifest_path,
+            transport_auth=settings.get("transport_auth"),
             minimum_offline_seconds=offline_seconds,
             previous_checkpoint=previous_checkpoint,
         )
@@ -958,10 +966,20 @@ class DailyAgentHandler(BaseHandler):
                 return False, "--clear darf nicht mit weiteren Optionen kombiniert werden."
             settings = {}
         else:
-            projection_values = [
+            if any(arg.startswith("--projection=") for arg in options):
+                return False, (
+                    "Direkte unauthentifizierte Projektionspfade sind für "
+                    "BACH-Consumer gesperrt."
+                )
+            manifest_values = [
                 arg.split("=", 1)[1]
                 for arg in options
-                if arg.startswith("--projection=")
+                if arg.startswith("--manifest=")
+            ]
+            auth_refs_values = [
+                arg.split("=", 1)[1]
+                for arg in options
+                if arg.startswith("--auth-refs-file=")
             ]
             offline_values = [
                 arg.split("=", 1)[1]
@@ -971,18 +989,36 @@ class DailyAgentHandler(BaseHandler):
             unknown = [
                 arg
                 for arg in options
-                if not arg.startswith("--projection=")
+                if not arg.startswith("--manifest=")
+                and not arg.startswith("--auth-refs-file=")
                 and not arg.startswith("--minimum-offline-seconds=")
             ]
             if unknown:
                 return False, f"Unbekannte Konfigurationsoption: {unknown[0]}"
-            if len(projection_values) != 1 or not projection_values[0]:
-                return False, "Genau ein --projection=<absoluter-pfad> ist erforderlich."
+            auth_mode = (
+                len(manifest_values) == 1
+                and bool(manifest_values[0])
+                and len(auth_refs_values) == 1
+                and bool(auth_refs_values[0])
+            )
+            if not auth_mode:
+                return False, (
+                    "Gemeinsam --manifest=<absoluter-pfad> und "
+                    "--auth-refs-file=<absoluter-pfad> angeben; direkte "
+                    "unauthentifizierte Projektionspfade sind gesperrt."
+                )
+            if len(manifest_values) > 1 or len(auth_refs_values) > 1:
+                return False, "Manifest- und Auth-Optionen dürfen nur einmal vorkommen."
             if len(offline_values) > 1:
                 return False, "--minimum-offline-seconds darf nur einmal vorkommen."
-            projection = Path(projection_values[0]).expanduser()
-            if not projection.is_absolute():
-                return False, "Der Projektionspfad muss absolut sein."
+            manifest = Path(manifest_values[0]).expanduser()
+            auth_refs_file = Path(auth_refs_values[0]).expanduser()
+            for label, candidate in (
+                ("Manifestpfad", manifest),
+                ("Auth-Referenzpfad", auth_refs_file),
+            ):
+                if candidate is not None and not candidate.is_absolute():
+                    return False, f"Der {label} muss absolut sein."
             try:
                 default_offline_seconds = (
                     MEDIPLANER_DEFAULT_MINIMUM_OFFLINE_SECONDS
@@ -998,10 +1034,18 @@ class DailyAgentHandler(BaseHandler):
                 return False, "--minimum-offline-seconds muss eine Ganzzahl sein."
             if offline_seconds < 0:
                 return False, "--minimum-offline-seconds darf nicht negativ sein."
-            settings = {
-                "minimum_offline_seconds": offline_seconds,
-                "projection_path": str(projection.resolve()),
-            }
+            settings = {"minimum_offline_seconds": offline_seconds}
+            try:
+                raw_auth = json.loads(auth_refs_file.read_text(encoding="utf-8"))
+                transport_auth = validate_transport_auth_config(raw_auth)
+            except (OSError, UnicodeError, json.JSONDecodeError, ProjectionTransportAuthError) as exc:
+                return False, f"Auth-Referenzen ungültig: {exc}"
+            settings.update(
+                {
+                    "manifest_path": str(manifest.resolve()),
+                    "transport_auth": transport_auth,
+                }
+            )
 
         conn = sqlite3.connect(str(self.db_path))
         try:

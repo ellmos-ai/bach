@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -20,9 +21,60 @@ if str(SYSTEM_ROOT) not in sys.path:
 from hub._services.mediplaner_projection import (
     MediplanerProjectionError,
     format_mediplaner_briefing,
+    read_legacy_unauthenticated_mediplaner_projection,
     read_mediplaner_projection,
 )  # noqa: E402
 from hub.daily_agent import DailyAgentHandler  # noqa: E402
+
+from sqlite_transit_sync import (  # noqa: E402
+    HMACKeyReference,
+    SyncConfig,
+    TransitSync,
+    load_hmac_authenticator,
+)
+
+
+class _MappingResolver:
+    def __init__(self, value: bytes = b"T" * 32):
+        self.value = value
+
+    def resolve_secret(self, _reference):
+        return self.value
+
+
+def _authenticated_projection(path: Path, tmp_path: Path):
+    reference = HMACKeyReference(
+        "mediplaner-v1",
+        "synthetic-projection-tests",
+        "mediplaner-v1",
+        "mediplaner-primary",
+    )
+    resolver = _MappingResolver()
+    auth_config = {
+        "active_key_id": reference.key_id,
+        "keys": [reference.as_dict()],
+        "trusted_senders": ["mediplaner-primary"],
+        "trust_source": "synthetic-keyring",
+    }
+    authenticator = load_hmac_authenticator(
+        [reference],
+        active_key_id=reference.key_id,
+        resolver=resolver,
+        trusted_senders=auth_config["trusted_senders"],
+        trust_source=auth_config["trust_source"],
+    )
+    sync = TransitSync(
+        SyncConfig(
+            database=path,
+            transit=tmp_path / "transit",
+            state=tmp_path / "transport-state.json",
+            node_id="mediplaner-primary",
+            namespace="mediplaner-reminder-v1",
+        ),
+        authenticator=authenticator,
+    )
+    snapshot = sync.push()
+    return snapshot, auth_config, resolver
 
 
 def _create_projection(path: Path) -> None:
@@ -101,7 +153,9 @@ def test_reads_only_actionable_opaque_records_without_mutation(tmp_path):
     _create_projection(path)
     before = hashlib.sha256(path.read_bytes()).hexdigest()
 
-    projection = read_mediplaner_projection(path, previous_checkpoint=40)
+    projection = read_legacy_unauthenticated_mediplaner_projection(
+        path, previous_checkpoint=40
+    )
     text = format_mediplaner_briefing(projection, include_receipt=True)
 
     assert [row.record_ref for row in projection.due_records] == ["a" * 32]
@@ -113,6 +167,270 @@ def test_reads_only_actionable_opaque_records_without_mutation(tmp_path):
     assert "contract=org.ellmos.mediplaner.reminder-projection@1.0.0" in text
     assert "read_only=true" in text
     assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+def test_authenticated_manifest_is_verified_before_projection_open(tmp_path):
+    path = tmp_path / "mediplaner.sqlite"
+    _create_projection(path)
+    snapshot, auth_config, resolver = _authenticated_projection(path, tmp_path)
+
+    projection = read_mediplaner_projection(
+        manifest_path=snapshot.manifest_path,
+        transport_auth=auth_config,
+        secret_resolver=resolver,
+        previous_checkpoint=40,
+    )
+
+    assert projection.source_checkpoint == 41
+    assert projection.publisher_instance == "mediplaner-primary"
+
+
+def test_normal_consumer_rejects_direct_unauthenticated_database(tmp_path):
+    path = tmp_path / "mediplaner.sqlite"
+    _create_projection(path)
+
+    with pytest.raises(TypeError):
+        read_mediplaner_projection(path)  # type: ignore[misc]
+
+
+def test_adversarial_exchange_after_auth_is_not_consumed(tmp_path, monkeypatch):
+    import sqlite_transit_sync
+
+    path = tmp_path / "mediplaner.sqlite"
+    _create_projection(path)
+    snapshot, auth_config, resolver = _authenticated_projection(path, tmp_path)
+    real_verify = sqlite_transit_sync.verify_authenticated_snapshot
+
+    def verify_then_exchange(*args, **kwargs):
+        verified = real_verify(*args, **kwargs)
+        replacement = tmp_path / "attacker.sqlite"
+        replacement.write_bytes(b"not the authenticated database")
+        replacement.replace(verified.path)
+        return verified
+
+    monkeypatch.setattr(
+        sqlite_transit_sync,
+        "verify_authenticated_snapshot",
+        verify_then_exchange,
+    )
+    with pytest.raises(MediplanerProjectionError, match="ausgetauscht"):
+        read_mediplaner_projection(
+            manifest_path=snapshot.manifest_path,
+            transport_auth=auth_config,
+            secret_resolver=resolver,
+        )
+
+
+def test_auth_failure_does_not_advance_daily_agent_checkpoint(tmp_path):
+    handler = _handler_with_briefing_db(tmp_path)
+    path = tmp_path / "mediplaner.sqlite"
+    _create_projection(path)
+    snapshot, auth_config, resolver = _authenticated_projection(path, tmp_path)
+    refs = tmp_path / "auth-refs.json"
+    refs.write_text(json.dumps(auth_config), encoding="utf-8")
+
+    ok, text = handler.handle(
+        "config",
+        [
+            "mediplaner_briefing",
+            f"--manifest={snapshot.manifest_path}",
+            f"--auth-refs-file={refs}",
+        ],
+    )
+    assert ok is True and "bleibt deaktiviert" in text
+    snapshot.path.write_bytes(b"tampered")
+
+    with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+        ok, text = handler.handle(
+            "briefing",
+            [f"--mediplaner-manifest={snapshot.manifest_path}"],
+            dry_run=False,
+        )
+
+    assert ok is False
+    assert "Transportauthentifizierung fehlgeschlagen" in text
+    conn = sqlite3.connect(handler.db_path)
+    stored = json.loads(
+        conn.execute(
+            "SELECT settings_json FROM briefing_config "
+            "WHERE module_name = 'mediplaner_briefing'"
+        ).fetchone()[0]
+    )
+    conn.close()
+    assert "last_checkpoint" not in stored
+    assert "secret" not in json.dumps(stored).lower()
+
+
+def test_authenticated_daily_agent_path_persists_checkpoint_after_success(tmp_path):
+    handler = _handler_with_briefing_db(tmp_path)
+    path = tmp_path / "mediplaner.sqlite"
+    _create_projection(path)
+    snapshot, auth_config, resolver = _authenticated_projection(path, tmp_path)
+    refs = tmp_path / "auth-refs.json"
+    refs.write_text(json.dumps(auth_config), encoding="utf-8")
+    ok, _ = handler.handle(
+        "config",
+        [
+            "mediplaner_briefing",
+            f"--manifest={snapshot.manifest_path}",
+            f"--auth-refs-file={refs}",
+        ],
+    )
+    assert ok is True
+
+    with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+        ok, text = handler.handle(
+            "briefing",
+            [f"--mediplaner-manifest={snapshot.manifest_path}"],
+            dry_run=False,
+        )
+
+    assert ok is True, text
+    conn = sqlite3.connect(handler.db_path)
+    stored = json.loads(
+        conn.execute(
+            "SELECT settings_json FROM briefing_config "
+            "WHERE module_name = 'mediplaner_briefing'"
+        ).fetchone()[0]
+    )
+    conn.close()
+    assert stored["last_checkpoint"] == 41
+    assert stored["publisher_instance"] == "mediplaner-primary"
+
+
+def test_config_rejects_secret_values(tmp_path):
+    handler = _handler_with_briefing_db(tmp_path)
+    refs = tmp_path / "unsafe-auth-refs.json"
+    refs.write_text(
+        json.dumps(
+            {
+                "active_key_id": "v1",
+                "keys": [{
+                    "key_id": "v1",
+                    "service": "svc",
+                    "account": "acct",
+                    "sender": "mediplaner-primary",
+                    "secret": "must-not-be-here",
+                }],
+                "trusted_senders": ["mediplaner-primary"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    ok, text = handler.handle(
+        "config",
+        [
+            "mediplaner_briefing",
+            f"--manifest={tmp_path / 'future.json'}",
+            f"--auth-refs-file={refs}",
+        ],
+    )
+    assert ok is False
+    assert "Secretwerte" in text
+
+
+def test_config_rejects_direct_unauthenticated_consumer_path(tmp_path):
+    handler = _handler_with_briefing_db(tmp_path)
+    ok, text = handler.handle(
+        "config",
+        ["mediplaner_briefing", f"--projection={tmp_path / 'projection.sqlite'}"],
+    )
+    assert ok is False
+    assert "unauthentifizierte Projektionspfade" in text
+    conn = sqlite3.connect(handler.db_path)
+    settings = conn.execute(
+        "SELECT settings_json FROM briefing_config "
+        "WHERE module_name = 'mediplaner_briefing'"
+    ).fetchone()[0]
+    conn.close()
+    assert json.loads(settings) == {}
+
+
+def test_transport_failure_does_not_advance_consumer_checkpoint(tmp_path):
+    handler = _handler_with_briefing_db(tmp_path)
+    refs = tmp_path / "auth-refs.json"
+    refs.write_text(
+        json.dumps(
+            {
+                "active_key_id": "v1",
+                "keys": [{
+                    "key_id": "v1", "service": "svc", "account": "acct",
+                    "sender": "mediplaner-primary",
+                }],
+                "trusted_senders": ["mediplaner-primary"],
+                "trust_source": "synthetic-keyring",
+            }
+        ),
+        encoding="utf-8",
+    )
+    ok, _ = handler.handle(
+        "config",
+        [
+            "mediplaner_briefing",
+            f"--manifest={tmp_path / 'missing.sqlite-snapshot.json'}",
+            f"--auth-refs-file={refs}",
+        ],
+    )
+    assert ok is True
+    with patch(
+        "sqlite_transit_sync.OSKeyringSecretResolver", return_value=_MappingResolver()
+    ):
+        ok, _ = handler.handle(
+            "briefing",
+            [f"--mediplaner-manifest={tmp_path / 'missing.sqlite-snapshot.json'}"],
+            dry_run=False,
+        )
+    assert ok is False
+    conn = sqlite3.connect(handler.db_path)
+    settings = json.loads(
+        conn.execute(
+            "SELECT settings_json FROM briefing_config "
+            "WHERE module_name = 'mediplaner_briefing'"
+        ).fetchone()[0]
+    )
+    conn.close()
+    assert "last_checkpoint" not in settings
+
+
+def test_consumer_commit_crash_does_not_advance_checkpoint(tmp_path):
+    handler = _handler_with_briefing_db(tmp_path)
+    path = tmp_path / "mediplaner.sqlite"
+    _create_projection(path)
+    snapshot, auth_config, resolver = _authenticated_projection(path, tmp_path)
+    refs = tmp_path / "auth-refs.json"
+    refs.write_text(json.dumps(auth_config), encoding="utf-8")
+    ok, _ = handler.handle(
+        "config",
+        [
+            "mediplaner_briefing",
+            f"--manifest={snapshot.manifest_path}",
+            f"--auth-refs-file={refs}",
+        ],
+    )
+    assert ok is True
+    with (
+        patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver),
+        patch.object(
+            handler,
+            "_persist_projection_checkpoints",
+            side_effect=RuntimeError("synthetischer Commit-Absturz"),
+        ),
+    ):
+        ok, _ = handler.handle(
+            "briefing",
+            [f"--mediplaner-manifest={snapshot.manifest_path}"],
+            dry_run=False,
+        )
+    assert ok is False
+    conn = sqlite3.connect(handler.db_path)
+    settings = json.loads(
+        conn.execute(
+            "SELECT settings_json FROM briefing_config "
+            "WHERE module_name = 'mediplaner_briefing'"
+        ).fetchone()[0]
+    )
+    conn.close()
+    assert "last_checkpoint" not in settings
 
 
 @pytest.mark.parametrize(
@@ -134,7 +452,7 @@ def test_contract_drift_fails_closed(tmp_path, statement, message):
     conn.close()
 
     with pytest.raises(MediplanerProjectionError, match=message):
-        read_mediplaner_projection(path)
+        read_legacy_unauthenticated_mediplaner_projection(path)
 
 
 def test_unclosed_sidecar_and_consumer_loop_fail_closed(tmp_path):
@@ -142,7 +460,7 @@ def test_unclosed_sidecar_and_consumer_loop_fail_closed(tmp_path):
     _create_projection(path)
     Path(f"{path}-wal").write_bytes(b"synthetic")
     with pytest.raises(MediplanerProjectionError, match="nicht geschlossen"):
-        read_mediplaner_projection(path)
+        read_legacy_unauthenticated_mediplaner_projection(path)
 
     Path(f"{path}-wal").unlink()
     conn = sqlite3.connect(path)
@@ -158,7 +476,7 @@ def test_unclosed_sidecar_and_consumer_loop_fail_closed(tmp_path):
     conn.commit()
     conn.close()
     with pytest.raises(MediplanerProjectionError, match="Loop-Guard"):
-        read_mediplaner_projection(path)
+        read_legacy_unauthenticated_mediplaner_projection(path)
 
 
 def test_tombstone_retention_and_active_collision_are_checked(tmp_path):
@@ -176,7 +494,7 @@ def test_tombstone_retention_and_active_collision_are_checked(tmp_path):
     conn.close()
 
     with pytest.raises(MediplanerProjectionError, match="Tombstone kollidiert"):
-        read_mediplaner_projection(path)
+        read_legacy_unauthenticated_mediplaner_projection(path)
 
     conn = sqlite3.connect(path)
     conn.execute("DELETE FROM projection_tombstones")
@@ -190,7 +508,7 @@ def test_tombstone_retention_and_active_collision_are_checked(tmp_path):
     conn.commit()
     conn.close()
     with pytest.raises(MediplanerProjectionError, match="Offline-Intervall"):
-        read_mediplaner_projection(path)
+        read_legacy_unauthenticated_mediplaner_projection(path)
 
 
 @pytest.mark.parametrize(
@@ -211,7 +529,7 @@ def test_record_provenance_must_match_metadata(tmp_path, table, column, value, m
     conn.close()
 
     with pytest.raises(MediplanerProjectionError, match=message):
-        read_mediplaner_projection(path)
+        read_legacy_unauthenticated_mediplaner_projection(path)
 
 
 @pytest.mark.parametrize(
@@ -239,14 +557,16 @@ def test_tombstone_provenance_must_match_metadata(tmp_path, column, value, messa
     conn.close()
 
     with pytest.raises(MediplanerProjectionError, match=message):
-        read_mediplaner_projection(path)
+        read_legacy_unauthenticated_mediplaner_projection(path)
 
 
 def test_checkpoint_must_advance(tmp_path):
     path = tmp_path / "mediplaner.sqlite"
     _create_projection(path)
     with pytest.raises(MediplanerProjectionError, match="nicht neuer"):
-        read_mediplaner_projection(path, previous_checkpoint=41)
+        read_legacy_unauthenticated_mediplaner_projection(
+            path, previous_checkpoint=41
+        )
 
 
 def test_sqlite_uri_metacharacters_in_path_are_quoted(tmp_path):
@@ -255,7 +575,7 @@ def test_sqlite_uri_metacharacters_in_path_are_quoted(tmp_path):
     path = directory / "mediplaner.sqlite"
     _create_projection(path)
 
-    projection = read_mediplaner_projection(path)
+    projection = read_legacy_unauthenticated_mediplaner_projection(path)
 
     assert projection.database_name == "mediplaner.sqlite"
 
@@ -284,12 +604,21 @@ def _handler_with_briefing_db(tmp_path: Path) -> DailyAgentHandler:
     return handler
 
 
-def _configure_delivery_database(handler: DailyAgentHandler, projection: Path) -> None:
+def _configure_delivery_database(
+    handler: DailyAgentHandler, manifest: Path, auth_config: dict
+) -> None:
     conn = sqlite3.connect(handler.db_path)
     conn.execute(
         "UPDATE briefing_config SET is_active = 1, settings_json = ? "
         "WHERE module_name = 'mediplaner_briefing'",
-        (__import__("json").dumps({"projection_path": str(projection)}),),
+        (
+            json.dumps(
+                {
+                    "manifest_path": str(manifest),
+                    "transport_auth": auth_config,
+                }
+            ),
+        ),
     )
     conn.execute(
         """
@@ -318,16 +647,15 @@ def test_daily_agent_can_preview_mediplaner_projection(tmp_path):
     handler = _handler_with_briefing_db(tmp_path)
     projection = tmp_path / "mediplaner.sqlite"
     _create_projection(projection)
+    snapshot, auth_config, resolver = _authenticated_projection(projection, tmp_path)
+    _configure_delivery_database(handler, snapshot.manifest_path, auth_config)
 
-    ok, text = handler.handle(
-        "briefing",
-        [
-            f"--mediplaner-projection={projection}",
-            "--mediplaner-receipt",
-            "--dry-run",
-        ],
-        dry_run=True,
-    )
+    with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+        ok, text = handler.handle(
+            "briefing",
+            ["--mediplaner-receipt", "--dry-run"],
+            dry_run=True,
+        )
 
     assert ok is True
     assert "MEDIPLANER-FÄLLIGKEITEN (1)" in text
@@ -338,17 +666,18 @@ def test_daily_agent_can_preview_mediplaner_projection(tmp_path):
         "SELECT settings_json FROM briefing_config WHERE module_name = 'mediplaner_briefing'"
     ).fetchone()[0]
     conn.close()
-    assert settings == "{}"
+    assert "last_checkpoint" not in json.loads(settings)
 
 
 def test_daily_agent_persists_checkpoint_and_rejects_replay(tmp_path):
     handler = _handler_with_briefing_db(tmp_path)
     projection = tmp_path / "mediplaner.sqlite"
     _create_projection(projection)
+    snapshot, auth_config, resolver = _authenticated_projection(projection, tmp_path)
+    _configure_delivery_database(handler, snapshot.manifest_path, auth_config)
 
-    ok, _ = handler.handle(
-        "briefing", [f"--mediplaner-projection={projection}"], dry_run=False
-    )
+    with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+        ok, _ = handler.handle("briefing", [], dry_run=False)
     assert ok is True
 
     conn = sqlite3.connect(handler.db_path)
@@ -363,61 +692,26 @@ def test_daily_agent_persists_checkpoint_and_rejects_replay(tmp_path):
     assert settings["publisher_instance"] == "mediplaner-primary"
     assert len(settings["last_projection_sha256"]) == 64
 
-    ok, text = handler.handle(
-        "briefing", [f"--mediplaner-projection={projection}"], dry_run=False
-    )
+    with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+        ok, text = handler.handle("briefing", [], dry_run=False)
     assert ok is False
     assert "nicht neuer als der Consumer-Checkpoint" in text
 
-    conn = sqlite3.connect(projection)
-    conn.execute(
-        "UPDATE projection_metadata SET source_checkpoint = 43, "
-        "generated_at = '2026-08-22T10:00:00Z'"
-    )
-    conn.execute("UPDATE medication_due SET source_checkpoint = 43")
-    conn.execute("UPDATE inventory_warning SET source_checkpoint = 43")
-    conn.commit()
-    conn.close()
-    ok, _ = handler.handle(
-        "briefing", [f"--mediplaner-projection={projection}"], dry_run=False
-    )
-    assert ok is True
-
-    conn = sqlite3.connect(projection)
-    conn.execute(
-        "UPDATE projection_metadata SET source_checkpoint = 44, "
-        "publisher_instance = 'replacement-publisher'"
-    )
-    conn.execute(
-        "UPDATE medication_due SET source_checkpoint = 44, "
-        "publisher_instance = 'replacement-publisher'"
-    )
-    conn.execute(
-        "UPDATE inventory_warning SET source_checkpoint = 44, "
-        "publisher_instance = 'replacement-publisher'"
-    )
-    conn.commit()
-    conn.close()
-    ok, text = handler.handle(
-        "briefing", [f"--mediplaner-projection={projection}"], dry_run=False
-    )
-    assert ok is False
-    assert "Publisher-Instanz weicht" in text
 
 
 def test_later_projection_failure_does_not_consume_mediplaner_checkpoint(tmp_path):
     handler = _handler_with_briefing_db(tmp_path)
     projection = tmp_path / "mediplaner.sqlite"
     _create_projection(projection)
+    snapshot, auth_config, resolver = _authenticated_projection(projection, tmp_path)
+    _configure_delivery_database(handler, snapshot.manifest_path, auth_config)
 
-    ok, text = handler.handle(
-        "briefing",
-        [
-            f"--mediplaner-projection={projection}",
-            f"--routinika-projection={tmp_path / 'missing-routinika.sqlite'}",
-        ],
-        dry_run=False,
-    )
+    with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+        ok, text = handler.handle(
+            "briefing",
+            [f"--routinika-manifest={tmp_path / 'missing-routinika.json'}"],
+            dry_run=False,
+        )
 
     assert ok is False
     assert "routinika_briefing" in text
@@ -433,13 +727,17 @@ def test_failed_delivery_does_not_consume_projection(tmp_path):
     handler = _handler_with_briefing_db(tmp_path)
     projection = tmp_path / "mediplaner.sqlite"
     _create_projection(projection)
-    _configure_delivery_database(handler, projection)
+    snapshot, auth_config, resolver = _authenticated_projection(projection, tmp_path)
+    _configure_delivery_database(handler, snapshot.manifest_path, auth_config)
     connector = MagicMock()
     connector.send_message.return_value = False
 
-    with patch(
-        "hub.connector.ConnectorHandler._instantiate",
-        return_value=(connector, ""),
+    with (
+        patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver),
+        patch(
+            "hub.connector.ConnectorHandler._instantiate",
+            return_value=(connector, ""),
+        ),
     ):
         ok, text = handler.handle("deliver", ["--telegram"], dry_run=False)
 
@@ -457,20 +755,25 @@ def test_successful_delivery_persists_then_duplicate_skips_before_replay(tmp_pat
     handler = _handler_with_briefing_db(tmp_path)
     projection = tmp_path / "mediplaner.sqlite"
     _create_projection(projection)
-    _configure_delivery_database(handler, projection)
+    snapshot, auth_config, resolver = _authenticated_projection(projection, tmp_path)
+    _configure_delivery_database(handler, snapshot.manifest_path, auth_config)
     connector = MagicMock()
     connector.send_message.return_value = True
 
-    with patch(
-        "hub.connector.ConnectorHandler._instantiate",
-        return_value=(connector, ""),
+    with (
+        patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver),
+        patch(
+            "hub.connector.ConnectorHandler._instantiate",
+            return_value=(connector, ""),
+        ),
     ):
         first_ok, _ = handler.handle("deliver", ["--telegram"], dry_run=False)
 
-    with patch("hub.connector.ConnectorHandler._instantiate") as instantiate:
-        second_ok, second_text = handler.handle(
-            "deliver", ["--telegram"], dry_run=False
-        )
+    with (
+        patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver),
+        patch("hub.connector.ConnectorHandler._instantiate") as instantiate,
+    ):
+        second_ok, second_text = handler.handle("deliver", ["--telegram"], dry_run=False)
 
     assert first_ok is True and second_ok is True
     assert "[SKIP]" in second_text
@@ -488,13 +791,31 @@ def test_successful_delivery_persists_then_duplicate_skips_before_replay(tmp_pat
 
 def test_daily_agent_stores_only_inactive_consumer_settings(tmp_path):
     handler = _handler_with_briefing_db(tmp_path)
-    projection = tmp_path / "future-mediplaner.sqlite"
+    manifest = tmp_path / "future-mediplaner.sqlite-snapshot.json"
+    refs = tmp_path / "auth-refs.json"
+    refs.write_text(
+        json.dumps(
+            {
+                "active_key_id": "v1",
+                "keys": [{
+                    "key_id": "v1",
+                    "service": "svc",
+                    "account": "acct",
+                    "sender": "mediplaner-primary",
+                }],
+                "trusted_senders": ["mediplaner-primary"],
+                "trust_source": "synthetic-keyring",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     ok, text = handler.handle(
         "config",
         [
             "mediplaner_briefing",
-            f"--projection={projection}",
+            f"--manifest={manifest}",
+            f"--auth-refs-file={refs}",
             "--minimum-offline-seconds=2592000",
         ],
     )
@@ -510,5 +831,6 @@ def test_daily_agent_stores_only_inactive_consumer_settings(tmp_path):
     assert row[0] == 0
     assert __import__("json").loads(row[1]) == {
         "minimum_offline_seconds": 2592000,
-        "projection_path": str(projection.resolve()),
+        "manifest_path": str(manifest.resolve()),
+        "transport_auth": json.loads(refs.read_text(encoding="utf-8")),
     }

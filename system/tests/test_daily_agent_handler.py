@@ -20,8 +20,73 @@ if str(SYSTEM_ROOT) not in sys.path:
 from hub.daily_agent import DailyAgentHandler
 from hub._services.routinika_projection import (
     RoutinikaProjectionError,
+    read_legacy_unauthenticated_routinika_projection,
     read_routinika_projection,
 )
+from sqlite_transit_sync import (
+    HMACKeyReference,
+    SyncConfig,
+    TransitSync,
+    load_hmac_authenticator,
+)
+
+
+class _ProjectionSecretResolver:
+    def resolve_secret(self, _reference):
+        return b"R" * 32
+
+
+def _authenticated_routinika_projection(path: Path, tmp_path: Path):
+    reference = HMACKeyReference(
+        "routinika-v1",
+        "synthetic-projection-tests",
+        "routinika-v1",
+        "routinika-primary",
+    )
+    resolver = _ProjectionSecretResolver()
+    auth_config = {
+        "active_key_id": reference.key_id,
+        "keys": [reference.as_dict()],
+        "trusted_senders": ["routinika-primary"],
+        "trust_source": "synthetic-keyring",
+    }
+    authenticator = load_hmac_authenticator(
+        [reference],
+        active_key_id=reference.key_id,
+        resolver=resolver,
+        trusted_senders=auth_config["trusted_senders"],
+        trust_source=auth_config["trust_source"],
+    )
+    snapshot = TransitSync(
+        SyncConfig(
+            database=path,
+            transit=tmp_path / "routinika-transit",
+            state=tmp_path / "routinika-transport-state.json",
+            node_id="routinika-primary",
+            namespace="routinika-reminder-v1",
+        ),
+        authenticator=authenticator,
+    ).push()
+    return snapshot, auth_config, resolver
+
+
+def _store_projection_auth(handler, module_name: str, snapshot, auth_config: dict) -> None:
+    conn = sqlite3.connect(handler.db_path)
+    handler._ensure_briefing_config(conn)
+    conn.execute(
+        "UPDATE briefing_config SET settings_json = ? WHERE module_name = ?",
+        (
+            json.dumps(
+                {
+                    "manifest_path": str(snapshot.manifest_path),
+                    "transport_auth": auth_config,
+                }
+            ),
+            module_name,
+        ),
+    )
+    conn.commit()
+    conn.close()
 
 
 @pytest.fixture
@@ -344,21 +409,49 @@ class TestBriefingDelivery:
 
 
 class TestRoutinikaProjectionBriefing:
+    def test_authenticated_manifest_is_verified_before_projection_open(self, tmp_path):
+        projection_path = tmp_path / "routinika-projection.sqlite"
+        _create_routinika_projection(projection_path)
+        snapshot, auth_config, resolver = _authenticated_routinika_projection(
+            projection_path, tmp_path
+        )
+
+        projection = read_routinika_projection(
+            manifest_path=snapshot.manifest_path,
+            transport_auth=auth_config,
+            secret_resolver=resolver,
+            previous_checkpoint=5,
+        )
+
+        assert projection.source_checkpoint == 6
+        assert projection.publisher_instance == "routinika-primary"
+
+    def test_normal_consumer_rejects_direct_unauthenticated_database(self, tmp_path):
+        projection = tmp_path / "routinika-projection.sqlite"
+        _create_routinika_projection(projection)
+        with pytest.raises(TypeError):
+            read_routinika_projection(projection)  # type: ignore[misc]
+
     def test_dry_run_is_read_only_and_emits_non_personal_receipt(self, handler, tmp_path):
         _make_briefing_db(handler.db_path)
         projection = tmp_path / "routinika-projection.sqlite"
         _create_routinika_projection(projection)
         before = hashlib.sha256(projection.read_bytes()).hexdigest()
-
-        ok, text = handler.handle(
-            "briefing",
-            [
-                f"--routinika-projection={projection}",
-                "--routinika-receipt",
-                "--dry-run",
-            ],
-            dry_run=True,
+        snapshot, auth_config, resolver = _authenticated_routinika_projection(
+            projection, tmp_path
         )
+        _store_projection_auth(handler, "routinika_briefing", snapshot, auth_config)
+
+        with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+            ok, text = handler.handle(
+                "briefing",
+                [
+                    f"--routinika-manifest={snapshot.manifest_path}",
+                    "--routinika-receipt",
+                    "--dry-run",
+                ],
+                dry_run=True,
+            )
 
         assert ok is True
         assert "[DRY-RUN] Read-only" in text
@@ -376,7 +469,16 @@ class TestRoutinikaProjectionBriefing:
             "WHERE type = 'table' AND name = 'briefing_config'"
         ).fetchone()[0]
         conn.close()
-        assert config_table == 0
+        assert config_table == 1
+        conn = sqlite3.connect(handler.db_path)
+        settings = json.loads(
+            conn.execute(
+                "SELECT settings_json FROM briefing_config "
+                "WHERE module_name = 'routinika_briefing'"
+            ).fetchone()[0]
+        )
+        conn.close()
+        assert "last_checkpoint" not in settings
 
     def test_terminal_rows_are_not_briefed(self, handler, tmp_path):
         _make_briefing_db(handler.db_path)
@@ -404,10 +506,17 @@ class TestRoutinikaProjectionBriefing:
                 ),
             ],
         )
-
-        ok, text = handler.handle(
-            "briefing", [f"--routinika-projection={projection}", "--dry-run"], dry_run=True
+        snapshot, auth_config, resolver = _authenticated_routinika_projection(
+            projection, tmp_path
         )
+        _store_projection_auth(handler, "routinika_briefing", snapshot, auth_config)
+
+        with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+            ok, text = handler.handle(
+                "briefing",
+                [f"--routinika-manifest={snapshot.manifest_path}", "--dry-run"],
+                dry_run=True,
+            )
 
         assert ok is True
         assert "ROUTINIKA-FÄLLIGKEITEN (1)" in text
@@ -423,7 +532,7 @@ class TestRoutinikaProjectionBriefing:
         conn.close()
 
         with pytest.raises(RoutinikaProjectionError, match="Spalten-Allowlist"):
-            read_routinika_projection(projection)
+            read_legacy_unauthenticated_routinika_projection(projection)
 
     def test_unclosed_sidecar_fails_closed(self, tmp_path):
         projection = tmp_path / "routinika-projection.sqlite"
@@ -431,17 +540,33 @@ class TestRoutinikaProjectionBriefing:
         Path(f"{projection}-wal").write_bytes(b"synthetic")
 
         with pytest.raises(RoutinikaProjectionError, match="nicht geschlossen"):
-            read_routinika_projection(projection)
+            read_legacy_unauthenticated_routinika_projection(projection)
 
     def test_config_persists_only_consumer_settings_and_stays_inactive(self, handler, tmp_path):
         _make_briefing_db(handler.db_path)
-        projection = tmp_path / "future-routinika-projection.sqlite"
+        manifest = tmp_path / "future-routinika-projection.sqlite-snapshot.json"
+        refs = tmp_path / "auth-refs.json"
+        refs.write_text(
+            json.dumps(
+                {
+                    "active_key_id": "v1",
+                    "keys": [{
+                        "key_id": "v1", "service": "svc", "account": "acct",
+                        "sender": "routinika-primary",
+                    }],
+                    "trusted_senders": ["routinika-primary"],
+                    "trust_source": "synthetic-keyring",
+                }
+            ),
+            encoding="utf-8",
+        )
 
         ok, text = handler.handle(
             "config",
             [
                 "routinika_briefing",
-                f"--projection={projection}",
+                f"--manifest={manifest}",
+                f"--auth-refs-file={refs}",
                 "--minimum-offline-seconds=2592000",
             ],
         )
@@ -457,17 +582,25 @@ class TestRoutinikaProjectionBriefing:
         assert row[0] == 0
         assert json.loads(row[1]) == {
             "minimum_offline_seconds": 2592000,
-            "projection_path": str(projection.resolve()),
+            "manifest_path": str(manifest.resolve()),
+            "transport_auth": json.loads(refs.read_text(encoding="utf-8")),
         }
 
     def test_real_briefing_persists_checkpoint_and_rejects_replay(self, handler, tmp_path):
         _make_briefing_db(handler.db_path)
         projection = tmp_path / "routinika-projection.sqlite"
         _create_routinika_projection(projection)
-
-        ok, _ = handler.handle(
-            "briefing", [f"--routinika-projection={projection}"], dry_run=False
+        snapshot, auth_config, resolver = _authenticated_routinika_projection(
+            projection, tmp_path
         )
+        _store_projection_auth(handler, "routinika_briefing", snapshot, auth_config)
+
+        with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+            ok, _ = handler.handle(
+                "briefing",
+                [f"--routinika-manifest={snapshot.manifest_path}"],
+                dry_run=False,
+            )
         assert ok is True
 
         conn = sqlite3.connect(handler.db_path)
@@ -481,9 +614,12 @@ class TestRoutinikaProjectionBriefing:
         assert settings["last_checkpoint"] == 6
         assert settings["publisher_instance"] == "routinika-primary"
 
-        ok, text = handler.handle(
-            "briefing", [f"--routinika-projection={projection}"], dry_run=False
-        )
+        with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+            ok, text = handler.handle(
+                "briefing",
+                [f"--routinika-manifest={snapshot.manifest_path}"],
+                dry_run=False,
+            )
         assert ok is False
         assert "nicht neuer als der Consumer-Checkpoint" in text
 
