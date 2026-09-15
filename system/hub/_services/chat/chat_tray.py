@@ -117,6 +117,33 @@ def _is_terminal_parked(task) -> bool:
     return False
 
 
+def _pending_fields(pending):
+    """Felder des idle_pending-Tupels inkl. exakter Send-chat_id (#1303).
+
+    Der Send-Pfad (_process_idle_task) schickt den Task-Prompt an
+    'idle-{role_id}-{task_id}'; der Settle-Pfad (_settle_pending_task) pollte
+    vor #1303 hartkodiert 'idle-task-{task_id}' -- eine chat_id, an die NIE
+    gesendet wurde. Jede Idle-Session >300s Client-Timeout endete so als
+    "ohne Antwort oder Transkript" (PATH A), obwohl die Antwort im
+    Transkript der echten Send-chat_id lag (Evidenz: chat_tray.py.bak-universal
+    -- vorm Universal-Worker-Refaktor nutzten BEIDE Pfade einheitlich
+    'idle-task-{id}', der Refaktor aenderte nur den Send-Pfad).
+
+    Neu: das Tupel traegt die Send-chat_id als 4. Element. Rueckgabe:
+    (task_id, seit, title, chat_id). Legacy-Tupel (2/3 Elemente, nur waehrend
+    des Deploy-Fensters moeglich) fallen defensiv auf den alten Praefix
+    zurueck.
+    """
+    if not pending:
+        return None, 0.0, "", ""
+    p = tuple(pending)
+    if len(p) >= 4:
+        return p[0], p[1], p[2], p[3]
+    if len(p) >= 3:
+        return p[0], p[1], p[2], f"idle-task-{p[0]}"
+    return p[0], p[1], f"Task #{p[0]}", f"idle-task-{p[0]}"
+
+
 def acquire_single_instance_lock(lock_path: Path = TRAY_LOCK_FILE):
     """Return an open, exclusively locked handle -- or None if another tray holds it.
 
@@ -185,7 +212,7 @@ class BACHTray:
         self.idle_consecutive = 0
         self.idle_task_name = None
         self.idle_processing = False
-        self.idle_pending = None   # (task_id, seit) nach Client-Timeout
+        self.idle_pending = None   # (task_id, seit, title, chat_id) nach Client-Timeout (#1303)
         self._recurring_tick = 0
 
         self.max_status_failures = 3
@@ -552,12 +579,9 @@ class BACHTray:
         if not self.idle_pending:
             return True
 
-        if len(self.idle_pending) >= 3:
-            task_id, seit, title = self.idle_pending[0], self.idle_pending[1], self.idle_pending[2]
-        else:
-            task_id, seit = self.idle_pending[0], self.idle_pending[1]
-            title = f"Task #{task_id}"
-        task_chat_id = f"idle-task-{task_id}"
+        # #1303: chat_id aus dem Tupel (exakt wie beim Senden), nicht mehr
+        # hartkodiert 'idle-task-{id}' -- sonst sind Antworten >300s unauffindbar
+        task_id, seit, title, task_chat_id = _pending_fields(self.idle_pending)
         hist = self._api("GET", f"/api/history?chat_id={task_chat_id}")
         messages = (hist or {}).get("messages", [])
         answer = next((m for m in messages if m.get("role") == "assistant"), None)
@@ -733,7 +757,9 @@ class BACHTray:
             }, timeout=300)
 
             if result is None:
-                self.idle_pending = (task_id, time.time(), title)
+                # #1303: chat_id mitvormerken, damit _settle_pending_task die
+                # echte Send-chat_id (idle-{role}-{id}) pollen kann
+                self.idle_pending = (task_id, time.time(), title, task_chat_id)
                 print(f"[Idle] Chat-Ergebnis fuer Task #{task_id} unbekannt; wird nachgelesen")
             elif result.get("compute_locked"):
                 # Weder erledigt noch fehlgeschlagen: der Task wurde gar nicht
