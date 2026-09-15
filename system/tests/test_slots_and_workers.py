@@ -59,15 +59,16 @@ class TestSlotsConfigCRUD:
         assert get_worker_slot("alpha", path=str(cfg_file)) == first
         assert len(load_slots_config(str(cfg_file))["dynamic_workers"]) == 1
 
-    def test_worker_display_name_cannot_be_used_as_live_worker_id(self, tmp_path):
+    def test_worker_display_name_cannot_route_or_block_other_ids(self, tmp_path):
         cfg_file = tmp_path / "worker-name-alias.json"
         initialize_slots_config(str(cfg_file))
-        worker = add_worker({"id": "alpha", "name": "12345", "allow_tools": False},
+        worker = add_worker({"id": "alpha", "name": "api-delegate", "allow_tools": False},
                             path=str(cfg_file))
+        add_worker({"id": "beta", "name": "alpha", "allow_tools": False},
+                   path=str(cfg_file))
 
         assert get_worker_slot("alpha", path=str(cfg_file)) == worker
-        with pytest.raises(ValueError, match="Worker-Name.*kollidiert"):
-            get_worker_slot("12345", path=str(cfg_file))
+        assert get_worker_slot("api-delegate", path=str(cfg_file)) == {}
 
     def test_worker_id_cannot_be_mutated_into_collision(self, tmp_path):
         cfg_file = tmp_path / "id-mutation.json"
@@ -307,7 +308,34 @@ class TestSlotsConfigCRUD:
 
 
 class TestTelegramSlotMapping:
-    def test_worker_name_matching_telegram_id_fails_closed_before_model(self, tmp_path, monkeypatch):
+    def test_display_names_do_not_block_api_default_or_exact_worker_id(self, tmp_path, monkeypatch):
+        control = importlib.import_module("hub._services.chat.telegram_chat")
+        cfg_file = tmp_path / "api-name-collision.json"
+        initialize_slots_config(str(cfg_file))
+        add_worker({"id": "alpha", "name": "api-delegate", "allow_tools": False,
+                    "backend": "ollama-cloud", "model": "kimi-k3:cloud"}, path=str(cfg_file))
+        add_worker({"id": "beta", "name": "alpha", "allow_tools": False},
+                   path=str(cfg_file))
+        sessions = {}
+        worker_backend = object()
+        monkeypatch.setattr(control, "_orig_get_session",
+                            lambda chat_id: sessions.setdefault(chat_id, ChatSession()))
+        monkeypatch.setattr(control, "get_worker_slot",
+                            lambda worker_id: get_worker_slot(worker_id, path=str(cfg_file)))
+        monkeypatch.setattr(control, "_get_or_create_backend",
+                            lambda *_args: worker_backend)
+
+        default_backend, _model = control._snapshot_chat_backend("api-delegate")
+        assert default_backend is control.runtime.backend
+        assert sessions["api-delegate"].worker_slot_reader is None
+
+        selected, model = control._snapshot_chat_backend("alpha")
+        assert selected is worker_backend
+        assert model == "kimi-k3:cloud"
+        assert sessions["alpha"].allow_tools is False
+        assert sessions["alpha"].worker_slot_reader()["id"] == "alpha"
+
+    def test_worker_name_matching_telegram_id_does_not_route_cloud_worker(self, tmp_path, monkeypatch):
         control = importlib.import_module("hub._services.chat.telegram_chat")
         cfg_file = tmp_path / "telegram-worker-name.json"
         initialize_slots_config(str(cfg_file))
@@ -318,19 +346,27 @@ class TestTelegramSlotMapping:
         session.chat_id = "12345"
         session.messages = [{"role": "user", "content": "älterer Verlauf"}]
         session.allow_tools = True
+        session.model = "kimi-k3:cloud"
+        session.backend = object()
+        connector_backend = object()
         monkeypatch.setattr(control, "_orig_get_session", lambda _id: session)
         monkeypatch.setattr(control, "load_slots_config",
                             lambda: load_slots_config(str(cfg_file)))
         monkeypatch.setattr(control, "get_worker_slot",
                             lambda worker_id: get_worker_slot(worker_id, path=str(cfg_file)))
+        monkeypatch.setattr(control, "_get_or_create_backend",
+                            lambda *_args: connector_backend)
 
         assert control._resolve_slot_for_chat("12345")["id"] == "buddha_connector"
+        assert get_worker_slot("12345", path=str(cfg_file)) == {}
         assert control.runtime.get_session("12345") is session
-        assert session.allow_tools is False
-        with pytest.raises(ValueError, match="Worker-Name.*kollidiert"):
-            session.worker_slot_reader()
-        with pytest.raises(ValueError, match="Worker-Name.*kollidiert"):
-            control._snapshot_chat_backend("12345")
+        assert session.worker_slot_reader is None
+        selected, model = control._snapshot_chat_backend("12345")
+        assert selected is connector_backend
+        assert session.backend is connector_backend
+        assert model == "qwen3.8:27b-mlx"
+        assert session.model == model
+        assert session.mode == "safe"
 
     def test_numeric_telegram_session_rebinds_live_worker_with_history(self, monkeypatch):
         control = importlib.import_module("hub._services.chat.telegram_chat")

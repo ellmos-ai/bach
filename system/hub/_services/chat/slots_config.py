@@ -277,13 +277,6 @@ def get_worker_slot(worker_id: str, path: str | None = None) -> Dict[str, Any]:
     """Return only a unique dynamic worker; ambiguity fails closed."""
     cfg = load_slots_config(path, strict=True)
     matches = [w for w in cfg.get("dynamic_workers", []) if w.get("id") == worker_id]
-    # Worker names are display labels, not chat/worker identities. A name
-    # alias could otherwise select a restricted worker in the model resolver
-    # while the live capability reader binds only exact IDs.
-    name_aliases = [w for w in cfg.get("dynamic_workers", [])
-                    if w.get("name") == worker_id and w.get("id") != worker_id]
-    if name_aliases:
-        raise ValueError(f"Worker-Name {worker_id!r} kollidiert mit einer Chat-/Worker-ID")
     if len(matches) > 1 or (matches and (
         worker_id in cfg.get("slots", {}) or worker_id in DEFAULT_CORE_SLOTS
     )):
