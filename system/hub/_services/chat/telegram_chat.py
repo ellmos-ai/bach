@@ -550,7 +550,7 @@ def _resolve_slot_for_chat(chat_id: str) -> dict:
 
     # 1. Check dynamic workers first
     for w in cfg.get("dynamic_workers", []):
-        if w.get("id") == str_id or w.get("name") == str_id:
+        if w.get("id") == str_id:
             return w
     if str_id.startswith("worker-"):
         try:
