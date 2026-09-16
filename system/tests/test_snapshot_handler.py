@@ -26,11 +26,23 @@ def snap_env(tmp_path, monkeypatch):
     db_path = data / "bach.db"
 
     conn = sqlite3.connect(str(db_path))
+    # Schema spiegelt das produktive DB-Schema (Live-DDL, Task #1207):
+    # session_snapshots inkl. aller Spalten, memory_working inkl. type/priority/
+    # is_active/created_by_session_id, tasks inkl. source/updated_at.
     conn.execute("""
         CREATE TABLE session_snapshots (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT, snapshot_type TEXT, name TEXT,
-            snapshot_data TEXT, created_at TEXT
+            id INTEGER PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            snapshot_type TEXT NOT NULL,
+            snapshot_data JSON,
+            working_memory JSON,
+            open_tasks JSON,
+            active_files JSON,
+            token_usage INTEGER,
+            context_hash TEXT,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, name TEXT,
+            UNIQUE(session_id, snapshot_type, created_at)
         )
     """)
     conn.execute("""
@@ -40,14 +52,28 @@ def snap_env(tmp_path, monkeypatch):
     """)
     conn.execute("""
         CREATE TABLE tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT, status TEXT, priority TEXT
+            id INTEGER PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT,
+            category TEXT,
+            priority TEXT DEFAULT 'P3',
+            status TEXT DEFAULT 'pending',
+            created_at TEXT,
+            updated_at TEXT,
+            source TEXT
         )
     """)
     conn.execute("""
         CREATE TABLE memory_working (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            content TEXT, created_at TEXT
+            type TEXT NOT NULL CHECK(type IN ('scratchpad', 'context', 'loop', 'note')),
+            content TEXT NOT NULL,
+            priority INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            is_active INTEGER DEFAULT 1,
+            created_by_session_id TEXT
         )
     """)
     conn.execute(
@@ -228,3 +254,167 @@ class TestSnapshotDelete:
         count = conn.execute("SELECT COUNT(*) FROM session_snapshots").fetchone()[0]
         conn.close()
         assert count == 1
+
+
+class TestSnapshotRestore:
+    """Echter Restore (Task #1207): Working Memory & Tasks zurueckschreiben."""
+
+    def test_load_restores_working_memory(self, snap_env):
+        handler, _, db_path = snap_env
+        conn = sqlite3.connect(str(db_path))
+        for text in ("Notiz A", "Notiz B"):
+            conn.execute(
+                "INSERT INTO memory_working (type, content, priority, is_active) "
+                "VALUES ('note', ?, 3, 1)", (text,))
+        conn.commit(); conn.close()
+
+        handler.handle("create", ["with-memory"])
+
+        # Session-Verlust simulieren: alle aktiven Eintraege deaktivieren
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("UPDATE memory_working SET is_active = 0")
+        conn.commit(); conn.close()
+
+        ok, msg = handler.handle("load", [])
+        assert ok is True
+        assert "RESTORIERT" in msg
+        assert "2 zurueckgeschrieben" in msg
+
+        conn = sqlite3.connect(str(db_path))
+        active = conn.execute(
+            "SELECT COUNT(*) FROM memory_working WHERE is_active = 1 "
+            "AND content IN ('Notiz A', 'Notiz B')").fetchone()[0]
+        conn.close()
+        assert active == 2
+
+    def test_load_idempotent_no_duplicates(self, snap_env):
+        handler, _, db_path = snap_env
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO memory_working (type, content, priority, is_active) "
+            "VALUES ('note', 'Dauernotiz', 3, 1)")
+        conn.commit(); conn.close()
+
+        handler.handle("create", ["stable"])
+
+        handler.handle("load", [])
+        ok, msg = handler.handle("load", [])
+
+        assert ok is True
+        assert "uebersprungen" in msg
+        assert "0 zurueckgeschrieben" in msg
+
+        conn = sqlite3.connect(str(db_path))
+        count = conn.execute(
+            "SELECT COUNT(*) FROM memory_working WHERE content = 'Dauernotiz' "
+            "AND is_active = 1").fetchone()[0]
+        conn.close()
+        assert count == 1
+
+    def test_load_reactivates_completed_task(self, snap_env):
+        handler, _, db_path = snap_env
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO tasks (title, status, priority) "
+            "VALUES ('Wichtig offen', 'pending', 'P2')")
+        conn.commit(); conn.close()
+
+        handler.handle("create", ["before-done"])
+
+        # Task nach dem Snapshot abschliessen
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "UPDATE tasks SET status = 'done' WHERE title = 'Wichtig offen'")
+        conn.commit(); conn.close()
+
+        ok, msg = handler.handle("load", [])
+        assert ok is True
+        assert "1 reaktiviert" in msg
+
+        conn = sqlite3.connect(str(db_path))
+        status = conn.execute(
+            "SELECT status FROM tasks WHERE title = 'Wichtig offen'").fetchone()[0]
+        conn.close()
+        assert status == "pending"
+
+    def test_load_creates_missing_task(self, snap_env):
+        handler, _, db_path = snap_env
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO tasks (title, status) VALUES ('Verschollener Task', 'pending')")
+        conn.commit(); conn.close()
+
+        handler.handle("create", ["before-delete"])
+
+        # Task nach dem Snapshot gaenzlich loeschen
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("DELETE FROM tasks WHERE title = 'Verschollener Task'")
+        conn.commit(); conn.close()
+
+        ok, msg = handler.handle("load", [])
+        assert ok is True
+        assert "1 neu angelegt" in msg
+
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT status, source FROM tasks WHERE title = 'Verschollener Task'"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "pending"
+        assert row[1] == "snapshot-restore"
+
+    def test_load_display_mode_no_write(self, snap_env):
+        handler, _, db_path = snap_env
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO memory_working (type, content, priority, is_active) "
+            "VALUES ('note', 'Nur-Anzeige', 3, 1)")
+        conn.execute(
+            "INSERT INTO tasks (title, status) VALUES ('Anzeige-Task', 'pending')")
+        conn.commit(); conn.close()
+
+        handler.handle("create", ["display-snap"])
+
+        # Nach dem Snapshot veraendern ...
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("UPDATE memory_working SET is_active = 0")
+        conn.execute("UPDATE tasks SET status = 'done' WHERE title = 'Anzeige-Task'")
+        snap_id = conn.execute(
+            "SELECT id FROM session_snapshots WHERE name = 'display-snap'"
+        ).fetchone()[0]
+        conn.commit(); conn.close()
+
+        ok, msg = handler.handle("load", [str(snap_id), "display"])
+        assert ok is True
+        assert "Display-Modus" in msg
+
+        # ... darf display NICHT zurueckschreiben
+        conn = sqlite3.connect(str(db_path))
+        active = conn.execute(
+            "SELECT COUNT(*) FROM memory_working WHERE is_active = 1").fetchone()[0]
+        status = conn.execute(
+            "SELECT status FROM tasks WHERE title = 'Anzeige-Task'").fetchone()[0]
+        conn.close()
+        assert active == 0
+        assert status == "done"
+
+    def test_load_skips_already_open_tasks(self, snap_env):
+        handler, _, db_path = snap_env
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO tasks (title, status) VALUES ('Bleibt offen', 'pending')")
+        conn.commit(); conn.close()
+
+        handler.handle("create", ["still-open"])
+
+        ok, msg = handler.handle("load", [])
+        assert ok is True
+        assert "bereits offen" in msg
+
+        conn = sqlite3.connect(str(db_path))
+        rows = conn.execute(
+            "SELECT COUNT(*) FROM tasks WHERE source = 'snapshot-restore'"
+        ).fetchone()[0]
+        conn.close()
+        assert rows == 0  # kein Duplikat angelegt

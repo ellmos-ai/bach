@@ -1,12 +1,12 @@
 # Portabilität: SYSTEM
-# Zuletzt validiert: 2026-09-09
-# Nächste Prüfung: 2026-10-07
+# Zuletzt validiert: 2026-09-16
+# Nächste Prüfung: 2026-10-14
 # Ressourcen: [session_snapshots table, hub/snapshot.py]
 
 BACH SNAPSHOT SYSTEM
 ====================
 
-STAND: 2026-09-09
+STAND: 2026-09-16 (Task #1207 umgesetzt: load = echter Restore)
 
 Session-Snapshots sichern den exakten "State of Mind" einer KI-Session. 
 Dies ermöglicht das Laden eines Kontexts in eine neue Instanz oder 
@@ -14,16 +14,22 @@ das Fortsetzen nach einem Absturz/Shutdown.
 
 BEFEHLE
 -------
-  bach --snapshot create [name]  Aktuellen Status sichern.
-  bach --snapshot list           Verfügbare Snapshots (auto & manuell).
-  bach --snapshot load [ID]      ECHTER Restore: Working Memory & Tasks in das Live-System einfuehren.
-  bach --snapshot delete <ID>    Entfernt alte Snapshots.
+  bach --snapshot create [name]   Aktuellen Status sichern (fuellt ALLE Schema-Spalten).
+  bach --snapshot list            Verfügbare Snapshots (auto & manuell).
+  bach --snapshot load [ID]       ECHTER Restore: Working Memory & Tasks zurueckschreiben.
+  bach --snapshot load [ID] display  NUR anzeigen (keine Schreibvorgaenge).
+  bach --snapshot delete <ID>     Entfernt alte Snapshots.
 
-HINWEIS (Stand 2026-09-09):
-  'load' zeigt aktuell NUR die gespeicherten Details (Session, offene Tasks,
-  letzte Notizen) an. Die tatsächliche RESTORE-Funktion (Wiedereinschreiben
-  von Working Memory & Tasks in das Live-System) ist NOCH NICHT implementiert.
-  Offener Task: snapshot load = echter Restore (siehe BACH-Tasks, Kategorie SNAPSHOT).
+RESTORE-SEMANTIK (Stand 2026-09-16, nicht-destruktiv & idempotent):
+  - WORKING MEMORY: Im Snapshot gesicherte, aber im Live-System fehlende
+    aktive Eintraege werden als neue aktive memory_working-Rows (type='note')
+    zurueckgeschrieben. Identische aktive Eintraege werden uebersprungen
+    (keine Duplikate).
+  - TASKS: Erledigte/geloeschte Tasks aus dem Snapshot werden reaktiviert
+    (status='pending'); voellig fehlende Tasks werden als neue pending-Tasks
+    mit source='snapshot-restore' angelegt. Bereits offene Tasks = No-Op.
+  - current_session wird NICHT ueberschrieben (Sicherheitsabstand).
+  - `display` als zweites Argument schaltet auf reinen Anzeigemodus.
 
 KONZEPT: DER STATE-TREE
 -----------------------
@@ -47,31 +53,35 @@ MANUELL: `bach --snapshot create [name]` → snapshot_type='manual'.
 AUTO:    hub/shutdown.py erstellt bei >= 3 erkannten Aenderungen ein Auto-Snapshot
          (Name: auto_YYYYMMDD_HHMMSS).
 
-ACHTUNG (Stand 2026-09-09): Auto-Snapshots werden aktuell ebenfalls mit
-snapshot_type='manual' gespeichert (nur der Name enthaelt 'auto_...'). Eine
-eigene 'auto'-Wertung in der DB-Spalte snapshot_type existiert noch nicht.
+ACHTUNG: Auto-Snapshots werden ebenfalls mit snapshot_type='manual' gespeichert
+(nur der Name enthaelt 'auto_...'; shutdown.py ruft denselben _create-Pfad).
+Verifiziert 2026-09-16.
 
 DATENBANK
 ---------
-Tabelle: `session_snapshots` (data/schema/schema.sql, ab Zeile 243)
-Felder (SOLL-Schema):
+Tabelle: `session_snapshots` (data/schema/schema.sql, ab Zeile 347)
+Felder (SOLL=IST seit 2026-09-16):
   - id, session_id, snapshot_type, name
-  - snapshot_data (JSON: enthält open_tasks, recent_memory, created_at)
-  - working_memory, open_tasks, active_files (separate JSON-Felder, optional)
-  - token_usage, context_hash, notes
-  - created_at (Timestamp)
+  - snapshot_data (JSON: session_id, open_tasks, recent_memory, active_files,
+    token_usage, created_at)
+  - working_memory, open_tasks, active_files (separate JSON-Spalten, gefuellt)
+  - token_usage (letzte Gesamt-Zahl aus monitor_tokens, falls vorhanden)
+  - context_hash (sha256 der Snapshot-Daten, erste 16 Hex-Zeichen)
+  - notes, created_at
 
-IST-ZUSTAND (2026-09-09): Handler hub/snapshot.py _create schreibt NUR
-session_id, snapshot_type, name, snapshot_data, created_at. Die Spalten
-working_memory, open_tasks, active_files, token_usage, context_hash, notes
-existieren im Schema, werden aber NICHT befuellt.
+IST-ZUSTAND (2026-09-16): Handler hub/snapshot.py _create befuellt ALLE
+Schema-Spalten (INSERT mit working_memory, open_tasks, active_files,
+token_usage, context_hash, notes). _load bevorzugt die separaten Spalten
+und faellt auf snapshot_data zurueck (abwaertskompatibel fuer aeltere
+Snapshots ohne Spaltenbefuellung).
 
 BEISPIELE
 ---------
-  bach --snapshot create "Vor Grossumbau"  # Manuelles Backup
-  bach --snapshot list                     # Status prüfen
-  bach --snapshot load 42                  # ID 42 anzeigen (echter Restore folgt)
-  bach --snapshot delete 42                # Snapshot 42 löschen
+  bach --snapshot create "Vor Grossumbau"   # Manuelles Backup
+  bach --snapshot list                      # Status prüfen
+  bach --snapshot load 42                   # Restore: Memory & Tasks zurueckschreiben
+  bach --snapshot load 42 display           # Nur anzeigen, nichts veraendern
+  bach --snapshot delete 42                 # Snapshot 42 löschen
 
 SIEHE AUCH
 ----------
