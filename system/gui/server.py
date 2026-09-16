@@ -4364,10 +4364,11 @@ async def chat_control_proxy(control_path: str, request: Request):
             upstream_headers = {}
             if request.headers.get("authorization"):
                 upstream_headers["authorization"] = request.headers["authorization"]
-            status_response = await client.get(
-                f"{base_url}/status",
-                headers=upstream_headers,
-            )
+            status_url = f"{base_url}/status"
+            if upstream_headers:
+                status_response = await client.get(status_url, headers=upstream_headers)
+            else:
+                status_response = await client.get(status_url)
             try:
                 status_payload = status_response.json()
             except ValueError:
