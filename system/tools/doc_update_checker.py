@@ -174,7 +174,13 @@ class DocUpdateChecker:
 
     def _should_skip(self, path: Path) -> bool:
         path_str = str(path)
-        return "_archive" in path_str or "__pycache__" in path_str
+        return (
+             "_archive" in path_str
+            or "__pycache__" in path_str
+            # Vendorierte Fremd-Dateien (z.B. Anthropic) duerfen nie
+            # als veraltet/fixbar markiert oder automatisch geaendert werden.
+            or "_vendor" in path_str
+         )
 
     def _classify_doc(self, absolute_path: Path, rel_path: Path) -> str:
         rel_parts = rel_path.parts
