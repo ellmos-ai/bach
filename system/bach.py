@@ -1320,6 +1320,15 @@ def main():
                 cmd(command, [operation] + args)
                 dry_run = "--dry-run" in args or "-n" in args
                 success, message = handler.handle(operation, args, dry_run)
+                # OPS-TELEM-001: Befehlsausfuehrung zaehlen (fail-silent, ohne Payloads)
+                if not dry_run:
+                    try:
+                        from core.telemetry import increment
+                        increment("tool_calls",
+                                  outcome="ok" if success else "error",
+                                  tool=command)
+                    except Exception:
+                        pass
                 if message:
                     print(message)
                 if message and not quiet_protocol_mode:

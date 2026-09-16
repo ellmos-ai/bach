@@ -8,6 +8,23 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Added
 
+- **OPS-TELEM-001: Low-cardinality Telemetrie (Task #1315, ROADMAP Security-Prio-1):**
+  Neues Kernmodul `system/core/telemetry.py` — OpenTelemetry-inspiriert, lokal & privacy-first:
+  Model-Calls, Tool-/Befehlsausfuehrungen, Agentenstarts und Fehler werden ausschliesslich als
+  aggregierte Zaehler erfasst — ohne Payloads, Prompts, Pfade oder Nutzerdaten.
+  Low-Cardinality-Design: Counter-Allowlist (agent_starts/model_calls/tool_calls),
+  Label-Validierung per Regex mit Fallback "other", fixe outcome-Menge
+  (ok/error/dummy/timeout), Tages-Aggregation per UPSERT und Serien-Cap 200/Tag mit
+  Overflow-Bucket. Fail-Silent in allen Kernpfaden, Opt-Out via BACH_TELEMETRY_DISABLED=1.
+  Neue Migration `data/schema/migrations/041_telemetry.py` (Tabelle telemetry_counters,
+  additiv/idempotent; vom Migrations-Runner automatisch erkannt und angewandt), neuer
+  Handler `bach telemetry report/status/reset` (`system/hub/telemetry.py`), Hooks in
+  `core/agent_runtime.py` (_instantiate), `core/launcher.py` (route), `system/bach.py`
+  (CLI Direct Execute) und `hub/ollama.py` (_ask). 11 neue Regressionstests
+  (`tests/test_telemetry.py`); Baseline-Beweis per git-stash: keine zusaetzlichen
+  Testfehler (10 pre-existing Failures in test_ollama_stream/test_agent_launcher_handler
+  bleiben unveraendert).
+
 - **TRANSFER-08: Reife-Zertifizierung & Nullreferenznachweis (Task #1224, MODULRUECKTRANSFER
   Stufe 8):** Abschlusspruefung aller 8 Modulruecktransfers. Ergebnis:
   7/8 Module pin-konform (Checkouts arbeitssauber), 225 Waechter-Tests gruen auf
