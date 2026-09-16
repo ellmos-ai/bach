@@ -68,6 +68,16 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **Test-Fail-Soft in `test_hook_provider_wiring.py` (Daily Care 2026-09-16):**
+  In `test_fail_soft_on_backend_error` wird `SessionState(session_start_shown=True)`
+  vorab gesetzt, damit der einmalige `session_start_message`-Hinweis bei Backend-Verfuegbarkeit
+  den Test nicht ueberlagert und das isolierte Fail-Soft-Verhalten der Prompt-Evaluierung
+  bei Backend-Ausfall exakt verifiziert wird. 161 Provider- und Modulruecktransfer-Tests gruen.
+
+- **Task-DB bereinigt (Daily Care 2026-09-16):**
+  Zehn verbliebene Wegwerf-Test-Tasks #1166–#1175 („ich teste ob du antwortest…“)
+  in der Live-Datenbank als erledigt (`done`) markiert; offener Task-Bestand auf 11 bereinigt.
+
 - **`_extract_base_command` Windows-Pfad-Parsing (Task #1071, Nebenbefund):**
   shlex im POSIX-Modus frass Backslashes (`C:\Windows\System32\cmd.exe` →
   `c:windowssystem32cmd`); Windows-Pfade werden jetzt vor shlex erkannt.
