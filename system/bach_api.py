@@ -31,7 +31,7 @@ Drei Zugriffsmodi:
   3. Session-Modus:     python bach.py --startup (klassische CLI)
 
 Nutzung:
-    from bach_api import session, task, memory, agent, prompt, partner, tools, injector
+    from bach_api import session, task, memory, agent, prompt, partner, tools, tool_registry, injector
 
     # Session-Lifecycle (optional -- Modus 2)
     session.startup(partner="claude", mode="silent")
@@ -53,6 +53,7 @@ Nutzung:
     partner.delegate("Recherche", "--to=gemini")
     tools.list()
     tools.search("ocr")
+    tool_registry.list()
 
     # Kognitive Injektoren
     injector.process("ich bin blockiert")
@@ -170,6 +171,90 @@ class _DBBackedProxy(_HandlerProxy):
         conn = sqlite3.connect(str(_resolve_db_path()))
         conn.row_factory = sqlite3.Row
         return conn
+
+
+class _ToolRegistryProxy:
+    """Read-only structured access to BACH's canonical ``tool_registry`` table.
+
+    This is intentionally separate from ``tools``: the latter is the legacy
+    user-facing tool catalog, while ``tool_registry`` is the scanner-backed
+    inventory used by the resource axis.  The connection uses SQLite's
+    ``mode=ro`` URI so this API cannot create or mutate the database, including
+    when the table is consumed by an external resolver adapter.
+    """
+
+    _COLUMNS = (
+        "id",
+        "name",
+        "path",
+        "status",
+        "has_aufgaben",
+        "has_test",
+        "has_feedback",
+        "task_count",
+        "last_scan",
+        "created_at",
+        "updated_at",
+    )
+    _STATUSES = frozenset({"aktiv", "inaktiv", "archiviert"})
+
+    @staticmethod
+    def _read_only_uri(db_path: Path) -> str:
+        return f"{db_path.resolve().as_uri()}?mode=ro"
+
+    def list(
+        self,
+        *,
+        status: str | None = "aktiv",
+        query: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return registered tools without exposing a write-capable handle.
+
+        ``status`` defaults to active entries.  ``query`` searches the stable
+        name and path fields.  All SQL structure is fixed; caller input is
+        passed only as bound values.
+        """
+        if status is not None and status not in self._STATUSES:
+            raise ValueError(f"Ungültiger tool_registry-Status: {status!r}")
+        if query is not None and not isinstance(query, str):
+            raise TypeError("tool_registry query muss ein String oder None sein")
+        if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0):
+            raise ValueError("tool_registry limit muss eine positive Ganzzahl oder None sein")
+
+        db_path = _resolve_db_path()
+        if not db_path.is_file():
+            raise BachAPIError(f"BACH-Datenbank nicht gefunden: {db_path}")
+
+        conditions: list[str] = []
+        params: list[Any] = []
+        if status is not None:
+            conditions.append("status = ?")
+            params.append(status)
+        if query:
+            conditions.append("(name LIKE ? OR path LIKE ?)")
+            needle = f"%{query}%"
+            params.extend([needle, needle])
+
+        where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+        columns = ", ".join(f"[{column}]" for column in self._COLUMNS)
+        sql = f"SELECT {columns} FROM [tool_registry]{where} ORDER BY [name] COLLATE NOCASE, [id]"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+
+        try:
+            conn = sqlite3.connect(self._read_only_uri(db_path), uri=True)
+        except sqlite3.Error as error:
+            raise BachAPIError(f"BACH-Datenbank read-only nicht öffnbar: {error}") from error
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.Error as error:
+            raise BachAPIError(f"tool_registry read-only Abfrage fehlgeschlagen: {error}") from error
+        finally:
+            conn.close()
 
 
 class _TaskProxy(_DBBackedProxy):
@@ -607,6 +692,7 @@ partner = _HandlerProxy("partner")
 logs = _HandlerProxy("logs")
 msg = _HandlerProxy("msg")
 tools = _HandlerProxy("tools")
+tool_registry = _ToolRegistryProxy()
 help = _HandlerProxy("help")
 update = _HandlerProxy("update")
 email = _HandlerProxy("email")
@@ -868,6 +954,7 @@ __all__ = [
     "logs",
     "msg",
     "tools",
+    "tool_registry",
     "help",
     "update",
     "email",
