@@ -495,9 +495,14 @@ kein Feature-Sync mehr). BACH soll den Umgang mit dem Modul prüfen und seinen F
   MODULRUECKTRANSFER-Plan Stufe 2 scharfgeschaltet (BACH-Task 1218; Rollback
   `BACH_TEST_ADAPTER=native`, Regressionstests + Live-Nachweis). Die frühere
   Task-Referenz #1181 ist obsolet (ID inzwischen mit einem GUI-Task belegt).
-- **Doku-Nachlauf (offen, Task-Referenz #1182 obsolet):** Die externe, noch auf „vorbereitet" stehende
-  `clutch/docs/BACH_MIGRATION.md` ist im kanonischen Modul-Repo weiterhin auf diesen
-  Ist-Stand nachzuziehen (neue Task-ID erforderlich).
+- **Doku-Nachlauf (Stand 2026-09-16: ERLEDIGT, BACH-Task 1228):** Die
+  `clutch/docs/BACH_MIGRATION.md` steht im kanonischen Modul-Bus
+  (`.TOPICS/.AI/.MODULES/.ORCHESTRATION/clutch/docs/`) und im lokalen Klon
+  (`ellmos-ai/clutch`) auf dem Ist-Stand „ABGESCHLOSSEN“ (Cutover 2026-07-22,
+  BACH-Task 1150); eine „vorbereitet“-Fassung existiert nicht mehr. Das Dokument
+  bleibt als interne Doku bewusst nicht oeffentlich (clutch-.gitignore: interne
+  Planungs-/Migrationsdocs mit BACH-Pfaden/Refs). Die frühere Task-Referenz
+  #1182 ist obsolet (ID inzwischen mit einem GUI-Task belegt).
 
 ---
 

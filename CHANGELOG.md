@@ -167,6 +167,16 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Docs
 
+- **M8-Doku-Nachlauf clutch abgeschlossen (Task 1228, ROADMAP-Bullet nachgezogen):**
+  Verifiziert, dass `clutch/docs/BACH_MIGRATION.md` in beiden kanonischen Kopien auf
+  dem Ist-Stand steht: Modul-Bus `.TOPICS/.AI/.MODULES/.ORCHESTRATION/clutch/docs/`
+  („ABGESCHLOSSEN", Cutover 2026-07-22) und lokaler Klon `ellmos-ai/clutch`
+  (gleicher Ist-Stand, heute aufgefrischt). Eine „vorbereitet"-Fassung existiert
+  nicht mehr; die ROADMAP-M8-Prämisse vom 2026-09-12 war ueberholt. Das Dokument
+  bleibt als interne Doku bewusst nicht oeffentlich (clutch-.gitignore: interne
+  Planungs-/Migrationsdocs mit BACH-Pfaden/Refs). ROADMAP-M8-Bullet auf ERLEDIGT
+  (Task 1228) gesetzt; obsolete Task-Referenz #1182 (ID neu belegt) damit endgueltig
+  abgeloest. Kein Push (Judging-Hold), lokaler Commit only.
 - **Help-Sprachvarianten scheduler nachgezogen (Task 1227):** Alle 5 Sprachvarianten
   scheduler_{en,es,ja,ru,zh}.txt auf den Stand der deutschen Vorlage v1.1.0
   (2026-09-12) gebracht: neuer Abschnitt „Externer Scheduler (ellmos-scheduler)"
