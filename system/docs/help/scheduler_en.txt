@@ -1,13 +1,14 @@
 # Portability: SYSTEM
-# Last validated: 2026-05-18
-# Next review: 2027-05-17
+# Version: 1.1.0
+# Last validated: 2026-09-12
+# Next review: 2027-03-12
 # Next exam: 2026-11-15
-# Resources: [hub/scheduler.py, gui/daemon_service.py, scheduler_jobs, scheduler_runs]
+# Resources: [hub/scheduler.py, hub/scheduler_provider.py, gui/daemon_service.py, scheduler_jobs, scheduler_runs, scheduler_external]
 
 SCHEDULER - background jobs and scheduler service
 ----------------------------------------------------
 
-DATE: 2026-02-28
+DATE: 2026-09-12
 
 Note: `bach scheduler ...` is the new name for the scheduler.
 The old command `bach daemon ...` is still available as an alias.
@@ -22,8 +23,6 @@ activated if required.
 
 The scheduler automatically pauses OneDrive sync during operation
 to avoid sync conflicts.
-
-See: docs/CONCEPT_daemon_policy.md
 
 CLI COMMANDS (bach scheduler)
 -----------------------------
@@ -46,6 +45,7 @@ CLI COMMANDS (bach scheduler)
   run <ID> Run individual jobs manually
   logs [N] Show latest log entries (default: 20)
   jobs --json Scheduler jobs with calculated status as JSON
+  external ... External ellmos scheduler (see below)
 
 SESSION-SYSTEM
 --------------
@@ -79,6 +79,28 @@ SESSION-SYSTEM
     bach scheduler session steer --profile ati "Bitte heute nur Health-Checks und Docs anfassen."
     bach scheduler session steer --profile ati "Please validate with a dry run first." --json
     bach scheduler session status --json
+
+EXTERNAL SCHEDULER (ellmos-scheduler)
+-------------------------------------
+  Provider seam (MODULRUECKTRANSFER step 3): `hub/scheduler_provider.py`
+  wires BACH to the external module `ellmos-scheduler`. The legacy
+  scheduler stays untouched as the fail-closed fallback.
+
+  external status              Show adapter/provider status
+  external status --json       Status as JSON
+  external jobs                 List jobs in the external state store
+  external verify              Pre-migrate legacy jobs read-only (dry run)
+  external verify --apply      Adopt legacy jobs idempotently
+  external verify --json       Response as JSON
+
+  - The external state store is isolated under data/scheduler_external/
+    (provenance `bach:<ID>`); the legacy job store is never modified.
+  - Jobs with bare command names without a PATH executable are skipped
+    during verify and documented with a reason (argv conversion before --apply).
+  - Rollback: BACH_USE_EXTERNAL_SCHEDULER=0 disables the wiring;
+    `bach scheduler doctor` reports provider state and rollback hint.
+  - Fail-closed: external commands without the module installed produce
+    a clear error instead of silently falling back to the legacy store.
 
 JOB TYPES
 ---------
@@ -148,7 +170,6 @@ are equivalent:
 SEE ALSO
 ----------
   bach --help daemon           Older documentation (alias)
-docs/CONCEPT_daemon_policy.md Scheduler policies
   bach --help connector        Connector system (queue, retry)
   bach --help maintain         Maintenance tools
   bach --help backup           Backup system

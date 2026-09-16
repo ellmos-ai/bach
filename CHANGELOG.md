@@ -167,6 +167,18 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Docs
 
+- **Help-Sprachvarianten scheduler nachgezogen (Task 1227):** Alle 5 Sprachvarianten
+  scheduler_{en,es,ja,ru,zh}.txt auf den Stand der deutschen Vorlage v1.1.0
+  (2026-09-12) gebracht: neuer Abschnitt „Externer Scheduler (ellmos-scheduler)"
+  je Sprache uebersetzt (external status/jobs/verify [--apply], Rollback
+  BACH_USE_EXTERNAL_SCHEDULER=0, Fail-Closed, isolierter State-Store
+  data/scheduler_external/, Verify-Skip fuer Bare-Commands), CLI-Liste um
+  `external ...` ergaenzt, Ressourcen-Header um hub/scheduler_provider.py und
+  scheduler_external erweitert, beide toten CONCEPT_daemon_policy.md-Verweise
+  je Datei entfernt (Policy + SIEHE AUCH), Stand-Daten auf 2026-09-12/2027-03-12
+  aktualisiert; EN erhaelt zusaetzlich `# Version: 1.1.0` (Konvention der _en-Varianten).
+  Render-Verifikation: `bach --help scheduler` laedt scheduler_en.txt fehlerfrei
+  (Sprache en, danach zurueck auf de). 10 CONCEPT-Vorkommen auf 0 reduziert.
 - **Help-Forensik scheduler.txt (Task 1226):** Die in TRANSFER-03 (Task 1219) eingefuehrte
   CLI-Gruppe `bach scheduler external status|jobs|verify [--apply]` war in der deutschen
   Help nicht dokumentiert → neuer Abschnitt „Externer Scheduler" inkl. Rollback

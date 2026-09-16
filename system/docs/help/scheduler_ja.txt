@@ -1,13 +1,13 @@
 # Portability: SYSTEM
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-09-12
+# Next review: 2027-03-12
 # 次回試験: 2026-11-15
-# リソース: [hub/scheduler.py、gui/daemon_service.py、scheduler_jobs、scheduler_runs]
+# リソース: [hub/scheduler.py、hub/scheduler_provider.py、gui/daemon_service.py、scheduler_jobs、scheduler_runs、scheduler_external]
 
 SCHEDULER - バックグラウンド ジョブとスケジューラ サービス
 ----------------------------------------------------
 
-日付: 2026-02-28
+日付: 2026-09-12
 
 注: `bach スケジューラ ...` はスケジューラの新しい名前です。
 古いコマンド `bach daemon ...` はエイリアスとして引き続き使用できます。
@@ -23,8 +23,6 @@ SCHEDULER - バックグラウンド ジョブとスケジューラ サービス
 スケジューラは、操作中に OneDrive 同期を自動的に一時停止します。
 同期の競合を避けるため。
 
-参照: docs/CONCEPT_daemon_policy.md
-
 CLI コマンド (バッチ スケジューラ)
 -----------------------------
 
@@ -38,6 +36,7 @@ CLI コマンド (バッチ スケジューラ)
   run <ID> 個々のジョブを手動で実行する
   logs [N] 最新のログ エントリを表示します (デフォルト: 20)
   jobs --json JSON として計算されたステータスを持つスケジューラ ジョブ
+  external ... 外部 ellmos スケジューラ (下記参照)
 
 SESSION-SYSTEM
 --------------
@@ -61,6 +60,28 @@ SESSION-SYSTEM
   オペレーター制御の例:
     bach scheduler session steer --profile ati "Bitte heute nur Health-Checks und Docs anfassen."
     bach scheduler session status --json
+
+外部スケジューラ (ellmos-scheduler)
+-------------------------------------
+  プロバイダーシーム (MODULRUECKTRANSFER ステップ 3): `hub/scheduler_provider.py`
+  は BACH を外部モジュール `ellmos-scheduler` に接続します。レガシー
+  スケジューラはフェイルクローズドのフォールバックとしてそのまま残ります。
+
+  external status              アダプター/プロバイダーの状態を表示
+  external status --json       状態を JSON として出力
+  external jobs                 外部状態ストアのジョブを一覧表示
+  external verify              レガシージョブを読み取り専用で事前移行 (ドライラン)
+  external verify --apply      レガシージョブを冪等に引き継ぐ
+  external verify --json       応答を JSON として出力
+
+  - 外部状態ストアは data/scheduler_external/ に隔離されています
+    (出所 `bach:<ID>`)。レガシージョブストアは決して変更されません。
+  - PATH 上に実行ファイルのない bare コマンド名のジョブは verify 時に
+    スキップされ、理由付きで文書化されます (--apply 前の argv 変換)。
+  - ロールバック: BACH_USE_EXTERNAL_SCHEDULER=0 で接続を無効化。
+    `bach scheduler doctor` がプロバイダー状態とロールバックを報告します。
+  - フェイルクローズド: モジュール未インストール時の外部コマンドは、
+    レガシーストアに黙ってフォールバックせず、明確なエラーを出します。
 
 ジョブタイプ
 ---------
@@ -130,7 +151,6 @@ ALIAS: bach daemon ...
 関連項目
 ----------
   bach --help daemon           古いドキュメント (エイリアス)
-docs/CONCEPT_daemon_policy.md スケジューラ ポリシー
   bach --help connector        コネクタ システム (キュー、再試行)
   bach --help maintain         メンテナンス ツール
   bach --help backup           バックアップ システム
