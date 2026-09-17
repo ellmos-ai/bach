@@ -81,3 +81,7 @@ sqlite-transit-sync @ git+https://github.com/ellmos-ai/sqlite-transit-sync.git@4
 # daher Kern- statt Optional-Abhaengigkeit. SHA-Pin statt Paketname -- der Name `web-scraper`
 # ist auf PyPI fremd belegt (Vahid Vaezian 1.0, 2018); kein Tag im Repo, 3078116 = max_redirects.
 web-scraper @ git+https://github.com/ellmos-ai/web-scraper.git@3078116fa4d3d9a94f6e012645b4af5d7fe9de3e
+# Dokumentextraktions-Fachkern (Einheit 5b, T-20260818-903104603): Der kanonische Seam
+# verlangt für regelbasierte Abnehmer Fließtext. Privates Repo direkt und reproduzierbar
+# per SHA beziehen; PRIVATE.txt bleibt unangetastet, keine Veröffentlichung als Paket.
+doc-services @ git+https://github.com/ellmos-ai/doc-services.git@f8506e642d27417e4ed00810aab2fc934aa3e374
