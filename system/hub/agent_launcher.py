@@ -1676,12 +1676,12 @@ class AgentLauncherHandler(BaseHandler):
                 start_bat = agent_temp_dir / "start.bat"
                 headless = self._has_flag(args, "--headless")
                 bat_lines = [
-                    f"@echo off",
+                    "@echo off",
                     f"title {title}",
                     f'cd /d "{agent_temp_dir}"',
                     f"echo === BACH Agent: {agent_label} ({resolved_name}) ===",
                     f"echo Modell: {model} ^| Modus: {mode} ^| Runner: {runner_name}",
-                    f"echo.",
+                    "echo.",
                     'set "BACH_GATE_ATTEMPTS=0"',
                     ':BACH_SPAWN_WAIT',
                     f'if exist "{gate_file}" goto BACH_SPAWN_CHECK',
