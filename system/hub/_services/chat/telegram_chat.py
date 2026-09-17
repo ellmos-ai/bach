@@ -27,7 +27,7 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if hasattr(sys.stdout, 'reconfigure'):
@@ -36,9 +36,11 @@ if hasattr(sys.stdout, 'reconfigure'):
 import tempfile
 import threading
 import time
-from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+logger = logging.getLogger("bach.telegram_chat")
 
 # BACH system path: resolve from this file's location (system/hub/_services/chat/)
 _here = Path(__file__).resolve()
@@ -89,15 +91,11 @@ from hub._services.chat.chat_runtime import (
     ChatRuntime,
     ComputeLocked,
     FailedAnswer,
-    RUNTIME_BACH_DB,
 )
 from hub._services.chat.session_store import SQLiteChatSessionStore
 from hub._services.chat.slots_config import (
     DEFAULT_CORE_SLOTS,
-    DEFAULT_ROLE_PROMPTS,
-    DEFAULT_SYSTEM_PROMPT,
     add_worker,
-    compose_worker_prompt,
     get_activity_history,
     get_prompt_templates,
     get_worker_slot,
@@ -107,7 +105,6 @@ from hub._services.chat.slots_config import (
     record_activity,
     remove_worker,
     reset_prompt_template,
-    save_slots_config,
     update_prompt_template,
     update_slot,
 )
@@ -118,7 +115,7 @@ try:
         DEFAULT_CHECK_SCRIPT, DEFAULT_LOCK_PATH,
         check_compute_active, pause_compute_jobs, resume_compute_jobs,
         start_resume_monitor, recover_paused_jobs, format_status_message,
-        write_session_flag, update_session_flag, delete_session_flag,
+        write_session_flag, delete_session_flag,
         set_inferenz_active, get_effective_keep_alive_seconds,
         get_fackel_preference, set_fackel_preference,
     )
@@ -220,7 +217,6 @@ if os.path.exists(system_file):
 else:
     system_prompt = "Du bist ein lokaler BACH Chat-Assistent. Antworte auf Deutsch, präzise und klar."
 
-from hub._services.chat.session_store import SQLiteChatSessionStore
 
 session_store = None
 try:
@@ -1128,8 +1124,6 @@ async def _handle_pending_action(chat_id: str, text: str, update: Update) -> boo
         original_text = pending["text"]
 
         await update.message.reply_text("Pausiere Compute-Jobs...")
-
-        cl_cfg = CONFIG.get("compute_lock", {})
         paused = pause_compute_jobs(status)
 
         if not paused:

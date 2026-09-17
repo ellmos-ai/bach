@@ -31,7 +31,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 from hub._services.limits import limit  # einstellbare Laufzeit-Grenzen
 from hub._services.chat import hooks  # Hook-Punkte fuer memory-/workflowhooker
 
@@ -703,7 +703,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         "Chat Tray": "chat_tray",
                     }
                     lines = ["BACH Service-Check:"]
-                    lines.append(f"  ✅ Control API (:8081) — läuft (diese Anfrage)")
+                    lines.append("  ✅ Control API (:8081) — läuft (diese Anfrage)")
                     for svc, cmd in http_checks.items():
                         code = run_shell(cmd).strip()
                         ok = code == "200"
@@ -831,7 +831,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if not location:
                 return "Kein Ort angegeben"
             try:
-                from hub._services.weather.weather_service import get_weather_text, get_weather
+                from hub._services.weather.weather_service import get_weather_text
                 parts = location.replace(" ", "").split(",")
                 if len(parts) == 2:
                     try:

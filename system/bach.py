@@ -16,8 +16,6 @@ Usage:
 
 import os
 import sys
-import email
-import email.parser
 import json
 import re
 import subprocess
@@ -197,7 +195,7 @@ def _handle_fs(sub_cmd, args):
         snapshot_count = len(list(snapshots_dir.glob("*.orig"))) if snapshots_dir.exists() else 0
         print("[FS] Filesystem Protection Status")
         print(f"  Snapshots: {snapshot_count} Dateien")
-        print(f"  Befehle: bach fs check, bach fs heal, bach dist snapshot")
+        print("  Befehle: bach fs check, bach fs heal, bach dist snapshot")
     elif sub_cmd == "classify":
         if not args:
             print("Usage: bach fs classify <path>")
