@@ -4,6 +4,7 @@
 
 import importlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -76,6 +77,30 @@ def test_server_serve_forwards_transport(monkeypatch):
     mcp_server.serve(transport="stdio")
 
     assert calls == [{"transport": "stdio"}]
+
+
+def test_server_import_ignores_bach_hub_mcp_shadow():
+    code = """
+import sys
+from pathlib import Path
+
+system_root = Path.cwd()
+import tools
+sys.path.insert(0, str(system_root / "hub"))
+from tools import mcp_server
+
+assert mcp_server.FastMCP.__module__.startswith("mcp.server")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=SYSTEM_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.asyncio

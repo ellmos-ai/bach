@@ -51,7 +51,7 @@
 - **Priorität:** high
 - **Erledigt:** 2026-09-13 – `mcp` auf v1.x gepinnt, `pytest-asyncio` ergänzt, alle 9 Tests grün.
 
-### [BACH-MOD-01] Modularisierung: `tools/testing` durch `ellmos-tests`-Adapter ersetzen
+### ✅ [BACH-MOD-01] Modularisierung: `tools/testing` durch `ellmos-tests`-Adapter ersetzen
 - **Ziel:** Eigene Test-Tools aus `tools/testing` durch Adapter auf das externe Modul `ellmos-tests` ablösen und den Upstream-Widerspruch in `ellmos-tests-SKILL.md` auflösen.
 - **Quelle:** `[Quelle: ROADMAP.md:88-90]`
 - **Akzeptanzkriterien (DoD):**
@@ -62,3 +62,6 @@
 - **Aufwand:** large
 - **Reichweite:** local
 - **Priorität:** medium
+- **Erledigt:** 2026-09-14 auf WORKSTATION-LG gegengeprüft — Adapter-Vertrag
+  `15 passed`, externer QUICK-Lauf `8/8` B-Tests erfolgreich, nativer
+  Rollbackpfad `B001 + O001` jeweils 5,0/5; BACH-Task 1218 abgeschlossen.

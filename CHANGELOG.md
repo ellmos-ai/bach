@@ -81,6 +81,14 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **MCP-SDK-Import gegen BACH-Handler-Shadowing gehaertet (Task #1284):**
+  `system/tools/mcp_server.py` blendet beim SDK-Import gezielt den Legacy-
+  `sys.path`-Eintrag `system/hub` aus. Dadurch wird `hub/mcp.py` in langen
+  Pytest-Prozessen nicht mehr faelschlich als Top-Level-Paket `mcp` geladen;
+  die urspruengliche Pfadreihenfolge wird unmittelbar wiederhergestellt.
+  Ein Subprozess-Regressionstest reproduziert exakt die verschmutzte
+  Importreihenfolge.
+
 - **Test-Fail-Soft in `test_hook_provider_wiring.py` (Daily Care 2026-09-16):**
   In `test_fail_soft_on_backend_error` wird `SessionState(session_start_shown=True)`
   vorab gesetzt, damit der einmalige `session_start_message`-Hinweis bei Backend-Verfuegbarkeit
