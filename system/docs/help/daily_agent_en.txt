@@ -23,10 +23,10 @@ OPERATIONS
   bach daily-agent briefing --dry-run   Read-only briefing preview
   bach daily-agent summary              Generate evening summary
   bach daily-agent config               List briefing modules
-  bach daily-agent config mediplaner_briefing --projection=<absolute-path>
-                                        Store the MediPlaner consumer path
-  bach daily-agent config routinika_briefing --projection=<absolute-path>
-                                        Store the Routinika consumer path
+  bach daily-agent config mediplaner_briefing --manifest=<absolute-path> --auth-refs-file=<absolute-path>
+                                        Store an authenticated transit path
+  bach daily-agent config routinika_briefing --manifest=<absolute-path> --auth-refs-file=<absolute-path>
+                                        Store an authenticated transit path
   bach daily-agent modules              Alias for config
   bach daily-agent toggle <modul>       Module Switch on/off
 
@@ -48,10 +48,8 @@ EXAMPLES
   bach daily-agent start --model=opus   Starts with model 'opus'
   bach daily-agent status               Shows PID and start time
   bach daily-agent briefing             Generates briefing with active modules
-  bach daily-agent briefing --mediplaner-projection=C:\staging\mediplaner.sqlite --mediplaner-receipt --dry-run
-                                        Verifies one closed projection without writes
-  bach daily-agent briefing --routinika-projection=C:\staging\routinika.sqlite --routinika-receipt --dry-run
-                                        Verifies one closed projection without writes
+  bach daily-agent briefing --mediplaner-manifest=C:\transit\mediplaner.sqlite-snapshot.json --dry-run
+                                        Reads only a private hash-bound snapshot
   bach daily-agent toggle news_briefing Deaktiviert News-Modul
   bach daily-agent summary              Shows tasks completed today
   bach daily-agent stop                 Stops agent + saves summary
@@ -76,9 +74,13 @@ mediplaner_briefing: Exact allowlisted opaque medication due records and
                     projection; disabled by default. Real runs persist the
                     consumer checkpoint in BACH configuration; dry-runs write
                     nothing.
+                    Transit configuration stores only OS-keyring references;
+                    HMAC, file size, and SHA-256 are checked before SQLite opens.
 routinika_briefing: Exact allowlisted opaque due records from a closed
                     Routinika v1 SQLite projection; disabled by default. Real
                     runs persist the consumer checkpoint; dry-runs write nothing.
+                    Configured transit manifests are authenticated fail-closed;
+                    secret values are forbidden in configuration.
 weather_briefing: Tried weather_service (coordinates hardcoded to 0.0)
 calendar_briefing: Today's events from assistant_calendar (next 5 events)
 
@@ -90,6 +92,9 @@ ERROR HANDLING
 - Briefing modules ignore silent DB errors (e.g. if news_items does not exist)
 - An active or explicitly selected MediPlaner or Routinika projection fails closed on
   contract, provenance, or closure errors.
+- Authenticated transit paths fail before SQLite access on missing keyring,
+  unknown key/sender, tampering, missing files, or sidecars; the consumer
+  checkpoint remains unchanged.
 - stop saves summary EVEN if agent is already dead
 
 

@@ -66,6 +66,7 @@ Changelog:
 __version__ = "2.2.0"
 __author__ = "BACH Team"
 
+import importlib
 import os
 import sys
 import sqlite3
@@ -85,7 +86,42 @@ from hub.bach_paths import BACH_DB
 BACH_DB_PATH = Path(BACH_DB)
 BACH_DB_STR = str(BACH_DB_PATH)
 
-from mcp.server.fastmcp import FastMCP
+
+
+def _import_fastmcp():
+    """Import the external MCP SDK even when ``hub/mcp.py`` is on sys.path.
+
+    Some legacy tests add ``system/hub`` as a top-level import root.  In that
+    state a normal ``import mcp`` resolves BACH's CLI handler instead of the
+    installed SDK package.  Remove only that known shadow path for the duration
+    of the import and restore the caller's path order afterwards.
+    """
+    hub_mcp = (SYSTEM_ROOT / "hub" / "mcp.py").resolve()
+    original_path = list(sys.path)
+    shadow_module = sys.modules.get("mcp")
+    shadow_file = getattr(shadow_module, "__file__", None)
+
+    def shadows_sdk(entry: str) -> bool:
+        try:
+            return (Path(entry) / "mcp.py").resolve() == hub_mcp
+        except (OSError, RuntimeError, TypeError):
+            return False
+
+    sys.path[:] = [entry for entry in original_path if not shadows_sdk(entry)]
+    if shadow_file and Path(shadow_file).resolve() == hub_mcp:
+        sys.modules.pop("mcp", None)
+
+    try:
+        return importlib.import_module("mcp.server.fastmcp").FastMCP
+    except Exception:
+        if shadow_module is not None:
+            sys.modules["mcp"] = shadow_module
+        raise
+    finally:
+        sys.path[:] = original_path
+
+
+FastMCP = _import_fastmcp()
 
 from bach_api import get_app
 

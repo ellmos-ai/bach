@@ -14,7 +14,31 @@
 - **Quelle:** `[Ticket: T-20260915-107799375]` `[PR: #63]` `[USMC-Lesson: 98]`
 - **Nachweis:** Synthetischer Audit-Checkout #69 + #63: ohne Bootstrap 304 bestanden und 8 strikte API-Tests rot; ausschließlich im Audit-Worktree ergänzter Temp-Bootstrap ergab 312 bestandene Tests und grünen Home-/Checkout-Wächter. Keine Änderung am gesperrten #63-Worktree.
 - **Akzeptanzkriterien (DoD):** Lock-Eigner ergänzt Temp-Bootstrap, Regression und README im #63-Branch; kanonischer Repo-Root-Testpfad ist grün und schreibt weder in `~/.bach` noch in Checkout-Runtime; PR-Review, Merge und erneuter Integrationslauf folgen.
+
+### ✅ [BACH-TEST-01] Testisolation für Runtime-Dateien und Prozesssteuerung
+- **Ziel:** Pytest-Läufe dürfen weder Runtime-Zustand in den Checkout schreiben noch reale Cloud- oder Systemprozesse beenden.
+- **Quelle:** `[Ticket: T-20260915-107799375]` `[Vorfall: OneDrive.exe /shutdown aus test_daemon_service.py]`
+- **Akzeptanzkriterien (DoD):** Runtime-Pfade liegen in einem temporären Sitzungsordner; Schreibversuche in geschützte Checkout-Pfade und reale Prozessbeendigungen werden zentral blockiert; CLI-Kindprozesse erben dieselbe Isolation.
+- **Prüfweg:** siehe `system/tests/README.md`; fokussierte Tätergruppe und anschließend vollständige Suite ausführen, danach Checkout-Artefakte und OneDrive-Prozess prüfen.
+- **Aufwand:** medium
+- **Reichweite:** local
 - **Priorität:** high
+- **Erledigt:** 2026-09-15 – Pfad-Seams, Audit-/Subprozess-Guard und Regressionstests ergänzt; konkrete Alt-Schreiber isoliert.
+
+### [BACH-AGENT-PID-01] Agent-Stop gegen PID-Wiederverwendung absichern (OC-B-Gate)
+- **Ziel:** `agent stop` darf niemals einen fremden Prozess nur wegen einer wiederverwendeten PID beenden. Die PID-Identität muss beim Start gespeichert und vor Status/Stop konsistent geprüft werden; Altdateien ohne verifizierbare Identität brauchen einen fail-closed oder explizit geprüften Migrationspfad.
+- **Quelle:** `[OC-B: T-20260818-903104603; unabhängiger Review von BACH PR #65 am 2026-09-15]` — `system/hub/agent_launcher.py::_stop_agent` liest die PID direkt, während `AgentProcessRegistry.is_running` Identitätsabweichungen erkennt und PID-Dateien entfernen kann. BACHs heutige Startdateien enthalten keinen `process_identity`-Anker.
+- **Akzeptanzkriterien (DoD):** Wiederverwendete PID und Identitätsabweichung stoppen keinen Prozess; Status-, JSON- und Stop-Zugänge stimmen überein; Stop-Dry-run meldet denselben Guard; Alt-PID-Verhalten ist ausdrücklich geregelt; Tests prüfen Windows- und Unix-Pfade ohne echten Agentenstart. Erst danach Opt-in-Seam auf einem Host aktivieren und Lifecycle/Parity nachweisen.
+- **Prüfweg:** gezielte Agent-Handler-/Provider-Tests, echter Modul-Pin/Host-Smoke und unabhängiger Review; kein lokales Ollama.
+- **Stand 2026-09-15:** BACH-seitiger PID-/Erzeugungszeit-Guard und fail-closed Altdatei-Verhalten im OC-B-Arbeitszweig umgesetzt. Unabhängiger Review des ersten Nachtrags fand weitere Lücken (Unix-Kinder, Start ohne Identitätsanker, mutierende Status/Dry-run-Bereinigung, Registry-PID-Substitution); sie wurden mit read-only Modul-Probe und BACH-Nachbesserung adressiert. 144 gezielte BACH-Tests und 70 Modul-Tests bestanden, 1 Modul-Test übersprungen. Re-Review hat weitere Hochrisiko-Reste festgestellt, siehe unten. Kein Aktivierungs- oder Release-Claim.
+- **Re-Review 2026-09-15:** Hochrisiko-Rest: Spawn kann bei fehlender Birth-Erfassung einen unkontrollierbaren Prozess hinterlassen; parallele Starts überschreiben Belege mangels exklusivem Claim. Unix-Stop erfasst nur eine Kind-Momentaufnahme und löscht den Beleg ohne Abschlussnachweis; JSON-Status kann Dateiname/Record-Name verwechseln. Diese Punkte sind vor Produktiv-Opt-in/Release zu reparieren und mit Race-/Lifecycle-Tests zu belegen. Der separate Modul-Stop hat zusätzlich einen nackten PID-Signalpfad (agent-launcher TODO OC-B-PID-02).
+- **Nachbesserung 2026-09-15:** BACHs Handler-Start/Stop nutzen jetzt einen nativen Claim pro technischem Namen; Status/Stop verweigern ein PID-File, dessen `name` nicht zum Dateinamen passt. 147 gezielte Agent-/Provider-Tests bestanden. Der direkte Modul-Stop wurde im PR #2 identitätsgebunden nachgebessert; dort lesen Statusmethoden Belege inzwischen ohne Bereinigung. Rest-HOCH: Birth-Erfassung nach Spawn ohne kontrollierte Rückführung, enger psutil-Signal-/PID-Reuse-Race ohne OS-Handle, dynamische Kinder/Abschlussnachweis, echter Host-Lifecycle und Ocean-Parität. Kein Release-Claim.
+- **Umsetzungsvertrag 2026-09-15:** `docs/architecture/OC-B-OWNED-SPAWN-STOP-GATE.md` definiert den gesperrten Provider-Spawn, einen gehaltenen OS-/Supervisor-Prozessbezug, belegtes Prozessbaum-Ende und die Host-/Paritäts-Prüfmatrix. Der aktuelle Birth-Failure-Test belegt keinen kontrollierten Abbruch; erst entsprechende neue Tests plus Implementierung können dieses Gate schließen.
+- **Gated-Spawn-Nachtrag 2026-09-15:** Windows-`start.bat` und Unix-Python-Starter warten providerlos auf einen eindeutigen atomar freigegebenen Marker, nachdem `process_create_time` und PID-Beleg geschrieben sind. Birth-Fehler/Abfrageausnahme beenden den noch providerlosen Starter ohne Marker; unbestätigtes Ende bleibt `unverified`. Ein früher Pipe-Handshake wurde verworfen, weil er der interaktiven Windows-CLI einen geschlossenen Standardeingang vererben konnte. Harmlose Windows-Headless-Gate- und integrierte Handler-Tests bestanden, Unix-Gate-Tests sind auf diesem Windows-Host übersprungen. **Nicht geschlossen:** fremdakteursfeste Freigabe, interaktiver Windows-New-Console-/Unix-Host-Smoke, Gate-Ack, OS-gehaltener Stop-/Baum-Fence und BACH/Modul/Ocean-Parität.
+- **Aufwand:** medium
+- **Reichweite:** local
+- **Priorität:** high
+
 
 ### [BACH-HERZ-01] Zuteilungsgrenze für einen Pfad: atomarer Claim, Rechteprüfung, Besetzungsprotokoll
 - **Ziel:** Eine zentrale Stelle, durch die genau ein produktiver Pfad läuft (Vorschlag: der Hintergrundplatz `buddha_always_on`). Sie reicht die bisherige Modellwahl **unverändert** durch, beansprucht die Aufgabe atomar, prüft das Rollenrecht, erzeugt eine `assignment_id` und protokolliert Start und Ende.
@@ -56,7 +80,7 @@
 - **Priorität:** high
 - **Erledigt:** 2026-09-13 – `mcp` auf v1.x gepinnt, `pytest-asyncio` ergänzt, alle 9 Tests grün.
 
-### [BACH-MOD-01] Modularisierung: `tools/testing` durch `ellmos-tests`-Adapter ersetzen
+### ✅ [BACH-MOD-01] Modularisierung: `tools/testing` durch `ellmos-tests`-Adapter ersetzen
 - **Ziel:** Eigene Test-Tools aus `tools/testing` durch Adapter auf das externe Modul `ellmos-tests` ablösen und den Upstream-Widerspruch in `ellmos-tests-SKILL.md` auflösen.
 - **Quelle:** `[Quelle: ROADMAP.md:88-90]`
 - **Akzeptanzkriterien (DoD):**
@@ -67,3 +91,6 @@
 - **Aufwand:** large
 - **Reichweite:** local
 - **Priorität:** medium
+- **Erledigt:** 2026-09-14 auf WORKSTATION-LG gegengeprüft — Adapter-Vertrag
+  `15 passed`, externer QUICK-Lauf `8/8` B-Tests erfolgreich, nativer
+  Rollbackpfad `B001 + O001` jeweils 5,0/5; BACH-Task 1218 abgeschlossen.
