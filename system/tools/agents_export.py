@@ -21,6 +21,7 @@ import argparse
 import json
 import re
 import sqlite3
+import sys
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -975,6 +976,12 @@ def main() -> int:
         output_dir=args.output,
         dry_run=args.dry_run,
     )
+    # Keep captured CLI output UTF-8 on Windows as well as on POSIX.  Without
+    # this, a redirected stdout may use the active Windows code page and emit
+    # German umlauts as non-UTF-8 bytes, breaking callers that explicitly
+    # decode the exporter contract as UTF-8.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     print(message)
     return 0 if success else 1
 
