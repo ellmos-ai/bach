@@ -564,6 +564,7 @@ class TestSteer:
             json.dumps(
                 {
                     "pid": 4242,
+                    "process_create_time": 10.0,
                     "name": "test-boss",
                     "display_name": "Test Boss",
                     "type": "boss",
@@ -617,7 +618,9 @@ class TestSteer:
         assert not handler._agent_operator_notes_path("test-boss", temp_dir=temp_dir, markdown=True).exists()
 
     @patch("subprocess.Popen")
-    def test_start_preserves_prelaunch_operator_notes(self, mock_popen, handler):
+    def test_start_preserves_prelaunch_operator_notes(self, mock_popen, handler, monkeypatch):
+        from hub import agent_process_provider as provider
+        monkeypatch.setattr(provider, "capture_process_create_time", lambda pid: 10.0)
         temp_dir = str(handler.temp_dir / "agent_test-boss")
         handler._write_operator_notes(
             "test-boss",
@@ -652,6 +655,7 @@ class TestPauseResume:
             json.dumps(
                 {
                     "pid": 4242,
+                    "process_create_time": 10.0,
                     "name": "test-boss",
                     "display_name": "Test Boss",
                     "type": "boss",
@@ -734,6 +738,16 @@ class TestPauseResume:
         assert "Am sicheren Punkt" in markdown
 
     def test_status_json_shows_pause_requested_for_running_agent(self, handler, monkeypatch):
+        from hub import agent_process_provider as provider
+
+        class OwnedProcess:
+            def create_time(self):
+                return 10.0
+
+            def is_running(self):
+                return True
+
+        monkeypatch.setattr(provider.psutil, "Process", lambda pid: OwnedProcess())
         temp_dir = self._running_pid_fixture(handler)
         handler._write_pause_request(
             "test-boss",
